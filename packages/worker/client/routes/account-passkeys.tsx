@@ -1,4 +1,7 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
+import {
+	formatNullableTimestamp,
+	formatTimestamp,
+} from '#client/format-timestamp.ts'
 import { startRegistration } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
@@ -26,15 +29,19 @@ import {
 	descriptionCss,
 	getDangerButtonCss,
 	getPrimaryButtonCss,
+	getSecondaryButtonCss,
+	inputCss,
 	layoutMaxWidths,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
 
 type PasskeyListItem = {
 	id: string
+	name: string
 	deviceType: string
 	backedUp: boolean
 	createdAt: string
+	lastUsedAt: string | null
 }
 
 type AccountPasskeysPayload = {
@@ -81,6 +88,8 @@ export function AccountPasskeysRoute(handle: Handle) {
 	let passkeys: Array<PasskeyListItem> = []
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
+	let renamingPasskeyId: string | null = null
+	let renameDraft = ''
 	const loadLatch = createRouteLoadLatch()
 
 	async function loadPasskeys(signal: AbortSignal) {
@@ -201,6 +210,63 @@ export function AccountPasskeysRoute(handle: Handle) {
 		}
 	}
 
+	function beginRename(passkey: PasskeyListItem) {
+		renamingPasskeyId = passkey.id
+		renameDraft = passkey.name
+		message = null
+		handle.update()
+	}
+
+	function cancelRename() {
+		renamingPasskeyId = null
+		renameDraft = ''
+		handle.update()
+	}
+
+	async function handleRenamePasskey(passkeyId: string) {
+		actionStatus = 'busy'
+		message = null
+		handle.update()
+
+		try {
+			const response = await fetch(passkeysApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					intent: 'rename',
+					passkeyId,
+					name: renameDraft,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountPasskeysPayload & { error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to rename the passkey.')
+			}
+			passkeys = payload.passkeys
+			renamingPasskeyId = null
+			renameDraft = ''
+			message = 'Passkey renamed.'
+			messageTone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error ? error.message : 'Unable to rename the passkey.'
+			messageTone = 'error'
+		} finally {
+			actionStatus = 'idle'
+			handle.update()
+		}
+	}
+
 	async function handleDeletePasskey(passkeyId: string) {
 		actionStatus = 'busy'
 		message = null
@@ -227,6 +293,10 @@ export function AccountPasskeysRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to delete the passkey.')
 			}
 			passkeys = payload.passkeys
+			if (renamingPasskeyId === passkeyId) {
+				renamingPasskeyId = null
+				renameDraft = ''
+			}
 			message = 'Passkey deleted.'
 			messageTone = 'info'
 		} catch (error) {
@@ -329,49 +399,160 @@ export function AccountPasskeysRoute(handle: Handle) {
 										gap: spacing.md,
 									})}
 								>
-									{passkeys.map((passkey) => (
-										<li
-											key={passkey.id}
-											mix={css({
-												display: 'flex',
-												justifyContent: 'space-between',
-												alignItems: 'center',
-												gap: spacing.md,
-												flexWrap: 'wrap',
-												paddingBottom: spacing.md,
-												borderBottom: `1px solid ${colors.border}`,
-											})}
-										>
-											<div mix={css({ display: 'grid', gap: spacing.xs })}>
-												<span
-													mix={css({
-														fontWeight: typography.fontWeight.medium,
-														color: colors.text,
-													})}
-												>
-													{describeDeviceType(passkey.deviceType)}
-												</span>
-												<span
-													mix={css({
-														color: colors.textMuted,
-														fontSize: typography.fontSize.sm,
-													})}
-												>
-													Registered {formatTimestamp(passkey.createdAt)}
-												</span>
-											</div>
-											<button
-												type="button"
-												disabled={isBusy}
-												mix={[
-													css(dangerButtonCss),
-													on('click', () => handleDeletePasskey(passkey.id)),
-												]}
+									{passkeys.map((passkey) => {
+										const isRenaming = renamingPasskeyId === passkey.id
+										return (
+											<li
+												key={passkey.id}
+												mix={css({
+													display: 'flex',
+													justifyContent: 'space-between',
+													alignItems: 'flex-start',
+													gap: spacing.md,
+													flexWrap: 'wrap',
+													paddingBottom: spacing.md,
+													borderBottom: `1px solid ${colors.border}`,
+												})}
 											>
-												Delete
-											</button>
-										</li>
-									))}
+												<div
+													mix={css({
+														display: 'grid',
+														gap: spacing.xs,
+														flex: '1 1 16rem',
+														minWidth: 0,
+													})}
+												>
+													{isRenaming ? (
+														<label
+															mix={css({
+																display: 'grid',
+																gap: spacing.xs,
+															})}
+														>
+															<span
+																mix={css({
+																	fontSize: typography.fontSize.sm,
+																	color: colors.textMuted,
+																})}
+															>
+																Nickname
+															</span>
+															<input
+																type="text"
+																value={renameDraft}
+																maxLength={80}
+																disabled={isBusy}
+																aria-label="Passkey nickname"
+																mix={[
+																	css(inputCss),
+																	on('input', (event) => {
+																		renameDraft = (
+																			event.currentTarget as HTMLInputElement
+																		).value
+																		handle.update()
+																	}),
+																]}
+															/>
+														</label>
+													) : (
+														<span
+															mix={css({
+																fontWeight: typography.fontWeight.medium,
+																color: colors.text,
+															})}
+														>
+															{passkey.name}
+														</span>
+													)}
+													<span
+														mix={css({
+															color: colors.textMuted,
+															fontSize: typography.fontSize.sm,
+														})}
+													>
+														{describeDeviceType(passkey.deviceType)}
+													</span>
+													<span
+														mix={css({
+															color: colors.textMuted,
+															fontSize: typography.fontSize.sm,
+														})}
+													>
+														Created {formatTimestamp(passkey.createdAt)}
+													</span>
+													<span
+														mix={css({
+															color: colors.textMuted,
+															fontSize: typography.fontSize.sm,
+														})}
+													>
+														Last used{' '}
+														{formatNullableTimestamp(
+															passkey.lastUsedAt,
+															'Never',
+														)}
+													</span>
+												</div>
+												<div
+													mix={css({
+														display: 'flex',
+														gap: spacing.sm,
+														flexWrap: 'wrap',
+													})}
+												>
+													{isRenaming ? (
+														<>
+															<button
+																type="button"
+																disabled={isBusy}
+																mix={[
+																	css(primaryButtonCss),
+																	on('click', () =>
+																		handleRenamePasskey(passkey.id),
+																	),
+																]}
+															>
+																Save
+															</button>
+															<button
+																type="button"
+																disabled={isBusy}
+																mix={[
+																	css(secondaryButtonCss),
+																	on('click', cancelRename),
+																]}
+															>
+																Cancel
+															</button>
+														</>
+													) : (
+														<button
+															type="button"
+															disabled={isBusy}
+															mix={[
+																css(secondaryButtonCss),
+																on('click', () => beginRename(passkey)),
+															]}
+														>
+															Rename
+														</button>
+													)}
+													<button
+														type="button"
+														disabled={isBusy}
+														mix={[
+															css(dangerButtonCss),
+															on('click', () =>
+																handleDeletePasskey(passkey.id),
+															),
+														]}
+													>
+														Delete
+													</button>
+												</div>
+											</li>
+										)
+									})}
 								</ul>
 							</section>
 						)}
@@ -389,4 +570,5 @@ export function AccountPasskeysRoute(handle: Handle) {
 }
 
 const primaryButtonCss = getPrimaryButtonCss()
+const secondaryButtonCss = getSecondaryButtonCss()
 const dangerButtonCss = getDangerButtonCss()

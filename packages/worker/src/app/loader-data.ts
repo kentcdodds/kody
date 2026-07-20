@@ -464,9 +464,11 @@ export type AccountTwoFactorLoaderData = {
 
 export type AccountPasskeyListItem = {
 	id: string
+	name: string
 	deviceType: string
 	backedUp: boolean
 	createdAt: string
+	lastUsedAt: string | null
 }
 
 export type AccountPasskeysLoaderData = {
