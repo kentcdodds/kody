@@ -45,11 +45,15 @@ and ChatGPT. For creating or editing packages, a coding agent (Cursor, Claude
 Code, Codex, VS Code, OpenCode, and similar) is usually smoother because those
 hosts can edit files and iterate on code more easily.
 
-## Ask your agent to help set up
+## Install a starter or build your own
 
-After the connection works, paste a short setup prompt into your agent (the Get
-started page has a copy button). Ask it to explain what Kody can do and help
-configure secrets, integrations, or packages you need.
+After the connection works, the Get started page offers admin-reviewed starter
+packages for one-click install. Each card can copy a short agent prompt for
+remaining setup. Prefer a starter when one is close to what you want.
+
+If nothing fits, use **Choose your own adventure** on that page to copy a prompt
+that asks your agent what Kody can do and helps you connect an integration and
+build something custom.
 
 ## Where to go next
 

@@ -21,18 +21,18 @@ import {
 } from '#client/routes/account-management-components.tsx'
 import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
+import { OnboardingDiyCard } from '#client/routes/onboarding-diy-card.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
 import { OnboardingStarterCard } from '#client/routes/onboarding-starter-card.tsx'
 import {
 	onboardingPath,
 	resolveOnboardingPendingVerificationPath,
 } from '#client/routes/onboarding-redirect.ts'
-import { colors, typography } from '#client/styles/tokens.ts'
+import { colors, mq, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
-	getPrimaryButtonCss,
 	insetCardCss,
 	layoutMaxWidths,
 	mutedLinkCss,
@@ -248,65 +248,34 @@ export function OnboardingRoute(handle: Handle) {
 							<OnboardingMcpClientTabs mcpServerUrl={mcpServerUrl} />
 						</section>
 
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>2. Ask your agent to help set up</h2>
-							<p mix={css(descriptionCss)}>
-								After the connection succeeds, paste this prompt into your
-								agent. It asks the agent to explain what Kody can do and help
-								you configure the basics.
-							</p>
-							<pre mix={css(codeBlockCss)}>{setupPrompt}</pre>
-							<CopyTextButton
-								value={setupPrompt}
-								idleLabel="Copy prompt"
-								variant="secondary"
-							/>
-						</section>
-
 						{renderByokExplainer({ image: 'handoff' })}
 
-						{featuredListings.length > 0 ? (
-							<section
-								mix={css(cardCss)}
-								data-testid="onboarding-starter-packages"
-							>
-								<h2 mix={css(cardTitleCss)}>3. Install a starter package</h2>
-								<p mix={css(descriptionCss)}>
-									These packages were reviewed by an admin and support one-click
-									install here: they are copied into your account ready to run.
-									After install, use Copy prompt so your agent can finish any
-									remaining setup.
-								</p>
-								<ul mix={css(starterListCss)}>
-									{featuredListings.map((listing) => (
-										<OnboardingStarterCard
-											key={listing.id}
-											listing={listing}
-											loggedIn={loggedIn}
-										/>
-									))}
-								</ul>
-								<p mix={css({ margin: 0 })}>
-									<a href="/community" mix={css(primaryLinkCss)}>
-										Browse all community packages
-									</a>
-								</p>
-							</section>
-						) : (
-							<section mix={css(cardCss)}>
-								<h2 mix={css(cardTitleCss)}>3. Explore community packages</h2>
-								<p mix={css(descriptionCss)}>
-									See what other people have built with Kody — browse community
-									packages for ready-made automations you can fork into your own
-									account.
-								</p>
-								<div>
-									<a href="/community" mix={css(communityCtaCss)}>
-										Browse community packages
-									</a>
-								</div>
-							</section>
-						)}
+						<section
+							mix={css(cardCss)}
+							data-testid="onboarding-starter-packages"
+						>
+							<h2 mix={css(cardTitleCss)}>2. Install a starter package</h2>
+							<p mix={css(descriptionCss)}>
+								{featuredListings.length > 0
+									? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
+									: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
+							</p>
+							<ul mix={css(starterGridCss)}>
+								{featuredListings.map((listing) => (
+									<OnboardingStarterCard
+										key={listing.id}
+										listing={listing}
+										loggedIn={loggedIn}
+									/>
+								))}
+								<OnboardingDiyCard setupPrompt={setupPrompt} />
+							</ul>
+							<p mix={css({ margin: 0 })}>
+								<a href="/community" mix={css(primaryLinkCss)}>
+									Browse all community packages
+								</a>
+							</p>
+						</section>
 
 						<p mix={css({ margin: 0 })}>
 							{loggedIn ? (
@@ -352,17 +321,15 @@ const codeBlockCss = {
 	lineHeight: 1.6,
 }
 
-const communityCtaCss = {
-	...getPrimaryButtonCss(),
-	display: 'inline-flex',
-	textDecoration: 'none',
-}
-
-const starterListCss = {
-	display: 'flex',
-	flexDirection: 'column' as const,
-	gap: '0.75rem',
+const starterGridCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(auto-fill, minmax(10.5rem, 1fr))',
+	gap: spacing.md,
 	margin: 0,
 	padding: 0,
 	listStyle: 'none',
+	[mq.mobile]: {
+		gridTemplateColumns: 'repeat(auto-fill, minmax(9rem, 1fr))',
+		gap: spacing.sm,
+	},
 }

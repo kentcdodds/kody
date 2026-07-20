@@ -8,6 +8,7 @@ import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	colors,
+	mq,
 	radius,
 	shadows,
 	spacing,
@@ -38,8 +39,8 @@ const copyPromptTooltip =
 	'Copies a short prompt you can paste into your agent to finish setup for this package.'
 
 /**
- * Featured onboarding starter: install in place, then copy the agent setup
- * prompt without leaving /onboarding.
+ * Featured onboarding starter: square card with in-place install, then copy
+ * the agent setup prompt without leaving /onboarding.
  */
 export function OnboardingStarterCard(
 	handle: Handle<OnboardingStarterCardProps>,
@@ -149,18 +150,18 @@ export function OnboardingStarterCard(
 		const detailHref = routes.communityDetail.href({ listingId: listing.id })
 
 		return (
-			<li>
+			<li mix={css(starterCardItemCss)}>
 				<div
 					mix={css(starterCardCss)}
 					data-testid={`onboarding-starter-${listing.id}`}
 				>
 					<a href={detailHref} mix={css(starterCardLinkCss)}>
-						<CommunityListingIcon listing={listing} size="card" />
-						<span mix={css(starterCardBodyCss)}>
-							<span mix={css(starterCardTitleCss)}>{listing.name}</span>
-							<span mix={css(starterCardDescriptionCss)}>
-								{listing.description}
-							</span>
+						<span mix={css(starterCardIconWrapCss)}>
+							<CommunityListingIcon listing={listing} size="card" />
+						</span>
+						<span mix={css(starterCardTitleCss)}>{listing.name}</span>
+						<span mix={css(starterCardDescriptionCss)}>
+							{listing.description}
 						</span>
 					</a>
 					<div mix={css(starterCardActionsCss)}>
@@ -170,7 +171,7 @@ export function OnboardingStarterCard(
 									type="button"
 									aria-describedby={`onboarding-starter-prompt-tip-${listing.id}`}
 									mix={[
-										css(getSecondaryButtonCss()),
+										css(actionButtonCss),
 										popover.anchor({ placement: 'top' }),
 										popover.focusOnHide(),
 										on('click', () => void copyPrompt()),
@@ -209,7 +210,7 @@ export function OnboardingStarterCard(
 								type="button"
 								disabled={phase === 'installing'}
 								mix={[
-									css(getPrimaryButtonCss()),
+									css(actionButtonPrimaryCss),
 									on('click', () => void submitInstall()),
 								]}
 								data-testid={`onboarding-starter-install-${listing.id}`}
@@ -242,59 +243,99 @@ export function OnboardingStarterCard(
 	}
 }
 
-const starterCardCss = {
+export const starterCardItemCss = {
+	display: 'flex',
+	flexDirection: 'column' as const,
+	minWidth: 0,
+}
+
+export const starterCardCss = {
 	...insetCardCss,
 	display: 'flex',
-	alignItems: 'center',
-	gap: '0.75rem',
+	flexDirection: 'column' as const,
+	alignItems: 'stretch',
+	gap: spacing.sm,
+	height: '100%',
+	minHeight: '14rem',
+	padding: spacing.md,
 	color: colors.text,
+	[mq.mobile]: {
+		minHeight: '12.5rem',
+	},
 }
 
 const starterCardLinkCss = {
 	display: 'flex',
+	flexDirection: 'column' as const,
 	alignItems: 'center',
-	gap: '0.75rem',
+	gap: spacing.xs,
 	flex: 1,
 	minWidth: 0,
+	textAlign: 'center' as const,
 	textDecoration: 'none',
 	color: 'inherit',
-	'&:hover span:first-of-type': {
+	'&:hover': {
 		color: colors.primary,
 	},
 }
 
-const starterCardBodyCss = {
+const starterCardIconWrapCss = {
 	display: 'flex',
-	flexDirection: 'column' as const,
-	gap: '0.25rem',
-	minWidth: 0,
+	justifyContent: 'center',
+	marginBottom: spacing.xs,
 }
 
 const starterCardTitleCss = {
 	fontWeight: typography.fontWeight.semibold,
 	color: colors.primaryText,
+	fontSize: typography.fontSize.sm,
 	overflowWrap: 'anywhere' as const,
+	display: '-webkit-box',
+	WebkitLineClamp: 2,
+	WebkitBoxOrient: 'vertical' as const,
+	overflow: 'hidden',
 }
 
 const starterCardDescriptionCss = {
 	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
+	fontSize: typography.fontSize.xs,
+	lineHeight: 1.4,
+	display: '-webkit-box',
+	WebkitLineClamp: 3,
+	WebkitBoxOrient: 'vertical' as const,
+	overflow: 'hidden',
 }
 
 const starterCardActionsCss = {
-	flexShrink: 0,
+	marginTop: 'auto',
+	display: 'flex',
+	justifyContent: 'center',
+}
+
+const actionButtonCss = {
+	...getSecondaryButtonCss(),
+	width: '100%',
+	justifyContent: 'center',
+}
+
+const actionButtonPrimaryCss = {
+	...getPrimaryButtonCss(),
+	width: '100%',
+	justifyContent: 'center',
 }
 
 const statusCss = {
 	margin: '0.35rem 0 0',
 	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
+	fontSize: typography.fontSize.xs,
+	textAlign: 'center' as const,
 }
 
 const errorCss = {
 	margin: '0.35rem 0 0',
 	color: colors.error,
-	fontSize: typography.fontSize.sm,
+	fontSize: typography.fontSize.xs,
+	textAlign: 'center' as const,
 }
 
 const tooltipSurfaceCss = {

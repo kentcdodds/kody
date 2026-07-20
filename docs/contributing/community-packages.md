@@ -99,12 +99,14 @@ be effectively trusted before featuring; the effective `featured` flag
 (`featured_at IS NOT NULL AND trusted`) is computed in `repo.ts`, so an owner
 republish that drops trust also pulls the listing from onboarding while keeping
 the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
-`OnboardingFeaturedListing` shapes, capped at 6). Surfaces: the `Featured` badge
-on the detail page, the admin-only toggle
+`OnboardingFeaturedListing` shapes, capped at 12). Surfaces: the `Featured`
+badge on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), the admin-only
 `community_set_featured` capability, and the onboarding "Install a starter
-package" step (in-place Install on each starter card, then Copy prompt for agent
-setup). `community_get` exposes the effective `featured` flag.
+package" step (square-card grid with in-place Install, then Copy prompt for
+agent setup, plus a trailing Choose your own adventure card). `community_get`
+exposes the effective `featured` flag. Onboarding loads up to 12 featured
+listings.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.

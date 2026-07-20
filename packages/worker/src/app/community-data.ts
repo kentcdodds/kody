@@ -27,7 +27,7 @@ import {
 import { getCommunityStar } from '#worker/community/social-repo.ts'
 
 const defaultCommunityListLimit = 50
-const onboardingFeaturedListingLimit = 6
+const onboardingFeaturedListingLimit = 12
 
 function isCommunityDataCacheEnabled(env: Env) {
 	const sentryEnv = (env as { SENTRY_ENVIRONMENT?: string }).SENTRY_ENVIRONMENT

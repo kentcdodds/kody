@@ -55,12 +55,12 @@ test('admins can feature trusted listings and members see them in onboarding', a
 	await expect(page.getByText('Fork with your agent')).toBeVisible()
 	await expect(page.getByTestId('community-admin-feature')).toHaveCount(0)
 
-	// Without any featured listings, onboarding falls back to the browse CTA.
+	// Without any featured listings, onboarding still shows the starter step
+	// with the Choose your own adventure card.
 	await page.goto('/onboarding')
-	await expect(
-		page.getByRole('heading', { name: 'Explore community packages' }),
-	).toBeVisible()
-	await expect(page.getByTestId('onboarding-starter-packages')).toHaveCount(0)
+	await expect(page.getByTestId('onboarding-starter-packages')).toBeVisible()
+	await expect(page.getByTestId('onboarding-diy-card')).toBeVisible()
+	await expect(page.getByTestId('onboarding-diy-copy')).toBeVisible()
 
 	// Admins can feature the trusted listing from the detail page.
 	await page.context().clearCookies()
@@ -121,6 +121,7 @@ test('admins can feature trusted listings and members see them in onboarding', a
 	const starterCard = page.getByTestId(`onboarding-starter-${trustedListingId}`)
 	await expect(starterCard).toBeVisible()
 	await expect(starterCard).toContainText(trustedListingName)
+	await expect(page.getByTestId('onboarding-diy-card')).toBeVisible()
 	await page
 		.getByTestId(`onboarding-starter-install-${trustedListingId}`)
 		.click()
@@ -136,7 +137,7 @@ test('admins can feature trusted listings and members see them in onboarding', a
 	await starterCard.getByRole('link', { name: trustedListingName }).click()
 	await expect(page).toHaveURL(new RegExp(`/community/${trustedListingId}$`))
 
-	// Removing the mark pulls the listing from onboarding again.
+	// Removing the mark pulls the listing from onboarding again; DIY remains.
 	await page.context().clearCookies()
 	await login({
 		email: adminUser.email,
@@ -152,8 +153,9 @@ test('admins can feature trusted listings and members see them in onboarding', a
 		0,
 	)
 	await page.goto('/onboarding')
+	await expect(page.getByTestId('onboarding-starter-packages')).toBeVisible()
 	await expect(
-		page.getByRole('heading', { name: 'Explore community packages' }),
-	).toBeVisible()
-	await expect(page.getByTestId('onboarding-starter-packages')).toHaveCount(0)
+		page.getByTestId(`onboarding-starter-${trustedListingId}`),
+	).toHaveCount(0)
+	await expect(page.getByTestId('onboarding-diy-card')).toBeVisible()
 })
