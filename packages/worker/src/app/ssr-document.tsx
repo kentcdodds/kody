@@ -6,7 +6,10 @@ import {
 	buildClientEntryHref,
 	buildStylesheetHref,
 } from '#app/client-build-id.ts'
-import { type ResolvedDocumentHead } from '#app/document-head.ts'
+import {
+	DOCUMENT_HEAD_ATTR,
+	type ResolvedDocumentHead,
+} from '#app/document-head.ts'
 import { publicOgPages, type PublicOgPageId } from '#worker/og/pages.ts'
 
 export const CLIENT_ENTRY_HREF = '/client-entry.js'
@@ -20,6 +23,10 @@ export type SsrDocumentProps = AppRootProps & {
 	stylesheetHref?: string
 }
 
+function managedHeadAttr(value: string) {
+	return { [DOCUMENT_HEAD_ATTR]: value }
+}
+
 /**
  * Managed OG / Twitter / canonical tags. Marked with `data-kody-head` so the
  * client router can upsert or remove them on SPA navigations.
@@ -31,59 +38,63 @@ export function ManagedDocumentHead(
 		const { head } = handle.props
 		return (
 			<>
-				{head.og && head.canonicalUrl ? (
+				{head.og ? (
 					<>
 						<meta
 							property="og:title"
 							content={head.og.title}
-							data-kody-head="og:title"
+							{...managedHeadAttr('og:title')}
 						/>
 						<meta
 							property="og:description"
 							content={head.og.description}
-							data-kody-head="og:description"
+							{...managedHeadAttr('og:description')}
 						/>
 						<meta
 							property="og:image"
 							content={head.og.imageUrl}
-							data-kody-head="og:image"
+							{...managedHeadAttr('og:image')}
 						/>
 						<meta
 							property="og:type"
 							content="website"
-							data-kody-head="og:type"
+							{...managedHeadAttr('og:type')}
 						/>
-						<meta
-							property="og:url"
-							content={head.canonicalUrl}
-							data-kody-head="og:url"
-						/>
+						{head.canonicalUrl ? (
+							<meta
+								property="og:url"
+								content={head.canonicalUrl}
+								{...managedHeadAttr('og:url')}
+							/>
+						) : null}
 						<meta
 							name="twitter:card"
 							content="summary_large_image"
-							data-kody-head="twitter:card"
+							{...managedHeadAttr('twitter:card')}
 						/>
 						<meta
 							name="twitter:title"
 							content={head.og.title}
-							data-kody-head="twitter:title"
+							{...managedHeadAttr('twitter:title')}
 						/>
 						<meta
 							name="twitter:description"
 							content={head.og.description}
-							data-kody-head="twitter:description"
+							{...managedHeadAttr('twitter:description')}
 						/>
 						<meta
 							name="twitter:image"
 							content={head.og.imageUrl}
-							data-kody-head="twitter:image"
-						/>
-						<link
-							rel="canonical"
-							href={head.canonicalUrl}
-							data-kody-head="canonical"
+							{...managedHeadAttr('twitter:image')}
 						/>
 					</>
+				) : null}
+				{head.canonicalUrl ? (
+					<link
+						rel="canonical"
+						href={head.canonicalUrl}
+						{...managedHeadAttr('canonical')}
+					/>
 				) : null}
 				{(head.links ?? []).map((link, index) => (
 					<link
@@ -92,7 +103,7 @@ export function ManagedDocumentHead(
 						href={link.href}
 						type={link.type}
 						title={link.title}
-						data-kody-head={`link:${index}`}
+						{...managedHeadAttr(`link:${index}`)}
 					/>
 				))}
 			</>

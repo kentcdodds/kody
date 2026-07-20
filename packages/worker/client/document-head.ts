@@ -54,7 +54,7 @@ function applyResolvedDocumentHead(resolved: ResolvedDocumentHead) {
 	// stale OG/canonical/RSS nodes that no longer apply.
 	removeManagedHeadNodes(head)
 
-	if (resolved.og && resolved.canonicalUrl) {
+	if (resolved.og) {
 		appendMeta(head, 'og:title', {
 			property: 'og:title',
 			content: resolved.og.title,
@@ -71,10 +71,12 @@ function applyResolvedDocumentHead(resolved: ResolvedDocumentHead) {
 			property: 'og:type',
 			content: 'website',
 		})
-		appendMeta(head, 'og:url', {
-			property: 'og:url',
-			content: resolved.canonicalUrl,
-		})
+		if (resolved.canonicalUrl) {
+			appendMeta(head, 'og:url', {
+				property: 'og:url',
+				content: resolved.canonicalUrl,
+			})
+		}
 		appendMeta(head, 'twitter:card', {
 			name: 'twitter:card',
 			content: 'summary_large_image',
@@ -91,6 +93,9 @@ function applyResolvedDocumentHead(resolved: ResolvedDocumentHead) {
 			name: 'twitter:image',
 			content: resolved.og.imageUrl,
 		})
+	}
+
+	if (resolved.canonicalUrl) {
 		appendLink(head, 'canonical', {
 			rel: 'canonical',
 			href: resolved.canonicalUrl,
