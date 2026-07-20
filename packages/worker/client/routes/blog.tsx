@@ -44,14 +44,16 @@ export function BlogRoute(handle: Handle) {
 	let posts: BlogLoaderData['posts'] = []
 	const loadLatch = createRouteLoadLatch()
 
-	async function loadBlog() {
+	async function loadBlog(signal: AbortSignal) {
 		status = 'loading'
 		handle.update()
 		try {
 			const response = await fetch(blogApiPath, {
 				headers: { Accept: 'application/json' },
+				signal,
 			})
 			const payload = await readJson<BlogLoaderData>(response)
+			if (signal.aborted) return
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load blog posts.')
 			}
@@ -59,6 +61,7 @@ export function BlogRoute(handle: Handle) {
 			status = 'ready'
 			handle.update()
 		} catch {
+			if (signal.aborted) return
 			status = 'error'
 			handle.update()
 		}
@@ -86,12 +89,14 @@ export function BlogRoute(handle: Handle) {
 			needsStaleRefresh,
 		})
 		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(async () => {
+			handle.queueTask(async (signal) => {
 				try {
-					await loadBlog()
+					await loadBlog(signal)
+					if (signal.aborted) return
 					if (status === 'ready') loadLatch.markLoaded(currentHref)
 					else loadLatch.markFailed(currentHref)
 				} catch {
+					if (signal.aborted) return
 					loadLatch.markFailed(currentHref)
 				}
 			})
