@@ -37,10 +37,18 @@ export function buildOnboardingSetupPrompt() {
  * Discovery prompt for people who have not connected (or signed up) yet. It
  * only assumes the agent can fetch a URL or search the web, and points at the
  * GitHub usage docs, which resolve without any Kody account or MCP session.
+ * The parenthetical identifies this deployment (heykody.dev in production).
  */
-export function buildDiscoveryPrompt() {
+export function buildDiscoveryPrompt(input: {
+	env: Pick<OnboardingEnv, 'APP_BASE_URL'>
+	requestUrl: string | URL
+}) {
+	const origin = getAppBaseUrl({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
 	return [
-		"I'm deciding whether Kody (https://github.com/kentcdodds/kody) would be useful for me.",
+		`I'm deciding whether Kody (${origin}) would be useful for me.`,
 		'Read https://github.com/kentcdodds/kody/blob/main/docs/use/what-can-kody-do.md and follow its links for anything you need more detail on.',
 		"Then interview me about the tools I use, recurring chores I do by hand, and automations I've wished for.",
 		'Finish with 3-5 specific things Kody could do for me, ranked by payoff versus setup effort, each with a concrete first step.',
@@ -79,7 +87,10 @@ export function loadPublicOnboardingData(input: {
 			requestUrl: input.requestUrl,
 		}),
 		setupPrompt: buildOnboardingSetupPrompt(),
-		discoveryPrompt: buildDiscoveryPrompt(),
+		discoveryPrompt: buildDiscoveryPrompt({
+			env: input.env,
+			requestUrl: input.requestUrl,
+		}),
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -122,7 +133,10 @@ export async function loadOnboardingData(input: {
 		setupPrompt,
 		// The discovery prompt needs no MCP connection or verified email, so it
 		// stays available even while setup fields are gated.
-		discoveryPrompt: buildDiscoveryPrompt(),
+		discoveryPrompt: buildDiscoveryPrompt({
+			env: input.env,
+			requestUrl: input.requestUrl,
+		}),
 		hasMcpClient,
 		emailVerified: input.emailVerified,
 		needsOnboarding,

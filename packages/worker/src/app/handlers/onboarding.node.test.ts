@@ -38,7 +38,10 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		loggedIn: false,
 		mcpServerUrl: 'https://example.com/mcp',
 		setupPrompt: buildOnboardingSetupPrompt(),
-		discoveryPrompt: buildDiscoveryPrompt(),
+		discoveryPrompt: buildDiscoveryPrompt({
+			env,
+			requestUrl: 'https://example.com/onboarding.json',
+		}),
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,

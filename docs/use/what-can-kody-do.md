@@ -88,8 +88,7 @@ Nothing in this discovery flow requires an account or an MCP connection.
 
 Paste this into an agent that can fetch URLs or search the web:
 
-> I'm deciding whether Kody (https://github.com/kentcdodds/kody) would be useful
-> for me. Read
+> I'm deciding whether Kody (https://heykody.dev) would be useful for me. Read
 > https://github.com/kentcdodds/kody/blob/main/docs/use/what-can-kody-do.md and
 > follow its links for anything you need more detail on. Then interview me about
 > the tools I use, recurring chores I do by hand, and automations I've wished
