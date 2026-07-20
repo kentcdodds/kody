@@ -209,52 +209,57 @@ export function OnboardingRoute(handle: Handle) {
 								<h2 mix={css(cardTitleCss)}>You are connected</h2>
 								<p mix={css(descriptionCss)}>
 									At least one AI agent has already authorized access to this
-									account. You can still use the steps below to connect another
-									host or re-run setup with your agent.
+									account, so the first steps below are collapsed. Open them any
+									time to connect another host or re-run setup with your agent.
 								</p>
 							</section>
 						) : null}
 
-						<section
-							id="discovery"
-							mix={css(cardCss)}
-							data-testid="onboarding-discovery"
-						>
-							<h2 mix={css(cardTitleCss)}>
-								Not sure what you&apos;d use Kody for?
-							</h2>
-							<p mix={css(descriptionCss)}>
-								Paste this into any AI agent that can fetch a URL or search the
-								web — ChatGPT, Claude, or whatever you already use. It has the
-								agent read Kody&apos;s docs, interview you, and suggest concrete
-								automations. No account or setup needed yet.
-							</p>
-							<pre mix={css(codeBlockCss)}>{discoveryPrompt}</pre>
-							<CopyTextButton
-								value={discoveryPrompt}
-								idleLabel="Copy discovery prompt"
-								variant="secondary"
-							/>
-						</section>
+						{renderOnboardingStep({
+							title: '1. Not sure what you\u2019d use Kody for?',
+							collapsed: hasMcpClient,
+							id: 'discovery',
+							testId: 'onboarding-discovery',
+							children: (
+								<>
+									<p mix={css(descriptionCss)}>
+										Paste this into any AI agent that can fetch a URL or search
+										the web — ChatGPT, Claude, or whatever you already use. It
+										has the agent read Kody&apos;s docs, interview you, and
+										suggest concrete automations. No account or setup needed
+										yet.
+									</p>
+									<pre mix={css(codeBlockCss)}>{discoveryPrompt}</pre>
+									<CopyTextButton
+										value={discoveryPrompt}
+										idleLabel="Copy discovery prompt"
+										variant="secondary"
+									/>
+								</>
+							),
+						})}
 
-						<section mix={css(cardCss)}>
-							<h2 mix={css(cardTitleCss)}>1. Add Kody as an MCP server</h2>
-							<p mix={css(descriptionCss)}>
-								Pick your MCP client below for host-specific setup. When the
-								agent connects, it starts an OAuth flow — sign in to Kody if
-								needed, approve the request, and the agent receives a token
-								scoped to your account.
-							</p>
-							<OnboardingMcpClientTabs mcpServerUrl={mcpServerUrl} />
-						</section>
-
-						{renderByokExplainer({ image: 'handoff' })}
+						{renderOnboardingStep({
+							title: '2. Add Kody as an MCP server',
+							collapsed: hasMcpClient,
+							children: (
+								<>
+									<p mix={css(descriptionCss)}>
+										Pick your MCP client below for host-specific setup. When the
+										agent connects, it starts an OAuth flow — sign in to Kody if
+										needed, approve the request, and the agent receives a token
+										scoped to your account.
+									</p>
+									<OnboardingMcpClientTabs mcpServerUrl={mcpServerUrl} />
+								</>
+							),
+						})}
 
 						<section
 							mix={css(cardCss)}
 							data-testid="onboarding-starter-packages"
 						>
-							<h2 mix={css(cardTitleCss)}>2. Install a starter package</h2>
+							<h2 mix={css(cardTitleCss)}>3. Install a starter package</h2>
 							<p mix={css(descriptionCss)}>
 								{featuredListings.length > 0
 									? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
@@ -277,38 +282,75 @@ export function OnboardingRoute(handle: Handle) {
 							</p>
 						</section>
 
-						<p mix={css({ margin: 0 })}>
-							{loggedIn ? (
-								<>
-									<a href="/account" mix={css(mutedLinkCss)}>
-										Back to account
-									</a>
-									{' · '}
-									<a href="/account/secrets" mix={css(primaryLinkCss)}>
-										Secrets
-									</a>
-									{' · '}
-									<a href="/account/integrations" mix={css(primaryLinkCss)}>
-										Integrations
-									</a>
-								</>
-							) : (
-								<>
-									<a href="/signup" mix={css(primaryLinkCss)}>
-										Sign up
-									</a>
-									{' · '}
-									<a href="/login" mix={css(mutedLinkCss)}>
-										Log in
-									</a>
-								</>
-							)}
-						</p>
+						{renderByokExplainer({ image: 'handoff' })}
+
+						{loggedIn ? null : (
+							<p mix={css({ margin: 0 })}>
+								<a href="/signup" mix={css(primaryLinkCss)}>
+									Sign up
+								</a>
+								{' · '}
+								<a href="/login" mix={css(mutedLinkCss)}>
+									Log in
+								</a>
+							</p>
+						)}
 					</>
 				) : null}
 			</AccountManagementShell>
 		)
 	}
+}
+
+type OnboardingStepSlot = any
+
+/**
+ * Renders an onboarding step as an open card, or — once an MCP client is
+ * already connected — as a collapsed `<details>` card the user can reopen to
+ * redo the step (e.g. connect another host).
+ */
+function renderOnboardingStep(input: {
+	title: string
+	collapsed: boolean
+	id?: string
+	testId?: string
+	children: OnboardingStepSlot
+}) {
+	if (!input.collapsed) {
+		return (
+			<section id={input.id} mix={css(cardCss)} data-testid={input.testId}>
+				<h2 mix={css(cardTitleCss)}>{input.title}</h2>
+				{input.children}
+			</section>
+		)
+	}
+	return (
+		<details id={input.id} mix={css(cardCss)} data-testid={input.testId}>
+			<summary mix={css(collapsedStepSummaryCss)}>
+				<h2 mix={css(collapsedStepTitleCss)}>{input.title}</h2>
+				<span mix={css(collapsedStepHintCss)}>Done — open to revisit</span>
+			</summary>
+			{input.children}
+		</details>
+	)
+}
+
+const collapsedStepSummaryCss = {
+	cursor: 'pointer',
+	'&::marker': {
+		color: colors.textMuted,
+	},
+}
+
+const collapsedStepTitleCss = {
+	...cardTitleCss,
+	display: 'inline' as const,
+}
+
+const collapsedStepHintCss = {
+	marginLeft: spacing.sm,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
 }
 
 const codeBlockCss = {
