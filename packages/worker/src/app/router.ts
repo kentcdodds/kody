@@ -61,6 +61,10 @@ import {
 import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'
 import {
+	createAccountStarsApiHandler,
+	createAccountStarsHandler,
+} from '#app/handlers/account-stars.ts'
+import {
 	createAccountTwoFactorApiHandler,
 	createAccountTwoFactorHandler,
 } from '#app/handlers/account-two-factor.ts'
@@ -95,6 +99,19 @@ import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-fe
 import { createCommunityIconHandler } from '#app/handlers/community-icon.ts'
 import { createCommunityInstallApiPostHandler } from '#app/handlers/community-install.ts'
 import { createCommunityTrustApiPostHandler } from '#app/handlers/community-trust.ts'
+import {
+	createCommunityStarApiPostHandler,
+	createCommunityStargazersApiHandler,
+} from '#app/handlers/community-star.ts'
+import {
+	createProfileApiHandler,
+	createProfileFollowApiPostHandler,
+	createProfileHandler,
+} from '#app/handlers/profile.tsx'
+import {
+	createTimelineApiHandler,
+	createTimelineHandler,
+} from '#app/handlers/timeline.tsx'
 import { createHealthHandler } from '#app/handlers/health.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
@@ -184,6 +201,8 @@ export function createAppRouter(env: Env) {
 			accountPasskeysApiPost: createAccountPasskeysApiHandler(env),
 			accountProfileApi: createAccountProfileApiHandler(env),
 			accountProfileApiPost: createAccountProfileApiHandler(env),
+			accountStars: createAccountStarsHandler(env),
+			accountStarsApi: createAccountStarsApiHandler(env),
 			accountTwoFactor: createAccountTwoFactorHandler(env),
 			accountTwoFactorApi: createAccountTwoFactorApiHandler(env),
 			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(env),
@@ -233,6 +252,13 @@ export function createAppRouter(env: Env) {
 			communityTrustApiPost: createCommunityTrustApiPostHandler(env),
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
+			communityStarApiPost: createCommunityStarApiPostHandler(env),
+			communityStargazersApi: createCommunityStargazersApiHandler(env),
+			profile: createProfileHandler(env),
+			profileApi: createProfileApiHandler(env),
+			profileFollowApiPost: createProfileFollowApiPostHandler(env),
+			timeline: createTimelineHandler(env),
+			timelineApi: createTimelineApiHandler(env),
 			connectOauth: createConnectOauthHandler(env),
 			auth: createAuthHandler(env),
 			authProvidersApi: createAuthProvidersApiHandler(env),

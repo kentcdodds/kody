@@ -26,6 +26,51 @@ export type PublicCommunityListing = {
 	starCount: number
 }
 
+export type ProfileVisibility = 'public' | 'private'
+
+export type PublicCommunityProfile = {
+	username: string
+	displayName: string
+	bio: string | null
+	visibility: ProfileVisibility
+	joinedAt: string
+	followerCount: number
+	followingCount: number
+	publicPackageCount: number
+	listingCount: number
+}
+
+export type PublicProfilePackageItem = {
+	name: string
+	kodyId: string
+	description: string
+	tags: Array<string>
+	updatedAt: string
+	communityListingId: string | null
+}
+
+export type CommunityActivityEventType =
+	| 'listing_published'
+	| 'listing_updated'
+	| 'listing_forked'
+	| 'listing_starred'
+
+export type PublicCommunityActivityItem = {
+	type: CommunityActivityEventType
+	actorUsername: string
+	actorDisplayName: string
+	listingId: string
+	listingName: string
+	listingKodyId: string
+	createdAt: string
+}
+
+export type PublicCommunityStargazer = {
+	username: string
+	displayName: string
+	starredAt: string
+}
+
 /**
  * Slim listing shape embedded in the onboarding payload for the starter
  * package step. Kept minimal (no README) so onboarding stays light.

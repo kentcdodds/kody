@@ -28,7 +28,7 @@ export function createAccountHandler(env: Env) {
 
 			const [accountProfile, accountConnections, onboarding] =
 				await Promise.all([
-					loadAccountProfileData(user),
+					loadAccountProfileData(user, env),
 					loadAccountConnectionsData({ env, userId: user.userId }),
 					loadOnboardingData({
 						env,

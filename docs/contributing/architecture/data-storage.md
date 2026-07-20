@@ -186,8 +186,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 
 - `users`: login identity and password hash, plus the persisted stable MCP
   `userId` (`stable_user_id`, SHA-256 of the normalized email, unique partial
-  index from migration 0052; written at signup). Inbound email routing does not
-  reverse-resolve stable ids at all — it uses the indexed username lookup
+  index from migration 0052; written at signup). Optional community profile
+  fields (`display_name`, `bio`, `profile_visibility` with default `public`)
+  come from migration 0065. Inbound email routing does not reverse-resolve
+  stable ids at all — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). The remaining contextless paths resolve
   stable ids with one indexed point read (`findUserRowByStableUserId` /
   `findUserAccountByStableUserId`); legacy rows with a NULL `stable_user_id`
@@ -208,7 +210,20 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `saved_packages`: package metadata/search projection derived from published
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
-  intact
+  intact, and `is_private` (0/1, migration 0065) projecting
+  `package.json#private` for public-profile and timeline filters (migration
+  defaults existing rows to private;
+  `POST /__maintenance/backfill-package-privacy` recomputes from manifests)
+- `community_listings`, `community_forks`, `community_ratings`,
+  `community_reports`, `community_bans`: public community package listings and
+  moderation (see [Community packages](../community-packages.md))
+- `user_follows`: follow edges between MCP stable user ids (`follower_user_id` /
+  `followee_user_id`)
+- `community_stars`: listing stargazer bookmarks (`listing_id` + `user_id`),
+  distinct from 1–5 `community_ratings`
+- `community_activity_events`: stored `listing_published` / `listing_updated`
+  timeline events (`actor_user_id` + `listing_id`); fork and star timeline items
+  are derived at read time from `community_forks` / `community_stars`
 - `secret_buckets`: encrypted-secret ownership buckets scoped to `user`,
   `package`, or `session`. Package buckets bind directly to `saved_packages.id`;
   package runtimes may use their own package secrets, while user secrets require

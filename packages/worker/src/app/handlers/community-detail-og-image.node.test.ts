@@ -45,6 +45,8 @@ const listing = {
 	trustedCommit: null,
 	trustedAt: null,
 	trusted: false,
+	featuredAt: null,
+	featured: false,
 	createdAt: '2026-07-10T00:00:00.000Z',
 	updatedAt: '2026-07-10T00:00:00.000Z',
 	publishedAt: '2026-07-10T00:00:00.000Z',

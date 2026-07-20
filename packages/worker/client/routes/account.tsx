@@ -12,7 +12,9 @@ import {
 	type AccountConnectionListItem,
 	type AccountConnectionsLoaderData,
 	type AccountProfileLoaderData,
+	type ProfileVisibility,
 } from '#app/loader-data.ts'
+import { routes } from '#app/routes.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	descriptionCss,
@@ -24,6 +26,7 @@ import {
 	inputCss,
 	mutedLinkCss,
 	primaryLinkCss,
+	textareaCss,
 } from '#client/styles/style-primitives.ts'
 import { queueSessionRefresh } from '#client/session.ts'
 import {
@@ -129,6 +132,12 @@ export function AccountRoute(handle: Handle) {
 	let emailVerified = false
 	let username = ''
 	let draftUsername = ''
+	let draftDisplayName = ''
+	let draftBio = ''
+	let draftProfileVisibility: ProfileVisibility = 'public'
+	let savedDisplayName = ''
+	let savedBio = ''
+	let savedProfileVisibility: ProfileVisibility = 'public'
 	let draftEmail = ''
 	let emailChangePassword = ''
 	let message: string | null = null
@@ -257,6 +266,7 @@ export function AccountRoute(handle: Handle) {
 			emailVerified = payload.emailVerified
 			username = payload.username
 			draftUsername = payload.username
+			applyProfileFields(payload)
 			draftEmail = payload.email
 			status = 'ready'
 			message = null
@@ -272,6 +282,15 @@ export function AccountRoute(handle: Handle) {
 			loadLatch.markFailed(href)
 			handle.update()
 		}
+	}
+
+	function applyProfileFields(payload: AccountProfileLoaderData) {
+		savedDisplayName = payload.displayName
+		savedBio = payload.bio ?? ''
+		savedProfileVisibility = payload.profileVisibility
+		draftDisplayName = payload.displayName
+		draftBio = payload.bio ?? ''
+		draftProfileVisibility = payload.profileVisibility
 	}
 
 	async function handleResendVerification() {
@@ -385,7 +404,7 @@ export function AccountRoute(handle: Handle) {
 		}
 	}
 
-	async function handleUsernameSubmit(event: SubmitEvent) {
+	async function handleProfileSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		const nextUsername = draftUsername.trim()
 		if (!nextUsername) {
@@ -408,7 +427,12 @@ export function AccountRoute(handle: Handle) {
 					'Content-Type': 'application/json',
 				},
 				credentials: 'include',
-				body: JSON.stringify({ username: nextUsername }),
+				body: JSON.stringify({
+					username: nextUsername,
+					displayName: draftDisplayName,
+					bio: draftBio,
+					profileVisibility: draftProfileVisibility,
+				}),
 			})
 			if (response.status === 401) {
 				window.location.assign('/login')
@@ -418,18 +442,19 @@ export function AccountRoute(handle: Handle) {
 				AccountProfileLoaderData & { error?: string }
 			>(response)
 			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error || 'Unable to save username.')
+				throw new Error(payload?.error || 'Unable to save profile.')
 			}
 			email = payload.email
 			emailVerified = payload.emailVerified
 			username = payload.username
 			draftUsername = payload.username
-			message = 'Username saved.'
+			applyProfileFields(payload)
+			message = 'Profile saved.'
 			messageTone = 'info'
 			queueSessionRefresh()
 		} catch (error) {
 			message =
-				error instanceof Error ? error.message : 'Unable to save username.'
+				error instanceof Error ? error.message : 'Unable to save profile.'
 			messageTone = 'error'
 		} finally {
 			saveStatus = 'idle'
@@ -451,6 +476,7 @@ export function AccountRoute(handle: Handle) {
 		emailVerified = routeData.emailVerified
 		username = routeData.username
 		draftUsername = routeData.username
+		applyProfileFields(routeData)
 		draftEmail = routeData.email
 		applyConnectionsPayload(connectionsData)
 		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
@@ -492,6 +518,11 @@ export function AccountRoute(handle: Handle) {
 		const isSendingEmailChange = emailChangeStatus === 'sending'
 		const normalizedDraftUsername = draftUsername.trim().toLowerCase()
 		const normalizedDraftEmail = draftEmail.trim().toLowerCase()
+		const profileUnchanged =
+			normalizedDraftUsername === username &&
+			draftDisplayName === savedDisplayName &&
+			draftBio === savedBio &&
+			draftProfileVisibility === savedProfileVisibility
 
 		return (
 			<AccountManagementShell>
@@ -531,12 +562,12 @@ export function AccountRoute(handle: Handle) {
 						{emailVerified && needsOnboarding ? renderOnboardingBanner() : null}
 						<AccountManagementPanel
 							title="Profile"
-							description="Your username is unique and visible anywhere Kody needs a display name. Your email stays on the account for login."
+							description="Your username is unique. Display name, bio, and visibility control your public community profile."
 						>
 							<form
 								mix={[
 									css({ display: 'grid', gap: spacing.md }),
-									on('submit', handleUsernameSubmit),
+									on('submit', handleProfileSubmit),
 								]}
 							>
 								<label mix={css(fieldCss)}>
@@ -552,16 +583,109 @@ export function AccountRoute(handle: Handle) {
 										mix={[css(inputCss), on('input', updateDraftUsername)]}
 									/>
 								</label>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Display name</span>
+									<input
+										type="text"
+										name="displayName"
+										maxLength={50}
+										autoComplete="nickname"
+										value={draftDisplayName}
+										mix={[
+											css(inputCss),
+											on('input', (event) => {
+												draftDisplayName = (
+													event.currentTarget as HTMLInputElement
+												).value
+												handle.update()
+											}),
+										]}
+									/>
+								</label>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Bio</span>
+									<textarea
+										name="bio"
+										maxLength={500}
+										rows={3}
+										value={draftBio}
+										mix={[
+											css(textareaCss),
+											on('input', (event) => {
+												draftBio = (event.currentTarget as HTMLTextAreaElement)
+													.value
+												handle.update()
+											}),
+										]}
+									/>
+								</label>
+								<fieldset mix={css({ margin: 0, padding: 0, border: 'none' })}>
+									<legend mix={css(fieldLabelCss)}>Profile visibility</legend>
+									<label
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											alignItems: 'center',
+											marginTop: spacing.sm,
+										})}
+									>
+										<input
+											type="radio"
+											name="profileVisibility"
+											checked={draftProfileVisibility === 'public'}
+											mix={[
+												on('change', () => {
+													draftProfileVisibility = 'public'
+													handle.update()
+												}),
+											]}
+										/>
+										<span>Public</span>
+									</label>
+									<label
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											alignItems: 'center',
+											marginTop: spacing.xs,
+										})}
+									>
+										<input
+											type="radio"
+											name="profileVisibility"
+											checked={draftProfileVisibility === 'private'}
+											mix={[
+												on('change', () => {
+													draftProfileVisibility = 'private'
+													handle.update()
+												}),
+											]}
+										/>
+										<span>Private</span>
+									</label>
+									<p mix={css(descriptionCss)}>
+										Private hides your profile, public package list, and
+										activity from others.
+									</p>
+								</fieldset>
 								<p mix={css({ color: colors.textMuted, margin: 0 })}>
 									Email: {email} ({emailVerified ? 'verified' : 'unverified'})
+								</p>
+								<p mix={css({ margin: 0 })}>
+									<a
+										href={routes.profile.href({ username })}
+										mix={css(mutedLinkCss)}
+									>
+										View public profile
+									</a>
 								</p>
 								<div>
 									<button
 										type="submit"
-										disabled={isSaving || normalizedDraftUsername === username}
+										disabled={isSaving || profileUnchanged}
 										mix={css(primaryButtonCss)}
 									>
-										{isSaving ? 'Saving...' : 'Save username'}
+										{isSaving ? 'Saving...' : 'Save profile'}
 									</button>
 								</div>
 							</form>

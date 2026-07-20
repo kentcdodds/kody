@@ -89,6 +89,8 @@ export function createCommunityDetailHandler(env: Env) {
 						trusted: detail.listing.trusted,
 						featured: detail.listing.featured,
 						readmeContent: detail.listing.readmeContent,
+						starCount: detail.listing.starCount,
+						starredByViewer: detail.starredByViewer,
 					},
 				},
 			})

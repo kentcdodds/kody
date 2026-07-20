@@ -1,0 +1,25 @@
+import { type CommunityActivityEventType } from '#app/community-public-types.ts'
+import { formatCommunityPublishedDate } from '#app/community-display.ts'
+
+export function communityActivityVerb(
+	type: CommunityActivityEventType,
+): string {
+	switch (type) {
+		case 'listing_published':
+			return 'Published'
+		case 'listing_updated':
+			return 'Updated'
+		case 'listing_forked':
+			return 'Forked'
+		case 'listing_starred':
+			return 'Starred'
+		default: {
+			const _exhaustive: never = type
+			return _exhaustive
+		}
+	}
+}
+
+export function formatCommunityActivityDate(value: string) {
+	return formatCommunityPublishedDate(value)
+}

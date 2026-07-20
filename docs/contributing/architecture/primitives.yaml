@@ -181,6 +181,19 @@ primitives:
       - docs/use/community-packages.md
       - docs/contributing/community-packages.md
 
+  - id: community-social
+    group: assistant
+    name: Community profiles and social graph
+    summary:
+      Public profiles, follows, timelines, and listing stargazer bookmarks.
+    code:
+      - packages/worker/src/community/social-repo.ts
+      - packages/worker/src/community/social-service.ts
+      - packages/worker/migrations/0065-community-social.sql
+    docs:
+      - docs/use/community-profiles.md
+      - docs/contributing/community-packages.md
+
   - id: package-apps
     group: assistant
     name: Package apps
@@ -471,6 +484,13 @@ invariants:
       Public community reads are deliberate; forks stay inert until publish.
     docs:
       - docs/use/community-packages.md
+      - docs/contributing/community-packages.md
+
+  - id: community-social-privacy
+    summary:
+      Private profiles and private packages stay off public social surfaces.
+    docs:
+      - docs/use/community-profiles.md
       - docs/contributing/community-packages.md
 
   - id: no-secrets-in-chat

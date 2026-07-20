@@ -648,6 +648,36 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'rating-2', listing_id: 'listing-2', user_id: userAaa },
 			{ id: 'rating-3', listing_id: 'listing-2', user_id: userBbb },
 		],
+		community_stars: [
+			{ listing_id: 'listing-1', user_id: userBbb },
+			{ listing_id: 'listing-2', user_id: userAaa },
+			{ listing_id: 'listing-2', user_id: userBbb },
+		],
+		community_activity_events: [
+			{
+				id: 'evt-1',
+				actor_user_id: userAaa,
+				event_type: 'listing_published',
+				listing_id: 'listing-2',
+			},
+			{
+				id: 'evt-2',
+				actor_user_id: userBbb,
+				event_type: 'listing_updated',
+				listing_id: 'listing-1',
+			},
+			{
+				id: 'evt-3',
+				actor_user_id: userBbb,
+				event_type: 'listing_published',
+				listing_id: 'listing-2',
+			},
+		],
+		user_follows: [
+			{ follower_user_id: userAaa, followee_user_id: userBbb },
+			{ follower_user_id: userBbb, followee_user_id: userAaa },
+			{ follower_user_id: userBbb, followee_user_id: 'user-ccc' },
+		],
 		community_reports: [
 			{
 				id: 'report-1',
@@ -864,6 +894,20 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.community_ratings).toEqual([
 		{ id: 'rating-3', listing_id: 'listing-2', user_id: userBbb },
 	])
+	expect(rows.community_stars).toEqual([
+		{ listing_id: 'listing-2', user_id: userBbb },
+	])
+	expect(rows.community_activity_events).toEqual([
+		{
+			id: 'evt-3',
+			actor_user_id: userBbb,
+			event_type: 'listing_published',
+			listing_id: 'listing-2',
+		},
+	])
+	expect(rows.user_follows).toEqual([
+		{ follower_user_id: userBbb, followee_user_id: 'user-ccc' },
+	])
 	expect(rows.community_reports).toEqual([
 		{
 			id: 'report-3',
@@ -930,6 +974,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.community_listings).toBe(1)
 	expect(result.deletedRowCounts.community_forks).toBe(2)
 	expect(result.deletedRowCounts.community_ratings).toBe(2)
+	expect(result.deletedRowCounts.community_stars).toBe(2)
+	expect(result.deletedRowCounts.community_activity_events).toBe(2)
+	expect(result.deletedRowCounts.user_follows).toBe(2)
 	expect(result.deletedRowCounts.community_reports).toBe(2)
 	expect(result.updatedRowCounts.community_reports).toBe(1)
 	expect(result.deletedRowCounts.community_bans).toBe(1)

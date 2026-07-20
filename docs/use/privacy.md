@@ -5,12 +5,26 @@ How Kody stores your data and what a deployment admin can see.
 ## What Kody stores per account
 
 Each signed-in user gets a fully isolated assistant. Kody stores account profile
-information (email and username), secrets, values, memories, packages and their
-source, jobs, email inboxes and messages, chat threads, durable storage, remote
-connector configuration, OAuth grants, package invocation tokens, and any
-platform feedback you approve for submission. All of this remains scoped to your
-account except for the narrow admin review of approved platform feedback
-described below.
+information (email, username, optional display name and bio, and profile
+visibility), secrets, values, memories, packages and their source, jobs, email
+inboxes and messages, chat threads, durable storage, remote connector
+configuration, OAuth grants, package invocation tokens, community social graph
+edges (follows, listing stars, and stored activity events), and any platform
+feedback you approve for submission. All of this remains scoped to your account
+except for content you deliberately make public (community listings and a public
+profile) and the narrow admin review of approved platform feedback described
+below.
+
+When profile visibility is **public**, display name, bio, public package
+metadata, follow counts, and public activity are visible on `/@username` and
+related social surfaces. When visibility is **private**, the public profile is
+not found, others cannot follow you, and you are omitted from stargazer lists
+and other users' timelines. See [Community profiles](./community-profiles.md).
+
+Account export includes your profile columns and social rows where you are on
+either side of an edge (follows as follower or followee; stars you placed or
+that sit on listings you own; activity you authored or that is tied to your
+listings). Account deletion removes those same rows.
 
 ## What a deployment admin can see
 
@@ -24,7 +38,8 @@ user-content exception.
 
 Admins also moderate public community listings and attributed community reports.
 That review covers content deliberately published or reported through community
-features, not private package source or unrelated account content.
+features, not private package source, private profiles, or unrelated account
+content.
 
 ## Platform feedback
 

@@ -101,6 +101,12 @@ export function CommunityListingsContent(
 									</dd>
 								</div>
 								<div>
+									<dt>Stars</dt>
+									<dd data-testid={`community-listing-stars-${listing.id}`}>
+										{listing.starCount}
+									</dd>
+								</div>
+								<div>
 									<dt>Adaptation effort</dt>
 									<dd>
 										{formatCommunityAdaptationEffort(
