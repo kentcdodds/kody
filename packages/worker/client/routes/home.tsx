@@ -63,6 +63,18 @@ const capabilityHighlights = [
 	},
 ] as const
 
+const socialProofQuotes = [
+	{
+		quote: 'Bro is building an ecosystem.',
+		name: 'Tejas Kumar',
+		detail: '@tejaskumar_',
+	},
+	{
+		quote: 'Pretty awesome.',
+		name: 'Josh Tomaino',
+	},
+] as const
+
 function isHomePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/'
 }
@@ -181,6 +193,15 @@ export function HomeRoute(handle: Handle) {
 					</div>
 				</section>
 
+				<section aria-labelledby="social-proof-title" mix={css(sectionCss)}>
+					<h2 id="social-proof-title" mix={css(socialProofTitleCss)}>
+						From Kody users
+					</h2>
+					<div mix={css(socialProofGridCss)}>
+						{socialProofQuotes.map((quote) => renderSocialProofQuote(quote))}
+					</div>
+				</section>
+
 				<section mix={css(sectionCss)}>
 					<div mix={css(sectionHeaderCss)}>
 						<h2 mix={css(sectionTitleCss)}>How it works</h2>
@@ -224,6 +245,26 @@ function renderCommandPill(label: string) {
 		<div mix={css(commandPillCss)}>
 			<code>{label}</code>
 		</div>
+	)
+}
+
+function renderSocialProofQuote({
+	quote,
+	name,
+	detail,
+}: {
+	quote: string
+	name: string
+	detail?: string
+}) {
+	return (
+		<blockquote mix={css(socialProofQuoteCss)}>
+			<p mix={css(socialProofQuoteTextCss)}>&ldquo;{quote}&rdquo;</p>
+			<footer mix={css(socialProofAttributionCss)}>
+				<cite mix={css(socialProofNameCss)}>{name}</cite>
+				{detail ? <span>{detail}</span> : null}
+			</footer>
+		</blockquote>
 	)
 }
 
@@ -384,6 +425,63 @@ const sectionDescriptionCss = {
 	margin: 0,
 	color: colors.textMuted,
 	lineHeight: 1.6,
+}
+
+const socialProofTitleCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.semibold,
+	letterSpacing: '0.08em',
+	textTransform: 'uppercase' as const,
+}
+
+const socialProofGridCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+	gap: spacing.xl,
+	width: '100%',
+	[mq.tablet]: {
+		gridTemplateColumns: '1fr',
+	},
+}
+
+const socialProofQuoteCss = {
+	display: 'grid',
+	gap: spacing.md,
+	alignContent: 'space-between',
+	margin: 0,
+	padding: `${spacing.lg} ${spacing.xl}`,
+	borderLeft: `3px solid ${colors.primary}`,
+	borderRadius: radius.md,
+	backgroundColor: colors.primarySoftest,
+	textAlign: 'left' as const,
+	[mq.mobile]: {
+		padding: spacing.lg,
+	},
+}
+
+const socialProofQuoteTextCss = {
+	margin: 0,
+	color: colors.text,
+	fontSize: typography.fontSize.lg,
+	fontWeight: typography.fontWeight.medium,
+	lineHeight: 1.5,
+}
+
+const socialProofAttributionCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: spacing.xs,
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+}
+
+const socialProofNameCss = {
+	color: colors.text,
+	fontStyle: 'normal',
+	fontWeight: typography.fontWeight.semibold,
 }
 
 const stepGridCss = {
