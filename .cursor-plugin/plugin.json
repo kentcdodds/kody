@@ -1,0 +1,23 @@
+{
+	"name": "kody",
+	"displayName": "Kody",
+	"version": "1.0.0",
+	"description": "Connect Cursor to your Kody personal assistant over remote MCP. Search capabilities, run sandboxed automations, manage secrets and packages, and keep memory and jobs that outlive the chat.",
+	"author": {
+		"name": "Kent C. Dodds",
+		"email": "me@kentcdodds.com"
+	},
+	"homepage": "https://heykody.dev",
+	"repository": "https://github.com/kentcdodds/kody",
+	"license": "MIT",
+	"keywords": [
+		"mcp",
+		"personal-assistant",
+		"automation",
+		"packages",
+		"secrets",
+		"remote-mcp"
+	],
+	"logo": "packages/worker/public/logo.png",
+	"mcpServers": "mcp.json"
+}

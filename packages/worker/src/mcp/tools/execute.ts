@@ -92,7 +92,9 @@ More context: https://github.com/kentcdodds/kody/blob/main/docs/use/execute.md
 	`.trim(),
 	annotations: {
 		readOnlyHint: false,
-		destructiveHint: false,
+		// Execute can delete, overwrite, send, revoke, or otherwise make
+		// irreversible changes depending on the module and capabilities called.
+		destructiveHint: true,
 		idempotentHint: false,
 		openWorldHint: true,
 	} satisfies ToolAnnotations,
