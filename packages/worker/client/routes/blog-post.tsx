@@ -64,6 +64,8 @@ export async function blogPostRouteLoader(
 export function BlogPostRoute(handle: Handle) {
 	let status: 'loading' | 'ready' | 'error' | 'not-found' = 'loading'
 	let post: BlogPostLoaderData | null = null
+	/** Slug that `post` / `status` currently describe; used to hide stale UI. */
+	let loadedSlug: string | null = null
 	const loadLatch = createRouteLoadLatch()
 
 	async function loadPost(slug: string, signal: AbortSignal) {
@@ -78,6 +80,7 @@ export function BlogPostRoute(handle: Handle) {
 			if (response.status === 404) {
 				post = null
 				status = 'not-found'
+				loadedSlug = slug
 				handle.update()
 				return
 			}
@@ -88,10 +91,12 @@ export function BlogPostRoute(handle: Handle) {
 			}
 			post = payload
 			status = 'ready'
+			loadedSlug = slug
 			handle.update()
 		} catch {
 			if (signal.aborted) return
 			status = 'error'
+			loadedSlug = slug
 			handle.update()
 		}
 	}
@@ -108,6 +113,7 @@ export function BlogPostRoute(handle: Handle) {
 		if (routeData?.ok) {
 			post = routeData
 			status = 'ready'
+			loadedSlug = routeData.slug
 			loadLatch.markLoaded(currentHref)
 		}
 
@@ -135,7 +141,15 @@ export function BlogPostRoute(handle: Handle) {
 			})
 		}
 
-		if (status === 'not-found') {
+		// Never show another post's content: mismatched loadedSlug means the
+		// URL already moved on while this closure still holds prior state.
+		const contentMatchesSlug = loadedSlug === slug
+		const showNotFound = status === 'not-found' && contentMatchesSlug
+		const showError = status === 'error' && contentMatchesSlug
+		const showReady = status === 'ready' && post !== null && contentMatchesSlug
+		const showLoading = !showNotFound && !showError && !showReady
+
+		if (showNotFound) {
 			return (
 				<section mix={css(pageCss)}>
 					<header mix={css(pageHeaderCss)}>
@@ -155,13 +169,11 @@ export function BlogPostRoute(handle: Handle) {
 
 		return (
 			<section mix={css(pageCss)}>
-				{status === 'loading' ? (
-					<p mix={css(descriptionCss)}>Loading post…</p>
-				) : null}
-				{status === 'error' ? (
+				{showLoading ? <p mix={css(descriptionCss)}>Loading post…</p> : null}
+				{showError ? (
 					<p mix={css(descriptionCss)}>Unable to load this blog post.</p>
 				) : null}
-				{status === 'ready' && post ? (
+				{showReady && post ? (
 					<>
 						<header mix={css(pageHeaderCss)}>
 							<h1 mix={css(pageTitleCss)}>{post.title}</h1>
