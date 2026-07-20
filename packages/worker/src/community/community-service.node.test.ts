@@ -259,6 +259,15 @@ test('community operations reject banned users', async () => {
 			packageId: 'package-1',
 		}),
 	).rejects.toThrow(/banned from community participation/)
+
+	await expect(
+		unpublishCommunityListing({
+			env: createEnv(),
+			userId: 'platform-owner-1',
+			actorUserId: 'user-1',
+			listingId: 'listing-1',
+		}),
+	).rejects.toThrow(/banned from community participation/)
 })
 
 function validPublishSource() {

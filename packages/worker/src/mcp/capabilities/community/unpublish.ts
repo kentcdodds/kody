@@ -43,6 +43,7 @@ export const communityUnpublishCapability = defineDomainCapability(
 			await unpublishCommunityListing({
 				env: ctx.env,
 				userId: owner.ownerUserId,
+				actorUserId: owner.actorUserId,
 				listingId: args.listing_id,
 			})
 			return {

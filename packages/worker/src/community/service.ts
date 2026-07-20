@@ -531,7 +531,7 @@ export async function publishCommunityListing(input: {
 	try {
 		await insertCommunityActivityEvent(input.env.APP_DB, {
 			id: crypto.randomUUID(),
-			actorUserId: input.userId,
+			actorUserId: input.actorUserId ?? input.userId,
 			eventType: existingListing ? 'listing_updated' : 'listing_published',
 			listingId,
 		})
@@ -548,8 +548,17 @@ export async function publishCommunityListing(input: {
 export async function unpublishCommunityListing(input: {
 	env: Env
 	userId: string
+	/**
+	 * Acting user on delegated (package scope grant) unpublishes. Community
+	 * bans must bind to the person acting, not just the owning platform
+	 * account.
+	 */
+	actorUserId?: string
 	listingId: string
 }): Promise<void> {
+	if (input.actorUserId && input.actorUserId !== input.userId) {
+		await assertNotCommunityBanned(input.env.APP_DB, input.actorUserId)
+	}
 	const listing = await getCommunityListingById(input.env.APP_DB, {
 		listingId: input.listingId,
 		includeDelisted: true,
