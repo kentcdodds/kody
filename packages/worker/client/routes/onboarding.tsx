@@ -44,6 +44,7 @@ export type OnboardingPayload = {
 	loggedIn: boolean
 	mcpServerUrl: string
 	setupPrompt: string
+	discoveryPrompt: string
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean
@@ -102,6 +103,7 @@ export function OnboardingRoute(handle: Handle) {
 	let loggedIn = false
 	let mcpServerUrl = ''
 	let setupPrompt = ''
+	let discoveryPrompt = ''
 	let hasMcpClient = false
 	let featuredListings: Array<OnboardingFeaturedListing> = []
 	const loadLatch = createRouteLoadLatch()
@@ -110,6 +112,7 @@ export function OnboardingRoute(handle: Handle) {
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
+		discoveryPrompt = payload.discoveryPrompt
 		hasMcpClient = payload.hasMcpClient
 		featuredListings = payload.featuredListings ?? []
 		status = 'ready'
@@ -211,6 +214,28 @@ export function OnboardingRoute(handle: Handle) {
 								</p>
 							</section>
 						) : null}
+
+						<section
+							id="discovery"
+							mix={css(cardCss)}
+							data-testid="onboarding-discovery"
+						>
+							<h2 mix={css(cardTitleCss)}>
+								Not sure what you&apos;d use Kody for?
+							</h2>
+							<p mix={css(descriptionCss)}>
+								Paste this into any AI agent that can fetch a URL or search the
+								web — ChatGPT, Claude, or whatever you already use. It has the
+								agent read Kody&apos;s docs, interview you, and suggest concrete
+								automations. No account or setup needed yet.
+							</p>
+							<pre mix={css(codeBlockCss)}>{discoveryPrompt}</pre>
+							<CopyTextButton
+								value={discoveryPrompt}
+								idleLabel="Copy discovery prompt"
+								variant="secondary"
+							/>
+						</section>
 
 						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>1. Add Kody as an MCP server</h2>

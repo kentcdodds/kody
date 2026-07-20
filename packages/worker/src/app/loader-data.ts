@@ -472,6 +472,8 @@ export type OnboardingLoaderData = {
 	loggedIn: boolean
 	mcpServerUrl: string
 	setupPrompt: string
+	/** Pre-connection "is Kody for me?" prompt; usable in any tool-calling agent. */
+	discoveryPrompt: string
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean

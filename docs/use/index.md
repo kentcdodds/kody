@@ -15,6 +15,8 @@ Read in order for a full tour, or jump to a topic.
 
 ## Guides
 
+- [What can Kody do?](./what-can-kody-do.md) — capability tour and discovery
+  prompt for people (and agents) deciding whether Kody fits, before any setup
 - [Connect your agent](./connect-your-agent.md) — add `{origin}/mcp`, complete
   OAuth, and use the setup prompt
 - [First steps — what to ask Kody to do](./first-steps.md)
@@ -30,6 +32,8 @@ Read in order for a full tour, or jump to a topic.
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets, values, and host approval](./secrets-and-values.md)
+- [Email primitives](./email-primitives.md) — the per-user inbox, notify-self
+  sends, and replies
 - [Mutating actions and confirmations](./mutating-actions.md)
 - [Privacy](./privacy.md) — what Kody stores and what deployment admins can see
 - [Troubleshooting](./troubleshooting.md)

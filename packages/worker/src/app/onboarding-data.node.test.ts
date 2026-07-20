@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import {
+	buildDiscoveryPrompt,
 	buildMcpServerUrl,
 	buildOnboardingSetupPrompt,
 	loadOnboardingData,
@@ -24,6 +25,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		loggedIn: false,
 		mcpServerUrl: 'https://heykody.dev/mcp',
 		setupPrompt: buildOnboardingSetupPrompt(),
+		discoveryPrompt: buildDiscoveryPrompt(),
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -45,6 +47,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		loggedIn: true,
 		mcpServerUrl: 'https://heykody.dev/mcp',
 		setupPrompt: buildOnboardingSetupPrompt(),
+		discoveryPrompt: buildDiscoveryPrompt(),
 		hasMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: true,
@@ -88,6 +91,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		mcpServerUrl: '',
 		setupPrompt: '',
+		// Discovery needs no verified email or MCP host, so it is never gated.
+		discoveryPrompt: buildDiscoveryPrompt(),
 	})
 
 	const whenProviderListingFails = await loadOnboardingData({

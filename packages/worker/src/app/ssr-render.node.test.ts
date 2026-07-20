@@ -285,6 +285,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		loggedIn: true,
 		mcpServerUrl: '',
 		setupPrompt: '',
+		discoveryPrompt: expect.stringContaining('what-can-kody-do'),
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,

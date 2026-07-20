@@ -179,6 +179,13 @@ export function HomeRoute(handle: Handle) {
 							</a>
 						)}
 					</div>
+					<p mix={css(discoveryHintCss)}>
+						Not sure what you&apos;d use it for?{' '}
+						<a href={`${onboardingPath}#discovery`} mix={css(discoveryLinkCss)}>
+							Ask your agent with the discovery prompt
+						</a>
+						— no account needed.
+					</p>
 				</section>
 
 				<section mix={css(sectionCss)}>
@@ -347,6 +354,16 @@ const heroTaglineCss = {
 	margin: 0,
 	color: colors.textMuted,
 	fontSize: typography.fontSize.base,
+}
+
+const discoveryHintCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+}
+
+const discoveryLinkCss = {
+	color: colors.primaryText,
 }
 
 const heroCtaCss = {
