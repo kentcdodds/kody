@@ -81,60 +81,15 @@ export function createAccountProfileApiHandler(env: Env) {
 
 			const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 			const packageUserId = user.mcpUser.userId
-			let packageUpdate
-			try {
-				packageUpdate = await updatePackagesForUsernameChange({
-					env,
-					baseUrl,
-					userId: packageUserId,
-					previousUsername,
-					nextUsername: username,
-				})
-			} catch (error) {
-				void logAuditEvent({
-					category: 'account',
-					action: 'update_username',
-					result: 'failure',
-					email: user.email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'package_scope_update_failed',
-				})
-				return jsonResponse(
-					{
-						ok: false,
-						error: `Username was not changed because package updates failed: ${getErrorMessage(error)}`,
-					},
-					500,
-				)
-			}
 
+			// Claim the username first so concurrent renames lose on the unique
+			// constraint before any package publishes use the new scope.
 			try {
 				await db.update(usersTable, user.userId, {
 					username,
 					updated_at: utcSqliteTimestamp(),
 				})
 			} catch (error) {
-				if (packageUpdate.updatedPackages.length > 0) {
-					try {
-						await updatePackagesForUsernameChange({
-							env,
-							baseUrl,
-							userId: packageUserId,
-							previousUsername: username,
-							nextUsername: previousUsername,
-						})
-					} catch (compensateError) {
-						console.error(
-							JSON.stringify({
-								message:
-									'username-change package compensation after username update failure failed',
-								userId: packageUserId,
-								error: getErrorMessage(compensateError),
-							}),
-						)
-					}
-				}
 				if (getUniqueConstraintField(error) === 'username') {
 					void logAuditEvent({
 						category: 'account',
@@ -151,6 +106,48 @@ export function createAccountProfileApiHandler(env: Env) {
 					)
 				}
 				throw error
+			}
+
+			let packageUpdate
+			try {
+				packageUpdate = await updatePackagesForUsernameChange({
+					env,
+					baseUrl,
+					userId: packageUserId,
+					previousUsername,
+					nextUsername: username,
+				})
+			} catch (error) {
+				try {
+					await db.update(usersTable, user.userId, {
+						username: previousUsername,
+						updated_at: utcSqliteTimestamp(),
+					})
+				} catch (rollbackError) {
+					console.error(
+						JSON.stringify({
+							message: 'username-change rollback failed after package error',
+							userId: packageUserId,
+							error: getErrorMessage(rollbackError),
+						}),
+					)
+				}
+				void logAuditEvent({
+					category: 'account',
+					action: 'update_username',
+					result: 'failure',
+					email: user.email,
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'package_scope_update_failed',
+				})
+				return jsonResponse(
+					{
+						ok: false,
+						error: `Username was not changed because package updates failed: ${getErrorMessage(error)}`,
+					},
+					500,
+				)
 			}
 
 			const communityPackageIds = packageUpdate.updatedPackages

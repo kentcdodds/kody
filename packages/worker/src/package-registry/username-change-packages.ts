@@ -4,10 +4,7 @@ import { publishCommunityListing } from '#worker/community/service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
-import {
-	rewritePackageFilesForUsernameChange,
-	type UsernameScopeRewriteResult,
-} from '#worker/package-registry/username-scope-rewrite.ts'
+import { rewritePackageFilesForUsernameChange } from '#worker/package-registry/username-scope-rewrite.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 
 export type UsernameChangePackageUpdate = {
@@ -32,19 +29,6 @@ function buildUsernameRenameCommitMessage(input: {
 	return `Rename package scope after username change from @${input.previousScope} to @${input.nextScope}`
 }
 
-function changedFilesOnly(
-	rewrite: UsernameScopeRewriteResult,
-): Record<string, string> {
-	const files: Record<string, string> = {}
-	for (const path of rewrite.changedPaths) {
-		const content = rewrite.files[path]
-		if (typeof content === 'string') {
-			files[path] = content
-		}
-	}
-	return files
-}
-
 async function rewriteAndPublishPackageScope(input: {
 	env: Env
 	baseUrl: string
@@ -66,12 +50,15 @@ async function rewriteAndPublishPackageScope(input: {
 		return null
 	}
 
+	// Pass the full rewritten tree. Partial file maps are unsafe on the
+	// unpublished bootstrap path in syncArtifactSourceSnapshot, which replaces
+	// the whole repo with only the provided files.
 	const publishedCommit = await syncArtifactSourceSnapshot({
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		sourceId: input.sourceId,
-		files: changedFilesOnly(rewrite),
+		files: rewrite.files,
 		expectedPackageScope: input.nextScope,
 		destructiveOverwriteConfirmed: true,
 		commitMessage: buildUsernameRenameCommitMessage({
@@ -80,13 +67,25 @@ async function rewriteAndPublishPackageScope(input: {
 		}),
 	})
 
-	await refreshSavedPackageProjection({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		packageId: input.packageId,
-		sourceId: input.sourceId,
-	})
+	try {
+		await refreshSavedPackageProjection({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			packageId: input.packageId,
+			sourceId: input.sourceId,
+		})
+	} catch (error) {
+		// Publish already succeeded; keep this package in the applied set so
+		// callers can compensate. Projection can be repaired on the next save.
+		console.error(
+			JSON.stringify({
+				message: 'username-change package projection refresh failed',
+				packageId: input.packageId,
+				error: getErrorMessage(error),
+			}),
+		)
+	}
 
 	return {
 		packageId: input.packageId,
@@ -139,13 +138,13 @@ async function compensatePackageUpdates(input: {
 
 /**
  * Rewrite and republish every saved package whose scope still embeds the
- * previous username. Call this **before** flipping `users.username` so a
- * failure leaves the account on the old username. Package publish validates
+ * previous username. Call this **after** claiming `users.username` so the
+ * new scope is reserved before package publishes. Package publish validates
  * against `nextUsername` via `expectedPackageScope`.
  *
  * Returns which updated packages had an active community listing already
  * pinned to the pre-rename published commit; the caller should republish
- * those listings after the username row is updated.
+ * those listings after this returns.
  */
 export async function updatePackagesForUsernameChange(input: {
 	env: Env

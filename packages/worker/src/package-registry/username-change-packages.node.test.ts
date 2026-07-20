@@ -113,6 +113,7 @@ test('updatePackagesForUsernameChange rewrites packages and flags community repu
 				'Rename package scope after username change from @alice to @bob',
 			files: expect.objectContaining({
 				'package.json': expect.stringContaining('"name": "@bob/demo"'),
+				'index.ts': expect.stringContaining('kody:@bob/demo'),
 			}),
 		}),
 	)
