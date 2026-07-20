@@ -291,6 +291,7 @@ export type PackageSearchProjection = {
 	tags: Array<string>
 	searchText: string | null
 	hasApp: boolean
+	isPrivate: boolean
 	appEntry: string | null
 	exports: Array<PackageExportProjection>
 	jobs: Array<{
@@ -915,6 +916,7 @@ export function buildPackageSearchProjection(
 		tags: getPackageTags(manifest),
 		searchText: manifest.kody.searchText?.trim() || null,
 		hasApp: appEntry !== null,
+		isPrivate: manifest.private === true,
 		appEntry,
 		exports: Object.entries(manifest.exports)
 			.map(([exportName, target]) =>

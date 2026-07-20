@@ -113,6 +113,7 @@ function mockSourceAndPackage() {
 		sourceId: 'source-1',
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-04-28T00:00:00.000Z',
 		updatedAt: '2026-04-28T00:00:00.000Z',
 	})
@@ -259,6 +260,7 @@ test('repo_list_sessions applies limit after dropping sessions with missing sour
 		sourceId: 'source-1',
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-04-28T00:00:00.000Z',
 		updatedAt: '2026-04-28T00:00:00.000Z',
 	})

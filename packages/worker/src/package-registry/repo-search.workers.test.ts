@@ -19,11 +19,21 @@ async function ensureSchema(db: D1Database) {
 				source_id TEXT NOT NULL,
 				has_app INTEGER NOT NULL DEFAULT 0 CHECK (has_app IN (0, 1)),
 				hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
+				is_private INTEGER NOT NULL DEFAULT 1 CHECK (is_private IN (0, 1)),
 				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 				updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 			)`,
 		)
 		.run()
+	try {
+		await db
+			.prepare(
+				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
+			)
+			.run()
+	} catch {
+		// Column already present on newer schemas.
+	}
 	await db
 		.prepare(`DELETE FROM saved_packages WHERE user_id IN (?, ?)`)
 		.bind(userId, otherUserId)
@@ -53,6 +63,7 @@ function buildRow(input: {
 		source_id: `source-${input.id}`,
 		has_app: input.hasApp ? (1 as const) : (0 as const),
 		hidden: 0 as const,
+		is_private: 0 as const,
 		created_at: input.createdAt,
 		updated_at: input.updatedAt,
 	}

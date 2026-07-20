@@ -55,15 +55,17 @@ async function insertTestUser(input: {
 	username: string
 }): Promise<TestUser> {
 	await ensureUsersTable()
+	const userId = await createStableUserIdFromEmail(input.email)
 	await runSql(
-		`INSERT INTO users (username, email, password_hash)
-			VALUES (?, ?, ?)`,
+		`INSERT INTO users (username, email, stable_user_id, password_hash)
+			VALUES (?, ?, ?, ?)`,
 		input.username,
 		input.email,
+		userId,
 		'test-password-hash',
 	)
 	return {
-		userId: await createStableUserIdFromEmail(input.email),
+		userId,
 		email: input.email,
 		username: input.username,
 		displayName: input.username,
@@ -141,6 +143,8 @@ async function seedOwnerPackage(input: {
 		search_text: 'community flow integration websocket',
 		source_id: input.sourceId,
 		has_app: 0,
+		hidden: 0,
+		is_private: 0,
 		created_at: now,
 		updated_at: now,
 	})

@@ -72,6 +72,7 @@ test('getPackageCapability returns export metadata and omits external invocation
 		sourceId: 'source-1',
 		hasApp: true,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -170,6 +171,7 @@ test('getPackageCapability returns export metadata and omits external invocation
 		sourceId: 'source-1',
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})

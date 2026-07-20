@@ -46,6 +46,7 @@ function createHiddenRetrieverFixture(scopes: Array<'search' | 'context'>) {
 			sourceId: 'source-hidden',
 			hasApp: false,
 			hidden: true,
+			isPrivate: false,
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		},

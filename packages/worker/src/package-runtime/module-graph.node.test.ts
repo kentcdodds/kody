@@ -165,6 +165,7 @@ function createSavedPackageRecord(input?: {
 		sourceId: input?.sourceId ?? 'source-1',
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-04-24T00:00:00.000Z',
 		updatedAt: '2026-04-24T00:00:00.000Z',
 	}
@@ -2291,6 +2292,7 @@ test('buildKodyModuleBundle records only entrypoint-reachable kody package depen
 					sourceId: 'source-reachable',
 					hasApp: false,
 					hidden: false,
+					isPrivate: false,
 					createdAt: '2026-05-10T00:00:00.000Z',
 					updatedAt: '2026-05-10T00:00:00.000Z',
 				}
@@ -2307,6 +2309,7 @@ test('buildKodyModuleBundle records only entrypoint-reachable kody package depen
 					sourceId: 'source-unreachable',
 					hasApp: false,
 					hidden: false,
+					isPrivate: false,
 					createdAt: '2026-05-10T00:00:00.000Z',
 					updatedAt: '2026-05-10T00:00:00.000Z',
 				}
@@ -2417,6 +2420,7 @@ test('buildKodyModuleBundle follows self kody imports when recording reachable d
 				sourceId: 'source-reachable',
 				hasApp: false,
 				hidden: false,
+				isPrivate: false,
 				createdAt: '2026-05-10T00:00:00.000Z',
 				updatedAt: '2026-05-10T00:00:00.000Z',
 			}

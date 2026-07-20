@@ -83,6 +83,7 @@ function createSavedPackage(input: {
 		sourceId: input.sourceId,
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-07-19T00:00:00.000Z',
 		updatedAt: '2026-07-19T00:00:00.000Z',
 	}

@@ -118,6 +118,7 @@ test('fetch gateway requires package approval before resolving user secrets', as
 			searchText: null,
 			hasApp: false,
 			hidden: false,
+			isPrivate: false,
 			sourceId: 'source-1',
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',

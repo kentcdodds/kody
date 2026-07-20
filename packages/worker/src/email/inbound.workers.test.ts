@@ -825,11 +825,21 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 				source_id TEXT NOT NULL,
 				has_app INTEGER NOT NULL DEFAULT 0,
 				hidden INTEGER NOT NULL DEFAULT 0,
+				is_private INTEGER NOT NULL DEFAULT 1,
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			)`,
 		)
 		.run()
+	try {
+		await db
+			.prepare(
+				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
+			)
+			.run()
+	} catch {
+		// Column already present on newer schemas.
+	}
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS entity_sources (

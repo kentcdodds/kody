@@ -23,6 +23,7 @@ export type PublicCommunityListing = {
 	ratingCount: number
 	averageAdaptationEffort: number | null
 	forkCount: number
+	starCount: number
 }
 
 /**

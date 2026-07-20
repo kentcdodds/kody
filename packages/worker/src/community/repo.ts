@@ -15,7 +15,7 @@ import {
 	type CommunityReportStatus,
 } from './types.ts'
 
-function mapCommunityListingRow(
+export function mapCommunityListingRow(
 	row: Record<string, unknown>,
 ): CommunityListingRecord {
 	const pinnedCommit = String(row['pinned_commit'])
@@ -115,7 +115,7 @@ function listingStatusFilter(includeDelisted: boolean) {
  * scoped to the listing owner + package so a foreign source row can never
  * leak a commit into another user's listing.
  */
-const communityListingSelectColumns = `community_listings.id, community_listings.owner_user_id,
+export const communityListingSelectColumns = `community_listings.id, community_listings.owner_user_id,
 	community_listings.package_id, community_listings.source_id, community_listings.kody_id,
 	community_listings.name, community_listings.description, community_listings.tags_json,
 	community_listings.search_text, community_listings.readme_content, community_listings.license,
@@ -125,7 +125,7 @@ const communityListingSelectColumns = `community_listings.id, community_listings
 	community_listings.trusted_at, community_listings.featured_at,
 	entity_sources.published_commit AS source_published_commit`
 
-const communityListingSourceJoin = `LEFT JOIN entity_sources
+export const communityListingSourceJoin = `LEFT JOIN entity_sources
 	ON entity_sources.id = community_listings.source_id
 	AND entity_sources.user_id = community_listings.owner_user_id
 	AND entity_sources.entity_kind = 'package'

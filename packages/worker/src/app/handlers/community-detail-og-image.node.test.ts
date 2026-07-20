@@ -52,6 +52,7 @@ const listing = {
 	ratingCount: 12,
 	averageAdaptationEffort: null,
 	forkCount: 37,
+	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 const tinyPng = Uint8Array.from([

@@ -54,6 +54,7 @@ export function toPublicCommunityListing(
 		ratingCount: listing.ratingCount,
 		averageAdaptationEffort: listing.averageAdaptationEffort,
 		forkCount: listing.forkCount,
+		starCount: listing.starCount,
 	}
 }
 
