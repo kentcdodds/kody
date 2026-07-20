@@ -88,7 +88,11 @@ test('account package picker and integration search use recognizable names', asy
 		approvalCard.getByText(calendarPackage.packageId, { exact: true }),
 	).toBeVisible()
 	await page.getByRole('button', { name: 'Approve', exact: true }).click()
-	await expect(page.getByText('Approved requested package.')).toBeVisible()
+	await expect(
+		page.getByRole('button', {
+			name: `Remove package ${calendarPackage.kodyId}`,
+		}),
+	).toBeVisible()
 
 	const allowedPackagePicker = page.getByLabel('Add allowed package')
 	await allowedPackagePicker.fill(tasksPackage.kodyId)
