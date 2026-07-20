@@ -7,7 +7,10 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { type RouteLoaderResult } from '#client/route-loader.ts'
+import {
+	routeLoaderRedirect,
+	type RouteLoaderResult,
+} from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
@@ -28,7 +31,9 @@ function getSlugFromPathname(pathname: string) {
 	const slug = decodeURIComponent(
 		pathname.slice(prefix.length).replace(/\/$/, ''),
 	)
-	if (!slug || slug.includes('/')) return null
+	// Dots mark non-post paths under /blog (rss.xml, .json APIs); real post
+	// slugs are kebab-case and never contain one.
+	if (!slug || slug.includes('/') || slug.includes('.')) return null
 	return slug
 }
 
@@ -44,7 +49,10 @@ export async function blogPostRouteLoader(
 ): Promise<RouteLoaderResult> {
 	const slug = getSlugFromPathname(url.pathname)
 	if (!slug) {
-		throw new Error('Blog post not found.')
+		// Non-post paths under /blog (rss.xml, .json APIs) are served by the
+		// worker as raw documents; leave the SPA instead of rendering a
+		// missing-post page.
+		return routeLoaderRedirect(`${url.pathname}${url.search}`)
 	}
 
 	const response = await fetch(routes.blogPostApi.href({ slug }), {
