@@ -78,11 +78,14 @@ test('account package picker and integration search use recognizable names', asy
 	await expect(
 		page.getByRole('heading', { name: 'Approve secret access' }),
 	).toBeVisible()
+	const approvalCard = page
+		.getByRole('heading', { name: 'Approve secret access' })
+		.locator('..')
 	await expect(
-		page.getByText(calendarPackage.kodyId, { exact: true }),
+		approvalCard.getByText(calendarPackage.kodyId, { exact: true }),
 	).toBeVisible()
 	await expect(
-		page.getByText(calendarPackage.packageId, { exact: true }),
+		approvalCard.getByText(calendarPackage.packageId, { exact: true }),
 	).toBeVisible()
 	await page.getByRole('button', { name: 'Approve', exact: true }).click()
 	await expect(page.getByText('Approved requested package.')).toBeVisible()
@@ -91,11 +94,16 @@ test('account package picker and integration search use recognizable names', asy
 	await allowedPackagePicker.fill(tasksPackage.kodyId)
 	await allowedPackagePicker.press('ArrowDown')
 	await allowedPackagePicker.press('Enter')
+	const selectedPackageRow = page
+		.getByRole('button', {
+			name: `Remove package ${tasksPackage.kodyId}`,
+		})
+		.locator('..')
 	await expect(
-		page.getByText(tasksPackage.kodyId, { exact: true }),
+		selectedPackageRow.getByText(tasksPackage.kodyId, { exact: true }),
 	).toBeVisible()
 	await expect(
-		page.getByText(tasksPackage.packageId, { exact: true }),
+		selectedPackageRow.getByText(tasksPackage.packageId, { exact: true }),
 	).toBeVisible()
 	await page.getByRole('button', { name: 'Save', exact: true }).click()
 	await expect(page.getByText('Saved secret.')).toBeVisible()
