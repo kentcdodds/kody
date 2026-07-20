@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers'
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createBillingLinkReference } from './billing-config.ts'
@@ -8,10 +8,6 @@ import {
 	linkStripeCustomerFromCheckoutSession,
 	refreshStaleStripePlans,
 } from './subscription-sync.ts'
-
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
 
 function jsonResponse(body: unknown, status = 200) {
 	return new Response(JSON.stringify(body), {
@@ -126,6 +122,20 @@ function stubStripeFetch(input: {
 	return fetchStub
 }
 
+async function expectBillingLinkError(
+	promise: Promise<unknown>,
+	code: BillingLinkError['code'],
+) {
+	const error = await promise.then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(error instanceof BillingLinkError)) {
+		throw new Error('Expected BillingLinkError')
+	}
+	expect(error.code).toBe(code)
+}
+
 test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_plan', async () => {
 	const email = `link-happy-${crypto.randomUUID()}@example.com`
 	const user = await seedUser({ email, plan: 'pro' })
@@ -162,126 +172,120 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 		stripe_plan: 'pro',
 		stripe_plan_refreshed_at: now.toISOString(),
 	})
+
+	vi.unstubAllGlobals()
 })
 
-test('linkStripeCustomerFromCheckoutSession rejects client_reference_mismatch', async () => {
-	const email = `link-mismatch-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({ email })
-	stubStripeFetch({
-		checkout: {
-			id: 'cs_mismatch',
-			customer: 'cus_mismatch',
-			client_reference_id: 'someone-else',
-		},
-	})
+test('linkStripeCustomerFromCheckoutSession rejects unsafe checkout links without mutating users', async () => {
+	const billingEnv = createBillingEnv()
 
-	const error = await linkStripeCustomerFromCheckoutSession({
-		env: createBillingEnv(),
-		user,
-		sessionId: 'cs_mismatch',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(error instanceof BillingLinkError)) {
-		throw new Error('Expected BillingLinkError')
+	{
+		const email = `link-mismatch-${crypto.randomUUID()}@example.com`
+		const user = await seedUser({ email })
+		stubStripeFetch({
+			checkout: {
+				id: 'cs_mismatch',
+				customer: 'cus_mismatch',
+				client_reference_id: 'someone-else',
+			},
+		})
+
+		await expectBillingLinkError(
+			linkStripeCustomerFromCheckoutSession({
+				env: billingEnv,
+				user,
+				sessionId: 'cs_mismatch',
+			}),
+			'client_reference_mismatch',
+		)
+		expect(await readUserBilling(user.id)).toMatchObject({
+			stripe_customer_id: null,
+			stripe_plan: null,
+		})
+		vi.unstubAllGlobals()
 	}
-	expect(error.code).toBe('client_reference_mismatch')
-	expect(await readUserBilling(user.id)).toMatchObject({
-		stripe_customer_id: null,
-		stripe_plan: null,
-	})
-})
 
-test('linkStripeCustomerFromCheckoutSession rejects missing_customer', async () => {
-	const email = `link-missing-cus-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({ email })
-	stubStripeFetch({
-		checkout: {
-			id: 'cs_no_customer',
-			customer: null,
-			client_reference_id: user.linkReference,
-		},
-	})
+	{
+		const email = `link-missing-cus-${crypto.randomUUID()}@example.com`
+		const user = await seedUser({ email })
+		stubStripeFetch({
+			checkout: {
+				id: 'cs_no_customer',
+				customer: null,
+				client_reference_id: user.linkReference,
+			},
+		})
 
-	const error = await linkStripeCustomerFromCheckoutSession({
-		env: createBillingEnv(),
-		user,
-		sessionId: 'cs_no_customer',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(error instanceof BillingLinkError)) {
-		throw new Error('Expected BillingLinkError')
+		await expectBillingLinkError(
+			linkStripeCustomerFromCheckoutSession({
+				env: billingEnv,
+				user,
+				sessionId: 'cs_no_customer',
+			}),
+			'missing_customer',
+		)
+		vi.unstubAllGlobals()
 	}
-	expect(error.code).toBe('missing_customer')
-})
 
-test('linkStripeCustomerFromCheckoutSession rejects customer_already_linked', async () => {
-	const claimedEmail = `link-claimed-${crypto.randomUUID()}@example.com`
-	const claimantEmail = `link-claimant-${crypto.randomUUID()}@example.com`
-	await seedUser({
-		email: claimedEmail,
-		stripeCustomerId: 'cus_already',
-	})
-	const claimant = await seedUser({ email: claimantEmail })
-	stubStripeFetch({
-		checkout: {
-			id: 'cs_already',
-			customer: 'cus_already',
-			client_reference_id: claimant.linkReference,
-		},
-	})
+	{
+		const claimedEmail = `link-claimed-${crypto.randomUUID()}@example.com`
+		const claimantEmail = `link-claimant-${crypto.randomUUID()}@example.com`
+		await seedUser({
+			email: claimedEmail,
+			stripeCustomerId: 'cus_already',
+		})
+		const claimant = await seedUser({ email: claimantEmail })
+		stubStripeFetch({
+			checkout: {
+				id: 'cs_already',
+				customer: 'cus_already',
+				client_reference_id: claimant.linkReference,
+			},
+		})
 
-	const error = await linkStripeCustomerFromCheckoutSession({
-		env: createBillingEnv(),
-		user: claimant,
-		sessionId: 'cs_already',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(error instanceof BillingLinkError)) {
-		throw new Error('Expected BillingLinkError')
+		await expectBillingLinkError(
+			linkStripeCustomerFromCheckoutSession({
+				env: billingEnv,
+				user: claimant,
+				sessionId: 'cs_already',
+			}),
+			'customer_already_linked',
+		)
+		expect(await readUserBilling(claimant.id)).toMatchObject({
+			stripe_customer_id: null,
+		})
+		vi.unstubAllGlobals()
 	}
-	expect(error.code).toBe('customer_already_linked')
-	expect(await readUserBilling(claimant.id)).toMatchObject({
-		stripe_customer_id: null,
-	})
-})
 
-test('linkStripeCustomerFromCheckoutSession refuses to replace an established linkage', async () => {
-	const email = `link-replace-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({
-		email,
-		stripeCustomerId: 'cus_original',
-		stripePlan: 'pro',
-	})
-	stubStripeFetch({
-		checkout: {
-			id: 'cs_replacement',
-			customer: 'cus_other',
-			client_reference_id: user.linkReference,
-		},
-	})
+	{
+		const email = `link-replace-${crypto.randomUUID()}@example.com`
+		const user = await seedUser({
+			email,
+			stripeCustomerId: 'cus_original',
+			stripePlan: 'pro',
+		})
+		stubStripeFetch({
+			checkout: {
+				id: 'cs_replacement',
+				customer: 'cus_other',
+				client_reference_id: user.linkReference,
+			},
+		})
 
-	const error = await linkStripeCustomerFromCheckoutSession({
-		env: createBillingEnv(),
-		user,
-		sessionId: 'cs_replacement',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(error instanceof BillingLinkError)) {
-		throw new Error('Expected BillingLinkError')
+		await expectBillingLinkError(
+			linkStripeCustomerFromCheckoutSession({
+				env: billingEnv,
+				user,
+				sessionId: 'cs_replacement',
+			}),
+			'account_already_linked',
+		)
+		expect(await readUserBilling(user.id)).toMatchObject({
+			stripe_customer_id: 'cus_original',
+			stripe_plan: 'pro',
+		})
+		vi.unstubAllGlobals()
 	}
-	expect(error.code).toBe('account_already_linked')
-	expect(await readUserBilling(user.id)).toMatchObject({
-		stripe_customer_id: 'cus_original',
-		stripe_plan: 'pro',
-	})
 })
 
 test('refreshStaleStripePlans refreshes stale linked customers', async () => {
@@ -321,6 +325,8 @@ test('refreshStaleStripePlans refreshes stale linked customers', async () => {
 		stripe_plan: 'pro',
 		stripe_plan_refreshed_at: now.toISOString(),
 	})
+
+	vi.unstubAllGlobals()
 })
 
 test('refreshStaleStripePlans skips when billing is not configured', async () => {
@@ -333,4 +339,6 @@ test('refreshStaleStripePlans skips when billing is not configured', async () =>
 	})
 	expect(result).toEqual({ refreshed: 0, failed: 0, skipped: true })
 	expect(fetchStub).not.toHaveBeenCalled()
+
+	vi.unstubAllGlobals()
 })
