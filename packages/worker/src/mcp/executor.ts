@@ -43,6 +43,7 @@ import {
 	assertGeneratedExecutorSourceIsBundleSafe,
 	kodyRemoteProxyFactorySource,
 } from '#mcp/kody-remote-proxy-source.ts'
+import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
@@ -853,6 +854,15 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
+			kind: 'runtime_helper_unbound'
+			message: string
+			nextStep: string
+			helperName: string
+			suggestedAction: {
+				type: 'fix_code'
+			}
+	  }
+	| {
 			kind: 'entitlement_limit_exceeded'
 			message: string
 			nextStep: string
@@ -1017,6 +1027,19 @@ export function getExecutionErrorDetails(
 		}
 	}
 
+	const unboundRuntimeHelper = parseUnboundRuntimeHelperMessage(message)
+	if (unboundRuntimeHelper) {
+		return {
+			kind: 'runtime_helper_unbound',
+			message,
+			nextStep: buildUnboundRuntimeHelperNextStep(unboundRuntimeHelper),
+			helperName: unboundRuntimeHelper,
+			suggestedAction: {
+				type: 'fix_code',
+			},
+		}
+	}
+
 	const missingRuntimeExport = parseMissingRuntimeExportMessage(message)
 	if (missingRuntimeExport) {
 		return {
@@ -1035,7 +1058,7 @@ export function getExecutionErrorDetails(
 
 /**
  * Named exports of the virtual `kody:runtime` module (see
- * `buildRuntimeModuleSource` in `#worker/package-runtime/module-graph.ts`).
+ * `createRuntimeModuleSource` in `#worker/package-runtime/module-graph.ts`).
  * Referencing one without the import throws a bare `X is not defined`
  * ReferenceError that gives no hint about the required import.
  */
@@ -1055,6 +1078,35 @@ const kodyRuntimeExportNames = new Set([
 	'packages',
 	'events',
 ])
+
+/**
+ * Remedies for guard-less access to an optional `kody:runtime` export that
+ * the execution context intentionally left unbound (`undefined` / `null` so
+ * `if (storage) { ... }` guards stay falsy). The message itself is produced
+ * by `createUnboundRuntimeHelperMessage` in
+ * `#worker/package-runtime/unbound-runtime-helpers.ts`.
+ */
+const unboundRuntimeHelperNextSteps: Record<string, string> = {
+	storage:
+		"`storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a storage bucket, or, if this code was imported from a saved package that owns its data, invoke that package's export dynamically (for example `packages.invokeChecked({ kodyId, exportName, params })`) so it runs in the package's own runtime context with the package's storage. Code that must also run without storage can guard with `if (storage) { ... }`.",
+	packages:
+		'`packages` is bound for authenticated ad hoc execute calls and saved-package runtime contexts; retry the call as an authenticated user, or guard with `if (packages) { ... }` where dynamic package invocation is optional.',
+	events:
+		"`events` is only bound in saved-package runtime contexts that can dispatch package events; invoke the owning package's export dynamically (for example `packages.invokeChecked`) so it runs in that context, or guard with `if (events) { ... }`.",
+	packageSecrets:
+		"`packageSecrets` is only bound in saved-package runtime contexts; invoke the owning package's export dynamically (for example `packages.invokeChecked`) so it runs with the package's mounted secrets, or guard with `if (packageSecrets) { ... }`.",
+	service:
+		'`service` is only bound in package service runs; guard with `if (service) { ... }` when the code can also run outside a service context.',
+	email:
+		'`email` is only bound for email-triggered runs; guard with `if (email) { ... }` when the code can also run outside an email context.',
+}
+
+function buildUnboundRuntimeHelperNextStep(helperName: string) {
+	return (
+		unboundRuntimeHelperNextSteps[helperName] ??
+		`The optional \`${helperName}\` export of 'kody:runtime' is not provided in this execution context; guard with a falsiness check (for example \`if (${helperName}) { ... }\`) or run the code in a context that binds it, such as invoking the owning saved package's export dynamically via \`packages.invokeChecked\`.`
+	)
+}
 
 /**
  * workerd throws this when an RPC stub outlives the execution context that

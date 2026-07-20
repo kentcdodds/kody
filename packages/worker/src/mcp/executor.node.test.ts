@@ -7,6 +7,7 @@ import {
 	createMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { createUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import {
 	createKodyRemoteProxy,
 	createKodyProviderProxySource,
@@ -914,6 +915,60 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		getExecutionErrorDetails(new Error('myHelper is not defined')),
 	).toBeNull()
 
+	// A guard-less access to an imported-but-unbound optional kody:runtime
+	// helper must name the helper and the realistic remedies instead of
+	// leaving the bare TypeError.
+	const unboundStorageMessage = createUnboundRuntimeHelperMessage({
+		originalMessage: "Cannot read properties of undefined (reading 'sql')",
+		helperName: 'storage',
+		reference: 'storage.sql',
+	})
+	expect(
+		getExecutionErrorDetails(new Error(unboundStorageMessage)),
+	).toMatchObject({
+		kind: 'runtime_helper_unbound',
+		helperName: 'storage',
+		nextStep: expect.stringContaining('`storageId`'),
+		suggestedAction: { type: 'fix_code' },
+	})
+	expect(
+		getExecutionErrorDetails(new Error(unboundStorageMessage))?.nextStep,
+	).toContain('packages.invokeChecked')
+	// Wrapped transports prefix the message (for example package invocation
+	// responses); parsing stays prefix-tolerant.
+	expect(
+		getExecutionErrorDetails(
+			new Error(`[execution_failed] ${unboundStorageMessage}`),
+		),
+	).toMatchObject({
+		kind: 'runtime_helper_unbound',
+		helperName: 'storage',
+	})
+	// Helpers without a dedicated remedy get the generic guard guidance.
+	expect(
+		getExecutionErrorDetails(
+			new Error(
+				createUnboundRuntimeHelperMessage({
+					originalMessage:
+						"Cannot read properties of undefined (reading 'basic')",
+					helperName: 'secretHeaders',
+					reference: 'secretHeaders.basic',
+				}),
+			),
+		),
+	).toMatchObject({
+		kind: 'runtime_helper_unbound',
+		helperName: 'secretHeaders',
+		nextStep: expect.stringContaining('if (secretHeaders) { ... }'),
+	})
+	// The bare TypeError alone stays unhinted: without the rewrite marker the
+	// undefined value may be any user-code bug.
+	expect(
+		getExecutionErrorDetails(
+			new Error("Cannot read properties of undefined (reading 'sql')"),
+		),
+	).toBeNull()
+
 	// A disposed RPC stub in the sandbox means per-run state leaked into a
 	// cached dynamic worker; the structured hint explains how to escape the
 	// poisoned worker instead of suggesting a futile identical retry.
@@ -929,6 +984,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		capabilityError,
 		new Error(createMissingSecretMessage('missingToken')),
 		new Error('kody is not defined'),
+		new Error(unboundStorageMessage),
 	]
 	for (const error of errors) {
 		const output = formatExecutionOutput({ error } as const)

@@ -406,7 +406,7 @@ export default new Proxy(__kodyRuntimeNamedExports, {
 	return source
 }
 
-function isRuntimeModulePath(modulePath: string) {
+export function isKodyRuntimeModulePath(modulePath: string) {
 	return (
 		modulePath === runtimeModulePath ||
 		modulePath.endsWith(`/${runtimeModulePath}`)
@@ -423,14 +423,14 @@ function collectReferencedRuntimeModulePaths(
 		options?.includeDefaultRuntimePath === false ? [] : [runtimeModulePath],
 	)
 	for (const modulePath of Object.keys(modules)) {
-		if (isRuntimeModulePath(modulePath)) {
+		if (isKodyRuntimeModulePath(modulePath)) {
 			runtimePaths.add(modulePath)
 		}
 	}
 	for (const [modulePath, source] of iterateModuleSourceTexts(modules)) {
 		for (const node of collectLiteralImportNodes(source)) {
 			const resolvedPath = resolveRelativeModulePath(modulePath, node.specifier)
-			if (resolvedPath && isRuntimeModulePath(resolvedPath)) {
+			if (resolvedPath && isKodyRuntimeModulePath(resolvedPath)) {
 				runtimePaths.add(resolvedPath)
 			}
 		}
@@ -457,7 +457,7 @@ export function refreshKodyRuntimeModules(
 function stripKodyRuntimeModules(modules: WorkerLoaderModules) {
 	let stripped: WorkerLoaderModules | null = null
 	for (const modulePath of Object.keys(modules)) {
-		if (!isRuntimeModulePath(modulePath)) continue
+		if (!isKodyRuntimeModulePath(modulePath)) continue
 		stripped ??= { ...modules }
 		delete stripped[modulePath]
 	}

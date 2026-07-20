@@ -58,6 +58,10 @@ import {
 	hydrateKodyRuntimeModules,
 } from '#worker/package-runtime/module-graph.ts'
 import {
+	createUnboundRuntimeHelperMessage,
+	findUnboundRuntimeHelperAccess,
+} from '#worker/package-runtime/unbound-runtime-helpers.ts'
+import {
 	beginPackageRuntimeRun,
 	finishPackageRuntimeRun,
 	type PackageRuntimeDebugContext,
@@ -1278,6 +1282,26 @@ export async function runBundledModuleWithRegistry(
 		)
 			? createExecuteHelperPrelude()
 			: ''
+		// Mirrors the `__kodyRuntime` object below: a helper whose prelude is
+		// omitted reaches the sandbox as `undefined` / `null`, so guard-less
+		// access to it is what the unbound-helper error rewrite looks for.
+		const unboundOptionalRuntimeHelperNames = new Set<string>([
+			...(storageHelperPrelude ? [] : ['storage']),
+			...(executeHelperPrelude
+				? []
+				: [
+						'refreshAccessToken',
+						'createAuthenticatedFetch',
+						'secretHeaders',
+						'oauthClientCredentials',
+					]),
+			...(serviceHelperPrelude ? [] : ['service']),
+			...(packageSecretsHelperPrelude ? [] : ['packageSecrets']),
+			...(emailHelperPrelude ? [] : ['email']),
+			...(workflowsHelperPrelude ? [] : ['workflows']),
+			...(packagesHelperPrelude ? [] : ['packages']),
+			...(eventsHelperPrelude ? [] : ['events']),
+		])
 		const entrypointInputJson = JSON.stringify(params)
 		const entrypointInputSource =
 			entrypointInputJson === undefined ? 'undefined' : entrypointInputJson
@@ -1346,15 +1370,21 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 				await recordPackageExportUsage('success')
 				return sanitizedResult
 			}
-			const batchMessage = await rewriteCapabilitySecretError({
-				error: result.error,
-				env,
-				callerContext,
-			})
-			const finalResult = batchMessage
+			const rewrittenMessage =
+				(await rewriteCapabilitySecretError({
+					error: result.error,
+					env,
+					callerContext,
+				})) ??
+				rewriteUnboundRuntimeHelperError({
+					error: result.error,
+					modules: bundle.modules,
+					unboundHelperNames: unboundOptionalRuntimeHelperNames,
+				})
+			const finalResult = rewrittenMessage
 				? {
 						...sanitizedResult,
-						error: secretRedactor.redactErrorMessage(batchMessage),
+						error: secretRedactor.redactErrorMessage(rewrittenMessage),
 					}
 				: sanitizedResult
 			await finishPackageRuntimeRunBestEffort({
@@ -1392,6 +1422,32 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 		throw error
 	}
 }
+/**
+ * A guard-less access to an unbound optional `kody:runtime` helper (for
+ * example `storage.sql(...)` in an execute call without a bound `storageId`)
+ * throws a bare TypeError that gives the caller no path to self-correct.
+ * Enrich the message so `getExecutionErrorDetails` can attach a structured
+ * next step naming the unbound helper.
+ */
+function rewriteUnboundRuntimeHelperError(input: {
+	error: unknown
+	modules: WorkerLoaderModules
+	unboundHelperNames: ReadonlySet<string>
+}) {
+	const message = getErrorMessage(input.error)
+	const access = findUnboundRuntimeHelperAccess({
+		errorMessage: message,
+		modules: input.modules,
+		unboundHelperNames: input.unboundHelperNames,
+	})
+	if (!access) return null
+	return createUnboundRuntimeHelperMessage({
+		originalMessage: message,
+		helperName: access.helperName,
+		reference: access.reference,
+	})
+}
+
 async function rewriteCapabilitySecretError(input: {
 	error: unknown
 	env: Env
