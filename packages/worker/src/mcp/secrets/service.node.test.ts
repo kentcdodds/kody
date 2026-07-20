@@ -59,7 +59,7 @@ function createSecretTestDb(
 						async first<T>() {
 							if (
 								normalizedQuery.includes(
-									'select plan from users where email = ?',
+									'select plan, stripe_plan from users where email = ?',
 								)
 							) {
 								const [email] = params as Array<string>
@@ -556,10 +556,9 @@ function buildEntitlementTestSecretEnv(input: {
 test('saveSecret enforces the secrets entitlement for plan users', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'personal' })
-	const limit = planLimits.personal.maxSecrets
-	if (limit === null)
-		throw new Error('Expected a numeric personal secret limit.')
+	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'pro' })
+	const limit = planLimits.pro.maxSecrets
+	if (limit === null) throw new Error('Expected a numeric pro secret limit.')
 
 	for (let index = 0; index < limit; index += 1) {
 		await saveSecret({
@@ -589,7 +588,7 @@ test('saveSecret enforces the secrets entitlement for plan users', async () => {
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'secrets',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 		current: limit,
 	})
@@ -599,10 +598,9 @@ test('saveSecret enforces the secrets entitlement for plan users', async () => {
 test('saveSecret allows updating an existing secret at the plan limit', async () => {
 	const email = 'planned-update@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'personal' })
-	const limit = planLimits.personal.maxSecrets
-	if (limit === null)
-		throw new Error('Expected a numeric personal secret limit.')
+	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'pro' })
+	const limit = planLimits.pro.maxSecrets
+	if (limit === null) throw new Error('Expected a numeric pro secret limit.')
 
 	for (let index = 0; index < limit; index += 1) {
 		await saveSecret({
@@ -632,9 +630,8 @@ test('saveSecret stays unlimited for users without a plan', async () => {
 	const email = 'legacy@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const { env } = buildEntitlementTestSecretEnv({ email, plan: null })
-	const limit = planLimits.personal.maxSecrets
-	if (limit === null)
-		throw new Error('Expected a numeric personal secret limit.')
+	const limit = planLimits.pro.maxSecrets
+	if (limit === null) throw new Error('Expected a numeric pro secret limit.')
 
 	for (let index = 0; index < limit + 1; index += 1) {
 		await saveSecret({

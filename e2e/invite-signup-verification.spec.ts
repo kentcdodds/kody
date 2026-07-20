@@ -3,6 +3,49 @@ import {
 	clearAuthRateLimitsInE2eDatabase,
 	setEmailVerificationTokenInE2eDatabase,
 } from './d1-utils.ts'
+import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
+import { spawnSync } from 'node:child_process'
+import path from 'node:path'
+
+const projectRoot = path.resolve(import.meta.dirname, '..')
+
+function queryUserPlanFromE2eDatabase(email: string) {
+	const result = spawnSync(
+		process.execPath,
+		[
+			'--env-file=packages/worker/.env',
+			'./wrangler-env.ts',
+			'd1',
+			'execute',
+			'APP_DB',
+			'--local',
+			'--persist-to',
+			'.wrangler/state/e2e',
+			'--json',
+			'--command',
+			`SELECT plan FROM users WHERE email = ${quoteSqlString(email)};`,
+		],
+		{
+			cwd: projectRoot,
+			encoding: 'utf8',
+			stdio: 'pipe',
+			env: {
+				...process.env,
+				CLOUDFLARE_ENV: 'test',
+			},
+		},
+	)
+	if (result.status !== 0) {
+		throw new Error(
+			`Failed to query user plan from E2E D1:\n${result.stdout}\n${result.stderr}`,
+		)
+	}
+	const parsed = JSON.parse(result.stdout) as Array<{
+		results?: Array<{ plan: string | null }>
+	}>
+	const rows = parsed.flatMap((entry) => entry.results ?? [])
+	return rows[0]?.plan ?? null
+}
 
 test('admin invite signup and email verification happy path', async ({
 	page,
@@ -42,12 +85,18 @@ test('admin invite signup and email verification happy path', async ({
 	await page.getByLabel('Code').fill(inviteCode)
 	await page.getByLabel('Note').fill('E2E invite signup verification')
 	await page.getByLabel('Max uses').fill('1')
+	await page.getByLabel('Plan').selectOption('pro')
 	await page.getByRole('button', { name: 'Create', exact: true }).click()
 	await expect(async () => {
 		await expect(page.getByRole('heading', { name: inviteCode })).toBeVisible({
 			timeout: 1_000,
 		})
 	}).toPass({ timeout: 15_000 })
+	// Filter to visible matches: the create form's <select> also contains a
+	// hidden <option> with the same text.
+	await expect(
+		page.getByText('pro', { exact: true }).filter({ visible: true }).first(),
+	).toBeVisible()
 
 	await page.getByLabel('User email').fill(adminCreatedEmail)
 	await page.getByLabel('Username (optional)').fill(adminCreatedUsername)
@@ -157,4 +206,6 @@ test('admin invite signup and email verification happy path', async ({
 	await expect(
 		page.getByRole('heading', { name: 'Verify your email' }),
 	).toHaveCount(0)
+
+	expect(queryUserPlanFromE2eDatabase(invitedEmail)).toBe('pro')
 })

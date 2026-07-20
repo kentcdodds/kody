@@ -93,7 +93,7 @@ function createDatabase(
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T = Record<string, unknown>>() {
-							if (query.includes('SELECT plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								return selectOne(
 									'users',
 									(row) => row['email'] === params[0],
@@ -287,9 +287,8 @@ function createHandlerContext(input: {
 test('package_save enforces the saved packages entitlement for plan users on create', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxSavedPackages
-	if (limit === null)
-		throw new Error('Expected a numeric personal package limit.')
+	const limit = planLimits.pro.maxSavedPackages
+	if (limit === null) throw new Error('Expected a numeric pro package limit.')
 	const now = '2026-04-18T00:00:00.000Z'
 	const savedPackages = Array.from({ length: limit }, (_, index) => ({
 		id: `package-${index}`,
@@ -305,7 +304,7 @@ test('package_save enforces the saved packages entitlement for plan users on cre
 		updated_at: now,
 	}))
 	const db = createDatabase({
-		users: [{ email, plan: 'personal', username: 'planned' }],
+		users: [{ email, plan: 'pro', username: 'planned' }],
 		saved_packages: savedPackages,
 	})
 	setupPersistenceMocks()
@@ -324,7 +323,7 @@ test('package_save enforces the saved packages entitlement for plan users on cre
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'saved_packages',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 		current: limit,
 	})
@@ -334,9 +333,8 @@ test('package_save enforces the saved packages entitlement for plan users on cre
 test('package_save does not gate updates to an existing package at the limit', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxSavedPackages
-	if (limit === null)
-		throw new Error('Expected a numeric personal package limit.')
+	const limit = planLimits.pro.maxSavedPackages
+	if (limit === null) throw new Error('Expected a numeric pro package limit.')
 	const now = '2026-04-18T00:00:00.000Z'
 	const existingPackageId = 'package-existing'
 	const savedPackages = [
@@ -368,7 +366,7 @@ test('package_save does not gate updates to an existing package at the limit', a
 		},
 	]
 	const db = createDatabase({
-		users: [{ email, plan: 'personal', username: 'planned' }],
+		users: [{ email, plan: 'pro', username: 'planned' }],
 		saved_packages: savedPackages,
 	})
 	setupPersistenceMocks()
@@ -409,9 +407,8 @@ test('package_save responses steer coding agents toward the git lane', async () 
 test('package_save stays unlimited for users without a plan', async () => {
 	const email = 'legacy@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxSavedPackages
-	if (limit === null)
-		throw new Error('Expected a numeric personal package limit.')
+	const limit = planLimits.free.maxSavedPackages
+	if (limit === null) throw new Error('Expected a numeric free package limit.')
 	const db = createDatabase({
 		users: [{ email, plan: null, username: 'legacy' }],
 	})

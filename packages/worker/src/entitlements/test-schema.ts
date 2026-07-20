@@ -2,7 +2,8 @@
  * Non-destructive schema for entitlement primitives in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
  * needs. Mirrors migrations 0001 (users), 0046 (users.email_verified_at and
- * users.plan), and 0048 (entitlement_daily_counters).
+ * users.plan), 0048 (entitlement_daily_counters), and 0066 (Stripe billing
+ * columns).
  */
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await db
@@ -14,12 +15,21 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 	password_hash TEXT NOT NULL,
 	email_verified_at TEXT,
 	plan TEXT,
+	stripe_customer_id TEXT,
+	stripe_plan TEXT,
+	stripe_plan_refreshed_at TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 )`,
 		)
 		.run()
-	for (const column of ['email_verified_at TEXT', 'plan TEXT']) {
+	for (const column of [
+		'email_verified_at TEXT',
+		'plan TEXT',
+		'stripe_customer_id TEXT',
+		'stripe_plan TEXT',
+		'stripe_plan_refreshed_at TEXT',
+	]) {
 		try {
 			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()
 		} catch {

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { planNames } from '#worker/entitlements/plans.ts'
 import { loadAdminUserByIdOrEmail } from '#app/admin-users-data.ts'
 import { loadAdminUserUsageData } from '#app/admin-user-usage-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -33,7 +34,7 @@ const entitlementResourceSchema = z.enum([
 	'storage_bytes',
 ])
 
-const planSchema = z.enum(['partner', 'personal', 'pro']).nullable()
+const planSchema = z.enum(planNames).nullable()
 
 const usageRollupSchema = z.object({
 	metric: usageMetricSchema,

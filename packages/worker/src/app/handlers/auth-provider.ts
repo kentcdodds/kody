@@ -51,6 +51,7 @@ import {
 import { createDb, oauthConnectionsTable, usersTable } from '#worker/db.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
+import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 /**
@@ -433,6 +434,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			// Non-production stays open without an invite, but still consumes
 			// one when supplied — same posture as password signup.
 			let consumedInviteCode: string | null = null
+			let consumedInvitePlan: PlanName | null = null
 			async function releaseConsumedInvite() {
 				if (!consumedInviteCode) return
 				await releaseInviteUse({
@@ -440,6 +442,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					code: consumedInviteCode,
 				})
 				consumedInviteCode = null
+				consumedInvitePlan = null
 			}
 
 			const inviteRequired = isInviteRequiredForSignup(env)
@@ -456,6 +459,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					)
 				}
 				consumedInviteCode = inviteResult.invite.code
+				consumedInvitePlan = parsePlanName(inviteResult.invite.plan)
 			}
 
 			// Username / stable-id lookup must share the create try/catch so a
@@ -477,6 +481,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						stable_user_id: stableUserId,
 						password_hash: oauthNoUsablePasswordHash,
 						email_verified_at: new Date().toISOString(),
+						...(consumedInvitePlan ? { plan: consumedInvitePlan } : {}),
 					},
 					{ returnRow: true },
 				)
@@ -567,7 +572,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					email,
 					ip: requestIp,
 					path: url.pathname,
-					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider}`,
+					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider};plan=${consumedInvitePlan ?? 'none'}`,
 				})
 			}
 			return issueLogin({ id: newUser.id, email })

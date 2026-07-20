@@ -126,7 +126,11 @@ function createWorkflowRunsDatabase(options?: {
 							if (query.includes('COUNT(*) AS count')) {
 								return { count: options?.activeCount ?? 0 }
 							}
-							if (query.includes('SELECT plan FROM users WHERE email = ?')) {
+							if (
+								query.includes(
+									'SELECT plan, stripe_plan FROM users WHERE email = ?',
+								)
+							) {
 								const email = String(params[0] ?? '')
 								const user = (options?.users ?? []).find(
 									(row) => row.email === email,
@@ -1052,8 +1056,8 @@ test('createDynamicCallableWorkflow enforces the per-user concurrent workflow li
 test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', async () => {
 	const email = 'plan-user@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxConcurrentWorkflows
-	if (limit == null) throw new Error('Expected personal plan workflow limit.')
+	const limit = planLimits.pro.maxConcurrentWorkflows
+	if (limit == null) throw new Error('Expected pro plan workflow limit.')
 	const binding = createStatefulWorkflowBinding()
 	const body = {
 		code: 'export default async function main() { return { ok: true } }',
@@ -1066,7 +1070,7 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 			env: {
 				APP_DB: createWorkflowRunsDatabase({
 					activeCount: limit,
-					users: [{ email, plan: 'personal' }],
+					users: [{ email, plan: 'pro' }],
 				}),
 				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
 			} as Env,
@@ -1086,7 +1090,7 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 	expect(denied.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'concurrent_workflows',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 		current: limit,
 	})
@@ -1096,7 +1100,7 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 		env: {
 			APP_DB: createWorkflowRunsDatabase({
 				activeCount: limit - 1,
-				users: [{ email, plan: 'personal' }],
+				users: [{ email, plan: 'pro' }],
 			}),
 			DYNAMIC_CALLABLE_WORKFLOWS: createStatefulWorkflowBinding().workflow,
 		} as Env,

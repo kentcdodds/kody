@@ -23,6 +23,14 @@ type SyncArtifactSourceInput = {
 	bootstrapAccess?: ArtifactBootstrapAccess | null
 	destructiveOverwriteConfirmed?: boolean
 	privateVisibilityChangeConfirmed?: boolean
+	/**
+	 * When set, package publish validates `package.json#name` against this
+	 * scope instead of skipping scope checks. Used for username-rename
+	 * rewrites that publish the new scope before `users.username` flips.
+	 */
+	expectedPackageScope?: string
+	/** Optional git commit message used when publishing an existing source. */
+	commitMessage?: string
 }
 
 function validateEntitySourceManifest(input: {
@@ -190,6 +198,12 @@ export async function syncArtifactSourceSnapshot(
 				: {}),
 			...(input.privateVisibilityChangeConfirmed === true
 				? { privateVisibilityChangeConfirmed: true }
+				: {}),
+			...(input.expectedPackageScope !== undefined
+				? { expectedPackageScope: input.expectedPackageScope }
+				: {}),
+			...(input.commitMessage !== undefined
+				? { commitMessage: input.commitMessage }
 				: {}),
 		})
 		if (publishResult.status !== 'ok') {

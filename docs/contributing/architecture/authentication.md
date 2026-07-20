@@ -94,6 +94,9 @@ The `invites` table stores operator-created invite codes:
   deletion does not strand invites)
 - `note`, `max_uses`, `use_count`, `expires_at`, `revoked_at`, and `created_at`
   describe current invite state
+- `plan` (nullable, migration `0065-invite-plans.sql`) is an optional signup
+  plan name; password and social signup copy a known value onto `users.plan`.
+  NULL keeps legacy/unlimited behavior. See [Entitlements](./entitlements.md).
 
 Production signup atomically consumes an invite with a single conditional
 `UPDATE ... WHERE use_count < max_uses AND revoked_at IS NULL ...`; concurrent
@@ -102,8 +105,8 @@ open when no invite is supplied, but they still consume and validate an invite
 when a code is provided so E2E coverage can exercise the same path.
 
 Admins manage invites at `/admin/invites`. The route uses the RBAC `admin` role
-guard, not an owner-scoped content bypass. Invite creation, use, and revocation
-emit audit events.
+guard, not an owner-scoped content bypass. Invite creation (including optional
+plan), use, and revocation emit audit events.
 
 The same admin page can create a user directly by email for manually invited
 people. That flow calls `adminCreateUserWithPasswordSetup` in

@@ -7,7 +7,7 @@
  * NULL (unlimited) so adding or renaming plans never locks users out.
  */
 
-export const planNames = ['partner', 'personal', 'pro'] as const
+export const planNames = ['free', 'partner', 'pro'] as const
 
 export type PlanName = (typeof planNames)[number]
 
@@ -16,6 +16,45 @@ export function parsePlanName(value: unknown): PlanName | null {
 		(planNames as ReadonlyArray<string>).includes(value)
 		? (value as PlanName)
 		: null
+}
+
+/**
+ * Rank order for comparing manual grants vs Stripe subscription plans.
+ * Higher rank wins. free(0) < pro(1) < partner(2).
+ */
+export function getPlanRank(plan: PlanName): number {
+	switch (plan) {
+		case 'free':
+			return 0
+		case 'pro':
+			return 1
+		case 'partner':
+			return 2
+		default: {
+			const exhaustive: never = plan
+			throw new Error(`Unknown plan: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * Effective plan for entitlement enforcement.
+ *
+ * - Manual plan NULL → effective NULL (legacy/unlimited always wins; a Stripe
+ *   subscription never downgrades a plan-less account into enforcement).
+ * - Otherwise the higher-ranked of manual and stripe plans.
+ * - Unknown/NULL stripe_plan contributes nothing.
+ */
+export function resolveEffectivePlan(
+	manualPlan: PlanName | null,
+	stripePlan: string | null,
+): PlanName | null {
+	if (!manualPlan) return null
+	const parsedStripe = parsePlanName(stripePlan)
+	if (!parsedStripe) return manualPlan
+	return getPlanRank(parsedStripe) > getPlanRank(manualPlan)
+		? parsedStripe
+		: manualPlan
 }
 
 export type PlanLimits = {
@@ -53,22 +92,24 @@ export type PlanLimits = {
 /**
  * Initial limit numbers are conservative placeholders chosen before usage
  * metering exists. They are expected to be tuned once metering data is
- * available, and are deliberately not tied to any billing integration.
+ * available. Billing (packages/worker/src/billing/) maps Stripe
+ * subscriptions onto these plan names but the limit numbers stay
+ * independent of pricing.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
-	personal: {
-		maxSavedPackages: 20,
-		maxScheduledJobs: 10,
-		maxPackageServices: 2,
+	free: {
+		maxSavedPackages: 5,
+		maxScheduledJobs: 3,
+		maxPackageServices: 1,
 		packageServicePersistentAllowed: false,
-		maxRepoSessions: 5,
-		maxEmailSendsPerDay: 20,
-		maxEmailReceivesPerDay: 200,
-		maxStoredEmailMessages: 2000,
-		maxEmailMessageBytes: 512 * 1024,
-		maxSecrets: 20,
-		maxStorageBytes: 256 * 1024 * 1024,
-		maxConcurrentWorkflows: 10,
+		maxRepoSessions: 2,
+		maxEmailSendsPerDay: 5,
+		maxEmailReceivesPerDay: 50,
+		maxStoredEmailMessages: 500,
+		maxEmailMessageBytes: 256 * 1024,
+		maxSecrets: 5,
+		maxStorageBytes: 64 * 1024 * 1024,
+		maxConcurrentWorkflows: 3,
 	},
 	pro: {
 		maxSavedPackages: 100,
@@ -140,9 +181,9 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
  * attacker-controlled (anyone can send to a `{username}@<platform domain>`
  * address) and outbound sending is an outreach-abuse surface — so unlike
  * other resources the NULL-plan invariant does not mean unlimited here:
- * plan-less users get these deployment-level backstops instead. The inbound
- * numbers match the `personal` plan; the send backstop sits between the
- * `personal` and `pro` send limits.
+ * plan-less users get these deployment-level backstops instead. The receive
+ * and storage numbers sit between the `free` and `pro` plan limits; the send
+ * backstop sits between `free` and `pro` send limits as well.
  */
 export const nullPlanEmailFallbackLimits = {
 	email_sends_per_day: 100,

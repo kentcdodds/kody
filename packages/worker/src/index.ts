@@ -55,6 +55,7 @@ import {
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
+import { refreshStaleStripePlans } from '#worker/billing/subscription-sync.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
@@ -526,6 +527,10 @@ const workerHandler = {
 						blobs: env.EMAIL_BLOBS,
 						now: scheduledAt,
 					}),
+			},
+			{
+				name: 'stripe_plan_refresh',
+				run: () => refreshStaleStripePlans({ env, now: scheduledAt }),
 			},
 		]
 		if (shouldRunRetentionCron(scheduledAt)) {

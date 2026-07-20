@@ -90,7 +90,7 @@ function createAdminUserUsageTestDb(input: {
 				async first<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan, stable_user_id from users where id = ?',
+							'select id, username, email, plan, stripe_plan, stable_user_id from users where id = ?',
 						)
 					) {
 						return (users.find((user) => user.id === Number(params[0])) ??
@@ -174,7 +174,7 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 				id: 1,
 				username: 'empty',
 				email,
-				plan: 'personal',
+				plan: 'pro',
 			},
 		],
 		resourceCounts: {
@@ -214,7 +214,7 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 				id: 2,
 				username: 'member',
 				email,
-				plan: 'personal',
+				plan: 'pro',
 			},
 		],
 		usageRollups: [
@@ -236,12 +236,12 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 				user_id: usageUserId,
 				resource: 'email_sends_per_day',
 				day: '2026-07-05',
-				count: 17,
+				count: 170,
 			},
 		],
 		resourceCounts: {
 			[usageUserId]: {
-				saved_packages: 18,
+				saved_packages: 85,
 				scheduled_jobs: 8,
 				package_services: 1,
 				repo_sessions: 2,

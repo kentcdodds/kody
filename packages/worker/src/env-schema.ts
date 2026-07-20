@@ -205,6 +205,13 @@ export const EnvSchema = object({
 	KIT_WAITLIST_TAG_ID: optionalNonEmptyStringSchema,
 	KIT_WAITLIST_SEQUENCE_ID: optionalNonEmptyStringSchema,
 	KIT_SIGNED_UP_TAG_ID: optionalNonEmptyStringSchema,
+	// Stripe billing — optional; when STRIPE_SECRET_KEY is unset, billing
+	// surfaces render a "not configured" notice and sync/cron/portal skip.
+	STRIPE_SECRET_KEY: optionalNonEmptyStringSchema,
+	// Override for tests/mocks; defaults to https://api.stripe.com.
+	STRIPE_API_BASE_URL: optionalUrlStringSchema,
+	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
+	STRIPE_PRO_PAYMENT_LINK: optionalUrlStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

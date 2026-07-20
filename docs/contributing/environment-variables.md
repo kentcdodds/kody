@@ -104,6 +104,26 @@ Optional Worker secrets / vars for the public `/signup` waiting-list form
 
 See [`architecture/authentication.md`](./architecture/authentication.md).
 
+## Stripe billing
+
+Optional Worker secret and vars for account subscription billing
+(`packages/worker/src/billing/`, routes under `/account/billing`). When
+`STRIPE_SECRET_KEY` is unset, billing is disabled: the account billing page
+shows plan info plus a "not configured" notice, and success/portal/cron skip
+safely. Manual `users.plan` grants and invite-assigned plans still work.
+
+- `STRIPE_SECRET_KEY` — Stripe secret API key. Required for checkout linking,
+  portal sessions, and `stripe_plan` refresh. Synced as a Worker secret from the
+  GitHub Actions secret of the same name on production deploy when set.
+- `STRIPE_API_BASE_URL` — optional API base URL; defaults to
+  `https://api.stripe.com` when unset. Override for tests/mocks.
+- `STRIPE_PRO_PRICE_ID` — Stripe Price id used to map active/trialing
+  subscriptions to the `pro` plan.
+- `STRIPE_PRO_PAYMENT_LINK` — Stripe Payment Link URL for checkout. Production
+  values are committed as Wrangler `vars` in `packages/worker/wrangler.jsonc`.
+
+See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
+
 ## Saved-secret encryption (`SECRET_STORE_KEY`)
 
 Required Worker secret used to derive the AES-GCM key for encrypting saved

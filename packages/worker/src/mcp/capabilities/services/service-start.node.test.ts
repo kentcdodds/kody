@@ -45,7 +45,7 @@ function createEntitlementsTestDb(input: {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
-							if (query.includes('SELECT plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								const user = users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
 							}
@@ -165,12 +165,12 @@ function buildRunningServices(count: number) {
 	}))
 }
 
-test('service_start denies persistent services for personal plan users', async () => {
+test('service_start denies persistent services for free plan users', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const env = {
 		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'personal' }],
+			users: [{ email, plan: 'free' }],
 		}),
 	} as Env
 	const callerContext = createPlanUserCallerContext({ userId, email })
@@ -193,7 +193,7 @@ test('service_start denies persistent services for personal plan users', async (
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'persistent_package_services',
-		plan: 'personal',
+		plan: 'free',
 		limit: 0,
 		current: 0,
 	})
@@ -202,13 +202,13 @@ test('service_start denies persistent services for personal plan users', async (
 test('service_start denies bounded starts at the package_services limit', async () => {
 	const email = 'bounded-limit@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxPackageServices
+	const limit = planLimits.pro.maxPackageServices
 	if (limit === null) {
-		throw new Error('Expected a numeric personal package service limit.')
+		throw new Error('Expected a numeric pro package service limit.')
 	}
 	const env = {
 		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'personal' }],
+			users: [{ email, plan: 'pro' }],
 			runningServices: buildRunningServices(limit),
 		}),
 	} as Env
@@ -232,7 +232,7 @@ test('service_start denies bounded starts at the package_services limit', async 
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'package_services',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 		current: limit,
 	})
@@ -241,13 +241,13 @@ test('service_start denies bounded starts at the package_services limit', async 
 test('service_start skips enforcement when the service is already running', async () => {
 	const email = 'running@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxPackageServices
+	const limit = planLimits.pro.maxPackageServices
 	if (limit === null) {
-		throw new Error('Expected a numeric personal package service limit.')
+		throw new Error('Expected a numeric pro package service limit.')
 	}
 	const env = {
 		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'personal' }],
+			users: [{ email, plan: 'pro' }],
 			runningServices: buildRunningServices(limit),
 		}),
 	} as Env
@@ -283,16 +283,16 @@ test('service_start skips enforcement when the service is already running', asyn
 test('service_start lets a stale running row for the same service restart at the limit', async () => {
 	const email = 'stale-restart@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxPackageServices
+	const limit = planLimits.pro.maxPackageServices
 	if (limit === null) {
-		throw new Error('Expected a numeric personal package service limit.')
+		throw new Error('Expected a numeric pro package service limit.')
 	}
 	// The target service itself holds one of the 'running' telemetry rows
 	// (stale after a hard eviction); excluding it keeps the restart under
 	// the limit.
 	const env = {
 		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'personal' }],
+			users: [{ email, plan: 'pro' }],
 			runningServices: [
 				...buildRunningServices(limit - 1),
 				{ packageId: 'package-123', name: 'realtime-supervisor' },
@@ -321,9 +321,9 @@ test('service_start lets a stale running row for the same service restart at the
 test('service_start stays unlimited for users without a plan', async () => {
 	const email = 'legacy@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxPackageServices
+	const limit = planLimits.pro.maxPackageServices
 	if (limit === null) {
-		throw new Error('Expected a numeric personal package service limit.')
+		throw new Error('Expected a numeric pro package service limit.')
 	}
 	const env = {
 		APP_DB: createEntitlementsTestDb({

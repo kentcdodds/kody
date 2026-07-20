@@ -596,16 +596,16 @@ test('update plan action sets, clears, validates, and scopes plan changes', asyn
 	const setPlanResponse = await postUpdatePlan({
 		action: 'update_plan',
 		userId: 2,
-		plan: 'personal',
+		plan: 'pro',
 	})
 	expect(setPlanResponse.status).toBe(200)
-	expect((await setPlanResponse.json()).users[0].plan).toBe('personal')
+	expect((await setPlanResponse.json()).users[0].plan).toBe('pro')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
 			action: 'update_plan',
 			result: 'success',
-			reason: 'target_user_id=2;plan=personal',
+			reason: 'target_user_id=2;plan=pro',
 		}),
 	)
 

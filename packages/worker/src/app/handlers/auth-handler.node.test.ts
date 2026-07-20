@@ -77,6 +77,7 @@ type TestUser = {
 	email: string
 	username: string
 	password_hash: string
+	plan: string | null
 }
 
 type TestInvite = {
@@ -85,6 +86,7 @@ type TestInvite = {
 	use_count: number
 	expires_at: string | null
 	revoked_at: string | null
+	plan: string | null
 }
 
 function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
@@ -110,25 +112,42 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 					}
 
 					const insertUser = () => {
-						const [username, email, passwordHash] = params as Array<string>
-						const normalizedEmail = String(email).toLowerCase()
+						const columnMatch = normalizedQuery.match(
+							/insert into "users" \(([^)]+)\)/,
+						)
+						const columns = columnMatch
+							? columnMatch[1]
+									.split(',')
+									.map((column) => column.trim().replaceAll('"', ''))
+							: []
+						const values = Object.fromEntries(
+							columns.map((column, index) => [column, params[index]]),
+						)
+						const username = String(values.username ?? '')
+						const email = String(values.email ?? '')
+						const passwordHash = String(values.password_hash ?? '')
+						const plan =
+							values.plan === undefined || values.plan === null
+								? null
+								: String(values.plan)
+						const normalizedEmail = email.toLowerCase()
 						if (users.has(normalizedEmail)) {
 							throw new Error('UNIQUE constraint failed: users.email')
 						}
 						if (
 							Array.from(users.values()).some(
 								(user) =>
-									user.username.toLowerCase() ===
-									String(username).toLowerCase(),
+									user.username.toLowerCase() === username.toLowerCase(),
 							)
 						) {
 							throw new Error('UNIQUE constraint failed: users.username')
 						}
 						const user: TestUser = {
 							id: nextId,
-							email: String(email),
-							username: String(username),
-							password_hash: String(passwordHash),
+							email,
+							username,
+							password_hash: passwordHash,
+							plan,
 						}
 						nextId += 1
 						users.set(normalizedEmail, user)
@@ -291,19 +310,21 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 			email,
 			username,
 			password_hash: passwordHash,
+			plan: null,
 		}
 		nextId += 1
 		users.set(email.toLowerCase(), user)
 		return user
 	}
 
-	function addInvite(code: string) {
+	function addInvite(code: string, plan: string | null = null) {
 		invites.set(code.toUpperCase(), {
 			code: code.toUpperCase(),
 			max_uses: 1,
 			use_count: 0,
 			expires_at: '2099-01-01T00:00:00.000Z',
 			revoked_at: null,
+			plan,
 		})
 	}
 
@@ -662,5 +683,53 @@ test('production signup fails closed when no verification email sender is config
 	expect(consoleInfo).toHaveBeenCalledWith(
 		'cloudflare-email-unconfigured',
 		expect.any(String),
+	)
+})
+
+test('signup consuming a plan invite sets users.plan', async () => {
+	const context = createAuthTestContext({ emailConfigured: true })
+	stubCloudflareEmailFetch({ ok: true })
+	context.testDb.addInvite('PLAN-PRO', 'pro')
+
+	const response = await context.request({
+		email: 'planned@example.com',
+		username: 'planned-user',
+		password: 'password123',
+		mode: 'signup',
+		inviteCode: 'plan-pro',
+	})
+	expect(response.status).toBe(200)
+	expect(context.testDb.users.get('planned@example.com')?.plan).toBe('pro')
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'invite_use',
+			result: 'success',
+			reason: expect.stringContaining('plan=pro'),
+		}),
+	)
+})
+
+test('signup consuming a plan-less invite leaves users.plan null', async () => {
+	const context = createAuthTestContext({ emailConfigured: true })
+	stubCloudflareEmailFetch({ ok: true })
+	context.testDb.addInvite('PLAN-NONE')
+
+	const response = await context.request({
+		email: 'legacy-invite@example.com',
+		username: 'legacy-invite-user',
+		password: 'password123',
+		mode: 'signup',
+		inviteCode: 'plan-none',
+	})
+	expect(response.status).toBe(200)
+	expect(context.testDb.users.get('legacy-invite@example.com')?.plan).toBeNull()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'invite_use',
+			result: 'success',
+			reason: expect.stringContaining('plan=none'),
+		}),
 	)
 })

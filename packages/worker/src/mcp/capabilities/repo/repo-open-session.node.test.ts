@@ -44,7 +44,7 @@ function createEntitlementsDatabase(input: {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
-							if (query.includes('SELECT plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								const user = input.users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
 							}
@@ -156,13 +156,13 @@ test('repo_open_session enforces the repo sessions entitlement for plan users op
 	resetMocks()
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxRepoSessions
+	const limit = planLimits.pro.maxRepoSessions
 	if (limit === null) {
-		throw new Error('Expected a numeric personal repo session limit.')
+		throw new Error('Expected a numeric pro repo session limit.')
 	}
 	const env = {
 		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'personal' }],
+			users: [{ email, plan: 'pro' }],
 			repoSessionCount: limit,
 		}),
 	} as Env
@@ -206,7 +206,7 @@ test('repo_open_session enforces the repo sessions entitlement for plan users op
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'repo_sessions',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 		current: limit,
 	})
@@ -217,13 +217,13 @@ test('repo_open_session resumes an existing active session without enforcing the
 	resetMocks()
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxRepoSessions
+	const limit = planLimits.pro.maxRepoSessions
 	if (limit === null) {
-		throw new Error('Expected a numeric personal repo session limit.')
+		throw new Error('Expected a numeric pro repo session limit.')
 	}
 	const env = {
 		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'personal' }],
+			users: [{ email, plan: 'pro' }],
 			repoSessionCount: limit,
 		}),
 	} as Env
@@ -275,9 +275,9 @@ test('repo_open_session stays unlimited for users without a plan', async () => {
 	resetMocks()
 	const email = 'legacy@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxRepoSessions
+	const limit = planLimits.pro.maxRepoSessions
 	if (limit === null) {
-		throw new Error('Expected a numeric personal repo session limit.')
+		throw new Error('Expected a numeric pro repo session limit.')
 	}
 	const env = {
 		APP_DB: createEntitlementsDatabase({

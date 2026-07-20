@@ -109,11 +109,13 @@ export type AdminInviteListItem = {
 	expiresAt: string | null
 	revokedAt: string | null
 	createdAt: string
+	plan: AdminPlanName | null
 }
 
 export type AdminInvitesLoaderData = {
 	ok: true
 	invites: Array<AdminInviteListItem>
+	availablePlans: Array<AdminPlanName>
 }
 
 export type AdminFeatureFlagsLoaderData = {
@@ -144,7 +146,7 @@ export type AdminUsageEntitlementResource =
 	| 'concurrent_workflows'
 	| 'storage_bytes'
 
-export type AdminPlanName = 'partner' | 'personal' | 'pro'
+export type AdminPlanName = 'free' | 'partner' | 'pro'
 
 export type AdminUsageRollup = {
 	metric: AdminUsageMetric
@@ -655,6 +657,21 @@ export type AppLoaderData = {
 	authProviders?: AuthProvidersLoaderData
 	emailVerification?: EmailVerificationLoaderData
 	oauthAuthorize?: OAuthAuthorizeLoaderData
+	accountBilling?: AccountBillingLoaderData
+}
+
+export type AccountBillingLoaderData = {
+	ok: true
+	configured: boolean
+	manualPlan: AdminPlanName | null
+	stripePlan: AdminPlanName | null
+	effectivePlan: AdminPlanName | null
+	hasStripeCustomer: boolean
+	cancelAt: string | null
+	paymentLinks: {
+		pro?: string
+	}
+	error?: string
 }
 
 export function getRequestUrl(request: Request) {

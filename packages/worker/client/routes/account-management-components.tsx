@@ -165,6 +165,7 @@ export function AccountManagementLinkNav(
 
 const accountNavItems = [
 	{ href: '/account', label: 'Overview' },
+	{ href: '/account/billing', label: 'Billing' },
 	{ href: '/account/packages', label: 'Packages' },
 	{ href: '/account/secrets', label: 'Secrets' },
 	{ href: '/account/integrations', label: 'Integrations' },

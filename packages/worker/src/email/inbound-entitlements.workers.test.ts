@@ -25,7 +25,7 @@ function createInboundEnv() {
 
 async function seedAccountWithPlan(input: {
 	email: string
-	plan: 'personal' | null
+	plan: 'free' | null
 	emailVerifiedAt?: string | null
 }) {
 	const username = `quota-${crypto.randomUUID().slice(0, 8)}`
@@ -136,19 +136,18 @@ async function readEmailReceivedRollup(userId: string) {
 		.first<{ event_count: number; error_count: number; total_bytes: number }>()
 }
 
-test('inbound email enforces personal-plan receive, storage, and size limits then stores under quota', async () => {
+test('inbound email enforces free-plan receive, storage, and size limits then stores under quota', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 
 	const receiveLimitEmail = `receive-limit-${crypto.randomUUID()}@example.com`
 	const receiveLimitUserId =
 		await createStableUserIdFromEmail(receiveLimitEmail)
-	const receiveLimit = planLimits.personal.maxEmailReceivesPerDay
-	if (receiveLimit === null)
-		throw new Error('Expected a numeric personal limit.')
+	const receiveLimit = planLimits.free.maxEmailReceivesPerDay
+	if (receiveLimit === null) throw new Error('Expected a numeric free limit.')
 	const { address: receiveLimitAddress } = await seedAccountWithPlan({
 		email: receiveLimitEmail,
-		plan: 'personal',
+		plan: 'free',
 	})
 	await setDailyReceiveCounter(receiveLimitUserId, receiveLimit)
 
@@ -178,11 +177,11 @@ test('inbound email enforces personal-plan receive, storage, and size limits the
 
 	const storageCapEmail = `storage-cap-${crypto.randomUUID()}@example.com`
 	const storageCapUserId = await createStableUserIdFromEmail(storageCapEmail)
-	const storageCap = planLimits.personal.maxStoredEmailMessages
-	if (storageCap === null) throw new Error('Expected a numeric personal cap.')
+	const storageCap = planLimits.free.maxStoredEmailMessages
+	if (storageCap === null) throw new Error('Expected a numeric free cap.')
 	const { address: storageCapAddress } = await seedAccountWithPlan({
 		email: storageCapEmail,
-		plan: 'personal',
+		plan: 'free',
 	})
 	await bulkInsertStoredMessages(storageCapUserId, storageCap)
 
@@ -208,12 +207,12 @@ test('inbound email enforces personal-plan receive, storage, and size limits the
 	const storageBytesEmail = `storage-bytes-${crypto.randomUUID()}@example.com`
 	const storageBytesUserId =
 		await createStableUserIdFromEmail(storageBytesEmail)
-	const storageBytesLimit = planLimits.personal.maxStorageBytes
+	const storageBytesLimit = planLimits.free.maxStorageBytes
 	if (storageBytesLimit === null)
-		throw new Error('Expected a numeric personal storage byte cap.')
+		throw new Error('Expected a numeric free storage byte cap.')
 	const { address: storageBytesAddress } = await seedAccountWithPlan({
 		email: storageBytesEmail,
-		plan: 'personal',
+		plan: 'free',
 	})
 	await insertStoredMessageBytes(storageBytesUserId, storageBytesLimit)
 
@@ -231,11 +230,11 @@ test('inbound email enforces personal-plan receive, storage, and size limits the
 
 	const oversizeEmail = `oversize-${crypto.randomUUID()}@example.com`
 	const oversizeUserId = await createStableUserIdFromEmail(oversizeEmail)
-	const maxBytes = planLimits.personal.maxEmailMessageBytes
+	const maxBytes = planLimits.free.maxEmailMessageBytes
 	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
 	const { address: oversizeAddress } = await seedAccountWithPlan({
 		email: oversizeEmail,
-		plan: 'personal',
+		plan: 'free',
 	})
 	const oversizeMessage = buildInboundMessage(oversizeAddress)
 	const oversizeBytes = maxBytes + 1
@@ -260,7 +259,7 @@ test('inbound email enforces personal-plan receive, storage, and size limits the
 	const underQuotaUserId = await createStableUserIdFromEmail(underQuotaEmail)
 	const { address: underQuotaAddress } = await seedAccountWithPlan({
 		email: underQuotaEmail,
-		plan: 'personal',
+		plan: 'free',
 	})
 	const underQuotaMessage = buildInboundMessage(underQuotaAddress)
 	await handleInboundEmail(underQuotaMessage, createInboundEnv())
@@ -305,9 +304,9 @@ test('inbound email stores at most five detailed rejection events per inbox per 
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const email = `rejection-bound-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.personal.maxEmailReceivesPerDay
-	if (limit === null) throw new Error('Expected a numeric personal limit.')
-	const { address } = await seedAccountWithPlan({ email, plan: 'personal' })
+	const limit = planLimits.free.maxEmailReceivesPerDay
+	if (limit === null) throw new Error('Expected a numeric free limit.')
+	const { address } = await seedAccountWithPlan({ email, plan: 'free' })
 	await setDailyReceiveCounter(userId, limit)
 
 	const attempts = maxDetailedEmailRejectionEventsPerDay + 3

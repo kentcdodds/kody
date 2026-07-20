@@ -1,3 +1,5 @@
+import { type PlanName } from '#worker/entitlements/plans.ts'
+
 export type InviteRecord = {
 	code: string
 	created_by: number | null
@@ -7,6 +9,7 @@ export type InviteRecord = {
 	expires_at: string | null
 	revoked_at: string | null
 	created_at: string
+	plan: string | null
 }
 
 export type InviteConsumeFailureReason =
@@ -45,7 +48,7 @@ export function generateInviteCode() {
 export async function getInviteByCode(db: D1Database, code: string) {
 	return db
 		.prepare(
-			`SELECT code, created_by, note, max_uses, use_count, expires_at, revoked_at, created_at
+			`SELECT code, created_by, note, max_uses, use_count, expires_at, revoked_at, created_at, plan
 			 FROM invites
 			 WHERE code = ?`,
 		)
@@ -56,7 +59,7 @@ export async function getInviteByCode(db: D1Database, code: string) {
 export async function listInvites(db: D1Database) {
 	const result = await db
 		.prepare(
-			`SELECT code, created_by, note, max_uses, use_count, expires_at, revoked_at, created_at
+			`SELECT code, created_by, note, max_uses, use_count, expires_at, revoked_at, created_at, plan
 			 FROM invites
 			 ORDER BY created_at DESC, code ASC
 			 LIMIT 200`,
@@ -72,6 +75,7 @@ export async function createInvite(input: {
 	note?: string | null
 	maxUses: number
 	expiresAt?: string | null
+	plan?: PlanName | null
 }) {
 	const code = normalizeInviteCode(input.code) ?? generateInviteCode()
 	if (!isValidInviteCode(code)) {
@@ -85,8 +89,8 @@ export async function createInvite(input: {
 
 	await input.db
 		.prepare(
-			`INSERT INTO invites (code, created_by, note, max_uses, expires_at)
-			 VALUES (?, ?, ?, ?, ?)`,
+			`INSERT INTO invites (code, created_by, note, max_uses, expires_at, plan)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			code,
@@ -94,6 +98,7 @@ export async function createInvite(input: {
 			input.note?.trim() ?? '',
 			input.maxUses,
 			input.expiresAt ?? null,
+			input.plan ?? null,
 		)
 		.run()
 

@@ -4,7 +4,7 @@ import { findUserAccountByStableUserId } from '#worker/entitlements/service.ts'
 import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
-async function seedAccount(email: string, plan: 'personal' | null) {
+async function seedAccount(email: string, plan: 'pro' | null) {
 	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, plan)
 			VALUES (?, ?, ?, ?, ?)`,
@@ -23,11 +23,11 @@ test('findUserAccountByStableUserId resolves accounts, caches hits, and recovers
 	await ensureEmailTestSchema(env.APP_DB)
 	const email = `reverse-lookup-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
-	await seedAccount(email, 'personal')
+	await seedAccount(email, 'pro')
 
 	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
 		email,
-		plan: 'personal',
+		plan: 'pro',
 		emailVerified: true,
 	})
 	await env.APP_DB.prepare(
