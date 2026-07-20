@@ -1,7 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	listSavedPackagesPage,
-	updateSavedPackage,
+	setSavedPackagePrivacy,
 } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
@@ -172,7 +172,7 @@ export async function backfillPackagePrivacy(input: {
 				})
 				const isPrivate = manifest.private === true
 				if (row.isPrivate === isPrivate) continue
-				const changed = await updateSavedPackage(input.env.APP_DB, {
+				const changed = await setSavedPackagePrivacy(input.env.APP_DB, {
 					userId: row.userId,
 					packageId: row.id,
 					isPrivate,

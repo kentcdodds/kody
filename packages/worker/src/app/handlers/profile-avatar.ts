@@ -8,7 +8,8 @@ import {
 import { getUserSocialRowByUsername } from '#worker/community/social-repo.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 
-const userAvatarCacheControl = 'public, max-age=31536000, immutable'
+const publicUserAvatarCacheControl = 'public, max-age=31536000, immutable'
+const privateUserAvatarCacheControl = 'private, no-store'
 
 export function createProfileAvatarHandler(env: Env) {
 	return {
@@ -47,7 +48,9 @@ export function createProfileAvatarHandler(env: Env) {
 			const contentType =
 				object.httpMetadata?.contentType ?? 'application/octet-stream'
 			const headers: Record<string, string> = {
-				'Cache-Control': userAvatarCacheControl,
+				'Cache-Control': isPublic
+					? publicUserAvatarCacheControl
+					: privateUserAvatarCacheControl,
 				'Content-Type': contentType,
 				'X-Content-Type-Options': 'nosniff',
 			}

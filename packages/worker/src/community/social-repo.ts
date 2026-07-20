@@ -2,10 +2,6 @@ import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import {
-	displayNameFromEmail,
-	getUsernameFormatValidationError,
-} from '#app/username.ts'
-import {
 	communityListingSelectColumns,
 	communityListingSourceJoin,
 	extractCommunityListingLikeTokens,
@@ -57,13 +53,10 @@ function mapUserSocialRow(row: Record<string, unknown>): UserSocialRow {
 export function resolveCommunityDisplayName(input: {
 	displayName: string | null
 	username: string
-	email: string
 }): string {
 	const trimmed = input.displayName?.trim()
 	if (trimmed) return trimmed
-	return getUsernameFormatValidationError(input.username)
-		? displayNameFromEmail(input.email)
-		: input.username
+	return input.username
 }
 
 export async function getUserSocialRowByUsername(
@@ -219,6 +212,7 @@ export async function countUserFollowing(
 	return Number(row?.count ?? 0)
 }
 
+// Keep in sync with maxFollowingCount in social-service.ts.
 const maxFolloweeIds = 2000
 
 export async function listFolloweeUserIds(
@@ -326,7 +320,7 @@ export async function listCommunityStargazers(
 ): Promise<Array<CommunityStargazer>> {
 	const rows = await db
 		.prepare(
-			`SELECT s.user_id, s.created_at, u.username, u.display_name, u.email,
+			`SELECT s.user_id, s.created_at, u.username, u.display_name,
 				u.avatar_key
 			FROM community_stars s
 			JOIN users u ON u.stable_user_id = s.user_id
@@ -339,7 +333,6 @@ export async function listCommunityStargazers(
 		.all<Record<string, unknown>>()
 	return (rows.results ?? []).map((row) => {
 		const username = String(row['username'])
-		const email = String(row['email'])
 		const displayName =
 			row['display_name'] == null ? null : String(row['display_name'])
 		return {
@@ -348,7 +341,6 @@ export async function listCommunityStargazers(
 			displayName: resolveCommunityDisplayName({
 				displayName,
 				username,
-				email,
 			}),
 			avatarKey: row['avatar_key'] == null ? null : String(row['avatar_key']),
 			starredAt: String(row['created_at']),
@@ -460,7 +452,6 @@ function mapActivityRow(
 	type: CommunityActivityEventType,
 ): CommunityActivityItem {
 	const username = String(row['username'])
-	const email = String(row['email'])
 	const displayName =
 		row['display_name'] == null ? null : String(row['display_name'])
 	return {
@@ -470,7 +461,6 @@ function mapActivityRow(
 		actorDisplayName: resolveCommunityDisplayName({
 			displayName,
 			username,
-			email,
 		}),
 		actorAvatarKey:
 			row['avatar_key'] == null ? null : String(row['avatar_key']),
@@ -507,83 +497,84 @@ export async function listCommunityActivityForActors(
 	const publicProfileClause = input.requirePublicActorProfile
 		? `AND u.profile_visibility = 'public'`
 		: ''
-	const items: Array<CommunityActivityItem> = []
+	const idChunks = chunkArray(input.actorUserIds, maxSqlBindingsPerChunk)
+	const chunkResults = await Promise.all(
+		idChunks.map(async (idChunk) => {
+			const placeholders = idChunk.map(() => '?').join(', ')
+			const items: Array<CommunityActivityItem> = []
 
-	for (const idChunk of chunkArray(
-		input.actorUserIds,
-		maxSqlBindingsPerChunk,
-	)) {
-		const placeholders = idChunk.map(() => '?').join(', ')
+			const [storedRows, forkRows, starRows] = await Promise.all([
+				db
+					.prepare(
+						`SELECT e.event_type AS event_type, e.actor_user_id AS actor_user_id,
+							e.created_at AS created_at, l.id AS listing_id, l.name AS listing_name,
+							l.kody_id AS listing_kody_id, u.username, u.display_name,
+							u.avatar_key
+						FROM community_activity_events e
+						JOIN community_listings l ON l.id = e.listing_id AND l.status = 'active'
+						JOIN users u ON u.stable_user_id = e.actor_user_id ${publicProfileClause}
+						WHERE e.actor_user_id IN (${placeholders})
+						ORDER BY e.created_at DESC
+						LIMIT ?`,
+					)
+					.bind(...idChunk, input.limit)
+					.all<Record<string, unknown>>(),
+				db
+					.prepare(
+						`SELECT 'listing_forked' AS event_type, f.forker_user_id AS actor_user_id,
+							f.created_at AS created_at, l.id AS listing_id, l.name AS listing_name,
+							l.kody_id AS listing_kody_id, u.username, u.display_name,
+							u.avatar_key
+						FROM community_forks f
+						JOIN community_listings l ON l.id = f.listing_id AND l.status = 'active'
+						JOIN saved_packages sp ON sp.id = f.forked_package_id
+							AND sp.user_id = f.forker_user_id
+							AND sp.is_private = 0
+						JOIN users u ON u.stable_user_id = f.forker_user_id ${publicProfileClause}
+						WHERE f.forker_user_id IN (${placeholders})
+						ORDER BY f.created_at DESC
+						LIMIT ?`,
+					)
+					.bind(...idChunk, input.limit)
+					.all<Record<string, unknown>>(),
+				db
+					.prepare(
+						`SELECT 'listing_starred' AS event_type, s.user_id AS actor_user_id,
+							s.created_at AS created_at, l.id AS listing_id, l.name AS listing_name,
+							l.kody_id AS listing_kody_id, u.username, u.display_name,
+							u.avatar_key
+						FROM community_stars s
+						JOIN community_listings l ON l.id = s.listing_id AND l.status = 'active'
+						JOIN users u ON u.stable_user_id = s.user_id ${publicProfileClause}
+						WHERE s.user_id IN (${placeholders})
+						ORDER BY s.created_at DESC
+						LIMIT ?`,
+					)
+					.bind(...idChunk, input.limit)
+					.all<Record<string, unknown>>(),
+			])
 
-		const [storedRows, forkRows, starRows] = await Promise.all([
-			db
-				.prepare(
-					`SELECT e.event_type AS event_type, e.actor_user_id AS actor_user_id,
-						e.created_at AS created_at, l.id AS listing_id, l.name AS listing_name,
-						l.kody_id AS listing_kody_id, u.username, u.display_name, u.email,
-						u.avatar_key
-					FROM community_activity_events e
-					JOIN community_listings l ON l.id = e.listing_id AND l.status = 'active'
-					JOIN users u ON u.stable_user_id = e.actor_user_id ${publicProfileClause}
-					WHERE e.actor_user_id IN (${placeholders})
-					ORDER BY e.created_at DESC
-					LIMIT ?`,
-				)
-				.bind(...idChunk, input.limit)
-				.all<Record<string, unknown>>(),
-			db
-				.prepare(
-					`SELECT 'listing_forked' AS event_type, f.forker_user_id AS actor_user_id,
-						f.created_at AS created_at, l.id AS listing_id, l.name AS listing_name,
-						l.kody_id AS listing_kody_id, u.username, u.display_name, u.email,
-						u.avatar_key
-					FROM community_forks f
-					JOIN community_listings l ON l.id = f.listing_id AND l.status = 'active'
-					JOIN saved_packages sp ON sp.id = f.forked_package_id
-						AND sp.user_id = f.forker_user_id
-						AND sp.is_private = 0
-					JOIN users u ON u.stable_user_id = f.forker_user_id ${publicProfileClause}
-					WHERE f.forker_user_id IN (${placeholders})
-					ORDER BY f.created_at DESC
-					LIMIT ?`,
-				)
-				.bind(...idChunk, input.limit)
-				.all<Record<string, unknown>>(),
-			db
-				.prepare(
-					`SELECT 'listing_starred' AS event_type, s.user_id AS actor_user_id,
-						s.created_at AS created_at, l.id AS listing_id, l.name AS listing_name,
-						l.kody_id AS listing_kody_id, u.username, u.display_name, u.email,
-						u.avatar_key
-					FROM community_stars s
-					JOIN community_listings l ON l.id = s.listing_id AND l.status = 'active'
-					JOIN users u ON u.stable_user_id = s.user_id ${publicProfileClause}
-					WHERE s.user_id IN (${placeholders})
-					ORDER BY s.created_at DESC
-					LIMIT ?`,
-				)
-				.bind(...idChunk, input.limit)
-				.all<Record<string, unknown>>(),
-		])
-
-		for (const row of storedRows.results ?? []) {
-			const eventType = String(row['event_type'])
-			if (
-				eventType !== 'listing_published' &&
-				eventType !== 'listing_updated'
-			) {
-				continue
+			for (const row of storedRows.results ?? []) {
+				const eventType = String(row['event_type'])
+				if (
+					eventType !== 'listing_published' &&
+					eventType !== 'listing_updated'
+				) {
+					continue
+				}
+				items.push(mapActivityRow(row, eventType))
 			}
-			items.push(mapActivityRow(row, eventType))
-		}
-		for (const row of forkRows.results ?? []) {
-			items.push(mapActivityRow(row, 'listing_forked'))
-		}
-		for (const row of starRows.results ?? []) {
-			items.push(mapActivityRow(row, 'listing_starred'))
-		}
-	}
+			for (const row of forkRows.results ?? []) {
+				items.push(mapActivityRow(row, 'listing_forked'))
+			}
+			for (const row of starRows.results ?? []) {
+				items.push(mapActivityRow(row, 'listing_starred'))
+			}
+			return items
+		}),
+	)
 
+	const items = chunkResults.flat()
 	items.sort(compareActivityItems)
 	return items.slice(0, input.limit)
 }
@@ -625,7 +616,7 @@ export async function countPublicSavedPackagesForUser(
 		.prepare(
 			`SELECT COUNT(*) AS count
 			FROM saved_packages
-			WHERE user_id = ? AND is_private = 0`,
+			WHERE user_id = ? AND is_private = 0 AND hidden = 0`,
 		)
 		.bind(userId)
 		.first<{ count: number }>()
@@ -652,7 +643,6 @@ const publicPackageSearchColumns = [
 	'kody_id',
 	'description',
 	'tags_json',
-	'search_text',
 ] as const
 
 export async function listPublicProfilePackages(
@@ -663,7 +653,7 @@ export async function listPublicProfilePackages(
 		limit: number
 	},
 ): Promise<Array<PublicProfilePackage>> {
-	const conditions = ['user_id = ?', 'is_private = 0']
+	const conditions = ['user_id = ?', 'is_private = 0', 'hidden = 0']
 	const bindings: Array<unknown> = [input.ownerStableUserId]
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {

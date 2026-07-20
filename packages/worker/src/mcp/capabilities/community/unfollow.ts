@@ -9,7 +9,7 @@ export const communityUnfollowCapability = defineDomainCapability(
 	{
 		name: 'community_unfollow',
 		description:
-			'Stop following a community user. Unfollowing when not following is a no-op.',
+			'Stop following a community user. Unfollowing when not following or when the username is unknown is a no-op.',
 		keywords: ['community', 'unfollow', 'follower', 'social', 'timeline'],
 		tags: ['community', 'follow'],
 		readOnly: false,

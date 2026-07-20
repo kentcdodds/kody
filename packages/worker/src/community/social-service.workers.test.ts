@@ -99,22 +99,25 @@ async function insertSavedPackage(input: {
 	kodyId: string
 	description?: string
 	tags?: Array<string>
+	searchText?: string
 	isPrivate: boolean
+	hidden?: boolean
 	updatedAt?: string
 }) {
 	await runSql(
 		`INSERT INTO saved_packages (
 			id, user_id, name, kody_id, description, tags_json, search_text,
 			source_id, has_app, hidden, is_private, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
 		input.id,
 		input.userId,
 		input.name,
 		input.kodyId,
 		input.description ?? `${input.kodyId} description`,
 		JSON.stringify(input.tags ?? ['social']),
-		`${input.kodyId} search`,
+		input.searchText ?? `${input.kodyId} search`,
 		`source-${input.id}`,
+		input.hidden ? 1 : 0,
 		input.isPrivate ? 1 : 0,
 		input.updatedAt ?? '2026-07-01T00:00:00.000Z',
 		input.updatedAt ?? '2026-07-01T00:00:00.000Z',
@@ -180,6 +183,15 @@ test('follow and unfollow enforce private profiles and self-follow', async () =>
 		followerUserId: alice.userId,
 		followeeUsername: bob.username,
 	})
+
+	// Unknown usernames are also a silent no-op (no existence oracle).
+	await expect(
+		unfollowCommunityUser({
+			env,
+			followerUserId: alice.userId,
+			followeeUsername: `missing${crypto.randomUUID().slice(0, 8)}`,
+		}),
+	).resolves.toBeUndefined()
 })
 
 test('star and unstar update starCount aggregates', async () => {
@@ -442,7 +454,7 @@ test('updateCommunityProfile validates display name and bio bounds', async () =>
 	expect(cleared?.visibility).toBe('public')
 })
 
-test('listPublicProfilePackages filters private packages and supports query', async () => {
+test('listPublicProfilePackages filters private/hidden packages and supports query', async () => {
 	const owner = await insertUser({
 		email: `pkgs-${crypto.randomUUID()}@example.com`,
 		username: `pkgs${crypto.randomUUID().slice(0, 8)}`,
@@ -468,12 +480,24 @@ test('listPublicProfilePackages filters private packages and supports query', as
 		updatedAt: '2026-07-03T00:00:00.000Z',
 	})
 	await insertSavedPackage({
+		id: `hidden-${crypto.randomUUID()}`,
+		userId: owner.userId,
+		name: `@${owner.username}/hidden-notes`,
+		kodyId: 'hidden-notes',
+		description: 'hidden diary helpers',
+		tags: ['notes'],
+		isPrivate: false,
+		hidden: true,
+		updatedAt: '2026-07-04T00:00:00.000Z',
+	})
+	await insertSavedPackage({
 		id: `other-${crypto.randomUUID()}`,
 		userId: owner.userId,
 		name: `@${owner.username}/calendar`,
 		kodyId: 'calendar',
 		description: 'schedule helpers',
 		tags: ['calendar'],
+		searchText: 'unique-search-oracle-token',
 		isPrivate: false,
 		updatedAt: '2026-07-01T00:00:00.000Z',
 	})
@@ -488,6 +512,12 @@ test('listPublicProfilePackages filters private packages and supports query', as
 		'public-notes',
 	])
 
+	const profile = await getCommunityProfileByUsername({
+		env,
+		username: owner.username,
+	})
+	expect(profile?.publicPackageCount).toBe(2)
+
 	const queried = await listPublicProfilePackages({
 		env,
 		ownerStableUserId: owner.userId,
@@ -495,4 +525,13 @@ test('listPublicProfilePackages filters private packages and supports query', as
 		limit: 10,
 	})
 	expect(queried.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
+
+	// search_text is not publicly searchable (substring-probing oracle).
+	const searchTextOnly = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		query: 'unique-search-oracle-token',
+		limit: 10,
+	})
+	expect(searchTextOnly).toEqual([])
 })

@@ -297,29 +297,33 @@ test('account export includes profile fields and social graph edges for either s
 
 	expect(accountExport.d1.user_follows.rows).toEqual([
 		expect.objectContaining({
-			follower_user_id: 'user-aaa',
-			followee_user_id: 'user-bbb',
+			follower_user_id: '[redacted]',
+			followee_user_id: 'user-aaa',
 		}),
 		expect.objectContaining({
-			follower_user_id: 'user-bbb',
-			followee_user_id: 'user-aaa',
+			follower_user_id: 'user-aaa',
+			followee_user_id: '[redacted]',
 		}),
 	])
 	expect(
 		accountExport.d1.user_follows.rows.some(
 			(row) =>
-				row.follower_user_id === 'user-bbb' &&
+				row.follower_user_id === 'user-bbb' ||
+				row.followee_user_id === 'user-bbb' ||
 				row.followee_user_id === 'user-ccc',
 		),
 	).toBe(false)
 
 	expect(accountExport.d1.community_stars.rows).toEqual([
-		expect.objectContaining({ listing_id: 'listing-a', user_id: 'user-bbb' }),
+		expect.objectContaining({
+			listing_id: 'listing-a',
+			user_id: '[redacted]',
+		}),
 		expect.objectContaining({ listing_id: 'listing-b', user_id: 'user-aaa' }),
 	])
 	expect(
 		accountExport.d1.community_stars.rows.some(
-			(row) => row.listing_id === 'listing-b' && row.user_id === 'user-bbb',
+			(row) => row.user_id === 'user-bbb',
 		),
 	).toBe(false)
 
@@ -331,13 +335,13 @@ test('account export includes profile fields and social graph edges for either s
 		}),
 		expect.objectContaining({
 			id: 'evt-b',
-			actor_user_id: 'user-bbb',
+			actor_user_id: '[redacted]',
 			listing_id: 'listing-a',
 		}),
 	])
 	expect(
 		accountExport.d1.community_activity_events.rows.some(
-			(row) => row.id === 'evt-c',
+			(row) => row.id === 'evt-c' || row.actor_user_id === 'user-bbb',
 		),
 	).toBe(false)
 

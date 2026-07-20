@@ -34,7 +34,8 @@ import {
 	type PublicProfilePackage,
 } from './types.ts'
 
-const maxFollowingCount = 5000
+// Keep in sync with maxFolloweeIds in social-repo.ts.
+const maxFollowingCount = 2000
 const maxDisplayNameLength = 50
 const maxBioLength = 500
 
@@ -59,7 +60,6 @@ function toCommunityProfileRecord(input: {
 		displayName: resolveCommunityDisplayName({
 			displayName: input.row.display_name,
 			username: input.row.username,
-			email: input.row.email,
 		}),
 		bio: input.row.bio,
 		avatarKey: input.row.avatar_key,
@@ -233,9 +233,9 @@ export async function unfollowCommunityUser(input: {
 		input.env.APP_DB,
 		input.followeeUsername,
 	)
-	if (!followee) {
-		throw new CommunityActionError('This profile is not available.')
-	}
+	// Unknown usernames are a silent no-op (same as unfollowing someone you
+	// do not follow) so unfollow cannot be used as a username existence oracle.
+	if (!followee) return
 	const followeeUserId = await resolveStableUserIdFromRow(followee)
 	await deleteUserFollow(input.env.APP_DB, {
 		followerUserId: input.followerUserId,
