@@ -169,21 +169,21 @@ test('createInvite stores plan and roundtrips through getInviteByCode and listIn
 		createdBy: 7,
 		note: 'personal cohort',
 		maxUses: 3,
-		plan: 'personal',
+		plan: 'pro',
 	})
 
-	expect(created.plan).toBe('personal')
+	expect(created.plan).toBe('pro')
 	await expect(getInviteByCode(db, 'PLAN-PERSONAL')).resolves.toEqual(
 		expect.objectContaining({
 			code: 'PLAN-PERSONAL',
-			plan: 'personal',
+			plan: 'pro',
 			max_uses: 3,
 		}),
 	)
 	await expect(listInvites(db)).resolves.toEqual([
 		expect.objectContaining({
 			code: 'PLAN-PERSONAL',
-			plan: 'personal',
+			plan: 'pro',
 		}),
 	])
 })

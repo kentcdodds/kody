@@ -23,7 +23,6 @@ function jsonResponse(body: unknown, status = 200) {
 function createBillingEnv(
 	overrides: {
 		STRIPE_SECRET_KEY?: string
-		STRIPE_PERSONAL_PRICE_ID?: string
 		STRIPE_PRO_PRICE_ID?: string
 		STRIPE_API_BASE_URL?: string
 	} = {},
@@ -31,7 +30,6 @@ function createBillingEnv(
 	return {
 		...env,
 		STRIPE_SECRET_KEY: 'sk_test_secret',
-		STRIPE_PERSONAL_PRICE_ID: 'price_personal',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 		STRIPE_API_BASE_URL: 'https://stripe.mock',
 		...overrides,
@@ -130,7 +128,7 @@ function stubStripeFetch(input: {
 
 test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_plan', async () => {
 	const email = `link-happy-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({ email, plan: 'personal' })
+	const user = await seedUser({ email, plan: 'pro' })
 	const now = new Date('2026-07-19T12:00:00.000Z')
 	stubStripeFetch({
 		checkout: {
@@ -258,7 +256,7 @@ test('linkStripeCustomerFromCheckoutSession refuses to replace an established li
 	const user = await seedUser({
 		email,
 		stripeCustomerId: 'cus_original',
-		stripePlan: 'personal',
+		stripePlan: 'pro',
 	})
 	stubStripeFetch({
 		checkout: {
@@ -282,7 +280,7 @@ test('linkStripeCustomerFromCheckoutSession refuses to replace an established li
 	expect(error.code).toBe('account_already_linked')
 	expect(await readUserBilling(user.id)).toMatchObject({
 		stripe_customer_id: 'cus_original',
-		stripe_plan: 'personal',
+		stripe_plan: 'pro',
 	})
 })
 
@@ -293,7 +291,7 @@ test('refreshStaleStripePlans refreshes stale linked customers', async () => {
 	const user = await seedUser({
 		email,
 		stripeCustomerId: 'cus_stale',
-		stripePlan: 'personal',
+		stripePlan: 'pro',
 		stripePlanRefreshedAt: staleAt,
 	})
 	stubStripeFetch({

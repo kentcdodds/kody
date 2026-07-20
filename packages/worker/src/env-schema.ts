@@ -210,9 +210,7 @@ export const EnvSchema = object({
 	STRIPE_SECRET_KEY: optionalNonEmptyStringSchema,
 	// Override for tests/mocks; defaults to https://api.stripe.com.
 	STRIPE_API_BASE_URL: optionalUrlStringSchema,
-	STRIPE_PERSONAL_PRICE_ID: optionalNonEmptyStringSchema,
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
-	STRIPE_PERSONAL_PAYMENT_LINK: optionalUrlStringSchema,
 	STRIPE_PRO_PAYMENT_LINK: optionalUrlStringSchema,
 })
 

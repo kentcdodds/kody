@@ -2,7 +2,6 @@ import { type AccountBillingLoaderData } from '#app/loader-data.ts'
 import {
 	buildPaymentLinkUrl,
 	createBillingLinkReference,
-	getPersonalPaymentLink,
 	getProPaymentLink,
 	isBillingConfigured,
 } from '#worker/billing/billing-config.ts'
@@ -102,28 +101,18 @@ export async function loadAccountBillingData(input: {
 		}
 	}
 
-	const personalBase = getPersonalPaymentLink(input.env)
 	const proBase = getProPaymentLink(input.env)
 	const paymentLinks: AccountBillingLoaderData['paymentLinks'] = {}
-	if (personalBase || proBase) {
+	if (proBase) {
 		const clientReferenceId = await createBillingLinkReference(
 			input.env,
 			input.stableUserId,
 		)
-		if (personalBase) {
-			paymentLinks.personal = buildPaymentLinkUrl({
-				baseUrl: personalBase,
-				clientReferenceId,
-				email: input.email,
-			})
-		}
-		if (proBase) {
-			paymentLinks.pro = buildPaymentLinkUrl({
-				baseUrl: proBase,
-				clientReferenceId,
-				email: input.email,
-			})
-		}
+		paymentLinks.pro = buildPaymentLinkUrl({
+			baseUrl: proBase,
+			clientReferenceId,
+			email: input.email,
+		})
 	}
 
 	return {

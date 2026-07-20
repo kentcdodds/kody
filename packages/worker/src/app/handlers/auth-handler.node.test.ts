@@ -689,23 +689,23 @@ test('production signup fails closed when no verification email sender is config
 test('signup consuming a plan invite sets users.plan', async () => {
 	const context = createAuthTestContext({ emailConfigured: true })
 	stubCloudflareEmailFetch({ ok: true })
-	context.testDb.addInvite('PLAN-PERSONAL', 'personal')
+	context.testDb.addInvite('PLAN-PRO', 'pro')
 
 	const response = await context.request({
 		email: 'planned@example.com',
 		username: 'planned-user',
 		password: 'password123',
 		mode: 'signup',
-		inviteCode: 'plan-personal',
+		inviteCode: 'plan-pro',
 	})
 	expect(response.status).toBe(200)
-	expect(context.testDb.users.get('planned@example.com')?.plan).toBe('personal')
+	expect(context.testDb.users.get('planned@example.com')?.plan).toBe('pro')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'invite_use',
 			result: 'success',
-			reason: expect.stringContaining('plan=personal'),
+			reason: expect.stringContaining('plan=pro'),
 		}),
 	)
 })

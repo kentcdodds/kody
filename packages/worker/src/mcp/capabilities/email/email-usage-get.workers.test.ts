@@ -12,7 +12,7 @@ import { emailUsageGetCapability } from './email-usage-get.ts'
 
 async function seedUser(input: {
 	email: string
-	plan: 'personal' | null
+	plan: 'pro' | null
 	emailVerifiedAt?: string | null
 }) {
 	await env.APP_DB.prepare(
@@ -98,7 +98,7 @@ test('email_usage_get returns usage for verified users and enforces auth require
 
 	const planEmail = `usage-plan-${crypto.randomUUID()}@example.com`
 	const planUserId = await createStableUserIdFromEmail(planEmail)
-	await seedUser({ email: planEmail, plan: 'personal' })
+	await seedUser({ email: planEmail, plan: 'pro' })
 	await seedDailyCounter({
 		userId: planUserId,
 		resource: 'email_sends_per_day',
@@ -122,18 +122,18 @@ test('email_usage_get returns usage for verified users and enforces auth require
 		},
 	)
 	expect(planResult).toEqual({
-		plan: 'personal',
+		plan: 'pro',
 		day: utcDayKey(),
 		stored_messages: {
 			count: 2,
-			limit: planLimits.personal.maxStoredEmailMessages,
+			limit: planLimits.pro.maxStoredEmailMessages,
 		},
-		sends_today: { count: 3, limit: planLimits.personal.maxEmailSendsPerDay },
+		sends_today: { count: 3, limit: planLimits.pro.maxEmailSendsPerDay },
 		receives_today: {
 			count: 5,
-			limit: planLimits.personal.maxEmailReceivesPerDay,
+			limit: planLimits.pro.maxEmailReceivesPerDay,
 		},
-		max_message_bytes: planLimits.personal.maxEmailMessageBytes,
+		max_message_bytes: planLimits.pro.maxEmailMessageBytes,
 	})
 
 	const nullPlanEmail = `usage-null-plan-${crypto.randomUUID()}@example.com`

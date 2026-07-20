@@ -146,7 +146,7 @@ export type AdminUsageEntitlementResource =
 	| 'concurrent_workflows'
 	| 'storage_bytes'
 
-export type AdminPlanName = 'free' | 'partner' | 'personal' | 'pro'
+export type AdminPlanName = 'free' | 'partner' | 'pro'
 
 export type AdminUsageRollup = {
 	metric: AdminUsageMetric
@@ -669,7 +669,6 @@ export type AccountBillingLoaderData = {
 	hasStripeCustomer: boolean
 	cancelAt: string | null
 	paymentLinks: {
-		personal?: string
 		pro?: string
 	}
 	error?: string

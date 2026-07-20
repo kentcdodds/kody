@@ -7,7 +7,7 @@
  * NULL (unlimited) so adding or renaming plans never locks users out.
  */
 
-export const planNames = ['free', 'partner', 'personal', 'pro'] as const
+export const planNames = ['free', 'partner', 'pro'] as const
 
 export type PlanName = (typeof planNames)[number]
 
@@ -20,18 +20,16 @@ export function parsePlanName(value: unknown): PlanName | null {
 
 /**
  * Rank order for comparing manual grants vs Stripe subscription plans.
- * Higher rank wins. free(0) < personal(1) < pro(2) < partner(3).
+ * Higher rank wins. free(0) < pro(1) < partner(2).
  */
 export function getPlanRank(plan: PlanName): number {
 	switch (plan) {
 		case 'free':
 			return 0
-		case 'personal':
-			return 1
 		case 'pro':
-			return 2
+			return 1
 		case 'partner':
-			return 3
+			return 2
 		default: {
 			const exhaustive: never = plan
 			throw new Error(`Unknown plan: ${String(exhaustive)}`)
@@ -113,20 +111,6 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxStorageBytes: 64 * 1024 * 1024,
 		maxConcurrentWorkflows: 3,
 	},
-	personal: {
-		maxSavedPackages: 20,
-		maxScheduledJobs: 10,
-		maxPackageServices: 2,
-		packageServicePersistentAllowed: false,
-		maxRepoSessions: 5,
-		maxEmailSendsPerDay: 20,
-		maxEmailReceivesPerDay: 200,
-		maxStoredEmailMessages: 2000,
-		maxEmailMessageBytes: 512 * 1024,
-		maxSecrets: 20,
-		maxStorageBytes: 256 * 1024 * 1024,
-		maxConcurrentWorkflows: 10,
-	},
 	pro: {
 		maxSavedPackages: 100,
 		maxScheduledJobs: 50,
@@ -197,9 +181,9 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
  * attacker-controlled (anyone can send to a `{username}@<platform domain>`
  * address) and outbound sending is an outreach-abuse surface — so unlike
  * other resources the NULL-plan invariant does not mean unlimited here:
- * plan-less users get these deployment-level backstops instead. The inbound
- * numbers match the `personal` plan; the send backstop sits between the
- * `personal` and `pro` send limits.
+ * plan-less users get these deployment-level backstops instead. The receive
+ * and storage numbers sit between the `free` and `pro` plan limits; the send
+ * backstop sits between `free` and `pro` send limits as well.
  */
 export const nullPlanEmailFallbackLimits = {
 	email_sends_per_day: 100,

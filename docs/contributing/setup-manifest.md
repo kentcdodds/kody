@@ -137,12 +137,11 @@ automatically:
   to manual plans.)
 - `STRIPE_API_BASE_URL` (optional; defaults to `https://api.stripe.com`.
   Override for tests/mocks.)
-- `STRIPE_PERSONAL_PRICE_ID` / `STRIPE_PRO_PRICE_ID` (optional Worker vars;
-  Stripe Price ids mapped to the `personal` / `pro` plans. Production values are
-  set in `packages/worker/wrangler.jsonc`.)
-- `STRIPE_PERSONAL_PAYMENT_LINK` / `STRIPE_PRO_PAYMENT_LINK` (optional Worker
-  vars; Stripe Payment Link URLs for `/account/billing` checkout. Production
-  values are set in `packages/worker/wrangler.jsonc`.)
+- `STRIPE_PRO_PRICE_ID` (optional Worker var; Stripe Price id mapped to the
+  `pro` plan. Production value is set in `packages/worker/wrangler.jsonc`.)
+- `STRIPE_PRO_PAYMENT_LINK` (optional Worker var; Stripe Payment Link URL for
+  `/account/billing` checkout. Production value is set in
+  `packages/worker/wrangler.jsonc`.)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.

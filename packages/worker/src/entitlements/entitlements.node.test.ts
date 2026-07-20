@@ -257,8 +257,8 @@ test('getUserPlan resolves plans through hashed email and short-circuits invalid
 
 test('assertWithinEntitlement passes under the limit, throws at it, and skips counting without a plan', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const limit = planLimits.personal.maxScheduledJobs
-	if (limit === null) throw new Error('Expected a numeric personal job limit.')
+	const limit = planLimits.free.maxScheduledJobs
+	if (limit === null) throw new Error('Expected a numeric free job limit.')
 
 	const noPlan = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: null }],
@@ -274,7 +274,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and skips co
 	expect(noPlan.queries[0]).toContain('SELECT plan, stripe_plan FROM users')
 
 	const under = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'personal' }],
+		users: [{ email: plannedEmail, plan: 'free' }],
 		counts: { jobs: limit - 1 },
 	})
 	await assertWithinEntitlement({
@@ -285,7 +285,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and skips co
 	})
 
 	const at = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'personal' }],
+		users: [{ email: plannedEmail, plan: 'free' }],
 		counts: { jobs: limit },
 	})
 	const error = await assertWithinEntitlement({
@@ -303,7 +303,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and skips co
 	expect(error.details).toEqual({
 		code: 'entitlement_limit_exceeded',
 		resource: 'scheduled_jobs',
-		plan: 'personal',
+		plan: 'free',
 		limit,
 		current: limit,
 		upgradeHint: error.details.upgradeHint,
@@ -337,11 +337,11 @@ test('assertWithinEntitlement applies fallbackLimit for plan-less users', async 
 
 test('persistent package services are gated as a zero limit', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
-	expect(resolvePlanLimit('personal', 'persistent_package_services')).toBe(0)
+	expect(resolvePlanLimit('free', 'persistent_package_services')).toBe(0)
 	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBeNull()
 
 	const { db } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'personal' }],
+		users: [{ email: plannedEmail, plan: 'free' }],
 	})
 	const denied = await assertWithinEntitlement({
 		db,
@@ -375,11 +375,11 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const now = new Date('2026-07-05T15:00:00.000Z')
 	const { db, counters } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'personal' }],
+		users: [{ email: plannedEmail, plan: 'free' }],
 	})
 	expect(utcDayKey(now)).toBe('2026-07-05')
 
-	const limit = planLimits.personal.maxEmailSendsPerDay
+	const limit = planLimits.free.maxEmailSendsPerDay
 	if (limit === null) throw new Error('Expected a numeric email send limit.')
 	for (let index = 0; index < limit; index += 1) {
 		await assertWithinEntitlement({
@@ -431,7 +431,7 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 	expect(denied.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'email_sends_per_day',
-		plan: 'personal',
+		plan: 'free',
 		limit,
 		current: limit,
 	})
@@ -458,7 +458,7 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 
 test('plan-less users count uncapped sends but honor fallback receive limits', async () => {
 	const { db, counters } = createEntitlementsTestDb()
-	const sendLimit = planLimits.personal.maxEmailSendsPerDay
+	const sendLimit = planLimits.free.maxEmailSendsPerDay
 	if (sendLimit === null)
 		throw new Error('Expected a numeric email send limit.')
 	const now = new Date('2026-07-05T15:00:00.000Z')
@@ -514,9 +514,9 @@ test('plan-less users count uncapped sends but honor fallback receive limits', a
 test('requested units and getCurrent overrides are honored', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const { db } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'personal' }],
+		users: [{ email: plannedEmail, plan: 'pro' }],
 	})
-	const maxBytes = planLimits.personal.maxEmailMessageBytes
+	const maxBytes = planLimits.pro.maxEmailMessageBytes
 	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
 
 	const oversized = await assertWithinEntitlement({
@@ -561,7 +561,7 @@ test('requested units and getCurrent overrides are honored', async () => {
 		email: plannedEmail,
 		resource: 'saved_packages',
 		requested: 5,
-		getCurrent: async () => 17,
+		getCurrent: async () => 97,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -571,8 +571,8 @@ test('requested units and getCurrent overrides are honored', async () => {
 	}
 	expect(overSavedPackages.details).toMatchObject({
 		resource: 'saved_packages',
-		limit: 20,
-		current: 17,
+		limit: 100,
+		current: 97,
 	})
 	await assertWithinEntitlement({
 		db,
@@ -580,15 +580,14 @@ test('requested units and getCurrent overrides are honored', async () => {
 		email: plannedEmail,
 		resource: 'saved_packages',
 		requested: 3,
-		getCurrent: async () => 17,
+		getCurrent: async () => 97,
 	})
 })
 
 test('storage bytes enforce for planned users and skip NULL-plan users', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const limit = planLimits.personal.maxStorageBytes
-	if (limit === null)
-		throw new Error('Expected a numeric personal storage cap.')
+	const limit = planLimits.pro.maxStorageBytes
+	if (limit === null) throw new Error('Expected a numeric pro storage cap.')
 
 	const noPlan = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: null }],
@@ -604,7 +603,7 @@ test('storage bytes enforce for planned users and skip NULL-plan users', async (
 	expect(noPlan.queries[0]).toContain('SELECT plan, stripe_plan FROM users')
 
 	const atLimit = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'personal' }],
+		users: [{ email: plannedEmail, plan: 'pro' }],
 		counts: { email_messages: limit },
 	})
 	const denied = await assertWithinStorageBytesEntitlement({
@@ -622,13 +621,13 @@ test('storage bytes enforce for planned users and skip NULL-plan users', async (
 	expect(denied.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'storage_bytes',
-		plan: 'personal',
+		plan: 'pro',
 		limit,
 		current: limit,
 	})
 
 	const underLimit = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'personal' }],
+		users: [{ email: plannedEmail, plan: 'pro' }],
 		counts: { email_messages: limit - 1 },
 	})
 	await assertWithinStorageBytesEntitlement({
@@ -639,57 +638,56 @@ test('storage bytes enforce for planned users and skip NULL-plan users', async (
 	})
 })
 
-test('getPlanRank orders free < personal < pro < partner', () => {
-	expect(getPlanRank('free')).toBeLessThan(getPlanRank('personal'))
-	expect(getPlanRank('personal')).toBeLessThan(getPlanRank('pro'))
+test('getPlanRank orders free < pro < partner', () => {
+	expect(getPlanRank('free')).toBeLessThan(getPlanRank('pro'))
 	expect(getPlanRank('pro')).toBeLessThan(getPlanRank('partner'))
 })
 
 test('resolveEffectivePlan never downgrades a NULL manual plan', () => {
 	expect(resolveEffectivePlan(null, 'pro')).toBeNull()
-	expect(resolveEffectivePlan(null, 'personal')).toBeNull()
+	expect(resolveEffectivePlan(null, 'partner')).toBeNull()
 	expect(resolveEffectivePlan(null, null)).toBeNull()
 	expect(resolveEffectivePlan(null, 'unknown')).toBeNull()
 })
 
 test('resolveEffectivePlan picks the higher of manual and stripe plans', () => {
-	expect(resolveEffectivePlan('personal', 'pro')).toBe('pro')
-	expect(resolveEffectivePlan('pro', 'personal')).toBe('pro')
-	expect(resolveEffectivePlan('free', 'personal')).toBe('personal')
+	expect(resolveEffectivePlan('free', 'pro')).toBe('pro')
+	expect(resolveEffectivePlan('pro', 'free')).toBe('pro')
+	expect(resolveEffectivePlan('free', 'partner')).toBe('partner')
 	expect(resolveEffectivePlan('partner', 'pro')).toBe('partner')
-	expect(resolveEffectivePlan('personal', null)).toBe('personal')
-	expect(resolveEffectivePlan('personal', 'not-a-plan')).toBe('personal')
+	expect(resolveEffectivePlan('pro', null)).toBe('pro')
+	expect(resolveEffectivePlan('pro', 'not-a-plan')).toBe('pro')
+	expect(resolveEffectivePlan('pro', 'personal')).toBe('pro')
 })
 
-test('free plan limits are stricter than personal', () => {
+test('free plan limits are stricter than pro', () => {
 	expect(planLimits.free.maxSavedPackages).toBe(5)
 	expect(planLimits.free.maxScheduledJobs).toBe(3)
 	expect(planLimits.free.maxPackageServices).toBe(1)
 	expect(planLimits.free.packageServicePersistentAllowed).toBe(false)
 	expect(planLimits.free.maxSavedPackages).toBeLessThan(
-		planLimits.personal.maxSavedPackages!,
+		planLimits.pro.maxSavedPackages!,
 	)
 	expect(planLimits.free.maxScheduledJobs).toBeLessThan(
-		planLimits.personal.maxScheduledJobs!,
+		planLimits.pro.maxScheduledJobs!,
 	)
 	expect(resolvePlanLimit('free', 'persistent_package_services')).toBe(0)
 	expect(resolvePlanLimit('free', 'saved_packages')).toBe(5)
 })
 
 test('getUserPlan resolves effective plan from manual plan and stripe_plan', async () => {
-	const personalPlusProEmail = 'manual-personal-stripe-pro@example.com'
+	const freePlusProEmail = 'manual-free-stripe-pro@example.com'
 	const nullPlusProEmail = 'manual-null-stripe-pro@example.com'
-	const proPlusPersonalEmail = 'manual-pro-stripe-personal@example.com'
-	const personalPlusProUserId =
-		await createStableUserIdFromEmail(personalPlusProEmail)
+	const proPlusPartnerEmail = 'manual-pro-stripe-partner@example.com'
+	const freePlusProUserId = await createStableUserIdFromEmail(freePlusProEmail)
 	const nullPlusProUserId = await createStableUserIdFromEmail(nullPlusProEmail)
-	const proPlusPersonalUserId =
-		await createStableUserIdFromEmail(proPlusPersonalEmail)
+	const proPlusPartnerUserId =
+		await createStableUserIdFromEmail(proPlusPartnerEmail)
 	const { db } = createEntitlementsTestDb({
 		users: [
 			{
-				email: personalPlusProEmail,
-				plan: 'personal',
+				email: freePlusProEmail,
+				plan: 'free',
 				stripe_plan: 'pro',
 			},
 			{
@@ -698,17 +696,17 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 				stripe_plan: 'pro',
 			},
 			{
-				email: proPlusPersonalEmail,
+				email: proPlusPartnerEmail,
 				plan: 'pro',
-				stripe_plan: 'personal',
+				stripe_plan: 'partner',
 			},
 		],
 	})
 
 	expect(
 		await getUserPlan(db, {
-			userId: personalPlusProUserId,
-			email: personalPlusProEmail,
+			userId: freePlusProUserId,
+			email: freePlusProEmail,
 		}),
 	).toBe('pro')
 	expect(
@@ -719,8 +717,8 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 	).toBeNull()
 	expect(
 		await getUserPlan(db, {
-			userId: proPlusPersonalUserId,
-			email: proPlusPersonalEmail,
+			userId: proPlusPartnerUserId,
+			email: proPlusPartnerEmail,
 		}),
-	).toBe('pro')
+	).toBe('partner')
 })

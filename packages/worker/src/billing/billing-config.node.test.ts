@@ -34,13 +34,13 @@ test('isBillingConfigured requires a non-empty STRIPE_SECRET_KEY', () => {
 
 test('buildPaymentLinkUrl appends client_reference_id and prefilled_email', () => {
 	const url = buildPaymentLinkUrl({
-		baseUrl: 'https://buy.stripe.com/test_personal',
+		baseUrl: 'https://buy.stripe.com/test_pro',
 		clientReferenceId: 'signedref123',
 		email: 'user@example.com',
 	})
 	const parsed = new URL(url)
 	expect(parsed.origin + parsed.pathname).toBe(
-		'https://buy.stripe.com/test_personal',
+		'https://buy.stripe.com/test_pro',
 	)
 	expect(parsed.searchParams.get('client_reference_id')).toBe('signedref123')
 	expect(parsed.searchParams.get('prefilled_email')).toBe('user@example.com')
@@ -76,7 +76,6 @@ test('createBillingLinkReference is stable per user and not the raw stable id', 
 
 test('resolveSubscriptionPlan ignores non-active statuses', () => {
 	const env = {
-		STRIPE_PERSONAL_PRICE_ID: 'price_personal',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 	}
 	expect(
@@ -88,7 +87,7 @@ test('resolveSubscriptionPlan ignores non-active statuses', () => {
 				}),
 				subscription({
 					status: 'incomplete',
-					priceIds: ['price_personal'],
+					priceIds: ['price_pro'],
 				}),
 			],
 			env,
@@ -96,9 +95,8 @@ test('resolveSubscriptionPlan ignores non-active statuses', () => {
 	).toEqual({ stripePlan: null, cancelAt: null })
 })
 
-test('resolveSubscriptionPlan matches price ids and prefers the highest plan', () => {
+test('resolveSubscriptionPlan matches the pro price id', () => {
 	const env = {
-		STRIPE_PERSONAL_PRICE_ID: 'price_personal',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 	}
 	expect(
@@ -106,22 +104,18 @@ test('resolveSubscriptionPlan matches price ids and prefers the highest plan', (
 			[
 				subscription({
 					status: 'active',
-					priceIds: ['price_personal'],
+					priceIds: ['price_pro'],
 				}),
 			],
 			env,
 		),
-	).toEqual({ stripePlan: 'personal', cancelAt: null })
+	).toEqual({ stripePlan: 'pro', cancelAt: null })
 
 	expect(
 		resolveSubscriptionPlan(
 			[
 				subscription({
 					status: 'trialing',
-					priceIds: ['price_personal'],
-				}),
-				subscription({
-					status: 'active',
 					priceIds: ['price_pro'],
 				}),
 			],
@@ -132,7 +126,6 @@ test('resolveSubscriptionPlan matches price ids and prefers the highest plan', (
 
 test('resolveSubscriptionPlan falls back to kody_plan metadata when prices do not match', () => {
 	const env = {
-		STRIPE_PERSONAL_PRICE_ID: 'price_personal',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 	}
 	expect(
@@ -164,7 +157,6 @@ test('resolveSubscriptionPlan falls back to kody_plan metadata when prices do no
 
 test('resolveSubscriptionPlan returns the soonest cancel_at as ISO', () => {
 	const env = {
-		STRIPE_PERSONAL_PRICE_ID: 'price_personal',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
 	}
 	const sooner = 1_700_000_000
@@ -174,7 +166,7 @@ test('resolveSubscriptionPlan returns the soonest cancel_at as ISO', () => {
 			[
 				subscription({
 					status: 'active',
-					priceIds: ['price_personal'],
+					priceIds: ['price_pro'],
 					cancel_at: later,
 				}),
 				subscription({
@@ -206,7 +198,6 @@ test('resolveSubscriptionPlan ignores unknown price ids without metadata', () =>
 				}),
 			],
 			{
-				STRIPE_PERSONAL_PRICE_ID: 'price_personal',
 				STRIPE_PRO_PRICE_ID: 'price_pro',
 			},
 		),

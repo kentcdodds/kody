@@ -85,7 +85,7 @@ test('admin invite signup and email verification happy path', async ({
 	await page.getByLabel('Code').fill(inviteCode)
 	await page.getByLabel('Note').fill('E2E invite signup verification')
 	await page.getByLabel('Max uses').fill('1')
-	await page.getByLabel('Plan').selectOption('personal')
+	await page.getByLabel('Plan').selectOption('pro')
 	await page.getByRole('button', { name: 'Create', exact: true }).click()
 	await expect(async () => {
 		await expect(page.getByRole('heading', { name: inviteCode })).toBeVisible({
@@ -95,10 +95,7 @@ test('admin invite signup and email verification happy path', async ({
 	// Filter to visible matches: the create form's <select> also contains a
 	// hidden <option> with the same text.
 	await expect(
-		page
-			.getByText('personal', { exact: true })
-			.filter({ visible: true })
-			.first(),
+		page.getByText('pro', { exact: true }).filter({ visible: true }).first(),
 	).toBeVisible()
 
 	await page.getByLabel('User email').fill(adminCreatedEmail)
@@ -210,5 +207,5 @@ test('admin invite signup and email verification happy path', async ({
 		page.getByRole('heading', { name: 'Verify your email' }),
 	).toHaveCount(0)
 
-	expect(queryUserPlanFromE2eDatabase(invitedEmail)).toBe('personal')
+	expect(queryUserPlanFromE2eDatabase(invitedEmail)).toBe('pro')
 })

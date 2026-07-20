@@ -8,8 +8,8 @@ in `planLimits` remain independently configured placeholders.
 
 Module: `packages/worker/src/entitlements/`
 
-- `plans.ts` — plan names (`free`, `personal`, `pro`, `partner`), the
-  `PlanLimits` config per plan, the `EntitlementResource` registry,
+- `plans.ts` — plan names (`free`, `pro`, `partner`), the `PlanLimits` config
+  per plan, the `EntitlementResource` registry,
   `resolvePlanLimit(plan, resource)`, `getPlanRank`, and
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
@@ -83,7 +83,7 @@ directly. `getUserPlan(db, { userId, email })`:
 3. Reads `SELECT plan, stripe_plan FROM users WHERE email = ?` and returns
    `resolveEffectivePlan(parsePlanName(plan), stripe_plan)`: NULL manual plan
    stays unlimited; otherwise the higher-ranked of manual `users.plan` and
-   `users.stripe_plan` (rank: `free` < `personal` < `pro` < `partner`).
+   `users.stripe_plan` (rank: `free` < `pro` < `partner`).
 
 Consequence: enforcement points must have the acting user's account email
 available. Both auth surfaces provide it — app sessions expose
@@ -134,8 +134,8 @@ the stable programmatic contract:
 The `message` is built by `buildEntitlementLimitMessage` and is the single
 user-facing string across MCP and UI surfaces:
 
-> Plan limit reached: your "personal" plan allows at most 10 scheduled jobs and
-> you currently have 10. Remove or finish existing scheduled jobs you no longer
+> Plan limit reached: your "pro" plan allows at most 50 scheduled jobs and you
+> currently have 50. Remove or finish existing scheduled jobs you no longer
 > need, or ask the operator of this Kody deployment to upgrade your plan.
 
 Rules:
@@ -279,9 +279,8 @@ when `/account/billing` loads with data older than 60s. Migration
 `0066-stripe-billing.sql` adds `stripe_customer_id` (unique partial index),
 `stripe_plan`, and `stripe_plan_refreshed_at`.
 
-Published prices: Free $0, Personal $2.50/mo, Pro $5/mo. Env vars and deploy
-wiring are documented in
-[`../environment-variables.md`](../environment-variables.md).
+Published prices: Free $0, Pro $5/mo. Env vars and deploy wiring are documented
+in [`../environment-variables.md`](../environment-variables.md).
 
 ## Related tables and coordination
 

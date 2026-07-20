@@ -8,9 +8,7 @@ import { type StripeSubscription } from './stripe-client.ts'
 
 type BillingEnv = {
 	STRIPE_SECRET_KEY?: string
-	STRIPE_PERSONAL_PRICE_ID?: string
 	STRIPE_PRO_PRICE_ID?: string
-	STRIPE_PERSONAL_PAYMENT_LINK?: string
 	STRIPE_PRO_PAYMENT_LINK?: string
 }
 
@@ -20,16 +18,8 @@ export function isBillingConfigured(env: BillingEnv) {
 	return Boolean(env.STRIPE_SECRET_KEY?.trim())
 }
 
-export function getPersonalPriceId(env: BillingEnv) {
-	return env.STRIPE_PERSONAL_PRICE_ID?.trim() || null
-}
-
 export function getProPriceId(env: BillingEnv) {
 	return env.STRIPE_PRO_PRICE_ID?.trim() || null
-}
-
-export function getPersonalPaymentLink(env: BillingEnv) {
-	return env.STRIPE_PERSONAL_PAYMENT_LINK?.trim() || null
 }
 
 export function getProPaymentLink(env: BillingEnv) {
@@ -89,19 +79,15 @@ function pickHigherPlan(
 
 function planFromSubscription(
 	subscription: StripeSubscription,
-	priceIds: { personal: string | null; pro: string | null },
+	proPriceId: string | null,
 ): PlanName | null {
-	let matched: PlanName | null = null
-	for (const item of subscription.items.data) {
-		const priceId = item.price.id
-		if (priceIds.personal && priceId === priceIds.personal) {
-			matched = pickHigherPlan(matched, 'personal')
-		}
-		if (priceIds.pro && priceId === priceIds.pro) {
-			matched = pickHigherPlan(matched, 'pro')
+	if (proPriceId) {
+		for (const item of subscription.items.data) {
+			if (item.price.id === proPriceId) {
+				return 'pro'
+			}
 		}
 	}
-	if (matched) return matched
 	const metadataPlan = subscription.metadata?.['kody_plan']
 	return parsePlanName(metadataPlan)
 }
@@ -115,10 +101,7 @@ export function resolveSubscriptionPlan(
 	subscriptions: ReadonlyArray<StripeSubscription>,
 	env: BillingEnv,
 ): { stripePlan: PlanName | null; cancelAt: string | null } {
-	const priceIds = {
-		personal: getPersonalPriceId(env),
-		pro: getProPriceId(env),
-	}
+	const proPriceId = getProPriceId(env)
 	let stripePlan: PlanName | null = null
 	let soonestCancelAt: number | null = null
 
@@ -126,7 +109,7 @@ export function resolveSubscriptionPlan(
 		if (!activeSubscriptionStatuses.has(subscription.status)) continue
 		stripePlan = pickHigherPlan(
 			stripePlan,
-			planFromSubscription(subscription, priceIds),
+			planFromSubscription(subscription, proPriceId),
 		)
 		if (
 			typeof subscription.cancel_at === 'number' &&

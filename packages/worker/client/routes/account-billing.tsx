@@ -40,7 +40,7 @@ import {
 const billingApiPath = '/account/billing.json'
 const billingPath = '/account/billing'
 
-type PaidTier = 'personal' | 'pro'
+type PaidTier = 'pro'
 type PlanTier = 'free' | PaidTier
 
 const planTiers: Array<{
@@ -56,12 +56,6 @@ const planTiers: Array<{
 		description: 'Tight limits for trying Kody.',
 	},
 	{
-		id: 'personal',
-		name: 'Personal',
-		price: '$2.50/month',
-		description: 'More room for everyday personal automation.',
-	},
-	{
 		id: 'pro',
 		name: 'Pro',
 		price: '$5/month',
@@ -69,17 +63,15 @@ const planTiers: Array<{
 	},
 ]
 
-/** Mirrors server rank: free < personal < pro < partner. */
+/** Mirrors server rank: free < pro < partner. */
 function getPlanRank(plan: AdminPlanName): number {
 	switch (plan) {
 		case 'free':
 			return 0
-		case 'personal':
-			return 1
 		case 'pro':
-			return 2
+			return 1
 		case 'partner':
-			return 3
+			return 2
 		default: {
 			const exhaustive: never = plan
 			throw new Error(`Unknown plan: ${String(exhaustive)}`)
@@ -111,13 +103,8 @@ function planCoversTier(
 	return getPlanRank(effectivePlan) >= getPlanRank(tier)
 }
 
-function getPaymentLink(
-	data: AccountBillingLoaderData,
-	tier: PaidTier,
-): string | undefined {
-	return tier === 'personal'
-		? data.paymentLinks.personal
-		: data.paymentLinks.pro
+function getPaymentLink(data: AccountBillingLoaderData): string | undefined {
+	return data.paymentLinks.pro
 }
 
 export async function accountBillingRouteLoader(
@@ -227,7 +214,7 @@ export function AccountBillingRoute(handle: Handle) {
 			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
 				<AccountPageHeader
 					title="Billing"
-					description="View your plan, subscribe to Personal or Pro, and manage your Stripe subscription."
+					description="View your plan, subscribe to Pro, and manage your Stripe subscription."
 					currentHref={currentHref}
 				/>
 
@@ -283,7 +270,7 @@ export function AccountBillingRoute(handle: Handle) {
 							<div
 								mix={css({
 									display: 'grid',
-									gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+									gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 									gap: spacing.md,
 									[mq.mobile]: {
 										gridTemplateColumns: '1fr',
@@ -295,9 +282,7 @@ export function AccountBillingRoute(handle: Handle) {
 									const isIncluded =
 										!isCurrent && planCoversTier(billing.effectivePlan, tier.id)
 									const paymentLink =
-										tier.id === 'free'
-											? undefined
-											: getPaymentLink(billing, tier.id)
+										tier.id === 'free' ? undefined : getPaymentLink(billing)
 									const showSubscribe =
 										!isCurrent &&
 										!isIncluded &&
@@ -354,9 +339,7 @@ export function AccountBillingRoute(handle: Handle) {
 													<a
 														href={paymentLink}
 														mix={css({
-															...(tier.id === 'pro'
-																? primaryButtonCss
-																: secondaryButtonCss),
+															...primaryButtonCss,
 															display: 'inline-block',
 															textDecoration: 'none',
 															textAlign: 'center',
