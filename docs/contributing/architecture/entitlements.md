@@ -106,9 +106,9 @@ can never go stale) and re-verified with one point read. Only use it on
 contextless paths; interactive surfaces already carry the email. Production
 deployment invokes the authenticated
 `POST /__maintenance/backfill-stable-user-ids` migration before installing code
-that requires materialized ids. Migration `0069-require-stable-user-ids.sql`
-then prevents future null/empty values, so runtime resolution is always an
-indexed point read and never scans or hashes account email.
+that requires materialized ids. Every account-creation path writes the id, so
+runtime resolution is always an indexed point read and never scans or hashes
+account email.
 
 ## The error shape
 

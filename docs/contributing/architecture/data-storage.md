@@ -202,9 +202,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   stable ids with one indexed point read (`findUserRowByStableUserId` /
   `findUserAccountByStableUserId`). Production deployment calls
   `POST /__maintenance/backfill-stable-user-ids` before installing code that
-  requires materialized ids, and migration `0069-require-stable-user-ids.sql`
-  rejects future null/empty writes. Runtime lookups never scan or derive ids
-  from account email.
+  requires materialized ids; every account-creation path writes the id. Runtime
+  lookups never scan or derive ids from account email.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until

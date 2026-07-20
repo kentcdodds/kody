@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import {
 	createStableUserIdFromEmail,
 	findUserRowByStableUserId,
+	resolveUserStableId,
 } from './user-id.ts'
 
 const usersSelect = `SELECT id, email, stable_user_id FROM users`
@@ -27,32 +28,12 @@ async function recreateUsersTable(db: D1Database) {
 	WHERE stable_user_id IS NOT NULL`,
 		)
 		.run()
-	await db
-		.prepare(
-			`CREATE TRIGGER users_require_stable_user_id_insert
-	BEFORE INSERT ON users
-	WHEN NEW.stable_user_id IS NULL OR trim(NEW.stable_user_id) = ''
-	BEGIN
-		SELECT RAISE(ABORT, 'users.stable_user_id is required');
-	END`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE TRIGGER users_require_stable_user_id_update
-	BEFORE UPDATE OF stable_user_id ON users
-	WHEN NEW.stable_user_id IS NULL OR trim(NEW.stable_user_id) = ''
-	BEGIN
-		SELECT RAISE(ABORT, 'users.stable_user_id is required');
-	END`,
-		)
-		.run()
 }
 
 async function seedUser(input: {
 	db: D1Database
 	email: string
-	stableUserId?: string | null
+	stableUserId: string
 }) {
 	await input.db
 		.prepare(
@@ -62,7 +43,7 @@ async function seedUser(input: {
 		.bind(
 			`user-id-${crypto.randomUUID().slice(0, 8)}`,
 			input.email,
-			input.stableUserId ?? null,
+			input.stableUserId,
 		)
 		.run()
 }
@@ -75,15 +56,13 @@ async function readStoredStableUserId(db: D1Database, email: string) {
 	return row?.stable_user_id ?? null
 }
 
-test('database triggers reject users without a materialized stable id', async () => {
-	await recreateUsersTable(env.APP_DB)
-	await expect(
-		seedUser({
-			db: env.APP_DB,
+test('runtime identity resolution requires a materialized stable id', () => {
+	expect(() =>
+		resolveUserStableId({
 			email: `missing-${crypto.randomUUID()}@example.com`,
-			stableUserId: null,
+			stable_user_id: null,
 		}),
-	).rejects.toThrow('users.stable_user_id is required')
+	).toThrow('users.stable_user_id must be materialized')
 })
 
 test('stored stable ids resolve via the index and are never overwritten', async () => {
