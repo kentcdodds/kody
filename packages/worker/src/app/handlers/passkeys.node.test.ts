@@ -143,22 +143,38 @@ async function seedUser(
 
 function seedPasskey(
 	sqlite: DatabaseSync,
-	input: { id: string; userId: number },
+	input: {
+		id: string
+		userId: number
+		name?: string
+		aaguid?: string
+		lastUsedAt?: string | null
+	},
 ) {
+	const name = input.name ?? ''
+	const aaguid = input.aaguid ?? '00000000-0000-0000-0000-000000000000'
+	const lastUsedAt =
+		input.lastUsedAt === undefined
+			? 'NULL'
+			: input.lastUsedAt === null
+				? 'NULL'
+				: quoteSqlString(input.lastUsedAt)
 	sqlite.exec(`
 		INSERT INTO passkeys (
 			id, aaguid, public_key, user_id, webauthn_user_handle, counter,
-			device_type, backed_up, transports
+			device_type, backed_up, transports, name, last_used_at
 		) VALUES (
 			${quoteSqlString(input.id)},
-			'00000000-0000-0000-0000-000000000000',
+			${quoteSqlString(aaguid)},
 			'cHVibGljLWtleQ',
 			${input.userId},
 			'd2ViYXV0aG4tdXNlcg',
 			0,
 			'multiDevice',
 			1,
-			'internal'
+			'internal',
+			${quoteSqlString(name)},
+			${lastUsedAt}
 		);
 	`)
 }
@@ -197,13 +213,23 @@ const userOneSession: AuthSession = {
 	rememberMe: false,
 }
 
-test('account passkeys API lists owned keys and deletes them while ignoring other users', async () => {
+test('account passkeys API lists labels/dates, renames owned keys, and deletes while ignoring other users', async () => {
 	initTestSecrets()
 	const { sqlite, db } = createMigratedDb()
 	await seedUser(sqlite, { id: 1, email: 'one@example.com', username: 'one' })
 	await seedUser(sqlite, { id: 2, email: 'two@example.com', username: 'two' })
-	seedPasskey(sqlite, { id: 'passkey-user-1', userId: 1 })
-	seedPasskey(sqlite, { id: 'passkey-user-2', userId: 2 })
+	seedPasskey(sqlite, {
+		id: 'passkey-user-1',
+		userId: 1,
+		aaguid: 'ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4',
+		lastUsedAt: '2026-07-01 12:00:00',
+	})
+	seedPasskey(sqlite, {
+		id: 'passkey-user-1b',
+		userId: 1,
+		name: 'Work laptop',
+	})
+	seedPasskey(sqlite, { id: 'passkey-user-2', userId: 2, name: 'Other user' })
 
 	const handler = createAccountPasskeysApiHandler(createAppEnv(db))
 	const listResponse = await runHandler(
@@ -215,12 +241,97 @@ test('account passkeys API lists owned keys and deletes them while ignoring othe
 	expect(listResponse.status).toBe(200)
 	const listPayload = (await listResponse.json()) as {
 		ok: boolean
-		passkeys: Array<{ id: string }>
+		passkeys: Array<{
+			id: string
+			name: string
+			createdAt: string
+			lastUsedAt: string | null
+		}>
 	}
 	expect(listPayload.ok).toBe(true)
 	expect(listPayload.passkeys.map((passkey) => passkey.id)).toEqual([
+		'passkey-user-1b',
 		'passkey-user-1',
 	])
+	expect(listPayload.passkeys).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				id: 'passkey-user-1',
+				name: 'Google Password Manager',
+				lastUsedAt: '2026-07-01 12:00:00',
+			}),
+			expect.objectContaining({
+				id: 'passkey-user-1b',
+				name: 'Work laptop',
+				lastUsedAt: null,
+			}),
+		]),
+	)
+
+	const crossUserRename = await runHandler(
+		handler,
+		new Request('http://example.com/account/passkeys.json', {
+			method: 'POST',
+			headers: {
+				Cookie: await createAuthCookie(userOneSession, false),
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				intent: 'rename',
+				passkeyId: 'passkey-user-2',
+				name: 'Stolen name',
+			}),
+		}),
+	)
+	expect(crossUserRename.status).toBe(404)
+	expect(
+		sqlite
+			.prepare(`SELECT name FROM passkeys WHERE id = 'passkey-user-2'`)
+			.get(),
+	).toEqual({ name: 'Other user' })
+
+	const ownRename = await runHandler(
+		handler,
+		new Request('http://example.com/account/passkeys.json', {
+			method: 'POST',
+			headers: {
+				Cookie: await createAuthCookie(userOneSession, false),
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				intent: 'rename',
+				passkeyId: 'passkey-user-1',
+				name: '  Phone · Google  ',
+			}),
+		}),
+	)
+	expect(ownRename.status).toBe(200)
+	const renamePayload = (await ownRename.json()) as {
+		ok: boolean
+		passkeys: Array<{ id: string; name: string }>
+	}
+	expect(renamePayload.ok).toBe(true)
+	expect(
+		renamePayload.passkeys.find((passkey) => passkey.id === 'passkey-user-1')
+			?.name,
+	).toBe('Phone · Google')
+
+	const invalidRename = await runHandler(
+		handler,
+		new Request('http://example.com/account/passkeys.json', {
+			method: 'POST',
+			headers: {
+				Cookie: await createAuthCookie(userOneSession, false),
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				intent: 'rename',
+				passkeyId: 'passkey-user-1',
+				name: '   ',
+			}),
+		}),
+	)
+	expect(invalidRename.status).toBe(400)
 
 	const crossUserDelete = await runHandler(
 		handler,
@@ -236,7 +347,7 @@ test('account passkeys API lists owned keys and deletes them while ignoring othe
 	expect(crossUserDelete.status).toBe(404)
 	expect(
 		sqlite.prepare(`SELECT COUNT(*) AS count FROM passkeys`).get(),
-	).toEqual({ count: 2 })
+	).toEqual({ count: 3 })
 
 	const ownDelete = await runHandler(
 		handler,
@@ -250,7 +361,14 @@ test('account passkeys API lists owned keys and deletes them while ignoring othe
 		}),
 	)
 	expect(ownDelete.status).toBe(200)
-	expect(await ownDelete.json()).toEqual({ ok: true, passkeys: [] })
+	const deletePayload = (await ownDelete.json()) as {
+		ok: boolean
+		passkeys: Array<{ id: string }>
+	}
+	expect(deletePayload.ok).toBe(true)
+	expect(deletePayload.passkeys.map((passkey) => passkey.id)).toEqual([
+		'passkey-user-1b',
+	])
 })
 
 test('registration options require authentication and exclude existing credentials', async () => {

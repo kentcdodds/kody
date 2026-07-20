@@ -51,6 +51,18 @@ test('passkey lifecycle: register, sign in, delete', async ({
 	await expect(
 		page.getByRole('heading', { name: 'Registered passkeys' }),
 	).toBeVisible()
+	const passkeyList = page.getByRole('list').filter({
+		has: page.getByRole('button', { name: 'Rename' }),
+	})
+	await expect(passkeyList.getByText(/Created /)).toBeVisible()
+	await expect(passkeyList.getByText('Last used Never')).toBeVisible()
+
+	// Rename so multiple passkeys stay distinguishable.
+	await page.getByRole('button', { name: 'Rename' }).click()
+	await page.getByLabel('Passkey nickname').fill('Josh phone')
+	await page.getByRole('button', { name: 'Save' }).click()
+	await expect(page.getByText('Passkey renamed.')).toBeVisible()
+	await expect(passkeyList.getByText('Josh phone')).toBeVisible()
 
 	// Sign in with the passkey instead of the password.
 	await page.context().clearCookies()
@@ -62,6 +74,9 @@ test('passkey lifecycle: register, sign in, delete', async ({
 
 	// Delete the passkey.
 	await page.goto(localhostUrl(baseURL, '/account/passkeys'))
+	await expect(passkeyList.getByText('Josh phone')).toBeVisible()
+	await expect(passkeyList.getByText(/Last used /)).toBeVisible()
+	await expect(passkeyList.getByText('Last used Never')).toHaveCount(0)
 	await page.getByRole('button', { name: 'Delete' }).click()
 	await expect(page.getByText('Passkey deleted.')).toBeVisible()
 	await expect(

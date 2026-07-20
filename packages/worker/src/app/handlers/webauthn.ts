@@ -16,6 +16,7 @@ import {
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { buildDefaultPasskeyName } from '#app/passkey-label.ts'
 import {
 	createPasskey,
 	findPasskeyById,
@@ -173,6 +174,11 @@ export function createWebauthnRegistrationHandler(env: Env) {
 				deviceType: credentialDeviceType,
 				backedUp: credentialBackedUp,
 				transports: credential.transports?.join(',') ?? null,
+				name: buildDefaultPasskeyName({
+					aaguid,
+					deviceType: credentialDeviceType,
+					userAgent: request.headers.get('user-agent'),
+				}),
 			})
 
 			void logAuditEvent({
