@@ -48,6 +48,8 @@ const sampleListing = {
 	trustedCommit: null,
 	trustedAt: null,
 	trusted: false,
+	featuredAt: null,
+	featured: false,
 	createdAt: '2026-01-01T00:00:00.000Z',
 	updatedAt: '2026-01-01T00:00:00.000Z',
 	publishedAt: '2026-01-01T00:00:00.000Z',
@@ -55,6 +57,7 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
+	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 type TestUser = {
@@ -267,6 +270,9 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		emailVerified: false,
 		username: 'account-user',
 		displayName: 'account-user',
+		bio: null,
+		avatarUrl: null,
+		profileVisibility: 'public',
 	})
 	expect(accountProps.loaderData?.accountConnections).toEqual({
 		ok: true,

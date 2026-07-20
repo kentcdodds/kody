@@ -1,10 +1,16 @@
 import {
 	type OnboardingFeaturedListing,
+	type ProfileVisibility,
+	type PublicCommunityActivityItem,
 	type PublicCommunityListing,
+	type PublicCommunityProfile,
+	type PublicCommunityStargazer,
+	type PublicProfilePackageItem,
 } from '#app/community-public-types.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
 import { type AdminFeatureFlag } from '#worker/feature-flags/types.ts'
 
+export type { ProfileVisibility }
 export type { AdminFeatureFlag }
 
 export type CommunityIndexLoaderData = {
@@ -19,6 +25,7 @@ export type CommunityDetailLoaderData = {
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string
+	starredByViewer: boolean
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */
@@ -31,6 +38,51 @@ export type CommunityDetailShellLoaderData = {
 	trusted: boolean
 	featured: boolean
 	readmeContent: string | null
+	starCount: number
+	starredByViewer: boolean
+}
+
+export type ProfileLoaderData = {
+	ok: true
+	profile: PublicCommunityProfile
+	packages: Array<PublicProfilePackageItem>
+	activity: Array<PublicCommunityActivityItem>
+	query: string | null
+	isSelf: boolean
+	loggedIn: boolean
+	isFollowing: boolean
+}
+
+/** SSR-embedded shell data for client-only regions on the profile page. */
+export type ProfileShellLoaderData = {
+	ok: true
+	username: string
+	displayName: string
+	isSelf: boolean
+	loggedIn: boolean
+	isFollowing: boolean
+	visibility: ProfileVisibility
+}
+
+export type ProfileUnavailableLoaderData = {
+	ok: false
+	unavailable: true
+}
+
+export type TimelineLoaderData = {
+	ok: true
+	items: Array<PublicCommunityActivityItem>
+}
+
+export type AccountStarsLoaderData = {
+	ok: true
+	listings: Array<PublicCommunityListing>
+}
+
+export type CommunityStargazersLoaderData = {
+	ok: true
+	totalStars: number
+	stargazers: Array<PublicCommunityStargazer>
 }
 
 /**
@@ -374,6 +426,9 @@ export type AccountProfileLoaderData = {
 	emailVerified: boolean
 	username: string
 	displayName: string
+	bio: string | null
+	avatarUrl: string | null
+	profileVisibility: ProfileVisibility
 }
 
 export type AccountConnectionListItem = {
@@ -634,6 +689,9 @@ export type OAuthAuthorizeLoaderData =
 
 export type AppLoaderData = {
 	communityDetailShell?: CommunityDetailShellLoaderData
+	profileShell?: ProfileShellLoaderData | ProfileUnavailableLoaderData
+	timeline?: TimelineLoaderData
+	accountStars?: AccountStarsLoaderData
 	adminUsers?: AdminUsersLoaderData
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData

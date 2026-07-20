@@ -47,6 +47,18 @@ const redactedColumnsByTable: Readonly<Record<string, ReadonlyArray<string>>> =
 		verifications: ['secret'],
 	}
 
+// Social-graph export rows can include another user's stable id. Keep the
+// exporter's own id; replace every other value in these columns.
+const foreignUserIdColumnsByTable: Readonly<
+	Record<string, ReadonlyArray<string>>
+> = {
+	user_follows: ['follower_user_id', 'followee_user_id'],
+	community_stars: ['user_id'],
+	community_activity_events: ['actor_user_id'],
+}
+
+const redactedForeignUserId = '[redacted]'
+
 export const accountExportSectionNames = [
 	'd1_table',
 	'storage_runner',
@@ -402,11 +414,24 @@ function buildD1TableConditions(input: {
 	return conditionsByTable
 }
 
-function sanitizeRow(table: string, row: Record<string, unknown>) {
+function sanitizeRow(
+	table: string,
+	row: Record<string, unknown>,
+	mcpUserId: string,
+) {
 	const redactedColumns = redactedColumnsByTable[table] ?? []
+	const foreignUserIdColumns = foreignUserIdColumnsByTable[table] ?? []
 	const sanitized: Record<string, unknown> = {}
 	for (const [key, value] of Object.entries(row)) {
 		if (redactedColumns.includes(key)) continue
+		if (
+			foreignUserIdColumns.includes(key) &&
+			typeof value === 'string' &&
+			value !== mcpUserId
+		) {
+			sanitized[key] = redactedForeignUserId
+			continue
+		}
 		sanitized[key] = value
 	}
 	return {
@@ -453,6 +478,7 @@ async function selectD1TablePage(input: {
 	env: AccountExportEnv
 	table: string
 	conditions: ReadonlyArray<D1TableCondition>
+	mcpUserId: string
 	afterRowid: number
 	limit: number
 }) {
@@ -477,7 +503,7 @@ async function selectD1TablePage(input: {
 	for (const rawRow of pageRows) {
 		const { [exportRowidColumn]: rowid, ...columns } = rawRow
 		lastRowid = Number(rowid)
-		rows.push(sanitizeRow(input.table, columns))
+		rows.push(sanitizeRow(input.table, columns, input.mcpUserId))
 	}
 	return { rows, lastRowid, truncated }
 }
@@ -486,6 +512,7 @@ async function collectD1TableRows(input: {
 	env: AccountExportEnv
 	table: string
 	conditions: ReadonlyArray<D1TableCondition>
+	mcpUserId: string
 	warnings: Array<string>
 }): Promise<AccountExportD1Table> {
 	const section: AccountExportD1Table = {
@@ -502,6 +529,7 @@ async function collectD1TableRows(input: {
 				env: input.env,
 				table: input.table,
 				conditions: input.conditions,
+				mcpUserId: input.mcpUserId,
 				afterRowid,
 				limit: d1ExportPageSize,
 			})
@@ -824,6 +852,7 @@ async function collectD1Tables(input: {
 				env: input.env,
 				table,
 				conditions,
+				mcpUserId: input.mcpUserId,
 				warnings: input.warnings,
 			}),
 		])
@@ -859,6 +888,7 @@ async function readD1TableSectionPage(input: {
 			env: input.env,
 			table: input.table,
 			conditions,
+			mcpUserId: input.mcpUserId,
 			afterRowid: parseRowidCursor(input.startAfter),
 			limit: pageSize,
 		})

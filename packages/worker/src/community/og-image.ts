@@ -28,8 +28,15 @@ export type CommunityOgImageInput = {
 	averageStars: number | null
 	ratingCount: number
 	forkCount: number
+	starCount: number
 	/** Package community icon as a data URI (PNG or JPEG) for satori. */
 	iconDataUri: string
+}
+
+function formatForkAndStarCounts(input: CommunityOgImageInput): string {
+	const starLabel = input.starCount === 1 ? 'star' : 'stars'
+	const forkLabel = input.forkCount === 1 ? 'fork' : 'forks'
+	return `${input.starCount} ${starLabel} · ${input.forkCount} ${forkLabel}`
 }
 
 const STAR_PATH =
@@ -234,7 +241,7 @@ function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
 									fontSize: 22,
 									color: ogPalette.muted,
 								},
-								children: `${input.forkCount} forks`,
+								children: formatForkAndStarCounts(input),
 							},
 						},
 					],

@@ -106,6 +106,10 @@ export function CommunityDetailContent(
 						<dt>Forks</dt>
 						<dd data-testid="community-detail-forks">{listing.forkCount}</dd>
 					</div>
+					<div>
+						<dt>Stars</dt>
+						<dd data-testid="community-detail-stars">{listing.starCount}</dd>
+					</div>
 				</dl>
 			</section>
 		</div>

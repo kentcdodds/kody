@@ -4,6 +4,11 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 			username TEXT NOT NULL UNIQUE,
 			email TEXT NOT NULL UNIQUE,
+			stable_user_id TEXT,
+			display_name TEXT,
+			bio TEXT,
+			avatar_key TEXT,
+			profile_visibility TEXT NOT NULL DEFAULT 'public' CHECK (profile_visibility IN ('public', 'private')),
 			password_hash TEXT NOT NULL,
 			stable_user_id TEXT,
 			plan TEXT,
@@ -24,6 +29,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			source_id TEXT NOT NULL,
 			has_app INTEGER NOT NULL DEFAULT 0 CHECK (has_app IN (0, 1)),
 			hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
+			is_private INTEGER NOT NULL DEFAULT 1 CHECK (is_private IN (0, 1)),
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
@@ -119,6 +125,33 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			reason TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
+		`CREATE TABLE IF NOT EXISTS user_follows (
+			follower_user_id TEXT NOT NULL,
+			followee_user_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (follower_user_id, followee_user_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_follows_followee_user_id
+			ON user_follows(followee_user_id)`,
+		`CREATE TABLE IF NOT EXISTS community_stars (
+			listing_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (listing_id, user_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_community_stars_user_id
+			ON community_stars(user_id)`,
+		`CREATE TABLE IF NOT EXISTS community_activity_events (
+			id TEXT PRIMARY KEY NOT NULL,
+			actor_user_id TEXT NOT NULL,
+			event_type TEXT NOT NULL CHECK (event_type IN ('listing_published', 'listing_updated')),
+			listing_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_community_activity_events_actor_created
+			ON community_activity_events(actor_user_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_community_activity_events_listing_id
+			ON community_activity_events(listing_id)`,
 		`CREATE TABLE IF NOT EXISTS jobs (
 			id TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,
@@ -180,5 +213,23 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()
+	}
+
+	// Best-effort ALTERs for persisted worker DBs that already created the
+	// older IF NOT EXISTS tables without the social columns.
+	const additiveAlters = [
+		`ALTER TABLE users ADD COLUMN stable_user_id TEXT`,
+		`ALTER TABLE users ADD COLUMN display_name TEXT`,
+		`ALTER TABLE users ADD COLUMN bio TEXT`,
+		`ALTER TABLE users ADD COLUMN avatar_key TEXT`,
+		`ALTER TABLE users ADD COLUMN profile_visibility TEXT NOT NULL DEFAULT 'public'`,
+		`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
+	]
+	for (const statement of additiveAlters) {
+		try {
+			await db.prepare(statement).run()
+		} catch {
+			// Column already present.
+		}
 	}
 }

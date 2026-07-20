@@ -78,8 +78,10 @@ delete can remove the delisted row.
 ## Browsing listings
 
 Anyone can browse `/community` and open `/community/:listingId`. Detail pages
-show metadata, aggregate ratings, fork count, the README (not the full source
-tree), and a dynamically generated Open Graph image (1200×630).
+show metadata, aggregate ratings, **star count** (stargazers — distinct from 1–5
+ratings), fork count, the README (not the full source tree), and a dynamically
+generated Open Graph image (1200×630). When the owner keeps a
+[public profile](./community-profiles.md), the listing links to `/@username`.
 
 Each detail page includes a **copyable prompt** you can hand to your agent to
 start a fork. You can also ask your agent to use `community_search` or
@@ -170,6 +172,14 @@ Featured listings show a **Featured** badge on their detail page. Admins toggle
 featuring from the listing detail page or with the `community_set_featured`
 capability.
 
+## Stars (stargazers)
+
+Anyone signed in can **star** a listing as a public bookmark (`community_star` /
+`community_unstar`). Star counts appear on search and detail outputs; stargazer
+lists include only users with public profiles. Stars are separate from the 1–5
+**ratings** below — see
+[Community profiles](./community-profiles.md#stars-vs-ratings).
+
 ## Ratings
 
 After forking, your agent can call `community_rate` with:
@@ -203,21 +213,29 @@ Use the MCP `community` domain:
 - `community_publish` — publish or update a listing from a saved package
 - `community_unpublish` — remove your active listing (not delisted listings)
 - `community_search` — search active listings
-- `community_get` — fetch one listing's metadata and aggregates
+- `community_get` — fetch one listing's metadata and aggregates (including star
+  count, stargazers, and owner profile linkage when the owner is public)
 - `community_fork` — copy a pinned snapshot into your account (inert until
   published)
 - `community_rate` — rate a listing after forking
+- `community_star` / `community_unstar` — bookmark a listing (see
+  [Community profiles](./community-profiles.md))
 - `community_report` — report a listing (requires login)
 - `community_set_trusted` — admin-only: mark or unmark a listing as trusted at
   its current pinned commit
 - `community_set_featured` — admin-only: feature or unfeature a trusted listing
   as an onboarding starter package
 
+Profiles, follows, and timelines use additional `community_*` capabilities
+documented in [Community profiles](./community-profiles.md).
+
 ## Privacy and isolation
 
-Forks are copies. Cross-user package imports never resolve. The only deliberate
-cross-user data flows are the public listing snapshot and aggregate ratings.
+Forks are copies. Cross-user package imports never resolve. The deliberate
+cross-user data flows are the public listing snapshot, aggregate ratings, star
+counts/stargazers, and [public profile](./community-profiles.md) surfaces.
 
-Owner user ids are not exposed on public pages or through community kody. The
-package name scope reveals the owner's **username**, as it does for normal
-package URLs.
+Stable owner **user ids** are not required for browsing: package name scope and
+public profiles reveal the owner's **username** (as package URLs do). Search
+summaries may still omit a stable owner id (`owner_anonymous`) while linking by
+username when the owner profile is public.

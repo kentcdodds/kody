@@ -7,6 +7,7 @@ import {
 	buildCommunityPublicUrl,
 	communitySearchGuidance,
 	communitySearchMatchSchema,
+	toCommunityListingAggregatesOutput,
 } from './shared.ts'
 
 export const communitySearchCapability = defineDomainCapability(
@@ -60,10 +61,7 @@ export const communitySearchCapability = defineDomainCapability(
 					tags: listing.tags,
 					owner_anonymous: true as const,
 					trusted: listing.trusted,
-					average_stars: listing.averageStars,
-					rating_count: listing.ratingCount,
-					average_adaptation_effort: listing.averageAdaptationEffort,
-					fork_count: listing.forkCount,
+					...toCommunityListingAggregatesOutput(listing),
 					public_url: buildCommunityPublicUrl(
 						ctx.callerContext.baseUrl,
 						listing.id,

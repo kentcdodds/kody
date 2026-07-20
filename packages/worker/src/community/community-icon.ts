@@ -459,14 +459,14 @@ function readRasterDimensions(
 	return readJpegDimensions(bytes)
 }
 
-function readPngDimensions(bytes: Uint8Array) {
+export function readPngDimensions(bytes: Uint8Array) {
 	const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 	if (
 		bytes.byteLength < 24 ||
 		!signature.every((byte, index) => bytes[index] === byte) ||
 		readAscii(bytes, 12, 4) !== 'IHDR'
 	) {
-		throw new Error('Community PNG icons must contain a valid PNG header.')
+		throw new Error('PNG images must contain a valid PNG header.')
 	}
 	return {
 		width: readUint32BigEndian(bytes, 16),
@@ -474,9 +474,9 @@ function readPngDimensions(bytes: Uint8Array) {
 	}
 }
 
-function readJpegDimensions(bytes: Uint8Array) {
+export function readJpegDimensions(bytes: Uint8Array) {
 	if (bytes.byteLength < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
-		throw new Error('Community JPEG icons must contain a valid JPEG header.')
+		throw new Error('JPEG images must contain a valid JPEG header.')
 	}
 	const frameMarkers = new Set([
 		0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce,
@@ -500,16 +500,16 @@ function readJpegDimensions(bytes: Uint8Array) {
 		}
 		offset += segmentLength
 	}
-	throw new Error('Community JPEG icons must contain valid image dimensions.')
+	throw new Error('JPEG images must contain valid image dimensions.')
 }
 
-function readWebpDimensions(bytes: Uint8Array) {
+export function readWebpDimensions(bytes: Uint8Array) {
 	if (
 		bytes.byteLength < 30 ||
 		readAscii(bytes, 0, 4) !== 'RIFF' ||
 		readAscii(bytes, 8, 4) !== 'WEBP'
 	) {
-		throw new Error('Community WebP icons must contain a valid WebP header.')
+		throw new Error('WebP images must contain a valid WebP header.')
 	}
 	const chunk = readAscii(bytes, 12, 4)
 	switch (chunk) {
@@ -538,12 +538,10 @@ function readWebpDimensions(bytes: Uint8Array) {
 			}
 		default: {
 			const unreachable: string = chunk
-			throw new Error(
-				`Community WebP icons use an unsupported "${unreachable}" chunk.`,
-			)
+			throw new Error(`WebP images use an unsupported "${unreachable}" chunk.`)
 		}
 	}
-	throw new Error('Community WebP icons must contain valid image dimensions.')
+	throw new Error('WebP images must contain valid image dimensions.')
 }
 
 function assertCommunityIconDimensions(dimensions: {

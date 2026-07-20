@@ -89,6 +89,8 @@ export function createCommunityDetailHandler(env: Env) {
 						trusted: detail.listing.trusted,
 						featured: detail.listing.featured,
 						readmeContent: detail.listing.readmeContent,
+						starCount: detail.listing.starCount,
+						starredByViewer: detail.starredByViewer,
 					},
 				},
 			})
@@ -174,6 +176,7 @@ export function createCommunityDetailOgImageHandler(env: Env) {
 				averageStars: publicListing.averageStars,
 				ratingCount: publicListing.ratingCount,
 				forkCount: publicListing.forkCount,
+				starCount: publicListing.starCount,
 				iconDataUri,
 			})
 

@@ -23,6 +23,55 @@ export type PublicCommunityListing = {
 	ratingCount: number
 	averageAdaptationEffort: number | null
 	forkCount: number
+	starCount: number
+}
+
+export type ProfileVisibility = 'public' | 'private'
+
+export type PublicCommunityProfile = {
+	username: string
+	displayName: string
+	bio: string | null
+	avatarUrl: string | null
+	visibility: ProfileVisibility
+	joinedAt: string
+	followerCount: number
+	followingCount: number
+	publicPackageCount: number
+	listingCount: number
+}
+
+export type PublicProfilePackageItem = {
+	name: string
+	kodyId: string
+	description: string
+	tags: Array<string>
+	updatedAt: string
+	communityListingId: string | null
+}
+
+export type CommunityActivityEventType =
+	| 'listing_published'
+	| 'listing_updated'
+	| 'listing_forked'
+	| 'listing_starred'
+
+export type PublicCommunityActivityItem = {
+	type: CommunityActivityEventType
+	actorUsername: string
+	actorDisplayName: string
+	actorAvatarUrl: string | null
+	listingId: string
+	listingName: string
+	listingKodyId: string
+	createdAt: string
+}
+
+export type PublicCommunityStargazer = {
+	username: string
+	displayName: string
+	avatarUrl: string | null
+	starredAt: string
 }
 
 /**

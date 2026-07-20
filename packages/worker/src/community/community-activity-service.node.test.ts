@@ -64,7 +64,7 @@ function createCommunityDb() {
 	sqlite.exec(
 		readFileSync(
 			new URL(
-				'../../migrations/0068-community-fork-listing-snapshots.sql',
+				'../../migrations/0070-community-fork-listing-snapshots.sql',
 				import.meta.url,
 			),
 			'utf8',

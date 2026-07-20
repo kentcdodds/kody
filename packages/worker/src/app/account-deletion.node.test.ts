@@ -226,6 +226,15 @@ function createTestDb(initial: RowMap): {
 									.map((row) => ({ kv_key: row['kv_key'] }))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
+							if (lower === 'select avatar_key from users where id = ?') {
+								const numericId = Number(params[0])
+								results = (rows.users ?? [])
+									.filter((row) => Number(row['id']) === numericId)
+									.map((row) => ({
+										avatar_key: row['avatar_key'] ?? null,
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
 							return { results: [] as Array<T>, meta: { changes: 0 } }
 						},
 						async first<T>() {
@@ -458,7 +467,11 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'package-job:b2fda105-005a-4e2b-9f22-1513b6752da2:event-runner'
 	const { db, rows } = createTestDb({
 		users: [
-			{ id: 1, email: 'a@example.com' },
+			{
+				id: 1,
+				email: 'a@example.com',
+				avatar_key: 'user-avatars/user-aaa/abc123.png',
+			},
 			{ id: 2, email: 'b@example.com' },
 		],
 		jobs: [
@@ -647,6 +660,36 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'rating-1', listing_id: 'listing-1', user_id: userBbb },
 			{ id: 'rating-2', listing_id: 'listing-2', user_id: userAaa },
 			{ id: 'rating-3', listing_id: 'listing-2', user_id: userBbb },
+		],
+		community_stars: [
+			{ listing_id: 'listing-1', user_id: userBbb },
+			{ listing_id: 'listing-2', user_id: userAaa },
+			{ listing_id: 'listing-2', user_id: userBbb },
+		],
+		community_activity_events: [
+			{
+				id: 'evt-1',
+				actor_user_id: userAaa,
+				event_type: 'listing_published',
+				listing_id: 'listing-2',
+			},
+			{
+				id: 'evt-2',
+				actor_user_id: userBbb,
+				event_type: 'listing_updated',
+				listing_id: 'listing-1',
+			},
+			{
+				id: 'evt-3',
+				actor_user_id: userBbb,
+				event_type: 'listing_published',
+				listing_id: 'listing-2',
+			},
+		],
+		user_follows: [
+			{ follower_user_id: userAaa, followee_user_id: userBbb },
+			{ follower_user_id: userBbb, followee_user_id: userAaa },
+			{ follower_user_id: userBbb, followee_user_id: 'user-ccc' },
 		],
 		community_reports: [
 			{
@@ -864,6 +907,20 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.community_ratings).toEqual([
 		{ id: 'rating-3', listing_id: 'listing-2', user_id: userBbb },
 	])
+	expect(rows.community_stars).toEqual([
+		{ listing_id: 'listing-2', user_id: userBbb },
+	])
+	expect(rows.community_activity_events).toEqual([
+		{
+			id: 'evt-3',
+			actor_user_id: userBbb,
+			event_type: 'listing_published',
+			listing_id: 'listing-2',
+		},
+	])
+	expect(rows.user_follows).toEqual([
+		{ follower_user_id: userBbb, followee_user_id: 'user-ccc' },
+	])
 	expect(rows.community_reports).toEqual([
 		{
 			id: 'report-3',
@@ -930,6 +987,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.community_listings).toBe(1)
 	expect(result.deletedRowCounts.community_forks).toBe(2)
 	expect(result.deletedRowCounts.community_ratings).toBe(2)
+	expect(result.deletedRowCounts.community_stars).toBe(2)
+	expect(result.deletedRowCounts.community_activity_events).toBe(2)
+	expect(result.deletedRowCounts.user_follows).toBe(2)
 	expect(result.deletedRowCounts.community_reports).toBe(2)
 	expect(result.updatedRowCounts.community_reports).toBe(1)
 	expect(result.deletedRowCounts.community_bans).toBe(1)
@@ -937,13 +997,14 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.platform_feedback).toBe(1)
 	expect(result.updatedRowCounts.platform_feedback).toBe(1)
 	expect(result.deletedKvKeys).toBe(13)
-	expect(result.deletedCommunityAssets).toBe(2)
+	expect(result.deletedCommunityAssets).toBe(3)
 	expect(result.deletedEmailBlobs).toBe(1)
 	// Both the pinned snapshot revision and the current icon commit revision
-	// (the source's published commit) are removed.
+	// (the source's published commit) are removed, plus the user's avatar.
 	expect(deletedCommunityAssetKeys.sort()).toEqual([
 		'community-icon:v1/listing-1/abc123/asset',
 		'community-icon:v1/listing-1/commit-1/asset',
+		'user-avatars/user-aaa/abc123.png',
 	])
 	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({

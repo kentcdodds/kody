@@ -53,6 +53,12 @@ import {
 	deleteCommunityBan,
 } from './repo.ts'
 import {
+	countCommunityStarsByListingIds,
+	deleteCommunityActivityEventsByListingId,
+	deleteCommunityStarsByListingId,
+	insertCommunityActivityEvent,
+} from './social-repo.ts'
+import {
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
 } from './fork-scan.ts'
@@ -292,9 +298,10 @@ async function attachListingAggregates(
 	db: D1Database,
 	listing: CommunityListingRecord,
 ): Promise<CommunityListingWithAggregates> {
-	const [ratingAggregate, forkCounts] = await Promise.all([
+	const [ratingAggregate, forkCounts, starCounts] = await Promise.all([
 		getCommunityRatingAggregatesByListingId(db, listing.id),
 		countCommunityForksByListingIds(db, [listing.id]),
+		countCommunityStarsByListingIds(db, [listing.id]),
 	])
 	return {
 		...listing,
@@ -302,18 +309,20 @@ async function attachListingAggregates(
 		ratingCount: ratingAggregate.ratingCount,
 		averageAdaptationEffort: ratingAggregate.averageAdaptationEffort,
 		forkCount: forkCounts[listing.id] ?? 0,
+		starCount: starCounts[listing.id] ?? 0,
 	}
 }
 
-async function attachListingAggregatesBatch(
+export async function attachListingAggregatesBatch(
 	db: D1Database,
 	listings: Array<CommunityListingRecord>,
 ): Promise<Array<CommunityListingWithAggregates>> {
 	if (listings.length === 0) return []
 	const listingIds = listings.map((listing) => listing.id)
-	const [ratingAggregates, forkCounts] = await Promise.all([
+	const [ratingAggregates, forkCounts, starCounts] = await Promise.all([
 		getCommunityRatingAggregatesByListingIds(db, listingIds),
 		countCommunityForksByListingIds(db, listingIds),
+		countCommunityStarsByListingIds(db, listingIds),
 	])
 	return listings.map((listing) => {
 		const ratingAggregate = ratingAggregates[listing.id] ?? {
@@ -328,6 +337,7 @@ async function attachListingAggregatesBatch(
 			ratingCount: ratingAggregate.ratingCount,
 			averageAdaptationEffort: ratingAggregate.averageAdaptationEffort,
 			forkCount: forkCounts[listing.id] ?? 0,
+			starCount: starCounts[listing.id] ?? 0,
 		}
 	})
 }
@@ -510,6 +520,19 @@ export async function publishCommunityListing(input: {
 	if (!listing) {
 		throw new Error(`Community listing "${listingId}" could not be loaded.`)
 	}
+	try {
+		await insertCommunityActivityEvent(input.env.APP_DB, {
+			id: crypto.randomUUID(),
+			actorUserId: input.userId,
+			eventType: existingListing ? 'listing_updated' : 'listing_published',
+			listingId,
+		})
+	} catch (activityError) {
+		console.error(
+			'Failed to record community activity event after publish:',
+			activityError,
+		)
+	}
 	invalidateCommunityPublicCache()
 	return listing
 }
@@ -546,6 +569,11 @@ export async function unpublishCommunityListing(input: {
 		reason: 'unpublish',
 	})
 	await deleteCommunityRatingsByListingId(input.env.APP_DB, input.listingId)
+	await deleteCommunityActivityEventsByListingId(
+		input.env.APP_DB,
+		input.listingId,
+	)
+	await deleteCommunityStarsByListingId(input.env.APP_DB, input.listingId)
 	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
 	invalidateCommunityPublicCache()
 }
@@ -1128,6 +1156,14 @@ export async function resolveCommunityReport(input: {
 					})
 				}
 				await deleteCommunityRatingsByListingId(
+					input.env.APP_DB,
+					report.listingId,
+				)
+				await deleteCommunityActivityEventsByListingId(
+					input.env.APP_DB,
+					report.listingId,
+				)
+				await deleteCommunityStarsByListingId(
 					input.env.APP_DB,
 					report.listingId,
 				)

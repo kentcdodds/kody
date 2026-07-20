@@ -24,6 +24,7 @@ import {
 	searchCommunityListings,
 	getCommunityListingWithAggregates,
 } from '#worker/community/service.ts'
+import { getCommunityStar } from '#worker/community/social-repo.ts'
 
 const defaultCommunityListLimit = 50
 const onboardingFeaturedListingLimit = 6
@@ -165,10 +166,18 @@ async function loadCommunityDetailDataUncached(
 	if (!listing) return null
 
 	const user = await readAuthenticatedAppUser(request, env)
+	const starredByViewer =
+		user != null
+			? await getCommunityStar(env.APP_DB, {
+					listingId,
+					userId: user.mcpUser.userId,
+				})
+			: false
 	return composeCommunityDetailLoaderData(
 		listing,
 		Boolean(user),
 		user?.roles.includes('admin') ?? false,
+		starredByViewer,
 	)
 }
 
@@ -176,6 +185,7 @@ export function composeCommunityDetailLoaderData(
 	listing: PublicCommunityListing,
 	loggedIn: boolean,
 	viewerIsAdmin = false,
+	starredByViewer = false,
 ): CommunityDetailLoaderData {
 	return {
 		ok: true,
@@ -186,5 +196,6 @@ export function composeCommunityDetailLoaderData(
 			name: listing.name,
 			listingId: listing.id,
 		}),
+		starredByViewer,
 	}
 }

@@ -30,7 +30,13 @@ import {
 	stackedPageCss,
 	textareaCss,
 } from '#client/styles/style-primitives.ts'
-import { type PublicCommunityListing } from '#app/community-public-types.ts'
+import {
+	type PublicCommunityListing,
+	type PublicCommunityStargazer,
+} from '#app/community-public-types.ts'
+import { type CommunityStargazersLoaderData } from '#app/loader-data.ts'
+import { formatCommunityPublishedDate } from '#app/community-display.ts'
+import { UserAvatar } from '#app/user-avatar.tsx'
 
 type CommunityDetailApiPayload = {
 	ok: true
@@ -38,6 +44,7 @@ type CommunityDetailApiPayload = {
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string
+	starredByViewer: boolean
 }
 
 type CommunityInstallApiPayload = {
@@ -111,6 +118,8 @@ export async function communityDetailRouteLoader(
 			trusted: payload.listing.trusted,
 			featured: payload.listing.featured,
 			readmeContent: payload.listing.readmeContent,
+			starCount: payload.listing.starCount,
+			starredByViewer: payload.starredByViewer,
 		},
 	}
 }
@@ -145,6 +154,14 @@ export function CommunityDetailRoute(handle: Handle) {
 	let copyResetTimerId: ReturnType<typeof window.setTimeout> | null = null
 	let shellLoadedForListingId: string | null = null
 	let shellRequestedForListingId: string | null = null
+	let starCount = 0
+	let starredByViewer = false
+	let starState: 'idle' | 'submitting' | 'error' = 'idle'
+	let starMessage: string | null = null
+	let stargazers: Array<PublicCommunityStargazer> = []
+	let stargazersTotal = 0
+	let stargazersStatus: 'idle' | 'loading' | 'ready' | 'error' = 'idle'
+	let stargazersLoadedForListingId: string | null = null
 
 	async function loadDetailShell() {
 		const listingId = getCurrentListingId(handle)
@@ -189,17 +206,94 @@ export function CommunityDetailRoute(handle: Handle) {
 			installMessage = null
 			installOutcome = null
 			readmeContent = payload.listing.readmeContent
+			starCount = payload.listing.starCount
+			starredByViewer = payload.starredByViewer
+			starState = 'idle'
+			starMessage = null
 			reportState = 'idle'
 			reportMessage = null
 			shellLoadedForListingId = listingId
 			shellStatus = 'ready'
 			handle.update()
+			void loadStargazers(listingId)
 		} catch {
 			if (requestId !== shellLoadRequestId) return
 			// Mark the listing as attempted so renders do not requeue the load
 			// in a loop; the user can recover via navigation or reload.
 			shellLoadedForListingId = listingId
 			shellStatus = 'error'
+			handle.update()
+		}
+	}
+
+	async function loadStargazers(listingId: string) {
+		stargazersStatus = 'loading'
+		handle.update()
+		try {
+			const response = await fetch(
+				routes.communityStargazersApi.href({ listingId }),
+				{ headers: { Accept: 'application/json' } },
+			)
+			const payload = await readJson<CommunityStargazersLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load stargazers.')
+			}
+			stargazers = payload.stargazers
+			stargazersTotal = payload.totalStars
+			stargazersLoadedForListingId = listingId
+			stargazersStatus = 'ready'
+			handle.update()
+		} catch {
+			stargazersStatus = 'error'
+			handle.update()
+		}
+	}
+
+	async function submitStar(nextStarred: boolean) {
+		const listingId = getCurrentListingId(handle)
+		if (!listingId || starState === 'submitting') return
+
+		starState = 'submitting'
+		starMessage = null
+		handle.update()
+
+		try {
+			const response = await fetch(
+				routes.communityStarApiPost.href({ listingId }),
+				{
+					method: 'POST',
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+					},
+					credentials: 'include',
+					body: JSON.stringify({ starred: nextStarred }),
+				},
+			)
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<{
+				ok: boolean
+				starred?: boolean
+				starCount?: number
+				error?: string
+			}>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error ?? 'Unable to update star status.')
+			}
+			starredByViewer = payload.starred ?? nextStarred
+			starCount = payload.starCount ?? starCount
+			starState = 'idle'
+			handle.update()
+			void loadStargazers(listingId)
+			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
+			if (frame) void frame.reload()
+		} catch (error) {
+			starState = 'error'
+			starMessage =
+				error instanceof Error ? error.message : 'Unable to update star status.'
 			handle.update()
 		}
 	}
@@ -484,10 +578,17 @@ export function CommunityDetailRoute(handle: Handle) {
 		installMessage = null
 		installOutcome = null
 		readmeContent = routeData.readmeContent
+		starCount = routeData.starCount
+		starredByViewer = routeData.starredByViewer
+		starState = 'idle'
+		starMessage = null
 		reportState = 'idle'
 		reportMessage = null
 		shellLoadedForListingId = listingId
 		shellStatus = 'ready'
+		if (stargazersLoadedForListingId !== listingId) {
+			void loadStargazers(listingId)
+		}
 		return true
 	}
 
@@ -717,6 +818,83 @@ export function CommunityDetailRoute(handle: Handle) {
 							)}
 						</section>
 
+						<section mix={css(cardCss)} data-testid="community-star">
+							<h2 mix={css(cardTitleCss)}>Stars</h2>
+							<p mix={css(descriptionCss)} data-testid="community-star-count">
+								{starCount} {starCount === 1 ? 'star' : 'stars'}
+							</p>
+							{loggedIn ? (
+								<button
+									type="button"
+									disabled={starState === 'submitting'}
+									mix={[
+										on('click', () => void submitStar(!starredByViewer)),
+										css(
+											starredByViewer ? secondaryButtonCss : primaryButtonCss,
+										),
+									]}
+								>
+									{starState === 'submitting'
+										? 'Saving…'
+										: starredByViewer
+											? 'Unstar'
+											: 'Star'}
+								</button>
+							) : (
+								<p mix={css(descriptionCss)}>
+									<a href="/login" mix={css(mutedLinkCss)}>
+										Log in
+									</a>{' '}
+									to star this package.
+								</p>
+							)}
+							{starMessage ? (
+								<p mix={css({ margin: 0, color: colors.error })} role="alert">
+									{starMessage}
+								</p>
+							) : null}
+							<p
+								mix={css(descriptionCss)}
+								data-testid="community-stargazers-total"
+							>
+								{stargazersTotal}{' '}
+								{stargazersTotal === 1 ? 'stargazer' : 'stargazers'}
+							</p>
+							{stargazersStatus === 'loading' ? (
+								<p mix={css(descriptionCss)}>Loading stargazers…</p>
+							) : null}
+							{stargazersStatus === 'ready' && stargazers.length > 0 ? (
+								<ul
+									mix={css(stargazerListCss)}
+									data-testid="community-stargazers"
+								>
+									{stargazers.map((stargazer) => (
+										<li key={stargazer.username} mix={css(stargazerRowCss)}>
+											<UserAvatar
+												displayName={stargazer.displayName}
+												avatarUrl={stargazer.avatarUrl}
+												size={32}
+											/>
+											<span>
+												<a
+													href={routes.profile.href({
+														username: stargazer.username,
+													})}
+													mix={css(mutedLinkCss)}
+												>
+													{stargazer.displayName}
+												</a>{' '}
+												<span mix={css({ color: colors.textMuted })}>
+													starred{' '}
+													{formatCommunityPublishedDate(stargazer.starredAt)}
+												</span>
+											</span>
+										</li>
+									))}
+								</ul>
+							) : null}
+						</section>
+
 						<section mix={css(cardCss)}>
 							<h2 mix={css(cardTitleCss)}>Fork with your agent</h2>
 							<p mix={css(descriptionCss)}>
@@ -907,6 +1085,21 @@ const buttonRowCss = {
 	display: 'flex',
 	gap: '0.5rem',
 	flexWrap: 'wrap' as const,
+}
+
+const stargazerListCss = {
+	display: 'grid',
+	gap: '0.35rem',
+	margin: 0,
+	padding: 0,
+	listStyle: 'none',
+	fontSize: typography.fontSize.sm,
+}
+
+const stargazerRowCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.5rem',
 }
 
 const checkListCss = {

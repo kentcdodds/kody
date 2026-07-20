@@ -12,7 +12,10 @@ import {
 	type AccountConnectionListItem,
 	type AccountConnectionsLoaderData,
 	type AccountProfileLoaderData,
+	type ProfileVisibility,
 } from '#app/loader-data.ts'
+import { routes } from '#app/routes.ts'
+import { UserAvatar } from '#app/user-avatar.tsx'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	descriptionCss,
@@ -24,6 +27,7 @@ import {
 	inputCss,
 	mutedLinkCss,
 	primaryLinkCss,
+	textareaCss,
 } from '#client/styles/style-primitives.ts'
 import { queueSessionRefresh } from '#client/session.ts'
 import {
@@ -53,6 +57,7 @@ import {
 
 const emailChangeApiPath = '/account/email-change.json'
 const connectionsApiPath = '/account/connections.json'
+const accountAvatarApiPath = '/account/profile/avatar.json'
 
 const providerLabels: Record<string, string> = {
 	github: 'GitHub',
@@ -129,6 +134,14 @@ export function AccountRoute(handle: Handle) {
 	let emailVerified = false
 	let username = ''
 	let draftUsername = ''
+	let draftDisplayName = ''
+	let draftBio = ''
+	let draftProfileVisibility: ProfileVisibility = 'public'
+	let savedDisplayName = ''
+	let savedBio = ''
+	let savedProfileVisibility: ProfileVisibility = 'public'
+	let avatarUrl: string | null = null
+	let avatarStatus: 'idle' | 'uploading' | 'removing' = 'idle'
 	let draftEmail = ''
 	let emailChangePassword = ''
 	let message: string | null = null
@@ -257,6 +270,7 @@ export function AccountRoute(handle: Handle) {
 			emailVerified = payload.emailVerified
 			username = payload.username
 			draftUsername = payload.username
+			applyProfileFields(payload)
 			draftEmail = payload.email
 			status = 'ready'
 			message = null
@@ -270,6 +284,97 @@ export function AccountRoute(handle: Handle) {
 				error instanceof Error ? error.message : 'Unable to load your account.'
 			messageTone = 'error'
 			loadLatch.markFailed(href)
+			handle.update()
+		}
+	}
+
+	function applyProfileFields(payload: AccountProfileLoaderData) {
+		savedDisplayName = payload.displayName
+		savedBio = payload.bio ?? ''
+		savedProfileVisibility = payload.profileVisibility
+		draftDisplayName = payload.displayName
+		draftBio = payload.bio ?? ''
+		draftProfileVisibility = payload.profileVisibility
+		avatarUrl = payload.avatarUrl
+	}
+
+	async function handleAvatarSelected(event: Event) {
+		const input = event.currentTarget
+		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
+		const file = input.files[0]
+		avatarStatus = 'uploading'
+		message = null
+		messageTone = 'info'
+		handle.update()
+
+		try {
+			const body = new FormData()
+			body.set('avatar', file)
+			const response = await fetch(accountAvatarApiPath, {
+				method: 'POST',
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				body,
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountProfileLoaderData & { error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to upload avatar.')
+			}
+			applyProfileFields(payload)
+			message = 'Avatar updated.'
+			messageTone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error ? error.message : 'Unable to upload avatar.'
+			messageTone = 'error'
+		} finally {
+			avatarStatus = 'idle'
+			input.value = ''
+			handle.update()
+		}
+	}
+
+	async function handleRemoveAvatar() {
+		avatarStatus = 'removing'
+		message = null
+		messageTone = 'info'
+		handle.update()
+
+		try {
+			const response = await fetch(accountAvatarApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({ remove: true }),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountProfileLoaderData & { error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to remove avatar.')
+			}
+			applyProfileFields(payload)
+			message = 'Avatar removed.'
+			messageTone = 'info'
+		} catch (error) {
+			message =
+				error instanceof Error ? error.message : 'Unable to remove avatar.'
+			messageTone = 'error'
+		} finally {
+			avatarStatus = 'idle'
 			handle.update()
 		}
 	}
@@ -385,7 +490,7 @@ export function AccountRoute(handle: Handle) {
 		}
 	}
 
-	async function handleUsernameSubmit(event: SubmitEvent) {
+	async function handleProfileSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		const nextUsername = draftUsername.trim()
 		if (!nextUsername) {
@@ -408,7 +513,12 @@ export function AccountRoute(handle: Handle) {
 					'Content-Type': 'application/json',
 				},
 				credentials: 'include',
-				body: JSON.stringify({ username: nextUsername }),
+				body: JSON.stringify({
+					username: nextUsername,
+					displayName: draftDisplayName,
+					bio: draftBio,
+					profileVisibility: draftProfileVisibility,
+				}),
 			})
 			if (response.status === 401) {
 				window.location.assign('/login')
@@ -424,12 +534,13 @@ export function AccountRoute(handle: Handle) {
 				}
 			>(response)
 			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error || 'Unable to save username.')
+				throw new Error(payload?.error || 'Unable to save profile.')
 			}
 			email = payload.email
 			emailVerified = payload.emailVerified
 			username = payload.username
 			draftUsername = payload.username
+			applyProfileFields(payload)
 			const packageMessage =
 				typeof payload.packageUpdateMessage === 'string'
 					? payload.packageUpdateMessage
@@ -438,14 +549,14 @@ export function AccountRoute(handle: Handle) {
 				typeof payload.communityUpdateWarning === 'string'
 					? payload.communityUpdateWarning
 					: null
-			message = ['Username saved.', packageMessage, communityWarning]
+			message = ['Profile saved.', packageMessage, communityWarning]
 				.filter(Boolean)
 				.join(' ')
 			messageTone = communityWarning ? 'error' : 'info'
 			queueSessionRefresh()
 		} catch (error) {
 			message =
-				error instanceof Error ? error.message : 'Unable to save username.'
+				error instanceof Error ? error.message : 'Unable to save profile.'
 			messageTone = 'error'
 		} finally {
 			saveStatus = 'idle'
@@ -467,6 +578,7 @@ export function AccountRoute(handle: Handle) {
 		emailVerified = routeData.emailVerified
 		username = routeData.username
 		draftUsername = routeData.username
+		applyProfileFields(routeData)
 		draftEmail = routeData.email
 		applyConnectionsPayload(connectionsData)
 		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
@@ -508,6 +620,11 @@ export function AccountRoute(handle: Handle) {
 		const isSendingEmailChange = emailChangeStatus === 'sending'
 		const normalizedDraftUsername = draftUsername.trim().toLowerCase()
 		const normalizedDraftEmail = draftEmail.trim().toLowerCase()
+		const profileUnchanged =
+			normalizedDraftUsername === username &&
+			draftDisplayName === savedDisplayName &&
+			draftBio === savedBio &&
+			draftProfileVisibility === savedProfileVisibility
 
 		return (
 			<AccountManagementShell>
@@ -547,14 +664,58 @@ export function AccountRoute(handle: Handle) {
 						{emailVerified && needsOnboarding ? renderOnboardingBanner() : null}
 						<AccountManagementPanel
 							title="Profile"
-							description="Your username is unique and visible anywhere Kody needs a display name. Your email stays on the account for login."
+							description="Your username is unique. Display name, bio, avatar, and visibility control your public community profile."
 						>
 							<form
 								mix={[
 									css({ display: 'grid', gap: spacing.md }),
-									on('submit', handleUsernameSubmit),
+									on('submit', handleProfileSubmit),
 								]}
 							>
+								<div mix={css(avatarSectionCss)} data-testid="account-avatar">
+									<UserAvatar
+										displayName={draftDisplayName || username}
+										avatarUrl={avatarUrl}
+										size={72}
+										testId="account-avatar-image"
+									/>
+									<div mix={css({ display: 'grid', gap: spacing.sm })}>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Avatar</span>
+											<input
+												type="file"
+												name="avatar"
+												accept="image/png,image/jpeg,image/webp"
+												disabled={avatarStatus !== 'idle' || isSaving}
+												mix={[
+													css(inputCss),
+													on('change', (event) => {
+														void handleAvatarSelected(event)
+													}),
+												]}
+											/>
+										</label>
+										{avatarUrl ? (
+											<button
+												type="button"
+												disabled={avatarStatus !== 'idle' || isSaving}
+												mix={[
+													css(secondaryButtonCss),
+													on('click', () => {
+														void handleRemoveAvatar()
+													}),
+												]}
+											>
+												{avatarStatus === 'removing'
+													? 'Removing...'
+													: 'Remove avatar'}
+											</button>
+										) : null}
+										{avatarStatus === 'uploading' ? (
+											<p mix={css(descriptionCss)}>Uploading avatar…</p>
+										) : null}
+									</div>
+								</div>
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Username</span>
 									<input
@@ -568,8 +729,101 @@ export function AccountRoute(handle: Handle) {
 										mix={[css(inputCss), on('input', updateDraftUsername)]}
 									/>
 								</label>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Display name</span>
+									<input
+										type="text"
+										name="displayName"
+										maxLength={50}
+										autoComplete="nickname"
+										value={draftDisplayName}
+										mix={[
+											css(inputCss),
+											on('input', (event) => {
+												draftDisplayName = (
+													event.currentTarget as HTMLInputElement
+												).value
+												handle.update()
+											}),
+										]}
+									/>
+								</label>
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Bio</span>
+									<textarea
+										name="bio"
+										maxLength={500}
+										rows={3}
+										value={draftBio}
+										mix={[
+											css(textareaCss),
+											on('input', (event) => {
+												draftBio = (event.currentTarget as HTMLTextAreaElement)
+													.value
+												handle.update()
+											}),
+										]}
+									/>
+								</label>
+								<fieldset mix={css({ margin: 0, padding: 0, border: 'none' })}>
+									<legend mix={css(fieldLabelCss)}>Profile visibility</legend>
+									<label
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											alignItems: 'center',
+											marginTop: spacing.sm,
+										})}
+									>
+										<input
+											type="radio"
+											name="profileVisibility"
+											checked={draftProfileVisibility === 'public'}
+											mix={[
+												on('change', () => {
+													draftProfileVisibility = 'public'
+													handle.update()
+												}),
+											]}
+										/>
+										<span>Public</span>
+									</label>
+									<label
+										mix={css({
+											display: 'flex',
+											gap: spacing.sm,
+											alignItems: 'center',
+											marginTop: spacing.xs,
+										})}
+									>
+										<input
+											type="radio"
+											name="profileVisibility"
+											checked={draftProfileVisibility === 'private'}
+											mix={[
+												on('change', () => {
+													draftProfileVisibility = 'private'
+													handle.update()
+												}),
+											]}
+										/>
+										<span>Private</span>
+									</label>
+									<p mix={css(descriptionCss)}>
+										Private hides your profile, public package list, and
+										activity from others.
+									</p>
+								</fieldset>
 								<p mix={css({ color: colors.textMuted, margin: 0 })}>
 									Email: {email} ({emailVerified ? 'verified' : 'unverified'})
+								</p>
+								<p mix={css({ margin: 0 })}>
+									<a
+										href={routes.profile.href({ username })}
+										mix={css(mutedLinkCss)}
+									>
+										View public profile
+									</a>
 								</p>
 								{normalizedDraftUsername !== username ? (
 									<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -584,10 +838,10 @@ export function AccountRoute(handle: Handle) {
 								<div>
 									<button
 										type="submit"
-										disabled={isSaving || normalizedDraftUsername === username}
+										disabled={isSaving || profileUnchanged}
 										mix={css(primaryButtonCss)}
 									>
-										{isSaving ? 'Saving...' : 'Save username'}
+										{isSaving ? 'Saving...' : 'Save profile'}
 									</button>
 								</div>
 							</form>
@@ -834,6 +1088,13 @@ export function AccountRoute(handle: Handle) {
 const primaryButtonCss = getPrimaryButtonCss()
 const secondaryButtonCss = getSecondaryButtonCss()
 const dangerButtonCss = getDangerButtonCss()
+
+const avatarSectionCss = {
+	display: 'flex',
+	alignItems: 'flex-start',
+	gap: spacing.md,
+	flexWrap: 'wrap' as const,
+}
 
 const providerConnectButtonCss = {
 	...secondaryButtonCss,

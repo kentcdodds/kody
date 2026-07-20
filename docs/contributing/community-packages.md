@@ -45,6 +45,37 @@ Migration: `packages/worker/migrations/0045-community-listings.sql`
 | `community_reports`  | Reports with denormalized `listing_name` / `listing_owner_user_id` |
 | `community_bans`     | Community-wide bans (publish, fork, rate, report)                  |
 
+Social / profiles migration:
+`packages/worker/migrations/0068-community-social.sql`
+
+| Table / column                    | Purpose                                                           |
+| --------------------------------- | ----------------------------------------------------------------- |
+| `users.display_name`, `users.bio` | Optional public profile fields                                    |
+| `users.profile_visibility`        | `public` (default) or `private`                                   |
+| `saved_packages.is_private`       | Projection of `package.json#private` for profile/timeline filters |
+| `user_follows`                    | Follow edges keyed by MCP stable user ids                         |
+| `community_stars`                 | Listing stargazers (bookmark stars; not 1–5 ratings)              |
+| `community_activity_events`       | Stored `listing_published` / `listing_updated` events only        |
+
+Follow, star, and activity actor columns store the MCP **stable user id**
+(`users.stable_user_id`), matching other community ownership columns such as
+`community_listings.owner_user_id`.
+
+`saved_packages.is_private` defaults to `1` in the migration (safe until
+manifests are read). Package save/publish paths keep the column in sync with
+`package.json#private`. Operators can recompute every row with
+`POST /__maintenance/backfill-package-privacy` (Bearer
+`CAPABILITY_REINDEX_SECRET`), implemented in `maintenance-handler.ts`.
+
+### Derived timeline events
+
+Timelines merge stored `community_activity_events` with **read-time derived**
+fork and star items from `community_forks` / `community_stars`. Forks appear
+only while the forker's saved package copy has `is_private = 0`; unstarring
+drops the star item immediately. Ratings are never projected into timelines.
+Storing only publish/update events avoids orphaned fork/star timeline rows when
+privacy flips or a star is removed — see `social-repo.ts` / `social-service.ts`.
+
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.
 Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks
 owner unpublish. **Hard delete** (admin report action) removes the listing row,
@@ -120,16 +151,18 @@ icon entries for the listing.
 
 Core logic: `packages/worker/src/community/`
 
-| Module         | Role                                                                |
-| -------------- | ------------------------------------------------------------------- |
-| `service.ts`   | Publish, unpublish, search, fork, rate, report, admin resolution    |
-| `install.ts`   | One-click install: fork + publish checks + projection publish       |
-| `repo.ts`      | D1 queries                                                          |
-| `activity-*`   | Admin activity feed and durable admin subscription dispatch         |
-| `snapshot.ts`  | KV snapshot I/O                                                     |
-| `fork-scan.ts` | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan |
-| `og-image.ts`  | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
-| `types.ts`     | Shared record types                                                 |
+| Module              | Role                                                                |
+| ------------------- | ------------------------------------------------------------------- |
+| `service.ts`        | Publish, unpublish, search, fork, rate, report, admin resolution    |
+| `social-service.ts` | Profiles, follows, timeline merge, stars / stargazers               |
+| `social-repo.ts`    | D1 for profiles, follows, stars, activity, public package lists     |
+| `install.ts`        | One-click install: fork + publish checks + projection publish       |
+| `repo.ts`           | D1 queries                                                          |
+| `activity-*`        | Admin activity feed and durable admin subscription dispatch         |
+| `snapshot.ts`       | KV snapshot I/O                                                     |
+| `fork-scan.ts`      | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan |
+| `og-image.ts`       | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
+| `types.ts`          | Shared record types                                                 |
 
 `publishCommunityListing` validates MIT license, README `## Intent`, published
 commit, and ban status; copies published source into KV; upserts D1 metadata.
@@ -150,7 +183,7 @@ stable user ids, and package source. Rating rows use `updated_at`, so the feed
 shows the latest value for each user/listing rating. Since one-click install and
 agent fork both persist through `community_forks`, historical data cannot
 distinguish them and reports both as `fork`. New fork rows snapshot the public
-listing name and kody id; migration `0068-community-fork-listing-snapshots.sql`
+listing name and kody id; migration `0070-community-fork-listing-snapshots.sql`
 backfills existing rows while their listings still exist, preserving readable
 fork provenance after a later hard delete. Pre-snapshot orphan rows use explicit
 deleted/unknown placeholders. Actor usernames use the materialized stable-id
@@ -180,6 +213,10 @@ Capabilities:
 - `community_get`
 - `community_fork`
 - `community_rate`
+- `community_star` / `community_unstar` / `community_starred_list`
+- `community_profile_get` / `community_profile_update`
+- `community_follow` / `community_unfollow`
+- `community_timeline`
 - `community_report`
 - `community_set_trusted` (admin-only via `requiredRole`)
 - `community_set_featured` (admin-only via `requiredRole`)
@@ -286,17 +323,26 @@ count.
 ## Isolation invariants
 
 - Forks are copies; **no cross-user `kody:@…` import ever resolves**.
-- The only deliberate cross-user data flows are public listing snapshots and
-  aggregate ratings.
-- Owner `userId` is not exposed on public pages or community capability
-  responses; package name scope reveals the owner's username by design.
+- Deliberate cross-user data flows are public listing snapshots, aggregate
+  ratings, star counts/stargazers, and public profile / timeline surfaces.
+- Private profiles and private packages (`profile_visibility = private`,
+  `saved_packages.is_private = 1`) must not appear on public social reads.
+- Package name scope and public profiles reveal the owner's username by design;
+  browsing does not require exposing a stable owner user id on every search hit.
 - Community results stay out of general MCP `search` and per-user package vector
   indexes.
 
+Account deletion and export cover social tables through `accountUserDataTargets`
+(`user_follows` on both follower and followee columns, `community_stars` by user
+and by owned listing, `community_activity_events` by actor and by owned
+listing), matching the multi-column pattern used for `community_reports`.
+
 ## Related docs
 
+- [Community profiles (usage)](../use/community-profiles.md) — agent-facing
+  profiles, follows, timelines, and stars
 - [Packages and manifests](./packages-and-manifests.md) — saved package model
 - [Repo-backed editing sessions](../use/repo-sessions.md) — fork activation path
 - [Adding capabilities](./adding-kody.md) — domain registration
-- [Primitives map](./architecture/primitives.yaml) — `community-listings`
-  primitive entry
+- [Primitives map](./architecture/primitives.yaml) — `community-listings` and
+  `community-social` primitive entries

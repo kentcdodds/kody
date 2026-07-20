@@ -1,25 +1,43 @@
 import { z } from 'zod'
+import { buildUserAvatarUrl } from '#app/community-public.ts'
 import { getCommunityListingWithAggregates } from '#worker/community/service.ts'
+import { listCommunityStargazersForListing } from '#worker/community/social-service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { callerContextFields } from '#mcp/observability.ts'
 import {
+	buildCommunityOwnerProfileUrl,
 	buildCommunityPublicUrl,
 	communityContentWarning,
 	communityFeaturedFieldSchema,
 	communityGetForkInstructions,
 	communityListingAggregatesSchema,
 	communityListingStatusSchema,
+	communityStargazerSchema,
 	communityTrustedFieldSchema,
+	resolveCommunityOwnerUsername,
+	toCommunityListingAggregatesOutput,
 } from './shared.ts'
+
+const recentStargazerLimit = 10
 
 export const communityGetCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'community_get',
 		description:
-			'Load full detail for one public community listing, including untrusted README content and aggregate ratings.',
-		keywords: ['community', 'get', 'listing', 'detail', 'readme', 'package'],
+			'Load full detail for one public community listing, including untrusted README content, aggregate ratings, and recent stargazers.',
+		keywords: [
+			'community',
+			'get',
+			'listing',
+			'detail',
+			'readme',
+			'package',
+			'stargazers',
+			'stars',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -37,14 +55,21 @@ export const communityGetCapability = defineDomainCapability(
 			status: communityListingStatusSchema,
 			trusted: communityTrustedFieldSchema,
 			featured: communityFeaturedFieldSchema,
+			owner_username: z.string(),
+			owner_profile_url: z.string(),
 			public_url: z.string(),
 			published_at: z.string(),
 			readme_untrusted: z.string().nullable(),
 			content_warning: z.string(),
 			fork_instructions: z.string(),
+			stargazers: z.object({
+				total_stars: z.number().int().nonnegative(),
+				recent_stargazers: z.array(communityStargazerSchema),
+			}),
 		}),
 		async handler(args, ctx) {
 			requireMcpUser(ctx.callerContext)
+			const { baseUrl } = callerContextFields(ctx.callerContext)
 			const listing = await getCommunityListingWithAggregates({
 				env: ctx.env,
 				listingId: args.listing_id,
@@ -53,6 +78,13 @@ export const communityGetCapability = defineDomainCapability(
 			if (!listing) {
 				throw new Error('Community listing not found.')
 			}
+			const ownerUsername = resolveCommunityOwnerUsername(listing.name)
+			const { totalStars, stargazers } =
+				await listCommunityStargazersForListing({
+					env: ctx.env,
+					listingId: listing.id,
+					limit: recentStargazerLimit,
+				})
 			return {
 				listing_id: listing.id,
 				name: listing.name,
@@ -64,18 +96,32 @@ export const communityGetCapability = defineDomainCapability(
 				status: listing.status,
 				trusted: listing.trusted,
 				featured: listing.featured,
-				public_url: buildCommunityPublicUrl(
-					ctx.callerContext.baseUrl,
-					listing.id,
+				owner_username: ownerUsername,
+				owner_profile_url: buildCommunityOwnerProfileUrl(
+					baseUrl,
+					ownerUsername,
 				),
+				public_url: buildCommunityPublicUrl(baseUrl, listing.id),
 				published_at: listing.publishedAt,
-				average_stars: listing.averageStars,
-				rating_count: listing.ratingCount,
-				average_adaptation_effort: listing.averageAdaptationEffort,
-				fork_count: listing.forkCount,
+				...toCommunityListingAggregatesOutput(listing),
 				readme_untrusted: listing.readmeContent,
 				content_warning: communityContentWarning,
 				fork_instructions: communityGetForkInstructions,
+				stargazers: {
+					total_stars: totalStars,
+					recent_stargazers: stargazers.map((stargazer) => {
+						const avatarPath = buildUserAvatarUrl({
+							username: stargazer.username,
+							avatarKey: stargazer.avatarKey,
+						})
+						return {
+							username: stargazer.username,
+							display_name: stargazer.displayName,
+							avatar_url: avatarPath ? `${baseUrl}${avatarPath}` : null,
+							starred_at: stargazer.starredAt,
+						}
+					}),
+				},
 			}
 		},
 	},

@@ -32,6 +32,8 @@ const sampleListing = {
 	trustedCommit: null,
 	trustedAt: null,
 	trusted: false,
+	featuredAt: null,
+	featured: false,
 	createdAt: '2026-01-01T00:00:00.000Z',
 	updatedAt: '2026-01-01T00:00:00.000Z',
 	publishedAt: '2026-01-01T00:00:00.000Z',
@@ -39,6 +41,7 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
+	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 const env = {} as Env

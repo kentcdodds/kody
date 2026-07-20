@@ -110,6 +110,27 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'community_ratings' },
 	{
 		kind: 'community_listing_child',
+		table: 'community_stars',
+		listingColumn: 'listing_id',
+	},
+	{ kind: 'user_id', table: 'community_stars' },
+	{
+		kind: 'community_listing_child',
+		table: 'community_activity_events',
+		listingColumn: 'listing_id',
+	},
+	{
+		kind: 'user_columns',
+		table: 'community_activity_events',
+		columns: ['actor_user_id'],
+	},
+	{
+		kind: 'user_columns',
+		table: 'user_follows',
+		columns: ['follower_user_id', 'followee_user_id'],
+	},
+	{
+		kind: 'community_listing_child',
 		table: 'community_forks',
 		listingColumn: 'listing_id',
 	},

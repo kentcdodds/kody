@@ -45,6 +45,8 @@ const listing = {
 	trustedCommit: null,
 	trustedAt: null,
 	trusted: false,
+	featuredAt: null,
+	featured: false,
 	createdAt: '2026-07-10T00:00:00.000Z',
 	updatedAt: '2026-07-10T00:00:00.000Z',
 	publishedAt: '2026-07-10T00:00:00.000Z',
@@ -52,6 +54,7 @@ const listing = {
 	ratingCount: 12,
 	averageAdaptationEffort: null,
 	forkCount: 37,
+	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 const tinyPng = Uint8Array.from([
@@ -93,6 +96,7 @@ test('community detail OG image embeds PNG icons and falls back for WebP', async
 	expect(mocks.renderCommunityOgImage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: listing.name,
+			starCount: listing.starCount,
 			iconDataUri: expect.stringMatching(/^data:image\/png;base64,/),
 		}),
 	)

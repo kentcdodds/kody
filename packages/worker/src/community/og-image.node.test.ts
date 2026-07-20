@@ -26,6 +26,7 @@ test('renderCommunityOgImage returns valid PNG bytes with and without ratings', 
 		averageStars: 4.6,
 		ratingCount: 12,
 		forkCount: 37,
+		starCount: 8,
 		iconDataUri: await sampleIconDataUri('@kody/github-triage'),
 	})
 	expectPngBytes(withRatings)
@@ -37,6 +38,7 @@ test('renderCommunityOgImage returns valid PNG bytes with and without ratings', 
 		averageStars: null,
 		ratingCount: 0,
 		forkCount: 2,
+		starCount: 1,
 		iconDataUri: await sampleIconDataUri('@kody/new-package'),
 	})
 	expectPngBytes(withoutRatings)

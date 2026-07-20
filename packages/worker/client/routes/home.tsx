@@ -149,21 +149,21 @@ export function HomeRoute(handle: Handle) {
 					<img src="/logo.png" alt="kody logo" mix={css(heroLogoCss)} />
 					<div mix={css(heroTextCss)}>
 						<h1 mix={css(heroTitleCss)}>
-							Kody{' '}
-							<span mix={css({ color: colors.primaryText })}>for builders</span>
+							Your assistant&apos;s{' '}
+							<span mix={css({ color: colors.primaryText })}>home</span>
 						</h1>
 						<p mix={css(heroSubtitleCss)}>
-							Kody gives your AI assistant secure, reusable access to your
-							services and lets it run durable Worker-native automations while
-							your computer is offline.
+							The memory, keys, code, and automations it keeps, no matter which
+							agent you talk to. For builders who&apos;d rather own their
+							assistant than rent one.
 						</p>
 					</div>
 					<div mix={css(commandPillRowCss)}>
-						{renderCommandPill('search')}
-						{renderCommandPill('execute')}
+						{renderCommandPill('remembers')}
+						{renderCommandPill('acts')}
 					</div>
 					<p mix={css(heroTaglineCss)}>
-						Two tools. A vast capability graph behind them.
+						Kody keeps working while your computer is off.
 					</p>
 					<div>
 						{onboardingStatus === 'ready' &&
@@ -185,7 +185,8 @@ export function HomeRoute(handle: Handle) {
 					<div mix={css(sectionHeaderCss)}>
 						<h2 mix={css(sectionTitleCss)}>How it works</h2>
 						<p mix={css(sectionDescriptionCss)}>
-							Add Kody to the AI assistant you already use through MCP.
+							Add Kody to the assistant you already use through MCP. Two
+							tools—search and execute—put a vast capability graph behind it.
 						</p>
 					</div>
 					<div mix={css(stepGridCss)}>
@@ -195,10 +196,10 @@ export function HomeRoute(handle: Handle) {
 
 				<section mix={css(sectionCss)}>
 					<div mix={css(sectionHeaderCss)}>
-						<h2 mix={css(sectionTitleCss)}>Capabilities</h2>
+						<h2 mix={css(sectionTitleCss)}>What your assistant keeps</h2>
 						<p mix={css(sectionDescriptionCss)}>
-							Behind search and execute: reusable packages, scheduled jobs,
-							secrets, OAuth integrations, email, durable storage, and memories.
+							Memory, keys, reusable packages, scheduled jobs, a personal inbox,
+							and durable storage—portable across every MCP host.
 						</p>
 					</div>
 					<div mix={css(capabilityGridCss)}>

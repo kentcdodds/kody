@@ -194,6 +194,7 @@ export type AuthoredPackageKody = z.infer<typeof authoredPackageKodySchema>
 
 export const authoredPackageJsonSchema = z.object({
 	name: z.string().min(1),
+	private: z.boolean().optional(),
 	exports: z.record(z.string().min(1), packageExportTargetSchema),
 	kody: authoredPackageKodySchema,
 })
@@ -211,6 +212,7 @@ export type SavedPackageRow = {
 	source_id: string
 	has_app: 0 | 1
 	hidden: 0 | 1
+	is_private: 0 | 1
 	created_at: string
 	updated_at: string
 }
@@ -226,6 +228,7 @@ export type SavedPackageRecord = {
 	sourceId: string
 	hasApp: boolean
 	hidden: boolean
+	isPrivate: boolean
 	createdAt: string
 	updatedAt: string
 }

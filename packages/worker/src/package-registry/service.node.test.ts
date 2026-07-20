@@ -159,6 +159,7 @@ function createProjection() {
 		searchText: 'shade automation',
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 	}
 }
 
@@ -235,6 +236,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 		sourceId: 'source-1',
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 	})
@@ -270,6 +272,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 			sourceId: 'source-1',
 			hasApp: false,
 			hidden: false,
+			isPrivate: false,
 			createdAt: '2026-04-20T00:00:00.000Z',
 		}),
 		manifest,
@@ -359,6 +362,7 @@ test('refreshSavedPackageProjection omits files when artifact rebuild is skipped
 		sourceId: 'source-1',
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 	})
@@ -406,6 +410,7 @@ test('refreshSavedPackageProjection continues best-effort cleanup when dependent
 		sourceId: 'source-1',
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 	}
@@ -826,6 +831,7 @@ test('refreshSavedPackageProjection preserves hidden across projection refresh',
 		sourceId: 'source-1',
 		hasApp: false,
 		hidden: true,
+		isPrivate: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 	})
@@ -851,6 +857,64 @@ test('refreshSavedPackageProjection preserves hidden across projection refresh',
 	})
 	expect(refreshed.record.hidden).toBe(true)
 	expect(refreshed.record.description).toBe('Updated description')
+})
+
+test('refreshSavedPackageProjection recomputes isPrivate from the manifest', async () => {
+	setupDefaultMocks()
+	const env = createEnv()
+	mockModule.buildPackageSearchProjection.mockReturnValue({
+		...createProjection(),
+		isPrivate: true,
+		description: 'Updated description',
+	})
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@kentcdodds/shade-automation',
+			private: true,
+			kody: {
+				id: 'shade-automation',
+				description: 'Updated description',
+				tags: ['home'],
+			},
+		},
+		files: { 'package.json': '{}' },
+	})
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kentcdodds/shade-automation',
+		kodyId: 'shade-automation',
+		description: 'Old description',
+		tags: ['home'],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		hidden: false,
+		isPrivate: false,
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+	})
+
+	const refreshed = await refreshSavedPackageProjection({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	})
+
+	expect(mockModule.updateSavedPackage).toHaveBeenCalled()
+	const updateArg = mockModule.updateSavedPackage.mock.calls[0]?.[1] as Record<
+		string,
+		unknown
+	>
+	expect(updateArg).toMatchObject({
+		userId: 'user-1',
+		packageId: 'package-1',
+		isPrivate: true,
+	})
+	expect(refreshed.record.isPrivate).toBe(true)
+	expect(refreshed.record.hidden).toBe(false)
 })
 
 test('refreshSavedPackageProjection does not gate the update branch at the limit', async () => {
@@ -888,6 +952,7 @@ test('refreshSavedPackageProjection does not gate the update branch at the limit
 		sourceId: 'source-1',
 		hasApp: false,
 		hidden: false,
+		isPrivate: false,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 	})

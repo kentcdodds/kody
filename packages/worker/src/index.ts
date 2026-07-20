@@ -40,7 +40,10 @@ import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
-import { handleStableUserIdBackfillRequest } from './maintenance-handler.ts'
+import {
+	handlePackagePrivacyBackfillRequest,
+	handleStableUserIdBackfillRequest,
+} from './maintenance-handler.ts'
 import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from './repo/repo-session-cleanup.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
@@ -244,6 +247,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/backfill-stable-user-ids') {
 			return handleStableUserIdBackfillRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/backfill-package-privacy') {
+			return handlePackagePrivacyBackfillRequest(request, env)
 		}
 
 		if (url.pathname.startsWith('/__maintenance/')) {

@@ -221,6 +221,137 @@ test('account export includes submitted feedback but excludes reviewer-only rela
 	).toEqual(['admin_note', 'reviewed_at', 'reviewed_by_user_id'])
 })
 
+test('account export includes profile fields and social graph edges for either side', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, display_name, bio, profile_visibility
+		) VALUES
+			(
+				1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+				'2026-07-05', '2026-07-05', 'User A', 'Builds packages', 'public'
+			),
+			(
+				2, 'user-b', 'b@example.com', 'password-hash-b', '2026-07-05',
+				'2026-07-05', '2026-07-05', 'User B', NULL, 'private'
+			);
+
+		INSERT INTO community_listings (
+			id, owner_user_id, package_id, source_id, kody_id, name, description,
+			tags_json, license, pinned_commit, status, published_at
+		) VALUES
+			(
+				'listing-a', 'user-aaa', 'pkg-a', 'src-a', 'demo', '@user-a/demo',
+				'Demo listing', '[]', 'MIT', 'commit-a', 'active', '2026-07-05'
+			),
+			(
+				'listing-b', 'user-bbb', 'pkg-b', 'src-b', 'other', '@user-b/other',
+				'Other listing', '[]', 'MIT', 'commit-b', 'active', '2026-07-05'
+			);
+
+		INSERT INTO user_follows (follower_user_id, followee_user_id, created_at)
+		VALUES
+			('user-aaa', 'user-bbb', '2026-07-05'),
+			('user-bbb', 'user-aaa', '2026-07-05'),
+			('user-bbb', 'user-ccc', '2026-07-05');
+
+		INSERT INTO community_stars (listing_id, user_id, created_at)
+		VALUES
+			('listing-a', 'user-bbb', '2026-07-05'),
+			('listing-b', 'user-aaa', '2026-07-05'),
+			('listing-b', 'user-bbb', '2026-07-05');
+
+		INSERT INTO community_activity_events (
+			id, actor_user_id, event_type, listing_id, created_at
+		) VALUES
+			(
+				'evt-a', 'user-aaa', 'listing_published', 'listing-b', '2026-07-05'
+			),
+			(
+				'evt-b', 'user-bbb', 'listing_updated', 'listing-a', '2026-07-05'
+			),
+			(
+				'evt-c', 'user-bbb', 'listing_published', 'listing-b', '2026-07-05'
+			);
+	`)
+
+	const accountExport = await createAccountExport({
+		env: { APP_DB: db } as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		generatedAt: '2026-07-05T00:00:00.000Z',
+	})
+
+	expect(accountExport.d1.users.rows).toEqual([
+		expect.objectContaining({
+			id: 1,
+			username: 'user-a',
+			email: 'a@example.com',
+			display_name: 'User A',
+			bio: 'Builds packages',
+			profile_visibility: 'public',
+		}),
+	])
+	expect(accountExport.d1.users.rows[0]).not.toHaveProperty('password_hash')
+
+	expect(accountExport.d1.user_follows.rows).toEqual([
+		expect.objectContaining({
+			follower_user_id: '[redacted]',
+			followee_user_id: 'user-aaa',
+		}),
+		expect.objectContaining({
+			follower_user_id: 'user-aaa',
+			followee_user_id: '[redacted]',
+		}),
+	])
+	expect(
+		accountExport.d1.user_follows.rows.some(
+			(row) =>
+				row.follower_user_id === 'user-bbb' ||
+				row.followee_user_id === 'user-bbb' ||
+				row.followee_user_id === 'user-ccc',
+		),
+	).toBe(false)
+
+	expect(accountExport.d1.community_stars.rows).toEqual([
+		expect.objectContaining({
+			listing_id: 'listing-a',
+			user_id: '[redacted]',
+		}),
+		expect.objectContaining({ listing_id: 'listing-b', user_id: 'user-aaa' }),
+	])
+	expect(
+		accountExport.d1.community_stars.rows.some(
+			(row) => row.user_id === 'user-bbb',
+		),
+	).toBe(false)
+
+	expect(accountExport.d1.community_activity_events.rows).toEqual([
+		expect.objectContaining({
+			id: 'evt-a',
+			actor_user_id: 'user-aaa',
+			event_type: 'listing_published',
+		}),
+		expect.objectContaining({
+			id: 'evt-b',
+			actor_user_id: '[redacted]',
+			listing_id: 'listing-a',
+		}),
+	])
+	expect(
+		accountExport.d1.community_activity_events.rows.some(
+			(row) => row.id === 'evt-c' || row.actor_user_id === 'user-bbb',
+		),
+	).toBe(false)
+
+	expect(accountExport.manifest.sections['d1.user_follows']?.count).toBe(2)
+	expect(accountExport.manifest.sections['d1.community_stars']?.count).toBe(2)
+	expect(
+		accountExport.manifest.sections['d1.community_activity_events']?.count,
+	).toBe(2)
+})
+
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`

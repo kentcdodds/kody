@@ -90,6 +90,7 @@ function toSavedPackageInsertRow(input: {
 		source_id: input.sourceId,
 		has_app: projection.hasApp ? 1 : 0,
 		hidden: 0,
+		is_private: projection.isPrivate ? 1 : 0,
 	}
 }
 
@@ -168,6 +169,7 @@ export async function refreshSavedPackageProjection(input: {
 			searchText: row.search_text,
 			sourceId: row.source_id,
 			hasApp: row.has_app === 1,
+			isPrivate: row.is_private === 1,
 		})
 	} else {
 		await assertWithinEntitlement({
@@ -196,6 +198,8 @@ export async function refreshSavedPackageProjection(input: {
 		hasApp: row.has_app === 1,
 		// Preserve visibility across projection refresh / re-save.
 		hidden: existing?.hidden ?? false,
+		// Privacy is recomputed from the manifest on every refresh.
+		isPrivate: row.is_private === 1,
 		createdAt: existing?.createdAt ?? refreshedAt,
 		updatedAt: refreshedAt,
 	} satisfies SavedPackageRecord

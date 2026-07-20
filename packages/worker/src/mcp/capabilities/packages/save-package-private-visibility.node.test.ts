@@ -132,6 +132,7 @@ function setupPersistenceMocks() {
 				sourceId: `source-${packageId}`,
 				hasApp: false,
 				hidden: false,
+				isPrivate: false,
 				createdAt: '2026-07-10T00:00:00.000Z',
 				updatedAt: '2026-07-10T00:00:00.000Z',
 			},

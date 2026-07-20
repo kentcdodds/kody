@@ -75,6 +75,59 @@ export type CommunityListingAggregates = {
 	ratingCount: number
 	averageAdaptationEffort: number | null
 	forkCount: number
+	starCount: number
+}
+
+export type ProfileVisibility = 'public' | 'private'
+
+export type CommunityProfileRecord = {
+	userId: string
+	username: string
+	displayName: string
+	bio: string | null
+	avatarKey: string | null
+	visibility: ProfileVisibility
+	joinedAt: string
+	followerCount: number
+	followingCount: number
+	publicPackageCount: number
+	listingCount: number
+}
+
+export type CommunityActivityEventType =
+	| 'listing_published'
+	| 'listing_updated'
+	| 'listing_forked'
+	| 'listing_starred'
+
+export type CommunityActivityItem = {
+	type: CommunityActivityEventType
+	actorUserId: string
+	actorUsername: string
+	actorDisplayName: string
+	actorAvatarKey: string | null
+	listingId: string
+	listingName: string
+	listingKodyId: string
+	createdAt: string
+}
+
+export type PublicProfilePackage = {
+	packageId: string
+	name: string
+	kodyId: string
+	description: string
+	tags: Array<string>
+	updatedAt: string
+	communityListingId: string | null
+}
+
+export type CommunityStargazer = {
+	userId: string
+	username: string
+	displayName: string
+	avatarKey: string | null
+	starredAt: string
 }
 
 export type CommunityListingWithAggregates = CommunityListingRecord &

@@ -25,6 +25,8 @@ Read in order for a full tour, or jump to a topic.
 - [Packages](./packages.md)
 - [Community packages](./community-packages.md) — share, browse, and fork
   published packages on the same deployment
+- [Community profiles](./community-profiles.md) — public profiles, follows,
+  timelines, and listing stars
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets, values, and host approval](./secrets-and-values.md)

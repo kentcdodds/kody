@@ -1,14 +1,109 @@
 import {
 	type OnboardingFeaturedListing,
+	type PublicCommunityActivityItem,
 	type PublicCommunityListing,
+	type PublicCommunityProfile,
+	type PublicCommunityStargazer,
+	type PublicProfilePackageItem,
 } from '#app/community-public-types.ts'
 import { routes } from '#app/routes.ts'
-import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
+import { parseUserAvatarCacheKey } from '#worker/community/avatar.ts'
+import {
+	type CommunityActivityItem,
+	type CommunityListingWithAggregates,
+	type CommunityProfileRecord,
+	type CommunityStargazer,
+	type PublicProfilePackage,
+} from '#worker/community/types.ts'
 
 export {
 	type OnboardingFeaturedListing,
 	type PublicCommunityListing,
 } from '#app/community-public-types.ts'
+
+/**
+ * Public payload mappers deliberately rebuild objects field-by-field so
+ * internal identifiers (stable user ids, saved package ids) never serialize
+ * into public JSON: stable user ids are unsalted email hashes and package
+ * ids are the owner's private handles.
+ */
+export function buildUserAvatarUrl(input: {
+	username: string
+	avatarKey: string | null
+}): string | null {
+	if (!input.avatarKey) return null
+	const cacheKey = parseUserAvatarCacheKey(input.avatarKey)
+	if (!cacheKey) return null
+	return routes.profileAvatar.href({
+		username: input.username,
+		cacheKey,
+	})
+}
+
+export function toPublicCommunityProfile(
+	profile: CommunityProfileRecord,
+): PublicCommunityProfile {
+	return {
+		username: profile.username,
+		displayName: profile.displayName,
+		bio: profile.bio,
+		avatarUrl: buildUserAvatarUrl({
+			username: profile.username,
+			avatarKey: profile.avatarKey,
+		}),
+		visibility: profile.visibility,
+		joinedAt: profile.joinedAt,
+		followerCount: profile.followerCount,
+		followingCount: profile.followingCount,
+		publicPackageCount: profile.publicPackageCount,
+		listingCount: profile.listingCount,
+	}
+}
+
+export function toPublicProfilePackageItem(
+	pkg: PublicProfilePackage,
+): PublicProfilePackageItem {
+	return {
+		name: pkg.name,
+		kodyId: pkg.kodyId,
+		description: pkg.description,
+		tags: pkg.tags,
+		updatedAt: pkg.updatedAt,
+		communityListingId: pkg.communityListingId,
+	}
+}
+
+export function toPublicCommunityActivityItem(
+	item: CommunityActivityItem,
+): PublicCommunityActivityItem {
+	return {
+		type: item.type,
+		actorUsername: item.actorUsername,
+		actorDisplayName: item.actorDisplayName,
+		actorAvatarUrl: buildUserAvatarUrl({
+			username: item.actorUsername,
+			avatarKey: item.actorAvatarKey,
+		}),
+		listingId: item.listingId,
+		listingName: item.listingName,
+		listingKodyId: item.listingKodyId,
+		createdAt: item.createdAt,
+	}
+}
+
+export function toPublicCommunityStargazer(
+	stargazer: CommunityStargazer,
+): PublicCommunityStargazer {
+	return {
+		username: stargazer.username,
+		displayName: stargazer.displayName,
+		avatarUrl: buildUserAvatarUrl({
+			username: stargazer.username,
+			avatarKey: stargazer.avatarKey,
+		}),
+		starredAt: stargazer.starredAt,
+	}
+}
 
 const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
 
@@ -54,6 +149,7 @@ export function toPublicCommunityListing(
 		ratingCount: listing.ratingCount,
 		averageAdaptationEffort: listing.averageAdaptationEffort,
 		forkCount: listing.forkCount,
+		starCount: listing.starCount,
 	}
 }
 

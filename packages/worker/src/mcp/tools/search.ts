@@ -291,6 +291,7 @@ function buildLeanPackageSearchProjection(
 		tags: record.tags,
 		searchText: record.searchText,
 		hasApp: record.hasApp,
+		isPrivate: record.isPrivate,
 		appEntry: null,
 		exports: [],
 		jobs: [],

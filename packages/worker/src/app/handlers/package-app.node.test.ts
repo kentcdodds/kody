@@ -36,6 +36,7 @@ const mockModule = vi.hoisted(() => ({
 		sourceId: 'source-1',
 		hasApp: true,
 		hidden: false,
+		isPrivate: false,
 		createdAt: new Date(0).toISOString(),
 		updatedAt: new Date(0).toISOString(),
 	})),

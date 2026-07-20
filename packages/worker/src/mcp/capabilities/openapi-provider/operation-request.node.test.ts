@@ -340,6 +340,7 @@ test('requires package approval before OpenAPI resolves a user secret', async ()
 			sourceId: 'source-1',
 			hasApp: false,
 			hidden: false,
+			isPrivate: false,
 			createdAt: '2026-07-09T00:00:00.000Z',
 			updatedAt: '2026-07-09T00:00:00.000Z',
 		})

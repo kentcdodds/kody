@@ -6,6 +6,9 @@ export function savedPackageVectorId(packageId: string) {
 	return buildLengthSafeVectorId({ prefix: 'package', rawId: packageId })
 }
 
+const savedPackageSelectColumns = `id, user_id, name, kody_id, description, tags_json, search_text,
+				source_id, has_app, hidden, is_private, created_at, updated_at`
+
 function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 	return {
 		id: String(row['id']),
@@ -21,6 +24,10 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 			row['has_app'] === 1 || row['has_app'] === '1' || row['has_app'] === true,
 		hidden:
 			row['hidden'] === 1 || row['hidden'] === '1' || row['hidden'] === true,
+		isPrivate:
+			row['is_private'] === 1 ||
+			row['is_private'] === '1' ||
+			row['is_private'] === true,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -37,8 +44,8 @@ export async function insertSavedPackage(
 		.prepare(
 			`INSERT INTO saved_packages (
 				id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, hidden, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				source_id, has_app, hidden, is_private, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -51,10 +58,29 @@ export async function insertSavedPackage(
 			row.source_id,
 			row.has_app,
 			row.hidden ?? 0,
+			row.is_private ?? 1,
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
 		.run()
+}
+
+/** Sets `is_private` without bumping `updated_at` (maintenance backfills). */
+export async function setSavedPackagePrivacy(
+	db: D1Database,
+	input: {
+		userId: string
+		packageId: string
+		isPrivate: boolean
+	},
+) {
+	const result = await db
+		.prepare(
+			`UPDATE saved_packages SET is_private = ? WHERE id = ? AND user_id = ?`,
+		)
+		.bind(input.isPrivate ? 1 : 0, input.packageId, input.userId)
+		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function updateSavedPackage(
@@ -70,6 +96,7 @@ export async function updateSavedPackage(
 		sourceId?: string
 		hasApp?: boolean
 		hidden?: boolean
+		isPrivate?: boolean
 	},
 ) {
 	const assignments: Array<string> = []
@@ -103,6 +130,9 @@ export async function updateSavedPackage(
 	}
 	if (input.hidden !== undefined) {
 		addAssignment('hidden', input.hidden ? 1 : 0)
+	}
+	if (input.isPrivate !== undefined) {
+		addAssignment('is_private', input.isPrivate ? 1 : 0)
 	}
 
 	addAssignment('updated_at', new Date().toISOString())
@@ -142,8 +172,7 @@ export async function getSavedPackageById(
 ): Promise<SavedPackageRecord | null> {
 	const row = await db
 		.prepare(
-			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, hidden, created_at, updated_at
+			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
 			WHERE id = ? AND user_id = ?`,
 		)
@@ -161,8 +190,7 @@ export async function getSavedPackageByKodyId(
 ): Promise<SavedPackageRecord | null> {
 	const row = await db
 		.prepare(
-			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, hidden, created_at, updated_at
+			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
 			WHERE kody_id = ? AND user_id = ?`,
 		)
@@ -180,8 +208,7 @@ export async function getSavedPackageByName(
 ): Promise<SavedPackageRecord | null> {
 	const row = await db
 		.prepare(
-			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, hidden, created_at, updated_at
+			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
 			WHERE name = ? AND user_id = ?`,
 		)
@@ -198,8 +225,7 @@ export async function listSavedPackagesByUserId(
 ): Promise<Array<SavedPackageRecord>> {
 	const rows = await db
 		.prepare(
-			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, hidden, created_at, updated_at
+			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
 			WHERE user_id = ?
 			ORDER BY updated_at DESC`,
@@ -274,8 +300,7 @@ export async function searchSavedPackagesByUserId(
 			.first<{ total: number }>(),
 		db
 			.prepare(
-				`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-					source_id, has_app, hidden, created_at, updated_at
+				`SELECT ${savedPackageSelectColumns}
 				FROM saved_packages
 				${whereClause}
 				ORDER BY ${orderBy}
@@ -302,8 +327,7 @@ export async function listSavedPackagesPage(
 ): Promise<Array<SavedPackageRecord>> {
 	const rows = await db
 		.prepare(
-			`SELECT id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, hidden, created_at, updated_at
+			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
 			WHERE id > ?
 			ORDER BY id

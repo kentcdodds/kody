@@ -115,6 +115,7 @@ type UserDeletionInventory = {
 	mcpServers: Array<UserMcpServerSnapshot>
 	packageServices: Array<UserPackageServiceSnapshot>
 	communityListings: Array<UserCommunityListingSnapshot>
+	avatarR2Key: string | null
 }
 
 function uniqueStrings(values: Iterable<string | null | undefined>) {
@@ -389,9 +390,22 @@ async function listUserBundleKvKeys(input: {
 	])
 }
 
+async function listUserAvatarR2Key(
+	env: Env,
+	dbUserId: number,
+): Promise<string | null> {
+	const row = await env.APP_DB.prepare(
+		`SELECT avatar_key FROM users WHERE id = ?`,
+	)
+		.bind(dbUserId)
+		.first<{ avatar_key: string | null }>()
+	return row?.avatar_key == null ? null : String(row.avatar_key)
+}
+
 async function collectUserDeletionInventory(input: {
 	env: Env
 	userId: string
+	dbUserId: number
 	warnings: Array<string>
 }): Promise<UserDeletionInventory> {
 	const [
@@ -405,6 +419,7 @@ async function collectUserDeletionInventory(input: {
 		mcpServers,
 		packageServices,
 		communityListings,
+		avatarR2Key,
 	] = await Promise.all([
 		listUserVectorIds(input.env, input.userId).catch((error) => {
 			const message = getErrorMessage(error)
@@ -456,6 +471,11 @@ async function collectUserDeletionInventory(input: {
 			input.warnings.push(`Failed to enumerate community listings: ${message}`)
 			return [] as Array<UserCommunityListingSnapshot>
 		}),
+		listUserAvatarR2Key(input.env, input.dbUserId).catch((error) => {
+			const message = getErrorMessage(error)
+			input.warnings.push(`Failed to enumerate user avatar key: ${message}`)
+			return null as string | null
+		}),
 	])
 	const bundleKvKeys = await listUserBundleKvKeys({
 		env: input.env,
@@ -479,6 +499,7 @@ async function collectUserDeletionInventory(input: {
 		mcpServers,
 		packageServices,
 		communityListings,
+		avatarR2Key,
 	}
 }
 
@@ -1026,6 +1047,7 @@ export async function deleteUserAccount(input: {
 	const inventory = await collectUserDeletionInventory({
 		env: input.env,
 		userId: input.mcpUserId,
+		dbUserId: input.dbUserId,
 		warnings,
 	})
 
@@ -1123,8 +1145,8 @@ export async function deleteUserAccount(input: {
 
 	result.deletedCommunityAssets = await deleteR2Objects({
 		blobs: input.env.COMMUNITY_ASSETS,
-		keys: uniqueStrings(
-			inventory.communityListings.flatMap((listing) => [
+		keys: uniqueStrings([
+			...inventory.communityListings.flatMap((listing) => [
 				buildCommunityIconR2Key({
 					listingId: listing.id,
 					commit: listing.pinnedCommit,
@@ -1134,7 +1156,8 @@ export async function deleteUserAccount(input: {
 					commit: listing.iconCommit,
 				}),
 			]),
-		),
+			inventory.avatarR2Key,
+		]),
 		label: 'Community asset',
 		warnings,
 	})

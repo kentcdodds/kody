@@ -20,6 +20,7 @@ import {
 	AccountPackagesRoute,
 	accountPackagesRouteLoader,
 } from './account-packages.tsx'
+import { AccountStarsRoute, accountStarsRouteLoader } from './account-stars.tsx'
 import {
 	AccountPasskeysRoute,
 	accountPasskeysRouteLoader,
@@ -68,6 +69,8 @@ import { ConnectOauthRoute } from './connect-oauth.tsx'
 import { HomeRoute, homeRouteLoader } from './home.tsx'
 import { LoginRoute, authProvidersRouteLoader } from './login.tsx'
 import { OnboardingRoute, onboardingRouteLoader } from './onboarding.tsx'
+import { ProfileRoute, profileRouteLoader } from './profile.tsx'
+import { TimelineRoute, timelineRouteLoader } from './timeline.tsx'
 import {
 	PendingVerificationRoute,
 	pendingVerificationRouteLoader,
@@ -96,6 +99,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountPackageInvocationTokensRouteLoader,
 	'/account/packages': accountPackagesRouteLoader,
 	'/account/packages/:packageId': accountPackagesRouteLoader,
+	'/account/stars': accountStarsRouteLoader,
 	'/account/passkeys': accountPasskeysRouteLoader,
 	'/account/remote-connectors': accountRemoteConnectorsRouteLoader,
 	'/account/secrets': accountSecretsRouteLoader,
@@ -116,6 +120,8 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/admin/system-email': adminSystemEmailRouteLoader,
 	'/community': communityRouteLoader,
 	'/community/:listingId': communityDetailRouteLoader,
+	'/@:username': profileRouteLoader,
+	'/timeline': timelineRouteLoader,
 	'/login': authProvidersRouteLoader,
 	'/signup': authProvidersRouteLoader,
 	'/oauth/authorize': oauthAuthorizeRouteLoader,
@@ -138,6 +144,7 @@ export const clientRoutes = {
 	),
 	'/account/packages': <AccountPackagesRoute />,
 	'/account/packages/:packageId': <AccountPackagesRoute />,
+	'/account/stars': <AccountStarsRoute />,
 	'/account/passkeys': <AccountPasskeysRoute />,
 	'/account/remote-connectors': <AccountRemoteConnectorsRoute />,
 	'/account/secrets': <AccountSecretsRoute />,
@@ -158,6 +165,8 @@ export const clientRoutes = {
 	'/admin/system-email': <AdminSystemEmailRoute />,
 	'/community': <CommunityRoute />,
 	'/community/:listingId': <CommunityDetailRoute />,
+	'/@:username': <ProfileRoute />,
+	'/timeline': <TimelineRoute />,
 	'/login': <LoginRoute />,
 	'/onboarding': <OnboardingRoute />,
 	'/pending-verification': <PendingVerificationRoute />,

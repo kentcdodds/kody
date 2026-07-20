@@ -167,6 +167,7 @@ const accountNavItems = [
 	{ href: '/account', label: 'Overview' },
 	{ href: '/account/billing', label: 'Billing' },
 	{ href: '/account/packages', label: 'Packages' },
+	{ href: '/account/stars', label: 'Stars' },
 	{ href: '/account/secrets', label: 'Secrets' },
 	{ href: '/account/integrations', label: 'Integrations' },
 	{ href: '/account/package-invocation-tokens', label: 'Package tokens' },

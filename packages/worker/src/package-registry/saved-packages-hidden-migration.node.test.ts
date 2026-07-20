@@ -37,6 +37,7 @@ function createD1FromSqlite(db: DatabaseSync) {
 
 test('saved packages hidden migration defaults existing rows to visible and hydrates reads', async () => {
 	const db = new DatabaseSync(':memory:')
+	applyMigration(db, '0001-init.sql')
 	applyMigration(db, '0027-saved-packages.sql')
 	db.prepare(
 		`INSERT INTO saved_packages (
@@ -56,6 +57,9 @@ test('saved packages hidden migration defaults existing rows to visible and hydr
 	)
 
 	applyMigration(db, '0058-saved-packages-hidden.sql')
+	// Repo SELECTs include is_private (added in 0065); apply it so reads work.
+	applyMigration(db, '0045-community-listings.sql')
+	applyMigration(db, '0068-community-social.sql')
 
 	expect(
 		db.prepare(`SELECT hidden FROM saved_packages WHERE id = 'pkg-1'`).get(),
@@ -75,6 +79,7 @@ test('saved packages hidden migration defaults existing rows to visible and hydr
 		id: 'pkg-1',
 		userId: 'user-1',
 		hidden: true,
+		isPrivate: true,
 	})
 
 	const listed = await listSavedPackagesByUserId(d1, { userId: 'user-1' })
