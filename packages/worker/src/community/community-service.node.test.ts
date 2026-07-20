@@ -236,6 +236,29 @@ test('community operations reject banned users', async () => {
 			listingId: 'listing-1',
 		}),
 	).rejects.toThrow(/banned from community participation/)
+
+	// Delegated publishes bind bans to the acting person too: the platform
+	// owner is not banned, but the banned actor must still be rejected.
+	mockModule.getCommunityBan.mockImplementation(
+		async (_db: unknown, userId: unknown) =>
+			userId === 'user-1'
+				? {
+						userId: 'user-1',
+						bannedByUserId: 'admin-1',
+						reason: 'spam',
+						createdAt: '2026-07-01T00:00:00.000Z',
+					}
+				: null,
+	)
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'platform-owner-1',
+			actorUserId: 'user-1',
+			packageId: 'package-1',
+		}),
+	).rejects.toThrow(/banned from community participation/)
 })
 
 function validPublishSource() {

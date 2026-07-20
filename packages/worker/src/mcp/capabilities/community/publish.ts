@@ -52,6 +52,7 @@ export const communityPublishCapability = defineDomainCapability(
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,
+				actorUserId: owner.actorUserId,
 				packageId: args.package_id,
 			})
 			return {

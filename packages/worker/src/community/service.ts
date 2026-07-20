@@ -346,9 +346,17 @@ export async function publishCommunityListing(input: {
 	env: Env
 	baseUrl: string
 	userId: string
+	/**
+	 * Acting user on delegated (package scope grant) publishes. Community bans
+	 * must bind to the person acting, not just the owning platform account.
+	 */
+	actorUserId?: string
 	packageId: string
 }): Promise<CommunityListingRecord> {
 	await assertNotCommunityBanned(input.env.APP_DB, input.userId)
+	if (input.actorUserId && input.actorUserId !== input.userId) {
+		await assertNotCommunityBanned(input.env.APP_DB, input.actorUserId)
+	}
 
 	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.userId,
