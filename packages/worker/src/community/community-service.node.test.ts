@@ -154,15 +154,16 @@ const testCommunityAssets = {
 		truncated: false,
 	})),
 } as unknown as R2Bucket
+const testCommunityActivityQueue = {
+	send: vi.fn(),
+} as unknown as Queue
 
 function createEnv() {
 	return {
 		APP_DB: {} as D1Database,
 		BUNDLE_ARTIFACTS_KV: testBundleArtifactsKv,
 		COMMUNITY_ASSETS: testCommunityAssets,
-		COMMUNITY_ACTIVITY_DISPATCH_QUEUE: {
-			send: vi.fn(),
-		} as unknown as Queue,
+		COMMUNITY_ACTIVITY_DISPATCH_QUEUE: testCommunityActivityQueue,
 	} as Env
 }
 

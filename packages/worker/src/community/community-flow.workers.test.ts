@@ -559,6 +559,11 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 		CLOUDFLARE_ACCOUNT_ID: mockAccountId,
 		CLOUDFLARE_API_TOKEN: 'artifacts-test-token',
 		CLOUDFLARE_API_BASE_URL: artifactsApiBaseUrl,
+		COMMUNITY_ACTIVITY_DISPATCH_QUEUE: {
+			async send(_message: CommunityActivityDispatchQueueMessage) {
+				return undefined
+			},
+		},
 	} as Env
 
 	const unique = crypto.randomUUID()
