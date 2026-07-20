@@ -11,17 +11,19 @@ export type UserAvatarProps = {
 }
 
 export function UserAvatar(handle: Handle<UserAvatarProps>) {
-	const { displayName, avatarUrl, size, testId } = handle.props
-	const initial = displayName.trim().charAt(0).toUpperCase() || '?'
-	const sizeStyle = {
-		width: `${size}px`,
-		height: `${size}px`,
-		borderRadius: radius.full,
-		flexShrink: '0',
-	}
+	// Props must be read inside the render function so updates (for example
+	// the account page swapping the avatar after an upload) re-render.
+	return () => {
+		const { displayName, avatarUrl, size, testId } = handle.props
+		const initial = displayName.trim().charAt(0).toUpperCase() || '?'
+		const sizeStyle = {
+			width: `${size}px`,
+			height: `${size}px`,
+			borderRadius: radius.full,
+			flexShrink: '0',
+		}
 
-	return () =>
-		avatarUrl ? (
+		return avatarUrl ? (
 			<img
 				src={avatarUrl}
 				alt=""
@@ -55,4 +57,5 @@ export function UserAvatar(handle: Handle<UserAvatarProps>) {
 				{initial}
 			</span>
 		)
+	}
 }
