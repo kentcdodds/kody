@@ -1768,6 +1768,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		privateVisibilityChangeConfirmed?: boolean
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
+		commitMessage?: string
 	}): Promise<RepoSessionPublishResult> {
 		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
@@ -1830,8 +1831,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			})
 		}
 		const sessionHeadCommit =
-			(await this.commitIfDirty(`Publish repo session ${input.sessionId}`)) ??
-			(await this.getHeadCommit())
+			(await this.commitIfDirty(
+				input.commitMessage?.trim() ||
+					`Publish repo session ${input.sessionId}`,
+			)) ?? (await this.getHeadCommit())
 		await this.readManifestFromWorkspace(
 			source.manifest_path,
 			source.entity_kind,

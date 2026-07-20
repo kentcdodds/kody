@@ -415,7 +415,13 @@ export function AccountRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AccountProfileLoaderData & { error?: string }
+				AccountProfileLoaderData & {
+					error?: string
+					packagesUpdated?: number
+					communityListingsRepublished?: number
+					packageUpdateMessage?: string
+					communityUpdateWarning?: string
+				}
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to save username.')
@@ -424,8 +430,18 @@ export function AccountRoute(handle: Handle) {
 			emailVerified = payload.emailVerified
 			username = payload.username
 			draftUsername = payload.username
-			message = 'Username saved.'
-			messageTone = 'info'
+			const packageMessage =
+				typeof payload.packageUpdateMessage === 'string'
+					? payload.packageUpdateMessage
+					: null
+			const communityWarning =
+				typeof payload.communityUpdateWarning === 'string'
+					? payload.communityUpdateWarning
+					: null
+			message = ['Username saved.', packageMessage, communityWarning]
+				.filter(Boolean)
+				.join(' ')
+			messageTone = communityWarning ? 'error' : 'info'
 			queueSessionRefresh()
 		} catch (error) {
 			message =
@@ -555,6 +571,16 @@ export function AccountRoute(handle: Handle) {
 								<p mix={css({ color: colors.textMuted, margin: 0 })}>
 									Email: {email} ({emailVerified ? 'verified' : 'unverified'})
 								</p>
+								{normalizedDraftUsername !== username ? (
+									<p mix={css({ color: colors.textMuted, margin: 0 })}>
+										Changing your username updates every saved package to the
+										new <code>@{normalizedDraftUsername}</code> scope with an
+										automatic commit. That can affect third-party integrations
+										and dynamic invocations that still reference{' '}
+										<code>@{username}</code>. Community listings already pinned
+										to the latest package commit are republished automatically.
+									</p>
+								) : null}
 								<div>
 									<button
 										type="submit"

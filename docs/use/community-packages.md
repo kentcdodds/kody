@@ -66,7 +66,10 @@ formats.
 
 Re-running `community_publish` updates the public listing to the package's
 current published commit. Private edits after publishing do not change the
-listing until you publish again and re-run `community_publish`.
+listing until you publish again and re-run `community_publish`. When you change
+your username on `/account`, Kody republishes any of your listings that were
+already pinned to the package's latest commit so the public `@{username}/…` name
+stays current.
 
 `community_unpublish` removes an active listing you own. If an admin **delists**
 a listing, the owner cannot unpublish or re-publish it; only an admin hard
