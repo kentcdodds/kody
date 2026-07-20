@@ -155,10 +155,18 @@ export function OnboardingRoute(handle: Handle) {
 	// Users typically keep this page open while their MCP client runs the
 	// OAuth flow, so poll the same JSON endpoint until a grant shows up and
 	// collapse the completed steps without requiring a manual refresh.
+	let pollIntervalId: ReturnType<typeof setInterval> | undefined
+	let pollInFlight = false
+
 	async function pollForMcpConnection() {
-		if (status !== 'ready' || !loggedIn || hasMcpClient) return
+		if (hasMcpClient) {
+			clearInterval(pollIntervalId)
+			return
+		}
+		if (pollInFlight || status !== 'ready' || !loggedIn) return
 		if (document.hidden) return
 		if (!isOnboardingPath(readCurrentRouterHref(handle))) return
+		pollInFlight = true
 		try {
 			const payload = await fetchOnboardingPayload(handle.signal)
 			if (handle.signal.aborted || !payload?.hasMcpClient) return
@@ -166,11 +174,13 @@ export function OnboardingRoute(handle: Handle) {
 			handle.update()
 		} catch {
 			// Transient poll failures are fine; the next tick retries.
+		} finally {
+			pollInFlight = false
 		}
 	}
 
 	if (typeof document !== 'undefined') {
-		const pollIntervalId = setInterval(pollForMcpConnection, 5000)
+		pollIntervalId = setInterval(pollForMcpConnection, 5000)
 		handle.signal.addEventListener('abort', () => clearInterval(pollIntervalId))
 	}
 
