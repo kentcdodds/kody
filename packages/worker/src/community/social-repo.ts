@@ -1,6 +1,7 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
+import { findUserRowByStableUserId } from '#worker/user-id.ts'
 import {
 	communityListingSelectColumns,
 	communityListingSourceJoin,
@@ -78,14 +79,17 @@ export async function getUserSocialRowByStableId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<UserSocialRow | null> {
-	const row = await db
-		.prepare(
-			`SELECT ${userSocialSelectColumns}
-			FROM users
-			WHERE stable_user_id = ?`,
-		)
-		.bind(stableUserId)
-		.first<Record<string, unknown>>()
+	// Self-healing lookup: legacy rows whose stable_user_id column is still
+	// NULL are found by hashing emails and get the id written back, so they
+	// also start matching the raw stable-id joins used by stargazer and
+	// timeline queries.
+	const row = await findUserRowByStableUserId<
+		UserSocialRow & Record<string, unknown>
+	>({
+		db,
+		stableUserId,
+		select: `SELECT ${userSocialSelectColumns} FROM users`,
+	})
 	return row ? mapUserSocialRow(row) : null
 }
 
@@ -136,13 +140,16 @@ export async function insertUserFollow(
 		followeeUserId: string
 	},
 ): Promise<boolean> {
+	// created_at is bound explicitly (not left to the SQLite CURRENT_TIMESTAMP
+	// default) so follow/star rows use the same ISO-8601 format as activity
+	// events and forks; the merged timeline sorts timestamps as strings.
 	const result = await db
 		.prepare(
-			`INSERT INTO user_follows (follower_user_id, followee_user_id)
-			VALUES (?, ?)
+			`INSERT INTO user_follows (follower_user_id, followee_user_id, created_at)
+			VALUES (?, ?, ?)
 			ON CONFLICT(follower_user_id, followee_user_id) DO NOTHING`,
 		)
-		.bind(input.followerUserId, input.followeeUserId)
+		.bind(input.followerUserId, input.followeeUserId, new Date().toISOString())
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }
@@ -239,13 +246,15 @@ export async function insertCommunityStar(
 		userId: string
 	},
 ): Promise<boolean> {
+	// Explicit ISO created_at keeps star timestamps string-sortable against
+	// activity events and forks in the merged timeline (see insertUserFollow).
 	const result = await db
 		.prepare(
-			`INSERT INTO community_stars (listing_id, user_id)
-			VALUES (?, ?)
+			`INSERT INTO community_stars (listing_id, user_id, created_at)
+			VALUES (?, ?, ?)
 			ON CONFLICT(listing_id, user_id) DO NOTHING`,
 		)
-		.bind(input.listingId, input.userId)
+		.bind(input.listingId, input.userId, new Date().toISOString())
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }
