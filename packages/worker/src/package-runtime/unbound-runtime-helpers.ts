@@ -37,10 +37,12 @@ export function createUnboundRuntimeHelperMessage(input: {
 	reference: string
 }) {
 	const separator = /[.!?]\s*$/.test(input.originalMessage) ? ' ' : '. '
+	// Attribution is a source-text heuristic (sandbox errors carry no stack),
+	// so name the matching access without asserting it is the thrower.
 	return (
 		`${input.originalMessage}${separator}` +
 		`The optional kody:runtime export "${input.helperName}" is not bound in this execution context, ` +
-		`so \`${input.reference}\` failed.`
+		`which likely caused \`${input.reference}\` to fail.`
 	)
 }
 

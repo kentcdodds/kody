@@ -2431,6 +2431,48 @@ export default async function main() {
 			},
 		)
 		expect(boundResult.error).toBe(bareTypeError)
+
+		// Guard-less access inside a dynamically hydrated package module
+		// (literal dynamic `import("kody:@...")` target) must be matched too:
+		// the original bundle has no runtime import, only the hydrated module
+		// graph the sandbox actually executed does.
+		const hydrateSpy = vi
+			.spyOn(
+				await import('#worker/package-runtime/module-graph.ts'),
+				'hydrateKodyRuntimeModules',
+			)
+			.mockResolvedValue({
+				'entry.js': `export default async function main() {
+	const mod = await import('kody:@scope/skills/skill-list')
+	return await mod.default({})
+}`,
+				'.__kody_dynamic__/scope/skills/skill-list.js': `import { storage } from '../../.__kody_virtual__/runtime.js'
+export default async () => (await storage.sql('select 1')).rows`,
+			})
+		try {
+			const hydratedResult = await runBundledModuleWithRegistry(
+				env,
+				callerContext,
+				{
+					mainModule: 'entry.js',
+					modules: {
+						'entry.js': `export default async function main() {
+	const mod = await import('kody:@scope/skills/skill-list')
+	return await mod.default({})
+}`,
+					},
+				},
+				undefined,
+				{
+					skipCapabilityRegistry: true,
+				},
+			)
+			expect(hydratedResult.error).toContain(
+				'The optional kody:runtime export "storage" is not bound in this execution context',
+			)
+		} finally {
+			hydrateSpy.mockRestore()
+		}
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 	}

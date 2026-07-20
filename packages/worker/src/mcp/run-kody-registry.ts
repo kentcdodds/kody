@@ -1207,6 +1207,15 @@ export async function runBundledModuleWithRegistry(
 		})
 	}
 	try {
+		// Hydration can install additional published-package sources (literal
+		// dynamic `import("kody:@...")` targets); keep a reference so error
+		// rewriting below scans the same module graph the sandbox executed.
+		const hydratedModules = await hydrateKodyRuntimeModules({
+			env,
+			baseUrl: callerContext.baseUrl,
+			userId: callerContext.user?.userId ?? '',
+			modules: bundle.modules,
+		})
 		const executor = createExecuteExecutor({
 			env,
 			exports: options?.executorExports ?? workerExports,
@@ -1216,12 +1225,7 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? null,
 				storageContext: normalizedStorageContext,
 			},
-			modules: await hydrateKodyRuntimeModules({
-				env,
-				baseUrl: callerContext.baseUrl,
-				userId: callerContext.user?.userId ?? '',
-				modules: bundle.modules,
-			}),
+			modules: hydratedModules,
 			// Package-context runs are saved-package code; do not count their fetch hosts.
 			rawFetchHostSink: options?.packageContext
 				? undefined
@@ -1378,7 +1382,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
 				})) ??
 				rewriteUnboundRuntimeHelperError({
 					error: result.error,
-					modules: bundle.modules,
+					modules: hydratedModules,
 					unboundHelperNames: unboundOptionalRuntimeHelperNames,
 				})
 			const finalResult = rewrittenMessage
