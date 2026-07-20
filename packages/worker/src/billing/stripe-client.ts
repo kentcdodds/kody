@@ -110,6 +110,9 @@ async function stripeRequest(
 	const init: RequestInit = {
 		method: input.method,
 		headers,
+		// A hung Stripe endpoint must not block billing page loads, portal
+		// redirects, or the sequential cron sweep.
+		signal: AbortSignal.timeout(10_000),
 	}
 
 	if (input.method === 'POST' && input.form) {
