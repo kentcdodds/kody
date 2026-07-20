@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config as loadDotEnv } from 'dotenv'
 import { type UserConfig } from 'vitest/config'
+import { markdownAsText } from './tools/vite-markdown-as-text.ts'
 import { suppressThirdPartySourcemapWarnings } from './tools/vite-suppress-sourcemap-warnings.ts'
 
 export const rootDir = fileURLToPath(new URL('.', import.meta.url))
@@ -13,7 +14,7 @@ loadDotEnv({
 })
 
 export const sharedProjectConfig = {
-	plugins: [suppressThirdPartySourcemapWarnings()],
+	plugins: [suppressThirdPartySourcemapWarnings(), markdownAsText()],
 	resolve: {
 		alias: [
 			{

@@ -5,6 +5,13 @@
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"main": "./src/index.ts",
 	"upload_source_maps": true,
+	"rules": [
+		{
+			"type": "Text",
+			"globs": ["**/*.md"],
+			"fallthrough": true,
+		},
+	],
 	"migrations": [
 		{
 			"new_sqlite_classes": ["MCP"],

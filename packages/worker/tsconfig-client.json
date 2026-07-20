@@ -30,6 +30,7 @@
 		"./src/app/community-public-types.ts",
 		"./src/app/community-activity-display.ts",
 		"./src/app/community-display.ts",
+		"./src/app/blog-display.ts",
 		"./src/app/loader-data.ts",
 		"./src/app/safe-redirect.ts",
 		"./src/feature-flags/registry.ts",

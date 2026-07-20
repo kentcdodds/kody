@@ -37,6 +37,15 @@ export const publicOgPages = {
 		ogDescription: 'Browse community packages shared by Kody users.',
 		path: '/community',
 	},
+	blog: {
+		imageTitle: 'Kody Blog',
+		imageSubtitle:
+			'Updates and positioning posts from Kent C. Dodds about Kody.',
+		ogTitle: 'Blog — Kody',
+		ogDescription:
+			'Updates and positioning posts from Kent C. Dodds about Kody.',
+		path: '/blog',
+	},
 	login: {
 		imageTitle: 'Welcome back',
 		imageSubtitle: 'Log in to continue to kody.',

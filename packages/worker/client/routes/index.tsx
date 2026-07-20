@@ -60,6 +60,8 @@ import {
 	adminSystemEmailRouteLoader,
 } from './admin-system-email.tsx'
 import { AdminUsersRoute, adminUsersRouteLoader } from './admin-users.tsx'
+import { BlogRoute, blogRouteLoader } from './blog.tsx'
+import { BlogPostRoute, blogPostRouteLoader } from './blog-post.tsx'
 import {
 	CommunityDetailRoute,
 	communityDetailRouteLoader,
@@ -118,6 +120,8 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	'/admin/insights': adminInsightsRouteLoader,
 	'/admin/platform-feedback': adminPlatformFeedbackRouteLoader,
 	'/admin/system-email': adminSystemEmailRouteLoader,
+	'/blog': blogRouteLoader,
+	'/blog/:slug': blogPostRouteLoader,
 	'/community': communityRouteLoader,
 	'/community/:listingId': communityDetailRouteLoader,
 	'/@:username': profileRouteLoader,
@@ -163,6 +167,8 @@ export const clientRoutes = {
 	'/admin/insights': <AdminInsightsRoute />,
 	'/admin/platform-feedback': <AdminPlatformFeedbackRoute />,
 	'/admin/system-email': <AdminSystemEmailRoute />,
+	'/blog': <BlogRoute />,
+	'/blog/:slug': <BlogPostRoute />,
 	'/community': <CommunityRoute />,
 	'/community/:listingId': <CommunityDetailRoute />,
 	'/@:username': <ProfileRoute />,

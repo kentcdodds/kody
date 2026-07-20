@@ -23,4 +23,10 @@ test('renderPageOgImage returns valid PNG bytes for home and community', async (
 		label: 'heykody.dev',
 	})
 	expectPngBytes(community)
+
+	const blog = await renderPageOgImage({
+		page: publicOgPages.blog,
+		label: 'heykody.dev',
+	})
+	expectPngBytes(blog)
 })

@@ -121,6 +121,14 @@ import {
 	createTimelineApiHandler,
 	createTimelineHandler,
 } from '#app/handlers/timeline.tsx'
+import {
+	createBlogApiHandler,
+	createBlogHandler,
+	createBlogPostApiHandler,
+	createBlogPostHandler,
+	createBlogPostOgImageHandler,
+	createBlogRssHandler,
+} from '#app/handlers/blog.tsx'
 import { createHealthHandler } from '#app/handlers/health.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
@@ -171,6 +179,12 @@ export function createAppRouter(env: Env) {
 			health: createHealthHandler(env),
 			login: createLoginHandler(env),
 			ogPageImage: createOgPageImageHandler(env),
+			blog: createBlogHandler(env),
+			blogApi: createBlogApiHandler(env),
+			blogRss: createBlogRssHandler(env),
+			blogPost: createBlogPostHandler(env),
+			blogPostApi: createBlogPostApiHandler(env),
+			blogPostOgImage: createBlogPostOgImageHandler(env),
 			privacy: createPrivacyHandler(env),
 			onboarding: createOnboardingHandler(env),
 			onboardingApi: createOnboardingApiHandler(env),

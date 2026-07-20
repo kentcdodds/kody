@@ -13,6 +13,28 @@ import { type AdminFeatureFlag } from '#worker/feature-flags/types.ts'
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
 
+export type BlogPostSummaryLoaderData = {
+	slug: string
+	title: string
+	date: string
+	description: string
+	order: number
+}
+
+export type BlogLoaderData = {
+	ok: true
+	posts: Array<BlogPostSummaryLoaderData>
+}
+
+export type BlogPostLoaderData = {
+	ok: true
+	slug: string
+	title: string
+	date: string
+	description: string
+	body: string
+}
+
 export type CommunityIndexLoaderData = {
 	ok: true
 	listings: Array<PublicCommunityListing>
@@ -688,6 +710,8 @@ export type OAuthAuthorizeLoaderData =
 	  }
 
 export type AppLoaderData = {
+	blog?: BlogLoaderData
+	blogPost?: BlogPostLoaderData
 	communityDetailShell?: CommunityDetailShellLoaderData
 	profileShell?: ProfileShellLoaderData | ProfileUnavailableLoaderData
 	timeline?: TimelineLoaderData
