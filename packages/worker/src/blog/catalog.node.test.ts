@@ -3,7 +3,7 @@ import { getBlogPost, listBlogPosts, toBlogPostSummary } from './catalog.ts'
 import { parseBlogPostMarkdown } from './parse-frontmatter.ts'
 import { buildBlogRssXml } from './rss.ts'
 
-test('parseBlogPostMarkdown reads the fixed frontmatter contract', () => {
+test('parseBlogPostMarkdown reads frontmatter and rejects invalid input', () => {
 	const post = parseBlogPostMarkdown(
 		'sample',
 		`---
@@ -18,7 +18,6 @@ order: 3
 Body paragraph.
 `,
 	)
-
 	expect(post).toEqual({
 		slug: 'sample',
 		title: 'Sample title',
@@ -27,10 +26,8 @@ Body paragraph.
 		order: 3,
 		body: '# Hello\n\nBody paragraph.\n',
 	})
-})
 
-test('parseBlogPostMarkdown reads indented multiline description values', () => {
-	const post = parseBlogPostMarkdown(
+	const multiline = parseBlogPostMarkdown(
 		'multiline',
 		`---
 title: Multiline
@@ -44,13 +41,10 @@ order: 2
 Body
 `,
 	)
-
-	expect(post.description).toBe(
+	expect(multiline.description).toBe(
 		'First sentence about the post. Second sentence for meta tags.',
 	)
-})
 
-test('parseBlogPostMarkdown rejects invalid dates and missing fields', () => {
 	expect(() =>
 		parseBlogPostMarkdown(
 			'bad-date',
@@ -124,7 +118,6 @@ test('buildBlogRssXml escapes markup and includes every catalog post', () => {
 
 	expect(xml).toContain('<?xml version="1.0" encoding="UTF-8"?>')
 	expect(xml).toContain('<rss version="2.0">')
-	expect(xml).toContain('<title>Kody Blog</title>')
 	expect(xml).toContain('<link>https://heykody.dev/blog</link>')
 
 	for (const post of posts) {

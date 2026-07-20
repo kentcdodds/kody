@@ -38,25 +38,31 @@ vi.mock('#app/ssr-render.tsx', () => ({
 
 const env = {} as Env
 
-test('timeline page redirects unauthenticated users to login', async () => {
+test('timeline page redirect, API items, and auth requirements', async () => {
 	mockModule.readAuthSessionResult.mockResolvedValue({ session: null })
 	mockModule.redirectToLogin.mockReturnValue(
 		new Response(null, { status: 302 }),
 	)
 
-	const handler = createTimelineHandler(env)
-	const response = await handler.handler({
+	const pageHandler = createTimelineHandler(env)
+	const redirectResponse = await pageHandler.handler({
 		request: new Request('https://example.com/timeline'),
 		params: {},
 		url: new URL('https://example.com/timeline'),
 	} as never)
-
-	expect(response.status).toBe(302)
+	expect(redirectResponse.status).toBe(302)
 	expect(mockModule.redirectToLogin).toHaveBeenCalled()
 	expect(mockModule.getCommunityTimeline).not.toHaveBeenCalled()
-})
 
-test('timeline API returns followee activity items', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	const apiHandler = createTimelineApiHandler(env)
+	const unauthorized = await apiHandler.handler({
+		request: new Request('https://example.com/timeline.json'),
+		params: {},
+		url: new URL('https://example.com/timeline.json'),
+	} as never)
+	expect(unauthorized.status).toBe(401)
+
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		mcpUser: { userId: 'stable-viewer' },
 	})
@@ -74,15 +80,13 @@ test('timeline API returns followee activity items', async () => {
 		},
 	])
 
-	const handler = createTimelineApiHandler(env)
-	const response = await handler.handler({
+	const authorized = await apiHandler.handler({
 		request: new Request('https://example.com/timeline.json'),
 		params: {},
 		url: new URL('https://example.com/timeline.json'),
 	} as never)
-	const body = await response.json()
-
-	expect(response.status).toBe(200)
+	const body = await authorized.json()
+	expect(authorized.status).toBe(200)
 	expect(body.ok).toBe(true)
 	expect(body.items).toHaveLength(1)
 	expect(body.items[0].actorUsername).toBe('alice')
@@ -91,15 +95,4 @@ test('timeline API returns followee activity items', async () => {
 		userId: 'stable-viewer',
 		limit: 50,
 	})
-})
-
-test('timeline API requires auth', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const handler = createTimelineApiHandler(env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/timeline.json'),
-		params: {},
-		url: new URL('https://example.com/timeline.json'),
-	} as never)
-	expect(response.status).toBe(401)
 })

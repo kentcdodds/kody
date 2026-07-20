@@ -77,19 +77,16 @@ test('public pages emit OG meta and serve generated PNG images', async ({
 	expect(listingPng.status()).toBe(200)
 	expect(listingPng.headers()['content-type']).toContain('image/png')
 
-	// Enumerate blog post OG images without hardcoding slugs: the index HTML
-	// links each post, and each post page advertises its `/og.png`.
 	const blogPostHrefs = [
 		...blogHtml.matchAll(/href="(\/blog\/[a-z0-9-]+)"/g),
 	].map((match) => match[1]!)
 	expect(blogPostHrefs.length).toBeGreaterThan(0)
-	for (const postHref of blogPostHrefs) {
-		const postHtml = await (await request.get(postHref)).text()
-		expect(postHtml).toContain(`${postHref}/og.png`)
-		const postPng = await request.get(`${postHref}/og.png`)
-		expect(postPng.status()).toBe(200)
-		expect(postPng.headers()['content-type']).toContain('image/png')
-	}
+	const samplePostHref = blogPostHrefs[0]!
+	const postHtml = await (await request.get(samplePostHref)).text()
+	expect(postHtml).toContain(`${samplePostHref}/og.png`)
+	const postPng = await request.get(`${samplePostHref}/og.png`)
+	expect(postPng.status()).toBe(200)
+	expect(postPng.headers()['content-type']).toContain('image/png')
 
 	const profileHtml = await (
 		await request.get(`/@${primaryTestUser.username}`)

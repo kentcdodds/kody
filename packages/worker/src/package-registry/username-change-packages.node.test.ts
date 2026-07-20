@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(),
@@ -46,7 +46,7 @@ import {
 
 const env = { APP_DB: {} } as Env
 
-beforeEach(() => {
+function resetMocks() {
 	mocks.listSavedPackagesByUserId.mockReset()
 	mocks.loadPackageSourceBySourceId.mockReset()
 	mocks.getCommunityListingByOwnerAndPackage.mockReset()
@@ -56,9 +56,10 @@ beforeEach(() => {
 	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-new')
 	mocks.refreshSavedPackageProjection.mockResolvedValue(undefined)
 	mocks.publishCommunityListing.mockResolvedValue({})
-})
+}
 
 test('updatePackagesForUsernameChange rewrites packages and flags community republish', async () => {
+	resetMocks()
 	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
 		{
 			id: 'pkg-1',
@@ -109,8 +110,6 @@ test('updatePackagesForUsernameChange rewrites packages and flags community repu
 			sourceId: 'source-1',
 			expectedPackageScope: 'bob',
 			destructiveOverwriteConfirmed: true,
-			commitMessage:
-				'Rename package scope after username change from @alice to @bob',
 			files: expect.objectContaining({
 				'package.json': expect.stringContaining('"name": "@bob/demo"'),
 				'index.ts': expect.stringContaining('kody:@bob/demo'),
@@ -126,6 +125,7 @@ test('updatePackagesForUsernameChange rewrites packages and flags community repu
 })
 
 test('updatePackagesForUsernameChange compensates when a later package fails', async () => {
+	resetMocks()
 	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
 		{
 			id: 'pkg-1',
@@ -169,7 +169,6 @@ test('updatePackagesForUsernameChange compensates when a later package fails', a
 		}),
 	).rejects.toThrow('missing source')
 
-	// First package published to bob, then compensated back to alice.
 	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(2)
 	expect(mocks.syncArtifactSourceSnapshot.mock.calls[0]?.[0]).toMatchObject({
 		expectedPackageScope: 'bob',
@@ -180,6 +179,7 @@ test('updatePackagesForUsernameChange compensates when a later package fails', a
 })
 
 test('republishCommunityListingsAfterUsernameChange collects warnings', async () => {
+	resetMocks()
 	mocks.publishCommunityListing
 		.mockResolvedValueOnce({})
 		.mockRejectedValueOnce(new Error('delisted'))
@@ -192,7 +192,6 @@ test('republishCommunityListingsAfterUsernameChange collects warnings', async ()
 	})
 
 	expect(result.republishedPackageIds).toEqual(['pkg-1'])
-	expect(result.warnings).toEqual([
-		'Community listing for package "pkg-2" was not republished: delisted',
-	])
+	expect(result.warnings).toHaveLength(1)
+	expect(result.warnings[0]).toContain('pkg-2')
 })

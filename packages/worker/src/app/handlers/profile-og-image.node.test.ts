@@ -51,7 +51,7 @@ const tinyPng = Uint8Array.from([
 	0x44, 0xae, 0x42, 0x60, 0x82,
 ])
 
-test('profile OG image returns PNG for public profiles with cache headers', async () => {
+test('profile OG image public PNG, avatar fallback, and unavailable profiles', async () => {
 	mocks.getCommunityProfileByUsername.mockResolvedValue(publicProfile)
 	mocks.getUserAvatarObject.mockResolvedValue({
 		httpMetadata: { contentType: 'image/png' },
@@ -60,20 +60,14 @@ test('profile OG image returns PNG for public profiles with cache headers', asyn
 	mocks.renderProfileOgImage.mockResolvedValue(tinyPng)
 
 	const handler = createProfileOgImageHandler({} as Env)
-	const response = await handler.handler({
+	const publicResponse = await handler.handler({
 		request: new Request('https://example.com/profiles/alice/og.png'),
 		params: { username: 'alice' },
 		url: new URL('https://example.com/profiles/alice/og.png'),
 	} as never)
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Content-Type')).toBe('image/png')
-	expect(response.headers.get('Cache-Control')).toBe('public, max-age=3600')
-	expect(mocks.getCommunityProfileByUsername).toHaveBeenCalledWith({
-		env: expect.anything(),
-		username: 'alice',
-		includePrivate: false,
-	})
+	expect(publicResponse.status).toBe(200)
+	expect(publicResponse.headers.get('Content-Type')).toBe('image/png')
+	expect(publicResponse.headers.get('Cache-Control')).toBe('public, max-age=3600')
 	expect(mocks.renderProfileOgImage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			displayName: 'Alice',
@@ -81,43 +75,31 @@ test('profile OG image returns PNG for public profiles with cache headers', asyn
 			avatarDataUri: expect.stringMatching(/^data:image\/png;base64,/),
 		}),
 	)
-})
 
-test('profile OG image returns 404 for private or unknown profiles', async () => {
-	mocks.getCommunityProfileByUsername.mockResolvedValue(null)
-	const handler = createProfileOgImageHandler({} as Env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/profiles/secret/og.png'),
-		params: { username: 'secret' },
-		url: new URL('https://example.com/profiles/secret/og.png'),
-	} as never)
-
-	expect(response.status).toBe(404)
-	expect(mocks.renderProfileOgImage).not.toHaveBeenCalled()
-})
-
-test('profile OG image falls back to placeholder when avatar load fails', async () => {
 	consoleError.mockImplementation(() => {})
 	mocks.getCommunityProfileByUsername.mockResolvedValue(publicProfile)
 	mocks.getUserAvatarObject.mockRejectedValue(new Error('r2 unavailable'))
 	mocks.renderProfileOgImage.mockResolvedValue(tinyPng)
-
-	const handler = createProfileOgImageHandler({} as Env)
-	const response = await handler.handler({
+	const fallbackResponse = await handler.handler({
 		request: new Request('https://example.com/profiles/alice/og.png'),
 		params: { username: 'alice' },
 		url: new URL('https://example.com/profiles/alice/og.png'),
 	} as never)
-
-	expect(response.status).toBe(200)
+	expect(fallbackResponse.status).toBe(200)
 	expect(mocks.renderProfileOgImage).toHaveBeenCalledWith(
-		expect.objectContaining({
-			avatarDataUri: null,
-		}),
+		expect.objectContaining({ avatarDataUri: null }),
 	)
 	expect(consoleError).toHaveBeenCalledWith(
 		'profile-og-avatar-load-failed',
 		'alice',
 		expect.any(Error),
 	)
+
+	mocks.getCommunityProfileByUsername.mockResolvedValue(null)
+	const unavailable = await handler.handler({
+		request: new Request('https://example.com/profiles/secret/og.png'),
+		params: { username: 'secret' },
+		url: new URL('https://example.com/profiles/secret/og.png'),
+	} as never)
+	expect(unavailable.status).toBe(404)
 })

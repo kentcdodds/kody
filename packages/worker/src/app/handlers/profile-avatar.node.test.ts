@@ -63,7 +63,7 @@ async function runHandler(
 	} as never)
 }
 
-test('profile avatar serves public avatars with immutable cache headers', async () => {
+test('profile avatar cache visibility, anon 404, and cacheKey mismatch', async () => {
 	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
 	mocks.getUserSocialRowByUsername.mockResolvedValue(publicRow)
 	mocks.getUserAvatarObject.mockResolvedValue({
@@ -73,19 +73,16 @@ test('profile avatar serves public avatars with immutable cache headers', async 
 		size: 3,
 	})
 
-	const response = await runHandler(
+	const publicResponse = await runHandler(
 		new Request('https://example.com/profiles/alice/avatar/abcdef.png'),
 		{ username: 'alice', cacheKey: 'abcdef.png' },
 	)
-
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Cache-Control')).toBe(
+	expect(publicResponse.status).toBe(200)
+	expect(publicResponse.headers.get('Cache-Control')).toBe(
 		'public, max-age=31536000, immutable',
 	)
-	expect(response.headers.get('Content-Type')).toBe('image/png')
-})
+	expect(publicResponse.headers.get('Content-Type')).toBe('image/png')
 
-test('profile avatar serves private-profile avatars with private no-store cache', async () => {
 	mocks.readAuthenticatedAppUser.mockResolvedValue({
 		userId: 1,
 		email: 'alice@example.com',
@@ -101,43 +98,32 @@ test('profile avatar serves private-profile avatars with private no-store cache'
 		httpMetadata: { contentType: 'image/png' },
 		size: 1,
 	})
-
-	const response = await runHandler(
+	const privateResponse = await runHandler(
 		new Request('https://example.com/profiles/alice/avatar/abcdef.png'),
 		{ username: 'alice', cacheKey: 'abcdef.png' },
 	)
+	expect(privateResponse.status).toBe(200)
+	expect(privateResponse.headers.get('Cache-Control')).toBe('private, no-store')
 
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Cache-Control')).toBe('private, no-store')
-})
-
-test('profile avatar returns 404 for anonymous viewers of private profiles', async () => {
 	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
 	mocks.getUserSocialRowByUsername.mockResolvedValue({
 		...publicRow,
 		profile_visibility: 'private',
 	})
-	mocks.getUserAvatarObject.mockReset()
-
-	const response = await runHandler(
+	mocks.getUserAvatarObject.mockClear()
+	const anonPrivate = await runHandler(
 		new Request('https://example.com/profiles/alice/avatar/abcdef.png'),
 		{ username: 'alice', cacheKey: 'abcdef.png' },
 	)
-
-	expect(response.status).toBe(404)
+	expect(anonPrivate.status).toBe(404)
 	expect(mocks.getUserAvatarObject).not.toHaveBeenCalled()
-})
 
-test('profile avatar returns 404 when cacheKey does not match avatar_key', async () => {
-	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
 	mocks.getUserSocialRowByUsername.mockResolvedValue(publicRow)
-	mocks.getUserAvatarObject.mockReset()
-
-	const response = await runHandler(
+	mocks.getUserAvatarObject.mockClear()
+	const mismatch = await runHandler(
 		new Request('https://example.com/profiles/alice/avatar/wrong.png'),
 		{ username: 'alice', cacheKey: 'wrong.png' },
 	)
-
-	expect(response.status).toBe(404)
+	expect(mismatch.status).toBe(404)
 	expect(mocks.getUserAvatarObject).not.toHaveBeenCalled()
 })

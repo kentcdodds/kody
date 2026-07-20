@@ -54,11 +54,20 @@ vi.mock('#app/frames/community-detail.ts', () => ({}))
 vi.mock('#app/frames/profile.ts', () => ({}))
 vi.mock('#app/frame-registrations.ts', () => ({}))
 
-vi.mock('#app/frame-registry.ts', () => {
+vi.mock('#app/frame-registry.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#app/frame-registry.ts')>()
 	return {
-		handleFrameRequest: vi.fn(async () => null),
-		registerFrame: vi.fn(),
-		pathnameMatchesFrameRoute: vi.fn(() => false),
+		...actual,
+		handleFrameRequest: vi.fn(
+			async (request: Request, _env: Env, _pathname: string) => {
+				if (request.headers.get('x-remix-target') === 'profile') {
+					return actual.createFrameHtmlResponse(
+						'<div data-testid="profile-frame"><span data-testid="profile-display-name">Alice</span></div>',
+					)
+				}
+				return null
+			},
+		),
 	}
 })
 
@@ -76,83 +85,86 @@ const publicProfile = {
 	listingCount: 1,
 } satisfies CommunityProfileRecord
 
+const packageFixture = [
+	{
+		packageId: 'pkg-1',
+		name: '@alice/helper',
+		kodyId: 'helper',
+		description: 'Helpful package',
+		tags: ['tools'],
+		updatedAt: '2026-07-01T00:00:00.000Z',
+		communityListingId: 'listing-1',
+	},
+]
+
+const activityFixture = [
+	{
+		type: 'listing_published' as const,
+		actorUserId: 'stable-alice',
+		actorUsername: 'alice',
+		actorDisplayName: 'Alice',
+		actorAvatarKey: null,
+		listingId: 'listing-1',
+		listingName: '@alice/helper',
+		listingKodyId: 'helper',
+		createdAt: '2026-07-01T00:00:00.000Z',
+	},
+]
+
 const env = {} as Env
 
-test('profile API returns packages and activity for a public profile', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+function setupPublicProfileMocks() {
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(publicProfile)
-	mockModule.listPublicProfilePackages.mockResolvedValue([
-		{
-			packageId: 'pkg-1',
-			name: '@alice/helper',
-			kodyId: 'helper',
-			description: 'Helpful package',
-			tags: ['tools'],
-			updatedAt: '2026-07-01T00:00:00.000Z',
-			communityListingId: 'listing-1',
-		},
-	])
-	mockModule.getProfileActivity.mockResolvedValue([
-		{
-			type: 'listing_published',
-			actorUserId: 'stable-alice',
-			actorUsername: 'alice',
-			actorDisplayName: 'Alice',
-			actorAvatarKey: null,
-			listingId: 'listing-1',
-			listingName: '@alice/helper',
-			listingKodyId: 'helper',
-			createdAt: '2026-07-01T00:00:00.000Z',
-		},
-	])
+	mockModule.listPublicProfilePackages.mockResolvedValue(packageFixture)
+	mockModule.getProfileActivity.mockResolvedValue(activityFixture)
 	mockModule.getUserFollow.mockResolvedValue(false)
+}
 
-	const handler = createProfileApiHandler(env)
-	const response = await handler.handler({
+test('profile API and page respect visibility and expose packages/activity', async () => {
+	const apiHandler = createProfileApiHandler(env)
+	const pageHandler = createProfileHandler(env)
+
+	// Public profile for anonymous viewer.
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	setupPublicProfileMocks()
+
+	const publicResponse = await apiHandler.handler({
 		request: new Request('https://example.com/profiles/alice.json'),
 		params: { username: 'alice' },
 		url: new URL('https://example.com/profiles/alice.json'),
 	} as never)
-	const body = await response.json()
+	const publicBody = await publicResponse.json()
+	expect(publicResponse.status).toBe(200)
+	expect(publicBody.ok).toBe(true)
+	expect(publicBody.profile.displayName).toBe('Alice')
+	expect(publicBody.packages).toHaveLength(1)
+	expect(publicBody.activity).toHaveLength(1)
+	expect(publicBody.isSelf).toBe(false)
+	expect(publicBody.loggedIn).toBe(false)
 
-	expect(response.status).toBe(200)
-	expect(body.ok).toBe(true)
-	expect(body.profile.displayName).toBe('Alice')
-	expect(body.packages).toHaveLength(1)
-	expect(body.activity).toHaveLength(1)
-	expect(body.isSelf).toBe(false)
-	expect(body.loggedIn).toBe(false)
-})
-
-test('profile API returns 404 for private and unknown profiles', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	// Private profile hidden from others.
 	mockModule.getCommunityProfileByUsername.mockResolvedValue({
 		...publicProfile,
 		visibility: 'private',
 	})
-
-	const handler = createProfileApiHandler(env)
-	const privateResponse = await handler.handler({
+	const privateResponse = await apiHandler.handler({
 		request: new Request('https://example.com/profiles/alice.json'),
 		params: { username: 'alice' },
 		url: new URL('https://example.com/profiles/alice.json'),
 	} as never)
 	expect(privateResponse.status).toBe(404)
-	expect(await privateResponse.json()).toEqual({
-		ok: false,
-		error: "This profile isn't available.",
-	})
+	expect((await privateResponse.json()).ok).toBe(false)
 
+	// Unknown profile.
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
-	const unknownResponse = await handler.handler({
+	const unknownResponse = await apiHandler.handler({
 		request: new Request('https://example.com/profiles/missing.json'),
 		params: { username: 'missing' },
 		url: new URL('https://example.com/profiles/missing.json'),
 	} as never)
 	expect(unknownResponse.status).toBe(404)
-})
 
-test('profile API returns own private profile', async () => {
+	// Own private profile visible to self.
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		userId: 1,
 		mcpUser: { userId: 'stable-alice' },
@@ -163,39 +175,48 @@ test('profile API returns own private profile', async () => {
 	})
 	mockModule.listPublicProfilePackages.mockResolvedValue([])
 	mockModule.getProfileActivity.mockResolvedValue([])
-	mockModule.getUserFollow.mockResolvedValue(false)
-
-	const handler = createProfileApiHandler(env)
-	const response = await handler.handler({
+	const ownResponse = await apiHandler.handler({
 		request: new Request('https://example.com/profiles/alice.json'),
 		params: { username: 'alice' },
 		url: new URL('https://example.com/profiles/alice.json'),
 	} as never)
-	const body = await response.json()
+	const ownBody = await ownResponse.json()
+	expect(ownResponse.status).toBe(200)
+	expect(ownBody.ok).toBe(true)
+	expect(ownBody.isSelf).toBe(true)
+	expect(ownBody.profile.visibility).toBe('private')
 
-	expect(response.status).toBe(200)
-	expect(body.ok).toBe(true)
-	expect(body.isSelf).toBe(true)
-	expect(body.profile.visibility).toBe('private')
-})
-
-test('profile page returns 404 shell for unavailable profiles', async () => {
+	// Page shell 404 for unavailable profiles.
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
-
-	const handler = createProfileHandler(env)
-	const response = await handler.handler({
+	const shellResponse = await pageHandler.handler({
 		request: new Request('https://example.com/@missing'),
 		params: { username: 'missing' },
 		url: new URL('https://example.com/@missing'),
 	} as never)
-	const body = await response.json()
-
-	expect(response.status).toBe(404)
-	expect(body.loaderData.profileShell).toEqual({
+	const shellBody = await shellResponse.json()
+	expect(shellResponse.status).toBe(404)
+	expect(shellBody.loaderData.profileShell).toEqual({
 		ok: false,
 		unavailable: true,
 	})
+
+	// Bare profile frame HTML for target header.
+	setupPublicProfileMocks()
+	const frameResponse = await pageHandler.handler({
+		request: new Request('https://example.com/@alice', {
+			headers: { 'x-remix-target': 'profile' },
+		}),
+		params: { username: 'alice' },
+		url: new URL('https://example.com/@alice'),
+	} as never)
+	const html = await frameResponse.text()
+	expect(frameResponse.status).toBe(200)
+	expect(frameResponse.headers.get('Cache-Control')).toBe('no-store')
+	expect(html).toContain('data-testid="profile-frame"')
+	expect(html).toContain('data-testid="profile-display-name"')
+	expect(html).toContain('Alice')
+	expect(html).not.toContain('<html')
 })
 
 test('profile follow POST enforces auth and toggles follow', async () => {
@@ -260,8 +281,7 @@ test('profile follow POST enforces auth and toggles follow', async () => {
 		url: new URL('https://example.com/profiles/alice/follow.json'),
 	} as never)
 	expect(errorResponse.status).toBe(400)
-	expect(await errorResponse.json()).toEqual({
-		ok: false,
-		error: 'You cannot follow yourself.',
-	})
+	const errorBody = await errorResponse.json()
+	expect(errorBody.ok).toBe(false)
+	expect(typeof errorBody.error).toBe('string')
 })

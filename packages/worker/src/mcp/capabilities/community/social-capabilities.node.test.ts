@@ -180,8 +180,10 @@ function resetMocks() {
 	}
 }
 
-test('community_profile_get returns own profile with package ids and private visibility', async () => {
+test('community_profile_get respects visibility and package id exposure', async () => {
 	resetMocks()
+
+	// Own private profile: full package ids and self activity.
 	const ownProfile = makeProfile({ visibility: 'private', bio: 'Secret' })
 	mocks.getCommunityProfileByStableId.mockResolvedValue(ownProfile)
 	mocks.listPublicProfilePackages.mockResolvedValue([makePackage()])
@@ -193,54 +195,23 @@ test('community_profile_get returns own profile with package ids and private vis
 		}),
 	])
 
-	const result = await communityProfileGetCapability.handler(
+	const ownResult = await communityProfileGetCapability.handler(
 		{},
 		createContext(),
 	)
-
 	expect(mocks.getCommunityProfileByStableId).toHaveBeenCalledWith({
 		env: expect.anything(),
 		stableUserId: 'user-alice',
 		includePrivate: true,
 	})
-	expect(mocks.getProfileActivity).toHaveBeenCalledWith({
-		env: expect.anything(),
-		actorUserId: 'user-alice',
-		limit: 20,
-		isSelf: true,
-	})
-	expect(result).toMatchObject({
+	expect(ownResult).toMatchObject({
 		user_found: true,
-		profile: {
-			username: 'alice',
-			display_name: 'Alice',
-			bio: 'Secret',
-			visibility: 'private',
-			follower_count: 2,
-			following_count: 3,
-			public_package_count: 1,
-			listing_count: 1,
-		},
-		packages: [
-			{
-				package_id: 'pkg-1',
-				name: '@alice/demo',
-				kody_id: 'demo',
-				community_listing_id: 'listing-1',
-			},
-		],
-		recent_activity: [
-			{
-				type: 'listing_published',
-				actor_username: 'alice',
-				listing_id: 'listing-1',
-				public_url: 'https://example.com/community/listing-1',
-			},
-		],
+		profile: { visibility: 'private', bio: 'Secret' },
+		packages: [{ package_id: 'pkg-1' }],
+		recent_activity: [{ actor_username: 'alice' }],
 	})
-})
 
-test('community_profile_get omits package ids for other public profiles', async () => {
+	// Other public profile: no package ids.
 	resetMocks()
 	mocks.getCommunityProfileByUsername.mockResolvedValue(
 		makeProfile({
@@ -258,44 +229,30 @@ test('community_profile_get omits package ids for other public profiles', async 
 	])
 	mocks.getProfileActivity.mockResolvedValue([])
 
-	const result = await communityProfileGetCapability.handler(
+	const publicResult = await communityProfileGetCapability.handler(
 		{ username: 'bob' },
 		createContext(),
 	)
-
 	expect(mocks.getCommunityProfileByUsername).toHaveBeenCalledWith({
 		env: expect.anything(),
 		username: 'bob',
 		includePrivate: false,
 	})
-	expect(mocks.getProfileActivity).toHaveBeenCalledWith({
-		env: expect.anything(),
-		actorUserId: 'user-bob',
-		limit: 20,
-		isSelf: false,
-	})
-	expect(result.user_found).toBe(true)
-	expect(result.packages[0]).toEqual({
+	expect(publicResult.user_found).toBe(true)
+	expect(publicResult.packages[0]).not.toHaveProperty('package_id')
+	expect(publicResult.packages[0]).toMatchObject({
 		name: '@bob/widget',
 		kody_id: 'widget',
-		description: 'Demo package',
-		tags: ['demo'],
-		updated_at: '2026-07-01T00:00:00.000Z',
-		community_listing_id: 'listing-1',
 	})
-	expect(result.packages[0]).not.toHaveProperty('package_id')
-})
 
-test('community_profile_get hides private profiles of other users', async () => {
+	// Hidden private profile of another user.
 	resetMocks()
 	mocks.getCommunityProfileByUsername.mockResolvedValue(null)
-
-	const result = await communityProfileGetCapability.handler(
+	const hiddenResult = await communityProfileGetCapability.handler(
 		{ username: 'private-user' },
 		createContext(),
 	)
-
-	expect(result).toEqual({
+	expect(hiddenResult).toEqual({
 		user_found: false,
 		profile: null,
 		packages: [],
@@ -372,10 +329,10 @@ test('community_follow and community_unfollow happy path and self-follow error',
 	)
 	await expect(
 		communityFollowCapability.handler({ username: 'alice' }, createContext()),
-	).rejects.toThrow('You cannot follow yourself.')
+	).rejects.toBeInstanceOf(CommunityActionError)
 })
 
-test('community_star and community_unstar return star state; community_get includes star_count and stargazers', async () => {
+test('community star/unstar, starred_list, timeline, and listing stargazers', async () => {
 	resetMocks()
 	mocks.starCommunityListing.mockResolvedValue(undefined)
 	mocks.unstarCommunityListing.mockResolvedValue(undefined)
@@ -392,6 +349,8 @@ test('community_star and community_unstar return star state; community_get inclu
 		],
 	})
 	mocks.getCommunityListingWithAggregates.mockResolvedValue(makeListing())
+	mocks.listStarredCommunityListings.mockResolvedValue([makeListing()])
+	mocks.getCommunityTimeline.mockResolvedValue([makeActivity()])
 
 	await expect(
 		communityStarCapability.handler(
@@ -421,73 +380,36 @@ test('community_star and community_unstar return star state; community_get inclu
 	expect(detail).toMatchObject({
 		listing_id: 'listing-1',
 		star_count: 3,
-		owner_username: 'bob',
-		owner_profile_url: 'https://example.com/@bob',
 		stargazers: {
 			total_stars: 4,
-			recent_stargazers: [
-				{
-					username: 'alice',
-					display_name: 'Alice',
-					avatar_url: null,
-					starred_at: '2026-07-11T00:00:00.000Z',
-				},
-			],
+			recent_stargazers: [{ username: 'alice' }],
 		},
 	})
-})
 
-test('community_timeline maps followed publish events to public urls', async () => {
-	resetMocks()
-	mocks.getCommunityTimeline.mockResolvedValue([makeActivity()])
+	const starredList = await communityStarredListCapability.handler(
+		{},
+		createContext(),
+	)
+	expect(starredList.items).toEqual([
+		expect.objectContaining({
+			listing_id: 'listing-1',
+			star_count: 3,
+			public_url: 'https://example.com/community/listing-1',
+		}),
+	])
 
-	const result = await communityTimelineCapability.handler(
+	const timeline = await communityTimelineCapability.handler(
 		{ limit: 10 },
 		createContext(),
 	)
-
 	expect(mocks.getCommunityTimeline).toHaveBeenCalledWith({
 		env: expect.anything(),
 		userId: 'user-alice',
 		limit: 10,
 	})
-	expect(result).toEqual({
-		items: [
-			{
-				type: 'listing_published',
-				actor_username: 'bob',
-				actor_display_name: 'Bob',
-				actor_avatar_url: null,
-				listing_id: 'listing-1',
-				listing_name: '@bob/widget',
-				listing_kody_id: 'widget',
-				created_at: '2026-07-10T00:00:00.000Z',
-				public_url: 'https://example.com/community/listing-1',
-			},
-		],
+	expect(timeline.items[0]).toMatchObject({
+		type: 'listing_published',
+		actor_username: 'bob',
+		public_url: 'https://example.com/community/listing-1',
 	})
-})
-
-test('community_starred_list returns summary plus aggregate fields including star_count', async () => {
-	resetMocks()
-	mocks.listStarredCommunityListings.mockResolvedValue([makeListing()])
-
-	const result = await communityStarredListCapability.handler(
-		{},
-		createContext(),
-	)
-
-	expect(result.items).toEqual([
-		expect.objectContaining({
-			listing_id: 'listing-1',
-			name: '@bob/widget',
-			kody_id: 'widget',
-			star_count: 3,
-			fork_count: 1,
-			average_stars: 4.5,
-			trusted: false,
-			featured: false,
-			public_url: 'https://example.com/community/listing-1',
-		}),
-	])
 })

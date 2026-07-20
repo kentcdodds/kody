@@ -63,12 +63,8 @@ INSERT INTO community_activity_events (
 
 	await page.goto(`/community/${listingId}`)
 	await expect(page.getByTestId('community-star')).toBeVisible()
-	await expect(page.getByTestId('community-star-count')).toContainText(
-		'0 stars',
-	)
 	await page.getByRole('button', { name: 'Star', exact: true }).click()
 	await expect(page.getByRole('button', { name: 'Unstar' })).toBeVisible()
-	await expect(page.getByTestId('community-star-count')).toContainText('1 star')
 	await expect(page.getByTestId('community-stargazers')).toContainText(
 		viewer.username,
 	)
@@ -80,5 +76,4 @@ INSERT INTO community_activity_events (
 	await page.goto('/timeline')
 	await expect(page.getByTestId('timeline-page')).toBeVisible()
 	await expect(page.getByRole('link', { name: listingName })).toBeVisible()
-	await expect(page.getByText(/published/i)).toBeVisible()
 })

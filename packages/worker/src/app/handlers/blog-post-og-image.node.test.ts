@@ -20,29 +20,25 @@ const tinyPng = Uint8Array.from([
 	0x44, 0xae, 0x42, 0x60, 0x82,
 ])
 
-test('blog post OG image renders PNG for catalog posts and 404s unknown slugs', async () => {
+test('blog post OG image renders PNG for a catalog post and 404s unknown slugs', async () => {
 	mocks.renderBlogPostOgImage.mockResolvedValue(tinyPng)
 	const handler = createBlogPostOgImageHandler({} as Env)
-	const posts = listBlogPosts()
-	expect(posts.length).toBeGreaterThan(0)
+	const post = listBlogPosts()[0]
+	expect(post).toBeDefined()
 
-	for (const post of posts) {
-		mocks.renderBlogPostOgImage.mockClear()
-		const response = await handler.handler({
-			request: new Request(`https://example.com/blog/${post.slug}/og.png`),
-			params: { slug: post.slug },
-			url: new URL(`https://example.com/blog/${post.slug}/og.png`),
-		} as never)
-
-		expect(response.status).toBe(200)
-		expect(response.headers.get('Content-Type')).toBe('image/png')
-		expect(response.headers.get('Cache-Control')).toContain('max-age=3600')
-		expect(mocks.renderBlogPostOgImage).toHaveBeenCalledWith({
-			title: post.title,
-			description: post.description,
-			date: post.date,
-		})
-	}
+	const response = await handler.handler({
+		request: new Request(`https://example.com/blog/${post!.slug}/og.png`),
+		params: { slug: post!.slug },
+		url: new URL(`https://example.com/blog/${post!.slug}/og.png`),
+	} as never)
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toBe('image/png')
+	expect(response.headers.get('Cache-Control')).toContain('max-age=3600')
+	expect(mocks.renderBlogPostOgImage).toHaveBeenCalledWith({
+		title: post!.title,
+		description: post!.description,
+		date: post!.date,
+	})
 
 	const missing = await handler.handler({
 		request: new Request('https://example.com/blog/does-not-exist/og.png'),

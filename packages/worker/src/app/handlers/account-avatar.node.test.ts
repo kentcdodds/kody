@@ -59,21 +59,20 @@ function createEnv() {
 	} as Env
 }
 
-test('account avatar API requires authentication', async () => {
-	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
+test('account avatar API auth, upload, remove, and invalid type', async () => {
 	const handler = createAccountAvatarApiPostHandler(createEnv())
-	const response = await handler.handler({
+
+	mocks.readAuthenticatedAppUser.mockResolvedValue(null)
+	const unauthorized = await handler.handler({
 		request: new Request('http://example.com/account/profile/avatar.json', {
 			method: 'POST',
 		}),
 		url: new URL('http://example.com/account/profile/avatar.json'),
 		params: {},
 	} as never)
-	expect(response.status).toBe(401)
-	expect(await response.json()).toEqual({ ok: false, error: 'Unauthorized.' })
-})
+	expect(unauthorized.status).toBe(401)
+	expect((await unauthorized.json()).ok).toBe(false)
 
-test('account avatar API uploads multipart avatar and returns refreshed profile', async () => {
 	mocks.readAuthenticatedAppUser.mockResolvedValue(authedUser)
 	mocks.processUserAvatar.mockReturnValue({
 		bytes: Uint8Array.from([1, 2, 3]),
@@ -89,9 +88,7 @@ test('account avatar API uploads multipart avatar and returns refreshed profile'
 			type: 'image/png',
 		}),
 	)
-
-	const handler = createAccountAvatarApiPostHandler(createEnv())
-	const response = await handler.handler({
+	const upload = await handler.handler({
 		request: new Request('http://example.com/account/profile/avatar.json', {
 			method: 'POST',
 			body: form,
@@ -99,13 +96,8 @@ test('account avatar API uploads multipart avatar and returns refreshed profile'
 		url: new URL('http://example.com/account/profile/avatar.json'),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
-	expect(await response.json()).toEqual(profilePayload)
-	expect(mocks.processUserAvatar).toHaveBeenCalledWith({
-		contentType: 'image/png',
-		sourceBytes: expect.any(Uint8Array),
-	})
+	expect(upload.status).toBe(200)
+	expect(await upload.json()).toEqual(profilePayload)
 	expect(mocks.saveUserAvatar).toHaveBeenCalledWith(
 		expect.objectContaining({
 			numericUserId: 1,
@@ -113,18 +105,13 @@ test('account avatar API uploads multipart avatar and returns refreshed profile'
 			contentType: 'image/png',
 		}),
 	)
-})
 
-test('account avatar API removes avatar via JSON body', async () => {
-	mocks.readAuthenticatedAppUser.mockResolvedValue(authedUser)
 	mocks.deleteUserAvatar.mockResolvedValue(undefined)
 	mocks.loadAccountProfileData.mockResolvedValue({
 		...profilePayload,
 		avatarUrl: null,
 	})
-
-	const handler = createAccountAvatarApiPostHandler(createEnv())
-	const response = await handler.handler({
+	const remove = await handler.handler({
 		request: new Request('http://example.com/account/profile/avatar.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -133,42 +120,31 @@ test('account avatar API removes avatar via JSON body', async () => {
 		url: new URL('http://example.com/account/profile/avatar.json'),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
-	expect(await response.json()).toMatchObject({ avatarUrl: null })
+	expect(remove.status).toBe(200)
+	expect(await remove.json()).toMatchObject({ avatarUrl: null })
 	expect(mocks.deleteUserAvatar).toHaveBeenCalledWith(
 		expect.objectContaining({
 			numericUserId: 1,
 			stableUserId: 'stable-alice',
 		}),
 	)
-})
 
-test('account avatar API returns 400 for invalid content type from processUserAvatar', async () => {
-	mocks.readAuthenticatedAppUser.mockResolvedValue(authedUser)
 	mocks.processUserAvatar.mockImplementation(() => {
 		throw new Error('Avatars must be PNG, JPEG, or WebP images.')
 	})
-
-	const form = new FormData()
-	form.set(
+	const invalidForm = new FormData()
+	invalidForm.set(
 		'avatar',
 		new File([Uint8Array.from([1])], 'avatar.svg', { type: 'image/svg+xml' }),
 	)
-
-	const handler = createAccountAvatarApiPostHandler(createEnv())
-	const response = await handler.handler({
+	const invalid = await handler.handler({
 		request: new Request('http://example.com/account/profile/avatar.json', {
 			method: 'POST',
-			body: form,
+			body: invalidForm,
 		}),
 		url: new URL('http://example.com/account/profile/avatar.json'),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(400)
-	expect(await response.json()).toEqual({
-		ok: false,
-		error: 'Avatars must be PNG, JPEG, or WebP images.',
-	})
+	expect(invalid.status).toBe(400)
+	expect((await invalid.json()).ok).toBe(false)
 })

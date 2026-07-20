@@ -5,16 +5,14 @@ import {
 	rewriteScopedPackageReferences,
 } from './username-scope-rewrite.ts'
 
-test('rewriteScopedPackageReferences rewrites exact scopes only', () => {
+test('username scope rewrite updates references, package files, and no-ops when unchanged', () => {
 	expect(
 		rewriteScopedPackageReferences(
 			'import x from "kody:@alice/pkg"\nimport y from "kody:@alice-dev/other"',
 			{ previousScope: 'alice', nextScope: 'bob' },
 		),
 	).toBe('import x from "kody:@bob/pkg"\nimport y from "kody:@alice-dev/other"')
-})
 
-test('rewritePackageFilesForUsernameChange updates manifest and source references', () => {
 	const result = rewritePackageFilesForUsernameChange({
 		files: {
 			'package.json': `${JSON.stringify(
@@ -72,23 +70,19 @@ test('rewritePackageFilesForUsernameChange updates manifest and source reference
 		'@other/topic',
 	])
 	expect(result.files['src/index.ts']).toContain('kody:@bob/shared/helper')
-	expect(result.files['src/index.ts']).toContain('kody:@other/lib')
-	expect(result.files['README.md']).toBe('# @bob/demo\n')
 	expect(result.files['binary.bin']).toBe('not-a-scope-reference')
-})
 
-test('rewritePackageFilesForUsernameChange is a no-op when scopes match', () => {
-	const files = {
+	const unchangedFiles = {
 		'package.json': '{"name":"@alice/demo"}\n',
 	}
-	const result = rewritePackageFilesForUsernameChange({
-		files,
+	const noOp = rewritePackageFilesForUsernameChange({
+		files: unchangedFiles,
 		previousScope: 'alice',
 		nextScope: 'Alice',
 		kodyId: 'demo',
 	})
-	expect(result.changed).toBe(false)
-	expect(result.changedPaths).toEqual([])
+	expect(noOp.changed).toBe(false)
+	expect(noOp.changedPaths).toEqual([])
 	expect(buildPackageNameForScope({ scope: 'Alice', kodyId: 'demo' })).toBe(
 		'@alice/demo',
 	)

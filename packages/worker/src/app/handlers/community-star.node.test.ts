@@ -28,11 +28,12 @@ vi.mock('#worker/community/social-service.ts', () => ({
 
 const env = {} as Env
 
-test('community star POST requires auth and toggles star count', async () => {
-	const handler = createCommunityStarApiPostHandler(env)
+test('community star POST and stargazers API', async () => {
+	const starHandler = createCommunityStarApiPostHandler(env)
+	const stargazersHandler = createCommunityStargazersApiHandler(env)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const unauthorized = await handler.handler({
+	const unauthorized = await starHandler.handler({
 		request: new Request('https://example.com/community/listing-1/star.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -50,9 +51,17 @@ test('community star POST requires auth and toggles star count', async () => {
 	mockModule.starCommunityListing.mockResolvedValue(undefined)
 	mockModule.listCommunityStargazersForListing.mockResolvedValue({
 		totalStars: 1,
-		stargazers: [],
+		stargazers: [
+			{
+				userId: 'stable-bob',
+				username: 'bob',
+				displayName: 'Bob',
+				avatarKey: null,
+				starredAt: '2026-07-01T00:00:00.000Z',
+			},
+		],
 	})
-	const starred = await handler.handler({
+	const starred = await starHandler.handler({
 		request: new Request('https://example.com/community/listing-1/star.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -78,7 +87,7 @@ test('community star POST requires auth and toggles star count', async () => {
 		totalStars: 0,
 		stargazers: [],
 	})
-	const unstarred = await handler.handler({
+	const unstarred = await starHandler.handler({
 		request: new Request('https://example.com/community/listing-1/star.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -97,7 +106,7 @@ test('community star POST requires auth and toggles star count', async () => {
 	mockModule.starCommunityListing.mockRejectedValue(
 		new CommunityActionError('Community listing "listing-1" was not found.'),
 	)
-	const missing = await handler.handler({
+	const missing = await starHandler.handler({
 		request: new Request('https://example.com/community/listing-1/star.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -107,9 +116,7 @@ test('community star POST requires auth and toggles star count', async () => {
 		url: new URL('https://example.com/community/listing-1/star.json'),
 	} as never)
 	expect(missing.status).toBe(400)
-})
 
-test('community stargazers API returns public stargazers', async () => {
 	mockModule.listCommunityStargazersForListing.mockResolvedValue({
 		totalStars: 2,
 		stargazers: [
@@ -122,19 +129,15 @@ test('community stargazers API returns public stargazers', async () => {
 			},
 		],
 	})
-
-	const handler = createCommunityStargazersApiHandler(env)
-	const response = await handler.handler({
+	const stargazersResponse = await stargazersHandler.handler({
 		request: new Request(
 			'https://example.com/community/listing-1/stargazers.json',
 		),
 		params: { listingId: 'listing-1' },
 		url: new URL('https://example.com/community/listing-1/stargazers.json'),
 	} as never)
-	const body = await response.json()
-
-	expect(response.status).toBe(200)
-	// Public stargazer payloads must never include internal stable user ids.
+	const body = await stargazersResponse.json()
+	expect(stargazersResponse.status).toBe(200)
 	expect(body).toEqual({
 		ok: true,
 		totalStars: 2,
@@ -147,6 +150,7 @@ test('community stargazers API returns public stargazers', async () => {
 			},
 		],
 	})
+	expect(body.stargazers[0]).not.toHaveProperty('userId')
 	expect(mockModule.listCommunityStargazersForListing).toHaveBeenCalledWith({
 		env,
 		listingId: 'listing-1',
