@@ -12,8 +12,6 @@ import {
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
 
-const pageRefreshStaleMs = 60 * 1000
-
 const billingErrorMessages: Record<string, string> = {
 	billing_not_configured: 'Billing is not configured on this deployment.',
 	no_customer:
@@ -66,38 +64,34 @@ export async function loadAccountBillingData(input: {
 		.bind(input.userId)
 		.first<BillingUserRow>()
 
-	let manualPlan: PlanName | null = parsePlanName(row?.plan)
+	const manualPlan: PlanName | null = parsePlanName(row?.plan)
 	let stripePlan: PlanName | null = parsePlanName(row?.stripe_plan)
 	let cancelAt: string | null = null
 	const customerId = row?.stripe_customer_id?.trim() || null
 	const hasStripeCustomer = Boolean(customerId)
 
 	if (configured && customerId) {
-		const refreshedAtMs = row?.stripe_plan_refreshed_at
-			? Date.parse(row.stripe_plan_refreshed_at)
-			: Number.NaN
-		const isStale =
-			!Number.isFinite(refreshedAtMs) ||
-			now.valueOf() - refreshedAtMs > pageRefreshStaleMs
-		if (isStale) {
-			try {
-				const refreshed = await refreshStripePlanForUser({
-					env: input.env,
-					userId: input.userId,
-					customerId,
-					now,
-				})
-				stripePlan = refreshed.stripePlan
-				cancelAt = refreshed.cancelAt
-			} catch (refreshError) {
-				console.error('account_billing_refresh_failed', {
-					userId: input.userId,
-					error:
-						refreshError instanceof Error
-							? refreshError.message
-							: String(refreshError),
-				})
-			}
+		// Always refresh on page view: cancel_at is not persisted, so serving
+		// the stored stripe_plan would hide a scheduled cancellation. Billing
+		// page loads are rare enough that one Stripe call per view is fine;
+		// failures fall back to the stored plan.
+		try {
+			const refreshed = await refreshStripePlanForUser({
+				env: input.env,
+				userId: input.userId,
+				customerId,
+				now,
+			})
+			stripePlan = refreshed.stripePlan
+			cancelAt = refreshed.cancelAt
+		} catch (refreshError) {
+			console.error('account_billing_refresh_failed', {
+				userId: input.userId,
+				error:
+					refreshError instanceof Error
+						? refreshError.message
+						: String(refreshError),
+			})
 		}
 	}
 

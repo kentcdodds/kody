@@ -193,11 +193,14 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 			error instanceof StripeApiError ||
 			error instanceof BillingNotConfiguredError
 		) {
-			throw new BillingLinkError(
-				'stripe_error',
-				'Linked the Stripe customer but could not refresh the subscription plan.',
-				{ cause: error },
-			)
+			// The customer is linked; a failed plan refresh must not surface as
+			// a checkout error. The billing page refreshes on view and the
+			// hourly cron sweep retries, so the plan converges shortly.
+			console.error('billing_link_refresh_failed', {
+				userId: input.user.id,
+				error: error instanceof Error ? error.message : String(error),
+			})
+			return { stripePlan: null, cancelAt: null }
 		}
 		throw error
 	}
