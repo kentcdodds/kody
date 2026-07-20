@@ -3,6 +3,10 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
+	packageScopeInputDescription,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
+import {
 	getSavedPackageById,
 	updateSavedPackage,
 } from '#worker/package-registry/repo.ts'
@@ -33,6 +37,11 @@ export const packageUpdateCapability = defineDomainCapability(
 		destructive: false,
 		inputSchema: z.strictObject({
 			package_id: z.string().min(1).describe('Saved package id.'),
+			package_scope: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(packageScopeInputDescription),
 			changes: packageUpdateChangesSchema,
 		}),
 		outputSchema: z.object({
@@ -41,8 +50,13 @@ export const packageUpdateCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const owner = await resolvePackageOwnerContext(
+				ctx.env.APP_DB,
+				user,
+				args.package_scope,
+			)
 			const changed = await updateSavedPackage(ctx.env.APP_DB, {
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				packageId: args.package_id,
 				hidden: args.changes.hidden,
 			})
@@ -50,7 +64,7 @@ export const packageUpdateCapability = defineDomainCapability(
 				throw new Error('Saved package not found for this user.')
 			}
 			const savedPackage = await getSavedPackageById(ctx.env.APP_DB, {
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				packageId: args.package_id,
 			})
 			if (!savedPackage) {

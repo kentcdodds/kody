@@ -3,6 +3,10 @@ import { unpublishCommunityListing } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	packageScopeInputDescription,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 
 export const communityUnpublishCapability = defineDomainCapability(
 	capabilityDomainNames.community,
@@ -19,6 +23,11 @@ export const communityUnpublishCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.describe('Community listing id to unpublish.'),
+			package_scope: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(packageScopeInputDescription),
 		}),
 		outputSchema: z.object({
 			listing_id: z.string(),
@@ -26,9 +35,14 @@ export const communityUnpublishCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const owner = await resolvePackageOwnerContext(
+				ctx.env.APP_DB,
+				user,
+				args.package_scope,
+			)
 			await unpublishCommunityListing({
 				env: ctx.env,
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				listingId: args.listing_id,
 			})
 			return {

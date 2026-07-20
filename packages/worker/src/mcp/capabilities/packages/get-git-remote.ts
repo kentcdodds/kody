@@ -3,6 +3,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	packageScopeInputDescription,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
 	buildAuthenticatedArtifactsRemote,
@@ -18,6 +22,11 @@ import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 const getGitRemoteInputSchema = z.object({
 	package_id: z.string().min(1).optional(),
 	kody_id: z.string().min(1).optional(),
+	package_scope: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(packageScopeInputDescription),
 	create: z
 		.boolean()
 		.optional()
@@ -87,6 +96,11 @@ export const getGitRemoteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const owner = await resolvePackageOwnerContext(
+				ctx.env.APP_DB,
+				user,
+				args.package_scope,
+			)
 			const requestedKodyId = args.kody_id?.trim() || undefined
 			let created = false
 			if (args.create) {
@@ -96,14 +110,14 @@ export const getGitRemoteCapability = defineDomainCapability(
 					)
 				}
 				const existing = await getSavedPackageByKodyId(ctx.env.APP_DB, {
-					userId: user.userId,
+					userId: owner.ownerUserId,
 					kodyId: requestedKodyId,
 				})
 				if (!existing) {
 					await createStubSavedPackage({
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
-						user,
+						owner,
 						kodyId: requestedKodyId,
 						description: args.description,
 					})
@@ -112,7 +126,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 			}
 			const { source, packageId, kodyId } = await resolveOwnedPackageSource({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				args: {
 					package_id: args.package_id,
 					kody_id: requestedKodyId,
@@ -121,7 +135,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 			if (args.scope === 'write') {
 				await assertRestorablePackageSourceSnapshot({
 					env: ctx.env,
-					userId: user.userId,
+					userId: owner.ownerUserId,
 					source,
 					operation: 'package_get_git_remote write access',
 				})

@@ -11,7 +11,10 @@ import {
 	getStaticPackageDependentsSummary,
 	type StaticPackageDependentsSummary,
 } from '#worker/package-runtime/static-package-dependents.ts'
-import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
+import {
+	packageScopeInputDescription,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
@@ -21,6 +24,11 @@ import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 const inputSchema = z.object({
 	package_id: z.string().min(1).optional(),
 	kody_id: z.string().min(1).optional(),
+	package_scope: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(packageScopeInputDescription),
 	allow_force: z.boolean().optional().default(false),
 	confirm_destructive_overwrite: z
 		.boolean()
@@ -251,10 +259,12 @@ export const publishExternalPushCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const expectedPackageScope = await getMcpUserPackageScope(
+			const owner = await resolvePackageOwnerContext(
 				ctx.env.APP_DB,
 				user,
+				args.package_scope,
 			)
+			const expectedPackageScope = owner.ownerScope
 			const maxAttempts = externalPublishRetryDelaysMs.length + 1
 			let lastTransientError: unknown = null
 			for (
@@ -265,7 +275,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				const attempt = attemptIndex + 1
 				const { packageId, source } = await resolveOwnedPackageSource({
 					db: ctx.env.APP_DB,
-					userId: user.userId,
+					userId: owner.ownerUserId,
 					args: {
 						package_id: args.package_id,
 						kody_id: args.kody_id,
@@ -289,7 +299,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 					).publishFromExternalRef({
 						sessionId,
 						sourceId: source.id,
-						userId: user.userId,
+						userId: owner.ownerUserId,
 						newCommit,
 						expectedHead: newCommit,
 						allowForce: args.allow_force,
@@ -308,7 +318,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 							env: ctx.env,
 							rpcSessionId: sessionId,
 							sourceId: source.id,
-							userId: user.userId,
+							userId: owner.ownerUserId,
 							publishedCommit: result.published_commit,
 							baseUrl: ctx.callerContext.baseUrl,
 						})
@@ -316,7 +326,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 							...result,
 							static_dependents: await getPublishStaticDependents({
 								db: ctx.env.APP_DB,
-								userId: user.userId,
+								userId: owner.ownerUserId,
 								sourceId: source.id,
 								publishedCommit: result.published_commit,
 							}),
@@ -329,7 +339,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 						env: ctx.env,
 						rpcSessionId: sessionId,
 						sourceId: source.id,
-						userId: user.userId,
+						userId: owner.ownerUserId,
 						publishedCommit: result.published_commit,
 						baseUrl: ctx.callerContext.baseUrl,
 					})
@@ -337,7 +347,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 						...result,
 						static_dependents: await getPublishStaticDependents({
 							db: ctx.env.APP_DB,
-							userId: user.userId,
+							userId: owner.ownerUserId,
 							sourceId: source.id,
 							publishedCommit: result.published_commit,
 						}),

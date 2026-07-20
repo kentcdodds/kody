@@ -6,6 +6,10 @@ import { resolvePublicUsername } from '#app/user-lookup.ts'
 import { buildExternalPackageInvocationDescriptor } from '#worker/package-invocations/public-url.ts'
 import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
+import {
+	packageScopeInputDescription,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { packageDetailSchema } from './shared.ts'
@@ -31,12 +35,22 @@ export const getPackageCapability = defineDomainCapability(
 		destructive: false,
 		inputSchema: z.object({
 			package_id: z.string().min(1),
+			package_scope: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(packageScopeInputDescription),
 		}),
 		outputSchema: packageDetailSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const owner = await resolvePackageOwnerContext(
+				ctx.env.APP_DB,
+				user,
+				args.package_scope,
+			)
 			const saved = await getSavedPackageById(ctx.env.APP_DB, {
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				packageId: args.package_id,
 			})
 			if (!saved) {
@@ -44,13 +58,13 @@ export const getPackageCapability = defineDomainCapability(
 			}
 			const username = await resolvePublicUsername({
 				db: ctx.env.APP_DB,
-				username: user.username ?? null,
-				email: user.email ?? null,
+				username: owner.ownerScope,
+				email: owner.ownerEmail,
 			})
 			const loaded = await loadPackageManifestBySourceId({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				sourceId: saved.sourceId,
 			})
 			const projection = buildPackageSearchProjection(loaded.manifest)

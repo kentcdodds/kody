@@ -5,6 +5,10 @@ import { adminCommunityActivityListCapability } from './admin-community-activity
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
+import { adminPackageScopeGrantCreateCapability } from './admin-package-scope-grant-create.ts'
+import { adminPackageScopeGrantListCapability } from './admin-package-scope-grant-list.ts'
+import { adminPackageScopeGrantRevokeCapability } from './admin-package-scope-grant-revoke.ts'
+import { adminPlatformAccountCreateCapability } from './admin-platform-account-create.ts'
 import { adminPlatformFeedbackGetCapability } from './admin-platform-feedback-get.ts'
 import { adminPlatformFeedbackListCapability } from './admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin-platform-feedback-update.ts'
@@ -19,7 +23,7 @@ import { adminUserUpdateCapability } from './admin-user-update.ts'
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
 	description:
-		'Admin-only operator capabilities for account metadata, feature flags, operator-owned system email, attributed platform feedback users explicitly submit for admin review, and metadata about activity on public community listings; never exposes private package source or unrelated user content such as secrets, memories, jobs, or user inbox email.',
+		'Admin-only operator capabilities for account metadata, platform accounts, package scope grants, feature flags, operator-owned system email, attributed platform feedback users explicitly submit for admin review, and metadata about activity on public community listings; never exposes private package source or unrelated user content such as secrets, memories, jobs, or user inbox email.',
 	keywords: [
 		'admin',
 		'rbac',
@@ -32,12 +36,18 @@ export const adminDomain = defineDomain({
 		'system email',
 		'platform feedback',
 		'community activity',
+		'platform accounts',
+		'package scope grants',
 	],
 	capabilities: [
 		adminUserListCapability,
 		adminUserGetCapability,
 		adminUserCreateCapability,
 		adminUserUpdateCapability,
+		adminPlatformAccountCreateCapability,
+		adminPackageScopeGrantCreateCapability,
+		adminPackageScopeGrantRevokeCapability,
+		adminPackageScopeGrantListCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
 		adminFeatureFlagListCapability,

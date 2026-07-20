@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
+	resolvePackageOwnerContext: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -15,22 +16,31 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 		mockModule.loadPackageManifestBySourceId(...args),
 }))
 
+vi.mock('#worker/package-registry/package-owner.ts', () => ({
+	packageScopeInputDescription: 'package scope',
+	resolvePackageOwnerContext: (...args: Array<unknown>) =>
+		mockModule.resolvePackageOwnerContext(...args),
+}))
+
 const { getPackageCapability } = await import('./get-package.ts')
 
 function createCallerContext(input?: {
-	includeUsername?: boolean
 	username?: string | null
+	ownerUserId?: string
+	ownerScope?: string
+	ownerEmail?: string
+	delegated?: boolean
 }) {
-	const appDb = {
-		prepare: () => ({
-			bind: () => ({
-				first: async () => {
-					if (input?.includeUsername === false) return null
-					return { username: input?.username ?? 'kody' }
-				},
-			}),
-		}),
-	} as unknown as D1Database
+	const userId = 'user-1'
+	const ownerUserId = input?.ownerUserId ?? userId
+	const ownerScope = input?.ownerScope ?? input?.username ?? 'kody'
+	mockModule.resolvePackageOwnerContext.mockResolvedValue({
+		ownerUserId,
+		ownerScope,
+		ownerEmail: input?.ownerEmail ?? 'kody@example.com',
+		actorUserId: userId,
+		delegated: input?.delegated ?? false,
+	})
 
 	const user: {
 		userId: string
@@ -38,16 +48,16 @@ function createCallerContext(input?: {
 		displayName: string
 		username?: string
 	} = {
-		userId: 'user-1',
+		userId,
 		email: 'kody@example.com',
 		displayName: 'Kody',
 	}
-	if (input?.includeUsername !== false) {
+	if (input?.username !== null) {
 		user.username = input?.username ?? 'kody'
 	}
 
 	return {
-		env: { APP_DB: appDb } as Env,
+		env: { APP_DB: {} } as Env,
 		callerContext: {
 			baseUrl: 'https://heykody.dev',
 			user,
@@ -58,7 +68,7 @@ function createCallerContext(input?: {
 	}
 }
 
-test('getPackageCapability returns export metadata and omits external invocation without a public username', async () => {
+test('getPackageCapability returns export metadata and owner-scoped invocation URLs', async () => {
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
 	mockModule.getSavedPackageById.mockResolvedValue({
@@ -151,19 +161,25 @@ test('getPackageCapability returns export metadata and omits external invocation
 			},
 		],
 	})
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ userId: 'user-1', packageId: 'package-1' }),
+	)
 	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith({
 		env: expect.objectContaining({ APP_DB: expect.anything() }),
 		baseUrl: 'https://heykody.dev',
 		userId: 'user-1',
 		sourceId: 'source-1',
 	})
+})
 
+test('getPackageCapability loads packages under a delegated package_scope owner', async () => {
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
-		userId: 'user-1',
-		name: '@kentcdodds/discord-gateway',
+		userId: 'platform-owner',
+		name: '@kody/discord-gateway',
 		kodyId: 'discord-gateway',
 		description: 'Discord helpers',
 		tags: ['discord'],
@@ -178,7 +194,7 @@ test('getPackageCapability returns export metadata and omits external invocation
 	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
 		source: { id: 'source-1' },
 		manifest: {
-			name: '@kentcdodds/discord-gateway',
+			name: '@kody/discord-gateway',
 			exports: {
 				'./post-message': './src/post-message.ts',
 			},
@@ -189,15 +205,33 @@ test('getPackageCapability returns export metadata and omits external invocation
 		},
 	})
 
-	const withoutUsername = await getPackageCapability.handler(
-		{ package_id: 'package-1' },
-		createCallerContext({ includeUsername: false }),
+	const result = await getPackageCapability.handler(
+		{ package_id: 'package-1', package_scope: 'kody' },
+		createCallerContext({
+			ownerUserId: 'platform-owner',
+			ownerScope: 'kody',
+			ownerEmail: 'platform@example.com',
+			delegated: true,
+		}),
 	)
 
-	expect(withoutUsername.exports).toEqual([
+	expect(mockModule.resolvePackageOwnerContext).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ userId: 'user-1' }),
+		'kody',
+	)
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
+		expect.anything(),
 		expect.objectContaining({
-			subpath: './post-message',
-			external_invocation: null,
+			userId: 'platform-owner',
+			packageId: 'package-1',
 		}),
-	])
+	)
+	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'platform-owner' }),
+	)
+	expect(result.exports[0]?.external_invocation).toMatchObject({
+		owner_username: 'kody',
+		url: 'https://heykody.dev/@kody/api/package-invocations/discord-gateway/post-message',
+	})
 })

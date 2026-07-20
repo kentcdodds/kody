@@ -15,6 +15,9 @@ to become.
   Worker.
 - [Authentication](./authentication.md): app session auth and OAuth-protected
   MCP auth.
+- [Platform accounts](./platform-accounts.md): operator-provisioned platform
+  accounts, package scope grants, and actor/owner delegation for official
+  package scopes.
 - [Authorization](./authorization.md): role-based access control (RBAC), admin
   routes, and the `any`-access exception to per-user isolation.
 - [Entitlements](./entitlements.md): per-user plans (`users.plan`), per-plan

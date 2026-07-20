@@ -4,6 +4,10 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
+	packageScopeInputDescription,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
+import {
 	buildCommunityPublicUrl,
 	communityListingSummarySchema,
 } from './shared.ts'
@@ -30,14 +34,24 @@ export const communityPublishCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.describe('Saved package id to publish as a community listing.'),
+			package_scope: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(packageScopeInputDescription),
 		}),
 		outputSchema: communityListingSummarySchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const owner = await resolvePackageOwnerContext(
+				ctx.env.APP_DB,
+				user,
+				args.package_scope,
+			)
 			const listing = await publishCommunityListing({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				packageId: args.package_id,
 			})
 			return {

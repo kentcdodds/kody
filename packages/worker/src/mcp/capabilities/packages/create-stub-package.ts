@@ -1,14 +1,13 @@
-import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { type PackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import {
 	assertKodyDescriptionLength,
 	kodyPackageIdPattern,
 } from '#worker/package-registry/types.ts'
-import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
@@ -55,7 +54,7 @@ export function buildStubPackageFiles(input: {
 export async function createStubSavedPackage(input: {
 	env: Env
 	baseUrl: string
-	user: McpUserContext
+	owner: PackageOwnerContext
 	kodyId: string
 	description?: string
 }) {
@@ -67,12 +66,11 @@ export async function createStubSavedPackage(input: {
 	}
 	await assertWithinEntitlement({
 		db: input.env.APP_DB,
-		userId: input.user.userId,
-		email: input.user.email,
+		userId: input.owner.ownerUserId,
+		email: input.owner.ownerEmail,
 		resource: 'saved_packages',
 	})
-	const scope = await getMcpUserPackageScope(input.env.APP_DB, input.user)
-	const name = `@${scope}/${kodyId}`
+	const name = `@${input.owner.ownerScope}/${kodyId}`
 	const description = input.description?.trim() || defaultStubPackageDescription
 	assertKodyDescriptionLength(description)
 	const files = buildStubPackageFiles({ name, kodyId, description })
@@ -83,13 +81,13 @@ export async function createStubSavedPackage(input: {
 	const manifest = parseAuthoredPackageJson({
 		content: packageJsonContent,
 		manifestPath: 'package.json',
-		expectedPackageScope: scope,
+		expectedPackageScope: input.owner.ownerScope,
 	})
 	const packageId = crypto.randomUUID()
 	const ensuredSource = await ensureEntitySource({
 		db: input.env.APP_DB,
 		env: input.env,
-		userId: input.user.userId,
+		userId: input.owner.ownerUserId,
 		entityKind: 'package',
 		entityId: packageId,
 		sourceRoot: '/',
@@ -98,7 +96,7 @@ export async function createStubSavedPackage(input: {
 	})
 	await syncArtifactSourceSnapshot({
 		env: input.env,
-		userId: input.user.userId,
+		userId: input.owner.ownerUserId,
 		baseUrl: input.baseUrl,
 		sourceId: ensuredSource.id,
 		bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
@@ -107,7 +105,7 @@ export async function createStubSavedPackage(input: {
 	const now = new Date().toISOString()
 	await insertSavedPackage(input.env.APP_DB, {
 		id: packageId,
-		user_id: input.user.userId,
+		user_id: input.owner.ownerUserId,
 		name: manifest.name,
 		kody_id: manifest.kody.id,
 		description: manifest.kody.description,
@@ -122,13 +120,13 @@ export async function createStubSavedPackage(input: {
 	})
 	await upsertSavedPackageVector(input.env, {
 		packageId,
-		userId: input.user.userId,
+		userId: input.owner.ownerUserId,
 		embedText: buildSavedPackageEmbedText(manifest),
 	})
 	await refreshSavedPackageProjection({
 		env: input.env,
 		baseUrl: input.baseUrl,
-		userId: input.user.userId,
+		userId: input.owner.ownerUserId,
 		packageId,
 		sourceId: ensuredSource.id,
 	})

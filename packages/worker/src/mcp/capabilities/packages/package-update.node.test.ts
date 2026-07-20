@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	updateSavedPackage: vi.fn(),
+	resolvePackageOwnerContext: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -12,9 +13,22 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.updateSavedPackage(...args),
 }))
 
+vi.mock('#worker/package-registry/package-owner.ts', () => ({
+	packageScopeInputDescription: 'package scope',
+	resolvePackageOwnerContext: (...args: Array<unknown>) =>
+		mockModule.resolvePackageOwnerContext(...args),
+}))
+
 const { packageUpdateCapability } = await import('./package-update.ts')
 
 function createCtx(userId = 'user-1') {
+	mockModule.resolvePackageOwnerContext.mockResolvedValue({
+		ownerUserId: userId,
+		ownerScope: 'user',
+		ownerEmail: 'user@example.com',
+		actorUserId: userId,
+		delegated: false,
+	})
 	return {
 		env: { APP_DB: {} } as Env,
 		callerContext: {

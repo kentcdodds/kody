@@ -198,7 +198,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `userId` (`stable_user_id`, SHA-256 of the normalized email, unique partial
   index from migration 0052; written at signup). Optional community profile
   fields (`display_name`, `bio`, `profile_visibility` with default `public`)
-  come from migration 0065. Inbound email routing does not reverse-resolve
+  come from migration 0065. `account_type` (`'person'` default or `'platform'`,
+  migration 0072) distinguishes normal signups from operator-provisioned
+  platform accounts that own official package scopes (see
+  [Platform accounts](./platform-accounts.md)). Inbound email routing does not
+  reverse-resolve
   stable ids at all — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). The remaining contextless paths resolve
   stable ids with one indexed point read (`findUserRowByStableUserId` /
@@ -212,6 +216,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   they are resolved, dismissed, or the submitting account is deleted. Resolved
   and dismissed rows are pruned 365 days after `updated_at`; submitter deletion
   removes any remaining rows.
+- `package_scope_grants`: explicit rows granting a person account permission to
+  act inside a platform account's package scope (`scope_owner_user_id`,
+  `grantee_user_id`, `created_by_user_id`, `created_at`; migration 0072). Grants
+  are only representable when the scope owner is a platform account.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
   pointers, and run observability counters/history

@@ -8,6 +8,7 @@ export const usersTable = table({
 		username: c.text(),
 		email: c.text(),
 		stable_user_id: c.text(),
+		account_type: c.text(),
 		display_name: c.text(),
 		bio: c.text(),
 		profile_visibility: c.text(),

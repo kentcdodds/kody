@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
+import {
+	packageScopeInputDescription,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { packageSummarySchema, toPackageSummary } from './shared.ts'
 
@@ -16,14 +19,25 @@ export const listPackagesCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: emptyCapabilityInputSchema,
+		inputSchema: z.object({
+			package_scope: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(packageScopeInputDescription),
+		}),
 		outputSchema: z.object({
 			packages: z.array(packageSummarySchema),
 		}),
-		async handler(_args, ctx) {
+		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const owner = await resolvePackageOwnerContext(
+				ctx.env.APP_DB,
+				user,
+				args.package_scope,
+			)
 			const packages = await listSavedPackagesByUserId(ctx.env.APP_DB, {
-				userId: user.userId,
+				userId: owner.ownerUserId,
 			})
 			return {
 				packages: packages.map(toPackageSummary),

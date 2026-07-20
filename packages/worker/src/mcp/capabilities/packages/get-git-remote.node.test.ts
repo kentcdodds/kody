@@ -7,6 +7,7 @@ const mockModule = vi.hoisted(() => ({
 	resolveArtifactDefaultBranchHead: vi.fn(),
 	resolveExistingArtifactSourceRepo: vi.fn(),
 	createStubSavedPackage: vi.fn(),
+	resolvePackageOwnerContext: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -14,6 +15,12 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),
+}))
+
+vi.mock('#worker/package-registry/package-owner.ts', () => ({
+	packageScopeInputDescription: 'package scope',
+	resolvePackageOwnerContext: (...args: Array<unknown>) =>
+		mockModule.resolvePackageOwnerContext(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -39,10 +46,21 @@ vi.mock('./create-stub-package.ts', () => ({
 
 const { getGitRemoteCapability } = await import('./get-git-remote.ts')
 
+function personalOwner(userId = 'user-1') {
+	return {
+		ownerUserId: userId,
+		ownerScope: 'kentcdodds',
+		ownerEmail: `${userId}@example.com`,
+		actorUserId: userId,
+		delegated: false,
+	}
+}
+
 function resetMocks() {
 	for (const fn of Object.values(mockModule)) {
 		fn.mockReset()
 	}
+	mockModule.resolvePackageOwnerContext.mockResolvedValue(personalOwner())
 }
 
 function createContext(userId = 'user-1') {
@@ -245,6 +263,7 @@ test('get_git_remote create mode registers a stub package when missing', async (
 			kodyId: 'unleashed-wifi',
 			description: 'WiFi controls',
 			baseUrl: 'https://heykody.dev',
+			owner: personalOwner(),
 		}),
 	)
 	expect(createdResult.created).toBe(true)
@@ -286,4 +305,62 @@ test('get_git_remote create mode registers a stub package when missing', async (
 	)
 	expect(trimmedResult.created).toBe(true)
 	expect(trimmedResult.kody_id).toBe('unleashed-wifi')
+})
+
+test('get_git_remote uses the delegated package owner for storage lookups', async () => {
+	resetMocks()
+	const delegatedOwner = {
+		ownerUserId: 'platform-owner',
+		ownerScope: 'kody',
+		ownerEmail: 'kody@example.com',
+		actorUserId: 'user-1',
+		delegated: true,
+	}
+	mockModule.resolvePackageOwnerContext.mockResolvedValue(delegatedOwner)
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(null)
+	mockModule.createStubSavedPackage.mockImplementation(async () => {
+		mockPackageSource('platform-owner')
+		return {
+			packageId: 'package-1',
+			kodyId: 'unleashed-wifi',
+			name: '@kody/unleashed-wifi',
+		}
+	})
+	const result = await getGitRemoteCapability.handler(
+		{
+			kody_id: 'unleashed-wifi',
+			create: true,
+			package_scope: 'kody',
+		},
+		createContext('user-1'),
+	)
+	expect(mockModule.resolvePackageOwnerContext).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ userId: 'user-1' }),
+		'kody',
+	)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
+		1,
+		expect.anything(),
+		expect.objectContaining({
+			userId: 'platform-owner',
+			kodyId: 'unleashed-wifi',
+		}),
+	)
+	expect(mockModule.createStubSavedPackage).toHaveBeenCalledWith(
+		expect.objectContaining({
+			owner: delegatedOwner,
+			kodyId: 'unleashed-wifi',
+		}),
+	)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
+		2,
+		expect.anything(),
+		expect.objectContaining({
+			userId: 'platform-owner',
+			kodyId: 'unleashed-wifi',
+		}),
+	)
+	expect(result.created).toBe(true)
+	expect(result.package_id).toBe('package-1')
 })

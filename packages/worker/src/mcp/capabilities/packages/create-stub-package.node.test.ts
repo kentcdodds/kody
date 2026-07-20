@@ -1,8 +1,8 @@
 import { expect, test, vi } from 'vitest'
+import { type PackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 
 const mockModule = vi.hoisted(() => ({
 	assertWithinEntitlement: vi.fn(),
-	getMcpUserPackageScope: vi.fn(),
 	ensureEntitySource: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
 	insertSavedPackage: vi.fn(),
@@ -13,11 +13,6 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/entitlements/service.ts', () => ({
 	assertWithinEntitlement: (...args: Array<unknown>) =>
 		mockModule.assertWithinEntitlement(...args),
-}))
-
-vi.mock('#worker/package-registry/user-scope.ts', () => ({
-	getMcpUserPackageScope: (...args: Array<unknown>) =>
-		mockModule.getMcpUserPackageScope(...args),
 }))
 
 vi.mock('#worker/repo/source-service.ts', () => ({
@@ -52,7 +47,6 @@ function resetMocks() {
 		fn.mockReset()
 	}
 	mockModule.assertWithinEntitlement.mockResolvedValue(undefined)
-	mockModule.getMcpUserPackageScope.mockResolvedValue('kentcdodds')
 	mockModule.ensureEntitySource.mockResolvedValue({
 		id: 'source-new',
 		bootstrapAccess: null,
@@ -63,10 +57,12 @@ function resetMocks() {
 	mockModule.refreshSavedPackageProjection.mockResolvedValue({ record: {} })
 }
 
-const user = {
-	userId: 'user-1',
-	email: 'user-1@example.com',
-	displayName: 'User One',
+const owner: PackageOwnerContext = {
+	ownerUserId: 'user-1',
+	ownerScope: 'kentcdodds',
+	ownerEmail: 'user-1@example.com',
+	actorUserId: 'user-1',
+	delegated: false,
 }
 
 test('createStubSavedPackage rejects invalid kody ids and registers valid stubs through the pipeline', async () => {
@@ -75,7 +71,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers valid stubs 
 		createStubSavedPackage({
 			env: { APP_DB: {} } as Env,
 			baseUrl: 'https://heykody.dev',
-			user,
+			owner,
 			kodyId: 'Not_A_Valid_Id',
 		}),
 	).rejects.toThrow(/lower-kebab-case/)
@@ -86,7 +82,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers valid stubs 
 	const result = await createStubSavedPackage({
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://heykody.dev',
-		user,
+		owner,
 		kodyId: 'my-package',
 		description: 'Does the thing.',
 	})
@@ -95,7 +91,11 @@ test('createStubSavedPackage rejects invalid kody ids and registers valid stubs 
 		name: '@kentcdodds/my-package',
 	})
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
-		expect.objectContaining({ resource: 'saved_packages' }),
+		expect.objectContaining({
+			resource: 'saved_packages',
+			userId: 'user-1',
+			email: 'user-1@example.com',
+		}),
 	)
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -110,6 +110,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers valid stubs 
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
+			user_id: 'user-1',
 			name: '@kentcdodds/my-package',
 			kody_id: 'my-package',
 			description: 'Does the thing.',
@@ -120,4 +121,44 @@ test('createStubSavedPackage rejects invalid kody ids and registers valid stubs 
 	)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalled()
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalled()
+})
+
+test('createStubSavedPackage stores under the owner account when acting under a grant', async () => {
+	resetMocks()
+	const delegatedOwner: PackageOwnerContext = {
+		ownerUserId: 'platform-owner',
+		ownerScope: 'kody',
+		ownerEmail: 'kody@example.com',
+		actorUserId: 'actor-1',
+		delegated: true,
+	}
+	await createStubSavedPackage({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://heykody.dev',
+		owner: delegatedOwner,
+		kodyId: 'official-tool',
+	})
+	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'platform-owner',
+			email: 'kody@example.com',
+		}),
+	)
+	expect(mockModule.ensureEntitySource).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'platform-owner' }),
+	)
+	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			user_id: 'platform-owner',
+			name: '@kody/official-tool',
+		}),
+	)
+	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ userId: 'platform-owner' }),
+	)
+	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'platform-owner' }),
+	)
 })

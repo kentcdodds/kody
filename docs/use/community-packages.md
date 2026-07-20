@@ -167,8 +167,11 @@ Admins toggle trust from the listing detail page or with the
 
 Admins can additionally mark trusted listings as **featured**. Featured listings
 appear on the onboarding page (`/onboarding`) as starter packages new users can
-one-click install. Only trusted listings can be featured, and a listing is only
-_shown_ in onboarding while it remains effectively trusted: when the owner
+one-click install. Official starter packages are published under platform scopes
+such as `@kody` by operators who hold a package scope grant on that account —
+they show up like any other community listing, owned by `@kody/...` rather than
+a personal username. Only trusted listings can be featured, and a listing is
+only _shown_ in onboarding while it remains effectively trusted: when the owner
 republishes, it silently drops out of onboarding until an admin re-trusts the
 new version (the featured mark itself is kept, so re-trusting restores it).
 

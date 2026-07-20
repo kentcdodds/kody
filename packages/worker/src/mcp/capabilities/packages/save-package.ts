@@ -22,7 +22,10 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
-import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
+import {
+	packageScopeInputDescription,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
@@ -38,6 +41,11 @@ const inputSchema = z
 			.describe(
 				'Optional saved package id to update in place. Omit to create a new saved package.',
 			),
+		package_scope: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(packageScopeInputDescription),
 		files: z
 			.array(packageFileSchema)
 			.min(1)
@@ -114,23 +122,25 @@ export const savePackageCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const owner = await resolvePackageOwnerContext(
+				ctx.env.APP_DB,
+				user,
+				args.package_scope,
+			)
 			let files = normalizeFiles(args.files)
 			let packageJsonContent = files['package.json']
 			if (!packageJsonContent) {
 				throw new Error('Saved packages require a root package.json file.')
 			}
-			const expectedPackageScope = await getMcpUserPackageScope(
-				ctx.env.APP_DB,
-				user,
-			)
+			const expectedPackageScope = owner.ownerScope
 			const existing =
 				args.package_id !== undefined
 					? await getSavedPackageById(ctx.env.APP_DB, {
-							userId: user.userId,
+							userId: owner.ownerUserId,
 							packageId: args.package_id,
 						})
 					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
-							userId: user.userId,
+							userId: owner.ownerUserId,
 							kodyId: parseAuthoredPackageJson({
 								content: packageJsonContent,
 								manifestPath: 'package.json',
@@ -140,8 +150,8 @@ export const savePackageCapability = defineDomainCapability(
 			if (!existing) {
 				await assertWithinEntitlement({
 					db: ctx.env.APP_DB,
-					userId: user.userId,
-					email: user.email,
+					userId: owner.ownerUserId,
+					email: owner.ownerEmail,
 					resource: 'saved_packages',
 				})
 				packageJsonContent = injectDefaultPrivateField(packageJsonContent)
@@ -158,14 +168,14 @@ export const savePackageCapability = defineDomainCapability(
 				existing == null
 					? null
 					: await getEntitySourceByEntity(ctx.env.APP_DB, {
-							userId: user.userId,
+							userId: owner.ownerUserId,
 							entityKind: 'package',
 							entityId: packageId,
 						})
 			const ensuredSource = await ensureEntitySource({
 				db: ctx.env.APP_DB,
 				env: ctx.env,
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				entityKind: 'package',
 				entityId: packageId,
 				sourceRoot: '/',
@@ -177,7 +187,7 @@ export const savePackageCapability = defineDomainCapability(
 					? null
 					: await loadPriorPackageManifestContent({
 							env: ctx.env,
-							userId: user.userId,
+							userId: owner.ownerUserId,
 							source:
 								canonicalExistingSource?.id === ensuredSource.id
 									? canonicalExistingSource
@@ -193,7 +203,7 @@ export const savePackageCapability = defineDomainCapability(
 			if (existing) {
 				await assertPackageSourceOverwriteAllowed({
 					env: ctx.env,
-					userId: user.userId,
+					userId: owner.ownerUserId,
 					source:
 						canonicalExistingSource?.id === ensuredSource.id
 							? canonicalExistingSource
@@ -204,7 +214,7 @@ export const savePackageCapability = defineDomainCapability(
 			}
 			await syncArtifactSourceSnapshot({
 				env: ctx.env,
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				baseUrl: ctx.callerContext.baseUrl,
 				sourceId: ensuredSource.id,
 				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
@@ -217,7 +227,7 @@ export const savePackageCapability = defineDomainCapability(
 				const now = new Date().toISOString()
 				await insertSavedPackage(ctx.env.APP_DB, {
 					id: packageId,
-					user_id: user.userId,
+					user_id: owner.ownerUserId,
 					name: manifest.name,
 					kody_id: manifest.kody.id,
 					description: manifest.kody.description,
@@ -232,14 +242,14 @@ export const savePackageCapability = defineDomainCapability(
 				})
 				await upsertSavedPackageVector(ctx.env, {
 					packageId,
-					userId: user.userId,
+					userId: owner.ownerUserId,
 					embedText: buildSavedPackageEmbedText(manifest),
 				})
 			}
 			const refreshed = await refreshSavedPackageProjection({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
-				userId: user.userId,
+				userId: owner.ownerUserId,
 				packageId,
 				sourceId: ensuredSource.id,
 			})

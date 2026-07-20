@@ -205,6 +205,10 @@ Current admin capabilities:
 - `admin_user_get`
 - `admin_user_create`
 - `admin_user_update`
+- `admin_platform_account_create`
+- `admin_package_scope_grant_create`
+- `admin_package_scope_grant_revoke`
+- `admin_package_scope_grant_list`
 - `admin_audit_log_query`
 - `admin_user_usage`
 - `admin_feature_flag_list`
