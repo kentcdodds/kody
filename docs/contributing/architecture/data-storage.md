@@ -200,10 +200,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   reverse-resolve stable ids at all — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). The remaining contextless paths resolve
   stable ids with one indexed point read (`findUserRowByStableUserId` /
-  `findUserAccountByStableUserId`). Production deployment calls
-  `POST /__maintenance/backfill-stable-user-ids` before installing code that
-  requires materialized ids; every account-creation path writes the id. Runtime
-  lookups never scan or derive ids from account email.
+  `findUserAccountByStableUserId`); legacy rows with a NULL `stable_user_id`
+  fall back to a scan-and-hash that self-heals by writing the computed id back,
+  and the `POST /__maintenance/backfill-stable-user-ids` endpoint backfills all
+  remaining legacy rows in one pass.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until
