@@ -202,8 +202,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   migration 0072) distinguishes normal signups from operator-provisioned
   platform accounts that own official package scopes (see
   [Platform accounts](./platform-accounts.md)). Inbound email routing does not
-  reverse-resolve
-  stable ids at all — it uses the indexed username lookup
+  reverse-resolve stable ids at all — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). The remaining contextless paths resolve
   stable ids with one indexed point read (`findUserRowByStableUserId` /
   `findUserAccountByStableUserId`); legacy rows with a NULL `stable_user_id`

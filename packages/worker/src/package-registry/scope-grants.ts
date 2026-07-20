@@ -1,4 +1,4 @@
-import { resolveUserStableId } from "#worker/user-id.ts";
+import { resolveUserStableId } from '#worker/user-id.ts'
 
 /**
  * Package scope grants: explicit rows that let a person account act inside a
@@ -16,132 +16,132 @@ import { resolveUserStableId } from "#worker/user-id.ts";
  */
 
 export type PackageScopeGrantRow = {
-  scope_owner_user_id: string;
-  grantee_user_id: string;
-  created_by_user_id: string;
-  created_at: string;
-  scope_username: string;
-  grantee_username: string;
-};
+	scope_owner_user_id: string
+	grantee_user_id: string
+	created_by_user_id: string
+	created_at: string
+	scope_username: string
+	grantee_username: string
+}
 
 export type PlatformAccountRow = {
-  id: number;
-  username: string;
-  email: string;
-  stableUserId: string;
-};
+	id: number
+	username: string
+	email: string
+	stableUserId: string
+}
 
 export async function getPlatformAccountByUsername(
-  db: D1Database,
-  username: string,
+	db: D1Database,
+	username: string,
 ): Promise<PlatformAccountRow | null> {
-  const row = await db
-    .prepare(
-      `SELECT id, username, email, account_type, stable_user_id
+	const row = await db
+		.prepare(
+			`SELECT id, username, email, account_type, stable_user_id
 			FROM users
 			WHERE username = ?
 			LIMIT 1`,
-    )
-    .bind(username)
-    .first<{
-      id: number;
-      username: string;
-      email: string;
-      account_type: string;
-      stable_user_id: string | null;
-    }>();
-  if (!row || row.account_type !== "platform") return null;
-  return {
-    id: row.id,
-    username: row.username,
-    email: row.email,
-    stableUserId: await resolveUserStableId(row),
-  };
+		)
+		.bind(username)
+		.first<{
+			id: number
+			username: string
+			email: string
+			account_type: string
+			stable_user_id: string | null
+		}>()
+	if (!row || row.account_type !== 'platform') return null
+	return {
+		id: row.id,
+		username: row.username,
+		email: row.email,
+		stableUserId: await resolveUserStableId(row),
+	}
 }
 
 async function isPlatformAccountStableUserId(
-  db: D1Database,
-  stableUserId: string,
+	db: D1Database,
+	stableUserId: string,
 ) {
-  const row = await db
-    .prepare(`SELECT account_type FROM users WHERE stable_user_id = ? LIMIT 1`)
-    .bind(stableUserId)
-    .first<{ account_type: string }>();
-  return row?.account_type === "platform";
+	const row = await db
+		.prepare(`SELECT account_type FROM users WHERE stable_user_id = ? LIMIT 1`)
+		.bind(stableUserId)
+		.first<{ account_type: string }>()
+	return row?.account_type === 'platform'
 }
 
 export async function hasPackageScopeGrant(
-  db: D1Database,
-  input: {
-    scopeOwnerUserId: string;
-    granteeUserId: string;
-  },
+	db: D1Database,
+	input: {
+		scopeOwnerUserId: string
+		granteeUserId: string
+	},
 ): Promise<boolean> {
-  const row = await db
-    .prepare(
-      `SELECT 1 AS granted FROM package_scope_grants
+	const row = await db
+		.prepare(
+			`SELECT 1 AS granted FROM package_scope_grants
 			WHERE scope_owner_user_id = ? AND grantee_user_id = ?
 			LIMIT 1`,
-    )
-    .bind(input.scopeOwnerUserId, input.granteeUserId)
-    .first<{ granted: number }>();
-  return Boolean(row);
+		)
+		.bind(input.scopeOwnerUserId, input.granteeUserId)
+		.first<{ granted: number }>()
+	return Boolean(row)
 }
 
 export async function insertPackageScopeGrant(
-  db: D1Database,
-  input: {
-    scopeOwnerUserId: string;
-    granteeUserId: string;
-    createdByUserId: string;
-  },
+	db: D1Database,
+	input: {
+		scopeOwnerUserId: string
+		granteeUserId: string
+		createdByUserId: string
+	},
 ): Promise<{ created: boolean }> {
-  if (!(await isPlatformAccountStableUserId(db, input.scopeOwnerUserId))) {
-    throw new Error(
-      "Package scope grants can only be created on platform accounts.",
-    );
-  }
-  const result = await db
-    .prepare(
-      `INSERT INTO package_scope_grants
+	if (!(await isPlatformAccountStableUserId(db, input.scopeOwnerUserId))) {
+		throw new Error(
+			'Package scope grants can only be created on platform accounts.',
+		)
+	}
+	const result = await db
+		.prepare(
+			`INSERT INTO package_scope_grants
 			(scope_owner_user_id, grantee_user_id, created_by_user_id)
 			VALUES (?, ?, ?)
 			ON CONFLICT(scope_owner_user_id, grantee_user_id) DO NOTHING`,
-    )
-    .bind(input.scopeOwnerUserId, input.granteeUserId, input.createdByUserId)
-    .run();
-  return { created: (result.meta.changes ?? 0) > 0 };
+		)
+		.bind(input.scopeOwnerUserId, input.granteeUserId, input.createdByUserId)
+		.run()
+	return { created: (result.meta.changes ?? 0) > 0 }
 }
 
 export async function deletePackageScopeGrant(
-  db: D1Database,
-  input: {
-    scopeOwnerUserId: string;
-    granteeUserId: string;
-  },
+	db: D1Database,
+	input: {
+		scopeOwnerUserId: string
+		granteeUserId: string
+	},
 ): Promise<{ deleted: boolean }> {
-  const result = await db
-    .prepare(
-      `DELETE FROM package_scope_grants
+	const result = await db
+		.prepare(
+			`DELETE FROM package_scope_grants
 			WHERE scope_owner_user_id = ? AND grantee_user_id = ?`,
-    )
-    .bind(input.scopeOwnerUserId, input.granteeUserId)
-    .run();
-  return { deleted: (result.meta.changes ?? 0) > 0 };
+		)
+		.bind(input.scopeOwnerUserId, input.granteeUserId)
+		.run()
+	return { deleted: (result.meta.changes ?? 0) > 0 }
 }
 
 export async function listPackageScopeGrants(
-  db: D1Database,
-  input: {
-    scopeOwnerUserId?: string;
-  } = {},
+	db: D1Database,
+	input: {
+		scopeOwnerUserId?: string
+	} = {},
 ): Promise<Array<PackageScopeGrantRow>> {
-  const where =
-    input.scopeOwnerUserId === undefined
-      ? ""
-      : "WHERE grants.scope_owner_user_id = ?";
-  const statement = db.prepare(
-    `SELECT
+	const where =
+		input.scopeOwnerUserId === undefined
+			? ''
+			: 'WHERE grants.scope_owner_user_id = ?'
+	const statement = db.prepare(
+		`SELECT
 			grants.scope_owner_user_id,
 			grants.grantee_user_id,
 			grants.created_by_user_id,
@@ -155,12 +155,10 @@ export async function listPackageScopeGrants(
 			ON grantee_users.stable_user_id = grants.grantee_user_id
 		${where}
 		ORDER BY grants.created_at ASC`,
-  );
-  const rows =
-    input.scopeOwnerUserId === undefined
-      ? await statement.all<PackageScopeGrantRow>()
-      : await statement
-          .bind(input.scopeOwnerUserId)
-          .all<PackageScopeGrantRow>();
-  return rows.results ?? [];
+	)
+	const rows =
+		input.scopeOwnerUserId === undefined
+			? await statement.all<PackageScopeGrantRow>()
+			: await statement.bind(input.scopeOwnerUserId).all<PackageScopeGrantRow>()
+	return rows.results ?? []
 }

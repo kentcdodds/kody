@@ -14,10 +14,7 @@ function personUsername() {
 	return `person-${crypto.randomUUID().replaceAll('-', '').slice(0, 8)}`
 }
 
-async function seedPersonUser(input: {
-	username: string
-	email: string
-}) {
+async function seedPersonUser(input: { username: string; email: string }) {
 	const stableUserId = await createStableUserIdFromEmail(input.email)
 	const result = await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, account_type)

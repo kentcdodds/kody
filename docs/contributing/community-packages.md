@@ -94,12 +94,12 @@ expose the effective `trusted` flag.
 
 Admin **featured** marks live in `featured_at` (migration
 `0060-community-featured-listings.sql`) and highlight onboarding starter
-packages. Operators publish official starters under a platform scope (for example
-`@kody`) by passing `package_scope` to `community_publish` while holding a
-package scope grant; see
-[Platform accounts](./architecture/platform-accounts.md). `setCommunityListingFeatured`
-in `service.ts` requires the listing to be effectively trusted before
-featuring; the effective `featured` flag
+packages. Operators publish official starters under a platform scope (for
+example `@kody`) by passing `package_scope` to `community_publish` while holding
+a package scope grant; see
+[Platform accounts](./architecture/platform-accounts.md).
+`setCommunityListingFeatured` in `service.ts` requires the listing to be
+effectively trusted before featuring; the effective `featured` flag
 (`featured_at IS NOT NULL AND trusted`) is computed in `repo.ts`, so an owner
 republish that drops trust also pulls the listing from onboarding while keeping
 the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
