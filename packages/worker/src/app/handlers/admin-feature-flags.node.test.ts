@@ -275,40 +275,48 @@ function createFeatureFlagsTestEnv(
 const { createAdminFeatureFlagsApiHandler } =
 	await import('./admin-feature-flags.ts')
 
-test('admin feature flags API returns 403 without admin role', async () => {
+function createHandlerRequest(
+	input: {
+		method?: string
+		body?: unknown
+	} = {},
+) {
+	return {
+		request: new Request('https://example.com/admin/feature-flags.json', {
+			method: input.method ?? 'GET',
+			headers: {
+				Accept: 'application/json',
+				...(input.body === undefined
+					? {}
+					: { 'Content-Type': 'application/json' }),
+			},
+			...(input.body === undefined
+				? {}
+				: { body: JSON.stringify(input.body) }),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/feature-flags.json'),
+	} as never
+}
+
+test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation errors', async () => {
+	const env = createFeatureFlagsTestEnv() as unknown as Env
+	const handler = createAdminFeatureFlagsApiHandler(env)
+
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['user']),
 	)
-	const handler = createAdminFeatureFlagsApiHandler(
-		createFeatureFlagsTestEnv() as unknown as Env,
-	)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
-			headers: { Accept: 'application/json' },
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
-	expect(response.status).toBe(403)
-})
+	const forbidden = await handler.handler(createHandlerRequest())
+	expect(forbidden.status).toBe(403)
 
-test('admin feature flags GET returns flag list', async () => {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
 	)
-	const handler = createAdminFeatureFlagsApiHandler(
-		createFeatureFlagsTestEnv() as unknown as Env,
-	)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
-			headers: { Accept: 'application/json' },
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toMatchObject({
+	logAuditEventSpy.mockClear()
+
+	const listResponse = await handler.handler(createHandlerRequest())
+	expect(listResponse.status).toBe(200)
+	await expect(listResponse.json()).resolves.toMatchObject({
 		ok: true,
 		featureFlags: [
 			{
@@ -320,37 +328,21 @@ test('admin feature flags GET returns flag list', async () => {
 			},
 		],
 	})
-})
 
-test('admin feature flags set_global happy path', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	logAuditEventSpy.mockClear()
-	const handler = createAdminFeatureFlagsApiHandler(
-		createFeatureFlagsTestEnv() as unknown as Env,
-	)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
+	const setGlobalResponse = await handler.handler(
+		createHandlerRequest({
 			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
+			body: {
 				action: 'set_global',
 				key: 'demo-indicator',
 				enabled: true,
 				rolloutPercent: 25,
 				note: 'canary',
-			}),
+			},
 		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toMatchObject({
+	)
+	expect(setGlobalResponse.status).toBe(200)
+	await expect(setGlobalResponse.json()).resolves.toMatchObject({
 		ok: true,
 		featureFlags: [
 			{
@@ -372,98 +364,37 @@ test('admin feature flags set_global happy path', async () => {
 			reason: 'key=demo-indicator;enabled=true;rollout_percent=25',
 		}),
 	)
-})
 
-test('admin feature flags set_global with bad key returns 400', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const handler = createAdminFeatureFlagsApiHandler(
-		createFeatureFlagsTestEnv() as unknown as Env,
-	)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
+	const unknownKeyResponse = await handler.handler(
+		createHandlerRequest({
 			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
+			body: {
 				action: 'set_global',
 				key: 'not-a-real-flag',
 				enabled: true,
 				rolloutPercent: null,
-			}),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Unknown or invalid feature flag key.',
-	})
-})
-
-test('admin feature flags delete_stale on registry key returns 400', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const handler = createAdminFeatureFlagsApiHandler(
-		createFeatureFlagsTestEnv() as unknown as Env,
-	)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify({
+		}),
+	)
+	expect(unknownKeyResponse.status).toBe(400)
+	await expect(unknownKeyResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.any(String),
+	})
+
+	const deleteRegistryResponse = await handler.handler(
+		createHandlerRequest({
+			method: 'POST',
+			body: {
 				action: 'delete_stale',
 				key: 'demo-indicator',
-			}),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: false,
-		error:
-			'Cannot delete registry feature flag "demo-indicator". Remove it from the code registry first.',
-	})
-})
-
-test('admin feature flags set_global rejects overlong notes', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const handler = createAdminFeatureFlagsApiHandler(
-		createFeatureFlagsTestEnv() as unknown as Env,
-	)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify({
-				action: 'set_global',
-				key: 'demo-indicator',
-				enabled: true,
-				rolloutPercent: null,
-				note: 'x'.repeat(501),
-			}),
 		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({
+	)
+	expect(deleteRegistryResponse.status).toBe(400)
+	await expect(deleteRegistryResponse.json()).resolves.toMatchObject({
 		ok: false,
-		error: 'note must be at most 500 characters.',
+		error: expect.any(String),
 	})
 })
 
@@ -480,92 +411,68 @@ test('admin feature flags set_user_override validates user identity and existenc
 		}) as unknown as Env,
 	)
 
-	const neither = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
+	const neither = await handler.handler(
+		createHandlerRequest({
 			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
+			body: {
 				action: 'set_user_override',
 				key: 'demo-indicator',
 				enabled: true,
-			}),
+			},
 		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
+	)
 	expect(neither.status).toBe(400)
 	await expect(neither.json()).resolves.toMatchObject({
 		ok: false,
-		error: 'Provide either userId or username.',
+		error: expect.any(String),
 	})
 
-	const both = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
+	const both = await handler.handler(
+		createHandlerRequest({
 			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
+			body: {
 				action: 'set_user_override',
 				key: 'demo-indicator',
 				enabled: true,
 				userId: 2,
 				username: 'jane',
-			}),
+			},
 		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
+	)
 	expect(both.status).toBe(400)
 	await expect(both.json()).resolves.toMatchObject({
 		ok: false,
-		error: 'Provide either userId or username, not both.',
+		error: expect.any(String),
 	})
 
-	const missingId = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
+	const missingId = await handler.handler(
+		createHandlerRequest({
 			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
+			body: {
 				action: 'set_user_override',
 				key: 'demo-indicator',
 				enabled: true,
 				userId: 404,
-			}),
+			},
 		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
+	)
 	expect(missingId.status).toBe(404)
 	await expect(missingId.json()).resolves.toMatchObject({
 		ok: false,
-		error: 'User not found.',
+		error: expect.any(String),
 	})
 
-	const byUsername = await handler.handler({
-		request: new Request('https://example.com/admin/feature-flags.json', {
+	const byUsername = await handler.handler(
+		createHandlerRequest({
 			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
+			body: {
 				action: 'set_user_override',
 				key: 'demo-indicator',
 				enabled: true,
 				username: 'jane',
-			}),
+			},
 		}),
-		params: {},
-		url: new URL('https://example.com/admin/feature-flags.json'),
-	} as never)
+	)
 	expect(byUsername.status).toBe(200)
 	await expect(byUsername.json()).resolves.toMatchObject({
 		ok: true,

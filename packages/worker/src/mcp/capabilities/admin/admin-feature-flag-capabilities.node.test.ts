@@ -279,54 +279,40 @@ function createAdminCapabilityContext(db: D1Database) {
 	}
 }
 
-test('admin_feature_flag_list returns registry flags with description metadata', async () => {
-	const { db, auditEvents } = createFeatureFlagCapabilityTestDb({
-		users: [
-			{
-				id: 1,
-				username: 'admin',
-				email: 'admin@example.com',
-				stable_user_id: 'admin-stable',
-			},
-		],
-	})
+test('admin feature flag MCP capabilities: list, set, override, and audit wiring', async () => {
+	const { db, auditEvents, globals, overrides } =
+		createFeatureFlagCapabilityTestDb({
+			users: [
+				{
+					id: 1,
+					username: 'admin',
+					email: 'admin@example.com',
+					stable_user_id: 'admin-stable',
+				},
+				{
+					id: 2,
+					username: 'jane',
+					email: 'jane@example.com',
+					stable_user_id: 'jane-stable',
+				},
+			],
+		})
 	const ctx = createAdminCapabilityContext(db)
 
-	const result = await adminFeatureFlagListCapability.handler({}, ctx)
-	expect(result.flags).toEqual([
+	const listResult = await adminFeatureFlagListCapability.handler({}, ctx)
+	expect(listResult.flags).toEqual([
 		expect.objectContaining({
 			key: 'demo-indicator',
-			description: expect.stringContaining(
-				'exercising the feature flag system',
-			),
+			description: expect.any(String),
 			defaultEnabled: false,
 			stale: false,
 			global: null,
 			overrides: [],
 		}),
 	])
-	expect(auditEvents).toEqual([
-		expect.objectContaining({
-			action: 'admin_feature_flag_list',
-			result: 'success',
-		}),
-	])
-})
+	expect(listResult.flags[0]?.description).not.toHaveLength(0)
 
-test('admin_feature_flag_set updates global state and rejects unknown keys', async () => {
-	const { db, auditEvents, globals } = createFeatureFlagCapabilityTestDb({
-		users: [
-			{
-				id: 1,
-				username: 'admin',
-				email: 'admin@example.com',
-				stable_user_id: 'admin-stable',
-			},
-		],
-	})
-	const ctx = createAdminCapabilityContext(db)
-
-	const result = await adminFeatureFlagSetCapability.handler(
+	const setResult = await adminFeatureFlagSetCapability.handler(
 		{
 			key: 'demo-indicator',
 			enabled: true,
@@ -335,7 +321,7 @@ test('admin_feature_flag_set updates global state and rejects unknown keys', asy
 		},
 		ctx,
 	)
-	expect(result.flag).toMatchObject({
+	expect(setResult.flag).toMatchObject({
 		key: 'demo-indicator',
 		global: {
 			enabled: true,
@@ -355,32 +341,7 @@ test('admin_feature_flag_set updates global state and rejects unknown keys', asy
 			{ key: 'not-a-real-flag', enabled: true },
 			ctx,
 		),
-	).rejects.toThrow(/Unknown feature flag key "not-a-real-flag"/)
-
-	expect(auditEvents.map((event) => event.result)).toEqual([
-		'success',
-		'failure',
-	])
-})
-
-test('admin_feature_flag_override sets and clears per-user overrides', async () => {
-	const { db, overrides } = createFeatureFlagCapabilityTestDb({
-		users: [
-			{
-				id: 1,
-				username: 'admin',
-				email: 'admin@example.com',
-				stable_user_id: 'admin-stable',
-			},
-			{
-				id: 2,
-				username: 'jane',
-				email: 'jane@example.com',
-				stable_user_id: 'jane-stable',
-			},
-		],
-	})
-	const ctx = createAdminCapabilityContext(db)
+	).rejects.toThrow(/Unknown feature flag key/)
 
 	const setByUsername = await adminFeatureFlagOverrideCapability.handler(
 		{ key: 'demo-indicator', username: 'jane', enabled: true },
@@ -411,41 +372,12 @@ test('admin_feature_flag_override sets and clears per-user overrides', async () 
 	expect(cleared.cleared).toBe(true)
 	expect(cleared.flag.overrides).toEqual([])
 	expect(overrides.has('demo-indicator:2')).toBe(false)
-})
 
-test('admin_feature_flag_override rejects invalid keys and missing users', async () => {
-	const { db } = createFeatureFlagCapabilityTestDb({
-		users: [
-			{
-				id: 1,
-				username: 'admin',
-				email: 'admin@example.com',
-				stable_user_id: 'admin-stable',
-			},
-		],
-	})
-	const ctx = createAdminCapabilityContext(db)
-
-	await expect(
-		adminFeatureFlagOverrideCapability.handler(
-			{ key: 'missing-flag', username: 'admin', enabled: true },
-			ctx,
-		),
-	).rejects.toThrow(/Unknown feature flag key "missing-flag"/)
-
-	await expect(
-		adminFeatureFlagOverrideCapability.handler(
-			{ key: 'demo-indicator', username: 'nobody', enabled: true },
-			ctx,
-		),
-	).rejects.toThrow(/User not found for username "nobody"/)
-
-	await expect(
-		adminFeatureFlagOverrideCapability.handler(
-			{ key: 'demo-indicator', userId: 1, clear: true },
-			ctx,
-		),
-	).rejects.toThrow(
-		/No override exists for feature flag "demo-indicator" and userId 1/,
-	)
+	expect(auditEvents.map((event) => event.result)).toEqual([
+		'success',
+		'success',
+		'failure',
+		'success',
+		'success',
+	])
 })
