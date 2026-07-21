@@ -121,32 +121,6 @@ test('createPlatformAccount rejects non-reserved usernames and duplicates; creat
 	).rejects.toMatchObject({ code: 'username_exists' })
 })
 
-test('insertPackageScopeGrant rejects person-account scope owners', async () => {
-	await ensurePackageScopeGrantsTestSchema(env.APP_DB)
-	const person = await seedPersonUser({
-		username: personUsername(),
-		email: `person-${crypto.randomUUID()}@example.com`,
-	})
-	const grantee = await seedPersonUser({
-		username: personUsername(),
-		email: `grantee-${crypto.randomUUID()}@example.com`,
-	})
-	const admin = await seedPersonUser({
-		username: personUsername(),
-		email: `admin-${crypto.randomUUID()}@example.com`,
-	})
-
-	await expect(
-		insertPackageScopeGrant(env.APP_DB, {
-			scopeOwnerUserId: person.stableUserId,
-			granteeUserId: grantee.stableUserId,
-			createdByUserId: admin.stableUserId,
-		}),
-	).rejects.toThrow(
-		'Package scope grants can only be created on platform accounts.',
-	)
-})
-
 test('admin package scope grant create, list, and revoke handlers', async () => {
 	await ensurePackageScopeGrantsTestSchema(env.APP_DB)
 	const adminEmail = `admin-${crypto.randomUUID()}@example.com`
@@ -171,6 +145,16 @@ test('admin package scope grant create, list, and revoke handlers', async () => 
 		userId: admin.stableUserId,
 		email: adminEmail,
 	})
+
+	await expect(
+		insertPackageScopeGrant(env.APP_DB, {
+			scopeOwnerUserId: otherPerson.stableUserId,
+			granteeUserId: grantee.stableUserId,
+			createdByUserId: admin.stableUserId,
+		}),
+	).rejects.toThrow(
+		'Package scope grants can only be created on platform accounts.',
+	)
 
 	const created = await adminPackageScopeGrantCreateCapability.handler(
 		{ scope: platform.username, username: grantee.username },

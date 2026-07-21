@@ -65,7 +65,7 @@ const owner: PackageOwnerContext = {
 	delegated: false,
 }
 
-test('createStubSavedPackage rejects invalid kody ids and registers valid stubs through the pipeline', async () => {
+test('createStubSavedPackage rejects invalid kody ids and registers stubs for owner and delegated scopes', async () => {
 	resetMocks()
 	await expect(
 		createStubSavedPackage({
@@ -121,9 +121,8 @@ test('createStubSavedPackage rejects invalid kody ids and registers valid stubs 
 	)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalled()
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalled()
-})
 
-test('createStubSavedPackage stores under the owner account when acting under a grant', async () => {
+	// Delegated grants must persist under the platform owner, not the actor.
 	resetMocks()
 	const delegatedOwner: PackageOwnerContext = {
 		ownerUserId: 'platform-owner',

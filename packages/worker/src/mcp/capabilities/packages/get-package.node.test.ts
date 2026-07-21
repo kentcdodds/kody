@@ -68,7 +68,7 @@ function createCallerContext(input?: {
 	}
 }
 
-test('getPackageCapability returns export metadata and owner-scoped invocation URLs', async () => {
+test('getPackageCapability returns export metadata for owner and delegated package scopes', async () => {
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
 	mockModule.getSavedPackageById.mockResolvedValue({
@@ -171,11 +171,11 @@ test('getPackageCapability returns export metadata and owner-scoped invocation U
 		userId: 'user-1',
 		sourceId: 'source-1',
 	})
-})
 
-test('getPackageCapability loads packages under a delegated package_scope owner', async () => {
+	// Delegated package_scope loads and builds invocation URLs for the owner.
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockReset()
+	mockModule.resolvePackageOwnerContext.mockClear()
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
 		userId: 'platform-owner',
@@ -205,7 +205,7 @@ test('getPackageCapability loads packages under a delegated package_scope owner'
 		},
 	})
 
-	const result = await getPackageCapability.handler(
+	const delegated = await getPackageCapability.handler(
 		{ package_id: 'package-1', package_scope: 'kody' },
 		createCallerContext({
 			ownerUserId: 'platform-owner',
@@ -230,7 +230,7 @@ test('getPackageCapability loads packages under a delegated package_scope owner'
 	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: 'platform-owner' }),
 	)
-	expect(result.exports[0]?.external_invocation).toMatchObject({
+	expect(delegated.exports[0]?.external_invocation).toMatchObject({
 		owner_username: 'kody',
 		url: 'https://heykody.dev/@kody/api/package-invocations/discord-gateway/post-message',
 	})

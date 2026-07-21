@@ -30,65 +30,12 @@ async function seedPersonUser(input: { username: string; email: string }) {
 	}
 }
 
-test('resolvePackageOwnerContext returns caller as owner when no scope is requested', async () => {
+test('resolvePackageOwnerContext returns caller ownership, grant delegation, and rejection paths', async () => {
 	await ensurePackageScopeGrantsTestSchema(env.APP_DB)
 	const person = await seedPersonUser({
 		username: personUsername(),
 		email: `owner-${crypto.randomUUID()}@example.com`,
 	})
-	const user = {
-		userId: person.stableUserId,
-		email: person.email,
-		displayName: person.username,
-	}
-
-	const context = await resolvePackageOwnerContext(env.APP_DB, user)
-	expect(context).toEqual({
-		ownerUserId: person.stableUserId,
-		ownerScope: person.username,
-		ownerEmail: person.email,
-		actorUserId: person.stableUserId,
-		delegated: false,
-	})
-})
-
-test('resolvePackageOwnerContext returns platform owner when a grant exists', async () => {
-	await ensurePackageScopeGrantsTestSchema(env.APP_DB)
-	const person = await seedPersonUser({
-		username: personUsername(),
-		email: `grantee-${crypto.randomUUID()}@example.com`,
-	})
-	const platform = await createPlatformAccount({
-		db: env.APP_DB,
-		email: `platform-${crypto.randomUUID()}@example.com`,
-		username: reservedPlatformUsername(),
-	})
-	await insertPackageScopeGrant(env.APP_DB, {
-		scopeOwnerUserId: platform.stableUserId,
-		granteeUserId: person.stableUserId,
-		createdByUserId: person.stableUserId,
-	})
-
-	const context = await resolvePackageOwnerContext(
-		env.APP_DB,
-		{
-			userId: person.stableUserId,
-			email: person.email,
-			displayName: person.username,
-		},
-		platform.username,
-	)
-	expect(context).toEqual({
-		ownerUserId: platform.stableUserId,
-		ownerScope: platform.username,
-		ownerEmail: platform.email,
-		actorUserId: person.stableUserId,
-		delegated: true,
-	})
-})
-
-test('resolvePackageOwnerContext rejects person scopes, missing grants, and unknown scopes', async () => {
-	await ensurePackageScopeGrantsTestSchema(env.APP_DB)
 	const actor = await seedPersonUser({
 		username: personUsername(),
 		email: `actor-${crypto.randomUUID()}@example.com`,
@@ -102,21 +49,49 @@ test('resolvePackageOwnerContext rejects person scopes, missing grants, and unkn
 		email: `platform-${crypto.randomUUID()}@example.com`,
 		username: reservedPlatformUsername(),
 	})
-	const user = {
+	const personUser = {
+		userId: person.stableUserId,
+		email: person.email,
+		displayName: person.username,
+	}
+	const actorUser = {
 		userId: actor.stableUserId,
 		email: actor.email,
 		displayName: actor.username,
 	}
 
+	expect(await resolvePackageOwnerContext(env.APP_DB, personUser)).toEqual({
+		ownerUserId: person.stableUserId,
+		ownerScope: person.username,
+		ownerEmail: person.email,
+		actorUserId: person.stableUserId,
+		delegated: false,
+	})
+
+	await insertPackageScopeGrant(env.APP_DB, {
+		scopeOwnerUserId: platform.stableUserId,
+		granteeUserId: person.stableUserId,
+		createdByUserId: person.stableUserId,
+	})
+	expect(
+		await resolvePackageOwnerContext(env.APP_DB, personUser, platform.username),
+	).toEqual({
+		ownerUserId: platform.stableUserId,
+		ownerScope: platform.username,
+		ownerEmail: platform.email,
+		actorUserId: person.stableUserId,
+		delegated: true,
+	})
+
 	await expect(
-		resolvePackageOwnerContext(env.APP_DB, user, otherPerson.username),
+		resolvePackageOwnerContext(env.APP_DB, actorUser, otherPerson.username),
 	).rejects.toThrow(/not a platform account scope/)
 
 	await expect(
-		resolvePackageOwnerContext(env.APP_DB, user, platform.username),
+		resolvePackageOwnerContext(env.APP_DB, actorUser, platform.username),
 	).rejects.toThrow(/do not have a package scope grant/)
 
 	await expect(
-		resolvePackageOwnerContext(env.APP_DB, user, 'missing-scope-xyz'),
+		resolvePackageOwnerContext(env.APP_DB, actorUser, 'missing-scope-xyz'),
 	).rejects.toThrow(/not a platform account scope/)
 })

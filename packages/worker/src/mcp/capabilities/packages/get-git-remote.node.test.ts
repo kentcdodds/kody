@@ -227,7 +227,7 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 	).rejects.toThrow()
 })
 
-test('get_git_remote create mode registers a stub package when missing', async () => {
+test('get_git_remote create mode registers stubs for owner and delegated scopes', async () => {
 	resetMocks()
 	await expect(
 		getGitRemoteCapability.handler(
@@ -305,9 +305,7 @@ test('get_git_remote create mode registers a stub package when missing', async (
 	)
 	expect(trimmedResult.created).toBe(true)
 	expect(trimmedResult.kody_id).toBe('unleashed-wifi')
-})
 
-test('get_git_remote uses the delegated package owner for storage lookups', async () => {
 	resetMocks()
 	const delegatedOwner = {
 		ownerUserId: 'platform-owner',
@@ -326,7 +324,7 @@ test('get_git_remote uses the delegated package owner for storage lookups', asyn
 			name: '@kody/unleashed-wifi',
 		}
 	})
-	const result = await getGitRemoteCapability.handler(
+	const delegatedResult = await getGitRemoteCapability.handler(
 		{
 			kody_id: 'unleashed-wifi',
 			create: true,
@@ -361,6 +359,6 @@ test('get_git_remote uses the delegated package owner for storage lookups', asyn
 			kodyId: 'unleashed-wifi',
 		}),
 	)
-	expect(result.created).toBe(true)
-	expect(result.package_id).toBe('package-1')
+	expect(delegatedResult.created).toBe(true)
+	expect(delegatedResult.package_id).toBe('package-1')
 })
