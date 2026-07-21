@@ -162,6 +162,7 @@ INNER JOIN recent_conversations rc
 INNER JOIN saved_packages p
 	ON p.id = u.package_id AND p.user_id = u.user_id
 WHERE u.user_id = ?1
+	AND u.last_used_at >= ?2
 GROUP BY u.package_id, p.kody_id, p.description
 ORDER BY conversation_count DESC, p.kody_id ASC
 LIMIT ?4
