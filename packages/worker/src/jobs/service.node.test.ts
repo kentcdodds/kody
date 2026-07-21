@@ -3751,7 +3751,7 @@ test('executeJobOnce returns an error when kody secret policy would reject execu
 		expect(outcome.execution).toEqual({
 			ok: false,
 			error:
-				'Secret "apiToken" is not allowed for capability "secret_set". If this capability should be able to use the secret, ask the user whether to add "secret_set" to the secret\'s allowed capabilities in the account secrets UI, then retry after they approve that policy change. Approval link: https://example.com/account/secrets/user/apiToken?capability=secret_set',
+				'Secret "apiToken" is not allowed for capability "secret_set". If this capability should be able to use the secret, ask the user whether to approve that capability in the account secrets UI, then retry after they approve that policy change. Approval link: https://example.com/account/secrets/user/apiToken?capability=secret_set',
 			logs: [],
 		})
 		repoSessionRpcSpy.mockRestore()

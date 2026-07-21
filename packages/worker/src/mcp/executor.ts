@@ -948,7 +948,7 @@ export function getExecutionErrorDetails(
 			kind: 'secret_capability_access_required',
 			message,
 			nextStep:
-				"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
+				'Send the user the capability approval link so they can approve with one click in the account secrets UI, then retry after approval.',
 			secretNames: [capabilityAccessDetails.secretName],
 			capabilityName: capabilityAccessDetails.capabilityName,
 			approvalUrl: extractFirstUrl(message),

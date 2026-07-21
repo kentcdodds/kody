@@ -693,6 +693,7 @@ export type AccountSecretsLoaderData = {
 		requestedCapability: string | null
 		requestedPackageId: string | null
 		currentAllowedHosts: Array<string>
+		currentAllowedCapabilities: Array<string>
 		currentAllowedPackages: Array<string>
 	} | null
 	approvalError: string | null

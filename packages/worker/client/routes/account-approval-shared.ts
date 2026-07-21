@@ -11,6 +11,7 @@ export type ApprovalView = {
 	requestedHost: string
 	requestedCapability: string | null
 	currentAllowedHosts: Array<string>
+	currentAllowedCapabilities: Array<string>
 	requestedPackageId: string | null
 	currentAllowedPackages: Array<string>
 }

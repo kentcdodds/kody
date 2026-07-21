@@ -39,6 +39,12 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 		'secret_set',
 		'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
 	)
+	expect(capabilityMessage).toContain(
+		'ask the user whether to approve that capability in the account secrets UI',
+	)
+	expect(capabilityMessage).not.toContain(
+		'add "secret_set" to the secret\'s allowed capabilities',
+	)
 	expect(parseCapabilityAccessRequiredMessage(capabilityMessage)).toEqual({
 		secretName: 'cloudflareToken',
 		capabilityName: 'secret_set',
