@@ -1160,27 +1160,34 @@ function findStrongSynthesizedIdentityTerms(input: {
 
 	const strongTermsByProvider = new Map<string, Set<string>>()
 	for (const [providerKey, candidates] of candidatesByProvider) {
-		const providerTokens = new Set(
-			candidates.flatMap((candidate) =>
-				(candidate.providerIdentityFields ?? []).flatMap(extractSearchTokens),
-			),
+		const providerConcepts = new Set(
+			candidates
+				.flatMap((candidate) =>
+					(candidate.providerIdentityFields ?? []).flatMap(extractSearchTokens),
+				)
+				.map(semanticSearchConcept),
 		)
-		const operationTokenCounts = new Map<string, number>()
+		const operationConceptCounts = new Map<string, number>()
 		for (const candidate of candidates) {
-			const candidateTokens = new Set(
-				(candidate.identityFields ?? []).flatMap(extractSearchTokens),
+			const candidateConcepts = new Set(
+				(candidate.identityFields ?? [])
+					.flatMap(extractSearchTokens)
+					.map(semanticSearchConcept),
 			)
-			for (const token of candidateTokens) {
-				operationTokenCounts.set(
-					token,
-					(operationTokenCounts.get(token) ?? 0) + 1,
+			for (const concept of candidateConcepts) {
+				operationConceptCounts.set(
+					concept,
+					(operationConceptCounts.get(concept) ?? 0) + 1,
 				)
 			}
 		}
-		const strongTerms = queryIdentityTerms.filter(
-			(term) =>
-				providerTokens.has(term) || (operationTokenCounts.get(term) ?? 0) >= 2,
-		)
+		const strongTerms = queryIdentityTerms.filter((term) => {
+			const concept = semanticSearchConcept(term)
+			return (
+				providerConcepts.has(concept) ||
+				(operationConceptCounts.get(concept) ?? 0) >= 2
+			)
+		})
 		if (strongTerms.length > 0) {
 			strongTermsByProvider.set(providerKey, new Set(strongTerms))
 		}
@@ -1230,7 +1237,7 @@ function rerankCandidates(input: {
 			: undefined
 		const matchesStrongSynthesizedIdentity =
 			strongIdentityTerms != null &&
-			scoreMatchedTerms(
+			scoreSemanticMatchedTerms(
 				[
 					...(candidate.identityFields ?? []),
 					...(candidate.providerIdentityFields ?? []),

@@ -1422,6 +1422,9 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 	expect(liveNames[0]).toBe('sonos_get_player_status')
 	expect(liveNames.slice(0, 3)).toContain('sonos_list_players')
 	expect(liveNames.slice(0, 4)).not.toContain('home-ops-manager')
+	expect(liveNames).toEqual(
+		expect.arrayContaining(['sonos_get_player_status', 'sonos_play']),
+	)
 	expect(liveNames.indexOf('sonos_get_player_status')).toBeLessThan(
 		liveNames.indexOf('sonos_play'),
 	)
@@ -1700,6 +1703,15 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 				`${testCase.prefix}sonos_list_players`,
 			]),
 		)
+		expect(capabilityNames).toEqual(
+			expect.arrayContaining([
+				`${testCase.prefix}sonos_get_player_status`,
+				`${testCase.prefix}sonos_list_players`,
+				`${testCase.prefix}sonos_get_group_status`,
+				`${testCase.prefix}sonos_list_groups`,
+				'repo_get_check_status',
+			]),
+		)
 		expect(
 			capabilityNames.indexOf(`${testCase.prefix}sonos_get_player_status`),
 		).toBeLessThan(capabilityNames.indexOf('repo_get_check_status'))
@@ -1835,18 +1847,26 @@ test('online search activates remote provider identity when operation names omit
 		},
 		remote!.domain,
 	])
-	const result = await searchUnified({
-		env: {
-			SENTRY_ENVIRONMENT: 'production',
-			AI: createDeterministicAiBinding(),
-			CAPABILITY_VECTOR_INDEX: {
-				async query() {
-					return {
-						matches: [{ id: competitor.name, score: 0.99 }],
-					}
-				},
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: createDeterministicAiBinding(),
+		CAPABILITY_VECTOR_INDEX: {
+			async query() {
+				return {
+					matches: [
+						{ id: competitor.name, score: 0.99 },
+						{
+							id: 'remote:living-room:get_player_status',
+							score: 0.5,
+						},
+						{ id: 'remote:living-room:list_players', score: 0.49 },
+					],
+				}
 			},
-		} as unknown as Env,
+		},
+	} as unknown as Env
+	const result = await searchUnified({
+		env,
 		query: 'check whether any Sonos speakers are playing',
 		limit: 3,
 		userId: 'user-1',
@@ -1857,10 +1877,42 @@ test('online search activates remote provider identity when operation names omit
 	const rankedNames = result.matches.flatMap((match) =>
 		match.type === 'capability' ? [match.name] : [],
 	)
+	expect(rankedNames).toEqual(
+		expect.arrayContaining([
+			'remote:living-room:get_player_status',
+			'remote:living-room:list_players',
+			'repo_get_check_status',
+		]),
+	)
 	expect(
 		rankedNames.indexOf('remote:living-room:get_player_status'),
 	).toBeLessThan(rankedNames.indexOf('repo_get_check_status'))
 	expect(rankedNames.indexOf('remote:living-room:list_players')).toBeLessThan(
 		rankedNames.indexOf('repo_get_check_status'),
 	)
+
+	const synonymOnlyResult = await searchUnified({
+		env,
+		query: 'check whether any speakers are playing',
+		limit: 3,
+		userId: 'user-1',
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+	const synonymOnlyRankedNames = synonymOnlyResult.matches.flatMap((match) =>
+		match.type === 'capability' ? [match.name] : [],
+	)
+	expect(synonymOnlyRankedNames).toEqual(
+		expect.arrayContaining([
+			'remote:living-room:get_player_status',
+			'remote:living-room:list_players',
+			'repo_get_check_status',
+		]),
+	)
+	expect(
+		synonymOnlyRankedNames.indexOf('remote:living-room:get_player_status'),
+	).toBeLessThan(synonymOnlyRankedNames.indexOf('repo_get_check_status'))
+	expect(
+		synonymOnlyRankedNames.indexOf('remote:living-room:list_players'),
+	).toBeLessThan(synonymOnlyRankedNames.indexOf('repo_get_check_status'))
 })
