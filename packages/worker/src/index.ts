@@ -345,19 +345,29 @@ const oauthProvider = new OAuthProvider({
 	apiHandler,
 	defaultHandler: {
 		fetch(request, env, ctx) {
-			// @ts-expect-error https://github.com/cloudflare/workers-oauth-provider/issues/71
-			return appHandler(request, env, ctx)
+			// Provider types still leave `env` as unknown inside this callback
+			// even after https://github.com/cloudflare/workers-oauth-provider/issues/71.
+			return appHandler(request, env as Env, ctx)
 		},
 	},
 	authorizeEndpoint: oauthPaths.authorize,
 	tokenEndpoint: oauthPaths.token,
 	clientRegistrationEndpoint: oauthPaths.register,
 	scopesSupported: oauthScopes,
-	// NOTE: we intentionally do NOT set `allowPlainPKCE: false`. In this provider
-	// version that option rejects EVERY authorize request whose
-	// `code_challenge_method` is absent or `plain` — including confidential
-	// clients that legitimately use no PKCE — which breaks real MCP clients. See
-	// the OAuth section of docs/contributing/security.md before changing this.
+	// Accept provider defaults from @cloudflare/workers-oauth-provider@>=0.5.0:
+	// refreshTokenTTL = 30 days, clientRegistrationTTL = 90 days (DCR only).
+	// These replace the pre-0.5.0 infinite grant/client storage lifetime and keep
+	// OAUTH_KV bounded; MCP clients re-register / re-authorize when needed.
+	// Override the provider's default onError console.warn: expected client
+	// errors (invalid_grant, etc.) are not warn-worthy, and the default breaks
+	// Epic-style console spies in workers tests. Unexpected throws are still
+	// captured via Sentry in the fetch wrapper below.
+	onError: () => undefined,
+	// NOTE: we intentionally do NOT set `allowPlainPKCE: false`. That option
+	// still rejects EVERY authorize request whose `code_challenge_method` is
+	// absent or `plain` — including confidential clients that legitimately use
+	// no PKCE — which breaks real MCP clients. See the OAuth section of
+	// docs/contributing/security.md before changing this.
 })
 
 /**
@@ -397,8 +407,9 @@ function isOAuthProviderOwnedPath(pathname: string) {
 
 function isMalformedOAuthClientException(error: unknown, pathname: string) {
 	const message = error instanceof Error ? error.message : ''
-	// @cloudflare/workers-oauth-provider@0.4.0 throws this raw TypeError
-	// when a stored client is missing redirectUris during token validation.
+	// @cloudflare/workers-oauth-provider still throws this raw TypeError when a
+	// stored client is missing redirectUris during token validation
+	// (`registeredUris.some(...)` with undefined).
 	return (
 		pathname === oauthPaths.token &&
 		message.includes("Cannot read properties of undefined (reading 'some')")
@@ -538,6 +549,12 @@ const workerHandler = {
 			{
 				name: 'stripe_plan_refresh',
 				run: () => refreshStaleStripePlans({ env, now: scheduledAt }),
+			},
+			{
+				// Defense-in-depth for provider KV TTLs (refresh grants + DCR
+				// clients). Batch-limited; safe across users (provider-scoped keys).
+				name: 'oauth_purge_expired',
+				run: () => oauthProvider.purgeExpiredData(env),
 			},
 		]
 		if (shouldRunRetentionCron(scheduledAt)) {

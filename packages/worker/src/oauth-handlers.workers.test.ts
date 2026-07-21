@@ -73,6 +73,16 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 		listUserGrants: async () => ({ items: [] }),
 		revokeGrant: async () => undefined,
 		unwrapToken: async () => null,
+		async exchangeToken() {
+			throw new Error('Not implemented')
+		},
+		purgeExpiredData: async () => ({
+			grantsChecked: 0,
+			grantsPurged: 0,
+			tokensChecked: 0,
+			tokensPurged: 0,
+			done: true,
+		}),
 		...overrides,
 	}
 }
@@ -785,6 +795,11 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 			encryptedProps: '',
 			createdAt: Math.floor(Date.now() / 1000),
 			authCodeId: await createSha256Hex(code),
+			// Present so @cloudflare/workers-oauth-provider@>=0.8.0 does not treat
+			// the code as already-used before redirect URI validation. The value
+			// is never unwrapped: the missing client.redirectUris still throws
+			// first and is mapped to invalid_client by the worker entrypoint.
+			authCodeWrappedKey: 'test-auth-code-wrapped-key',
 			resource: 'https://heykody.dev/mcp',
 			codeChallenge: 'verifier',
 			codeChallengeMethod: 'plain',
