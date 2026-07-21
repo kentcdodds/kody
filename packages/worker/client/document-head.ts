@@ -128,11 +128,3 @@ export function applyDocumentHead(
 	)
 	applyResolvedDocumentHead(resolved)
 }
-
-/** @deprecated Prefer `applyDocumentHead` — titles are part of document head. */
-export function applyDocumentTitle(
-	pathname: string,
-	loaderData?: Partial<AppLoaderData>,
-): void {
-	applyDocumentHead(pathname, loaderData)
-}

@@ -1,6 +1,6 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
-import { type Handle, type RemixNode } from 'remix/ui'
+import { type Handle } from 'remix/ui'
 import { AppRoot, type AppRootProps } from '#client/app-root.tsx'
 import {
 	buildClientEntryHref,
@@ -10,7 +10,6 @@ import {
 	DOCUMENT_HEAD_ATTR,
 	type ResolvedDocumentHead,
 } from '#app/document-head.ts'
-import { publicOgPages, type PublicOgPageId } from '#worker/og/pages.ts'
 
 export const CLIENT_ENTRY_HREF = '/client-entry.js'
 export const STYLESHEET_HREF = '/styles.css'
@@ -18,7 +17,6 @@ export const STYLESHEET_HREF = '/styles.css'
 export type SsrDocumentProps = AppRootProps & {
 	title?: string
 	documentHead?: ResolvedDocumentHead
-	extraHead?: RemixNode
 	clientEntryHref?: string
 	stylesheetHref?: string
 }
@@ -148,7 +146,6 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				{handle.props.documentHead ? (
 					<ManagedDocumentHead head={handle.props.documentHead} />
 				) : null}
-				{handle.props.extraHead ?? null}
 				<link rel="modulepreload" href={clientEntryHref} />
 				<link rel="stylesheet" href={stylesheetHref} />
 			</head>
@@ -165,51 +162,4 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 			</body>
 		</html>
 	)
-}
-
-type OgHeadProps = {
-	title: string
-	description: string
-	canonicalUrl: string
-	ogImageUrl: string
-}
-
-/**
- * Open Graph / Twitter card tags for public pages. Prefer the document-head
- * registry for route-level metadata; this remains for one-off SSR callers.
- */
-export function OgHead(handle: Handle<OgHeadProps>) {
-	return () => (
-		<ManagedDocumentHead
-			head={{
-				title: handle.props.title,
-				canonicalUrl: handle.props.canonicalUrl,
-				og: {
-					title: handle.props.title,
-					description: handle.props.description,
-					imageUrl: handle.props.ogImageUrl,
-				},
-			}}
-		/>
-	)
-}
-
-/**
- * Build the `extraHead` node for a registered public page (see
- * `#worker/og/pages.ts`). Kept for callers that still pass `extraHead`
- * explicitly; prefer the document-head registry via `renderAppPage`.
- */
-export function createPageOgHeadNode(input: {
-	origin: string
-	pageId: PublicOgPageId
-}): RemixNode {
-	const page = publicOgPages[input.pageId]
-	return (
-		<OgHead
-			title={page.ogTitle}
-			description={page.ogDescription}
-			canonicalUrl={`${input.origin}${page.path}`}
-			ogImageUrl={`${input.origin}/og/${input.pageId}.png`}
-		/>
-	) as RemixNode
 }

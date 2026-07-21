@@ -10,7 +10,7 @@
     <img src="https://img.shields.io/badge/TypeScript-5.9-blue?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Node-26-5FA04E?style=flat-square&logo=node.js&logoColor=white" alt="Node 26" />
     <img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers" />
-    <img src="https://img.shields.io/badge/Remix-3.0_alpha-000000?style=flat-square&logo=remix&logoColor=white" alt="Remix" />
+    <img src="https://img.shields.io/badge/Remix-3.0_beta-000000?style=flat-square&logo=remix&logoColor=white" alt="Remix" />
   </p>
 </div>
 
@@ -59,7 +59,7 @@ If you are trying to understand what this repository is for, start with
 | Layer           | Technology                                                            |
 | --------------- | --------------------------------------------------------------------- |
 | Runtime         | [Cloudflare Workers](https://workers.cloudflare.com/)                 |
-| UI Framework    | [Remix 3](https://remix.run/) (alpha)                                 |
+| UI Framework    | [Remix 3](https://remix.run/) (beta)                                  |
 | Package Manager | [npm](https://www.npmjs.com/)                                         |
 | Workspace       | [Nx](https://nx.dev/) + npm workspaces                                |
 | Database        | [Cloudflare D1](https://developers.cloudflare.com/d1/)                |

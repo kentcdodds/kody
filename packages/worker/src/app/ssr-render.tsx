@@ -27,11 +27,6 @@ export type RenderAppPageInput = {
 	env: Env
 	/** Optional title override (e.g. not-found pages). Defaults to the registry. */
 	title?: string
-	/**
-	 * Escape hatch for unmanaged head tags. Route-level title/OG/canonical/RSS
-	 * come from the document-head registry and should not be passed here.
-	 */
-	extraHead?: RemixNode
 	loaderData?: AppLoaderData
 	notFound?: boolean
 	status?: number
@@ -39,16 +34,8 @@ export type RenderAppPageInput = {
 }
 
 export async function renderAppPage(input: RenderAppPageInput) {
-	const {
-		request,
-		env,
-		title,
-		extraHead,
-		loaderData,
-		notFound,
-		status,
-		extraSetCookies,
-	} = input
+	const { request, env, title, loaderData, notFound, status, extraSetCookies } =
+		input
 	// OAuth authorize (and any SSR entry) can run outside appHandler, so configure
 	// the session cookie before reading request cookies.
 	setAuthSessionSecret(getEnv(env).COOKIE_SECRET)
@@ -71,7 +58,6 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		(
 			<SsrDocument
 				documentHead={documentHead}
-				extraHead={extraHead}
 				url={url}
 				session={session}
 				loaderData={loaderData}

@@ -16,7 +16,7 @@ async function workerFetch(request: Request): Promise<Response> {
 	return response
 }
 
-test('public route hardening rejects unauthenticated connector access, unknown paths, and abusive auth while allowing websocket upgrades', async () => {
+test('public route hardening rejects unauthenticated connector and maintenance access, unknown paths, and abusive auth while allowing websocket upgrades', async () => {
 	await env.APP_DB.prepare(
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -63,6 +63,61 @@ test('public route hardening rejects unauthenticated connector access, unknown p
 	const websocketResponse = await workerFetch(websocketRequest)
 	expect(websocketResponse.status).toBe(101)
 	expect(websocketResponse.webSocket).toBeTruthy()
+
+	// Real maintenance routes from index.ts share handleSecretMaintenanceRequest:
+	// non-POST → 405 (proves registration vs unknown JSON 404); unauthenticated
+	// POST → 401 when the secret is set, otherwise 503 not-configured.
+	const registeredMaintenanceRoutes = [
+		{
+			path: '/__maintenance/reindex-capabilities',
+			secret: env.CAPABILITY_REINDEX_SECRET,
+			notConfiguredMessage: 'Capability reindex is not configured',
+		},
+		{
+			path: '/__maintenance/execute-smoke',
+			secret: env.CAPABILITY_REINDEX_SECRET,
+			notConfiguredMessage: 'Execute smoke check is not configured',
+		},
+		{
+			path: '/__maintenance/reindex-memories',
+			secret: env.CAPABILITY_REINDEX_SECRET,
+			notConfiguredMessage: 'Memory reindex is not configured',
+		},
+		{
+			path: '/__maintenance/reindex-jobs',
+			secret: env.JOB_REINDEX_SECRET,
+			notConfiguredMessage: 'Job reindex is not configured',
+		},
+		{
+			path: '/__maintenance/backfill-stable-user-ids',
+			secret: env.CAPABILITY_REINDEX_SECRET,
+			notConfiguredMessage: 'Stable user id backfill is not configured',
+		},
+		{
+			path: '/__maintenance/backfill-package-privacy',
+			secret: env.CAPABILITY_REINDEX_SECRET,
+			notConfiguredMessage: 'Package privacy backfill is not configured',
+		},
+	] as const
+
+	for (const route of registeredMaintenanceRoutes) {
+		const methodResponse = await workerFetch(createRequest(route.path))
+		expect(methodResponse.status).toBe(405)
+		await expect(methodResponse.text()).resolves.toBe('Method Not Allowed')
+
+		const unauthorizedResponse = await workerFetch(
+			createRequest(route.path, { method: 'POST' }),
+		)
+		if (route.secret?.trim()) {
+			expect(unauthorizedResponse.status).toBe(401)
+			await expect(unauthorizedResponse.text()).resolves.toBe('Unauthorized')
+		} else {
+			expect(unauthorizedResponse.status).toBe(503)
+			await expect(unauthorizedResponse.text()).resolves.toBe(
+				route.notConfiguredMessage,
+			)
+		}
+	}
 
 	const unknownMaintenanceResponse = await workerFetch(
 		createRequest('/__maintenance/nonexistent'),

@@ -473,7 +473,7 @@ export function AdminUsersRoute(handle: Handle) {
 			invalidateUsage()
 			selectedUserId = selectedUser.id
 			lastLoadedHref = readCurrentRouterHref(handle)
-			message = `Updated plan to ${plan ?? 'legacy/unlimited'}.`
+			message = `Updated plan to ${plan ?? 'Legacy / unlimited'}.`
 			status = 'ready'
 			actionState = 'idle'
 			handle.update()
@@ -755,7 +755,7 @@ export function AdminUsersRoute(handle: Handle) {
 										},
 										{
 											label: 'Plan',
-											value: selectedUser.plan ?? 'Legacy/unlimited',
+											value: selectedUser.plan ?? 'Legacy / unlimited',
 										},
 										{
 											label: 'Created',
@@ -850,7 +850,7 @@ export function AdminUsersRoute(handle: Handle) {
 													css(inputCss),
 												]}
 											>
-												<option value="">Legacy/unlimited (no plan)</option>
+												<option value="">Legacy / unlimited</option>
 												{availablePlans.map((plan) => (
 													<option key={plan} value={plan}>
 														{plan}

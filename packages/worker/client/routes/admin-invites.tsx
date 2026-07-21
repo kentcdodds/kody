@@ -395,7 +395,7 @@ export function AdminInvitesRoute(handle: Handle) {
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Plan</span>
 							<select name="plan" disabled={isMutating} mix={css(inputCss)}>
-								<option value="">Legacy / tierless (free)</option>
+								<option value="">Legacy / unlimited</option>
 								{availablePlans.map((plan) => (
 									<option key={plan} value={plan}>
 										{plan}
@@ -494,7 +494,7 @@ export function AdminInvitesRoute(handle: Handle) {
 										},
 										{
 											label: 'Plan',
-											value: invite.plan ?? 'legacy',
+											value: invite.plan ?? 'Legacy / unlimited',
 										},
 										{
 											label: 'Expires',
