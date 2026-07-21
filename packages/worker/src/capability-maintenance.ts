@@ -1,8 +1,8 @@
-import { capabilitySpecs } from './mcp/capabilities/registry.ts'
 import {
 	handleSecretMaintenanceRequest,
 	MaintenanceFailureError,
 } from './maintenance-handler.ts'
+import { getStaticRegistry } from './mcp/capabilities/registry.ts'
 import { reindexCapabilityVectors } from './mcp/capabilities/capability-reindex.ts'
 import { reindexJobVectors } from './jobs/job-reindex.ts'
 import { reindexMemoryVectors } from './mcp/memory/memory-reindex.ts'
@@ -46,7 +46,7 @@ async function reindexAllCapabilitySearchVectors(
 	input: { baseUrl: string },
 ) {
 	const capabilities = await runReindexStep(() =>
-		reindexCapabilityVectors(env, capabilitySpecs),
+		reindexCapabilityVectors(env, getStaticRegistry().capabilitySpecs),
 	)
 	const memories = await runReindexStep(() => reindexMemoryVectors(env))
 	const jobs = await runReindexStep(() => reindexJobVectors(env))

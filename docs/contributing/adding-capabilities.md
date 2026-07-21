@@ -39,10 +39,14 @@ Authoring flow:
 3. **`builtinDomains`** — in
    `packages/worker/src/mcp/capabilities/builtin-domains.ts`, list all domains
    you want in the default server. Order controls the flattening order of
-   `capabilityList` (capabilities from earlier domains come first).
-4. **`registry.ts`** — calls `buildCapabilityRegistry(builtinDomains)` and
-   re-exports `capabilityList`, `capabilityMap`, `capabilitySpecs`, handlers,
-   tool descriptors, and domain metadata for search/MCP instructions.
+   capabilities in the static registry (capabilities from earlier domains come
+   first).
+4. **`registry.ts`** — memoizes `buildCapabilityRegistry(builtinDomains)` via
+   **`getStaticRegistry()`** on first use per isolate, providing access to
+   builtin capabilities, handlers, tool descriptors, and domain metadata. At
+   request time, **`getCapabilityRegistryForContext()`** merges remote
+   connectors, MCP client servers, and OpenAPI bindings, then applies caller
+   role/permission/feature-flag filtering for search and execute.
 
 To merge extra domains later (e.g. plugins), the seam is:
 `buildCapabilityRegistry([...builtinDomains, ...extraDomains])` with real

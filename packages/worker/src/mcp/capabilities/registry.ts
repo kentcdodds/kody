@@ -39,59 +39,6 @@ export function getStaticRegistry(): BuiltCapabilityRegistry {
 	return staticRegistryMemo
 }
 
-/**
- * Lazy view over one field of the static registry, so the legacy constant
- * exports below keep working without forcing the registry build at module
- * load. The proxy target only supplies the right base shape (array vs plain
- * object); every operation is forwarded to the real, memoized registry.
- */
-function lazyStaticRegistryField<Key extends keyof BuiltCapabilityRegistry>(
-	key: Key,
-	target: object,
-): BuiltCapabilityRegistry[Key] {
-	const resolve = () => getStaticRegistry()[key] as object
-	return new Proxy(target, {
-		get(_target, property) {
-			return Reflect.get(resolve(), property)
-		},
-		has(_target, property) {
-			return Reflect.has(resolve(), property)
-		},
-		ownKeys() {
-			return Reflect.ownKeys(resolve())
-		},
-		getOwnPropertyDescriptor(_target, property) {
-			return Object.getOwnPropertyDescriptor(resolve(), property)
-		},
-	}) as BuiltCapabilityRegistry[Key]
-}
-
-export const capabilityList = lazyStaticRegistryField('capabilityList', [])
-
-export const capabilityDomains = lazyStaticRegistryField(
-	'capabilityDomains',
-	[],
-)
-
-export const capabilityDomainDescriptionsByName = lazyStaticRegistryField(
-	'capabilityDomainDescriptionsByName',
-	{},
-)
-
-export const capabilityMap = lazyStaticRegistryField('capabilityMap', {})
-
-export const capabilitySpecs = lazyStaticRegistryField('capabilitySpecs', {})
-
-export const capabilityToolDescriptors = lazyStaticRegistryField(
-	'capabilityToolDescriptors',
-	{},
-)
-
-export const capabilityHandlers = lazyStaticRegistryField(
-	'capabilityHandlers',
-	{},
-)
-
 export const capabilityRegistryCacheTtlMs = 30_000
 export const capabilityRegistryCacheLimit = 50
 

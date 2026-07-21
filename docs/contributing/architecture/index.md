@@ -82,9 +82,11 @@ token and then attaches it to an outbound request.
 - MCP capability catalog: domain modules under
   `packages/worker/src/mcp/capabilities/*/domain.ts`, merged list in
   `packages/worker/src/mcp/capabilities/builtin-domains.ts`, built by
-  `packages/worker/src/mcp/capabilities/build-capability-registry.ts`,
-  re-exported from `packages/worker/src/mcp/capabilities/registry.ts` (see
-  [`../adding-kody.md`](../adding-kody.md)).
+  `packages/worker/src/mcp/capabilities/build-capability-registry.ts`, memoized
+  for builtins via `getStaticRegistry()` and resolved per request via
+  `getCapabilityRegistryForContext()` in
+  `packages/worker/src/mcp/capabilities/registry.ts` (see
+  [`../adding-capabilities.md`](../adding-capabilities.md)).
 - Workflow runtime hub:
   `packages/worker/src/package-runtime/package-workflows.ts` defines the shared
   `DynamicCallableWorkflow` Cloudflare Workflow used by every runtime context.

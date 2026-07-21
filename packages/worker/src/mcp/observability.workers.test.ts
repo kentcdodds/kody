@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { capabilityMap } from '#mcp/capabilities/registry.ts'
+import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { errorFields, logMcpEvent } from '#mcp/observability.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
@@ -141,7 +141,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 		}
 	}) as typeof console.info
 	try {
-		const handler = capabilityMap['package_save'].handler
+		const handler = getStaticRegistry().capabilityMap['package_save'].handler
 		await expect(
 			handler(
 				{},
@@ -168,7 +168,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 	})
 
 	resetRepoPersistenceMocks()
-	const handler = capabilityMap['package_save'].handler
+	const handler = getStaticRegistry().capabilityMap['package_save'].handler
 	const signedInContext = {
 		env: {
 			APP_DB: {

@@ -2,8 +2,6 @@ import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	clearCapabilityRegistryCacheForTests,
-	capabilityMap,
-	capabilitySpecs,
 	getCapabilityRegistryForContext,
 	getStaticRegistry,
 } from '#mcp/capabilities/registry.ts'
@@ -68,15 +66,13 @@ test('getCapabilityRegistryForContext bypasses connector caches when no connecto
 	expect(registry.capabilityMap).toBe(getStaticRegistry().capabilityMap)
 })
 
-test('getStaticRegistry memoizes and the lazy constant exports mirror it', () => {
-	expect(getStaticRegistry()).toBe(getStaticRegistry())
-	expect(capabilityMap.email_send).toBe(
-		getStaticRegistry().capabilityMap.email_send,
-	)
-	expect(Object.keys(capabilitySpecs)).toEqual(
-		Object.keys(getStaticRegistry().capabilitySpecs),
-	)
-	expect('email_send' in capabilityMap).toBe(true)
+test('getStaticRegistry memoizes the builtin registry', () => {
+	const first = getStaticRegistry()
+	const second = getStaticRegistry()
+	expect(first).toBe(second)
+	expect(first.capabilityMap.email_send).toBeTruthy()
+	expect(Object.keys(first.capabilitySpecs).length).toBeGreaterThan(0)
+	expect('email_send' in first.capabilityMap).toBe(true)
 })
 
 test('getCapabilityRegistryForContext filters admin capabilities by current caller roles', async () => {
@@ -123,6 +119,7 @@ test('the email domain no longer exposes self-service inbox or sender-identity c
 	// Inboxes are auto-provisioned at {username}@<platform domain> and the
 	// outbound from address is platform-assigned, so these capabilities were
 	// removed and must never come back silently.
+	const { capabilityMap } = getStaticRegistry()
 	expect(capabilityMap.email_inbox_create).toBeUndefined()
 	expect(capabilityMap.email_sender_identity_verify).toBeUndefined()
 	expect(capabilityMap.email_inbox_list).toBeTruthy()
