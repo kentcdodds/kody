@@ -115,8 +115,14 @@ test('account export D1 coverage includes every live user-owned schema column', 
 test('account export documents and excludes operator-owned system email rows', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
-		INSERT INTO users (id, username, email, password_hash, created_at, updated_at, email_verified_at)
-		VALUES (1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05', '2026-07-05', '2026-07-05');
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
 
 		INSERT INTO email_messages (
 			id, direction, user_id, from_address, subject, processing_status, created_at, updated_at
@@ -226,15 +232,16 @@ test('account export includes profile fields and social graph edges for either s
 	sqlite.exec(`
 		INSERT INTO users (
 			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, display_name, bio, profile_visibility
+			email_verified_at, stable_user_id, display_name, bio, profile_visibility
 		) VALUES
 			(
 				1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-				'2026-07-05', '2026-07-05', 'User A', 'Builds packages', 'public'
+				'2026-07-05', '2026-07-05', 'user-aaa', 'User A', 'Builds packages',
+				'public'
 			),
 			(
 				2, 'user-b', 'b@example.com', 'password-hash-b', '2026-07-05',
-				'2026-07-05', '2026-07-05', 'User B', NULL, 'private'
+				'2026-07-05', '2026-07-05', 'user-bbb', 'User B', NULL, 'private'
 			);
 
 		INSERT INTO community_listings (
@@ -355,10 +362,19 @@ test('account export includes profile fields and social graph edges for either s
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
-		INSERT INTO users (id, username, email, password_hash, created_at, updated_at, email_verified_at)
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
 		VALUES
-			(1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05', '2026-07-05', '2026-07-05'),
-			(2, 'user-b', 'b@example.com', 'password-hash-b', '2026-07-05', '2026-07-05', '2026-07-05');
+			(
+				1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+				'2026-07-05', '2026-07-05', 'user-aaa'
+			),
+			(
+				2, 'user-b', 'b@example.com', 'password-hash-b', '2026-07-05',
+				'2026-07-05', '2026-07-05', 'user-bbb'
+			);
 
 		INSERT INTO secret_buckets (id, user_id, scope, binding_key, created_at, updated_at)
 		VALUES ('secret-bucket-a', 'user-aaa', 'user', 'global', '2026-07-05', '2026-07-05');
@@ -514,8 +530,14 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 test('createAccountExport records partial-failure warnings and section pagination works', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
-		INSERT INTO users (id, username, email, password_hash, created_at, updated_at, email_verified_at)
-		VALUES (1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05', '2026-07-05', '2026-07-05');
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
 		INSERT INTO archived_job_artifacts (
 			id,
 			job_id,
@@ -609,8 +631,14 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 		onQueryRows: (rowCount) => rowCounts.push(rowCount),
 	})
 	sqlite.exec(`
-		INSERT INTO users (id, username, email, password_hash, created_at, updated_at, email_verified_at)
-		VALUES (1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05', '2026-07-05', '2026-07-05');
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
 	`)
 	const totalMessages = 1201
 	const insert = sqlite.prepare(
