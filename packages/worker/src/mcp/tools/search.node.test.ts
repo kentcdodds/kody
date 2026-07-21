@@ -1485,6 +1485,11 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 			description: 'Static builtin home automation capabilities.',
 			capabilities: [
 				homeCapability(
+					'lutron_list_processors',
+					'List discovered Lutron processors, whether credentials are stored, and the latest auth status.',
+					['lutron', 'processors', 'credentials', 'status'],
+				),
+				homeCapability(
 					'samsung_get_known_apps_status',
 					'Check a curated set of common app IDs to see which apps are installed on a Samsung TV.',
 					['samsung', 'apps', 'installed', 'status'],
@@ -1500,7 +1505,7 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 	const competingBuiltinIds = Object.keys(
 		buildCapabilityRegistry(builtinCompetitorDomains).capabilitySpecs,
 	)
-	expect(competingBuiltinIds).toHaveLength(3)
+	expect(competingBuiltinIds).toHaveLength(4)
 
 	const targetTools = [
 		{
@@ -1689,6 +1694,12 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 			match.type === 'capability' ? [match.name] : [],
 		)
 
+		expect(new Set(capabilityNames.slice(0, 2))).toEqual(
+			new Set([
+				`${testCase.prefix}sonos_get_player_status`,
+				`${testCase.prefix}sonos_list_players`,
+			]),
+		)
 		expect(
 			capabilityNames.indexOf(`${testCase.prefix}sonos_get_player_status`),
 		).toBeLessThan(capabilityNames.indexOf('repo_get_check_status'))

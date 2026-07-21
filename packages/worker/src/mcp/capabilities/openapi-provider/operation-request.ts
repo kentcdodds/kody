@@ -546,6 +546,7 @@ async function assertPackageCanUpdateUserSecret(input: {
 		storageContext: input.storageContext,
 		secretName: input.secretName,
 		resolved,
+		intent: 'mutate',
 	})
 }
 

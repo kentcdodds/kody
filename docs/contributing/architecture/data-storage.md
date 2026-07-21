@@ -243,8 +243,16 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   are derived at read time from `community_forks` / `community_stars`
 - `secret_buckets`: encrypted-secret ownership buckets scoped to `user`,
   `package`, or `session`. Package buckets bind directly to `saved_packages.id`;
-  package runtimes may use their own package secrets, while user secrets require
-  an explicit `allowed_packages` grant on every package read path.
+  package runtimes may use their own package secrets. User secrets are
+  auto-granted for read/use to self-authored packages (no `community_forks` row
+  for that `saved_packages.id` + `userId`) and to adopted forks
+  (`community_forks.adopted_at` set via `community_fork_adopt`; columns in
+  `0074-community-fork-adoption.sql`). Unadopted community forks
+  (`community_forks.forked_package_id`, indexed in
+  `0073-community-forks-forked-package-index.sql`) still require an explicit
+  `allowed_packages` grant on every package read path. Updating or deleting a
+  user secret from package code always requires that grant, regardless of fork
+  or adoption state.
 
 App access pattern:
 
@@ -597,8 +605,15 @@ on write unless a migration backfills existing rows.
   policy inputs (`0009-secret-allowed-hosts.sql`,
   `0010-secret-allowed-capabilities.sql`, `0023-secret-allowed-packages.sql`).
   Tightening parse-error behavior requires explicit compatibility review.
-  `allowed_packages` applies only to user-scoped secrets; package-scoped secrets
-  are owned exclusively by the package id in their bucket binding.
+  `allowed_packages` applies only to user-scoped secrets. Unadopted
+  community-forked packages need it for every package read/use path (provenance
+  via `community_forks.forked_package_id` + `forker_user_id`; index
+  `0073-community-forks-forked-package-index.sql`). Self-authored packages and
+  adopted forks (`community_forks.adopted_at` / `adoption_note` from
+  `0074-community-fork-adoption.sql`) skip that grant for read/use only.
+  Mutations from package code (`secret_set` / `secret_delete` / OpenAPI
+  token-refresh writes) always require the grant. Package-scoped secrets are
+  owned exclusively by the package id in their bucket binding.
 - `package_runtime_runs.metadata_json` and `package_runtime_logs.fields_json`
   (`0037-package-runtime-debug.sql`) store bounded debug metadata and log
   fields.

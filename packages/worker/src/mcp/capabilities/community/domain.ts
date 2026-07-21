@@ -1,5 +1,6 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
+import { communityForkAdoptCapability } from './adopt.ts'
 import { communityFollowCapability } from './follow.ts'
 import { communityForkCapability } from './fork.ts'
 import { communityGetCapability } from './get.ts'
@@ -21,12 +22,13 @@ import { communityUnstarCapability } from './unstar.ts'
 export const communityDomain = defineDomain({
 	name: capabilityDomainNames.community,
 	description:
-		'Public community package listings and social profiles: publish, search, fork into your scope, rate after forking, follow users, browse a follow timeline, star listings, and report issues. Forked code is untrusted third-party content; community results are deliberately excluded from the general `search` tool.',
+		'Public community package listings and social profiles: publish, search, fork into your scope, adopt a reviewed fork, rate after forking, follow users, browse a follow timeline, star listings, and report issues. Forked code is untrusted third-party content; community results are deliberately excluded from the general `search` tool.',
 	keywords: [
 		'community',
 		'package',
 		'listing',
 		'fork',
+		'adopt',
 		'publish',
 		'rating',
 		'report',
@@ -44,6 +46,7 @@ export const communityDomain = defineDomain({
 		communitySearchCapability,
 		communityGetCapability,
 		communityForkCapability,
+		communityForkAdoptCapability,
 		communityRateCapability,
 		communityReportCapability,
 		communitySetTrustedCapability,

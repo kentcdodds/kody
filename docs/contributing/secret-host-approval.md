@@ -21,7 +21,8 @@ authenticated account admin UI.
 
 In this repo, that means the user must approve host access through the account
 secrets experience, such as `/account/secrets` and the focused approval route at
-`/account/secrets/approve`.
+`/account/secrets/approve`. Capability allowlist changes use the same one-click
+"Approve secret access" card on `/account/secrets/<scope>/<name>?capability=…`.
 
 ## What agents should assume
 

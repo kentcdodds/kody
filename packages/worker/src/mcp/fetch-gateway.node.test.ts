@@ -11,6 +11,7 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
+import * as communityRepo from '#worker/community/repo.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 
 const env = {
@@ -123,6 +124,20 @@ test('fetch gateway requires package approval before resolving user secrets', as
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		})
+	const forkSpy = vi
+		.spyOn(communityRepo, 'getCommunityForkByForkedPackageId')
+		.mockResolvedValue({
+			id: 'fork-1',
+			listingId: 'listing-1',
+			forkerUserId: 'user-123',
+			originCommit: 'abc123',
+			forkedPackageId: 'pkg-1',
+			forkedSourceId: 'source-1',
+			targetKodyId: 'example-package',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			adoptedAt: null,
+			adoptionNote: null,
+		})
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValueOnce({
@@ -142,20 +157,31 @@ test('fetch gateway requires package approval before resolving user secrets', as
 			allowedPackages: ['pkg-1'],
 		})
 
-	await expect(
-		expandSecretPlaceholders({ request: request(), props: packageProps, env }),
-	).rejects.toSatisfy((error: unknown) => {
-		const parsed = parsePackageAccessRequiredMessage(getErrorMessage(error))
-		return parsed?.packageName === 'example-package'
-	})
-	const transformed = await expandSecretPlaceholders({
-		request: request(),
-		props: packageProps,
-		env,
-	})
-	expect(transformed.headers.get('Authorization')).toBe('Bearer secret-value')
-	expect(packageSpy).toHaveBeenCalledTimes(1)
-	expect(resolveSpy).toHaveBeenCalledTimes(2)
+	try {
+		await expect(
+			expandSecretPlaceholders({
+				request: request(),
+				props: packageProps,
+				env,
+			}),
+		).rejects.toSatisfy((error: unknown) => {
+			const parsed = parsePackageAccessRequiredMessage(getErrorMessage(error))
+			return parsed?.packageName === 'example-package'
+		})
+		const transformed = await expandSecretPlaceholders({
+			request: request(),
+			props: packageProps,
+			env,
+		})
+		expect(transformed.headers.get('Authorization')).toBe('Bearer secret-value')
+		expect(packageSpy).toHaveBeenCalledTimes(1)
+		expect(forkSpy).toHaveBeenCalledTimes(1)
+		expect(resolveSpy).toHaveBeenCalledTimes(2)
+	} finally {
+		packageSpy.mockRestore()
+		forkSpy.mockRestore()
+		resolveSpy.mockRestore()
+	}
 })
 
 test('opt-out header sends placeholders literally, strips itself, and never resolves secrets', async () => {

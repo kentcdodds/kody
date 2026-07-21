@@ -10,6 +10,7 @@ import {
 } from './errors.ts'
 import { resolveSecret, type ResolvedSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
+import { getCommunityForkByForkedPackageId } from '#worker/community/repo.ts'
 import {
 	loadPackageManifestBySourceId,
 	type LoadedPackageManifest,
@@ -48,6 +49,8 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		| undefined
 	secretName: string
 	resolved: ResolvedSecret
+	/** Default `'use'` (read/resolve). `'mutate'` always requires allowed_packages. */
+	intent?: 'use' | 'mutate'
 }) {
 	const packageId = input.storageContext?.packageId?.trim()
 	if (!packageId || input.resolved.scope !== 'user') return
@@ -62,6 +65,22 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 			`Package "${packageId}" was not found for secret access.`,
 		)
 	}
+	const intent = input.intent ?? 'use'
+	if (intent === 'use') {
+		const communityFork = await getCommunityForkByForkedPackageId(
+			input.env.APP_DB,
+			{
+				forkerUserId: input.userId,
+				forkedPackageId: savedPackage.id,
+			},
+		)
+		// Self-authored packages (no community fork row) and adopted community
+		// forks may read/use user secrets without an explicit allowed_packages
+		// grant. Unadopted community forks still require approval. Mutations
+		// never take this path.
+		if (!communityFork || communityFork.adoptedAt) return
+	}
+
 	const approvalUrl = buildSecretPackageApprovalUrl({
 		baseUrl: input.baseUrl,
 		name: input.secretName,
@@ -202,6 +221,15 @@ export async function findMissingPackageApprovals(input: {
 	if (!savedPackage) {
 		throw new Error(`Saved package "${input.packageId}" was not found.`)
 	}
+	const communityFork = await getCommunityForkByForkedPackageId(
+		input.env.APP_DB,
+		{
+			forkerUserId: input.userId,
+			forkedPackageId: savedPackage.id,
+		},
+	)
+	if (!communityFork || communityFork.adoptedAt) return []
+
 	const storageContext = {
 		sessionId: input.storageContext?.sessionId ?? null,
 		appId: input.storageContext?.appId ?? null,

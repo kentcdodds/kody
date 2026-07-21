@@ -944,14 +944,16 @@ export function getExecutionErrorDetails(
 
 	const capabilityAccessDetails = parseCapabilityAccessRequiredMessage(message)
 	if (capabilityAccessDetails) {
+		const approvalUrl = extractFirstUrl(message)
 		return {
 			kind: 'secret_capability_access_required',
 			message,
-			nextStep:
-				"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
+			nextStep: approvalUrl
+				? 'Send the user the capability approval link so they can approve with one click in the account secrets UI, then retry after approval.'
+				: "Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
 			secretNames: [capabilityAccessDetails.secretName],
 			capabilityName: capabilityAccessDetails.capabilityName,
-			approvalUrl: extractFirstUrl(message),
+			approvalUrl,
 			suggestedAction: {
 				type: 'edit_secret_policy',
 				policyField: 'allowed_capabilities',

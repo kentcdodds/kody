@@ -14,6 +14,7 @@ import {
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import { parseAllowedCapabilityName } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -62,6 +63,7 @@ type SecretApprovalView = {
 	requestedCapability: string | null
 	requestedPackageId: string | null
 	currentAllowedHosts: Array<string>
+	currentAllowedCapabilities: Array<string>
 	currentAllowedPackages: Array<string>
 }
 
@@ -137,7 +139,9 @@ async function buildAccountSecretsPayload(input: {
 
 	let approval: SecretApprovalView | null = null
 	let approvalError: string | null = null
-	const hasApprovalTarget = Boolean(requestedApprovalHost || requestedPackageId)
+	const hasApprovalTarget = Boolean(
+		requestedApprovalHost || requestedPackageId || requestedCapability,
+	)
 	const hasApprovalSubject = Boolean(
 		input.selectedSecretId || requestedSecretNames.length > 0,
 	)
@@ -239,11 +243,19 @@ type ResolvedSecretApproval =
 			packageId: string
 			storageContext: StorageContext | null
 	  }
+	| {
+			kind: 'capability'
+			name: string
+			scope: SecretScope
+			capabilityName: string
+			storageContext: StorageContext | null
+	  }
 
 function resolveApprovalRequest(input: {
 	secretId: string | null
 	requestedHost: string | null
 	requestedPackageId: string | null
+	requestedCapability?: string | null
 	requestedSecretNames?: Array<string>
 }): ResolvedSecretApproval {
 	const requestedSecretNames = normalizeBulkPackageSecretApprovalNames(
@@ -302,7 +314,22 @@ function resolveApprovalRequest(input: {
 			storageContext,
 		}
 	}
-	throw new Error('Approval request is missing a host or package.')
+	if (input.requestedCapability) {
+		const requestedCapability = parseAllowedCapabilityName(
+			input.requestedCapability,
+		)
+		if (!requestedCapability) {
+			throw new Error('Invalid approval request capability.')
+		}
+		return {
+			kind: 'capability',
+			name: parsed.name,
+			scope: parsed.scope,
+			capabilityName: requestedCapability,
+			storageContext,
+		}
+	}
+	throw new Error('Approval request is missing a host, package, or capability.')
 }
 
 async function resolveSecretApprovalView(input: {
@@ -319,6 +346,7 @@ async function resolveSecretApprovalView(input: {
 		secretId: input.secretId,
 		requestedHost: input.requestedHost,
 		requestedPackageId: input.requestedPackageId,
+		requestedCapability: input.requestedCapability,
 		requestedSecretNames: input.requestedSecretNames,
 	})
 	if (approval.kind === 'package_bulk') {
@@ -357,6 +385,7 @@ async function resolveSecretApprovalView(input: {
 				requestedCapability: input.requestedCapability,
 				requestedPackageId: approval.packageId,
 				currentAllowedHosts: [],
+				currentAllowedCapabilities: [],
 				currentAllowedPackages: [approval.packageId],
 			} satisfies SecretApprovalView
 		}
@@ -370,6 +399,7 @@ async function resolveSecretApprovalView(input: {
 			requestedCapability: input.requestedCapability,
 			requestedPackageId: approval.packageId,
 			currentAllowedHosts: firstSecret?.allowedHosts ?? [],
+			currentAllowedCapabilities: firstSecret?.allowedCapabilities ?? [],
 			currentAllowedPackages: firstSecret?.allowedPackages ?? [],
 		} satisfies SecretApprovalView
 	}
@@ -396,9 +426,13 @@ async function resolveSecretApprovalView(input: {
 		names: [approval.name],
 		scope: approval.scope,
 		requestedHost: approval.kind === 'host' ? approval.requestedHost : '',
-		requestedCapability: input.requestedCapability,
+		requestedCapability:
+			approval.kind === 'capability'
+				? approval.capabilityName
+				: input.requestedCapability,
 		requestedPackageId: approval.kind === 'package' ? approval.packageId : null,
 		currentAllowedHosts: secret.allowedHosts,
+		currentAllowedCapabilities: secret.allowedCapabilities,
 		currentAllowedPackages: secret.allowedPackages,
 	} satisfies SecretApprovalView
 }

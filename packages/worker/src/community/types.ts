@@ -165,6 +165,8 @@ export type CommunityForkRow = {
 	forked_source_id: string
 	target_kody_id: string
 	created_at: string
+	adopted_at: string | null
+	adoption_note: string | null
 }
 
 export type CommunityForkRecord = {
@@ -176,6 +178,8 @@ export type CommunityForkRecord = {
 	forkedSourceId: string
 	targetKodyId: string
 	createdAt: string
+	adoptedAt: string | null
+	adoptionNote: string | null
 }
 
 export type CommunityRatingRow = {

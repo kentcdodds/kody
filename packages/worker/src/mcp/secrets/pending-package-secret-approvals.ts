@@ -80,8 +80,9 @@ export function formatPendingPackageSecretApprovalsGuidance(
 	const preferredUrl =
 		summary.bulk_approval_url ?? summary.secrets[0]?.approval_url ?? null
 	if (!preferredUrl) return ''
+	const adoptOption = `either review the forked package source and call \`community_fork_adopt\` with a \`review_summary\` (user-secret read/use then works like a self-authored package), or`
 	if (summary.secrets.length === 1) {
-		return `Before treating this package as ready to run, send the user this package secret approval link and wait for approval: ${preferredUrl}. An ad hoc execute smoke test does not grant package secret access.`
+		return `Before treating this community-forked package as ready to run, ${adoptOption} send the user this package secret approval link and wait for approval: ${preferredUrl}. An ad hoc execute smoke test does not grant package secret access.`
 	}
-	return `Before treating this package as ready to run, send the user this bulk package secret approval link (one click for all listed secrets) and wait for approval: ${preferredUrl}. An ad hoc execute smoke test does not grant package secret access.`
+	return `Before treating this community-forked package as ready to run, ${adoptOption} send the user this bulk package secret approval link (one click for all listed secrets) and wait for approval: ${preferredUrl}. An ad hoc execute smoke test does not grant package secret access.`
 }

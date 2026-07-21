@@ -298,7 +298,7 @@ function buildSecretsHref(pathname: string, search: string) {
 	return `${pathname}${search}`
 }
 
-function readCapabilityPrefill(href: string) {
+function readRequestedCapability(href: string) {
 	const url = new URL(href, 'http://localhost')
 	const value = url.searchParams.get('capability')
 	return value?.trim() ? value.trim() : null
@@ -330,7 +330,7 @@ function getAlreadyAddedNotice(input: {
 		readRequestedHost(input.href),
 	)
 	const requestedCapability = normalizeSingleAllowedCapability(
-		readCapabilityPrefill(input.href),
+		readRequestedCapability(input.href),
 	)
 	const requestedPackageId =
 		new URL(input.href, 'http://localhost').searchParams
@@ -345,7 +345,11 @@ function getAlreadyAddedNotice(input: {
 		? normalizeAllowedCapabilities(
 				coerceStringRows(input.selectedSecret.allowedCapabilities),
 			)
-		: []
+		: input.approval
+			? normalizeAllowedCapabilities(
+					coerceStringRows(input.approval.currentAllowedCapabilities),
+				)
+			: []
 	const allowedPackageIds = input.selectedSecret
 		? Array.from(
 				new Set(
@@ -369,11 +373,15 @@ function getAlreadyAddedNotice(input: {
 	if (hostAlreadyAdded) {
 		items.push(`Host ${requestedHost} is already in allowed hosts.`)
 	}
-	if (
+	const capabilityAlreadyAdded =
 		requestedCapability != null &&
+		requestedHost == null &&
+		requestedPackageId == null &&
 		allowedCapabilities.includes(requestedCapability)
-	) {
-		items.push(`Capability ${requestedCapability} is already in allowed kody.`)
+	if (capabilityAlreadyAdded) {
+		items.push(
+			`Capability ${requestedCapability} is already in allowed capabilities.`,
+		)
 	}
 	const packageAlreadyAdded =
 		requestedPackageId != null && allowedPackageIds.includes(requestedPackageId)
@@ -386,23 +394,8 @@ function getAlreadyAddedNotice(input: {
 	return {
 		items,
 		hostAlreadyAdded,
+		capabilityAlreadyAdded,
 		packageAlreadyAdded,
-	}
-}
-
-function applyCapabilityPrefill(state: EditorState, capability: string | null) {
-	if (!capability) return state
-	if (state.allowedCapabilities.some((entry) => entry.trim() === capability)) {
-		return state
-	}
-	const nextAllowedCapabilities =
-		state.allowedCapabilities.length === 1 &&
-		state.allowedCapabilities[0]?.trim() === ''
-			? [capability]
-			: [...state.allowedCapabilities, capability]
-	return {
-		...state,
-		allowedCapabilities: nextAllowedCapabilities,
 	}
 }
 
@@ -603,25 +596,18 @@ export function AccountSecretsRoute(handle: Handle) {
 	function syncEditorState(selection: SelectionState) {
 		deleteSecretCheck.reset()
 		showSecretValue = false
-		const capabilityPrefill = readCapabilityPrefill(getCurrentHref())
 		if (selection.isCreating) {
-			editorState = applyCapabilityPrefill(
-				createEditorStateFromNewSecretQuery(packageOptions, getCurrentHref()),
-				capabilityPrefill,
+			editorState = createEditorStateFromNewSecretQuery(
+				packageOptions,
+				getCurrentHref(),
 			)
 			return
 		}
 		if (selectedSecret) {
-			editorState = applyCapabilityPrefill(
-				createEditorStateFromSecret(selectedSecret),
-				capabilityPrefill,
-			)
+			editorState = createEditorStateFromSecret(selectedSecret)
 			return
 		}
-		editorState = applyCapabilityPrefill(
-			createEmptyEditorState(packageOptions),
-			capabilityPrefill,
-		)
+		editorState = createEmptyEditorState(packageOptions)
 	}
 
 	function applyPayload(
@@ -759,6 +745,10 @@ export function AccountSecretsRoute(handle: Handle) {
 
 			const isBulkPackageApproval =
 				Boolean(approval.requestedPackageId) && approval.names.length > 1
+			const isCapabilityApproval =
+				Boolean(approval.requestedCapability) &&
+				!approval.requestedPackageId &&
+				!approval.requestedHost
 			applyPayload(
 				payload,
 				selection,
@@ -767,12 +757,16 @@ export function AccountSecretsRoute(handle: Handle) {
 						? isBulkPackageApproval
 							? `Approved package access for ${approval.names.length} secrets.`
 							: 'Approved requested package.'
-						: 'Approved requested host.'
+						: isCapabilityApproval
+							? 'Approved requested capability.'
+							: 'Approved requested host.'
 					: approval.requestedPackageId
 						? isBulkPackageApproval
 							? 'Rejected bulk package approval request.'
 							: 'Rejected package approval request.'
-						: 'Rejected host approval request.',
+						: isCapabilityApproval
+							? 'Rejected capability approval request.'
+							: 'Rejected host approval request.',
 			)
 			handle.update()
 
@@ -1101,12 +1095,17 @@ export function AccountSecretsRoute(handle: Handle) {
 			approval &&
 			!isRefreshingForLocationChange &&
 			!alreadyAddedNotice?.hostAlreadyAdded &&
+			!alreadyAddedNotice?.capabilityAlreadyAdded &&
 			!alreadyAddedNotice?.packageAlreadyAdded
 				? approval
 				: null
 		const requestedPackageMetadata = approvalCard?.requestedPackageId
 			? packagesById.get(approvalCard.requestedPackageId)
 			: null
+		const isCapabilityApprovalCard =
+			Boolean(approvalCard?.requestedCapability) &&
+			!approvalCard?.requestedPackageId &&
+			!approvalCard?.requestedHost
 
 		return (
 			<AccountManagementShell>
@@ -1192,6 +1191,13 @@ export function AccountSecretsRoute(handle: Handle) {
 										</ul>
 									) : null}
 								</div>
+							) : isCapabilityApprovalCard ? (
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Requested capability:{' '}
+									<code>{approvalCard.requestedCapability}</code> for secret{' '}
+									<code>{approvalCard.name}</code> from the{' '}
+									{getScopeLabel(approvalCard.scope)} scope.
+								</p>
 							) : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Allow <code>{approvalCard.requestedHost}</code> to receive
@@ -1199,7 +1205,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									{getScopeLabel(approvalCard.scope)} scope.
 								</p>
 							)}
-							{approvalCard.requestedCapability ? (
+							{approvalCard.requestedCapability && !isCapabilityApprovalCard ? (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Requested capability:{' '}
 									<code>{approvalCard.requestedCapability}</code>
@@ -1241,6 +1247,13 @@ export function AccountSecretsRoute(handle: Handle) {
 										)}
 									</div>
 								)
+							) : isCapabilityApprovalCard ? (
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Current allowed capabilities:{' '}
+									{approvalCard.currentAllowedCapabilities.length > 0
+										? approvalCard.currentAllowedCapabilities.join(', ')
+										: 'none'}
+								</p>
 							) : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Current allowed hosts:{' '}

@@ -77,6 +77,7 @@ export const secretSetCapability = defineDomainCapability(
 					storageContext,
 					secretName: parsed.name,
 					resolved: existing,
+					intent: 'mutate',
 				})
 				saved = await updateUserSecretForPackage({
 					env: ctx.env,

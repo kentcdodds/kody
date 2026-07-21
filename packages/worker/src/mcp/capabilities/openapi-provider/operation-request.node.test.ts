@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import * as secretService from '#mcp/secrets/service.ts'
+import * as communityRepo from '#worker/community/repo.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
@@ -344,6 +345,20 @@ test('requires package approval before OpenAPI resolves a user secret', async ()
 			createdAt: '2026-07-09T00:00:00.000Z',
 			updatedAt: '2026-07-09T00:00:00.000Z',
 		})
+	const forkSpy = vi
+		.spyOn(communityRepo, 'getCommunityForkByForkedPackageId')
+		.mockResolvedValue({
+			id: 'fork-1',
+			listingId: 'listing-1',
+			forkerUserId: 'user-1',
+			originCommit: 'abc123',
+			forkedPackageId: 'package-1',
+			forkedSourceId: 'source-1',
+			targetKodyId: 'example-package',
+			createdAt: '2026-07-09T00:00:00.000Z',
+			adoptedAt: null,
+			adoptionNote: null,
+		})
 	const fetchStub = vi.fn()
 
 	try {
@@ -379,8 +394,13 @@ test('requires package approval before OpenAPI resolves a user secret', async ()
 			'https://api.widgets.example/account/secrets',
 		)
 		expect(fetchStub).not.toHaveBeenCalled()
+		expect(forkSpy).toHaveBeenCalledWith(expect.anything(), {
+			forkerUserId: 'user-1',
+			forkedPackageId: 'package-1',
+		})
 	} finally {
 		packageSpy.mockRestore()
+		forkSpy.mockRestore()
 		resolveSpy.mockRestore()
 		usageSpy.mockRestore()
 	}

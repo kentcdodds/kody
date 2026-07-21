@@ -121,11 +121,15 @@ app will depend on:
 - the agent is using the correct secret names, integration name, and API base
   URL
 
-An authenticated `execute` smoke test does **not** grant package secret access.
-After you save or publish a secret-using package, surface
-`pending_secret_package_approvals` (prefer `bulk_approval_url`), wait for the
-user to approve, and verify with `packages.invokeChecked` before calling the
-work complete.
+An authenticated `execute` smoke test does **not** grant package secret access
+for unadopted community-forked packages. Self-authored packages and adopted
+forks (`community_fork_adopt` after source review) get automatic read/use access
+to user secrets (host approval still applies; updating or deleting a user secret
+from package code still needs an `allowed_packages` grant). After you save or
+publish a secret-using package, read `pending_secret_package_approvals`; when it
+is non-null (unadopted community forks), either adopt after review or surface
+`bulk_approval_url`, wait when required, and verify with
+`packages.invokeChecked` before calling the work complete.
 
 ## Important exceptions
 

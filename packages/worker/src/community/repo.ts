@@ -61,6 +61,9 @@ export function mapCommunityListingRow(
 	}
 }
 
+const communityForkSelectColumns = `id, listing_id, forker_user_id, origin_commit, forked_package_id,
+	forked_source_id, target_kody_id, created_at, adopted_at, adoption_note`
+
 function mapCommunityForkRow(
 	row: Record<string, unknown>,
 ): CommunityForkRecord {
@@ -73,6 +76,9 @@ function mapCommunityForkRow(
 		forkedSourceId: String(row['forked_source_id']),
 		targetKodyId: String(row['target_kody_id']),
 		createdAt: String(row['created_at']),
+		adoptedAt: row['adopted_at'] == null ? null : String(row['adopted_at']),
+		adoptionNote:
+			row['adoption_note'] == null ? null : String(row['adoption_note']),
 	}
 }
 
@@ -600,7 +606,7 @@ export async function setCommunityListingStatus(
 
 export async function insertCommunityFork(
 	db: D1Database,
-	row: Omit<CommunityForkRow, 'created_at'> & {
+	row: Omit<CommunityForkRow, 'created_at' | 'adopted_at' | 'adoption_note'> & {
 		listing_name: string
 		listing_kody_id: string
 		created_at?: string
@@ -638,14 +644,60 @@ export async function getCommunityForkByListingAndUser(
 ): Promise<CommunityForkRecord | null> {
 	const row = await db
 		.prepare(
-			`SELECT id, listing_id, forker_user_id, origin_commit, forked_package_id,
-				forked_source_id, target_kody_id, created_at
+			`SELECT ${communityForkSelectColumns}
 			FROM community_forks
 			WHERE listing_id = ? AND forker_user_id = ?`,
 		)
 		.bind(input.listingId, input.userId)
 		.first<Record<string, unknown>>()
 	return row ? mapCommunityForkRow(row) : null
+}
+
+export async function getCommunityForkByForkedPackageId(
+	db: D1Database,
+	input: {
+		forkerUserId: string
+		forkedPackageId: string
+	},
+): Promise<CommunityForkRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${communityForkSelectColumns}
+			FROM community_forks
+			WHERE forked_package_id = ? AND forker_user_id = ?`,
+		)
+		.bind(input.forkedPackageId, input.forkerUserId)
+		.first<Record<string, unknown>>()
+	return row ? mapCommunityForkRow(row) : null
+}
+
+export async function markCommunityForkAdopted(
+	db: D1Database,
+	input: {
+		forkerUserId: string
+		forkedPackageId: string
+		adoptionNote: string
+		adoptedAt: string
+	},
+): Promise<CommunityForkRecord | null> {
+	const result = await db
+		.prepare(
+			`UPDATE community_forks
+			SET adopted_at = ?, adoption_note = ?
+			WHERE forked_package_id = ? AND forker_user_id = ?`,
+		)
+		.bind(
+			input.adoptedAt,
+			input.adoptionNote,
+			input.forkedPackageId,
+			input.forkerUserId,
+		)
+		.run()
+	if ((result.meta.changes ?? 0) === 0) return null
+	return getCommunityForkByForkedPackageId(db, {
+		forkerUserId: input.forkerUserId,
+		forkedPackageId: input.forkedPackageId,
+	})
 }
 
 export async function listCommunityForksByListingAndUser(
@@ -657,8 +709,7 @@ export async function listCommunityForksByListingAndUser(
 ): Promise<Array<CommunityForkRecord>> {
 	const result = await db
 		.prepare(
-			`SELECT id, listing_id, forker_user_id, origin_commit, forked_package_id,
-				forked_source_id, target_kody_id, created_at
+			`SELECT ${communityForkSelectColumns}
 			FROM community_forks
 			WHERE listing_id = ? AND forker_user_id = ?
 			ORDER BY created_at ASC`,
