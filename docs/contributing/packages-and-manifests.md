@@ -129,8 +129,7 @@ The top-level saved identity is the package.
   exports/invocations, job-/service-scoped buckets for jobs/services,
   caller-bound or `undefined` under static import), so repo checks surface a
   non-failing suggestion (in the advisory `lint` result message) when package
-  sources import it. The nudge must never fail checks: existing published
-  packages keep passing unchanged.
+  sources import it. The nudge is advisory only and must never fail checks.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.

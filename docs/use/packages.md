@@ -216,7 +216,7 @@ token material.
 Static package imports from ad hoc MCP `execute` code, such as
 `kody:@scope/package/export`, do not get a package runtime context. They run as
 library/snapshot imports in the execute caller's runtime, where
-`packageStorage()` still reaches the declaring package's own storage bucket (see
+`packageStorage()` reaches the declaring package's own storage bucket (see
 [Package storage](#package-storage)). Use `packages.invokeChecked` from execute
 when you need to enter a saved package as that package so it receives
 `packageContext`, package-owned storage, package secrets, and its own `packages`
@@ -252,14 +252,14 @@ package's immutable id. One rule per context:
 declaring package's own bucket no matter where the code runs:
 
 - In the package's own export/invocation runtime it is the same bucket ambient
-  `storage` binds, so there is no migration cost to preferring it.
+  `storage` binds.
 - In package jobs and services — where ambient `storage` binds job-scoped and
-  service-scoped buckets — it still reaches the package's shared bucket.
+  service-scoped buckets — it reaches the package's shared bucket.
 - When the module is statically imported (`kody:@scope/package/export`) into an
-  ad hoc `execute` call or into another package, it keeps working: each module
-  reads and writes the bucket of the package it came from, under the calling
-  user's account. Ambient `storage` cannot do this; the binding is per-run, so
-  statically imported code sees the caller's bucket or `undefined`.
+  ad hoc `execute` call or into another package, each module reads and writes
+  the bucket of the package it came from, under the calling user's account.
+  Ambient `storage` cannot do this; the binding is per-run, so statically
+  imported code sees the caller's bucket or `undefined`.
 
 ```ts
 import { packageStorage } from 'kody:runtime'
@@ -287,16 +287,16 @@ consequences:
 
 ### Ambient `storage` in package code (legacy)
 
-`import { storage } from 'kody:runtime'` inside package code still works and
-stays supported. Exports and invocations bind it to the package's own bucket,
-jobs and services bind it to job-/service-scoped buckets, and statically
-imported code gets the caller's binding or `undefined`. Because the binding is
-per-run, code written against ambient `storage` breaks as soon as it is
-statically imported into another context — which is why the docs recommend
-`packageStorage()` and repo checks surface a non-failing suggestion when package
-sources import ambient `storage`. Reserve ambient `storage` in package code for
-intentionally run-scoped state, such as a job checkpoint that belongs to the
-job's own bucket rather than the package's.
+Ambient `storage` from `kody:runtime` is available inside package code. Exports
+and invocations bind it to the package's own bucket, jobs and services bind it
+to job-/service-scoped buckets, and statically imported code gets the caller's
+binding or `undefined`. Because the binding is per-run, code written against
+ambient `storage` breaks as soon as it is statically imported into another
+context — which is why the docs recommend `packageStorage()` and repo checks
+surface a non-failing suggestion when package sources import ambient `storage`.
+Reserve ambient `storage` in package code for intentionally run-scoped state,
+such as a job checkpoint that belongs to the job's own bucket rather than the
+package's.
 
 ## Package apps
 

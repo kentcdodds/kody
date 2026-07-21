@@ -72,7 +72,7 @@ Default new saved packages to `"private": true` in `package.json` unless the
 user explicitly wants public **community** publishing.
 
 Like npm, `"private": true` blocks community listings on this deployment.
-Account publishing still works so the owner can run the package privately.
+Account publishing is unaffected, so the owner can run the package privately.
 
 - Set `"private": true` when creating or forking a package unless the user asks
   to share it publicly.

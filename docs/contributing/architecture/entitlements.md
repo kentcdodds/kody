@@ -23,8 +23,7 @@ Module: `packages/worker/src/entitlements/`
 `0046-invites-email-verification.sql`). **NULL means legacy/unlimited**: nothing
 is enforced, and no counting query runs, for users without a plan. Unknown
 stored plan values are also treated as NULL so plan renames can never lock users
-out. Enforcement activates only when a known plan name is set — existing
-accounts keep working unchanged.
+out. Enforcement activates only when a known plan name is set.
 
 A Stripe subscription never downgrades a NULL manual plan into enforcement:
 `resolveEffectivePlan` returns NULL whenever `users.plan` is NULL, regardless of
