@@ -1,3 +1,5 @@
+import { toHex } from '@kody-internal/shared/hex.ts'
+
 /**
  * Agent-facing package popularity for MCP server instructions.
  *
@@ -5,6 +7,10 @@
  * package paths. Ranking uses unique conversation counts over a rolling
  * window — not raw invoke spam. Writes are best-effort and never throw into
  * the invoke path (same spirit as `recordUsage`).
+ *
+ * Stored `conversation_id` values are SHA-256 hex digests of the MCP
+ * conversation id (not the raw id), so the table only needs cardinality, not
+ * reversible conversation identifiers.
  *
  * See `docs/contributing/architecture/usage-metering.md`.
  */
@@ -30,6 +36,12 @@ INSERT INTO agent_package_conversation_uses (
 ON CONFLICT (user_id, package_id, conversation_id) DO UPDATE SET
 	last_used_at = excluded.last_used_at
 `.trim()
+
+async function hashConversationId(conversationId: string): Promise<string> {
+	const data = new TextEncoder().encode(conversationId)
+	const digest = await crypto.subtle.digest('SHA-256', data)
+	return toHex(new Uint8Array(digest))
+}
 
 /**
  * Upsert one conversation-scoped agent package use. Idempotent for the same
@@ -57,9 +69,10 @@ export async function recordAgentPackageConversationUse(
 			return
 		}
 		const usedAt = input.usedAt ?? new Date().toISOString()
+		const conversationKey = await hashConversationId(conversationId)
 		await db
 			.prepare(upsertStatement)
-			.bind(userId, packageId, conversationId, usedAt)
+			.bind(userId, packageId, conversationKey, usedAt)
 			.run()
 	} catch (error) {
 		console.warn('agent-package-conversation-use-record-failed', error)
@@ -106,18 +119,19 @@ export async function listPopularAgentPackagesForUser(
 		now?: Date
 	},
 ): Promise<Array<PopularAgentPackageSummary>> {
-	const userId = input.userId.trim()
-	if (!userId) return []
-	const limit = input.limit ?? agentPackagePopularityTopLimit
-	const windowDays = input.windowDays ?? agentPackagePopularityWindowDays
-	const now = input.now ?? new Date()
-	const since = new Date(
-		now.getTime() - windowDays * 24 * 60 * 60 * 1000,
-	).toISOString()
+	try {
+		const userId = input.userId.trim()
+		if (!userId) return []
+		const limit = input.limit ?? agentPackagePopularityTopLimit
+		const windowDays = input.windowDays ?? agentPackagePopularityWindowDays
+		const now = input.now ?? new Date()
+		const since = new Date(
+			now.getTime() - windowDays * 24 * 60 * 60 * 1000,
+		).toISOString()
 
-	const rows = await db
-		.prepare(
-			`
+		const rows = await db
+			.prepare(
+				`
 SELECT
 	u.package_id AS package_id,
 	p.kody_id AS kody_id,
@@ -131,20 +145,25 @@ WHERE u.user_id = ?1
 GROUP BY u.package_id, p.kody_id, p.description
 ORDER BY conversation_count DESC, p.kody_id ASC
 LIMIT ?3
-			`.trim(),
-		)
-		.bind(userId, since, limit)
-		.all<{
-			package_id: string
-			kody_id: string
-			description: string
-			conversation_count: number
-		}>()
+				`.trim(),
+			)
+			.bind(userId, since, limit)
+			.all<{
+				package_id: string
+				kody_id: string
+				description: string
+				conversation_count: number
+			}>()
 
-	return (rows.results ?? []).map((row) => ({
-		packageId: row.package_id,
-		kodyId: row.kody_id,
-		description: row.description ?? '',
-		conversationCount: Number(row.conversation_count) || 0,
-	}))
+		return (rows.results ?? []).map((row) => ({
+			packageId: row.package_id,
+			kodyId: row.kody_id,
+			description: row.description ?? '',
+			conversationCount: Number(row.conversation_count) || 0,
+		}))
+	} catch (error) {
+		// MCP init must stay up during migration rollout / transient D1 errors.
+		console.warn('agent-package-conversation-use-list-failed', error)
+		return []
+	}
 }

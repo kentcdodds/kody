@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	listPopularAgentPackagesForUser,
 	recordAgentPackageConversationUse,
@@ -135,10 +136,25 @@ test('recordAgentPackageConversationUse upserts idempotently per conversation', 
 	expect(rows[0]).toMatchObject({
 		user_id: 'user-a',
 		package_id: 'pkg-1',
-		conversation_id: 'conv-1',
 		first_used_at: '2026-07-01T10:00:00.000Z',
 		last_used_at: '2026-07-01T12:00:00.000Z',
 	})
+	// Stored value is a SHA-256 hex digest, not the raw conversation id.
+	expect(rows[0]?.conversation_id).toMatch(/^[0-9a-f]{64}$/)
+	expect(rows[0]?.conversation_id).not.toBe('conv-1')
+})
+
+test('listPopularAgentPackagesForUser returns [] when the table is missing', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await expect(
+		listPopularAgentPackagesForUser(db, { userId: 'user-a' }),
+	).resolves.toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'agent-package-conversation-use-list-failed',
+		expect.anything(),
+	)
 })
 
 test('listPopularAgentPackagesForUser ranks by distinct conversations and skips missing packages', async () => {

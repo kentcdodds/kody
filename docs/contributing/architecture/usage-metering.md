@@ -121,10 +121,14 @@ conversations** in which a signed-in user’s agents used a saved package via MC
 `kody:@…` deps attributed to that execute call’s `conversationId`).
 
 - Key: `(user_id, package_id, conversation_id)` — upsert updates `last_used_at`;
-  the same package in the same conversation counts once.
+  the same package in the same conversation counts once. Stored
+  `conversation_id` values are SHA-256 hex digests of the MCP conversation id
+  (cardinality only; not reversible to the raw id).
 - Read path: count conversations with `last_used_at` in the last 30 days, join
   `saved_packages` for `kody_id` + description, top 8 for
-  `buildMcpServerInstructions`. Cold start (no rows) omits the section.
+  `buildMcpServerInstructions`. Cold start (no rows) omits the section. List
+  failures (missing table, transient D1 errors) return `[]` so MCP init stays
+  up during migration rollout.
 - Writes are best-effort and never throw into the invoke path (same spirit as
   `recordUsage`). Do **not** widen `usage_rollups` for conversation cardinality.
 
