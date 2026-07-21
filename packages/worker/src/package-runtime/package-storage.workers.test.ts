@@ -247,8 +247,8 @@ test(
 				{ artifactName: './note-list', entryPoint: 'src/note-list.ts' },
 			],
 		})
-		// Seed the package's own bucket the way the package would in its own
-		// runtime (package invocations bind ambient storage to the same id).
+		// Seed the package's own bucket for `packageStorage()` (package
+		// invocations leave ambient storage unbound).
 		const runner = packageBucketRunner(userId, packageId)
 		await runner.sqlQuery({
 			query: 'create table if not exists notes (name text primary key)',
