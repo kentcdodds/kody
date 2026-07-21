@@ -285,18 +285,24 @@ consequences:
   package that is not the running package and not statically imported by the
   bundle, use `packages.invokeChecked` so its own runtime does the reading.
 
-### Ambient `storage` in package code (legacy)
+### Ambient `storage` in package code (legacy, being removed)
 
-Ambient `storage` from `kody:runtime` is available inside package code. Exports
-and invocations bind it to the package's own bucket, jobs and services bind it
-to job-/service-scoped buckets, and statically imported code gets the caller's
-binding or `undefined`. Because the binding is per-run, code written against
-ambient `storage` breaks as soon as it is statically imported into another
-context — which is why the docs recommend `packageStorage()` and repo checks
-surface a non-failing suggestion when package sources import ambient `storage`.
-Reserve ambient `storage` in package code for intentionally run-scoped state,
-such as a job checkpoint that belongs to the job's own bucket rather than the
-package's.
+Ambient `storage` from `kody:runtime` inside package code is a legacy pattern on
+a staged removal path. It binds per-run: exports and invocations bind the
+package's own bucket, jobs and services bind job-/service-scoped buckets, and
+statically imported code gets the caller's binding or `undefined` — so code
+written against ambient `storage` breaks as soon as it is statically imported
+into another context.
+
+Repo checks now fail when package source imports ambient `storage` from
+`kody:runtime` (type-only imports and `.d.ts` files are exempt). This applies to
+new check runs and publishes only: packages published earlier keep running
+unchanged until the ambient binding is removed from package runtimes in a later
+stage. Use `packageStorage()` instead — in the package's own runtime it is the
+identical bucket, so switching is a rename. For run-scoped state that previously
+lived in a job's or service's ambient bucket, either keep it in the package
+bucket under a run-scoped key (for example keyed by `jobName`), or have ad hoc
+callers bind an explicit `storageId`.
 
 ## Package apps
 
@@ -330,9 +336,8 @@ Treat package apps like Worker-style modules:
 A package service is optional.
 
 When `package.json#kody.services` is present, the package can declare one or
-more named service entrypoints that Kody runs with package caller context,
-service-scoped ambient `storage` for run state, and `packageStorage()` for the
-package's shared bucket.
+more named service entrypoints that Kody runs with package caller context and
+`packageStorage()` for the package's shared bucket.
 
 Use the package service model when the package needs:
 

@@ -1326,9 +1326,10 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 	)
 })
 
-test('runRepoChecks nudges ambient storage imports in package code toward packageStorage() without failing', async () => {
-	// Positive: a runtime module importing the ambient `storage` helper gets
-	// the storage-prescription suggestion in the advisory lint result.
+test('runRepoChecks fails ambient storage imports in package code with the packageStorage() remedy', async () => {
+	// A runtime module importing the ambient `storage` helper fails the lint
+	// check with an actionable message (stage two of the ambient-storage
+	// removal: the #817 advisory nudge is now enforced on new check runs).
 	const ambientStorage = await runPackageJobTypecheckChecks(
 		new Map<string, string>([
 			[
@@ -1350,19 +1351,17 @@ export default async function main() {
 			],
 		]),
 	)
-	expect(ambientStorage.result.ok).toBe(true)
+	expect(ambientStorage.result.ok).toBe(false)
 	const ambientStorageLint = ambientStorage.result.results.find(
 		(entry) => entry.kind === 'lint',
 	)
-	expect(ambientStorageLint).toMatchObject({ kind: 'lint', ok: true })
-	expect(ambientStorageLint?.message).not.toBe(
-		'Lint placeholder passed for this phase.',
-	)
+	expect(ambientStorageLint).toMatchObject({ kind: 'lint', ok: false })
 	expect(ambientStorageLint?.message).toContain('"src/index.ts"')
 	expect(ambientStorageLint?.message).toContain('packageStorage()')
+	expect(ambientStorageLint?.message).toContain('`storageId`')
 
-	// Negative: packageStorage()-only package code gets no suggestion — the
-	// lint result stays the placeholder.
+	// packageStorage()-only package code passes; the lint result stays the
+	// placeholder.
 	const prescribedStorage = await runPackageJobTypecheckChecks(
 		new Map<string, string>([
 			[
@@ -1396,8 +1395,7 @@ export default async function main() {
 	)
 
 	// Type-only imports and declaration files are not runtime accesses, and
-	// aliased runtime imports of other helpers do not match; none of them
-	// trigger the nudge.
+	// aliased runtime imports of other helpers do not match; the check passes.
 	const typeOnly = await runPackageJobTypecheckChecks(
 		new Map<string, string>([
 			[
@@ -1438,8 +1436,8 @@ export type Bucket = typeof storage
 		]),
 	)
 
-	// Aliased ambient storage imports still get the nudge: the imported name
-	// is what identifies the helper, not the local binding.
+	// Aliased ambient storage imports still fail: the imported name is what
+	// identifies the helper, not the local binding.
 	const aliasedStorage = await runPackageJobTypecheckChecks(
 		new Map<string, string>([
 			[
@@ -1461,9 +1459,10 @@ export default async function main() {
 			],
 		]),
 	)
-	expect(aliasedStorage.result.ok).toBe(true)
+	expect(aliasedStorage.result.ok).toBe(false)
 	const aliasedStorageLint = aliasedStorage.result.results.find(
 		(entry) => entry.kind === 'lint',
 	)
+	expect(aliasedStorageLint).toMatchObject({ kind: 'lint', ok: false })
 	expect(aliasedStorageLint?.message).toContain('packageStorage()')
 })

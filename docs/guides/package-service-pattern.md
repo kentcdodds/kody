@@ -58,8 +58,6 @@ Package services run as **background-managed** service instances:
   - `serviceContext`
   - `packageStorage()` for the package's shared bucket (the prescription for
     package-owned data)
-  - service-owned writable ambient `storage`, scoped to this service's run state
-    only
   - a `service` helper from `kody:runtime`
 
 Import shape inside a service module:
@@ -68,9 +66,11 @@ Import shape inside a service module:
 import { service, serviceContext, packageStorage } from 'kody:runtime'
 ```
 
-Persist state the package app or exports must see through `packageStorage()`;
-ambient `storage` in a service binds a service-scoped bucket that other package
-surfaces do not read.
+Persist service state through `packageStorage()` (key run-scoped entries by
+service name if needed). The legacy ambient `storage` binding in services is
+service-scoped, invisible to other package surfaces, and importing it now fails
+repo checks — see
+[Ambient `storage` in package code](../use/packages.md#ambient-storage-in-package-code-legacy-being-removed).
 
 The `service` helper exposes:
 

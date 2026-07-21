@@ -125,11 +125,16 @@ The top-level saved identity is the package.
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
   goes through `packages.invokeChecked`. Ambient `storage` inside package code
-  is a supported legacy pattern — it binds per-run (package bucket for
-  exports/invocations, job-/service-scoped buckets for jobs/services,
-  caller-bound or `undefined` under static import), so repo checks surface a
-  non-failing suggestion (in the advisory `lint` result message) when package
-  sources import it. The nudge is advisory only and must never fail checks.
+  is a legacy pattern being removed in stages — it binds per-run (package bucket
+  for exports/invocations, job-/service-scoped buckets for jobs/services,
+  caller-bound or `undefined` under static import). Repo checks fail (the `lint`
+  result) when package sources import ambient `storage` from `kody:runtime` with
+  a value named import; type-only imports and `.d.ts` files are exempt. The rule
+  runs only where checks run — new session check runs, publishes, and community
+  fork installs — so already-published artifacts are never re-validated
+  retroactively and keep executing. Removing the ambient binding from
+  package-invocation contexts is a follow-up gated on an operator audit of
+  published artifacts confirming no remaining invocation-context usage.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.

@@ -874,7 +874,7 @@ function formatBundleCheckMessage(input: {
 
 const lintPlaceholderPassedMessage = 'Lint placeholder passed for this phase.'
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
-const maxAmbientStorageAdvisoryFiles = 5
+const maxAmbientStorageReportedFiles = 5
 
 function moduleImportsAmbientStorage(source: string) {
 	let parsed: ModuleAstNode
@@ -928,34 +928,42 @@ function collectAmbientStorageImportFiles(sourceFiles: Record<string, string>) {
 }
 
 /**
- * Storage prescription nudge (advisory, never failing): saved-package code
- * should prefer `packageStorage()` over the ambient `storage` binding, which
- * is per-run and is unbound or caller-bound when package code is statically
- * imported into another context. Repo checks have no dedicated advisory
- * channel, so the suggestion rides the always-passing `lint` result message —
- * the existing placeholder slot for style-level feedback.
+ * Storage prescription lint rule (failing): saved-package source must use
+ * `packageStorage()` instead of the ambient `storage` binding, which is
+ * per-run and is unbound or caller-bound when package code is statically
+ * imported into another context. This only runs where repo checks run — new
+ * session check runs, session/external publishes, and community fork installs
+ * — so already-published artifacts are never re-validated retroactively.
+ * Stage two of the ambient-storage removal plan: #817 shipped the advisory
+ * nudge, this fails new publishes, and a follow-up removes the ambient
+ * binding from package invocation contexts once an operator audit of
+ * published artifacts confirms no remaining usage.
  */
-function buildLintCheckMessage(sourceFiles: Record<string, string>) {
+function buildLintCheck(sourceFiles: Record<string, string>): {
+	ok: boolean
+	message: string
+} {
 	const ambientStorageFiles = collectAmbientStorageImportFiles(sourceFiles)
 	if (ambientStorageFiles.length === 0) {
-		return lintPlaceholderPassedMessage
+		return { ok: true, message: lintPlaceholderPassedMessage }
 	}
 	const shownFiles = ambientStorageFiles.slice(
 		0,
-		maxAmbientStorageAdvisoryFiles,
+		maxAmbientStorageReportedFiles,
 	)
 	const hiddenCount = ambientStorageFiles.length - shownFiles.length
 	const fileList =
 		shownFiles.map((filePath) => `"${filePath}"`).join(', ') +
 		(hiddenCount > 0 ? ` (and ${hiddenCount} more)` : '')
-	return (
-		`Suggestion (does not fail checks): ${fileList} import${
-			ambientStorageFiles.length === 1 ? 's' : ''
-		} the ambient \`storage\` helper from 'kody:runtime'. ` +
-		"Saved-package code should prefer `packageStorage()` for the package's own data: it always reaches this " +
-		"package's bucket, while ambient `storage` binds per-run and is unbound or caller-bound when this code is " +
-		'statically imported into another context. Ambient `storage` keeps working as before.'
-	)
+	return {
+		ok: false,
+		message:
+			`Package code imports the ambient \`storage\` helper from 'kody:runtime': ${fileList}. ` +
+			"Use `packageStorage()` from 'kody:runtime' for package-owned data instead: it reaches the identical " +
+			"bucket in the package's own runtime and keeps working when the code is statically imported into " +
+			'another context. Ambient `storage` remains only for ad hoc execute code with a `storageId` bound on ' +
+			'the execute call.',
+	}
 }
 
 export async function runRepoChecks(input: {
@@ -1036,7 +1044,7 @@ export async function runRepoChecks(input: {
 		}
 	}
 	const sourceFiles = sourceWalk.collected
-	const lintCheckMessage = buildLintCheckMessage(sourceFiles)
+	const lintCheck = buildLintCheck(sourceFiles)
 	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
 		(async function* () {
@@ -1128,8 +1136,8 @@ export async function runRepoChecks(input: {
 		})
 		results.push({
 			kind: 'lint',
-			ok: true,
-			message: lintCheckMessage,
+			ok: lintCheck.ok,
+			message: lintCheck.message,
 		})
 		return {
 			ok: results.every((result) => result.ok),
@@ -1154,8 +1162,8 @@ export async function runRepoChecks(input: {
 		})
 		results.push({
 			kind: 'lint',
-			ok: true,
-			message: lintCheckMessage,
+			ok: lintCheck.ok,
+			message: lintCheck.message,
 		})
 		return {
 			ok: results.every((result) => result.ok),
@@ -1173,8 +1181,8 @@ export async function runRepoChecks(input: {
 		})
 		results.push({
 			kind: 'lint',
-			ok: true,
-			message: lintCheckMessage,
+			ok: lintCheck.ok,
+			message: lintCheck.message,
 		})
 		return {
 			ok: results.every((result) => result.ok),
@@ -1220,8 +1228,8 @@ export async function runRepoChecks(input: {
 
 	results.push({
 		kind: 'lint',
-		ok: true,
-		message: lintCheckMessage,
+		ok: lintCheck.ok,
+		message: lintCheck.message,
 	})
 
 	return {
