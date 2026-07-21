@@ -62,6 +62,12 @@ export default async () => {
 		if (path.length > 2048) throw new Error('path exceeds maximum length')
 		if (/[\s#]/.test(path))
 			throw new Error('path contains disallowed characters')
+		if (path.includes('..') || /%2e/i.test(path)) {
+			throw new Error('path must not contain ..')
+		}
+		if (!PREFIXES.some((prefix) => path.startsWith(prefix))) {
+			throw new Error(`path must start with one of: ${PREFIXES.join(', ')}`)
+		}
 		const url = new URL(path, ORIGIN)
 		if (url.origin !== ORIGIN) {
 			throw new Error('path must stay on developers.cloudflare.com')
@@ -70,7 +76,6 @@ export default async () => {
 		if (!PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
 			throw new Error(`path must start with one of: ${PREFIXES.join(', ')}`)
 		}
-		if (pathname.includes('..')) throw new Error('path must not contain ..')
 		return url
 	}
 
