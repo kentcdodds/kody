@@ -11,6 +11,7 @@ import { buildIntegrationValueName } from '#mcp/capabilities/integrations/integr
 import { synthesizeMcpServerToolDomain } from '#mcp/capabilities/mcp-server/index.ts'
 import { synthesizeOpenApiProviderDomain } from '#mcp/capabilities/openapi-provider/index.ts'
 import { synthesizeRemoteToolDomain } from '#mcp/capabilities/remote-connector/index.ts'
+import { repoGetCheckStatusCapability } from '#mcp/capabilities/repo/index.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
 import type * as PackageRegistrySource from '#worker/package-registry/source.ts'
@@ -1473,39 +1474,58 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 })
 
 test('online search ranks remote, MCP, and OpenAPI Sonos operations above real competing builtin hits', async () => {
-	const builtinCompetitorDomain = {
-		name: 'home',
-		description: 'Static builtin home automation capabilities.',
-		capabilities: [
-			homeCapability(
-				'lutron_list_processors',
-				'List discovered Lutron processors, whether credentials are stored, and the latest auth status.',
-				['lutron', 'processors', 'credentials', 'status'],
-			),
-			homeCapability(
-				'samsung_get_known_apps_status',
-				'Check a curated set of common app IDs to see which apps are installed on a Samsung TV.',
-				['samsung', 'apps', 'installed', 'status'],
-			),
-			homeCapability(
-				'access_networks_unleashed_list_controllers',
-				'List locally persisted Access Networks Unleashed controllers, whether one is adopted, and whether credentials are stored.',
-				['access', 'networks', 'controllers', 'credentials'],
-			),
-		],
-	}
+	const builtinCompetitorDomains = [
+		{
+			name: 'repo',
+			description: 'Repository workspace capabilities.',
+			capabilities: [repoGetCheckStatusCapability],
+		},
+		{
+			name: 'home',
+			description: 'Static builtin home automation capabilities.',
+			capabilities: [
+				homeCapability(
+					'samsung_get_known_apps_status',
+					'Check a curated set of common app IDs to see which apps are installed on a Samsung TV.',
+					['samsung', 'apps', 'installed', 'status'],
+				),
+				homeCapability(
+					'access_networks_unleashed_list_controllers',
+					'List locally persisted Access Networks Unleashed controllers, whether one is adopted, and whether credentials are stored.',
+					['access', 'networks', 'controllers', 'credentials'],
+				),
+			],
+		},
+	]
 	const competingBuiltinIds = Object.keys(
-		buildCapabilityRegistry([builtinCompetitorDomain]).capabilitySpecs,
+		buildCapabilityRegistry(builtinCompetitorDomains).capabilitySpecs,
 	)
 	expect(competingBuiltinIds).toHaveLength(3)
 
 	const targetTools = [
+		{
+			name: 'sonos_list_groups',
+			description:
+				'List Sonos groups with coordinators, member players, and current topology.',
+			inputSchema: { type: 'object', properties: {} },
+			annotations: { readOnlyHint: true, idempotentHint: true },
+		},
 		{
 			name: 'sonos_list_players',
 			description:
 				'List known Sonos players with room names, models, group membership, and adoption state.',
 			inputSchema: { type: 'object', properties: {} },
 			annotations: { readOnlyHint: true, idempotentHint: true },
+		},
+		{
+			name: 'sonos_get_group_status',
+			description:
+				'Get transport, playback, queue, and coordinator status for a Sonos group.',
+			inputSchema: {
+				type: 'object',
+				properties: { groupId: { type: 'string' } },
+			},
+			annotations: { readOnlyHint: true },
 		},
 		{
 			name: 'sonos_get_player_status',
@@ -1588,6 +1608,9 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 		CAPABILITY_VECTOR_INDEX: {
 			async query(_values: Array<number>, options: { filter?: unknown }) {
 				capturedFilters.push(options.filter)
+				const kind = (options.filter as { kind?: { $eq?: string } } | undefined)
+					?.kind?.$eq
+				if (kind === 'package') return { matches: [] }
 				return {
 					matches: competingBuiltinIds.map((id, index) => ({
 						id,
@@ -1597,6 +1620,32 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 			},
 		},
 	} as unknown as Env
+	const mixedCandidateRows = {
+		packageRows: [
+			leanPackageRow('pkg-sonos-diagnostics', 'user-1', {
+				name: 'sonos-speaker-diagnostics',
+				description:
+					'Check whether any Sonos speakers are playing and report playback status.',
+				tags: ['sonos', 'speakers', 'playing', 'status'],
+			}),
+		],
+		userSecretRows: [],
+		userValueRows: [
+			{
+				name: 'sonos_speaker_playback_status',
+				scope: 'user',
+				value: 'check whether any Sonos speakers are playing',
+				description: 'Current Sonos speaker playback status',
+				appId: null,
+				createdAt: '2026-04-20T00:00:00.000Z',
+				updatedAt: '2026-04-20T00:00:00.000Z',
+				ttlMs: null,
+			},
+		],
+	} satisfies Pick<
+		OptionalSearchRowsResult,
+		'packageRows' | 'userSecretRows' | 'userValueRows'
+	>
 
 	const cases = [
 		{
@@ -1609,7 +1658,7 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 	] as const
 	for (const testCase of cases) {
 		const registry = buildCapabilityRegistry([
-			builtinCompetitorDomain,
+			...builtinCompetitorDomains,
 			testCase.domain,
 		])
 		expect(
@@ -1622,7 +1671,9 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 				.filter((spec) => spec.source === testCase.source)
 				.map((spec) => spec.name),
 		).toEqual([
+			`${testCase.prefix}sonos_list_groups`,
 			`${testCase.prefix}sonos_list_players`,
+			`${testCase.prefix}sonos_get_group_status`,
 			`${testCase.prefix}sonos_get_player_status`,
 		])
 
@@ -1632,22 +1683,173 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 			limit: 10,
 			userId: 'user-1',
 			registry,
-			optionalRows: emptyOptionalSearchRows,
+			optionalRows: mixedCandidateRows,
 		})
 		const capabilityNames = result.matches.flatMap((match) =>
 			match.type === 'capability' ? [match.name] : [],
 		)
 
-		expect(new Set(capabilityNames.slice(0, 2))).toEqual(
-			new Set([
-				`${testCase.prefix}sonos_get_player_status`,
-				`${testCase.prefix}sonos_list_players`,
+		expect(
+			capabilityNames.indexOf(`${testCase.prefix}sonos_get_player_status`),
+		).toBeLessThan(capabilityNames.indexOf('repo_get_check_status'))
+		expect(capabilityNames.indexOf('repo_get_check_status')).toBeGreaterThan(
+			capabilityNames.indexOf(`${testCase.prefix}sonos_list_players`),
+		)
+		expect(
+			capabilityNames.indexOf(`${testCase.prefix}sonos_get_group_status`),
+		).toBeGreaterThan(
+			capabilityNames.indexOf(`${testCase.prefix}sonos_get_player_status`),
+		)
+		expect(
+			capabilityNames.indexOf(`${testCase.prefix}sonos_list_groups`),
+		).toBeGreaterThan(
+			capabilityNames.indexOf(`${testCase.prefix}sonos_list_players`),
+		)
+		expect(result.matches).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: 'package',
+					kodyId: 'sonos-speaker-diagnostics',
+				}),
+				expect.objectContaining({
+					type: 'value',
+					name: 'sonos_speaker_playback_status',
+				}),
 			]),
 		)
+
+		const exactPackage = await searchUnified({
+			env,
+			query: 'sonos-speaker-diagnostics',
+			limit: 10,
+			userId: 'user-1',
+			registry,
+			optionalRows: {
+				packageRows: mixedCandidateRows.packageRows,
+				userSecretRows: [],
+				userValueRows: [],
+			},
+		})
+		const exactPackageIndex = exactPackage.matches.findIndex(
+			(match) =>
+				match.type === 'package' &&
+				match.kodyId === 'sonos-speaker-diagnostics',
+		)
+		const packageProviderIndex = exactPackage.matches.findIndex(
+			(match) =>
+				match.type === 'capability' && match.name.startsWith(testCase.prefix),
+		)
+		expect(exactPackageIndex).toBe(0)
+		expect(packageProviderIndex).toBeGreaterThan(exactPackageIndex)
+
+		const exactValue = await searchUnified({
+			env,
+			query: 'sonos_speaker_playback_status',
+			limit: 10,
+			userId: 'user-1',
+			registry,
+			optionalRows: {
+				packageRows: [],
+				userSecretRows: [],
+				userValueRows: mixedCandidateRows.userValueRows,
+			},
+		})
+		const exactValueIndex = exactValue.matches.findIndex(
+			(match) =>
+				match.type === 'value' &&
+				match.name === 'sonos_speaker_playback_status',
+		)
+		const valueProviderIndex = exactValue.matches.findIndex(
+			(match) =>
+				match.type === 'capability' && match.name.startsWith(testCase.prefix),
+		)
+		expect(exactValueIndex).toBe(0)
+		expect(valueProviderIndex).toBeGreaterThan(exactValueIndex)
 	}
 
-	expect(capturedFilters).toEqual(
-		cases.map(() => ({ kind: { $eq: 'builtin' } })),
+	expect(capturedFilters).toHaveLength(cases.length * 5)
+	expect(
+		capturedFilters.filter(
+			(filter) =>
+				(filter as { kind?: { $eq?: string } }).kind?.$eq === 'builtin',
+		),
+	).toHaveLength(cases.length * 3)
+	expect(
+		capturedFilters.filter(
+			(filter) =>
+				(filter as { kind?: { $eq?: string } }).kind?.$eq === 'package',
+		),
+	).toHaveLength(cases.length * 2)
+	expect(aiRunCount).toBe(cases.length * 3)
+})
+
+test('online search activates remote provider identity when operation names omit it', async () => {
+	const remote = await synthesizeRemoteToolDomain({
+		env: {} as Env,
+		userId: 'user-1',
+		ref: { instanceId: 'living-room' },
+		snapshot: {
+			connectorId: 'sonos',
+			description: 'Local multi-room audio provider.',
+			connectedAt: '2026-07-21T00:00:00.000Z',
+			lastSeenAt: '2026-07-21T00:00:01.000Z',
+			tools: [
+				{
+					name: 'list_players',
+					description:
+						'List connected players with room names and group membership.',
+					inputSchema: { type: 'object', properties: {} },
+					annotations: { readOnlyHint: true, idempotentHint: true },
+				},
+				{
+					name: 'get_player_status',
+					description:
+						'Get transport, track, queue, volume, and playback status for a player.',
+					inputSchema: {
+						type: 'object',
+						properties: { playerId: { type: 'string' } },
+					},
+					annotations: { readOnlyHint: true },
+				},
+			],
+		},
+	})
+	expect(remote).not.toBeNull()
+	const competitor = repoGetCheckStatusCapability
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'repo',
+			description: 'Repository workspace capabilities.',
+			capabilities: [competitor],
+		},
+		remote!.domain,
+	])
+	const result = await searchUnified({
+		env: {
+			SENTRY_ENVIRONMENT: 'production',
+			AI: createDeterministicAiBinding(),
+			CAPABILITY_VECTOR_INDEX: {
+				async query() {
+					return {
+						matches: [{ id: competitor.name, score: 0.99 }],
+					}
+				},
+			},
+		} as unknown as Env,
+		query: 'check whether any Sonos speakers are playing',
+		limit: 3,
+		userId: 'user-1',
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+
+	const rankedNames = result.matches.flatMap((match) =>
+		match.type === 'capability' ? [match.name] : [],
 	)
-	expect(aiRunCount).toBe(cases.length)
+	expect(
+		rankedNames.indexOf('remote:living-room:get_player_status'),
+	).toBeLessThan(rankedNames.indexOf('repo_get_check_status'))
+	expect(rankedNames.indexOf('remote:living-room:list_players')).toBeLessThan(
+		rankedNames.indexOf('repo_get_check_status'),
+	)
 })

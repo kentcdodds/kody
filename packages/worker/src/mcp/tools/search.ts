@@ -7,6 +7,7 @@ import {
 	parseIntegrationValueName,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import {
 	CAPABILITY_SEARCH_RRF_K,
 	blendLexicalAndVectorScore,
@@ -146,6 +147,7 @@ export type SearchScoreComponents = {
 	lexical: number
 	vector: number
 	entityMatch: number
+	providerEntityAffinity: number
 	actionMatch: number
 	taskAffinity: number
 	appAvailability: number
@@ -160,6 +162,9 @@ type SearchCandidate = {
 	id: string
 	title: string
 	searchFields: Array<string>
+	identityFields?: Array<string>
+	providerIdentityFields?: Array<string>
+	synthesizedProviderKey?: string
 	scoreComponents: SearchScoreComponents
 }
 
@@ -685,6 +690,7 @@ function buildCandidateBaseScore(input: {
 		lexical: input.lexical,
 		vector,
 		entityMatch: 0,
+		providerEntityAffinity: 0,
 		actionMatch: 0,
 		taskAffinity: 0,
 		appAvailability: 0,
@@ -714,6 +720,80 @@ function scoreMatchedTerms(
 		if (fieldTokens.has(term)) matched += 1
 	}
 	return matched / Math.max(1, matchedTerms.length)
+}
+
+function semanticSearchConcept(token: string): string {
+	const normalized = normalizeSearchText(token)
+	if (['speaker', 'speakers', 'player', 'players'].includes(normalized)) {
+		return 'media-player'
+	}
+	if (
+		[
+			'playing',
+			'paused',
+			'running',
+			'connected',
+			'disconnected',
+			'status',
+			'statuses',
+			'state',
+			'states',
+		].includes(normalized)
+	) {
+		return 'live-state'
+	}
+	if (normalized.endsWith('ies') && normalized.length > 3) {
+		return `${normalized.slice(0, -3)}y`
+	}
+	if (
+		normalized.endsWith('s') &&
+		normalized.length > 3 &&
+		!normalized.endsWith('ss')
+	) {
+		return normalized.slice(0, -1)
+	}
+	return normalized
+}
+
+function scoreSemanticMatchedTerms(
+	fields: ReadonlyArray<string>,
+	matchedTerms: ReadonlyArray<string>,
+): number {
+	if (matchedTerms.length === 0 || fields.length === 0) return 0
+	const fieldConcepts = new Set(
+		fields.flatMap((field) =>
+			extractSearchTokens(field).map(semanticSearchConcept),
+		),
+	)
+	const matched = matchedTerms.filter((term) =>
+		fieldConcepts.has(semanticSearchConcept(term)),
+	).length
+	return matched / matchedTerms.length
+}
+
+const nonIdentityQueryTerms = new Set([
+	'any',
+	'are',
+	'be',
+	'do',
+	'does',
+	'is',
+	'whether',
+])
+
+function getSearchIdentityTerms(intent: SearchIntent): Array<string> {
+	const actionTerms = new Set(
+		intent.actions.flatMap((action) => action.matchedTerms),
+	)
+	const constraintTerms = new Set(
+		intent.constraints.map((constraint) => constraint.value),
+	)
+	return intent.meaningfulTokens.filter(
+		(token) =>
+			!actionTerms.has(token) &&
+			!constraintTerms.has(token) &&
+			!nonIdentityQueryTerms.has(token),
+	)
 }
 
 function buildPackageExportSearchFields(
@@ -790,7 +870,8 @@ function scoreConstraintBoost(
 		if (
 			normalizedFields.some((field) =>
 				field.includes(normalizeSearchText(constraint.value)),
-			)
+			) ||
+			scoreSemanticMatchedTerms(fields, [constraint.value]) > 0
 		) {
 			score += 0.08
 		}
@@ -970,7 +1051,7 @@ function scoreTaskAffinity(
 		(action) => action.matchedTerms,
 	)
 	const actionMatch =
-		scoreMatchedTerms(candidate.searchFields, matchedActionTerms) *
+		scoreSemanticMatchedTerms(candidate.searchFields, matchedActionTerms) *
 		0.25 *
 		taskConfidenceWeight
 	const constraint =
@@ -1063,6 +1144,66 @@ function scoreTaskAffinity(
 	}
 }
 
+function findStrongSynthesizedIdentityTerms(input: {
+	candidates: Array<SearchCandidate>
+	intent: SearchIntent
+}): Map<string, Set<string>> {
+	const queryIdentityTerms = getSearchIdentityTerms(input.intent)
+	const candidatesByProvider = new Map<string, Array<SearchCandidate>>()
+	for (const candidate of input.candidates) {
+		if (!candidate.synthesizedProviderKey) continue
+		const group =
+			candidatesByProvider.get(candidate.synthesizedProviderKey) ?? []
+		group.push(candidate)
+		candidatesByProvider.set(candidate.synthesizedProviderKey, group)
+	}
+
+	const strongTermsByProvider = new Map<string, Set<string>>()
+	for (const [providerKey, candidates] of candidatesByProvider) {
+		const providerTokens = new Set(
+			candidates.flatMap((candidate) =>
+				(candidate.providerIdentityFields ?? []).flatMap(extractSearchTokens),
+			),
+		)
+		const operationTokenCounts = new Map<string, number>()
+		for (const candidate of candidates) {
+			const candidateTokens = new Set(
+				(candidate.identityFields ?? []).flatMap(extractSearchTokens),
+			)
+			for (const token of candidateTokens) {
+				operationTokenCounts.set(
+					token,
+					(operationTokenCounts.get(token) ?? 0) + 1,
+				)
+			}
+		}
+		const strongTerms = queryIdentityTerms.filter(
+			(term) =>
+				providerTokens.has(term) || (operationTokenCounts.get(term) ?? 0) >= 2,
+		)
+		if (strongTerms.length > 0) {
+			strongTermsByProvider.set(providerKey, new Set(strongTerms))
+		}
+	}
+	return strongTermsByProvider
+}
+
+const maxSynthesizedProviderEntityAffinity = 1.1
+
+function hasExactNonProviderEntityTarget(input: {
+	candidates: ReadonlyArray<SearchCandidate>
+	intent: SearchIntent
+}): boolean {
+	return input.candidates.some(
+		(candidate) =>
+			candidate.synthesizedProviderKey == null &&
+			[candidate.id, candidate.title].some(
+				(identity) =>
+					normalizeSearchText(identity).trim() === input.intent.normalizedQuery,
+			),
+	)
+}
+
 function rerankCandidates(input: {
 	candidates: Array<SearchCandidate>
 	intent: SearchIntent
@@ -1075,16 +1216,45 @@ function rerankCandidates(input: {
 		]),
 	)
 	const rerankWeight = Math.min(1, Math.max(0.25, input.intent.confidence))
+	const strongIdentityTermsByProvider =
+		findStrongSynthesizedIdentityTerms(input)
+	const exactNonProviderEntityTarget = hasExactNonProviderEntityTarget(input)
 
 	const reranked = input.candidates.map((candidate) => {
 		const entityMatch =
 			(entityConfidenceByKey.get(`${candidate.type}:${candidate.id}`) ?? 0) *
 			0.45 *
 			rerankWeight
+		const strongIdentityTerms = candidate.synthesizedProviderKey
+			? strongIdentityTermsByProvider.get(candidate.synthesizedProviderKey)
+			: undefined
+		const matchesStrongSynthesizedIdentity =
+			strongIdentityTerms != null &&
+			scoreMatchedTerms(
+				[
+					...(candidate.identityFields ?? []),
+					...(candidate.providerIdentityFields ?? []),
+				],
+				[...strongIdentityTerms],
+			) > 0
+		const providerEntityAffinity =
+			matchesStrongSynthesizedIdentity && !exactNonProviderEntityTarget
+				? Math.min(
+						maxSynthesizedProviderEntityAffinity,
+						scoreSemanticMatchedTerms(
+							[
+								...candidate.searchFields,
+								...(candidate.providerIdentityFields ?? []),
+							],
+							getSearchIdentityTerms(input.intent),
+						) * maxSynthesizedProviderEntityAffinity,
+					)
+				: 0
 		const taskSignals = scoreTaskAffinity(candidate, input.intent)
 		const final =
 			candidate.scoreComponents.base +
 			entityMatch +
+			providerEntityAffinity +
 			taskSignals.actionMatch +
 			taskSignals.taskAffinity +
 			taskSignals.appAvailability +
@@ -1096,6 +1266,7 @@ function rerankCandidates(input: {
 			scoreComponents: {
 				...candidate.scoreComponents,
 				entityMatch,
+				providerEntityAffinity,
 				actionMatch: taskSignals.actionMatch,
 				taskAffinity: taskSignals.taskAffinity,
 				appAvailability: taskSignals.appAvailability,
@@ -1546,12 +1717,65 @@ function buildSecretCandidates(input: {
 		.filter((candidate) => candidate.scoreComponents.base > 0)
 }
 
+function getSynthesizedProviderIdentity(spec: CapabilitySpec):
+	| {
+			key: string
+			providerFields: Array<string>
+			operationFields: Array<string>
+	  }
+	| undefined {
+	switch (spec.source) {
+		case 'builtin':
+			return undefined
+		case 'remote-connector':
+			return spec.remoteConnector
+				? {
+						key: `remote-connector:${spec.remoteConnector.instanceId}`,
+						providerFields: [
+							spec.remoteConnector.instanceId,
+							spec.remoteConnector.connectorId,
+							spec.remoteConnector.connectorName,
+						],
+						operationFields: [
+							spec.remoteConnector.mcpToolName,
+							spec.remoteConnector.toolName,
+						],
+					}
+				: undefined
+		case 'mcp-server':
+			return spec.mcpServer
+				? {
+						key: `mcp-server:${spec.mcpServer.serverId}`,
+						providerFields: [
+							spec.mcpServer.serverName,
+							spec.mcpServer.kodyName,
+						],
+						operationFields: [
+							spec.mcpServer.mcpToolName,
+							spec.mcpServer.toolName,
+						],
+					}
+				: undefined
+		case 'openapi':
+			return spec.openApi
+				? {
+						key: `openapi:${spec.openApi.bindingName}`,
+						providerFields: [spec.openApi.bindingName, spec.openApi.kodyName],
+						operationFields: [spec.openApi.operationSlug],
+					}
+				: undefined
+		default: {
+			const exhaustiveSource: never = spec.source
+			return exhaustiveSource
+		}
+	}
+}
+
 function capabilityMatchToCandidate(
 	match: SearchCapabilityMatch,
-	spec: Awaited<
-		ReturnType<typeof getCapabilityRegistryForContext>
-	>['capabilitySpecs'][string],
+	spec: CapabilitySpec,
 ): SearchCandidate {
+	const providerIdentity = getSynthesizedProviderIdentity(spec)
 	return {
 		match: {
 			type: 'capability',
@@ -1575,6 +1799,17 @@ function capabilityMatchToCandidate(
 			...(spec.inputFields ?? []),
 			...(spec.outputFields ?? []),
 		],
+		identityFields: [
+			spec.name,
+			spec.domain,
+			...(providerIdentity?.operationFields ?? []),
+		],
+		...(providerIdentity
+			? {
+					providerIdentityFields: providerIdentity.providerFields,
+					synthesizedProviderKey: providerIdentity.key,
+				}
+			: {}),
 		scoreComponents: buildCandidateBaseScore({
 			lexical: match.lexicalScore,
 			...(match.vectorRank != null ? { vector: match.vectorScore } : {}),
