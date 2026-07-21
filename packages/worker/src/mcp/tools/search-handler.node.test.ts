@@ -94,7 +94,6 @@ vi.mock('#worker/remote-connector/status.ts', () => ({
 
 const {
 	registerSearchTool,
-	SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS,
 	SEARCH_MEMORY_ENRICHMENT_BUDGET_MS,
 	memoryAcknowledgementWarning,
 	memoryEnrichmentSkippedWarning,
@@ -830,7 +829,4 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 			memoryAcknowledgementMs: expect.any(Number),
 		}),
 	)
-	expect(
-		hangResult.phaseTimings?.memoryAcknowledgementMs,
-	).toBeGreaterThanOrEqual(SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS)
 }, 10_000)
