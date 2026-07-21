@@ -44,8 +44,16 @@ class McpClientHubBase extends DurableObject<Env> {
 				server_options TEXT
 			)
 		`)
+		// createAuthProvider mirrors Agent.addMcpServer so restore + OAuth
+		// callback paths rebuild a DO-storage-backed provider after hibernation.
 		this.manager = new MCPClientManager(mcpClientName, mcpClientVersion, {
 			storage: state.storage,
+			createAuthProvider: (callbackUrl) =>
+				new DurableObjectOAuthClientProvider(
+					state.storage,
+					mcpClientName,
+					callbackUrl,
+				),
 		})
 	}
 
