@@ -1339,6 +1339,7 @@ async function resolvePackageAppBundledArtifact(input: {
 			userId: input.userId,
 			sourceFiles,
 			entryPoint: appEntry,
+			rootPackageId: input.savedPackage.id,
 			cacheKey: inMemoryCacheKey,
 		})
 	}
@@ -1369,6 +1370,7 @@ async function resolvePackageAppBundledArtifact(input: {
 		userId: input.userId,
 		sourceFiles,
 		entryPoint: appEntry,
+		rootPackageId: input.savedPackage.id,
 		cacheKey: inMemoryCacheKey,
 	})
 	const persistableSource = await resolvePersistablePackageSource({
@@ -1450,7 +1452,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		sourceFiles: input.sourceFiles,
 	})
 	const mainModule = 'package-app-entry.js'
-	const hydratedModules = await hydrateKodyRuntimeModules({
+	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,

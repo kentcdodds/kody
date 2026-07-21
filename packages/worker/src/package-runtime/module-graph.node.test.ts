@@ -44,9 +44,13 @@ vi.mock('./published-bundle-artifacts.ts', async () => {
 const {
 	buildKodyAppBundle,
 	buildKodyModuleBundle,
+	buildPackageRuntimeModulePath,
+	createPackageRuntimeModuleSource,
 	createPublishedPackageAppBundleCacheKey,
 	createRuntimeModuleSource,
 	hydrateKodyRuntimeModules,
+	parsePackageRuntimeModulePathPackageId,
+	refreshKodyRuntimeModules,
 } = await import('./module-graph.ts')
 
 function createBundleResult(suffix: string) {
@@ -237,7 +241,7 @@ throw new Error('unhydrated ${specifier}');
 	})
 
 	const specifier = 'kody:@kentcdodds/example-package/value'
-	const hydratedModules = await hydrateKodyRuntimeModules({
+	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
 		env: {
 			APP_DB: {},
 			REPO_SESSION: {},
@@ -363,12 +367,14 @@ test('buildKodyModuleBundle keeps deterministic dependency ordering after parall
 			publishedCommit: 'commit-source-alpha',
 			kodyId: 'alpha-package',
 			packageName: '@kentcdodds/alpha-package',
+			packageId: 'pkg-1',
 		},
 		{
 			sourceId: 'source-zebra',
 			publishedCommit: 'commit-source-zebra',
 			kodyId: 'zebra-package',
 			packageName: '@kentcdodds/zebra-package',
+			packageId: 'pkg-1',
 		},
 	])
 })
@@ -926,6 +932,7 @@ test('buildKodyModuleBundle prefers published importable export artifacts for sa
 			publishedCommit: 'commit-1',
 			kodyId: 'example-package',
 			packageName: '@kentcdodds/example-package',
+			packageId: 'pkg-1',
 		},
 	])
 	const firstCall = mockModule.createWorker.mock.calls[0]?.[0] as
@@ -1109,7 +1116,7 @@ test('buildKodyModuleBundle imports published importable defaults as callable de
 test('hydrateKodyRuntimeModules replaces stale persisted kody runtime modules', async () => {
 	const staleRuntimeSource =
 		'export const kody = { stale: true }; export default { kody };'
-	const hydratedModules = await hydrateKodyRuntimeModules({
+	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
 		env: {
 			APP_DB: {},
 			REPO_SESSION: {},
@@ -1196,7 +1203,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		await staleModuleGraph.cleanup()
 	}
 
-	const hydratedModules = await hydrateKodyRuntimeModules({
+	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
 		env: {
 			APP_DB: {},
 			REPO_SESSION: {},
@@ -1431,6 +1438,7 @@ export default async function run() {
 			publishedCommit: 'commit-1',
 			kodyId: 'example-package',
 			packageName: '@kentcdodds/example-package',
+			packageId: 'pkg-1',
 		},
 	])
 	expect(bundle.dynamicDependencies).toEqual([
@@ -1441,7 +1449,7 @@ export default async function run() {
 		},
 	])
 	packageVersion = 'current'
-	const hydratedModules = await hydrateKodyRuntimeModules({
+	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
 		env: {
 			APP_DB: {},
 			REPO_SESSION: {},
@@ -1509,7 +1517,7 @@ export default async function run() {
 		},
 		entryPoint: 'index.js',
 	})
-	const hydratedModules = await hydrateKodyRuntimeModules({
+	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
 		env: {
 			APP_DB: {},
 			REPO_SESSION: {},
@@ -1664,7 +1672,7 @@ throw new Error('unhydrated ${specifier}');
 		}),
 	)
 
-	const hydratedModules = await hydrateKodyRuntimeModules({
+	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
 		env: {
 			APP_DB: {},
 			REPO_SESSION: {},
@@ -1837,7 +1845,7 @@ export default async function launchAgent() {
 		})
 
 		expect(bundle.modules).not.toHaveProperty('.__kody_virtual__/runtime.js')
-		const hydratedModules = await hydrateKodyRuntimeModules({
+		const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
 			env: {
 				APP_DB: {},
 				REPO_SESSION: {},
@@ -2178,6 +2186,7 @@ test('buildKodyModuleBundle resolves transitive imports back to the root package
 				publishedCommit: 'journaling-commit',
 				kodyId: 'journaling',
 				packageName: '@kentcdodds/journaling',
+				packageId: 'pkg-1',
 			},
 		],
 	})
@@ -2259,12 +2268,14 @@ test('buildKodyModuleBundle keeps dependencies for scoped packages with the same
 			publishedCommit: 'commit-source-alice',
 			kodyId: 'shared-package',
 			packageName: '@alice/shared-package',
+			packageId: 'pkg-1',
 		},
 		{
 			sourceId: 'source-bob',
 			publishedCommit: 'commit-source-bob',
 			kodyId: 'shared-package',
 			packageName: '@bob/shared-package',
+			packageId: 'pkg-1',
 		},
 	])
 })
@@ -2393,6 +2404,7 @@ test('buildKodyModuleBundle records only entrypoint-reachable kody package depen
 			publishedCommit: 'commit-source-reachable',
 			kodyId: 'reachable-package',
 			packageName: '@alice/reachable-package',
+			packageId: 'pkg-reachable',
 		},
 	])
 })
@@ -2492,6 +2504,7 @@ test('buildKodyModuleBundle follows self kody imports when recording reachable d
 			publishedCommit: 'commit-reachable',
 			kodyId: 'reachable-package',
 			packageName: '@alice/reachable-package',
+			packageId: 'pkg-reachable',
 		},
 	])
 	const workerInput = mockModule.createWorker.mock.calls[0]?.[0] as
@@ -2771,4 +2784,241 @@ export default {
 	expect(dynamicRewriteCall?.files?.['.__kody_root__/app.ts']).not.toContain(
 		"import('kody:runtime')",
 	)
+})
+
+test('package runtime module paths round-trip stamped package ids', () => {
+	const packageId = crypto.randomUUID()
+	const modulePath = buildPackageRuntimeModulePath(packageId)
+	expect(modulePath).toMatch(
+		/^\.__kody_virtual__\/package-runtime\/[0-9a-f]+\.js$/,
+	)
+	expect(parsePackageRuntimeModulePathPackageId(modulePath)).toBe(packageId)
+	// Artifact installs nest the stamped module under graph prefixes; the id
+	// must still parse out.
+	expect(
+		parsePackageRuntimeModulePathPackageId(
+			`.__kody_packages__/@kentcdodds/example-package/.__published_bundle__/2e/${modulePath}`,
+		),
+	).toBe(packageId)
+	expect(
+		parsePackageRuntimeModulePathPackageId('.__kody_virtual__/runtime.js'),
+	).toBeNull()
+	expect(parsePackageRuntimeModulePathPackageId('src/index.js')).toBeNull()
+	expect(
+		parsePackageRuntimeModulePathPackageId(
+			'.__kody_virtual__/package-runtime/not-hex.js',
+		),
+	).toBeNull()
+
+	const moduleSource = createPackageRuntimeModuleSource(packageId)
+	expect(moduleSource).toContain(JSON.stringify(packageId))
+	expect(moduleSource).toContain('__kodyCreatePackageBoundStorage')
+	expect(moduleSource).toContain('../runtime.js')
+})
+
+test('buildKodyModuleBundle stamps root modules with a per-package runtime module when rootPackageId is provided', async () => {
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(createBundleResult('stamped-root'))
+	const rootPackageId = crypto.randomUUID()
+
+	await buildKodyModuleBundle({
+		...createModuleBundleInput({
+			code: [
+				"import { packageStorage } from 'kody:runtime'",
+				'export default async function run() {',
+				'\treturn packageStorage().id',
+				'}',
+			].join('\n'),
+		}),
+		rootPackageId,
+	})
+
+	const stampedCall = mockModule.createWorker.mock.calls[0]?.[0] as
+		| { files?: Record<string, string> }
+		| undefined
+	const stampedModulePath = buildPackageRuntimeModulePath(rootPackageId)
+	expect(stampedCall?.files?.['.__kody_root__/entry.ts']).toContain(
+		`../${stampedModulePath}`,
+	)
+	expect(stampedCall?.files?.['.__kody_root__/entry.ts']).not.toContain(
+		"'kody:runtime'",
+	)
+	expect(stampedCall?.files?.[stampedModulePath]).toBe(
+		createPackageRuntimeModuleSource(rootPackageId),
+	)
+
+	// Without root provenance the same source keeps the shared runtime module
+	// (whose packageStorage falls back to the run's own package context).
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('unstamped-root'),
+	)
+	await buildKodyModuleBundle(
+		createModuleBundleInput({
+			code: [
+				"import { packageStorage } from 'kody:runtime'",
+				'export default async function run() {',
+				'\treturn packageStorage().id',
+				'}',
+			].join('\n'),
+		}),
+	)
+	const unstampedCall = mockModule.createWorker.mock.calls[0]?.[0] as
+		| { files?: Record<string, string> }
+		| undefined
+	expect(unstampedCall?.files?.['.__kody_root__/entry.ts']).toContain(
+		'../.__kody_virtual__/runtime.js',
+	)
+	expect(unstampedCall?.files?.['.__kody_root__/entry.ts']).not.toContain(
+		'package-runtime/',
+	)
+})
+
+test('statically imported saved package sources get stamped with their own package id', async () => {
+	mockModule.createWorker.mockReset()
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('stamped-dependency'),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		...createLoadedPackageSource(),
+		files: {
+			'index.js': 'export const value = "ok"',
+			'follow-up-on-pr-agent.js': [
+				"import { packageStorage } from 'kody:runtime'",
+				'export default async function followUp() {',
+				'\treturn packageStorage().id',
+				'}',
+			].join('\n'),
+		},
+	})
+
+	await buildKodyModuleBundle(
+		createModuleBundleInput({
+			code: [
+				"import followUp from 'kody:@kentcdodds/example-package/follow-up-on-pr-agent'",
+				"import { packageStorage } from 'kody:runtime'",
+				'export default async function run() {',
+				'\treturn { dependency: await followUp(), root: packageStorage().id }',
+				'}',
+			].join('\n'),
+		}),
+	)
+
+	const call = mockModule.createWorker.mock.calls[0]?.[0] as
+		| { files?: Record<string, string> }
+		| undefined
+	// The dependency module (saved package id pkg-1) is stamped…
+	const dependencyModulePath =
+		'.__kody_packages__/@kentcdodds/example-package/follow-up-on-pr-agent.js'
+	const stampedModulePath = buildPackageRuntimeModulePath('pkg-1')
+	expect(call?.files?.[dependencyModulePath]).toContain(
+		`../../../${stampedModulePath}`,
+	)
+	expect(call?.files?.[stampedModulePath]).toBe(
+		createPackageRuntimeModuleSource('pkg-1'),
+	)
+	// …while the unprovenanced root entry keeps the shared runtime module.
+	expect(call?.files?.['.__kody_root__/entry.ts']).toContain(
+		'../.__kody_virtual__/runtime.js',
+	)
+	expect(call?.files?.['.__kody_root__/entry.ts']).not.toContain(
+		'package-runtime/',
+	)
+})
+
+test('refreshKodyRuntimeModules regenerates stale per-package runtime modules and their sibling shared runtime', () => {
+	const packageId = crypto.randomUUID()
+	const nestedPrefix =
+		'.__kody_packages__/@kentcdodds/example-package/.__published_bundle__/2e'
+	const stampedModulePath = `${nestedPrefix}/${buildPackageRuntimeModulePath(packageId)}`
+	const refreshed = refreshKodyRuntimeModules({
+		'entry.js': [
+			`import { packageStorage } from './${stampedModulePath}'`,
+			'export default async function run() {',
+			'\treturn packageStorage().id',
+			'}',
+		].join('\n'),
+		[stampedModulePath]: 'export const packageStorage = () => "stale"',
+	})
+	expect(refreshed[stampedModulePath]).toBe(
+		createPackageRuntimeModuleSource(packageId),
+	)
+	// The regenerated stamped module imports its sibling shared runtime; the
+	// refresh must materialize that sibling even when nothing referenced it.
+	expect(refreshed[`${nestedPrefix}/.__kody_virtual__/runtime.js`]).toBe(
+		createRuntimeModuleSource(),
+	)
+})
+
+test('packageStorage resolves the stamped package id, falls back to the run package context, and rejects unprovenanced calls', async () => {
+	const packageId = crypto.randomUUID()
+	const stampedModulePath = buildPackageRuntimeModulePath(packageId)
+	const moduleGraph = await createTemporaryModuleGraph({
+		'.__kody_virtual__/runtime.js': createRuntimeModuleSource(),
+		[stampedModulePath]: createPackageRuntimeModuleSource(packageId),
+		'stamped-entry.js': [
+			`import runtimeDefault, { packageStorage } from './${stampedModulePath}'`,
+			'export default async function main() {',
+			'\treturn {',
+			'\t\tnamed: packageStorage().id,',
+			'\t\tviaDefault: runtimeDefault.packageStorage().id,',
+			'\t}',
+			'}',
+		].join('\n'),
+		'unstamped-entry.js': [
+			"import { packageStorage } from './.__kody_virtual__/runtime.js'",
+			'export default async function main() {',
+			'\treturn packageStorage().id',
+			'}',
+		].join('\n'),
+	})
+	try {
+		const runtimeModule = (await moduleGraph.importModule(
+			'.__kody_virtual__/runtime.js',
+			{ cacheBust: false },
+		)) as RuntimeModule
+		const runEntry = async (
+			entryPath: string,
+			runtime: Record<string, unknown>,
+		) =>
+			await runtimeModule.__kodyRunInRuntime(runtime, async () => {
+				const entry = (await moduleGraph.importModule(entryPath, {
+					cacheBust: false,
+				})) as { default: () => Promise<unknown> }
+				return await entry.default()
+			})
+		const boundRuntime = {
+			__kodyPackageStorage: (boundPackageId: string) => ({
+				id: `package:${boundPackageId}`,
+			}),
+			packageContext: { packageId: 'pkg-context', kodyId: 'context' },
+		}
+
+		// Stamped modules use their bundle-time identity even when the run
+		// belongs to a different package.
+		await expect(runEntry('stamped-entry.js', boundRuntime)).resolves.toEqual({
+			named: `package:${packageId}`,
+			viaDefault: `package:${packageId}`,
+		})
+		// Unstamped modules fall back to the run's own package context.
+		await expect(runEntry('unstamped-entry.js', boundRuntime)).resolves.toBe(
+			'package:pkg-context',
+		)
+		// No provenance at all: a clear, actionable error.
+		await expect(
+			runEntry('unstamped-entry.js', {
+				__kodyPackageStorage: boundRuntime.__kodyPackageStorage,
+			}),
+		).rejects.toThrow('packageStorage() requires package provenance')
+		// Contexts that never bind the factory (no authenticated user) fail
+		// with the availability message instead of a bare TypeError.
+		await expect(
+			runEntry('stamped-entry.js', { packageContext: null }),
+		).rejects.toThrow('packageStorage() is not available')
+	} finally {
+		await moduleGraph.cleanup()
+	}
 })

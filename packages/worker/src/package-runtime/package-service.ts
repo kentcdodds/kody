@@ -624,6 +624,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					userId: binding.userId,
 					sourceFiles: runtime.loaded.packageSource.files,
 					entryPoint: runtime.loaded.serviceEntry,
+					rootPackageId: runtime.packageContext.packageId,
 				})
 			})())
 		const callerContext = createMcpCallerContext({
@@ -669,6 +670,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			{
 				mainModule: bundle.mainModule,
 				modules: bundle.modules,
+				dependencies: bundle.dependencies,
 			},
 			undefined,
 			{

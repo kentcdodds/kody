@@ -100,6 +100,27 @@ The top-level saved identity is the package.
   implementation. Execution loaders hydrate the deployed host runtime module
   into every referenced `.__kody_virtual__/runtime.js` path, including nested
   static dependency artifacts and package-app workers.
+- `packageStorage()` identity is stamped at bundle time. Modules that originate
+  from a saved package (the root source of a package build via `rootPackageId`,
+  and statically imported package sources) get their `kody:runtime` import
+  rewritten to a per-package virtual runtime module,
+  `.__kody_virtual__/package-runtime/<hex(packageId)>.js`, which re-exports the
+  shared runtime and overrides `packageStorage` with a variant that closes over
+  the package's immutable id. The closure survives esbuild inlining, so
+  per-module identity holds even after the graph collapses into one module.
+  Hydration regenerates per-package runtime modules from the id encoded in the
+  path, exactly like the shared runtime module.
+- The stamp routes identity but is not the security boundary. At execution,
+  `packageStorage()` bucket access is granted only from host-controlled
+  provenance metadata: the run's own package context, the `packageId` entries
+  recorded in the bundle's static dependency metadata, and published artifacts
+  the host installs for literal dynamic package imports during hydration.
+  Sandbox-supplied strings never extend the grant set, so hand-written source
+  claiming an arbitrary package id is rejected (`packageId` on
+  `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
+  `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
+  `#worker/storage-runner.ts`). Cross-user access stays structurally impossible
+  because storage runner names are keyed by the calling user's id.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.

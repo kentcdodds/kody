@@ -58,6 +58,7 @@ import {
 	getEmailMessageById,
 	getEmailMessageWithAttachmentsById,
 } from '#worker/email/repo.ts'
+import { buildPackageStorageId } from '#worker/storage-runner.ts'
 import {
 	getPackageInvocationByKey,
 	insertPackageInvocationRow,
@@ -218,7 +219,9 @@ function parsePackageInvokeInput(
 }
 
 function buildPackageInvocationStorageId(packageId: string) {
-	return `package:${encodeURIComponent(packageId)}`
+	// Shared with packageStorage() so a package's own runtime and foreign
+	// bundles that statically import it reach the same bucket.
+	return buildPackageStorageId(packageId)
 }
 
 function createRepoContext(source: EntitySourceRow) {
@@ -637,6 +640,7 @@ async function ensureModuleArtifact(input: {
 		userId: input.userId,
 		sourceFiles: packageSource.files,
 		entryPoint: resolution.entryPoint,
+		rootPackageId: input.savedPackage.id,
 	})
 	await persistPublishedBundleArtifact({
 		env: input.env,
@@ -1096,6 +1100,7 @@ async function invokeSavedPackageModule(input: {
 			{
 				mainModule: artifact.mainModule,
 				modules: artifact.modules,
+				dependencies: artifact.dependencies,
 			},
 			input.params,
 			{

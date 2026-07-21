@@ -215,10 +215,12 @@ token material.
 
 Static package imports from ad hoc MCP `execute` code, such as
 `kody:@scope/package/export`, do not get a package runtime context. They run as
-library/snapshot imports in the execute caller's runtime. Use
-`packages.invokeChecked` from execute when you need to enter a saved package as
-that package so it receives `packageContext`, package-owned storage, package
-secrets, and its own `packages` helper.
+library/snapshot imports in the execute caller's runtime, where
+`packageStorage()` still reaches the declaring package's own storage bucket (see
+[Package storage](#package-storage)). Use `packages.invokeChecked` from execute
+when you need to enter a saved package as that package so it receives
+`packageContext`, package-owned storage, package secrets, and its own `packages`
+helper.
 
 If `idempotencyKey` is omitted, Kody generates one. In package invocations that
 already have a parent idempotency key, the generated key is deterministic for
@@ -231,6 +233,55 @@ For an event-dispatch package, subscriber dispatch should prefer the dynamic
 shape above over static imports such as
 `kody:@scope/event-subscriber/handle-event`, using the source event id as the
 explicit `idempotencyKey` when available.
+
+## Package storage
+
+Every saved package owns one durable storage bucket per user, keyed by the
+package's immutable id. Package code has two ways to reach durable storage from
+`kody:runtime`, plus one way to reach another package's behavior:
+
+- Ambient `storage` is bound by the execution context. In a package's own
+  runtime (invocations, jobs, services, subscriptions, apps) it is the package's
+  own bucket; in ad hoc `execute` it is the bucket for the call's `storageId`,
+  or `undefined` when the call binds none.
+- `packageStorage()` always returns the declaring package's own bucket,
+  regardless of where the code runs. When saved-package code is statically
+  imported into an ad hoc `execute` call or into another package, each module's
+  `packageStorage()` still reads and writes the bucket of the package that
+  module came from, writable, under the calling user's account. In the package's
+  own runtime, `packageStorage()` and ambient `storage` are the same bucket.
+- `packages.invokeChecked({ kodyId, exportName, params })` enters the target
+  package's own runtime, where that package gets its full context: ambient
+  `storage`, `packageContext`, and package secrets.
+
+```ts
+import { packageStorage } from 'kody:runtime'
+
+export default async function listSkills() {
+	const bucket = packageStorage()
+	const result = await bucket.sql('select name from skills order by name asc')
+	return result.rows.map((row) => row.name)
+}
+```
+
+`packageStorage()` identity comes from the bundler, not from source code: the
+publish pipeline stamps each module with the saved package it originated from,
+and execution grants bucket access only from that recorded provenance — the
+running package itself and the packages the bundle statically imported.
+Hand-written code cannot claim another package's id to read its bucket. Two
+consequences:
+
+- Inline `execute` code has no package provenance, so `packageStorage()` throws
+  an actionable error there. Bind a `storageId` and use ambient `storage`, or
+  call the owning package's export via `packages.invokeChecked`.
+- Provenance grants cover directly imported packages. For data owned by a
+  package that is not the running package and not statically imported by the
+  bundle, use `packages.invokeChecked` so its own runtime does the reading.
+
+Choose ambient `storage` for caller-owned or session data, `packageStorage()`
+for package-owned data that must stay reachable when the package's code is
+imported as a library, and `packages.invokeChecked` when the other package's
+logic (not just its data) should run.
 
 ## Package apps
 

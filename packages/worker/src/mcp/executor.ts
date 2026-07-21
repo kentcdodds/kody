@@ -1065,6 +1065,7 @@ export function getExecutionErrorDetails(
 const kodyRuntimeExportNames = new Set([
 	'kody',
 	'storage',
+	'packageStorage',
 	'refreshAccessToken',
 	'createAuthenticatedFetch',
 	'secretHeaders',
@@ -1088,7 +1089,7 @@ const kodyRuntimeExportNames = new Set([
  */
 const unboundRuntimeHelperNextSteps: Record<string, string> = {
 	storage:
-		"`storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a storage bucket, or, if this code was imported from a saved package that owns its data, invoke that package's export dynamically (for example `packages.invokeChecked({ kodyId, exportName, params })`) so it runs in the package's own runtime context with the package's storage. Code that must also run without storage can guard with `if (storage) { ... }`.",
+		"`storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a storage bucket, or, if this code was imported from a saved package that owns its data, call `packageStorage()` from 'kody:runtime' inside that package's module (it always reaches the declaring package's own bucket, even when statically imported into another context) or invoke that package's export dynamically (for example `packages.invokeChecked({ kodyId, exportName, params })`) so it runs in the package's own runtime context with the package's storage. Code that must also run without storage can guard with `if (storage) { ... }`.",
 	packages:
 		'`packages` is bound for authenticated ad hoc execute calls and saved-package runtime contexts; retry the call as an authenticated user, or guard with `if (packages) { ... }` where dynamic package invocation is optional.',
 	events:

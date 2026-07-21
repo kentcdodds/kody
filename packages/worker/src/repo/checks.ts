@@ -402,6 +402,7 @@ declare module "kody:runtime" {
 			? 'KodyStorageRuntime'
 			: 'KodyStorageRuntime | undefined'
 	};
+  export function packageStorage(): KodyStorageRuntime;
   export const email: KodyEmailRuntime;
   export const workflows: KodyWorkflowsRuntime;
   export const events: KodyEventsRuntime;

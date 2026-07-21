@@ -1695,6 +1695,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					userId: input.userId,
 					sourceFiles,
 					entryPoint,
+					rootPackageId: savedPackage.id,
 					cacheKey: null,
 				}),
 			buildModuleBundle: async ({ entryPoint }) =>
@@ -1704,6 +1705,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					userId: input.userId,
 					sourceFiles,
 					entryPoint,
+					rootPackageId: savedPackage.id,
 				}),
 			buildImportableModuleBundle: async ({ entryPoint }) =>
 				await buildKodyImportableModuleBundle({
@@ -1712,6 +1714,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					userId: input.userId,
 					sourceFiles,
 					entryPoint,
+					rootPackageId: savedPackage.id,
 				}),
 		})
 		return {

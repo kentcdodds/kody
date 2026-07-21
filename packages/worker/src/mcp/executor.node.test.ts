@@ -934,6 +934,11 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	expect(
 		getExecutionErrorDetails(new Error(unboundStorageMessage))?.nextStep,
 	).toContain('packages.invokeChecked')
+	// Package-provenanced modules have a better remedy than rebinding the
+	// caller's storage: their own packageStorage().
+	expect(
+		getExecutionErrorDetails(new Error(unboundStorageMessage))?.nextStep,
+	).toContain('packageStorage()')
 	// Wrapped transports prefix the message (for example package invocation
 	// responses); parsing stays prefix-tolerant.
 	expect(

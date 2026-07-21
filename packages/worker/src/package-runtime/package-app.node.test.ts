@@ -318,7 +318,10 @@ function resetPackageAppRuntimeMocks() {
 	packageAppRuntimeMock.assertPublishedSourceCanRebuildWithoutInstallingDeps.mockReset()
 	packageAppRuntimeMock.getEntitySourceById.mockReset()
 	packageAppRuntimeMock.hydrateKodyRuntimeModules.mockImplementation(
-		async ({ modules }: { modules: Record<string, string> }) => modules,
+		async ({ modules }: { modules: Record<string, string> }) => ({
+			modules,
+			dynamicDependencyPackageIds: [],
+		}),
 	)
 }
 

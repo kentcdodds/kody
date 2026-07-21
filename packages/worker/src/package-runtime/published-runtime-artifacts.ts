@@ -21,6 +21,16 @@ export type BundleArtifactDependency = {
 	publishedCommit: string
 	kodyId: string
 	packageName?: string
+	/**
+	 * Immutable saved-package UUID of the dependency, recorded at bundle time
+	 * from the resolved saved-package row. This is bundler-controlled
+	 * provenance: `packageStorage()` grants (see `createPackageStorageKodyTools`
+	 * in `#worker/storage-runner.ts`) are derived from it, never from strings in
+	 * module source. Absent on artifacts persisted before the field existed;
+	 * those bundles carry no package-runtime stamps either, so nothing can
+	 * claim the missing grant.
+	 */
+	packageId?: string
 }
 
 export type BundleArtifactDynamicDependency = {

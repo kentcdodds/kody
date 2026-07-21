@@ -47,6 +47,7 @@ import {
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 
 const runtimeModulePath = '.__kody_virtual__/runtime.js'
+const packageRuntimeModulePrefix = '.__kody_virtual__/package-runtime'
 const packageManifestPath = 'package.json'
 const wranglerConfigPaths = ['wrangler.toml', 'wrangler.json', 'wrangler.jsonc']
 const rootSourcePrefix = '.__kody_root__'
@@ -115,6 +116,14 @@ type RewriteState = {
 		manifest: AuthoredPackageJson
 		prefix: string
 	} | null
+	/**
+	 * Saved-package UUID of the root source when the graph is being built for
+	 * a saved package's own module (publish/invocation builds). Root modules
+	 * are then stamped with per-package runtime modules just like statically
+	 * imported dependency modules, so the stamp survives into published
+	 * artifacts that later get composed into foreign bundles.
+	 */
+	rootPackageId: string | null
 	proxies: Map<string, string>
 	dynamicPackageImports: Map<string, string>
 	packages: Map<
@@ -329,6 +338,45 @@ function __kodyOptionalRuntimeFunctionExport(exportName) {
 	return __kodyCreateRuntimeFunctionExport(exportName);
 }
 
+function __kodyResolvePackageStorage(packageId) {
+	const currentRuntime = __kodyRuntimeStorage.getStore();
+	const factory = currentRuntime?.__kodyPackageStorage;
+	if (typeof factory !== 'function') {
+		throw new Error(
+			'packageStorage() is not available in this execution context. It is bound for bundled module runs (execute calls and saved-package invocations) with an authenticated user.',
+		);
+	}
+	return factory(packageId);
+}
+
+// Factory for the bundler's per-package virtual runtime modules: each module
+// that originates from a saved package imports 'kody:runtime' through a
+// module whose packageStorage closes over that package's immutable id (see
+// createPackageRuntimeModuleSource). The closure survives bundler inlining,
+// and the host independently validates the id against the run's provenance
+// grants, so this stamp routes identity without being a security boundary.
+export function __kodyCreatePackageBoundStorage(packageId) {
+	return function packageStorage() {
+		return __kodyResolvePackageStorage(packageId);
+	};
+}
+
+// Unstamped fallback: modules without bundler-recorded package provenance
+// (ad hoc execute code, artifacts published before stamping existed) can only
+// reach the storage of the package the run itself belongs to.
+export function packageStorage() {
+	const currentRuntime = __kodyRuntimeStorage.getStore();
+	const declaringPackageId = currentRuntime?.packageContext?.packageId;
+	if (typeof declaringPackageId !== 'string' || declaringPackageId === '') {
+		throw new Error(
+			'packageStorage() requires package provenance: this module was not bundled from a saved package and the run has no package context. ' +
+				'For ad hoc execute code, bind a storageId to the execute call and use the ambient storage helper, ' +
+				"or call the owning package's export via packages.invokeChecked({ kodyId, exportName, params }).",
+		);
+	}
+	return __kodyResolvePackageStorage(declaringPackageId);
+}
+
 // \`kody\` keeps its preload late-binding (imported before any store exists)
 // and additionally stays late-bound for in-run evaluations, so reused worker
 // isolates never pin the first run's dispatcher-backed proxy. A wrapper that
@@ -355,6 +403,7 @@ export const events = __kodyOptionalRuntimeObjectExport('events', null);
 const __kodyRuntimeNamedExports = {
 	kody,
 	storage,
+	packageStorage,
 	refreshAccessToken,
 	createAuthenticatedFetch,
 	secretHeaders,
@@ -413,6 +462,66 @@ export function isKodyRuntimeModulePath(modulePath: string) {
 	)
 }
 
+export function buildPackageRuntimeModulePath(packageId: string) {
+	// Hex-encode the id so arbitrary saved-package ids stay path-safe and the
+	// id survives a lossless round trip through the module path.
+	return `${packageRuntimeModulePrefix}/${encodePathKey(packageId)}.js`
+}
+
+/**
+ * Reads the stamped saved-package id back out of a per-package virtual
+ * runtime module path (`.__kody_virtual__/package-runtime/<hex>.js`,
+ * optionally nested under a graph or artifact prefix). Returns null for
+ * every other path.
+ */
+export function parsePackageRuntimeModulePathPackageId(modulePath: string) {
+	const normalizedPath = normalizeWorkspaceModulePath(modulePath)
+	const prefix = `${packageRuntimeModulePrefix}/`
+	const isPackageRuntimePath =
+		normalizedPath.startsWith(prefix) || normalizedPath.includes(`/${prefix}`)
+	if (!isPackageRuntimePath) return null
+	const fileName = normalizedPath.slice(normalizedPath.lastIndexOf('/') + 1)
+	if (!fileName.endsWith('.js')) return null
+	return decodePathKey(fileName.slice(0, -'.js'.length))
+}
+
+/**
+ * Virtual runtime module for one saved package: re-exports the shared
+ * runtime and overrides `packageStorage` with a variant bound to the
+ * package's immutable id. The bundler rewrites `kody:runtime` imports in
+ * modules that originate from that package to this module, so
+ * `packageStorage()` keeps resolving to the declaring package's bucket even
+ * when the module is statically imported into a foreign execution context.
+ * The id baked in here is identity routing only; the host grants access from
+ * its own provenance metadata (see `createPackageStorageKodyTools`).
+ */
+export function createPackageRuntimeModuleSource(packageId: string) {
+	// Per-package modules sit one directory below the shared runtime module
+	// (`.__kody_virtual__/package-runtime/<hex>.js` next to
+	// `.__kody_virtual__/runtime.js`), in every graph or artifact prefix.
+	const baseRuntimeSpecifier = '../runtime.js'
+	return `
+export * from ${JSON.stringify(baseRuntimeSpecifier)};
+import __kodyBaseRuntimeDefault, { __kodyCreatePackageBoundStorage } from ${JSON.stringify(
+		baseRuntimeSpecifier,
+	)};
+export const packageStorage = __kodyCreatePackageBoundStorage(${JSON.stringify(
+		packageId,
+	)});
+// The default export mirrors the shared runtime default but resolves
+// packageStorage to this package's bound variant.
+export default new Proxy(__kodyBaseRuntimeDefault, {
+	get(target, property, receiver) {
+		if (property === 'packageStorage') return packageStorage;
+		return Reflect.get(target, property, receiver);
+	},
+	has(target, property) {
+		return property === 'packageStorage' || Reflect.has(target, property);
+	},
+});
+`.trim()
+}
+
 function collectReferencedRuntimeModulePaths(
 	modules: WorkerLoaderModules,
 	options?: {
@@ -438,6 +547,33 @@ function collectReferencedRuntimeModulePaths(
 	return runtimePaths
 }
 
+function collectReferencedPackageRuntimeModulePaths(
+	modules: WorkerLoaderModules,
+) {
+	const packageRuntimePaths = new Map<string, string>()
+	const remember = (modulePath: string) => {
+		const packageId = parsePackageRuntimeModulePathPackageId(modulePath)
+		if (packageId != null) {
+			packageRuntimePaths.set(
+				normalizeWorkspaceModulePath(modulePath),
+				packageId,
+			)
+		}
+	}
+	for (const modulePath of Object.keys(modules)) {
+		remember(modulePath)
+	}
+	for (const [modulePath, source] of iterateModuleSourceTexts(modules)) {
+		for (const node of collectLiteralImportNodes(source)) {
+			const resolvedPath = resolveRelativeModulePath(modulePath, node.specifier)
+			if (resolvedPath) {
+				remember(resolvedPath)
+			}
+		}
+	}
+	return packageRuntimePaths
+}
+
 export function refreshKodyRuntimeModules(
 	modules: WorkerLoaderModules,
 	options?: {
@@ -451,13 +587,33 @@ export function refreshKodyRuntimeModules(
 	)) {
 		refreshed[modulePath] = createRuntimeModuleSource()
 	}
+	for (const [
+		modulePath,
+		packageId,
+	] of collectReferencedPackageRuntimeModulePaths(modules)) {
+		refreshed[modulePath] = createPackageRuntimeModuleSource(packageId)
+		// The regenerated per-package module imports its sibling shared runtime
+		// module; make sure that target exists even when nothing else in the
+		// scanned modules referenced it.
+		const siblingRuntimePath = normalizeWorkspaceModulePath(
+			joinPath(dirname(dirname(modulePath)), 'runtime.js'),
+		)
+		refreshed[siblingRuntimePath] = createRuntimeModuleSource()
+	}
 	return refreshed
+}
+
+function isStrippableKodyRuntimeModulePath(modulePath: string) {
+	return (
+		isKodyRuntimeModulePath(modulePath) ||
+		parsePackageRuntimeModulePathPackageId(modulePath) != null
+	)
 }
 
 function stripKodyRuntimeModules(modules: WorkerLoaderModules) {
 	let stripped: WorkerLoaderModules | null = null
 	for (const modulePath of Object.keys(modules)) {
-		if (!isKodyRuntimeModulePath(modulePath)) continue
+		if (!isStrippableKodyRuntimeModulePath(modulePath)) continue
 		stripped ??= { ...modules }
 		delete stripped[modulePath]
 	}
@@ -858,6 +1014,7 @@ async function resolveDirectKodyDependenciesForEntryPoint(input: {
 				publishedCommit: loaded.source.published_commit,
 				kodyId: row.kodyId,
 				packageName: row.name,
+				packageId: row.id,
 			}
 		}),
 	)
@@ -1154,6 +1311,7 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 		userId: input.userId,
 		sourceFiles: loaded.files,
 		entryPoint,
+		rootPackageId: row.id,
 	})
 	await persistPublishedBundleArtifact({
 		env: input.env,
@@ -1227,12 +1385,23 @@ function createDynamicPackageImportArtifactKey(input: {
 	return `${input.specifier}:${input.artifact.sourceId}:${input.artifact.publishedCommit}`
 }
 
+export type HydratedKodyRuntimeModules = {
+	modules: WorkerLoaderModules
+	/**
+	 * Saved-package UUIDs of the published artifacts installed for literal
+	 * dynamic `import("kody:@...")` targets during hydration. Host-resolved
+	 * provenance (never sandbox input), so callers may extend `packageStorage`
+	 * grants with these ids alongside static bundle dependency metadata.
+	 */
+	dynamicDependencyPackageIds: Array<string>
+}
+
 export async function hydrateKodyRuntimeModules(input: {
 	env: Env
 	baseUrl: string
 	userId: string
 	modules: WorkerLoaderModules
-}): Promise<WorkerLoaderModules> {
+}): Promise<HydratedKodyRuntimeModules> {
 	const modules = refreshKodyRuntimeModules(input.modules)
 	const installedArtifacts = new Map<string, string>()
 	const resolvedArtifacts = new Map<
@@ -1296,7 +1465,20 @@ export async function hydrateKodyRuntimeModules(input: {
 			installedArtifacts.set(resolved.artifactKey, installedArtifactMainModule)
 			installedDynamicImport = true
 		}
-		if (!installedDynamicImport) return refreshKodyRuntimeModules(modules)
+		if (!installedDynamicImport) {
+			const dynamicDependencyPackageIds = [
+				...new Set(
+					[...resolvedArtifacts.values()].flatMap((resolved) => {
+						const packageId = resolved.artifact.packageContext?.packageId
+						return packageId ? [packageId] : []
+					}),
+				),
+			].sort((left, right) => left.localeCompare(right))
+			return {
+				modules: refreshKodyRuntimeModules(modules),
+				dynamicDependencyPackageIds,
+			}
+		}
 	}
 }
 
@@ -1370,6 +1552,7 @@ async function ensurePackageLoaded(
 			state,
 			source: content,
 			modulePath: targetPath,
+			sourcePackageId: row.id,
 		})
 	}
 	return entry
@@ -1506,10 +1689,23 @@ function createUniqueHelperName(source: string, baseName: string) {
 	return candidate
 }
 
+function ensurePackageRuntimeModule(state: RewriteState, packageId: string) {
+	const modulePath = buildPackageRuntimeModulePath(packageId)
+	state.files[modulePath] ??= createPackageRuntimeModuleSource(packageId)
+	return modulePath
+}
+
 async function rewriteKodyImports(input: {
 	state: RewriteState
 	source: string
 	modulePath: string
+	/**
+	 * Saved-package UUID the module's source belongs to, or null for
+	 * unprovenanced source (ad hoc execute entry code). Stamped modules get
+	 * their `kody:runtime` import rewritten to a per-package virtual runtime
+	 * module so `packageStorage()` resolves to the declaring package.
+	 */
+	sourcePackageId: string | null
 }) {
 	const importNodes = collectLiteralImportNodes(input.source)
 	const dynamicImportNodes = collectDynamicImportExpressionNodes(input.source)
@@ -1519,11 +1715,14 @@ async function rewriteKodyImports(input: {
 	const replacements: Array<RewriteReplacement> = []
 	for (const node of importNodes) {
 		if (node.specifier === 'kody:runtime') {
+			const runtimeTargetPath = input.sourcePackageId
+				? ensurePackageRuntimeModule(input.state, input.sourcePackageId)
+				: runtimeModulePath
 			replacements.push({
 				start: node.start,
 				end: node.end,
 				value: JSON.stringify(
-					createRelativeImportSpecifier(input.modulePath, runtimeModulePath),
+					createRelativeImportSpecifier(input.modulePath, runtimeTargetPath),
 				),
 			})
 			continue
@@ -1648,6 +1847,9 @@ export async function buildKodyModuleBundle(input: {
 	userId: string
 	sourceFiles: Record<string, string>
 	entryPoint: string
+	// Saved-package UUID when the root source is a saved package's own module;
+	// stamps root modules with package provenance (see RewriteState).
+	rootPackageId?: string | null
 	// Opt-in: cache createWorkerBundle by prepared-files digest (see createModuleBundleCacheKey).
 	reuseCachedBundle?: boolean
 }) {
@@ -1657,6 +1859,7 @@ export async function buildKodyModuleBundle(input: {
 		userId: input.userId,
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
+		rootPackageId: input.rootPackageId,
 	})
 	const entryPoint =
 		resolveWorkspaceSourceFilePath({
@@ -1721,6 +1924,9 @@ export async function buildKodyImportableModuleBundle(input: {
 	userId: string
 	sourceFiles: Record<string, string>
 	entryPoint: string
+	// Saved-package UUID when the root source is a saved package's own module;
+	// stamps root modules with package provenance (see RewriteState).
+	rootPackageId?: string | null
 }) {
 	const { files, packages } = await prepareKodyGraphFiles({
 		env: input.env,
@@ -1728,6 +1934,7 @@ export async function buildKodyImportableModuleBundle(input: {
 		userId: input.userId,
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
+		rootPackageId: input.rootPackageId,
 	})
 	const entryPoint =
 		resolveWorkspaceSourceFilePath({
@@ -1774,6 +1981,7 @@ async function prepareKodyGraphFiles(input: {
 	userId: string
 	sourceFiles: Record<string, string>
 	entryPoint: string
+	rootPackageId?: string | null
 }) {
 	const files: Record<string, string> = {
 		[runtimeModulePath]: createRuntimeModuleSource(),
@@ -1796,6 +2004,7 @@ async function prepareKodyGraphFiles(input: {
 		files,
 		sourceFiles: input.sourceFiles,
 		rootPackage,
+		rootPackageId: input.rootPackageId?.trim() || null,
 		proxies: new Map(),
 		dynamicPackageImports: new Map(),
 		packages: new Map(),
@@ -1827,6 +2036,7 @@ async function prepareKodyGraphFiles(input: {
 			state,
 			source: content,
 			modulePath: normalizedPath,
+			sourcePackageId: state.rootPackageId,
 		})
 	}
 	return {
@@ -1841,6 +2051,9 @@ export async function buildKodyAppBundle(input: {
 	userId: string
 	sourceFiles: Record<string, string>
 	entryPoint: string
+	// Saved-package UUID when the root source is a saved package's own module;
+	// stamps root modules with package provenance (see RewriteState).
+	rootPackageId?: string | null
 	cacheKey?: string | null
 }) {
 	const buildBundle = async () => {
@@ -1850,6 +2063,7 @@ export async function buildKodyAppBundle(input: {
 			userId: input.userId,
 			sourceFiles: input.sourceFiles,
 			entryPoint: input.entryPoint,
+			rootPackageId: input.rootPackageId,
 		})
 		const entryPoint =
 			resolveWorkspaceSourceFilePath({

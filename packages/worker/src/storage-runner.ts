@@ -573,6 +573,140 @@ export function createStorageKodyTools(input: {
 	}
 }
 
+/**
+ * Durable storage id of a saved package's own bucket. Shared by package
+ * invocations (ambient `storage` in a package's own runtime) and
+ * `packageStorage()` so both reach the same bucket for one package.
+ */
+export function buildPackageStorageId(packageId: string) {
+	return `package:${encodeURIComponent(packageId)}`
+}
+
+export function createPackageStorageAccessDeniedMessage(packageId: string) {
+	return (
+		`packageStorage() cannot access the storage of package "${packageId}" from this execution context. ` +
+		'Package storage access is granted only from bundler-recorded provenance: the running package itself and ' +
+		'the saved packages this bundle statically imported (kody:@scope/package/export). To work with another ' +
+		"package's data, call one of its exports via packages.invokeChecked({ kodyId, exportName, params })."
+	)
+}
+
+/**
+ * `kody.package_storage_*` tools backing the `packageStorage()` runtime
+ * helper. Unlike `createStorageKodyTools` (bound to one storage id for a
+ * whole run) these take a `packageId` argument per call, because one bundle
+ * can contain modules from several saved packages that each own a bucket.
+ *
+ * Security boundary: the sandbox-supplied `packageId` is honored only when
+ * it is in `grantedPackageIds`, which the host computes from
+ * bundler-controlled provenance metadata (the run's own package context and
+ * the bundle's recorded static/dynamic package dependencies). Hand-written
+ * module source claiming an arbitrary package id is rejected here even if it
+ * forges a stamped-looking call, so a malicious package cannot reach other
+ * installed packages' buckets. Cross-user access is structurally impossible:
+ * `buildStorageRunnerName` keys the durable object on this run's user id.
+ */
+export function createPackageStorageKodyTools(input: {
+	env: Env
+	userId: string
+	email?: string | null
+	grantedPackageIds: ReadonlySet<string>
+}) {
+	const createWritableStorageTools = (packageId: string) => {
+		const {
+			storage_get,
+			storage_list,
+			storage_sql,
+			storage_set,
+			storage_delete,
+			storage_clear,
+		} = createStorageKodyTools({
+			env: input.env,
+			userId: input.userId,
+			email: input.email,
+			storageId: buildPackageStorageId(packageId),
+			writable: true,
+		})
+		if (!storage_set || !storage_delete || !storage_clear) {
+			// createStorageKodyTools only omits these when writable is false.
+			throw new Error('Writable package storage tools are missing writes.')
+		}
+		return {
+			storage_get,
+			storage_list,
+			storage_sql,
+			storage_set,
+			storage_delete,
+			storage_clear,
+		}
+	}
+	const toolsByPackageId = new Map<
+		string,
+		ReturnType<typeof createWritableStorageTools>
+	>()
+	const resolveTools = (args: unknown) => {
+		const packageId =
+			typeof args === 'object' && args !== null && 'packageId' in args
+				? String((args as { packageId: unknown }).packageId ?? '').trim()
+				: ''
+		if (!packageId) {
+			throw new Error('packageStorage requires a non-empty package id.')
+		}
+		if (!input.grantedPackageIds.has(packageId)) {
+			throw new Error(createPackageStorageAccessDeniedMessage(packageId))
+		}
+		let tools = toolsByPackageId.get(packageId)
+		if (!tools) {
+			tools = createWritableStorageTools(packageId)
+			toolsByPackageId.set(packageId, tools)
+		}
+		return tools
+	}
+	return {
+		package_storage_get: async (args: unknown) =>
+			await resolveTools(args).storage_get(args),
+		package_storage_list: async (args: unknown) =>
+			await resolveTools(args).storage_list(args),
+		package_storage_sql: async (args: unknown) =>
+			await resolveTools(args).storage_sql(args),
+		package_storage_set: async (args: unknown) =>
+			await resolveTools(args).storage_set(args),
+		package_storage_delete: async (args: unknown) =>
+			await resolveTools(args).storage_delete(args),
+		package_storage_clear: async (args: unknown) =>
+			await resolveTools(args).storage_clear(),
+	}
+}
+
+/**
+ * Sandbox-side factory behind the `packageStorage()` runtime export. The
+ * virtual `kody:runtime` module resolves the declaring package id (from the
+ * bundle-time stamp or the run's own package context) and calls this factory
+ * through the AsyncLocalStorage runtime store; the host still validates the
+ * id against the run's provenance grants in `createPackageStorageKodyTools`.
+ */
+export function createPackageStorageHelperPrelude() {
+	// The interface mirrors the ambient `storage` helper but always writable;
+	// `id` mirrors buildPackageStorageId above (covered by a unit test).
+	return `
+const __kodyPackageStorage = (packageId) => ({
+  id: 'package:' + encodeURIComponent(packageId),
+  get: async (key) => (await kody.package_storage_get({ packageId, key })).value,
+  list: async (options = {}) => await kody.package_storage_list({ ...options, packageId }),
+  sql: async (query, params = []) =>
+    await kody.package_storage_sql({
+      packageId,
+      query,
+      params,
+      writable: true,
+    }),
+  set: async (key, value) => await kody.package_storage_set({ packageId, key, value }),
+  delete: async (key) => await kody.package_storage_delete({ packageId, key }),
+  clear: async () => await kody.package_storage_clear({ packageId }),
+});
+	`.trim()
+}
+
 export function createStorageHelperPrelude(input: {
 	storageId: string
 	writable: boolean

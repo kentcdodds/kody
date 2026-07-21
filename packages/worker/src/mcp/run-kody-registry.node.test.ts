@@ -2442,12 +2442,15 @@ export default async function main() {
 				'hydrateKodyRuntimeModules',
 			)
 			.mockResolvedValue({
-				'entry.js': `export default async function main() {
+				modules: {
+					'entry.js': `export default async function main() {
 	const mod = await import('kody:@scope/skills/skill-list')
 	return await mod.default({})
 }`,
-				'.__kody_dynamic__/scope/skills/skill-list.js': `import { storage } from '../../.__kody_virtual__/runtime.js'
+					'.__kody_dynamic__/scope/skills/skill-list.js': `import { storage } from '../../.__kody_virtual__/runtime.js'
 export default async () => (await storage.sql('select 1')).rows`,
+				},
+				dynamicDependencyPackageIds: [],
 			})
 		try {
 			const hydratedResult = await runBundledModuleWithRegistry(

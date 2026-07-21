@@ -184,6 +184,7 @@ async function invokeRetriever(input: {
 		{
 			mainModule: loaded.artifact.mainModule,
 			modules: loaded.artifact.modules,
+			dependencies: loaded.artifact.dependencies,
 		},
 		{
 			query: input.query,

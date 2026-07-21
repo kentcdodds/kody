@@ -71,9 +71,12 @@ import {
 	type PackageWorkflowCreateInput,
 } from '#worker/package-runtime/package-workflows.ts'
 import {
+	createPackageStorageHelperPrelude,
+	createPackageStorageKodyTools,
 	createStorageKodyTools,
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
+import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
@@ -94,6 +97,16 @@ type StorageToolOptions = {
 	userId: string
 	storageId: string
 	writable: boolean
+}
+
+type PackageStorageToolOptions = {
+	/**
+	 * Saved-package UUIDs whose buckets `packageStorage()` may reach in this
+	 * run. Must come from bundler-controlled provenance only (own package
+	 * context plus recorded bundle dependency metadata); see
+	 * `collectPackageStorageGrantIds`.
+	 */
+	grantedPackageIds: ReadonlySet<string>
 }
 
 type ServiceToolOptions = {
@@ -360,6 +373,7 @@ export async function buildKodyFns(
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
+		packageStorageTools?: PackageStorageToolOptions
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
@@ -382,6 +396,7 @@ async function buildKodyToolContext(
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
+		packageStorageTools?: PackageStorageToolOptions
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
@@ -465,6 +480,18 @@ async function buildKodyToolContext(
 			})
 		: {}
 	assertNoCapabilityCollisions(capabilityMap, storageKodyTools)
+	const packageStorageTools = options?.packageStorageTools
+	const packageStorageUserId = callerContext.user?.userId ?? ''
+	const packageStorageKodyTools: AdditionalKodyTools =
+		packageStorageTools && packageStorageUserId
+			? createPackageStorageKodyTools({
+					env,
+					userId: packageStorageUserId,
+					email: callerContext.user?.email,
+					grantedPackageIds: packageStorageTools.grantedPackageIds,
+				})
+			: {}
+	assertNoCapabilityCollisions(capabilityMap, packageStorageKodyTools)
 	const serviceTools = options?.serviceTools
 	const serviceKodyTools: AdditionalKodyTools = serviceTools
 		? {
@@ -566,6 +593,7 @@ async function buildKodyToolContext(
 		tools: {
 			...capabilityKodyTools,
 			...storageKodyTools,
+			...packageStorageKodyTools,
 			...serviceKodyTools,
 			...packageSecretKodyTools,
 			...emailKodyTools,
@@ -789,6 +817,7 @@ export async function buildKodyProvider(
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
+		packageStorageTools?: PackageStorageToolOptions
 		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
@@ -1112,6 +1141,7 @@ export async function runModuleWithRegistry(
 		{
 			mainModule: bundled.mainModule,
 			modules: bundled.modules,
+			dependencies: bundled.dependencies,
 		},
 		params,
 		{
@@ -1140,12 +1170,47 @@ async function finishPackageRuntimeRunBestEffort(
 	}
 }
 
+/**
+ * `packageStorage()` grant set for one bundled run, from bundler/host
+ * controlled provenance only: the run's own package context, the saved
+ * packages recorded in the bundle's static dependency metadata, and the
+ * published artifacts installed for literal dynamic package imports during
+ * hydration. Sandbox-supplied strings never extend this set, which is what
+ * keeps a malicious module from claiming another installed package's bucket.
+ */
+function collectPackageStorageGrantIds(input: {
+	packageContext: PackageContextOptions
+	dependencies: Array<BundleArtifactDependency>
+	dynamicDependencyPackageIds: Array<string>
+}): ReadonlySet<string> {
+	const grantedPackageIds = new Set<string>()
+	if (input.packageContext?.packageId) {
+		grantedPackageIds.add(input.packageContext.packageId)
+	}
+	for (const dependency of input.dependencies) {
+		if (dependency.packageId) {
+			grantedPackageIds.add(dependency.packageId)
+		}
+	}
+	for (const packageId of input.dynamicDependencyPackageIds) {
+		grantedPackageIds.add(packageId)
+	}
+	return grantedPackageIds
+}
+
 export async function runBundledModuleWithRegistry(
 	env: Env,
 	callerContext: McpCallerContext,
 	bundle: {
 		mainModule: string
 		modules: WorkerLoaderModules
+		/**
+		 * Bundle dependency metadata recorded at build time (static
+		 * `kody:@scope/package` imports). Used as provenance for
+		 * `packageStorage()` grants; omit it and only the run's own package
+		 * context is granted.
+		 */
+		dependencies?: Array<BundleArtifactDependency>
 	},
 	params?: Record<string, unknown>,
 	options?: {
@@ -1210,11 +1275,17 @@ export async function runBundledModuleWithRegistry(
 		// Hydration can install additional published-package sources (literal
 		// dynamic `import("kody:@...")` targets); keep a reference so error
 		// rewriting below scans the same module graph the sandbox executed.
-		const hydratedModules = await hydrateKodyRuntimeModules({
-			env,
-			baseUrl: callerContext.baseUrl,
-			userId: callerContext.user?.userId ?? '',
-			modules: bundle.modules,
+		const { modules: hydratedModules, dynamicDependencyPackageIds } =
+			await hydrateKodyRuntimeModules({
+				env,
+				baseUrl: callerContext.baseUrl,
+				userId: callerContext.user?.userId ?? '',
+				modules: bundle.modules,
+			})
+		const grantedPackageStorageIds = collectPackageStorageGrantIds({
+			packageContext: options?.packageContext ?? null,
+			dependencies: bundle.dependencies ?? [],
+			dynamicDependencyPackageIds,
 		})
 		const executor = createExecuteExecutor({
 			env,
@@ -1238,12 +1309,20 @@ export async function runBundledModuleWithRegistry(
 				callerContext,
 				packageContext: options?.packageContext ?? null,
 			})
+		// Register the package_storage_* tools whenever the run has a user, even
+		// with an empty grant set: an unauthorized packageStorage() call then
+		// fails with the structured provenance message instead of a bare
+		// missing-capability TypeError.
+		const packageStorageTools = callerContext.user?.userId
+			? { grantedPackageIds: grantedPackageStorageIds }
+			: undefined
 		const provider = await buildKodyProvider(env, callerContext, {
 			trackSecretInputValue: (value) => {
 				secretRedactor.track(value)
 			},
 			additionalTools: options?.additionalTools,
 			storageTools: options?.storageTools,
+			packageStorageTools,
 			serviceTools: options?.serviceTools,
 			packageSecretTools: options?.packageContext
 				? createPackageSecretTools({
@@ -1262,6 +1341,9 @@ export async function runBundledModuleWithRegistry(
 					storageId: options.storageTools.storageId,
 					writable: options.storageTools.writable,
 				})
+			: ''
+		const packageStorageHelperPrelude = packageStorageTools
+			? createPackageStorageHelperPrelude()
 			: ''
 		const serviceHelperPrelude = options?.serviceTools
 			? createServiceHelperPrelude()
@@ -1312,6 +1394,7 @@ export async function runBundledModuleWithRegistry(
 		const wrapped = `async () => {
 ${executeHelperPrelude ? `${executeHelperPrelude}\n` : ''}
 ${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
+${packageStorageHelperPrelude ? `${packageStorageHelperPrelude}\n` : ''}
 ${serviceHelperPrelude ? `${serviceHelperPrelude}\n` : ''}
 ${packageSecretsHelperPrelude ? `${packageSecretsHelperPrelude}\n` : ''}
 ${emailHelperPrelude ? `${emailHelperPrelude}\n` : ''}
@@ -1327,6 +1410,7 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
   const __kodyRuntime = {
     kody,
     storage: typeof storage === 'undefined' ? undefined : storage,
+    __kodyPackageStorage: typeof __kodyPackageStorage === 'undefined' ? undefined : __kodyPackageStorage,
     refreshAccessToken: typeof refreshAccessToken === 'undefined' ? undefined : refreshAccessToken,
     createAuthenticatedFetch: typeof createAuthenticatedFetch === 'undefined' ? undefined : createAuthenticatedFetch,
     secretHeaders: typeof secretHeaders === 'undefined' ? undefined : secretHeaders,

@@ -223,6 +223,7 @@ export async function refreshSavedPackageProjection(input: {
 					userId: input.userId,
 					sourceFiles: loadedFiles,
 					entryPoint,
+					rootPackageId: savedPackage.id,
 					cacheKey: null,
 				})
 			},
@@ -235,6 +236,7 @@ export async function refreshSavedPackageProjection(input: {
 					userId: input.userId,
 					sourceFiles: loadedFiles,
 					entryPoint,
+					rootPackageId: savedPackage.id,
 				})
 			},
 			buildImportableModuleBundle: async ({ entryPoint }) => {
@@ -246,6 +248,7 @@ export async function refreshSavedPackageProjection(input: {
 					userId: input.userId,
 					sourceFiles: loadedFiles,
 					entryPoint,
+					rootPackageId: savedPackage.id,
 				})
 			},
 		})

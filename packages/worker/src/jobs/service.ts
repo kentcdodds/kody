@@ -145,6 +145,7 @@ async function buildPublishedJobBundle(input: {
 	userId: string
 	sourceFiles: Record<string, string>
 	entryPoint: string
+	rootPackageId?: string | null
 }) {
 	assertPublishedSourceCanRebuildWithoutInstallingDeps({
 		sourceFiles: input.sourceFiles,
@@ -191,6 +192,7 @@ async function persistPublishedJobBundleArtifact(input: {
 		userId: input.callerContext.user.userId,
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
+		rootPackageId: input.packageContext?.packageId ?? null,
 	})
 	const artifact: PublishedBundleArtifact = {
 		version: 1,
@@ -554,6 +556,7 @@ async function executePublishedJobArtifact(input: {
 		{
 			mainModule: input.artifact.mainModule,
 			modules: input.artifact.modules,
+			dependencies: input.artifact.dependencies,
 		},
 		input.job.params,
 		{
