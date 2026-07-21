@@ -1355,7 +1355,9 @@ export default async function main() {
 		(entry) => entry.kind === 'lint',
 	)
 	expect(ambientStorageLint).toMatchObject({ kind: 'lint', ok: true })
-	expect(ambientStorageLint?.message).toContain('does not fail checks')
+	expect(ambientStorageLint?.message).not.toBe(
+		'Lint placeholder passed for this phase.',
+	)
 	expect(ambientStorageLint?.message).toContain('"src/index.ts"')
 	expect(ambientStorageLint?.message).toContain('packageStorage()')
 

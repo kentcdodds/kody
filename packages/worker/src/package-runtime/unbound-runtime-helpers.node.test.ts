@@ -19,20 +19,18 @@ const allOptionalHelperNames = new Set([
 	'events',
 ])
 
-test('findUnboundRuntimeHelperAccess matches guard-less property reads on unbound helpers', () => {
-	const modules = {
-		'entry.js': `import { storage } from 'kody:runtime'
+test('findUnboundRuntimeHelperAccess matches guard-less reads, calls, aliases, namespaces, and inlined helpers', () => {
+	expect(
+		findUnboundRuntimeHelperAccess({
+			errorMessage: "Cannot read properties of undefined (reading 'sql')",
+			modules: {
+				'entry.js': `import { storage } from 'kody:runtime'
 
 export default async function main() {
 	const result = await storage.sql('select 1')
 	return result.rows
 }`,
-	}
-
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'sql')",
-			modules,
+			},
 			unboundHelperNames: allOptionalHelperNames,
 		}),
 	).toEqual({
@@ -55,9 +53,7 @@ export default async () => await email.getMessage('m-1')`,
 		helperName: 'email',
 		reference: 'email.getMessage',
 	})
-})
 
-test('findUnboundRuntimeHelperAccess resolves rewritten runtime specifiers, aliases, and namespace imports', () => {
 	// Bundled saved-package modules import the virtual runtime module through
 	// a rewritten relative path and may alias the binding.
 	expect(
@@ -89,9 +85,7 @@ export default async () => await runtime.storage.sql('select 1')`,
 		helperName: 'storage',
 		reference: 'storage.sql',
 	})
-})
 
-test('findUnboundRuntimeHelperAccess matches inlined runtime helper declarations', () => {
 	// Real bundles inline the virtual runtime module into the entry module,
 	// so helpers are top-level declarations rather than import bindings.
 	const inlinedSource = `var storage = __kodyOptionalRuntimeObjectExport("storage", void 0);
@@ -134,9 +128,7 @@ async function main() { return (await storage.sql("select 1")).rows }`,
 			unboundHelperNames: allOptionalHelperNames,
 		}),
 	).toBeNull()
-})
 
-test('findUnboundRuntimeHelperAccess matches calls to unbound function helpers', () => {
 	expect(
 		findUnboundRuntimeHelperAccess({
 			errorMessage: 'TypeError: refreshAccessToken is not a function',

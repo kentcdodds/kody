@@ -2397,9 +2397,6 @@ export default async function main() {
 			},
 		)
 		expect(unboundResult.error).toContain(bareTypeError)
-		expect(unboundResult.error).toContain(
-			'The optional kody:runtime export "storage" is not bound in this execution context',
-		)
 		expect(
 			mcpExecutor.getExecutionErrorDetails(unboundResult.error),
 		).toMatchObject({

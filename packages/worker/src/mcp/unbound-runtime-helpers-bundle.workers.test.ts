@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
+import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 
 /**
@@ -52,8 +53,6 @@ test(
 		expect(result.error).toContain(
 			"Cannot read properties of undefined (reading 'sql')",
 		)
-		expect(result.error).toContain(
-			'The optional kody:runtime export "storage" is not bound in this execution context',
-		)
+		expect(parseUnboundRuntimeHelperMessage(result.error ?? '')).toBe('storage')
 	},
 )
