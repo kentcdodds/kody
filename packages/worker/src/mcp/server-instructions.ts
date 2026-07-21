@@ -10,9 +10,18 @@ function formatDomainInstructions(
 
 const maxRemoteConnectorDescriptionChars = 240
 
+/** Soft budget for the popular-packages hint section (names + short blurbs). */
+export const popularPackagesInstructionCharBudget = 550
+const maxPopularPackageDescriptionChars = 48
+
 export type RemoteConnectorInstructionSummary = {
 	name: string
 	domain: string
+	description?: string | null
+}
+
+export type PopularPackageInstructionSummary = {
+	kodyId: string
 	description?: string | null
 }
 
@@ -21,6 +30,15 @@ function truncateRemoteConnectorDescription(description: string) {
 		return description
 	}
 	return `${description.slice(0, maxRemoteConnectorDescriptionChars - 3).trimEnd()}...`
+}
+
+function truncatePopularPackageDescription(description: string) {
+	const trimmed = description.trim().replace(/\s+/g, ' ')
+	if (!trimmed) return ''
+	if (trimmed.length <= maxPopularPackageDescriptionChars) {
+		return trimmed
+	}
+	return `${trimmed.slice(0, maxPopularPackageDescriptionChars - 3).trimEnd()}...`
 }
 
 function formatRemoteConnectorInstructions(
@@ -40,10 +58,57 @@ ${lines.join('\n')}
 `
 }
 
+/**
+ * Compact packages-first popularity hint. Omits entirely when empty (cold
+ * start). Frames as a hint, not a whitelist; stays under a soft char budget.
+ */
+export function formatPopularPackagesInstructions(
+	packages: ReadonlyArray<PopularPackageInstructionSummary> | undefined,
+	options: { charBudget?: number } = {},
+): string {
+	if (!packages?.length) return ''
+	const charBudget = options.charBudget ?? popularPackagesInstructionCharBudget
+	const prefix = 'Often used from agents: '
+	const suffix = ' — discover others with `search`'
+	const parts: Array<string> = []
+	let used = prefix.length + suffix.length
+
+	for (const pkg of packages) {
+		const kodyId = pkg.kodyId.trim()
+		if (!kodyId) continue
+		const description = truncatePopularPackageDescription(pkg.description ?? '')
+		const part = description
+			? `\`${kodyId}\` — ${description}`
+			: `\`${kodyId}\``
+		const separatorCost = parts.length > 0 ? 2 : 0 // "; "
+		if (used + separatorCost + part.length > charBudget) {
+			if (parts.length === 0) {
+				// Always include at least the first kody id, truncated if needed.
+				const available = Math.max(8, charBudget - used)
+				parts.push(
+					part.length <= available
+						? part
+						: `${part.slice(0, available - 3)}...`,
+				)
+			}
+			break
+		}
+		used += separatorCost + part.length
+		parts.push(part)
+	}
+
+	if (parts.length === 0) return ''
+	return `
+
+${prefix}${parts.join('; ')}${suffix}
+`
+}
+
 export function buildBaseMcpServerInstructions(
 	input: {
 		domains?: ReadonlyArray<CapabilityDomainMetadata>
 		remoteConnectors?: ReadonlyArray<RemoteConnectorInstructionSummary>
+		popularPackages?: ReadonlyArray<PopularPackageInstructionSummary>
 	} = {},
 ): string {
 	const domainInstructions = formatDomainInstructions(input.domains ?? [])
@@ -70,8 +135,8 @@ Conventions:
 - Integration-backed work: before building packages, package apps, or workflows that depend on third-party auth, call \`coding_guide_get({ guide: "integration_bootstrap" })\`, confirm the required \`integration\` or \`secret\` entity exists through \`search\`, run a cheap authenticated \`execute\` smoke test, then check \`community_search\` for a trusted close package before creating one. Do not present auth-dependent work as complete until that smoke test succeeds.
 - Jobs, workflows, sessions, services, values, storage, and the other capability groups below are individual capabilities: discover them with \`search\`, whose entity detail includes each capability's exact call shape.
 - Memory writes are verify-first: run \`meta_memory_verify\` before \`meta_memory_upsert\` or \`meta_memory_delete\`.
-- User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users). Updates apply to **new** MCP sessions.
-
+- User-specific MCP instructions: \`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\` (signed-in users) are for preferences and workflow notes only — not for maintaining a package inventory (popular packages are hinted automatically when available). Updates apply to **new** MCP sessions.
+${formatPopularPackagesInstructions(input.popularPackages)}
 Kody repository (for contributors): https://github.com/kentcdodds/kody
 
 Domains (builtin capability groups)
@@ -89,6 +154,7 @@ export function buildMcpServerInstructions(
 				userOverlay?: string | null | undefined
 				domains?: ReadonlyArray<CapabilityDomainMetadata>
 				remoteConnectors?: ReadonlyArray<RemoteConnectorInstructionSummary>
+				popularPackages?: ReadonlyArray<PopularPackageInstructionSummary>
 		  },
 ): string {
 	const normalizedInput =
@@ -96,6 +162,7 @@ export function buildMcpServerInstructions(
 	const base = buildBaseMcpServerInstructions({
 		domains: normalizedInput.domains,
 		remoteConnectors: normalizedInput.remoteConnectors,
+		popularPackages: normalizedInput.popularPackages,
 	})
 	const userOverlay = normalizedInput.userOverlay
 	const trimmed = userOverlay?.trim()

@@ -47,6 +47,7 @@ import {
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { packageWorkflowInvocationSource } from '#worker/package-runtime/package-invocation-sources.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
+import { recordAgentPackageConversationUse } from '#worker/usage/agent-package-conversation-uses.ts'
 import {
 	buildPackageSubscriptionArtifactName,
 	normalizePackageSubscriptionTopic,
@@ -1529,11 +1530,14 @@ export function createExecutePackageInvokeTools(input: {
 	callerContext: ReturnType<typeof createMcpCallerContext>
 	parentRuntimeDebug?: PackageRuntimeDebugContext | null
 	packageInvokeDepth?: number
+	/** MCP execute conversation id for agent-facing popularity recording. */
+	conversationId?: string | null
 }): PackageInvokeTools {
 	return createPackageInvokeTools({
 		...input,
 		packageContext: null,
 		callerKind: 'execute',
+		conversationId: input.conversationId ?? null,
 	})
 }
 
@@ -1545,6 +1549,7 @@ function createPackageInvokeTools(input: {
 	parentRuntimeDebug?: PackageRuntimeDebugContext | null
 	packageInvokeDepth?: number
 	callerKind: 'package' | 'execute'
+	conversationId?: string | null
 }): PackageInvokeTools {
 	let autoIdempotencySequence = 0
 	const requireRuntimeCaller = (operationName: string) => {
@@ -1613,6 +1618,7 @@ function createPackageInvokeTools(input: {
 						topic: request.topic,
 					},
 					runtimeInvokeDepth: packageInvokeDepth + 1,
+					conversationId: input.conversationId ?? null,
 				})
 		if (response.status >= 200 && response.status < 400) {
 			return response.body['result']
@@ -1680,6 +1686,7 @@ async function invokePackageExportForExecuteRuntime(input: {
 	}
 	request: PackageInvocationRequest
 	runtimeInvokeDepth?: number
+	conversationId?: string | null
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -1709,6 +1716,15 @@ async function invokePackageExportForExecuteRuntime(input: {
 			code: 'package_not_found',
 			message: `Saved package "${packageIdOrKodyId}" was not found for this user.`,
 			idempotencyKey,
+		})
+	}
+	const conversationId = input.conversationId?.trim()
+	if (conversationId) {
+		// Best-effort; must not affect invoke. Conversation-unique upsert.
+		void recordAgentPackageConversationUse(input.env, {
+			userId: input.caller.userId,
+			packageId: savedPackage.id,
+			conversationId,
 		})
 	}
 	return await invokeSavedPackageModule({

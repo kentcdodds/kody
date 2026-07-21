@@ -254,6 +254,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 											env,
 											baseUrl: callerContext.baseUrl,
 											callerContext,
+											conversationId: resolvedConversationId,
 										}),
 								)
 							: undefined
@@ -275,6 +276,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 										: undefined,
 									packageInvokeTools,
 									rawFetchHostSink: rawFetchHosts.sink,
+									conversationId: resolvedConversationId,
 								},
 							)
 						} catch (cause) {

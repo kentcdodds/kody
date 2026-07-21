@@ -20,6 +20,7 @@ const repoMockModule = vi.hoisted(() => ({
 	persistPublishedBundleArtifact: vi.fn(),
 	typecheckPackageEntrypointsFromSourceFiles: vi.fn(),
 	runBundledModuleWithRegistry: vi.fn(),
+	recordAgentPackageConversationUse: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -58,6 +59,11 @@ vi.mock('#worker/repo/checks.ts', () => ({
 vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runBundledModuleWithRegistry: (...args: Array<unknown>) =>
 		repoMockModule.runBundledModuleWithRegistry(...args),
+}))
+
+vi.mock('#worker/usage/agent-package-conversation-uses.ts', () => ({
+	recordAgentPackageConversationUse: (...args: Array<unknown>) =>
+		repoMockModule.recordAgentPackageConversationUse(...args),
 }))
 
 function createDatabase(options: { failInsert?: boolean } = {}) {
@@ -1011,6 +1017,8 @@ test('execute runtime invokeChecked invokes target package with execute provenan
 		result: { handled: true, eventId: 'message-1' },
 		logs: [],
 	})
+	repoMockModule.recordAgentPackageConversationUse.mockClear()
+	repoMockModule.recordAgentPackageConversationUse.mockResolvedValue(undefined)
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://kody.dev',
 		user: {
@@ -1023,6 +1031,7 @@ test('execute runtime invokeChecked invokes target package with execute provenan
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		callerContext,
+		conversationId: 'conv-execute-1',
 	})
 
 	const result = await tools.invokeChecked({
@@ -1066,6 +1075,14 @@ test('execute runtime invokeChecked invokes target package with execute provenan
 		(runCall?.[4] as { packageInvokeTools?: unknown } | undefined)
 			?.packageInvokeTools,
 	).toBeDefined()
+	expect(repoMockModule.recordAgentPackageConversationUse).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			userId: 'user-123',
+			packageId: 'pkg-subscriber',
+			conversationId: 'conv-execute-1',
+		},
+	)
 })
 
 test('package runtime check reads target package metadata changes without republishing caller', async () => {

@@ -286,6 +286,7 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 		env: {},
 		baseUrl: 'https://example.com',
 		callerContext: expect.objectContaining(callerContext),
+		conversationId: 'conv-packages',
 	})
 	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
 		expect.anything(),
@@ -294,6 +295,7 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 		undefined,
 		expect.objectContaining({
 			packageInvokeTools,
+			conversationId: 'conv-packages',
 		}),
 	)
 
