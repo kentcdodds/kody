@@ -25,6 +25,7 @@ import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	acknowledgeToolMemories,
+	buildMemoryRetrievalQuery,
 	loadRelevantMemoriesForTool,
 	type MemoryToolSummary,
 } from '#mcp/tools/memory-tool-context.ts'
@@ -1919,18 +1920,18 @@ export function launchSearchMemoryEnrichment(input: {
 	promise: Promise<MemoryToolSummary | null>
 	launchedAtMs: number
 } | null {
-	const query = input.query?.trim() ?? ''
 	const userId = input.callerContext.user?.userId ?? null
-	if (!query || !userId) return null
+	const memoryContext = resolveSearchMemoryContext({
+		query: input.query,
+		memoryContext: input.memoryContext,
+	})
+	if (!userId || !buildMemoryRetrievalQuery(memoryContext)) return null
 	const launchedAtMs = performance.now()
 	const promise = loadRelevantMemoriesForTool({
 		env: input.env,
 		callerContext: input.callerContext,
 		conversationId: input.conversationId,
-		memoryContext: resolveSearchMemoryContext({
-			query: input.query,
-			memoryContext: input.memoryContext,
-		}),
+		memoryContext,
 		acknowledgeSurfaced: false,
 	})
 	void promise.catch(() => {})

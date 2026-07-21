@@ -688,6 +688,34 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 		results: [],
 		warnings: [],
 	})
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce(memorySummary)
+	const { handler: structuredContextHandler } = await getSearchRegistration({
+		user,
+	})
+	const structuredContextResult = await structuredContextHandler({
+		query: ' ',
+		conversationId: 'conv-structured-memory',
+		memoryContext: { task: 'search docs' },
+	})
+	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalledWith(
+		expect.objectContaining({
+			memoryContext: { task: 'search docs' },
+			acknowledgeSurfaced: false,
+		}),
+	)
+	expect(
+		(
+			structuredContextResult.structuredContent.result as {
+				memories?: { surfaced: Array<{ id: string }> }
+			}
+		).memories?.surfaced,
+	).toEqual([expect.objectContaining({ id: 'memory-1' })])
+
+	vi.clearAllMocks()
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
 	mockModule.loadRelevantMemoriesForTool.mockImplementation(
 		() =>
 			new Promise((resolve) => {
