@@ -56,13 +56,16 @@ export default async () => {
 		if (path !== path.trim()) {
 			throw new Error('path must not have leading or trailing whitespace')
 		}
-		if (!path.startsWith('/')) {
+		if (!path.startsWith('/') || path.startsWith('//')) {
 			throw new Error('path must start with / and must not include a host')
 		}
 		if (path.length > 2048) throw new Error('path exceeds maximum length')
 		if (/[\s#]/.test(path))
 			throw new Error('path contains disallowed characters')
 		const url = new URL(path, ORIGIN)
+		if (url.origin !== ORIGIN) {
+			throw new Error('path must stay on developers.cloudflare.com')
+		}
 		const pathname = url.pathname
 		if (!PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
 			throw new Error(`path must start with one of: ${PREFIXES.join(', ')}`)
