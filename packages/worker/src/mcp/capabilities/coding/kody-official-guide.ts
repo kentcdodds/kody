@@ -21,7 +21,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'package-authoring.md',
 		title: 'Package authoring guide',
 		summary:
-			'START HERE when creating or materially changing a Kody package: package shape, README.md Intent section, and scope-update guidance without adding new primitives.',
+			'START HERE when creating or materially changing a Kody package: package shape, README.md Intent section, secret-using package approval checklist, and scope-update guidance without adding new primitives.',
 	},
 	package_lifecycle: {
 		file: 'package-lifecycle.md',
@@ -39,7 +39,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'secret-backed-integration.md',
 		title: 'Secret-backed integration recipe',
 		summary:
-			'Default non-OAuth recipe for secret-backed integrations: research auth, collect secrets through /account/secrets/new, run a smoke test, then build the downstream package or workflow.',
+			'Default non-OAuth recipe for secret-backed integrations: research auth, collect secrets through /account/secrets/new, run a smoke test, build the downstream package, then surface package secret approval links (prefer bulk) before calling the work complete.',
 	},
 	integration_backed_app: {
 		file: 'integration-backed-app-happy-path.md',
@@ -57,7 +57,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'account-secret-setup.md',
 		title: 'Account secret setup guide',
 		summary:
-			'Hosted /account/secrets/new URL shape, query params, and approval policy for API keys and PATs.',
+			'Hosted /account/secrets/new URL shape, query params, approval policy for API keys and PATs, and post-hoc package approval URLs including bulk approve.',
 	},
 	package_invocation_token_setup: {
 		file: 'account-package-invocation-token-setup.md',

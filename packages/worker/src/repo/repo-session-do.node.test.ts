@@ -350,7 +350,8 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
 })
 
 const { RepoSession } = await import('./repo-session-do.ts')
-const { insertRepoSession } = await import('./repo-sessions.ts')
+const { deleteRepoSession, insertRepoSession } =
+	await import('./repo-sessions.ts')
 
 function createDurableObjectState() {
 	const storageState = new Map<string, unknown>()
@@ -558,10 +559,16 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 	}
 
 	mockModule.rawPush.mockClear()
-	await repoSession.cleanupSessionBranch({
+	const cleanupResult = await repoSession.cleanupSessionBranch({
 		sessionId: 'session-1',
 		userId: 'user-1',
 		reason: 'expired',
+	})
+	expect(cleanupResult).toEqual({
+		ok: true,
+		sessionId: 'session-1',
+		branch: 'sessions/session1',
+		branchDeleted: true,
 	})
 	expect(mockModule.rawPush).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -573,6 +580,33 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('publish_git_note'),
 		expect.anything(),
+	)
+})
+
+test('cleanupSessionBranch removes the D1 session row when remote branch delete fails', async () => {
+	consoleWarn.mockImplementation(() => {})
+	setCommonSessionFixtures()
+	mockModule.rawPush.mockRejectedValueOnce(
+		new TypeError("Cannot read properties of undefined (reading 'bind')"),
+	)
+	vi.mocked(deleteRepoSession).mockClear()
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.cleanupSessionBranch({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		reason: 'expired',
+	})
+
+	expect(result).toEqual({
+		ok: true,
+		sessionId: 'session-1',
+		branch: 'sessions/session1',
+		branchDeleted: false,
+	})
+	expect(deleteRepoSession).toHaveBeenCalledWith(expect.anything(), 'session-1')
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('repo session remote branch delete failed'),
 	)
 })
 

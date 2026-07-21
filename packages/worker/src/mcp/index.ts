@@ -19,6 +19,7 @@ import { remoteConnectorDomainId } from '#worker/remote-connector/remote-domain-
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type RawFetchHostNudgeState } from '#mcp/raw-fetch-host-nudge.ts'
+import { listPopularAgentPackagesForUser } from '#worker/usage/agent-package-conversation-uses.ts'
 
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
@@ -66,24 +67,29 @@ class MCPBase extends McpAgent<Env, State, Props> {
 	async init() {
 		const caller = this.getCallerContext()
 		const userId = caller.user?.userId ?? null
-		const [overlay, remoteConnectors, registry] = await Promise.all([
-			userId !== null
-				? getMcpUserServerInstructions(this.env.APP_DB, userId)
-				: Promise.resolve(null),
-			loadRemoteConnectorInstructionSummaries({
-				env: this.env,
-				caller,
-			}),
-			getCapabilityRegistryForContext({
-				env: this.env,
-				callerContext: caller,
-			}),
-		])
+		const [overlay, remoteConnectors, registry, popularPackages] =
+			await Promise.all([
+				userId !== null
+					? getMcpUserServerInstructions(this.env.APP_DB, userId)
+					: Promise.resolve(null),
+				loadRemoteConnectorInstructionSummaries({
+					env: this.env,
+					caller,
+				}),
+				getCapabilityRegistryForContext({
+					env: this.env,
+					callerContext: caller,
+				}),
+				userId !== null
+					? listPopularAgentPackagesForUser(this.env.APP_DB, { userId })
+					: Promise.resolve([]),
+			])
 		this.server = createKodyMcpServer({
 			instructions: buildMcpServerInstructions({
 				userOverlay: overlay,
 				domains: registry.capabilityDomains,
 				remoteConnectors,
+				popularPackages,
 			}),
 			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
 		})

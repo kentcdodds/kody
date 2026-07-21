@@ -251,8 +251,8 @@ package's immutable id. One rule per context:
 (`get`/`set`/`list`/`sql`/`delete`/`clear`/`id`), writable, always bound to the
 declaring package's own bucket no matter where the code runs:
 
-- In the package's own export/invocation runtime it is the same bucket ambient
-  `storage` binds.
+- In the package's own export/invocation runtime it is the only way to reach the
+  package bucket — those runs bind no ambient `storage`.
 - In package jobs and services — where ambient `storage` binds job-scoped and
   service-scoped buckets — it reaches the package's shared bucket.
 - When the module is statically imported (`kody:@scope/package/export`) into an
@@ -285,18 +285,26 @@ consequences:
   package that is not the running package and not statically imported by the
   bundle, use `packages.invokeChecked` so its own runtime does the reading.
 
-### Ambient `storage` in package code (legacy)
+### Ambient `storage` in package code (removed)
 
-Ambient `storage` from `kody:runtime` is available inside package code. Exports
-and invocations bind it to the package's own bucket, jobs and services bind it
-to job-/service-scoped buckets, and statically imported code gets the caller's
-binding or `undefined`. Because the binding is per-run, code written against
-ambient `storage` breaks as soon as it is statically imported into another
-context — which is why the docs recommend `packageStorage()` and repo checks
-surface a non-failing suggestion when package sources import ambient `storage`.
-Reserve ambient `storage` in package code for intentionally run-scoped state,
-such as a job checkpoint that belongs to the job's own bucket rather than the
-package's.
+Package exports, subscription handlers, and retrievers no longer bind ambient
+`storage` — the legacy pattern where invocation runs bound it to the package's
+own bucket has been removed. In those contexts ambient `storage` is simply
+`undefined`; guard-less access to it fails with a structured
+`runtime_helper_unbound` error whose remedy points at `packageStorage()`, the
+one way package code reaches its bucket (same interface, same bucket, so the
+migration is a rename).
+
+Repo checks fail when package source imports ambient `storage` from
+`kody:runtime` (type-only imports and `.d.ts` files are exempt), so the pattern
+cannot be reintroduced at publish time.
+
+Ambient `storage` still exists where it is not the legacy pattern: ad hoc
+`execute` code with a `storageId` bound on the call (the prescribed use), and
+package job and service runtimes, which still bind job-/service-scoped scratch
+buckets distinct from the package bucket for already-published code. New package
+source cannot import ambient `storage` (checks fail), so new job and service
+code keeps run-scoped state in the package bucket under run-scoped keys instead.
 
 ## Package apps
 
@@ -330,9 +338,8 @@ Treat package apps like Worker-style modules:
 A package service is optional.
 
 When `package.json#kody.services` is present, the package can declare one or
-more named service entrypoints that Kody runs with package caller context,
-service-scoped ambient `storage` for run state, and `packageStorage()` for the
-package's shared bucket.
+more named service entrypoints that Kody runs with package caller context and
+`packageStorage()` for the package's shared bucket.
 
 Use the package service model when the package needs:
 
@@ -383,9 +390,10 @@ Each subscription has:
 - `filters` — optional topic-specific metadata reserved for event dispatchers
 
 Subscription handlers run as package runtime modules with the signed-in package
-user, package-owned storage, package context, secrets, and `kody:runtime`
-helpers. Published bundle artifacts are rebuilt for subscription handlers during
-package checks and publish, just like exports, services, jobs, and apps.
+user, package-owned storage via `packageStorage()`, package context, secrets,
+and `kody:runtime` helpers. Published bundle artifacts are rebuilt for
+subscription handlers during package checks and publish, just like exports,
+services, jobs, and apps.
 
 Use the built-in `package_subscriptions_list` capability to discover the
 signed-in user's saved package subscriptions, optionally filtered by exact

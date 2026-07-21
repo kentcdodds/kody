@@ -102,6 +102,18 @@ If a request fails because a host is not approved for that secret, use the
 approval path the error provides (typically in the web app). Saving a secret
 does not by itself approve new hosts.
 
+## Package approval
+
+User-scoped secrets also need explicit **package** approval before package code
+can use them. Saving a secret, approving a host, or succeeding in an ad hoc
+execute smoke test does not grant that access.
+
+When several secrets need the same package approved, Kody can provide a bulk
+approval URL shaped like
+`/account/secrets/approve?package_id=...&names=secretA,secretB`. That page lists
+every pending secret and approves them in one click. Single-secret links still
+work for one-off grants.
+
 ## Values
 
 Use **values** capabilities for readable non-secret configuration that generated

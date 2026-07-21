@@ -78,6 +78,7 @@ import {
 } from '#worker/storage-runner.ts'
 import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
+import { recordAgentPackageConversationUses } from '#worker/usage/agent-package-conversation-uses.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	formatRemoteConnectorUnavailableMessage,
@@ -1122,6 +1123,11 @@ export async function runModuleWithRegistry(
 		packageEventTools?: PackageEventTools
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
+		/**
+		 * When set (MCP public `execute` tool), static/dynamic `kody:@…`
+		 * package deps are credited toward agent-facing package popularity.
+		 */
+		conversationId?: string | null
 	},
 ): Promise<ExecuteResult> {
 	const userId = callerContext.user?.userId ?? ''
@@ -1135,6 +1141,19 @@ export async function runModuleWithRegistry(
 		entryPoint: 'entry.ts',
 		reuseCachedBundle: true,
 	})
+	const conversationId = options?.conversationId?.trim()
+	if (conversationId && userId) {
+		const packageIds = bundled.dependencies
+			.map((dependency) => dependency.packageId)
+			.filter((packageId): packageId is string => Boolean(packageId))
+		if (packageIds.length > 0) {
+			void recordAgentPackageConversationUses(env, {
+				userId,
+				packageIds,
+				conversationId,
+			})
+		}
+	}
 	return runBundledModuleWithRegistry(
 		env,
 		callerContext,
@@ -1156,6 +1175,7 @@ export async function runModuleWithRegistry(
 				}),
 			packageInvokeTools: options?.packageInvokeTools,
 			packageEventTools: options?.packageEventTools,
+			conversationId: options?.conversationId ?? null,
 		},
 	)
 }
@@ -1231,6 +1251,7 @@ export async function runBundledModuleWithRegistry(
 		runtimeDebug?: PackageRuntimeDebugContext | null
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
+		conversationId?: string | null
 	},
 ): Promise<ExecuteResult> {
 	const secretRedactor = createExecutionSecretRedactor()
@@ -1282,6 +1303,19 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? '',
 				modules: bundle.modules,
 			})
+		const agentConversationId = options?.conversationId?.trim()
+		const agentUserId = callerContext.user?.userId
+		if (
+			agentConversationId &&
+			agentUserId &&
+			dynamicDependencyPackageIds.length > 0
+		) {
+			void recordAgentPackageConversationUses(env, {
+				userId: agentUserId,
+				packageIds: dynamicDependencyPackageIds,
+				conversationId: agentConversationId,
+			})
+		}
 		const grantedPackageStorageIds = collectPackageStorageGrantIds({
 			packageContext: options?.packageContext ?? null,
 			dependencies: bundle.dependencies ?? [],

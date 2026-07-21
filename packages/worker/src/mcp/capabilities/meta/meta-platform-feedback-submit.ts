@@ -14,7 +14,7 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 	{
 		name: 'meta_platform_feedback_submit',
 		description:
-			'Submit platform feedback only from an interactive MCP agent flow after showing the user the exact proposed summary and details, asking first, and receiving explicit approval. Load `coding_guide_get({ guide: "platform_friction" })` first for the approval flow and content guidance. The exact approved summary and details plus the account user id, username, and email may be delivered immediately to deployment admins through admin-configured notification integrations such as Discord. Copies already delivered outside Kody, including Discord messages, may remain after Kody account deletion under the deployment operator’s retention and deletion controls. Non-interactive package code and package apps cannot submit. Do not include secrets or unrelated private content.',
+			'Submit platform feedback only from an interactive MCP agent flow after showing the user the exact proposed summary and details, asking first, and receiving explicit approval. Load `coding_guide_get({ guide: "platform_friction" })` first for the approval flow and content guidance. The exact approved summary and details plus the account user id, username, and email may be delivered immediately to deployment admins through admin-configured notifications. Copies already delivered outside Kody may remain after Kody account deletion under the deployment operator’s retention and deletion controls. Non-interactive package code and package apps cannot submit. Do not include secrets or unrelated private content.',
 		keywords: [
 			'platform feedback',
 			'friction',
@@ -50,7 +50,7 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 			user_confirmed: z
 				.literal(true)
 				.describe(
-					'Must be true only after the agent shows the exact proposed summary and details and the user explicitly approves sending them, with the account user id, username, and email, immediately to deployment admins through admin-configured notification integrations such as Discord, after being told that copies already delivered outside Kody, including Discord messages, may remain after Kody account deletion under the deployment operator’s retention and deletion controls.',
+					'Must be true only after the agent shows the exact proposed summary and details and the user explicitly approves sending them, with the account user id, username, and email, immediately to deployment admins through admin-configured notifications, after being told that copies already delivered outside Kody may remain after Kody account deletion under the deployment operator’s retention and deletion controls.',
 				),
 		}),
 		outputSchema: z.object({

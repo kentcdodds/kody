@@ -30,7 +30,15 @@ import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
-import { packageFileSchema, packageSummarySchema } from './shared.ts'
+import {
+	buildPendingPackageSecretApprovalsSummary,
+	formatPendingPackageSecretApprovalsGuidance,
+} from '#mcp/secrets/pending-package-secret-approvals.ts'
+import {
+	packageFileSchema,
+	packageSummarySchema,
+	pendingPackageSecretApprovalsSchema,
+} from './shared.ts'
 
 const inputSchema = z
 	.object({
@@ -85,13 +93,21 @@ function normalizeFiles(files: Array<z.infer<typeof packageFileSchema>>) {
 	return next
 }
 
-export function buildPackageSaveNextSteps(kodyId: string) {
-	return [
+export function buildPackageSaveNextSteps(input: {
+	kodyId: string
+	pendingSecretApprovalsGuidance?: string | null
+}) {
+	const steps = [
 		'Coding agents with local filesystem/git access should use the git lane for further edits instead of re-sending full file sets:',
-		`call package_get_git_remote({ kody_id: ${JSON.stringify(kodyId)} }), run the returned setup_commands to clone into a temporary directory, edit and push normally, then publish with package_publish_external_push.`,
+		`call package_get_git_remote({ kody_id: ${JSON.stringify(input.kodyId)} }), run the returned setup_commands to clone into a temporary directory, edit and push normally, then publish with package_publish_external_push.`,
 		'Binary assets and multi-file refactors are only supported through that git lane.',
 		'Tool-only agents without local git can continue with package_save or repo sessions.',
-	].join(' ')
+	]
+	const guidance = input.pendingSecretApprovalsGuidance?.trim()
+	if (guidance) {
+		steps.push(guidance)
+	}
+	return steps.join(' ')
 }
 
 export const savePackageCapability = defineDomainCapability(
@@ -117,8 +133,9 @@ export const savePackageCapability = defineDomainCapability(
 			next_steps: z
 				.string()
 				.describe(
-					'Follow-up guidance for continuing package work, including the git clone-edit-push lane for coding agents.',
+					'Follow-up guidance for continuing package work, including the git clone-edit-push lane for coding agents and any pending package secret approvals.',
 				),
+			pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -254,6 +271,22 @@ export const savePackageCapability = defineDomainCapability(
 				sourceId: ensuredSource.id,
 			})
 			const saved = refreshed.record
+			const pendingSecretApprovals =
+				await buildPendingPackageSecretApprovalsSummary({
+					env: ctx.env,
+					baseUrl: ctx.callerContext.baseUrl,
+					userId: owner.ownerUserId,
+					packageId: saved.id,
+					kodyId: saved.kodyId,
+					secretMounts: manifest.kody.secretMounts,
+					files,
+					storageContext: {
+						sessionId: null,
+						appId: null,
+						packageId: saved.id,
+						storageId: null,
+					},
+				})
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,
@@ -265,7 +298,15 @@ export const savePackageCapability = defineDomainCapability(
 				source_id: saved.sourceId,
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
-				next_steps: buildPackageSaveNextSteps(saved.kodyId),
+				pending_secret_package_approvals: pendingSecretApprovals,
+				next_steps: buildPackageSaveNextSteps({
+					kodyId: saved.kodyId,
+					pendingSecretApprovalsGuidance: pendingSecretApprovals
+						? formatPendingPackageSecretApprovalsGuidance(
+								pendingSecretApprovals,
+							)
+						: null,
+				}),
 			}
 		},
 	},

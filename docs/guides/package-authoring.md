@@ -83,6 +83,23 @@ Account publishing is unaffected, so the owner can run the package privately.
 - Community publish additionally requires `"private": false` or omitting
   `private`, plus MIT license and README `## Intent`.
 
+## Secret-using packages
+
+When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
+`kody.secretMounts`):
+
+1. Ensure each secret exists (see `guide: "connect_secret"` /
+   `guide: "secret_backed_integration"`).
+2. After save/publish, read `pending_secret_package_approvals` from the tool
+   result.
+3. Send the user `bulk_approval_url` when present; otherwise send each
+   `approval_url`.
+4. Wait for approval, then smoke-test with `packages.invokeChecked(...)`.
+5. Only then treat the package as ready to run.
+
+Host approval (from an earlier ad hoc `execute` smoke test) is separate from
+package approval. Both may be required.
+
 ## Community icon
 
 Public community packages should include one root `community-icon.svg`,

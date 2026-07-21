@@ -39,6 +39,11 @@ target host is not already approved for that secret, the correct behavior is:
 3. Ask the user whether they want to approve that host in the admin UI.
 4. Retry only after the user approves it.
 
+The same stop-and-surface rule applies to package secret access denies. When
+several user secrets need the same package approved, prefer the bulk approval
+URL (`/account/secrets/approve?package_id=...&names=...`) over one link per
+secret. Agents must never auto-approve package access.
+
 ## What agents must not do
 
 Do not design or document any MCP capability, package app helper, or client

@@ -21,7 +21,7 @@ export const metaSetMcpServerInstructionsCapability = defineDomainCapability(
 	{
 		name: 'meta_set_mcp_server_instructions',
 		description:
-			'Replace or clear the signed-in user’s custom MCP server instructions overlay (appended to built-in server instructions for new MCP connections). Pass an empty string to clear. Changes apply to new MCP sessions—reconnect the client if the host caches server instructions.',
+			'Replace or clear the signed-in user’s custom MCP server instructions overlay (appended to built-in server instructions for new MCP connections). Use for preferences and workflow notes only—not for maintaining a package inventory (popular packages are hinted automatically when available). Pass an empty string to clear. Changes apply to new MCP sessions—reconnect the client if the host caches server instructions.',
 		keywords: [
 			'instructions',
 			'server',

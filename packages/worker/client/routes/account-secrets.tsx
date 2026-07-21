@@ -437,8 +437,14 @@ function getDataRefreshKey(href: string) {
 	const requestedHost = url.searchParams.get('allowed-host') ?? ''
 	const requestedCapability = url.searchParams.get('capability') ?? ''
 	const requestedPackageId = url.searchParams.get('package_id') ?? ''
+	const requestedNames = [
+		...url.searchParams.getAll('names'),
+		...url.searchParams.getAll('name'),
+	]
+		.join(',')
+		.trim()
 	const newSecretQuery = getNewSecretQueryKey(href)
-	return `${url.pathname}?allowed-host=${requestedHost}&capability=${requestedCapability}&package_id=${requestedPackageId}&new-secret=${newSecretQuery}`
+	return `${url.pathname}?allowed-host=${requestedHost}&capability=${requestedCapability}&package_id=${requestedPackageId}&names=${requestedNames}&new-secret=${newSecretQuery}`
 }
 
 function buildSecretsApiRequestUrl(href: string) {
@@ -633,6 +639,14 @@ export function AccountSecretsRoute(handle: Handle) {
 		secrets = payload.secrets
 		selectedSecret = payload.selectedSecret
 		approval = payload.approval
+			? {
+					...payload.approval,
+					names:
+						payload.approval.names.length > 0
+							? payload.approval.names
+							: [payload.approval.name],
+				}
+			: null
 		syncEditorState(selection)
 		message =
 			nextMessage ??
@@ -743,15 +757,21 @@ export function AccountSecretsRoute(handle: Handle) {
 			>(action, `${requestUrl.pathname}${requestUrl.search}`)
 			if (!payload) return
 
+			const isBulkPackageApproval =
+				Boolean(approval.requestedPackageId) && approval.names.length > 1
 			applyPayload(
 				payload,
 				selection,
 				action === 'approve'
 					? approval.requestedPackageId
-						? 'Approved requested package.'
+						? isBulkPackageApproval
+							? `Approved package access for ${approval.names.length} secrets.`
+							: 'Approved requested package.'
 						: 'Approved requested host.'
 					: approval.requestedPackageId
-						? 'Rejected package approval request.'
+						? isBulkPackageApproval
+							? 'Rejected bulk package approval request.'
+							: 'Rejected package approval request.'
 						: 'Rejected host approval request.',
 			)
 			handle.update()
@@ -774,6 +794,8 @@ export function AccountSecretsRoute(handle: Handle) {
 				nextUrl.searchParams.delete('capability')
 				nextUrl.searchParams.delete('package_id')
 				nextUrl.searchParams.delete('package')
+				nextUrl.searchParams.delete('names')
+				nextUrl.searchParams.delete('name')
 				// `navigate` is async (preload-then-commit); the commit render
 				// consumes its preloaded data and updates `lastLoadedDataKey`.
 				// Pre-setting it to the destination here would make interim
@@ -1138,12 +1160,37 @@ export function AccountSecretsRoute(handle: Handle) {
 										<strong mix={css({ color: colors.text })}>
 											{requestedPackageMetadata?.kodyId ?? 'Unknown package'}
 										</strong>{' '}
-										to use secret <code>{approvalCard.name}</code> from the{' '}
-										{getScopeLabel(approvalCard.scope)} scope.
+										{approvalCard.names.length > 1 ? (
+											<>
+												to use these {approvalCard.names.length} secrets from
+												the {getScopeLabel(approvalCard.scope)} scope.
+											</>
+										) : (
+											<>
+												to use secret <code>{approvalCard.name}</code> from the{' '}
+												{getScopeLabel(approvalCard.scope)} scope.
+											</>
+										)}
 									</p>
 									<code mix={css({ color: colors.textMuted })}>
 										{approvalCard.requestedPackageId}
 									</code>
+									{approvalCard.names.length > 1 ? (
+										<ul
+											mix={css({
+												margin: 0,
+												paddingLeft: spacing.lg,
+												display: 'grid',
+												gap: spacing.xs,
+											})}
+										>
+											{approvalCard.names.map((secretName) => (
+												<li key={secretName}>
+													<code>{secretName}</code>
+												</li>
+											))}
+										</ul>
+									) : null}
 								</div>
 							) : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
@@ -1159,37 +1206,41 @@ export function AccountSecretsRoute(handle: Handle) {
 								</p>
 							) : null}
 							{approvalCard.requestedPackageId ? (
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<span mix={css({ color: colors.textMuted })}>
-										Current allowed packages:
-									</span>
-									{approvalCard.currentAllowedPackages.length > 0 ? (
-										<ul
-											mix={css({
-												margin: 0,
-												paddingLeft: spacing.lg,
-												display: 'grid',
-												gap: spacing.xs,
-											})}
-										>
-											{approvalCard.currentAllowedPackages.map((packageId) => {
-												const metadata = packagesById.get(packageId)
-												return (
-													<li key={packageId}>
-														<span mix={css(packageIdentityCss)}>
-															<strong>
-																{metadata?.kodyId ?? 'Unknown package'}
-															</strong>
-															<code>{packageId}</code>
-														</span>
-													</li>
-												)
-											})}
-										</ul>
-									) : (
-										<span mix={css({ color: colors.textMuted })}>None</span>
-									)}
-								</div>
+								approvalCard.names.length > 1 ? null : (
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<span mix={css({ color: colors.textMuted })}>
+											Current allowed packages:
+										</span>
+										{approvalCard.currentAllowedPackages.length > 0 ? (
+											<ul
+												mix={css({
+													margin: 0,
+													paddingLeft: spacing.lg,
+													display: 'grid',
+													gap: spacing.xs,
+												})}
+											>
+												{approvalCard.currentAllowedPackages.map(
+													(packageId) => {
+														const metadata = packagesById.get(packageId)
+														return (
+															<li key={packageId}>
+																<span mix={css(packageIdentityCss)}>
+																	<strong>
+																		{metadata?.kodyId ?? 'Unknown package'}
+																	</strong>
+																	<code>{packageId}</code>
+																</span>
+															</li>
+														)
+													},
+												)}
+											</ul>
+										) : (
+											<span mix={css({ color: colors.textMuted })}>None</span>
+										)}
+									</div>
+								)
 							) : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Current allowed hosts:{' '}
@@ -1210,7 +1261,10 @@ export function AccountSecretsRoute(handle: Handle) {
 									css(primaryButtonCss),
 								]}
 							>
-								Approve
+								{approvalCard.requestedPackageId &&
+								approvalCard.names.length > 1
+									? `Approve all (${approvalCard.names.length})`
+									: 'Approve'}
 							</button>
 							<button
 								type="button"

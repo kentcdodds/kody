@@ -821,6 +821,7 @@ export type ExecutionErrorDetails =
 				kodyId: string | null
 				approvalUrl: string
 			}>
+			bulkApprovalUrl: string | null
 			suggestedAction: {
 				type: 'edit_secret_policy'
 				policyField: 'allowed_packages'
@@ -963,9 +964,11 @@ export function getExecutionErrorDetails(
 		return {
 			kind: 'secret_package_access_required_batch',
 			message,
-			nextStep:
-				'Ask the user whether they want to approve these packages for the listed secrets in the account secrets UI, then retry after approval.',
-			missingApprovals: packageAccessBatch,
+			nextStep: packageAccessBatch.bulkApprovalUrl
+				? 'Send the user the bulk package secret approval link, wait for them to approve in the account secrets UI, then retry.'
+				: 'Ask the user whether they want to approve these packages for the listed secrets in the account secrets UI, then retry after approval.',
+			missingApprovals: packageAccessBatch.entries,
+			bulkApprovalUrl: packageAccessBatch.bulkApprovalUrl,
 			suggestedAction: {
 				type: 'edit_secret_policy',
 				policyField: 'allowed_packages',

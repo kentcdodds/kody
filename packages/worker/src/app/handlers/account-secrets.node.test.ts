@@ -573,8 +573,22 @@ test('account secrets payload includes all packages and package titles and allow
 
 test('package approval reject and approve handle missing secrets and deduplicate package ids', async () => {
 	const handler = createAccountSecretsApiHandler(createEnv())
+	const savedPackages = [
+		{
+			id: 'pkg-allowed',
+			kodyId: 'allowed-pkg',
+			name: '@user/allowed-pkg',
+			updatedAt: new Date(0).toISOString(),
+		},
+		{
+			id: 'pkg-new',
+			kodyId: 'new-pkg',
+			name: '@user/new-pkg',
+			updatedAt: new Date(0).toISOString(),
+		},
+	]
 
-	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(savedPackages)
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
@@ -598,6 +612,7 @@ test('package approval reject and approve handle missing secrets and deduplicate
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
 	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
 
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(savedPackages)
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'discordBotToken',
@@ -613,7 +628,7 @@ test('package approval reject and approve handle missing secrets and deduplicate
 		},
 	])
 	mockModule.listSecrets.mockResolvedValueOnce([])
-	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(savedPackages)
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
 	const approveResponse = await handler.handler({
@@ -637,6 +652,119 @@ test('package approval reject and approve handle missing secrets and deduplicate
 			allowedPackages: ['pkg-allowed', 'pkg-new'],
 		}),
 	)
+})
+
+test('bulk package approval view and approve grant the package on every listed secret', async () => {
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const savedPackages = [
+		{
+			id: 'pkg-release',
+			kodyId: 'release',
+			name: '@kentcdodds/release',
+			updatedAt: new Date(0).toISOString(),
+		},
+	]
+	const secrets = [
+		{
+			name: 'discordBotToken',
+			scope: 'user' as const,
+			description: 'Discord',
+			packageId: null,
+			allowedHosts: [],
+			allowedCapabilities: [],
+			allowedPackages: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+		{
+			name: 'xAccessToken',
+			scope: 'user' as const,
+			description: 'X',
+			packageId: null,
+			allowedHosts: [],
+			allowedCapabilities: [],
+			allowedPackages: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+		{
+			name: 'githubAccessToken',
+			scope: 'user' as const,
+			description: 'GitHub',
+			packageId: null,
+			allowedHosts: [],
+			allowedCapabilities: [],
+			allowedPackages: ['pkg-release'],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	]
+
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(savedPackages)
+	mockModule.listSecrets.mockResolvedValueOnce(secrets)
+	mockModule.listSecrets.mockResolvedValueOnce(secrets)
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
+
+	const viewResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?package_id=pkg-release&names=discordBotToken,xAccessToken,githubAccessToken',
+			{ method: 'GET' },
+		),
+		params: {},
+	} as never)
+
+	expect(viewResponse.status).toBe(200)
+	await expect(viewResponse.json()).resolves.toMatchObject({
+		ok: true,
+		approval: {
+			names: ['discordBotToken', 'xAccessToken'],
+			requestedPackageId: 'pkg-release',
+			scope: 'user',
+		},
+	})
+
+	mockModule.setSecretAllowedPackages.mockClear()
+	mockModule.listSavedPackagesByUserId.mockResolvedValue(savedPackages)
+	mockModule.listSecrets.mockResolvedValue(secrets)
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+
+	const approveResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?package_id=pkg-release&names=discordBotToken,xAccessToken,githubAccessToken',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(approveResponse.status).toBe(200)
+	await expect(approveResponse.json()).resolves.toMatchObject({ ok: true })
+	expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledTimes(2)
+	expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'discordBotToken',
+			allowedPackages: ['pkg-release'],
+		}),
+	)
+	expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'xAccessToken',
+			allowedPackages: ['pkg-release'],
+		}),
+	)
+
+	mockModule.listSavedPackagesByUserId.mockReset()
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listSecrets.mockReset()
+	mockModule.listSecrets.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockReset()
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
 })
 
 test('account secrets API loads selected secret values and deletes the selected user secret', async () => {

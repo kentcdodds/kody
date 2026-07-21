@@ -181,7 +181,9 @@ Kody supports durable storage binding for execute and scheduled jobs, including
 package-owned jobs and non-package jobs created with `job_schedule` or
 `job_schedule_once`.
 
-- bound storage is execute-, app-, package-, or job-owned durable state
+- bound storage is execute-, app-, or job-owned durable state; saved-package
+  invocation runs (exports, subscriptions, retrievers) bind no ambient `storage`
+  — package code reaches its own bucket through `packageStorage()`
 - package service runs also get writable service-owned durable state scoped to
   the declared service name
 - package service runs are background-managed by the service Durable Object, so
@@ -246,8 +248,12 @@ Users can read or replace their own MCP server instruction overlay with
 **`meta_set_mcp_server_instructions`**.
 
 This overlay is appended to Kody's built-in server instructions for that user.
-Pass an empty string to clear it. Changes apply to new MCP sessions, so
-reconnect the MCP client if the host caches server instructions.
+Use it for preferences and workflow notes only — not for maintaining a package
+inventory. When agents have used saved packages via MCP `execute`, Kody may
+include a short “often used from agents” hint of those packages automatically;
+discover others with **`search`**. Pass an empty string to clear the overlay.
+Changes apply to new MCP sessions, so reconnect the MCP client if the host
+caches server instructions.
 
 ## Network and OAuth helpers
 

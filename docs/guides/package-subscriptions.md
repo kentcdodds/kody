@@ -168,7 +168,7 @@ explicitly approved. They remain user-authored untrusted data, and
 `content_warning` tells handlers to treat them as feedback rather than
 instructions. `admin_url` is built from the trusted deployment origin and links
 to `/admin/platform-feedback?feedbackId=<encoded id>`, making it suitable for an
-admin Discord notifier. The event also includes the submitter's account user id,
+admin notifier. The event also includes the submitter's account user id,
 username, and email snapshot stored with the submission. Retries never resolve
 mutable live profile data, so an intervening account profile change cannot alter
 the payload or its request hash. Rows without submitter snapshots retain null
@@ -179,10 +179,10 @@ metadata, roles, plan, and unrelated account content. This narrow delivery
 exception applies only to the exact feedback the user approved after an agent
 showed the proposed summary and details and asked first. It does not grant
 package runtime general admin roles or general access to user data. Notification
-copies already delivered outside Kody, including Discord messages, cannot be
-recalled and may remain after Kody account deletion under the deployment
-operator's retention and deletion controls. Such copies contain only the exact
-approved feedback and attribution, never unrelated account content.
+copies already delivered outside Kody cannot be recalled and may remain after
+Kody account deletion under the deployment operator's retention and deletion
+controls. Such copies contain only the exact approved feedback and attribution,
+never unrelated account content.
 
 The feedback row is durable before Kody awaits the small Queue enqueue. Enqueue
 failure is logged but does not change the successful MCP response, avoiding a

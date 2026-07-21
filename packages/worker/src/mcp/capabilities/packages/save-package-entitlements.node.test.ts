@@ -403,6 +403,7 @@ test('package_save responses steer coding agents toward the git lane', async () 
 	expect(result.next_steps).toContain('package_get_git_remote')
 	expect(result.next_steps).toContain('package_publish_external_push')
 	expect(result.next_steps).toContain(JSON.stringify(result.kody_id))
+	expect(result.pending_secret_package_approvals).toBeNull()
 })
 
 test('package_save stays unlimited for users without a plan', async () => {

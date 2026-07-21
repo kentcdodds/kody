@@ -25,6 +25,7 @@ import {
 } from '#app/auth-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
+import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
 import {
 	deleteSecret,
 	listSecrets,
@@ -678,6 +679,16 @@ function readRequestedPackageId(url: URL) {
 	return value?.trim() ? value.trim() : null
 }
 
+function readRequestedSecretNames(url: URL) {
+	const values = [
+		...url.searchParams.getAll('names'),
+		...url.searchParams.getAll('name'),
+	]
+	return normalizeBulkPackageSecretApprovalNames(
+		values.flatMap((value) => value.split(',')),
+	)
+}
+
 async function handleApprovalAction(input: {
 	request: Request
 	env: Env
@@ -690,10 +701,82 @@ async function handleApprovalAction(input: {
 			secretId: readAccountSecretsSelectedSecretId(input.request.url),
 			requestedHost: readApprovalHost(url),
 			requestedPackageId: readRequestedPackageId(url),
+			requestedSecretNames: readRequestedSecretNames(url),
 		})
+
+		if (approval.kind === 'package_bulk') {
+			if (input.action === 'approve') {
+				const savedPackages = await listSavedPackagesByUserId(
+					input.env.APP_DB,
+					{
+						userId: input.user.mcpUser.userId,
+					},
+				)
+				if (!savedPackages.some((entry) => entry.id === approval.packageId)) {
+					return jsonResponse(
+						{ ok: false, error: 'Package not found for approval.' },
+						404,
+					)
+				}
+				const current = await listSecrets({
+					env: input.env,
+					userId: input.user.mcpUser.userId,
+					scope: 'user',
+				})
+				const byName = new Map(
+					current
+						.filter((item) => item.scope === 'user')
+						.map((item) => [item.name, item]),
+				)
+				const missingNames: Array<string> = []
+				for (const name of approval.names) {
+					const secret = byName.get(name)
+					if (!secret) {
+						missingNames.push(name)
+						continue
+					}
+					if (secret.allowedPackages.includes(approval.packageId)) continue
+					await setSecretAllowedPackages({
+						env: input.env,
+						userId: input.user.mcpUser.userId,
+						name,
+						scope: 'user',
+						allowedPackages: Array.from(
+							new Set([...secret.allowedPackages, approval.packageId]),
+						),
+						storageContext: null,
+					})
+				}
+				if (missingNames.length === approval.names.length) {
+					return jsonResponse(
+						{ ok: false, error: 'None of the listed secrets were found.' },
+						404,
+					)
+				}
+			}
+			const payload = await loadAccountSecretsData({
+				request: input.request,
+				env: input.env,
+				user: input.user,
+				selectedSecretId: null,
+			})
+			return jsonResponse(payload)
+		}
 
 		if (approval.kind === 'package') {
 			if (input.action === 'approve') {
+				const savedPackages = await listSavedPackagesByUserId(
+					input.env.APP_DB,
+					{
+						userId: input.user.mcpUser.userId,
+					},
+				)
+				if (!savedPackages.some((entry) => entry.id === approval.packageId)) {
+					return jsonResponse(
+						{ ok: false, error: 'Package not found for approval.' },
+						404,
+					)
+				}
 				const current = await listSecrets({
 					env: input.env,
 					userId: input.user.mcpUser.userId,
