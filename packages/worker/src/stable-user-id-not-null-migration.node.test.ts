@@ -4,6 +4,9 @@ import { expect, test } from 'vitest'
 
 const migrationsDirectory = new URL('../migrations/', import.meta.url)
 
+/** Upper bound (exclusive): only migrations before this file are applied as setup. */
+const stableUserIdNotNullMigration = '0075-stable-user-id-not-null.sql'
+
 const inboundUserFkTables = [
 	'password_resets',
 	'email_verifications',
@@ -39,8 +42,7 @@ function applyMigrationsBeforeNotNull(db: DatabaseSync) {
 	db.exec('PRAGMA foreign_keys = ON')
 	for (const fileName of readdirSync(migrationsDirectory)
 		.filter(
-			(file) =>
-				file.endsWith('.sql') && file !== '0075-stable-user-id-not-null.sql',
+			(file) => file.endsWith('.sql') && file < stableUserIdNotNullMigration,
 		)
 		.sort()) {
 		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
@@ -196,7 +198,7 @@ test('stable user id not-null migration rebuilds users and preserves inbound fks
 			.all(),
 	).toEqual([])
 
-	applyMigrationLikeD1(db, '0075-stable-user-id-not-null.sql')
+	applyMigrationLikeD1(db, stableUserIdNotNullMigration)
 
 	const stableColumn = (
 		db.prepare(`PRAGMA table_info(users)`).all() as Array<{
@@ -344,9 +346,9 @@ test('stable user id not-null migration fails closed when any NULL stable id rem
 
 	const beforeChildRows = snapshotInboundUserFkRows(db)
 
-	expect(() =>
-		applyMigrationLikeD1(db, '0075-stable-user-id-not-null.sql'),
-	).toThrow(/NOT NULL constraint failed: users_next\.stable_user_id/)
+	expect(() => applyMigrationLikeD1(db, stableUserIdNotNullMigration)).toThrow(
+		/NOT NULL constraint failed: users_next\.stable_user_id/,
+	)
 
 	expect(usersTableSql(db)).not.toContain('stable_user_id TEXT NOT NULL')
 	expect(stableUserIdIndexSql(db)).toContain('WHERE stable_user_id IS NOT NULL')
