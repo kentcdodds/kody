@@ -192,6 +192,29 @@ test('package access helpers treat missing approvals consistently', () => {
 		secretName: 'discordBotTokenKentPersonalAutomation',
 		packageName: 'discord-gateway',
 	})
+
+	const batchMessage = buildPackageApprovalErrorForMounts({
+		baseUrl: 'https://example.com',
+		entries: [
+			{
+				secretName: 'discordBotToken',
+				packageId: 'pkg-1',
+				kodyId: 'release',
+				approvalUrl:
+					'https://example.com/account/secrets/user/discordBotToken?package_id=pkg-1',
+			},
+			{
+				secretName: 'xAccessToken',
+				packageId: 'pkg-1',
+				kodyId: 'release',
+				approvalUrl:
+					'https://example.com/account/secrets/user/xAccessToken?package_id=pkg-1',
+			},
+		],
+	})
+	expect(batchMessage).toContain('bulkApprovalUrl')
+	expect(batchMessage).toContain('/account/secrets/approve?')
+	expect(batchMessage).toContain('names=discordBotToken')
 })
 
 test('findMissingPackageApprovals reads saved package metadata without loading manifest', async () => {

@@ -5,6 +5,7 @@ import {
 	createCapabilitySecretAccessDeniedMessage,
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
+	createPackageSecretAccessDeniedBatchMessage,
 } from '#mcp/secrets/errors.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { createUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
@@ -854,6 +855,43 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		suggestedAction: {
 			type: 'approve_secret_host',
 		},
+	})
+
+	const packageBatchError = new Error(
+		createPackageSecretAccessDeniedBatchMessage(
+			[
+				{
+					secretName: 'discordBotToken',
+					packageId: 'pkg-1',
+					kodyId: 'release',
+					packageName: 'release',
+					approvalUrl:
+						'https://example.com/account/secrets/user/discordBotToken?package_id=pkg-1',
+				},
+				{
+					secretName: 'xAccessToken',
+					packageId: 'pkg-1',
+					kodyId: 'release',
+					packageName: 'release',
+					approvalUrl:
+						'https://example.com/account/secrets/user/xAccessToken?package_id=pkg-1',
+				},
+			],
+			{
+				bulkApprovalUrl:
+					'https://example.com/account/secrets/approve?package_id=pkg-1&names=discordBotToken,xAccessToken',
+			},
+		),
+	)
+	expect(getExecutionErrorDetails(packageBatchError)).toMatchObject({
+		kind: 'secret_package_access_required_batch',
+		bulkApprovalUrl:
+			'https://example.com/account/secrets/approve?package_id=pkg-1&names=discordBotToken,xAccessToken',
+		missingApprovals: [
+			{ secretName: 'discordBotToken', packageId: 'pkg-1' },
+			{ secretName: 'xAccessToken', packageId: 'pkg-1' },
+		],
+		nextStep: expect.stringContaining('bulk package secret approval link'),
 	})
 
 	const entitlementError = new EntitlementLimitError({

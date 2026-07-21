@@ -62,8 +62,9 @@ genuinely ad hoc or one-off job, or for a simple self-contained schedule that is
 not tied to reusable package behavior. `job_schedule_once` is the one-off
 convenience form.
 
-Use `guide: "package_authoring"` for package shape, README `## Intent`, and
-visibility guidance.
+Use `guide: "package_authoring"` for package shape, README `## Intent`,
+visibility guidance, and the secret-using package approval checklist (prefer
+bulk approval URLs from `pending_secret_package_approvals` after save/publish).
 
 ## Signals to escalate from `execute` to a package
 

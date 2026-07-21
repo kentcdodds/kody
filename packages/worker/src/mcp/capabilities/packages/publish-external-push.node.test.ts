@@ -51,6 +51,12 @@ vi.mock('#worker/package-runtime/static-package-dependents.ts', () => ({
 		mockModule.getStaticPackageDependentsSummary(...args),
 }))
 
+vi.mock('#worker/repo/published-source.ts', () => ({
+	loadPublishedEntitySource: async () => {
+		throw new Error('published source unavailable in unit test')
+	},
+}))
+
 const { publishExternalPushCapability } =
 	await import('./publish-external-push.ts')
 
@@ -249,6 +255,7 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 			truncated: false,
 			items: [],
 		}),
+		pending_secret_package_approvals: null,
 	})
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
 		sourceId: 'source-1',
@@ -516,6 +523,7 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 			truncated: false,
 			items: [],
 		}),
+		pending_secret_package_approvals: null,
 	})
 
 	setupDefaultMocks()

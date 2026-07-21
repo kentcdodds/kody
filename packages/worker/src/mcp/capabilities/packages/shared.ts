@@ -28,6 +28,32 @@ export const packageSummarySchema = z.object({
 	updated_at: z.string(),
 })
 
+export const pendingPackageSecretApprovalsSchema = z
+	.object({
+		package_id: z.string().describe('Saved package id that needs approvals.'),
+		kody_id: z.string().describe('Package kody.id that needs approvals.'),
+		secrets: z
+			.array(
+				z.object({
+					secret_name: z.string(),
+					approval_url: z
+						.string()
+						.describe('Per-secret package approval URL in the account UI.'),
+				}),
+			)
+			.describe('User secrets that still need package approval.'),
+		bulk_approval_url: z
+			.string()
+			.nullable()
+			.describe(
+				'One-click bulk approval URL when two or more secrets still need package approval; prefer this over individual links.',
+			),
+	})
+	.nullable()
+	.describe(
+		'Pending user-secret package approvals detected from secretMounts and secret placeholders. Null when none are pending. Do not treat the package as ready to run until the user approves these and a packages.invokeChecked smoke test succeeds.',
+	)
+
 export function toPackageSummary(savedPackage: SavedPackageRecord) {
 	return {
 		package_id: savedPackage.id,

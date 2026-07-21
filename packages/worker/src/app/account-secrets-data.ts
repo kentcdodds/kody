@@ -12,6 +12,7 @@ import {
 	resolveSecret,
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
+import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 
@@ -55,6 +56,7 @@ type AccountSecretDetail = AccountSecretListItem & {
 
 type SecretApprovalView = {
 	name: string
+	names: Array<string>
 	scope: SecretScope
 	requestedHost: string
 	requestedCapability: string | null
@@ -111,6 +113,7 @@ async function buildAccountSecretsPayload(input: {
 	const requestedApprovalHost = readApprovalHost(url)
 	const requestedCapability = readRequestedCapability(url)
 	const requestedPackageId = readRequestedPackageId(url)
+	const requestedSecretNames = readRequestedSecretNames(url)
 	const savedPackages =
 		input.savedPackages ??
 		(await listSavedPackagesByUserId(input.env.APP_DB, {
@@ -134,15 +137,21 @@ async function buildAccountSecretsPayload(input: {
 
 	let approval: SecretApprovalView | null = null
 	let approvalError: string | null = null
-	if (input.selectedSecretId && (requestedApprovalHost || requestedPackageId)) {
+	const hasApprovalTarget = Boolean(requestedApprovalHost || requestedPackageId)
+	const hasApprovalSubject = Boolean(
+		input.selectedSecretId || requestedSecretNames.length > 0,
+	)
+	if (hasApprovalSubject && hasApprovalTarget) {
 		try {
 			approval = await resolveSecretApprovalView({
 				env: input.env,
 				userId: input.user.mcpUser.userId,
-				secretId: input.selectedSecretId,
+				secretId: input.selectedSecretId ?? null,
 				requestedHost: requestedApprovalHost,
 				requestedCapability,
 				requestedPackageId,
+				requestedSecretNames,
+				savedPackageIds: new Set(savedPackages.map((entry) => entry.id)),
 			})
 		} catch (error) {
 			approvalError =
@@ -223,18 +232,49 @@ type ResolvedSecretApproval =
 			packageId: string
 			storageContext: StorageContext | null
 	  }
+	| {
+			kind: 'package_bulk'
+			names: Array<string>
+			scope: 'user'
+			packageId: string
+			storageContext: StorageContext | null
+	  }
 
 function resolveApprovalRequest(input: {
 	secretId: string | null
 	requestedHost: string | null
 	requestedPackageId: string | null
+	requestedSecretNames?: Array<string>
 }): ResolvedSecretApproval {
+	const requestedSecretNames = normalizeBulkPackageSecretApprovalNames(
+		input.requestedSecretNames ?? [],
+	)
+	if (input.requestedHost && input.requestedPackageId) {
+		throw new Error('Approval request contains both host and package.')
+	}
+	if (requestedSecretNames.length > 0) {
+		if (input.secretId) {
+			throw new Error(
+				'Approval request cannot combine selected secret and names list.',
+			)
+		}
+		if (!input.requestedPackageId) {
+			throw new Error('Bulk secret approval requires a package_id.')
+		}
+		if (input.requestedHost) {
+			throw new Error('Bulk secret approval does not support host approval.')
+		}
+		return {
+			kind: 'package_bulk',
+			names: requestedSecretNames,
+			scope: 'user',
+			packageId: input.requestedPackageId,
+			storageContext: null,
+		}
+	}
 	const parsed = input.secretId ? parseAccountSecretId(input.secretId) : null
 	if (!parsed) {
 		throw new Error('Invalid approval request.')
-	}
-	if (input.requestedHost && input.requestedPackageId) {
-		throw new Error('Approval request contains both host and package.')
 	}
 	const storageContext = getSecretContextForAccountSecret(parsed)
 	if (input.requestedPackageId) {
@@ -268,12 +308,71 @@ function resolveApprovalRequest(input: {
 async function resolveSecretApprovalView(input: {
 	env: Env
 	userId: string
-	secretId: string
+	secretId: string | null
 	requestedHost: string | null
 	requestedCapability: string | null
 	requestedPackageId: string | null
+	requestedSecretNames: Array<string>
+	savedPackageIds: Set<string>
 }) {
-	const approval = resolveApprovalRequest(input)
+	const approval = resolveApprovalRequest({
+		secretId: input.secretId,
+		requestedHost: input.requestedHost,
+		requestedPackageId: input.requestedPackageId,
+		requestedSecretNames: input.requestedSecretNames,
+	})
+	if (approval.kind === 'package_bulk') {
+		if (!input.savedPackageIds.has(approval.packageId)) {
+			throw new Error('Package not found for approval.')
+		}
+		const secrets = await listSecrets({
+			env: input.env,
+			userId: input.userId,
+			scope: 'user',
+		})
+		const byName = new Map(
+			secrets
+				.filter((secret) => secret.scope === 'user')
+				.map((secret) => [secret.name, secret]),
+		)
+		const foundNames: Array<string> = []
+		const pendingNames: Array<string> = []
+		for (const name of approval.names) {
+			const secret = byName.get(name)
+			if (!secret) continue
+			foundNames.push(name)
+			if (!secret.allowedPackages.includes(approval.packageId)) {
+				pendingNames.push(name)
+			}
+		}
+		if (foundNames.length === 0) {
+			throw new Error('None of the listed secrets were found.')
+		}
+		if (pendingNames.length === 0) {
+			return {
+				name: foundNames[0] ?? '',
+				names: foundNames,
+				scope: 'user',
+				requestedHost: '',
+				requestedCapability: input.requestedCapability,
+				requestedPackageId: approval.packageId,
+				currentAllowedHosts: [],
+				currentAllowedPackages: [approval.packageId],
+			} satisfies SecretApprovalView
+		}
+		const firstPending = pendingNames[0]
+		const firstSecret = firstPending ? byName.get(firstPending) : null
+		return {
+			name: firstPending ?? '',
+			names: pendingNames,
+			scope: 'user',
+			requestedHost: '',
+			requestedCapability: input.requestedCapability,
+			requestedPackageId: approval.packageId,
+			currentAllowedHosts: firstSecret?.allowedHosts ?? [],
+			currentAllowedPackages: firstSecret?.allowedPackages ?? [],
+		} satisfies SecretApprovalView
+	}
 	const secrets = await listSecrets({
 		env: input.env,
 		userId: input.userId,
@@ -286,8 +385,15 @@ async function resolveSecretApprovalView(input: {
 	if (!secret) {
 		throw new Error('Secret not found.')
 	}
+	if (
+		approval.kind === 'package' &&
+		!input.savedPackageIds.has(approval.packageId)
+	) {
+		throw new Error('Package not found for approval.')
+	}
 	return {
 		name: approval.name,
+		names: [approval.name],
 		scope: approval.scope,
 		requestedHost: approval.kind === 'host' ? approval.requestedHost : '',
 		requestedCapability: input.requestedCapability,
@@ -428,6 +534,16 @@ function readRequestedPackageId(url: URL) {
 function readRequestedCapability(url: URL) {
 	const value = url.searchParams.get('capability')
 	return value?.trim() ? value.trim() : null
+}
+
+function readRequestedSecretNames(url: URL) {
+	const values = [
+		...url.searchParams.getAll('names'),
+		...url.searchParams.getAll('name'),
+	]
+	return normalizeBulkPackageSecretApprovalNames(
+		values.flatMap((value) => value.split(',')),
+	)
 }
 
 export { resolveApprovalRequest, toPackageOptions, listAccountSecrets }

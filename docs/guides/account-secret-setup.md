@@ -46,6 +46,20 @@ Provide the user a URL like:
 - Host, capability, and package approvals are handled in the authenticated
   account secrets UI after the secret is saved.
 
+## Package approval URLs (after a package exists)
+
+When a saved package needs access to one or more **existing** user secrets, send
+the user an approval link — do not ask them to recreate the secrets.
+
+- Single secret:
+  `/account/secrets/user/{secretName}?package_id={savedPackageId}&package={kodyId}`
+- Multiple secrets for one package (preferred):
+  `/account/secrets/approve?package_id={savedPackageId}&package={kodyId}&names={secret1},{secret2}`
+
+Prefer the bulk `/account/secrets/approve?...&names=...` URL whenever two or
+more secrets still need package approval. The account UI shows every listed
+secret and lets the user approve them in one click.
+
 ## Agent instructions
 
 1. Generate the URL with the required `name` and any optional params.

@@ -80,8 +80,13 @@ export function createPackageSecretAccessDeniedMessage(input: {
 
 export function createPackageSecretAccessDeniedBatchMessage(
 	entries: Array<PackageApprovalEntry>,
+	options: { bulkApprovalUrl?: string | null } = {},
 ) {
-	const payload = JSON.stringify(entries)
+	const bulkApprovalUrl = options.bulkApprovalUrl?.trim() || null
+	const payload = JSON.stringify({
+		entries,
+		...(bulkApprovalUrl ? { bulkApprovalUrl } : {}),
+	})
 	return `${packageBatchDeniedPrefix} ${payload}`
 }
 
@@ -143,33 +148,55 @@ export function parseHostApprovalRequiredBatchMessage(message: string) {
 	}
 }
 
-export function parsePackageAccessRequiredBatchMessage(message: string) {
+function parsePackageApprovalEntries(value: unknown) {
+	if (!Array.isArray(value)) return []
+	const entries: Array<PackageApprovalEntry> = []
+	for (const entry of value) {
+		if (!entry || typeof entry !== 'object') continue
+		if (
+			typeof entry.secretName !== 'string' ||
+			typeof entry.packageId !== 'string' ||
+			typeof entry.approvalUrl !== 'string'
+		) {
+			continue
+		}
+		entries.push({
+			secretName: entry.secretName,
+			packageId: entry.packageId,
+			kodyId: typeof entry.kodyId === 'string' ? entry.kodyId : null,
+			packageName:
+				typeof entry.packageName === 'string' ? entry.packageName : null,
+			approvalUrl: entry.approvalUrl,
+		})
+	}
+	return entries
+}
+
+export function parsePackageAccessRequiredBatchMessage(message: string): {
+	entries: Array<PackageApprovalEntry>
+	bulkApprovalUrl: string | null
+} | null {
 	if (!message.startsWith(packageBatchDeniedPrefix)) return null
 	const raw = message.slice(packageBatchDeniedPrefix.length).trim()
 	if (!raw) return null
 	try {
 		const parsed = JSON.parse(raw)
-		if (!Array.isArray(parsed)) return null
-		const entries: Array<PackageApprovalEntry> = []
-		for (const entry of parsed) {
-			if (!entry || typeof entry !== 'object') continue
-			if (
-				typeof entry.secretName !== 'string' ||
-				typeof entry.packageId !== 'string' ||
-				typeof entry.approvalUrl !== 'string'
-			) {
-				continue
-			}
-			entries.push({
-				secretName: entry.secretName,
-				packageId: entry.packageId,
-				kodyId: typeof entry.kodyId === 'string' ? entry.kodyId : null,
-				packageName:
-					typeof entry.packageName === 'string' ? entry.packageName : null,
-				approvalUrl: entry.approvalUrl,
-			})
+		if (Array.isArray(parsed)) {
+			const entries = parsePackageApprovalEntries(parsed)
+			return entries.length > 0 ? { entries, bulkApprovalUrl: null } : null
 		}
-		return entries.length > 0 ? entries : null
+		if (!parsed || typeof parsed !== 'object') return null
+		const entries = parsePackageApprovalEntries(
+			'entries' in parsed ? parsed.entries : null,
+		)
+		if (entries.length === 0) return null
+		const bulkApprovalUrl =
+			'bulkApprovalUrl' in parsed &&
+			typeof parsed.bulkApprovalUrl === 'string' &&
+			parsed.bulkApprovalUrl.trim()
+				? parsed.bulkApprovalUrl.trim()
+				: null
+		return { entries, bulkApprovalUrl }
 	} catch {
 		return null
 	}

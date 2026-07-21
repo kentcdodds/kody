@@ -1,5 +1,8 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { buildSecretPackageApprovalUrl } from './package-approval-url.ts'
+import {
+	buildSecretPackageApprovalUrl,
+	buildSecretPackageBulkApprovalUrlIfNeeded,
+} from './package-approval-url.ts'
 import {
 	createMissingSecretMessage,
 	createPackageSecretAccessDeniedBatchMessage,
@@ -244,6 +247,7 @@ export function buildPackageApprovalErrorForMounts(input: {
 		kodyId: string
 		approvalUrl: string
 	}>
+	baseUrl?: string
 }) {
 	if (input.entries.length === 0) {
 		return null
@@ -257,6 +261,28 @@ export function buildPackageApprovalErrorForMounts(input: {
 			approvalUrl: only.approvalUrl,
 		})
 	}
+	const packageIds = new Set(input.entries.map((entry) => entry.packageId))
+	const first = input.entries[0]
+	const baseUrl =
+		input.baseUrl ??
+		(first
+			? (() => {
+					try {
+						return new URL(first.approvalUrl).origin
+					} catch {
+						return null
+					}
+				})()
+			: null)
+	const bulkApprovalUrl =
+		packageIds.size === 1 && first && baseUrl
+			? buildSecretPackageBulkApprovalUrlIfNeeded({
+					baseUrl,
+					packageId: first.packageId,
+					kodyId: first.kodyId,
+					names: input.entries.map((entry) => entry.secretName),
+				})
+			: null
 	return createPackageSecretAccessDeniedBatchMessage(
 		input.entries.map((entry) => ({
 			secretName: entry.secretName,
@@ -265,5 +291,6 @@ export function buildPackageApprovalErrorForMounts(input: {
 			packageName: entry.kodyId,
 			approvalUrl: entry.approvalUrl,
 		})),
+		{ bulkApprovalUrl },
 	)
 }

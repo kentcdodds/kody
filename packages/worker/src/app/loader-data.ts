@@ -687,6 +687,7 @@ export type AccountSecretsLoaderData = {
 	selectedSecret: AccountSecretDetail | null
 	approval: {
 		name: string
+		names: Array<string>
 		scope: 'package' | 'session' | 'user'
 		requestedHost: string
 		requestedCapability: string | null

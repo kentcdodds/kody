@@ -121,6 +121,12 @@ app will depend on:
 - the agent is using the correct secret names, integration name, and API base
   URL
 
+An authenticated `execute` smoke test does **not** grant package secret access.
+After you save or publish a secret-using package, surface
+`pending_secret_package_approvals` (prefer `bulk_approval_url`), wait for the
+user to approve, and verify with `packages.invokeChecked` before calling the
+work complete.
+
 ## Important exceptions
 
 The main exception is a package app whose explicit purpose is to complete a

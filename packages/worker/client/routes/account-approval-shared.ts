@@ -6,6 +6,7 @@ export type ApprovalScope = 'session' | 'package' | 'user'
 
 export type ApprovalView = {
 	name: string
+	names: Array<string>
 	scope: ApprovalScope
 	requestedHost: string
 	requestedCapability: string | null

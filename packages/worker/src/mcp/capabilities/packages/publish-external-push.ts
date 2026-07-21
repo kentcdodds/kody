@@ -19,6 +19,12 @@ import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
 import { destructiveOverwriteConfirmationDescription } from '#worker/repo/source-safety-policy.ts'
+import {
+	buildPendingPackageSecretApprovalsSummary,
+	type PendingPackageSecretApprovalsSummary,
+} from '#mcp/secrets/pending-package-secret-approvals.ts'
+import { loadPublishedEntitySource } from '#worker/repo/published-source.ts'
+import { pendingPackageSecretApprovalsSchema } from './shared.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
 const inputSchema = z.object({
@@ -198,6 +204,7 @@ const outputSchema = z.discriminatedUnion('status', [
 		status: z.literal('already_published'),
 		published_commit: z.string().nullable(),
 		static_dependents: staticDependentsSchema,
+		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
 	}),
 	z.object({
 		status: z.literal('not_fast_forward'),
@@ -218,8 +225,64 @@ const outputSchema = z.discriminatedUnion('status', [
 		manifest: z.unknown(),
 		checks: z.array(checkSchema),
 		static_dependents: staticDependentsSchema,
+		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
 	}),
 ])
+
+function readSecretMountsFromPackageJson(content: string | undefined) {
+	if (!content) return null
+	try {
+		const parsed = JSON.parse(content) as {
+			kody?: {
+				secretMounts?: Record<
+					string,
+					{ name: string; scope?: 'user' | 'package' | 'session' }
+				>
+			}
+		}
+		const mounts = parsed.kody?.secretMounts
+		if (!mounts || typeof mounts !== 'object') return null
+		return mounts
+	} catch {
+		return null
+	}
+}
+
+async function getPendingSecretApprovalsForPublishedPackage(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	packageId: string
+	kodyId: string
+	sourceId: string
+}): Promise<PendingPackageSecretApprovalsSummary | null> {
+	try {
+		const published = await loadPublishedEntitySource({
+			env: input.env,
+			userId: input.userId,
+			sourceId: input.sourceId,
+		})
+		return await buildPendingPackageSecretApprovalsSummary({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			packageId: input.packageId,
+			kodyId: input.kodyId,
+			secretMounts: readSecretMountsFromPackageJson(
+				published.files['package.json'],
+			),
+			files: published.files,
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: input.packageId,
+				storageId: null,
+			},
+		})
+	} catch {
+		return null
+	}
+}
 
 async function getPublishStaticDependents(input: {
 	db: D1Database
@@ -273,7 +336,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				attemptIndex += 1
 			) {
 				const attempt = attemptIndex + 1
-				const { packageId, source } = await resolveOwnedPackageSource({
+				const { packageId, kodyId, source } = await resolveOwnedPackageSource({
 					db: ctx.env.APP_DB,
 					userId: owner.ownerUserId,
 					args: {
@@ -330,6 +393,15 @@ export const publishExternalPushCapability = defineDomainCapability(
 								sourceId: source.id,
 								publishedCommit: result.published_commit,
 							}),
+							pending_secret_package_approvals:
+								await getPendingSecretApprovalsForPublishedPackage({
+									env: ctx.env,
+									baseUrl: ctx.callerContext.baseUrl,
+									userId: owner.ownerUserId,
+									packageId,
+									kodyId,
+									sourceId: source.id,
+								}),
 						} as const
 					}
 					if (result.status !== 'published') {
@@ -351,6 +423,15 @@ export const publishExternalPushCapability = defineDomainCapability(
 							sourceId: source.id,
 							publishedCommit: result.published_commit,
 						}),
+						pending_secret_package_approvals:
+							await getPendingSecretApprovalsForPublishedPackage({
+								env: ctx.env,
+								baseUrl: ctx.callerContext.baseUrl,
+								userId: owner.ownerUserId,
+								packageId,
+								kodyId,
+								sourceId: source.id,
+							}),
 					} as const
 				} catch (error) {
 					if (!isTransientDurableObjectResetError(error)) {
