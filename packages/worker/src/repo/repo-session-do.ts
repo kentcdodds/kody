@@ -1118,6 +1118,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				ok: true as const,
 				sessionId: input.sessionId,
 				branch: '',
+				branchDeleted: true,
 			}
 		}
 		if (sessionRow.user_id !== input.userId) {
@@ -1126,39 +1127,78 @@ class RepoSessionBase extends DurableObject<Env> {
 			)
 		}
 		const sessionBranch = sessionRow.session_branch
+		// Remote branch delete is best-effort. Cron selects the same expired
+		// rows every tick until the D1 session row is removed; a sticky remote
+		// failure (for example a broken raw-git fs adapter) must not pin those
+		// rows forever and burn ~50 DO wakes each scheduled run.
+		let branchDeleted = false
+		try {
+			branchDeleted = await this.deleteSessionRemoteBranch({
+				sessionRow,
+			})
+		} catch (error) {
+			console.warn(
+				JSON.stringify({
+					message: 'repo session remote branch delete failed',
+					reason: input.reason,
+					sessionId: input.sessionId,
+					branch: sessionBranch,
+					error: getErrorMessage(error),
+				}),
+			)
+		}
+		await deleteRepoSession(this.env.APP_DB, input.sessionId)
+		await this.clearCachedSessionState(input.sessionId)
+		await this.resetWorkspace().catch(() => {
+			// Session row is already gone; workspace wipe is best-effort.
+		})
+		console.info(
+			JSON.stringify({
+				message: branchDeleted
+					? 'repo session branch deleted'
+					: 'repo session cleanup completed without remote branch delete',
+				reason: input.reason,
+			}),
+		)
+		return {
+			ok: true as const,
+			sessionId: input.sessionId,
+			branch: sessionBranch,
+			branchDeleted,
+		}
+	}
+
+	private async deleteSessionRemoteBranch(input: {
+		sessionRow: RepoSessionRow
+	}): Promise<boolean> {
+		const sessionBranch = input.sessionRow.session_branch
 		const source = await getEntitySourceById(
 			this.env.APP_DB,
-			sessionRow.source_id,
+			input.sessionRow.source_id,
 		)
 		if (!source) {
 			const sourceRepo = await resolveExistingArtifactSourceRepo(
 				this.env,
-				sessionRow.source_repo_id,
+				input.sessionRow.source_repo_id,
 			)
-			if (sourceRepo) {
-				const access = await ensureArtifactRepoRemote({
-					repo: sourceRepo,
-					scope: 'write',
-				})
-				await this.initialize({
-					sessionId: sessionRow.id,
-					repoRemote: access.remote,
-					repoToken: access.token,
-					sessionBranch,
-				})
-				await this.deleteRemoteBranch({
-					branch: sessionBranch,
-					token: access.token,
-				})
+			if (!sourceRepo) {
+				return true
 			}
-			await deleteRepoSession(this.env.APP_DB, input.sessionId)
-			await this.clearCachedSessionState(input.sessionId)
-			await this.resetWorkspace()
-			return {
-				ok: true as const,
-				sessionId: input.sessionId,
+			const access = await ensureArtifactRepoRemote({
+				repo: sourceRepo,
+				scope: 'write',
+			})
+			await this.initialize({
+				sessionId: input.sessionRow.id,
+				repoRemote: access.remote,
+				repoToken: access.token,
+				sessionBranch,
+			})
+			await this.deleteRemoteBranch({
 				branch: sessionBranch,
-			}
+				token: access.token,
+			})
+			return true
 		}
 		const sourceRepo = await resolveArtifactSourceRepo(this.env, source.repo_id)
 		const access = await ensureArtifactRepoRemote({
@@ -1166,7 +1206,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			scope: 'write',
 		})
 		await this.initialize({
-			sessionId: sessionRow.id,
+			sessionId: input.sessionRow.id,
 			repoRemote: access.remote,
 			repoToken: access.token,
 			sessionBranch,
@@ -1175,20 +1215,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			branch: sessionBranch,
 			token: access.token,
 		})
-		await deleteRepoSession(this.env.APP_DB, input.sessionId)
-		await this.clearCachedSessionState(input.sessionId)
-		await this.resetWorkspace()
-		console.info(
-			JSON.stringify({
-				message: 'repo session branch deleted',
-				reason: input.reason,
-			}),
-		)
-		return {
-			ok: true as const,
-			sessionId: input.sessionId,
-			branch: sessionBranch,
-		}
+		return true
 	}
 
 	async readFile(input: {
