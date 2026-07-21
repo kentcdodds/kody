@@ -462,6 +462,67 @@ test('buildPackageAppWorker acquires a fresh stub per request while reusing the 
 	expect(firstWorkerId).toMatch(/^package-app-/)
 })
 
+test('buildPackageAppWorker aligns dynamic worker compatibility with the main worker', async () => {
+	resetPackageAppRuntimeMocks()
+	const { env } = createPackageAppTestEnv()
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		{
+			row: {
+				id: 'artifact-row-1',
+				artifactName: null,
+				entryPoint: 'app.js',
+			},
+			artifact: {
+				mainModule: 'dist/app.js',
+				modules: {
+					'dist/app.js':
+						'export default { fetch() { return new Response("cached") } }',
+				},
+				dependencies: [],
+				dynamicDependencies: [],
+			},
+		},
+	)
+
+	await buildPackageAppWorker({
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-compat',
+		savedPackage: {
+			id: 'package-compat',
+			kodyId: 'example-compat',
+			name: '@kody/example-compat',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+		},
+		source: createPackageAppTestSource(),
+		manifest: createPackageAppTestManifest(),
+		runtime: {
+			callerContext: {
+				user: {
+					userId: 'user-compat',
+					email: 'compat@example.com',
+					displayName: 'Compat User',
+				},
+			},
+		} as never,
+	})
+
+	const loader = env.APP_LOADER as unknown as {
+		get: ReturnType<typeof vi.fn>
+	}
+	const factory = loader.get.mock.calls[0]?.[1] as
+		| (() => Record<string, unknown>)
+		| undefined
+	expect(factory).toBeTypeOf('function')
+	expect(factory?.()).toMatchObject({
+		compatibilityDate: '2026-04-16',
+		compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
+	})
+})
+
 test('buildPackageAppWorker persists rebuilt app artifacts with artifactName null', async () => {
 	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
