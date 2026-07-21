@@ -4,7 +4,6 @@ import { planLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	listPackageSecretsByPackageIds,
-	listSecrets,
 	resolveSecret,
 	saveSecret,
 	setSecretAllowedPackages,
@@ -272,34 +271,6 @@ function createSecretTestDb(
 		},
 	} as unknown as D1Database
 
-	function seedReservedSecret(userId: string, name: string) {
-		const bucketKey = getBucketKey(userId, 'user', '')
-		let bucket = buckets.get(bucketKey)
-		if (!bucket) {
-			bucket = {
-				id: crypto.randomUUID(),
-				user_id: userId,
-				scope: 'user',
-				binding_key: '',
-				expires_at: null,
-				created_at: '2026-01-01T00:00:00.000Z',
-				updated_at: '2026-01-01T00:00:00.000Z',
-			}
-			buckets.set(bucketKey, bucket)
-		}
-		entries.set(getEntryKey(bucket.id, name), {
-			bucket_id: bucket.id,
-			name,
-			description: 'internal',
-			encrypted_value: 'ciphertext',
-			allowed_hosts: '[]',
-			allowed_capabilities: '[]',
-			allowed_packages: '[]',
-			created_at: '2026-01-01T00:00:00.000Z',
-			updated_at: '2026-01-01T00:00:00.000Z',
-		})
-	}
-
 	function corruptUserSecret(userId: string, name: string) {
 		const bucket = buckets.get(getBucketKey(userId, 'user', ''))
 		if (!bucket) throw new Error('user bucket not found')
@@ -308,36 +279,8 @@ function createSecretTestDb(
 		entry.encrypted_value = 'not-valid-ciphertext'
 	}
 
-	return { db, seedReservedSecret, corruptUserSecret }
+	return { db, corruptUserSecret }
 }
-
-test('reserved internal skill runner secret names cannot be saved or listed', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-	}
-
-	await expect(
-		saveSecret({
-			env,
-			userId: 'user-123',
-			scope: 'user',
-			name: 'skill-runner-token:discord-gateway',
-			value: 'super-secret-token',
-		}),
-	).rejects.toThrow('Secret name is reserved for internal use.')
-
-	testDb.seedReservedSecret('user-123', 'skill-runner-token:discord-gateway')
-
-	await expect(
-		listSecrets({
-			env,
-			userId: 'user-123',
-			scope: 'user',
-		}),
-	).resolves.toEqual([])
-})
 
 test('resolveSecret returns the first scope hit in precedence order', async () => {
 	const testDb = createSecretTestDb()

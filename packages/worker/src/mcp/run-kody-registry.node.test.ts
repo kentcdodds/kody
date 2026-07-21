@@ -9,7 +9,6 @@ import {
 	buildKodyFns,
 	buildKodyProvider,
 	createWorkflowTools,
-	runKodyWithRegistry,
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
 } from './run-kody-registry.ts'
@@ -1242,7 +1241,7 @@ test('buildKodyFns rejects storage kody tools that collide with capabilities', a
 	}
 })
 
-test('runKodyWithRegistry redacts secret keys and survives cyclic results', async () => {
+test('runModuleWithRegistry redacts secret keys and survives cyclic results', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -1413,125 +1412,7 @@ export default async function run() {
 	}
 })
 
-test('runKodyWithRegistry routes module and snippet inputs through the expected execution path', async () => {
-	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const buildBundleMock = vi.mocked(buildKodyModuleBundle)
-	buildBundleMock.mockClear()
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockResolvedValue({
-			capabilityDomains: [],
-			capabilityDomainDescriptionsByName: {} as Record<string, string>,
-			capabilityHandlers: {},
-			capabilityList: [],
-			capabilityMap: {},
-			capabilitySpecs: {},
-			capabilityToolDescriptors: {},
-		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>)
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return {
-					result: 'ok',
-					logs: [],
-				}
-			},
-		} as never)
-
-	try {
-		const moduleCode = `import { kody } from 'kody:runtime'
-
-export default async function run() {
-	return await kody.meta_list_capabilities({})
-}`
-		const fencedModuleCode = `\`\`\`ts
-import { kody } from 'kody:runtime'
-
-export default async function run() {
-	return await kody.meta_list_capabilities({})
-}
-\`\`\``
-		const typescriptModuleCode = `import type { ExecuteResult } from '@cloudflare/codemode'
-
-type ModuleOutput = ExecuteResult | null
-
-export default async function run(): Promise<ModuleOutput> {
-	return null
-}`
-		const moduleResult = await runKodyWithRegistry(
-			env,
-			callerContext,
-			moduleCode,
-		)
-		expect(moduleResult.result).toBe('ok')
-		expect(buildBundleMock).toHaveBeenNthCalledWith(
-			1,
-			expect.objectContaining({
-				sourceFiles: {
-					'entry.ts': moduleCode,
-				},
-				entryPoint: 'entry.ts',
-			}),
-		)
-
-		const fencedModuleResult = await runKodyWithRegistry(
-			env,
-			callerContext,
-			fencedModuleCode,
-		)
-		expect(fencedModuleResult.result).toBe('ok')
-		expect(buildBundleMock).toHaveBeenNthCalledWith(
-			2,
-			expect.objectContaining({
-				sourceFiles: {
-					'entry.ts': `import { kody } from 'kody:runtime'
-
-export default async function run() {
-	return await kody.meta_list_capabilities({})
-}
-`,
-				},
-			}),
-		)
-
-		const typescriptModuleResult = await runKodyWithRegistry(
-			env,
-			callerContext,
-			typescriptModuleCode,
-		)
-		expect(typescriptModuleResult.result).toBe('ok')
-		expect(buildBundleMock).toHaveBeenNthCalledWith(
-			3,
-			expect.objectContaining({
-				sourceFiles: {
-					'entry.ts': typescriptModuleCode,
-				},
-			}),
-		)
-
-		const snippetResult = await runKodyWithRegistry(
-			env,
-			callerContext,
-			'return "ok"',
-		)
-		expect(snippetResult.result).toBe('ok')
-		expect(buildBundleMock).toHaveBeenCalledTimes(3)
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-	}
-})
-
-test('runKodyWithRegistry forwards package context for module syntax', async () => {
+test('runModuleWithRegistry forwards package context', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -1600,7 +1481,7 @@ test('runKodyWithRegistry forwards package context for module syntax', async () 
 export default async function run() {
 	return packageContext?.packageId ?? null
 }`
-		const result = await runKodyWithRegistry(
+		const result = await runModuleWithRegistry(
 			env,
 			callerContext,
 			code,
@@ -2368,7 +2249,7 @@ test('runBundledModuleWithRegistry rewrites guard-less unbound runtime helper er
 			'entry.js': `import { storage } from './.__kody_virtual__/runtime.js'
 
 export default async function main() {
-	const result = await storage.sql('select count(*) as count from skills')
+	const result = await storage.sql('select count(*) as count from items')
 	return result.rows
 }`,
 		},
@@ -2441,10 +2322,10 @@ export default async function main() {
 			.mockResolvedValue({
 				modules: {
 					'entry.js': `export default async function main() {
-	const mod = await import('kody:@scope/skills/skill-list')
+	const mod = await import('kody:@scope/notes/note-list')
 	return await mod.default({})
 }`,
-					'.__kody_dynamic__/scope/skills/skill-list.js': `import { storage } from '../../.__kody_virtual__/runtime.js'
+					'.__kody_dynamic__/scope/notes/note-list.js': `import { storage } from '../../.__kody_virtual__/runtime.js'
 export default async () => (await storage.sql('select 1')).rows`,
 				},
 				dynamicDependencyPackageIds: [],
@@ -2457,7 +2338,7 @@ export default async () => (await storage.sql('select 1')).rows`,
 					mainModule: 'entry.js',
 					modules: {
 						'entry.js': `export default async function main() {
-	const mod = await import('kody:@scope/skills/skill-list')
+	const mod = await import('kody:@scope/notes/note-list')
 	return await mod.default({})
 }`,
 					},
@@ -2475,59 +2356,5 @@ export default async () => (await storage.sql('select 1')).rows`,
 		}
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
-	}
-})
-
-test('runKodyWithRegistry expression path omits OAuth helper prelude without execute helper capabilities', async () => {
-	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const emptyRegistry = {
-		capabilityDomains: [],
-		capabilityDomainDescriptionsByName: {} as Record<string, string>,
-		capabilityHandlers: {},
-		capabilityList: [],
-		capabilityMap: {},
-		capabilitySpecs: {},
-		capabilityToolDescriptors: {},
-	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockResolvedValue(emptyRegistry)
-	let wrappedSource = ''
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute(wrapped) {
-				wrappedSource = String(wrapped)
-				return {
-					result: 42,
-					logs: [],
-				}
-			},
-		} as never)
-
-	try {
-		const result = await runKodyWithRegistry(
-			env,
-			callerContext,
-			'async () => 42',
-			undefined,
-			{
-				capabilityRegistry: emptyRegistry,
-			},
-		)
-		expect(result.result).toBe(42)
-		expect(wrappedSource).not.toContain('IntegrationHostNotAllowedError')
-		expect(wrappedSource).not.toContain('__kodyRefreshAccessToken')
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
 	}
 })

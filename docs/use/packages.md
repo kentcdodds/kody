@@ -264,9 +264,9 @@ declaring package's own bucket no matter where the code runs:
 ```ts
 import { packageStorage } from 'kody:runtime'
 
-export default async function listSkills() {
+export default async function listItems() {
 	const bucket = packageStorage()
-	const result = await bucket.sql('select name from skills order by name asc')
+	const result = await bucket.sql('select name from items order by name asc')
 	return result.rows.map((row) => row.name)
 }
 ```

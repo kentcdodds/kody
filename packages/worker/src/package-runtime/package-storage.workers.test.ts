@@ -222,19 +222,19 @@ test(
 		const userId = `user-${crypto.randomUUID()}`
 		const { packageId } = await publishPackage({
 			userId,
-			name: '@kentcdodds/skills',
-			kodyId: 'skills',
+			name: '@kentcdodds/notes',
+			kodyId: 'notes',
 			sourceFiles: {
 				'package.json': JSON.stringify({
-					name: '@kentcdodds/skills',
-					exports: { './skill-list': './src/skill-list.ts' },
-					kody: { id: 'skills', description: 'Skill storage' },
+					name: '@kentcdodds/notes',
+					exports: { './note-list': './src/note-list.ts' },
+					kody: { id: 'notes', description: 'Note storage' },
 				}),
-				'src/skill-list.ts': [
+				'src/note-list.ts': [
 					"import { packageStorage, storage } from 'kody:runtime'",
-					'export default async function skillList() {',
+					'export default async function noteList() {',
 					'\tconst bucket = packageStorage()',
-					"\tconst result = await bucket.sql('select name from skills order by name asc')",
+					"\tconst result = await bucket.sql('select name from notes order by name asc')",
 					'\treturn {',
 					'\t\tambientStorageType: typeof storage,',
 					'\t\tbucketId: bucket.id,',
@@ -244,18 +244,18 @@ test(
 				].join('\n'),
 			},
 			exports: [
-				{ artifactName: './skill-list', entryPoint: 'src/skill-list.ts' },
+				{ artifactName: './note-list', entryPoint: 'src/note-list.ts' },
 			],
 		})
 		// Seed the package's own bucket the way the package would in its own
 		// runtime (package invocations bind ambient storage to the same id).
 		const runner = packageBucketRunner(userId, packageId)
 		await runner.sqlQuery({
-			query: 'create table if not exists skills (name text primary key)',
+			query: 'create table if not exists notes (name text primary key)',
 			writable: true,
 		})
 		await runner.sqlQuery({
-			query: "insert into skills (name) values ('debugging'), ('writing')",
+			query: "insert into notes (name) values ('debugging'), ('writing')",
 			writable: true,
 		})
 
@@ -265,9 +265,9 @@ test(
 			userId,
 			sourceFiles: {
 				'entry.ts': [
-					"import skillList from 'kody:@kentcdodds/skills/skill-list'",
+					"import noteList from 'kody:@kentcdodds/notes/note-list'",
 					'export default async function main() {',
-					'\treturn await skillList()',
+					'\treturn await noteList()',
 					'}',
 				].join('\n'),
 			},

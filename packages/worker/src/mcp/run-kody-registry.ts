@@ -1,6 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
-	normalizeCode,
 	resolveProvider,
 	sanitizeToolName,
 	type ExecuteResult,
@@ -33,7 +32,6 @@ import {
 import { buildSecretCapabilityApprovalUrl } from '#mcp/secrets/capability-approval-url.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
-import { buildParameterizedSkillCode } from '#mcp/skills/skill-parameters.ts'
 import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
@@ -49,10 +47,6 @@ import {
 	createExecuteHelperPrelude,
 	getExecuteHelperCapabilityNames,
 } from '#mcp/execute-modules/kody-runtime-utils.ts'
-import {
-	hasTopLevelModuleSyntax,
-	stripCodeFences,
-} from '#worker/module-source.ts'
 import {
 	buildKodyModuleBundle,
 	hydrateKodyRuntimeModules,
@@ -941,167 +935,6 @@ function createCapabilityInputSecretResolver(
 			)
 		}
 		return resolved.value
-	}
-}
-
-export async function runKodyWithRegistry(
-	env: Env,
-	callerContext: McpCallerContext,
-	code: string,
-	params?: Record<string, unknown>,
-	options?: {
-		executorExports?: typeof workerExports
-		additionalTools?: AdditionalKodyTools
-		helperPrelude?: string
-		storageTools?: StorageToolOptions
-		serviceTools?: ServiceToolOptions
-		packageContext?: PackageContextOptions
-		emailTools?: EmailToolOptions
-		executorModules?: WorkerLoaderModules
-		executorTimeoutMs?: number | null
-		packageInvokeTools?: PackageInvokeTools
-		packageEventTools?: PackageEventTools
-		capabilityRegistry?: BuiltCapabilityRegistry
-		rawFetchHostSink?: RawFetchHostSink
-	},
-): Promise<ExecuteResult> {
-	const moduleSource = stripCodeFences(code.trim())
-	if (hasTopLevelModuleSyntax(moduleSource)) {
-		return runModuleWithRegistry(env, callerContext, moduleSource, params, {
-			executorExports: options?.executorExports,
-			additionalTools: options?.additionalTools,
-			storageTools: options?.storageTools,
-			serviceTools: options?.serviceTools,
-			packageContext: options?.packageContext,
-			workflowTools: createWorkflowTools({
-				env,
-				callerContext,
-				packageContext: options?.packageContext ?? null,
-			}),
-			packageInvokeTools: options?.packageInvokeTools,
-			packageEventTools: options?.packageEventTools,
-			executorTimeoutMs: options?.executorTimeoutMs,
-			capabilityRegistry: options?.capabilityRegistry,
-			rawFetchHostSink: options?.rawFetchHostSink,
-		})
-	}
-	const secretRedactor = createExecutionSecretRedactor()
-	const normalizedStorageContext = normalizeStorageContext(
-		callerContext.storageContext ?? null,
-	)
-	const executor = createExecuteExecutor({
-		env,
-		exports: options?.executorExports ?? workerExports,
-		timeoutMs: options?.executorTimeoutMs,
-		gatewayProps: {
-			baseUrl: callerContext.baseUrl,
-			userId: callerContext.user?.userId ?? null,
-			storageContext: normalizedStorageContext,
-		},
-		modules: options?.executorModules,
-		// Package-context runs are saved-package code; do not count their fetch hosts.
-		rawFetchHostSink: options?.packageContext
-			? undefined
-			: options?.rawFetchHostSink,
-	})
-	const workflowTools = createWorkflowTools({
-		env,
-		callerContext,
-		packageContext: options?.packageContext ?? null,
-	})
-	const provider = await buildKodyProvider(env, callerContext, {
-		trackSecretInputValue: (value) => {
-			secretRedactor.track(value)
-		},
-		additionalTools: options?.additionalTools,
-		storageTools: options?.storageTools,
-		serviceTools: options?.serviceTools,
-		packageSecretTools: options?.packageContext
-			? createPackageSecretTools({
-					env,
-					callerContext,
-					packageId: options.packageContext.packageId,
-				})
-			: undefined,
-		emailTools: options?.emailTools,
-		workflowTools,
-		capabilityRegistry: options?.capabilityRegistry,
-	})
-	const wrappedCode =
-		params !== undefined
-			? await buildParameterizedSkillCode(code, params)
-			: code
-	const normalized = normalizeCode(wrappedCode)
-	const storageHelperPrelude = options?.storageTools
-		? createStorageHelperPrelude({
-				storageId: options.storageTools.storageId,
-				writable: options.storageTools.writable,
-			})
-		: ''
-	const serviceHelperPrelude = options?.serviceTools
-		? createServiceHelperPrelude()
-		: ''
-	const packageSecretsHelperPrelude = options?.packageContext
-		? createPackageSecretsHelperPrelude()
-		: ''
-	const emailHelperPrelude = options?.emailTools
-		? createEmailHelperPrelude()
-		: ''
-	const workflowsHelperPrelude = workflowTools
-		? createWorkflowsHelperPrelude()
-		: ''
-	const packagesHelperPrelude = options?.packageInvokeTools
-		? createPackagesHelperPrelude()
-		: ''
-	const eventsHelperPrelude = options?.packageEventTools
-		? createEventsHelperPrelude()
-		: ''
-	const helperPrelude = [
-		storageHelperPrelude,
-		serviceHelperPrelude,
-		packageSecretsHelperPrelude,
-		emailHelperPrelude,
-		workflowsHelperPrelude,
-		packagesHelperPrelude,
-		eventsHelperPrelude,
-		options?.helperPrelude ?? '',
-	]
-		.filter((value) => value.trim().length > 0)
-		.join('\n')
-	const executeHelperPrelude = providerExposesExecuteHelperCapabilities(
-		provider,
-	)
-		? createExecuteHelperPrelude()
-		: ''
-	const wrapped = `async () => {
-${executeHelperPrelude ? `${executeHelperPrelude}\n` : ''}
-${helperPrelude ? `${helperPrelude}\n` : ''}
-  const __kodyUserCode = (${normalized});
-  return await __kodyUserCode();
-}`
-	const providers: Array<ResolvedProvider> = [provider]
-	if (options?.packageInvokeTools) {
-		providers.push(
-			createPackageInvokeRuntimeBridgeProvider(options.packageInvokeTools),
-		)
-	}
-	if (options?.packageEventTools) {
-		providers.push(
-			createPackageEventRuntimeBridgeProvider(options.packageEventTools),
-		)
-	}
-	const result = await executor.execute(wrapped, providers)
-	const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
-	if (!result.error) return sanitizedResult
-	const batchMessage = await rewriteCapabilitySecretError({
-		error: result.error,
-		env,
-		callerContext,
-	})
-	if (!batchMessage) return sanitizedResult
-	return {
-		...sanitizedResult,
-		error: secretRedactor.redactErrorMessage(batchMessage),
 	}
 }
 

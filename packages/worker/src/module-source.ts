@@ -5,13 +5,6 @@ export type ModuleAstNode = {
 	[key: string]: unknown
 }
 
-export function stripCodeFences(code: string): string {
-	const match = code.match(
-		/^```(?:js|javascript|typescript|ts|tsx|jsx)?\s*\n([\s\S]*?)```\s*$/,
-	)
-	return match?.[1] ?? code
-}
-
 export function parseModuleSource(source: string) {
 	return parse(source, {
 		sourceType: 'module',
@@ -33,22 +26,6 @@ function getNodeName(node: unknown) {
 	if (typeof candidate.name === 'string') return candidate.name
 	if (typeof candidate.value === 'string') return candidate.value
 	return null
-}
-
-export function hasTopLevelModuleSyntax(source: string) {
-	if (!source) return false
-	try {
-		const body = getProgramBody(
-			parseModuleSource(source) as unknown as ModuleAstNode,
-		)
-		return body.some(
-			(statement) =>
-				statement?.type === 'ImportDeclaration' ||
-				statement?.type?.startsWith('Export') === true,
-		)
-	} catch {
-		return false
-	}
 }
 
 export function hasTopLevelDefaultExport(source: string) {

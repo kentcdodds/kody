@@ -170,11 +170,7 @@ function mockRepoPersistence() {
 							id: sourceId,
 							user_id: String(existing['user_id']),
 							entity_kind:
-								(existing['entity_kind'] as
-									| 'job'
-									| 'package'
-									| 'skill'
-									| 'app') ?? 'job',
+								(existing['entity_kind'] as 'job' | 'package') ?? 'job',
 							entity_id: String(existing['entity_id'] ?? sourceId),
 							repo_id: String(existing['repo_id'] ?? sourceId),
 							published_commit: 'published-commit-1',

@@ -64,19 +64,13 @@ test('public route hardening rejects unauthenticated connector access, unknown p
 	expect(websocketResponse.status).toBe(101)
 	expect(websocketResponse.webSocket).toBeTruthy()
 
-	const maintenanceRequests = [
-		createRequest('/__maintenance/reindex-skills', {
-			method: 'POST',
-		}),
+	const unknownMaintenanceResponse = await workerFetch(
 		createRequest('/__maintenance/nonexistent'),
-	]
-	for (const request of maintenanceRequests) {
-		const response = await workerFetch(request)
-		expect(response.status).toBe(404)
-		await expect(response.json()).resolves.toEqual({
-			error: 'Unknown maintenance endpoint.',
-		})
-	}
+	)
+	expect(unknownMaintenanceResponse.status).toBe(404)
+	await expect(unknownMaintenanceResponse.json()).resolves.toEqual({
+		error: 'Unknown maintenance endpoint.',
+	})
 
 	let rateLimited = false
 	for (let i = 0; i < 25; i++) {
