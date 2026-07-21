@@ -70,7 +70,7 @@ Persist service state through `packageStorage()` (key run-scoped entries by
 service name if needed). The legacy ambient `storage` binding in services is
 service-scoped, invisible to other package surfaces, and importing it now fails
 repo checks — see
-[Ambient `storage` in package code](../use/packages.md#ambient-storage-in-package-code-legacy-being-removed).
+[Ambient `storage` in package code](../use/packages.md#ambient-storage-in-package-code-removed).
 
 The `service` helper exposes:
 

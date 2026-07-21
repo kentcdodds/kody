@@ -124,17 +124,17 @@ The top-level saved identity is the package.
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
-  goes through `packages.invokeChecked`. Ambient `storage` inside package code
-  is a legacy pattern being removed in stages — it binds per-run (package bucket
-  for exports/invocations, job-/service-scoped buckets for jobs/services,
-  caller-bound or `undefined` under static import). Repo checks fail (the `lint`
-  result) when package sources import ambient `storage` from `kody:runtime` with
-  a value named import; type-only imports and `.d.ts` files are exempt. The rule
-  runs only where checks run — new session check runs, publishes, and community
-  fork installs — so already-published artifacts are never re-validated
-  retroactively and keep executing. Removing the ambient binding from
-  package-invocation contexts is a follow-up gated on an operator audit of
-  published artifacts confirming no remaining invocation-context usage.
+  goes through `packages.invokeChecked`. Package-invocation runs (exports,
+  subscription handlers, retrievers) bind no ambient `storage`: the legacy
+  package-bucket binding was removed after an operator audit of all published
+  artifacts confirmed no remaining usage, so guard-less ambient access in those
+  contexts fails with the structured `runtime_helper_unbound` hint pointing at
+  `packageStorage()`. Job and service runtimes still bind job-/service-scoped
+  scratch buckets. Repo checks fail (the `lint` result) when package sources
+  import ambient `storage` from `kody:runtime` with a value named import;
+  type-only imports and `.d.ts` files are exempt. The rule runs only where
+  checks run — new session check runs, publishes, and community fork installs —
+  so already-published artifacts are never re-validated retroactively.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.
@@ -405,7 +405,9 @@ automatic context retrieval without promoting those records to durable memory.
   more scopes: `search`, `context`
 - Package metadata is the source of truth; runtime discovery uses derived KV
   manifest and scope indexes that are rebuilt on package refresh
-- Retriever exports run read-only against the package storage bucket
+- Retriever exports reach the package storage bucket through `packageStorage()`
+  (writable, like every packageStorage surface); keeping retrievers read-mostly
+  is a convention — they no longer get a read-only ambient `storage` binding
 
 Example:
 

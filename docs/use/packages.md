@@ -251,8 +251,8 @@ package's immutable id. One rule per context:
 (`get`/`set`/`list`/`sql`/`delete`/`clear`/`id`), writable, always bound to the
 declaring package's own bucket no matter where the code runs:
 
-- In the package's own export/invocation runtime it is the same bucket ambient
-  `storage` binds.
+- In the package's own export/invocation runtime it is the only way to reach the
+  package bucket — those runs bind no ambient `storage`.
 - In package jobs and services — where ambient `storage` binds job-scoped and
   service-scoped buckets — it reaches the package's shared bucket.
 - When the module is statically imported (`kody:@scope/package/export`) into an
@@ -285,24 +285,26 @@ consequences:
   package that is not the running package and not statically imported by the
   bundle, use `packages.invokeChecked` so its own runtime does the reading.
 
-### Ambient `storage` in package code (legacy, being removed)
+### Ambient `storage` in package code (removed)
 
-Ambient `storage` from `kody:runtime` inside package code is a legacy pattern on
-a staged removal path. It binds per-run: exports and invocations bind the
-package's own bucket, jobs and services bind job-/service-scoped buckets, and
-statically imported code gets the caller's binding or `undefined` — so code
-written against ambient `storage` breaks as soon as it is statically imported
-into another context.
+Package exports, subscription handlers, and retrievers no longer bind ambient
+`storage` — the legacy pattern where invocation runs bound it to the package's
+own bucket has been removed. In those contexts ambient `storage` is simply
+`undefined`; guard-less access to it fails with a structured
+`runtime_helper_unbound` error whose remedy points at `packageStorage()`, the
+one way package code reaches its bucket (same interface, same bucket, so the
+migration is a rename).
 
-Repo checks now fail when package source imports ambient `storage` from
-`kody:runtime` (type-only imports and `.d.ts` files are exempt). This applies to
-new check runs and publishes only: packages published earlier keep running
-unchanged until the ambient binding is removed from package runtimes in a later
-stage. Use `packageStorage()` instead — in the package's own runtime it is the
-identical bucket, so switching is a rename. For run-scoped state that previously
-lived in a job's or service's ambient bucket, either keep it in the package
-bucket under a run-scoped key (for example keyed by `jobName`), or have ad hoc
-callers bind an explicit `storageId`.
+Repo checks fail when package source imports ambient `storage` from
+`kody:runtime` (type-only imports and `.d.ts` files are exempt), so the pattern
+cannot be reintroduced at publish time.
+
+Ambient `storage` still exists where it is not the legacy pattern: ad hoc
+`execute` code with a `storageId` bound on the call (the prescribed use), and
+package job and service runtimes, which still bind job-/service-scoped scratch
+buckets distinct from the package bucket for already-published code. New package
+source cannot import ambient `storage` (checks fail), so new job and service
+code keeps run-scoped state in the package bucket under run-scoped keys instead.
 
 ## Package apps
 
@@ -388,9 +390,10 @@ Each subscription has:
 - `filters` — optional topic-specific metadata reserved for event dispatchers
 
 Subscription handlers run as package runtime modules with the signed-in package
-user, package-owned storage, package context, secrets, and `kody:runtime`
-helpers. Published bundle artifacts are rebuilt for subscription handlers during
-package checks and publish, just like exports, services, jobs, and apps.
+user, package-owned storage via `packageStorage()`, package context, secrets,
+and `kody:runtime` helpers. Published bundle artifacts are rebuilt for
+subscription handlers during package checks and publish, just like exports,
+services, jobs, and apps.
 
 Use the built-in `package_subscriptions_list` capability to discover the
 signed-in user's saved package subscriptions, optionally filtered by exact

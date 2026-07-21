@@ -181,7 +181,9 @@ Kody supports durable storage binding for execute and scheduled jobs, including
 package-owned jobs and non-package jobs created with `job_schedule` or
 `job_schedule_once`.
 
-- bound storage is execute-, app-, package-, or job-owned durable state
+- bound storage is execute-, app-, or job-owned durable state; saved-package
+  invocation runs (exports, subscriptions, retrievers) bind no ambient `storage`
+  — package code reaches its own bucket through `packageStorage()`
 - package service runs also get writable service-owned durable state scoped to
   the declared service name
 - package service runs are background-managed by the service Durable Object, so

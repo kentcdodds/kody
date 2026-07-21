@@ -1937,11 +1937,6 @@ test('invokePackageSubscription uses the normal capability registry with package
 			message: { id: 'message-123' },
 		},
 		expect.objectContaining({
-			storageTools: {
-				userId: 'user-123',
-				storageId: 'package:pkg-1',
-				writable: true,
-			},
 			packageContext: {
 				packageId: 'pkg-1',
 				kodyId: 'discord-gateway',
@@ -1954,5 +1949,10 @@ test('invokePackageSubscription uses the normal capability registry with package
 	expect(runOptions).toBeDefined()
 	expect(
 		(runOptions as { skipCapabilityRegistry?: boolean }).skipCapabilityRegistry,
+	).toBeUndefined()
+	// Package invocation runs no longer bind ambient `storage`: the package
+	// bucket is reached via packageStorage(), granted through packageContext.
+	expect(
+		(runOptions as { storageTools?: unknown }).storageTools,
 	).toBeUndefined()
 })

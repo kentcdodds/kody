@@ -39,6 +39,10 @@ function createRepoContext(source: EntitySourceRow) {
 }
 
 function buildPackageRetrieverStorageId(packageId: string) {
+	// Names the package bucket (same shape as buildPackageStorageId). Since the
+	// ambient `storage` binding was removed from retriever runs, this only
+	// feeds `callerContext.storageContext` and runtime-debug metadata —
+	// retriever code reaches the bucket via `packageStorage()`.
 	return `package:${encodeURIComponent(packageId)}`
 }
 
@@ -194,11 +198,12 @@ async function invokeRetriever(input: {
 			conversationId: input.conversationId ?? null,
 		},
 		{
-			storageTools: {
-				userId: input.userId,
-				storageId: buildPackageRetrieverStorageId(input.entry.packageId),
-				writable: false,
-			},
+			// No ambient `storage` binding: retriever code reaches the package
+			// bucket via `packageStorage()` (granted through packageContext
+			// below). The old read-only ambient binding constrained only the
+			// ambient helper — `packageStorage()` has been writable in retriever
+			// context since it shipped — so retrievers staying read-mostly is a
+			// convention, not a runtime constraint.
 			packageContext,
 			runtimeDebug,
 			packageInvokeTools: createPackageRuntimeInvokeTools(

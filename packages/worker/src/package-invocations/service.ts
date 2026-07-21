@@ -220,8 +220,10 @@ function parsePackageInvokeInput(
 }
 
 function buildPackageInvocationStorageId(packageId: string) {
-	// Shared with packageStorage() so a package's own runtime and foreign
-	// bundles that statically import it reach the same bucket.
+	// Shared with packageStorage() so all surfaces name the same bucket. Since
+	// the ambient `storage` binding was removed from invocation runs, this only
+	// feeds `callerContext.storageContext` (secret scoping and runtime-debug
+	// metadata) — package code reaches the bucket via `packageStorage()`.
 	return buildPackageStorageId(packageId)
 }
 
@@ -1105,11 +1107,9 @@ async function invokeSavedPackageModule(input: {
 			},
 			input.params,
 			{
-				storageTools: {
-					userId: input.actor.userId,
-					storageId: buildPackageInvocationStorageId(input.savedPackage.id),
-					writable: true,
-				},
+				// No ambient `storage` binding: package code reaches its bucket via
+				// `packageStorage()` (granted through packageContext below). Legacy
+				// ambient use gets the structured runtime_helper_unbound hint.
 				runtimeDebug,
 				emailTools: {
 					getMessage: async (messageId) => {
