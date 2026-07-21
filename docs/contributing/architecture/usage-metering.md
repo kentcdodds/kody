@@ -22,15 +22,15 @@ One schema covers every chokepoint. It is defined in
 
 ```ts
 type UsageEvent = {
-  userId: string; // required; owning user
-  eventType: UsageEventType; // see the metric table below
-  entityId?: string | null; // metered entity id when one exists
-  durationMs?: number | null; // wall-clock duration of the metered unit
-  cpuMs?: number | null; // CPU time, only when the platform exposes it
-  bytes?: number | null; // bytes moved/stored when meaningful
-  outcome: "success" | "error";
-  timestamp?: string; // ISO 8601; defaults to time of recording
-};
+	userId: string // required; owning user
+	eventType: UsageEventType // see the metric table below
+	entityId?: string | null // metered entity id when one exists
+	durationMs?: number | null // wall-clock duration of the metered unit
+	cpuMs?: number | null // CPU time, only when the platform exposes it
+	bytes?: number | null // bytes moved/stored when meaningful
+	outcome: 'success' | 'error'
+	timestamp?: string // ISO 8601; defaults to time of recording
+}
 ```
 
 `eventType` is a closed union. Add new members to `UsageEventType` in
@@ -127,8 +127,8 @@ conversations** in which a signed-in user’s agents used a saved package via MC
 - Read path: count conversations with `last_used_at` in the last 30 days, join
   `saved_packages` for `kody_id` + description, top 8 for
   `buildMcpServerInstructions`. Cold start (no rows) omits the section. List
-  failures (missing table, transient D1 errors) return `[]` so MCP init stays
-  up during migration rollout.
+  failures (missing table, transient D1 errors) return `[]` so MCP init stays up
+  during migration rollout.
 - Writes are best-effort and never throw into the invoke path (same spirit as
   `recordUsage`). Do **not** widen `usage_rollups` for conversation cardinality.
 
@@ -137,15 +137,15 @@ Helpers live in `packages/worker/src/usage/agent-package-conversation-uses.ts`.
 ## Helper contract
 
 ```ts
-import { recordUsage } from "#worker/usage/record-usage.ts";
+import { recordUsage } from '#worker/usage/record-usage.ts'
 
 await recordUsage(env, {
-  userId,
-  eventType: "job_run",
-  entityId: job.id,
-  durationMs,
-  outcome: execution.ok ? "success" : "error",
-});
+	userId,
+	eventType: 'job_run',
+	entityId: job.id,
+	durationMs,
+	outcome: execution.ok ? 'success' : 'error',
+})
 ```
 
 Guarantees and rules:
@@ -179,23 +179,23 @@ Guarantees and rules:
    id, the start time, and the outcome. Wrap it:
 
    ```ts
-   const startedAtMs = Date.now();
-   let outcome: "success" | "error" = "success";
+   const startedAtMs = Date.now()
+   let outcome: 'success' | 'error' = 'success'
    try {
-     // existing work
+   	// existing work
    } catch (error) {
-     outcome = "error";
-     throw error;
+   	outcome = 'error'
+   	throw error
    } finally {
-     if (userId) {
-       await recordUsage(env, {
-         userId,
-         eventType: "my_metric",
-         entityId,
-         durationMs: Date.now() - startedAtMs,
-         outcome,
-       });
-     }
+   	if (userId) {
+   		await recordUsage(env, {
+   			userId,
+   			eventType: 'my_metric',
+   			entityId,
+   			durationMs: Date.now() - startedAtMs,
+   			outcome,
+   		})
+   	}
    }
    ```
 
@@ -210,10 +210,10 @@ Guarantees and rules:
 6. **Test it.** In `*.node.test.ts`, spy on the helper:
 
    ```ts
-   const usageModule = await import("#worker/usage/record-usage.ts");
+   const usageModule = await import('#worker/usage/record-usage.ts')
    const recordUsageSpy = vi
-     .spyOn(usageModule, "recordUsage")
-     .mockResolvedValue(undefined);
+   	.spyOn(usageModule, 'recordUsage')
+   	.mockResolvedValue(undefined)
    ```
 
    Assert one call per metered unit with the expected `userId`, `eventType`,
