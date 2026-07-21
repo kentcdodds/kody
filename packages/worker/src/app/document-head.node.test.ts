@@ -7,17 +7,21 @@ import {
 	resolveDocumentTitle,
 } from './document-head.ts'
 
-test('resolveDocumentTitle returns static titles for known routes', () => {
+test('resolveDocumentHead covers static titles, dynamic OG, fallbacks, and absolutized URLs', () => {
 	expect(resolveDocumentTitle('/')).toBe(DEFAULT_DOCUMENT_TITLE)
 	expect(resolveDocumentTitle('/account')).toBe('Account')
+	expect(resolveDocumentTitle('/account/secrets')).toBe('Secrets')
+	expect(resolveDocumentTitle('/account/secrets/new')).toBe('Secrets')
+	expect(resolveDocumentTitle('/account/billing')).toBe('Billing')
+	expect(
+		resolveDocumentTitle('/account/package-invocation-tokens/token-1'),
+	).toBe('Package invocation tokens')
 	expect(resolveDocumentTitle('/blog')).toBe('Blog')
 	expect(resolveDocumentTitle('/community')).toBe('Community packages')
 	expect(resolveDocumentTitle('/timeline')).toBe('Timeline')
 	expect(resolveDocumentTitle('/admin/users')).toBe('Admin users')
 	expect(resolveDocumentTitle('/privacy')).toBe('Privacy')
-})
 
-test('resolveDocumentHead attaches OG metadata for public registry pages', () => {
 	const home = resolveDocumentHead('/')
 	expect(home.og?.title).toBe("Kody — your assistant's home")
 	expect(home.og?.imagePath).toBe('/og/home.png')
@@ -36,9 +40,7 @@ test('resolveDocumentHead attaches OG metadata for public registry pages', () =>
 			hrefPath: '/blog/rss.xml',
 		},
 	])
-})
 
-test('resolveDocumentHead derives dynamic OG from loader data', () => {
 	const blogPost = resolveDocumentHead('/blog/hello-world', {
 		blogPost: {
 			ok: true,
@@ -106,9 +108,13 @@ test('resolveDocumentHead derives dynamic OG from loader data', () => {
 	})
 	expect(privateProfile.title).toBe('Kent C. Dodds')
 	expect(privateProfile.og).toBeUndefined()
-})
 
-test('resolveDocumentHead falls back when dynamic loader data is missing', () => {
+	expect(
+		resolveDocumentTitle('/@missing', {
+			profileShell: { ok: false, unavailable: true },
+		}),
+	).toBe('Profile unavailable')
+
 	expect(resolveDocumentHead('/blog/hello-world')).toEqual({ title: 'Blog' })
 	expect(resolveDocumentHead('/community/listing-1')).toEqual({
 		title: 'Community packages',
@@ -117,9 +123,7 @@ test('resolveDocumentHead falls back when dynamic loader data is missing', () =>
 	expect(resolveDocumentHead('/this-route-does-not-exist').title).toBe(
 		NOT_FOUND_DOCUMENT_TITLE,
 	)
-})
 
-test('absolutizeDocumentHead expands origin-relative paths', () => {
 	const resolved = absolutizeDocumentHead(
 		resolveDocumentHead('/blog', undefined),
 		'https://heykody.dev',

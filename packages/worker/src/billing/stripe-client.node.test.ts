@@ -51,6 +51,86 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 		vi.unstubAllGlobals()
 	}
 
+	const createFetch = vi.fn(async () =>
+		jsonResponse({
+			id: 'cs_new_1',
+			url: 'https://checkout.stripe.com/c/pay/cs_new_1',
+		}),
+	)
+	vi.stubGlobal('fetch', createFetch)
+	try {
+		const result = await createCheckoutSession(
+			{ STRIPE_SECRET_KEY: 'sk_test_secret' },
+			{
+				priceId: 'price_pro',
+				clientReferenceId: 'signed-ref',
+				successUrl:
+					'https://app.example.com/account/billing/success?session_id={CHECKOUT_SESSION_ID}',
+				cancelUrl: 'https://app.example.com/account/billing',
+				customerEmail: 'user@example.com',
+			},
+		)
+		expect(result).toEqual({
+			id: 'cs_new_1',
+			url: 'https://checkout.stripe.com/c/pay/cs_new_1',
+		})
+
+		expect(createFetch).toHaveBeenCalledOnce()
+		const [createUrl, createInit] = createFetch.mock.calls[0]!
+		expect(createUrl).toBe('https://api.stripe.com/v1/checkout/sessions')
+		expect(createInit?.method).toBe('POST')
+		expect(createInit?.headers).toMatchObject({
+			authorization: 'Bearer sk_test_secret',
+			'content-type': 'application/x-www-form-urlencoded',
+			accept: 'application/json',
+		})
+		const body = new URLSearchParams(String(createInit?.body))
+		expect(body.get('mode')).toBe('subscription')
+		expect(body.get('line_items[0][price]')).toBe('price_pro')
+		expect(body.get('line_items[0][quantity]')).toBe('1')
+		expect(body.get('client_reference_id')).toBe('signed-ref')
+		expect(body.get('success_url')).toBe(
+			'https://app.example.com/account/billing/success?session_id={CHECKOUT_SESSION_ID}',
+		)
+		expect(body.get('cancel_url')).toBe(
+			'https://app.example.com/account/billing',
+		)
+		expect(body.get('customer_email')).toBe('user@example.com')
+		expect(body.get('customer')).toBeNull()
+	} finally {
+		vi.unstubAllGlobals()
+	}
+
+	// Existing Stripe customers must send customer, never customer_email.
+	const customerIdFetch = vi.fn(async () =>
+		jsonResponse({
+			id: 'cs_new_2',
+			url: 'https://checkout.stripe.com/c/pay/cs_new_2',
+		}),
+	)
+	vi.stubGlobal('fetch', customerIdFetch)
+	try {
+		await createCheckoutSession(
+			{ STRIPE_SECRET_KEY: 'sk_test_secret' },
+			{
+				priceId: 'price_pro',
+				clientReferenceId: 'signed-ref',
+				successUrl:
+					'https://app.example.com/account/billing/success?session_id={CHECKOUT_SESSION_ID}',
+				cancelUrl: 'https://app.example.com/account/billing',
+				customerId: 'cus_existing',
+				customerEmail: 'should-not-send@example.com',
+			},
+		)
+		const body = new URLSearchParams(
+			String(customerIdFetch.mock.calls[0]?.[1]?.body),
+		)
+		expect(body.get('customer')).toBe('cus_existing')
+		expect(body.get('customer_email')).toBeNull()
+	} finally {
+		vi.unstubAllGlobals()
+	}
+
 	const listFetch = vi.fn(async () =>
 		jsonResponse({
 			data: [
@@ -123,90 +203,11 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 	}
 })
 
-test('createCheckoutSession posts subscription form fields and auth header', async () => {
-	const createFetch = vi.fn(async () =>
-		jsonResponse({
-			id: 'cs_new_1',
-			url: 'https://checkout.stripe.com/c/pay/cs_new_1',
-		}),
+test('stripe client rejects missing config and maps API failure shapes', async () => {
+	await expect(getCheckoutSession({}, 'cs_test')).rejects.toBeInstanceOf(
+		BillingNotConfiguredError,
 	)
-	vi.stubGlobal('fetch', createFetch)
-	try {
-		const result = await createCheckoutSession(
-			{ STRIPE_SECRET_KEY: 'sk_test_secret' },
-			{
-				priceId: 'price_pro',
-				clientReferenceId: 'signed-ref',
-				successUrl:
-					'https://app.example.com/account/billing/success?session_id={CHECKOUT_SESSION_ID}',
-				cancelUrl: 'https://app.example.com/account/billing',
-				customerEmail: 'user@example.com',
-			},
-		)
-		expect(result).toEqual({
-			id: 'cs_new_1',
-			url: 'https://checkout.stripe.com/c/pay/cs_new_1',
-		})
 
-		expect(createFetch).toHaveBeenCalledOnce()
-		const [createUrl, createInit] = createFetch.mock.calls[0]!
-		expect(createUrl).toBe('https://api.stripe.com/v1/checkout/sessions')
-		expect(createInit?.method).toBe('POST')
-		expect(createInit?.headers).toMatchObject({
-			authorization: 'Bearer sk_test_secret',
-			'content-type': 'application/x-www-form-urlencoded',
-			accept: 'application/json',
-		})
-		const body = new URLSearchParams(String(createInit?.body))
-		expect(body.get('mode')).toBe('subscription')
-		expect(body.get('line_items[0][price]')).toBe('price_pro')
-		expect(body.get('line_items[0][quantity]')).toBe('1')
-		expect(body.get('client_reference_id')).toBe('signed-ref')
-		expect(body.get('success_url')).toBe(
-			'https://app.example.com/account/billing/success?session_id={CHECKOUT_SESSION_ID}',
-		)
-		expect(body.get('cancel_url')).toBe(
-			'https://app.example.com/account/billing',
-		)
-		expect(body.get('customer_email')).toBe('user@example.com')
-		expect(body.get('customer')).toBeNull()
-	} finally {
-		vi.unstubAllGlobals()
-	}
-})
-
-test('createCheckoutSession uses customer when customerId is set, not customer_email', async () => {
-	const createFetch = vi.fn(async () =>
-		jsonResponse({
-			id: 'cs_new_2',
-			url: 'https://checkout.stripe.com/c/pay/cs_new_2',
-		}),
-	)
-	vi.stubGlobal('fetch', createFetch)
-	try {
-		await createCheckoutSession(
-			{ STRIPE_SECRET_KEY: 'sk_test_secret' },
-			{
-				priceId: 'price_pro',
-				clientReferenceId: 'signed-ref',
-				successUrl:
-					'https://app.example.com/account/billing/success?session_id={CHECKOUT_SESSION_ID}',
-				cancelUrl: 'https://app.example.com/account/billing',
-				customerId: 'cus_existing',
-				customerEmail: 'should-not-send@example.com',
-			},
-		)
-		const body = new URLSearchParams(
-			String(createFetch.mock.calls[0]?.[1]?.body),
-		)
-		expect(body.get('customer')).toBe('cus_existing')
-		expect(body.get('customer_email')).toBeNull()
-	} finally {
-		vi.unstubAllGlobals()
-	}
-})
-
-test('createCheckoutSession rejects null url and non-OK Stripe responses', async () => {
 	silenceExpectedConsoleErrors(['stripe_api_error'])
 
 	vi.stubGlobal(
@@ -262,14 +263,7 @@ test('createCheckoutSession rejects null url and non-OK Stripe responses', async
 	} finally {
 		vi.unstubAllGlobals()
 	}
-})
 
-test('stripe client rejects missing config and maps API failure shapes', async () => {
-	await expect(getCheckoutSession({}, 'cs_test')).rejects.toBeInstanceOf(
-		BillingNotConfiguredError,
-	)
-
-	silenceExpectedConsoleErrors(['stripe_api_error'])
 	vi.stubGlobal(
 		'fetch',
 		vi.fn(async () => jsonResponse({ error: { message: 'nope' } }, 404)),

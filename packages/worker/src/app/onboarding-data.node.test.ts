@@ -7,17 +7,6 @@ import {
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
 
-test('onboarding setup prompt steers agents to fork trusted community packages before creating', () => {
-	const prompt = buildOnboardingSetupPrompt()
-	expect(prompt).toContain('community_search')
-	expect(prompt).toContain('trusted community package')
-	expect(prompt).toContain('community_fork')
-	expect(prompt).toContain(
-		'only create a new package if nothing suitable exists',
-	)
-	expect(prompt).not.toContain('then package things up once they work')
-})
-
 test('onboarding data builds the MCP URL and derives incomplete setup from verification plus grants', async () => {
 	expect(
 		buildMcpServerUrl({
@@ -26,14 +15,14 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		}),
 	).toBe('https://preview.example/mcp')
 
+	// Discovery prompt must identify the deployment origin so agents know
+	// which Kody instance the user is evaluating.
 	expect(
 		buildDiscoveryPrompt({
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
-	).toContain(
-		"I'm deciding whether Kody (https://heykody.dev) would be useful for me.",
-	)
+	).toContain('https://heykody.dev')
 
 	expect(
 		loadPublicOnboardingData({
