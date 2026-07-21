@@ -27,10 +27,12 @@ import {
 	deleteCommunityRatingsByListingId,
 	getCommunityBan,
 	getCommunityActivityByIdForAdmin,
+	getCommunityForkByForkedPackageId,
 	getCommunityForkByListingAndUser,
 	getCommunityListingById,
 	getCommunityListingByOwnerAndPackage,
 	listCommunityForksByListingAndUser,
+	markCommunityForkAdopted,
 	listCommunityActivityPageRowsForAdmin,
 	listCommunityActivityRowsForAdmin,
 	getCommunityRatingAggregatesByListingId,
@@ -997,6 +999,95 @@ export async function forkCommunityListing(input: {
 			packageId,
 		})
 		throw error
+	}
+}
+
+export type AdoptCommunityForkResult = {
+	packageId: string
+	kodyId: string
+	listingId: string
+	originCommit: string
+	adoptedAt: string
+	alreadyAdopted: boolean
+}
+
+export async function adoptCommunityFork(input: {
+	env: Env
+	userId: string
+	packageId?: string
+	kodyId?: string
+	reviewSummary: string
+}): Promise<AdoptCommunityForkResult> {
+	const packageIdCount =
+		(input.packageId !== undefined ? 1 : 0) +
+		(input.kodyId !== undefined ? 1 : 0)
+	if (packageIdCount !== 1) {
+		throw new CommunityActionError(
+			'Provide exactly one of `package_id` or `kody_id`.',
+		)
+	}
+
+	const reviewSummary = input.reviewSummary.trim()
+	if (reviewSummary.length < 10) {
+		throw new CommunityActionError(
+			'Adoption requires a review_summary of at least 10 characters describing what was reviewed and why the fork is trusted.',
+		)
+	}
+
+	const savedPackage =
+		input.packageId !== undefined
+			? await getSavedPackageById(input.env.APP_DB, {
+					userId: input.userId,
+					packageId: input.packageId,
+				})
+			: await getSavedPackageByKodyId(input.env.APP_DB, {
+					userId: input.userId,
+					kodyId: input.kodyId ?? '',
+				})
+	if (!savedPackage) {
+		const missingId = input.packageId ?? input.kodyId
+		throw new Error(`Saved package "${missingId}" was not found.`)
+	}
+
+	const fork = await getCommunityForkByForkedPackageId(input.env.APP_DB, {
+		forkerUserId: input.userId,
+		forkedPackageId: savedPackage.id,
+	})
+	if (!fork) {
+		throw new CommunityActionError(
+			`Package "${savedPackage.kodyId}" is already self-authored; adoption is not needed.`,
+		)
+	}
+	if (fork.adoptedAt) {
+		return {
+			packageId: savedPackage.id,
+			kodyId: savedPackage.kodyId,
+			listingId: fork.listingId,
+			originCommit: fork.originCommit,
+			adoptedAt: fork.adoptedAt,
+			alreadyAdopted: true,
+		}
+	}
+
+	const adoptedAt = new Date().toISOString()
+	const updated = await markCommunityForkAdopted(input.env.APP_DB, {
+		forkerUserId: input.userId,
+		forkedPackageId: savedPackage.id,
+		adoptionNote: reviewSummary,
+		adoptedAt,
+	})
+	if (!updated?.adoptedAt) {
+		throw new CommunityActionError(
+			`Community fork for package "${savedPackage.kodyId}" could not be adopted.`,
+		)
+	}
+	return {
+		packageId: savedPackage.id,
+		kodyId: savedPackage.kodyId,
+		listingId: updated.listingId,
+		originCommit: updated.originCommit,
+		adoptedAt: updated.adoptedAt,
+		alreadyAdopted: false,
 	}
 }
 

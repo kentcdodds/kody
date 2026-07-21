@@ -378,10 +378,7 @@ function getAlreadyAddedNotice(input: {
 		requestedHost == null &&
 		requestedPackageId == null &&
 		allowedCapabilities.includes(requestedCapability)
-	if (
-		requestedCapability != null &&
-		allowedCapabilities.includes(requestedCapability)
-	) {
+	if (capabilityAlreadyAdded) {
 		items.push(
 			`Capability ${requestedCapability} is already in allowed capabilities.`,
 		)

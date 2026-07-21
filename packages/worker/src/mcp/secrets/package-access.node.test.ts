@@ -49,6 +49,8 @@ const communityFork = {
 	forkedSourceId: 'source-1',
 	targetKodyId: 'discord-gateway',
 	createdAt: '2026-01-01T00:00:00.000Z',
+	adoptedAt: null,
+	adoptionNote: null,
 }
 
 test('package-owned secrets do not require an allowed-packages grant', async () => {
@@ -164,6 +166,101 @@ test('community-forked packages with an allowed-packages grant may use user secr
 	).resolves.toBeUndefined()
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
+})
+
+test('adopted community forks may use user secrets without an allowed-packages grant', async () => {
+	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
+		...communityFork,
+		adoptedAt: '2026-07-01T00:00:00.000Z',
+		adoptionNote: 'Reviewed source; trusted for my use.',
+	})
+
+	await expect(
+		assertPackageCanAccessResolvedSecret({
+			env: { APP_DB: {} as D1Database },
+			baseUrl: 'https://example.com',
+			userId: 'user-1',
+			storageContext: {
+				sessionId: null,
+				packageId: 'pkg-1',
+			},
+			secretName: 'userToken',
+			resolved: {
+				found: true,
+				value: 'secret',
+				scope: 'user',
+				allowedHosts: [],
+				allowedCapabilities: [],
+				allowedPackages: [],
+			},
+		}),
+	).resolves.toBeUndefined()
+})
+
+test('adopted community forks still require an allowed-packages grant for mutate', async () => {
+	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
+
+	await expect(
+		assertPackageCanAccessResolvedSecret({
+			env: { APP_DB: {} as D1Database },
+			baseUrl: 'https://example.com',
+			userId: 'user-1',
+			storageContext: {
+				sessionId: null,
+				packageId: 'pkg-1',
+			},
+			secretName: 'userToken',
+			resolved: {
+				found: true,
+				value: 'secret',
+				scope: 'user',
+				allowedHosts: [],
+				allowedCapabilities: [],
+				allowedPackages: [],
+			},
+			intent: 'mutate',
+		}),
+	).rejects.toSatisfy((error: unknown) => {
+		const message = error instanceof Error ? error.message : String(error)
+		return (
+			parsePackageAccessRequiredMessage(message)?.packageName ===
+			'discord-gateway'
+		)
+	})
+	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
+})
+
+test('findMissingPackageApprovals returns empty for adopted community forks', async () => {
+	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
+		...communityFork,
+		adoptedAt: '2026-07-01T00:00:00.000Z',
+		adoptionNote: 'Reviewed source; trusted for my use.',
+	})
+
+	const { findMissingPackageApprovals } = await import('./package-access.ts')
+	const entries = await findMissingPackageApprovals({
+		env: { APP_DB: {} as D1Database } as Env,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		mounts: {
+			discordBotToken: {
+				name: 'discordBotTokenKentPersonalAutomation',
+				scope: 'user',
+			},
+		},
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'pkg-1',
+			storageId: 'pkg-1',
+		},
+	})
+
+	expect(entries).toEqual([])
+	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
 })
 
 test('mutate intent denies self-authored packages without an allowed-packages grant', async () => {

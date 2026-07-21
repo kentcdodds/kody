@@ -74,10 +74,11 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 				forkedPackageId: savedPackage.id,
 			},
 		)
-		// Self-authored packages (no community fork row) may read/use the user's
-		// secrets without an explicit allowed_packages grant. Community-forked
-		// packages still require approval. Mutations never take this path.
-		if (!communityFork) return
+		// Self-authored packages (no community fork row) and adopted community
+		// forks may read/use user secrets without an explicit allowed_packages
+		// grant. Unadopted community forks still require approval. Mutations
+		// never take this path.
+		if (!communityFork || communityFork.adoptedAt) return
 	}
 
 	const approvalUrl = buildSecretPackageApprovalUrl({
@@ -227,7 +228,7 @@ export async function findMissingPackageApprovals(input: {
 			forkedPackageId: savedPackage.id,
 		},
 	)
-	if (!communityFork) return []
+	if (!communityFork || communityFork.adoptedAt) return []
 
 	const storageContext = {
 		sessionId: input.storageContext?.sessionId ?? null,

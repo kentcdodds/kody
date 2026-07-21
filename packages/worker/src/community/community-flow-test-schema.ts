@@ -90,6 +90,8 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			target_kody_id TEXT NOT NULL,
 			listing_name TEXT,
 			listing_kody_id TEXT,
+			adopted_at TEXT,
+			adoption_note TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_community_forks_forked_package_id

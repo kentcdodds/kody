@@ -122,13 +122,14 @@ app will depend on:
   URL
 
 An authenticated `execute` smoke test does **not** grant package secret access
-for community-forked packages. Self-authored packages get automatic read/use
-access to user secrets (host approval still applies; updating or deleting a user
-secret from package code still needs an `allowed_packages` grant). After you
-save or publish a secret-using package, read `pending_secret_package_approvals`;
-when it is non-null (community forks), surface `bulk_approval_url` when present,
-wait for the user to approve, and verify with `packages.invokeChecked` before
-calling the work complete.
+for unadopted community-forked packages. Self-authored packages and adopted
+forks (`community_fork_adopt` after source review) get automatic read/use access
+to user secrets (host approval still applies; updating or deleting a user secret
+from package code still needs an `allowed_packages` grant). After you save or
+publish a secret-using package, read `pending_secret_package_approvals`; when it
+is non-null (unadopted community forks), either adopt after review or surface
+`bulk_approval_url`, wait when required, and verify with
+`packages.invokeChecked` before calling the work complete.
 
 ## Important exceptions
 

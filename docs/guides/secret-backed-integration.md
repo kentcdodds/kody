@@ -61,17 +61,19 @@ smoke-test path is unclear.
      browser-side forms, or hosted callbacks.
 8. After the package is saved or published, finish package secret approval when
    needed.
-   - Self-authored packages get automatic read/use access to user secrets
-     (mutations still need an `allowed_packages` grant); community-forked
-     packages still need explicit package approval for read/use too.
+   - Self-authored packages and adopted forks (`community_fork_adopt`) get
+     automatic read/use access to user secrets (mutations still need an
+     `allowed_packages` grant); unadopted community forks still need explicit
+     package approval for read/use, or adoption after review.
    - An ad hoc `execute` smoke test does **not** grant package secret access for
      community forks.
    - Read `pending_secret_package_approvals` from `package_save` or
-     `package_publish_external_push` (null for self-authored packages).
-   - When present, prefer `bulk_approval_url` (one click for all listed
-     secrets). Otherwise send each per-secret `approval_url`.
-   - Wait for the user to approve (when required), then verify with
-     `packages.invokeChecked(...)` before treating the package as complete.
+     `package_publish_external_push` (null for self-authored / adopted
+     packages).
+   - When present, either review the source and call `community_fork_adopt`, or
+     send `bulk_approval_url` / each `approval_url`.
+   - Wait for the user to approve or for adoption (when required), then verify
+     with `packages.invokeChecked(...)` before treating the package as complete.
 
 ## Secret names and value names
 
@@ -181,8 +183,8 @@ Avoid these mistakes:
 - assuming a saved secret automatically approves outbound hosts
 - treating an ad hoc `execute` smoke test as package secret approval for a
   community-forked package
-- marking a community-forked secret-using package complete without sending
-  package approval links (prefer the bulk approval URL when multiple secrets
-  need access)
+- marking an unadopted community-forked secret-using package complete without
+  adopting after review (`community_fork_adopt`) or sending package approval
+  links (prefer the bulk approval URL when multiple secrets need access)
 - inventing a provider-specific flow when one or two secrets plus a smoke test
   would do

@@ -135,6 +135,8 @@ test('fetch gateway requires package approval before resolving user secrets', as
 			forkedSourceId: 'source-1',
 			targetKodyId: 'example-package',
 			createdAt: '2026-01-01T00:00:00.000Z',
+			adoptedAt: null,
+			adoptionNote: null,
 		})
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')

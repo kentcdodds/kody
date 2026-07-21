@@ -784,6 +784,24 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		capabilityName: 'secret_set',
 		approvalUrl:
 			'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
+		nextStep:
+			'Send the user the capability approval link so they can approve with one click in the account secrets UI, then retry after approval.',
+		suggestedAction: {
+			type: 'edit_secret_policy',
+			policyField: 'allowed_capabilities',
+		},
+	})
+
+	const capabilityErrorWithoutUrl = new Error(
+		createCapabilitySecretAccessDeniedMessage('cloudflareToken', 'secret_set'),
+	)
+	expect(getExecutionErrorDetails(capabilityErrorWithoutUrl)).toMatchObject({
+		kind: 'secret_capability_access_required',
+		secretNames: ['cloudflareToken'],
+		capabilityName: 'secret_set',
+		approvalUrl: null,
+		nextStep:
+			"Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
 		suggestedAction: {
 			type: 'edit_secret_policy',
 			policyField: 'allowed_capabilities',

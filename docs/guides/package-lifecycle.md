@@ -64,8 +64,9 @@ convenience form.
 
 Use `guide: "package_authoring"` for package shape, README `## Intent`,
 visibility guidance, and the secret-using package approval checklist
-(`pending_secret_package_approvals` is non-null only for community-forked
-packages; prefer bulk approval URLs when present).
+(`pending_secret_package_approvals` is non-null only for unadopted
+community-forked packages; prefer `community_fork_adopt` after review, or bulk
+approval URLs when present).
 
 ## Signals to escalate from `execute` to a package
 

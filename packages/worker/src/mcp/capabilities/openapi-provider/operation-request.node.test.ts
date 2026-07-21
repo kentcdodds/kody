@@ -356,6 +356,8 @@ test('requires package approval before OpenAPI resolves a user secret', async ()
 			forkedSourceId: 'source-1',
 			targetKodyId: 'example-package',
 			createdAt: '2026-07-09T00:00:00.000Z',
+			adoptedAt: null,
+			adoptionNote: null,
 		})
 	const fetchStub = vi.fn()
 
