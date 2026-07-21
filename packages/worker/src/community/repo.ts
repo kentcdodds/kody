@@ -648,6 +648,25 @@ export async function getCommunityForkByListingAndUser(
 	return row ? mapCommunityForkRow(row) : null
 }
 
+export async function getCommunityForkByForkedPackageId(
+	db: D1Database,
+	input: {
+		forkerUserId: string
+		forkedPackageId: string
+	},
+): Promise<CommunityForkRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT id, listing_id, forker_user_id, origin_commit, forked_package_id,
+				forked_source_id, target_kody_id, created_at
+			FROM community_forks
+			WHERE forked_package_id = ? AND forker_user_id = ?`,
+		)
+		.bind(input.forkedPackageId, input.forkerUserId)
+		.first<Record<string, unknown>>()
+	return row ? mapCommunityForkRow(row) : null
+}
+
 export async function listCommunityForksByListingAndUser(
 	db: D1Database,
 	input: {

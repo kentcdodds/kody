@@ -90,15 +90,19 @@ When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 
 1. Ensure each secret exists (see `guide: "connect_secret"` /
    `guide: "secret_backed_integration"`).
-2. After save/publish, read `pending_secret_package_approvals` from the tool
-   result.
-3. Send the user `bulk_approval_url` when present; otherwise send each
-   `approval_url`.
-4. Wait for approval, then smoke-test with `packages.invokeChecked(...)`.
+2. Self-authored packages get automatic user-secret access (host approval still
+   applies). After save/publish, read `pending_secret_package_approvals` from
+   the tool result — it is non-null only for packages forked from community
+   listings.
+3. When pending approvals are present, send the user `bulk_approval_url` when
+   present; otherwise send each `approval_url`.
+4. Wait for approval (when required), then smoke-test with
+   `packages.invokeChecked(...)`.
 5. Only then treat the package as ready to run.
 
 Host approval (from an earlier ad hoc `execute` smoke test) is separate from
-package approval. Both may be required.
+package approval. Community-forked packages may need both; self-authored
+packages still need host approval when outbound calls require it.
 
 ## Community icon
 

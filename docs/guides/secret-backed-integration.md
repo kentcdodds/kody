@@ -59,13 +59,17 @@ smoke-test path is unclear.
    - Prefer plain package exports for simple automations.
    - Use a package app only when the user actually needs interactive UI,
      browser-side forms, or hosted callbacks.
-8. After the package is saved or published, finish package secret approval.
-   - An ad hoc `execute` smoke test does **not** grant package secret access.
+8. After the package is saved or published, finish package secret approval when
+   needed.
+   - Self-authored packages get automatic user-secret access; community-forked
+     packages still need explicit package approval.
+   - An ad hoc `execute` smoke test does **not** grant package secret access for
+     community forks.
    - Read `pending_secret_package_approvals` from `package_save` or
-     `package_publish_external_push`.
-   - Prefer `bulk_approval_url` when present (one click for all listed secrets).
-     Otherwise send each per-secret `approval_url`.
-   - Wait for the user to approve, then verify with
+     `package_publish_external_push` (null for self-authored packages).
+   - When present, prefer `bulk_approval_url` (one click for all listed
+     secrets). Otherwise send each per-secret `approval_url`.
+   - Wait for the user to approve (when required), then verify with
      `packages.invokeChecked(...)` before treating the package as complete.
 
 ## Secret names and value names
@@ -174,8 +178,10 @@ Avoid these mistakes:
 - saving readable config as a secret
 - saving the downstream package before the smoke test passes
 - assuming a saved secret automatically approves outbound hosts
-- treating an ad hoc `execute` smoke test as package secret approval
-- marking a secret-using package complete without sending package approval links
-  (prefer the bulk approval URL when multiple secrets need access)
+- treating an ad hoc `execute` smoke test as package secret approval for a
+  community-forked package
+- marking a community-forked secret-using package complete without sending
+  package approval links (prefer the bulk approval URL when multiple secrets
+  need access)
 - inventing a provider-specific flow when one or two secrets plus a smoke test
   would do

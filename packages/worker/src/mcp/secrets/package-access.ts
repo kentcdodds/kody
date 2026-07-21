@@ -10,6 +10,7 @@ import {
 } from './errors.ts'
 import { resolveSecret, type ResolvedSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
+import { getCommunityForkByForkedPackageId } from '#worker/community/repo.ts'
 import {
 	loadPackageManifestBySourceId,
 	type LoadedPackageManifest,
@@ -62,6 +63,18 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 			`Package "${packageId}" was not found for secret access.`,
 		)
 	}
+	const communityFork = await getCommunityForkByForkedPackageId(
+		input.env.APP_DB,
+		{
+			forkerUserId: input.userId,
+			forkedPackageId: savedPackage.id,
+		},
+	)
+	// Self-authored packages (no community fork row) may use the user's secrets
+	// without an explicit allowed_packages grant. Community-forked packages still
+	// require approval.
+	if (!communityFork) return
+
 	const approvalUrl = buildSecretPackageApprovalUrl({
 		baseUrl: input.baseUrl,
 		name: input.secretName,
@@ -202,6 +215,15 @@ export async function findMissingPackageApprovals(input: {
 	if (!savedPackage) {
 		throw new Error(`Saved package "${input.packageId}" was not found.`)
 	}
+	const communityFork = await getCommunityForkByForkedPackageId(
+		input.env.APP_DB,
+		{
+			forkerUserId: input.userId,
+			forkedPackageId: savedPackage.id,
+		},
+	)
+	if (!communityFork) return []
+
 	const storageContext = {
 		sessionId: input.storageContext?.sessionId ?? null,
 		appId: input.storageContext?.appId ?? null,

@@ -14,9 +14,11 @@ such as **`package`**) returns **metadata only**: names, descriptions, allowed
 hosts, allowed capabilities — not plaintext values.
 
 Package-scoped secrets belong to one saved package and are available only while
-that package runs. User-scoped secrets require explicit package approval before
-package code can list, read, update, or delete them through mounts, fetch
-placeholders, or secret-aware capabilities.
+that package runs. User-scoped secrets are available automatically to packages
+the user authored themselves. Packages forked from community listings still
+require explicit package approval (`allowed_packages`) before package code can
+list, read, update, or delete those secrets through mounts, fetch placeholders,
+or secret-aware capabilities. Host and capability approvals are unchanged.
 
 **`kody.secret_set(...)`** persists a value that is already available inside
 execution (for example a refreshed OAuth token). It does not return secret

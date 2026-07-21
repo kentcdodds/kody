@@ -92,6 +92,8 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			listing_kody_id TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
+		`CREATE INDEX IF NOT EXISTS idx_community_forks_forked_package_id
+			ON community_forks(forked_package_id)`,
 		`CREATE TABLE IF NOT EXISTS community_ratings (
 			id TEXT PRIMARY KEY NOT NULL,
 			listing_id TEXT NOT NULL,
