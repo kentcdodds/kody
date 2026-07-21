@@ -157,7 +157,7 @@ test('listPopularAgentPackagesForUser returns [] when the table is missing', asy
 	)
 })
 
-test('listPopularAgentPackagesForUser ranks by distinct conversations and skips missing packages', async () => {
+test('listPopularAgentPackagesForUser ranks within last N conversations and skips missing packages', async () => {
 	const { sqlite, db } = createTestDb()
 	seedPackage(sqlite, {
 		id: 'pkg-a',
@@ -179,29 +179,39 @@ test('listPopularAgentPackagesForUser ranks by distinct conversations and skips 
 	})
 
 	const now = new Date('2026-07-21T12:00:00.000Z')
-	const recent = '2026-07-10T00:00:00.000Z'
-	const older = '2026-06-01T00:00:00.000Z'
-
-	// alpha: 3 conversations
-	for (const conversationId of ['c1', 'c2', 'c3']) {
+	// Five conversations; ranking uses only the newest 4.
+	// c1–c3: alpha; c1+c4: bravo; c0 (oldest): charlie only
+	await recordAgentPackageConversationUse(
+		{ APP_DB: db },
+		{
+			userId: 'user-a',
+			packageId: 'pkg-c',
+			conversationId: 'c0',
+			usedAt: '2026-07-01T00:00:00.000Z',
+		},
+	)
+	for (const [conversationId, usedAt] of [
+		['c1', '2026-07-10T00:00:00.000Z'],
+		['c2', '2026-07-11T00:00:00.000Z'],
+		['c3', '2026-07-12T00:00:00.000Z'],
+	] as const) {
 		await recordAgentPackageConversationUse(
 			{ APP_DB: db },
 			{
 				userId: 'user-a',
 				packageId: 'pkg-a',
 				conversationId,
-				usedAt: recent,
+				usedAt,
 			},
 		)
 	}
-	// bravo: 2 conversations (one duplicate upsert)
 	await recordAgentPackageConversationUses(
 		{ APP_DB: db },
 		{
 			userId: 'user-a',
 			packageIds: ['pkg-b', 'pkg-b'],
 			conversationId: 'c1',
-			usedAt: recent,
+			usedAt: '2026-07-10T00:00:00.000Z',
 		},
 	)
 	await recordAgentPackageConversationUse(
@@ -210,17 +220,7 @@ test('listPopularAgentPackagesForUser ranks by distinct conversations and skips 
 			userId: 'user-a',
 			packageId: 'pkg-b',
 			conversationId: 'c4',
-			usedAt: recent,
-		},
-	)
-	// charlie: only outside the window
-	await recordAgentPackageConversationUse(
-		{ APP_DB: db },
-		{
-			userId: 'user-a',
-			packageId: 'pkg-c',
-			conversationId: 'c-old',
-			usedAt: older,
+			usedAt: '2026-07-13T00:00:00.000Z',
 		},
 	)
 	// deleted package row still in uses — skip via join
@@ -230,18 +230,65 @@ test('listPopularAgentPackagesForUser ranks by distinct conversations and skips 
 			userId: 'user-a',
 			packageId: 'pkg-gone',
 			conversationId: 'c5',
-			usedAt: recent,
+			usedAt: '2026-07-14T00:00:00.000Z',
 		},
 	)
 
 	const ranked = await listPopularAgentPackagesForUser(db, {
 		userId: 'user-a',
 		now,
+		conversationLimit: 4,
 		limit: 8,
 	})
+	// Last 4 conversations by recency: c5 (gone), c4 (bravo), c3/c2/c1 (alpha),
+	// but limit 4 means c5,c4,c3,c2 — charlie's c0 is excluded.
 	expect(ranked.map((row) => row.kodyId)).toEqual(['alpha', 'bravo'])
-	expect(ranked[0]?.conversationCount).toBe(3)
-	expect(ranked[1]?.conversationCount).toBe(2)
+	expect(ranked[0]?.conversationCount).toBe(2) // c2, c3
+	expect(ranked[1]?.conversationCount).toBe(1) // c4
+})
+
+test('listPopularAgentPackagesForUser ignores conversations older than max age', async () => {
+	const { sqlite, db } = createTestDb()
+	seedPackage(sqlite, {
+		id: 'pkg-a',
+		userId: 'user-a',
+		kodyId: 'alpha',
+		description: 'Alpha pack',
+	})
+	seedPackage(sqlite, {
+		id: 'pkg-old',
+		userId: 'user-a',
+		kodyId: 'stale',
+		description: 'Stale pack',
+	})
+
+	const now = new Date('2026-07-21T12:00:00.000Z')
+	await recordAgentPackageConversationUse(
+		{ APP_DB: db },
+		{
+			userId: 'user-a',
+			packageId: 'pkg-old',
+			conversationId: 'ancient',
+			usedAt: '2025-01-01T00:00:00.000Z',
+		},
+	)
+	await recordAgentPackageConversationUse(
+		{ APP_DB: db },
+		{
+			userId: 'user-a',
+			packageId: 'pkg-a',
+			conversationId: 'recent',
+			usedAt: '2026-07-10T00:00:00.000Z',
+		},
+	)
+
+	const ranked = await listPopularAgentPackagesForUser(db, {
+		userId: 'user-a',
+		now,
+		conversationLimit: 40,
+		maxAgeDays: 180,
+	})
+	expect(ranked.map((row) => row.kodyId)).toEqual(['alpha'])
 })
 
 test('recordAgentPackageConversationUse never throws when DB is missing', async () => {
