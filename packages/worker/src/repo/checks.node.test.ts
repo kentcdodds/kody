@@ -1325,3 +1325,143 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 		}),
 	)
 })
+
+test('runRepoChecks nudges ambient storage imports in package code toward packageStorage() without failing', async () => {
+	// Positive: a runtime module importing the ambient `storage` helper gets
+	// the storage-prescription suggestion in the advisory lint result.
+	const ambientStorage = await runPackageJobTypecheckChecks(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/ambient-storage-package',
+					kodyId: 'ambient-storage-package',
+					description: 'Imports ambient storage',
+				}),
+			],
+			[
+				'src/index.ts',
+				`import { storage } from 'kody:runtime'
+
+export default async function main() {
+	return await storage.get('key')
+}
+`,
+			],
+		]),
+	)
+	expect(ambientStorage.result.ok).toBe(true)
+	const ambientStorageLint = ambientStorage.result.results.find(
+		(entry) => entry.kind === 'lint',
+	)
+	expect(ambientStorageLint).toMatchObject({ kind: 'lint', ok: true })
+	expect(ambientStorageLint?.message).toContain('does not fail checks')
+	expect(ambientStorageLint?.message).toContain('"src/index.ts"')
+	expect(ambientStorageLint?.message).toContain('packageStorage()')
+
+	// Negative: packageStorage()-only package code gets no suggestion — the
+	// lint result stays the placeholder.
+	const prescribedStorage = await runPackageJobTypecheckChecks(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/package-storage-package',
+					kodyId: 'package-storage-package',
+					description: 'Uses packageStorage',
+				}),
+			],
+			[
+				'src/index.ts',
+				`import { packageStorage } from 'kody:runtime'
+
+export default async function main() {
+	return await packageStorage().get('key')
+}
+`,
+			],
+		]),
+	)
+	expect(prescribedStorage.result.ok).toBe(true)
+	expect(prescribedStorage.result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'lint',
+				ok: true,
+				message: 'Lint placeholder passed for this phase.',
+			}),
+		]),
+	)
+
+	// Type-only imports and declaration files are not runtime accesses, and
+	// aliased runtime imports of other helpers do not match; none of them
+	// trigger the nudge.
+	const typeOnly = await runPackageJobTypecheckChecks(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/type-only-storage-package',
+					kodyId: 'type-only-storage-package',
+					description: 'Type-only storage import',
+				}),
+			],
+			[
+				'src/index.ts',
+				`import type { storage } from 'kody:runtime'
+import { kody as client } from 'kody:runtime'
+
+export default async function main() {
+	void (null as unknown as typeof storage)
+	return await client.value_get({ name: 'projectId' })
+}
+`,
+			],
+			[
+				'src/types.d.ts',
+				`import { storage } from 'kody:runtime'
+export type Bucket = typeof storage
+`,
+			],
+		]),
+	)
+	expect(typeOnly.result.ok).toBe(true)
+	expect(typeOnly.result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'lint',
+				ok: true,
+				message: 'Lint placeholder passed for this phase.',
+			}),
+		]),
+	)
+
+	// Aliased ambient storage imports still get the nudge: the imported name
+	// is what identifies the helper, not the local binding.
+	const aliasedStorage = await runPackageJobTypecheckChecks(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/aliased-storage-package',
+					kodyId: 'aliased-storage-package',
+					description: 'Aliased ambient storage import',
+				}),
+			],
+			[
+				'src/index.ts',
+				`import { storage as bucket } from 'kody:runtime'
+
+export default async function main() {
+	return await bucket.get('key')
+}
+`,
+			],
+		]),
+	)
+	expect(aliasedStorage.result.ok).toBe(true)
+	const aliasedStorageLint = aliasedStorage.result.results.find(
+		(entry) => entry.kind === 'lint',
+	)
+	expect(aliasedStorageLint?.message).toContain('packageStorage()')
+})

@@ -121,6 +121,16 @@ The top-level saved identity is the package.
   `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
   `#worker/storage-runner.ts`). Cross-user access stays structurally impossible
   because storage runner names are keyed by the calling user's id.
+- The author-facing storage prescription is one rule per context: saved-package
+  code always uses `packageStorage()` for the package's own data; ad hoc execute
+  code binds a `storageId` and uses ambient `storage`; another package's data
+  goes through `packages.invokeChecked`. Ambient `storage` inside package code
+  is a supported legacy pattern — it binds per-run (package bucket for
+  exports/invocations, job-/service-scoped buckets for jobs/services,
+  caller-bound or `undefined` under static import), so repo checks surface a
+  non-failing suggestion (in the advisory `lint` result message) when package
+  sources import it. The nudge must never fail checks: existing published
+  packages keep passing unchanged.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.

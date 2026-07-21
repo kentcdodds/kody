@@ -56,14 +56,21 @@ Package services run as **background-managed** service instances:
 - the service module runs with:
   - `packageContext`
   - `serviceContext`
-  - service-owned writable `storage`
+  - `packageStorage()` for the package's shared bucket (the prescription for
+    package-owned data)
+  - service-owned writable ambient `storage`, scoped to this service's run state
+    only
   - a `service` helper from `kody:runtime`
 
 Import shape inside a service module:
 
 ```ts
-import { service, serviceContext, storage } from 'kody:runtime'
+import { service, serviceContext, packageStorage } from 'kody:runtime'
 ```
+
+Persist state the package app or exports must see through `packageStorage()`;
+ambient `storage` in a service binds a service-scoped bucket that other package
+surfaces do not read.
 
 The `service` helper exposes:
 
@@ -78,7 +85,7 @@ Treat the service entry as a **runtime supervisor**, not just a one-shot job.
 
 Recommended loop:
 
-1. Load persisted session state from `storage`
+1. Load persisted session state from `packageStorage()`
    - configuration references
    - last checkpoint / cursor / offset
    - reconnect endpoint or transport metadata
@@ -101,7 +108,7 @@ Recommended loop:
 Pseudo-code shape:
 
 ```ts
-import { service, storage } from 'kody:runtime'
+import { service, packageStorage } from 'kody:runtime'
 
 async function openSocket(session: unknown) {
 	void session
@@ -120,6 +127,7 @@ async function openSocket(session: unknown) {
 
 export default async function main(input = {}) {
 	void input
+	const storage = packageStorage()
 	const session = (await storage.get('session-state')) ?? null
 	const socket = await openSocket(session)
 

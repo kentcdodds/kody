@@ -20,8 +20,15 @@ import {
 	collectPublishedPackageArtifactTargets,
 	type PublishedPackageArtifactBuildTarget,
 } from '#worker/package-runtime/package-artifact-targets.ts'
-import { collectStaticKodyPackageImportsFromFiles } from '#worker/package-runtime/static-kody-imports.ts'
-import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
+import {
+	collectStaticKodyPackageImportsFromFiles,
+	isTypeDeclarationFilePath,
+} from '#worker/package-runtime/static-kody-imports.ts'
+import {
+	hasTopLevelDefaultExport,
+	parseModuleSource,
+	type ModuleAstNode,
+} from '#worker/module-source.ts'
 import {
 	createRepoCapabilitiesModuleTypecheckHarness,
 	repoBackedModuleEntrypointExportErrorMessage,
@@ -865,6 +872,92 @@ function formatBundleCheckMessage(input: {
 	return `Resolved ${input.targetCount} package target(s) for bundling.`
 }
 
+const lintPlaceholderPassedMessage = 'Lint placeholder passed for this phase.'
+const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
+const maxAmbientStorageAdvisoryFiles = 5
+
+function moduleImportsAmbientStorage(source: string) {
+	let parsed: ModuleAstNode
+	try {
+		parsed = parseModuleSource(source) as unknown as ModuleAstNode
+	} catch {
+		return false
+	}
+	const program = parsed.program as { body?: Array<ModuleAstNode> } | undefined
+	const body =
+		program?.body ?? (parsed.body as Array<ModuleAstNode> | undefined)
+	if (!Array.isArray(body)) return false
+	for (const node of body) {
+		if (node?.type !== 'ImportDeclaration') continue
+		if ((node as { importKind?: unknown }).importKind === 'type') continue
+		const specifier = (node as { source?: { value?: unknown } }).source?.value
+		if (specifier !== 'kody:runtime') continue
+		const specifiers = (node as { specifiers?: unknown }).specifiers
+		if (!Array.isArray(specifiers)) continue
+		for (const importSpecifier of specifiers) {
+			const typedSpecifier = importSpecifier as {
+				type?: string
+				importKind?: unknown
+				imported?: { name?: unknown; value?: unknown }
+			}
+			if (typedSpecifier.type !== 'ImportSpecifier') continue
+			if (typedSpecifier.importKind === 'type') continue
+			const importedName =
+				typeof typedSpecifier.imported?.name === 'string'
+					? typedSpecifier.imported.name
+					: typeof typedSpecifier.imported?.value === 'string'
+						? typedSpecifier.imported.value
+						: null
+			if (importedName === 'storage') return true
+		}
+	}
+	return false
+}
+
+function collectAmbientStorageImportFiles(sourceFiles: Record<string, string>) {
+	const filePaths: Array<string> = []
+	for (const [filePath, source] of Object.entries(sourceFiles)) {
+		if (!scannableModuleFilePattern.test(filePath)) continue
+		if (isTypeDeclarationFilePath(filePath)) continue
+		if (!source.includes('kody:runtime')) continue
+		if (moduleImportsAmbientStorage(source)) {
+			filePaths.push(filePath)
+		}
+	}
+	return filePaths.sort((left, right) => left.localeCompare(right))
+}
+
+/**
+ * Storage prescription nudge (advisory, never failing): saved-package code
+ * should prefer `packageStorage()` over the ambient `storage` binding, which
+ * is per-run and is unbound or caller-bound when package code is statically
+ * imported into another context. Repo checks have no dedicated advisory
+ * channel, so the suggestion rides the always-passing `lint` result message —
+ * the existing placeholder slot for style-level feedback.
+ */
+function buildLintCheckMessage(sourceFiles: Record<string, string>) {
+	const ambientStorageFiles = collectAmbientStorageImportFiles(sourceFiles)
+	if (ambientStorageFiles.length === 0) {
+		return lintPlaceholderPassedMessage
+	}
+	const shownFiles = ambientStorageFiles.slice(
+		0,
+		maxAmbientStorageAdvisoryFiles,
+	)
+	const hiddenCount = ambientStorageFiles.length - shownFiles.length
+	const fileList =
+		shownFiles.map((filePath) => `"${filePath}"`).join(', ') +
+		(hiddenCount > 0 ? ` (and ${hiddenCount} more)` : '')
+	return (
+		`Suggestion (does not fail checks): ${fileList} import${
+			ambientStorageFiles.length === 1 ? 's' : ''
+		} the ambient \`storage\` helper from 'kody:runtime'. ` +
+		"Saved-package code should prefer `packageStorage()` for the package's own data: it always reaches this " +
+		"package's bucket, while ambient `storage` binds per-run and is unbound or caller-bound when this code is " +
+		'statically imported into another context. Ambient `storage` keeps working as before.'
+	)
+}
+
 export async function runRepoChecks(input: {
 	workspace: {
 		readFile(path: string): Promise<string | null>
@@ -943,6 +1036,7 @@ export async function runRepoChecks(input: {
 		}
 	}
 	const sourceFiles = sourceWalk.collected
+	const lintCheckMessage = buildLintCheckMessage(sourceFiles)
 	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
 		(async function* () {
@@ -1035,7 +1129,7 @@ export async function runRepoChecks(input: {
 		results.push({
 			kind: 'lint',
 			ok: true,
-			message: 'Lint placeholder passed for this phase.',
+			message: lintCheckMessage,
 		})
 		return {
 			ok: results.every((result) => result.ok),
@@ -1061,7 +1155,7 @@ export async function runRepoChecks(input: {
 		results.push({
 			kind: 'lint',
 			ok: true,
-			message: 'Lint placeholder passed for this phase.',
+			message: lintCheckMessage,
 		})
 		return {
 			ok: results.every((result) => result.ok),
@@ -1080,7 +1174,7 @@ export async function runRepoChecks(input: {
 		results.push({
 			kind: 'lint',
 			ok: true,
-			message: 'Lint placeholder passed for this phase.',
+			message: lintCheckMessage,
 		})
 		return {
 			ok: results.every((result) => result.ok),
@@ -1127,7 +1221,7 @@ export async function runRepoChecks(input: {
 	results.push({
 		kind: 'lint',
 		ok: true,
-		message: 'Lint placeholder passed for this phase.',
+		message: lintCheckMessage,
 	})
 
 	return {

@@ -30,6 +30,9 @@ helpers are runtime exports:
   Basic Auth from a saved client id and client secret
 - use **`import { storage } from 'kody:runtime'`** when the execute call is
   bound to a storage id
+- use **`import { packageStorage } from 'kody:runtime'`** inside saved-package
+  code for the package's own bucket — always, in every package surface; see
+  [Package storage](./packages.md#package-storage)
 - use **`import { workflows } from 'kody:runtime'`** to queue Cloudflare
   Workflows from execute calls, ad hoc jobs, package jobs, package
   subscriptions, package services, and package exports. Prefer workflows for
@@ -169,6 +172,11 @@ from execute or another saved package.
 
 ## Storage
 
+One rule per context: ad hoc execute code binds a `storageId` on the call and
+uses ambient `storage`; saved-package code always uses `packageStorage()` for
+the package's own data; another package's data goes through
+`packages.invokeChecked`. See [Package storage](./packages.md#package-storage).
+
 Kody supports durable storage binding for execute and scheduled jobs, including
 package-owned jobs and non-package jobs created with `job_schedule` or
 `job_schedule_once`.
@@ -183,6 +191,9 @@ package-owned jobs and non-package jobs created with `job_schedule` or
 - import **`storage`** from **`kody:runtime`**
 - use **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**,
   and **`storage.sql(query, params?)`**
+
+Both `storage` and `packageStorage()` expose the same interface; everything
+below applies to both.
 
 `storage.sql(...)` returns a result object, not the row array directly:
 

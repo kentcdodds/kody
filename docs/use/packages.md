@@ -237,22 +237,29 @@ explicit `idempotencyKey` when available.
 ## Package storage
 
 Every saved package owns one durable storage bucket per user, keyed by the
-package's immutable id. Package code has two ways to reach durable storage from
-`kody:runtime`, plus one way to reach another package's behavior:
+package's immutable id. One rule per context:
 
-- Ambient `storage` is bound by the execution context. In a package's own
-  runtime (invocations, jobs, services, subscriptions, apps) it is the package's
-  own bucket; in ad hoc `execute` it is the bucket for the call's `storageId`,
-  or `undefined` when the call binds none.
-- `packageStorage()` always returns the declaring package's own bucket,
-  regardless of where the code runs. When saved-package code is statically
-  imported into an ad hoc `execute` call or into another package, each module's
-  `packageStorage()` still reads and writes the bucket of the package that
-  module came from, writable, under the calling user's account. In the package's
-  own runtime, `packageStorage()` and ambient `storage` are the same bucket.
-- `packages.invokeChecked({ kodyId, exportName, params })` enters the target
-  package's own runtime, where that package gets its full context: ambient
-  `storage`, `packageContext`, and package secrets.
+- **Writing a saved package?** Use `packageStorage()` from `kody:runtime` for
+  the package's own data — always.
+- **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
+  `storageId` on the execute call and use ambient `storage`.
+- **Touching another package's data?** Call that package's exports via
+  `packages.invokeChecked({ kodyId, exportName, params })` so its own runtime
+  does the reading and writing.
+
+`packageStorage()` returns the same storage interface as ambient `storage`
+(`get`/`set`/`list`/`sql`/`delete`/`clear`/`id`), writable, always bound to the
+declaring package's own bucket no matter where the code runs:
+
+- In the package's own export/invocation runtime it is the same bucket ambient
+  `storage` binds, so there is no migration cost to preferring it.
+- In package jobs and services — where ambient `storage` binds job-scoped and
+  service-scoped buckets — it still reaches the package's shared bucket.
+- When the module is statically imported (`kody:@scope/package/export`) into an
+  ad hoc `execute` call or into another package, it keeps working: each module
+  reads and writes the bucket of the package it came from, under the calling
+  user's account. Ambient `storage` cannot do this; the binding is per-run, so
+  statically imported code sees the caller's bucket or `undefined`.
 
 ```ts
 import { packageStorage } from 'kody:runtime'
@@ -278,10 +285,18 @@ consequences:
   package that is not the running package and not statically imported by the
   bundle, use `packages.invokeChecked` so its own runtime does the reading.
 
-Choose ambient `storage` for caller-owned or session data, `packageStorage()`
-for package-owned data that must stay reachable when the package's code is
-imported as a library, and `packages.invokeChecked` when the other package's
-logic (not just its data) should run.
+### Ambient `storage` in package code (legacy)
+
+`import { storage } from 'kody:runtime'` inside package code still works and
+stays supported. Exports and invocations bind it to the package's own bucket,
+jobs and services bind it to job-/service-scoped buckets, and statically
+imported code gets the caller's binding or `undefined`. Because the binding is
+per-run, code written against ambient `storage` breaks as soon as it is
+statically imported into another context — which is why the docs recommend
+`packageStorage()` and repo checks surface a non-failing suggestion when package
+sources import ambient `storage`. Reserve ambient `storage` in package code for
+intentionally run-scoped state, such as a job checkpoint that belongs to the
+job's own bucket rather than the package's.
 
 ## Package apps
 
@@ -315,8 +330,9 @@ Treat package apps like Worker-style modules:
 A package service is optional.
 
 When `package.json#kody.services` is present, the package can declare one or
-more named service entrypoints that Kody runs with package-owned storage and
-package caller context.
+more named service entrypoints that Kody runs with package caller context,
+service-scoped ambient `storage` for run state, and `packageStorage()` for the
+package's shared bucket.
 
 Use the package service model when the package needs:
 
