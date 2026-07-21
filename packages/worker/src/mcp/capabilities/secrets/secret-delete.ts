@@ -50,6 +50,7 @@ export const secretDeleteCapability = defineDomainCapability(
 						storageContext,
 						secretName: args.name,
 						resolved: existing,
+						intent: 'mutate',
 					})
 				}
 			}

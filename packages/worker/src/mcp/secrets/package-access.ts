@@ -49,6 +49,8 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		| undefined
 	secretName: string
 	resolved: ResolvedSecret
+	/** Default `'use'` (read/resolve). `'mutate'` always requires allowed_packages. */
+	intent?: 'use' | 'mutate'
 }) {
 	const packageId = input.storageContext?.packageId?.trim()
 	if (!packageId || input.resolved.scope !== 'user') return
@@ -63,17 +65,20 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 			`Package "${packageId}" was not found for secret access.`,
 		)
 	}
-	const communityFork = await getCommunityForkByForkedPackageId(
-		input.env.APP_DB,
-		{
-			forkerUserId: input.userId,
-			forkedPackageId: savedPackage.id,
-		},
-	)
-	// Self-authored packages (no community fork row) may use the user's secrets
-	// without an explicit allowed_packages grant. Community-forked packages still
-	// require approval.
-	if (!communityFork) return
+	const intent = input.intent ?? 'use'
+	if (intent === 'use') {
+		const communityFork = await getCommunityForkByForkedPackageId(
+			input.env.APP_DB,
+			{
+				forkerUserId: input.userId,
+				forkedPackageId: savedPackage.id,
+			},
+		)
+		// Self-authored packages (no community fork row) may read/use the user's
+		// secrets without an explicit allowed_packages grant. Community-forked
+		// packages still require approval. Mutations never take this path.
+		if (!communityFork) return
+	}
 
 	const approvalUrl = buildSecretPackageApprovalUrl({
 		baseUrl: input.baseUrl,

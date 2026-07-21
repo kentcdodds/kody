@@ -15,10 +15,13 @@ hosts, allowed capabilities — not plaintext values.
 
 Package-scoped secrets belong to one saved package and are available only while
 that package runs. User-scoped secrets are available automatically to packages
-the user authored themselves. Packages forked from community listings still
-require explicit package approval (`allowed_packages`) before package code can
-list, read, update, or delete those secrets through mounts, fetch placeholders,
-or secret-aware capabilities. Host and capability approvals are unchanged.
+the user authored themselves for reading and using (mounts, fetch placeholders,
+capability inputs). Packages forked from community listings still require
+explicit package approval (`allowed_packages`) before those read/use paths.
+Updating or deleting a user secret from package code (`secret_set`,
+`secret_delete`, OpenAPI token-refresh writes) always requires the explicit
+package grant, including for self-authored packages. Host and capability
+approvals are unchanged.
 
 **`kody.secret_set(...)`** persists a value that is already available inside
 execution (for example a refreshed OAuth token). It does not return secret

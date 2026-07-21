@@ -166,6 +166,67 @@ test('community-forked packages with an allowed-packages grant may use user secr
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 })
 
+test('mutate intent denies self-authored packages without an allowed-packages grant', async () => {
+	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
+
+	await expect(
+		assertPackageCanAccessResolvedSecret({
+			env: { APP_DB: {} as D1Database },
+			baseUrl: 'https://example.com',
+			userId: 'user-1',
+			storageContext: {
+				sessionId: null,
+				packageId: 'pkg-1',
+			},
+			secretName: 'userToken',
+			resolved: {
+				found: true,
+				value: 'secret',
+				scope: 'user',
+				allowedHosts: [],
+				allowedCapabilities: [],
+				allowedPackages: [],
+			},
+			intent: 'mutate',
+		}),
+	).rejects.toSatisfy((error: unknown) => {
+		const message = error instanceof Error ? error.message : String(error)
+		const parsed = parsePackageAccessRequiredMessage(message)
+		return (
+			parsed?.secretName === 'userToken' &&
+			parsed.packageName === 'discord-gateway' &&
+			message.includes('/account/secrets/user/userToken')
+		)
+	})
+	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
+})
+
+test('mutate intent allows self-authored packages with an allowed-packages grant', async () => {
+	await expect(
+		assertPackageCanAccessResolvedSecret({
+			env: { APP_DB: {} as D1Database },
+			baseUrl: 'https://example.com',
+			userId: 'user-1',
+			storageContext: {
+				sessionId: null,
+				packageId: 'pkg-1',
+			},
+			secretName: 'userToken',
+			resolved: {
+				found: true,
+				value: 'secret',
+				scope: 'user',
+				allowedHosts: [],
+				allowedCapabilities: [],
+				allowedPackages: ['pkg-1'],
+			},
+			intent: 'mutate',
+		}),
+	).resolves.toBeUndefined()
+	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
+	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
+})
+
 test('resolvePackageMountedSecret rejects package runtime calls without a matching packageId', async () => {
 	const runtimeError =
 		'Package secret access requires a matching server-side package runtime context.'

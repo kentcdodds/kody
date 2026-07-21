@@ -48,10 +48,11 @@ Provide the user a URL like:
 
 ## Package approval URLs (after a package exists)
 
-Self-authored packages can use the user's secrets without an `allowed_packages`
-grant. When a **community-forked** package needs access to one or more
-**existing** user secrets, send the user an approval link — do not ask them to
-recreate the secrets.
+Self-authored packages can read and use the user's secrets without an
+`allowed_packages` grant; updating or deleting a user secret from package code
+still requires that grant. When a **community-forked** package needs access to
+one or more **existing** user secrets, send the user an approval link — do not
+ask them to recreate the secrets.
 
 - Single secret:
   `/account/secrets/user/{secretName}?package_id={savedPackageId}&package={kodyId}`

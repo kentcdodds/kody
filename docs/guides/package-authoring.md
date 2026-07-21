@@ -90,10 +90,11 @@ When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 
 1. Ensure each secret exists (see `guide: "connect_secret"` /
    `guide: "secret_backed_integration"`).
-2. Self-authored packages get automatic user-secret access (host approval still
-   applies). After save/publish, read `pending_secret_package_approvals` from
-   the tool result — it is non-null only for packages forked from community
-   listings.
+2. Self-authored packages get automatic read/use access to user secrets (host
+   approval still applies; `secret_set` / `secret_delete` still need an
+   `allowed_packages` grant). After save/publish, read
+   `pending_secret_package_approvals` from the tool result — it is non-null only
+   for packages forked from community listings.
 3. When pending approvals are present, send the user `bulk_approval_url` when
    present; otherwise send each `approval_url`.
 4. Wait for approval (when required), then smoke-test with

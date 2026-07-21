@@ -71,9 +71,16 @@ vi.mock('#mcp/secrets/allowed-hosts.ts', () => ({
 		),
 }))
 
-vi.mock('#mcp/secrets/allowed-capabilities.ts', () => ({
-	normalizeAllowedCapabilities: (capabilities: Array<string>) => capabilities,
-}))
+vi.mock('#mcp/secrets/allowed-capabilities.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#mcp/secrets/allowed-capabilities.ts')
+		>()
+	return {
+		...actual,
+		normalizeAllowedCapabilities: (capabilities: Array<string>) => capabilities,
+	}
+})
 
 vi.mock('#mcp/secrets/host-approval.ts', () => ({
 	buildSecretHostApprovalUrl: (...args: Array<unknown>) =>
@@ -761,6 +768,70 @@ test('capability approval rejects invalid targets and defers to host when both a
 		ok: true,
 	})
 	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalled()
+	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
+})
+
+test('capability approval rejects junk and oversized capability names without policy change', async () => {
+	mockModule.setSecretAllowedCapabilities.mockClear()
+	const handler = createAccountSecretsApiHandler(createEnv())
+
+	const junkResponse = await handler.handler({
+		request: new Request(
+			`https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=${encodeURIComponent('evil name<script>')}`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(junkResponse.status).toBe(400)
+	await expect(junkResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Invalid approval request capability.',
+	})
+	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
+
+	const oversizedCapability = 'a'.repeat(201)
+	const oversizedResponse = await handler.handler({
+		request: new Request(
+			`https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=${encodeURIComponent(oversizedCapability)}`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+
+	expect(oversizedResponse.status).toBe(400)
+	await expect(oversizedResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Invalid approval request capability.',
+	})
+	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
+
+	mockModule.listSecrets.mockResolvedValueOnce([])
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
+
+	const junkViewResponse = await handler.handler({
+		request: new Request(
+			`https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=${encodeURIComponent('evil name<script>')}`,
+			{ method: 'GET' },
+		),
+		params: {},
+	} as never)
+
+	expect(junkViewResponse.status).toBe(200)
+	await expect(junkViewResponse.json()).resolves.toMatchObject({
+		ok: true,
+		approval: null,
+		approvalError: 'Invalid approval request capability.',
+	})
 	expect(mockModule.setSecretAllowedCapabilities).not.toHaveBeenCalled()
 })
 

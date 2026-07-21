@@ -14,7 +14,7 @@ import {
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
-import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
+import { parseAllowedCapabilityName } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -315,9 +315,9 @@ function resolveApprovalRequest(input: {
 		}
 	}
 	if (input.requestedCapability) {
-		const [requestedCapability] = normalizeAllowedCapabilities([
+		const requestedCapability = parseAllowedCapabilityName(
 			input.requestedCapability,
-		])
+		)
 		if (!requestedCapability) {
 			throw new Error('Invalid approval request capability.')
 		}
