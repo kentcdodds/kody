@@ -468,9 +468,7 @@ function createProviderProxySource(provider: ResolvedProvider) {
 			openApiProviders: kodyProvider.kodyOpenApiProviders ?? [],
 		})
 	}
-	return provider.positionalArgs
-		? `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
-		: `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args ?? {}));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
+	return `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
 }
 
 // Keep only fields the sandbox proxy reads so inlined executor scripts stay
@@ -593,10 +591,7 @@ export function createToolDispatchers(
 				return await fn(...args)
 			}
 		}
-		dispatchers[provider.name] = new ToolDispatcher(
-			sanitizedFns,
-			provider.positionalArgs,
-		)
+		dispatchers[provider.name] = new ToolDispatcher(sanitizedFns)
 	}
 	return dispatchers
 }

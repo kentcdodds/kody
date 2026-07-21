@@ -770,6 +770,62 @@ test('createToolDispatchers rejects duplicate sanitized tool names', () => {
 	)
 })
 
+test('createToolDispatchers forwards rest args for codemode 0.4 ToolDispatcher', async () => {
+	const dispatchers = createToolDispatchers(
+		[
+			{
+				name: 'state',
+				fns: {
+					readFile: async (path: unknown) => path,
+					merge: async (left: unknown, right: unknown) => [left, right],
+					search: async (query: unknown) => query,
+				},
+			},
+		],
+		{ active: true },
+	)
+
+	await expect(
+		JSON.parse(
+			(await dispatchers.state.call(
+				'readFile',
+				JSON.stringify(['/tmp/foo']),
+			)) ?? '{}',
+		),
+	).toEqual({ result: '/tmp/foo' })
+	await expect(
+		JSON.parse(
+			(await dispatchers.state.call('merge', JSON.stringify(['a', 'b']))) ??
+				'{}',
+		),
+	).toEqual({ result: ['a', 'b'] })
+	await expect(
+		JSON.parse(
+			(await dispatchers.state.call('search', JSON.stringify([{ q: 'ok' }]))) ??
+				'{}',
+		),
+	).toEqual({ result: { q: 'ok' } })
+})
+
+test('generated provider proxy uses rest args for sandbox tool calls', () => {
+	const moduleSource = createExecutorModuleSource({
+		code: 'async () => "ok"',
+		providers: [
+			{
+				name: 'codemode',
+				fns: {
+					search: async () => ({ ok: true }),
+				},
+			},
+		],
+		shadowGlobalThis: false,
+		timeoutMs: 1_000,
+	})
+	expect(moduleSource).toContain('async (...args) => {')
+	expect(moduleSource).toContain('JSON.stringify(args)')
+	expect(moduleSource).not.toContain('JSON.stringify(args ?? {})')
+})
+
 test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {
 	const capabilityError = new Error(
 		createCapabilitySecretAccessDeniedMessage(
