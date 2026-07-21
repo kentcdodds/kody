@@ -31,13 +31,8 @@ export type SynthesizedMcpServerDomain = {
 	bindings: Record<string, McpServerToolCapabilityBinding>
 }
 
-function buildKeywords(
-	tool: McpServerToolDescriptor,
-	ref: McpServerRef,
-	extraRoots: ReadonlyArray<string>,
-) {
+function buildKeywords(tool: McpServerToolDescriptor, ref: McpServerRef) {
 	const words = [
-		...extraRoots,
 		'mcp',
 		'server',
 		tool.name,
@@ -60,9 +55,8 @@ function createCapabilityFromTool(input: {
 	tool: McpServerToolDescriptor
 	ref: McpServerRef
 	domainId: CapabilityDomain
-	domainKeywordRoots: ReadonlyArray<string>
 }): { capability: Capability; binding: McpServerToolCapabilityBinding } {
-	const { tool, ref, domainId, domainKeywordRoots } = input
+	const { tool, ref, domainId } = input
 	const capabilityName = mcpServerCapabilityId({
 		ref,
 		toolName: tool.name,
@@ -82,7 +76,7 @@ function createCapabilityFromTool(input: {
 			tool.description?.trim() ||
 			tool.title?.trim() ||
 			`MCP server tool ${tool.name}.`,
-		keywords: buildKeywords(tool, ref, domainKeywordRoots),
+		keywords: buildKeywords(tool, ref),
 		readOnly: Boolean(
 			(tool.annotations as Record<string, unknown> | undefined)?.[
 				'readOnlyHint'
@@ -165,8 +159,6 @@ export function synthesizeMcpServerToolDomain(input: {
 	const domainId = mcpServerDomainId(ref)
 	const domainIdForCapabilities: CapabilityDomain = domainId
 
-	const domainKeywordRoots = [snapshot.instructions ?? '', 'integration', 'mcp']
-
 	const domainDescription =
 		snapshot.instructions?.trim() ||
 		`Capabilities discovered from the connected MCP server "${ref.name}".`
@@ -179,7 +171,6 @@ export function synthesizeMcpServerToolDomain(input: {
 			tool,
 			ref,
 			domainId: domainIdForCapabilities,
-			domainKeywordRoots,
 		})
 		capabilities.push(capability)
 		bindings[binding.capabilityName] = binding

@@ -32,10 +32,8 @@ function buildKeywords(
 	snapshot: RemoteConnectorSnapshot,
 	tool: RemoteConnectorSnapshot['tools'][number],
 	ref: RemoteConnectorRef,
-	extraRoots: ReadonlyArray<string>,
 ) {
 	const words = [
-		...extraRoots,
 		'connector',
 		'remote',
 		tool.name,
@@ -60,9 +58,8 @@ function createCapabilityFromTool(input: {
 	tool: RemoteConnectorSnapshot['tools'][number]
 	ref: RemoteConnectorRef
 	domainId: CapabilityDomain
-	domainKeywordRoots: ReadonlyArray<string>
 }): { capability: Capability; binding: RemoteToolCapabilityBinding } {
-	const { snapshot, tool, ref, domainId, domainKeywordRoots } = input
+	const { snapshot, tool, ref, domainId } = input
 	const capabilityName = remoteConnectorCapabilityId({
 		ref,
 		toolName: tool.name,
@@ -82,7 +79,7 @@ function createCapabilityFromTool(input: {
 			tool.description?.trim() ||
 			tool.title?.trim() ||
 			`Remote connector action for ${tool.name}.`,
-		keywords: buildKeywords(snapshot, tool, ref, domainKeywordRoots),
+		keywords: buildKeywords(snapshot, tool, ref),
 		readOnly: Boolean(
 			(tool.annotations as Record<string, unknown> | undefined)?.[
 				'readOnlyHint'
@@ -189,7 +186,6 @@ export async function synthesizeRemoteToolDomain(input: {
 			tool,
 			ref,
 			domainId: domainIdForCapabilities,
-			domainKeywordRoots,
 		})
 		capabilities.push(capability)
 		bindings[binding.capabilityName] = binding

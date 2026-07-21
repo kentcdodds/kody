@@ -113,6 +113,23 @@ export function lexicalScore(query: string, doc: string): number {
 	return intersection / q.size
 }
 
+function capabilityLexicalScore(
+	query: string,
+	identityQuery: string,
+	spec: CapabilitySpec,
+	document: string,
+): number {
+	const documentScore = lexicalScore(query, document)
+	const identityScore = lexicalScore(
+		identityQuery,
+		`${spec.name}\n${spec.domain}`,
+	)
+	// Dynamic operations may not be indexed yet. Normalize operation identity
+	// against query terms that occur in this registry's identities so exact
+	// entity names are not diluted by conversational query words.
+	return Math.min(1, documentScore + identityScore)
+}
+
 export function hybridSearchScore(lexical: number, vector: number): number {
 	return blendLexicalAndVectorScore(lexical, vector)
 }
@@ -380,8 +397,22 @@ export async function searchCapabilities(input: {
 	const docsById = Object.fromEntries(
 		ids.map((id) => [id, buildCapabilityEmbedText(specs[id]!)] as const),
 	)
+	const identityTokenUniverse = new Set(
+		ids.flatMap((id) => [
+			...tokenize(`${specs[id]!.name}\n${specs[id]!.domain}`),
+		]),
+	)
+	const identityQuery = [...tokenize(q)]
+		.filter((token) => identityTokenUniverse.has(token))
+		.join(' ')
 	const lexicalScoreById = Object.fromEntries(
-		ids.map((id) => [id, lexicalScore(q, docsById[id]!)] as const),
+		ids.map(
+			(id) =>
+				[
+					id,
+					capabilityLexicalScore(q, identityQuery, specs[id]!, docsById[id]!),
+				] as const,
+		),
 	)
 
 	const lexicalOrder = sortIdsByScore(ids, (id) => lexicalScoreById[id]!)

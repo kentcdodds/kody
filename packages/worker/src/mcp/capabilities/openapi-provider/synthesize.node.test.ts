@@ -122,6 +122,21 @@ test('synthesizes an openapi:<provider> domain with a capability per operation',
 	expect(del?.destructive).toBe(true)
 	expect(del?.readOnly).toBe(false)
 
+	const providerDescription = synthesizeOpenApiProviderDomain({
+		binding: createBinding({
+			description:
+				'Provider-wide instructions for widgets and unrelated invoice workflows.',
+			specTitle: 'Billing ledger platform',
+		}),
+	})
+	expect(providerDescription?.domain.description).toContain('invoice workflows')
+	const providerKeywords =
+		providerDescription?.domain.capabilities.find(
+			(capability) => capability.name === 'openapi:widgets:listwidgets',
+		)?.keywords ?? []
+	expect(providerKeywords).not.toContain('invoice')
+	expect(providerKeywords).not.toContain('billing')
+
 	expect(
 		synthesizeOpenApiProviderDomain({
 			binding: createBinding({ operations: [] }),

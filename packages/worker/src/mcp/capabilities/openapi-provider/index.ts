@@ -23,10 +23,8 @@ export type SynthesizedOpenApiDomain = {
 function buildKeywords(
 	operation: OpenApiBindingOperation,
 	binding: OpenApiBinding,
-	extraRoots: ReadonlyArray<string>,
 ) {
 	const words = [
-		...extraRoots,
 		'openapi',
 		'rest',
 		'api',
@@ -37,7 +35,6 @@ function buildKeywords(
 		operation.description ?? '',
 		...operation.tags,
 		binding.name,
-		binding.specTitle ?? '',
 	]
 	return Array.from(
 		new Set(
@@ -164,9 +161,8 @@ function createCapabilityFromOperation(input: {
 	binding: OpenApiBinding
 	operation: OpenApiBindingOperation
 	domainId: CapabilityDomain
-	domainKeywordRoots: ReadonlyArray<string>
 }): Capability {
-	const { binding, operation, domainId, domainKeywordRoots } = input
+	const { binding, operation, domainId } = input
 	const kodyName = openApiProviderKodyName(binding.name)
 	const capabilityName = openApiCapabilityId(binding.name, operation.slug)
 	const method = operation.method
@@ -179,7 +175,7 @@ function createCapabilityFromOperation(input: {
 		name: capabilityName,
 		domain: domainId,
 		description: descriptionParts.join(' — '),
-		keywords: buildKeywords(operation, binding, domainKeywordRoots),
+		keywords: buildKeywords(operation, binding),
 		readOnly: method === 'get' || method === 'head',
 		destructive: method === 'delete',
 		source: 'openapi',
@@ -226,13 +222,6 @@ export function synthesizeOpenApiProviderDomain(input: {
 
 	const domainId = openApiDomainId(binding.name)
 	const domainIdForCapabilities: CapabilityDomain = domainId
-	const domainKeywordRoots = [
-		binding.description ?? '',
-		binding.specTitle ?? '',
-		'openapi',
-		'rest',
-		'api',
-	]
 	const domainDescription =
 		binding.description?.trim() ||
 		binding.specTitle?.trim() ||
@@ -243,7 +232,6 @@ export function synthesizeOpenApiProviderDomain(input: {
 			binding,
 			operation,
 			domainId: domainIdForCapabilities,
-			domainKeywordRoots,
 		}),
 	)
 

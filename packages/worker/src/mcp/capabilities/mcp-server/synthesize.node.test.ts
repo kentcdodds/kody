@@ -72,6 +72,20 @@ test('synthesizes an mcp:<server> domain with a capability per tool', () => {
 	)
 	expect(listIssues?.readOnly).toBe(true)
 
+	const instructed = synthesizeMcpServerToolDomain({
+		ref,
+		snapshot: createSnapshot({
+			instructions:
+				'This server supports issue tracking and unrelated invoice workflows.',
+		}),
+	})
+	expect(instructed?.domain.description).toContain('invoice workflows')
+	expect(
+		instructed?.domain.capabilities.find(
+			(capability) => capability.name === 'mcp:linear:create_issue',
+		)?.keywords,
+	).not.toContain('invoice')
+
 	expect(synthesizeMcpServerToolDomain({ ref, snapshot: null })).toBeNull()
 	expect(
 		synthesizeMcpServerToolDomain({

@@ -8,7 +8,11 @@ import {
 import { filterCapabilityRegistryForCaller } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { buildIntegrationValueName } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { synthesizeMcpServerToolDomain } from '#mcp/capabilities/mcp-server/index.ts'
+import { synthesizeOpenApiProviderDomain } from '#mcp/capabilities/openapi-provider/index.ts'
+import { synthesizeRemoteToolDomain } from '#mcp/capabilities/remote-connector/index.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
 import type * as PackageRegistrySource from '#worker/package-registry/source.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {
@@ -1466,4 +1470,184 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 		type: 'value',
 		name: 'webhook_api_key',
 	})
+})
+
+test('online search ranks remote, MCP, and OpenAPI Sonos operations above real competing builtin hits', async () => {
+	const builtinCompetitorDomain = {
+		name: 'home',
+		description: 'Static builtin home automation capabilities.',
+		capabilities: [
+			homeCapability(
+				'lutron_list_processors',
+				'List discovered Lutron processors, whether credentials are stored, and the latest auth status.',
+				['lutron', 'processors', 'credentials', 'status'],
+			),
+			homeCapability(
+				'samsung_get_known_apps_status',
+				'Check a curated set of common app IDs to see which apps are installed on a Samsung TV.',
+				['samsung', 'apps', 'installed', 'status'],
+			),
+			homeCapability(
+				'access_networks_unleashed_list_controllers',
+				'List locally persisted Access Networks Unleashed controllers, whether one is adopted, and whether credentials are stored.',
+				['access', 'networks', 'controllers', 'credentials'],
+			),
+		],
+	}
+	const competingBuiltinIds = Object.keys(
+		buildCapabilityRegistry([builtinCompetitorDomain]).capabilitySpecs,
+	)
+	expect(competingBuiltinIds).toHaveLength(3)
+
+	const targetTools = [
+		{
+			name: 'sonos_list_players',
+			description:
+				'List known Sonos players with room names, models, group membership, and adoption state.',
+			inputSchema: { type: 'object', properties: {} },
+			annotations: { readOnlyHint: true, idempotentHint: true },
+		},
+		{
+			name: 'sonos_get_player_status',
+			description:
+				'Get transport, track, queue, volume, EQ, and input status for a Sonos player.',
+			inputSchema: {
+				type: 'object',
+				properties: { playerId: { type: 'string' } },
+			},
+			annotations: { readOnlyHint: true },
+		},
+	]
+	const providerWideDescription =
+		'Local home provider for checking whether any Sonos speakers are playing.'
+	const remote = await synthesizeRemoteToolDomain({
+		env: {} as Env,
+		userId: 'user-1',
+		ref: { instanceId: 'home' },
+		snapshot: {
+			connectorId: 'home',
+			description: providerWideDescription,
+			connectedAt: '2026-07-21T00:00:00.000Z',
+			lastSeenAt: '2026-07-21T00:00:01.000Z',
+			tools: targetTools,
+		},
+	})
+	const mcp = synthesizeMcpServerToolDomain({
+		ref: { serverId: 'server-1', name: 'home' },
+		snapshot: {
+			serverId: 'server-1',
+			name: 'home',
+			url: 'https://mcp.example.com/mcp',
+			state: 'ready',
+			authUrl: null,
+			error: null,
+			instructions: providerWideDescription,
+			tools: targetTools,
+		},
+	})
+	const openApi = synthesizeOpenApiProviderDomain({
+		binding: {
+			name: 'home',
+			specUrl: 'https://specs.example/openapi.json',
+			apiBaseUrl: 'https://api.home.example',
+			description: providerWideDescription,
+			auth: { kind: 'none' },
+			selection: { tags: ['home'] },
+			includeDestructive: false,
+			specTitle: providerWideDescription,
+			specVersion: '1.0.0',
+			updatedAt: '2026-07-21T00:00:00.000Z',
+			operations: targetTools.map((tool) => ({
+				slug: tool.name,
+				operationId: tool.name,
+				method: 'get',
+				path: `/tools/${tool.name}`,
+				summary: tool.description,
+				description: null,
+				tags: ['home'],
+				deprecated: false,
+				parameters: [],
+				requestBody: null,
+			})),
+		} satisfies OpenApiBinding,
+	})
+	expect(remote).not.toBeNull()
+	expect(mcp).not.toBeNull()
+	expect(openApi).not.toBeNull()
+
+	const capturedFilters: Array<unknown> = []
+	let aiRunCount = 0
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: {
+			async run(...args: Array<unknown>) {
+				aiRunCount += 1
+				return createDeterministicAiBinding().run(...args)
+			},
+		},
+		CAPABILITY_VECTOR_INDEX: {
+			async query(_values: Array<number>, options: { filter?: unknown }) {
+				capturedFilters.push(options.filter)
+				return {
+					matches: competingBuiltinIds.map((id, index) => ({
+						id,
+						score: 0.99 - index * 0.01,
+					})),
+				}
+			},
+		},
+	} as unknown as Env
+
+	const cases = [
+		{
+			source: 'remote-connector',
+			domain: remote!.domain,
+			prefix: 'remote:home:',
+		},
+		{ source: 'mcp-server', domain: mcp!.domain, prefix: 'mcp:home:' },
+		{ source: 'openapi', domain: openApi!.domain, prefix: 'openapi:home:' },
+	] as const
+	for (const testCase of cases) {
+		const registry = buildCapabilityRegistry([
+			builtinCompetitorDomain,
+			testCase.domain,
+		])
+		expect(
+			competingBuiltinIds.every(
+				(id) => registry.capabilitySpecs[id]?.source === 'builtin',
+			),
+		).toBe(true)
+		expect(
+			Object.values(registry.capabilitySpecs)
+				.filter((spec) => spec.source === testCase.source)
+				.map((spec) => spec.name),
+		).toEqual([
+			`${testCase.prefix}sonos_list_players`,
+			`${testCase.prefix}sonos_get_player_status`,
+		])
+
+		const result = await searchUnified({
+			env,
+			query: 'check whether any Sonos speakers are playing',
+			limit: 10,
+			userId: 'user-1',
+			registry,
+			optionalRows: emptyOptionalSearchRows,
+		})
+		const capabilityNames = result.matches.flatMap((match) =>
+			match.type === 'capability' ? [match.name] : [],
+		)
+
+		expect(new Set(capabilityNames.slice(0, 2))).toEqual(
+			new Set([
+				`${testCase.prefix}sonos_get_player_status`,
+				`${testCase.prefix}sonos_list_players`,
+			]),
+		)
+	}
+
+	expect(capturedFilters).toEqual(
+		cases.map(() => ({ kind: { $eq: 'builtin' } })),
+	)
+	expect(aiRunCount).toBe(cases.length)
 })
