@@ -71,6 +71,14 @@ const taskLexicon = {
 		'current',
 		'latest',
 		'summary',
+		'check',
+		'checking',
+		'whether',
+		'playing',
+		'running',
+		'paused',
+		'connected',
+		'disconnected',
 	],
 	learn: [
 		'what',
@@ -331,11 +339,33 @@ function inferTaskSignals(
 			confidence: Math.min(1, result.score),
 		}))
 
+	// Prefer inspect over setup for package/note lookups.
+	const inspectAction = actions.find((action) => action.name === 'inspect')
+	const setupAction = actions.find((action) => action.name === 'setup')
+	const packageOrientedTokens = meaningfulTokens.some((token) =>
+		['note', 'notes', 'package', 'packages', 'readme', 'doc', 'docs'].includes(
+			token,
+		),
+	)
+	const prefersInspectOverSetup =
+		packageOrientedTokens &&
+		inspectAction != null &&
+		setupAction != null &&
+		inspectAction.matchedTerms.some((term) =>
+			['show', 'list', 'view', 'inspect'].includes(term),
+		)
+	const task = prefersInspectOverSetup
+		? {
+				name: 'inspect' as const,
+				confidence: Math.min(1, inspectAction.confidence),
+			}
+		: {
+				name: strongest.task,
+				confidence: Math.min(1, strongest.score),
+			}
+
 	return {
-		task: {
-			name: strongest.task,
-			confidence: Math.min(1, strongest.score),
-		},
+		task,
 		actions,
 	}
 }

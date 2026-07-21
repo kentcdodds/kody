@@ -27,6 +27,30 @@ export const CAPABILITY_EMBEDDING_MAX_INPUT_CHARS = 2_000
 
 export const CAPABILITY_SEARCH_RRF_K = 60
 
+/**
+ * Indexed metadata `kind` for builtin capability vectors in the shared
+ * CAPABILITY_VECTOR_INDEX (see capability-reindex.ts). Distinct from package /
+ * memory / job kinds in the same index.
+ */
+export const CAPABILITY_VECTOR_KIND = 'builtin'
+
+/**
+ * Always scope capability Vectorize queries to builtin capability vectors.
+ * Caller-supplied RBAC/provider filters are merged with implicit AND; `kind` is
+ * forced to builtin so callers cannot widen into packages or other corpora.
+ */
+export function buildCapabilityVectorMetadataFilter(
+	callerFilter?: VectorizeVectorMetadataFilter,
+): VectorizeVectorMetadataFilter {
+	if (!callerFilter || Object.keys(callerFilter).length === 0) {
+		return { kind: { $eq: CAPABILITY_VECTOR_KIND } }
+	}
+	return {
+		...callerFilter,
+		kind: { $eq: CAPABILITY_VECTOR_KIND },
+	}
+}
+
 function truncateEmbeddingInput(text: string) {
 	if (text.length <= CAPABILITY_EMBEDDING_MAX_INPUT_CHARS) return text
 	return text.slice(0, CAPABILITY_EMBEDDING_MAX_INPUT_CHARS)
@@ -338,8 +362,17 @@ export async function searchCapabilities(input: {
 	limit: number
 	detail: boolean
 	specs: Record<string, CapabilitySpec>
-	/** When set (online only), Vectorize query uses this metadata filter first; falls back to unfiltered if no spec ids match. */
+	/**
+	 * Optional online-only metadata filter combined with the builtin capability
+	 * kind filter (RBAC/provider scoping). Never widens into other index kinds.
+	 */
 	vectorMetadataFilter?: VectorizeVectorMetadataFilter
+	/**
+	 * Optional precomputed query embedding. Callers that also rank packages
+	 * (or other Vectorize-backed corpora) against the same query should embed
+	 * once and pass the vector here to avoid a second Workers AI round-trip.
+	 */
+	queryVector?: ReadonlyArray<number>
 }): Promise<{ matches: Array<CapabilitySearchHit>; offline: boolean }> {
 	const q = input.query.trim()
 	const specs = input.specs
@@ -355,11 +388,16 @@ export async function searchCapabilities(input: {
 
 	let vectorOrder: Array<string>
 	let vectorScoreById: Record<string, number>
+	let vectorHitIds: Set<string>
 
 	const offline = isCapabilitySearchOffline(input.env)
 
 	if (offline) {
-		const qVec = deterministicEmbedding(q)
+		const qVec =
+			input.queryVector &&
+			input.queryVector.length === CAPABILITY_EMBEDDING_DIMENSIONS
+				? [...input.queryVector]
+				: deterministicEmbedding(q)
 		vectorScoreById = Object.fromEntries(
 			ids.map((id) => {
 				const cVec = deterministicEmbedding(docsById[id]!)
@@ -367,6 +405,7 @@ export async function searchCapabilities(input: {
 			}),
 		)
 		vectorOrder = sortIdsByScore(ids, (id) => vectorScoreById[id]!)
+		vectorHitIds = new Set(ids)
 	} else {
 		const index = getCapabilityVectorIndex(input.env)
 		if (!index) {
@@ -375,55 +414,43 @@ export async function searchCapabilities(input: {
 			)
 		}
 		const vectorIndex = index
-		const qVec = await embedTextForVectorize(input.env, q)
+		// Clone at the Vectorize boundary — Workers may mutate the query array.
+		const qVec = [
+			...(input.queryVector ?? (await embedTextForVectorize(input.env, q))),
+		]
 		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
 		const vectorScoreMap = new Map<string, number>()
+		const filter = buildCapabilityVectorMetadataFilter(
+			input.vectorMetadataFilter,
+		)
 
-		async function queryVectorize(filter?: VectorizeVectorMetadataFilter) {
-			return vectorIndex.query(qVec, {
-				topK,
-				returnMetadata: 'none',
-				...(filter ? { filter } : {}),
-			})
-		}
-
-		let vecMatches = await queryVectorize(input.vectorMetadataFilter)
-		const collectFromMatches = (
-			raw: typeof vecMatches.matches,
-		): { fromIndex: Array<string>; seen: Set<string> } => {
-			const seen = new Set<string>()
-			const fromIndex: Array<string> = []
-			for (const m of raw) {
-				if (typeof m.id !== 'string' || !specs[m.id] || seen.has(m.id)) continue
-				seen.add(m.id)
-				fromIndex.push(m.id)
-				vectorScoreMap.set(m.id, m.score)
-			}
-			return { fromIndex, seen }
-		}
-
-		let { fromIndex, seen } = collectFromMatches(vecMatches.matches)
-		if (fromIndex.length === 0 && input.vectorMetadataFilter) {
-			vecMatches = await queryVectorize(undefined)
-			;({ fromIndex, seen } = collectFromMatches(vecMatches.matches))
-		}
-		const missingIds = ids.filter((id) => !seen.has(id))
-		if (missingIds.length > 0) {
-			const missingVectors = await embedTextsForVectorize(
-				input.env,
-				missingIds.map((id) => docsById[id]!),
+		const vecMatches = await vectorIndex.query(qVec, {
+			topK,
+			returnMetadata: 'none',
+			filter,
+		})
+		const fromIndex: Array<string> = []
+		const seen = new Set<string>()
+		for (const match of vecMatches.matches) {
+			if (
+				typeof match.id !== 'string' ||
+				!specs[match.id] ||
+				seen.has(match.id)
 			)
-			for (let index_ = 0; index_ < missingIds.length; index_ += 1) {
-				vectorScoreMap.set(
-					missingIds[index_]!,
-					cosineSimilarity(qVec, missingVectors[index_]!),
-				)
-			}
+				continue
+			seen.add(match.id)
+			fromIndex.push(match.id)
+			vectorScoreMap.set(match.id, match.score)
 		}
+		// Do not re-embed documents missing from Vectorize topK on the query path,
+		// and do not fall back to an unfiltered cross-kind query. Lexical ranking
+		// recalls non-vector hits; reindexing owns document embeddings.
+		vectorHitIds = seen
 		vectorScoreById = Object.fromEntries(
 			ids.map((id) => [id, vectorScoreMap.get(id) ?? Number.NEGATIVE_INFINITY]),
 		)
-		vectorOrder = sortIdsByScore(ids, (id) => vectorScoreById[id]!)
+		// Only real Vectorize hits participate in vectorOrder / RRF.
+		vectorOrder = fromIndex
 	}
 
 	const lexicalRankById = new Map<string, number>()
@@ -443,8 +470,13 @@ export async function searchCapabilities(input: {
 		.sort((a, b) => {
 			const fusedDiff = (fused.get(b) ?? 0) - (fused.get(a) ?? 0)
 			if (fusedDiff !== 0) return fusedDiff
-			const vectorDiff = vectorScoreById[b]! - vectorScoreById[a]!
-			if (vectorDiff !== 0) return vectorDiff
+			const aHasVector = vectorHitIds.has(a)
+			const bHasVector = vectorHitIds.has(b)
+			if (aHasVector !== bHasVector) return aHasVector ? -1 : 1
+			if (aHasVector && bHasVector) {
+				const vectorDiff = vectorScoreById[b]! - vectorScoreById[a]!
+				if (vectorDiff !== 0) return vectorDiff
+			}
 			return lexicalScoreById[b]! - lexicalScoreById[a]!
 		})
 		.slice(0, Math.max(1, Math.min(input.limit, ids.length)))
@@ -452,19 +484,23 @@ export async function searchCapabilities(input: {
 	const matches: Array<CapabilitySearchHit> = ordered.map((id) => {
 		const spec = specs[id]!
 		const base = input.detail ? toDetail(spec) : toSummary(spec)
+		const hasVectorHit = vectorHitIds.has(id)
 		const rawVectorScore = vectorScoreById[id]
 		const vectorScore =
-			rawVectorScore !== undefined && Number.isFinite(rawVectorScore)
+			hasVectorHit &&
+			rawVectorScore !== undefined &&
+			Number.isFinite(rawVectorScore)
 				? rawVectorScore
 				: 0
 		return {
 			...base,
 			fusedScore: fused.get(id) ?? 0,
 			lexicalRank: lexicalRankById.get(id),
-			vectorRank: vectorRankById.get(id),
+			// Omit vectorRank when there was no Vectorize hit so callers can
+			// treat the candidate as lexical-only (not vectorScore === 0).
+			...(hasVectorHit ? { vectorRank: vectorRankById.get(id) } : {}),
 			lexicalScore: lexicalScoreById[id] ?? 0,
-			// Keep non-finite scores internal to ranking and expose a stable numeric
-			// value on the public hit shape.
+			// Keep a stable numeric public field; ranking uses vectorRank presence.
 			vectorScore,
 		}
 	})

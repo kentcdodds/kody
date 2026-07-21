@@ -23,7 +23,11 @@ import {
 import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
-import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
+import {
+	acknowledgeToolMemories,
+	loadRelevantMemoriesForTool,
+	type MemoryToolSummary,
+} from '#mcp/tools/memory-tool-context.ts'
 import {
 	buildValueEntityId,
 	describeValue,
@@ -106,18 +110,19 @@ const defaultMaxResponseSize = 4_000
 const topCapabilityInlineCallShapeCount = 3
 const maxRelatedCapabilityOperations = 20
 const maxBatchEntityRefs = 10
-/** Upper bound on package candidates kept after lexical/vector rank fusion. */
 const maxFusedPackageCandidates = 100
+export const SEARCH_MEMORY_ENRICHMENT_BUDGET_MS = 1_000
+/** Bound wait for post-retrieval D1 acknowledgement; does not cover retrieval. */
+export const SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS = 250
+export const memoryEnrichmentSkippedWarning =
+	'Memory enrichment was skipped; returning core results without memory context.'
+export const memoryAcknowledgementWarning =
+	'Memory acknowledgement did not complete; surfaced memories may repeat in this conversation.'
 
 export type PackageSearchRow = {
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
 	projection: PackageSearchProjection
 	readmeSnippet?: PackageReadmeSnippet | null
-	/**
-	 * Lazily loads full package source detail (export metadata + README).
-	 * Only invoked for the bounded set of top-ranked package matches so broad
-	 * searches never load every package's published source.
-	 */
 	hydrate?: () => Promise<{
 		projection: PackageSearchProjection
 		readmeSnippet: PackageReadmeSnippet | null
@@ -181,6 +186,90 @@ type SearchPhaseTimings = {
 	candidateGenerationMs: number
 	rerankingMs: number
 	formattingMs?: number
+	rowAndRegistryLoadMs?: number
+	retrieversMs?: number
+	queryEmbeddingMs?: number
+	capabilityCandidatesMs?: number
+	packageCandidatesMs?: number
+	remoteConnectorStatusMs?: number
+	memoryEnrichmentMs?: number
+	memoryEnrichmentWaitMs?: number
+	memoryAcknowledgementMs?: number
+	memoryEnrichmentTimedOut?: boolean
+	memoryAcknowledgementTimedOut?: boolean
+	memoryEnrichmentFailed?: boolean
+}
+
+function elapsedMs(startedAt: number): number {
+	return Math.max(0, Math.round(performance.now() - startedAt))
+}
+
+export async function settleWithBudget<T>(
+	promise: Promise<T>,
+	budgetMs: number,
+	launchedAtMs: number = performance.now(),
+): Promise<
+	| { ok: true; value: T; durationMs: number; timedOut: false; failed: false }
+	| {
+			ok: false
+			value: null
+			durationMs: number
+			timedOut: true
+			failed: false
+	  }
+	| {
+			ok: false
+			value: null
+			durationMs: number
+			timedOut: false
+			failed: true
+			error: unknown
+	  }
+> {
+	const remainingMs = Math.max(0, budgetMs - (performance.now() - launchedAtMs))
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	try {
+		const raced = await Promise.race([
+			promise.then(
+				(value) => ({ status: 'fulfilled' as const, value }) as const,
+				(error: unknown) => ({ status: 'rejected' as const, error }) as const,
+			),
+			new Promise<{ status: 'timeout' }>((resolve) => {
+				timeoutId = setTimeout(() => {
+					resolve({ status: 'timeout' })
+				}, remainingMs)
+			}),
+		])
+		const durationMs = elapsedMs(launchedAtMs)
+		if (raced.status === 'timeout') {
+			return {
+				ok: false,
+				value: null,
+				durationMs,
+				timedOut: true,
+				failed: false,
+			}
+		}
+		if (raced.status === 'rejected') {
+			return {
+				ok: false,
+				value: null,
+				durationMs,
+				timedOut: false,
+				failed: true,
+				error: raced.error,
+			}
+		}
+		return {
+			ok: true,
+			value: raced.value,
+			durationMs,
+			timedOut: false,
+			failed: false,
+		}
+	} finally {
+		if (timeoutId !== undefined) clearTimeout(timeoutId)
+	}
 }
 
 type SearchGuidanceContext = {
@@ -212,10 +301,7 @@ function buildExactPackageSearchResult(input: {
 		query: input.query,
 		entities: [],
 	})
-	const queryUnderstandingMs = Math.max(
-		0,
-		Math.round(performance.now() - queryUnderstandingStart),
-	)
+	const queryUnderstandingMs = elapsedMs(queryUnderstandingStart)
 	const matches = input.match ? [input.match] : []
 	const candidates: Array<SearchCandidate> = input.match
 		? [
@@ -271,16 +357,6 @@ export type BuildSavedPackageSearchRowsResult = {
 	warnings: Array<string>
 }
 
-/**
- * Cheap projection built entirely from the `saved_packages` D1 row. Heavier
- * fields (exports, jobs, README) stay empty until a row is hydrated for a
- * top-ranked match.
- */
-// Ranking works on this lean D1 projection so broad searches never load
-// full package source per package. Export/job/action recall is preserved
-// online by the package vectors (built from the full document at publish)
-// and by hydrating the top matches; the offline lexical path ranks on
-// name/description/tags/searchText only.
 function buildLeanPackageSearchProjection(
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number],
 ): PackageSearchProjection {
@@ -814,9 +890,11 @@ function scorePackageWrapperWorkflowBoost(
 	const taskWeight =
 		intent.task.name === 'learn'
 			? 0.25
-			: intent.task.name === 'unknown'
-				? 0.75
-				: 1
+			: intent.task.name === 'inspect' && isLiveStatusInspect(intent)
+				? 0.15
+				: intent.task.name === 'unknown'
+					? 0.75
+					: 1
 	const confidenceWeight = Math.min(
 		1,
 		Math.max(0.35, intent.confidence, intent.task.confidence),
@@ -829,6 +907,46 @@ function scorePackageWrapperWorkflowBoost(
 	boost += Math.min(0.1, queryCoverage * 0.16)
 	boost += Math.min(0.08, actionCoverage * 0.1)
 	return Math.min(0.42, boost) * confidenceWeight * taskWeight
+}
+
+function isPackageOrientedInspect(intent: SearchIntent): boolean {
+	return intent.meaningfulTokens.some((token) =>
+		[
+			'note',
+			'notes',
+			'package',
+			'packages',
+			'setup',
+			'readme',
+			'doc',
+			'docs',
+		].includes(token),
+	)
+}
+
+/** Inspect queries about live device/playback state, not package notes. */
+function isLiveStatusInspect(intent: SearchIntent): boolean {
+	if (intent.task.name !== 'inspect') return false
+	if (isPackageOrientedInspect(intent)) return false
+	return (
+		intent.constraints.some((constraint) => constraint.kind === 'state') ||
+		intent.actions.some(
+			(action) =>
+				action.name === 'inspect' &&
+				action.matchedTerms.some((term) =>
+					[
+						'check',
+						'whether',
+						'playing',
+						'status',
+						'running',
+						'paused',
+						'connected',
+						'disconnected',
+					].includes(term),
+				),
+		)
+	)
 }
 
 function scoreTaskAffinity(
@@ -875,12 +993,46 @@ function scoreTaskAffinity(
 			if (candidate.type === 'value') taskAffinity += 0.06
 			if (candidate.type === 'capability') taskAffinity += 0.05
 			break
-		case 'inspect':
-			if (candidate.type === 'value' || candidate.type === 'integration') {
-				taskAffinity += 0.12
+		case 'inspect': {
+			const packageOrientedInspect = isPackageOrientedInspect(intent)
+			const liveStatusInspect = isLiveStatusInspect(intent)
+			if (packageOrientedInspect) {
+				if (candidate.type === 'capability') taskAffinity += 0.04
+				if (candidate.type === 'value' || candidate.type === 'integration') {
+					taskAffinity += 0.06
+				}
+				if (candidate.type === 'package') taskAffinity += 0.16
+			} else if (liveStatusInspect) {
+				const inspectionTerms = [
+					'status',
+					'list',
+					'state',
+					'current',
+					'playing',
+					'show',
+					'check',
+				] as const
+				const inspectionKeyHits = inspectionTerms.filter(
+					(term) => scoreMatchedTerms(candidate.searchFields, [term]) > 0,
+				).length
+				if (candidate.type === 'capability') {
+					taskAffinity += 0.16 + Math.min(0.16, inspectionKeyHits * 0.08)
+				}
+				if (candidate.type === 'value' || candidate.type === 'integration') {
+					taskAffinity += 0.06
+				}
+				if (candidate.type === 'package') {
+					taskAffinity -= 0.12
+					if (inspectionKeyHits === 0) taskAffinity -= 0.1
+				}
+			} else {
+				if (candidate.type === 'value' || candidate.type === 'integration') {
+					taskAffinity += 0.12
+				}
+				if (candidate.type === 'package') taskAffinity += 0.05
 			}
-			if (candidate.type === 'package') taskAffinity += 0.05
 			break
+		}
 		case 'learn':
 			if (candidate.type === 'capability') taskAffinity += 0.16
 			if (candidate.type === 'package') taskAffinity -= 0.02
@@ -967,6 +1119,7 @@ async function buildCapabilityCandidates(input: {
 	query: string
 	env: Env
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	queryVector?: ReadonlyArray<number>
 }): Promise<Array<SearchCandidate>> {
 	const capabilitySearch = await searchCapabilities({
 		env: input.env,
@@ -974,6 +1127,7 @@ async function buildCapabilityCandidates(input: {
 		limit: Math.max(1, Object.keys(input.registry.capabilitySpecs).length),
 		detail: false,
 		specs: input.registry.capabilitySpecs,
+		...(input.queryVector ? { queryVector: input.queryVector } : {}),
 	})
 
 	return capabilitySearch.matches
@@ -990,35 +1144,35 @@ async function buildCapabilityCandidates(input: {
 }
 
 /**
- * Queries Vectorize for this user's `package_{id}` vectors (written at publish
- * time) and returns similarity scores keyed by saved package record id.
- * Returns null when the vector index is unavailable so callers fall back to
- * deterministic offline scoring.
+ * Queries Vectorize for this user's `package_{id}` vectors with
+ * `{ kind: 'package', userId }`. Returns null when unavailable.
  */
 async function queryPackageVectorScores(input: {
 	env: Env
 	query: string
 	rows: Array<PackageSearchRow>
+	userId: string
 	limit: number
+	queryVector?: ReadonlyArray<number>
 }): Promise<Map<string, number> | null> {
 	const index = getCapabilityVectorIndex(input.env)
-	if (!index) return null
-	const userIds = Array.from(
-		new Set(input.rows.map((row) => row.record.userId).filter(Boolean)),
-	)
+	if (!index || !input.userId) return null
 	const recordIdByVectorId = new Map(
 		input.rows.map(
 			(row) => [savedPackageVectorId(row.record.id), row.record.id] as const,
 		),
 	)
-	const queryVector = await embedTextForVectorize(input.env, input.query)
+	const queryVector = [
+		...(input.queryVector ??
+			(await embedTextForVectorize(input.env, input.query))),
+	]
 	const topK = Math.min(Math.max(input.rows.length, input.limit * 5), 100)
 	const vectorMatches = await index.query(queryVector, {
 		topK,
 		returnMetadata: 'none',
 		filter: {
 			kind: { $eq: 'package' },
-			...(userIds.length === 1 ? { userId: { $eq: userIds[0] } } : {}),
+			userId: { $eq: input.userId },
 		},
 	})
 	const scores = new Map<string, number>()
@@ -1038,21 +1192,34 @@ async function buildPackageCandidates(input: {
 	queryEmbedding: ReadonlyArray<number>
 	limit: number
 	offline: boolean
+	userId?: string
+	queryVector?: ReadonlyArray<number>
 }): Promise<Array<SearchCandidate>> {
 	if (input.rows.length === 0) return []
+	// Fail closed in every mode: no userId or foreign rows never enter ranking.
+	if (!input.userId) return []
+	if (input.rows.some((row) => row.record.userId !== input.userId)) {
+		console.warn(
+			JSON.stringify({
+				message: 'package candidates skipped: row userId mismatch',
+				expectedUserId: input.userId,
+			}),
+		)
+		return []
+	}
 	const meaningfulTokens = extractMeaningfulSearchTokens(input.query)
 	let vectorScoresByRecordId: Map<string, number> | null = null
-	if (!input.offline) {
+	if (!input.offline && input.userId) {
 		try {
 			vectorScoresByRecordId = await queryPackageVectorScores({
 				env: input.env,
 				query: input.query,
 				rows: input.rows,
+				userId: input.userId,
 				limit: input.limit,
+				...(input.queryVector ? { queryVector: input.queryVector } : {}),
 			})
 		} catch (error) {
-			// Degrade to lexical/deterministic ranking rather than failing the
-			// whole search when the vector index is unreachable.
 			console.warn(
 				JSON.stringify({
 					message: 'package vector query failed, using lexical ranking',
@@ -1090,15 +1257,24 @@ async function buildPackageCandidates(input: {
 			]
 				.filter((value) => value.trim().length > 0)
 				.join('\n')
-			const lexical = lexicalScore(input.query, document)
-			// Online, Vectorize similarity replaces the per-package deterministic
-			// embedding so broad searches never embed every package document.
-			const vector = vectorScoresByRecordId
-				? (vectorScoresByRecordId.get(entry.record.id) ?? 0)
-				: cosineSimilarity(
-						input.queryEmbedding,
-						deterministicEmbedding(document),
-					)
+			const lexical = Math.max(
+				lexicalScore(input.query, document),
+				(actionMatches[0]?.score ?? 0) * 0.8,
+			)
+			const vectorHit = vectorScoresByRecordId?.get(entry.record.id)
+			const scoreComponents =
+				vectorScoresByRecordId != null
+					? buildCandidateBaseScore({
+							lexical,
+							...(vectorHit !== undefined ? { vector: vectorHit } : {}),
+						})
+					: buildCandidateBaseScore({
+							lexical,
+							vector: cosineSimilarity(
+								input.queryEmbedding,
+								deterministicEmbedding(document),
+							),
+						})
 			return {
 				match: {
 					type: 'package' as const,
@@ -1152,18 +1328,14 @@ async function buildPackageCandidates(input: {
 					readmeSnippet,
 					...(entry.record.hasApp ? ['app', 'ui', 'remote'] : []),
 				],
-				scoreComponents: buildCandidateBaseScore({
-					lexical: Math.max(lexical, (actionMatches[0]?.score ?? 0) * 0.8),
-					vector,
-				}),
+				scoreComponents,
 			}
 		})
 		.filter((candidate) => candidate.scoreComponents.base > 0)
 	if (!vectorScoresByRecordId) {
 		return candidates
 	}
-	// Online: fuse lexical and vector rankings (RRF, mirroring
-	// capability-search) to bound the package candidate set.
+	// Fuse lexical and vector rankings to bound the online candidate set.
 	const candidateIds = candidates.map((candidate) => candidate.match.packageId)
 	const lexicalById = new Map(
 		candidates.map(
@@ -1175,8 +1347,11 @@ async function buildPackageCandidates(input: {
 		candidateIds,
 		(id) => lexicalById.get(id) ?? 0,
 	)
+	const vectorHitIds = candidateIds.filter((id) =>
+		vectorScoresByRecordId.has(id),
+	)
 	const vectorOrder = sortIdsByScore(
-		candidateIds,
+		vectorHitIds,
 		(id) => vectorScoresByRecordId.get(id) ?? 0,
 	)
 	const fused = reciprocalRankFusion(
@@ -1400,16 +1575,11 @@ function capabilityMatchToCandidate(
 		],
 		scoreComponents: buildCandidateBaseScore({
 			lexical: match.lexicalScore,
-			vector: match.vectorScore,
+			...(match.vectorRank != null ? { vector: match.vectorScore } : {}),
 		}),
 	}
 }
 
-/**
- * Attaches a compact call shape (accessor + collapsed input type) to the top
- * capability matches only, so query responses stay lean while still letting
- * agents call without an immediate entity round trip.
- */
 function attachTopCapabilityCallShapes(input: {
 	matches: Array<SearchMatch>
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
@@ -1491,11 +1661,6 @@ function collectRelatedCapabilityOperations(input: {
 		}))
 }
 
-/**
- * Loads README snippets and export metadata for the bounded set of package
- * matches actually being returned (at most `limit` rows), instead of loading
- * every saved package's full source up front.
- */
 async function hydrateTopPackageMatches(input: {
 	query: string
 	matches: Array<SearchMatch>
@@ -1538,6 +1703,8 @@ export async function searchUnified(input: {
 	env: Env
 	query: string
 	limit: number
+	/** Authenticated user; required for fail-closed package Vectorize isolation. */
+	userId?: string
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 	optionalRows: Pick<
 		OptionalSearchRowsResult,
@@ -1553,10 +1720,7 @@ export async function searchUnified(input: {
 			query,
 			entities: [],
 		})
-		const queryUnderstandingMs = Math.max(
-			0,
-			Math.round(performance.now() - queryUnderstandingStart),
-		)
+		const queryUnderstandingMs = elapsedMs(queryUnderstandingStart)
 		return {
 			matches: [],
 			offline,
@@ -1584,26 +1748,44 @@ export async function searchUnified(input: {
 		query,
 		entities: entityDescriptors,
 	})
-	const queryUnderstandingMs = Math.max(
-		0,
-		Math.round(performance.now() - queryUnderstandingStart),
-	)
+	const queryUnderstandingMs = elapsedMs(queryUnderstandingStart)
 	const candidateGenerationStart = performance.now()
+	const queryEmbeddingStart = performance.now()
 	const queryEmbedding = deterministicEmbedding(intent.normalizedQuery)
-	const candidates = [
-		...(await buildCapabilityCandidates({
+	const sharedQueryVector = offline
+		? queryEmbedding
+		: await embedTextForVectorize(input.env, intent.normalizedQuery)
+	const queryEmbeddingMs = elapsedMs(queryEmbeddingStart)
+
+	const capabilityCandidatesStart = performance.now()
+	const packageCandidatesStart = performance.now()
+	const [capabilityCandidates, packageCandidates] = await Promise.all([
+		buildCapabilityCandidates({
 			query: intent.normalizedQuery,
 			env: input.env,
 			registry: input.registry,
+			queryVector: sharedQueryVector,
+		}).then((candidates) => ({
+			candidates,
+			durationMs: elapsedMs(capabilityCandidatesStart),
 		})),
-		...(await buildPackageCandidates({
+		buildPackageCandidates({
 			env: input.env,
 			query: intent.normalizedQuery,
 			rows: input.optionalRows.packageRows,
 			queryEmbedding,
 			limit,
 			offline,
+			userId: input.userId,
+			queryVector: offline ? undefined : sharedQueryVector,
+		}).then((candidates) => ({
+			candidates,
+			durationMs: elapsedMs(packageCandidatesStart),
 		})),
+	])
+	const candidates = [
+		...capabilityCandidates.candidates,
+		...packageCandidates.candidates,
 		...buildValueCandidates({
 			query: intent.normalizedQuery,
 			rows: input.optionalRows.userValueRows,
@@ -1622,10 +1804,7 @@ export async function searchUnified(input: {
 			results: input.retrieverResults ?? [],
 		}),
 	]
-	const candidateGenerationMs = Math.max(
-		0,
-		Math.round(performance.now() - candidateGenerationStart),
-	)
+	const candidateGenerationMs = elapsedMs(candidateGenerationStart)
 	const rerankingStart = performance.now()
 	const reranked = rerankCandidates({
 		candidates,
@@ -1642,10 +1821,7 @@ export async function searchUnified(input: {
 		matches,
 		rows: input.optionalRows.packageRows,
 	})
-	const rerankingMs = Math.max(
-		0,
-		Math.round(performance.now() - rerankingStart),
-	)
+	const rerankingMs = elapsedMs(rerankingStart)
 
 	return {
 		matches,
@@ -1660,6 +1836,9 @@ export async function searchUnified(input: {
 			queryUnderstandingMs,
 			candidateGenerationMs,
 			rerankingMs,
+			queryEmbeddingMs,
+			capabilityCandidatesMs: capabilityCandidates.durationMs,
+			packageCandidatesMs: packageCandidates.durationMs,
 		},
 		guidance: buildRecommendedNextStep({
 			query,
@@ -1674,12 +1853,14 @@ export async function searchPackages(input: {
 	baseUrl: string
 	query: string
 	limit: number
+	userId?: string
 	rows: Array<PackageSearchRow>
 }): Promise<{ matches: Array<SearchMatch>; offline: boolean }> {
 	const result = await searchUnified({
 		env: input.env,
 		query: input.query,
 		limit: input.limit,
+		userId: input.userId,
 		registry: {
 			capabilitySpecs: {},
 		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>,
@@ -1705,6 +1886,215 @@ export function resolveSearchMemoryContext(input: {
 
 	const query = input.query?.trim() ?? ''
 	return query.length > 0 ? { query } : undefined
+}
+
+export type SearchMemoryEnrichmentSettlement = {
+	memories?: {
+		surfaced: MemoryToolSummary['memories']
+		suppressedCount: number
+		retrievalQuery: string
+		retrieverResults: MemoryToolSummary['retrieverResults']
+	}
+	warnings: Array<string>
+	phaseTimings: Pick<
+		SearchPhaseTimings,
+		| 'memoryEnrichmentMs'
+		| 'memoryEnrichmentWaitMs'
+		| 'memoryAcknowledgementMs'
+		| 'memoryEnrichmentTimedOut'
+		| 'memoryAcknowledgementTimedOut'
+		| 'memoryEnrichmentFailed'
+	>
+}
+
+export function launchSearchMemoryEnrichment(input: {
+	env: Env
+	callerContext: McpCallerContext
+	conversationId: string
+	query?: string
+	memoryContext?: z.infer<typeof memoryContextInputField>
+}): {
+	promise: Promise<MemoryToolSummary | null>
+	launchedAtMs: number
+} | null {
+	const query = input.query?.trim() ?? ''
+	const userId = input.callerContext.user?.userId ?? null
+	if (!query || !userId) return null
+	const launchedAtMs = performance.now()
+	const promise = loadRelevantMemoriesForTool({
+		env: input.env,
+		callerContext: input.callerContext,
+		conversationId: input.conversationId,
+		memoryContext: resolveSearchMemoryContext({
+			query: input.query,
+			memoryContext: input.memoryContext,
+		}),
+		acknowledgeSurfaced: false,
+	})
+	void promise.catch(() => {})
+	return { promise, launchedAtMs }
+}
+
+export async function settleSearchMemoryEnrichment(input: {
+	env: Env
+	callerContext: McpCallerContext
+	conversationId: string
+	promise: Promise<MemoryToolSummary | null>
+	launchedAtMs?: number
+	budgetMs?: number
+	acknowledgementBudgetMs?: number
+}): Promise<SearchMemoryEnrichmentSettlement> {
+	const waitStartedAt = performance.now()
+	const launchedAtMs = input.launchedAtMs ?? waitStartedAt
+	const budgetMs = input.budgetMs ?? SEARCH_MEMORY_ENRICHMENT_BUDGET_MS
+	const settlement = await settleWithBudget(
+		input.promise,
+		budgetMs,
+		launchedAtMs,
+	)
+	const memoryEnrichmentWaitMs = elapsedMs(waitStartedAt)
+	const memoryEnrichmentMs = settlement.durationMs
+
+	if (!settlement.ok) {
+		console.warn(
+			JSON.stringify({
+				message: 'search memory enrichment skipped',
+				reason: settlement.timedOut ? 'timeout' : 'failure',
+				budgetMs,
+				waitedMs: memoryEnrichmentWaitMs,
+				launchToSettleMs: memoryEnrichmentMs,
+				...(settlement.failed
+					? {
+							error:
+								settlement.error instanceof Error
+									? settlement.error.message
+									: String(settlement.error),
+						}
+					: {}),
+			}),
+		)
+		return {
+			warnings: [memoryEnrichmentSkippedWarning],
+			phaseTimings: {
+				memoryEnrichmentMs,
+				memoryEnrichmentWaitMs,
+				memoryEnrichmentTimedOut: settlement.timedOut,
+				memoryEnrichmentFailed: settlement.failed,
+			},
+		}
+	}
+
+	const memoryToolContext = settlement.value
+	const warnings = [...(memoryToolContext?.retrieverWarnings ?? [])]
+	if (!memoryToolContext || memoryToolContext.memories.length === 0) {
+		return {
+			...(memoryToolContext
+				? {
+						memories: {
+							surfaced: memoryToolContext.memories,
+							suppressedCount: memoryToolContext.suppressedCount,
+							retrievalQuery: memoryToolContext.retrievalQuery,
+							retrieverResults: memoryToolContext.retrieverResults,
+						},
+					}
+				: {}),
+			warnings,
+			phaseTimings: {
+				memoryEnrichmentMs,
+				memoryEnrichmentWaitMs,
+				memoryEnrichmentTimedOut: false,
+				memoryEnrichmentFailed: false,
+			},
+		}
+	}
+
+	const memories = {
+		surfaced: memoryToolContext.memories,
+		suppressedCount: memoryToolContext.suppressedCount,
+		retrievalQuery: memoryToolContext.retrievalQuery,
+		retrieverResults: memoryToolContext.retrieverResults,
+	}
+	const acknowledgementBudgetMs =
+		input.acknowledgementBudgetMs ?? SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS
+	const acknowledgementStartedAt = performance.now()
+	const acknowledgementPromise = acknowledgeToolMemories({
+		env: input.env,
+		callerContext: input.callerContext,
+		conversationId: input.conversationId,
+		memoryIds: memoryToolContext.memories.map((memory) => memory.id),
+	})
+	const acknowledgement = await settleWithBudget(
+		acknowledgementPromise,
+		acknowledgementBudgetMs,
+		acknowledgementStartedAt,
+	)
+	const memoryAcknowledgementMs = elapsedMs(acknowledgementStartedAt)
+
+	if (acknowledgement.ok) {
+		return {
+			memories,
+			warnings,
+			phaseTimings: {
+				memoryEnrichmentMs,
+				memoryEnrichmentWaitMs,
+				memoryAcknowledgementMs,
+				memoryEnrichmentTimedOut: false,
+				memoryEnrichmentFailed: false,
+			},
+		}
+	}
+
+	if (acknowledgement.timedOut) {
+		void acknowledgementPromise.catch((error) => {
+			console.warn(
+				JSON.stringify({
+					message: 'search memory acknowledgement failed after timeout',
+					error: error instanceof Error ? error.message : String(error),
+				}),
+			)
+		})
+		console.warn(
+			JSON.stringify({
+				message: 'search memory acknowledgement timed out',
+				budgetMs: acknowledgementBudgetMs,
+				acknowledgementMs: memoryAcknowledgementMs,
+			}),
+		)
+		return {
+			memories,
+			warnings: [...warnings, memoryAcknowledgementWarning],
+			phaseTimings: {
+				memoryEnrichmentMs,
+				memoryEnrichmentWaitMs,
+				memoryAcknowledgementMs,
+				memoryEnrichmentTimedOut: false,
+				memoryAcknowledgementTimedOut: true,
+				memoryEnrichmentFailed: false,
+			},
+		}
+	}
+
+	console.warn(
+		JSON.stringify({
+			message: 'search memory acknowledgement failed',
+			error:
+				acknowledgement.error instanceof Error
+					? acknowledgement.error.message
+					: String(acknowledgement.error),
+			acknowledgementMs: memoryAcknowledgementMs,
+		}),
+	)
+	return {
+		memories,
+		warnings: [...warnings, memoryAcknowledgementWarning],
+		phaseTimings: {
+			memoryEnrichmentMs,
+			memoryEnrichmentWaitMs,
+			memoryAcknowledgementMs,
+			memoryEnrichmentTimedOut: false,
+			memoryEnrichmentFailed: true,
+		},
+	}
 }
 
 function truncateSearchText(text: string): string {
@@ -2011,9 +2401,6 @@ async function resolveEntityDetail(input: {
 
 	if (ref.type === 'value') {
 		const valueRef = parseValueEntityId(ref.id)
-		// The search snapshot only covers buckets visible to the caller's
-		// storage context; fetch directly so entity detail works for values in
-		// scopes the snapshot missed (matching the package path).
 		const row =
 			input.searchRows.userValueRows.find(
 				(value) =>
@@ -2178,6 +2565,10 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 			let warnings: Array<string> = []
 			let remoteConnectorDownStatuses: Array<RemoteConnectorStatus> = []
 			let username: string | null = null
+			const endToEndPhaseTimings: Partial<SearchPhaseTimings> = {}
+			let memoryEnrichmentPromise: Promise<MemoryToolSummary | null> =
+				Promise.resolve(null)
+			let memoryEnrichmentLaunchedAtMs: number | undefined
 
 			const searchSpan = async () => {
 				const query = args.query?.trim() ?? ''
@@ -2186,6 +2577,19 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					username: callerContext.user?.username ?? null,
 					email: callerContext.user?.email ?? null,
 				})
+				if (!args.entity) {
+					const launched = launchSearchMemoryEnrichment({
+						env: agent.getEnv(),
+						callerContext,
+						conversationId,
+						query: args.query,
+						memoryContext: args.memoryContext,
+					})
+					if (launched) {
+						memoryEnrichmentLaunchedAtMs = launched.launchedAtMs
+						memoryEnrichmentPromise = launched.promise
+					}
+				}
 				if (!args.entity && query) {
 					const identityResolution = await resolvePackageIdentitySearch({
 						db: agent.getEnv().APP_DB,
@@ -2196,11 +2600,15 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						includeHiddenPackages,
 					})
 					if (identityResolution.recognized) {
+						const remoteConnectorStatusStart = performance.now()
 						remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses(
 							{
 								env: agent.getEnv(),
 								callerContext,
 							},
+						)
+						endToEndPhaseTimings.remoteConnectorStatusMs = elapsedMs(
+							remoteConnectorStatusStart,
 						)
 						return {
 							mode: 'list' as const,
@@ -2212,6 +2620,19 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 						}
 					}
 				}
+				const rowAndRegistryLoadStart = performance.now()
+				const rowsPromise = loadSearchRowsAndRegistry({
+					env: agent.getEnv(),
+					callerContext,
+					userId,
+					includeHiddenPackages,
+				}).then((rows) => {
+					endToEndPhaseTimings.rowAndRegistryLoadMs = elapsedMs(
+						rowAndRegistryLoadStart,
+					)
+					return rows
+				})
+				const retrieversStart = performance.now()
 				const retrieverRunPromise =
 					!args.entity && userId && query
 						? (async () => {
@@ -2230,21 +2651,28 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 									}),
 									conversationId,
 								})
-							})()
-						: Promise.resolve({ results: [], warnings: [] })
+							})().then((retrieverRun) => {
+								endToEndPhaseTimings.retrieversMs = elapsedMs(retrieversStart)
+								return retrieverRun
+							})
+						: Promise.resolve({ results: [], warnings: [] }).then(
+								(retrieverRun) => {
+									endToEndPhaseTimings.retrieversMs = elapsedMs(retrieversStart)
+									return retrieverRun
+								},
+							)
 				const [searchRows] = await Promise.all([
-					loadSearchRowsAndRegistry({
-						env: agent.getEnv(),
-						callerContext,
-						userId,
-						includeHiddenPackages,
-					}),
+					rowsPromise,
 					retrieverRunPromise,
 				])
+				const remoteConnectorStatusStart = performance.now()
 				remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses({
 					env: agent.getEnv(),
 					callerContext,
 				})
+				endToEndPhaseTimings.remoteConnectorStatusMs = elapsedMs(
+					remoteConnectorStatusStart,
+				)
 				warnings = searchRows.warnings
 
 				if (args.entity) {
@@ -2300,6 +2728,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					env: agent.getEnv(),
 					query,
 					limit,
+					userId: userId ?? undefined,
 					registry: searchRows.registry,
 					optionalRows: searchRows,
 					retrieverResults: retrieverRun.results,
@@ -2456,26 +2885,16 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					remoteConnectorDownStatuses.length > 0
 						? remoteConnectorDownStatuses.map(serializeRemoteConnectorStatus)
 						: undefined
-				const memoryToolContext = await loadRelevantMemoriesForTool({
+				const memorySettlement = await settleSearchMemoryEnrichment({
 					env: agent.getEnv(),
 					callerContext,
 					conversationId,
-					memoryContext: resolveSearchMemoryContext({
-						query: args.query,
-						memoryContext: args.memoryContext,
-					}),
+					promise: memoryEnrichmentPromise,
+					launchedAtMs: memoryEnrichmentLaunchedAtMs,
 				})
-				const searchMemories = memoryToolContext
-					? {
-							surfaced: memoryToolContext.memories,
-							suppressedCount: memoryToolContext.suppressedCount,
-							retrievalQuery: memoryToolContext.retrievalQuery,
-							retrieverResults: memoryToolContext.retrieverResults,
-						}
-					: undefined
-				if (memoryToolContext) {
-					warnings.push(...memoryToolContext.retrieverWarnings)
-				}
+				Object.assign(endToEndPhaseTimings, memorySettlement.phaseTimings)
+				warnings.push(...memorySettlement.warnings)
+				const searchMemories = memorySettlement.memories
 				const structuredWarnings = [...warnings]
 
 				const payload: {
@@ -2541,10 +2960,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					0,
 					outcome.result.matches.length - trimmedPayload.matches.length,
 				)
-				const formattingMs = Math.max(
-					0,
-					Math.round(performance.now() - formattingStartMs),
-				)
+				const formattingMs = elapsedMs(formattingStartMs)
 				const result: SearchResultStructuredContent = {
 					offline: trimmedPayload.offline,
 					warnings: structuredWarnings,
@@ -2563,6 +2979,7 @@ export async function registerSearchTool(agent: McpRegistrationAgent) {
 					},
 					phaseTimings: {
 						...outcome.result.phaseTimings,
+						...endToEndPhaseTimings,
 						formattingMs,
 					},
 					...(searchMemories

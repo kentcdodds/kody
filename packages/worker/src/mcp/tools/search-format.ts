@@ -77,6 +77,18 @@ export type SearchResultStructuredContent = {
 		candidateGenerationMs: number
 		rerankingMs: number
 		formattingMs?: number
+		rowAndRegistryLoadMs?: number
+		retrieversMs?: number
+		queryEmbeddingMs?: number
+		capabilityCandidatesMs?: number
+		packageCandidatesMs?: number
+		remoteConnectorStatusMs?: number
+		memoryEnrichmentMs?: number
+		memoryEnrichmentWaitMs?: number
+		memoryAcknowledgementMs?: number
+		memoryEnrichmentTimedOut?: boolean
+		memoryAcknowledgementTimedOut?: boolean
+		memoryEnrichmentFailed?: boolean
 	}
 	memories?: {
 		surfaced: Array<{

@@ -2,6 +2,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { isCapabilitySearchOffline } from '#mcp/capabilities/capability-search.ts'
 import {
+	acknowledgeSurfacedMemoryWrites,
 	deleteMemory as deleteMemoryRow,
 	getConversationSuppressions,
 	getMemoryById,
@@ -9,9 +10,7 @@ import {
 	listMemoriesByIds,
 	listMemoriesByUserId,
 	pruneExpiredConversationSuppressions,
-	touchMemoryAccessedAt,
 	updateMemory,
-	upsertConversationSuppressions,
 } from './repo.ts'
 import { parseJsonStringArray } from './json-string-array.ts'
 import { buildMemoryEmbedText } from './memory-embed.ts'
@@ -130,6 +129,30 @@ type SurfaceRelevantMemoriesInput = MemoryOwnerContext & {
 	query: string
 	conversationId: string
 	limit?: number
+	acknowledgeSurfaced?: boolean
+}
+
+/**
+ * Marks memories as surfaced for a conversation so later enrichment does not repeat them.
+ */
+export async function acknowledgeSurfacedMemories(input: {
+	env: MemoryEnv
+	userId: string
+	conversationId: string
+	memoryIds: Array<string>
+}) {
+	const memoryIds = Array.from(
+		new Set(input.memoryIds.filter((id) => id.trim().length > 0)),
+	)
+	if (memoryIds.length === 0) return
+	const expiresAt = new Date(Date.now() + defaultSuppressionTtlMs).toISOString()
+	await acknowledgeSurfacedMemoryWrites({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		conversationId: input.conversationId,
+		memoryIds,
+		expiresAt,
+	})
 }
 
 export async function upsertMemory(input: MemoryUpsertInput): Promise<{
@@ -436,6 +459,9 @@ export async function searchMemoryRecords(input: MemorySearchInput): Promise<{
 		env: input.env as Env,
 		query,
 		limit: rankedLimit,
+		userId: input.userId,
+		statuses,
+		category,
 		rows: filteredRows,
 		...(vectorRankedIds ? { vectorRankedIds } : {}),
 	})
@@ -523,20 +549,15 @@ export async function surfaceRelevantMemories(
 	}
 
 	const memories = result.matches.map(mapSearchMatchToMemoryRecord)
-
+	const acknowledgeSurfaced = input.acknowledgeSurfaced !== false
 	const memoryIds = memories.map((memory) => memory.id)
-	if (memoryIds.length > 0) {
-		const expiresAt = new Date(
-			Date.now() + defaultSuppressionTtlMs,
-		).toISOString()
-		await upsertConversationSuppressions({
-			db: input.env.APP_DB,
+	if (acknowledgeSurfaced && memoryIds.length > 0) {
+		await acknowledgeSurfacedMemories({
+			env: input.env,
 			userId: input.userId,
 			conversationId: input.conversationId,
 			memoryIds,
-			expiresAt,
 		})
-		await touchMemoryAccessedAt(input.env.APP_DB, input.userId, memoryIds)
 	}
 
 	return {

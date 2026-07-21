@@ -15,7 +15,6 @@ import {
 	memoryContextInputField,
 	resolveConversationId,
 } from '#mcp/tools/tool-call-context.ts'
-import { loadRelevantMemoriesForTool } from '#mcp/tools/memory-tool-context.ts'
 
 const defaultSearchLimit = 15
 const maxSearchLimit = 100
@@ -168,10 +167,11 @@ export const searchCapability = defineDomainCapability(
 				includeHiddenPackages,
 			})
 			const {
+				launchSearchMemoryEnrichment,
 				loadDownRemoteConnectorStatuses,
-				resolveSearchMemoryContext,
 				searchUnified,
 				serializeRemoteConnectorStatus,
+				settleSearchMemoryEnrichment,
 			} = await import('#mcp/tools/search.ts')
 			let warnings: Array<string>
 			let result: {
@@ -179,6 +179,16 @@ export const searchCapability = defineDomainCapability(
 				offline: boolean
 				guidance?: string
 			}
+			const memoryLaunch = launchSearchMemoryEnrichment({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				conversationId,
+				query,
+				memoryContext: args.memoryContext,
+			})
+			const memoryEnrichmentPromise =
+				memoryLaunch?.promise ?? Promise.resolve(null)
+			const memoryEnrichmentLaunchedAtMs = memoryLaunch?.launchedAtMs
 			if (identityResolution.recognized) {
 				warnings = []
 				result = {
@@ -205,6 +215,7 @@ export const searchCapability = defineDomainCapability(
 					env: ctx.env,
 					query,
 					limit: normalizeLimit(args.limit),
+					userId: userId ?? undefined,
 					registry: searchRows.registry,
 					optionalRows: searchRows,
 					retrieverResults: retrieverRun.results,
@@ -215,34 +226,27 @@ export const searchCapability = defineDomainCapability(
 				env: ctx.env,
 				callerContext: ctx.callerContext,
 			})
-			const memoryToolContext = await loadRelevantMemoriesForTool({
+			const memorySettlement = await settleSearchMemoryEnrichment({
 				env: ctx.env,
 				callerContext: ctx.callerContext,
 				conversationId,
-				memoryContext: resolveSearchMemoryContext({
-					query,
-					memoryContext: args.memoryContext,
-				}),
+				promise: memoryEnrichmentPromise,
+				launchedAtMs: memoryEnrichmentLaunchedAtMs,
 			})
-			warnings.push(...(memoryToolContext?.retrieverWarnings ?? []))
+			warnings.push(...memorySettlement.warnings)
 			return {
 				conversationId,
 				matches: toSlimStructuredMatches({
 					matches: result.matches,
 					baseUrl: ctx.callerContext.baseUrl,
+					username,
 				}) as Array<SlimSearchMatch>,
 				offline: result.offline,
 				warnings,
 				...(result.guidance ? { guidance: result.guidance } : {}),
-				...(memoryToolContext
+				...(memorySettlement.memories
 					? {
-							memories: {
-								surfaced: memoryToolContext.memories,
-								suppressedCount: memoryToolContext.suppressedCount,
-								retrievalQuery: memoryToolContext.retrievalQuery,
-								retrieverResults: memoryToolContext.retrieverResults,
-								retrieverWarnings: memoryToolContext.retrieverWarnings,
-							},
+							memories: memorySettlement.memories,
 						}
 					: {}),
 				...(remoteConnectorStatuses.length > 0

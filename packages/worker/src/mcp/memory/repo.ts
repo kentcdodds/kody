@@ -247,6 +247,22 @@ export async function listMemoriesPage(input: {
 	return (results ?? []).map(mapMemoryRow)
 }
 
+function touchMemoryAccessedAtStatement(
+	db: D1Database,
+	userId: string,
+	memoryIds: Array<string>,
+	timestamp: string,
+) {
+	const placeholders = memoryIds.map(() => '?').join(', ')
+	return db
+		.prepare(
+			`UPDATE mcp_memories
+			SET last_accessed_at = ?, updated_at = updated_at
+			WHERE user_id = ? AND id IN (${placeholders})`,
+		)
+		.bind(timestamp, userId, ...memoryIds)
+}
+
 export async function touchMemoryAccessedAt(
 	db: D1Database,
 	userId: string,
@@ -255,15 +271,7 @@ export async function touchMemoryAccessedAt(
 ) {
 	if (memoryIds.length === 0) return
 	const touchedAt = timestamp ?? new Date().toISOString()
-	const placeholders = memoryIds.map(() => '?').join(', ')
-	await db
-		.prepare(
-			`UPDATE mcp_memories
-			SET last_accessed_at = ?, updated_at = updated_at
-			WHERE user_id = ? AND id IN (${placeholders})`,
-		)
-		.bind(touchedAt, userId, ...memoryIds)
-		.run()
+	await touchMemoryAccessedAtStatement(db, userId, memoryIds, touchedAt).run()
 }
 
 export async function getConversationSuppressions(input: {
@@ -284,6 +292,36 @@ export async function getConversationSuppressions(input: {
 	return (results ?? []).map(mapSuppressionRow)
 }
 
+const conversationSuppressionUpsertSql = `INSERT INTO mcp_memory_conversation_suppressions (
+					user_id, conversation_id, memory_id, created_at, last_seen_at, expires_at
+				) VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT(user_id, conversation_id, memory_id)
+				DO UPDATE SET
+					last_seen_at = excluded.last_seen_at,
+					expires_at = excluded.expires_at`
+
+function conversationSuppressionUpsertStatements(input: {
+	db: D1Database
+	userId: string
+	conversationId: string
+	memoryIds: Array<string>
+	expiresAt: string
+	now: string
+}) {
+	return input.memoryIds.map((memoryId) =>
+		input.db
+			.prepare(conversationSuppressionUpsertSql)
+			.bind(
+				input.userId,
+				input.conversationId,
+				memoryId,
+				input.now,
+				input.now,
+				input.expiresAt,
+			),
+	)
+}
+
 export async function upsertConversationSuppressions(input: {
 	db: D1Database
 	userId: string
@@ -294,27 +332,48 @@ export async function upsertConversationSuppressions(input: {
 }) {
 	if (input.memoryIds.length === 0) return
 	const now = input.now ?? new Date().toISOString()
-	for (const memoryId of input.memoryIds) {
-		await input.db
-			.prepare(
-				`INSERT INTO mcp_memory_conversation_suppressions (
-					user_id, conversation_id, memory_id, created_at, last_seen_at, expires_at
-				) VALUES (?, ?, ?, ?, ?, ?)
-				ON CONFLICT(user_id, conversation_id, memory_id)
-				DO UPDATE SET
-					last_seen_at = excluded.last_seen_at,
-					expires_at = excluded.expires_at`,
-			)
-			.bind(
-				input.userId,
-				input.conversationId,
-				memoryId,
-				now,
-				now,
-				input.expiresAt,
-			)
-			.run()
-	}
+	await input.db.batch(
+		conversationSuppressionUpsertStatements({
+			db: input.db,
+			userId: input.userId,
+			conversationId: input.conversationId,
+			memoryIds: input.memoryIds,
+			expiresAt: input.expiresAt,
+			now,
+		}),
+	)
+}
+
+/**
+ * Atomically upsert conversation suppressions and touch last_accessed_at in one
+ * D1 batch so acknowledgement cannot partially suppress.
+ */
+export async function acknowledgeSurfacedMemoryWrites(input: {
+	db: D1Database
+	userId: string
+	conversationId: string
+	memoryIds: Array<string>
+	expiresAt: string
+	now?: string
+}) {
+	if (input.memoryIds.length === 0) return
+	const now = input.now ?? new Date().toISOString()
+	await input.db.batch([
+		...conversationSuppressionUpsertStatements({
+			db: input.db,
+			userId: input.userId,
+			conversationId: input.conversationId,
+			memoryIds: input.memoryIds,
+			expiresAt: input.expiresAt,
+			now,
+		}),
+		touchMemoryAccessedAtStatement(
+			input.db,
+			input.userId,
+			input.memoryIds,
+			now,
+		),
+	])
 }
 
 export async function pruneExpiredConversationSuppressions(

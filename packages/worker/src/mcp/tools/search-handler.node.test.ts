@@ -26,6 +26,7 @@ const mockModule = vi.hoisted(() => ({
 	listValues: vi.fn(async () => []),
 	loadPackageSourceBySourceId: vi.fn(),
 	loadRelevantMemoriesForTool: vi.fn(async () => null),
+	acknowledgeToolMemories: vi.fn(async () => undefined),
 	runPackageRetrievers: vi.fn(async () => ({
 		results: [],
 		warnings: [],
@@ -76,6 +77,8 @@ vi.mock('./memory-tool-context.ts', async () => {
 		...actual,
 		loadRelevantMemoriesForTool: (...args: Array<unknown>) =>
 			mockModule.loadRelevantMemoriesForTool(...args),
+		acknowledgeToolMemories: (...args: Array<unknown>) =>
+			mockModule.acknowledgeToolMemories(...args),
 	}
 })
 
@@ -89,7 +92,13 @@ vi.mock('#worker/remote-connector/status.ts', () => ({
 		mockModule.getRemoteConnectorStatus(...args),
 }))
 
-const { registerSearchTool } = await import('./search.ts')
+const {
+	registerSearchTool,
+	SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS,
+	SEARCH_MEMORY_ENRICHMENT_BUDGET_MS,
+	memoryAcknowledgementWarning,
+	memoryEnrichmentSkippedWarning,
+} = await import('./search.ts')
 
 const mockPerformanceNow = vi.spyOn(performance, 'now')
 
@@ -229,7 +238,14 @@ test('search tool returns compact query markdown while preserving structured aux
 			'Second memory retriever warning should remain structured.',
 		],
 	})
-	const handler = await getSearchHandler()
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	})
 
 	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(112)
 	const successResponse = await handler({
@@ -255,6 +271,10 @@ test('search tool returns compact query markdown while preserving structured aux
 		warnings: Array<string>
 		guidance?: string
 		memories?: { surfaced: Array<{ id: string }> }
+		phaseTimings?: {
+			memoryEnrichmentMs?: number
+			memoryEnrichmentTimedOut?: boolean
+		}
 		matches: Array<{ type: string; entityRef?: string }>
 	}
 	expect(result.warnings).toHaveLength(2)
@@ -267,6 +287,19 @@ test('search tool returns compact query markdown while preserving structured aux
 	expect(result.memories?.surfaced).toEqual([
 		expect.objectContaining({ id: 'memory-1' }),
 	])
+	expect(result.phaseTimings).toEqual(
+		expect.objectContaining({
+			memoryEnrichmentTimedOut: false,
+			memoryEnrichmentMs: expect.any(Number),
+			memoryAcknowledgementMs: expect.any(Number),
+		}),
+	)
+	expect(mockModule.acknowledgeToolMemories).toHaveBeenCalledWith(
+		expect.objectContaining({
+			conversationId: 'conv-compact-search',
+			memoryIds: ['memory-1'],
+		}),
+	)
 
 	mockPerformanceNow.mockReturnValueOnce(5).mockReturnValueOnce(9)
 	const validationErrorResponse = await handler({
@@ -296,7 +329,6 @@ test('search tool returns compact query markdown while preserving structured aux
 		'Registry unavailable',
 	)
 })
-
 test('search tool excludes hidden packages by default and includes them with includeHiddenPackages', async () => {
 	vi.clearAllMocks()
 	consoleWarn.mockImplementation(() => {})
@@ -624,3 +656,181 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 		}),
 	])
 })
+
+test('search tool memory enrichment: timeout, rejection, and ack failure stay off the critical path', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const user = {
+		userId: 'user-1',
+		email: 'user@example.com',
+		displayName: 'User',
+		username: 'user',
+	}
+	const memorySummary = {
+		memories: [
+			{
+				id: 'memory-1',
+				category: 'preference',
+				status: 'active',
+				subject: 'Search preference',
+				summary: 'Prefers compact search results',
+				details: '',
+				tags: ['search'],
+				updatedAt: '2026-04-20T00:00:00.000Z',
+			},
+		],
+		suppressedCount: 0,
+		retrievalQuery: 'search docs',
+		retrieverResults: [],
+		retrieverWarnings: [],
+	}
+
+	vi.clearAllMocks()
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+	mockModule.loadRelevantMemoriesForTool.mockImplementation(
+		() =>
+			new Promise((resolve) => {
+				setTimeout(
+					() => resolve(memorySummary),
+					SEARCH_MEMORY_ENRICHMENT_BUDGET_MS + 250,
+				)
+			}),
+	)
+	const { handler: timeoutHandler } = await getSearchRegistration({ user })
+	const timedOut = await timeoutHandler({
+		query: 'search docs',
+		conversationId: 'conv-memory-budget',
+	})
+	const timedOutResult = timedOut.structuredContent.result as {
+		matches: Array<{ type: string }>
+		memories?: unknown
+		warnings: Array<string>
+		phaseTimings?: Record<string, unknown>
+	}
+	expect(timedOutResult.matches.length).toBeGreaterThan(0)
+	expect(timedOutResult.memories).toBeUndefined()
+	expect(timedOutResult.warnings).toContain(memoryEnrichmentSkippedWarning)
+	expect(timedOutResult.phaseTimings).toEqual(
+		expect.objectContaining({
+			memoryEnrichmentTimedOut: true,
+			memoryEnrichmentFailed: false,
+			memoryEnrichmentMs: expect.any(Number),
+			memoryEnrichmentWaitMs: expect.any(Number),
+		}),
+	)
+	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalledWith(
+		expect.objectContaining({ acknowledgeSurfaced: false }),
+	)
+
+	vi.clearAllMocks()
+	consoleWarn.mockImplementation(() => {})
+	const unhandled: Array<unknown> = []
+	const onUnhandled = (reason: unknown) => {
+		unhandled.push(reason)
+	}
+	process.on('unhandledRejection', onUnhandled)
+	try {
+		mockModule.runPackageRetrievers.mockResolvedValue({
+			results: [],
+			warnings: [],
+		})
+		mockModule.loadRelevantMemoriesForTool.mockRejectedValueOnce(
+			new Error('memory store unavailable'),
+		)
+		const { handler } = await getSearchRegistration({ user })
+		const rejected = await handler({
+			query: 'search docs',
+			conversationId: 'conv-memory-reject',
+		})
+		const rejectedResult = rejected.structuredContent.result as {
+			memories?: unknown
+			warnings: Array<string>
+			phaseTimings?: Record<string, unknown>
+		}
+		expect(rejectedResult.memories).toBeUndefined()
+		expect(rejectedResult.warnings).toContain(memoryEnrichmentSkippedWarning)
+		expect(rejectedResult.phaseTimings).toEqual(
+			expect.objectContaining({
+				memoryEnrichmentFailed: true,
+				memoryEnrichmentTimedOut: false,
+			}),
+		)
+		await Promise.resolve()
+		await Promise.resolve()
+		expect(unhandled).toEqual([])
+	} finally {
+		process.off('unhandledRejection', onUnhandled)
+	}
+
+	vi.clearAllMocks()
+	consoleWarn.mockImplementation(() => {})
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce(memorySummary)
+	mockModule.acknowledgeToolMemories.mockRejectedValueOnce(
+		new Error('ack store unavailable'),
+	)
+	const { handler: ackHandler } = await getSearchRegistration({ user })
+	const ackFailed = await ackHandler({
+		query: 'search docs',
+		conversationId: 'conv-memory-ack-fail',
+	})
+	const ackResult = ackFailed.structuredContent.result as {
+		matches: Array<{ type: string }>
+		memories?: { surfaced: Array<{ id: string }> }
+		warnings: Array<string>
+		phaseTimings?: Record<string, unknown>
+	}
+	expect(ackResult.matches.length).toBeGreaterThan(0)
+	expect(ackResult.memories?.surfaced).toEqual([
+		expect.objectContaining({ id: 'memory-1' }),
+	])
+	expect(ackResult.warnings).toContain(memoryAcknowledgementWarning)
+	expect(ackResult.phaseTimings).toEqual(
+		expect.objectContaining({
+			memoryEnrichmentFailed: true,
+			memoryAcknowledgementMs: expect.any(Number),
+		}),
+	)
+
+	vi.clearAllMocks()
+	consoleWarn.mockImplementation(() => {})
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValueOnce(memorySummary)
+	mockModule.acknowledgeToolMemories.mockImplementation(
+		() => new Promise(() => {}),
+	)
+	const { handler: neverSettlingHandler } = await getSearchRegistration({
+		user,
+	})
+	const neverSettling = await neverSettlingHandler({
+		query: 'search docs',
+		conversationId: 'conv-memory-ack-hang',
+	})
+	const hangResult = neverSettling.structuredContent.result as {
+		memories?: { surfaced: Array<{ id: string }> }
+		warnings: Array<string>
+		phaseTimings?: Record<string, unknown>
+	}
+	expect(hangResult.memories?.surfaced).toEqual([
+		expect.objectContaining({ id: 'memory-1' }),
+	])
+	expect(hangResult.warnings).toContain(memoryAcknowledgementWarning)
+	expect(hangResult.phaseTimings).toEqual(
+		expect.objectContaining({
+			memoryAcknowledgementTimedOut: true,
+			memoryEnrichmentFailed: false,
+			memoryAcknowledgementMs: expect.any(Number),
+		}),
+	)
+	expect(
+		hangResult.phaseTimings?.memoryAcknowledgementMs,
+	).toBeGreaterThanOrEqual(SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS)
+}, 10_000)

@@ -1,6 +1,9 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { surfaceRelevantMemories } from '#mcp/memory/service.ts'
+import {
+	acknowledgeSurfacedMemories,
+	surfaceRelevantMemories,
+} from '#mcp/memory/service.ts'
 import { type MemoryRecord } from '#mcp/memory/types.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 import {
@@ -64,6 +67,7 @@ export async function loadRelevantMemoriesForTool(input: {
 		constraints?: Array<string>
 	} | null
 	limit?: number
+	acknowledgeSurfaced?: boolean
 }): Promise<MemoryToolSummary | null> {
 	const userId = input.callerContext.user?.userId ?? null
 	if (!userId) return null
@@ -80,6 +84,7 @@ export async function loadRelevantMemoriesForTool(input: {
 			query: retrievalQuery,
 			conversationId: input.conversationId,
 			limit: input.limit,
+			acknowledgeSurfaced: input.acknowledgeSurfaced,
 		}),
 		runContextPackageRetrievers({
 			env: input.env as Env,
@@ -106,6 +111,22 @@ export async function loadRelevantMemoriesForTool(input: {
 		suppressedCount: result.suppressedCount,
 		retrievalQuery: result.retrievalQuery,
 	}
+}
+
+export async function acknowledgeToolMemories(input: {
+	env: Pick<Env, 'APP_DB'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
+	callerContext: McpCallerContext
+	conversationId: string
+	memoryIds: Array<string>
+}) {
+	const userId = input.callerContext.user?.userId ?? null
+	if (!userId || input.memoryIds.length === 0) return
+	await acknowledgeSurfacedMemories({
+		env: input.env,
+		userId,
+		conversationId: input.conversationId,
+		memoryIds: input.memoryIds,
+	})
 }
 
 export async function surfaceToolMemories(input: {

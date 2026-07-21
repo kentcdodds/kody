@@ -14,10 +14,23 @@ import { parseJsonStringArray } from './json-string-array.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
 import { type McpMemoryRow, type MemorySearchMatch } from './types.ts'
 
+function buildMemoryVectorFilter(input: {
+	userId: string
+	statuses: ReadonlyArray<McpMemoryRow['status']>
+	category?: string | null
+}): VectorizeVectorMetadataFilter {
+	return {
+		kind: { $eq: 'memory' },
+		userId: { $eq: input.userId },
+		status: { $in: [...input.statuses] },
+		...(input.category ? { category: { $eq: input.category } } : {}),
+	}
+}
+
 /**
- * Queries Vectorize for the user's memory vectors (metadata filter on kind,
- * userId, status, and optional category) and returns memory ids ordered by
- * similarity. Returns an empty list when the vector index is unavailable.
+ * Queries Vectorize for the user's memory vectors (strict metadata filter on
+ * kind, userId, status, and optional category) and returns memory ids ordered
+ * by similarity. Returns an empty list when the vector index is unavailable.
  */
 export async function queryMemoryVectorIds(input: {
 	env: Env
@@ -28,17 +41,12 @@ export async function queryMemoryVectorIds(input: {
 	topK: number
 }): Promise<Array<string>> {
 	const index = getCapabilityVectorIndex(input.env)
-	if (!index) return []
+	if (!index || !input.userId) return []
 	const queryVector = await embedTextForVectorize(input.env, input.query)
 	const vectorMatches = await index.query(queryVector, {
 		topK: input.topK,
 		returnMetadata: 'none',
-		filter: {
-			kind: { $eq: 'memory' },
-			userId: { $eq: input.userId },
-			status: { $in: [...input.statuses] },
-			...(input.category ? { category: { $eq: input.category } } : {}),
-		},
+		filter: buildMemoryVectorFilter(input),
 	})
 	const memoryIds: Array<string> = []
 	const seen = new Set<string>()
@@ -59,22 +67,29 @@ export async function searchMemories(input: {
 	env: Env
 	query: string
 	limit: number
+	userId: string
+	statuses: ReadonlyArray<McpMemoryRow['status']>
+	category?: string | null
 	rows: Array<McpMemoryRow>
-	/**
-	 * Vector-ranked memory ids already fetched from Vectorize (online path).
-	 * When provided, no additional Vectorize query is issued here.
-	 */
 	vectorRankedIds?: ReadonlyArray<string>
 }): Promise<{ matches: Array<MemorySearchMatch>; offline: boolean }> {
 	const query = input.query.trim()
-	const rowsById = new Map(input.rows.map((row) => [row.id, row] as const))
-	const ids = [...rowsById.keys()]
 	const offline = isCapabilitySearchOffline(input.env)
-
-	if (!query || ids.length === 0) {
+	if (!query || !input.userId || input.rows.length === 0) {
+		return { matches: [], offline }
+	}
+	if (input.rows.some((row) => row.user_id !== input.userId)) {
+		console.warn(
+			JSON.stringify({
+				message: 'memory search skipped: row userId mismatch',
+				expectedUserId: input.userId,
+			}),
+		)
 		return { matches: [], offline }
 	}
 
+	const rowsById = new Map(input.rows.map((row) => [row.id, row] as const))
+	const ids = [...rowsById.keys()]
 	const docsById = Object.fromEntries(
 		input.rows.map(
 			(row) => [row.id, buildMemoryEmbedTextFromRow(row)] as const,
@@ -86,9 +101,7 @@ export async function searchMemories(input: {
 
 	let vectorOrder: Array<string>
 	if (input.vectorRankedIds) {
-		const fromIndex = input.vectorRankedIds.filter((id) => rowsById.has(id))
-		const fromIndexSet = new Set(fromIndex)
-		vectorOrder = [...fromIndex, ...ids.filter((id) => !fromIndexSet.has(id))]
+		vectorOrder = input.vectorRankedIds.filter((id) => rowsById.has(id))
 	} else if (offline) {
 		const queryVector = deterministicEmbedding(query)
 		const similarityById = Object.fromEntries(
@@ -102,20 +115,14 @@ export async function searchMemories(input: {
 		const index = getCapabilityVectorIndex(input.env)!
 		const queryVector = await embedTextForVectorize(input.env, query)
 		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
-		const userIds = Array.from(
-			new Set(input.rows.map((row) => row.user_id).filter(Boolean)),
-		)
 		const vectorMatches = await index.query(queryVector, {
 			topK,
 			returnMetadata: 'none',
-			filter: {
-				kind: { $eq: 'memory' },
-				...(userIds.length === 1
-					? {
-							userId: { $eq: userIds[0] },
-						}
-					: {}),
-			},
+			filter: buildMemoryVectorFilter({
+				userId: input.userId,
+				statuses: input.statuses,
+				category: input.category,
+			}),
 		})
 		const seen = new Set<string>()
 		const fromIndex: Array<string> = []
@@ -125,12 +132,11 @@ export async function searchMemories(input: {
 				prefix: 'memory',
 				vectorId: match.id,
 			})
-			if (!memoryId) continue
-			if (!rowsById.has(memoryId)) continue
+			if (!memoryId || !rowsById.has(memoryId)) continue
 			seen.add(match.id)
 			fromIndex.push(memoryId)
 		}
-		vectorOrder = [...fromIndex, ...ids.filter((id) => !fromIndex.includes(id))]
+		vectorOrder = fromIndex
 	}
 
 	const lexicalRankById = new Map<string, number>()
@@ -154,6 +160,7 @@ export async function searchMemories(input: {
 	return {
 		matches: ordered.map((id) => {
 			const row = rowsById.get(id)!
+			const vectorRank = vectorRankById.get(id)
 			return {
 				id: row.id,
 				category: row.category,
@@ -170,7 +177,7 @@ export async function searchMemories(input: {
 				deletedAt: row.deleted_at,
 				score: fused.get(id) ?? 0,
 				lexicalRank: lexicalRankById.get(id),
-				vectorRank: vectorRankById.get(id),
+				...(vectorRank != null ? { vectorRank } : {}),
 			}
 		}),
 		offline,

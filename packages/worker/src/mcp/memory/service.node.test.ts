@@ -4,6 +4,7 @@ import {
 	deterministicEmbedding,
 } from '#mcp/capabilities/capability-search.ts'
 import {
+	acknowledgeSurfacedMemories,
 	deleteMemory,
 	getMemory,
 	searchMemoryRecords,
@@ -19,6 +20,7 @@ import {
 function createMemoryTestDb() {
 	const memories = new Map<string, McpMemoryRow>()
 	const suppressions = new Map<string, McpMemoryConversationSuppressionRow>()
+	const batches: Array<Array<unknown>> = []
 
 	function suppressionKey(
 		userId: string,
@@ -29,6 +31,14 @@ function createMemoryTestDb() {
 	}
 
 	const db = {
+		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
+			batches.push(statements)
+			const results = []
+			for (const statement of statements) {
+				results.push(await statement.run())
+			}
+			return results
+		},
 		prepare(query: string) {
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			return {
@@ -259,7 +269,7 @@ function createMemoryTestDb() {
 		},
 	} as unknown as D1Database
 
-	return { db, memories, suppressions }
+	return { db, memories, suppressions, batches }
 }
 
 const env = (db: D1Database) =>
@@ -481,6 +491,39 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 
 	expect(search.matches).toHaveLength(0)
 	expect(search.suppressedCount).toBeGreaterThanOrEqual(1)
+})
+
+test('acknowledgeSurfacedMemories writes suppressions and last_accessed in one batch', async () => {
+	const testDb = createMemoryTestDb()
+	const runtimeEnv = env(testDb.db)
+	const created = await upsertMemory({
+		env: runtimeEnv,
+		userId: 'user-123',
+		subject: 'Ack batch',
+		summary: 'Atomic acknowledgement coverage.',
+		category: 'workflow',
+		verificationReference: 'verify-ack-batch',
+	})
+	testDb.batches.length = 0
+
+	await acknowledgeSurfacedMemories({
+		env: runtimeEnv,
+		userId: 'user-123',
+		conversationId: 'conv-ack-batch',
+		memoryIds: [created.memory.id],
+	})
+
+	expect(testDb.batches).toHaveLength(1)
+	expect(testDb.batches[0]).toHaveLength(2)
+	expect(
+		testDb.suppressions.get(`user-123:conv-ack-batch:${created.memory.id}`),
+	).toMatchObject({
+		memory_id: created.memory.id,
+		conversation_id: 'conv-ack-batch',
+	})
+	expect(testDb.memories.get(created.memory.id)?.last_accessed_at).toEqual(
+		expect.any(String),
+	)
 })
 
 test('memory service rejects invalid source uris and tolerates missing stored values', async () => {

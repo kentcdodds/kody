@@ -16,6 +16,7 @@ import {
 	loadDownRemoteConnectorStatuses,
 	loadOptionalSearchRows,
 	searchUnified,
+	settleWithBudget,
 	type OptionalSearchRowsResult,
 	type PackageSearchRow,
 } from './search.ts'
@@ -82,6 +83,92 @@ function createDeterministicAiBinding(): Ai {
 			}
 		},
 	} as unknown as Ai
+}
+
+function leanPackage(
+	id: string,
+	userId: string,
+	name: string,
+	description: string,
+): PackageSearchRow {
+	return {
+		record: {
+			id,
+			userId,
+			name,
+			kodyId: name,
+			description,
+			tags: [],
+			searchText: null,
+			sourceId: `source-${id}`,
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-04-20T00:00:00.000Z',
+			updatedAt: '2026-04-20T00:00:00.000Z',
+		},
+		projection: {
+			name,
+			kodyId: name,
+			description,
+			tags: [],
+			searchText: null,
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			appEntry: null,
+			exports: [],
+			jobs: [],
+			services: [],
+			subscriptions: [],
+			retrievers: [],
+		},
+		readmeSnippet: null,
+	}
+}
+
+function homeCapability(
+	name: string,
+	description: string,
+	keywords: Array<string>,
+) {
+	return {
+		name,
+		domain: 'home' as const,
+		description,
+		keywords,
+		readOnly: true,
+		idempotent: true,
+		destructive: false,
+		inputSchema: { type: 'object' as const, properties: {} },
+		handler: async () => null,
+	}
+}
+
+function leanPackageRow(
+	id: string,
+	userId: string,
+	overrides: Partial<PackageSearchRow['record']> = {},
+): PackageSearchRow {
+	const row = leanPackage(
+		id,
+		userId,
+		overrides.name ?? id,
+		overrides.description ?? '',
+	)
+	return {
+		...row,
+		record: { ...row.record, ...overrides },
+		projection: {
+			...row.projection,
+			name: overrides.name ?? row.projection.name,
+			kodyId: overrides.kodyId ?? row.projection.kodyId,
+			description: overrides.description ?? row.projection.description,
+			tags: overrides.tags ?? row.projection.tags,
+			searchText: overrides.searchText ?? row.projection.searchText,
+			hasApp: overrides.hasApp ?? row.projection.hasApp,
+		},
+	}
 }
 
 function createPackageExportProjection(
@@ -151,40 +238,14 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 			],
 		},
 	])
-	const packageRows: Array<PackageSearchRow> = [
-		{
-			record: {
-				id: 'pkg-1',
-				userId: 'user-1',
-				name: 'alpha',
-				kodyId: 'beta',
-				description: 'gamma',
-				tags: ['delta'],
-				searchText: 'epsilon',
-				sourceId: 'source-1',
-				hasApp: false,
-				hidden: false,
-				isPrivate: false,
-				createdAt: '2026-04-20T00:00:00.000Z',
-				updatedAt: '2026-04-20T00:00:00.000Z',
-			},
-			projection: {
-				name: 'alpha',
-				kodyId: 'beta',
-				description: 'gamma',
-				tags: ['delta'],
-				searchText: 'epsilon',
-				hasApp: false,
-				hidden: false,
-				isPrivate: false,
-				appEntry: null,
-				exports: [],
-				jobs: [],
-				services: [],
-				subscriptions: [],
-				retrievers: [],
-			},
-		},
+	const packageRows = [
+		leanPackageRow('pkg-1', 'user-1', {
+			name: 'alpha',
+			kodyId: 'beta',
+			description: 'gamma',
+			tags: ['delta'],
+			searchText: 'epsilon',
+		}),
 	]
 	const optionalRows = {
 		packageRows,
@@ -235,6 +296,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 		env: {} as Env,
 		query: 'alpha\nbeta\ngamma\ndelta\nepsilon',
 		limit: 5,
+		userId: 'user-1',
 		registry,
 		optionalRows,
 	})
@@ -421,11 +483,7 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 		query: 'target lookup note',
 		limit: 5,
 		registry: buildCapabilityRegistry([]),
-		optionalRows: {
-			packageRows: [],
-			userSecretRows: [],
-			userValueRows: [],
-		},
+		optionalRows: emptyOptionalSearchRows,
 		retrieverResults,
 	})
 	expect(directMatch.matches).toEqual([
@@ -443,11 +501,7 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 		query: 'target lookup',
 		limit: 2,
 		registry,
-		optionalRows: {
-			packageRows: [],
-			userSecretRows: [],
-			userValueRows: [],
-		},
+		optionalRows: emptyOptionalSearchRows,
 		retrieverResults: [
 			{
 				...retrieverResults[0]!,
@@ -613,6 +667,7 @@ test('searchUnified annotates high-confidence package action matches', async () 
 	const result = await searchUnified({
 		env: {} as Env,
 		query: 'module-a run task',
+		userId: 'user-1',
 		limit: 5,
 		registry,
 		optionalRows: {
@@ -642,6 +697,7 @@ test('searchUnified annotates high-confidence package action matches', async () 
 	const broadQuery = await searchUnified({
 		env: {} as Env,
 		query: 'alpha helpers overview',
+		userId: 'user-1',
 		limit: 5,
 		registry,
 		optionalRows: {
@@ -732,7 +788,6 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		],
 	})
 
-	// Building rows only projects cheap D1 fields; no source snapshots load.
 	expect(rows.warnings).toEqual([])
 	expect(sourceMocks.loadPackageSourceBySourceId).not.toHaveBeenCalled()
 	expect(rows.rows[0]).toMatchObject({
@@ -747,6 +802,7 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		env: {} as Env,
 		query: 'trace package',
 		limit: 3,
+		userId: 'user-123',
 		registry: buildCapabilityRegistry([]),
 		optionalRows: {
 			packageRows: rows.rows,
@@ -755,7 +811,6 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		},
 	})
 
-	// The returned top match is hydrated with README and export metadata.
 	const packageMatch = result.matches.find((match) => match.type === 'package')
 	expect(packageMatch).toMatchObject({
 		type: 'package',
@@ -780,7 +835,6 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 	)
 	expect(sourceMocks.loadPackageSourceBySourceId).toHaveBeenCalledTimes(1)
 
-	// Hydration failures degrade to the lean match instead of failing search.
 	consoleWarn.mockImplementation(() => {})
 	sourceMocks.loadPackageSourceBySourceId.mockRejectedValueOnce(
 		new Error('missing-source'),
@@ -811,6 +865,7 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		env: {} as Env,
 		query: 'observed package',
 		limit: 3,
+		userId: 'user-123',
 		registry: buildCapabilityRegistry([]),
 		optionalRows: {
 			packageRows: failedHydration.rows,
@@ -827,101 +882,9 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 			}),
 		]),
 	)
-	// The degraded path leaves a hydration-failure trail for the package.
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('package-123'),
 	)
-})
-
-test('searchUnified ranks packages via user-filtered package vectors when Vectorize is online', async () => {
-	const capturedFilters: Array<Record<string, unknown> | undefined> = []
-	const env = {
-		SENTRY_ENVIRONMENT: 'production',
-		AI: createDeterministicAiBinding(),
-		CAPABILITY_VECTOR_INDEX: {
-			async query(
-				_values: Array<number>,
-				options: { filter?: Record<string, unknown> },
-			) {
-				capturedFilters.push(options.filter)
-				const kind = (options.filter as { kind?: { $eq?: string } } | undefined)
-					?.kind?.$eq
-				if (kind === 'package') {
-					return { matches: [{ id: 'package_pkg-vector', score: 0.91 }] }
-				}
-				return { matches: [] }
-			},
-		},
-	} as unknown as Env
-	function leanPackageRow(id: string, name: string): PackageSearchRow {
-		return {
-			record: {
-				id,
-				userId: 'user-1',
-				name,
-				kodyId: name,
-				description: 'automation helpers',
-				tags: [],
-				searchText: null,
-				sourceId: `source-${id}`,
-				hasApp: false,
-				hidden: false,
-				isPrivate: false,
-				createdAt: '2026-04-20T00:00:00.000Z',
-				updatedAt: '2026-04-20T00:00:00.000Z',
-			},
-			projection: {
-				name,
-				kodyId: name,
-				description: 'automation helpers',
-				tags: [],
-				searchText: null,
-				hasApp: false,
-				hidden: false,
-				isPrivate: false,
-				appEntry: null,
-				exports: [],
-				jobs: [],
-				services: [],
-				subscriptions: [],
-				retrievers: [],
-			},
-			readmeSnippet: null,
-		}
-	}
-
-	const result = await searchUnified({
-		env,
-		query: 'summarize inbox threads',
-		limit: 5,
-		registry: buildCapabilityRegistry([]),
-		optionalRows: {
-			packageRows: [
-				leanPackageRow('pkg-vector', 'semantic-match'),
-				leanPackageRow('pkg-other', 'unrelated-package'),
-			],
-			userSecretRows: [],
-			userValueRows: [],
-		},
-	})
-
-	expect(result.offline).toBe(false)
-	expect(capturedFilters).toContainEqual(
-		expect.objectContaining({
-			kind: { $eq: 'package' },
-			userId: { $eq: 'user-1' },
-		}),
-	)
-	expect(
-		result.matches.some(
-			(match) => match.type === 'package' && match.packageId === 'pkg-vector',
-		),
-	).toBe(true)
-	expect(
-		result.matches.some(
-			(match) => match.type === 'package' && match.packageId === 'pkg-other',
-		),
-	).toBe(false)
 })
 
 test('searchUnified degrades to lexical package ranking when the vector query throws', async () => {
@@ -945,48 +908,22 @@ test('searchUnified degrades to lexical package ranking when the vector query th
 			},
 		},
 	} as unknown as Env
-	const packageRow: PackageSearchRow = {
-		record: {
-			id: 'pkg-inbox',
-			userId: 'user-1',
-			name: 'inbox-summarizer',
-			kodyId: 'inbox-summarizer',
-			description: 'summarize inbox threads',
-			tags: [],
-			searchText: null,
-			sourceId: 'source-pkg-inbox',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-04-20T00:00:00.000Z',
-			updatedAt: '2026-04-20T00:00:00.000Z',
-		},
-		projection: {
-			name: 'inbox-summarizer',
-			kodyId: 'inbox-summarizer',
-			description: 'summarize inbox threads',
-			tags: [],
-			searchText: null,
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			appEntry: null,
-			exports: [],
-			jobs: [],
-			services: [],
-			subscriptions: [],
-			retrievers: [],
-		},
-		readmeSnippet: null,
-	}
 
 	const result = await searchUnified({
 		env,
 		query: 'summarize inbox threads',
 		limit: 5,
+		userId: 'user-1',
 		registry: buildCapabilityRegistry([]),
 		optionalRows: {
-			packageRows: [packageRow],
+			packageRows: [
+				leanPackage(
+					'pkg-inbox',
+					'user-1',
+					'inbox-summarizer',
+					'summarize inbox threads',
+				),
+			],
 			userSecretRows: [],
 			userValueRows: [],
 		},
@@ -999,7 +936,6 @@ test('searchUnified degrades to lexical package ranking when the vector query th
 			(match) => match.type === 'package' && match.packageId === 'pkg-inbox',
 		),
 	).toBe(true)
-	// The degradation leaves a warn trail carrying the vector failure.
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('vectorize unavailable'),
 	)
@@ -1230,4 +1166,304 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 		inputTypeDefinition: 'type ListWidgetsInput = Record<string, never>',
 	})
 	expect(listTop).not.toHaveProperty('inputTypeDefinitionTruncated')
+})
+
+test('settleWithBudget uses an absolute launch deadline and degrades safely', async () => {
+	await expect(
+		settleWithBudget(Promise.resolve('ready'), 25),
+	).resolves.toMatchObject({
+		ok: true,
+		value: 'ready',
+		timedOut: false,
+		failed: false,
+	})
+	await expect(
+		settleWithBudget(Promise.reject(new Error('memory down')), 100),
+	).resolves.toMatchObject({ ok: false, timedOut: false, failed: true })
+
+	vi.useFakeTimers()
+	try {
+		const latePromise = new Promise<string>(() => {})
+		const settlement = settleWithBudget(latePromise, 40)
+		await vi.advanceTimersByTimeAsync(40)
+		await expect(settlement).resolves.toMatchObject({
+			ok: false,
+			timedOut: true,
+		})
+
+		const overdue = settleWithBudget(
+			new Promise(() => {}),
+			1_000,
+			performance.now() - 2_000,
+		)
+		await vi.advanceTimersByTimeAsync(0)
+		await expect(overdue).resolves.toMatchObject({ ok: false, timedOut: true })
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('searchUnified shares query embedding, fail-closes package isolation, and keeps lexical-only Vectorize misses', async () => {
+	consoleWarn.mockImplementation(() => {})
+	let aiRunCount = 0
+	let inFlightQueries = 0
+	let maxInFlightQueries = 0
+	let packageQueryCount = 0
+	const capturedFilters: Array<Record<string, unknown> | undefined> = []
+	const registry = buildCapabilityRegistry([
+		{
+			name: 'meta',
+			description: 'Meta',
+			capabilities: [
+				{
+					name: 'inbox_summarize',
+					domain: 'meta',
+					description: 'summarize inbox threads',
+					keywords: ['inbox', 'summarize'],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					inputSchema: { type: 'object', properties: {} },
+					handler: async () => null,
+				},
+			],
+		},
+	])
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: {
+			async run(...args: Array<unknown>) {
+				aiRunCount += 1
+				return createDeterministicAiBinding().run(...args)
+			},
+		},
+		CAPABILITY_VECTOR_INDEX: {
+			async query(
+				_values: Array<number>,
+				options: { filter?: Record<string, unknown> },
+			) {
+				capturedFilters.push(options.filter)
+				inFlightQueries += 1
+				maxInFlightQueries = Math.max(maxInFlightQueries, inFlightQueries)
+				await new Promise((resolve) => setTimeout(resolve, 15))
+				inFlightQueries -= 1
+				const kind = (options.filter as { kind?: { $eq?: string } } | undefined)
+					?.kind?.$eq
+				if (kind === 'package') {
+					packageQueryCount += 1
+					return { matches: [{ id: 'package_pkg-weak', score: 0.99 }] }
+				}
+				return { matches: [{ id: 'inbox_summarize', score: 0.93 }] }
+			},
+		},
+	} as unknown as Env
+	const packageRows = [
+		leanPackage('pkg-weak', 'user-1', 'noise-helper', 'barely related helper'),
+		leanPackage(
+			'pkg-lexical',
+			'user-1',
+			'inbox-triage',
+			'summarize inbox threads for triage',
+		),
+	]
+
+	const overlapped = await searchUnified({
+		env,
+		query: 'summarize inbox threads for triage',
+		limit: 5,
+		userId: 'user-1',
+		registry,
+		optionalRows: { packageRows, userSecretRows: [], userValueRows: [] },
+	})
+	expect(aiRunCount).toBe(1)
+	expect(maxInFlightQueries).toBeGreaterThanOrEqual(2)
+	expect(packageQueryCount).toBe(1)
+	expect(capturedFilters).toContainEqual(
+		expect.objectContaining({
+			kind: { $eq: 'package' },
+			userId: { $eq: 'user-1' },
+		}),
+	)
+	expect(overlapped.matches[0]).toMatchObject({
+		type: 'package',
+		packageId: 'pkg-lexical',
+	})
+
+	packageQueryCount = 0
+	const noUserOnline = await searchUnified({
+		env,
+		query: 'summarize inbox threads for triage',
+		limit: 5,
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			packageRows: [packageRows[0]!],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+	expect(packageQueryCount).toBe(0)
+	expect(
+		noUserOnline.matches.filter((match) => match.type === 'package'),
+	).toEqual([])
+	expect(
+		(
+			await searchUnified({
+				env: {} as Env,
+				query: 'summarize inbox threads for triage',
+				limit: 5,
+				registry: buildCapabilityRegistry([]),
+				optionalRows: {
+					packageRows: [packageRows[0]!],
+					userSecretRows: [],
+					userValueRows: [],
+				},
+			})
+		).matches.filter((match) => match.type === 'package'),
+	).toEqual([])
+
+	packageQueryCount = 0
+	const mismatched = await searchUnified({
+		env,
+		query: 'summarize inbox threads for triage',
+		limit: 5,
+		userId: 'user-1',
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			packageRows: [
+				packageRows[0]!,
+				leanPackage(
+					'pkg-foreign',
+					'user-2',
+					'foreign',
+					'summarize inbox threads',
+				),
+			],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+	expect(packageQueryCount).toBe(0)
+	expect(
+		mismatched.matches.filter((match) => match.type === 'package'),
+	).toEqual([])
+})
+
+test('searchUnified inspect affinity: live-status, package-oriented, and generic value counterexample', async () => {
+	const statusCaps = [
+		homeCapability(
+			'sonos_list_players',
+			'List known Sonos players with room names and group membership.',
+			['sonos', 'speakers', 'list', 'players'],
+		),
+		homeCapability(
+			'sonos_get_player_status',
+			'Get transport, track, queue, volume, and playback status for a Sonos player.',
+			['sonos', 'status', 'playing', 'speakers'],
+		),
+		{
+			...homeCapability('sonos_play', 'Start playback on a Sonos player.', [
+				'sonos',
+				'play',
+				'speakers',
+				'start',
+			]),
+			readOnly: false,
+			idempotent: false,
+		},
+		homeCapability(
+			'webhook_list_status',
+			'List webhook delivery status and connection state.',
+			['webhook', 'status', 'list', 'connection'],
+		),
+	]
+	const registry = buildCapabilityRegistry([
+		{ name: 'home', description: 'Home', capabilities: statusCaps },
+	])
+	const notesPackage = leanPackageRow('pkg-sonos-notes', 'user-1', {
+		name: 'sonos-setup-notes',
+		description: 'Notes about configuring Sonos speakers around the home.',
+		tags: ['sonos', 'notes', 'setup'],
+		searchText: 'sonos speakers setup notes',
+	})
+	const opsPackage = leanPackageRow('pkg-home-ops', 'user-1', {
+		name: 'home-ops-manager',
+		description:
+			'Home automation package management wrappers and workflow helpers.',
+		tags: ['home', 'workflow', 'wrapper', 'package'],
+		hasApp: true,
+	})
+	opsPackage.projection.appEntry = './app.tsx'
+
+	const live = await searchUnified({
+		env: {} as Env,
+		query: 'check whether any Sonos speakers are playing',
+		limit: 8,
+		userId: 'user-1',
+		registry,
+		optionalRows: {
+			packageRows: [opsPackage, notesPackage],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+	expect(live.intent.task.name).toBe('inspect')
+	const liveNames = live.matches.map((match) =>
+		match.type === 'capability'
+			? match.name
+			: match.type === 'package'
+				? match.kodyId
+				: match.type,
+	)
+	expect(liveNames[0]).toBe('sonos_get_player_status')
+	expect(liveNames.slice(0, 3)).toContain('sonos_list_players')
+	expect(liveNames.slice(0, 4)).not.toContain('home-ops-manager')
+	expect(liveNames.indexOf('sonos_get_player_status')).toBeLessThan(
+		liveNames.indexOf('sonos_play'),
+	)
+
+	const packageOriented = await searchUnified({
+		env: {} as Env,
+		query: 'show my Sonos setup notes',
+		limit: 5,
+		userId: 'user-1',
+		registry,
+		optionalRows: {
+			packageRows: [notesPackage],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+	})
+	expect(packageOriented.matches[0]).toMatchObject({
+		type: 'package',
+		kodyId: 'sonos-setup-notes',
+	})
+
+	const genericValue = await searchUnified({
+		env: {} as Env,
+		query: 'show my webhook api key value',
+		limit: 5,
+		userId: 'user-1',
+		registry,
+		optionalRows: {
+			packageRows: [],
+			userSecretRows: [],
+			userValueRows: [
+				{
+					name: 'webhook_api_key',
+					scope: 'user',
+					value: 'secret-value',
+					description: 'Webhook API key value for outbound hooks',
+					appId: null,
+					createdAt: '2026-04-20T00:00:00.000Z',
+					updatedAt: '2026-04-20T00:00:00.000Z',
+					ttlMs: null,
+				},
+			],
+		},
+	})
+	expect(genericValue.intent.task.name).toBe('inspect')
+	expect(genericValue.matches[0]).toMatchObject({
+		type: 'value',
+		name: 'webhook_api_key',
+	})
 })
