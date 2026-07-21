@@ -49,8 +49,11 @@ type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
 export const defaultExecutionResponseLimitBytes = 102_400
 const maxSupportedExecutorTimeoutMs = 2_147_483_647
-const dynamicWorkerCompatibilityDate = '2025-06-01'
-const dynamicWorkerCompatibilityFlags = ['nodejs_compat'] as const
+const dynamicWorkerCompatibilityDate = '2026-04-16'
+const dynamicWorkerCompatibilityFlags = [
+	'nodejs_compat',
+	'global_fetch_strictly_public',
+] as const
 const dynamicWorkerMainModule = 'executor.js'
 const dynamicWorkerIdPrefix = 'kody-'
 const dynamicWorkerCacheKeyVersion = 3

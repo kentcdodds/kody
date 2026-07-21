@@ -1465,7 +1465,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		}),
 	}
 	return {
-		compatibilityDate: '2026-04-13',
+		compatibilityDate: '2026-04-16',
 		compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
 		mainModule,
 		modules,
