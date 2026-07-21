@@ -89,6 +89,7 @@ export type SearchResultStructuredContent = {
 		memoryEnrichmentTimedOut?: boolean
 		memoryAcknowledgementTimedOut?: boolean
 		memoryEnrichmentFailed?: boolean
+		memoryAcknowledgementFailed?: boolean
 	}
 	memories?: {
 		surfaced: Array<{

@@ -198,6 +198,7 @@ type SearchPhaseTimings = {
 	memoryEnrichmentTimedOut?: boolean
 	memoryAcknowledgementTimedOut?: boolean
 	memoryEnrichmentFailed?: boolean
+	memoryAcknowledgementFailed?: boolean
 }
 
 function elapsedMs(startedAt: number): number {
@@ -1904,6 +1905,7 @@ export type SearchMemoryEnrichmentSettlement = {
 		| 'memoryEnrichmentTimedOut'
 		| 'memoryAcknowledgementTimedOut'
 		| 'memoryEnrichmentFailed'
+		| 'memoryAcknowledgementFailed'
 	>
 }
 
@@ -2092,7 +2094,8 @@ export async function settleSearchMemoryEnrichment(input: {
 			memoryEnrichmentWaitMs,
 			memoryAcknowledgementMs,
 			memoryEnrichmentTimedOut: false,
-			memoryEnrichmentFailed: true,
+			memoryEnrichmentFailed: false,
+			memoryAcknowledgementFailed: true,
 		},
 	}
 }

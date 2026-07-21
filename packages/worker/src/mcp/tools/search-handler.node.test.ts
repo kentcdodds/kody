@@ -791,7 +791,8 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 	expect(ackResult.warnings).toContain(memoryAcknowledgementWarning)
 	expect(ackResult.phaseTimings).toEqual(
 		expect.objectContaining({
-			memoryEnrichmentFailed: true,
+			memoryEnrichmentFailed: false,
+			memoryAcknowledgementFailed: true,
 			memoryAcknowledgementMs: expect.any(Number),
 		}),
 	)
