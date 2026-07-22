@@ -19,7 +19,7 @@ export interface BackupEnvironment {
 export interface BackupPayload {
 	scheduledAt: string
 	day: string
-	objectKey: string
+	objectPrefix: string
 	manifestKey: string
 	retentionTier: RetentionTier
 }

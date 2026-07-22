@@ -58,6 +58,11 @@ every referenced file locally, computes SHA-256, and requires the digest to
 match the attestation; missing, unreadable, non-local, or mismatched artifacts
 fail readiness.
 
+Freshness also has code-owned maximum ages that `expiresAt` cannot extend:
+`d1-only` evidence is valid for at most 35 days, `canonical-data` for 100 days,
+and `full-service` for 200 days. Evidence exactly on the applicable boundary is
+accepted; older evidence fails closed even if its stated expiry is years away.
+
 ```sh
 node tools/disaster-recovery/canonical-readiness-cli.ts \
   --evidence recovery-evidence.json

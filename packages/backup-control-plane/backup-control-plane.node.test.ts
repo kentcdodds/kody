@@ -17,6 +17,7 @@ import {
 	assertRemoteDatabaseIdentity,
 	backupPayload,
 	isBackupEnabled,
+	objectKeyForBookmark,
 	workflowInstanceId,
 } from './backup-policy.ts'
 import {
@@ -26,7 +27,8 @@ import {
 } from './backup-types.ts'
 import {
 	enqueueBackup,
-	isControlledRetryWindow,
+	isApprovedRetryWindow,
+	retryExistingBackup,
 	type WorkflowInstanceStatus,
 } from './workflow-trigger.ts'
 
@@ -254,7 +256,10 @@ function manifest(stored: {
 		scheduledAt: '2026-07-22T02:15:00.000Z',
 		startedAt: '2026-07-22T02:15:01.000Z',
 		completedAt: '2026-07-22T02:16:00.000Z',
-		objectKey: `daily/d1/${DATABASE_ID}/2026-07-22/backup.sql`,
+		objectKey: objectKeyForBookmark(
+			`daily/d1/${DATABASE_ID}/2026-07-22`,
+			'bookmark-1',
+		),
 		...stored,
 		commit: 'abc123',
 		retentionTier: 'daily',
@@ -305,9 +310,13 @@ test('builds deterministic daily and Sunday-UTC weekly retention keys', () => {
 	const daily = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
 	const sameDay = backupPayload(env, new Date('2026-07-22T23:59:00Z'))
 	assert.equal(daily.day, sameDay.day)
-	assert.equal(daily.objectKey, sameDay.objectKey)
+	assert.equal(daily.objectPrefix, sameDay.objectPrefix)
 	assert.equal(daily.manifestKey, sameDay.manifestKey)
-	assert.equal(daily.objectKey, `daily/d1/${DATABASE_ID}/2026-07-22/backup.sql`)
+	assert.equal(daily.objectPrefix, `daily/d1/${DATABASE_ID}/2026-07-22`)
+	assert.match(
+		objectKeyForBookmark(daily.objectPrefix, 'bookmark-1'),
+		new RegExp(`^daily/d1/${DATABASE_ID}/2026-07-22/backup-[0-9a-f]+\\.sql$`),
+	)
 	assert.equal(daily.retentionTier, 'daily')
 	assert.equal(
 		workflowInstanceId(DATABASE_ID, daily.day),
@@ -318,6 +327,32 @@ test('builds deterministic daily and Sunday-UTC weekly retention keys', () => {
 	assert.equal(
 		weekly.manifestKey,
 		`weekly/d1/${DATABASE_ID}/2026-07-26/manifest.json`,
+	)
+})
+
+test('bookmark-derived keys reject unsafe bookmark path input', () => {
+	const prefix = `daily/d1/${DATABASE_ID}/2026-07-22`
+	for (const bookmark of [
+		'',
+		'.',
+		'..',
+		'../escape',
+		'slash/value',
+		'line\n',
+	]) {
+		assert.throws(
+			() => objectKeyForBookmark(prefix, bookmark),
+			(error: unknown) =>
+				error instanceof BackupError && error.code === 'unsafe-export-bookmark',
+		)
+	}
+	assert.equal(
+		objectKeyForBookmark(prefix, 'bookmark-1'),
+		objectKeyForBookmark(prefix, 'bookmark-1'),
+	)
+	assert.notEqual(
+		objectKeyForBookmark(prefix, 'bookmark-1'),
+		objectKeyForBookmark(prefix, 'bookmark-2'),
 	)
 })
 
@@ -487,17 +522,20 @@ test('streams once with an immutable conditional, checksum, byte count, and ETag
 	assert.equal(duplicate.sha256, stored.sha256)
 })
 
-test('crash-window object without a manifest fails closed', async () => {
+test('orphan stays quarantined while a new bookmark can complete the day', async () => {
 	const bucket = new MemoryBucket()
+	const prefix = `daily/d1/${DATABASE_ID}/2026-07-22`
+	const manifestKey = `${prefix}/manifest.json`
+	const orphanKey = objectKeyForBookmark(prefix, 'bookmark-1')
 	await storeSignedDownload(
 		bucket as unknown as R2Bucket,
-		'backup.sql',
+		orphanKey,
 		'https://download.example',
 		async () => new Response('valid', { headers: { 'content-length': '5' } }),
 	)
 	const duplicate = await storeSignedDownload(
 		bucket as unknown as R2Bucket,
-		'backup.sql',
+		orphanKey,
 		'https://download.example',
 		async () => {
 			throw new Error('existing immutable object must not redownload')
@@ -506,8 +544,8 @@ test('crash-window object without a manifest fails closed', async () => {
 	await assert.rejects(
 		assertDuplicateMatchesManifest(
 			bucket as unknown as R2Bucket,
-			'manifest.json',
-			'backup.sql',
+			manifestKey,
+			orphanKey,
 			duplicate,
 		),
 		(error: unknown) =>
@@ -517,11 +555,29 @@ test('crash-window object without a manifest fails closed', async () => {
 	await assert.doesNotReject(
 		assertDuplicateMatchesManifest(
 			bucket as unknown as R2Bucket,
-			'manifest.json',
-			'backup.sql',
+			manifestKey,
+			orphanKey,
 			{ ...duplicate, alreadyExisted: false },
 		),
 	)
+	const recoveryKey = objectKeyForBookmark(prefix, 'bookmark-2')
+	const recovered = await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		recoveryKey,
+		'https://download.example',
+		async () => new Response('newer', { headers: { 'content-length': '5' } }),
+	)
+	assert.equal(recovered.alreadyExisted, false)
+	await putImmutableManifest(bucket as unknown as R2Bucket, manifestKey, {
+		...manifest(recovered),
+		bookmark: 'bookmark-2',
+		objectKey: recoveryKey,
+	})
+	assert.equal(
+		(await readManifest(bucket as unknown as R2Bucket, manifestKey))?.objectKey,
+		recoveryKey,
+	)
+	assert.notEqual(await bucket.head(orphanKey), null)
 })
 
 test('truncated and interrupted downloads fail retryably, then a retry succeeds', async () => {
@@ -683,7 +739,10 @@ test('object corruption changes its checksum and conflicts with the immutable ma
 test('freshness accepts matching metadata and flags size/ETag drift or missing objects', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
-	const key = `daily/d1/${DATABASE_ID}/2026-07-22/backup.sql`
+	const key = objectKeyForBookmark(
+		`daily/d1/${DATABASE_ID}/2026-07-22`,
+		'bookmark-1',
+	)
 	const stored = await storeSignedDownload(
 		bucket as unknown as R2Bucket,
 		key,
@@ -831,9 +890,94 @@ for (const status of ['unknown', 'unexpected'] as const) {
 	})
 }
 
-test('only the 02:45 UTC freshness tick is an approved retry window', () => {
-	assert.equal(isControlledRetryWindow(new Date('2026-07-22T02:45:00Z')), true)
-	assert.equal(isControlledRetryWindow(new Date('2026-07-22T01:45:00Z')), false)
-	assert.equal(isControlledRetryWindow(new Date('2026-07-22T03:45:00Z')), false)
-	assert.equal(isControlledRetryWindow(new Date('2026-07-22T02:44:00Z')), false)
+test('hourly freshness retries are bounded to 02:45 through 05:45 UTC', () => {
+	for (const hour of [2, 3, 4, 5]) {
+		assert.equal(
+			isApprovedRetryWindow(
+				new Date(`2026-07-22T${String(hour).padStart(2, '0')}:45:00Z`),
+			),
+			true,
+		)
+	}
+	assert.equal(isApprovedRetryWindow(new Date('2026-07-22T01:45:00Z')), false)
+	assert.equal(isApprovedRetryWindow(new Date('2026-07-22T06:45:00Z')), false)
+	assert.equal(isApprovedRetryWindow(new Date('2026-07-22T03:44:00Z')), false)
+})
+
+test('existing-only retry restarts a later failure without creating', async () => {
+	let creates = 0
+	let restarts = 0
+	const workflow = {
+		async create() {
+			creates += 1
+		},
+		async get() {
+			return {
+				status: async () => ({ status: 'errored' as const }),
+				restart: async () => {
+					restarts += 1
+				},
+			}
+		},
+	}
+	assert.equal(
+		await retryExistingBackup(workflow, DATABASE_ID, '2026-07-22'),
+		'restarted',
+	)
+	assert.equal(creates, 0)
+	assert.equal(restarts, 1)
+})
+
+test('existing-only retry does not create a missing deterministic instance', async () => {
+	let creates = 0
+	const workflow = {
+		async create() {
+			creates += 1
+		},
+		async get() {
+			throw new Error('instance missing')
+		},
+	}
+	assert.equal(
+		await retryExistingBackup(workflow, DATABASE_ID, '2026-07-22'),
+		'missing',
+	)
+	assert.equal(creates, 0)
+})
+
+test('existing-only retry leaves active/complete alone and fails closed on unknown', async () => {
+	for (const status of ['running', 'complete'] as const) {
+		let restarts = 0
+		const workflow = {
+			async get() {
+				return {
+					status: async () => ({ status }),
+					restart: async () => {
+						restarts += 1
+					},
+				}
+			},
+		}
+		assert.equal(
+			await retryExistingBackup(workflow, DATABASE_ID, '2026-07-22'),
+			'duplicate',
+		)
+		assert.equal(restarts, 0)
+	}
+	await assert.rejects(
+		retryExistingBackup(
+			{
+				async get() {
+					return {
+						status: async () => ({ status: 'unknown' as const }),
+						restart: async () => undefined,
+					}
+				},
+			},
+			DATABASE_ID,
+			'2026-07-22',
+		),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'workflow-status-unknown',
+	)
 })

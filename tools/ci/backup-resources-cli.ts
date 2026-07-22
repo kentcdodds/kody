@@ -3,6 +3,7 @@ import {
 	createCloudflareBackupApi,
 	ensureBackupResources,
 	generateBackupDesiredState,
+	normalizeCloudflareAccountId,
 	renderBackupOutput,
 	type SourceD1Database,
 } from './backup-resources.ts'
@@ -159,8 +160,6 @@ export function parseBackupCliArgs(
 		}
 	}
 
-	sourceAccountId = sourceAccountId.trim()
-	destinationAccountId = destinationAccountId.trim()
 	if (!sourceAccountId) {
 		throw new Error(
 			'Source Cloudflare account ID is required via BACKUP_SOURCE_ACCOUNT_ID or --source-account-id.',
@@ -171,6 +170,14 @@ export function parseBackupCliArgs(
 			'Destination Cloudflare account ID is required via BACKUP_DESTINATION_ACCOUNT_ID, CLOUDFLARE_ACCOUNT_ID, or --destination-account-id.',
 		)
 	}
+	sourceAccountId = normalizeCloudflareAccountId(
+		sourceAccountId,
+		'Source Cloudflare account ID',
+	)
+	destinationAccountId = normalizeCloudflareAccountId(
+		destinationAccountId,
+		'Destination Cloudflare account ID',
+	)
 	if (sourceAccountId === destinationAccountId) {
 		throw new Error(
 			'Source and destination Cloudflare account IDs must be distinct.',

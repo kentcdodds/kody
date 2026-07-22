@@ -21,6 +21,7 @@ import {
 	type ResourceEvidence,
 	assessCanonicalReadiness,
 	canonicalContracts,
+	maximumEvidenceAgeDays,
 } from './canonical-readiness.ts'
 import { canonicalJson, sha256 } from './canonical-json.ts'
 
@@ -478,6 +479,56 @@ test('readiness requires independently verified local artifact bytes', async () 
 		).rejects.toThrow()
 	} finally {
 		await rm(directory, { recursive: true, force: true })
+	}
+})
+
+test('code-owned readiness cadence caps evidence age regardless of decades-long expiresAt', () => {
+	const cases = [
+		{ resourceId: 'APP_DB', level: 'd1-only' },
+		{ resourceId: 'EMAIL_BLOBS', level: 'canonical-data' },
+		{ resourceId: 'VECTORIZE', level: 'full-service' },
+	] as const
+	for (const testCase of cases) {
+		const maximumDays = maximumEvidenceAgeDays[testCase.level]
+		const boundaryEvidence = completeEvidence()
+		const boundaryRecord = boundaryEvidence.find(
+			(item) => item.resourceId === testCase.resourceId,
+		)
+		if (!boundaryRecord) {
+			throw new Error(`fixture lacks ${testCase.resourceId}`)
+		}
+		boundaryRecord.performedAt = new Date(
+			now.getTime() - maximumDays * 24 * 60 * 60 * 1000,
+		).toISOString()
+		boundaryRecord.expiresAt = '2099-01-01T00:00:00.000Z'
+		expect(
+			assessCanonicalReadiness(
+				boundaryEvidence,
+				now,
+				verifiedMap(boundaryEvidence),
+			).levels[testCase.level].ready,
+		).toBe(true)
+
+		const staleEvidence = completeEvidence()
+		const staleRecord = staleEvidence.find(
+			(item) => item.resourceId === testCase.resourceId,
+		)
+		if (!staleRecord) throw new Error(`fixture lacks ${testCase.resourceId}`)
+		staleRecord.performedAt = new Date(
+			now.getTime() - maximumDays * 24 * 60 * 60 * 1000 - 1,
+		).toISOString()
+		staleRecord.expiresAt = '2099-01-01T00:00:00.000Z'
+		const staleResult = assessCanonicalReadiness(
+			staleEvidence,
+			now,
+			verifiedMap(staleEvidence),
+		)
+		expect(staleResult.levels[testCase.level].ready).toBe(false)
+		expect(staleResult.inputFailures).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining(`${String(maximumDays)}-day maximum age`),
+			]),
+		)
 	}
 })
 

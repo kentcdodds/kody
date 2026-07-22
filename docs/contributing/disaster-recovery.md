@@ -360,24 +360,37 @@ dry-run, and deploy once more.
 
 ### Daily and weekly procedure
 
-The implemented Worker runs the primary backup trigger at `02:15 UTC`, a
-controlled retry at `02:45 UTC`, and freshness checks at minute 45 of every
-hour. At 02:45 an errored or terminated same-day Workflow is restarted; a
-queued, running, paused, waiting, `waitingForPause`, or complete same-day
-Workflow is treated as a duplicate. An unknown status fails rather than
-restarting. Sunday UTC is the weekly boundary:
+The implemented Worker creates the day's Workflow only at the primary
+`02:15 UTC` trigger. On hourly freshness ticks in the bounded **02:45, 03:45,
+04:45, and 05:45 UTC** retry window, it looks up that deterministic same-day
+instance and restarts it only when its status is `errored` or `terminated`. A
+queued, running, paused, waiting, `waitingForPause`, or complete instance is
+left alone; an unknown status fails closed. If the 02:15 trigger never created
+the instance, retry-window lookup returns `missing` and does not create one. No
+missed instance is created outside 02:15.
 
-- Sunday writes `weekly/d1/{databaseUuid}/{yyyy-mm-dd}/backup.sql` and
-  `weekly/d1/{databaseUuid}/{yyyy-mm-dd}/manifest.json`;
-- every other UTC weekday writes the corresponding paths under `daily/d1/`.
+Sunday UTC is the weekly boundary. Each day has one canonical manifest and one
+or more immutable attempt objects:
 
-There is no daily copy on Sunday and no post-capture promotion step. Workflow
-instance id `d1-backup-{databaseUuid}-{yyyy-mm-dd}` prevents duplicate daily
-Workflow creation. Immutable R2 puts reject a conflicting object; an existing
-object is accepted only when it matches the immutable manifest contract. An
-object without its canonical manifest fails closed with
-`duplicate-object-manifest-missing`; do not delete, replace, or bless it
-automatically. Preserve it and escalate for operator investigation.
+- Sunday uses `weekly/d1/{databaseUuid}/{yyyy-mm-dd}/manifest.json`;
+- every other UTC weekday uses
+  `daily/d1/{databaseUuid}/{yyyy-mm-dd}/manifest.json`;
+- after D1 export completes, its bookmark is UTF-8 encoded to lowercase hex and
+  the SQL key is `{dayPrefix}/backup-{hexEncodedBookmark}.sql`.
+
+There is no fixed-name SQL object, daily copy on Sunday, or post-capture
+promotion step. Workflow instance id `d1-backup-{databaseUuid}-{yyyy-mm-dd}`
+prevents duplicate day creation. Immutable R2 puts reject conflicting bytes. The
+single day manifest selects the canonical SQL attempt by its exact
+bookmark-derived `objectKey`.
+
+An attempt object without the canonical day manifest remains quarantined and
+fails closed when that same object key is encountered
+(`duplicate-object-manifest-missing`); do not delete, replace, or bless it
+automatically. Preserve it and escalate for operator investigation. A restarted
+Workflow performs a new D1 export; if Cloudflare returns a different bookmark,
+the restart can write a new immutable SQL key and complete the still-absent day
+manifest while the earlier orphan attempt remains quarantined.
 
 For each run, the Workflow:
 
@@ -385,7 +398,8 @@ For each run, the Workflow:
 2. verifies configured account/database allowlists and the source D1 UUID/name
    through the source API;
 3. starts D1 export with `output_format: "polling"` and durably polls every 15
-   seconds for at most 120 polls;
+   seconds for at most 120 polls, then derives the SQL object key from the
+   completed export bookmark;
 4. marks export API Workflow step outputs sensitive so the signed URL is not
    logged;
 5. streams the signed response into the destination `BACKUP_BUCKET`, computing
@@ -437,8 +451,9 @@ primary operator and incident commander when:
   manifest is missing, older than `BACKUP_MAX_AGE_HOURS` (26 by default),
   identity-invalid, malformed, missing its R2 object, or inconsistent with the
   object's size/ETag;
-- an immutable SQL object exists without its manifest; fail closed and open an
-  operator investigation rather than repairing or deleting it automatically;
+- an immutable bookmark-derived attempt object exists without the canonical day
+  manifest; quarantine it and open an operator investigation rather than
+  repairing or deleting it automatically;
 - no complete Sunday UTC weekly set exists by 8 days (a separate operator
   metric; the implemented freshness check validates the latest expected day);
 - D1, `EMAIL_BLOBS`, avatars, Artifacts, or `StorageRunner` is missing,
@@ -501,7 +516,7 @@ target name must differ from the production database name.
 node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest restore-manifest.json \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
-  --backup backup.sql \
+  --backup downloaded-export.sql \
   --baseline restore-baseline.json \
   --allowlist drill-allowlist.json \
   --target-account-id "<ALLOWLISTED_DRILL_ACCOUNT_ID>" \
@@ -512,7 +527,7 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
 node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest restore-manifest.json \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
-  --backup backup.sql \
+  --backup downloaded-export.sql \
   --baseline restore-baseline.json \
   --allowlist drill-allowlist.json \
   --target-account-id "<ALLOWLISTED_DRILL_ACCOUNT_ID>" \
@@ -542,7 +557,7 @@ Forward migrations are an inseparable pair of inputs:
 node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest restore-manifest.json \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
-  --backup backup.sql \
+  --backup downloaded-export.sql \
   --baseline restore-baseline.json \
   --post-forward-baseline post-forward-baseline.json \
   --allowlist drill-allowlist.json \
@@ -760,11 +775,15 @@ the intended system only.
       absent from runtime.
 - [ ] Both schedule gates remained false through benchmark and are true only in
       the approved deployment.
-- [ ] The 02:15 UTC backup, controlled 02:45 retry, hourly size/ETag freshness
-      logs, immutable manifest, observability alerts, paging, and operations
-      runbook are live.
+- [ ] The sole create-capable 02:15 UTC trigger, bounded 02:45–05:45 hourly
+      existing-instance restart checks, and hourly size/ETag freshness logs are
+      live; no missed Workflow is created outside 02:15.
+- [ ] Each day has one canonical manifest selecting a bookmark-derived immutable
+      SQL key; orphan-attempt quarantine and restarted-export/new-key behavior
+      have tested alerts and operator procedures.
 - [ ] Deep checksum drills verify SQL bytes against manifest SHA-256 on schedule
-      and object-without-manifest alerts have a tested investigation path.
+      and orphan-attempt-without-manifest alerts have a tested quarantine and
+      investigation path.
 - [ ] A fresh D1-only drill passed.
 - [ ] A fresh canonical-data drill passed.
 - [ ] A fresh full-service drill passed, including OAuth reauthorization and
@@ -773,6 +792,9 @@ the intended system only.
       date are recorded.
 - [ ] Every readiness artifact is a dated, resource-specific local file whose
       exact bytes match its declared SHA-256; network evidence is rejected.
+- [ ] Evidence refresh automation respects the code-owned 35-day D1, 100-day
+      canonical-data, and 200-day full-service maximum ages regardless of
+      `expiresAt`.
 
 Operator status command:
 
@@ -811,6 +833,18 @@ identity, `performedAt` not in the future, and `expiresAt` later than both
 `performedAt` and the assessment time. Unknown fields, resources, evidence
 kinds, duplicate resources, duplicate evidence kinds, malformed dates, and
 expired attestations fail the entire input closed.
+
+Code also owns a non-configurable maximum age measured from `performedAt`,
+independent of the supplied `expiresAt`:
+
+- resources first required for `d1-only` (D1) expire after **35 days**;
+- resources first required for `canonical-data` expire after **100 days**;
+- resources first required for `full-service` expire after **200 days**.
+
+An `expiresAt` farther in the future cannot extend these limits. Conversely,
+`expiresAt` can make evidence expire sooner. For example, a full-service report
+still requires APP_DB evidence no older than 35 days, canonical-store evidence
+no older than 100 days, and derived/operational evidence no older than 200 days.
 
 Every artifact URI must be a local path (resolved relative to the evidence JSON)
 or a `file:` URL. The CLI opens every file, hashes its exact bytes, and requires

@@ -1,5 +1,6 @@
 const sha256Pattern = /^[a-f0-9]{64}$/
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+const millisecondsPerDay = 24 * 60 * 60 * 1000
 
 export type ReadinessLevel = 'd1-only' | 'canonical-data' | 'full-service'
 
@@ -262,6 +263,11 @@ const levelOrder: Record<ReadinessLevel, number> = {
 	'canonical-data': 1,
 	'full-service': 2,
 }
+export const maximumEvidenceAgeDays = {
+	'd1-only': 35,
+	'canonical-data': 100,
+	'full-service': 200,
+} as const satisfies Record<ReadinessLevel, number>
 
 function exactKeys(
 	value: Record<string, unknown>,
@@ -348,6 +354,20 @@ function parseEvidence(
 		}
 		if (performedAt > now.getTime()) {
 			failures.push(`${label}: performedAt is in the future`)
+			continue
+		}
+		const contract = canonicalContracts.find(
+			(candidateContract) => candidateContract.id === resourceId,
+		)
+		if (!contract) {
+			failures.push(`${label}: resource contract is unavailable`)
+			continue
+		}
+		const maximumAgeDays = maximumEvidenceAgeDays[contract.requiredFor]
+		if (now.getTime() - performedAt > maximumAgeDays * millisecondsPerDay) {
+			failures.push(
+				`${label}: evidence exceeds the code-owned ${String(maximumAgeDays)}-day maximum age for ${contract.requiredFor}`,
+			)
 			continue
 		}
 		if (expiresAt <= now.getTime() || expiresAt <= performedAt) {

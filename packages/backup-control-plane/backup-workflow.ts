@@ -17,6 +17,7 @@ import {
 	backupPayload,
 	errorCode,
 	isBackupEnabled,
+	objectKeyForBookmark,
 	safeLog,
 } from './backup-policy.ts'
 import {
@@ -32,7 +33,7 @@ function validatePayload(
 	const expected = backupPayload(env, new Date(payload.scheduledAt))
 	if (
 		payload.day !== expected.day ||
-		payload.objectKey !== expected.objectKey ||
+		payload.objectPrefix !== expected.objectPrefix ||
 		payload.manifestKey !== expected.manifestKey ||
 		payload.retentionTier !== expected.retentionTier
 	) {
@@ -57,6 +58,7 @@ export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 	): Promise<BackupManifest> {
 		const startedAt = event.timestamp.toISOString()
 		let payload: BackupPayload | undefined
+		let objectKey: string | undefined
 		try {
 			if (!isBackupEnabled(this.env)) {
 				throw new BackupError(
@@ -72,6 +74,11 @@ export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 				async () => verifySourceDatabaseIdentity(this.env),
 			)
 			const exported = await runDurableExport(this.env, step)
+			const checkedObjectKey = objectKeyForBookmark(
+				checkedPayload.objectPrefix,
+				exported.bookmark,
+			)
+			objectKey = checkedObjectKey
 			const stored = await step.do(
 				'stream-export-to-immutable-r2',
 				{
@@ -81,7 +88,7 @@ export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 				async () =>
 					storeSignedDownload(
 						this.env.BACKUP_BUCKET,
-						checkedPayload.objectKey,
+						checkedObjectKey,
 						exported.signedUrl,
 					),
 			)
@@ -92,7 +99,7 @@ export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 					assertDuplicateMatchesManifest(
 						this.env.BACKUP_BUCKET,
 						checkedPayload.manifestKey,
-						checkedPayload.objectKey,
+						checkedObjectKey,
 						stored,
 					),
 			)
@@ -111,7 +118,7 @@ export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 				scheduledAt: checkedPayload.scheduledAt,
 				startedAt,
 				completedAt,
-				objectKey: checkedPayload.objectKey,
+				objectKey: checkedObjectKey,
 				bytes: stored.bytes,
 				sha256: stored.sha256,
 				r2Etag: stored.r2Etag,
@@ -136,7 +143,7 @@ export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 				status: 'success',
 				day: checkedPayload.day,
 				instanceId: event.instanceId,
-				objectKey: checkedPayload.objectKey,
+				objectKey: checkedObjectKey,
 				manifestKey: checkedPayload.manifestKey,
 				bytes: stored.bytes,
 				sha256: stored.sha256,
@@ -148,7 +155,7 @@ export class ProductionD1BackupWorkflow extends WorkflowEntrypoint<
 				status: 'failure',
 				day: payload?.day,
 				instanceId: event.instanceId,
-				objectKey: payload?.objectKey,
+				objectKey,
 				manifestKey: payload?.manifestKey,
 				errorCode: errorCode(error),
 			})

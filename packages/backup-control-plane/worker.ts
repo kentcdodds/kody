@@ -10,7 +10,8 @@ import {
 import { type BackupEnvironment } from './backup-types.ts'
 import {
 	enqueueBackup,
-	isControlledRetryWindow,
+	isApprovedRetryWindow,
+	retryExistingBackup,
 	type EnqueueResult,
 } from './workflow-trigger.ts'
 
@@ -52,9 +53,38 @@ async function triggerBackup(
 		status: 'success',
 		day: payload.day,
 		instanceId,
-		objectKey: payload.objectKey,
 		manifestKey: payload.manifestKey,
 	})
+}
+
+async function retryExisting(
+	env: BackupEnvironment,
+	scheduledAt: Date,
+): Promise<void> {
+	const payload = backupPayload(env, scheduledAt)
+	const result = await retryExistingBackup(
+		env.BACKUP_WORKFLOW,
+		env.SOURCE_DATABASE_ID,
+		payload.day,
+	)
+	switch (result) {
+		case 'missing':
+		case 'duplicate':
+			return
+		case 'restarted':
+			safeLog({
+				event: 'backup-restarted',
+				status: 'success',
+				day: payload.day,
+				instanceId: workflowInstanceId(env.SOURCE_DATABASE_ID, payload.day),
+				manifestKey: payload.manifestKey,
+			})
+			return
+		default: {
+			const exhaustive: never = result
+			throw exhaustive
+		}
+	}
 }
 
 async function scheduled(
@@ -75,8 +105,8 @@ async function scheduled(
 			await triggerBackup(env, scheduledAt)
 			return
 		case FRESHNESS_CRON:
-			if (isControlledRetryWindow(scheduledAt)) {
-				await triggerBackup(env, scheduledAt)
+			if (isApprovedRetryWindow(scheduledAt)) {
+				await retryExisting(env, scheduledAt)
 			}
 			await checkFreshness(env, scheduledAt)
 			return

@@ -1,6 +1,7 @@
 const secondsPerDay = 86_400
 const sourceD1UuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const cloudflareAccountIdPattern = /^[0-9a-f]{32}$/i
 const resourceNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const sensitiveKeyPattern =
 	/(?:authorization|credential|password|private.?key|secret|token)/i
@@ -169,6 +170,14 @@ function isRecord(value: unknown): value is JsonRecord {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+export function normalizeCloudflareAccountId(value: string, label: string) {
+	const normalized = value.trim().toLowerCase()
+	if (!cloudflareAccountIdPattern.test(normalized)) {
+		throw new Error(`${label} must be exactly 32 hexadecimal characters.`)
+	}
+	return normalized
+}
+
 function assertBackupInput(input: {
 	sourceAccountId: string
 	destinationAccountId: string
@@ -231,8 +240,14 @@ export function generateBackupDesiredState(input: {
 	sourceD1Databases: ReadonlyArray<SourceD1Database>
 	productionResourceDenylist?: ReadonlyArray<string>
 }): BackupDesiredState {
-	const sourceAccountId = input.sourceAccountId.trim()
-	const destinationAccountId = input.destinationAccountId.trim()
+	const sourceAccountId = normalizeCloudflareAccountId(
+		input.sourceAccountId,
+		'Source Cloudflare account ID',
+	)
+	const destinationAccountId = normalizeCloudflareAccountId(
+		input.destinationAccountId,
+		'Destination Cloudflare account ID',
+	)
 	const productionResourceDenylist = input.productionResourceDenylist ?? []
 	assertBackupInput({
 		...input,
@@ -624,13 +639,14 @@ export function createCloudflareBackupApi(input: {
 	fetcher?: typeof fetch
 	apiBaseUrl?: string
 }): BackupCloudflareApi {
-	if (!input.destinationAccountId) {
-		throw new Error('Destination Cloudflare account ID is required.')
-	}
+	const destinationAccountId = normalizeCloudflareAccountId(
+		input.destinationAccountId,
+		'Destination Cloudflare account ID',
+	)
 	if (!input.apiToken)
 		throw new Error('Cloudflare provisioner token is required.')
 	const fetcher = input.fetcher ?? fetch
-	const accountPath = `/accounts/${encodeURIComponent(input.destinationAccountId)}/r2/buckets`
+	const accountPath = `/accounts/${destinationAccountId}/r2/buckets`
 	const baseUrl = (
 		input.apiBaseUrl ?? 'https://api.cloudflare.com/client/v4'
 	).replace(/\/$/, '')

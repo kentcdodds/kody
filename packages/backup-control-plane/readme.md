@@ -12,6 +12,13 @@ The schedule and key policy use UTC exclusively:
 - All other UTC weekdays use `daily/d1/<database-uuid>/<yyyy-mm-dd>/...` and
   retention tier `daily`.
 
+Each export object is immutable and bookmark-derived:
+`<tier>/d1/<database-uuid>/<yyyy-mm-dd>/backup-<encoded-bookmark>.sql`. The day
+has one canonical immutable `manifest.json`, which records the selected object
+key. If a process crashes after writing SQL but before its manifest, a later
+export with a new bookmark writes a different object; the orphan remains
+quarantined and cannot be paired with the new bookmark.
+
 Configure the production R2 bucket lifecycle by these immutable prefixes:
 
 - `daily/`: expire after approximately 35 days.
@@ -26,6 +33,11 @@ benchmark is approved.
 Workflow instance retention is omitted intentionally so Cloudflare applies the
 maximum available to the account (currently up to 30 days on paid plans and
 three days on free plans). This is separate from R2 backup retention.
+
+The 02:15 UTC trigger is the only path that creates an instance. Freshness ticks
+from 02:45 through 05:45 UTC may restart that day's existing errored or
+terminated deterministic instance. They never create a missing instance; active
+and complete instances are left alone.
 
 ## Integrity checks
 

@@ -111,10 +111,39 @@ export function backupPayload(
 	return {
 		scheduledAt: scheduledAt.toISOString(),
 		day,
-		objectKey: `${prefix}/backup.sql`,
+		objectPrefix: prefix,
 		manifestKey: `${prefix}/manifest.json`,
 		retentionTier: tier,
 	}
+}
+
+export function objectKeyForBookmark(
+	objectPrefix: string,
+	bookmark: string,
+): string {
+	if (
+		!/^[A-Za-z0-9._:-]{1,256}$/.test(bookmark) ||
+		bookmark === '.' ||
+		bookmark === '..'
+	) {
+		throw new BackupError(
+			'unsafe-export-bookmark',
+			'D1 export bookmark cannot be safely mapped to an object key',
+		)
+	}
+	const encoded = [...new TextEncoder().encode(bookmark)]
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('')
+	return `${objectPrefix}/backup-${encoded}.sql`
+}
+
+export function isBookmarkObjectKey(
+	objectPrefix: string,
+	objectKey: string,
+): boolean {
+	if (!objectKey.startsWith(`${objectPrefix}/`)) return false
+	const filename = objectKey.slice(objectPrefix.length + 1)
+	return /^backup-(?:[0-9a-f]{2}){1,256}\.sql$/.test(filename)
 }
 
 export function workflowInstanceId(databaseId: string, day: string): string {

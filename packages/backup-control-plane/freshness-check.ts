@@ -3,6 +3,7 @@ import {
 	BackupError,
 	assertConfiguredIdentity,
 	backupPayload,
+	isBookmarkObjectKey,
 	safeLog,
 } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
@@ -32,7 +33,13 @@ export async function checkFreshness(
 	let ageHours: number | undefined
 	let stale = manifest === null
 	if (manifest !== null) {
-		const object = await env.BACKUP_BUCKET.head(payload.objectKey)
+		const validObjectKey = isBookmarkObjectKey(
+			payload.objectPrefix,
+			manifest.objectKey,
+		)
+		const object = validObjectKey
+			? await env.BACKUP_BUCKET.head(manifest.objectKey)
+			: null
 		ageHours =
 			(scheduledAt.valueOf() - new Date(manifest.completedAt).valueOf()) /
 			3_600_000
@@ -44,7 +51,7 @@ export async function checkFreshness(
 			manifest.source.accountName !== env.SOURCE_ACCOUNT_NAME ||
 			manifest.source.databaseId !== env.SOURCE_DATABASE_ID ||
 			manifest.source.databaseName !== env.SOURCE_DATABASE_NAME ||
-			manifest.objectKey !== payload.objectKey ||
+			!validObjectKey ||
 			manifest.bytes <= 0 ||
 			!/^[0-9a-f]{64}$/.test(manifest.sha256) ||
 			!manifest.r2Etag ||
@@ -56,7 +63,7 @@ export async function checkFreshness(
 		event: stale ? 'freshness-stale' : 'freshness-success',
 		status: stale ? 'stale-success' : 'success',
 		day: payload.day,
-		objectKey: payload.objectKey,
+		objectKey: manifest?.objectKey,
 		manifestKey: payload.manifestKey,
 		ageHours,
 	})
