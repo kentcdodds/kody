@@ -106,6 +106,7 @@ Object.assign(globalThis, {
 class MemoryBucket {
 	readonly puts: Array<{ key: string; options: R2PutOptions }> = []
 	private readonly objects = new Map<string, Uint8Array>()
+	private readonly reportedSizes = new Map<string, number>()
 
 	async put(
 		key: string,
@@ -154,12 +155,16 @@ class MemoryBucket {
 		this.objects.set(key, new TextEncoder().encode(value))
 	}
 
+	setReportedSize(key: string, size: number): void {
+		this.reportedSizes.set(key, size)
+	}
+
 	private metadata(key: string): R2Object {
 		const bytes = this.objects.get(key)!
 		return {
 			key,
 			version: '1',
-			size: bytes.byteLength,
+			size: this.reportedSizes.get(key) ?? bytes.byteLength,
 			etag: createHash('md5').update(bytes).digest('hex'),
 			httpEtag: `"${createHash('md5').update(bytes).digest('hex')}"`,
 			uploaded: new Date(0),
@@ -829,9 +834,35 @@ test('download HTTP and malformed length failures have safe retry classification
 			async () =>
 				new Response('', {
 					headers: {
-						'content-length': String(MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES + 1),
+						'content-length': String(MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES),
 					},
 				}),
+		),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'download-too-large',
+	)
+})
+
+test('pre-existing object at the size limit cannot be resumed into a manifest', async () => {
+	const bucket = new MemoryBucket()
+	await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		'oversized-existing.sql',
+		'https://download.example',
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
+	)
+	bucket.setReportedSize(
+		'oversized-existing.sql',
+		MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES,
+	)
+	await assert.rejects(
+		storeSignedDownload(
+			bucket as unknown as R2Bucket,
+			'oversized-existing.sql',
+			'https://download.example',
+			async () => {
+				throw new Error('existing object must not redownload')
+			},
 		),
 		(error: unknown) =>
 			error instanceof BackupError && error.code === 'download-too-large',
@@ -945,6 +976,12 @@ test('freshness accepts matching metadata and flags size/ETag drift or missing o
 		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
 		true,
 	)
+	bucket.setReportedSize(key, MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES)
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
+		false,
+	)
+	bucket.setReportedSize(key, stored.bytes)
 	bucket.corrupt(key, 'drift')
 	assert.equal(
 		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),

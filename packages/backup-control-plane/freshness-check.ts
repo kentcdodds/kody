@@ -1,4 +1,7 @@
-import { readManifest } from './immutable-storage.ts'
+import {
+	MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES,
+	readManifest,
+} from './immutable-storage.ts'
 import {
 	verifySourceDatabaseIdentity,
 	type ApiOptions,
@@ -63,7 +66,9 @@ export async function checkFreshness(
 			!manifest.r2Etag ||
 			object === null ||
 			(object !== null &&
-				(object.size !== manifest.bytes || object.etag !== manifest.r2Etag))
+				(object.size !== manifest.bytes ||
+					object.size >= MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES ||
+					object.etag !== manifest.r2Etag))
 	}
 	safeLog({
 		event: stale ? 'freshness-stale' : 'freshness-success',

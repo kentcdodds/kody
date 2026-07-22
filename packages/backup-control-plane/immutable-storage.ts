@@ -38,6 +38,12 @@ async function inspectExisting(
 			true,
 		)
 	}
+	if (object.size >= MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES) {
+		throw new BackupError(
+			'download-too-large',
+			'existing export is at or above the single-object backup size limit',
+		)
+	}
 	const digest = await digestBody(object.body, object.size)
 	return {
 		...digest,
@@ -87,7 +93,7 @@ export async function storeSignedDownload(
 			'signed export Content-Length exceeded safe limits',
 		)
 	}
-	if (expectedBytes > MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES) {
+	if (expectedBytes >= MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES) {
 		throw new BackupError(
 			'download-too-large',
 			'export exceeds the single-object backup size limit',
