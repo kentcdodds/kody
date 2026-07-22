@@ -67,7 +67,6 @@ test('provider delivery events are idempotent, ordered, and user scoped', async 
 	const providerMessageId = `provider-${crypto.randomUUID()}`
 	const message = await insertEmailMessage({
 		db: env.APP_DB,
-		blobs: env.EMAIL_BLOBS,
 		message: {
 			direction: 'outbound',
 			userId,

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { recordProviderEmailDeliveryEvent } from './repo.ts'
+import { recordProviderEmailDeliveryEvent } from './service.ts'
 import { emailDeliveryStatusValues, type EmailDeliveryStatus } from './types.ts'
 
 const cloudflareEmailDeliveryTypeValues = [

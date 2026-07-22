@@ -1,6 +1,6 @@
 import { readPagination } from '#app/query-params.ts'
 import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
-import { loadRawMime } from '#worker/email/repo.ts'
+import { loadRawMime } from '#worker/email/service.ts'
 import {
 	systemEmailLimits,
 	systemEmailLocals,

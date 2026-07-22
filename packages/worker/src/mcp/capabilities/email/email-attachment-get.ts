@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
-import { getEmailAttachmentById } from '#worker/email/repo.ts'
+import { getEmailAttachmentById } from '#worker/email/service.ts'
 
 const emailAttachmentContentSchema = z.object({
 	id: z.string(),

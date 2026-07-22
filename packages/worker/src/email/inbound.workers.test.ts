@@ -6,18 +6,20 @@ import {
 	createEmailThread,
 	deleteEmailMessageById,
 	emailRawMimeKey,
-	EmailRawMimeStorageError,
 	getEmailMessageById,
-	insertEmailMessage,
-	insertEmailMessageWithAttachments,
-	getEmailAttachmentById,
 	listEmailInboxesForUser,
 	listEmailInboxAddressesForUser,
 	listEmailMessages,
 	listEmailAttachmentsForMessage,
+} from './repo.ts'
+import {
+	EmailRawMimeStorageError,
+	getEmailAttachmentById,
+	insertEmailMessageWithAttachments,
+	insertEmailMessageWithRawMime,
 	loadRawMime,
 	RetryableInboundStorageError,
-} from './repo.ts'
+} from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
@@ -1035,12 +1037,12 @@ test('inbound storage refund failure is logged and original storage error is ret
 	)
 })
 
-test('insertEmailMessage stores raw MIME in R2 and only raw_mime_key in D1', async () => {
+test('insertEmailMessageWithRawMime stores raw MIME in R2 and only raw_mime_key in D1', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `user-${crypto.randomUUID()}`
 	const messageId = crypto.randomUUID()
 	const rawMime = 'From: a@example.net\r\nTo: b@example.net\r\n\r\nbody'
-	const stored = await insertEmailMessage({
+	const stored = await insertEmailMessageWithRawMime({
 		db: env.APP_DB,
 		blobs: env.EMAIL_BLOBS,
 		message: {
@@ -1065,7 +1067,7 @@ test('insertEmailMessage stores raw MIME in R2 and only raw_mime_key in D1', asy
 	)
 })
 
-test('insertEmailMessage best-effort deletes R2 blob when D1 insert fails', async () => {
+test('insertEmailMessageWithRawMime best-effort deletes R2 blob when D1 insert fails', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `user-${crypto.randomUUID()}`
 	const messageId = crypto.randomUUID()
@@ -1106,7 +1108,7 @@ test('insertEmailMessage best-effort deletes R2 blob when D1 insert fails', asyn
 	}) as D1Database
 
 	await expect(
-		insertEmailMessage({
+		insertEmailMessageWithRawMime({
 			db: failingDb,
 			blobs,
 			message: {

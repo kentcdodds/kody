@@ -1,12 +1,11 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { handleInboundEmail } from './inbound.ts'
+import { listEmailInboxesForUser, listEmailMessages } from './repo.ts'
 import {
-	listEmailInboxesForUser,
-	listEmailMessages,
 	maxDetailedEmailRejectionEventsPerDay,
-} from './repo.ts'
-import { RetryableInboundStorageError } from './repo.ts'
+	RetryableInboundStorageError,
+} from './service.ts'
 import {
 	pruneSystemEmailRetention,
 	refundSystemEmailDailyReceive,

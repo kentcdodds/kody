@@ -4,7 +4,7 @@ const mockModule = vi.hoisted(() => ({
 	getEmailAttachmentById: vi.fn(),
 }))
 
-vi.mock('#worker/email/repo.ts', () => ({
+vi.mock('#worker/email/service.ts', () => ({
 	getEmailAttachmentById: (...args: Array<unknown>) =>
 		mockModule.getEmailAttachmentById(...args),
 }))

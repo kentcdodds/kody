@@ -6,12 +6,12 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import {
 	deleteEmailMessageById,
-	getEmailAttachmentById,
 	getEmailMessageById,
 	insertEmailMessage,
 	listEmailAttachmentsForMessage,
 	listEmailMessages,
 } from './repo.ts'
+import { getEmailAttachmentById } from './service.ts'
 import {
 	maxOutboundEmailAttachmentTotalBytes,
 	sendOutboundEmail,
@@ -437,7 +437,6 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	})
 	const inbound = await insertEmailMessage({
 		db: env.APP_DB,
-		blobs: env.EMAIL_BLOBS,
 		message: {
 			direction: 'inbound',
 			userId,
@@ -549,7 +548,6 @@ test('sendOutboundEmail sends, stores, and re-serves reply attachments', async (
 	await seedVerifiedAccount({ email: accountEmail })
 	const inbound = await insertEmailMessage({
 		db: env.APP_DB,
-		blobs: env.EMAIL_BLOBS,
 		message: {
 			direction: 'inbound',
 			userId,

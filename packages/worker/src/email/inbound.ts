@@ -33,7 +33,7 @@ import {
 	recordBoundedEmailRejectionEvent,
 	RetryableInboundStorageError,
 	touchEmailThread,
-} from './repo.ts'
+} from './service.ts'
 import {
 	dispatchInboundEmailSubscriptionEvents,
 	dispatchSystemInboundEmailSubscriptionEvents,

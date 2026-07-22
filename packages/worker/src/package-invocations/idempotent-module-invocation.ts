@@ -9,7 +9,7 @@ import {
 	getEmailAttachmentById,
 	getEmailMessageById,
 	getEmailMessageWithAttachmentsById,
-} from '#worker/email/repo.ts'
+} from '#worker/email/service.ts'
 import {
 	buildPackageInvocationStorageId,
 	createRepoContext,

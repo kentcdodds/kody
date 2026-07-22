@@ -22,7 +22,7 @@ import {
 	insertEmailMessage,
 	insertEmailDeliveryEvent,
 	updateEmailMessageDelivery,
-} from './repo.ts'
+} from './service.ts'
 import { type EmailMessageRecord, type EmailProcessingStatus } from './types.ts'
 
 type SendEmailEnv = Pick<
@@ -548,7 +548,6 @@ export async function sendOutboundEmail(
 	const providerHeaders = buildProviderHeaders(storedHeaders)
 	const message = await insertEmailMessage({
 		db: input.env.APP_DB,
-		blobs: input.env.EMAIL_BLOBS,
 		message: {
 			direction: 'outbound',
 			userId: input.userId,
@@ -573,7 +572,7 @@ export async function sendOutboundEmail(
 			authResults: null,
 			textBody: text,
 			htmlBody: html,
-			rawMime: null,
+			rawMimeKey: null,
 			rawSize: null,
 			processingStatus: 'stored',
 			providerMessageId: null,
