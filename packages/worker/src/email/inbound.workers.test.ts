@@ -1762,6 +1762,7 @@ test('lease takeover fences stale finalization and active storage from cleanup',
 		storageLease: 'stale-worker',
 		storageLeaseAt: '2026-07-19T00:00:00.000Z',
 		expectedAttachmentCount: 0,
+		usageDurationMs: 123,
 	}
 	await env.APP_DB.prepare(
 		`INSERT INTO email_delivery_events (
@@ -1783,9 +1784,11 @@ test('lease takeover fences stale finalization and active storage from cleanup',
 		db: env.APP_DB,
 		delivery: staleDelivery,
 		expectedAttachmentCount: 0,
+		usageDurationMs: 999,
 		now,
 	})
 	if (!takeover.claimed) throw new Error('Expected storage lease takeover.')
+	expect(takeover.delivery.usageDurationMs).toBe(123)
 
 	await expect(
 		insertEmailMessage({

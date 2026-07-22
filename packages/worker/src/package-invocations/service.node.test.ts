@@ -8,6 +8,10 @@ import {
 	invokePackageExport,
 	invokePackageSubscription,
 } from './service.ts'
+import {
+	tryClaimStalePackageInvocation,
+	updatePackageInvocationResult,
+} from './repo.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -197,7 +201,7 @@ function createDatabase(options: { failInsert?: boolean } = {}) {
 		seedStaleInvocation(idempotencyKey: string) {
 			const completed = getTable('package_invocations')[0]
 			if (!completed) throw new Error('Expected completed invocation seed.')
-			getTable('package_invocations').push({
+			const row = {
 				...clone(completed),
 				id: crypto.randomUUID(),
 				idempotency_key: idempotencyKey,
@@ -205,11 +209,39 @@ function createDatabase(options: { failInsert?: boolean } = {}) {
 				response_json: null,
 				created_at: '2026-01-01T00:00:00.000Z',
 				updated_at: '2026-01-01T00:00:00.000Z',
+			}
+			getTable('package_invocations').push(row)
+			return clone(row)
+		},
+		seedFreshInvocation(idempotencyKey: string) {
+			const completed = getTable('package_invocations')[0]
+			if (!completed) throw new Error('Expected completed invocation seed.')
+			const now = new Date().toISOString()
+			getTable('package_invocations').push({
+				...clone(completed),
+				id: crypto.randomUUID(),
+				idempotency_key: idempotencyKey,
+				status: 'in_progress',
+				response_json: null,
+				created_at: now,
+				updated_at: now,
 			})
+		},
+		completeInvocation(idempotencyKey: string) {
+			const row = getTable('package_invocations').find(
+				(candidate) => candidate['idempotency_key'] === idempotencyKey,
+			)
+			const completed = getTable('package_invocations')[0]
+			if (!row || !completed) throw new Error('Expected invocation rows.')
+			row['status'] = 'completed'
+			row['response_json'] = completed['response_json']
+			row['updated_at'] = new Date().toISOString()
 		},
 	} as unknown as D1Database & {
 		corruptStoredResponses(): void
-		seedStaleInvocation(idempotencyKey: string): void
+		seedStaleInvocation(idempotencyKey: string): Record<string, unknown>
+		seedFreshInvocation(idempotencyKey: string): void
+		completeInvocation(idempotencyKey: string): void
 	}
 	return db
 }
@@ -2009,4 +2041,64 @@ test('invokePackageSubscription uses the normal capability registry with package
 	})
 	expect(recovered.status).toBe(200)
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
+
+	const freshKey = 'email:message-fresh:pkg-1:email.message.received'
+	db.seedFreshInvocation(freshKey)
+	const completionTimer = setTimeout(() => {
+		db.completeInvocation(freshKey)
+	}, 150)
+	try {
+		const polled = await invokePackageSubscription({
+			env: createEnv(db),
+			baseUrl: 'https://kody.dev',
+			savedPackage,
+			topic: 'email.message.received',
+			params: {
+				event: 'email.message.received',
+				message: { id: 'message-123' },
+			},
+			idempotencyKey: freshKey,
+			source: 'email',
+		})
+		expect(polled.status).toBe(200)
+		expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
+	} finally {
+		clearTimeout(completionTimer)
+	}
+
+	const fenced = db.seedStaleInvocation(
+		'email:message-fenced:pkg-1:email.message.received',
+	)
+	const reclaimedAt = new Date().toISOString()
+	expect(
+		await tryClaimStalePackageInvocation({
+			db,
+			id: String(fenced['id']),
+			userId: String(fenced['user_id']),
+			expectedUpdatedAt: String(fenced['updated_at']),
+			staleBefore: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+			now: reclaimedAt,
+		}),
+	).toBe(true)
+	const storedResponse = { status: 200, body: { ok: true } }
+	expect(
+		await updatePackageInvocationResult({
+			db,
+			id: String(fenced['id']),
+			userId: String(fenced['user_id']),
+			status: 'completed',
+			response: storedResponse,
+			claimUpdatedAt: String(fenced['updated_at']),
+		}),
+	).toBe(false)
+	expect(
+		await updatePackageInvocationResult({
+			db,
+			id: String(fenced['id']),
+			userId: String(fenced['user_id']),
+			status: 'completed',
+			response: storedResponse,
+			claimUpdatedAt: reclaimedAt,
+		}),
+	).toBe(true)
 })

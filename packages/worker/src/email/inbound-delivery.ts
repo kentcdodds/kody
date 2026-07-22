@@ -755,11 +755,10 @@ export async function claimInboundDeliveryStorage(input: {
 				'$.storageLease', ?,
 				'$.storageLeaseAt', ?,
 				'$.expectedAttachmentCount', ?,
-				'$.usageDurationMs', CASE
-					WHEN ? IS NULL
-						THEN json_extract(detail_json, '$.usageDurationMs')
-					ELSE ?
-				END
+				'$.usageDurationMs', COALESCE(
+					json_extract(detail_json, '$.usageDurationMs'),
+					?
+				)
 			)
 			WHERE id = ?
 				AND user_id = ?
@@ -775,7 +774,6 @@ export async function claimInboundDeliveryStorage(input: {
 			storageLease,
 			storageLeaseAt,
 			input.expectedAttachmentCount,
-			input.usageDurationMs ?? null,
 			input.usageDurationMs ?? null,
 			input.delivery.deliveryId,
 			input.delivery.userId,
