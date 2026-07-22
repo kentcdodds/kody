@@ -2,12 +2,8 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountBillingData } from '#app/account-billing-data.ts'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import {
-	redirectToLogin,
-	redirectToLoginWhenUnauthenticated,
-} from '#app/auth-redirect.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import {
@@ -36,14 +32,9 @@ export function createAccountBillingHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
-			}
-
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return redirectToLoginWhenUnauthenticated(request, env)
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
 			}
 
 			const errorCode = new URL(request.url).searchParams.get('error')
@@ -165,14 +156,9 @@ export function createAccountBillingSuccessHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
-			}
-
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return redirectToLoginWhenUnauthenticated(request, env)
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
 			}
 
 			if (!isBillingConfigured(env)) {
@@ -227,14 +213,9 @@ export function createAccountBillingPortalHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
-			}
-
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return redirectToLoginWhenUnauthenticated(request, env)
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
 			}
 
 			if (!isBillingConfigured(env)) {

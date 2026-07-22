@@ -11,14 +11,14 @@ import {
 	adminCreateUserWithPasswordSetup,
 	AdminCreateUserError,
 } from '#app/admin-user-creation.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
 import {
 	createInvite,
 	normalizeInviteCode,
 	revokeInvite,
 } from '#app/invites.ts'
+import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
+import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import {
@@ -31,16 +31,9 @@ export function createAdminInvitesHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			try {
-				await requireUserWithRole(request, env, 'admin')
-			} catch (error) {
-				if (error instanceof Response) return error
-				throw error
-			}
-
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
+			const admin = await requirePageUserWithRole(request, env, 'admin')
+			if (admin instanceof Response) {
+				return admin
 			}
 
 			const adminInvites = await loadAdminInvitesData(env)
@@ -79,7 +72,7 @@ export function createAdminInvitesApiHandler(env: Env) {
 					)
 				}
 
-				const action = readString(body, 'action')
+				const action = readNonEmptyTrimmedStringOrNumber(body, 'action')
 				if (action === 'create_invite') {
 					return handleCreateInviteAction({ env, request, url, actor, body })
 				}
@@ -106,8 +99,8 @@ async function handleCreateUserAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithRole>>
 	body: object
 }) {
-	const email = readString(input.body, 'email') ?? ''
-	const username = readString(input.body, 'username')
+	const email = readNonEmptyTrimmedStringOrNumber(input.body, 'email') ?? ''
+	const username = readNonEmptyTrimmedStringOrNumber(input.body, 'username')
 
 	try {
 		const createdUser = await adminCreateUserWithPasswordSetup({
@@ -161,9 +154,12 @@ async function handleCreateInviteAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithRole>>
 	body: object
 }) {
-	const code = readString(input.body, 'code')
-	const note = readString(input.body, 'note') ?? ''
-	const maxUses = readPositiveInt(readString(input.body, 'maxUses'), 1)
+	const code = readNonEmptyTrimmedStringOrNumber(input.body, 'code')
+	const note = readNonEmptyTrimmedStringOrNumber(input.body, 'note') ?? ''
+	const maxUses = readPositiveInt(
+		readNonEmptyTrimmedStringOrNumber(input.body, 'maxUses'),
+		1,
+	)
 	const expiresAt = readExpiresAt(input.body)
 	if (expiresAt === false) {
 		return jsonResponse(
@@ -244,7 +240,9 @@ async function handleRevokeInviteAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithRole>>
 	body: object
 }) {
-	const code = normalizeInviteCode(readString(input.body, 'code'))
+	const code = normalizeInviteCode(
+		readNonEmptyTrimmedStringOrNumber(input.body, 'code'),
+	)
 	if (!code) {
 		return jsonResponse({ ok: false, error: 'Invite code is required.' }, 400)
 	}
@@ -268,20 +266,9 @@ async function handleRevokeInviteAction(input: {
 }
 
 function readExpiresAt(body: object): string | null | false {
-	const value = readString(body, 'expiresAt')
+	const value = readNonEmptyTrimmedStringOrNumber(body, 'expiresAt')
 	if (!value) return null
 	const date = new Date(value)
 	if (Number.isNaN(date.getTime())) return false
 	return date.toISOString()
-}
-
-function readString(body: object, key: string) {
-	const value = (body as Record<string, unknown>)[key]
-	if (typeof value === 'string' && value.trim()) {
-		return value.trim()
-	}
-	if (typeof value === 'number' && Number.isFinite(value)) {
-		return String(value)
-	}
-	return null
 }

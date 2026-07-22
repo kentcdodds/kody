@@ -17,13 +17,8 @@ import {
 	toPackageOptions,
 } from '#app/account-secrets-data.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadConnectOauthNextSteps } from '#app/connect-oauth-next-steps.ts'
-import {
-	redirectToLogin,
-	redirectToLoginWhenUnauthenticated,
-} from '#app/auth-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
@@ -47,6 +42,7 @@ import {
 	buildIntegrationValueName,
 	parseIntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import {
 	buildOAuthTokenExchangeFailurePayload,
 	buildOAuthTokenExchangeRequest,
@@ -54,6 +50,7 @@ import {
 	resolveTokenExchangeStyle,
 	type TokenExchangeStyle,
 } from '#app/oauth-token-exchange.ts'
+import { readNonEmptyTrimmedString as readString } from '#app/request-body.ts'
 
 type AccountEditableSecretScope = Extract<SecretScope, 'package' | 'user'>
 
@@ -78,14 +75,9 @@ export function createAccountSecretsHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
-			}
-
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return redirectToLoginWhenUnauthenticated(request, env)
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
 			}
 
 			const accountSecrets = await loadAccountSecretsData({
@@ -1131,11 +1123,6 @@ async function handleDeleteAction(input: {
 		...payload,
 		deleted: true,
 	})
-}
-
-function readString(body: object, key: string) {
-	const value = (body as Record<string, unknown>)[key]
-	return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
 function readOptionalString(body: object, key: string) {

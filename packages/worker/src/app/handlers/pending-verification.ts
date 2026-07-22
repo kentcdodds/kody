@@ -1,11 +1,6 @@
 import { type Action } from 'remix/router'
-import {
-	normalizeRedirectTo,
-	redirectToLogin,
-	redirectToLoginWhenUnauthenticated,
-} from '#app/auth-redirect.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { normalizeRedirectTo } from '#app/auth-redirect.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 
@@ -20,14 +15,9 @@ export function createPendingVerificationHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
-			}
-
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return redirectToLoginWhenUnauthenticated(request, env)
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
 			}
 
 			if (user.emailVerified) {

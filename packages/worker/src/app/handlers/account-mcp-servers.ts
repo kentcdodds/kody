@@ -2,12 +2,9 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type Action } from 'remix/router'
 import { loadAccountMcpServersData } from '#app/account-mcp-servers-data.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import {
-	redirectToLogin,
-	redirectToLoginWhenUnauthenticated,
-} from '#app/auth-redirect.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
+import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
@@ -27,14 +24,9 @@ export function createAccountMcpServersHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
-			}
-
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return redirectToLoginWhenUnauthenticated(request, env)
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
 			}
 
 			const accountMcpServers = await loadAccountMcpServersData({ env, user })
@@ -70,7 +62,7 @@ export function createAccountMcpServersApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Invalid request body.' }, 400)
 			}
 
-			const action = readString(body, 'action')
+			const action = readTrimmedStringOrEmpty(body, 'action')
 			try {
 				if (action === 'add') {
 					return await handleAddAction({ env, user, body, request })
@@ -124,13 +116,9 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
-			}
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return redirectToLoginWhenUnauthenticated(request, env)
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
 			}
 
 			const hub = createMcpClientHubClient({
@@ -173,8 +161,8 @@ async function handleAddAction(input: {
 	const { setting } = await addMcpServer({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
-		name: readString(input.body, 'name'),
-		url: readString(input.body, 'url'),
+		name: readTrimmedStringOrEmpty(input.body, 'name'),
+		url: readTrimmedStringOrEmpty(input.body, 'url'),
 		baseUrl: getAppBaseUrl({
 			env: input.env,
 			requestUrl: input.request.url,
@@ -265,7 +253,7 @@ async function requireSetting(input: {
 	user: AuthenticatedUser
 	body: object
 }) {
-	const id = readString(input.body, 'id')
+	const id = readTrimmedStringOrEmpty(input.body, 'id')
 	if (!id) {
 		throw new Error('MCP server id is required.')
 	}
@@ -278,11 +266,6 @@ async function requireSetting(input: {
 		throw new Error('MCP server not found.')
 	}
 	return setting
-}
-
-function readString(body: object, key: string) {
-	const value = (body as Record<string, unknown>)[key]
-	return typeof value === 'string' ? value.trim() : ''
 }
 
 function readBoolean(body: object, key: string, defaultValue: boolean) {

@@ -1,12 +1,8 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { type Action } from 'remix/router'
-import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import {
-	redirectToLogin,
-	redirectToLoginWhenUnauthenticated,
-} from '#app/auth-redirect.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { type routes } from '#app/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { loadTimelineData } from '#app/timeline-data.ts'
@@ -16,14 +12,9 @@ export function createTimelineHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
-			}
-
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return redirectToLoginWhenUnauthenticated(request, env)
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
 			}
 
 			const timeline = await loadTimelineData({

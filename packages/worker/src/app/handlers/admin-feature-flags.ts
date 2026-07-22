@@ -2,9 +2,9 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAdminFeatureFlagsData } from '#app/admin-feature-flags-data.ts'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
+import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
+import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import { isFeatureFlagKey } from '#worker/feature-flags/registry.ts'
@@ -19,16 +19,9 @@ export function createAdminFeatureFlagsHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			try {
-				await requireUserWithRole(request, env, 'admin')
-			} catch (error) {
-				if (error instanceof Response) return error
-				throw error
-			}
-
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
+			const admin = await requirePageUserWithRole(request, env, 'admin')
+			if (admin instanceof Response) {
+				return admin
 			}
 
 			const adminFeatureFlags = await loadAdminFeatureFlagsData(env)
@@ -67,7 +60,7 @@ export function createAdminFeatureFlagsApiHandler(env: Env) {
 					)
 				}
 
-				const action = readString(body, 'action')
+				const action = readNonEmptyTrimmedStringOrNumber(body, 'action')
 				if (action === 'set_global') {
 					return handleSetGlobalAction({ env, request, url, actor, body })
 				}
@@ -109,7 +102,7 @@ async function handleSetGlobalAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithRole>>
 	body: object
 }) {
-	const key = readString(input.body, 'key')
+	const key = readNonEmptyTrimmedStringOrNumber(input.body, 'key')
 	if (!key || !isFeatureFlagKey(key)) {
 		return jsonResponse(
 			{ ok: false, error: 'Unknown or invalid feature flag key.' },
@@ -181,7 +174,7 @@ async function handleSetUserOverrideAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithRole>>
 	body: object
 }) {
-	const key = readString(input.body, 'key')
+	const key = readNonEmptyTrimmedStringOrNumber(input.body, 'key')
 	if (!key || !isFeatureFlagKey(key)) {
 		return jsonResponse(
 			{ ok: false, error: 'Unknown or invalid feature flag key.' },
@@ -238,7 +231,7 @@ async function handleClearUserOverrideAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithRole>>
 	body: object
 }) {
-	const key = readString(input.body, 'key')
+	const key = readNonEmptyTrimmedStringOrNumber(input.body, 'key')
 	if (!key || !isFeatureFlagKey(key)) {
 		return jsonResponse(
 			{ ok: false, error: 'Unknown or invalid feature flag key.' },
@@ -280,7 +273,7 @@ async function handleDeleteStaleAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithRole>>
 	body: object
 }) {
-	const key = readString(input.body, 'key')
+	const key = readNonEmptyTrimmedStringOrNumber(input.body, 'key')
 	if (!key) {
 		return jsonResponse(
 			{ ok: false, error: 'Feature flag key is required.' },
@@ -334,7 +327,7 @@ async function resolveOverrideUserId(
 ): Promise<ResolveOverrideUserIdResult> {
 	const record = body as Record<string, unknown>
 	const hasUserId = Object.hasOwn(record, 'userId') && record.userId != null
-	const username = readString(body, 'username')
+	const username = readNonEmptyTrimmedStringOrNumber(body, 'username')
 	const hasUsername = username !== null
 
 	if (!hasUserId && !hasUsername) {
@@ -423,17 +416,6 @@ function readPositiveIntField(body: object, key: string): number | null {
 		if (Number.isInteger(parsed) && parsed > 0) {
 			return parsed
 		}
-	}
-	return null
-}
-
-function readString(body: object, key: string) {
-	const value = (body as Record<string, unknown>)[key]
-	if (typeof value === 'string' && value.trim()) {
-		return value.trim()
-	}
-	if (typeof value === 'number' && Number.isFinite(value)) {
-		return String(value)
 	}
 	return null
 }

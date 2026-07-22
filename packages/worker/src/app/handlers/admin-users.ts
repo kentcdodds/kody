@@ -16,17 +16,16 @@ import {
 	resolvePlanWrite,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
+import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
 	assignUserRole,
 	removeAdminRolePreservingLastAdmin,
 	removeUserRole,
 	requireUserWithPermission,
-	requireUserWithRole,
 } from '#app/permissions-server.ts'
 import { type RoleName, roleNames } from '#app/permissions.ts'
+import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
 import { type routes } from '#app/routes.ts'
 
 export { adminUserListItemFieldNames, type AdminUserListItem }
@@ -35,11 +34,9 @@ export function createAdminHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			try {
-				await requireUserWithRole(request, env, 'admin')
-			} catch (error) {
-				if (error instanceof Response) return error
-				throw error
+			const admin = await requirePageUserWithRole(request, env, 'admin')
+			if (admin instanceof Response) {
+				return admin
 			}
 			return Response.redirect(new URL('/admin/users', request.url), 302)
 		},
@@ -50,16 +47,9 @@ export function createAdminUsersHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			try {
-				await requireUserWithRole(request, env, 'admin')
-			} catch (error) {
-				if (error instanceof Response) return error
-				throw error
-			}
-
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
+			const admin = await requirePageUserWithRole(request, env, 'admin')
+			if (admin instanceof Response) {
+				return admin
 			}
 
 			// The HTML page always seeds the first window; infinite scroll owns
@@ -107,7 +97,7 @@ export function createAdminUsersApiHandler(env: Env) {
 					)
 				}
 
-				const action = readString(body, 'action')
+				const action = readNonEmptyTrimmedStringOrNumber(body, 'action')
 				if (action === 'assign_role') {
 					return handleAssignRoleAction({
 						env,
@@ -183,7 +173,10 @@ async function handleAssignRoleAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
 	body: object
 }) {
-	const targetUserId = readPositiveInt(readString(input.body, 'userId'), 0)
+	const targetUserId = readPositiveInt(
+		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
+		0,
+	)
 	const roleName = readRoleName(input.body, 'role')
 	if (!targetUserId) {
 		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
@@ -245,7 +238,10 @@ async function handleRemoveRoleAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
 	body: object
 }) {
-	const targetUserId = readPositiveInt(readString(input.body, 'userId'), 0)
+	const targetUserId = readPositiveInt(
+		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
+		0,
+	)
 	const roleName = readRoleName(input.body, 'role')
 	if (!targetUserId) {
 		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
@@ -330,7 +326,10 @@ async function handleUpdatePlanAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
 	body: object
 }) {
-	const targetUserId = readPositiveInt(readString(input.body, 'userId'), 0)
+	const targetUserId = readPositiveInt(
+		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
+		0,
+	)
 	if (!targetUserId) {
 		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
 	}
@@ -392,17 +391,6 @@ function isRoleName(value: string): value is RoleName {
 }
 
 function readRoleName(body: object, key: string): RoleName | null {
-	const value = readString(body, key)
+	const value = readNonEmptyTrimmedStringOrNumber(body, key)
 	return value && isRoleName(value) ? value : null
-}
-
-function readString(body: object, key: string) {
-	const value = (body as Record<string, unknown>)[key]
-	if (typeof value === 'string' && value.trim()) {
-		return value.trim()
-	}
-	if (typeof value === 'number' && Number.isFinite(value)) {
-		return String(value)
-	}
-	return null
 }

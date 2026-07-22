@@ -1,12 +1,9 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountRemoteConnectorsData } from '#app/account-remote-connectors-data.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import {
-	redirectToLogin,
-	redirectToLoginWhenUnauthenticated,
-} from '#app/auth-redirect.ts'
+import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
+import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import {
@@ -22,14 +19,9 @@ export function createAccountRemoteConnectorsHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
-			}
-
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return redirectToLoginWhenUnauthenticated(request, env)
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) {
+				return user
 			}
 
 			const accountRemoteConnectors = await loadAccountRemoteConnectorsData({
@@ -75,7 +67,7 @@ export function createAccountRemoteConnectorsApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Invalid request body.' }, 400)
 			}
 
-			const action = readString(body, 'action')
+			const action = readTrimmedStringOrEmpty(body, 'action')
 			try {
 				if (action === 'save') {
 					return await handleSaveAction({
@@ -121,7 +113,7 @@ async function handleSaveAction(input: {
 		env: input.env,
 		userId: input.user.mcpUser.userId,
 		id: readOptionalString(input.body, 'id'),
-		instanceId: readString(input.body, 'instanceId'),
+		instanceId: readTrimmedStringOrEmpty(input.body, 'instanceId'),
 		enabled: readBoolean(input.body, 'enabled', true),
 		attached: readBoolean(input.body, 'attached', true),
 		sharedSecret: readOptionalString(input.body, 'sharedSecret'),
@@ -143,7 +135,7 @@ async function handleDeleteAction(input: {
 	request: Request
 	body: object
 }) {
-	const id = readString(input.body, 'id')
+	const id = readTrimmedStringOrEmpty(input.body, 'id')
 	if (!id) {
 		return jsonResponse(
 			{ ok: false, error: 'Remote connector setting id is required.' },
@@ -170,13 +162,8 @@ async function handleDeleteAction(input: {
 	)
 }
 
-function readString(body: object, key: string) {
-	const value = (body as Record<string, unknown>)[key]
-	return typeof value === 'string' ? value.trim() : ''
-}
-
 function readOptionalString(body: object, key: string) {
-	const value = readString(body, key)
+	const value = readTrimmedStringOrEmpty(body, key)
 	return value || null
 }
 

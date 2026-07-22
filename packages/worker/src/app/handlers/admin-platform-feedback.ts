@@ -4,8 +4,7 @@ import {
 	loadAdminPlatformFeedbackData,
 	readAdminPlatformFeedbackId,
 } from '#app/admin-platform-feedback-data.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
+import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { type routes } from '#app/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -53,17 +52,9 @@ export function createAdminPlatformFeedbackHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			let actor: Awaited<ReturnType<typeof requireUserWithRole>>
-			try {
-				actor = await requireUserWithRole(request, env, 'admin')
-			} catch (error) {
-				if (error instanceof Response) return error
-				throw error
-			}
-
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
+			const actor = await requirePageUserWithRole(request, env, 'admin')
+			if (actor instanceof Response) {
+				return actor
 			}
 
 			const adminPlatformFeedback = await loadAdminPlatformFeedbackData(

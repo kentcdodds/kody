@@ -2,8 +2,7 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { loadAdminCommunityReportsData } from '#app/admin-community-reports-data.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
+import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { type routes } from '#app/routes.ts'
@@ -30,16 +29,9 @@ export function createAdminCommunityReportsHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			try {
-				await requireUserWithRole(request, env, 'admin')
-			} catch (error) {
-				if (error instanceof Response) return error
-				throw error
-			}
-
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
+			const admin = await requirePageUserWithRole(request, env, 'admin')
+			if (admin instanceof Response) {
+				return admin
 			}
 
 			const adminCommunityReports = await loadAdminCommunityReportsData(

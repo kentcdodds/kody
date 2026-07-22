@@ -2,8 +2,7 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { loadAdminSystemEmailData } from '#app/admin-system-email-data.ts'
-import { readAuthSessionResult } from '#app/auth-session.ts'
-import { redirectToLogin } from '#app/auth-redirect.ts'
+import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { type routes } from '#app/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -33,17 +32,9 @@ export function createAdminSystemEmailHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			let actor: Awaited<ReturnType<typeof requireUserWithRole>>
-			try {
-				actor = await requireUserWithRole(request, env, 'admin')
-			} catch (error) {
-				if (error instanceof Response) return error
-				throw error
-			}
-
-			const { session } = await readAuthSessionResult(request)
-			if (!session) {
-				return redirectToLogin(request)
+			const actor = await requirePageUserWithRole(request, env, 'admin')
+			if (actor instanceof Response) {
+				return actor
 			}
 
 			const adminSystemEmail = await loadAdminSystemEmailData(env, request.url)
