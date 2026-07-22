@@ -303,6 +303,35 @@ test('account-specific integration names still match the stable provider', async
 		).toBe(true)
 	}
 
+	const legacyGoogleIntegration = {
+		...createIntegration('google-business'),
+		authorization: null,
+	}
+	expect(resolveIntegrationProviderName(legacyGoogleIntegration)).toBe('google')
+	const accountSpecificSuggestions = await collectIntegrationPackageSuggestions(
+		{
+			env: {} as Env,
+			baseUrl: 'https://example.com',
+			integration: legacyGoogleIntegration,
+			packageRows: [
+				createPackageRow({
+					kodyId: 'google-calendar',
+					name: '@kody/google-calendar',
+					tags: ['google', 'calendar'],
+				}),
+				createPackageRow({
+					kodyId: 'github',
+					name: '@kody/github',
+					tags: ['github'],
+				}),
+			],
+		},
+	)
+	expect(
+		accountSpecificSuggestions.map((suggestion) => suggestion.kodyId),
+	).toEqual(['google-calendar'])
+	expect(mockModule.searchCommunityListings).not.toHaveBeenCalled()
+
 	const googleProvider = resolveIntegrationProviderName(
 		createIntegration('google-business'),
 	)

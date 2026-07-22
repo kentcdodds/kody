@@ -49,6 +49,11 @@ function providerMetadataHosts(
 	return [...hosts, ...(integration.requiredHosts ?? [])]
 }
 
+function normalizeProviderDomainLabel(label: string): string {
+	const withoutApiSuffix = label.replace(/apis?$/, '')
+	return withoutApiSuffix || label
+}
+
 /**
  * Separate the provider identity from an account-specific integration label.
  * A prefix is accepted only when saved endpoint metadata independently
@@ -64,7 +69,7 @@ export function resolveIntegrationProviderName(
 		providerMetadataHosts(integration).flatMap((host) => {
 			const labels = host.toLowerCase().split('.').filter(Boolean)
 			if (labels.length < 2) return labels
-			return [labels.at(-2) ?? '']
+			return [normalizeProviderDomainLabel(labels.at(-2) ?? '')]
 		}),
 	)
 
