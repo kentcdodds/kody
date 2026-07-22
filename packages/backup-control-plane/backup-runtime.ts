@@ -107,13 +107,20 @@ export async function runBackupRuntime(
 		)
 		await step.do(
 			'verify-duplicate-object-manifest',
-			{ retries: { limit: 0, delay: '1 second' }, timeout: '1 minute' },
+			{
+				retries: { limit: 4, delay: '30 seconds', backoff: 'exponential' },
+				timeout: '15 minutes',
+			},
 			async () =>
 				assertDuplicateMatchesManifest(
 					env.BACKUP_BUCKET,
 					checkedPayload.manifestKey,
 					checkedObjectKey,
 					stored,
+					{
+						signedUrl: exported.signedUrl,
+						fetcher: options.downloadFetcher,
+					},
 				),
 		)
 		const completedAt = await step.do('record-completion-time', async () =>

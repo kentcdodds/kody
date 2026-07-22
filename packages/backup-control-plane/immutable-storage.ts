@@ -242,10 +242,40 @@ export async function assertDuplicateMatchesManifest(
 	manifestKey: string,
 	objectKey: string,
 	stored: StoredBackup,
+	signedSource?: {
+		signedUrl: string
+		fetcher?: typeof fetch
+	},
 ): Promise<void> {
-	if (!stored.alreadyExisted) return
 	const manifest = await readManifest(bucket, manifestKey)
-	if (manifest === null) return
+	if (manifest === null) {
+		if (!signedSource) {
+			throw new BackupError(
+				'duplicate-object-manifest-missing',
+				'backup object has no manifest and no signed source verification',
+			)
+		}
+		const download = await fetchSignedDownload(
+			signedSource.signedUrl,
+			signedSource.fetcher ?? fetch,
+		)
+		const verified = await inspectExisting(
+			bucket,
+			objectKey,
+			digestBody(download.body, download.expectedBytes),
+		)
+		if (
+			verified.bytes !== stored.bytes ||
+			verified.sha256 !== stored.sha256 ||
+			verified.r2Etag !== stored.r2Etag
+		) {
+			throw new BackupError(
+				'duplicate-object-source-proof-mismatch',
+				'signed source verification does not match the stored step result',
+			)
+		}
+		return
+	}
 	if (
 		manifest.objectKey !== objectKey ||
 		manifest.bytes !== stored.bytes ||

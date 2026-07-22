@@ -296,6 +296,39 @@ class RetryAfterCommitStep implements BackupRuntimeStep {
 	async sleep(): Promise<void> {}
 }
 
+class CachedUploadStep implements BackupRuntimeStep {
+	private readonly cache = new Map<string, unknown>()
+	private readonly afterUpload: () => void
+
+	constructor(afterUpload: () => void) {
+		this.afterUpload = afterUpload
+	}
+
+	async do<T>(
+		name: string,
+		config: unknown,
+		callback: () => Promise<T>,
+	): Promise<T>
+	async do<T>(name: string, callback: () => Promise<T>): Promise<T>
+	async do<T>(
+		name: string,
+		configOrCallback: unknown,
+		callback?: () => Promise<T>,
+	): Promise<T> {
+		if (this.cache.has(name)) return this.cache.get(name) as T
+		const execute =
+			typeof configOrCallback === 'function'
+				? (configOrCallback as () => Promise<T>)
+				: callback!
+		const value = await execute()
+		this.cache.set(name, value)
+		if (name === 'stream-export-to-immutable-r2') this.afterUpload()
+		return value
+	}
+
+	async sleep(): Promise<void> {}
+}
+
 function exportEnvelope(
 	status?: 'complete' | 'error',
 	bookmark = 'bookmark-1',
@@ -632,7 +665,7 @@ test('workflow retry reuses an upload committed before step persistence and writ
 		},
 	)
 	assert.deepEqual(step.uploadResults, [false, true])
-	assert.equal(downloadCalls, 2)
+	assert.equal(downloadCalls, 3)
 	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 1)
 	assert.equal(
 		result.objectKey,
@@ -685,6 +718,55 @@ test('workflow retry rejects an object tampered after upload and leaves the mani
 			error instanceof BackupError &&
 			error.code === 'existing-object-source-mismatch' &&
 			error.retryable === false,
+	)
+	assert.equal(downloadCalls, 2)
+	assert.equal(
+		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
+		null,
+	)
+	assert.equal(consoleError.mock.calls.length, 1)
+})
+
+test('cached upload result cannot bless a tampered manifest-less object', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
+	consoleError.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
+	const step = new CachedUploadStep(() => {
+		bucket.corrupt(objectKey, 'evil!')
+	})
+	let downloadCalls = 0
+	await assert.rejects(
+		runBackupRuntime(
+			env,
+			{
+				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+				payload,
+				timestamp: new Date('2026-07-22T02:15:01Z'),
+			},
+			step,
+			{
+				api: {
+					fetcher: async (input) =>
+						String(input).endsWith('/export')
+							? exportEnvelope('complete')
+							: identityEnvelope(1_000),
+					sleep: async () => undefined,
+				},
+				downloadFetcher: async () => {
+					downloadCalls += 1
+					return new Response('valid', {
+						headers: { 'content-length': '5' },
+					})
+				},
+			},
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'existing-object-source-mismatch',
 	)
 	assert.equal(downloadCalls, 2)
 	assert.equal(
@@ -801,12 +883,28 @@ test('an existing object without a manifest is recoverable', async () => {
 		'https://download.example',
 		async () => new Response('valid', { headers: { 'content-length': '5' } }),
 	)
+	await assert.rejects(
+		assertDuplicateMatchesManifest(
+			bucket as unknown as R2Bucket,
+			manifestKey,
+			orphanKey,
+			duplicate,
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'duplicate-object-manifest-missing',
+	)
 	await assert.doesNotReject(
 		assertDuplicateMatchesManifest(
 			bucket as unknown as R2Bucket,
 			manifestKey,
 			orphanKey,
 			duplicate,
+			{
+				signedUrl: 'https://download.example',
+				fetcher: async () =>
+					new Response('valid', { headers: { 'content-length': '5' } }),
+			},
 		),
 	)
 	const recoveryKey = objectKeyForBookmark(prefix, 'bookmark-2')

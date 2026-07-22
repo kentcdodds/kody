@@ -402,13 +402,14 @@ prevents duplicate day creation. Immutable R2 puts reject conflicting bytes. The
 single day manifest selects the canonical SQL attempt by its exact
 bookmark-derived `objectKey`.
 
-An attempt object without the canonical day manifest remains quarantined and
-fails closed when that same object key is encountered
-(`duplicate-object-manifest-missing`); do not delete, replace, or bless it
-automatically. Preserve it and escalate for operator investigation. A restarted
-Workflow performs a new D1 export; if Cloudflare returns a different bookmark,
-the restart can write a new immutable SQL key and complete the still-absent day
-manifest while the earlier orphan attempt remains quarantined.
+A manifest-less attempt object is never trusted from R2 alone. Before the
+canonical day manifest can be written, the manifest step independently
+re-fetches the same signed D1 export and stream-compares byte count and SHA-256
+with R2—even when Workflow replay returns a cached upload-step result and skips
+the upload callback. Missing signed-source context fails with
+`duplicate-object-manifest-missing`; unavailable, truncated, oversized, or
+mismatched source leaves the object quarantined and the manifest absent. Do not
+delete, replace, or bless that object automatically.
 
 For each run, the Workflow:
 
@@ -427,9 +428,10 @@ For each run, the Workflow:
    mismatch. The same strictly-below-5-GiB limit is enforced when an immutable
    object already exists, so a pre-existing object at the limit cannot be
    resumed into a manifest;
-6. writes schema-version-1 immutable manifest metadata including source
-   identity, D1 bookmark, timestamps, key, hash, ETag, build commit, and
-   retention tier;
+6. independently repeats signed-source comparison whenever the canonical
+   manifest is absent, then writes schema-version-1 immutable manifest metadata
+   including source identity, D1 bookmark, timestamps, key, hash, ETag, build
+   commit, and retention tier;
 7. emits structured success/failure logs. The hourly freshness check validates
    live source identity and `file_size` against the same size ceiling before it
    validates the expected manifest identity, shape, maximum age (26 hours by

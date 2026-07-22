@@ -19,8 +19,12 @@ key. If a process crashes after writing SQL but before its manifest, a later
 Workflow-step retry reuses the cached export bookmark and therefore inspects the
 same object before constructing the absent canonical manifest. Before an
 existing object can be reused, the retry re-fetches the same signed export and
-stream-compares its exact byte count and SHA-256 with R2. An existing manifest
-must also match that object exactly.
+stream-compares its exact byte count and SHA-256 with R2. The separate manifest
+step repeats that signed-source comparison whenever the manifest is absent, even
+when Workflow replay returns a cached upload-step result and skips the upload
+callback. Without signed-source context it fails with
+`duplicate-object-manifest-missing`. An existing manifest must also match that
+object exactly.
 
 Configure the production R2 bucket lifecycle by these immutable prefixes:
 
