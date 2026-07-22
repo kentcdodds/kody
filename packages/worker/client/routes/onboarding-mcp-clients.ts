@@ -31,6 +31,9 @@ export const mcpClientTabs = [
 	{ id: 'other', label: 'Other', isNonCodingAgent: false },
 ] as const satisfies ReadonlyArray<McpClientTab>
 
+export const chatGptDeveloperModeGuideUrl =
+	'https://developers.openai.com/api/docs/guides/developer-mode'
+
 /** Square favicon suitable for ChatGPT plugin / connector app icons. */
 export function buildKodyAppIconUrl(mcpServerUrl: string) {
 	return new URL('/apple-touch-icon.png', mcpServerUrl).href

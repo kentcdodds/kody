@@ -30,10 +30,14 @@ MCP URL and setup prompt.
   Remote servers are not configured through `claude_desktop_config.json`.
 - **Claude Code** — `claude mcp add --transport http -s user kody <url>`, or a
   `.mcp.json` entry with `"type": "http"`.
-- **ChatGPT** — Turn on Developer mode (Settings → Security and login), then
-  create an app under Settings → Plugins → Browse plugins → Create app with the
-  MCP URL. Use the site favicon (`/apple-touch-icon.png`) for the app icon;
-  ChatGPT does not let you change the icon later.
+- **ChatGPT** — On an
+  [eligible paid plan (Plus, Pro, Business, Enterprise, or Education)](https://developers.openai.com/api/docs/guides/developer-mode),
+  turn on Developer mode on the web (Settings → Security and login), then create
+  an app under Settings → Plugins → Browse plugins → Create app with the MCP
+  URL. In a managed workspace, ask an admin to enable access if the setting or
+  Plugins UI is missing. You can use the site favicon (`/apple-touch-icon.png`)
+  for the app icon; the owner can edit a developer-mode app's name and logo
+  later from Manage in Apps settings.
 - **Codex** — Codex (ChatGPT desktop, CLI, IDE) shares `~/.codex/config.toml`
   with an `[mcp_servers.kody]` `url` entry.
 - **OpenCode** — Add a `mcp.kody` remote entry in `opencode.json`

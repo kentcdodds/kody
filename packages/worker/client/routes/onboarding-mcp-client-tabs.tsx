@@ -9,6 +9,7 @@ import {
 	buildKodyAppIconUrl,
 	buildOpenCodeMcpJson,
 	buildVsCodeMcpJson,
+	chatGptDeveloperModeGuideUrl,
 	codingAgentPackageHint,
 	type McpClientKind,
 	mcpClientTabs,
@@ -114,12 +115,23 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 				<>
 					<p mix={css(descriptionCss)}>
 						In ChatGPT, turn on <strong>Developer mode</strong> under Settings →
-						Security and login (reload ChatGPT if the Plugins UI does not appear
-						yet). Then open{' '}
+						Security and login. Developer mode is available on the web for{' '}
+						<a
+							href={chatGptDeveloperModeGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							eligible paid plans (Plus, Pro, Business, Enterprise, and
+							Education)
+						</a>
+						. In a managed workspace, ask an admin to enable access if the
+						setting or Plugins UI is missing. Then open{' '}
 						<strong>Settings → Plugins → Browse plugins → Create app</strong>.
 						Paste the MCP URL below as the server URL. For the app icon,
-						download Kody&apos;s favicon from the link below — ChatGPT does not
-						let you change the icon later. Complete OAuth when prompted.
+						download Kody&apos;s favicon from the link below. Owners can edit a
+						developer-mode app&apos;s name and logo later from its{' '}
+						<strong>Manage</strong> menu in Apps settings. Complete OAuth when
+						prompted.
 					</p>
 					<CopyCard
 						label="MCP URL"
