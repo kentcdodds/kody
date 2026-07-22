@@ -19,6 +19,12 @@ const accountExportSource = readFileSync(
 	fileURLToPath(new URL('./account-export.ts', import.meta.url)),
 	'utf8',
 )
+const manifestCacheSource = readFileSync(
+	fileURLToPath(
+		new URL('../package-retrievers/manifest-cache.ts', import.meta.url),
+	),
+	'utf8',
+)
 
 test('account export excluded durable objects preserve the legacy manifest list', () => {
 	expect(getAccountExportExcludedDurableObjects()).toEqual([
@@ -160,7 +166,6 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	for (const prefix of [
 		'source-snapshot:v1:',
 		'source-manifest-snapshot:v1:',
-		'package-retriever-index:v1:',
 	]) {
 		expect(
 			accountUserOwnedKvKeySchemes.some((scheme) =>
@@ -173,6 +178,10 @@ test('account deletion and export consume the out-of-band surface registry', () 
 			`account-deletion.ts must still enumerate prefix ${prefix}`,
 		).toBe(true)
 	}
+	expect(manifestCacheSource).toContain('legacyRetrieverScopeIndexPrefix')
+	expect(manifestCacheSource).toContain(
+		'deleteLegacyPackageRetrieverScopeIndexes',
+	)
 
 	for (const surface of accountUserOwnedDurableObjectSurfaces) {
 		if (surface.deletionResultKey == null) continue

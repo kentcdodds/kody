@@ -15,7 +15,14 @@ export type UserScopedDataTarget =
 	// Rows keyed by a `target` column holding the stringified database user id
 	// (Epic Stack-style verifications: 2fa secrets etc).
 	| { kind: 'db_user_target'; table: string }
-	| { kind: 'user_columns'; table: string; columns: ReadonlyArray<string> }
+	| {
+			kind: 'user_columns'
+			table: string
+			columns: ReadonlyArray<string>
+			includeInExport?: boolean
+			surface?: string
+			reason?: string
+	  }
 	| {
 			kind: 'null_user_column'
 			table: string
@@ -214,12 +221,22 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		kind: 'user_columns',
 		table: 'community_reports',
 		columns: ['listing_owner_user_id', 'reporter_user_id'],
+		includeInExport: false,
+		surface: 'community_report_deletion_parties',
+		reason:
+			'This combined predicate exists for deletion. Export ownership is limited to the separate reporter predicate so listing owners cannot receive reports about their listings.',
+	},
+	{
+		kind: 'user_columns',
+		table: 'community_reports',
+		columns: ['reporter_user_id'],
 	},
 	{
 		kind: 'null_user_column',
 		table: 'community_reports',
 		matchColumn: 'resolved_by_user_id',
 		nullColumns: ['resolved_by_user_id', 'resolved_at', 'resolution_note'],
+		includeInExport: false,
 	},
 	// A grant dies with its scope owner or grantee, but survives deletion of
 	// the admin who created it (the grant remains valid; only attribution is

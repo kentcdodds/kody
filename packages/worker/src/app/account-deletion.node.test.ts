@@ -193,6 +193,30 @@ function createTestDb(
 									})
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
+							if (
+								lower.startsWith(
+									'select rowid as account_r2_rowid, id from email_messages',
+								)
+							) {
+								const afterRowid = Number(params[1])
+								const limit = Number(params[2])
+								results = (rows.email_messages ?? [])
+									.map((row, index) => ({
+										row,
+										account_r2_rowid: index + 1,
+									}))
+									.filter(
+										(entry) =>
+											entry.row['user_id'] === userId &&
+											entry.account_r2_rowid > afterRowid,
+									)
+									.slice(0, limit)
+									.map((entry) => ({
+										account_r2_rowid: entry.account_r2_rowid,
+										id: entry.row['id'],
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
 							const m = lower.match(/^select id from (\w+) where user_id = \?/)
 							if (m) {
 								const table = m[1] as string

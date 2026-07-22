@@ -42,6 +42,29 @@ function bindingFor(
 	return surface.binding
 }
 
+async function listUserEmailMessageIds(env: Env, userId: string) {
+	const ids: Array<string> = []
+	let afterRowid = 0
+	const pageSize = 500
+	while (true) {
+		const rows = await env.APP_DB.prepare(
+			`SELECT rowid AS account_r2_rowid, id
+			FROM email_messages
+			WHERE user_id = ? AND rowid > ?
+			ORDER BY rowid
+			LIMIT ?`,
+		)
+			.bind(userId, afterRowid, pageSize + 1)
+			.all<{ account_r2_rowid: number; id: string }>()
+		const page = rows.results ?? []
+		const truncated = page.length > pageSize
+		const included = truncated ? page.slice(0, pageSize) : page
+		ids.push(...included.map((row) => row.id))
+		if (!truncated) return ids
+		afterRowid = included.at(-1)?.account_r2_rowid ?? afterRowid
+	}
+}
+
 export async function collectAccountR2Inventory(input: {
 	env: Env
 	userId: string
@@ -52,11 +75,7 @@ export async function collectAccountR2Inventory(input: {
 }> {
 	const [rawMimeRows, attachmentRows, listingRows, avatarRow] =
 		await Promise.all([
-			input.env.APP_DB.prepare(
-				`SELECT id FROM email_messages WHERE user_id = ?`,
-			)
-				.bind(input.userId)
-				.all<{ id: string }>(),
+			listUserEmailMessageIds(input.env, input.userId),
 			input.env.APP_DB.prepare(
 				`SELECT attachment.storage_key AS storage_key
 				FROM email_attachments attachment
@@ -93,10 +112,10 @@ export async function collectAccountR2Inventory(input: {
 		iconCommit: row.source_published_commit ?? row.pinned_commit,
 	}))
 	const objects: Array<AccountR2ObjectRef> = [
-		...(rawMimeRows.results ?? []).map((row) => ({
+		...rawMimeRows.map((messageId) => ({
 			surfaceId: 'email_raw_mime' as const,
 			binding: bindingFor('email_raw_mime'),
-			key: emailRawMimeKey(input.userId, row.id),
+			key: emailRawMimeKey(input.userId, messageId),
 		})),
 		...(attachmentRows.results ?? []).map((row) => ({
 			surfaceId: 'email_attachment_storage_key' as const,

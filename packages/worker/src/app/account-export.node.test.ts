@@ -141,12 +141,14 @@ test('account export documents and excludes operator-owned system email rows', a
 	expect(accountExport.d1.email_messages.rows).toEqual([
 		expect.objectContaining({ id: 'user-message', user_id: 'user-aaa' }),
 	])
-	expect(accountExport.manifest.excludedD1Surfaces).toEqual([
-		expect.objectContaining({
-			name: 'system_email_inboxes',
-			reason: expect.stringContaining('Operator-owned inbound mail'),
-		}),
-	])
+	expect(accountExport.manifest.excludedD1Surfaces).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				name: 'system_email_inboxes',
+				reason: expect.stringContaining('Operator-owned inbound mail'),
+			}),
+		]),
+	)
 })
 
 test('account export includes submitted feedback but excludes reviewer-only relationships', async () => {
