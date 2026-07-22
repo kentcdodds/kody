@@ -367,4 +367,19 @@ test('account-specific integration names still match the stable provider', async
 			acmeProvider,
 		),
 	).toBe(false)
+
+	const rapidApiIntegration = {
+		...createIntegration('rapidapi-team'),
+		tokenUrl: 'https://rapidapi.com/oauth/token',
+		apiBaseUrl: 'https://api.rapidapi.com/v1',
+		requiredHosts: ['api.rapidapi.com'],
+		authorization: null,
+	}
+	expect(resolveIntegrationProviderName(rapidApiIntegration)).toBe('rapidapi')
+	expect(
+		resolveIntegrationProviderName({
+			...rapidApiIntegration,
+			name: 'rapid-team',
+		}),
+	).toBe('rapid-team')
 })

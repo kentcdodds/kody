@@ -49,9 +49,12 @@ function providerMetadataHosts(
 	return [...hosts, ...(integration.requiredHosts ?? [])]
 }
 
+const providerDomainAliases: Readonly<Record<string, string>> = {
+	googleapis: 'google',
+}
+
 function normalizeProviderDomainLabel(label: string): string {
-	const withoutApiSuffix = label.replace(/apis?$/, '')
-	return withoutApiSuffix || label
+	return providerDomainAliases[label] ?? label
 }
 
 /**
