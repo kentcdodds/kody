@@ -403,13 +403,15 @@ single day manifest selects the canonical SQL attempt by its exact
 bookmark-derived `objectKey`.
 
 A manifest-less attempt object is never trusted from R2 alone. Before the
-canonical day manifest can be written, the manifest step independently
-re-fetches the same signed D1 export and stream-compares byte count and SHA-256
-with R2—even when Workflow replay returns a cached upload-step result and skips
-the upload callback. Missing signed-source context fails with
-`duplicate-object-manifest-missing`; unavailable, truncated, oversized, or
-mismatched source leaves the object quarantined and the manifest absent. Do not
-delete, replace, or bless that object automatically.
+canonical day manifest can be written, one retryable finalization step
+re-fetches the same signed D1 export, stream-compares byte count and SHA-256
+with R2, and writes the immutable manifest. Workflow can cache that step only
+after manifest creation; otherwise replay re-runs source verification. This also
+applies when replay returns a cached upload-step result and skips its callback.
+Missing signed-source context fails with `duplicate-object-manifest-missing`;
+unavailable, truncated, oversized, or mismatched source leaves the object
+quarantined and the manifest absent. Do not delete, replace, or bless that
+object automatically.
 
 For each run, the Workflow:
 
@@ -428,10 +430,10 @@ For each run, the Workflow:
    mismatch. The same strictly-below-5-GiB limit is enforced when an immutable
    object already exists, so a pre-existing object at the limit cannot be
    resumed into a manifest;
-6. independently repeats signed-source comparison whenever the canonical
-   manifest is absent, then writes schema-version-1 immutable manifest metadata
-   including source identity, D1 bookmark, timestamps, key, hash, ETag, build
-   commit, and retention tier;
+6. in one retryable finalization step, independently repeats signed-source
+   comparison whenever the canonical manifest is absent and writes
+   schema-version-1 immutable manifest metadata including source identity, D1
+   bookmark, timestamps, key, hash, ETag, build commit, and retention tier;
 7. emits structured success/failure logs. The hourly freshness check validates
    live source identity and `file_size` against the same size ceiling before it
    validates the expected manifest identity, shape, maximum age (26 hours by

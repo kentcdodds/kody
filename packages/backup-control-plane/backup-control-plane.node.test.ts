@@ -299,9 +299,14 @@ class RetryAfterCommitStep implements BackupRuntimeStep {
 class CachedUploadStep implements BackupRuntimeStep {
 	private readonly cache = new Map<string, unknown>()
 	private readonly afterUpload: () => void
+	private readonly afterFinalization?: () => Promise<void>
 
-	constructor(afterUpload: () => void) {
+	constructor(
+		afterUpload: () => void,
+		afterFinalization?: () => Promise<void>,
+	) {
 		this.afterUpload = afterUpload
+		this.afterFinalization = afterFinalization
 	}
 
 	async do<T>(
@@ -323,6 +328,12 @@ class CachedUploadStep implements BackupRuntimeStep {
 		const value = await execute()
 		this.cache.set(name, value)
 		if (name === 'stream-export-to-immutable-r2') this.afterUpload()
+		if (
+			name === 'verify-source-and-write-immutable-manifest' &&
+			this.afterFinalization
+		) {
+			await this.afterFinalization()
+		}
 		return value
 	}
 
@@ -774,6 +785,46 @@ test('cached upload result cannot bless a tampered manifest-less object', async 
 		null,
 	)
 	assert.equal(consoleError.mock.calls.length, 1)
+})
+
+test('source verification and manifest commit share one Workflow step boundary', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	let finalizationObserved = false
+	const step = new CachedUploadStep(
+		() => undefined,
+		async () => {
+			finalizationObserved = true
+			assert.notEqual(
+				await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
+				null,
+			)
+		},
+	)
+	await runBackupRuntime(
+		env,
+		{
+			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+			payload,
+			timestamp: new Date('2026-07-22T02:15:01Z'),
+		},
+		step,
+		{
+			api: {
+				fetcher: async (input) =>
+					String(input).endsWith('/export')
+						? exportEnvelope('complete')
+						: identityEnvelope(1_000),
+				sleep: async () => undefined,
+			},
+			downloadFetcher: async () =>
+				new Response('valid', {
+					headers: { 'content-length': '5' },
+				}),
+		},
+	)
+	assert.equal(finalizationObserved, true)
 })
 
 for (const status of [401, 403]) {

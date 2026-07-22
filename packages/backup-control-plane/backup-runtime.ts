@@ -105,24 +105,6 @@ export async function runBackupRuntime(
 					options.downloadFetcher,
 				),
 		)
-		await step.do(
-			'verify-duplicate-object-manifest',
-			{
-				retries: { limit: 4, delay: '30 seconds', backoff: 'exponential' },
-				timeout: '15 minutes',
-			},
-			async () =>
-				assertDuplicateMatchesManifest(
-					env.BACKUP_BUCKET,
-					checkedPayload.manifestKey,
-					checkedObjectKey,
-					stored,
-					{
-						signedUrl: exported.signedUrl,
-						fetcher: options.downloadFetcher,
-					},
-				),
-		)
 		const completedAt = await step.do('record-completion-time', async () =>
 			new Date().toISOString(),
 		)
@@ -146,17 +128,28 @@ export async function runBackupRuntime(
 			retentionTier: checkedPayload.retentionTier,
 		}
 		await step.do(
-			'write-immutable-manifest',
+			'verify-source-and-write-immutable-manifest',
 			{
-				retries: { limit: 4, delay: '10 seconds', backoff: 'exponential' },
-				timeout: '1 minute',
+				retries: { limit: 4, delay: '30 seconds', backoff: 'exponential' },
+				timeout: '15 minutes',
 			},
-			async () =>
-				putImmutableManifest(
+			async () => {
+				await assertDuplicateMatchesManifest(
+					env.BACKUP_BUCKET,
+					checkedPayload.manifestKey,
+					checkedObjectKey,
+					stored,
+					{
+						signedUrl: exported.signedUrl,
+						fetcher: options.downloadFetcher,
+					},
+				)
+				await putImmutableManifest(
 					env.BACKUP_BUCKET,
 					checkedPayload.manifestKey,
 					manifest,
-				),
+				)
+			},
 		)
 		safeLog({
 			event: 'backup-success',
