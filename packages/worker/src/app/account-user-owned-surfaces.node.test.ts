@@ -161,7 +161,8 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	expect(accountExportSource).toContain(
 		'getAccountExportExcludedDurableObjects',
 	)
-	expect(accountExportSource).toContain('collectAccountR2Inventory')
+	expect(accountExportSource).toContain('readAccountR2ExportPage')
+	expect(accountExportSource).not.toContain('collectAccountR2Inventory')
 
 	for (const prefix of [
 		'source-snapshot:v1:',

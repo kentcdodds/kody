@@ -170,8 +170,10 @@ test('listing-owner deletion predicates are excluded from export for private par
 		.map((target) => target.table)
 		.sort()
 	expect(excludedListingChildren).toEqual([
+		'community_activity_events',
 		'community_forks',
 		'community_ratings',
 		'community_reports',
+		'community_stars',
 	])
 })

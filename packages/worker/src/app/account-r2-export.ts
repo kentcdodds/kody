@@ -1,0 +1,607 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
+import { emailRawMimeKey } from '#worker/email/repo.ts'
+import {
+	type AccountR2Binding,
+	type AccountR2ObjectRef,
+} from './account-r2-inventory.ts'
+
+const accountR2CursorVersion = 1
+const accountR2ChunkBytes = 256 * 1024
+
+type R2ScanState =
+	| { stage: 'avatar' }
+	| { stage: 'community_icon'; afterRowid: number }
+	| { stage: 'email_raw_mime'; afterRowid: number }
+	| { stage: 'email_attachment_storage_key'; afterRowid: number }
+	| { stage: 'done' }
+
+type R2ObjectSource =
+	| { kind: 'avatar' }
+	| {
+			kind: 'community_icon'
+			rowid: number
+			listingId: string
+			commitSlot: 'pinned' | 'icon'
+	  }
+	| { kind: 'email_raw_mime'; rowid: number; messageId: string }
+	| {
+			kind: 'email_attachment_storage_key'
+			rowid: number
+			attachmentId: string
+	  }
+
+type StableR2Ref = AccountR2ObjectRef & { source: R2ObjectSource }
+
+type R2Cursor = {
+	v: typeof accountR2CursorVersion
+	state: R2ScanState
+	current?: {
+		ref: StableR2Ref
+		offset: number
+		etag?: string
+		size?: number
+	}
+	pending?: StableR2Ref
+}
+
+function encodeBase64Url(value: string) {
+	const bytes = new TextEncoder().encode(value)
+	let binary = ''
+	for (const byte of bytes) binary += String.fromCharCode(byte)
+	return btoa(binary)
+		.replaceAll('+', '-')
+		.replaceAll('/', '_')
+		.replace(/=+$/u, '')
+}
+
+function decodeBase64Url(value: string) {
+	const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
+	const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
+	const binary = atob(padded)
+	return new TextDecoder().decode(
+		Uint8Array.from(binary, (character) => character.charCodeAt(0)),
+	)
+}
+
+function encodeCursor(cursor: R2Cursor) {
+	return encodeBase64Url(JSON.stringify(cursor))
+}
+
+function isScanState(value: unknown): value is R2ScanState {
+	if (!value || typeof value !== 'object' || !('stage' in value)) return false
+	const stage = (value as { stage: unknown }).stage
+	if (stage === 'avatar' || stage === 'done') return true
+	return (
+		(stage === 'community_icon' ||
+			stage === 'email_raw_mime' ||
+			stage === 'email_attachment_storage_key') &&
+		'afterRowid' in value &&
+		Number.isSafeInteger((value as { afterRowid: unknown }).afterRowid) &&
+		(value as { afterRowid: number }).afterRowid >= 0
+	)
+}
+
+function decodeCursor(value: string | undefined): R2Cursor {
+	if (!value) {
+		return { v: accountR2CursorVersion, state: { stage: 'avatar' } }
+	}
+	try {
+		const parsed = JSON.parse(decodeBase64Url(value)) as R2Cursor
+		if (parsed.v !== accountR2CursorVersion || !isScanState(parsed.state)) {
+			throw new Error('unsupported cursor')
+		}
+		return parsed
+	} catch {
+		throw new Error('Invalid r2_object cursor.')
+	}
+}
+
+function bucketFor(env: Env, binding: AccountR2Binding) {
+	return binding === 'EMAIL_BLOBS' ? env.EMAIL_BLOBS : env.COMMUNITY_ASSETS
+}
+
+async function findNextRef(input: {
+	env: Env
+	userId: string
+	dbUserId: number
+	cursor: R2Cursor
+}): Promise<R2Cursor> {
+	let cursor = input.cursor
+	while (!cursor.current) {
+		if (cursor.pending) {
+			return {
+				v: accountR2CursorVersion,
+				state: cursor.state,
+				current: { ref: cursor.pending, offset: 0 },
+			}
+		}
+		switch (cursor.state.stage) {
+			case 'avatar': {
+				const row = await input.env.APP_DB.prepare(
+					`SELECT avatar_key FROM users WHERE id = ?`,
+				)
+					.bind(input.dbUserId)
+					.first<{ avatar_key: string | null }>()
+				cursor = {
+					v: accountR2CursorVersion,
+					state: { stage: 'community_icon', afterRowid: 0 },
+					...(row?.avatar_key
+						? {
+								current: {
+									ref: {
+										surfaceId: 'user_avatar',
+										binding: 'COMMUNITY_ASSETS',
+										key: row.avatar_key,
+										source: { kind: 'avatar' },
+									},
+									offset: 0,
+								},
+							}
+						: {}),
+				}
+				break
+			}
+			case 'community_icon': {
+				const row = await input.env.APP_DB.prepare(
+					`SELECT community_listings.rowid AS source_rowid,
+						community_listings.id, community_listings.pinned_commit,
+						entity_sources.published_commit AS source_published_commit
+					FROM community_listings
+					LEFT JOIN entity_sources
+						ON entity_sources.id = community_listings.source_id
+						AND entity_sources.user_id = community_listings.owner_user_id
+						AND entity_sources.entity_kind = 'package'
+						AND entity_sources.entity_id = community_listings.package_id
+					WHERE community_listings.owner_user_id = ?
+						AND community_listings.rowid > ?
+					ORDER BY community_listings.rowid
+					LIMIT 1`,
+				)
+					.bind(input.userId, cursor.state.afterRowid)
+					.first<{
+						source_rowid: number
+						id: string
+						pinned_commit: string
+						source_published_commit: string | null
+					}>()
+				if (!row) {
+					cursor = {
+						v: accountR2CursorVersion,
+						state: { stage: 'email_raw_mime', afterRowid: 0 },
+					}
+					break
+				}
+				const commits = Array.from(
+					new Set([
+						row.pinned_commit,
+						row.source_published_commit ?? row.pinned_commit,
+					]),
+				)
+				const refs = commits.map(
+					(commit, index): StableR2Ref => ({
+						surfaceId: 'community_icon',
+						binding: 'COMMUNITY_ASSETS',
+						key: buildCommunityIconR2Key({
+							listingId: row.id,
+							commit,
+						}),
+						source: {
+							kind: 'community_icon',
+							rowid: row.source_rowid,
+							listingId: row.id,
+							commitSlot: index === 0 ? 'pinned' : 'icon',
+						},
+					}),
+				)
+				cursor = {
+					v: accountR2CursorVersion,
+					state: {
+						stage: 'community_icon',
+						afterRowid: row.source_rowid,
+					},
+					current: { ref: refs[0]!, offset: 0 },
+					...(refs[1] ? { pending: refs[1] } : {}),
+				}
+				break
+			}
+			case 'email_raw_mime': {
+				const row = await input.env.APP_DB.prepare(
+					`SELECT rowid AS source_rowid, id
+					FROM email_messages
+					WHERE user_id = ? AND rowid > ?
+					ORDER BY rowid
+					LIMIT 1`,
+				)
+					.bind(input.userId, cursor.state.afterRowid)
+					.first<{ source_rowid: number; id: string }>()
+				if (!row) {
+					cursor = {
+						v: accountR2CursorVersion,
+						state: {
+							stage: 'email_attachment_storage_key',
+							afterRowid: 0,
+						},
+					}
+					break
+				}
+				cursor = {
+					v: accountR2CursorVersion,
+					state: {
+						stage: 'email_raw_mime',
+						afterRowid: row.source_rowid,
+					},
+					current: {
+						ref: {
+							surfaceId: 'email_raw_mime',
+							binding: 'EMAIL_BLOBS',
+							key: emailRawMimeKey(input.userId, row.id),
+							source: {
+								kind: 'email_raw_mime',
+								rowid: row.source_rowid,
+								messageId: row.id,
+							},
+						},
+						offset: 0,
+					},
+				}
+				break
+			}
+			case 'email_attachment_storage_key': {
+				const row = await input.env.APP_DB.prepare(
+					`SELECT attachment.rowid AS source_rowid, attachment.id,
+						attachment.storage_key
+					FROM email_attachments AS attachment
+					JOIN email_messages AS message
+						ON message.id = attachment.message_id
+					WHERE message.user_id = ?
+						AND attachment.storage_key IS NOT NULL
+						AND attachment.rowid > ?
+					ORDER BY attachment.rowid
+					LIMIT 1`,
+				)
+					.bind(input.userId, cursor.state.afterRowid)
+					.first<{
+						source_rowid: number
+						id: string
+						storage_key: string
+					}>()
+				if (!row) {
+					cursor = {
+						v: accountR2CursorVersion,
+						state: { stage: 'done' },
+					}
+					break
+				}
+				cursor = {
+					v: accountR2CursorVersion,
+					state: {
+						stage: 'email_attachment_storage_key',
+						afterRowid: row.source_rowid,
+					},
+					current: {
+						ref: {
+							surfaceId: 'email_attachment_storage_key',
+							binding: 'EMAIL_BLOBS',
+							key: row.storage_key,
+							source: {
+								kind: 'email_attachment_storage_key',
+								rowid: row.source_rowid,
+								attachmentId: row.id,
+							},
+						},
+						offset: 0,
+					},
+				}
+				break
+			}
+			case 'done': {
+				return cursor
+			}
+			default: {
+				const exhaustive: never = cursor.state
+				throw new Error(
+					`Unhandled R2 scan state: ${JSON.stringify(exhaustive)}`,
+				)
+			}
+		}
+	}
+	return cursor
+}
+
+async function resolveCurrentRef(input: {
+	env: Env
+	userId: string
+	dbUserId: number
+	ref: StableR2Ref
+}): Promise<AccountR2ObjectRef | null> {
+	switch (input.ref.source.kind) {
+		case 'avatar': {
+			const row = await input.env.APP_DB.prepare(
+				`SELECT avatar_key FROM users WHERE id = ?`,
+			)
+				.bind(input.dbUserId)
+				.first<{ avatar_key: string | null }>()
+			return row?.avatar_key === input.ref.key ? input.ref : null
+		}
+		case 'community_icon': {
+			const row = await input.env.APP_DB.prepare(
+				`SELECT community_listings.pinned_commit,
+					entity_sources.published_commit AS source_published_commit
+				FROM community_listings
+				LEFT JOIN entity_sources
+					ON entity_sources.id = community_listings.source_id
+					AND entity_sources.user_id = community_listings.owner_user_id
+					AND entity_sources.entity_kind = 'package'
+					AND entity_sources.entity_id = community_listings.package_id
+				WHERE community_listings.owner_user_id = ?
+					AND community_listings.rowid = ?
+					AND community_listings.id = ?`,
+			)
+				.bind(input.userId, input.ref.source.rowid, input.ref.source.listingId)
+				.first<{
+					pinned_commit: string
+					source_published_commit: string | null
+				}>()
+			if (!row) return null
+			const commit =
+				input.ref.source.commitSlot === 'pinned'
+					? row.pinned_commit
+					: (row.source_published_commit ?? row.pinned_commit)
+			return buildCommunityIconR2Key({
+				listingId: input.ref.source.listingId,
+				commit,
+			}) === input.ref.key
+				? input.ref
+				: null
+		}
+		case 'email_raw_mime': {
+			const row = await input.env.APP_DB.prepare(
+				`SELECT id FROM email_messages
+				WHERE user_id = ? AND rowid = ? AND id = ?`,
+			)
+				.bind(input.userId, input.ref.source.rowid, input.ref.source.messageId)
+				.first<{ id: string }>()
+			return row && emailRawMimeKey(input.userId, row.id) === input.ref.key
+				? input.ref
+				: null
+		}
+		case 'email_attachment_storage_key': {
+			const row = await input.env.APP_DB.prepare(
+				`SELECT attachment.storage_key
+				FROM email_attachments AS attachment
+				JOIN email_messages AS message
+					ON message.id = attachment.message_id
+				WHERE message.user_id = ?
+					AND attachment.rowid = ?
+					AND attachment.id = ?`,
+			)
+				.bind(
+					input.userId,
+					input.ref.source.rowid,
+					input.ref.source.attachmentId,
+				)
+				.first<{ storage_key: string | null }>()
+			return row?.storage_key === input.ref.key ? input.ref : null
+		}
+		default: {
+			const exhaustive: never = input.ref.source
+			throw new Error(`Unhandled R2 source: ${JSON.stringify(exhaustive)}`)
+		}
+	}
+}
+
+function cursorAfterCurrent(cursor: R2Cursor): R2Cursor {
+	return {
+		v: accountR2CursorVersion,
+		state: cursor.state,
+		...(cursor.pending ? { current: { ref: cursor.pending, offset: 0 } } : {}),
+	}
+}
+
+function encodeBytesBase64(bytes: Uint8Array) {
+	let binary = ''
+	const blockSize = 32 * 1024
+	for (let offset = 0; offset < bytes.length; offset += blockSize) {
+		binary += String.fromCharCode(...bytes.subarray(offset, offset + blockSize))
+	}
+	return btoa(binary)
+}
+
+export async function readAccountR2ExportPage(input: {
+	env: Env
+	userId: string
+	dbUserId: number
+	startAfter?: string
+	warnings: Array<string>
+}) {
+	const cursor = await findNextRef({
+		env: input.env,
+		userId: input.userId,
+		dbUserId: input.dbUserId,
+		cursor: decodeCursor(input.startAfter),
+	})
+	if (!cursor.current) {
+		return {
+			items: [] as Array<unknown>,
+			truncated: false,
+			nextStartAfter: null,
+		}
+	}
+	const current = cursor.current
+	const ref = await resolveCurrentRef({
+		env: input.env,
+		userId: input.userId,
+		dbUserId: input.dbUserId,
+		ref: current.ref,
+	})
+	const after = cursorAfterCurrent(cursor)
+	if (!ref) {
+		input.warnings.push(
+			`R2 export source changed for ${current.ref.binding}/${current.ref.key}.`,
+		)
+		return {
+			items: [
+				{
+					...current.ref,
+					source: undefined,
+					changed: true,
+					change: 'ownership_or_key_changed',
+				},
+			],
+			truncated: true,
+			nextStartAfter: encodeCursor(after),
+		}
+	}
+	const bucket = bucketFor(input.env, ref.binding)
+	try {
+		if (current.offset > 0) {
+			const head = await bucket.head(ref.key)
+			if (
+				!head ||
+				head.httpEtag !== current.etag ||
+				head.size !== current.size
+			) {
+				input.warnings.push(
+					`R2 object changed during export for ${ref.binding}/${ref.key}.`,
+				)
+				return {
+					items: [
+						{
+							...ref,
+							changed: true,
+							change: 'object_overwritten',
+							expectedEtag: current.etag,
+							actualEtag: head?.httpEtag ?? null,
+						},
+					],
+					truncated: true,
+					nextStartAfter: encodeCursor(after),
+				}
+			}
+		}
+		const object = await bucket.get(ref.key, {
+			range: { offset: current.offset, length: accountR2ChunkBytes },
+		})
+		if (!object) {
+			return {
+				items: [{ ...ref, missing: true }],
+				truncated: true,
+				nextStartAfter: encodeCursor(after),
+			}
+		}
+		if (
+			current.etag !== undefined &&
+			(object.httpEtag !== current.etag || object.size !== current.size)
+		) {
+			input.warnings.push(
+				`R2 object changed during export for ${ref.binding}/${ref.key}.`,
+			)
+			return {
+				items: [
+					{
+						...ref,
+						changed: true,
+						change: 'object_overwritten',
+						expectedEtag: current.etag,
+						actualEtag: object.httpEtag,
+					},
+				],
+				truncated: true,
+				nextStartAfter: encodeCursor(after),
+			}
+		}
+		const bytes = new Uint8Array(await object.arrayBuffer())
+		const nextOffset = current.offset + bytes.byteLength
+		const objectComplete = nextOffset >= object.size
+		return {
+			items: [
+				{
+					...ref,
+					offset: current.offset,
+					size: object.size,
+					contentType: object.httpMetadata?.contentType ?? null,
+					etag: object.httpEtag,
+					contentBase64: encodeBytesBase64(bytes),
+					objectComplete,
+				},
+			],
+			truncated: true,
+			nextStartAfter: encodeCursor(
+				objectComplete
+					? after
+					: {
+							...cursor,
+							current: {
+								ref: current.ref,
+								offset: nextOffset,
+								etag: object.httpEtag,
+								size: object.size,
+							},
+						},
+			),
+		}
+	} catch (error) {
+		input.warnings.push(
+			`R2 object export failed for ${ref.binding}/${ref.key}: ${getErrorMessage(error)}`,
+		)
+		return {
+			items: [{ ...ref, unavailable: true }],
+			truncated: true,
+			nextStartAfter: encodeCursor(after),
+		}
+	}
+}
+
+export async function countAccountR2ObjectRefs(input: {
+	env: Env
+	userId: string
+	dbUserId: number
+}) {
+	const [messages, attachments, icons, avatar] = await Promise.all([
+		input.env.APP_DB.prepare(
+			`SELECT COUNT(*) AS count FROM email_messages WHERE user_id = ?`,
+		)
+			.bind(input.userId)
+			.first<{ count: number }>(),
+		input.env.APP_DB.prepare(
+			`SELECT COUNT(*) AS count
+			FROM email_attachments AS attachment
+			JOIN email_messages AS message ON message.id = attachment.message_id
+			WHERE message.user_id = ? AND attachment.storage_key IS NOT NULL`,
+		)
+			.bind(input.userId)
+			.first<{ count: number }>(),
+		input.env.APP_DB.prepare(
+			`SELECT COALESCE(SUM(
+				CASE
+					WHEN entity_sources.published_commit IS NULL
+						OR entity_sources.published_commit = community_listings.pinned_commit
+					THEN 1 ELSE 2
+				END
+			), 0) AS count
+			FROM community_listings
+			LEFT JOIN entity_sources
+				ON entity_sources.id = community_listings.source_id
+				AND entity_sources.user_id = community_listings.owner_user_id
+				AND entity_sources.entity_kind = 'package'
+				AND entity_sources.entity_id = community_listings.package_id
+			WHERE community_listings.owner_user_id = ?`,
+		)
+			.bind(input.userId)
+			.first<{ count: number }>(),
+		input.env.APP_DB.prepare(
+			`SELECT CASE WHEN avatar_key IS NULL OR TRIM(avatar_key) = ''
+				THEN 0 ELSE 1 END AS count
+			FROM users WHERE id = ?`,
+		)
+			.bind(input.dbUserId)
+			.first<{ count: number }>(),
+	])
+	return (
+		Number(messages?.count ?? 0) +
+		Number(attachments?.count ?? 0) +
+		Number(icons?.count ?? 0) +
+		Number(avatar?.count ?? 0)
+	)
+}

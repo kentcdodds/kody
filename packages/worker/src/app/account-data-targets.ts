@@ -177,12 +177,20 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		kind: 'community_listing_child',
 		table: 'community_stars',
 		listingColumn: 'listing_id',
+		includeInExport: false,
+		surface: 'community_listing_stars_by_other_users',
+		reason:
+			'Stars belong in the stargazer export. Listing-owner deletion still cascades them, but listing-owner export must not disclose another user’s bookmark or its timestamp.',
 	},
 	{ kind: 'user_id', table: 'community_stars' },
 	{
 		kind: 'community_listing_child',
 		table: 'community_activity_events',
 		listingColumn: 'listing_id',
+		includeInExport: false,
+		surface: 'community_listing_activity_by_other_users',
+		reason:
+			'Stored community activity belongs in the actor export. Listing-owner deletion still cascades it, but listing-owner export must not disclose another actor’s event type or timestamp.',
 	},
 	{
 		kind: 'user_columns',

@@ -19,10 +19,14 @@ function applyMigrations(db: DatabaseSync) {
 
 function createD1FromSqlite(
 	db: DatabaseSync,
-	options?: { onQueryRows?: (rowCount: number) => void },
+	options?: {
+		onQueryRows?: (rowCount: number) => void
+		onQuery?: (query: string) => void
+	},
 ) {
 	return {
 		prepare(query: string) {
+			options?.onQuery?.(query.replace(/\s+/g, ' ').trim())
 			return {
 				bind(...params: Array<unknown>) {
 					return {
@@ -68,6 +72,7 @@ function createD1FromSqlite(
 
 function createMigratedDb(options?: {
 	onQueryRows?: (rowCount: number) => void
+	onQuery?: (query: string) => void
 }) {
 	const sqlite = new DatabaseSync(':memory:')
 	applyMigrations(sqlite)
@@ -324,10 +329,6 @@ test('account export includes profile fields and social graph edges for either s
 	).toBe(false)
 
 	expect(accountExport.d1.community_stars.rows).toEqual([
-		expect.objectContaining({
-			listing_id: 'listing-a',
-			user_id: '[redacted]',
-		}),
 		expect.objectContaining({ listing_id: 'listing-b', user_id: 'user-aaa' }),
 	])
 	expect(
@@ -342,11 +343,6 @@ test('account export includes profile fields and social graph edges for either s
 			actor_user_id: 'user-aaa',
 			event_type: 'listing_published',
 		}),
-		expect.objectContaining({
-			id: 'evt-b',
-			actor_user_id: '[redacted]',
-			listing_id: 'listing-a',
-		}),
 	])
 	expect(
 		accountExport.d1.community_activity_events.rows.some(
@@ -355,10 +351,10 @@ test('account export includes profile fields and social graph edges for either s
 	).toBe(false)
 
 	expect(accountExport.manifest.sections['d1.user_follows']?.count).toBe(2)
-	expect(accountExport.manifest.sections['d1.community_stars']?.count).toBe(2)
+	expect(accountExport.manifest.sections['d1.community_stars']?.count).toBe(1)
 	expect(
 		accountExport.manifest.sections['d1.community_activity_events']?.count,
-	).toBe(2)
+	).toBe(1)
 })
 
 test('account export separates listing-owner deletion cascades from participant ownership', async () => {
@@ -514,14 +510,204 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 			unavailable: true,
 		}),
 	])
-	expect(third.truncated).toBe(false)
+	expect(third.truncated).toBe(true)
 	expect(third.warnings).toEqual([
 		expect.stringContaining('R2 object export failed'),
 	])
+	const done = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'r2_object',
+		startAfter: third.nextStartAfter ?? undefined,
+	})
+	expect(done.items).toEqual([])
+	expect(done.truncated).toBe(false)
 	expect(getEmailBlob).not.toHaveBeenCalledWith(
 		'email-raw:v1:user-bbb/mail-b',
 		expect.anything(),
 	)
+})
+
+test('R2 export performs bounded keyset work independent of mailbox size', async () => {
+	const queries: Array<string> = []
+	const { sqlite, db } = createMigratedDb({
+		onQuery: (query) => queries.push(query),
+	})
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		) VALUES (
+			1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05',
+			'2026-07-05', 'user-aaa'
+		);
+	`)
+	const insert = sqlite.prepare(
+		`INSERT INTO email_messages (
+			id, direction, user_id, from_address, subject, processing_status,
+			created_at, updated_at
+		) VALUES (?, 'inbound', 'user-aaa', 'sender@example.com', ?, 'stored', '2026-07-05', '2026-07-05')`,
+	)
+	for (let index = 0; index < 1201; index += 1) {
+		insert.run(`mail-${String(index).padStart(4, '0')}`, `Mail ${index}`)
+	}
+	const page = await readAccountExportSection({
+		env: {
+			APP_DB: db,
+			EMAIL_BLOBS: { get: vi.fn(async () => null) },
+			COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
+		} as unknown as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'r2_object',
+	})
+	expect(page.items).toEqual([
+		expect.objectContaining({
+			key: 'email-raw:v1:user-aaa/mail-0000',
+			missing: true,
+		}),
+	])
+	expect(queries.length).toBeLessThanOrEqual(4)
+	expect(
+		queries.some(
+			(query) =>
+				query.includes('FROM email_messages') && !query.includes('LIMIT 1'),
+		),
+	).toBe(false)
+})
+
+test('R2 export cursor detects object overwrite before continuing bytes', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id, avatar_key
+		) VALUES (
+			1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05',
+			'2026-07-05', 'user-aaa', 'user-avatars/user-aaa/avatar.png'
+		);
+	`)
+	const bytes = new Uint8Array(300 * 1024).fill(1)
+	let etag = '"v1"'
+	const get = vi.fn(
+		async (
+			_key: string,
+			options?: { range?: { offset: number; length: number } },
+		) => {
+			const offset = options?.range?.offset ?? 0
+			const length = options?.range?.length ?? bytes.byteLength
+			const chunk = bytes.slice(offset, offset + length)
+			return {
+				size: bytes.byteLength,
+				httpEtag: etag,
+				httpMetadata: { contentType: 'image/png' },
+				arrayBuffer: async () => chunk.buffer,
+			}
+		},
+	)
+	const head = vi.fn(async () => ({
+		size: bytes.byteLength,
+		httpEtag: etag,
+	}))
+	const env = {
+		APP_DB: db,
+		COMMUNITY_ASSETS: { get, head },
+		EMAIL_BLOBS: { get: vi.fn(async () => null), head },
+	} as unknown as Env
+	const first = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'r2_object',
+	})
+	expect(first.items).toEqual([
+		expect.objectContaining({
+			offset: 0,
+			etag: '"v1"',
+			objectComplete: false,
+		}),
+	])
+	etag = '"v2"'
+	const second = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'r2_object',
+		startAfter: first.nextStartAfter ?? undefined,
+	})
+	expect(second.items).toEqual([
+		expect.objectContaining({
+			changed: true,
+			change: 'object_overwritten',
+			expectedEtag: '"v1"',
+			actualEtag: '"v2"',
+		}),
+	])
+	expect(get).toHaveBeenCalledTimes(1)
+})
+
+test('R2 export cursor keeps stable row identity when inventory mutates', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		) VALUES (
+			1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05',
+			'2026-07-05', 'user-aaa'
+		);
+		INSERT INTO email_messages (
+			id, direction, user_id, from_address, subject, processing_status,
+			created_at, updated_at
+		) VALUES
+			('mail-a', 'inbound', 'user-aaa', 'sender@example.com', 'A', 'stored', '2026-07-05', '2026-07-05'),
+			('mail-b', 'inbound', 'user-aaa', 'sender@example.com', 'B', 'stored', '2026-07-05', '2026-07-05');
+	`)
+	const requestedKeys: Array<string> = []
+	const get = vi.fn(async (key: string) => {
+		requestedKeys.push(key)
+		const bytes = new TextEncoder().encode(key)
+		return {
+			size: bytes.byteLength,
+			httpEtag: `"${key}"`,
+			arrayBuffer: async () => bytes.buffer,
+		}
+	})
+	const env = {
+		APP_DB: db,
+		EMAIL_BLOBS: { get },
+		COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
+	} as unknown as Env
+	const first = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'r2_object',
+	})
+	sqlite.exec(`
+		INSERT INTO email_messages (
+			id, direction, user_id, from_address, subject, processing_status,
+			created_at, updated_at
+		) VALUES (
+			'mail-00', 'inbound', 'user-aaa', 'sender@example.com', 'Inserted',
+			'stored', '2026-07-05', '2026-07-05'
+		);
+	`)
+	const second = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'r2_object',
+		startAfter: first.nextStartAfter ?? undefined,
+	})
+	expect(second.items).toEqual([
+		expect.objectContaining({ key: 'email-raw:v1:user-aaa/mail-b' }),
+	])
+	expect(requestedKeys).toEqual([
+		'email-raw:v1:user-aaa/mail-a',
+		'email-raw:v1:user-aaa/mail-b',
+	])
 })
 
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {

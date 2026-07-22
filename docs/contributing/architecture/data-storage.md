@@ -45,12 +45,13 @@ installs and ordinary forks share the same row shape and therefore appear as
 
 Account deletion is implemented in `packages/worker/src/app/account-deletion.ts`
 and is intentionally inventory driven. The operation first enumerates user-owned
-identifiers while D1 rows still exist, then best-effort deletes out-of-band
-stores, then deletes or clears D1 rows, revokes OAuth grants, and finally
-deletes the `users` row. Each step records deleted counts, updated counts for
-cleared references, and warnings so the HTTP response states what was removed
-and what needs operator attention. Re-running the operation is safe: missing
-rows, missing KV keys, missing vectors, deleted Artifacts repos, and
+identifiers while D1 rows still exist, then performs idempotent out-of-band and
+OAuth cleanup. Any critical cleanup failure preserves D1 and the user row for
+retry. Only after cleanup succeeds does one atomic D1 batch delete or clear all
+user rows and the `users` row. Each step records deleted counts, updated counts
+for cleared references, and warnings so the HTTP response states what was
+removed and what needs operator attention. Re-running the operation is safe:
+missing rows, missing KV keys, missing vectors, deleted Artifacts repos, and
 already-cleared Durable Objects are treated as successful no-ops or warning-only
 failures.
 
@@ -84,11 +85,11 @@ Deletion must cover these user-owned surfaces:
   rows and removed with `deleteByIds`.
 - **R2:** raw email MIME blobs in `EMAIL_BLOBS` are enumerated from
   `email_messages` (deterministic `emailRawMimeKey` keys) and attachment storage
-  keys while those rows still exist, then deleted best-effort with warnings,
-  mirroring the KV/Vectorize reporting. Rows owned by `system:email` keep their
-  blobs here (they are not user data); those blobs are removed when the
-  system-email retention prune deletes the messages through the shared
-  delete-message helper.
+  keys while those rows still exist. A failed object delete aborts D1
+  finalization so those inventory rows remain available for retry. Rows owned by
+  `system:email` keep their blobs here (they are not user data); those blobs are
+  removed when the system-email retention prune deletes the messages through the
+  shared delete-message helper.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
   community listing snapshots, and per-user package retriever cache/index keys
   in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
@@ -138,8 +139,6 @@ Exports are versioned JSON documents:
 - `oauthGrants` — OAuth grant metadata only.
 - `artifactRepos` — Artifacts repo pointers from `entity_sources`.
 - `kvKeys` — KV source/cache keys that belong to the user.
-- `r2Objects` — owned R2 object references. Payload bytes are read through the
-  chunked `r2_object` section rather than embedded in this full JSON document.
 
 Secret values are **never** exported. `secret_entries` rows are metadata-only:
 name, description, bucket, allowed hosts, allowed kody, allowed packages, and
@@ -162,7 +161,11 @@ migration-safe chunked interface:
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
   storage export capability. R2 raw MIME, attachment, avatar, and icon objects
   use `section: "r2_object"`; each response contains at most one 256 KiB base64
-  chunk and an opaque cursor. Missing objects are represented explicitly.
+  chunk and an opaque cursor. Each request uses bounded `LIMIT 1` ownership
+  queries rather than reconstructing inventory. Continuation cursors bind the
+  source row, object key, size, and ETag; ownership/key mutations and object
+  overwrites are reported instead of mixing generations. Missing objects are
+  represented explicitly.
 
 D1 rows are always read with SQL-level keyset pagination: every query orders by
 the table's `rowid`, resumes strictly after an opaque cursor, and applies a SQL
@@ -356,8 +359,8 @@ rows only.
   that canonical key): `deleteEmailMessageById` (best-effort after the D1 row
   delete), user email retention and system-email retention (strict: blob delete
   before row delete; failed blob deletes skip the row for retry), and account
-  deletion (best-effort with warnings; enumerates every message id for the user
-  before D1 rows are removed).
+  deletion (strict before atomic D1 finalization; a failed blob delete preserves
+  every message row for retry).
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style

@@ -130,6 +130,21 @@ export class AccountDeletionInventoryError extends Error {
 	}
 }
 
+export class AccountDeletionCleanupError extends Error {
+	readonly cleanupErrors: ReadonlyArray<string>
+	readonly partialResult: AccountDeletionResult
+
+	constructor(
+		cleanupErrors: ReadonlyArray<string>,
+		partialResult: AccountDeletionResult,
+	) {
+		super('Account deletion cleanup could not complete safely.')
+		this.name = 'AccountDeletionCleanupError'
+		this.cleanupErrors = [...cleanupErrors]
+		this.partialResult = partialResult
+	}
+}
+
 function uniqueStrings(values: Iterable<string | null | undefined>) {
 	return Array.from(
 		new Set(
@@ -688,7 +703,12 @@ async function deleteVectorsByIds(input: {
 }): Promise<number> {
 	if (input.ids.length === 0) return 0
 	const index = getCapabilityVectorIndex(input.env)
-	if (!index) return 0
+	if (!index) {
+		input.warnings.push(
+			`CAPABILITY_VECTOR_INDEX binding was unavailable; ${input.ids.length} user vector(s) were not removed.`,
+		)
+		return 0
+	}
 	let deleted = 0
 	const batchSize = 100
 	for (let offset = 0; offset < input.ids.length; offset += batchSize) {
@@ -791,11 +811,10 @@ async function deleteRetrieverCache(input: {
 	}
 }
 
-async function deleteUserScopedRows(input: {
+async function deleteUserScopedRowsAndUser(input: {
 	env: Env
 	mcpUserId: string
 	dbUserId: number
-	warnings: Array<string>
 }): Promise<{
 	deletedRowCounts: Record<string, number>
 	updatedRowCounts: Record<string, number>
@@ -810,52 +829,35 @@ async function deleteUserScopedRows(input: {
 		updatedRowCounts[tableName] =
 			(updatedRowCounts[tableName] ?? 0) + (changes ?? 0)
 	}
-	for (const target of accountUserDataTargets) {
+	const operations = accountUserDataTargets.map((target) => {
 		const match = buildUserScopedTargetMatch({
 			target,
 			mcpUserId: input.mcpUserId,
 			dbUserId: input.dbUserId,
 		})
-		try {
-			const { sql, params } = buildUserScopedDeleteOrUpdateSql(match)
-			const result = await input.env.APP_DB.prepare(sql)
-				.bind(...params)
-				.run()
-			if (match.mutation.kind === 'delete') {
-				recordDeleted(match.table, result.meta.changes)
-			} else {
-				recordUpdated(match.table, result.meta.changes)
-			}
-		} catch (error) {
-			const message = getErrorMessage(error)
-			input.warnings.push(`Failed to delete from ${match.table}: ${message}`)
-			if (match.mutation.kind === 'delete') {
-				recordDeleted(match.table, 0)
-			} else {
-				recordUpdated(match.table, 0)
-			}
+		const { sql, params } = buildUserScopedDeleteOrUpdateSql(match)
+		return {
+			match,
+			statement: input.env.APP_DB.prepare(sql).bind(...params),
+		}
+	})
+	const userStatement = input.env.APP_DB.prepare(
+		`DELETE FROM users WHERE id = ?`,
+	).bind(input.dbUserId)
+	const results = await input.env.APP_DB.batch([
+		...operations.map((operation) => operation.statement),
+		userStatement,
+	])
+	for (const [index, operation] of operations.entries()) {
+		const changes = results[index]?.meta.changes
+		if (operation.match.mutation.kind === 'delete') {
+			recordDeleted(operation.match.table, changes)
+		} else {
+			recordUpdated(operation.match.table, changes)
 		}
 	}
+	deletedRowCounts.users = results.at(-1)?.meta.changes ?? 0
 	return { deletedRowCounts, updatedRowCounts }
-}
-
-async function deleteUserRow(input: {
-	env: Env
-	dbUserId: number
-	warnings: Array<string>
-}): Promise<number> {
-	try {
-		const result = await input.env.APP_DB.prepare(
-			`DELETE FROM users WHERE id = ?`,
-		)
-			.bind(input.dbUserId)
-			.run()
-		return result.meta.changes ?? 0
-	} catch (error) {
-		const message = getErrorMessage(error)
-		input.warnings.push(`Failed to delete user row: ${message}`)
-		return 0
-	}
 }
 
 /**
@@ -866,12 +868,11 @@ async function deleteUserRow(input: {
  * The cleanup ordering is:
  *   1. Pre-collect identifiers we need (vector ids, storage ids, KV keys,
  *      repo/session/package ids) while their owning rows still exist.
- *   2. Best-effort destructive cleanup of out-of-band stores (Vectorize,
- *      Artifacts repos, Durable Objects, KV) - each batch records a warning on
- *      failure but does not abort the cascade.
- *   3. Delete user-scoped D1 rows in dependency-safe order.
- *   4. Revoke OAuth grants and delete the user's row last so a partially
- *      failed run can be retried with the same email.
+ *   2. Idempotent cleanup of out-of-band stores and OAuth grants.
+ *   3. Abort while preserving D1 inventory and the user row if any critical
+ *      cleanup failed. The five-minute usage-rollup derived cache is the sole
+ *      TTL-owned omission and does not participate in this gate.
+ *   4. Atomically delete user-scoped D1 rows and the user row in one batch.
  */
 export async function deleteUserAccount(input: {
 	env: AccountDeletionEnv
@@ -1014,15 +1015,6 @@ export async function deleteUserAccount(input: {
 		warnings,
 	})
 
-	const d1Cleanup = await deleteUserScopedRows({
-		env: input.env,
-		mcpUserId: input.mcpUserId,
-		dbUserId: input.dbUserId,
-		warnings,
-	})
-	result.deletedRowCounts = d1Cleanup.deletedRowCounts
-	result.updatedRowCounts = d1Cleanup.updatedRowCounts
-
 	const helpers = input.env.OAUTH_PROVIDER
 	if (helpers) {
 		try {
@@ -1041,12 +1033,23 @@ export async function deleteUserAccount(input: {
 		)
 	}
 
-	const deletedUserRows = await deleteUserRow({
-		env: input.env,
-		dbUserId: input.dbUserId,
-		warnings,
-	})
-	result.deletedRowCounts.users = deletedUserRows
+	if (warnings.length > 0) {
+		throw new AccountDeletionCleanupError(warnings, result)
+	}
+
+	try {
+		const d1Cleanup = await deleteUserScopedRowsAndUser({
+			env: input.env,
+			mcpUserId: input.mcpUserId,
+			dbUserId: input.dbUserId,
+		})
+		result.deletedRowCounts = d1Cleanup.deletedRowCounts
+		result.updatedRowCounts = d1Cleanup.updatedRowCounts
+	} catch (error) {
+		const failure = `Atomic D1 account deletion failed: ${getErrorMessage(error)}`
+		warnings.push(failure)
+		throw new AccountDeletionCleanupError(warnings, result)
+	}
 
 	return result
 }

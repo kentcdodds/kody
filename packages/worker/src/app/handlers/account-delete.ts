@@ -4,6 +4,7 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { type routes } from '#app/routes.ts'
 import {
+	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
 	deleteUserAccount,
 } from '#app/account-deletion.ts'
@@ -82,7 +83,14 @@ export function createAccountDeleteHandler(env: Env) {
 					mcpUserId: user.mcpUser.userId,
 				})
 			} catch (error) {
-				if (!(error instanceof AccountDeletionInventoryError)) throw error
+				if (
+					!(
+						error instanceof AccountDeletionInventoryError ||
+						error instanceof AccountDeletionCleanupError
+					)
+				) {
+					throw error
+				}
 				void logAuditEvent({
 					category: 'auth',
 					action: 'account_delete',
@@ -90,7 +98,10 @@ export function createAccountDeleteHandler(env: Env) {
 					email: user.email,
 					ip: requestIp,
 					path: url.pathname,
-					reason: 'inventory_incomplete',
+					reason:
+						error instanceof AccountDeletionInventoryError
+							? 'inventory_incomplete'
+							: 'cleanup_incomplete',
 				})
 				return Response.json(
 					{
