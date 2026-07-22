@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import {
 	applyRawFetchHostCounts,
+	codeUsesIntegrationAuthHelpers,
 	createRawFetchHostSink,
 	formatRawFetchHostNudge,
 	listHostsApproachingRawFetchNudge,
@@ -156,4 +157,35 @@ test('raw-fetch host nudge counts hosts, tips at threshold once, excludes covere
 			count: 3,
 		}),
 	])
+
+	expect(codeUsesIntegrationAuthHelpers('const x = 1')).toBe(false)
+	expect(
+		codeUsesIntegrationAuthHelpers(
+			`import { createAuthenticatedFetch } from 'kody:runtime'`,
+		),
+	).toBe(true)
+	expect(
+		codeUsesIntegrationAuthHelpers(
+			`import { refreshAccessToken } from 'kody:runtime'`,
+		),
+	).toBe(true)
+
+	const authHelperTip = applyRawFetchHostCounts({
+		state: null,
+		conversationId: 'conv-oauth',
+		hostCounts: { 'gmail.googleapis.com': 3 },
+		usedIntegrationAuthHelpers: true,
+	})
+	const authHelperNudge = formatRawFetchHostNudge({
+		hostname: 'gmail.googleapis.com',
+		count: 3,
+		usedIntegrationAuthHelpers: true,
+	})
+	const plainNudge = formatRawFetchHostNudge({
+		hostname: 'gmail.googleapis.com',
+		count: 3,
+	})
+	expect(authHelperTip.nudges).toEqual([authHelperNudge])
+	expect(authHelperNudge).not.toBe(plainNudge)
+	expect(authHelperNudge).toContain('gmail.googleapis.com')
 })

@@ -96,11 +96,35 @@ export function wrapOutboundFetcherRecordingHosts(
 	} as Fetcher
 }
 
+/**
+ * True when execute/package source references raw OAuth/integration auth
+ * helpers. Used only to sharpen the packages-first failure-moment steer —
+ * not as a hard gate (smoke tests still use these helpers).
+ */
+export function codeUsesIntegrationAuthHelpers(code: string) {
+	return /\b(?:createAuthenticatedFetch|refreshAccessToken)\b/.test(code)
+}
+
+/**
+ * One-line packages-first steer when ad hoc execute repeatedly raw-fetches a
+ * product API host. Integrations are auth; packages are how agents should call
+ * the product. Prefer trusted community packages when forking.
+ */
 export function formatRawFetchHostNudge(input: {
 	hostname: string
 	count: number
+	usedIntegrationAuthHelpers?: boolean
 }) {
-	return `Raw-fetched ${input.hostname} ${input.count}x this conversation — consider openapi_binding_save or a saved package for this API (search for existing ones first).`
+	const mentalModel =
+		'Integrations = auth; packages = how agents should call the product.'
+	const packagesFirst =
+		'Prefer a package: search for an existing wrapper, then community_search (prefer trusted), then fork or create a thin helpers package.'
+	const openapiAside =
+		'Use openapi_binding_save only when an OpenAPI binding fits.'
+	if (input.usedIntegrationAuthHelpers) {
+		return `Raw integration auth hit ${input.hostname} ${input.count}x this conversation. ${mentalModel} ${packagesFirst} ${openapiAside}`
+	}
+	return `Raw-fetched ${input.hostname} ${input.count}x this conversation. ${mentalModel} ${packagesFirst} ${openapiAside}`
 }
 
 /**
@@ -136,6 +160,11 @@ export function applyRawFetchHostCounts(input: {
 	hostCounts: ReadonlyMap<string, number> | Record<string, number>
 	/** Hosts that already have a saved OpenAPI binding — never nudge these. */
 	coveredHosts?: ReadonlySet<string> | Iterable<string>
+	/**
+	 * When the execute module used createAuthenticatedFetch / refreshAccessToken,
+	 * sharpen the nudge toward packages (integrations are auth only).
+	 */
+	usedIntegrationAuthHelpers?: boolean
 }): {
 	state: RawFetchHostNudgeState
 	nudges: Array<string>
@@ -153,6 +182,7 @@ export function applyRawFetchHostCounts(input: {
 	const covered = toNormalizedHostSet(input.coveredHosts)
 	const increments = toHostCountEntries(input.hostCounts)
 	const nudges: Array<string> = []
+	const usedIntegrationAuthHelpers = input.usedIntegrationAuthHelpers === true
 
 	for (const [hostname, increment] of increments) {
 		if (increment <= 0) continue
@@ -166,7 +196,13 @@ export function applyRawFetchHostCounts(input: {
 			!covered.has(hostname)
 		) {
 			entry.nudged = true
-			nudges.push(formatRawFetchHostNudge({ hostname, count: entry.count }))
+			nudges.push(
+				formatRawFetchHostNudge({
+					hostname,
+					count: entry.count,
+					usedIntegrationAuthHelpers,
+				}),
+			)
 		}
 	}
 

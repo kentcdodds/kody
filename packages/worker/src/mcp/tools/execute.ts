@@ -40,6 +40,7 @@ import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 import {
 	applyRawFetchHostCounts,
+	codeUsesIntegrationAuthHelpers,
 	createRawFetchHostSink,
 	listHostsApproachingRawFetchNudge,
 	readLiteralRequestHostname,
@@ -300,6 +301,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					callerContext,
 					conversationId: resolvedConversationId,
 					hostCounts: rawFetchHosts.hostCounts(),
+					usedIntegrationAuthHelpers: codeUsesIntegrationAuthHelpers(code),
 				})
 
 				if (result.error) {
@@ -537,6 +539,7 @@ async function resolveRawFetchHostNudges(input: {
 	callerContext: ReturnType<McpRegistrationAgent['getCallerContext']>
 	conversationId: string
 	hostCounts: ReadonlyMap<string, number>
+	usedIntegrationAuthHelpers?: boolean
 }): Promise<Array<string>> {
 	if (input.hostCounts.size === 0) return []
 
@@ -566,6 +569,7 @@ async function resolveRawFetchHostNudges(input: {
 		conversationId: input.conversationId,
 		hostCounts: input.hostCounts,
 		coveredHosts,
+		usedIntegrationAuthHelpers: input.usedIntegrationAuthHelpers,
 	})
 	if (typeof statefulAgent.setState === 'function') {
 		statefulAgent.setState({

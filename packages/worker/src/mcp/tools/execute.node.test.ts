@@ -630,4 +630,33 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation and ski
 		conversationId: 'conv-covered',
 	})
 	expect(covered.structuredContent.warnings).toBeUndefined()
+
+	// Integration-auth helper source sharpens the packages-first warning text.
+	mockModule.runModuleWithRegistry.mockImplementationOnce(
+		async (
+			_env,
+			_ctx,
+			_code,
+			_params,
+			options: { rawFetchHostSink?: { add: (hostname: string) => void } },
+		) => {
+			options.rawFetchHostSink?.add('gmail.googleapis.com')
+			options.rawFetchHostSink?.add('gmail.googleapis.com')
+			options.rawFetchHostSink?.add('gmail.googleapis.com')
+			return { result: { ok: true }, logs: [] }
+		},
+	)
+	mockPerformanceSequence(9, 10)
+	const authHelperTipped = await handler({
+		code: `import { createAuthenticatedFetch } from 'kody:runtime'
+export default async () => ({ ok: true })`,
+		conversationId: 'conv-oauth-nudge',
+	})
+	expect(authHelperTipped.structuredContent.warnings).toHaveLength(1)
+	expect(authHelperTipped.structuredContent.warnings?.[0]).toContain(
+		'gmail.googleapis.com',
+	)
+	expect(authHelperTipped.structuredContent.warnings?.[0]).not.toBe(
+		tipped.structuredContent.warnings?.[0],
+	)
 })
