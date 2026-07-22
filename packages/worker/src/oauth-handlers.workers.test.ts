@@ -73,6 +73,16 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 		listUserGrants: async () => ({ items: [] }),
 		revokeGrant: async () => undefined,
 		unwrapToken: async () => null,
+		async exchangeToken() {
+			throw new Error('Not implemented')
+		},
+		purgeExpiredData: async () => ({
+			grantsChecked: 0,
+			grantsPurged: 0,
+			tokensChecked: 0,
+			tokensPurged: 0,
+			done: true,
+		}),
 		...overrides,
 	}
 }
@@ -791,6 +801,11 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 			encryptedProps: '',
 			createdAt: Math.floor(Date.now() / 1000),
 			authCodeId: await createSha256Hex(code),
+			// 0.8+ treats a missing authCodeWrappedKey as an already-used code and
+			// returns invalid_grant before redirect_uri validation. Keep a dummy
+			// wrapped key so the malformed-client redirectUris TypeError still
+			// reaches the worker exception mapper under test.
+			authCodeWrappedKey: 'malformed-client-auth-code-wrapped-key',
 			resource: 'https://heykody.dev/mcp',
 			codeChallenge: 'verifier',
 			codeChallengeMethod: 'plain',

@@ -48,6 +48,16 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 		listUserGrants: async () => ({ items: [] }),
 		revokeGrant: async () => undefined,
 		unwrapToken: async () => null,
+		async exchangeToken() {
+			throw new Error('Not implemented')
+		},
+		purgeExpiredData: async () => ({
+			grantsChecked: 0,
+			grantsPurged: 0,
+			tokensChecked: 0,
+			tokensPurged: 0,
+			done: true,
+		}),
 		...overrides,
 	}
 }

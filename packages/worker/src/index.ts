@@ -353,6 +353,10 @@ const oauthProvider = new OAuthProvider({
 	tokenEndpoint: oauthPaths.token,
 	clientRegistrationEndpoint: oauthPaths.register,
 	scopesSupported: oauthScopes,
+	// Provider default onError logs every structured OAuth error via console.warn.
+	// Keep those responses on the wire without duplicating them into worker logs /
+	// test console guards; unexpected throws still reach our fetch catch + Sentry.
+	onError: () => undefined,
 	// NOTE: we intentionally do NOT set `allowPlainPKCE: false`. In this provider
 	// version that option rejects EVERY authorize request whose
 	// `code_challenge_method` is absent or `plain` — including confidential
@@ -397,8 +401,8 @@ function isOAuthProviderOwnedPath(pathname: string) {
 
 function isMalformedOAuthClientException(error: unknown, pathname: string) {
 	const message = error instanceof Error ? error.message : ''
-	// @cloudflare/workers-oauth-provider@0.4.0 throws this raw TypeError
-	// when a stored client is missing redirectUris during token validation.
+	// @cloudflare/workers-oauth-provider still throws this raw TypeError when a
+	// stored client is missing redirectUris during token redirect_uri checks.
 	return (
 		pathname === oauthPaths.token &&
 		message.includes("Cannot read properties of undefined (reading 'some')")
@@ -538,6 +542,12 @@ const workerHandler = {
 			{
 				name: 'stripe_plan_refresh',
 				run: () => refreshStaleStripePlans({ env, now: scheduledAt }),
+			},
+			{
+				// 0.5+ defaults refresh/client TTLs and exposes purgeExpiredData for
+				// defense-in-depth cleanup of orphaned OAUTH_KV grants/tokens.
+				name: 'oauth_purge_expired',
+				run: () => oauthProvider.purgeExpiredData(env),
 			},
 		]
 		if (shouldRunRetentionCron(scheduledAt)) {
