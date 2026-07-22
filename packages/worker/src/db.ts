@@ -73,6 +73,7 @@ export const invitesTable = table({
 		expires_at: c.text(),
 		revoked_at: c.text(),
 		created_at: c.text(),
+		plan: c.text(),
 	},
 	primaryKey: 'code',
 })

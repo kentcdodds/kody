@@ -272,9 +272,9 @@ test('repo_open_session resumes an existing active session without enforcing the
 	expect(resumeRpc.openSession).not.toHaveBeenCalled()
 })
 
-test('repo_open_session stays unlimited for users without a plan', async () => {
+test('repo_open_session stays unlimited for unlimited plan users', async () => {
 	resetMocks()
-	const email = 'legacy@example.com'
+	const email = 'unlimited@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const limit = planLimits.pro.maxRepoSessions
 	if (limit === null) {
@@ -282,7 +282,7 @@ test('repo_open_session stays unlimited for users without a plan', async () => {
 	}
 	const env = {
 		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: null }],
+			users: [{ email, plan: 'unlimited' }],
 			repoSessionCount: limit + 1,
 		}),
 	} as Env
@@ -293,7 +293,7 @@ test('repo_open_session stays unlimited for users without a plan', async () => {
 			user: {
 				userId,
 				email,
-				displayName: 'Legacy User',
+				displayName: 'Unlimited User',
 			},
 		}),
 	}

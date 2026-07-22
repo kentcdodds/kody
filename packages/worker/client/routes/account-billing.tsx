@@ -104,10 +104,10 @@ function formatCancelDate(value: string) {
 }
 
 function planCoversTier(
-	effectivePlan: AdminPlanName | null,
+	effectivePlan: AdminPlanName,
 	tier: PlanTier,
 ): boolean {
-	if (effectivePlan == null || effectivePlan === 'unlimited') return true
+	if (effectivePlan === 'unlimited') return true
 	return getPlanRank(effectivePlan) >= getPlanRank(tier)
 }
 

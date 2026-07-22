@@ -25,7 +25,10 @@ import { assignUserRole } from '#app/permissions-db.ts'
 import { type routes } from '#app/routes.ts'
 import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
-import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
+import {
+	parseStoredPlanName,
+	type PlanName,
+} from '#worker/entitlements/plans.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -237,7 +240,9 @@ export function createAuthHandler(env: Env) {
 						)
 					}
 					consumedInviteCode = inviteResult.invite.code
-					consumedInvitePlan = parsePlanName(inviteResult.invite.plan)
+					consumedInvitePlan = parseStoredPlanName(
+						inviteResult.invite.plan,
+					)
 				}
 
 				let record: { id: number } | null = null

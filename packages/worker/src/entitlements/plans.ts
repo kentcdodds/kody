@@ -1,17 +1,31 @@
 /**
  * Plan definitions and per-plan resource limits.
  *
- * First-class plans include `unlimited`. New writers always persist a plan
- * name (never NULL). During stage 1, reads stay dual-compatible: stored NULL
- * and unknown strings still parse as null and retain historical fail-open
- * behavior (no ordinary entitlement enforcement). Enforcement activates for
- * recognized plan names from `planNames`.
+ * First-class plans include `unlimited`. Writers persist a plan name (never
+ * NULL). After `users.plan` NOT NULL, reads resolve stored values to
+ * {@link PlanName} via {@link parseStoredPlanName}: known names including
+ * `unlimited` are unchanged; unexpected NULL / unknown strings fail open to
+ * `unlimited` with a stable console.warn. Untrusted admin/API input still
+ * uses strict {@link parsePlanName} so typos are rejected rather than coerced.
  */
 
 export const planNames = ['free', 'partner', 'pro', 'unlimited'] as const
 
 export type PlanName = (typeof planNames)[number]
 
+/**
+ * Stable console.warn tag when {@link parseStoredPlanName} coerces an
+ * unexpected NULL or unknown stored string to `unlimited`. Never include
+ * user identifiers or the raw stored value in the warn arguments.
+ */
+export const unknownStoredPlanWarningTag = 'entitlement-unknown-stored-plan'
+
+/**
+ * Strict plan-name parser for untrusted admin/API input validation.
+ * Unknown strings, typos, nullish values, and non-strings return null so
+ * callers can reject them. Do not use this for reading stored `users.plan` /
+ * `invites.plan` columns — use {@link parseStoredPlanName} instead.
+ */
 export function parsePlanName(value: unknown): PlanName | null {
 	return typeof value === 'string' &&
 		(planNames as ReadonlyArray<string>).includes(value)
@@ -20,8 +34,26 @@ export function parsePlanName(value: unknown): PlanName | null {
 }
 
 /**
+ * Parse a plan value read from a stored `users.plan` (or equivalent) column.
+ *
+ * Unlike {@link parsePlanName} (strict validation for untrusted admin/API
+ * input — typos and unknown strings stay null so writers can reject them),
+ * this helper always returns a {@link PlanName}: known names including
+ * `unlimited` are unchanged; defensive unexpected NULL and unknown stored
+ * strings fail open to `unlimited` and emit {@link unknownStoredPlanWarningTag}
+ * with no user data.
+ */
+export function parseStoredPlanName(value: unknown): PlanName {
+	const plan = parsePlanName(value)
+	if (plan) return plan
+	console.warn(unknownStoredPlanWarningTag)
+	return 'unlimited'
+}
+
+/**
  * Parse a plan name that may come from Stripe metadata or `users.stripe_plan`.
- * `unlimited` is never purchasable or Stripe-sourced.
+ * `unlimited` is never purchasable or Stripe-sourced. `stripe_plan` stays
+ * nullable; unknown / null / `unlimited` values contribute nothing.
  */
 export function parseStripePlanName(value: unknown): PlanName | null {
 	const plan = parsePlanName(value)
@@ -60,17 +92,16 @@ export function getPlanRank(plan: PlanName): number {
 /**
  * Effective plan for entitlement enforcement.
  *
- * - Manual plan NULL → effective NULL (stage-1 dual-read fail-open; a Stripe
- *   subscription never downgrades a stored-NULL account into enforcement).
+ * - Manual arg is a non-null {@link PlanName} (callers resolve stored values
+ *   with {@link parseStoredPlanName} first).
  * - Manual `unlimited` always wins over any Stripe plan.
  * - Otherwise the higher-ranked of manual and stripe plans.
  * - Unknown/NULL/`unlimited` stripe_plan contributes nothing.
  */
 export function resolveEffectivePlan(
-	manualPlan: PlanName | null,
+	manualPlan: PlanName,
 	stripePlan: string | null,
-): PlanName | null {
-	if (!manualPlan) return null
+): PlanName {
 	if (manualPlan === 'unlimited') return 'unlimited'
 	const parsedStripe = parseStripePlanName(stripePlan)
 	if (!parsedStripe) return manualPlan
@@ -146,28 +177,21 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 }
 
 /**
- * Fallback limits for users without a plan on the email resources.
- *
- * Email is abuse-sensitive in both directions — inbound volume is
+ * Deployment-level email backstops shared by the first-class `unlimited`
+ * plan. Email is abuse-sensitive in both directions — inbound volume is
  * attacker-controlled (anyone can send to a `{username}@<platform domain>`
- * address) and outbound sending is an outreach-abuse surface — so unlike
- * other resources stored NULL / unknown strings during stage 1 do not mean
- * uncapped mail here: accounts without a recognized plan and the explicit
- * `unlimited` plan get these deployment-level backstops instead. The receive
- * and storage numbers sit between the `free` and `pro` plan limits; the send
- * backstop sits between `free` and `pro` send limits as well.
- *
- * The first-class `unlimited` plan uses these same numbers as its email
- * limits so new accounts match historical stored-NULL email behavior.
+ * address) and outbound sending is an outreach-abuse surface — so `unlimited`
+ * is not uncapped for mail. Numbers sit between the `free` and `pro` plan
+ * limits.
  */
-export const nullPlanEmailFallbackLimits = {
+export const unlimitedPlanEmailLimits = {
 	email_sends_per_day: 100,
 	email_receives_per_day: 200,
 	stored_email_messages: 2000,
 	email_message_bytes: 512 * 1024,
 } as const satisfies Partial<Record<EntitlementResource, number>>
 
-export type EmailFallbackResource = keyof typeof nullPlanEmailFallbackLimits
+export type UnlimitedPlanEmailResource = keyof typeof unlimitedPlanEmailLimits
 
 /**
  * Initial limit numbers are conservative placeholders chosen before usage
@@ -225,35 +249,34 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxPackageServices: null,
 		packageServicePersistentAllowed: true,
 		maxRepoSessions: null,
-		maxEmailSendsPerDay: nullPlanEmailFallbackLimits.email_sends_per_day,
-		maxEmailReceivesPerDay: nullPlanEmailFallbackLimits.email_receives_per_day,
-		maxStoredEmailMessages: nullPlanEmailFallbackLimits.stored_email_messages,
-		maxEmailMessageBytes: nullPlanEmailFallbackLimits.email_message_bytes,
+		maxEmailSendsPerDay: unlimitedPlanEmailLimits.email_sends_per_day,
+		maxEmailReceivesPerDay: unlimitedPlanEmailLimits.email_receives_per_day,
+		maxStoredEmailMessages: unlimitedPlanEmailLimits.stored_email_messages,
+		maxEmailMessageBytes: unlimitedPlanEmailLimits.email_message_bytes,
 		maxSecrets: null,
 		maxStorageBytes: null,
 		// null so assertWithinEntitlement falls through to the env workflow
-		// concurrency backstop (same behavior as historical stored-NULL users).
+		// concurrency backstop.
 		maxConcurrentWorkflows: null,
 	},
 }
 
-export function isEmailFallbackResource(
+export function isUnlimitedPlanEmailResource(
 	resource: EntitlementResource,
-): resource is EmailFallbackResource {
-	return resource in nullPlanEmailFallbackLimits
+): resource is UnlimitedPlanEmailResource {
+	return resource in unlimitedPlanEmailLimits
 }
 
 /**
- * Resolve the effective limit for an inbound email resource: the plan limit
- * when the user has a recognized plan, otherwise the email backstop.
+ * Resolve the effective limit for an email resource under a plan. The
+ * `unlimited` plan uses {@link unlimitedPlanEmailLimits} as its email
+ * caps; other plans use their ordinary plan limits.
  */
 export function resolveEmailResourceLimit(
-	plan: PlanName | null,
-	resource: EmailFallbackResource,
+	plan: PlanName,
+	resource: UnlimitedPlanEmailResource,
 ): number | null {
-	return plan
-		? resolvePlanLimit(plan, resource)
-		: nullPlanEmailFallbackLimits[resource]
+	return resolvePlanLimit(plan, resource)
 }
 
 /**

@@ -3,7 +3,7 @@ import { normalizeStableUserId } from '#worker/user-id.ts'
 import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
-	parsePlanName,
+	parseStoredPlanName,
 	resolveEffectivePlan,
 	resolvePlanLimit,
 	type EntitlementResource,
@@ -13,43 +13,43 @@ import {
 const stableUserIdPattern = /^[a-f0-9]{64}$/i
 
 /**
- * Resolve the effective plan for a user, or null when stored NULL or an
- * unknown plan string dual-reads as fail-open during stage 1.
+ * Resolve the effective plan for a user. Always returns a {@link PlanName}
+ * (never a meaningful null): missing email/userId, invalid stable ids, and
+ * no matching row resolve to `unlimited` without warning; stored values go
+ * through {@link parseStoredPlanName} (unknown / defensive NULL → `unlimited`
+ * with a stable warn tag).
  *
  * The MCP `userId` is the account's stored `users.stable_user_id`. Lookup
  * requires the email + stable id pair so a mismatched caller context
  * (synthetic runtime contexts, package-scoped callers with an empty email, or
  * test fixtures) cannot resolve another account's plan. Non-hex userIds
- * short-circuit without touching D1 — which also means enforcement is skipped,
- * matching the invariant that enforcement only activates for users with a
- * recognized plan.
+ * short-circuit without touching D1.
  *
- * Effective plan = f(manual users.plan, users.stripe_plan): stored NULL
- * dual-reads as fail-open during stage 1; manual `unlimited` always beats Stripe;
- * otherwise the higher-ranked of the manual grant and Stripe subscription plan
- * is returned. Signature stays `(db, { userId, email })` so enforcement call
- * sites are unchanged.
+ * Effective plan = f(manual users.plan, users.stripe_plan): manual
+ * `unlimited` always beats Stripe; otherwise the higher-ranked of the manual
+ * grant and Stripe subscription plan is returned. Signature stays
+ * `(db, { userId, email })` so enforcement call sites are unchanged.
  */
 export async function getUserPlan(
 	db: D1Database,
 	input: { userId: string; email: string | null | undefined },
-): Promise<PlanName | null> {
+): Promise<PlanName> {
 	const email = input.email?.trim().toLowerCase()
-	if (!email || !input.userId) return null
-	if (!stableUserIdPattern.test(input.userId)) return null
+	if (!email || !input.userId) return 'unlimited'
+	if (!stableUserIdPattern.test(input.userId)) return 'unlimited'
 	const row = await db
 		.prepare(
 			`SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`,
 		)
 		.bind(email, input.userId)
-		.first<{ plan: string | null; stripe_plan: string | null }>()
-	if (!row) return null
-	return resolveEffectivePlan(parsePlanName(row.plan), row.stripe_plan)
+		.first<{ plan: string; stripe_plan: string | null }>()
+	if (!row) return 'unlimited'
+	return resolveEffectivePlan(parseStoredPlanName(row.plan), row.stripe_plan)
 }
 
 export type StableUserAccount = {
 	email: string
-	plan: PlanName | null
+	plan: PlanName
 	/** Whether users.email_verified_at is set. */
 	emailVerified: boolean
 }
@@ -77,13 +77,13 @@ export async function findUserAccountByStableUserId(
 		.bind(trimmed)
 		.first<{
 			email: string
-			plan: string | null
+			plan: string
 			email_verified_at: string | null
 		}>()
 	if (!row) return null
 	return {
 		email: row.email,
-		plan: parsePlanName(row.plan),
+		plan: parseStoredPlanName(row.plan),
 		emailVerified: Boolean(row.email_verified_at),
 	}
 }
@@ -624,8 +624,8 @@ export type AssertWithinEntitlementInput = {
 	userId: string
 	/**
 	 * Account email of the acting user when available. Plan lookup requires
-	 * it; when absent (synthetic runtime contexts) the user is treated as
-	 * unlimited.
+	 * the email + stable-id pair; when absent (synthetic runtime contexts)
+	 * {@link getUserPlan} resolves to `unlimited`.
 	 */
 	email: string | null | undefined
 	resource: EntitlementResource
@@ -634,11 +634,10 @@ export type AssertWithinEntitlementInput = {
 	/** Override the built-in D1 usage counter for this resource. */
 	getCurrent?: () => Promise<number>
 	/**
-	 * Limit used when the resolved plan limit is null — including stored-NULL /
-	 * unknown dual-read users and recognized plans whose resource limit is null
-	 * (for example `unlimited` concurrent_workflows). Absorbs global backstops
-	 * such as the workflow concurrency env var into the shared enforcement path.
-	 * Default: no limit when both the plan limit and this fallback are null.
+	 * Limit used when the resolved plan limit is null (for example `unlimited`
+	 * concurrent_workflows). Absorbs global backstops such as the workflow
+	 * concurrency env var into the shared enforcement path. Default: no limit
+	 * when both the plan limit and this fallback are null.
 	 */
 	fallbackLimit?: number | null
 	now?: Date
@@ -650,11 +649,8 @@ export type AssertWithinEntitlementInput = {
  * error shape and user-facing message stay identical across MCP and UI
  * surfaces.
  *
- * Users with a NULL (or unknown) plan are fail-open for ordinary resources:
- * the helper returns before running any counting query when neither a plan
- * limit nor `fallbackLimit` applies. When a plan limit is null (including
- * `unlimited` concurrent_workflows), `fallbackLimit` still applies so env
- * backstops retain historical stored-NULL behavior.
+ * When a plan limit is null (including `unlimited` concurrent_workflows),
+ * `fallbackLimit` still applies so deployment env backstops remain in force.
  */
 export async function assertWithinEntitlement(
 	input: AssertWithinEntitlementInput,
@@ -663,8 +659,8 @@ export async function assertWithinEntitlement(
 		userId: input.userId,
 		email: input.email,
 	})
-	const planLimit = plan ? resolvePlanLimit(plan, input.resource) : null
-	const limit = planLimit ?? input.fallbackLimit ?? null
+	const limit =
+		resolvePlanLimit(plan, input.resource) ?? input.fallbackLimit ?? null
 	if (limit == null) return
 	const now = input.now ?? new Date()
 	const requested = input.requested ?? 1
@@ -695,10 +691,8 @@ export async function assertWithinEntitlement(
  * assertWithinEntitlement + incrementDailyEntitlementCounter calls would
  * have under concurrent requests, and evaluates the UTC day key once.
  *
- * Users without a plan (or without a resolvable limit) consume without a
- * cap: the counter still accumulates so limits bind the moment a plan is
- * assigned. Pass `fallbackLimit` to cap accounts without a recognized plan with a
- * deployment-level backstop (for example inbound email receives).
+ * When the plan resource limit is null, the counter still accumulates
+ * without a cap unless `fallbackLimit` is provided.
  */
 export async function consumeDailyEntitlement(input: {
 	db: D1Database
@@ -706,9 +700,8 @@ export async function consumeDailyEntitlement(input: {
 	email: string | null | undefined
 	resource: EntitlementResource
 	/**
-	 * Limit used when the resolved plan limit is null — including stored-NULL /
-	 * unknown dual-read users and recognized plans with a null resource limit.
-	 * Default: no limit (the counter still accumulates).
+	 * Limit used when the resolved plan limit is null. Default: no limit
+	 * (the counter still accumulates).
 	 */
 	fallbackLimit?: number | null
 	now?: Date
@@ -718,8 +711,8 @@ export async function consumeDailyEntitlement(input: {
 		userId: input.userId,
 		email: input.email,
 	})
-	const planLimit = plan ? resolvePlanLimit(plan, input.resource) : null
-	const limit = planLimit ?? input.fallbackLimit ?? null
+	const limit =
+		resolvePlanLimit(plan, input.resource) ?? input.fallbackLimit ?? null
 	if (limit == null) {
 		await incrementDailyEntitlementCounter({
 			db: input.db,
@@ -800,8 +793,9 @@ export async function refundDailyEntitlement(input: {
 export const defaultWorkflowConcurrencyBackstop = 100
 
 /**
- * Global per-user concurrent workflow backstop for users without a plan.
- * Reads the WORKFLOW_CONCURRENT_LIMIT env var (previously read directly by
+ * Global per-user concurrent workflow backstop when the plan limit is null
+ * (for example `unlimited` maxConcurrentWorkflows). Reads the
+ * WORKFLOW_CONCURRENT_LIMIT env var (previously read directly by
  * package-workflows.ts) and falls back to the historical default of 100.
  */
 export function getWorkflowConcurrencyBackstop(env: {

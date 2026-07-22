@@ -1308,7 +1308,7 @@ function buildEntitlementTestJobBody(index: number): JobCreateInput {
 	}
 }
 
-test('createJob enforces scheduled job entitlements for plan users and stays unlimited without a plan', async () => {
+test('createJob enforces scheduled job entitlements for plan users and stays unlimited for unlimited plan users', async () => {
 	const plannedEmail = 'planned@example.com'
 	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
 	const plannedEnv = {
@@ -1351,20 +1351,22 @@ test('createJob enforces scheduled job entitlements for plan users and stays unl
 		current: limit,
 	})
 
-	const legacyEmail = 'legacy@example.com'
-	const legacyUserId = await createStableUserIdFromEmail(legacyEmail)
-	const legacyEnv = {
-		APP_DB: createDatabase({ users: [{ email: legacyEmail, plan: null }] }),
+	const unlimitedEmail = 'unlimited@example.com'
+	const unlimitedUserId = await createStableUserIdFromEmail(unlimitedEmail)
+	const unlimitedEnv = {
+		APP_DB: createDatabase({
+			users: [{ email: unlimitedEmail, plan: 'unlimited' }],
+		}),
 	} as Env
 	mockRepoPersistence()
-	const legacyCallerContext = createPlanUserCallerContext({
-		userId: legacyUserId,
-		email: legacyEmail,
+	const unlimitedCallerContext = createPlanUserCallerContext({
+		userId: unlimitedUserId,
+		email: unlimitedEmail,
 	})
 	for (let index = 0; index < limit + 1; index += 1) {
 		await createJob({
-			env: legacyEnv,
-			callerContext: legacyCallerContext,
+			env: unlimitedEnv,
+			callerContext: unlimitedCallerContext,
 			body: buildEntitlementTestJobBody(index),
 		})
 	}

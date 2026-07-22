@@ -1,5 +1,5 @@
 import { type AdminInvitesLoaderData } from '#app/loader-data.ts'
-import { parsePlanName, planNames } from '#worker/entitlements/plans.ts'
+import { parseStoredPlanName, planNames } from '#worker/entitlements/plans.ts'
 
 type InviteRow = {
 	code: string
@@ -11,7 +11,7 @@ type InviteRow = {
 	expires_at: string | null
 	revoked_at: string | null
 	created_at: string
-	plan: string | null
+	plan: string
 }
 
 export async function loadAdminInvitesData(
@@ -46,7 +46,7 @@ export async function loadAdminInvitesData(
 			expiresAt: row.expires_at,
 			revokedAt: row.revoked_at,
 			createdAt: row.created_at,
-			plan: parsePlanName(row.plan),
+			plan: parseStoredPlanName(row.plan),
 		})),
 		availablePlans: [...planNames],
 	}

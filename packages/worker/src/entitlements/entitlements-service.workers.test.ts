@@ -1,12 +1,17 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { findUserAccountByStableUserId } from '#worker/entitlements/service.ts'
+import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
 import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
+import {
+	consoleWarn,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 async function seedAccount(
 	email: string,
-	plan: 'pro' | null,
+	plan: 'pro' | 'unlimited',
 	stableUserId: string,
 ) {
 	await env.APP_DB.prepare(
@@ -36,15 +41,17 @@ test('findUserAccountByStableUserId resolves accounts via indexed stable id and 
 		emailVerified: true,
 	})
 	await env.APP_DB.prepare(
-		`UPDATE users SET plan = NULL, email_verified_at = NULL WHERE email = ?`,
+		`UPDATE users SET plan = 'enterprise-2099', email_verified_at = NULL WHERE email = ?`,
 	)
 		.bind(email)
 		.run()
+	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
 	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
 		email,
-		plan: null,
+		plan: 'unlimited',
 		emailVerified: false,
 	})
+	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 	await env.APP_DB.prepare(`DELETE FROM users WHERE email = ?`)
 		.bind(email)
 		.run()

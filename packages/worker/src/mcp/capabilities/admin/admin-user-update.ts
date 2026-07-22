@@ -60,7 +60,7 @@ export const adminUserUpdateCapability = defineDomainCapability(
 				},
 				{
 					successReason: ({ user }) =>
-						`target_user_id=${user.id};plan=${user.plan ?? 'unlimited'}`,
+						`target_user_id=${user.id};plan=${user.plan}`,
 				},
 			)
 		},

@@ -9,7 +9,7 @@ export type InviteRecord = {
 	expires_at: string | null
 	revoked_at: string | null
 	created_at: string
-	plan: string | null
+	plan: string
 }
 
 export type InviteConsumeFailureReason =

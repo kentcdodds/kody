@@ -51,7 +51,10 @@ import {
 import { createDb, oauthConnectionsTable, usersTable } from '#worker/db.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
-import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
+import {
+	parseStoredPlanName,
+	type PlanName,
+} from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 /**
@@ -459,7 +462,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					)
 				}
 				consumedInviteCode = inviteResult.invite.code
-				consumedInvitePlan = parsePlanName(inviteResult.invite.plan)
+				consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
 			}
 
 			// Username / stable-id lookup must share the create try/catch so a

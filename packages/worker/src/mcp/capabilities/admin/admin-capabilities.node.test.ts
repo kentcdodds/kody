@@ -19,7 +19,7 @@ type UserRow = {
 	username: string
 	email: string
 	stable_user_id: string
-	plan?: string | null
+	plan?: string
 	created_at: string
 	updated_at: string
 	password_hash?: string
@@ -31,6 +31,7 @@ function adminTestUser(
 ): UserRow {
 	return {
 		...input,
+		plan: input.plan ?? 'unlimited',
 		stable_user_id:
 			input.stable_user_id ?? testStableUserIdFromEmail(input.email),
 	}
@@ -186,8 +187,19 @@ function createAdminCapabilityTestDb(input: {
 							'select id, username, email, plan, stripe_plan, stable_user_id from users where id = ?',
 						)
 					) {
-						return (users.find((user) => user.id === Number(params[0])) ??
-							null) as T | null
+						const user = users.find((row) => row.id === Number(params[0]))
+						return (
+							user
+								? {
+										id: user.id,
+										username: user.username,
+										email: user.email,
+										plan: user.plan ?? 'unlimited',
+										stripe_plan: null,
+										stable_user_id: user.stable_user_id,
+									}
+								: null
+						) as T | null
 					}
 					if (
 						normalizedQuery.includes(
@@ -293,7 +305,7 @@ function createAdminCapabilityTestDb(input: {
 									id: user.id,
 									username: user.username,
 									email: user.email,
-									plan: user.plan ?? null,
+									plan: user.plan ?? 'unlimited',
 									stable_user_id: user.stable_user_id,
 								})) as Array<T>,
 						}
@@ -387,17 +399,12 @@ function createAdminCapabilityTestDb(input: {
 							throw new Error('UNIQUE constraint failed: users.username')
 						}
 						const now = new Date().toISOString()
-						const plan =
-							normalizedQuery.includes(', plan)') &&
-							normalizedQuery.includes("'unlimited'")
-								? 'unlimited'
-								: null
 						const user: UserRow = {
 							id: nextUserId,
 							username: String(username),
 							email: String(email),
 							stable_user_id: stableUserId,
-							plan,
+							plan: 'unlimited',
 							created_at: now,
 							updated_at: now,
 							password_hash: String(passwordHash),
@@ -444,7 +451,8 @@ function createAdminCapabilityTestDb(input: {
 					) {
 						const user = users.find((row) => row.id === Number(params[2]))
 						if (!user) return { meta: { changes: 0, last_row_id: 0 } }
-						user.plan = params[0] === null ? null : String(params[0])
+						user.plan =
+							params[0] == null ? 'unlimited' : String(params[0])
 						user.updated_at = String(params[1])
 						return { meta: { changes: 1, last_row_id: 0 } }
 					}
@@ -572,7 +580,7 @@ test('admin capabilities list and get account metadata and query sanitized audit
 	expect(usage.usage).toMatchObject({
 		userId: 2,
 		username: 'jane',
-		plan: null,
+		plan: 'unlimited',
 	})
 	expect(usage.usage?.entitlementConsumption.length).toBeGreaterThan(0)
 	expect(
@@ -794,7 +802,7 @@ test('admin_user_update sets plan and maps null clear to unlimited with audit me
 				username: 'jane',
 				email: 'jane@example.com',
 				email_verified_at: null,
-				plan: null,
+				plan: 'unlimited',
 				created_at: '2026-01-03 00:00:00',
 				updated_at: '2026-01-04 00:00:00',
 			}),

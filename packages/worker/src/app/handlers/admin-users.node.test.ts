@@ -1,6 +1,11 @@
 import { expect, test, vi } from 'vitest'
 import { adminUserListItemFieldNames } from './admin-users.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
+import {
+	consoleWarn,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import type * as AuditLog from '#app/audit-log.ts'
 
@@ -63,7 +68,17 @@ function createAdminTestEnv(input: {
 	users: Array<UserRow>
 	userRoles: Array<UserRoleRow>
 }) {
-	const users = new Map(input.users.map((user) => [user.id, { ...user }]))
+	const users = new Map(
+		input.users.map((user) => [
+			user.id,
+			{
+				...user,
+				// Final-world fixtures default to unlimited; unknown/null stay
+				// explicit so the dedicated stored-plan coercion test can warn.
+				plan: user.plan === undefined ? 'unlimited' : user.plan,
+			},
+		]),
+	)
 	const userRoles = input.userRoles.map((row) => ({ ...row }))
 
 	return {
@@ -294,6 +309,7 @@ test('admin users list payload exposes only account metadata fields', async () =
 		],
 	})
 
+	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
 	const handler = createAdminUsersApiHandler(env as unknown as Env)
 	const response = await handler.handler({
 		request: new Request('https://example.com/admin/users.json', {
@@ -332,10 +348,11 @@ test('admin users list payload exposes only account metadata fields', async () =
 			email: 'member@example.com',
 			email_verified: false,
 			email_verified_at: null,
-			// Unknown stored plan values read back as null.
-			plan: null,
+			// Unknown stored plan values fail open to unlimited.
+			plan: 'unlimited',
 		}),
 	])
+	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 })
 
 test('admin users list applies q and role filters to the slice and total', async () => {
@@ -572,7 +589,7 @@ test('update plan action sets, maps null to unlimited, validates, and scopes pla
 				id: 2,
 				username: 'member',
 				email: 'member@example.com',
-				plan: null,
+				plan: 'unlimited',
 				created_at: '2026-01-03 00:00:00',
 				updated_at: '2026-01-04 00:00:00',
 			},

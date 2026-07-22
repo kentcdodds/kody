@@ -5,7 +5,7 @@ import {
 } from '#worker/billing/billing-config.ts'
 import { refreshStripePlanForUser } from '#worker/billing/subscription-sync.ts'
 import {
-	parsePlanName,
+	parseStoredPlanName,
 	parseStripePlanName,
 	resolveEffectivePlan,
 	type PlanName,
@@ -37,7 +37,7 @@ export function resolveBillingErrorMessage(
 }
 
 type BillingUserRow = {
-	plan: string | null
+	plan: string
 	stripe_plan: string | null
 	stripe_customer_id: string | null
 	stripe_plan_refreshed_at: string | null
@@ -61,7 +61,9 @@ export async function loadAccountBillingData(input: {
 		.bind(input.userId)
 		.first<BillingUserRow>()
 
-	const manualPlan: PlanName | null = parsePlanName(row?.plan)
+	const manualPlan: PlanName = row
+		? parseStoredPlanName(row.plan)
+		: 'unlimited'
 	let stripePlan: PlanName | null = parseStripePlanName(row?.stripe_plan)
 	let cancelAt: string | null = null
 	const customerId = row?.stripe_customer_id?.trim() || null

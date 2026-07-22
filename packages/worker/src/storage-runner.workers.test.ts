@@ -48,7 +48,7 @@ async function ensureStorageBytesEmailTestSchema() {
 
 async function seedPlannedStorageUser(input: {
 	email: string
-	plan: 'pro' | null
+	plan: 'pro' | 'unlimited'
 	rawSize: number
 }) {
 	const userId = await createStableUserIdFromEmail(input.email)
@@ -203,22 +203,22 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 		}).getValue({ key: 'new-key' }),
 	).resolves.toEqual({ key: 'new-key', value: null })
 
-	const noPlanEmail = `storage-unplanned-${crypto.randomUUID()}@example.com`
-	const noPlanUserId = await seedPlannedStorageUser({
-		email: noPlanEmail,
-		plan: null,
+	const unlimitedEmail = `storage-unlimited-${crypto.randomUUID()}@example.com`
+	const unlimitedUserId = await seedPlannedStorageUser({
+		email: unlimitedEmail,
+		plan: 'unlimited',
 		rawSize: limit,
 	})
-	const noPlanStorageId = createExecuteStorageId()
-	const noPlanTools = createStorageKodyTools({
+	const unlimitedStorageId = createExecuteStorageId()
+	const unlimitedTools = createStorageKodyTools({
 		env,
-		userId: noPlanUserId,
-		email: noPlanEmail,
-		storageId: noPlanStorageId,
+		userId: unlimitedUserId,
+		email: unlimitedEmail,
+		storageId: unlimitedStorageId,
 		writable: true,
 	})
 	await expect(
-		noPlanTools.storage_set({
+		unlimitedTools.storage_set({
 			key: 'new-key',
 			value: 'new-value',
 		}),

@@ -2,8 +2,7 @@ import { isReservedUsername } from '#app/reserved-usernames.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
-	nullPlanEmailFallbackLimits,
-	parsePlanName,
+	parseStoredPlanName,
 	resolveEffectivePlan,
 	resolveEmailResourceLimit,
 } from '#worker/entitlements/plans.ts'
@@ -298,14 +297,15 @@ export async function handleInboundEmail(
 	)
 		.bind(identity.email)
 		.first<{
-			plan: string | null
+			plan: string
 			stripe_plan: string | null
 			email_verified_at: string | null
 		}>()
 	const account = {
 		email: identity.email,
 		plan: resolveEffectivePlan(
-			parsePlanName(accountRow?.plan),
+			// Defensive: missing row or unexpected stored value still fails open.
+			parseStoredPlanName(accountRow?.plan),
 			accountRow?.stripe_plan ?? null,
 		),
 		emailVerified: Boolean(accountRow?.email_verified_at),
@@ -346,7 +346,7 @@ export async function handleInboundEmail(
 	// {username}@<platform domain> address), so every fail-closed gate runs
 	// before any parsing work, cheapest rejection first: verified account,
 	// per-message size cap, storage bytes, per-day receive rate, and
-	// stored-message cap (entitlements with NULL-plan fallbacks).
+	// stored-message cap (entitlements, including unlimited email backstops).
 
 	// Verified-account gate first: an unverified account can never receive
 	// mail, so the attempt must not consume any of the daily receive quota
@@ -369,8 +369,8 @@ export async function handleInboundEmail(
 	}
 
 	// The plan's per-message cap also becomes the parser's raw-MIME ceiling
-	// so the two size gates can never disagree; a null (unlimited) plan
-	// limit still keeps the parser's hard platform-bound default.
+	// so the two size gates can never disagree; when the resolved plan limit
+	// is uncapped, the parser still keeps its hard platform-bound default.
 	const maxMessageBytes = resolveEmailResourceLimit(
 		account.plan,
 		'email_message_bytes',
@@ -388,7 +388,6 @@ export async function handleInboundEmail(
 			resource: 'email_message_bytes',
 			requested: 0,
 			getCurrent: async () => message.rawSize,
-			fallbackLimit: nullPlanEmailFallbackLimits.email_message_bytes,
 		})
 		await assertWithinStorageBytesEntitlement({
 			db: env.APP_DB,
@@ -402,7 +401,6 @@ export async function handleInboundEmail(
 			userId,
 			email: account.email,
 			resource: 'email_receives_per_day',
-			fallbackLimit: nullPlanEmailFallbackLimits.email_receives_per_day,
 			now: receiveQuotaNow,
 		})
 		// Check-then-insert: a concurrent burst can overshoot the stored cap
@@ -414,7 +412,6 @@ export async function handleInboundEmail(
 			userId,
 			email: account.email,
 			resource: 'stored_email_messages',
-			fallbackLimit: nullPlanEmailFallbackLimits.stored_email_messages,
 		})
 	} catch (error) {
 		if (!isEntitlementLimitError(error)) throw error

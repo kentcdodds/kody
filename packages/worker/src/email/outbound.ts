@@ -3,7 +3,6 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
-import { nullPlanEmailFallbackLimits } from '#worker/entitlements/plans.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
@@ -497,7 +496,6 @@ export async function sendOutboundEmail(
 			requested: 0,
 			getCurrent: async () =>
 				(outboundEmailContentBytes(text, html) ?? 0) + attachmentBytesTotal,
-			fallbackLimit: nullPlanEmailFallbackLimits.email_message_bytes,
 		})
 	}
 	const messageIdHeader = `<${crypto.randomUUID()}@kody.local>`
@@ -526,15 +524,13 @@ export async function sendOutboundEmail(
 	})
 
 	// Atomic check-and-increment: the counter tracks attempts for every user
-	// and denies the send when a plan's daily limit is reached. Users
-	// without a plan are capped by the global daily backstop instead of
-	// sending unlimited mail.
+	// and denies the send when a plan's daily limit is reached. The
+	// `unlimited` plan uses deployment email caps rather than uncapped mail.
 	await consumeDailyEntitlement({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: sender.accountEmail,
 		resource: 'email_sends_per_day',
-		fallbackLimit: nullPlanEmailFallbackLimits.email_sends_per_day,
 	})
 
 	const existingThreadId = original?.threadId ?? input.threadId ?? null

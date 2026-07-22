@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
-	nullPlanEmailFallbackLimits,
+	unlimitedPlanEmailLimits,
 	planLimits,
 } from '#worker/entitlements/plans.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
@@ -12,7 +12,7 @@ import { emailUsageGetCapability } from './email-usage-get.ts'
 
 async function seedUser(input: {
 	email: string
-	plan: 'pro' | null
+	plan: 'pro' | 'unlimited'
 	emailVerifiedAt?: string | null
 }) {
 	const stableUserId = await createStableUserIdFromEmail(input.email)
@@ -84,7 +84,11 @@ test('email_usage_get returns usage for verified users and enforces auth require
 
 	const unverifiedEmail = `usage-unverified-${crypto.randomUUID()}@example.com`
 	const unverifiedUserId = await createStableUserIdFromEmail(unverifiedEmail)
-	await seedUser({ email: unverifiedEmail, plan: null, emailVerifiedAt: null })
+	await seedUser({
+		email: unverifiedEmail,
+		plan: 'unlimited',
+		emailVerifiedAt: null,
+	})
 	await expect(
 		emailUsageGetCapability.handler(
 			{},
@@ -138,34 +142,34 @@ test('email_usage_get returns usage for verified users and enforces auth require
 		max_message_bytes: planLimits.pro.maxEmailMessageBytes,
 	})
 
-	const nullPlanEmail = `usage-null-plan-${crypto.randomUUID()}@example.com`
-	const nullPlanUserId = await createStableUserIdFromEmail(nullPlanEmail)
-	await seedUser({ email: nullPlanEmail, plan: null })
-	const nullPlanResult = await emailUsageGetCapability.handler(
+	const unlimitedEmail = `usage-unlimited-${crypto.randomUUID()}@example.com`
+	const unlimitedUserId = await createStableUserIdFromEmail(unlimitedEmail)
+	await seedUser({ email: unlimitedEmail, plan: 'unlimited' })
+	const unlimitedResult = await emailUsageGetCapability.handler(
 		{},
 		{
 			env,
 			callerContext: buildCallerContext({
-				userId: nullPlanUserId,
-				email: nullPlanEmail,
+				userId: unlimitedUserId,
+				email: unlimitedEmail,
 			}),
 		},
 	)
-	expect(nullPlanResult).toEqual({
-		plan: null,
+	expect(unlimitedResult).toEqual({
+		plan: 'unlimited',
 		day: utcDayKey(),
 		stored_messages: {
 			count: 0,
-			limit: nullPlanEmailFallbackLimits.stored_email_messages,
+			limit: unlimitedPlanEmailLimits.stored_email_messages,
 		},
 		sends_today: {
 			count: 0,
-			limit: nullPlanEmailFallbackLimits.email_sends_per_day,
+			limit: unlimitedPlanEmailLimits.email_sends_per_day,
 		},
 		receives_today: {
 			count: 0,
-			limit: nullPlanEmailFallbackLimits.email_receives_per_day,
+			limit: unlimitedPlanEmailLimits.email_receives_per_day,
 		},
-		max_message_bytes: nullPlanEmailFallbackLimits.email_message_bytes,
+		max_message_bytes: unlimitedPlanEmailLimits.email_message_bytes,
 	})
 })

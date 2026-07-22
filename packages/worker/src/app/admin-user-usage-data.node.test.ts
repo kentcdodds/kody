@@ -1,5 +1,12 @@
 import { expect, test } from 'vitest'
-import { nullPlanEmailFallbackLimits } from '#worker/entitlements/plans.ts'
+import {
+	unlimitedPlanEmailLimits,
+	unknownStoredPlanWarningTag,
+} from '#worker/entitlements/plans.ts'
+import {
+	consoleWarn,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type AdminUsageRollup } from './loader-data.ts'
 import { loadAdminUserUsageData } from './admin-user-usage-data.ts'
@@ -8,7 +15,8 @@ type UserRow = {
 	id: number
 	username: string
 	email: string
-	plan: string | null
+	plan: string
+	stripe_plan?: string | null
 	stable_user_id: string
 }
 
@@ -271,16 +279,16 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 	])
 })
 
-test('loadAdminUserUsageData shows email fallback limits for plan-less users', async () => {
-	const email = 'null-plan-email@example.com'
+test('loadAdminUserUsageData shows unlimited email caps for unknown stored plans', async () => {
+	const email = 'unknown-plan-email@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)
 	const db = createAdminUserUsageTestDb({
 		users: [
 			{
 				id: 1,
-				username: 'nullplan',
+				username: 'unknownplan',
 				email,
-				plan: null,
+				plan: 'enterprise-2099',
 				stable_user_id: usageUserId,
 			},
 		],
@@ -297,24 +305,26 @@ test('loadAdminUserUsageData shows email fallback limits for plan-less users', a
 		},
 	})
 
+	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
 	const data = await loadAdminUserUsageData(
 		{ APP_DB: db } as Env,
 		1,
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
 
+	expect(data?.plan).toBe('unlimited')
+	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 	const consumption = new Map(
 		(data?.entitlementConsumption ?? []).map((entry) => [
 			entry.resource,
 			entry,
 		]),
 	)
-	// Plan-less users stay unlimited for ordinary resources...
+	// Coerced unlimited stays uncapped for ordinary resources...
 	expect(consumption.get('saved_packages')?.limit).toBeNull()
-	// ...but the email resources show the deployment fallbacks (outbound
-	// sends included: plan-less users are not unlimited for email).
+	// ...but email resources use the unlimited plan's email backstops.
 	expect(consumption.get('email_sends_per_day')?.limit).toBe(
-		nullPlanEmailFallbackLimits.email_sends_per_day,
+		unlimitedPlanEmailLimits.email_sends_per_day,
 	)
 	expect(consumption.get('email_receives_per_day')).toMatchObject({
 		current: 190,
@@ -358,7 +368,7 @@ test('loadAdminUserUsageData caches rollup reads in KV and serves repeat loads f
 				id: 1,
 				username: 'cached',
 				email,
-				plan: null,
+				plan: 'unlimited',
 				stable_user_id: usageUserId,
 			},
 		],
@@ -414,7 +424,7 @@ test('loadAdminUserUsageData keeps current-month and month-over-month rollups on
 				id: 1,
 				username: 'boundary',
 				email,
-				plan: null,
+				plan: 'unlimited',
 				stable_user_id: usageUserId,
 			},
 		],

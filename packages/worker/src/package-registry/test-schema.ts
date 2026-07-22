@@ -2,7 +2,8 @@
  * Schema for package scope grant / platform account workers-unit tests.
  * Local D1 does not apply migrations, so suites provision the tables they need.
  * Mirrors users columns from early migrations plus 0052/0075 (stable_user_id),
- * 0072 (account_type, package_scope_grants), and 0048 (plan).
+ * 0072 (account_type, package_scope_grants), and 0081
+ * (`plan` NOT NULL DEFAULT `'unlimited'`).
  */
 export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	await db
@@ -15,7 +16,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	email_verified_at TEXT,
 	stable_user_id TEXT NOT NULL,
 	account_type TEXT NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'platform')),
-	plan TEXT,
+	plan TEXT NOT NULL DEFAULT 'unlimited',
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 )`,
@@ -25,7 +26,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 		'email_verified_at TEXT',
 		'stable_user_id TEXT',
 		`account_type TEXT NOT NULL DEFAULT 'person'`,
-		'plan TEXT',
+		`plan TEXT NOT NULL DEFAULT 'unlimited'`,
 	]) {
 		try {
 			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()

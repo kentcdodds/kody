@@ -1043,12 +1043,12 @@ test('createDynamicCallableWorkflow enforces the per-user concurrent workflow li
 		)
 	}
 	expect(error.message).toContain(
-		'this deployment allows at most 100 concurrent workflows',
+		'your "unlimited" plan allows at most 100 concurrent workflows',
 	)
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'concurrent_workflows',
-		plan: null,
+		plan: 'unlimited',
 		limit: 100,
 	})
 })

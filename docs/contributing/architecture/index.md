@@ -20,9 +20,10 @@ to become.
   package scopes.
 - [Authorization](./authorization.md): role-based access control (RBAC), admin
   routes, and the `any`-access exception to per-user isolation.
-- [Entitlements](./entitlements.md): per-user plans (`users.plan`), per-plan
-  resource limits, and the shared `assertWithinEntitlement` enforcement helper
-  (`unlimited` default; nullish admin inputs map to `unlimited`).
+- [Entitlements](./entitlements.md): per-user plans (`users.plan` NOT NULL
+  DEFAULT `unlimited`), per-plan resource limits, and the shared
+  `assertWithinEntitlement` enforcement helper (`parseStoredPlanName` for reads;
+  strict `parsePlanName` for untrusted admin/API input).
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.

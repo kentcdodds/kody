@@ -34,7 +34,7 @@ const entitlementResourceSchema = z.enum([
 	'storage_bytes',
 ])
 
-const planSchema = z.enum(planNames).nullable()
+const planSchema = z.enum(planNames)
 
 const usageRollupSchema = z.object({
 	metric: usageMetricSchema,

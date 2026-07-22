@@ -21,7 +21,7 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
-	nullPlanEmailFallbackLimits,
+	unlimitedPlanEmailLimits,
 	planLimits,
 } from '#worker/entitlements/plans.ts'
 import { incrementDailyEntitlementCounter } from '#worker/entitlements/service.ts'
@@ -50,7 +50,7 @@ function createBindingSendEnv() {
 async function seedVerifiedAccount(input: {
 	email: string
 	username?: string
-	plan?: 'pro' | null
+	plan?: 'pro' | 'unlimited'
 	verified?: boolean
 }) {
 	const username = input.username ?? `sender-${crypto.randomUUID().slice(0, 8)}`
@@ -64,7 +64,7 @@ async function seedVerifiedAccount(input: {
 			input.email,
 			'test-password-hash',
 			input.verified === false ? null : new Date().toISOString(),
-			input.plan ?? null,
+			input.plan ?? 'unlimited',
 			stableUserId,
 		)
 		.run()
@@ -736,10 +736,10 @@ test('sendOutboundEmail rejects invalid and oversized attachments', async () => 
 		}),
 	).rejects.toThrow('Attachment content must be valid base64: broken.bin')
 
-	// Attachments put the message under the plan-less per-message backstop
-	// (email_message_bytes) that body-only sends are not subject to.
+	// Attachments put the message under the per-message email_message_bytes
+	// cap that body-only sends are not subject to.
 	const oversize = new Uint8Array(
-		nullPlanEmailFallbackLimits.email_message_bytes + 1,
+		unlimitedPlanEmailLimits.email_message_bytes + 1,
 	)
 	const error = await sendOutboundEmail({
 		env: createBindingSendEnv(),
@@ -899,15 +899,15 @@ test('sendOutboundEmail increments the daily counter when under the plan limit',
 	expect(await readDailyEmailSendCounter(userId)).toBe(1)
 })
 
-test('sendOutboundEmail caps NULL-plan users at the global daily backstop', async () => {
+test('sendOutboundEmail caps unlimited-plan users at the email daily backstop', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 
-	const email = `legacy-${crypto.randomUUID()}@example.com`
+	const email = `unlimited-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
-	await seedVerifiedAccount({ email, plan: null })
+	await seedVerifiedAccount({ email, plan: 'unlimited' })
 	for (
 		let index = 0;
-		index < nullPlanEmailFallbackLimits.email_sends_per_day - 1;
+		index < unlimitedPlanEmailLimits.email_sends_per_day - 1;
 		index += 1
 	) {
 		await incrementDailyEntitlementCounter({
@@ -920,10 +920,10 @@ test('sendOutboundEmail caps NULL-plan users at the global daily backstop', asyn
 	const result = await sendSelfNotification({ userId, accountEmail: email })
 	expect(result.status).toBe('sent')
 	expect(await readDailyEmailSendCounter(userId)).toBe(
-		nullPlanEmailFallbackLimits.email_sends_per_day,
+		unlimitedPlanEmailLimits.email_sends_per_day,
 	)
 
-	// ...and the next one is denied: plan-less users are not unlimited.
+	// ...and the next one is denied: unlimited is not uncapped for email.
 	const error = await sendSelfNotification({
 		userId,
 		accountEmail: email,
@@ -937,11 +937,11 @@ test('sendOutboundEmail caps NULL-plan users at the global daily backstop', asyn
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'email_sends_per_day',
-		plan: null,
-		limit: nullPlanEmailFallbackLimits.email_sends_per_day,
-		current: nullPlanEmailFallbackLimits.email_sends_per_day,
+		plan: 'unlimited',
+		limit: unlimitedPlanEmailLimits.email_sends_per_day,
+		current: unlimitedPlanEmailLimits.email_sends_per_day,
 	})
 	expect(await readDailyEmailSendCounter(userId)).toBe(
-		nullPlanEmailFallbackLimits.email_sends_per_day,
+		unlimitedPlanEmailLimits.email_sends_per_day,
 	)
 })

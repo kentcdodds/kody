@@ -2,10 +2,8 @@ import { cachified, type Cache } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	entitlementResourceLabels,
-	isEmailFallbackResource,
-	parsePlanName,
+	parseStoredPlanName,
 	resolveEffectivePlan,
-	resolveEmailResourceLimit,
 	resolvePlanLimit,
 	type EntitlementResource,
 	type PlanName,
@@ -57,7 +55,7 @@ type AdminUserUsageUserRow = {
 	id: number
 	username: string
 	email: string
-	plan: string | null
+	plan: string
 	stripe_plan: string | null
 	stable_user_id: string
 }
@@ -91,7 +89,10 @@ export async function loadAdminUserUsageData(
 		.first<AdminUserUsageUserRow>()
 	if (!row) return null
 
-	const plan = resolveEffectivePlan(parsePlanName(row.plan), row.stripe_plan)
+	const plan = resolveEffectivePlan(
+		parseStoredPlanName(row.plan),
+		row.stripe_plan,
+	)
 	const usageUserId = resolveUserStableId(row)
 	const currentMonth = utcMonthKey(now)
 	const today = utcDayKey(now)
@@ -138,7 +139,7 @@ export async function loadAdminUserUsageData(
 async function readEntitlementConsumption(input: {
 	db: D1Database
 	usageUserId: string
-	plan: PlanName | null
+	plan: PlanName
 	now: Date
 }): Promise<Array<AdminUsageEntitlementConsumption>> {
 	return await Promise.all(
@@ -149,13 +150,7 @@ async function readEntitlementConsumption(input: {
 				resource,
 				now: input.now,
 			})
-			// Inbound email resources cap plan-less users with deployment
-			// fallbacks, so show the effective limit instead of unlimited.
-			const limit = isEmailFallbackResource(resource)
-				? resolveEmailResourceLimit(input.plan, resource)
-				: input.plan
-					? resolvePlanLimit(input.plan, resource)
-					: null
+			const limit = resolvePlanLimit(input.plan, resource)
 			const percentOfLimit =
 				limit == null || limit === 0 ? null : current / limit
 			return {

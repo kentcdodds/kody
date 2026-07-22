@@ -348,7 +348,7 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 	expect(unroutable.rejectedReason).toBe('Email routing is not configured.')
 
 	// Oversize mail for a valid user trips the pre-parse
-	// email_message_bytes gate (the NULL-plan fallback is 512 KiB) with the
+	// email_message_bytes gate (unlimited-plan cap is 512 KiB) with the
 	// generic over-quota reason, before anything is stored.
 	const username = `parse-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `parse-${crypto.randomUUID()}@example.com`

@@ -569,10 +569,10 @@ test('saveSecret allows updating an existing secret at the plan limit', async ()
 	expect(updated.description).toBe('rotated')
 })
 
-test('saveSecret stays unlimited for users without a plan', async () => {
-	const email = 'legacy@example.com'
+test('saveSecret stays unlimited for unlimited plan users', async () => {
+	const email = 'unlimited@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const { env } = buildEntitlementTestSecretEnv({ email, plan: null })
+	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'unlimited' })
 	const limit = planLimits.pro.maxSecrets
 	if (limit === null) throw new Error('Expected a numeric pro secret limit.')
 
@@ -582,7 +582,7 @@ test('saveSecret stays unlimited for users without a plan', async () => {
 			userId,
 			userEmail: email,
 			scope: 'user',
-			name: `legacy-secret-${index}`,
+			name: `unlimited-secret-${index}`,
 			value: `secret-value-${index}`,
 		})
 	}

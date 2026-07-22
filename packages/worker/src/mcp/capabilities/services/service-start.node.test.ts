@@ -319,8 +319,8 @@ test('service_start lets a stale running row for the same service restart at the
 	})
 })
 
-test('service_start stays unlimited for users without a plan', async () => {
-	const email = 'legacy@example.com'
+test('service_start stays unlimited for unlimited plan users', async () => {
+	const email = 'unlimited@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const limit = planLimits.pro.maxPackageServices
 	if (limit === null) {
@@ -328,7 +328,7 @@ test('service_start stays unlimited for users without a plan', async () => {
 	}
 	const env = {
 		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: null }],
+			users: [{ email, plan: 'unlimited' }],
 			runningServices: buildRunningServices(limit + 1),
 		}),
 	} as Env

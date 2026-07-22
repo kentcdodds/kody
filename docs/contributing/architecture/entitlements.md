@@ -9,8 +9,11 @@ in `planLimits` remain independently configured placeholders.
 Module: `packages/worker/src/entitlements/`
 
 - `plans.ts` — plan names (`free`, `pro`, `partner`, `unlimited`), the
-  `PlanLimits` config per plan, the `EntitlementResource` registry,
-  `resolvePlanLimit(plan, resource)`, `getPlanRank`, and
+  `PlanLimits` config per plan, deployment email backstops
+  (`unlimitedPlanEmailLimits`), the `EntitlementResource` registry,
+  `resolvePlanLimit(plan, resource)`, `resolveEmailResourceLimit(plan, resource)`,
+  `getPlanRank`, `parsePlanName` (strict, untrusted input),
+  `parseStoredPlanName` (stored-column reads), and
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
@@ -19,34 +22,37 @@ Module: `packages/worker/src/entitlements/`
 
 ## Plan model
 
-`users.plan` and `invites.plan` are nullable TEXT columns (added by migrations
-`0046-invites-email-verification.sql` and `0065-invite-plans.sql`). The plan
-registry in `plans.ts` includes `free`, `pro`, `partner`, and `unlimited`.
+`users.plan` and `invites.plan` are NOT NULL TEXT columns with default
+`'unlimited'` (migrations `0046-invites-email-verification.sql`,
+`0065-invite-plans.sql`, and `0081-plan-not-null.sql`). The plan registry in
+`plans.ts` includes `free`, `pro`, `partner`, and `unlimited`.
 
-**Write and default:** new writers always persist a plan name (never NULL).
-`resolvePlanWrite` maps nullish inputs to `unlimited`, which is the default for
-new accounts, invites without an explicit plan, and admin plan resets. Nullish
-admin/API inputs (`null`, empty string, omitted invite plan) map to `unlimited`
-for backward compatibility.
+**Write and default:** writers always persist a plan name (never NULL).
+`resolvePlanWrite` maps nullish admin/API inputs to `unlimited`, which is the
+default for new accounts, invites without an explicit plan, and admin plan
+resets.
+
+**Reading stored values:** D1 reads use `parseStoredPlanName`. Known plan names
+pass through unchanged; defensive NULL and unknown stored strings fail open to
+`unlimited` with a stable `entitlement-unknown-stored-plan` warn tag (no user
+data in the log). Untrusted admin/API input still uses strict `parsePlanName` so
+typos and unknown strings are rejected rather than coerced.
 
 The **`unlimited` plan** gives ordinary resources uncapped limits (`null` in
 `planLimits`), uses deployment-level email backstops
-(`nullPlanEmailFallbackLimits`), and keeps the workflow concurrency env global
+(`unlimitedPlanEmailLimits`), and keeps the workflow concurrency env global
 backstop (`maxConcurrentWorkflows: null` plus `fallbackLimit`).
 
 `users.stripe_plan` stays nullable because it is Stripe-derived; `unlimited` is
 manual-only and never written from Stripe (`parseStripePlanName` rejects it).
 
-`resolveEffectivePlan(manual, stripe)` returns the higher-ranked manual and
-Stripe plans when manual resolves to a recognized name; manual `unlimited`
-always wins over Stripe. When `parsePlanName(users.plan)` is null (stored NULL
-or an unrecognized string), effective plan is null and ordinary resources stay
-fail-open; a Stripe subscription never downgrades such an account into
-enforcement.
+`resolveEffectivePlan(manual, stripe)` compares a non-null manual plan (after
+`parseStoredPlanName`) with `users.stripe_plan`. Manual `unlimited` always wins
+over Stripe; otherwise the higher-ranked of the two is returned. Unknown or null
+`stripe_plan` values contribute nothing.
 
 Exception: the email resources are abuse-sensitive and bind the `unlimited` plan
-(and other accounts whose effective plan is null) to the
-`nullPlanEmailFallbackLimits` backstops from `plans.ts` instead of uncapped
+to the `unlimitedPlanEmailLimits` backstops from `plans.ts` instead of uncapped
 inbound/outbound mail — outbound sends (`email_sends_per_day`) because sending
 is an outreach-abuse surface, and the inbound resources
 (`email_receives_per_day`, `stored_email_messages`, `email_message_bytes`)
@@ -54,31 +60,23 @@ because inbound volume is attacker-controlled (anyone can send to a
 `{username}@<platform domain>` address). Use `resolveEmailResourceLimit` to read
 the effective limit for those resources.
 
-## Rollout sequencing
+## Schema history
 
-Migration `0080-backfill-unlimited-plan.sql` backfills existing `users.plan` and
-`invites.plan` NULL rows to `'unlimited'`. Nullable columns remain until a later
-NOT NULL stage. During that compatibility window, stored NULL and unknown plan
-strings still parse as null via `parsePlanName` and retain fail-open behavior so
-plan renames cannot lock users out. Enforcement activates only when a recognized
-plan name is resolved.
-
-**Deployment ordering:** production deploys apply D1 migrations before Worker
-code (`.github/workflows/deploy.yml`: `🗄️ Apply D1 Migrations`, then
-`☁️ Deploy to Cloudflare Workers`). On a NOT NULL stage deploy, the new Worker
-that writes `unlimited` instead of NULL can run while columns are still
-nullable, so rows written during that window may still contain NULL. The NOT
-NULL migration must reconcile or verify those residual NULLs (backfill or abort)
-before rebuilding the column NOT NULL.
+Migration `0080-backfill-unlimited-plan.sql` backfilled pre-existing NULL
+`users.plan` / `invites.plan` rows to `'unlimited'`. Migration
+`0081-plan-not-null.sql` reconciles any residual NULLs and rebuilds both columns
+as NOT NULL DEFAULT `'unlimited'`.
 
 ## Assigning plans
 
 New accounts start with `users.plan = 'unlimited'` (plus the email backstops
 above) unless the consumed invite carries another plan. Migration
-`0065-invite-plans.sql` adds nullable `invites.plan`. Password and social signup
-apply that value to the new `users.plan` when present (validated with
-`parsePlanName`); missing or NULL invite plans write `unlimited`. Admins set
-invite plans when creating codes at `/admin/invites`.
+`0065-invite-plans.sql` adds `invites.plan` (NOT NULL DEFAULT `'unlimited'`
+after `0081-plan-not-null.sql`). Password and social signup read the consumed
+invite's stored plan with `parseStoredPlanName` and copy it onto `users.plan`;
+missing or omitted invite plans use the column default `unlimited`. Admins set
+invite plans when creating codes at `/admin/invites` (validated with strict
+`parsePlanName`).
 
 Admins also assign or reset plans on existing users through two audited,
 admin-only surfaces, both backed by `updateAdminUserPlan` in
@@ -87,17 +85,16 @@ admin-only surfaces, both backed by `updateAdminUserPlan` in
 - **Admin UI** — the "Manage plan" panel on `/admin/users` posts
   `{ action: 'update_plan', userId, plan }` to `POST /admin/users.json` (guarded
   by `update:user:any`). `plan: null` maps to `unlimited` (writers never persist
-  NULL); unknown plan strings are rejected with `400` rather than coerced to
-  null.
+  NULL); unknown plan strings are rejected with `400` rather than coerced.
 - **MCP** — the `admin_user_update` capability (`requiredRole: 'admin'`) updates
   one user by `id` or `email` and accepts `plan: PlanName | null` (null maps to
   `unlimited`).
 
 Both paths validate against the plan registry (`parsePlanName` / `planNames`)
 and write an `admin`-category audit event with reason `target_user_id=…;plan=…`.
-Because daily counters accumulate even when effective plan is null
-(compatibility fail-open), assigning a recognized plan later binds immediately
-against the usage already counted that day.
+Daily counters accumulate for every user regardless of plan, so assigning a
+recognized plan later binds immediately against the usage already counted that
+day.
 
 Paid upgrades via Stripe write `users.stripe_plan` (not `users.plan`); see
 [Billing](#billing). Effective entitlement uses the higher-ranked of the two
@@ -107,37 +104,36 @@ when a manual plan is set.
 
 The MCP `userId` is the account's stored `users.stable_user_id` (NOT NULL,
 unique index; initially from `createStableUserIdFromEmail` at signup, then
-preserved across email changes). `getUserPlan(db, { userId, email })`:
+preserved across email changes). `getUserPlan(db, { userId, email })` always
+returns a `PlanName`:
 
-1. Normalizes the email and returns null (fail-open) when email or `userId` is
+1. Normalizes the email and returns `unlimited` when email or `userId` is
    absent.
-2. Returns null without touching D1 when `userId` is not a 64-char hex string.
-   Synthetic runtime contexts (package-scoped caller contexts with `email: ''`,
-   workflow-internal users, test fixtures) therefore fail open / stay unlimited.
+2. Returns `unlimited` without touching D1 when `userId` is not a 64-char hex
+   string. Synthetic runtime contexts (package-scoped caller contexts with
+   `email: ''`, workflow-internal users, test fixtures) therefore resolve to
+   `unlimited`.
 3. Reads
    `SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`
-   and returns `resolveEffectivePlan(parsePlanName(plan), stripe_plan)`: stored
-   NULL or unrecognized strings fail open; otherwise the higher-ranked of manual
-   `users.plan` and `users.stripe_plan` (rank: `free` < `pro` < `partner` <
-   `unlimited`). A mismatched email/stable-id pair returns null (fail-open)
-   intentionally.
+   and returns `resolveEffectivePlan(parseStoredPlanName(plan), stripe_plan)`. A
+   mismatched email/stable-id pair or missing row returns `unlimited`.
 
 Consequence: enforcement points must have the acting user's account email
 available. Both auth surfaces provide it — app sessions expose
 `user.mcpUser.email` and MCP caller contexts expose
 `ctx.callerContext.user.email`. Code paths that genuinely have no user email
-(for example package-manifest job sync or workflow-spawned inline code) are
-documented fail-open gaps, acceptable because they are only reachable after a
-user action that is itself gated.
+(for example package-manifest job sync or workflow-spawned inline code) resolve
+to `unlimited` at plan lookup — acceptable because they are only reachable after
+a user action that is itself gated.
 
-One path cannot fail open: inbound email routing has no caller context but must
-enforce receive quotas. It resolves the owning account via the indexed username
-lookup (`findPublicUserIdentityByUsername`) — it does not reverse-resolve stable
-user ids. `findUserAccountByStableUserId` in `service.ts` remains the
-reverse-resolution helper for other contextless paths (package-runtime contexts
-that act with only the stable userId, mirroring `findUserAccount` in
-`email/platform-address.ts`): `users.stable_user_id` is NOT NULL with a unique
-index (migrations 0052 + 0075; written at signup from
+One path still needs explicit account resolution: inbound email routing has no
+caller context but must enforce receive quotas. It resolves the owning account
+via the indexed username lookup (`findPublicUserIdentityByUsername`) — it does
+not reverse-resolve stable user ids. `findUserAccountByStableUserId` in
+`service.ts` remains the reverse-resolution helper for other contextless paths
+(package-runtime contexts that act with only the stable userId, mirroring
+`findUserAccount` in `email/platform-address.ts`): `users.stable_user_id` is NOT
+NULL with a unique index (migrations 0052 + 0075; written at signup from
 `createStableUserIdFromEmail`, preserved across email changes), so reverse
 lookup is always one indexed point read. Only use it on contextless paths;
 interactive surfaces already carry the email.
@@ -152,7 +148,7 @@ the stable programmatic contract:
 {
 	code: 'entitlement_limit_exceeded',
 	resource: EntitlementResource, // e.g. 'scheduled_jobs'
-	plan: PlanName | null,         // null when a global fallback limit applied
+	plan: PlanName,                // always a known plan name (including `unlimited`)
 	limit: number,
 	current: number,
 	upgradeHint: string,
@@ -168,6 +164,9 @@ user-facing string across MCP and UI surfaces:
 
 Rules:
 
+- `details.plan` is always a known plan name (including `unlimited` when email
+  caps from `unlimitedPlanEmailLimits` apply, or when a workflow concurrency
+  `fallbackLimit` backstop applies); denial messages always quote that plan name.
 - Never compose a custom denial message at an enforcement point; change the
   builder if the message needs work.
 - Never catch and rewrap `EntitlementLimitError` (use `isEntitlementLimitError`
@@ -184,19 +183,19 @@ Rules:
 - **Rate-style limits** (email sends and receives per day) use the
   `entitlement_daily_counters` table keyed by `(user_id, resource, day)` with
   UTC day keys. Call `consumeDailyEntitlement` on every attempt: it checks the
-  plan limit and increments the counter in one conditional D1 upsert (no
-  check-then-increment race), and still increments (uncapped) when effective
-  plan is null so counters reflect real usage the moment a recognized plan is
-  assigned — unless the caller passes `fallbackLimit`, which caps accounts whose
-  effective plan is null with a deployment-level backstop (both email sends and
-  receives do this). Counting attempts rather than successes keeps the limit
-  abuse-resistant for permanent rejects (parse failures, entitlement/quota
-  rejects). Only typed pre-commit `RetryableInboundStorageError` failures
-  (thread prework, R2 put, D1 message/attachment storage after successful
-  cleanup) refund exactly one `email_receives_per_day` unit via
-  `refundDailyEntitlement` for the same UTC day that was charged, so Cloudflare
-  Email Routing retries do not burn the daily receive quota. Post-commit
-  bookkeeping failures do not refund or retry.
+  plan limit from `resolvePlanLimit` (including the `unlimited` plan's email caps
+  in `planLimits.unlimited` via `unlimitedPlanEmailLimits`) and increments the
+  counter in one conditional D1 upsert (no check-then-increment race). When the
+  resolved plan limit is null, the counter still accumulates without a cap unless
+  the caller passes `fallbackLimit` (production use: workflow concurrency only).
+  Counting attempts rather
+  than successes keeps the limit abuse-resistant for permanent rejects (parse
+  failures, entitlement/quota rejects). Only typed pre-commit
+  `RetryableInboundStorageError` failures (thread prework, R2 put, D1
+  message/attachment storage after successful cleanup) refund exactly one
+  `email_receives_per_day` unit via `refundDailyEntitlement` for the same UTC
+  day that was charged, so Cloudflare Email Routing retries do not burn the
+  daily receive quota. Post-commit bookkeeping failures do not refund or retry.
   `incrementDailyEntitlementCounter` remains for raw counter writes (tests,
   backfills).
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
@@ -219,8 +218,10 @@ Rules:
   those stores either lack reliable byte metadata or are derived from D1 and are
   documented in `data-storage.md`.
 
-Because the plan check happens before any counting, enforcement adds zero
-counting overhead when effective plan is null (compatibility fail-open).
+When the resolved plan limit is null (including the `unlimited` tier for
+ordinary resources other than email), enforcement adds zero counting overhead
+beyond any `fallbackLimit` backstop. Email resources always resolve a numeric
+plan limit for every plan name, including `unlimited`.
 
 ### Concurrency
 
@@ -249,24 +250,24 @@ The exemplar is job scheduling: `createJob` in
 3. Call the single helper and let it throw:
 
    ```ts
-   import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+   import { assertWithinEntitlement } from "#worker/entitlements/service.ts";
 
    await assertWithinEntitlement({
-   	db: env.APP_DB,
-   	userId,
-   	email: userEmail,
-   	resource: 'scheduled_jobs',
-   })
+     db: env.APP_DB,
+     userId,
+     email: userEmail,
+     resource: "scheduled_jobs",
+   });
    ```
 
    Use `fallbackLimit` only for global backstops that must bind accounts whose
-   effective plan is null (the workflow concurrency limit absorbed the
-   `WORKFLOW_CONCURRENT_LIMIT` env var this way via
-   `getWorkflowConcurrencyBackstop`, and the email resources cap `unlimited` and
-   compatibility fail-open users via `nullPlanEmailFallbackLimits`).
-   `consumeDailyEntitlement` accepts the same `fallbackLimit` for daily rate
-   resources. Use `getCurrent` only when the built-in D1 counter cannot express
-   the resource.
+   plan limit is null (today: workflow concurrency via
+   `getWorkflowConcurrencyBackstop`, which absorbs the
+   `WORKFLOW_CONCURRENT_LIMIT` env var). Email abuse caps for the `unlimited`
+   plan live in `planLimits.unlimited` via `unlimitedPlanEmailLimits` — register
+   them in `planLimits` and read them through `resolvePlanLimit` /
+   `resolveEmailResourceLimit`; do not route email through `fallbackLimit`. Use
+   `getCurrent` only when the built-in D1 counter cannot express the resource.
 
 4. If the resource is a new one, register it in `plans.ts`
    (`entitlementResources`, `PlanLimits`, `planLimits`,
@@ -274,27 +275,28 @@ The exemplar is job scheduling: `createJob` in
    in `service.ts` when it is D1-countable.
 5. Test both sides: a plan user at the limit is denied with
    `details.code === 'entitlement_limit_exceeded'` (assert `resource`, `plan`,
-   `limit`, `current`), and a compatibility fail-open user is unaffected. Build
+   `limit`, `current`), and an `unlimited`-plan user (or a caller context that
+   resolves to `unlimited`) is unaffected for ordinary capped resources. Build
    the test user's id with `createStableUserIdFromEmail(email)` (or any stored
    `stable_user_id`) and assert plan lookup against the email + stable-id pair;
-   a mismatched pair must resolve as fail-open.
+   a mismatched pair must resolve as `unlimited`.
 
 ## Enforcement points
 
-| Resource                      | Enforcement point                                                                                                              |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                |
-| `saved_packages`              | new-package branch of `package_save` and projection insert                                                                     |
-| `package_services`            | `service_start` capability path                                                                                                |
-| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                     |
-| `repo_sessions`               | `repo_open_session` before creating a new session                                                                              |
-| `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`, email backstop)                                                         |
-| `email_receives_per_day`      | `handleInboundEmail` (atomic `consumeDailyEntitlement`, email backstop; refund only on `RetryableInboundStorageError`)         |
-| `stored_email_messages`       | `handleInboundEmail` before storage (email backstop)                                                                           |
-| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size, email backstop)                                                 |
-| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                               |
-| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for `unlimited` and compatibility fail-open)                     |
-| `storage_bytes`               | D1 payload writes (values, secrets, memories, saved-package projections, email storage) and StorageRunner write tools/app RPCs |
+| Resource                      | Enforcement point                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                 |
+| `saved_packages`              | new-package branch of `package_save` and projection insert                                                                      |
+| `package_services`            | `service_start` capability path                                                                                                 |
+| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                      |
+| `repo_sessions`               | `repo_open_session` before creating a new session                                                                               |
+| `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`, `unlimited` via `unlimitedPlanEmailLimits`) |
+| `email_receives_per_day`      | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)               |
+| `stored_email_messages`       | `handleInboundEmail` before storage (`assertWithinEntitlement`; `unlimited` cap from `planLimits.unlimited`)                    |
+| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolveEmailResourceLimit`)                                  |
+| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                |
+| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit, env-var backstop for `unlimited`)                                                  |
+| `storage_bytes`               | D1 payload writes (values, secrets, memories, saved-package projections, email storage) and StorageRunner write tools/app RPCs  |
 
 ## Billing
 
@@ -324,14 +326,13 @@ in [`../environment-variables.md`](../environment-variables.md).
 ## Related tables and coordination
 
 - `users.plan` — added by the invite-signup migration
-  (`0046-invites-email-verification.sql`); the entitlements module is the
-  consumer of that column (manual / invite / admin grant). Writers default to
-  `unlimited`; migration `0080-backfill-unlimited-plan.sql` materializes
-  historical NULL rows.
-- `invites.plan` — nullable signup plan from migration `0065-invite-plans.sql`;
-  applied to `users.plan` when the invite is consumed at signup (missing/NULL
-  invite plans write `unlimited`). Migration `0080-backfill-unlimited-plan.sql`
-  materializes historical NULL rows.
+  (`0046-invites-email-verification.sql`); NOT NULL DEFAULT `'unlimited'` after
+  `0081-plan-not-null.sql`. The entitlements module is the consumer of that
+  column (manual / invite / admin grant). Writers default to `unlimited`.
+- `invites.plan` — signup plan from migration `0065-invite-plans.sql`; NOT NULL
+  DEFAULT `'unlimited'` after `0081-plan-not-null.sql`. Applied to `users.plan`
+  when the invite is consumed at signup via `parseStoredPlanName` (omitted plans
+  use the column default `unlimited`).
 - `users.stripe_customer_id`, `users.stripe_plan`,
   `users.stripe_plan_refreshed_at` — Stripe billing columns from migration
   `0066-stripe-billing.sql`; owned by `packages/worker/src/billing/`, read by

@@ -31,7 +31,7 @@ export const emailUsageGetCapability = defineDomainCapability(
 		destructive: false,
 		inputSchema: emptyCapabilityInputSchema,
 		outputSchema: z.object({
-			plan: z.enum(planNames).nullable(),
+			plan: z.enum(planNames),
 			/** UTC day the send/receive counters apply to (YYYY-MM-DD). */
 			day: z.string(),
 			stored_messages: usageEntrySchema,

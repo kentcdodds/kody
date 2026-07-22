@@ -3,7 +3,7 @@ import { readPagination } from '#app/query-params.ts'
 import { type AdminUsersLoaderData } from '#app/loader-data.ts'
 import { type RoleName, roleNames } from '#app/permissions.ts'
 import {
-	parsePlanName,
+	parseStoredPlanName,
 	planNames,
 	resolvePlanWrite,
 	type PlanName,
@@ -34,7 +34,7 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	email: string
 	email_verified: boolean
 	email_verified_at: string | null
-	plan: PlanName | null
+	plan: PlanName
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -220,7 +220,7 @@ type AdminUserRow = {
 	username: string
 	email: string
 	email_verified_at: string | null
-	plan: string | null
+	plan: string
 	created_at: string
 	updated_at: string
 }
@@ -235,7 +235,7 @@ function toAdminUserListItem(
 		email: row.email,
 		email_verified: Boolean(row.email_verified_at),
 		email_verified_at: row.email_verified_at,
-		plan: parsePlanName(row.plan),
+		plan: parseStoredPlanName(row.plan),
 		created_at: row.created_at,
 		updated_at: row.updated_at,
 		roles,

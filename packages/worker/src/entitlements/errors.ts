@@ -10,8 +10,8 @@ export const entitlementLimitErrorCode = 'entitlement_limit_exceeded' as const
 export type EntitlementLimitErrorDetails = {
 	code: typeof entitlementLimitErrorCode
 	resource: EntitlementResource
-	/** null when the limit came from a global fallback rather than a plan. */
-	plan: PlanName | null
+	/** Always a known plan name (including `unlimited` for fallback contexts). */
+	plan: PlanName
 	limit: number
 	current: number
 	upgradeHint: string
@@ -31,10 +31,7 @@ export function buildEntitlementLimitMessage(
 	details: EntitlementLimitErrorDetails,
 ) {
 	const label = entitlementResourceLabels[details.resource]
-	const planText = details.plan
-		? `your "${details.plan}" plan`
-		: 'this deployment'
-	return `Plan limit reached: ${planText} allows at most ${details.limit} ${label} and you currently have ${details.current}. ${details.upgradeHint}`
+	return `Plan limit reached: your "${details.plan}" plan allows at most ${details.limit} ${label} and you currently have ${details.current}. ${details.upgradeHint}`
 }
 
 export function parseEntitlementLimitMessage(
@@ -44,12 +41,12 @@ export function parseEntitlementLimitMessage(
 		entitlementResourceLabels,
 	) as Array<[EntitlementResource, string]>) {
 		const match = new RegExp(
-			`^Plan limit reached: (?:your "([^"]+)" plan|this deployment) allows at most (\\d+) ${escapeRegex(label)} and you currently have (\\d+)\\. (.+)$`,
+			`^Plan limit reached: your "([^"]+)" plan allows at most (\\d+) ${escapeRegex(label)} and you currently have (\\d+)\\. (.+)$`,
 		).exec(message)
 		if (!match) continue
 
-		const plan = match[1] ? parsePlanName(match[1]) : null
-		if (match[1] && !plan) return null
+		const plan = parsePlanName(match[1])
+		if (!plan) return null
 		const limit = Number(match[2])
 		const current = Number(match[3])
 		if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(current)) {

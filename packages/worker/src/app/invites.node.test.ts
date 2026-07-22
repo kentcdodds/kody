@@ -27,7 +27,7 @@ function createInviteDb(invites: Array<InviteFixture> = []) {
 							expires_at: expiresAt == null ? null : String(expiresAt),
 							revoked_at: null,
 							created_at: '2026-07-05T00:00:00.000Z',
-							plan: plan == null ? null : String(plan),
+							plan: plan == null ? 'unlimited' : String(plan),
 						}
 						records.set(invite.code, invite)
 						return { meta: { changes: 1, last_row_id: 0 } }
@@ -103,7 +103,7 @@ function invite(overrides: Partial<InviteFixture> = {}): InviteFixture {
 		expires_at: null,
 		revoked_at: null,
 		created_at: '2026-07-05T00:00:00.000Z',
-		plan: null,
+		plan: 'unlimited',
 		...overrides,
 	}
 }

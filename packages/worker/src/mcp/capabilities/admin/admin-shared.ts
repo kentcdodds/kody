@@ -33,11 +33,9 @@ export const adminUserMetadataSchema = z.object({
 		.string()
 		.nullable()
 		.describe('Raw users.email_verified_at timestamp, or null if unverified.'),
-	plan: planNameSchema
-		.nullable()
-		.describe(
-			'Entitlement plan name, or null when the stored value is not recognized.',
-		),
+	plan: planNameSchema.describe(
+		'Entitlement plan name. Unknown or unexpected NULL stored values resolve to unlimited.',
+	),
 	created_at: z.string(),
 	updated_at: z.string(),
 	roles: z.array(roleNameSchema),

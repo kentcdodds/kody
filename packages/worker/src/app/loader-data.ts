@@ -121,7 +121,7 @@ export type AdminUserListItem = {
 	email: string
 	email_verified: boolean
 	email_verified_at: string | null
-	plan: AdminPlanName | null
+	plan: AdminPlanName
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -186,7 +186,7 @@ export type AdminInviteListItem = {
 	expiresAt: string | null
 	revokedAt: string | null
 	createdAt: string
-	plan: AdminPlanName | null
+	plan: AdminPlanName
 }
 
 export type AdminInvitesLoaderData = {
@@ -257,7 +257,7 @@ export type AdminUserUsageLoaderData = {
 	ok: true
 	userId: number
 	username: string
-	plan: AdminPlanName | null
+	plan: AdminPlanName
 	currentMonth: string
 	today: string
 	currentMonthUsage: Array<AdminUsageRollup>
@@ -754,9 +754,9 @@ export type AppLoaderData = {
 export type AccountBillingLoaderData = {
 	ok: true
 	configured: boolean
-	manualPlan: AdminPlanName | null
+	manualPlan: AdminPlanName
 	stripePlan: AdminPlanName | null
-	effectivePlan: AdminPlanName | null
+	effectivePlan: AdminPlanName
 	hasStripeCustomer: boolean
 	cancelAt: string | null
 	checkoutAvailable: boolean

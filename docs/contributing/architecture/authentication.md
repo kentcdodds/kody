@@ -94,10 +94,12 @@ The `invites` table stores operator-created invite codes:
   deletion does not strand invites)
 - `note`, `max_uses`, `use_count`, `expires_at`, `revoked_at`, and `created_at`
   describe current invite state
-- `plan` (nullable, migration `0065-invite-plans.sql`) is an optional signup
-  plan name; password and social signup copy a known value onto `users.plan`.
-  Missing or NULL invite plans write `unlimited` at signup. See
-  [Entitlements](./entitlements.md).
+- `plan` (NOT NULL DEFAULT `'unlimited'` after migration
+  `0081-plan-not-null.sql`; added by `0065-invite-plans.sql`) is an optional
+  signup plan name; password and social signup read the consumed invite's stored
+  plan with `parseStoredPlanName` and copy it onto `users.plan`. Omitted invite
+  plans use the column default `unlimited`. Admin invite creation validates plan
+  names with strict `parsePlanName`. See [Entitlements](./entitlements.md).
 
 Production signup atomically consumes an invite with a single conditional
 `UPDATE ... WHERE use_count < max_uses AND revoked_at IS NULL ...`; concurrent
