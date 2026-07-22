@@ -464,6 +464,7 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 	})
 	const env = {
 		APP_DB: db,
+		COOKIE_SECRET: 'test-cookie-secret',
 		EMAIL_BLOBS: { get: getEmailBlob },
 		COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
 	} as unknown as Env
@@ -481,6 +482,17 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 			missing: true,
 		}),
 	])
+	const firstCursor = first.nextStartAfter!
+	const tamperedCursor = `${firstCursor.slice(0, -1)}${firstCursor.endsWith('a') ? 'b' : 'a'}`
+	await expect(
+		readAccountExportSection({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+			section: 'r2_object',
+			startAfter: tamperedCursor,
+		}),
+	).rejects.toThrow('Invalid r2_object cursor.')
 	const second = await readAccountExportSection({
 		env,
 		dbUserId: 1,
@@ -555,6 +567,7 @@ test('R2 export performs bounded keyset work independent of mailbox size', async
 	const page = await readAccountExportSection({
 		env: {
 			APP_DB: db,
+			COOKIE_SECRET: 'test-cookie-secret',
 			EMAIL_BLOBS: { get: vi.fn(async () => null) },
 			COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
 		} as unknown as Env,
@@ -611,6 +624,7 @@ test('R2 export cursor detects object overwrite before continuing bytes', async 
 	}))
 	const env = {
 		APP_DB: db,
+		COOKIE_SECRET: 'test-cookie-secret',
 		COMMUNITY_ASSETS: { get, head },
 		EMAIL_BLOBS: { get: vi.fn(async () => null), head },
 	} as unknown as Env
@@ -675,6 +689,7 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 	})
 	const env = {
 		APP_DB: db,
+		COOKIE_SECRET: 'test-cookie-secret',
 		EMAIL_BLOBS: { get },
 		COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
 	} as unknown as Env

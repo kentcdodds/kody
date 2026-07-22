@@ -45,8 +45,7 @@ type R2Cursor = {
 	pending?: StableR2Ref
 }
 
-function encodeBase64Url(value: string) {
-	const bytes = new TextEncoder().encode(value)
+function encodeBase64UrlBytes(bytes: Uint8Array) {
 	let binary = ''
 	for (const byte of bytes) binary += String.fromCharCode(byte)
 	return btoa(binary)
@@ -55,17 +54,39 @@ function encodeBase64Url(value: string) {
 		.replace(/=+$/u, '')
 }
 
-function decodeBase64Url(value: string) {
+function encodeBase64Url(value: string) {
+	return encodeBase64UrlBytes(new TextEncoder().encode(value))
+}
+
+function decodeBase64UrlBytes(value: string) {
 	const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
 	const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
 	const binary = atob(padded)
-	return new TextDecoder().decode(
-		Uint8Array.from(binary, (character) => character.charCodeAt(0)),
+	return Uint8Array.from(binary, (character) => character.charCodeAt(0))
+}
+
+function decodeBase64Url(value: string) {
+	return new TextDecoder().decode(decodeBase64UrlBytes(value))
+}
+
+async function cursorHmacKey(env: Env) {
+	return await crypto.subtle.importKey(
+		'raw',
+		new TextEncoder().encode(env.COOKIE_SECRET),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign', 'verify'],
 	)
 }
 
-function encodeCursor(cursor: R2Cursor) {
-	return encodeBase64Url(JSON.stringify(cursor))
+async function encodeCursor(env: Env, userId: string, cursor: R2Cursor) {
+	const payload = encodeBase64Url(JSON.stringify({ userId, cursor }))
+	const signature = await crypto.subtle.sign(
+		'HMAC',
+		await cursorHmacKey(env),
+		new TextEncoder().encode(payload),
+	)
+	return `${payload}.${encodeBase64UrlBytes(new Uint8Array(signature))}`
 }
 
 function isScanState(value: unknown): value is R2ScanState {
@@ -82,12 +103,30 @@ function isScanState(value: unknown): value is R2ScanState {
 	)
 }
 
-function decodeCursor(value: string | undefined): R2Cursor {
+async function decodeCursor(
+	env: Env,
+	userId: string,
+	value: string | undefined,
+): Promise<R2Cursor> {
 	if (!value) {
 		return { v: accountR2CursorVersion, state: { stage: 'avatar' } }
 	}
 	try {
-		const parsed = JSON.parse(decodeBase64Url(value)) as R2Cursor
+		const [payload, signature, extra] = value.split('.')
+		if (!payload || !signature || extra) throw new Error('invalid envelope')
+		const valid = await crypto.subtle.verify(
+			'HMAC',
+			await cursorHmacKey(env),
+			decodeBase64UrlBytes(signature),
+			new TextEncoder().encode(payload),
+		)
+		if (!valid) throw new Error('invalid signature')
+		const envelope = JSON.parse(decodeBase64Url(payload)) as {
+			userId?: unknown
+			cursor?: unknown
+		}
+		if (envelope.userId !== userId) throw new Error('wrong user')
+		const parsed = envelope.cursor as R2Cursor
 		if (parsed.v !== accountR2CursorVersion || !isScanState(parsed.state)) {
 			throw new Error('unsupported cursor')
 		}
@@ -419,7 +458,7 @@ export async function readAccountR2ExportPage(input: {
 		env: input.env,
 		userId: input.userId,
 		dbUserId: input.dbUserId,
-		cursor: decodeCursor(input.startAfter),
+		cursor: await decodeCursor(input.env, input.userId, input.startAfter),
 	})
 	if (!cursor.current) {
 		return {
@@ -450,7 +489,7 @@ export async function readAccountR2ExportPage(input: {
 				},
 			],
 			truncated: true,
-			nextStartAfter: encodeCursor(after),
+			nextStartAfter: await encodeCursor(input.env, input.userId, after),
 		}
 	}
 	const bucket = bucketFor(input.env, ref.binding)
@@ -476,7 +515,7 @@ export async function readAccountR2ExportPage(input: {
 						},
 					],
 					truncated: true,
-					nextStartAfter: encodeCursor(after),
+					nextStartAfter: await encodeCursor(input.env, input.userId, after),
 				}
 			}
 		}
@@ -487,7 +526,7 @@ export async function readAccountR2ExportPage(input: {
 			return {
 				items: [{ ...ref, missing: true }],
 				truncated: true,
-				nextStartAfter: encodeCursor(after),
+				nextStartAfter: await encodeCursor(input.env, input.userId, after),
 			}
 		}
 		if (
@@ -508,7 +547,7 @@ export async function readAccountR2ExportPage(input: {
 					},
 				],
 				truncated: true,
-				nextStartAfter: encodeCursor(after),
+				nextStartAfter: await encodeCursor(input.env, input.userId, after),
 			}
 		}
 		const bytes = new Uint8Array(await object.arrayBuffer())
@@ -527,7 +566,9 @@ export async function readAccountR2ExportPage(input: {
 				},
 			],
 			truncated: true,
-			nextStartAfter: encodeCursor(
+			nextStartAfter: await encodeCursor(
+				input.env,
+				input.userId,
 				objectComplete
 					? after
 					: {
@@ -548,7 +589,7 @@ export async function readAccountR2ExportPage(input: {
 		return {
 			items: [{ ...ref, unavailable: true }],
 			truncated: true,
-			nextStartAfter: encodeCursor(after),
+			nextStartAfter: await encodeCursor(input.env, input.userId, after),
 		}
 	}
 }
