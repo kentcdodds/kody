@@ -362,6 +362,14 @@ function createAdminCapabilityTestDb(input: {
 							stableUserId,
 						] = params
 						if (
+							typeof stableUserId !== 'string' ||
+							stableUserId.trim().length === 0
+						) {
+							throw new Error(
+								'INSERT INTO users requires a non-empty stable_user_id bind parameter',
+							)
+						}
+						if (
 							users.some(
 								(row) =>
 									row.email.toLowerCase() === String(email ?? '').toLowerCase(),
@@ -379,18 +387,16 @@ function createAdminCapabilityTestDb(input: {
 							throw new Error('UNIQUE constraint failed: users.username')
 						}
 						const now = new Date().toISOString()
-						const user = adminTestUser({
+						const user: UserRow = {
 							id: nextUserId,
 							username: String(username),
 							email: String(email),
+							stable_user_id: stableUserId,
 							created_at: now,
 							updated_at: now,
 							password_hash: String(passwordHash),
 							email_verified_at: String(emailVerifiedAt),
-							...(typeof stableUserId === 'string'
-								? { stable_user_id: stableUserId }
-								: {}),
-						})
+						}
 						nextUserId += 1
 						users.push(user)
 						return { meta: { changes: 1, last_row_id: user.id } }
@@ -673,6 +679,39 @@ test('admin system email capabilities read only system-owned mail and audit read
 	expect(auditEvents[1]).toMatchObject({
 		reason: 'target_message_id=system-message-1',
 	})
+})
+
+test('insert into users mock rejects missing stable_user_id bind parameter', async () => {
+	const { db } = createAdminCapabilityTestDb({
+		users: [],
+		userRoles: [],
+	})
+	const insertSql = `INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+ VALUES (?, ?, ?, ?, ?)`
+
+	await expect(
+		db
+			.prepare(insertSql)
+			.bind('testuser', 'test@example.com', 'hash', '2026-01-01T00:00:00.000Z')
+			.run(),
+	).rejects.toThrow(
+		'INSERT INTO users requires a non-empty stable_user_id bind parameter',
+	)
+
+	await expect(
+		db
+			.prepare(insertSql)
+			.bind(
+				'testuser',
+				'test@example.com',
+				'hash',
+				'2026-01-01T00:00:00.000Z',
+				'   ',
+			)
+			.run(),
+	).rejects.toThrow(
+		'INSERT INTO users requires a non-empty stable_user_id bind parameter',
+	)
 })
 
 test('admin_user_create records audit metadata and assigns the default role', async () => {
