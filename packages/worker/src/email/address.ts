@@ -70,24 +70,3 @@ export function normalizeSubject(subject: string | null | undefined) {
 		.replace(/\s+/g, ' ')
 		.toLowerCase()
 }
-
-export function extractReplyToken(input: {
-	headers: Headers
-	recipients: ReadonlyArray<string>
-}) {
-	const explicit =
-		input.headers.get('X-Kody-Reply-Token') ??
-		input.headers.get('X-Reply-Token') ??
-		null
-	if (explicit?.trim()) return explicit.trim()
-	for (const recipient of input.recipients) {
-		const normalized = normalizeEmailAddress(recipient)
-		if (!normalized) continue
-		const localPart = getEmailLocalPart(normalized)
-		const match =
-			localPart.match(/\bkody-r-([a-f0-9]{16,128})\b/i) ??
-			localPart.match(/\+reply-([a-z0-9_-]+)/i)
-		if (match?.[1]) return match[1]
-	}
-	return null
-}

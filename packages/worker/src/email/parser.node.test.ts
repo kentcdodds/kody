@@ -29,7 +29,7 @@ function createMessage(
 	} satisfies ForwardableEmailMessage
 }
 
-test('parseForwardableEmailMessage extracts content, attachments, and reply tokens', async () => {
+test('parseForwardableEmailMessage extracts content and attachments', async () => {
 	const raw = [
 		'From: Sender <sender@example.com>',
 		'To: Support <support@example.com>',
@@ -71,47 +71,6 @@ test('parseForwardableEmailMessage extracts content, attachments, and reply toke
 			size: expect.any(Number),
 		}),
 	])
-
-	const headerTokenRaw = [
-		'From: Sender <sender@example.com>',
-		'To: Support <support@example.com>',
-		'X-Reply-Token: alternate-token',
-		'Subject: Hello',
-		'',
-		'Plain body',
-	].join('\r\n')
-	const headerTokenParsed = await parseForwardableEmailMessage(
-		createMessage(headerTokenRaw),
-	)
-	expect(headerTokenParsed.replyToken).toBe('alternate-token')
-	expect(headerTokenParsed.to).toEqual([
-		{ name: null, address: 'support@example.com' },
-	])
-
-	const recipientTokenRaw = [
-		'From: Sender <sender@example.com>',
-		'To: Support <kody-r-0123456789abcdef@example.com>',
-		'Subject: Reply token',
-		'',
-		'Body',
-	].join('\r\n')
-	const recipientTokenParsed = await parseForwardableEmailMessage(
-		createMessage(recipientTokenRaw, 'kody-r-0123456789abcdef@example.com'),
-	)
-	expect(recipientTokenParsed.replyToken).toBe('0123456789abcdef')
-
-	const explicitTokenRaw = [
-		'From: Sender <sender@example.com>',
-		'To: Support <support@example.com>',
-		'Subject: Reply token',
-		'X-Reply-Token: token-123',
-		'',
-		'Body',
-	].join('\r\n')
-	const explicitTokenParsed = await parseForwardableEmailMessage(
-		createMessage(explicitTokenRaw),
-	)
-	expect(explicitTokenParsed.replyToken).toBe('token-123')
 
 	await expect(
 		parseForwardableEmailMessage(createMessage('Subject: Oversized\n\nbody'), {

@@ -139,9 +139,9 @@ name, description, bucket, allowed hosts, allowed kody, allowed packages, and
 timestamps. The encrypted payload (`encrypted_value`) and lookup hash
 (`lookup_hash`) are omitted. The same redaction rule is applied to other
 credential-equivalent fields such as password hashes, password/email reset token
-hashes, package invocation token hashes, and email reply token hashes. The
-manifest states these redactions explicitly so a partial or intentionally
-redacted export is not mistaken for a complete secret backup.
+hashes, and package invocation token hashes. The manifest states these
+redactions explicitly so a partial or intentionally redacted export is not
+mistaken for a complete secret backup.
 
 The browser route `GET /account/export.json` downloads a full JSON export for
 the signed-in user. The MCP capability domain `account` provides a

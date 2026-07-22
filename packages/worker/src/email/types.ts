@@ -61,7 +61,6 @@ export type ParsedInboundEmail = {
 	rawMime: string
 	rawSize: number
 	attachments: Array<EmailAttachmentMetadata>
-	replyToken: string | null
 }
 
 export type EmailInboxRecord = {

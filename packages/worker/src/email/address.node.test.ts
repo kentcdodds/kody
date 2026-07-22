@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	extractReplyToken,
 	getEmailDomain,
 	getEmailLocalPart,
 	normalizeEmailAddress,
@@ -9,7 +8,7 @@ import {
 	splitEmailLocalPart,
 } from './address.ts'
 
-test('email address helpers normalize mailbox strings and reply tokens', () => {
+test('email address helpers normalize mailbox strings', () => {
 	expect(normalizeEmailAddress('Alice Example <Alice@Example.COM>')).toBe(
 		'alice@example.com',
 	)
@@ -38,11 +37,4 @@ test('email address helpers normalize mailbox strings and reply tokens', () => {
 		subaddress: null,
 	})
 	expect(splitEmailLocalPart('+tag')).toEqual({ base: '', subaddress: 'tag' })
-
-	const headers = new Headers({ 'X-Kody-Reply-Token': 'token-123' })
-	expect(extractReplyToken({ headers, recipients: [] })).toBe('token-123')
-	const alternateHeaders = new Headers({ 'X-Reply-Token': 'alternate-token' })
-	expect(extractReplyToken({ headers: alternateHeaders, recipients: [] })).toBe(
-		'alternate-token',
-	)
 })

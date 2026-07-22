@@ -2,11 +2,7 @@ import PostalMime, {
 	type Address as PostalAddress,
 	type Attachment as PostalAttachment,
 } from 'postal-mime'
-import {
-	extractReplyToken,
-	normalizeEmailAddress,
-	parseHeaderAddressList,
-} from './address.ts'
+import { normalizeEmailAddress, parseHeaderAddressList } from './address.ts'
 import {
 	type EmailAttachmentMetadata,
 	type EmailMailbox,
@@ -175,9 +171,5 @@ export async function parseForwardableEmailMessage(
 		rawMime,
 		rawSize: message.rawSize,
 		attachments: toAttachmentMetadata(parsed.attachments),
-		replyToken: extractReplyToken({
-			headers: message.headers,
-			recipients: toAddresses.map((address) => address.address),
-		}),
 	}
 }

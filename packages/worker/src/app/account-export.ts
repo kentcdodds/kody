@@ -36,7 +36,6 @@ const exportRowidColumn = '__account_export_rowid'
 // server-side and token/password hashes are omitted for the same reason.
 const redactedColumnsByTable: Readonly<Record<string, ReadonlyArray<string>>> =
 	{
-		email_inbox_addresses: ['reply_token_hash'],
 		email_verifications: ['token_hash'],
 		package_invocation_tokens: ['token_hash'],
 		password_resets: ['token_hash'],
