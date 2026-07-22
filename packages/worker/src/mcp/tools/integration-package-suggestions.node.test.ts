@@ -233,3 +233,33 @@ test('integration package suggestions stay same-provider, user-first, and capped
 	})
 	expect(failedCommunity).toEqual([])
 })
+
+test('account-specific integration names still match the stable provider', async () => {
+	for (const integrationName of [
+		'google-business',
+		'google-youtube-brand',
+		'google-team-2',
+	]) {
+		expect(
+			packageIdentityMentionsProvider(
+				{
+					kodyId: 'google-calendar',
+					name: '@kody/google-calendar',
+					tags: ['google', 'calendar'],
+				},
+				integrationName,
+			),
+		).toBe(true)
+	}
+
+	expect(
+		packageIdentityMentionsProvider(
+			{
+				kodyId: 'github',
+				name: '@kody/github',
+				tags: ['github'],
+			},
+			'google-business',
+		),
+	).toBe(false)
+})
