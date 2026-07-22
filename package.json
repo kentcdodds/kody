@@ -32,6 +32,10 @@
     "build:client:web": "esbuild packages/worker/client/entry.tsx --bundle --format=esm --target=es2022 --outdir=packages/worker/public --entry-names=client-entry --chunk-names=assets/[name] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/ui --minify",
     "build:client": "npm run build:client:web",
     "build": "nx run worker:build",
+    "backup:build": "wrangler deploy --dry-run --config packages/backup-control-plane/wrangler.jsonc",
+    "backup:readiness": "node tools/disaster-recovery/canonical-readiness-cli.ts",
+    "backup:resources": "node tools/ci/backup-resources-cli.ts",
+    "backup:restore-drill": "node tools/disaster-recovery/d1-restore-drill-cli.ts",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
     "format": "oxfmt",
@@ -44,7 +48,7 @@
     "preview": "nx run worker:build-client && npm run migrate:local && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local",
     "preview:e2e": "node --env-file=packages/worker/.env tools/prepare-e2e-env.ts && nx run worker:build-client && npm run migrate:e2e && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
     "generate-types": "node --env-file=packages/worker/.env ./wrangler-env.ts types ./packages/worker/worker-configuration.d.ts",
-    "typecheck": "nx run worker:typecheck",
+    "typecheck": "nx run worker:typecheck && tsc --noEmit -p packages/backup-control-plane/tsconfig.json",
     "test": "nx run worker:test",
     "test:push": "npm run test && npm run test:e2e:run",
     "inspect": "npx -y @mcpjam/inspector inspector",
@@ -95,6 +99,7 @@
   },
   "packageManager": "npm@11.11.1",
   "workspaces": [
+    "packages/backup-control-plane",
     "packages/shared",
     "packages/worker",
     "packages/mock-servers/*"

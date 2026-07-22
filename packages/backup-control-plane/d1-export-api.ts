@@ -1,0 +1,220 @@
+import { BackupError, assertRemoteDatabaseIdentity } from './backup-policy.ts'
+import { type BackupEnvironment, type ExportState } from './backup-types.ts'
+
+export interface ApiOptions {
+	fetcher?: typeof fetch
+	sleep?: (milliseconds: number) => Promise<void>
+	maxRequestAttempts?: number
+}
+
+interface JsonObject {
+	[key: string]: unknown
+}
+
+const DEFAULT_REQUEST_ATTEMPTS = 5
+const MAX_RETRY_DELAY = 60_000
+
+function isObject(value: unknown): value is JsonObject {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function classifyHttpStatus(
+	status: number,
+): 'hard' | 'retry' | 'malformed' {
+	if (status === 401 || status === 403) return 'hard'
+	if (status === 429 || status >= 500) return 'retry'
+	return 'malformed'
+}
+
+function retryDelay(response: Response, attempt: number): number {
+	const retryAfter = response.headers.get('retry-after')
+	if (retryAfter && /^\d+$/.test(retryAfter)) {
+		return Math.min(Number(retryAfter) * 1_000, MAX_RETRY_DELAY)
+	}
+	return Math.min(1_000 * 2 ** (attempt - 1), MAX_RETRY_DELAY)
+}
+
+async function apiJson(
+	url: string,
+	init: RequestInit,
+	options: ApiOptions,
+): Promise<JsonObject> {
+	const fetcher = options.fetcher ?? fetch
+	const sleep =
+		options.sleep ?? ((milliseconds) => scheduler.wait(milliseconds))
+	const attempts = options.maxRequestAttempts ?? DEFAULT_REQUEST_ATTEMPTS
+	for (let attempt = 1; attempt <= attempts; attempt += 1) {
+		let response: Response
+		try {
+			response = await fetcher(url, init)
+		} catch {
+			if (attempt === attempts) {
+				throw new BackupError(
+					'api-network-failure',
+					'Cloudflare API request failed',
+					true,
+				)
+			}
+			await sleep(Math.min(1_000 * 2 ** (attempt - 1), MAX_RETRY_DELAY))
+			continue
+		}
+		if (!response.ok) {
+			const classification = classifyHttpStatus(response.status)
+			switch (classification) {
+				case 'hard':
+					throw new BackupError(
+						'api-auth-failure',
+						`Cloudflare API rejected credentials (${response.status})`,
+					)
+				case 'retry':
+					if (attempt < attempts) {
+						await sleep(retryDelay(response, attempt))
+						continue
+					}
+					throw new BackupError(
+						'api-retries-exhausted',
+						`Cloudflare API remained unavailable (${response.status})`,
+						true,
+					)
+				case 'malformed':
+					throw new BackupError(
+						'api-http-error',
+						`Cloudflare API returned HTTP ${response.status}`,
+					)
+				default: {
+					const exhaustive: never = classification
+					throw exhaustive
+				}
+			}
+		}
+		let body: unknown
+		try {
+			body = await response.json()
+		} catch {
+			throw new BackupError(
+				'api-malformed-json',
+				'Cloudflare API returned malformed JSON',
+			)
+		}
+		if (!isObject(body) || body.success !== true || !isObject(body.result)) {
+			throw new BackupError(
+				'api-malformed-response',
+				'Cloudflare API response envelope was invalid',
+			)
+		}
+		return body.result
+	}
+	throw new BackupError(
+		'api-retries-exhausted',
+		'Cloudflare API retry limit reached',
+	)
+}
+
+function authHeaders(env: BackupEnvironment): HeadersInit {
+	return {
+		authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
+		'content-type': 'application/json',
+	}
+}
+
+export async function verifySourceDatabaseIdentity(
+	env: BackupEnvironment,
+	options: ApiOptions = {},
+): Promise<void> {
+	const database = await apiJson(
+		`https://api.cloudflare.com/client/v4/accounts/${env.SOURCE_ACCOUNT_ID}/d1/database/${env.SOURCE_DATABASE_ID}`,
+		{ headers: authHeaders(env) },
+		options,
+	)
+	if (typeof database.uuid !== 'string' || typeof database.name !== 'string') {
+		throw new BackupError(
+			'api-malformed-identity',
+			'Cloudflare identity response was invalid',
+		)
+	}
+	assertRemoteDatabaseIdentity(env, {
+		uuid: database.uuid,
+		name: database.name,
+	})
+}
+
+function parseExportState(result: JsonObject): ExportState {
+	if (
+		result.type !== 'export' ||
+		result.success !== true ||
+		typeof result.at_bookmark !== 'string' ||
+		result.at_bookmark.length === 0
+	) {
+		throw new BackupError(
+			'export-malformed-response',
+			'D1 export response was invalid',
+		)
+	}
+	const status = result.status
+	if (status === 'error') {
+		throw new BackupError('export-failed', 'D1 reported an export failure')
+	}
+	if (status === 'complete') {
+		const completed = result.result
+		if (!isObject(completed) || typeof completed.signed_url !== 'string') {
+			throw new BackupError(
+				'export-malformed-response',
+				'D1 completed without a signed URL',
+			)
+		}
+		return {
+			kind: 'complete',
+			bookmark: result.at_bookmark,
+			signedUrl: completed.signed_url,
+		}
+	}
+	if (status !== undefined) {
+		throw new BackupError(
+			'export-malformed-response',
+			'D1 export returned an unknown status',
+		)
+	}
+	return { kind: 'pending', bookmark: result.at_bookmark }
+}
+
+async function exportRequest(
+	env: BackupEnvironment,
+	bookmark: string | undefined,
+	options: ApiOptions,
+): Promise<ExportState> {
+	const payload =
+		bookmark === undefined
+			? { output_format: 'polling' }
+			: { output_format: 'polling', current_bookmark: bookmark }
+	const result = await apiJson(
+		`https://api.cloudflare.com/client/v4/accounts/${env.SOURCE_ACCOUNT_ID}/d1/database/${env.SOURCE_DATABASE_ID}/export`,
+		{
+			method: 'POST',
+			headers: authHeaders(env),
+			body: JSON.stringify(payload),
+		},
+		options,
+	)
+	return parseExportState(result)
+}
+
+export async function startD1Export(
+	env: BackupEnvironment,
+	options: ApiOptions = {},
+): Promise<ExportState> {
+	return exportRequest(env, undefined, options)
+}
+
+export async function pollD1Export(
+	env: BackupEnvironment,
+	bookmark: string,
+	options: ApiOptions = {},
+): Promise<ExportState> {
+	if (!bookmark) {
+		throw new BackupError(
+			'export-missing-bookmark',
+			'D1 export polling requires a bookmark',
+		)
+	}
+	return exportRequest(env, bookmark, options)
+}

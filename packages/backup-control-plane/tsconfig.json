@@ -1,0 +1,14 @@
+{
+	"compilerOptions": {
+		"target": "ES2024",
+		"module": "Preserve",
+		"moduleResolution": "Bundler",
+		"strict": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"erasableSyntaxOnly": true,
+		"types": ["@cloudflare/workers-types", "node"],
+		"skipLibCheck": true
+	},
+	"include": ["*.ts"]
+}

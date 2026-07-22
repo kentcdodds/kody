@@ -1,0 +1,38 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "kody-production-d1-backups",
+	"main": "./worker.ts",
+	"compatibility_date": "2026-07-22",
+	"observability": {
+		"enabled": true,
+	},
+	"triggers": {
+		"crons": ["15 2 * * *", "45 * * * *"],
+	},
+	"workflows": [
+		{
+			"binding": "BACKUP_WORKFLOW",
+			"name": "kody-production-d1-backup",
+			"class_name": "ProductionD1BackupWorkflow",
+		},
+	],
+	"r2_buckets": [
+		{
+			"binding": "BACKUP_BUCKET",
+			"bucket_name": "replace-with-production-backup-bucket",
+		},
+	],
+	"vars": {
+		// Both must be exactly "true"; safe defaults keep every schedule inert.
+		"ENABLE_PRODUCTION_D1_BACKUPS": "false",
+		"BACKUP_BENCHMARK_APPROVED": "false",
+		"SOURCE_ACCOUNT_ID": "REPLACE_WITH_ACCOUNT_UUID",
+		"SOURCE_ACCOUNT_NAME": "REPLACE_WITH_ACCOUNT_NAME",
+		"SOURCE_DATABASE_ID": "REPLACE_WITH_DATABASE_UUID",
+		"SOURCE_DATABASE_NAME": "REPLACE_WITH_DATABASE_NAME",
+		"ALLOWED_SOURCE_ACCOUNT_IDS": "REPLACE_WITH_ACCOUNT_UUID",
+		"ALLOWED_SOURCE_DATABASE_IDS": "REPLACE_WITH_DATABASE_UUID",
+		"BUILD_COMMIT": "REPLACE_AT_DEPLOY_TIME",
+		"BACKUP_MAX_AGE_HOURS": "26",
+	},
+}
