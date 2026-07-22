@@ -36,13 +36,15 @@ async function seedAccount(input: {
 	username: string
 	emailVerifiedAt?: string | null
 }) {
+	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await input.db
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at)
-			 VALUES (?, ?, ?, ?)
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			 VALUES (?, ?, ?, ?, ?)
 			 ON CONFLICT(email) DO UPDATE SET
 			   username = excluded.username,
 			   email_verified_at = excluded.email_verified_at,
+			   stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
 			   updated_at = CURRENT_TIMESTAMP`,
 		)
 		.bind(
@@ -52,6 +54,7 @@ async function seedAccount(input: {
 			input.emailVerifiedAt === undefined
 				? new Date().toISOString()
 				: input.emailVerifiedAt,
+			stableUserId,
 		)
 		.run()
 }

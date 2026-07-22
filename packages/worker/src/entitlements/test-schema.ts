@@ -2,8 +2,8 @@
  * Non-destructive schema for entitlement primitives in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
  * needs. Mirrors migrations 0001 (users), 0046 (users.email_verified_at and
- * users.plan), 0048 (entitlement_daily_counters), and 0066 (Stripe billing
- * columns).
+ * users.plan), 0048 (entitlement_daily_counters), 0052 (nullable
+ * stable_user_id plus partial unique index), and 0066 (Stripe billing columns).
  */
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await db
@@ -14,6 +14,7 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 	email TEXT NOT NULL UNIQUE,
 	password_hash TEXT NOT NULL,
 	email_verified_at TEXT,
+	stable_user_id TEXT,
 	plan TEXT,
 	stripe_customer_id TEXT,
 	stripe_plan TEXT,
@@ -25,6 +26,7 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 		.run()
 	for (const column of [
 		'email_verified_at TEXT',
+		'stable_user_id TEXT',
 		'plan TEXT',
 		'stripe_customer_id TEXT',
 		'stripe_plan TEXT',
@@ -35,6 +37,17 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 		} catch {
 			// The column already exists (fresh CREATE above or migrations).
 		}
+	}
+	try {
+		await db
+			.prepare(
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stable_user_id
+				 ON users(stable_user_id)
+				 WHERE stable_user_id IS NOT NULL`,
+			)
+			.run()
+	} catch {
+		// Index already exists or a full legacy index remains from an earlier suite.
 	}
 	await db
 		.prepare(

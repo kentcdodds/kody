@@ -54,9 +54,10 @@ async function seedVerifiedAccount(input: {
 	verified?: boolean
 }) {
 	const username = input.username ?? `sender-${crypto.randomUUID().slice(0, 8)}`
+	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan)
-			VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
+			VALUES (?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			username,
@@ -64,6 +65,7 @@ async function seedVerifiedAccount(input: {
 			'test-password-hash',
 			input.verified === false ? null : new Date().toISOString(),
 			input.plan ?? null,
+			stableUserId,
 		)
 		.run()
 	return { username, from: `${username}@${platformDomain}` }
@@ -249,13 +251,20 @@ test('sendOutboundEmail blocks reserved usernames and unconfigured platform doma
 	const reservedEmail = `reserved-${crypto.randomUUID()}@example.com`
 	const reservedUserId = await createStableUserIdFromEmail(reservedEmail)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at)
-			VALUES (?, ?, ?, ?)
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT(username) DO UPDATE SET
 				email = excluded.email,
-				email_verified_at = excluded.email_verified_at`,
+				email_verified_at = excluded.email_verified_at,
+				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id)`,
 	)
-		.bind('kody', reservedEmail, 'test-password-hash', new Date().toISOString())
+		.bind(
+			'kody',
+			reservedEmail,
+			'test-password-hash',
+			new Date().toISOString(),
+			reservedUserId,
+		)
 		.run()
 	await expect(
 		sendOutboundEmail({

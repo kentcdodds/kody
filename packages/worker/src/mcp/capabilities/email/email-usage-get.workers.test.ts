@@ -15,9 +15,10 @@ async function seedUser(input: {
 	plan: 'pro' | null
 	emailVerifiedAt?: string | null
 }) {
+	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan)
-			VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
+			VALUES (?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			`email-usage-${crypto.randomUUID().slice(0, 8)}`,
@@ -27,6 +28,7 @@ async function seedUser(input: {
 				? new Date().toISOString()
 				: input.emailVerifiedAt,
 			input.plan,
+			stableUserId,
 		)
 		.run()
 }

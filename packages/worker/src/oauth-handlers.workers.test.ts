@@ -82,32 +82,33 @@ async function createDatabase(
 	options: { emailVerifiedAt?: string | null } = {},
 ) {
 	const passwordHash = await createPasswordHash(password)
+	const email = 'user@example.com'
+	const stableUserId = await createStableUserIdFromEmail(email)
 	const emailVerifiedAt =
 		options.emailVerifiedAt === undefined
 			? new Date(0).toISOString()
 			: options.emailVerifiedAt
+	const userRow = {
+		id: 1,
+		username: 'test-user',
+		email,
+		password_hash: passwordHash,
+		email_verified_at: emailVerifiedAt,
+		stable_user_id: stableUserId,
+	}
 	return {
 		prepare(query: string) {
 			// The 2FA gate queries verifications during inline OAuth login; the
 			// mocked user has no verification rows, so those queries are empty.
 			const isVerificationsQuery = query.includes('FROM verifications')
-			const isEmailVerifiedQuery = query.includes('email_verified_at')
+			const isEmailVerifiedQuery =
+				query.includes('email_verified_at') && !query.includes('stable_user_id')
 			return {
 				bind() {
 					return {
 						async all() {
 							return {
-								results: isVerificationsQuery
-									? []
-									: [
-											{
-												id: 1,
-												username: 'test-user',
-												email: 'user@example.com',
-												password_hash: passwordHash,
-												email_verified_at: emailVerifiedAt,
-											},
-										],
+								results: isVerificationsQuery ? [] : [userRow],
 								meta: { changes: 0, last_row_id: 0 },
 							}
 						},
@@ -116,13 +117,7 @@ async function createDatabase(
 							if (isEmailVerifiedQuery) {
 								return { email_verified_at: emailVerifiedAt }
 							}
-							return {
-								id: 1,
-								username: 'test-user',
-								email: 'user@example.com',
-								password_hash: passwordHash,
-								email_verified_at: emailVerifiedAt,
-							}
+							return userRow
 						},
 						async run() {
 							return { meta: { changes: 1, last_row_id: 1 } }
@@ -213,6 +208,7 @@ async function seedWorkerUser(
 	options: { emailVerifiedAt?: string | null } = {},
 ) {
 	const passwordHash = await createPasswordHash(password)
+	const stableUserId = await createStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -220,10 +216,18 @@ async function seedWorkerUser(
 			email TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
 			email_verified_at TEXT,
+			stable_user_id TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
 	).run()
+	try {
+		await env.APP_DB.prepare(
+			`ALTER TABLE users ADD COLUMN stable_user_id TEXT`,
+		).run()
+	} catch {
+		// Column already present on a fresh CREATE above.
+	}
 	// The inline OAuth login checks two-factor status, which queries the
 	// verifications table (empty here: no seeded user has 2FA enabled).
 	await env.APP_DB.prepare(
@@ -246,17 +250,19 @@ async function seedWorkerUser(
 			? new Date(0).toISOString()
 			: options.emailVerifiedAt
 	const result = await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at)
-			VALUES (?, ?, ?, ?)
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT(email) DO UPDATE SET
 				password_hash = excluded.password_hash,
-				email_verified_at = excluded.email_verified_at`,
+				email_verified_at = excluded.email_verified_at,
+				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id)`,
 	)
 		.bind(
 			`user-${crypto.randomUUID().slice(0, 8)}`,
 			email,
 			passwordHash,
 			emailVerifiedAt,
+			stableUserId,
 		)
 		.run()
 	return Number(result.meta.last_row_id)
@@ -840,6 +846,7 @@ test('worker entrypoint renders OAuth errors for delegated authorize route excep
 
 test('reset client deletes matching grants for redirect-uri, client-id, and authorize-info mismatches', async () => {
 	const userId = await createStableUserIdFromEmail('user@example.com')
+	const appDb = await createDatabase('password123')
 	setAuthSessionSecret(cookieSecret)
 	const cookie = await createAuthCookie(
 		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
@@ -907,7 +914,7 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 				body: new URLSearchParams({ decision: 'reset-client' }),
 			},
 		),
-		createEnv(redirectUriHelpers),
+		createEnv(redirectUriHelpers, appDb),
 	)
 
 	expect(redirectUriResponse.status).toBe(200)
@@ -959,7 +966,7 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 		new Request(
 			`https://example.com/oauth/authorize-info?response_type=code&client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/callback')}&error_description=${encodeURIComponent(invalidClientIdMismatchMessage)}`,
 		),
-		createEnv(clientMismatchHelpers),
+		createEnv(clientMismatchHelpers, appDb),
 	)
 	const resetVerificationCookie =
 		authorizeInfoResponse.headers.get('Set-Cookie') ?? ''
@@ -977,7 +984,7 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 				body: new URLSearchParams({ decision: 'reset-client' }),
 			},
 		),
-		createEnv(clientMismatchHelpers),
+		createEnv(clientMismatchHelpers, appDb),
 	)
 
 	expect(clientMismatchResponse.status).toBe(200)
@@ -1029,7 +1036,7 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 				}),
 			},
 		),
-		createEnv(authorizeInfoHelpers),
+		createEnv(authorizeInfoHelpers, appDb),
 	)
 
 	expect(authorizeInfoResetResponse.status).toBe(200)
