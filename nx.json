@@ -15,10 +15,22 @@
 			"cache": true
 		},
 		"test": {
-			"cache": true
+			"cache": true,
+			"inputs": [
+				"default",
+				"^default",
+				"{workspaceRoot}/vitest*.ts",
+				"{workspaceRoot}/tools/**/*"
+			]
 		},
 		"test-mcp": {
-			"cache": true
+			"cache": true,
+			"inputs": [
+				"default",
+				"^default",
+				"{workspaceRoot}/vitest*.ts",
+				"{workspaceRoot}/tools/**/*"
+			]
 		},
 		"prepare-e2e-env": {
 			"cache": true
