@@ -16,9 +16,6 @@ const retryablePackageInvocationInfrastructureCodes = new Set([
 	'idempotency_lookup_failed',
 	'idempotency_persistence_failed',
 	'idempotency_conflict_unresolved',
-	'invocation_in_progress',
-	'invocation_failed',
-	'idempotency_response_unavailable',
 ])
 
 export function readRetryablePackageInvocationInfrastructureCode(response: {

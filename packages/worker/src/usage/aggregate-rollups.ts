@@ -129,56 +129,17 @@ function buildMonthToDateAggregateQuery(
 ) {
 	return `
 SELECT
-	user_id,
-	metric,
-	sum(event_count) AS event_count,
-	sum(error_count) AS error_count,
-	sum(total_duration_ms) AS total_duration_ms,
-	sum(total_cpu_ms) AS total_cpu_ms,
-	sum(total_bytes) AS total_bytes
-FROM (
-	SELECT
-		blob1 AS user_id,
-		blob2 AS metric,
-		sum(_sample_interval) AS event_count,
-		sum(if(blob4 = 'error', _sample_interval, 0)) AS error_count,
-		sum(double1 * _sample_interval) AS total_duration_ms,
-		sum(double2 * _sample_interval) AS total_cpu_ms,
-		sum(double3 * _sample_interval) AS total_bytes
-	FROM ${dataset}
-	WHERE timestamp >= toDateTime('${bounds.monthStart}')
-		AND timestamp < toDateTime('${bounds.nextMonthStart}')
-		AND blob6 = ''
-	GROUP BY blob1, blob2
-
-	UNION ALL
-
-	SELECT
-		user_id,
-		metric,
-		count() AS event_count,
-		sum(if(outcome = 'error', 1, 0)) AS error_count,
-		sum(duration_ms) AS total_duration_ms,
-		sum(cpu_ms) AS total_cpu_ms,
-		sum(bytes) AS total_bytes
-	FROM (
-		SELECT
-			blob1 AS user_id,
-			blob2 AS metric,
-			blob6 AS idempotency_key,
-			any(blob4) AS outcome,
-			any(double1) AS duration_ms,
-			any(double2) AS cpu_ms,
-			any(double3) AS bytes
-		FROM ${dataset}
-		WHERE timestamp >= toDateTime('${bounds.monthStart}')
-			AND timestamp < toDateTime('${bounds.nextMonthStart}')
-			AND blob6 != ''
-		GROUP BY blob1, blob2, blob6
-	)
-	GROUP BY user_id, metric
-)
-GROUP BY user_id, metric
+	blob1 AS user_id,
+	blob2 AS metric,
+	sum(_sample_interval) AS event_count,
+	sum(if(blob4 = 'error', _sample_interval, 0)) AS error_count,
+	sum(double1 * _sample_interval) AS total_duration_ms,
+	sum(double2 * _sample_interval) AS total_cpu_ms,
+	sum(double3 * _sample_interval) AS total_bytes
+FROM ${dataset}
+WHERE timestamp >= toDateTime('${bounds.monthStart}')
+	AND timestamp < toDateTime('${bounds.nextMonthStart}')
+GROUP BY blob1, blob2
 FORMAT JSON
 `.trim()
 }
@@ -191,6 +152,45 @@ type AnalyticsEngineSqlRow = {
 	total_duration_ms: number | string
 	total_cpu_ms: number | string
 	total_bytes: number | string
+}
+
+async function readIdempotentInboundEmailUsage(input: {
+	db: D1Database
+	month: string
+}) {
+	const result = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`SELECT
+					message.user_id,
+					'email_received' AS metric,
+					COUNT(*) AS event_count,
+					0 AS error_count,
+					SUM(COALESCE(
+						json_extract(event.detail_json, '$.usageDurationMs'),
+						0
+					)) AS total_duration_ms,
+					0 AS total_cpu_ms,
+					SUM(COALESCE(message.raw_size, 0)) AS total_bytes
+				FROM email_delivery_events event
+				JOIN email_messages message ON message.id = event.message_id
+				WHERE event.provider = 'cloudflare-email-routing'
+					AND event.event_type = 'received'
+					AND json_extract(
+						event.detail_json,
+						'$.usageEffectRecordedAt'
+					) IS NOT NULL
+					AND substr(
+						COALESCE(message.received_at, message.created_at),
+						1,
+						7
+					) = ?
+				GROUP BY message.user_id`,
+			)
+			.bind(input.month)
+			.all<AnalyticsEngineSqlRow>(),
+	)
+	return result.results ?? []
 }
 
 async function queryAnalyticsEngineSql(input: {
@@ -313,7 +313,32 @@ export async function aggregateUsageRollups(
 	})
 
 	const updatedAt = now.toISOString()
-	const presentRows = rows.filter((row) => row.user_id && row.metric)
+	const emailRows = await readIdempotentInboundEmailUsage({
+		db: env.APP_DB,
+		month,
+	})
+	const mergedRows = new Map<string, AnalyticsEngineSqlRow>()
+	for (const row of [...rows, ...emailRows]) {
+		if (!row.user_id || !row.metric) continue
+		const key = rollupPairKey(row)
+		const existing = mergedRows.get(key)
+		mergedRows.set(key, {
+			user_id: row.user_id,
+			metric: row.metric,
+			event_count:
+				toCount(existing?.event_count ?? 0) + toCount(row.event_count),
+			error_count:
+				toCount(existing?.error_count ?? 0) + toCount(row.error_count),
+			total_duration_ms:
+				toCount(existing?.total_duration_ms ?? 0) +
+				toCount(row.total_duration_ms),
+			total_cpu_ms:
+				toCount(existing?.total_cpu_ms ?? 0) + toCount(row.total_cpu_ms),
+			total_bytes:
+				toCount(existing?.total_bytes ?? 0) + toCount(row.total_bytes),
+		})
+	}
+	const presentRows = [...mergedRows.values()]
 	const statements = presentRows.map((row) =>
 		env.APP_DB.prepare(usageRollupAbsoluteUpsertStatement).bind(
 			row.user_id,

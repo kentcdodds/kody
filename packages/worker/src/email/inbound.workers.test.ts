@@ -1458,9 +1458,8 @@ test('delivery-ledger finalization failure retries before usage or subscription 
 	).toEqual({ event_count: 1 })
 })
 
-test('failed usage outbox delivery stays retryable and records one stable analytics event', async () => {
+test('production usage outbox records one durable D1 event without retry data points', async () => {
 	silenceIncidentalRuntimeWarnings()
-	consoleError.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `usage-outbox-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `usage-outbox-${crypto.randomUUID()}@example.com`
@@ -1487,14 +1486,10 @@ test('failed usage outbox delivery stays retryable and records one stable analyt
 		...createInboundEnv(),
 		USAGE_EVENTS: {
 			writeDataPoint() {
-				throw new Error('simulated analytics outage')
+				throw new Error('email usage must use the durable D1 outbox')
 			},
 		},
 	})
-	expect(consoleError).toHaveBeenCalledWith(
-		'Inbound email effect dispatch failed',
-		expect.any(Error),
-	)
 	const delivery = await env.APP_DB.prepare(
 		`SELECT id, detail_json FROM email_delivery_events
 		WHERE user_id = ? AND provider = 'cloudflare-email-routing'
@@ -1504,11 +1499,9 @@ test('failed usage outbox delivery stays retryable and records one stable analyt
 		.first<{ id: string; detail_json: string }>()
 	if (!delivery) throw new Error('Expected received delivery.')
 	const detail = JSON.parse(delivery.detail_json) as {
-		usageEffectRetryAt: string
-		usageEffectRecordedAt?: string
+		usageEffectRecordedAt: string
 	}
-	expect(detail.usageEffectRetryAt).toEqual(expect.any(String))
-	expect(detail.usageEffectRecordedAt).toBeUndefined()
+	expect(detail.usageEffectRecordedAt).toEqual(expect.any(String))
 
 	const points: Array<AnalyticsEngineDataPoint> = []
 	const effectsEnv = {
@@ -1519,21 +1512,17 @@ test('failed usage outbox delivery stays retryable and records one stable analyt
 			},
 		},
 	}
-	const retryNow = new Date(new Date(detail.usageEffectRetryAt).getTime() + 1)
 	await processInboundDeliveryEffects({
 		env: effectsEnv,
 		userId,
 		deliveryId: delivery.id,
-		now: retryNow,
 	})
 	await processInboundDeliveryEffects({
 		env: effectsEnv,
 		userId,
 		deliveryId: delivery.id,
-		now: retryNow,
 	})
-	expect(points).toHaveLength(1)
-	expect(points[0]?.blobs?.[5]).toBe(`email-received:${delivery.id}`)
+	expect(points).toHaveLength(0)
 })
 
 test('inbound parse rejection still consumes daily receive quota', async () => {

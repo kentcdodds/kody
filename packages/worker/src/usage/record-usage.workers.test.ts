@@ -58,12 +58,12 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 	expect(dataPoints).toHaveLength(3)
 	expect(dataPoints[0]).toEqual({
 		indexes: [userA],
-		blobs: [userA, 'execute', '', 'success', '2026-07-05T10:00:00.000Z', ''],
+		blobs: [userA, 'execute', '', 'success', '2026-07-05T10:00:00.000Z'],
 		doubles: [120, 0, 0],
 	})
 	expect(dataPoints[1]).toEqual({
 		indexes: [userA],
-		blobs: [userA, 'execute', 'pkg-1', 'error', '2026-07-05T11:00:00.000Z', ''],
+		blobs: [userA, 'execute', 'pkg-1', 'error', '2026-07-05T11:00:00.000Z'],
 		doubles: [80, 0, 512],
 	})
 	expect(dataPoints[2]?.indexes).toEqual([userB])

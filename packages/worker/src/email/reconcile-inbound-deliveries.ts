@@ -60,13 +60,18 @@ export async function sweepStaleInboundDeliveries(input: {
 				WHERE provider = 'cloudflare-email-routing-dedupe'
 					AND json_extract(detail_json, '$.dedupeExpiresAt') <= ?
 				UNION ALL
-				SELECT user_id, created_at
+				SELECT user_id, COALESCE(
+					json_extract(detail_json, '$.usageEffectRetryAt'),
+					json_extract(detail_json, '$.subscriptionEffectRetryAt'),
+					created_at
+				)
 				FROM email_delivery_events
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'received'
 					AND (
 						(
 							json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL
+							AND json_extract(detail_json, '$.usageEffectSuppressedAt') IS NULL
 							AND (
 								json_extract(detail_json, '$.usageEffectRetryAt') IS NULL
 								OR json_extract(detail_json, '$.usageEffectRetryAt') <= ?

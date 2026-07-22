@@ -58,6 +58,7 @@ export type InboundDelivery = {
 	cleanupLeaseAt?: string
 	finalizationToken?: string
 	usageEffectRecordedAt?: string
+	usageEffectSuppressedAt?: string
 	usageEffectRetryAt?: string
 	usageEffectLease?: string
 	usageEffectLeaseAt?: string
@@ -199,6 +200,9 @@ function parseInboundDelivery(
 				: {}),
 			...(typeof detail.usageEffectRecordedAt === 'string'
 				? { usageEffectRecordedAt: detail.usageEffectRecordedAt }
+				: {}),
+			...(typeof detail.usageEffectSuppressedAt === 'string'
+				? { usageEffectSuppressedAt: detail.usageEffectSuppressedAt }
 				: {}),
 			...(typeof detail.usageEffectRetryAt === 'string'
 				? { usageEffectRetryAt: detail.usageEffectRetryAt }
@@ -429,6 +433,7 @@ export async function adoptLegacyInboundDelivery(input: {
 				rawMimeKey: row.raw_mime_key,
 				state: 'received',
 				finalizationToken: `legacy-adoption:${input.delivery.deliveryId}`,
+				usageEffectSuppressedAt: input.now.toISOString(),
 				subscriptionEffectState: 'pending',
 			}
 			await input.db

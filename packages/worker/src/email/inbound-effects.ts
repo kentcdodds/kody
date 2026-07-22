@@ -1,4 +1,3 @@
-import { recordUsageChecked } from '#worker/usage/record-usage.ts'
 import { getInboundDelivery } from './inbound-delivery.ts'
 import {
 	dispatchInboundEmailSubscriptionEvents,
@@ -45,6 +44,7 @@ async function recordInboundUsageEffect(input: {
 							AND user_id = ?
 							AND event_type = 'received'
 							AND json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL
+							AND json_extract(detail_json, '$.usageEffectSuppressedAt') IS NULL
 							AND (
 								json_extract(detail_json, '$.usageEffectRetryAt') IS NULL
 								OR json_extract(detail_json, '$.usageEffectRetryAt') <= ?
@@ -71,13 +71,18 @@ async function recordInboundUsageEffect(input: {
 				input.env.APP_DB.prepare(
 					`UPDATE email_delivery_events
 					SET detail_json = json_remove(
-						json_set(detail_json, '$.usageEffectRecordedAt', ?),
+						json_set(
+							detail_json,
+							'$.usageEffectRecordedAt', ?,
+							'$.usageDurationMs', ?
+						),
 						'$.usageEffectRetryAt'
 					)
 					WHERE id = ?
 						AND user_id = ?
 						AND event_type = 'received'
 						AND json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL
+						AND json_extract(detail_json, '$.usageEffectSuppressedAt') IS NULL
 						AND (
 							json_extract(detail_json, '$.usageEffectRetryAt') IS NULL
 							OR json_extract(detail_json, '$.usageEffectRetryAt') <= ?
@@ -85,6 +90,7 @@ async function recordInboundUsageEffect(input: {
 						AND (? IS NULL OR json_extract(detail_json, '$.finalizationToken') = ?)`,
 				).bind(
 					input.now.toISOString(),
+					Math.round(input.durationMs ?? 0),
 					input.deliveryId,
 					input.userId,
 					input.now.toISOString(),
@@ -104,99 +110,49 @@ async function recordInboundUsageEffect(input: {
 			// best-effort metering semantics without poisoning the outbox.
 			await input.env.APP_DB.prepare(
 				`UPDATE email_delivery_events
-				SET detail_json = json_set(detail_json, '$.usageEffectRecordedAt', ?)
+				SET detail_json = json_set(
+					detail_json,
+					'$.usageEffectRecordedAt', ?,
+					'$.usageDurationMs', ?
+				)
 				WHERE id = ? AND user_id = ? AND event_type = 'received'`,
 			)
-				.bind(input.now.toISOString(), input.deliveryId, input.userId)
+				.bind(
+					input.now.toISOString(),
+					Math.round(input.durationMs ?? 0),
+					input.deliveryId,
+					input.userId,
+				)
 				.run()
 			return
 		}
 	}
-
-	const usageLease = crypto.randomUUID()
-	const leaseExpiredBefore = new Date(
-		input.now.getTime() - subscriptionEffectLeaseMs,
-	).toISOString()
-	const claim = await input.env.APP_DB.prepare(
+	await input.env.APP_DB.prepare(
 		`UPDATE email_delivery_events
-		SET detail_json = json_set(
-			detail_json,
-			'$.usageEffectLease', ?,
-			'$.usageEffectLeaseAt', ?
+		SET detail_json = json_remove(
+			json_set(
+				detail_json,
+				'$.usageEffectRecordedAt', ?,
+				'$.usageDurationMs', ?
+			),
+			'$.usageEffectRetryAt'
 		)
 		WHERE id = ?
 			AND user_id = ?
 			AND event_type = 'received'
 			AND json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL
-			AND (
-				json_extract(detail_json, '$.usageEffectRetryAt') IS NULL
-				OR json_extract(detail_json, '$.usageEffectRetryAt') <= ?
-			)
-			AND (
-				json_extract(detail_json, '$.usageEffectLease') IS NULL
-				OR json_extract(detail_json, '$.usageEffectLeaseAt') < ?
-			)
+			AND json_extract(detail_json, '$.usageEffectSuppressedAt') IS NULL
 			AND (? IS NULL OR json_extract(detail_json, '$.finalizationToken') = ?)`,
 	)
 		.bind(
-			usageLease,
 			input.now.toISOString(),
+			Math.round(input.durationMs ?? 0),
 			input.deliveryId,
 			input.userId,
-			input.now.toISOString(),
-			leaseExpiredBefore,
 			finalizationToken,
 			finalizationToken,
 		)
 		.run()
-	if (Number(claim.meta.changes ?? 0) === 0) return
-	const recorded = await recordUsageChecked(input.env, {
-		userId: input.userId,
-		eventType: 'email_received',
-		entityId: input.messageId,
-		bytes: input.rawSize,
-		durationMs: input.durationMs ?? 0,
-		outcome: 'success',
-		timestamp,
-		idempotencyKey: `email-received:${input.deliveryId}`,
-	})
-	if (recorded) {
-		await input.env.APP_DB.prepare(
-			`UPDATE email_delivery_events
-			SET detail_json = json_remove(
-				json_remove(
-					json_set(detail_json, '$.usageEffectRecordedAt', ?),
-					'$.usageEffectLease'
-				),
-				'$.usageEffectLeaseAt'
-			)
-			WHERE id = ? AND user_id = ?
-				AND json_extract(detail_json, '$.usageEffectLease') = ?`,
-		)
-			.bind(input.now.toISOString(), input.deliveryId, input.userId, usageLease)
-			.run()
-		return
-	}
-	await input.env.APP_DB.prepare(
-		`UPDATE email_delivery_events
-		SET detail_json = json_remove(
-			json_remove(
-				json_set(detail_json, '$.usageEffectRetryAt', ?),
-				'$.usageEffectLease'
-			),
-			'$.usageEffectLeaseAt'
-		)
-		WHERE id = ? AND user_id = ?
-			AND json_extract(detail_json, '$.usageEffectLease') = ?`,
-	)
-		.bind(
-			new Date(input.now.getTime() + effectRetryMs).toISOString(),
-			input.deliveryId,
-			input.userId,
-			usageLease,
-		)
-		.run()
-	throw new Error('Inbound usage effect could not be recorded.')
 }
 
 export async function processInboundDeliveryEffects(input: {
@@ -364,6 +320,7 @@ export async function reconcileInboundDeliveryEffectsForUser(input: {
 			AND (
 				(
 					json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL
+					AND json_extract(detail_json, '$.usageEffectSuppressedAt') IS NULL
 					AND (
 						json_extract(detail_json, '$.usageEffectRetryAt') IS NULL
 						OR json_extract(detail_json, '$.usageEffectRetryAt') <= ?
