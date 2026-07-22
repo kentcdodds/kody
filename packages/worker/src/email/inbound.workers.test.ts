@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { handleInboundEmail } from './inbound.ts'
+import { processInboundDeliveryEffects } from './inbound-effects.ts'
 import {
 	buildInboundDelivery,
 	claimInboundDeliveryWindow,
@@ -8,6 +9,7 @@ import {
 	inboundDeliveryDedupeWindowMs,
 	InboundDeliveryLeaseLostError,
 	markInboundDeliveryReceived,
+	pruneExpiredInboundDedupePointers,
 	reconcileStaleInboundDeliveries,
 } from './inbound-delivery.ts'
 import {
@@ -1057,6 +1059,56 @@ test('delivery-window claim serializes identical mail across a bucket boundary',
 	expect(first.deliveryId).toBe(second.deliveryId)
 })
 
+test('expired delivery-window pointers are pruned per user while active pointers remain', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `user-${crypto.randomUUID()}`
+	const oldNow = new Date('2026-07-19T00:00:00.000Z')
+	const currentNow = new Date('2026-07-22T00:00:00.000Z')
+	const expired = await buildInboundDelivery({
+		userId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'expired@example.com',
+		rawMime: 'expired',
+		quotaDay: '2026-07-19',
+		now: oldNow,
+	})
+	const active = await buildInboundDelivery({
+		userId,
+		inboxId: expired.inboxId,
+		recipient: 'active@example.com',
+		rawMime: 'active',
+		quotaDay: '2026-07-22',
+		now: currentNow,
+	})
+	await claimInboundDeliveryWindow({
+		db: env.APP_DB,
+		delivery: expired,
+		now: oldNow,
+	})
+	await claimInboundDeliveryWindow({
+		db: env.APP_DB,
+		delivery: active,
+		now: currentNow,
+	})
+
+	expect(
+		await pruneExpiredInboundDedupePointers({
+			db: env.APP_DB,
+			userId,
+			now: currentNow,
+		}),
+	).toBe(1)
+	const pointers = await env.APP_DB.prepare(
+		`SELECT id FROM email_delivery_events
+		WHERE user_id = ? AND provider = 'cloudflare-email-routing-dedupe'`,
+	)
+		.bind(userId)
+		.all<{ id: string }>()
+	expect(pointers.results?.map((row) => row.id)).toEqual([
+		`email-inbound-dedupe:${active.fingerprint}`,
+	])
+})
+
 test('byte-identical mail dedupes only inside the explicit delivery window', async () => {
 	silenceIncidentalRuntimeWarnings()
 	vi.useFakeTimers({ toFake: ['Date'] })
@@ -1064,6 +1116,7 @@ test('byte-identical mail dedupes only inside the explicit delivery window', asy
 		const firstNow = new Date('2026-07-20T12:00:00.000Z')
 		vi.setSystemTime(firstNow)
 		await ensureEmailTestSchema(env.APP_DB)
+		await ensureUsageRollupsTestSchema(env.APP_DB)
 		const username = `dedupe-window-${crypto.randomUUID().slice(0, 8)}`
 		const accountEmail = `dedupe-window-${crypto.randomUUID()}@example.com`
 		const userId = await createStableUserIdFromEmail(accountEmail)
@@ -1099,6 +1152,14 @@ test('byte-identical mail dedupes only inside the explicit delivery window', asy
 				limit: 10,
 			}),
 		).toHaveLength(1)
+		expect(
+			await env.APP_DB.prepare(
+				`SELECT event_count FROM usage_rollups
+				WHERE user_id = ? AND metric = 'email_received'`,
+			)
+				.bind(userId)
+				.first<{ event_count: number }>(),
+		).toEqual({ event_count: 1 })
 
 		vi.setSystemTime(
 			new Date(firstNow.getTime() + inboundDeliveryDedupeWindowMs + 1),
@@ -1118,6 +1179,14 @@ test('byte-identical mail dedupes only inside the explicit delivery window', asy
 			.bind(userId)
 			.first<{ count: number }>()
 		expect(Number(counter?.count ?? 0)).toBe(2)
+		expect(
+			await env.APP_DB.prepare(
+				`SELECT event_count FROM usage_rollups
+				WHERE user_id = ? AND metric = 'email_received'`,
+			)
+				.bind(userId)
+				.first<{ event_count: number }>(),
+		).toEqual({ event_count: 2 })
 	} finally {
 		vi.useRealTimers()
 	}
@@ -1166,6 +1235,31 @@ test('post-rollout retry adopts a recent legacy message without duplicate row or
 		},
 	})
 	await env.APP_DB.prepare(
+		`UPDATE email_messages SET created_at = ? WHERE id = ? AND user_id = ?`,
+	)
+		.bind(new Date(Date.now() - 60 * 60 * 1000).toISOString(), legacyId, userId)
+		.run()
+	for (let index = 0; index < 24; index += 1) {
+		const decoyRaw = raw.replace(
+			'Body',
+			`D${index.toString().padStart(3, '0')}`,
+		)
+		await insertEmailMessageWithRawMime({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			message: {
+				id: crypto.randomUUID(),
+				direction: 'inbound',
+				userId,
+				inboxId: provisioned.inbox.id,
+				rawMime: decoyRaw,
+				rawSize: new TextEncoder().encode(decoyRaw).byteLength,
+				messageIdHeader: `<legacy-decoy-${index}@example.net>`,
+				processingStatus: 'stored',
+			},
+		})
+	}
+	await env.APP_DB.prepare(
 		`INSERT INTO entitlement_daily_counters (
 			user_id, resource, day, count, updated_at
 		) VALUES (?, 'email_receives_per_day', ?, 1, ?)`,
@@ -1190,9 +1284,9 @@ test('post-rollout retry adopts a recent legacy message without duplicate row or
 		await listEmailMessages({
 			db: env.APP_DB,
 			userId,
-			limit: 10,
+			limit: 40,
 		}),
-	).toHaveLength(1)
+	).toHaveLength(25)
 	const adopted = await env.APP_DB.prepare(
 		`SELECT message_id, event_type, detail_json
 		FROM email_delivery_events
@@ -1338,6 +1432,30 @@ test('delivery-ledger finalization failure retries before usage or subscription 
 			.bind(userId, new Date().toISOString().slice(0, 7))
 			.first<{ event_count: number; error_count: number }>(),
 	).toMatchObject({ event_count: 1, error_count: 0 })
+	const delivery = await env.APP_DB.prepare(
+		`SELECT id FROM email_delivery_events
+		WHERE user_id = ? AND provider = 'cloudflare-email-routing'
+			AND event_type = 'received'`,
+	)
+		.bind(userId)
+		.first<{ id: string }>()
+	if (!delivery) throw new Error('Expected received delivery ledger.')
+	expect(
+		await processInboundDeliveryEffects({
+			env: createInboundEnv(),
+			userId,
+			deliveryId: delivery.id,
+			expectedFinalizationToken: 'stale-worker-token',
+		}),
+	).toEqual({ outcome: 'stale' })
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT event_count FROM usage_rollups
+			WHERE user_id = ? AND metric = 'email_received'`,
+		)
+			.bind(userId)
+			.first<{ event_count: number }>(),
+	).toEqual({ event_count: 1 })
 })
 
 test('inbound parse rejection still consumes daily receive quota', async () => {
@@ -1428,8 +1546,7 @@ test('stored-message count failure happens before durable quota charge', async (
 	expect(await readUserDailyReceiveCount(userId)).toBe(0)
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT id FROM email_delivery_events
-			WHERE user_id = ? AND provider = 'cloudflare-email-routing'`,
+			`SELECT id FROM email_delivery_events WHERE user_id = ?`,
 		)
 			.bind(userId)
 			.first(),
@@ -1852,6 +1969,7 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 
 test('scheduled sweep cleans quiet-user orphans and recovers partial commits', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const oldNow = new Date('2026-07-19T00:00:00.000Z')
 	const sweepNow = new Date('2026-07-22T00:00:00.000Z')
 	const orphanUserId = `orphan-${crypto.randomUUID()}`
@@ -1935,16 +2053,32 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 		)
 		.run()
 
+	const pointerUserId = `pointer-${crypto.randomUUID()}`
+	const expiredPointer = await buildInboundDelivery({
+		userId: pointerUserId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'expired-pointer@example.com',
+		rawMime: 'expired pointer bytes',
+		quotaDay: '2026-07-19',
+		now: oldNow,
+	})
+	await claimInboundDeliveryWindow({
+		db: env.APP_DB,
+		delivery: expiredPointer,
+		now: oldNow,
+	})
+
 	expect(
 		await sweepStaleInboundDeliveries({
-			db: env.APP_DB,
-			blobs: env.EMAIL_BLOBS,
+			env: createInboundEnv(),
 			now: sweepNow,
 		}),
 	).toMatchObject({
-		usersProcessed: 2,
+		usersProcessed: 3,
 		recovered: 1,
 		cleaned: 1,
+		pointersPruned: 1,
+		effectsProcessed: 1,
 		errors: 0,
 	})
 	expect(await env.EMAIL_BLOBS.get(orphan.rawMimeKey)).toBeNull()
@@ -1965,9 +2099,26 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 		}),
 	).toHaveLength(1)
 	expect(
+		await env.APP_DB.prepare(
+			`SELECT event_count FROM usage_rollups
+			WHERE user_id = ? AND metric = 'email_received'`,
+		)
+			.bind(partial.userId)
+			.first<{ event_count: number }>(),
+	).toEqual({ event_count: 1 })
+	const effects = await env.APP_DB.prepare(
+		`SELECT
+			json_extract(detail_json, '$.usageEffectClaimedAt') AS usage_at,
+			json_extract(detail_json, '$.subscriptionEffectState') AS subscription_state
+		FROM email_delivery_events WHERE id = ? AND user_id = ?`,
+	)
+		.bind(partial.deliveryId, partial.userId)
+		.first<{ usage_at: string; subscription_state: string }>()
+	expect(effects?.usage_at).toEqual(expect.any(String))
+	expect(effects?.subscription_state).toBe('complete')
+	expect(
 		await sweepStaleInboundDeliveries({
-			db: env.APP_DB,
-			blobs: env.EMAIL_BLOBS,
+			env: createInboundEnv(),
 			now: sweepNow,
 		}),
 	).toMatchObject({ usersProcessed: 0, recovered: 0, cleaned: 0 })

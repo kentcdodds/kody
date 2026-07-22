@@ -396,8 +396,12 @@ export async function storeIdempotentInboundEmail(input: {
 		)
 	}
 
+	let finalizedDelivery: InboundDelivery
 	try {
-		await markInboundDeliveryReceived({ db: input.db, delivery })
+		finalizedDelivery = await markInboundDeliveryReceived({
+			db: input.db,
+			delivery,
+		})
 	} catch (error) {
 		const committed = await getInboundDelivery({
 			db: input.db,
@@ -410,6 +414,7 @@ export async function storeIdempotentInboundEmail(input: {
 				error,
 			)
 		}
+		finalizedDelivery = committed
 	}
 	try {
 		if (stored.threadId) {
@@ -426,7 +431,12 @@ export async function storeIdempotentInboundEmail(input: {
 			error,
 		)
 	}
-	return stored
+	return {
+		message: stored,
+		finalizedDelivery,
+		wonFinalization:
+			finalizedDelivery.finalizationToken === delivery.storageLease,
+	}
 }
 
 export async function getEmailAttachmentById(input: {

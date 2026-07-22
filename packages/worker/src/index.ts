@@ -545,8 +545,7 @@ const workerHandler = {
 				name: 'reconcile_inbound_deliveries',
 				run: () =>
 					sweepStaleInboundDeliveries({
-						db: env.APP_DB,
-						blobs: env.EMAIL_BLOBS,
+						env,
 						now: scheduledAt,
 					}),
 			},

@@ -89,7 +89,6 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 	expect(mocks.cleanupRepoSessionBranches).toHaveBeenCalledTimes(1)
 	expect(mocks.sweepStaleInboundDeliveries).toHaveBeenCalledWith(
 		expect.objectContaining({
-			blobs: env.EMAIL_BLOBS,
 			now: new Date(scheduledTime),
 		}),
 	)

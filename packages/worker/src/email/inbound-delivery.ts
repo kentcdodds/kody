@@ -23,6 +23,7 @@ const inboundReconciliationRetryMs = 15 * 60 * 1000
 const inboundOrphanVerificationMs = 60 * 60 * 1000
 export const inboundDeliveryDedupeWindowMs = 48 * 60 * 60 * 1000
 export const inboundDeliveryCompatibilityWindowMs = 48 * 60 * 60 * 1000
+const legacyInboundAdoptionPageSize = 20
 
 export type InboundDelivery = {
 	fingerprint: string
@@ -48,6 +49,11 @@ export type InboundDelivery = {
 	expectedAttachmentCount?: number
 	cleanupLease?: string
 	cleanupLeaseAt?: string
+	finalizationToken?: string
+	usageEffectClaimedAt?: string
+	subscriptionEffectState?: 'pending' | 'processing' | 'complete'
+	subscriptionEffectLease?: string
+	subscriptionEffectLeaseAt?: string
 }
 
 type InboundDeliveryEventRow = {
@@ -177,6 +183,23 @@ function parseInboundDelivery(
 			...(typeof detail.cleanupLeaseAt === 'string'
 				? { cleanupLeaseAt: detail.cleanupLeaseAt }
 				: {}),
+			...(typeof detail.finalizationToken === 'string'
+				? { finalizationToken: detail.finalizationToken }
+				: {}),
+			...(typeof detail.usageEffectClaimedAt === 'string'
+				? { usageEffectClaimedAt: detail.usageEffectClaimedAt }
+				: {}),
+			...(detail.subscriptionEffectState === 'pending' ||
+			detail.subscriptionEffectState === 'processing' ||
+			detail.subscriptionEffectState === 'complete'
+				? { subscriptionEffectState: detail.subscriptionEffectState }
+				: {}),
+			...(typeof detail.subscriptionEffectLease === 'string'
+				? { subscriptionEffectLease: detail.subscriptionEffectLease }
+				: {}),
+			...(typeof detail.subscriptionEffectLeaseAt === 'string'
+				? { subscriptionEffectLeaseAt: detail.subscriptionEffectLeaseAt }
+				: {}),
 		}
 	} catch {
 		return null
@@ -253,6 +276,76 @@ export async function claimInboundDeliveryWindow(input: {
 	return claimed
 }
 
+export async function getInboundDeliveryWindow(input: {
+	db: D1Database
+	userId: string
+	fingerprint: string
+	now: Date
+}) {
+	const pointerId = `email-inbound-dedupe:${input.fingerprint}`
+	const row = await input.db
+		.prepare(
+			`SELECT event_type, detail_json
+			FROM email_delivery_events
+			WHERE id = ? AND user_id = ? AND provider = ?
+				AND json_extract(detail_json, '$.dedupeExpiresAt') > ?
+			LIMIT 1`,
+		)
+		.bind(
+			pointerId,
+			input.userId,
+			inboundDedupeProvider,
+			input.now.toISOString(),
+		)
+		.first<InboundDeliveryEventRow>()
+	return parseInboundDelivery(row)
+}
+
+export async function pruneExpiredInboundDedupePointers(input: {
+	db: D1Database
+	userId: string
+	now?: Date
+	limit?: number
+}) {
+	const now = input.now ?? new Date()
+	const rows = await input.db
+		.prepare(
+			`SELECT id
+			FROM email_delivery_events
+			WHERE user_id = ?
+				AND provider = ?
+				AND json_extract(detail_json, '$.dedupeExpiresAt') <= ?
+			ORDER BY created_at ASC, id ASC
+			LIMIT ?`,
+		)
+		.bind(
+			input.userId,
+			inboundDedupeProvider,
+			now.toISOString(),
+			input.limit ?? 20,
+		)
+		.all<{ id: string }>()
+	const ids = (rows.results ?? []).map((row) => row.id)
+	if (ids.length === 0) return 0
+	const results = await input.db.batch(
+		ids.map((id) =>
+			input.db
+				.prepare(
+					`DELETE FROM email_delivery_events
+					WHERE id = ?
+						AND user_id = ?
+						AND provider = ?
+						AND json_extract(detail_json, '$.dedupeExpiresAt') <= ?`,
+				)
+				.bind(id, input.userId, inboundDedupeProvider, now.toISOString()),
+		),
+	)
+	return results.reduce(
+		(total, result) => total + Number(result.meta.changes ?? 0),
+		0,
+	)
+}
+
 export async function adoptLegacyInboundDelivery(input: {
 	db: D1Database
 	blobs: R2Bucket
@@ -264,9 +357,11 @@ export async function adoptLegacyInboundDelivery(input: {
 	const cutoff = new Date(
 		input.now.getTime() - inboundDeliveryCompatibilityWindowMs,
 	).toISOString()
-	const rows = await input.db
-		.prepare(
-			`SELECT id, thread_id, raw_mime_key
+	let cursor: { createdAt: string; id: string } | null = null
+	while (true) {
+		const rows = await input.db
+			.prepare(
+				`SELECT id, thread_id, raw_mime_key, created_at
 			FROM email_messages
 			WHERE user_id = ?
 				AND inbox_id = ?
@@ -274,51 +369,79 @@ export async function adoptLegacyInboundDelivery(input: {
 				AND raw_size = ?
 				AND created_at >= ?
 				AND id NOT LIKE 'email-inbound-message:%'
+				AND (
+					? IS NULL
+					OR created_at < ?
+					OR (created_at = ? AND id < ?)
+				)
 			ORDER BY created_at DESC, id DESC
-			LIMIT 20`,
-		)
-		.bind(input.delivery.userId, input.delivery.inboxId, input.rawSize, cutoff)
-		.all<{
-			id: string
-			thread_id: string | null
-			raw_mime_key: string | null
-		}>()
-	for (const row of rows.results ?? []) {
-		if (!row.raw_mime_key) continue
-		const object = await input.blobs.get(row.raw_mime_key)
-		if (!object || (await object.text()) !== input.rawMime) continue
-		const adopted: InboundDelivery = {
-			...input.delivery,
-			messageId: row.id,
-			threadId: row.thread_id ?? input.delivery.threadId,
-			rawMimeKey: row.raw_mime_key,
-			state: 'received',
-		}
-		await input.db
-			.prepare(
-				`INSERT OR IGNORE INTO email_delivery_events (
-					id, message_id, user_id, inbox_id, event_type, provider,
-					provider_event_id, detail_json, created_at
-				) VALUES (?, ?, ?, ?, 'received', ?, ?, ?, ?)`,
+			LIMIT ?`,
 			)
 			.bind(
-				adopted.deliveryId,
-				adopted.messageId,
-				adopted.userId,
-				adopted.inboxId,
-				inboundProvider,
-				adopted.deliveryId,
-				JSON.stringify(adopted),
-				input.now.toISOString(),
+				input.delivery.userId,
+				input.delivery.inboxId,
+				input.rawSize,
+				cutoff,
+				cursor?.createdAt ?? null,
+				cursor?.createdAt ?? null,
+				cursor?.createdAt ?? null,
+				cursor?.id ?? null,
+				legacyInboundAdoptionPageSize,
 			)
-			.run()
-		return await getInboundDelivery({
-			db: input.db,
-			userId: adopted.userId,
-			deliveryId: adopted.deliveryId,
-		})
+			.all<{
+				id: string
+				thread_id: string | null
+				raw_mime_key: string | null
+				created_at: string
+			}>()
+		const candidates = rows.results ?? []
+		for (const row of candidates) {
+			if (
+				!row.raw_mime_key ||
+				row.raw_mime_key !== emailRawMimeKey(input.delivery.userId, row.id)
+			) {
+				continue
+			}
+			const object = await input.blobs.get(row.raw_mime_key)
+			if (!object || (await object.text()) !== input.rawMime) continue
+			const adopted: InboundDelivery = {
+				...input.delivery,
+				messageId: row.id,
+				threadId: row.thread_id ?? input.delivery.threadId,
+				rawMimeKey: row.raw_mime_key,
+				state: 'received',
+				usageEffectClaimedAt: input.now.toISOString(),
+				subscriptionEffectState: 'complete',
+			}
+			await input.db
+				.prepare(
+					`INSERT OR IGNORE INTO email_delivery_events (
+						id, message_id, user_id, inbox_id, event_type, provider,
+						provider_event_id, detail_json, created_at
+					) VALUES (?, ?, ?, ?, 'received', ?, ?, ?, ?)`,
+				)
+				.bind(
+					adopted.deliveryId,
+					adopted.messageId,
+					adopted.userId,
+					adopted.inboxId,
+					inboundProvider,
+					adopted.deliveryId,
+					JSON.stringify(adopted),
+					input.now.toISOString(),
+				)
+				.run()
+			return await getInboundDelivery({
+				db: input.db,
+				userId: adopted.userId,
+				deliveryId: adopted.deliveryId,
+			})
+		}
+		if (candidates.length < legacyInboundAdoptionPageSize) return null
+		const last = candidates.at(-1)
+		if (!last) return null
+		cursor = { createdAt: last.created_at, id: last.id }
 	}
-	return null
 }
 
 async function readCounter(input: {
@@ -348,6 +471,32 @@ async function readCounter(input: {
 		.bind(input.localPart, input.day)
 		.first<{ count: number }>()
 	return Number(row?.count ?? 0)
+}
+
+export async function readUserInboundReceiveCount(input: {
+	db: D1Database
+	userId: string
+	day: string
+}) {
+	return await readCounter({
+		db: input.db,
+		table: 'entitlement_daily_counters',
+		userId: input.userId,
+		day: input.day,
+	})
+}
+
+export async function readSystemInboundReceiveCount(input: {
+	db: D1Database
+	localPart: SystemEmailLocal
+	day: string
+}) {
+	return await readCounter({
+		db: input.db,
+		table: 'system_email_daily_counters',
+		localPart: input.localPart,
+		day: input.day,
+	})
 }
 
 async function resolveConcurrentDelivery(input: {
@@ -664,6 +813,8 @@ export async function markInboundDeliveryReceived(input: {
 	const detail: InboundDelivery = {
 		...input.delivery,
 		state: 'received',
+		finalizationToken: input.delivery.storageLease,
+		subscriptionEffectState: 'pending',
 	}
 	delete detail.storageLease
 	delete detail.storageLeaseAt
