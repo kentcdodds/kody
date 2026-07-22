@@ -196,6 +196,7 @@ test('loadConnectOauthNextSteps searches with bounded limit and fails open', asy
 		env,
 		query: 'GitHub',
 		limit: connectOauthCommunitySearchCandidateLimit,
+		trustedFirst: true,
 	})
 	expect(nextSteps.suggestions.map((entry) => entry.listingId)).toEqual([
 		'trusted',

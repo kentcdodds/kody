@@ -137,6 +137,7 @@ export async function loadConnectOauthNextSteps(input: {
 				env: input.env,
 				query,
 				limit: connectOauthCommunitySearchCandidateLimit,
+				trustedFirst: true,
 			})
 		} catch (error) {
 			console.error(

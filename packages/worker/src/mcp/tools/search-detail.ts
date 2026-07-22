@@ -152,7 +152,7 @@ export async function resolveEntityDetail(input: {
 			await collectIntegrationPackageSuggestions({
 				env: input.agent.getEnv(),
 				baseUrl: input.callerContext.baseUrl,
-				providerName: integration.config.name,
+				integration: integration.config,
 				packageRows: input.searchRows.packageRows,
 			})
 		return {

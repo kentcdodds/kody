@@ -3,6 +3,7 @@ import {
 	collectIntegrationPackageSuggestions,
 	maxIntegrationPackageSuggestions,
 	packageIdentityMentionsProvider,
+	resolveIntegrationProviderName,
 } from './integration-package-suggestions.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -26,6 +27,24 @@ function createPackageRow(input: {
 			name: input.name,
 			description: input.description ?? `${input.kodyId} package`,
 			tags: input.tags ?? [],
+		},
+	}
+}
+
+function createIntegration(name: string) {
+	return {
+		name,
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		apiBaseUrl: 'https://www.googleapis.com/calendar/v3',
+		flow: 'confidential' as const,
+		clientIdValueName: `${name}-client-id`,
+		clientSecretSecretName: `${name}ClientSecret`,
+		accessTokenSecretName: `${name}AccessToken`,
+		refreshTokenSecretName: `${name}RefreshToken`,
+		requiredHosts: ['www.googleapis.com'],
+		authorization: {
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			scopes: ['https://www.googleapis.com/auth/calendar'],
 		},
 	}
 }
@@ -128,7 +147,16 @@ test('integration package suggestions stay same-provider, user-first, and capped
 	const withUserPackages = await collectIntegrationPackageSuggestions({
 		env: {} as Env,
 		baseUrl: 'https://example.com',
-		providerName: 'github',
+		integration: {
+			...createIntegration('github'),
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			requiredHosts: ['api.github.com'],
+			authorization: {
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				scopes: ['repo'],
+			},
+		},
 		packageRows: userRows,
 	})
 	expect(mockModule.searchCommunityListings).not.toHaveBeenCalled()
@@ -181,7 +209,16 @@ test('integration package suggestions stay same-provider, user-first, and capped
 	const communityOnly = await collectIntegrationPackageSuggestions({
 		env: {} as Env,
 		baseUrl: 'https://example.com',
-		providerName: 'GitHub',
+		integration: {
+			...createIntegration('GitHub'),
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			requiredHosts: ['api.github.com'],
+			authorization: {
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				scopes: ['repo'],
+			},
+		},
 		packageRows: [
 			createPackageRow({
 				kodyId: 'notes',
@@ -195,6 +232,7 @@ test('integration package suggestions stay same-provider, user-first, and capped
 		env: {},
 		query: 'github',
 		limit: 12,
+		trustedFirst: true,
 	})
 	expect(communityOnly).toEqual([
 		expect.objectContaining({
@@ -228,7 +266,16 @@ test('integration package suggestions stay same-provider, user-first, and capped
 	const failedCommunity = await collectIntegrationPackageSuggestions({
 		env: {} as Env,
 		baseUrl: 'https://example.com',
-		providerName: 'github',
+		integration: {
+			...createIntegration('github'),
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			requiredHosts: ['api.github.com'],
+			authorization: {
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				scopes: ['repo'],
+			},
+		},
 		packageRows: [],
 	})
 	expect(failedCommunity).toEqual([])
@@ -240,6 +287,10 @@ test('account-specific integration names still match the stable provider', async
 		'google-youtube-brand',
 		'google-team-2',
 	]) {
+		const providerName = resolveIntegrationProviderName(
+			createIntegration(integrationName),
+		)
+		expect(providerName).toBe('google')
 		expect(
 			packageIdentityMentionsProvider(
 				{
@@ -247,11 +298,14 @@ test('account-specific integration names still match the stable provider', async
 					name: '@kody/google-calendar',
 					tags: ['google', 'calendar'],
 				},
-				integrationName,
+				providerName,
 			),
 		).toBe(true)
 	}
 
+	const googleProvider = resolveIntegrationProviderName(
+		createIntegration('google-business'),
+	)
 	expect(
 		packageIdentityMentionsProvider(
 			{
@@ -259,7 +313,29 @@ test('account-specific integration names still match the stable provider', async
 				name: '@kody/github',
 				tags: ['github'],
 			},
-			'google-business',
+			googleProvider,
+		),
+	).toBe(false)
+
+	const acmeProvider = resolveIntegrationProviderName({
+		...createIntegration('acme-business'),
+		tokenUrl: 'https://auth.acme.com/oauth/token',
+		apiBaseUrl: 'https://api.acme.com/v1',
+		requiredHosts: ['api.acme.com'],
+		authorization: {
+			authorizeUrl: 'https://auth.acme.com/oauth/authorize',
+			scopes: ['read'],
+		},
+	})
+	expect(acmeProvider).toBe('acme')
+	expect(
+		packageIdentityMentionsProvider(
+			{
+				kodyId: 'google-calendar',
+				name: '@kody/google-calendar',
+				tags: ['google', 'calendar'],
+			},
+			acmeProvider,
 		),
 	).toBe(false)
 })

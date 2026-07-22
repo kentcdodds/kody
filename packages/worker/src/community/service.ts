@@ -732,6 +732,7 @@ export async function searchCommunityListings(input: {
 	env: Env
 	query: string
 	limit: number
+	trustedFirst?: boolean
 }): Promise<Array<CommunityListingWithAggregates>> {
 	const trimmedQuery = input.query.trim()
 	let listings = await listCommunityListingCandidates(input.env.APP_DB, {
@@ -745,7 +746,15 @@ export async function searchCommunityListings(input: {
 			listings,
 		)
 		return withAggregates
-			.sort(compareCommunityListingsByBayesianAndPublishedAt)
+			.sort((left, right) => {
+				const trustOrder = input.trustedFirst
+					? Number(right.trusted) - Number(left.trusted)
+					: 0
+				return (
+					trustOrder ||
+					compareCommunityListingsByBayesianAndPublishedAt(left, right)
+				)
+			})
 			.slice(0, input.limit)
 	}
 	const matchesQuery = (listing: CommunityListingRecord) =>
@@ -792,7 +801,12 @@ export async function searchCommunityListings(input: {
 	})
 
 	return scored
-		.sort((left, right) => right.score - left.score)
+		.sort((left, right) => {
+			const trustOrder = input.trustedFirst
+				? Number(right.listing.trusted) - Number(left.listing.trusted)
+				: 0
+			return trustOrder || right.score - left.score
+		})
 		.slice(0, input.limit)
 		.map((entry) => entry.listing)
 }

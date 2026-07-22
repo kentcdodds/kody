@@ -1,11 +1,19 @@
 import { buildCommunityPublicUrl } from '#mcp/capabilities/community/shared.ts'
-import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
+import {
+	canonicalIntegrationName,
+	type IntegrationConfig,
+} from '#mcp/capabilities/integrations/integration-shared.ts'
 import { searchCommunityListings } from '#worker/community/service.ts'
 import { type RelatedIntegrationPackageSuggestion } from './search-format.ts'
 import { extractSearchTokens } from './understand-search-query.ts'
 
 export const maxIntegrationPackageSuggestions = 3
 const communitySuggestionCandidateLimit = 12
+
+type IntegrationProviderMetadata = Pick<
+	IntegrationConfig,
+	'name' | 'tokenUrl' | 'apiBaseUrl' | 'requiredHosts' | 'authorization'
+>
 
 type ProviderPackageIdentity = {
 	kodyId: string
@@ -20,6 +28,53 @@ type SuggestionPackageRow = {
 		description: string
 		tags: Array<string>
 	}
+}
+
+function providerMetadataHosts(
+	integration: IntegrationProviderMetadata,
+): Array<string> {
+	const urls = [
+		integration.tokenUrl,
+		integration.apiBaseUrl,
+		integration.authorization?.authorizeUrl,
+	]
+	const hosts = urls.flatMap((url) => {
+		if (!url) return []
+		try {
+			return [new URL(url).hostname]
+		} catch {
+			return []
+		}
+	})
+	return [...hosts, ...(integration.requiredHosts ?? [])]
+}
+
+/**
+ * Separate the provider identity from an account-specific integration label.
+ * A prefix is accepted only when saved endpoint metadata independently
+ * identifies every token, so an arbitrary first segment is never assumed to be
+ * the provider. The full integration name is the safe fallback.
+ */
+export function resolveIntegrationProviderName(
+	integration: IntegrationProviderMetadata,
+): string {
+	const integrationName = canonicalIntegrationName(integration.name)
+	const nameTokens = integrationName.split('-').filter(Boolean)
+	const providerTokens = new Set(
+		providerMetadataHosts(integration).flatMap((host) => {
+			const labels = host.toLowerCase().split('.').filter(Boolean)
+			if (labels.length < 2) return labels
+			return [labels.at(-2) ?? '']
+		}),
+	)
+
+	for (let length = nameTokens.length; length > 0; length--) {
+		const prefix = nameTokens.slice(0, length)
+		if (prefix.every((token) => providerTokens.has(token))) {
+			return prefix.join('-')
+		}
+	}
+	return integrationName
 }
 
 export function packageIdentityMentionsProvider(
@@ -101,6 +156,7 @@ async function collectSameProviderCommunitySuggestions(input: {
 			env: input.env,
 			query: provider,
 			limit: communitySuggestionCandidateLimit,
+			trustedFirst: true,
 		})
 	} catch {
 		return []
@@ -135,12 +191,13 @@ async function collectSameProviderCommunitySuggestions(input: {
 export async function collectIntegrationPackageSuggestions(input: {
 	env: Env
 	baseUrl: string
-	providerName: string
+	integration: IntegrationProviderMetadata
 	packageRows: ReadonlyArray<SuggestionPackageRow>
 }): Promise<Array<RelatedIntegrationPackageSuggestion>> {
+	const providerName = resolveIntegrationProviderName(input.integration)
 	const userSuggestions = collectSameProviderUserSuggestions(
 		input.packageRows,
-		input.providerName,
+		providerName,
 	)
 	if (userSuggestions.length > 0) {
 		return userSuggestions
@@ -148,6 +205,6 @@ export async function collectIntegrationPackageSuggestions(input: {
 	return await collectSameProviderCommunitySuggestions({
 		env: input.env,
 		baseUrl: input.baseUrl,
-		providerName: input.providerName,
+		providerName,
 	})
 }
