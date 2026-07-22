@@ -1,9 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
-import {
-	maxPlanEmailLimits,
-	planLimits,
-} from '#worker/entitlements/plans.ts'
+import { maxPlanEmailLimits, planLimits } from '#worker/entitlements/plans.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'

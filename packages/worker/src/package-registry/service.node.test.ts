@@ -515,13 +515,10 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		userId: 'user-1',
 		sourceId: 'source-1',
 	})
-	expect(mockModule.deleteEntitySource).toHaveBeenCalledWith(
-		env.APP_DB,
-		{
-			id: 'source-1',
-			userId: 'user-1',
-		},
-	)
+	expect(mockModule.deleteEntitySource).toHaveBeenCalledWith(env.APP_DB, {
+		id: 'source-1',
+		userId: 'user-1',
+	})
 	expect(
 		mockModule.deleteEntitySource.mock.invocationCallOrder[0],
 	).toBeGreaterThan(
@@ -552,13 +549,10 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		userId: 'user-1',
 		packageId: 'package-1',
 	})
-	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(
-		env.APP_DB,
-		{
-			userId: 'user-1',
-			packageId: 'package-1',
-		},
-	)
+	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(env.APP_DB, {
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
 	expect(
 		mockModule.removePackageRetrieverManifestCacheEntries,
 	).toHaveBeenCalledWith({
@@ -600,13 +594,10 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 		userId: 'user-1',
 		packageId: 'package-1',
 	})
-	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(
-		env.APP_DB,
-		{
-			userId: 'user-1',
-			packageId: 'package-1',
-		},
-	)
+	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(env.APP_DB, {
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
 	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
 		env,
 		'package-1',

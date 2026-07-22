@@ -41,9 +41,7 @@ function applyMigrationLikeD1(db: DatabaseSync, fileName: string) {
 function applyMigrationsBeforePlanDefaultMax(db: DatabaseSync) {
 	db.exec('PRAGMA foreign_keys = ON')
 	for (const fileName of readdirSync(migrationsDirectory)
-		.filter(
-			(file) => file.endsWith('.sql') && file < planDefaultMaxMigration,
-		)
+		.filter((file) => file.endsWith('.sql') && file < planDefaultMaxMigration)
 		.sort()) {
 		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
 	}
