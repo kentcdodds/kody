@@ -1,7 +1,7 @@
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import {
 	dispatchAdminPackageSubscriptionEvent,
-	readRetryablePackageInvocationInfrastructureCode,
+	readPreExecutionPackageInvocationInfrastructureCode,
 } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
@@ -208,7 +208,7 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 				source: 'email',
 			})
 			const retryableCode =
-				readRetryablePackageInvocationInfrastructureCode(response)
+				readPreExecutionPackageInvocationInfrastructureCode(response)
 			if (retryableCode) {
 				throw new Error(
 					`Retryable package invocation infrastructure response: ${retryableCode}.`,
@@ -332,6 +332,7 @@ export async function dispatchSystemInboundEmailSubscriptionEvents(input: {
 		source: 'email',
 		retryDiscoveryFailures: true,
 		retryInvocationInfrastructureFailures: true,
+		retryOnlyPreExecutionInfrastructureFailures: true,
 		buildIdempotencyKey: (savedPackage) =>
 			buildSubscriptionIdempotencyKey({
 				messageId: input.message.id,

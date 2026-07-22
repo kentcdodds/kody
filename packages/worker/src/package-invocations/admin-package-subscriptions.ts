@@ -16,20 +16,48 @@ const retryablePackageInvocationInfrastructureCodes = new Set([
 	'idempotency_lookup_failed',
 	'idempotency_persistence_failed',
 	'idempotency_conflict_unresolved',
+	'invocation_in_progress',
+	'invocation_failed',
+	'idempotency_response_unavailable',
 ])
+const preExecutionPackageInvocationInfrastructureCodes = new Set([
+	'idempotency_lookup_failed',
+	'idempotency_persistence_failed',
+	'idempotency_conflict_unresolved',
+])
+
+function readPackageInvocationInfrastructureCode(input: {
+	response: {
+		status: number
+		body: Record<string, unknown>
+	}
+	codes: ReadonlySet<string>
+}) {
+	if (input.response.status >= 200 && input.response.status < 300) return null
+	const error = input.response.body['error']
+	if (!error || typeof error !== 'object' || Array.isArray(error)) return null
+	const code = (error as Record<string, unknown>)['code']
+	return typeof code === 'string' && input.codes.has(code) ? code : null
+}
 
 export function readRetryablePackageInvocationInfrastructureCode(response: {
 	status: number
 	body: Record<string, unknown>
 }) {
-	if (response.status >= 200 && response.status < 300) return null
-	const error = response.body['error']
-	if (!error || typeof error !== 'object' || Array.isArray(error)) return null
-	const code = (error as Record<string, unknown>)['code']
-	return typeof code === 'string' &&
-		retryablePackageInvocationInfrastructureCodes.has(code)
-		? code
-		: null
+	return readPackageInvocationInfrastructureCode({
+		response,
+		codes: retryablePackageInvocationInfrastructureCodes,
+	})
+}
+
+export function readPreExecutionPackageInvocationInfrastructureCode(response: {
+	status: number
+	body: Record<string, unknown>
+}) {
+	return readPackageInvocationInfrastructureCode({
+		response,
+		codes: preExecutionPackageInvocationInfrastructureCodes,
+	})
 }
 
 async function mapSettledInChunks<T, TResult>(
@@ -123,6 +151,7 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 	actorTokenId?: string
 	retryDiscoveryFailures?: boolean
 	retryInvocationInfrastructureFailures?: boolean
+	retryOnlyPreExecutionInfrastructureFailures?: boolean
 }) {
 	const adminUserIds = await listAdminStableUserIds(input.env.APP_DB)
 	if (adminUserIds.length === 0) {
@@ -185,7 +214,9 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 			return {
 				response,
 				retryableInfrastructureCode: input.retryInvocationInfrastructureFailures
-					? readRetryablePackageInvocationInfrastructureCode(response)
+					? input.retryOnlyPreExecutionInfrastructureFailures
+						? readPreExecutionPackageInvocationInfrastructureCode(response)
+						: readRetryablePackageInvocationInfrastructureCode(response)
 					: null,
 			}
 		},
