@@ -32,6 +32,7 @@ export async function checkFreshness(
 	let ageHours: number | undefined
 	let stale = manifest === null
 	if (manifest !== null) {
+		const object = await env.BACKUP_BUCKET.head(payload.objectKey)
 		ageHours =
 			(scheduledAt.valueOf() - new Date(manifest.completedAt).valueOf()) /
 			3_600_000
@@ -47,7 +48,9 @@ export async function checkFreshness(
 			manifest.bytes <= 0 ||
 			!/^[0-9a-f]{64}$/.test(manifest.sha256) ||
 			!manifest.r2Etag ||
-			(await env.BACKUP_BUCKET.head(payload.objectKey)) === null
+			object === null ||
+			(object !== null &&
+				(object.size !== manifest.bytes || object.etag !== manifest.r2Etag))
 	}
 	safeLog({
 		event: stale ? 'freshness-stale' : 'freshness-success',

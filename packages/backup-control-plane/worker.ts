@@ -8,12 +8,54 @@ import {
 	workflowInstanceId,
 } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
-import { enqueueBackup } from './workflow-trigger.ts'
+import {
+	enqueueBackup,
+	isControlledRetryWindow,
+	type EnqueueResult,
+} from './workflow-trigger.ts'
 
 export { ProductionD1BackupWorkflow } from './backup-workflow.ts'
 
 export const BACKUP_CRON = '15 2 * * *'
 export const FRESHNESS_CRON = '45 * * * *'
+
+function enqueueEvent(
+	result: EnqueueResult,
+): 'backup-enqueued' | 'backup-overlap' | 'backup-restarted' {
+	switch (result) {
+		case 'created':
+			return 'backup-enqueued'
+		case 'duplicate':
+			return 'backup-overlap'
+		case 'restarted':
+			return 'backup-restarted'
+		default: {
+			const exhaustive: never = result
+			throw exhaustive
+		}
+	}
+}
+
+async function triggerBackup(
+	env: BackupEnvironment,
+	scheduledAt: Date,
+): Promise<void> {
+	const payload = backupPayload(env, scheduledAt)
+	const instanceId = workflowInstanceId(env.SOURCE_DATABASE_ID, payload.day)
+	const result = await enqueueBackup(
+		env.BACKUP_WORKFLOW,
+		env.SOURCE_DATABASE_ID,
+		payload,
+	)
+	safeLog({
+		event: enqueueEvent(result),
+		status: 'success',
+		day: payload.day,
+		instanceId,
+		objectKey: payload.objectKey,
+		manifestKey: payload.manifestKey,
+	})
+}
 
 async function scheduled(
 	controller: ScheduledController,
@@ -29,25 +71,13 @@ async function scheduled(
 	}
 	const scheduledAt = new Date(controller.scheduledTime)
 	switch (controller.cron) {
-		case BACKUP_CRON: {
-			const payload = backupPayload(env, scheduledAt)
-			const instanceId = workflowInstanceId(env.SOURCE_DATABASE_ID, payload.day)
-			const result = await enqueueBackup(
-				env.BACKUP_WORKFLOW,
-				env.SOURCE_DATABASE_ID,
-				payload,
-			)
-			safeLog({
-				event: result === 'created' ? 'backup-enqueued' : 'backup-overlap',
-				status: 'success',
-				day: payload.day,
-				instanceId,
-				objectKey: payload.objectKey,
-				manifestKey: payload.manifestKey,
-			})
+		case BACKUP_CRON:
+			await triggerBackup(env, scheduledAt)
 			return
-		}
 		case FRESHNESS_CRON:
+			if (isControlledRetryWindow(scheduledAt)) {
+				await triggerBackup(env, scheduledAt)
+			}
 			await checkFreshness(env, scheduledAt)
 			return
 		default:

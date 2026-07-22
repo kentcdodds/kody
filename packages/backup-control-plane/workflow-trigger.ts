@@ -1,45 +1,73 @@
 import { workflowInstanceId } from './backup-policy.ts'
 import { type BackupPayload } from './backup-types.ts'
 
+export type WorkflowInstanceStatus =
+	| 'queued'
+	| 'running'
+	| 'paused'
+	| 'errored'
+	| 'terminated'
+	| 'complete'
+	| 'waiting'
+	| 'waitingForPause'
+	| 'unknown'
+
+export type EnqueueResult = 'created' | 'duplicate' | 'restarted'
+
 interface WorkflowHandle {
-	status(): Promise<{ status: string }>
+	status(): Promise<{ status: WorkflowInstanceStatus }>
+	restart(): Promise<void>
 }
 
 interface WorkflowStarter {
-	create(options: {
-		id: string
-		params: BackupPayload
-		retention: {
-			successRetention: '1 year'
-			errorRetention: '1 year'
-		}
-	}): Promise<unknown>
+	create(options: { id: string; params: BackupPayload }): Promise<unknown>
 	get(id: string): Promise<WorkflowHandle>
+}
+
+export function isControlledRetryWindow(scheduledAt: Date): boolean {
+	return scheduledAt.getUTCHours() === 2 && scheduledAt.getUTCMinutes() === 45
 }
 
 export async function enqueueBackup(
 	workflow: WorkflowStarter,
 	databaseId: string,
 	payload: BackupPayload,
-): Promise<'created' | 'duplicate'> {
+): Promise<EnqueueResult> {
 	const id = workflowInstanceId(databaseId, payload.day)
 	try {
 		await workflow.create({
 			id,
 			params: payload,
-			retention: {
-				successRetention: '1 year',
-				errorRetention: '1 year',
-			},
 		})
 		return 'created'
 	} catch (createError) {
+		let instance: WorkflowHandle
 		try {
-			const status = await (await workflow.get(id)).status()
-			if (status.status !== 'unknown') return 'duplicate'
+			instance = await workflow.get(id)
 		} catch {
 			// Preserve the original create failure when no instance can be proven.
+			throw createError
 		}
-		throw createError
+		const status = await instance.status()
+		switch (status.status) {
+			case 'queued':
+			case 'running':
+			case 'paused':
+			case 'complete':
+			case 'waiting':
+			case 'waitingForPause':
+				return 'duplicate'
+			case 'errored':
+			case 'terminated':
+				await instance.restart()
+				return 'restarted'
+			case 'unknown':
+				throw createError
+			default: {
+				const exhaustive: never = status.status
+				void exhaustive
+				throw createError
+			}
+		}
 	}
 }

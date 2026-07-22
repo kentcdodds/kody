@@ -24,7 +24,11 @@ import {
 	type BackupManifest,
 	type BackupPayload,
 } from './backup-types.ts'
-import { enqueueBackup } from './workflow-trigger.ts'
+import {
+	enqueueBackup,
+	isControlledRetryWindow,
+	type WorkflowInstanceStatus,
+} from './workflow-trigger.ts'
 
 class TestDigestStream extends WritableStream<Uint8Array> {
 	readonly digest: Promise<ArrayBuffer>
@@ -483,6 +487,43 @@ test('streams once with an immutable conditional, checksum, byte count, and ETag
 	assert.equal(duplicate.sha256, stored.sha256)
 })
 
+test('crash-window object without a manifest fails closed', async () => {
+	const bucket = new MemoryBucket()
+	await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		'backup.sql',
+		'https://download.example',
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
+	)
+	const duplicate = await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		'backup.sql',
+		'https://download.example',
+		async () => {
+			throw new Error('existing immutable object must not redownload')
+		},
+	)
+	await assert.rejects(
+		assertDuplicateMatchesManifest(
+			bucket as unknown as R2Bucket,
+			'manifest.json',
+			'backup.sql',
+			duplicate,
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'duplicate-object-manifest-missing',
+	)
+	await assert.doesNotReject(
+		assertDuplicateMatchesManifest(
+			bucket as unknown as R2Bucket,
+			'manifest.json',
+			'backup.sql',
+			{ ...duplicate, alreadyExisted: false },
+		),
+	)
+})
+
 test('truncated and interrupted downloads fail retryably, then a retry succeeds', async () => {
 	const bucket = new MemoryBucket()
 	await assert.rejects(
@@ -639,7 +680,7 @@ test('object corruption changes its checksum and conflicts with the immutable ma
 	)
 })
 
-test('freshness check accepts a recent complete backup and flags a missing one', async () => {
+test('freshness accepts matching metadata and flags size/ETag drift or missing objects', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
 	const key = `daily/d1/${DATABASE_ID}/2026-07-22/backup.sql`
@@ -658,6 +699,16 @@ test('freshness check accepts a recent complete backup and flags a missing one',
 		await checkFreshness(env, new Date('2026-07-22T03:45:00Z')),
 		true,
 	)
+	bucket.corrupt(key, 'drift')
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z')),
+		false,
+	)
+	bucket.corrupt(key, 'longer')
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z')),
+		false,
+	)
 	assert.equal(
 		await checkFreshness(
 			environment(new MemoryBucket()),
@@ -667,22 +718,122 @@ test('freshness check accepts a recent complete backup and flags a missing one',
 	)
 })
 
-test('deterministic workflow ID collapses overlap and duplicate triggers', async () => {
-	let creates = 0
-	const statuses = new Map<string, string>()
+test('workflow creation omits explicit retention and active overlap stays duplicate', async () => {
+	let createdOptions: { id: string; params: BackupPayload } | undefined
 	const workflow = {
 		async create(options: { id: string; params: BackupPayload }) {
-			creates += 1
-			if (statuses.has(options.id)) throw new Error('instance already exists')
-			statuses.set(options.id, 'running')
+			if (createdOptions) throw new Error('instance already exists')
+			createdOptions = options
 		},
-		async get(id: string) {
-			return { status: async () => ({ status: statuses.get(id) ?? 'unknown' }) }
+		async get() {
+			return {
+				status: async () => ({ status: 'running' as const }),
+				restart: async () => undefined,
+			}
 		},
 	}
 	const payload = backupPayload(environment(), new Date('2026-07-22T02:15:00Z'))
 	assert.equal(await enqueueBackup(workflow, DATABASE_ID, payload), 'created')
+	assert.equal('retention' in createdOptions!, false)
 	assert.equal(await enqueueBackup(workflow, DATABASE_ID, payload), 'duplicate')
-	assert.equal(creates, 2)
-	assert.equal(statuses.size, 1)
+})
+
+for (const status of [
+	'queued',
+	'running',
+	'paused',
+	'complete',
+	'waiting',
+	'waitingForPause',
+] as const) {
+	test(`${status} workflow instances are not restarted`, async () => {
+		let restarts = 0
+		const workflow = {
+			async create() {
+				throw new Error('instance already exists')
+			},
+			async get() {
+				return {
+					status: async () => ({ status }),
+					restart: async () => {
+						restarts += 1
+					},
+				}
+			},
+		}
+		assert.equal(
+			await enqueueBackup(
+				workflow,
+				DATABASE_ID,
+				backupPayload(environment(), new Date('2026-07-22T02:15:00Z')),
+			),
+			'duplicate',
+		)
+		assert.equal(restarts, 0)
+	})
+}
+
+for (const status of ['errored', 'terminated'] as const) {
+	test(`${status} workflow instances are restarted once`, async () => {
+		let restarts = 0
+		const workflow = {
+			async create() {
+				throw new Error('instance already exists')
+			},
+			async get() {
+				return {
+					status: async () => ({ status }),
+					restart: async () => {
+						restarts += 1
+					},
+				}
+			},
+		}
+		assert.equal(
+			await enqueueBackup(
+				workflow,
+				DATABASE_ID,
+				backupPayload(environment(), new Date('2026-07-22T02:15:00Z')),
+			),
+			'restarted',
+		)
+		assert.equal(restarts, 1)
+	})
+}
+
+for (const status of ['unknown', 'unexpected'] as const) {
+	test(`${status} workflow status fails closed`, async () => {
+		let restarts = 0
+		const workflow = {
+			async create() {
+				throw new Error('original create failure')
+			},
+			async get() {
+				return {
+					status: async () => ({
+						status: status as WorkflowInstanceStatus,
+					}),
+					restart: async () => {
+						restarts += 1
+					},
+				}
+			},
+		}
+		await assert.rejects(
+			enqueueBackup(
+				workflow,
+				DATABASE_ID,
+				backupPayload(environment(), new Date('2026-07-22T02:15:00Z')),
+			),
+			/original create failure/,
+		)
+		assert.equal(restarts, 0)
+	})
+}
+
+test('only the 02:45 UTC freshness tick is an approved retry window', () => {
+	assert.equal(isControlledRetryWindow(new Date('2026-07-22T02:45:00Z')), true)
+	assert.equal(isControlledRetryWindow(new Date('2026-07-22T01:45:00Z')), false)
+	assert.equal(isControlledRetryWindow(new Date('2026-07-22T03:45:00Z')), false)
+	assert.equal(isControlledRetryWindow(new Date('2026-07-22T02:44:00Z')), false)
 })

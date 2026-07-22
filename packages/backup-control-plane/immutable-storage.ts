@@ -172,7 +172,12 @@ export async function assertDuplicateMatchesManifest(
 ): Promise<void> {
 	if (!stored.alreadyExisted) return
 	const manifest = await readManifest(bucket, manifestKey)
-	if (manifest === null) return
+	if (manifest === null) {
+		throw new BackupError(
+			'duplicate-object-manifest-missing',
+			'immutable backup object exists without its canonical manifest',
+		)
+	}
 	if (
 		manifest.objectKey !== objectKey ||
 		manifest.bytes !== stored.bytes ||

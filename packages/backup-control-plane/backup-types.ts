@@ -69,6 +69,7 @@ export interface LogRecord {
 		| 'backup-disabled'
 		| 'backup-enqueued'
 		| 'backup-overlap'
+		| 'backup-restarted'
 		| 'backup-success'
 		| 'backup-failure'
 		| 'freshness-success'
