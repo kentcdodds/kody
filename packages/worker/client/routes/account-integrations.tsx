@@ -1,4 +1,8 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
+import {
+	type AccountIntegrationListItem,
+	type AccountIntegrationsLoaderData,
+} from '#app/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
@@ -42,38 +46,6 @@ import {
 	sectionTitleCss,
 } from '#client/styles/style-primitives.ts'
 
-type IntegrationFlow = 'pkce' | 'confidential'
-
-type IntegrationAuthorization = {
-	authorizeUrl: string
-	scopes: Array<string>
-	scopeSeparator?: string | null
-	extraAuthorizeParams?: Record<string, string>
-}
-
-type AccountIntegrationListItem = {
-	name: string
-	valueName: string
-	tokenUrl: string
-	apiBaseUrl?: string | null
-	flow: IntegrationFlow
-	clientIdValueName: string
-	clientSecretSecretName?: string | null
-	accessTokenSecretName: string
-	refreshTokenSecretName?: string | null
-	requiredHosts?: Array<string>
-	authorization?: IntegrationAuthorization | null
-	createdAt: string
-	updatedAt: string
-}
-
-type AccountIntegrationsPayload = {
-	ok: true
-	email: string
-	username: string
-	integrations: Array<AccountIntegrationListItem>
-}
-
 const accountIntegrationsApiPath = '/account/integrations.json'
 const accountIntegrationsPath = '/account/integrations'
 
@@ -99,7 +71,7 @@ export async function accountIntegrationsRouteLoader(
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
-	const payload = await readJson<AccountIntegrationsPayload>(response)
+	const payload = await readJson<AccountIntegrationsLoaderData>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load integrations.')
 	}
@@ -173,7 +145,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				window.location.assign('/login')
 				return
 			}
-			const payload = await readJson<AccountIntegrationsPayload>(response)
+			const payload = await readJson<AccountIntegrationsLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load integrations.')
 			}

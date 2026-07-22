@@ -1,6 +1,10 @@
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
 import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
+import {
+	type AccountPackageInvocationTokenListItem,
+	type AccountPackageInvocationTokensLoaderData,
+} from '#app/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
@@ -48,34 +52,8 @@ import {
 	MetadataGrid,
 } from './account-management-components.tsx'
 
-type PackageOption = {
-	id: string
-	kodyId: string
-	name: string
-}
-
-type PackageInvocationTokenListItem = {
-	id: string
-	name: string
-	packageIds: Array<string>
-	packageKodyIds: Array<string>
-	exportNames: Array<string>
-	sources: Array<string>
-	createdAt: string
-	updatedAt: string
-	lastUsedAt: string | null
-	revokedAt: string | null
-}
-
-type AccountPackageInvocationTokensPayload = {
-	ok: true
-	email: string
-	username: string
-	invocationUrlOrigin: string
-	packages: Array<PackageOption>
-	tokens: Array<PackageInvocationTokenListItem>
-	selectedTokenId?: string
-}
+type PackageOption =
+	AccountPackageInvocationTokensLoaderData['packages'][number]
 
 type EditorState = {
 	name: string
@@ -187,7 +165,7 @@ export async function accountPackageInvocationTokensRouteLoader(
 		return routeLoaderRedirect('/login')
 	}
 	const payload =
-		await readJson<AccountPackageInvocationTokensPayload>(response)
+		await readJson<AccountPackageInvocationTokensLoaderData>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load package invocation tokens.')
 	}
@@ -284,11 +262,11 @@ function formatScope(values: Array<string>) {
 	return values.join(', ')
 }
 
-function tokenStatus(token: PackageInvocationTokenListItem) {
+function tokenStatus(token: AccountPackageInvocationTokenListItem) {
 	return token.revokedAt ? 'Revoked' : 'Active'
 }
 
-function tokenStatusCss(token: PackageInvocationTokenListItem) {
+function tokenStatusCss(token: AccountPackageInvocationTokenListItem) {
 	return {
 		display: 'inline-flex',
 		alignItems: 'center',
@@ -305,7 +283,7 @@ function tokenStatusCss(token: PackageInvocationTokenListItem) {
 }
 
 function createEditorStateFromToken(
-	token: PackageInvocationTokenListItem,
+	token: AccountPackageInvocationTokenListItem,
 ): EditorState {
 	return {
 		name: token.name,
@@ -329,7 +307,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	let username = ''
 	let invocationUrlOrigin = ''
 	let packages: Array<PackageOption> = []
-	let tokens: Array<PackageInvocationTokenListItem> = []
+	let tokens: Array<AccountPackageInvocationTokenListItem> = []
 	let editorState = createEmptyEditorState()
 	let selectedTokenId: string | null = null
 	let message: string | null = null
@@ -385,7 +363,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				return
 			}
 			const payload =
-				await readJson<AccountPackageInvocationTokensPayload>(response)
+				await readJson<AccountPackageInvocationTokensLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load package invocation tokens.')
 			}
@@ -413,7 +391,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	}
 
 	function applyPayload(
-		payload: AccountPackageInvocationTokensPayload,
+		payload: AccountPackageInvocationTokensLoaderData,
 		href: string,
 	) {
 		username = payload.username
@@ -527,7 +505,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function startEditToken(token: PackageInvocationTokenListItem) {
+	function startEditToken(token: AccountPackageInvocationTokenListItem) {
 		if (token.revokedAt) return
 		editorState = createEditorStateFromToken(token)
 		selectedTokenId = token.id
@@ -618,7 +596,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AccountPackageInvocationTokensPayload & { error?: string; ok?: boolean }
+				AccountPackageInvocationTokensLoaderData & {
+					error?: string
+					ok?: boolean
+				}
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to create token.')
@@ -701,7 +682,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AccountPackageInvocationTokensPayload & { error?: string; ok?: boolean }
+				AccountPackageInvocationTokensLoaderData & {
+					error?: string
+					ok?: boolean
+				}
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to update token.')
@@ -749,7 +733,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AccountPackageInvocationTokensPayload & { error?: string; ok?: boolean }
+				AccountPackageInvocationTokensLoaderData & {
+					error?: string
+					ok?: boolean
+				}
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to revoke token.')
@@ -798,7 +785,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AccountPackageInvocationTokensPayload & { error?: string; ok?: boolean }
+				AccountPackageInvocationTokensLoaderData & {
+					error?: string
+					ok?: boolean
+				}
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to reinstate token.')
@@ -844,7 +834,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AccountPackageInvocationTokensPayload & { error?: string; ok?: boolean }
+				AccountPackageInvocationTokensLoaderData & {
+					error?: string
+					ok?: boolean
+				}
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to delete token.')
@@ -868,7 +861,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		}
 	}
 
-	function selectToken(token: PackageInvocationTokenListItem) {
+	function selectToken(token: AccountPackageInvocationTokenListItem) {
 		selectedTokenId = token.id
 		editorState = token.revokedAt
 			? createEmptyEditorState()

@@ -42,6 +42,10 @@ The example rule reports when it finds the identifier
 `__oxlint_plugin_example__`. This keeps the demo deterministic and avoids
 accidentally linting normal production code.
 
+Another live example is `kody-custom/prefer-loader-data-types`, which scopes
+itself to `packages/worker/client/routes/**` and reports route-local TypeScript
+payload declarations that should instead be imported from `#app/loader-data.ts`.
+
 ## Verify manually
 
 Create a temporary file containing the sentinel identifier and run:

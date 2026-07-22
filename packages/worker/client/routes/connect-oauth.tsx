@@ -6,6 +6,10 @@ import {
 	normalizeProviderKey,
 	safeParseHost,
 } from '@kody-internal/shared/url-hosts.ts'
+import {
+	type AccountIntegrationListItem,
+	type AccountSecretsLoaderData,
+} from '#app/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -87,26 +91,30 @@ type ConnectOauthConfig = {
 	allowedHosts: Array<string>
 }
 
-type StoredIntegrationConfig = {
-	name: string
-	tokenUrl: string
+type StoredIntegrationAuthorization = NonNullable<
+	NonNullable<AccountIntegrationListItem['authorization']>
+>
+
+// Persisted integration values share the core account-integration payload shape
+// but omit account-only metadata and normalize nullable fields after parsing.
+type StoredIntegrationConfig = Omit<
+	AccountIntegrationListItem,
+	| 'apiBaseUrl'
+	| 'authorization'
+	| 'clientSecretSecretName'
+	| 'createdAt'
+	| 'refreshTokenSecretName'
+	| 'requiredHosts'
+	| 'updatedAt'
+	| 'valueName'
+> & {
 	apiBaseUrl: string | null
-	flow: OAuthFlow
-	usePkce?: boolean | null
-	clientIdValueName: string
 	clientSecretSecretName: string | null
-	accessTokenSecretName: string
 	refreshTokenSecretName: string | null
 	requiredHosts: Array<string>
-	tokenExchangeStyle?: TokenExchangeStyle | null
-	authorization?: StoredIntegrationAuthorization | null
-}
-
-type StoredIntegrationAuthorization = {
-	authorizeUrl: string
-	scopes: Array<string>
-	scopeSeparator: string | null
-	extraAuthorizeParams: Record<string, string>
+	usePkce: boolean | null
+	tokenExchangeStyle: TokenExchangeStyle | null
+	authorization: StoredIntegrationAuthorization | null
 }
 
 type OAuthExchangeResult =
@@ -143,11 +151,6 @@ type ConnectOauthNextSteps = {
 		label: string
 		prompt: string
 	}
-}
-
-type AccountSecretsListPayload = {
-	ok: true
-	secrets: Array<{ name: string; scope: string }>
 }
 
 type OAuthCallback =
@@ -447,9 +450,10 @@ export function ConnectOauthRoute(handle: Handle) {
 			credentials: 'include',
 		})
 		if (redirectToLoginOn401(response)) return null
-		const payload = (await response
-			.json()
-			.catch(() => null)) as AccountSecretsListPayload | null
+		const payload = (await response.json().catch(() => null)) as Pick<
+			AccountSecretsLoaderData,
+			'ok' | 'secrets'
+		> | null
 		if (
 			!response.ok ||
 			payload?.ok !== true ||
@@ -1436,7 +1440,7 @@ export function parseStoredIntegrationConfig(
 			accessTokenSecretName,
 			refreshTokenSecretName,
 			requiredHosts: normalizeHosts(requiredHosts),
-			...(tokenExchangeStyle ? { tokenExchangeStyle } : {}),
+			tokenExchangeStyle,
 			authorization,
 		}
 	} catch {

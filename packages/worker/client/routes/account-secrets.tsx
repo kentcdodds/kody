@@ -1,5 +1,10 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
+import {
+	type AccountSecretDetail,
+	type AccountSecretListItem,
+	type AccountSecretsLoaderData,
+} from '#app/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
@@ -61,47 +66,9 @@ import {
 	MetadataGrid,
 } from './account-management-components.tsx'
 
-type SecretScope = 'package' | 'user'
+type SecretScope = AccountSecretListItem['scope']
 
-type PackageOption = {
-	id: string
-	title: string
-	updatedAt: string
-}
-
-type SecretListItem = {
-	id: string
-	name: string
-	scope: SecretScope
-	description: string
-	packageId: string | null
-	packageTitle: string | null
-	allowedHosts: Array<string>
-	allowedCapabilities: Array<string>
-	allowedPackages: Array<string>
-	createdAt: string
-	updatedAt: string
-	ttlMs: number | null
-}
-
-type SecretDetail = SecretListItem & {
-	value: string
-}
-
-type AccountSecretsPayload = {
-	ok: true
-	email: string
-	packageOptions: Array<PackageOption>
-	packages: Array<{
-		id: string
-		kodyId: string
-		name: string
-	}>
-	secrets: Array<SecretListItem>
-	selectedSecret: SecretDetail | null
-	approval: ApprovalView | null
-	approvalError: string | null
-}
+type PackageOption = AccountSecretsLoaderData['packageOptions'][number]
 
 type EditorState = {
 	currentId: string | null
@@ -249,7 +216,7 @@ function collectRepeatedTextRows(
 	return out
 }
 
-function createEditorStateFromSecret(secret: SecretDetail): EditorState {
+function createEditorStateFromSecret(secret: AccountSecretDetail): EditorState {
 	const allowedHosts = coerceStringRows(secret.allowedHosts)
 	const allowedCapabilities = coerceStringRows(secret.allowedCapabilities)
 	const allowedPackages = coerceStringRows(secret.allowedPackages)
@@ -322,7 +289,7 @@ function normalizeSingleAllowedCapability(capability: string | null) {
 
 function getAlreadyAddedNotice(input: {
 	href: string
-	selectedSecret: SecretDetail | null
+	selectedSecret: AccountSecretDetail | null
 	approval: ApprovalView | null
 	formatPackageId: (packageId: string) => string
 }) {
@@ -467,7 +434,7 @@ export async function accountSecretsRouteLoader(
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
-	const payload = await readJson<AccountSecretsPayload>(response)
+	const payload = await readJson<AccountSecretsLoaderData>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load your secrets.')
 	}
@@ -500,7 +467,7 @@ function readFilterState(
 }
 
 function filterSecrets(
-	secrets: Array<SecretListItem>,
+	secrets: Array<AccountSecretListItem>,
 	filters: SecretFilterState,
 	packagesById: ReadonlyMap<string, { kodyId: string; name: string }>,
 ) {
@@ -540,8 +507,8 @@ export function AccountSecretsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let packageOptions: Array<PackageOption> = []
 	let packagesById = new Map<string, { kodyId: string; name: string }>()
-	let secrets: Array<SecretListItem> = []
-	let selectedSecret: SecretDetail | null = null
+	let secrets: Array<AccountSecretListItem> = []
+	let selectedSecret: AccountSecretDetail | null = null
 	let approval: ApprovalView | null = null
 	let editorState = createEmptyEditorState([])
 	let message: string | null = null
@@ -604,7 +571,7 @@ export function AccountSecretsRoute(handle: Handle) {
 	}
 
 	function applyPayload(
-		payload: AccountSecretsPayload,
+		payload: AccountSecretsLoaderData,
 		selection: SelectionState,
 		nextMessage: string | null,
 	) {
@@ -673,7 +640,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				return
 			}
 
-			const payload = await readJson<AccountSecretsPayload>(response)
+			const payload = await readJson<AccountSecretsLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load your secrets.')
 			}
@@ -732,7 +699,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				requestUrl.searchParams.set('selected', selection.selectedSecretId)
 			}
 			const payload = await submitApprovalRequest<
-				AccountSecretsPayload & { error?: string; ok?: boolean }
+				AccountSecretsLoaderData & { error?: string; ok?: boolean }
 			>(action, `${requestUrl.pathname}${requestUrl.search}`)
 			if (!payload) return
 
@@ -851,7 +818,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			}
 
 			const payload = await readJson<
-				AccountSecretsPayload & { error?: string; ok?: boolean }
+				AccountSecretsLoaderData & { error?: string; ok?: boolean }
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to save secret.')
@@ -911,7 +878,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			}
 
 			const payload = await readJson<
-				AccountSecretsPayload & { error?: string; ok?: boolean }
+				AccountSecretsLoaderData & { error?: string; ok?: boolean }
 			>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to delete secret.')
