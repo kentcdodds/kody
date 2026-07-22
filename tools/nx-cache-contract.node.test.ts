@@ -5,7 +5,7 @@ import {
 	type NxJsonConfiguration,
 	type ProjectConfiguration,
 	type ProjectGraphProjectNode,
-} from '@nx/devkit'
+} from 'nx/src/devkit-exports.js'
 import {
 	filterUsingGlobPatterns,
 	getTargetInputs,
