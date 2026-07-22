@@ -1,0 +1,433 @@
+import {
+	generateKeyPairSync,
+	sign as signBytes,
+	type KeyObject,
+} from 'node:crypto'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { expect, test } from 'vitest'
+import {
+	type EvidenceContent,
+	type EvidenceDetailsByKind,
+	type EvidenceKind,
+	type SignedEvidenceEnvelope,
+	assessCanonicalReadiness,
+	canonicalEvidencePayload,
+} from './canonical-readiness.ts'
+import {
+	type TrustedPublicKeyRegistry,
+	parseTrustedPublicKeyRegistry,
+	verifyLocalArtifactFiles,
+} from './canonical-readiness-cli.ts'
+import { sha256 } from './canonical-json.ts'
+
+const appKinds = [
+	'inventory',
+	'source-credential-check',
+	'destination-credential-check',
+	'transfer-support-check',
+	'contract-verification',
+	'd1-size-ceiling-check',
+	'd1-restore-drill',
+] as const satisfies ReadonlyArray<EvidenceKind>
+type AppKind = (typeof appKinds)[number]
+
+const performedAt = '2026-07-22T10:00:00.000Z'
+const now = new Date('2026-07-22T12:00:00.000Z')
+const sourceIdentity = {
+	accountId: 'production-account',
+	resourceId: '11111111-1111-4111-8111-111111111111',
+}
+const destinationIdentity = {
+	accountId: 'recovery-account',
+	resourceId: '22222222-2222-4222-8222-222222222222',
+}
+
+function detailsFor(kind: AppKind): EvidenceDetailsByKind[AppKind] {
+	switch (kind) {
+		case 'inventory':
+			return { inventorySha256: '1'.repeat(64), itemCount: 1 }
+		case 'source-credential-check':
+			return { credentialId: 'source-edit-token', scope: 'Account D1 Edit' }
+		case 'destination-credential-check':
+			return {
+				credentialId: 'destination-edit-token',
+				scope: 'Account D1 Edit',
+			}
+		case 'transfer-support-check':
+			return { mechanism: 'd1-logical-import', supported: true }
+		case 'contract-verification':
+			return { checksPassed: 5, contractVersion: '2026-07-22' }
+		case 'd1-size-ceiling-check':
+			return {
+				ceilingBytes: 4_500_000_000,
+				measuredBytes: 1024,
+				monitoredAt: performedAt,
+				sourceAccountId: sourceIdentity.accountId,
+				sourceDatabaseUuid: sourceIdentity.resourceId,
+			}
+		case 'd1-restore-drill':
+			return {
+				foreignKeyViolations: 0,
+				quickCheck: 'ok',
+				restoredDatabaseUuid: destinationIdentity.resourceId,
+			}
+		default: {
+			const exhaustive: never = kind
+			throw new Error(String(exhaustive))
+		}
+	}
+}
+
+function destinationFor(kind: AppKind) {
+	return kind === 'inventory' ||
+		kind === 'source-credential-check' ||
+		kind === 'd1-size-ceiling-check'
+		? null
+		: destinationIdentity
+}
+
+function signEnvelope(
+	content: EvidenceContent,
+	privateKey: KeyObject,
+	keyId = 'readiness-2026',
+): SignedEvidenceEnvelope {
+	const unsigned = { schemaVersion: 1 as const, content }
+	return {
+		...unsigned,
+		signature: {
+			algorithm: 'Ed25519',
+			keyId,
+			value: signBytes(
+				null,
+				Buffer.from(canonicalEvidencePayload(unsigned)),
+				privateKey,
+			).toString('base64'),
+		},
+	}
+}
+
+async function createFixture(
+	directory: string,
+	privateKey: KeyObject,
+): Promise<{
+	evidence: Array<Record<string, unknown>>
+	envelopes: Array<SignedEvidenceEnvelope>
+	evidencePath: string
+}> {
+	const envelopes: Array<SignedEvidenceEnvelope> = []
+	const artifacts: Array<Record<string, unknown>> = []
+	for (const kind of appKinds) {
+		const uri = `${kind}.json`
+		const content: EvidenceContent = {
+			changeId: 'CHG-APP-DB-RESTORE',
+			destinationIdentity: destinationFor(kind),
+			details: detailsFor(kind),
+			kind,
+			outcome: 'passed',
+			performedAt,
+			resourceId: 'APP_DB',
+			sourceIdentity,
+			systemVersion: 'kody-build-2026.07.22',
+			uri,
+			verifierIdentity: 'recovery-verifier@example.test',
+		}
+		const envelope = signEnvelope(content, privateKey)
+		const bytes = Buffer.from(JSON.stringify(envelope))
+		await writeFile(path.join(directory, uri), bytes)
+		envelopes.push(envelope)
+		artifacts.push({
+			changeId: content.changeId,
+			destinationIdentity: content.destinationIdentity,
+			kind: content.kind,
+			outcome: content.outcome,
+			performedAt: content.performedAt,
+			sha256: sha256(bytes),
+			sourceIdentity: content.sourceIdentity,
+			systemVersion: content.systemVersion,
+			type: 'application/vnd.kody.readiness-evidence+json',
+			uri: content.uri,
+			verifierIdentity: content.verifierIdentity,
+		})
+	}
+	return {
+		evidence: [
+			{
+				artifacts,
+				changeId: 'CHG-APP-DB-RESTORE',
+				expiresAt: '2026-08-22T10:00:00.000Z',
+				performedAt,
+				resourceId: 'APP_DB',
+				schemaVersion: 1,
+				systemVersion: 'kody-build-2026.07.22',
+				verifierIdentity: 'recovery-verifier@example.test',
+			},
+		],
+		envelopes,
+		evidencePath: path.join(directory, 'evidence.json'),
+	}
+}
+
+function registryFor(publicKey: KeyObject): TrustedPublicKeyRegistry {
+	return {
+		schemaVersion: 1,
+		keys: [
+			{
+				algorithm: 'Ed25519',
+				keyId: 'readiness-2026',
+				publicKeyPem: publicKey.export({
+					format: 'pem',
+					type: 'spki',
+				}) as string,
+			},
+		],
+	}
+}
+
+async function isD1Ready(
+	evidence: unknown,
+	evidencePath: string,
+	registry: TrustedPublicKeyRegistry,
+): Promise<boolean> {
+	const verified = await verifyLocalArtifactFiles(
+		evidence,
+		evidencePath,
+		registry,
+	)
+	return assessCanonicalReadiness(evidence, now, verified).levels['d1-only']
+		.ready
+}
+
+test('minimal D1 readiness requires every kind-specific signed envelope', async () => {
+	const directory = await mkdtemp(
+		path.join(os.tmpdir(), 'readiness-signatures-'),
+	)
+	try {
+		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+		const fixture = await createFixture(directory, privateKey)
+		const registry = registryFor(publicKey)
+		expect(
+			await isD1Ready(fixture.evidence, fixture.evidencePath, registry),
+		).toBe(true)
+		expect(
+			assessCanonicalReadiness(
+				fixture.evidence,
+				now,
+				await verifyLocalArtifactFiles(
+					fixture.evidence,
+					fixture.evidencePath,
+					registry,
+				),
+			).levels['canonical-data'].ready,
+		).toBe(false)
+
+		for (const kind of appKinds) {
+			const record = fixture.evidence[0]
+			if (!record || !Array.isArray(record.artifacts)) {
+				throw new Error('fixture is malformed')
+			}
+			const withoutKind = [
+				{
+					...record,
+					artifacts: record.artifacts.filter(
+						(artifact) => (artifact as Record<string, unknown>).kind !== kind,
+					),
+				},
+			]
+			expect(await isD1Ready(withoutKind, fixture.evidencePath, registry)).toBe(
+				false,
+			)
+		}
+		const sizeEnvelope = fixture.envelopes.find(
+			(envelope) => envelope.content.kind === 'd1-size-ceiling-check',
+		)
+		const evidenceRecord = fixture.evidence[0]
+		if (
+			!sizeEnvelope ||
+			!evidenceRecord ||
+			!Array.isArray(evidenceRecord.artifacts)
+		) {
+			throw new Error('fixture lacks size-ceiling evidence')
+		}
+		const unsupportedCeiling = signEnvelope(
+			{
+				...sizeEnvelope.content,
+				details: {
+					...(sizeEnvelope.content
+						.details as EvidenceDetailsByKind['d1-size-ceiling-check']),
+					ceilingBytes: 5 * 1024 * 1024 * 1024,
+				},
+			},
+			privateKey,
+		)
+		const unsupportedBytes = Buffer.from(JSON.stringify(unsupportedCeiling))
+		await writeFile(
+			path.join(directory, unsupportedCeiling.content.uri),
+			unsupportedBytes,
+		)
+		const unsupportedEvidence = structuredClone(fixture.evidence)
+		const unsupportedRecord = unsupportedEvidence[0]
+		if (!unsupportedRecord || !Array.isArray(unsupportedRecord.artifacts)) {
+			throw new Error('fixture is malformed')
+		}
+		const sizeArtifact = unsupportedRecord.artifacts.find(
+			(artifact) =>
+				(artifact as Record<string, unknown>).kind === 'd1-size-ceiling-check',
+		) as Record<string, unknown> | undefined
+		if (!sizeArtifact) throw new Error('fixture lacks size artifact')
+		sizeArtifact.sha256 = sha256(unsupportedBytes)
+		expect(
+			await isD1Ready(unsupportedEvidence, fixture.evidencePath, registry),
+		).toBe(false)
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+})
+
+test('unsigned, forged, wrong-key, mismatched, stale-shape, and duplicate evidence fail closed', async () => {
+	const directory = await mkdtemp(
+		path.join(os.tmpdir(), 'readiness-forgeries-'),
+	)
+	try {
+		const trusted = generateKeyPairSync('ed25519')
+		const untrusted = generateKeyPairSync('ed25519')
+		const fixture = await createFixture(directory, trusted.privateKey)
+		const registry = registryFor(trusted.publicKey)
+		const firstEnvelope = fixture.envelopes[0]
+		const firstRecord = fixture.evidence[0]
+		if (
+			!firstEnvelope ||
+			!firstRecord ||
+			!Array.isArray(firstRecord.artifacts)
+		) {
+			throw new Error('fixture is malformed')
+		}
+		const firstArtifact = firstRecord.artifacts[0] as Record<string, unknown>
+		const firstPath = path.join(directory, firstEnvelope.content.uri)
+
+		async function expectEnvelopeNotReady(value: unknown): Promise<void> {
+			const bytes = Buffer.from(
+				typeof value === 'string' ? value : JSON.stringify(value),
+			)
+			await writeFile(firstPath, bytes)
+			const indexedEvidence = structuredClone(fixture.evidence)
+			const indexedRecord = indexedEvidence[0]
+			if (!indexedRecord || !Array.isArray(indexedRecord.artifacts)) {
+				throw new Error('fixture is malformed')
+			}
+			const indexedArtifact = indexedRecord.artifacts[0] as Record<
+				string,
+				unknown
+			>
+			indexedArtifact.sha256 = sha256(bytes)
+			expect(
+				await isD1Ready(indexedEvidence, fixture.evidencePath, registry),
+			).toBe(false)
+		}
+
+		await expectEnvelopeNotReady('synthetic arbitrary artifact bytes')
+
+		const { signature: omittedSignature, ...unsigned } = firstEnvelope
+		expect(omittedSignature.algorithm).toBe('Ed25519')
+		await expectEnvelopeNotReady(unsigned)
+
+		await expectEnvelopeNotReady(
+			signEnvelope(firstEnvelope.content, untrusted.privateKey),
+		)
+
+		const forged = structuredClone(firstEnvelope)
+		forged.content.changeId = 'FORGED-CHANGE'
+		await expectEnvelopeNotReady(forged)
+
+		const signedMismatches: Array<EvidenceContent> = [
+			{ ...firstEnvelope.content, resourceId: 'EMAIL_BLOBS' },
+			{
+				...firstEnvelope.content,
+				details: {
+					credentialId: 'source-edit-token',
+					scope: 'Account D1 Edit',
+				},
+				kind: 'source-credential-check',
+			},
+			{
+				...firstEnvelope.content,
+				sourceIdentity: {
+					...firstEnvelope.content.sourceIdentity,
+					accountId: 'different-account',
+				},
+			},
+			{
+				...firstEnvelope.content,
+				performedAt: '2026-07-22T09:59:59.000Z',
+			},
+			{ ...firstEnvelope.content, uri: 'different-uri.json' },
+			{
+				...firstEnvelope.content,
+				systemVersion: 'different-build',
+			},
+		]
+		for (const content of signedMismatches) {
+			await expectEnvelopeNotReady(signEnvelope(content, trusted.privateKey))
+		}
+
+		await expectEnvelopeNotReady({
+			...firstEnvelope,
+			content: { ...firstEnvelope.content, outcome: 'failed' },
+		})
+		await expectEnvelopeNotReady({ ...firstEnvelope, schemaVersion: 2 })
+
+		await writeFile(firstPath, JSON.stringify(firstEnvelope))
+		const digestMismatch = structuredClone(fixture.evidence)
+		const digestRecord = digestMismatch[0]
+		if (!digestRecord || !Array.isArray(digestRecord.artifacts)) {
+			throw new Error('fixture is malformed')
+		}
+		;(digestRecord.artifacts[0] as Record<string, unknown>).sha256 = '0'.repeat(
+			64,
+		)
+		expect(
+			await isD1Ready(digestMismatch, fixture.evidencePath, registry),
+		).toBe(false)
+
+		const duplicateUri = structuredClone(fixture.evidence)
+		const duplicateRecord = duplicateUri[0]
+		if (!duplicateRecord || !Array.isArray(duplicateRecord.artifacts)) {
+			throw new Error('fixture is malformed')
+		}
+		const secondArtifact = duplicateRecord.artifacts[1] as Record<
+			string,
+			unknown
+		>
+		secondArtifact.uri = firstArtifact.uri
+		expect(await isD1Ready(duplicateUri, fixture.evidencePath, registry)).toBe(
+			false,
+		)
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+})
+
+test('checked-in empty trust registry cannot bless operator-generated evidence', async () => {
+	const directory = await mkdtemp(
+		path.join(os.tmpdir(), 'readiness-untrusted-operator-'),
+	)
+	try {
+		const { privateKey } = generateKeyPairSync('ed25519')
+		const fixture = await createFixture(directory, privateKey)
+		const checkedRegistry = parseTrustedPublicKeyRegistry(
+			JSON.parse(
+				await readFile(
+					new URL('./trusted-readiness-public-keys.json', import.meta.url),
+					'utf8',
+				),
+			) as unknown,
+		)
+		expect(checkedRegistry.keys).toEqual([])
+		expect(
+			await isD1Ready(fixture.evidence, fixture.evidencePath, checkedRegistry),
+		).toBe(false)
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+})

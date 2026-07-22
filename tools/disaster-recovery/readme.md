@@ -14,8 +14,8 @@ GiB are rejected.
 Schema, migration, sequence, and representative two-user expectations live in a
 separate baseline JSON file. The execution order is import, baseline
 verification, optional forward migrations, then optional post-forward baseline
-verification. Baseline verification always includes SQLite integrity and
-foreign-key checks.
+verification. Baseline verification always executes D1's documented
+`PRAGMA quick_check` plus `PRAGMA foreign_key_check`.
 
 Supply a target account/name allowlist whose matching entry has
 `"purpose": "drill"`. The target account must differ from the manifest's source
@@ -40,23 +40,60 @@ isolated target account after setting `CLOUDFLARE_D1_DRILL_EDIT_TOKEN` to a
 drill-only D1 Edit token for that account. The token is used for live creation,
 import, and checks and is never printed. `--apply-forward-migrations` is
 rejected unless `--post-forward-baseline post-forward-baseline.json` is also
-supplied. The tool never deletes, binds, cuts over, or modifies production.
+supplied. After target creation the tool writes a temporary Wrangler config
+binding `D1_RESTORE_TARGET` to the returned UUID/name and pointing
+`migrations_dir` at `packages/worker/migrations`; import, checks, and migrations
+all use that config. The local config is removed afterward. The tool never
+deletes, binds, cuts over, or modifies production.
 
 ## Canonical readiness
 
-Evidence is an array of exact-shape, dated `ResourceEvidence` records from
-`canonical-readiness.ts`. Each record identifies its verifier and change,
-defines a freshness interval, and supplies typed artifact records with URI and
-lowercase SHA-256. Every resource requires inventory, source/destination
+Evidence is an array of exact-shape, schema-versioned `ResourceEvidence` index
+records from `canonical-readiness.ts`. Each index record binds its resource,
+verifier, change, system/build version, performed timestamp, freshness interval,
+and artifact metadata. Every resource requires inventory, source/destination
 credential checks, support and contract checks, plus its resource-specific drill
-artifact. Unknown, duplicate, malformed, expired, or future attestations fail
-the entire report closed.
+evidence. APP_DB additionally requires a `d1-size-ceiling-check` whose measured
+bytes are strictly below a ceiling no greater than 4,500,000,000 bytes.
 
-Artifact URIs must be `file:` URLs or local filesystem paths (relative paths are
-resolved beside the evidence JSON). The CLI never fetches network URIs. It reads
-every referenced file locally, computes SHA-256, and requires the digest to
-match the attestation; missing, unreadable, non-local, or mismatched artifacts
-fail readiness.
+Each artifact is JSON with the exact versioned `SignedEvidenceEnvelope` schema.
+Its signed content binds the resource and evidence kind, unique URI, source
+resource/account identity, destination resource/account identity where
+applicable, `passed` outcome, verifier, change, system/build version, performed
+timestamp, and a strict kind-specific details object. The Ed25519 signature is
+over canonical JSON containing `schemaVersion` and `content`; the `signature`
+field is excluded. The index digest covers the exact envelope file bytes. Index
+metadata must exactly equal the signed content, so an index cannot relabel an
+otherwise valid artifact.
+
+Artifact URIs must be unique `file:` URLs or local filesystem paths (relative
+paths are resolved beside the evidence JSON). The CLI never fetches network
+URIs. It reads each referenced file, verifies its exact-byte SHA-256 and Ed25519
+signature, and accepts the signing key only from the checked-in
+`trusted-readiness-public-keys.json` trust registry. Random bytes, synthetic
+metadata, unsigned envelopes, untrusted keys, duplicate URIs, malformed kind
+details, and any metadata mismatch fail readiness closed.
+
+The trusted key registry has an exact shape:
+
+```json
+{
+	"schemaVersion": 1,
+	"keys": [
+		{
+			"algorithm": "Ed25519",
+			"keyId": "readiness-2026",
+			"publicKeyPem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
+		}
+	]
+}
+```
+
+The checked-in registry is intentionally empty until recovery-verifier public
+keys are approved in code review. The CLI does not accept an alternate registry
+path, so an operator cannot make synthetic evidence trusted by supplying a new
+key at runtime. With no approved keys, every readiness level remains
+`NOT READY`.
 
 Freshness also has code-owned maximum ages that `expiresAt` cannot extend:
 `d1-only` evidence is valid for at most 35 days, `canonical-data` for 100 days,

@@ -326,6 +326,12 @@ controlled benchmark has:
    D1-only RTO at measured p95;
 8. received incident commander, data owner, and security sign-off.
 
+The implemented path also has a hard size-support gate. The live source D1
+`file_size` must be an integer strictly below `BACKUP_MAX_SOURCE_BYTES` before
+the benchmark or a scheduled export can proceed. The checked-in default and
+deployment ceiling are 4,500,000,000 bytes. Configuration may lower that value
+but cannot raise it.
+
 If the gate fails, keep scheduling disabled. Change the maintenance window,
 capacity, or design and repeat the benchmark. Do not test export blocking for
 the first time through an unattended production schedule. There is no benchmark
@@ -408,20 +414,24 @@ For each run, the Workflow:
 
 1. refuses to run unless both enable gates are true;
 2. verifies configured account/database allowlists and the source D1 UUID/name
-   through the source API;
+   through the source API, and requires the live D1 `file_size` to be strictly
+   below the configured, non-raisable 4,500,000,000-byte ceiling;
 3. starts D1 export with `output_format: "polling"` and durably polls every 15
    seconds for at most 120 polls, then derives the SQL object key from the
    completed export bookmark;
 4. marks export API Workflow step outputs sensitive so the signed URL is not
    logged;
 5. streams the signed response into the destination `BACKUP_BUCKET`, computing
-   bytes, SHA-256, and R2 ETag;
+   bytes, SHA-256, and R2 ETag; it requires a valid `Content-Length`, rejects a
+   declared length greater than 5 GiB, and rejects a streamed byte-count
+   mismatch;
 6. writes schema-version-1 immutable manifest metadata including source
    identity, D1 bookmark, timestamps, key, hash, ETag, build commit, and
    retention tier;
 7. emits structured success/failure logs. The hourly freshness check validates
-   the expected manifest identity, shape, maximum age (26 hours by default), and
-   object existence, size, and ETag against the manifest.
+   live source identity and `file_size` against the same size ceiling before it
+   validates the expected manifest identity, shape, maximum age (26 hours by
+   default), and object existence, size, and ETag against the manifest.
 
 Hourly freshness deliberately does not download and SHA-256 the SQL object.
 Scheduled deep checksum/restore drills must read the retained bytes and verify
@@ -463,6 +473,8 @@ primary operator and incident commander when:
   manifest is missing, older than `BACKUP_MAX_AGE_HOURS` (26 by default),
   identity-invalid, malformed, missing its R2 object, or inconsistent with the
   object's size/ETag;
+- the live D1 `file_size` is missing or invalid, or reaches the configured
+  ceiling on an export attempt or hourly freshness tick;
 - an immutable bookmark-derived attempt object exists without the canonical day
   manifest; quarantine it and open an operator investigation rather than
   repairing or deleting it automatically;
@@ -510,11 +522,15 @@ npx wrangler d1 time-travel restore "<D1_NAME>" \
 ```
 
 For retained SQL exports, `wrangler d1 execute --file` accepts SQL, not a raw
-SQLite file, and each import file is limited to **5 GiB**. Split larger dumps at
-statement boundaries while preserving schema/foreign-key order; also split any
-statement that exceeds D1's statement-size limit. Do not split bytes
-arbitrarily. Export has limitations for virtual tables and JavaScript numeric
-precision; inventory the schema and values during the benchmark.
+SQLite file, and each import file is limited to **5 GiB**. The restore CLI
+rejects a local SQL export larger than 5 GiB. Statement-safe split restore is
+not implemented, so operators must not split bytes or statements and feed the
+parts to this CLI. Export has limitations for virtual tables and JavaScript
+numeric precision; inventory the schema and values during the benchmark.
+
+Multipart capture is also not implemented. Consequently, a 10-GB D1 database and
+any logical SQL export over 5 GiB are unsupported and must remain **NOT READY**,
+regardless of provider capacity.
 
 ### Mandatory isolated D1 drill
 
@@ -559,7 +575,16 @@ window. New creation is the empty/unbound proof. The drill-only token is passed
 to Wrangler as `CLOUDFLARE_API_TOKEN` with the selected target account and is
 never printed.
 
-Execution imports, then checks `PRAGMA integrity_check`,
+After live creation, the CLI generates a temporary local Wrangler config whose
+`D1_RESTORE_TARGET` binding contains the returned target UUID and exact target
+name and whose `migrations_dir` points to `packages/worker/migrations`. Import,
+baseline and post-forward checks, and forward migrations all address
+`D1_RESTORE_TARGET` through that generated config; they do not rely on a
+checked-in or name-only binding. The CLI removes the local temporary config in a
+`finally` cleanup, but intentionally does not delete the live-created drill
+target.
+
+Execution imports, then checks D1's documented `PRAGMA quick_check`,
 `PRAGMA foreign_key_check`, expected migration names, schema hash, sequences,
 and representative two-user isolation baselines. It never deletes, binds, cuts
 over, or modifies production.
@@ -582,8 +607,8 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
 
 `--apply-forward-migrations` without `--post-forward-baseline`, and a
 post-forward baseline without the migration switch, both fail closed. Delete the
-drill target only after evidence is retained and the approved cleanup window
-starts.
+live-created drill target only through the separate approved operator cleanup
+procedure, after evidence is retained and the approved cleanup window starts.
 
 ## Cross-store restore and abort points
 
@@ -731,10 +756,11 @@ Run and retain evidence for:
 
 Readiness is reported separately:
 
-- **D1-only ready:** complete checksummed D1 SQL, schema/migration parity,
-  foreign-key/integrity/sequence checks, representative two-user isolation, and
-  passing isolated import within RPO/RTO. Operational declaration also requires
-  fresh backup/freshness evidence and alert delivery.
+- **D1-only ready:** complete checksummed D1 SQL, schema/migration parity, a
+  live source-size measurement strictly below the supported ceiling,
+  foreign-key/`PRAGMA quick_check`/sequence checks, representative two-user
+  isolation, and passing isolated import within RPO/RTO. Operational declaration
+  also requires fresh backup/freshness evidence and alert delivery.
 - **Canonical-data ready:** D1-only ready plus independently retained and
   verified canonical `EMAIL_BLOBS`, avatars, Artifacts, complete `StorageRunner`
   inventory/restore, and external `SECRET_STORE_KEY` source and destination
@@ -782,29 +808,40 @@ the intended system only.
 - [ ] Every D1-referenced Artifacts repo and ref can be mirrored and restored
       with short-lived repo-scoped tokens.
 - [ ] The blocking D1 export benchmark gate passed at production scale and an
-      isolated import passed before schedule enablement.
+      isolated import passed before schedule enablement; the live D1 `file_size`
+      was strictly below 4,500,000,000 bytes, and over-ceiling `file_size` and
+      over-5-GiB signed `Content-Length` failures were tested.
 - [ ] The dedicated Worker/Workflow is deployed in the DR account with the
       source Account D1 Edit secret and destination R2 binding; the provisioner
       token is absent from runtime.
 - [ ] Both schedule gates remained false through benchmark and are true only in
       the approved deployment.
 - [ ] The sole create-capable 02:15 UTC trigger, bounded 02:45–05:45 hourly
-      existing-instance restart checks, and hourly size/ETag freshness logs are
-      live; no missed Workflow is created outside 02:15.
+      existing-instance restart checks, and hourly live-D1-size plus R2
+      size/ETag freshness logs are live; no missed Workflow is created outside
+      02:15.
 - [ ] Each day has one canonical manifest selecting a bookmark-derived immutable
       SQL key; orphan-attempt quarantine and restarted-export/new-key behavior
       have tested alerts and operator procedures.
 - [ ] Deep checksum drills verify SQL bytes against manifest SHA-256 on schedule
       and orphan-attempt-without-manifest alerts have a tested quarantine and
       investigation path.
-- [ ] A fresh D1-only drill passed.
+- [ ] A fresh D1-only drill passed against a live-created isolated target,
+      including the source-size ceiling, `PRAGMA quick_check`, foreign keys,
+      migration/schema parity, sequences, and representative two-user isolation.
 - [ ] A fresh canonical-data drill passed.
 - [ ] A fresh full-service drill passed, including OAuth reauthorization and
       derived reconstruction.
 - [ ] Evidence location, audit retention, exception process, and runbook review
       date are recorded.
-- [ ] Every readiness artifact is a dated, resource-specific local file whose
-      exact bytes match its declared SHA-256; network evidence is rejected.
+- [ ] Every readiness artifact is a dated, resource- and kind-specific local
+      Ed25519 envelope whose exact bytes match its declared SHA-256; every URI
+      is unique, every signature chains to a reviewed checked-in verifier key,
+      and network evidence is rejected.
+- [ ] Approved recovery-verifier public keys are present in
+      `tools/disaster-recovery/trusted-readiness-public-keys.json`; each key was
+      added through code review and its private key is controlled outside the
+      repository.
 - [ ] Evidence refresh automation respects the code-owned 35-day D1, 100-day
       canonical-data, and 200-day full-service maximum ages regardless of
       `expiresAt`.
@@ -816,22 +853,35 @@ node tools/disaster-recovery/canonical-readiness-cli.ts \
   --evidence recovery-evidence.json
 ```
 
-The evidence file is an array with exactly one dated record per resource. Each
-record has exactly:
+The evidence file is an array with exactly one dated index record per resource.
+Each index record has an exact versioned shape and repeats the signed metadata
+for every artifact:
 
 ```json
 {
+	"schemaVersion": 1,
 	"resourceId": "APP_DB",
-	"verifierIdentity": "<OPERATOR_OR_SERVICE_ID>",
+	"verifierIdentity": "<APPROVED_RECOVERY_VERIFIER_ID>",
 	"changeId": "<CHANGE_ID>",
+	"systemVersion": "<DEPLOYMENT_BUILD_OR_COMMIT>",
 	"performedAt": "<UTC_ISO_TIMESTAMP_WITH_MILLISECONDS>",
 	"expiresAt": "<LATER_UTC_ISO_TIMESTAMP_WITH_MILLISECONDS>",
 	"artifacts": [
 		{
-			"kind": "inventory",
-			"type": "application/json",
-			"uri": "evidence/app-db-inventory.json",
-			"sha256": "<LOWERCASE_SHA256_OF_EXACT_LOCAL_FILE_BYTES>"
+			"kind": "d1-size-ceiling-check",
+			"type": "application/vnd.kody.readiness-evidence+json",
+			"uri": "evidence/app-db-size-ceiling.json",
+			"sha256": "<LOWERCASE_SHA256_OF_EXACT_ENVELOPE_FILE_BYTES>",
+			"sourceIdentity": {
+				"accountId": "<SOURCE_ACCOUNT_ID>",
+				"resourceId": "<SOURCE_D1_UUID>"
+			},
+			"destinationIdentity": null,
+			"outcome": "passed",
+			"verifierIdentity": "<APPROVED_RECOVERY_VERIFIER_ID>",
+			"changeId": "<CHANGE_ID>",
+			"systemVersion": "<DEPLOYMENT_BUILD_OR_COMMIT>",
+			"performedAt": "<UTC_ISO_TIMESTAMP_WITH_MILLISECONDS>"
 		}
 	]
 }
@@ -839,13 +889,107 @@ record has exactly:
 
 Use the resource-specific `requiredEvidenceKinds` in
 `tools/disaster-recovery/canonical-readiness.ts`; the example is not a complete
-`APP_DB` record. Every resource requires inventory, source-credential,
-destination-credential, transfer-support, and contract-verification artifacts,
-plus its specific drill artifacts. Records require nonempty verifier/change
+`APP_DB` record. APP_DB requires `inventory`, `source-credential-check`,
+`destination-credential-check`, `transfer-support-check`,
+`contract-verification`, `d1-size-ceiling-check`, and `d1-restore-drill`. Every
+other resource similarly requires all five common kinds plus its
+resource-specific drill kinds. Records require nonempty verifier/change/build
 identity, `performedAt` not in the future, and `expiresAt` later than both
 `performedAt` and the assessment time. Unknown fields, resources, evidence
 kinds, duplicate resources, duplicate evidence kinds, malformed dates, and
 expired attestations fail the entire input closed.
+
+Each artifact file is an exact, kind-specific signed envelope. For the APP_DB
+source-size check, the exact content shape is:
+
+```json
+{
+	"schemaVersion": 1,
+	"content": {
+		"changeId": "<CHANGE_ID>",
+		"destinationIdentity": null,
+		"details": {
+			"ceilingBytes": 4500000000,
+			"measuredBytes": 123456789,
+			"monitoredAt": "<UTC_ISO_TIMESTAMP_WITH_MILLISECONDS>",
+			"sourceAccountId": "<SOURCE_ACCOUNT_ID>",
+			"sourceDatabaseUuid": "<SOURCE_D1_UUID>"
+		},
+		"kind": "d1-size-ceiling-check",
+		"outcome": "passed",
+		"performedAt": "<UTC_ISO_TIMESTAMP_WITH_MILLISECONDS>",
+		"resourceId": "APP_DB",
+		"sourceIdentity": {
+			"accountId": "<SOURCE_ACCOUNT_ID>",
+			"resourceId": "<SOURCE_D1_UUID>"
+		},
+		"systemVersion": "<DEPLOYMENT_BUILD_OR_COMMIT>",
+		"uri": "evidence/app-db-size-ceiling.json",
+		"verifierIdentity": "<APPROVED_RECOVERY_VERIFIER_ID>"
+	},
+	"signature": {
+		"algorithm": "Ed25519",
+		"keyId": "<REVIEWED_TRUSTED_KEY_ID>",
+		"value": "<BASE64_64_BYTE_ED25519_SIGNATURE>"
+	}
+}
+```
+
+`ceilingBytes` must be positive and no greater than 4,500,000,000;
+`measuredBytes` must be nonnegative and strictly less than `ceilingBytes`.
+`monitoredAt` must equal `performedAt`, and the detail account id and database
+UUID must equal `sourceIdentity`.
+
+The required APP_DB restore-drill envelope uses the same outer shape and index
+matching rules, with a non-null destination identity for the live-created drill
+database. Its exact shape is:
+
+```json
+{
+	"schemaVersion": 1,
+	"content": {
+		"changeId": "<CHANGE_ID>",
+		"destinationIdentity": {
+			"accountId": "<DRILL_ACCOUNT_ID>",
+			"resourceId": "<LIVE_CREATED_DRILL_D1_UUID>"
+		},
+		"details": {
+			"foreignKeyViolations": 0,
+			"quickCheck": "ok",
+			"restoredDatabaseUuid": "<LIVE_CREATED_DRILL_D1_UUID>"
+		},
+		"kind": "d1-restore-drill",
+		"outcome": "passed",
+		"performedAt": "<UTC_ISO_TIMESTAMP_WITH_MILLISECONDS>",
+		"resourceId": "APP_DB",
+		"sourceIdentity": {
+			"accountId": "<SOURCE_ACCOUNT_ID>",
+			"resourceId": "<SOURCE_D1_UUID>"
+		},
+		"systemVersion": "<DEPLOYMENT_BUILD_OR_COMMIT>",
+		"uri": "evidence/app-db-restore-drill.json",
+		"verifierIdentity": "<APPROVED_RECOVERY_VERIFIER_ID>"
+	},
+	"signature": {
+		"algorithm": "Ed25519",
+		"keyId": "<REVIEWED_TRUSTED_KEY_ID>",
+		"value": "<BASE64_64_BYTE_ED25519_SIGNATURE>"
+	}
+}
+```
+
+Every evidence kind has its own exact `details` keys, types, and passing
+constraints in `EvidenceDetailsByKind` and `parseDetails`. Extra or missing
+fields fail closed. `inventory`, `source-credential-check`, and
+`d1-size-ceiling-check` require a null destination identity; all other kinds
+require a non-null destination identity. The full signed content binds the
+resource and kind, unique local URI, source and destination identities, literal
+`"passed"` outcome, verifier, change, system/build version, and millisecond UTC
+timestamp. Index metadata must match those signed fields exactly.
+
+The Ed25519 signature covers canonical JSON containing only `schemaVersion` and
+`content`; the envelope's `signature` field is excluded. The index SHA-256
+covers the exact envelope file bytes.
 
 Code also owns a non-configurable maximum age measured from `performedAt`,
 independent of the supplied `expiresAt`:
@@ -859,12 +1003,21 @@ An `expiresAt` farther in the future cannot extend these limits. Conversely,
 still requires APP_DB evidence no older than 35 days, canonical-store evidence
 no older than 100 days, and derived/operational evidence no older than 200 days.
 
-Every artifact URI must be a local path (resolved relative to the evidence JSON)
-or a `file:` URL. The CLI opens every file, hashes its exact bytes, and requires
-the computed digest to equal the declared lowercase SHA-256. Missing,
-unreadable, unhashed, or mismatched files fail readiness. `https:`, `s3:`,
-dashboard, ticket, and every other network URI are rejected; download evidence
-to an immutable local file before assessment.
+Every artifact URI must be unique across the whole evidence input and be a local
+path (resolved relative to the evidence JSON) or a `file:` URL. The CLI opens
+every file, hashes its exact bytes, parses the strict envelope, and verifies its
+Ed25519 signature. Missing, unreadable, unsigned, unhashed, mismatched, or
+duplicate-URI files fail readiness. `https:`, `s3:`, dashboard, ticket, and
+every other network URI are rejected; download evidence to an immutable local
+file before assessment.
+
+The only trust registry is the checked-in
+`tools/disaster-recovery/trusted-readiness-public-keys.json`. It is
+intentionally empty until recovery-verifier Ed25519 public keys are approved by
+code review. The CLI accepts no alternate registry path or key flag. Synthetic
+metadata, unsigned evidence, and evidence signed by an operator key that is not
+in that checked-in registry cannot produce **READY**. With the registry empty,
+every readiness level remains **NOT READY**.
 
 The command prints `d1-only`, `canonical-data`, and `full-service` separately
 and exits nonzero until full-service is proven.
@@ -879,7 +1032,12 @@ This runbook does not claim or provide:
   credential, deployment, evidence set, or drill is live merely because its
   implementation exists;
 - D1 availability during export, or a non-destructive Time Travel clone;
-- import of a raw SQLite file or a D1 SQL import larger than 5 GiB per file;
+- support for a live D1 `file_size` at or above the configurable-but-not-
+  raisable 4,500,000,000-byte ceiling, a signed export download whose
+  `Content-Length` is greater than 5 GiB, or a restore input greater than 5 GiB;
+- multipart D1 capture or statement-safe split restore; 10-GB D1 databases and
+  logical exports over 5 GiB remain unsupported and **NOT READY**;
+- import of a raw SQLite file;
 - native cross-account replication for D1, R2, Durable Objects, Artifacts, KV,
   Queues, or Workflows;
 - runtime-selectable/custom retention or application deletion of backup sets;

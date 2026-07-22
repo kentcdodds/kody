@@ -1,13 +1,93 @@
+import { createPublicKey, verify } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+	type VerifiedEvidenceArtifact,
 	assessCanonicalReadiness,
+	canonicalEvidencePayload,
+	parseSignedEvidenceEnvelope,
 	renderReadinessReport,
 } from './canonical-readiness.ts'
 import { sha256 } from './canonical-json.ts'
 
 const uriSchemePattern = /^[a-z][a-z0-9+.-]*:/i
+const trustedPublicKeysFile = fileURLToPath(
+	new URL('./trusted-readiness-public-keys.json', import.meta.url),
+)
+
+export type TrustedPublicKeyRegistry = {
+	schemaVersion: 1
+	keys: Array<{
+		algorithm: 'Ed25519'
+		keyId: string
+		publicKeyPem: string
+	}>
+}
+
+function exactKeys(
+	value: Record<string, unknown>,
+	expected: ReadonlyArray<string>,
+): boolean {
+	const actual = Object.keys(value).sort()
+	const sortedExpected = [...expected].sort()
+	return (
+		actual.length === sortedExpected.length &&
+		actual.every((key, index) => key === sortedExpected[index])
+	)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+export function parseTrustedPublicKeyRegistry(
+	input: unknown,
+): TrustedPublicKeyRegistry {
+	if (
+		!isRecord(input) ||
+		!exactKeys(input, ['keys', 'schemaVersion']) ||
+		input.schemaVersion !== 1 ||
+		!Array.isArray(input.keys)
+	) {
+		throw new Error('trusted public-key registry has an invalid shape')
+	}
+	const keys: TrustedPublicKeyRegistry['keys'] = []
+	const keyIds = new Set<string>()
+	for (const [index, candidate] of input.keys.entries()) {
+		if (
+			!isRecord(candidate) ||
+			!exactKeys(candidate, ['algorithm', 'keyId', 'publicKeyPem']) ||
+			candidate.algorithm !== 'Ed25519' ||
+			typeof candidate.keyId !== 'string' ||
+			candidate.keyId.trim().length === 0 ||
+			typeof candidate.publicKeyPem !== 'string' ||
+			candidate.publicKeyPem.trim().length === 0
+		) {
+			throw new Error(
+				`trusted public-key registry key[${String(index)}] is invalid`,
+			)
+		}
+		if (keyIds.has(candidate.keyId)) {
+			throw new Error(
+				`trusted public-key registry has duplicate keyId ${candidate.keyId}`,
+			)
+		}
+		const publicKey = createPublicKey(candidate.publicKeyPem)
+		if (publicKey.asymmetricKeyType !== 'ed25519') {
+			throw new Error(
+				`trusted public-key registry key ${candidate.keyId} is not Ed25519`,
+			)
+		}
+		keyIds.add(candidate.keyId)
+		keys.push({
+			algorithm: 'Ed25519',
+			keyId: candidate.keyId,
+			publicKeyPem: candidate.publicKeyPem,
+		})
+	}
+	return { schemaVersion: 1, keys }
+}
 
 function resolveLocalArtifactPath(
 	uri: string,
@@ -29,56 +109,80 @@ function resolveLocalArtifactPath(
 export async function verifyLocalArtifactFiles(
 	evidence: unknown,
 	evidenceFilePath: string,
-): Promise<ReadonlyMap<string, string>> {
-	if (!Array.isArray(evidence)) return new Map()
-	const uris = new Set<string>()
+	trustedPublicKeys?: TrustedPublicKeyRegistry,
+): Promise<ReadonlyMap<string, VerifiedEvidenceArtifact>> {
+	if (!Array.isArray(evidence) || !trustedPublicKeys) return new Map()
+	const artifacts: Array<{ uri: string }> = []
 	for (const candidate of evidence) {
-		if (
-			!candidate ||
-			typeof candidate !== 'object' ||
-			Array.isArray(candidate)
-		) {
-			continue
-		}
-		const artifacts = (candidate as Record<string, unknown>).artifacts
-		if (!Array.isArray(artifacts)) continue
-		for (const artifact of artifacts) {
+		if (!isRecord(candidate) || !Array.isArray(candidate.artifacts)) continue
+		for (const artifact of candidate.artifacts) {
 			if (
-				!artifact ||
-				typeof artifact !== 'object' ||
-				Array.isArray(artifact)
+				isRecord(artifact) &&
+				typeof artifact.uri === 'string' &&
+				artifact.uri.length > 0
 			) {
-				continue
+				artifacts.push({ uri: artifact.uri })
 			}
-			const uri = (artifact as Record<string, unknown>).uri
-			if (typeof uri === 'string' && uri.length > 0) uris.add(uri)
 		}
 	}
-	const verified = new Map<string, string>()
+	const trustedKeys = new Map(
+		trustedPublicKeys.keys.map((entry) => [
+			entry.keyId,
+			createPublicKey(entry.publicKeyPem),
+		]),
+	)
+	const verified = new Map<string, VerifiedEvidenceArtifact>()
 	await Promise.all(
-		[...uris].map(async (uri) => {
+		artifacts.map(async ({ uri }) => {
 			const file = resolveLocalArtifactPath(uri, evidenceFilePath)
-			verified.set(uri, sha256(await readFile(file)))
+			const bytes = await readFile(file)
+			let parsed: unknown
+			try {
+				parsed = JSON.parse(bytes.toString('utf8')) as unknown
+			} catch {
+				return
+			}
+			const envelope = parseSignedEvidenceEnvelope(parsed)
+			if (!envelope) return
+			const trustedKey = trustedKeys.get(envelope.signature.keyId)
+			if (!trustedKey) return
+			const validSignature = verify(
+				null,
+				Buffer.from(canonicalEvidencePayload(envelope)),
+				trustedKey,
+				Buffer.from(envelope.signature.value, 'base64'),
+			)
+			if (!validSignature) return
+			verified.set(uri, { digest: sha256(bytes), envelope })
 		}),
 	)
 	return verified
 }
 
-export async function main(argv = process.argv.slice(2)): Promise<void> {
+function parseArguments(argv: ReadonlyArray<string>): { evidenceFile: string } {
 	if (argv.length !== 2 || argv[0] !== '--evidence' || !argv[1]) {
 		throw new Error(
 			'Usage: canonical-readiness-cli.ts --evidence <evidence.json>',
 		)
 	}
-	const evidence = JSON.parse(await readFile(argv[1], 'utf8')) as unknown
-	const verifiedArtifactDigests = await verifyLocalArtifactFiles(
+	return { evidenceFile: argv[1] }
+}
+
+export async function main(argv = process.argv.slice(2)): Promise<void> {
+	const { evidenceFile } = parseArguments(argv)
+	const evidence = JSON.parse(await readFile(evidenceFile, 'utf8')) as unknown
+	const trustedPublicKeys = parseTrustedPublicKeyRegistry(
+		JSON.parse(await readFile(trustedPublicKeysFile, 'utf8')) as unknown,
+	)
+	const verifiedArtifacts = await verifyLocalArtifactFiles(
 		evidence,
-		argv[1],
+		evidenceFile,
+		trustedPublicKeys,
 	)
 	const result = assessCanonicalReadiness(
 		evidence,
 		new Date(),
-		verifiedArtifactDigests,
+		verifiedArtifacts,
 	)
 	console.log(renderReadinessReport(result))
 	if (!result.levels['full-service'].ready) process.exitCode = 1

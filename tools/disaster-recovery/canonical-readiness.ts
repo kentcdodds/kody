@@ -1,6 +1,13 @@
+import { canonicalJson } from './canonical-json.ts'
+
 const sha256Pattern = /^[a-f0-9]{64}$/
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+const uuidPattern =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const base64Pattern =
+	/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 const millisecondsPerDay = 24 * 60 * 60 * 1000
+export const maximumSupportedD1BackupBytes = 4_500_000_000
 
 export type ReadinessLevel = 'd1-only' | 'canonical-data' | 'full-service'
 
@@ -26,6 +33,7 @@ export type EvidenceKind =
 	| 'contract-verification'
 	| 'destination-credential-check'
 	| 'd1-restore-drill'
+	| 'd1-size-ceiling-check'
 	| 'escrow-recovery-drill'
 	| 'inventory'
 	| 'key-fingerprint'
@@ -37,20 +45,128 @@ export type EvidenceKind =
 	| 'transfer-support-check'
 	| 'vectorize-rebuild-drill'
 
+export type ResourceIdentity = {
+	accountId: string
+	resourceId: string
+}
+
+export type EvidenceDetailsByKind = {
+	'alarm-rebuild-drill': { alarmsRebuilt: number; deliveryVerified: true }
+	'artifact-mirror-verification': { mirrorSha256: string; refCount: number }
+	'bundle-kv-rebuild-drill': { contentSha256: string; keyCount: number }
+	'community-icon-rebuild-drill': {
+		contentSha256: string
+		objectCount: number
+	}
+	'contract-verification': { checksPassed: number; contractVersion: string }
+	'destination-credential-check': { credentialId: string; scope: string }
+	'd1-restore-drill': {
+		foreignKeyViolations: 0
+		quickCheck: 'ok'
+		restoredDatabaseUuid: string
+	}
+	'd1-size-ceiling-check': {
+		ceilingBytes: number
+		measuredBytes: number
+		monitoredAt: string
+		sourceAccountId: string
+		sourceDatabaseUuid: string
+	}
+	'escrow-recovery-drill': {
+		custodian: string
+		recoveredFingerprint: string
+	}
+	inventory: { inventorySha256: string; itemCount: number }
+	'key-fingerprint': {
+		destinationFingerprint: string
+		matched: true
+		sourceFingerprint: string
+	}
+	'oauth-reauthorization-drill': {
+		connectorCount: number
+		reauthorizedCount: number
+	}
+	'queue-workflow-rebuild-drill': {
+		deliveryVerified: true
+		queueCount: number
+		workflowCount: number
+	}
+	'r2-round-trip-drill': { bytes: number; objectKey: string; sha256: string }
+	'source-credential-check': { credentialId: string; scope: string }
+	'storage-runner-round-trip-drill': {
+		instanceCount: number
+		kvEntries: number
+		sqliteRows: number
+	}
+	'transfer-support-check': { mechanism: string; supported: true }
+	'vectorize-rebuild-drill': { queryVerified: true; vectorCount: number }
+}
+
+export type EvidenceContent<K extends EvidenceKind = EvidenceKind> = {
+	changeId: string
+	destinationIdentity: ResourceIdentity | null
+	details: EvidenceDetailsByKind[K]
+	kind: K
+	outcome: 'passed'
+	performedAt: string
+	resourceId: CanonicalResourceId
+	sourceIdentity: ResourceIdentity
+	systemVersion: string
+	uri: string
+	verifierIdentity: string
+}
+
+export type SignedEvidenceEnvelope<K extends EvidenceKind = EvidenceKind> = {
+	schemaVersion: 1
+	content: EvidenceContent<K>
+	signature: {
+		algorithm: 'Ed25519'
+		keyId: string
+		value: string
+	}
+}
+
 export type EvidenceArtifact = {
+	changeId: string
+	destinationIdentity: ResourceIdentity | null
 	kind: EvidenceKind
+	outcome: 'passed'
+	performedAt: string
+	sourceIdentity: ResourceIdentity
+	systemVersion: string
 	type: string
 	uri: string
 	sha256: string
+	verifierIdentity: string
 }
 
 export type ResourceEvidence = {
+	schemaVersion: 1
 	resourceId: CanonicalResourceId
 	verifierIdentity: string
 	changeId: string
+	systemVersion: string
 	performedAt: string
 	expiresAt: string
 	artifacts: Array<EvidenceArtifact>
+}
+
+type ParsedEvidenceArtifact = Required<EvidenceArtifact>
+
+type ParsedResourceEvidence = {
+	schemaVersion: 1
+	resourceId: CanonicalResourceId
+	verifierIdentity: string
+	changeId: string
+	systemVersion: string
+	performedAt: string
+	expiresAt: string
+	artifacts: Array<ParsedEvidenceArtifact>
+}
+
+export type VerifiedEvidenceArtifact = {
+	digest: string
+	envelope: SignedEvidenceEnvelope
 }
 
 export type ResourceContract = {
@@ -83,7 +199,11 @@ export const canonicalContracts = [
 		id: 'APP_DB',
 		requiredFor: 'd1-only',
 		transfer: 'd1-logical-import',
-		requiredEvidenceKinds: [...commonEvidenceKinds, 'd1-restore-drill'],
+		requiredEvidenceKinds: [
+			...commonEvidenceKinds,
+			'd1-size-ceiling-check',
+			'd1-restore-drill',
+		],
 		includes: [
 			'complete checksummed D1 SQL export',
 			'migration and sqlite schema parity evidence',
@@ -281,44 +401,386 @@ function exactKeys(
 	)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isNonemptyString(value: unknown): value is string {
+	return typeof value === 'string' && value.trim().length > 0
+}
+
+function isIsoDate(value: unknown): value is string {
+	return (
+		typeof value === 'string' &&
+		isoDatePattern.test(value) &&
+		Number.isFinite(Date.parse(value))
+	)
+}
+
+function isNonnegativeInteger(value: unknown): value is number {
+	return Number.isSafeInteger(value) && Number(value) >= 0
+}
+
+function isPositiveInteger(value: unknown): value is number {
+	return Number.isSafeInteger(value) && Number(value) > 0
+}
+
+function parseIdentity(value: unknown): ResourceIdentity | undefined {
+	if (
+		!isRecord(value) ||
+		!exactKeys(value, ['accountId', 'resourceId']) ||
+		!isNonemptyString(value.accountId) ||
+		!isNonemptyString(value.resourceId)
+	) {
+		return undefined
+	}
+	return { accountId: value.accountId, resourceId: value.resourceId }
+}
+
+function parseDetails<K extends EvidenceKind>(
+	kind: K,
+	value: unknown,
+): EvidenceDetailsByKind[K] | undefined {
+	if (!isRecord(value)) return undefined
+	switch (kind) {
+		case 'alarm-rebuild-drill':
+			if (
+				exactKeys(value, ['alarmsRebuilt', 'deliveryVerified']) &&
+				isNonnegativeInteger(value.alarmsRebuilt) &&
+				value.deliveryVerified === true
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'artifact-mirror-verification':
+			if (
+				exactKeys(value, ['mirrorSha256', 'refCount']) &&
+				typeof value.mirrorSha256 === 'string' &&
+				sha256Pattern.test(value.mirrorSha256) &&
+				isNonnegativeInteger(value.refCount)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'bundle-kv-rebuild-drill':
+			if (
+				exactKeys(value, ['contentSha256', 'keyCount']) &&
+				typeof value.contentSha256 === 'string' &&
+				sha256Pattern.test(value.contentSha256) &&
+				isNonnegativeInteger(value.keyCount)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'community-icon-rebuild-drill':
+			if (
+				exactKeys(value, ['contentSha256', 'objectCount']) &&
+				typeof value.contentSha256 === 'string' &&
+				sha256Pattern.test(value.contentSha256) &&
+				isNonnegativeInteger(value.objectCount)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'contract-verification':
+			if (
+				exactKeys(value, ['checksPassed', 'contractVersion']) &&
+				isPositiveInteger(value.checksPassed) &&
+				isNonemptyString(value.contractVersion)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'destination-credential-check':
+		case 'source-credential-check':
+			if (
+				exactKeys(value, ['credentialId', 'scope']) &&
+				isNonemptyString(value.credentialId) &&
+				isNonemptyString(value.scope)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'd1-restore-drill':
+			if (
+				exactKeys(value, [
+					'foreignKeyViolations',
+					'quickCheck',
+					'restoredDatabaseUuid',
+				]) &&
+				value.foreignKeyViolations === 0 &&
+				value.quickCheck === 'ok' &&
+				typeof value.restoredDatabaseUuid === 'string' &&
+				uuidPattern.test(value.restoredDatabaseUuid)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'd1-size-ceiling-check':
+			if (
+				exactKeys(value, [
+					'ceilingBytes',
+					'measuredBytes',
+					'monitoredAt',
+					'sourceAccountId',
+					'sourceDatabaseUuid',
+				]) &&
+				isPositiveInteger(value.ceilingBytes) &&
+				isNonnegativeInteger(value.measuredBytes) &&
+				value.ceilingBytes <= maximumSupportedD1BackupBytes &&
+				value.measuredBytes < value.ceilingBytes &&
+				isIsoDate(value.monitoredAt) &&
+				isNonemptyString(value.sourceAccountId) &&
+				typeof value.sourceDatabaseUuid === 'string' &&
+				uuidPattern.test(value.sourceDatabaseUuid)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'escrow-recovery-drill':
+			if (
+				exactKeys(value, ['custodian', 'recoveredFingerprint']) &&
+				isNonemptyString(value.custodian) &&
+				isNonemptyString(value.recoveredFingerprint)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'inventory':
+			if (
+				exactKeys(value, ['inventorySha256', 'itemCount']) &&
+				typeof value.inventorySha256 === 'string' &&
+				sha256Pattern.test(value.inventorySha256) &&
+				isNonnegativeInteger(value.itemCount)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'key-fingerprint':
+			if (
+				exactKeys(value, [
+					'destinationFingerprint',
+					'matched',
+					'sourceFingerprint',
+				]) &&
+				isNonemptyString(value.destinationFingerprint) &&
+				value.matched === true &&
+				isNonemptyString(value.sourceFingerprint) &&
+				value.destinationFingerprint === value.sourceFingerprint
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'oauth-reauthorization-drill':
+			if (
+				exactKeys(value, ['connectorCount', 'reauthorizedCount']) &&
+				isNonnegativeInteger(value.connectorCount) &&
+				isNonnegativeInteger(value.reauthorizedCount) &&
+				value.reauthorizedCount === value.connectorCount
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'queue-workflow-rebuild-drill':
+			if (
+				exactKeys(value, ['deliveryVerified', 'queueCount', 'workflowCount']) &&
+				value.deliveryVerified === true &&
+				isNonnegativeInteger(value.queueCount) &&
+				isNonnegativeInteger(value.workflowCount)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'r2-round-trip-drill':
+			if (
+				exactKeys(value, ['bytes', 'objectKey', 'sha256']) &&
+				isNonnegativeInteger(value.bytes) &&
+				isNonemptyString(value.objectKey) &&
+				typeof value.sha256 === 'string' &&
+				sha256Pattern.test(value.sha256)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'storage-runner-round-trip-drill':
+			if (
+				exactKeys(value, ['instanceCount', 'kvEntries', 'sqliteRows']) &&
+				isNonnegativeInteger(value.instanceCount) &&
+				isNonnegativeInteger(value.kvEntries) &&
+				isNonnegativeInteger(value.sqliteRows)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'transfer-support-check':
+			if (
+				exactKeys(value, ['mechanism', 'supported']) &&
+				isNonemptyString(value.mechanism) &&
+				value.supported === true
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		case 'vectorize-rebuild-drill':
+			if (
+				exactKeys(value, ['queryVerified', 'vectorCount']) &&
+				value.queryVerified === true &&
+				isNonnegativeInteger(value.vectorCount)
+			) {
+				return value as EvidenceDetailsByKind[K]
+			}
+			return undefined
+		default: {
+			const exhaustive: never = kind
+			throw new Error(String(exhaustive))
+		}
+	}
+}
+
+function destinationIsRequired(kind: EvidenceKind): boolean {
+	switch (kind) {
+		case 'inventory':
+		case 'source-credential-check':
+		case 'd1-size-ceiling-check':
+			return false
+		case 'alarm-rebuild-drill':
+		case 'artifact-mirror-verification':
+		case 'bundle-kv-rebuild-drill':
+		case 'community-icon-rebuild-drill':
+		case 'contract-verification':
+		case 'destination-credential-check':
+		case 'd1-restore-drill':
+		case 'escrow-recovery-drill':
+		case 'key-fingerprint':
+		case 'oauth-reauthorization-drill':
+		case 'queue-workflow-rebuild-drill':
+		case 'r2-round-trip-drill':
+		case 'storage-runner-round-trip-drill':
+		case 'transfer-support-check':
+		case 'vectorize-rebuild-drill':
+			return true
+		default: {
+			const exhaustive: never = kind
+			throw new Error(String(exhaustive))
+		}
+	}
+}
+
+export function parseSignedEvidenceEnvelope(
+	input: unknown,
+): SignedEvidenceEnvelope | undefined {
+	if (
+		!isRecord(input) ||
+		!exactKeys(input, ['content', 'schemaVersion', 'signature']) ||
+		input.schemaVersion !== 1 ||
+		!isRecord(input.content) ||
+		!exactKeys(input.content, [
+			'changeId',
+			'destinationIdentity',
+			'details',
+			'kind',
+			'outcome',
+			'performedAt',
+			'resourceId',
+			'sourceIdentity',
+			'systemVersion',
+			'uri',
+			'verifierIdentity',
+		]) ||
+		typeof input.content.kind !== 'string' ||
+		!evidenceKinds.has(input.content.kind) ||
+		typeof input.content.resourceId !== 'string' ||
+		!resourceIds.has(input.content.resourceId) ||
+		input.content.outcome !== 'passed' ||
+		!isNonemptyString(input.content.uri) ||
+		!isNonemptyString(input.content.verifierIdentity) ||
+		!isNonemptyString(input.content.changeId) ||
+		!isNonemptyString(input.content.systemVersion) ||
+		!isIsoDate(input.content.performedAt)
+	) {
+		return undefined
+	}
+	const kind = input.content.kind as EvidenceKind
+	const sourceIdentity = parseIdentity(input.content.sourceIdentity)
+	const destinationIdentity =
+		input.content.destinationIdentity === null
+			? null
+			: parseIdentity(input.content.destinationIdentity)
+	const details = parseDetails(kind, input.content.details)
+	if (
+		!sourceIdentity ||
+		destinationIdentity === undefined ||
+		(destinationIsRequired(kind)
+			? destinationIdentity === null
+			: destinationIdentity !== null) ||
+		!details ||
+		!isRecord(input.signature) ||
+		!exactKeys(input.signature, ['algorithm', 'keyId', 'value']) ||
+		input.signature.algorithm !== 'Ed25519' ||
+		!isNonemptyString(input.signature.keyId) ||
+		typeof input.signature.value !== 'string' ||
+		!base64Pattern.test(input.signature.value) ||
+		Buffer.from(input.signature.value, 'base64').byteLength !== 64
+	) {
+		return undefined
+	}
+	if (kind === 'd1-size-ceiling-check') {
+		const sizeDetails =
+			details as EvidenceDetailsByKind['d1-size-ceiling-check']
+		if (
+			sizeDetails.sourceAccountId !== sourceIdentity.accountId ||
+			sizeDetails.sourceDatabaseUuid !== sourceIdentity.resourceId ||
+			sizeDetails.monitoredAt !== input.content.performedAt
+		) {
+			return undefined
+		}
+	}
+	return input as SignedEvidenceEnvelope
+}
+
+export function canonicalEvidencePayload(
+	envelope: Pick<SignedEvidenceEnvelope, 'schemaVersion' | 'content'>,
+): string {
+	return canonicalJson({
+		schemaVersion: envelope.schemaVersion,
+		content: envelope.content,
+	})
+}
+
 function parseEvidence(
 	input: unknown,
 	now: Date,
-): { evidence: Array<ResourceEvidence>; failures: Array<string> } {
+): { evidence: Array<ParsedResourceEvidence>; failures: Array<string> } {
 	if (!Array.isArray(input)) {
 		return { evidence: [], failures: ['evidence input must be an array'] }
 	}
 	if (!Number.isFinite(now.getTime())) {
 		return { evidence: [], failures: ['readiness clock is invalid'] }
 	}
-	const parsed: Array<ResourceEvidence> = []
+	const parsed: Array<ParsedResourceEvidence> = []
 	const failures: Array<string> = []
 	const seenResources = new Set<string>()
+	const seenUris = new Set<string>()
 	for (const [index, candidate] of input.entries()) {
 		const label = `evidence[${String(index)}]`
 		if (
-			!candidate ||
-			typeof candidate !== 'object' ||
-			Array.isArray(candidate)
-		) {
-			failures.push(`${label}: must be an object`)
-			continue
-		}
-		const record = candidate as Record<string, unknown>
-		if (
-			!exactKeys(record, [
+			!isRecord(candidate) ||
+			!exactKeys(candidate, [
 				'artifacts',
 				'changeId',
 				'expiresAt',
 				'performedAt',
 				'resourceId',
+				'schemaVersion',
+				'systemVersion',
 				'verifierIdentity',
-			])
+			]) ||
+			candidate.schemaVersion !== 1
 		) {
-			failures.push(`${label}: invalid shape`)
+			failures.push(`${label}: invalid versioned shape`)
 			continue
 		}
-		const resourceId = record.resourceId
+		const resourceId = candidate.resourceId
 		if (typeof resourceId !== 'string' || !resourceIds.has(resourceId)) {
 			failures.push(`${label}: unknown resourceId`)
 			continue
@@ -329,29 +791,21 @@ function parseEvidence(
 		}
 		seenResources.add(resourceId)
 		if (
-			typeof record.verifierIdentity !== 'string' ||
-			record.verifierIdentity.trim().length === 0 ||
-			typeof record.changeId !== 'string' ||
-			record.changeId.trim().length === 0
+			!isNonemptyString(candidate.verifierIdentity) ||
+			!isNonemptyString(candidate.changeId) ||
+			!isNonemptyString(candidate.systemVersion)
 		) {
-			failures.push(`${label}: verifier identity and change ID are required`)
+			failures.push(
+				`${label}: verifier identity, change ID, and system version are required`,
+			)
 			continue
 		}
-		if (
-			typeof record.performedAt !== 'string' ||
-			typeof record.expiresAt !== 'string' ||
-			!isoDatePattern.test(record.performedAt) ||
-			!isoDatePattern.test(record.expiresAt)
-		) {
+		if (!isIsoDate(candidate.performedAt) || !isIsoDate(candidate.expiresAt)) {
 			failures.push(`${label}: performedAt and expiresAt are required`)
 			continue
 		}
-		const performedAt = Date.parse(record.performedAt)
-		const expiresAt = Date.parse(record.expiresAt)
-		if (!Number.isFinite(performedAt) || !Number.isFinite(expiresAt)) {
-			failures.push(`${label}: attestation dates are invalid`)
-			continue
-		}
+		const performedAt = Date.parse(candidate.performedAt)
+		const expiresAt = Date.parse(candidate.expiresAt)
 		if (performedAt > now.getTime()) {
 			failures.push(`${label}: performedAt is in the future`)
 			continue
@@ -374,66 +828,115 @@ function parseEvidence(
 			failures.push(`${label}: attestation is expired or has invalid freshness`)
 			continue
 		}
-		if (!Array.isArray(record.artifacts) || record.artifacts.length === 0) {
+		if (
+			!Array.isArray(candidate.artifacts) ||
+			candidate.artifacts.length === 0
+		) {
 			failures.push(`${label}: artifacts must be a nonempty array`)
 			continue
 		}
-		const artifacts: Array<EvidenceArtifact> = []
+		const artifacts: Array<ParsedEvidenceArtifact> = []
 		const seenKinds = new Set<string>()
+		let resourceSourceIdentity: ResourceIdentity | null = null
+		let resourceDestinationIdentity: ResourceIdentity | null = null
 		let artifactMalformed = false
-		for (const [artifactIndex, artifact] of record.artifacts.entries()) {
+		for (const [artifactIndex, artifact] of candidate.artifacts.entries()) {
 			const artifactLabel = `${label}.artifacts[${String(artifactIndex)}]`
 			if (
-				!artifact ||
-				typeof artifact !== 'object' ||
-				Array.isArray(artifact) ||
-				!exactKeys(artifact as Record<string, unknown>, [
+				!isRecord(artifact) ||
+				!exactKeys(artifact, [
+					'changeId',
+					'destinationIdentity',
 					'kind',
+					'outcome',
+					'performedAt',
 					'sha256',
+					'sourceIdentity',
+					'systemVersion',
 					'type',
 					'uri',
-				])
+					'verifierIdentity',
+				]) ||
+				typeof artifact.kind !== 'string' ||
+				!evidenceKinds.has(artifact.kind) ||
+				artifact.type !== 'application/vnd.kody.readiness-evidence+json' ||
+				!isNonemptyString(artifact.uri) ||
+				typeof artifact.sha256 !== 'string' ||
+				!sha256Pattern.test(artifact.sha256) ||
+				artifact.outcome !== 'passed' ||
+				!isNonemptyString(artifact.verifierIdentity) ||
+				!isNonemptyString(artifact.changeId) ||
+				!isNonemptyString(artifact.systemVersion) ||
+				!isIsoDate(artifact.performedAt)
 			) {
-				failures.push(`${artifactLabel}: invalid shape`)
+				failures.push(`${artifactLabel}: invalid signed-evidence metadata`)
 				artifactMalformed = true
 				continue
 			}
-			const artifactRecord = artifact as Record<string, unknown>
-			if (
-				typeof artifactRecord.kind !== 'string' ||
-				!evidenceKinds.has(artifactRecord.kind)
-			) {
-				failures.push(`${artifactLabel}: unknown evidence kind`)
-				artifactMalformed = true
-				continue
-			}
-			if (seenKinds.has(artifactRecord.kind)) {
+			if (seenKinds.has(artifact.kind)) {
 				failures.push(`${artifactLabel}: duplicate evidence kind`)
 				artifactMalformed = true
 				continue
 			}
-			seenKinds.add(artifactRecord.kind)
-			if (
-				typeof artifactRecord.type !== 'string' ||
-				artifactRecord.type.trim().length === 0 ||
-				typeof artifactRecord.uri !== 'string' ||
-				artifactRecord.uri.trim().length === 0 ||
-				typeof artifactRecord.sha256 !== 'string' ||
-				!sha256Pattern.test(artifactRecord.sha256)
-			) {
-				failures.push(`${artifactLabel}: malformed artifact record`)
+			seenKinds.add(artifact.kind)
+			if (seenUris.has(artifact.uri)) {
+				failures.push(
+					`${artifactLabel}: duplicate artifact URI ${artifact.uri}`,
+				)
 				artifactMalformed = true
 				continue
 			}
-			artifacts.push(artifactRecord as EvidenceArtifact)
+			seenUris.add(artifact.uri)
+			const sourceIdentity = parseIdentity(artifact.sourceIdentity)
+			const destinationIdentity =
+				artifact.destinationIdentity === null
+					? null
+					: parseIdentity(artifact.destinationIdentity)
+			if (
+				!sourceIdentity ||
+				destinationIdentity === undefined ||
+				artifact.verifierIdentity !== candidate.verifierIdentity ||
+				artifact.changeId !== candidate.changeId ||
+				artifact.systemVersion !== candidate.systemVersion ||
+				artifact.performedAt !== candidate.performedAt
+			) {
+				failures.push(`${artifactLabel}: metadata does not match its index`)
+				artifactMalformed = true
+				continue
+			}
+			if (resourceSourceIdentity === null) {
+				resourceSourceIdentity = sourceIdentity
+			} else if (!identitiesEqual(resourceSourceIdentity, sourceIdentity)) {
+				failures.push(
+					`${artifactLabel}: source identity differs across resource evidence`,
+				)
+				artifactMalformed = true
+				continue
+			}
+			if (destinationIdentity !== null) {
+				if (resourceDestinationIdentity === null) {
+					resourceDestinationIdentity = destinationIdentity
+				} else if (
+					!identitiesEqual(resourceDestinationIdentity, destinationIdentity)
+				) {
+					failures.push(
+						`${artifactLabel}: destination identity differs across resource evidence`,
+					)
+					artifactMalformed = true
+					continue
+				}
+			}
+			artifacts.push(artifact as ParsedEvidenceArtifact)
 		}
 		if (!artifactMalformed) {
 			parsed.push({
+				schemaVersion: 1,
 				resourceId: resourceId as CanonicalResourceId,
-				verifierIdentity: record.verifierIdentity,
-				changeId: record.changeId,
-				performedAt: record.performedAt,
-				expiresAt: record.expiresAt,
+				verifierIdentity: candidate.verifierIdentity,
+				changeId: candidate.changeId,
+				systemVersion: candidate.systemVersion,
+				performedAt: candidate.performedAt,
+				expiresAt: candidate.expiresAt,
 				artifacts,
 			})
 		}
@@ -448,10 +951,60 @@ function isRequiredAtLevel(
 	return levelOrder[requiredFor] <= levelOrder[level]
 }
 
+function identitiesEqual(
+	left: ResourceIdentity | null,
+	right: ResourceIdentity | null,
+): boolean {
+	return (
+		left === right ||
+		(left !== null &&
+			right !== null &&
+			left.accountId === right.accountId &&
+			left.resourceId === right.resourceId)
+	)
+}
+
+function artifactMatchesEnvelope(
+	resourceId: CanonicalResourceId,
+	artifact: ParsedEvidenceArtifact,
+	envelope: SignedEvidenceEnvelope,
+): boolean {
+	const content = envelope.content
+	const metadataMatches =
+		content.resourceId === resourceId &&
+		content.kind === artifact.kind &&
+		content.uri === artifact.uri &&
+		identitiesEqual(content.sourceIdentity, artifact.sourceIdentity) &&
+		identitiesEqual(
+			content.destinationIdentity,
+			artifact.destinationIdentity,
+		) &&
+		content.outcome === artifact.outcome &&
+		content.verifierIdentity === artifact.verifierIdentity &&
+		content.changeId === artifact.changeId &&
+		content.systemVersion === artifact.systemVersion &&
+		content.performedAt === artifact.performedAt
+	if (!metadataMatches) return false
+	if (
+		resourceId === 'APP_DB' &&
+		(content.kind === 'source-credential-check' ||
+			content.kind === 'destination-credential-check')
+	) {
+		const details = content.details as EvidenceDetailsByKind[
+			| 'source-credential-check'
+			| 'destination-credential-check']
+		return details.scope === 'Account D1 Edit'
+	}
+	return true
+}
+
 export function assessCanonicalReadiness(
 	input: unknown,
 	now = new Date(),
-	verifiedArtifactDigests: ReadonlyMap<string, string> = new Map(),
+	verifiedArtifacts: ReadonlyMap<
+		string,
+		VerifiedEvidenceArtifact | string
+	> = new Map(),
 ): ReadinessResult {
 	const parsed = parseEvidence(input, now)
 	const resources = canonicalContracts.map((contract) => {
@@ -466,14 +1019,20 @@ export function assessCanonicalReadiness(
 				evidence.artifacts.map((artifact) => artifact.kind),
 			)
 			for (const artifact of evidence.artifacts) {
-				const verifiedDigest = verifiedArtifactDigests.get(artifact.uri)
-				if (verifiedDigest === undefined) {
+				const verified = verifiedArtifacts.get(artifact.uri)
+				if (verified === undefined || typeof verified === 'string') {
 					failures.push(
-						`${contract.id}: artifact bytes were not locally verified: ${artifact.uri}`,
+						`${contract.id}: signed artifact was not locally verified: ${artifact.uri}`,
 					)
-				} else if (verifiedDigest !== artifact.sha256) {
+				} else if (verified.digest !== artifact.sha256) {
 					failures.push(
 						`${contract.id}: locally verified artifact digest mismatch: ${artifact.uri}`,
+					)
+				} else if (
+					!artifactMatchesEnvelope(contract.id, artifact, verified.envelope)
+				) {
+					failures.push(
+						`${contract.id}: signed artifact content does not match index metadata: ${artifact.uri}`,
 					)
 				}
 			}
