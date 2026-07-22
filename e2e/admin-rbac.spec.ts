@@ -145,7 +145,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 		(user: { email: string }) => user.email === memberUser.email,
 	)
 	expect(memberRecord).toBeTruthy()
-	expect(memberRecord.plan).toBe(null)
+	expect(memberRecord.plan).toBe('unlimited')
 	expect(JSON.stringify(memberRecord)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(memberRecord)).not.toContain('super-secret-value')
 
@@ -196,7 +196,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(page.getByText('Account metadata only')).toBeVisible()
 
 	const planSelect = page.getByLabel('Plan')
-	await expect(planSelect).toHaveValue('')
+	await expect(planSelect).toHaveValue('unlimited')
 	await planSelect.selectOption('pro')
 	await page.getByRole('button', { name: 'Save plan' }).click()
 	await expect(planSelect).toHaveValue('pro')
