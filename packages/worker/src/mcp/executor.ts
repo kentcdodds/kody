@@ -44,16 +44,12 @@ import {
 	kodyRemoteProxyFactorySource,
 } from '#mcp/kody-remote-proxy-source.ts'
 import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
+import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
 export const defaultExecutionResponseLimitBytes = 102_400
 const maxSupportedExecutorTimeoutMs = 2_147_483_647
-const dynamicWorkerCompatibilityDate = '2026-04-16'
-const dynamicWorkerCompatibilityFlags = [
-	'nodejs_compat',
-	'global_fetch_strictly_public',
-] as const
 const dynamicWorkerMainModule = 'executor.js'
 const dynamicWorkerIdPrefix = 'kody-'
 const dynamicWorkerCacheKeyVersion = 3
@@ -279,8 +275,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				excludedHostname,
 			})
 			const workerOptions = {
-				compatibilityDate: dynamicWorkerCompatibilityDate,
-				compatibilityFlags: [...dynamicWorkerCompatibilityFlags],
+				...createDynamicWorkerCompatibilityOptions(),
 				mainModule: dynamicWorkerMainModule,
 				modules: {
 					...modules,

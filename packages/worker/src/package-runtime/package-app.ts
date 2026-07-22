@@ -36,6 +36,7 @@ import {
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageSqlWriteBytes,
 } from '#worker/entitlements/service.ts'
+import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
 import {
 	createDynamicCallableWorkflow,
@@ -1197,7 +1198,7 @@ type PackageAppWorkerBuild = {
 const packageAppWorkerOptionsCache =
 	new PromiseLruCache<PackageAppWorkerBuild>()
 
-async function createPackageAppWorkerId(input: {
+export async function createPackageAppWorkerId(input: {
 	cacheKey: string
 	workerOptions: PackageAppWorkerOptions
 }) {
@@ -1218,6 +1219,8 @@ async function createPackageAppWorkerId(input: {
 			JSON.stringify([
 				'package-app-worker@v1',
 				input.cacheKey,
+				input.workerOptions.compatibilityDate ?? null,
+				input.workerOptions.compatibilityFlags ?? [],
 				input.workerOptions.mainModule,
 				sortedModuleEntries,
 			]),
@@ -1465,8 +1468,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		}),
 	}
 	return {
-		compatibilityDate: '2026-04-16',
-		compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
+		...createDynamicWorkerCompatibilityOptions(),
 		mainModule,
 		modules,
 		env: {

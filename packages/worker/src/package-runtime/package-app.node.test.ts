@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
+import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 
 async function extractCreatePackageAppWorkerSource() {
 	const sourceText = await readFile(
@@ -325,7 +326,8 @@ function resetPackageAppRuntimeMocks() {
 	)
 }
 
-const { buildPackageAppWorker } = await import('./package-app.ts')
+const { buildPackageAppWorker, createPackageAppWorkerId } =
+	await import('./package-app.ts')
 
 test('buildPackageAppWorker loads published app artifacts with artifactName null', async () => {
 	resetPackageAppRuntimeMocks()
@@ -462,7 +464,7 @@ test('buildPackageAppWorker acquires a fresh stub per request while reusing the 
 	expect(firstWorkerId).toMatch(/^package-app-/)
 })
 
-test('buildPackageAppWorker aligns dynamic worker compatibility with the main worker', async () => {
+test('buildPackageAppWorker aligns dynamic worker compatibility with shared options', async () => {
 	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()
 	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
@@ -517,10 +519,58 @@ test('buildPackageAppWorker aligns dynamic worker compatibility with the main wo
 		| (() => Record<string, unknown>)
 		| undefined
 	expect(factory).toBeTypeOf('function')
-	expect(factory?.()).toMatchObject({
-		compatibilityDate: '2026-04-16',
-		compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
+	expect(factory?.()).toMatchObject(createDynamicWorkerCompatibilityOptions())
+})
+
+test('createPackageAppWorkerId changes when compatibility settings change', async () => {
+	const cacheKey = JSON.stringify([
+		'user-compat-id',
+		'package-compat-id',
+		'example-compat-id',
+		'source-1',
+		'commit-1',
+		'https://example.com',
+		'compat@example.com',
+		'Compat User',
+	])
+	const modules = {
+		'package-app-entry.js':
+			'export default { fetch() { return new Response("ok") } }',
+	}
+	const baseWorkerOptions = {
+		...createDynamicWorkerCompatibilityOptions(),
+		mainModule: 'package-app-entry.js',
+		modules,
+	}
+
+	const baselineId = await createPackageAppWorkerId({
+		cacheKey,
+		workerOptions: baseWorkerOptions,
 	})
+	const dateChangedId = await createPackageAppWorkerId({
+		cacheKey,
+		workerOptions: {
+			...baseWorkerOptions,
+			compatibilityDate: '2025-06-01',
+		},
+	})
+	const flagsChangedId = await createPackageAppWorkerId({
+		cacheKey,
+		workerOptions: {
+			...baseWorkerOptions,
+			compatibilityFlags: ['nodejs_compat'],
+		},
+	})
+	const unchangedId = await createPackageAppWorkerId({
+		cacheKey,
+		workerOptions: baseWorkerOptions,
+	})
+
+	expect(baselineId).toMatch(/^package-app-/)
+	expect(unchangedId).toBe(baselineId)
+	expect(dateChangedId).not.toBe(baselineId)
+	expect(flagsChangedId).not.toBe(baselineId)
+	expect(dateChangedId).not.toBe(flagsChangedId)
 })
 
 test('buildPackageAppWorker persists rebuilt app artifacts with artifactName null', async () => {

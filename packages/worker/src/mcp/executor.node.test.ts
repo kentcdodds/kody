@@ -22,6 +22,7 @@ import {
 	limitExecutionResultValue,
 } from './executor.ts'
 import { assertGeneratedExecutorSourceIsBundleSafe } from './kody-remote-proxy-source.ts'
+import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 
 type FakeWorkerOptions = Record<string, unknown>
 
@@ -406,7 +407,7 @@ test('generated kody provider source wires openapi proxy dispatch', async () => 
 	)
 })
 
-test('createExecuteExecutor aligns dynamic worker compatibility with the main worker', async () => {
+test('createExecuteExecutor aligns dynamic worker compatibility with shared options', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	await createExecuteExecutor({
 		env: createExecutorTestEnv(fakeLoader.loader),
@@ -415,10 +416,7 @@ test('createExecuteExecutor aligns dynamic worker compatibility with the main wo
 	}).execute('async () => "ok"', [{ name: 'kody', fns: {} }])
 
 	const workerOptions = fakeLoader.createdOptions.get(fakeLoader.ids[0]!)
-	expect(workerOptions).toMatchObject({
-		compatibilityDate: '2026-04-16',
-		compatibilityFlags: ['nodejs_compat', 'global_fetch_strictly_public'],
-	})
+	expect(workerOptions).toMatchObject(createDynamicWorkerCompatibilityOptions())
 })
 
 test('createExecuteExecutor reuses stable dynamic worker ids until binding context or module graph changes', async () => {
