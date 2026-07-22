@@ -23,7 +23,7 @@ To add a search entity:
 5. Extend the closed unions in `search-format-types.ts`, keeping these groups
    separate:
    - Always required for any list/result type (including result-only types such
-     as `retriever_result`): `SearchMatchType`, `SearchMatch`, and
+     as `retriever_result` and `domain`): `SearchMatchType`, `SearchMatch`, and
      `SlimSearchMatch`.
    - Entity-backed only (types accepted by `{id}:{type}` / entity detail):
      `SearchEntityType`, `SearchEntityDetail`, and related
@@ -53,6 +53,10 @@ Current candidate flatten order is:
 4. `integration`
 5. `secret`
 6. `retriever_result`
+
+`domain` is registered last as a result-only plugin (slim formatting only): its
+rows come from the broad-query domain overview in `searchUnified`, not from the
+candidate pipeline.
 
 Keep ranking, scoring, and output formatting changes out of plugin seam work
 unless the behavior change is explicitly requested.
