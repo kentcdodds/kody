@@ -54,12 +54,15 @@ export const test = base.extend<{
 			return { email, username, password }
 		})
 	},
-	assignRole: async (_fixtures, use) => {
+	// Playwright fixtures require object destructuring even with no deps.
+	// eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+	assignRole: async ({}, use) => {
 		await use(async (email, role) => {
 			assignRoleInE2eDatabase(email, role)
 		})
 	},
-	seedE2eUser: async (_fixtures, use) => {
+	// eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+	seedE2eUser: async ({}, use) => {
 		await use(async (options) => {
 			const runId = Date.now()
 			const email = options?.email ?? `e2e-user-${runId}@example.com`
