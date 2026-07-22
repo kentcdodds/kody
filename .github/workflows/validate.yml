@@ -34,6 +34,10 @@ jobs:
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
+        with:
+          # Migration immutability validation compares against the PR merge
+          # base and must never silently fall back to an editable ledger.
+          fetch-depth: 0
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v6
