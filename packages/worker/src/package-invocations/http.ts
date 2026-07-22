@@ -351,22 +351,37 @@ export async function handlePackageInvocationApiRequest(
 		)
 	}
 
-	const response = await invokePackageExport({
-		env,
-		baseUrl: getAppBaseUrl({
+	let response: Awaited<ReturnType<typeof invokePackageExport>>
+	try {
+		response = await invokePackageExport({
 			env,
-			requestUrl: request.url,
-		}),
-		token: tokenScope,
-		request: {
-			packageIdOrKodyId: route.kodyId,
-			exportName: route.exportName,
-			params: body.params,
-			idempotencyKey: body.idempotencyKey,
-			source,
-			topic,
-		},
-	})
+			baseUrl: getAppBaseUrl({
+				env,
+				requestUrl: request.url,
+			}),
+			token: tokenScope,
+			request: {
+				packageIdOrKodyId: route.kodyId,
+				exportName: route.exportName,
+				params: body.params,
+				idempotencyKey: body.idempotencyKey,
+				source,
+				topic,
+			},
+		})
+	} catch (error) {
+		if (!(error instanceof AccountDeletionInProgressError)) throw error
+		return jsonResponse(
+			{
+				ok: false,
+				error: {
+					code: 'account_deleting',
+					message: error.message,
+				},
+			},
+			{ status: 409 },
+		)
+	}
 	const result =
 		response.status >= 200 && response.status < 400 ? 'success' : 'failure'
 	const reason =

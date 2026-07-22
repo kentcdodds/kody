@@ -6,6 +6,7 @@ import {
 } from './http.ts'
 import { hashPackageInvocationBearerToken } from './repo.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { AccountDeletionInProgressError } from '#app/account-deletion-state.ts'
 
 const invocationMockModule = vi.hoisted(() => ({
 	invokePackageExport: vi.fn(),
@@ -470,4 +471,36 @@ test('package invocation API validates requests and invokes exports with scoped 
 		}),
 	)
 	expect(rootResponse.status).toBe(200)
+})
+
+test('package invocation maps a lease acquisition race to account_deleting', async () => {
+	invocationMockModule.invokePackageExport.mockRejectedValue(
+		new AccountDeletionInProgressError(),
+	)
+	const response = await handlePackageInvocationApiRequest(
+		new Request(
+			'https://example.com/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer private-token-123',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					idempotencyKey: 'lease-race',
+				}),
+			},
+		),
+		await createEnv(),
+		createContext(),
+	)
+	expect(response.status).toBe(409)
+	await expect(response.json()).resolves.toEqual({
+		ok: false,
+		error: {
+			code: 'account_deleting',
+			message:
+				'Account deletion is in progress; user-owned writes are disabled.',
+		},
+	})
 })
