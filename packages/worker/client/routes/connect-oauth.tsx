@@ -125,6 +125,26 @@ type ConnectOauthHostApprovalLink = {
 	approvalUrl: string
 }
 
+type ConnectOauthPackageSuggestion = {
+	listingId: string
+	name: string
+	kodyId: string
+	description: string
+	trusted: boolean
+	publicUrl: string
+	forkPrompt: string
+}
+
+type ConnectOauthNextSteps = {
+	guidance: string
+	integrationName: string
+	suggestions: Array<ConnectOauthPackageSuggestion>
+	createHelpersCta: {
+		label: string
+		prompt: string
+	}
+}
+
 type AccountSecretsListPayload = {
 	ok: true
 	secrets: Array<{ name: string; scope: string }>
@@ -149,6 +169,7 @@ export function ConnectOauthRoute(handle: Handle) {
 	let hasConfigError = false
 	let connectOauthHandled = false
 	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
+	let nextSteps: ConnectOauthNextSteps | null = null
 	let approvingAllHosts = false
 	let submitting = false
 	let initialLoadStarted = false
@@ -175,6 +196,11 @@ export function ConnectOauthRoute(handle: Handle) {
 		links: Array<ConnectOauthHostApprovalLink>,
 	): void => {
 		hostApprovalLinks = links
+		update()
+	}
+
+	const setNextSteps = (value: ConnectOauthNextSteps | null): void => {
+		nextSteps = value
 		update()
 	}
 
@@ -757,6 +783,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		accessTokenSaved = payload.accessTokenSaved === true
 		refreshTokenSaved = payload.refreshTokenSaved === true
 		setHostApprovalLinks(parseHostApprovalLinks(payload.hostApprovalLinks))
+		setNextSteps(parseConnectOauthNextSteps(payload.nextSteps))
 		setStatus('OAuth tokens saved.', 'info')
 		setStep('success')
 		return
@@ -1201,6 +1228,61 @@ export function ConnectOauthRoute(handle: Handle) {
 								</strong>
 							</div>
 						</div>
+						{nextSteps ? (
+							<div mix={css(insetCardCss)}>
+								<h3 mix={css(sectionTitleCss)}>Next: helpers package</h3>
+								<p mix={css(descriptionCss)}>{nextSteps.guidance}</p>
+								{nextSteps.suggestions.length > 0 ? (
+									<ul mix={css(listCss)}>
+										{nextSteps.suggestions.map((suggestion) => (
+											<li key={suggestion.listingId}>
+												<div mix={css(suggestionHeaderCss)}>
+													<a
+														href={suggestion.publicUrl}
+														target="_blank"
+														rel="noreferrer noopener"
+														mix={css(primaryLinkCss)}
+													>
+														{suggestion.name}
+													</a>
+													{suggestion.trusted ? (
+														<span mix={css(trustedBadgeCss)}>Trusted</span>
+													) : null}
+												</div>
+												<p mix={css(descriptionCss)}>
+													{suggestion.description}
+												</p>
+												<div mix={css(suggestionActionsCss)}>
+													<a
+														href={suggestion.publicUrl}
+														target="_blank"
+														rel="noreferrer noopener"
+														mix={css(primaryLinkCss)}
+													>
+														View listing
+													</a>
+													<CopyTextButton
+														value={suggestion.forkPrompt}
+														idleLabel="Copy fork prompt"
+														variant="secondary"
+													/>
+												</div>
+											</li>
+										))}
+									</ul>
+								) : null}
+								<div mix={css(suggestionActionsCss)}>
+									<strong mix={css(detailValueCss)}>
+										{nextSteps.createHelpersCta.label}
+									</strong>
+									<CopyTextButton
+										value={nextSteps.createHelpersCta.prompt}
+										idleLabel="Copy create prompt"
+										variant="secondary"
+									/>
+								</div>
+							</div>
+						) : null}
 						<h3 mix={css(sectionTitleCss)}>Host approvals</h3>
 						<p mix={css({ margin: 0, color: colors.text })}>
 							Hosts are never auto-approved. Review these allowed hosts in your
@@ -1701,6 +1783,65 @@ function parseHostApprovalLinks(
 	)
 }
 
+export function parseConnectOauthNextSteps(
+	raw: unknown,
+): ConnectOauthNextSteps | null {
+	if (!raw || typeof raw !== 'object') return null
+	const record = raw as Record<string, unknown>
+	if (
+		typeof record.guidance !== 'string' ||
+		typeof record.integrationName !== 'string' ||
+		!record.createHelpersCta ||
+		typeof record.createHelpersCta !== 'object' ||
+		!Array.isArray(record.suggestions)
+	) {
+		return null
+	}
+	const createHelpersCta = record.createHelpersCta as Record<string, unknown>
+	if (
+		typeof createHelpersCta.label !== 'string' ||
+		typeof createHelpersCta.prompt !== 'string'
+	) {
+		return null
+	}
+	const suggestions = record.suggestions.flatMap((entry) => {
+		if (!entry || typeof entry !== 'object') return []
+		const suggestion = entry as Record<string, unknown>
+		if (
+			typeof suggestion.listingId !== 'string' ||
+			typeof suggestion.name !== 'string' ||
+			typeof suggestion.kodyId !== 'string' ||
+			typeof suggestion.description !== 'string' ||
+			typeof suggestion.trusted !== 'boolean' ||
+			typeof suggestion.publicUrl !== 'string' ||
+			typeof suggestion.forkPrompt !== 'string' ||
+			!isSafeExternalUrl(suggestion.publicUrl)
+		) {
+			return []
+		}
+		return [
+			{
+				listingId: suggestion.listingId,
+				name: suggestion.name,
+				kodyId: suggestion.kodyId,
+				description: suggestion.description,
+				trusted: suggestion.trusted,
+				publicUrl: suggestion.publicUrl,
+				forkPrompt: suggestion.forkPrompt,
+			} satisfies ConnectOauthPackageSuggestion,
+		]
+	})
+	return {
+		guidance: record.guidance,
+		integrationName: record.integrationName,
+		suggestions,
+		createHelpersCta: {
+			label: createHelpersCta.label,
+			prompt: createHelpersCta.prompt,
+		},
+	}
+}
+
 function parseOptionalUrl(raw: string | null) {
 	if (!raw) return null
 	try {
@@ -1794,6 +1935,30 @@ const secondaryButtonCss = getSecondaryButtonCss({
 	size: 'lg',
 	weight: 'semibold',
 })
+const suggestionHeaderCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: spacing.sm,
+}
+const suggestionActionsCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: spacing.sm,
+	marginTop: spacing.sm,
+}
+const trustedBadgeCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	padding: `0.15rem ${spacing.sm}`,
+	borderRadius: radius.md,
+	backgroundColor: colors.primarySoftest,
+	color: colors.primaryText,
+	fontSize: typography.fontSize.xs,
+	fontWeight: typography.fontWeight.semibold,
+}
 
 function getStatusCardCss(tone: 'info' | 'warn' | 'error') {
 	return {

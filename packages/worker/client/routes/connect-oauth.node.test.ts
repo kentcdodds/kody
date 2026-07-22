@@ -4,6 +4,7 @@ import {
 	formatOAuthExchangeFailure,
 	isOAuthExchangeSessionExpired,
 	mergeConnectOauthConfig,
+	parseConnectOauthNextSteps,
 	parseSessionConnectOauthConfig,
 	parseStoredIntegrationConfig,
 	summarizeStoredSetupState,
@@ -534,4 +535,56 @@ test('session config parsing is strict: usePkce is required and stale shapes are
 			JSON.stringify({ ...sessionConfig, flow: 'implicit' }),
 		),
 	).toBeNull()
+})
+
+test('parseConnectOauthNextSteps accepts suggestion payload and drops unsafe URLs', () => {
+	const parsed = parseConnectOauthNextSteps({
+		guidance: 'Connected. Auth credentials only.',
+		integrationName: 'google',
+		suggestions: [
+			{
+				listingId: 'listing-1',
+				name: 'google-helpers',
+				kodyId: '@owner/google-helpers',
+				description: 'Trusted google helpers',
+				trusted: true,
+				publicUrl: 'https://example.com/community/listing-1',
+				forkPrompt: 'Fork google-helpers',
+			},
+			{
+				listingId: 'bad',
+				name: 'bad',
+				kodyId: '@owner/bad',
+				description: 'bad',
+				trusted: false,
+				publicUrl: 'javascript:alert(1)',
+				forkPrompt: 'bad',
+			},
+		],
+		createHelpersCta: {
+			label: 'Create helpers package',
+			prompt: 'Create a thin helpers package for google',
+		},
+	})
+	expect(parsed).toEqual({
+		guidance: 'Connected. Auth credentials only.',
+		integrationName: 'google',
+		suggestions: [
+			{
+				listingId: 'listing-1',
+				name: 'google-helpers',
+				kodyId: '@owner/google-helpers',
+				description: 'Trusted google helpers',
+				trusted: true,
+				publicUrl: 'https://example.com/community/listing-1',
+				forkPrompt: 'Fork google-helpers',
+			},
+		],
+		createHelpersCta: {
+			label: 'Create helpers package',
+			prompt: 'Create a thin helpers package for google',
+		},
+	})
+	expect(parseConnectOauthNextSteps(null)).toBeNull()
+	expect(parseConnectOauthNextSteps({ guidance: 'x' })).toBeNull()
 })
