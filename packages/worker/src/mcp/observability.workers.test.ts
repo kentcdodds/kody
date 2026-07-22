@@ -270,6 +270,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 			payloads.push(json)
 		}
 	}) as typeof console.info
+	const bundleArtifactsKvStore = new Map<string, string>()
 	try {
 		const result = await handler(
 			{
@@ -388,8 +389,20 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 							}
 							return null
 						},
-						put: async () => undefined,
-						delete: async () => undefined,
+						put: async (key: string, value: string) => {
+							bundleArtifactsKvStore.set(key, value)
+						},
+						delete: async (key: string) => {
+							bundleArtifactsKvStore.delete(key)
+						},
+						list: async (options?: { prefix?: string; cursor?: string }) => ({
+							keys: Array.from(bundleArtifactsKvStore.keys())
+								.filter((key) => key.startsWith(options?.prefix ?? ''))
+								.sort()
+								.map((name) => ({ name })),
+							list_complete: true,
+							cursor: undefined,
+						}),
 					},
 					CLOUDFLARE_ACCOUNT_ID: 'acct',
 					CLOUDFLARE_API_TOKEN: 'token',
