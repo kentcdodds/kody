@@ -5,7 +5,8 @@
 
 export type McpClientKind =
 	| 'cursor'
-	| 'codex-chatgpt'
+	| 'chatgpt'
+	| 'codex'
 	| 'claude-desktop'
 	| 'claude-code'
 	| 'opencode'
@@ -21,13 +22,22 @@ export type McpClientTab = {
 
 export const mcpClientTabs = [
 	{ id: 'cursor', label: 'Cursor', isNonCodingAgent: false },
-	{ id: 'codex-chatgpt', label: 'Codex / ChatGPT', isNonCodingAgent: true },
+	{ id: 'chatgpt', label: 'ChatGPT', isNonCodingAgent: true },
+	{ id: 'codex', label: 'Codex', isNonCodingAgent: false },
 	{ id: 'claude-desktop', label: 'Claude Desktop', isNonCodingAgent: true },
 	{ id: 'claude-code', label: 'Claude Code', isNonCodingAgent: false },
 	{ id: 'opencode', label: 'OpenCode', isNonCodingAgent: false },
 	{ id: 'vscode', label: 'VS Code', isNonCodingAgent: false },
 	{ id: 'other', label: 'Other', isNonCodingAgent: false },
 ] as const satisfies ReadonlyArray<McpClientTab>
+
+export const chatGptDeveloperModeGuideUrl =
+	'https://developers.openai.com/api/docs/guides/developer-mode'
+
+/** Square favicon suitable for ChatGPT plugin / connector app icons. */
+export function buildKodyAppIconUrl(mcpServerUrl: string) {
+	return new URL('/apple-touch-icon.png', mcpServerUrl).href
+}
 
 export const nonCodingAgentNote =
 	'Using Kody packages works great with non-coding agents. For creating or editing packages, a coding agent such as Cursor, Claude Code, Codex, VS Code, or OpenCode is usually smoother — those hosts can edit files and iterate on code more easily.'
@@ -91,7 +101,7 @@ export function buildOpenCodeMcpJson(mcpServerUrl: string) {
 	})
 }
 
-/** Codex / ChatGPT desktop shared `~/.codex/config.toml` streamable HTTP entry. */
+/** Codex shared `~/.codex/config.toml` streamable HTTP entry. */
 export function buildCodexMcpToml(mcpServerUrl: string) {
 	return [
 		'[mcp_servers.kody]',

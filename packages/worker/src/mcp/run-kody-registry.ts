@@ -44,9 +44,21 @@ import {
 } from '#mcp/kody-remote-types.ts'
 import { openApiProviderKodyName } from '#worker/openapi/openapi-domain-id.ts'
 import {
-	createExecuteHelperPrelude,
-	getExecuteHelperCapabilityNames,
-} from '#mcp/execute-modules/kody-runtime-utils.ts'
+	createRuntimeHelperExtraProviders,
+	createRuntimeHelperKodyToolSets,
+	createRuntimeHelperPreludes,
+	createRuntimeHelperRuntimePropertySource,
+	createUnboundOptionalRuntimeHelperNames,
+	type AdditionalKodyTools,
+	type EmailToolOptions,
+	type PackageEventTools,
+	type PackageInvokeTools,
+	type PackageSecretToolOptions,
+	type PackageStorageToolOptions,
+	type PackageWorkflowTools,
+	type ServiceToolOptions,
+	type StorageToolOptions,
+} from '#mcp/runtime-helper-manifest.ts'
 import {
 	buildKodyModuleBundle,
 	hydrateKodyRuntimeModules,
@@ -60,16 +72,7 @@ import {
 	finishPackageRuntimeRun,
 	type PackageRuntimeDebugContext,
 } from '#worker/package-runtime/package-runtime-debug.ts'
-import {
-	createDynamicCallableWorkflow,
-	type PackageWorkflowCreateInput,
-} from '#worker/package-runtime/package-workflows.ts'
-import {
-	createPackageStorageHelperPrelude,
-	createPackageStorageKodyTools,
-	createStorageKodyTools,
-	createStorageHelperPrelude,
-} from '#worker/storage-runner.ts'
+import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { recordAgentPackageConversationUses } from '#worker/usage/agent-package-conversation-uses.ts'
@@ -86,97 +89,16 @@ import {
 import { mcpServerKodyName } from '#worker/mcp-client/mcp-domain-id.ts'
 import { listEnabledMcpServerRefs } from '#worker/mcp-client/settings-service.ts'
 
-type AdditionalKodyTools = Record<string, (args: unknown) => Promise<unknown>>
-
-type StorageToolOptions = {
-	userId: string
-	storageId: string
-	writable: boolean
-}
-
-type PackageStorageToolOptions = {
-	/**
-	 * Saved-package UUIDs whose buckets `packageStorage()` may reach in this
-	 * run. Must come from bundler-controlled provenance only (own package
-	 * context plus recorded bundle dependency metadata); see
-	 * `collectPackageStorageGrantIds`.
-	 */
-	grantedPackageIds: ReadonlySet<string>
-}
-
-type ServiceToolOptions = {
-	getStatus: () => Promise<unknown>
-	shouldStop: () => Promise<boolean>
-	setAlarm: (runAt: Date) => Promise<{ ok: true; scheduled_at: string }>
-	clearAlarm: () => Promise<{ ok: true }>
-}
-
-type PackageSecretToolOptions = {
-	get: (alias: string) => Promise<string>
-	has: (alias: string) => Promise<boolean>
-}
-
-type EmailToolOptions = {
-	getMessage: (messageId: string) => Promise<unknown>
-	getAttachment: (attachmentId: string) => Promise<unknown>
-}
-
-export type PackageInvokeInput = Record<string, unknown>
-
-export type PackageInvokeNormalizedInput = {
-	kodyId?: string
-	packageId?: string
-	exportName: string
-	params?: Record<string, unknown>
-	idempotencyKey?: string
-	topic?: string
-}
-
-export type PackageInvokeContract = {
-	packageId: string
-	kodyId: string
-	name: string
-	sourceId: string
-	publishedCommit: string | null
-	exportName: string
-	runtimeTarget: string | null
-	description?: string | null
-	typeDefinition?: string | null
-	warnings: Array<string>
-}
-
-export type PackageInvokeCheckResult =
-	| {
-			ok: true
-			invoke: PackageInvokeNormalizedInput
-			contract: PackageInvokeContract
-	  }
-	| {
-			ok: false
-			message: string
-			problems: Array<string>
-			contract?: Partial<PackageInvokeContract>
-	  }
-
-export type PackageInvokeTools = {
-	invoke: (input: PackageInvokeInput) => Promise<unknown>
-	check: (input: PackageInvokeInput) => Promise<PackageInvokeCheckResult>
-	invokeChecked: (input: PackageInvokeInput) => Promise<unknown>
-}
-
-export type PackageEventDispatchInput = {
-	topic?: unknown
-	idempotencyKey?: unknown
-	payload?: unknown
-}
-
-export type PackageEventTools = {
-	dispatch: (input: PackageEventDispatchInput) => Promise<unknown>
-}
-
-export type PackageWorkflowTools = {
-	create: (input: PackageWorkflowCreateInput) => Promise<unknown>
-}
+export type {
+	PackageEventDispatchInput,
+	PackageEventTools,
+	PackageInvokeCheckResult,
+	PackageInvokeContract,
+	PackageInvokeInput,
+	PackageInvokeNormalizedInput,
+	PackageInvokeTools,
+	PackageWorkflowTools,
+} from '#mcp/runtime-helper-manifest.ts'
 
 export type PackageContextOptions = {
 	packageId: string
@@ -247,114 +169,6 @@ export function createWorkflowTools(input: {
 			})
 		},
 	}
-}
-
-function createServiceHelperPrelude() {
-	return `
-const service = {
-  getStatus: async () => await kody.service_get_status({}),
-  shouldStop: async () => {
-    const result = await kody.service_should_stop({});
-    return result?.shouldStop === true;
-  },
-  setAlarm: async (runAt) => {
-    const normalizedRunAt =
-      runAt instanceof Date ? runAt.toISOString() : String(runAt ?? '');
-    return await kody.service_set_alarm({ runAt: normalizedRunAt });
-  },
-  clearAlarm: async () => await kody.service_clear_alarm({}),
-};
-	`.trim()
-}
-
-function createPackageSecretsHelperPrelude() {
-	return `
-const packageSecrets = {
-  get: async (alias) => {
-    const normalizedAlias = typeof alias === 'string' ? alias.trim() : '';
-    if (!normalizedAlias) {
-      throw new Error('packageSecrets.get requires a non-empty alias.')
-    }
-    const result = await kody.package_secret_get({ alias: normalizedAlias });
-    return typeof result?.value === 'string' ? result.value : '';
-  },
-  has: async (alias) => {
-    const normalizedAlias = typeof alias === 'string' ? alias.trim() : '';
-    if (!normalizedAlias) {
-      throw new Error('packageSecrets.has requires a non-empty alias.')
-    }
-    const result = await kody.package_secret_has({ alias: normalizedAlias });
-    return result?.has === true;
-  },
-};
-	`.trim()
-}
-
-function createEmailHelperPrelude() {
-	return `
-const email = {
-  getMessage: async (messageId) => {
-    const normalizedMessageId =
-      typeof messageId === 'string' ? messageId.trim() : '';
-    if (!normalizedMessageId) {
-      throw new Error('email.getMessage requires a non-empty message id.')
-    }
-    return await kody.email_message_get({ message_id: normalizedMessageId });
-  },
-  getAttachment: async (attachmentId) => {
-    const normalizedAttachmentId =
-      typeof attachmentId === 'string' ? attachmentId.trim() : '';
-    if (!normalizedAttachmentId) {
-      throw new Error('email.getAttachment requires a non-empty attachment id.')
-    }
-    const result = await kody.email_attachment_get({
-      attachment_id: normalizedAttachmentId,
-    });
-    if (!result || typeof result !== 'object') {
-      return result;
-    }
-    if ('content_base64' in result) {
-      return result;
-    }
-    return {
-      ...result,
-      content_base64:
-        typeof result.data_base64 === 'string' ? result.data_base64 : null,
-    };
-  },
-  reply: async (input) => await kody.email_reply(input ?? {}),
-};
-	`.trim()
-}
-
-function createWorkflowsHelperPrelude() {
-	return `
-const workflows = {
-  create: async (input) => await kody.package_workflow_create(input ?? {}),
-};
-	`.trim()
-}
-
-const packageInvokeRuntimeBridgeProviderName =
-	'__kodyPackageInvokeRuntimeBridge'
-const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
-
-function createPackagesHelperPrelude() {
-	return `
-const packages = {
-  check: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.check(input ?? {}),
-  invoke: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invoke(input ?? {}),
-  invokeChecked: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invokeChecked(input ?? {}),
-};
-	`.trim()
-}
-
-function createEventsHelperPrelude() {
-	return `
-const events = {
-  dispatch: async (input) => await ${packageEventRuntimeBridgeProviderName}.dispatch(input ?? {}),
-};
-	`.trim()
 }
 
 export async function buildKodyFns(
@@ -465,134 +279,28 @@ async function buildKodyToolContext(
 			},
 		]),
 	) as AdditionalKodyTools
-	const storageKodyTools: AdditionalKodyTools = storageTools
-		? await createStorageKodyTools({
-				env,
-				userId: callerContext.user?.userId ?? '',
-				email: callerContext.user?.email,
-				storageId: storageTools.storageId,
-				writable: storageTools.writable,
-			})
-		: {}
-	assertNoCapabilityCollisions(capabilityMap, storageKodyTools)
-	const packageStorageTools = options?.packageStorageTools
-	const packageStorageUserId = callerContext.user?.userId ?? ''
-	const packageStorageKodyTools: AdditionalKodyTools =
-		packageStorageTools && packageStorageUserId
-			? createPackageStorageKodyTools({
-					env,
-					userId: packageStorageUserId,
-					email: callerContext.user?.email,
-					grantedPackageIds: packageStorageTools.grantedPackageIds,
-				})
-			: {}
-	assertNoCapabilityCollisions(capabilityMap, packageStorageKodyTools)
-	const serviceTools = options?.serviceTools
-	const serviceKodyTools: AdditionalKodyTools = serviceTools
-		? {
-				service_get_status: async () => await serviceTools.getStatus(),
-				service_should_stop: async () => ({
-					shouldStop: await serviceTools.shouldStop(),
-				}),
-				service_set_alarm: async (args: unknown) => {
-					const payload =
-						typeof args === 'object' && args !== null
-							? (args as { runAt?: unknown })
-							: {}
-					const runAtValue = payload.runAt
-					const runAtString =
-						typeof runAtValue === 'string' ? runAtValue.trim() : ''
-					if (!runAtString) {
-						throw new Error('service.setAlarm requires a runAt ISO string.')
-					}
-					const runAt = new Date(runAtString)
-					if (Number.isNaN(runAt.getTime())) {
-						throw new Error(
-							'service.setAlarm requires a valid runAt ISO string.',
-						)
-					}
-					return await serviceTools.setAlarm(runAt)
-				},
-				service_clear_alarm: async () => await serviceTools.clearAlarm(),
-			}
-		: {}
-	assertNoCapabilityCollisions(capabilityMap, serviceKodyTools)
-	const packageSecretTools = options?.packageSecretTools
-	const packageSecretKodyTools: AdditionalKodyTools = packageSecretTools
-		? {
-				package_secret_get: async (args: unknown) => {
-					const alias =
-						typeof args === 'object' && args !== null && 'alias' in args
-							? String((args as { alias: unknown }).alias ?? '')
-							: ''
-					return {
-						value: await packageSecretTools.get(alias),
-					}
-				},
-				package_secret_has: async (args: unknown) => {
-					const alias =
-						typeof args === 'object' && args !== null && 'alias' in args
-							? String((args as { alias: unknown }).alias ?? '')
-							: ''
-					return {
-						has: await packageSecretTools.has(alias),
-					}
-				},
-			}
-		: {}
-	assertNoCapabilityCollisions(capabilityMap, packageSecretKodyTools)
-	const emailTools = options?.emailTools
-	const emailKodyTools: AdditionalKodyTools = emailTools
-		? {
-				...(capabilityMap.email_message_get
-					? {}
-					: {
-							email_message_get: async (args: unknown) => {
-								const messageId =
-									typeof args === 'object' &&
-									args !== null &&
-									'message_id' in args
-										? String((args as { message_id: unknown }).message_id ?? '')
-										: ''
-								return await emailTools.getMessage(messageId)
-							},
-						}),
-				...(capabilityMap.email_attachment_get
-					? {}
-					: {
-							email_attachment_get: async (args: unknown) => {
-								const attachmentId =
-									typeof args === 'object' &&
-									args !== null &&
-									'attachment_id' in args
-										? String(
-												(args as { attachment_id: unknown }).attachment_id ??
-													'',
-											)
-										: ''
-								return await emailTools.getAttachment(attachmentId)
-							},
-						}),
-			}
-		: {}
-	assertNoCapabilityCollisions(capabilityMap, emailKodyTools)
-	const workflowTools = options?.workflowTools
-	const workflowKodyTools: AdditionalKodyTools = workflowTools
-		? {
-				package_workflow_create: async (args: unknown) =>
-					await workflowTools.create(args as PackageWorkflowCreateInput),
-			}
-		: {}
-	assertNoCapabilityCollisions(capabilityMap, workflowKodyTools)
+	const runtimeHelperKodyToolSets = await createRuntimeHelperKodyToolSets({
+		env,
+		callerContext,
+		capabilityMap,
+		storageTools,
+		packageStorageTools: options?.packageStorageTools,
+		serviceTools: options?.serviceTools,
+		packageSecretTools: options?.packageSecretTools,
+		emailTools: options?.emailTools,
+		workflowTools: options?.workflowTools,
+	})
+	for (const { tools } of runtimeHelperKodyToolSets) {
+		assertNoCapabilityCollisions(capabilityMap, tools)
+	}
+	const runtimeHelperKodyTools = Object.assign(
+		{},
+		...runtimeHelperKodyToolSets.map(({ tools }) => tools),
+	) as AdditionalKodyTools
 	return {
 		tools: {
 			...capabilityKodyTools,
-			...storageKodyTools,
-			...packageStorageKodyTools,
-			...serviceKodyTools,
-			...packageSecretKodyTools,
-			...emailKodyTools,
-			...workflowKodyTools,
+			...runtimeHelperKodyTools,
 			...additionalTools,
 		},
 		remoteConnectors,
@@ -839,52 +547,6 @@ export async function buildKodyProvider(
 		kodyMcpServers: mcpServers,
 		kodyOpenApiProviders: openApiProviders,
 	}) satisfies KodyResolvedProvider
-}
-
-function createPackageInvokeRuntimeBridgeProvider(
-	packageInvokeTools: PackageInvokeTools,
-): ResolvedProvider {
-	const provider: ToolProvider = {
-		name: packageInvokeRuntimeBridgeProviderName,
-		tools: {
-			check: {
-				execute: async (args: unknown) =>
-					await packageInvokeTools.check((args ?? {}) as PackageInvokeInput),
-			},
-			invoke: {
-				execute: async (args: unknown) =>
-					await packageInvokeTools.invoke((args ?? {}) as PackageInvokeInput),
-			},
-			invokeChecked: {
-				execute: async (args: unknown) =>
-					await packageInvokeTools.invokeChecked(
-						(args ?? {}) as PackageInvokeInput,
-					),
-			},
-		},
-	}
-	return resolveProvider(provider)
-}
-
-function createPackageEventRuntimeBridgeProvider(
-	packageEventTools: PackageEventTools,
-): ResolvedProvider {
-	const provider: ToolProvider = {
-		name: packageEventRuntimeBridgeProviderName,
-		tools: {
-			dispatch: {
-				execute: async (args: unknown) =>
-					await packageEventTools.dispatch(
-						(args ?? {}) as PackageEventDispatchInput,
-					),
-			},
-		},
-	}
-	return resolveProvider(provider)
-}
-
-function providerExposesExecuteHelperCapabilities(provider: ResolvedProvider) {
-	return getExecuteHelperCapabilityNames().every((name) => name in provider.fns)
 }
 
 function createCapabilityInputSecretResolver(
@@ -1183,6 +845,13 @@ export async function runBundledModuleWithRegistry(
 		const packageStorageTools = callerContext.user?.userId
 			? { grantedPackageIds: grantedPackageStorageIds }
 			: undefined
+		const packageSecretTools = options?.packageContext
+			? createPackageSecretTools({
+					env,
+					callerContext,
+					packageId: options.packageContext.packageId,
+				})
+			: undefined
 		const provider = await buildKodyProvider(env, callerContext, {
 			trackSecretInputValue: (value) => {
 				secretRedactor.track(value)
@@ -1191,83 +860,44 @@ export async function runBundledModuleWithRegistry(
 			storageTools: options?.storageTools,
 			packageStorageTools,
 			serviceTools: options?.serviceTools,
-			packageSecretTools: options?.packageContext
-				? createPackageSecretTools({
-						env,
-						callerContext,
-						packageId: options.packageContext.packageId,
-					})
-				: undefined,
+			packageSecretTools,
 			emailTools: options?.emailTools,
 			workflowTools,
 			skipCapabilityRegistry: options?.skipCapabilityRegistry,
 			capabilityRegistry: options?.capabilityRegistry,
 		})
-		const storageHelperPrelude = options?.storageTools
-			? createStorageHelperPrelude({
-					storageId: options.storageTools.storageId,
-					writable: options.storageTools.writable,
-				})
-			: ''
-		const packageStorageHelperPrelude = packageStorageTools
-			? createPackageStorageHelperPrelude()
-			: ''
-		const serviceHelperPrelude = options?.serviceTools
-			? createServiceHelperPrelude()
-			: ''
-		const packageSecretsHelperPrelude = options?.packageContext
-			? createPackageSecretsHelperPrelude()
-			: ''
-		const emailHelperPrelude = options?.emailTools
-			? createEmailHelperPrelude()
-			: ''
-		const workflowsHelperPrelude = workflowTools
-			? createWorkflowsHelperPrelude()
-			: ''
-		const packagesHelperPrelude = options?.packageInvokeTools
-			? createPackagesHelperPrelude()
-			: ''
-		const eventsHelperPrelude = options?.packageEventTools
-			? createEventsHelperPrelude()
-			: ''
-		const executeHelperPrelude = providerExposesExecuteHelperCapabilities(
+		const runtimeHelperContext = {
+			env,
+			callerContext,
+			capabilityMap: {},
 			provider,
-		)
-			? createExecuteHelperPrelude()
-			: ''
+			storageTools: options?.storageTools,
+			packageStorageTools,
+			serviceTools: options?.serviceTools,
+			packageSecretTools,
+			emailTools: options?.emailTools,
+			workflowTools,
+			packageInvokeTools: options?.packageInvokeTools,
+			packageEventTools: options?.packageEventTools,
+		}
+		const runtimeHelperPreludes =
+			createRuntimeHelperPreludes(runtimeHelperContext)
+		const runtimeHelperPreludeSource =
+			runtimeHelperPreludes.length > 0
+				? `${runtimeHelperPreludes.join('\n')}\n`
+				: ''
 		// Mirrors the `__kodyRuntime` object below: a helper whose prelude is
 		// omitted reaches the sandbox as `undefined` / `null`, so guard-less
 		// access to it is what the unbound-helper error rewrite looks for.
-		const unboundOptionalRuntimeHelperNames = new Set<string>([
-			...(storageHelperPrelude ? [] : ['storage']),
-			...(executeHelperPrelude
-				? []
-				: [
-						'refreshAccessToken',
-						'createAuthenticatedFetch',
-						'secretHeaders',
-						'oauthClientCredentials',
-					]),
-			...(serviceHelperPrelude ? [] : ['service']),
-			...(packageSecretsHelperPrelude ? [] : ['packageSecrets']),
-			...(emailHelperPrelude ? [] : ['email']),
-			...(workflowsHelperPrelude ? [] : ['workflows']),
-			...(packagesHelperPrelude ? [] : ['packages']),
-			...(eventsHelperPrelude ? [] : ['events']),
-		])
+		const unboundOptionalRuntimeHelperNames =
+			createUnboundOptionalRuntimeHelperNames(runtimeHelperContext)
+		const runtimeHelperRuntimePropertySource =
+			createRuntimeHelperRuntimePropertySource()
 		const entrypointInputJson = JSON.stringify(params)
 		const entrypointInputSource =
 			entrypointInputJson === undefined ? 'undefined' : entrypointInputJson
 		const wrapped = `async () => {
-${executeHelperPrelude ? `${executeHelperPrelude}\n` : ''}
-${storageHelperPrelude ? `${storageHelperPrelude}\n` : ''}
-${packageStorageHelperPrelude ? `${packageStorageHelperPrelude}\n` : ''}
-${serviceHelperPrelude ? `${serviceHelperPrelude}\n` : ''}
-${packageSecretsHelperPrelude ? `${packageSecretsHelperPrelude}\n` : ''}
-${emailHelperPrelude ? `${emailHelperPrelude}\n` : ''}
-${workflowsHelperPrelude ? `${workflowsHelperPrelude}\n` : ''}
-${packagesHelperPrelude ? `${packagesHelperPrelude}\n` : ''}
-${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
+${runtimeHelperPreludeSource}
   const { AsyncLocalStorage: __KodyAsyncLocalStorage } = await import('node:async_hooks');
   const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
   const __kodyGlobal = globalThis;
@@ -1276,20 +906,9 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
     (__kodyGlobal[__kodyRuntimeStorageSymbol] = new __KodyAsyncLocalStorage());
   const __kodyRuntime = {
     kody,
-    storage: typeof storage === 'undefined' ? undefined : storage,
-    __kodyPackageStorage: typeof __kodyPackageStorage === 'undefined' ? undefined : __kodyPackageStorage,
-    refreshAccessToken: typeof refreshAccessToken === 'undefined' ? undefined : refreshAccessToken,
-    createAuthenticatedFetch: typeof createAuthenticatedFetch === 'undefined' ? undefined : createAuthenticatedFetch,
-    secretHeaders: typeof secretHeaders === 'undefined' ? undefined : secretHeaders,
-    oauthClientCredentials: typeof oauthClientCredentials === 'undefined' ? undefined : oauthClientCredentials,
+${runtimeHelperRuntimePropertySource}
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
     serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
-    service: typeof service === 'undefined' ? null : service,
-    packageSecrets: typeof packageSecrets === 'undefined' ? null : packageSecrets,
-    email: typeof email === 'undefined' ? null : email,
-    workflows: typeof workflows === 'undefined' ? null : workflows,
-    packages: typeof packages === 'undefined' ? null : packages,
-    events: typeof events === 'undefined' ? null : events,
   };
   return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {
     const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});
@@ -1301,17 +920,10 @@ ${eventsHelperPrelude ? `${eventsHelperPrelude}\n` : ''}
   });
 }`
 		try {
-			const providers: Array<ResolvedProvider> = [provider]
-			if (options?.packageInvokeTools) {
-				providers.push(
-					createPackageInvokeRuntimeBridgeProvider(options.packageInvokeTools),
-				)
-			}
-			if (options?.packageEventTools) {
-				providers.push(
-					createPackageEventRuntimeBridgeProvider(options.packageEventTools),
-				)
-			}
+			const providers: Array<ResolvedProvider> = [
+				provider,
+				...createRuntimeHelperExtraProviders(runtimeHelperContext),
+			]
 			const result = await executor.execute(wrapped, providers)
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 			if (!result.error) {

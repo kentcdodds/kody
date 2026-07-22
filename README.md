@@ -70,7 +70,7 @@ If you are trying to understand what this repository is for, start with
 
 ## Scope
 
-- Open-source personal assistant platform, not a general-purpose agent harness
+- Fair Source personal assistant platform, not a general-purpose agent harness
 - MCP-first architecture intended to work across compatible AI agent hosts
 - Compact MCP surface area preferred over a large static tool inventory
 - ChatGPT is a likely primary host target, while keeping the server usable from
@@ -109,10 +109,15 @@ Request → packages/worker/src/index.ts
 
 Kody is licensed under the
 [Functional Source License, Version 1.1, ALv2 Future License](./LICENSE)
-([FSL-1.1-ALv2](https://fsl.software/)). You can use, modify, and redistribute
-the software for any purpose other than offering a competing product or service.
-Each version becomes available under Apache License 2.0 on the second
-anniversary of the date that version was made available.
+([FSL-1.1-ALv2](https://fsl.software/)). You can use, copy, modify, create
+derivative works from, publicly perform, publicly display, and redistribute the
+software for any purpose other than Competing Use. Competing Use means making
+the software available to others in a commercial product or service that
+substitutes for Kody, substitutes for another product or service the licensor
+offers using Kody that existed when the version was made available, or offers
+the same or substantially similar functionality. Each version becomes available
+under the Apache License 2.0 on the second anniversary of the date that version
+was made available.
 
 Community packages published through Kody remain MIT-licensed; that requirement
 is separate from this repository's license.

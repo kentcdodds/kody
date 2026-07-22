@@ -2,7 +2,8 @@ import {
 	type CapabilityDomainMetadata,
 	type CapabilitySpec,
 } from '#mcp/capabilities/types.ts'
-import { type SearchMatch } from './search-format.ts'
+
+import { type SearchMatch } from './search-format-types.ts'
 import {
 	type SearchIntent,
 	extractSearchTokens,

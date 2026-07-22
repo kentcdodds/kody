@@ -13,6 +13,17 @@ capability graph behind that surface. To add a new capability, register it
 through a **domain** and the **builtin registry**—do not add a new public MCP
 tool per capability.
 
+To add a new **search entity type** (not a capability), follow
+[`search-entity-plugins.md`](./search-entity-plugins.md). That means a plugin
+module under `packages/worker/src/mcp/tools/search-entity-plugins/`, one
+registration in `search-entity-registry.ts`, closed unions in
+`search-format-types.ts` (result unions for every list type; entity-backed
+detail unions only when `{id}:{type}` applies), Markdown list formatting in
+`search-format-list.ts`, detail routing in `search-detail.ts`, and for
+entity-backed types the public allowed-type lists in `search-tool-definition.ts`
+and `docs/use/search.md` (plus `parseEntityRef`). Plugin `formatSlimMatch`
+covers structured output only.
+
 ## Domains and registry (plain objects)
 
 A **domain** is the single source of truth for:

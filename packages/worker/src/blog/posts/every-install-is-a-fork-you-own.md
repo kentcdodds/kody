@@ -110,7 +110,7 @@ rest of the ladder feel real. The docs on
 and
 [packages generally](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md)
 cover the details, and the whole platform is
-[open source](https://github.com/kentcdodds/kody) if you want to go deeper than
+[Fair Source](https://github.com/kentcdodds/kody) if you want to go deeper than
 that.
 
 Kody is invite-gated right now, so if you don't have an account yet,

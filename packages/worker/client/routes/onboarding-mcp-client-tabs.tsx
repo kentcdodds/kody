@@ -6,8 +6,10 @@ import {
 	buildClaudeCodeMcpJson,
 	buildCodexMcpToml,
 	buildCursorMcpJson,
+	buildKodyAppIconUrl,
 	buildOpenCodeMcpJson,
 	buildVsCodeMcpJson,
+	chatGptDeveloperModeGuideUrl,
 	codingAgentPackageHint,
 	type McpClientKind,
 	mcpClientTabs,
@@ -107,14 +109,28 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 				</>
 			)
 		}
-		case 'codex-chatgpt': {
-			const codexToml = buildCodexMcpToml(mcpServerUrl)
+		case 'chatgpt': {
+			const appIconUrl = buildKodyAppIconUrl(mcpServerUrl)
 			return (
 				<>
 					<p mix={css(descriptionCss)}>
-						<strong>ChatGPT (web)</strong>: turn on Developer mode under
-						Settings → Security and login, then create a developer-mode app /
-						connector pointed at the MCP URL below. Complete OAuth when
+						In ChatGPT, turn on <strong>Developer mode</strong> under Settings →
+						Security and login. Developer mode is available on the web for{' '}
+						<a
+							href={chatGptDeveloperModeGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							eligible paid plans (Plus, Pro, Business, Enterprise, and
+							Education)
+						</a>
+						. In a managed workspace, ask an admin to enable access if the
+						setting or Plugins UI is missing. Then open{' '}
+						<strong>Settings → Plugins → Browse plugins → Create app</strong>.
+						Paste the MCP URL below as the server URL. For the app icon,
+						download Kody&apos;s favicon from the link below. Owners can edit a
+						developer-mode app&apos;s name and logo later from its{' '}
+						<strong>Manage</strong> menu in Apps settings. Complete OAuth when
 						prompted.
 					</p>
 					<CopyCard
@@ -123,18 +139,31 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						copyLabel="Copy MCP URL"
 						variant="primary"
 					/>
+					<CopyCard
+						label="App icon (favicon)"
+						value={appIconUrl}
+						copyLabel="Copy icon URL"
+					/>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
+				</>
+			)
+		}
+		case 'codex': {
+			const codexToml = buildCodexMcpToml(mcpServerUrl)
+			return (
+				<>
 					<p mix={css(descriptionCss)}>
-						<strong>Codex</strong> (ChatGPT desktop, Codex CLI, and the IDE
-						extension) share <code>~/.codex/config.toml</code>. Add this
-						streamable HTTP entry, then run <code>codex mcp login kody</code> if
-						OAuth does not start automatically:
+						Codex (ChatGPT desktop, Codex CLI, and the IDE extension) shares{' '}
+						<code>~/.codex/config.toml</code>. Add this streamable HTTP entry,
+						then run <code>codex mcp login kody</code> if OAuth does not start
+						automatically:
 					</p>
 					<CopyCard
 						label="config.toml"
 						value={codexToml}
 						copyLabel="Copy TOML"
 					/>
+					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		}

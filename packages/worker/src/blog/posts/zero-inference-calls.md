@@ -116,7 +116,7 @@ when I burn.
 
 ## Owning vs renting
 
-Kody is open source
+Kody is Fair Source
 ([github.com/kentcdodds/kody](https://github.com/kentcdodds/kody)) and built for
 people who'd rather own their assistant than rent one. Zero inference calls is
 what that principle looks like when it reaches the balance sheet: the thinking

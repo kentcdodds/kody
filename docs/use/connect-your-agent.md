@@ -1,8 +1,8 @@
 # Connect your agent
 
-Kody is an MCP server. You use it from Cursor, Claude Desktop, Claude Code,
-Codex / ChatGPT, OpenCode, VS Code, or any other AI agent that supports MCP —
-not from a separate Kody chat app.
+Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
+Claude Code, OpenCode, VS Code, or any other AI agent that supports MCP — not
+from a separate Kody chat app.
 
 The in-app Get started page (`/onboarding`) has tabs with client-specific
 instructions and copyable config snippets for the host you are on.
@@ -30,9 +30,16 @@ MCP URL and setup prompt.
   Remote servers are not configured through `claude_desktop_config.json`.
 - **Claude Code** — `claude mcp add --transport http -s user kody <url>`, or a
   `.mcp.json` entry with `"type": "http"`.
-- **Codex / ChatGPT** — ChatGPT web uses Developer mode + a connector/app URL.
-  Codex (desktop, CLI, IDE) shares `~/.codex/config.toml` with an
-  `[mcp_servers.kody]` `url` entry.
+- **ChatGPT** — On an
+  [eligible paid plan (Plus, Pro, Business, Enterprise, or Education)](https://developers.openai.com/api/docs/guides/developer-mode),
+  turn on Developer mode on the web (Settings → Security and login), then create
+  an app under Settings → Plugins → Browse plugins → Create app with the MCP
+  URL. In a managed workspace, ask an admin to enable access if the setting or
+  Plugins UI is missing. You can use the site favicon (`/apple-touch-icon.png`)
+  for the app icon; the owner can edit a developer-mode app's name and logo
+  later from Manage in Apps settings.
+- **Codex** — Codex (ChatGPT desktop, CLI, IDE) shares `~/.codex/config.toml`
+  with an `[mcp_servers.kody]` `url` entry.
 - **OpenCode** — Add a `mcp.kody` remote entry in `opencode.json`
   (`"type": "remote"`).
 - **VS Code** — Use `.vscode/mcp.json` with root key `servers` (not
