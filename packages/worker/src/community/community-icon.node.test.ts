@@ -397,17 +397,16 @@ test('community icon cache write loses the race to account deletion', async () =
 		path: 'community-icon.png',
 		bytes: png,
 	})
-	await expect(
-		getCommunityIconObject({
-			env: {
-				APP_DB: db,
-				BUNDLE_ARTIFACTS_KV: kv,
-				COMMUNITY_ASSETS: bucket,
-			} as Env,
-			listing,
-			iconCommit: listing.pinnedCommit,
-		}),
-	).rejects.toThrow('Account deletion is in progress')
+	await getCommunityIconObject({
+		env: {
+			APP_DB: db,
+			BUNDLE_ARTIFACTS_KV: kv,
+			COMMUNITY_ASSETS: bucket,
+		} as Env,
+		listing,
+		iconCommit: listing.pinnedCommit,
+	})
+	expect(leaseAcquires).toBe(2)
 	expect(kvValues.size).toBe(0)
 })
 
