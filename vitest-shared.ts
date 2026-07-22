@@ -45,7 +45,6 @@ export const sharedProjectConfig = {
 	test: {
 		testTimeout,
 		hookTimeout: testTimeout,
-		fileParallelism: false,
 		clearMocks: true,
 		mockReset: true,
 		setupFiles: [
