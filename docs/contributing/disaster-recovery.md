@@ -1026,6 +1026,11 @@ database. Its exact shape is:
 }
 ```
 
+The signed `restoredDatabaseUuid` must equal `destinationIdentity.resourceId`.
+Both the destination account and destination resource must differ from their
+source counterparts; a same-account drill or a reused source database UUID fails
+readiness even with a valid signature.
+
 Every evidence kind has its own exact `details` keys, types, and passing
 constraints in `EvidenceDetailsByKind` and `parseDetails`. Extra or missing
 fields fail closed. `inventory`, `source-credential-check`, and

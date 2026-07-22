@@ -91,6 +91,10 @@ field is excluded. The index digest covers the exact envelope file bytes. Index
 metadata must exactly equal the signed content, so an index cannot relabel an
 otherwise valid artifact.
 
+For `d1-restore-drill`, signed details must report the exact
+`destinationIdentity.resourceId` as `restoredDatabaseUuid`; destination account
+and resource identities must both differ from the source.
+
 Artifact URIs must be unique `file:` URLs or local filesystem paths (relative
 paths are resolved beside the evidence JSON). The CLI never fetches network
 URIs. It reads each referenced file, verifies its exact-byte SHA-256 and Ed25519

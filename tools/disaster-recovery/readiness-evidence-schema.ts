@@ -324,6 +324,20 @@ export function parseSignedEvidenceEnvelope(
 			return undefined
 		}
 	}
+	if (kind === 'd1-restore-drill') {
+		const restoreDetails = details as EvidenceDetailsByKind['d1-restore-drill']
+		if (
+			destinationIdentity === null ||
+			restoreDetails.restoredDatabaseUuid.toLowerCase() !==
+				destinationIdentity.resourceId.toLowerCase() ||
+			sourceIdentity.accountId.toLowerCase() ===
+				destinationIdentity.accountId.toLowerCase() ||
+			sourceIdentity.resourceId.toLowerCase() ===
+				destinationIdentity.resourceId.toLowerCase()
+		) {
+			return undefined
+		}
+	}
 	return input as SignedEvidenceEnvelope
 }
 

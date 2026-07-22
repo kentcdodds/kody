@@ -285,6 +285,78 @@ test('minimal D1 readiness requires every kind-specific signed envelope', async 
 	}
 })
 
+test('signed D1 restore evidence binds an isolated destination UUID and account', async () => {
+	const directory = await mkdtemp(
+		path.join(os.tmpdir(), 'readiness-restore-isolation-'),
+	)
+	try {
+		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+		const fixture = await createFixture(directory, privateKey)
+		const registry = registryFor(publicKey)
+		expect(
+			await isD1Ready(fixture.evidence, fixture.evidencePath, registry),
+		).toBe(true)
+		const restoreEnvelope = fixture.envelopes.find(
+			(envelope) => envelope.content.kind === 'd1-restore-drill',
+		)
+		if (!restoreEnvelope) throw new Error('fixture lacks restore evidence')
+
+		async function expectRestoreContentNotReady(
+			content: EvidenceContent,
+		): Promise<void> {
+			const signed = signEnvelope(content, privateKey)
+			const bytes = Buffer.from(JSON.stringify(signed))
+			await writeFile(path.join(directory, content.uri), bytes)
+			const evidence = structuredClone(fixture.evidence)
+			const record = evidence[0]
+			if (!record || !Array.isArray(record.artifacts)) {
+				throw new Error('fixture is malformed')
+			}
+			const artifact = record.artifacts.find(
+				(candidate) =>
+					(candidate as Record<string, unknown>).kind === 'd1-restore-drill',
+			) as Record<string, unknown> | undefined
+			if (!artifact) throw new Error('fixture lacks restore artifact')
+			artifact.sha256 = sha256(bytes)
+			artifact.sourceIdentity = content.sourceIdentity
+			artifact.destinationIdentity = content.destinationIdentity
+			expect(await isD1Ready(evidence, fixture.evidencePath, registry)).toBe(
+				false,
+			)
+		}
+
+		await expectRestoreContentNotReady({
+			...restoreEnvelope.content,
+			details: {
+				...(restoreEnvelope.content
+					.details as EvidenceDetailsByKind['d1-restore-drill']),
+				restoredDatabaseUuid: '33333333-3333-4333-8333-333333333333',
+			},
+		})
+		await expectRestoreContentNotReady({
+			...restoreEnvelope.content,
+			destinationIdentity: {
+				...destinationIdentity,
+				accountId: sourceIdentity.accountId,
+			},
+		})
+		await expectRestoreContentNotReady({
+			...restoreEnvelope.content,
+			destinationIdentity: {
+				...destinationIdentity,
+				resourceId: sourceIdentity.resourceId,
+			},
+			details: {
+				...(restoreEnvelope.content
+					.details as EvidenceDetailsByKind['d1-restore-drill']),
+				restoredDatabaseUuid: sourceIdentity.resourceId,
+			},
+		})
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+})
+
 test('unsigned, forged, wrong-key, mismatched, stale-shape, and duplicate evidence fail closed', async () => {
 	const directory = await mkdtemp(
 		path.join(os.tmpdir(), 'readiness-forgeries-'),
