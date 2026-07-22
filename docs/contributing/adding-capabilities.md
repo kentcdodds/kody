@@ -13,10 +13,12 @@ capability graph behind that surface. To add a new capability, register it
 through a **domain** and the **builtin registry**—do not add a new public MCP
 tool per capability.
 
-To add a new **search entity type** (not a capability), use the plugin seam in
-[`search-entity-plugins.md`](./search-entity-plugins.md): one module under
-`packages/worker/src/mcp/tools/search-entity-plugins/` plus one registration in
-`search-entity-registry.ts`.
+To add a new **search entity type** (not a capability), follow
+[`search-entity-plugins.md`](./search-entity-plugins.md). That means a plugin
+module under `packages/worker/src/mcp/tools/search-entity-plugins/`, one
+registration in `search-entity-registry.ts`, and parallel updates to the closed
+unions in `search-format-types.ts` plus detail routing in `search-detail.ts`
+(and `parseEntityRef` when the type is entity-backed).
 
 ## Domains and registry (plain objects)
 

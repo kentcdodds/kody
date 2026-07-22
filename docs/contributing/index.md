@@ -16,8 +16,8 @@ style, tests, MCP kody, and runtime architecture.
 - [Community packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md)
 - [Adding capabilities](./adding-capabilities.md)
-- [Search entity plugins](./search-entity-plugins.md) (one module + one
-  registration to extend MCP `search`)
+- [Search entity plugins](./search-entity-plugins.md) (plugin module + registry,
+  plus closed unions / detail routing)
 - [Architecture](./architecture/index.md) — includes
   [authorization](./architecture/authorization.md) (RBAC)
 - [MCP server patterns](./mcp-server-patterns.md) (reference for server design)
