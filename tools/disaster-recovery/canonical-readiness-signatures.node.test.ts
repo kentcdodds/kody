@@ -325,6 +325,47 @@ test('signed D1 restore evidence binds an isolated destination UUID and account'
 			)
 		}
 
+		async function expectDestinationNotReady(
+			destination: typeof destinationIdentity,
+		): Promise<void> {
+			const evidence = structuredClone(fixture.evidence)
+			const record = evidence[0]
+			if (!record || !Array.isArray(record.artifacts)) {
+				throw new Error('fixture is malformed')
+			}
+			for (const envelope of fixture.envelopes) {
+				if (envelope.content.destinationIdentity === null) continue
+				const content: EvidenceContent =
+					envelope.content.kind === 'd1-restore-drill'
+						? {
+								...envelope.content,
+								destinationIdentity: destination,
+								details: {
+									...(envelope.content
+										.details as EvidenceDetailsByKind['d1-restore-drill']),
+									restoredDatabaseUuid: destination.resourceId,
+								},
+							}
+						: {
+								...envelope.content,
+								destinationIdentity: destination,
+							}
+				const signed = signEnvelope(content, privateKey)
+				const bytes = Buffer.from(JSON.stringify(signed))
+				await writeFile(path.join(directory, content.uri), bytes)
+				const artifact = record.artifacts.find(
+					(candidate) =>
+						(candidate as Record<string, unknown>).kind === content.kind,
+				) as Record<string, unknown> | undefined
+				if (!artifact) throw new Error(`fixture lacks ${content.kind} artifact`)
+				artifact.sha256 = sha256(bytes)
+				artifact.destinationIdentity = destination
+			}
+			expect(await isD1Ready(evidence, fixture.evidencePath, registry)).toBe(
+				false,
+			)
+		}
+
 		await expectRestoreContentNotReady({
 			...restoreEnvelope.content,
 			details: {
@@ -333,43 +374,21 @@ test('signed D1 restore evidence binds an isolated destination UUID and account'
 				restoredDatabaseUuid: '33333333-3333-4333-8333-333333333333',
 			},
 		})
-		await expectRestoreContentNotReady({
-			...restoreEnvelope.content,
-			destinationIdentity: {
-				...destinationIdentity,
-				accountId: sourceIdentity.accountId,
-			},
+		await expectDestinationNotReady({
+			...destinationIdentity,
+			accountId: sourceIdentity.accountId,
 		})
-		await expectRestoreContentNotReady({
-			...restoreEnvelope.content,
-			destinationIdentity: {
-				...destinationIdentity,
-				resourceId: sourceIdentity.resourceId,
-			},
-			details: {
-				...(restoreEnvelope.content
-					.details as EvidenceDetailsByKind['d1-restore-drill']),
-				restoredDatabaseUuid: sourceIdentity.resourceId,
-			},
+		await expectDestinationNotReady({
+			...destinationIdentity,
+			resourceId: sourceIdentity.resourceId,
 		})
-		await expectRestoreContentNotReady({
-			...restoreEnvelope.content,
-			destinationIdentity: {
-				...destinationIdentity,
-				accountId: sourceIdentity.accountId.toUpperCase(),
-			},
+		await expectDestinationNotReady({
+			...destinationIdentity,
+			accountId: sourceIdentity.accountId.toUpperCase(),
 		})
-		await expectRestoreContentNotReady({
-			...restoreEnvelope.content,
-			destinationIdentity: {
-				...destinationIdentity,
-				resourceId: sourceIdentity.resourceId.toUpperCase(),
-			},
-			details: {
-				...(restoreEnvelope.content
-					.details as EvidenceDetailsByKind['d1-restore-drill']),
-				restoredDatabaseUuid: sourceIdentity.resourceId.toUpperCase(),
-			},
+		await expectDestinationNotReady({
+			...destinationIdentity,
+			resourceId: sourceIdentity.resourceId.toUpperCase(),
 		})
 	} finally {
 		await rm(directory, { recursive: true, force: true })
