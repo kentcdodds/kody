@@ -94,7 +94,7 @@ export async function invokeSavedPackageModule(input: {
 					idempotencyKey: input.idempotencyKey,
 				})
 			}
-			let invocationId = crypto.randomUUID()
+			let invocationId: string = crypto.randomUUID()
 			let claimUpdatedAt: string | null = null
 			if (existing) {
 				if (
