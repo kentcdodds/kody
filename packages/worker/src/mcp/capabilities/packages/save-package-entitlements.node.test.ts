@@ -315,7 +315,9 @@ test('package_save enforces the saved packages entitlement for plan users on cre
 		updated_at: now,
 	}))
 	const db = createDatabase({
-		users: [{ email, plan: 'pro', username: 'planned', stable_user_id: userId }],
+		users: [
+			{ email, plan: 'pro', username: 'planned', stable_user_id: userId },
+		],
 		saved_packages: savedPackages,
 	})
 	setupPersistenceMocks()
@@ -377,7 +379,9 @@ test('package_save does not gate updates to an existing package at the limit', a
 		},
 	]
 	const db = createDatabase({
-		users: [{ email, plan: 'pro', username: 'planned', stable_user_id: userId }],
+		users: [
+			{ email, plan: 'pro', username: 'planned', stable_user_id: userId },
+		],
 		saved_packages: savedPackages,
 	})
 	setupPersistenceMocks()

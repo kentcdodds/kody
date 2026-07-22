@@ -141,9 +141,7 @@ test('inbound account plan/verification requires matching email and stable_user_
 		.bind(recipientUserId)
 		.all<{ detail_json: string }>()
 	expect(
-		(recipientEvents.results ?? []).map((row) =>
-			JSON.parse(row.detail_json),
-		),
+		(recipientEvents.results ?? []).map((row) => JSON.parse(row.detail_json)),
 	).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({

@@ -55,8 +55,7 @@ function createEntitlementsDatabase(input: {
 								}
 								const user = input.users.find(
 									(row) =>
-										row.email === email &&
-										row.stable_user_id === stableUserId,
+										row.email === email && row.stable_user_id === stableUserId,
 								)
 								return (user ? { plan: user.plan } : null) as T | null
 							}
