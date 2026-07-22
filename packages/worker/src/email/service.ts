@@ -280,6 +280,16 @@ export async function storeIdempotentInboundEmail(input: {
 	now: string
 }) {
 	const { delivery, parsed } = input
+	if (!delivery.storageLease) {
+		throw new RetryableInboundStorageError(
+			'Inbound delivery storage requires an active lease.',
+		)
+	}
+	const inboundDeliveryFence = {
+		deliveryId: delivery.deliveryId,
+		userId: delivery.userId,
+		storageLease: delivery.storageLease,
+	}
 	await putRawMimeToBlobs({
 		blobs: input.blobs,
 		userId: delivery.userId,
@@ -310,11 +320,13 @@ export async function storeIdempotentInboundEmail(input: {
 				rootMessageIdHeader: parsed.messageId,
 				lastMessageAt: input.now,
 				ignoreConflict: true,
+				inboundDeliveryFence,
 			})
 		}
 		try {
 			stored = await insertEmailMessage({
 				db: input.db,
+				inboundDeliveryFence,
 				message: {
 					id: delivery.messageId,
 					direction: 'inbound',
@@ -365,6 +377,7 @@ export async function storeIdempotentInboundEmail(input: {
 			db: input.db,
 			messageId: delivery.messageId,
 			ignoreConflicts: true,
+			inboundDeliveryFence,
 			attachments: parsed.attachments.map((attachment, index) => ({
 				id: `${delivery.messageId}:attachment:${index}`,
 				filename: attachment.filename,

@@ -1,16 +1,25 @@
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { handleInboundEmail } from './inbound.ts'
 import {
 	buildInboundDelivery,
+	claimInboundDeliveryStorage,
+	inboundDeliveryDedupeWindowMs,
+	InboundDeliveryLeaseLostError,
+	markInboundDeliveryReceived,
 	reconcileStaleInboundDeliveries,
 } from './inbound-delivery.ts'
-import { defaultEmailInboxName } from './default-inbox.ts'
+import {
+	defaultEmailInboxName,
+	ensureDefaultEmailInbox,
+} from './default-inbox.ts'
+import { sweepStaleInboundDeliveries } from './reconcile-inbound-deliveries.ts'
 import {
 	createEmailThread,
 	deleteEmailMessageById,
 	emailRawMimeKey,
 	getEmailMessageById,
+	insertEmailMessage,
 	listEmailInboxesForUser,
 	listEmailInboxAddressesForUser,
 	listEmailMessages,
@@ -1009,6 +1018,161 @@ test('ambiguous quota-ledger batch response charges one delivery exactly once', 
 	).toHaveLength(1)
 })
 
+test('byte-identical mail dedupes only inside the explicit delivery window', async () => {
+	silenceIncidentalRuntimeWarnings()
+	vi.useFakeTimers({ toFake: ['Date'] })
+	try {
+		const firstNow = new Date('2026-07-20T12:00:00.000Z')
+		vi.setSystemTime(firstNow)
+		await ensureEmailTestSchema(env.APP_DB)
+		const username = `dedupe-window-${crypto.randomUUID().slice(0, 8)}`
+		const accountEmail = `dedupe-window-${crypto.randomUUID()}@example.com`
+		const userId = await createStableUserIdFromEmail(accountEmail)
+		const address = `${username}@${platformDomain}`
+		await seedVerifiedAccount({
+			db: env.APP_DB,
+			email: accountEmail,
+			username,
+		})
+		const raw = [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Identical periodic mail',
+			'',
+			'Same bytes.',
+		].join('\r\n')
+		const deliver = () =>
+			handleInboundEmail(
+				createForwardableEmailMessage({
+					from: 'sender@example.net',
+					to: address,
+					raw,
+				}),
+				createInboundEnv(),
+			)
+
+		await deliver()
+		await deliver()
+		expect(
+			await listEmailMessages({
+				db: env.APP_DB,
+				userId,
+				limit: 10,
+			}),
+		).toHaveLength(1)
+
+		vi.setSystemTime(
+			new Date(firstNow.getTime() + inboundDeliveryDedupeWindowMs + 1),
+		)
+		await deliver()
+		expect(
+			await listEmailMessages({
+				db: env.APP_DB,
+				userId,
+				limit: 10,
+			}),
+		).toHaveLength(2)
+		const counter = await env.APP_DB.prepare(
+			`SELECT SUM(count) AS count FROM entitlement_daily_counters
+			WHERE user_id = ? AND resource = 'email_receives_per_day'`,
+		)
+			.bind(userId)
+			.first<{ count: number }>()
+		expect(Number(counter?.count ?? 0)).toBe(2)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('post-rollout retry adopts a recent legacy message without duplicate row or quota', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `legacy-retry-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `legacy-retry-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	const provisioned = await ensureDefaultEmailInbox({
+		db: env.APP_DB,
+		userId,
+		username,
+		domain: platformDomain,
+	})
+	if (!provisioned) throw new Error('Expected a provisioned inbox.')
+	const raw = [
+		'From: Sender <sender@example.net>',
+		`To: ${address}`,
+		'Subject: Deploy-window retry',
+		'Message-ID: <legacy-deploy-retry@example.net>',
+		'',
+		'Body',
+	].join('\r\n')
+	const legacyId = crypto.randomUUID()
+	await insertEmailMessageWithRawMime({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		message: {
+			id: legacyId,
+			direction: 'inbound',
+			userId,
+			inboxId: provisioned.inbox.id,
+			rawMime: raw,
+			rawSize: new TextEncoder().encode(raw).byteLength,
+			messageIdHeader: '<legacy-deploy-retry@example.net>',
+			processingStatus: 'stored',
+		},
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO entitlement_daily_counters (
+			user_id, resource, day, count, updated_at
+		) VALUES (?, 'email_receives_per_day', ?, 1, ?)`,
+	)
+		.bind(
+			userId,
+			new Date().toISOString().slice(0, 10),
+			new Date().toISOString(),
+		)
+		.run()
+
+	await handleInboundEmail(
+		createForwardableEmailMessage({
+			from: 'sender@example.net',
+			to: address,
+			raw,
+		}),
+		createInboundEnv(),
+	)
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 10,
+		}),
+	).toHaveLength(1)
+	const adopted = await env.APP_DB.prepare(
+		`SELECT message_id, event_type, detail_json
+		FROM email_delivery_events
+		WHERE user_id = ? AND provider = 'cloudflare-email-routing'`,
+	)
+		.bind(userId)
+		.first<{
+			message_id: string
+			event_type: string
+			detail_json: string
+		}>()
+	expect(adopted?.message_id).toBe(legacyId)
+	expect(adopted?.event_type).toBe('received')
+	expect(JSON.parse(adopted!.detail_json)).toMatchObject({
+		messageId: legacyId,
+		state: 'received',
+	})
+})
+
 test('inbound post-commit bookkeeping failure keeps one stored row without refund or retry throw', async () => {
 	silenceIncidentalRuntimeWarnings()
 	silenceExpectedConsoleErrors(['inbound-email-post-commit-bookkeeping-failed'])
@@ -1327,6 +1491,101 @@ test('insertEmailMessageWithRawMime best-effort deletes R2 blob when D1 insert f
 	).toBeNull()
 })
 
+test('lease takeover fences stale finalization and active storage from cleanup', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `user-${crypto.randomUUID()}`
+	const now = new Date('2026-07-22T00:00:00.000Z')
+	const delivery = await buildInboundDelivery({
+		userId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'lease-race@example.com',
+		rawMime: 'lease race raw mime',
+		quotaDay: '2026-07-19',
+		now: new Date('2026-07-19T00:00:00.000Z'),
+	})
+	const staleDelivery = {
+		...delivery,
+		state: 'storing' as const,
+		storageLease: 'stale-worker',
+		storageLeaseAt: '2026-07-19T00:00:00.000Z',
+		expectedAttachmentCount: 0,
+	}
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, inbox_id, event_type, provider, provider_event_id,
+			detail_json, created_at
+		) VALUES (?, ?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+	)
+		.bind(
+			delivery.deliveryId,
+			userId,
+			delivery.inboxId,
+			delivery.deliveryId,
+			JSON.stringify(staleDelivery),
+			'2026-07-19T00:00:00.000Z',
+		)
+		.run()
+	await env.EMAIL_BLOBS.put(delivery.rawMimeKey, 'lease race raw mime')
+	const takeover = await claimInboundDeliveryStorage({
+		db: env.APP_DB,
+		delivery: staleDelivery,
+		expectedAttachmentCount: 0,
+		now,
+	})
+	if (!takeover.claimed) throw new Error('Expected storage lease takeover.')
+
+	await expect(
+		insertEmailMessage({
+			db: env.APP_DB,
+			inboundDeliveryFence: {
+				deliveryId: staleDelivery.deliveryId,
+				userId,
+				storageLease: staleDelivery.storageLease,
+			},
+			message: {
+				id: staleDelivery.messageId,
+				direction: 'inbound',
+				userId,
+				processingStatus: 'stored',
+			},
+		}),
+	).rejects.toThrow('storage lease was lost')
+	expect(
+		await getEmailMessageById({
+			db: env.APP_DB,
+			userId,
+			messageId: staleDelivery.messageId,
+		}),
+	).toBeNull()
+	await expect(
+		markInboundDeliveryReceived({
+			db: env.APP_DB,
+			delivery: staleDelivery,
+		}),
+	).rejects.toBeInstanceOf(InboundDeliveryLeaseLostError)
+	expect(
+		await reconcileStaleInboundDeliveries({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			userId,
+			now,
+		}),
+	).toEqual({ recovered: 0, cleaned: 0 })
+	expect(await env.EMAIL_BLOBS.get(delivery.rawMimeKey)).not.toBeNull()
+	const state = await env.APP_DB.prepare(
+		`SELECT
+			json_extract(detail_json, '$.state') AS state,
+			json_extract(detail_json, '$.storageLease') AS storage_lease
+		FROM email_delivery_events WHERE id = ? AND user_id = ?`,
+	)
+		.bind(delivery.deliveryId, userId)
+		.first<{ state: string; storage_lease: string }>()
+	expect(state).toEqual({
+		state: 'storing',
+		storage_lease: takeover.delivery.storageLease,
+	})
+})
+
 test('stale inbound ledger durably retries orphan blob cleanup after R2 delete failure', async () => {
 	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
@@ -1440,6 +1699,122 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 		}),
 	).toEqual({ recovered: 0, cleaned: 0 })
 	expect(await env.EMAIL_BLOBS.get(protectedDelivery.rawMimeKey)).not.toBeNull()
+})
+
+test('scheduled sweep cleans quiet-user orphans and recovers partial commits', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const oldNow = new Date('2026-07-19T00:00:00.000Z')
+	const sweepNow = new Date('2026-07-22T00:00:00.000Z')
+	const orphanUserId = `orphan-${crypto.randomUUID()}`
+	const orphan = await buildInboundDelivery({
+		userId: orphanUserId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'quiet@example.com',
+		rawMime: 'quiet orphan',
+		quotaDay: '2026-07-19',
+		now: oldNow,
+	})
+	await env.EMAIL_BLOBS.put(orphan.rawMimeKey, 'quiet orphan')
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, inbox_id, event_type, provider, provider_event_id,
+			detail_json, created_at
+		) VALUES (?, ?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+	)
+		.bind(
+			orphan.deliveryId,
+			orphan.userId,
+			orphan.inboxId,
+			orphan.deliveryId,
+			JSON.stringify(orphan),
+			oldNow.toISOString(),
+		)
+		.run()
+
+	const partialUserId = `partial-${crypto.randomUUID()}`
+	const partialRaw = [
+		'From: sender@example.net',
+		'To: partial@example.com',
+		'Subject: Partial commit',
+		'Content-Type: multipart/mixed; boundary="partial-boundary"',
+		'',
+		'--partial-boundary',
+		'Content-Type: text/plain',
+		'',
+		'Body',
+		'--partial-boundary',
+		'Content-Type: text/plain; name="note.txt"',
+		'Content-Disposition: attachment; filename="note.txt"',
+		'',
+		'Note',
+		'--partial-boundary--',
+	].join('\r\n')
+	const partial = await buildInboundDelivery({
+		userId: partialUserId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'partial@example.com',
+		rawMime: partialRaw,
+		quotaDay: '2026-07-19',
+		now: oldNow,
+	})
+	await insertEmailMessageWithRawMime({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		message: {
+			id: partial.messageId,
+			direction: 'inbound',
+			userId: partial.userId,
+			inboxId: partial.inboxId,
+			rawMime: partialRaw,
+			rawSize: new TextEncoder().encode(partialRaw).byteLength,
+			processingStatus: 'stored',
+		},
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, inbox_id, event_type, provider, provider_event_id,
+			detail_json, created_at
+		) VALUES (?, ?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+	)
+		.bind(
+			partial.deliveryId,
+			partial.userId,
+			partial.inboxId,
+			partial.deliveryId,
+			JSON.stringify(partial),
+			oldNow.toISOString(),
+		)
+		.run()
+
+	expect(
+		await sweepStaleInboundDeliveries({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			now: sweepNow,
+		}),
+	).toMatchObject({
+		usersProcessed: 2,
+		recovered: 1,
+		cleaned: 1,
+		errors: 0,
+	})
+	expect(await env.EMAIL_BLOBS.get(orphan.rawMimeKey)).toBeNull()
+	const partialEvent = await env.APP_DB.prepare(
+		`SELECT event_type, message_id FROM email_delivery_events
+		WHERE id = ? AND user_id = ?`,
+	)
+		.bind(partial.deliveryId, partial.userId)
+		.first<{ event_type: string; message_id: string }>()
+	expect(partialEvent).toEqual({
+		event_type: 'received',
+		message_id: partial.messageId,
+	})
+	expect(
+		await listEmailAttachmentsForMessage({
+			db: env.APP_DB,
+			messageId: partial.messageId,
+		}),
+	).toHaveLength(1)
 })
 
 test('insertEmailMessageWithAttachments cleans message and blob when attachment insert fails', async () => {

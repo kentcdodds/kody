@@ -13,6 +13,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
 	reconcileArtifactsPushes: vi.fn(async () => ({})),
+	sweepStaleInboundDeliveries: vi.fn(async () => ({})),
 	cleanupRepoSessionBranches: vi.fn(async () => ({})),
 	pruneSystemEmailRetention: vi.fn(async () => ({})),
 	pruneRetention: vi.fn(async () => ({})),
@@ -36,6 +37,10 @@ vi.mock('./repo/repo-session-cleanup.ts', () => ({
 
 vi.mock('#worker/email/system-email.ts', () => ({
 	pruneSystemEmailRetention: mocks.pruneSystemEmailRetention,
+}))
+
+vi.mock('#worker/email/reconcile-inbound-deliveries.ts', () => ({
+	sweepStaleInboundDeliveries: mocks.sweepStaleInboundDeliveries,
 }))
 
 vi.mock('#app/retention.ts', () => ({
@@ -82,6 +87,13 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
 	expect(mocks.cleanupRepoSessionBranches).toHaveBeenCalledTimes(1)
+	expect(mocks.sweepStaleInboundDeliveries).toHaveBeenCalledWith(
+		expect.objectContaining({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			now: new Date(scheduledTime),
+		}),
+	)
 	expect(mocks.pruneSystemEmailRetention).toHaveBeenCalledWith(
 		expect.objectContaining({ blobs: env.EMAIL_BLOBS }),
 	)

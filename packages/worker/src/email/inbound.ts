@@ -23,11 +23,12 @@ import {
 	readForwardableEmailRawMime,
 } from './parser.ts'
 import {
+	adoptLegacyInboundDelivery,
 	buildInboundDelivery,
 	claimInboundDeliveryStorage,
 	chargeSystemInboundDeliveryOnce,
 	chargeUserInboundDeliveryOnce,
-	getInboundDelivery,
+	getActiveInboundDelivery,
 	markInboundDeliveryRejected,
 	reconcileStaleInboundDeliveries,
 	releaseInboundDeliveryStorage,
@@ -128,11 +129,15 @@ async function cleanupInboundDurability(input: {
 }
 
 function unreadableRawDeliveryFingerprint(message: ForwardableEmailMessage) {
+	const headers = Array.from(message.headers.entries()).sort(
+		([left], [right]) => left.localeCompare(right),
+	)
 	return JSON.stringify({
 		from: message.from,
 		to: message.to,
 		rawSize: message.rawSize,
-		headers: Object.fromEntries(message.headers.entries()),
+		messageId: message.headers.get('message-id')?.trim() ?? null,
+		headers,
 	})
 }
 
@@ -346,12 +351,25 @@ export async function handleInboundEmail(
 		recipient,
 		rawMime: rawMime ?? unreadableRawDeliveryFingerprint(message),
 		quotaDay: userInboundQuotaDay(quotaNow),
+		now: quotaNow,
 	})
-	const existingDelivery = await getInboundDelivery({
-		db: env.APP_DB,
-		userId,
-		deliveryId: delivery.deliveryId,
-	})
+	const existingDelivery =
+		(await getActiveInboundDelivery({
+			db: env.APP_DB,
+			userId,
+			fingerprint: delivery.fingerprint,
+			now: quotaNow,
+		})) ??
+		(rawMime
+			? await adoptLegacyInboundDelivery({
+					db: env.APP_DB,
+					blobs: env.EMAIL_BLOBS,
+					delivery,
+					rawMime,
+					rawSize: message.rawSize,
+					now: quotaNow,
+				})
+			: null)
 	if (!existingDelivery) {
 		try {
 			// New deliveries check the stored cap before their durable quota
@@ -452,6 +470,7 @@ export async function handleInboundEmail(
 	const storageClaim = await claimInboundDeliveryStorage({
 		db: env.APP_DB,
 		delivery: claimedDelivery,
+		expectedAttachmentCount: parsed.attachments.length,
 	})
 	if (!storageClaim.claimed) {
 		if (storageClaim.delivery?.state === 'received') return
@@ -568,12 +587,25 @@ async function handleSystemInboundEmail(input: {
 		recipient: input.recipient,
 		rawMime: rawMime ?? unreadableRawDeliveryFingerprint(input.message),
 		quotaDay: systemInboundQuotaDay(quotaNow),
+		now: quotaNow,
 	})
-	const existingDelivery = await getInboundDelivery({
-		db: input.env.APP_DB,
-		userId: systemEmailOwnerId,
-		deliveryId: delivery.deliveryId,
-	})
+	const existingDelivery =
+		(await getActiveInboundDelivery({
+			db: input.env.APP_DB,
+			userId: systemEmailOwnerId,
+			fingerprint: delivery.fingerprint,
+			now: quotaNow,
+		})) ??
+		(rawMime
+			? await adoptLegacyInboundDelivery({
+					db: input.env.APP_DB,
+					blobs: input.env.EMAIL_BLOBS,
+					delivery,
+					rawMime,
+					rawSize: input.message.rawSize,
+					now: quotaNow,
+				})
+			: null)
 	if (!existingDelivery) {
 		const storedMessages = await countStoredSystemEmailMessages({
 			db: input.env.APP_DB,
@@ -661,6 +693,7 @@ async function handleSystemInboundEmail(input: {
 	const storageClaim = await claimInboundDeliveryStorage({
 		db: input.env.APP_DB,
 		delivery: claimedDelivery,
+		expectedAttachmentCount: parsed.attachments.length,
 	})
 	if (!storageClaim.claimed) {
 		if (storageClaim.delivery?.state === 'received') return
