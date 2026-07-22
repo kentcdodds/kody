@@ -1368,7 +1368,6 @@ export async function runJobNow(input: {
 	callerContext?: McpCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 }) {
-	await assertAccountWritable(input.env, input.userId)
 	const row = await getJobRowById(input.env.APP_DB, input.userId, input.jobId)
 	if (!row) {
 		throw new Error(`Job "${input.jobId}" was not found.`)

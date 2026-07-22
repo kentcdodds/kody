@@ -28,6 +28,7 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 	stripe_customer_id TEXT,
 	stripe_plan TEXT,
 	stripe_plan_refreshed_at TEXT,
+	deleting_at TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 )`,
@@ -42,6 +43,7 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 		'stripe_customer_id TEXT',
 		'stripe_plan TEXT',
 		'stripe_plan_refreshed_at TEXT',
+		'deleting_at TEXT',
 	]) {
 		try {
 			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()

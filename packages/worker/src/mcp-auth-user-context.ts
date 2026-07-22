@@ -104,6 +104,6 @@ export async function buildMcpUserContextFromGrantProps(
 		}
 	} catch (error) {
 		console.error('Failed to load roles for MCP user context:', error)
-		return null
+		throw error
 	}
 }

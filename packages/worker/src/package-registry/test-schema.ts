@@ -18,6 +18,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	stable_user_id TEXT NOT NULL,
 	account_type TEXT NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'platform')),
 	plan TEXT NOT NULL DEFAULT 'free',
+	deleting_at TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 )`,
@@ -28,6 +29,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 		'stable_user_id TEXT',
 		`account_type TEXT NOT NULL DEFAULT 'person'`,
 		`plan TEXT NOT NULL DEFAULT 'free'`,
+		'deleting_at TEXT',
 	]) {
 		try {
 			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()

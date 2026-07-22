@@ -189,7 +189,7 @@ test('buildMcpUserContextFromGrantProps resolves by stable id, refreshes profile
 			email: 'resilient@example.com',
 			displayName: 'resilient',
 		}),
-	).resolves.toBeNull()
+	).rejects.toThrow('D1 unavailable')
 	expect(consoleError).toHaveBeenCalled()
 	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledTimes(3)
 })

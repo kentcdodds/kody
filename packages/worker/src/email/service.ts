@@ -139,7 +139,9 @@ export async function insertEmailMessageWithRawMime(
 ) {
 	const { blobs, db, message } = input
 	const { rawMime, ...messageInput } = message
-	await assertAccountWritableDb(db, messageInput.userId)
+	if (messageInput.userId !== 'system:email') {
+		await assertAccountWritableDb(db, messageInput.userId)
+	}
 	const messageId = messageInput.id ?? crypto.randomUUID()
 	let rawMimeKey: string | null = null
 	if (rawMime != null) {
