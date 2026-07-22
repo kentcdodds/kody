@@ -221,6 +221,19 @@ export function HomeRoute(handle: Handle) {
 					prompts or your assistant&apos;s context. Every user is fully
 					isolated.
 				</p>
+
+				<p mix={css(openSourceLineCss)}>
+					Kody is{' '}
+					<a
+						href="https://github.com/kentcdodds/kody"
+						target="_blank"
+						rel="noreferrer noopener"
+						mix={css(openSourceLinkCss)}
+					>
+						open source
+					</a>
+					.
+				</p>
 			</section>
 		)
 	}
@@ -498,4 +511,15 @@ const trustLineCss = {
 	color: colors.textMuted,
 	fontSize: typography.fontSize.base,
 	lineHeight: 1.6,
+}
+
+const openSourceLineCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	lineHeight: 1.6,
+}
+
+const openSourceLinkCss = {
+	color: colors.primaryText,
 }
