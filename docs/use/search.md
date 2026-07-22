@@ -25,8 +25,8 @@ title, one-line summary, and entity reference when applicable. Capability hits
 include their **domain id** (for example `email`, `jobs`, `remote:home`) so a
 follow-up search can scope to that domain. The top few capability hits also
 include a compact inlined call shape (runtime accessor plus a
-whitespace-collapsed input type, truncated when long) so you can often call
-from **execute** without an immediate entity round trip.
+whitespace-collapsed input type, truncated when long) so you can often call from
+**execute** without an immediate entity round trip.
 
 ### Broad queries return domain overviews
 
@@ -43,18 +43,18 @@ returning ranked capability, package, value, integration, and secret hits.
 
 Pass optional **`domain`** with a capability domain id:
 
-- **With `query`** — ranks only that domain's capabilities. User-owned
-  entities (packages, values, integrations, secrets, retriever results) are
-  excluded because they have no domain.
+- **With `query`** — ranks only that domain's capabilities. User-owned entities
+  (packages, values, integrations, secrets, retriever results) are excluded
+  because they have no domain.
 - **Without `query`** — lists the domain's capabilities in curated registry
-  order (with inlined call shapes for the top hits), which completes the
-  two-hop browse flow: broad query → domain overview → domain listing.
+  order (with inlined call shapes for the top hits), which completes the two-hop
+  browse flow: broad query → domain overview → domain listing.
 
 Domain ids cover builtin domains (`email`, `jobs`, `packages`, ...) plus
 synthesized ones for remote connectors (`remote:home`), connected MCP servers
-(`mcp:linear`), and OpenAPI bindings (`openapi:canva`). An unknown id returns
-an error listing the available domains. The `search` meta capability (usable
-inside **execute**) accepts the same `domain` argument alongside `query`.
+(`mcp:linear`), and OpenAPI bindings (`openapi:canva`). An unknown id returns an
+error listing the available domains. The `search` meta capability (usable inside
+**execute**) accepts the same `domain` argument alongside `query`.
 
 An entire saved-package UUID or `kody.id` is treated as an exact package
 identity when it resolves for the signed-in user. Kody also recognizes

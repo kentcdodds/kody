@@ -617,11 +617,17 @@ function formatOneLineSummary(value: string, maxLength = 180) {
 	return `${summary.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`
 }
 
-function formatOneLineSentence(value: string) {
-	const summary = formatOneLineSummary(value)
+function formatOneLineSentence(value: string, maxLength?: number) {
+	const summary = formatOneLineSummary(value, maxLength)
 	if (!summary) return 'No description.'
 	return /[.!?]$/.test(summary) ? summary : `${summary}.`
 }
+
+/**
+ * Domain overview lines stay shorter than regular hits so a full all-domain
+ * map fits inside the default `maxResponseSize` without trimming.
+ */
+const domainOverviewDescriptionMaxLength = 110
 
 function formatPackageSchedule(
 	schedule: PackageJobSchedule,
@@ -719,7 +725,7 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 						.map((name) => formatMarkdownInlineCode(name))
 						.join(', ')}.`
 				: ''
-		return `${String(index + 1)}. **domain** ${formatMarkdownInlineCode(match.name)} (${String(match.capabilityCount)} ${match.capabilityCount === 1 ? 'capability' : 'capabilities'}) — ${escapeMarkdownText(formatOneLineSentence(match.description))}${sample}`
+		return `${String(index + 1)}. **domain** ${formatMarkdownInlineCode(match.name)} (${String(match.capabilityCount)} ${match.capabilityCount === 1 ? 'capability' : 'capabilities'}) — ${escapeMarkdownText(formatOneLineSentence(match.description, domainOverviewDescriptionMaxLength))}${sample}`
 	}
 	if (match.type === 'capability') {
 		const entityRef = buildEntityRef(match.name, 'capability')

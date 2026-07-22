@@ -2072,9 +2072,9 @@ test('searchUnified answers broad exploratory queries with a domain overview', a
 		registry,
 		optionalRows: emptyOptionalSearchRows,
 	})
-	expect(
-		taskQuery.matches.every((match) => match.type === 'capability'),
-	).toBe(true)
+	expect(taskQuery.matches.every((match) => match.type === 'capability')).toBe(
+		true,
+	)
 	expect(
 		taskQuery.matches.some(
 			(match) => match.type === 'capability' && match.name === 'email_send',

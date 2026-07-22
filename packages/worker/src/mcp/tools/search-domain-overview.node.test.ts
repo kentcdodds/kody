@@ -51,7 +51,11 @@ test('broad domain-oriented queries return a summary for the named domain', () =
 			title: 'email',
 			description: 'Email primitives for the per-user inbox.',
 			capabilityCount: 4,
-			sampleCapabilities: ['email_send', 'email_message_list', 'email_message_get'],
+			sampleCapabilities: [
+				'email_send',
+				'email_message_list',
+				'email_message_get',
+			],
 		},
 	])
 	expect(overviewFor('email')).toEqual([
