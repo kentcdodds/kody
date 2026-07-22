@@ -279,26 +279,6 @@ export async function storeIdempotentInboundEmail(input: {
 	now: string
 }) {
 	const { delivery, parsed } = input
-	let thread = await findEmailThreadForInboundMessage({
-		db: input.db,
-		userId: delivery.userId,
-		inboxId: delivery.inboxId,
-		references: parsed.references,
-		inReplyToHeader: parsed.inReplyTo,
-	})
-	if (!thread) {
-		thread = await createEmailThread({
-			db: input.db,
-			id: delivery.threadId,
-			userId: delivery.userId,
-			inboxId: delivery.inboxId,
-			subjectNormalized: input.subjectNormalized,
-			rootMessageIdHeader: parsed.messageId,
-			lastMessageAt: input.now,
-			ignoreConflict: true,
-		})
-	}
-
 	await putRawMimeToBlobs({
 		blobs: input.blobs,
 		userId: delivery.userId,
@@ -312,6 +292,25 @@ export async function storeIdempotentInboundEmail(input: {
 		messageId: delivery.messageId,
 	})
 	if (!stored) {
+		let thread = await findEmailThreadForInboundMessage({
+			db: input.db,
+			userId: delivery.userId,
+			inboxId: delivery.inboxId,
+			references: parsed.references,
+			inReplyToHeader: parsed.inReplyTo,
+		})
+		if (!thread) {
+			thread = await createEmailThread({
+				db: input.db,
+				id: delivery.threadId,
+				userId: delivery.userId,
+				inboxId: delivery.inboxId,
+				subjectNormalized: input.subjectNormalized,
+				rootMessageIdHeader: parsed.messageId,
+				lastMessageAt: input.now,
+				ignoreConflict: true,
+			})
+		}
 		try {
 			stored = await insertEmailMessage({
 				db: input.db,
@@ -384,11 +383,13 @@ export async function storeIdempotentInboundEmail(input: {
 	}
 
 	try {
-		await touchEmailThread({
-			db: input.db,
-			threadId: thread.id,
-			lastMessageAt: input.now,
-		})
+		if (stored.threadId) {
+			await touchEmailThread({
+				db: input.db,
+				threadId: stored.threadId,
+				lastMessageAt: input.now,
+			})
+		}
 		await markInboundDeliveryReceived({ db: input.db, delivery })
 	} catch (error) {
 		console.error(

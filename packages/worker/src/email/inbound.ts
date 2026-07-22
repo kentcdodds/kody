@@ -24,10 +24,13 @@ import {
 } from './parser.ts'
 import {
 	buildInboundDelivery,
+	claimInboundDeliveryStorage,
 	chargeSystemInboundDeliveryOnce,
 	chargeUserInboundDeliveryOnce,
+	getInboundDelivery,
 	markInboundDeliveryRejected,
 	reconcileStaleInboundDeliveries,
+	releaseInboundDeliveryStorage,
 	systemInboundQuotaDay,
 	type InboundDelivery,
 	userInboundQuotaDay,
@@ -302,16 +305,6 @@ export async function handleInboundEmail(
 			email: account.email,
 			requested: estimateInboundEmailStorageBytes({ message, recipient }),
 		})
-		// Check-then-insert: a concurrent burst can overshoot the stored cap
-		// by a few rows, which is the documented row-count-limit trade-off
-		// (see entitlements.md "Concurrency") — this is a denial-of-wallet
-		// backstop, not billing-grade accounting.
-		await assertWithinEntitlement({
-			db: env.APP_DB,
-			userId,
-			email: account.email,
-			resource: 'stored_email_messages',
-		})
 	} catch (error) {
 		if (!isEntitlementLimitError(error)) throw error
 		// The SMTP reject reason goes to the arbitrary sender; keep it
@@ -354,15 +347,51 @@ export async function handleInboundEmail(
 		rawMime: rawMime ?? unreadableRawDeliveryFingerprint(message),
 		quotaDay: userInboundQuotaDay(quotaNow),
 	})
+	const existingDelivery = await getInboundDelivery({
+		db: env.APP_DB,
+		userId,
+		deliveryId: delivery.deliveryId,
+	})
+	if (!existingDelivery) {
+		try {
+			// New deliveries check the stored cap before their durable quota
+			// claim. A retry with an existing ledger bypasses this gate so a
+			// mailbox that filled meanwhile can still repair its claimed mail.
+			await assertWithinEntitlement({
+				db: env.APP_DB,
+				userId,
+				email: account.email,
+				resource: 'stored_email_messages',
+			})
+		} catch (error) {
+			if (!isEntitlementLimitError(error)) throw error
+			message.setReject('Recipient mailbox is over quota.')
+			await recordBoundedEmailRejectionEvent({
+				db: env.APP_DB,
+				userId,
+				inboxId: inbox.id,
+				recipient,
+				reason: error.message,
+				phase: 'entitlement',
+			}).catch(warnRejectionAuditWriteFailed)
+			await recordReceiveUsage({ outcome: 'error' })
+			return
+		}
+	}
 	let claimedDelivery: InboundDelivery
 	try {
-		claimedDelivery = await chargeUserInboundDeliveryOnce({
-			db: env.APP_DB,
-			delivery,
-			plan: account.plan,
-			limit: resolveEmailResourceLimit(account.plan, 'email_receives_per_day'),
-			now: quotaNow,
-		})
+		claimedDelivery =
+			existingDelivery ??
+			(await chargeUserInboundDeliveryOnce({
+				db: env.APP_DB,
+				delivery,
+				plan: account.plan,
+				limit: resolveEmailResourceLimit(
+					account.plan,
+					'email_receives_per_day',
+				),
+				now: quotaNow,
+			}))
 	} catch (error) {
 		if (!isEntitlementLimitError(error)) throw error
 		message.setReject('Recipient mailbox is over quota.')
@@ -420,12 +449,37 @@ export async function handleInboundEmail(
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
-	const stored = await parseAndStoreInboundEmail({
+	const storageClaim = await claimInboundDeliveryStorage({
 		db: env.APP_DB,
-		blobs: env.EMAIL_BLOBS,
 		delivery: claimedDelivery,
-		parsed,
 	})
+	if (!storageClaim.claimed) {
+		if (storageClaim.delivery?.state === 'received') return
+		throw new RetryableInboundStorageError(
+			'Inbound delivery is already being stored; retry the stable delivery.',
+		)
+	}
+	let stored
+	try {
+		stored = await parseAndStoreInboundEmail({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			delivery: storageClaim.delivery,
+			parsed,
+		})
+	} catch (error) {
+		await releaseInboundDeliveryStorage({
+			db: env.APP_DB,
+			delivery: storageClaim.delivery,
+		}).catch((releaseError) => {
+			console.error(
+				'inbound-email-storage-lease-release-failed',
+				storageClaim.delivery.deliveryId,
+				releaseError,
+			)
+		})
+		throw error
+	}
 	await recordReceiveUsage({ entityId: stored.id, outcome: 'success' })
 	const dispatchPromise = dispatchInboundEmailSubscriptionEvents({
 		env,
@@ -495,23 +549,6 @@ async function handleSystemInboundEmail(input: {
 		return
 	}
 
-	const storedMessages = await countStoredSystemEmailMessages({
-		db: input.env.APP_DB,
-	})
-	if (storedMessages >= systemEmailLimits.maxStoredMessages) {
-		input.message.setReject('Recipient mailbox is over quota.')
-		await recordBoundedEmailRejectionEvent({
-			db: input.env.APP_DB,
-			userId: systemEmailOwnerId,
-			inboxId: inbox.id,
-			recipient: input.recipient,
-			reason: `System inbox stored-message cap ${systemEmailLimits.maxStoredMessages} reached.`,
-			phase: 'system-limit',
-		}).catch(warnRejectionAuditWriteFailed)
-		await recordReceiveUsage({ outcome: 'error' })
-		return
-	}
-
 	await cleanupInboundDurability({
 		db: input.env.APP_DB,
 		blobs: input.env.EMAIL_BLOBS,
@@ -532,13 +569,38 @@ async function handleSystemInboundEmail(input: {
 		rawMime: rawMime ?? unreadableRawDeliveryFingerprint(input.message),
 		quotaDay: systemInboundQuotaDay(quotaNow),
 	})
-	const claim = await chargeSystemInboundDeliveryOnce({
+	const existingDelivery = await getInboundDelivery({
 		db: input.env.APP_DB,
-		delivery,
-		localPart: input.localPart,
-		limit: systemEmailLimits.maxReceivesPerDay,
-		now: quotaNow,
+		userId: systemEmailOwnerId,
+		deliveryId: delivery.deliveryId,
 	})
+	if (!existingDelivery) {
+		const storedMessages = await countStoredSystemEmailMessages({
+			db: input.env.APP_DB,
+		})
+		if (storedMessages >= systemEmailLimits.maxStoredMessages) {
+			input.message.setReject('Recipient mailbox is over quota.')
+			await recordBoundedEmailRejectionEvent({
+				db: input.env.APP_DB,
+				userId: systemEmailOwnerId,
+				inboxId: inbox.id,
+				recipient: input.recipient,
+				reason: `System inbox stored-message cap ${systemEmailLimits.maxStoredMessages} reached.`,
+				phase: 'system-limit',
+			}).catch(warnRejectionAuditWriteFailed)
+			await recordReceiveUsage({ outcome: 'error' })
+			return
+		}
+	}
+	const claim = existingDelivery
+		? { delivery: existingDelivery, overLimit: false as const }
+		: await chargeSystemInboundDeliveryOnce({
+				db: input.env.APP_DB,
+				delivery,
+				localPart: input.localPart,
+				limit: systemEmailLimits.maxReceivesPerDay,
+				now: quotaNow,
+			})
 	if (claim.overLimit || !claim.delivery) {
 		input.message.setReject('Recipient mailbox is over quota.')
 		await recordBoundedEmailRejectionEvent({
@@ -596,12 +658,37 @@ async function handleSystemInboundEmail(input: {
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
-	const stored = await parseAndStoreInboundEmail({
+	const storageClaim = await claimInboundDeliveryStorage({
 		db: input.env.APP_DB,
-		blobs: input.env.EMAIL_BLOBS,
 		delivery: claimedDelivery,
-		parsed,
 	})
+	if (!storageClaim.claimed) {
+		if (storageClaim.delivery?.state === 'received') return
+		throw new RetryableInboundStorageError(
+			'Inbound delivery is already being stored; retry the stable delivery.',
+		)
+	}
+	let stored
+	try {
+		stored = await parseAndStoreInboundEmail({
+			db: input.env.APP_DB,
+			blobs: input.env.EMAIL_BLOBS,
+			delivery: storageClaim.delivery,
+			parsed,
+		})
+	} catch (error) {
+		await releaseInboundDeliveryStorage({
+			db: input.env.APP_DB,
+			delivery: storageClaim.delivery,
+		}).catch((releaseError) => {
+			console.error(
+				'inbound-email-storage-lease-release-failed',
+				storageClaim.delivery.deliveryId,
+				releaseError,
+			)
+		})
+		throw error
+	}
 	await recordReceiveUsage({ entityId: stored.id, outcome: 'success' })
 	// System mail fans out to packages saved by admin users on the dedicated
 	// email.system-message.received topic (never to the synthetic system

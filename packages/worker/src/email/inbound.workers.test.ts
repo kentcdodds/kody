@@ -923,12 +923,90 @@ test('inbound R2/D1 failures and retries reuse one quota charge, row, thread, an
 			limit: 10,
 		}),
 	).toHaveLength(1)
+	const [stored] = await listEmailMessages({
+		db: env.APP_DB,
+		userId,
+		limit: 10,
+	})
+	expect(stored?.rawMimeKey).toBe(emailRawMimeKey(userId, stored!.id))
+	expect(await (await env.EMAIL_BLOBS.get(stored!.rawMimeKey!))?.text()).toBe(
+		raw,
+	)
+	const blobs = await env.EMAIL_BLOBS.list({
+		prefix: `email-raw:v1:${userId}/`,
+	})
+	expect(blobs.objects.map((object) => object.key)).toEqual([
+		stored!.rawMimeKey,
+	])
 	const threadCount = await env.APP_DB.prepare(
 		`SELECT COUNT(*) AS count FROM email_threads WHERE user_id = ?`,
 	)
 		.bind(userId)
 		.first<{ count: number }>()
 	expect(Number(threadCount?.count ?? 0)).toBe(1)
+})
+
+test('ambiguous quota-ledger batch response charges one delivery exactly once', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `quota-ambiguous-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `quota-ambiguous-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	let batchResponseFailed = false
+	const ambiguousDb = new Proxy(env.APP_DB, {
+		get(target, property, receiver) {
+			if (property === 'batch') {
+				return async (statements: Parameters<D1Database['batch']>[0]) => {
+					const result = await target.batch(statements)
+					if (!batchResponseFailed) {
+						batchResponseFailed = true
+						throw new Error('simulated quota batch response loss')
+					}
+					return result
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	}) as D1Database
+	const raw = [
+		'From: Sender <sender@example.net>',
+		`To: ${address}`,
+		'Subject: Ambiguous quota claim',
+		'Message-ID: <ambiguous-quota@example.net>',
+		'',
+		'Body',
+	].join('\r\n')
+	const message = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw,
+	})
+
+	await handleInboundEmail(message, {
+		...createInboundEnv(),
+		APP_DB: ambiguousDb,
+	})
+	const retry = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw,
+	})
+	await handleInboundEmail(retry, createInboundEnv())
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 10,
+		}),
+	).toHaveLength(1)
 })
 
 test('inbound post-commit bookkeeping failure keeps one stored row without refund or retry throw', async () => {

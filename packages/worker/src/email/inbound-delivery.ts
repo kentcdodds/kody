@@ -4,13 +4,14 @@ import {
 	EntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
 import { type PlanName } from '#worker/entitlements/plans.ts'
-import { emailRawMimeKey, getEmailMessageById } from './repo.ts'
+import { emailRawMimeKey } from './repo.ts'
 import { systemEmailDayKey, type SystemEmailLocal } from './system-email.ts'
 import { type EmailDeliveryEventType } from './types.ts'
 
 const inboundProvider = 'cloudflare-email-routing'
 const staleInboundDeliveryAgeMs = 48 * 60 * 60 * 1000
 const staleInboundDeliveryBatchSize = 20
+const inboundStorageLeaseMs = 5 * 60 * 1000
 
 export type InboundDelivery = {
 	deliveryId: string
@@ -21,8 +22,16 @@ export type InboundDelivery = {
 	inboxId: string
 	recipient: string
 	quotaDay: string
-	state: 'pending' | 'received' | 'rejected' | 'orphan-cleaned'
+	state:
+		| 'pending'
+		| 'storing'
+		| 'cleaning'
+		| 'received'
+		| 'rejected'
+		| 'orphan-cleaned'
 	rejectionReason?: string
+	storageLease?: string
+	storageLeaseAt?: string
 }
 
 type InboundDeliveryEventRow = {
@@ -90,6 +99,8 @@ function parseInboundDelivery(
 			return null
 		}
 		const state =
+			detail.state === 'storing' ||
+			detail.state === 'cleaning' ||
 			detail.state === 'received' ||
 			detail.state === 'rejected' ||
 			detail.state === 'orphan-cleaned'
@@ -107,6 +118,12 @@ function parseInboundDelivery(
 			state,
 			...(typeof detail.rejectionReason === 'string'
 				? { rejectionReason: detail.rejectionReason }
+				: {}),
+			...(typeof detail.storageLease === 'string'
+				? { storageLease: detail.storageLease }
+				: {}),
+			...(typeof detail.storageLeaseAt === 'string'
+				? { storageLeaseAt: detail.storageLeaseAt }
 				: {}),
 		}
 	} catch {
@@ -369,11 +386,101 @@ export async function markInboundDeliveryRejected(input: {
 	return detail
 }
 
+export async function claimInboundDeliveryStorage(input: {
+	db: D1Database
+	delivery: InboundDelivery
+}) {
+	const storageLease = crypto.randomUUID()
+	const storageLeaseAt = new Date().toISOString()
+	const expiredBefore = new Date(
+		Date.now() - inboundStorageLeaseMs,
+	).toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE email_delivery_events
+			SET detail_json = json_set(
+				detail_json,
+				'$.state', 'storing',
+				'$.storageLease', ?,
+				'$.storageLeaseAt', ?
+			)
+			WHERE id = ?
+				AND user_id = ?
+				AND (
+					json_extract(detail_json, '$.state') IN ('pending', 'orphan-cleaned')
+					OR (
+						json_extract(detail_json, '$.state') = 'storing'
+						AND json_extract(detail_json, '$.storageLeaseAt') < ?
+					)
+				)`,
+		)
+		.bind(
+			storageLease,
+			storageLeaseAt,
+			input.delivery.deliveryId,
+			input.delivery.userId,
+			expiredBefore,
+		)
+		.run()
+	if (Number(result.meta.changes ?? 0) > 0) {
+		return {
+			claimed: true as const,
+			delivery: {
+				...input.delivery,
+				state: 'storing' as const,
+				storageLease,
+				storageLeaseAt,
+			},
+		}
+	}
+	return {
+		claimed: false as const,
+		delivery: await getInboundDelivery({
+			db: input.db,
+			userId: input.delivery.userId,
+			deliveryId: input.delivery.deliveryId,
+		}),
+	}
+}
+
+export async function releaseInboundDeliveryStorage(input: {
+	db: D1Database
+	delivery: InboundDelivery
+}) {
+	if (!input.delivery.storageLease) return
+	await input.db
+		.prepare(
+			`UPDATE email_delivery_events
+			SET detail_json = json_remove(
+				json_remove(
+					json_set(detail_json, '$.state', 'pending'),
+					'$.storageLease'
+				),
+				'$.storageLeaseAt'
+			)
+			WHERE id = ?
+				AND user_id = ?
+				AND json_extract(detail_json, '$.state') = 'storing'
+				AND json_extract(detail_json, '$.storageLease') = ?`,
+		)
+		.bind(
+			input.delivery.deliveryId,
+			input.delivery.userId,
+			input.delivery.storageLease,
+		)
+		.run()
+}
+
 export async function markInboundDeliveryReceived(input: {
 	db: D1Database
 	delivery: InboundDelivery
 }) {
-	const detail = { ...input.delivery, state: 'received' as const }
+	const detail: InboundDelivery = {
+		...input.delivery,
+		state: 'received',
+	}
+	delete detail.storageLease
+	delete detail.storageLeaseAt
 	await input.db
 		.prepare(
 			`UPDATE email_delivery_events
@@ -408,27 +515,55 @@ export async function reconcileStaleInboundDeliveries(input: {
 				AND provider = ?
 				AND event_type = 'receive_started'
 				AND created_at < ?
-				AND json_extract(detail_json, '$.state') = 'pending'
+				AND (
+					json_extract(detail_json, '$.state') = 'pending'
+					OR (
+						json_extract(detail_json, '$.state') = 'storing'
+						AND json_extract(detail_json, '$.storageLeaseAt') < ?
+					)
+				)
 			ORDER BY created_at ASC, id ASC
 			LIMIT ?`,
 		)
-		.bind(input.userId, inboundProvider, cutoff, staleInboundDeliveryBatchSize)
+		.bind(
+			input.userId,
+			inboundProvider,
+			cutoff,
+			cutoff,
+			staleInboundDeliveryBatchSize,
+		)
 		.all<InboundDeliveryEventRow>()
-	let recovered = 0
 	let cleaned = 0
 	for (const row of rows.results ?? []) {
 		const delivery = parseInboundDelivery(row)
 		if (!delivery || delivery.userId !== input.userId) continue
-		const message = await getEmailMessageById({
-			db: input.db,
-			userId: input.userId,
-			messageId: delivery.messageId,
-		})
-		if (message) {
-			await markInboundDeliveryReceived({ db: input.db, delivery })
-			recovered += 1
-			continue
-		}
+		const claim = await input.db
+			.prepare(
+				`UPDATE email_delivery_events
+				SET detail_json = json_set(detail_json, '$.state', 'cleaning')
+				WHERE id = ?
+					AND user_id = ?
+					AND (
+						json_extract(detail_json, '$.state') = 'pending'
+						OR (
+							json_extract(detail_json, '$.state') = 'storing'
+							AND json_extract(detail_json, '$.storageLeaseAt') < ?
+						)
+					)
+					AND NOT EXISTS (
+						SELECT 1 FROM email_messages
+						WHERE id = ? AND user_id = ?
+					)`,
+			)
+			.bind(
+				delivery.deliveryId,
+				input.userId,
+				delivery.messageId,
+				input.userId,
+				cutoff,
+			)
+			.run()
+		if (Number(claim.meta.changes ?? 0) === 0) continue
 		try {
 			await input.blobs.delete(delivery.rawMimeKey)
 		} catch (error) {
@@ -437,19 +572,31 @@ export async function reconcileStaleInboundDeliveries(input: {
 				delivery.rawMimeKey,
 				error,
 			)
+			await input.db
+				.prepare(
+					`UPDATE email_delivery_events
+					SET detail_json = json_set(detail_json, '$.state', 'pending')
+					WHERE id = ?
+						AND user_id = ?
+						AND json_extract(detail_json, '$.state') = 'cleaning'`,
+				)
+				.bind(delivery.deliveryId, input.userId)
+				.run()
 			continue
 		}
 		await input.db
 			.prepare(
 				`UPDATE email_delivery_events
 				SET detail_json = json_set(detail_json, '$.state', 'orphan-cleaned')
-				WHERE id = ? AND user_id = ?`,
+				WHERE id = ?
+					AND user_id = ?
+					AND json_extract(detail_json, '$.state') = 'cleaning'`,
 			)
 			.bind(delivery.deliveryId, input.userId)
 			.run()
 		cleaned += 1
 	}
-	return { recovered, cleaned }
+	return { recovered: 0, cleaned }
 }
 
 export function userInboundQuotaDay(now: Date) {
