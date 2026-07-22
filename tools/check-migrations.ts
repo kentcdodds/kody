@@ -1,4 +1,5 @@
-import { readdir } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { isExecutedDirectly } from './node-runtime.ts'
 
@@ -7,6 +8,12 @@ export const defaultMigrationsDir = path.join(
 	'worker',
 	'migrations',
 )
+export const defaultMigrationLedgerPath = path.join(
+	'tools',
+	'migration-ledger.json',
+)
+export const expectedMigrationBaselineSha256 =
+	'33a6aadea996e639d158229a1322f00164a157e2ef8aa43c9abcd5bf22c59c3a'
 
 /**
  * Exact grandfathered duplicate-prefix pairs. Applied D1 migrations cannot be
@@ -49,6 +56,19 @@ export type MigrationFilenameCheckResult = {
 	maxPrefix: number
 }
 
+export type MigrationLedgerEntry = {
+	filename: string
+	sha256: string
+}
+
+export type MigrationLedger = {
+	version: 1
+	baselineCount: number
+	baselineMaximumPrefix: number
+	baselineSha256: string
+	migrations: Array<MigrationLedgerEntry>
+}
+
 export function parseMigrationFilename(
 	filename: string,
 ): ParsedMigrationFilename | null {
@@ -69,12 +89,11 @@ export function getMaxMigrationPrefix(
 ): number {
 	let maxPrefix = 0
 	for (const filename of filenames) {
-		const match = /^(?<prefix>\d{4})/.exec(filename)
-		const prefix = match?.groups?.prefix
-		if (!prefix) {
+		const parsed = parseMigrationFilename(filename)
+		if (!parsed) {
 			continue
 		}
-		maxPrefix = Math.max(maxPrefix, Number(prefix))
+		maxPrefix = Math.max(maxPrefix, Number(parsed.prefix))
 	}
 	return maxPrefix
 }
@@ -160,11 +179,161 @@ export function checkMigrationFilenames(
 	}
 }
 
+function sha256(value: string | Uint8Array): string {
+	return createHash('sha256').update(value).digest('hex')
+}
+
+function getBaselineSha256(
+	entries: ReadonlyArray<MigrationLedgerEntry>,
+): string {
+	return sha256(JSON.stringify(entries))
+}
+
+function isMigrationLedger(value: unknown): value is MigrationLedger {
+	if (!value || typeof value !== 'object') {
+		return false
+	}
+	const candidate = value as Partial<MigrationLedger>
+	return (
+		candidate.version === 1 &&
+		Number.isInteger(candidate.baselineCount) &&
+		Number.isInteger(candidate.baselineMaximumPrefix) &&
+		typeof candidate.baselineSha256 === 'string' &&
+		Array.isArray(candidate.migrations) &&
+		candidate.migrations.every(
+			(entry) =>
+				entry !== null &&
+				typeof entry === 'object' &&
+				typeof entry.filename === 'string' &&
+				typeof entry.sha256 === 'string' &&
+				/^[a-f0-9]{64}$/.test(entry.sha256),
+		)
+	)
+}
+
+export function checkMigrationLedger(
+	files: ReadonlyArray<MigrationLedgerEntry>,
+	ledger: MigrationLedger,
+): MigrationFilenameCheckResult {
+	const filenames = files.map(({ filename }) => filename)
+	const filenameResult = checkMigrationFilenames(filenames)
+	const errors = [...filenameResult.errors]
+	const ledgerFilenames = ledger.migrations.map(({ filename }) => filename)
+	const ledgerFilenameResult = checkMigrationFilenames(ledgerFilenames)
+
+	if (ledger.baselineSha256 !== expectedMigrationBaselineSha256) {
+		errors.push(
+			`Migration ledger baseline digest changed. Baseline migrations are immutable; expected ${expectedMigrationBaselineSha256}.`,
+		)
+	}
+
+	if (ledger.migrations.length < ledger.baselineCount) {
+		errors.push(
+			`Migration ledger contains ${String(ledger.migrations.length)} entries but its frozen baseline requires ${String(ledger.baselineCount)}.`,
+		)
+	} else {
+		const baselineEntries = ledger.migrations.slice(0, ledger.baselineCount)
+		const actualBaselineSha256 = getBaselineSha256(baselineEntries)
+		if (actualBaselineSha256 !== ledger.baselineSha256) {
+			errors.push(
+				`Migration ledger baseline entries changed (expected digest ${ledger.baselineSha256}, received ${actualBaselineSha256}). Baseline entries cannot be edited, reordered, renamed, or deleted.`,
+			)
+		}
+		const actualBaselineMaximum = getMaxMigrationPrefix(
+			baselineEntries.map(({ filename }) => filename),
+		)
+		if (actualBaselineMaximum !== ledger.baselineMaximumPrefix) {
+			errors.push(
+				`Migration ledger baseline maximum is ${String(actualBaselineMaximum)}, not the recorded ${String(ledger.baselineMaximumPrefix)}.`,
+			)
+		}
+	}
+
+	if (!ledgerFilenameResult.ok) {
+		errors.push(
+			...ledgerFilenameResult.errors.map((error) => `Ledger: ${error}`),
+		)
+	}
+
+	const sortedLedgerFilenames = [...ledgerFilenames].sort()
+	if (
+		sortedLedgerFilenames.some(
+			(filename, index) => filename !== ledgerFilenames[index],
+		)
+	) {
+		errors.push(
+			'Migration ledger entries must remain in lexicographic filename order; append new migrations without reordering history.',
+		)
+	}
+
+	for (const entry of ledger.migrations.slice(ledger.baselineCount)) {
+		const parsed = parseMigrationFilename(entry.filename)
+		if (parsed && Number(parsed.prefix) <= ledger.baselineMaximumPrefix) {
+			errors.push(
+				`Migration "${entry.filename}" was added at or below frozen baseline maximum ${formatMigrationPrefix(ledger.baselineMaximumPrefix)}. Additions must use a higher prefix.`,
+			)
+		}
+	}
+
+	const filesByName = new Map(files.map((entry) => [entry.filename, entry]))
+	const ledgerByName = new Map(
+		ledger.migrations.map((entry) => [entry.filename, entry]),
+	)
+	for (const entry of ledger.migrations) {
+		const file = filesByName.get(entry.filename)
+		if (!file) {
+			errors.push(
+				`Ledgered migration "${entry.filename}" is missing. Applied migrations cannot be deleted or renamed.`,
+			)
+		} else if (file.sha256 !== entry.sha256) {
+			errors.push(
+				`Ledgered migration "${entry.filename}" was modified (expected sha256 ${entry.sha256}, received ${file.sha256}). Applied migrations are immutable.`,
+			)
+		}
+	}
+	for (const file of files) {
+		if (!ledgerByName.has(file.filename)) {
+			errors.push(
+				`Migration "${file.filename}" is not in ${defaultMigrationLedgerPath}. Append its filename and sha256 after choosing a prefix above the ledger maximum.`,
+			)
+		}
+	}
+
+	return {
+		...filenameResult,
+		ok: errors.length === 0,
+		errors,
+	}
+}
+
+export async function readMigrationLedger(
+	ledgerPath: string = defaultMigrationLedgerPath,
+): Promise<MigrationLedger> {
+	const parsed: unknown = JSON.parse(await readFile(ledgerPath, 'utf8'))
+	if (!isMigrationLedger(parsed)) {
+		throw new Error(`Invalid migration ledger structure in ${ledgerPath}.`)
+	}
+	return parsed
+}
+
 export async function checkMigrationsDirectory(
 	migrationsDir: string = defaultMigrationsDir,
+	ledgerPath: string = defaultMigrationLedgerPath,
 ): Promise<MigrationFilenameCheckResult> {
-	const filenames = await readdir(migrationsDir)
-	return checkMigrationFilenames(filenames)
+	const directoryEntries = await readdir(migrationsDir, {
+		withFileTypes: true,
+	})
+	const filenames = directoryEntries
+		.filter((entry) => entry.isFile())
+		.map(({ name }) => name)
+	const files = await Promise.all(
+		filenames.map(async (filename) => ({
+			filename,
+			sha256: sha256(await readFile(path.join(migrationsDir, filename))),
+		})),
+	)
+	const ledger = await readMigrationLedger(ledgerPath)
+	return checkMigrationLedger(files, ledger)
 }
 
 export async function main(
@@ -182,9 +351,9 @@ export async function main(
 		return
 	}
 
-	const filenames = await readdir(migrationsDir)
+	const fileCount = (await readdir(migrationsDir)).length
 	console.log(
-		`Migration filenames ok: ${String(filenames.length)} file(s) in ${migrationsDir} (next free prefix ${result.nextPrefix}).`,
+		`Migration ledger ok: ${String(fileCount)} file(s) in ${migrationsDir} (next free prefix ${result.nextPrefix}).`,
 	)
 }
 

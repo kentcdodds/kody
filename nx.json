@@ -20,7 +20,8 @@
 				"default",
 				"^default",
 				"{workspaceRoot}/vitest*.ts",
-				"{workspaceRoot}/tools/**/*"
+				"{workspaceRoot}/tools/**/*",
+				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
 			]
 		},
 		"test-mcp": {
@@ -29,7 +30,8 @@
 				"default",
 				"^default",
 				"{workspaceRoot}/vitest*.ts",
-				"{workspaceRoot}/tools/**/*"
+				"{workspaceRoot}/tools/**/*",
+				"{workspaceRoot}/wrangler-env.ts"
 			]
 		},
 		"prepare-e2e-env": {

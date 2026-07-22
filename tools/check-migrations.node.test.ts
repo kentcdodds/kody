@@ -2,11 +2,14 @@ import { expect, test } from 'vitest'
 import {
 	allowedHistoricalDuplicateMigrationFilenames,
 	checkMigrationFilenames,
+	checkMigrationLedger,
 	checkMigrationsDirectory,
 	formatMigrationPrefix,
 	getMaxMigrationPrefix,
 	getNextMigrationPrefix,
 	parseMigrationFilename,
+	readMigrationLedger,
+	type MigrationLedgerEntry,
 } from './check-migrations.ts'
 
 const historicalPair0009 = [
@@ -60,6 +63,9 @@ test('migration filename helpers parse, score prefixes, and accept unique plus g
 	expect(formatMigrationPrefix(76)).toBe('0076')
 	expect(formatMigrationPrefix(1)).toBe('0001')
 	expect(getNextMigrationPrefix([])).toBe('0001')
+	expect(
+		getNextMigrationPrefix([...filenamesWithGap, '9999-BadName.sql']),
+	).toBe('0076')
 
 	const withGap = checkMigrationFilenames(filenamesWithGap)
 	expect(withGap).toMatchObject({ ok: true, errors: [], nextPrefix: '0076' })
@@ -102,6 +108,86 @@ test('migration filename helpers parse, score prefixes, and accept unique plus g
 	expect(live.errors).toEqual([])
 	expect(live.nextPrefix).toBe(formatMigrationPrefix(live.maxPrefix + 1))
 	expect(live.nextPrefix).toMatch(/^\d{4}$/)
+})
+
+test('migration ledger rejects historical mutation and lower-prefix additions while accepting monotonic additions', async () => {
+	const ledger = await readMigrationLedger()
+	const baselineFiles = ledger.migrations.map((entry) => ({ ...entry }))
+
+	expect(checkMigrationLedger(baselineFiles, ledger)).toMatchObject({
+		ok: true,
+		errors: [],
+		nextPrefix: '0084',
+		maxPrefix: 83,
+	})
+
+	const modifiedFiles = baselineFiles.map((entry) =>
+		entry.filename === '0001-init.sql'
+			? { ...entry, sha256: '0'.repeat(64) }
+			: entry,
+	)
+	const modified = checkMigrationLedger(modifiedFiles, ledger)
+	expect(modified.ok).toBe(false)
+	expectErrorsMention(modified.errors, ['0001-init.sql', 'modified'])
+
+	const withoutHistoricalPairMember = baselineFiles.filter(
+		(entry) => entry.filename !== historicalPair0009[0],
+	)
+	const deleted = checkMigrationLedger(withoutHistoricalPairMember, ledger)
+	expect(deleted.ok).toBe(false)
+	expectErrorsMention(deleted.errors, [
+		historicalPair0009[0],
+		'missing',
+		'cannot be deleted or renamed',
+	])
+
+	const renamedFiles = baselineFiles.map((entry) =>
+		entry.filename === historicalPair0009[1]
+			? { ...entry, filename: '0009-renamed.sql' }
+			: entry,
+	)
+	const renamed = checkMigrationLedger(renamedFiles, ledger)
+	expect(renamed.ok).toBe(false)
+	expectErrorsMention(renamed.errors, [
+		historicalPair0009[1],
+		'missing',
+		'0009-renamed.sql',
+		'not in tools/migration-ledger.json',
+	])
+
+	const lowerAddition: MigrationLedgerEntry = {
+		filename: '0039-too-low.sql',
+		sha256: '1'.repeat(64),
+	}
+	const ledgerWithLowerAddition = structuredClone(ledger)
+	ledgerWithLowerAddition.migrations.push(lowerAddition)
+	const lower = checkMigrationLedger(
+		[...baselineFiles, lowerAddition],
+		ledgerWithLowerAddition,
+	)
+	expect(lower.ok).toBe(false)
+	expectErrorsMention(lower.errors, [
+		'0039-too-low.sql',
+		'at or below frozen baseline maximum 0083',
+	])
+
+	const monotonicAddition: MigrationLedgerEntry = {
+		filename: '0084-normal-addition.sql',
+		sha256: '2'.repeat(64),
+	}
+	const ledgerWithMonotonicAddition = structuredClone(ledger)
+	ledgerWithMonotonicAddition.migrations.push(monotonicAddition)
+	expect(
+		checkMigrationLedger(
+			[...baselineFiles, monotonicAddition],
+			ledgerWithMonotonicAddition,
+		),
+	).toMatchObject({
+		ok: true,
+		errors: [],
+		nextPrefix: '0085',
+		maxPrefix: 84,
+	})
 })
 
 test('checkMigrationFilenames rejects malformed names, ordinary duplicates, and non-allowlisted prefix reuse', () => {
