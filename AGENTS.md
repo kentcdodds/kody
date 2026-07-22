@@ -21,7 +21,8 @@ the same checks CI runs — in fact CI invokes `npm run validate` literally. If
 local `validate`, that is a bug in `validate` and should be filed.
 
 - `npm run validate` runs `format:check`, `lint`, `typecheck`, unit tests,
-  Playwright E2E, and MCP E2E in parallel and reports every failure (it does not
+  Playwright E2E, MCP E2E, and repository structure checks (`primitives:check`
+  and `migrations:check`) in parallel and reports every failure (it does not
   abort sibling checks on the first failure).
 - `npm run validate:fix` is the explicit opt-in for mutating auto-fixes
   (`format` + `lint:fix`). Running it is never required to pass `validate`.

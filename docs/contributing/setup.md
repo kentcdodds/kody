@@ -66,8 +66,9 @@ Quick notes for getting a local kody environment running.
 
 - `git commit` runs the Husky `pre-commit` hook, which formats staged
   JavaScript/TypeScript/JSON/Markdown/CSS files with `oxfmt`, applies
-  `oxlint --fix` to staged JavaScript/TypeScript files, and then runs
-  `npm run typecheck` for the repo before the commit is created.
+  `oxlint --fix` to staged JavaScript/TypeScript files, runs `npm run typecheck`
+  for the repo, and runs `npm run migrations:check` before the commit is
+  created.
 - `git push` runs the Husky `pre-push` hook, which executes `npm run test:push`
   so pushes are blocked when the worker Vitest suites or Playwright E2E suite
   fail.
@@ -80,9 +81,9 @@ Quick notes for getting a local kody environment running.
   the push gate.
 - `npm run validate` is the single authoritative gate and is what CI runs. It is
   read-only and executes `format:check`, `lint`, `typecheck`, unit tests,
-  Playwright E2E, and MCP E2E in parallel, reporting every failure (sibling
-  checks are not aborted on the first failure). If `npm run validate` passes
-  locally, CI will pass.
+  Playwright E2E, MCP E2E, `primitives:check`, and `migrations:check` in
+  parallel, reporting every failure (sibling checks are not aborted on the first
+  failure). If `npm run validate` passes locally, CI will pass.
 - `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
   for mutating auto-fixes. It is never required to pass `validate`.
 - `npm run format` applies formatting updates on its own.
@@ -106,23 +107,31 @@ Quick notes for getting a local kody environment running.
   lexicographic filename order by Wrangler (`npm run migrate:local`,
   `migrate:e2e`, and the documented `d1 migrations apply APP_DB --remote`
   invocations below).
-- Pick the next-highest 4-digit prefix as the filename: read the directory and
-  use `(max numeric prefix) + 1`, zero-padded to four digits (for example, if
-  the last file is `0036-...sql`, your new file is `0037-<slug>.sql`).
+- Name new files `NNNN-kebab-case-description.sql` (four-digit prefix, hyphen,
+  kebab-case slug). Pick the next prefix as `(max numeric prefix) + 1`,
+  zero-padded to four digits (for example, if the highest prefix is `0075`, use
+  `0076-my-change.sql`).
 - If your branch is behind `main` and a new migration has landed upstream with
   the prefix you picked, rebase and renumber your file to a new unused prefix.
-  Do not introduce new duplicate prefixes — the four pairs documented below are
-  grandfathered exceptions, not a precedent.
+  Do not introduce new duplicate prefixes.
 - Do not edit migration files that have already landed in `main` and been
   deployed. New migration files that only exist on your branch can be revised
   freely until they land in `main`; once deployed, any schema correction should
   ship as a new migration instead.
-- The directory contains four pairs of files that share a numeric prefix from
-  earlier parallel-branch merges (`0009`, `0010`, `0018`, `0023`). These are
-  intentionally left in place: D1 tracks applied migrations by exact filename,
-  all four pairs are additive (new tables/indexes only), and the alphabetical
-  apply order is stable. Treat them as grandfathered — do not rename them, and
-  do not add a third file to any of those prefixes.
+- `npm run migrations:check` (also run by `npm run validate` and the pre-commit
+  hook) enforces the naming rules above.
+- Seven historical duplicate prefixes are permanently accepted only for their
+  exact existing filename pairs — applied migrations cannot be renamed, and
+  Wrangler orders lexicographically. Do not rename these files or add a third
+  file to any of these prefixes:
+  - `0009-ui-artifact-parameters.sql` / `0009-secret-allowed-hosts.sql`
+  - `0010-value-buckets.sql` / `0010-secret-allowed-capabilities.sql`
+  - `0018-mcp-memory-source-uris.sql` / `0018-jobs.sql`
+  - `0023-secret-allowed-packages.sql` / `0023-entity-sources.sql`
+  - `0037-package-runtime-debug.sql` / `0037-drop-chat-threads.sql`
+  - `0053-two-factor-passkeys.sql` / `0053-mcp-server-settings.sql`
+  - `0073-community-forks-forked-package-index.sql` /
+    `0073-agent-package-conversation-uses.sql`
 
 ## Documentation maintenance
 

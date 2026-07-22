@@ -1,2 +1,3 @@
 npm exec lint-staged
 npm run typecheck
+npm run migrations:check
