@@ -7,18 +7,11 @@ import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 
 import {
-	buildCapabilityCandidates,
-	buildIntegrationCandidates,
-	buildPackageCandidates,
-	buildRetrieverResultCandidates,
-	buildSecretCandidates,
-	buildValueCandidates,
-	hydrateTopPackageMatches,
-} from './search-candidates.ts'
-import {
 	buildRecommendedNextStep,
 	buildSearchableEntityDescriptors,
 } from './search-descriptors.ts'
+import { searchEntityPlugins } from './search-entity-registry.ts'
+import { hydrateTopPackageMatches } from './search-entity-plugins/package.ts'
 import { type SearchMatch } from './search-format.ts'
 import { attachTopCapabilityCallShapes } from './search-related-capabilities.ts'
 import {
@@ -31,6 +24,7 @@ import {
 	type OptionalSearchRowsResult,
 	type PackageSearchRow,
 	type SearchCandidate,
+	type SearchPhaseTimings,
 	type SearchUnifiedResult,
 } from './search-types.ts'
 import { understandSearchQuery } from './understand-search-query.ts'
@@ -143,53 +137,47 @@ export async function searchUnified(input: {
 		: await embedTextForVectorize(input.env, intent.normalizedQuery)
 	const queryEmbeddingMs = elapsedMs(queryEmbeddingStart)
 
-	const capabilityCandidatesStart = performance.now()
-	const packageCandidatesStart = performance.now()
-	const [capabilityCandidates, packageCandidates] = await Promise.all([
-		buildCapabilityCandidates({
-			query: intent.normalizedQuery,
-			env: input.env,
-			registry: input.registry,
-			queryVector: sharedQueryVector,
-		}).then((candidates) => ({
-			candidates,
-			durationMs: elapsedMs(capabilityCandidatesStart),
-		})),
-		buildPackageCandidates({
-			env: input.env,
-			query: intent.normalizedQuery,
-			rows: input.optionalRows.packageRows,
-			queryEmbedding,
-			limit,
-			offline,
-			userId: input.userId,
-			queryVector: offline ? undefined : sharedQueryVector,
-		}).then((candidates) => ({
-			candidates,
-			durationMs: elapsedMs(packageCandidatesStart),
-		})),
-	])
-	const candidates = [
-		...capabilityCandidates.candidates,
-		...packageCandidates.candidates,
-		...buildValueCandidates({
-			query: intent.normalizedQuery,
-			rows: input.optionalRows.userValueRows,
+	const candidateResults = await Promise.all(
+		searchEntityPlugins.map(async (plugin) => {
+			const startedAt = performance.now()
+			const candidates = plugin.buildCandidates
+				? await plugin.buildCandidates({
+						env: input.env,
+						query: intent.normalizedQuery,
+						limit,
+						offline,
+						...(input.userId ? { userId: input.userId } : {}),
+						registry: input.registry,
+						optionalRows: input.optionalRows,
+						retrieverResults: input.retrieverResults ?? [],
+						queryEmbedding,
+						sharedQueryVector,
+					})
+				: []
+			return {
+				plugin,
+				candidates,
+				durationMs: elapsedMs(startedAt),
+			}
 		}),
-		...buildIntegrationCandidates({
-			query: intent.normalizedQuery,
-			rows: input.optionalRows.userValueRows,
-			queryEmbedding,
-		}),
-		...buildSecretCandidates({
-			query: intent.normalizedQuery,
-			rows: input.optionalRows.userSecretRows,
-		}),
-		...buildRetrieverResultCandidates({
-			query: intent.normalizedQuery,
-			results: input.retrieverResults ?? [],
-		}),
-	]
+	)
+	const candidates = candidateResults.flatMap((result) => result.candidates)
+	const candidateTimings: Pick<
+		SearchPhaseTimings,
+		'capabilityCandidatesMs' | 'packageCandidatesMs'
+	> = {}
+	for (const result of candidateResults) {
+		const candidateTimingKey =
+			'candidateTimingKey' in result.plugin
+				? result.plugin.candidateTimingKey
+				: undefined
+		if (candidateTimingKey === 'capabilityCandidatesMs') {
+			candidateTimings.capabilityCandidatesMs = result.durationMs
+		}
+		if (candidateTimingKey === 'packageCandidatesMs') {
+			candidateTimings.packageCandidatesMs = result.durationMs
+		}
+	}
 	const candidateGenerationMs = elapsedMs(candidateGenerationStart)
 	const rerankingStart = performance.now()
 	const reranked = rerankCandidates({
@@ -223,8 +211,7 @@ export async function searchUnified(input: {
 			candidateGenerationMs,
 			rerankingMs,
 			queryEmbeddingMs,
-			capabilityCandidatesMs: capabilityCandidates.durationMs,
-			packageCandidatesMs: packageCandidates.durationMs,
+			...candidateTimings,
 		},
 		guidance: buildRecommendedNextStep({
 			query,

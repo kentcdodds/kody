@@ -6,22 +6,22 @@ import {
 	errorFields,
 	logMcpEvent,
 } from '#mcp/observability.ts'
-import { runPackageRetrievers } from '#worker/package-retrievers/service.ts'
 import { type RemoteConnectorStatus } from '#worker/remote-connector/status.ts'
 
-import { type MemoryToolSummary } from './memory-tool-context.ts'
 import {
 	escapeMarkdownText,
 	formatMarkdownInlineCode,
 } from './markdown-safety.ts'
-import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import {
 	defaultMaxResponseSize,
 	defaultSearchLimit,
 	maxChars,
 } from './search-constants.ts'
-import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
 import { resolveEntityDetail } from './search-detail.ts'
+import {
+	executeSearchList,
+	type SearchListExecutionResult,
+} from './search-execution.ts'
 import {
 	formatEntityDetailMarkdown,
 	formatSearchMarkdown,
@@ -36,19 +36,11 @@ import {
 	serializeRemoteConnectorStatus,
 } from './search-loaders.ts'
 import {
-	launchSearchMemoryEnrichment,
-	resolveSearchMemoryContext,
-	settleSearchMemoryEnrichment,
-} from './search-memory.ts'
-import {
 	applyMaxResponseSize,
 	truncateSearchText,
 } from './search-response-size.ts'
 import { elapsedMs } from './search-timing.ts'
-import {
-	type SearchPhaseTimings,
-	type SearchUnifiedResult,
-} from './search-types.ts'
+import { type SearchPhaseTimings } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
 import { resolveConversationId } from './tool-call-context.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
@@ -104,58 +96,35 @@ export async function runSearchTool(input: {
 	let remoteConnectorDownStatuses: Array<RemoteConnectorStatus> = []
 	let username: string | null = null
 	const endToEndPhaseTimings: Partial<SearchPhaseTimings> = {}
-	let memoryEnrichmentPromise: Promise<MemoryToolSummary | null> =
-		Promise.resolve(null)
-	let memoryEnrichmentLaunchedAtMs: number | undefined
 
 	const searchSpan = async () => {
 		const query = args.query?.trim() ?? ''
+		if (!args.entity) {
+			const execution = await executeSearchList({
+				env: agent.getEnv(),
+				callerContext,
+				conversationId,
+				query,
+				memoryQuery: args.query,
+				limit,
+				userId,
+				includeHiddenPackages,
+				memoryContext: args.memoryContext,
+			})
+			username = execution.username
+			warnings = execution.warnings
+			remoteConnectorDownStatuses = execution.remoteConnectorStatuses
+			Object.assign(endToEndPhaseTimings, execution.phaseTimings)
+			return {
+				mode: 'list' as const,
+				execution,
+			}
+		}
 		username = await resolvePublicUsername({
 			db: agent.getEnv().APP_DB,
 			username: callerContext.user?.username ?? null,
 			email: callerContext.user?.email ?? null,
 		})
-		if (!args.entity) {
-			const launched = launchSearchMemoryEnrichment({
-				env: agent.getEnv(),
-				callerContext,
-				conversationId,
-				query: args.query,
-				memoryContext: args.memoryContext,
-			})
-			if (launched) {
-				memoryEnrichmentLaunchedAtMs = launched.launchedAtMs
-				memoryEnrichmentPromise = launched.promise
-			}
-		}
-		if (!args.entity && query) {
-			const identityResolution = await resolvePackageIdentitySearch({
-				db: agent.getEnv().APP_DB,
-				userId,
-				query,
-				baseUrl,
-				username,
-				includeHiddenPackages,
-			})
-			if (identityResolution.recognized) {
-				const remoteConnectorStatusStart = performance.now()
-				remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses({
-					env: agent.getEnv(),
-					callerContext,
-				})
-				endToEndPhaseTimings.remoteConnectorStatusMs = elapsedMs(
-					remoteConnectorStatusStart,
-				)
-				return {
-					mode: 'list' as const,
-					result: buildExactPackageSearchResult({
-						env: agent.getEnv(),
-						query,
-						match: identityResolution.match,
-					}),
-				}
-			}
-		}
 		const rowAndRegistryLoadStart = performance.now()
 		const rowsPromise = loadSearchRowsAndRegistry({
 			env: agent.getEnv(),
@@ -168,32 +137,7 @@ export async function runSearchTool(input: {
 			)
 			return rows
 		})
-		const retrieversStart = performance.now()
-		const retrieverRunPromise =
-			!args.entity && userId && query
-				? runPackageRetrievers({
-						env: agent.getEnv(),
-						baseUrl,
-						userId,
-						scope: 'search',
-						query,
-						includeHiddenPackages,
-						memoryContext: resolveSearchMemoryContext({
-							query,
-							memoryContext: args.memoryContext,
-						}),
-						conversationId,
-					}).then((retrieverRun) => {
-						endToEndPhaseTimings.retrieversMs = elapsedMs(retrieversStart)
-						return retrieverRun
-					})
-				: Promise.resolve({ results: [], warnings: [] }).then(
-						(retrieverRun) => {
-							endToEndPhaseTimings.retrieversMs = elapsedMs(retrieversStart)
-							return retrieverRun
-						},
-					)
-		const [searchRows] = await Promise.all([rowsPromise, retrieverRunPromise])
+		const [searchRows] = await Promise.all([rowsPromise])
 		const remoteConnectorStatusStart = performance.now()
 		remoteConnectorDownStatuses = await loadDownRemoteConnectorStatuses({
 			env: agent.getEnv(),
@@ -204,68 +148,49 @@ export async function runSearchTool(input: {
 		)
 		warnings = searchRows.warnings
 
-		if (args.entity) {
-			if (Array.isArray(args.entity)) {
-				const batchResults = await Promise.all(
-					args.entity.map(async (entityRef) => {
-						try {
-							const detail = await resolveEntityDetail({
-								agent,
-								callerContext,
-								userId,
-								username,
-								entity: entityRef,
-								searchRows,
-							})
-							return {
-								ok: true as const,
-								entityRef,
-								detail,
-							}
-						} catch (cause) {
-							const error =
-								cause instanceof Error ? cause : new Error(String(cause))
-							return {
-								ok: false as const,
-								entityRef,
-								error: error.message,
-							}
+		if (Array.isArray(args.entity)) {
+			const batchResults = await Promise.all(
+				args.entity.map(async (entityRef) => {
+					try {
+						const detail = await resolveEntityDetail({
+							agent,
+							callerContext,
+							userId,
+							username,
+							entity: entityRef,
+							searchRows,
+						})
+						return {
+							ok: true as const,
+							entityRef,
+							detail,
 						}
-					}),
-				)
-				return {
-					mode: 'entity-batch' as const,
-					results: batchResults,
-				}
-			}
-			return {
-				mode: 'entity' as const,
-				detail: await resolveEntityDetail({
-					agent,
-					callerContext,
-					userId,
-					username,
-					entity: args.entity,
-					searchRows,
+					} catch (cause) {
+						const error =
+							cause instanceof Error ? cause : new Error(String(cause))
+						return {
+							ok: false as const,
+							entityRef,
+							error: error.message,
+						}
+					}
 				}),
+			)
+			return {
+				mode: 'entity-batch' as const,
+				results: batchResults,
 			}
 		}
-
-		const retrieverRun = await retrieverRunPromise
-		warnings.push(...retrieverRun.warnings)
-		const result = await searchUnified({
-			env: agent.getEnv(),
-			query,
-			limit,
-			userId: userId ?? undefined,
-			registry: searchRows.registry,
-			optionalRows: searchRows,
-			retrieverResults: retrieverRun.results,
-		})
-
 		return {
-			mode: 'list' as const,
-			result,
+			mode: 'entity' as const,
+			detail: await resolveEntityDetail({
+				agent,
+				callerContext,
+				userId,
+				username,
+				entity: args.entity,
+				searchRows,
+			}),
 		}
 	}
 
@@ -273,7 +198,7 @@ export async function runSearchTool(input: {
 		const outcome:
 			| {
 					mode: 'list'
-					result: SearchUnifiedResult
+					execution: SearchListExecutionResult
 			  }
 			| {
 					mode: 'entity'
@@ -414,16 +339,8 @@ export async function runSearchTool(input: {
 			remoteConnectorDownStatuses.length > 0
 				? remoteConnectorDownStatuses.map(serializeRemoteConnectorStatus)
 				: undefined
-		const memorySettlement = await settleSearchMemoryEnrichment({
-			env: agent.getEnv(),
-			callerContext,
-			conversationId,
-			promise: memoryEnrichmentPromise,
-			launchedAtMs: memoryEnrichmentLaunchedAtMs,
-		})
-		Object.assign(endToEndPhaseTimings, memorySettlement.phaseTimings)
-		warnings.push(...memorySettlement.warnings)
-		const searchMemories = memorySettlement.memories
+		const execution = outcome.execution
+		const searchMemories = execution.memorySettlement.memories
 		const structuredWarnings = [...warnings]
 
 		const payload: {
@@ -436,8 +353,8 @@ export async function runSearchTool(input: {
 				toolCount: number
 			}>
 		} = {
-			matches: outcome.result.matches,
-			offline: outcome.result.offline,
+			matches: execution.result.matches,
+			offline: execution.result.offline,
 			...(normalizedRemoteConnectorStatuses
 				? {
 						remoteConnectorStatuses: normalizedRemoteConnectorStatuses,
@@ -487,19 +404,19 @@ export async function runSearchTool(input: {
 		)
 		const trimmedMatchCount = Math.max(
 			0,
-			outcome.result.matches.length - trimmedPayload.matches.length,
+			execution.result.matches.length - trimmedPayload.matches.length,
 		)
 		const formattingMs = elapsedMs(formattingStartMs)
 		const result: SearchResultStructuredContent = {
 			offline: trimmedPayload.offline,
 			warnings: structuredWarnings,
-			...(outcome.result.guidance
+			...(execution.result.guidance
 				? {
-						guidance: outcome.result.guidance,
+						guidance: execution.result.guidance,
 					}
 				: {}),
 			telemetry: {
-				...outcome.result.telemetry,
+				...execution.result.telemetry,
 				topResultTypes: trimmedPayload.matches
 					.slice(0, 5)
 					.map((match) => match.type),
@@ -507,7 +424,7 @@ export async function runSearchTool(input: {
 				responseTrimmed: trimmedMatchCount > 0,
 			},
 			phaseTimings: {
-				...outcome.result.phaseTimings,
+				...execution.result.phaseTimings,
 				...endToEndPhaseTimings,
 				formattingMs,
 			},
@@ -538,16 +455,16 @@ export async function runSearchTool(input: {
 			hasUser,
 			message: 'Search completed successfully.',
 			context: {
-				task: outcome.result.intent.task.name,
-				intentConfidence: outcome.result.intent.confidence,
-				entityCount: outcome.result.intent.entities.length,
-				actionCount: outcome.result.intent.actions.length,
-				constraintCount: outcome.result.intent.constraints.length,
-				candidateCounts: outcome.result.telemetry.candidateCounts,
+				task: execution.result.intent.task.name,
+				intentConfidence: execution.result.intent.confidence,
+				entityCount: execution.result.intent.entities.length,
+				actionCount: execution.result.intent.actions.length,
+				constraintCount: execution.result.intent.constraints.length,
+				candidateCounts: execution.result.telemetry.candidateCounts,
 				topResultTypes: result.telemetry?.topResultTypes ?? [],
 				responseTrimmed: result.telemetry?.responseTrimmed ?? false,
 				trimmedMatchCount,
-				offline: outcome.result.offline,
+				offline: execution.result.offline,
 				warningsCount: warnings.length,
 				phaseTimings: result.phaseTimings,
 			},

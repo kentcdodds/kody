@@ -1,12 +1,8 @@
 import { z } from 'zod'
-import { resolvePublicUsername } from '#app/user-lookup.ts'
-import { isCapabilitySearchOffline } from '#mcp/capabilities/capability-search.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { resolvePackageIdentitySearch } from '#mcp/tools/package-search-identity.ts'
 import {
-	type SearchMatch,
 	toSlimStructuredMatches,
 	type SlimSearchMatch,
 } from '#mcp/tools/search-format.ts'
@@ -47,51 +43,6 @@ const searchOutputSchema = z.object({
 function normalizeLimit(limit: number | undefined) {
 	if (!limit) return defaultSearchLimit
 	return Math.max(1, Math.min(Math.floor(limit), maxSearchLimit))
-}
-
-async function loadSearchRows(input: {
-	ctx: CapabilityContext
-	userId: string | null
-	includeHiddenPackages: boolean
-}) {
-	// Deliberately dynamic: search.ts loads the capability registry, which
-	// includes this meta capability.
-	const { loadSearchRowsAndRegistry } = await import('#mcp/tools/search.ts')
-	return await loadSearchRowsAndRegistry({
-		env: input.ctx.env,
-		callerContext: input.ctx.callerContext,
-		userId: input.userId,
-		includeHiddenPackages: input.includeHiddenPackages,
-	})
-}
-
-async function runPackageRetrieverSearch(input: {
-	ctx: CapabilityContext
-	userId: string | null
-	query: string
-	conversationId: string
-	includeHiddenPackages: boolean
-	memoryContext?: z.infer<typeof memoryContextInputField>
-}) {
-	if (!input.userId || !input.query) {
-		return { results: [], warnings: [] }
-	}
-	const { resolveSearchMemoryContext } = await import('#mcp/tools/search.ts')
-	const { runPackageRetrievers } =
-		await import('#worker/package-retrievers/service.ts')
-	return await runPackageRetrievers({
-		env: input.ctx.env,
-		baseUrl: input.ctx.callerContext.baseUrl,
-		userId: input.userId,
-		scope: 'search',
-		query: input.query,
-		includeHiddenPackages: input.includeHiddenPackages,
-		memoryContext: resolveSearchMemoryContext({
-			query: input.query,
-			memoryContext: input.memoryContext,
-		}),
-		conversationId: input.conversationId,
-	})
 }
 
 export const searchCapability = defineDomainCapability(
@@ -153,105 +104,41 @@ export const searchCapability = defineDomainCapability(
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null
 			const includeHiddenPackages = !!args.includeHiddenPackages
-			const username = await resolvePublicUsername({
-				db: ctx.env.APP_DB,
-				username: ctx.callerContext.user?.username ?? null,
-				email: ctx.callerContext.user?.email ?? null,
-			})
-			const identityResolution = await resolvePackageIdentitySearch({
-				db: ctx.env.APP_DB,
-				userId,
-				query,
-				baseUrl: ctx.callerContext.baseUrl,
-				username,
-				includeHiddenPackages,
-			})
-			const {
-				launchSearchMemoryEnrichment,
-				loadDownRemoteConnectorStatuses,
-				searchUnified,
-				serializeRemoteConnectorStatus,
-				settleSearchMemoryEnrichment,
-			} = await import('#mcp/tools/search.ts')
-			let warnings: Array<string>
-			let result: {
-				matches: Array<SearchMatch>
-				offline: boolean
-				guidance?: string
-			}
-			const memoryLaunch = launchSearchMemoryEnrichment({
+			// Deliberately dynamic: search-execution loads the capability registry,
+			// which includes this meta capability.
+			const { executeSearchList, serializeRemoteConnectorStatus } =
+				await import('#mcp/tools/search-execution.ts')
+			const execution = await executeSearchList({
 				env: ctx.env,
 				callerContext: ctx.callerContext,
 				conversationId,
 				query,
+				memoryQuery: args.query,
+				limit: normalizeLimit(args.limit),
+				userId,
+				includeHiddenPackages,
 				memoryContext: args.memoryContext,
 			})
-			const memoryEnrichmentPromise =
-				memoryLaunch?.promise ?? Promise.resolve(null)
-			const memoryEnrichmentLaunchedAtMs = memoryLaunch?.launchedAtMs
-			if (identityResolution.recognized) {
-				warnings = []
-				result = {
-					matches: identityResolution.match ? [identityResolution.match] : [],
-					offline: isCapabilitySearchOffline(ctx.env),
-				}
-			} else {
-				const [searchRows, retrieverRun] = await Promise.all([
-					loadSearchRows({
-						ctx,
-						userId,
-						includeHiddenPackages,
-					}),
-					runPackageRetrieverSearch({
-						ctx,
-						userId,
-						query,
-						conversationId,
-						includeHiddenPackages,
-						memoryContext: args.memoryContext,
-					}),
-				])
-				result = await searchUnified({
-					env: ctx.env,
-					query,
-					limit: normalizeLimit(args.limit),
-					userId: userId ?? undefined,
-					registry: searchRows.registry,
-					optionalRows: searchRows,
-					retrieverResults: retrieverRun.results,
-				})
-				warnings = [...searchRows.warnings, ...retrieverRun.warnings]
-			}
-			const remoteConnectorStatuses = await loadDownRemoteConnectorStatuses({
-				env: ctx.env,
-				callerContext: ctx.callerContext,
-			})
-			const memorySettlement = await settleSearchMemoryEnrichment({
-				env: ctx.env,
-				callerContext: ctx.callerContext,
-				conversationId,
-				promise: memoryEnrichmentPromise,
-				launchedAtMs: memoryEnrichmentLaunchedAtMs,
-			})
-			warnings.push(...memorySettlement.warnings)
 			return {
 				conversationId,
 				matches: toSlimStructuredMatches({
-					matches: result.matches,
+					matches: execution.result.matches,
 					baseUrl: ctx.callerContext.baseUrl,
-					username,
+					username: execution.username,
 				}) as Array<SlimSearchMatch>,
-				offline: result.offline,
-				warnings,
-				...(result.guidance ? { guidance: result.guidance } : {}),
-				...(memorySettlement.memories
+				offline: execution.result.offline,
+				warnings: execution.warnings,
+				...(execution.capabilityGuidance
+					? { guidance: execution.capabilityGuidance }
+					: {}),
+				...(execution.memorySettlement.memories
 					? {
-							memories: memorySettlement.memories,
+							memories: execution.memorySettlement.memories,
 						}
 					: {}),
-				...(remoteConnectorStatuses.length > 0
+				...(execution.remoteConnectorStatuses.length > 0
 					? {
-							remoteConnectorStatuses: remoteConnectorStatuses.map(
+							remoteConnectorStatuses: execution.remoteConnectorStatuses.map(
 								serializeRemoteConnectorStatus,
 							),
 						}

@@ -1,12 +1,7 @@
-import {
-	parseIntegrationConfig,
-	parseIntegrationJson,
-	parseIntegrationValueName,
-} from '#mcp/capabilities/integrations/integration-shared.ts'
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { buildValueEntityId } from '#mcp/tools/search-entities.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 
+import { searchEntityPlugins } from './search-entity-registry.ts'
 import {
 	type SearchMatch,
 	buildKodyCapabilityAccessor,
@@ -22,16 +17,8 @@ import {
 	extractSearchTokens,
 } from './understand-search-query.ts'
 
-export function flattenReferencedTypeFields(
-	referencedTypes:
-		| ReadonlyArray<{ name: string; definition: string }>
-		| undefined,
-): Array<string> {
-	return (referencedTypes ?? []).flatMap((referencedType) => [
-		referencedType.name,
-		referencedType.definition,
-	])
-}
+export { buildIntegrationSearchDocument } from './search-entity-plugins/integration.ts'
+export { flattenReferencedTypeFields } from './search-entity-plugins/package.ts'
 
 function buildPackageRelationTokens(
 	match: Extract<SearchMatch, { type: 'package' }>,
@@ -43,25 +30,6 @@ function buildPackageRelationTokens(
 			),
 		),
 	)
-}
-
-export function buildIntegrationSearchDocument(input: {
-	integrationName: string
-	description: string
-	config: NonNullable<ReturnType<typeof parseIntegrationConfig>>
-}): string {
-	return [
-		input.integrationName,
-		input.description,
-		input.config.tokenUrl,
-		input.config.apiBaseUrl ?? '',
-		input.config.flow,
-		input.config.authorization?.authorizeUrl ?? '',
-		...(input.config.authorization?.scopes ?? []),
-		...(input.config.requiredHosts ?? []),
-	]
-		.filter((value) => value.trim().length > 0)
-		.join('\n')
 }
 
 export function buildRecommendedNextStep(
@@ -125,127 +93,10 @@ export function buildSearchableEntityDescriptors(input: {
 	>
 }): Array<SearchableEntityDescriptor> {
 	const descriptors: Array<SearchableEntityDescriptor> = []
-
-	for (const spec of Object.values(input.registry.capabilitySpecs)) {
-		descriptors.push({
-			type: 'capability',
-			id: spec.name,
-			title: spec.name,
-			primaryAliases: [spec.name],
-			secondaryAliases: [
-				spec.domain,
-				spec.description,
-				...(spec.keywords ?? []),
-			],
-			tertiaryAliases: [
-				...(spec.inputFields ?? []),
-				...(spec.outputFields ?? []),
-			],
-		})
-	}
-
-	for (const entry of input.optionalRows.packageRows) {
-		const services = Array.isArray(entry.projection.services)
-			? entry.projection.services
-			: []
-		const subscriptions = Array.isArray(entry.projection.subscriptions)
-			? entry.projection.subscriptions
-			: []
-		const retrievers = Array.isArray(entry.projection.retrievers)
-			? entry.projection.retrievers
-			: []
-		descriptors.push({
-			type: 'package',
-			id: entry.record.kodyId,
-			title: entry.record.name,
-			primaryAliases: [entry.record.kodyId, entry.record.name],
-			secondaryAliases: [
-				entry.record.description,
-				entry.record.searchText ?? '',
-				...entry.record.tags,
-			],
-			tertiaryAliases: [
-				...entry.projection.exports.flatMap((exportDetail) => [
-					exportDetail.subpath,
-					exportDetail.description ?? '',
-					exportDetail.typeDefinition ?? '',
-					...flattenReferencedTypeFields(exportDetail.referencedTypes),
-					...(exportDetail.functions ?? []).flatMap((fn) => [
-						fn.name,
-						fn.description ?? '',
-						fn.typeDefinition ?? '',
-						...flattenReferencedTypeFields(fn.referencedTypes),
-					]),
-				]),
-				...entry.projection.jobs.map((job) => job.name),
-				...services.flatMap((service) => [
-					service.name,
-					service.entry,
-					service.mode,
-					service.autoStart ? 'auto-start' : 'manual-start',
-				]),
-				...subscriptions.flatMap((subscription) => [
-					subscription.topic,
-					subscription.handler,
-					subscription.description ?? '',
-				]),
-				...retrievers.flatMap((retriever) => [
-					retriever.key,
-					retriever.name,
-					retriever.description,
-				]),
-				entry.readmeSnippet?.snippet ?? '',
-				...(entry.record.hasApp ? ['app', 'ui', 'remote'] : []),
-			],
-		})
-	}
-
-	for (const row of input.optionalRows.userValueRows) {
-		const integrationName = parseIntegrationValueName(row.name)
-		if (integrationName) {
-			const config = parseIntegrationConfig(
-				parseIntegrationJson(row.value),
-				integrationName,
-			)
-			if (!config) continue
-			descriptors.push({
-				type: 'integration',
-				id: integrationName,
-				title: integrationName,
-				primaryAliases: [integrationName],
-				secondaryAliases: [
-					row.description,
-					config.apiBaseUrl ?? '',
-					config.tokenUrl,
-					config.flow,
-				],
-				tertiaryAliases: [
-					...(config.requiredHosts ?? []),
-					...(config.apiBaseUrl ? extractSearchTokens(config.apiBaseUrl) : []),
-				],
-			})
-			continue
+	for (const plugin of searchEntityPlugins) {
+		if ('buildDescriptors' in plugin) {
+			descriptors.push(...plugin.buildDescriptors(input))
 		}
-
-		descriptors.push({
-			type: 'value',
-			id: buildValueEntityId(row),
-			title: row.name,
-			primaryAliases: [row.name],
-			secondaryAliases: [row.description, row.scope],
-			tertiaryAliases: [row.value],
-		})
 	}
-
-	for (const row of input.optionalRows.userSecretRows) {
-		descriptors.push({
-			type: 'secret',
-			id: row.name,
-			title: row.name,
-			primaryAliases: [row.name],
-			secondaryAliases: [row.description],
-		})
-	}
-
 	return descriptors
 }
