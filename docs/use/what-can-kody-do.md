@@ -8,13 +8,13 @@ connection exists.
 
 ## What Kody is
 
-Kody is an open-source personal assistant platform. You do not chat with Kody
-directly: you connect the AI agent you already use (Claude, ChatGPT, Cursor,
-Codex, or any other MCP-capable host) to your Kody account, and that agent gains
-durable capabilities that outlive the conversation and keep running while your
-computer is off. Kody makes no inference calls of its own — your agent supplies
-the intelligence; Kody supplies memory, credentials, saved code, schedules, and
-execution.
+Kody is a source-available personal assistant platform. You do not chat with
+Kody directly: you connect the AI agent you already use (Claude, ChatGPT,
+Cursor, Codex, or any other MCP-capable host) to your Kody account, and that
+agent gains durable capabilities that outlive the conversation and keep running
+while your computer is off. Kody makes no inference calls of its own — your
+agent supplies the intelligence; Kody supplies memory, credentials, saved code,
+schedules, and execution.
 
 ## The building blocks
 

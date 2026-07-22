@@ -1,9 +1,9 @@
 {
-	"name": "kody",
-	"private": true,
-	"version": "0.0.0",
-	"license": "FSL-1.1-ALv2",
-	"type": "module",
+  "name": "kody",
+  "private": true,
+  "version": "0.0.0",
+  "license": "FSL-1.1-ALv2",
+  "type": "module",
   "imports": {
     "#app/*": "./packages/worker/src/app/*",
     "#client/*": "./packages/worker/client/*",
