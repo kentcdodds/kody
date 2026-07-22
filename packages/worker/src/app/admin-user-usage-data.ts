@@ -59,7 +59,7 @@ type AdminUserUsageUserRow = {
 	email: string
 	plan: string | null
 	stripe_plan: string | null
-	stable_user_id?: string | null
+	stable_user_id: string
 }
 
 type AdminUsageRollupRow = {
@@ -92,7 +92,7 @@ export async function loadAdminUserUsageData(
 	if (!row) return null
 
 	const plan = resolveEffectivePlan(parsePlanName(row.plan), row.stripe_plan)
-	const usageUserId = await resolveUserStableId(row)
+	const usageUserId = resolveUserStableId(row)
 	const currentMonth = utcMonthKey(now)
 	const today = utcDayKey(now)
 	// Fall through to direct D1 queries when KV is unavailable (some tests

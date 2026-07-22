@@ -1,8 +1,8 @@
 /**
  * Schema for package scope grant / platform account workers-unit tests.
  * Local D1 does not apply migrations, so suites provision the tables they need.
- * Mirrors users columns from early migrations plus 0052 (stable_user_id) and
- * 0072 (account_type, package_scope_grants).
+ * Mirrors users columns from early migrations plus 0052/0075 (stable_user_id)
+ * and 0072 (account_type, package_scope_grants).
  */
 export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	await db
@@ -13,7 +13,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	email TEXT NOT NULL UNIQUE,
 	password_hash TEXT NOT NULL,
 	email_verified_at TEXT,
-	stable_user_id TEXT,
+	stable_user_id TEXT NOT NULL,
 	account_type TEXT NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'platform')),
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
@@ -30,6 +30,16 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 		} catch {
 			// Column already exists (fresh CREATE above or prior suite setup).
 		}
+	}
+	try {
+		await db
+			.prepare(
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stable_user_id
+				 ON users(stable_user_id)`,
+			)
+			.run()
+	} catch {
+		// Index already exists or partial legacy index remains from an earlier suite.
 	}
 	await db.prepare(`DROP TABLE IF EXISTS package_scope_grants`).run()
 	await db

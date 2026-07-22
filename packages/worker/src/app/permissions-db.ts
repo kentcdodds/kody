@@ -1,8 +1,4 @@
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
-import {
-	isMissingStableUserIdColumnError,
-	type UserStableIdRow,
-} from '#worker/user-id.ts'
 
 type PermissionRow = {
 	role_name: string
@@ -56,31 +52,23 @@ function isMissingRbacTableError(error: unknown) {
 }
 
 /**
- * List account rows (email + stored stable id) for every user holding the
- * admin role. Returns an empty list on pre-RBAC databases so callers can
- * treat "no RBAC tables" as "no admins".
+ * List stable user ids for every user holding the admin role. Returns an empty
+ * list on pre-RBAC databases so callers can treat "no RBAC tables" as "no admins".
  */
-export async function listAdminAccountRows(
+export async function listAdminStableUserIds(
 	db: D1Database,
-): Promise<Array<UserStableIdRow>> {
-	const select = (columns: string) =>
-		`SELECT DISTINCT ${columns}
-		 FROM users u
-		 INNER JOIN user_roles ur ON ur.user_id = u.id
-		 INNER JOIN roles r ON r.id = ur.role_id
-		 WHERE r.name = 'admin'`
+): Promise<Array<string>> {
 	try {
 		const result = await db
-			.prepare(select('u.email, u.stable_user_id'))
-			.all<{ email: string; stable_user_id: string | null }>()
-		return result.results ?? []
-	} catch (error) {
-		if (isMissingRbacTableError(error)) return []
-		if (!isMissingStableUserIdColumnError(error)) throw error
-	}
-	try {
-		const result = await db.prepare(select('u.email')).all<{ email: string }>()
-		return result.results ?? []
+			.prepare(
+				`SELECT DISTINCT u.stable_user_id
+				 FROM users u
+				 INNER JOIN user_roles ur ON ur.user_id = u.id
+				 INNER JOIN roles r ON r.id = ur.role_id
+				 WHERE r.name = 'admin'`,
+			)
+			.all<{ stable_user_id: string }>()
+		return [...new Set((result.results ?? []).map((row) => row.stable_user_id))]
 	} catch (error) {
 		if (isMissingRbacTableError(error)) return []
 		throw error

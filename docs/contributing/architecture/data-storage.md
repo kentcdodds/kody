@@ -36,9 +36,10 @@ public listing identity and the actor's username. Fork rows snapshot the public
 listing name and kody id so retained provenance remains intelligible after a
 listing is deleted. The projection never reads the forked Artifacts source, the
 public snapshot file tree, rating notes, or unrelated account data. Actor
-usernames resolve through the materialized stable-id index; email and stable
-user ids remain absent from activity results and events. One-click installs and
-ordinary forks share the same row shape and therefore appear as `fork`.
+usernames resolve through the unique `users.stable_user_id` index; email and
+stable user ids remain absent from activity results and events. One-click
+installs and ordinary forks share the same row shape and therefore appear as
+`fork`.
 
 ## Account deletion inventory
 
@@ -195,20 +196,18 @@ Relational app data lives in D1.
 The schema is defined by migrations in `packages/worker/migrations/`:
 
 - `users`: login identity and password hash, plus the persisted stable MCP
-  `userId` (`stable_user_id`, SHA-256 of the normalized email, unique partial
-  index from migration 0052; written at signup). Optional community profile
-  fields (`display_name`, `bio`, `profile_visibility` with default `public`)
-  come from migration 0065. `account_type` (`'person'` default or `'platform'`,
-  migration 0072) distinguishes normal signups from operator-provisioned
-  platform accounts that own official package scopes (see
+  `userId` (`stable_user_id`, NOT NULL unique index from migrations 0052 + 0075;
+  initially SHA-256 of the normalized email at signup via
+  `createStableUserIdFromEmail`, then preserved across email changes). Optional
+  community profile fields (`display_name`, `bio`, `profile_visibility` with
+  default `public`) come from migration 0065. `account_type` (`'person'` default
+  or `'platform'`, migration 0072) distinguishes normal signups from
+  operator-provisioned platform accounts that own official package scopes (see
   [Platform accounts](./platform-accounts.md)). Inbound email routing does not
   reverse-resolve stable ids at all — it uses the indexed username lookup
-  (`findPublicUserIdentityByUsername`). The remaining contextless paths resolve
-  stable ids with one indexed point read (`findUserRowByStableUserId` /
-  `findUserAccountByStableUserId`); legacy rows with a NULL `stable_user_id`
-  fall back to a scan-and-hash that self-heals by writing the computed id back,
-  and the `POST /__maintenance/backfill-stable-user-ids` endpoint backfills all
-  remaining legacy rows in one pass.
+  (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
+  with one indexed point read on `users.stable_user_id` (for example
+  `findUserAccountByStableUserId`).
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until

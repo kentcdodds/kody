@@ -4,10 +4,6 @@ import {
 	setSavedPackagePrivacy,
 } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import {
-	createStableUserIdFromEmail,
-	normalizeStableUserId,
-} from '#worker/user-id.ts'
 
 type MaintenanceResult = Record<string, unknown> & { ok?: never }
 
@@ -66,75 +62,6 @@ export async function handleSecretMaintenanceRequest(
 			{ status: 500 },
 		)
 	}
-}
-
-export const stableUserIdBackfillBatchSize = 100
-
-/**
- * Persist the stable user id (SHA-256 of the normalized email) for every
- * pre-materialization users row that still has a NULL `stable_user_id`. The
- * production deploy runs this migration before installing code that requires
- * indexed stable ids. Pages with a keyset on `id` in batches of 100 to stay
- * within D1 limits on large tables. Per-row failures (for example two rows
- * whose emails normalize to the same hash colliding on the unique index) are
- * counted for the deploy step to reject.
- */
-export async function backfillStableUserIds(input: {
-	db: D1Database
-	batchSize?: number
-}) {
-	const batchSize = input.batchSize ?? stableUserIdBackfillBatchSize
-	let lastId = 0
-	let scanned = 0
-	let backfilled = 0
-	let failed = 0
-	for (;;) {
-		const { results } = await input.db
-			.prepare(
-				`SELECT id, email, stable_user_id FROM users
-				 WHERE id > ? ORDER BY id ASC LIMIT ?`,
-			)
-			.bind(lastId, batchSize)
-			.all<{ id: number; email: string; stable_user_id: string | null }>()
-		const rows = results ?? []
-		for (const row of rows) {
-			lastId = row.id
-			scanned += 1
-			if (normalizeStableUserId(row.stable_user_id)) continue
-			try {
-				const result = await input.db
-					.prepare(
-						`UPDATE users SET stable_user_id = ?
-						 WHERE id = ? AND stable_user_id IS NULL`,
-					)
-					.bind(await createStableUserIdFromEmail(row.email), row.id)
-					.run()
-				backfilled += result.meta.changes ?? 0
-			} catch (error) {
-				failed += 1
-				console.warn('stable-user-id-backfill-row-failed', row.id, error)
-			}
-		}
-		if (rows.length < batchSize) break
-	}
-	return { scanned, backfilled, failed }
-}
-
-/**
- * `POST /__maintenance/backfill-stable-user-ids`: one-off/idempotent backfill
- * of `users.stable_user_id` for the production deploy migration, authenticated
- * like the reindex endpoints (Bearer `CAPABILITY_REINDEX_SECRET`).
- */
-export async function handleStableUserIdBackfillRequest(
-	request: Request,
-	env: Pick<Env, 'APP_DB' | 'CAPABILITY_REINDEX_SECRET'>,
-): Promise<Response> {
-	return handleSecretMaintenanceRequest({
-		request,
-		secret: env.CAPABILITY_REINDEX_SECRET,
-		notConfiguredMessage: 'Stable user id backfill is not configured',
-		run: () => backfillStableUserIds({ db: env.APP_DB }),
-	})
 }
 
 export const packagePrivacyBackfillPageSize = 200

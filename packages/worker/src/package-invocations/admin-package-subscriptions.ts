@@ -1,10 +1,9 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
-import { listAdminAccountRows } from '#app/permissions-db.ts'
+import { listAdminStableUserIds } from '#app/permissions-db.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
 import { invokePackageSubscription } from './service.ts'
 
 type LoadedAdminPackageSubscription = {
@@ -55,32 +54,6 @@ function isMissingSavedPackagesTableError(error: unknown) {
 		error instanceof Error &&
 		error.message.toLowerCase().includes('no such table: saved_packages')
 	)
-}
-
-async function listAdminStableUserIds(db: D1Database) {
-	const rows = await listAdminAccountRows(db)
-	const settled = await mapSettledInChunks(
-		rows,
-		async (row) => await resolveUserStableId(row),
-	)
-	const stableIds = new Set<string>()
-	const discoveryErrors: Array<unknown> = []
-	for (const result of settled) {
-		if (result.status === 'fulfilled' && result.value) {
-			stableIds.add(result.value)
-			continue
-		}
-		if (result.status === 'rejected') {
-			console.warn('admin-package-subscription-user-id-resolution-failed', {
-				error: result.reason,
-			})
-			discoveryErrors.push(result.reason)
-		}
-	}
-	return {
-		adminUserIds: Array.from(stableIds),
-		discoveryErrors,
-	}
 }
 
 async function loadMatchingSubscriptions(input: {
@@ -154,14 +127,8 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 	retryDiscoveryFailures?: boolean
 	retryInvocationInfrastructureFailures?: boolean
 }) {
-	const { adminUserIds, discoveryErrors: adminUserIdDiscoveryErrors } =
-		await listAdminStableUserIds(input.env.APP_DB)
+	const adminUserIds = await listAdminStableUserIds(input.env.APP_DB)
 	if (adminUserIds.length === 0) {
-		if (input.retryDiscoveryFailures && adminUserIdDiscoveryErrors.length > 0) {
-			throw new Error('Admin package subscription discovery failed.', {
-				cause: adminUserIdDiscoveryErrors[0],
-			})
-		}
 		return []
 	}
 	const discovered = await mapSettledInChunks(
@@ -175,7 +142,7 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 			}),
 	)
 	const subscriptions: Array<LoadedAdminPackageSubscription> = []
-	const discoveryErrors: Array<unknown> = [...adminUserIdDiscoveryErrors]
+	const discoveryErrors: Array<unknown> = []
 	for (const [index, result] of discovered.entries()) {
 		if (result.status === 'fulfilled') {
 			subscriptions.push(...result.value.subscriptions)

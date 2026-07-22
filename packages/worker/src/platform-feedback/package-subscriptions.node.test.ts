@@ -12,13 +12,13 @@ import { type PlatformFeedbackRecord } from './types.ts'
 const mocks = vi.hoisted(() => ({
 	getPlatformFeedbackForAdmin: vi.fn(),
 	invokePackageSubscription: vi.fn(),
-	listAdminAccountRows: vi.fn(),
+	listAdminStableUserIds: vi.fn(),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 }))
 
 vi.mock('#app/permissions-db.ts', () => ({
-	listAdminAccountRows: mocks.listAdminAccountRows,
+	listAdminStableUserIds: mocks.listAdminStableUserIds,
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
@@ -200,9 +200,7 @@ test('platform feedback dispatch isolates terminal handler failures and rejects 
 		userId: 'admin-stable-1',
 		sourceId: 'source-terminal',
 	})
-	mocks.listAdminAccountRows.mockResolvedValue([
-		{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
-	])
+	mocks.listAdminStableUserIds.mockResolvedValue(['admin-stable-1'])
 	mocks.listSavedPackagesByUserId.mockResolvedValue([terminalOnly])
 	mocks.loadPackageManifestBySourceId.mockResolvedValue(
 		createManifest(terminalOnly.id),
@@ -256,9 +254,9 @@ test('platform feedback dispatch isolates terminal handler failures and rejects 
 		userId: 'admin-stable-2',
 		sourceId: 'source-unrelated',
 	})
-	mocks.listAdminAccountRows.mockResolvedValue([
-		{ email: 'admin-1@example.com', stable_user_id: 'admin-stable-1' },
-		{ email: 'admin-2@example.com', stable_user_id: 'admin-stable-2' },
+	mocks.listAdminStableUserIds.mockResolvedValue([
+		'admin-stable-1',
+		'admin-stable-2',
 	])
 	mocks.listSavedPackagesByUserId.mockImplementation(
 		async (_db: D1Database, input: { userId: string }) =>
@@ -340,9 +338,7 @@ test('platform feedback dispatch isolates terminal handler failures and rejects 
 		userId: 'admin-stable-1',
 		sourceId: 'source-successful',
 	})
-	mocks.listAdminAccountRows.mockResolvedValue([
-		{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
-	])
+	mocks.listAdminStableUserIds.mockResolvedValue(['admin-stable-1'])
 	mocks.listSavedPackagesByUserId.mockResolvedValue([
 		retryable,
 		successfulSibling,
@@ -401,7 +397,7 @@ test('platform feedback dispatch isolates terminal handler failures and rejects 
 test('platform feedback skips lazy enrichment without admins and cancels permanently when the row is deleted', async () => {
 	mocks.getPlatformFeedbackForAdmin.mockClear()
 	mocks.invokePackageSubscription.mockClear()
-	mocks.listAdminAccountRows.mockResolvedValue([])
+	mocks.listAdminStableUserIds.mockResolvedValue([])
 
 	await expect(
 		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
@@ -416,9 +412,7 @@ test('platform feedback skips lazy enrichment without admins and cancels permane
 		userId: 'admin-stable-1',
 		sourceId: 'source-subscriber',
 	})
-	mocks.listAdminAccountRows.mockResolvedValue([
-		{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
-	])
+	mocks.listAdminStableUserIds.mockResolvedValue(['admin-stable-1'])
 	mocks.listSavedPackagesByUserId.mockResolvedValue([subscribed])
 	mocks.loadPackageManifestBySourceId.mockResolvedValue(
 		createManifest(subscribed.id),
@@ -451,9 +445,7 @@ test('generic admin fan-out defaults to skipping manifest and invocation failure
 		userId: 'admin-stable-1',
 		sourceId: 'source-thrown',
 	})
-	mocks.listAdminAccountRows.mockResolvedValue([
-		{ email: 'admin@example.com', stable_user_id: 'admin-stable-1' },
-	])
+	mocks.listAdminStableUserIds.mockResolvedValue(['admin-stable-1'])
 	mocks.listSavedPackagesByUserId.mockResolvedValue([
 		successful,
 		thrown,

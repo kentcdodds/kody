@@ -1,5 +1,5 @@
 import { getUsernameFormatValidationError } from '#app/username.ts'
-import { resolveUserStableIdByEmail } from '#worker/user-id.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 
 export type PublicUserIdentity = {
 	userId: number
@@ -17,7 +17,7 @@ export async function findPublicUserIdentityByUsername(input: {
 
 	const userRecord = await input.db
 		.prepare(
-			`SELECT id, username, email
+			`SELECT id, username, email, stable_user_id
 				FROM users
 				WHERE username = ?`,
 		)
@@ -26,6 +26,7 @@ export async function findPublicUserIdentityByUsername(input: {
 			id: number
 			username: string
 			email: string
+			stable_user_id: string
 		}>()
 	if (!userRecord) return null
 
@@ -33,10 +34,7 @@ export async function findPublicUserIdentityByUsername(input: {
 		userId: userRecord.id,
 		username: userRecord.username,
 		email: userRecord.email,
-		mcpUserId: await resolveUserStableIdByEmail({
-			db: input.db,
-			email: userRecord.email,
-		}),
+		mcpUserId: resolveUserStableId(userRecord),
 	}
 }
 

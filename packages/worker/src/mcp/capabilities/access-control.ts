@@ -10,7 +10,7 @@ import {
 	featureFlagKeys,
 } from '#worker/feature-flags/registry.ts'
 import { getFeatureFlagsForUser } from '#worker/feature-flags/service.ts'
-import { findUserRowByStableUserId } from '#worker/user-id.ts'
+import { normalizeStableUserId } from '#worker/user-id.ts'
 import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
 import { type Capability, type CapabilitySpec } from './types.ts'
 
@@ -55,16 +55,12 @@ async function resolveFeatureFlagUserId(
 	callerContext: McpCallerContext,
 ): Promise<number | null> {
 	const user = callerContext.user
-	if (!user?.userId) return null
-	const row = await findUserRowByStableUserId<{
-		id: number
-		email: string
-		stable_user_id: string | null
-	}>({
-		db,
-		stableUserId: user.userId,
-		select: 'SELECT id, email, stable_user_id FROM users',
-	})
+	const stableUserId = normalizeStableUserId(user?.userId)
+	if (!stableUserId) return null
+	const row = await db
+		.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+		.bind(stableUserId)
+		.first<{ id: number }>()
 	return row?.id ?? null
 }
 

@@ -70,19 +70,21 @@ when a manual plan is set.
 
 ## Plan lookup
 
-The MCP `userId` is the SHA-256 hash of the normalized account email
-(`createStableUserIdFromEmail`), so `users.plan` cannot be joined on that id
-directly. `getUserPlan(db, { userId, email })`:
+The MCP `userId` is the account's stored `users.stable_user_id` (NOT NULL,
+unique index; initially from `createStableUserIdFromEmail` at signup, then
+preserved across email changes). `getUserPlan(db, { userId, email })`:
 
-1. Normalizes the email and returns null (unlimited) when it is absent.
-2. Verifies `sha256(email) === userId` and returns null on mismatch, without
-   touching D1. This keeps the per-user-isolation invariant honest and makes
-   synthetic runtime contexts (package-scoped caller contexts with `email: ''`,
-   workflow-internal users, test fixtures) fail open.
-3. Reads `SELECT plan, stripe_plan FROM users WHERE email = ?` and returns
-   `resolveEffectivePlan(parsePlanName(plan), stripe_plan)`: NULL manual plan
-   stays unlimited; otherwise the higher-ranked of manual `users.plan` and
-   `users.stripe_plan` (rank: `free` < `pro` < `partner`).
+1. Normalizes the email and returns null (unlimited) when email or `userId` is
+   absent.
+2. Returns null without touching D1 when `userId` is not a 64-char hex string.
+   Synthetic runtime contexts (package-scoped caller contexts with `email: ''`,
+   workflow-internal users, test fixtures) therefore fail open / stay unlimited.
+3. Reads
+   `SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`
+   and returns `resolveEffectivePlan(parsePlanName(plan), stripe_plan)`: NULL
+   manual plan stays unlimited; otherwise the higher-ranked of manual
+   `users.plan` and `users.stripe_plan` (rank: `free` < `pro` < `partner`). A
+   mismatched email/stable-id pair returns null (unlimited) intentionally.
 
 Consequence: enforcement points must have the acting user's account email
 available. Both auth surfaces provide it — app sessions expose
@@ -97,21 +99,12 @@ enforce receive quotas. It resolves the owning account via the indexed username
 lookup (`findPublicUserIdentityByUsername`) — it does not reverse-resolve stable
 user ids. `findUserAccountByStableUserId` in `service.ts` remains the
 reverse-resolution helper for other contextless paths (package-runtime contexts
-that act with only the hashed userId, mirroring `findUserAccount` in
-`email/platform-address.ts`): stored `stable_user_id` values are one indexed
-point read (unique partial index from migration 0052, persisted at signup),
-positive matches are cached per isolate (the mapping is a content hash, so hits
-can never go stale) and re-verified with one point read. Only use it on
-contextless paths; interactive surfaces already carry the email.
-
-Legacy rows with a NULL `stable_user_id` still fall back to a scan that hashes
-each email, but the scan is self-healing: a match writes the computed id back
-(`UPDATE ... WHERE stable_user_id IS NULL`), so each legacy row pays the scan at
-most once. The authenticated `POST /__maintenance/backfill-stable-user-ids`
-endpoint (`backfillStableUserIds` in
-`packages/worker/src/maintenance-handler.ts`) backfills all remaining legacy
-rows in keyset-paged batches, eliminating the scan entirely for existing
-deployments.
+that act with only the stable userId, mirroring `findUserAccount` in
+`email/platform-address.ts`): `users.stable_user_id` is NOT NULL with a unique
+index (migrations 0052 + 0075; written at signup from
+`createStableUserIdFromEmail`, preserved across email changes), so reverse
+lookup is always one indexed point read. Only use it on contextless paths;
+interactive surfaces already carry the email.
 
 ## The error shape
 
@@ -238,8 +231,9 @@ The exemplar is job scheduling: `createJob` in
 5. Test both sides: a plan user at the limit is denied with
    `details.code === 'entitlement_limit_exceeded'` (assert `resource`, `plan`,
    `limit`, `current`), and a NULL-plan user is unaffected. Build the test
-   user's id with `createStableUserIdFromEmail(email)` so the plan lookup's hash
-   verification passes.
+   user's id with `createStableUserIdFromEmail(email)` (or any stored
+   `stable_user_id`) and assert plan lookup against the email + stable-id pair;
+   a mismatched pair must resolve as unlimited.
 
 ## Enforcement points
 

@@ -17,17 +17,24 @@ async function workerFetch(request: Request): Promise<Response> {
 }
 
 test('public route hardening rejects unauthenticated connector and maintenance access, unknown paths, and abusive auth while allowing websocket upgrades', async () => {
+	await env.APP_DB.prepare(`DROP TABLE IF EXISTS users`).run()
 	await env.APP_DB.prepare(
-		`CREATE TABLE IF NOT EXISTS users (
+		`CREATE TABLE users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 			username TEXT NOT NULL UNIQUE,
 			email TEXT NOT NULL UNIQUE,
-			password_hash TEXT NOT NULL
+			password_hash TEXT NOT NULL,
+			stable_user_id TEXT NOT NULL
 		)`,
 	).run()
 	await env.APP_DB.prepare(
-		`INSERT OR IGNORE INTO users (username, email, password_hash)
-			VALUES ('connector-user', 'connector-user@example.com', 'hash')`,
+		`INSERT INTO users (username, email, password_hash, stable_user_id)
+			VALUES (
+				'connector-user',
+				'connector-user@example.com',
+				'hash',
+				'connector-user-stable-id'
+			)`,
 	).run()
 
 	const unauthorizedConnectorRequests = [
@@ -87,11 +94,6 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			path: '/__maintenance/reindex-jobs',
 			secret: env.JOB_REINDEX_SECRET,
 			notConfiguredMessage: 'Job reindex is not configured',
-		},
-		{
-			path: '/__maintenance/backfill-stable-user-ids',
-			secret: env.CAPABILITY_REINDEX_SECRET,
-			notConfiguredMessage: 'Stable user id backfill is not configured',
 		},
 		{
 			path: '/__maintenance/backfill-package-privacy',

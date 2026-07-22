@@ -74,7 +74,7 @@ export const adminPackageScopeGrantRevokeCapability = defineDomainCapability(
 							username: string
 							email: string
 							account_type: string
-							stable_user_id: string | null
+							stable_user_id: string
 						}>()
 					if (!grantee) {
 						throw new Error(`User "${username}" was not found.`)
@@ -86,7 +86,7 @@ export const adminPackageScopeGrantRevokeCapability = defineDomainCapability(
 					}
 					const { deleted } = await deletePackageScopeGrant(ctx.env.APP_DB, {
 						scopeOwnerUserId: platformAccount.stableUserId,
-						granteeUserId: await resolveUserStableId(grantee),
+						granteeUserId: resolveUserStableId(grantee),
 					})
 					return {
 						deleted,

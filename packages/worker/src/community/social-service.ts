@@ -39,11 +39,8 @@ const maxFollowingCount = 2000
 const maxDisplayNameLength = 50
 const maxBioLength = 500
 
-async function resolveStableUserIdFromRow(row: UserSocialRow): Promise<string> {
-	return await resolveUserStableId({
-		email: row.email,
-		stable_user_id: row.stable_user_id,
-	})
+function resolveStableUserIdFromRow(row: UserSocialRow): string {
+	return resolveUserStableId(row)
 }
 
 function toCommunityProfileRecord(input: {
@@ -80,7 +77,7 @@ async function loadCommunityProfileFromRow(input: {
 	if (input.row.profile_visibility === 'private' && !input.includePrivate) {
 		return null
 	}
-	const stableUserId = await resolveStableUserIdFromRow(input.row)
+	const stableUserId = resolveStableUserIdFromRow(input.row)
 	const [followerCount, followingCount, publicPackageCount, listingCount] =
 		await Promise.all([
 			countUserFollowers(input.env.APP_DB, stableUserId),
@@ -203,7 +200,7 @@ export async function followCommunityUser(input: {
 		throw new CommunityActionError('This profile is not available.')
 	}
 
-	const followeeUserId = await resolveStableUserIdFromRow(followee)
+	const followeeUserId = resolveStableUserIdFromRow(followee)
 	if (followeeUserId === input.followerUserId) {
 		throw new CommunityActionError('You cannot follow yourself.')
 	}
@@ -236,7 +233,7 @@ export async function unfollowCommunityUser(input: {
 	// Unknown usernames are a silent no-op (same as unfollowing someone you
 	// do not follow) so unfollow cannot be used as a username existence oracle.
 	if (!followee) return
-	const followeeUserId = await resolveStableUserIdFromRow(followee)
+	const followeeUserId = resolveStableUserIdFromRow(followee)
 	await deleteUserFollow(input.env.APP_DB, {
 		followerUserId: input.followerUserId,
 		followeeUserId,

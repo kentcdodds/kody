@@ -75,7 +75,7 @@ export const adminPackageScopeGrantCreateCapability = defineDomainCapability(
 							username: string
 							email: string
 							account_type: string
-							stable_user_id: string | null
+							stable_user_id: string
 						}>()
 					if (!grantee) {
 						throw new Error(`User "${username}" was not found.`)
@@ -88,7 +88,7 @@ export const adminPackageScopeGrantCreateCapability = defineDomainCapability(
 					const admin = requireMcpUser(ctx.callerContext)
 					const { created } = await insertPackageScopeGrant(ctx.env.APP_DB, {
 						scopeOwnerUserId: platformAccount.stableUserId,
-						granteeUserId: await resolveUserStableId(grantee),
+						granteeUserId: resolveUserStableId(grantee),
 						createdByUserId: admin.userId,
 					})
 					return {

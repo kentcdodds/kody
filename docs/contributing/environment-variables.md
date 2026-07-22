@@ -156,13 +156,13 @@ Worker secrets:
   the Workers AI binding `gateway` option so production and preview inference is
   logged/routed through AI Gateway. When unset, the Worker calls Workers AI
   directly.
-- **`CAPABILITY_REINDEX_SECRET`** — required in production; bearer token for the
-  pre-deploy stable-user-id migration and
-  `POST /__maintenance/reindex-capabilities`. Use the reindex endpoint after
-  changing the embedding model, pooling, or Vectorize index dimensions; it
-  rebuilds built-in capability, memory, job, and saved-package vectors with
-  per-user `userId` metadata on user-owned rows. Local dev uses offline search
-  while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
+- **`CAPABILITY_REINDEX_SECRET`** — required in production; bearer token for
+  `POST /__maintenance/reindex-capabilities` and other secret-gated maintenance
+  endpoints. Use the reindex endpoint after changing the embedding model,
+  pooling, or Vectorize index dimensions; it rebuilds built-in capability,
+  memory, job, and saved-package vectors with per-user `userId` metadata on
+  user-owned rows. Local dev uses offline search while `WRANGLER_IS_LOCAL_DEV`
+  is set or the binding is missing.
 
 ## Cloudflare API (Worker + Email)
 

@@ -150,38 +150,6 @@ jobs:
           node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config
           "$WRANGLER_CONFIG"
 
-      - name: 🪪 Materialize stable user IDs
-        shell: bash
-        env:
-          DEPLOY_URL: ${{ vars.APP_BASE_URL }}
-          CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
-        run: |
-          set -euo pipefail
-          if [ -z "${DEPLOY_URL:-}" ]; then
-            echo "APP_BASE_URL is required for the stable user id migration." >&2
-            exit 1
-          fi
-          if [ -z "${CAPABILITY_REINDEX_SECRET:-}" ]; then
-            echo "CAPABILITY_REINDEX_SECRET is required for the stable user id migration." >&2
-            exit 1
-          fi
-
-          migration_url="${DEPLOY_URL%/}/__maintenance/backfill-stable-user-ids"
-          status="$(curl --silent --show-error --location --max-time 180 \
-            -X POST \
-            -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
-            -H "Accept: application/json" \
-            --output stable-user-id-migration.json \
-            --write-out "%{http_code}" \
-            "$migration_url")"
-          cat stable-user-id-migration.json
-          echo
-          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "Stable user id migration failed with HTTP ${status}." >&2
-            exit 1
-          fi
-          node -e "const fs = require('node:fs'); const result = JSON.parse(fs.readFileSync('stable-user-id-migration.json', 'utf8')); if (result.ok !== true || result.failed !== 0) { console.error('stable-user-id-migration-incomplete', result); process.exit(1); } console.log('stable-user-id-migration-complete', result);"
-
       - name: ☁️ Deploy to Cloudflare Workers
         id: deploy
         env:

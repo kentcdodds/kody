@@ -4,7 +4,7 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { hashVerificationToken } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { createDb, pendingEmailChangesTable } from '#worker/db.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 
@@ -177,7 +177,7 @@ export async function verifyEmailChangeToken(input: {
 			new_email: string
 			expires_at: number
 			email: string
-			stable_user_id: string | null
+			stable_user_id: string
 		}>()
 	const now = input.now ?? new Date()
 
@@ -197,9 +197,9 @@ export async function verifyEmailChangeToken(input: {
 		.first<{ id: number }>()
 	if (existing) return { ok: false, reason: 'email_conflict' }
 
-	const stableUserId =
-		record.stable_user_id?.trim() ||
-		(await createStableUserIdFromEmail(record.email))
+	// Preserve the existing stable id across email changes so MCP identity,
+	// ownership rows, and grants stay bound to the same account.
+	const stableUserId = resolveUserStableId(record)
 	const verifiedAt = now.toISOString()
 
 	try {

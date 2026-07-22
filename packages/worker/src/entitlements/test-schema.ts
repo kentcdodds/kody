@@ -2,8 +2,14 @@
  * Non-destructive schema for entitlement primitives in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
  * needs. Mirrors migrations 0001 (users), 0046 (users.email_verified_at and
- * users.plan), 0048 (entitlement_daily_counters), 0052 (nullable
- * stable_user_id plus partial unique index), and 0066 (Stripe billing columns).
+ * users.plan), 0048 (entitlement_daily_counters), 0052 + 0075
+ * (`stable_user_id` NOT NULL + unique index), and 0066 (Stripe billing
+ * columns).
+ *
+ * Fresh `CREATE TABLE` uses `stable_user_id TEXT NOT NULL`. Preexisting shared
+ * `users` tables can only gain the column via `ALTER TABLE ... ADD COLUMN
+ * stable_user_id TEXT` (SQLite cannot add NOT NULL without a default); callers
+ * must insert concrete ids before relying on the unique index.
  */
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await db
@@ -14,7 +20,7 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 	email TEXT NOT NULL UNIQUE,
 	password_hash TEXT NOT NULL,
 	email_verified_at TEXT,
-	stable_user_id TEXT,
+	stable_user_id TEXT NOT NULL,
 	plan TEXT,
 	stripe_customer_id TEXT,
 	stripe_plan TEXT,
@@ -26,6 +32,8 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 		.run()
 	for (const column of [
 		'email_verified_at TEXT',
+		// Preexisting shared tables: ALTER ADD COLUMN cannot express NOT NULL
+		// without a default; nullable TEXT matches migration 0052's add step.
 		'stable_user_id TEXT',
 		'plan TEXT',
 		'stripe_customer_id TEXT',
@@ -38,17 +46,12 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 			// The column already exists (fresh CREATE above or migrations).
 		}
 	}
-	try {
-		await db
-			.prepare(
-				`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stable_user_id
-				 ON users(stable_user_id)
-				 WHERE stable_user_id IS NOT NULL`,
-			)
-			.run()
-	} catch {
-		// Index already exists or a full legacy index remains from an earlier suite.
-	}
+	await db
+		.prepare(
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stable_user_id
+			 ON users(stable_user_id)`,
+		)
+		.run()
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS entitlement_daily_counters (

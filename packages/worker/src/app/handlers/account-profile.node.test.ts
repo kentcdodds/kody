@@ -20,6 +20,7 @@ import {
 import { createAccountProfileApiHandler } from './account-profile.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -37,6 +38,7 @@ type TestUser = {
 	email: string
 	username: string
 	password_hash: string
+	stable_user_id: string
 	display_name: string | null
 	bio: string | null
 	avatar_key: string | null
@@ -160,6 +162,7 @@ function createUser(
 		email,
 		username,
 		password_hash: 'unused',
+		stable_user_id: testStableUserIdFromEmail(email),
 		display_name: profile?.display_name ?? null,
 		bio: profile?.bio ?? null,
 		avatar_key: profile?.avatar_key ?? null,

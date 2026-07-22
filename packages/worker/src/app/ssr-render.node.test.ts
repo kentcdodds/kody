@@ -12,6 +12,7 @@ import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -65,6 +66,7 @@ type TestUser = {
 	email: string
 	username: string
 	password_hash: string
+	stable_user_id: string
 	created_at: string
 	updated_at: string
 }
@@ -205,6 +207,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 				email: 'user@example.com',
 				username: 'account-user',
 				password_hash: 'unused',
+				stable_user_id: testStableUserIdFromEmail('user@example.com'),
 				created_at: new Date(0).toISOString(),
 				updated_at: new Date(0).toISOString(),
 			},

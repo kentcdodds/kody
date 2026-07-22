@@ -6,6 +6,7 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -26,6 +27,7 @@ function createUserEnv(options: {
 				email: 'pending@example.com',
 				username: 'pending-user',
 				password_hash: 'unused',
+				stable_user_id: testStableUserIdFromEmail('pending@example.com'),
 				email_verified_at: options.emailVerifiedAt ?? null,
 				created_at: new Date(0).toISOString(),
 				updated_at: new Date(0).toISOString(),

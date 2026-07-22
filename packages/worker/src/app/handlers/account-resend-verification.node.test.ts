@@ -11,6 +11,7 @@ import {
 } from '#worker/test-support/console-spies.ts'
 import { createAccountResendVerificationHandler } from './account-resend-verification.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -22,6 +23,7 @@ function createResendTestDb(options: { emailVerifiedAt?: string | null } = {}) {
 		email: 'resend-user@example.com',
 		username: 'resend-user',
 		password_hash: 'unused',
+		stable_user_id: testStableUserIdFromEmail('resend-user@example.com'),
 		email_verified_at: options.emailVerifiedAt ?? null,
 		created_at: new Date(0).toISOString(),
 		updated_at: new Date(0).toISOString(),

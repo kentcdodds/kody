@@ -37,6 +37,7 @@ function createEntitlementsTestDb(
 			email: string
 			plan: string | null
 			stripe_plan?: string | null
+			stable_user_id: string
 		}>
 		counts?: Partial<
 			Record<
@@ -64,7 +65,7 @@ function createEntitlementsTestDb(
 	const users = input.users ?? []
 	const counts = input.counts ?? {}
 	const counters = input.counters ?? []
-	const queries: Array<string> = []
+	const queries: Array<{ sql: string; params: Array<unknown> }> = []
 
 	function countFor(query: string) {
 		const tableNames = [
@@ -93,16 +94,29 @@ function createEntitlementsTestDb(
 
 	const db = {
 		prepare(query: string) {
-			queries.push(query)
 			return {
 				bind(...params: Array<unknown>) {
+					queries.push({ sql: query, params })
 					return {
 						async first<T>() {
 							if (
 								query.includes('SELECT plan, stripe_plan FROM users') ||
 								query.includes('SELECT plan FROM users')
 							) {
-								const user = users.find((row) => row.email === params[0])
+								const email = params[0]
+								const stableUserId = params[1]
+								// Pair match is required: omitted bind params or
+								// email-only fixtures must not resolve a plan.
+								if (
+									typeof email !== 'string' ||
+									typeof stableUserId !== 'string'
+								) {
+									return null as T | null
+								}
+								const user = users.find(
+									(row) =>
+										row.email === email && row.stable_user_id === stableUserId,
+								)
 								return (
 									user
 										? {
@@ -224,12 +238,18 @@ test('storage byte entry estimates support net-positive upsert deltas', () => {
 	)
 })
 
-test('getUserPlan resolves plans through hashed email and short-circuits invalid lookups', async () => {
+test('getUserPlan resolves plans via email+stable id and short-circuits invalid lookups', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const unknownPlanEmail = 'unknown-plan@example.com'
+	const unknownPlanUserId = await createStableUserIdFromEmail(unknownPlanEmail)
 	const { db, queries } = createEntitlementsTestDb({
 		users: [
-			{ email: plannedEmail, plan: 'pro' },
-			{ email: 'unknown-plan@example.com', plan: 'enterprise-2099' },
+			{ email: plannedEmail, plan: 'pro', stable_user_id: userId },
+			{
+				email: unknownPlanEmail,
+				plan: 'enterprise-2099',
+				stable_user_id: unknownPlanUserId,
+			},
 		],
 	})
 	expect(await getUserPlan(db, { userId: 'user-1', email: null })).toBeNull()
@@ -243,14 +263,21 @@ test('getUserPlan resolves plans through hashed email and short-circuits invalid
 	expect(
 		await getUserPlan(db, { userId, email: ' Planned@Example.com ' }),
 	).toBe('pro')
+	expect(queries.at(-1)?.sql).toContain('email = ? AND stable_user_id = ?')
+	expect(queries.at(-1)?.params).toEqual([plannedEmail, userId])
 
-	const unknownPlanUserId = await createStableUserIdFromEmail(
-		'unknown-plan@example.com',
-	)
+	// Mismatched email/stable-id pair is intentionally unlimited.
+	expect(
+		await getUserPlan(db, {
+			userId,
+			email: unknownPlanEmail,
+		}),
+	).toBeNull()
+
 	expect(
 		await getUserPlan(db, {
 			userId: unknownPlanUserId,
-			email: 'unknown-plan@example.com',
+			email: unknownPlanEmail,
 		}),
 	).toBeNull()
 })
@@ -261,7 +288,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and skips co
 	if (limit === null) throw new Error('Expected a numeric free job limit.')
 
 	const noPlan = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: null }],
+		users: [{ email: plannedEmail, plan: null, stable_user_id: userId }],
 		counts: { jobs: 10_000 },
 	})
 	await assertWithinEntitlement({
@@ -271,10 +298,12 @@ test('assertWithinEntitlement passes under the limit, throws at it, and skips co
 		resource: 'scheduled_jobs',
 	})
 	expect(noPlan.queries).toHaveLength(1)
-	expect(noPlan.queries[0]).toContain('SELECT plan, stripe_plan FROM users')
+	expect(noPlan.queries[0]?.sql).toContain(
+		'SELECT plan, stripe_plan FROM users',
+	)
 
 	const under = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'free' }],
+		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
 		counts: { jobs: limit - 1 },
 	})
 	await assertWithinEntitlement({
@@ -285,7 +314,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and skips co
 	})
 
 	const at = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'free' }],
+		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
 		counts: { jobs: limit },
 	})
 	const error = await assertWithinEntitlement({
@@ -341,7 +370,7 @@ test('persistent package services are gated as a zero limit', async () => {
 	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBeNull()
 
 	const { db } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'free' }],
+		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
 	})
 	const denied = await assertWithinEntitlement({
 		db,
@@ -361,7 +390,7 @@ test('persistent package services are gated as a zero limit', async () => {
 	})
 
 	const proDb = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'pro' }],
+		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
 	})
 	await assertWithinEntitlement({
 		db: proDb.db,
@@ -375,7 +404,7 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const now = new Date('2026-07-05T15:00:00.000Z')
 	const { db, counters } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'free' }],
+		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
 	})
 	expect(utcDayKey(now)).toBe('2026-07-05')
 
@@ -514,7 +543,7 @@ test('plan-less users count uncapped sends but honor fallback receive limits', a
 test('requested units and getCurrent overrides are honored', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const { db } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'pro' }],
+		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
 	})
 	const maxBytes = planLimits.pro.maxEmailMessageBytes
 	if (maxBytes === null) throw new Error('Expected a numeric size cap.')
@@ -590,7 +619,7 @@ test('storage bytes enforce for planned users and skip NULL-plan users', async (
 	if (limit === null) throw new Error('Expected a numeric pro storage cap.')
 
 	const noPlan = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: null }],
+		users: [{ email: plannedEmail, plan: null, stable_user_id: userId }],
 		counts: { email_messages: limit + 1 },
 	})
 	await assertWithinStorageBytesEntitlement({
@@ -600,10 +629,12 @@ test('storage bytes enforce for planned users and skip NULL-plan users', async (
 		requested: 1,
 	})
 	expect(noPlan.queries).toHaveLength(1)
-	expect(noPlan.queries[0]).toContain('SELECT plan, stripe_plan FROM users')
+	expect(noPlan.queries[0]?.sql).toContain(
+		'SELECT plan, stripe_plan FROM users',
+	)
 
 	const atLimit = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'pro' }],
+		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
 		counts: { email_messages: limit },
 	})
 	const denied = await assertWithinStorageBytesEntitlement({
@@ -627,7 +658,7 @@ test('storage bytes enforce for planned users and skip NULL-plan users', async (
 	})
 
 	const underLimit = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'pro' }],
+		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
 		counts: { email_messages: limit - 1 },
 	})
 	await assertWithinStorageBytesEntitlement({
@@ -689,16 +720,19 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 				email: freePlusProEmail,
 				plan: 'free',
 				stripe_plan: 'pro',
+				stable_user_id: freePlusProUserId,
 			},
 			{
 				email: nullPlusProEmail,
 				plan: null,
 				stripe_plan: 'pro',
+				stable_user_id: nullPlusProUserId,
 			},
 			{
 				email: proPlusPartnerEmail,
 				plan: 'pro',
 				stripe_plan: 'partner',
+				stable_user_id: proPlusPartnerUserId,
 			},
 		],
 	})

@@ -28,8 +28,7 @@ export function createProfileAvatarHandler(env: Env) {
 			const isPublic = row.profile_visibility === 'public'
 			if (!isPublic) {
 				const user = await readAuthenticatedAppUser(request, env)
-				const ownerStableId = await resolveUserStableId({
-					email: row.email,
+				const ownerStableId = resolveUserStableId({
 					stable_user_id: row.stable_user_id,
 				})
 				if (!user || user.mcpUser.userId !== ownerStableId) {

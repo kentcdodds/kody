@@ -29,9 +29,10 @@ async function seedAccountWithPlan(input: {
 	emailVerifiedAt?: string | null
 }) {
 	const username = `quota-${crypto.randomUUID().slice(0, 8)}`
+	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan)
-			VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
+			VALUES (?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			username,
@@ -41,6 +42,7 @@ async function seedAccountWithPlan(input: {
 				? new Date().toISOString()
 				: input.emailVerifiedAt,
 			input.plan,
+			stableUserId,
 		)
 		.run()
 	return { username, address: `${username}@${platformDomain}` }

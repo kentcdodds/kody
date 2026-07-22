@@ -6,6 +6,7 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createSessionHandler } from '#app/handlers/session.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 const rememberedSession: AuthSession = {
@@ -33,6 +34,7 @@ function createSessionTestDb() {
 				email: 'user@example.com',
 				username: 'session-user',
 				password_hash: 'unused',
+				stable_user_id: testStableUserIdFromEmail('user@example.com'),
 				created_at: new Date(0).toISOString(),
 				updated_at: new Date(0).toISOString(),
 			},

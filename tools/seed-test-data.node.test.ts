@@ -90,8 +90,7 @@ test('seeded users carry the same stable id the signup path derives', async () =
 	const email = 'Kody+Mixed.Case@Example.com '
 	// Reference implementation mirroring the worker's async derivation in
 	// `packages/worker/src/user-id.ts` (`createStableUserIdFromEmail`): the
-	// sync seeding helper must stay byte-identical or fixtures would fall
-	// back to the legacy full-table scan.
+	// sync seeding helper must stay byte-identical so fixtures match signup.
 	const digest = await crypto.subtle.digest(
 		'SHA-256',
 		new TextEncoder().encode(email.trim().toLowerCase()),

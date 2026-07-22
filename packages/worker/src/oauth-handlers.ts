@@ -16,10 +16,7 @@ import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { getEnv } from '#app/env.ts'
 import { type OAuthAuthorizeLoaderData } from '#app/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import {
-	createStableUserIdFromEmail,
-	resolveUserStableId,
-} from '#worker/user-id.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 import { createDb, usersTable } from './db.ts'
 import { wantsJson } from './utils.ts'
 import { isTwoFactorEnabled } from '#app/two-factor.ts'
@@ -462,19 +459,29 @@ async function handleResetClientRequest(
 	}
 
 	try {
-		let userId = await createStableUserIdFromEmail(sessionEmail)
-		try {
-			const db = createDb(env.APP_DB)
-			const userRecord = await db.findOne(usersTable, {
-				where: { email: sessionEmail },
+		const db = createDb(env.APP_DB)
+		const userRecord = await db.findOne(usersTable, {
+			where: { email: sessionEmail },
+		})
+		if (!userRecord) {
+			void logAuditEvent({
+				category: 'oauth',
+				action: 'reset_client',
+				result: 'failure',
+				email: sessionEmail,
+				ip: requestIp,
+				clientId,
+				reason: 'user_not_found',
 			})
-			if (userRecord) {
-				userId = await resolveUserStableId(userRecord)
-			}
-		} catch {
-			// Reset cleanup predated stored stable ids and can run in OAuth-only
-			// test/adaptor contexts where the users table is unavailable.
+			return respondAuthorizeError(
+				request,
+				'Signed-in user not found.',
+				401,
+				'unauthorized',
+				createSetCookieHeaders([clearResetVerificationCookie]),
+			)
 		}
+		const userId = resolveUserStableId(userRecord)
 		const grants = await listUserGrantsForClient(helpers, userId, clientId)
 		await Promise.all(
 			grants.map((grant) => helpers.revokeGrant(grant.id, userId)),
@@ -861,7 +868,7 @@ export async function handleAuthorizeRequest(
 		}
 		approvedEmail = normalizedEmail
 		approvedUsername = username
-		approvedUserId = await resolveUserStableId(userRecord)
+		approvedUserId = resolveUserStableId(userRecord)
 	} else if (sessionEmail) {
 		const db = createDb(env.APP_DB)
 		const sessionDbUserId = Number(session?.id)
@@ -896,7 +903,7 @@ export async function handleAuthorizeRequest(
 		}
 		approvedEmail = userRecord.email.trim().toLowerCase()
 		approvedUsername = username
-		approvedUserId = await resolveUserStableId(userRecord)
+		approvedUserId = resolveUserStableId(userRecord)
 		if (session && approvedEmail !== sessionEmail) {
 			setCookie = await createAuthCookie(
 				{

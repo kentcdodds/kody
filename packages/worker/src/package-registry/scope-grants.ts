@@ -1,7 +1,4 @@
-import {
-	findUserRowByStableUserId,
-	resolveUserStableId,
-} from '#worker/user-id.ts'
+import { normalizeStableUserId, resolveUserStableId } from '#worker/user-id.ts'
 
 /**
  * Package scope grants: explicit rows that let a person account act inside a
@@ -51,14 +48,14 @@ export async function getPlatformAccountByUsername(
 			username: string
 			email: string
 			account_type: string
-			stable_user_id: string | null
+			stable_user_id: string
 		}>()
 	if (!row || row.account_type !== 'platform') return null
 	return {
 		id: row.id,
 		username: row.username,
 		email: row.email,
-		stableUserId: await resolveUserStableId(row),
+		stableUserId: resolveUserStableId(row),
 	}
 }
 
@@ -66,18 +63,12 @@ async function isPlatformAccountStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ) {
-	// Self-healing lookup: matches legacy rows whose stable_user_id column is
-	// still NULL by deriving the id from email, then backfilling.
-	const row = await findUserRowByStableUserId<{
-		id: number
-		email: string
-		stable_user_id: string | null
-		account_type: string
-	}>({
-		db,
-		stableUserId,
-		select: 'SELECT id, email, stable_user_id, account_type FROM users',
-	})
+	const trimmed = normalizeStableUserId(stableUserId)
+	if (!trimmed) return false
+	const row = await db
+		.prepare(`SELECT account_type FROM users WHERE stable_user_id = ?`)
+		.bind(trimmed)
+		.first<{ account_type: string }>()
 	return row?.account_type === 'platform'
 }
 

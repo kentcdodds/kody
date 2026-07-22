@@ -1,7 +1,7 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
-import { findUserRowByStableUserId } from '#worker/user-id.ts'
+import { normalizeStableUserId } from '#worker/user-id.ts'
 import {
 	communityListingSelectColumns,
 	communityListingSourceJoin,
@@ -24,7 +24,7 @@ export type UserSocialRow = {
 	id: number
 	username: string
 	email: string
-	stable_user_id: string | null
+	stable_user_id: string
 	display_name: string | null
 	bio: string | null
 	avatar_key: string | null
@@ -40,8 +40,7 @@ function mapUserSocialRow(row: Record<string, unknown>): UserSocialRow {
 		id: Number(row['id']),
 		username: String(row['username']),
 		email: String(row['email']),
-		stable_user_id:
-			row['stable_user_id'] == null ? null : String(row['stable_user_id']),
+		stable_user_id: String(row['stable_user_id']),
 		display_name:
 			row['display_name'] == null ? null : String(row['display_name']),
 		bio: row['bio'] == null ? null : String(row['bio']),
@@ -79,17 +78,16 @@ export async function getUserSocialRowByStableId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<UserSocialRow | null> {
-	// Self-healing lookup: legacy rows whose stable_user_id column is still
-	// NULL are found by hashing emails and get the id written back, so they
-	// also start matching the raw stable-id joins used by stargazer and
-	// timeline queries.
-	const row = await findUserRowByStableUserId<
-		UserSocialRow & Record<string, unknown>
-	>({
-		db,
-		stableUserId,
-		select: `SELECT ${userSocialSelectColumns} FROM users`,
-	})
+	const trimmed = normalizeStableUserId(stableUserId)
+	if (!trimmed) return null
+	const row = await db
+		.prepare(
+			`SELECT ${userSocialSelectColumns}
+			FROM users
+			WHERE stable_user_id = ?`,
+		)
+		.bind(trimmed)
+		.first<Record<string, unknown>>()
 	return row ? mapUserSocialRow(row) : null
 }
 

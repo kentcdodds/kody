@@ -92,7 +92,7 @@ test('profile avatar cache visibility, anon 404, and cacheKey mismatch', async (
 		...publicRow,
 		profile_visibility: 'private',
 	})
-	mocks.resolveUserStableId.mockResolvedValue('stable-alice')
+	mocks.resolveUserStableId.mockReturnValue('stable-alice')
 	mocks.getUserAvatarObject.mockResolvedValue({
 		body: new Blob([Uint8Array.from([9])]).stream(),
 		httpMetadata: { contentType: 'image/png' },

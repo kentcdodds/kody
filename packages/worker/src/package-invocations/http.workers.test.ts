@@ -86,6 +86,7 @@ async function createEnv(
 													username: 'my-user',
 													email: 'me@example.com',
 													password_hash: 'hash',
+													stable_user_id: tokenUserId,
 													created_at: '2026-04-27T00:00:00.000Z',
 													updated_at: '2026-04-27T00:00:00.000Z',
 												}

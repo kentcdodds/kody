@@ -40,17 +40,19 @@ async function seedUser(input: {
 	stripePlanRefreshedAt?: string | null
 }) {
 	await ensureEntitlementTestSchema(env.APP_DB)
+	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, plan,
+			username, email, password_hash, email_verified_at, stable_user_id, plan,
 			stripe_customer_id, stripe_plan, stripe_plan_refreshed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			`billing-${crypto.randomUUID().slice(0, 8)}`,
 			input.email,
 			'test-password-hash',
 			new Date().toISOString(),
+			stableUserId,
 			input.plan ?? null,
 			input.stripeCustomerId ?? null,
 			input.stripePlan ?? null,
@@ -61,7 +63,6 @@ async function seedUser(input: {
 		.bind(input.email)
 		.first<{ id: number }>()
 	if (!row) throw new Error(`Failed to seed user ${input.email}`)
-	const stableUserId = await createStableUserIdFromEmail(input.email)
 	return {
 		id: row.id,
 		email: input.email,

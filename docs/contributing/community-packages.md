@@ -193,8 +193,9 @@ distinguish them and reports both as `fork`. New fork rows snapshot the public
 listing name and kody id; migration `0070-community-fork-listing-snapshots.sql`
 backfills existing rows while their listings still exist, preserving readable
 fork provenance after a later hard delete. Pre-snapshot orphan rows use explicit
-deleted/unknown placeholders. Actor usernames use the materialized stable-id
-index; neither email nor stable user id enters the feed or event.
+deleted/unknown placeholders. Actor usernames resolve through the unique
+`users.stable_user_id` index; neither email nor stable user id enters the feed
+or event.
 
 `installCommunityListing` (one-click install) composes `forkCommunityListing`
 with `runRepoChecks` over the fork's rewritten snapshot files and, when checks

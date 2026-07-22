@@ -1224,11 +1224,11 @@ export async function resolveAccountExportDbUserId(input: {
 		`SELECT id, email, stable_user_id FROM users WHERE email = ?`,
 	)
 		.bind(email)
-		.first<{ id: number; email: string; stable_user_id: string | null }>()
+		.first<{ id: number; email: string; stable_user_id: string }>()
 	if (!row) {
 		throw new Error('Authenticated account was not found.')
 	}
-	if ((await resolveUserStableId(row)) !== input.mcpUserId) {
+	if (resolveUserStableId(row) !== input.mcpUserId) {
 		throw new Error(
 			'Authenticated user identity did not match the account email.',
 		)

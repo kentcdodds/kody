@@ -76,6 +76,9 @@ type MockDbOptions = {
 	emailVerifiedAt?: string | null
 	// Row returned for the indexed `stable_user_id` verification lookup.
 	stableUserVerifiedAt?: string | null
+	// Expected bind values for the default verified fixture identity.
+	expectedEmail?: string
+	expectedStableUserId?: string
 	// Optional authoritative users row for stable-id profile/RBAC resolution.
 	accountByStableId?: MockAccountRow | null
 	// Rows returned for remote connector settings queries.
@@ -83,10 +86,16 @@ type MockDbOptions = {
 }
 
 function createMockDb(options: MockDbOptions = {}) {
+	const defaultEmail = options.expectedEmail ?? 'user@example.com'
+	const defaultStableUserId = options.expectedStableUserId ?? 'user'
 	const statementFor = (query: string) => {
 		const normalized = query.replace(/\s+/g, ' ').toLowerCase()
+		let boundParams: Array<unknown> = []
 		const statement = {
-			bind: () => statement,
+			bind(...params: Array<unknown>) {
+				boundParams = params
+				return statement
+			},
 			async all() {
 				if (normalized.includes('from user_roles')) {
 					return { results: [], meta: { changes: 0 } }
@@ -97,27 +106,56 @@ function createMockDb(options: MockDbOptions = {}) {
 				}
 			},
 			async first() {
+				const boundStableUserId =
+					typeof boundParams[0] === 'string' ? boundParams[0] : null
 				const isProfileLookup =
 					normalized.includes('from users') &&
 					normalized.includes('where stable_user_id') &&
 					normalized.includes('select id')
 				if (isProfileLookup) {
+					if (!boundStableUserId) return null
 					if (options.accountByStableId !== undefined) {
+						if (
+							options.accountByStableId === null ||
+							options.accountByStableId.stable_user_id !== boundStableUserId
+						) {
+							return null
+						}
 						return options.accountByStableId
 					}
+					if (boundStableUserId !== defaultStableUserId) return null
 					const verifiedAt =
 						options.stableUserVerifiedAt ?? options.emailVerifiedAt
 					if (verifiedAt === undefined) return null
 					return {
 						id: 1,
-						email: 'user@example.com',
+						email: defaultEmail,
 						username: 'user',
 						display_name: null,
-						stable_user_id: 'user',
+						stable_user_id: defaultStableUserId,
 						email_verified_at: verifiedAt,
 					} satisfies MockAccountRow
 				}
 				if (normalized.includes('email = ? and stable_user_id')) {
+					const email =
+						typeof boundParams[0] === 'string' ? boundParams[0] : null
+					const stableUserId =
+						typeof boundParams[1] === 'string' ? boundParams[1] : null
+					if (!email || !stableUserId) return null
+					if (options.accountByStableId) {
+						if (
+							email !== options.accountByStableId.email ||
+							stableUserId !== options.accountByStableId.stable_user_id
+						) {
+							return null
+						}
+						return {
+							email_verified_at: options.accountByStableId.email_verified_at,
+						}
+					}
+					if (email !== defaultEmail || stableUserId !== defaultStableUserId) {
+						return null
+					}
 					if (options.emailVerifiedAt !== undefined) {
 						return { email_verified_at: options.emailVerifiedAt }
 					}
@@ -130,11 +168,30 @@ function createMockDb(options: MockDbOptions = {}) {
 					normalized.includes('where stable_user_id') &&
 					normalized.includes('email_verified_at')
 				) {
+					if (!boundStableUserId) return null
+					if (options.accountByStableId) {
+						if (
+							options.accountByStableId.stable_user_id !== boundStableUserId
+						) {
+							return null
+						}
+						return {
+							email_verified_at: options.accountByStableId.email_verified_at,
+						}
+					}
+					if (boundStableUserId !== defaultStableUserId) return null
 					return options.stableUserVerifiedAt === undefined
 						? null
 						: { email_verified_at: options.stableUserVerifiedAt }
 				}
-				if (normalized.includes('email_verified_at')) {
+				if (
+					normalized.includes('email_verified_at') &&
+					normalized.includes('where email = ?') &&
+					!normalized.includes('stable_user_id')
+				) {
+					const email =
+						typeof boundParams[0] === 'string' ? boundParams[0] : null
+					if (!email || email !== defaultEmail) return null
 					return options.emailVerifiedAt === undefined
 						? null
 						: { email_verified_at: options.emailVerifiedAt }

@@ -9,6 +9,7 @@ type UserRow = {
 	username: string
 	email: string
 	plan: string | null
+	stable_user_id: string
 }
 
 type UsageRollupRow = {
@@ -175,6 +176,7 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 				username: 'empty',
 				email,
 				plan: 'pro',
+				stable_user_id: usageUserId,
 			},
 		],
 		resourceCounts: {
@@ -215,6 +217,7 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 				username: 'member',
 				email,
 				plan: 'pro',
+				stable_user_id: usageUserId,
 			},
 		],
 		usageRollups: [
@@ -278,6 +281,7 @@ test('loadAdminUserUsageData shows email fallback limits for plan-less users', a
 				username: 'nullplan',
 				email,
 				plan: null,
+				stable_user_id: usageUserId,
 			},
 		],
 		dailyCounters: [
@@ -349,7 +353,15 @@ test('loadAdminUserUsageData caches rollup reads in KV and serves repeat loads f
 	const usageUserId = await createStableUserIdFromEmail(email)
 	let rollupQueryCount = 0
 	const db = createAdminUserUsageTestDb({
-		users: [{ id: 1, username: 'cached', email, plan: null }],
+		users: [
+			{
+				id: 1,
+				username: 'cached',
+				email,
+				plan: null,
+				stable_user_id: usageUserId,
+			},
+		],
 		usageRollups: [
 			usageRow({
 				user_id: usageUserId,
@@ -403,6 +415,7 @@ test('loadAdminUserUsageData keeps current-month and month-over-month rollups on
 				username: 'boundary',
 				email,
 				plan: null,
+				stable_user_id: usageUserId,
 			},
 		],
 		usageRollups: [

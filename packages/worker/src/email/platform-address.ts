@@ -1,10 +1,6 @@
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { isReservedUsername } from '#app/reserved-usernames.ts'
-import {
-	findUserRowByStableUserId,
-	isMissingStableUserIdColumnError,
-	resolveUserStableId,
-} from '#worker/user-id.ts'
+import { normalizeStableUserId } from '#worker/user-id.ts'
 
 /**
  * The label prepended to the app hostname to form the default user email
@@ -83,58 +79,49 @@ async function findUserAccount(input: {
 	accountEmail: string | null | undefined
 	userId: string
 }): Promise<{ email: string; username: string | null } | null> {
-	const userId = input.userId.trim()
+	const userId = normalizeStableUserId(input.userId)
 	if (!userId) return null
-	// The stable userId is the authoritative identity: a caller-supplied
-	// email is only trusted (as an indexed lookup) when it hashes to that
-	// userId, so a mismatched pair can never yield another account's
-	// platform sender address.
+	// The stored stable userId is the authoritative identity: a caller-supplied
+	// email is only trusted (as an indexed lookup) when it matches that
+	// `users.stable_user_id`, so a mismatched pair can never yield another
+	// account's platform sender address.
 	const email = normalizeEmail(input.accountEmail ?? '')
 	if (email) {
 		const row = await input.db
 			.prepare(
-				`SELECT email, stable_user_id, username FROM users WHERE email = ?`,
+				`SELECT email, stable_user_id, username
+				 FROM users
+				 WHERE email = ? AND stable_user_id = ?`,
 			)
-			.bind(email)
+			.bind(email, userId)
 			.first<{
 				email: string
-				stable_user_id: string | null
+				stable_user_id: string
 				username: string | null
 			}>()
-			.catch(async (error: unknown) => {
-				// Only a schema missing the stable_user_id column downgrades to the
-				// legacy query; transient D1 failures must propagate, not silently
-				// change which lookup ran.
-				if (!isMissingStableUserIdColumnError(error)) throw error
-				const legacyRow = await input.db
-					.prepare(`SELECT email, username FROM users WHERE email = ?`)
-					.bind(email)
-					.first<{ email: string; username: string | null }>()
-				return legacyRow
-					? { ...legacyRow, stable_user_id: null as string | null }
-					: null
-			})
-		if (!row) return null
-		if ((await resolveUserStableId(row)) === userId) {
+		if (row && normalizeStableUserId(row.stable_user_id) === userId) {
 			return {
 				email: row.email,
 				username: row.username?.trim().toLowerCase() || null,
 			}
 		}
+		// Caller email did not match this stable id; ignore it and resolve by
+		// the authoritative indexed stable id below.
 	}
 	// Package runtime contexts (for example email subscription handlers) act
-	// with the stable hashed userId but no account email; resolve the account
-	// the same way isAccountEmailVerified does.
-	const row = await findUserRowByStableUserId<{
-		id: number
-		email: string
-		stable_user_id: string | null
-		username: string | null
-	}>({
-		db: input.db,
-		stableUserId: userId,
-		select: `SELECT id, email, stable_user_id, username FROM users`,
-	})
+	// with the stable userId but no account email; resolve the account the
+	// same way isAccountEmailVerified does.
+	const row = await input.db
+		.prepare(
+			`SELECT email, username
+			 FROM users
+			 WHERE stable_user_id = ?`,
+		)
+		.bind(userId)
+		.first<{
+			email: string
+			username: string | null
+		}>()
 	if (row) {
 		return {
 			email: normalizeEmail(row.email),

@@ -88,7 +88,7 @@ async function resolveRequestAuth(
 		console.error('Failed to load roles for authenticated user:', error)
 	}
 
-	const stableUserId = await resolveUserStableId(userRecord)
+	const stableUserId = resolveUserStableId(userRecord)
 	const displayName = getDisplayName({
 		email: userRecord.email,
 		username: userRecord.username,

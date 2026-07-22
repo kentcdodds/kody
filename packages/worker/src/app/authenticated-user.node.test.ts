@@ -5,6 +5,7 @@ import {
 	type AuthSession,
 } from './auth-session.ts'
 import { readAuthenticatedAppUser } from './authenticated-user.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'LOCAL_TEST_COOKIE_SECRET_32_CHARS_MINIMUM'
 
@@ -85,6 +86,8 @@ test('readAuthenticatedAppUser fails closed to empty roles when the rbac query e
 											email: 'user@example.com',
 											username: 'resilient-user',
 											password_hash: 'irrelevant',
+											stable_user_id:
+												testStableUserIdFromEmail('user@example.com'),
 										},
 									],
 									meta: { changes: 0 },

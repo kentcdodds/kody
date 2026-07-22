@@ -11,7 +11,7 @@ import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
  * Node-sync equivalent of the worker's `createStableUserIdFromEmail`
  * (`packages/worker/src/user-id.ts`): sha256 hex of the trimmed lowercase
  * email. Seeded users must carry the same derived id as the signup path so
- * fixtures never depend on the legacy full-scan fallback.
+ * fixtures match production identity semantics.
  */
 export function stableUserIdFromEmail(email: string) {
 	return createHash('sha256').update(email.trim().toLowerCase()).digest('hex')

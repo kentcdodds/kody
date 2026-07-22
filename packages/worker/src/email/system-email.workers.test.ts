@@ -47,12 +47,14 @@ function buildInboundMessage(input: {
 }
 
 async function seedVerifiedAccount(input: { email: string; username: string }) {
+	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at)
-		 VALUES (?, ?, ?, ?)
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(username) DO UPDATE SET
 			email = excluded.email,
 			email_verified_at = excluded.email_verified_at,
+			stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
 			updated_at = CURRENT_TIMESTAMP`,
 	)
 		.bind(
@@ -60,6 +62,7 @@ async function seedVerifiedAccount(input: { email: string; username: string }) {
 			input.email,
 			'test-password-hash',
 			new Date().toISOString(),
+			stableUserId,
 		)
 		.run()
 }

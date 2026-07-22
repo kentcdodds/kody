@@ -1,10 +1,5 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import {
-	createStableUserIdFromEmail,
-	findUserRowByStableUserId,
-	isMissingStableUserIdColumnError,
-	resolveUserStableId,
-} from '#worker/user-id.ts'
+import { normalizeStableUserId } from '#worker/user-id.ts'
 import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
@@ -15,18 +10,19 @@ import {
 	type PlanName,
 } from './plans.ts'
 
+const stableUserIdPattern = /^[a-f0-9]{64}$/i
+
 /**
  * Resolve the effective plan for a user, or null when the user is
  * legacy/unlimited.
  *
- * The MCP `userId` is the account's stored stable id, falling back to the
- * legacy SHA-256 email hash when a stored id has not been materialized yet.
- * The lookup goes through email while verifying that the account stable id
- * matches the given userId. When the pair does not match (synthetic
- * runtime contexts, package-scoped caller contexts with an empty email, or
- * test fixtures), the lookup short-circuits to null without touching D1 —
- * which also means enforcement is skipped, matching the invariant that
- * enforcement only activates for users with a verified plan.
+ * The MCP `userId` is the account's stored `users.stable_user_id`. Lookup
+ * requires the email + stable id pair so a mismatched caller context
+ * (synthetic runtime contexts, package-scoped callers with an empty email, or
+ * test fixtures) cannot resolve another account's plan. Non-hex userIds
+ * short-circuit without touching D1 — which also means enforcement is skipped,
+ * matching the invariant that enforcement only activates for users with a
+ * verified plan.
  *
  * Effective plan = f(manual users.plan, users.stripe_plan): a NULL manual
  * plan always wins (legacy/unlimited); otherwise the higher-ranked of the
@@ -39,68 +35,29 @@ export async function getUserPlan(
 ): Promise<PlanName | null> {
 	const email = input.email?.trim().toLowerCase()
 	if (!email || !input.userId) return null
-	if ((await createStableUserIdFromEmail(email)) !== input.userId) {
-		if (!/^[a-f0-9]{64}$/i.test(input.userId)) return null
-		// Only the missing-column case (pre-migration databases and legacy
-		// test fixtures) may be treated as "no stored plan"; any other D1
-		// failure must propagate instead of silently disabling enforcement.
-		const storedMatch = await db
-			.prepare(
-				`SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`,
-			)
-			.bind(email, input.userId)
-			.first<{ plan: string | null; stripe_plan: string | null }>()
-			.catch((error: unknown) => {
-				if (isMissingStableUserIdColumnError(error)) return null
-				throw error
-			})
-		return storedMatch
-			? resolveEffectivePlan(
-					parsePlanName(storedMatch.plan),
-					storedMatch.stripe_plan,
-				)
-			: null
-	}
+	if (!stableUserIdPattern.test(input.userId)) return null
 	const row = await db
-		.prepare(`SELECT plan, stripe_plan FROM users WHERE email = ?`)
-		.bind(email)
+		.prepare(
+			`SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`,
+		)
+		.bind(email, input.userId)
 		.first<{ plan: string | null; stripe_plan: string | null }>()
 	if (!row) return null
 	return resolveEffectivePlan(parsePlanName(row.plan), row.stripe_plan)
 }
 
-/**
- * Per-isolate cache of stable user id → account email. Cache hits are
- * validated against the stored stable id and deleted entries fall back to a
- * fresh scan. Bounded so long-lived isolates cannot grow it without limit;
- * the oldest insertion is evicted first.
- */
-const stableUserIdEmailCache = new Map<string, string>()
-const stableUserIdEmailCacheMaxEntries = 256
-
-function cacheStableUserIdEmail(stableUserId: string, email: string) {
-	if (stableUserIdEmailCache.size >= stableUserIdEmailCacheMaxEntries) {
-		const oldestKey = stableUserIdEmailCache.keys().next().value
-		if (oldestKey !== undefined) stableUserIdEmailCache.delete(oldestKey)
-	}
-	stableUserIdEmailCache.set(stableUserId, email)
-}
-
 export type StableUserAccount = {
 	email: string
 	plan: PlanName | null
-	/** Whether users.email_verified_at is set. Read fresh, never cached. */
+	/** Whether users.email_verified_at is set. */
 	emailVerified: boolean
 }
 
 /**
  * Reverse-resolve a stable MCP userId back to the account email, plan, and
- * verified-email state. Stored stable ids are one indexed point read; legacy
- * rows without one fall back to the scan in `findUserRowByStableUserId`,
- * which hashes each email and writes the computed id back so the scan is
- * paid at most once per row.
+ * verified-email state via one indexed `users.stable_user_id` point read.
  * Only call this on paths that genuinely have no caller context email (for
- * example package-runtime contexts acting with only the hashed userId);
+ * example package-runtime contexts acting with only the stable userId);
  * inbound email routing resolves accounts via the indexed username lookup
  * and interactive surfaces already carry the email.
  */
@@ -108,67 +65,21 @@ export async function findUserAccountByStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<StableUserAccount | null> {
-	const trimmed = stableUserId.trim()
+	const trimmed = normalizeStableUserId(stableUserId)
 	if (!trimmed) return null
-	const cachedEmail = stableUserIdEmailCache.get(trimmed)
-	if (cachedEmail) {
-		const row = await db
-			.prepare(
-				`SELECT email, stable_user_id, plan, email_verified_at
-				 FROM users
-				 WHERE email = ?`,
-			)
-			.bind(cachedEmail)
-			.first<{
-				email: string
-				stable_user_id: string | null
-				plan: string | null
-				email_verified_at: string | null
-			}>()
-			.catch(async (error: unknown) => {
-				// Only a schema missing the stable_user_id column downgrades to the
-				// legacy query; transient D1 failures must propagate, not silently
-				// change which lookup ran.
-				if (!isMissingStableUserIdColumnError(error)) throw error
-				const legacyRow = await db
-					.prepare(
-						`SELECT email, plan, email_verified_at
-						 FROM users
-						 WHERE email = ?`,
-					)
-					.bind(cachedEmail)
-					.first<{
-						email: string
-						plan: string | null
-						email_verified_at: string | null
-					}>()
-				return legacyRow
-					? { ...legacyRow, stable_user_id: null as string | null }
-					: null
-			})
-		if (row && (await resolveUserStableId(row)) === trimmed) {
-			return {
-				email: row.email,
-				plan: parsePlanName(row.plan),
-				emailVerified: Boolean(row.email_verified_at),
-			}
-		}
-		// The account is gone (deleted); drop the entry and rescan.
-		stableUserIdEmailCache.delete(trimmed)
-	}
-	const row = await findUserRowByStableUserId<{
-		id: number
-		email: string
-		stable_user_id: string | null
-		plan: string | null
-		email_verified_at: string | null
-	}>({
-		db,
-		stableUserId: trimmed,
-		select: `SELECT id, email, stable_user_id, plan, email_verified_at FROM users`,
-	})
+	const row = await db
+		.prepare(
+			`SELECT email, plan, email_verified_at
+			 FROM users
+			 WHERE stable_user_id = ?`,
+		)
+		.bind(trimmed)
+		.first<{
+			email: string
+			plan: string | null
+			email_verified_at: string | null
+		}>()
 	if (!row) return null
-	cacheStableUserIdEmail(trimmed, row.email)
 	return {
 		email: row.email,
 		plan: parsePlanName(row.plan),

@@ -6,7 +6,7 @@ import {
 	isFeatureFlagKey,
 	type FeatureFlagKey,
 } from '#worker/feature-flags/registry.ts'
-import { findUserRowByStableUserId } from '#worker/user-id.ts'
+import { normalizeStableUserId } from '#worker/user-id.ts'
 
 export const adminFeatureFlagOverrideSchema = z.object({
 	userId: z.number().int().positive(),
@@ -45,15 +45,15 @@ export async function resolveActingAdminUserId(
 	ctx: CapabilityContext,
 ): Promise<number> {
 	const user = requireMcpUser(ctx.callerContext)
-	const row = await findUserRowByStableUserId<{
-		id: number
-		email: string
-		stable_user_id: string | null
-	}>({
-		db: ctx.env.APP_DB,
-		stableUserId: user.userId,
-		select: 'SELECT id, email, stable_user_id FROM users',
-	})
+	const stableUserId = normalizeStableUserId(user.userId)
+	if (!stableUserId) {
+		throw new Error('Authenticated admin account was not found.')
+	}
+	const row = await ctx.env.APP_DB.prepare(
+		`SELECT id FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(stableUserId)
+		.first<{ id: number }>()
 	if (!row) {
 		throw new Error('Authenticated admin account was not found.')
 	}
