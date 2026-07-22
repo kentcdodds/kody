@@ -308,3 +308,242 @@ export function getAccountD1UserColumnCoverage() {
 	}
 	return covered
 }
+
+/**
+ * Shared match predicate for a user-scoped D1 target. Account deletion wraps
+ * this in DELETE/UPDATE; account export uses the table-qualified form in
+ * SELECT WHERE clauses. Keep both SQL shapes here so the two paths cannot
+ * drift.
+ */
+export type UserScopedTargetMatch = {
+	table: string
+	/** Unqualified boolean SQL for DELETE/UPDATE WHERE clauses. */
+	whereSql: string
+	/** Table-qualified boolean SQL for SELECT WHERE clauses. */
+	qualifiedWhereSql: string
+	params: ReadonlyArray<unknown>
+	mutation:
+		| { kind: 'delete' }
+		| { kind: 'null_columns'; columns: ReadonlyArray<string> }
+		| { kind: 'replace_column'; column: string; value: string }
+}
+
+export function resolveUserScopedTargetTable(
+	target: UserScopedDataTarget,
+): string {
+	switch (target.kind) {
+		case 'mcp_memory_suppression': {
+			return 'mcp_memory_conversation_suppressions'
+		}
+		case 'attachment_parent': {
+			return 'email_attachments'
+		}
+		case 'user_id':
+		case 'db_user_id':
+		case 'db_user_target':
+		case 'user_columns':
+		case 'null_user_column':
+		case 'replace_user_column':
+		case 'bucket_parent':
+		case 'community_listing_child': {
+			return target.table
+		}
+		default: {
+			const exhaustive: never = target
+			throw new Error(
+				`Unhandled user-scoped target table: ${JSON.stringify(exhaustive)}`,
+			)
+		}
+	}
+}
+
+export function buildUserScopedTargetMatch(input: {
+	target: UserScopedDataTarget
+	mcpUserId: string
+	dbUserId: number
+}): UserScopedTargetMatch {
+	const { target } = input
+	const table = resolveUserScopedTargetTable(target)
+	switch (target.kind) {
+		case 'user_id': {
+			return {
+				table,
+				whereSql: 'user_id = ?',
+				qualifiedWhereSql: `${table}.user_id = ?`,
+				params: [input.mcpUserId],
+				mutation: { kind: 'delete' },
+			}
+		}
+		case 'db_user_id': {
+			return {
+				table,
+				whereSql: 'user_id = ?',
+				qualifiedWhereSql: `${table}.user_id = ?`,
+				params: [input.dbUserId],
+				mutation: { kind: 'delete' },
+			}
+		}
+		case 'db_user_target': {
+			return {
+				table,
+				whereSql: 'target = ?',
+				qualifiedWhereSql: `${table}.target = ?`,
+				params: [String(input.dbUserId)],
+				mutation: { kind: 'delete' },
+			}
+		}
+		case 'user_columns': {
+			return {
+				table,
+				whereSql: target.columns.map((column) => `${column} = ?`).join(' OR '),
+				qualifiedWhereSql: target.columns
+					.map((column) => `${table}.${column} = ?`)
+					.join(' OR '),
+				params: target.columns.map(() => input.mcpUserId),
+				mutation: { kind: 'delete' },
+			}
+		}
+		case 'null_user_column': {
+			return {
+				table,
+				whereSql: `${target.matchColumn} = ?`,
+				qualifiedWhereSql: `${table}.${target.matchColumn} = ?`,
+				params: [input.mcpUserId],
+				mutation: { kind: 'null_columns', columns: target.nullColumns },
+			}
+		}
+		case 'replace_user_column': {
+			return {
+				table,
+				whereSql: `${target.matchColumn} = ?`,
+				qualifiedWhereSql: `${table}.${target.matchColumn} = ?`,
+				params: [input.mcpUserId],
+				mutation: {
+					kind: 'replace_column',
+					column: target.setColumn,
+					value: target.value,
+				},
+			}
+		}
+		case 'bucket_parent': {
+			const whereSql = `bucket_id IN (
+						SELECT id FROM ${target.parentTable} WHERE user_id = ?
+					)`
+			return {
+				table,
+				whereSql,
+				qualifiedWhereSql: `${table}.${whereSql}`,
+				params: [input.mcpUserId],
+				mutation: { kind: 'delete' },
+			}
+		}
+		case 'attachment_parent': {
+			const whereSql = `message_id IN (
+						SELECT id FROM email_messages WHERE user_id = ?
+					)`
+			return {
+				table,
+				whereSql,
+				qualifiedWhereSql: `email_attachments.${whereSql}`,
+				params: [input.mcpUserId],
+				mutation: { kind: 'delete' },
+			}
+		}
+		case 'community_listing_child': {
+			const whereSql = `${target.listingColumn} IN (
+						SELECT id FROM community_listings WHERE owner_user_id = ?
+					)`
+			return {
+				table,
+				whereSql,
+				qualifiedWhereSql: `${table}.${whereSql}`,
+				params: [input.mcpUserId],
+				mutation: { kind: 'delete' },
+			}
+		}
+		case 'mcp_memory_suppression': {
+			return {
+				table,
+				whereSql: 'user_id = ?',
+				qualifiedWhereSql: `${table}.user_id = ?`,
+				params: [input.mcpUserId],
+				mutation: { kind: 'delete' },
+			}
+		}
+		default: {
+			const exhaustive: never = target
+			throw new Error(
+				`Unhandled user-scoped target match: ${JSON.stringify(exhaustive)}`,
+			)
+		}
+	}
+}
+
+export function buildUserScopedDeleteOrUpdateSql(
+	match: UserScopedTargetMatch,
+): { sql: string; params: ReadonlyArray<unknown> } {
+	switch (match.mutation.kind) {
+		case 'delete': {
+			return {
+				sql: `DELETE FROM ${match.table} WHERE ${match.whereSql}`,
+				params: match.params,
+			}
+		}
+		case 'null_columns': {
+			return {
+				sql: `UPDATE ${match.table}
+						SET ${match.mutation.columns.map((column) => `${column} = NULL`).join(', ')}
+						WHERE ${match.whereSql}`,
+				params: match.params,
+			}
+		}
+		case 'replace_column': {
+			return {
+				sql: `UPDATE ${match.table}
+						SET ${match.mutation.column} = ?
+						WHERE ${match.whereSql}`,
+				params: [match.mutation.value, ...match.params],
+			}
+		}
+		default: {
+			const exhaustive: never = match.mutation
+			throw new Error(
+				`Unhandled user-scoped mutation: ${JSON.stringify(exhaustive)}`,
+			)
+		}
+	}
+}
+
+// Secret values and credential-equivalent hashes must never leave Kody through
+// account export. Secret entries are metadata-only; encrypted payloads stay
+// server-side and token/password hashes are omitted for the same reason.
+export const accountExportRedactedColumnsByTable: Readonly<
+	Record<string, ReadonlyArray<string>>
+> = {
+	email_verifications: ['token_hash'],
+	package_invocation_tokens: ['token_hash'],
+	password_resets: ['token_hash'],
+	pending_email_changes: ['token_hash'],
+	platform_feedback: ['reviewed_by_user_id', 'reviewed_at', 'admin_note'],
+	remote_connector_settings: ['encrypted_shared_secret'],
+	secret_entries: ['encrypted_value', 'lookup_hash'],
+	users: ['password_hash'],
+	verifications: ['secret'],
+}
+
+// Social-graph export rows can include another user's stable id. Keep the
+// exporter's own id; replace every other value in these columns.
+export const accountExportForeignUserIdColumnsByTable: Readonly<
+	Record<string, ReadonlyArray<string>>
+> = {
+	user_follows: ['follower_user_id', 'followee_user_id'],
+	community_stars: ['user_id'],
+	community_activity_events: ['actor_user_id'],
+	package_scope_grants: [
+		'scope_owner_user_id',
+		'grantee_user_id',
+		'created_by_user_id',
+	],
+}
+
+export const accountExportRedactedForeignUserId = '[redacted]'

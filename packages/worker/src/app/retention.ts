@@ -1,3 +1,4 @@
+import { accountRetentionDispositions } from '#app/account-retention-dispositions.ts'
 import { emailRawMimeKey } from '#worker/email/repo.ts'
 import { systemEmailOwnerId } from '#worker/email/system-email.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
@@ -70,6 +71,11 @@ const terminalWorkflowStatusList = terminalWorkflowStatusValues
  * Inventory of D1 growth-table retention policies. Keep this manifest in sync
  * with the scheduled prune implementation and data-storage.md so future growth
  * tables have an explicit retention story or a documented exemption.
+ *
+ * Explicit policy / alternate_cleanup / durable_forever dispositions also live
+ * in `account-retention-dispositions.ts` and must cover the same table set
+ * (`account-retention-dispositions.node.test.ts`). The schema-growth heuristic
+ * in `retention.node.test.ts` remains a second net for discovering new tables.
  */
 export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 	{
@@ -184,18 +190,21 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 ] as const
 
 export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> =
-	[
-		{
-			table: 'archived_job_artifacts',
-			reason:
-				'Archived job artifact rows are bounded by retain_until and cleaned by the job artifact cleanup path.',
-		},
-		{
-			table: 'mcp_memories',
-			reason:
-				'Memories are durable user-curated content removed by explicit user action or account deletion, not by time-based retention.',
-		},
-	] as const
+	accountRetentionDispositions
+		.filter(
+			(
+				disposition,
+			): disposition is Extract<
+				(typeof accountRetentionDispositions)[number],
+				{ kind: 'alternate_cleanup' | 'durable_forever' }
+			> =>
+				disposition.kind === 'alternate_cleanup' ||
+				disposition.kind === 'durable_forever',
+		)
+		.map((disposition) => ({
+			table: disposition.table,
+			reason: disposition.reason,
+		}))
 
 export type RetentionPruneResult = {
 	runtimeRuns: {

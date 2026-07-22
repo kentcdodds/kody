@@ -1,11 +1,15 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	accountExportForeignUserIdColumnsByTable,
+	accountExportRedactedColumnsByTable,
+	accountExportRedactedForeignUserId,
 	accountUserDataTargets,
+	buildUserScopedTargetMatch,
 	getAccountExportExcludedD1Surfaces,
 	isExcludedFromAccountExport,
-	type UserScopedDataTarget,
 	getAccountD1UserColumnCoverage,
 } from '#app/account-data-targets.ts'
+import { getAccountExportExcludedDurableObjects } from '#app/account-user-owned-surfaces.ts'
 import { exportJobManagerForUser } from '#worker/jobs/manager-client.ts'
 import {
 	buildPackageServiceStorageId,
@@ -30,39 +34,6 @@ const d1ExportPageSize = 500
 // Internal alias for the SQLite rowid used as the keyset cursor. Stripped from
 // exported rows so the export document schema is unchanged.
 const exportRowidColumn = '__account_export_rowid'
-
-// Secret values and credential-equivalent hashes must never leave Kody through
-// account export. Secret entries are metadata-only; encrypted payloads stay
-// server-side and token/password hashes are omitted for the same reason.
-const redactedColumnsByTable: Readonly<Record<string, ReadonlyArray<string>>> =
-	{
-		email_verifications: ['token_hash'],
-		package_invocation_tokens: ['token_hash'],
-		password_resets: ['token_hash'],
-		pending_email_changes: ['token_hash'],
-		platform_feedback: ['reviewed_by_user_id', 'reviewed_at', 'admin_note'],
-		remote_connector_settings: ['encrypted_shared_secret'],
-		secret_entries: ['encrypted_value', 'lookup_hash'],
-		users: ['password_hash'],
-		verifications: ['secret'],
-	}
-
-// Social-graph export rows can include another user's stable id. Keep the
-// exporter's own id; replace every other value in these columns.
-const foreignUserIdColumnsByTable: Readonly<
-	Record<string, ReadonlyArray<string>>
-> = {
-	user_follows: ['follower_user_id', 'followee_user_id'],
-	community_stars: ['user_id'],
-	community_activity_events: ['actor_user_id'],
-	package_scope_grants: [
-		'scope_owner_user_id',
-		'grantee_user_id',
-		'created_by_user_id',
-	],
-}
-
-const redactedForeignUserId = '[redacted]'
 
 export const accountExportSectionNames = [
 	'd1_table',
@@ -274,120 +245,6 @@ type D1TableCondition = {
 	params: Array<unknown>
 }
 
-function buildConditionForTarget(input: {
-	target: UserScopedDataTarget
-	mcpUserId: string
-	dbUserId: number
-}): { table: string; condition: D1TableCondition } {
-	const { target } = input
-	switch (target.kind) {
-		case 'user_id': {
-			return {
-				table: target.table,
-				condition: {
-					condition: `${target.table}.user_id = ?`,
-					params: [input.mcpUserId],
-				},
-			}
-		}
-		case 'db_user_id': {
-			return {
-				table: target.table,
-				condition: {
-					condition: `${target.table}.user_id = ?`,
-					params: [input.dbUserId],
-				},
-			}
-		}
-		case 'db_user_target': {
-			return {
-				table: target.table,
-				condition: {
-					condition: `${target.table}.target = ?`,
-					params: [String(input.dbUserId)],
-				},
-			}
-		}
-		case 'user_columns': {
-			return {
-				table: target.table,
-				condition: {
-					condition: target.columns
-						.map((column) => `${target.table}.${column} = ?`)
-						.join(' OR '),
-					params: target.columns.map(() => input.mcpUserId),
-				},
-			}
-		}
-		case 'null_user_column': {
-			return {
-				table: target.table,
-				condition: {
-					condition: `${target.table}.${target.matchColumn} = ?`,
-					params: [input.mcpUserId],
-				},
-			}
-		}
-		case 'replace_user_column': {
-			return {
-				table: target.table,
-				condition: {
-					condition: `${target.table}.${target.matchColumn} = ?`,
-					params: [input.mcpUserId],
-				},
-			}
-		}
-		case 'bucket_parent': {
-			return {
-				table: target.table,
-				condition: {
-					condition: `${target.table}.bucket_id IN (
-						SELECT id FROM ${target.parentTable} WHERE user_id = ?
-					)`,
-					params: [input.mcpUserId],
-				},
-			}
-		}
-		case 'attachment_parent': {
-			return {
-				table: 'email_attachments',
-				condition: {
-					condition: `email_attachments.message_id IN (
-						SELECT id FROM email_messages WHERE user_id = ?
-					)`,
-					params: [input.mcpUserId],
-				},
-			}
-		}
-		case 'community_listing_child': {
-			return {
-				table: target.table,
-				condition: {
-					condition: `${target.table}.${target.listingColumn} IN (
-						SELECT id FROM community_listings WHERE owner_user_id = ?
-					)`,
-					params: [input.mcpUserId],
-				},
-			}
-		}
-		case 'mcp_memory_suppression': {
-			return {
-				table: 'mcp_memory_conversation_suppressions',
-				condition: {
-					condition: `mcp_memory_conversation_suppressions.user_id = ?`,
-					params: [input.mcpUserId],
-				},
-			}
-		}
-		default: {
-			const exhaustive: never = target
-			throw new Error(
-				`Unhandled account export target: ${JSON.stringify(exhaustive)}`,
-			)
-		}
-	}
-}
-
 function buildD1TableConditions(input: {
 	mcpUserId: string
 	dbUserId: number
@@ -406,12 +263,15 @@ function buildD1TableConditions(input: {
 		if (isExcludedFromAccountExport(target)) {
 			continue
 		}
-		const built = buildConditionForTarget({
+		const match = buildUserScopedTargetMatch({
 			target,
 			mcpUserId: input.mcpUserId,
 			dbUserId: input.dbUserId,
 		})
-		add(built.table, built.condition)
+		add(match.table, {
+			condition: match.qualifiedWhereSql,
+			params: [...match.params],
+		})
 	}
 	return conditionsByTable
 }
@@ -421,8 +281,9 @@ function sanitizeRow(
 	row: Record<string, unknown>,
 	mcpUserId: string,
 ) {
-	const redactedColumns = redactedColumnsByTable[table] ?? []
-	const foreignUserIdColumns = foreignUserIdColumnsByTable[table] ?? []
+	const redactedColumns = accountExportRedactedColumnsByTable[table] ?? []
+	const foreignUserIdColumns =
+		accountExportForeignUserIdColumnsByTable[table] ?? []
 	const sanitized: Record<string, unknown> = {}
 	for (const [key, value] of Object.entries(row)) {
 		if (redactedColumns.includes(key)) continue
@@ -431,7 +292,7 @@ function sanitizeRow(
 			typeof value === 'string' &&
 			value !== mcpUserId
 		) {
-			sanitized[key] = redactedForeignUserId
+			sanitized[key] = accountExportRedactedForeignUserId
 			continue
 		}
 		sanitized[key] = value
@@ -1180,23 +1041,7 @@ function buildManifest(input: {
 			vectorize:
 				'Vectorize entries for memories, jobs, and packages are derived from exported D1 rows and are intentionally excluded; rebuild them by reindexing after import.',
 		},
-		excludedDurableObjects: [
-			{
-				name: 'MCP',
-				reason:
-					'Session-keyed by the MCP SDK and not globally enumerable; durable user data is carried by D1 and user-scoped stores instead.',
-			},
-			{
-				name: 'RepoSession',
-				reason:
-					'Ephemeral editing workspace. Canonical repo-backed source is exported as Artifacts repo pointers via entity_sources and repo_sessions metadata.',
-			},
-			{
-				name: 'PackageRealtimeSession',
-				reason:
-					'Ephemeral live websocket/session state. Durable app storage is exported through StorageRunner buckets.',
-			},
-		],
+		excludedDurableObjects: getAccountExportExcludedDurableObjects(),
 		excludedD1Surfaces: getAccountExportExcludedD1Surfaces(),
 	} satisfies AccountExportManifest
 }

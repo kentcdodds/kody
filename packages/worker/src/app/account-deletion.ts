@@ -16,8 +16,14 @@ import {
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import {
 	accountUserDataTargets,
+	buildUserScopedDeleteOrUpdateSql,
+	buildUserScopedTargetMatch,
 	getAccountD1UserColumnCoverage,
 } from '#app/account-data-targets.ts'
+import {
+	accountUserOwnedVectorizeSurfaces,
+	getAccountDeletionDurableObjectResultKeys,
+} from '#app/account-user-owned-surfaces.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
@@ -130,31 +136,24 @@ function uniqueStrings(values: Iterable<string | null | undefined>) {
 	)
 }
 
+const vectorIdBuildersBySurfaceId = {
+	memory: memoryVectorId,
+	job: jobVectorId,
+	saved_package: savedPackageVectorId,
+} as const
+
 async function listUserVectorIds(env: Env, userId: string) {
-	const memoryRows = await env.APP_DB.prepare(
-		`SELECT id FROM mcp_memories WHERE user_id = ?`,
-	)
-		.bind(userId)
-		.all<{ id: string }>()
-	const jobRows = await env.APP_DB.prepare(
-		`SELECT id FROM jobs WHERE user_id = ?`,
-	)
-		.bind(userId)
-		.all<{ id: string }>()
-	const packageRows = await env.APP_DB.prepare(
-		`SELECT id FROM saved_packages WHERE user_id = ?`,
-	)
-		.bind(userId)
-		.all<{ id: string }>()
 	const ids: Array<string> = []
-	for (const row of memoryRows.results ?? []) {
-		ids.push(memoryVectorId(row.id))
-	}
-	for (const row of jobRows.results ?? []) {
-		ids.push(jobVectorId(row.id))
-	}
-	for (const row of packageRows.results ?? []) {
-		ids.push(savedPackageVectorId(row.id))
+	for (const surface of accountUserOwnedVectorizeSurfaces) {
+		const rows = await env.APP_DB.prepare(
+			`SELECT id FROM ${surface.sourceTable} WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.all<{ id: string }>()
+		const buildId = vectorIdBuildersBySurfaceId[surface.id]
+		for (const row of rows.results ?? []) {
+			ids.push(buildId(row.id))
+		}
 	}
 	return ids
 }
@@ -881,115 +880,28 @@ async function deleteUserScopedRows(input: {
 			(updatedRowCounts[tableName] ?? 0) + (changes ?? 0)
 	}
 	for (const target of accountUserDataTargets) {
+		const match = buildUserScopedTargetMatch({
+			target,
+			mcpUserId: input.mcpUserId,
+			dbUserId: input.dbUserId,
+		})
 		try {
-			let sql: string
-			let params: Array<unknown>
-			let tableName: string
-			switch (target.kind) {
-				case 'user_id': {
-					sql = `DELETE FROM ${target.table} WHERE user_id = ?`
-					params = [input.mcpUserId]
-					tableName = target.table
-					break
-				}
-				case 'db_user_id': {
-					sql = `DELETE FROM ${target.table} WHERE user_id = ?`
-					params = [input.dbUserId]
-					tableName = target.table
-					break
-				}
-				case 'db_user_target': {
-					sql = `DELETE FROM ${target.table} WHERE target = ?`
-					params = [String(input.dbUserId)]
-					tableName = target.table
-					break
-				}
-				case 'user_columns': {
-					sql = `DELETE FROM ${target.table} WHERE ${target.columns
-						.map((column) => `${column} = ?`)
-						.join(' OR ')}`
-					params = target.columns.map(() => input.mcpUserId)
-					tableName = target.table
-					break
-				}
-				case 'null_user_column': {
-					sql = `UPDATE ${target.table}
-						SET ${target.nullColumns.map((column) => `${column} = NULL`).join(', ')}
-						WHERE ${target.matchColumn} = ?`
-					params = [input.mcpUserId]
-					tableName = target.table
-					break
-				}
-				case 'replace_user_column': {
-					sql = `UPDATE ${target.table}
-						SET ${target.setColumn} = ?
-						WHERE ${target.matchColumn} = ?`
-					params = [target.value, input.mcpUserId]
-					tableName = target.table
-					break
-				}
-				case 'bucket_parent': {
-					sql = `DELETE FROM ${target.table} WHERE bucket_id IN (
-						SELECT id FROM ${target.parentTable} WHERE user_id = ?
-					)`
-					params = [input.mcpUserId]
-					tableName = target.table
-					break
-				}
-				case 'attachment_parent': {
-					sql = `DELETE FROM email_attachments WHERE message_id IN (
-						SELECT id FROM email_messages WHERE user_id = ?
-					)`
-					params = [input.mcpUserId]
-					tableName = 'email_attachments'
-					break
-				}
-				case 'community_listing_child': {
-					sql = `DELETE FROM ${target.table} WHERE ${target.listingColumn} IN (
-						SELECT id FROM community_listings WHERE owner_user_id = ?
-					)`
-					params = [input.mcpUserId]
-					tableName = target.table
-					break
-				}
-				case 'mcp_memory_suppression': {
-					sql = `DELETE FROM mcp_memory_conversation_suppressions WHERE user_id = ?`
-					params = [input.mcpUserId]
-					tableName = 'mcp_memory_conversation_suppressions'
-					break
-				}
-				default: {
-					const exhaustive: never = target
-					throw new Error(
-						`Unhandled user-scoped delete target: ${JSON.stringify(exhaustive)}`,
-					)
-				}
-			}
+			const { sql, params } = buildUserScopedDeleteOrUpdateSql(match)
 			const result = await input.env.APP_DB.prepare(sql)
 				.bind(...params)
 				.run()
-			if (
-				target.kind === 'null_user_column' ||
-				target.kind === 'replace_user_column'
-			) {
-				recordUpdated(tableName, result.meta.changes)
+			if (match.mutation.kind === 'delete') {
+				recordDeleted(match.table, result.meta.changes)
 			} else {
-				recordDeleted(tableName, result.meta.changes)
+				recordUpdated(match.table, result.meta.changes)
 			}
 		} catch (error) {
 			const message = getErrorMessage(error)
-			const targetLabel =
-				target.kind === 'mcp_memory_suppression'
-					? 'mcp_memory_conversation_suppressions'
-					: target.table
-			input.warnings.push(`Failed to delete from ${targetLabel}: ${message}`)
-			if (
-				target.kind === 'null_user_column' ||
-				target.kind === 'replace_user_column'
-			) {
-				recordUpdated(targetLabel, 0)
+			input.warnings.push(`Failed to delete from ${match.table}: ${message}`)
+			if (match.mutation.kind === 'delete') {
+				recordDeleted(match.table, 0)
 			} else {
-				recordDeleted(targetLabel, 0)
+				recordUpdated(match.table, 0)
 			}
 		}
 	}
@@ -1036,6 +948,10 @@ export async function deleteUserAccount(input: {
 	mcpUserId: string
 }): Promise<AccountDeletionResult> {
 	const warnings: Array<string> = []
+	const clearedDurableObjects: Record<string, number> = {}
+	for (const key of getAccountDeletionDurableObjectResultKeys()) {
+		clearedDurableObjects[key] = 0
+	}
 	const result: AccountDeletionResult = {
 		deletedRowCounts: {},
 		updatedRowCounts: {},
@@ -1044,7 +960,7 @@ export async function deleteUserAccount(input: {
 		deletedEmailBlobs: 0,
 		deletedArtifactRepos: 0,
 		revokedOAuthGrants: 0,
-		clearedDurableObjects: {},
+		clearedDurableObjects,
 		deletedVectors: 0,
 		warnings,
 	}
