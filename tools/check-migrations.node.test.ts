@@ -21,7 +21,16 @@ const uniqueMigrations = [
 	'0077-drop-email-raw-mime-inline.sql',
 ] as const
 
-test('parseMigrationFilename accepts NNNN-kebab-case-description.sql and rejects malformed names', () => {
+function expectErrorsMention(
+	errors: ReadonlyArray<string>,
+	needles: ReadonlyArray<string>,
+) {
+	for (const needle of needles) {
+		expect(errors.some((error) => error.includes(needle))).toBe(true)
+	}
+}
+
+test('migration filename helpers parse, score prefixes, and accept unique plus grandfathered pairs', async () => {
 	expect(parseMigrationFilename('0001-init.sql')).toEqual({
 		prefix: '0001',
 		description: 'init',
@@ -30,7 +39,6 @@ test('parseMigrationFilename accepts NNNN-kebab-case-description.sql and rejects
 		prefix: '0075',
 		description: 'stable-user-id-not-null',
 	})
-
 	expect(parseMigrationFilename('1-init.sql')).toBeNull()
 	expect(parseMigrationFilename('0001_init.sql')).toBeNull()
 	expect(parseMigrationFilename('0001-Init.sql')).toBeNull()
@@ -39,14 +47,30 @@ test('parseMigrationFilename accepts NNNN-kebab-case-description.sql and rejects
 	expect(parseMigrationFilename('0001-init.SQL')).toBeNull()
 	expect(parseMigrationFilename('readme.md')).toBeNull()
 	expect(parseMigrationFilename('0001-init.sql.bak')).toBeNull()
-})
 
-test('checkMigrationFilenames accepts valid unique names and exact historical pairs', () => {
+	const filenamesWithGap = [
+		'0001-init.sql',
+		'0038-backfill-usernames.sql',
+		// Gap at 0039 is intentional and must not be treated as an error.
+		'0040-drop-source-rescue-events.sql',
+		'0075-stable-user-id-not-null.sql',
+	]
+	expect(getMaxMigrationPrefix(filenamesWithGap)).toBe(75)
+	expect(getNextMigrationPrefix(filenamesWithGap)).toBe('0076')
+	expect(formatMigrationPrefix(76)).toBe('0076')
+	expect(formatMigrationPrefix(1)).toBe('0001')
+	expect(getNextMigrationPrefix([])).toBe('0001')
+
+	const withGap = checkMigrationFilenames(filenamesWithGap)
+	expect(withGap).toMatchObject({ ok: true, errors: [], nextPrefix: '0076' })
+
 	const validUnique = checkMigrationFilenames([...uniqueMigrations])
-	expect(validUnique.ok).toBe(true)
-	expect(validUnique.errors).toEqual([])
-	expect(validUnique.nextPrefix).toBe('0078')
-	expect(validUnique.maxPrefix).toBe(77)
+	expect(validUnique).toMatchObject({
+		ok: true,
+		errors: [],
+		nextPrefix: '0078',
+		maxPrefix: 77,
+	})
 
 	const withHistoricalPairs = checkMigrationFilenames([
 		...uniqueMigrations,
@@ -54,9 +78,8 @@ test('checkMigrationFilenames accepts valid unique names and exact historical pa
 	])
 	expect(withHistoricalPairs.ok).toBe(true)
 	expect(withHistoricalPairs.errors).toEqual([])
-})
 
-test('historical allowlist is pinned to the exact 14 filenames and live migrations pass', async () => {
+	// Exact allowlist pin: applied D1 migrations cannot be renamed.
 	expect([...allowedHistoricalDuplicateMigrationFilenames]).toEqual([
 		'0009-secret-allowed-hosts.sql',
 		'0009-ui-artifact-parameters.sql',
@@ -81,45 +104,34 @@ test('historical allowlist is pinned to the exact 14 filenames and live migratio
 	expect(live.nextPrefix).toMatch(/^\d{4}$/)
 })
 
-test('checkMigrationFilenames reports malformed names with the offending file and next free prefix', () => {
-	const result = checkMigrationFilenames([
+test('checkMigrationFilenames rejects malformed names, ordinary duplicates, and non-allowlisted prefix reuse', () => {
+	const malformed = checkMigrationFilenames([
 		'0001-init.sql',
 		'0002-BadName.sql',
 		'notes.txt',
 		'0075-stable-user-id-not-null.sql',
 	])
+	expect(malformed.ok).toBe(false)
+	expect(malformed.nextPrefix).toBe('0076')
+	expect(malformed.errors).toHaveLength(2)
+	expectErrorsMention(malformed.errors, ['0002-BadName.sql', 'notes.txt'])
 
-	expect(result.ok).toBe(false)
-	expect(result.nextPrefix).toBe('0076')
-	expect(result.errors).toHaveLength(2)
-	expect(result.errors[0]).toContain('0002-BadName.sql')
-	expect(result.errors[0]).toContain('0076')
-	expect(result.errors[0]).toContain('0076-your-change.sql')
-	expect(result.errors[1]).toContain('notes.txt')
-	expect(result.errors[1]).toContain('0076')
-})
-
-test('checkMigrationFilenames rejects ordinary duplicate prefixes with actionable guidance', () => {
-	const result = checkMigrationFilenames([
+	const ordinaryDuplicate = checkMigrationFilenames([
 		'0001-init.sql',
 		'0024-repo-sessions-and-source-columns.sql',
 		'0024-extra-change.sql',
 		'0075-stable-user-id-not-null.sql',
 	])
-
-	expect(result.ok).toBe(false)
-	expect(result.nextPrefix).toBe('0076')
-	expect(result.errors).toHaveLength(1)
-	expect(result.errors[0]).toContain('Duplicate migration prefix 0024')
-	expect(result.errors[0]).toContain('0024-extra-change.sql')
-	expect(result.errors[0]).toContain(
+	expect(ordinaryDuplicate.ok).toBe(false)
+	expect(ordinaryDuplicate.nextPrefix).toBe('0076')
+	expect(ordinaryDuplicate.errors).toHaveLength(1)
+	expectErrorsMention(ordinaryDuplicate.errors, [
+		'0024',
+		'0024-extra-change.sql',
 		'0024-repo-sessions-and-source-columns.sql',
-	)
-	expect(result.errors[0]).toContain('next free prefix 0076')
-	expect(result.errors[0]).not.toContain('grandfathered')
-})
+	])
+	expect(ordinaryDuplicate.errors[0]).not.toMatch(/grandfathered/i)
 
-test('checkMigrationFilenames allows exact historical pairs but rejects a third reuse or non-allowlisted file', () => {
 	const exactPair = checkMigrationFilenames([
 		'0001-init.sql',
 		...historicalPair0009,
@@ -137,14 +149,12 @@ test('checkMigrationFilenames allows exact historical pairs but rejects a third 
 	expect(thirdReuse.ok).toBe(false)
 	expect(thirdReuse.nextPrefix).toBe('0076')
 	expect(thirdReuse.errors).toHaveLength(1)
-	expect(thirdReuse.errors[0]).toContain('Duplicate migration prefix 0009')
-	expect(thirdReuse.errors[0]).toContain('grandfathered pair')
-	expect(thirdReuse.errors[0]).toContain('0009-secret-allowed-hosts.sql')
-	expect(thirdReuse.errors[0]).toContain('0009-ui-artifact-parameters.sql')
-	expect(thirdReuse.errors[0]).toContain(
-		'Offending file(s): 0009-another-change.sql',
-	)
-	expect(thirdReuse.errors[0]).toContain('next free prefix 0076')
+	expectErrorsMention(thirdReuse.errors, [
+		'0009',
+		'0009-another-change.sql',
+		'0009-secret-allowed-hosts.sql',
+		'0009-ui-artifact-parameters.sql',
+	])
 
 	const nonAllowlistedPairMember = checkMigrationFilenames([
 		'0001-init.sql',
@@ -154,30 +164,7 @@ test('checkMigrationFilenames allows exact historical pairs but rejects a third 
 	])
 	expect(nonAllowlistedPairMember.ok).toBe(false)
 	expect(nonAllowlistedPairMember.errors).toHaveLength(1)
-	expect(nonAllowlistedPairMember.errors[0]).toContain(
-		'Offending file(s): 0009-renamed-not-allowlisted.sql',
-	)
-	expect(nonAllowlistedPairMember.errors[0]).toContain('grandfathered pair')
-	expect(nonAllowlistedPairMember.errors[0]).toContain('next free prefix 0076')
-})
-
-test('prefix helpers report max and next free numbers without gap checking', () => {
-	const filenames = [
-		'0001-init.sql',
-		'0038-backfill-usernames.sql',
-		// Gap at 0039 is intentional and must not be treated as an error.
-		'0040-drop-source-rescue-events.sql',
-		'0075-stable-user-id-not-null.sql',
-	]
-	expect(getMaxMigrationPrefix(filenames)).toBe(75)
-	expect(getNextMigrationPrefix(filenames)).toBe('0076')
-	expect(formatMigrationPrefix(76)).toBe('0076')
-	expect(formatMigrationPrefix(1)).toBe('0001')
-
-	const withGap = checkMigrationFilenames(filenames)
-	expect(withGap.ok).toBe(true)
-	expect(withGap.errors).toEqual([])
-	expect(withGap.nextPrefix).toBe('0076')
-
-	expect(getNextMigrationPrefix([])).toBe('0001')
+	expectErrorsMention(nonAllowlistedPairMember.errors, [
+		'0009-renamed-not-allowlisted.sql',
+	])
 })

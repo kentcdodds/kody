@@ -144,20 +144,27 @@ test('recordAgentPackageConversationUse upserts idempotently per conversation', 
 	expect(rows[0]?.conversation_id).not.toBe('conv-1')
 })
 
-test('listPopularAgentPackagesForUser returns [] when the table is missing', async () => {
+test('agent package popularity ranking fails open and ranks within last N conversations', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
+	const missingTableDb = createD1FromSqlite(new DatabaseSync(':memory:'))
 	await expect(
-		listPopularAgentPackagesForUser(db, { userId: 'user-a' }),
+		listPopularAgentPackagesForUser(missingTableDb, { userId: 'user-a' }),
 	).resolves.toEqual([])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'agent-package-conversation-use-list-failed',
 		expect.anything(),
 	)
-})
+	await expect(
+		recordAgentPackageConversationUse(
+			{},
+			{
+				userId: 'user-a',
+				packageId: 'pkg-1',
+				conversationId: 'conv-1',
+			},
+		),
+	).resolves.toBeUndefined()
 
-test('listPopularAgentPackagesForUser ranks within last N conversations and skips missing packages', async () => {
 	const { sqlite, db } = createTestDb()
 	seedPackage(sqlite, {
 		id: 'pkg-a',
@@ -247,7 +254,7 @@ test('listPopularAgentPackagesForUser ranks within last N conversations and skip
 	expect(ranked[1]?.conversationCount).toBe(1) // c4
 })
 
-test('listPopularAgentPackagesForUser ignores conversations older than max age', async () => {
+test('listPopularAgentPackagesForUser ignores max-age conversations and stale package rows inside recent ones', async () => {
 	const { sqlite, db } = createTestDb()
 	seedPackage(sqlite, {
 		id: 'pkg-a',
@@ -281,32 +288,6 @@ test('listPopularAgentPackagesForUser ignores conversations older than max age',
 			usedAt: '2026-07-10T00:00:00.000Z',
 		},
 	)
-
-	const ranked = await listPopularAgentPackagesForUser(db, {
-		userId: 'user-a',
-		now,
-		conversationLimit: 40,
-		maxAgeDays: 180,
-	})
-	expect(ranked.map((row) => row.kodyId)).toEqual(['alpha'])
-})
-
-test('listPopularAgentPackagesForUser ignores stale package rows inside recent conversations', async () => {
-	const { sqlite, db } = createTestDb()
-	seedPackage(sqlite, {
-		id: 'pkg-a',
-		userId: 'user-a',
-		kodyId: 'alpha',
-		description: 'Alpha pack',
-	})
-	seedPackage(sqlite, {
-		id: 'pkg-old',
-		userId: 'user-a',
-		kodyId: 'stale',
-		description: 'Stale pack',
-	})
-
-	const now = new Date('2026-07-21T12:00:00.000Z')
 	// Same conversation: recent alpha use pulls the conversation into last-N,
 	// but a much older stale-package row must not count.
 	await recordAgentPackageConversationUse(
@@ -335,17 +316,5 @@ test('listPopularAgentPackagesForUser ignores stale package rows inside recent c
 		maxAgeDays: 180,
 	})
 	expect(ranked.map((row) => row.kodyId)).toEqual(['alpha'])
-})
-
-test('recordAgentPackageConversationUse never throws when DB is missing', async () => {
-	await expect(
-		recordAgentPackageConversationUse(
-			{},
-			{
-				userId: 'user-a',
-				packageId: 'pkg-1',
-				conversationId: 'conv-1',
-			},
-		),
-	).resolves.toBeUndefined()
+	expect(ranked[0]?.conversationCount).toBe(2)
 })

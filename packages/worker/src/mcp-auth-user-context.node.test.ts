@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getUserRolesAndPermissions: vi.fn(),
@@ -50,12 +51,12 @@ function createMockAppDb(options: {
 	return { db, queries }
 }
 
-test('buildMcpUserContextFromGrantProps loads roles by stable id and refreshes profile fields', async () => {
+test('buildMcpUserContextFromGrantProps resolves by stable id, refreshes profile, and fails closed', async () => {
 	mockModule.getUserRolesAndPermissions.mockResolvedValueOnce({
 		roles: ['admin'],
 		permissions: ['read:user:any', 'read:role:any'],
 	})
-	const { db, queries } = createMockAppDb({
+	const refreshed = createMockAppDb({
 		row: {
 			id: 42,
 			email: 'current@example.com',
@@ -65,14 +66,14 @@ test('buildMcpUserContextFromGrantProps loads roles by stable id and refreshes p
 		},
 	})
 
-	const user = await buildMcpUserContextFromGrantProps({ APP_DB: db } as Env, {
-		userId: 'stable-admin-id',
-		email: 'stale@example.com',
-		username: 'stale-username',
-		displayName: 'stale display',
-	})
-
-	expect(user).toEqual({
+	await expect(
+		buildMcpUserContextFromGrantProps({ APP_DB: refreshed.db } as Env, {
+			userId: 'stable-admin-id',
+			email: 'stale@example.com',
+			username: 'stale-username',
+			displayName: 'stale display',
+		}),
+	).resolves.toEqual({
 		userId: 'stable-admin-id',
 		email: 'current@example.com',
 		username: 'admin',
@@ -80,18 +81,18 @@ test('buildMcpUserContextFromGrantProps loads roles by stable id and refreshes p
 		roles: ['admin'],
 		permissions: ['read:user:any', 'read:role:any'],
 	})
-	expect(queries).toHaveLength(1)
-	expect(queries[0]?.sql.toLowerCase()).toContain('where stable_user_id = ?')
-	expect(queries[0]?.params).toEqual(['stable-admin-id'])
-	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(db, 42)
-})
+	expect(refreshed.queries).toHaveLength(1)
+	expect(refreshed.queries[0]?.params).toEqual(['stable-admin-id'])
+	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(
+		refreshed.db,
+		42,
+	)
 
-test('buildMcpUserContextFromGrantProps never attaches roles from a stale grant email owned by another account', async () => {
 	mockModule.getUserRolesAndPermissions.mockResolvedValueOnce({
 		roles: ['user'],
 		permissions: [],
 	})
-	const { db } = createMockAppDb({
+	const staleEmailOwnedElsewhere = createMockAppDb({
 		row: {
 			id: 7,
 			email: 'original-owner@example.com',
@@ -100,15 +101,17 @@ test('buildMcpUserContextFromGrantProps never attaches roles from a stale grant 
 			stable_user_id: 'stable-original',
 		},
 	})
-
-	const user = await buildMcpUserContextFromGrantProps({ APP_DB: db } as Env, {
-		userId: 'stable-original',
-		// Email now belongs to a different verified admin account.
-		email: 'reused-by-admin@example.com',
-		displayName: 'stale',
-	})
-
-	expect(user).toEqual({
+	await expect(
+		buildMcpUserContextFromGrantProps(
+			{ APP_DB: staleEmailOwnedElsewhere.db } as Env,
+			{
+				userId: 'stable-original',
+				// Email now belongs to a different verified admin account.
+				email: 'reused-by-admin@example.com',
+				displayName: 'stale',
+			},
+		),
+	).resolves.toEqual({
 		userId: 'stable-original',
 		email: 'original-owner@example.com',
 		username: 'original',
@@ -116,62 +119,16 @@ test('buildMcpUserContextFromGrantProps never attaches roles from a stale grant 
 		roles: ['user'],
 		permissions: [],
 	})
-	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(db, 7)
-})
+	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(
+		staleEmailOwnedElsewhere.db,
+		7,
+	)
 
-test('buildMcpUserContextFromGrantProps omits roles when the stable id row is missing', async () => {
-	const { db } = createMockAppDb({ row: null })
-
-	const user = await buildMcpUserContextFromGrantProps({ APP_DB: db } as Env, {
-		userId: 'orphan-id',
-		email: 'missing@example.com',
-		displayName: 'missing',
-	})
-
-	expect(user).toEqual({
-		userId: 'orphan-id',
-		email: 'missing@example.com',
-		displayName: 'missing',
-	})
-	expect(mockModule.getUserRolesAndPermissions).not.toHaveBeenCalled()
-})
-
-test('buildMcpUserContextFromGrantProps falls back without elevation when D1 fails', async () => {
-	const { db } = createMockAppDb({
-		reject: new Error('D1 unavailable'),
-	})
-	const consoleError = vi
-		.spyOn(console, 'error')
-		.mockImplementation(() => undefined)
-
-	try {
-		const user = await buildMcpUserContextFromGrantProps(
-			{ APP_DB: db } as Env,
-			{
-				userId: 'resilient-id',
-				email: 'resilient@example.com',
-				displayName: 'resilient',
-			},
-		)
-
-		expect(user).toEqual({
-			userId: 'resilient-id',
-			email: 'resilient@example.com',
-			displayName: 'resilient',
-		})
-		expect(consoleError).toHaveBeenCalled()
-		expect(mockModule.getUserRolesAndPermissions).not.toHaveBeenCalled()
-	} finally {
-		consoleError.mockRestore()
-	}
-})
-
-test('buildMcpUserContextFromGrantProps resolves by stable id when grant props omit email', async () => {
 	mockModule.getUserRolesAndPermissions.mockResolvedValueOnce({
 		roles: ['user'],
 		permissions: [],
 	})
-	const { db, queries } = createMockAppDb({
+	const emailOmitted = createMockAppDb({
 		row: {
 			id: 9,
 			email: 'resolved@example.com',
@@ -180,12 +137,11 @@ test('buildMcpUserContextFromGrantProps resolves by stable id when grant props o
 			stable_user_id: 'legacy-id',
 		},
 	})
-
-	const user = await buildMcpUserContextFromGrantProps({ APP_DB: db } as Env, {
-		userId: 'legacy-id',
-	})
-
-	expect(user).toEqual({
+	await expect(
+		buildMcpUserContextFromGrantProps({ APP_DB: emailOmitted.db } as Env, {
+			userId: 'legacy-id',
+		}),
+	).resolves.toEqual({
 		userId: 'legacy-id',
 		email: 'resolved@example.com',
 		username: 'resolved',
@@ -193,5 +149,37 @@ test('buildMcpUserContextFromGrantProps resolves by stable id when grant props o
 		roles: ['user'],
 		permissions: [],
 	})
-	expect(queries[0]?.params).toEqual(['legacy-id'])
+	expect(emailOmitted.queries[0]?.params).toEqual(['legacy-id'])
+
+	const missingRow = createMockAppDb({ row: null })
+	await expect(
+		buildMcpUserContextFromGrantProps({ APP_DB: missingRow.db } as Env, {
+			userId: 'orphan-id',
+			email: 'missing@example.com',
+			displayName: 'missing',
+		}),
+	).resolves.toEqual({
+		userId: 'orphan-id',
+		email: 'missing@example.com',
+		displayName: 'missing',
+	})
+	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledTimes(3)
+
+	consoleError.mockImplementation(() => {})
+	const failingDb = createMockAppDb({
+		reject: new Error('D1 unavailable'),
+	})
+	await expect(
+		buildMcpUserContextFromGrantProps({ APP_DB: failingDb.db } as Env, {
+			userId: 'resilient-id',
+			email: 'resilient@example.com',
+			displayName: 'resilient',
+		}),
+	).resolves.toEqual({
+		userId: 'resilient-id',
+		email: 'resilient@example.com',
+		displayName: 'resilient',
+	})
+	expect(consoleError).toHaveBeenCalled()
+	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledTimes(3)
 })

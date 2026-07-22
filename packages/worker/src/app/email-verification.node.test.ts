@@ -80,14 +80,14 @@ function createVerificationTestDb(users: Array<VerificationUser>) {
 	return { db, queries }
 }
 
-test('isAccountEmailVerified binds email+stable id when both are supplied', async () => {
+test('isAccountEmailVerified binds email+stable id together and keeps single-key lookup paths', async () => {
 	const ownerEmail = 'owner@example.com'
 	const ownerStableId = await createStableUserIdFromEmail(ownerEmail)
 	const reusedEmail = 'reused@example.com'
 	const otherStableId = await createStableUserIdFromEmail(
 		'other-account@example.com',
 	)
-	const { db, queries } = createVerificationTestDb([
+	const combined = createVerificationTestDb([
 		{
 			email: ownerEmail,
 			stable_user_id: ownerStableId,
@@ -102,7 +102,7 @@ test('isAccountEmailVerified binds email+stable id when both are supplied', asyn
 
 	expect(
 		await isAccountEmailVerified({
-			db,
+			db: combined.db,
 			email: ownerEmail,
 			stableUserId: ownerStableId,
 		}),
@@ -112,23 +112,21 @@ test('isAccountEmailVerified binds email+stable id when both are supplied', asyn
 	// for the original stable id.
 	expect(
 		await isAccountEmailVerified({
-			db,
+			db: combined.db,
 			email: reusedEmail,
 			stableUserId: ownerStableId,
 		}),
 	).toBe(false)
 
 	expect(
-		queries.every((query) =>
+		combined.queries.every((query) =>
 			query.sql.toLowerCase().includes('email = ? and stable_user_id = ?'),
 		),
 	).toBe(true)
-})
 
-test('isAccountEmailVerified keeps email-only and stable-only lookup paths', async () => {
 	const email = 'browser@example.com'
 	const stableUserId = await createStableUserIdFromEmail(email)
-	const { db, queries } = createVerificationTestDb([
+	const singleKey = createVerificationTestDb([
 		{
 			email,
 			stable_user_id: stableUserId,
@@ -136,22 +134,28 @@ test('isAccountEmailVerified keeps email-only and stable-only lookup paths', asy
 		},
 	])
 
-	expect(await isAccountEmailVerified({ db, email })).toBe(true)
-	expect(await isAccountEmailVerified({ db, stableUserId })).toBe(true)
+	expect(await isAccountEmailVerified({ db: singleKey.db, email })).toBe(true)
+	expect(await isAccountEmailVerified({ db: singleKey.db, stableUserId })).toBe(
+		true,
+	)
 	expect(
 		await isAccountEmailVerified({
-			db,
+			db: singleKey.db,
 			email: 'missing@example.com',
 		}),
 	).toBe(false)
 	expect(
 		await isAccountEmailVerified({
-			db,
+			db: singleKey.db,
 			stableUserId: 'missing-stable-id',
 		}),
 	).toBe(false)
 
-	expect(queries[0]?.sql.toLowerCase()).toContain('where email = ?')
-	expect(queries[0]?.sql.toLowerCase()).not.toContain('stable_user_id')
-	expect(queries[1]?.sql.toLowerCase()).toContain('where stable_user_id = ?')
+	expect(singleKey.queries[0]?.sql.toLowerCase()).toContain('where email = ?')
+	expect(singleKey.queries[0]?.sql.toLowerCase()).not.toContain(
+		'stable_user_id',
+	)
+	expect(singleKey.queries[1]?.sql.toLowerCase()).toContain(
+		'where stable_user_id = ?',
+	)
 })
