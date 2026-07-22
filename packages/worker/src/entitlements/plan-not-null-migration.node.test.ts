@@ -225,10 +225,25 @@ function seedInboundFkRows(db: DatabaseSync) {
 	`)
 }
 
+const allocatedThenDeletedUserId = 1000
+
 test('plan not-null migration reconciles residual NULLs, rebuilds users/invites, and preserves inbound fks under a D1 transaction', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrationsBeforePlanNotNull(db)
 	seedInboundFkRows(db)
+	// Allocate a high user id then delete it so sqlite_sequence sits above live
+	// max(id). FK inventory/snapshots stay based on remaining users only.
+	db.prepare(
+		`INSERT INTO users (
+			id, username, email, password_hash, stable_user_id, plan
+		) VALUES (?, 'high-water', 'high-water@example.com', 'hash-h',
+			'stable-high-water', 'free')`,
+	).run(allocatedThenDeletedUserId)
+	db.prepare(`DELETE FROM users WHERE id = ?`).run(allocatedThenDeletedUserId)
+	expect(
+		db.prepare(`SELECT seq FROM sqlite_sequence WHERE name = 'users'`).get(),
+	).toEqual({ seq: allocatedThenDeletedUserId })
+
 	assertInboundUserFkInventoryMatches(db)
 
 	const beforeChildRows = snapshotInboundUserFkRows(db)
@@ -443,7 +458,7 @@ test('plan not-null migration reconciles residual NULLs, rebuilds users/invites,
 
 	expect(
 		db.prepare(`SELECT seq FROM sqlite_sequence WHERE name = 'users'`).get(),
-	).toEqual({ seq: 3 })
+	).toEqual({ seq: allocatedThenDeletedUserId })
 
 	db.prepare(
 		`INSERT INTO users (username, email, password_hash, stable_user_id)
@@ -451,12 +466,12 @@ test('plan not-null migration reconciles residual NULLs, rebuilds users/invites,
 	).run()
 	expect(
 		db.prepare(`SELECT id, plan FROM users WHERE username = 'carol'`).get(),
-	).toEqual({ id: 4, plan: 'unlimited' })
+	).toEqual({ id: allocatedThenDeletedUserId + 1, plan: 'unlimited' })
 
 	db.prepare(
 		`INSERT INTO invites (code, created_by, note)
-		 VALUES ('invite-default', 4, 'default plan')`,
-	).run()
+		 VALUES ('invite-default', ?, 'default plan')`,
+	).run(allocatedThenDeletedUserId + 1)
 	expect(
 		db.prepare(`SELECT plan FROM invites WHERE code = 'invite-default'`).get(),
 	).toEqual({ plan: 'unlimited' })
@@ -471,8 +486,8 @@ test('plan not-null migration reconciles residual NULLs, rebuilds users/invites,
 	expect(() => {
 		db.prepare(
 			`INSERT INTO invites (code, created_by, note, plan)
-			 VALUES ('invite-nope', 4, 'nope', NULL)`,
-		).run()
+			 VALUES ('invite-nope', ?, 'nope', NULL)`,
+		).run(allocatedThenDeletedUserId + 1)
 	}).toThrow(/NOT NULL constraint failed: invites\.plan/)
 
 	db.prepare(
@@ -514,6 +529,13 @@ test('plan not-null migration fails closed and rolls back when reconciliation ca
 	const db = new DatabaseSync(':memory:')
 	applyMigrationsBeforePlanNotNull(db)
 	seedInboundFkRows(db)
+	db.prepare(
+		`INSERT INTO users (
+			id, username, email, password_hash, stable_user_id, plan
+		) VALUES (?, 'high-water', 'high-water@example.com', 'hash-h',
+			'stable-high-water', 'free')`,
+	).run(allocatedThenDeletedUserId)
+	db.prepare(`DELETE FROM users WHERE id = ?`).run(allocatedThenDeletedUserId)
 	assertInboundUserFkInventoryMatches(db)
 
 	const beforeChildRows = snapshotInboundUserFkRows(db)
@@ -525,6 +547,9 @@ test('plan not-null migration fails closed and rolls back when reconciliation ca
 		.all()
 	const beforeUsersSql = usersTableSql(db)
 	const beforeInvitesSql = invitesTableSql(db)
+	const beforeUsersSeq = db
+		.prepare(`SELECT seq FROM sqlite_sequence WHERE name = 'users'`)
+		.get()
 
 	// Force one eligible users.plan NULL to survive the real UPDATE so the
 	// migration's residual-NULL assertion aborts. Created outside the D1-style
@@ -556,6 +581,10 @@ test('plan not-null migration fails closed and rolls back when reconciliation ca
 	expect(
 		db.prepare(`SELECT code, plan FROM invites ORDER BY code`).all(),
 	).toEqual(beforeInvites)
+	expect(
+		db.prepare(`SELECT seq FROM sqlite_sequence WHERE name = 'users'`).get(),
+	).toEqual(beforeUsersSeq)
+	expect(beforeUsersSeq).toEqual({ seq: allocatedThenDeletedUserId })
 	expectInboundUserFkRowsPreserved(db, beforeChildRows)
 	expect(db.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
 	expect(

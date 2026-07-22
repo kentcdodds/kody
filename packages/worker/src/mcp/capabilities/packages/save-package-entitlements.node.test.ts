@@ -94,9 +94,19 @@ function createDatabase(
 					return {
 						async first<T = Record<string, unknown>>() {
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
+								const email = params[0]
+								const stableUserId = params[1]
+								if (
+									typeof email !== 'string' ||
+									typeof stableUserId !== 'string'
+								) {
+									return null as T | null
+								}
 								return selectOne(
 									'users',
-									(row) => row['email'] === params[0],
+									(row) =>
+										row['email'] === email &&
+										row['stable_user_id'] === stableUserId,
 								) as T | null
 							}
 							if (
@@ -305,7 +315,7 @@ test('package_save enforces the saved packages entitlement for plan users on cre
 		updated_at: now,
 	}))
 	const db = createDatabase({
-		users: [{ email, plan: 'pro', username: 'planned' }],
+		users: [{ email, plan: 'pro', username: 'planned', stable_user_id: userId }],
 		saved_packages: savedPackages,
 	})
 	setupPersistenceMocks()
@@ -367,7 +377,7 @@ test('package_save does not gate updates to an existing package at the limit', a
 		},
 	]
 	const db = createDatabase({
-		users: [{ email, plan: 'pro', username: 'planned' }],
+		users: [{ email, plan: 'pro', username: 'planned', stable_user_id: userId }],
 		saved_packages: savedPackages,
 	})
 	setupPersistenceMocks()
@@ -390,7 +400,9 @@ test('package_save responses steer coding agents toward the git lane', async () 
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const db = createDatabase({
-		users: [{ email, plan: 'unlimited', username: 'planned' }],
+		users: [
+			{ email, plan: 'unlimited', username: 'planned', stable_user_id: userId },
+		],
 	})
 	setupPersistenceMocks()
 	const ctx = createHandlerContext({ db, userId, email })
@@ -412,7 +424,14 @@ test('package_save stays unlimited for unlimited plan users', async () => {
 	const limit = planLimits.free.maxSavedPackages
 	if (limit === null) throw new Error('Expected a numeric free package limit.')
 	const db = createDatabase({
-		users: [{ email, plan: 'unlimited', username: 'unlimited' }],
+		users: [
+			{
+				email,
+				plan: 'unlimited',
+				username: 'unlimited',
+				stable_user_id: userId,
+			},
+		],
 	})
 	setupPersistenceMocks()
 	const ctx = createHandlerContext({ db, userId, email })

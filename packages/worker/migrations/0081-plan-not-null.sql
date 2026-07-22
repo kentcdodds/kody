@@ -17,6 +17,10 @@
 --
 -- Fail-closed layers: residual-NULL assertions after reconciliation, then
 -- INSERT...SELECT plan (no COALESCE) into NOT NULL columns during rebuild.
+--
+-- AUTOINCREMENT: DROP TABLE users clears sqlite_sequence. Snapshot the users
+-- high-water mark before DROP and restore/advance it after rename so previously
+-- allocated (including deleted) ids are never reused.
 
 UPDATE users SET plan = 'unlimited' WHERE plan IS NULL;
 UPDATE invites SET plan = 'unlimited' WHERE plan IS NULL;
@@ -46,6 +50,8 @@ CREATE TABLE _mig0081_invites AS SELECT * FROM invites;
 CREATE TABLE _mig0081_feature_flags AS SELECT * FROM feature_flags;
 CREATE TABLE _mig0081_feature_flag_user_overrides AS
 SELECT * FROM feature_flag_user_overrides;
+CREATE TABLE _mig0081_users_seq AS
+SELECT seq FROM sqlite_sequence WHERE name = 'users';
 
 DELETE FROM feature_flag_user_overrides;
 DELETE FROM feature_flags;
@@ -123,6 +129,27 @@ FROM users;
 DROP TABLE users;
 
 ALTER TABLE users_next RENAME TO users;
+
+-- Never lower the sequence: take the max of the post-rebuild value (live ids)
+-- and the pre-DROP high-water mark (includes deleted allocations).
+UPDATE sqlite_sequence
+SET seq = (
+	SELECT MAX(value) FROM (
+		SELECT seq AS value FROM sqlite_sequence WHERE name = 'users'
+		UNION ALL
+		SELECT seq AS value FROM _mig0081_users_seq
+	)
+)
+WHERE name = 'users'
+	AND EXISTS (SELECT 1 FROM _mig0081_users_seq);
+
+-- Empty live users leaves no sqlite_sequence row after rebuild; restore it.
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'users', seq FROM _mig0081_users_seq
+WHERE EXISTS (SELECT 1 FROM _mig0081_users_seq)
+	AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'users');
+
+DROP TABLE _mig0081_users_seq;
 
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

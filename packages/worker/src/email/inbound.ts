@@ -290,12 +290,14 @@ export async function handleInboundEmail(
 	}
 
 	const userId = identity.mcpUserId
-	// The username lookup already resolved the account email, so plan and
-	// verified state come from one indexed point read (no stable-id scan).
+	// Require email + canonical stable id together (same contract as
+	// getUserPlan / isAccountEmailVerified) so a mismatched identity pair
+	// cannot apply another account's plan or verification state.
 	const accountRow = await env.APP_DB.prepare(
-		`SELECT plan, stripe_plan, email_verified_at FROM users WHERE email = ?`,
+		`SELECT plan, stripe_plan, email_verified_at FROM users
+			WHERE email = ? AND stable_user_id = ?`,
 	)
-		.bind(identity.email)
+		.bind(identity.email, userId)
 		.first<{
 			plan: string
 			stripe_plan: string | null

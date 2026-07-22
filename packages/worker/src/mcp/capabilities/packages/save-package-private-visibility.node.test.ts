@@ -57,7 +57,21 @@ function createDatabase(users: Array<Record<string, unknown>>) {
 					return {
 						async first() {
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
-								return users.find((row) => row['email'] === params[0]) ?? null
+								const email = params[0]
+								const stableUserId = params[1]
+								if (
+									typeof email !== 'string' ||
+									typeof stableUserId !== 'string'
+								) {
+									return null
+								}
+								return (
+									users.find(
+										(row) =>
+											row['email'] === email &&
+											row['stable_user_id'] === stableUserId,
+									) ?? null
+								)
 							}
 							if (
 								query.includes('SELECT username') &&
@@ -172,7 +186,12 @@ async function createContext() {
 	return {
 		env: {
 			APP_DB: createDatabase([
-				{ email, plan: 'unlimited', username: 'visibility' },
+				{
+					email,
+					plan: 'unlimited',
+					username: 'visibility',
+					stable_user_id: userId,
+				},
 			]),
 		} as Env,
 		callerContext: createMcpCallerContext({
