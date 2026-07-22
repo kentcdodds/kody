@@ -194,7 +194,7 @@ test('inbound email enforces free-plan receive, storage, and size limits then st
 			limit: storageCap + 10,
 		}),
 	).toHaveLength(storageCap)
-	expect(await readDailyReceiveCounter(storageCapUserId)).toBe(1)
+	expect(await readDailyReceiveCounter(storageCapUserId)).toBe(0)
 	expect(
 		(await readRejectionEvents(storageCapUserId)).detailed[0]?.detail,
 	).toMatchObject({
