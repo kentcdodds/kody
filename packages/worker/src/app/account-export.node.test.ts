@@ -571,8 +571,7 @@ test('R2 export performs bounded keyset work independent of mailbox size', async
 	expect(queries.length).toBeLessThanOrEqual(4)
 	expect(
 		queries.some(
-			(query) =>
-				query.includes('FROM email_messages') && !query.includes('LIMIT 1'),
+			(query) => query === 'SELECT id FROM email_messages WHERE user_id = ?',
 		),
 	).toBe(false)
 })

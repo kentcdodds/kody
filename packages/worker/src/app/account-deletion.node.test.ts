@@ -176,19 +176,19 @@ function createTestDb(
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
-								lower.startsWith(
-									'select community_listings.id, community_listings.pinned_commit',
-								)
+								lower.includes('from community_listings') &&
+								lower.includes('entity_sources.published_commit')
 							) {
 								results = (rows.community_listings ?? [])
 									.filter((row) => row['owner_user_id'] === userId)
-									.map((row) => {
+									.map((row, index) => {
 										const source = (rows.entity_sources ?? []).find(
 											(sourceRow) =>
 												sourceRow['id'] === row['source_id'] &&
 												sourceRow['user_id'] === row['owner_user_id'],
 										)
 										return {
+											account_r2_rowid: index + 1,
 											id: row['id'],
 											pinned_commit: row['pinned_commit'],
 											source_published_commit:
