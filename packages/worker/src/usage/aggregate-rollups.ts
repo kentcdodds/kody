@@ -129,17 +129,56 @@ function buildMonthToDateAggregateQuery(
 ) {
 	return `
 SELECT
-	blob1 AS user_id,
-	blob2 AS metric,
-	sum(_sample_interval) AS event_count,
-	sum(if(blob4 = 'error', _sample_interval, 0)) AS error_count,
-	sum(double1 * _sample_interval) AS total_duration_ms,
-	sum(double2 * _sample_interval) AS total_cpu_ms,
-	sum(double3 * _sample_interval) AS total_bytes
-FROM ${dataset}
-WHERE timestamp >= toDateTime('${bounds.monthStart}')
-	AND timestamp < toDateTime('${bounds.nextMonthStart}')
-GROUP BY blob1, blob2
+	user_id,
+	metric,
+	sum(event_count) AS event_count,
+	sum(error_count) AS error_count,
+	sum(total_duration_ms) AS total_duration_ms,
+	sum(total_cpu_ms) AS total_cpu_ms,
+	sum(total_bytes) AS total_bytes
+FROM (
+	SELECT
+		blob1 AS user_id,
+		blob2 AS metric,
+		sum(_sample_interval) AS event_count,
+		sum(if(blob4 = 'error', _sample_interval, 0)) AS error_count,
+		sum(double1 * _sample_interval) AS total_duration_ms,
+		sum(double2 * _sample_interval) AS total_cpu_ms,
+		sum(double3 * _sample_interval) AS total_bytes
+	FROM ${dataset}
+	WHERE timestamp >= toDateTime('${bounds.monthStart}')
+		AND timestamp < toDateTime('${bounds.nextMonthStart}')
+		AND blob6 = ''
+	GROUP BY blob1, blob2
+
+	UNION ALL
+
+	SELECT
+		user_id,
+		metric,
+		count() AS event_count,
+		sum(if(outcome = 'error', 1, 0)) AS error_count,
+		sum(duration_ms) AS total_duration_ms,
+		sum(cpu_ms) AS total_cpu_ms,
+		sum(bytes) AS total_bytes
+	FROM (
+		SELECT
+			blob1 AS user_id,
+			blob2 AS metric,
+			blob6 AS idempotency_key,
+			any(blob4) AS outcome,
+			any(double1) AS duration_ms,
+			any(double2) AS cpu_ms,
+			any(double3) AS bytes
+		FROM ${dataset}
+		WHERE timestamp >= toDateTime('${bounds.monthStart}')
+			AND timestamp < toDateTime('${bounds.nextMonthStart}')
+			AND blob6 != ''
+		GROUP BY blob1, blob2, blob6
+	)
+	GROUP BY user_id, metric
+)
+GROUP BY user_id, metric
 FORMAT JSON
 `.trim()
 }

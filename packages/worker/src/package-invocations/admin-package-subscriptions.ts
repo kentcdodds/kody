@@ -21,7 +21,7 @@ const retryablePackageInvocationInfrastructureCodes = new Set([
 	'idempotency_response_unavailable',
 ])
 
-function readRetryablePackageInvocationInfrastructureCode(response: {
+export function readRetryablePackageInvocationInfrastructureCode(response: {
 	status: number
 	body: Record<string, unknown>
 }) {

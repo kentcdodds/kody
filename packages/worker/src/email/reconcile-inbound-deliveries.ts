@@ -7,6 +7,7 @@ import { reconcileInboundDeliveryEffectsForUser } from './inbound-effects.ts'
 
 const reconciliationUserBatchSize = 25
 const reconciliationTimeBudgetMs = 10_000
+const inboundEffectLeaseMs = 5 * 60 * 1000
 
 export async function sweepStaleInboundDeliveries(input: {
 	env: Pick<
@@ -25,6 +26,9 @@ export async function sweepStaleInboundDeliveries(input: {
 	).toISOString()
 	const startedAt = Date.now()
 	const deadlineMs = startedAt + reconciliationTimeBudgetMs
+	const effectLeaseExpiredBefore = new Date(
+		now.getTime() - inboundEffectLeaseMs,
+	).toISOString()
 	let usersProcessed = 0
 	let recovered = 0
 	let cleaned = 0
@@ -61,9 +65,31 @@ export async function sweepStaleInboundDeliveries(input: {
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'received'
 					AND (
-						json_extract(detail_json, '$.usageEffectClaimedAt') IS NULL
-						OR json_extract(detail_json, '$.subscriptionEffectState') IS NULL
-						OR json_extract(detail_json, '$.subscriptionEffectState') != 'complete'
+						(
+							json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL
+							AND (
+								json_extract(detail_json, '$.usageEffectRetryAt') IS NULL
+								OR json_extract(detail_json, '$.usageEffectRetryAt') <= ?
+							)
+							AND (
+								json_extract(detail_json, '$.usageEffectLease') IS NULL
+								OR json_extract(detail_json, '$.usageEffectLeaseAt') < ?
+							)
+						)
+						OR (
+							(
+								json_extract(detail_json, '$.subscriptionEffectState') IS NULL
+								OR json_extract(detail_json, '$.subscriptionEffectState') != 'complete'
+							)
+							AND (
+								json_extract(detail_json, '$.subscriptionEffectRetryAt') IS NULL
+								OR json_extract(detail_json, '$.subscriptionEffectRetryAt') <= ?
+							)
+							AND (
+								json_extract(detail_json, '$.subscriptionEffectState') != 'processing'
+								OR json_extract(detail_json, '$.subscriptionEffectLeaseAt') < ?
+							)
+						)
 					)
 			)
 			SELECT user_id
@@ -77,6 +103,10 @@ export async function sweepStaleInboundDeliveries(input: {
 			now.toISOString(),
 			now.toISOString(),
 			now.toISOString(),
+			now.toISOString(),
+			effectLeaseExpiredBefore,
+			now.toISOString(),
+			effectLeaseExpiredBefore,
 			reconciliationUserBatchSize,
 		)
 		.all<{ user_id: string }>()

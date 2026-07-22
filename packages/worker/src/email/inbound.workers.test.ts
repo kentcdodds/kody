@@ -1458,6 +1458,84 @@ test('delivery-ledger finalization failure retries before usage or subscription 
 	).toEqual({ event_count: 1 })
 })
 
+test('failed usage outbox delivery stays retryable and records one stable analytics event', async () => {
+	silenceIncidentalRuntimeWarnings()
+	consoleError.mockImplementation(() => {})
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `usage-outbox-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `usage-outbox-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	const message = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Usage outbox',
+			'Message-ID: <usage-outbox@example.net>',
+			'',
+			'Body',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(message, {
+		...createInboundEnv(),
+		USAGE_EVENTS: {
+			writeDataPoint() {
+				throw new Error('simulated analytics outage')
+			},
+		},
+	})
+	expect(consoleError).toHaveBeenCalledWith(
+		'Inbound email effect dispatch failed',
+		expect.any(Error),
+	)
+	const delivery = await env.APP_DB.prepare(
+		`SELECT id, detail_json FROM email_delivery_events
+		WHERE user_id = ? AND provider = 'cloudflare-email-routing'
+			AND event_type = 'received'`,
+	)
+		.bind(userId)
+		.first<{ id: string; detail_json: string }>()
+	if (!delivery) throw new Error('Expected received delivery.')
+	const detail = JSON.parse(delivery.detail_json) as {
+		usageEffectRetryAt: string
+		usageEffectRecordedAt?: string
+	}
+	expect(detail.usageEffectRetryAt).toEqual(expect.any(String))
+	expect(detail.usageEffectRecordedAt).toBeUndefined()
+
+	const points: Array<AnalyticsEngineDataPoint> = []
+	const effectsEnv = {
+		...createInboundEnv(),
+		USAGE_EVENTS: {
+			writeDataPoint(point?: AnalyticsEngineDataPoint) {
+				if (point) points.push(point)
+			},
+		},
+	}
+	const retryNow = new Date(new Date(detail.usageEffectRetryAt).getTime() + 1)
+	await processInboundDeliveryEffects({
+		env: effectsEnv,
+		userId,
+		deliveryId: delivery.id,
+		now: retryNow,
+	})
+	await processInboundDeliveryEffects({
+		env: effectsEnv,
+		userId,
+		deliveryId: delivery.id,
+		now: retryNow,
+	})
+	expect(points).toHaveLength(1)
+	expect(points[0]?.blobs?.[5]).toBe(`email-received:${delivery.id}`)
+})
+
 test('inbound parse rejection still consumes daily receive quota', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
@@ -2108,7 +2186,7 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 	).toEqual({ event_count: 1 })
 	const effects = await env.APP_DB.prepare(
 		`SELECT
-			json_extract(detail_json, '$.usageEffectClaimedAt') AS usage_at,
+			json_extract(detail_json, '$.usageEffectRecordedAt') AS usage_at,
 			json_extract(detail_json, '$.subscriptionEffectState') AS subscription_state
 		FROM email_delivery_events WHERE id = ? AND user_id = ?`,
 	)

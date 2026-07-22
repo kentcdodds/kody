@@ -54,6 +54,8 @@ export type UsageEvent = {
 	outcome: UsageOutcome
 	/** ISO 8601 timestamp. Defaults to the time of recording. */
 	timestamp?: string
+	/** Stable sink-level dedupe key for retryable outbox delivery. */
+	idempotencyKey?: string
 }
 
 export type UsageEnv = {
@@ -97,20 +99,27 @@ export async function recordUsage(
 	env: UsageEnv,
 	event: UsageEvent,
 ): Promise<void> {
+	await recordUsageChecked(env, event)
+}
+
+export async function recordUsageChecked(
+	env: UsageEnv,
+	event: UsageEvent,
+): Promise<boolean> {
 	try {
 		if (!event.userId) {
 			console.debug('usage-event-skipped', 'missing userId', event.eventType)
-			return
+			return false
 		}
 		const timestamp = event.timestamp ?? new Date().toISOString()
 		if (env.USAGE_EVENTS) {
-			writeUsageDataPoint(env, event, timestamp)
-			return
+			return writeUsageDataPoint(env, event, timestamp)
 		}
 		console.debug('usage-event-local', JSON.stringify({ ...event, timestamp }))
-		await writeUsageRollup(env, event, timestamp)
+		return await writeUsageRollup(env, event, timestamp)
 	} catch (error) {
 		console.warn('usage-event-record-failed', error)
+		return false
 	}
 }
 
@@ -119,7 +128,7 @@ function writeUsageDataPoint(
 	event: UsageEvent,
 	timestamp: string,
 ) {
-	if (!env.USAGE_EVENTS) return
+	if (!env.USAGE_EVENTS) return false
 	try {
 		env.USAGE_EVENTS.writeDataPoint({
 			indexes: [event.userId],
@@ -129,11 +138,14 @@ function writeUsageDataPoint(
 				event.entityId ?? '',
 				event.outcome,
 				timestamp,
+				event.idempotencyKey ?? '',
 			],
 			doubles: [event.durationMs ?? 0, event.cpuMs ?? 0, event.bytes ?? 0],
 		})
+		return true
 	} catch (error) {
 		console.warn('usage-event-analytics-failed', error)
+		return false
 	}
 }
 
@@ -144,7 +156,7 @@ async function writeUsageRollup(
 ) {
 	if (!env.APP_DB) {
 		console.debug('usage-rollup-skipped', 'missing APP_DB binding')
-		return
+		return false
 	}
 	try {
 		await env.APP_DB.prepare(usageRollupUpsertStatement)
@@ -159,7 +171,9 @@ async function writeUsageRollup(
 				timestamp,
 			)
 			.run()
+		return true
 	} catch (error) {
 		console.warn('usage-rollup-failed', error)
+		return false
 	}
 }

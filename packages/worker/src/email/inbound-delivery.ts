@@ -57,10 +57,14 @@ export type InboundDelivery = {
 	cleanupLease?: string
 	cleanupLeaseAt?: string
 	finalizationToken?: string
-	usageEffectClaimedAt?: string
+	usageEffectRecordedAt?: string
+	usageEffectRetryAt?: string
+	usageEffectLease?: string
+	usageEffectLeaseAt?: string
 	subscriptionEffectState?: 'pending' | 'processing' | 'complete'
 	subscriptionEffectLease?: string
 	subscriptionEffectLeaseAt?: string
+	subscriptionEffectRetryAt?: string
 }
 
 type InboundDeliveryEventRow = {
@@ -193,8 +197,17 @@ function parseInboundDelivery(
 			...(typeof detail.finalizationToken === 'string'
 				? { finalizationToken: detail.finalizationToken }
 				: {}),
-			...(typeof detail.usageEffectClaimedAt === 'string'
-				? { usageEffectClaimedAt: detail.usageEffectClaimedAt }
+			...(typeof detail.usageEffectRecordedAt === 'string'
+				? { usageEffectRecordedAt: detail.usageEffectRecordedAt }
+				: {}),
+			...(typeof detail.usageEffectRetryAt === 'string'
+				? { usageEffectRetryAt: detail.usageEffectRetryAt }
+				: {}),
+			...(typeof detail.usageEffectLease === 'string'
+				? { usageEffectLease: detail.usageEffectLease }
+				: {}),
+			...(typeof detail.usageEffectLeaseAt === 'string'
+				? { usageEffectLeaseAt: detail.usageEffectLeaseAt }
 				: {}),
 			...(detail.subscriptionEffectState === 'pending' ||
 			detail.subscriptionEffectState === 'processing' ||
@@ -206,6 +219,9 @@ function parseInboundDelivery(
 				: {}),
 			...(typeof detail.subscriptionEffectLeaseAt === 'string'
 				? { subscriptionEffectLeaseAt: detail.subscriptionEffectLeaseAt }
+				: {}),
+			...(typeof detail.subscriptionEffectRetryAt === 'string'
+				? { subscriptionEffectRetryAt: detail.subscriptionEffectRetryAt }
 				: {}),
 		}
 	} catch {
@@ -412,8 +428,8 @@ export async function adoptLegacyInboundDelivery(input: {
 				threadId: row.thread_id ?? input.delivery.threadId,
 				rawMimeKey: row.raw_mime_key,
 				state: 'received',
-				usageEffectClaimedAt: input.now.toISOString(),
-				subscriptionEffectState: 'complete',
+				finalizationToken: `legacy-adoption:${input.delivery.deliveryId}`,
+				subscriptionEffectState: 'pending',
 			}
 			await input.db
 				.prepare(

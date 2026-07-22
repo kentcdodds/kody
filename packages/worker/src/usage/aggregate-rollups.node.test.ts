@@ -218,6 +218,9 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 		'sum(double1 * _sample_interval) AS total_duration_ms',
 	)
 	expect(query).toContain('GROUP BY blob1, blob2')
+	expect(query).toContain(`AND blob6 = ''`)
+	expect(query).toContain(`AND blob6 != ''`)
+	expect(query).toContain('GROUP BY blob1, blob2, blob6')
 
 	expect(batches).toHaveLength(1)
 	const statements = batches[0] ?? []
