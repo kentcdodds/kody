@@ -18,6 +18,7 @@ const uniqueMigrations = [
 	'0001-init.sql',
 	'0002-chat-threads.sql',
 	'0075-stable-user-id-not-null.sql',
+	'0077-drop-email-raw-mime-inline.sql',
 ] as const
 
 test('parseMigrationFilename accepts NNNN-kebab-case-description.sql and rejects malformed names', () => {
@@ -44,8 +45,8 @@ test('checkMigrationFilenames accepts valid unique names and exact historical pa
 	const validUnique = checkMigrationFilenames([...uniqueMigrations])
 	expect(validUnique.ok).toBe(true)
 	expect(validUnique.errors).toEqual([])
-	expect(validUnique.nextPrefix).toBe('0076')
-	expect(validUnique.maxPrefix).toBe(75)
+	expect(validUnique.nextPrefix).toBe('0078')
+	expect(validUnique.maxPrefix).toBe(77)
 
 	const withHistoricalPairs = checkMigrationFilenames([
 		...uniqueMigrations,

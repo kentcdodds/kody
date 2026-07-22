@@ -88,12 +88,6 @@ test('account export D1 coverage includes every live user-owned schema column', 
 			ORDER BY name`,
 		)
 		.all() as Array<{ name: string }>
-	// Stage 4b1 expand/contract: transitional table still physically present
-	// until a migration-only contract PR drops it, but production runtime no
-	// longer targets it (queue drained; offloader removed).
-	const transitionalUntargetedUserColumns = new Set([
-		'email_raw_mime_cleanup_queue.user_id',
-	])
 	const liveUserColumns = new Set<string>()
 	for (const table of tables) {
 		const columns = db
@@ -107,9 +101,7 @@ test('account export D1 coverage includes every live user-owned schema column', 
 	}
 	const coveredColumns = getAccountExportD1UserColumnCoverage()
 	const missing = [...liveUserColumns].filter(
-		(column) =>
-			!coveredColumns.has(column) &&
-			!transitionalUntargetedUserColumns.has(column),
+		(column) => !coveredColumns.has(column),
 	)
 	const stale = [...coveredColumns].filter(
 		(column) => !liveUserColumns.has(column),
@@ -118,18 +110,6 @@ test('account export D1 coverage includes every live user-owned schema column', 
 		[],
 	)
 	expect(stale, 'account export references stale D1 columns').toEqual([])
-	expect(
-		[...transitionalUntargetedUserColumns].every((column) =>
-			liveUserColumns.has(column),
-		),
-		'transitional untargeted columns must still exist until the contract drop',
-	).toBe(true)
-	expect(
-		[...transitionalUntargetedUserColumns].some((column) =>
-			coveredColumns.has(column),
-		),
-		'transitional untargeted columns must not be covered by runtime targets',
-	).toBe(false)
 })
 
 test('account export documents and excludes operator-owned system email rows', async () => {

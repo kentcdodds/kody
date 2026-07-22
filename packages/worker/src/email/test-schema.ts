@@ -86,12 +86,7 @@ ON email_sender_identities(user_id, email);`,
 	auth_results TEXT,
 	text_body TEXT,
 	html_body TEXT,
-	-- Transitional columns still physically present until a migration-only
-	-- contract PR drops them. Production code must not read or write these.
-	raw_mime TEXT,
 	raw_mime_key TEXT,
-	raw_mime_offload_blocked INTEGER NOT NULL DEFAULT 0
-		CHECK (raw_mime_offload_blocked IN (0, 1)),
 	raw_size INTEGER NOT NULL DEFAULT 0,
 	processing_status TEXT NOT NULL CHECK (processing_status IN ('stored', 'sent', 'failed')),
 	provider_message_id TEXT,
@@ -142,21 +137,6 @@ ON email_sender_identities(user_id, email);`,
 ON email_messages(provider_message_id)
 WHERE direction = 'outbound'
 	AND provider_message_id IS NOT NULL;`,
-		`CREATE INDEX IF NOT EXISTS idx_email_messages_raw_mime_offload_unblocked
-ON email_messages (id)
-WHERE raw_mime IS NOT NULL
-	AND raw_mime_offload_blocked = 0;`,
-		`CREATE TABLE IF NOT EXISTS email_raw_mime_cleanup_queue (
-	object_key TEXT PRIMARY KEY NOT NULL,
-	user_id TEXT NOT NULL,
-	message_id TEXT NOT NULL,
-	attempt_count INTEGER NOT NULL DEFAULT 0,
-	last_error TEXT,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
-);`,
-		`CREATE INDEX IF NOT EXISTS idx_email_raw_mime_cleanup_queue_user_id
-ON email_raw_mime_cleanup_queue (user_id);`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_delivery_events_provider_event_id
 ON email_delivery_events(provider_event_id)
 WHERE provider_event_id IS NOT NULL;`,

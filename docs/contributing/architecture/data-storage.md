@@ -72,10 +72,7 @@ Deletion must cover these user-owned surfaces:
   `packages/worker/src/app/account-deletion.node.test.ts` applies the live
   migrations to SQLite and fails if a user-owned schema column is not
   represented in the deletion target list, or if the deletion target list
-  references a stale column. During Stage 4b1 expand/contract, transitional
-  `email_raw_mime_cleanup_queue` remains physically present but is intentionally
-  omitted from runtime deletion/export targets (production queue drained;
-  offloader removed) until a migration-only contract PR drops it.
+  references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, and
   `PackageServiceInstance` are purged through account-deletion RPCs after their
@@ -324,10 +321,14 @@ the blob is best-effort deleted.
 **Expand/contract Stage 4b1 (code-only):** the worker no longer reads or writes
 transitional `email_messages.raw_mime` / `raw_mime_offload_blocked`, no longer
 runs the offload maintenance endpoint or deploy sweep, and no longer uses the
-delete-time claim protocol. Those columns, the unblocked inline index, and
-`email_raw_mime_cleanup_queue` remain physically present until a later
-migration-only contract PR drops them. Runtime code is compatible with the
-schema both before and after that drop.
+delete-time claim protocol.
+
+**Expand/contract Stage 4b2 (migration-only):** after production verified
+`remainingInline=0`, `remainingBlockedInline=0`, and `remainingBlobCleanup=0`,
+migration `0077-drop-email-raw-mime-inline.sql` drops the legacy `raw_mime`
+column, `raw_mime_offload_blocked`, the unblocked inline partial index, and
+`email_raw_mime_cleanup_queue`. Runtime code from Stage 4b1 is already
+compatible with the final schema.
 
 - All reads go through `loadRawMime` in `packages/worker/src/email/repo.ts`,
   which fetches the blob by `raw_mime_key` only. Attachment content extraction
@@ -338,8 +339,7 @@ schema both before and after that drop.
   delete), user email retention and system-email retention (strict: blob delete
   before row delete; failed blob deletes skip the row for retry), and account
   deletion (best-effort with warnings; enumerates every message id for the user
-  before D1 rows are removed). Runtime account deletion/export does not query
-  transitional `email_raw_mime_cleanup_queue` (production queue verified empty).
+  before D1 rows are removed).
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
