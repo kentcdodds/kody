@@ -25,6 +25,13 @@ export const inboundDeliveryDedupeWindowMs = 48 * 60 * 60 * 1000
 export const inboundDeliveryCompatibilityWindowMs = 48 * 60 * 60 * 1000
 const legacyInboundAdoptionPageSize = 20
 
+type LegacyInboundCandidate = {
+	id: string
+	thread_id: string | null
+	raw_mime_key: string | null
+	created_at: string
+}
+
 export type InboundDelivery = {
 	fingerprint: string
 	deliveryId: string
@@ -359,7 +366,7 @@ export async function adoptLegacyInboundDelivery(input: {
 	).toISOString()
 	let cursor: { createdAt: string; id: string } | null = null
 	while (true) {
-		const rows = await input.db
+		const rows: D1Result<LegacyInboundCandidate> = await input.db
 			.prepare(
 				`SELECT id, thread_id, raw_mime_key, created_at
 			FROM email_messages
@@ -388,13 +395,8 @@ export async function adoptLegacyInboundDelivery(input: {
 				cursor?.id ?? null,
 				legacyInboundAdoptionPageSize,
 			)
-			.all<{
-				id: string
-				thread_id: string | null
-				raw_mime_key: string | null
-				created_at: string
-			}>()
-		const candidates = rows.results ?? []
+			.all<LegacyInboundCandidate>()
+		const candidates: Array<LegacyInboundCandidate> = rows.results ?? []
 		for (const row of candidates) {
 			if (
 				!row.raw_mime_key ||
@@ -438,7 +440,7 @@ export async function adoptLegacyInboundDelivery(input: {
 			})
 		}
 		if (candidates.length < legacyInboundAdoptionPageSize) return null
-		const last = candidates.at(-1)
+		const last: LegacyInboundCandidate | undefined = candidates.at(-1)
 		if (!last) return null
 		cursor = { createdAt: last.created_at, id: last.id }
 	}
