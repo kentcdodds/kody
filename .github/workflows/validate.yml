@@ -67,3 +67,9 @@ jobs:
 
       - name: ✅ Validate
         run: npm run validate
+        env:
+          # PRs trust the fetched base SHA; main pushes trust the pre-push SHA.
+          # The validator rejects this value if it resolves to HEAD.
+          MIGRATION_VALIDATION_BASE: >-
+            ${{ github.event.pull_request.base.sha || github.event.before || ''
+            }}

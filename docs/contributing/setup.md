@@ -122,12 +122,14 @@ Quick notes for getting a local kody environment running.
   hook) enforces the naming rules above against the checked-in, append-only
   `tools/migration-ledger.json`. When adding a migration, append its filename
   and SHA-256 digest to the ledger; never edit or remove an existing ledger
-  entry. The check compares historical entries and SQL contents with the trusted
-  Git merge base. CI fetches complete history; local and cloud checkouts must
-  retain or fetch `origin/main`. If trusted history is unavailable, validation
-  fails safely once migrations exist beyond the frozen bootstrap baseline.
-  Migration SQL is hashed with canonical LF line endings, and `.gitattributes`
-  enforces LF checkouts.
+  entry. The check compares historical entries and SQL contents with a
+  pre-change Git commit: CI supplies the PR base or push-before SHA, local
+  branches use their `main` merge base, and main/detached checkouts fall back to
+  the first parent. `HEAD` itself is never trusted. CI fetches complete history;
+  local and cloud checkouts must retain or fetch `origin/main`. If no pre-change
+  commit is available, validation fails safely once migrations exist beyond the
+  frozen bootstrap baseline. Migration SQL is hashed with canonical LF line
+  endings, and `.gitattributes` enforces LF checkouts.
 - Seven historical duplicate prefixes are permanently accepted only for their
   exact existing filename pairs — applied migrations cannot be renamed, and
   Wrangler orders lexicographically. Do not rename these files or add a third

@@ -79,6 +79,16 @@ export type TrustedMigrationHistory = {
 	ledgerEntries: Array<MigrationLedgerEntry>
 }
 
+type GitOutput = (
+	args: ReadonlyArray<string>,
+	options?: { trim?: boolean },
+) => Promise<string | null>
+
+export type TrustedMigrationBaseOptions = {
+	env?: NodeJS.ProcessEnv
+	git?: GitOutput
+}
+
 export function parseMigrationFilename(
 	filename: string,
 ): ParsedMigrationFilename | null {
@@ -401,23 +411,36 @@ async function gitOutput(
 	}
 }
 
-export async function resolveTrustedMigrationBase(): Promise<string | null> {
-	const candidates = [
-		process.env.MIGRATION_VALIDATION_BASE,
-		process.env.GITHUB_BASE_REF
-			? `origin/${process.env.GITHUB_BASE_REF}`
-			: undefined,
-		'origin/main',
-		'main',
-	].filter((candidate): candidate is string => Boolean(candidate))
+export async function resolveTrustedMigrationBase(
+	options: TrustedMigrationBaseOptions = {},
+): Promise<string | null> {
+	const env = options.env ?? process.env
+	const git = options.git ?? gitOutput
+	const head = await git(['rev-parse', 'HEAD^{commit}'])
+	if (!head) {
+		return null
+	}
 
-	for (const candidate of candidates) {
-		const mergeBase = await gitOutput(['merge-base', 'HEAD', candidate])
-		if (mergeBase) {
+	const explicitCandidates = [
+		env.MIGRATION_VALIDATION_BASE,
+		env.GITHUB_BASE_REF ? `origin/${env.GITHUB_BASE_REF}` : undefined,
+	].filter((candidate): candidate is string => Boolean(candidate))
+	for (const candidate of explicitCandidates) {
+		const commit = await git(['rev-parse', `${candidate}^{commit}`])
+		if (commit && commit !== head) {
+			return commit
+		}
+	}
+
+	for (const candidate of ['origin/main', 'main']) {
+		const mergeBase = await git(['merge-base', 'HEAD', candidate])
+		if (mergeBase && mergeBase !== head) {
 			return mergeBase
 		}
 	}
-	return null
+
+	const firstParent = await git(['rev-parse', 'HEAD^1'])
+	return firstParent && firstParent !== head ? firstParent : null
 }
 
 export async function readTrustedMigrationHistory(
