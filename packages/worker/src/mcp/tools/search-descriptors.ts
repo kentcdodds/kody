@@ -93,7 +93,20 @@ export function buildSearchableEntityDescriptors(input: {
 	>
 }): Array<SearchableEntityDescriptor> {
 	const descriptors: Array<SearchableEntityDescriptor> = []
+	const valueRowDescriptorPlugins = searchEntityPlugins.filter(
+		(plugin) => 'buildValueRowDescriptor' in plugin,
+	)
 	for (const plugin of searchEntityPlugins) {
+		if ('buildValueRowDescriptor' in plugin) {
+			if (plugin !== valueRowDescriptorPlugins[0]) continue
+			for (const row of input.optionalRows.userValueRows) {
+				for (const valueRowPlugin of valueRowDescriptorPlugins) {
+					const descriptor = valueRowPlugin.buildValueRowDescriptor(row)
+					if (descriptor) descriptors.push(descriptor)
+				}
+			}
+			continue
+		}
 		if ('buildDescriptors' in plugin) {
 			descriptors.push(...plugin.buildDescriptors(input))
 		}

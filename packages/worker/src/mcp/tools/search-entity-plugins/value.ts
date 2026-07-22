@@ -15,20 +15,16 @@ import { buildCandidateBaseScore } from '../search-scoring.ts'
 
 export const valueSearchEntityPlugin = {
 	type: 'value',
-	buildDescriptors(input) {
-		return input.optionalRows.userValueRows.flatMap((row) => {
-			if (parseIntegrationValueName(row.name)) return []
-			return [
-				{
-					type: 'value',
-					id: buildValueEntityId(row),
-					title: row.name,
-					primaryAliases: [row.name],
-					secondaryAliases: [row.description, row.scope],
-					tertiaryAliases: [row.value],
-				},
-			]
-		})
+	buildValueRowDescriptor(row) {
+		if (parseIntegrationValueName(row.name)) return undefined
+		return {
+			type: 'value',
+			id: buildValueEntityId(row),
+			title: row.name,
+			primaryAliases: [row.name],
+			secondaryAliases: [row.description, row.scope],
+			tertiaryAliases: [row.value],
+		}
 	},
 	buildCandidates(input) {
 		return input.optionalRows.userValueRows

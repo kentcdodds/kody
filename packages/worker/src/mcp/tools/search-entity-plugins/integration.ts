@@ -43,36 +43,30 @@ export function buildIntegrationSearchDocument(input: {
 
 export const integrationSearchEntityPlugin = {
 	type: 'integration',
-	buildDescriptors(input) {
-		return input.optionalRows.userValueRows.flatMap((row) => {
-			const integrationName = parseIntegrationValueName(row.name)
-			if (!integrationName) return []
-			const config = parseIntegrationConfig(
-				parseIntegrationJson(row.value),
-				integrationName,
-			)
-			if (!config) return []
-			return [
-				{
-					type: 'integration',
-					id: integrationName,
-					title: integrationName,
-					primaryAliases: [integrationName],
-					secondaryAliases: [
-						row.description,
-						config.apiBaseUrl ?? '',
-						config.tokenUrl,
-						config.flow,
-					],
-					tertiaryAliases: [
-						...(config.requiredHosts ?? []),
-						...(config.apiBaseUrl
-							? extractSearchTokens(config.apiBaseUrl)
-							: []),
-					],
-				},
-			]
-		})
+	buildValueRowDescriptor(row) {
+		const integrationName = parseIntegrationValueName(row.name)
+		if (!integrationName) return undefined
+		const config = parseIntegrationConfig(
+			parseIntegrationJson(row.value),
+			integrationName,
+		)
+		if (!config) return undefined
+		return {
+			type: 'integration',
+			id: integrationName,
+			title: integrationName,
+			primaryAliases: [integrationName],
+			secondaryAliases: [
+				row.description,
+				config.apiBaseUrl ?? '',
+				config.tokenUrl,
+				config.flow,
+			],
+			tertiaryAliases: [
+				...(config.requiredHosts ?? []),
+				...(config.apiBaseUrl ? extractSearchTokens(config.apiBaseUrl) : []),
+			],
+		}
 	},
 	buildCandidates(input) {
 		return input.optionalRows.userValueRows

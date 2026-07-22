@@ -7,7 +7,11 @@ import {
 	searchEntityPlugins,
 } from './search-entity-registry.ts'
 import { buildSearchableEntityDescriptors } from './search-descriptors.ts'
-import { type PackageSearchRow } from './search-types.ts'
+import {
+	type OptionalSearchRowsResult,
+	type PackageSearchRow,
+} from './search-types.ts'
+import { understandSearchQuery } from './understand-search-query.ts'
 
 function createPackageRow(): PackageSearchRow {
 	return {
@@ -182,4 +186,62 @@ test('descriptor seam follows registry order across entity modules', () => {
 		'github',
 		'weather_api_key',
 	])
+})
+
+test('value-backed descriptors preserve source order and integration affinity', () => {
+	const userValueRows = [
+		{
+			userId: 'user-1',
+			name: buildIntegrationValueName('github'),
+			value: JSON.stringify({
+				name: 'github',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				flow: 'confidential',
+				clientIdValueName: 'github_client_id',
+				clientSecretSecretName: 'github_client_secret',
+				accessTokenSecretName: 'github_access_token',
+			}),
+			description: 'GitHub integration',
+			scope: 'user' as const,
+			appId: null,
+			ttlMs: null,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+		...Array.from({ length: 8 }, (_, index) => ({
+			userId: 'user-1',
+			name: `github_value_${index}`,
+			value: `github value ${index}`,
+			description: 'GitHub preference',
+			scope: 'user' as const,
+			appId: null,
+			ttlMs: null,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		})),
+	] satisfies OptionalSearchRowsResult['userValueRows']
+	const descriptors = buildSearchableEntityDescriptors({
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: {
+			packageRows: [],
+			userSecretRows: [],
+			userValueRows,
+		},
+	})
+
+	expect(descriptors.map((descriptor) => descriptor.type)).toEqual([
+		'integration',
+		...Array.from({ length: 8 }, () => 'value'),
+	])
+
+	const intent = understandSearchQuery({
+		query: 'github',
+		entities: descriptors,
+	})
+	expect(intent.entities).toHaveLength(8)
+	expect(intent.entities[0]).toMatchObject({
+		type: 'integration',
+		id: 'github',
+	})
 })
