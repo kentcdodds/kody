@@ -17,8 +17,10 @@ Each export object is immutable and bookmark-derived:
 has one canonical immutable `manifest.json`, which records the selected object
 key. If a process crashes after writing SQL but before its manifest, a later
 Workflow-step retry reuses the cached export bookmark and therefore inspects the
-same object before constructing the absent canonical manifest. An existing
-manifest must match that object exactly.
+same object before constructing the absent canonical manifest. Before an
+existing object can be reused, the retry re-fetches the same signed export and
+stream-compares its exact byte count and SHA-256 with R2. An existing manifest
+must also match that object exactly.
 
 Configure the production R2 bucket lifecycle by these immutable prefixes:
 

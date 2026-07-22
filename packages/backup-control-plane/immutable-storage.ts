@@ -26,41 +26,15 @@ async function digestBody(
 	return { bytes, sha256: hex(await digest.digest) }
 }
 
-async function inspectExisting(
-	bucket: R2Bucket,
-	key: string,
-): Promise<StoredBackup> {
-	const object = await bucket.get(key)
-	if (object === null) {
-		throw new BackupError(
-			'immutable-put-race',
-			'immutable object lost after a failed precondition',
-			true,
-		)
-	}
-	if (object.size >= MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES) {
-		throw new BackupError(
-			'download-too-large',
-			'existing export is at or above the single-object backup size limit',
-		)
-	}
-	const digest = await digestBody(object.body, object.size)
-	return {
-		...digest,
-		r2Etag: object.etag,
-		alreadyExisted: true,
-	}
+interface SignedDownload {
+	body: ReadableStream<Uint8Array>
+	expectedBytes: number
 }
 
-export async function storeSignedDownload(
-	bucket: R2Bucket,
-	key: string,
+async function fetchSignedDownload(
 	signedUrl: string,
-	fetcher: typeof fetch = fetch,
-): Promise<StoredBackup> {
-	const existing = await bucket.head(key)
-	if (existing !== null) return inspectExisting(bucket, key)
-
+	fetcher: typeof fetch,
+): Promise<SignedDownload> {
 	let response: Response
 	try {
 		response = await fetcher(signedUrl)
@@ -105,6 +79,13 @@ export async function storeSignedDownload(
 		new TransformStream<Uint8Array, Uint8Array>({
 			transform(chunk, controller) {
 				streamedBytes += chunk.byteLength
+				if (streamedBytes > expectedBytes) {
+					throw new BackupError(
+						'download-truncated',
+						'download byte count did not match Content-Length',
+						true,
+					)
+				}
 				controller.enqueue(chunk)
 			},
 			flush() {
@@ -118,16 +99,94 @@ export async function storeSignedDownload(
 			},
 		}),
 	)
-	const fixed = validated.pipeThrough(new FixedLengthStream(expectedBytes))
-	const [r2Body, digestBodyStream] = fixed.tee()
-	const digestPromise = digestBody(digestBodyStream, expectedBytes)
+	return {
+		body: validated.pipeThrough(new FixedLengthStream(expectedBytes)),
+		expectedBytes,
+	}
+}
+
+async function inspectExisting(
+	bucket: R2Bucket,
+	key: string,
+	sourceDigestPromise: Promise<{ bytes: number; sha256: string }>,
+): Promise<StoredBackup> {
+	const object = await bucket.get(key)
+	if (object === null) {
+		await sourceDigestPromise.catch(() => undefined)
+		throw new BackupError(
+			'immutable-put-race',
+			'immutable object lost after a failed precondition',
+			true,
+		)
+	}
+	if (object.size >= MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES) {
+		await sourceDigestPromise.catch(() => undefined)
+		throw new BackupError(
+			'download-too-large',
+			'existing export is at or above the single-object backup size limit',
+		)
+	}
+	let digest: { bytes: number; sha256: string }
+	let sourceDigest: { bytes: number; sha256: string }
+	try {
+		;[digest, sourceDigest] = await Promise.all([
+			digestBody(object.body, object.size),
+			sourceDigestPromise,
+		])
+	} catch (error) {
+		if (error instanceof BackupError) throw error
+		throw new BackupError(
+			'download-interrupted',
+			'streaming the signed export for immutable comparison failed',
+			true,
+		)
+	}
+	if (
+		digest.bytes !== sourceDigest.bytes ||
+		digest.sha256 !== sourceDigest.sha256
+	) {
+		throw new BackupError(
+			'existing-object-source-mismatch',
+			'existing immutable object does not match the signed export source',
+		)
+	}
+	return {
+		...digest,
+		r2Etag: object.etag,
+		alreadyExisted: true,
+	}
+}
+
+export async function storeSignedDownload(
+	bucket: R2Bucket,
+	key: string,
+	signedUrl: string,
+	fetcher: typeof fetch = fetch,
+): Promise<StoredBackup> {
+	const existing = await bucket.head(key)
+	const download = await fetchSignedDownload(signedUrl, fetcher)
+	if (existing !== null) {
+		return inspectExisting(
+			bucket,
+			key,
+			digestBody(download.body, download.expectedBytes),
+		)
+	}
+
+	const [r2Body, digestBodyStream] = download.body.tee()
+	const digestPromise = digestBody(digestBodyStream, download.expectedBytes)
 	let object: R2Object | null
 	try {
 		;[object] = await Promise.all([
-			bucket.put(key, r2Body, {
-				onlyIf: { etagDoesNotMatch: '*' },
-				httpMetadata: { contentType: 'application/sql' },
-			}),
+			bucket
+				.put(key, r2Body, {
+					onlyIf: { etagDoesNotMatch: '*' },
+					httpMetadata: { contentType: 'application/sql' },
+				})
+				.then(async (result) => {
+					if (result === null && !r2Body.locked) await r2Body.cancel()
+					return result
+				}),
 			digestPromise,
 		])
 	} catch (error) {
@@ -138,7 +197,7 @@ export async function storeSignedDownload(
 			true,
 		)
 	}
-	if (object === null) return inspectExisting(bucket, key)
+	if (object === null) return inspectExisting(bucket, key, digestPromise)
 	const digest = await digestPromise
 	return {
 		...digest,

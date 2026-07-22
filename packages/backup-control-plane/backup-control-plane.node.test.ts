@@ -107,6 +107,7 @@ class MemoryBucket {
 	readonly puts: Array<{ key: string; options: R2PutOptions }> = []
 	private readonly objects = new Map<string, Uint8Array>()
 	private readonly reportedSizes = new Map<string, number>()
+	private nextPutRace: { key: string; bytes: Uint8Array } | undefined
 
 	async put(
 		key: string,
@@ -114,6 +115,10 @@ class MemoryBucket {
 		options: R2PutOptions = {},
 	): Promise<R2Object | null> {
 		this.puts.push({ key, options })
+		if (this.nextPutRace?.key === key) {
+			this.objects.set(key, this.nextPutRace.bytes)
+			this.nextPutRace = undefined
+		}
 		if (
 			options.onlyIf &&
 			'etagDoesNotMatch' in options.onlyIf &&
@@ -157,6 +162,10 @@ class MemoryBucket {
 
 	setReportedSize(key: string, size: number): void {
 		this.reportedSizes.set(key, size)
+	}
+
+	raceOnNextPut(key: string, value: string): void {
+		this.nextPutRace = { key, bytes: new TextEncoder().encode(value) }
 	}
 
 	private metadata(key: string): R2Object {
@@ -234,6 +243,11 @@ class ReplayStep implements DurableExportStep {
 class RetryAfterCommitStep implements BackupRuntimeStep {
 	readonly uploadResults: boolean[] = []
 	private readonly cache = new Map<string, unknown>()
+	private readonly afterFirstUpload: (() => void) | undefined
+
+	constructor(afterFirstUpload?: () => void) {
+		this.afterFirstUpload = afterFirstUpload
+	}
 
 	async do<T>(
 		name: string,
@@ -257,6 +271,7 @@ class RetryAfterCommitStep implements BackupRuntimeStep {
 				this.uploadResults.push(
 					(discarded as { alreadyExisted: boolean }).alreadyExisted,
 				)
+				this.afterFirstUpload?.()
 				throw new Error('simulated Workflow failure before step persistence')
 			} catch (error) {
 				if (
@@ -458,6 +473,7 @@ test('verifies D1 identity without calling the live account endpoint', async () 
 
 test('requires an integer D1 file size and accepts the byte below the ceiling', async () => {
 	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
 	consoleError.mockImplementation(() => undefined)
 	for (const response of [
 		identityEnvelope(undefined, false),
@@ -485,6 +501,7 @@ test('requires an integer D1 file size and accepts the byte below the ceiling', 
 
 test('rejects D1 size at or above the configured ceiling', async () => {
 	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
 	consoleError.mockImplementation(() => undefined)
 	for (const fileSize of [
 		DEFAULT_BACKUP_MAX_SOURCE_BYTES,
@@ -586,6 +603,7 @@ test('workflow retry reuses an upload committed before step persistence and writ
 	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
 	const step = new RetryAfterCommitStep()
 	const apiCalls: string[] = []
+	let downloadCalls = 0
 	const result = await runBackupRuntime(
 		env,
 		{
@@ -605,11 +623,16 @@ test('workflow retry reuses an upload committed before step persistence and writ
 				},
 				sleep: async () => undefined,
 			},
-			downloadFetcher: async () =>
-				new Response('valid', { headers: { 'content-length': '5' } }),
+			downloadFetcher: async () => {
+				downloadCalls += 1
+				return new Response('valid', {
+					headers: { 'content-length': '5' },
+				})
+			},
 		},
 	)
 	assert.deepEqual(step.uploadResults, [false, true])
+	assert.equal(downloadCalls, 2)
 	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 1)
 	assert.equal(
 		result.objectKey,
@@ -619,6 +642,56 @@ test('workflow retry reuses an upload committed before step persistence and writ
 		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
 		result,
 	)
+})
+
+test('workflow retry rejects an object tampered after upload and leaves the manifest absent', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
+	consoleError.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
+	const step = new RetryAfterCommitStep(() => {
+		bucket.corrupt(objectKey, 'evil!')
+	})
+	let downloadCalls = 0
+	await assert.rejects(
+		runBackupRuntime(
+			env,
+			{
+				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+				payload,
+				timestamp: new Date('2026-07-22T02:15:01Z'),
+			},
+			step,
+			{
+				api: {
+					fetcher: async (input) =>
+						String(input).endsWith('/export')
+							? exportEnvelope('complete')
+							: identityEnvelope(1_000),
+					sleep: async () => undefined,
+				},
+				downloadFetcher: async () => {
+					downloadCalls += 1
+					return new Response('valid', {
+						headers: { 'content-length': '5' },
+					})
+				},
+			},
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'existing-object-source-mismatch' &&
+			error.retryable === false,
+	)
+	assert.equal(downloadCalls, 2)
+	assert.equal(
+		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
+		null,
+	)
+	assert.equal(consoleError.mock.calls.length, 1)
 })
 
 for (const status of [401, 403]) {
@@ -702,9 +775,10 @@ test('streams once with an immutable conditional, checksum, byte count, and ETag
 		bucket as unknown as R2Bucket,
 		'backup.sql',
 		'https://download.example',
-		async () => {
-			throw new Error('duplicate must not redownload')
-		},
+		async () =>
+			new Response(bytes, {
+				headers: { 'content-length': String(bytes.byteLength) },
+			}),
 	)
 	assert.equal(duplicate.alreadyExisted, true)
 	assert.equal(duplicate.sha256, stored.sha256)
@@ -725,9 +799,7 @@ test('an existing object without a manifest is recoverable', async () => {
 		bucket as unknown as R2Bucket,
 		orphanKey,
 		'https://download.example',
-		async () => {
-			throw new Error('existing immutable object must not redownload')
-		},
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
 	)
 	await assert.doesNotReject(
 		assertDuplicateMatchesManifest(
@@ -792,6 +864,95 @@ test('truncated and interrupted downloads fail retryably, then a retry succeeds'
 		async () => new Response('valid', { headers: { 'content-length': '5' } }),
 	)
 	assert.equal(retry.bytes, 5)
+})
+
+test('direct existing-object mismatch with the signed source fails explicitly', async () => {
+	const bucket = new MemoryBucket()
+	await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		'backup.sql',
+		'https://download.example',
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
+	)
+	await assert.rejects(
+		storeSignedDownload(
+			bucket as unknown as R2Bucket,
+			'backup.sql',
+			'https://download.example',
+			async () => new Response('other', { headers: { 'content-length': '5' } }),
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'existing-object-source-mismatch' &&
+			error.retryable === false,
+	)
+})
+
+test('existing objects do not bypass signed source availability and size validation', async () => {
+	const bucket = new MemoryBucket()
+	await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		'backup.sql',
+		'https://download.example',
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
+	)
+	const failures: Array<{
+		code: string
+		fetcher: typeof fetch
+	}> = [
+		{
+			code: 'download-interrupted',
+			fetcher: async () => {
+				throw new Error('source unavailable')
+			},
+		},
+		{
+			code: 'download-http-error',
+			fetcher: async () => new Response('', { status: 403 }),
+		},
+		{
+			code: 'download-truncated',
+			fetcher: async () =>
+				new Response('abc', { headers: { 'content-length': '5' } }),
+		},
+		{
+			code: 'download-too-large',
+			fetcher: async () =>
+				new Response('', {
+					headers: {
+						'content-length': String(MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES),
+					},
+				}),
+		},
+	]
+	for (const { code, fetcher } of failures) {
+		await assert.rejects(
+			storeSignedDownload(
+				bucket as unknown as R2Bucket,
+				'backup.sql',
+				'https://download.example',
+				fetcher,
+			),
+			(error: unknown) => error instanceof BackupError && error.code === code,
+		)
+	}
+})
+
+test('conditional-put races compare the winning object with the signed source', async () => {
+	const bucket = new MemoryBucket()
+	bucket.raceOnNextPut('backup.sql', 'other')
+	await assert.rejects(
+		storeSignedDownload(
+			bucket as unknown as R2Bucket,
+			'backup.sql',
+			'https://download.example',
+			async () => new Response('valid', { headers: { 'content-length': '5' } }),
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'existing-object-source-mismatch',
+	)
+	assert.equal(bucket.puts.length, 1)
 })
 
 test('download HTTP and malformed length failures have safe retry classification', async () => {
@@ -860,9 +1021,7 @@ test('pre-existing object at the size limit cannot be resumed into a manifest', 
 			bucket as unknown as R2Bucket,
 			'oversized-existing.sql',
 			'https://download.example',
-			async () => {
-				throw new Error('existing object must not redownload')
-			},
+			async () => new Response('valid', { headers: { 'content-length': '5' } }),
 		),
 		(error: unknown) =>
 			error instanceof BackupError && error.code === 'download-too-large',
@@ -903,7 +1062,7 @@ test('manifest is immutable across duplicate writes and commit changes', async (
 	)
 })
 
-test('object corruption changes its checksum and conflicts with the immutable manifest', async () => {
+test('an existing source-matched object must also match its immutable manifest', async () => {
 	const bucket = new MemoryBucket()
 	const stored = await storeSignedDownload(
 		bucket as unknown as R2Bucket,
@@ -921,9 +1080,7 @@ test('object corruption changes its checksum and conflicts with the immutable ma
 		bucket as unknown as R2Bucket,
 		'backup.sql',
 		'https://download.example',
-		async () => {
-			throw new Error('must inspect existing object')
-		},
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
 	)
 	await assertDuplicateMatchesManifest(
 		bucket as unknown as R2Bucket,
@@ -931,22 +1088,12 @@ test('object corruption changes its checksum and conflicts with the immutable ma
 		'backup.sql',
 		matchingDuplicate,
 	)
-	bucket.corrupt('backup.sql', 'evil!')
-	const inspected = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'backup.sql',
-		'https://download.example',
-		async () => {
-			throw new Error('must inspect existing object')
-		},
-	)
-	assert.notEqual(inspected.sha256, stored.sha256)
 	await assert.rejects(
 		assertDuplicateMatchesManifest(
 			bucket as unknown as R2Bucket,
 			'manifest.json',
-			'backup.sql',
-			inspected,
+			'other-backup.sql',
+			matchingDuplicate,
 		),
 		(error: unknown) =>
 			error instanceof BackupError &&
@@ -1004,6 +1151,7 @@ test('freshness accepts matching metadata and flags size/ETag drift or missing o
 
 test('hourly freshness queries live D1 size and fails at the ceiling', async () => {
 	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
 	consoleError.mockImplementation(() => undefined)
 	let metadataRequests = 0
 	await assert.rejects(
@@ -1023,6 +1171,7 @@ test('hourly freshness queries live D1 size and fails at the ceiling', async () 
 
 test('workflow does not start D1 export when source size exceeds the ceiling', async () => {
 	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
 	consoleError.mockImplementation(() => undefined)
 	const env = environment()
 	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
