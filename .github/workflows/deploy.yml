@@ -285,12 +285,22 @@ jobs:
           base="${DEPLOY_URL%/}"
           offload_url="${base}/__maintenance/offload-email-raw-mime"
           # Each request processes at most one bounded cleanup-queue batch plus
-          # one bounded inline batch (≤10 each). Cap attempts so this step stays
-          # inside the 15-minute deploy job after healthcheck.
+          # one bounded inline batch (≤10 each). Cap attempts and enforce a
+          # total step deadline so worst-case curl time cannot consume the full
+          # 15-minute deploy job timeout after earlier steps.
           max_attempts=60
+          deadline_seconds=600
+          curl_max_time=20
+          start_epoch="$(date +%s)"
           for attempt in $(seq 1 "$max_attempts"); do
-            echo "POST ${offload_url} (attempt ${attempt}/${max_attempts})"
-            status="$(curl --silent --show-error --location --max-time 20 \
+            now_epoch="$(date +%s)"
+            elapsed=$((now_epoch - start_epoch))
+            if [ "$elapsed" -ge "$deadline_seconds" ]; then
+              echo "Email raw MIME offload did not complete within ${deadline_seconds}s deadline (attempt ${attempt}/${max_attempts}, elapsed ${elapsed}s)." >&2
+              exit 1
+            fi
+            echo "POST ${offload_url} (attempt ${attempt}/${max_attempts}, elapsed ${elapsed}s/${deadline_seconds}s)"
+            status="$(curl --silent --show-error --location --max-time "$curl_max_time" \
               -X POST \
               -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
               -H "Accept: application/json" \
