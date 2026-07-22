@@ -9,6 +9,10 @@
  * {@link parsePlanName} so typos and residual `'unlimited'` are rejected
  * rather than coerced. Stripe metadata uses {@link parseStripePlanName},
  * which rejects `max` (manual-only) and residual `'unlimited'`.
+ *
+ * Follow-up: emergency admin-only `unlimited` is intentionally deferred until
+ * a follow-up deployment after 0083's residual sweep. Until then the live
+ * registry is finite `max` only.
  */
 
 export const planNames = ['free', 'partner', 'pro', 'max'] as const
@@ -143,7 +147,7 @@ export type PlanLimits = {
 	maxEmailMessageBytes: number
 	/** Maximum stored secret entries across non-expired buckets. */
 	maxSecrets: number
-	/** Maximum durable storage bytes. Defined but not yet enforced. */
+	/** Maximum durable storage bytes across enforced storage surfaces. */
 	maxStorageBytes: number
 	/** Maximum concurrently active workflow runs. */
 	maxConcurrentWorkflows: number

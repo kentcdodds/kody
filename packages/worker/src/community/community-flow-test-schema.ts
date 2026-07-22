@@ -1,7 +1,7 @@
 /**
  * Community flow workers-unit schema. Keeps production-parity
- * `plan TEXT NOT NULL DEFAULT 'unlimited'` from migration 0081; 0082 is a pure
- * UPDATE. Non-historical seeds must write `'max'` explicitly when plan matters.
+ * `plan TEXT NOT NULL DEFAULT 'max'` from migration 0083. Non-historical seeds
+ * must write `'max'` explicitly when plan matters.
  */
 export async function ensureCommunityFlowSchema(db: D1Database) {
 	const statements = [
@@ -15,7 +15,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			avatar_key TEXT,
 			profile_visibility TEXT NOT NULL DEFAULT 'public' CHECK (profile_visibility IN ('public', 'private')),
 			password_hash TEXT NOT NULL,
-			plan TEXT NOT NULL DEFAULT 'unlimited',
+			plan TEXT NOT NULL DEFAULT 'max',
 			stripe_customer_id TEXT,
 			stripe_plan TEXT,
 			stripe_plan_refreshed_at TEXT,

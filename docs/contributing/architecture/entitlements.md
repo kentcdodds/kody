@@ -25,13 +25,18 @@ The plan registry in `plans.ts` includes `free`, `pro`, `partner`, and `max`.
 Every plan has finite numeric limits for every resource; there are no uncapped
 tiers and no env-var backstops.
 
+Follow-up: emergency admin-only `unlimited` is intentionally deferred until a
+follow-up deployment after `0083-plan-default-max.sql` completes its residual
+sweep. Until then the live registry stays finite `max` only.
+
 `users.plan` and `invites.plan` are NOT NULL TEXT columns. Historical migrations
 (`0046-invites-email-verification.sql`, `0065-invite-plans.sql`, and
-`0081-plan-not-null.sql`) left the DDL default as `'unlimited'`; migration
-`0082-rename-unlimited-plan-to-max.sql` renames stored `'unlimited'` rows to
-`'max'` but does not change the column default. **Production writers always
-persist a known plan name (never NULL) and default new rows to `max`**, not the
-historical DDL sentinel.
+`0081-plan-not-null.sql`) left the DDL default as `'unlimited'` through
+`0082-rename-unlimited-plan-to-max.sql`, which renames stored `'unlimited'` rows
+to `'max'` but does not change the column default. Migration
+`0083-plan-default-max.sql` reconciles migration-window residual `'unlimited'`
+and rebuilds both columns as NOT NULL DEFAULT `'max'`. **Live DDL defaults and
+writers always persist a known plan name (never NULL) and use finite `max`.**
 
 **Write and default:** `resolvePlanWrite` maps nullish admin/API inputs to
 `max`, which is the default for new accounts, invites without an explicit plan,
@@ -83,17 +88,20 @@ sentinel). Migration `0081-plan-not-null.sql` reconciles any residual NULLs and
 rebuilds both columns as NOT NULL DEFAULT `'unlimited'`. Migration
 `0082-rename-unlimited-plan-to-max.sql` renames stored `'unlimited'` plan values
 to `'max'` on `users.plan` and `invites.plan` only; it does not touch
-`users.stripe_plan`, unknown plan strings, or the DDL default.
+`users.stripe_plan`, unknown plan strings, or the DDL default. Migration
+`0083-plan-default-max.sql` reconciles migration-window residual `'unlimited'`,
+fails closed if any remain, and rebuilds `users` and `invites` with NOT NULL
+DEFAULT `'max'`.
 
 ## Assigning plans
 
 New accounts start with `users.plan = 'max'` unless the consumed invite carries
 another plan. Migration `0065-invite-plans.sql` adds `invites.plan` (NOT NULL
-DEFAULT `'unlimited'` in DDL after `0081-plan-not-null.sql`; writers and admin
-UI default to `max`). Password and social signup read the consumed invite's
-stored plan with `parseStoredPlanName` and copy it onto `users.plan`; missing or
-omitted invite plans are written as `max` via `resolvePlanWrite`. Admins set
-invite plans when creating codes at `/admin/invites` (validated with strict
+DEFAULT `'max'` after `0083-plan-default-max.sql`; writers and admin UI default
+to `max`). Password and social signup read the consumed invite's stored plan
+with `parseStoredPlanName` and copy it onto `users.plan`; missing or omitted
+invite plans are written as `max` via `resolvePlanWrite`. Admins set invite
+plans when creating codes at `/admin/invites` (validated with strict
 `parsePlanName`).
 
 Admins also assign or reset plans on existing users through two audited,
@@ -326,12 +334,12 @@ in [`../environment-variables.md`](../environment-variables.md).
 ## Related tables and coordination
 
 - `users.plan` — added by the invite-signup migration
-  (`0046-invites-email-verification.sql`); NOT NULL DEFAULT `'unlimited'` in DDL
-  after `0081-plan-not-null.sql` (writers default to `max`). The entitlements
+  (`0046-invites-email-verification.sql`); NOT NULL DEFAULT `'max'` after
+  `0083-plan-default-max.sql` (writers default to `max`). The entitlements
   module is the consumer of that column (manual / invite / admin grant).
 - `invites.plan` — signup plan from migration `0065-invite-plans.sql`; NOT NULL
-  DEFAULT `'unlimited'` in DDL after `0081-plan-not-null.sql` (writers and admin
-  UI default to `max`). Applied to `users.plan` when the invite is consumed at
+  DEFAULT `'max'` after `0083-plan-default-max.sql` (writers and admin UI
+  default to `max`). Applied to `users.plan` when the invite is consumed at
   signup via `parseStoredPlanName` and `resolvePlanWrite`.
 - `users.stripe_customer_id`, `users.stripe_plan`,
   `users.stripe_plan_refreshed_at` — Stripe billing columns from migration

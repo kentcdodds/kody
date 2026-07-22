@@ -2,10 +2,9 @@
  * Schema for package scope grant / platform account workers-unit tests.
  * Local D1 does not apply migrations, so suites provision the tables they need.
  * Mirrors users columns from early migrations plus 0052/0075 (stable_user_id),
- * 0072 (account_type, package_scope_grants), and 0081
- * (`plan` NOT NULL DEFAULT `'unlimited'`). Migration 0082 is a pure UPDATE and
- * does not change the column default; non-historical seeds must write
- * `'max'` explicitly when plan matters.
+ * 0072 (account_type, package_scope_grants), 0081 (`plan` NOT NULL), and 0083
+ * (`plan` NOT NULL DEFAULT `'max'`). Non-historical seeds must write `'max'`
+ * explicitly when plan matters.
  */
 export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	await db
@@ -18,7 +17,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	email_verified_at TEXT,
 	stable_user_id TEXT NOT NULL,
 	account_type TEXT NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'platform')),
-	plan TEXT NOT NULL DEFAULT 'unlimited',
+	plan TEXT NOT NULL DEFAULT 'max',
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 )`,
@@ -28,7 +27,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 		'email_verified_at TEXT',
 		'stable_user_id TEXT',
 		`account_type TEXT NOT NULL DEFAULT 'person'`,
-		`plan TEXT NOT NULL DEFAULT 'unlimited'`,
+		`plan TEXT NOT NULL DEFAULT 'max'`,
 	]) {
 		try {
 			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()
