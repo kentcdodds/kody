@@ -59,7 +59,7 @@ const capabilityHighlights = [
 	{
 		title: 'Self-service means ownership',
 		description:
-			'Bring your own OAuth apps and API keys. Your data is exportable and Kody is open source, so your assistant stays portable.',
+			'Bring your own OAuth apps and API keys. Your data is exportable and Kody is source available, so your assistant stays portable.',
 	},
 ] as const
 
@@ -222,17 +222,17 @@ export function HomeRoute(handle: Handle) {
 					isolated.
 				</p>
 
-				<p mix={css(openSourceLineCss)}>
+				<p mix={css(sourceAvailableLineCss)}>
 					Kody is{' '}
 					<a
-						href="https://github.com/kentcdodds/kody"
+						href="https://github.com/kentcdodds/kody/blob/main/LICENSE"
 						target="_blank"
 						rel="noreferrer noopener"
-						mix={css(openSourceLinkCss)}
+						mix={css(sourceAvailableLinkCss)}
 					>
-						open source
-					</a>
-					.
+						source available
+					</a>{' '}
+					under the Functional Source License.
 				</p>
 			</section>
 		)
@@ -513,13 +513,13 @@ const trustLineCss = {
 	lineHeight: 1.6,
 }
 
-const openSourceLineCss = {
+const sourceAvailableLineCss = {
 	margin: 0,
 	color: colors.textMuted,
 	fontSize: typography.fontSize.sm,
 	lineHeight: 1.6,
 }
 
-const openSourceLinkCss = {
+const sourceAvailableLinkCss = {
 	color: colors.primaryText,
 }

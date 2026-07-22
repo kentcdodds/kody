@@ -105,6 +105,18 @@ Request → packages/worker/src/index.ts
 | [`docs/use/index.md`](./docs/use/index.md)                                                   | Using Kody over MCP                  |
 | [`docs/contributing/setup.md`](./docs/contributing/setup.md)                                 | Local development and verification   |
 
+## License
+
+Kody is licensed under the
+[Functional Source License, Version 1.1, ALv2 Future License](./LICENSE)
+([FSL-1.1-ALv2](https://fsl.software/)). You can use, modify, and redistribute
+the software for any purpose other than offering a competing product or service.
+Each version becomes available under Apache License 2.0 on the second
+anniversary of the date that version was made available.
+
+Community packages published through Kody remain MIT-licensed; that requirement
+is separate from this repository's license.
+
 ---
 
 <div align="center">
