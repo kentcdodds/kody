@@ -20,6 +20,9 @@ import {
 	formatMarkdownInlineCode,
 } from './markdown-safety.ts'
 import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
+import { buildKodyCapabilityAccessor } from '#mcp/kody-capability-accessors.ts'
+
+export { buildKodyCapabilityAccessor } from '#mcp/kody-capability-accessors.ts'
 
 export type SearchEntityType =
 	| 'capability'
@@ -507,53 +510,6 @@ function buildCapabilityUsage(spec: {
 	openApi?: CapabilitySpec['openApi']
 }) {
 	return `execute with ${buildKodyCapabilityAccessor(spec)}(args)`
-}
-
-function buildNamespacedKodyAccessor(input: {
-	namespace: string
-	entryName: string
-	toolName: string
-}) {
-	const entryAccessor = `kody.${input.namespace}[${JSON.stringify(input.entryName)}]`
-	if (/^[A-Za-z_$][\w$]*$/.test(input.toolName)) {
-		return `${entryAccessor}.${input.toolName}`
-	}
-	return `${entryAccessor}[${JSON.stringify(input.toolName)}]`
-}
-
-export function buildKodyCapabilityAccessor(spec: {
-	name: string
-	source?: CapabilitySpec['source']
-	remoteConnector?: CapabilitySpec['remoteConnector']
-	mcpServer?: CapabilitySpec['mcpServer']
-	openApi?: CapabilitySpec['openApi']
-}) {
-	if (spec.source === 'remote-connector' && spec.remoteConnector) {
-		return buildNamespacedKodyAccessor({
-			namespace: 'remote',
-			entryName: spec.remoteConnector.connectorName,
-			toolName: spec.remoteConnector.toolName,
-		})
-	}
-	if (spec.source === 'mcp-server' && spec.mcpServer) {
-		return buildNamespacedKodyAccessor({
-			namespace: 'mcp',
-			entryName: spec.mcpServer.kodyName,
-			toolName: spec.mcpServer.toolName,
-		})
-	}
-	if (spec.source === 'openapi' && spec.openApi) {
-		return buildNamespacedKodyAccessor({
-			namespace: 'openapi',
-			entryName: spec.openApi.kodyName,
-			toolName: spec.openApi.operationSlug,
-		})
-	}
-	const { name } = spec
-	if (/^[A-Za-z_$][\w$]*$/.test(name)) {
-		return `kody.${name}`
-	}
-	return `kody[${JSON.stringify(name)}]`
 }
 
 export const inlineCapabilityInputTypeMaxLength = 500

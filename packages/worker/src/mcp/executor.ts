@@ -34,17 +34,14 @@ import {
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
 import {
-	type KodyMcpServerMetadata,
-	type KodyOpenApiProviderMetadata,
 	type KodyRemoteConnectorMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
-import {
-	assertGeneratedExecutorSourceIsBundleSafe,
-	kodyRemoteProxyFactorySource,
-} from '#mcp/kody-remote-proxy-source.ts'
+import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
+
+export { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
@@ -467,99 +464,6 @@ function createProviderProxySource(provider: ResolvedProvider) {
 		})
 	}
 	return `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
-}
-
-// Keep only fields the sandbox proxy reads so inlined executor scripts stay
-// smaller and volatile status prose does not churn the stable worker-ID hash.
-function projectKodyRemoteProxyMetadata(
-	entries: ReadonlyArray<{
-		name: string
-		status: {
-			connected: boolean
-			toolCount: number
-			unavailableMessage: string
-		}
-		capabilities: ReadonlyArray<{
-			name: string
-			dispatchName: string
-		}>
-	}>,
-) {
-	return entries.map((entry) => ({
-		name: entry.name,
-		status: {
-			connected: entry.status.connected,
-			toolCount: entry.status.toolCount,
-			unavailableMessage: entry.status.unavailableMessage,
-		},
-		capabilities: entry.capabilities.map((capability) => ({
-			name: capability.name,
-			dispatchName: capability.dispatchName,
-		})),
-	}))
-}
-
-export function createKodyProviderProxySource(input: {
-	providerName: string
-	remoteConnectors: Array<KodyRemoteConnectorMetadata>
-	mcpServers?: Array<KodyMcpServerMetadata>
-	openApiProviders?: Array<KodyOpenApiProviderMetadata>
-}) {
-	const metadataJson = JSON.stringify(
-		projectKodyRemoteProxyMetadata(input.remoteConnectors),
-	)
-	const mcpMetadataJson = JSON.stringify(
-		projectKodyRemoteProxyMetadata(input.mcpServers ?? []),
-	)
-	const openApiMetadataJson = JSON.stringify(
-		projectKodyRemoteProxyMetadata(input.openApiProviders ?? []),
-	)
-	const source = `    const __kodyCreateRemoteProxy = ${kodyRemoteProxyFactorySource};
-    const __kodyCallDispatcher = async (dispatchName, args) => {
-      const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
-      const data = JSON.parse(resJson);
-      if (data.error) throw new Error(data.error);
-      return data.result;
-    };
-    const __kodyRemote = __kodyCreateRemoteProxy({
-      remoteConnectors: ${metadataJson},
-      callTool: __kodyCallDispatcher,
-    });
-    const __kodyMcp = __kodyCreateRemoteProxy({
-      remoteConnectors: ${mcpMetadataJson},
-      entityLabel: "MCP server",
-      shortEntityLabel: "MCP server",
-      capabilityLabel: "MCP tool",
-      callTool: __kodyCallDispatcher,
-    });
-    const __kodyOpenapi = __kodyCreateRemoteProxy({
-      remoteConnectors: ${openApiMetadataJson},
-      entityLabel: "OpenAPI provider",
-      shortEntityLabel: "provider",
-      capabilityLabel: "operation",
-      callTool: __kodyCallDispatcher,
-    });
-    const ${input.providerName} = new Proxy({}, {
-      get: (_, toolName) => {
-        if (typeof toolName === 'symbol' || toolName === 'then') return undefined;
-        if (toolName === 'remote') return __kodyRemote;
-        if (toolName === 'mcp') return __kodyMcp;
-        if (toolName === 'openapi') return __kodyOpenapi;
-        const normalizedToolName = String(toolName);
-        if (normalizedToolName.startsWith('remote:')) {
-          throw new Error(\`Remote connector capability "\${normalizedToolName}" is not available as a flat kody function. Use kody.remote[connectorName].capabilityName(input) instead.\`);
-        }
-        if (normalizedToolName.startsWith('mcp:')) {
-          throw new Error(\`MCP server tool "\${normalizedToolName}" is not available as a flat kody function. Use kody.mcp[serverName].toolName(input) instead.\`);
-        }
-        if (normalizedToolName.startsWith('openapi:')) {
-          throw new Error(\`OpenAPI operation "\${normalizedToolName}" is not available as a flat kody function. Use kody.openapi[providerName].operationSlug(input) instead.\`);
-        }
-        return async (args) => await __kodyCallDispatcher(normalizedToolName, args);
-      }
-    });`
-	assertGeneratedExecutorSourceIsBundleSafe(source)
-	return source
 }
 
 export function createToolDispatchers(
