@@ -71,6 +71,11 @@ type MockAccountRow = {
 	email_verified_at: string | null
 }
 
+type VerificationLookupKind =
+	| 'email_and_stable_user_id'
+	| 'stable_user_id_only'
+	| 'email_only'
+
 type MockDbOptions = {
 	// Row returned for the `email_verified_at` lookup keyed by account email.
 	emailVerifiedAt?: string | null
@@ -83,11 +88,16 @@ type MockDbOptions = {
 	accountByStableId?: MockAccountRow | null
 	// Rows returned for remote connector settings queries.
 	connectorRows?: Array<Record<string, unknown>>
+	// Optional sink for which verification SQL shapes were exercised.
+	verificationLookups?: Array<VerificationLookupKind>
 }
 
 function createMockDb(options: MockDbOptions = {}) {
 	const defaultEmail = options.expectedEmail ?? 'user@example.com'
 	const defaultStableUserId = options.expectedStableUserId ?? 'user'
+	const recordVerificationLookup = (kind: VerificationLookupKind) => {
+		options.verificationLookups?.push(kind)
+	}
 	const statementFor = (query: string) => {
 		const normalized = query.replace(/\s+/g, ' ').toLowerCase()
 		let boundParams: Array<unknown> = []
@@ -137,6 +147,7 @@ function createMockDb(options: MockDbOptions = {}) {
 					} satisfies MockAccountRow
 				}
 				if (normalized.includes('email = ? and stable_user_id')) {
+					recordVerificationLookup('email_and_stable_user_id')
 					const email =
 						typeof boundParams[0] === 'string' ? boundParams[0] : null
 					const stableUserId =
@@ -168,6 +179,7 @@ function createMockDb(options: MockDbOptions = {}) {
 					normalized.includes('where stable_user_id') &&
 					normalized.includes('email_verified_at')
 				) {
+					recordVerificationLookup('stable_user_id_only')
 					if (!boundStableUserId) return null
 					if (options.accountByStableId) {
 						if (
@@ -189,6 +201,11 @@ function createMockDb(options: MockDbOptions = {}) {
 					normalized.includes('where email = ?') &&
 					!normalized.includes('stable_user_id')
 				) {
+					// Mirrors production `isAccountEmailVerified` email-only path used by
+					// browser sessions (oauth-handlers consent/approve with session email
+					// only). MCP auth always supplies stable userId and must not rely on
+					// this branch; see verificationLookups assertions below.
+					recordVerificationLookup('email_only')
 					const email =
 						typeof boundParams[0] === 'string' ? boundParams[0] : null
 					if (!email || email !== defaultEmail) return null
@@ -300,8 +317,10 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		...tokenWithoutAudience,
 		audience: `https://example.com${mcpResourcePath}`,
 	}
+	const verificationLookups: Array<VerificationLookupKind> = []
 	const verifiedDb: MockDbOptions = {
 		emailVerifiedAt: new Date(0).toISOString(),
+		verificationLookups,
 	}
 
 	const invalidResponse = await handleMcpRequest({
@@ -352,6 +371,10 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		storageContext: null,
 		user: { userId: 'user' },
 	})
+	// MCP grant props carry email + stable userId, so verification must use the
+	// paired lookup — never the browser-session email-only SQL shape.
+	expect(verificationLookups).toContain('email_and_stable_user_id')
+	expect(verificationLookups).not.toContain('email_only')
 
 	const withConnectorResponse = await handleMcpRequest({
 		request,
@@ -495,6 +518,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	const fallbackEmail = 'fallback@example.com'
 	const stableUserId = await createStableUserIdFromEmail(fallbackEmail)
 	const verifiedAt = new Date(0).toISOString()
+	const fallbackVerificationLookups: Array<VerificationLookupKind> = []
 	const fallbackResponse = await handleMcpRequest({
 		request,
 		env: createEnv(
@@ -512,6 +536,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 					stable_user_id: stableUserId,
 					email_verified_at: verifiedAt,
 				},
+				verificationLookups: fallbackVerificationLookups,
 			},
 		),
 		ctx: createContext(),
@@ -519,4 +544,6 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	})
 	expect(fallbackResponse.status).toBe(200)
 	expect(fetchMcpCalled).toBe(true)
+	expect(fallbackVerificationLookups).toContain('email_and_stable_user_id')
+	expect(fallbackVerificationLookups).not.toContain('email_only')
 })

@@ -294,6 +294,7 @@ function createAdminCapabilityTestDb(input: {
 									username: user.username,
 									email: user.email,
 									plan: user.plan ?? null,
+									stable_user_id: user.stable_user_id,
 								})) as Array<T>,
 						}
 					}
@@ -353,7 +354,13 @@ function createAdminCapabilityTestDb(input: {
 				},
 				async run() {
 					if (normalizedQuery.startsWith('insert into users')) {
-						const [username, email, passwordHash, emailVerifiedAt] = params
+						const [
+							username,
+							email,
+							passwordHash,
+							emailVerifiedAt,
+							stableUserId,
+						] = params
 						if (
 							users.some(
 								(row) =>
@@ -372,7 +379,7 @@ function createAdminCapabilityTestDb(input: {
 							throw new Error('UNIQUE constraint failed: users.username')
 						}
 						const now = new Date().toISOString()
-						const user = {
+						const user = adminTestUser({
 							id: nextUserId,
 							username: String(username),
 							email: String(email),
@@ -380,7 +387,10 @@ function createAdminCapabilityTestDb(input: {
 							updated_at: now,
 							password_hash: String(passwordHash),
 							email_verified_at: String(emailVerifiedAt),
-						}
+							...(typeof stableUserId === 'string'
+								? { stable_user_id: stableUserId }
+								: {}),
+						})
 						nextUserId += 1
 						users.push(user)
 						return { meta: { changes: 1, last_row_id: user.id } }
@@ -666,7 +676,7 @@ test('admin system email capabilities read only system-owned mail and audit read
 })
 
 test('admin_user_create records audit metadata and assigns the default role', async () => {
-	const { db, auditEvents, userRoles } = createAdminCapabilityTestDb({
+	const { db, auditEvents, userRoles, users } = createAdminCapabilityTestDb({
 		users: [
 			adminTestUser({
 				id: 1,
@@ -688,6 +698,10 @@ test('admin_user_create records audit metadata and assigns the default role', as
 	expect(result.createdUser).toMatchObject({
 		userId: 2,
 		email: 'person+launch@example.com',
+	})
+	expect(users.find((user) => user.id === 2)).toMatchObject({
+		email: 'person+launch@example.com',
+		stable_user_id: testStableUserIdFromEmail('person+launch@example.com'),
 	})
 	expect(userRoles).toContainEqual({ user_id: 2, role_name: 'user' })
 	expect(auditEvents).toEqual([
