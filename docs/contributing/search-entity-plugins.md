@@ -36,8 +36,14 @@ To add a search entity:
    as `retriever_result`).
 8. Update `parseEntityRef` in `search-format-helpers.ts` so `{id}:{type}`
    parsing accepts the new entity-backed type.
-9. Add or update `search-entity-registry.node.test.ts` to prove the registry
-   order and whether the type is entity-backed.
+9. For entity-backed types, update the public allowed-type lists so agents and
+   docs stay in sync:
+   - `search-tool-definition.ts` (tool description and `entity` input schema
+     copy that enumerates `capability` | `package` | `secret` | `value` |
+     `integration`)
+   - `docs/use/search.md` (user-facing `{id}:{type}` type list)
+10. Add or update `search-entity-registry.node.test.ts` to prove the registry
+    order and whether the type is entity-backed.
 
 Current candidate flatten order is:
 
