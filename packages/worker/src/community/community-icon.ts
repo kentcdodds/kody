@@ -95,7 +95,16 @@ export async function getCommunityIconObject(input: {
 		...baseCache,
 		async set(key: string, entry: Parameters<typeof baseCache.set>[1]) {
 			if (await isServableIconCommit(input)) {
-				await baseCache.set(key, entry)
+				const write = async () => await baseCache.set(key, entry)
+				if (typeof input.env.APP_DB.prepare === 'function') {
+					await withAccountWriteLease({
+						db: input.env.APP_DB,
+						stableUserId: input.listing.ownerUserId,
+						write,
+					})
+				} else {
+					await write()
+				}
 			}
 		},
 	}

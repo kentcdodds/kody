@@ -87,12 +87,16 @@ function createTestDb(
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
-								lower === 'select active_write_count from users where id = ?'
+								lower.includes(
+									'select active_write_count, active_write_expires_at from users',
+								)
 							) {
 								results = (rows.users ?? [])
 									.filter((row) => row['id'] === params[0])
 									.map((row) => ({
 										active_write_count: row['active_write_count'] ?? 0,
+										active_write_expires_at:
+											row['active_write_expires_at'] ?? null,
 									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
@@ -1553,6 +1557,7 @@ test('account deletion waits for an active writer and resumes on retry', async (
 				email: 'a@example.com',
 				stable_user_id: 'user-aaa',
 				active_write_count: 1,
+				active_write_expires_at: '2999-01-01 00:00:00',
 				updated_at: '2026-07-22',
 			},
 		],

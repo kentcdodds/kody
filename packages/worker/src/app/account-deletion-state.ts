@@ -37,10 +37,30 @@ export async function markAccountDeleting(input: {
 		throw new Error('Account could not be marked for deletion.')
 	}
 	const row = await input.db
-		.prepare(`SELECT active_write_count FROM users WHERE id = ?`)
+		.prepare(
+			`SELECT active_write_count, active_write_expires_at
+			FROM users WHERE id = ?`,
+		)
 		.bind(input.dbUserId)
-		.first<{ active_write_count: number }>()
-	return Number(row?.active_write_count ?? 0)
+		.first<{
+			active_write_count: number
+			active_write_expires_at: string | null
+		}>()
+	const active =
+		row?.active_write_expires_at && row.active_write_expires_at > now
+			? Number(row.active_write_count)
+			: 0
+	if (active === 0 && Number(row?.active_write_count ?? 0) > 0) {
+		await input.db
+			.prepare(
+				`UPDATE users
+				SET active_write_count = 0, active_write_expires_at = NULL
+				WHERE id = ?`,
+			)
+			.bind(input.dbUserId)
+			.run()
+	}
+	return active
 }
 
 export async function assertAccountWritableDb(
@@ -65,13 +85,15 @@ export async function withAccountWriteLease<T>(input: {
 	stableUserId: string
 	write: () => Promise<T>
 }) {
+	const expiresAt = utcSqliteTimestamp(new Date(Date.now() + 30 * 60 * 1000))
 	const acquired = await input.db
 		.prepare(
 			`UPDATE users
-			SET active_write_count = active_write_count + 1
+			SET active_write_count = active_write_count + 1,
+				active_write_expires_at = ?
 			WHERE stable_user_id = ? AND deleting_at IS NULL`,
 		)
-		.bind(input.stableUserId)
+		.bind(expiresAt, input.stableUserId)
 		.run()
 	if ((acquired.meta.changes ?? 0) !== 1) {
 		throw new AccountDeletionInProgressError()
@@ -82,7 +104,11 @@ export async function withAccountWriteLease<T>(input: {
 		await input.db
 			.prepare(
 				`UPDATE users
-				SET active_write_count = MAX(active_write_count - 1, 0)
+				SET active_write_count = MAX(active_write_count - 1, 0),
+					active_write_expires_at = CASE
+						WHEN active_write_count <= 1 THEN NULL
+						ELSE active_write_expires_at
+					END
 				WHERE stable_user_id = ?`,
 			)
 			.bind(input.stableUserId)

@@ -3,6 +3,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
+import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
@@ -410,334 +411,346 @@ function outboundEmailContentBytes(
 export async function sendOutboundEmail(
 	input: EmailSendInput,
 ): Promise<EmailSendResult> {
-	// The from address is always platform-assigned: {username}@<platform
-	// domain>. There is no self-service sender verification. The resolved
-	// account email (recovered from the stable userId when the caller
-	// context carried none, e.g. package subscription handlers) backs the
-	// verified-account gate and the entitlement plan lookup so plan limits
-	// can never be bypassed by an empty context email.
-	const sender = await resolveUserPlatformSender({
-		db: input.env.APP_DB,
-		env: input.env,
-		accountEmail: input.accountEmail,
-		userId: input.userId,
-	})
-	const from = sender.from
-	const accountEmailVerified = await isAccountEmailVerified({
-		db: input.env.APP_DB,
-		email: sender.accountEmail,
-		stableUserId: input.userId,
-	})
-	if (!accountEmailVerified) {
-		throw new Error('Account email must be verified before sending email.')
-	}
-	// Sends reference the platform-provisioned sender identity. It is
-	// normally created alongside the default inbox at signup; ensuring it
-	// here also covers accounts provisioned before the identity existed.
-	const senderIdentity = await ensurePlatformSenderIdentity({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		email: sender.from,
-		domain: sender.domain,
-	})
-
-	let original: EmailMessageRecord | null = null
-	let to: Array<string>
-	if (input.recipientPolicy === 'reply') {
-		// The recipient is derived from the stored inbound message — callers
-		// can never turn a reply into outreach.
-		const replyOriginal = await getEmailMessageById({
+	const write = async (): Promise<EmailSendResult> => {
+		// The from address is always platform-assigned: {username}@<platform
+		// domain>. There is no self-service sender verification. The resolved
+		// account email (recovered from the stable userId when the caller
+		// context carried none, e.g. package subscription handlers) backs the
+		// verified-account gate and the entitlement plan lookup so plan limits
+		// can never be bypassed by an empty context email.
+		const sender = await resolveUserPlatformSender({
+			db: input.env.APP_DB,
+			env: input.env,
+			accountEmail: input.accountEmail,
+			userId: input.userId,
+		})
+		const from = sender.from
+		const accountEmailVerified = await isAccountEmailVerified({
+			db: input.env.APP_DB,
+			email: sender.accountEmail,
+			stableUserId: input.userId,
+		})
+		if (!accountEmailVerified) {
+			throw new Error('Account email must be verified before sending email.')
+		}
+		// Sends reference the platform-provisioned sender identity. It is
+		// normally created alongside the default inbox at signup; ensuring it
+		// here also covers accounts provisioned before the identity existed.
+		const senderIdentity = await ensurePlatformSenderIdentity({
 			db: input.env.APP_DB,
 			userId: input.userId,
-			messageId: input.replyToMessageId,
+			email: sender.from,
+			domain: sender.domain,
 		})
-		if (!replyOriginal || replyOriginal.direction !== 'inbound') {
-			throw new Error('Replying requires a stored inbound message.')
-		}
-		original = replyOriginal
-		to = [deriveReplyRecipient(replyOriginal)]
-	} else {
-		if (input.inReplyToHeader) {
-			original = await getEmailMessageByMessageIdHeader({
+
+		let original: EmailMessageRecord | null = null
+		let to: Array<string>
+		if (input.recipientPolicy === 'reply') {
+			// The recipient is derived from the stored inbound message — callers
+			// can never turn a reply into outreach.
+			const replyOriginal = await getEmailMessageById({
 				db: input.env.APP_DB,
 				userId: input.userId,
-				messageIdHeader: input.inReplyToHeader,
+				messageId: input.replyToMessageId,
 			})
-			if (!original) {
-				throw new Error(
-					`Cannot reply because original message ${input.inReplyToHeader} was not found.`,
-				)
+			if (!replyOriginal || replyOriginal.direction !== 'inbound') {
+				throw new Error('Replying requires a stored inbound message.')
 			}
+			original = replyOriginal
+			to = [deriveReplyRecipient(replyOriginal)]
+		} else {
+			if (input.inReplyToHeader) {
+				original = await getEmailMessageByMessageIdHeader({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					messageIdHeader: input.inReplyToHeader,
+				})
+				if (!original) {
+					throw new Error(
+						`Cannot reply because original message ${input.inReplyToHeader} was not found.`,
+					)
+				}
+			}
+			to = resolveSelfRecipients({
+				to: input.to,
+				accountEmail: sender.accountEmail,
+			})
 		}
-		to = resolveSelfRecipients({
-			to: input.to,
-			accountEmail: sender.accountEmail,
+		const subject = input.subject.trim()
+		if (!subject) throw new Error('Email subject is required.')
+		const text = input.text?.trim() || null
+		const html = input.html?.trim() || null
+		if (!text && !html) throw new Error('Email text or HTML body is required.')
+		const attachments = prepareOutboundAttachments(input.attachments)
+		const attachmentBytesTotal = attachments.reduce(
+			(total, attachment) => total + attachment.bytes.byteLength,
+			0,
+		)
+		if (attachments.length > 0) {
+			// Attachments put outbound mail under the same per-message ceiling
+			// as inbound mail. Body-only sends keep their pre-attachment
+			// behavior (no per-message cap).
+			await assertWithinEntitlement({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				email: sender.accountEmail,
+				resource: 'email_message_bytes',
+				requested: 0,
+				getCurrent: async () =>
+					(outboundEmailContentBytes(text, html) ?? 0) + attachmentBytesTotal,
+			})
+		}
+		const messageIdHeader = `<${crypto.randomUUID()}@kody.local>`
+		const storedHeaders = buildStoredHeaders({
+			messageId: messageIdHeader,
+			inReplyTo: input.inReplyToHeader ?? null,
+			references: input.references ?? [],
 		})
-	}
-	const subject = input.subject.trim()
-	if (!subject) throw new Error('Email subject is required.')
-	const text = input.text?.trim() || null
-	const html = input.html?.trim() || null
-	if (!text && !html) throw new Error('Email text or HTML body is required.')
-	const attachments = prepareOutboundAttachments(input.attachments)
-	const attachmentBytesTotal = attachments.reduce(
-		(total, attachment) => total + attachment.bytes.byteLength,
-		0,
-	)
-	if (attachments.length > 0) {
-		// Attachments put outbound mail under the same per-message ceiling
-		// as inbound mail. Body-only sends keep their pre-attachment
-		// behavior (no per-message cap).
-		await assertWithinEntitlement({
+		await assertWithinStorageBytesEntitlement({
 			db: input.env.APP_DB,
 			userId: input.userId,
 			email: sender.accountEmail,
-			resource: 'email_message_bytes',
-			requested: 0,
-			getCurrent: async () =>
-				(outboundEmailContentBytes(text, html) ?? 0) + attachmentBytesTotal,
+			requested:
+				estimateEntitlementStorageEntryBytes({
+					key: messageIdHeader,
+					value: {
+						from,
+						to,
+						subject,
+						replyTo: input.replyTo,
+						text,
+						html,
+						headers: storedHeaders,
+					},
+				}) + attachmentBytesTotal,
 		})
-	}
-	const messageIdHeader = `<${crypto.randomUUID()}@kody.local>`
-	const storedHeaders = buildStoredHeaders({
-		messageId: messageIdHeader,
-		inReplyTo: input.inReplyToHeader ?? null,
-		references: input.references ?? [],
-	})
-	await assertWithinStorageBytesEntitlement({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		email: sender.accountEmail,
-		requested:
-			estimateEntitlementStorageEntryBytes({
-				key: messageIdHeader,
-				value: {
-					from,
-					to,
-					subject,
-					replyTo: input.replyTo,
-					text,
-					html,
-					headers: storedHeaders,
-				},
-			}) + attachmentBytesTotal,
-	})
 
-	// Atomic check-and-increment: the counter tracks attempts for every user
-	// and denies the send when a plan's daily limit is reached. The
-	// `max` plan uses finite email caps rather than uncapped mail.
-	await consumeDailyEntitlement({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		email: sender.accountEmail,
-		resource: 'email_sends_per_day',
-	})
+		// Atomic check-and-increment: the counter tracks attempts for every user
+		// and denies the send when a plan's daily limit is reached. The
+		// `max` plan uses finite email caps rather than uncapped mail.
+		await consumeDailyEntitlement({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			email: sender.accountEmail,
+			resource: 'email_sends_per_day',
+		})
 
-	const existingThreadId = original?.threadId ?? input.threadId ?? null
-	const thread = existingThreadId
-		? null
-		: await createEmailThread({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				inboxId: original?.inboxId ?? input.inboxId ?? null,
-				subjectNormalized: subject.toLowerCase(),
-				rootMessageIdHeader: input.inReplyToHeader ?? null,
-				lastMessageAt: new Date().toISOString(),
-			})
-	const threadId = existingThreadId ?? thread?.id ?? null
-	const providerHeaders = buildProviderHeaders(storedHeaders)
-	const message = await insertEmailMessageWithoutRawMime({
-		db: input.env.APP_DB,
-		message: {
-			direction: 'outbound',
-			userId: input.userId,
-			inboxId: original?.inboxId ?? input.inboxId ?? null,
-			threadId,
-			senderIdentityId: senderIdentity.id,
-			fromAddress: from,
-			envelopeFrom: from,
-			toAddresses: to,
-			ccAddresses: [],
-			bccAddresses: [],
-			replyToAddresses: input.replyTo
-				? [normalizeEmailAddress(input.replyTo)].filter(
-						(value): value is string => typeof value === 'string',
-					)
-				: [],
-			subject,
-			messageIdHeader,
-			inReplyToHeader: input.inReplyToHeader ?? null,
-			references: input.references ?? [],
-			headers: storedHeaders,
-			authResults: null,
-			textBody: text,
-			htmlBody: html,
-			rawSize: null,
-			processingStatus: 'stored',
-			providerMessageId: null,
-			error: null,
-			receivedAt: null,
-			sentAt: null,
-		},
-	})
-	try {
-		await storeOutboundAttachments({
-			db: input.env.APP_DB,
-			blobs: input.env.EMAIL_BLOBS,
-			userId: input.userId,
-			messageId: message.id,
-			attachments,
-		})
-	} catch (error) {
-		// The daily send counter deliberately tracks attempts (see the
-		// consumeDailyEntitlement comment), but the message must not stay in
-		// 'stored' limbo with no delivery attempt recorded.
-		const messageText = getErrorMessage(error)
-		await updateEmailMessageDelivery({
-			db: input.env.APP_DB,
-			messageId: message.id,
-			status: 'failed',
-			providerMessageId: null,
-			error: messageText,
-			sentAt: null,
-		}).catch((updateError) => {
-			console.warn('email-attachment-failure-status-update-failed', updateError)
-		})
-		await insertEmailDeliveryEvent({
-			db: input.env.APP_DB,
-			messageId: message.id,
-			userId: input.userId,
-			inboxId: null,
-			eventType: 'failed',
-			provider: 'cloudflare-email',
-			providerMessageId: null,
-			detail: { error: messageText },
-		}).catch((eventError) => {
-			console.warn('email-attachment-failure-event-insert-failed', eventError)
-		})
-		throw error
-	}
-	await insertEmailDeliveryEvent({
-		db: input.env.APP_DB,
-		messageId: message.id,
-		userId: input.userId,
-		inboxId: null,
-		eventType: 'send_requested',
-		provider: 'cloudflare-email',
-		providerMessageId: null,
-		detail: { to, from, subject, attachmentCount: attachments.length },
-	})
-
-	const messageContentBytes = outboundEmailContentBytes(
-		text,
-		html,
-		attachmentBytesTotal,
-	)
-	const sendStartedAtMs = Date.now()
-	let sendOutcome: 'success' | 'error' = 'success'
-	try {
-		const bindingResult = await sendViaBinding({
-			env: input.env,
-			from,
-			to,
-			subject,
-			text,
-			html,
-			replyTo: input.replyTo
-				? (normalizeEmailAddress(input.replyTo) ?? undefined)
-				: undefined,
-			headers: providerHeaders,
-			attachments,
-		})
-		const providerMessageId = bindingResult.sent
-			? bindingResult.messageId
-			: await sendViaRestFallback({
-					env: input.env,
-					from,
-					to,
-					subject,
-					text,
-					html,
-					replyTo: input.replyTo
-						? (normalizeEmailAddress(input.replyTo) ?? undefined)
-						: undefined,
-					headers: providerHeaders,
-					attachments,
-				})
-		await updateEmailMessageDelivery({
-			db: input.env.APP_DB,
-			messageId: message.id,
-			status: 'sent',
-			providerMessageId,
-			error: null,
-			sentAt: new Date().toISOString(),
-		})
-		await insertEmailDeliveryEvent({
-			db: input.env.APP_DB,
-			messageId: message.id,
-			userId: input.userId,
-			inboxId: null,
-			eventType: 'sent',
-			provider: 'cloudflare-email',
-			providerMessageId,
-			detail: { providerMessageId },
-		})
-		return {
-			message: await requireStoredEmailMessage({
-				env: input.env,
-				userId: input.userId,
-				messageId: message.id,
-			}),
-			providerMessageId,
-			status: 'sent',
-			error: null,
-		}
-	} catch (error) {
-		sendOutcome = 'error'
-		const messageText = getErrorMessage(error)
-		await updateEmailMessageDelivery({
-			db: input.env.APP_DB,
-			messageId: message.id,
-			status: 'failed',
-			providerMessageId: null,
-			error: messageText,
-			sentAt: null,
-		}).catch((updateError) => {
-			console.warn('email-delivery-failure-status-update-failed', updateError)
-		})
-		await insertEmailDeliveryEvent({
-			db: input.env.APP_DB,
-			messageId: message.id,
-			userId: input.userId,
-			inboxId: null,
-			eventType: 'failed',
-			provider: 'cloudflare-email',
-			providerMessageId: null,
-			detail: { error: messageText },
-		}).catch((eventError) => {
-			console.warn('email-delivery-failure-event-insert-failed', eventError)
-		})
-		return {
-			message:
-				(await getEmailMessageById({
+		const existingThreadId = original?.threadId ?? input.threadId ?? null
+		const thread = existingThreadId
+			? null
+			: await createEmailThread({
 					db: input.env.APP_DB,
 					userId: input.userId,
-					messageId: message.id,
-				})) ?? message,
-			providerMessageId: null,
-			status: 'failed',
-			error: messageText,
-		}
-	} finally {
-		if (input.userId) {
-			await recordUsage(input.env, {
+					inboxId: original?.inboxId ?? input.inboxId ?? null,
+					subjectNormalized: subject.toLowerCase(),
+					rootMessageIdHeader: input.inReplyToHeader ?? null,
+					lastMessageAt: new Date().toISOString(),
+				})
+		const threadId = existingThreadId ?? thread?.id ?? null
+		const providerHeaders = buildProviderHeaders(storedHeaders)
+		const message = await insertEmailMessageWithoutRawMime({
+			db: input.env.APP_DB,
+			message: {
+				direction: 'outbound',
 				userId: input.userId,
-				eventType: 'email_send',
-				entityId: message.id,
-				bytes: messageContentBytes,
-				durationMs: Date.now() - sendStartedAtMs,
-				outcome: sendOutcome,
+				inboxId: original?.inboxId ?? input.inboxId ?? null,
+				threadId,
+				senderIdentityId: senderIdentity.id,
+				fromAddress: from,
+				envelopeFrom: from,
+				toAddresses: to,
+				ccAddresses: [],
+				bccAddresses: [],
+				replyToAddresses: input.replyTo
+					? [normalizeEmailAddress(input.replyTo)].filter(
+							(value): value is string => typeof value === 'string',
+						)
+					: [],
+				subject,
+				messageIdHeader,
+				inReplyToHeader: input.inReplyToHeader ?? null,
+				references: input.references ?? [],
+				headers: storedHeaders,
+				authResults: null,
+				textBody: text,
+				htmlBody: html,
+				rawSize: null,
+				processingStatus: 'stored',
+				providerMessageId: null,
+				error: null,
+				receivedAt: null,
+				sentAt: null,
+			},
+		})
+		try {
+			await storeOutboundAttachments({
+				db: input.env.APP_DB,
+				blobs: input.env.EMAIL_BLOBS,
+				userId: input.userId,
+				messageId: message.id,
+				attachments,
 			})
+		} catch (error) {
+			// The daily send counter deliberately tracks attempts (see the
+			// consumeDailyEntitlement comment), but the message must not stay in
+			// 'stored' limbo with no delivery attempt recorded.
+			const messageText = getErrorMessage(error)
+			await updateEmailMessageDelivery({
+				db: input.env.APP_DB,
+				messageId: message.id,
+				status: 'failed',
+				providerMessageId: null,
+				error: messageText,
+				sentAt: null,
+			}).catch((updateError) => {
+				console.warn(
+					'email-attachment-failure-status-update-failed',
+					updateError,
+				)
+			})
+			await insertEmailDeliveryEvent({
+				db: input.env.APP_DB,
+				messageId: message.id,
+				userId: input.userId,
+				inboxId: null,
+				eventType: 'failed',
+				provider: 'cloudflare-email',
+				providerMessageId: null,
+				detail: { error: messageText },
+			}).catch((eventError) => {
+				console.warn('email-attachment-failure-event-insert-failed', eventError)
+			})
+			throw error
+		}
+		await insertEmailDeliveryEvent({
+			db: input.env.APP_DB,
+			messageId: message.id,
+			userId: input.userId,
+			inboxId: null,
+			eventType: 'send_requested',
+			provider: 'cloudflare-email',
+			providerMessageId: null,
+			detail: { to, from, subject, attachmentCount: attachments.length },
+		})
+
+		const messageContentBytes = outboundEmailContentBytes(
+			text,
+			html,
+			attachmentBytesTotal,
+		)
+		const sendStartedAtMs = Date.now()
+		let sendOutcome: 'success' | 'error' = 'success'
+		try {
+			const bindingResult = await sendViaBinding({
+				env: input.env,
+				from,
+				to,
+				subject,
+				text,
+				html,
+				replyTo: input.replyTo
+					? (normalizeEmailAddress(input.replyTo) ?? undefined)
+					: undefined,
+				headers: providerHeaders,
+				attachments,
+			})
+			const providerMessageId = bindingResult.sent
+				? bindingResult.messageId
+				: await sendViaRestFallback({
+						env: input.env,
+						from,
+						to,
+						subject,
+						text,
+						html,
+						replyTo: input.replyTo
+							? (normalizeEmailAddress(input.replyTo) ?? undefined)
+							: undefined,
+						headers: providerHeaders,
+						attachments,
+					})
+			await updateEmailMessageDelivery({
+				db: input.env.APP_DB,
+				messageId: message.id,
+				status: 'sent',
+				providerMessageId,
+				error: null,
+				sentAt: new Date().toISOString(),
+			})
+			await insertEmailDeliveryEvent({
+				db: input.env.APP_DB,
+				messageId: message.id,
+				userId: input.userId,
+				inboxId: null,
+				eventType: 'sent',
+				provider: 'cloudflare-email',
+				providerMessageId,
+				detail: { providerMessageId },
+			})
+			return {
+				message: await requireStoredEmailMessage({
+					env: input.env,
+					userId: input.userId,
+					messageId: message.id,
+				}),
+				providerMessageId,
+				status: 'sent',
+				error: null,
+			}
+		} catch (error) {
+			sendOutcome = 'error'
+			const messageText = getErrorMessage(error)
+			await updateEmailMessageDelivery({
+				db: input.env.APP_DB,
+				messageId: message.id,
+				status: 'failed',
+				providerMessageId: null,
+				error: messageText,
+				sentAt: null,
+			}).catch((updateError) => {
+				console.warn('email-delivery-failure-status-update-failed', updateError)
+			})
+			await insertEmailDeliveryEvent({
+				db: input.env.APP_DB,
+				messageId: message.id,
+				userId: input.userId,
+				inboxId: null,
+				eventType: 'failed',
+				provider: 'cloudflare-email',
+				providerMessageId: null,
+				detail: { error: messageText },
+			}).catch((eventError) => {
+				console.warn('email-delivery-failure-event-insert-failed', eventError)
+			})
+			return {
+				message:
+					(await getEmailMessageById({
+						db: input.env.APP_DB,
+						userId: input.userId,
+						messageId: message.id,
+					})) ?? message,
+				providerMessageId: null,
+				status: 'failed',
+				error: messageText,
+			}
+		} finally {
+			if (input.userId) {
+				await recordUsage(input.env, {
+					userId: input.userId,
+					eventType: 'email_send',
+					entityId: message.id,
+					bytes: messageContentBytes,
+					durationMs: Date.now() - sendStartedAtMs,
+					outcome: sendOutcome,
+				})
+			}
 		}
 	}
+	return input.userId
+		? await withAccountWriteLease({
+				db: input.env.APP_DB,
+				stableUserId: input.userId,
+				write,
+			})
+		: await write()
 }

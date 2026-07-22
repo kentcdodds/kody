@@ -21,6 +21,7 @@ export const usersTable = table({
 		stripe_plan_refreshed_at: c.text(),
 		deleting_at: c.text(),
 		active_write_count: c.integer(),
+		active_write_expires_at: c.text(),
 		created_at: c.text(),
 		updated_at: c.text(),
 	},

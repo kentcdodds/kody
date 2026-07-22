@@ -20,6 +20,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	plan TEXT NOT NULL DEFAULT 'free',
 	deleting_at TEXT,
 	active_write_count INTEGER NOT NULL DEFAULT 0,
+	active_write_expires_at TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 )`,
@@ -32,6 +33,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 		`plan TEXT NOT NULL DEFAULT 'free'`,
 		'deleting_at TEXT',
 		'active_write_count INTEGER NOT NULL DEFAULT 0',
+		'active_write_expires_at TEXT',
 	]) {
 		try {
 			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()
