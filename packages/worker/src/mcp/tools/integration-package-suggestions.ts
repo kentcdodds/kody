@@ -1,4 +1,5 @@
 import { buildCommunityPublicUrl } from '#mcp/capabilities/community/shared.ts'
+import { getDomain } from 'tldts'
 import {
 	canonicalIntegrationName,
 	type IntegrationConfig,
@@ -57,6 +58,13 @@ function normalizeProviderDomainLabel(label: string): string {
 	return providerDomainAliases[label] ?? label
 }
 
+function providerTokensFromHost(host: string): Array<string> {
+	const registrableDomain =
+		getDomain(host, { allowPrivateDomains: true }) ?? host.toLowerCase()
+	const providerLabel = registrableDomain.split('.')[0] ?? registrableDomain
+	return extractSearchTokens(normalizeProviderDomainLabel(providerLabel))
+}
+
 /**
  * Separate the provider identity from an account-specific integration label.
  * A prefix is accepted only when saved endpoint metadata independently
@@ -67,19 +75,22 @@ export function resolveIntegrationProviderName(
 	integration: IntegrationProviderMetadata,
 ): string {
 	const integrationName = canonicalIntegrationName(integration.name)
-	const nameTokens = integrationName.split('-').filter(Boolean)
-	const providerTokens = new Set(
-		providerMetadataHosts(integration).flatMap((host) => {
-			const labels = host.toLowerCase().split('.').filter(Boolean)
-			if (labels.length < 2) return labels
-			return [normalizeProviderDomainLabel(labels.at(-2) ?? '')]
-		}),
-	)
+	const nameSegments = integrationName.split('-').filter(Boolean)
+	const providerTokenGroups = providerMetadataHosts(integration)
+		.map(providerTokensFromHost)
+		.filter((tokens) => tokens.length > 0)
 
-	for (let length = nameTokens.length; length > 0; length--) {
-		const prefix = nameTokens.slice(0, length)
-		if (prefix.every((token) => providerTokens.has(token))) {
-			return prefix.join('-')
+	const matchesProviderTokens = (tokens: Array<string>) =>
+		providerTokenGroups.some(
+			(providerTokens) =>
+				providerTokens.length === tokens.length &&
+				providerTokens.every((token, index) => token === tokens[index]),
+		)
+
+	for (let length = nameSegments.length; length > 0; length--) {
+		const prefix = nameSegments.slice(0, length).join('-')
+		if (matchesProviderTokens(extractSearchTokens(prefix))) {
+			return prefix
 		}
 	}
 	return integrationName
@@ -165,6 +176,15 @@ async function collectSameProviderCommunitySuggestions(input: {
 			query: provider,
 			limit: communitySuggestionCandidateLimit,
 			trustedFirst: true,
+			resultFilter: (listing) =>
+				packageIdentityMentionsProvider(
+					{
+						kodyId: listing.kodyId,
+						name: listing.name,
+						tags: listing.tags,
+					},
+					provider,
+				),
 		})
 	} catch {
 		return []

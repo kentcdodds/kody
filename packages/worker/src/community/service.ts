@@ -733,6 +733,7 @@ export async function searchCommunityListings(input: {
 	query: string
 	limit: number
 	trustedFirst?: boolean
+	resultFilter?: (listing: CommunityListingWithAggregates) => boolean
 }): Promise<Array<CommunityListingWithAggregates>> {
 	const trimmedQuery = input.query.trim()
 	let listings = await listCommunityListingCandidates(input.env.APP_DB, {
@@ -745,17 +746,10 @@ export async function searchCommunityListings(input: {
 			input.env.APP_DB,
 			listings,
 		)
-		return withAggregates
-			.sort((left, right) => {
-				const trustOrder = input.trustedFirst
-					? Number(right.trusted) - Number(left.trusted)
-					: 0
-				return (
-					trustOrder ||
-					compareCommunityListingsByBayesianAndPublishedAt(left, right)
-				)
-			})
-			.slice(0, input.limit)
+		const relevanceOrdered = withAggregates.sort(
+			compareCommunityListingsByBayesianAndPublishedAt,
+		)
+		return finalizeCommunitySearchResults(relevanceOrdered, input)
 	}
 	const matchesQuery = (listing: CommunityListingRecord) =>
 		isCommunityListingSearchMatch({
@@ -800,15 +794,27 @@ export async function searchCommunityListings(input: {
 		}
 	})
 
-	return scored
-		.sort((left, right) => {
-			const trustOrder = input.trustedFirst
-				? Number(right.listing.trusted) - Number(left.listing.trusted)
-				: 0
-			return trustOrder || right.score - left.score
-		})
-		.slice(0, input.limit)
+	const relevanceOrdered = scored
+		.sort((left, right) => right.score - left.score)
 		.map((entry) => entry.listing)
+	return finalizeCommunitySearchResults(relevanceOrdered, input)
+}
+
+function finalizeCommunitySearchResults(
+	relevanceOrdered: Array<CommunityListingWithAggregates>,
+	input: {
+		limit: number
+		trustedFirst?: boolean
+		resultFilter?: (listing: CommunityListingWithAggregates) => boolean
+	},
+): Array<CommunityListingWithAggregates> {
+	const filtered = input.resultFilter
+		? relevanceOrdered.filter(input.resultFilter)
+		: relevanceOrdered
+	if (input.trustedFirst) {
+		filtered.sort((left, right) => Number(right.trusted) - Number(left.trusted))
+	}
+	return filtered.slice(0, input.limit)
 }
 
 export async function listCommunityActivityForAdmin(input: {

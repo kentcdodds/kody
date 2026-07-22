@@ -237,4 +237,32 @@ test('trusted-first community search promotes a trusted relevance rank 13 before
 	expect(trustedFirst.slice(1).map((listing) => listing.id)).toEqual(
 		relevanceOnly.slice(0, 11).map((listing) => listing.id),
 	)
+
+	const trustedFalsePositive = {
+		...githubListing(),
+		id: 'trusted-false-positive',
+		kodyId: 'workflow-tools',
+		name: '@owner/workflow-tools',
+		trustedCommit: 'trusted-commit',
+		trustedAt: '2026-07-20T00:00:00.000Z',
+		trusted: true,
+	}
+	const realProviderListing = {
+		...githubListing(),
+		id: 'real-provider-listing',
+		kodyId: 'github-helpers',
+		name: '@owner/github-helpers',
+	}
+	mockListings([trustedFalsePositive, realProviderListing])
+
+	const providerFiltered = await searchCommunityListings({
+		env: createEnv(),
+		query: 'github',
+		limit: 1,
+		trustedFirst: true,
+		resultFilter: (listing) => listing.id === 'real-provider-listing',
+	})
+	expect(providerFiltered.map((listing) => listing.id)).toEqual([
+		'real-provider-listing',
+	])
 })

@@ -788,6 +788,7 @@ test('integration entity detail enriches related packages without bloating ranke
 		query: 'github',
 		limit: 12,
 		trustedFirst: true,
+		resultFilter: expect.any(Function),
 	})
 	expect(detail.structuredContent.result).toMatchObject({
 		kind: 'entity',

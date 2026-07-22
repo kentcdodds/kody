@@ -88,6 +88,8 @@ function createCommunityListing(input: {
 	}
 }
 
+type CommunityListingFixture = ReturnType<typeof createCommunityListing>
+
 test('integration package suggestions stay same-provider, user-first, and capped', async () => {
 	expect(
 		packageIdentityMentionsProvider(
@@ -233,6 +235,7 @@ test('integration package suggestions stay same-provider, user-first, and capped
 		query: 'github',
 		limit: 12,
 		trustedFirst: true,
+		resultFilter: expect.any(Function),
 	})
 	expect(communityOnly).toEqual([
 		expect.objectContaining({
@@ -279,6 +282,68 @@ test('integration package suggestions stay same-provider, user-first, and capped
 		packageRows: [],
 	})
 	expect(failedCommunity).toEqual([])
+})
+
+test('community suggestions provider-filter before trust ordering and limiting', async () => {
+	const trustedFalsePositives = Array.from({ length: 12 }, (_, index) =>
+		createCommunityListing({
+			id: `trusted-false-positive-${index + 1}`,
+			kodyId: `workflow-${index + 1}`,
+			name: `@owner/workflow-${index + 1}`,
+			description: 'A trusted workflow whose prose mentions GitHub.',
+			tags: ['workflow'],
+			trusted: true,
+		}),
+	)
+	const realProviderListing = createCommunityListing({
+		id: 'github-rank-13',
+		kodyId: 'github-helpers',
+		name: '@owner/github-helpers',
+		tags: ['github'],
+		trusted: false,
+	})
+	const relevanceOrdered = [...trustedFalsePositives, realProviderListing]
+	mockModule.searchCommunityListings.mockImplementationOnce(
+		async (input: {
+			limit: number
+			trustedFirst?: boolean
+			resultFilter?: (listing: CommunityListingFixture) => boolean
+		}) => {
+			const providerMatches = input.resultFilter
+				? relevanceOrdered.filter(input.resultFilter)
+				: relevanceOrdered
+			const trustedFirst = input.trustedFirst
+				? [
+						...providerMatches.filter((listing) => listing.trusted),
+						...providerMatches.filter((listing) => !listing.trusted),
+					]
+				: providerMatches
+			return trustedFirst.slice(0, input.limit)
+		},
+	)
+
+	const suggestions = await collectIntegrationPackageSuggestions({
+		env: {} as Env,
+		baseUrl: 'https://example.com',
+		integration: {
+			...createIntegration('github'),
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			requiredHosts: ['api.github.com'],
+			authorization: {
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				scopes: ['repo'],
+			},
+		},
+		packageRows: [],
+	})
+
+	expect(suggestions).toEqual([
+		expect.objectContaining({
+			listingId: 'github-rank-13',
+			kodyId: 'github-helpers',
+		}),
+	])
 })
 
 test('account-specific integration names still match the stable provider', async () => {
@@ -382,4 +447,28 @@ test('account-specific integration names still match the stable provider', async
 			name: 'rapid-team',
 		}),
 	).toBe('rapid-team')
+
+	for (const providerHost of [
+		'auth.eu.my-provider.co.uk',
+		'auth.my-provider.github.io',
+	]) {
+		const hyphenatedProvider = resolveIntegrationProviderName({
+			...createIntegration('my-provider-business'),
+			tokenUrl: `https://${providerHost}/oauth/token`,
+			apiBaseUrl: `https://${providerHost}/api`,
+			requiredHosts: [providerHost],
+			authorization: null,
+		})
+		expect(hyphenatedProvider).toBe('my-provider')
+		expect(
+			packageIdentityMentionsProvider(
+				{
+					kodyId: 'my-provider-tools',
+					name: '@owner/my-provider-tools',
+					tags: ['my-provider'],
+				},
+				hyphenatedProvider,
+			),
+		).toBe(true)
+	}
 })
