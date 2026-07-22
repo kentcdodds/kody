@@ -148,12 +148,12 @@ test('account export documents and excludes operator-owned system email rows', a
 		}),
 		expect.objectContaining({
 			name: 'email_raw_mime_cleanup_queue',
-			reason: expect.stringContaining('Operational tombstone metadata'),
+			reason: expect.stringContaining('omitted from account export'),
 		}),
 	])
 })
 
-test('account export documents operational cleanup-queue exclusion and does not export it', async () => {
+test('account export documents cleanup-queue exclusion and does not export rows', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
 		INSERT INTO users (
@@ -186,11 +186,12 @@ test('account export documents operational cleanup-queue exclusion and does not 
 			expect.objectContaining({
 				name: 'email_raw_mime_cleanup_queue',
 				reason: expect.stringContaining(
-					'must not erase pending cleanup until the offload maintenance queue processor confirms the blob delete',
+					'Account deletion clears these rows after attempting best-effort R2 key cleanup',
 				),
 			}),
 		]),
 	)
+	// Export skips the surface; rows remain until account deletion.
 	const remaining = sqlite
 		.prepare(
 			`SELECT object_key, user_id FROM email_raw_mime_cleanup_queue WHERE user_id = ?`,

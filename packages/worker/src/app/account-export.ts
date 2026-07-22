@@ -1,8 +1,8 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	accountUserDataTargets,
-	accountUserDataExcludedOwnerIds,
-	accountUserDataOperationalExclusions,
+	getAccountExportExcludedD1Surfaces,
+	isExcludedFromAccountExport,
 	type UserScopedDataTarget,
 	getAccountD1UserColumnCoverage,
 } from '#app/account-data-targets.ts'
@@ -404,10 +404,7 @@ function buildD1TableConditions(input: {
 	}
 	add('users', { condition: `users.id = ?`, params: [input.dbUserId] })
 	for (const target of accountUserDataTargets) {
-		if (
-			target.kind === 'null_user_column' &&
-			target.includeInExport === false
-		) {
+		if (isExcludedFromAccountExport(target)) {
 			continue
 		}
 		const built = buildConditionForTarget({
@@ -1201,16 +1198,7 @@ function buildManifest(input: {
 					'Ephemeral live websocket/session state. Durable app storage is exported through StorageRunner buckets.',
 			},
 		],
-		excludedD1Surfaces: [
-			...accountUserDataExcludedOwnerIds.map((exclusion) => ({
-				name: exclusion.surface,
-				reason: exclusion.reason,
-			})),
-			...accountUserDataOperationalExclusions.map((exclusion) => ({
-				name: exclusion.surface,
-				reason: exclusion.reason,
-			})),
-		],
+		excludedD1Surfaces: getAccountExportExcludedD1Surfaces(),
 	} satisfies AccountExportManifest
 }
 

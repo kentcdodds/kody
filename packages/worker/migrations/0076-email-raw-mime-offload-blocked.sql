@@ -13,11 +13,11 @@ WHERE raw_mime IS NOT NULL
 	AND raw_mime_offload_blocked = 0;
 
 -- Sticky operational tombstones for just-put EMAIL_BLOBS orphans when CAS-miss
--- cleanup fails. Keyed by R2 object key; user_id scopes every mutation. Not
--- user-exportable content and must not be erased by account deletion until the
--- blob delete succeeds (see accountUserDataOperationalExclusions).
+-- cleanup fails. Keyed by R2 object key; every mutation binds object_key +
+-- user_id. Deleted with the account (after best-effort R2 cleanup) and omitted
+-- from account export (includeInExport: false on the user_id target).
 CREATE TABLE email_raw_mime_cleanup_queue (
-	object_key TEXT PRIMARY KEY,
+	object_key TEXT PRIMARY KEY NOT NULL,
 	user_id TEXT NOT NULL,
 	message_id TEXT NOT NULL,
 	attempt_count INTEGER NOT NULL DEFAULT 0,

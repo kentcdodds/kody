@@ -6,10 +6,7 @@ import {
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
-import {
-	accountUserDataExcludedOwnerIds,
-	accountUserDataOperationalExclusions,
-} from './account-data-targets.ts'
+import { accountUserDataExcludedOwnerIds } from './account-data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
@@ -217,6 +214,15 @@ function createTestDb(initial: RowMap): {
 										id: row['id'],
 										raw_mime_key: row['raw_mime_key'] ?? null,
 									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower ===
+								'select object_key from email_raw_mime_cleanup_queue where user_id = ?'
+							) {
+								results = (rows.email_raw_mime_cleanup_queue ?? [])
+									.filter((row) => row['user_id'] === userId)
+									.map((row) => ({ object_key: row['object_key'] }))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							const kvMatch = lower.match(
@@ -477,36 +483,46 @@ test('account deletion documents and preserves operator-owned system email rows'
 	])
 })
 
-test('account deletion documents operational cleanup-queue exclusion and preserves pending rows', async () => {
-	const cleanupExclusion = accountUserDataOperationalExclusions.find(
-		(exclusion) => exclusion.table === 'email_raw_mime_cleanup_queue',
-	)
-	expect(cleanupExclusion?.reason).toContain('Operational tombstone metadata')
-	expect(cleanupExclusion?.reason).toContain(
-		'must not erase pending cleanup until the offload maintenance queue processor confirms the blob delete',
-	)
+test('account deletion removes cleanup-queue rows after attempting R2 key cleanup', async () => {
 	expect(
 		getAccountDeletionD1UserColumnCoverage().has(
 			'email_raw_mime_cleanup_queue.user_id',
 		),
 	).toBe(true)
 
+	const deletedBlobKeys: Array<string> = []
 	const { db, rows } = createTestDb({
 		users: [{ id: 1, email: 'user@example.com' }],
-		email_messages: [{ id: 'user-message', user_id: 'user-aaa' }],
+		email_messages: [
+			{
+				id: 'user-message',
+				user_id: 'user-aaa',
+				raw_mime_key: 'email-raw:v1:user-aaa/user-message',
+			},
+		],
 		email_raw_mime_cleanup_queue: [
 			{
-				object_key: 'email-raw:v1:user-aaa/msg-1',
+				object_key: 'email-raw:v1:user-aaa/orphan-1',
 				user_id: 'user-aaa',
-				message_id: 'msg-1',
+				message_id: 'orphan-1',
+			},
+			{
+				object_key: 'email-raw:v1:user-bbb/orphan-other',
+				user_id: 'user-bbb',
+				message_id: 'orphan-other',
 			},
 		],
 	})
 
 	await deleteUserAccount({
-		env: { APP_DB: db } as unknown as Parameters<
-			typeof deleteUserAccount
-		>[0]['env'],
+		env: {
+			APP_DB: db,
+			EMAIL_BLOBS: {
+				delete: async (key: string) => {
+					deletedBlobKeys.push(key)
+				},
+			},
+		} as unknown as Parameters<typeof deleteUserAccount>[0]['env'],
 		dbUserId: 1,
 		mcpUserId: 'user-aaa',
 	})
@@ -514,11 +530,18 @@ test('account deletion documents operational cleanup-queue exclusion and preserv
 	expect(rows.email_messages).toEqual([])
 	expect(rows.email_raw_mime_cleanup_queue).toEqual([
 		{
-			object_key: 'email-raw:v1:user-aaa/msg-1',
-			user_id: 'user-aaa',
-			message_id: 'msg-1',
+			object_key: 'email-raw:v1:user-bbb/orphan-other',
+			user_id: 'user-bbb',
+			message_id: 'orphan-other',
 		},
 	])
+	expect(deletedBlobKeys).toEqual(
+		expect.arrayContaining([
+			'email-raw:v1:user-aaa/user-message',
+			'email-raw:v1:user-aaa/orphan-1',
+		]),
+	)
+	expect(deletedBlobKeys).not.toContain('email-raw:v1:user-bbb/orphan-other')
 })
 
 test('deleteUserAccount cascades user-scoped rows for the requested user', async () => {

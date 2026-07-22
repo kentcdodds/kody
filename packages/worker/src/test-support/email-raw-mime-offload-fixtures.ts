@@ -77,7 +77,7 @@ export function createEmailMessagesDb() {
 			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
 		);
 		CREATE TABLE email_raw_mime_cleanup_queue (
-			object_key TEXT PRIMARY KEY,
+			object_key TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,
 			message_id TEXT NOT NULL,
 			attempt_count INTEGER NOT NULL DEFAULT 0,

@@ -71,12 +71,11 @@ Deletion must cover these user-owned surfaces:
   and listing children for community-owned listings. The guardrail test in
   `packages/worker/src/app/account-deletion.node.test.ts` applies the live
   migrations to SQLite and fails if a user-owned schema column is not
-  represented in the deletion target list (or an explicit
-  `accountUserDataOperationalExclusions` entry), or if the deletion target list
-  references a stale column. Operational exclusions such as
-  `email_raw_mime_cleanup_queue` are sticky tombstones for pending EMAIL_BLOBS
-  orphan cleanup and must not be wiped by account deletion before that cleanup
-  succeeds.
+  represented in the deletion target list, or if the deletion target list
+  references a stale column. `email_raw_mime_cleanup_queue` is a normal
+  user-scoped deletion target (cleared after best-effort EMAIL_BLOBS deletes) so
+  object-key / user-id tombstones are not retained after account wipe; it is
+  omitted from account export via `includeInExport: false`.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, and
   `PackageServiceInstance` are purged through account-deletion RPCs after their
@@ -87,11 +86,12 @@ Deletion must cover these user-owned surfaces:
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw email MIME blobs in `EMAIL_BLOBS` are enumerated from
-  `email_messages.raw_mime_key` while the rows still exist and deleted
-  best-effort with warnings, mirroring the KV/Vectorize reporting. Rows owned by
-  `system:email` keep their blobs here (they are not user data); those blobs are
-  removed when the system-email retention prune deletes the messages through the
-  shared delete-message helper.
+  `email_messages` (deterministic keys plus stored `raw_mime_key`), pending
+  `email_raw_mime_cleanup_queue` object keys, and attachment storage keys while
+  those rows still exist, then deleted best-effort with warnings, mirroring the
+  KV/Vectorize reporting. Rows owned by `system:email` keep their blobs here
+  (they are not user data); those blobs are removed when the system-email
+  retention prune deletes the messages through the shared delete-message helper.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
   community listing snapshots, and per-user package retriever cache/index keys
   in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
@@ -356,14 +356,16 @@ losing mail, and never throws from that decision).
   succeeds — the endpoint may finish with blocked inline rows because deletion
   owns them; production logs keep the total/blocked counters so Stage 4 can
   require `remainingInline = 0` before dropping the column. The cleanup queue is
-  operational tombstone metadata (`accountUserDataOperationalExclusions`): it is
-  not exported and account deletion must not erase pending rows before blob
-  cleanup succeeds. Incomplete progress with `failed=0` is HTTP 200 / `ok=true`;
-  any row failure is HTTP 500. Deploy loops until `complete === true` (it does
-  not treat total `remainingInline === 0` as a shortcut) and fails if the secret
-  is missing, on non-2xx / nonzero `failed`, or if `complete` is still false
-  after the attempt cap. The write-time inline fallback policy and `loadRawMime`
-  dual-read path stay in place until a later column-drop stage.
+  user-scoped operational metadata omitted from account export
+  (`includeInExport: false`); account deletion enumerates its object keys for
+  best-effort R2 cleanup, then deletes the D1 rows with other user data so
+  identifier tombstones are not retained. Incomplete progress with `failed=0` is
+  HTTP 200 / `ok=true`; any row failure is HTTP 500. Deploy loops until
+  `complete === true` (it does not treat total `remainingInline === 0` as a
+  shortcut) and fails if the secret is missing, on non-2xx / nonzero `failed`,
+  or if `complete` is still false after the attempt cap. The write-time inline
+  fallback policy and `loadRawMime` dual-read path stay in place until a later
+  column-drop stage.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style

@@ -145,7 +145,7 @@ ON email_messages (id)
 WHERE raw_mime IS NOT NULL
 	AND raw_mime_offload_blocked = 0;`,
 		`CREATE TABLE IF NOT EXISTS email_raw_mime_cleanup_queue (
-	object_key TEXT PRIMARY KEY,
+	object_key TEXT PRIMARY KEY NOT NULL,
 	user_id TEXT NOT NULL,
 	message_id TEXT NOT NULL,
 	attempt_count INTEGER NOT NULL DEFAULT 0,

@@ -307,7 +307,7 @@ async function listUserEmailBlobKeys(env: Env, userId: string) {
 		db: env.APP_DB,
 		userId,
 	})
-	const [rawMimeRows, attachmentRows] = await Promise.all([
+	const [rawMimeRows, attachmentRows, cleanupQueueRows] = await Promise.all([
 		// Include every message id so the deterministic raw-MIME key is always
 		// deleted even when an in-flight offload has not yet committed
 		// raw_mime_key (or left only an inline residual).
@@ -328,6 +328,15 @@ async function listUserEmailBlobKeys(env: Env, userId: string) {
 		)
 			.bind(userId)
 			.all<{ storage_key: string }>(),
+		// Pending sticky-orphan cleanup keys for this user. Best-effort R2
+		// deletes run before D1 queue rows are wiped with the account.
+		env.APP_DB.prepare(
+			`SELECT object_key
+			FROM email_raw_mime_cleanup_queue
+			WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.all<{ object_key: string }>(),
 	])
 	return uniqueStrings([
 		...(rawMimeRows.results ?? []).flatMap((row) =>
@@ -338,6 +347,7 @@ async function listUserEmailBlobKeys(env: Env, userId: string) {
 			}),
 		),
 		...(attachmentRows.results ?? []).map((row) => row.storage_key),
+		...(cleanupQueueRows.results ?? []).map((row) => row.object_key),
 	])
 }
 
