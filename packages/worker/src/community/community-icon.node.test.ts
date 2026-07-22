@@ -368,9 +368,8 @@ test('community icon cache write loses the race to account deletion', async () =
 							if (query.includes('SELECT deleting_at')) {
 								writableChecks += 1
 								if (writableChecks === 2) {
-									queueMicrotask(() => {
-										deleting = true
-									})
+									deleting = true
+									return { deleting_at: null } as T
 								}
 								return { deleting_at: deleting ? 'now' : null } as T
 							}
