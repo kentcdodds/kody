@@ -4,6 +4,39 @@ import { type RemoteConnectorSnapshot } from '#worker/remote-connector/types.ts'
 
 export const remoteConnectorSnapshotCacheTtlMs = 30_000
 export const remoteConnectorSnapshotCacheLimit = 100
+export const remoteConnectorSnapshotTimeoutMs = 5_000
+
+export class RemoteConnectorSnapshotTimeoutError extends Error {
+	constructor(instanceId: string) {
+		super(
+			`Remote connector "${instanceId}" snapshot timed out after ${remoteConnectorSnapshotTimeoutMs}ms.`,
+		)
+		this.name = 'RemoteConnectorSnapshotTimeoutError'
+	}
+}
+
+async function getSnapshotWithTimeout(input: {
+	instanceId: string
+	getSnapshot: () => Promise<RemoteConnectorSnapshot | null>
+}) {
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	try {
+		return await Promise.race([
+			input.getSnapshot(),
+			new Promise<never>((_resolve, reject) => {
+				timeoutId = setTimeout(
+					() =>
+						reject(new RemoteConnectorSnapshotTimeoutError(input.instanceId)),
+					remoteConnectorSnapshotTimeoutMs,
+				)
+			}),
+		])
+	} finally {
+		if (timeoutId !== undefined) {
+			clearTimeout(timeoutId)
+		}
+	}
+}
 
 function createRemoteConnectorSnapshotCache() {
 	return new PromiseLruCache<RemoteConnectorSnapshot | null>({
@@ -33,7 +66,10 @@ export function getCachedRemoteConnectorSnapshot(input: {
 			const stub = input.env.REMOTE_CONNECTOR_SESSION.get(
 				input.env.REMOTE_CONNECTOR_SESSION.idFromName(cacheKey),
 			)
-			const snapshot = await stub.getSnapshot()
+			const snapshot = await getSnapshotWithTimeout({
+				instanceId: input.instanceId,
+				getSnapshot: () => stub.getSnapshot(),
+			})
 			if (snapshot == null) {
 				// Do not retain disconnected results: a connector that comes online
 				// should be visible on the next lookup instead of after the TTL.

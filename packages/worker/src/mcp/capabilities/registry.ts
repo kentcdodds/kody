@@ -201,6 +201,28 @@ async function loadMcpServerSnapshots(input: {
 	}
 }
 
+async function loadRemoteConnectorSnapshots(input: {
+	env: Env
+	userId: string
+	refs: ReadonlyArray<RemoteConnectorRef>
+}): Promise<Array<RemoteConnectorSnapshot | null>> {
+	return await Promise.all(
+		input.refs.map(async (ref) => {
+			try {
+				return await getCachedRemoteConnectorSnapshot({
+					env: input.env,
+					userId: input.userId,
+					instanceId: ref.instanceId,
+				})
+			} catch {
+				// A stalled or unavailable connector must not prevent builtin or
+				// healthy dynamic capabilities from being discovered.
+				return null
+			}
+		}),
+	)
+}
+
 async function loadOpenApiBindingsForRegistry(input: {
 	env: Env
 	userId: string
@@ -262,15 +284,11 @@ export async function getCapabilityRegistryForContext(input: {
 		})
 	}
 	const [snapshots, mcpServerSnapshots] = await Promise.all([
-		Promise.all(
-			refs.map((ref) =>
-				getCachedRemoteConnectorSnapshot({
-					env: input.env,
-					userId,
-					instanceId: ref.instanceId,
-				}),
-			),
-		),
+		loadRemoteConnectorSnapshots({
+			env: input.env,
+			userId,
+			refs,
+		}),
 		loadMcpServerSnapshots({
 			env: input.env,
 			userId,

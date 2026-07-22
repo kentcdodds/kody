@@ -5,6 +5,10 @@ import {
 	getCapabilityRegistryForContext,
 	getStaticRegistry,
 } from '#mcp/capabilities/registry.ts'
+import {
+	clearRemoteConnectorSnapshotCacheForTests,
+	remoteConnectorSnapshotTimeoutMs,
+} from '#worker/remote-connector/snapshot-cache.ts'
 
 test('getCapabilityRegistryForContext bypasses connector caches when no connectors are attached', async () => {
 	clearCapabilityRegistryCacheForTests()
@@ -127,4 +131,90 @@ test('the email domain no longer exposes self-service inbox or sender-identity c
 	expect(capabilityMap.email_reply).toBeTruthy()
 	expect(capabilityMap.email_message_list).toBeTruthy()
 	expect(capabilityMap.email_message_get).toBeTruthy()
+})
+
+test('getCapabilityRegistryForContext keeps healthy capabilities when a connector snapshot stalls', async () => {
+	vi.useFakeTimers()
+	clearCapabilityRegistryCacheForTests()
+	clearRemoteConnectorSnapshotCacheForTests()
+	const prepare = vi.fn(() => ({
+		bind() {
+			return this
+		},
+		async all() {
+			return { results: [], meta: { changes: 0 } }
+		},
+		async first() {
+			return null
+		},
+		async run() {
+			return { meta: { changes: 0 } }
+		},
+	}))
+	const env = {
+		REMOTE_CONNECTOR_SESSION: {
+			idFromName(name: string) {
+				return name
+			},
+			get(name: string) {
+				const [, instanceId] = JSON.parse(name) as [string, string]
+				return {
+					getSnapshot() {
+						if (instanceId === 'stalled') {
+							return new Promise(() => undefined)
+						}
+						return Promise.resolve({
+							connectorId: instanceId,
+							connectedAt: '2026-03-25T00:00:00.000Z',
+							lastSeenAt: '2026-03-25T00:00:01.000Z',
+							tools: [
+								{
+									name: 'roku_press_key',
+									description: 'Send a Roku ECP keypress.',
+									inputSchema: {
+										type: 'object',
+										properties: {
+											key: { type: 'string' },
+										},
+										required: ['key'],
+									},
+								},
+							],
+						})
+					},
+				}
+			},
+		},
+		APP_DB: {
+			prepare,
+		},
+	} as unknown as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-1',
+			email: 'user-1@example.com',
+			displayName: 'user-1',
+		},
+		remoteConnectors: [{ instanceId: 'healthy' }, { instanceId: 'stalled' }],
+	})
+
+	try {
+		const registryPromise = getCapabilityRegistryForContext({
+			env,
+			callerContext,
+		})
+		await vi.advanceTimersByTimeAsync(remoteConnectorSnapshotTimeoutMs)
+		const registry = await registryPromise
+
+		expect(registry.capabilityMap.email_send).toBeTruthy()
+		expect(registry.capabilityMap['remote:healthy:roku_press_key']).toBeTruthy()
+		expect(
+			registry.capabilityMap['remote:stalled:roku_press_key'],
+		).toBeUndefined()
+	} finally {
+		clearCapabilityRegistryCacheForTests()
+		clearRemoteConnectorSnapshotCacheForTests()
+		vi.useRealTimers()
+	}
 })

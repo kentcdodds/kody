@@ -1,8 +1,11 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createRemoteConnectorMcpClient } from '#worker/remote-connector/client.ts'
+import { getRemoteConnectorStatus } from '#worker/remote-connector/status.ts'
 import {
 	clearRemoteConnectorSnapshotCacheForTests,
 	getCachedRemoteConnectorSnapshot,
+	RemoteConnectorSnapshotTimeoutError,
+	remoteConnectorSnapshotTimeoutMs,
 } from '#worker/remote-connector/snapshot-cache.ts'
 
 const runtimeTools = [
@@ -159,4 +162,79 @@ test('getCachedRemoteConnectorSnapshot does not share entries across users', asy
 	})
 
 	expect(getSnapshotCalls()).toBe(2)
+})
+
+test('a stalled snapshot times out, rejects concurrent callers, and is retried', async () => {
+	vi.useFakeTimers()
+	clearRemoteConnectorSnapshotCacheForTests()
+	let attempt = 0
+	const { env, getSnapshotCalls } = buildEnv(() => {
+		attempt += 1
+		if (attempt === 1) {
+			return new Promise(() => undefined)
+		}
+		return Promise.resolve({
+			connectorKind: 'roku',
+			connectorId: 'home',
+			connectedAt: '2026-03-25T00:00:00.000Z',
+			lastSeenAt: '2026-03-25T00:00:01.000Z',
+			tools: runtimeTools,
+		})
+	})
+	const request = {
+		env,
+		userId: 'user-1',
+		instanceId: 'home',
+	}
+
+	try {
+		const first = getCachedRemoteConnectorSnapshot(request)
+		const second = getCachedRemoteConnectorSnapshot(request)
+		const firstRejection = expect(first).rejects.toBeInstanceOf(
+			RemoteConnectorSnapshotTimeoutError,
+		)
+		const secondRejection = expect(second).rejects.toBeInstanceOf(
+			RemoteConnectorSnapshotTimeoutError,
+		)
+
+		expect(getSnapshotCalls()).toBe(1)
+		await vi.advanceTimersByTimeAsync(remoteConnectorSnapshotTimeoutMs)
+		await Promise.all([firstRejection, secondRejection])
+
+		await expect(
+			getCachedRemoteConnectorSnapshot(request),
+		).resolves.toMatchObject({
+			connectorId: 'home',
+		})
+		expect(getSnapshotCalls()).toBe(2)
+	} finally {
+		clearRemoteConnectorSnapshotCacheForTests()
+		vi.useRealTimers()
+	}
+})
+
+test('remote connector status reports a stalled snapshot as an error', async () => {
+	vi.useFakeTimers()
+	clearRemoteConnectorSnapshotCacheForTests()
+	const { env } = buildEnv(() => new Promise(() => undefined))
+
+	try {
+		const statusPromise = getRemoteConnectorStatus({
+			env,
+			userId: 'user-1',
+			ref: { instanceId: 'home' },
+		})
+		await vi.advanceTimersByTimeAsync(remoteConnectorSnapshotTimeoutMs)
+
+		await expect(statusPromise).resolves.toMatchObject({
+			state: 'error',
+			connectorId: 'home',
+			connected: false,
+			toolCount: 0,
+			error: expect.stringContaining('snapshot timed out'),
+		})
+	} finally {
+		clearRemoteConnectorSnapshotCacheForTests()
+		vi.useRealTimers()
+	}
 })
