@@ -987,6 +987,10 @@ export async function deleteUserAccount(input: {
 					`source-snapshot:v1:${source.sourceId}:`,
 					`source-manifest-snapshot:v1:${source.sourceId}:`,
 				]),
+				...inventory.communityListings.map(
+					(listing) =>
+						`${derivedCacheKeyPrefix}community-icon:v1:${listing.id}:`,
+				),
 			],
 			warnings,
 		})

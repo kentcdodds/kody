@@ -908,6 +908,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'source-manifest-snapshot:v1:src-1:abc123',
 		'source-snapshot:v1:src-1:old456',
 		'source-manifest-snapshot:v1:src-1:old456',
+		'derived-cache:v1:community-icon:v1:listing-1:commit-1',
+		'derived-cache:v1:community-icon:v1:listing-1:abc123',
+		'derived-cache:v1:community-icon:v1:listing-1:historical',
 		'source-snapshot:v1:src-2:def456',
 		'package-retriever-manifest:v1:user-aaa:pkg-1:abc123',
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
@@ -941,6 +944,19 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 						list_complete: false,
 						cursor: 'legacy-page-2',
 					}
+				}
+			}
+			if (prefix === 'derived-cache:v1:community-icon:v1:listing-1:') {
+				const start = options?.cursor
+					? Number(options.cursor.replace('icon-page-', '')) - 1
+					: 0
+				const page = matchingKeys.slice(start, start + 1)
+				return {
+					keys: page.map((name) => ({ name })),
+					list_complete: start + page.length >= matchingKeys.length,
+					...(start + page.length < matchingKeys.length
+						? { cursor: `icon-page-${start + 2}` }
+						: {}),
 				}
 			}
 			return {
@@ -1208,6 +1224,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'community-snapshot:v1:listing-1',
 		'derived-cache:v1:community-icon:v1:listing-1:abc123',
 		'derived-cache:v1:community-icon:v1:listing-1:commit-1',
+		'derived-cache:v1:community-icon:v1:listing-1:historical',
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
 		'package-retriever-index:v1:user-aaa:context',
@@ -1243,7 +1260,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.updatedRowCounts.community_bans).toBe(1)
 	expect(result.deletedRowCounts.platform_feedback).toBe(1)
 	expect(result.updatedRowCounts.platform_feedback).toBe(1)
-	expect(result.deletedKvKeys).toBe(13)
+	expect(result.deletedKvKeys).toBe(14)
 	expect(result.deletedCommunityAssets).toBe(5)
 	expect(result.deletedEmailBlobs).toBe(2)
 	// Prefix sweeps remove current and historical assets without crossing users.
