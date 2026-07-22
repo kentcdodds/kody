@@ -19,8 +19,8 @@ import {
 	getEmailMessageById,
 	getEmailMessageByMessageIdHeader,
 	insertEmailAttachments,
-	insertEmailMessage,
 	insertEmailDeliveryEvent,
+	insertEmailMessageWithoutRawMime,
 	updateEmailMessageDelivery,
 } from './service.ts'
 import { type EmailMessageRecord, type EmailProcessingStatus } from './types.ts'
@@ -546,7 +546,7 @@ export async function sendOutboundEmail(
 			})
 	const threadId = existingThreadId ?? thread?.id ?? null
 	const providerHeaders = buildProviderHeaders(storedHeaders)
-	const message = await insertEmailMessage({
+	const message = await insertEmailMessageWithoutRawMime({
 		db: input.env.APP_DB,
 		message: {
 			direction: 'outbound',
@@ -572,7 +572,6 @@ export async function sendOutboundEmail(
 			authResults: null,
 			textBody: text,
 			htmlBody: html,
-			rawMimeKey: null,
 			rawSize: null,
 			processingStatus: 'stored',
 			providerMessageId: null,

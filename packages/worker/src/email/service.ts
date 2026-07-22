@@ -28,7 +28,6 @@ export {
 	getEmailMessageByMessageIdHeader,
 	insertEmailAttachments,
 	insertEmailDeliveryEvent,
-	insertEmailMessage,
 	touchEmailThread,
 	updateEmailMessageDelivery,
 } from './repo.ts'
@@ -101,6 +100,12 @@ export async function loadRawMime(input: {
 }
 
 type InsertEmailMessageInput = Parameters<typeof insertEmailMessage>[0]
+type InsertEmailMessageWithoutRawMimeInput = Omit<
+	InsertEmailMessageInput,
+	'message'
+> & {
+	message: Omit<InsertEmailMessageInput['message'], 'rawMimeKey'>
+}
 type InsertEmailMessageWithRawMimeInput = Omit<
 	InsertEmailMessageInput,
 	'message'
@@ -109,6 +114,23 @@ type InsertEmailMessageWithRawMimeInput = Omit<
 	message: Omit<InsertEmailMessageInput['message'], 'rawMimeKey'> & {
 		rawMime?: string | null
 	}
+}
+
+/**
+ * Domain insert for messages that must not point at EMAIL_BLOBS raw MIME.
+ * Forces `rawMimeKey: null` so callers cannot invent a key without a blob.
+ * Inbound mail with raw MIME must use `insertEmailMessageWithRawMime`.
+ */
+export async function insertEmailMessageWithoutRawMime(
+	input: InsertEmailMessageWithoutRawMimeInput,
+) {
+	return await insertEmailMessage({
+		db: input.db,
+		message: {
+			...input.message,
+			rawMimeKey: null,
+		},
+	})
 }
 
 export async function insertEmailMessageWithRawMime(
