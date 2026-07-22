@@ -1,3 +1,5 @@
+import type { ConsoleMessage } from '@playwright/test'
+
 import { expect, test } from './playwright-utils.ts'
 
 test('admin RBAC controls access, role assignment, and privacy boundaries', async ({
@@ -191,7 +193,18 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	expect(JSON.stringify(insightsPayload)).not.toContain('super-secret-value')
 	expect(JSON.stringify(insightsPayload)).not.toContain(memberUser.email)
 
-	await page.goto(`/admin/users?q=rbac-${runId}`)
+	const clientConsoleProblems: Array<string> = []
+	const captureClientConsoleProblems = (message: ConsoleMessage) => {
+		if (message.type() === 'warning' || message.type() === 'error') {
+			clientConsoleProblems.push(`${message.type()}: ${message.text()}`)
+		}
+	}
+	page.on('console', captureClientConsoleProblems)
+
+	// Return through SPA navigation so the plan select is hydrated from loader
+	// data rather than relying on a fresh document load.
+	await page.getByRole('link', { name: 'Users', exact: true }).click()
+	await usersSearchInput.fill(`rbac-${runId}`)
 	await page.getByRole('button', { name: memberUser.username }).click()
 	await expect(page.getByText('Account metadata only')).toBeVisible()
 
@@ -200,6 +213,9 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await planSelect.selectOption('pro')
 	await page.getByRole('button', { name: 'Save plan' }).click()
 	await expect(planSelect).toHaveValue('pro')
+	await expect(
+		page.getByText('Updated plan to pro.', { exact: true }),
+	).toBeVisible()
 	const planApiResponse = await page.request.get(
 		`/admin/users.json?q=rbac-${runId}`,
 	)
@@ -209,6 +225,24 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 		(user: { email: string }) => user.email === memberUser.email,
 	)
 	expect(memberAfterPlan.plan).toBe('pro')
+
+	await planSelect.selectOption('unlimited')
+	await page.getByRole('button', { name: 'Save plan' }).click()
+	await expect(planSelect).toHaveValue('unlimited')
+	await expect(
+		page.getByText('Updated plan to unlimited.', { exact: true }),
+	).toBeVisible()
+	const unlimitedPlanApiResponse = await page.request.get(
+		`/admin/users.json?q=rbac-${runId}`,
+	)
+	expect(unlimitedPlanApiResponse.ok()).toBe(true)
+	const unlimitedPlanPayload = await unlimitedPlanApiResponse.json()
+	const memberAfterUnlimitedPlan = unlimitedPlanPayload.users.find(
+		(user: { email: string }) => user.email === memberUser.email,
+	)
+	expect(memberAfterUnlimitedPlan.plan).toBe('unlimited')
+	expect(clientConsoleProblems).toEqual([])
+	page.off('console', captureClientConsoleProblems)
 
 	// Mutations under an active role filter: removing the filtered role must
 	// drop the row from the list and shrink the filtered total in place.

@@ -848,7 +848,11 @@ export function AdminUsersRoute(handle: Handle) {
 												]}
 											>
 												{availablePlans.map((plan) => (
-													<option key={plan} value={plan}>
+													<option
+														key={plan}
+														value={plan}
+														selected={plan === selectedPlanChoice}
+													>
 														{plan}
 													</option>
 												))}
