@@ -130,7 +130,6 @@ export type EmailMessageRecord = {
 	authResults: string | null
 	textBody: string | null
 	htmlBody: string | null
-	rawMime: string | null
 	rawMimeKey: string | null
 	rawSize: number | null
 	processingStatus: EmailProcessingStatus

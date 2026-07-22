@@ -86,6 +86,8 @@ ON email_sender_identities(user_id, email);`,
 	auth_results TEXT,
 	text_body TEXT,
 	html_body TEXT,
+	-- Transitional columns still physically present until a migration-only
+	-- contract PR drops them. Production code must not read or write these.
 	raw_mime TEXT,
 	raw_mime_key TEXT,
 	raw_mime_offload_blocked INTEGER NOT NULL DEFAULT 0

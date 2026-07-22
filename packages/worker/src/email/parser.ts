@@ -13,7 +13,7 @@ import {
 	type ParsedInboundEmail,
 } from './types.ts'
 
-export const maxInlineRawMimeBytes = 512 * 1024
+export const maxRawMimeBytes = 512 * 1024
 
 function flattenPostalAddresses(
 	addresses: PostalAddress | Array<PostalAddress> | undefined,
@@ -112,7 +112,7 @@ export async function parseForwardableEmailMessage(
 	message: ForwardableEmailMessage,
 	options: { maxRawSize?: number } = {},
 ): Promise<ParsedInboundEmail> {
-	const maxRawSize = options.maxRawSize ?? maxInlineRawMimeBytes
+	const maxRawSize = options.maxRawSize ?? maxRawMimeBytes
 	if (message.rawSize > maxRawSize) {
 		throw new Error(
 			`Inbound email raw MIME is too large (${message.rawSize} bytes, max ${maxRawSize}).`,

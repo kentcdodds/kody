@@ -28,10 +28,7 @@ import {
 	buildCommunityIconR2Key,
 } from '#worker/community/community-icon.ts'
 import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
-import {
-	claimAllUserEmailMessagesForDeletion,
-	emailRawMimeKeysForDelete,
-} from '#worker/email/repo.ts'
+import { emailRawMimeKey } from '#worker/email/repo.ts'
 
 // Imported manually instead of via `@cloudflare/workers-oauth-provider` so
 // node-only unit tests can require this module without dragging in
@@ -301,23 +298,15 @@ async function listUserPackageServices(env: Env, userId: string) {
 }
 
 async function listUserEmailBlobKeys(env: Env, userId: string) {
-	// Claim before key enumeration so offload cannot clear residual inline MIME
-	// between the inventory snapshot and D1 row removal.
-	await claimAllUserEmailMessagesForDeletion({
-		db: env.APP_DB,
-		userId,
-	})
-	const [rawMimeRows, attachmentRows, cleanupQueueRows] = await Promise.all([
-		// Include every message id so the deterministic raw-MIME key is always
-		// deleted even when an in-flight offload has not yet committed
-		// raw_mime_key (or left only an inline residual).
+	const [rawMimeRows, attachmentRows] = await Promise.all([
+		// Deterministic canonical keys for every message id.
 		env.APP_DB.prepare(
-			`SELECT id, raw_mime_key
+			`SELECT id
 			FROM email_messages
 			WHERE user_id = ?`,
 		)
 			.bind(userId)
-			.all<{ id: string; raw_mime_key: string | null }>(),
+			.all<{ id: string }>(),
 		// Externally stored attachments (outbound mail) have their own R2
 		// objects, separate from any raw-MIME blob.
 		env.APP_DB.prepare(
@@ -328,34 +317,12 @@ async function listUserEmailBlobKeys(env: Env, userId: string) {
 		)
 			.bind(userId)
 			.all<{ storage_key: string }>(),
-		// Pending sticky-orphan cleanup keys for this user. Best-effort R2
-		// deletes run before D1 queue rows are wiped with the account.
-		env.APP_DB.prepare(
-			`SELECT object_key
-			FROM email_raw_mime_cleanup_queue
-			WHERE user_id = ?`,
-		)
-			.bind(userId)
-			.all<{ object_key: string }>(),
 	])
-	const messageRows = rawMimeRows.results ?? []
-	const batchMessageIds = messageRows.map((row) => row.id)
-	const rawMimeKeys: Array<string> = []
-	for (const row of messageRows) {
-		rawMimeKeys.push(
-			...(await emailRawMimeKeysForDelete({
-				db: env.APP_DB,
-				userId,
-				messageId: row.id,
-				storedRawMimeKey: row.raw_mime_key,
-				alsoExcludingMessageIds: batchMessageIds,
-			})),
-		)
-	}
 	return uniqueStrings([
-		...rawMimeKeys,
+		...(rawMimeRows.results ?? []).map((row) =>
+			emailRawMimeKey(userId, row.id),
+		),
 		...(attachmentRows.results ?? []).map((row) => row.storage_key),
-		...(cleanupQueueRows.results ?? []).map((row) => row.object_key),
 	])
 }
 

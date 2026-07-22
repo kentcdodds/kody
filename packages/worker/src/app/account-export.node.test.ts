@@ -88,6 +88,12 @@ test('account export D1 coverage includes every live user-owned schema column', 
 			ORDER BY name`,
 		)
 		.all() as Array<{ name: string }>
+	// Stage 4b1 expand/contract: transitional table still physically present
+	// until a migration-only contract PR drops it, but production runtime no
+	// longer targets it (queue drained; offloader removed).
+	const transitionalUntargetedUserColumns = new Set([
+		'email_raw_mime_cleanup_queue.user_id',
+	])
 	const liveUserColumns = new Set<string>()
 	for (const table of tables) {
 		const columns = db
@@ -101,7 +107,9 @@ test('account export D1 coverage includes every live user-owned schema column', 
 	}
 	const coveredColumns = getAccountExportD1UserColumnCoverage()
 	const missing = [...liveUserColumns].filter(
-		(column) => !coveredColumns.has(column),
+		(column) =>
+			!coveredColumns.has(column) &&
+			!transitionalUntargetedUserColumns.has(column),
 	)
 	const stale = [...coveredColumns].filter(
 		(column) => !liveUserColumns.has(column),
@@ -110,6 +118,18 @@ test('account export D1 coverage includes every live user-owned schema column', 
 		[],
 	)
 	expect(stale, 'account export references stale D1 columns').toEqual([])
+	expect(
+		[...transitionalUntargetedUserColumns].every((column) =>
+			liveUserColumns.has(column),
+		),
+		'transitional untargeted columns must still exist until the contract drop',
+	).toBe(true)
+	expect(
+		[...transitionalUntargetedUserColumns].some((column) =>
+			coveredColumns.has(column),
+		),
+		'transitional untargeted columns must not be covered by runtime targets',
+	).toBe(false)
 })
 
 test('account export documents and excludes operator-owned system email rows', async () => {
@@ -146,59 +166,6 @@ test('account export documents and excludes operator-owned system email rows', a
 			name: 'system_email_inboxes',
 			reason: expect.stringContaining('Operator-owned inbound mail'),
 		}),
-		expect.objectContaining({
-			name: 'email_raw_mime_cleanup_queue',
-			reason: expect.stringContaining('omitted from account export'),
-		}),
-	])
-})
-
-test('account export documents cleanup-queue exclusion and does not export rows', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-
-		INSERT INTO email_raw_mime_cleanup_queue (
-			object_key, user_id, message_id, attempt_count, last_error, created_at, updated_at
-		) VALUES (
-			'email-raw:v1:user-aaa/msg-1', 'user-aaa', 'msg-1', 1, 'r2-delete-failed',
-			'2026-07-05', '2026-07-05'
-		);
-	`)
-
-	const accountExport = await createAccountExport({
-		env: { APP_DB: db } as Env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		generatedAt: '2026-07-05T00:00:00.000Z',
-	})
-
-	expect(accountExport.d1).not.toHaveProperty('email_raw_mime_cleanup_queue')
-	expect(accountExport.manifest.excludedD1Surfaces).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				name: 'email_raw_mime_cleanup_queue',
-				reason: expect.stringContaining(
-					'Account deletion clears these rows after attempting best-effort R2 key cleanup',
-				),
-			}),
-		]),
-	)
-	// Export skips the surface; rows remain until account deletion.
-	const remaining = sqlite
-		.prepare(
-			`SELECT object_key, user_id FROM email_raw_mime_cleanup_queue WHERE user_id = ?`,
-		)
-		.all('user-aaa')
-	expect(remaining).toEqual([
-		{ object_key: 'email-raw:v1:user-aaa/msg-1', user_id: 'user-aaa' },
 	])
 })
 

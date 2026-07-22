@@ -75,7 +75,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: 🚀 Deploy to production
-    timeout-minutes: 15
+    timeout-minutes: 8
     needs: sha-guard
     if: needs.sha-guard.outputs.should_deploy == 'true'
     environment:
@@ -264,67 +264,6 @@ jobs:
             echo "Last response body:" >&2
             cat health.json >&2
           fi
-          exit 1
-
-      - name: 📦 Offload inline email raw MIME to EMAIL_BLOBS
-        shell: bash
-        env:
-          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
-          CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CAPABILITY_REINDEX_SECRET:-}" ]; then
-            echo "CAPABILITY_REINDEX_SECRET is required for email raw MIME offload." >&2
-            exit 1
-          fi
-          if [ -z "${DEPLOY_URL:-}" ]; then
-            echo "Missing deploy URL output; cannot run email raw MIME offload." >&2
-            exit 1
-          fi
-
-          base="${DEPLOY_URL%/}"
-          offload_url="${base}/__maintenance/offload-email-raw-mime"
-          # Each request processes at most one bounded cleanup-queue batch plus
-          # one bounded inline batch (≤10 each). Cap attempts and enforce a
-          # total step deadline so worst-case curl time cannot consume the full
-          # 15-minute deploy job timeout after earlier steps.
-          max_attempts=60
-          deadline_seconds=600
-          curl_max_time=20
-          start_epoch="$(date +%s)"
-          for attempt in $(seq 1 "$max_attempts"); do
-            now_epoch="$(date +%s)"
-            elapsed=$((now_epoch - start_epoch))
-            if [ "$elapsed" -ge "$deadline_seconds" ]; then
-              echo "Email raw MIME offload did not complete within ${deadline_seconds}s deadline (attempt ${attempt}/${max_attempts}, elapsed ${elapsed}s)." >&2
-              exit 1
-            fi
-            echo "POST ${offload_url} (attempt ${attempt}/${max_attempts}, elapsed ${elapsed}s/${deadline_seconds}s)"
-            status="$(curl --silent --show-error --location --max-time "$curl_max_time" \
-              -X POST \
-              -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
-              -H "Accept: application/json" \
-              --output email-raw-mime-offload.json \
-              --write-out "%{http_code}" \
-              "${offload_url}")"
-            cat email-raw-mime-offload.json
-            echo
-            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-              echo "Email raw MIME offload failed with HTTP ${status}." >&2
-              exit 1
-            fi
-            if node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('email-raw-mime-offload.json','utf8')); if (json?.ok !== true) { console.error('email-raw-mime-offload-unexpected-response', json); process.exit(2); } if ((json?.failed ?? 0) !== 0) { console.error('email-raw-mime-offload-nonzero-failed', json); process.exit(2); } if (json?.complete === true) { console.log('email-raw-mime-offload-ok', json); process.exit(0); } console.log('email-raw-mime-offload-continue', json); process.exit(3);"; then
-              exit 0
-            else
-              node_status=$?
-              if [ "$node_status" -eq 3 ]; then
-                continue
-              fi
-              exit 1
-            fi
-          done
-
-          echo "Email raw MIME offload did not complete after ${max_attempts} attempts." >&2
           exit 1
 
       - name: 🧪 Execute smoke check (production)

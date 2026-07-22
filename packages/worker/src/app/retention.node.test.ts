@@ -242,8 +242,6 @@ function createRetentionDb() {
 			subject TEXT NOT NULL DEFAULT '',
 			processing_status TEXT NOT NULL,
 			raw_mime_key TEXT,
-			raw_mime_offload_blocked INTEGER NOT NULL DEFAULT 0
-				CHECK (raw_mime_offload_blocked IN (0, 1)),
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
@@ -864,7 +862,6 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 	})
 	expect(blobDelete).toHaveBeenCalledWith([
 		'email-raw:v1:user-1/msg-old-blob',
-		'email-raw:v1:user-1/legacy-msg-old-blob',
 		'email-raw:v1:user-1/msg-old-plain',
 		'email-attachment:v1:user-1/msg-old-plain/att-ext',
 	])
@@ -898,12 +895,12 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 		blobs: { delete: failingDelete } as unknown as Pick<R2Bucket, 'delete'>,
 		now,
 	})
-	// Every message attempts at least the deterministic raw-MIME key, so an R2
-	// outage skips both the stored-key row and the plain residual.
+	// Every message attempts the deterministic raw-MIME key, so an R2 outage
+	// skips both rows.
 	expect(failedDelete).toMatchObject({
 		deletedMessages: 0,
 		deletedRawMimeBlobs: 0,
-		blobDeleteErrors: 3,
+		blobDeleteErrors: 2,
 	})
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'retention-email-blob-delete-failed',
@@ -926,7 +923,6 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 	})
 	expect(workingDelete).toHaveBeenCalledWith([
 		'email-raw:v1:user-1/msg-old-blob',
-		'email-raw:v1:user-1/legacy-msg-old-blob',
 		'email-raw:v1:user-1/msg-old-plain',
 	])
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([])
@@ -971,7 +967,7 @@ test('email message retention cursor advances past skipped rows when R2 deletes 
 	})
 	expect(first).toMatchObject({
 		deletedMessages: 0,
-		blobDeleteErrors: 4,
+		blobDeleteErrors: 2,
 		hasMore: true,
 	})
 	expect(first.nextCursor).toEqual({
@@ -980,9 +976,7 @@ test('email message retention cursor advances past skipped rows when R2 deletes 
 	})
 	expect(failingBlobs.delete).toHaveBeenCalledWith([
 		'email-raw:v1:user-1/msg-blocked-a',
-		'email-raw:v1:user-1/legacy-msg-blocked-a',
 		'email-raw:v1:user-1/msg-blocked-b',
-		'email-raw:v1:user-1/legacy-msg-blocked-b',
 	])
 
 	const second = await pruneUserEmailMessagesForRetention({
@@ -1055,9 +1049,8 @@ test('retention run reports blob delete errors across a full email batch when R2
 	const result = await pruneRetention({ env, now })
 
 	expect(result.emailMessages.deletedMessages).toBe(0)
-	// Batch 1: 250 rows * (deterministic + stored) = 500 keys.
-	// Batch 2: 1 stored-key row (2 keys) + 5 plain rows (1 key each) = 7.
-	expect(result.emailMessages.blobDeleteErrors).toBe(507)
+	// Batch 1: 250 deterministic keys. Batch 2: 1 stored-key row + 5 plain = 6.
+	expect(result.emailMessages.blobDeleteErrors).toBe(256)
 	expect(result.batchesPerTable['email_messages']).toBe(2)
 	expect(idsForTable(sqlite, 'email_messages')).toHaveLength(256)
 })

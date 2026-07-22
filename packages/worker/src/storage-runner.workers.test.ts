@@ -34,6 +34,9 @@ async function ensureStorageBytesEmailTestSchema() {
 	text_body TEXT,
 	html_body TEXT,
 	raw_mime TEXT,
+	raw_mime_key TEXT,
+	raw_mime_offload_blocked INTEGER NOT NULL DEFAULT 0
+		CHECK (raw_mime_offload_blocked IN (0, 1)),
 	raw_size INTEGER NOT NULL DEFAULT 0,
 	processing_status TEXT NOT NULL DEFAULT 'stored',
 	provider_message_id TEXT,

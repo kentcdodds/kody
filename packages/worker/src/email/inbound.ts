@@ -21,10 +21,7 @@ import {
 	splitEmailLocalPart,
 } from './address.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
-import {
-	maxInlineRawMimeBytes,
-	parseForwardableEmailMessage,
-} from './parser.ts'
+import { maxRawMimeBytes, parseForwardableEmailMessage } from './parser.ts'
 import {
 	getPlatformEmailDomain,
 	getSystemEmailDomain,
@@ -450,7 +447,7 @@ export async function handleInboundEmail(
 			recipient,
 			userId,
 			inboxId: inbox.id,
-			maxMessageBytes: maxMessageBytes ?? maxInlineRawMimeBytes,
+			maxMessageBytes: maxMessageBytes ?? maxRawMimeBytes,
 			async onParseRejected(reason) {
 				// Parse failures keep one event per attempt: unlike quota/size
 				// rejections they are bounded by the daily receive quota (the

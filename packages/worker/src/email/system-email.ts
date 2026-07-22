@@ -1,11 +1,10 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import { maxInlineRawMimeBytes } from './parser.ts'
+import { maxRawMimeBytes } from './parser.ts'
 import {
-	claimEmailMessagesForDeletion,
 	createEmailInbox,
 	createEmailInboxAddress,
 	deleteEmailInboxAddressById,
-	emailRawMimeKeysForDelete,
+	emailRawMimeKey,
 	getEmailInboxAddressByAddress,
 	getEmailInboxById,
 	getEmailInboxByName,
@@ -27,7 +26,7 @@ export const systemEmailLocals = [
 export type SystemEmailLocal = (typeof systemEmailLocals)[number]
 
 export const systemEmailLimits = {
-	maxMessageBytes: maxInlineRawMimeBytes,
+	maxMessageBytes: maxRawMimeBytes,
 	maxReceivesPerDay: 1000,
 	maxStoredMessages: 5000,
 	retentionDays: 90,
@@ -285,45 +284,17 @@ async function deleteSystemEmailMessagesByIds(input: {
 			.bind(...messageIds)
 			.all<{ id: string; user_id: string; raw_mime_key: string | null }>()
 		const blobRows = results ?? []
-		// Claim before R2/D1 cleanup so offload cannot clear residual inline MIME
-		// mid-delete. Claims are scoped to the operator system:email owner (and
-		// each row's user_id) so cross-user ids cannot be claimed. Selection
-		// still includes already-blocked rows for retry after a failed blob delete.
-		const messageIdsByUserId = new Map<string, Array<string>>()
-		for (const row of blobRows) {
-			const ids = messageIdsByUserId.get(row.user_id)
-			if (ids) ids.push(row.id)
-			else messageIdsByUserId.set(row.user_id, [row.id])
-		}
-		for (const [userId, ids] of messageIdsByUserId) {
-			await claimEmailMessagesForDeletion({
-				db: input.db,
-				userId,
-				messageIds: ids,
-			})
-		}
 		// Delete R2 blobs before their rows, mirroring the user-mail retention
 		// policy: once a row is gone its keys are lost, so a failed blob delete
-		// would orphan the object forever. Always include the deterministic
-		// raw-MIME key so an in-flight offload put cannot orphan a blob when
-		// raw_mime_key is not yet committed. Rows whose blob cannot be deleted
-		// are skipped and retried on a later run.
+		// would orphan the object forever. Deletes use the deterministic
+		// canonical key. Rows whose blob cannot be deleted are skipped and
+		// retried on a later run.
 		let deletableIds: ReadonlyArray<string> = messageIds
 		if (blobRows.length > 0) {
 			const blobRowIds = new Set(blobRows.map((row) => row.id))
-			const batchMessageIds = blobRows.map((row) => row.id)
-			const blobKeys: Array<string> = []
-			for (const row of blobRows) {
-				blobKeys.push(
-					...(await emailRawMimeKeysForDelete({
-						db: input.db,
-						userId: row.user_id,
-						messageId: row.id,
-						storedRawMimeKey: row.raw_mime_key,
-						alsoExcludingMessageIds: batchMessageIds,
-					})),
-				)
-			}
+			const blobKeys = blobRows.map((row) =>
+				emailRawMimeKey(row.user_id, row.id),
+			)
 			try {
 				await input.blobs.delete(blobKeys)
 				result.deletedRawMimeBlobs += blobRows.filter(

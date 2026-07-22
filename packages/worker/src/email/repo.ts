@@ -24,158 +24,10 @@ function nowIso() {
  * bucket. The userId prefix is part of the per-user isolation contract:
  * account deletion enumerates and deletes a user's blobs by these stored
  * keys, and the key can never be forged to point at another user's mail.
+ * Writers always store this canonical key in `raw_mime_key`.
  */
 export function emailRawMimeKey(userId: string, messageId: string) {
 	return `email-raw:v1:${userId}/${messageId}`
-}
-
-/**
- * Strict ownership check for EMAIL_BLOBS raw-MIME keys. Only keys under
- * `email-raw:v1:{userId}/...` belong to that user; never treat another user's
- * (or non-v1) key as deletable for this owner.
- */
-export function isOwnedEmailRawMimeKey(
-	userId: string,
-	objectKey: string,
-): boolean {
-	if (!userId || !objectKey) return false
-	const prefix = `email-raw:v1:${userId}/`
-	return objectKey.startsWith(prefix) && objectKey.length > prefix.length
-}
-
-/**
- * True when any email_messages row still points at this raw_mime_key, after
- * excluding the given message ids (the row(s) being deleted in this operation).
- * Uses a bounded id fetch + in-memory exclude set so large deletion batches
- * never hit SQLite/D1 variable-count limits.
- */
-export async function isEmailRawMimeKeyReferenced(input: {
-	db: D1Database
-	objectKey: string
-	excludeMessageIds?: ReadonlyArray<string>
-}): Promise<boolean> {
-	const excludeMessageIds = new Set(
-		(input.excludeMessageIds ?? []).filter((id) => typeof id === 'string'),
-	)
-	// Fetch one more than the exclude set so a leftover referrer outside the
-	// deletion batch cannot hide behind a full page of excluded ids.
-	const limit = Math.max(excludeMessageIds.size + 1, 1)
-	const rows = await input.db
-		.prepare(
-			`SELECT id
-			FROM email_messages
-			WHERE raw_mime_key = ?
-			LIMIT ?`,
-		)
-		.bind(input.objectKey, limit)
-		.all<{ id: string }>()
-	for (const row of rows.results ?? []) {
-		if (!excludeMessageIds.has(row.id)) return true
-	}
-	return false
-}
-
-/**
- * Raw-MIME blob keys to delete for a message. Always includes the
- * deterministic `emailRawMimeKey(userId, messageId)` so deletes remain safe
- * across offload races (put succeeded, D1 clear not yet visible). A divergent
- * stored `raw_mime_key` is included only when it is owned by the same user and
- * no other email_messages row still references it (the current message id, plus
- * any siblings in `alsoExcludingMessageIds` for the same deletion batch, are
- * excluded from that check). Cross-user or non-v1 stored keys are rejected.
- */
-export async function emailRawMimeKeysForDelete(input: {
-	db: D1Database
-	userId: string
-	messageId: string
-	storedRawMimeKey?: string | null
-	/**
-	 * Other message ids being deleted in the same operation. Combined with
-	 * `messageId` when checking whether a divergent key is still referenced.
-	 */
-	alsoExcludingMessageIds?: ReadonlyArray<string>
-}): Promise<Array<string>> {
-	const deterministic = emailRawMimeKey(input.userId, input.messageId)
-	const stored = input.storedRawMimeKey ?? null
-	if (
-		stored == null ||
-		stored === deterministic ||
-		!isOwnedEmailRawMimeKey(input.userId, stored)
-	) {
-		return [deterministic]
-	}
-	const referenced = await isEmailRawMimeKeyReferenced({
-		db: input.db,
-		objectKey: stored,
-		excludeMessageIds: [
-			input.messageId,
-			...(input.alsoExcludingMessageIds ?? []),
-		],
-	})
-	if (referenced) return [deterministic]
-	return [deterministic, stored]
-}
-
-/** D1 bind budget leave one slot for userId (+ optional timestamp). */
-const emailMessageClaimIdsMaxParameters = 98
-
-/**
- * Claim email_messages rows for deletion so the raw-MIME offload sweep cannot
- * clear or rewrite them mid-delete. Always binds `user_id` — ids alone can
- * never claim another user's row. Idempotent for already-blocked rows so
- * retention retries still work.
- */
-export async function claimEmailMessagesForDeletion(input: {
-	db: D1Database
-	userId: string
-	messageIds: ReadonlyArray<string>
-}): Promise<number> {
-	if (input.messageIds.length === 0) return 0
-	const timestamp = nowIso()
-	let claimed = 0
-	for (
-		let index = 0;
-		index < input.messageIds.length;
-		index += emailMessageClaimIdsMaxParameters
-	) {
-		const chunk = input.messageIds.slice(
-			index,
-			index + emailMessageClaimIdsMaxParameters,
-		)
-		const placeholders = chunk.map(() => '?').join(', ')
-		const result = await input.db
-			.prepare(
-				`UPDATE email_messages
-				SET raw_mime_offload_blocked = 1,
-					updated_at = ?
-				WHERE user_id = ?
-					AND id IN (${placeholders})`,
-			)
-			.bind(timestamp, input.userId, ...chunk)
-			.run()
-		claimed += result.meta.changes ?? 0
-	}
-	return claimed
-}
-
-/**
- * Claim every email_messages row for a user before account-deletion blob
- * enumeration. Scoped solely by `user_id`.
- */
-export async function claimAllUserEmailMessagesForDeletion(input: {
-	db: D1Database
-	userId: string
-}): Promise<number> {
-	const result = await input.db
-		.prepare(
-			`UPDATE email_messages
-			SET raw_mime_offload_blocked = 1,
-				updated_at = ?
-			WHERE user_id = ?`,
-		)
-		.bind(nowIso(), input.userId)
-		.run()
-	return result.meta.changes ?? 0
 }
 
 /**
@@ -207,9 +59,9 @@ export class RetryableInboundStorageError extends Error {
 
 /**
  * Retryable EMAIL_BLOBS put failure for inbound raw MIME (pre-commit).
- * Callers must not fall back to inline D1 `raw_mime`; the inbound email
- * handler lets this propagate so Cloudflare Email Routing treats delivery
- * as a temporary failure (throw) rather than a permanent `setReject`.
+ * The inbound email handler lets this propagate so Cloudflare Email Routing
+ * treats delivery as a temporary failure (throw) rather than a permanent
+ * `setReject`.
  */
 export class EmailRawMimeStorageError extends RetryableInboundStorageError {
 	override name = 'EmailRawMimeStorageError'
@@ -223,9 +75,7 @@ export class EmailRawMimeStorageError extends RetryableInboundStorageError {
 
 /**
  * Persist inbound raw MIME to EMAIL_BLOBS before the D1 insert. Returns the
- * object key on success. Throws EmailRawMimeStorageError on put failure —
- * there is no inline D1 fallback (Stage 4a; column drop follows once
- * residuals are swept).
+ * object key on success. Throws EmailRawMimeStorageError on put failure.
  */
 async function putRawMimeToBlobs(input: {
 	blobs: R2Bucket
@@ -243,16 +93,13 @@ async function putRawMimeToBlobs(input: {
 }
 
 /**
- * Resolve a message's raw MIME regardless of where it is stored. Dual-read
- * for the Stage 4a rollout: residual legacy rows may still have inline
- * raw_mime; new inbound rows store only an R2 key in raw_mime_key.
- * Returns null when the message has no raw MIME or the blob is unreachable.
+ * Resolve a message's raw MIME from EMAIL_BLOBS via `raw_mime_key`.
+ * Returns null when the message has no key or the blob is unreachable.
  */
 export async function loadRawMime(input: {
 	blobs: R2Bucket
-	message: Pick<EmailMessageRecord, 'rawMime' | 'rawMimeKey'>
+	message: Pick<EmailMessageRecord, 'rawMimeKey'>
 }): Promise<string | null> {
-	if (input.message.rawMime != null) return input.message.rawMime
 	const key = input.message.rawMimeKey
 	if (!key) return null
 	const object = await input.blobs.get(key)
@@ -379,7 +226,6 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 			row['auth_results'] == null ? null : String(row['auth_results']),
 		textBody: row['text_body'] == null ? null : String(row['text_body']),
 		htmlBody: row['html_body'] == null ? null : String(row['html_body']),
-		rawMime: row['raw_mime'] == null ? null : String(row['raw_mime']),
 		rawMimeKey:
 			row['raw_mime_key'] == null ? null : String(row['raw_mime_key']),
 		rawSize: row['raw_size'] == null ? null : Number(row['raw_size']),
@@ -792,10 +638,9 @@ export async function insertEmailMessage(input: {
 	db: D1Database
 	/**
 	 * EMAIL_BLOBS bucket. Inbound raw MIME must be written here before the
-	 * D1 insert; put failure throws EmailRawMimeStorageError (no inline
-	 * raw_mime fallback). Outbound messages pass rawMime null and skip
-	 * the put. If D1 insert fails after a successful put, the blob is
-	 * best-effort deleted.
+	 * D1 insert; put failure throws EmailRawMimeStorageError. Outbound
+	 * messages pass rawMime null and skip the put. If D1 insert fails after
+	 * a successful put, the blob is best-effort deleted.
 	 */
 	blobs: R2Bucket
 	message: {
@@ -819,6 +664,7 @@ export async function insertEmailMessage(input: {
 		authResults?: string | null
 		textBody?: string | null
 		htmlBody?: string | null
+		/** Write-only inbound MIME; stored in R2 before the D1 insert. */
 		rawMime?: string | null
 		rawSize?: number | null
 		processingStatus: EmailProcessingStatus
@@ -830,8 +676,7 @@ export async function insertEmailMessage(input: {
 }) {
 	const timestamp = nowIso()
 	const messageId = input.message.id ?? crypto.randomUUID()
-	// New rows never write inline raw_mime (Stage 4a). Inbound MIME goes to
-	// R2 first; outbound leaves both columns null.
+	// Inbound MIME goes to R2 first; outbound leaves raw_mime_key null.
 	let rawMimeKey: string | null = null
 	if (input.message.rawMime != null) {
 		rawMimeKey = await putRawMimeToBlobs({
@@ -866,7 +711,6 @@ export async function insertEmailMessage(input: {
 		auth_results: input.message.authResults ?? null,
 		text_body: input.message.textBody ?? null,
 		html_body: input.message.htmlBody ?? null,
-		raw_mime: null,
 		raw_mime_key: rawMimeKey,
 		raw_size: input.message.rawSize ?? 0,
 		processing_status: input.message.processingStatus,
@@ -885,10 +729,10 @@ export async function insertEmailMessage(input: {
 				from_address, envelope_from, to_addresses_json, cc_addresses_json,
 				bcc_addresses_json, reply_to_addresses_json, subject, message_id_header,
 				in_reply_to_header, references_json, headers_json, auth_results,
-				text_body, html_body, raw_mime, raw_mime_key, raw_size, processing_status,
+				text_body, html_body, raw_mime_key, raw_size, processing_status,
 				provider_message_id, error, received_at, sent_at,
 				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				row.id,
@@ -911,7 +755,6 @@ export async function insertEmailMessage(input: {
 				row.auth_results,
 				row.text_body,
 				row.html_body,
-				row.raw_mime,
 				row.raw_mime_key,
 				row.raw_size,
 				row.processing_status,
@@ -1174,31 +1017,13 @@ export async function deleteEmailMessageById(input: {
 	blobs: R2Bucket
 	messageId: string
 }) {
-	// Capture ownership before claim. A failed read must abort the delete
-	// (and be retried) rather than orphan the R2 blobs; only the R2 deletes
-	// themselves are best-effort.
+	// Capture ownership and blob keys before D1 delete. A failed read must
+	// abort the delete (and be retried) rather than orphan the R2 blobs; only
+	// the R2 deletes themselves are best-effort.
 	const row = await input.db
-		.prepare(`SELECT user_id, raw_mime_key FROM email_messages WHERE id = ?`)
+		.prepare(`SELECT user_id FROM email_messages WHERE id = ?`)
 		.bind(input.messageId)
-		.first<{ user_id: string; raw_mime_key: string | null }>()
-	if (row) {
-		// Claim before key snapshot / D1 delete so an in-flight offload cannot
-		// clear raw_mime after we enumerate keys. Scoped by user_id + id.
-		await claimEmailMessagesForDeletion({
-			db: input.db,
-			userId: row.user_id,
-			messageIds: [input.messageId],
-		})
-	}
-	const claimed = row
-		? await input.db
-				.prepare(
-					`SELECT raw_mime_key FROM email_messages
-					WHERE id = ? AND user_id = ?`,
-				)
-				.bind(input.messageId, row.user_id)
-				.first<{ raw_mime_key: string | null }>()
-		: null
+		.first<{ user_id: string }>()
 	const attachmentRows = await input.db
 		.prepare(
 			`SELECT storage_key FROM email_attachments
@@ -1207,14 +1032,7 @@ export async function deleteEmailMessageById(input: {
 		.bind(input.messageId)
 		.all<{ storage_key: string }>()
 	const blobKeys = [
-		...(row
-			? await emailRawMimeKeysForDelete({
-					db: input.db,
-					userId: row.user_id,
-					messageId: input.messageId,
-					storedRawMimeKey: claimed?.raw_mime_key ?? row.raw_mime_key,
-				})
-			: []),
+		...(row ? [emailRawMimeKey(row.user_id, input.messageId)] : []),
 		...(attachmentRows.results ?? []).map((result) => result.storage_key),
 	]
 	// Atomic batch: a partial delete (attachments gone, message left) would

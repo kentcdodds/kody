@@ -127,17 +127,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'entity_sources' },
 	{ kind: 'user_id', table: 'email_delivery_events' },
 	{ kind: 'attachment_parent', table: 'email_attachments' },
-	// Sticky EMAIL_BLOBS orphan cleanup tombstones. Deleted with the account
-	// after best-effort R2 cleanup so object keys / user ids are not retained;
-	// omitted from export (not portable user content).
-	{
-		kind: 'user_id',
-		table: 'email_raw_mime_cleanup_queue',
-		includeInExport: false,
-		surface: 'email_raw_mime_cleanup_queue',
-		reason:
-			'Sticky EMAIL_BLOBS orphan cleanup queue keyed by R2 object key. Operational metadata only (not portable user content); omitted from account export. Account deletion clears these rows after attempting best-effort R2 key cleanup so object keys and user ids are not retained indefinitely.',
-	},
 	{ kind: 'user_id', table: 'email_messages' },
 	{ kind: 'user_id', table: 'email_threads' },
 	{ kind: 'user_id', table: 'email_inbox_addresses' },

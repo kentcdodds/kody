@@ -175,7 +175,6 @@ export async function loadAdminSystemEmailMessageById(
 		raw_mime: await loadRawMime({
 			blobs,
 			message: {
-				rawMime: row['raw_mime'] == null ? null : String(row['raw_mime']),
 				rawMimeKey:
 					row['raw_mime_key'] == null ? null : String(row['raw_mime_key']),
 			},

@@ -72,7 +72,7 @@ type SystemEmailMessageRow = {
 	headers_json?: string
 	text_body?: string | null
 	html_body?: string | null
-	raw_mime?: string | null
+	raw_mime_key?: string | null
 	subject: string | null
 	processing_status: string
 	raw_size: number
@@ -254,7 +254,7 @@ function createAdminCapabilityTestDb(input: {
 							headers_json: message.headers_json ?? '{}',
 							text_body: message.text_body ?? null,
 							html_body: message.html_body ?? null,
-							raw_mime: message.raw_mime ?? null,
+							raw_mime_key: message.raw_mime_key ?? null,
 						} as T
 					}
 					if (normalizedQuery.includes('from entitlement_daily_counters')) {
@@ -477,9 +477,17 @@ function createAdminCapabilityTestDb(input: {
 	return { db, auditEvents, passwordResets, userRoles, users }
 }
 
-function createAdminCapabilityContext(db: D1Database) {
+function createAdminCapabilityContext(
+	db: D1Database,
+	blobs?: Pick<R2Bucket, 'get'>,
+) {
 	return {
-		env: { APP_DB: db } as Env,
+		env: {
+			APP_DB: db,
+			EMAIL_BLOBS: blobs ?? {
+				get: async () => null,
+			},
+		} as unknown as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
@@ -624,7 +632,7 @@ test('admin system email capabilities read only system-owned mail and audit read
 				headers_json: '{"from":["Sender <sender@example.net>"]}',
 				text_body: 'System body.',
 				html_body: null,
-				raw_mime: 'Subject: Abuse\r\n\r\nSystem body.',
+				raw_mime_key: 'email-raw:v1:system:email/system-message-1',
 				subject: 'Abuse report',
 				processing_status: 'stored',
 				raw_size: 32,
@@ -645,7 +653,19 @@ test('admin system email capabilities read only system-owned mail and audit read
 			},
 		],
 	})
-	const ctx = createAdminCapabilityContext(db)
+	const rawMimeByKey = new Map([
+		[
+			'email-raw:v1:system:email/system-message-1',
+			'Subject: Abuse\r\n\r\nSystem body.',
+		],
+	])
+	const ctx = createAdminCapabilityContext(db, {
+		get: async (key: string) => {
+			const value = rawMimeByKey.get(key)
+			if (value == null) return null
+			return { text: async () => value }
+		},
+	})
 
 	const list = await adminSystemEmailListCapability.handler(
 		{ pageSize: 10 },

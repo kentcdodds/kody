@@ -653,7 +653,7 @@ test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', as
 	)
 })
 
-test('inbound email offloads raw MIME to R2 and readers and deletes follow the blob', async () => {
+test('inbound email stores raw MIME in R2 and readers and deletes follow the blob', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `blob-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `blob-${crypto.randomUUID()}@example.com`
@@ -699,13 +699,12 @@ test('inbound email offloads raw MIME to R2 and readers and deletes follow the b
 	expect(stored).toBeDefined()
 	if (!stored) throw new Error('Expected stored inbound message')
 
-	// The raw MIME left D1 and lives at the per-user R2 key.
-	expect(stored.rawMime).toBeNull()
+	// The raw MIME lives at the per-user R2 key only.
 	expect(stored.rawMimeKey).toBe(emailRawMimeKey(userId, stored.id))
 	const blob = await env.EMAIL_BLOBS.get(stored.rawMimeKey!)
 	expect(await blob?.text()).toBe(raw)
 
-	// The shared read helper resolves the blob for offloaded rows.
+	// The shared read helper resolves the blob by raw_mime_key.
 	expect(await loadRawMime({ blobs: env.EMAIL_BLOBS, message: stored })).toBe(
 		raw,
 	)
@@ -1034,7 +1033,7 @@ test('inbound storage refund failure is logged and original storage error is ret
 	)
 })
 
-test('insertEmailMessage never writes inline raw_mime on successful R2 put', async () => {
+test('insertEmailMessage stores raw MIME in R2 and only raw_mime_key in D1', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `user-${crypto.randomUUID()}`
 	const messageId = crypto.randomUUID()
@@ -1050,15 +1049,13 @@ test('insertEmailMessage never writes inline raw_mime on successful R2 put', asy
 			processingStatus: 'stored',
 		},
 	})
-	expect(stored.rawMime).toBeNull()
 	expect(stored.rawMimeKey).toBe(emailRawMimeKey(userId, messageId))
 	const row = await env.APP_DB.prepare(
-		`SELECT raw_mime, raw_mime_key FROM email_messages WHERE id = ?`,
+		`SELECT raw_mime_key FROM email_messages WHERE id = ?`,
 	)
 		.bind(messageId)
-		.first<{ raw_mime: string | null; raw_mime_key: string | null }>()
+		.first<{ raw_mime_key: string | null }>()
 	expect(row).toEqual({
-		raw_mime: null,
 		raw_mime_key: emailRawMimeKey(userId, messageId),
 	})
 	expect(await loadRawMime({ blobs: env.EMAIL_BLOBS, message: stored })).toBe(

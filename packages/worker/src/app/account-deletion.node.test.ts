@@ -204,27 +204,6 @@ function createTestDb(initial: RowMap): {
 									.map((row) => ({ storage_id: row['storage_id'] }))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
-							if (
-								lower ===
-								'select id, raw_mime_key from email_messages where user_id = ?'
-							) {
-								results = (rows.email_messages ?? [])
-									.filter((row) => row['user_id'] === userId)
-									.map((row) => ({
-										id: row['id'],
-										raw_mime_key: row['raw_mime_key'] ?? null,
-									}))
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
-								lower ===
-								'select object_key from email_raw_mime_cleanup_queue where user_id = ?'
-							) {
-								results = (rows.email_raw_mime_cleanup_queue ?? [])
-									.filter((row) => row['user_id'] === userId)
-									.map((row) => ({ object_key: row['object_key'] }))
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
 							const kvMatch = lower.match(
 								/^select kv_key from (\w+) where user_id = \?/,
 							)
@@ -252,20 +231,6 @@ function createTestDb(initial: RowMap): {
 						},
 						async run() {
 							const userId = params[0] as string | number
-							if (
-								lower ===
-								'update email_messages set raw_mime_offload_blocked = 1, updated_at = ? where user_id = ?'
-							) {
-								const claimUserId = params[1] as string
-								let changed = 0
-								for (const row of rows.email_messages ?? []) {
-									if (row['user_id'] !== claimUserId) continue
-									row['raw_mime_offload_blocked'] = 1
-									row['updated_at'] = params[0]
-									changed += 1
-								}
-								return { meta: { changes: changed } }
-							}
 							const nullColumnMatch = lower.match(
 								/^update (\w+) set ((?:\w+ = null)(?:, \w+ = null)*) where (\w+) = \?$/,
 							)
@@ -407,6 +372,12 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 			ORDER BY name`,
 		)
 		.all() as Array<{ name: string }>
+	// Stage 4b1 expand/contract: transitional table still physically present
+	// until a migration-only contract PR drops it, but production runtime no
+	// longer targets it (queue drained; offloader removed).
+	const transitionalUntargetedUserColumns = new Set([
+		'email_raw_mime_cleanup_queue.user_id',
+	])
 	const liveUserColumns = new Set<string>()
 	for (const table of tables) {
 		const columns = db
@@ -420,7 +391,9 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 	}
 	const coveredColumns = getAccountDeletionD1UserColumnCoverage()
 	const missing = [...liveUserColumns].filter(
-		(column) => !coveredColumns.has(column),
+		(column) =>
+			!coveredColumns.has(column) &&
+			!transitionalUntargetedUserColumns.has(column),
 	)
 	const stale = [...coveredColumns].filter(
 		(column) => !liveUserColumns.has(column),
@@ -430,6 +403,18 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 		'user-owned D1 columns missing from account deletion',
 	).toEqual([])
 	expect(stale, 'account deletion references stale D1 columns').toEqual([])
+	expect(
+		[...transitionalUntargetedUserColumns].every((column) =>
+			liveUserColumns.has(column),
+		),
+		'transitional untargeted columns must still exist until the contract drop',
+	).toBe(true)
+	expect(
+		[...transitionalUntargetedUserColumns].some((column) =>
+			coveredColumns.has(column),
+		),
+		'transitional untargeted columns must not be covered by runtime targets',
+	).toBe(false)
 })
 
 test('account deletion documents and preserves operator-owned system email rows', async () => {
@@ -481,67 +466,6 @@ test('account deletion documents and preserves operator-owned system email rows'
 	expect(rows.email_inbox_addresses).toEqual([
 		{ id: 'system-address', user_id: 'system:email' },
 	])
-})
-
-test('account deletion removes cleanup-queue rows after attempting R2 key cleanup', async () => {
-	expect(
-		getAccountDeletionD1UserColumnCoverage().has(
-			'email_raw_mime_cleanup_queue.user_id',
-		),
-	).toBe(true)
-
-	const deletedBlobKeys: Array<string> = []
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'user@example.com' }],
-		email_messages: [
-			{
-				id: 'user-message',
-				user_id: 'user-aaa',
-				raw_mime_key: 'email-raw:v1:user-aaa/user-message',
-			},
-		],
-		email_raw_mime_cleanup_queue: [
-			{
-				object_key: 'email-raw:v1:user-aaa/orphan-1',
-				user_id: 'user-aaa',
-				message_id: 'orphan-1',
-			},
-			{
-				object_key: 'email-raw:v1:user-bbb/orphan-other',
-				user_id: 'user-bbb',
-				message_id: 'orphan-other',
-			},
-		],
-	})
-
-	await deleteUserAccount({
-		env: {
-			APP_DB: db,
-			EMAIL_BLOBS: {
-				delete: async (key: string) => {
-					deletedBlobKeys.push(key)
-				},
-			},
-		} as unknown as Parameters<typeof deleteUserAccount>[0]['env'],
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
-
-	expect(rows.email_messages).toEqual([])
-	expect(rows.email_raw_mime_cleanup_queue).toEqual([
-		{
-			object_key: 'email-raw:v1:user-bbb/orphan-other',
-			user_id: 'user-bbb',
-			message_id: 'orphan-other',
-		},
-	])
-	expect(deletedBlobKeys).toEqual(
-		expect.arrayContaining([
-			'email-raw:v1:user-aaa/user-message',
-			'email-raw:v1:user-aaa/orphan-1',
-		]),
-	)
-	expect(deletedBlobKeys).not.toContain('email-raw:v1:user-bbb/orphan-other')
 })
 
 test('deleteUserAccount cascades user-scoped rows for the requested user', async () => {
