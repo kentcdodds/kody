@@ -41,3 +41,38 @@ template:
 
 If a Node server entry point is added later, evaluate `trustProxy` only at that
 trusted reverse-proxy boundary. Do not copy it into Worker request handling.
+
+## Adding a page
+
+For a typical authenticated HTML page, start with the route contract and wire
+the narrowest owners. The core route-wiring path is five files:
+
+1. `packages/worker/src/app/routes.ts` — add the route identity. Treat
+   `routes.<name>` as the canonical source of the pathname.
+2. `packages/worker/src/app/router.ts` — map the route to its handler in
+   `router.map(...)`.
+3. `packages/worker/src/app/handlers/<page>.ts` — implement the page handler.
+   Use the helpers in `#app/page-auth.ts` (`requireAuthenticatedPageUser`,
+   `requirePageSession`, `requirePageUserWithRole`) for page auth, and use
+   `#app/request-body.ts` helpers when the page reads structured request bodies.
+4. `packages/worker/client/routes/<page>.tsx` — add the route component and,
+   when the page participates in SPA preload navigation, its route loader.
+   Import shared loader payload types from `#app/loader-data.ts`
+   (`kody-custom/prefer-loader-data-types` enforces this). Keep UI-only state
+   types local.
+5. `packages/worker/client/routes/index.tsx` — register the component in
+   `clientRoutes` and any loader in `clientRouteLoaders`, keyed by
+   `routePattern(routes.<name>)` instead of a duplicated literal pathname.
+
+That covers the server contract, page handler, client route, and client
+registries in five edits. Treat `packages/worker/src/app/document-head.ts` as
+the 5-vs-6 check: the count stays at five when the page can reuse existing head
+behavior, and it becomes six when the new pathname needs its own title,
+canonical URL, or Open Graph metadata. A brand-new standalone route commonly
+needs that sixth edit because unmatched pathnames fall back to the `Not found`
+title.
+
+OAuth authorize/callback shells are the exception to the `routes.ts` rule. Those
+pathnames are owned by the Cloudflare OAuth provider wrapper, so client
+registries and document head use `#app/oauth-paths.ts` (`oauthPaths.authorize`
+and `oauthPaths.callback`) instead of `routes.ts`.

@@ -117,18 +117,24 @@ therefore cannot persist stale. Routes should still consume before deriving
 list/detail state — the follow-up render is a safety net, not the primary
 ordering contract.
 
-Route loaders are registered in `clientRouteLoaders` (`routes/index.tsx`) and
-matched with the same Remix route-pattern specificity as `clientRoutes`. Loaders
-return a `RouteLoaderRedirect` (via `routeLoaderRedirect`) to abort the SPA
-navigation with a full-document redirect (for example, `401` → login). The
-router performs the redirect, never the loader itself, so speculative loader
-runs stay side-effect free. Loader errors still commit the navigation so the
-destination route can fall back to its own fetch; the router marks the
-destination stale (`markNavigationDataStale`) so same-path refreshes — where no
-href change would otherwise trigger a refetch — still reload. Hash-only changes
-commit immediately without a loader. Back/forward (`popstate`) and same-path
-refreshes after form POST also run loaders before notifying, keeping the
-previous UI visible until data is ready.
+Route loaders are registered in `packages/worker/client/routes/index.tsx` under
+`clientRouteLoaders`, keyed by `routePattern(routes.<name>)`. The same keying
+scheme is used by `clientRoutes` and `document-head.ts`, so pathname renames
+flow from `packages/worker/src/app/routes.ts` instead of duplicated literal
+strings. OAuth authorize/callback are the exception: those shells use
+`oauthPaths.authorize` and `oauthPaths.callback` because the Cloudflare OAuth
+provider wrapper, not `routes.ts`, owns those pathnames. Loaders still match
+with the same Remix route-pattern specificity as `clientRoutes`. They return a
+`RouteLoaderRedirect` (via `routeLoaderRedirect`) to abort the SPA navigation
+with a full-document redirect (for example, `401` → login). The router performs
+the redirect, never the loader itself, so speculative loader runs stay side-
+effect free. Loader errors still commit the navigation so the destination route
+can fall back to its own fetch; the router marks the destination stale
+(`markNavigationDataStale`) so same-path refreshes — where no href change would
+otherwise trigger a refetch — still reload. Hash-only changes commit immediately
+without a loader. Back/forward (`popstate`) and same-path refreshes after form
+POST also run loaders before notifying, keeping the previous UI visible until
+data is ready.
 
 ### Intent prefetch
 
