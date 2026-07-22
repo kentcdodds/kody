@@ -63,6 +63,7 @@ import {
 	aggregateUsageRollups,
 	shouldRunUsageAggregationCron,
 } from '#worker/usage/aggregate-rollups.ts'
+import { continueOAuthPurge } from './oauth-purge.ts'
 
 export {
 	RepoSession,
@@ -540,10 +541,10 @@ const workerHandler = {
 				run: () => refreshStaleStripePlans({ env, now: scheduledAt }),
 			},
 			{
-				// 0.5+ defaults refresh/client TTLs and exposes purgeExpiredData for
-				// defense-in-depth cleanup of orphaned OAUTH_KV grants/tokens.
+				// Persisted phase cursors keep healthy leading KV pages from starving
+				// later orphaned grants or the token sweep.
 				name: 'oauth_purge_expired',
-				run: () => oauthProvider.purgeExpiredData(env),
+				run: () => continueOAuthPurge(env, scheduledAt),
 			},
 		]
 		if (shouldRunRetentionCron(scheduledAt)) {
