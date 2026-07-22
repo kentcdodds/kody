@@ -1,0 +1,442 @@
+import { expect, test, vi } from 'vitest'
+import {
+	createCloudflareBackupApi,
+	ensureBackupResources,
+	generateBackupDesiredState,
+	redactBackupOutput,
+	renderBackupOutput,
+	type BackupCloudflareApi,
+	type BackupDesiredState,
+	type R2Bucket,
+	type R2LifecyclePolicy,
+	type R2LockPolicy,
+} from './backup-resources.ts'
+import {
+	parseBackupCliArgs,
+	runBackupResourcesCli,
+} from './backup-resources-cli.ts'
+
+const accountId = 'account-123'
+const apiToken = 'provisioner-secret-value'
+const sourceD1Uuid = '9f1c2f54-13f0-4fd4-8cf4-89ec2f9df71a'
+
+function createDesired(): BackupDesiredState {
+	return generateBackupDesiredState({
+		accountId,
+		bucketName: 'kody-d1-backup-archive',
+		workerName: 'kody-d1-backup-writer',
+		sourceD1Databases: [
+			{ uuid: sourceD1Uuid, name: 'kody-production-database' },
+		],
+		productionResourceDenylist: ['kody-email-blobs', 'kody-community-assets'],
+	})
+}
+
+function createFakeApi() {
+	let bucket: R2Bucket | undefined
+	let lockPolicy: R2LockPolicy | undefined
+	let lifecyclePolicy: R2LifecyclePolicy | undefined
+	const writes: Array<string> = []
+	const api: BackupCloudflareApi = {
+		async getBucket(name) {
+			return bucket?.name === name ? bucket : undefined
+		},
+		async createBucket(input) {
+			writes.push('create-bucket')
+			bucket = { name: input.name }
+			return bucket
+		},
+		async getBucketLockPolicy() {
+			return lockPolicy
+		},
+		async putBucketLockPolicy(_bucketName, policy) {
+			writes.push('put-lock-policy')
+			lockPolicy = structuredClone(policy)
+		},
+		async getBucketLifecyclePolicy() {
+			return lifecyclePolicy
+		},
+		async putBucketLifecyclePolicy(_bucketName, policy) {
+			writes.push('put-lifecycle-policy')
+			lifecyclePolicy = structuredClone(policy)
+		},
+	}
+	return { api, writes }
+}
+
+function jsonResponse(result: unknown, status = 200) {
+	return new Response(JSON.stringify({ success: true, result }), {
+		status,
+		headers: { 'Content-Type': 'application/json' },
+	})
+}
+
+test('backup desired state uses exact R2 schemas and a non-enforced runtime contract', () => {
+	const desired = createDesired()
+
+	expect(desired.bucket).toEqual({
+		name: 'kody-d1-backup-archive',
+		privacy: 'private-by-default',
+	})
+	expect(desired.lockPolicy).toEqual({
+		rules: [
+			{
+				id: 'daily-backups-immutable-35-days',
+				enabled: true,
+				prefix: 'daily/',
+				condition: { type: 'Age', maxAgeSeconds: 35 * 86_400 },
+			},
+			{
+				id: 'weekly-backups-immutable-400-days',
+				enabled: true,
+				prefix: 'weekly/',
+				condition: { type: 'Age', maxAgeSeconds: 400 * 86_400 },
+			},
+		],
+	})
+	expect(desired.lifecyclePolicy).toEqual({
+		rules: [
+			{
+				id: 'expire-daily-backups-after-35-days',
+				enabled: true,
+				conditions: { prefix: 'daily/' },
+				deleteObjectsTransition: {
+					condition: { type: 'Age', maxAge: 35 * 86_400 },
+				},
+			},
+			{
+				id: 'expire-weekly-backups-after-400-days',
+				enabled: true,
+				conditions: { prefix: 'weekly/' },
+				deleteObjectsTransition: {
+					condition: { type: 'Age', maxAge: 400 * 86_400 },
+				},
+			},
+		],
+	})
+	expect(desired.retentionSemantics).toEqual({
+		bucketLockOverridesLifecycle: true,
+	})
+	expect(desired.runtimeContract).toEqual({
+		kind: 'dedicated-worker-runtime-contract',
+		enforcement: 'deployment-configuration-not-cloudflare-identity-api',
+		deployment: 'out-of-scope',
+		identity: {
+			workerName: 'kody-d1-backup-writer',
+			environment: 'production',
+			dedicated: true,
+		},
+		sourceD1DatabaseAllowlist: [
+			{ uuid: sourceD1Uuid, name: 'kody-production-database' },
+		],
+		d1ExportTokenRequirements: {
+			cloudflarePermission: 'D1 Read',
+			accountIdProvidedAtDeployment: true,
+			allowedDatabaseUuids: [sourceD1Uuid],
+			applicationMustEnforceAllowlist: true,
+		},
+		r2Binding: {
+			binding: 'BACKUP_BUCKET',
+			bucketName: 'kody-d1-backup-archive',
+			access: 'object-read-write',
+			allowedPrefixes: ['daily/', 'weekly/'],
+		},
+		explicitRuntimeProhibitions: [
+			'r2.bucket.admin',
+			'r2.bucket.public-access.admin',
+			'r2.lifecycle.admin',
+			'r2.lock.admin',
+		],
+	})
+	expect(desired.readiness).toEqual({
+		bucketPrivateByDefault: true,
+		publicExposureApiManagedHere: false,
+		requiresSeparateVerificationDisabled: ['r2.dev', 'custom-domain'],
+	})
+	expect(desired.tokenRequirements.provisioner).toMatchObject({
+		cloudflarePermission: 'Workers R2 Storage Write',
+		bucketName: 'kody-d1-backup-archive',
+	})
+})
+
+test('generation and CLI reject non-dedicated resources and invalid D1 allowlists', () => {
+	expect(() =>
+		generateBackupDesiredState({
+			accountId,
+			bucketName: 'kody-email-blobs',
+			workerName: 'kody-d1-backup-writer',
+			sourceD1Databases: [
+				{ uuid: sourceD1Uuid, name: 'kody-production-database' },
+			],
+			productionResourceDenylist: ['kody-email-blobs'],
+		}),
+	).toThrow('distinct from production resources')
+	expect(() =>
+		generateBackupDesiredState({
+			accountId,
+			bucketName: 'kody-d1-backup-archive',
+			workerName: 'kody-d1-backup-writer',
+			sourceD1Databases: [{ uuid: 'not-a-uuid', name: 'production-db' }],
+		}),
+	).toThrow('UUID and lower-kebab name pairs')
+
+	const options = parseBackupCliArgs(
+		[
+			'--source-d1',
+			`${sourceD1Uuid}:kody-production-database`,
+			'--deny-production-resource',
+			'kody-email-blobs',
+		],
+		{
+			CLOUDFLARE_ACCOUNT_ID: accountId,
+			CLOUDFLARE_API_TOKEN: apiToken,
+			BACKUP_R2_BUCKET_NAME: 'kody-d1-backup-archive',
+		},
+	)
+	expect(options).toMatchObject({
+		mode: 'plan',
+		accountId,
+		bucketName: 'kody-d1-backup-archive',
+		sourceD1Databases: [
+			{ uuid: sourceD1Uuid, name: 'kody-production-database' },
+		],
+		productionResourceDenylist: ['kody-email-blobs'],
+	})
+	expect(
+		parseBackupCliArgs(
+			[
+				'apply',
+				'--source-d1',
+				`${sourceD1Uuid}:kody-production-database`,
+				'--provisioner-token-env',
+				'BACKUP_PROVISIONER_TOKEN',
+			],
+			{
+				CLOUDFLARE_ACCOUNT_ID: accountId,
+				BACKUP_PROVISIONER_TOKEN: apiToken,
+			},
+		).mode,
+	).toBe('apply')
+})
+
+test('plan and apply converge idempotently without provisioning a Worker', async () => {
+	const fake = createFakeApi()
+	const desired = createDesired()
+	const logs: Array<string> = []
+
+	const planned = await ensureBackupResources({
+		api: fake.api,
+		desired,
+		dryRun: true,
+		log: (message) => logs.push(message),
+	})
+	expect(planned.plan.actions.map(({ type }) => type)).toEqual([
+		'create-bucket',
+		'put-lock-policy',
+		'put-lifecycle-policy',
+	])
+	expect(fake.writes).toEqual([])
+	expect(logs.join('\n')).not.toContain(apiToken)
+
+	const applied = await ensureBackupResources({
+		api: fake.api,
+		desired,
+		dryRun: false,
+	})
+	expect(applied.appliedActions).toBe(3)
+	expect(fake.writes).toEqual([
+		'create-bucket',
+		'put-lock-policy',
+		'put-lifecycle-policy',
+	])
+
+	fake.writes.length = 0
+	const repeated = await ensureBackupResources({
+		api: fake.api,
+		desired,
+		dryRun: false,
+	})
+	expect(repeated.appliedActions).toBe(0)
+	expect(repeated.plan.actions).toEqual([])
+	expect(fake.writes).toEqual([])
+})
+
+test('REST adapter uses documented bucket, lock, and lifecycle contracts', async () => {
+	const desired = createDesired()
+	const requests: Array<{ url: string; init: RequestInit }> = []
+	const responses = [
+		new Response(null, { status: 404 }),
+		jsonResponse({ name: desired.bucket.name }),
+		jsonResponse(desired.lockPolicy),
+		jsonResponse(desired.lifecyclePolicy),
+	]
+	const fetcher = vi.fn(
+		async (url: string | URL | Request, init?: RequestInit) => {
+			requests.push({ url: String(url), init: init ?? {} })
+			const response = responses.shift()
+			if (!response) throw new Error('Unexpected request')
+			return response
+		},
+	) as typeof fetch
+	const api = createCloudflareBackupApi({
+		accountId,
+		apiToken,
+		apiBaseUrl: 'https://api.example.test/client/v4/',
+		fetcher,
+	})
+
+	const result = await ensureBackupResources({
+		api,
+		desired,
+		dryRun: false,
+	})
+	expect(result.appliedActions).toBe(3)
+	expect(requests.map(({ url, init }) => [init.method, url])).toEqual([
+		[
+			'GET',
+			`https://api.example.test/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive`,
+		],
+		[
+			'POST',
+			`https://api.example.test/client/v4/accounts/${accountId}/r2/buckets`,
+		],
+		[
+			'PUT',
+			`https://api.example.test/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive/lock`,
+		],
+		[
+			'PUT',
+			`https://api.example.test/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
+		],
+	])
+	expect(JSON.parse(String(requests[1]?.init.body))).toEqual({
+		name: 'kody-d1-backup-archive',
+	})
+	expect(JSON.parse(String(requests[2]?.init.body))).toEqual(desired.lockPolicy)
+	expect(JSON.parse(String(requests[3]?.init.body))).toEqual(
+		desired.lifecyclePolicy,
+	)
+	for (const request of requests) {
+		expect(request.init.headers).toMatchObject({
+			Authorization: `Bearer ${apiToken}`,
+		})
+	}
+	expect(renderBackupOutput(result)).not.toContain(apiToken)
+
+	const readRequests: Array<string> = []
+	const readResponses = [
+		jsonResponse({ name: desired.bucket.name }),
+		jsonResponse(desired.lockPolicy),
+		jsonResponse(desired.lifecyclePolicy),
+	]
+	const readApi = createCloudflareBackupApi({
+		accountId,
+		apiToken,
+		fetcher: vi.fn(async (url: string | URL | Request) => {
+			readRequests.push(String(url))
+			const response = readResponses.shift()
+			if (!response) throw new Error('Unexpected request')
+			return response
+		}) as typeof fetch,
+	})
+	const converged = await ensureBackupResources({
+		api: readApi,
+		desired,
+		dryRun: true,
+	})
+	expect(converged.plan.actions).toEqual([])
+	expect(readRequests).toEqual([
+		`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive`,
+		`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive/lock`,
+		`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
+	])
+})
+
+test('REST adapter reports authentication, authorization, rate, server, and malformed failures safely', async () => {
+	for (const status of [401, 403, 429, 500, 503]) {
+		const fetcher = vi.fn(
+			async () =>
+				new Response(JSON.stringify({ secret: apiToken }), {
+					status,
+					statusText: 'upstream failure',
+				}),
+		) as typeof fetch
+		const api = createCloudflareBackupApi({
+			accountId,
+			apiToken,
+			fetcher,
+		})
+		let thrown: unknown
+		try {
+			await api.getBucket('kody-d1-backup-archive')
+		} catch (error) {
+			thrown = error
+		}
+		expect(thrown).toBeInstanceOf(Error)
+		expect((thrown as Error).message).toContain(String(status))
+		expect((thrown as Error).message).not.toContain(apiToken)
+	}
+
+	for (const response of [
+		new Response('not-json', { status: 200 }),
+		jsonResponse(undefined),
+		jsonResponse({ wrong: 'shape' }),
+	]) {
+		const api = createCloudflareBackupApi({
+			accountId,
+			apiToken,
+			fetcher: vi.fn(async () => response.clone()) as typeof fetch,
+		})
+		await expect(api.getBucket('kody-d1-backup-archive')).rejects.toThrow(
+			'Malformed Cloudflare response',
+		)
+	}
+
+	const malformedLockApi = createCloudflareBackupApi({
+		accountId,
+		apiToken,
+		fetcher: vi.fn(async () =>
+			jsonResponse({ rules: [{ condition: { type: 'Forever' } }] }),
+		) as typeof fetch,
+	})
+	await expect(
+		malformedLockApi.getBucketLockPolicy('kody-d1-backup-archive'),
+	).rejects.toThrow('Malformed Cloudflare response')
+})
+
+test('CLI defaults to plan and never renders its provisioner token', async () => {
+	const outputs: Array<string> = []
+	const fetcher = vi.fn(
+		async () => new Response(null, { status: 404 }),
+	) as typeof fetch
+	const result = await runBackupResourcesCli({
+		argv: [
+			'--source-d1',
+			`${sourceD1Uuid}:kody-production-database`,
+			'--deny-production-resource',
+			'kody-email-blobs',
+		],
+		env: {
+			CLOUDFLARE_ACCOUNT_ID: accountId,
+			CLOUDFLARE_API_TOKEN: apiToken,
+			BACKUP_R2_BUCKET_NAME: 'kody-d1-backup-archive',
+		},
+		fetcher,
+		log: (output) => outputs.push(output),
+	})
+	expect(result.status).toBe('planned')
+	expect(result.appliedActions).toBe(0)
+	expect(outputs.join('\n')).not.toContain(apiToken)
+	expect(JSON.parse(outputs[0] ?? '')).toHaveProperty(
+		'plan.desired.runtimeContract.enforcement',
+		'deployment-configuration-not-cloudflare-identity-api',
+	)
+
+	const redacted = redactBackupOutput({
+		provisionerToken: apiToken,
+		authorization: `Bearer ${apiToken}`,
+		tokenRequirements: { runtime: 'contract' },
+	})
+	expect(JSON.stringify(redacted)).not.toContain(apiToken)
+	expect(redacted).toHaveProperty('tokenRequirements.runtime', 'contract')
+})

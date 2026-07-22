@@ -1,0 +1,640 @@
+import { canonicalJson, sha256 } from './canonical-json.ts'
+
+const fiveGiB = 5 * 1024 * 1024 * 1024
+const sha256Pattern = /^[a-f0-9]{64}$/
+const uuidPattern =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+// Duplicated deliberately from backup-control-plane to keep this slice
+// independently deployable while consuming its serialized contract exactly.
+export type BackupManifest = {
+	schemaVersion: 1
+	source: {
+		accountId: string
+		accountName: string
+		databaseId: string
+		databaseName: string
+	}
+	bookmark: string
+	scheduledAt: string
+	startedAt: string
+	completedAt: string
+	objectKey: string
+	bytes: number
+	sha256: string
+	r2Etag: string
+	commit: string
+	retentionTier: 'daily' | 'weekly'
+}
+
+export type RestoreBaseline = {
+	schemaVersion: 1
+	sourceDatabaseId: string
+	migrationNames: Array<string>
+	schemaSha256: string
+	sequenceTables: Array<string>
+	isolationChecks: Array<{
+		table: string
+		userColumn: string
+		primaryKeyColumn: string
+		users: [
+			{ userId: string; rowCount: number; primaryKeySha256: string },
+			{ userId: string; rowCount: number; primaryKeySha256: string },
+		]
+	}>
+}
+
+export type D1TargetEvidence = {
+	uuid: string
+	name: string
+	createdAt: string
+	bindings: Array<string>
+	isEmpty: boolean
+}
+
+export type DrillAllowlistEntry = {
+	uuid: string
+	name: string
+	purpose: 'drill'
+}
+
+export type VerificationPhase = 'baseline' | 'post-forward'
+
+export type Command = {
+	kind: 'import' | 'migration' | 'verification'
+	phase?: VerificationPhase
+	program: string
+	args: Array<string>
+}
+
+export type VerificationQuery = {
+	id:
+		| 'foreign-keys'
+		| 'integrity'
+		| 'isolation'
+		| 'migrations'
+		| 'schema'
+		| 'sequences'
+	phase: VerificationPhase
+	sql: string
+}
+
+export type QueryRow = Record<string, string | number | null>
+
+export type DrillAdapters = {
+	run(command: Command): Promise<void>
+	query(targetUuid: string, query: VerificationQuery): Promise<Array<QueryRow>>
+}
+
+export type DrillInput = {
+	manifestBytes: Uint8Array
+	expectedManifestSha256: string
+	backupBytes: Uint8Array
+	backupFile: string
+	baseline: unknown
+	postForwardBaseline?: unknown
+	target: D1TargetEvidence
+	allowlist: ReadonlyArray<DrillAllowlistEntry>
+	applyForwardMigrations?: boolean
+	dryRun?: boolean
+}
+
+function assertRecord(
+	value: unknown,
+	label: string,
+): asserts value is Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error(`${label} must be an object`)
+	}
+}
+
+function assertExactKeys(
+	value: Record<string, unknown>,
+	keys: ReadonlyArray<string>,
+	label: string,
+): void {
+	const actual = Object.keys(value).sort()
+	const expected = [...keys].sort()
+	if (
+		actual.length !== expected.length ||
+		actual.some((key, index) => key !== expected[index])
+	) {
+		throw new Error(`${label} has an invalid shape`)
+	}
+}
+
+function assertString(value: unknown, label: string): asserts value is string {
+	if (typeof value !== 'string' || value.length === 0) {
+		throw new Error(`${label} must be a non-empty string`)
+	}
+}
+
+function assertHash(value: unknown, label: string): asserts value is string {
+	if (typeof value !== 'string' || !sha256Pattern.test(value)) {
+		throw new Error(`${label} must be a lowercase SHA-256 digest`)
+	}
+}
+
+function assertDate(value: unknown, label: string): asserts value is string {
+	assertString(value, label)
+	if (!Number.isFinite(Date.parse(value))) {
+		throw new Error(`${label} must be an ISO date`)
+	}
+}
+
+function assertIdentifier(
+	value: unknown,
+	label: string,
+): asserts value is string {
+	assertString(value, label)
+	if (!identifierPattern.test(value)) {
+		throw new Error(`${label} is not a safe SQLite identifier`)
+	}
+}
+
+function deepFreeze<T extends Record<string, unknown>>(value: T): Readonly<T> {
+	for (const child of Object.values(value)) {
+		if (child && typeof child === 'object') {
+			deepFreeze(child as Record<string, unknown>)
+		}
+	}
+	return Object.freeze(value)
+}
+
+export function parseAndVerifyManifest(
+	manifestBytes: Uint8Array,
+	expectedManifestSha256: string,
+): Readonly<BackupManifest> {
+	assertHash(expectedManifestSha256, 'expected manifest SHA-256')
+	if (sha256(manifestBytes) !== expectedManifestSha256) {
+		throw new Error('downloaded manifest bytes do not match expected SHA-256')
+	}
+	let value: unknown
+	try {
+		value = JSON.parse(
+			new TextDecoder('utf-8', { fatal: true }).decode(manifestBytes),
+		) as unknown
+	} catch {
+		throw new Error('downloaded manifest is not valid UTF-8 JSON')
+	}
+	assertRecord(value, 'manifest')
+	assertExactKeys(
+		value,
+		[
+			'bookmark',
+			'bytes',
+			'commit',
+			'completedAt',
+			'objectKey',
+			'r2Etag',
+			'retentionTier',
+			'scheduledAt',
+			'schemaVersion',
+			'sha256',
+			'source',
+			'startedAt',
+		],
+		'manifest',
+	)
+	if (value.schemaVersion !== 1)
+		throw new Error('manifest schemaVersion must be 1')
+	assertRecord(value.source, 'manifest.source')
+	assertExactKeys(
+		value.source,
+		['accountId', 'accountName', 'databaseId', 'databaseName'],
+		'manifest.source',
+	)
+	for (const key of [
+		'accountId',
+		'accountName',
+		'databaseId',
+		'databaseName',
+	] as const) {
+		assertString(value.source[key], `manifest.source.${key}`)
+	}
+	if (!uuidPattern.test(value.source.databaseId as string)) {
+		throw new Error('manifest.source.databaseId must be a UUID')
+	}
+	for (const key of ['bookmark', 'objectKey', 'r2Etag', 'commit'] as const) {
+		assertString(value[key], `manifest.${key}`)
+	}
+	assertHash(value.sha256, 'manifest.sha256')
+	if (!Number.isSafeInteger(value.bytes) || (value.bytes as number) <= 0) {
+		throw new Error('manifest.bytes must be a positive safe integer')
+	}
+	if ((value.bytes as number) > fiveGiB) {
+		throw new Error('D1 backup exceeds the 5 GiB restore-drill limit')
+	}
+	for (const key of ['scheduledAt', 'startedAt', 'completedAt'] as const) {
+		assertDate(value[key], `manifest.${key}`)
+	}
+	if (
+		Date.parse(value.scheduledAt as string) >
+			Date.parse(value.startedAt as string) ||
+		Date.parse(value.startedAt as string) >
+			Date.parse(value.completedAt as string)
+	) {
+		throw new Error('manifest timestamps are out of order')
+	}
+	if (value.retentionTier !== 'daily' && value.retentionTier !== 'weekly') {
+		throw new Error('manifest.retentionTier must be daily or weekly')
+	}
+	return deepFreeze(value) as Readonly<BackupManifest>
+}
+
+export function parseBaseline(
+	value: unknown,
+	label = 'baseline',
+): Readonly<RestoreBaseline> {
+	assertRecord(value, label)
+	assertExactKeys(
+		value,
+		[
+			'isolationChecks',
+			'migrationNames',
+			'schemaSha256',
+			'schemaVersion',
+			'sequenceTables',
+			'sourceDatabaseId',
+		],
+		label,
+	)
+	if (value.schemaVersion !== 1)
+		throw new Error(`${label}.schemaVersion must be 1`)
+	assertString(value.sourceDatabaseId, `${label}.sourceDatabaseId`)
+	if (!uuidPattern.test(value.sourceDatabaseId)) {
+		throw new Error(`${label}.sourceDatabaseId must be a UUID`)
+	}
+	assertHash(value.schemaSha256, `${label}.schemaSha256`)
+	if (
+		!Array.isArray(value.migrationNames) ||
+		!value.migrationNames.every(
+			(item) => typeof item === 'string' && item.length > 0,
+		)
+	) {
+		throw new Error(`${label}.migrationNames must contain migration names`)
+	}
+	if (!Array.isArray(value.sequenceTables)) {
+		throw new Error(`${label}.sequenceTables must be an array`)
+	}
+	for (const table of value.sequenceTables) {
+		assertIdentifier(table, `${label}.sequenceTables entry`)
+	}
+	if (
+		!Array.isArray(value.isolationChecks) ||
+		value.isolationChecks.length === 0
+	) {
+		throw new Error(`${label}.isolationChecks must contain checks`)
+	}
+	for (const check of value.isolationChecks) {
+		assertRecord(check, `${label} isolation check`)
+		assertExactKeys(
+			check,
+			['primaryKeyColumn', 'table', 'userColumn', 'users'],
+			`${label} isolation check`,
+		)
+		assertIdentifier(check.table, `${label} isolation table`)
+		assertIdentifier(check.userColumn, `${label} isolation user column`)
+		assertIdentifier(check.primaryKeyColumn, `${label} isolation primary key`)
+		if (!Array.isArray(check.users) || check.users.length !== 2) {
+			throw new Error(`${label} isolation check must contain exactly two users`)
+		}
+		const userIds = new Set<string>()
+		for (const user of check.users) {
+			assertRecord(user, `${label} isolation user`)
+			assertExactKeys(
+				user,
+				['primaryKeySha256', 'rowCount', 'userId'],
+				`${label} isolation user`,
+			)
+			assertString(user.userId, `${label} isolation userId`)
+			assertHash(user.primaryKeySha256, `${label} isolation primaryKeySha256`)
+			if (
+				!Number.isSafeInteger(user.rowCount) ||
+				(user.rowCount as number) < 0
+			) {
+				throw new Error(`${label} isolation rowCount is invalid`)
+			}
+			userIds.add(user.userId)
+		}
+		if (userIds.size !== 2) {
+			throw new Error(`${label} isolation users must be distinct`)
+		}
+	}
+	return deepFreeze(value) as Readonly<RestoreBaseline>
+}
+
+function quoteIdentifier(value: string): string {
+	return `"${value.replaceAll('"', '""')}"`
+}
+
+function quoteSqlString(value: string): string {
+	return `'${value.replaceAll("'", "''")}'`
+}
+
+export function buildVerificationQueries(
+	baseline: Readonly<RestoreBaseline>,
+	phase: VerificationPhase,
+): Array<VerificationQuery> {
+	const sequenceSql =
+		baseline.sequenceTables.length === 0
+			? 'SELECT 1 AS sequence_safe WHERE 1 = 0'
+			: baseline.sequenceTables
+					.map((table) => {
+						const name = quoteSqlString(table)
+						return `SELECT ${name} AS table_name, s.seq AS sequence_value, COALESCE(MAX(t.rowid), 0) AS max_rowid FROM sqlite_sequence s LEFT JOIN ${quoteIdentifier(table)} t ON 1 = 1 WHERE s.name = ${name}`
+					})
+					.join(' UNION ALL ')
+	const isolationSql = baseline.isolationChecks
+		.map((check) => {
+			const users = check.users.map((user) => quoteSqlString(user.userId))
+			return `SELECT ${quoteSqlString(check.table)} AS table_name, ${quoteIdentifier(check.userColumn)} AS user_id, ${quoteIdentifier(check.primaryKeyColumn)} AS primary_key FROM ${quoteIdentifier(check.table)} WHERE ${quoteIdentifier(check.userColumn)} IN (${users.join(',')})`
+		})
+		.join(' UNION ALL ')
+	const orderedIsolationSql = `${isolationSql} ORDER BY table_name, user_id, primary_key`
+	return [
+		{ id: 'integrity', phase, sql: 'PRAGMA integrity_check' },
+		{ id: 'foreign-keys', phase, sql: 'PRAGMA foreign_key_check' },
+		{
+			id: 'migrations',
+			phase,
+			sql: 'SELECT name FROM d1_migrations ORDER BY name',
+		},
+		{
+			id: 'schema',
+			phase,
+			sql: "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
+		},
+		{ id: 'sequences', phase, sql: sequenceSql },
+		{ id: 'isolation', phase, sql: orderedIsolationSql },
+	]
+}
+
+function verificationCommands(
+	targetUuid: string,
+	queries: ReadonlyArray<VerificationQuery>,
+): Array<Command> {
+	return queries.map((query) => ({
+		kind: 'verification',
+		phase: query.phase,
+		program: 'wrangler',
+		args: [
+			'd1',
+			'execute',
+			targetUuid,
+			'--remote',
+			'--json',
+			'--command',
+			query.sql,
+		],
+	}))
+}
+
+export function buildDrillCommands(input: {
+	backupFile: string
+	targetUuid: string
+	baseline: Readonly<RestoreBaseline>
+	applyForwardMigrations: boolean
+	postForwardBaseline?: Readonly<RestoreBaseline>
+}): Array<Command> {
+	const commands: Array<Command> = [
+		{
+			kind: 'import',
+			program: 'wrangler',
+			args: [
+				'd1',
+				'execute',
+				input.targetUuid,
+				'--remote',
+				'--file',
+				input.backupFile,
+			],
+		},
+		...verificationCommands(
+			input.targetUuid,
+			buildVerificationQueries(input.baseline, 'baseline'),
+		),
+	]
+	if (input.applyForwardMigrations) {
+		commands.push({
+			kind: 'migration',
+			program: 'wrangler',
+			args: ['d1', 'migrations', 'apply', input.targetUuid, '--remote'],
+		})
+	}
+	if (input.postForwardBaseline) {
+		commands.push(
+			...verificationCommands(
+				input.targetUuid,
+				buildVerificationQueries(input.postForwardBaseline, 'post-forward'),
+			),
+		)
+	}
+	return commands
+}
+
+function assertSafeTarget(
+	manifest: Readonly<BackupManifest>,
+	target: D1TargetEvidence,
+	allowlist: ReadonlyArray<DrillAllowlistEntry>,
+): void {
+	assertString(target.uuid, 'target.uuid')
+	assertString(target.name, 'target.name')
+	if (!uuidPattern.test(target.uuid))
+		throw new Error('target.uuid must be a UUID')
+	if (target.uuid.toLowerCase() === manifest.source.databaseId.toLowerCase()) {
+		throw new Error('target UUID is the production database UUID')
+	}
+	if (target.name === manifest.source.databaseName) {
+		throw new Error('target name is the production database name')
+	}
+	if (!Array.isArray(target.bindings) || target.bindings.length > 0) {
+		throw new Error('target must be unbound from every Worker')
+	}
+	if (!target.isEmpty) throw new Error('target must be empty before the drill')
+	assertDate(target.createdAt, 'target.createdAt')
+	if (Date.parse(target.createdAt) <= Date.parse(manifest.completedAt)) {
+		throw new Error('target is not fresh: it predates the completed backup')
+	}
+	if (
+		!allowlist.some(
+			(entry) =>
+				entry.purpose === 'drill' &&
+				entry.uuid === target.uuid &&
+				entry.name === target.name,
+		)
+	) {
+		throw new Error('target UUID/name is not allowlisted as a drill')
+	}
+}
+
+function verifyRows(
+	query: VerificationQuery,
+	rows: Array<QueryRow>,
+	baseline: Readonly<RestoreBaseline>,
+): void {
+	switch (query.id) {
+		case 'integrity':
+			if (
+				rows.length !== 1 ||
+				Object.values(rows[0] ?? {}).some((value) => value !== 'ok')
+			) {
+				throw new Error(`${query.phase} PRAGMA integrity_check failed`)
+			}
+			return
+		case 'foreign-keys':
+			if (rows.length !== 0) {
+				throw new Error(`${query.phase} PRAGMA foreign_key_check failed`)
+			}
+			return
+		case 'migrations': {
+			const actual = rows.map((row) => String(row.name)).sort()
+			if (
+				canonicalJson(actual) !==
+				canonicalJson([...baseline.migrationNames].sort())
+			) {
+				throw new Error(`${query.phase} migration parity check failed`)
+			}
+			return
+		}
+		case 'schema':
+			if (sha256(canonicalJson(rows)) !== baseline.schemaSha256) {
+				throw new Error(`${query.phase} schema parity check failed`)
+			}
+			return
+		case 'sequences':
+			if (
+				rows.length !== baseline.sequenceTables.length ||
+				rows.some(
+					(row) =>
+						typeof row.table_name !== 'string' ||
+						!baseline.sequenceTables.includes(row.table_name) ||
+						typeof row.sequence_value !== 'number' ||
+						typeof row.max_rowid !== 'number' ||
+						row.sequence_value < row.max_rowid,
+				)
+			) {
+				throw new Error(`${query.phase} sqlite_sequence safety check failed`)
+			}
+			return
+		case 'isolation': {
+			const primaryKeys = new Set<string>()
+			for (const check of baseline.isolationChecks) {
+				const tableRows = rows.filter((row) => row.table_name === check.table)
+				for (const expected of check.users) {
+					const keys = tableRows
+						.filter((row) => row.user_id === expected.userId)
+						.map((row) => String(row.primary_key))
+					if (
+						keys.length !== expected.rowCount ||
+						sha256(canonicalJson(keys)) !== expected.primaryKeySha256
+					) {
+						throw new Error(
+							`${query.phase} two-user isolation check failed for ${check.table}/${expected.userId}`,
+						)
+					}
+					for (const key of keys) {
+						const scopedKey = `${check.table}\0${key}`
+						if (primaryKeys.has(scopedKey)) {
+							throw new Error(
+								`${query.phase} isolation found a shared primary key`,
+							)
+						}
+						primaryKeys.add(scopedKey)
+					}
+				}
+			}
+			return
+		}
+		default: {
+			const exhaustive: never = query.id
+			throw new Error(`Unhandled verification query: ${String(exhaustive)}`)
+		}
+	}
+}
+
+async function verifyBaseline(
+	adapters: DrillAdapters,
+	targetUuid: string,
+	baseline: Readonly<RestoreBaseline>,
+	phase: VerificationPhase,
+): Promise<void> {
+	for (const query of buildVerificationQueries(baseline, phase)) {
+		verifyRows(query, await adapters.query(targetUuid, query), baseline)
+	}
+}
+
+export async function runD1RestoreDrill(
+	input: DrillInput,
+	adapters: DrillAdapters,
+): Promise<{ dryRun: boolean; commands: Array<Command> }> {
+	const manifest = parseAndVerifyManifest(
+		input.manifestBytes,
+		input.expectedManifestSha256,
+	)
+	const baseline = parseBaseline(input.baseline)
+	const postForwardBaseline =
+		input.postForwardBaseline === undefined
+			? undefined
+			: parseBaseline(input.postForwardBaseline, 'post-forward baseline')
+	if (
+		baseline.sourceDatabaseId.toLowerCase() !==
+		manifest.source.databaseId.toLowerCase()
+	) {
+		throw new Error('baseline source database does not match backup manifest')
+	}
+	if (
+		postForwardBaseline &&
+		postForwardBaseline.sourceDatabaseId.toLowerCase() !==
+			manifest.source.databaseId.toLowerCase()
+	) {
+		throw new Error(
+			'post-forward baseline source database does not match manifest',
+		)
+	}
+	const applyForwardMigrations = input.applyForwardMigrations ?? false
+	if (postForwardBaseline && !applyForwardMigrations) {
+		throw new Error('post-forward baseline requires forward migrations')
+	}
+	assertSafeTarget(manifest, input.target, input.allowlist)
+	if (
+		input.backupBytes.byteLength !== manifest.bytes ||
+		sha256(input.backupBytes) !== manifest.sha256
+	) {
+		throw new Error('local SQL bytes or checksum do not match the manifest')
+	}
+	const dryRun = input.dryRun ?? true
+	const commands = buildDrillCommands({
+		backupFile: input.backupFile,
+		targetUuid: input.target.uuid,
+		baseline,
+		applyForwardMigrations,
+		postForwardBaseline,
+	})
+	if (dryRun) return { dryRun, commands }
+
+	const importCommand = commands[0]
+	if (!importCommand || importCommand.kind !== 'import') {
+		throw new Error('restore plan is missing its import command')
+	}
+	await adapters.run(importCommand)
+	await verifyBaseline(adapters, input.target.uuid, baseline, 'baseline')
+	if (applyForwardMigrations) {
+		const migrationCommand = commands.find(
+			(command) => command.kind === 'migration',
+		)
+		if (!migrationCommand)
+			throw new Error('restore plan lacks migration command')
+		await adapters.run(migrationCommand)
+	}
+	if (postForwardBaseline) {
+		await verifyBaseline(
+			adapters,
+			input.target.uuid,
+			postForwardBaseline,
+			'post-forward',
+		)
+	}
+	return { dryRun, commands }
+}
