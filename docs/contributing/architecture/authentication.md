@@ -94,14 +94,14 @@ The `invites` table stores operator-created invite codes:
   deletion does not strand invites)
 - `note`, `max_uses`, `use_count`, `expires_at`, `revoked_at`, and `created_at`
   describe current invite state
-- `plan` (NOT NULL; DDL DEFAULT `'max'` after `0083-plan-default-max.sql`; added
-  by `0065-invite-plans.sql`; stored `'unlimited'` renamed to `'max'` by
+- `plan` (NOT NULL; DDL DEFAULT `'free'` after `0083-plan-default-free.sql`;
+  added by `0065-invite-plans.sql`; stored `'unlimited'` renamed to `'max'` by
   `0082-rename-unlimited-plan-to-max.sql`; migration-window residual
-  `'unlimited'` reconciled by `0083-plan-default-max.sql`) is an optional signup
-  plan name; password and social signup read the consumed invite's stored plan
-  with `parseStoredPlanName` and copy it onto `users.plan` via
-  `resolvePlanWrite`. Omitted invite plans are written as `max`. Admin invite
-  creation validates plan names with strict `parsePlanName`. See
+  `'unlimited'` reconciled to `'max'` by `0083-plan-default-free.sql`) is an
+  optional signup plan name; password and social signup read the consumed
+  invite's stored plan with `parseStoredPlanName` and copy it onto `users.plan`
+  via `resolvePlanWrite`. Omitted invite plans are written as `free`. Admin
+  invite creation validates plan names with strict `parsePlanName`. See
   [Entitlements](./entitlements.md).
 
 Production signup atomically consumes an invite with a single conditional

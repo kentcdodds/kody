@@ -26,7 +26,7 @@ Every plan has finite numeric limits for every resource; there are no uncapped
 tiers and no env-var backstops.
 
 Follow-up: emergency admin-only `unlimited` is intentionally deferred until a
-follow-up deployment after `0083-plan-default-max.sql` completes its residual
+follow-up deployment after `0083-plan-default-free.sql` completes its residual
 sweep. Until then the live registry stays finite `max` only.
 
 `users.plan` and `invites.plan` are NOT NULL TEXT columns. Historical migrations
@@ -34,13 +34,15 @@ sweep. Until then the live registry stays finite `max` only.
 `0081-plan-not-null.sql`) left the DDL default as `'unlimited'` through
 `0082-rename-unlimited-plan-to-max.sql`, which renames stored `'unlimited'` rows
 to `'max'` but does not change the column default. Migration
-`0083-plan-default-max.sql` reconciles migration-window residual `'unlimited'`
-and rebuilds both columns as NOT NULL DEFAULT `'max'`. **Live DDL defaults and
-writers always persist a known plan name (never NULL) and use finite `max`.**
+`0083-plan-default-free.sql` reconciles migration-window residual `'unlimited'`
+to `'max'`, fails closed if any remain, and rebuilds both columns as NOT NULL
+DEFAULT `'free'`. **Live DDL defaults and writers always persist a known plan
+name (never NULL); normal creation and reset paths default to `free`.**
 
 **Write and default:** `resolvePlanWrite` maps nullish admin/API inputs to
-`max`, which is the default for new accounts, invites without an explicit plan,
-and admin plan resets.
+`free`, which is the default for new accounts, invites without an explicit plan,
+admin-created accounts, platform-account provisioning, seed SQL, and admin plan
+resets. Explicit `max` remains a valid deliberate assignment.
 
 **Reading stored values:** D1 reads use `parseStoredPlanName`. Known plan names
 pass through unchanged; defensive NULL, unknown stored strings, and residual
@@ -50,8 +52,8 @@ admin/API input still uses strict `parsePlanName` so typos, unknown strings, and
 residual `'unlimited'` are rejected rather than coerced.
 
 `users.stripe_plan` stays nullable because it is Stripe-derived; `max` is
-manual-only and never written from Stripe (`parseStripePlanName` rejects it, as
-well as residual `'unlimited'`).
+manual-only — admin-visible, not paid or public — and never written from Stripe
+(`parseStripePlanName` rejects it, as well as residual `'unlimited'`).
 
 `resolveEffectivePlan(manual, stripe)` compares a non-null manual plan (after
 `parseStoredPlanName`) with `users.stripe_plan`. Manual `max` always wins over
@@ -60,7 +62,8 @@ Stripe; otherwise the higher-ranked of the two is returned. Unknown or null
 
 ### `max` plan limits
 
-The `max` plan is the operator/manual ceiling. Email resources use
+The `max` plan is the operator/manual ceiling: a high finite tier admins assign
+deliberately. It is not a public or Stripe-purchasable plan. Email resources use
 `maxPlanEmailLimits` because inbound volume is attacker-controlled and outbound
 sending is an outreach-abuse surface — use `resolveEmailResourceLimit` to read
 those caps. All other resources use the ordinary `planLimits.max` numbers.
@@ -89,20 +92,21 @@ rebuilds both columns as NOT NULL DEFAULT `'unlimited'`. Migration
 `0082-rename-unlimited-plan-to-max.sql` renames stored `'unlimited'` plan values
 to `'max'` on `users.plan` and `invites.plan` only; it does not touch
 `users.stripe_plan`, unknown plan strings, or the DDL default. Migration
-`0083-plan-default-max.sql` reconciles migration-window residual `'unlimited'`,
-fails closed if any remain, and rebuilds `users` and `invites` with NOT NULL
-DEFAULT `'max'`.
+`0083-plan-default-free.sql` reconciles migration-window residual `'unlimited'`
+to `'max'`, fails closed if any remain, and rebuilds `users` and `invites` with
+NOT NULL DEFAULT `'free'`.
 
 ## Assigning plans
 
-New accounts start with `users.plan = 'max'` unless the consumed invite carries
+New accounts start with `users.plan = 'free'` unless the consumed invite carries
 another plan. Migration `0065-invite-plans.sql` adds `invites.plan` (NOT NULL
-DEFAULT `'max'` after `0083-plan-default-max.sql`; writers and admin UI default
-to `max`). Password and social signup read the consumed invite's stored plan
+DEFAULT `'free'` after `0083-plan-default-free.sql`; writers and admin UI default
+to `free`). Password and social signup read the consumed invite's stored plan
 with `parseStoredPlanName` and copy it onto `users.plan`; missing or omitted
-invite plans are written as `max` via `resolvePlanWrite`. Admins set invite
-plans when creating codes at `/admin/invites` (validated with strict
-`parsePlanName`).
+invite plans are written as `free` via `resolvePlanWrite`. Admin-created
+accounts, platform-account provisioning, and seed SQL follow the same
+`resolvePlanWrite` default. Admins set invite plans when creating codes at
+`/admin/invites` (validated with strict `parsePlanName`).
 
 Admins also assign or reset plans on existing users through two audited,
 admin-only surfaces, both backed by `updateAdminUserPlan` in
@@ -110,11 +114,11 @@ admin-only surfaces, both backed by `updateAdminUserPlan` in
 
 - **Admin UI** — the "Manage plan" panel on `/admin/users` posts
   `{ action: 'update_plan', userId, plan }` to `POST /admin/users.json` (guarded
-  by `update:user:any`). `plan: null` maps to `max` (writers never persist
+  by `update:user:any`). `plan: null` maps to `free` (writers never persist
   NULL); unknown plan strings are rejected with `400` rather than coerced.
 - **MCP** — the `admin_user_update` capability (`requiredRole: 'admin'`) updates
   one user by `id` or `email` and accepts `plan: PlanName | null` (null maps to
-  `max`).
+  `free`).
 
 Both paths validate against the plan registry (`parsePlanName` / `planNames`)
 and write an `admin`-category audit event with reason `target_user_id=…;plan=…`.
@@ -266,14 +270,14 @@ The exemplar is job scheduling: `createJob` in
 3. Call the single helper and let it throw:
 
 ```ts
-import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import { assertWithinEntitlement } from "#worker/entitlements/service.ts";
 
 await assertWithinEntitlement({
-	db: env.APP_DB,
-	userId,
-	email: userEmail,
-	resource: 'scheduled_jobs',
-})
+  db: env.APP_DB,
+  userId,
+  email: userEmail,
+  resource: "scheduled_jobs",
+});
 ```
 
 Use `getCurrent` only when the built-in D1 counter cannot express the resource.
@@ -334,12 +338,12 @@ in [`../environment-variables.md`](../environment-variables.md).
 ## Related tables and coordination
 
 - `users.plan` — added by the invite-signup migration
-  (`0046-invites-email-verification.sql`); NOT NULL DEFAULT `'max'` after
-  `0083-plan-default-max.sql` (writers default to `max`). The entitlements
+  (`0046-invites-email-verification.sql`); NOT NULL DEFAULT `'free'` after
+  `0083-plan-default-free.sql` (writers default to `free`). The entitlements
   module is the consumer of that column (manual / invite / admin grant).
 - `invites.plan` — signup plan from migration `0065-invite-plans.sql`; NOT NULL
-  DEFAULT `'max'` after `0083-plan-default-max.sql` (writers and admin UI
-  default to `max`). Applied to `users.plan` when the invite is consumed at
+  DEFAULT `'free'` after `0083-plan-default-free.sql` (writers and admin UI
+  default to `free`). Applied to `users.plan` when the invite is consumed at
   signup via `parseStoredPlanName` and `resolvePlanWrite`.
 - `users.stripe_customer_id`, `users.stripe_plan`,
   `users.stripe_plan_refreshed_at` — Stripe billing columns from migration

@@ -79,8 +79,10 @@ Inbound storage is quota-gated per user:
   storage failures (for example an R2 outage while saving raw MIME) do not keep
   the daily receive charge — the attempt is refunded so delivery retries are not
   blocked by quota.
-- Plan users get their plan's limits; the `max` plan uses finite email caps (100
-  sends/day, 200 receives/day, 2,000 stored messages, 512 KiB per message).
+- Plan users get their plan's limits. New accounts start on the `free` plan
+  unless an invite assigns another tier. The operator-only `max` plan uses finite
+  email caps (100 sends/day, 200 receives/day, 2,000 stored messages, 512 KiB
+  per message); it is not a public or paid tier.
 - Quota, size, and unverified-account rejections store at most five detailed
   `rejected` delivery events per inbox per UTC day; further rejections increment
   a single daily aggregate event (with a total count and the last reason) so
@@ -143,14 +145,14 @@ Packages subscribe in `package.json#kody.subscriptions`:
 
 ```json
 {
-	"kody": {
-		"subscriptions": {
-			"email.message.received": {
-				"handler": "./src/on-email-message-received.ts",
-				"description": "Process stored inbound mail."
-			}
-		}
-	}
+  "kody": {
+    "subscriptions": {
+      "email.message.received": {
+        "handler": "./src/on-email-message-received.ts",
+        "description": "Process stored inbound mail."
+      }
+    }
+  }
 }
 ```
 
@@ -158,35 +160,35 @@ Handlers receive a metadata-first payload:
 
 ```ts
 type EmailMessageReceivedEvent = {
-	event: 'email.message.received'
-	message: {
-		id: string
-		inbox_id: string | null
-		from_address: string | null
-		envelope_from: string | null
-		to_addresses: Array<string>
-		cc_addresses: Array<string>
-		reply_to_addresses: Array<string>
-		subject: string | null
-		message_id_header: string | null
-		in_reply_to_header: string | null
-		references: Array<string>
-		processing_status: 'stored' | 'sent' | 'failed'
-		received_at: string | null
-		created_at: string
-	}
-	attachments: Array<{
-		id: string
-		filename: string | null
-		content_type: string | null
-		content_id: string | null
-		disposition: string | null
-		size: number
-		storage_kind: string
-		storage_key: string | null
-		created_at: string
-	}>
-}
+  event: "email.message.received";
+  message: {
+    id: string;
+    inbox_id: string | null;
+    from_address: string | null;
+    envelope_from: string | null;
+    to_addresses: Array<string>;
+    cc_addresses: Array<string>;
+    reply_to_addresses: Array<string>;
+    subject: string | null;
+    message_id_header: string | null;
+    in_reply_to_header: string | null;
+    references: Array<string>;
+    processing_status: "stored" | "sent" | "failed";
+    received_at: string | null;
+    created_at: string;
+  };
+  attachments: Array<{
+    id: string;
+    filename: string | null;
+    content_type: string | null;
+    content_id: string | null;
+    disposition: string | null;
+    size: number;
+    storage_kind: string;
+    storage_key: string | null;
+    created_at: string;
+  }>;
+};
 ```
 
 The event does not include parsed bodies or attachment bytes. Fetch those only
@@ -207,44 +209,44 @@ delivery event:
 
 ```ts
 type EmailMessageDeliveryUpdatedEvent = {
-	event: 'email.message.delivery.updated'
-	message: {
-		id: string
-		inbox_id: string | null
-		thread_id: string | null
-		from_address: string | null
-		to_addresses: Array<string>
-		subject: string | null
-		processing_status: 'stored' | 'sent' | 'failed'
-		provider_message_id: string | null
-		delivery_status:
-			| 'delivered'
-			| 'deferred'
-			| 'bounced'
-			| 'failed'
-			| 'rejected'
-			| 'complained'
-			| null
-		delivery_status_at: string | null
-		sent_at: string | null
-		created_at: string
-	}
-	delivery: {
-		event_id: string
-		status: NonNullable<
-			EmailMessageDeliveryUpdatedEvent['message']['delivery_status']
-		>
-		terminal: boolean
-		sender: string
-		recipient: string
-		delivery: Record<string, unknown>
-		bounce: Record<string, unknown> | null
-		failure: Record<string, unknown> | null
-		rejection: Record<string, unknown> | null
-		complaint: Record<string, unknown> | null
-		occurred_at: string
-	}
-}
+  event: "email.message.delivery.updated";
+  message: {
+    id: string;
+    inbox_id: string | null;
+    thread_id: string | null;
+    from_address: string | null;
+    to_addresses: Array<string>;
+    subject: string | null;
+    processing_status: "stored" | "sent" | "failed";
+    provider_message_id: string | null;
+    delivery_status:
+      | "delivered"
+      | "deferred"
+      | "bounced"
+      | "failed"
+      | "rejected"
+      | "complained"
+      | null;
+    delivery_status_at: string | null;
+    sent_at: string | null;
+    created_at: string;
+  };
+  delivery: {
+    event_id: string;
+    status: NonNullable<
+      EmailMessageDeliveryUpdatedEvent["message"]["delivery_status"]
+    >;
+    terminal: boolean;
+    sender: string;
+    recipient: string;
+    delivery: Record<string, unknown>;
+    bounce: Record<string, unknown> | null;
+    failure: Record<string, unknown> | null;
+    rejection: Record<string, unknown> | null;
+    complaint: Record<string, unknown> | null;
+    occurred_at: string;
+  };
+};
 ```
 
 `deferred` means Cloudflare still has delivery retries pending; handlers should
@@ -266,13 +268,13 @@ The payload is the same metadata-first envelope as `email.message.received`
 
 ```ts
 type SystemEmailMessageReceivedEvent = Omit<
-	EmailMessageReceivedEvent,
-	'event'
+  EmailMessageReceivedEvent,
+  "event"
 > & {
-	event: 'email.system-message.received'
-	/** Link to the stored message in the admin interface. */
-	admin_url: string
-}
+  event: "email.system-message.received";
+  /** Link to the stored message in the admin interface. */
+  admin_url: string;
+};
 ```
 
 Handlers run as the admin package owner, not the system owner, so the
