@@ -364,27 +364,6 @@ export async function storeIdempotentInboundEmail(input: {
 				messageId: delivery.messageId,
 			}).catch(() => null)
 			if (!stored) {
-				const current = await getInboundDelivery({
-					db: input.db,
-					userId: delivery.userId,
-					deliveryId: delivery.deliveryId,
-				}).catch(() => null)
-				const currentOwnsBlob =
-					current?.rawMimeKey === delivery.rawMimeKey &&
-					(current.state === 'pending' ||
-						current.state === 'storing' ||
-						current.state === 'received')
-				if (!currentOwnsBlob) {
-					await input.blobs
-						.delete(delivery.rawMimeKey)
-						.catch((deleteError: unknown) => {
-							console.warn(
-								'inbound-email-stale-lease-blob-delete-failed',
-								delivery.rawMimeKey,
-								deleteError,
-							)
-						})
-				}
 				throw new RetryableInboundStorageError(
 					'Failed to commit inbound email message; the stable delivery will be retried.',
 					error,

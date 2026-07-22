@@ -51,6 +51,7 @@ export type InboundDelivery = {
 }
 
 type InboundDeliveryEventRow = {
+	id?: string
 	event_type: EmailDeliveryEventType
 	detail_json: string
 }
@@ -717,6 +718,14 @@ async function recoverCommittedInboundDelivery(input: {
 		messageId: input.delivery.messageId,
 	})
 	if (!message?.rawMimeKey) return false
+	if (
+		message.rawMimeKey !==
+		emailRawMimeKey(input.delivery.userId, input.delivery.messageId)
+	) {
+		throw new Error(
+			'Inbound message raw MIME key is outside its user namespace.',
+		)
+	}
 	const object = await input.blobs.get(message.rawMimeKey)
 	if (!object) return false
 	const parsed = await PostalMime.parse(await object.text(), {
@@ -805,6 +814,7 @@ export async function reconcileStaleInboundDeliveries(input: {
 	blobs: R2Bucket
 	userId: string
 	now?: Date
+	deadlineMs?: number
 }) {
 	const now = input.now ?? new Date()
 	const cutoff = new Date(
@@ -815,7 +825,7 @@ export async function reconcileStaleInboundDeliveries(input: {
 	).toISOString()
 	const rows = await input.db
 		.prepare(
-			`SELECT event_type, detail_json
+			`SELECT id, event_type, detail_json
 			FROM email_delivery_events
 			WHERE user_id = ?
 				AND provider = ?
@@ -856,9 +866,26 @@ export async function reconcileStaleInboundDeliveries(input: {
 		.all<InboundDeliveryEventRow>()
 	let cleaned = 0
 	let recovered = 0
+	let budgetExhausted = false
 	for (const row of rows.results ?? []) {
+		if (input.deadlineMs != null && Date.now() >= input.deadlineMs) {
+			budgetExhausted = true
+			break
+		}
 		const delivery = parseInboundDelivery(row)
-		if (!delivery || delivery.userId !== input.userId) continue
+		if (!delivery || delivery.userId !== input.userId) {
+			if (row.id) {
+				await input.db
+					.prepare(
+						`UPDATE email_delivery_events
+						SET event_type = 'failed'
+						WHERE id = ? AND user_id = ? AND provider = ?`,
+					)
+					.bind(row.id, input.userId, inboundProvider)
+					.run()
+			}
+			continue
+		}
 		const message = await getEmailMessageById({
 			db: input.db,
 			userId: input.userId,
@@ -952,13 +979,28 @@ export async function reconcileStaleInboundDeliveries(input: {
 			await input.db
 				.prepare(
 					`UPDATE email_delivery_events
-					SET detail_json = json_set(detail_json, '$.state', 'pending')
+					SET detail_json = json_remove(
+						json_remove(
+							json_set(
+								detail_json,
+								'$.state', 'pending',
+								'$.reconcileAfter', ?
+							),
+							'$.cleanupLease'
+						),
+						'$.cleanupLeaseAt'
+					)
 					WHERE id = ?
 						AND user_id = ?
 						AND json_extract(detail_json, '$.state') = 'cleaning'
 						AND json_extract(detail_json, '$.cleanupLease') = ?`,
 				)
-				.bind(delivery.deliveryId, input.userId, cleanupLease)
+				.bind(
+					new Date(now.getTime() + inboundReconciliationRetryMs).toISOString(),
+					delivery.deliveryId,
+					input.userId,
+					cleanupLease,
+				)
 				.run()
 			continue
 		}
@@ -990,7 +1032,11 @@ export async function reconcileStaleInboundDeliveries(input: {
 			.run()
 		cleaned += 1
 	}
-	return { recovered, cleaned }
+	return {
+		recovered,
+		cleaned,
+		...(budgetExhausted ? { budgetExhausted: true as const } : {}),
+	}
 }
 
 export function userInboundQuotaDay(now: Date) {

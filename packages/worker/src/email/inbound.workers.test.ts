@@ -1627,6 +1627,7 @@ test('lease takeover fences stale finalization and active storage from cleanup',
 })
 
 test('reconciliation rejects a ledger key outside its user MIME namespace', async () => {
+	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `user-a-${crypto.randomUUID()}`
 	const otherUserId = `user-b-${crypto.randomUUID()}`
@@ -1666,6 +1667,59 @@ test('reconciliation rejects a ledger key outside its user MIME namespace', asyn
 		}),
 	).toEqual({ recovered: 0, cleaned: 0 })
 	expect(await env.EMAIL_BLOBS.get(otherKey)).not.toBeNull()
+
+	const validDelivery = await buildInboundDelivery({
+		userId,
+		inboxId: delivery.inboxId,
+		recipient: 'message-key-isolation@example.com',
+		rawMime: 'message key isolation bytes',
+		quotaDay: '2026-07-19',
+		now: new Date('2026-07-19T00:00:00.000Z'),
+	})
+	const crossUserMessageKey = emailRawMimeKey(
+		otherUserId,
+		validDelivery.messageId,
+	)
+	await env.EMAIL_BLOBS.put(crossUserMessageKey, 'other user message MIME')
+	await insertEmailMessage({
+		db: env.APP_DB,
+		message: {
+			id: validDelivery.messageId,
+			direction: 'inbound',
+			userId,
+			rawMimeKey: crossUserMessageKey,
+			processingStatus: 'stored',
+		},
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, inbox_id, event_type, provider, provider_event_id,
+			detail_json, created_at
+		) VALUES (?, ?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+	)
+		.bind(
+			validDelivery.deliveryId,
+			userId,
+			validDelivery.inboxId,
+			validDelivery.deliveryId,
+			JSON.stringify(validDelivery),
+			'2026-07-19T00:00:00.000Z',
+		)
+		.run()
+	expect(
+		await reconcileStaleInboundDeliveries({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			userId,
+			now,
+		}),
+	).toEqual({ recovered: 0, cleaned: 0 })
+	expect(await env.EMAIL_BLOBS.get(crossUserMessageKey)).not.toBeNull()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'inbound-email-partial-delivery-recovery-failed',
+		validDelivery.deliveryId,
+		expect.any(Error),
+	)
 })
 
 test('stale inbound ledger durably retries orphan blob cleanup after R2 delete failure', async () => {
@@ -1727,7 +1781,7 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 			db: env.APP_DB,
 			blobs: env.EMAIL_BLOBS,
 			userId,
-			now: new Date('2026-07-22T00:00:00.000Z'),
+			now: new Date('2026-07-22T00:15:01.000Z'),
 		}),
 	).toEqual({ recovered: 0, cleaned: 1 })
 	expect(await env.EMAIL_BLOBS.get(delivery.rawMimeKey)).toBeNull()
@@ -1747,7 +1801,7 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 			db: env.APP_DB,
 			blobs: env.EMAIL_BLOBS,
 			userId,
-			now: new Date('2026-07-22T01:00:01.000Z'),
+			now: new Date('2026-07-22T01:15:02.000Z'),
 		}),
 	).toEqual({ recovered: 0, cleaned: 1 })
 	expect(await env.EMAIL_BLOBS.get(delivery.rawMimeKey)).toBeNull()
