@@ -217,6 +217,104 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		scope: 'user',
 		value: 'kentcdodds/kody',
 	})
+
+	const integrationDetail = formatEntityDetailMarkdown({
+		type: 'integration',
+		id: 'github',
+		title: 'github',
+		description: 'GitHub OAuth integration config',
+		row: {
+			name: '_integration:github',
+			scope: 'user',
+			value: '{}',
+			description: 'GitHub OAuth integration config',
+			appId: null,
+			createdAt: '2026-03-20T00:00:00.000Z',
+			updatedAt: '2026-03-20T00:00:00.000Z',
+			ttlMs: null,
+		},
+		config: {
+			name: 'github',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientIdValueName: 'github_client_id',
+			clientSecretSecretName: 'github_client_secret',
+			accessTokenSecretName: 'github_access_token',
+			refreshTokenSecretName: null,
+			requiredHosts: ['api.github.com'],
+			authorization: null,
+		},
+		relatedPackageSuggestions: [
+			{
+				source: 'user',
+				kodyId: 'github',
+				name: '@user/github',
+				description: 'User GitHub package.',
+				entityRef: 'github:package',
+			},
+			{
+				source: 'community',
+				kodyId: 'github-helpers',
+				name: '@kody/github-helpers',
+				description: 'Trusted community GitHub helpers.',
+				listingId: 'listing-1',
+				publicUrl: 'https://example.com/community/listing-1',
+				trusted: true,
+			},
+		],
+	})
+	expect(integrationDetail.structured).toMatchObject({
+		type: 'integration',
+		entityRef: 'github:integration',
+		relatedPackageSuggestions: [
+			expect.objectContaining({
+				source: 'user',
+				entityRef: 'github:package',
+			}),
+			expect.objectContaining({
+				source: 'community',
+				listingId: 'listing-1',
+				trusted: true,
+			}),
+		],
+	})
+	expect(integrationDetail.markdown).toContain('## Related packages')
+	expect(integrationDetail.markdown).toContain('github:package')
+	expect(integrationDetail.markdown).toContain('listing-1')
+
+	const leanIntegrationDetail = formatEntityDetailMarkdown({
+		type: 'integration',
+		id: 'github',
+		title: 'github',
+		description: 'GitHub OAuth integration config',
+		row: {
+			name: '_integration:github',
+			scope: 'user',
+			value: '{}',
+			description: 'GitHub OAuth integration config',
+			appId: null,
+			createdAt: '2026-03-20T00:00:00.000Z',
+			updatedAt: '2026-03-20T00:00:00.000Z',
+			ttlMs: null,
+		},
+		config: {
+			name: 'github',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientIdValueName: 'github_client_id',
+			clientSecretSecretName: 'github_client_secret',
+			accessTokenSecretName: 'github_access_token',
+			refreshTokenSecretName: null,
+			requiredHosts: ['api.github.com'],
+			authorization: null,
+		},
+	})
+	expect(leanIntegrationDetail.structured).not.toHaveProperty(
+		'relatedPackageSuggestions',
+	)
+	expect(leanIntegrationDetail.markdown).not.toContain('## Related packages')
 })
 
 test('capability formatting keeps execute contracts for identifier and bracket ids', async () => {

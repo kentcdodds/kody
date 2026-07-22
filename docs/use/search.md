@@ -83,6 +83,11 @@ the same provider** so create/poll pairs and sibling tools are visible without a
 second lookup. Built-in capabilities skip that section to keep common lookups
 lean.
 
+Integration entity detail may include a small set of **related package
+suggestions** for the same provider (the user's packages first; otherwise
+trusted-first community listings, capped). Ranked query results stay lean and do
+not run community lookup or expand those suggestions.
+
 Package detail includes a short **Maintain** pointer: the git lane
 (`package_get_git_remote` → clone/edit/push → `package_publish_external_push`)
 and the tool-only alternative (`package_save` / repo sessions, with

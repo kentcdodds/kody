@@ -41,6 +41,7 @@ const mockModule = vi.hoisted(() => ({
 		connectedAt: null,
 		lastSeenAt: null,
 	})),
+	searchCommunityListings: vi.fn(async () => []),
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
@@ -90,6 +91,11 @@ vi.mock('#worker/package-retrievers/service.ts', () => ({
 vi.mock('#worker/remote-connector/status.ts', () => ({
 	getRemoteConnectorStatus: (...args: Array<unknown>) =>
 		mockModule.getRemoteConnectorStatus(...args),
+}))
+
+vi.mock('#worker/community/service.ts', () => ({
+	searchCommunityListings: (...args: Array<unknown>) =>
+		mockModule.searchCommunityListings(...args),
 }))
 
 const {
@@ -654,6 +660,223 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 			error: expect.any(String),
 		}),
 	])
+})
+
+test('integration entity detail enriches related packages without bloating ranked search', async () => {
+	const user = {
+		userId: 'user-1',
+		email: 'user@example.com',
+		displayName: 'User',
+		username: 'user',
+	}
+	const githubIntegrationValue = {
+		name: '_integration:github',
+		scope: 'user' as const,
+		value: JSON.stringify({
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			clientIdValueName: 'github-client-id',
+			clientSecretSecretName: 'github-client-secret',
+			accessTokenSecretName: 'github-access-token',
+			refreshTokenSecretName: null,
+			requiredHosts: ['api.github.com', 'github.com'],
+		}),
+		description: 'GitHub OAuth integration',
+		appId: null,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+		ttlMs: null,
+	}
+
+	vi.clearAllMocks()
+	mockModule.listValues.mockResolvedValue([githubIntegrationValue])
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.searchCommunityListings.mockResolvedValue([
+		{
+			id: 'listing-github',
+			ownerUserId: 'owner-1',
+			packageId: 'pkg-github',
+			sourceId: 'source-github',
+			kodyId: 'github',
+			name: '@kody/github',
+			description: 'GitHub helpers',
+			tags: ['github', 'api'],
+			searchText: null,
+			readmeContent: null,
+			license: 'MIT',
+			pinnedCommit: 'abc123',
+			iconCommit: 'abc123',
+			status: 'active',
+			trustedCommit: 'abc123',
+			trustedAt: '2026-01-01T00:00:00.000Z',
+			trusted: true,
+			featuredAt: null,
+			featured: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			publishedAt: '2026-01-01T00:00:00.000Z',
+			averageStars: null,
+			ratingCount: 0,
+			averageAdaptationEffort: null,
+			forkCount: 0,
+			starCount: 0,
+		},
+		{
+			id: 'listing-cursor',
+			ownerUserId: 'owner-1',
+			packageId: 'pkg-cursor',
+			sourceId: 'source-cursor',
+			kodyId: 'cursor',
+			name: '@kody/cursor',
+			description: 'Cursor helpers that mention github.com in prose',
+			tags: ['cursor'],
+			searchText: null,
+			readmeContent: null,
+			license: 'MIT',
+			pinnedCommit: 'abc123',
+			iconCommit: 'abc123',
+			status: 'active',
+			trustedCommit: 'abc123',
+			trustedAt: '2026-01-01T00:00:00.000Z',
+			trusted: true,
+			featuredAt: null,
+			featured: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			publishedAt: '2026-01-01T00:00:00.000Z',
+			averageStars: null,
+			ratingCount: 0,
+			averageAdaptationEffort: null,
+			forkCount: 0,
+			starCount: 0,
+		},
+	])
+
+	const { handler } = await getSearchRegistration({ user })
+
+	const ranked = await handler({
+		query: 'github integration',
+		conversationId: 'conv-integration-ranked',
+	})
+	expect(ranked.isError).toBeUndefined()
+	expect(mockModule.searchCommunityListings).not.toHaveBeenCalled()
+	const rankedResult = ranked.structuredContent.result as {
+		matches: Array<{
+			type: string
+			relatedPackageSuggestions?: unknown
+			entityRef?: string
+		}>
+	}
+	const rankedIntegration = rankedResult.matches.find(
+		(match) => match.type === 'integration',
+	)
+	expect(rankedIntegration).toMatchObject({
+		type: 'integration',
+		entityRef: 'github:integration',
+	})
+	expect(rankedIntegration).not.toHaveProperty('relatedPackageSuggestions')
+
+	const detail = await handler({
+		entity: 'github:integration',
+		conversationId: 'conv-integration-detail',
+	})
+	expect(detail.isError).toBeUndefined()
+	expect(mockModule.searchCommunityListings).toHaveBeenCalledTimes(1)
+	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
+		env: { APP_DB: {} },
+		query: 'github',
+		limit: 12,
+	})
+	expect(detail.structuredContent.result).toMatchObject({
+		kind: 'entity',
+		type: 'integration',
+		id: 'github',
+		relatedPackageSuggestions: [
+			expect.objectContaining({
+				source: 'community',
+				kodyId: 'github',
+				listingId: 'listing-github',
+				trusted: true,
+			}),
+		],
+	})
+	const suggestions = (
+		detail.structuredContent.result as {
+			relatedPackageSuggestions: Array<{ kodyId: string }>
+		}
+	).relatedPackageSuggestions
+	expect(suggestions.map((item) => item.kodyId)).toEqual(['github'])
+
+	vi.clearAllMocks()
+	mockModule.listValues.mockResolvedValue([githubIntegrationValue])
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+		{
+			id: 'pkg-user-github',
+			userId: 'user-1',
+			name: '@user/github',
+			kodyId: 'github',
+			description: 'User github package',
+			tags: ['github'],
+			searchText: 'github helpers',
+			sourceId: 'source-user-github',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+	])
+	mockModule.searchCommunityListings.mockResolvedValue([
+		{
+			id: 'listing-github',
+			ownerUserId: 'owner-1',
+			packageId: 'pkg-github',
+			sourceId: 'source-github',
+			kodyId: 'github',
+			name: '@kody/github',
+			description: 'GitHub helpers',
+			tags: ['github'],
+			searchText: null,
+			readmeContent: null,
+			license: 'MIT',
+			pinnedCommit: 'abc123',
+			iconCommit: 'abc123',
+			status: 'active',
+			trustedCommit: 'abc123',
+			trustedAt: '2026-01-01T00:00:00.000Z',
+			trusted: true,
+			featuredAt: null,
+			featured: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			publishedAt: '2026-01-01T00:00:00.000Z',
+			averageStars: null,
+			ratingCount: 0,
+			averageAdaptationEffort: null,
+			forkCount: 0,
+			starCount: 0,
+		},
+	])
+
+	const { handler: userPackageHandler } = await getSearchRegistration({
+		user,
+	})
+	const userPackageDetail = await userPackageHandler({
+		entity: 'github:integration',
+		conversationId: 'conv-integration-user-pkg',
+	})
+	expect(mockModule.searchCommunityListings).not.toHaveBeenCalled()
+	expect(userPackageDetail.structuredContent.result).toMatchObject({
+		type: 'integration',
+		relatedPackageSuggestions: [
+			expect.objectContaining({
+				source: 'user',
+				kodyId: 'github',
+				entityRef: 'github:package',
+			}),
+		],
+	})
 })
 
 test('search tool memory enrichment: timeout, rejection, and ack failure stay off the critical path', async () => {

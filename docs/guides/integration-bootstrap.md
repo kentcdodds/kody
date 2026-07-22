@@ -99,11 +99,14 @@ If those conditions are not met, stop and fix the integration first.
      surface.
 5. Only after the smoke test succeeds should you obtain the dependent package or
    package app.
-   - Search the user's account for an existing package that wraps the
-     integration.
-   - Call `community_search` for the provider or workflow (prefer `trusted`
-     matches). If a listing is close to the user's goal, fork or point them at
-     one-click install, then adapt — do not reimplement from scratch.
+   - `search({ entity: "<provider>:integration" })` may already surface a small
+     same-provider package suggestion set (user packages first, else
+     trusted-first community listings). Use those when present.
+   - Otherwise search the user's account for an existing package that wraps the
+     integration, then call `community_search` for the provider or workflow
+     (prefer `trusted` matches). If a listing is close to the user's goal, fork
+     or point them at one-click install, then adapt — do not reimplement from
+     scratch.
    - Create or save a thin helpers package only when no suitable community
      listing exists.
    - If the integration or tokens already exist and the smoke test passes,
