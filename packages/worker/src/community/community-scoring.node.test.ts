@@ -235,6 +235,6 @@ test('trusted-first community search promotes a trusted relevance rank 13 before
 	})
 	expect(trustedFirst[0]?.id).toBe('listing-trusted-13')
 	expect(trustedFirst.slice(1).map((listing) => listing.id)).toEqual(
-		untrusted.slice(0, 11).map((listing) => listing.id),
+		relevanceOnly.slice(0, 11).map((listing) => listing.id),
 	)
 })
