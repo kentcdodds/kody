@@ -41,11 +41,17 @@ const mockModule = vi.hoisted(() => ({
 	setSecretAllowedCapabilities: vi.fn(async () => undefined),
 	setSecretAllowedPackages: vi.fn(async () => undefined),
 	getValue: vi.fn(async () => null),
+	searchCommunityListings: vi.fn(async () => []),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
 	readAuthenticatedAppUser: (...args: Array<unknown>) =>
 		mockModule.readAuthenticatedAppUser(...args),
+}))
+
+vi.mock('#worker/community/service.ts', () => ({
+	searchCommunityListings: (...args: Array<unknown>) =>
+		mockModule.searchCommunityListings(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
@@ -185,6 +191,15 @@ test('connect oauth saves tokens, integration metadata, and host approval links'
 			},
 		],
 		integrationName: 'github',
+		nextSteps: {
+			integrationName: 'github',
+			guidance: expect.stringContaining('auth credentials only'),
+			suggestions: [],
+			createHelpersCta: {
+				label: 'Create helpers package',
+				prompt: expect.stringContaining('thin helpers package'),
+			},
+		},
 	})
 	expect(mockModule.buildSecretHostApprovalUrl).toHaveBeenCalledTimes(4)
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
@@ -1335,6 +1350,67 @@ test('oauth_exchange supports Canva basic-form with PKCE code_verifier and a cli
 
 test('connect oauth persists usePkce for confidential + PKCE providers like Canva', async () => {
 	mockModule.saveValue.mockClear()
+	mockModule.searchCommunityListings.mockClear()
+	mockModule.searchCommunityListings.mockResolvedValueOnce([
+		{
+			id: 'canva-untrusted',
+			ownerUserId: 'owner',
+			packageId: 'pkg',
+			sourceId: 'src',
+			kodyId: '@owner/canva-extra',
+			name: 'canva-extra',
+			description: 'Untrusted canva helpers',
+			tags: [],
+			searchText: null,
+			readmeContent: null,
+			license: 'MIT',
+			pinnedCommit: 'abc',
+			iconCommit: 'abc',
+			status: 'active',
+			trustedCommit: null,
+			trustedAt: null,
+			trusted: false,
+			featuredAt: null,
+			featured: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			publishedAt: '2026-01-01T00:00:00.000Z',
+			averageStars: null,
+			ratingCount: 0,
+			averageAdaptationEffort: null,
+			forkCount: 0,
+			starCount: 0,
+		},
+		{
+			id: 'canva-trusted',
+			ownerUserId: 'owner',
+			packageId: 'pkg-2',
+			sourceId: 'src-2',
+			kodyId: '@owner/canva-helpers',
+			name: 'canva-helpers',
+			description: 'Trusted canva helpers',
+			tags: ['canva'],
+			searchText: null,
+			readmeContent: null,
+			license: 'MIT',
+			pinnedCommit: 'def',
+			iconCommit: 'def',
+			status: 'active',
+			trustedCommit: 'def',
+			trustedAt: '2026-01-01T00:00:00.000Z',
+			trusted: true,
+			featuredAt: null,
+			featured: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			publishedAt: '2026-01-01T00:00:00.000Z',
+			averageStars: 5,
+			ratingCount: 2,
+			averageAdaptationEffort: 1,
+			forkCount: 3,
+			starCount: 4,
+		},
+	])
 	const handler = createAccountSecretsApiHandler(createEnv())
 
 	const canvaResponse = await handler.handler({
@@ -1367,11 +1443,38 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 	} as never)
 
 	expect(canvaResponse.status).toBe(200)
-	await expect(canvaResponse.json()).resolves.toMatchObject({
+	const canvaPayload = await canvaResponse.json()
+	expect(canvaPayload).toMatchObject({
 		ok: true,
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
 		integrationName: 'canva',
+		nextSteps: {
+			integrationName: 'canva',
+			guidance: expect.stringContaining('auth credentials only'),
+			createHelpersCta: {
+				label: 'Create helpers package',
+				prompt: expect.stringContaining('thin helpers package'),
+			},
+		},
+	})
+	expect(canvaPayload.nextSteps.suggestions).toHaveLength(2)
+	expect(
+		canvaPayload.nextSteps.suggestions.map(
+			(entry: { listingId: string }) => entry.listingId,
+		),
+	).toEqual(['canva-trusted', 'canva-untrusted'])
+	expect(canvaPayload.nextSteps.suggestions[0]).toMatchObject({
+		listingId: 'canva-trusted',
+		name: 'canva-helpers',
+		trusted: true,
+		publicUrl: 'https://example.com/community/canva-trusted',
+		forkPrompt: expect.stringContaining('canva-helpers'),
+	})
+	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
+		env: expect.anything(),
+		query: 'canva',
+		limit: 12,
 	})
 	expect(mockModule.saveValue).toHaveBeenCalledWith(
 		expect.objectContaining({

@@ -19,6 +19,7 @@ import {
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { loadConnectOauthNextSteps } from '#app/connect-oauth-next-steps.ts'
 import {
 	redirectToLogin,
 	redirectToLoginWhenUnauthenticated,
@@ -403,6 +404,16 @@ async function handleConnectOauthAction(input: {
 		})
 	}
 
+	const nextSteps = await loadConnectOauthNextSteps({
+		env: input.env,
+		integrationName,
+		providerQuery: provider,
+		baseUrl: getAppBaseUrl({
+			env: input.env,
+			requestUrl: input.request.url,
+		}),
+	})
+
 	return jsonResponse({
 		ok: true,
 		accessTokenSaved: Boolean(accessSaved),
@@ -410,6 +421,7 @@ async function handleConnectOauthAction(input: {
 		allowedHosts,
 		hostApprovalLinks,
 		integrationName,
+		nextSteps,
 	})
 }
 
