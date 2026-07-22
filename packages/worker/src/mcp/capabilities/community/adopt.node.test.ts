@@ -28,7 +28,7 @@ function createContext(userId = 'user-alice') {
 	}
 }
 
-test('community_fork_adopt adopts a reviewed fork', async () => {
+test('community_fork_adopt adopts by package_id or kody_id and rejects invalid reviews', async () => {
 	mocks.adoptCommunityFork.mockResolvedValue({
 		packageId: 'pkg-1',
 		kodyId: 'demo-fork',
@@ -38,15 +38,15 @@ test('community_fork_adopt adopts a reviewed fork', async () => {
 		alreadyAdopted: false,
 	})
 
-	const result = await communityForkAdoptCapability.handler(
-		{
-			package_id: 'pkg-1',
-			review_summary: 'Reviewed auth paths and secret mounts.',
-		},
-		createContext(),
-	)
-
-	expect(result).toEqual({
+	await expect(
+		communityForkAdoptCapability.handler(
+			{
+				package_id: 'pkg-1',
+				review_summary: 'Reviewed auth paths and secret mounts.',
+			},
+			createContext(),
+		),
+	).resolves.toEqual({
 		adopted: true,
 		already_adopted: false,
 		package_id: 'pkg-1',
@@ -62,10 +62,8 @@ test('community_fork_adopt adopts a reviewed fork', async () => {
 		kodyId: undefined,
 		reviewSummary: 'Reviewed auth paths and secret mounts.',
 	})
-})
 
-test('community_fork_adopt accepts kody_id and surfaces not-a-fork errors', async () => {
-	mocks.adoptCommunityFork.mockResolvedValue({
+	mocks.adoptCommunityFork.mockResolvedValueOnce({
 		packageId: 'pkg-1',
 		kodyId: 'demo-fork',
 		listingId: 'listing-1',
@@ -73,7 +71,6 @@ test('community_fork_adopt accepts kody_id and surfaces not-a-fork errors', asyn
 		adoptedAt: '2026-07-21T12:00:00.000Z',
 		alreadyAdopted: true,
 	})
-
 	await expect(
 		communityForkAdoptCapability.handler(
 			{
@@ -88,7 +85,7 @@ test('community_fork_adopt accepts kody_id and surfaces not-a-fork errors', asyn
 		kody_id: 'demo-fork',
 	})
 
-	mocks.adoptCommunityFork.mockRejectedValue(
+	mocks.adoptCommunityFork.mockRejectedValueOnce(
 		new CommunityActionError(
 			'Package "demo" is already self-authored; adoption is not needed.',
 		),
@@ -102,9 +99,8 @@ test('community_fork_adopt accepts kody_id and surfaces not-a-fork errors', asyn
 			createContext(),
 		),
 	).rejects.toThrow(/already self-authored/)
-})
 
-test('community_fork_adopt rejects short review_summary before calling the service', async () => {
+	mocks.adoptCommunityFork.mockClear()
 	await expect(
 		communityForkAdoptCapability.handler(
 			{

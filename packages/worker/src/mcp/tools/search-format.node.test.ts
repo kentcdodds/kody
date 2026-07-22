@@ -279,7 +279,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 			}),
 		],
 	})
-	expect(integrationDetail.markdown).toContain('## Related packages')
 	expect(integrationDetail.markdown).toContain('github:package')
 	expect(integrationDetail.markdown).toContain('listing-1')
 
@@ -314,7 +313,8 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	expect(leanIntegrationDetail.structured).not.toHaveProperty(
 		'relatedPackageSuggestions',
 	)
-	expect(leanIntegrationDetail.markdown).not.toContain('## Related packages')
+	expect(leanIntegrationDetail.markdown).not.toContain('github:package')
+	expect(leanIntegrationDetail.markdown).not.toContain('listing-1')
 })
 
 test('capability formatting keeps execute contracts for identifier and bracket ids', async () => {

@@ -231,39 +231,7 @@ test('adopted community forks still require an allowed-packages grant for mutate
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 })
 
-test('findMissingPackageApprovals returns empty for adopted community forks', async () => {
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
-		...communityFork,
-		adoptedAt: '2026-07-01T00:00:00.000Z',
-		adoptionNote: 'Reviewed source; trusted for my use.',
-	})
-
-	const { findMissingPackageApprovals } = await import('./package-access.ts')
-	const entries = await findMissingPackageApprovals({
-		env: { APP_DB: {} as D1Database } as Env,
-		baseUrl: 'https://example.com',
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		mounts: {
-			discordBotToken: {
-				name: 'discordBotTokenKentPersonalAutomation',
-				scope: 'user',
-			},
-		},
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: 'pkg-1',
-			storageId: 'pkg-1',
-		},
-	})
-
-	expect(entries).toEqual([])
-	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
-})
-
-test('mutate intent denies self-authored packages without an allowed-packages grant', async () => {
+test('mutate intent requires an allowed-packages grant even for self-authored packages', async () => {
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 
 	await expect(
@@ -296,9 +264,7 @@ test('mutate intent denies self-authored packages without an allowed-packages gr
 		)
 	})
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
-})
 
-test('mutate intent allows self-authored packages with an allowed-packages grant', async () => {
 	await expect(
 		assertPackageCanAccessResolvedSecret({
 			env: { APP_DB: {} as D1Database },
@@ -320,7 +286,7 @@ test('mutate intent allows self-authored packages with an allowed-packages grant
 			intent: 'mutate',
 		}),
 	).resolves.toBeUndefined()
-	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(1)
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 })
 
@@ -485,35 +451,53 @@ test('package access helpers treat missing approvals consistently', () => {
 	expect(batchMessage).toContain('names=discordBotToken')
 })
 
-test('findMissingPackageApprovals returns empty for self-authored packages', async () => {
+test('findMissingPackageApprovals skips self-authored and adopted forks, reports unapproved community forks', async () => {
+	const { findMissingPackageApprovals } = await import('./package-access.ts')
+	const mounts = {
+		discordBotToken: {
+			name: 'discordBotTokenKentPersonalAutomation',
+			scope: 'user' as const,
+		},
+	}
+	const storageContext = {
+		sessionId: null,
+		appId: null,
+		packageId: 'pkg-1',
+		storageId: 'pkg-1',
+	}
+
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
-
-	const { findMissingPackageApprovals } = await import('./package-access.ts')
-	const entries = await findMissingPackageApprovals({
-		env: { APP_DB: {} as D1Database } as Env,
-		baseUrl: 'https://example.com',
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		mounts: {
-			discordBotToken: {
-				name: 'discordBotTokenKentPersonalAutomation',
-				scope: 'user',
-			},
-		},
-		storageContext: {
-			sessionId: null,
-			appId: null,
+	await expect(
+		findMissingPackageApprovals({
+			env: { APP_DB: {} as D1Database } as Env,
+			baseUrl: 'https://example.com',
+			userId: 'user-1',
 			packageId: 'pkg-1',
-			storageId: 'pkg-1',
-		},
-	})
-
-	expect(entries).toEqual([])
+			mounts,
+			storageContext,
+		}),
+	).resolves.toEqual([])
 	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
-})
 
-test('findMissingPackageApprovals reports unapproved mounts for community-forked packages', async () => {
+	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
+		...communityFork,
+		adoptedAt: '2026-07-01T00:00:00.000Z',
+		adoptionNote: 'Reviewed source; trusted for my use.',
+	})
+	await expect(
+		findMissingPackageApprovals({
+			env: { APP_DB: {} as D1Database } as Env,
+			baseUrl: 'https://example.com',
+			userId: 'user-1',
+			packageId: 'pkg-1',
+			mounts,
+			storageContext,
+		}),
+	).resolves.toEqual([])
+	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
+
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(
 		communityFork,
@@ -524,27 +508,14 @@ test('findMissingPackageApprovals reports unapproved mounts for community-forked
 		scope: 'user',
 		allowedPackages: [],
 	})
-
-	const { findMissingPackageApprovals } = await import('./package-access.ts')
 	const entries = await findMissingPackageApprovals({
 		env: { APP_DB: {} as D1Database } as Env,
 		baseUrl: 'https://example.com',
 		userId: 'user-1',
 		packageId: 'pkg-1',
-		mounts: {
-			discordBotToken: {
-				name: 'discordBotTokenKentPersonalAutomation',
-				scope: 'user',
-			},
-		},
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: 'pkg-1',
-			storageId: 'pkg-1',
-		},
+		mounts,
+		storageContext,
 	})
-
 	expect(entries).toHaveLength(1)
 	expect(entries[0]).toMatchObject({
 		secretName: 'discordBotTokenKentPersonalAutomation',

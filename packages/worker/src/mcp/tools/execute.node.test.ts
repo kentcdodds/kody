@@ -5,6 +5,7 @@ import {
 	maxMcpContentBlockCount,
 	wrapDownstreamMcpToolResult,
 } from '#mcp/downstream-mcp-result.ts'
+import { formatRawFetchHostNudge } from '#mcp/raw-fetch-host-nudge.ts'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
@@ -592,8 +593,12 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation and ski
 		code: 'export default async () => ({ ok: true })',
 		conversationId: 'conv-nudge',
 	})
-	expect(tipped.structuredContent.warnings).toHaveLength(1)
-	expect(tipped.structuredContent.warnings?.[0]).toContain('api.notion.com')
+	expect(tipped.structuredContent.warnings).toEqual([
+		formatRawFetchHostNudge({
+			hostname: 'api.notion.com',
+			count: 4,
+		}),
+	])
 	expect(setState).toHaveBeenCalled()
 	expect(mockModule.listOpenApiBindings).toHaveBeenCalled()
 
@@ -652,10 +657,13 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation and ski
 export default async () => ({ ok: true })`,
 		conversationId: 'conv-oauth-nudge',
 	})
-	expect(authHelperTipped.structuredContent.warnings).toHaveLength(1)
-	expect(authHelperTipped.structuredContent.warnings?.[0]).toContain(
-		'gmail.googleapis.com',
-	)
+	expect(authHelperTipped.structuredContent.warnings).toEqual([
+		formatRawFetchHostNudge({
+			hostname: 'gmail.googleapis.com',
+			count: 3,
+			usedIntegrationAuthHelpers: true,
+		}),
+	])
 	expect(authHelperTipped.structuredContent.warnings?.[0]).not.toBe(
 		tipped.structuredContent.warnings?.[0],
 	)

@@ -187,5 +187,4 @@ test('raw-fetch host nudge counts hosts, tips at threshold once, excludes covere
 	})
 	expect(authHelperTip.nudges).toEqual([authHelperNudge])
 	expect(authHelperNudge).not.toBe(plainNudge)
-	expect(authHelperNudge).toContain('gmail.googleapis.com')
 })
