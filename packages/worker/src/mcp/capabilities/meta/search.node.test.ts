@@ -226,3 +226,23 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 		}),
 	)
 })
+
+test('meta search supports domain-only browsing and requires query or domain', async () => {
+	const context = createContext({ userId: 'user-1', username: 'user' })
+
+	const browse = await searchCapability.handler(
+		{ domain: 'meta', conversationId: 'meta-domain-browse' },
+		context,
+	)
+	expect(browse.matches).toEqual([
+		expect.objectContaining({
+			type: 'capability',
+			entityRef: 'search_docs:capability',
+			domain: 'meta',
+		}),
+	])
+
+	await expect(
+		searchCapability.handler({ conversationId: 'meta-missing-args' }, context),
+	).rejects.toThrow('Provide "query" or "domain".')
+})

@@ -14,6 +14,9 @@ import {
 
 const defaultSearchLimit = 15
 const maxSearchLimit = 100
+// Domain browsing (domain without query) deliberately lists the whole domain
+// by default instead of cutting at the ranked default.
+const domainBrowseDefaultLimit = 100
 
 const remoteConnectorStatusSchema = z.object({
 	connectorId: z.string(),
@@ -40,8 +43,11 @@ const searchOutputSchema = z.object({
 	remoteConnectorStatuses: z.array(remoteConnectorStatusSchema).optional(),
 })
 
-function normalizeLimit(limit: number | undefined) {
-	if (!limit) return defaultSearchLimit
+function normalizeLimit(
+	limit: number | undefined,
+	fallback = defaultSearchLimit,
+) {
+	if (!limit) return fallback
 	return Math.max(1, Math.min(Math.floor(limit), maxSearchLimit))
 }
 
@@ -67,15 +73,16 @@ export const searchCapability = defineDomainCapability(
 			query: z
 				.string()
 				.min(1)
+				.optional()
 				.describe(
-					'Natural language description, or an exact saved-package UUID, kody id, current-origin account package URL, or owner-matching hosted package URL.',
+					'Natural language description, or an exact saved-package UUID, kody id, current-origin account package URL, or owner-matching hosted package URL. Optional when "domain" is provided.',
 				),
 			domain: z
 				.string()
 				.min(1)
 				.optional()
 				.describe(
-					'Optional capability domain id (for example "email" or "remote:home") to rank only that domain\'s capabilities.',
+					'Optional capability domain id (for example "email" or "remote:home"). With "query", ranks only that domain\'s capabilities; without "query", lists the domain\'s capabilities.',
 				),
 			limit: z
 				.number()
@@ -96,7 +103,7 @@ export const searchCapability = defineDomainCapability(
 		outputSchema: searchOutputSchema,
 		async handler(
 			args: {
-				query: string
+				query?: string
 				domain?: string
 				limit?: number
 				conversationId?: string
@@ -105,11 +112,11 @@ export const searchCapability = defineDomainCapability(
 			},
 			ctx: CapabilityContext,
 		) {
-			const query = args.query.trim()
-			if (!query) {
-				throw new Error('Search query is required.')
-			}
+			const query = args.query?.trim() ?? ''
 			const domainFilter = args.domain?.trim() || undefined
+			if (!query && !domainFilter) {
+				throw new Error('Provide "query" or "domain".')
+			}
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null
 			const includeHiddenPackages = !!args.includeHiddenPackages
@@ -122,8 +129,11 @@ export const searchCapability = defineDomainCapability(
 				callerContext: ctx.callerContext,
 				conversationId,
 				query,
-				memoryQuery: args.query,
-				limit: normalizeLimit(args.limit),
+				...(args.query !== undefined ? { memoryQuery: args.query } : {}),
+				limit: normalizeLimit(
+					args.limit,
+					domainFilter && !query ? domainBrowseDefaultLimit : undefined,
+				),
 				userId,
 				includeHiddenPackages,
 				memoryContext: args.memoryContext,

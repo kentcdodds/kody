@@ -2038,6 +2038,20 @@ test('searchUnified lists a whole domain in curated order when query is empty', 
 		inputTypeDefinition: expect.stringContaining('to'),
 	})
 	expect(result.guidance).toBeDefined()
+
+	const truncated = await searchUnified({
+		env: {} as Env,
+		query: '',
+		limit: 1,
+		userId: 'user-1',
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+		domain: 'email',
+	})
+	expect(truncated.matches).toHaveLength(1)
+	expect(truncated.guidance).toContain(
+		'Domain listing truncated: showing the first 1 of 2 capabilities in "email"',
+	)
 })
 
 test('searchUnified answers broad exploratory queries with a domain overview', async () => {

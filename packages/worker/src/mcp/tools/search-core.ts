@@ -110,24 +110,31 @@ function scopeRegistryToDomain(
 /** Lists a whole domain's capabilities (in curated registry order) when `domain` is passed without a `query`. */
 function buildDomainBrowseResult(input: {
 	env: Env
+	domain: string
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 	limit: number
 }): SearchUnifiedResult {
 	const queryUnderstandingStart = performance.now()
 	const intent = understandSearchQuery({ query: '', entities: [] })
 	const queryUnderstandingMs = elapsedMs(queryUnderstandingStart)
-	const matches = Object.values(input.registry.capabilitySpecs)
+	const domainSpecs = Object.values(input.registry.capabilitySpecs)
+	const matches = domainSpecs
 		.slice(0, Math.max(1, input.limit))
 		.map(toCapabilitySearchMatch)
 	attachTopCapabilityCallShapes({
 		matches,
 		registry: input.registry,
 	})
-	const guidance = buildRecommendedNextStep({
-		query: '',
-		intent,
-		matches,
-	})
+	// Large synthesized domains (mcp:*, openapi:*) can exceed the listing
+	// limit; never let a partial listing pass silently as the whole domain.
+	const guidance =
+		matches.length < domainSpecs.length
+			? `Domain listing truncated: showing the first ${String(matches.length)} of ${String(domainSpecs.length)} capabilities in ${JSON.stringify(input.domain)}. Raise "limit" or call meta_list_capabilities({ domain: ${JSON.stringify(input.domain)} }) from execute for the complete list.`
+			: buildRecommendedNextStep({
+					query: '',
+					intent,
+					matches,
+				})
 	return {
 		matches,
 		offline: isCapabilitySearchOffline(input.env),
@@ -185,6 +192,7 @@ export async function searchUnified(input: {
 		if (domainFilter) {
 			return buildDomainBrowseResult({
 				env: input.env,
+				domain: domainFilter,
 				registry,
 				limit: input.limit,
 			})
