@@ -128,7 +128,10 @@ async function loadMatchingEmailSubscriptions(input: {
 			error instanceof Error &&
 			error.message.includes('no such table: saved_packages')
 		) {
-			return []
+			return {
+				subscriptions: [] as Array<LoadedEmailSubscription>,
+				discoveryErrors: [] as Array<unknown>,
+			}
 		}
 		throw error
 	}
@@ -236,7 +239,7 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 	providerEvent: CloudflareEmailDeliveryEvent
 }) {
 	const baseUrl = getAppBaseUrl({ env: input.env })
-	const subscriptions = await loadMatchingEmailSubscriptions({
+	const { subscriptions } = await loadMatchingEmailSubscriptions({
 		env: input.env,
 		baseUrl,
 		userId: input.message.userId,
