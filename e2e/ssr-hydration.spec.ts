@@ -94,7 +94,12 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 		),
 	).toBe(true)
 
-	await page.evaluate(() => window.scrollTo(0, 40))
+	await page.evaluate(async () => {
+		await new Promise<void>((resolve) => {
+			window.addEventListener('scroll', () => resolve(), { once: true })
+			window.scrollTo(0, 40)
+		})
+	})
 	const detailScrollY = await page.evaluate(() => window.scrollY)
 	expect(detailScrollY).toBeGreaterThan(0)
 	expect(detailScrollY).not.toBe(communityScrollY)
