@@ -249,25 +249,24 @@ The exemplar is job scheduling: `createJob` in
    user.
 3. Call the single helper and let it throw:
 
-   ```ts
-   import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+```ts
+import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 
-   await assertWithinEntitlement({
-     db: env.APP_DB,
-     userId,
-     email: userEmail,
-     resource: 'scheduled_jobs',
-   })
-   ```
+await assertWithinEntitlement({
+	db: env.APP_DB,
+	userId,
+	email: userEmail,
+	resource: 'scheduled_jobs',
+})
+```
 
-   Use `fallbackLimit` only for global backstops that must bind accounts whose
-   plan limit is null (today: workflow concurrency via
-   `getWorkflowConcurrencyBackstop`, which absorbs the
-   `WORKFLOW_CONCURRENT_LIMIT` env var). Email abuse caps for the `unlimited`
-   plan live in `planLimits.unlimited` via `unlimitedPlanEmailLimits` — register
-   them in `planLimits` and read them through `resolvePlanLimit` /
-   `resolveEmailResourceLimit`; do not route email through `fallbackLimit`. Use
-   `getCurrent` only when the built-in D1 counter cannot express the resource.
+Use `fallbackLimit` only for global backstops that must bind accounts whose plan
+limit is null (today: workflow concurrency via `getWorkflowConcurrencyBackstop`,
+which absorbs the `WORKFLOW_CONCURRENT_LIMIT` env var). Email abuse caps for the
+`unlimited` plan live in `planLimits.unlimited` via `unlimitedPlanEmailLimits` —
+register them in `planLimits` and read them through `resolvePlanLimit` /
+`resolveEmailResourceLimit`; do not route email through `fallbackLimit`. Use
+`getCurrent` only when the built-in D1 counter cannot express the resource.
 
 4. If the resource is a new one, register it in `plans.ts`
    (`entitlementResources`, `PlanLimits`, `planLimits`,
