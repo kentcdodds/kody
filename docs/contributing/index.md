@@ -11,6 +11,7 @@ style, tests, MCP kody, and runtime architecture.
   [testing](./testing-principles.md)
 - [Package discovery routing evaluation](./package-discovery-evaluation.md)
 - [Cursor Cloud Agent notes](./cloud-agents.md)
+- [Production backup and disaster recovery](./disaster-recovery.md)
 - [Remix skills and page checklist](./remix.md), [frames](./frames.md)
 - [Packages and manifests](./packages-and-manifests.md)
 - [Community packages](./community-packages.md)

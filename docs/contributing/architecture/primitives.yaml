@@ -384,6 +384,20 @@ primitives:
     docs:
       - docs/contributing/architecture/data-storage.md
 
+  - id: backup-control-plane
+    group: storage
+    name: Production backup control plane
+    summary:
+      Dedicated scheduled D1 export, immutable R2 retention, isolated restore
+      drills, and cross-store recovery readiness contracts.
+    code:
+      - packages/backup-control-plane/
+      - tools/ci/backup-
+      - tools/disaster-recovery/
+    docs:
+      - docs/contributing/disaster-recovery.md
+      - docs/contributing/setup-manifest.md
+
   - id: artifacts-repos
     group: storage
     name: Artifacts repos

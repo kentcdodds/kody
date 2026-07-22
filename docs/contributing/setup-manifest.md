@@ -76,6 +76,34 @@ before migrations and deploy. Preview deploys do the same per preview worker via
 resources from bindings alone, so the deploy workflow runs
 `node tools/ci/production-resources.ts ensure` first.
 
+### Disaster-recovery control plane
+
+Production backups use a separate deployment and are not provisioned or deployed
+by the application workflow above. The dedicated Worker and Workflow live under
+`packages/backup-control-plane/` in an independently administered DR Cloudflare
+account. Its `BACKUP_BUCKET` R2 binding is private and uses immutable `daily/`
+and `weekly/` prefixes.
+
+The retention administrator uses a separate provisioner token to create the
+bucket and apply 35-day daily and 400-day weekly lock/lifecycle rules:
+
+```sh
+node tools/ci/backup-resources-cli.ts plan \
+  --account-id "<DR_ACCOUNT_ID>" \
+  --source-d1 "<PRODUCTION_D1_UUID>:kody" \
+  --deny-production-resource kody-email-blobs \
+  --deny-production-resource kody-community-assets
+```
+
+`apply` is an explicit mutation and must be run only after reviewing the plan.
+The runtime receives a source-account token with D1 read/export access as the
+`CLOUDFLARE_API_TOKEN` Worker secret. It must not receive the provisioner token
+or R2 bucket, lock, lifecycle, or public-access administration permissions.
+Scheduling remains inert until the blocking-export benchmark is approved and
+both enable variables are exactly `true`. See
+[Disaster recovery](./disaster-recovery.md) for deployment, readiness, drill,
+credential, and exclusion details.
+
 ## Optional Cloudflare offerings
 
 The default footprint stays intentionally small. If you want to add additional
