@@ -37,11 +37,11 @@ const performedAt = '2026-07-22T10:00:00.000Z'
 const now = new Date('2026-07-22T12:00:00.000Z')
 const sourceIdentity = {
 	accountId: 'production-account',
-	resourceId: '11111111-1111-4111-8111-111111111111',
+	resourceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 }
 const destinationIdentity = {
 	accountId: 'recovery-account',
-	resourceId: '22222222-2222-4222-8222-222222222222',
+	resourceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
 }
 
 function detailsFor(kind: AppKind): EvidenceDetailsByKind[AppKind] {
@@ -350,6 +350,25 @@ test('signed D1 restore evidence binds an isolated destination UUID and account'
 				...(restoreEnvelope.content
 					.details as EvidenceDetailsByKind['d1-restore-drill']),
 				restoredDatabaseUuid: sourceIdentity.resourceId,
+			},
+		})
+		await expectRestoreContentNotReady({
+			...restoreEnvelope.content,
+			destinationIdentity: {
+				...destinationIdentity,
+				accountId: sourceIdentity.accountId.toUpperCase(),
+			},
+		})
+		await expectRestoreContentNotReady({
+			...restoreEnvelope.content,
+			destinationIdentity: {
+				...destinationIdentity,
+				resourceId: sourceIdentity.resourceId.toUpperCase(),
+			},
+			details: {
+				...(restoreEnvelope.content
+					.details as EvidenceDetailsByKind['d1-restore-drill']),
+				restoredDatabaseUuid: sourceIdentity.resourceId.toUpperCase(),
 			},
 		})
 	} finally {
