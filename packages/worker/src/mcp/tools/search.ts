@@ -104,200 +104,52 @@ import {
 	understandSearchQuery,
 } from './understand-search-query.ts'
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
-
-const charsPerToken = 4
-const maxTokens = 6_000
-const maxChars = maxTokens * charsPerToken
-const defaultSearchLimit = 15
-const defaultMaxResponseSize = 4_000
-const topCapabilityInlineCallShapeCount = 3
-const maxRelatedCapabilityOperations = 20
-const maxBatchEntityRefs = 10
-const maxFusedPackageCandidates = 100
-export const SEARCH_MEMORY_ENRICHMENT_BUDGET_MS = 1_000
-/** Bound wait for post-retrieval D1 acknowledgement; does not cover retrieval. */
-export const SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS = 250
-export const memoryEnrichmentSkippedWarning =
-	'Memory enrichment was skipped; returning core results without memory context.'
-export const memoryAcknowledgementWarning =
-	'Memory acknowledgement did not complete; surfaced memories may repeat in this conversation.'
-
-export type PackageSearchRow = {
-	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
-	projection: PackageSearchProjection
-	readmeSnippet?: PackageReadmeSnippet | null
-	hydrate?: () => Promise<{
-		projection: PackageSearchProjection
-		readmeSnippet: PackageReadmeSnippet | null
-	}>
-}
-
-export type OptionalSearchRowsResult = {
-	packageRows: Array<PackageSearchRow>
-	userSecretRows: Array<SecretSearchRow>
-	userValueRows: Array<ValueMetadata>
-	warnings: Array<string>
-}
-
-type LoadedPackageRows =
-	| Array<PackageSearchRow>
-	| BuildSavedPackageSearchRowsResult
-
-export type SearchScoreComponents = {
-	base: number
-	lexical: number
-	vector: number
-	entityMatch: number
-	providerEntityAffinity: number
-	actionMatch: number
-	taskAffinity: number
-	appAvailability: number
-	wrapperWorkflow: number
-	constraint: number
-	final: number
-}
-
-type SearchCandidate = {
-	match: SearchMatch
-	type: SearchMatch['type']
-	id: string
-	title: string
-	searchFields: Array<string>
-	identityFields?: Array<string>
-	providerIdentityFields?: Array<string>
-	synthesizedProviderKey?: string
-	scoreComponents: SearchScoreComponents
-}
-
-export type SearchTelemetry = {
-	intent: {
-		task: SearchIntent['task']['name']
-		confidence: number
-		entityCount: number
-		actionCount: number
-		constraintCount: number
-		topEntities: Array<{
-			type: string
-			id: string
-			confidence: number
-		}>
-	}
-	candidateCounts: Partial<Record<SearchMatch['type'], number>>
-	topResultTypes: Array<SearchMatch['type']>
-	trimmedMatchCount?: number
-	responseTrimmed?: boolean
-}
-
-type SearchPhaseTimings = {
-	queryUnderstandingMs: number
-	candidateGenerationMs: number
-	rerankingMs: number
-	formattingMs?: number
-	rowAndRegistryLoadMs?: number
-	retrieversMs?: number
-	queryEmbeddingMs?: number
-	capabilityCandidatesMs?: number
-	packageCandidatesMs?: number
-	remoteConnectorStatusMs?: number
-	memoryEnrichmentMs?: number
-	memoryEnrichmentWaitMs?: number
-	memoryAcknowledgementMs?: number
-	memoryEnrichmentTimedOut?: boolean
-	memoryAcknowledgementTimedOut?: boolean
-	memoryEnrichmentFailed?: boolean
-	memoryAcknowledgementFailed?: boolean
-}
-
-function elapsedMs(startedAt: number): number {
-	return Math.max(0, Math.round(performance.now() - startedAt))
-}
-
-export async function settleWithBudget<T>(
-	promise: Promise<T>,
-	budgetMs: number,
-	launchedAtMs: number = performance.now(),
-): Promise<
-	| { ok: true; value: T; durationMs: number; timedOut: false; failed: false }
-	| {
-			ok: false
-			value: null
-			durationMs: number
-			timedOut: true
-			failed: false
-	  }
-	| {
-			ok: false
-			value: null
-			durationMs: number
-			timedOut: false
-			failed: true
-			error: unknown
-	  }
-> {
-	const remainingMs = Math.max(0, budgetMs - (performance.now() - launchedAtMs))
-	let timeoutId: ReturnType<typeof setTimeout> | undefined
-	try {
-		const raced = await Promise.race([
-			promise.then(
-				(value) => ({ status: 'fulfilled' as const, value }) as const,
-				(error: unknown) => ({ status: 'rejected' as const, error }) as const,
-			),
-			new Promise<{ status: 'timeout' }>((resolve) => {
-				timeoutId = setTimeout(() => {
-					resolve({ status: 'timeout' })
-				}, remainingMs)
-			}),
-		])
-		const durationMs = elapsedMs(launchedAtMs)
-		if (raced.status === 'timeout') {
-			return {
-				ok: false,
-				value: null,
-				durationMs,
-				timedOut: true,
-				failed: false,
-			}
-		}
-		if (raced.status === 'rejected') {
-			return {
-				ok: false,
-				value: null,
-				durationMs,
-				timedOut: false,
-				failed: true,
-				error: raced.error,
-			}
-		}
-		return {
-			ok: true,
-			value: raced.value,
-			durationMs,
-			timedOut: false,
-			failed: false,
-		}
-	} finally {
-		if (timeoutId !== undefined) clearTimeout(timeoutId)
-	}
-}
-
-type SearchGuidanceContext = {
-	query: string
-	intent: SearchIntent
-	matches: Array<SearchMatch>
-}
-
-type SearchCapabilityMatch = Awaited<
-	ReturnType<typeof searchCapabilities>
->['matches'][number]
-
-type SearchUnifiedResult = {
-	matches: Array<SearchMatch>
-	offline: boolean
-	intent: SearchIntent
-	telemetry: SearchTelemetry
-	phaseTimings: SearchPhaseTimings
-	guidance?: string
-}
+import {
+	SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS,
+	SEARCH_MEMORY_ENRICHMENT_BUDGET_MS,
+	charsPerToken,
+	defaultMaxResponseSize,
+	defaultSearchLimit,
+	maxBatchEntityRefs,
+	maxChars,
+	maxFusedPackageCandidates,
+	maxRelatedCapabilityOperations,
+	maxTokens,
+	memoryAcknowledgementWarning,
+	memoryEnrichmentSkippedWarning,
+	topCapabilityInlineCallShapeCount,
+} from './search-constants.ts'
+import { elapsedMs, settleWithBudget } from './search-timing.ts'
+import {
+	type BuildSavedPackageSearchRowsResult,
+	type LoadedPackageRows,
+	type OptionalSearchRowsResult,
+	type PackageSearchRow,
+	type SearchCandidate,
+	type SearchCapabilityMatch,
+	type SearchGuidanceContext,
+	type SearchMemoryEnrichmentSettlement,
+	type SearchPhaseTimings,
+	type SearchRowsAndRegistry,
+	type SearchScoreComponents,
+	type SearchTelemetry,
+	type SearchUnifiedResult,
+} from './search-types.ts'
+export {
+	SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS,
+	SEARCH_MEMORY_ENRICHMENT_BUDGET_MS,
+	memoryAcknowledgementWarning,
+	memoryEnrichmentSkippedWarning,
+} from './search-constants.ts'
+export { settleWithBudget } from './search-timing.ts'
+export type {
+	BuildSavedPackageSearchRowsResult,
+	OptionalSearchRowsResult,
+	PackageSearchRow,
+	SearchMemoryEnrichmentSettlement,
+	SearchScoreComponents,
+	SearchTelemetry,
+} from './search-types.ts'
 
 function buildExactPackageSearchResult(input: {
 	env: Env
@@ -358,11 +210,6 @@ function flattenReferencedTypeFields(
 		referencedType.name,
 		referencedType.definition,
 	])
-}
-
-export type BuildSavedPackageSearchRowsResult = {
-	rows: Array<PackageSearchRow>
-	warnings: Array<string>
 }
 
 function buildLeanPackageSearchProjection(
@@ -2133,26 +1980,6 @@ export function resolveSearchMemoryContext(input: {
 	return query.length > 0 ? { query } : undefined
 }
 
-export type SearchMemoryEnrichmentSettlement = {
-	memories?: {
-		surfaced: MemoryToolSummary['memories']
-		suppressedCount: number
-		retrievalQuery: string
-		retrieverResults: MemoryToolSummary['retrieverResults']
-	}
-	warnings: Array<string>
-	phaseTimings: Pick<
-		SearchPhaseTimings,
-		| 'memoryEnrichmentMs'
-		| 'memoryEnrichmentWaitMs'
-		| 'memoryAcknowledgementMs'
-		| 'memoryEnrichmentTimedOut'
-		| 'memoryAcknowledgementTimedOut'
-		| 'memoryEnrichmentFailed'
-		| 'memoryAcknowledgementFailed'
-	>
-}
-
 export function launchSearchMemoryEnrichment(input: {
 	env: Env
 	callerContext: McpCallerContext
@@ -2436,10 +2263,6 @@ https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 		openWorldHint: false,
 	} satisfies ToolAnnotations,
 } as const
-
-type SearchRowsAndRegistry = OptionalSearchRowsResult & {
-	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
-}
 
 function shouldIncludeRemoteConnectorStatus(status: RemoteConnectorStatus) {
 	return status.state !== 'connected' || status.toolCount === 0
