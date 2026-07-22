@@ -450,7 +450,7 @@ test('account-specific integration names still match the stable provider', async
 
 	for (const providerHost of [
 		'auth.eu.my-provider.co.uk',
-		'auth.my-provider.github.io',
+		'auth.apac.my-provider.com.au',
 	]) {
 		const hyphenatedProvider = resolveIntegrationProviderName({
 			...createIntegration('my-provider-business'),

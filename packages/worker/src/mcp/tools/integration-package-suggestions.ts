@@ -59,8 +59,7 @@ function normalizeProviderDomainLabel(label: string): string {
 }
 
 function providerTokensFromHost(host: string): Array<string> {
-	const registrableDomain =
-		getDomain(host, { allowPrivateDomains: true }) ?? host.toLowerCase()
+	const registrableDomain = getDomain(host) ?? host.toLowerCase()
 	const providerLabel = registrableDomain.split('.')[0] ?? registrableDomain
 	return extractSearchTokens(normalizeProviderDomainLabel(providerLabel))
 }
