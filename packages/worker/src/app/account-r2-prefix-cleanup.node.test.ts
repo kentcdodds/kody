@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import { deleteAccountCommunityAssetPrefixes } from './account-r2-prefix-cleanup.ts'
+import {
+	deleteAccountCommunityAssetPrefixes,
+	deleteAccountEmailBlobPrefixes,
+} from './account-r2-prefix-cleanup.ts'
 
 test('community asset prefix cleanup paginates and preserves other users', async () => {
 	const keys = new Set([
@@ -89,4 +92,33 @@ test('community asset prefix cleanup fails closed on listing or deletion errors'
 			listingIds: [],
 		}),
 	).rejects.toThrow('User avatar prefix delete failed')
+})
+
+test('email prefix cleanup removes orphan raw MIME and attachment objects', async () => {
+	const keys = new Set([
+		'email-raw:v1:user-aaa/orphan',
+		'email-attachment:v1:user-aaa/message/attachment',
+		'email-raw:v1:user-bbb/other',
+	])
+	const count = await deleteAccountEmailBlobPrefixes({
+		bucket: {
+			async list(options?: { prefix?: string }) {
+				return {
+					objects: [...keys]
+						.filter((key) => key.startsWith(options?.prefix ?? ''))
+						.map((key) => ({ key })),
+					delimitedPrefixes: [],
+					truncated: false,
+				}
+			},
+			async delete(value: string | Array<string>) {
+				for (const key of Array.isArray(value) ? value : [value]) {
+					keys.delete(key)
+				}
+			},
+		},
+		stableUserId: 'user-aaa',
+	})
+	expect(count).toBe(2)
+	expect(keys).toEqual(new Set(['email-raw:v1:user-bbb/other']))
 })

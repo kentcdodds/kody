@@ -1,7 +1,7 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
-import { assertAccountWritableDb } from '#app/account-deletion-state.ts'
+import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import {
 	deleteEmailMessageById,
 	emailRawMimeKey,
@@ -139,35 +139,40 @@ export async function insertEmailMessageWithRawMime(
 ) {
 	const { blobs, db, message } = input
 	const { rawMime, ...messageInput } = message
-	if (messageInput.userId !== 'system:email') {
-		await assertAccountWritableDb(db, messageInput.userId)
-	}
-	const messageId = messageInput.id ?? crypto.randomUUID()
-	let rawMimeKey: string | null = null
-	if (rawMime != null) {
-		rawMimeKey = await putRawMimeToBlobs({
-			blobs,
-			userId: messageInput.userId,
-			messageId,
-			rawMime,
-		})
-	}
-	try {
-		return await insertEmailMessage({
-			db,
-			message: {
-				...messageInput,
-				id: messageId,
-				rawMimeKey,
-			},
-		})
-	} catch (error) {
-		// Best-effort orphan cleanup: the blob was written before the row.
-		if (rawMimeKey != null) {
-			await blobs.delete(rawMimeKey).catch(() => undefined)
+	const write = async () => {
+		const messageId = messageInput.id ?? crypto.randomUUID()
+		let rawMimeKey: string | null = null
+		if (rawMime != null) {
+			rawMimeKey = await putRawMimeToBlobs({
+				blobs,
+				userId: messageInput.userId,
+				messageId,
+				rawMime,
+			})
 		}
-		throw error
+		try {
+			return await insertEmailMessage({
+				db,
+				message: {
+					...messageInput,
+					id: messageId,
+					rawMimeKey,
+				},
+			})
+		} catch (error) {
+			if (rawMimeKey != null) {
+				await blobs.delete(rawMimeKey)
+			}
+			throw error
+		}
 	}
+	return messageInput.userId === 'system:email'
+		? await write()
+		: await withAccountWriteLease({
+				db,
+				stableUserId: messageInput.userId,
+				write,
+			})
 }
 
 export async function getEmailMessageWithAttachmentsById(input: {

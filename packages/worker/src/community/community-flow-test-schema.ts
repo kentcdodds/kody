@@ -20,6 +20,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			stripe_plan TEXT,
 			stripe_plan_refreshed_at TEXT,
 			deleting_at TEXT,
+			active_write_count INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
@@ -234,6 +235,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		`ALTER TABLE users ADD COLUMN profile_visibility TEXT NOT NULL DEFAULT 'public'`,
 		`ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'`,
 		`ALTER TABLE users ADD COLUMN deleting_at TEXT`,
+		`ALTER TABLE users ADD COLUMN active_write_count INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
 	]
 	for (const statement of additiveAlters) {

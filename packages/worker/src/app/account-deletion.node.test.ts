@@ -12,6 +12,7 @@ import { accountUserDataExcludedOwnerIds } from './account-data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import {
 	AccountDeletionInProgressError,
+	AccountDeletionWritersActiveError,
 	assertAccountWritable,
 } from './account-deletion-state.ts'
 
@@ -82,6 +83,16 @@ function createTestDb(
 									.filter((row) => row['stable_user_id'] === userId)
 									.map((row) => ({
 										deleting_at: row['deleting_at'] ?? null,
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower === 'select active_write_count from users where id = ?'
+							) {
+								results = (rows.users ?? [])
+									.filter((row) => row['id'] === params[0])
+									.map((row) => ({
+										active_write_count: row['active_write_count'] ?? 0,
 									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
@@ -508,7 +519,16 @@ function createSuccessfulDeletionEnv(
 			},
 			delete: async () => undefined,
 		},
-		EMAIL_BLOBS: { delete: async () => undefined },
+		EMAIL_BLOBS: {
+			async list() {
+				return {
+					objects: [],
+					delimitedPrefixes: [],
+					truncated: false as const,
+				}
+			},
+			delete: async () => undefined,
+		},
 		OAUTH_PROVIDER: {
 			async listUserGrants() {
 				return { items: [], cursor: undefined }
@@ -929,8 +949,15 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 
 	const deletedEmailBlobKeys: Array<string> = []
 	const emailBlobs = {
-		async delete(key: string) {
-			deletedEmailBlobKeys.push(key)
+		async list() {
+			return {
+				objects: [],
+				delimitedPrefixes: [],
+				truncated: false as const,
+			}
+		},
+		async delete(keys: string | Array<string>) {
+			deletedEmailBlobKeys.push(...(Array.isArray(keys) ? keys : [keys]))
 		},
 	} as unknown as R2Bucket
 	const deletedCommunityAssetKeys: Array<string> = []
@@ -1516,4 +1543,41 @@ test('account deletion quiesces a concurrent user write before inventory', async
 	expect(raceAttempted).toBe(true)
 	expect(writeCommitted).toBe(false)
 	expect(writeError).toBeInstanceOf(AccountDeletionInProgressError)
+})
+
+test('account deletion waits for an active writer and resumes on retry', async () => {
+	const { db, rows } = createTestDb({
+		users: [
+			{
+				id: 1,
+				email: 'a@example.com',
+				stable_user_id: 'user-aaa',
+				active_write_count: 1,
+				updated_at: '2026-07-22',
+			},
+		],
+	})
+	const env = createSuccessfulDeletionEnv(db)
+	await expect(
+		deleteUserAccount({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
+	expect(rows.users?.[0]).toEqual(
+		expect.objectContaining({
+			deleting_at: expect.any(String),
+			active_write_count: 1,
+		}),
+	)
+	rows.users![0]!['active_write_count'] = 0
+	await expect(
+		deleteUserAccount({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).resolves.toEqual(expect.objectContaining({ warnings: [] }))
+	expect(rows.users).toEqual([])
 })

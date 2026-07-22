@@ -65,3 +65,21 @@ export async function deleteAccountCommunityAssetPrefixes(input: {
 	}
 	return deleted
 }
+
+export async function deleteAccountEmailBlobPrefixes(input: {
+	bucket: Pick<R2Bucket, 'list' | 'delete'>
+	stableUserId: string
+}) {
+	return (
+		(await deletePrefixStrict({
+			bucket: input.bucket,
+			prefix: `email-raw:v1:${input.stableUserId}/`,
+			label: 'Email raw MIME',
+		})) +
+		(await deletePrefixStrict({
+			bucket: input.bucket,
+			prefix: `email-attachment:v1:${input.stableUserId}/`,
+			label: 'Email attachment',
+		}))
+	)
+}

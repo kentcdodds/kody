@@ -8,6 +8,7 @@ import {
 	AccountDeletionInventoryError,
 	deleteUserAccount,
 } from '#app/account-deletion.ts'
+import { AccountDeletionWritersActiveError } from '#app/account-deletion-state.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
@@ -86,7 +87,8 @@ export function createAccountDeleteHandler(env: Env) {
 				if (
 					!(
 						error instanceof AccountDeletionInventoryError ||
-						error instanceof AccountDeletionCleanupError
+						error instanceof AccountDeletionCleanupError ||
+						error instanceof AccountDeletionWritersActiveError
 					)
 				) {
 					throw error
@@ -99,9 +101,11 @@ export function createAccountDeleteHandler(env: Env) {
 					ip: requestIp,
 					path: url.pathname,
 					reason:
-						error instanceof AccountDeletionInventoryError
-							? 'inventory_incomplete'
-							: 'cleanup_incomplete',
+						error instanceof AccountDeletionWritersActiveError
+							? 'writers_active'
+							: error instanceof AccountDeletionInventoryError
+								? 'inventory_incomplete'
+								: 'cleanup_incomplete',
 				})
 				return Response.json(
 					{
