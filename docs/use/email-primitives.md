@@ -75,7 +75,10 @@ Inbound storage is quota-gated per user:
   with a generic "over quota" response to the sender, and the detailed reason is
   recorded as a `rejected` delivery event. Oversize mail is rejected before it
   consumes any daily receive quota, and mail to unverified accounts (which can
-  never receive) is rejected without consuming any quota at all.
+  never receive) is rejected without consuming any quota at all. Transient
+  storage failures (for example an R2 outage while saving raw MIME) do not keep
+  the daily receive charge — the attempt is refunded so delivery retries are not
+  blocked by quota.
 - Plan users get their plan's limits; users without a plan get conservative
   deployment fallbacks (they are not unlimited for inbound mail).
 - Quota, size, and unverified-account rejections store at most five detailed

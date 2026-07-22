@@ -153,7 +153,13 @@ Rules:
   a plan so counters reflect real usage the moment a plan is assigned — unless
   the caller passes `fallbackLimit`, which caps plan-less users with a
   deployment-level backstop (both email sends and receives do this). Counting
-  attempts rather than successes keeps the limit abuse-resistant.
+  attempts rather than successes keeps the limit abuse-resistant for permanent
+  rejects (parse failures, entitlement/quota rejects). Only typed pre-commit
+  `RetryableInboundStorageError` failures (thread prework, R2 put, D1
+  message/attachment storage after successful cleanup) refund exactly one
+  `email_receives_per_day` unit via `refundDailyEntitlement` for the same UTC
+  day that was charged, so Cloudflare Email Routing retries do not burn the
+  daily receive quota. Post-commit bookkeeping failures do not refund or retry.
   `incrementDailyEntitlementCounter` remains for raw counter writes (tests,
   backfills).
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
@@ -245,7 +251,7 @@ The exemplar is job scheduling: `createJob` in
 | `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                     |
 | `repo_sessions`               | `repo_open_session` before creating a new session                                                                              |
 | `email_sends_per_day`         | `sendOutboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan backstop)                                                     |
-| `email_receives_per_day`      | `handleInboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan fallback)                                                    |
+| `email_receives_per_day`      | `handleInboundEmail` (atomic `consumeDailyEntitlement`, NULL-plan fallback; refund only on `RetryableInboundStorageError`)     |
 | `stored_email_messages`       | `handleInboundEmail` before storage (NULL-plan fallback)                                                                       |
 | `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size, NULL-plan fallback)                                             |
 | `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                               |
