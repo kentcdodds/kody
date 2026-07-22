@@ -16,9 +16,12 @@ tool per capability.
 To add a new **search entity type** (not a capability), follow
 [`search-entity-plugins.md`](./search-entity-plugins.md). That means a plugin
 module under `packages/worker/src/mcp/tools/search-entity-plugins/`, one
-registration in `search-entity-registry.ts`, and parallel updates to the closed
-unions in `search-format-types.ts` plus detail routing in `search-detail.ts`
-(and `parseEntityRef` when the type is entity-backed).
+registration in `search-entity-registry.ts`, closed unions in
+`search-format-types.ts` (result unions for every list type; entity-backed
+detail unions only when `{id}:{type}` applies), Markdown list formatting in
+`search-format-list.ts`, and detail routing in `search-detail.ts` (plus
+`parseEntityRef` when the type is entity-backed). Plugin `formatSlimMatch`
+covers structured output only.
 
 ## Domains and registry (plain objects)
 
