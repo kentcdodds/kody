@@ -1276,11 +1276,13 @@ async function readR2ObjectSection(input: {
 		input.warnings.push(
 			`R2 object export failed for ${ref.binding}/${ref.key}: ${getErrorMessage(error)}`,
 		)
+		const nextIndex = cursor.objectIndex + 1
+		const truncated = nextIndex < inventory.r2Objects.length
 		return {
 			section: 'r2_object',
-			items: [],
-			truncated: false,
-			nextStartAfter: null,
+			items: [{ ...ref, unavailable: true }],
+			truncated,
+			nextStartAfter: truncated ? `${nextIndex}:0` : null,
 			pageSize: 1,
 			warnings: input.warnings,
 		}

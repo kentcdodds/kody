@@ -576,6 +576,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	user_follows: ['follower_user_id', 'followee_user_id'],
 	community_stars: ['user_id'],
 	community_activity_events: ['actor_user_id'],
+	community_reports: ['listing_owner_user_id', 'resolved_by_user_id'],
 	package_scope_grants: [
 		'scope_owner_user_id',
 		'grantee_user_id',

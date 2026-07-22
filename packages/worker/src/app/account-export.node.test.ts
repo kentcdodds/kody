@@ -393,10 +393,10 @@ test('account export separates listing-owner deletion cascades from participant 
 		);
 		INSERT INTO community_reports (
 			id, listing_id, listing_name, listing_owner_user_id, reporter_user_id,
-			reason
+			reason, resolved_by_user_id
 		) VALUES (
 			'report-private', 'listing-owner', '@owner/owned', 'user-owner',
-			'user-participant', 'private report reason'
+			'user-participant', 'private report reason', 'user-moderator'
 		);
 	`)
 	const ownerExport = await createAccountExport({
@@ -429,6 +429,9 @@ test('account export separates listing-owner deletion cascades from participant 
 		expect.objectContaining({
 			id: 'report-private',
 			reason: 'private report reason',
+			reporter_user_id: 'user-participant',
+			listing_owner_user_id: '[redacted]',
+			resolved_by_user_id: '[redacted]',
 		}),
 	])
 })
@@ -447,10 +450,14 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 			created_at, updated_at
 		) VALUES
 			('mail-a', 'inbound', 'user-aaa', 'sender@example.com', 'A', 'stored', '2026-07-05', '2026-07-05'),
+			('mail-z', 'inbound', 'user-aaa', 'sender@example.com', 'Z', 'stored', '2026-07-05', '2026-07-05'),
 			('mail-b', 'inbound', 'user-bbb', 'sender@example.com', 'B', 'stored', '2026-07-05', '2026-07-05');
 	`)
 	const mimeBytes = new TextEncoder().encode('Subject: A\r\n\r\nbody')
 	const getEmailBlob = vi.fn(async (key: string) => {
+		if (key === 'email-raw:v1:user-aaa/mail-z') {
+			throw new Error('temporary R2 outage')
+		}
 		if (key !== 'email-raw:v1:user-aaa/mail-a') return null
 		return {
 			size: mimeBytes.byteLength,
@@ -493,7 +500,24 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 			objectComplete: true,
 		}),
 	])
-	expect(second.truncated).toBe(false)
+	expect(second.truncated).toBe(true)
+	const third = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'r2_object',
+		startAfter: second.nextStartAfter ?? undefined,
+	})
+	expect(third.items).toEqual([
+		expect.objectContaining({
+			key: 'email-raw:v1:user-aaa/mail-z',
+			unavailable: true,
+		}),
+	])
+	expect(third.truncated).toBe(false)
+	expect(third.warnings).toEqual([
+		expect.stringContaining('R2 object export failed'),
+	])
 	expect(getEmailBlob).not.toHaveBeenCalledWith(
 		'email-raw:v1:user-bbb/mail-b',
 		expect.anything(),
