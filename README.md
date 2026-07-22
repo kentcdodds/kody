@@ -113,11 +113,11 @@ Kody is licensed under the
 derivative works from, publicly perform, publicly display, and redistribute the
 software for any purpose other than Competing Use. Competing Use means making
 the software available to others in a commercial product or service that
-substitutes for Kody, substitutes for another product or service offered using
-Kody that existed when the version was made available, or offers the same or
-substantially similar functionality. Each version becomes available under the
-Apache License 2.0 on the second anniversary of the date that version was made
-available.
+substitutes for Kody, substitutes for another product or service the licensor
+offers using Kody that existed when the version was made available, or offers
+the same or substantially similar functionality. Each version becomes available
+under the Apache License 2.0 on the second anniversary of the date that version
+was made available.
 
 Community packages published through Kody remain MIT-licensed; that requirement
 is separate from this repository's license.
