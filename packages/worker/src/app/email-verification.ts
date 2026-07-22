@@ -3,7 +3,6 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { createDb, emailVerificationsTable } from '#worker/db.ts'
-import { findUserRowByStableUserId } from '#worker/user-id.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 
 const verificationTokenBytes = 32
@@ -221,6 +220,22 @@ export async function isAccountEmailVerified(input: {
 }) {
 	const normalizedEmail =
 		typeof input.email === 'string' ? normalizeEmail(input.email) : ''
+	const stableUserId = input.stableUserId?.trim() ?? ''
+
+	// When both are present (typical MCP grant props), require the pair so a
+	// stale grant email that another verified account now owns cannot pass.
+	if (normalizedEmail && stableUserId) {
+		const row = await input.db
+			.prepare(
+				`SELECT email_verified_at FROM users
+				 WHERE email = ? AND stable_user_id = ?`,
+			)
+			.bind(normalizedEmail, stableUserId)
+			.first<{ email_verified_at: string | null }>()
+		return Boolean(row?.email_verified_at)
+	}
+
+	// Browser sessions carry email only.
 	if (normalizedEmail) {
 		const row = await input.db
 			.prepare(`SELECT email_verified_at FROM users WHERE email = ?`)
@@ -229,18 +244,12 @@ export async function isAccountEmailVerified(input: {
 		return Boolean(row?.email_verified_at)
 	}
 
-	const stableUserId = input.stableUserId?.trim()
+	// Package-runtime / grant contexts with only the stable id.
 	if (!stableUserId) return false
-	const row = await findUserRowByStableUserId<{
-		id: number
-		email: string
-		stable_user_id: string | null
-		email_verified_at: string | null
-	}>({
-		db: input.db,
-		stableUserId,
-		select: `SELECT id, email, stable_user_id, email_verified_at FROM users`,
-	})
+	const row = await input.db
+		.prepare(`SELECT email_verified_at FROM users WHERE stable_user_id = ?`)
+		.bind(stableUserId)
+		.first<{ email_verified_at: string | null }>()
 	return Boolean(row?.email_verified_at)
 }
 

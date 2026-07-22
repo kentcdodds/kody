@@ -52,25 +52,34 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 	}
 }
 
+type MockAccountRow = {
+	id: number
+	email: string
+	username: string | null
+	display_name: string | null
+	stable_user_id: string
+	email_verified_at: string | null
+}
+
 type MockDbOptions = {
 	// Row returned for the `email_verified_at` lookup keyed by account email.
 	emailVerifiedAt?: string | null
-	// Rows returned for the full `users` table scan (stable-user-id fallback).
-	userRows?: Array<{ email: string; email_verified_at: string | null }>
+	// Row returned for the indexed `stable_user_id` verification lookup.
+	stableUserVerifiedAt?: string | null
+	// Optional authoritative users row for stable-id profile/RBAC resolution.
+	accountByStableId?: MockAccountRow | null
 	// Rows returned for remote connector settings queries.
 	connectorRows?: Array<Record<string, unknown>>
 }
 
 function createMockDb(options: MockDbOptions = {}) {
 	const statementFor = (query: string) => {
+		const normalized = query.replace(/\s+/g, ' ').toLowerCase()
 		const statement = {
 			bind: () => statement,
 			async all() {
-				if (/from\s+"?users"?/i.test(query)) {
-					return {
-						results: options.userRows ?? [],
-						meta: { changes: 0 },
-					}
+				if (normalized.includes('from user_roles')) {
+					return { results: [], meta: { changes: 0 } }
 				}
 				return {
 					results: options.connectorRows ?? [],
@@ -78,7 +87,44 @@ function createMockDb(options: MockDbOptions = {}) {
 				}
 			},
 			async first() {
-				if (query.includes('email_verified_at')) {
+				const isProfileLookup =
+					normalized.includes('from users') &&
+					normalized.includes('where stable_user_id') &&
+					normalized.includes('select id')
+				if (isProfileLookup) {
+					if (options.accountByStableId !== undefined) {
+						return options.accountByStableId
+					}
+					const verifiedAt =
+						options.stableUserVerifiedAt ?? options.emailVerifiedAt
+					if (verifiedAt === undefined) return null
+					return {
+						id: 1,
+						email: 'user@example.com',
+						username: 'user',
+						display_name: null,
+						stable_user_id: 'user',
+						email_verified_at: verifiedAt,
+					} satisfies MockAccountRow
+				}
+				if (normalized.includes('email = ? and stable_user_id')) {
+					if (options.emailVerifiedAt !== undefined) {
+						return { email_verified_at: options.emailVerifiedAt }
+					}
+					if (options.stableUserVerifiedAt !== undefined) {
+						return { email_verified_at: options.stableUserVerifiedAt }
+					}
+					return null
+				}
+				if (
+					normalized.includes('where stable_user_id') &&
+					normalized.includes('email_verified_at')
+				) {
+					return options.stableUserVerifiedAt === undefined
+						? null
+						: { email_verified_at: options.stableUserVerifiedAt }
+				}
+				if (normalized.includes('email_verified_at')) {
 					return options.emailVerifiedAt === undefined
 						? null
 						: { email_verified_at: options.emailVerifiedAt }
@@ -378,9 +424,10 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	expect(noUserResponse.status).toBe(403)
 	expect(fetchMcpCalled).toBe(false)
 
-	// Stable-user-id fallback verifies accounts when grant props lack email.
+	// Indexed stable-user-id lookup verifies accounts when grant props lack email.
 	const fallbackEmail = 'fallback@example.com'
 	const stableUserId = await createStableUserIdFromEmail(fallbackEmail)
+	const verifiedAt = new Date(0).toISOString()
 	const fallbackResponse = await handleMcpRequest({
 		request,
 		env: createEnv(
@@ -389,12 +436,15 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 			}),
 			{},
 			{
-				userRows: [
-					{
-						email: fallbackEmail,
-						email_verified_at: new Date(0).toISOString(),
-					},
-				],
+				stableUserVerifiedAt: verifiedAt,
+				accountByStableId: {
+					id: 11,
+					email: fallbackEmail,
+					username: 'fallback',
+					display_name: null,
+					stable_user_id: stableUserId,
+					email_verified_at: verifiedAt,
+				},
 			},
 		),
 		ctx: createContext(),
