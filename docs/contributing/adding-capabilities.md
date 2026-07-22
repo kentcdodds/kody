@@ -19,8 +19,9 @@ module under `packages/worker/src/mcp/tools/search-entity-plugins/`, one
 registration in `search-entity-registry.ts`, closed unions in
 `search-format-types.ts` (result unions for every list type; entity-backed
 detail unions only when `{id}:{type}` applies), Markdown list formatting in
-`search-format-list.ts`, and detail routing in `search-detail.ts` (plus
-`parseEntityRef` when the type is entity-backed). Plugin `formatSlimMatch`
+`search-format-list.ts`, detail routing in `search-detail.ts`, and for
+entity-backed types the public allowed-type lists in `search-tool-definition.ts`
+and `docs/use/search.md` (plus `parseEntityRef`). Plugin `formatSlimMatch`
 covers structured output only.
 
 ## Domains and registry (plain objects)
