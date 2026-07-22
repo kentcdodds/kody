@@ -14,6 +14,7 @@ export interface BackupEnvironment {
 	BACKUP_BENCHMARK_APPROVED: string
 	BUILD_COMMIT: string
 	BACKUP_MAX_AGE_HOURS?: string
+	BACKUP_MAX_SOURCE_BYTES?: string
 }
 
 export interface BackupPayload {
@@ -74,6 +75,8 @@ export interface LogRecord {
 		| 'backup-failure'
 		| 'freshness-success'
 		| 'freshness-stale'
+		| 'source-size-success'
+		| 'source-size-failure'
 	status: 'success' | 'failure' | 'stale-success' | 'disabled'
 	day?: string
 	instanceId?: string
@@ -83,4 +86,6 @@ export interface LogRecord {
 	sha256?: string
 	errorCode?: string
 	ageHours?: number
+	sourceBytes?: number
+	maxSourceBytes?: number
 }

@@ -1,5 +1,9 @@
 import { readManifest } from './immutable-storage.ts'
 import {
+	verifySourceDatabaseIdentity,
+	type ApiOptions,
+} from './d1-export-api.ts'
+import {
 	BackupError,
 	assertConfiguredIdentity,
 	backupPayload,
@@ -19,8 +23,10 @@ function latestExpectedDate(scheduledAt: Date): Date {
 export async function checkFreshness(
 	env: BackupEnvironment,
 	scheduledAt: Date,
+	apiOptions: ApiOptions = {},
 ): Promise<boolean> {
 	assertConfiguredIdentity(env)
+	await verifySourceDatabaseIdentity(env, apiOptions)
 	const payload = backupPayload(env, latestExpectedDate(scheduledAt))
 	const maxAgeHours = Number(env.BACKUP_MAX_AGE_HOURS ?? '26')
 	if (!Number.isFinite(maxAgeHours) || maxAgeHours <= 0) {

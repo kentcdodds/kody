@@ -34,5 +34,7 @@
 		"ALLOWED_SOURCE_DATABASE_IDS": "REPLACE_WITH_DATABASE_UUID",
 		"BUILD_COMMIT": "REPLACE_AT_DEPLOY_TIME",
 		"BACKUP_MAX_AGE_HOURS": "26",
+		// D1 GET file_size must remain strictly below this single-object ceiling.
+		"BACKUP_MAX_SOURCE_BYTES": "4500000000",
 	},
 }

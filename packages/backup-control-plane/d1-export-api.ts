@@ -1,4 +1,8 @@
-import { BackupError, assertRemoteDatabaseIdentity } from './backup-policy.ts'
+import {
+	BackupError,
+	assertRemoteDatabaseIdentity,
+	safeLog,
+} from './backup-policy.ts'
 import { type BackupEnvironment, type ExportState } from './backup-types.ts'
 
 export interface ApiOptions {
@@ -13,6 +17,7 @@ interface JsonObject {
 
 const DEFAULT_REQUEST_ATTEMPTS = 5
 const MAX_RETRY_DELAY = 60_000
+export const DEFAULT_BACKUP_MAX_SOURCE_BYTES = 4_500_000_000
 
 function isObject(value: unknown): value is JsonObject {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -120,13 +125,45 @@ function authHeaders(env: BackupEnvironment): HeadersInit {
 export async function verifySourceDatabaseIdentity(
 	env: BackupEnvironment,
 	options: ApiOptions = {},
-): Promise<void> {
+): Promise<{ fileSize: number; maxSourceBytes: number }> {
+	const configuredMax =
+		env.BACKUP_MAX_SOURCE_BYTES ?? String(DEFAULT_BACKUP_MAX_SOURCE_BYTES)
+	if (!/^\d+$/.test(configuredMax)) {
+		throw new BackupError(
+			'invalid-max-source-bytes',
+			'BACKUP_MAX_SOURCE_BYTES must be a positive safe integer',
+		)
+	}
+	const maxSourceBytes = Number(configuredMax)
+	if (
+		!Number.isSafeInteger(maxSourceBytes) ||
+		maxSourceBytes <= 0 ||
+		maxSourceBytes > DEFAULT_BACKUP_MAX_SOURCE_BYTES
+	) {
+		throw new BackupError(
+			'invalid-max-source-bytes',
+			`BACKUP_MAX_SOURCE_BYTES must be a positive safe integer no greater than ${String(DEFAULT_BACKUP_MAX_SOURCE_BYTES)}`,
+		)
+	}
 	const database = await apiJson(
 		`https://api.cloudflare.com/client/v4/accounts/${env.SOURCE_ACCOUNT_ID}/d1/database/${env.SOURCE_DATABASE_ID}`,
 		{ headers: authHeaders(env) },
 		options,
 	)
-	if (typeof database.uuid !== 'string' || typeof database.name !== 'string') {
+	if (
+		typeof database.uuid !== 'string' ||
+		typeof database.name !== 'string' ||
+		!Number.isSafeInteger(database.file_size) ||
+		(database.file_size as number) < 0
+	) {
+		safeLog({
+			event: 'source-size-failure',
+			status: 'failure',
+			errorCode: 'api-malformed-identity',
+			sourceBytes:
+				typeof database.file_size === 'number' ? database.file_size : undefined,
+			maxSourceBytes,
+		})
 		throw new BackupError(
 			'api-malformed-identity',
 			'Cloudflare identity response was invalid',
@@ -136,6 +173,27 @@ export async function verifySourceDatabaseIdentity(
 		uuid: database.uuid,
 		name: database.name,
 	})
+	const fileSize = database.file_size as number
+	if (fileSize >= maxSourceBytes) {
+		safeLog({
+			event: 'source-size-failure',
+			status: 'failure',
+			errorCode: 'source-size-limit-exceeded',
+			sourceBytes: fileSize,
+			maxSourceBytes,
+		})
+		throw new BackupError(
+			'source-size-limit-exceeded',
+			'D1 source size is at or above the configured backup ceiling',
+		)
+	}
+	safeLog({
+		event: 'source-size-success',
+		status: 'success',
+		sourceBytes: fileSize,
+		maxSourceBytes,
+	})
+	return { fileSize, maxSourceBytes }
 }
 
 function parseExportState(result: JsonObject): ExportState {

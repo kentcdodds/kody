@@ -16,8 +16,9 @@ Each export object is immutable and bookmark-derived:
 `<tier>/d1/<database-uuid>/<yyyy-mm-dd>/backup-<encoded-bookmark>.sql`. The day
 has one canonical immutable `manifest.json`, which records the selected object
 key. If a process crashes after writing SQL but before its manifest, a later
-export with a new bookmark writes a different object; the orphan remains
-quarantined and cannot be paired with the new bookmark.
+Workflow-step retry reuses the cached export bookmark and therefore inspects the
+same object before constructing the absent canonical manifest. An existing
+manifest must match that object exactly.
 
 Configure the production R2 bucket lifecycle by these immutable prefixes:
 
@@ -33,6 +34,21 @@ benchmark is approved.
 Workflow instance retention is omitted intentionally so Cloudflare applies the
 maximum available to the account (currently up to 30 days on paid plans and
 three days on free plans). This is separate from R2 backup retention.
+
+## Source size ceiling
+
+This runtime does not support a 10-GB D1 database. Before every export and on
+every hourly freshness tick, it queries live D1 metadata and requires
+`file_size` to be an integer strictly below `BACKUP_MAX_SOURCE_BYTES`. The
+checked-in default and deployment value are 4,500,000,000 bytes, below R2's
+5-GiB single-object limit. Configuration may lower this ceiling but cannot raise
+it. Reaching the ceiling fails export readiness and hourly observability before
+an export starts. The signed export download is independently rejected if its
+`Content-Length` exceeds 5 GiB.
+
+Multipart capture and statement-safe split restore are not implemented. A
+database or logical SQL export above these limits is unsupported and cannot be
+reported ready.
 
 ## Credential contract
 

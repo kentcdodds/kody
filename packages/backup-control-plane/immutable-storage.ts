@@ -1,6 +1,8 @@
 import { BackupError } from './backup-policy.ts'
 import { type BackupManifest, type StoredBackup } from './backup-types.ts'
 
+export const MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES = 5 * 1024 * 1024 * 1024
+
 function hex(buffer: ArrayBuffer): string {
 	return [...new Uint8Array(buffer)]
 		.map((byte) => byte.toString(16).padStart(2, '0'))
@@ -83,6 +85,12 @@ export async function storeSignedDownload(
 		throw new BackupError(
 			'download-invalid-length',
 			'signed export Content-Length exceeded safe limits',
+		)
+	}
+	if (expectedBytes > MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES) {
+		throw new BackupError(
+			'download-too-large',
+			'export exceeds the single-object backup size limit',
 		)
 	}
 
@@ -172,12 +180,7 @@ export async function assertDuplicateMatchesManifest(
 ): Promise<void> {
 	if (!stored.alreadyExisted) return
 	const manifest = await readManifest(bucket, manifestKey)
-	if (manifest === null) {
-		throw new BackupError(
-			'duplicate-object-manifest-missing',
-			'immutable backup object exists without its canonical manifest',
-		)
-	}
+	if (manifest === null) return
 	if (
 		manifest.objectKey !== objectKey ||
 		manifest.bytes !== stored.bytes ||

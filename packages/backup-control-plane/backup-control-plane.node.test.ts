@@ -3,10 +3,16 @@ import { createHash } from 'node:crypto'
 
 import { test } from 'vitest'
 
-import { startD1Export, verifySourceDatabaseIdentity } from './d1-export-api.ts'
+import {
+	DEFAULT_BACKUP_MAX_SOURCE_BYTES,
+	startD1Export,
+	verifySourceDatabaseIdentity,
+} from './d1-export-api.ts'
+import { runBackupRuntime, type BackupRuntimeStep } from './backup-runtime.ts'
 import { runDurableExport, type DurableExportStep } from './durable-export.ts'
 import { checkFreshness } from './freshness-check.ts'
 import {
+	MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES,
 	assertDuplicateMatchesManifest,
 	putImmutableManifest,
 	readManifest,
@@ -220,6 +226,56 @@ class ReplayStep implements DurableExportStep {
 	}
 }
 
+class RetryAfterCommitStep implements BackupRuntimeStep {
+	readonly uploadResults: boolean[] = []
+	private readonly cache = new Map<string, unknown>()
+
+	async do<T>(
+		name: string,
+		config: unknown,
+		callback: () => Promise<T>,
+	): Promise<T>
+	async do<T>(name: string, callback: () => Promise<T>): Promise<T>
+	async do<T>(
+		name: string,
+		configOrCallback: unknown,
+		callback?: () => Promise<T>,
+	): Promise<T> {
+		if (this.cache.has(name)) return this.cache.get(name) as T
+		const execute =
+			typeof configOrCallback === 'function'
+				? (configOrCallback as () => Promise<T>)
+				: callback!
+		if (name === 'stream-export-to-immutable-r2') {
+			try {
+				const discarded = await execute()
+				this.uploadResults.push(
+					(discarded as { alreadyExisted: boolean }).alreadyExisted,
+				)
+				throw new Error('simulated Workflow failure before step persistence')
+			} catch (error) {
+				if (
+					!(error instanceof Error) ||
+					error.message !== 'simulated Workflow failure before step persistence'
+				) {
+					throw error
+				}
+			}
+			const retried = await execute()
+			this.uploadResults.push(
+				(retried as { alreadyExisted: boolean }).alreadyExisted,
+			)
+			this.cache.set(name, retried)
+			return retried
+		}
+		const value = await execute()
+		this.cache.set(name, value)
+		return value
+	}
+
+	async sleep(): Promise<void> {}
+}
+
 function exportEnvelope(
 	status?: 'complete' | 'error',
 	bookmark = 'bookmark-1',
@@ -237,6 +293,24 @@ function exportEnvelope(
 			...(status === 'error' ? { error: 'internal detail' } : {}),
 		},
 	})
+}
+
+function identityEnvelope(fileSize: unknown, includeSize = true): Response {
+	return Response.json({
+		success: true,
+		result: {
+			uuid: DATABASE_ID,
+			name: 'production-db',
+			...(includeSize ? { file_size: fileSize } : {}),
+		},
+	})
+}
+
+function identityApi(fileSize = 1_000) {
+	return {
+		fetcher: async () => identityEnvelope(fileSize),
+		sleep: async () => undefined,
+	}
 }
 
 function manifest(stored: {
@@ -364,13 +438,75 @@ test('verifies D1 identity without calling the live account endpoint', async () 
 			urls.push(String(input))
 			return Response.json({
 				success: true,
-				result: { uuid: DATABASE_ID, name: 'production-db' },
+				result: {
+					uuid: DATABASE_ID,
+					name: 'production-db',
+					file_size: 1_000,
+				},
 			})
 		},
 		sleep: async () => undefined,
 	})
 	assert.equal(urls.length, 1)
 	assert.match(urls[0]!, /\/d1\/database\//)
+})
+
+test('requires an integer D1 file size and accepts the byte below the ceiling', async () => {
+	for (const response of [
+		identityEnvelope(undefined, false),
+		identityEnvelope('1000'),
+		identityEnvelope(1.5),
+		identityEnvelope(-1),
+	]) {
+		await assert.rejects(
+			verifySourceDatabaseIdentity(environment(), {
+				fetcher: async () => response.clone(),
+			}),
+			(error: unknown) =>
+				error instanceof BackupError && error.code === 'api-malformed-identity',
+		)
+	}
+	const result = await verifySourceDatabaseIdentity(environment(), {
+		fetcher: async () => identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES - 1),
+	})
+	assert.deepEqual(result, {
+		fileSize: DEFAULT_BACKUP_MAX_SOURCE_BYTES - 1,
+		maxSourceBytes: DEFAULT_BACKUP_MAX_SOURCE_BYTES,
+	})
+})
+
+test('rejects D1 size at or above the configured ceiling', async () => {
+	for (const fileSize of [
+		DEFAULT_BACKUP_MAX_SOURCE_BYTES,
+		DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1,
+	]) {
+		await assert.rejects(
+			verifySourceDatabaseIdentity(environment(), {
+				fetcher: async () => identityEnvelope(fileSize),
+			}),
+			(error: unknown) =>
+				error instanceof BackupError &&
+				error.code === 'source-size-limit-exceeded',
+		)
+	}
+	const env = environment()
+	env.BACKUP_MAX_SOURCE_BYTES = '100'
+	await assert.rejects(
+		verifySourceDatabaseIdentity(env, {
+			fetcher: async () => identityEnvelope(100),
+		}),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'source-size-limit-exceeded',
+	)
+	env.BACKUP_MAX_SOURCE_BYTES = String(DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1)
+	await assert.rejects(
+		verifySourceDatabaseIdentity(env, {
+			fetcher: async () => identityEnvelope(1),
+		}),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'invalid-max-source-bytes',
+	)
 })
 
 test('durable orchestration starts once and resumes numbered polls after interruption', async () => {
@@ -431,6 +567,47 @@ test('durable polling hard-fails after its bounded numbered poll steps', async (
 		'poll-d1-export-1',
 		'poll-d1-export-2',
 	])
+})
+
+test('workflow retry reuses an upload committed before step persistence and writes the absent manifest', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const step = new RetryAfterCommitStep()
+	const apiCalls: string[] = []
+	const result = await runBackupRuntime(
+		env,
+		{
+			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+			payload,
+			timestamp: new Date('2026-07-22T02:15:01Z'),
+		},
+		step,
+		{
+			api: {
+				fetcher: async (input) => {
+					const url = String(input)
+					apiCalls.push(url)
+					return url.endsWith('/export')
+						? exportEnvelope('complete')
+						: identityEnvelope(1_000)
+				},
+				sleep: async () => undefined,
+			},
+			downloadFetcher: async () =>
+				new Response('valid', { headers: { 'content-length': '5' } }),
+		},
+	)
+	assert.deepEqual(step.uploadResults, [false, true])
+	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 1)
+	assert.equal(
+		result.objectKey,
+		objectKeyForBookmark(payload.objectPrefix, 'bookmark-1'),
+	)
+	assert.deepEqual(
+		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
+		result,
+	)
 })
 
 for (const status of [401, 403]) {
@@ -522,7 +699,7 @@ test('streams once with an immutable conditional, checksum, byte count, and ETag
 	assert.equal(duplicate.sha256, stored.sha256)
 })
 
-test('orphan stays quarantined while a new bookmark can complete the day', async () => {
+test('an existing object without a manifest is recoverable', async () => {
 	const bucket = new MemoryBucket()
 	const prefix = `daily/d1/${DATABASE_ID}/2026-07-22`
 	const manifestKey = `${prefix}/manifest.json`
@@ -541,23 +718,12 @@ test('orphan stays quarantined while a new bookmark can complete the day', async
 			throw new Error('existing immutable object must not redownload')
 		},
 	)
-	await assert.rejects(
-		assertDuplicateMatchesManifest(
-			bucket as unknown as R2Bucket,
-			manifestKey,
-			orphanKey,
-			duplicate,
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'duplicate-object-manifest-missing',
-	)
 	await assert.doesNotReject(
 		assertDuplicateMatchesManifest(
 			bucket as unknown as R2Bucket,
 			manifestKey,
 			orphanKey,
-			{ ...duplicate, alreadyExisted: false },
+			duplicate,
 		),
 	)
 	const recoveryKey = objectKeyForBookmark(prefix, 'bookmark-2')
@@ -648,6 +814,21 @@ test('download HTTP and malformed length failures have safe retry classification
 			error instanceof BackupError &&
 			error.code === 'download-missing-length' &&
 			error.retryable,
+	)
+	await assert.rejects(
+		storeSignedDownload(
+			new MemoryBucket() as unknown as R2Bucket,
+			'too-large.sql',
+			'https://download.example',
+			async () =>
+				new Response('', {
+					headers: {
+						'content-length': String(MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES + 1),
+					},
+				}),
+		),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'download-too-large',
 	)
 })
 
@@ -755,24 +936,74 @@ test('freshness accepts matching metadata and flags size/ETag drift or missing o
 		manifest(stored),
 	)
 	assert.equal(
-		await checkFreshness(env, new Date('2026-07-22T03:45:00Z')),
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
 		true,
 	)
 	bucket.corrupt(key, 'drift')
 	assert.equal(
-		await checkFreshness(env, new Date('2026-07-22T03:45:00Z')),
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
 		false,
 	)
 	bucket.corrupt(key, 'longer')
 	assert.equal(
-		await checkFreshness(env, new Date('2026-07-22T03:45:00Z')),
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
 		false,
 	)
 	assert.equal(
 		await checkFreshness(
 			environment(new MemoryBucket()),
 			new Date('2026-07-22T03:45:00Z'),
+			identityApi(),
 		),
+		false,
+	)
+})
+
+test('hourly freshness queries live D1 size and fails at the ceiling', async () => {
+	let metadataRequests = 0
+	await assert.rejects(
+		checkFreshness(environment(), new Date('2026-07-22T03:45:00Z'), {
+			fetcher: async () => {
+				metadataRequests += 1
+				return identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES)
+			},
+		}),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'source-size-limit-exceeded',
+	)
+	assert.equal(metadataRequests, 1)
+})
+
+test('workflow does not start D1 export when source size exceeds the ceiling', async () => {
+	const env = environment()
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const urls: string[] = []
+	await assert.rejects(
+		runBackupRuntime(
+			env,
+			{
+				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+				payload,
+				timestamp: new Date('2026-07-22T02:15:01Z'),
+			},
+			new RetryAfterCommitStep(),
+			{
+				api: {
+					fetcher: async (input) => {
+						urls.push(String(input))
+						return identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1)
+					},
+				},
+			},
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'source-size-limit-exceeded',
+	)
+	assert.equal(urls.length, 1)
+	assert.equal(
+		urls.some((url) => url.endsWith('/export')),
 		false,
 	)
 })

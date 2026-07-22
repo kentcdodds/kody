@@ -105,10 +105,10 @@ async function scheduled(
 			await triggerBackup(env, scheduledAt)
 			return
 		case FRESHNESS_CRON:
+			await checkFreshness(env, scheduledAt)
 			if (isApprovedRetryWindow(scheduledAt)) {
 				await retryExisting(env, scheduledAt)
 			}
-			await checkFreshness(env, scheduledAt)
 			return
 		default:
 			throw new BackupError(
