@@ -1118,10 +1118,13 @@ export async function deleteUserAccount(input: {
 	if (input.env.BUNDLE_ARTIFACTS_KV) {
 		const sourceSnapshotKeys = await listKvKeysByPrefix({
 			kv: input.env.BUNDLE_ARTIFACTS_KV,
-			prefixes: inventory.sourceSnapshots.flatMap((source) => [
-				`source-snapshot:v1:${source.sourceId}:`,
-				`source-manifest-snapshot:v1:${source.sourceId}:`,
-			]),
+			prefixes: [
+				...inventory.sourceSnapshots.flatMap((source) => [
+					`source-snapshot:v1:${source.sourceId}:`,
+					`source-manifest-snapshot:v1:${source.sourceId}:`,
+				]),
+				`package-retriever-index:v1:${input.mcpUserId}:`,
+			],
 			warnings,
 		})
 		result.deletedKvKeys =

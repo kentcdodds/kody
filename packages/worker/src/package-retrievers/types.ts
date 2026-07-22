@@ -48,14 +48,6 @@ export type PackageRetrieverIndexEntry = {
 	scopes: Array<PackageRetrieverScope>
 }
 
-export type PackageRetrieverScopeIndex = {
-	version: 1
-	userId: string
-	scope: PackageRetrieverScope
-	retrievers: Array<PackageRetrieverIndexEntry>
-	updatedAt: string
-}
-
 export type PackageRetrieverResult = {
 	id: string
 	title: string

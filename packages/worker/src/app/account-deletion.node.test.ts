@@ -716,27 +716,48 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	})
 
 	const deletedKvKeys: Array<string> = []
+	const kvStoreKeys = [
+		'source-snapshot:v1:src-1:abc123',
+		'source-manifest-snapshot:v1:src-1:abc123',
+		'source-snapshot:v1:src-1:old456',
+		'source-manifest-snapshot:v1:src-1:old456',
+		'source-snapshot:v1:src-2:def456',
+		'package-retriever-manifest:v1:user-aaa:pkg-1:abc123',
+		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
+		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
+		'package-retriever-index:v1:user-aaa:search',
+		'package-retriever-index:v1:user-aaa:context',
+		'package-retriever-index-entry:v1:user-bbb:search:pkg-2:notes',
+		'package-retriever-index:v1:user-bbb:search',
+	]
 	const kv = {
 		async delete(key: string) {
 			deletedKvKeys.push(key)
 		},
 		async list(options?: { prefix?: string; cursor?: string }) {
-			const allKeys = [
-				'source-snapshot:v1:src-1:abc123',
-				'source-manifest-snapshot:v1:src-1:abc123',
-				'source-snapshot:v1:src-1:old456',
-				'source-manifest-snapshot:v1:src-1:old456',
-				'source-snapshot:v1:src-2:def456',
-				'package-retriever-manifest:v1:user-aaa:pkg-1:abc123',
-				'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
-				'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
-				'package-retriever-index-entry:v1:user-bbb:search:pkg-2:notes',
-			]
-			const keys = allKeys
-				.filter((key) => key.startsWith(options?.prefix ?? ''))
-				.map((name) => ({ name }))
+			const prefix = options?.prefix ?? ''
+			const matchingKeys = kvStoreKeys
+				.filter((key) => key.startsWith(prefix))
+				.sort()
+			if (prefix === `package-retriever-index:v1:${userAaa}:`) {
+				const firstPage = matchingKeys.slice(0, 1)
+				if (options?.cursor === 'legacy-page-2') {
+					return {
+						keys: matchingKeys.slice(1).map((name) => ({ name })),
+						list_complete: true,
+						cursor: undefined,
+					}
+				}
+				if (firstPage.length < matchingKeys.length) {
+					return {
+						keys: firstPage.map((name) => ({ name })),
+						list_complete: false,
+						cursor: 'legacy-page-2',
+					}
+				}
+			}
 			return {
-				keys,
+				keys: matchingKeys.map((name) => ({ name })),
 				list_complete: true,
 				cursor: undefined,
 			}
@@ -975,6 +996,12 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'source-snapshot:v1:src-1:abc123',
 		'source-snapshot:v1:src-1:old456',
 	])
+	expect(deletedKvKeys).not.toContain(
+		'package-retriever-index-entry:v1:user-bbb:search:pkg-2:notes',
+	)
+	expect(deletedKvKeys).not.toContain(
+		'package-retriever-index:v1:user-bbb:search',
+	)
 
 	// Result accounting captures the per-table counts.
 	expect(result.deletedRowCounts.jobs).toBe(3)

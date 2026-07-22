@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import {
-	buildPackageRetrieverScopeIndexKey,
 	listPackageRetrieversForScope,
 	refreshPackageRetrieverManifestCache,
 	removePackageRetrieverManifestCacheEntries,
@@ -9,7 +8,7 @@ import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
-function createKv(options?: { list?: boolean }) {
+function createKv() {
 	const store = new Map<string, string>()
 	const kv = {
 		get: vi.fn(async (key: string, type?: 'json') => {
@@ -22,27 +21,18 @@ function createKv(options?: { list?: boolean }) {
 		delete: vi.fn(async (key: string) => {
 			store.delete(key)
 		}),
-	} as {
-		get: ReturnType<typeof vi.fn>
-		put: ReturnType<typeof vi.fn>
-		delete: ReturnType<typeof vi.fn>
-		list?: ReturnType<typeof vi.fn>
-	}
-	if (options?.list !== false) {
-		kv.list = vi.fn(
-			async (listOptions?: { prefix?: string; cursor?: string }) => ({
-				keys: Array.from(store.keys())
-					.filter((key) => key.startsWith(listOptions?.prefix ?? ''))
-					.sort()
-					.map((name) => ({ name })),
-				list_complete: true,
-				cursor: undefined,
-			}),
-		)
-	}
+		list: vi.fn(async (listOptions?: { prefix?: string; cursor?: string }) => ({
+			keys: Array.from(store.keys())
+				.filter((key) => key.startsWith(listOptions?.prefix ?? ''))
+				.sort()
+				.map((name) => ({ name })),
+			list_complete: true,
+			cursor: undefined,
+		})),
+	} as unknown as KVNamespace
 	return {
 		store,
-		kv: kv as unknown as KVNamespace,
+		kv,
 	}
 }
 
@@ -115,23 +105,6 @@ test('package retriever manifest cache refreshes, lists, removes entries, and pr
 	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
 	const manifest = createRetrieverManifest()
 
-	// A pre-existing legacy combined index blob is deleted on refresh; only
-	// per-entry keys are written going forward.
-	const legacySearchIndexKey = buildPackageRetrieverScopeIndexKey({
-		userId: 'user-1',
-		scope: 'search',
-	})
-	store.set(
-		legacySearchIndexKey,
-		JSON.stringify({
-			version: 1,
-			userId: 'user-1',
-			scope: 'search',
-			retrievers: [],
-			updatedAt: '2026-04-20T00:00:00.000Z',
-		}),
-	)
-
 	await refreshPackageRetrieverManifestCache({
 		env,
 		userId: 'user-1',
@@ -140,7 +113,6 @@ test('package retriever manifest cache refreshes, lists, removes entries, and pr
 		manifest,
 	})
 
-	expect(store.has(legacySearchIndexKey)).toBe(false)
 	expect(
 		store.has(
 			'package-retriever-index-entry:v1:user-1:search:package-1:notes-search',
@@ -223,7 +195,6 @@ test('package retriever manifest cache refreshes, lists, removes entries, and pr
 			key.startsWith('package-retriever-manifest:v1:user-1:package-1:'),
 		),
 	).toEqual([])
-	expect(store.has(legacySearchIndexKey)).toBe(false)
 })
 
 test('refreshing to a new revision deletes the stale manifest cache key', async () => {
@@ -263,82 +234,6 @@ test('refreshing to a new revision deletes the stale manifest cache key', async 
 			revision: 'commit-2',
 		}),
 	])
-})
-
-test('readers without kv.list support still read the legacy index but nothing writes it', async () => {
-	const { kv, store } = createKv({ list: false })
-	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
-	const legacyKey = buildPackageRetrieverScopeIndexKey({
-		userId: 'user-1',
-		scope: 'search',
-	})
-	store.set(
-		legacyKey,
-		JSON.stringify({
-			version: 1,
-			userId: 'user-1',
-			scope: 'search',
-			retrievers: [
-				{
-					userId: 'user-1',
-					packageId: 'package-legacy',
-					kodyId: 'legacy-inbox',
-					packageName: '@kentcdodds/legacy-inbox',
-					sourceId: 'source-legacy',
-					revision: 'commit-legacy',
-					retrieverKey: 'notes-search',
-					name: 'Notes Search',
-					description: 'Searches saved notes',
-					scopes: ['search'],
-				},
-			],
-			updatedAt: '2026-04-20T00:00:00.000Z',
-		}),
-	)
-	store.set(
-		'package-retriever-manifest:v1:user-1:package-legacy:commit-legacy',
-		JSON.stringify({
-			version: 1,
-			userId: 'user-1',
-			packageId: 'package-legacy',
-			kodyId: 'legacy-inbox',
-			packageName: '@kentcdodds/legacy-inbox',
-			sourceId: 'source-legacy',
-			revision: 'commit-legacy',
-			manifestHash: 'hash',
-			retrievers: [
-				{
-					userId: 'user-1',
-					packageId: 'package-legacy',
-					kodyId: 'legacy-inbox',
-					packageName: '@kentcdodds/legacy-inbox',
-					sourceId: 'source-legacy',
-					revision: 'commit-legacy',
-					retrieverKey: 'notes-search',
-					exportName: './search-notes',
-					entryPoint: 'src/search-notes.ts',
-					name: 'Notes Search',
-					description: 'Searches saved notes',
-					scopes: ['search'],
-				},
-			],
-			cachedAt: '2026-04-20T00:00:00.000Z',
-		}),
-	)
-
-	await expect(
-		listPackageRetrieversForScope({
-			env,
-			userId: 'user-1',
-			scope: 'search',
-		}),
-	).resolves.toEqual([
-		expect.objectContaining({
-			packageId: 'package-legacy',
-			retrieverKey: 'notes-search',
-		}),
-	])
-	expect(kv.put).not.toHaveBeenCalledWith(legacyKey, expect.any(String))
 })
 
 test('listPackageRetrieversForScope filters stale, malformed, and prefix-colliding cache rows', async () => {

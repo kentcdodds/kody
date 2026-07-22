@@ -683,12 +683,13 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `bundle-artifact:v1:{sourceId}:{commit}:{kind}:{artifactName|_}:{entryPoint}`.
 - `community-snapshot:v1:{listingId}`.
 - `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
-- `package-retriever-index:v1:{userId}:{scope}` for the legacy combined
-  retriever index blob. Not written — the combined blob risks the 25MB KV value
-  limit; refresh and removal delete it best-effort, and it is read only as a
-  fallback when the KV binding does not support `list()`.
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
   for per-entry retriever index rows.
+- `package-retriever-index:v1:{userId}:{scope}` — legacy combined retriever
+  index blob (no longer written). Residual blobs for active users are unused and
+  are not removed by refresh/removal; account deletion lists and deletes keys
+  under the user-scoped prefix `package-retriever-index:v1:{userId}:`. There is
+  no global sweep because that would require cross-user KV enumeration.
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage
