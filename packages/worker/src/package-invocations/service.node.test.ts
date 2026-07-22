@@ -111,6 +111,9 @@ function createDatabase(options: { failInsert?: boolean } = {}) {
 							return null
 						},
 						async run() {
+							if (query.includes('UPDATE users')) {
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
 							if (query.includes('INTO package_invocations')) {
 								if (options.failInsert) {
 									throw new Error('D1 unavailable')
