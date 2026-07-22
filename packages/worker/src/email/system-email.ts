@@ -287,13 +287,19 @@ async function deleteSystemEmailMessagesByIds(input: {
 		let deletableIds: ReadonlyArray<string> = messageIds
 		if (blobRows.length > 0) {
 			const blobRowIds = new Set(blobRows.map((row) => row.id))
-			const blobKeys = blobRows.flatMap((row) =>
-				emailRawMimeKeysForDelete({
-					userId: row.user_id,
-					messageId: row.id,
-					storedRawMimeKey: row.raw_mime_key,
-				}),
-			)
+			const batchMessageIds = blobRows.map((row) => row.id)
+			const blobKeys: Array<string> = []
+			for (const row of blobRows) {
+				blobKeys.push(
+					...(await emailRawMimeKeysForDelete({
+						db: input.db,
+						userId: row.user_id,
+						messageId: row.id,
+						storedRawMimeKey: row.raw_mime_key,
+						alsoExcludingMessageIds: batchMessageIds,
+					})),
+				)
+			}
 			try {
 				await input.blobs.delete(blobKeys)
 				result.deletedRawMimeBlobs += blobRows.filter(

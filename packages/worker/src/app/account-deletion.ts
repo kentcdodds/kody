@@ -338,14 +338,22 @@ async function listUserEmailBlobKeys(env: Env, userId: string) {
 			.bind(userId)
 			.all<{ object_key: string }>(),
 	])
-	return uniqueStrings([
-		...(rawMimeRows.results ?? []).flatMap((row) =>
-			emailRawMimeKeysForDelete({
+	const messageRows = rawMimeRows.results ?? []
+	const batchMessageIds = messageRows.map((row) => row.id)
+	const rawMimeKeys: Array<string> = []
+	for (const row of messageRows) {
+		rawMimeKeys.push(
+			...(await emailRawMimeKeysForDelete({
+				db: env.APP_DB,
 				userId,
 				messageId: row.id,
 				storedRawMimeKey: row.raw_mime_key,
-			}),
-		),
+				alsoExcludingMessageIds: batchMessageIds,
+			})),
+		)
+	}
+	return uniqueStrings([
+		...rawMimeKeys,
 		...(attachmentRows.results ?? []).map((row) => row.storage_key),
 		...(cleanupQueueRows.results ?? []).map((row) => row.object_key),
 	])

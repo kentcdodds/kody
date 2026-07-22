@@ -872,14 +872,23 @@ export async function pruneUserEmailMessagesForRetention(input: {
 			}
 		}
 	}
-	const blobKeysForRow = (row: (typeof rows)[number]) => [
-		...emailRawMimeKeysForDelete({
+	const batchMessageIds = rows.map((row) => row.id)
+	const blobKeysByMessageId = new Map<string, Array<string>>()
+	for (const row of rows) {
+		const rawMimeKeys = await emailRawMimeKeysForDelete({
+			db: input.db,
 			userId: row.user_id,
 			messageId: row.id,
 			storedRawMimeKey: row.raw_mime_key,
-		}),
-		...(attachmentKeysByMessageId.get(row.id) ?? []),
-	]
+			alsoExcludingMessageIds: batchMessageIds,
+		})
+		blobKeysByMessageId.set(row.id, [
+			...rawMimeKeys,
+			...(attachmentKeysByMessageId.get(row.id) ?? []),
+		])
+	}
+	const blobKeysForRow = (row: (typeof rows)[number]) =>
+		blobKeysByMessageId.get(row.id) ?? []
 	// Every message attempts at least the deterministic raw-MIME key so an
 	// in-flight offload put cannot leave an orphan after the D1 row is gone.
 	const rowsWithBlob = rows.filter((row) => blobKeysForRow(row).length > 0)

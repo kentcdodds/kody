@@ -527,6 +527,232 @@ test('interleaving: blocked cleanup failure fails offload rather than reporting 
 	])
 })
 
+test('successful offload cleans owned divergent prior raw_mime_key via sticky queue', async () => {
+	const { sqlite, db } = createEmailMessagesDb()
+	const deterministic = emailRawMimeKey('user-1', 'msg-divergent')
+	const prior = emailRawMimeKey('user-1', 'legacy-divergent')
+	insertMessage(sqlite, {
+		id: 'msg-divergent',
+		userId: 'user-1',
+		rawMime: 'fresh-inline',
+		rawMimeKey: prior,
+	})
+	const { store, blobs, del } = createMemoryBlobs()
+	store.set(prior, 'stale-prior-bytes')
+
+	const result = await offloadInlineEmailRawMime({ db, blobs })
+	expect(result).toEqual({
+		scanned: 1,
+		offloaded: 1,
+		failed: 0,
+		cleanup: emptyCleanup(),
+		remainingBlobCleanup: 0,
+		remainingInline: 0,
+		remainingOffloadableInline: 0,
+		remainingBlockedInline: 0,
+		complete: true,
+	})
+	expect(store.get(deterministic)).toBe('fresh-inline')
+	expect(store.has(prior)).toBe(false)
+	expect(del).toHaveBeenCalledWith(prior)
+	expect(readCleanupQueue(sqlite)).toEqual([])
+	expect(readMessage(sqlite, 'msg-divergent')).toMatchObject({
+		raw_mime: null,
+		raw_mime_key: deterministic,
+	})
+})
+
+test('divergent prior cleanup failure is sticky across requests', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createEmailMessagesDb()
+	const deterministic = emailRawMimeKey('user-1', 'msg-prior-fail')
+	const prior = emailRawMimeKey('user-1', 'legacy-prior-fail')
+	insertMessage(sqlite, {
+		id: 'msg-prior-fail',
+		userId: 'user-1',
+		rawMime: 'inline-bytes',
+		rawMimeKey: prior,
+	})
+	let allowDelete = false
+	const { store, blobs } = createMemoryBlobs({
+		deleteImpl: async (key, memory) => {
+			if (key === prior && !allowDelete) {
+				throw new Error(`prior-delete-failed:${key}`)
+			}
+			memory.delete(key)
+		},
+	})
+	store.set(prior, 'stale-prior')
+
+	const first = await offloadInlineEmailRawMime({ db, blobs })
+	expect(first).toMatchObject({
+		scanned: 1,
+		offloaded: 0,
+		failed: 1,
+		remainingBlobCleanup: 1,
+		remainingOffloadableInline: 0,
+		complete: false,
+	})
+	expect(store.get(deterministic)).toBe('inline-bytes')
+	expect(store.get(prior)).toBe('stale-prior')
+	expect(readCleanupQueue(sqlite)).toEqual([
+		{
+			object_key: prior,
+			user_id: 'user-1',
+			message_id: 'msg-prior-fail',
+			attempt_count: 1,
+			last_error: `prior-delete-failed:${prior}`,
+		},
+	])
+	expect(readMessage(sqlite, 'msg-prior-fail')).toMatchObject({
+		raw_mime: null,
+		raw_mime_key: deterministic,
+	})
+
+	allowDelete = true
+	const second = await offloadInlineEmailRawMime({ db, blobs })
+	expect(second).toEqual({
+		scanned: 0,
+		offloaded: 0,
+		failed: 0,
+		cleanup: { scanned: 1, deleted: 1, failed: 0 },
+		remainingBlobCleanup: 0,
+		remainingInline: 0,
+		remainingOffloadableInline: 0,
+		remainingBlockedInline: 0,
+		complete: true,
+	})
+	expect(store.has(prior)).toBe(false)
+	expect(readCleanupQueue(sqlite)).toEqual([])
+})
+
+test('cross-user divergent prior key is rejected and not deleted', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createEmailMessagesDb()
+	const deterministic = emailRawMimeKey('user-1', 'msg-cross')
+	const foreign = emailRawMimeKey('user-2', 'msg-foreign')
+	insertMessage(sqlite, {
+		id: 'msg-cross',
+		userId: 'user-1',
+		rawMime: 'cross-inline',
+		rawMimeKey: foreign,
+	})
+	const { store, blobs, del } = createMemoryBlobs()
+	store.set(foreign, 'foreign-bytes')
+
+	const result = await offloadInlineEmailRawMime({ db, blobs })
+	expect(result).toEqual({
+		scanned: 1,
+		offloaded: 1,
+		failed: 0,
+		cleanup: emptyCleanup(),
+		remainingBlobCleanup: 0,
+		remainingInline: 0,
+		remainingOffloadableInline: 0,
+		remainingBlockedInline: 0,
+		complete: true,
+	})
+	expect(store.get(deterministic)).toBe('cross-inline')
+	expect(store.get(foreign)).toBe('foreign-bytes')
+	expect(del).not.toHaveBeenCalledWith(foreign)
+	expect(readCleanupQueue(sqlite)).toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'email-raw-mime-offload-key-ownership-rejected',
+		'msg-cross',
+		'user-1',
+		foreign,
+	)
+})
+
+test('divergent prior key referenced by another row is preserved', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createEmailMessagesDb()
+	const deterministic = emailRawMimeKey('user-1', 'msg-shared-offload')
+	const shared = emailRawMimeKey('user-1', 'shared-blob')
+	insertMessage(sqlite, {
+		id: 'msg-shared-offload',
+		userId: 'user-1',
+		rawMime: 'offload-me',
+		rawMimeKey: shared,
+	})
+	insertMessage(sqlite, {
+		id: 'msg-still-points',
+		userId: 'user-1',
+		rawMime: null,
+		rawMimeKey: shared,
+	})
+	const { store, blobs, del } = createMemoryBlobs()
+	store.set(shared, 'shared-bytes')
+
+	const result = await offloadInlineEmailRawMime({ db, blobs })
+	expect(result).toEqual({
+		scanned: 1,
+		offloaded: 1,
+		failed: 0,
+		cleanup: emptyCleanup(),
+		remainingBlobCleanup: 0,
+		remainingInline: 0,
+		remainingOffloadableInline: 0,
+		remainingBlockedInline: 0,
+		complete: true,
+	})
+	expect(store.get(deterministic)).toBe('offload-me')
+	expect(store.get(shared)).toBe('shared-bytes')
+	expect(del).not.toHaveBeenCalledWith(shared)
+	expect(readCleanupQueue(sqlite)).toEqual([])
+	expect(readMessage(sqlite, 'msg-still-points')).toMatchObject({
+		raw_mime_key: shared,
+	})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'email-raw-mime-offload-key-still-referenced',
+		'msg-shared-offload',
+		shared,
+	)
+})
+
+test('cleanup queue drains lower attempt_count rows before sticky failures', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createEmailMessagesDb()
+	const stickyKey = emailRawMimeKey('user-1', 'sticky-head')
+	const freshKey = emailRawMimeKey('user-1', 'fresh-tail')
+	sqlite
+		.prepare(
+			`INSERT INTO email_raw_mime_cleanup_queue (
+				object_key, user_id, message_id, attempt_count, last_error, created_at, updated_at
+			) VALUES
+				(?, 'user-1', 'sticky-head', 5, 'old-failure', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),
+				(?, 'user-1', 'fresh-tail', 0, NULL, '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z')`,
+		)
+		.run(stickyKey, freshKey)
+	const { store, blobs } = createMemoryBlobs({
+		deleteImpl: async (key, memory) => {
+			if (key === stickyKey) {
+				throw new Error(`sticky-still-broken:${key}`)
+			}
+			memory.delete(key)
+		},
+	})
+	store.set(stickyKey, 'sticky')
+	store.set(freshKey, 'fresh')
+
+	const result = await offloadInlineEmailRawMime({
+		db,
+		blobs,
+		pageSize: 1,
+	})
+	expect(result.cleanup).toEqual({ scanned: 1, deleted: 1, failed: 0 })
+	expect(store.has(freshKey)).toBe(false)
+	expect(store.get(stickyKey)).toBe('sticky')
+	expect(readCleanupQueue(sqlite)).toEqual([
+		expect.objectContaining({
+			object_key: stickyKey,
+			attempt_count: 5,
+		}),
+	])
+	expect(result.remainingBlobCleanup).toBe(1)
+	expect(result.complete).toBe(false)
+})
+
 test('sticky cleanup queue: first orphan delete failure leaves queue; second request drains it before complete', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const { sqlite, db: baseDb } = createEmailMessagesDb()

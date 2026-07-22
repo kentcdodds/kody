@@ -1,4 +1,8 @@
-import { emailRawMimeKey } from '#worker/email/repo.ts'
+import {
+	emailRawMimeKey,
+	isEmailRawMimeKeyReferenced,
+	isOwnedEmailRawMimeKey,
+} from '#worker/email/repo.ts'
 import {
 	handleSecretMaintenanceRequest,
 	MaintenanceFailureError,
@@ -18,6 +22,7 @@ type InlineRawMimeRow = {
 	id: string
 	userId: string
 	rawMime: string
+	priorRawMimeKey: string | null
 }
 
 type EmailMessageMimeState = {
@@ -145,6 +150,7 @@ async function markCleanupQueueFailure(input: {
  * Sticky orphan cleanup: upsert a user-scoped queue tombstone first, retry R2
  * delete, then remove the queue row only after a confirmed delete. On failure
  * leave/update the queue row and rethrow so the request fails stickily.
+ * Rejects keys not owned by userId (never queues or deletes cross-user keys).
  */
 async function cleanupOrphanRawMimeBlob(input: {
 	db: D1Database
@@ -153,6 +159,28 @@ async function cleanupOrphanRawMimeBlob(input: {
 	userId: string
 	messageId: string
 }): Promise<void> {
+	if (!isOwnedEmailRawMimeKey(input.userId, input.objectKey)) {
+		console.warn(
+			'email-raw-mime-offload-key-ownership-rejected',
+			input.messageId,
+			input.userId,
+			input.objectKey,
+		)
+		return
+	}
+	const referenced = await isEmailRawMimeKeyReferenced({
+		db: input.db,
+		objectKey: input.objectKey,
+		excludeMessageIds: [input.messageId],
+	})
+	if (referenced) {
+		console.warn(
+			'email-raw-mime-offload-key-still-referenced',
+			input.messageId,
+			input.objectKey,
+		)
+		return
+	}
 	await upsertCleanupQueueRow({
 		db: input.db,
 		objectKey: input.objectKey,
@@ -181,15 +209,41 @@ async function cleanupOrphanRawMimeBlob(input: {
 	}
 }
 
+/**
+ * After a successful offload clear to the deterministic key, delete a prior
+ * divergent same-user blob through the sticky queue protocol when safe.
+ */
+async function cleanupDivergentPriorRawMimeKey(input: {
+	db: D1Database
+	blobs: R2Bucket
+	userId: string
+	messageId: string
+	priorRawMimeKey: string | null
+	newRawMimeKey: string
+}): Promise<void> {
+	const prior = input.priorRawMimeKey
+	if (prior == null || prior === input.newRawMimeKey) return
+	await cleanupOrphanRawMimeBlob({
+		db: input.db,
+		blobs: input.blobs,
+		objectKey: prior,
+		userId: input.userId,
+		messageId: input.messageId,
+	})
+}
+
 async function listCleanupQueueBatch(input: {
 	db: D1Database
 	limit: number
 }): Promise<Array<CleanupQueueRow>> {
+	// Prefer lower attempt_count / older updated_at so a permanently failing
+	// head item cannot starve later queue rows across bounded batches. Failures
+	// still bump attempt_count/updated_at and leave remainingBlobCleanup > 0.
 	const rows = await input.db
 		.prepare(
 			`SELECT object_key, user_id, message_id
 			FROM email_raw_mime_cleanup_queue
-			ORDER BY created_at, object_key
+			ORDER BY attempt_count ASC, updated_at ASC, object_key ASC
 			LIMIT ?`,
 		)
 		.bind(input.limit)
@@ -218,6 +272,41 @@ async function processCleanupQueueBatch(input: {
 	const result = emptyCleanupBatchResult()
 	for (const row of rows) {
 		result.scanned += 1
+		if (!isOwnedEmailRawMimeKey(row.userId, row.objectKey)) {
+			// Invalid tombstone: drop without touching R2 so we cannot delete
+			// another user's object via a corrupted queue row.
+			await deleteCleanupQueueRow({
+				db: input.db,
+				objectKey: row.objectKey,
+				userId: row.userId,
+			})
+			console.warn(
+				'email-raw-mime-offload-cleanup-queue-ownership-rejected',
+				row.messageId,
+				row.userId,
+				row.objectKey,
+			)
+			result.deleted += 1
+			continue
+		}
+		const referenced = await isEmailRawMimeKeyReferenced({
+			db: input.db,
+			objectKey: row.objectKey,
+		})
+		if (referenced) {
+			await deleteCleanupQueueRow({
+				db: input.db,
+				objectKey: row.objectKey,
+				userId: row.userId,
+			})
+			console.warn(
+				'email-raw-mime-offload-cleanup-queue-still-referenced',
+				row.messageId,
+				row.objectKey,
+			)
+			result.deleted += 1
+			continue
+		}
 		try {
 			await deleteOrphanRawMimeBlobWithRetry({
 				blobs: input.blobs,
@@ -261,7 +350,7 @@ async function listEmailMessagesWithInlineRawMimeBatch(input: {
 }): Promise<Array<InlineRawMimeRow>> {
 	const rows = await input.db
 		.prepare(
-			`SELECT id, user_id, raw_mime
+			`SELECT id, user_id, raw_mime, raw_mime_key
 			FROM email_messages
 			WHERE raw_mime IS NOT NULL
 				AND raw_mime_offload_blocked = 0
@@ -276,7 +365,15 @@ async function listEmailMessagesWithInlineRawMimeBatch(input: {
 		const userId = typeof row['user_id'] === 'string' ? row['user_id'] : null
 		const rawMime = typeof row['raw_mime'] === 'string' ? row['raw_mime'] : null
 		if (!id || !userId || rawMime == null) return []
-		return [{ id, userId, rawMime }]
+		return [
+			{
+				id,
+				userId,
+				rawMime,
+				priorRawMimeKey:
+					typeof row['raw_mime_key'] === 'string' ? row['raw_mime_key'] : null,
+			},
+		]
 	})
 }
 
@@ -426,8 +523,10 @@ async function resolveCasMissAfterPut(input: {
  * Process one bounded cleanup-queue batch, then one bounded batch of residual
  * inline `raw_mime` rows: put each payload into EMAIL_BLOBS under
  * `emailRawMimeKey(userId, id)`, then clear the D1 column only after a
- * successful put. Dual-state rows treat inline bytes as authoritative. Callers
- * (deploy) loop until `complete` is true.
+ * successful put. Dual-state rows treat inline bytes as authoritative. When a
+ * prior stored key diverges from the deterministic key, clean it through the
+ * sticky queue after a successful clear. Callers (deploy) loop until
+ * `complete` is true.
  */
 export async function offloadInlineEmailRawMime(input: {
 	db: D1Database
@@ -469,6 +568,14 @@ export async function offloadInlineEmailRawMime(input: {
 				rawMimeKey: key,
 			})
 			if (cleared) {
+				await cleanupDivergentPriorRawMimeKey({
+					db: input.db,
+					blobs: input.blobs,
+					userId: row.userId,
+					messageId: row.id,
+					priorRawMimeKey: row.priorRawMimeKey,
+					newRawMimeKey: key,
+				})
 				offloaded += 1
 				continue
 			}

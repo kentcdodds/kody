@@ -30,22 +30,90 @@ export function emailRawMimeKey(userId: string, messageId: string) {
 }
 
 /**
+ * Strict ownership check for EMAIL_BLOBS raw-MIME keys. Only keys under
+ * `email-raw:v1:{userId}/...` belong to that user; never treat another user's
+ * (or non-v1) key as deletable for this owner.
+ */
+export function isOwnedEmailRawMimeKey(
+	userId: string,
+	objectKey: string,
+): boolean {
+	if (!userId || !objectKey) return false
+	const prefix = `email-raw:v1:${userId}/`
+	return objectKey.startsWith(prefix) && objectKey.length > prefix.length
+}
+
+/**
+ * True when any email_messages row still points at this raw_mime_key, after
+ * excluding the given message ids (the row(s) being deleted in this operation).
+ * Uses a bounded id fetch + in-memory exclude set so large deletion batches
+ * never hit SQLite/D1 variable-count limits.
+ */
+export async function isEmailRawMimeKeyReferenced(input: {
+	db: D1Database
+	objectKey: string
+	excludeMessageIds?: ReadonlyArray<string>
+}): Promise<boolean> {
+	const excludeMessageIds = new Set(
+		(input.excludeMessageIds ?? []).filter((id) => typeof id === 'string'),
+	)
+	// Fetch one more than the exclude set so a leftover referrer outside the
+	// deletion batch cannot hide behind a full page of excluded ids.
+	const limit = Math.max(excludeMessageIds.size + 1, 1)
+	const rows = await input.db
+		.prepare(
+			`SELECT id
+			FROM email_messages
+			WHERE raw_mime_key = ?
+			LIMIT ?`,
+		)
+		.bind(input.objectKey, limit)
+		.all<{ id: string }>()
+	for (const row of rows.results ?? []) {
+		if (!excludeMessageIds.has(row.id)) return true
+	}
+	return false
+}
+
+/**
  * Raw-MIME blob keys to delete for a message. Always includes the
  * deterministic `emailRawMimeKey(userId, messageId)` so deletes remain safe
- * across offload races (put succeeded, D1 clear not yet visible), and also
- * includes a divergent stored `raw_mime_key` when one is present.
+ * across offload races (put succeeded, D1 clear not yet visible). A divergent
+ * stored `raw_mime_key` is included only when it is owned by the same user and
+ * no other email_messages row still references it (the current message id, plus
+ * any siblings in `alsoExcludingMessageIds` for the same deletion batch, are
+ * excluded from that check). Cross-user or non-v1 stored keys are rejected.
  */
-export function emailRawMimeKeysForDelete(input: {
+export async function emailRawMimeKeysForDelete(input: {
+	db: D1Database
 	userId: string
 	messageId: string
 	storedRawMimeKey?: string | null
-}): Array<string> {
+	/**
+	 * Other message ids being deleted in the same operation. Combined with
+	 * `messageId` when checking whether a divergent key is still referenced.
+	 */
+	alsoExcludingMessageIds?: ReadonlyArray<string>
+}): Promise<Array<string>> {
 	const deterministic = emailRawMimeKey(input.userId, input.messageId)
 	const stored = input.storedRawMimeKey ?? null
-	if (stored != null && stored !== deterministic) {
-		return [deterministic, stored]
+	if (
+		stored == null ||
+		stored === deterministic ||
+		!isOwnedEmailRawMimeKey(input.userId, stored)
+	) {
+		return [deterministic]
 	}
-	return [deterministic]
+	const referenced = await isEmailRawMimeKeyReferenced({
+		db: input.db,
+		objectKey: stored,
+		excludeMessageIds: [
+			input.messageId,
+			...(input.alsoExcludingMessageIds ?? []),
+		],
+	})
+	if (referenced) return [deterministic]
+	return [deterministic, stored]
 }
 
 /** D1 bind budget leave one slot for userId (+ optional timestamp). */
@@ -1115,7 +1183,8 @@ export async function deleteEmailMessageById(input: {
 		.all<{ storage_key: string }>()
 	const blobKeys = [
 		...(row
-			? emailRawMimeKeysForDelete({
+			? await emailRawMimeKeysForDelete({
+					db: input.db,
 					userId: row.user_id,
 					messageId: input.messageId,
 					storedRawMimeKey: claimed?.raw_mime_key ?? row.raw_mime_key,

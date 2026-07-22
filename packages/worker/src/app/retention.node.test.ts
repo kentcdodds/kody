@@ -805,7 +805,7 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 	insertEmailMessage(sqlite, {
 		id: 'msg-old-blob',
 		threadId: 'thread-orphan',
-		rawMimeKey: 'raw-mime/user-1/msg-old-blob',
+		rawMimeKey: 'email-raw:v1:user-1/legacy-msg-old-blob',
 		createdAt: daysAgo(emailMessageRetentionDays + 1),
 	})
 	insertEmailMessage(sqlite, {
@@ -864,7 +864,7 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 	})
 	expect(blobDelete).toHaveBeenCalledWith([
 		'email-raw:v1:user-1/msg-old-blob',
-		'raw-mime/user-1/msg-old-blob',
+		'email-raw:v1:user-1/legacy-msg-old-blob',
 		'email-raw:v1:user-1/msg-old-plain',
 		'email-attachment:v1:user-1/msg-old-plain/att-ext',
 	])
@@ -882,7 +882,7 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 	const { sqlite, db } = createRetentionDb()
 	insertEmailMessage(sqlite, {
 		id: 'msg-old-blob',
-		rawMimeKey: 'raw-mime/user-1/msg-old-blob',
+		rawMimeKey: 'email-raw:v1:user-1/legacy-msg-old-blob',
 		createdAt: daysAgo(emailMessageRetentionDays + 1),
 	})
 	insertEmailMessage(sqlite, {
@@ -926,7 +926,7 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 	})
 	expect(workingDelete).toHaveBeenCalledWith([
 		'email-raw:v1:user-1/msg-old-blob',
-		'raw-mime/user-1/msg-old-blob',
+		'email-raw:v1:user-1/legacy-msg-old-blob',
 		'email-raw:v1:user-1/msg-old-plain',
 	])
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([])
@@ -941,12 +941,12 @@ test('email message retention cursor advances past skipped rows when R2 deletes 
 	// runs/batches are not stuck behind the head forever.
 	insertEmailMessage(sqlite, {
 		id: 'msg-blocked-a',
-		rawMimeKey: 'raw-mime/user-1/msg-blocked-a',
+		rawMimeKey: 'email-raw:v1:user-1/legacy-msg-blocked-a',
 		createdAt: daysAgo(emailMessageRetentionDays + 4),
 	})
 	insertEmailMessage(sqlite, {
 		id: 'msg-blocked-b',
-		rawMimeKey: 'raw-mime/user-1/msg-blocked-b',
+		rawMimeKey: 'email-raw:v1:user-1/legacy-msg-blocked-b',
 		createdAt: daysAgo(emailMessageRetentionDays + 3),
 	})
 	insertEmailMessage(sqlite, {
@@ -980,9 +980,9 @@ test('email message retention cursor advances past skipped rows when R2 deletes 
 	})
 	expect(failingBlobs.delete).toHaveBeenCalledWith([
 		'email-raw:v1:user-1/msg-blocked-a',
-		'raw-mime/user-1/msg-blocked-a',
+		'email-raw:v1:user-1/legacy-msg-blocked-a',
 		'email-raw:v1:user-1/msg-blocked-b',
-		'raw-mime/user-1/msg-blocked-b',
+		'email-raw:v1:user-1/legacy-msg-blocked-b',
 	])
 
 	const second = await pruneUserEmailMessagesForRetention({
@@ -1028,7 +1028,7 @@ test('retention run reports blob delete errors across a full email batch when R2
 	for (let index = 0; index < 251; index += 1) {
 		insertEmailMessage(sqlite, {
 			id: `msg-blob-${String(index).padStart(3, '0')}`,
-			rawMimeKey: `raw-mime/user-1/${index}`,
+			rawMimeKey: `email-raw:v1:user-1/legacy-${index}`,
 			createdAt: new Date(
 				now.getTime() -
 					(emailMessageRetentionDays + 10) * 24 * 60 * 60 * 1000 +
