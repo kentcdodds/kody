@@ -30,6 +30,87 @@ export function emailRawMimeKey(userId: string, messageId: string) {
 }
 
 /**
+ * Raw-MIME blob keys to delete for a message. Always includes the
+ * deterministic `emailRawMimeKey(userId, messageId)` so deletes remain safe
+ * across offload races (put succeeded, D1 clear not yet visible), and also
+ * includes a divergent stored `raw_mime_key` when one is present.
+ */
+export function emailRawMimeKeysForDelete(input: {
+	userId: string
+	messageId: string
+	storedRawMimeKey?: string | null
+}): Array<string> {
+	const deterministic = emailRawMimeKey(input.userId, input.messageId)
+	const stored = input.storedRawMimeKey ?? null
+	if (stored != null && stored !== deterministic) {
+		return [deterministic, stored]
+	}
+	return [deterministic]
+}
+
+/** D1 bind budget leave one slot for userId (+ optional timestamp). */
+const emailMessageClaimIdsMaxParameters = 98
+
+/**
+ * Claim email_messages rows for deletion so the raw-MIME offload sweep cannot
+ * clear or rewrite them mid-delete. Always binds `user_id` — ids alone can
+ * never claim another user's row. Idempotent for already-blocked rows so
+ * retention retries still work.
+ */
+export async function claimEmailMessagesForDeletion(input: {
+	db: D1Database
+	userId: string
+	messageIds: ReadonlyArray<string>
+}): Promise<number> {
+	if (input.messageIds.length === 0) return 0
+	const timestamp = nowIso()
+	let claimed = 0
+	for (
+		let index = 0;
+		index < input.messageIds.length;
+		index += emailMessageClaimIdsMaxParameters
+	) {
+		const chunk = input.messageIds.slice(
+			index,
+			index + emailMessageClaimIdsMaxParameters,
+		)
+		const placeholders = chunk.map(() => '?').join(', ')
+		const result = await input.db
+			.prepare(
+				`UPDATE email_messages
+				SET raw_mime_offload_blocked = 1,
+					updated_at = ?
+				WHERE user_id = ?
+					AND id IN (${placeholders})`,
+			)
+			.bind(timestamp, input.userId, ...chunk)
+			.run()
+		claimed += result.meta.changes ?? 0
+	}
+	return claimed
+}
+
+/**
+ * Claim every email_messages row for a user before account-deletion blob
+ * enumeration. Scoped solely by `user_id`.
+ */
+export async function claimAllUserEmailMessagesForDeletion(input: {
+	db: D1Database
+	userId: string
+}): Promise<number> {
+	const result = await input.db
+		.prepare(
+			`UPDATE email_messages
+			SET raw_mime_offload_blocked = 1,
+				updated_at = ?
+			WHERE user_id = ?`,
+		)
+		.bind(nowIso(), input.userId)
+		.run()
+	return result.meta.changes ?? 0
+}
+
+/**
  * R2 object key for an attachment stored on its own (storage_kind
  * 'external'), used by outbound mail whose bytes never exist as raw MIME.
  * The userId prefix follows the same per-user isolation contract as
@@ -1000,14 +1081,31 @@ export async function deleteEmailMessageById(input: {
 	blobs: R2Bucket
 	messageId: string
 }) {
-	// Capture the blob keys before the rows disappear. A failed read must
-	// abort the delete (and be retried) rather than orphan the R2 blobs;
-	// only the R2 deletes themselves are best-effort.
+	// Capture ownership before claim. A failed read must abort the delete
+	// (and be retried) rather than orphan the R2 blobs; only the R2 deletes
+	// themselves are best-effort.
 	const row = await input.db
-		.prepare(`SELECT raw_mime_key FROM email_messages WHERE id = ?`)
+		.prepare(`SELECT user_id, raw_mime_key FROM email_messages WHERE id = ?`)
 		.bind(input.messageId)
-		.first<{ raw_mime_key: string | null }>()
-	const rawMimeKey = row?.raw_mime_key ?? null
+		.first<{ user_id: string; raw_mime_key: string | null }>()
+	if (row) {
+		// Claim before key snapshot / D1 delete so an in-flight offload cannot
+		// clear raw_mime after we enumerate keys. Scoped by user_id + id.
+		await claimEmailMessagesForDeletion({
+			db: input.db,
+			userId: row.user_id,
+			messageIds: [input.messageId],
+		})
+	}
+	const claimed = row
+		? await input.db
+				.prepare(
+					`SELECT raw_mime_key FROM email_messages
+					WHERE id = ? AND user_id = ?`,
+				)
+				.bind(input.messageId, row.user_id)
+				.first<{ raw_mime_key: string | null }>()
+		: null
 	const attachmentRows = await input.db
 		.prepare(
 			`SELECT storage_key FROM email_attachments
@@ -1016,7 +1114,13 @@ export async function deleteEmailMessageById(input: {
 		.bind(input.messageId)
 		.all<{ storage_key: string }>()
 	const blobKeys = [
-		...(rawMimeKey != null ? [rawMimeKey] : []),
+		...(row
+			? emailRawMimeKeysForDelete({
+					userId: row.user_id,
+					messageId: input.messageId,
+					storedRawMimeKey: claimed?.raw_mime_key ?? row.raw_mime_key,
+				})
+			: []),
 		...(attachmentRows.results ?? []).map((result) => result.storage_key),
 	]
 	// Atomic batch: a partial delete (attachments gone, message left) would

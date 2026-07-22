@@ -2,6 +2,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	accountUserDataTargets,
 	accountUserDataExcludedOwnerIds,
+	accountUserDataOperationalExclusions,
 	type UserScopedDataTarget,
 	getAccountD1UserColumnCoverage,
 } from '#app/account-data-targets.ts'
@@ -1200,10 +1201,16 @@ function buildManifest(input: {
 					'Ephemeral live websocket/session state. Durable app storage is exported through StorageRunner buckets.',
 			},
 		],
-		excludedD1Surfaces: accountUserDataExcludedOwnerIds.map((exclusion) => ({
-			name: exclusion.surface,
-			reason: exclusion.reason,
-		})),
+		excludedD1Surfaces: [
+			...accountUserDataExcludedOwnerIds.map((exclusion) => ({
+				name: exclusion.surface,
+				reason: exclusion.reason,
+			})),
+			...accountUserDataOperationalExclusions.map((exclusion) => ({
+				name: exclusion.surface,
+				reason: exclusion.reason,
+			})),
+		],
 	} satisfies AccountExportManifest
 }
 

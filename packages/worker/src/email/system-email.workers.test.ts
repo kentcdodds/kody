@@ -389,11 +389,12 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 		'system-email-raw-mime-blob-delete-failed',
 		expect.any(Error),
 	)
-	// The blob-backed row survives the failed blob delete; only the plain row
-	// is pruned, and the blob is still readable for the retry.
-	expect(failed.deletedMessages).toBe(1)
+	// Every message attempts the deterministic raw-MIME key, so an R2 outage
+	// skips both the stored-key row and the plain residual; the blob remains
+	// for retry.
+	expect(failed.deletedMessages).toBe(0)
 	expect(failed.deletedRawMimeBlobs).toBe(0)
-	expect(failed.blobDeleteErrors).toBe(1)
+	expect(failed.blobDeleteErrors).toBe(2)
 	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).not.toBeNull()
 	expect(
 		await env.APP_DB.prepare(
@@ -404,7 +405,7 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 		await env.APP_DB.prepare(
 			`SELECT id FROM email_messages WHERE id = 'plain-old-message'`,
 		).first(),
-	).toBeNull()
+	).toMatchObject({ id: 'plain-old-message' })
 
 	const retried = await pruneSystemEmailRetention({
 		db: env.APP_DB,
@@ -412,13 +413,18 @@ test('system email retention deletes blobs before rows and keeps rows when the b
 		now,
 	})
 
-	expect(retried.deletedMessages).toBe(1)
+	expect(retried.deletedMessages).toBe(2)
 	expect(retried.deletedRawMimeBlobs).toBe(1)
 	expect(retried.blobDeleteErrors).toBe(0)
 	expect(await env.EMAIL_BLOBS.get(rawMimeKey)).toBeNull()
 	expect(
 		await env.APP_DB.prepare(
 			`SELECT id FROM email_messages WHERE id = 'blob-ordering-message'`,
+		).first(),
+	).toBeNull()
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM email_messages WHERE id = 'plain-old-message'`,
 		).first(),
 	).toBeNull()
 })
@@ -477,9 +483,8 @@ test('system email retention advances past skipped blob rows at the head of a ba
 			.run()
 	}
 
-	// Every blob delete fails: the whole first batch is skipped, but the
-	// keyset cursor advances so the plain rows in the next batch are still
-	// pruned within the same run.
+	// Every message attempts the deterministic raw-MIME key, so an R2 outage
+	// skips every selected batch while the keyset cursor still advances.
 	const failingBlobs = new Proxy(env.EMAIL_BLOBS, {
 		get(target, property, receiver) {
 			if (property === 'delete') {
@@ -496,8 +501,8 @@ test('system email retention advances past skipped blob rows at the head of a ba
 		now,
 	})
 
-	expect(result.blobDeleteErrors).toBe(blockedCount)
-	expect(result.deletedMessages).toBe(plainCount)
+	expect(result.blobDeleteErrors).toBe(blockedCount + plainCount)
+	expect(result.deletedMessages).toBe(0)
 	// The simulated outage is warned for operators.
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'system-email-raw-mime-blob-delete-failed',
@@ -506,7 +511,7 @@ test('system email retention advances past skipped blob rows at the head of a ba
 	const remainingPlain = await env.APP_DB.prepare(
 		`SELECT COUNT(*) AS count FROM email_messages WHERE id LIKE 'head-plain-%'`,
 	).first<{ count: number }>()
-	expect(Number(remainingPlain?.count ?? -1)).toBe(0)
+	expect(Number(remainingPlain?.count ?? -1)).toBe(plainCount)
 	const remainingBlob = await env.APP_DB.prepare(
 		`SELECT COUNT(*) AS count FROM email_messages WHERE id LIKE 'head-blob-%'`,
 	).first<{ count: number }>()
@@ -519,7 +524,7 @@ test('system email retention advances past skipped blob rows at the head of a ba
 		blobs: env.EMAIL_BLOBS,
 		now,
 	})
-	expect(cleanup.deletedMessages).toBe(blockedCount)
+	expect(cleanup.deletedMessages).toBe(blockedCount + plainCount)
 })
 
 test('system email retention drains delivery-event backlogs larger than one batch', async () => {

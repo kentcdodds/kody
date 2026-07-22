@@ -34,6 +34,23 @@ export const accountUserDataExcludedOwnerIds = [
 ] as const
 
 /**
+ * Live user_id columns that are intentionally not account-deletion or export
+ * targets. They still count toward schema coverage so the guardrail tests fail
+ * if a new user-owned column is added without an explicit decision. Use this
+ * only for operational metadata that must outlive account wipe until another
+ * process finishes (for example sticky R2 orphan cleanup).
+ */
+export const accountUserDataOperationalExclusions = [
+	{
+		table: 'email_raw_mime_cleanup_queue',
+		column: 'user_id',
+		surface: 'email_raw_mime_cleanup_queue',
+		reason:
+			'Operational tombstone metadata for sticky EMAIL_BLOBS orphan cleanup after CAS-miss puts during raw MIME offload. Rows are not portable user content for export; account deletion must not erase pending cleanup until the offload maintenance queue processor confirms the blob delete.',
+	},
+] as const
+
+/**
  * Tables that are scoped by `user_id` (directly or transitively) and should
  * be included in per-user account operations. A cleanup-only reviewer target
  * can opt out of export so it does not disclose another user's content. The
@@ -260,6 +277,9 @@ export function getAccountD1UserColumnCoverage() {
 				)
 			}
 		}
+	}
+	for (const exclusion of accountUserDataOperationalExclusions) {
+		covered.add(`${exclusion.table}.${exclusion.column}`)
 	}
 	return covered
 }

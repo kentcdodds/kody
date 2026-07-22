@@ -37,6 +37,7 @@ import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { checkRateLimit, authRateLimitConfig } from '#app/rate-limit.ts'
 import { getRequestIp } from '#app/audit-log.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
+import { handleEmailRawMimeOffloadRequest } from './email-raw-mime-offload-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
@@ -244,6 +245,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/backfill-package-privacy') {
 			return handlePackagePrivacyBackfillRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/offload-email-raw-mime') {
+			return handleEmailRawMimeOffloadRequest(request, env)
 		}
 
 		if (url.pathname.startsWith('/__maintenance/')) {

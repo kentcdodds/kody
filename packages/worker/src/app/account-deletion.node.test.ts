@@ -6,7 +6,10 @@ import {
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
-import { accountUserDataExcludedOwnerIds } from './account-data-targets.ts'
+import {
+	accountUserDataExcludedOwnerIds,
+	accountUserDataOperationalExclusions,
+} from './account-data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
@@ -206,14 +209,14 @@ function createTestDb(initial: RowMap): {
 							}
 							if (
 								lower ===
-								'select raw_mime_key from email_messages where user_id = ? and raw_mime_key is not null'
+								'select id, raw_mime_key from email_messages where user_id = ?'
 							) {
 								results = (rows.email_messages ?? [])
-									.filter(
-										(row) =>
-											row['user_id'] === userId && row['raw_mime_key'] != null,
-									)
-									.map((row) => ({ raw_mime_key: row['raw_mime_key'] }))
+									.filter((row) => row['user_id'] === userId)
+									.map((row) => ({
+										id: row['id'],
+										raw_mime_key: row['raw_mime_key'] ?? null,
+									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							const kvMatch = lower.match(
@@ -243,6 +246,20 @@ function createTestDb(initial: RowMap): {
 						},
 						async run() {
 							const userId = params[0] as string | number
+							if (
+								lower ===
+								'update email_messages set raw_mime_offload_blocked = 1, updated_at = ? where user_id = ?'
+							) {
+								const claimUserId = params[1] as string
+								let changed = 0
+								for (const row of rows.email_messages ?? []) {
+									if (row['user_id'] !== claimUserId) continue
+									row['raw_mime_offload_blocked'] = 1
+									row['updated_at'] = params[0]
+									changed += 1
+								}
+								return { meta: { changes: changed } }
+							}
 							const nullColumnMatch = lower.match(
 								/^update (\w+) set ((?:\w+ = null)(?:, \w+ = null)*) where (\w+) = \?$/,
 							)
@@ -457,6 +474,50 @@ test('account deletion documents and preserves operator-owned system email rows'
 	])
 	expect(rows.email_inbox_addresses).toEqual([
 		{ id: 'system-address', user_id: 'system:email' },
+	])
+})
+
+test('account deletion documents operational cleanup-queue exclusion and preserves pending rows', async () => {
+	const cleanupExclusion = accountUserDataOperationalExclusions.find(
+		(exclusion) => exclusion.table === 'email_raw_mime_cleanup_queue',
+	)
+	expect(cleanupExclusion?.reason).toContain('Operational tombstone metadata')
+	expect(cleanupExclusion?.reason).toContain(
+		'must not erase pending cleanup until the offload maintenance queue processor confirms the blob delete',
+	)
+	expect(
+		getAccountDeletionD1UserColumnCoverage().has(
+			'email_raw_mime_cleanup_queue.user_id',
+		),
+	).toBe(true)
+
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'user@example.com' }],
+		email_messages: [{ id: 'user-message', user_id: 'user-aaa' }],
+		email_raw_mime_cleanup_queue: [
+			{
+				object_key: 'email-raw:v1:user-aaa/msg-1',
+				user_id: 'user-aaa',
+				message_id: 'msg-1',
+			},
+		],
+	})
+
+	await deleteUserAccount({
+		env: { APP_DB: db } as unknown as Parameters<
+			typeof deleteUserAccount
+		>[0]['env'],
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+
+	expect(rows.email_messages).toEqual([])
+	expect(rows.email_raw_mime_cleanup_queue).toEqual([
+		{
+			object_key: 'email-raw:v1:user-aaa/msg-1',
+			user_id: 'user-aaa',
+			message_id: 'msg-1',
+		},
 	])
 })
 
@@ -866,7 +927,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			raw_mime_key: 'email-raw:v1:user-bbb/em-3',
 		},
 	])
-	expect(deletedEmailBlobKeys).toEqual(['email-raw:v1:user-aaa/em-1'])
+	expect(deletedEmailBlobKeys.sort()).toEqual([
+		'email-raw:v1:user-aaa/em-1',
+		'email-raw:v1:user-aaa/em-2',
+	])
 	expect(rows.entitlement_daily_counters).toEqual([
 		{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
 	])
@@ -1005,7 +1069,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.updatedRowCounts.platform_feedback).toBe(1)
 	expect(result.deletedKvKeys).toBe(13)
 	expect(result.deletedCommunityAssets).toBe(3)
-	expect(result.deletedEmailBlobs).toBe(1)
+	expect(result.deletedEmailBlobs).toBe(2)
 	// Both the pinned snapshot revision and the current icon commit revision
 	// (the source's published commit) are removed, plus the user's avatar.
 	expect(deletedCommunityAssetKeys.sort()).toEqual([

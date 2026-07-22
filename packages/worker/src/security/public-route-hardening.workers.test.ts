@@ -100,6 +100,11 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			secret: env.CAPABILITY_REINDEX_SECRET,
 			notConfiguredMessage: 'Package privacy backfill is not configured',
 		},
+		{
+			path: '/__maintenance/offload-email-raw-mime',
+			secret: env.CAPABILITY_REINDEX_SECRET,
+			notConfiguredMessage: 'Email raw MIME offload is not configured',
+		},
 	] as const
 
 	for (const route of registeredMaintenanceRoutes) {

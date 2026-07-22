@@ -242,6 +242,8 @@ function createRetentionDb() {
 			subject TEXT NOT NULL DEFAULT '',
 			processing_status TEXT NOT NULL,
 			raw_mime_key TEXT,
+			raw_mime_offload_blocked INTEGER NOT NULL DEFAULT 0
+				CHECK (raw_mime_offload_blocked IN (0, 1)),
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
@@ -861,7 +863,9 @@ test('email message retention deletes old user rows, R2 blobs, attachments, and 
 		nextCursor: null,
 	})
 	expect(blobDelete).toHaveBeenCalledWith([
+		'email-raw:v1:user-1/msg-old-blob',
 		'raw-mime/user-1/msg-old-blob',
+		'email-raw:v1:user-1/msg-old-plain',
 		'email-attachment:v1:user-1/msg-old-plain/att-ext',
 	])
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([
@@ -894,16 +898,21 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 		blobs: { delete: failingDelete } as unknown as Pick<R2Bucket, 'delete'>,
 		now,
 	})
+	// Every message attempts at least the deterministic raw-MIME key, so an R2
+	// outage skips both the stored-key row and the plain residual.
 	expect(failedDelete).toMatchObject({
-		deletedMessages: 1,
+		deletedMessages: 0,
 		deletedRawMimeBlobs: 0,
-		blobDeleteErrors: 1,
+		blobDeleteErrors: 3,
 	})
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'retention-email-blob-delete-failed',
 		{ error: expect.any(Error) },
 	)
-	expect(idsForTable(sqlite, 'email_messages')).toEqual(['msg-old-blob'])
+	expect(idsForTable(sqlite, 'email_messages')).toEqual([
+		'msg-old-blob',
+		'msg-old-plain',
+	])
 
 	const workingDelete = vi.fn(async () => undefined)
 	const succeeded = await pruneUserEmailMessagesForRetention({
@@ -912,19 +921,24 @@ test('email message retention never deletes rows whose blob cannot be deleted fi
 		now,
 	})
 	expect(succeeded).toMatchObject({
-		deletedMessages: 1,
+		deletedMessages: 2,
 		deletedRawMimeBlobs: 1,
 	})
+	expect(workingDelete).toHaveBeenCalledWith([
+		'email-raw:v1:user-1/msg-old-blob',
+		'raw-mime/user-1/msg-old-blob',
+		'email-raw:v1:user-1/msg-old-plain',
+	])
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([])
 })
 
-test('email message retention cursor advances past skipped blob rows at the head', async () => {
+test('email message retention cursor advances past skipped rows when R2 deletes fail', async () => {
 	// Failed blob deletes are already counted via blobDeleteErrors below.
 	silenceExpectedConsoleWarns(['retention-email-blob-delete-failed'])
 	const { sqlite, db } = createRetentionDb()
-	// The two oldest expired rows are blob-backed and unpassable while the
-	// R2 delete fails; the two plain expired rows behind them must still be
-	// pruned within the same run.
+	// Every expired row attempts a deterministic raw-MIME delete, so an R2
+	// outage skips the whole batch; the cursor must still advance so later
+	// runs/batches are not stuck behind the head forever.
 	insertEmailMessage(sqlite, {
 		id: 'msg-blocked-a',
 		rawMimeKey: 'raw-mime/user-1/msg-blocked-a',
@@ -955,17 +969,21 @@ test('email message retention cursor advances past skipped blob rows at the head
 		now,
 		batchSize: 2,
 	})
-	// Full batch selected but nothing deleted: hasMore must stay true and the
-	// cursor must point past the skipped rows.
 	expect(first).toMatchObject({
 		deletedMessages: 0,
-		blobDeleteErrors: 2,
+		blobDeleteErrors: 4,
 		hasMore: true,
 	})
 	expect(first.nextCursor).toEqual({
 		createdAt: daysAgo(emailMessageRetentionDays + 3),
 		id: 'msg-blocked-b',
 	})
+	expect(failingBlobs.delete).toHaveBeenCalledWith([
+		'email-raw:v1:user-1/msg-blocked-a',
+		'raw-mime/user-1/msg-blocked-a',
+		'email-raw:v1:user-1/msg-blocked-b',
+		'raw-mime/user-1/msg-blocked-b',
+	])
 
 	const second = await pruneUserEmailMessagesForRetention({
 		db,
@@ -975,13 +993,19 @@ test('email message retention cursor advances past skipped blob rows at the head
 		cursor: first.nextCursor,
 	})
 	expect(second).toMatchObject({
-		deletedMessages: 2,
-		blobDeleteErrors: 0,
+		deletedMessages: 0,
+		blobDeleteErrors: 2,
 		hasMore: true,
 	})
+	expect(failingBlobs.delete).toHaveBeenCalledWith([
+		'email-raw:v1:user-1/msg-plain-a',
+		'email-raw:v1:user-1/msg-plain-b',
+	])
 	expect(idsForTable(sqlite, 'email_messages')).toEqual([
 		'msg-blocked-a',
 		'msg-blocked-b',
+		'msg-plain-a',
+		'msg-plain-b',
 	])
 
 	const third = await pruneUserEmailMessagesForRetention({
@@ -994,12 +1018,13 @@ test('email message retention cursor advances past skipped blob rows at the head
 	expect(third).toMatchObject({ deletedMessages: 0, hasMore: false })
 })
 
-test('retention run prunes expired plain emails behind a skipped blob-row head', async () => {
+test('retention run reports blob delete errors across a full email batch when R2 is down', async () => {
 	// Failed blob deletes are already counted via blobDeleteErrors below.
 	silenceExpectedConsoleWarns(['retention-email-blob-delete-failed'])
 	const { sqlite, db } = createRetentionDb()
-	// 251 blob-backed rows fill the first default-size batch and spill into the
-	// second; 5 plain expired rows sit behind them.
+	// 251 stored-key rows fill the first default-size batch and spill into the
+	// second; 5 plain expired rows sit behind them. Every row attempts the
+	// deterministic key, so an R2 outage skips the entire selection.
 	for (let index = 0; index < 251; index += 1) {
 		insertEmailMessage(sqlite, {
 			id: `msg-blob-${String(index).padStart(3, '0')}`,
@@ -1027,16 +1052,14 @@ test('retention run prunes expired plain emails behind a skipped blob-row head',
 		},
 	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
 
-	// Every blob delete fails, so every blob row is skipped, yet the
-	// run-level cursor advances past them so the plain rows in the second
-	// batch are still pruned within the same run.
 	const result = await pruneRetention({ env, now })
 
-	expect(result.emailMessages.deletedMessages).toBe(5)
-	expect(result.emailMessages.blobDeleteErrors).toBe(251)
+	expect(result.emailMessages.deletedMessages).toBe(0)
+	// Batch 1: 250 rows * (deterministic + stored) = 500 keys.
+	// Batch 2: 1 stored-key row (2 keys) + 5 plain rows (1 key each) = 7.
+	expect(result.emailMessages.blobDeleteErrors).toBe(507)
 	expect(result.batchesPerTable['email_messages']).toBe(2)
-	expect(idsForTable(sqlite, 'email_messages')).toHaveLength(251)
-	expect(idsForTable(sqlite, 'email_messages')).not.toContain('msg-plain-0')
+	expect(idsForTable(sqlite, 'email_messages')).toHaveLength(256)
 })
 
 test('retention prune reports selected separately from deleted when rows vanish mid-batch', async () => {

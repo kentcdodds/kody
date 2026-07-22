@@ -71,8 +71,12 @@ Deletion must cover these user-owned surfaces:
   and listing children for community-owned listings. The guardrail test in
   `packages/worker/src/app/account-deletion.node.test.ts` applies the live
   migrations to SQLite and fails if a user-owned schema column is not
-  represented in the deletion target list, or if the deletion target list
-  references a stale column.
+  represented in the deletion target list (or an explicit
+  `accountUserDataOperationalExclusions` entry), or if the deletion target list
+  references a stale column. Operational exclusions such as
+  `email_raw_mime_cleanup_queue` are sticky tombstones for pending EMAIL_BLOBS
+  orphan cleanup and must not be wiped by account deletion before that cleanup
+  succeeds.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, and
   `PackageServiceInstance` are purged through account-deletion RPCs after their
@@ -302,18 +306,64 @@ validated derived output or a generated fallback.
 Raw email MIME payloads live in the `EMAIL_BLOBS` R2 bucket instead of D1.
 `email_messages` stores an object key in `raw_mime_key`
 (`email-raw:v1:{userId}/{messageId}`), and the legacy inline `raw_mime` column
-is kept only for rows written before the offload (or when the binding is
-unavailable at write time — the write path falls back to inline storage rather
-than losing mail, and never throws from that decision).
+is kept only for residual rows that have not yet been swept (or when R2 put
+fails at write time — the write path falls back to inline storage rather than
+losing mail, and never throws from that decision).
 
 - All reads go through `loadRawMime` in `packages/worker/src/email/repo.ts`,
   which prefers the inline payload and otherwise fetches the blob by key.
   Attachment content extraction re-parses the resolved MIME the same way as
   before.
-- `deleteEmailMessageById` deletes the message's blob best-effort after the D1
-  row delete; blob cleanup never blocks the delete.
-- Account deletion enumerates the user's `raw_mime_key` values before D1 rows
-  are removed and deletes the blobs with warnings on failure.
+- Message deletes claim rows first by setting transitional
+  `raw_mime_offload_blocked = 1` for exactly the user-scoped ids about to be
+  removed (`claimEmailMessagesForDeletion` /
+  `claimAllUserEmailMessagesForDeletion`). Claims always bind `user_id`, so no
+  row can be cross-user claimed. After claim, deletes always include the
+  deterministic `emailRawMimeKey(userId, messageId)` in the R2 delete set (plus
+  a divergent stored `raw_mime_key` when present): `deleteEmailMessageById`
+  (best-effort after the D1 row delete), user email retention and system-email
+  retention (strict: blob delete before row delete; failed blob deletes leave
+  the blocked row for retry — later selection still includes blocked rows), and
+  account deletion (best-effort with warnings; claims then enumerates every
+  message id for the user before D1 rows are removed). The claim column is
+  dropped later with `raw_mime`.
+- Post-deploy, production loops the idempotent maintenance endpoint
+  `POST /__maintenance/offload-email-raw-mime` (Bearer
+  `CAPABILITY_REINDEX_SECRET`; see
+  `packages/worker/src/email-raw-mime-offload-maintenance.ts`). Each request
+  first drains at most one bounded batch from the sticky
+  `email_raw_mime_cleanup_queue` (keyed by R2 object key, mutated only with
+  `object_key` + `user_id`), then processes at most one bounded inline batch
+  (≤10 residual `raw_mime IS NOT NULL AND raw_mime_offload_blocked = 0` rows):
+  puts each payload to the deterministic per-user key from
+  `emailRawMimeKey(userId, id)`, then clears `raw_mime` only after a successful
+  R2 put via a conditional update bound to `id` + `user_id` + `blocked = 0`.
+  Dual-state rows treat inline bytes as authoritative. When the conditional
+  update misses, the handler rereads the row: deleted rows and deletion-claimed
+  (`blocked = 1`) rows that must drop the just-put key first upsert a
+  user-scoped queue tombstone, then retry orphan delete; the queue row is
+  removed only after a confirmed delete, otherwise it is left/updated and the
+  row fails (successful blocked cleanup is a skip, not an offload success). Rows
+  already pointing at a key with inline null count as success; rows that still
+  have inline bytes count as failed. Put/update failures leave inline intact so
+  retries converge. The response reports `scanned`, `offloaded`, `failed`
+  (inline failures plus cleanup-queue failures), `cleanup`
+  `{ scanned, deleted, failed }`, `remainingBlobCleanup`, `remainingInline` (all
+  inline residuals), `remainingOffloadableInline` (`blocked = 0`),
+  `remainingBlockedInline` (`blocked = 1`), `complete`, and `ok`. `complete`
+  means `remainingBlobCleanup = 0` and `remainingOffloadableInline = 0`, so a
+  failed orphan delete stays sticky across requests until a later queue drain
+  succeeds — the endpoint may finish with blocked inline rows because deletion
+  owns them; production logs keep the total/blocked counters so Stage 4 can
+  require `remainingInline = 0` before dropping the column. The cleanup queue is
+  operational tombstone metadata (`accountUserDataOperationalExclusions`): it is
+  not exported and account deletion must not erase pending rows before blob
+  cleanup succeeds. Incomplete progress with `failed=0` is HTTP 200 / `ok=true`;
+  any row failure is HTTP 500. Deploy loops until `complete === true` (it does
+  not treat total `remainingInline === 0` as a shortcut) and fails if the secret
+  is missing, on non-2xx / nonzero `failed`, or if `complete` is still false
+  after the attempt cap. The write-time inline fallback policy and `loadRawMime`
+  dual-read path stay in place until a later column-drop stage.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
@@ -776,11 +826,14 @@ Current retention policies:
   at 5000.
 - `email_messages` / `email_attachments` / `email_threads`: user-owned messages
   (excluding the `system:email` owner) keep 365 days, deleted oldest first in
-  batches. For rows with `raw_mime_key`, the `EMAIL_BLOBS` R2 blob is deleted
-  before the row; if the blob delete fails, those rows are skipped and retried
-  on a later run so blobs are never orphaned. Dependent `email_attachments` rows
-  are deleted before their messages, and threads left with no messages are
-  pruned for the affected users.
+  batches. Before R2/D1 cleanup, retention claims selected rows
+  (`raw_mime_offload_blocked = 1`, user-scoped) so offload cannot clear them
+  mid-delete, then deletes the deterministic
+  `emailRawMimeKey(userId, messageId)` (and a divergent stored `raw_mime_key`
+  when present) from `EMAIL_BLOBS`; if the blob delete fails, those blocked rows
+  are skipped and still selected on later runs so cleanup can retry. Dependent
+  `email_attachments` rows are deleted before their messages, and threads left
+  with no messages are pruned for the affected users.
 - `entitlement_daily_counters`: daily rate counters keep 400 days by `day` key.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.

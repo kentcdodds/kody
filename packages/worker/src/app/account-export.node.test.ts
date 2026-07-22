@@ -146,6 +146,58 @@ test('account export documents and excludes operator-owned system email rows', a
 			name: 'system_email_inboxes',
 			reason: expect.stringContaining('Operator-owned inbound mail'),
 		}),
+		expect.objectContaining({
+			name: 'email_raw_mime_cleanup_queue',
+			reason: expect.stringContaining('Operational tombstone metadata'),
+		}),
+	])
+})
+
+test('account export documents operational cleanup-queue exclusion and does not export it', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+
+		INSERT INTO email_raw_mime_cleanup_queue (
+			object_key, user_id, message_id, attempt_count, last_error, created_at, updated_at
+		) VALUES (
+			'email-raw:v1:user-aaa/msg-1', 'user-aaa', 'msg-1', 1, 'r2-delete-failed',
+			'2026-07-05', '2026-07-05'
+		);
+	`)
+
+	const accountExport = await createAccountExport({
+		env: { APP_DB: db } as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		generatedAt: '2026-07-05T00:00:00.000Z',
+	})
+
+	expect(accountExport.d1).not.toHaveProperty('email_raw_mime_cleanup_queue')
+	expect(accountExport.manifest.excludedD1Surfaces).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				name: 'email_raw_mime_cleanup_queue',
+				reason: expect.stringContaining(
+					'must not erase pending cleanup until the offload maintenance queue processor confirms the blob delete',
+				),
+			}),
+		]),
+	)
+	const remaining = sqlite
+		.prepare(
+			`SELECT object_key, user_id FROM email_raw_mime_cleanup_queue WHERE user_id = ?`,
+		)
+		.all('user-aaa')
+	expect(remaining).toEqual([
+		{ object_key: 'email-raw:v1:user-aaa/msg-1', user_id: 'user-aaa' },
 	])
 })
 

@@ -1,3 +1,7 @@
+import {
+	claimEmailMessagesForDeletion,
+	emailRawMimeKeysForDelete,
+} from '#worker/email/repo.ts'
 import { systemEmailOwnerId } from '#worker/email/system-email.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import {
@@ -141,7 +145,7 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 		retentionDays: emailMessageRetentionDays,
 		batchSize: retentionDefaultBatchSize,
 		description:
-			'User email messages keep 365 days, oldest first. R2 raw MIME blobs are deleted before their rows; rows whose blob delete fails are skipped and retried so blobs are never orphaned. Operator system:email messages remain governed by system-email retention.',
+			'User email messages keep 365 days, oldest first. Selected rows are claimed (raw_mime_offload_blocked=1, user-scoped) before R2/D1 cleanup so offload cannot clear them mid-delete; deterministic raw-MIME keys (and divergent stored keys) are deleted from R2 before their rows; rows whose blob delete fails stay blocked and are retried. Operator system:email messages remain governed by system-email retention.',
 	},
 	{
 		table: 'email_attachments',
@@ -822,6 +826,22 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		hasMore: false,
 		nextCursor: null,
 	}
+	// Claim before R2/D1 cleanup so offload cannot clear residual inline MIME
+	// mid-delete. Selection still includes already-blocked rows so a prior
+	// failed blob delete can be retried. Claims are always user-scoped.
+	const messageIdsByUserId = new Map<string, Array<string>>()
+	for (const row of rows) {
+		const ids = messageIdsByUserId.get(row.user_id)
+		if (ids) ids.push(row.id)
+		else messageIdsByUserId.set(row.user_id, [row.id])
+	}
+	for (const [userId, messageIds] of messageIdsByUserId) {
+		await claimEmailMessagesForDeletion({
+			db: input.db,
+			userId,
+			messageIds,
+		})
+	}
 	// Externally stored attachments (outbound mail) have their own R2
 	// objects that must be deleted along with the raw-MIME blobs.
 	const attachmentKeysByMessageId = new Map<string, Array<string>>()
@@ -853,9 +873,15 @@ export async function pruneUserEmailMessagesForRetention(input: {
 		}
 	}
 	const blobKeysForRow = (row: (typeof rows)[number]) => [
-		...(row.raw_mime_key !== null ? [row.raw_mime_key] : []),
+		...emailRawMimeKeysForDelete({
+			userId: row.user_id,
+			messageId: row.id,
+			storedRawMimeKey: row.raw_mime_key,
+		}),
 		...(attachmentKeysByMessageId.get(row.id) ?? []),
 	]
+	// Every message attempts at least the deterministic raw-MIME key so an
+	// in-flight offload put cannot leave an orphan after the D1 row is gone.
 	const rowsWithBlob = rows.filter((row) => blobKeysForRow(row).length > 0)
 	// Never delete a row whose R2 blobs could not be deleted first: once
 	// the row is gone its blob keys are lost and the blobs are orphaned

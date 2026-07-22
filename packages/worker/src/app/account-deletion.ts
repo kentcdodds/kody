@@ -28,6 +28,10 @@ import {
 	buildCommunityIconR2Key,
 } from '#worker/community/community-icon.ts'
 import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
+import {
+	claimAllUserEmailMessagesForDeletion,
+	emailRawMimeKeysForDelete,
+} from '#worker/email/repo.ts'
 
 // Imported manually instead of via `@cloudflare/workers-oauth-provider` so
 // node-only unit tests can require this module without dragging in
@@ -297,14 +301,23 @@ async function listUserPackageServices(env: Env, userId: string) {
 }
 
 async function listUserEmailBlobKeys(env: Env, userId: string) {
+	// Claim before key enumeration so offload cannot clear residual inline MIME
+	// between the inventory snapshot and D1 row removal.
+	await claimAllUserEmailMessagesForDeletion({
+		db: env.APP_DB,
+		userId,
+	})
 	const [rawMimeRows, attachmentRows] = await Promise.all([
+		// Include every message id so the deterministic raw-MIME key is always
+		// deleted even when an in-flight offload has not yet committed
+		// raw_mime_key (or left only an inline residual).
 		env.APP_DB.prepare(
-			`SELECT raw_mime_key
+			`SELECT id, raw_mime_key
 			FROM email_messages
-			WHERE user_id = ? AND raw_mime_key IS NOT NULL`,
+			WHERE user_id = ?`,
 		)
 			.bind(userId)
-			.all<{ raw_mime_key: string }>(),
+			.all<{ id: string; raw_mime_key: string | null }>(),
 		// Externally stored attachments (outbound mail) have their own R2
 		// objects, separate from any raw-MIME blob.
 		env.APP_DB.prepare(
@@ -317,7 +330,13 @@ async function listUserEmailBlobKeys(env: Env, userId: string) {
 			.all<{ storage_key: string }>(),
 	])
 	return uniqueStrings([
-		...(rawMimeRows.results ?? []).map((row) => row.raw_mime_key),
+		...(rawMimeRows.results ?? []).flatMap((row) =>
+			emailRawMimeKeysForDelete({
+				userId,
+				messageId: row.id,
+				storedRawMimeKey: row.raw_mime_key,
+			}),
+		),
 		...(attachmentRows.results ?? []).map((row) => row.storage_key),
 	])
 }
