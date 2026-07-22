@@ -236,6 +236,34 @@ test('refreshing to a new revision deletes the stale manifest cache key', async 
 	])
 })
 
+test('refresh and removal deterministically delete legacy combined indexes', async () => {
+	const { kv, store } = createKv()
+	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env
+	for (const scope of ['search', 'context']) {
+		store.set(`package-retriever-index:v1:user-1:${scope}`, '{}')
+	}
+	await refreshPackageRetrieverManifestCache({
+		env,
+		userId: 'user-1',
+		source: createSource(),
+		savedPackage: createSavedPackage(),
+		manifest: createRetrieverManifest(),
+	})
+	expect(store.has('package-retriever-index:v1:user-1:search')).toBe(false)
+	expect(store.has('package-retriever-index:v1:user-1:context')).toBe(false)
+
+	for (const scope of ['search', 'context']) {
+		store.set(`package-retriever-index:v1:user-1:${scope}`, '{}')
+	}
+	await removePackageRetrieverManifestCacheEntries({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+	expect(store.has('package-retriever-index:v1:user-1:search')).toBe(false)
+	expect(store.has('package-retriever-index:v1:user-1:context')).toBe(false)
+})
+
 test('listPackageRetrieversForScope filters stale, malformed, and prefix-colliding cache rows', async () => {
 	const { kv, store } = createKv()
 	const env = { BUNDLE_ARTIFACTS_KV: kv } as Env

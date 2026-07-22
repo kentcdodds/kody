@@ -32,7 +32,14 @@ export type UserScopedDataTarget =
 	  }
 	| { kind: 'bucket_parent'; table: string; parentTable: string }
 	| { kind: 'attachment_parent'; table: string }
-	| { kind: 'community_listing_child'; table: string; listingColumn: string }
+	| {
+			kind: 'community_listing_child'
+			table: string
+			listingColumn: string
+			includeInExport?: boolean
+			surface?: string
+			reason?: string
+	  }
 	| { kind: 'mcp_memory_suppression' }
 
 export const accountUserDataExcludedOwnerIds = [
@@ -68,7 +75,8 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
 	for (const target of accountUserDataTargets) {
 		if (!isExcludedFromAccountExport(target)) continue
 		if (
-			target.kind === 'user_id' &&
+			'surface' in target &&
+			'reason' in target &&
 			typeof target.surface === 'string' &&
 			typeof target.reason === 'string'
 		) {
@@ -152,6 +160,10 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		kind: 'community_listing_child',
 		table: 'community_ratings',
 		listingColumn: 'listing_id',
+		includeInExport: false,
+		surface: 'community_listing_ratings_by_other_users',
+		reason:
+			'Ratings belong in the rating author export. Listing-owner deletion still cascades them, but listing-owner export must not disclose another user’s identity, score, or note.',
 	},
 	{ kind: 'user_id', table: 'community_ratings' },
 	{
@@ -179,6 +191,10 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		kind: 'community_listing_child',
 		table: 'community_forks',
 		listingColumn: 'listing_id',
+		includeInExport: false,
+		surface: 'community_listing_forks_by_other_users',
+		reason:
+			'Fork and adoption records belong in the forking user export. Listing-owner deletion still cascades them, but listing-owner export must not disclose another user’s identity or adoption note.',
 	},
 	{
 		kind: 'user_columns',
@@ -189,6 +205,10 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		kind: 'community_listing_child',
 		table: 'community_reports',
 		listingColumn: 'listing_id',
+		includeInExport: false,
+		surface: 'community_listing_reports_by_other_users',
+		reason:
+			'Community reports are attributed moderation submissions. Listing-owner deletion still cascades them, but listing-owner export must not disclose reporter identity, report reasons, or moderation notes.',
 	},
 	{
 		kind: 'user_columns',

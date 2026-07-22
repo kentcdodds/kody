@@ -138,6 +138,8 @@ Exports are versioned JSON documents:
 - `oauthGrants` — OAuth grant metadata only.
 - `artifactRepos` — Artifacts repo pointers from `entity_sources`.
 - `kvKeys` — KV source/cache keys that belong to the user.
+- `r2Objects` — owned R2 object references. Payload bytes are read through the
+  chunked `r2_object` section rather than embedded in this full JSON document.
 
 Secret values are **never** exported. `secret_entries` rows are metadata-only:
 name, description, bucket, allowed hosts, allowed kody, allowed packages, and
@@ -158,7 +160,9 @@ migration-safe chunked interface:
   with `section: "d1_table"` and a table name. Durable storage buckets are read
   with `section: "storage_runner"` and a `storage_id`, using the same
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
-  storage export capability.
+  storage export capability. R2 raw MIME, attachment, avatar, and icon objects
+  use `section: "r2_object"`; each response contains at most one 256 KiB base64
+  chunk and an opaque cursor. Missing objects are represented explicitly.
 
 D1 rows are always read with SQL-level keyset pagination: every query orders by
 the table's `rowid`, resumes strictly after an opaque cursor, and applies a SQL
@@ -702,10 +706,13 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
   for per-entry retriever index rows.
 - `package-retriever-index:v1:{userId}:{scope}` — legacy combined retriever
-  index blob (no longer written). Residual blobs for active users are unused and
-  are not removed by refresh/removal; account deletion lists and deletes keys
-  under the user-scoped prefix `package-retriever-index:v1:{userId}:`. There is
-  no global sweep because that would require cross-user KV enumeration.
+  index blob (no longer written). Package refresh/removal and account deletion
+  delete the known `search` and `context` keys directly, so cleanup does not
+  depend on KV prefix listing. There is no global sweep because that would
+  require cross-user KV enumeration.
+- `derived-cache:v1:usage-rollups:user:{userId}:asof:{YYYY-MM}` — derived
+  per-user usage read model written with KV `expirationTtl`; retention is five
+  minutes, so immediate account-deletion cleanup is not required.
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage
@@ -726,7 +733,9 @@ App-owned R2 keys are:
   the keys stored on their rows.
 
 New R2 key prefixes must add corresponding account-deletion coverage or a
-deliberate retention note, same as KV.
+deliberate retention note, same as KV. All currently registered R2 surfaces use
+the bounded `r2_object` account-export section; the inventory is derived from
+the same user-owned D1 rows used by account deletion.
 
 ### Vectorize metadata contracts
 

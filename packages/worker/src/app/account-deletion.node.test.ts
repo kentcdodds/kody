@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
+	AccountDeletionInventoryError,
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
@@ -11,7 +12,10 @@ import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
-function createTestDb(initial: RowMap): {
+function createTestDb(
+	initial: RowMap,
+	options?: { failSelectContaining?: string },
+): {
 	db: D1Database
 	rows: RowMap
 } {
@@ -52,6 +56,12 @@ function createTestDb(initial: RowMap): {
 				bind(...params: Array<unknown>) {
 					return {
 						async all<T>() {
+							if (
+								options?.failSelectContaining &&
+								lower.includes(options.failSelectContaining)
+							) {
+								throw new Error('simulated inventory read failure')
+							}
 							let results: Array<unknown> = []
 							const userId = params[0] as string
 							if (
@@ -1151,4 +1161,81 @@ test('deleteUserAccount handles OAuth grant revocation and warning-only edge cas
 		'Email blob delete failed for email-raw:v1:user-aaa/em-1: simulated R2 outage',
 	)
 	expect(kvFailureResult.warnings.length).toBeGreaterThan(0)
+})
+
+test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
+	const { db, rows } = createTestDb(
+		{
+			users: [{ id: 1, email: 'a@example.com' }],
+			mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
+			jobs: [{ id: 'job-a', user_id: 'user-aaa', storage_id: 'job:job-a' }],
+		},
+		{ failSelectContaining: 'select id from mcp_memories where user_id = ?' },
+	)
+	const deleteVectors = vi.fn(async () => undefined)
+	const clearStorage = vi.fn(async () => undefined)
+	await expect(
+		deleteUserAccount({
+			env: {
+				APP_DB: db,
+				CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectors },
+				STORAGE_RUNNER: {
+					idFromName: (name: string) => name as unknown as DurableObjectId,
+					get: () => ({ clearStorage }),
+				},
+			} as unknown as Parameters<typeof deleteUserAccount>[0]['env'],
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInventoryError)
+	expect(rows.users).toEqual([{ id: 1, email: 'a@example.com' }])
+	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
+	expect(rows.jobs).toEqual([
+		{ id: 'job-a', user_id: 'user-aaa', storage_id: 'job:job-a' },
+	])
+	expect(deleteVectors).not.toHaveBeenCalled()
+	expect(clearStorage).not.toHaveBeenCalled()
+})
+
+test('account deletion removes deterministic legacy retriever keys when KV listing fails', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com' }],
+		saved_packages: [
+			{
+				id: 'package-a',
+				user_id: 'user-aaa',
+				kody_id: 'package-a',
+				source_id: 'source-a',
+				has_app: 0,
+			},
+		],
+	})
+	const deletedKeys: Array<string> = []
+	const result = await deleteUserAccount({
+		env: {
+			APP_DB: db,
+			BUNDLE_ARTIFACTS_KV: {
+				delete: vi.fn(async (key: string) => {
+					deletedKeys.push(key)
+				}),
+				list: vi.fn(async () => {
+					throw new Error('KV list unavailable')
+				}),
+			},
+		} as unknown as Parameters<typeof deleteUserAccount>[0]['env'],
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(rows.users).toEqual([])
+	expect(deletedKeys).toEqual(
+		expect.arrayContaining([
+			'package-retriever-index:v1:user-aaa:search',
+			'package-retriever-index:v1:user-aaa:context',
+		]),
+	)
+	expect(result.warnings).toEqual(
+		expect.arrayContaining([
+			expect.stringContaining('Package retriever KV cleanup failed'),
+		]),
+	)
 })

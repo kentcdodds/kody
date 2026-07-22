@@ -3,7 +3,10 @@ import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { type routes } from '#app/routes.ts'
-import { deleteUserAccount } from '#app/account-deletion.ts'
+import {
+	AccountDeletionInventoryError,
+	deleteUserAccount,
+} from '#app/account-deletion.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
@@ -71,11 +74,32 @@ export function createAccountDeleteHandler(env: Env) {
 				)
 			}
 
-			const result = await deleteUserAccount({
-				env,
-				dbUserId: user.userId,
-				mcpUserId: user.mcpUser.userId,
-			})
+			let result: Awaited<ReturnType<typeof deleteUserAccount>>
+			try {
+				result = await deleteUserAccount({
+					env,
+					dbUserId: user.userId,
+					mcpUserId: user.mcpUser.userId,
+				})
+			} catch (error) {
+				if (!(error instanceof AccountDeletionInventoryError)) throw error
+				void logAuditEvent({
+					category: 'auth',
+					action: 'account_delete',
+					result: 'failure',
+					email: user.email,
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'inventory_incomplete',
+				})
+				return Response.json(
+					{
+						error:
+							'Account deletion could not complete safely. Try again later.',
+					},
+					{ status: 503 },
+				)
+			}
 
 			void logAuditEvent({
 				category: 'auth',

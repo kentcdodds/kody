@@ -78,6 +78,7 @@ test('account user-owned surface registry covers known out-of-band surfaces', ()
 		'published_bundle_artifact_kv_key',
 		'source_manifest_snapshot',
 		'source_snapshot',
+		'usage_rollup_derived_cache',
 	])
 	expect([...coverage.r2SurfaceIds].sort()).toEqual([
 		'community_icon',
@@ -136,6 +137,11 @@ test('R2 surfaces cover email blobs, community icons, and user avatars', () => {
 			}),
 		]),
 	)
+	expect(
+		accountUserOwnedR2Surfaces.every(
+			(surface) => surface.export === 'chunked_bytes',
+		),
+	).toBe(true)
 })
 
 test('account deletion and export consume the out-of-band surface registry', () => {
@@ -149,6 +155,7 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	expect(accountExportSource).toContain(
 		'getAccountExportExcludedDurableObjects',
 	)
+	expect(accountExportSource).toContain('collectAccountR2Inventory')
 
 	for (const prefix of [
 		'source-snapshot:v1:',

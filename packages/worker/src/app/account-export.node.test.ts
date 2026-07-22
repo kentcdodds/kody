@@ -359,6 +359,145 @@ test('account export includes profile fields and social graph edges for either s
 	).toBe(2)
 })
 
+test('account export separates listing-owner deletion cascades from participant ownership', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		) VALUES
+			(1, 'owner', 'owner@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-owner'),
+			(2, 'participant', 'participant@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-participant');
+		INSERT INTO community_listings (
+			id, owner_user_id, package_id, source_id, kody_id, name, description,
+			tags_json, license, pinned_commit, status, published_at
+		) VALUES (
+			'listing-owner', 'user-owner', 'pkg-owner', 'src-owner', 'owned',
+			'@owner/owned', 'Owned listing', '[]', 'MIT', 'commit-owner', 'active',
+			'2026-07-05'
+		);
+		INSERT INTO community_ratings (
+			id, listing_id, user_id, stars, adaptation_effort, note
+		) VALUES (
+			'rating-private', 'listing-owner', 'user-participant', 4, 3,
+			'private rating note'
+		);
+		INSERT INTO community_forks (
+			id, listing_id, forker_user_id, origin_commit, forked_package_id,
+			forked_source_id, target_kody_id, adoption_note
+		) VALUES (
+			'fork-private', 'listing-owner', 'user-participant', 'commit-owner',
+			'pkg-fork', 'src-fork', 'forked', 'private adoption note'
+		);
+		INSERT INTO community_reports (
+			id, listing_id, listing_name, listing_owner_user_id, reporter_user_id,
+			reason
+		) VALUES (
+			'report-private', 'listing-owner', '@owner/owned', 'user-owner',
+			'user-participant', 'private report reason'
+		);
+	`)
+	const ownerExport = await createAccountExport({
+		env: { APP_DB: db } as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-owner',
+	})
+	expect(ownerExport.d1.community_ratings.rows).toEqual([])
+	expect(ownerExport.d1.community_forks.rows).toEqual([])
+	expect(ownerExport.d1.community_reports.rows).toEqual([])
+
+	const participantExport = await createAccountExport({
+		env: { APP_DB: db } as Env,
+		dbUserId: 2,
+		mcpUserId: 'user-participant',
+	})
+	expect(participantExport.d1.community_ratings.rows).toEqual([
+		expect.objectContaining({
+			id: 'rating-private',
+			note: 'private rating note',
+		}),
+	])
+	expect(participantExport.d1.community_forks.rows).toEqual([
+		expect.objectContaining({
+			id: 'fork-private',
+			adoption_note: 'private adoption note',
+		}),
+	])
+	expect(participantExport.d1.community_reports.rows).toEqual([
+		expect.objectContaining({
+			id: 'report-private',
+			reason: 'private report reason',
+		}),
+	])
+})
+
+test('R2 export pages owned payloads in bounded chunks and reports missing objects', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id, avatar_key
+		) VALUES
+			(1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-aaa', 'user-avatars/user-aaa/avatar.png'),
+			(2, 'user-b', 'b@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-bbb', 'user-avatars/user-bbb/avatar.png');
+		INSERT INTO email_messages (
+			id, direction, user_id, from_address, subject, processing_status,
+			created_at, updated_at
+		) VALUES
+			('mail-a', 'inbound', 'user-aaa', 'sender@example.com', 'A', 'stored', '2026-07-05', '2026-07-05'),
+			('mail-b', 'inbound', 'user-bbb', 'sender@example.com', 'B', 'stored', '2026-07-05', '2026-07-05');
+	`)
+	const mimeBytes = new TextEncoder().encode('Subject: A\r\n\r\nbody')
+	const getEmailBlob = vi.fn(async (key: string) => {
+		if (key !== 'email-raw:v1:user-aaa/mail-a') return null
+		return {
+			size: mimeBytes.byteLength,
+			httpEtag: '"etag-a"',
+			httpMetadata: { contentType: 'message/rfc822' },
+			arrayBuffer: async () => mimeBytes.buffer,
+		}
+	})
+	const env = {
+		APP_DB: db,
+		EMAIL_BLOBS: { get: getEmailBlob },
+		COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
+	} as unknown as Env
+
+	const first = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'r2_object',
+	})
+	expect(first.items).toEqual([
+		expect.objectContaining({
+			surfaceId: 'user_avatar',
+			key: 'user-avatars/user-aaa/avatar.png',
+			missing: true,
+		}),
+	])
+	const second = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'r2_object',
+		startAfter: first.nextStartAfter ?? undefined,
+	})
+	expect(second.items).toEqual([
+		expect.objectContaining({
+			surfaceId: 'email_raw_mime',
+			key: 'email-raw:v1:user-aaa/mail-a',
+			contentBase64: btoa('Subject: A\r\n\r\nbody'),
+			objectComplete: true,
+		}),
+	])
+	expect(second.truncated).toBe(false)
+	expect(getEmailBlob).not.toHaveBeenCalledWith(
+		'email-raw:v1:user-bbb/mail-b',
+		expect.anything(),
+	)
+})
+
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`

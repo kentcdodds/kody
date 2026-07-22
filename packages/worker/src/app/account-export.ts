@@ -10,6 +10,10 @@ import {
 	getAccountD1UserColumnCoverage,
 } from '#app/account-data-targets.ts'
 import { getAccountExportExcludedDurableObjects } from '#app/account-user-owned-surfaces.ts'
+import {
+	collectAccountR2Inventory,
+	type AccountR2ObjectRef,
+} from '#app/account-r2-inventory.ts'
 import { exportJobManagerForUser } from '#worker/jobs/manager-client.ts'
 import {
 	buildPackageServiceStorageId,
@@ -34,6 +38,7 @@ const d1ExportPageSize = 500
 // Internal alias for the SQLite rowid used as the keyset cursor. Stripped from
 // exported rows so the export document schema is unchanged.
 const exportRowidColumn = '__account_export_rowid'
+const r2ExportChunkBytes = 256 * 1024
 
 export const accountExportSectionNames = [
 	'd1_table',
@@ -41,6 +46,7 @@ export const accountExportSectionNames = [
 	'oauth_grants',
 	'artifact_repos',
 	'kv_keys',
+	'r2_object',
 	'durable_object_summaries',
 ] as const
 
@@ -99,6 +105,7 @@ type UserExportInventory = {
 	packageServices: Array<UserPackageServiceSnapshot>
 	communityListingIds: Array<string>
 	bundleKvKeys: Array<string>
+	r2Objects: Array<AccountR2ObjectRef>
 	artifactRepos: Array<AccountExportArtifactRepo>
 }
 
@@ -131,6 +138,7 @@ export type AccountExportManifest = {
 	}
 	derivedData: {
 		vectorize: string
+		r2: string
 	}
 	excludedDurableObjects: Array<{
 		name: string
@@ -185,6 +193,7 @@ export type AccountExportFile = {
 	oauthGrants: Array<{ id: string; clientId: string }>
 	artifactRepos: Array<AccountExportArtifactRepo>
 	kvKeys: Array<string>
+	r2Objects: Array<AccountR2ObjectRef>
 }
 
 export type AccountExportSectionResult = {
@@ -545,15 +554,6 @@ async function listUserPackageServices(env: Env, userId: string) {
 	}))
 }
 
-async function listUserCommunityListingIds(env: Env, userId: string) {
-	const rows = await selectRows<{ id: string }>(
-		env,
-		`SELECT id FROM community_listings WHERE owner_user_id = ?`,
-		[userId],
-	)
-	return uniqueStrings(rows.map((row) => row.id))
-}
-
 async function listUserBundleKvKeys(input: {
 	env: Env
 	userId: string
@@ -617,6 +617,7 @@ async function listUserBundleKvKeys(input: {
 async function collectInventory(input: {
 	env: AccountExportEnv
 	userId: string
+	dbUserId: number
 	warnings: Array<string>
 }): Promise<UserExportInventory> {
 	const [
@@ -625,7 +626,7 @@ async function collectInventory(input: {
 		savedPackages,
 		remoteConnectors,
 		packageServices,
-		communityListingIds,
+		r2Inventory,
 	] = await Promise.all([
 		listUserStorageIds(input.env, input.userId).catch((error) => {
 			input.warnings.push(
@@ -657,13 +658,20 @@ async function collectInventory(input: {
 			)
 			return [] as Array<UserPackageServiceSnapshot>
 		}),
-		listUserCommunityListingIds(input.env, input.userId).catch((error) => {
+		collectAccountR2Inventory({
+			env: input.env,
+			userId: input.userId,
+			dbUserId: input.dbUserId,
+		}).catch((error) => {
 			input.warnings.push(
-				`Failed to enumerate community listings: ${getErrorMessage(error)}`,
+				`Failed to enumerate R2 objects: ${getErrorMessage(error)}`,
 			)
-			return [] as Array<string>
+			return { objects: [], communityListings: [] }
 		}),
 	])
+	const communityListingIds = r2Inventory.communityListings.map(
+		(listing) => listing.id,
+	)
 	const bundleKvKeys = await listUserBundleKvKeys({
 		env: input.env,
 		userId: input.userId,
@@ -693,6 +701,7 @@ async function collectInventory(input: {
 		packageServices,
 		communityListingIds,
 		bundleKvKeys,
+		r2Objects: r2Inventory.objects,
 		artifactRepos,
 	}
 }
@@ -1015,6 +1024,10 @@ function buildManifest(input: {
 		count: input.inventory.bundleKvKeys.length,
 		warnings: input.warnings.filter((warning) => warning.startsWith('KV ')),
 	}
+	sections.r2_objects = {
+		count: input.inventory.r2Objects.length,
+		warnings: input.warnings.filter((warning) => warning.includes('R2 object')),
+	}
 	return {
 		schemaVersion: accountExportSchemaVersion,
 		generatedAt: input.generatedAt,
@@ -1040,6 +1053,7 @@ function buildManifest(input: {
 		derivedData: {
 			vectorize:
 				'Vectorize entries for memories, jobs, and packages are derived from exported D1 rows and are intentionally excluded; rebuild them by reindexing after import.',
+			r2: 'R2 raw MIME, attachment, avatar, and icon bytes are exported through the r2_object section in bounded 256 KiB base64 chunks. Missing objects are returned explicitly instead of being silently omitted.',
 		},
 		excludedDurableObjects: getAccountExportExcludedDurableObjects(),
 		excludedD1Surfaces: getAccountExportExcludedD1Surfaces(),
@@ -1093,6 +1107,7 @@ export async function createAccountExportManifest(input: {
 		collectInventory({
 			env: input.env,
 			userId: input.mcpUserId,
+			dbUserId: input.dbUserId,
 			warnings,
 		}),
 		listOAuthGrants({
@@ -1130,6 +1145,7 @@ export async function createAccountExport(input: {
 		collectInventory({
 			env: input.env,
 			userId: input.mcpUserId,
+			dbUserId: input.dbUserId,
 			warnings,
 		}),
 		listOAuthGrants({
@@ -1160,6 +1176,114 @@ export async function createAccountExport(input: {
 		oauthGrants,
 		artifactRepos: inventory.artifactRepos,
 		kvKeys: inventory.bundleKvKeys,
+		r2Objects: inventory.r2Objects,
+	}
+}
+
+function encodeBytesBase64(bytes: Uint8Array) {
+	let binary = ''
+	const blockSize = 32 * 1024
+	for (let offset = 0; offset < bytes.length; offset += blockSize) {
+		binary += String.fromCharCode(...bytes.subarray(offset, offset + blockSize))
+	}
+	return btoa(binary)
+}
+
+function parseR2Cursor(startAfter: string | undefined) {
+	if (!startAfter) return { objectIndex: 0, offset: 0 }
+	const match = /^(\d+):(\d+)$/.exec(startAfter)
+	if (!match) throw new Error('Invalid r2_object cursor.')
+	return {
+		objectIndex: Number(match[1]),
+		offset: Number(match[2]),
+	}
+}
+
+async function readR2ObjectSection(input: {
+	env: AccountExportEnv
+	dbUserId: number
+	mcpUserId: string
+	startAfter: string | undefined
+	warnings: Array<string>
+}): Promise<AccountExportSectionResult> {
+	const inventory = await collectInventory({
+		env: input.env,
+		userId: input.mcpUserId,
+		dbUserId: input.dbUserId,
+		warnings: input.warnings,
+	})
+	const cursor = parseR2Cursor(input.startAfter)
+	const ref = inventory.r2Objects[cursor.objectIndex]
+	if (!ref) {
+		return {
+			section: 'r2_object',
+			items: [],
+			truncated: false,
+			nextStartAfter: null,
+			pageSize: 1,
+			warnings: input.warnings,
+		}
+	}
+	const bucket =
+		ref.binding === 'EMAIL_BLOBS'
+			? input.env.EMAIL_BLOBS
+			: input.env.COMMUNITY_ASSETS
+	try {
+		const object = await bucket.get(ref.key, {
+			range: { offset: cursor.offset, length: r2ExportChunkBytes },
+		})
+		if (!object) {
+			const nextIndex = cursor.objectIndex + 1
+			const truncated = nextIndex < inventory.r2Objects.length
+			return {
+				section: 'r2_object',
+				items: [{ ...ref, missing: true }],
+				truncated,
+				nextStartAfter: truncated ? `${nextIndex}:0` : null,
+				pageSize: 1,
+				warnings: input.warnings,
+			}
+		}
+		const bytes = new Uint8Array(await object.arrayBuffer())
+		const nextOffset = cursor.offset + bytes.byteLength
+		const objectComplete = nextOffset >= object.size
+		const nextIndex = objectComplete
+			? cursor.objectIndex + 1
+			: cursor.objectIndex
+		const truncated = !objectComplete || nextIndex < inventory.r2Objects.length
+		return {
+			section: 'r2_object',
+			items: [
+				{
+					...ref,
+					missing: false,
+					offset: cursor.offset,
+					size: object.size,
+					contentType: object.httpMetadata?.contentType ?? null,
+					etag: object.httpEtag,
+					contentBase64: encodeBytesBase64(bytes),
+					objectComplete,
+				},
+			],
+			truncated,
+			nextStartAfter: truncated
+				? `${nextIndex}:${objectComplete ? 0 : nextOffset}`
+				: null,
+			pageSize: 1,
+			warnings: input.warnings,
+		}
+	} catch (error) {
+		input.warnings.push(
+			`R2 object export failed for ${ref.binding}/${ref.key}: ${getErrorMessage(error)}`,
+		)
+		return {
+			section: 'r2_object',
+			items: [],
+			truncated: false,
+			nextStartAfter: null,
+			pageSize: 1,
+			warnings: input.warnings,
+		}
 	}
 }
 
@@ -1174,6 +1298,15 @@ export async function readAccountExportSection(input: {
 	startAfter?: string
 }): Promise<AccountExportSectionResult> {
 	const warnings: Array<string> = []
+	if (input.section === 'r2_object') {
+		return await readR2ObjectSection({
+			env: input.env,
+			dbUserId: input.dbUserId,
+			mcpUserId: input.mcpUserId,
+			startAfter: input.startAfter,
+			warnings,
+		})
+	}
 	if (input.section === 'storage_runner') {
 		if (!input.storageId) {
 			throw new Error('storage_id is required when section is storage_runner.')
@@ -1233,6 +1366,7 @@ export async function readAccountExportSection(input: {
 			const inventory = await collectInventory({
 				env: input.env,
 				userId: input.mcpUserId,
+				dbUserId: input.dbUserId,
 				warnings,
 			})
 			items = inventory.artifactRepos
@@ -1242,6 +1376,7 @@ export async function readAccountExportSection(input: {
 			const inventory = await collectInventory({
 				env: input.env,
 				userId: input.mcpUserId,
+				dbUserId: input.dbUserId,
 				warnings,
 			})
 			items = inventory.bundleKvKeys
@@ -1251,6 +1386,7 @@ export async function readAccountExportSection(input: {
 			const inventory = await collectInventory({
 				env: input.env,
 				userId: input.mcpUserId,
+				dbUserId: input.dbUserId,
 				warnings,
 			})
 			items = [
