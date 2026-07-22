@@ -131,10 +131,29 @@ test('buildConnectOauthNextSteps empty listings still guides create path', () =>
 		buildConnectOauthNextStepsGuidance({
 			integrationName: 'linear',
 			suggestionCount: 0,
+			trustedSuggestionCount: 0,
 		}),
 	)
 	expect(nextSteps.guidance).toContain('No close community helpers package')
 	expect(nextSteps.createHelpersCta.prompt).toContain('linear')
+})
+
+test('buildConnectOauthNextSteps avoids trusted copy when only untrusted listings match', () => {
+	const nextSteps = buildConnectOauthNextSteps({
+		integrationName: 'notion',
+		baseUrl: 'https://example.com',
+		listings: [
+			listing({
+				id: 'untrusted-notion',
+				name: 'notion-extra',
+				trusted: false,
+			}),
+		],
+	})
+	expect(nextSteps.suggestions).toHaveLength(1)
+	expect(nextSteps.suggestions[0]?.trusted).toBe(false)
+	expect(nextSteps.guidance).toContain('none are trusted yet')
+	expect(nextSteps.guidance).not.toContain('Prefer a trusted community listing')
 })
 
 test('buildConnectOauthPackageSuggestion includes fork CTA fields', () => {

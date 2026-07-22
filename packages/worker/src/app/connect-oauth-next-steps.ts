@@ -54,12 +54,16 @@ export function buildConnectOauthCreateHelpersPrompt(integrationName: string) {
 export function buildConnectOauthNextStepsGuidance(input: {
 	integrationName: string
 	suggestionCount: number
+	trustedSuggestionCount: number
 }) {
 	const base = `Connected. "${input.integrationName}" is an OAuth integration (auth credentials only) — not an agent-callable package. Durable agent interaction goes through a helpers package.`
-	if (input.suggestionCount > 0) {
+	if (input.suggestionCount <= 0) {
+		return `${base} No close community helpers package was found for this provider — create a thin helpers package next.`
+	}
+	if (input.trustedSuggestionCount > 0) {
 		return `${base} Prefer a trusted community listing below (fork or one-click install, then adapt). Create a thin helpers package only when none of these fit.`
 	}
-	return `${base} No close community helpers package was found for this provider — create a thin helpers package next.`
+	return `${base} Community listings below may help, but none are trusted yet — review carefully before forking, or create a thin helpers package.`
 }
 
 export function buildConnectOauthPackageSuggestion(input: {
@@ -102,6 +106,9 @@ export function buildConnectOauthNextSteps(input: {
 		guidance: buildConnectOauthNextStepsGuidance({
 			integrationName: input.integrationName,
 			suggestionCount: suggestions.length,
+			trustedSuggestionCount: suggestions.filter(
+				(suggestion) => suggestion.trusted,
+			).length,
 		}),
 		integrationName: input.integrationName,
 		suggestions,
