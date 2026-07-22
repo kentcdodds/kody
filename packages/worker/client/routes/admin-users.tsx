@@ -146,9 +146,9 @@ export function AdminUsersRoute(handle: Handle) {
 	let message: string | null = null
 	let actionState: 'idle' | 'assigning' | 'removing' | 'saving-plan' = 'idle'
 	let selectedRoleToAssign = 'user' as RoleName
-	// '' represents the NULL plan (legacy/unlimited). The draft follows the
-	// selected user (see the render body) until the admin edits it.
-	let selectedPlanChoice: AdminPlanName | '' = ''
+	// Draft follows the selected user (see the render body) until the admin
+	// edits it. Null stored plan values are shown/saved as `unlimited`.
+	let selectedPlanChoice: AdminPlanName = 'unlimited'
 	let planDraftUserId: number | null = null
 	let loadRequestId = 0
 	let lastLoadedHref = ''
@@ -435,7 +435,7 @@ export function AdminUsersRoute(handle: Handle) {
 	async function submitPlanAction() {
 		const selectedUser = getSelectedUser()
 		if (!selectedUser || actionState !== 'idle') return
-		const plan = selectedPlanChoice === '' ? null : selectedPlanChoice
+		const plan = selectedPlanChoice
 		actionState = 'saving-plan'
 		message = null
 		handle.update()
@@ -471,7 +471,7 @@ export function AdminUsersRoute(handle: Handle) {
 			invalidateUsage()
 			selectedUserId = selectedUser.id
 			lastLoadedHref = readCurrentRouterHref(handle)
-			message = `Updated plan to ${plan ?? 'Legacy / unlimited'}.`
+			message = `Updated plan to ${plan}.`
 			status = 'ready'
 			actionState = 'idle'
 			handle.update()
@@ -560,7 +560,7 @@ export function AdminUsersRoute(handle: Handle) {
 		// the select always starts from that user's stored plan.
 		if (selectedUser && selectedUser.id !== planDraftUserId) {
 			planDraftUserId = selectedUser.id
-			selectedPlanChoice = selectedUser.plan ?? ''
+			selectedPlanChoice = selectedUser.plan ?? 'unlimited'
 		}
 
 		return (
@@ -753,7 +753,7 @@ export function AdminUsersRoute(handle: Handle) {
 										},
 										{
 											label: 'Plan',
-											value: selectedUser.plan ?? 'Legacy / unlimited',
+											value: selectedUser.plan ?? 'unlimited',
 										},
 										{
 											label: 'Created',
@@ -840,15 +840,13 @@ export function AdminUsersRoute(handle: Handle) {
 												aria-label="Plan"
 												mix={[
 													on('change', (event) => {
-														selectedPlanChoice = event.currentTarget.value as
-															| AdminPlanName
-															| ''
+														selectedPlanChoice = event.currentTarget
+															.value as AdminPlanName
 														handle.update()
 													}),
 													css(inputCss),
 												]}
 											>
-												<option value="">Legacy / unlimited</option>
 												{availablePlans.map((plan) => (
 													<option key={plan} value={plan}>
 														{plan}
@@ -860,7 +858,8 @@ export function AdminUsersRoute(handle: Handle) {
 											type="button"
 											disabled={
 												isMutating ||
-												selectedPlanChoice === (selectedUser.plan ?? '')
+												selectedPlanChoice ===
+													(selectedUser.plan ?? 'unlimited')
 											}
 											mix={[
 												on('click', () => void submitPlanAction()),

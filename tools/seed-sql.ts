@@ -39,13 +39,14 @@ export function buildSeedUserSql(input: {
 	].join('\n')
 
 	return `
-INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
-VALUES (${quoteSqlString(input.username)}, ${quoteSqlString(input.email)}, ${quoteSqlString(input.passwordHash)}, CURRENT_TIMESTAMP, ${quoteSqlString(stableUserIdFromEmail(input.email))})
+INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+VALUES (${quoteSqlString(input.username)}, ${quoteSqlString(input.email)}, ${quoteSqlString(input.passwordHash)}, CURRENT_TIMESTAMP, ${quoteSqlString(stableUserIdFromEmail(input.email))}, 'unlimited')
 ON CONFLICT(email) DO UPDATE SET
   username = excluded.username,
   password_hash = excluded.password_hash,
   email_verified_at = COALESCE(users.email_verified_at, excluded.email_verified_at),
   stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+  plan = COALESCE(users.plan, excluded.plan),
   updated_at = CURRENT_TIMESTAMP;
 ${roleSql}`.trim()
 }

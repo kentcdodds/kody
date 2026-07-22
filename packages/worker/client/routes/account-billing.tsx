@@ -64,7 +64,7 @@ const planTiers: Array<{
 	},
 ]
 
-/** Mirrors server rank: free < pro < partner. */
+/** Mirrors server rank: free < pro < partner < unlimited. */
 function getPlanRank(plan: AdminPlanName): number {
 	switch (plan) {
 		case 'free':
@@ -73,6 +73,8 @@ function getPlanRank(plan: AdminPlanName): number {
 			return 1
 		case 'partner':
 			return 2
+		case 'unlimited':
+			return 3
 		default: {
 			const exhaustive: never = plan
 			throw new Error(`Unknown plan: ${String(exhaustive)}`)
@@ -85,7 +87,7 @@ function isBillingPath(href: string) {
 }
 
 function formatPlanLabel(plan: AdminPlanName | null) {
-	if (plan == null) return 'Legacy / unlimited'
+	if (plan == null || plan === 'unlimited') return 'Unlimited'
 	return plan.charAt(0).toUpperCase() + plan.slice(1)
 }
 
@@ -100,7 +102,7 @@ function planCoversTier(
 	effectivePlan: AdminPlanName | null,
 	tier: PlanTier,
 ): boolean {
-	if (effectivePlan == null) return true
+	if (effectivePlan == null || effectivePlan === 'unlimited') return true
 	return getPlanRank(effectivePlan) >= getPlanRank(tier)
 }
 

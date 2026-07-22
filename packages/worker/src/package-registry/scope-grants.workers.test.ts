@@ -88,7 +88,7 @@ test('createPlatformAccount rejects non-reserved usernames and duplicates; creat
 	})
 
 	const row = await env.APP_DB.prepare(
-		`SELECT account_type, password_hash, username, email FROM users WHERE id = ?`,
+		`SELECT account_type, password_hash, username, email, plan FROM users WHERE id = ?`,
 	)
 		.bind(created.userId)
 		.first<{
@@ -96,12 +96,14 @@ test('createPlatformAccount rejects non-reserved usernames and duplicates; creat
 			password_hash: string
 			username: string
 			email: string
+			plan: string | null
 		}>()
 	expect(row).toEqual({
 		account_type: 'platform',
 		password_hash: 'platform_account_no_usable_password',
 		username,
 		email,
+		plan: 'unlimited',
 	})
 
 	await expect(

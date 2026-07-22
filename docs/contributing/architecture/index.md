@@ -22,7 +22,7 @@ to become.
   routes, and the `any`-access exception to per-user isolation.
 - [Entitlements](./entitlements.md): per-user plans (`users.plan`), per-plan
   resource limits, and the shared `assertWithinEntitlement` enforcement helper
-  (NULL plan = legacy/unlimited).
+  (`unlimited` default; nullish admin inputs map to `unlimited`).
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.

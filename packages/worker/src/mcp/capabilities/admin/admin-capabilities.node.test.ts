@@ -387,11 +387,17 @@ function createAdminCapabilityTestDb(input: {
 							throw new Error('UNIQUE constraint failed: users.username')
 						}
 						const now = new Date().toISOString()
+						const plan =
+							normalizedQuery.includes(', plan)') &&
+							normalizedQuery.includes("'unlimited'")
+								? 'unlimited'
+								: null
 						const user: UserRow = {
 							id: nextUserId,
 							username: String(username),
 							email: String(email),
 							stable_user_id: stableUserId,
+							plan,
 							created_at: now,
 							updated_at: now,
 							password_hash: String(passwordHash),
@@ -761,6 +767,7 @@ test('admin_user_create records audit metadata and assigns the default role', as
 	expect(users.find((user) => user.id === 2)).toMatchObject({
 		email: 'person+launch@example.com',
 		stable_user_id: testStableUserIdFromEmail('person+launch@example.com'),
+		plan: 'unlimited',
 	})
 	expect(userRoles).toContainEqual({ user_id: 2, role_name: 'user' })
 	expect(auditEvents).toEqual([
@@ -772,7 +779,7 @@ test('admin_user_create records audit metadata and assigns the default role', as
 	])
 })
 
-test('admin_user_update sets and clears the entitlement plan with audit metadata', async () => {
+test('admin_user_update sets plan and maps null clear to unlimited with audit metadata', async () => {
 	const { db, auditEvents, users } = createAdminCapabilityTestDb({
 		users: [
 			adminTestUser({
@@ -815,8 +822,8 @@ test('admin_user_update sets and clears the entitlement plan with audit metadata
 		{ id: 2, plan: null },
 		ctx,
 	)
-	expect(clearById.user).toMatchObject({ id: 2, plan: null })
-	expect(users.find((user) => user.id === 2)?.plan).toBe(null)
+	expect(clearById.user).toMatchObject({ id: 2, plan: 'unlimited' })
+	expect(users.find((user) => user.id === 2)?.plan).toBe('unlimited')
 
 	expect(auditEvents).toEqual([
 		expect.objectContaining({
@@ -827,7 +834,7 @@ test('admin_user_update sets and clears the entitlement plan with audit metadata
 		expect.objectContaining({
 			action: 'admin_user_update',
 			result: 'success',
-			reason: 'target_user_id=2;plan=null',
+			reason: 'target_user_id=2;plan=unlimited',
 		}),
 	])
 })

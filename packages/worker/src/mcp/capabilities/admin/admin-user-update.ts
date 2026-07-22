@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { updateAdminUserPlan } from '#app/admin-users-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { resolvePlanWrite } from '#worker/entitlements/plans.ts'
 import {
 	adminMutationCapabilityAccess,
 	adminUserMetadataSchema,
@@ -21,7 +22,7 @@ const inputSchema = z
 		plan: planNameSchema
 			.nullable()
 			.describe(
-				'Entitlement plan to set, or null to clear the plan (legacy/unlimited: no entitlement enforcement).',
+				'Entitlement plan to set. Null maps to unlimited (never persists NULL).',
 			),
 	})
 	.refine((value) => value.id !== undefined || value.email !== undefined, {
@@ -38,7 +39,7 @@ export const adminUserUpdateCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_user_update',
 		description:
-			'Update account metadata for one user by id or email. Supports setting or clearing the entitlement plan. Admin-only; never touches user content.',
+			'Update account metadata for one user by id or email. Supports setting the entitlement plan (null maps to unlimited). Admin-only; never touches user content.',
 		keywords: ['admin', 'user', 'update', 'account', 'plan', 'entitlements'],
 		inputSchema,
 		outputSchema,
@@ -50,7 +51,7 @@ export const adminUserUpdateCapability = defineDomainCapability(
 					const user = await updateAdminUserPlan(ctx.env.APP_DB, {
 						id: args.id,
 						email: args.email,
-						plan: args.plan,
+						plan: resolvePlanWrite(args.plan),
 					})
 					if (!user) {
 						throw new Error('User not found.')
@@ -59,7 +60,7 @@ export const adminUserUpdateCapability = defineDomainCapability(
 				},
 				{
 					successReason: ({ user }) =>
-						`target_user_id=${user.id};plan=${user.plan ?? 'null'}`,
+						`target_user_id=${user.id};plan=${user.plan ?? 'unlimited'}`,
 				},
 			)
 		},

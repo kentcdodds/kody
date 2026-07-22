@@ -6,6 +6,7 @@ import {
 import { refreshStripePlanForUser } from '#worker/billing/subscription-sync.ts'
 import {
 	parsePlanName,
+	parseStripePlanName,
 	resolveEffectivePlan,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
@@ -61,7 +62,7 @@ export async function loadAccountBillingData(input: {
 		.first<BillingUserRow>()
 
 	const manualPlan: PlanName | null = parsePlanName(row?.plan)
-	let stripePlan: PlanName | null = parsePlanName(row?.stripe_plan)
+	let stripePlan: PlanName | null = parseStripePlanName(row?.stripe_plan)
 	let cancelAt: string | null = null
 	const customerId = row?.stripe_customer_id?.trim() || null
 	const hasStripeCustomer = Boolean(customerId)

@@ -79,8 +79,8 @@ Inbound storage is quota-gated per user:
   storage failures (for example an R2 outage while saving raw MIME) do not keep
   the daily receive charge — the attempt is refunded so delivery retries are not
   blocked by quota.
-- Plan users get their plan's limits; users without a plan get conservative
-  deployment fallbacks (they are not unlimited for inbound mail).
+- Plan users get their plan's limits; the `unlimited` plan uses conservative
+  deployment email backstops (inbound mail is never uncapped).
 - Quota, size, and unverified-account rejections store at most five detailed
   `rejected` delivery events per inbox per UTC day; further rejections increment
   a single daily aggregate event (with a total count and the last reason) so
@@ -108,7 +108,7 @@ Inbound storage is quota-gated per user:
   platform-assigned address, and `email_send` only delivers to the signed-in
   user's own account email. `email_reply` is the only way to address external
   recipients, and only recipients taken from stored inbound mail.
-- Outbound sends consume a per-day entitlement. Users without a plan are capped
+- Outbound sends consume a per-day entitlement. The `unlimited` plan is capped
   by a global daily backstop instead of sending unlimited mail.
 - A successful send request has `processing_status: "sent"`. Cloudflare delivery
   events independently populate `delivery_status` with `delivered`, `deferred`,

@@ -5,6 +5,7 @@ import { type RoleName, roleNames } from '#app/permissions.ts'
 import {
 	parsePlanName,
 	planNames,
+	resolvePlanWrite,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
 import {
@@ -160,9 +161,9 @@ export async function loadAdminUserByIdOrEmail(
 }
 
 /**
- * Set or clear (null = legacy/unlimited) the entitlement plan on one user
- * account. Returns the updated account metadata record, or null when no
- * user matches `id`/`email`.
+ * Set the entitlement plan on one user account. Nullish inputs map to the
+ * first-class `unlimited` plan; writers never persist NULL. Returns the
+ * updated account metadata record, or null when no user matches `id`/`email`.
  */
 export async function updateAdminUserPlan(
 	db: D1Database,
@@ -173,7 +174,7 @@ export async function updateAdminUserPlan(
 
 	await db
 		.prepare(`UPDATE users SET plan = ?, updated_at = ? WHERE id = ?`)
-		.bind(input.plan, utcSqliteTimestamp(), existing.id)
+		.bind(resolvePlanWrite(input.plan), utcSqliteTimestamp(), existing.id)
 		.run()
 
 	return loadAdminUserByIdOrEmail(db, { id: existing.id })

@@ -96,7 +96,8 @@ The `invites` table stores operator-created invite codes:
   describe current invite state
 - `plan` (nullable, migration `0065-invite-plans.sql`) is an optional signup
   plan name; password and social signup copy a known value onto `users.plan`.
-  NULL keeps legacy/unlimited behavior. See [Entitlements](./entitlements.md).
+  Missing or NULL invite plans write `unlimited` at signup. See
+  [Entitlements](./entitlements.md).
 
 Production signup atomically consumes an invite with a single conditional
 `UPDATE ... WHERE use_count < max_uses AND revoked_at IS NULL ...`; concurrent

@@ -36,7 +36,7 @@ export const adminUserMetadataSchema = z.object({
 	plan: planNameSchema
 		.nullable()
 		.describe(
-			'Entitlement plan, or null for legacy/unlimited (no entitlement enforcement).',
+			'Entitlement plan name, or null when the stored value is not recognized.',
 		),
 	created_at: z.string(),
 	updated_at: z.string(),

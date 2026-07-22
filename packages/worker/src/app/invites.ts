@@ -98,7 +98,7 @@ export async function createInvite(input: {
 			input.note?.trim() ?? '',
 			input.maxUses,
 			input.expiresAt ?? null,
-			input.plan ?? null,
+			input.plan ?? 'unlimited',
 		)
 		.run()
 

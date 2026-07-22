@@ -1,7 +1,7 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 import {
 	getPlanRank,
-	parsePlanName,
+	parseStripePlanName,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
 import { type StripeSubscription } from './stripe-client.ts'
@@ -69,7 +69,7 @@ function planFromSubscription(
 		}
 	}
 	const metadataPlan = subscription.metadata?.['kody_plan']
-	return parsePlanName(metadataPlan)
+	return parseStripePlanName(metadataPlan)
 }
 
 /**

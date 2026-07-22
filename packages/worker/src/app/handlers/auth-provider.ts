@@ -481,7 +481,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						stable_user_id: stableUserId,
 						password_hash: oauthNoUsablePasswordHash,
 						email_verified_at: new Date().toISOString(),
-						...(consumedInvitePlan ? { plan: consumedInvitePlan } : {}),
+						plan: consumedInvitePlan ?? 'unlimited',
 					},
 					{ returnRow: true },
 				)
@@ -572,7 +572,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					email,
 					ip: requestIp,
 					path: url.pathname,
-					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider};plan=${consumedInvitePlan ?? 'none'}`,
+					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider};plan=${consumedInvitePlan ?? 'unlimited'}`,
 				})
 			}
 			return issueLogin({ id: newUser.id, email })

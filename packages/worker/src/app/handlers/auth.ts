@@ -251,7 +251,7 @@ export function createAuthHandler(env: Env) {
 							email: normalizedEmail,
 							stable_user_id: stableUserId,
 							password_hash: passwordHash,
-							...(consumedInvitePlan ? { plan: consumedInvitePlan } : {}),
+							plan: consumedInvitePlan ?? 'unlimited',
 						},
 						{
 							returnRow: true,
@@ -434,7 +434,7 @@ export function createAuthHandler(env: Env) {
 						email: normalizedEmail,
 						ip: requestIp,
 						path: url.pathname,
-						reason: `invite_code=${consumedInviteCode};user_id=${record.id};plan=${consumedInvitePlan ?? 'none'}`,
+						reason: `invite_code=${consumedInviteCode};user_id=${record.id};plan=${consumedInvitePlan ?? 'unlimited'}`,
 					})
 				}
 				return Response.json(

@@ -332,7 +332,7 @@ test('admin users list payload exposes only account metadata fields', async () =
 			email: 'member@example.com',
 			email_verified: false,
 			email_verified_at: null,
-			// Unknown stored plan values read back as null (legacy/unlimited).
+			// Unknown stored plan values read back as null.
 			plan: null,
 		}),
 	])
@@ -561,7 +561,7 @@ test('remove role removes admin when another admin remains', async () => {
 	)
 })
 
-test('update plan action sets, clears, validates, and scopes plan changes', async () => {
+test('update plan action sets, maps null to unlimited, validates, and scopes plan changes', async () => {
 	logAuditEventSpy.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
@@ -616,13 +616,13 @@ test('update plan action sets, clears, validates, and scopes plan changes', asyn
 		plan: null,
 	})
 	expect(clearPlanResponse.status).toBe(200)
-	expect((await clearPlanResponse.json()).users[0].plan).toBe(null)
+	expect((await clearPlanResponse.json()).users[0].plan).toBe('unlimited')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
 			action: 'update_plan',
 			result: 'success',
-			reason: 'target_user_id=2;plan=null',
+			reason: 'target_user_id=2;plan=unlimited',
 		}),
 	)
 

@@ -21,7 +21,11 @@ import {
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
-import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
+import {
+	parsePlanName,
+	resolvePlanWrite,
+	type PlanName,
+} from '#worker/entitlements/plans.ts'
 
 export function createAdminInvitesHandler(env: Env) {
 	return {
@@ -173,7 +177,7 @@ async function handleCreateInviteAction(input: {
 			{
 				ok: false,
 				error:
-					'Plan must be one of the known plan names, or empty for legacy/tierless.',
+					'Plan must be one of the known plan names, or empty for unlimited.',
 			},
 			400,
 		)
@@ -197,7 +201,7 @@ async function handleCreateInviteAction(input: {
 			email: input.actor.email,
 			ip: requestIp,
 			path: input.url.pathname,
-			reason: `invite_code=${invite.code};max_uses=${invite.max_uses};plan=${planResult.plan ?? 'none'}`,
+			reason: `invite_code=${invite.code};max_uses=${invite.max_uses};plan=${planResult.plan}`,
 		})
 	} catch (error) {
 		return jsonResponse(
@@ -214,18 +218,20 @@ async function handleCreateInviteAction(input: {
 }
 
 /**
- * Read an optional invite plan: missing/empty → null (legacy/tierless).
- * Unknown non-empty values are rejected instead of being coerced to null.
+ * Read an optional invite plan: missing/empty/null → `unlimited`.
+ * Unknown non-empty values are rejected. Writers never persist NULL.
  */
 function readInvitePlan(
 	body: object,
-): { ok: true; plan: PlanName | null } | { ok: false } {
-	if (!('plan' in body)) return { ok: true, plan: null }
+): { ok: true; plan: PlanName } | { ok: false } {
+	if (!('plan' in body)) return { ok: true, plan: resolvePlanWrite(null) }
 	const value = (body as Record<string, unknown>).plan
-	if (value === null || value === undefined) return { ok: true, plan: null }
+	if (value === null || value === undefined) {
+		return { ok: true, plan: resolvePlanWrite(null) }
+	}
 	if (typeof value === 'string') {
 		const trimmed = value.trim()
-		if (!trimmed) return { ok: true, plan: null }
+		if (!trimmed) return { ok: true, plan: resolvePlanWrite(null) }
 		const plan = parsePlanName(trimmed)
 		if (plan) return { ok: true, plan }
 	}

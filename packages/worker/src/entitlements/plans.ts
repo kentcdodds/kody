@@ -1,13 +1,14 @@
 /**
  * Plan definitions and per-plan resource limits.
  *
- * `users.plan` is nullable: NULL means legacy/unlimited and disables all
- * entitlement enforcement for that user. Enforcement only activates when a
- * plan name from `planNames` is set. Unknown stored values are treated as
- * NULL (unlimited) so adding or renaming plans never locks users out.
+ * First-class plans include `unlimited`. New writers always persist a plan
+ * name (never NULL). During stage 1, reads stay dual-compatible: stored NULL
+ * and unknown strings still parse as null and retain historical fail-open
+ * behavior (no ordinary entitlement enforcement). Enforcement activates for
+ * recognized plan names from `planNames`.
  */
 
-export const planNames = ['free', 'partner', 'pro'] as const
+export const planNames = ['free', 'partner', 'pro', 'unlimited'] as const
 
 export type PlanName = (typeof planNames)[number]
 
@@ -19,8 +20,25 @@ export function parsePlanName(value: unknown): PlanName | null {
 }
 
 /**
+ * Parse a plan name that may come from Stripe metadata or `users.stripe_plan`.
+ * `unlimited` is never purchasable or Stripe-sourced.
+ */
+export function parseStripePlanName(value: unknown): PlanName | null {
+	const plan = parsePlanName(value)
+	return plan === 'unlimited' ? null : plan
+}
+
+/**
+ * Coerce admin/API nullish plan inputs to the first-class `unlimited` plan.
+ * Production writers must never persist NULL.
+ */
+export function resolvePlanWrite(plan: PlanName | null | undefined): PlanName {
+	return plan ?? 'unlimited'
+}
+
+/**
  * Rank order for comparing manual grants vs Stripe subscription plans.
- * Higher rank wins. free(0) < pro(1) < partner(2).
+ * Higher rank wins. free(0) < pro(1) < partner(2) < unlimited(3).
  */
 export function getPlanRank(plan: PlanName): number {
 	switch (plan) {
@@ -30,6 +48,8 @@ export function getPlanRank(plan: PlanName): number {
 			return 1
 		case 'partner':
 			return 2
+		case 'unlimited':
+			return 3
 		default: {
 			const exhaustive: never = plan
 			throw new Error(`Unknown plan: ${String(exhaustive)}`)
@@ -40,17 +60,19 @@ export function getPlanRank(plan: PlanName): number {
 /**
  * Effective plan for entitlement enforcement.
  *
- * - Manual plan NULL → effective NULL (legacy/unlimited always wins; a Stripe
- *   subscription never downgrades a plan-less account into enforcement).
+ * - Manual plan NULL → effective NULL (stage-1 dual-read fail-open; a Stripe
+ *   subscription never downgrades a stored-NULL account into enforcement).
+ * - Manual `unlimited` always wins over any Stripe plan.
  * - Otherwise the higher-ranked of manual and stripe plans.
- * - Unknown/NULL stripe_plan contributes nothing.
+ * - Unknown/NULL/`unlimited` stripe_plan contributes nothing.
  */
 export function resolveEffectivePlan(
 	manualPlan: PlanName | null,
 	stripePlan: string | null,
 ): PlanName | null {
 	if (!manualPlan) return null
-	const parsedStripe = parsePlanName(stripePlan)
+	if (manualPlan === 'unlimited') return 'unlimited'
+	const parsedStripe = parseStripePlanName(stripePlan)
 	if (!parsedStripe) return manualPlan
 	return getPlanRank(parsedStripe) > getPlanRank(manualPlan)
 		? parsedStripe
@@ -89,6 +111,63 @@ export type PlanLimits = {
 	/** Maximum concurrently active workflow runs. */
 	maxConcurrentWorkflows: number | null
 }
+
+export const entitlementResources = [
+	'saved_packages',
+	'scheduled_jobs',
+	'package_services',
+	'persistent_package_services',
+	'repo_sessions',
+	'email_sends_per_day',
+	'email_receives_per_day',
+	'stored_email_messages',
+	'email_message_bytes',
+	'secrets',
+	'storage_bytes',
+	'concurrent_workflows',
+] as const
+
+export type EntitlementResource = (typeof entitlementResources)[number]
+
+/** Human-readable resource labels used in the shared error message. */
+export const entitlementResourceLabels: Record<EntitlementResource, string> = {
+	saved_packages: 'saved packages',
+	scheduled_jobs: 'scheduled jobs',
+	package_services: 'running package services',
+	persistent_package_services: 'persistent package services',
+	repo_sessions: 'active repo sessions',
+	email_sends_per_day: 'email sends per day',
+	email_receives_per_day: 'email receives per day',
+	stored_email_messages: 'stored email messages',
+	email_message_bytes: 'bytes per email message',
+	secrets: 'secrets',
+	storage_bytes: 'storage bytes',
+	concurrent_workflows: 'concurrent workflows',
+}
+
+/**
+ * Fallback limits for users without a plan on the email resources.
+ *
+ * Email is abuse-sensitive in both directions — inbound volume is
+ * attacker-controlled (anyone can send to a `{username}@<platform domain>`
+ * address) and outbound sending is an outreach-abuse surface — so unlike
+ * other resources stored NULL / unknown strings during stage 1 do not mean
+ * uncapped mail here: accounts without a recognized plan and the explicit
+ * `unlimited` plan get these deployment-level backstops instead. The receive
+ * and storage numbers sit between the `free` and `pro` plan limits; the send
+ * backstop sits between `free` and `pro` send limits as well.
+ *
+ * The first-class `unlimited` plan uses these same numbers as its email
+ * limits so new accounts match historical stored-NULL email behavior.
+ */
+export const nullPlanEmailFallbackLimits = {
+	email_sends_per_day: 100,
+	email_receives_per_day: 200,
+	stored_email_messages: 2000,
+	email_message_bytes: 512 * 1024,
+} as const satisfies Partial<Record<EntitlementResource, number>>
+
+export type EmailFallbackResource = keyof typeof nullPlanEmailFallbackLimits
 
 /**
  * Initial limit numbers are conservative placeholders chosen before usage
@@ -140,60 +219,23 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 100,
 	},
+	unlimited: {
+		maxSavedPackages: null,
+		maxScheduledJobs: null,
+		maxPackageServices: null,
+		packageServicePersistentAllowed: true,
+		maxRepoSessions: null,
+		maxEmailSendsPerDay: nullPlanEmailFallbackLimits.email_sends_per_day,
+		maxEmailReceivesPerDay: nullPlanEmailFallbackLimits.email_receives_per_day,
+		maxStoredEmailMessages: nullPlanEmailFallbackLimits.stored_email_messages,
+		maxEmailMessageBytes: nullPlanEmailFallbackLimits.email_message_bytes,
+		maxSecrets: null,
+		maxStorageBytes: null,
+		// null so assertWithinEntitlement falls through to the env workflow
+		// concurrency backstop (same behavior as historical stored-NULL users).
+		maxConcurrentWorkflows: null,
+	},
 }
-
-export const entitlementResources = [
-	'saved_packages',
-	'scheduled_jobs',
-	'package_services',
-	'persistent_package_services',
-	'repo_sessions',
-	'email_sends_per_day',
-	'email_receives_per_day',
-	'stored_email_messages',
-	'email_message_bytes',
-	'secrets',
-	'storage_bytes',
-	'concurrent_workflows',
-] as const
-
-export type EntitlementResource = (typeof entitlementResources)[number]
-
-/** Human-readable resource labels used in the shared error message. */
-export const entitlementResourceLabels: Record<EntitlementResource, string> = {
-	saved_packages: 'saved packages',
-	scheduled_jobs: 'scheduled jobs',
-	package_services: 'running package services',
-	persistent_package_services: 'persistent package services',
-	repo_sessions: 'active repo sessions',
-	email_sends_per_day: 'email sends per day',
-	email_receives_per_day: 'email receives per day',
-	stored_email_messages: 'stored email messages',
-	email_message_bytes: 'bytes per email message',
-	secrets: 'secrets',
-	storage_bytes: 'storage bytes',
-	concurrent_workflows: 'concurrent workflows',
-}
-
-/**
- * Fallback limits for users without a plan on the email resources.
- *
- * Email is abuse-sensitive in both directions — inbound volume is
- * attacker-controlled (anyone can send to a `{username}@<platform domain>`
- * address) and outbound sending is an outreach-abuse surface — so unlike
- * other resources the NULL-plan invariant does not mean unlimited here:
- * plan-less users get these deployment-level backstops instead. The receive
- * and storage numbers sit between the `free` and `pro` plan limits; the send
- * backstop sits between `free` and `pro` send limits as well.
- */
-export const nullPlanEmailFallbackLimits = {
-	email_sends_per_day: 100,
-	email_receives_per_day: 200,
-	stored_email_messages: 2000,
-	email_message_bytes: 512 * 1024,
-} as const satisfies Partial<Record<EntitlementResource, number>>
-
-export type EmailFallbackResource = keyof typeof nullPlanEmailFallbackLimits
 
 export function isEmailFallbackResource(
 	resource: EntitlementResource,
@@ -203,7 +245,7 @@ export function isEmailFallbackResource(
 
 /**
  * Resolve the effective limit for an inbound email resource: the plan limit
- * when the user has a plan, otherwise the NULL-plan fallback backstop.
+ * when the user has a recognized plan, otherwise the email backstop.
  */
 export function resolveEmailResourceLimit(
 	plan: PlanName | null,

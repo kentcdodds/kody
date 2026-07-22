@@ -8,6 +8,7 @@ type TestUser = {
 	email: string
 	password_hash: string
 	email_verified_at: string | null
+	plan: string | null
 }
 
 type TestPasswordReset = {
@@ -72,12 +73,18 @@ function createAdminUserCreationTestDb(initialUsers: Array<TestUser> = []) {
 								) {
 									throw new Error('UNIQUE constraint failed: users.username')
 								}
+								const plan =
+									normalizedQuery.includes(', plan)') &&
+									normalizedQuery.includes("'unlimited'")
+										? 'unlimited'
+										: null
 								const user = {
 									id: nextId,
 									username: String(username),
 									email: String(email),
 									password_hash: String(passwordHash),
 									email_verified_at: String(emailVerifiedAt),
+									plan,
 								}
 								nextId += 1
 								users.set(user.id, user)
@@ -130,6 +137,7 @@ test('adminCreateUserWithPasswordSetup rejects duplicate email', async () => {
 			email: 'existing@example.com',
 			password_hash: 'hash',
 			email_verified_at: new Date(0).toISOString(),
+			plan: 'unlimited',
 		},
 	])
 
@@ -172,6 +180,7 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 		username: 'person-launch',
 		email_verified_at: now.toISOString(),
 		password_hash: 'admin_created_no_usable_password',
+		plan: 'unlimited',
 	})
 	expect(passwordResets.get(created.userId)?.expires_at).toBe(
 		now.getTime() + adminPasswordSetupTokenExpiryMs,

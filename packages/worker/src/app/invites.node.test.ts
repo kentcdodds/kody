@@ -188,7 +188,7 @@ test('createInvite stores plan and roundtrips through getInviteByCode and listIn
 	])
 })
 
-test('createInvite without plan stores null', async () => {
+test('createInvite without plan stores unlimited', async () => {
 	const db = createInviteDb()
 	const created = await createInvite({
 		db,
@@ -197,11 +197,11 @@ test('createInvite without plan stores null', async () => {
 		maxUses: 1,
 	})
 
-	expect(created.plan).toBeNull()
+	expect(created.plan).toBe('unlimited')
 	await expect(getInviteByCode(db, 'PLAN-NONE')).resolves.toEqual(
 		expect.objectContaining({
 			code: 'PLAN-NONE',
-			plan: null,
+			plan: 'unlimited',
 		}),
 	)
 })

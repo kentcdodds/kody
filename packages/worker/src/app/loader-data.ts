@@ -223,7 +223,7 @@ export type AdminUsageEntitlementResource =
 	| 'concurrent_workflows'
 	| 'storage_bytes'
 
-export type AdminPlanName = 'free' | 'partner' | 'pro'
+export type AdminPlanName = 'free' | 'partner' | 'pro' | 'unlimited'
 
 export type AdminUsageRollup = {
 	metric: AdminUsageMetric

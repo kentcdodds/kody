@@ -710,26 +710,28 @@ test('signup consuming a plan invite sets users.plan', async () => {
 	)
 })
 
-test('signup consuming a plan-less invite leaves users.plan null', async () => {
+test('signup consuming an invite without plan writes users.plan unlimited', async () => {
 	const context = createAuthTestContext({ emailConfigured: true })
 	stubCloudflareEmailFetch({ ok: true })
 	context.testDb.addInvite('PLAN-NONE')
 
 	const response = await context.request({
-		email: 'legacy-invite@example.com',
-		username: 'legacy-invite-user',
+		email: 'null-plan-invite@example.com',
+		username: 'null-plan-invite-user',
 		password: 'password123',
 		mode: 'signup',
 		inviteCode: 'plan-none',
 	})
 	expect(response.status).toBe(200)
-	expect(context.testDb.users.get('legacy-invite@example.com')?.plan).toBeNull()
+	expect(context.testDb.users.get('null-plan-invite@example.com')?.plan).toBe(
+		'unlimited',
+	)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'invite_use',
 			result: 'success',
-			reason: expect.stringContaining('plan=none'),
+			reason: expect.stringContaining('plan=unlimited'),
 		}),
 	)
 })

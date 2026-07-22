@@ -11,7 +11,11 @@ import {
 	updateAdminUserPlan,
 	type AdminUserListItem,
 } from '#app/admin-users-data.ts'
-import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
+import {
+	parsePlanName,
+	resolvePlanWrite,
+	type PlanName,
+} from '#worker/entitlements/plans.ts'
 import { readAuthSessionResult } from '#app/auth-session.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -336,7 +340,7 @@ async function handleUpdatePlanAction(input: {
 			{
 				ok: false,
 				error:
-					'Plan must be one of the known plan names, or null to clear the plan.',
+					'Plan must be one of the known plan names, or null for unlimited.',
 			},
 			400,
 		)
@@ -358,25 +362,27 @@ async function handleUpdatePlanAction(input: {
 		email: input.actor.email,
 		ip: requestIp,
 		path: input.url.pathname,
-		reason: `target_user_id=${targetUserId};plan=${planUpdate.plan ?? 'null'}`,
+		reason: `target_user_id=${targetUserId};plan=${planUpdate.plan}`,
 	})
 
 	return buildMutationResponse(input.env, input.request.url, targetUserId)
 }
 
 /**
- * Read the requested plan value: a known plan name sets it, explicit null
- * clears it (legacy/unlimited). Anything else — including a missing key or
- * an unknown plan string — is rejected instead of being coerced to null.
+ * Read the requested plan value: a known plan name sets it; explicit null
+ * (and empty string) map to `unlimited` for backward compatibility. Writers
+ * never persist NULL. Missing key or unknown plan strings are rejected.
  */
 function readPlanUpdate(
 	body: object,
-): { ok: true; plan: PlanName | null } | { ok: false } {
+): { ok: true; plan: PlanName } | { ok: false } {
 	if (!('plan' in body)) return { ok: false }
 	const value = (body as Record<string, unknown>).plan
-	if (value === null) return { ok: true, plan: null }
+	if (value === null) return { ok: true, plan: resolvePlanWrite(null) }
 	if (typeof value === 'string') {
-		const plan = parsePlanName(value.trim())
+		const trimmed = value.trim()
+		if (!trimmed) return { ok: true, plan: resolvePlanWrite(null) }
+		const plan = parsePlanName(trimmed)
 		if (plan) return { ok: true, plan }
 	}
 	return { ok: false }

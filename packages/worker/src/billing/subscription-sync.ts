@@ -1,4 +1,7 @@
-import { parsePlanName, type PlanName } from '#worker/entitlements/plans.ts'
+import {
+	parseStripePlanName,
+	type PlanName,
+} from '#worker/entitlements/plans.ts'
 import {
 	createBillingLinkReference,
 	isBillingConfigured,
@@ -255,5 +258,5 @@ export async function refreshStaleStripePlans(input: {
 }
 
 export function parseStoredStripePlan(value: string | null | undefined) {
-	return parsePlanName(value)
+	return parseStripePlanName(value)
 }
