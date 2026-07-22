@@ -2,6 +2,10 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import {
+	AccountDeletionInProgressError,
+	assertAccountWritable,
+} from '#app/account-deletion-state.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { packageInvocationRootExportRouteSegment } from '@kody-internal/shared/public-urls.ts'
 import {
@@ -130,6 +134,7 @@ async function resolveTokenScope(input: {
 		tokenHash,
 	})
 	if (!record) return null
+	await assertAccountWritable(input.env, record.user_id)
 	const touched = await updatePackageInvocationTokenLastUsed({
 		db: input.env.APP_DB,
 		id: record.id,
@@ -239,10 +244,25 @@ export async function handlePackageInvocationApiRequest(
 		})
 		return unauthorizedResponse()
 	}
-	const tokenScope = await resolveTokenScope({
-		env,
-		bearerToken,
-	})
+	let tokenScope: PackageInvocationTokenScope | null
+	try {
+		tokenScope = await resolveTokenScope({
+			env,
+			bearerToken,
+		})
+	} catch (error) {
+		if (!(error instanceof AccountDeletionInProgressError)) throw error
+		return jsonResponse(
+			{
+				ok: false,
+				error: {
+					code: 'account_deleting',
+					message: error.message,
+				},
+			},
+			{ status: 409 },
+		)
+	}
 	if (!tokenScope) {
 		logPackageInvocationAudit(ctx, {
 			category: 'oauth',

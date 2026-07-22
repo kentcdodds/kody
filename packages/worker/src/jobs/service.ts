@@ -1,4 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { assertAccountWritable } from '#app/account-deletion-state.ts'
 import { createMcpCallerContext, parseMcpCallerContext } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
@@ -1367,6 +1368,7 @@ export async function runJobNow(input: {
 	callerContext?: McpCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 }) {
+	await assertAccountWritable(input.env, input.userId)
 	const row = await getJobRowById(input.env.APP_DB, input.userId, input.jobId)
 	if (!row) {
 		throw new Error(`Job "${input.jobId}" was not found.`)
@@ -1428,6 +1430,7 @@ export async function runDueJobsForUser(input: {
 	userId: string
 	now?: Date
 }) {
+	await assertAccountWritable(input.env, input.userId)
 	const now = input.now ?? new Date()
 	const dueRows = await listDueJobRows(
 		input.env.APP_DB,

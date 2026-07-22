@@ -16,6 +16,7 @@ import {
 	createSchemaTypeDefinition,
 } from './schema-type-definitions.ts'
 import { assertCallerCanAccessCapability } from './access-control.ts'
+import { assertAccountWritable } from '#app/account-deletion-state.ts'
 
 // Normalize capability authoring input into the JSON-Schema-based shape
 // consumed by the registry and sandbox search surface.
@@ -75,6 +76,10 @@ export function defineCapability<
 			await assertCallerCanAccessCapability(ctx.callerContext, definition, {
 				env: ctx.env,
 			})
+			const callerUserId = ctx.callerContext.user?.userId
+			if ((definition.readOnly ?? false) === false && callerUserId) {
+				await assertAccountWritable(ctx.env, callerUserId)
+			}
 
 			let parsedArgs: InferCapabilitySchema<TInputSchema>
 			try {

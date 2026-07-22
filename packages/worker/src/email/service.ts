@@ -1,6 +1,7 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
+import { assertAccountWritableDb } from '#app/account-deletion-state.ts'
 import {
 	deleteEmailMessageById,
 	emailRawMimeKey,
@@ -138,6 +139,7 @@ export async function insertEmailMessageWithRawMime(
 ) {
 	const { blobs, db, message } = input
 	const { rawMime, ...messageInput } = message
+	await assertAccountWritableDb(db, messageInput.userId)
 	const messageId = messageInput.id ?? crypto.randomUUID()
 	let rawMimeKey: string | null = null
 	if (rawMime != null) {

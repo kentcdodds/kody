@@ -10,6 +10,10 @@ import {
 } from './account-deletion.ts'
 import { accountUserDataExcludedOwnerIds } from './account-data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
+import {
+	AccountDeletionInProgressError,
+	assertAccountWritable,
+} from './account-deletion-state.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
@@ -18,6 +22,7 @@ function createTestDb(
 	options?: {
 		failSelectContaining?: string
 		failRunContaining?: string
+		onSelect?: (query: string) => Promise<void>
 	},
 ): {
 	db: D1Database
@@ -60,6 +65,7 @@ function createTestDb(
 				bind(...params: Array<unknown>) {
 					return {
 						async all<T>() {
+							await options?.onSelect?.(lower)
 							if (
 								options?.failSelectContaining &&
 								lower.includes(options.failSelectContaining)
@@ -68,6 +74,17 @@ function createTestDb(
 							}
 							let results: Array<unknown> = []
 							const userId = params[0] as string
+							if (
+								lower ===
+								'select deleting_at from users where stable_user_id = ?'
+							) {
+								results = (rows.users ?? [])
+									.filter((row) => row['stable_user_id'] === userId)
+									.map((row) => ({
+										deleting_at: row['deleting_at'] ?? null,
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
 							if (
 								lower ===
 								'select id from saved_packages where user_id = ? and has_app = 1'
@@ -275,6 +292,19 @@ function createTestDb(
 								throw new Error('simulated atomic D1 failure')
 							}
 							const userId = params[0] as string | number
+							if (
+								lower ===
+								'update users set deleting_at = coalesce(deleting_at, ?), updated_at = ? where id = ?'
+							) {
+								let changed = 0
+								for (const row of rows.users ?? []) {
+									if (row['id'] !== params[2]) continue
+									row['deleting_at'] ??= params[0]
+									row['updated_at'] = params[1]
+									changed += 1
+								}
+								return { meta: { changes: changed } }
+							}
 							const nullColumnMatch = lower.match(
 								/^update (\w+) set ((?:\w+ = null)(?:, \w+ = null)*) where (\w+) = \?$/,
 							)
@@ -468,7 +498,16 @@ function createSuccessfulDeletionEnv(
 			idFromName: durableObjectId,
 			get: () => ({ fetch: fetchOk }),
 		},
-		COMMUNITY_ASSETS: { delete: async () => undefined },
+		COMMUNITY_ASSETS: {
+			async list() {
+				return {
+					objects: [],
+					delimitedPrefixes: [],
+					truncated: false as const,
+				}
+			},
+			delete: async () => undefined,
+		},
 		EMAIL_BLOBS: { delete: async () => undefined },
 		OAUTH_PROVIDER: {
 			async listUserGrants() {
@@ -895,9 +934,38 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		},
 	} as unknown as R2Bucket
 	const deletedCommunityAssetKeys: Array<string> = []
+	const communityAssetKeys = new Set([
+		'user-avatars/user-aaa/abc123.png',
+		'user-avatars/user-aaa/old.png',
+		'user-avatars/user-bbb/other.png',
+		'community-icon:v1/listing-1/abc123/asset',
+		'community-icon:v1/listing-1/commit-1/asset',
+		'community-icon:v1/listing-1/historical/asset',
+		'community-icon:v1/listing-2/other/asset',
+	])
 	const communityAssets = {
-		async delete(key: string) {
-			deletedCommunityAssetKeys.push(key)
+		async list(options?: { prefix?: string; cursor?: string }) {
+			const matching = [...communityAssetKeys]
+				.filter(
+					(key) =>
+						key.startsWith(options?.prefix ?? '') &&
+						(!options?.cursor || key > options.cursor),
+				)
+				.sort()
+			const page = matching.slice(0, 1)
+			return {
+				objects: page.map((key) => ({ key })),
+				delimitedPrefixes: [],
+				...(matching.length > page.length
+					? { truncated: true as const, cursor: page[0]! }
+					: { truncated: false as const }),
+			}
+		},
+		async delete(keys: string | Array<string>) {
+			for (const key of Array.isArray(keys) ? keys : [keys]) {
+				deletedCommunityAssetKeys.push(key)
+				communityAssetKeys.delete(key)
+			}
 		},
 	} as unknown as R2Bucket
 
@@ -1145,15 +1213,22 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.platform_feedback).toBe(1)
 	expect(result.updatedRowCounts.platform_feedback).toBe(1)
 	expect(result.deletedKvKeys).toBe(13)
-	expect(result.deletedCommunityAssets).toBe(3)
+	expect(result.deletedCommunityAssets).toBe(5)
 	expect(result.deletedEmailBlobs).toBe(2)
-	// Both the pinned snapshot revision and the current icon commit revision
-	// (the source's published commit) are removed, plus the user's avatar.
+	// Prefix sweeps remove current and historical assets without crossing users.
 	expect(deletedCommunityAssetKeys.sort()).toEqual([
 		'community-icon:v1/listing-1/abc123/asset',
 		'community-icon:v1/listing-1/commit-1/asset',
+		'community-icon:v1/listing-1/historical/asset',
 		'user-avatars/user-aaa/abc123.png',
+		'user-avatars/user-aaa/old.png',
 	])
+	expect(communityAssetKeys).toEqual(
+		new Set([
+			'community-icon:v1/listing-2/other/asset',
+			'user-avatars/user-bbb/other.png',
+		]),
+	)
 	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({
 		storageRunners: 6,
@@ -1219,7 +1294,13 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	expect(oauthFailureRows.jobs).toEqual([
 		{ id: 'job-1', user_id: 'user-aaa', storage_id: null },
 	])
-	expect(oauthFailureRows.users).toEqual([{ id: 1, email: 'a@example.com' }])
+	expect(oauthFailureRows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			email: 'a@example.com',
+			deleting_at: expect.any(String),
+		}),
+	])
 
 	const { db: kvFailureDb, rows: kvFailureRows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com' }],
@@ -1265,7 +1346,13 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	expect(kvFailureRows.published_bundle_artifacts).toHaveLength(1)
 	expect(kvFailureRows.archived_job_artifacts).toHaveLength(1)
 	expect(kvFailureRows.email_messages).toHaveLength(1)
-	expect(kvFailureRows.users).toEqual([{ id: 1, email: 'a@example.com' }])
+	expect(kvFailureRows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			email: 'a@example.com',
+			deleting_at: expect.any(String),
+		}),
+	])
 })
 
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
@@ -1293,7 +1380,13 @@ test('deleteUserAccount fails closed when preflight inventory cannot be read', a
 			mcpUserId: 'user-aaa',
 		}),
 	).rejects.toBeInstanceOf(AccountDeletionInventoryError)
-	expect(rows.users).toEqual([{ id: 1, email: 'a@example.com' }])
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			email: 'a@example.com',
+			deleting_at: expect.any(String),
+		}),
+	])
 	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
 	expect(rows.jobs).toEqual([
 		{ id: 'job-a', user_id: 'user-aaa', storage_id: 'job:job-a' },
@@ -1332,7 +1425,13 @@ test('account deletion removes deterministic legacy retriever keys when KV listi
 			mcpUserId: 'user-aaa',
 		}),
 	).rejects.toBeInstanceOf(AccountDeletionCleanupError)
-	expect(rows.users).toEqual([{ id: 1, email: 'a@example.com' }])
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			email: 'a@example.com',
+			deleting_at: expect.any(String),
+		}),
+	])
 	expect(deletedKeys).toEqual(
 		expect.arrayContaining([
 			'package-retriever-index:v1:user-aaa:search',
@@ -1361,9 +1460,60 @@ test('atomic D1 deletion rolls back every row when one statement fails', async (
 			expect.stringContaining('Atomic D1 account deletion failed'),
 		],
 	})
-	expect(rows.users).toEqual([{ id: 1, email: 'a@example.com' }])
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			email: 'a@example.com',
+			deleting_at: expect.any(String),
+		}),
+	])
 	expect(rows.jobs).toEqual([
 		{ id: 'job-a', user_id: 'user-aaa', storage_id: null },
 	])
 	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
+})
+
+test('account deletion quiesces a concurrent user write before inventory', async () => {
+	let env: Parameters<typeof deleteUserAccount>[0]['env']
+	let raceAttempted = false
+	let writeCommitted = false
+	let writeError: unknown
+	const { db } = createTestDb(
+		{
+			users: [
+				{
+					id: 1,
+					email: 'a@example.com',
+					stable_user_id: 'user-aaa',
+					updated_at: '2026-07-22',
+				},
+			],
+		},
+		{
+			async onSelect(query) {
+				if (
+					raceAttempted ||
+					!query.includes('select id from mcp_memories where user_id = ?')
+				) {
+					return
+				}
+				raceAttempted = true
+				try {
+					await assertAccountWritable(env, 'user-aaa')
+					writeCommitted = true
+				} catch (error) {
+					writeError = error
+				}
+			},
+		},
+	)
+	env = createSuccessfulDeletionEnv(db)
+	await deleteUserAccount({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(raceAttempted).toBe(true)
+	expect(writeCommitted).toBe(false)
+	expect(writeError).toBeInstanceOf(AccountDeletionInProgressError)
 })

@@ -4,7 +4,10 @@ import {
 	setAuthSessionSecret,
 	type AuthSession,
 } from './auth-session.ts'
-import { readAuthenticatedAppUser } from './authenticated-user.ts'
+import {
+	readAuthenticatedAppUser,
+	readAuthenticatedAppUserForDeletion,
+} from './authenticated-user.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'LOCAL_TEST_COOKIE_SECRET_32_CHARS_MINIMUM'
@@ -126,4 +129,59 @@ test('readAuthenticatedAppUser fails closed to empty roles when the rbac query e
 	} finally {
 		consoleError.mockRestore()
 	}
+})
+
+test('deleting accounts are invalid for normal requests but can retry deletion', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	const cookie = await createAuthCookie(
+		{
+			id: '7',
+			email: 'user@example.com',
+			rememberMe: false,
+		} satisfies AuthSession,
+		false,
+	)
+	const db = {
+		prepare(query: string) {
+			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+			return {
+				bind() {
+					return {
+						async all() {
+							if (normalized.includes('from "users"')) {
+								return {
+									results: [
+										{
+											id: 7,
+											email: 'user@example.com',
+											username: 'deleting-user',
+											stable_user_id:
+												testStableUserIdFromEmail('user@example.com'),
+											deleting_at: '2026-07-22 22:00:00',
+										},
+									],
+									meta: { changes: 0 },
+								}
+							}
+							return { results: [], meta: { changes: 0 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	const env = { APP_DB: db, COOKIE_SECRET: testCookieSecret } as Env
+	const request = () =>
+		new Request('https://example.com/account/delete', {
+			headers: { Cookie: cookie },
+		})
+	await expect(readAuthenticatedAppUser(request(), env)).resolves.toBeNull()
+	await expect(
+		readAuthenticatedAppUserForDeletion(request(), env),
+	).resolves.toEqual(
+		expect.objectContaining({
+			userId: 7,
+			username: 'deleting-user',
+		}),
+	)
 })

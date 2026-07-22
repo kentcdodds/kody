@@ -158,6 +158,7 @@ test('account deletion and export consume the out-of-band surface registry', () 
 		'getAccountDeletionDurableObjectResultKeys',
 	)
 	expect(accountDeletionSource).toContain('accountUserOwnedVectorizeSurfaces')
+	expect(accountDeletionSource).toContain('deleteAccountCommunityAssetPrefixes')
 	expect(accountExportSource).toContain(
 		'getAccountExportExcludedDurableObjects',
 	)

@@ -44,16 +44,18 @@ installs and ordinary forks share the same row shape and therefore appear as
 ## Account deletion inventory
 
 Account deletion is implemented in `packages/worker/src/app/account-deletion.ts`
-and is intentionally inventory driven. The operation first enumerates user-owned
-identifiers while D1 rows still exist, then performs idempotent out-of-band and
-OAuth cleanup. Any critical cleanup failure preserves D1 and the user row for
-retry. Only after cleanup succeeds does one atomic D1 batch delete or clear all
-user rows and the `users` row. Each step records deleted counts, updated counts
-for cleared references, and warnings so the HTTP response states what was
-removed and what needs operator attention. Re-running the operation is safe:
-missing rows, missing KV keys, missing vectors, deleted Artifacts repos, and
-already-cleared Durable Objects are treated as successful no-ops or warning-only
-failures.
+and is intentionally inventory driven. Before inventory it durably sets
+`users.deleting_at`; browser, MCP, package-invocation, and job mutation
+boundaries then reject writes, while the deletion route can still authenticate
+the marked account for retry. The operation performs idempotent out-of-band and
+OAuth cleanup. Any critical cleanup failure preserves D1, the marker, and the
+user row for retry. Only after cleanup succeeds does one atomic D1 batch delete
+or clear all user rows and the `users` row. Each step records deleted counts,
+updated counts for cleared references, and warnings so the HTTP response states
+what was removed and what needs operator attention. Re-running the operation is
+safe: missing rows, missing KV keys, missing vectors, deleted Artifacts repos,
+and already-cleared Durable Objects are treated as successful no-ops or
+warning-only failures.
 
 System email rows owned by `system:email` are intentionally excluded from
 account deletion. They are operator-owned inbound mail for reserved platform
@@ -727,8 +729,12 @@ App-owned R2 keys are:
 
 - `community-icon:v1/{listingId}/{commit}/asset` — processed public community
   icon bytes at the listing's pinned or icon commit. The listing id is the
-  public ownership boundary; account deletion derives keys from the owner's
-  listing rows and their joined package source commits.
+  public ownership boundary. Account deletion paginates and strictly deletes
+  every key under each D1-owned listing prefix, including historical revisions.
+
+- `user-avatars/{stableUserId}/{contentHash}.{extension}` — profile avatars.
+  Account deletion paginates and strictly deletes the complete stable-user
+  prefix, including historical replacements left by earlier cleanup failures.
 
 - `email-raw:v1:{userId}/{messageId}` — raw email MIME for the message row that
   stores this key in `email_messages.raw_mime_key`. The `userId` prefix is part

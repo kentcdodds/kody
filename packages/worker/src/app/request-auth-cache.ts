@@ -29,6 +29,7 @@ type ResolvedAuthUser = {
 	emailVerified: boolean
 	username: string
 	displayName: string
+	accountDeleting: boolean
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
 	mcpUser: McpUserContext
@@ -103,6 +104,7 @@ async function resolveRequestAuth(
 			emailVerified: Boolean(userRecord.email_verified_at),
 			username: userRecord.username,
 			displayName,
+			accountDeleting: Boolean(userRecord.deleting_at),
 			roles,
 			permissions,
 			mcpUser: {

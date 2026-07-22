@@ -29,6 +29,8 @@ import {
 	type AccountCommunityListingSnapshot,
 	type AccountR2ObjectRef,
 } from '#app/account-r2-inventory.ts'
+import { deleteAccountCommunityAssetPrefixes } from '#app/account-r2-prefix-cleanup.ts'
+import { markAccountDeleting } from '#app/account-deletion-state.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
@@ -879,6 +881,10 @@ export async function deleteUserAccount(input: {
 	dbUserId: number
 	mcpUserId: string
 }): Promise<AccountDeletionResult> {
+	await markAccountDeleting({
+		db: input.env.APP_DB,
+		dbUserId: input.dbUserId,
+	})
 	const warnings: Array<string> = []
 	const clearedDurableObjects: Record<string, number> = {}
 	for (const key of getAccountDeletionDurableObjectResultKeys()) {
@@ -998,14 +1004,15 @@ export async function deleteUserAccount(input: {
 		)
 	}
 
-	result.deletedCommunityAssets = await deleteR2Objects({
-		blobs: input.env.COMMUNITY_ASSETS,
-		keys: inventory.r2Objects
-			.filter((object) => object.binding === 'COMMUNITY_ASSETS')
-			.map((object) => object.key),
-		label: 'Community asset',
-		warnings,
-	})
+	try {
+		result.deletedCommunityAssets = await deleteAccountCommunityAssetPrefixes({
+			bucket: input.env.COMMUNITY_ASSETS,
+			stableUserId: input.mcpUserId,
+			listingIds: inventory.communityListings.map((listing) => listing.id),
+		})
+	} catch (error) {
+		warnings.push(getErrorMessage(error))
+	}
 	result.deletedEmailBlobs = await deleteR2Objects({
 		blobs: input.env.EMAIL_BLOBS,
 		keys: inventory.r2Objects

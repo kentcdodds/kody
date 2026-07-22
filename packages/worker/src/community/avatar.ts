@@ -1,5 +1,6 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
+import { assertAccountWritableDb } from '#app/account-deletion-state.ts'
 import {
 	readJpegDimensions,
 	readPngDimensions,
@@ -148,6 +149,7 @@ export async function saveUserAvatar(input: {
 	bytes: Uint8Array
 	contentType: UserAvatarContentType
 }): Promise<string> {
+	await assertAccountWritableDb(input.env.APP_DB, input.stableUserId)
 	const contentHash = await sha256Hex(input.bytes)
 	const r2Key = buildUserAvatarR2Key({
 		stableUserId: input.stableUserId,
@@ -198,6 +200,7 @@ export async function deleteUserAvatar(input: {
 	numericUserId: number
 	stableUserId: string
 }): Promise<void> {
+	await assertAccountWritableDb(input.env.APP_DB, input.stableUserId)
 	const existing = await input.env.APP_DB.prepare(
 		`SELECT avatar_key FROM users WHERE id = ?`,
 	)

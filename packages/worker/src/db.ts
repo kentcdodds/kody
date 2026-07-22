@@ -19,6 +19,7 @@ export const usersTable = table({
 		stripe_customer_id: c.text(),
 		stripe_plan: c.text(),
 		stripe_plan_refreshed_at: c.text(),
+		deleting_at: c.text(),
 		created_at: c.text(),
 		updated_at: c.text(),
 	},

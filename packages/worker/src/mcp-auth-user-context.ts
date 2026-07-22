@@ -18,6 +18,7 @@ type GrantUserRow = {
 	username: string | null
 	display_name: string | null
 	stable_user_id: string
+	deleting_at: string | null
 }
 
 function buildBaseUserFromGrant(
@@ -69,13 +70,13 @@ export async function buildMcpUserContextFromGrantProps(
 	// grant-props user means no elevated permissions this request.
 	try {
 		const row = await env.APP_DB.prepare(
-			`SELECT id, email, username, display_name, stable_user_id
+			`SELECT id, email, username, display_name, stable_user_id, deleting_at
 			 FROM users
 			 WHERE stable_user_id = ?`,
 		)
 			.bind(userId)
 			.first<GrantUserRow>()
-		if (!row) return baseUser
+		if (!row || row.deleting_at) return null
 
 		const email = row.email.trim().toLowerCase()
 		const usernameCandidate = row.username?.trim() ?? ''
@@ -103,6 +104,6 @@ export async function buildMcpUserContextFromGrantProps(
 		}
 	} catch (error) {
 		console.error('Failed to load roles for MCP user context:', error)
-		return baseUser
+		return null
 	}
 }

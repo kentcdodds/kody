@@ -1,6 +1,6 @@
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { readAuthenticatedAppUserForDeletion } from '#app/authenticated-user.ts'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { type routes } from '#app/routes.ts'
 import {
@@ -16,7 +16,7 @@ export function createAccountDeleteHandler(env: Env) {
 		middleware: [],
 		async handler({ request, url }) {
 			const requestIp = getRequestIp(request) ?? undefined
-			const user = await readAuthenticatedAppUser(request, env)
+			const user = await readAuthenticatedAppUserForDeletion(request, env)
 			if (!user) {
 				return Response.json(
 					{ error: 'Authentication required.' },

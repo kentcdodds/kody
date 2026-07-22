@@ -19,6 +19,7 @@ type GrantUserRow = {
 	username: string | null
 	display_name: string | null
 	stable_user_id: string
+	deleting_at?: string | null
 }
 
 function createMockAppDb(options: {
@@ -158,12 +159,25 @@ test('buildMcpUserContextFromGrantProps resolves by stable id, refreshes profile
 			email: 'missing@example.com',
 			displayName: 'missing',
 		}),
-	).resolves.toEqual({
-		userId: 'orphan-id',
-		email: 'missing@example.com',
-		displayName: 'missing',
-	})
+	).resolves.toBeNull()
 	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledTimes(3)
+
+	const deleting = createMockAppDb({
+		row: {
+			id: 10,
+			email: 'deleting@example.com',
+			username: 'deleting',
+			display_name: null,
+			stable_user_id: 'deleting-id',
+			deleting_at: '2026-07-22 22:00:00',
+		},
+	})
+	await expect(
+		buildMcpUserContextFromGrantProps({ APP_DB: deleting.db } as Env, {
+			userId: 'deleting-id',
+			email: 'deleting@example.com',
+		}),
+	).resolves.toBeNull()
 
 	consoleError.mockImplementation(() => {})
 	const failingDb = createMockAppDb({
@@ -175,11 +189,7 @@ test('buildMcpUserContextFromGrantProps resolves by stable id, refreshes profile
 			email: 'resilient@example.com',
 			displayName: 'resilient',
 		}),
-	).resolves.toEqual({
-		userId: 'resilient-id',
-		email: 'resilient@example.com',
-		displayName: 'resilient',
-	})
+	).resolves.toBeNull()
 	expect(consoleError).toHaveBeenCalled()
 	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledTimes(3)
 })

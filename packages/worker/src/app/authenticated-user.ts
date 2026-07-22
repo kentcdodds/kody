@@ -16,10 +16,15 @@ export type AuthenticatedAppUser = {
 	artifactOwnerIds: Array<string>
 }
 
-export async function readAuthenticatedAppUser(request: Request, env: Env) {
+async function readAuthenticatedAppUserInternal(
+	request: Request,
+	env: Env,
+	allowDeleting: boolean,
+) {
 	setAuthSessionSecret(env.COOKIE_SECRET)
 	const resolved = await loadResolvedRequestAuth(request, env)
 	if (!resolved.user || !resolved.sessionUserId) return null
+	if (resolved.user.accountDeleting && !allowDeleting) return null
 
 	return {
 		sessionUserId: resolved.sessionUserId,
@@ -33,4 +38,15 @@ export async function readAuthenticatedAppUser(request: Request, env: Env) {
 		artifactOwnerIds: resolved.user.artifactOwnerIds,
 		mcpUser: resolved.user.mcpUser,
 	} satisfies AuthenticatedAppUser
+}
+
+export async function readAuthenticatedAppUser(request: Request, env: Env) {
+	return await readAuthenticatedAppUserInternal(request, env, false)
+}
+
+export async function readAuthenticatedAppUserForDeletion(
+	request: Request,
+	env: Env,
+) {
+	return await readAuthenticatedAppUserInternal(request, env, true)
 }

@@ -49,6 +49,7 @@ import {
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { listOpenApiBindings } from '#worker/openapi/binding-service.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
+import { assertAccountWritable } from '#app/account-deletion-state.ts'
 
 const executeTool = {
 	name: 'execute',
@@ -131,6 +132,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			const timingStart = startToolTiming()
 			const env = agent.getEnv()
 			const baseCallerContext = agent.getCallerContext()
+			if (baseCallerContext.user?.userId) {
+				await assertAccountWritable(env, baseCallerContext.user.userId)
+			}
 			const resolvedStorageId = storageId?.trim() || null
 			const callerContext = {
 				...baseCallerContext,
