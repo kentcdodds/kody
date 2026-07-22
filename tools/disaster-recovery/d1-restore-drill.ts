@@ -4,6 +4,7 @@ export const maximumD1BackupSizeBytes = 5 * 1024 * 1024 * 1024
 const sha256Pattern = /^[a-f0-9]{64}$/
 const uuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const cloudflareAccountIdPattern = /^[0-9a-f]{32}$/i
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 // Duplicated deliberately from backup-control-plane to keep this slice
@@ -45,10 +46,17 @@ export type RestoreBaseline = {
 	}>
 }
 
-export type DrillAllowlistEntry = {
-	accountId: string
-	name: string
-	purpose: 'drill'
+export type RestoreTrustRegistry = {
+	schemaVersion: 1
+	productionSources: Array<{
+		accountId: string
+		databaseId: string
+		databaseName: string
+	}>
+	drillTargets: Array<{
+		accountId: string
+		databaseName: string
+	}>
 }
 
 export type CreatedD1Target = {
@@ -113,7 +121,7 @@ export type DrillInput = {
 	postForwardBaseline?: unknown
 	targetAccountId: string
 	targetName: string
-	allowlist: ReadonlyArray<DrillAllowlistEntry>
+	trustRegistry: unknown
 	applyForwardMigrations?: boolean
 	dryRun?: boolean
 }
@@ -241,7 +249,7 @@ export function parseAndVerifyManifest(
 	if (!Number.isSafeInteger(value.bytes) || (value.bytes as number) <= 0) {
 		throw new Error('manifest.bytes must be a positive safe integer')
 	}
-	if ((value.bytes as number) > maximumD1BackupSizeBytes) {
+	if ((value.bytes as number) >= maximumD1BackupSizeBytes) {
 		throw new Error('D1 backup exceeds the 5 GiB restore-drill limit')
 	}
 	for (const key of ['scheduledAt', 'startedAt', 'completedAt'] as const) {
@@ -341,6 +349,99 @@ export function parseBaseline(
 		}
 	}
 	return deepFreeze(value) as Readonly<RestoreBaseline>
+}
+
+export function parseRestoreTrustRegistry(
+	value: unknown,
+): Readonly<RestoreTrustRegistry> {
+	assertRecord(value, 'restore trust registry')
+	assertExactKeys(
+		value,
+		['drillTargets', 'productionSources', 'schemaVersion'],
+		'restore trust registry',
+	)
+	if (value.schemaVersion !== 1) {
+		throw new Error('restore trust registry schemaVersion must be 1')
+	}
+	if (!Array.isArray(value.productionSources)) {
+		throw new Error('restore trust registry productionSources must be an array')
+	}
+	if (!Array.isArray(value.drillTargets)) {
+		throw new Error('restore trust registry drillTargets must be an array')
+	}
+	const productionIdentities = new Set<string>()
+	const productionAccounts = new Set<string>()
+	for (const source of value.productionSources) {
+		assertRecord(source, 'restore trust registry production source')
+		assertExactKeys(
+			source,
+			['accountId', 'databaseId', 'databaseName'],
+			'restore trust registry production source',
+		)
+		assertString(
+			source.accountId,
+			'restore trust registry production source accountId',
+		)
+		if (!cloudflareAccountIdPattern.test(source.accountId)) {
+			throw new Error(
+				'restore trust registry production source accountId must be a Cloudflare account ID',
+			)
+		}
+		assertString(
+			source.databaseId,
+			'restore trust registry production source databaseId',
+		)
+		if (!uuidPattern.test(source.databaseId)) {
+			throw new Error(
+				'restore trust registry production source databaseId must be a UUID',
+			)
+		}
+		assertString(
+			source.databaseName,
+			'restore trust registry production source databaseName',
+		)
+		const identity = canonicalJson(source)
+		if (productionIdentities.has(identity)) {
+			throw new Error(
+				'restore trust registry has a duplicate production source',
+			)
+		}
+		productionIdentities.add(identity)
+		productionAccounts.add(source.accountId.toLowerCase())
+	}
+	const drillIdentities = new Set<string>()
+	for (const target of value.drillTargets) {
+		assertRecord(target, 'restore trust registry drill target')
+		assertExactKeys(
+			target,
+			['accountId', 'databaseName'],
+			'restore trust registry drill target',
+		)
+		assertString(
+			target.accountId,
+			'restore trust registry drill target accountId',
+		)
+		if (!cloudflareAccountIdPattern.test(target.accountId)) {
+			throw new Error(
+				'restore trust registry drill target accountId must be a Cloudflare account ID',
+			)
+		}
+		assertString(
+			target.databaseName,
+			'restore trust registry drill target databaseName',
+		)
+		if (productionAccounts.has(target.accountId.toLowerCase())) {
+			throw new Error(
+				'restore trust registry drill target account must differ from every production account',
+			)
+		}
+		const identity = canonicalJson(target)
+		if (drillIdentities.has(identity)) {
+			throw new Error('restore trust registry has a duplicate drill target')
+		}
+		drillIdentities.add(identity)
+	}
+	return deepFreeze(value) as Readonly<RestoreTrustRegistry>
 }
 
 function quoteIdentifier(value: string): string {
@@ -479,10 +580,22 @@ function assertTargetRequest(
 	manifest: Readonly<BackupManifest>,
 	targetAccountId: string,
 	targetName: string,
-	allowlist: ReadonlyArray<DrillAllowlistEntry>,
+	trustRegistry: Readonly<RestoreTrustRegistry>,
 ): void {
 	assertString(targetAccountId, 'targetAccountId')
 	assertString(targetName, 'targetName')
+	if (
+		!trustRegistry.productionSources.some(
+			(source) =>
+				source.accountId === manifest.source.accountId &&
+				source.databaseId === manifest.source.databaseId &&
+				source.databaseName === manifest.source.databaseName,
+		)
+	) {
+		throw new Error(
+			'manifest source identity is not approved by the restore trust registry',
+		)
+	}
 	if (
 		targetAccountId.toLowerCase() === manifest.source.accountId.toLowerCase()
 	) {
@@ -492,14 +605,15 @@ function assertTargetRequest(
 		throw new Error('target name is the production database name')
 	}
 	if (
-		!allowlist.some(
-			(entry) =>
-				entry.purpose === 'drill' &&
-				entry.accountId === targetAccountId &&
-				entry.name === targetName,
+		!trustRegistry.drillTargets.some(
+			(target) =>
+				target.accountId === targetAccountId &&
+				target.databaseName === targetName,
 		)
 	) {
-		throw new Error('target account/name is not allowlisted as a drill')
+		throw new Error(
+			'target account/name is not approved by the restore trust registry',
+		)
 	}
 }
 
@@ -650,6 +764,7 @@ export async function runD1RestoreDrill(
 		input.postForwardBaseline === undefined
 			? undefined
 			: parseBaseline(input.postForwardBaseline, 'post-forward baseline')
+	const trustRegistry = parseRestoreTrustRegistry(input.trustRegistry)
 	if (
 		baseline.sourceDatabaseId.toLowerCase() !==
 		manifest.source.databaseId.toLowerCase()
@@ -676,7 +791,7 @@ export async function runD1RestoreDrill(
 		manifest,
 		input.targetAccountId,
 		input.targetName,
-		input.allowlist,
+		trustRegistry,
 	)
 	if (
 		input.backupFileEvidence.sizeBytes !== manifest.bytes ||

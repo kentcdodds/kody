@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { expect, test, vi } from 'vitest'
@@ -7,10 +7,12 @@ import {
 	type DrillAdapters,
 	type QueryRow,
 	type RestoreBaseline,
+	type RestoreTrustRegistry,
 	type VerificationQuery,
 	buildDrillCommands,
 	buildVerificationQueries,
 	parseAndVerifyManifest,
+	parseRestoreTrustRegistry,
 	runD1RestoreDrill,
 	verifyRows,
 } from './d1-restore-drill.ts'
@@ -18,13 +20,17 @@ import {
 	buildD1RestoreWranglerConfig,
 	collectBackupFileEvidence,
 	createD1DrillTarget,
+	parseArguments,
 	parseQueryRows,
+	restoreTrustRegistryPath,
 	runProcess,
 } from './d1-restore-drill-cli.ts'
 import { canonicalJson, sha256 } from './canonical-json.ts'
 
 const productionUuid = '11111111-1111-4111-8111-111111111111'
 const targetUuid = '22222222-2222-4222-8222-222222222222'
+const productionAccountId = 'a'.repeat(32)
+const targetAccountId = 'b'.repeat(32)
 const backupBytes = new TextEncoder().encode('backup')
 const schemaRows: Array<Record<string, string>> = []
 const now = new Date('2026-07-22T12:00:00.000Z')
@@ -35,7 +41,7 @@ function createManifest(
 	return {
 		schemaVersion: 1,
 		source: {
-			accountId: 'production-account-id',
+			accountId: productionAccountId,
 			accountName: 'production-account',
 			databaseId: productionUuid,
 			databaseName: 'kody-production',
@@ -86,6 +92,28 @@ function createBaseline(
 						primaryKeySha256: sha256(canonicalJson(['message-b'])),
 					},
 				],
+			},
+		],
+		...overrides,
+	}
+}
+
+function createTrustRegistry(
+	overrides: Partial<RestoreTrustRegistry> = {},
+): RestoreTrustRegistry {
+	return {
+		schemaVersion: 1,
+		productionSources: [
+			{
+				accountId: productionAccountId,
+				databaseId: productionUuid,
+				databaseName: 'kody-production',
+			},
+		],
+		drillTargets: [
+			{
+				accountId: targetAccountId,
+				databaseName: 'kody-drill',
 			},
 		],
 		...overrides,
@@ -154,15 +182,9 @@ function drillInput(overrides: Record<string, unknown> = {}) {
 		},
 		backupFile: '/operator/downloads/backup.sql',
 		baseline: createBaseline(),
-		targetAccountId: 'isolated-drill-account-id',
+		targetAccountId,
 		targetName: 'kody-drill',
-		allowlist: [
-			{
-				accountId: 'isolated-drill-account-id',
-				name: 'kody-drill',
-				purpose: 'drill' as const,
-			},
-		],
+		trustRegistry: createTrustRegistry(),
 		...overrides,
 	}
 }
@@ -204,7 +226,7 @@ test('D1 drill verifies immutable manifest and supplied SQL file evidence before
 		),
 	).rejects.toThrow('local SQL file evidence')
 	const oversized = manifestFixture({
-		bytes: 5 * 1024 * 1024 * 1024 + 1,
+		bytes: 5 * 1024 * 1024 * 1024,
 	})
 	await expect(
 		runD1RestoreDrill(
@@ -217,6 +239,111 @@ test('D1 drill verifies immutable manifest and supplied SQL file evidence before
 		),
 	).rejects.toThrow('exceeds the 5 GiB')
 	expect(adapters.createTarget).not.toHaveBeenCalled()
+})
+
+test('restore trust registry is exact, checked-in empty, and cannot be replaced by operator assertions', async () => {
+	expect(parseRestoreTrustRegistry(createTrustRegistry())).toEqual(
+		createTrustRegistry(),
+	)
+	expect(() =>
+		parseRestoreTrustRegistry({
+			...createTrustRegistry(),
+			operatorApproved: true,
+		}),
+	).toThrow('invalid shape')
+	expect(() =>
+		parseRestoreTrustRegistry({
+			...createTrustRegistry(),
+			productionSources: [
+				{
+					accountId: productionAccountId,
+					databaseId: productionUuid,
+					databaseName: 'kody-production',
+					purpose: 'production',
+				},
+			],
+		}),
+	).toThrow('invalid shape')
+	expect(() =>
+		parseRestoreTrustRegistry(
+			createTrustRegistry({
+				drillTargets: [
+					{ accountId: 'not-a-cloudflare-account', databaseName: 'kody-drill' },
+				],
+			}),
+		),
+	).toThrow('Cloudflare account ID')
+
+	const checkedRegistry = JSON.parse(
+		await readFile(restoreTrustRegistryPath, 'utf8'),
+	) as unknown
+	expect(parseRestoreTrustRegistry(checkedRegistry)).toEqual({
+		schemaVersion: 1,
+		productionSources: [],
+		drillTargets: [],
+	})
+	await expect(
+		runD1RestoreDrill(
+			drillInput({ trustRegistry: checkedRegistry }),
+			createAdapters(),
+		),
+	).rejects.toThrow('manifest source identity is not approved')
+	const checkedRegistryAdapters = createAdapters()
+	await expect(
+		runD1RestoreDrill(
+			drillInput({ trustRegistry: checkedRegistry, dryRun: false }),
+			checkedRegistryAdapters,
+		),
+	).rejects.toThrow('manifest source identity is not approved')
+	expect(checkedRegistryAdapters.createTarget).not.toHaveBeenCalled()
+
+	const fabricated = manifestFixture({
+		source: {
+			accountId: targetAccountId,
+			accountName: 'operator-claimed-production',
+			databaseId: targetUuid,
+			databaseName: 'kody-drill',
+		},
+	})
+	const fabricatedAdapters = createAdapters()
+	await expect(
+		runD1RestoreDrill(
+			drillInput({
+				manifestBytes: fabricated.bytes,
+				expectedManifestSha256: fabricated.checksum,
+				baseline: createBaseline({ sourceDatabaseId: targetUuid }),
+				allowlist: [
+					{
+						accountId: targetAccountId,
+						name: 'kody-drill',
+						purpose: 'drill',
+					},
+				],
+				dryRun: false,
+			}),
+			fabricatedAdapters,
+		),
+	).rejects.toThrow('manifest source identity is not approved')
+	expect(fabricatedAdapters.createTarget).not.toHaveBeenCalled()
+
+	expect(() =>
+		parseArguments([
+			'--manifest',
+			'manifest.json',
+			'--manifest-sha256',
+			'0'.repeat(64),
+			'--backup',
+			'backup.sql',
+			'--baseline',
+			'baseline.json',
+			'--allowlist',
+			'operator-registry.json',
+			'--target-account-id',
+			targetAccountId,
+			'--target-name',
+			'kody-drill',
+		]),
+	).toThrow('Unknown argument: --allowlist')
 })
 
 test('SQL file evidence streams injected chunks after stat and rejects sizes without reading the dump', async () => {
@@ -258,9 +385,9 @@ test('SQL file evidence streams injected chunks after stat and rejects sizes wit
 		}),
 	).rejects.toThrow('size does not match the manifest')
 	await expect(
-		collectBackupFileEvidence('backup.sql', 5 * 1024 * 1024 * 1024 + 1, {
+		collectBackupFileEvidence('backup.sql', 5 * 1024 * 1024 * 1024, {
 			async statFile() {
-				return { size: 5 * 1024 * 1024 * 1024 + 1 }
+				return { size: 5 * 1024 * 1024 * 1024 }
 			},
 			readChunks,
 		}),
@@ -268,7 +395,7 @@ test('SQL file evidence streams injected chunks after stat and rejects sizes wit
 	expect(readChunks).not.toHaveBeenCalled()
 })
 
-test('dry-run is non-mutating and live execution creates in a distinct allowlisted account immediately before import', async () => {
+test('dry-run is non-mutating and live execution creates in a distinct approved account immediately before import', async () => {
 	const dryAdapters = createAdapters()
 	const dryRun = await runD1RestoreDrill(drillInput(), dryAdapters)
 	expect(dryRun.dryRun).toBe(true)
@@ -326,7 +453,7 @@ test('dry-run is non-mutating and live execution creates in a distinct allowlist
 	}
 	await runD1RestoreDrill(drillInput({ dryRun: false }), liveAdapters)
 	expect(events).toEqual([
-		'create:isolated-drill-account-id:kody-drill',
+		`create:${targetAccountId}:kody-drill`,
 		`config:kody-drill:${targetUuid}`,
 		'import',
 		'baseline:integrity',
@@ -342,16 +469,19 @@ test('dry-run is non-mutating and live execution creates in a distinct allowlist
 test('target account, returned creation evidence, and forward baseline fail closed', async () => {
 	await expect(
 		runD1RestoreDrill(
-			drillInput({ targetAccountId: 'production-account-id' }),
+			drillInput({ targetAccountId: productionAccountId }),
 			createAdapters(),
 		),
 	).rejects.toThrow('target account must differ')
 	await expect(
 		runD1RestoreDrill(
-			drillInput({ allowlist: [], dryRun: false }),
+			drillInput({
+				trustRegistry: createTrustRegistry({ drillTargets: [] }),
+				dryRun: false,
+			}),
 			createAdapters(),
 		),
-	).rejects.toThrow('allowlisted as a drill')
+	).rejects.toThrow('target account/name is not approved')
 	const staleAdapters = createAdapters()
 	staleAdapters.createTarget = vi.fn(async () => ({
 		uuid: targetUuid,
@@ -382,7 +512,7 @@ test('target account, returned creation evidence, and forward baseline fail clos
 	const baseline = createBaseline()
 	const commands = buildDrillCommands({
 		backupFile: '/operator/downloads/backup.sql',
-		targetAccountId: 'isolated-drill-account-id',
+		targetAccountId,
 		targetName: 'kody-drill',
 		configPath: '/tmp/restore/wrangler.json',
 		baseline,
@@ -464,7 +594,7 @@ test('temporary D1 config and live forward migration commands target the configu
 	)
 	const expectedPlan = buildDrillCommands({
 		backupFile: '/operator/downloads/backup.sql',
-		targetAccountId: 'isolated-drill-account-id',
+		targetAccountId,
 		targetName: 'kody-drill',
 		configPath,
 		baseline,
@@ -611,7 +741,7 @@ test('Cloudflare create adapter uses documented endpoint and validates response 
 	})
 	await expect(
 		createD1DrillTarget({
-			accountId: 'isolated-drill-account-id',
+			accountId: targetAccountId,
 			name: 'kody-drill',
 			token: 'drill-only-token',
 			fetcher,
@@ -623,7 +753,7 @@ test('Cloudflare create adapter uses documented endpoint and validates response 
 		createdAt: now.toISOString(),
 	})
 	expect(fetcher).toHaveBeenCalledWith(
-		'https://api.example.test/client/v4/accounts/isolated-drill-account-id/d1/database',
+		`https://api.example.test/client/v4/accounts/${targetAccountId}/d1/database`,
 		expect.objectContaining({
 			method: 'POST',
 			body: JSON.stringify({ name: 'kody-drill' }),

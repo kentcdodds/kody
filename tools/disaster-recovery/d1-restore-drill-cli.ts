@@ -10,7 +10,6 @@ import {
 	type Command,
 	type CreatedD1Target,
 	type DrillAdapters,
-	type DrillAllowlistEntry,
 	type QueryRow,
 	type TemporaryWranglerConfig,
 	type VerificationQuery,
@@ -23,6 +22,9 @@ const drillTokenEnvironmentVariable = 'CLOUDFLARE_D1_DRILL_EDIT_TOKEN'
 const applicationMigrationsDirectory = fileURLToPath(
 	new URL('../../packages/worker/migrations/', import.meta.url),
 )
+export const restoreTrustRegistryPath = fileURLToPath(
+	new URL('./trusted-d1-restore-identities.json', import.meta.url),
+)
 
 type CliArguments = {
 	manifestPath: string
@@ -30,18 +32,16 @@ type CliArguments = {
 	backupPath: string
 	baselinePath: string
 	postForwardBaselinePath?: string
-	allowlistPath: string
 	targetAccountId: string
 	targetName: string
 	execute: boolean
 	applyForwardMigrations: boolean
 }
 
-function parseArguments(argv: ReadonlyArray<string>): CliArguments {
+export function parseArguments(argv: ReadonlyArray<string>): CliArguments {
 	const values = new Map<string, string>()
 	const switches = new Set<string>()
 	const valuedArguments = new Set([
-		'--allowlist',
 		'--backup',
 		'--baseline',
 		'--manifest',
@@ -81,7 +81,6 @@ function parseArguments(argv: ReadonlyArray<string>): CliArguments {
 		backupPath: required('--backup'),
 		baselinePath: required('--baseline'),
 		postForwardBaselinePath: values.get('--post-forward-baseline'),
-		allowlistPath: required('--allowlist'),
 		targetAccountId: required('--target-account-id'),
 		targetName: required('--target-name'),
 		execute: switches.has('--execute'),
@@ -116,7 +115,7 @@ export async function collectBackupFileEvidence(
 	if (!Number.isSafeInteger(size) || size < 0) {
 		throw new Error('local SQL file size is invalid')
 	}
-	if (size > maximumD1BackupSizeBytes) {
+	if (size >= maximumD1BackupSizeBytes) {
 		throw new Error('local SQL file exceeds the 5 GiB restore-drill limit')
 	}
 	if (size !== expectedSizeBytes) {
@@ -129,7 +128,7 @@ export async function collectBackupFileEvidence(
 		streamedSizeBytes += chunk.byteLength
 		if (
 			streamedSizeBytes > size ||
-			streamedSizeBytes > maximumD1BackupSizeBytes
+			streamedSizeBytes >= maximumD1BackupSizeBytes
 		) {
 			throw new Error('local SQL file changed while hashing')
 		}
@@ -364,9 +363,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 		args.backupPath,
 		manifest.bytes,
 	)
-	const [baseline, allowlist] = await Promise.all([
+	const [baseline, trustRegistry] = await Promise.all([
 		readJson(args.baselinePath),
-		readJson(args.allowlistPath) as Promise<Array<DrillAllowlistEntry>>,
+		readJson(restoreTrustRegistryPath),
 	])
 	const postForwardBaseline = args.postForwardBaselinePath
 		? await readJson(args.postForwardBaselinePath)
@@ -389,7 +388,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 			postForwardBaseline,
 			targetAccountId: args.targetAccountId,
 			targetName: args.targetName,
-			allowlist,
+			trustRegistry,
 			applyForwardMigrations: args.applyForwardMigrations,
 			dryRun: !args.execute,
 		},
