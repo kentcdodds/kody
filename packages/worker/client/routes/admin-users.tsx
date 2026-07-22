@@ -835,7 +835,6 @@ export function AdminUsersRoute(handle: Handle) {
 										<label mix={css(fieldCss)}>
 											<span mix={css(fieldLabelCss)}>Plan</span>
 											<select
-												value={selectedPlanChoice}
 												disabled={isMutating}
 												aria-label="Plan"
 												mix={[

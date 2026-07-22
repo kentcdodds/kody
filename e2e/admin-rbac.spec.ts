@@ -210,6 +210,10 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 
 	const planSelect = page.getByLabel('Plan')
 	await expect(planSelect).toHaveValue('unlimited')
+	await expect(planSelect.getByRole('option')).toHaveCount(4)
+	await expect(
+		planSelect.getByRole('option', { name: 'unlimited', exact: true }),
+	).toHaveCount(1)
 	await planSelect.selectOption('pro')
 	await page.getByRole('button', { name: 'Save plan' }).click()
 	await expect(planSelect).toHaveValue('pro')
