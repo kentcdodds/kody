@@ -114,7 +114,20 @@ export async function parseForwardableEmailMessage(
 			`Inbound email raw MIME is too large (${message.rawSize} bytes, max ${maxRawSize}).`,
 		)
 	}
-	const rawMime = await new Response(message.raw).text()
+	const rawMime = await readForwardableEmailRawMime(message)
+	return await parseForwardableEmailRawMime(message, rawMime)
+}
+
+export async function readForwardableEmailRawMime(
+	message: ForwardableEmailMessage,
+) {
+	return await new Response(message.raw).text()
+}
+
+export async function parseForwardableEmailRawMime(
+	message: ForwardableEmailMessage,
+	rawMime: string,
+): Promise<ParsedInboundEmail> {
 	const parsed = await PostalMime.parse(rawMime, {
 		attachmentEncoding: 'arraybuffer',
 	})

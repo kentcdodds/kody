@@ -3,8 +3,14 @@ import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
 import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import {
+	markInboundDeliveryReceived,
+	type InboundDelivery,
+} from './inbound-delivery.ts'
+import {
+	createEmailThread,
 	deleteEmailMessageById,
 	emailRawMimeKey,
+	findEmailThreadForInboundMessage,
 	getEmailAttachmentRecordById,
 	getEmailMessageById,
 	getOutboundEmailMessageByProviderMessageId,
@@ -12,11 +18,13 @@ import {
 	insertEmailDeliveryEvent,
 	insertEmailMessage,
 	listEmailAttachmentsForMessage,
+	touchEmailThread,
 } from './repo.ts'
 import {
 	type EmailDeliveryEventRecord,
 	type EmailDeliveryStatus,
 	type EmailMessageRecord,
+	type ParsedInboundEmail,
 } from './types.ts'
 
 export {
@@ -38,10 +46,9 @@ function nowIso() {
 }
 
 /**
- * Pre-commit inbound storage failure. Thrown only before the message and
- * attachment rows are durably committed. The inbound handler refunds daily
- * receive quota and rethrows so Cloudflare Email Routing retries delivery.
- * Post-commit bookkeeping failures must not use this type.
+ * Retryable inbound storage failure. Stable delivery/message/blob identifiers
+ * make another Email Routing attempt repair the same logical delivery without
+ * consuming quota or inserting another message.
  */
 export class RetryableInboundStorageError extends Error {
 	override name = 'RetryableInboundStorageError'
@@ -261,6 +268,136 @@ export async function insertEmailMessageWithAttachments(
 			attachmentError,
 		)
 	}
+}
+
+export async function storeIdempotentInboundEmail(input: {
+	db: D1Database
+	blobs: R2Bucket
+	delivery: InboundDelivery
+	parsed: ParsedInboundEmail
+	subjectNormalized: string
+	now: string
+}) {
+	const { delivery, parsed } = input
+	let thread = await findEmailThreadForInboundMessage({
+		db: input.db,
+		userId: delivery.userId,
+		inboxId: delivery.inboxId,
+		references: parsed.references,
+		inReplyToHeader: parsed.inReplyTo,
+	})
+	if (!thread) {
+		thread = await createEmailThread({
+			db: input.db,
+			id: delivery.threadId,
+			userId: delivery.userId,
+			inboxId: delivery.inboxId,
+			subjectNormalized: input.subjectNormalized,
+			rootMessageIdHeader: parsed.messageId,
+			lastMessageAt: input.now,
+			ignoreConflict: true,
+		})
+	}
+
+	await putRawMimeToBlobs({
+		blobs: input.blobs,
+		userId: delivery.userId,
+		messageId: delivery.messageId,
+		rawMime: parsed.rawMime,
+	})
+
+	let stored = await getEmailMessageById({
+		db: input.db,
+		userId: delivery.userId,
+		messageId: delivery.messageId,
+	})
+	if (!stored) {
+		try {
+			stored = await insertEmailMessage({
+				db: input.db,
+				message: {
+					id: delivery.messageId,
+					direction: 'inbound',
+					userId: delivery.userId,
+					inboxId: delivery.inboxId,
+					threadId: thread.id,
+					senderIdentityId: null,
+					fromAddress: parsed.headerFrom,
+					envelopeFrom: parsed.envelopeFrom,
+					toAddresses: parsed.to.map((entry) => entry.address),
+					ccAddresses: parsed.cc.map((entry) => entry.address),
+					bccAddresses: parsed.bcc.map((entry) => entry.address),
+					replyToAddresses: parsed.replyTo.map((entry) => entry.address),
+					subject: parsed.subject,
+					messageIdHeader: parsed.messageId,
+					inReplyToHeader: parsed.inReplyTo,
+					references: parsed.references,
+					headers: parsed.headers,
+					authResults: parsed.authResults,
+					textBody: parsed.textBody,
+					htmlBody: parsed.htmlBody,
+					rawMimeKey: delivery.rawMimeKey,
+					rawSize: parsed.rawSize,
+					processingStatus: 'stored',
+					providerMessageId: null,
+					error: null,
+					receivedAt: input.now,
+					sentAt: null,
+				},
+			})
+		} catch (error) {
+			stored = await getEmailMessageById({
+				db: input.db,
+				userId: delivery.userId,
+				messageId: delivery.messageId,
+			}).catch(() => null)
+			if (!stored) {
+				throw new RetryableInboundStorageError(
+					'Failed to commit inbound email message; the stable delivery will be retried.',
+					error,
+				)
+			}
+		}
+	}
+
+	try {
+		await insertEmailAttachments({
+			db: input.db,
+			messageId: delivery.messageId,
+			ignoreConflicts: true,
+			attachments: parsed.attachments.map((attachment, index) => ({
+				id: `${delivery.messageId}:attachment:${index}`,
+				filename: attachment.filename,
+				contentType: attachment.contentType,
+				contentId: attachment.contentId,
+				disposition: attachment.disposition,
+				size: attachment.size,
+				storageKind: 'raw-mime',
+				storageKey: null,
+			})),
+		})
+	} catch (error) {
+		throw new RetryableInboundStorageError(
+			'Failed to commit inbound email attachments; the stable delivery will be retried.',
+			error,
+		)
+	}
+
+	try {
+		await touchEmailThread({
+			db: input.db,
+			threadId: thread.id,
+			lastMessageAt: input.now,
+		})
+		await markInboundDeliveryReceived({ db: input.db, delivery })
+	} catch (error) {
+		console.error(
+			'inbound-email-post-commit-bookkeeping-failed',
+			stored.id,
+			error,
+		)
+	}
+	return stored
 }
 
 export async function getEmailAttachmentById(input: {

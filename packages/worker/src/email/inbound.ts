@@ -9,9 +9,7 @@ import {
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
-	consumeDailyEntitlement,
 	estimateEntitlementStorageEntryBytes,
-	refundDailyEntitlement,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
@@ -20,53 +18,42 @@ import {
 	splitEmailLocalPart,
 } from './address.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
-import { parseForwardableEmailMessage } from './parser.ts'
+import {
+	parseForwardableEmailRawMime,
+	readForwardableEmailRawMime,
+} from './parser.ts'
+import {
+	buildInboundDelivery,
+	chargeSystemInboundDeliveryOnce,
+	chargeUserInboundDeliveryOnce,
+	markInboundDeliveryRejected,
+	reconcileStaleInboundDeliveries,
+	systemInboundQuotaDay,
+	type InboundDelivery,
+	userInboundQuotaDay,
+} from './inbound-delivery.ts'
 import {
 	getPlatformEmailDomain,
 	getSystemEmailDomain,
 } from './platform-address.ts'
+import { deleteEmptyEmailThreads, getEmailMessageById } from './repo.ts'
 import {
-	createEmailThread,
-	findEmailThreadForInboundMessage,
-	insertEmailDeliveryEvent,
-	insertEmailMessageWithAttachments,
 	recordBoundedEmailRejectionEvent,
 	RetryableInboundStorageError,
-	touchEmailThread,
+	storeIdempotentInboundEmail,
 } from './service.ts'
 import {
 	dispatchInboundEmailSubscriptionEvents,
 	dispatchSystemInboundEmailSubscriptionEvents,
 } from './package-subscriptions.ts'
 import {
-	consumeSystemEmailDailyReceive,
 	countStoredSystemEmailMessages,
 	ensureSystemEmailInbox,
 	isSystemEmailLocal,
-	refundSystemEmailDailyReceive,
 	systemEmailLimits,
 	systemEmailOwnerId,
 	type SystemEmailLocal,
 } from './system-email.ts'
-
-/**
- * Best-effort refund of a pre-parse daily receive charge after a retryable
- * storage failure. Logs refund failures but never masks the original error.
- */
-async function refundReceiveQuotaAfterStorageFailure(input: {
-	refund: () => Promise<void>
-	logLabel: string
-}): Promise<void> {
-	try {
-		await input.refund()
-	} catch (refundError) {
-		console.error(input.logLabel, refundError)
-	}
-}
-
-type ParsedInboundEmail = Awaited<
-	ReturnType<typeof parseForwardableEmailMessage>
->
 
 /**
  * Rejection audit writes are best-effort (the SMTP reject already happened),
@@ -97,91 +84,18 @@ function estimateInboundEmailStorageBytes(input: {
 async function parseAndStoreInboundEmail(input: {
 	db: D1Database
 	blobs: R2Bucket
-	message: ForwardableEmailMessage
-	recipient: string
-	userId: string
-	inboxId: string
-	maxMessageBytes: number
-	onParseRejected: (reason: string) => Promise<void>
+	delivery: InboundDelivery
+	parsed: Awaited<ReturnType<typeof parseForwardableEmailRawMime>>
 }) {
-	let parsed: ParsedInboundEmail
-	try {
-		parsed = await parseForwardableEmailMessage(input.message, {
-			maxRawSize: input.maxMessageBytes,
-		})
-	} catch (error) {
-		const reason =
-			error instanceof Error ? error.message : 'Failed to parse inbound email.'
-		input.message.setReject(reason)
-		await input.onParseRejected(reason)
-		return null
-	}
 	const now = new Date().toISOString()
-	const subjectNormalized = normalizeSubject(parsed.subject)
-	// Durable commit boundary: thread prework + message/attachment storage are
-	// pre-commit (RetryableInboundStorageError → refund + Email Routing retry).
-	// touchEmailThread / received delivery-event writes are post-commit and must
-	// not throw after the message row is durable (retry would duplicate mail).
-	let thread
-	let stored
 	try {
-		const existingThread = await findEmailThreadForInboundMessage({
-			db: input.db,
-			userId: input.userId,
-			inboxId: input.inboxId,
-			references: parsed.references,
-			inReplyToHeader: parsed.inReplyTo,
-		})
-		thread =
-			existingThread ??
-			(await createEmailThread({
-				db: input.db,
-				userId: input.userId,
-				inboxId: input.inboxId,
-				subjectNormalized,
-				rootMessageIdHeader: parsed.messageId,
-				lastMessageAt: now,
-			}))
-		stored = await insertEmailMessageWithAttachments({
+		return await storeIdempotentInboundEmail({
 			db: input.db,
 			blobs: input.blobs,
-			message: {
-				direction: 'inbound',
-				userId: input.userId,
-				inboxId: input.inboxId,
-				threadId: thread.id,
-				senderIdentityId: null,
-				fromAddress: parsed.headerFrom,
-				envelopeFrom: parsed.envelopeFrom,
-				toAddresses: parsed.to.map((entry) => entry.address),
-				ccAddresses: parsed.cc.map((entry) => entry.address),
-				bccAddresses: parsed.bcc.map((entry) => entry.address),
-				replyToAddresses: parsed.replyTo.map((entry) => entry.address),
-				subject: parsed.subject,
-				messageIdHeader: parsed.messageId,
-				inReplyToHeader: parsed.inReplyTo,
-				references: parsed.references,
-				headers: parsed.headers,
-				authResults: parsed.authResults,
-				textBody: parsed.textBody,
-				htmlBody: parsed.htmlBody,
-				rawMime: parsed.rawMime,
-				rawSize: parsed.rawSize,
-				processingStatus: 'stored',
-				providerMessageId: null,
-				error: null,
-				receivedAt: now,
-				sentAt: null,
-			},
-			attachments: parsed.attachments.map((attachment) => ({
-				filename: attachment.filename,
-				contentType: attachment.contentType,
-				contentId: attachment.contentId,
-				disposition: attachment.disposition,
-				size: attachment.size,
-				storageKind: 'raw-mime',
-				storageKey: null,
-			})),
+			delivery: input.delivery,
+			parsed: input.parsed,
+			subjectNormalized: normalizeSubject(input.parsed.subject),
+			now,
 		})
 	} catch (error) {
 		if (error instanceof RetryableInboundStorageError) throw error
@@ -190,33 +104,33 @@ async function parseAndStoreInboundEmail(input: {
 			error,
 		)
 	}
+}
+
+async function cleanupInboundDurability(input: {
+	db: D1Database
+	blobs: R2Bucket
+	userId: string
+}) {
 	try {
-		await touchEmailThread({
+		await reconcileStaleInboundDeliveries(input)
+		await deleteEmptyEmailThreads({
 			db: input.db,
-			threadId: thread.id,
-			lastMessageAt: now,
-		})
-		await insertEmailDeliveryEvent({
-			db: input.db,
-			messageId: stored.id,
 			userId: input.userId,
-			inboxId: input.inboxId,
-			eventType: 'received',
-			provider: 'cloudflare-email-routing',
-			detail: {
-				recipient: input.recipient,
-				envelope_from: parsed.envelopeFrom,
-				from_address: parsed.headerFrom,
-			},
+			before: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+			limit: 20,
 		})
 	} catch (error) {
-		console.error(
-			'inbound-email-post-commit-bookkeeping-failed',
-			stored.id,
-			error,
-		)
+		console.warn('inbound-email-durability-cleanup-failed', input.userId, error)
 	}
-	return stored
+}
+
+function unreadableRawDeliveryFingerprint(message: ForwardableEmailMessage) {
+	return JSON.stringify({
+		from: message.from,
+		to: message.to,
+		rawSize: message.rawSize,
+		headers: Object.fromEntries(message.headers.entries()),
+	})
 }
 
 export async function handleInboundEmail(
@@ -370,14 +284,6 @@ export async function handleInboundEmail(
 		return
 	}
 
-	// The plan's per-message cap also becomes the parser's raw-MIME ceiling
-	// so the two size gates can never disagree.
-	const maxMessageBytes = resolveEmailResourceLimit(
-		account.plan,
-		'email_message_bytes',
-	)
-	// Captured at consume time so a storage-failure refund uses the same UTC day.
-	let receiveQuotaNow: Date | null = null
 	try {
 		// Size first: an oversize message is rejected without consuming any
 		// of the owner's daily receive quota (griefing resistance) and
@@ -395,14 +301,6 @@ export async function handleInboundEmail(
 			userId,
 			email: account.email,
 			requested: estimateInboundEmailStorageBytes({ message, recipient }),
-		})
-		receiveQuotaNow = new Date()
-		await consumeDailyEntitlement({
-			db: env.APP_DB,
-			userId,
-			email: account.email,
-			resource: 'email_receives_per_day',
-			now: receiveQuotaNow,
 		})
 		// Check-then-insert: a concurrent burst can overshoot the stored cap
 		// by a few rows, which is the documented row-count-limit trade-off
@@ -436,56 +334,98 @@ export async function handleInboundEmail(
 		return
 	}
 
-	let stored
+	await cleanupInboundDurability({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		userId,
+	})
+	let rawMime: string | null = null
+	let rawReadError: unknown
 	try {
-		stored = await parseAndStoreInboundEmail({
+		rawMime = await readForwardableEmailRawMime(message)
+	} catch (error) {
+		rawReadError = error
+	}
+	const quotaNow = new Date()
+	const delivery = await buildInboundDelivery({
+		userId,
+		inboxId: inbox.id,
+		recipient,
+		rawMime: rawMime ?? unreadableRawDeliveryFingerprint(message),
+		quotaDay: userInboundQuotaDay(quotaNow),
+	})
+	let claimedDelivery: InboundDelivery
+	try {
+		claimedDelivery = await chargeUserInboundDeliveryOnce({
 			db: env.APP_DB,
-			blobs: env.EMAIL_BLOBS,
-			message,
-			recipient,
-			userId,
-			inboxId: inbox.id,
-			maxMessageBytes,
-			async onParseRejected(reason) {
-				// Parse failures keep one event per attempt: unlike quota/size
-				// rejections they are bounded by the daily receive quota (the
-				// counter was already consumed above), and the per-attempt detail
-				// is useful for the owner to debug a misbehaving sender.
-				await insertEmailDeliveryEvent({
-					db: env.APP_DB,
-					userId,
-					inboxId: inbox.id,
-					eventType: 'rejected',
-					provider: 'cloudflare-email-routing',
-					detail: {
-						recipient,
-						reason,
-						phase: 'parse',
-					},
-				}).catch(warnRejectionAuditWriteFailed)
-				await recordReceiveUsage({ outcome: 'error' })
-			},
+			delivery,
+			plan: account.plan,
+			limit: resolveEmailResourceLimit(account.plan, 'email_receives_per_day'),
+			now: quotaNow,
 		})
 	} catch (error) {
-		// Only typed pre-commit failures refund + retry. Post-commit
-		// bookkeeping is swallowed inside parseAndStoreInboundEmail.
-		if (!(error instanceof RetryableInboundStorageError)) throw error
-		const chargedAt = receiveQuotaNow
-		if (chargedAt) {
-			await refundReceiveQuotaAfterStorageFailure({
-				logLabel: 'email-receives-daily-refund-failed',
-				refund: () =>
-					refundDailyEntitlement({
-						db: env.APP_DB,
-						userId,
-						resource: 'email_receives_per_day',
-						now: chargedAt,
-					}),
-			})
-		}
-		throw error
+		if (!isEntitlementLimitError(error)) throw error
+		message.setReject('Recipient mailbox is over quota.')
+		await recordBoundedEmailRejectionEvent({
+			db: env.APP_DB,
+			userId,
+			inboxId: inbox.id,
+			recipient,
+			reason: error.message,
+			phase: 'entitlement',
+		}).catch(warnRejectionAuditWriteFailed)
+		await recordReceiveUsage({ outcome: 'error' })
+		return
 	}
-	if (!stored) return
+	if (claimedDelivery.state === 'rejected') {
+		message.setReject(
+			claimedDelivery.rejectionReason ?? 'Failed to parse inbound email.',
+		)
+		return
+	}
+	if (claimedDelivery.state === 'received') {
+		const existing = await getEmailMessageById({
+			db: env.APP_DB,
+			userId,
+			messageId: claimedDelivery.messageId,
+		})
+		if (existing) return
+	}
+	if (rawReadError || rawMime == null) {
+		const reason =
+			rawReadError instanceof Error
+				? rawReadError.message
+				: 'Failed to read inbound email.'
+		message.setReject(reason)
+		await markInboundDeliveryRejected({
+			db: env.APP_DB,
+			delivery: claimedDelivery,
+			reason,
+		}).catch(warnRejectionAuditWriteFailed)
+		await recordReceiveUsage({ outcome: 'error' })
+		return
+	}
+	let parsed
+	try {
+		parsed = await parseForwardableEmailRawMime(message, rawMime)
+	} catch (error) {
+		const reason =
+			error instanceof Error ? error.message : 'Failed to parse inbound email.'
+		message.setReject(reason)
+		await markInboundDeliveryRejected({
+			db: env.APP_DB,
+			delivery: claimedDelivery,
+			reason,
+		}).catch(warnRejectionAuditWriteFailed)
+		await recordReceiveUsage({ outcome: 'error' })
+		return
+	}
+	const stored = await parseAndStoreInboundEmail({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		delivery: claimedDelivery,
+		parsed,
+	})
 	await recordReceiveUsage({ entityId: stored.id, outcome: 'success' })
 	const dispatchPromise = dispatchInboundEmailSubscriptionEvents({
 		env,
@@ -555,27 +495,6 @@ async function handleSystemInboundEmail(input: {
 		return
 	}
 
-	// Same-day key for consume + possible storage-failure refund.
-	const receiveQuotaNow = new Date()
-	const receivesToday = await consumeSystemEmailDailyReceive({
-		db: input.env.APP_DB,
-		localPart: input.localPart,
-		now: receiveQuotaNow,
-	})
-	if (receivesToday === null) {
-		input.message.setReject('Recipient mailbox is over quota.')
-		await recordBoundedEmailRejectionEvent({
-			db: input.env.APP_DB,
-			userId: systemEmailOwnerId,
-			inboxId: inbox.id,
-			recipient: input.recipient,
-			reason: `System inbox daily receive cap ${systemEmailLimits.maxReceivesPerDay} reached for ${input.localPart}.`,
-			phase: 'system-limit',
-		}).catch(warnRejectionAuditWriteFailed)
-		await recordReceiveUsage({ outcome: 'error' })
-		return
-	}
-
 	const storedMessages = await countStoredSystemEmailMessages({
 		db: input.env.APP_DB,
 	})
@@ -593,46 +512,96 @@ async function handleSystemInboundEmail(input: {
 		return
 	}
 
-	let stored
+	await cleanupInboundDurability({
+		db: input.env.APP_DB,
+		blobs: input.env.EMAIL_BLOBS,
+		userId: systemEmailOwnerId,
+	})
+	let rawMime: string | null = null
+	let rawReadError: unknown
 	try {
-		stored = await parseAndStoreInboundEmail({
+		rawMime = await readForwardableEmailRawMime(input.message)
+	} catch (error) {
+		rawReadError = error
+	}
+	const quotaNow = new Date()
+	const delivery = await buildInboundDelivery({
+		userId: systemEmailOwnerId,
+		inboxId: inbox.id,
+		recipient: input.recipient,
+		rawMime: rawMime ?? unreadableRawDeliveryFingerprint(input.message),
+		quotaDay: systemInboundQuotaDay(quotaNow),
+	})
+	const claim = await chargeSystemInboundDeliveryOnce({
+		db: input.env.APP_DB,
+		delivery,
+		localPart: input.localPart,
+		limit: systemEmailLimits.maxReceivesPerDay,
+		now: quotaNow,
+	})
+	if (claim.overLimit || !claim.delivery) {
+		input.message.setReject('Recipient mailbox is over quota.')
+		await recordBoundedEmailRejectionEvent({
 			db: input.env.APP_DB,
-			blobs: input.env.EMAIL_BLOBS,
-			message: input.message,
-			recipient: input.recipient,
 			userId: systemEmailOwnerId,
 			inboxId: inbox.id,
-			maxMessageBytes: systemEmailLimits.maxMessageBytes,
-			async onParseRejected(reason) {
-				await insertEmailDeliveryEvent({
-					db: input.env.APP_DB,
-					userId: systemEmailOwnerId,
-					inboxId: inbox.id,
-					eventType: 'rejected',
-					provider: 'cloudflare-email-routing',
-					detail: {
-						recipient: input.recipient,
-						reason,
-						phase: 'parse',
-					},
-				}).catch(warnRejectionAuditWriteFailed)
-				await recordReceiveUsage({ outcome: 'error' })
-			},
-		})
-	} catch (error) {
-		if (!(error instanceof RetryableInboundStorageError)) throw error
-		await refundReceiveQuotaAfterStorageFailure({
-			logLabel: 'system-email-receives-daily-refund-failed',
-			refund: () =>
-				refundSystemEmailDailyReceive({
-					db: input.env.APP_DB,
-					localPart: input.localPart,
-					now: receiveQuotaNow,
-				}),
-		})
-		throw error
+			recipient: input.recipient,
+			reason: `System inbox daily receive cap ${systemEmailLimits.maxReceivesPerDay} reached for ${input.localPart}.`,
+			phase: 'system-limit',
+		}).catch(warnRejectionAuditWriteFailed)
+		await recordReceiveUsage({ outcome: 'error' })
+		return
 	}
-	if (!stored) return
+	const claimedDelivery = claim.delivery
+	if (claimedDelivery.state === 'rejected') {
+		input.message.setReject(
+			claimedDelivery.rejectionReason ?? 'Failed to parse inbound email.',
+		)
+		return
+	}
+	if (claimedDelivery.state === 'received') {
+		const existing = await getEmailMessageById({
+			db: input.env.APP_DB,
+			userId: systemEmailOwnerId,
+			messageId: claimedDelivery.messageId,
+		})
+		if (existing) return
+	}
+	if (rawReadError || rawMime == null) {
+		const reason =
+			rawReadError instanceof Error
+				? rawReadError.message
+				: 'Failed to read inbound email.'
+		input.message.setReject(reason)
+		await markInboundDeliveryRejected({
+			db: input.env.APP_DB,
+			delivery: claimedDelivery,
+			reason,
+		}).catch(warnRejectionAuditWriteFailed)
+		await recordReceiveUsage({ outcome: 'error' })
+		return
+	}
+	let parsed
+	try {
+		parsed = await parseForwardableEmailRawMime(input.message, rawMime)
+	} catch (error) {
+		const reason =
+			error instanceof Error ? error.message : 'Failed to parse inbound email.'
+		input.message.setReject(reason)
+		await markInboundDeliveryRejected({
+			db: input.env.APP_DB,
+			delivery: claimedDelivery,
+			reason,
+		}).catch(warnRejectionAuditWriteFailed)
+		await recordReceiveUsage({ outcome: 'error' })
+		return
+	}
+	const stored = await parseAndStoreInboundEmail({
+		db: input.env.APP_DB,
+		blobs: input.env.EMAIL_BLOBS,
+		delivery: claimedDelivery,
+		parsed,
+	})
 	await recordReceiveUsage({ entityId: stored.id, outcome: 'success' })
 	// System mail fans out to packages saved by admin users on the dedicated
 	// email.system-message.received topic (never to the synthetic system

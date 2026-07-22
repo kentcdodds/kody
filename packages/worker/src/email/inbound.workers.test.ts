@@ -1,6 +1,10 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { handleInboundEmail } from './inbound.ts'
+import {
+	buildInboundDelivery,
+	reconcileStaleInboundDeliveries,
+} from './inbound-delivery.ts'
 import { defaultEmailInboxName } from './default-inbox.ts'
 import {
 	createEmailThread,
@@ -13,7 +17,6 @@ import {
 	listEmailAttachmentsForMessage,
 } from './repo.ts'
 import {
-	EmailRawMimeStorageError,
 	getEmailAttachmentById,
 	insertEmailMessageWithAttachments,
 	insertEmailMessageWithRawMime,
@@ -26,6 +29,7 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
 	consoleError,
+	consoleWarn,
 	silenceExpectedConsoleErrors,
 } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
@@ -851,7 +855,7 @@ function createPostCommitBookkeepingFailureDb() {
 	}) as D1Database
 }
 
-test('inbound pre-commit R2/D1 failures refund receive quota and rethrow; retry consumes one', async () => {
+test('inbound R2/D1 failures and retries reuse one quota charge, row, thread, and blob', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `r2fail-${crypto.randomUUID().slice(0, 8)}`
@@ -892,7 +896,7 @@ test('inbound pre-commit R2/D1 failures refund receive quota and rethrow; retry 
 				handleInboundEmail(message, failingEnv),
 			).rejects.toBeInstanceOf(RetryableInboundStorageError)
 			expect(message.rejectedReason).toBeNull()
-			expect(await readUserDailyReceiveCount(userId)).toBe(0)
+			expect(await readUserDailyReceiveCount(userId)).toBe(1)
 		}
 	}
 
@@ -919,6 +923,12 @@ test('inbound pre-commit R2/D1 failures refund receive quota and rethrow; retry 
 			limit: 10,
 		}),
 	).toHaveLength(1)
+	const threadCount = await env.APP_DB.prepare(
+		`SELECT COUNT(*) AS count FROM email_threads WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.first<{ count: number }>()
+	expect(Number(threadCount?.count ?? 0)).toBe(1)
 })
 
 test('inbound post-commit bookkeeping failure keeps one stored row without refund or retry throw', async () => {
@@ -993,12 +1003,12 @@ test('inbound parse rejection still consumes daily receive quota', async () => {
 	expect(await readUserDailyReceiveCount(userId)).toBe(1)
 })
 
-test('inbound storage refund failure is logged and original storage error is rethrown', async () => {
+test('stored-message count failure happens before durable quota charge', async () => {
 	silenceIncidentalRuntimeWarnings()
-	consoleError.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
-	const username = `refund-fail-${crypto.randomUUID().slice(0, 8)}`
-	const accountEmail = `refund-fail-${crypto.randomUUID()}@example.com`
+	const username = `count-fail-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `count-fail-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
 	await seedVerifiedAccount({
 		db: env.APP_DB,
 		email: accountEmail,
@@ -1009,11 +1019,14 @@ test('inbound storage refund failure is logged and original storage error is ret
 		get(target, property, receiver) {
 			if (property === 'prepare') {
 				return (query: string) => {
-					if (query.includes('UPDATE entitlement_daily_counters')) {
+					if (
+						query.includes('COUNT(*)') &&
+						query.includes('FROM email_messages')
+					) {
 						return {
 							bind: () => ({
-								run: async () => {
-									throw new Error('simulated refund failure')
+								first: async () => {
+									throw new Error('simulated stored count failure')
 								},
 							}),
 						}
@@ -1028,7 +1041,6 @@ test('inbound storage refund failure is logged and original storage error is ret
 	const failingEnv = {
 		...createInboundEnv(),
 		APP_DB: failingDb,
-		EMAIL_BLOBS: createFailingEmailBlobs(),
 	} as Parameters<typeof handleInboundEmail>[1]
 	const message = createForwardableEmailMessage({
 		from: 'sender@example.net',
@@ -1036,20 +1048,24 @@ test('inbound storage refund failure is logged and original storage error is ret
 		raw: [
 			'From: Sender <sender@example.net>',
 			`To: ${address}`,
-			'Subject: Refund failure',
-			'Message-ID: <refund-failure@example.net>',
+			'Subject: Count failure',
+			'Message-ID: <count-failure@example.net>',
 			'',
 			'Body',
 		].join('\r\n'),
 	})
 
-	await expect(handleInboundEmail(message, failingEnv)).rejects.toBeInstanceOf(
-		EmailRawMimeStorageError,
+	await expect(handleInboundEmail(message, failingEnv)).rejects.toThrow(
+		'simulated stored count failure',
 	)
-	expect(consoleError).toHaveBeenCalledWith(
-		'email-receives-daily-refund-failed',
-		expect.anything(),
-	)
+	expect(await readUserDailyReceiveCount(userId)).toBe(0)
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM email_delivery_events WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.first(),
+	).toBeNull()
 })
 
 test('insertEmailMessageWithRawMime stores raw MIME in R2 and only raw_mime_key in D1', async () => {
@@ -1145,6 +1161,78 @@ test('insertEmailMessageWithRawMime best-effort deletes R2 blob when D1 insert f
 			.bind(messageId)
 			.first(),
 	).toBeNull()
+})
+
+test('stale inbound ledger durably retries orphan blob cleanup after R2 delete failure', async () => {
+	consoleWarn.mockImplementation(() => {})
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `user-${crypto.randomUUID()}`
+	const delivery = await buildInboundDelivery({
+		userId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'durable@example.com',
+		rawMime: 'orphaned raw mime',
+		quotaDay: '2026-07-19',
+	})
+	await env.EMAIL_BLOBS.put(delivery.rawMimeKey, 'orphaned raw mime')
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, inbox_id, event_type, provider, provider_event_id,
+			detail_json, created_at
+		) VALUES (?, ?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+	)
+		.bind(
+			delivery.deliveryId,
+			userId,
+			delivery.inboxId,
+			delivery.deliveryId,
+			JSON.stringify(delivery),
+			'2026-07-19T00:00:00.000Z',
+		)
+		.run()
+	const failingBlobs = new Proxy(env.EMAIL_BLOBS, {
+		get(target, property, receiver) {
+			if (property === 'delete') {
+				return async () => {
+					throw new Error('simulated compensating delete failure')
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	})
+
+	expect(
+		await reconcileStaleInboundDeliveries({
+			db: env.APP_DB,
+			blobs: failingBlobs,
+			userId,
+			now: new Date('2026-07-22T00:00:00.000Z'),
+		}),
+	).toEqual({ recovered: 0, cleaned: 0 })
+	expect(await env.EMAIL_BLOBS.get(delivery.rawMimeKey)).not.toBeNull()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'inbound-email-orphan-blob-delete-failed',
+		delivery.rawMimeKey,
+		expect.any(Error),
+	)
+
+	expect(
+		await reconcileStaleInboundDeliveries({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			userId,
+			now: new Date('2026-07-22T00:00:00.000Z'),
+		}),
+	).toEqual({ recovered: 0, cleaned: 1 })
+	expect(await env.EMAIL_BLOBS.get(delivery.rawMimeKey)).toBeNull()
+	const row = await env.APP_DB.prepare(
+		`SELECT json_extract(detail_json, '$.state') AS state
+		FROM email_delivery_events WHERE id = ? AND user_id = ?`,
+	)
+		.bind(delivery.deliveryId, userId)
+		.first<{ state: string }>()
+	expect(row).toEqual({ state: 'orphan-cleaned' })
 })
 
 test('insertEmailMessageWithAttachments cleans message and blob when attachment insert fails', async () => {
@@ -1266,14 +1354,11 @@ test('attachment cleanup failure with remaining row is acknowledged without retr
 	)
 })
 
-test('attachment cleanup probe failure acknowledges message without retry or quota refund', async () => {
+test('ambiguous D1 commit response repairs the stable delivery without duplicate mail', async () => {
 	silenceIncidentalRuntimeWarnings()
-	silenceExpectedConsoleErrors([
-		'inbound-email-attachment-cleanup-probe-failed',
-	])
 	await ensureEmailTestSchema(env.APP_DB)
-	const username = `probe-fail-${crypto.randomUUID().slice(0, 8)}`
-	const accountEmail = `probe-fail-${crypto.randomUUID()}@example.com`
+	const username = `ambiguous-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `ambiguous-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(accountEmail)
 	const address = `${username}@${platformDomain}`
 	await seedVerifiedAccount({
@@ -1281,32 +1366,28 @@ test('attachment cleanup probe failure acknowledges message without retry or quo
 		email: accountEmail,
 		username,
 	})
+	let commitResponseFailed = false
 	const failingDb = new Proxy(env.APP_DB, {
 		get(target, property, receiver) {
-			if (property === 'batch') {
-				return async () => {
-					throw new Error('simulated attachment and cleanup batch failure')
-				}
-			}
 			if (property === 'prepare') {
 				return (query: string) => {
 					const statement = target.prepare(query)
-					// Residual probe after attachment cleanup (getEmailMessageById).
-					if (
-						query.includes('FROM email_messages') &&
-						query.includes('WHERE id = ?') &&
-						query.includes('AND user_id = ?') &&
-						query.includes('LIMIT 1')
-					) {
-						return {
-							bind: () => ({
-								first: async () => {
-									throw new Error('simulated residual probe failure')
+					if (!query.includes('INSERT INTO email_messages')) return statement
+					return {
+						bind(...params: Array<unknown>) {
+							const bound = statement.bind(...params)
+							return {
+								run: async () => {
+									const result = await bound.run()
+									if (!commitResponseFailed) {
+										commitResponseFailed = true
+										throw new Error('simulated commit response loss')
+									}
+									return result
 								},
-							}),
-						}
+							}
+						},
 					}
-					return statement
 				}
 			}
 			const value = Reflect.get(target, property, receiver)
@@ -1319,20 +1400,10 @@ test('attachment cleanup probe failure acknowledges message without retry or quo
 		raw: [
 			'From: Sender <sender@example.net>',
 			`To: ${address}`,
-			'Subject: Probe failure mail',
-			'Message-ID: <probe-failure@example.net>',
-			'Content-Type: multipart/mixed; boundary="probe-boundary"',
-			'',
-			'--probe-boundary',
-			'Content-Type: text/plain; charset="utf-8"',
+			'Subject: Ambiguous commit mail',
+			'Message-ID: <ambiguous-commit@example.net>',
 			'',
 			'Body',
-			'--probe-boundary',
-			'Content-Type: text/plain; name="note.txt"',
-			'Content-Disposition: attachment; filename="note.txt"',
-			'',
-			'Note',
-			'--probe-boundary--',
 		].join('\r\n'),
 	})
 	const failingEnv = {
@@ -1343,6 +1414,20 @@ test('attachment cleanup probe failure acknowledges message without retry or quo
 	await handleInboundEmail(message, failingEnv)
 	expect(message.rejectedReason).toBeNull()
 	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+	const retry = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Ambiguous commit mail',
+			'Message-ID: <ambiguous-commit@example.net>',
+			'',
+			'Body',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(retry, createInboundEnv())
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
 	expect(
 		await listEmailMessages({
 			db: env.APP_DB,
@@ -1350,13 +1435,21 @@ test('attachment cleanup probe failure acknowledges message without retry or quo
 			limit: 10,
 		}),
 	).toHaveLength(1)
-	expect(consoleError).toHaveBeenCalledWith(
-		'inbound-email-attachment-cleanup-probe-failed',
-		expect.any(String),
-		expect.anything(),
-		expect.anything(),
-		expect.anything(),
-	)
+	const stored = (
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 10,
+		})
+	)[0]!
+	expect(await env.EMAIL_BLOBS.get(stored.rawMimeKey!)).not.toBeNull()
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT COUNT(*) AS count FROM email_threads WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.first<{ count: number }>(),
+	).toEqual({ count: 1 })
 })
 
 test('inbound email handler dispatches package subscriptions for stored inbound email', async () => {

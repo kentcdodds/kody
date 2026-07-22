@@ -255,10 +255,8 @@ test('refundSystemEmailDailyReceive decrements local/day counter and floors at z
 	expect(await readCount('abuse')).toBe(0)
 })
 
-test('system inbox pre-commit R2/D1 failures refund daily receive quota; retry consumes one', async () => {
+test('system inbox R2/D1 failures and retries keep one durable quota charge', async () => {
 	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const r2FailingEnv = {
 		...createInboundEnv(),
 		EMAIL_BLOBS: new Proxy(env.EMAIL_BLOBS, {
@@ -298,34 +296,37 @@ test('system inbox pre-commit R2/D1 failures refund daily receive quota; retry c
 		}) as D1Database,
 	} as Parameters<typeof handleInboundEmail>[1]
 
-	for (const failingEnv of [r2FailingEnv, d1FailingEnv]) {
+	for (const [index, failingEnv] of [r2FailingEnv, d1FailingEnv].entries()) {
+		await ensureEmailTestSchema(env.APP_DB)
+		await ensureUsageRollupsTestSchema(env.APP_DB)
+		const messageId = `system-storage-retry-${index}`
 		for (let attempt = 0; attempt < 2; attempt += 1) {
 			const message = buildInboundMessage({
 				to: `abuse@${systemDomain}`,
-				messageId: `system-precommit-fail-${attempt}-${crypto.randomUUID().slice(0, 6)}`,
+				messageId,
 			})
 			await expect(
 				handleInboundEmail(message, failingEnv),
 			).rejects.toBeInstanceOf(RetryableInboundStorageError)
 			expect(message.rejectedReason).toBeNull()
-			expect(await readSystemDailyReceiveCount('abuse')).toBe(0)
+			expect(await readSystemDailyReceiveCount('abuse')).toBe(1)
 		}
-	}
 
-	const retry = buildInboundMessage({
-		to: `abuse@${systemDomain}`,
-		messageId: 'system-r2-retry-ok',
-	})
-	await handleInboundEmail(retry, createInboundEnv())
-	expect(retry.rejectedReason).toBeNull()
-	expect(await readSystemDailyReceiveCount('abuse')).toBe(1)
-	expect(
-		await listEmailMessages({
-			db: env.APP_DB,
-			userId: systemEmailOwnerId,
-			limit: 10,
-		}),
-	).toHaveLength(1)
+		const retry = buildInboundMessage({
+			to: `abuse@${systemDomain}`,
+			messageId,
+		})
+		await handleInboundEmail(retry, createInboundEnv())
+		expect(retry.rejectedReason).toBeNull()
+		expect(await readSystemDailyReceiveCount('abuse')).toBe(1)
+		expect(
+			await listEmailMessages({
+				db: env.APP_DB,
+				userId: systemEmailOwnerId,
+				limit: 10,
+			}),
+		).toHaveLength(1)
+	}
 })
 
 test('system inbox post-commit bookkeeping failure keeps one stored row without refund or retry throw', async () => {

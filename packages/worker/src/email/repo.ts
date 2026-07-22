@@ -508,15 +508,17 @@ export const findEmailThreadForInboundMessage = findThreadForMessage
 
 export async function createEmailThread(input: {
 	db: D1Database
+	id?: string
 	userId: string
 	inboxId?: string | null
 	subjectNormalized?: string | null
 	rootMessageIdHeader?: string | null
 	lastMessageAt?: string | null
+	ignoreConflict?: boolean
 }) {
 	const timestamp = nowIso()
 	const row = {
-		id: crypto.randomUUID(),
+		id: input.id ?? crypto.randomUUID(),
 		user_id: input.userId,
 		inbox_id: input.inboxId ?? null,
 		subject_normalized: input.subjectNormalized ?? '',
@@ -527,7 +529,7 @@ export async function createEmailThread(input: {
 	}
 	await input.db
 		.prepare(
-			`INSERT INTO email_threads (
+			`${input.ignoreConflict ? 'INSERT OR IGNORE' : 'INSERT'} INTO email_threads (
 				id, user_id, inbox_id, subject_normalized, root_message_id_header, last_message_at, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
@@ -543,6 +545,50 @@ export async function createEmailThread(input: {
 		)
 		.run()
 	return mapThreadRow(row)
+}
+
+export async function deleteEmptyEmailThreads(input: {
+	db: D1Database
+	userId: string
+	before: string
+	limit: number
+}) {
+	const rows = await input.db
+		.prepare(
+			`SELECT thread.id
+			FROM email_threads thread
+			WHERE thread.user_id = ?
+				AND thread.created_at < ?
+				AND NOT EXISTS (
+					SELECT 1 FROM email_messages message
+					WHERE message.thread_id = thread.id
+				)
+			ORDER BY thread.created_at ASC, thread.id ASC
+			LIMIT ?`,
+		)
+		.bind(input.userId, input.before, input.limit)
+		.all<{ id: string }>()
+	const ids = (rows.results ?? []).map((row) => row.id)
+	if (ids.length === 0) return 0
+	const results = await input.db.batch(
+		ids.map((id) =>
+			input.db
+				.prepare(
+					`DELETE FROM email_threads
+					WHERE id = ?
+						AND user_id = ?
+						AND NOT EXISTS (
+							SELECT 1 FROM email_messages
+							WHERE thread_id = ?
+						)`,
+				)
+				.bind(id, input.userId, id),
+		),
+	)
+	return results.reduce(
+		(total, result) => total + Number(result.meta.changes ?? 0),
+		0,
+	)
 }
 
 export async function touchEmailThread(input: {
@@ -942,6 +988,7 @@ const emailAttachmentInsertBatchSize = 50
 export async function insertEmailAttachments(input: {
 	db: D1Database
 	messageId: string
+	ignoreConflicts?: boolean
 	attachments: Array<{
 		/**
 		 * Pre-generated row id. Callers that store attachment bytes in R2
@@ -964,7 +1011,7 @@ export async function insertEmailAttachments(input: {
 	// from oversized D1 batches. On a mid-chunk failure, callers that need
 	// consistency delete by message_id, which covers earlier chunks too.
 	const statement = input.db.prepare(
-		`INSERT INTO email_attachments (
+		`${input.ignoreConflicts ? 'INSERT OR IGNORE' : 'INSERT'} INTO email_attachments (
 			id, message_id, filename, content_type, content_id, disposition,
 			size, storage_kind, storage_key, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
