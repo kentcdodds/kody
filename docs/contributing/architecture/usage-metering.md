@@ -209,7 +209,9 @@ Guarantees and rules:
    `undefined` — do not approximate.
 5. **Do not change behavior.** No new throws, no altered return values, no added
    latency beyond the awaited write (use `ctx.waitUntil` in DOs if needed).
-6. **Test it.** In `*.node.test.ts`, spy on the helper:
+6. **Test it.** Pick the flavor with the
+   [test flavor decision matrix](../testing-principles.md#test-flavor-decision-matrix).
+   In `*.node.test.ts`, spy on the helper:
 
    ```ts
    const usageModule = await import('#worker/usage/record-usage.ts')

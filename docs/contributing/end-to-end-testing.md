@@ -113,8 +113,9 @@ Common commands:
 - `npx playwright test e2e/login.spec.ts`
 
 For MCP capability work, prefer `*.node.test.ts` or `*.workers.test.ts` beside
-the implementation and keep `npm run test:mcp` limited to a couple of
-high-signal smoke journeys.
+the implementation (see the
+[test flavor decision matrix](./testing-principles.md#test-flavor-decision-matrix))
+and keep `npm run test:mcp` limited to a couple of high-signal smoke journeys.
 
 If `packages/worker/.env` is missing, the E2E server startup path copies
 `packages/worker/.env.example` to `packages/worker/.env` before Wrangler starts.

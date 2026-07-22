@@ -2,49 +2,12 @@ import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	listPopularAgentPackagesForUser,
 	recordAgentPackageConversationUse,
 	recordAgentPackageConversationUses,
 } from './agent-package-conversation-uses.ts'
-
-type TestD1Statement = {
-	bind(...params: Array<unknown>): TestD1Statement
-	all<T>(): Promise<{ results: Array<T>; meta: { changes: number } }>
-	first<T>(): Promise<T | null>
-	run(): Promise<{ meta: { changes: number } }>
-}
-
-function createD1FromSqlite(sqlite: DatabaseSync) {
-	function createStatement(
-		query: string,
-		params: Array<unknown> = [],
-	): TestD1Statement {
-		return {
-			bind(...boundParams: Array<unknown>) {
-				return createStatement(query, boundParams)
-			},
-			async all<T>() {
-				return {
-					results: sqlite.prepare(query).all(...params) as Array<T>,
-					meta: { changes: 0 },
-				}
-			},
-			async first<T>() {
-				return (sqlite.prepare(query).get(...params) ?? null) as T | null
-			},
-			async run() {
-				const result = sqlite.prepare(query).run(...params)
-				return { meta: { changes: result.changes } }
-			},
-		}
-	}
-	return {
-		prepare(query: string) {
-			return createStatement(query)
-		},
-	} as unknown as D1Database
-}
 
 function createTestDb() {
 	const sqlite = new DatabaseSync(':memory:')

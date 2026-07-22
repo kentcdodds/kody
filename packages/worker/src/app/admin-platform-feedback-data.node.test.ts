@@ -2,47 +2,8 @@ import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { loadAdminPlatformFeedbackData } from './admin-platform-feedback-data.ts'
-
-type TestD1Statement = {
-	bind(...params: Array<unknown>): TestD1Statement
-	all<T>(): Promise<{ results: Array<T>; meta: { changes: number } }>
-	first<T>(): Promise<T | null>
-	run(): Promise<{ meta: { changes: number } }>
-}
-
-function createD1FromSqlite(sqlite: DatabaseSync, queries: Array<string>) {
-	function createStatement(
-		query: string,
-		params: Array<unknown> = [],
-	): TestD1Statement {
-		return {
-			bind(...boundParams: Array<unknown>) {
-				return createStatement(query, boundParams)
-			},
-			async all<T>() {
-				return {
-					results: sqlite.prepare(query).all(...params) as Array<T>,
-					meta: { changes: 0 },
-				}
-			},
-			async first<T>() {
-				return (sqlite.prepare(query).get(...params) ?? null) as T | null
-			},
-			async run() {
-				const result = sqlite.prepare(query).run(...params)
-				return { meta: { changes: result.changes } }
-			},
-		}
-	}
-
-	return {
-		prepare(query: string) {
-			queries.push(query.replace(/\s+/g, ' ').trim())
-			return createStatement(query)
-		},
-	} as unknown as D1Database
-}
 
 function createAdminPlatformFeedbackFixture() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -140,7 +101,7 @@ function createAdminPlatformFeedbackFixture() {
 	return {
 		sqlite,
 		queries,
-		env: { APP_DB: createD1FromSqlite(sqlite, queries) } as Env,
+		env: { APP_DB: createD1FromSqlite(sqlite, { queries }) } as Env,
 	}
 }
 

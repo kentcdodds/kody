@@ -4,6 +4,29 @@ This codebase favors small, readable test suites with explicit setup and minimal
 magic. Individual tests should follow a meaningful workflow end-to-end, even
 when that makes a single test longer and more assertion-heavy.
 
+## Test flavor decision matrix
+
+Choose the lightest flavor that can falsify the behavior. Filename suffixes pick
+the Vitest project (`vitest.config.ts`):
+
+| Flavor / command                              | Use when                                                                                                                                                                                                                                                                                                        | Avoid when                                                                                                                                                                                                                                         |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `*.node.test.ts` (`npm run test` / node-unit) | Pure server logic, pure functions, handlers/services that can run against an in-memory `node:sqlite` D1 facade (`createD1FromSqlite` in `packages/worker/src/test-support/`), or code that is correctly covered by spies/stubs (for example `vi.spyOn` on `recordUsage`). Fast feedback; no Workers runtime.    | The assertion needs real Cloudflare bindings (`env.APP_DB`, KV, DO, R2) or Workers-only APIs that the node stubs do not honestly exercise.                                                                                                         |
+| `*.workers.test.ts` (workers-unit)            | The behavior depends on real local bindings from `cloudflare:workers` / the Vitest Workers pool (D1 schema + queries, KV reads/writes, DO stubs as configured). Prefer shared explicit-import factories from `packages/worker/src/test-support/` and domain `test-schema.ts` helpers over copy-pasted seed SQL. | The file never reads `env` / bindings and only tests pure registry or string logic — prefer `*.node.test.ts` instead (several `src/mcp/**` workers suites are historical misclassifications; leave them unless you are already editing that area). |
+| `*.mcp-e2e.test.ts` (`npm run test:mcp`)      | A tiny smoke suite for the real MCP HTTP transport, OAuth, and package-app session wiring.                                                                                                                                                                                                                      | Capability-by-capability coverage that does not need that transport — put those beside the implementation as node or workers tests.                                                                                                                |
+| Playwright (`npm run test:e2e:run`)           | A very small number of user-critical happy-path journeys through the worker + client. See [end-to-end testing](./end-to-end-testing.md).                                                                                                                                                                        | Edge cases, copy pinning, or anything a faster unit/integration test can cover.                                                                                                                                                                    |
+
+**Usage metering example** (lifted from
+[usage metering](./architecture/usage-metering.md)): in `*.node.test.ts`, spy on
+`recordUsage` and assert call shape for success and failure paths. In
+`*.workers.test.ts` with a real local D1, call `ensureUsageRollupsTestSchema`
+from `packages/worker/src/usage/test-schema.ts` and assert on `usage_rollups`
+rows instead of spying.
+
+Shared test helpers live under `packages/worker/src/test-support/`. Import
+factories explicitly inside each test (or a per-test factory). Do not introduce
+`beforeEach` hooks that hide setup — that conflicts with the principles below.
+
 ## Principles
 
 - Prefer the "fewer, longer tests" style from Kent C. Dodds when assertions

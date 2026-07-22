@@ -464,7 +464,9 @@ Public MCP behavior should be verified through the compact tool surface:
 
 Prefer `*.node.test.ts` and `*.workers.test.ts` for capability behavior. Reserve
 `packages/worker/src/mcp/*.mcp-e2e.test.ts` for a very small number of real MCP
-contract smoke tests.
+contract smoke tests. See the
+[test flavor decision matrix](./testing-principles.md#test-flavor-decision-matrix)
+for when each flavor is appropriate.
 
 Registry invariants (duplicate capability names, domain/capability mismatches,
 duplicate domain registration) are covered in

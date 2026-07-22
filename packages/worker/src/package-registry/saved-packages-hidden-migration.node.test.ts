@@ -1,38 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
 function applyMigration(db: DatabaseSync, fileName: string) {
 	db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
-}
-
-function createD1FromSqlite(db: DatabaseSync) {
-	return {
-		prepare(query: string) {
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async all<T>() {
-							const statement = db.prepare(query)
-							const rows = statement.all(...params) as Array<T>
-							return { results: rows, meta: { changes: 0 } }
-						},
-						async first<T>() {
-							const statement = db.prepare(query)
-							return (statement.get(...params) ?? null) as T | null
-						},
-						async run() {
-							const statement = db.prepare(query)
-							const result = statement.run(...params)
-							return { meta: { changes: result.changes } }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
 }
 
 test('saved packages hidden migration defaults existing rows to visible and hydrates reads', async () => {

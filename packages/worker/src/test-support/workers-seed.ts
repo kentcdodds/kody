@@ -1,0 +1,193 @@
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+
+/**
+ * Explicit-import factories for `*.workers.test.ts` suites that need a local
+ * D1 user/RBAC/package-subscription schema. Call these inside each test (or a
+ * per-test factory) — do not wire them through `beforeEach`.
+ */
+
+export async function ensureRbacTestSchema(db: D1Database) {
+	await ensureEntitlementTestSchema(db)
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS roles (
+				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+				name TEXT NOT NULL UNIQUE,
+				description TEXT NOT NULL DEFAULT ''
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS user_roles (
+				user_id INTEGER NOT NULL,
+				role_id INTEGER NOT NULL,
+				PRIMARY KEY (user_id, role_id)
+			)`,
+		)
+		.run()
+	await db
+		.prepare(`INSERT OR IGNORE INTO roles (name) VALUES ('user'), ('admin')`)
+		.run()
+}
+
+export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
+	const statements = [
+		`CREATE TABLE IF NOT EXISTS saved_packages (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			kody_id TEXT NOT NULL,
+			description TEXT NOT NULL,
+			tags_json TEXT NOT NULL DEFAULT '[]',
+			search_text TEXT,
+			source_id TEXT NOT NULL,
+			has_app INTEGER NOT NULL DEFAULT 0,
+			hidden INTEGER NOT NULL DEFAULT 0,
+			is_private INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS entity_sources (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			entity_kind TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			repo_id TEXT NOT NULL,
+			published_commit TEXT,
+			indexed_commit TEXT,
+			manifest_path TEXT NOT NULL,
+			source_root TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			source_id TEXT NOT NULL,
+			published_commit TEXT NOT NULL,
+			artifact_kind TEXT NOT NULL,
+			artifact_name TEXT,
+			entry_point TEXT NOT NULL,
+			kv_key TEXT NOT NULL,
+			dependencies_json TEXT NOT NULL DEFAULT '[]',
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_published_bundle_artifacts_identity
+		ON published_bundle_artifacts(user_id, source_id, artifact_kind, COALESCE(artifact_name, ''), entry_point)`,
+		`CREATE TABLE IF NOT EXISTS package_invocations (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			token_id TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			package_kody_id TEXT NOT NULL,
+			export_name TEXT NOT NULL,
+			idempotency_key TEXT NOT NULL,
+			request_hash TEXT NOT NULL,
+			source TEXT,
+			topic TEXT,
+			status TEXT NOT NULL,
+			response_json TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_package_invocations_key
+		ON package_invocations(user_id, token_id, package_id, export_name, idempotency_key)`,
+	]
+	for (const statement of statements) {
+		await db.prepare(statement).run()
+	}
+	try {
+		await db
+			.prepare(
+				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
+			)
+			.run()
+	} catch {
+		// Column already present on newer schemas.
+	}
+}
+
+/**
+ * Upserts a users row for workers-unit tests and returns the numeric account id.
+ * Pass `db` explicitly (usually `env.APP_DB`) — no ambient default.
+ */
+export async function seedAccount(input: {
+	db: D1Database
+	email: string
+	username: string
+	emailVerifiedAt?: string | null
+	plan?: string
+	passwordHash?: string
+	stableUserId?: string
+}): Promise<number> {
+	const stableUserId =
+		input.stableUserId ?? (await createStableUserIdFromEmail(input.email))
+	const emailVerifiedAt =
+		input.emailVerifiedAt === undefined
+			? new Date().toISOString()
+			: input.emailVerifiedAt
+	const passwordHash = input.passwordHash ?? 'test-password-hash'
+	if (input.plan === undefined) {
+		await input.db
+			.prepare(
+				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+				 VALUES (?, ?, ?, ?, ?)
+				 ON CONFLICT(email) DO UPDATE SET
+					username = excluded.username,
+					email_verified_at = excluded.email_verified_at,
+					stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+					updated_at = CURRENT_TIMESTAMP`,
+			)
+			.bind(
+				input.username,
+				input.email,
+				passwordHash,
+				emailVerifiedAt,
+				stableUserId,
+			)
+			.run()
+	} else {
+		await input.db
+			.prepare(
+				`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
+				 VALUES (?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(email) DO UPDATE SET
+					username = excluded.username,
+					email_verified_at = excluded.email_verified_at,
+					plan = excluded.plan,
+					stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+					updated_at = CURRENT_TIMESTAMP`,
+			)
+			.bind(
+				input.username,
+				input.email,
+				passwordHash,
+				emailVerifiedAt,
+				input.plan,
+				stableUserId,
+			)
+			.run()
+	}
+	const row = await input.db
+		.prepare(`SELECT id FROM users WHERE email = ?`)
+		.bind(input.email)
+		.first<{ id: number }>()
+	if (!row) throw new Error(`Expected seeded user row for ${input.email}`)
+	return row.id
+}
+
+export async function assignAdminRole(input: {
+	db: D1Database
+	userId: number
+}) {
+	await input.db
+		.prepare(
+			`INSERT OR IGNORE INTO user_roles (user_id, role_id)
+			 SELECT ?, id FROM roles WHERE name = 'admin'`,
+		)
+		.bind(input.userId)
+		.run()
+}

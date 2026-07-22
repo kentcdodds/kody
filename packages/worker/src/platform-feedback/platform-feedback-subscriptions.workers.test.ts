@@ -2,6 +2,12 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import {
+	assignAdminRole,
+	ensurePackageSubscriptionTestSchema,
+	ensureRbacTestSchema,
+	seedAccount,
+} from '#worker/test-support/workers-seed.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { platformFeedbackContentWarning } from './content-warning.ts'
 import { dispatchPlatformFeedbackSubmittedSubscriptionEvent } from './package-subscriptions.ts'
@@ -26,84 +32,6 @@ const openFeedback = {
 	adminNote: null,
 	createdAt: '2026-07-19T01:00:00.000Z',
 	updatedAt: '2026-07-19T01:00:00.000Z',
-}
-
-async function ensurePackageSubscriptionTestSchema(db: D1Database) {
-	const statements = [
-		`CREATE TABLE IF NOT EXISTS saved_packages (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			name TEXT NOT NULL,
-			kody_id TEXT NOT NULL,
-			description TEXT NOT NULL,
-			tags_json TEXT NOT NULL DEFAULT '[]',
-			search_text TEXT,
-			source_id TEXT NOT NULL,
-			has_app INTEGER NOT NULL DEFAULT 0,
-			hidden INTEGER NOT NULL DEFAULT 0,
-			is_private INTEGER NOT NULL DEFAULT 1,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS entity_sources (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			entity_kind TEXT NOT NULL,
-			entity_id TEXT NOT NULL,
-			repo_id TEXT NOT NULL,
-			published_commit TEXT,
-			indexed_commit TEXT,
-			manifest_path TEXT NOT NULL,
-			source_root TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			source_id TEXT NOT NULL,
-			published_commit TEXT NOT NULL,
-			artifact_kind TEXT NOT NULL,
-			artifact_name TEXT,
-			entry_point TEXT NOT NULL,
-			kv_key TEXT NOT NULL,
-			dependencies_json TEXT NOT NULL DEFAULT '[]',
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_published_bundle_artifacts_identity
-		ON published_bundle_artifacts(user_id, source_id, artifact_kind, COALESCE(artifact_name, ''), entry_point)`,
-		`CREATE TABLE IF NOT EXISTS package_invocations (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			token_id TEXT NOT NULL,
-			package_id TEXT NOT NULL,
-			package_kody_id TEXT NOT NULL,
-			export_name TEXT NOT NULL,
-			idempotency_key TEXT NOT NULL,
-			request_hash TEXT NOT NULL,
-			source TEXT,
-			topic TEXT,
-			status TEXT NOT NULL,
-			response_json TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_package_invocations_key
-		ON package_invocations(user_id, token_id, package_id, export_name, idempotency_key)`,
-	]
-	for (const statement of statements) {
-		await db.prepare(statement).run()
-	}
-	try {
-		await db
-			.prepare(
-				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
-			)
-			.run()
-	} catch {
-		// Column already present on newer schemas.
-	}
 }
 
 async function ensurePlatformFeedbackTestSchema(db: D1Database) {
@@ -145,72 +73,6 @@ async function ensurePlatformFeedbackTestSchema(db: D1Database) {
 			.prepare(`ALTER TABLE platform_feedback ADD COLUMN submitter_email TEXT`)
 			.run()
 	}
-}
-
-async function ensureRbacTestSchema(db: D1Database) {
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS users (
-				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-				username TEXT NOT NULL UNIQUE,
-				email TEXT NOT NULL UNIQUE,
-				password_hash TEXT NOT NULL,
-				email_verified_at TEXT,
-				stable_user_id TEXT,
-				created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-				updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-			)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS roles (
-				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-				name TEXT NOT NULL UNIQUE,
-				description TEXT NOT NULL DEFAULT ''
-			)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS user_roles (
-				user_id INTEGER NOT NULL,
-				role_id INTEGER NOT NULL,
-				PRIMARY KEY (user_id, role_id)
-			)`,
-		)
-		.run()
-	await db
-		.prepare(`INSERT OR IGNORE INTO roles (name) VALUES ('user'), ('admin')`)
-		.run()
-}
-
-async function seedAccount(input: { email: string; username: string }) {
-	const stableUserId = await createStableUserIdFromEmail(input.email)
-	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
-		 VALUES (?, ?, 'test-password-hash', ?, ?)
-		 ON CONFLICT(email) DO UPDATE SET
-			username = excluded.username,
-			stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
-			updated_at = CURRENT_TIMESTAMP`,
-	)
-		.bind(input.username, input.email, new Date().toISOString(), stableUserId)
-		.run()
-	const row = await env.APP_DB.prepare(`SELECT id FROM users WHERE email = ?`)
-		.bind(input.email)
-		.first<{ id: number }>()
-	if (!row) throw new Error(`Expected seeded user row for ${input.email}`)
-	return row.id
-}
-
-async function assignAdminRole(userId: number) {
-	await env.APP_DB.prepare(
-		`INSERT OR IGNORE INTO user_roles (user_id, role_id)
-		 SELECT ?, id FROM roles WHERE name = 'admin'`,
-	)
-		.bind(userId)
-		.run()
 }
 
 async function seedSubscribedPackage(input: {
@@ -361,6 +223,7 @@ test('platform feedback dispatch keeps stored identity snapshots idempotent acro
 	const submitterUsername = `feedbacksubmitter-${crypto.randomUUID().slice(0, 8)}`
 	const submitterStableId = await createStableUserIdFromEmail(submitterEmail)
 	const submitterAccountId = await seedAccount({
+		db: env.APP_DB,
 		email: submitterEmail,
 		username: submitterUsername,
 	})
@@ -394,14 +257,16 @@ test('platform feedback dispatch keeps stored identity snapshots idempotent acro
 	const adminEmail = `feedback-sub-admin-${crypto.randomUUID()}@example.com`
 	const adminStableId = await createStableUserIdFromEmail(adminEmail)
 	const adminAccountId = await seedAccount({
+		db: env.APP_DB,
 		email: adminEmail,
 		username: `feedbackadmin-${crypto.randomUUID().slice(0, 8)}`,
 	})
-	await assignAdminRole(adminAccountId)
+	await assignAdminRole({ db: env.APP_DB, userId: adminAccountId })
 
 	const regularEmail = `feedback-sub-user-${crypto.randomUUID()}@example.com`
 	const regularStableId = await createStableUserIdFromEmail(regularEmail)
 	await seedAccount({
+		db: env.APP_DB,
 		email: regularEmail,
 		username: `feedbackuser-${crypto.randomUUID().slice(0, 8)}`,
 	})

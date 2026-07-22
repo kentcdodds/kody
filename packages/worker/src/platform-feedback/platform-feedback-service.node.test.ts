@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	getPlatformFeedbackByIdForAdmin,
 	updatePlatformFeedbackStatusForAdmin,
@@ -11,59 +12,6 @@ import {
 	submitPlatformFeedback,
 	updatePlatformFeedbackForAdmin,
 } from './service.ts'
-
-type TestD1Statement = {
-	bind(...params: Array<unknown>): TestD1Statement
-	all<T>(): Promise<{ results: Array<T>; meta: { changes: number } }>
-	first<T>(): Promise<T | null>
-	run(): Promise<{ meta: { changes: number } }>
-}
-
-function createD1FromSqlite(sqlite: DatabaseSync, queries: Array<string> = []) {
-	function createStatement(
-		query: string,
-		params: Array<unknown> = [],
-	): TestD1Statement {
-		return {
-			bind(...boundParams: Array<unknown>) {
-				return createStatement(query, boundParams)
-			},
-			async all<T>() {
-				return {
-					results: sqlite.prepare(query).all(...params) as Array<T>,
-					meta: { changes: 0 },
-				}
-			},
-			async first<T>() {
-				return (sqlite.prepare(query).get(...params) ?? null) as T | null
-			},
-			async run() {
-				const result = sqlite.prepare(query).run(...params)
-				return { meta: { changes: result.changes } }
-			},
-		}
-	}
-	return {
-		prepare(query: string) {
-			queries.push(query.replace(/\s+/g, ' ').trim())
-			return createStatement(query)
-		},
-		async batch(statements: Array<TestD1Statement>) {
-			const results = []
-			sqlite.exec('BEGIN')
-			try {
-				for (const statement of statements) {
-					results.push(await statement.run())
-				}
-				sqlite.exec('COMMIT')
-				return results
-			} catch (error) {
-				sqlite.exec('ROLLBACK')
-				throw error
-			}
-		},
-	} as unknown as D1Database
-}
 
 function createPlatformFeedbackDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -83,7 +31,11 @@ function createPlatformFeedbackDb() {
 		),
 	)
 	const queries: Array<string> = []
-	return { sqlite, db: createD1FromSqlite(sqlite, queries), queries }
+	return {
+		sqlite,
+		db: createD1FromSqlite(sqlite, { queries }),
+		queries,
+	}
 }
 
 test('platform feedback workflow submits, lists, reads, transitions, and preserves submitter attribution', async () => {
