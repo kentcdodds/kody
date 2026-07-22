@@ -1428,7 +1428,8 @@ test('stored-message count failure happens before durable quota charge', async (
 	expect(await readUserDailyReceiveCount(userId)).toBe(0)
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT id FROM email_delivery_events WHERE user_id = ?`,
+			`SELECT id FROM email_delivery_events
+			WHERE user_id = ? AND provider = 'cloudflare-email-routing'`,
 		)
 			.bind(userId)
 			.first(),

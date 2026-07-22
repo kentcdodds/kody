@@ -729,6 +729,12 @@ async function recoverCommittedInboundDelivery(input: {
 		now: input.now,
 	})
 	if (!claim.claimed) return claim.delivery?.state === 'received'
+	const storageLease = claim.delivery.storageLease
+	if (!storageLease) {
+		throw new InboundDeliveryLeaseLostError(
+			'Recovered inbound delivery has no storage lease.',
+		)
+	}
 	try {
 		await insertEmailAttachments({
 			db: input.db,
@@ -737,7 +743,7 @@ async function recoverCommittedInboundDelivery(input: {
 			inboundDeliveryFence: {
 				deliveryId: claim.delivery.deliveryId,
 				userId: claim.delivery.userId,
-				storageLease: claim.delivery.storageLease,
+				storageLease,
 			},
 			attachments: parsed.attachments.map((attachment, index) => ({
 				id: `${message.id}:attachment:${index}`,
