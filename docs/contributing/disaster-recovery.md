@@ -423,8 +423,10 @@ For each run, the Workflow:
    logged;
 5. streams the signed response into the destination `BACKUP_BUCKET`, computing
    bytes, SHA-256, and R2 ETag; it requires a valid `Content-Length`, rejects a
-   declared length greater than 5 GiB, and rejects a streamed byte-count
-   mismatch;
+   declared length at or above 5 GiB, and rejects a streamed byte-count
+   mismatch. The same strictly-below-5-GiB limit is enforced when an immutable
+   object already exists, so a pre-existing object at the limit cannot be
+   resumed into a manifest;
 6. writes schema-version-1 immutable manifest metadata including source
    identity, D1 bookmark, timestamps, key, hash, ETag, build commit, and
    retention tier;
@@ -432,6 +434,8 @@ For each run, the Workflow:
    live source identity and `file_size` against the same size ceiling before it
    validates the expected manifest identity, shape, maximum age (26 hours by
    default), and object existence, size, and ETag against the manifest.
+   Freshness fails when the retained object is at or above 5 GiB, even when its
+   size and ETag otherwise match the manifest.
 
 Hourly freshness deliberately does not download and SHA-256 the SQL object.
 Scheduled deep checksum/restore drills must read the retained bytes and verify
@@ -522,23 +526,59 @@ npx wrangler d1 time-travel restore "<D1_NAME>" \
 ```
 
 For retained SQL exports, `wrangler d1 execute --file` accepts SQL, not a raw
-SQLite file, and each import file is limited to **5 GiB**. The restore CLI
-rejects a local SQL export larger than 5 GiB. Statement-safe split restore is
-not implemented, so operators must not split bytes or statements and feed the
-parts to this CLI. Export has limitations for virtual tables and JavaScript
-numeric precision; inventory the schema and values during the benchmark.
+SQLite file. Kody supports an import file only when it is **strictly below 5
+GiB**: exactly 5 GiB is rejected, as is every larger file. Statement-safe split
+restore is not implemented, so operators must not split bytes or statements and
+feed the parts to this CLI. Export has limitations for virtual tables and
+JavaScript numeric precision; inventory the schema and values during the
+benchmark.
 
-Multipart capture is also not implemented. Consequently, a 10-GB D1 database and
-any logical SQL export over 5 GiB are unsupported and must remain **NOT READY**,
-regardless of provider capacity.
+Multipart capture is also not implemented. Consequently, a 10 GB D1 database and
+any logical SQL export at or above 5 GiB are unsupported and must remain **NOT
+READY**, regardless of provider capacity. The source `file_size` ceiling of
+4,500,000,000 bytes is a separate, lower pre-export gate and cannot be raised by
+configuration, operator approval, or an incident exception.
 
 ### Mandatory isolated D1 drill
 
 Never use Time Travel to make a drill copy. It has no clone operation. The
-restore CLI no longer accepts target inventory or a target UUID. Its allowlist
-contains exact `{ accountId, name, purpose: "drill" }` entries. The selected
-target account must differ from the backup manifest's source account, and the
-target name must differ from the production database name.
+restore CLI accepts neither `--allowlist` nor any alternate trust-registry path,
+target inventory, or target UUID. It always loads the sole restore trust
+registry, `tools/disaster-recovery/trusted-d1-restore-identities.json`, whose
+exact schema is:
+
+```json
+{
+	"schemaVersion": 1,
+	"productionSources": [
+		{
+			"accountId": "<PRODUCTION_ACCOUNT_ID>",
+			"databaseId": "<PRODUCTION_D1_UUID>",
+			"databaseName": "<PRODUCTION_D1_NAME>"
+		}
+	],
+	"drillTargets": [
+		{
+			"accountId": "<DRILL_ACCOUNT_ID>",
+			"databaseName": "<DRILL_DATABASE_NAME>"
+		}
+	]
+}
+```
+
+Every `productionSources[].databaseId` must be a UUID. Each drill target account
+must differ from every checked production source account. The manifest's exact
+`accountId`, `databaseId`, and `databaseName` must match one checked production
+source, while the requested target's exact `accountId` and `databaseName` must
+match one checked drill target. The target name must also differ from the
+manifest's production database name.
+
+Both checked-in lists are intentionally empty until identities are approved in
+code review. Therefore both dry-run and `--execute` currently fail closed before
+target creation. The operator-supplied manifest SHA-256 proves the integrity of
+the exact manifest bytes; it does not trust their asserted source identity. Only
+an exact match against the checked-in `productionSources` list establishes
+source trust.
 
 ```sh
 node tools/disaster-recovery/d1-restore-drill-cli.ts \
@@ -546,9 +586,8 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
   --backup downloaded-export.sql \
   --baseline restore-baseline.json \
-  --allowlist drill-allowlist.json \
-  --target-account-id "<ALLOWLISTED_DRILL_ACCOUNT_ID>" \
-  --target-name "kody-drill-<YYYYMMDD>"
+  --target-account-id "<CHECKED_DRILL_ACCOUNT_ID>" \
+  --target-name "<CHECKED_DRILL_DATABASE_NAME>"
 
 # After reviewing the dry-run plan, retrieve the target-account D1 Edit token
 # into CLOUDFLARE_D1_DRILL_EDIT_TOKEN through the approved secret broker.
@@ -557,23 +596,24 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
   --backup downloaded-export.sql \
   --baseline restore-baseline.json \
-  --allowlist drill-allowlist.json \
-  --target-account-id "<ALLOWLISTED_DRILL_ACCOUNT_ID>" \
-  --target-name "kody-drill-<YYYYMMDD>" \
+  --target-account-id "<CHECKED_DRILL_ACCOUNT_ID>" \
+  --target-name "<CHECKED_DRILL_DATABASE_NAME>" \
   --execute
 ```
 
 The CLI verifies the exact manifest bytes against the separately supplied
-manifest SHA-256, stats the SQL file, rejects files larger than 5 GiB or with a
-manifest size mismatch, then computes SHA-256 as a stream without retaining the
-dump in memory. It does not split oversized dumps. It dry-runs by default and
-does not create a target. With `--execute`, it requires
-`CLOUDFLARE_D1_DRILL_EDIT_TOKEN`, live-creates a new D1 database in the
-allowlisted target account immediately before import, and verifies Cloudflare's
-returned UUID, exact requested name, and `created_at` against the creation
-window. New creation is the empty/unbound proof. The drill-only token is passed
-to Wrangler as `CLOUDFLARE_API_TOKEN` with the selected target account and is
-never printed.
+manifest SHA-256 as an integrity check, independently verifies the manifest's
+exact source identity against the checked-in trust registry, stats the SQL file,
+rejects files at or above 5 GiB or with a manifest size mismatch, then computes
+SHA-256 as a stream without retaining the dump in memory. It does not split
+oversized dumps. It dry-runs by default and does not create a target. With
+`--execute`, it requires `CLOUDFLARE_D1_DRILL_EDIT_TOKEN`, live-creates a new D1
+database in the exact checked drill account with the exact checked drill name
+immediately before import, and verifies Cloudflare's returned UUID, exact
+requested name, and `created_at` against the creation window. It never creates a
+target in any account listed in `productionSources`. New creation is the
+empty/unbound proof. The drill-only token is passed to Wrangler as
+`CLOUDFLARE_API_TOKEN` with the selected target account and is never printed.
 
 After live creation, the CLI generates a temporary local Wrangler config whose
 `D1_RESTORE_TARGET` binding contains the returned target UUID and exact target
@@ -598,9 +638,8 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --backup downloaded-export.sql \
   --baseline restore-baseline.json \
   --post-forward-baseline post-forward-baseline.json \
-  --allowlist drill-allowlist.json \
-  --target-account-id "<ALLOWLISTED_DRILL_ACCOUNT_ID>" \
-  --target-name "kody-drill-forward-<YYYYMMDD>" \
+  --target-account-id "<CHECKED_DRILL_ACCOUNT_ID>" \
+  --target-name "<CHECKED_FORWARD_DRILL_DATABASE_NAME>" \
   --apply-forward-migrations \
   --execute
 ```
@@ -788,6 +827,11 @@ the intended system only.
       jurisdiction requirements are approved.
 - [ ] The code-complete provisioner, backup package, restore drill, and
       readiness assessor pass tests at the deployment commit.
+- [ ] Exact production `{accountId, databaseId, databaseName}` identities and
+      distinct drill `{accountId, databaseName}` identities are approved by code
+      review in `tools/disaster-recovery/trusted-d1-restore-identities.json`;
+      until both lists are populated, restore dry-run and execution remain
+      fail-closed.
 - [ ] Production source account, D1 UUID, R2 buckets, Artifacts namespace,
       Durable Object namespaces/classes, Worker, hostname, and environment are
       allowlisted; preview/test identities are denylisted.
@@ -810,7 +854,8 @@ the intended system only.
 - [ ] The blocking D1 export benchmark gate passed at production scale and an
       isolated import passed before schedule enablement; the live D1 `file_size`
       was strictly below 4,500,000,000 bytes, and over-ceiling `file_size` and
-      over-5-GiB signed `Content-Length` failures were tested.
+      at-or-above-5-GiB signed `Content-Length`, pre-existing-object, restore
+      input, and freshness failures were tested.
 - [ ] The dedicated Worker/Workflow is deployed in the DR account with the
       source Account D1 Edit secret and destination R2 binding; the provisioner
       token is absent from runtime.
@@ -826,9 +871,12 @@ the intended system only.
 - [ ] Deep checksum drills verify SQL bytes against manifest SHA-256 on schedule
       and orphan-attempt-without-manifest alerts have a tested quarantine and
       investigation path.
-- [ ] A fresh D1-only drill passed against a live-created isolated target,
-      including the source-size ceiling, `PRAGMA quick_check`, foreign keys,
-      migration/schema parity, sequences, and representative two-user isolation.
+- [ ] A fresh D1-only drill passed against a live-created isolated target, after
+      exact checked source and drill-target identity matches, including the
+      source-size ceiling, strictly-below-5-GiB restore input,
+      `PRAGMA quick_check`, foreign keys, migration/schema parity, sequences,
+      and representative two-user isolation; no checked production account was
+      eligible for target creation.
 - [ ] A fresh canonical-data drill passed.
 - [ ] A fresh full-service drill passed, including OAuth reauthorization and
       derived reconstruction.
@@ -1033,17 +1081,21 @@ This runbook does not claim or provide:
   implementation exists;
 - D1 availability during export, or a non-destructive Time Travel clone;
 - support for a live D1 `file_size` at or above the configurable-but-not-
-  raisable 4,500,000,000-byte ceiling, a signed export download whose
-  `Content-Length` is greater than 5 GiB, or a restore input greater than 5 GiB;
-- multipart D1 capture or statement-safe split restore; 10-GB D1 databases and
-  logical exports over 5 GiB remain unsupported and **NOT READY**;
+  raisable 4,500,000,000-byte ceiling, or any signed export, pre-existing
+  object, freshness result, or restore input at or above 5 GiB; exactly 5 GiB is
+  rejected;
+- any operator override that raises the 4,500,000,000-byte source ceiling;
+  multipart D1 capture or statement-safe split restore; 10 GB D1 databases and
+  logical exports at or above 5 GiB remain unsupported and **NOT READY**;
 - import of a raw SQLite file;
 - native cross-account replication for D1, R2, Durable Objects, Artifacts, KV,
   Queues, or Workflows;
 - runtime-selectable/custom retention or application deletion of backup sets;
   retention is the fixed provisioned R2 lock/lifecycle policy;
-- restore-drill import into an operator-supplied existing target UUID; execution
-  always creates a new database in the distinct allowlisted drill account;
+- restore-drill import into an operator-supplied existing target UUID, use of
+  `--allowlist`, or use of an alternate trust registry; execution creates a new
+  database only for an exact account/name in the checked-in drill-target list
+  and never in any account in the checked-in production-source list;
 - implemented capture automation for canonical `EMAIL_BLOBS`, avatars,
   `StorageRunner`, or Artifacts in the D1 backup control plane;
 - backup of Analytics Engine events, transient logs/traces, CDN caches,

@@ -7,9 +7,9 @@ create, bind, overwrite, delete, cut over, or use Time Travel on a D1 database.
 
 The manifest must be the exact immutable JSON downloaded from the backup control
 plane. Its SHA-256 is supplied separately by the operator and checked against
-the downloaded bytes before JSON parsing. The local SQL file's exact bytes,
-size, and SHA-256 are then checked against that manifest. Backups larger than 5
-GiB are rejected.
+the downloaded bytes before JSON parsing. This proves byte integrity, not source
+identity or authorization. The local SQL file's exact bytes, size, and SHA-256
+are then checked against that manifest. Backups at or above 5 GiB are rejected.
 
 Schema, migration, sequence, and representative two-user expectations live in a
 separate baseline JSON file. The execution order is import, baseline
@@ -17,12 +17,38 @@ verification, optional forward migrations, then optional post-forward baseline
 verification. Baseline verification always executes D1's documented
 `PRAGMA quick_check` plus `PRAGMA foreign_key_check`.
 
-Supply a target account/name allowlist whose matching entry has
-`"purpose": "drill"`. The target account must differ from the manifest's source
-account. Dry-run is non-mutating. Execution does not accept inventory evidence:
-it creates a new D1 database through Cloudflare's create API immediately before
-import, then validates the returned UUID, name, and `created_at`. Successful
-creation is the empty/unbound evidence.
+Production source and drill-target identities are trusted only when they exactly
+match entries in the checked-in `trusted-d1-restore-identities.json` registry.
+The CLI accepts no alternate registry path. The registry has an exact,
+schema-versioned shape:
+
+```json
+{
+	"schemaVersion": 1,
+	"productionSources": [
+		{
+			"accountId": "<production-account-id>",
+			"databaseId": "<production-d1-uuid>",
+			"databaseName": "<exact-production-database-name>"
+		}
+	],
+	"drillTargets": [
+		{
+			"accountId": "<isolated-drill-account-id>",
+			"databaseName": "<exact-drill-database-name>"
+		}
+	]
+}
+```
+
+Its checked-in lists are intentionally empty. A production source and distinct
+drill target must be approved by code review before either dry-run or execution
+can produce a plan. The manifest source account ID, D1 UUID, and database name
+must exactly match one production entry; the requested target account ID and
+name must exactly match one drill-target entry; and the source and target
+accounts must differ. Execution creates a new D1 database through Cloudflare's
+create API immediately before import, then validates the returned UUID, name,
+and `created_at`. Successful creation is the empty/unbound evidence.
 
 ```sh
 node tools/disaster-recovery/d1-restore-drill-cli.ts \
@@ -30,7 +56,6 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest-sha256 <operator-supplied-sha256> \
   --backup backup.sql \
   --baseline restore-baseline.json \
-  --allowlist drill-allowlist.json \
   --target-account-id isolated-drill-account-id \
   --target-name app-db-restore-drill
 ```
