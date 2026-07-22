@@ -45,6 +45,10 @@ export const sharedProjectConfig = {
 	test: {
 		testTimeout,
 		hookTimeout: testTimeout,
+		// `validate` runs this suite concurrently with Playwright and two
+		// Wrangler servers on 4-core CI runners; leave a core free so their
+		// startup is not starved by test workers.
+		maxWorkers: process.env.CI ? 3 : undefined,
 		clearMocks: true,
 		mockReset: true,
 		setupFiles: [

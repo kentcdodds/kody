@@ -27,6 +27,10 @@ export default defineConfig({
 	webServer: {
 		command: webServerCommand,
 		url: baseURL,
+		// Startup (client build + D1 migrations + Wrangler boot) competes with
+		// the parallel unit test workers at the beginning of `validate`, and the
+		// default 60s budget times out on 4-core CI runners.
+		timeout: process.env.CI ? 180_000 : 60_000,
 		reuseExistingServer: hasExplicitBaseUrl,
 		env: {
 			CLOUDFLARE_ENV: 'test',
