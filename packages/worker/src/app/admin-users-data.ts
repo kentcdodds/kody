@@ -161,9 +161,9 @@ export async function loadAdminUserByIdOrEmail(
 }
 
 /**
- * Set the entitlement plan on one user account. Nullish inputs map to the
- * first-class `max` plan; writers never persist NULL. Returns the
- * updated account metadata record, or null when no user matches `id`/`email`.
+ * Set the entitlement plan on one user account. Nullish inputs map to `free`,
+ * the normal default plan; writers never persist NULL. Returns the updated
+ * account metadata record, or null when no user matches `id`/`email`.
  */
 export async function updateAdminUserPlan(
 	db: D1Database,
