@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
 	type Command,
-	type D1TargetEvidence,
+	type CreatedD1Target,
 	type DrillAdapters,
 	type DrillAllowlistEntry,
 	type QueryRow,
@@ -11,15 +11,16 @@ import {
 	runD1RestoreDrill,
 } from './d1-restore-drill.ts'
 
+const drillTokenEnvironmentVariable = 'CLOUDFLARE_D1_DRILL_EDIT_TOKEN'
+
 type CliArguments = {
 	manifestPath: string
 	manifestSha256: string
 	backupPath: string
 	baselinePath: string
 	postForwardBaselinePath?: string
-	inventoryPath: string
 	allowlistPath: string
-	targetUuid: string
+	targetAccountId: string
 	targetName: string
 	execute: boolean
 	applyForwardMigrations: boolean
@@ -32,28 +33,25 @@ function parseArguments(argv: ReadonlyArray<string>): CliArguments {
 		'--allowlist',
 		'--backup',
 		'--baseline',
-		'--inventory',
 		'--manifest',
 		'--manifest-sha256',
 		'--post-forward-baseline',
+		'--target-account-id',
 		'--target-name',
-		'--target-uuid',
 	])
 	for (let index = 0; index < argv.length; index += 1) {
 		const argument = argv[index]
 		if (argument === '--execute' || argument === '--apply-forward-migrations') {
+			if (switches.has(argument)) {
+				throw new Error(`Duplicate argument: ${argument}`)
+			}
 			switches.add(argument)
 			continue
 		}
-		if (!argument?.startsWith('--')) {
+		if (!argument?.startsWith('--') || !valuedArguments.has(argument)) {
 			throw new Error(`Unknown argument: ${String(argument)}`)
 		}
-		if (!valuedArguments.has(argument)) {
-			throw new Error(`Unknown argument: ${argument}`)
-		}
-		if (values.has(argument)) {
-			throw new Error(`Duplicate argument: ${argument}`)
-		}
+		if (values.has(argument)) throw new Error(`Duplicate argument: ${argument}`)
 		const value = argv[index + 1]
 		if (!value || value.startsWith('--')) {
 			throw new Error(`Missing value for ${argument}`)
@@ -72,9 +70,8 @@ function parseArguments(argv: ReadonlyArray<string>): CliArguments {
 		backupPath: required('--backup'),
 		baselinePath: required('--baseline'),
 		postForwardBaselinePath: values.get('--post-forward-baseline'),
-		inventoryPath: required('--inventory'),
 		allowlistPath: required('--allowlist'),
-		targetUuid: required('--target-uuid'),
+		targetAccountId: required('--target-account-id'),
 		targetName: required('--target-name'),
 		execute: switches.has('--execute'),
 		applyForwardMigrations: switches.has('--apply-forward-migrations'),
@@ -85,7 +82,10 @@ async function readJson(file: string): Promise<unknown> {
 	return JSON.parse(await readFile(file, 'utf8')) as unknown
 }
 
-async function runProcess(command: Command): Promise<string> {
+async function runProcess(
+	command: Command,
+	environment?: Record<string, string>,
+): Promise<string> {
 	const program =
 		command.program === 'wrangler'
 			? path.join(process.cwd(), 'node_modules', '.bin', 'wrangler')
@@ -93,6 +93,7 @@ async function runProcess(command: Command): Promise<string> {
 	return await new Promise<string>((resolve, reject) => {
 		const child = spawn(program, command.args, {
 			stdio: ['ignore', 'pipe', 'pipe'],
+			env: { ...process.env, ...environment },
 		})
 		let stdout = ''
 		let stderr = ''
@@ -126,26 +127,87 @@ function parseQueryRows(output: string): Array<QueryRow> {
 	return results as Array<QueryRow>
 }
 
-function createAdapters(): DrillAdapters {
+export async function createD1DrillTarget(input: {
+	accountId: string
+	name: string
+	token: string
+	fetcher?: typeof fetch
+	apiBaseUrl?: string
+}): Promise<CreatedD1Target> {
+	const response = await (input.fetcher ?? fetch)(
+		`${input.apiBaseUrl ?? 'https://api.cloudflare.com/client/v4'}/accounts/${encodeURIComponent(input.accountId)}/d1/database`,
+		{
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${input.token}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ name: input.name }),
+		},
+	)
+	const payload = (await response.json()) as unknown
+	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+		throw new Error(`Cloudflare D1 create failed (${String(response.status)})`)
+	}
+	const envelope = payload as Record<string, unknown>
+	const result = envelope.result
+	if (
+		!response.ok ||
+		envelope.success !== true ||
+		!result ||
+		typeof result !== 'object' ||
+		Array.isArray(result)
+	) {
+		throw new Error(`Cloudflare D1 create failed (${String(response.status)})`)
+	}
+	const record = result as Record<string, unknown>
+	if (
+		typeof record.uuid !== 'string' ||
+		typeof record.name !== 'string' ||
+		typeof record.created_at !== 'string'
+	) {
+		throw new Error('Cloudflare D1 create returned malformed target evidence')
+	}
 	return {
+		uuid: record.uuid,
+		name: record.name,
+		createdAt: record.created_at,
+	}
+}
+
+function createAdapters(token: string, targetAccountId: string): DrillAdapters {
+	const drillEnvironment = {
+		CLOUDFLARE_API_TOKEN: token,
+		CLOUDFLARE_ACCOUNT_ID: targetAccountId,
+	}
+	return {
+		async createTarget({ accountId, name }) {
+			return await createD1DrillTarget({ accountId, name, token })
+		},
+		now() {
+			return new Date()
+		},
 		async run(command) {
-			await runProcess(command)
+			await runProcess(command, drillEnvironment)
 		},
 		async query(targetUuid: string, query: VerificationQuery) {
-			const output = await runProcess({
-				kind: 'verification',
-				phase: query.phase,
-				program: 'wrangler',
-				args: [
-					'd1',
-					'execute',
-					targetUuid,
-					'--remote',
-					'--json',
-					'--command',
-					query.sql,
-				],
-			})
+			const output = await runProcess(
+				{
+					kind: 'verification',
+					phase: query.phase,
+					program: 'wrangler',
+					args: [
+						'd1',
+						'execute',
+						targetUuid,
+						'--remote',
+						'--json',
+						'--command',
+						query.sql,
+					],
+				},
+				drillEnvironment,
+			)
 			return parseQueryRows(output)
 		},
 	}
@@ -153,22 +215,22 @@ function createAdapters(): DrillAdapters {
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
 	const args = parseArguments(argv)
-	const [manifestBytes, backupBytes, baseline, inventory, allowlist] =
-		await Promise.all([
-			readFile(args.manifestPath),
-			readFile(args.backupPath),
-			readJson(args.baselinePath),
-			readJson(args.inventoryPath) as Promise<Array<D1TargetEvidence>>,
-			readJson(args.allowlistPath) as Promise<Array<DrillAllowlistEntry>>,
-		])
+	const [manifestBytes, backupBytes, baseline, allowlist] = await Promise.all([
+		readFile(args.manifestPath),
+		readFile(args.backupPath),
+		readJson(args.baselinePath),
+		readJson(args.allowlistPath) as Promise<Array<DrillAllowlistEntry>>,
+	])
 	const postForwardBaseline = args.postForwardBaselinePath
 		? await readJson(args.postForwardBaselinePath)
 		: undefined
-	const target = inventory.find(
-		(item) => item.uuid === args.targetUuid && item.name === args.targetName,
-	)
-	if (!target) {
-		throw new Error('explicit target UUID/name pair is absent from inventory')
+	const token = args.execute
+		? process.env[drillTokenEnvironmentVariable]
+		: 'unused-in-dry-run'
+	if (!token) {
+		throw new Error(
+			`${drillTokenEnvironmentVariable} is required for --execute and must be a drill-only D1 Edit token for the target account`,
+		)
 	}
 	const result = await runD1RestoreDrill(
 		{
@@ -178,16 +240,16 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 			backupFile: args.backupPath,
 			baseline,
 			postForwardBaseline,
-			target,
+			targetAccountId: args.targetAccountId,
+			targetName: args.targetName,
 			allowlist,
 			applyForwardMigrations: args.applyForwardMigrations,
 			dryRun: !args.execute,
 		},
-		createAdapters(),
+		createAdapters(token, args.targetAccountId),
 	)
 	if (result.dryRun) console.log(JSON.stringify(result, null, 2))
-	else
-		console.log('Restore drill and all requested verification checks passed.')
+	else console.log('Live-created target passed all restore-drill checks.')
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

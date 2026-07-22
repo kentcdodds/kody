@@ -45,24 +45,22 @@ export type RestoreBaseline = {
 	}>
 }
 
-export type D1TargetEvidence = {
+export type DrillAllowlistEntry = {
+	accountId: string
+	name: string
+	purpose: 'drill'
+}
+
+export type CreatedD1Target = {
 	uuid: string
 	name: string
 	createdAt: string
-	bindings: Array<string>
-	isEmpty: boolean
-}
-
-export type DrillAllowlistEntry = {
-	uuid: string
-	name: string
-	purpose: 'drill'
 }
 
 export type VerificationPhase = 'baseline' | 'post-forward'
 
 export type Command = {
-	kind: 'import' | 'migration' | 'verification'
+	kind: 'import' | 'migration' | 'provision' | 'verification'
 	phase?: VerificationPhase
 	program: string
 	args: Array<string>
@@ -83,6 +81,11 @@ export type VerificationQuery = {
 export type QueryRow = Record<string, string | number | null>
 
 export type DrillAdapters = {
+	createTarget(input: {
+		accountId: string
+		name: string
+	}): Promise<CreatedD1Target>
+	now(): Date
 	run(command: Command): Promise<void>
 	query(targetUuid: string, query: VerificationQuery): Promise<Array<QueryRow>>
 }
@@ -94,7 +97,8 @@ export type DrillInput = {
 	backupFile: string
 	baseline: unknown
 	postForwardBaseline?: unknown
-	target: D1TargetEvidence
+	targetAccountId: string
+	targetName: string
 	allowlist: ReadonlyArray<DrillAllowlistEntry>
 	applyForwardMigrations?: boolean
 	dryRun?: boolean
@@ -125,7 +129,7 @@ function assertExactKeys(
 }
 
 function assertString(value: unknown, label: string): asserts value is string {
-	if (typeof value !== 'string' || value.length === 0) {
+	if (typeof value !== 'string' || value.trim().length === 0) {
 		throw new Error(`${label} must be a non-empty string`)
 	}
 }
@@ -393,12 +397,23 @@ function verificationCommands(
 
 export function buildDrillCommands(input: {
 	backupFile: string
+	targetAccountId: string
+	targetName: string
 	targetUuid: string
 	baseline: Readonly<RestoreBaseline>
 	applyForwardMigrations: boolean
 	postForwardBaseline?: Readonly<RestoreBaseline>
 }): Array<Command> {
 	const commands: Array<Command> = [
+		{
+			kind: 'provision',
+			program: 'cloudflare-api',
+			args: [
+				'POST',
+				`/accounts/${input.targetAccountId}/d1/database`,
+				JSON.stringify({ name: input.targetName }),
+			],
+		},
 		{
 			kind: 'import',
 			program: 'wrangler',
@@ -434,38 +449,59 @@ export function buildDrillCommands(input: {
 	return commands
 }
 
-function assertSafeTarget(
+function assertTargetRequest(
 	manifest: Readonly<BackupManifest>,
-	target: D1TargetEvidence,
+	targetAccountId: string,
+	targetName: string,
 	allowlist: ReadonlyArray<DrillAllowlistEntry>,
 ): void {
-	assertString(target.uuid, 'target.uuid')
-	assertString(target.name, 'target.name')
-	if (!uuidPattern.test(target.uuid))
-		throw new Error('target.uuid must be a UUID')
-	if (target.uuid.toLowerCase() === manifest.source.databaseId.toLowerCase()) {
-		throw new Error('target UUID is the production database UUID')
+	assertString(targetAccountId, 'targetAccountId')
+	assertString(targetName, 'targetName')
+	if (
+		targetAccountId.toLowerCase() === manifest.source.accountId.toLowerCase()
+	) {
+		throw new Error('target account must differ from the production account')
 	}
-	if (target.name === manifest.source.databaseName) {
+	if (targetName === manifest.source.databaseName) {
 		throw new Error('target name is the production database name')
-	}
-	if (!Array.isArray(target.bindings) || target.bindings.length > 0) {
-		throw new Error('target must be unbound from every Worker')
-	}
-	if (!target.isEmpty) throw new Error('target must be empty before the drill')
-	assertDate(target.createdAt, 'target.createdAt')
-	if (Date.parse(target.createdAt) <= Date.parse(manifest.completedAt)) {
-		throw new Error('target is not fresh: it predates the completed backup')
 	}
 	if (
 		!allowlist.some(
 			(entry) =>
 				entry.purpose === 'drill' &&
-				entry.uuid === target.uuid &&
-				entry.name === target.name,
+				entry.accountId === targetAccountId &&
+				entry.name === targetName,
 		)
 	) {
-		throw new Error('target UUID/name is not allowlisted as a drill')
+		throw new Error('target account/name is not allowlisted as a drill')
+	}
+}
+
+function assertCreatedTarget(
+	created: CreatedD1Target,
+	requestedName: string,
+	creationStartedAt: Date,
+	creationCompletedAt: Date,
+	manifest: Readonly<BackupManifest>,
+): void {
+	assertString(created.uuid, 'created target UUID')
+	if (!uuidPattern.test(created.uuid)) {
+		throw new Error('Cloudflare returned an invalid target UUID')
+	}
+	if (created.uuid.toLowerCase() === manifest.source.databaseId.toLowerCase()) {
+		throw new Error('Cloudflare returned the production database UUID')
+	}
+	if (created.name !== requestedName) {
+		throw new Error('Cloudflare returned a different target name')
+	}
+	assertDate(created.createdAt, 'created target created_at')
+	const createdAt = Date.parse(created.createdAt)
+	const clockSkewMs = 5 * 60 * 1000
+	if (
+		createdAt < creationStartedAt.getTime() - clockSkewMs ||
+		createdAt > creationCompletedAt.getTime() + clockSkewMs
+	) {
+		throw new Error('Cloudflare target created_at is outside creation window')
 	}
 }
 
@@ -597,7 +633,15 @@ export async function runD1RestoreDrill(
 	if (postForwardBaseline && !applyForwardMigrations) {
 		throw new Error('post-forward baseline requires forward migrations')
 	}
-	assertSafeTarget(manifest, input.target, input.allowlist)
+	if (applyForwardMigrations && !postForwardBaseline) {
+		throw new Error('forward migrations require a post-forward baseline')
+	}
+	assertTargetRequest(
+		manifest,
+		input.targetAccountId,
+		input.targetName,
+		input.allowlist,
+	)
 	if (
 		input.backupBytes.byteLength !== manifest.bytes ||
 		sha256(input.backupBytes) !== manifest.sha256
@@ -605,21 +649,52 @@ export async function runD1RestoreDrill(
 		throw new Error('local SQL bytes or checksum do not match the manifest')
 	}
 	const dryRun = input.dryRun ?? true
-	const commands = buildDrillCommands({
+	const plan = buildDrillCommands({
 		backupFile: input.backupFile,
-		targetUuid: input.target.uuid,
+		targetAccountId: input.targetAccountId,
+		targetName: input.targetName,
+		targetUuid: '<live-created-d1-uuid>',
 		baseline,
 		applyForwardMigrations,
 		postForwardBaseline,
 	})
-	if (dryRun) return { dryRun, commands }
+	if (dryRun) return { dryRun, commands: plan }
 
-	const importCommand = commands[0]
-	if (!importCommand || importCommand.kind !== 'import') {
+	const creationStartedAt = adapters.now()
+	const created = await adapters.createTarget({
+		accountId: input.targetAccountId,
+		name: input.targetName,
+	})
+	const creationCompletedAt = adapters.now()
+	if (
+		!Number.isFinite(creationStartedAt.getTime()) ||
+		!Number.isFinite(creationCompletedAt.getTime()) ||
+		creationCompletedAt < creationStartedAt
+	) {
+		throw new Error('invalid creation clock evidence')
+	}
+	assertCreatedTarget(
+		created,
+		input.targetName,
+		creationStartedAt,
+		creationCompletedAt,
+		manifest,
+	)
+	const commands = buildDrillCommands({
+		backupFile: input.backupFile,
+		targetAccountId: input.targetAccountId,
+		targetName: input.targetName,
+		targetUuid: created.uuid,
+		baseline,
+		applyForwardMigrations,
+		postForwardBaseline,
+	})
+	const importCommand = commands.find((command) => command.kind === 'import')
+	if (!importCommand) {
 		throw new Error('restore plan is missing its import command')
 	}
 	await adapters.run(importCommand)
-	await verifyBaseline(adapters, input.target.uuid, baseline, 'baseline')
+	await verifyBaseline(adapters, created.uuid, baseline, 'baseline')
 	if (applyForwardMigrations) {
 		const migrationCommand = commands.find(
 			(command) => command.kind === 'migration',
@@ -631,7 +706,7 @@ export async function runD1RestoreDrill(
 	if (postForwardBaseline) {
 		await verifyBaseline(
 			adapters,
-			input.target.uuid,
+			created.uuid,
 			postForwardBaseline,
 			'post-forward',
 		)

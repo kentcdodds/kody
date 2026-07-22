@@ -16,13 +16,15 @@ import {
 	runBackupResourcesCli,
 } from './backup-resources-cli.ts'
 
-const accountId = 'account-123'
+const sourceAccountId = 'source-account-123'
+const destinationAccountId = 'destination-account-456'
 const apiToken = 'provisioner-secret-value'
 const sourceD1Uuid = '9f1c2f54-13f0-4fd4-8cf4-89ec2f9df71a'
 
 function createDesired(): BackupDesiredState {
 	return generateBackupDesiredState({
-		accountId,
+		sourceAccountId,
+		destinationAccountId,
 		bucketName: 'kody-d1-backup-archive',
 		workerName: 'kody-d1-backup-writer',
 		sourceD1Databases: [
@@ -126,17 +128,22 @@ test('backup desired state uses exact R2 schemas and a non-enforced runtime cont
 			environment: 'production',
 			dedicated: true,
 		},
+		accounts: {
+			sourceAccountId,
+			destinationAccountId,
+		},
 		sourceD1DatabaseAllowlist: [
 			{ uuid: sourceD1Uuid, name: 'kody-production-database' },
 		],
 		d1ExportTokenRequirements: {
 			cloudflarePermission: 'D1 Read',
-			accountIdProvidedAtDeployment: true,
+			sourceAccountId,
 			allowedDatabaseUuids: [sourceD1Uuid],
 			applicationMustEnforceAllowlist: true,
 		},
 		r2Binding: {
 			binding: 'BACKUP_BUCKET',
+			destinationAccountId,
 			bucketName: 'kody-d1-backup-archive',
 			access: 'object-read-write',
 			allowedPrefixes: ['daily/', 'weekly/'],
@@ -155,6 +162,7 @@ test('backup desired state uses exact R2 schemas and a non-enforced runtime cont
 	})
 	expect(desired.tokenRequirements.provisioner).toMatchObject({
 		cloudflarePermission: 'Workers R2 Storage Write',
+		destinationAccountId,
 		bucketName: 'kody-d1-backup-archive',
 	})
 })
@@ -162,7 +170,8 @@ test('backup desired state uses exact R2 schemas and a non-enforced runtime cont
 test('generation and CLI reject non-dedicated resources and invalid D1 allowlists', () => {
 	expect(() =>
 		generateBackupDesiredState({
-			accountId,
+			sourceAccountId,
+			destinationAccountId,
 			bucketName: 'kody-email-blobs',
 			workerName: 'kody-d1-backup-writer',
 			sourceD1Databases: [
@@ -173,12 +182,24 @@ test('generation and CLI reject non-dedicated resources and invalid D1 allowlist
 	).toThrow('distinct from production resources')
 	expect(() =>
 		generateBackupDesiredState({
-			accountId,
+			sourceAccountId,
+			destinationAccountId,
 			bucketName: 'kody-d1-backup-archive',
 			workerName: 'kody-d1-backup-writer',
 			sourceD1Databases: [{ uuid: 'not-a-uuid', name: 'production-db' }],
 		}),
 	).toThrow('UUID and lower-kebab name pairs')
+	expect(() =>
+		generateBackupDesiredState({
+			sourceAccountId: destinationAccountId,
+			destinationAccountId,
+			bucketName: 'kody-d1-backup-archive',
+			workerName: 'kody-d1-backup-writer',
+			sourceD1Databases: [
+				{ uuid: sourceD1Uuid, name: 'kody-production-database' },
+			],
+		}),
+	).toThrow('account IDs must be distinct')
 
 	const options = parseBackupCliArgs(
 		[
@@ -188,14 +209,16 @@ test('generation and CLI reject non-dedicated resources and invalid D1 allowlist
 			'kody-email-blobs',
 		],
 		{
-			CLOUDFLARE_ACCOUNT_ID: accountId,
+			BACKUP_SOURCE_ACCOUNT_ID: sourceAccountId,
+			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
 			CLOUDFLARE_API_TOKEN: apiToken,
 			BACKUP_R2_BUCKET_NAME: 'kody-d1-backup-archive',
 		},
 	)
 	expect(options).toMatchObject({
 		mode: 'plan',
-		accountId,
+		sourceAccountId,
+		destinationAccountId,
 		bucketName: 'kody-d1-backup-archive',
 		sourceD1Databases: [
 			{ uuid: sourceD1Uuid, name: 'kody-production-database' },
@@ -206,17 +229,34 @@ test('generation and CLI reject non-dedicated resources and invalid D1 allowlist
 		parseBackupCliArgs(
 			[
 				'apply',
+				'--source-account-id',
+				sourceAccountId,
+				'--destination-account-id',
+				destinationAccountId,
 				'--source-d1',
 				`${sourceD1Uuid}:kody-production-database`,
 				'--provisioner-token-env',
 				'BACKUP_PROVISIONER_TOKEN',
 			],
 			{
-				CLOUDFLARE_ACCOUNT_ID: accountId,
 				BACKUP_PROVISIONER_TOKEN: apiToken,
 			},
 		).mode,
 	).toBe('apply')
+	expect(() =>
+		parseBackupCliArgs(['--provisioner-token', apiToken], {
+			BACKUP_SOURCE_ACCOUNT_ID: sourceAccountId,
+			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
+			CLOUDFLARE_API_TOKEN: 'safe-environment-token',
+		}),
+	).toThrow('Unknown backup flag: --provisioner-token')
+	expect(() =>
+		parseBackupCliArgs([], {
+			BACKUP_SOURCE_ACCOUNT_ID: destinationAccountId,
+			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
+			CLOUDFLARE_API_TOKEN: apiToken,
+		}),
+	).toThrow('account IDs must be distinct')
 })
 
 test('plan and apply converge idempotently without provisioning a Worker', async () => {
@@ -279,7 +319,7 @@ test('REST adapter uses documented bucket, lock, and lifecycle contracts', async
 		},
 	) as typeof fetch
 	const api = createCloudflareBackupApi({
-		accountId,
+		destinationAccountId,
 		apiToken,
 		apiBaseUrl: 'https://api.example.test/client/v4/',
 		fetcher,
@@ -294,19 +334,19 @@ test('REST adapter uses documented bucket, lock, and lifecycle contracts', async
 	expect(requests.map(({ url, init }) => [init.method, url])).toEqual([
 		[
 			'GET',
-			`https://api.example.test/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive`,
+			`https://api.example.test/client/v4/accounts/${destinationAccountId}/r2/buckets/kody-d1-backup-archive`,
 		],
 		[
 			'POST',
-			`https://api.example.test/client/v4/accounts/${accountId}/r2/buckets`,
+			`https://api.example.test/client/v4/accounts/${destinationAccountId}/r2/buckets`,
 		],
 		[
 			'PUT',
-			`https://api.example.test/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive/lock`,
+			`https://api.example.test/client/v4/accounts/${destinationAccountId}/r2/buckets/kody-d1-backup-archive/lock`,
 		],
 		[
 			'PUT',
-			`https://api.example.test/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
+			`https://api.example.test/client/v4/accounts/${destinationAccountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
 		],
 	])
 	expect(JSON.parse(String(requests[1]?.init.body))).toEqual({
@@ -330,7 +370,7 @@ test('REST adapter uses documented bucket, lock, and lifecycle contracts', async
 		jsonResponse(desired.lifecyclePolicy),
 	]
 	const readApi = createCloudflareBackupApi({
-		accountId,
+		destinationAccountId,
 		apiToken,
 		fetcher: vi.fn(async (url: string | URL | Request) => {
 			readRequests.push(String(url))
@@ -346,9 +386,9 @@ test('REST adapter uses documented bucket, lock, and lifecycle contracts', async
 	})
 	expect(converged.plan.actions).toEqual([])
 	expect(readRequests).toEqual([
-		`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive`,
-		`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive/lock`,
-		`https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
+		`https://api.cloudflare.com/client/v4/accounts/${destinationAccountId}/r2/buckets/kody-d1-backup-archive`,
+		`https://api.cloudflare.com/client/v4/accounts/${destinationAccountId}/r2/buckets/kody-d1-backup-archive/lock`,
+		`https://api.cloudflare.com/client/v4/accounts/${destinationAccountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
 	])
 })
 
@@ -362,7 +402,7 @@ test('REST adapter reports authentication, authorization, rate, server, and malf
 				}),
 		) as typeof fetch
 		const api = createCloudflareBackupApi({
-			accountId,
+			destinationAccountId,
 			apiToken,
 			fetcher,
 		})
@@ -383,7 +423,7 @@ test('REST adapter reports authentication, authorization, rate, server, and malf
 		jsonResponse({ wrong: 'shape' }),
 	]) {
 		const api = createCloudflareBackupApi({
-			accountId,
+			destinationAccountId,
 			apiToken,
 			fetcher: vi.fn(async () => response.clone()) as typeof fetch,
 		})
@@ -393,7 +433,7 @@ test('REST adapter reports authentication, authorization, rate, server, and malf
 	}
 
 	const malformedLockApi = createCloudflareBackupApi({
-		accountId,
+		destinationAccountId,
 		apiToken,
 		fetcher: vi.fn(async () =>
 			jsonResponse({ rules: [{ condition: { type: 'Forever' } }] }),
@@ -417,7 +457,8 @@ test('CLI defaults to plan and never renders its provisioner token', async () =>
 			'kody-email-blobs',
 		],
 		env: {
-			CLOUDFLARE_ACCOUNT_ID: accountId,
+			BACKUP_SOURCE_ACCOUNT_ID: sourceAccountId,
+			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
 			CLOUDFLARE_API_TOKEN: apiToken,
 			BACKUP_R2_BUCKET_NAME: 'kody-d1-backup-archive',
 		},

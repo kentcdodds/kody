@@ -11,7 +11,8 @@ type BackupCliMode = 'plan' | 'apply'
 
 type BackupCliOptions = {
 	mode: BackupCliMode
-	accountId: string
+	sourceAccountId: string
+	destinationAccountId: string
 	apiToken: string
 	apiBaseUrl?: string
 	bucketName: string
@@ -88,7 +89,11 @@ export function parseBackupCliArgs(
 		throw new Error(`Unknown backup command: ${argv[0]}.`)
 	}
 
-	let accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim() ?? ''
+	let sourceAccountId = env.BACKUP_SOURCE_ACCOUNT_ID?.trim() ?? ''
+	let destinationAccountId =
+		env.BACKUP_DESTINATION_ACCOUNT_ID?.trim() ??
+		env.CLOUDFLARE_ACCOUNT_ID?.trim() ??
+		''
 	let apiToken = env.CLOUDFLARE_API_TOKEN?.trim() ?? ''
 	let apiBaseUrl = env.CLOUDFLARE_API_BASE_URL?.trim() || undefined
 	const serviceName = env.BACKUP_SERVICE_NAME?.trim() || 'kody'
@@ -107,13 +112,13 @@ export function parseBackupCliArgs(
 	for (; index < argv.length; index += 1) {
 		const flag = argv[index]
 		switch (flag) {
-			case '--account-id': {
-				accountId = readFlagValue(argv, index, flag)
+			case '--source-account-id': {
+				sourceAccountId = readFlagValue(argv, index, flag)
 				index += 1
 				break
 			}
-			case '--provisioner-token': {
-				apiToken = readFlagValue(argv, index, flag)
+			case '--destination-account-id': {
+				destinationAccountId = readFlagValue(argv, index, flag)
 				index += 1
 				break
 			}
@@ -154,15 +159,32 @@ export function parseBackupCliArgs(
 		}
 	}
 
-	if (!accountId) throw new Error('Cloudflare account ID is required.')
+	sourceAccountId = sourceAccountId.trim()
+	destinationAccountId = destinationAccountId.trim()
+	if (!sourceAccountId) {
+		throw new Error(
+			'Source Cloudflare account ID is required via BACKUP_SOURCE_ACCOUNT_ID or --source-account-id.',
+		)
+	}
+	if (!destinationAccountId) {
+		throw new Error(
+			'Destination Cloudflare account ID is required via BACKUP_DESTINATION_ACCOUNT_ID, CLOUDFLARE_ACCOUNT_ID, or --destination-account-id.',
+		)
+	}
+	if (sourceAccountId === destinationAccountId) {
+		throw new Error(
+			'Source and destination Cloudflare account IDs must be distinct.',
+		)
+	}
 	if (!apiToken) {
 		throw new Error(
-			'Provisioner token is required via CLOUDFLARE_API_TOKEN, --provisioner-token, or --provisioner-token-env.',
+			'Provisioner token is required via CLOUDFLARE_API_TOKEN or --provisioner-token-env.',
 		)
 	}
 	return {
 		mode,
-		accountId,
+		sourceAccountId,
+		destinationAccountId,
 		apiToken,
 		apiBaseUrl,
 		bucketName,
@@ -180,14 +202,15 @@ export async function runBackupResourcesCli(input: {
 }) {
 	const options = parseBackupCliArgs(input.argv, input.env)
 	const desired = generateBackupDesiredState({
-		accountId: options.accountId,
+		sourceAccountId: options.sourceAccountId,
+		destinationAccountId: options.destinationAccountId,
 		bucketName: options.bucketName,
 		workerName: options.workerName,
 		sourceD1Databases: options.sourceD1Databases,
 		productionResourceDenylist: options.productionResourceDenylist,
 	})
 	const api = createCloudflareBackupApi({
-		accountId: options.accountId,
+		destinationAccountId: options.destinationAccountId,
 		apiToken: options.apiToken,
 		fetcher: input.fetcher,
 		apiBaseUrl: options.apiBaseUrl,

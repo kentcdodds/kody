@@ -65,15 +65,20 @@ export type BackupRuntimeContract = {
 		environment: 'production'
 		dedicated: true
 	}
+	accounts: {
+		sourceAccountId: string
+		destinationAccountId: string
+	}
 	sourceD1DatabaseAllowlist: Array<SourceD1Database>
 	d1ExportTokenRequirements: {
 		cloudflarePermission: 'D1 Read'
-		accountIdProvidedAtDeployment: true
+		sourceAccountId: string
 		allowedDatabaseUuids: Array<string>
 		applicationMustEnforceAllowlist: true
 	}
 	r2Binding: {
 		binding: 'BACKUP_BUCKET'
+		destinationAccountId: string
 		bucketName: string
 		access: 'object-read-write'
 		allowedPrefixes: ['daily/', 'weekly/']
@@ -101,7 +106,7 @@ export type BackupDesiredState = {
 		provisioner: {
 			authentication: 'bearer-api-token-injected-not-rendered'
 			cloudflarePermission: 'Workers R2 Storage Write'
-			accountId: string
+			destinationAccountId: string
 			bucketName: string
 			operations: [
 				'bucket.create',
@@ -165,14 +170,24 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 
 function assertBackupInput(input: {
-	accountId: string
+	sourceAccountId: string
+	destinationAccountId: string
 	bucketName: string
 	workerName: string
 	sourceD1Databases: ReadonlyArray<SourceD1Database>
 	productionResourceDenylist: ReadonlyArray<string>
 }) {
-	if (!input.accountId.trim())
-		throw new Error('Cloudflare account ID is required.')
+	if (!input.sourceAccountId.trim()) {
+		throw new Error('Source Cloudflare account ID is required.')
+	}
+	if (!input.destinationAccountId.trim()) {
+		throw new Error('Destination Cloudflare account ID is required.')
+	}
+	if (input.sourceAccountId.trim() === input.destinationAccountId.trim()) {
+		throw new Error(
+			'Source and destination Cloudflare account IDs must be distinct.',
+		)
+	}
 	if (
 		!resourceNamePattern.test(input.bucketName) ||
 		input.bucketName.length < 3 ||
@@ -209,14 +224,22 @@ function assertBackupInput(input: {
 }
 
 export function generateBackupDesiredState(input: {
-	accountId: string
+	sourceAccountId: string
+	destinationAccountId: string
 	bucketName: string
 	workerName: string
 	sourceD1Databases: ReadonlyArray<SourceD1Database>
 	productionResourceDenylist?: ReadonlyArray<string>
 }): BackupDesiredState {
+	const sourceAccountId = input.sourceAccountId.trim()
+	const destinationAccountId = input.destinationAccountId.trim()
 	const productionResourceDenylist = input.productionResourceDenylist ?? []
-	assertBackupInput({ ...input, productionResourceDenylist })
+	assertBackupInput({
+		...input,
+		sourceAccountId,
+		destinationAccountId,
+		productionResourceDenylist,
+	})
 	const sourceD1DatabaseAllowlist = input.sourceD1Databases.map((database) => ({
 		uuid: database.uuid.toLowerCase(),
 		name: database.name,
@@ -272,15 +295,20 @@ export function generateBackupDesiredState(input: {
 			environment: 'production',
 			dedicated: true,
 		},
+		accounts: {
+			sourceAccountId,
+			destinationAccountId,
+		},
 		sourceD1DatabaseAllowlist,
 		d1ExportTokenRequirements: {
 			cloudflarePermission: 'D1 Read',
-			accountIdProvidedAtDeployment: true,
+			sourceAccountId,
 			allowedDatabaseUuids: sourceD1DatabaseAllowlist.map(({ uuid }) => uuid),
 			applicationMustEnforceAllowlist: true,
 		},
 		r2Binding: {
 			binding: 'BACKUP_BUCKET',
+			destinationAccountId,
 			bucketName: input.bucketName,
 			access: 'object-read-write',
 			allowedPrefixes: ['daily/', 'weekly/'],
@@ -308,7 +336,7 @@ export function generateBackupDesiredState(input: {
 			provisioner: {
 				authentication: 'bearer-api-token-injected-not-rendered',
 				cloudflarePermission: 'Workers R2 Storage Write',
-				accountId: input.accountId,
+				destinationAccountId,
 				bucketName: input.bucketName,
 				operations: [
 					'bucket.create',
@@ -591,16 +619,18 @@ function cloudflareFailure(status: number, requestLabel: string) {
 }
 
 export function createCloudflareBackupApi(input: {
-	accountId: string
+	destinationAccountId: string
 	apiToken: string
 	fetcher?: typeof fetch
 	apiBaseUrl?: string
 }): BackupCloudflareApi {
-	if (!input.accountId) throw new Error('Cloudflare account ID is required.')
+	if (!input.destinationAccountId) {
+		throw new Error('Destination Cloudflare account ID is required.')
+	}
 	if (!input.apiToken)
 		throw new Error('Cloudflare provisioner token is required.')
 	const fetcher = input.fetcher ?? fetch
-	const accountPath = `/accounts/${encodeURIComponent(input.accountId)}/r2/buckets`
+	const accountPath = `/accounts/${encodeURIComponent(input.destinationAccountId)}/r2/buckets`
 	const baseUrl = (
 		input.apiBaseUrl ?? 'https://api.cloudflare.com/client/v4'
 	).replace(/\/$/, '')

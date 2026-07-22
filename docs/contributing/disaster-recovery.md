@@ -134,8 +134,9 @@ the following are operator contracts and mandatory canonical-readiness failures:
   restore and verify refs/objects. A default-branch clone or working tree is not
   coverage.
 
-No operator may set `supported`, `inventoryComplete`, credential, contract, or
-verification fields to true in readiness evidence based only on this document.
+No operator may create support, inventory, credential, contract, or drill
+artifacts based only on this document. Each resource needs its own dated
+attestation and locally verifiable evidence bytes.
 
 ### Derived or intentionally regenerated stores
 
@@ -250,7 +251,8 @@ rendered output:
 
 ```sh
 node tools/ci/backup-resources-cli.ts plan \
-  --account-id "<DR_ACCOUNT_ID>" \
+  --source-account-id "<SOURCE_ACCOUNT_ID>" \
+  --destination-account-id "<DR_ACCOUNT_ID>" \
   --provisioner-token-env DR_R2_PROVISIONER_TOKEN \
   --bucket-name "<DR_BUCKET>" \
   --worker-name kody-production-d1-backups \
@@ -259,7 +261,8 @@ node tools/ci/backup-resources-cli.ts plan \
   --deny-production-resource kody-community-assets
 
 node tools/ci/backup-resources-cli.ts apply \
-  --account-id "<DR_ACCOUNT_ID>" \
+  --source-account-id "<SOURCE_ACCOUNT_ID>" \
+  --destination-account-id "<DR_ACCOUNT_ID>" \
   --provisioner-token-env DR_R2_PROVISIONER_TOKEN \
   --bucket-name "<DR_BUCKET>" \
   --worker-name kody-production-d1-backups \
@@ -267,6 +270,11 @@ node tools/ci/backup-resources-cli.ts apply \
   --deny-production-resource kody-email-blobs \
   --deny-production-resource kody-community-assets
 ```
+
+The source and destination account ids are both mandatory and must differ. The
+provisioner token is accepted only from `CLOUDFLARE_API_TOKEN` or the
+environment variable named by `--provisioner-token-env`; there is no
+command-line token-value flag.
 
 The provisioner creates the private-by-default bucket and converges lock and
 lifecycle rules for `daily/` at 35 days and `weekly/` at 400 days. Public
@@ -278,7 +286,9 @@ locked bucket cannot be emptied until lock rules are removed. Lifecycle deletion
 is asynchronous (typically within 24 hours of expiry), so 35/400 days are
 minimum retention rather than an exact deletion instant. The default
 incomplete-multipart-upload lifecycle is not a backup retention policy. Use
-unique set ids and never overwrite an object key.
+unique set ids and never overwrite an object key. Retention is fixed by the
+provisioned bucket policies; the backup runtime intentionally has no custom
+retention input or deletion logic.
 
 ## Backup capture
 
@@ -350,8 +360,12 @@ dry-run, and deploy once more.
 
 ### Daily and weekly procedure
 
-The implemented Worker runs the backup trigger at `02:15 UTC` and freshness
-check at minute 45 of every hour. Sunday UTC is the weekly boundary:
+The implemented Worker runs the primary backup trigger at `02:15 UTC`, a
+controlled retry at `02:45 UTC`, and freshness checks at minute 45 of every
+hour. At 02:45 an errored or terminated same-day Workflow is restarted; a
+queued, running, paused, waiting, `waitingForPause`, or complete same-day
+Workflow is treated as a duplicate. An unknown status fails rather than
+restarting. Sunday UTC is the weekly boundary:
 
 - Sunday writes `weekly/d1/{databaseUuid}/{yyyy-mm-dd}/backup.sql` and
   `weekly/d1/{databaseUuid}/{yyyy-mm-dd}/manifest.json`;
@@ -360,7 +374,10 @@ check at minute 45 of every hour. Sunday UTC is the weekly boundary:
 There is no daily copy on Sunday and no post-capture promotion step. Workflow
 instance id `d1-backup-{databaseUuid}-{yyyy-mm-dd}` prevents duplicate daily
 Workflow creation. Immutable R2 puts reject a conflicting object; an existing
-object is accepted only when it matches the immutable manifest contract.
+object is accepted only when it matches the immutable manifest contract. An
+object without its canonical manifest fails closed with
+`duplicate-object-manifest-missing`; do not delete, replace, or bless it
+automatically. Preserve it and escalate for operator investigation.
 
 For each run, the Workflow:
 
@@ -378,7 +395,12 @@ For each run, the Workflow:
    retention tier;
 7. emits structured success/failure logs. The hourly freshness check validates
    the expected manifest identity, shape, maximum age (26 hours by default), and
-   object existence.
+   object existence, size, and ETag against the manifest.
+
+Hourly freshness deliberately does not download and SHA-256 the SQL object.
+Scheduled deep checksum/restore drills must read the retained bytes and verify
+their SHA-256; those drills complement, rather than replace, hourly size/ETag
+freshness.
 
 The control plane does **not** quiesce application traffic or create a
 maintenance window; D1 export still blocks source queries. The approved
@@ -413,7 +435,10 @@ primary operator and incident commander when:
 
 - the hourly `freshness-stale` event reports that the expected daily/weekly
   manifest is missing, older than `BACKUP_MAX_AGE_HOURS` (26 by default),
-  identity-invalid, malformed, or missing its R2 object;
+  identity-invalid, malformed, missing its R2 object, or inconsistent with the
+  object's size/ETag;
+- an immutable SQL object exists without its manifest; fail closed and open an
+  operator investigation rather than repairing or deleting it automatically;
 - no complete Sunday UTC weekly set exists by 8 days (a separate operator
   metric; the implemented freshness check validates the latest expected day);
 - D1, `EMAIL_BLOBS`, avatars, Artifacts, or `StorageRunner` is missing,
@@ -432,7 +457,9 @@ primary operator and incident commander when:
 Open a ticket rather than page for lifecycle deletion lag inside Cloudflare's
 documented asynchronous window, orphan objects that do not affect the current
 set, or an expected derived-cache rebuild warning. Never report aggregate backup
-success when a canonical component failed. Test alert delivery monthly.
+success when a canonical component failed. Deep checksum drills must detect byte
+corruption that hourly size/ETag checks cannot prove absent. Test alert delivery
+monthly.
 
 ## D1 recovery contracts
 
@@ -464,10 +491,11 @@ precision; inventory the schema and values during the benchmark.
 
 ### Mandatory isolated D1 drill
 
-Never use Time Travel to make a drill copy. It has no clone operation. Create
-the target separately, then supply fresh inventory evidence proving it is empty,
-unbound, and different from production in both UUID and name. Its allowlist
-entry must have `"purpose": "drill"`.
+Never use Time Travel to make a drill copy. It has no clone operation. The
+restore CLI no longer accepts target inventory or a target UUID. Its allowlist
+contains exact `{ accountId, name, purpose: "drill" }` entries. The selected
+target account must differ from the backup manifest's source account, and the
+target name must differ from the production database name.
 
 ```sh
 node tools/disaster-recovery/d1-restore-drill-cli.ts \
@@ -475,20 +503,19 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
   --backup backup.sql \
   --baseline restore-baseline.json \
-  --inventory d1-inventory.json \
   --allowlist drill-allowlist.json \
-  --target-uuid "<NEW_ISOLATED_D1_UUID>" \
+  --target-account-id "<ALLOWLISTED_DRILL_ACCOUNT_ID>" \
   --target-name "kody-drill-<YYYYMMDD>"
 
-# After reviewing the dry-run command plan, execute against only that target.
+# After reviewing the dry-run plan, retrieve the target-account D1 Edit token
+# into CLOUDFLARE_D1_DRILL_EDIT_TOKEN through the approved secret broker.
 node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest restore-manifest.json \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
   --backup backup.sql \
   --baseline restore-baseline.json \
-  --inventory d1-inventory.json \
   --allowlist drill-allowlist.json \
-  --target-uuid "<NEW_ISOLATED_D1_UUID>" \
+  --target-account-id "<ALLOWLISTED_DRILL_ACCOUNT_ID>" \
   --target-name "kody-drill-<YYYYMMDD>" \
   --execute
 ```
@@ -496,14 +523,39 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
 The CLI verifies the exact manifest bytes against the separately supplied
 manifest SHA-256, then checks SQL bytes, size, and SHA-256 against the manifest.
 It rejects backups larger than 5 GiB; it does not split them. It dry-runs by
-default and neither creates nor deletes a target. Execution imports, then checks
-`PRAGMA integrity_check`, `PRAGMA foreign_key_check`, expected migration names,
-schema hash, sequences, and representative two-user isolation baselines.
+default and does not create a target. With `--execute`, it requires
+`CLOUDFLARE_D1_DRILL_EDIT_TOKEN`, live-creates a new D1 database in the
+allowlisted target account immediately before import, and verifies Cloudflare's
+returned UUID, exact requested name, and `created_at` against the creation
+window. New creation is the empty/unbound proof. The drill-only token is passed
+to Wrangler as `CLOUDFLARE_API_TOKEN` with the selected target account and is
+never printed.
 
-Use `--apply-forward-migrations` only after baseline verification. When doing
-so, also provide `--post-forward-baseline post-forward-baseline.json` to verify
-the migrated state. Delete the drill target only after evidence is retained and
-the approved cleanup window starts.
+Execution imports, then checks `PRAGMA integrity_check`,
+`PRAGMA foreign_key_check`, expected migration names, schema hash, sequences,
+and representative two-user isolation baselines. It never deletes, binds, cuts
+over, or modifies production.
+
+Forward migrations are an inseparable pair of inputs:
+
+```sh
+node tools/disaster-recovery/d1-restore-drill-cli.ts \
+  --manifest restore-manifest.json \
+  --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
+  --backup backup.sql \
+  --baseline restore-baseline.json \
+  --post-forward-baseline post-forward-baseline.json \
+  --allowlist drill-allowlist.json \
+  --target-account-id "<ALLOWLISTED_DRILL_ACCOUNT_ID>" \
+  --target-name "kody-drill-forward-<YYYYMMDD>" \
+  --apply-forward-migrations \
+  --execute
+```
+
+`--apply-forward-migrations` without `--post-forward-baseline`, and a
+post-forward baseline without the migration switch, both fail closed. Delete the
+drill target only after evidence is retained and the approved cleanup window
+starts.
 
 ## Cross-store restore and abort points
 
@@ -687,6 +739,9 @@ the intended system only.
       allowlisted; preview/test identities are denylisted.
 - [ ] A separately administered destination account/bucket exists with
       independently issued credentials and audited break-glass access.
+- [ ] Provisioner plan/apply evidence names distinct source and destination
+      account ids; the provisioner token came only from an approved environment
+      variable and is absent from runtime.
 - [ ] Daily 35-day and weekly 400-day R2 lock/lifecycle rules are installed,
       listed, tested against overwrite/delete, and monitored.
 - [ ] Least-privilege source, scheduler, destination, restore, and retention
@@ -705,14 +760,19 @@ the intended system only.
       absent from runtime.
 - [ ] Both schedule gates remained false through benchmark and are true only in
       the approved deployment.
-- [ ] The 02:15 UTC backup, hourly freshness logs, immutable manifest,
-      observability alerts, paging, and operations runbook are live.
+- [ ] The 02:15 UTC backup, controlled 02:45 retry, hourly size/ETag freshness
+      logs, immutable manifest, observability alerts, paging, and operations
+      runbook are live.
+- [ ] Deep checksum drills verify SQL bytes against manifest SHA-256 on schedule
+      and object-without-manifest alerts have a tested investigation path.
 - [ ] A fresh D1-only drill passed.
 - [ ] A fresh canonical-data drill passed.
 - [ ] A fresh full-service drill passed, including OAuth reauthorization and
       derived reconstruction.
 - [ ] Evidence location, audit retention, exception process, and runbook review
       date are recorded.
+- [ ] Every readiness artifact is a dated, resource-specific local file whose
+      exact bytes match its declared SHA-256; network evidence is rejected.
 
 Operator status command:
 
@@ -721,12 +781,46 @@ node tools/disaster-recovery/canonical-readiness-cli.ts \
   --evidence recovery-evidence.json
 ```
 
-The evidence file is an array of `ResourceEvidence` records matching
-`tools/disaster-recovery/canonical-readiness.ts`. Missing, duplicate,
-unsupported, incompletely inventoried, uncredentialed, contract-incomplete, or
-unevidenced resources fail closed. The command prints `d1-only`,
-`canonical-data`, and `full-service` separately and exits nonzero until
-full-service is proven.
+The evidence file is an array with exactly one dated record per resource. Each
+record has exactly:
+
+```json
+{
+	"resourceId": "APP_DB",
+	"verifierIdentity": "<OPERATOR_OR_SERVICE_ID>",
+	"changeId": "<CHANGE_ID>",
+	"performedAt": "<UTC_ISO_TIMESTAMP_WITH_MILLISECONDS>",
+	"expiresAt": "<LATER_UTC_ISO_TIMESTAMP_WITH_MILLISECONDS>",
+	"artifacts": [
+		{
+			"kind": "inventory",
+			"type": "application/json",
+			"uri": "evidence/app-db-inventory.json",
+			"sha256": "<LOWERCASE_SHA256_OF_EXACT_LOCAL_FILE_BYTES>"
+		}
+	]
+}
+```
+
+Use the resource-specific `requiredEvidenceKinds` in
+`tools/disaster-recovery/canonical-readiness.ts`; the example is not a complete
+`APP_DB` record. Every resource requires inventory, source-credential,
+destination-credential, transfer-support, and contract-verification artifacts,
+plus its specific drill artifacts. Records require nonempty verifier/change
+identity, `performedAt` not in the future, and `expiresAt` later than both
+`performedAt` and the assessment time. Unknown fields, resources, evidence
+kinds, duplicate resources, duplicate evidence kinds, malformed dates, and
+expired attestations fail the entire input closed.
+
+Every artifact URI must be a local path (resolved relative to the evidence JSON)
+or a `file:` URL. The CLI opens every file, hashes its exact bytes, and requires
+the computed digest to equal the declared lowercase SHA-256. Missing,
+unreadable, unhashed, or mismatched files fail readiness. `https:`, `s3:`,
+dashboard, ticket, and every other network URI are rejected; download evidence
+to an immutable local file before assessment.
+
+The command prints `d1-only`, `canonical-data`, and `full-service` separately
+and exits nonzero until full-service is proven.
 
 ## Explicit exclusions
 
@@ -741,6 +835,10 @@ This runbook does not claim or provide:
 - import of a raw SQLite file or a D1 SQL import larger than 5 GiB per file;
 - native cross-account replication for D1, R2, Durable Objects, Artifacts, KV,
   Queues, or Workflows;
+- runtime-selectable/custom retention or application deletion of backup sets;
+  retention is the fixed provisioned R2 lock/lifecycle policy;
+- restore-drill import into an operator-supplied existing target UUID; execution
+  always creates a new database in the distinct allowlisted drill account;
 - implemented capture automation for canonical `EMAIL_BLOBS`, avatars,
   `StorageRunner`, or Artifacts in the D1 backup control plane;
 - backup of Analytics Engine events, transient logs/traces, CDN caches,

@@ -89,7 +89,8 @@ bucket and apply 35-day daily and 400-day weekly lock/lifecycle rules:
 
 ```sh
 node tools/ci/backup-resources-cli.ts plan \
-  --account-id "<DR_ACCOUNT_ID>" \
+  --source-account-id "<PRODUCTION_ACCOUNT_ID>" \
+  --destination-account-id "<DR_ACCOUNT_ID>" \
   --source-d1 "<PRODUCTION_D1_UUID>:kody" \
   --deny-production-resource kody-email-blobs \
   --deny-production-resource kody-community-assets
