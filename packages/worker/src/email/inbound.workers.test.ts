@@ -1456,6 +1456,35 @@ test('delivery-ledger finalization failure retries before usage or subscription 
 			.bind(userId)
 			.first<{ event_count: number }>(),
 	).toEqual({ event_count: 1 })
+	await env.APP_DB.prepare(
+		`DELETE FROM usage_rollups
+		WHERE user_id = ? AND metric = 'email_received'`,
+	)
+		.bind(userId)
+		.run()
+	await env.APP_DB.prepare(
+		`UPDATE email_delivery_events
+		SET detail_json = json_remove(
+			json_set(detail_json, '$.usageDurationMs', 4321),
+			'$.usageEffectRecordedAt'
+		)
+		WHERE id = ? AND user_id = ?`,
+	)
+		.bind(delivery.id, userId)
+		.run()
+	await processInboundDeliveryEffects({
+		env: createInboundEnv(),
+		userId,
+		deliveryId: delivery.id,
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT event_count, total_duration_ms FROM usage_rollups
+			WHERE user_id = ? AND metric = 'email_received'`,
+		)
+			.bind(userId)
+			.first<{ event_count: number; total_duration_ms: number }>(),
+	).toEqual({ event_count: 1, total_duration_ms: 4321 })
 })
 
 test('production usage outbox records one durable D1 event without retry data points', async () => {
@@ -1958,6 +1987,78 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 		'inbound-email-orphan-blob-delete-failed',
 		delivery.rawMimeKey,
 		expect.any(Error),
+	)
+	const writeClosedClaim = await claimInboundDeliveryStorage({
+		db: env.APP_DB,
+		delivery,
+		expectedAttachmentCount: 0,
+		now: new Date('2026-07-22T00:10:00.000Z'),
+	})
+	expect(writeClosedClaim.claimed).toBe(false)
+
+	const successorNow = new Date('2026-07-25T00:00:00.000Z')
+	const successor = await buildInboundDelivery({
+		userId,
+		inboxId: delivery.inboxId,
+		recipient: delivery.recipient,
+		rawMime: 'successor committed MIME',
+		quotaDay: '2026-07-25',
+		now: successorNow,
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, inbox_id, event_type, provider, provider_event_id,
+			detail_json, created_at
+		) VALUES (?, ?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+	)
+		.bind(
+			successor.deliveryId,
+			userId,
+			successor.inboxId,
+			successor.deliveryId,
+			JSON.stringify(successor),
+			successorNow.toISOString(),
+		)
+		.run()
+	const successorClaim = await claimInboundDeliveryStorage({
+		db: env.APP_DB,
+		delivery: successor,
+		expectedAttachmentCount: 0,
+		usageDurationMs: 321,
+		now: successorNow,
+	})
+	if (!successorClaim.claimed) throw new Error('Expected successor lease.')
+	await env.EMAIL_BLOBS.put(
+		successorClaim.delivery.rawMimeKey,
+		'successor committed MIME',
+	)
+	const successorLease = successorClaim.delivery.storageLease
+	if (!successorLease) throw new Error('Expected successor storage lease.')
+	await insertEmailMessage({
+		db: env.APP_DB,
+		inboundDeliveryFence: {
+			deliveryId: successor.deliveryId,
+			userId,
+			storageLease: successorLease,
+		},
+		message: {
+			id: successor.messageId,
+			direction: 'inbound',
+			userId,
+			rawMimeKey: successor.rawMimeKey,
+			rawSize: 24,
+			processingStatus: 'stored',
+		},
+	})
+	await markInboundDeliveryReceived({
+		db: env.APP_DB,
+		delivery: successorClaim.delivery,
+	})
+	// Cleaner A resumes with the abandoned generation's key after the
+	// successor committed. The non-overlapping generation keeps live MIME safe.
+	await env.EMAIL_BLOBS.delete(delivery.rawMimeKey)
+	expect(await (await env.EMAIL_BLOBS.get(successor.rawMimeKey))?.text()).toBe(
+		'successor committed MIME',
 	)
 
 	expect(

@@ -572,6 +572,7 @@ export async function handleInboundEmail(
 		db: env.APP_DB,
 		delivery: claimedDelivery,
 		expectedAttachmentCount: parsed.attachments.length,
+		usageDurationMs: Date.now() - receiveStartedAtMs,
 	})
 	if (!storageClaim.claimed) {
 		if (storageClaim.delivery?.state === 'received') return
@@ -854,6 +855,7 @@ async function handleSystemInboundEmail(input: {
 		db: input.env.APP_DB,
 		delivery: claimedDelivery,
 		expectedAttachmentCount: parsed.attachments.length,
+		usageDurationMs: Date.now() - receiveStartedAtMs,
 	})
 	if (!storageClaim.claimed) {
 		if (storageClaim.delivery?.state === 'received') return

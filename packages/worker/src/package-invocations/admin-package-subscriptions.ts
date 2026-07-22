@@ -24,6 +24,7 @@ const preExecutionPackageInvocationInfrastructureCodes = new Set([
 	'idempotency_lookup_failed',
 	'idempotency_persistence_failed',
 	'idempotency_conflict_unresolved',
+	'invocation_in_progress',
 ])
 
 function readPackageInvocationInfrastructureCode(input: {

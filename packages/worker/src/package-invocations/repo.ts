@@ -433,6 +433,38 @@ export async function insertPackageInvocationRow(input: {
 			now,
 		)
 		.run()
+	return {
+		inserted: (result.meta.changes ?? 0) > 0,
+		claimUpdatedAt: now,
+	}
+}
+
+export async function tryClaimStalePackageInvocation(input: {
+	db: D1Database
+	id: string
+	userId: string
+	expectedUpdatedAt: string
+	staleBefore: string
+	now: string
+}) {
+	const result = await input.db
+		.prepare(
+			`UPDATE package_invocations
+			SET updated_at = ?
+			WHERE id = ?
+				AND user_id = ?
+				AND status = 'in_progress'
+				AND updated_at = ?
+				AND updated_at <= ?`,
+		)
+		.bind(
+			input.now,
+			input.id,
+			input.userId,
+			input.expectedUpdatedAt,
+			input.staleBefore,
+		)
+		.run()
 	return (result.meta.changes ?? 0) > 0
 }
 
@@ -471,6 +503,7 @@ export async function updatePackageInvocationResult(input: {
 	userId: string
 	status: 'completed' | 'failed'
 	response: PackageInvocationStoredResponse
+	claimUpdatedAt: string
 }) {
 	const responseJson = JSON.stringify({
 		status: input.response.status,
@@ -480,7 +513,10 @@ export async function updatePackageInvocationResult(input: {
 		.prepare(
 			`UPDATE package_invocations
 			SET status = ?, response_json = ?, updated_at = ?
-			WHERE id = ? AND user_id = ?`,
+			WHERE id = ?
+				AND user_id = ?
+				AND status = 'in_progress'
+				AND updated_at = ?`,
 		)
 		.bind(
 			input.status,
@@ -488,6 +524,7 @@ export async function updatePackageInvocationResult(input: {
 			new Date().toISOString(),
 			input.id,
 			input.userId,
+			input.claimUpdatedAt,
 		)
 		.run()
 	return (result.meta.changes ?? 0) > 0

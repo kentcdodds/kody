@@ -59,6 +59,7 @@ export type InboundDelivery = {
 	finalizationToken?: string
 	usageEffectRecordedAt?: string
 	usageEffectSuppressedAt?: string
+	usageDurationMs?: number
 	usageEffectRetryAt?: string
 	usageEffectLease?: string
 	usageEffectLeaseAt?: string
@@ -203,6 +204,9 @@ function parseInboundDelivery(
 				: {}),
 			...(typeof detail.usageEffectSuppressedAt === 'string'
 				? { usageEffectSuppressedAt: detail.usageEffectSuppressedAt }
+				: {}),
+			...(typeof detail.usageDurationMs === 'number'
+				? { usageDurationMs: detail.usageDurationMs }
 				: {}),
 			...(typeof detail.usageEffectRetryAt === 'string'
 				? { usageEffectRetryAt: detail.usageEffectRetryAt }
@@ -733,6 +737,7 @@ export async function claimInboundDeliveryStorage(input: {
 	db: D1Database
 	delivery: InboundDelivery
 	expectedAttachmentCount: number
+	usageDurationMs?: number
 	now?: Date
 }) {
 	const now = input.now ?? new Date()
@@ -749,12 +754,17 @@ export async function claimInboundDeliveryStorage(input: {
 				'$.state', 'storing',
 				'$.storageLease', ?,
 				'$.storageLeaseAt', ?,
-				'$.expectedAttachmentCount', ?
+				'$.expectedAttachmentCount', ?,
+				'$.usageDurationMs', CASE
+					WHEN ? IS NULL
+						THEN json_extract(detail_json, '$.usageDurationMs')
+					ELSE ?
+				END
 			)
 			WHERE id = ?
 				AND user_id = ?
 				AND (
-					json_extract(detail_json, '$.state') IN ('pending', 'orphan-cleaned')
+					json_extract(detail_json, '$.state') = 'pending'
 					OR (
 						json_extract(detail_json, '$.state') = 'storing'
 						AND json_extract(detail_json, '$.storageLeaseAt') < ?
@@ -765,6 +775,8 @@ export async function claimInboundDeliveryStorage(input: {
 			storageLease,
 			storageLeaseAt,
 			input.expectedAttachmentCount,
+			input.usageDurationMs ?? null,
+			input.usageDurationMs ?? null,
 			input.delivery.deliveryId,
 			input.delivery.userId,
 			expiredBefore,
@@ -909,6 +921,7 @@ async function recoverCommittedInboundDelivery(input: {
 		db: input.db,
 		delivery: input.delivery,
 		expectedAttachmentCount: parsed.attachments.length,
+		usageDurationMs: input.delivery.usageDurationMs,
 		now: input.now,
 	})
 	if (!claim.claimed) return claim.delivery?.state === 'received'
@@ -1157,8 +1170,8 @@ export async function reconcileStaleInboundDeliveries(input: {
 						json_remove(
 							json_set(
 								detail_json,
-								'$.state', 'pending',
-								'$.reconcileAfter', ?
+								'$.state', 'orphan-cleaned',
+								'$.cleanupRetryAt', ?
 							),
 							'$.cleanupLease'
 						),

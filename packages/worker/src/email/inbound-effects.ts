@@ -192,7 +192,7 @@ export async function processInboundDeliveryEffects(input: {
 		receivedAt: message.receivedAt,
 		createdAt: message.createdAt,
 		expectedFinalizationToken: input.expectedFinalizationToken,
-		durationMs: input.durationMs,
+		durationMs: input.durationMs ?? delivery.usageDurationMs,
 		now,
 	})
 

@@ -152,9 +152,28 @@ function createDatabase(options: { failInsert?: boolean } = {}) {
 							}
 							if (query.includes('UPDATE package_invocations')) {
 								const table = getTable('package_invocations')
+								if (
+									query.includes('SET updated_at = ?') &&
+									!query.includes('SET status = ?')
+								) {
+									const existing = table.find(
+										(row) =>
+											row['id'] === params[1] &&
+											row['user_id'] === params[2] &&
+											row['status'] === 'in_progress' &&
+											row['updated_at'] === params[3] &&
+											String(row['updated_at']) <= String(params[4]),
+									)
+									if (!existing) return { meta: { changes: 0 } }
+									existing['updated_at'] = params[0]
+									return { meta: { changes: 1 } }
+								}
 								const existing = table.find(
 									(row) =>
-										row['id'] === params[3] && row['user_id'] === params[4],
+										row['id'] === params[3] &&
+										row['user_id'] === params[4] &&
+										row['status'] === 'in_progress' &&
+										row['updated_at'] === params[5],
 								)
 								if (!existing) {
 									return { meta: { changes: 0, last_row_id: 0 } }
@@ -175,7 +194,23 @@ function createDatabase(options: { failInsert?: boolean } = {}) {
 				row['response_json'] = '{"status":200,"body":null}'
 			}
 		},
-	} as unknown as D1Database & { corruptStoredResponses(): void }
+		seedStaleInvocation(idempotencyKey: string) {
+			const completed = getTable('package_invocations')[0]
+			if (!completed) throw new Error('Expected completed invocation seed.')
+			getTable('package_invocations').push({
+				...clone(completed),
+				id: crypto.randomUUID(),
+				idempotency_key: idempotencyKey,
+				status: 'in_progress',
+				response_json: null,
+				created_at: '2026-01-01T00:00:00.000Z',
+				updated_at: '2026-01-01T00:00:00.000Z',
+			})
+		},
+	} as unknown as D1Database & {
+		corruptStoredResponses(): void
+		seedStaleInvocation(idempotencyKey: string): void
+	}
 	return db
 }
 
@@ -1958,4 +1993,20 @@ test('invokePackageSubscription uses the normal capability registry with package
 	expect(
 		(runOptions as { storageTools?: unknown }).storageTools,
 	).toBeUndefined()
+
+	db.seedStaleInvocation('email:message-stale:pkg-1:email.message.received')
+	const recovered = await invokePackageSubscription({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		savedPackage,
+		topic: 'email.message.received',
+		params: {
+			event: 'email.message.received',
+			message: { id: 'message-123' },
+		},
+		idempotencyKey: 'email:message-stale:pkg-1:email.message.received',
+		source: 'email',
+	})
+	expect(recovered.status).toBe(200)
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
 })
