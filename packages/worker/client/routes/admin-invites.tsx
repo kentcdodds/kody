@@ -248,6 +248,9 @@ export function AdminInvitesRoute(handle: Handle) {
 			handle.queueTask(loadInvites)
 		}
 		const isMutating = actionState !== 'idle'
+		// Plan options arrive with loader data; disable create until then so an
+		// empty <select> cannot submit plan="" before Unlimited is available.
+		const inviteFormDisabled = isMutating || availablePlans.length === 0
 
 		return (
 			<AccountManagementShell>
@@ -367,7 +370,7 @@ export function AdminInvitesRoute(handle: Handle) {
 								name="code"
 								type="text"
 								placeholder="Optional"
-								disabled={isMutating}
+								disabled={inviteFormDisabled}
 								mix={css(inputCss)}
 							/>
 						</label>
@@ -377,7 +380,7 @@ export function AdminInvitesRoute(handle: Handle) {
 								name="note"
 								type="text"
 								placeholder="Cohort or recipient"
-								disabled={isMutating}
+								disabled={inviteFormDisabled}
 								mix={css(inputCss)}
 							/>
 						</label>
@@ -388,7 +391,7 @@ export function AdminInvitesRoute(handle: Handle) {
 								type="number"
 								min="1"
 								defaultValue="1"
-								disabled={isMutating}
+								disabled={inviteFormDisabled}
 								mix={css(inputCss)}
 							/>
 						</label>
@@ -396,7 +399,7 @@ export function AdminInvitesRoute(handle: Handle) {
 							<span mix={css(fieldLabelCss)}>Plan</span>
 							<select
 								name="plan"
-								disabled={isMutating}
+								disabled={inviteFormDisabled}
 								defaultValue="unlimited"
 								mix={css(inputCss)}
 							>
@@ -412,13 +415,13 @@ export function AdminInvitesRoute(handle: Handle) {
 							<input
 								name="expiresAt"
 								type="datetime-local"
-								disabled={isMutating}
+								disabled={inviteFormDisabled}
 								mix={css(inputCss)}
 							/>
 						</label>
 						<button
 							type="submit"
-							disabled={isMutating}
+							disabled={inviteFormDisabled}
 							mix={css(primaryButtonCss)}
 						>
 							{actionState === 'creating' ? 'Creating…' : 'Create'}
