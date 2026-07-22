@@ -59,6 +59,9 @@ export async function runSearchTool(input: {
 	const userId = callerContext.user?.userId ?? null
 	const includeHiddenPackages = !!args.includeHiddenPackages
 	const domainFilter = args.domain?.trim() || undefined
+	// Whitespace-only queries stay valid (memory enrichment may still run) but
+	// count as "no query" for the domain-browse limit default.
+	const trimmedQuery = args.query?.trim() ?? ''
 	if (!args.query && !args.entity && !domainFilter) {
 		const timing = finishToolTiming(timingStart)
 		logMcpEvent({
@@ -96,7 +99,7 @@ export async function runSearchTool(input: {
 	// domain by default instead of cutting at the ranked default.
 	const limit =
 		args.limit ??
-		(domainFilter && !args.query
+		(domainFilter && !trimmedQuery
 			? domainBrowseDefaultLimit
 			: defaultSearchLimit)
 	const maxResponseSize = args.maxResponseSize ?? defaultMaxResponseSize
@@ -106,7 +109,7 @@ export async function runSearchTool(input: {
 	const endToEndPhaseTimings: Partial<SearchPhaseTimings> = {}
 
 	const searchSpan = async () => {
-		const query = args.query?.trim() ?? ''
+		const query = trimmedQuery
 		if (!args.entity) {
 			const execution = await executeSearchList({
 				env: agent.getEnv(),

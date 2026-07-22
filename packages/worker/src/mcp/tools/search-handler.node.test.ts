@@ -1091,7 +1091,9 @@ test('search tool lists a domain when domain is passed without a query', async (
 	consoleWarn.mockImplementation(() => {})
 	const handler = await getSearchHandler()
 
+	// Whitespace-only queries fall back to domain browsing (with its limit).
 	const browseResponse = await handler({
+		query: '   ',
 		domain: 'meta',
 		conversationId: 'conv-domain-browse',
 	})
