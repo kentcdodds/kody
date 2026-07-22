@@ -6,14 +6,20 @@ import {
 	listEmailMessages,
 	maxDetailedEmailRejectionEventsPerDay,
 } from './repo.ts'
+import { RetryableInboundStorageError } from './repo.ts'
 import {
 	pruneSystemEmailRetention,
+	refundSystemEmailDailyReceive,
+	systemEmailDayKey,
 	systemEmailLimits,
 	systemEmailOwnerId,
 } from './system-email.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
+	consoleWarn,
+	silenceExpectedConsoleErrors,
+} from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -197,6 +203,192 @@ test('non-system reserved locals still reject while username addresses are unaff
 	expect(userMessage.rejectedReason).toBeNull()
 	expect(
 		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
+	).toHaveLength(1)
+})
+
+async function readSystemDailyReceiveCount(localPart: string) {
+	const row = await env.APP_DB.prepare(
+		`SELECT count FROM system_email_daily_counters
+			WHERE local_part = ? AND day = ?`,
+	)
+		.bind(localPart, systemEmailDayKey())
+		.first<{ count: number }>()
+	return Number(row?.count ?? 0)
+}
+
+test('refundSystemEmailDailyReceive decrements local/day counter and floors at zero', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const now = new Date('2026-07-05T12:00:00.000Z')
+	const day = systemEmailDayKey(now)
+	const readCount = async (localPart: string) =>
+		Number(
+			(
+				await env.APP_DB.prepare(
+					`SELECT count FROM system_email_daily_counters
+					WHERE local_part = ? AND day = ?`,
+				)
+					.bind(localPart, day)
+					.first<{ count: number }>()
+			)?.count ?? 0,
+		)
+	await env.APP_DB.prepare(
+		`INSERT INTO system_email_daily_counters (local_part, day, count, updated_at)
+		VALUES ('abuse', ?, 1, ?), ('support', ?, 2, ?)`,
+	)
+		.bind(day, now.toISOString(), day, now.toISOString())
+		.run()
+
+	await refundSystemEmailDailyReceive({
+		db: env.APP_DB,
+		localPart: 'abuse',
+		now,
+	})
+	expect(await readCount('abuse')).toBe(0)
+	expect(await readCount('support')).toBe(2)
+
+	await refundSystemEmailDailyReceive({
+		db: env.APP_DB,
+		localPart: 'abuse',
+		now,
+	})
+	expect(await readCount('abuse')).toBe(0)
+})
+
+test('system inbox pre-commit R2/D1 failures refund daily receive quota; retry consumes one', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const r2FailingEnv = {
+		...createInboundEnv(),
+		EMAIL_BLOBS: new Proxy(env.EMAIL_BLOBS, {
+			get(target, property, receiver) {
+				if (property === 'put') {
+					return async () => {
+						throw new Error('simulated R2 outage')
+					}
+				}
+				const value = Reflect.get(target, property, receiver)
+				return typeof value === 'function' ? value.bind(target) : value
+			},
+		}),
+	} as Parameters<typeof handleInboundEmail>[1]
+	const d1FailingEnv = {
+		...createInboundEnv(),
+		APP_DB: new Proxy(env.APP_DB, {
+			get(target, property, receiver) {
+				if (property === 'prepare') {
+					return (query: string) => {
+						const statement = target.prepare(query)
+						if (!query.includes('INSERT INTO email_messages')) {
+							return statement
+						}
+						return {
+							bind: () => ({
+								run: async () => {
+									throw new Error('simulated D1 insert failure')
+								},
+							}),
+						}
+					}
+				}
+				const value = Reflect.get(target, property, receiver)
+				return typeof value === 'function' ? value.bind(target) : value
+			},
+		}) as D1Database,
+	} as Parameters<typeof handleInboundEmail>[1]
+
+	for (const failingEnv of [r2FailingEnv, d1FailingEnv]) {
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			const message = buildInboundMessage({
+				to: `abuse@${systemDomain}`,
+				messageId: `system-precommit-fail-${attempt}-${crypto.randomUUID().slice(0, 6)}`,
+			})
+			await expect(
+				handleInboundEmail(message, failingEnv),
+			).rejects.toBeInstanceOf(RetryableInboundStorageError)
+			expect(message.rejectedReason).toBeNull()
+			expect(await readSystemDailyReceiveCount('abuse')).toBe(0)
+		}
+	}
+
+	const retry = buildInboundMessage({
+		to: `abuse@${systemDomain}`,
+		messageId: 'system-r2-retry-ok',
+	})
+	await handleInboundEmail(retry, createInboundEnv())
+	expect(retry.rejectedReason).toBeNull()
+	expect(await readSystemDailyReceiveCount('abuse')).toBe(1)
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId: systemEmailOwnerId,
+			limit: 10,
+		}),
+	).toHaveLength(1)
+})
+
+test('system inbox post-commit bookkeeping failure keeps one stored row without refund or retry throw', async () => {
+	silenceIncidentalRuntimeWarnings()
+	silenceExpectedConsoleErrors(['inbound-email-post-commit-bookkeeping-failed'])
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	let messageCommitted = false
+	const failingEnv = {
+		...createInboundEnv(),
+		APP_DB: new Proxy(env.APP_DB, {
+			get(target, property, receiver) {
+				if (property === 'prepare') {
+					return (query: string) => {
+						const statement = target.prepare(query)
+						if (query.includes('INSERT INTO email_messages')) {
+							return {
+								bind(...params: Array<unknown>) {
+									const bound = statement.bind(...params)
+									return {
+										run: async () => {
+											const result = await bound.run()
+											messageCommitted = true
+											return result
+										},
+									}
+								},
+							}
+						}
+						if (
+							messageCommitted &&
+							(query.includes('UPDATE email_threads') ||
+								query.includes('INSERT INTO email_delivery_events'))
+						) {
+							return {
+								bind: () => ({
+									run: async () => {
+										throw new Error('simulated post-commit bookkeeping failure')
+									},
+								}),
+							}
+						}
+						return statement
+					}
+				}
+				const value = Reflect.get(target, property, receiver)
+				return typeof value === 'function' ? value.bind(target) : value
+			},
+		}) as D1Database,
+	} as Parameters<typeof handleInboundEmail>[1]
+
+	const message = buildInboundMessage({
+		to: `support@${systemDomain}`,
+		messageId: 'system-post-commit',
+	})
+	await handleInboundEmail(message, failingEnv)
+	expect(message.rejectedReason).toBeNull()
+	expect(await readSystemDailyReceiveCount('support')).toBe(1)
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId: systemEmailOwnerId,
+			limit: 10,
+		}),
 	).toHaveLength(1)
 })
 

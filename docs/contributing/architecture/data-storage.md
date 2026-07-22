@@ -305,13 +305,28 @@ validated derived output or a generated fallback.
 
 Raw email MIME payloads live in the `EMAIL_BLOBS` R2 bucket instead of D1.
 `email_messages` stores an object key in `raw_mime_key`
-(`email-raw:v1:{userId}/{messageId}`), and the legacy inline `raw_mime` column
-is kept only for residual rows that have not yet been swept (or when R2 put
-fails at write time — the write path falls back to inline storage rather than
-losing mail, and never throws from that decision).
+(`email-raw:v1:{userId}/{messageId}`). **Durability policy (Stage 4a):** R2 is
+required for inbound MIME — `insertEmailMessage` puts the payload to
+`EMAIL_BLOBS` before the D1 insert and never writes new inline `raw_mime` rows.
+On R2 put failure the insert throws `EmailRawMimeStorageError` (a
+`RetryableInboundStorageError`; no D1 row). The inbound Worker refunds the daily
+receive charge and rethrows only typed pre-commit failures so Cloudflare Email
+Routing retries without burning quota. The durable commit boundary is message +
+attachment rows: thread prework, R2 put, and D1 message/attachment storage are
+pre-commit; `touchEmailThread` / `received` delivery-event writes are
+post-commit and are logged without throwing (retry would duplicate mail). If
+attachment insert fails but message cleanup cannot remove the row — or the
+residual-row probe itself fails (ambiguous commit state) — the handler
+acknowledges the already-created message (logged, non-retry) rather than risking
+a duplicate. Outbound messages pass `rawMime: null` and are unaffected. If D1
+insert fails after a successful put, the blob is best-effort deleted. Stage 4a
+only prevents **new** inline writes — it does not claim residual inline rows are
+gone. Dual-read `loadRawMime` and the maintenance/deploy offload sweep stay
+until a later column-drop stage, and that stage must wait until deploy logs
+verify `remainingInline = 0` (not merely that Stage 4a shipped).
 
 - All reads go through `loadRawMime` in `packages/worker/src/email/repo.ts`,
-  which prefers the inline payload and otherwise fetches the blob by key.
+  which prefers residual inline payload and otherwise fetches the blob by key.
   Attachment content extraction re-parses the resolved MIME the same way as
   before.
 - Message deletes claim rows first by setting transitional
@@ -378,8 +393,10 @@ losing mail, and never throws from that decision).
   is HTTP 500. Deploy loops until `complete === true` (it does not treat total
   `remainingInline === 0` as a shortcut) and fails if the secret is missing, on
   non-2xx / nonzero `failed`, or if `complete` is still false after the attempt
-  cap. The write-time inline fallback policy and `loadRawMime` dual-read path
-  stay in place until a later column-drop stage.
+  cap. Write-time inline fallback is gone (Stage 4a only stops new inline
+  writes). `loadRawMime` dual-read and this sweep remain; do not treat total
+  inline as zero until deploy logs verify `remainingInline = 0`, which is the
+  gate for a later column-drop stage.
 - Bucket names: `kody-email-blobs` (production), per-preview
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style

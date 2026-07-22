@@ -21,6 +21,7 @@ import {
 	estimateEntitlementStorageEntryBytes,
 	getUserPlan,
 	incrementDailyEntitlementCounter,
+	refundDailyEntitlement,
 } from './service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 
@@ -168,6 +169,20 @@ function createEntitlementsTestDb(
 									})
 								}
 								return { meta: { changes: 1 } }
+							}
+							if (query.includes('UPDATE entitlement_daily_counters')) {
+								// bind(updated_at, user_id, resource, day)
+								const existing = counters.find(
+									(counter) =>
+										counter.user_id === params[1] &&
+										counter.resource === params[2] &&
+										counter.day === params[3],
+								)
+								if (existing) {
+									existing.count = Math.max(0, existing.count - 1)
+									return { meta: { changes: 1 } }
+								}
+								return { meta: { changes: 0 } }
 							}
 							throw new Error(`Unsupported run query: ${query}`)
 						},
@@ -483,6 +498,62 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 	})
 	expect(counters).toHaveLength(2)
 	expect(counters[1]?.count).toBe(1)
+})
+
+test('refundDailyEntitlement decrements the user/day counter and floors at zero', async () => {
+	const { db, counters } = createEntitlementsTestDb()
+	const now = new Date('2026-07-05T15:00:00.000Z')
+	await incrementDailyEntitlementCounter({
+		db,
+		userId: 'user-1',
+		resource: 'email_receives_per_day',
+		amount: 2,
+		now,
+	})
+	await incrementDailyEntitlementCounter({
+		db,
+		userId: 'user-2',
+		resource: 'email_receives_per_day',
+		amount: 3,
+		now,
+	})
+	await refundDailyEntitlement({
+		db,
+		userId: 'user-1',
+		resource: 'email_receives_per_day',
+		now,
+	})
+	expect(
+		counters.find(
+			(row) =>
+				row.user_id === 'user-1' && row.resource === 'email_receives_per_day',
+		)?.count,
+	).toBe(1)
+	expect(
+		counters.find(
+			(row) =>
+				row.user_id === 'user-2' && row.resource === 'email_receives_per_day',
+		)?.count,
+	).toBe(3)
+
+	await refundDailyEntitlement({
+		db,
+		userId: 'user-1',
+		resource: 'email_receives_per_day',
+		now,
+	})
+	await refundDailyEntitlement({
+		db,
+		userId: 'user-1',
+		resource: 'email_receives_per_day',
+		now,
+	})
+	expect(
+		counters.find(
+			(row) =>
+				row.user_id === 'user-1' && row.resource === 'email_receives_per_day',
+		)?.count,
+	).toBe(0)
 })
 
 test('plan-less users count uncapped sends but honor fallback receive limits', async () => {

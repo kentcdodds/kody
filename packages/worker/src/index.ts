@@ -507,6 +507,9 @@ const workerHandler = {
 		env: Env,
 		ctx: ExecutionContext,
 	) {
+		// Let storage/transient failures throw so Email Routing does not
+		// acknowledge the message (retryable). Permanent rejects use
+		// message.setReject inside handleInboundEmail.
 		await handleInboundEmail(message, env, ctx)
 	},
 	async queue(batch: MessageBatch<unknown>, env: Env, ctx: ExecutionContext) {

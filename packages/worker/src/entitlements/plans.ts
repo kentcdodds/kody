@@ -76,9 +76,10 @@ export type PlanLimits = {
 	maxStoredEmailMessages: number | null
 	/**
 	 * Maximum raw MIME bytes for a single stored email message. Hard
-	 * platform bound: raw MIME is stored inline in the email_messages row
-	 * next to the extracted bodies (worst case ~2x raw), and D1 caps rows
-	 * at 2 MB — so keep this well under ~1 MB regardless of plan.
+	 * platform bound: raw MIME lives in EMAIL_BLOBS, but extracted text/html
+	 * bodies are still stored on the email_messages row (worst case ~2x
+	 * raw), and D1 caps rows at 2 MB — so keep this well under ~1 MB
+	 * regardless of plan.
 	 */
 	maxEmailMessageBytes: number | null
 	/** Maximum stored secret entries across non-expired buckets. */

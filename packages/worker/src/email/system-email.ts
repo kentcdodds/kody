@@ -172,6 +172,30 @@ export async function consumeSystemEmailDailyReceive(input: {
 	return row ? Number(row.count) : null
 }
 
+/**
+ * Atomically refund one previously consumed system-inbox daily receive for
+ * the given local_part/UTC day (floors at zero). Scoped by `local_part` so a
+ * refund cannot touch another system inbox's counter. Pass the same `now`
+ * (day key) as the matching `consumeSystemEmailDailyReceive` call.
+ */
+export async function refundSystemEmailDailyReceive(input: {
+	db: D1Database
+	localPart: SystemEmailLocal
+	now?: Date
+}): Promise<void> {
+	const now = input.now ?? new Date()
+	await input.db
+		.prepare(
+			`UPDATE system_email_daily_counters
+			SET count = MAX(0, count - 1),
+				updated_at = ?
+			WHERE local_part = ?
+				AND day = ?`,
+		)
+		.bind(now.toISOString(), input.localPart, systemEmailDayKey(now))
+		.run()
+}
+
 export async function countStoredSystemEmailMessages(input: {
 	db: D1Database
 }) {

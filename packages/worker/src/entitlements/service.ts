@@ -767,6 +767,33 @@ export async function consumeDailyEntitlement(input: {
 	}
 }
 
+/**
+ * Atomically refund one previously consumed daily entitlement unit for the
+ * given user/resource/UTC day (floors at zero). Scoped by `user_id` so a
+ * refund can never touch another user's counter. Used when inbound receive
+ * quota was charged before a retryable storage failure — the same `now`
+ * (day key) as the matching `consumeDailyEntitlement` call must be passed.
+ */
+export async function refundDailyEntitlement(input: {
+	db: D1Database
+	userId: string
+	resource: EntitlementResource
+	now?: Date
+}): Promise<void> {
+	const now = input.now ?? new Date()
+	await input.db
+		.prepare(
+			`UPDATE entitlement_daily_counters
+			SET count = MAX(0, count - 1),
+				updated_at = ?
+			WHERE user_id = ?
+				AND resource = ?
+				AND day = ?`,
+		)
+		.bind(now.toISOString(), input.userId, input.resource, utcDayKey(now))
+		.run()
+}
+
 export const defaultWorkflowConcurrencyBackstop = 100
 
 /**

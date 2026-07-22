@@ -193,37 +193,60 @@ export function emailAttachmentBlobKey(
 }
 
 /**
- * Best-effort raw-MIME offload to R2. Returns the stored object key, or
- * null when the payload must stay inline in D1 because the put failed
- * (for example a transient R2 outage). Never throws: falling back to
- * the legacy inline raw_mime column must not lose mail.
+ * Pre-commit inbound storage failure. Thrown only before the message and
+ * attachment rows are durably committed. The inbound handler refunds daily
+ * receive quota and rethrows so Cloudflare Email Routing retries delivery.
+ * Post-commit bookkeeping failures must not use this type.
  */
-async function offloadRawMimeToBlobs(input: {
+export class RetryableInboundStorageError extends Error {
+	override name = 'RetryableInboundStorageError'
+	constructor(message: string, cause?: unknown) {
+		super(message, { cause })
+	}
+}
+
+/**
+ * Retryable EMAIL_BLOBS put failure for inbound raw MIME (pre-commit).
+ * Callers must not fall back to inline D1 `raw_mime`; the inbound email
+ * handler lets this propagate so Cloudflare Email Routing treats delivery
+ * as a temporary failure (throw) rather than a permanent `setReject`.
+ */
+export class EmailRawMimeStorageError extends RetryableInboundStorageError {
+	override name = 'EmailRawMimeStorageError'
+	constructor(messageId: string, cause?: unknown) {
+		super(
+			`Failed to store email raw MIME in EMAIL_BLOBS (message ${messageId}); delivery should be retried.`,
+			cause,
+		)
+	}
+}
+
+/**
+ * Persist inbound raw MIME to EMAIL_BLOBS before the D1 insert. Returns the
+ * object key on success. Throws EmailRawMimeStorageError on put failure —
+ * there is no inline D1 fallback (Stage 4a; column drop follows once
+ * residuals are swept).
+ */
+async function putRawMimeToBlobs(input: {
 	blobs: R2Bucket
 	userId: string
 	messageId: string
 	rawMime: string
-}): Promise<string | null> {
+}): Promise<string> {
 	const key = emailRawMimeKey(input.userId, input.messageId)
 	try {
 		await input.blobs.put(key, input.rawMime)
 		return key
 	} catch (error) {
-		console.debug(
-			'email-raw-mime-inline-fallback',
-			'R2 put failed',
-			input.messageId,
-			error,
-		)
-		return null
+		throw new EmailRawMimeStorageError(input.messageId, error)
 	}
 }
 
 /**
- * Resolve a message's raw MIME regardless of where it is stored: legacy
- * rows keep the payload inline in raw_mime, offloaded rows store an R2
- * key in raw_mime_key. Returns null when the message has no raw MIME or
- * the blob is unreachable.
+ * Resolve a message's raw MIME regardless of where it is stored. Dual-read
+ * for the Stage 4a rollout: residual legacy rows may still have inline
+ * raw_mime; new inbound rows store only an R2 key in raw_mime_key.
+ * Returns null when the message has no raw MIME or the blob is unreachable.
  */
 export async function loadRawMime(input: {
 	blobs: R2Bucket
@@ -768,9 +791,11 @@ export async function touchEmailThread(input: {
 export async function insertEmailMessage(input: {
 	db: D1Database
 	/**
-	 * EMAIL_BLOBS bucket. Raw MIME is offloaded to R2 and only
-	 * raw_mime_key is persisted; if the put fails the payload stays
-	 * inline in the legacy raw_mime column rather than losing mail.
+	 * EMAIL_BLOBS bucket. Inbound raw MIME must be written here before the
+	 * D1 insert; put failure throws EmailRawMimeStorageError (no inline
+	 * raw_mime fallback). Outbound messages pass rawMime null and skip
+	 * the put. If D1 insert fails after a successful put, the blob is
+	 * best-effort deleted.
 	 */
 	blobs: R2Bucket
 	message: {
@@ -805,16 +830,16 @@ export async function insertEmailMessage(input: {
 }) {
 	const timestamp = nowIso()
 	const messageId = input.message.id ?? crypto.randomUUID()
-	let rawMime = input.message.rawMime ?? null
+	// New rows never write inline raw_mime (Stage 4a). Inbound MIME goes to
+	// R2 first; outbound leaves both columns null.
 	let rawMimeKey: string | null = null
-	if (rawMime != null) {
-		rawMimeKey = await offloadRawMimeToBlobs({
+	if (input.message.rawMime != null) {
+		rawMimeKey = await putRawMimeToBlobs({
 			blobs: input.blobs,
 			userId: input.message.userId,
 			messageId,
-			rawMime,
+			rawMime: input.message.rawMime,
 		})
-		if (rawMimeKey != null) rawMime = null
 	}
 	const row = {
 		id: messageId,
@@ -841,7 +866,7 @@ export async function insertEmailMessage(input: {
 		auth_results: input.message.authResults ?? null,
 		text_body: input.message.textBody ?? null,
 		html_body: input.message.htmlBody ?? null,
-		raw_mime: rawMime,
+		raw_mime: null,
 		raw_mime_key: rawMimeKey,
 		raw_size: input.message.rawSize ?? 0,
 		processing_status: input.message.processingStatus,
@@ -1271,7 +1296,17 @@ export async function insertEmailMessageWithAttachments(
 		attachments: Parameters<typeof insertEmailAttachments>[0]['attachments']
 	},
 ) {
-	const message = await insertEmailMessage(input)
+	let message
+	try {
+		message = await insertEmailMessage(input)
+	} catch (error) {
+		if (error instanceof RetryableInboundStorageError) throw error
+		throw new RetryableInboundStorageError(
+			'Failed to store inbound email message; delivery should be retried.',
+			error,
+		)
+	}
+	if (input.attachments.length === 0) return message
 	try {
 		await insertEmailAttachments({
 			db: input.db,
@@ -1279,13 +1314,51 @@ export async function insertEmailMessageWithAttachments(
 			attachments: input.attachments,
 		})
 		return message
-	} catch (error) {
-		await deleteEmailMessageById({
-			db: input.db,
-			blobs: input.blobs,
-			messageId: message.id,
-		}).catch(() => undefined)
-		throw error
+	} catch (attachmentError) {
+		let cleanupError: unknown
+		try {
+			await deleteEmailMessageById({
+				db: input.db,
+				blobs: input.blobs,
+				messageId: message.id,
+			})
+		} catch (error) {
+			cleanupError = error
+		}
+		let remaining: Awaited<ReturnType<typeof getEmailMessageById>>
+		try {
+			remaining = await getEmailMessageById({
+				db: input.db,
+				userId: message.userId,
+				messageId: message.id,
+			})
+		} catch (probeError) {
+			// Probe failed: commit state is ambiguous. Do not retry/refund —
+			// that risks duplicates if the row is still durable.
+			console.error(
+				'inbound-email-attachment-cleanup-probe-failed',
+				message.id,
+				attachmentError,
+				cleanupError,
+				probeError,
+			)
+			return message
+		}
+		if (remaining) {
+			// Message row is durable; retrying would duplicate mail. Acknowledge
+			// the commit and leave operators the cleanup/attachment failure logs.
+			console.error(
+				'inbound-email-attachment-cleanup-failed',
+				message.id,
+				attachmentError,
+				cleanupError,
+			)
+			return remaining
+		}
+		throw new RetryableInboundStorageError(
+			'Failed to store inbound email attachments; message cleaned up and delivery should be retried.',
+			attachmentError,
+		)
 	}
 }
 

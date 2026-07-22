@@ -6,7 +6,9 @@ import {
 	createEmailThread,
 	deleteEmailMessageById,
 	emailRawMimeKey,
+	EmailRawMimeStorageError,
 	getEmailMessageById,
+	insertEmailMessage,
 	insertEmailMessageWithAttachments,
 	getEmailAttachmentById,
 	listEmailInboxesForUser,
@@ -14,11 +16,16 @@ import {
 	listEmailMessages,
 	listEmailAttachmentsForMessage,
 	loadRawMime,
+	RetryableInboundStorageError,
 } from './repo.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
+	consoleError,
+	silenceExpectedConsoleErrors,
+} from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
@@ -735,10 +742,102 @@ test('inbound email offloads raw MIME to R2 and readers and deletes follow the b
 	expect(await env.EMAIL_BLOBS.get(stored.rawMimeKey!)).toBeNull()
 })
 
-test('raw MIME stays inline when the R2 put fails', async () => {
+async function readUserDailyReceiveCount(userId: string) {
+	const row = await env.APP_DB.prepare(
+		`SELECT count FROM entitlement_daily_counters
+			WHERE user_id = ? AND resource = 'email_receives_per_day' AND day = ?`,
+	)
+		.bind(userId, new Date().toISOString().slice(0, 10))
+		.first<{ count: number }>()
+	return Number(row?.count ?? 0)
+}
+
+function createFailingEmailBlobs() {
+	return new Proxy(env.EMAIL_BLOBS, {
+		get(target, property, receiver) {
+			if (property === 'put') {
+				return async () => {
+					throw new Error('simulated R2 outage')
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	})
+}
+
+function createPreCommitD1FailureDb() {
+	return new Proxy(env.APP_DB, {
+		get(target, property, receiver) {
+			if (property === 'prepare') {
+				return (query: string) => {
+					const statement = target.prepare(query)
+					if (!query.includes('INSERT INTO email_messages')) {
+						return statement
+					}
+					return {
+						bind: () => ({
+							run: async () => {
+								throw new Error('simulated D1 insert failure')
+							},
+						}),
+					}
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	}) as D1Database
+}
+
+function createPostCommitBookkeepingFailureDb() {
+	let messageCommitted = false
+	return new Proxy(env.APP_DB, {
+		get(target, property, receiver) {
+			if (property === 'prepare') {
+				return (query: string) => {
+					const statement = target.prepare(query)
+					if (query.includes('INSERT INTO email_messages')) {
+						return {
+							bind(...params: Array<unknown>) {
+								const bound = statement.bind(...params)
+								return {
+									run: async () => {
+										const result = await bound.run()
+										messageCommitted = true
+										return result
+									},
+								}
+							},
+						}
+					}
+					if (
+						messageCommitted &&
+						(query.includes('UPDATE email_threads') ||
+							query.includes('INSERT INTO email_delivery_events'))
+					) {
+						return {
+							bind: () => ({
+								run: async () => {
+									throw new Error('simulated post-commit bookkeeping failure')
+								},
+							}),
+						}
+					}
+					return statement
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	}) as D1Database
+}
+
+test('inbound pre-commit R2/D1 failures refund receive quota and rethrow; retry consumes one', async () => {
+	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
-	const username = `inline-${crypto.randomUUID().slice(0, 8)}`
-	const accountEmail = `inline-${crypto.randomUUID()}@example.com`
+	const username = `r2fail-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `r2fail-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(accountEmail)
 	const address = `${username}@${platformDomain}`
 	await seedVerifiedAccount({
@@ -750,47 +849,493 @@ test('raw MIME stays inline when the R2 put fails', async () => {
 	const raw = [
 		'From: Sender <sender@example.net>',
 		`To: ${address}`,
-		'Subject: Inline fallback mail',
-		'Message-ID: <inline-fallback@example.net>',
+		'Subject: R2 failure mail',
+		'Message-ID: <r2-failure@example.net>',
 		'',
-		'Inline body.',
+		'Should not persist.',
 	].join('\r\n')
-	const message = createForwardableEmailMessage({
+	const r2FailingEnv = {
+		...createInboundEnv(),
+		EMAIL_BLOBS: createFailingEmailBlobs(),
+	} as Parameters<typeof handleInboundEmail>[1]
+	const d1FailingEnv = {
+		...createInboundEnv(),
+		APP_DB: createPreCommitD1FailureDb(),
+	} as Parameters<typeof handleInboundEmail>[1]
+
+	for (const failingEnv of [r2FailingEnv, d1FailingEnv]) {
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			const message = createForwardableEmailMessage({
+				from: 'sender@example.net',
+				to: address,
+				raw,
+			})
+			await expect(
+				handleInboundEmail(message, failingEnv),
+			).rejects.toBeInstanceOf(RetryableInboundStorageError)
+			expect(message.rejectedReason).toBeNull()
+			expect(await readUserDailyReceiveCount(userId)).toBe(0)
+		}
+	}
+
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 10,
+		}),
+	).toEqual([])
+
+	const retryMessage = createForwardableEmailMessage({
 		from: 'sender@example.net',
 		to: address,
 		raw,
 	})
-	const failingBlobs = new Proxy(env.EMAIL_BLOBS, {
+	await handleInboundEmail(retryMessage, createInboundEnv())
+	expect(retryMessage.rejectedReason).toBeNull()
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 10,
+		}),
+	).toHaveLength(1)
+})
+
+test('inbound post-commit bookkeeping failure keeps one stored row without refund or retry throw', async () => {
+	silenceIncidentalRuntimeWarnings()
+	silenceExpectedConsoleErrors(['inbound-email-post-commit-bookkeeping-failed'])
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `postcommit-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `postcommit-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	const message = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Post-commit bookkeeping',
+			'Message-ID: <post-commit@example.net>',
+			'',
+			'Body',
+		].join('\r\n'),
+	})
+	const failingEnv = {
+		...createInboundEnv(),
+		APP_DB: createPostCommitBookkeepingFailureDb(),
+	} as Parameters<typeof handleInboundEmail>[1]
+
+	await handleInboundEmail(message, failingEnv)
+	expect(message.rejectedReason).toBeNull()
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 10,
+		}),
+	).toHaveLength(1)
+})
+
+test('inbound parse rejection still consumes daily receive quota', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `parse-quota-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `parse-quota-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+
+	const unreadableMessage = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: 'Subject: Unreadable\r\n\r\nBody',
+	})
+	Object.defineProperty(unreadableMessage, 'raw', {
+		value: new ReadableStream({
+			pull() {
+				throw new Error('raw stream read failed')
+			},
+		}),
+	})
+	await handleInboundEmail(unreadableMessage, createInboundEnv())
+	expect(unreadableMessage.rejectedReason).toMatch(/raw stream read failed/)
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+})
+
+test('inbound storage refund failure is logged and original storage error is rethrown', async () => {
+	silenceIncidentalRuntimeWarnings()
+	consoleError.mockImplementation(() => {})
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `refund-fail-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `refund-fail-${crypto.randomUUID()}@example.com`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	const address = `${username}@${platformDomain}`
+	const failingDb = new Proxy(env.APP_DB, {
 		get(target, property, receiver) {
-			if (property === 'put') {
-				return async () => {
-					throw new Error('simulated R2 outage')
+			if (property === 'prepare') {
+				return (query: string) => {
+					if (query.includes('UPDATE entitlement_daily_counters')) {
+						return {
+							bind: () => ({
+								run: async () => {
+									throw new Error('simulated refund failure')
+								},
+							}),
+						}
+					}
+					return target.prepare(query)
 				}
 			}
-			return Reflect.get(target, property, receiver)
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	}) as D1Database
+	const failingEnv = {
+		...createInboundEnv(),
+		APP_DB: failingDb,
+		EMAIL_BLOBS: createFailingEmailBlobs(),
+	} as Parameters<typeof handleInboundEmail>[1]
+	const message = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Refund failure',
+			'Message-ID: <refund-failure@example.net>',
+			'',
+			'Body',
+		].join('\r\n'),
+	})
+
+	await expect(handleInboundEmail(message, failingEnv)).rejects.toBeInstanceOf(
+		EmailRawMimeStorageError,
+	)
+	expect(consoleError).toHaveBeenCalledWith(
+		'email-receives-daily-refund-failed',
+		expect.anything(),
+	)
+})
+
+test('insertEmailMessage never writes inline raw_mime on successful R2 put', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `user-${crypto.randomUUID()}`
+	const messageId = crypto.randomUUID()
+	const rawMime = 'From: a@example.net\r\nTo: b@example.net\r\n\r\nbody'
+	const stored = await insertEmailMessage({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		message: {
+			id: messageId,
+			direction: 'inbound',
+			userId,
+			rawMime,
+			processingStatus: 'stored',
 		},
 	})
-	const envWithFailingBlobs = {
-		...createInboundEnv(),
-		EMAIL_BLOBS: failingBlobs,
-	} as Parameters<typeof handleInboundEmail>[1]
-	await handleInboundEmail(message, envWithFailingBlobs)
-	expect(message.rejectedReason).toBeNull()
-
-	const [stored] = await listEmailMessages({
-		db: env.APP_DB,
-		userId,
-		limit: 1,
+	expect(stored.rawMime).toBeNull()
+	expect(stored.rawMimeKey).toBe(emailRawMimeKey(userId, messageId))
+	const row = await env.APP_DB.prepare(
+		`SELECT raw_mime, raw_mime_key FROM email_messages WHERE id = ?`,
+	)
+		.bind(messageId)
+		.first<{ raw_mime: string | null; raw_mime_key: string | null }>()
+	expect(row).toEqual({
+		raw_mime: null,
+		raw_mime_key: emailRawMimeKey(userId, messageId),
 	})
-	expect(stored).toBeDefined()
-	if (!stored) throw new Error('Expected stored inbound message')
-
-	// Legacy inline behavior: the offload never throws and keeps mail.
-	expect(stored.rawMime).toBe(raw)
-	expect(stored.rawMimeKey).toBeNull()
-	// The read helper prefers the inline payload over the bucket.
 	expect(await loadRawMime({ blobs: env.EMAIL_BLOBS, message: stored })).toBe(
-		raw,
+		rawMime,
+	)
+})
+
+test('insertEmailMessage best-effort deletes R2 blob when D1 insert fails', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `user-${crypto.randomUUID()}`
+	const messageId = crypto.randomUUID()
+	const key = emailRawMimeKey(userId, messageId)
+	const deletes: Array<string> = []
+	const blobs = new Proxy(env.EMAIL_BLOBS, {
+		get(target, property, receiver) {
+			if (property === 'delete') {
+				return async (objectKey: string) => {
+					deletes.push(objectKey)
+					return target.delete(objectKey)
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	})
+	const failingDb = new Proxy(env.APP_DB, {
+		get(target, property, receiver) {
+			if (property === 'prepare') {
+				return (query: string) => {
+					const statement = target.prepare(query)
+					if (!query.includes('INSERT INTO email_messages')) {
+						return statement
+					}
+					return {
+						bind: () => ({
+							run: async () => {
+								throw new Error('simulated D1 insert failure')
+							},
+						}),
+					}
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	}) as D1Database
+
+	await expect(
+		insertEmailMessage({
+			db: failingDb,
+			blobs,
+			message: {
+				id: messageId,
+				direction: 'inbound',
+				userId,
+				rawMime: 'orphan-candidate',
+				processingStatus: 'stored',
+			},
+		}),
+	).rejects.toThrow('simulated D1 insert failure')
+
+	expect(deletes).toEqual([key])
+	expect(await env.EMAIL_BLOBS.get(key)).toBeNull()
+	expect(
+		await env.APP_DB.prepare(`SELECT id FROM email_messages WHERE id = ?`)
+			.bind(messageId)
+			.first(),
+	).toBeNull()
+})
+
+test('insertEmailMessageWithAttachments cleans message and blob when attachment insert fails', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `user-${crypto.randomUUID()}`
+	const messageId = crypto.randomUUID()
+	const key = emailRawMimeKey(userId, messageId)
+	// Fail only the first batch (attachment insert). Message cleanup also
+	// uses db.batch and must still run.
+	let attachmentBatchFailed = false
+	const failingDb = new Proxy(env.APP_DB, {
+		get(target, property, receiver) {
+			if (property === 'batch') {
+				return async (statements: Parameters<D1Database['batch']>[0]) => {
+					if (!attachmentBatchFailed) {
+						attachmentBatchFailed = true
+						throw new Error('simulated attachment insert failure')
+					}
+					return target.batch(statements)
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	}) as D1Database
+
+	await expect(
+		insertEmailMessageWithAttachments({
+			db: failingDb,
+			blobs: env.EMAIL_BLOBS,
+			message: {
+				id: messageId,
+				direction: 'inbound',
+				userId,
+				rawMime: 'attachment-cleanup-bytes',
+				processingStatus: 'stored',
+			},
+			attachments: [
+				{
+					filename: 'note.txt',
+					contentType: 'text/plain',
+					contentId: null,
+					disposition: 'attachment',
+					size: 4,
+					storageKind: 'raw-mime',
+					storageKey: null,
+				},
+			],
+		}),
+	).rejects.toBeInstanceOf(RetryableInboundStorageError)
+
+	expect(
+		await getEmailMessageById({
+			db: env.APP_DB,
+			userId,
+			messageId,
+		}),
+	).toBeNull()
+	expect(await env.EMAIL_BLOBS.get(key)).toBeNull()
+})
+
+test('attachment cleanup failure with remaining row is acknowledged without retryable throw', async () => {
+	silenceExpectedConsoleErrors(['inbound-email-attachment-cleanup-failed'])
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `user-${crypto.randomUUID()}`
+	const messageId = crypto.randomUUID()
+	const key = emailRawMimeKey(userId, messageId)
+	const failingDb = new Proxy(env.APP_DB, {
+		get(target, property, receiver) {
+			if (property === 'batch') {
+				return async () => {
+					throw new Error('simulated attachment and cleanup batch failure')
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	}) as D1Database
+
+	const stored = await insertEmailMessageWithAttachments({
+		db: failingDb,
+		blobs: env.EMAIL_BLOBS,
+		message: {
+			id: messageId,
+			direction: 'inbound',
+			userId,
+			rawMime: 'attachment-orphan-bytes',
+			processingStatus: 'stored',
+		},
+		attachments: [
+			{
+				filename: 'note.txt',
+				contentType: 'text/plain',
+				contentId: null,
+				disposition: 'attachment',
+				size: 4,
+				storageKind: 'raw-mime',
+				storageKey: null,
+			},
+		],
+	})
+
+	expect(stored.id).toBe(messageId)
+	expect(
+		await getEmailMessageById({
+			db: env.APP_DB,
+			userId,
+			messageId,
+		}),
+	).not.toBeNull()
+	expect(await env.EMAIL_BLOBS.get(key)).not.toBeNull()
+	expect(consoleError).toHaveBeenCalledWith(
+		'inbound-email-attachment-cleanup-failed',
+		messageId,
+		expect.anything(),
+		expect.anything(),
+	)
+})
+
+test('attachment cleanup probe failure acknowledges message without retry or quota refund', async () => {
+	silenceIncidentalRuntimeWarnings()
+	silenceExpectedConsoleErrors([
+		'inbound-email-attachment-cleanup-probe-failed',
+	])
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `probe-fail-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `probe-fail-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	const failingDb = new Proxy(env.APP_DB, {
+		get(target, property, receiver) {
+			if (property === 'batch') {
+				return async () => {
+					throw new Error('simulated attachment and cleanup batch failure')
+				}
+			}
+			if (property === 'prepare') {
+				return (query: string) => {
+					const statement = target.prepare(query)
+					// Residual probe after attachment cleanup (getEmailMessageById).
+					if (
+						query.includes('FROM email_messages') &&
+						query.includes('WHERE id = ?') &&
+						query.includes('AND user_id = ?') &&
+						query.includes('LIMIT 1')
+					) {
+						return {
+							bind: () => ({
+								first: async () => {
+									throw new Error('simulated residual probe failure')
+								},
+							}),
+						}
+					}
+					return statement
+				}
+			}
+			const value = Reflect.get(target, property, receiver)
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	}) as D1Database
+	const message = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Probe failure mail',
+			'Message-ID: <probe-failure@example.net>',
+			'Content-Type: multipart/mixed; boundary="probe-boundary"',
+			'',
+			'--probe-boundary',
+			'Content-Type: text/plain; charset="utf-8"',
+			'',
+			'Body',
+			'--probe-boundary',
+			'Content-Type: text/plain; name="note.txt"',
+			'Content-Disposition: attachment; filename="note.txt"',
+			'',
+			'Note',
+			'--probe-boundary--',
+		].join('\r\n'),
+	})
+	const failingEnv = {
+		...createInboundEnv(),
+		APP_DB: failingDb,
+	} as Parameters<typeof handleInboundEmail>[1]
+
+	await handleInboundEmail(message, failingEnv)
+	expect(message.rejectedReason).toBeNull()
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 10,
+		}),
+	).toHaveLength(1)
+	expect(consoleError).toHaveBeenCalledWith(
+		'inbound-email-attachment-cleanup-probe-failed',
+		expect.any(String),
+		expect.anything(),
+		expect.anything(),
+		expect.anything(),
 	)
 })
 
