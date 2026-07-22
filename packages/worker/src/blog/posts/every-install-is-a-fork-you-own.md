@@ -110,8 +110,8 @@ rest of the ladder feel real. The docs on
 and
 [packages generally](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md)
 cover the details, and the whole platform is
-[source available](https://github.com/kentcdodds/kody) if you want to go deeper
-than that.
+[open source](https://github.com/kentcdodds/kody) if you want to go deeper than
+that.
 
 Kody is invite-gated right now, so if you don't have an account yet,
 [join the waitlist on the signup page](https://heykody.dev/signup). And once

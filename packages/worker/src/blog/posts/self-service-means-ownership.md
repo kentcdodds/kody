@@ -108,9 +108,8 @@ the time.
 
 Kody is invite-gated right now, so if you're not in yet,
 [join the waitlist on the signup page](https://heykody.dev/signup). The whole
-thing is [source available](https://github.com/kentcdodds/kody) if you want to
-verify any of this yourself, which, given the subject of this post, seems
-fitting.
+thing is [open source](https://github.com/kentcdodds/kody) if you want to verify
+any of this yourself, which, given the subject of this post, seems fitting.
 
 A few minutes of setup, and the door into your own data has your name on it.
 That's the feature.
