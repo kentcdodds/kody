@@ -21,6 +21,8 @@
 		"./src/app/oauth-login-errors.ts",
 		"./src/app/permissions.ts",
 		"./src/app/routes.ts",
+		"./src/app/route-pattern.ts",
+		"./src/app/oauth-paths.ts",
 		"./src/app/frame-constants.ts",
 		"./src/app/community-frame-constants.ts",
 		"./src/app/profile-frame-constants.ts",

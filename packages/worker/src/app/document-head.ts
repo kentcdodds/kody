@@ -1,5 +1,8 @@
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#app/loader-data.ts'
+import { oauthPaths } from '#app/oauth-paths.ts'
+import { routePattern } from '#app/route-pattern.ts'
+import { routes } from '#app/routes.ts'
 import { publicOgPages, type PublicOgPageId } from '#worker/og/pages.ts'
 
 export const DEFAULT_DOCUMENT_TITLE = 'kody'
@@ -94,40 +97,47 @@ function publicPageHead(
  * navigations keep `<head>` in sync without per-route wiring.
  */
 const routeDocumentHeads = {
-	'/': publicPageHead('home', DEFAULT_DOCUMENT_TITLE),
-	'/account': titleOnly('Account'),
-	'/account/billing': titleOnly('Billing'),
-	'/account/integrations': titleOnly('Integrations'),
-	'/account/mcp-servers': titleOnly('MCP servers'),
-	'/account/package-invocation-tokens': titleOnly('Package invocation tokens'),
-	'/account/package-invocation-tokens/new': titleOnly(
+	[routePattern(routes.home)]: publicPageHead('home', DEFAULT_DOCUMENT_TITLE),
+	[routePattern(routes.account)]: titleOnly('Account'),
+	[routePattern(routes.accountBilling)]: titleOnly('Billing'),
+	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
+	[routePattern(routes.accountMcpServers)]: titleOnly('MCP servers'),
+	[routePattern(routes.accountPackageInvocationTokens)]: titleOnly(
 		'Package invocation tokens',
 	),
-	'/account/package-invocation-tokens/:tokenId': titleOnly(
+	[routePattern(routes.accountPackageInvocationTokenNew)]: titleOnly(
 		'Package invocation tokens',
 	),
-	'/account/packages': titleOnly('Packages'),
-	'/account/packages/:packageId': titleOnly('Packages'),
-	'/account/stars': titleOnly('Starred packages'),
-	'/account/passkeys': titleOnly('Passkeys'),
-	'/account/remote-connectors': titleOnly('Remote connectors'),
-	'/account/secrets': titleOnly('Secrets'),
-	'/account/secrets/new': titleOnly('Secrets'),
-	'/account/secrets/approve': titleOnly('Secrets'),
-	'/account/secrets/user/:secretName': titleOnly('Secrets'),
-	'/account/secrets/package/:packageId/:secretName': titleOnly('Secrets'),
-	'/account/secrets/session/:sessionId/:secretName': titleOnly('Secrets'),
-	'/account/two-factor': titleOnly('Two-factor authentication'),
-	'/admin': titleOnly('Admin users'),
-	'/admin/users': titleOnly('Admin users'),
-	'/admin/invites': titleOnly('Admin invites'),
-	'/admin/feature-flags': titleOnly('Admin feature flags'),
-	'/admin/roles': titleOnly('Admin roles'),
-	'/admin/community-reports': titleOnly('Community reports'),
-	'/admin/insights': titleOnly('Admin insights'),
-	'/admin/platform-feedback': titleOnly('Admin platform feedback'),
-	'/admin/system-email': titleOnly('Admin system email'),
-	'/blog': publicPageHead('blog', 'Blog', {
+	[routePattern(routes.accountPackageInvocationTokenDetail)]: titleOnly(
+		'Package invocation tokens',
+	),
+	[routePattern(routes.accountPackages)]: titleOnly('Packages'),
+	[routePattern(routes.accountPackageDetail)]: titleOnly('Packages'),
+	[routePattern(routes.accountStars)]: titleOnly('Starred packages'),
+	[routePattern(routes.accountPasskeys)]: titleOnly('Passkeys'),
+	[routePattern(routes.accountRemoteConnectors)]:
+		titleOnly('Remote connectors'),
+	[routePattern(routes.accountSecrets)]: titleOnly('Secrets'),
+	[routePattern(routes.accountSecretNew)]: titleOnly('Secrets'),
+	[routePattern(routes.accountSecretsApprove)]: titleOnly('Secrets'),
+	[routePattern(routes.accountSecretUserDetail)]: titleOnly('Secrets'),
+	[routePattern(routes.accountSecretPackageDetail)]: titleOnly('Secrets'),
+	[routePattern(routes.accountSecretSessionDetail)]: titleOnly('Secrets'),
+	[routePattern(routes.accountTwoFactor)]: titleOnly(
+		'Two-factor authentication',
+	),
+	[routePattern(routes.admin)]: titleOnly('Admin users'),
+	[routePattern(routes.adminUsers)]: titleOnly('Admin users'),
+	[routePattern(routes.adminInvites)]: titleOnly('Admin invites'),
+	[routePattern(routes.adminFeatureFlags)]: titleOnly('Admin feature flags'),
+	[routePattern(routes.adminRoles)]: titleOnly('Admin roles'),
+	[routePattern(routes.adminCommunityReports)]: titleOnly('Community reports'),
+	[routePattern(routes.adminInsights)]: titleOnly('Admin insights'),
+	[routePattern(routes.adminPlatformFeedback)]: titleOnly(
+		'Admin platform feedback',
+	),
+	[routePattern(routes.adminSystemEmail)]: titleOnly('Admin system email'),
+	[routePattern(routes.blog)]: publicPageHead('blog', 'Blog', {
 		links: [
 			{
 				rel: 'alternate',
@@ -137,7 +147,7 @@ const routeDocumentHeads = {
 			},
 		],
 	}),
-	'/blog/:slug': ({ loaderData, pathname }) => {
+	[routePattern(routes.blogPost)]: ({ loaderData, pathname }) => {
 		const post = loaderData?.blogPost
 		if (!post?.ok) {
 			return titleOnly('Blog')
@@ -153,8 +163,11 @@ const routeDocumentHeads = {
 			},
 		}
 	},
-	'/community': publicPageHead('community', 'Community packages'),
-	'/community/:listingId': ({ loaderData, pathname }) => {
+	[routePattern(routes.community)]: publicPageHead(
+		'community',
+		'Community packages',
+	),
+	[routePattern(routes.communityDetail)]: ({ loaderData, pathname }) => {
 		const shell = loaderData?.communityDetailShell
 		if (!shell?.ok) {
 			return titleOnly('Community packages')
@@ -170,7 +183,7 @@ const routeDocumentHeads = {
 			},
 		}
 	},
-	'/@:username': ({ loaderData, params, pathname }) => {
+	[routePattern(routes.profile)]: ({ loaderData, params, pathname }) => {
 		const shell = loaderData?.profileShell
 		if (shell && !shell.ok) {
 			return titleOnly('Profile unavailable')
@@ -200,25 +213,34 @@ const routeDocumentHeads = {
 			},
 		}
 	},
-	'/timeline': titleOnly('Timeline'),
-	'/login': publicPageHead('login', DEFAULT_DOCUMENT_TITLE),
-	'/signup': publicPageHead('signup', DEFAULT_DOCUMENT_TITLE),
-	'/onboarding': publicPageHead('onboarding', 'Get started'),
-	'/pending-verification': titleOnly('Verify your email'),
-	'/privacy': publicPageHead('privacy', 'Privacy'),
-	'/reset-password': publicPageHead('reset-password', 'Reset password'),
-	'/verify': titleOnly('Two-factor authentication'),
-	'/verify-email': ({ loaderData }) => {
+	[routePattern(routes.timeline)]: titleOnly('Timeline'),
+	[routePattern(routes.login)]: publicPageHead('login', DEFAULT_DOCUMENT_TITLE),
+	[routePattern(routes.signup)]: publicPageHead(
+		'signup',
+		DEFAULT_DOCUMENT_TITLE,
+	),
+	[routePattern(routes.onboarding)]: publicPageHead(
+		'onboarding',
+		'Get started',
+	),
+	[routePattern(routes.pendingVerification)]: titleOnly('Verify your email'),
+	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
+	[routePattern(routes.resetPassword)]: publicPageHead(
+		'reset-password',
+		'Reset password',
+	),
+	[routePattern(routes.verify)]: titleOnly('Two-factor authentication'),
+	[routePattern(routes.verifyEmail)]: ({ loaderData }) => {
 		const verification = loaderData?.emailVerification
 		return titleOnly(verification?.ok ? 'Email verified' : 'Verify email')
 	},
-	'/verify-email-change': ({ loaderData }) => {
+	[routePattern(routes.verifyEmailChange)]: ({ loaderData }) => {
 		const verification = loaderData?.emailVerification
 		return titleOnly(verification?.ok ? 'Email changed' : 'Verify email change')
 	},
-	'/connect/oauth': titleOnly('Connect OAuth'),
-	'/oauth/authorize': titleOnly('Authorize access'),
-	'/oauth/callback': titleOnly('OAuth callback'),
+	[routePattern(routes.connectOauth)]: titleOnly('Connect OAuth'),
+	[oauthPaths.authorize]: titleOnly('Authorize access'),
+	[oauthPaths.callback]: titleOnly('OAuth callback'),
 } as const satisfies Record<string, DocumentHeadResolver>
 
 const documentHeadMatcher = (() => {

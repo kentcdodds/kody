@@ -24,16 +24,9 @@ import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 import { getUsernameFormatValidationError } from '#app/username.ts'
 import { getPkceValidationError } from '#worker/oauth-pkce.ts'
+import { oauthPaths } from '#app/oauth-paths.ts'
 
-export const oauthPaths = {
-	authorize: '/oauth/authorize',
-	authorizeInfo: '/oauth/authorize-info',
-	token: '/oauth/token',
-	register: '/oauth/register',
-	callback: '/oauth/callback',
-	apiPrefix: '/api/',
-	discovery: '/.well-known/oauth-authorization-server',
-}
+export { oauthPaths }
 
 export const oauthScopes: Array<string> = ['profile', 'email']
 const invalidOAuthClientRegistrationMessage =
