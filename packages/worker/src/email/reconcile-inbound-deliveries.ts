@@ -33,14 +33,37 @@ export async function sweepStaleInboundDeliveries(input: {
 					AND provider = 'cloudflare-email-routing'
 					AND event_type = 'receive_started'
 					AND created_at < ?
+					AND (
+						json_extract(detail_json, '$.reconcileAfter') IS NULL
+						OR json_extract(detail_json, '$.reconcileAfter') <= ?
+					)
+					AND (
+						json_extract(detail_json, '$.state') != 'orphan-cleaned'
+						OR json_extract(detail_json, '$.cleanupRetryAt') <= ?
+					)
 				ORDER BY user_id ASC
 				LIMIT ?`,
 			)
-			.bind(afterUserId, cutoff, reconciliationUserBatchSize)
+			.bind(
+				afterUserId,
+				cutoff,
+				now.toISOString(),
+				now.toISOString(),
+				reconciliationUserBatchSize,
+			)
 			.all<{ user_id: string }>()
 		const userIds = (rows.results ?? []).map((row) => row.user_id)
 		if (userIds.length === 0) break
 		for (const userId of userIds) {
+			if (Date.now() - startedAt >= reconciliationTimeBudgetMs) {
+				return {
+					usersProcessed,
+					recovered,
+					cleaned,
+					errors,
+					budgetExhausted: true,
+				}
+			}
 			try {
 				const result = await reconcileStaleInboundDeliveries({
 					db: input.db,

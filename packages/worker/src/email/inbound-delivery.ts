@@ -15,9 +15,12 @@ import { systemEmailDayKey, type SystemEmailLocal } from './system-email.ts'
 import { type EmailDeliveryEventType } from './types.ts'
 
 const inboundProvider = 'cloudflare-email-routing'
+const inboundDedupeProvider = 'cloudflare-email-routing-dedupe'
 export const staleInboundDeliveryAgeMs = 48 * 60 * 60 * 1000
 const staleInboundDeliveryBatchSize = 20
 const inboundStorageLeaseMs = 5 * 60 * 1000
+const inboundReconciliationRetryMs = 15 * 60 * 1000
+const inboundOrphanVerificationMs = 60 * 60 * 1000
 export const inboundDeliveryDedupeWindowMs = 48 * 60 * 60 * 1000
 export const inboundDeliveryCompatibilityWindowMs = 48 * 60 * 60 * 1000
 
@@ -130,6 +133,11 @@ function parseInboundDelivery(
 		) {
 			return null
 		}
+		if (
+			detail.rawMimeKey !== emailRawMimeKey(detail.userId, detail.messageId)
+		) {
+			return null
+		}
 		const state =
 			detail.state === 'storing' ||
 			detail.state === 'cleaning' ||
@@ -193,31 +201,55 @@ export async function getInboundDelivery(input: {
 	return parseInboundDelivery(row)
 }
 
-export async function getActiveInboundDelivery(input: {
+export async function claimInboundDeliveryWindow(input: {
 	db: D1Database
-	userId: string
-	fingerprint: string
+	delivery: InboundDelivery
 	now: Date
 }) {
+	const pointerId = `email-inbound-dedupe:${input.delivery.fingerprint}`
 	const row = await input.db
 		.prepare(
-			`SELECT event_type, detail_json
-			FROM email_delivery_events
-			WHERE user_id = ?
-				AND provider = ?
-				AND json_extract(detail_json, '$.fingerprint') = ?
-				AND json_extract(detail_json, '$.dedupeExpiresAt') > ?
-			ORDER BY created_at DESC, id DESC
-			LIMIT 1`,
+			`INSERT INTO email_delivery_events (
+				id, message_id, user_id, inbox_id, event_type, provider,
+				provider_event_id, detail_json, created_at
+			) VALUES (?, NULL, ?, ?, 'receive_started', ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				inbox_id = excluded.inbox_id,
+				detail_json = excluded.detail_json,
+				created_at = excluded.created_at
+			WHERE email_delivery_events.user_id = excluded.user_id
+				AND json_extract(
+					email_delivery_events.detail_json,
+					'$.dedupeExpiresAt'
+				) <= ?
+			RETURNING event_type, detail_json`,
 		)
 		.bind(
-			input.userId,
-			inboundProvider,
-			input.fingerprint,
+			pointerId,
+			input.delivery.userId,
+			input.delivery.inboxId,
+			inboundDedupeProvider,
+			pointerId,
+			JSON.stringify(input.delivery),
+			input.now.toISOString(),
 			input.now.toISOString(),
 		)
 		.first<InboundDeliveryEventRow>()
-	return parseInboundDelivery(row)
+	if (row) return parseInboundDelivery(row) ?? input.delivery
+	const existing = await input.db
+		.prepare(
+			`SELECT event_type, detail_json
+			FROM email_delivery_events
+			WHERE id = ? AND user_id = ? AND provider = ?
+			LIMIT 1`,
+		)
+		.bind(pointerId, input.delivery.userId, inboundDedupeProvider)
+		.first<InboundDeliveryEventRow>()
+	const claimed = parseInboundDelivery(existing)
+	if (!claimed) {
+		throw new Error('Failed to resolve the inbound delivery dedupe window.')
+	}
+	return claimed
 }
 
 export async function adoptLegacyInboundDelivery(input: {
@@ -566,15 +598,19 @@ export async function claimInboundDeliveryStorage(input: {
 		)
 		.run()
 	if (Number(result.meta.changes ?? 0) > 0) {
+		const claimed = await getInboundDelivery({
+			db: input.db,
+			userId: input.delivery.userId,
+			deliveryId: input.delivery.deliveryId,
+		})
+		if (!claimed?.storageLease) {
+			throw new InboundDeliveryLeaseLostError(
+				'Inbound delivery lease disappeared after it was claimed.',
+			)
+		}
 		return {
 			claimed: true as const,
-			delivery: {
-				...input.delivery,
-				state: 'storing' as const,
-				storageLease,
-				storageLeaseAt,
-				expectedAttachmentCount: input.expectedAttachmentCount,
-			},
+			delivery: claimed,
 		}
 	}
 	return {
@@ -661,7 +697,9 @@ export async function markInboundDeliveryReceived(input: {
 	return detail
 }
 
-function parsedAttachmentSize(content: string | ArrayBuffer) {
+function parsedAttachmentSize(
+	content: string | ArrayBuffer | Uint8Array<ArrayBufferLike>,
+) {
 	return typeof content === 'string'
 		? new TextEncoder().encode(content).byteLength
 		: content.byteLength
@@ -735,6 +773,27 @@ async function recoverCommittedInboundDelivery(input: {
 	}
 }
 
+async function deferInboundDeliveryReconciliation(input: {
+	db: D1Database
+	delivery: InboundDelivery
+	now: Date
+}) {
+	await input.db
+		.prepare(
+			`UPDATE email_delivery_events
+			SET detail_json = json_set(detail_json, '$.reconcileAfter', ?)
+			WHERE id = ? AND user_id = ? AND event_type = 'receive_started'`,
+		)
+		.bind(
+			new Date(
+				input.now.getTime() + inboundReconciliationRetryMs,
+			).toISOString(),
+			input.delivery.deliveryId,
+			input.delivery.userId,
+		)
+		.run()
+}
+
 export async function reconcileStaleInboundDeliveries(input: {
 	db: D1Database
 	blobs: R2Bucket
@@ -757,6 +816,10 @@ export async function reconcileStaleInboundDeliveries(input: {
 				AND event_type = 'receive_started'
 				AND created_at < ?
 				AND (
+					json_extract(detail_json, '$.reconcileAfter') IS NULL
+					OR json_extract(detail_json, '$.reconcileAfter') <= ?
+				)
+				AND (
 					json_extract(detail_json, '$.state') = 'pending'
 					OR (
 						json_extract(detail_json, '$.state') = 'storing'
@@ -766,6 +829,10 @@ export async function reconcileStaleInboundDeliveries(input: {
 						json_extract(detail_json, '$.state') = 'cleaning'
 						AND json_extract(detail_json, '$.cleanupLeaseAt') < ?
 					)
+					OR (
+						json_extract(detail_json, '$.state') = 'orphan-cleaned'
+						AND json_extract(detail_json, '$.cleanupRetryAt') <= ?
+					)
 				)
 			ORDER BY created_at ASC, id ASC
 			LIMIT ?`,
@@ -774,8 +841,10 @@ export async function reconcileStaleInboundDeliveries(input: {
 			input.userId,
 			inboundProvider,
 			cutoff,
+			now.toISOString(),
 			leaseExpiredBefore,
 			leaseExpiredBefore,
+			now.toISOString(),
 			staleInboundDeliveryBatchSize,
 		)
 		.all<InboundDeliveryEventRow>()
@@ -800,6 +869,12 @@ export async function reconcileStaleInboundDeliveries(input: {
 					})
 				) {
 					recovered += 1
+				} else {
+					await deferInboundDeliveryReconciliation({
+						db: input.db,
+						delivery,
+						now,
+					})
 				}
 			} catch (error) {
 				console.warn(
@@ -807,6 +882,11 @@ export async function reconcileStaleInboundDeliveries(input: {
 					delivery.deliveryId,
 					error,
 				)
+				await deferInboundDeliveryReconciliation({
+					db: input.db,
+					delivery,
+					now,
+				}).catch(() => undefined)
 			}
 			continue
 		}
@@ -832,6 +912,10 @@ export async function reconcileStaleInboundDeliveries(input: {
 							json_extract(detail_json, '$.state') = 'cleaning'
 							AND json_extract(detail_json, '$.cleanupLeaseAt') < ?
 						)
+						OR (
+							json_extract(detail_json, '$.state') = 'orphan-cleaned'
+							AND json_extract(detail_json, '$.cleanupRetryAt') <= ?
+						)
 					)
 					AND NOT EXISTS (
 						SELECT 1 FROM email_messages
@@ -845,6 +929,7 @@ export async function reconcileStaleInboundDeliveries(input: {
 				input.userId,
 				leaseExpiredBefore,
 				leaseExpiredBefore,
+				now.toISOString(),
 				delivery.messageId,
 				input.userId,
 			)
@@ -874,13 +959,28 @@ export async function reconcileStaleInboundDeliveries(input: {
 		await input.db
 			.prepare(
 				`UPDATE email_delivery_events
-				SET detail_json = json_set(detail_json, '$.state', 'orphan-cleaned')
+				SET detail_json = json_remove(
+					json_remove(
+						json_set(
+							detail_json,
+							'$.state', 'orphan-cleaned',
+							'$.cleanupRetryAt', ?
+						),
+						'$.cleanupLease'
+					),
+					'$.cleanupLeaseAt'
+				)
 				WHERE id = ?
 					AND user_id = ?
 					AND json_extract(detail_json, '$.state') = 'cleaning'
 					AND json_extract(detail_json, '$.cleanupLease') = ?`,
 			)
-			.bind(delivery.deliveryId, input.userId, cleanupLease)
+			.bind(
+				new Date(now.getTime() + inboundOrphanVerificationMs).toISOString(),
+				delivery.deliveryId,
+				input.userId,
+				cleanupLease,
+			)
 			.run()
 		cleaned += 1
 	}

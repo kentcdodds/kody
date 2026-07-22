@@ -25,10 +25,11 @@ import {
 import {
 	adoptLegacyInboundDelivery,
 	buildInboundDelivery,
+	claimInboundDeliveryWindow,
 	claimInboundDeliveryStorage,
 	chargeSystemInboundDeliveryOnce,
 	chargeUserInboundDeliveryOnce,
-	getActiveInboundDelivery,
+	getInboundDelivery,
 	markInboundDeliveryRejected,
 	reconcileStaleInboundDeliveries,
 	releaseInboundDeliveryStorage,
@@ -345,7 +346,7 @@ export async function handleInboundEmail(
 		rawReadError = error
 	}
 	const quotaNow = new Date()
-	const delivery = await buildInboundDelivery({
+	const candidateDelivery = await buildInboundDelivery({
 		userId,
 		inboxId: inbox.id,
 		recipient,
@@ -353,12 +354,16 @@ export async function handleInboundEmail(
 		quotaDay: userInboundQuotaDay(quotaNow),
 		now: quotaNow,
 	})
+	const delivery = await claimInboundDeliveryWindow({
+		db: env.APP_DB,
+		delivery: candidateDelivery,
+		now: quotaNow,
+	})
 	const existingDelivery =
-		(await getActiveInboundDelivery({
+		(await getInboundDelivery({
 			db: env.APP_DB,
 			userId,
-			fingerprint: delivery.fingerprint,
-			now: quotaNow,
+			deliveryId: delivery.deliveryId,
 		})) ??
 		(rawMime
 			? await adoptLegacyInboundDelivery({
@@ -581,7 +586,7 @@ async function handleSystemInboundEmail(input: {
 		rawReadError = error
 	}
 	const quotaNow = new Date()
-	const delivery = await buildInboundDelivery({
+	const candidateDelivery = await buildInboundDelivery({
 		userId: systemEmailOwnerId,
 		inboxId: inbox.id,
 		recipient: input.recipient,
@@ -589,12 +594,16 @@ async function handleSystemInboundEmail(input: {
 		quotaDay: systemInboundQuotaDay(quotaNow),
 		now: quotaNow,
 	})
+	const delivery = await claimInboundDeliveryWindow({
+		db: input.env.APP_DB,
+		delivery: candidateDelivery,
+		now: quotaNow,
+	})
 	const existingDelivery =
-		(await getActiveInboundDelivery({
+		(await getInboundDelivery({
 			db: input.env.APP_DB,
 			userId: systemEmailOwnerId,
-			fingerprint: delivery.fingerprint,
-			now: quotaNow,
+			deliveryId: delivery.deliveryId,
 		})) ??
 		(rawMime
 			? await adoptLegacyInboundDelivery({

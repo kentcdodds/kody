@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import { handleInboundEmail } from './inbound.ts'
 import {
 	buildInboundDelivery,
+	claimInboundDeliveryWindow,
 	claimInboundDeliveryStorage,
 	inboundDeliveryDedupeWindowMs,
 	InboundDeliveryLeaseLostError,
@@ -1018,6 +1019,44 @@ test('ambiguous quota-ledger batch response charges one delivery exactly once', 
 	).toHaveLength(1)
 })
 
+test('delivery-window claim serializes identical mail across a bucket boundary', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const boundary =
+		Math.ceil(
+			Date.parse('2026-07-20T12:00:00.000Z') / inboundDeliveryDedupeWindowMs,
+		) * inboundDeliveryDedupeWindowMs
+	const input = {
+		userId: `user-${crypto.randomUUID()}`,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'boundary@example.com',
+		rawMime: 'identical boundary bytes',
+		quotaDay: '2026-07-20',
+	}
+	const before = await buildInboundDelivery({
+		...input,
+		now: new Date(boundary - 1),
+	})
+	const after = await buildInboundDelivery({
+		...input,
+		now: new Date(boundary + 1),
+	})
+	expect(before.deliveryId).not.toBe(after.deliveryId)
+
+	const [first, second] = await Promise.all([
+		claimInboundDeliveryWindow({
+			db: env.APP_DB,
+			delivery: before,
+			now: new Date(boundary - 1),
+		}),
+		claimInboundDeliveryWindow({
+			db: env.APP_DB,
+			delivery: after,
+			now: new Date(boundary + 1),
+		}),
+	])
+	expect(first.deliveryId).toBe(second.deliveryId)
+})
+
 test('byte-identical mail dedupes only inside the explicit delivery window', async () => {
 	silenceIncidentalRuntimeWarnings()
 	vi.useFakeTimers({ toFake: ['Date'] })
@@ -1586,6 +1625,48 @@ test('lease takeover fences stale finalization and active storage from cleanup',
 	})
 })
 
+test('reconciliation rejects a ledger key outside its user MIME namespace', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const userId = `user-a-${crypto.randomUUID()}`
+	const otherUserId = `user-b-${crypto.randomUUID()}`
+	const now = new Date('2026-07-22T00:00:00.000Z')
+	const delivery = await buildInboundDelivery({
+		userId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'isolation@example.com',
+		rawMime: 'isolation bytes',
+		quotaDay: '2026-07-19',
+		now: new Date('2026-07-19T00:00:00.000Z'),
+	})
+	const otherKey = emailRawMimeKey(otherUserId, delivery.messageId)
+	await env.EMAIL_BLOBS.put(otherKey, 'other user MIME')
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, inbox_id, event_type, provider, provider_event_id,
+			detail_json, created_at
+		) VALUES (?, ?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+	)
+		.bind(
+			delivery.deliveryId,
+			userId,
+			delivery.inboxId,
+			delivery.deliveryId,
+			JSON.stringify({ ...delivery, rawMimeKey: otherKey }),
+			'2026-07-19T00:00:00.000Z',
+		)
+		.run()
+
+	expect(
+		await reconcileStaleInboundDeliveries({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			userId,
+			now,
+		}),
+	).toEqual({ recovered: 0, cleaned: 0 })
+	expect(await env.EMAIL_BLOBS.get(otherKey)).not.toBeNull()
+})
+
 test('stale inbound ledger durably retries orphan blob cleanup after R2 delete failure', async () => {
 	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
@@ -1656,6 +1737,19 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 		.bind(delivery.deliveryId, userId)
 		.first<{ state: string }>()
 	expect(row).toEqual({ state: 'orphan-cleaned' })
+	// A stale worker may resume after the first delete and recreate the old
+	// generation's object. The durable tombstone keeps scheduled verification
+	// active, so the same orphan key is deleted again without future mail.
+	await env.EMAIL_BLOBS.put(delivery.rawMimeKey, 'late stale-worker write')
+	expect(
+		await reconcileStaleInboundDeliveries({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			userId,
+			now: new Date('2026-07-22T01:00:01.000Z'),
+		}),
+	).toEqual({ recovered: 0, cleaned: 1 })
+	expect(await env.EMAIL_BLOBS.get(delivery.rawMimeKey)).toBeNull()
 
 	const protectedDelivery = await buildInboundDelivery({
 		userId,
@@ -1697,7 +1791,7 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 			userId,
 			now: new Date('2026-07-22T00:00:00.000Z'),
 		}),
-	).toEqual({ recovered: 0, cleaned: 0 })
+	).toEqual({ recovered: 1, cleaned: 0 })
 	expect(await env.EMAIL_BLOBS.get(protectedDelivery.rawMimeKey)).not.toBeNull()
 })
 
@@ -1815,6 +1909,13 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 			messageId: partial.messageId,
 		}),
 	).toHaveLength(1)
+	expect(
+		await sweepStaleInboundDeliveries({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			now: sweepNow,
+		}),
+	).toMatchObject({ usersProcessed: 0, recovered: 0, cleaned: 0 })
 })
 
 test('insertEmailMessageWithAttachments cleans message and blob when attachment insert fails', async () => {
