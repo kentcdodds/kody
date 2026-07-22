@@ -14,6 +14,7 @@ import {
 	type SignedEvidenceEnvelope,
 	assessCanonicalReadiness,
 	canonicalEvidencePayload,
+	parseSignedEvidenceEnvelope,
 } from './canonical-readiness.ts'
 import {
 	type TrustedPublicKeyRegistry,
@@ -36,11 +37,11 @@ type AppKind = (typeof appKinds)[number]
 const performedAt = '2026-07-22T10:00:00.000Z'
 const now = new Date('2026-07-22T12:00:00.000Z')
 const sourceIdentity = {
-	accountId: 'production-account',
+	accountId: '0123456789abcdef0123456789abcdef',
 	resourceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 }
 const destinationIdentity = {
-	accountId: 'recovery-account',
+	accountId: 'fedcba9876543210fedcba9876543210',
 	resourceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
 }
 
@@ -390,6 +391,91 @@ test('signed D1 restore evidence binds an isolated destination UUID and account'
 			...destinationIdentity,
 			resourceId: sourceIdentity.resourceId.toUpperCase(),
 		})
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+})
+
+test('signed APP_DB evidence rejects non-canonical Cloudflare account IDs', async () => {
+	const directory = await mkdtemp(
+		path.join(os.tmpdir(), 'readiness-account-identities-'),
+	)
+	try {
+		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+		const fixture = await createFixture(directory, privateKey)
+		const registry = registryFor(publicKey)
+		expect(
+			await isD1Ready(fixture.evidence, fixture.evidencePath, registry),
+		).toBe(true)
+
+		async function expectAccountIdNotReady(
+			identity: 'source' | 'destination',
+			accountId: string,
+		): Promise<void> {
+			const evidence = structuredClone(fixture.evidence)
+			const record = evidence[0]
+			if (!record || !Array.isArray(record.artifacts)) {
+				throw new Error('fixture is malformed')
+			}
+			let affectedEnvelopeCount = 0
+			for (const envelope of fixture.envelopes) {
+				const content = structuredClone(envelope.content)
+				let affected = false
+				if (identity === 'source') {
+					content.sourceIdentity.accountId = accountId
+					if (content.kind === 'd1-size-ceiling-check') {
+						content.details = {
+							...(content.details as EvidenceDetailsByKind['d1-size-ceiling-check']),
+							sourceAccountId: accountId,
+						}
+					}
+					affected = true
+				} else if (content.destinationIdentity !== null) {
+					content.destinationIdentity.accountId = accountId
+					affected = true
+				}
+				const signed = signEnvelope(content, privateKey)
+				expect(parseSignedEvidenceEnvelope(signed) !== undefined).toBe(
+					!affected,
+				)
+				const bytes = Buffer.from(JSON.stringify(signed))
+				await writeFile(path.join(directory, content.uri), bytes)
+				const artifact = record.artifacts.find(
+					(candidate) =>
+						(candidate as Record<string, unknown>).kind === content.kind,
+				) as Record<string, unknown> | undefined
+				if (!artifact) throw new Error(`fixture lacks ${content.kind} artifact`)
+				artifact.sha256 = sha256(bytes)
+				artifact.sourceIdentity = content.sourceIdentity
+				artifact.destinationIdentity = content.destinationIdentity
+				if (affected) affectedEnvelopeCount += 1
+			}
+			const verified = await verifyLocalArtifactFiles(
+				evidence,
+				fixture.evidencePath,
+				registry,
+			)
+			expect(verified.size).toBe(
+				fixture.envelopes.length - affectedEnvelopeCount,
+			)
+			expect(
+				assessCanonicalReadiness(evidence, now, verified).levels['d1-only'],
+			).toMatchObject({ ready: false })
+		}
+
+		const invalidAccountIds = [
+			` ${sourceIdentity.accountId}`,
+			`${sourceIdentity.accountId} `,
+			`${sourceIdentity.accountId.slice(0, 16)} ${sourceIdentity.accountId.slice(16)}`,
+			sourceIdentity.accountId.toUpperCase(),
+			sourceIdentity.accountId.slice(1),
+			`${sourceIdentity.accountId.slice(0, -1)}g`,
+			`${sourceIdentity.accountId.slice(0, -1)}\u0430`,
+		]
+		for (const accountId of invalidAccountIds) {
+			await expectAccountIdNotReady('source', accountId)
+			await expectAccountIdNotReady('destination', accountId)
+		}
 	} finally {
 		await rm(directory, { recursive: true, force: true })
 	}

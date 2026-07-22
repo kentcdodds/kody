@@ -95,6 +95,13 @@ For `d1-restore-drill`, signed details must report the exact
 `destinationIdentity.resourceId` as `restoredDatabaseUuid`; destination account
 and resource identities must both differ from the source.
 
+Every APP_DB signed `sourceIdentity.accountId` and non-null
+`destinationIdentity.accountId` must be a canonical Cloudflare account ID:
+exactly 32 lowercase ASCII hexadecimal characters. Whitespace, uppercase,
+wrong-length, non-hex, and Unicode-lookalike values are rejected without
+normalization, even when the envelope is validly signed and its index metadata
+matches.
+
 Artifact URIs must be unique `file:` URLs or local filesystem paths (relative
 paths are resolved beside the evidence JSON). The CLI never fetches network
 URIs. It reads each referenced file, verifies its exact-byte SHA-256 and Ed25519

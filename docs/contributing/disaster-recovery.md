@@ -1035,6 +1035,14 @@ Both the destination account and destination resource must differ from their
 source counterparts; a same-account drill or a reused source database UUID fails
 readiness even with a valid signature.
 
+Every APP_DB envelope requires `sourceIdentity.accountId` and each non-null
+`destinationIdentity.accountId` to be a canonical Cloudflare account ID: exactly
+32 lowercase ASCII hexadecimal characters. The parser does not trim or lowercase
+these values. Leading, trailing, or internal whitespace, uppercase,
+wrong-length, non-hex, and Unicode-lookalike account IDs fail before signature
+verification can make the artifact eligible for readiness, even when all index
+metadata and exact-byte digests match the re-signed envelope.
+
 Every evidence kind has its own exact `details` keys, types, and passing
 constraints in `EvidenceDetailsByKind` and `parseDetails`. Extra or missing
 fields fail closed. `inventory`, `source-credential-check`, and

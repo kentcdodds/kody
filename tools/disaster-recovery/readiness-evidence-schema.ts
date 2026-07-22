@@ -8,6 +8,7 @@ import {
 } from './readiness-contracts.ts'
 import {
 	base64Pattern,
+	cloudflareAccountIdPattern,
 	exactKeys,
 	isIsoDate,
 	isNonemptyString,
@@ -299,6 +300,10 @@ export function parseSignedEvidenceEnvelope(
 	if (
 		!sourceIdentity ||
 		destinationIdentity === undefined ||
+		(input.content.resourceId === 'APP_DB' &&
+			(!cloudflareAccountIdPattern.test(sourceIdentity.accountId) ||
+				(destinationIdentity !== null &&
+					!cloudflareAccountIdPattern.test(destinationIdentity.accountId)))) ||
 		(destinationIsRequired(kind)
 			? destinationIdentity === null
 			: destinationIdentity !== null) ||

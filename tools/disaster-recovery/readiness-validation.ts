@@ -6,6 +6,7 @@ export const uuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 export const base64Pattern =
 	/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+export const cloudflareAccountIdPattern = /^[0-9a-f]{32}$/
 
 export function exactKeys(
 	value: Record<string, unknown>,
