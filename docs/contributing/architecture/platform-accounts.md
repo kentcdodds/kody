@@ -102,7 +102,7 @@ Typical path for official packages and onboarding starters:
 
 ## Intentionally not built
 
-This release seeds delegation mechanics only. It does **not** include:
+Delegation covers package-scope grants only. It does **not** include:
 
 - org/team roles or membership tiers beyond a single grant bit
 - invitations or self-service grant requests

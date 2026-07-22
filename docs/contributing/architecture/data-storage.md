@@ -318,9 +318,9 @@ non-retry) rather than risking a duplicate. Outbound messages pass
 `rawMime: null` and are unaffected. If D1 insert fails after a successful put,
 the blob is best-effort deleted.
 
-**Expand/contract Stage 4b1 (code-only):** the worker no longer reads or writes
-transitional `email_messages.raw_mime` / `raw_mime_offload_blocked`, no longer
-runs the offload maintenance endpoint or deploy sweep, and no longer uses the
+**Expand/contract Stage 4b1 (code-only):** the worker does not read or write
+transitional `email_messages.raw_mime` / `raw_mime_offload_blocked`, does not
+run the offload maintenance endpoint or deploy sweep, and does not use the
 delete-time claim protocol.
 
 **Expand/contract Stage 4b2 (migration-only):** after production verified

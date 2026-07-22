@@ -285,26 +285,22 @@ consequences:
   package that is not the running package and not statically imported by the
   bundle, use `packages.invokeChecked` so its own runtime does the reading.
 
-### Ambient `storage` in package code (removed)
+### Ambient `storage` in package code
 
-Package exports, subscription handlers, and retrievers no longer bind ambient
-`storage` — the legacy pattern where invocation runs bound it to the package's
-own bucket has been removed. In those contexts ambient `storage` is simply
-`undefined`; guard-less access to it fails with a structured
-`runtime_helper_unbound` error whose remedy points at `packageStorage()`, the
-one way package code reaches its bucket (same interface, same bucket, so the
-migration is a rename).
+Package exports, subscription handlers, and retrievers do not bind ambient
+`storage`. In those contexts ambient `storage` is `undefined`; guard-less access
+fails with a structured `runtime_helper_unbound` error whose remedy points at
+`packageStorage()`, the one way package code reaches its bucket (same interface,
+same bucket).
 
 Repo checks fail when package source imports ambient `storage` from
-`kody:runtime` (type-only imports and `.d.ts` files are exempt), so the pattern
-cannot be reintroduced at publish time.
+`kody:runtime` (type-only imports and `.d.ts` files are exempt).
 
-Ambient `storage` still exists where it is not the legacy pattern: ad hoc
-`execute` code with a `storageId` bound on the call (the prescribed use), and
-package job and service runtimes, which still bind job-/service-scoped scratch
-buckets distinct from the package bucket for already-published code. New package
-source cannot import ambient `storage` (checks fail), so new job and service
-code keeps run-scoped state in the package bucket under run-scoped keys instead.
+Ambient `storage` is available for ad hoc `execute` code with a `storageId`
+bound on the call, and for package job and service runtimes that bind
+job-/service-scoped scratch buckets distinct from the package bucket. Because
+repo checks reject ambient `storage` imports in package source, job and service
+code keeps run-scoped state in the package bucket under run-scoped keys.
 
 ## Package apps
 

@@ -125,16 +125,15 @@ The top-level saved identity is the package.
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
   goes through `packages.invokeChecked`. Package-invocation runs (exports,
-  subscription handlers, retrievers) bind no ambient `storage`: the legacy
-  package-bucket binding was removed after an operator audit of all published
-  artifacts confirmed no remaining usage, so guard-less ambient access in those
-  contexts fails with the structured `runtime_helper_unbound` hint pointing at
-  `packageStorage()`. Job and service runtimes still bind job-/service-scoped
-  scratch buckets. Repo checks fail (the `lint` result) when package sources
-  import ambient `storage` from `kody:runtime` with a value named import;
-  type-only imports and `.d.ts` files are exempt. The rule runs only where
-  checks run — new session check runs, publishes, and community fork installs —
-  so already-published artifacts are never re-validated retroactively.
+  subscription handlers, retrievers) bind no ambient `storage`, so guard-less
+  ambient access in those contexts fails with the structured
+  `runtime_helper_unbound` hint pointing at `packageStorage()`. Job and service
+  runtimes bind job-/service-scoped scratch buckets. Repo checks fail (the
+  `lint` result) when package sources import ambient `storage` from
+  `kody:runtime` with a value named import; type-only imports and `.d.ts` files
+  are exempt. The rule runs on new session check runs, publishes, and community
+  fork installs — already-published artifacts are not re-validated until one of
+  those events.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.
@@ -407,7 +406,7 @@ automatic context retrieval without promoting those records to durable memory.
   manifest and scope indexes that are rebuilt on package refresh
 - Retriever exports reach the package storage bucket through `packageStorage()`
   (writable, like every packageStorage surface); keeping retrievers read-mostly
-  is a convention — they no longer get a read-only ambient `storage` binding
+  is a convention
 
 Example:
 

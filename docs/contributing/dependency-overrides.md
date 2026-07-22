@@ -57,7 +57,7 @@ Advisories requiring the 2.x floor:
 
 The older 1.x floor (`>=1.19.13`) only addressed
 [GHSA-92pp-h63x-v22m](https://github.com/advisories/GHSA-92pp-h63x-v22m) and is
-now stale relative to the advisories above. The upper bound `<3.0.0` keeps the
+stale relative to the advisories above. The upper bound `<3.0.0` keeps the
 override within the forced 2.x major.
 
 ### `postcss` → `>=8.5.10 <9.0.0`

@@ -67,10 +67,9 @@ import { service, serviceContext, packageStorage } from 'kody:runtime'
 ```
 
 Persist service state through `packageStorage()` (key run-scoped entries by
-service name if needed). The legacy ambient `storage` binding in services is
-service-scoped, invisible to other package surfaces, and importing it now fails
-repo checks — see
-[Ambient `storage` in package code](../use/packages.md#ambient-storage-in-package-code-removed).
+service name if needed). Repo checks fail when service modules import ambient
+`storage` from `kody:runtime` — see
+[Ambient `storage` in package code](../use/packages.md#ambient-storage-in-package-code).
 
 The `service` helper exposes:
 
