@@ -99,7 +99,7 @@ export const searchCapability = defineDomainCapability(
 	{
 		name: 'search',
 		description:
-			'Search Kody capabilities, saved packages, values, integrations, and secret references using natural language or exact user-scoped package identity. Use this inside package and execute runtimes when reusable code needs the same discovery surface as the public MCP search tool.',
+			'Search Kody capabilities, saved packages, values, integrations, and secret references using natural language or exact user-scoped package identity. Pass "domain" to rank only one capability domain. Use this inside package and execute runtimes when reusable code needs the same discovery surface as the public MCP search tool.',
 		keywords: [
 			'search',
 			'discover',
@@ -118,6 +118,13 @@ export const searchCapability = defineDomainCapability(
 				.min(1)
 				.describe(
 					'Natural language description, or an exact saved-package UUID, kody id, current-origin account package URL, or owner-matching hosted package URL.',
+				),
+			domain: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'Optional capability domain id (for example "email" or "remote:home") to rank only that domain\'s capabilities.',
 				),
 			limit: z
 				.number()
@@ -139,6 +146,7 @@ export const searchCapability = defineDomainCapability(
 		async handler(
 			args: {
 				query: string
+				domain?: string
 				limit?: number
 				conversationId?: string
 				memoryContext?: z.infer<typeof memoryContextInputField>
@@ -150,6 +158,7 @@ export const searchCapability = defineDomainCapability(
 			if (!query) {
 				throw new Error('Search query is required.')
 			}
+			const domainFilter = args.domain?.trim() || undefined
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null
 			const includeHiddenPackages = !!args.includeHiddenPackages
@@ -158,14 +167,16 @@ export const searchCapability = defineDomainCapability(
 				username: ctx.callerContext.user?.username ?? null,
 				email: ctx.callerContext.user?.email ?? null,
 			})
-			const identityResolution = await resolvePackageIdentitySearch({
-				db: ctx.env.APP_DB,
-				userId,
-				query,
-				baseUrl: ctx.callerContext.baseUrl,
-				username,
-				includeHiddenPackages,
-			})
+			const identityResolution = domainFilter
+				? { recognized: false as const, match: null }
+				: await resolvePackageIdentitySearch({
+						db: ctx.env.APP_DB,
+						userId,
+						query,
+						baseUrl: ctx.callerContext.baseUrl,
+						username,
+						includeHiddenPackages,
+					})
 			const {
 				launchSearchMemoryEnrichment,
 				loadDownRemoteConnectorStatuses,
@@ -202,14 +213,18 @@ export const searchCapability = defineDomainCapability(
 						userId,
 						includeHiddenPackages,
 					}),
-					runPackageRetrieverSearch({
-						ctx,
-						userId,
-						query,
-						conversationId,
-						includeHiddenPackages,
-						memoryContext: args.memoryContext,
-					}),
+					// Domain-scoped searches rank capabilities only, so skip the
+					// package retriever fan-out entirely.
+					domainFilter
+						? Promise.resolve({ results: [], warnings: [] })
+						: runPackageRetrieverSearch({
+								ctx,
+								userId,
+								query,
+								conversationId,
+								includeHiddenPackages,
+								memoryContext: args.memoryContext,
+							}),
 				])
 				result = await searchUnified({
 					env: ctx.env,
@@ -219,6 +234,7 @@ export const searchCapability = defineDomainCapability(
 					registry: searchRows.registry,
 					optionalRows: searchRows,
 					retrieverResults: retrieverRun.results,
+					...(domainFilter ? { domain: domainFilter } : {}),
 				})
 				warnings = [...searchRows.warnings, ...retrieverRun.warnings]
 			}

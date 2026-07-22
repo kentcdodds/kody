@@ -399,6 +399,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 				type: 'capability',
 				name: 'foo-bar',
 				description: 'Capability with a non-identifier id.',
+				domain: 'meta',
 			},
 		],
 	})
@@ -549,6 +550,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 				type: 'capability',
 				name: 'openapi:widgets:listwidgets',
 				description: 'List widgets — GET /widgets',
+				domain: 'openapi:widgets',
 				source: 'openapi',
 				openApi: {
 					bindingName: 'widgets',
@@ -853,6 +855,7 @@ test('search markdown summarizes broad results safely and only suggests entity d
 				type: 'capability',
 				name: 'search_docs',
 				description: 'Search docs capability',
+				domain: 'meta',
 			},
 		],
 	})
@@ -943,6 +946,85 @@ test('search markdown summarizes broad results safely and only suggests entity d
 	])
 })
 
+test('domain overview matches format as compact summaries with drill-in guidance', () => {
+	const domainMatches = [
+		{
+			type: 'domain' as const,
+			name: 'email',
+			title: 'email',
+			description: 'Email primitives for the per-user inbox.',
+			capabilityCount: 9,
+			sampleCapabilities: [
+				'email_send',
+				'email_message_list',
+				'email_message_get',
+			],
+		},
+	]
+	const markdown = formatSearchMarkdown({ matches: domainMatches })
+	expect(markdown).toContain(
+		'Domain overview for a broad query. Drill in with `search({ query: "<task>", domain: "<name>" })`',
+	)
+	expect(markdown).toContain(
+		'1. **domain** `email` (9 capabilities) — Email primitives for the per\\-user inbox\\. e.g. `email_send`, `email_message_list`, `email_message_get`.',
+	)
+	expect(markdown).not.toContain('entity-backed')
+
+	const [slim] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: domainMatches,
+	})
+	expect(slim).toEqual({
+		type: 'domain',
+		id: 'email',
+		name: 'email',
+		title: 'email',
+		description: 'Email primitives for the per-user inbox.',
+		capabilityCount: 9,
+		sampleCapabilities: [
+			'email_send',
+			'email_message_list',
+			'email_message_get',
+		],
+		usage:
+			'search({ query: "<task>", domain: "email" }) or search({ domain: "email" })',
+	})
+})
+
+test('capability list items include the domain id for follow-up scoping', () => {
+	const markdown = formatSearchMarkdown({
+		matches: [
+			{
+				type: 'capability',
+				name: 'email_send',
+				description: 'Send a message.',
+				domain: 'email',
+			},
+		],
+		includePreamble: false,
+	})
+	expect(markdown).toContain(
+		'1. **capability** `email_send` (`email`) — Send a message\\. Entity: `email_send:capability`',
+	)
+
+	const [slim] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'capability',
+				name: 'email_send',
+				description: 'Send a message.',
+				domain: 'email',
+			},
+		],
+	})
+	expect(slim).toMatchObject({
+		type: 'capability',
+		id: 'email_send',
+		domain: 'email',
+	})
+})
+
 test('search formatting inlines top capability call shapes, related ops, and package maintain pointers', () => {
 	const longInputType = `type LongInput = {\n\t${'field: string\n\t'.repeat(40)}}`
 	const compact = compactCapabilityInputTypeDefinition(longInputType)
@@ -958,6 +1040,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 				type: 'capability',
 				name: 'openapi:widgets:createwidget',
 				description: 'Create a widget.',
+				domain: 'openapi:widgets',
 				source: 'openapi',
 				openApi: {
 					bindingName: 'widgets',
@@ -972,6 +1055,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 				type: 'capability',
 				name: 'openapi:widgets:listwidgets',
 				description: 'List widgets.',
+				domain: 'openapi:widgets',
 				source: 'openapi',
 				openApi: {
 					bindingName: 'widgets',
@@ -987,6 +1071,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 				type: 'capability',
 				name: 'fourth_capability',
 				description: 'Beyond the top inline set.',
+				domain: 'meta',
 				source: 'builtin',
 			},
 		],
@@ -1007,6 +1092,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 					type: 'capability',
 					name: 'openapi:widgets:createwidget',
 					description: 'Create a widget.',
+					domain: 'openapi:widgets',
 					source: 'openapi',
 					openApi: {
 						bindingName: 'widgets',
@@ -1021,6 +1107,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 					type: 'capability',
 					name: 'openapi:widgets:listwidgets',
 					description: 'List widgets.',
+					domain: 'openapi:widgets',
 					source: 'openapi',
 					inputTypeDefinition: compact.definition,
 					inputTypeDefinitionTruncated: true,
@@ -1029,6 +1116,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 					type: 'capability',
 					name: 'fourth_capability',
 					description: 'Beyond the top inline set.',
+					domain: 'meta',
 					source: 'builtin',
 				},
 			],

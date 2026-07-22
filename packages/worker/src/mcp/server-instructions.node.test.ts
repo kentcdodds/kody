@@ -49,7 +49,7 @@ test('base MCP server instructions preserve exact prose with domains and popular
 
 		Kody repository (for contributors): https://github.com/kentcdodds/kody
 
-		Domains (builtin capability groups)
+		Domains (builtin capability groups — scope ranked discovery with \`search({ query, domain })\` or list one domain with \`search({ domain })\`)
 		- \`email\`: Send and read mail
 		- \`jobs\`: Schedule durable work"
 	`)

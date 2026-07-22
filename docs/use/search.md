@@ -21,10 +21,40 @@ it). See [Packages](./packages.md#hidden-packages).
 Pass a **`query`** string that describes what you want to do. Results are
 ranked; order in the response matters. Query responses are intentionally
 compact: the markdown response is a short list of matches with the result type,
-title, one-line summary, and entity reference when applicable. The top few
-capability hits also include a compact inlined call shape (runtime accessor plus
-a whitespace-collapsed input type, truncated when long) so you can often call
+title, one-line summary, and entity reference when applicable. Capability hits
+include their **domain id** (for example `email`, `jobs`, `remote:home`) so a
+follow-up search can scope to that domain. The top few capability hits also
+include a compact inlined call shape (runtime accessor plus a
+whitespace-collapsed input type, truncated when long) so you can often call
 from **execute** without an immediate entity round trip.
+
+### Broad queries return domain overviews
+
+When a query is broad or exploratory rather than task-specific — "what can you
+do with email", "what can kody do", or a bare domain name like `jobs` — search
+returns a compact **domain overview** instead of ranked individual hits: one
+line per matched domain with its id, description, capability count, and a few
+sample capability names. This keeps browse-style discovery cheap; drill in with
+a scoped follow-up (`search({ query, domain })`) or a domain listing
+(`search({ domain })`). Task-specific queries ("send an email to Kent") keep
+returning ranked capability, package, value, integration, and secret hits.
+
+### Domain scoping
+
+Pass optional **`domain`** with a capability domain id:
+
+- **With `query`** — ranks only that domain's capabilities. User-owned
+  entities (packages, values, integrations, secrets, retriever results) are
+  excluded because they have no domain.
+- **Without `query`** — lists the domain's capabilities in curated registry
+  order (with inlined call shapes for the top hits), which completes the
+  two-hop browse flow: broad query → domain overview → domain listing.
+
+Domain ids cover builtin domains (`email`, `jobs`, `packages`, ...) plus
+synthesized ones for remote connectors (`remote:home`), connected MCP servers
+(`mcp:linear`), and OpenAPI bindings (`openapi:canva`). An unknown id returns
+an error listing the available domains. The `search` meta capability (usable
+inside **execute**) accepts the same `domain` argument alongside `query`.
 
 An entire saved-package UUID or `kody.id` is treated as an exact package
 identity when it resolves for the signed-in user. Kody also recognizes

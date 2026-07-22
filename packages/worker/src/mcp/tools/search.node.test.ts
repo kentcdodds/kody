@@ -1916,3 +1916,168 @@ test('online search activates remote provider identity when operation names omit
 		synonymOnlyRankedNames.indexOf('remote:living-room:list_players'),
 	).toBeLessThan(synonymOnlyRankedNames.indexOf('repo_get_check_status'))
 })
+
+function buildDomainScopedRegistry() {
+	const emailSend = defineDomainCapability('email', {
+		name: 'email_send',
+		description: 'Send an email message from the per-user inbox',
+		keywords: ['email', 'send', 'mail'],
+		readOnly: false,
+		idempotent: false,
+		inputSchema: {
+			type: 'object',
+			properties: { to: { type: 'string' } },
+			required: ['to'],
+		},
+		handler: async () => null,
+	})
+	const emailList = defineDomainCapability('email', {
+		name: 'email_message_list',
+		description: 'List stored email messages',
+		keywords: ['email', 'list', 'mail'],
+		readOnly: true,
+		idempotent: true,
+		inputSchema: { type: 'object', properties: {} },
+		handler: async () => null,
+	})
+	const jobSchedule = defineDomainCapability('jobs', {
+		name: 'job_schedule',
+		description: 'Schedule a durable job that can send email reminders',
+		keywords: ['email', 'schedule', 'job'],
+		readOnly: false,
+		idempotent: false,
+		inputSchema: { type: 'object', properties: {} },
+		handler: async () => null,
+	})
+	return buildCapabilityRegistry([
+		{
+			name: 'email',
+			description: 'Email primitives for the per-user inbox.',
+			capabilities: [emailSend, emailList],
+		},
+		{
+			name: 'jobs',
+			description: 'Schedule durable work.',
+			capabilities: [jobSchedule],
+		},
+	])
+}
+
+test('searchUnified domain filter scopes ranked results to one domain and drops user rows', async () => {
+	const registry = buildDomainScopedRegistry()
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'send email message',
+		limit: 10,
+		userId: 'user-1',
+		registry,
+		optionalRows: {
+			packageRows: [
+				leanPackageRow('pkg-email', 'user-1', {
+					name: 'email-digest',
+					kodyId: 'email-digest',
+					description: 'send email message digest package',
+				}),
+			],
+			userSecretRows: [],
+			userValueRows: [],
+		},
+		domain: 'email',
+	})
+
+	expect(result.matches.length).toBeGreaterThan(0)
+	for (const match of result.matches) {
+		expect(match.type).toBe('capability')
+		if (match.type === 'capability') {
+			expect(match.domain).toBe('email')
+		}
+	}
+	const names = result.matches.flatMap((match) =>
+		match.type === 'capability' ? [match.name] : [],
+	)
+	expect(names).toContain('email_send')
+	expect(names).not.toContain('job_schedule')
+})
+
+test('searchUnified rejects an unknown domain and lists the available domains', async () => {
+	const registry = buildDomainScopedRegistry()
+	await expect(
+		searchUnified({
+			env: {} as Env,
+			query: 'send email',
+			limit: 10,
+			userId: 'user-1',
+			registry,
+			optionalRows: emptyOptionalSearchRows,
+			domain: 'nope',
+		}),
+	).rejects.toThrow('Unknown domain "nope". Available domains: email, jobs.')
+})
+
+test('searchUnified lists a whole domain in curated order when query is empty', async () => {
+	const registry = buildDomainScopedRegistry()
+	const result = await searchUnified({
+		env: {} as Env,
+		query: '',
+		limit: 100,
+		userId: 'user-1',
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+		domain: 'email',
+	})
+
+	expect(
+		result.matches.map((match) =>
+			match.type === 'capability' ? match.name : match.type,
+		),
+	).toEqual(['email_send', 'email_message_list'])
+	const [topMatch] = result.matches
+	expect(topMatch).toMatchObject({
+		type: 'capability',
+		domain: 'email',
+		inputTypeDefinition: expect.stringContaining('to'),
+	})
+	expect(result.guidance).toBeDefined()
+})
+
+test('searchUnified answers broad exploratory queries with a domain overview', async () => {
+	const registry = buildDomainScopedRegistry()
+	const overview = await searchUnified({
+		env: {} as Env,
+		query: 'what can you do with email',
+		limit: 15,
+		userId: 'user-1',
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+
+	expect(overview.matches).toEqual([
+		{
+			type: 'domain',
+			name: 'email',
+			title: 'email',
+			description: 'Email primitives for the per-user inbox.',
+			capabilityCount: 2,
+			sampleCapabilities: ['email_send', 'email_message_list'],
+		},
+	])
+	expect(overview.guidance).toContain('domain: "email"')
+	expect(overview.telemetry.topResultTypes).toEqual(['domain'])
+
+	const taskQuery = await searchUnified({
+		env: {} as Env,
+		query: 'send an email to kent',
+		limit: 15,
+		userId: 'user-1',
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+	expect(
+		taskQuery.matches.every((match) => match.type === 'capability'),
+	).toBe(true)
+	expect(
+		taskQuery.matches.some(
+			(match) => match.type === 'capability' && match.name === 'email_send',
+		),
+	).toBe(true)
+})

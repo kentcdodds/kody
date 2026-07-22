@@ -26,7 +26,8 @@ export const conventionInstructions = `Conventions:
 export const kodyRepositoryInstructions =
 	'Kody repository (for contributors): https://github.com/kentcdodds/kody'
 
-export const domainHeadingInstructions = 'Domains (builtin capability groups)'
+export const domainHeadingInstructions =
+	'Domains (builtin capability groups — scope ranked discovery with `search({ query, domain })` or list one domain with `search({ domain })`)'
 
 export const baseMcpServerInstructionFragmentsBeforePopular = [
 	endUserDocumentationInstructions,

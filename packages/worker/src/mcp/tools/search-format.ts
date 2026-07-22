@@ -38,6 +38,7 @@ type SearchMatchType =
 	| 'integration'
 	| 'secret'
 	| 'retriever_result'
+	| 'domain'
 
 export type PackageActionMatch = {
 	subpath: string
@@ -146,11 +147,22 @@ export type RelatedIntegrationPackageSuggestion =
 
 export type SlimSearchMatch =
 	| {
+			type: 'domain'
+			id: string
+			name: string
+			title: string
+			description: string
+			capabilityCount: number
+			sampleCapabilities: Array<string>
+			usage: string
+	  }
+	| {
 			type: 'capability'
 			id: string
 			entityRef: string
 			title: string
 			description: string
+			domain: string
 			usage: string
 			source?: CapabilitySpec['source']
 			remoteConnector?: CapabilitySpec['remoteConnector']
@@ -431,9 +443,18 @@ export type SearchEntityDetail =
 
 export type SearchMatch =
 	| {
+			type: 'domain'
+			name: string
+			title: string
+			description: string
+			capabilityCount: number
+			sampleCapabilities: Array<string>
+	  }
+	| {
 			type: 'capability'
 			name: string
 			description: string
+			domain: string
 			source?: CapabilitySpec['source']
 			remoteConnector?: CapabilitySpec['remoteConnector']
 			mcpServer?: CapabilitySpec['mcpServer']
@@ -652,9 +673,16 @@ export function formatSearchMarkdown(input: {
 	includePreamble?: boolean
 }) {
 	const lines: Array<string> = ['# Search results', '']
+	const hasDomainMatch = input.matches.some((match) => match.type === 'domain')
 	const hasEntityBackedMatch = input.matches.some(
-		(match) => match.type !== 'retriever_result',
+		(match) => match.type !== 'retriever_result' && match.type !== 'domain',
 	)
+	if (hasDomainMatch) {
+		lines.push(
+			'Domain overview for a broad query. Drill in with `search({ query: "<task>", domain: "<name>" })`, or list every capability in one domain with `search({ domain: "<name>" })`.',
+			'',
+		)
+	}
 	if ((input.includePreamble ?? true) && hasEntityBackedMatch) {
 		lines.push(
 			'For full detail on entity-backed hits, call `search` with `entity: "{id}:{type}"`.',
@@ -684,9 +712,18 @@ export function formatSearchMarkdown(input: {
 }
 
 function formatMatchListItem(match: SearchMatch, index: number) {
+	if (match.type === 'domain') {
+		const sample =
+			match.sampleCapabilities.length > 0
+				? ` e.g. ${match.sampleCapabilities
+						.map((name) => formatMarkdownInlineCode(name))
+						.join(', ')}.`
+				: ''
+		return `${String(index + 1)}. **domain** ${formatMarkdownInlineCode(match.name)} (${String(match.capabilityCount)} ${match.capabilityCount === 1 ? 'capability' : 'capabilities'}) — ${escapeMarkdownText(formatOneLineSentence(match.description))}${sample}`
+	}
 	if (match.type === 'capability') {
 		const entityRef = buildEntityRef(match.name, 'capability')
-		const mainLine = `${String(index + 1)}. **capability** ${formatMarkdownInlineCode(match.name)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
+		const mainLine = `${String(index + 1)}. **capability** ${formatMarkdownInlineCode(match.name)} (${formatMarkdownInlineCode(match.domain)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 		if (!match.inputTypeDefinition) {
 			return mainLine
 		}
@@ -730,6 +767,18 @@ export function toSlimStructuredMatches(input: {
 	username?: string | null
 }): Array<SlimSearchMatch> {
 	return input.matches.map((match) => {
+		if (match.type === 'domain') {
+			return {
+				type: 'domain',
+				id: match.name,
+				name: match.name,
+				title: match.title,
+				description: match.description,
+				capabilityCount: match.capabilityCount,
+				sampleCapabilities: match.sampleCapabilities,
+				usage: `search({ query: "<task>", domain: ${JSON.stringify(match.name)} }) or search({ domain: ${JSON.stringify(match.name)} })`,
+			}
+		}
 		if (match.type === 'capability') {
 			return {
 				type: 'capability',
@@ -740,6 +789,7 @@ export function toSlimStructuredMatches(input: {
 					'description' in match && typeof match.description === 'string'
 						? match.description
 						: '',
+				domain: match.domain,
 				usage: buildCapabilityUsage(match),
 				...(match.source ? { source: match.source } : {}),
 				...(match.remoteConnector
