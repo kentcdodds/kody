@@ -7,6 +7,7 @@ import {
 	estimateEntitlementStorageSqlWriteBytes,
 	readUserD1StorageBytes,
 } from '#worker/entitlements/service.ts'
+import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
@@ -53,10 +54,6 @@ type StorageClearResult = {
 
 type StorageEstimateResult = {
 	estimatedBytes: number
-}
-
-function buildStorageRunnerName(userId: string, storageId: string) {
-	return JSON.stringify([userId, storageId])
 }
 
 export function createExecuteStorageId() {
@@ -396,7 +393,7 @@ export function storageRunnerRpc(input: {
 }) {
 	return input.env.STORAGE_RUNNER.get(
 		input.env.STORAGE_RUNNER.idFromName(
-			buildStorageRunnerName(input.userId, input.storageId),
+			storageRunnerDurableObjectName(input.userId, input.storageId),
 		),
 	) as unknown as {
 		getValue: (payload: { key: string }) => Promise<{
@@ -604,7 +601,7 @@ export function createPackageStorageAccessDeniedMessage(packageId: string) {
  * module source claiming an arbitrary package id is rejected here even if it
  * forges a stamped-looking call, so a malicious package cannot reach other
  * installed packages' buckets. Cross-user access is structurally impossible:
- * `buildStorageRunnerName` keys the durable object on this run's user id.
+ * `storageRunnerDurableObjectName` keys the durable object on this run's user id.
  */
 export function createPackageStorageKodyTools(input: {
 	env: Env

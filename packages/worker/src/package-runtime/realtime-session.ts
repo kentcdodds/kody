@@ -4,6 +4,7 @@ import { buildFacetName } from '#mcp/app-runner-facet-names.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
+import { packageRealtimeSessionDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { buildPackageAppWorker } from './package-app.ts'
 
 const sessionStateStorageKey = 'package-realtime-state'
@@ -871,13 +872,6 @@ type PackageRealtimeSessionRpc = {
 	fetch: (request: Request) => Promise<Response>
 }
 
-function buildRealtimeSessionName(input: {
-	userId: string
-	packageId: string
-}) {
-	return JSON.stringify([input.userId, input.packageId])
-}
-
 function getPackageRealtimeNamespace(env: Env) {
 	return env.PACKAGE_REALTIME_SESSION
 }
@@ -892,7 +886,7 @@ function getPackageRealtimeStub(input: {
 		throw new Error('Missing PACKAGE_REALTIME_SESSION binding.')
 	}
 	const id = namespace.idFromName(
-		buildRealtimeSessionName({
+		packageRealtimeSessionDurableObjectName({
 			userId: input.userId,
 			packageId: input.packageId,
 		}),

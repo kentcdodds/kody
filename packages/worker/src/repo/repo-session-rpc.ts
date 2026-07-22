@@ -1,5 +1,6 @@
 import { type ArtifactBootstrapAccess } from './artifacts.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { repoSessionDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type RepoRunCommandsResult } from './repo-session-commands.ts'
 import {
 	type RepoSourceBootstrapResult,
@@ -164,6 +165,6 @@ export function repoSessionRpc(env: Env, sessionId: string): RepoSessionRpc {
 		throw new Error('REPO_SESSION binding is not configured.')
 	}
 	return namespace.get(
-		namespace.idFromName(sessionId),
+		namespace.idFromName(repoSessionDurableObjectName(sessionId)),
 	) as unknown as RepoSessionRpc
 }

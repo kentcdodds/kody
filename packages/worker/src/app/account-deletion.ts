@@ -8,6 +8,7 @@ import { getCapabilityVectorIndex } from '#mcp/capabilities/capability-search.ts
 import { cleanupAllUserArtifactRepos } from '#worker/repo/artifact-repo-cleanup.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { userScopedConnectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
+import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import {
 	buildPackageServiceStorageId,
 	packageServiceRpc,
@@ -680,7 +681,7 @@ async function purgeMcpClientHub(input: {
 	}
 	try {
 		const stub = namespace.get(
-			namespace.idFromName(input.userId.trim()),
+			namespace.idFromName(mcpClientHubDurableObjectName(input.userId)),
 		) as unknown as {
 			purgeForAccountDeletion: () => Promise<void>
 		}

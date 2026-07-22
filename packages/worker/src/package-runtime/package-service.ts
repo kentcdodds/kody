@@ -15,6 +15,7 @@ import {
 	type UsageEvent,
 	type UsageOutcome,
 } from '#worker/usage/record-usage.ts'
+import { packageServiceInstanceDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './published-source-dependencies.ts'
 
 const serviceStateStorageKey = 'package-service-state'
@@ -113,14 +114,6 @@ function createInitialPackageServiceState(): PackageServiceState {
 	}
 }
 
-function buildPackageServiceName(input: {
-	userId: string
-	packageId: string
-	serviceName: string
-}) {
-	return JSON.stringify([input.userId, input.packageId, input.serviceName])
-}
-
 function getPackageServiceNamespace(env: Env) {
 	return env.PACKAGE_SERVICE_INSTANCE
 }
@@ -136,7 +129,7 @@ function getPackageServiceStub(input: {
 		throw new Error('Missing PACKAGE_SERVICE_INSTANCE binding.')
 	}
 	const id = namespace.idFromName(
-		buildPackageServiceName({
+		packageServiceInstanceDurableObjectName({
 			userId: input.userId,
 			packageId: input.packageId,
 			serviceName: input.serviceName,

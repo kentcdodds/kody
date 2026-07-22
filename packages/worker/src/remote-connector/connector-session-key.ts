@@ -2,6 +2,7 @@ import {
 	isValidRemoteConnectorName,
 	normalizeRemoteConnectorInstanceId,
 } from '@kody-internal/shared/remote-connectors.ts'
+import { durableObjectNameFromParts } from '#worker/user-scoped-durable-object-name.ts'
 
 export { userScopedConnectorIngressPath } from '@kody-internal/shared/remote-connectors.ts'
 
@@ -22,7 +23,7 @@ export function userScopedConnectorSessionKey(input: {
 	userId: string
 	instanceId: string
 }) {
-	return JSON.stringify([
+	return durableObjectNameFromParts([
 		input.userId.trim(),
 		normalizeRemoteConnectorInstanceId(input.instanceId),
 	])

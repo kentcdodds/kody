@@ -393,32 +393,37 @@ Storage split:
 ## Per-user Durable Object naming
 
 The Durable Objects whose state is intrinsically owned by one user are named so
-that two different users always resolve to two different object ids:
+that two different users always resolve to two different object ids. Builders
+live in `packages/worker/src/user-scoped-durable-object-name.ts` (JSON tuples
+via `durableObjectNameFromParts`); domain helpers such as
+`userScopedConnectorSessionKey` delegate to that module.
 
-- `JobManager` — `idFromName(userId)`
-  (`packages/worker/src/jobs/manager-client.ts`).
-- `StorageRunner` — `idFromName(JSON.stringify([userId, storageId]))`
-  (`packages/worker/src/storage-runner.ts`).
-- `RepoSession` — keyed by `repo_sessions.id`; every RPC validates the D1
-  session row's `user_id` before touching the workspace. Account deletion
-  enumerates the user's session ids before deleting D1 rows and purges each DO.
-- `PackageRealtimeSession` and `PackageServiceInstance` — keyed by
-  `(userId, packageId, ...)` via the helpers in
-  `packages/worker/src/package-runtime/`. Account deletion enumerates app
-  packages and observed service instances, closes live sessions/services, clears
-  alarms, and deletes DO storage.
+- `JobManager` — `jobManagerDurableObjectName(userId)` → `idFromName(userId)`.
+- `McpClientHub` — `mcpClientHubDurableObjectName(userId)` →
+  `idFromName(userId.trim())`.
+- `StorageRunner` — `storageRunnerDurableObjectName(userId, storageId)` →
+  `idFromName(JSON.stringify([userId, storageId]))`.
+- `PackageRealtimeSession` —
+  `packageRealtimeSessionDurableObjectName({ userId, packageId })`.
+- `PackageServiceInstance` —
+  `packageServiceInstanceDurableObjectName({ userId, packageId, serviceName })`.
 - `RemoteConnectorSession` —
-  `userScopedConnectorSessionKey(userId, kind, instanceId)`, where `instanceId`
-  is the explicit user-chosen connector name (globally unique per user).
-  Connectors must connect through the username-scoped ingress URL
-  `/@{username}/connectors/{kind}/{connectorName}`. Renaming a connector changes
-  this DO id; the old live session snapshot can be orphaned, but reconnecting
+  `userScopedConnectorSessionKey({ userId, instanceId })`, where `instanceId` is
+  the explicit user-chosen connector name (globally unique per user). Connectors
+  must connect through the username-scoped ingress URL
+  `/@{username}/connectors/{connectorName}`. Renaming a connector changes this
+  DO id; the old live session snapshot can be orphaned, but reconnecting
   rebuilds it from settings. The DO carries the ingress user id forward via
   headers + websocket attachment and verifies the shared secret against that
-  user's row only. The `MCP` Durable Object is addressed by MCP session id
-  rather than user id; ownership is enforced at the request boundary by
-  validating the authenticated user against the `McpCallerContext` on every
-  request.
+  user's row only.
+- `RepoSession` — `repoSessionDurableObjectName(sessionId)` keyed by
+  `repo_sessions.id` only (not user-prefixed). Every RPC validates the D1
+  session row's `user_id` before touching the workspace. Account deletion
+  enumerates the user's session ids before deleting D1 rows and purges each DO.
+  Documented exception to user-scoped naming.
+- The `MCP` Durable Object is addressed by MCP session id rather than user id;
+  ownership is enforced at the request boundary by validating the authenticated
+  user against the `McpCallerContext` on every request.
 
 ## Per-user runtime context (no shared `globalThis`)
 
@@ -655,9 +660,15 @@ on write unless a migration backfills existing rows.
 ### Durable Object id contracts
 
 `idFromName` inputs are Durable Object identity. Changing any of these strings
-or tuple layouts creates new objects and strands existing object storage.
+or tuple layouts creates new objects and strands existing object storage. All
+builders are centralized in
+`packages/worker/src/user-scoped-durable-object-name.ts` (plus
+`userScopedConnectorSessionKey` in
+`packages/worker/src/remote-connector/connector-session-key.ts`, which delegates
+to `durableObjectNameFromParts`).
 
-- `JobManager`: `idFromName(userId)`.
+- `JobManager`: `idFromName(userId)` (no trim).
+- `McpClientHub`: `idFromName(userId.trim())`.
 - `StorageRunner`: `idFromName(JSON.stringify([userId, storageId]))`.
 - `RepoSession`: `idFromName(repo_sessions.id)`; the key is not user-prefixed,
   so every RPC must keep validating the D1 row's `user_id`.
@@ -665,7 +676,7 @@ or tuple layouts creates new objects and strands existing object storage.
 - `PackageServiceInstance`:
   `idFromName(JSON.stringify([userId, packageId, serviceName]))`.
 - `RemoteConnectorSession`:
-  `idFromName(JSON.stringify([userId, normalizedKind, normalizedInstanceId]))`.
+  `idFromName(JSON.stringify([userId.trim(), normalizedInstanceId]))`.
 - `MCP`: session-keyed by the MCP SDK rather than by user id; OAuth caller
   context is the request-time ownership boundary.
 

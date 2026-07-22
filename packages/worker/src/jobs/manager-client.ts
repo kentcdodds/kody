@@ -1,4 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { jobManagerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import {
 	logJobSchedulerError,
 	logJobSchedulerEvent,
@@ -58,7 +59,9 @@ export function jobManagerRpc(env: Env, userId: string): JobManagerRpc | null {
 	if (!namespace) {
 		return null
 	}
-	return namespace.get(namespace.idFromName(userId)) as unknown as JobManagerRpc
+	return namespace.get(
+		namespace.idFromName(jobManagerDurableObjectName(userId)),
+	) as unknown as JobManagerRpc
 }
 
 export async function purgeJobManagerForUser(input: {

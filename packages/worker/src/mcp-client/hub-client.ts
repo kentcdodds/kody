@@ -1,5 +1,6 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
+import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import {
 	type McpClientHubSnapshot,
 	type McpServerConnectResult,
@@ -9,12 +10,13 @@ import {
 export const mcpClientHubSnapshotCacheTtlMs = 30_000
 export const mcpClientHubSnapshotCacheLimit = 100
 
+/** Cache/DO key alias for {@link mcpClientHubDurableObjectName}. */
 export function mcpClientHubKey(userId: string) {
-	return userId.trim()
+	return mcpClientHubDurableObjectName(userId)
 }
 
 function getMcpClientHubStub(input: { env: Env; userId: string }) {
-	const key = mcpClientHubKey(input.userId)
+	const key = mcpClientHubDurableObjectName(input.userId)
 	return input.env.MCP_CLIENT_HUB.get(input.env.MCP_CLIENT_HUB.idFromName(key))
 }
 
