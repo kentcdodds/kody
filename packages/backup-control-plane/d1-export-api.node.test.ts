@@ -1,0 +1,162 @@
+import assert from 'node:assert/strict'
+
+import { test, vi } from 'vitest'
+
+import {
+	DEFAULT_BACKUP_MAX_SOURCE_BYTES,
+	startD1Export,
+	verifySourceDatabaseIdentity,
+} from './d1-export-api.ts'
+import { BackupError } from './backup-policy.ts'
+import {
+	DATABASE_ID,
+	environment,
+	exportEnvelope,
+	identityEnvelope,
+} from './backup-control-plane-test-support.ts'
+
+test('verifies D1 identity without calling the live account endpoint', async () => {
+	const env = environment()
+	const urls: string[] = []
+	await verifySourceDatabaseIdentity(env, {
+		fetcher: async (input) => {
+			urls.push(String(input))
+			return Response.json({
+				success: true,
+				result: {
+					uuid: DATABASE_ID,
+					name: 'production-db',
+					file_size: 1_000,
+				},
+			})
+		},
+		sleep: async () => undefined,
+	})
+	assert.equal(urls.length, 1)
+	assert.match(urls[0]!, /\/d1\/database\//)
+})
+
+test('requires an integer D1 file size and accepts the byte below the ceiling', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
+	consoleError.mockImplementation(() => undefined)
+	for (const response of [
+		identityEnvelope(undefined, false),
+		identityEnvelope('1000'),
+		identityEnvelope(1.5),
+		identityEnvelope(-1),
+	]) {
+		await assert.rejects(
+			verifySourceDatabaseIdentity(environment(), {
+				fetcher: async () => response.clone(),
+			}),
+			(error: unknown) =>
+				error instanceof BackupError && error.code === 'api-malformed-identity',
+		)
+	}
+	const result = await verifySourceDatabaseIdentity(environment(), {
+		fetcher: async () => identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES - 1),
+	})
+	assert.deepEqual(result, {
+		fileSize: DEFAULT_BACKUP_MAX_SOURCE_BYTES - 1,
+		maxSourceBytes: DEFAULT_BACKUP_MAX_SOURCE_BYTES,
+	})
+	assert.equal(consoleError.mock.calls.length, 4)
+})
+
+test('rejects D1 size at or above the configured ceiling', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
+	consoleError.mockImplementation(() => undefined)
+	for (const fileSize of [
+		DEFAULT_BACKUP_MAX_SOURCE_BYTES,
+		DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1,
+	]) {
+		await assert.rejects(
+			verifySourceDatabaseIdentity(environment(), {
+				fetcher: async () => identityEnvelope(fileSize),
+			}),
+			(error: unknown) =>
+				error instanceof BackupError &&
+				error.code === 'source-size-limit-exceeded',
+		)
+	}
+	const env = environment()
+	env.BACKUP_MAX_SOURCE_BYTES = '100'
+	await assert.rejects(
+		verifySourceDatabaseIdentity(env, {
+			fetcher: async () => identityEnvelope(100),
+		}),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'source-size-limit-exceeded',
+	)
+	env.BACKUP_MAX_SOURCE_BYTES = String(DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1)
+	await assert.rejects(
+		verifySourceDatabaseIdentity(env, {
+			fetcher: async () => identityEnvelope(1),
+		}),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'invalid-max-source-bytes',
+	)
+	assert.equal(consoleError.mock.calls.length, 3)
+})
+for (const status of [401, 403]) {
+	test(`${status} is a non-retryable authentication failure`, async () => {
+		let calls = 0
+		await assert.rejects(
+			startD1Export(environment(), {
+				fetcher: async () => {
+					calls += 1
+					return new Response('', { status })
+				},
+				sleep: async () => undefined,
+			}),
+			(error: unknown) =>
+				error instanceof BackupError &&
+				error.code === 'api-auth-failure' &&
+				error.retryable === false,
+		)
+		assert.equal(calls, 1)
+	})
+}
+
+for (const status of [429, 500, 503]) {
+	test(`${status} retries and then starts the export`, async () => {
+		let calls = 0
+		const sleeps: number[] = []
+		const result = await startD1Export(environment(), {
+			fetcher: async () => {
+				calls += 1
+				return calls === 1
+					? new Response('', {
+							status,
+							headers: status === 429 ? { 'retry-after': '2' } : {},
+						})
+					: exportEnvelope('complete')
+			},
+			sleep: async (milliseconds) => {
+				sleeps.push(milliseconds)
+			},
+		})
+		assert.equal(result.kind, 'complete')
+		assert.equal(calls, 2)
+		assert.equal(sleeps[0], status === 429 ? 2_000 : 1_000)
+	})
+}
+
+test('rejects malformed JSON and malformed/error export payloads', async () => {
+	for (const response of [
+		new Response('{', { status: 200 }),
+		Response.json({ success: true, result: { status: 'complete' } }),
+		exportEnvelope('error'),
+	]) {
+		await assert.rejects(
+			startD1Export(environment(), {
+				fetcher: async () => response.clone(),
+				sleep: async () => undefined,
+			}),
+			BackupError,
+		)
+	}
+})

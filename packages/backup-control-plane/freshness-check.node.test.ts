@@ -1,0 +1,88 @@
+import assert from 'node:assert/strict'
+
+import { test, vi } from 'vitest'
+
+import { DEFAULT_BACKUP_MAX_SOURCE_BYTES } from './d1-export-api.ts'
+import { checkFreshness } from './freshness-check.ts'
+import {
+	MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES,
+	putImmutableManifest,
+	storeSignedDownload,
+} from './immutable-storage.ts'
+import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
+import {
+	DATABASE_ID,
+	MemoryBucket,
+	environment,
+	identityApi,
+	identityEnvelope,
+	manifest,
+} from './backup-control-plane-test-support.ts'
+
+test('freshness accepts matching metadata and flags size/ETag drift or missing objects', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const key = objectKeyForBookmark(
+		`daily/d1/${DATABASE_ID}/2026-07-22`,
+		'bookmark-1',
+	)
+	const stored = await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		key,
+		'https://download.example',
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
+	)
+	await putImmutableManifest(
+		bucket as unknown as R2Bucket,
+		`daily/d1/${DATABASE_ID}/2026-07-22/manifest.json`,
+		manifest(stored),
+	)
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
+		true,
+	)
+	bucket.setReportedSize(key, MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES)
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
+		false,
+	)
+	bucket.setReportedSize(key, stored.bytes)
+	bucket.corrupt(key, 'drift')
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
+		false,
+	)
+	bucket.corrupt(key, 'longer')
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
+		false,
+	)
+	assert.equal(
+		await checkFreshness(
+			environment(new MemoryBucket()),
+			new Date('2026-07-22T03:45:00Z'),
+			identityApi(),
+		),
+		false,
+	)
+})
+
+test('hourly freshness queries live D1 size and fails at the ceiling', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
+	consoleError.mockImplementation(() => undefined)
+	let metadataRequests = 0
+	await assert.rejects(
+		checkFreshness(environment(), new Date('2026-07-22T03:45:00Z'), {
+			fetcher: async () => {
+				metadataRequests += 1
+				return identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES)
+			},
+		}),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'source-size-limit-exceeded',
+	)
+	assert.equal(metadataRequests, 1)
+	assert.equal(consoleError.mock.calls.length, 1)
+})
