@@ -82,6 +82,10 @@
 			"new_sqlite_classes": ["McpClientHub"],
 			"tag": "v18",
 		},
+		{
+			"new_sqlite_classes": ["OAuthPurgeCoordinator"],
+			"tag": "v19",
+		},
 	],
 
 	"observability": {
@@ -132,6 +136,10 @@
 					{
 						"class_name": "McpClientHub",
 						"name": "MCP_CLIENT_HUB",
+					},
+					{
+						"class_name": "OAuthPurgeCoordinator",
+						"name": "OAUTH_PURGE_COORDINATOR",
 					},
 					{
 						"class_name": "JobManager",
@@ -291,6 +299,10 @@
 						"name": "MCP_CLIENT_HUB",
 					},
 					{
+						"class_name": "OAuthPurgeCoordinator",
+						"name": "OAUTH_PURGE_COORDINATOR",
+					},
+					{
 						"class_name": "JobManager",
 						"name": "JOB_MANAGER",
 					},
@@ -403,6 +415,10 @@
 					{
 						"class_name": "McpClientHub",
 						"name": "MCP_CLIENT_HUB",
+					},
+					{
+						"class_name": "OAuthPurgeCoordinator",
+						"name": "OAUTH_PURGE_COORDINATOR",
 					},
 					{
 						"class_name": "JobManager",

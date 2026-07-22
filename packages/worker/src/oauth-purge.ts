@@ -1,14 +1,28 @@
-const oauthPurgeBatchSize = 50
+import { DurableObject } from 'cloudflare:workers'
 
-export const oauthPurgeContinuationKey = 'kody:oauth-purge:continuation:v1'
+const oauthPurgeBatchSize = 50
+export const oauthPurgeContinuationStorageKey = 'continuation'
 
 type PurgePhase = 'grants' | 'tokens'
 
-type PurgeContinuation = {
+type PendingGrantRevocation = {
+	grantKey: string
+	tokenPrefix: string
+	tokenCursor?: string
+}
+
+type PendingGrantPage = {
+	complete: boolean
+	nextCursor?: string
+	revocations: Array<PendingGrantRevocation>
+}
+
+export type PurgeContinuation = {
 	version: 1
 	nextPhase: PurgePhase
 	grantCursor?: string
 	tokenCursor?: string
+	pendingGrantPage?: PendingGrantPage
 }
 
 type GrantRecord = {
@@ -24,12 +38,52 @@ type TokenRecord = {
 export type OAuthPurgeResult = {
 	phase: PurgePhase
 	checked: number
-	purged: number
+	grantsPurged: number
+	tokensPurged: number
 	phaseComplete: boolean
 }
 
 function isPurgePhase(value: unknown): value is PurgePhase {
 	return value === 'grants' || value === 'tokens'
+}
+
+function isPendingGrantRevocation(
+	value: unknown,
+): value is PendingGrantRevocation {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'grantKey' in value &&
+		typeof value.grantKey === 'string' &&
+		'tokenPrefix' in value &&
+		typeof value.tokenPrefix === 'string' &&
+		(!('tokenCursor' in value) ||
+			value.tokenCursor === undefined ||
+			typeof value.tokenCursor === 'string')
+	)
+}
+
+function parsePendingGrantPage(value: unknown): PendingGrantPage | undefined {
+	if (
+		typeof value !== 'object' ||
+		value === null ||
+		!('complete' in value) ||
+		typeof value.complete !== 'boolean' ||
+		!('revocations' in value) ||
+		!Array.isArray(value.revocations) ||
+		!value.revocations.every(isPendingGrantRevocation)
+	) {
+		return undefined
+	}
+	const nextCursor =
+		'nextCursor' in value && typeof value.nextCursor === 'string'
+			? value.nextCursor
+			: undefined
+	return {
+		complete: value.complete,
+		nextCursor,
+		revocations: value.revocations,
+	}
 }
 
 function parseContinuation(value: unknown): PurgeContinuation {
@@ -52,11 +106,16 @@ function parseContinuation(value: unknown): PurgeContinuation {
 		'tokenCursor' in value && typeof value.tokenCursor === 'string'
 			? value.tokenCursor
 			: undefined
+	const pendingGrantPage =
+		'pendingGrantPage' in value
+			? parsePendingGrantPage(value.pendingGrantPage)
+			: undefined
 	return {
 		version: 1,
 		nextPhase: value.nextPhase,
 		grantCursor,
 		tokenCursor,
+		pendingGrantPage,
 	}
 }
 
@@ -89,18 +148,54 @@ function isClientMetadataUrl(clientId: string) {
 	}
 }
 
-async function purgeGrantPage(
+export function isInvalidOAuthPurgeCursorError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false
+	if (
+		/cursor/i.test(error.message) &&
+		/(expired|invalid|malformed)/i.test(error.message)
+	) {
+		return true
+	}
+	return isInvalidOAuthPurgeCursorError(error.cause)
+}
+
+async function listPurgePage(
 	kv: KVNamespace,
-	cursor: string | undefined,
+	options: { prefix: string; cursor?: string },
+) {
+	try {
+		return await kv.list({ ...options, limit: oauthPurgeBatchSize })
+	} catch (error) {
+		if (!options.cursor || !isInvalidOAuthPurgeCursorError(error)) throw error
+		return kv.list({ prefix: options.prefix, limit: oauthPurgeBatchSize })
+	}
+}
+
+function grantRevocationForKey(
+	grantKey: string,
+): PendingGrantRevocation | undefined {
+	if (!grantKey.startsWith('grant:')) return undefined
+	const parts = grantKey.slice('grant:'.length).split(':')
+	if (parts.length !== 2 || parts.some((part) => part.length === 0)) {
+		return undefined
+	}
+	return {
+		grantKey,
+		tokenPrefix: `token:${parts[0]}:${parts[1]}:`,
+	}
+}
+
+async function loadGrantPage(
+	kv: KVNamespace,
+	continuation: PurgeContinuation,
 	now: number,
 ) {
-	const page = await kv.list({
+	const page = await listPurgePage(kv, {
 		prefix: 'grant:',
-		limit: oauthPurgeBatchSize,
-		cursor,
+		cursor: continuation.grantCursor,
 	})
 	const clients = new Map<string, boolean>()
-	let purged = 0
+	const revocations = new Array<PendingGrantRevocation>()
 
 	for (const key of page.keys) {
 		const grant = await kv.get(key.name, { type: 'json' })
@@ -119,29 +214,78 @@ async function purgeGrantPage(
 		}
 
 		if (shouldPurge) {
-			// Token cleanup is deliberately left to the independently paginated token
-			// phase, so a large grant cannot consume the whole cron subrequest budget.
-			await kv.delete(key.name)
-			purged++
+			const revocation = grantRevocationForKey(key.name)
+			if (revocation) revocations.push(revocation)
 		}
 	}
 
+	continuation.pendingGrantPage = {
+		complete: page.list_complete,
+		nextCursor: page.list_complete ? undefined : page.cursor,
+		revocations,
+	}
+	return page.keys.length
+}
+
+function finishGrantPage(continuation: PurgeContinuation) {
+	const page = continuation.pendingGrantPage
+	if (!page || page.revocations.length > 0) return
+	continuation.grantCursor = page.complete ? undefined : page.nextCursor
+	continuation.pendingGrantPage = undefined
+}
+
+async function purgeGrantPhase(
+	kv: KVNamespace,
+	continuation: PurgeContinuation,
+	now: number,
+): Promise<OAuthPurgeResult> {
+	const checked = continuation.pendingGrantPage
+		? 0
+		: await loadGrantPage(kv, continuation, now)
+	const pending = continuation.pendingGrantPage?.revocations[0]
+	let grantsPurged = 0
+	let tokensPurged = 0
+
+	if (pending) {
+		const tokenPage = await listPurgePage(kv, {
+			prefix: pending.tokenPrefix,
+			cursor: pending.tokenCursor,
+		})
+		await Promise.all(tokenPage.keys.map((key) => kv.delete(key.name)))
+		tokensPurged = tokenPage.keys.length
+		if (tokenPage.list_complete) {
+			await kv.delete(pending.grantKey)
+			continuation.pendingGrantPage?.revocations.shift()
+			grantsPurged = 1
+		} else {
+			pending.tokenCursor = tokenPage.cursor
+		}
+	}
+
+	finishGrantPage(continuation)
+	const phaseComplete =
+		continuation.pendingGrantPage === undefined &&
+		continuation.grantCursor === undefined
+	continuation.nextPhase = 'tokens'
 	return {
-		checked: page.keys.length,
-		purged,
-		phaseComplete: page.list_complete,
-		cursor: page.list_complete ? undefined : page.cursor,
+		phase: 'grants',
+		checked,
+		grantsPurged,
+		tokensPurged,
+		phaseComplete,
 	}
 }
 
-async function purgeTokenPage(kv: KVNamespace, cursor: string | undefined) {
-	const page = await kv.list({
+async function purgeTokenPhase(
+	kv: KVNamespace,
+	continuation: PurgeContinuation,
+): Promise<OAuthPurgeResult> {
+	const page = await listPurgePage(kv, {
 		prefix: 'token:',
-		limit: oauthPurgeBatchSize,
-		cursor,
+		cursor: continuation.tokenCursor,
 	})
 	const grants = new Map<string, boolean>()
-	let purged = 0
+	let tokensPurged = 0
 
 	for (const key of page.keys) {
 		const token = await kv.get(key.name, { type: 'json' })
@@ -155,53 +299,50 @@ async function purgeTokenPage(kv: KVNamespace, cursor: string | undefined) {
 		}
 		if (!grantExists) {
 			await kv.delete(key.name)
-			purged++
+			tokensPurged++
 		}
 	}
 
+	continuation.tokenCursor = page.list_complete ? undefined : page.cursor
+	continuation.nextPhase = 'grants'
 	return {
+		phase: 'tokens',
 		checked: page.keys.length,
-		purged,
+		grantsPurged: 0,
+		tokensPurged,
 		phaseComplete: page.list_complete,
-		cursor: page.list_complete ? undefined : page.cursor,
 	}
 }
 
-/**
- * Continues one bounded OAuth KV sweep phase per invocation. The provider's
- * purgeExpiredData() cursors are invocation-local in 0.8.2, so healthy leading
- * pages otherwise starve later grants and the entire token phase.
- */
-export async function continueOAuthPurge(
-	env: Pick<Env, 'OAUTH_KV'>,
-	now = new Date(),
+async function continueOAuthPurge(
+	kv: KVNamespace,
+	storage: DurableObjectStorage,
+	now: number,
 ): Promise<OAuthPurgeResult> {
 	const continuation = parseContinuation(
-		await env.OAUTH_KV.get(oauthPurgeContinuationKey, { type: 'json' }),
+		await storage.get(oauthPurgeContinuationStorageKey),
 	)
-	const phase = continuation.nextPhase
+	const result =
+		continuation.nextPhase === 'grants'
+			? await purgeGrantPhase(kv, continuation, now)
+			: await purgeTokenPhase(kv, continuation)
+	await storage.put(oauthPurgeContinuationStorageKey, continuation)
+	return result
+}
 
-	if (phase === 'grants') {
-		const result = await purgeGrantPage(
-			env.OAUTH_KV,
-			continuation.grantCursor,
-			Math.floor(now.getTime() / 1000),
+/**
+ * A single global instance serializes purge invocations and stores continuation
+ * in strongly consistent Durable Object storage. KV remains only the provider's
+ * data plane; it is not used as a lock or continuation-state authority.
+ */
+export class OAuthPurgeCoordinator extends DurableObject<Env> {
+	run(input: { scheduledAt: number }): Promise<OAuthPurgeResult> {
+		return this.ctx.blockConcurrencyWhile(() =>
+			continueOAuthPurge(
+				this.env.OAUTH_KV,
+				this.ctx.storage,
+				Math.floor(input.scheduledAt / 1000),
+			),
 		)
-		continuation.grantCursor = result.cursor
-		continuation.nextPhase = 'tokens'
-		await env.OAUTH_KV.put(
-			oauthPurgeContinuationKey,
-			JSON.stringify(continuation),
-		)
-		return { phase, ...result }
 	}
-
-	const result = await purgeTokenPage(env.OAUTH_KV, continuation.tokenCursor)
-	continuation.tokenCursor = result.cursor
-	continuation.nextPhase = 'grants'
-	await env.OAUTH_KV.put(
-		oauthPurgeContinuationKey,
-		JSON.stringify(continuation),
-	)
-	return { phase, ...result }
 }
