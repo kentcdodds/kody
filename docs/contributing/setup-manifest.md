@@ -97,13 +97,17 @@ node tools/ci/backup-resources-cli.ts plan \
 ```
 
 `apply` is an explicit mutation and must be run only after reviewing the plan.
-The runtime receives a source-account token with D1 read/export access as the
-`CLOUDFLARE_API_TOKEN` Worker secret. It must not receive the provisioner token
-or R2 bucket, lock, lifecycle, or public-access administration permissions.
-Scheduling remains inert until the blocking-export benchmark is approved and
-both enable variables are exactly `true`. See
-[Disaster recovery](./disaster-recovery.md) for deployment, readiness, drill,
-credential, and exclusion details.
+The runtime receives a source-account token with Cloudflare Account D1 Edit as
+the `CLOUDFLARE_API_TOKEN` Worker secret. Cloudflare grants this permission
+account-wide and it can mutate D1; the runtime's application UUID/name allowlist
+reduces operator mistakes but does not technically scope the token to one
+database or make it read-only. Keep this source runtime token separate from the
+destination R2 provisioning/lock-administration token and drill restore
+credentials. The runtime must not receive either of those credentials or R2
+bucket, lock, lifecycle, or public-access administration permissions. Scheduling
+remains inert until the blocking-export benchmark is approved and both enable
+variables are exactly `true`. See [Disaster recovery](./disaster-recovery.md)
+for deployment, readiness, drill, credential, and exclusion details.
 
 ## Optional Cloudflare offerings
 

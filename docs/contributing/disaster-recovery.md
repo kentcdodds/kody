@@ -174,20 +174,28 @@ community-activity dispatch and its DLQ.
 
 No one credential may both destroy the source and erase the retained backup.
 
-| Role                           | Minimum authority                                                                                                          | Must not have                                                                                              |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| D1 backup runtime              | Source-account D1 Read through one secret token; object read/write through its destination-account `BACKUP_BUCKET` binding | Provisioner token, source delete, D1 Time Travel restore, destination bucket/lifecycle/lock administration |
-| Canonical backup operator      | Read canonical source R2 and Artifacts; enumerate/export approved Durable Objects; write independently retained copies     | Claiming the D1 control plane implements these transfers                                                   |
-| Backup retention administrator | Configure destination R2 bucket locks and lifecycle; inspect retention                                                     | Source account access, backup object overwrite/delete during lock                                          |
-| Restore operator               | Read retained objects and manifests; create isolated/new destination resources; import into the approved target            | Retention-rule removal, unrestricted production source mutation                                            |
-| Incident commander             | Approve recovery point, abort points, cutover, and exceptions                                                              | Routine possession of data-plane secrets                                                                   |
-| Security approver              | Verify source/destination identities, escrow fingerprint, credential separation, and audit record                          | Routine backup execution                                                                                   |
+| Role                           | Minimum authority                                                                                                                  | Must not have                                                                                                |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| D1 backup runtime              | Source-account Account D1 Edit through one secret token; object read/write through its destination-account `BACKUP_BUCKET` binding | Provisioner token, application paths that mutate source D1, destination bucket/lifecycle/lock administration |
+| Canonical backup operator      | Read canonical source R2 and Artifacts; enumerate/export approved Durable Objects; write independently retained copies             | Claiming the D1 control plane implements these transfers                                                     |
+| Backup retention administrator | Configure destination R2 bucket locks and lifecycle; inspect retention                                                             | Source account access, backup object overwrite/delete during lock                                            |
+| Restore operator               | Read retained objects and manifests; create isolated/new destination resources; import into the approved target                    | Retention-rule removal, unrestricted production source mutation                                              |
+| Incident commander             | Approve recovery point, abort points, cutover, and exceptions                                                                      | Routine possession of data-plane secrets                                                                     |
+| Security approver              | Verify source/destination identities, escrow fingerprint, credential separation, and audit record                                  | Routine backup execution                                                                                     |
+
+Cloudflare grants Account D1 Edit account-wide, and the permission can mutate
+D1. Cloudflare does not technically scope the token to one database or make it
+read-only. The runtime's reviewed UUID/name allowlist and metadata checks reduce
+operator mistakes, but they are application controls rather than credential
+scope. This unavoidable blast radius makes credential separation especially
+important.
 
 Use account-scoped service identities, short expirations where supported, and
 bucket/resource restrictions:
 
-- source D1 runtime token: source-account D1 Read only; stored in the backup
-  Worker as `CLOUDFLARE_API_TOKEN`;
+- source D1 runtime token: source-account Account D1 Edit, used only by the
+  backup export runtime and stored in the backup Worker as
+  `CLOUDFLARE_API_TOKEN`;
 - source R2 S3 credentials: object read/list on only `kody-email-blobs` and
   `kody-community-assets`;
 - destination R2 runtime access: only the dedicated Worker's `BACKUP_BUCKET`
@@ -197,6 +205,10 @@ bucket/resource restrictions:
   secret or runtime credential;
 - restore credentials: created just in time, separately audited, and revoked
   after the drill or incident.
+
+The source runtime token, destination R2 provisioner/lock-administration token,
+and drill restore credentials must be three separate credentials. Do not add
+destination or restore authority to the source runtime token.
 
 Do not put token values, signed URLs, repo tokens, R2 secret access keys, or
 decrypted user secrets in command lines, manifests, logs, tickets, or shell
@@ -233,10 +245,10 @@ account does not protect against account compromise.
 
 The dedicated backup Worker, its Workflow, and `BACKUP_BUCKET` live in the
 independently administered **DR Cloudflare account**. The Worker calls the
-production/source account D1 API using the source-account D1 Read token stored
-as its `CLOUDFLARE_API_TOKEN` secret. On completion, it streams the temporary
-signed D1 export response directly into its destination-account R2 binding; it
-does not stage the SQL in the source account.
+production/source account D1 API using the source-account Account D1 Edit token
+stored as its `CLOUDFLARE_API_TOKEN` secret. On completion, it streams the
+temporary signed D1 export response directly into its destination-account R2
+binding; it does not stage the SQL in the source account.
 
 Cloudflare does not provide a single native cross-account backup transaction for
 D1, R2, Durable Objects, KV, and Artifacts. R2 has no S3 replication API;
@@ -342,8 +354,8 @@ npx wrangler deploy --dry-run \
   --config packages/backup-control-plane/wrangler.jsonc
 
 # Wrangler is authenticated to the DR account. The piped value is a separate
-# source-account token whose only Cloudflare permission is D1 Read.
-printf '%s' "$SOURCE_D1_READ_TOKEN" | npx wrangler secret put \
+# source-account token whose only Cloudflare permission is Account D1 Edit.
+printf '%s' "$SOURCE_D1_EDIT_TOKEN" | npx wrangler secret put \
   CLOUDFLARE_API_TOKEN \
   --config packages/backup-control-plane/wrangler.jsonc
 
@@ -536,9 +548,10 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
 ```
 
 The CLI verifies the exact manifest bytes against the separately supplied
-manifest SHA-256, then checks SQL bytes, size, and SHA-256 against the manifest.
-It rejects backups larger than 5 GiB; it does not split them. It dry-runs by
-default and does not create a target. With `--execute`, it requires
+manifest SHA-256, stats the SQL file, rejects files larger than 5 GiB or with a
+manifest size mismatch, then computes SHA-256 as a stream without retaining the
+dump in memory. It does not split oversized dumps. It dry-runs by default and
+does not create a target. With `--execute`, it requires
 `CLOUDFLARE_D1_DRILL_EDIT_TOKEN`, live-creates a new D1 database in the
 allowlisted target account immediately before import, and verifies Cloudflare's
 returned UUID, exact requested name, and `created_at` against the creation
@@ -771,8 +784,8 @@ the intended system only.
 - [ ] The blocking D1 export benchmark gate passed at production scale and an
       isolated import passed before schedule enablement.
 - [ ] The dedicated Worker/Workflow is deployed in the DR account with the
-      source D1 Read secret and destination R2 binding; the provisioner token is
-      absent from runtime.
+      source Account D1 Edit secret and destination R2 binding; the provisioner
+      token is absent from runtime.
 - [ ] Both schedule gates remained false through benchmark and are true only in
       the approved deployment.
 - [ ] The sole create-capable 02:15 UTC trigger, bounded 02:45–05:45 hourly

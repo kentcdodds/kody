@@ -138,10 +138,14 @@ test('backup desired state uses exact R2 schemas and a non-enforced runtime cont
 			{ uuid: sourceD1Uuid, name: 'kody-production-database' },
 		],
 		d1ExportTokenRequirements: {
-			cloudflarePermission: 'D1 Read',
+			cloudflarePermission: 'D1 Edit',
+			cloudflareScope: 'source-account-wide',
+			canMutateD1: true,
 			sourceAccountId: normalizedSourceAccountId,
 			allowedDatabaseUuids: [sourceD1Uuid],
 			applicationMustEnforceAllowlist: true,
+			applicationAllowlistDoesNotScopeToken: true,
+			applicationAllowlistDoesNotMakeTokenReadOnly: true,
 		},
 		r2Binding: {
 			binding: 'BACKUP_BUCKET',

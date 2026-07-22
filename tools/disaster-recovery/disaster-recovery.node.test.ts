@@ -14,7 +14,10 @@ import {
 	parseAndVerifyManifest,
 	runD1RestoreDrill,
 } from './d1-restore-drill.ts'
-import { createD1DrillTarget } from './d1-restore-drill-cli.ts'
+import {
+	collectBackupFileEvidence,
+	createD1DrillTarget,
+} from './d1-restore-drill-cli.ts'
 import { verifyLocalArtifactFiles } from './canonical-readiness-cli.ts'
 import {
 	type EvidenceArtifact,
@@ -146,7 +149,10 @@ function drillInput(overrides: Record<string, unknown> = {}) {
 	return {
 		manifestBytes: fixture.bytes,
 		expectedManifestSha256: fixture.checksum,
-		backupBytes,
+		backupFileEvidence: {
+			sizeBytes: backupBytes.byteLength,
+			sha256: sha256(backupBytes),
+		},
 		backupFile: '/operator/downloads/backup.sql',
 		baseline: createBaseline(),
 		targetAccountId: 'isolated-drill-account-id',
@@ -162,7 +168,7 @@ function drillInput(overrides: Record<string, unknown> = {}) {
 	}
 }
 
-test('D1 drill verifies immutable manifest and SQL bytes before any live creation', async () => {
+test('D1 drill verifies immutable manifest and supplied SQL file evidence before any live creation', async () => {
 	const fixture = manifestFixture()
 	expect(parseAndVerifyManifest(fixture.bytes, fixture.checksum)).toEqual(
 		fixture.manifest,
@@ -177,12 +183,27 @@ test('D1 drill verifies immutable manifest and SQL bytes before any live creatio
 	await expect(
 		runD1RestoreDrill(
 			drillInput({
-				backupBytes: new TextEncoder().encode('corrup'),
+				backupFileEvidence: {
+					sizeBytes: backupBytes.byteLength - 1,
+					sha256: sha256(backupBytes),
+				},
 				dryRun: false,
 			}),
 			adapters,
 		),
-	).rejects.toThrow('local SQL bytes or checksum')
+	).rejects.toThrow('local SQL file evidence')
+	await expect(
+		runD1RestoreDrill(
+			drillInput({
+				backupFileEvidence: {
+					sizeBytes: backupBytes.byteLength,
+					sha256: 'f'.repeat(64),
+				},
+				dryRun: false,
+			}),
+			adapters,
+		),
+	).rejects.toThrow('local SQL file evidence')
 	const oversized = manifestFixture({
 		bytes: 5 * 1024 * 1024 * 1024 + 1,
 	})
@@ -197,6 +218,55 @@ test('D1 drill verifies immutable manifest and SQL bytes before any live creatio
 		),
 	).rejects.toThrow('exceeds the 5 GiB')
 	expect(adapters.createTarget).not.toHaveBeenCalled()
+})
+
+test('SQL file evidence streams injected chunks after stat and rejects sizes without reading the dump', async () => {
+	const events: Array<string> = []
+	const evidence = await collectBackupFileEvidence('backup.sql', 6, {
+		async statFile(file) {
+			events.push(`stat:${file}`)
+			return { size: 6 }
+		},
+		readChunks(file) {
+			events.push(`stream:${file}`)
+			return (async function* () {
+				yield new TextEncoder().encode('back')
+				yield new TextEncoder().encode('up')
+			})()
+		},
+	})
+	expect(evidence).toEqual({
+		sizeBytes: 6,
+		sha256: sha256(backupBytes),
+	})
+	expect(events).toEqual(['stat:backup.sql', 'stream:backup.sql'])
+	await expect(
+		runD1RestoreDrill(
+			drillInput({ backupFileEvidence: evidence }),
+			createAdapters(),
+		),
+	).resolves.toMatchObject({ dryRun: true })
+
+	const readChunks = vi.fn((): AsyncIterable<Uint8Array> => {
+		throw new Error('dump stream must not be opened')
+	})
+	await expect(
+		collectBackupFileEvidence('backup.sql', 7, {
+			async statFile() {
+				return { size: 6 }
+			},
+			readChunks,
+		}),
+	).rejects.toThrow('size does not match the manifest')
+	await expect(
+		collectBackupFileEvidence('backup.sql', 5 * 1024 * 1024 * 1024 + 1, {
+			async statFile() {
+				return { size: 5 * 1024 * 1024 * 1024 + 1 }
+			},
+			readChunks,
+		}),
+	).rejects.toThrow('exceeds the 5 GiB')
+	expect(readChunks).not.toHaveBeenCalled()
 })
 
 test('dry-run is non-mutating and live execution creates in a distinct allowlisted account immediately before import', async () => {

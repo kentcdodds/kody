@@ -1,6 +1,6 @@
 import { canonicalJson, sha256 } from './canonical-json.ts'
 
-const fiveGiB = 5 * 1024 * 1024 * 1024
+export const maximumD1BackupSizeBytes = 5 * 1024 * 1024 * 1024
 const sha256Pattern = /^[a-f0-9]{64}$/
 const uuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -90,10 +90,15 @@ export type DrillAdapters = {
 	query(targetUuid: string, query: VerificationQuery): Promise<Array<QueryRow>>
 }
 
+export type BackupFileEvidence = {
+	sizeBytes: number
+	sha256: string
+}
+
 export type DrillInput = {
 	manifestBytes: Uint8Array
 	expectedManifestSha256: string
-	backupBytes: Uint8Array
+	backupFileEvidence: BackupFileEvidence
 	backupFile: string
 	baseline: unknown
 	postForwardBaseline?: unknown
@@ -227,7 +232,7 @@ export function parseAndVerifyManifest(
 	if (!Number.isSafeInteger(value.bytes) || (value.bytes as number) <= 0) {
 		throw new Error('manifest.bytes must be a positive safe integer')
 	}
-	if ((value.bytes as number) > fiveGiB) {
+	if ((value.bytes as number) > maximumD1BackupSizeBytes) {
 		throw new Error('D1 backup exceeds the 5 GiB restore-drill limit')
 	}
 	for (const key of ['scheduledAt', 'startedAt', 'completedAt'] as const) {
@@ -643,10 +648,10 @@ export async function runD1RestoreDrill(
 		input.allowlist,
 	)
 	if (
-		input.backupBytes.byteLength !== manifest.bytes ||
-		sha256(input.backupBytes) !== manifest.sha256
+		input.backupFileEvidence.sizeBytes !== manifest.bytes ||
+		input.backupFileEvidence.sha256 !== manifest.sha256
 	) {
-		throw new Error('local SQL bytes or checksum do not match the manifest')
+		throw new Error('local SQL file evidence does not match the manifest')
 	}
 	const dryRun = input.dryRun ?? true
 	const plan = buildDrillCommands({

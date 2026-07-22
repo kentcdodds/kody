@@ -72,10 +72,14 @@ export type BackupRuntimeContract = {
 	}
 	sourceD1DatabaseAllowlist: Array<SourceD1Database>
 	d1ExportTokenRequirements: {
-		cloudflarePermission: 'D1 Read'
+		cloudflarePermission: 'D1 Edit'
+		cloudflareScope: 'source-account-wide'
+		canMutateD1: true
 		sourceAccountId: string
 		allowedDatabaseUuids: Array<string>
 		applicationMustEnforceAllowlist: true
+		applicationAllowlistDoesNotScopeToken: true
+		applicationAllowlistDoesNotMakeTokenReadOnly: true
 	}
 	r2Binding: {
 		binding: 'BACKUP_BUCKET'
@@ -316,10 +320,14 @@ export function generateBackupDesiredState(input: {
 		},
 		sourceD1DatabaseAllowlist,
 		d1ExportTokenRequirements: {
-			cloudflarePermission: 'D1 Read',
+			cloudflarePermission: 'D1 Edit',
+			cloudflareScope: 'source-account-wide',
+			canMutateD1: true,
 			sourceAccountId,
 			allowedDatabaseUuids: sourceD1DatabaseAllowlist.map(({ uuid }) => uuid),
 			applicationMustEnforceAllowlist: true,
+			applicationAllowlistDoesNotScopeToken: true,
+			applicationAllowlistDoesNotMakeTokenReadOnly: true,
 		},
 		r2Binding: {
 			binding: 'BACKUP_BUCKET',

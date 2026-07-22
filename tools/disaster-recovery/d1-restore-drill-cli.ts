@@ -1,13 +1,18 @@
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import {
+	type BackupFileEvidence,
 	type Command,
 	type CreatedD1Target,
 	type DrillAdapters,
 	type DrillAllowlistEntry,
 	type QueryRow,
 	type VerificationQuery,
+	maximumD1BackupSizeBytes,
+	parseAndVerifyManifest,
 	runD1RestoreDrill,
 } from './d1-restore-drill.ts'
 
@@ -80,6 +85,54 @@ function parseArguments(argv: ReadonlyArray<string>): CliArguments {
 
 async function readJson(file: string): Promise<unknown> {
 	return JSON.parse(await readFile(file, 'utf8')) as unknown
+}
+
+type BackupFileEvidenceAdapters = {
+	statFile(file: string): Promise<{ size: number }>
+	readChunks(file: string): AsyncIterable<Uint8Array>
+}
+
+const defaultBackupFileEvidenceAdapters: BackupFileEvidenceAdapters = {
+	async statFile(file) {
+		return await stat(file)
+	},
+	readChunks(file) {
+		return createReadStream(file)
+	},
+}
+
+export async function collectBackupFileEvidence(
+	file: string,
+	expectedSizeBytes: number,
+	adapters: BackupFileEvidenceAdapters = defaultBackupFileEvidenceAdapters,
+): Promise<BackupFileEvidence> {
+	const { size } = await adapters.statFile(file)
+	if (!Number.isSafeInteger(size) || size < 0) {
+		throw new Error('local SQL file size is invalid')
+	}
+	if (size > maximumD1BackupSizeBytes) {
+		throw new Error('local SQL file exceeds the 5 GiB restore-drill limit')
+	}
+	if (size !== expectedSizeBytes) {
+		throw new Error('local SQL file size does not match the manifest')
+	}
+
+	const hash = createHash('sha256')
+	let streamedSizeBytes = 0
+	for await (const chunk of adapters.readChunks(file)) {
+		streamedSizeBytes += chunk.byteLength
+		if (
+			streamedSizeBytes > size ||
+			streamedSizeBytes > maximumD1BackupSizeBytes
+		) {
+			throw new Error('local SQL file changed while hashing')
+		}
+		hash.update(chunk)
+	}
+	if (streamedSizeBytes !== size) {
+		throw new Error('local SQL file changed while hashing')
+	}
+	return { sizeBytes: size, sha256: hash.digest('hex') }
 }
 
 async function runProcess(
@@ -215,9 +268,13 @@ function createAdapters(token: string, targetAccountId: string): DrillAdapters {
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
 	const args = parseArguments(argv)
-	const [manifestBytes, backupBytes, baseline, allowlist] = await Promise.all([
-		readFile(args.manifestPath),
-		readFile(args.backupPath),
+	const manifestBytes = await readFile(args.manifestPath)
+	const manifest = parseAndVerifyManifest(manifestBytes, args.manifestSha256)
+	const backupFileEvidence = await collectBackupFileEvidence(
+		args.backupPath,
+		manifest.bytes,
+	)
+	const [baseline, allowlist] = await Promise.all([
 		readJson(args.baselinePath),
 		readJson(args.allowlistPath) as Promise<Array<DrillAllowlistEntry>>,
 	])
@@ -236,7 +293,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 		{
 			manifestBytes,
 			expectedManifestSha256: args.manifestSha256,
-			backupBytes,
+			backupFileEvidence,
 			backupFile: args.backupPath,
 			baseline,
 			postForwardBaseline,
