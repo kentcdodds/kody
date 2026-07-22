@@ -39,6 +39,20 @@ function createInboundEnv() {
 	return { ...env, APP_BASE_URL: platformBaseUrl }
 }
 
+async function insertWritableEmailTestUser(stableUserId: string) {
+	await env.APP_DB.prepare(
+		`INSERT INTO users (
+			username, email, password_hash, stable_user_id, deleting_at
+		) VALUES (?, ?, 'hash', ?, NULL)`,
+	)
+		.bind(
+			`user-${crypto.randomUUID()}`,
+			`${crypto.randomUUID()}@example.test`,
+			stableUserId,
+		)
+		.run()
+}
+
 async function seedAccount(input: {
 	db: D1Database
 	email: string
@@ -567,6 +581,7 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `email-attachment-user-${crypto.randomUUID()}`
+	await insertWritableEmailTestUser(userId)
 	const stored = await insertEmailMessageWithAttachments({
 		db: env.APP_DB,
 		blobs: env.EMAIL_BLOBS,
@@ -1040,6 +1055,7 @@ test('inbound storage refund failure is logged and original storage error is ret
 test('insertEmailMessageWithRawMime stores raw MIME in R2 and only raw_mime_key in D1', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `user-${crypto.randomUUID()}`
+	await insertWritableEmailTestUser(userId)
 	const messageId = crypto.randomUUID()
 	const rawMime = 'From: a@example.net\r\nTo: b@example.net\r\n\r\nbody'
 	const stored = await insertEmailMessageWithRawMime({
@@ -1070,6 +1086,7 @@ test('insertEmailMessageWithRawMime stores raw MIME in R2 and only raw_mime_key 
 test('insertEmailMessageWithRawMime best-effort deletes R2 blob when D1 insert fails', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `user-${crypto.randomUUID()}`
+	await insertWritableEmailTestUser(userId)
 	const messageId = crypto.randomUUID()
 	const key = emailRawMimeKey(userId, messageId)
 	const deletes: Array<string> = []
@@ -1133,6 +1150,7 @@ test('insertEmailMessageWithRawMime best-effort deletes R2 blob when D1 insert f
 test('insertEmailMessageWithAttachments cleans message and blob when attachment insert fails', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `user-${crypto.randomUUID()}`
+	await insertWritableEmailTestUser(userId)
 	const messageId = crypto.randomUUID()
 	const key = emailRawMimeKey(userId, messageId)
 	// Fail only the first batch (attachment insert). Message cleanup also
@@ -1193,6 +1211,7 @@ test('attachment cleanup failure with remaining row is acknowledged without retr
 	silenceExpectedConsoleErrors(['inbound-email-attachment-cleanup-failed'])
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `user-${crypto.randomUUID()}`
+	await insertWritableEmailTestUser(userId)
 	const messageId = crypto.randomUUID()
 	const key = emailRawMimeKey(userId, messageId)
 	const failingDb = new Proxy(env.APP_DB, {

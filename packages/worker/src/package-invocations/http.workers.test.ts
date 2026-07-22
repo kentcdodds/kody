@@ -78,6 +78,11 @@ async function createEnv(
 						return {
 							async first<T = Record<string, unknown>>() {
 								if (query.includes('FROM users')) {
+									if (query.includes('stable_user_id = ?')) {
+										return (
+											params[0] === tokenUserId ? { deleting_at: null } : null
+										) as T | null
+									}
 									const username = String(params[0] ?? '')
 									return (
 										username === 'my-user'
