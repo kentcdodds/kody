@@ -358,7 +358,7 @@ test('community icon cache write loses the race to account deletion', async () =
 	const { kv, values: kvValues } = createFakeKv()
 	const { bucket } = createFakeR2()
 	let deleting = false
-	let writableChecks = 0
+	let leaseAcquires = 0
 	const db = {
 		prepare(query: string) {
 			return {
@@ -366,17 +366,14 @@ test('community icon cache write loses the race to account deletion', async () =
 					return {
 						async first<T>() {
 							if (query.includes('SELECT deleting_at')) {
-								writableChecks += 1
-								if (writableChecks === 2) {
-									deleting = true
-									return { deleting_at: null } as T
-								}
 								return { deleting_at: deleting ? 'now' : null } as T
 							}
 							return null
 						},
 						async run() {
 							if (query.includes('active_write_count + 1')) {
+								leaseAcquires += 1
+								if (leaseAcquires === 2) deleting = true
 								return { meta: { changes: deleting ? 0 : 1 } }
 							}
 							return { meta: { changes: 1 } }
