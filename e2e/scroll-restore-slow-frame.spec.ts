@@ -45,7 +45,24 @@ test('scroll restoration retries until slow frame content makes the saved positi
 	await expect(page).toHaveURL(new RegExp(`/community/${listing.listingId}$`))
 	await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
 
-	await page.evaluate(() => window.scrollTo(0, 40))
+	await page.evaluate(async (targetScrollY) => {
+		if (window.scrollY === targetScrollY) return
+
+		await new Promise<void>((resolve) => {
+			let fallbackFrame = requestAnimationFrame(() => {
+				fallbackFrame = requestAnimationFrame(finish)
+			})
+
+			function finish() {
+				window.removeEventListener('scroll', finish)
+				cancelAnimationFrame(fallbackFrame)
+				resolve()
+			}
+
+			window.addEventListener('scroll', finish, { once: true })
+			window.scrollTo(0, targetScrollY)
+		})
+	}, 40)
 	const detailScrollY = await page.evaluate(() => window.scrollY)
 	expect(detailScrollY).toBeGreaterThan(0)
 
