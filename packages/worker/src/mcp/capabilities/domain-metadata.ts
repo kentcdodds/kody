@@ -8,7 +8,6 @@ export const capabilityDomainNames = {
 	email: 'email',
 	integrations: 'integrations',
 	jobs: 'jobs',
-	math: 'math',
 	mcpServers: 'mcp_servers',
 	meta: 'meta',
 	openapi: 'openapi',
