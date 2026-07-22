@@ -101,7 +101,7 @@ can't be an afterthought. Here's how it actually works:
 - **Per-user isolation everywhere.** Every read and write path is scoped by
   userId, and your scheduler and storage run in your own Durable Objects.
 
-And the part I care about most: Kody is open source at
+And the part I care about most: Kody is Fair Source, with code available at
 https://github.com/kentcdodds/kody. You don't have to take my word for any of
 the above. Read the code.
 

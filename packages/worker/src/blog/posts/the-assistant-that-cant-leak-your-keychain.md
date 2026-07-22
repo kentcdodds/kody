@@ -35,7 +35,7 @@ doesn't exist. When I evaluate any system that combines LLMs with credentials,
 this is the question I ask: is the safety property enforced by the architecture,
 or by the model's good behavior?
 
-Kody is open source
+Kody is Fair Source
 ([github.com/kentcdodds/kody](https://github.com/kentcdodds/kody)), so you don't
 have to take my word for any of what follows. You can read the code. Here are
 the three layers.

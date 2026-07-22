@@ -126,8 +126,8 @@ OAuth connections use your own OAuth app, created at the provider and connected
 at https://heykody.dev/connect/oauth: a few minutes of setup instead of one
 click, in exchange for your scopes, your rate limits, and no fixed provider list
 ([guide](https://github.com/kentcdodds/kody/blob/main/docs/guides/oauth.md)).
-And the whole thing is open source at https://github.com/kentcdodds/kody, so
-"trust me" never has to be the answer.
+And the whole thing is Fair Source, with code available at
+https://github.com/kentcdodds/kody, so "trust me" never has to be the answer.
 
 ## Honest trade-offs, both directions
 
