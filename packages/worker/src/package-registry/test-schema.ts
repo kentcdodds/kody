@@ -3,8 +3,8 @@
  * Local D1 does not apply migrations, so suites provision the tables they need.
  * Mirrors users columns from early migrations plus 0052/0075 (stable_user_id),
  * 0072 (account_type, package_scope_grants), 0081 (`plan` NOT NULL), and 0083
- * (`plan` NOT NULL DEFAULT `'max'`). Non-historical seeds must write `'max'`
- * explicitly when plan matters.
+ * (`plan` NOT NULL DEFAULT `'free'`). Non-historical seeds may set
+ * `'max'` or `'free'` explicitly when plan matters.
  */
 export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	await db
@@ -17,7 +17,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	email_verified_at TEXT,
 	stable_user_id TEXT NOT NULL,
 	account_type TEXT NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'platform')),
-	plan TEXT NOT NULL DEFAULT 'max',
+	plan TEXT NOT NULL DEFAULT 'free',
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 )`,
@@ -27,7 +27,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 		'email_verified_at TEXT',
 		'stable_user_id TEXT',
 		`account_type TEXT NOT NULL DEFAULT 'person'`,
-		`plan TEXT NOT NULL DEFAULT 'max'`,
+		`plan TEXT NOT NULL DEFAULT 'free'`,
 	]) {
 		try {
 			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()

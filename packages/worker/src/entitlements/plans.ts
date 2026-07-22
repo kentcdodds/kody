@@ -70,11 +70,13 @@ export function parseStripePlanName(value: unknown): PlanName | null {
 }
 
 /**
- * Coerce admin/API nullish plan inputs to the first-class `max` plan.
- * Production writers must never persist NULL.
+ * Coerce admin/API nullish plan inputs to the default `free` plan used for
+ * normal creation and reset paths (signup, invites, admin/platform seeds).
+ * Production writers must never persist NULL. Explicit `max` remains a
+ * valid deliberate assignment.
  */
 export function resolvePlanWrite(plan: PlanName | null | undefined): PlanName {
-	return plan ?? 'max'
+	return plan ?? 'free'
 }
 
 /**

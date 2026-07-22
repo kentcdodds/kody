@@ -22,7 +22,7 @@ const inputSchema = z
 		plan: planNameSchema
 			.nullable()
 			.describe(
-				'Entitlement plan to set. Null maps to max (never persists NULL).',
+				'Entitlement plan to set. Null maps to free (never persists NULL).',
 			),
 	})
 	.refine((value) => value.id !== undefined || value.email !== undefined, {
@@ -39,7 +39,7 @@ export const adminUserUpdateCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_user_update',
 		description:
-			'Update account metadata for one user by id or email. Supports setting the entitlement plan (null maps to max). Admin-only; never touches user content.',
+			'Update account metadata for one user by id or email. Supports setting the entitlement plan (null maps to free). Admin-only; never touches user content.',
 		keywords: ['admin', 'user', 'update', 'account', 'plan', 'entitlements'],
 		inputSchema,
 		outputSchema,

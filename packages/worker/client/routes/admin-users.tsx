@@ -147,8 +147,8 @@ export function AdminUsersRoute(handle: Handle) {
 	let actionState: 'idle' | 'assigning' | 'removing' | 'saving-plan' = 'idle'
 	let selectedRoleToAssign = 'user' as RoleName
 	// Draft follows the selected user (see the render body) until the admin
-	// edits it. Null stored plan values are shown/saved as `max`.
-	let selectedPlanChoice: AdminPlanName = 'max'
+	// edits it. Null stored plan values are shown/saved as `free`.
+	let selectedPlanChoice: AdminPlanName = 'free'
 	let planDraftUserId: number | null = null
 	let loadRequestId = 0
 	let lastLoadedHref = ''
@@ -560,7 +560,7 @@ export function AdminUsersRoute(handle: Handle) {
 		// the select always starts from that user's stored plan.
 		if (selectedUser && selectedUser.id !== planDraftUserId) {
 			planDraftUserId = selectedUser.id
-			selectedPlanChoice = selectedUser.plan ?? 'max'
+			selectedPlanChoice = selectedUser.plan ?? 'free'
 		}
 
 		return (
@@ -753,7 +753,7 @@ export function AdminUsersRoute(handle: Handle) {
 										},
 										{
 											label: 'Plan',
-											value: selectedUser.plan ?? 'max',
+											value: selectedUser.plan ?? 'free',
 										},
 										{
 											label: 'Created',
@@ -861,7 +861,7 @@ export function AdminUsersRoute(handle: Handle) {
 											type="button"
 											disabled={
 												isMutating ||
-												selectedPlanChoice === (selectedUser.plan ?? 'max')
+												selectedPlanChoice === (selectedUser.plan ?? 'free')
 											}
 											mix={[
 												on('click', () => void submitPlanAction()),

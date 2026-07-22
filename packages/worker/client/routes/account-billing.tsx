@@ -86,10 +86,10 @@ function isBillingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === billingPath
 }
 
-/** Stripe missing → "None"; manual/effective compatibility missing → "Max". */
+/** Stripe missing → "None"; manual/effective compatibility missing → "Free". */
 function formatPlanLabel(
 	plan: AdminPlanName | null,
-	missingLabel: 'None' | 'Max',
+	missingLabel: 'None' | 'Free',
 ) {
 	if (plan == null) return missingLabel
 	return plan.charAt(0).toUpperCase() + plan.slice(1)
@@ -243,7 +243,7 @@ export function AccountBillingRoute(handle: Handle) {
 				? [
 						{
 							label: 'Granted plan',
-							value: formatPlanLabel(billing.manualPlan, 'Max'),
+							value: formatPlanLabel(billing.manualPlan, 'Free'),
 						},
 						{
 							label: 'Subscription plan',
@@ -292,7 +292,7 @@ export function AccountBillingRoute(handle: Handle) {
 									color: colors.text,
 								})}
 							>
-								{formatPlanLabel(billing.effectivePlan, 'Max')}
+								{formatPlanLabel(billing.effectivePlan, 'Free')}
 							</p>
 							{currentPlanItems.length > 0 ? (
 								<MetadataGrid items={currentPlanItems} />

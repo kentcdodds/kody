@@ -339,7 +339,7 @@ async function handleUpdatePlanAction(input: {
 		return jsonResponse(
 			{
 				ok: false,
-				error: 'Plan must be one of the known plan names, or null for max.',
+				error: 'Plan must be one of the known plan names, or null for free.',
 			},
 			400,
 		)
@@ -369,8 +369,8 @@ async function handleUpdatePlanAction(input: {
 
 /**
  * Read the requested plan value: a known plan name sets it; explicit null
- * (and empty string) map to `max` for backward compatibility. Writers
- * never persist NULL. Missing key or unknown plan strings are rejected.
+ * (and empty string) map to `free` (the normal default). Writers never
+ * persist NULL. Missing key or unknown plan strings are rejected.
  */
 function readPlanUpdate(
 	body: object,

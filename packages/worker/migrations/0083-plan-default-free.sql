@@ -1,9 +1,9 @@
--- Change users.plan and invites.plan DDL DEFAULT from 'unlimited' to 'max'.
+-- Change users.plan and invites.plan DDL DEFAULT from 'unlimited' to 'free'.
 -- SQLite cannot ALTER a column default in place, so rebuild both tables.
 --
 -- Deploy ordering: `.github/workflows/deploy.yml` applies D1 migrations before
 -- the Worker. Reconcile any residual stored 'unlimited' to 'max', fail closed if
--- any 'unlimited' remains, then rebuild with DEFAULT 'max'.
+-- any 'unlimited' remains, then rebuild with DEFAULT 'free'.
 --
 -- Cloudflare D1 wraps each migration in a transaction, so PRAGMA foreign_keys=OFF
 -- is a no-op there. With foreign keys still enforced, DROP TABLE users destroys or
@@ -71,7 +71,7 @@ CREATE TABLE users_next (
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	email_verified_at TEXT,
-	plan TEXT NOT NULL DEFAULT 'max',
+	plan TEXT NOT NULL DEFAULT 'free',
 	stable_user_id TEXT NOT NULL,
 	stripe_customer_id TEXT,
 	stripe_plan TEXT,
@@ -168,7 +168,7 @@ CREATE TABLE invites_next (
 	expires_at TEXT,
 	revoked_at TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-	plan TEXT NOT NULL DEFAULT 'max',
+	plan TEXT NOT NULL DEFAULT 'free',
 	FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 

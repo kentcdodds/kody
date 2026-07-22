@@ -176,7 +176,7 @@ async function handleCreateInviteAction(input: {
 		return jsonResponse(
 			{
 				ok: false,
-				error: 'Plan must be one of the known plan names, or empty for max.',
+				error: 'Plan must be one of the known plan names, or empty for free.',
 			},
 			400,
 		)
@@ -217,7 +217,7 @@ async function handleCreateInviteAction(input: {
 }
 
 /**
- * Read an optional invite plan: missing/empty/null → `max`.
+ * Read an optional invite plan: missing/empty/null → `free`.
  * Unknown non-empty values are rejected. Writers never persist NULL.
  */
 function readInvitePlan(

@@ -73,9 +73,9 @@ function createAdminTestEnv(input: {
 			user.id,
 			{
 				...user,
-				// Final-world fixtures default to max; unknown/null stay
+				// Normal fixtures default to free; unknown/null stay
 				// explicit so the dedicated stored-plan coercion test can warn.
-				plan: user.plan === undefined ? 'max' : user.plan,
+				plan: user.plan === undefined ? 'free' : user.plan,
 			},
 		]),
 	)
@@ -578,7 +578,7 @@ test('remove role removes admin when another admin remains', async () => {
 	)
 })
 
-test('update plan action sets, maps null to max, validates, and scopes plan changes', async () => {
+test('update plan action sets, maps null to free, validates, and scopes plan changes', async () => {
 	logAuditEventSpy.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
@@ -633,13 +633,13 @@ test('update plan action sets, maps null to max, validates, and scopes plan chan
 		plan: null,
 	})
 	expect(clearPlanResponse.status).toBe(200)
-	expect((await clearPlanResponse.json()).users[0].plan).toBe('max')
+	expect((await clearPlanResponse.json()).users[0].plan).toBe('free')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
 			action: 'update_plan',
 			result: 'success',
-			reason: 'target_user_id=2;plan=max',
+			reason: 'target_user_id=2;plan=free',
 		}),
 	)
 

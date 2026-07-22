@@ -27,7 +27,7 @@ function createInviteDb(invites: Array<InviteFixture> = []) {
 							expires_at: expiresAt == null ? null : String(expiresAt),
 							revoked_at: null,
 							created_at: '2026-07-05T00:00:00.000Z',
-							plan: plan == null ? 'max' : String(plan),
+							plan: plan == null ? 'free' : String(plan),
 						}
 						records.set(invite.code, invite)
 						return { meta: { changes: 1, last_row_id: 0 } }
@@ -188,7 +188,7 @@ test('createInvite stores plan and roundtrips through getInviteByCode and listIn
 	])
 })
 
-test('createInvite without plan stores max', async () => {
+test('createInvite without plan stores free', async () => {
 	const db = createInviteDb()
 	const created = await createInvite({
 		db,
@@ -197,11 +197,11 @@ test('createInvite without plan stores max', async () => {
 		maxUses: 1,
 	})
 
-	expect(created.plan).toBe('max')
+	expect(created.plan).toBe('free')
 	await expect(getInviteByCode(db, 'PLAN-NONE')).resolves.toEqual(
 		expect.objectContaining({
 			code: 'PLAN-NONE',
-			plan: 'max',
+			plan: 'free',
 		}),
 	)
 })

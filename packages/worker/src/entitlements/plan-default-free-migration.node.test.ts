@@ -5,7 +5,7 @@ import { expect, test } from 'vitest'
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
 /** Upper bound (exclusive): only migrations before this file are applied as setup. */
-const planDefaultMaxMigration = '0083-plan-default-max.sql'
+const planDefaultFreeMigration = '0083-plan-default-free.sql'
 
 const inboundUserFkTables = [
 	'password_resets',
@@ -38,10 +38,10 @@ function applyMigrationLikeD1(db: DatabaseSync, fileName: string) {
 	}
 }
 
-function applyMigrationsBeforePlanDefaultMax(db: DatabaseSync) {
+function applyMigrationsBeforePlanDefaultFree(db: DatabaseSync) {
 	db.exec('PRAGMA foreign_keys = ON')
 	for (const fileName of readdirSync(migrationsDirectory)
-		.filter((file) => file.endsWith('.sql') && file < planDefaultMaxMigration)
+		.filter((file) => file.endsWith('.sql') && file < planDefaultFreeMigration)
 		.sort()) {
 		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
 	}
@@ -163,7 +163,7 @@ function stripePlanColumnInfo(db: DatabaseSync) {
 /**
  * Seed after migrations through 0082: plan is NOT NULL DEFAULT 'unlimited',
  * data rename already applied. Residual stored 'unlimited' (reintroduced after
- * 0082) exercises 0083 reconciliation before the DEFAULT 'max' rebuild.
+ * 0082) exercises 0083 reconciliation before the DEFAULT 'free' rebuild.
  */
 function seedInboundFkRows(db: DatabaseSync) {
 	db.exec(`
@@ -235,9 +235,9 @@ function seedInboundFkRows(db: DatabaseSync) {
 
 const allocatedThenDeletedUserId = 1000
 
-test('plan default-max migration reconciles residual unlimited, rebuilds users/invites, and preserves inbound fks under a D1 transaction', () => {
+test('plan default-free migration reconciles residual unlimited, rebuilds users/invites, and preserves inbound fks under a D1 transaction', () => {
 	const db = new DatabaseSync(':memory:')
-	applyMigrationsBeforePlanDefaultMax(db)
+	applyMigrationsBeforePlanDefaultFree(db)
 	seedInboundFkRows(db)
 	// Allocate a high user id then delete it so sqlite_sequence sits above live
 	// max(id). FK inventory/snapshots stay based on remaining users only.
@@ -285,22 +285,22 @@ test('plan default-max migration reconciles residual unlimited, rebuilds users/i
 			.all(),
 	).toEqual([])
 
-	applyMigrationLikeD1(db, planDefaultMaxMigration)
+	applyMigrationLikeD1(db, planDefaultFreeMigration)
 
 	expect(planColumnInfo(db, 'users')).toMatchObject({
 		name: 'plan',
 		type: 'TEXT',
 		notnull: 1,
-		dflt_value: "'max'",
+		dflt_value: "'free'",
 	})
 	expect(planColumnInfo(db, 'invites')).toMatchObject({
 		name: 'plan',
 		type: 'TEXT',
 		notnull: 1,
-		dflt_value: "'max'",
+		dflt_value: "'free'",
 	})
-	expect(usersTableSql(db)).toContain(`plan TEXT NOT NULL DEFAULT 'max'`)
-	expect(invitesTableSql(db)).toContain(`plan TEXT NOT NULL DEFAULT 'max'`)
+	expect(usersTableSql(db)).toContain(`plan TEXT NOT NULL DEFAULT 'free'`)
+	expect(invitesTableSql(db)).toContain(`plan TEXT NOT NULL DEFAULT 'free'`)
 	expect(usersTableSql(db)).not.toMatch(/plan TEXT[^,\n]*CHECK/)
 	expect(invitesTableSql(db)).not.toMatch(/plan TEXT[^,\n]*CHECK/)
 	expect(usersTableSql(db)).not.toContain(`DEFAULT 'unlimited'`)
@@ -506,7 +506,7 @@ test('plan default-max migration reconciles residual unlimited, rebuilds users/i
 	).run()
 	expect(
 		db.prepare(`SELECT id, plan FROM users WHERE username = 'carol'`).get(),
-	).toEqual({ id: allocatedThenDeletedUserId + 1, plan: 'max' })
+	).toEqual({ id: allocatedThenDeletedUserId + 1, plan: 'free' })
 
 	db.prepare(
 		`INSERT INTO invites (code, created_by, note)
@@ -514,7 +514,7 @@ test('plan default-max migration reconciles residual unlimited, rebuilds users/i
 	).run(allocatedThenDeletedUserId + 1)
 	expect(
 		db.prepare(`SELECT plan FROM invites WHERE code = 'invite-default'`).get(),
-	).toEqual({ plan: 'max' })
+	).toEqual({ plan: 'free' })
 
 	expect(() => {
 		db.prepare(
@@ -535,7 +535,7 @@ test('plan default-max migration reconciles residual unlimited, rebuilds users/i
 			username, email, password_hash, stable_user_id, plan, stripe_plan
 		) VALUES (
 			'still-null-stripe', 'stripe-null@example.com', 'hash-s',
-			'stable-stripe-null', 'free', NULL
+			'stable-stripe-null', 'pro', NULL
 		)`,
 	).run()
 	expect(
@@ -545,7 +545,7 @@ test('plan default-max migration reconciles residual unlimited, rebuilds users/i
 				 WHERE username = 'still-null-stripe'`,
 			)
 			.get(),
-	).toEqual({ plan: 'free', stripe_plan: null })
+	).toEqual({ plan: 'pro', stripe_plan: null })
 
 	db.exec('PRAGMA foreign_keys = ON')
 	db.prepare(`DELETE FROM users WHERE id = 1`).run()
@@ -565,9 +565,9 @@ test('plan default-max migration reconciles residual unlimited, rebuilds users/i
 	).toEqual({ created_by: null })
 })
 
-test('plan default-max migration fails closed and rolls back when reconciliation cannot clear unlimited plans', () => {
+test('plan default-free migration fails closed and rolls back when reconciliation cannot clear unlimited plans', () => {
 	const db = new DatabaseSync(':memory:')
-	applyMigrationsBeforePlanDefaultMax(db)
+	applyMigrationsBeforePlanDefaultFree(db)
 	seedInboundFkRows(db)
 	db.prepare(
 		`INSERT INTO users (
@@ -604,7 +604,7 @@ test('plan default-max migration fails closed and rolls back when reconciliation
 		END;
 	`)
 
-	expect(() => applyMigrationLikeD1(db, planDefaultMaxMigration)).toThrow(
+	expect(() => applyMigrationLikeD1(db, planDefaultFreeMigration)).toThrow(
 		/CHECK constraint failed: 0/,
 	)
 
@@ -614,8 +614,8 @@ test('plan default-max migration fails closed and rolls back when reconciliation
 	expect(invitesTableSql(db)).toContain(
 		`plan TEXT NOT NULL DEFAULT 'unlimited'`,
 	)
-	expect(usersTableSql(db)).not.toContain(`DEFAULT 'max'`)
-	expect(invitesTableSql(db)).not.toContain(`DEFAULT 'max'`)
+	expect(usersTableSql(db)).not.toContain(`DEFAULT 'free'`)
+	expect(invitesTableSql(db)).not.toContain(`DEFAULT 'free'`)
 	expect(
 		db
 			.prepare(`SELECT username, plan, stripe_plan FROM users ORDER BY id`)

@@ -400,7 +400,7 @@ export function AdminInvitesRoute(handle: Handle) {
 							<select
 								name="plan"
 								disabled={inviteFormDisabled}
-								defaultValue="max"
+								defaultValue="free"
 								mix={css(inputCss)}
 							>
 								{availablePlans.map((plan) => (
@@ -501,7 +501,7 @@ export function AdminInvitesRoute(handle: Handle) {
 										},
 										{
 											label: 'Plan',
-											value: invite.plan ?? 'max',
+											value: invite.plan ?? 'free',
 										},
 										{
 											label: 'Expires',

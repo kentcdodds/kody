@@ -1,7 +1,7 @@
 /**
  * Community flow workers-unit schema. Keeps production-parity
- * `plan TEXT NOT NULL DEFAULT 'max'` from migration 0083. Non-historical seeds
- * must write `'max'` explicitly when plan matters.
+ * `plan TEXT NOT NULL DEFAULT 'free'` from migration 0083. Non-historical seeds
+ * may set `'max'` or `'free'` explicitly when plan matters.
  */
 export async function ensureCommunityFlowSchema(db: D1Database) {
 	const statements = [
@@ -15,7 +15,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			avatar_key TEXT,
 			profile_visibility TEXT NOT NULL DEFAULT 'public' CHECK (profile_visibility IN ('public', 'private')),
 			password_hash TEXT NOT NULL,
-			plan TEXT NOT NULL DEFAULT 'max',
+			plan TEXT NOT NULL DEFAULT 'free',
 			stripe_customer_id TEXT,
 			stripe_plan TEXT,
 			stripe_plan_refreshed_at TEXT,
@@ -231,6 +231,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		`ALTER TABLE users ADD COLUMN bio TEXT`,
 		`ALTER TABLE users ADD COLUMN avatar_key TEXT`,
 		`ALTER TABLE users ADD COLUMN profile_visibility TEXT NOT NULL DEFAULT 'public'`,
+		`ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'`,
 		`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
 	]
 	for (const statement of additiveAlters) {

@@ -273,11 +273,12 @@ test('parseStripePlanName rejects max, unlimited, and unknown values', () => {
 	expect(parseStripePlanName(null)).toBeNull()
 })
 
-test('resolvePlanWrite maps nullish inputs to max', () => {
-	expect(resolvePlanWrite(null)).toBe('max')
-	expect(resolvePlanWrite(undefined)).toBe('max')
+test('resolvePlanWrite maps nullish inputs to free', () => {
+	expect(resolvePlanWrite(null)).toBe('free')
+	expect(resolvePlanWrite(undefined)).toBe('free')
 	expect(resolvePlanWrite('pro')).toBe('pro')
 	expect(resolvePlanWrite('max')).toBe('max')
+	expect(resolvePlanWrite('free')).toBe('free')
 })
 
 test('storage byte entry estimates support net-positive upsert deltas', () => {

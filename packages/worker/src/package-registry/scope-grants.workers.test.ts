@@ -103,7 +103,7 @@ test('createPlatformAccount rejects non-reserved usernames and duplicates; creat
 		password_hash: 'platform_account_no_usable_password',
 		username,
 		email,
-		plan: 'max',
+		plan: 'free',
 	})
 
 	await expect(

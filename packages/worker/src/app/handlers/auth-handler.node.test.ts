@@ -311,14 +311,14 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 			email,
 			username,
 			password_hash: passwordHash,
-			plan: 'max',
+			plan: 'free',
 		}
 		nextId += 1
 		users.set(email.toLowerCase(), user)
 		return user
 	}
 
-	function addInvite(code: string, plan: string | null = 'max') {
+	function addInvite(code: string, plan: string | null = 'free') {
 		invites.set(code.toUpperCase(), {
 			code: code.toUpperCase(),
 			max_uses: 1,
@@ -465,6 +465,9 @@ test('auth handler login and signup workflow', async () => {
 		message: 'Check your email to verify your account.',
 	})
 	expect(signupContext.testDb.users.has('allowed@example.com')).toBe(true)
+	expect(signupContext.testDb.users.get('allowed@example.com')?.plan).toBe(
+		'free',
+	)
 	expect(signupContext.testDb.users.get('allowed@example.com')?.username).toBe(
 		'allowed-user',
 	)

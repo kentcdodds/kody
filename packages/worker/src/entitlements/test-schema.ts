@@ -4,15 +4,15 @@
  * needs. Mirrors migrations 0001 (users), 0046 (users.email_verified_at),
  * 0048 (entitlement_daily_counters), 0052 + 0075 (`stable_user_id` NOT NULL +
  * unique index), 0066 (Stripe billing columns), 0081 (`plan` NOT NULL), and
- * 0083 (`plan` NOT NULL DEFAULT `'max'`). Non-historical test seeds that care
- * about plan must write `'max'` explicitly.
+ * 0083 (`plan` NOT NULL DEFAULT `'free'`). Non-historical test seeds may set
+ * `'max'` or `'free'` explicitly when plan matters.
  *
  * Fresh `CREATE TABLE` uses `stable_user_id TEXT NOT NULL` and
- * `plan TEXT NOT NULL DEFAULT 'max'`. Preexisting shared `users` tables
+ * `plan TEXT NOT NULL DEFAULT 'free'`. Preexisting shared `users` tables
  * can only gain `stable_user_id` via `ALTER TABLE ... ADD COLUMN
  * stable_user_id TEXT` (SQLite cannot add NOT NULL without a default); callers
  * must insert concrete ids before relying on the unique index. Adding `plan`
- * to preexisting tables uses `NOT NULL DEFAULT 'max'`.
+ * to preexisting tables uses `NOT NULL DEFAULT 'free'`.
  */
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await db
@@ -24,7 +24,7 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 	password_hash TEXT NOT NULL,
 	email_verified_at TEXT,
 	stable_user_id TEXT NOT NULL,
-	plan TEXT NOT NULL DEFAULT 'max',
+	plan TEXT NOT NULL DEFAULT 'free',
 	stripe_customer_id TEXT,
 	stripe_plan TEXT,
 	stripe_plan_refreshed_at TEXT,
@@ -38,7 +38,7 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 		// Preexisting shared tables: ALTER ADD COLUMN cannot express NOT NULL
 		// without a default; nullable TEXT matches migration 0052's add step.
 		'stable_user_id TEXT',
-		`plan TEXT NOT NULL DEFAULT 'max'`,
+		`plan TEXT NOT NULL DEFAULT 'free'`,
 		'stripe_customer_id TEXT',
 		'stripe_plan TEXT',
 		'stripe_plan_refreshed_at TEXT',
