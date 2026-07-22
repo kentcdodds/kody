@@ -113,7 +113,8 @@ type StoredIntegrationConfig = Omit<
 	refreshTokenSecretName: string | null
 	requiredHosts: Array<string>
 	usePkce: boolean | null
-	tokenExchangeStyle: TokenExchangeStyle | null
+	/** Omitted when unset so persisted JSON stays sparse (matches pre-import shape). */
+	tokenExchangeStyle?: TokenExchangeStyle | null
 	authorization: StoredIntegrationAuthorization | null
 }
 
@@ -1440,7 +1441,7 @@ export function parseStoredIntegrationConfig(
 			accessTokenSecretName,
 			refreshTokenSecretName,
 			requiredHosts: normalizeHosts(requiredHosts),
-			tokenExchangeStyle,
+			...(tokenExchangeStyle ? { tokenExchangeStyle } : {}),
 			authorization,
 		}
 	} catch {
