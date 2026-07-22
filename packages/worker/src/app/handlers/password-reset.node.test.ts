@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import type * as AuditLog from '#app/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createRecord: vi.fn(async () => undefined),
@@ -24,7 +25,7 @@ vi.mock('#worker/db.ts', () => ({
 // The shared audit-log-spy setup file routes logAuditEvent; this test also
 // needs getRequestIp pinned to null for deterministic audit payloads.
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
 		getRequestIp: () => null,

@@ -158,7 +158,6 @@ const tagChipCss = {
 
 export function AccountPackagesRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
-	let pageSize = 20
 	let loadedThroughPage = 1
 	const packageList = createInfiniteList<AccountPackageListItem>({
 		mergeDirection: 'append',
@@ -201,7 +200,6 @@ export function AccountPackagesRoute(handle: Handle) {
 	}
 
 	function applyPayload(payload: AccountPackagesLoaderData, href: string) {
-		pageSize = payload.pageSize
 		const listKey = getListKey(href)
 		// Selection-only navigations deep in the scroll window keep the
 		// already-loaded pages; anything else reseeds from page one so

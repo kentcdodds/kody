@@ -2,6 +2,8 @@ import { expect, test, vi } from 'vitest'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
 import { type AdminPlatformFeedbackLoaderData } from '#app/loader-data.ts'
+import type * as AdminPlatformFeedbackData from '#app/admin-platform-feedback-data.ts'
+import type * as AuditLog from '#app/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	requireUserWithRole: vi.fn(),
@@ -14,10 +16,7 @@ vi.mock('#app/permissions-server.ts', () => ({
 }))
 
 vi.mock('#app/admin-platform-feedback-data.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<
-			typeof import('#app/admin-platform-feedback-data.ts')
-		>()
+	const actual = await importOriginal<typeof AdminPlatformFeedbackData>()
 	return {
 		...actual,
 		loadAdminPlatformFeedbackData: (...args: Array<unknown>) =>
@@ -26,7 +25,7 @@ vi.mock('#app/admin-platform-feedback-data.ts', async (importOriginal) => {
 })
 
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
 		getRequestIp: () => '127.0.0.1',

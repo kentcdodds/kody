@@ -2,7 +2,7 @@ import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { generateTOTP } from '@epic-web/totp'
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import {
 	createAuthCookie,
 	setAuthSessionSecret,

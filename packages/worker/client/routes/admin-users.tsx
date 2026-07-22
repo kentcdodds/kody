@@ -132,7 +132,6 @@ export function AdminUsersRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let availableRoles: Array<RoleName> = []
 	let availablePlans: Array<AdminPlanName> = []
-	let pageSize = 20
 	let loadedThroughPage = 1
 	const userList = createInfiniteList<AdminUserListItem>({
 		mergeDirection: 'append',
@@ -185,7 +184,6 @@ export function AdminUsersRoute(handle: Handle) {
 	function seedUsersFromPayload(payload: AdminUsersLoaderData) {
 		availableRoles = payload.availableRoles
 		availablePlans = payload.availablePlans
-		pageSize = payload.pageSize
 		loadedThroughPage = payload.page
 		// reset() invalidates any in-flight load-more so a stale page fetched
 		// for the previous filters can never append into the fresh window.

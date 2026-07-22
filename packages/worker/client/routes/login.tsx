@@ -661,6 +661,7 @@ export function LoginRoute(handle: Handle) {
 						</p>
 						{authProviders.map((provider) => (
 							<button
+								key={provider.id}
 								type="button"
 								disabled={isSubmitting}
 								mix={[

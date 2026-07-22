@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as AllowedCapabilities from '#mcp/secrets/allowed-capabilities.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(async () => ({
@@ -72,10 +73,7 @@ vi.mock('#mcp/secrets/allowed-hosts.ts', () => ({
 }))
 
 vi.mock('#mcp/secrets/allowed-capabilities.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<
-			typeof import('#mcp/secrets/allowed-capabilities.ts')
-		>()
+	const actual = await importOriginal<typeof AllowedCapabilities>()
 	return {
 		...actual,
 		normalizeAllowedCapabilities: (capabilities: Array<string>) => capabilities,

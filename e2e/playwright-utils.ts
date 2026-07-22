@@ -54,12 +54,12 @@ export const test = base.extend<{
 			return { email, username, password }
 		})
 	},
-	assignRole: async ({}, use) => {
+	assignRole: async (_fixtures, use) => {
 		await use(async (email, role) => {
 			assignRoleInE2eDatabase(email, role)
 		})
 	},
-	seedE2eUser: async ({}, use) => {
+	seedE2eUser: async (_fixtures, use) => {
 		await use(async (options) => {
 			const runId = Date.now()
 			const email = options?.email ?? `e2e-user-${runId}@example.com`

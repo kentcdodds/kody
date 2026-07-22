@@ -1,6 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
+import type * as CloudflareWorkers from 'cloudflare:workers'
+import type * as ModuleGraph from './module-graph.ts'
+import type * as PublishedBundleArtifacts from './published-bundle-artifacts.ts'
 
 async function extractCreatePackageAppWorkerSource() {
 	const sourceText = await readFile(
@@ -211,7 +214,7 @@ const packageAppRuntimeMock = vi.hoisted(() => ({
 }))
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('cloudflare:workers')>()
+	const actual = await importOriginal<typeof CloudflareWorkers>()
 	return {
 		...actual,
 		exports: {
@@ -222,10 +225,7 @@ vi.mock('cloudflare:workers', async (importOriginal) => {
 })
 
 vi.mock('./module-graph.ts', async () => {
-	const actual =
-		await vi.importActual<typeof import('./module-graph.ts')>(
-			'./module-graph.ts',
-		)
+	const actual = await vi.importActual<typeof ModuleGraph>('./module-graph.ts')
 	return {
 		...actual,
 		buildKodyAppBundle: (...args: Array<unknown>) =>
@@ -236,9 +236,9 @@ vi.mock('./module-graph.ts', async () => {
 })
 
 vi.mock('./published-bundle-artifacts.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('./published-bundle-artifacts.ts')
-	>('./published-bundle-artifacts.ts')
+	const actual = await vi.importActual<typeof PublishedBundleArtifacts>(
+		'./published-bundle-artifacts.ts',
+	)
 	return {
 		...actual,
 		loadPublishedBundleArtifactByIdentity: (...args: Array<unknown>) =>

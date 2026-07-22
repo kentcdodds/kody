@@ -62,7 +62,7 @@ function createRolesTestEnv() {
 						}
 						return { results: [] as Array<T>, meta: { changes: 0 } }
 					},
-					async first<T>() {
+					async first() {
 						return null
 					},
 					async run() {

@@ -563,13 +563,6 @@ export function AccountSecretsRoute(handle: Handle) {
 		return new URL(getCurrentHref(), 'http://localhost').search
 	}
 
-	function buildSecretsHrefWithSearch(
-		pathname: string,
-		search = getCurrentSearch(),
-	) {
-		return buildSecretsHref(pathname, search)
-	}
-
 	function buildHrefWithUpdatedFilters(
 		nextFilters: Partial<SecretFilterState>,
 		options?: { pathname?: string },

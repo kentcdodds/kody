@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import type * as AuditLog from '#app/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -12,7 +13,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 }))
 
 vi.mock('#app/audit-log.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/audit-log.ts')>()
+	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
 		getRequestIp: () => '127.0.0.1',

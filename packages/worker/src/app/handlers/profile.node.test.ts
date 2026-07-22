@@ -6,6 +6,7 @@ import {
 } from './profile.tsx'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { type CommunityProfileRecord } from '#worker/community/types.ts'
+import type * as FrameRegistry from '#app/frame-registry.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -55,7 +56,7 @@ vi.mock('#app/frames/profile.ts', () => ({}))
 vi.mock('#app/frame-registrations.ts', () => ({}))
 
 vi.mock('#app/frame-registry.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('#app/frame-registry.ts')>()
+	const actual = await importOriginal<typeof FrameRegistry>()
 	return {
 		...actual,
 		handleFrameRequest: vi.fn(

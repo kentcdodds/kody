@@ -5,6 +5,7 @@ import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-regi
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
+import type * as ModuleGraph from '#worker/package-runtime/module-graph.ts'
 import {
 	buildKodyFns,
 	buildKodyProvider,
@@ -328,9 +329,9 @@ export default async function main() {
 })
 
 vi.mock('#worker/package-runtime/module-graph.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('#worker/package-runtime/module-graph.ts')
-	>('#worker/package-runtime/module-graph.ts')
+	const actual = await vi.importActual<typeof ModuleGraph>(
+		'#worker/package-runtime/module-graph.ts',
+	)
 	return {
 		...actual,
 		buildKodyModuleBundle: vi.fn(async () => ({
