@@ -4,9 +4,12 @@ This file documents every `overrides` entry in the root `package.json` and
 explains why it exists. When adding or removing an override, update this file in
 the same commit.
 
-Run `npm run audit:prod` after changing overrides. Clearing these override
-targets does not mean the whole production audit is clean — other transitive
-packages can still report advisories outside this file's scope.
+After changing overrides, run `npm run audit:prod` as a diagnostic check on
+production dependencies — it is not the merge gate. Use `npm run validate` as
+the single authoritative read-only merge gate (see [`setup.md`](./setup.md)).
+Clearing these override targets does not mean the whole production audit is
+clean — other transitive packages can still report advisories outside this
+file's scope.
 
 ## Production overrides
 
