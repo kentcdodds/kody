@@ -8,7 +8,6 @@
 		"types": [],
 		"jsx": "react-jsx",
 		"jsxImportSource": "remix/ui",
-		"baseUrl": ".",
 		"paths": {
 			"#app/*": ["./src/app/*"],
 			"#client/*": ["./client/*"],

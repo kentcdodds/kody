@@ -8,7 +8,6 @@
 		"lib": ["ES2023", "WebWorker", "WebWorker.Iterable"],
 		"jsx": "react-jsx",
 		"jsxImportSource": "remix/ui",
-		"baseUrl": ".",
 		// Force MCP SDK to resolve to the hoisted install to avoid duplicate
 		// private type conflicts when multiple copies are present.
 		"paths": {
