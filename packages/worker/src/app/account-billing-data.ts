@@ -61,7 +61,7 @@ export async function loadAccountBillingData(input: {
 		.bind(input.userId)
 		.first<BillingUserRow>()
 
-	const manualPlan: PlanName = row ? parseStoredPlanName(row.plan) : 'unlimited'
+	const manualPlan: PlanName = row ? parseStoredPlanName(row.plan) : 'max'
 	let stripePlan: PlanName | null = parseStripePlanName(row?.stripe_plan)
 	let cancelAt: string | null = null
 	const customerId = row?.stripe_customer_id?.trim() || null

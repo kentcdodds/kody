@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
-	unlimitedPlanEmailLimits,
+	maxPlanEmailLimits,
+	planLimits,
 	unknownStoredPlanWarningTag,
 } from '#worker/entitlements/plans.ts'
 import {
@@ -279,7 +280,7 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 	])
 })
 
-test('loadAdminUserUsageData shows unlimited email caps for unknown stored plans', async () => {
+test('loadAdminUserUsageData shows max email caps for unknown stored plans', async () => {
 	const email = 'unknown-plan-email@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)
 	const db = createAdminUserUsageTestDb({
@@ -312,7 +313,7 @@ test('loadAdminUserUsageData shows unlimited email caps for unknown stored plans
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
 
-	expect(data?.plan).toBe('unlimited')
+	expect(data?.plan).toBe('max')
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 	const consumption = new Map(
 		(data?.entitlementConsumption ?? []).map((entry) => [
@@ -320,11 +321,13 @@ test('loadAdminUserUsageData shows unlimited email caps for unknown stored plans
 			entry,
 		]),
 	)
-	// Coerced unlimited stays uncapped for ordinary resources...
-	expect(consumption.get('saved_packages')?.limit).toBeNull()
-	// ...but email resources use the unlimited plan's email backstops.
+	// Coerced max uses finite ordinary ceilings...
+	expect(consumption.get('saved_packages')?.limit).toBe(
+		planLimits.max.maxSavedPackages,
+	)
+	// ...and email resources use the max plan's email caps.
 	expect(consumption.get('email_sends_per_day')?.limit).toBe(
-		unlimitedPlanEmailLimits.email_sends_per_day,
+		maxPlanEmailLimits.email_sends_per_day,
 	)
 	expect(consumption.get('email_receives_per_day')).toMatchObject({
 		current: 190,
@@ -368,7 +371,7 @@ test('loadAdminUserUsageData caches rollup reads in KV and serves repeat loads f
 				id: 1,
 				username: 'cached',
 				email,
-				plan: 'unlimited',
+				plan: 'max',
 				stable_user_id: usageUserId,
 			},
 		],
@@ -424,7 +427,7 @@ test('loadAdminUserUsageData keeps current-month and month-over-month rollups on
 				id: 1,
 				username: 'boundary',
 				email,
-				plan: 'unlimited',
+				plan: 'max',
 				stable_user_id: usageUserId,
 			},
 		],

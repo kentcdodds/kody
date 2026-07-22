@@ -40,7 +40,7 @@ function createInboundEnv() {
 async function seedAccount(input: {
 	username: string
 	email: string
-	plan: 'free' | 'unlimited'
+	plan: 'free' | 'max'
 	emailVerifiedAt: string | null
 	stableUserId: string
 }) {
@@ -61,7 +61,7 @@ async function seedAccount(input: {
 
 test('inbound account plan/verification requires matching email and stable_user_id (per-user isolation)', async () => {
 	silenceIncidentalRuntimeWarnings()
-	// Missing dual-scoped row fails plan parse open to unlimited with this tag.
+	// Missing dual-scoped row fails plan parse open to max with this tag.
 	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
@@ -72,7 +72,7 @@ test('inbound account plan/verification requires matching email and stable_user_
 	await seedAccount({
 		username: otherUsername,
 		email: otherEmail,
-		plan: 'unlimited',
+		plan: 'max',
 		emailVerifiedAt: new Date().toISOString(),
 		stableUserId: otherUserId,
 	})
@@ -115,7 +115,7 @@ test('inbound account plan/verification requires matching email and stable_user_
 	})
 	await handleInboundEmail(message, createInboundEnv())
 
-	// Dual-scoped miss → unverified gate (not the other account's verified/unlimited).
+	// Dual-scoped miss → unverified gate (not the other account's verified/max).
 	expect(message.rejectedReason).toBe('Account email is not verified.')
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 

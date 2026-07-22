@@ -34,7 +34,7 @@ function createBillingEnv(
 
 async function seedUser(input: {
 	email: string
-	plan?: 'pro' | 'unlimited'
+	plan?: 'pro' | 'max'
 	stripeCustomerId?: string | null
 	stripePlan?: string | null
 	stripePlanRefreshedAt?: string | null
@@ -53,7 +53,7 @@ async function seedUser(input: {
 			'test-password-hash',
 			new Date().toISOString(),
 			stableUserId,
-			input.plan ?? 'unlimited',
+			input.plan ?? 'max',
 			input.stripeCustomerId ?? null,
 			input.stripePlan ?? null,
 			input.stripePlanRefreshedAt ?? null,

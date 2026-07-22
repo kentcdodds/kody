@@ -3,7 +3,9 @@
  * Local D1 does not apply migrations, so suites provision the tables they need.
  * Mirrors users columns from early migrations plus 0052/0075 (stable_user_id),
  * 0072 (account_type, package_scope_grants), and 0081
- * (`plan` NOT NULL DEFAULT `'unlimited'`).
+ * (`plan` NOT NULL DEFAULT `'unlimited'`). Migration 0082 is a pure UPDATE and
+ * does not change the column default; non-historical seeds must write
+ * `'max'` explicitly when plan matters.
  */
 export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	await db

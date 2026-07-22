@@ -311,14 +311,14 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 			email,
 			username,
 			password_hash: passwordHash,
-			plan: 'unlimited',
+			plan: 'max',
 		}
 		nextId += 1
 		users.set(email.toLowerCase(), user)
 		return user
 	}
 
-	function addInvite(code: string, plan: string | null = 'unlimited') {
+	function addInvite(code: string, plan: string | null = 'max') {
 		invites.set(code.toUpperCase(), {
 			code: code.toUpperCase(),
 			max_uses: 1,
@@ -711,34 +711,32 @@ test('signup consuming a plan invite sets users.plan', async () => {
 	)
 })
 
-test('signup consuming an unlimited invite writes users.plan unlimited', async () => {
+test('signup consuming a max invite writes users.plan max', async () => {
 	const context = createAuthTestContext({ emailConfigured: true })
 	stubCloudflareEmailFetch({ ok: true })
-	context.testDb.addInvite('UNLIMITED-INVITE', 'unlimited')
+	context.testDb.addInvite('MAX-INVITE', 'max')
 
 	const response = await context.request({
-		email: 'unlimited-invite@example.com',
-		username: 'unlimited-invite-user',
+		email: 'max-invite@example.com',
+		username: 'max-invite-user',
 		password: 'password123',
 		mode: 'signup',
-		inviteCode: 'unlimited-invite',
+		inviteCode: 'max-invite',
 	})
 	expect(response.status).toBe(200)
-	expect(context.testDb.users.get('unlimited-invite@example.com')?.plan).toBe(
-		'unlimited',
-	)
+	expect(context.testDb.users.get('max-invite@example.com')?.plan).toBe('max')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
 			action: 'invite_use',
 			result: 'success',
-			reason: expect.stringContaining('plan=unlimited'),
+			reason: expect.stringContaining('plan=max'),
 		}),
 	)
 	expect(consoleWarn).not.toHaveBeenCalled()
 })
 
-test('signup consuming an unknown stored invite plan fails open to unlimited with a stable warn', async () => {
+test('signup consuming an unknown stored invite plan fails open to max with a stable warn', async () => {
 	const context = createAuthTestContext({ emailConfigured: true })
 	stubCloudflareEmailFetch({ ok: true })
 	context.testDb.addInvite('PLAN-UNKNOWN', 'enterprise-2099')
@@ -754,7 +752,7 @@ test('signup consuming an unknown stored invite plan fails open to unlimited wit
 	expect(response.status).toBe(200)
 	expect(
 		context.testDb.users.get('unknown-plan-invite@example.com')?.plan,
-	).toBe('unlimited')
+	).toBe('max')
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 	for (const call of consoleWarn.mock.calls) {
 		expect(call).toEqual([unknownStoredPlanWarningTag])
@@ -764,7 +762,7 @@ test('signup consuming an unknown stored invite plan fails open to unlimited wit
 			category: 'auth',
 			action: 'invite_use',
 			result: 'success',
-			reason: expect.stringContaining('plan=unlimited'),
+			reason: expect.stringContaining('plan=max'),
 		}),
 	)
 })

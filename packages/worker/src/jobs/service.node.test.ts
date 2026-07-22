@@ -282,7 +282,10 @@ vi.mock('@cloudflare/worker-bundler/typescript', () => ({
 }))
 
 function createDatabase(
-	initialRows: { users?: Array<Record<string, unknown>> } = {},
+	initialRows: {
+		users?: Array<Record<string, unknown>>
+		jobs?: Array<Record<string, unknown>>
+	} = {},
 ) {
 	const tables = new Map<string, Array<Record<string, unknown>>>([
 		['secret_buckets', []],
@@ -292,7 +295,7 @@ function createDatabase(
 		['entity_sources', []],
 		['published_bundle_artifacts', []],
 		['archived_job_artifacts', []],
-		['jobs', []],
+		['jobs', (initialRows.jobs ?? []).map((row) => ({ ...row }))],
 		['users', (initialRows.users ?? []).map((row) => ({ ...row }))],
 	])
 
@@ -487,6 +490,11 @@ function createDatabase(
 									),
 								)
 								return (rows[0] ?? null) as T | null
+							}
+							// Finite max-plan storage enforcement always counts D1
+							// bytes; this mock has no storage surfaces seeded.
+							if (query.includes('COALESCE(SUM(')) {
+								return { count: 0 } as T
 							}
 							throw new Error(`Unsupported first query: ${query}`)
 						},
@@ -1308,7 +1316,7 @@ function buildEntitlementTestJobBody(index: number): JobCreateInput {
 	}
 }
 
-test('createJob enforces scheduled job entitlements for plan users and stays unlimited for unlimited plan users', async () => {
+test('createJob enforces scheduled job entitlements for plan users and denies at the max plan ceiling', async () => {
 	const plannedEmail = 'planned@example.com'
 	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
 	const plannedEnv = {
@@ -1321,10 +1329,9 @@ test('createJob enforces scheduled job entitlements for plan users and stays unl
 		userId: plannedUserId,
 		email: plannedEmail,
 	})
-	const limit = planLimits.free.maxScheduledJobs
-	if (limit === null) throw new Error('Expected a numeric free job limit.')
+	const freeLimit = planLimits.free.maxScheduledJobs
 
-	for (let index = 0; index < limit; index += 1) {
+	for (let index = 0; index < freeLimit; index += 1) {
 		await createJob({
 			env: plannedEnv,
 			callerContext: plannedCallerContext,
@@ -1332,44 +1339,78 @@ test('createJob enforces scheduled job entitlements for plan users and stays unl
 		})
 	}
 
-	const error = await createJob({
+	const freeError = await createJob({
 		env: plannedEnv,
 		callerContext: plannedCallerContext,
-		body: buildEntitlementTestJobBody(limit),
+		body: buildEntitlementTestJobBody(freeLimit),
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
 	)
-	if (!isEntitlementLimitError(error)) {
+	if (!isEntitlementLimitError(freeError)) {
 		throw new Error('Expected an EntitlementLimitError from createJob.')
 	}
-	expect(error.details).toMatchObject({
+	expect(freeError.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'scheduled_jobs',
 		plan: 'free',
-		limit,
-		current: limit,
+		limit: freeLimit,
+		current: freeLimit,
 	})
 
-	const unlimitedEmail = 'unlimited@example.com'
-	const unlimitedUserId = await createStableUserIdFromEmail(unlimitedEmail)
-	const unlimitedEnv = {
+	const maxEmail = 'max@example.com'
+	const maxUserId = await createStableUserIdFromEmail(maxEmail)
+	const maxLimit = planLimits.max.maxScheduledJobs
+	const belowMaxEnv = {
 		APP_DB: createDatabase({
-			users: [{ email: unlimitedEmail, plan: 'unlimited' }],
+			users: [{ email: maxEmail, plan: 'max' }],
+			jobs: Array.from(
+				{ length: planLimits.pro.maxScheduledJobs },
+				(_, index) => ({
+					id: `below-max-job-${index}`,
+					user_id: maxUserId,
+				}),
+			),
 		}),
 	} as Env
 	mockRepoPersistence()
-	const unlimitedCallerContext = createPlanUserCallerContext({
-		userId: unlimitedUserId,
-		email: unlimitedEmail,
+	const maxCallerContext = createPlanUserCallerContext({
+		userId: maxUserId,
+		email: maxEmail,
 	})
-	for (let index = 0; index < limit + 1; index += 1) {
-		await createJob({
-			env: unlimitedEnv,
-			callerContext: unlimitedCallerContext,
-			body: buildEntitlementTestJobBody(index),
-		})
+	await createJob({
+		env: belowMaxEnv,
+		callerContext: maxCallerContext,
+		body: buildEntitlementTestJobBody(0),
+	})
+
+	const atCeilingEnv = {
+		APP_DB: createDatabase({
+			users: [{ email: maxEmail, plan: 'max' }],
+			jobs: Array.from({ length: maxLimit }, (_, index) => ({
+				id: `max-job-${index}`,
+				user_id: maxUserId,
+			})),
+		}),
+	} as Env
+	const maxError = await createJob({
+		env: atCeilingEnv,
+		callerContext: maxCallerContext,
+		body: buildEntitlementTestJobBody(1),
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!isEntitlementLimitError(maxError)) {
+		throw new Error('Expected an EntitlementLimitError at the max job ceiling.')
 	}
+	expect(maxError.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'scheduled_jobs',
+		plan: 'max',
+		limit: maxLimit,
+		current: maxLimit,
+	})
 })
 
 test('updateJob and deleteJob reject another user trying to mutate or remove a job by id', async () => {

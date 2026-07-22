@@ -147,7 +147,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 		(user: { email: string }) => user.email === memberUser.email,
 	)
 	expect(memberRecord).toBeTruthy()
-	expect(memberRecord.plan).toBe('unlimited')
+	expect(memberRecord.plan).toBe('max')
 	expect(JSON.stringify(memberRecord)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(memberRecord)).not.toContain('super-secret-value')
 
@@ -209,10 +209,10 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(page.getByText('Account metadata only')).toBeVisible()
 
 	const planSelect = page.getByLabel('Plan')
-	await expect(planSelect).toHaveValue('unlimited')
+	await expect(planSelect).toHaveValue('max')
 	await expect(planSelect.getByRole('option')).toHaveCount(4)
 	await expect(
-		planSelect.getByRole('option', { name: 'unlimited', exact: true }),
+		planSelect.getByRole('option', { name: 'max', exact: true }),
 	).toHaveCount(1)
 	await planSelect.selectOption('pro')
 	await page.getByRole('button', { name: 'Save plan' }).click()
@@ -230,21 +230,21 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	)
 	expect(memberAfterPlan.plan).toBe('pro')
 
-	await planSelect.selectOption('unlimited')
+	await planSelect.selectOption('max')
 	await page.getByRole('button', { name: 'Save plan' }).click()
-	await expect(planSelect).toHaveValue('unlimited')
+	await expect(planSelect).toHaveValue('max')
 	await expect(
-		page.getByText('Updated plan to unlimited.', { exact: true }),
+		page.getByText('Updated plan to max.', { exact: true }),
 	).toBeVisible()
-	const unlimitedPlanApiResponse = await page.request.get(
+	const maxPlanApiResponse = await page.request.get(
 		`/admin/users.json?q=rbac-${runId}`,
 	)
-	expect(unlimitedPlanApiResponse.ok()).toBe(true)
-	const unlimitedPlanPayload = await unlimitedPlanApiResponse.json()
-	const memberAfterUnlimitedPlan = unlimitedPlanPayload.users.find(
+	expect(maxPlanApiResponse.ok()).toBe(true)
+	const maxPlanPayload = await maxPlanApiResponse.json()
+	const memberAfterMaxPlan = maxPlanPayload.users.find(
 		(user: { email: string }) => user.email === memberUser.email,
 	)
-	expect(memberAfterUnlimitedPlan.plan).toBe('unlimited')
+	expect(memberAfterMaxPlan.plan).toBe('max')
 	expect(clientConsoleProblems).toEqual([])
 	page.off('console', captureClientConsoleProblems)
 

@@ -40,14 +40,15 @@ async function insertUser(input: {
 	const userId = await createStableUserIdFromEmail(input.email)
 	await runSql(
 		`INSERT INTO users (
-			username, email, stable_user_id, display_name, profile_visibility, password_hash
-		) VALUES (?, ?, ?, ?, ?, ?)`,
+			username, email, stable_user_id, display_name, profile_visibility, password_hash, plan
+		) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		input.username,
 		input.email,
 		userId,
 		input.displayName ?? null,
 		input.visibility ?? 'public',
 		'test-password-hash',
+		'max',
 	)
 	const row = await env.APP_DB.prepare(
 		`SELECT id FROM users WHERE stable_user_id = ?`,

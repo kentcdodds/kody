@@ -122,6 +122,19 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({ stripePlan: null, cancelAt: null })
 
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_unknown'],
+					metadata: { kody_plan: 'max' },
+				}),
+			],
+			env,
+		),
+	).toEqual({ stripePlan: null, cancelAt: null })
+
 	const sooner = 1_700_000_000
 	const later = 1_800_000_000
 	expect(

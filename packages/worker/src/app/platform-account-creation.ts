@@ -90,7 +90,7 @@ export async function createPlatformAccount(input: {
 		const result = await input.db
 			.prepare(
 				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, account_type, plan)
-				 VALUES (?, ?, ?, ?, ?, 'platform', 'unlimited')`,
+				 VALUES (?, ?, ?, ?, ?, 'platform', 'max')`,
 			)
 			.bind(
 				username,

@@ -1,4 +1,4 @@
-import { type PlanName } from '#worker/entitlements/plans.ts'
+import { resolvePlanWrite, type PlanName } from '#worker/entitlements/plans.ts'
 
 export type InviteRecord = {
 	code: string
@@ -98,7 +98,7 @@ export async function createInvite(input: {
 			input.note?.trim() ?? '',
 			input.maxUses,
 			input.expiresAt ?? null,
-			input.plan ?? 'unlimited',
+			resolvePlanWrite(input.plan),
 		)
 		.run()
 

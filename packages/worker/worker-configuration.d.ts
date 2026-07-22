@@ -18,7 +18,6 @@ interface __BaseEnv_Env {
 	ASSETS: Fetcher;
 	SENTRY_ENVIRONMENT: "production";
 	ARTIFACTS_NAMESPACE: "production";
-	WORKFLOW_CONCURRENT_LIMIT: "100";
 	COOKIE_SECRET: string;
 	SECRET_STORE_KEY: string;
 	APP_BASE_URL: string;
@@ -53,7 +52,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SENTRY_ENVIRONMENT" | "ARTIFACTS_NAMESPACE" | "WORKFLOW_CONCURRENT_LIMIT" | "COOKIE_SECRET" | "SECRET_STORE_KEY" | "APP_BASE_URL" | "GITHUB_CLIENT_ID" | "GITHUB_CLIENT_SECRET" | "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET" | "X_CLIENT_ID" | "X_CLIENT_SECRET" | "STRIPE_SECRET_KEY" | "STRIPE_API_BASE_URL" | "STRIPE_PRO_PRICE_ID">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SENTRY_ENVIRONMENT" | "ARTIFACTS_NAMESPACE" | "COOKIE_SECRET" | "SECRET_STORE_KEY" | "APP_BASE_URL" | "GITHUB_CLIENT_ID" | "GITHUB_CLIENT_SECRET" | "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET" | "X_CLIENT_ID" | "X_CLIENT_SECRET" | "STRIPE_SECRET_KEY" | "STRIPE_API_BASE_URL" | "STRIPE_PRO_PRICE_ID">> {}
 }
 declare module "*.md" {
 	const value: string;

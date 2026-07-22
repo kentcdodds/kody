@@ -32,7 +32,7 @@ function createAdminInvitesTestDb(
 	return db
 }
 
-test('loadAdminInvitesData coerces unknown stored invite plans to unlimited with a stable warn', async () => {
+test('loadAdminInvitesData coerces unknown stored invite plans to max with a stable warn', async () => {
 	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
 	const data = await loadAdminInvitesData({
 		APP_DB: createAdminInvitesTestDb([
@@ -65,7 +65,7 @@ test('loadAdminInvitesData coerces unknown stored invite plans to unlimited with
 
 	expect(data.invites).toEqual([
 		expect.objectContaining({ code: 'KNOWN-PRO', plan: 'pro' }),
-		expect.objectContaining({ code: 'UNKNOWN-PLAN', plan: 'unlimited' }),
+		expect.objectContaining({ code: 'UNKNOWN-PLAN', plan: 'max' }),
 	])
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 	for (const call of consoleWarn.mock.calls) {

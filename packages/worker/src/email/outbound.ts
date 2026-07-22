@@ -525,7 +525,7 @@ export async function sendOutboundEmail(
 
 	// Atomic check-and-increment: the counter tracks attempts for every user
 	// and denies the send when a plan's daily limit is reached. The
-	// `unlimited` plan uses deployment email caps rather than uncapped mail.
+	// `max` plan uses finite email caps rather than uncapped mail.
 	await consumeDailyEntitlement({
 		db: input.env.APP_DB,
 		userId: input.userId,

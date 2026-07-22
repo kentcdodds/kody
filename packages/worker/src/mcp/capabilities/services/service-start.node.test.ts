@@ -319,17 +319,16 @@ test('service_start lets a stale running row for the same service restart at the
 	})
 })
 
-test('service_start stays unlimited for unlimited plan users', async () => {
-	const email = 'unlimited@example.com'
+test('service_start allows below-max usage and denies at the max plan ceiling', async () => {
+	const email = 'max@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.pro.maxPackageServices
-	if (limit === null) {
-		throw new Error('Expected a numeric pro package service limit.')
-	}
-	const env = {
+	const maxLimit = planLimits.max.maxPackageServices
+	const belowMaxEnv = {
 		APP_DB: createEntitlementsTestDb({
-			users: [{ email, plan: 'unlimited' }],
-			runningServices: buildRunningServices(limit + 1),
+			users: [{ email, plan: 'max' }],
+			runningServices: buildRunningServices(
+				planLimits.pro.maxPackageServices + 1,
+			),
 		}),
 	} as Env
 	const callerContext = createPlanUserCallerContext({ userId, email })
@@ -343,10 +342,44 @@ test('service_start stays unlimited for unlimited plan users', async () => {
 	await expect(
 		serviceStartCapability.handler(
 			{ service_name: 'realtime-supervisor' },
-			{ env, callerContext },
+			{ env: belowMaxEnv, callerContext },
 		),
 	).resolves.toMatchObject({
 		ok: true,
 		run_id: 'run-123',
+	})
+
+	const atCeilingEnv = {
+		APP_DB: createEntitlementsTestDb({
+			users: [{ email, plan: 'max' }],
+			runningServices: buildRunningServices(maxLimit),
+		}),
+	} as Env
+	mockModule.getSavedPackageById.mockResolvedValue(
+		createSavedPackage({ userId }),
+	)
+	mockDeclaredServices('persistent')
+	mockServiceRpc({ status: 'stopped' })
+
+	const error = await serviceStartCapability
+		.handler(
+			{ service_name: 'realtime-supervisor' },
+			{ env: atCeilingEnv, callerContext },
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error(
+			'Expected an EntitlementLimitError at the max package service ceiling.',
+		)
+	}
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'package_services',
+		plan: 'max',
+		limit: maxLimit,
+		current: maxLimit,
 	})
 })

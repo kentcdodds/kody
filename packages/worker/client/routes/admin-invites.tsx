@@ -249,7 +249,7 @@ export function AdminInvitesRoute(handle: Handle) {
 		}
 		const isMutating = actionState !== 'idle'
 		// Plan options arrive with loader data; disable create until then so an
-		// empty <select> cannot submit plan="" before Unlimited is available.
+		// empty <select> cannot submit plan="" before Max is available.
 		const inviteFormDisabled = isMutating || availablePlans.length === 0
 
 		return (
@@ -400,7 +400,7 @@ export function AdminInvitesRoute(handle: Handle) {
 							<select
 								name="plan"
 								disabled={inviteFormDisabled}
-								defaultValue="unlimited"
+								defaultValue="max"
 								mix={css(inputCss)}
 							>
 								{availablePlans.map((plan) => (
@@ -501,7 +501,7 @@ export function AdminInvitesRoute(handle: Handle) {
 										},
 										{
 											label: 'Plan',
-											value: invite.plan ?? 'unlimited',
+											value: invite.plan ?? 'max',
 										},
 										{
 											label: 'Expires',

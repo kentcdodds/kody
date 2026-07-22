@@ -238,7 +238,6 @@
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
 				"ARTIFACTS_NAMESPACE": "production",
-				"WORKFLOW_CONCURRENT_LIMIT": "100",
 				// Public (non-secret) Stripe Price id for production Pro
 				// subscriptions. Coupled to the live Stripe account: if the
 				// price is regenerated in Stripe, update this value in the
@@ -361,7 +360,6 @@
 			"vars": {
 				"SENTRY_ENVIRONMENT": "preview",
 				"ARTIFACTS_NAMESPACE": "preview",
-				"WORKFLOW_CONCURRENT_LIMIT": "100",
 			},
 		},
 		"test": {
@@ -463,7 +461,6 @@
 			"vars": {
 				"SENTRY_ENVIRONMENT": "test",
 				"ARTIFACTS_NAMESPACE": "default",
-				"WORKFLOW_CONCURRENT_LIMIT": "100",
 				"COOKIE_SECRET": "LOCAL_AND_PREVIEW_COOKIE_SECRET_32_CHARS_MINIMUM",
 				"SECRET_STORE_KEY": "LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM_OK",
 				// MOCK_ client ids activate the in-worker social-login mock

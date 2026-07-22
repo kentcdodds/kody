@@ -4,7 +4,10 @@
  * needs. Mirrors migrations 0001 (users), 0046 (users.email_verified_at),
  * 0048 (entitlement_daily_counters), 0052 + 0075 (`stable_user_id` NOT NULL +
  * unique index), 0066 (Stripe billing columns), and 0081 (`plan` NOT NULL
- * DEFAULT `'unlimited'`).
+ * DEFAULT `'unlimited'`). Migration 0082 is a pure UPDATE of residual
+ * `'unlimited'` rows to `'max'` and does not change the column default, so
+ * production-parity DDL keeps DEFAULT `'unlimited'`. Non-historical test
+ * seeds that care about plan must write `'max'` explicitly.
  *
  * Fresh `CREATE TABLE` uses `stable_user_id TEXT NOT NULL` and
  * `plan TEXT NOT NULL DEFAULT 'unlimited'`. Preexisting shared `users` tables

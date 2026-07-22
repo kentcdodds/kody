@@ -33,7 +33,12 @@ type SecretEntryRow = {
 }
 
 function createSecretTestDb(
-	initialRows: { users?: Array<{ email: string; plan: string | null }> } = {},
+	initialRows: {
+		users?: Array<{ email: string; plan: string | null }>
+		/** Pre-seeded secret count for entitlement ceiling tests (avoids loops). */
+		seededSecretCount?: number
+		seededSecretUserId?: string
+	} = {},
 ) {
 	const buckets = new Map<string, SecretBucketRow>()
 	const entries = new Map<string, SecretEntryRow>()
@@ -47,6 +52,36 @@ function createSecretTestDb(
 
 	function getEntryKey(bucketId: string, name: string) {
 		return `${bucketId}:${name}`
+	}
+
+	const seededCount = initialRows.seededSecretCount ?? 0
+	const seededUserId = initialRows.seededSecretUserId
+	if (seededCount > 0 && seededUserId) {
+		const now = '2026-04-18T00:00:00.000Z'
+		const bucketId = `seeded-bucket-${seededUserId}`
+		buckets.set(getBucketKey(seededUserId, 'user', ''), {
+			id: bucketId,
+			user_id: seededUserId,
+			scope: 'user',
+			binding_key: '',
+			expires_at: null,
+			created_at: now,
+			updated_at: now,
+		})
+		for (let index = 0; index < seededCount; index += 1) {
+			const name = `seeded-secret-${index}`
+			entries.set(getEntryKey(bucketId, name), {
+				bucket_id: bucketId,
+				name,
+				description: '',
+				encrypted_value: `seeded-value-${index}`,
+				allowed_hosts: '[]',
+				allowed_capabilities: '[]',
+				allowed_packages: '[]',
+				created_at: now,
+				updated_at: now,
+			})
+		}
 	}
 
 	const db = {
@@ -482,9 +517,13 @@ test('resolveSecret ignores a corrupted lower-precedence entry when a higher sco
 function buildEntitlementTestSecretEnv(input: {
 	email: string
 	plan: string | null
+	seededSecretCount?: number
+	seededSecretUserId?: string
 }) {
 	const testDb = createSecretTestDb({
 		users: [{ email: input.email, plan: input.plan }],
+		seededSecretCount: input.seededSecretCount,
+		seededSecretUserId: input.seededSecretUserId,
 	})
 	return {
 		testDb,
@@ -569,21 +608,52 @@ test('saveSecret allows updating an existing secret at the plan limit', async ()
 	expect(updated.description).toBe('rotated')
 })
 
-test('saveSecret stays unlimited for unlimited plan users', async () => {
-	const email = 'unlimited@example.com'
+test('saveSecret allows below-max usage and denies at the max plan ceiling', async () => {
+	const email = 'max@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'unlimited' })
-	const limit = planLimits.pro.maxSecrets
-	if (limit === null) throw new Error('Expected a numeric pro secret limit.')
+	const maxLimit = planLimits.max.maxSecrets
+	const belowMax = buildEntitlementTestSecretEnv({
+		email,
+		plan: 'max',
+		seededSecretCount: planLimits.pro.maxSecrets + 1,
+		seededSecretUserId: userId,
+	})
+	await saveSecret({
+		env: belowMax.env,
+		userId,
+		userEmail: email,
+		scope: 'user',
+		name: 'below-max-secret',
+		value: 'secret-value',
+	})
 
-	for (let index = 0; index < limit + 1; index += 1) {
-		await saveSecret({
-			env,
-			userId,
-			userEmail: email,
-			scope: 'user',
-			name: `unlimited-secret-${index}`,
-			value: `secret-value-${index}`,
-		})
+	const atCeiling = buildEntitlementTestSecretEnv({
+		email,
+		plan: 'max',
+		seededSecretCount: maxLimit,
+		seededSecretUserId: userId,
+	})
+	const error = await saveSecret({
+		env: atCeiling.env,
+		userId,
+		userEmail: email,
+		scope: 'user',
+		name: 'over-max-secret',
+		value: 'secret-value',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error(
+			'Expected an EntitlementLimitError at the max secret ceiling.',
+		)
 	}
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'secrets',
+		plan: 'max',
+		limit: maxLimit,
+		current: maxLimit,
+	})
 })

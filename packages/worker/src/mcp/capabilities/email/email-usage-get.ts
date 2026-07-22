@@ -15,8 +15,7 @@ import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 
 const usageEntrySchema = z.object({
 	count: z.number().int().nonnegative(),
-	/** null = unlimited. */
-	limit: z.number().int().nonnegative().nullable(),
+	limit: z.number().int().nonnegative(),
 })
 
 export const emailUsageGetCapability = defineDomainCapability(
@@ -37,8 +36,8 @@ export const emailUsageGetCapability = defineDomainCapability(
 			stored_messages: usageEntrySchema,
 			sends_today: usageEntrySchema,
 			receives_today: usageEntrySchema,
-			/** Maximum raw MIME bytes per stored message. null = unlimited. */
-			max_message_bytes: z.number().int().nonnegative().nullable(),
+			/** Maximum raw MIME bytes per stored message. */
+			max_message_bytes: z.number().int().nonnegative(),
 		}),
 		async handler(_args, ctx) {
 			const user = await requireVerifiedEmailAccountUser(ctx)

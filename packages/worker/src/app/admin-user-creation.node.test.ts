@@ -75,8 +75,8 @@ function createAdminUserCreationTestDb(initialUsers: Array<TestUser> = []) {
 								}
 								const plan =
 									normalizedQuery.includes(', plan)') &&
-									normalizedQuery.includes("'unlimited'")
-										? 'unlimited'
+									normalizedQuery.includes("'max'")
+										? 'max'
 										: null
 								const user = {
 									id: nextId,
@@ -137,7 +137,7 @@ test('adminCreateUserWithPasswordSetup rejects duplicate email', async () => {
 			email: 'existing@example.com',
 			password_hash: 'hash',
 			email_verified_at: new Date(0).toISOString(),
-			plan: 'unlimited',
+			plan: 'max',
 		},
 	])
 
@@ -180,7 +180,7 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 		username: 'person-launch',
 		email_verified_at: now.toISOString(),
 		password_hash: 'admin_created_no_usable_password',
-		plan: 'unlimited',
+		plan: 'max',
 	})
 	expect(passwordResets.get(created.userId)?.expires_at).toBe(
 		now.getTime() + adminPasswordSetupTokenExpiryMs,

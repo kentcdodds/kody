@@ -28,8 +28,8 @@ async function seedPersonUser(input: {
 	const stableUserId =
 		input.stableUserId ?? (await createStableUserIdFromEmail(input.email))
 	const result = await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, account_type)
-		 VALUES (?, ?, 'test-password-hash', ?, ?, 'person')`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, account_type, plan)
+		 VALUES (?, ?, 'test-password-hash', ?, ?, 'person', 'max')`,
 	)
 		.bind(input.username, input.email, new Date().toISOString(), stableUserId)
 		.run()
@@ -103,7 +103,7 @@ test('createPlatformAccount rejects non-reserved usernames and duplicates; creat
 		password_hash: 'platform_account_no_usable_password',
 		username,
 		email,
-		plan: 'unlimited',
+		plan: 'max',
 	})
 
 	await expect(

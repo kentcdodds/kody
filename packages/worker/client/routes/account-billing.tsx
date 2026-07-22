@@ -64,7 +64,7 @@ const planTiers: Array<{
 	},
 ]
 
-/** Mirrors server rank: free < pro < partner < unlimited. */
+/** Mirrors server rank: free < pro < partner < max. */
 function getPlanRank(plan: AdminPlanName): number {
 	switch (plan) {
 		case 'free':
@@ -73,7 +73,7 @@ function getPlanRank(plan: AdminPlanName): number {
 			return 1
 		case 'partner':
 			return 2
-		case 'unlimited':
+		case 'max':
 			return 3
 		default: {
 			const exhaustive: never = plan
@@ -86,13 +86,12 @@ function isBillingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === billingPath
 }
 
-/** Stripe missing → "None"; manual/effective compatibility missing → "Unlimited". */
+/** Stripe missing → "None"; manual/effective compatibility missing → "Max". */
 function formatPlanLabel(
 	plan: AdminPlanName | null,
-	missingLabel: 'None' | 'Unlimited',
+	missingLabel: 'None' | 'Max',
 ) {
 	if (plan == null) return missingLabel
-	if (plan === 'unlimited') return 'Unlimited'
 	return plan.charAt(0).toUpperCase() + plan.slice(1)
 }
 
@@ -104,7 +103,6 @@ function formatCancelDate(value: string) {
 }
 
 function planCoversTier(effectivePlan: AdminPlanName, tier: PlanTier): boolean {
-	if (effectivePlan === 'unlimited') return true
 	return getPlanRank(effectivePlan) >= getPlanRank(tier)
 }
 
@@ -245,7 +243,7 @@ export function AccountBillingRoute(handle: Handle) {
 				? [
 						{
 							label: 'Granted plan',
-							value: formatPlanLabel(billing.manualPlan, 'Unlimited'),
+							value: formatPlanLabel(billing.manualPlan, 'Max'),
 						},
 						{
 							label: 'Subscription plan',
@@ -294,7 +292,7 @@ export function AccountBillingRoute(handle: Handle) {
 									color: colors.text,
 								})}
 							>
-								{formatPlanLabel(billing.effectivePlan, 'Unlimited')}
+								{formatPlanLabel(billing.effectivePlan, 'Max')}
 							</p>
 							{currentPlanItems.length > 0 ? (
 								<MetadataGrid items={currentPlanItems} />

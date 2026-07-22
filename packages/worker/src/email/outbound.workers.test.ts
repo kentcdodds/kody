@@ -20,10 +20,7 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
-import {
-	unlimitedPlanEmailLimits,
-	planLimits,
-} from '#worker/entitlements/plans.ts'
+import { maxPlanEmailLimits, planLimits } from '#worker/entitlements/plans.ts'
 import { incrementDailyEntitlementCounter } from '#worker/entitlements/service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -50,7 +47,7 @@ function createBindingSendEnv() {
 async function seedVerifiedAccount(input: {
 	email: string
 	username?: string
-	plan?: 'pro' | 'unlimited'
+	plan?: 'pro' | 'max'
 	verified?: boolean
 }) {
 	const username = input.username ?? `sender-${crypto.randomUUID().slice(0, 8)}`
@@ -64,7 +61,7 @@ async function seedVerifiedAccount(input: {
 			input.email,
 			'test-password-hash',
 			input.verified === false ? null : new Date().toISOString(),
-			input.plan ?? 'unlimited',
+			input.plan ?? 'max',
 			stableUserId,
 		)
 		.run()
@@ -249,12 +246,13 @@ test('sendOutboundEmail blocks reserved usernames and unconfigured platform doma
 	const reservedEmail = `reserved-${crypto.randomUUID()}@example.com`
 	const reservedUserId = await createStableUserIdFromEmail(reservedEmail)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
-			VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT(username) DO UPDATE SET
 				email = excluded.email,
 				email_verified_at = excluded.email_verified_at,
-				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id)`,
+				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+				plan = excluded.plan`,
 	)
 		.bind(
 			'kody',
@@ -262,6 +260,7 @@ test('sendOutboundEmail blocks reserved usernames and unconfigured platform doma
 			'test-password-hash',
 			new Date().toISOString(),
 			reservedUserId,
+			'max',
 		)
 		.run()
 	await expect(
@@ -738,9 +737,7 @@ test('sendOutboundEmail rejects invalid and oversized attachments', async () => 
 
 	// Attachments put the message under the per-message email_message_bytes
 	// cap that body-only sends are not subject to.
-	const oversize = new Uint8Array(
-		unlimitedPlanEmailLimits.email_message_bytes + 1,
-	)
+	const oversize = new Uint8Array(maxPlanEmailLimits.email_message_bytes + 1)
 	const error = await sendOutboundEmail({
 		env: createBindingSendEnv(),
 		userId,
@@ -899,15 +896,15 @@ test('sendOutboundEmail increments the daily counter when under the plan limit',
 	expect(await readDailyEmailSendCounter(userId)).toBe(1)
 })
 
-test('sendOutboundEmail caps unlimited-plan users at the email daily backstop', async () => {
+test('sendOutboundEmail caps max-plan users at the email daily backstop', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 
-	const email = `unlimited-${crypto.randomUUID()}@example.com`
+	const email = `max-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
-	await seedVerifiedAccount({ email, plan: 'unlimited' })
+	await seedVerifiedAccount({ email, plan: 'max' })
 	for (
 		let index = 0;
-		index < unlimitedPlanEmailLimits.email_sends_per_day - 1;
+		index < maxPlanEmailLimits.email_sends_per_day - 1;
 		index += 1
 	) {
 		await incrementDailyEntitlementCounter({
@@ -920,10 +917,10 @@ test('sendOutboundEmail caps unlimited-plan users at the email daily backstop', 
 	const result = await sendSelfNotification({ userId, accountEmail: email })
 	expect(result.status).toBe('sent')
 	expect(await readDailyEmailSendCounter(userId)).toBe(
-		unlimitedPlanEmailLimits.email_sends_per_day,
+		maxPlanEmailLimits.email_sends_per_day,
 	)
 
-	// ...and the next one is denied: unlimited is not uncapped for email.
+	// ...and the next one is denied: max is not uncapped for email.
 	const error = await sendSelfNotification({
 		userId,
 		accountEmail: email,
@@ -937,11 +934,11 @@ test('sendOutboundEmail caps unlimited-plan users at the email daily backstop', 
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'email_sends_per_day',
-		plan: 'unlimited',
-		limit: unlimitedPlanEmailLimits.email_sends_per_day,
-		current: unlimitedPlanEmailLimits.email_sends_per_day,
+		plan: 'max',
+		limit: maxPlanEmailLimits.email_sends_per_day,
+		current: maxPlanEmailLimits.email_sends_per_day,
 	})
 	expect(await readDailyEmailSendCounter(userId)).toBe(
-		unlimitedPlanEmailLimits.email_sends_per_day,
+		maxPlanEmailLimits.email_sends_per_day,
 	)
 })

@@ -63,8 +63,8 @@ type UsageStatus = 'loading' | 'ready' | 'error'
 const adminUsersApiPath = '/admin/users.json'
 const adminUserUsageApiPath = '/admin/users/usage.json'
 
-function formatUsageLimit(limit: number | null) {
-	return limit === null ? 'Unlimited' : formatIntegerNumber(limit)
+function formatUsageLimit(limit: number) {
+	return formatIntegerNumber(limit)
 }
 
 function formatUsagePercent(value: number | null) {
@@ -147,8 +147,8 @@ export function AdminUsersRoute(handle: Handle) {
 	let actionState: 'idle' | 'assigning' | 'removing' | 'saving-plan' = 'idle'
 	let selectedRoleToAssign = 'user' as RoleName
 	// Draft follows the selected user (see the render body) until the admin
-	// edits it. Null stored plan values are shown/saved as `unlimited`.
-	let selectedPlanChoice: AdminPlanName = 'unlimited'
+	// edits it. Null stored plan values are shown/saved as `max`.
+	let selectedPlanChoice: AdminPlanName = 'max'
 	let planDraftUserId: number | null = null
 	let loadRequestId = 0
 	let lastLoadedHref = ''
@@ -560,7 +560,7 @@ export function AdminUsersRoute(handle: Handle) {
 		// the select always starts from that user's stored plan.
 		if (selectedUser && selectedUser.id !== planDraftUserId) {
 			planDraftUserId = selectedUser.id
-			selectedPlanChoice = selectedUser.plan ?? 'unlimited'
+			selectedPlanChoice = selectedUser.plan ?? 'max'
 		}
 
 		return (
@@ -753,7 +753,7 @@ export function AdminUsersRoute(handle: Handle) {
 										},
 										{
 											label: 'Plan',
-											value: selectedUser.plan ?? 'unlimited',
+											value: selectedUser.plan ?? 'max',
 										},
 										{
 											label: 'Created',
@@ -861,8 +861,7 @@ export function AdminUsersRoute(handle: Handle) {
 											type="button"
 											disabled={
 												isMutating ||
-												selectedPlanChoice ===
-													(selectedUser.plan ?? 'unlimited')
+												selectedPlanChoice === (selectedUser.plan ?? 'max')
 											}
 											mix={[
 												on('click', () => void submitPlanAction()),

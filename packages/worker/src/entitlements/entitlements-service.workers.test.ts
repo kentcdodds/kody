@@ -11,7 +11,7 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 async function seedAccount(
 	email: string,
-	plan: 'pro' | 'unlimited',
+	plan: 'pro' | 'max',
 	stableUserId: string,
 ) {
 	await env.APP_DB.prepare(
@@ -48,7 +48,7 @@ test('findUserAccountByStableUserId resolves accounts via indexed stable id and 
 	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
 	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
 		email,
-		plan: 'unlimited',
+		plan: 'max',
 		emailVerified: false,
 	})
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)

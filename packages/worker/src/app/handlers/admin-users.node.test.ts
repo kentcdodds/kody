@@ -73,9 +73,9 @@ function createAdminTestEnv(input: {
 			user.id,
 			{
 				...user,
-				// Final-world fixtures default to unlimited; unknown/null stay
+				// Final-world fixtures default to max; unknown/null stay
 				// explicit so the dedicated stored-plan coercion test can warn.
-				plan: user.plan === undefined ? 'unlimited' : user.plan,
+				plan: user.plan === undefined ? 'max' : user.plan,
 			},
 		]),
 	)
@@ -348,8 +348,8 @@ test('admin users list payload exposes only account metadata fields', async () =
 			email: 'member@example.com',
 			email_verified: false,
 			email_verified_at: null,
-			// Unknown stored plan values fail open to unlimited.
-			plan: 'unlimited',
+			// Unknown stored plan values fail open to max.
+			plan: 'max',
 		}),
 	])
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
@@ -578,7 +578,7 @@ test('remove role removes admin when another admin remains', async () => {
 	)
 })
 
-test('update plan action sets, maps null to unlimited, validates, and scopes plan changes', async () => {
+test('update plan action sets, maps null to max, validates, and scopes plan changes', async () => {
 	logAuditEventSpy.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
@@ -589,7 +589,7 @@ test('update plan action sets, maps null to unlimited, validates, and scopes pla
 				id: 2,
 				username: 'member',
 				email: 'member@example.com',
-				plan: 'unlimited',
+				plan: 'max',
 				created_at: '2026-01-03 00:00:00',
 				updated_at: '2026-01-04 00:00:00',
 			},
@@ -633,13 +633,13 @@ test('update plan action sets, maps null to unlimited, validates, and scopes pla
 		plan: null,
 	})
 	expect(clearPlanResponse.status).toBe(200)
-	expect((await clearPlanResponse.json()).users[0].plan).toBe('unlimited')
+	expect((await clearPlanResponse.json()).users[0].plan).toBe('max')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
 			action: 'update_plan',
 			result: 'success',
-			reason: 'target_user_id=2;plan=unlimited',
+			reason: 'target_user_id=2;plan=max',
 		}),
 	)
 

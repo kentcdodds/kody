@@ -53,6 +53,7 @@ import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
 import {
 	parseStoredPlanName,
+	resolvePlanWrite,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -484,7 +485,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						stable_user_id: stableUserId,
 						password_hash: oauthNoUsablePasswordHash,
 						email_verified_at: new Date().toISOString(),
-						plan: consumedInvitePlan ?? 'unlimited',
+						plan: resolvePlanWrite(consumedInvitePlan),
 					},
 					{ returnRow: true },
 				)
@@ -575,7 +576,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					email,
 					ip: requestIp,
 					path: url.pathname,
-					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider};plan=${consumedInvitePlan ?? 'unlimited'}`,
+					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider};plan=${resolvePlanWrite(consumedInvitePlan)}`,
 				})
 			}
 			return issueLogin({ id: newUser.id, email })

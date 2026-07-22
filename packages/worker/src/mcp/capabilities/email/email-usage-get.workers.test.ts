@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
-	unlimitedPlanEmailLimits,
+	maxPlanEmailLimits,
 	planLimits,
 } from '#worker/entitlements/plans.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
@@ -12,7 +12,7 @@ import { emailUsageGetCapability } from './email-usage-get.ts'
 
 async function seedUser(input: {
 	email: string
-	plan: 'pro' | 'unlimited'
+	plan: 'pro' | 'max'
 	emailVerifiedAt?: string | null
 }) {
 	const stableUserId = await createStableUserIdFromEmail(input.email)
@@ -86,7 +86,7 @@ test('email_usage_get returns usage for verified users and enforces auth require
 	const unverifiedUserId = await createStableUserIdFromEmail(unverifiedEmail)
 	await seedUser({
 		email: unverifiedEmail,
-		plan: 'unlimited',
+		plan: 'max',
 		emailVerifiedAt: null,
 	})
 	await expect(
@@ -142,34 +142,34 @@ test('email_usage_get returns usage for verified users and enforces auth require
 		max_message_bytes: planLimits.pro.maxEmailMessageBytes,
 	})
 
-	const unlimitedEmail = `usage-unlimited-${crypto.randomUUID()}@example.com`
-	const unlimitedUserId = await createStableUserIdFromEmail(unlimitedEmail)
-	await seedUser({ email: unlimitedEmail, plan: 'unlimited' })
-	const unlimitedResult = await emailUsageGetCapability.handler(
+	const maxEmail = `usage-max-${crypto.randomUUID()}@example.com`
+	const maxUserId = await createStableUserIdFromEmail(maxEmail)
+	await seedUser({ email: maxEmail, plan: 'max' })
+	const maxResult = await emailUsageGetCapability.handler(
 		{},
 		{
 			env,
 			callerContext: buildCallerContext({
-				userId: unlimitedUserId,
-				email: unlimitedEmail,
+				userId: maxUserId,
+				email: maxEmail,
 			}),
 		},
 	)
-	expect(unlimitedResult).toEqual({
-		plan: 'unlimited',
+	expect(maxResult).toEqual({
+		plan: 'max',
 		day: utcDayKey(),
 		stored_messages: {
 			count: 0,
-			limit: unlimitedPlanEmailLimits.stored_email_messages,
+			limit: maxPlanEmailLimits.stored_email_messages,
 		},
 		sends_today: {
 			count: 0,
-			limit: unlimitedPlanEmailLimits.email_sends_per_day,
+			limit: maxPlanEmailLimits.email_sends_per_day,
 		},
 		receives_today: {
 			count: 0,
-			limit: unlimitedPlanEmailLimits.email_receives_per_day,
+			limit: maxPlanEmailLimits.email_receives_per_day,
 		},
-		max_message_bytes: unlimitedPlanEmailLimits.email_message_bytes,
+		max_message_bytes: maxPlanEmailLimits.email_message_bytes,
 	})
 })

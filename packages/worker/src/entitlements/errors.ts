@@ -10,7 +10,7 @@ export const entitlementLimitErrorCode = 'entitlement_limit_exceeded' as const
 export type EntitlementLimitErrorDetails = {
 	code: typeof entitlementLimitErrorCode
 	resource: EntitlementResource
-	/** Always a known plan name (including `unlimited` for fallback contexts). */
+	/** Always a known plan name (including `max` when plan lookup short-circuits). */
 	plan: PlanName
 	limit: number
 	current: number

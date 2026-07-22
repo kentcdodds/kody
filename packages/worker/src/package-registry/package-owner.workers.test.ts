@@ -17,8 +17,8 @@ function personUsername() {
 async function seedPersonUser(input: { username: string; email: string }) {
 	const stableUserId = await createStableUserIdFromEmail(input.email)
 	const result = await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, account_type)
-		 VALUES (?, ?, 'test-password-hash', ?, ?, 'person')`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, account_type, plan)
+		 VALUES (?, ?, 'test-password-hash', ?, ?, 'person', 'max')`,
 	)
 		.bind(input.username, input.email, new Date().toISOString(), stableUserId)
 		.run()

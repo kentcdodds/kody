@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import {
 	consoleWarn,
 	silenceExpectedConsoleWarns,
@@ -12,7 +12,7 @@ import {
 } from './errors.ts'
 import {
 	getPlanRank,
-	unlimitedPlanEmailLimits,
+	maxPlanEmailLimits,
 	parsePlanName,
 	parseStoredPlanName,
 	parseStripePlanName,
@@ -211,13 +211,13 @@ test('entitlement limit messages always identify a known plan name', () => {
 	const details = {
 		code: 'entitlement_limit_exceeded' as const,
 		resource: 'concurrent_workflows' as const,
-		plan: 'unlimited' as const,
+		plan: 'max' as const,
 		limit: 100,
 		current: 100,
 		upgradeHint: buildEntitlementUpgradeHint('concurrent_workflows'),
 	}
 	const message = buildEntitlementLimitMessage(details)
-	expect(message).toContain('your "unlimited" plan')
+	expect(message).toContain('your "max" plan')
 	expect(message).not.toContain('this deployment')
 	expect(parseEntitlementLimitMessage(message)).toEqual(details)
 	expect(
@@ -236,6 +236,7 @@ test('parsePlanName accepts registered plan names and treats everything else as 
 	for (const plan of planNames) {
 		expect(parsePlanName(plan)).toBe(plan)
 	}
+	expect(parsePlanName('unlimited')).toBeNull()
 	expect(parsePlanName('enterprise')).toBeNull()
 	expect(parsePlanName(' pro ')).toBeNull()
 	expect(parsePlanName('')).toBeNull()
@@ -244,37 +245,39 @@ test('parsePlanName accepts registered plan names and treats everything else as 
 	expect(parsePlanName(1)).toBeNull()
 })
 
-test('parseStoredPlanName keeps known plans and fails open unknown/null to unlimited with a stable warn', () => {
+test('parseStoredPlanName keeps known plans and fails open unknown/null/residual unlimited to max with a stable warn', () => {
 	consoleWarn.mockImplementation(() => {})
 	for (const plan of planNames) {
 		expect(parseStoredPlanName(plan)).toBe(plan)
 	}
 	expect(consoleWarn).not.toHaveBeenCalled()
 
-	expect(parseStoredPlanName('enterprise-2099')).toBe('unlimited')
-	expect(parseStoredPlanName(null)).toBe('unlimited')
-	expect(parseStoredPlanName(undefined)).toBe('unlimited')
-	expect(parseStoredPlanName('')).toBe('unlimited')
-	expect(parseStoredPlanName(' pro ')).toBe('unlimited')
-	expect(parseStoredPlanName(1)).toBe('unlimited')
-	expect(consoleWarn).toHaveBeenCalledTimes(6)
+	expect(parseStoredPlanName('enterprise-2099')).toBe('max')
+	expect(parseStoredPlanName(null)).toBe('max')
+	expect(parseStoredPlanName(undefined)).toBe('max')
+	expect(parseStoredPlanName('')).toBe('max')
+	expect(parseStoredPlanName(' pro ')).toBe('max')
+	expect(parseStoredPlanName(1)).toBe('max')
+	expect(parseStoredPlanName('unlimited')).toBe('max')
+	expect(consoleWarn).toHaveBeenCalledTimes(7)
 	for (const call of consoleWarn.mock.calls) {
 		expect(call).toEqual([unknownStoredPlanWarningTag])
 	}
 })
 
-test('parseStripePlanName rejects unlimited and unknown values', () => {
+test('parseStripePlanName rejects max, unlimited, and unknown values', () => {
 	expect(parseStripePlanName('pro')).toBe('pro')
+	expect(parseStripePlanName('max')).toBeNull()
 	expect(parseStripePlanName('unlimited')).toBeNull()
 	expect(parseStripePlanName('enterprise')).toBeNull()
 	expect(parseStripePlanName(null)).toBeNull()
 })
 
-test('resolvePlanWrite maps nullish inputs to unlimited', () => {
-	expect(resolvePlanWrite(null)).toBe('unlimited')
-	expect(resolvePlanWrite(undefined)).toBe('unlimited')
+test('resolvePlanWrite maps nullish inputs to max', () => {
+	expect(resolvePlanWrite(null)).toBe('max')
+	expect(resolvePlanWrite(undefined)).toBe('max')
 	expect(resolvePlanWrite('pro')).toBe('pro')
-	expect(resolvePlanWrite('unlimited')).toBe('unlimited')
+	expect(resolvePlanWrite('max')).toBe('max')
 })
 
 test('storage byte entry estimates support net-positive upsert deltas', () => {
@@ -321,7 +324,7 @@ test('storage byte entry estimates support net-positive upsert deltas', () => {
 	)
 })
 
-test('getUserPlan resolves plans via email+stable id and short-circuits invalid lookups to unlimited', async () => {
+test('getUserPlan resolves plans via email+stable id and short-circuits invalid lookups to max', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const unknownPlanEmail = 'unknown-plan@example.com'
 	const unknownPlanUserId = await createStableUserIdFromEmail(unknownPlanEmail)
@@ -335,14 +338,10 @@ test('getUserPlan resolves plans via email+stable id and short-circuits invalid 
 			},
 		],
 	})
-	expect(await getUserPlan(db, { userId: 'user-1', email: null })).toBe(
-		'unlimited',
-	)
-	expect(await getUserPlan(db, { userId: 'user-1', email: '' })).toBe(
-		'unlimited',
-	)
+	expect(await getUserPlan(db, { userId: 'user-1', email: null })).toBe('max')
+	expect(await getUserPlan(db, { userId: 'user-1', email: '' })).toBe('max')
 	expect(await getUserPlan(db, { userId: 'user-1', email: plannedEmail })).toBe(
-		'unlimited',
+		'max',
 	)
 	expect(queries).toEqual([])
 	expect(consoleWarn).not.toHaveBeenCalled()
@@ -354,13 +353,13 @@ test('getUserPlan resolves plans via email+stable id and short-circuits invalid 
 	expect(queries.at(-1)?.sql).toContain('email = ? AND stable_user_id = ?')
 	expect(queries.at(-1)?.params).toEqual([plannedEmail, userId])
 
-	// Mismatched email/stable-id pair is intentionally unlimited (no warn).
+	// Mismatched email/stable-id pair is intentionally max (no warn).
 	expect(
 		await getUserPlan(db, {
 			userId,
 			email: unknownPlanEmail,
 		}),
-	).toBe('unlimited')
+	).toBe('max')
 	expect(consoleWarn).not.toHaveBeenCalled()
 
 	consoleWarn.mockImplementation(() => {})
@@ -369,33 +368,51 @@ test('getUserPlan resolves plans via email+stable id and short-circuits invalid 
 			userId: unknownPlanUserId,
 			email: unknownPlanEmail,
 		}),
-	).toBe('unlimited')
+	).toBe('max')
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 })
 
-test('assertWithinEntitlement passes under the limit, throws at it, and skips counting for unlimited ordinary limits', async () => {
+test('assertWithinEntitlement passes under the limit, throws at it, and enforces finite max ordinary limits', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const limit = planLimits.free.maxScheduledJobs
-	if (limit === null) throw new Error('Expected a numeric free job limit.')
+	const freeLimit = planLimits.free.maxScheduledJobs
+	const maxLimit = planLimits.max.maxScheduledJobs
 
-	const unlimitedUser = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'unlimited', stable_user_id: userId }],
-		counts: { jobs: 10_000 },
+	const maxUnder = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
+		counts: { jobs: maxLimit - 1 },
 	})
 	await assertWithinEntitlement({
-		db: unlimitedUser.db,
+		db: maxUnder.db,
 		userId,
 		email: plannedEmail,
 		resource: 'scheduled_jobs',
 	})
-	expect(unlimitedUser.queries).toHaveLength(1)
-	expect(unlimitedUser.queries[0]?.sql).toContain(
-		'SELECT plan, stripe_plan FROM users',
+
+	const maxAt = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
+		counts: { jobs: maxLimit },
+	})
+	const maxDenied = await assertWithinEntitlement({
+		db: maxAt.db,
+		userId,
+		email: plannedEmail,
+		resource: 'scheduled_jobs',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
 	)
+	if (!(maxDenied instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError for max plan.')
+	}
+	expect(maxDenied.details).toMatchObject({
+		plan: 'max',
+		limit: maxLimit,
+		current: maxLimit,
+	})
 
 	const under = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
-		counts: { jobs: limit - 1 },
+		counts: { jobs: freeLimit - 1 },
 	})
 	await assertWithinEntitlement({
 		db: under.db,
@@ -406,7 +423,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and skips co
 
 	const at = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
-		counts: { jobs: limit },
+		counts: { jobs: freeLimit },
 	})
 	const error = await assertWithinEntitlement({
 		db: at.db,
@@ -424,23 +441,23 @@ test('assertWithinEntitlement passes under the limit, throws at it, and skips co
 		code: 'entitlement_limit_exceeded',
 		resource: 'scheduled_jobs',
 		plan: 'free',
-		limit,
-		current: limit,
+		limit: freeLimit,
+		current: freeLimit,
 		upgradeHint: error.details.upgradeHint,
 	})
 	expect(error.message).toBe(buildEntitlementLimitMessage(error.details))
 })
 
-test('assertWithinEntitlement applies fallbackLimit when plan limit is null', async () => {
+test('assertWithinEntitlement enforces max concurrent workflow limit without email', async () => {
+	const maxLimit = planLimits.max.maxConcurrentWorkflows
 	const { db } = createEntitlementsTestDb({
-		counts: { workflow_runs: 100 },
+		counts: { workflow_runs: maxLimit },
 	})
 	const error = await assertWithinEntitlement({
 		db,
 		userId: 'user-1',
 		email: null,
 		resource: 'concurrent_workflows',
-		fallbackLimit: 100,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -449,16 +466,16 @@ test('assertWithinEntitlement applies fallbackLimit when plan limit is null', as
 		throw new Error('Expected an EntitlementLimitError.')
 	}
 	expect(error.details).toMatchObject({
-		plan: 'unlimited',
-		limit: 100,
-		current: 100,
+		plan: 'max',
+		limit: maxLimit,
+		current: maxLimit,
 	})
 })
 
-test('persistent package services are gated as a zero limit', async () => {
+test('persistent package services are gated as a 0/1 limit', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	expect(resolvePlanLimit('free', 'persistent_package_services')).toBe(0)
-	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBeNull()
+	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBe(1)
 
 	const { db } = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
@@ -539,7 +556,6 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 		userId,
 		email: plannedEmail,
 		resource: 'email_sends_per_day',
-		fallbackLimit: 1,
 		now,
 	}).then(
 		() => null,
@@ -632,9 +648,9 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 	).toBe(0)
 })
 
-test('missing-email lookups resolve to unlimited and honor unlimited email caps', async () => {
+test('missing-email lookups resolve to max and honor max email caps', async () => {
 	const { db, counters } = createEntitlementsTestDb()
-	const sendLimit = unlimitedPlanEmailLimits.email_sends_per_day
+	const sendLimit = maxPlanEmailLimits.email_sends_per_day
 	const now = new Date('2026-07-05T15:00:00.000Z')
 	for (let index = 0; index < sendLimit; index += 1) {
 		await consumeDailyEntitlement({
@@ -656,7 +672,7 @@ test('missing-email lookups resolve to unlimited and honor unlimited email caps'
 		}),
 	).rejects.toBeInstanceOf(EntitlementLimitError)
 
-	const receiveLimit = unlimitedPlanEmailLimits.email_receives_per_day
+	const receiveLimit = maxPlanEmailLimits.email_receives_per_day
 	for (let index = 0; index < receiveLimit; index += 1) {
 		await consumeDailyEntitlement({
 			db,
@@ -686,7 +702,7 @@ test('missing-email lookups resolve to unlimited and honor unlimited email caps'
 	expect(denied.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'email_receives_per_day',
-		plan: 'unlimited',
+		plan: 'max',
 		limit: receiveLimit,
 		current: receiveLimit,
 	})
@@ -766,29 +782,38 @@ test('requested units and getCurrent overrides are honored', async () => {
 	})
 })
 
-test('storage bytes enforce for planned users and skip unlimited storage caps', async () => {
+test('storage bytes enforce for planned users and enforce finite max storage caps', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const limit = planLimits.pro.maxStorageBytes
-	if (limit === null) throw new Error('Expected a numeric pro storage cap.')
+	const proLimit = planLimits.pro.maxStorageBytes
+	const maxLimit = planLimits.max.maxStorageBytes
 
-	const unlimitedStorage = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'unlimited', stable_user_id: userId }],
-		counts: { email_messages: limit + 1 },
+	const maxAt = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
+		counts: { email_messages: maxLimit },
 	})
-	await assertWithinStorageBytesEntitlement({
-		db: unlimitedStorage.db,
+	const maxDenied = await assertWithinStorageBytesEntitlement({
+		db: maxAt.db,
 		userId,
 		email: plannedEmail,
 		requested: 1,
-	})
-	expect(unlimitedStorage.queries).toHaveLength(1)
-	expect(unlimitedStorage.queries[0]?.sql).toContain(
-		'SELECT plan, stripe_plan FROM users',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
 	)
+	if (!(maxDenied instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError for max storage.')
+	}
+	expect(maxDenied.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'storage_bytes',
+		plan: 'max',
+		limit: maxLimit,
+		current: maxLimit,
+	})
 
 	const atLimit = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
-		counts: { email_messages: limit },
+		counts: { email_messages: proLimit },
 	})
 	const denied = await assertWithinStorageBytesEntitlement({
 		db: atLimit.db,
@@ -806,13 +831,13 @@ test('storage bytes enforce for planned users and skip unlimited storage caps', 
 		code: 'entitlement_limit_exceeded',
 		resource: 'storage_bytes',
 		plan: 'pro',
-		limit,
-		current: limit,
+		limit: proLimit,
+		current: proLimit,
 	})
 
 	const underLimit = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
-		counts: { email_messages: limit - 1 },
+		counts: { email_messages: proLimit - 1 },
 	})
 	await assertWithinStorageBytesEntitlement({
 		db: underLimit.db,
@@ -822,17 +847,16 @@ test('storage bytes enforce for planned users and skip unlimited storage caps', 
 	})
 })
 
-test('getPlanRank orders free < pro < partner < unlimited', () => {
+test('getPlanRank orders free < pro < partner < max', () => {
 	expect(getPlanRank('free')).toBeLessThan(getPlanRank('pro'))
 	expect(getPlanRank('pro')).toBeLessThan(getPlanRank('partner'))
-	expect(getPlanRank('partner')).toBeLessThan(getPlanRank('unlimited'))
+	expect(getPlanRank('partner')).toBeLessThan(getPlanRank('max'))
 })
 
-test('resolveEffectivePlan manual unlimited always beats Stripe', () => {
-	expect(resolveEffectivePlan('unlimited', 'pro')).toBe('unlimited')
-	expect(resolveEffectivePlan('unlimited', 'partner')).toBe('unlimited')
-	expect(resolveEffectivePlan('unlimited', 'unlimited')).toBe('unlimited')
-	expect(resolveEffectivePlan('unlimited', null)).toBe('unlimited')
+test('resolveEffectivePlan manual max ranks above Stripe', () => {
+	expect(resolveEffectivePlan('max', 'pro')).toBe('max')
+	expect(resolveEffectivePlan('max', 'partner')).toBe('max')
+	expect(resolveEffectivePlan('max', null)).toBe('max')
 })
 
 test('resolveEffectivePlan picks the higher of manual and stripe plans', () => {
@@ -843,6 +867,8 @@ test('resolveEffectivePlan picks the higher of manual and stripe plans', () => {
 	expect(resolveEffectivePlan('pro', null)).toBe('pro')
 	expect(resolveEffectivePlan('pro', 'not-a-plan')).toBe('pro')
 	expect(resolveEffectivePlan('pro', 'personal')).toBe('pro')
+	// Stripe cannot source max or residual unlimited.
+	expect(resolveEffectivePlan('free', 'max')).toBe('free')
 	expect(resolveEffectivePlan('free', 'unlimited')).toBe('free')
 })
 
@@ -850,54 +876,56 @@ test('free plan limits are stricter than pro', () => {
 	expect(planLimits.free.maxSavedPackages).toBe(5)
 	expect(planLimits.free.maxScheduledJobs).toBe(3)
 	expect(planLimits.free.maxPackageServices).toBe(1)
-	expect(planLimits.free.packageServicePersistentAllowed).toBe(false)
+	expect(planLimits.free.packageServicePersistentAllowed).toBe(0)
 	expect(planLimits.free.maxSavedPackages).toBeLessThan(
-		planLimits.pro.maxSavedPackages!,
+		planLimits.pro.maxSavedPackages,
 	)
 	expect(planLimits.free.maxScheduledJobs).toBeLessThan(
-		planLimits.pro.maxScheduledJobs!,
+		planLimits.pro.maxScheduledJobs,
 	)
 	expect(resolvePlanLimit('free', 'persistent_package_services')).toBe(0)
 	expect(resolvePlanLimit('free', 'saved_packages')).toBe(5)
 })
 
-test('unlimited plan has null ordinary limits, email fallbacks, and persistent services', () => {
-	expect(planLimits.unlimited.maxSavedPackages).toBeNull()
-	expect(planLimits.unlimited.maxScheduledJobs).toBeNull()
-	expect(planLimits.unlimited.maxPackageServices).toBeNull()
-	expect(planLimits.unlimited.maxRepoSessions).toBeNull()
-	expect(planLimits.unlimited.maxSecrets).toBeNull()
-	expect(planLimits.unlimited.maxStorageBytes).toBeNull()
-	expect(planLimits.unlimited.maxConcurrentWorkflows).toBeNull()
-	expect(planLimits.unlimited.packageServicePersistentAllowed).toBe(true)
-	expect(
-		resolvePlanLimit('unlimited', 'persistent_package_services'),
-	).toBeNull()
-	expect(planLimits.unlimited.maxEmailSendsPerDay).toBe(
-		unlimitedPlanEmailLimits.email_sends_per_day,
+test('max plan has finite ordinary limits, email caps, and persistent services', () => {
+	expect(planLimits.max.maxSavedPackages).toBe(10_000)
+	expect(planLimits.max.maxScheduledJobs).toBe(5_000)
+	expect(planLimits.max.maxPackageServices).toBe(1_000)
+	expect(planLimits.max.maxRepoSessions).toBe(2_000)
+	expect(planLimits.max.maxSecrets).toBe(10_000)
+	expect(planLimits.max.maxStorageBytes).toBe(100 * 1024 * 1024 * 1024)
+	expect(planLimits.max.maxConcurrentWorkflows).toBe(5_000)
+	expect(planLimits.max.packageServicePersistentAllowed).toBe(1)
+	expect(resolvePlanLimit('max', 'persistent_package_services')).toBe(1)
+	expect(planLimits.max.maxEmailSendsPerDay).toBe(
+		maxPlanEmailLimits.email_sends_per_day,
 	)
-	expect(planLimits.unlimited.maxEmailReceivesPerDay).toBe(
-		unlimitedPlanEmailLimits.email_receives_per_day,
+	expect(planLimits.max.maxEmailReceivesPerDay).toBe(
+		maxPlanEmailLimits.email_receives_per_day,
 	)
-	expect(planLimits.unlimited.maxStoredEmailMessages).toBe(
-		unlimitedPlanEmailLimits.stored_email_messages,
+	expect(planLimits.max.maxStoredEmailMessages).toBe(
+		maxPlanEmailLimits.stored_email_messages,
 	)
-	expect(planLimits.unlimited.maxEmailMessageBytes).toBe(
-		unlimitedPlanEmailLimits.email_message_bytes,
+	expect(planLimits.max.maxEmailMessageBytes).toBe(
+		maxPlanEmailLimits.email_message_bytes,
 	)
 })
 
-test('unexpected stored NULL and unknown plans coerce to unlimited ordinary limits and still use concurrent_workflows fallbackLimit', async () => {
+test('unexpected stored NULL, unknown, and residual unlimited coerce to max finite limits', async () => {
 	const defensiveNullEmail = 'unexpected-stored-null@example.com'
 	const unknownPlanEmail = 'unknown-plan@example.com'
-	const unlimitedEmail = 'unlimited-plan@example.com'
+	const residualUnlimitedEmail = 'residual-unlimited@example.com'
 	const defensiveNullUserId =
 		await createStableUserIdFromEmail(defensiveNullEmail)
 	const unknownPlanUserId = await createStableUserIdFromEmail(unknownPlanEmail)
-	const unlimitedUserId = await createStableUserIdFromEmail(unlimitedEmail)
+	const residualUnlimitedUserId = await createStableUserIdFromEmail(
+		residualUnlimitedEmail,
+	)
+	const maxJobLimit = planLimits.max.maxScheduledJobs
+	const maxWorkflowLimit = planLimits.max.maxConcurrentWorkflows
 
 	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
-	const defensiveNullGetCurrent = vi.fn(async () => 10_000)
+
 	const defensiveNull = createEntitlementsTestDb({
 		users: [
 			{
@@ -906,22 +934,26 @@ test('unexpected stored NULL and unknown plans coerce to unlimited ordinary limi
 				stable_user_id: defensiveNullUserId,
 			},
 		],
-		counts: { jobs: 10_000 },
+		counts: { jobs: maxJobLimit },
 	})
-	await assertWithinEntitlement({
+	const defensiveNullDenied = await assertWithinEntitlement({
 		db: defensiveNull.db,
 		userId: defensiveNullUserId,
 		email: defensiveNullEmail,
 		resource: 'scheduled_jobs',
-		getCurrent: defensiveNullGetCurrent,
-	})
-	expect(defensiveNullGetCurrent).not.toHaveBeenCalled()
-	expect(defensiveNull.queries).toHaveLength(1)
-	expect(defensiveNull.queries[0]?.sql).toContain(
-		'SELECT plan, stripe_plan FROM users',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
 	)
+	if (!(defensiveNullDenied instanceof EntitlementLimitError)) {
+		throw new Error('Expected denial for coerced-null max job limit.')
+	}
+	expect(defensiveNullDenied.details).toMatchObject({
+		plan: 'max',
+		limit: maxJobLimit,
+		current: maxJobLimit,
+	})
 
-	const unknownPlanGetCurrent = vi.fn(async () => 10_000)
 	const unknownPlan = createEntitlementsTestDb({
 		users: [
 			{
@@ -930,61 +962,68 @@ test('unexpected stored NULL and unknown plans coerce to unlimited ordinary limi
 				stable_user_id: unknownPlanUserId,
 			},
 		],
-		counts: { jobs: 10_000 },
+		counts: { jobs: maxJobLimit },
 	})
-	await assertWithinEntitlement({
+	const unknownDenied = await assertWithinEntitlement({
 		db: unknownPlan.db,
 		userId: unknownPlanUserId,
 		email: unknownPlanEmail,
 		resource: 'scheduled_jobs',
-		getCurrent: unknownPlanGetCurrent,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(unknownDenied instanceof EntitlementLimitError)) {
+		throw new Error('Expected denial for coerced-unknown max job limit.')
+	}
+	expect(unknownDenied.details).toMatchObject({
+		plan: 'max',
+		limit: maxJobLimit,
 	})
-	expect(unknownPlanGetCurrent).not.toHaveBeenCalled()
 
-	const unlimitedGetCurrent = vi.fn(async () => 10_000)
-	const unlimited = createEntitlementsTestDb({
+	const residualUnlimited = createEntitlementsTestDb({
 		users: [
 			{
-				email: unlimitedEmail,
+				email: residualUnlimitedEmail,
 				plan: 'unlimited',
-				stable_user_id: unlimitedUserId,
+				stable_user_id: residualUnlimitedUserId,
 			},
 		],
-		counts: { jobs: 10_000 },
+		counts: { jobs: maxJobLimit },
 	})
-	await assertWithinEntitlement({
-		db: unlimited.db,
-		userId: unlimitedUserId,
-		email: unlimitedEmail,
+	const residualDenied = await assertWithinEntitlement({
+		db: residualUnlimited.db,
+		userId: residualUnlimitedUserId,
+		email: residualUnlimitedEmail,
 		resource: 'scheduled_jobs',
-		getCurrent: unlimitedGetCurrent,
-	})
-	expect(unlimitedGetCurrent).not.toHaveBeenCalled()
-	expect(unlimited.queries).toHaveLength(1)
-	expect(unlimited.queries[0]?.sql).toContain(
-		'SELECT plan, stripe_plan FROM users',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
 	)
-	expect(unlimited.queries[0]?.params).toEqual([
-		unlimitedEmail,
-		unlimitedUserId,
-	])
+	if (!(residualDenied instanceof EntitlementLimitError)) {
+		throw new Error('Expected denial for residual-unlimited→max job limit.')
+	}
+	expect(residualDenied.details).toMatchObject({
+		plan: 'max',
+		limit: maxJobLimit,
+		current: maxJobLimit,
+	})
 
 	const concurrent = createEntitlementsTestDb({
 		users: [
 			{
-				email: unlimitedEmail,
+				email: residualUnlimitedEmail,
 				plan: 'unlimited',
-				stable_user_id: unlimitedUserId,
+				stable_user_id: residualUnlimitedUserId,
 			},
 		],
-		counts: { workflow_runs: 100 },
+		counts: { workflow_runs: maxWorkflowLimit },
 	})
 	const error = await assertWithinEntitlement({
 		db: concurrent.db,
-		userId: unlimitedUserId,
-		email: unlimitedEmail,
+		userId: residualUnlimitedUserId,
+		email: residualUnlimitedEmail,
 		resource: 'concurrent_workflows',
-		fallbackLimit: 100,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -993,9 +1032,9 @@ test('unexpected stored NULL and unknown plans coerce to unlimited ordinary limi
 		throw new Error('Expected an EntitlementLimitError.')
 	}
 	expect(error.details).toMatchObject({
-		plan: 'unlimited',
-		limit: 100,
-		current: 100,
+		plan: 'max',
+		limit: maxWorkflowLimit,
+		current: maxWorkflowLimit,
 	})
 	expect(
 		concurrent.queries.some((query) =>
@@ -1039,7 +1078,7 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			},
 			{
 				email: unlimitedPlusProEmail,
-				plan: 'unlimited',
+				plan: 'max',
 				stripe_plan: 'pro',
 				stable_user_id: unlimitedPlusProUserId,
 			},
@@ -1053,13 +1092,13 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 		}),
 	).toBe('pro')
 	consoleWarn.mockImplementation(() => {})
-	// Stored NULL fails open to unlimited (which wins over Stripe).
+	// Stored NULL fails open to max (which ranks above Stripe).
 	expect(
 		await getUserPlan(db, {
 			userId: nullPlusProUserId,
 			email: nullPlusProEmail,
 		}),
-	).toBe('unlimited')
+	).toBe('max')
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 	expect(
 		await getUserPlan(db, {
@@ -1072,5 +1111,5 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			userId: unlimitedPlusProUserId,
 			email: unlimitedPlusProEmail,
 		}),
-	).toBe('unlimited')
+	).toBe('max')
 })

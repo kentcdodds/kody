@@ -405,7 +405,7 @@ test('package_save responses steer coding agents toward the git lane', async () 
 	const userId = await createStableUserIdFromEmail(email)
 	const db = createDatabase({
 		users: [
-			{ email, plan: 'unlimited', username: 'planned', stable_user_id: userId },
+			{ email, plan: 'max', username: 'planned', stable_user_id: userId },
 		],
 	})
 	setupPersistenceMocks()
@@ -422,32 +422,89 @@ test('package_save responses steer coding agents toward the git lane', async () 
 	expect(result.pending_secret_package_approvals).toBeNull()
 })
 
-test('package_save stays unlimited for unlimited plan users', async () => {
-	const email = 'unlimited@example.com'
+test('package_save allows below-max usage and denies at the max plan ceiling', async () => {
+	const email = 'max@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.free.maxSavedPackages
-	if (limit === null) throw new Error('Expected a numeric free package limit.')
-	const db = createDatabase({
+	const maxLimit = planLimits.max.maxSavedPackages
+	const now = '2026-04-18T00:00:00.000Z'
+	const belowMaxDb = createDatabase({
 		users: [
 			{
 				email,
-				plan: 'unlimited',
-				username: 'unlimited',
+				plan: 'max',
+				username: 'max',
 				stable_user_id: userId,
 			},
 		],
+		saved_packages: Array.from(
+			{ length: planLimits.pro.maxSavedPackages },
+			(_, index) => ({
+				id: `below-max-${index}`,
+				user_id: userId,
+				name: `@max/below-${index}`,
+				kody_id: `below-${index}`,
+				description: 'Below max ceiling',
+				tags_json: '[]',
+				search_text: null,
+				source_id: `source-below-${index}`,
+				has_app: 0,
+				created_at: now,
+				updated_at: now,
+			}),
+		),
 	})
 	setupPersistenceMocks()
-	const ctx = createHandlerContext({ db, userId, email })
+	const belowMaxCtx = createHandlerContext({ db: belowMaxDb, userId, email })
+	await savePackageCapability.handler(
+		{ files: buildPackageFiles('below-max-package', 'max') },
+		belowMaxCtx,
+	)
+	expect(mockModule.ensureEntitySource).toHaveBeenCalled()
 
-	for (let index = 0; index < limit + 1; index += 1) {
-		await savePackageCapability.handler(
+	const atCeilingDb = createDatabase({
+		users: [
 			{
-				files: buildPackageFiles(`unlimited-package-${index}`, 'unlimited'),
+				email,
+				plan: 'max',
+				username: 'max',
+				stable_user_id: userId,
 			},
-			ctx,
+		],
+		saved_packages: Array.from({ length: maxLimit }, (_, index) => ({
+			id: `max-package-${index}`,
+			user_id: userId,
+			name: `@max/existing-${index}`,
+			kody_id: `existing-${index}`,
+			description: 'At max ceiling',
+			tags_json: '[]',
+			search_text: null,
+			source_id: `source-max-${index}`,
+			has_app: 0,
+			created_at: now,
+			updated_at: now,
+		})),
+	})
+	setupPersistenceMocks()
+	const atCeilingCtx = createHandlerContext({ db: atCeilingDb, userId, email })
+	const error = await savePackageCapability
+		.handler(
+			{ files: buildPackageFiles('over-max-package', 'max') },
+			atCeilingCtx,
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error(
+			'Expected an EntitlementLimitError at the max package ceiling.',
 		)
 	}
-
-	expect(mockModule.ensureEntitySource).toHaveBeenCalledTimes(limit + 1)
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'saved_packages',
+		plan: 'max',
+		limit: maxLimit,
+		current: maxLimit,
+	})
 })

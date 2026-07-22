@@ -22,10 +22,7 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
-import {
-	assertWithinEntitlement,
-	getWorkflowConcurrencyBackstop,
-} from '#worker/entitlements/service.ts'
+import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	activeWorkflowStatusValues,
@@ -819,7 +816,6 @@ export async function createDynamicCallableWorkflow(input: {
 			userId: payload.userId,
 			email: input.userEmail,
 			resource: 'concurrent_workflows',
-			fallbackLimit: getWorkflowConcurrencyBackstop(input.env as Env),
 		})
 	}
 	if (input.env.APP_DB && idempotencyKeyInput) {

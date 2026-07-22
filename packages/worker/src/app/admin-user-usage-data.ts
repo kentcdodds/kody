@@ -151,8 +151,7 @@ async function readEntitlementConsumption(input: {
 				now: input.now,
 			})
 			const limit = resolvePlanLimit(input.plan, resource)
-			const percentOfLimit =
-				limit == null || limit === 0 ? null : current / limit
+			const percentOfLimit = limit === 0 ? null : current / limit
 			return {
 				resource,
 				label: entitlementResourceLabels[resource],

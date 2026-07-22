@@ -1,30 +1,34 @@
 /**
  * Plan definitions and per-plan resource limits.
  *
- * First-class plans include `unlimited`. Writers persist a plan name (never
- * NULL). After `users.plan` NOT NULL, reads resolve stored values to
- * {@link PlanName} via {@link parseStoredPlanName}: known names including
- * `unlimited` are unchanged; unexpected NULL / unknown strings fail open to
- * `unlimited` with a stable console.warn. Untrusted admin/API input still
- * uses strict {@link parsePlanName} so typos are rejected rather than coerced.
+ * First-class plans include `max`. Writers persist a plan name (never NULL).
+ * After `users.plan` NOT NULL, reads resolve stored values to {@link PlanName}
+ * via {@link parseStoredPlanName}: known names are unchanged; unexpected
+ * NULL / unknown strings / residual stored `'unlimited'` fail open to `max`
+ * with a stable console.warn. Untrusted admin/API input still uses strict
+ * {@link parsePlanName} so typos and residual `'unlimited'` are rejected
+ * rather than coerced. Stripe metadata uses {@link parseStripePlanName},
+ * which rejects `max` (manual-only) and residual `'unlimited'`.
  */
 
-export const planNames = ['free', 'partner', 'pro', 'unlimited'] as const
+export const planNames = ['free', 'partner', 'pro', 'max'] as const
 
 export type PlanName = (typeof planNames)[number]
 
 /**
  * Stable console.warn tag when {@link parseStoredPlanName} coerces an
- * unexpected NULL or unknown stored string to `unlimited`. Never include
- * user identifiers or the raw stored value in the warn arguments.
+ * unexpected NULL, unknown stored string, or residual `'unlimited'` to
+ * `max`. Never include user identifiers or the raw stored value in the warn
+ * arguments.
  */
 export const unknownStoredPlanWarningTag = 'entitlement-unknown-stored-plan'
 
 /**
  * Strict plan-name parser for untrusted admin/API input validation.
- * Unknown strings, typos, nullish values, and non-strings return null so
- * callers can reject them. Do not use this for reading stored `users.plan` /
- * `invites.plan` columns — use {@link parseStoredPlanName} instead.
+ * Unknown strings, typos, residual `'unlimited'`, nullish values, and
+ * non-strings return null so callers can reject them. Do not use this for
+ * reading stored `users.plan` / `invites.plan` columns — use
+ * {@link parseStoredPlanName} instead.
  */
 export function parsePlanName(value: unknown): PlanName | null {
 	return typeof value === 'string' &&
@@ -37,40 +41,41 @@ export function parsePlanName(value: unknown): PlanName | null {
  * Parse a plan value read from a stored `users.plan` (or equivalent) column.
  *
  * Unlike {@link parsePlanName} (strict validation for untrusted admin/API
- * input — typos and unknown strings stay null so writers can reject them),
- * this helper always returns a {@link PlanName}: known names including
- * `unlimited` are unchanged; defensive unexpected NULL and unknown stored
- * strings fail open to `unlimited` and emit {@link unknownStoredPlanWarningTag}
- * with no user data.
+ * input — typos, unknown strings, and residual `'unlimited'` stay null so
+ * writers can reject them), this helper always returns a {@link PlanName}:
+ * known names are unchanged; defensive unexpected NULL, unknown stored
+ * strings, and residual `'unlimited'` fail open to `max` and emit
+ * {@link unknownStoredPlanWarningTag} with no user data.
  */
 export function parseStoredPlanName(value: unknown): PlanName {
 	const plan = parsePlanName(value)
 	if (plan) return plan
 	console.warn(unknownStoredPlanWarningTag)
-	return 'unlimited'
+	return 'max'
 }
 
 /**
  * Parse a plan name that may come from Stripe metadata or `users.stripe_plan`.
- * `unlimited` is never purchasable or Stripe-sourced. `stripe_plan` stays
- * nullable; unknown / null / `unlimited` values contribute nothing.
+ * `max` is manual-only (never purchasable or Stripe-sourced). Residual
+ * `'unlimited'` is also rejected. `stripe_plan` stays nullable; unknown /
+ * null / `max` / `'unlimited'` values contribute nothing.
  */
 export function parseStripePlanName(value: unknown): PlanName | null {
 	const plan = parsePlanName(value)
-	return plan === 'unlimited' ? null : plan
+	return plan === 'max' ? null : plan
 }
 
 /**
- * Coerce admin/API nullish plan inputs to the first-class `unlimited` plan.
+ * Coerce admin/API nullish plan inputs to the first-class `max` plan.
  * Production writers must never persist NULL.
  */
 export function resolvePlanWrite(plan: PlanName | null | undefined): PlanName {
-	return plan ?? 'unlimited'
+	return plan ?? 'max'
 }
 
 /**
  * Rank order for comparing manual grants vs Stripe subscription plans.
- * Higher rank wins. free(0) < pro(1) < partner(2) < unlimited(3).
+ * Higher rank wins. free(0) < pro(1) < partner(2) < max(3).
  */
 export function getPlanRank(plan: PlanName): number {
 	switch (plan) {
@@ -80,7 +85,7 @@ export function getPlanRank(plan: PlanName): number {
 			return 1
 		case 'partner':
 			return 2
-		case 'unlimited':
+		case 'max':
 			return 3
 		default: {
 			const exhaustive: never = plan
@@ -94,15 +99,13 @@ export function getPlanRank(plan: PlanName): number {
  *
  * - Manual arg is a non-null {@link PlanName} (callers resolve stored values
  *   with {@link parseStoredPlanName} first).
- * - Manual `unlimited` always wins over any Stripe plan.
- * - Otherwise the higher-ranked of manual and stripe plans.
- * - Unknown/NULL/`unlimited` stripe_plan contributes nothing.
+ * - Higher-ranked of manual and stripe plans wins (`max` ranks highest).
+ * - Unknown/NULL/`max`/residual `'unlimited'` stripe_plan contributes nothing.
  */
 export function resolveEffectivePlan(
 	manualPlan: PlanName,
 	stripePlan: string | null,
 ): PlanName {
-	if (manualPlan === 'unlimited') return 'unlimited'
 	const parsedStripe = parseStripePlanName(stripePlan)
 	if (!parsedStripe) return manualPlan
 	return getPlanRank(parsedStripe) > getPlanRank(manualPlan)
@@ -111,22 +114,25 @@ export function resolveEffectivePlan(
 }
 
 export type PlanLimits = {
-	/** Maximum saved packages (rows in saved_packages). null = unlimited. */
-	maxSavedPackages: number | null
-	/** Maximum scheduled jobs (rows in jobs). null = unlimited. */
-	maxScheduledJobs: number | null
-	/** Maximum concurrently running package services. null = unlimited. */
-	maxPackageServices: number | null
-	/** Whether services declared with mode 'persistent' may be started. */
-	packageServicePersistentAllowed: boolean
+	/** Maximum saved packages (rows in saved_packages). */
+	maxSavedPackages: number
+	/** Maximum scheduled jobs (rows in jobs). */
+	maxScheduledJobs: number
+	/** Maximum concurrently running package services. */
+	maxPackageServices: number
+	/**
+	 * Finite 0/1 gate for services declared with mode `persistent`.
+	 * 0 = not allowed; 1 = allowed.
+	 */
+	packageServicePersistentAllowed: number
 	/** Maximum active repo sessions (repo_sessions with status 'active'). */
-	maxRepoSessions: number | null
+	maxRepoSessions: number
 	/** Maximum outbound email send attempts per UTC day. */
-	maxEmailSendsPerDay: number | null
+	maxEmailSendsPerDay: number
 	/** Maximum stored inbound email receipts per UTC day. */
-	maxEmailReceivesPerDay: number | null
+	maxEmailReceivesPerDay: number
 	/** Maximum stored email messages (rows in email_messages). */
-	maxStoredEmailMessages: number | null
+	maxStoredEmailMessages: number
 	/**
 	 * Maximum raw MIME bytes for a single stored email message. Hard
 	 * platform bound: raw MIME lives in EMAIL_BLOBS, but extracted text/html
@@ -134,13 +140,13 @@ export type PlanLimits = {
 	 * raw), and D1 caps rows at 2 MB — so keep this well under ~1 MB
 	 * regardless of plan.
 	 */
-	maxEmailMessageBytes: number | null
+	maxEmailMessageBytes: number
 	/** Maximum stored secret entries across non-expired buckets. */
-	maxSecrets: number | null
+	maxSecrets: number
 	/** Maximum durable storage bytes. Defined but not yet enforced. */
-	maxStorageBytes: number | null
+	maxStorageBytes: number
 	/** Maximum concurrently active workflow runs. */
-	maxConcurrentWorkflows: number | null
+	maxConcurrentWorkflows: number
 }
 
 export const entitlementResources = [
@@ -177,21 +183,22 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 }
 
 /**
- * Deployment-level email backstops shared by the first-class `unlimited`
- * plan. Email is abuse-sensitive in both directions — inbound volume is
+ * Inherited abuse caps for the first-class `max` plan. Email is
+ * abuse-sensitive in both directions — inbound volume is
  * attacker-controlled (anyone can send to a `{username}@<platform domain>`
- * address) and outbound sending is an outreach-abuse surface — so `unlimited`
- * is not uncapped for mail. Numbers sit between the `free` and `pro` plan
- * limits.
+ * address) and outbound sending is an outreach-abuse surface — so `max` is
+ * not uncapped for mail. These are intentional abuse backstops (not the
+ * ordinary 100×-pro derivation used for other max ceilings) and sit between
+ * the `free` and `pro` plan email limits.
  */
-export const unlimitedPlanEmailLimits = {
+export const maxPlanEmailLimits = {
 	email_sends_per_day: 100,
 	email_receives_per_day: 200,
-	stored_email_messages: 2000,
+	stored_email_messages: 2_000,
 	email_message_bytes: 512 * 1024,
 } as const satisfies Partial<Record<EntitlementResource, number>>
 
-export type UnlimitedPlanEmailResource = keyof typeof unlimitedPlanEmailLimits
+export type MaxPlanEmailResource = keyof typeof maxPlanEmailLimits
 
 /**
  * Initial limit numbers are conservative placeholders chosen before usage
@@ -199,13 +206,18 @@ export type UnlimitedPlanEmailResource = keyof typeof unlimitedPlanEmailLimits
  * available. Billing (packages/worker/src/billing/) maps Stripe
  * subscriptions onto these plan names but the limit numbers stay
  * independent of pricing.
+ *
+ * Ordinary `max` ceilings are an explicit product choice: 100× the
+ * corresponding `pro` limit (exact product for integer counters; storage
+ * uses 100× of pro's 1 GiB → 100 GiB). Email resources intentionally use
+ * {@link maxPlanEmailLimits} abuse caps instead.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
 	free: {
 		maxSavedPackages: 5,
 		maxScheduledJobs: 3,
 		maxPackageServices: 1,
-		packageServicePersistentAllowed: false,
+		packageServicePersistentAllowed: 0,
 		maxRepoSessions: 2,
 		maxEmailSendsPerDay: 5,
 		maxEmailReceivesPerDay: 50,
@@ -219,7 +231,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSavedPackages: 100,
 		maxScheduledJobs: 50,
 		maxPackageServices: 10,
-		packageServicePersistentAllowed: true,
+		packageServicePersistentAllowed: 1,
 		maxRepoSessions: 20,
 		maxEmailSendsPerDay: 200,
 		maxEmailReceivesPerDay: 1000,
@@ -233,7 +245,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSavedPackages: 200,
 		maxScheduledJobs: 100,
 		maxPackageServices: 20,
-		packageServicePersistentAllowed: true,
+		packageServicePersistentAllowed: 1,
 		maxRepoSessions: 40,
 		maxEmailSendsPerDay: 500,
 		maxEmailReceivesPerDay: 2000,
@@ -243,51 +255,58 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 100,
 	},
-	unlimited: {
-		maxSavedPackages: null,
-		maxScheduledJobs: null,
-		maxPackageServices: null,
-		packageServicePersistentAllowed: true,
-		maxRepoSessions: null,
-		maxEmailSendsPerDay: unlimitedPlanEmailLimits.email_sends_per_day,
-		maxEmailReceivesPerDay: unlimitedPlanEmailLimits.email_receives_per_day,
-		maxStoredEmailMessages: unlimitedPlanEmailLimits.stored_email_messages,
-		maxEmailMessageBytes: unlimitedPlanEmailLimits.email_message_bytes,
-		maxSecrets: null,
-		maxStorageBytes: null,
-		// null so assertWithinEntitlement falls through to the env workflow
-		// concurrency backstop.
-		maxConcurrentWorkflows: null,
+	max: {
+		// 100× pro (100) → 10_000.
+		maxSavedPackages: 10_000,
+		// 100× pro (50) → 5_000.
+		maxScheduledJobs: 5_000,
+		// 100× pro (10) → 1_000.
+		maxPackageServices: 1_000,
+		// Same finite 0/1 gate as pro (1 = persistent services allowed).
+		packageServicePersistentAllowed: 1,
+		// 100× pro (20) → 2_000.
+		maxRepoSessions: 2_000,
+		// Inherited abuse caps (not 100× pro); see maxPlanEmailLimits.
+		maxEmailSendsPerDay: maxPlanEmailLimits.email_sends_per_day,
+		maxEmailReceivesPerDay: maxPlanEmailLimits.email_receives_per_day,
+		maxStoredEmailMessages: maxPlanEmailLimits.stored_email_messages,
+		maxEmailMessageBytes: maxPlanEmailLimits.email_message_bytes,
+		// 100× pro (100) → 10_000.
+		maxSecrets: 10_000,
+		// 100× pro (1 GiB) → 100 GiB.
+		maxStorageBytes: 100 * 1024 * 1024 * 1024,
+		// 100× pro (50) → 5_000 (explicit product choice).
+		maxConcurrentWorkflows: 5_000,
 	},
 }
 
-export function isUnlimitedPlanEmailResource(
+export function isMaxPlanEmailResource(
 	resource: EntitlementResource,
-): resource is UnlimitedPlanEmailResource {
-	return resource in unlimitedPlanEmailLimits
+): resource is MaxPlanEmailResource {
+	return resource in maxPlanEmailLimits
 }
 
 /**
  * Resolve the effective limit for an email resource under a plan. The
- * `unlimited` plan uses {@link unlimitedPlanEmailLimits} as its email
- * caps; other plans use their ordinary plan limits.
+ * `max` plan uses {@link maxPlanEmailLimits} as its email caps; other plans
+ * use their ordinary plan limits.
  */
 export function resolveEmailResourceLimit(
 	plan: PlanName,
-	resource: UnlimitedPlanEmailResource,
-): number | null {
+	resource: MaxPlanEmailResource,
+): number {
 	return resolvePlanLimit(plan, resource)
 }
 
 /**
- * Resolve the numeric limit for a resource under a plan. null = unlimited.
- * Boolean allowances are expressed as limit 0 (not allowed) vs null
- * (allowed) so every enforcement point uses the same numeric contract.
+ * Resolve the numeric limit for a resource under a plan. Every plan limit
+ * is finite. Boolean-style allowances (persistent services) are expressed
+ * as a 0/1 gate so every enforcement point uses the same numeric contract.
  */
 export function resolvePlanLimit(
 	plan: PlanName,
 	resource: EntitlementResource,
-): number | null {
+): number {
 	const limits = planLimits[plan]
 	switch (resource) {
 		case 'saved_packages':
@@ -297,7 +316,7 @@ export function resolvePlanLimit(
 		case 'package_services':
 			return limits.maxPackageServices
 		case 'persistent_package_services':
-			return limits.packageServicePersistentAllowed ? null : 0
+			return limits.packageServicePersistentAllowed
 		case 'repo_sessions':
 			return limits.maxRepoSessions
 		case 'email_sends_per_day':

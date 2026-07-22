@@ -123,14 +123,21 @@ async function ensureRbacTestSchema(db: D1Database) {
 async function seedAccount(input: { email: string; username: string }) {
 	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
-		 VALUES (?, ?, 'test-password-hash', ?, ?)
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+		 VALUES (?, ?, 'test-password-hash', ?, ?, ?)
 		 ON CONFLICT(email) DO UPDATE SET
 			username = excluded.username,
 			stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+			plan = excluded.plan,
 			updated_at = CURRENT_TIMESTAMP`,
 	)
-		.bind(input.username, input.email, new Date().toISOString(), stableUserId)
+		.bind(
+			input.username,
+			input.email,
+			new Date().toISOString(),
+			stableUserId,
+			'max',
+		)
 		.run()
 	const row = await env.APP_DB.prepare(`SELECT id FROM users WHERE email = ?`)
 		.bind(input.email)

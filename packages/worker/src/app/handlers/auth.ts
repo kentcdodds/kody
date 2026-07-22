@@ -27,6 +27,7 @@ import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import {
 	parseStoredPlanName,
+	resolvePlanWrite,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
@@ -254,7 +255,7 @@ export function createAuthHandler(env: Env) {
 							email: normalizedEmail,
 							stable_user_id: stableUserId,
 							password_hash: passwordHash,
-							plan: consumedInvitePlan ?? 'unlimited',
+							plan: resolvePlanWrite(consumedInvitePlan),
 						},
 						{
 							returnRow: true,
@@ -437,7 +438,7 @@ export function createAuthHandler(env: Env) {
 						email: normalizedEmail,
 						ip: requestIp,
 						path: url.pathname,
-						reason: `invite_code=${consumedInviteCode};user_id=${record.id};plan=${consumedInvitePlan ?? 'unlimited'}`,
+						reason: `invite_code=${consumedInviteCode};user_id=${record.id};plan=${resolvePlanWrite(consumedInvitePlan)}`,
 					})
 				}
 				return Response.json(

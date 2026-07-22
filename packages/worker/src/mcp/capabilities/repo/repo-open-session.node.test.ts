@@ -283,28 +283,25 @@ test('repo_open_session resumes an existing active session without enforcing the
 	expect(resumeRpc.openSession).not.toHaveBeenCalled()
 })
 
-test('repo_open_session stays unlimited for unlimited plan users', async () => {
+test('repo_open_session allows below-max usage and denies at the max plan ceiling', async () => {
 	resetMocks()
-	const email = 'unlimited@example.com'
+	const email = 'max@example.com'
 	const userId = await createStableUserIdFromEmail(email)
-	const limit = planLimits.pro.maxRepoSessions
-	if (limit === null) {
-		throw new Error('Expected a numeric pro repo session limit.')
-	}
-	const env = {
+	const maxLimit = planLimits.max.maxRepoSessions
+	const belowMaxEnv = {
 		APP_DB: createEntitlementsDatabase({
-			users: [{ email, plan: 'unlimited', stable_user_id: userId }],
-			repoSessionCount: limit + 1,
+			users: [{ email, plan: 'max', stable_user_id: userId }],
+			repoSessionCount: planLimits.pro.maxRepoSessions + 1,
 		}),
 	} as Env
-	const ctx = {
-		env,
+	const belowMaxCtx = {
+		env: belowMaxEnv,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
 				email,
-				displayName: 'Unlimited User',
+				displayName: 'Max User',
 			},
 		}),
 	}
@@ -315,22 +312,70 @@ test('repo_open_session stays unlimited for unlimited plan users', async () => {
 	mockModule.getEntitySourceById.mockResolvedValueOnce(
 		createPackageSourceRow(userId),
 	)
-	const openRpc = createRepoRpc()
-	openRpc.openSession.mockResolvedValueOnce(createOpenSessionResult())
-	mockModule.repoSessionRpc.mockReturnValue(openRpc)
+	const belowMaxRpc = createRepoRpc()
+	belowMaxRpc.openSession.mockResolvedValueOnce(createOpenSessionResult())
+	mockModule.repoSessionRpc.mockReturnValue(belowMaxRpc)
 
 	const opened = await repoOpenSessionCapability.handler(
 		{
 			target: { kind: 'package', kody_id: 'triage-github-pr' },
 		},
-		ctx,
+		belowMaxCtx,
 	)
-
 	expect(opened.id).toBe('session-new')
-	expect(openRpc.openSession).toHaveBeenCalledWith(
-		expect.objectContaining({
-			sourceId: 'source-package-1',
-			userId,
+	expect(belowMaxRpc.openSession).toHaveBeenCalled()
+
+	resetMocks()
+	const atCeilingEnv = {
+		APP_DB: createEntitlementsDatabase({
+			users: [{ email, plan: 'max', stable_user_id: userId }],
+			repoSessionCount: maxLimit,
 		}),
+	} as Env
+	const atCeilingCtx = {
+		env: atCeilingEnv,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId,
+				email,
+				displayName: 'Max User',
+			},
+		}),
+	}
+	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
+		createSavedPackageRow(userId),
 	)
+	mockModule.getEntitySourceById.mockResolvedValueOnce(
+		createPackageSourceRow(userId),
+	)
+	const deniedRpc = createRepoRpc()
+	mockModule.repoSessionRpc.mockReturnValue(deniedRpc)
+
+	const error = await repoOpenSessionCapability
+		.handler(
+			{
+				target: { kind: 'package', kody_id: 'triage-github-pr' },
+				conversation_id: 'conversation-max',
+			},
+			atCeilingCtx,
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+	if (!isEntitlementLimitError(error)) {
+		throw new Error(
+			'Expected an EntitlementLimitError at the max repo session ceiling.',
+		)
+	}
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'repo_sessions',
+		plan: 'max',
+		limit: maxLimit,
+		current: maxLimit,
+	})
+	expect(deniedRpc.openSession).not.toHaveBeenCalled()
 })

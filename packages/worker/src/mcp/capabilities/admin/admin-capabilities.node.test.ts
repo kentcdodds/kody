@@ -31,7 +31,7 @@ function adminTestUser(
 ): UserRow {
 	return {
 		...input,
-		plan: input.plan ?? 'unlimited',
+		plan: input.plan ?? 'max',
 		stable_user_id:
 			input.stable_user_id ?? testStableUserIdFromEmail(input.email),
 	}
@@ -194,7 +194,7 @@ function createAdminCapabilityTestDb(input: {
 										id: user.id,
 										username: user.username,
 										email: user.email,
-										plan: user.plan ?? 'unlimited',
+										plan: user.plan ?? 'max',
 										stripe_plan: null,
 										stable_user_id: user.stable_user_id,
 									}
@@ -305,7 +305,7 @@ function createAdminCapabilityTestDb(input: {
 									id: user.id,
 									username: user.username,
 									email: user.email,
-									plan: user.plan ?? 'unlimited',
+									plan: user.plan ?? 'max',
 									stable_user_id: user.stable_user_id,
 								})) as Array<T>,
 						}
@@ -404,7 +404,7 @@ function createAdminCapabilityTestDb(input: {
 							username: String(username),
 							email: String(email),
 							stable_user_id: stableUserId,
-							plan: 'unlimited',
+							plan: 'max',
 							created_at: now,
 							updated_at: now,
 							password_hash: String(passwordHash),
@@ -451,7 +451,7 @@ function createAdminCapabilityTestDb(input: {
 					) {
 						const user = users.find((row) => row.id === Number(params[2]))
 						if (!user) return { meta: { changes: 0, last_row_id: 0 } }
-						user.plan = params[0] == null ? 'unlimited' : String(params[0])
+						user.plan = params[0] == null ? 'max' : String(params[0])
 						user.updated_at = String(params[1])
 						return { meta: { changes: 1, last_row_id: 0 } }
 					}
@@ -579,7 +579,7 @@ test('admin capabilities list and get account metadata and query sanitized audit
 	expect(usage.usage).toMatchObject({
 		userId: 2,
 		username: 'jane',
-		plan: 'unlimited',
+		plan: 'max',
 	})
 	expect(usage.usage?.entitlementConsumption.length).toBeGreaterThan(0)
 	expect(
@@ -774,7 +774,7 @@ test('admin_user_create records audit metadata and assigns the default role', as
 	expect(users.find((user) => user.id === 2)).toMatchObject({
 		email: 'person+launch@example.com',
 		stable_user_id: testStableUserIdFromEmail('person+launch@example.com'),
-		plan: 'unlimited',
+		plan: 'max',
 	})
 	expect(userRoles).toContainEqual({ user_id: 2, role_name: 'user' })
 	expect(auditEvents).toEqual([
@@ -786,7 +786,7 @@ test('admin_user_create records audit metadata and assigns the default role', as
 	])
 })
 
-test('admin_user_update sets plan and maps null clear to unlimited with audit metadata', async () => {
+test('admin_user_update sets plan and maps null clear to max with audit metadata', async () => {
 	const { db, auditEvents, users } = createAdminCapabilityTestDb({
 		users: [
 			adminTestUser({
@@ -801,7 +801,7 @@ test('admin_user_update sets plan and maps null clear to unlimited with audit me
 				username: 'jane',
 				email: 'jane@example.com',
 				email_verified_at: null,
-				plan: 'unlimited',
+				plan: 'max',
 				created_at: '2026-01-03 00:00:00',
 				updated_at: '2026-01-04 00:00:00',
 			}),
@@ -829,8 +829,8 @@ test('admin_user_update sets plan and maps null clear to unlimited with audit me
 		{ id: 2, plan: null },
 		ctx,
 	)
-	expect(clearById.user).toMatchObject({ id: 2, plan: 'unlimited' })
-	expect(users.find((user) => user.id === 2)?.plan).toBe('unlimited')
+	expect(clearById.user).toMatchObject({ id: 2, plan: 'max' })
+	expect(users.find((user) => user.id === 2)?.plan).toBe('max')
 
 	expect(auditEvents).toEqual([
 		expect.objectContaining({
@@ -841,7 +841,7 @@ test('admin_user_update sets plan and maps null clear to unlimited with audit me
 		expect.objectContaining({
 			action: 'admin_user_update',
 			result: 'success',
-			reason: 'target_user_id=2;plan=unlimited',
+			reason: 'target_user_id=2;plan=max',
 		}),
 	])
 })

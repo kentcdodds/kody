@@ -59,12 +59,13 @@ async function insertTestUser(input: {
 	await ensureUsersTable()
 	const userId = await createStableUserIdFromEmail(input.email)
 	await runSql(
-		`INSERT INTO users (username, email, stable_user_id, password_hash)
-			VALUES (?, ?, ?, ?)`,
+		`INSERT INTO users (username, email, stable_user_id, password_hash, plan)
+			VALUES (?, ?, ?, ?, ?)`,
 		input.username,
 		input.email,
 		userId,
 		'test-password-hash',
+		'max',
 	)
 	return {
 		userId,

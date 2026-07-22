@@ -188,7 +188,7 @@ async function createContext() {
 			APP_DB: createDatabase([
 				{
 					email,
-					plan: 'unlimited',
+					plan: 'max',
 					username: 'visibility',
 					stable_user_id: userId,
 				},

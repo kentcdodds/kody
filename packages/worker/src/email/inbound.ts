@@ -20,7 +20,7 @@ import {
 	splitEmailLocalPart,
 } from './address.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
-import { maxRawMimeBytes, parseForwardableEmailMessage } from './parser.ts'
+import { parseForwardableEmailMessage } from './parser.ts'
 import {
 	getPlatformEmailDomain,
 	getSystemEmailDomain,
@@ -348,7 +348,7 @@ export async function handleInboundEmail(
 	// {username}@<platform domain> address), so every fail-closed gate runs
 	// before any parsing work, cheapest rejection first: verified account,
 	// per-message size cap, storage bytes, per-day receive rate, and
-	// stored-message cap (entitlements, including unlimited email backstops).
+	// stored-message cap (entitlements, including max-plan email caps).
 
 	// Verified-account gate first: an unverified account can never receive
 	// mail, so the attempt must not consume any of the daily receive quota
@@ -371,8 +371,7 @@ export async function handleInboundEmail(
 	}
 
 	// The plan's per-message cap also becomes the parser's raw-MIME ceiling
-	// so the two size gates can never disagree; when the resolved plan limit
-	// is uncapped, the parser still keeps its hard platform-bound default.
+	// so the two size gates can never disagree.
 	const maxMessageBytes = resolveEmailResourceLimit(
 		account.plan,
 		'email_message_bytes',
@@ -446,7 +445,7 @@ export async function handleInboundEmail(
 			recipient,
 			userId,
 			inboxId: inbox.id,
-			maxMessageBytes: maxMessageBytes ?? maxRawMimeBytes,
+			maxMessageBytes,
 			async onParseRejected(reason) {
 				// Parse failures keep one event per attempt: unlike quota/size
 				// rejections they are bounded by the daily receive quota (the

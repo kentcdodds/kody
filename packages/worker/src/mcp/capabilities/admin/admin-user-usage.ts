@@ -48,8 +48,11 @@ const usageRollupSchema = z.object({
 const entitlementConsumptionSchema = z.object({
 	resource: entitlementResourceSchema,
 	label: z.string(),
-	current: z.number().int().nonnegative().nullable(),
-	limit: z.number().int().nonnegative().nullable(),
+	/** Finite usage count; every plan resolves a numeric current. */
+	current: z.number().int().nonnegative(),
+	/** Finite plan ceiling; every plan resolves a numeric limit. */
+	limit: z.number().int().nonnegative(),
+	/** Null when limit is the zero gate (for example persistent services). */
 	percentOfLimit: z.number().nonnegative().nullable(),
 	overEightyPercent: z.boolean(),
 })

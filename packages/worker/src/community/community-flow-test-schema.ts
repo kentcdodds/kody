@@ -1,3 +1,8 @@
+/**
+ * Community flow workers-unit schema. Keeps production-parity
+ * `plan TEXT NOT NULL DEFAULT 'unlimited'` from migration 0081; 0082 is a pure
+ * UPDATE. Non-historical seeds must write `'max'` explicitly when plan matters.
+ */
 export async function ensureCommunityFlowSchema(db: D1Database) {
 	const statements = [
 		`CREATE TABLE IF NOT EXISTS users (

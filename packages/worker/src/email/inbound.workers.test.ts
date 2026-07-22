@@ -46,12 +46,13 @@ async function seedAccount(input: {
 	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await input.db
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
-			 VALUES (?, ?, ?, ?, ?)
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			 VALUES (?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(email) DO UPDATE SET
 			   username = excluded.username,
 			   email_verified_at = excluded.email_verified_at,
 			   stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+			   plan = excluded.plan,
 			   updated_at = CURRENT_TIMESTAMP`,
 		)
 		.bind(
@@ -62,6 +63,7 @@ async function seedAccount(input: {
 				? new Date().toISOString()
 				: input.emailVerifiedAt,
 			stableUserId,
+			'max',
 		)
 		.run()
 }
@@ -348,7 +350,7 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 	expect(unroutable.rejectedReason).toBe('Email routing is not configured.')
 
 	// Oversize mail for a valid user trips the pre-parse
-	// email_message_bytes gate (unlimited-plan cap is 512 KiB) with the
+	// email_message_bytes gate (max-plan cap is 512 KiB) with the
 	// generic over-quota reason, before anything is stored.
 	const username = `parse-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `parse-${crypto.randomUUID()}@example.com`
