@@ -80,6 +80,12 @@ Move the behavior into a package when one or more of these become true:
   history
 - inputs, output, error handling, or integration behavior will evolve
 - a one-off script has already been copied, repaired, or rerun
+- you are calling a third-party **product** API with raw integration auth
+  helpers (`createAuthenticatedFetch`, `refreshAccessToken`, or equivalent)
+  beyond a cheap smoke test — **integrations = auth; packages = how agents
+  should call the product**. Search for an existing wrapper package first, then
+  `community_search` (prefer **trusted**), then fork or create a thin helpers
+  package
 
 Do not create a package merely to wrap one clear call to an existing capability
 or package export, or merely because a simple self-contained job needs a

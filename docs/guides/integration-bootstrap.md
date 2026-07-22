@@ -92,13 +92,20 @@ If those conditions are not met, stop and fix the integration first.
      similarly small account/profile endpoint.
    - Confirm the integration or secret name, token refresh behavior, and allowed
      hosts all work end-to-end.
+   - Keep raw OAuth helpers (`createAuthenticatedFetch`, `refreshAccessToken`)
+     for smoke tests and short exploration. **Integrations = auth; packages =
+     how agents should call the product.** Do not keep hand-rolling product API
+     calls with raw auth helpers in `execute` when a package should own that
+     surface.
 5. Only after the smoke test succeeds should you obtain the dependent package or
    package app.
+   - Search the user's account for an existing package that wraps the
+     integration.
    - Call `community_search` for the provider or workflow (prefer `trusted`
      matches). If a listing is close to the user's goal, fork or point them at
      one-click install, then adapt — do not reimplement from scratch.
-   - Create or save a new package only when no suitable community listing
-     exists.
+   - Create or save a thin helpers package only when no suitable community
+     listing exists.
    - If the integration or tokens already exist and the smoke test passes,
      proceed directly to that fork-or-create step.
    - Do not spend extra time exploring the local repo when the integration
@@ -165,3 +172,6 @@ Avoid these common mistakes:
 - building a package-app OAuth callback flow by default instead of the standard
   `/connect/oauth` path
 - skipping the authenticated smoke test after the user completes setup
+- treating a connected OAuth integration as a pre-built product API package, or
+  continuing to call Gmail/Calendar/etc. with raw `createAuthenticatedFetch` in
+  `execute` instead of searching for / forking / creating a helpers package
