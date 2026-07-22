@@ -9,7 +9,8 @@ Primary docs:
 
 - https://developers.cloudflare.com/agents/
 
-Installed in this repo as `agents` in `package.json` (version range `^0.7.4`).
+Installed in this repo as `agents` in `packages/worker/package.json` (currently
+pinned to `0.17.4`).
 
 ## Quick pointers for this repo
 
