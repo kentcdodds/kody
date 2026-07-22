@@ -100,10 +100,10 @@ NOT NULL DEFAULT `'free'`.
 
 New accounts start with `users.plan = 'free'` unless the consumed invite carries
 another plan. Migration `0065-invite-plans.sql` adds `invites.plan` (NOT NULL
-DEFAULT `'free'` after `0083-plan-default-free.sql`; writers and admin UI default
-to `free`). Password and social signup read the consumed invite's stored plan
-with `parseStoredPlanName` and copy it onto `users.plan`; missing or omitted
-invite plans are written as `free` via `resolvePlanWrite`. Admin-created
+DEFAULT `'free'` after `0083-plan-default-free.sql`; writers and admin UI
+default to `free`). Password and social signup read the consumed invite's stored
+plan with `parseStoredPlanName` and copy it onto `users.plan`; missing or
+omitted invite plans are written as `free` via `resolvePlanWrite`. Admin-created
 accounts, platform-account provisioning, and seed SQL follow the same
 `resolvePlanWrite` default. Admins set invite plans when creating codes at
 `/admin/invites` (validated with strict `parsePlanName`).
@@ -270,14 +270,14 @@ The exemplar is job scheduling: `createJob` in
 3. Call the single helper and let it throw:
 
 ```ts
-import { assertWithinEntitlement } from "#worker/entitlements/service.ts";
+import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 
 await assertWithinEntitlement({
-  db: env.APP_DB,
-  userId,
-  email: userEmail,
-  resource: "scheduled_jobs",
-});
+	db: env.APP_DB,
+	userId,
+	email: userEmail,
+	resource: 'scheduled_jobs',
+})
 ```
 
 Use `getCurrent` only when the built-in D1 counter cannot express the resource.
