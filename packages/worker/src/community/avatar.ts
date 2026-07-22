@@ -175,14 +175,24 @@ export async function saveUserAvatar(input: {
 			contentHash,
 		},
 	})
+	try {
+		await assertAccountWritableDb(input.env.APP_DB, input.stableUserId)
+	} catch (error) {
+		await input.env.COMMUNITY_ASSETS.delete(r2Key).catch(() => undefined)
+		throw error
+	}
 
-	await input.env.APP_DB.prepare(
+	const update = await input.env.APP_DB.prepare(
 		`UPDATE users
 		SET avatar_key = ?, updated_at = ?
-		WHERE id = ?`,
+		WHERE id = ? AND deleting_at IS NULL`,
 	)
 		.bind(r2Key, utcSqliteTimestamp(), input.numericUserId)
 		.run()
+	if ((update.meta.changes ?? 0) !== 1) {
+		await input.env.COMMUNITY_ASSETS.delete(r2Key).catch(() => undefined)
+		throw new Error('Avatar write was rejected because account state changed.')
+	}
 
 	if (previousKey && previousKey !== r2Key) {
 		try {

@@ -4,7 +4,9 @@ import {
 	getUserAvatarObject,
 	parseUserAvatarCacheKey,
 	processUserAvatar,
+	saveUserAvatar,
 } from './avatar.ts'
+import { AccountDeletionInProgressError } from '#app/account-deletion-state.ts'
 
 function createPngHeader(width: number, height: number) {
 	const bytes = new Uint8Array(24)
@@ -159,4 +161,66 @@ test('getUserAvatarObject refuses keys outside the user-avatars prefix', async (
 		}),
 	).resolves.toEqual({ key: 'user-avatars/stable-1/abcdef.png' })
 	expect(gets).toEqual(['user-avatars/stable-1/abcdef.png'])
+})
+
+test('saveUserAvatar removes an in-flight upload when deletion starts', async () => {
+	let deleting = false
+	let releasePut: () => void = () => undefined
+	let markPutStarted: () => void = () => undefined
+	const putStarted = new Promise<void>((resolve) => {
+		markPutStarted = resolve
+	})
+	const putReleased = new Promise<void>((resolve) => {
+		releasePut = resolve
+	})
+	const deleted: Array<string> = []
+	const db = {
+		prepare(query: string) {
+			return {
+				bind() {
+					return {
+						async first<T>() {
+							if (query.includes('SELECT deleting_at')) {
+								return {
+									deleting_at: deleting ? '2026-07-22 22:00:00' : null,
+								} as T
+							}
+							if (query.includes('SELECT avatar_key')) {
+								return { avatar_key: null } as T
+							}
+							return null
+						},
+						async run() {
+							return { meta: { changes: deleting ? 0 : 1 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	const save = saveUserAvatar({
+		env: {
+			APP_DB: db,
+			COMMUNITY_ASSETS: {
+				async put() {
+					markPutStarted()
+					await putReleased
+					return {} as R2Object
+				},
+				async delete(key: string) {
+					deleted.push(key)
+				},
+			} as R2Bucket,
+		},
+		numericUserId: 1,
+		stableUserId: 'stable-1',
+		bytes: createPngHeader(128, 128),
+		contentType: 'image/png',
+	})
+	await putStarted
+	deleting = true
+	releasePut()
+	await expect(save).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	expect(deleted).toHaveLength(1)
+	expect(deleted[0]).toMatch(/^user-avatars\/stable-1\//)
 })

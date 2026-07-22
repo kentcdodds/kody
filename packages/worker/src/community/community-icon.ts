@@ -2,6 +2,10 @@ import { cachified } from '@epic-web/cachified'
 import { Resvg } from '@resvg/resvg-wasm'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import {
+	AccountDeletionInProgressError,
+	assertAccountWritableDb,
+} from '#app/account-deletion-state.ts'
+import {
 	createKvCachifiedCache,
 	derivedCacheKeyPrefix,
 } from '#worker/kv-cachified.ts'
@@ -354,6 +358,14 @@ async function isServableIconCommit(input: {
 	listing: CommunityListingRecord
 	iconCommit: string
 }) {
+	if (typeof input.env.APP_DB.prepare === 'function') {
+		try {
+			await assertAccountWritableDb(input.env.APP_DB, input.listing.ownerUserId)
+		} catch (error) {
+			if (error instanceof AccountDeletionInProgressError) return false
+			throw error
+		}
+	}
 	const current = await getCommunityListingById(input.env.APP_DB, {
 		listingId: input.listing.id,
 		includeDelisted: false,
