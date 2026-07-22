@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { readFile, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
 	type BackupFileEvidence,
 	type Command,
@@ -10,6 +12,7 @@ import {
 	type DrillAdapters,
 	type DrillAllowlistEntry,
 	type QueryRow,
+	type TemporaryWranglerConfig,
 	type VerificationQuery,
 	maximumD1BackupSizeBytes,
 	parseAndVerifyManifest,
@@ -17,6 +20,9 @@ import {
 } from './d1-restore-drill.ts'
 
 const drillTokenEnvironmentVariable = 'CLOUDFLARE_D1_DRILL_EDIT_TOKEN'
+const applicationMigrationsDirectory = fileURLToPath(
+	new URL('../../packages/worker/migrations/', import.meta.url),
+)
 
 type CliArguments = {
 	manifestPath: string
@@ -135,18 +141,26 @@ export async function collectBackupFileEvidence(
 	return { sizeBytes: size, sha256: hash.digest('hex') }
 }
 
-async function runProcess(
+export async function runProcess(
 	command: Command,
-	environment?: Record<string, string>,
+	environment?: NodeJS.ProcessEnv,
+	inheritEnvironment = true,
 ): Promise<string> {
 	const program =
 		command.program === 'wrangler'
 			? path.join(process.cwd(), 'node_modules', '.bin', 'wrangler')
 			: command.program
 	return await new Promise<string>((resolve, reject) => {
+		const childEnvironment = {
+			...(inheritEnvironment ? process.env : {}),
+			...environment,
+		}
+		for (const [name, value] of Object.entries(childEnvironment)) {
+			if (value === undefined) delete childEnvironment[name]
+		}
 		const child = spawn(program, command.args, {
 			stdio: ['ignore', 'pipe', 'pipe'],
-			env: { ...process.env, ...environment },
+			env: childEnvironment,
 		})
 		let stdout = ''
 		let stderr = ''
@@ -158,13 +172,17 @@ async function runProcess(
 		})
 		child.on('error', reject)
 		child.on('close', (status) => {
-			if (status === 0) resolve(stdout)
-			else reject(new Error(stderr || `wrangler exited with ${String(status)}`))
+			if (status === 0) {
+				if (command.args.includes('--json') && stdout.length === 0) {
+					reject(new Error(`Wrangler returned no JSON. stderr: ${stderr}`))
+				} else resolve(stdout)
+			} else
+				reject(new Error(stderr || `wrangler exited with ${String(status)}`))
 		})
 	})
 }
 
-function parseQueryRows(output: string): Array<QueryRow> {
+export function parseQueryRows(output: string): Array<QueryRow> {
 	const payload = JSON.parse(output) as unknown
 	if (!Array.isArray(payload) || payload.length !== 1) {
 		throw new Error('Unexpected Wrangler D1 JSON response')
@@ -173,11 +191,90 @@ function parseQueryRows(output: string): Array<QueryRow> {
 	if (!first || typeof first !== 'object' || Array.isArray(first)) {
 		throw new Error('Unexpected Wrangler D1 result envelope')
 	}
-	const results = (first as Record<string, unknown>).results
+	const envelope = first as Record<string, unknown>
+	if (envelope.success !== true) {
+		throw new Error('Wrangler D1 query was not successful')
+	}
+	const results = envelope.results
 	if (!Array.isArray(results)) {
 		throw new Error('Wrangler response has no results')
 	}
+	for (const row of results) {
+		if (!row || typeof row !== 'object' || Array.isArray(row)) {
+			throw new Error('Wrangler response contains a malformed result row')
+		}
+		for (const value of Object.values(row)) {
+			if (
+				value !== null &&
+				typeof value !== 'string' &&
+				typeof value !== 'number'
+			) {
+				throw new Error('Wrangler response contains an invalid result value')
+			}
+		}
+	}
 	return results as Array<QueryRow>
+}
+
+export type D1RestoreWranglerConfig = {
+	d1_databases: [
+		{
+			binding: 'D1_RESTORE_TARGET'
+			database_name: string
+			database_id: string
+			migrations_dir: string
+		},
+	]
+}
+
+export function buildD1RestoreWranglerConfig(input: {
+	configPath: string
+	migrationsDirectory: string
+	targetName: string
+	targetUuid: string
+}): D1RestoreWranglerConfig {
+	const relativeMigrationsDirectory = path
+		.relative(path.dirname(input.configPath), input.migrationsDirectory)
+		.replaceAll(path.sep, '/')
+	return {
+		d1_databases: [
+			{
+				binding: 'D1_RESTORE_TARGET',
+				database_name: input.targetName,
+				database_id: input.targetUuid,
+				migrations_dir: relativeMigrationsDirectory.startsWith('.')
+					? relativeMigrationsDirectory
+					: `./${relativeMigrationsDirectory}`,
+			},
+		],
+	}
+}
+
+export async function writeTemporaryD1RestoreConfig(input: {
+	migrationsDirectory: string
+	targetName: string
+	targetUuid: string
+}): Promise<TemporaryWranglerConfig> {
+	const directory = await mkdtemp(path.join(os.tmpdir(), 'kody-d1-restore-'))
+	const configPath = path.join(directory, 'wrangler.json')
+	const config = buildD1RestoreWranglerConfig({
+		...input,
+		configPath,
+	})
+	try {
+		await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, {
+			flag: 'wx',
+		})
+	} catch (error) {
+		await rm(directory, { recursive: true, force: true })
+		throw error
+	}
+	return {
+		path: configPath,
+		async cleanup() {
+			await rm(directory, { recursive: true, force: true })
+		},
+	}
 }
 
 export async function createD1DrillTarget(input: {
@@ -228,7 +325,15 @@ export async function createD1DrillTarget(input: {
 	}
 }
 
-function createAdapters(token: string, targetAccountId: string): DrillAdapters {
+export function createAdapters(
+	token: string,
+	targetAccountId: string,
+	writeTemporaryConfig: DrillAdapters['writeTemporaryConfig'] = async (input) =>
+		await writeTemporaryD1RestoreConfig({
+			...input,
+			migrationsDirectory: applicationMigrationsDirectory,
+		}),
+): DrillAdapters {
 	const drillEnvironment = {
 		CLOUDFLARE_API_TOKEN: token,
 		CLOUDFLARE_ACCOUNT_ID: targetAccountId,
@@ -237,30 +342,15 @@ function createAdapters(token: string, targetAccountId: string): DrillAdapters {
 		async createTarget({ accountId, name }) {
 			return await createD1DrillTarget({ accountId, name, token })
 		},
+		writeTemporaryConfig,
 		now() {
 			return new Date()
 		},
 		async run(command) {
 			await runProcess(command, drillEnvironment)
 		},
-		async query(targetUuid: string, query: VerificationQuery) {
-			const output = await runProcess(
-				{
-					kind: 'verification',
-					phase: query.phase,
-					program: 'wrangler',
-					args: [
-						'd1',
-						'execute',
-						targetUuid,
-						'--remote',
-						'--json',
-						'--command',
-						query.sql,
-					],
-				},
-				drillEnvironment,
-			)
+		async query(command: Command, _query: VerificationQuery) {
+			const output = await runProcess(command, drillEnvironment)
 			return parseQueryRows(output)
 		},
 	}

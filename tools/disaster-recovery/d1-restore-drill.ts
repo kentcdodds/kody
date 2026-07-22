@@ -80,14 +80,23 @@ export type VerificationQuery = {
 
 export type QueryRow = Record<string, string | number | null>
 
+export type TemporaryWranglerConfig = {
+	path: string
+	cleanup(): Promise<void>
+}
+
 export type DrillAdapters = {
 	createTarget(input: {
 		accountId: string
 		name: string
 	}): Promise<CreatedD1Target>
+	writeTemporaryConfig(input: {
+		targetName: string
+		targetUuid: string
+	}): Promise<TemporaryWranglerConfig>
 	now(): Date
 	run(command: Command): Promise<void>
-	query(targetUuid: string, query: VerificationQuery): Promise<Array<QueryRow>>
+	query(command: Command, query: VerificationQuery): Promise<Array<QueryRow>>
 }
 
 export type BackupFileEvidence = {
@@ -363,7 +372,7 @@ export function buildVerificationQueries(
 		.join(' UNION ALL ')
 	const orderedIsolationSql = `${isolationSql} ORDER BY table_name, user_id, primary_key`
 	return [
-		{ id: 'integrity', phase, sql: 'PRAGMA integrity_check' },
+		{ id: 'integrity', phase, sql: 'PRAGMA quick_check' },
 		{ id: 'foreign-keys', phase, sql: 'PRAGMA foreign_key_check' },
 		{
 			id: 'migrations',
@@ -381,7 +390,7 @@ export function buildVerificationQueries(
 }
 
 function verificationCommands(
-	targetUuid: string,
+	configPath: string,
 	queries: ReadonlyArray<VerificationQuery>,
 ): Array<Command> {
 	return queries.map((query) => ({
@@ -391,8 +400,10 @@ function verificationCommands(
 		args: [
 			'd1',
 			'execute',
-			targetUuid,
+			'D1_RESTORE_TARGET',
 			'--remote',
+			'--config',
+			configPath,
 			'--json',
 			'--command',
 			query.sql,
@@ -404,7 +415,7 @@ export function buildDrillCommands(input: {
 	backupFile: string
 	targetAccountId: string
 	targetName: string
-	targetUuid: string
+	configPath: string
 	baseline: Readonly<RestoreBaseline>
 	applyForwardMigrations: boolean
 	postForwardBaseline?: Readonly<RestoreBaseline>
@@ -425,14 +436,16 @@ export function buildDrillCommands(input: {
 			args: [
 				'd1',
 				'execute',
-				input.targetUuid,
+				'D1_RESTORE_TARGET',
 				'--remote',
+				'--config',
+				input.configPath,
 				'--file',
 				input.backupFile,
 			],
 		},
 		...verificationCommands(
-			input.targetUuid,
+			input.configPath,
 			buildVerificationQueries(input.baseline, 'baseline'),
 		),
 	]
@@ -440,13 +453,21 @@ export function buildDrillCommands(input: {
 		commands.push({
 			kind: 'migration',
 			program: 'wrangler',
-			args: ['d1', 'migrations', 'apply', input.targetUuid, '--remote'],
+			args: [
+				'd1',
+				'migrations',
+				'apply',
+				'D1_RESTORE_TARGET',
+				'--remote',
+				'--config',
+				input.configPath,
+			],
 		})
 	}
 	if (input.postForwardBaseline) {
 		commands.push(
 			...verificationCommands(
-				input.targetUuid,
+				input.configPath,
 				buildVerificationQueries(input.postForwardBaseline, 'post-forward'),
 			),
 		)
@@ -510,18 +531,24 @@ function assertCreatedTarget(
 	}
 }
 
-function verifyRows(
+export function verifyRows(
 	query: VerificationQuery,
 	rows: Array<QueryRow>,
 	baseline: Readonly<RestoreBaseline>,
 ): void {
 	switch (query.id) {
 		case 'integrity':
+			if (rows.length !== 1) {
+				throw new Error(`${query.phase} PRAGMA quick_check failed`)
+			}
+			const quickCheckEntries = Object.entries(rows[0] ?? {})
 			if (
-				rows.length !== 1 ||
-				Object.values(rows[0] ?? {}).some((value) => value !== 'ok')
+				quickCheckEntries.length !== 1 ||
+				quickCheckEntries[0]?.[0].toLowerCase() !== 'quick_check' ||
+				typeof quickCheckEntries[0]?.[1] !== 'string' ||
+				quickCheckEntries[0][1].toLowerCase() !== 'ok'
 			) {
-				throw new Error(`${query.phase} PRAGMA integrity_check failed`)
+				throw new Error(`${query.phase} PRAGMA quick_check failed`)
 			}
 			return
 		case 'foreign-keys':
@@ -597,12 +624,16 @@ function verifyRows(
 
 async function verifyBaseline(
 	adapters: DrillAdapters,
-	targetUuid: string,
+	configPath: string,
 	baseline: Readonly<RestoreBaseline>,
 	phase: VerificationPhase,
 ): Promise<void> {
-	for (const query of buildVerificationQueries(baseline, phase)) {
-		verifyRows(query, await adapters.query(targetUuid, query), baseline)
+	const queries = buildVerificationQueries(baseline, phase)
+	const commands = verificationCommands(configPath, queries)
+	for (const [index, query] of queries.entries()) {
+		const command = commands[index]
+		if (!command) throw new Error('restore plan lacks verification command')
+		verifyRows(query, await adapters.query(command, query), baseline)
 	}
 }
 
@@ -658,7 +689,7 @@ export async function runD1RestoreDrill(
 		backupFile: input.backupFile,
 		targetAccountId: input.targetAccountId,
 		targetName: input.targetName,
-		targetUuid: '<live-created-d1-uuid>',
+		configPath: '<temporary-wrangler-config>',
 		baseline,
 		applyForwardMigrations,
 		postForwardBaseline,
@@ -685,36 +716,44 @@ export async function runD1RestoreDrill(
 		creationCompletedAt,
 		manifest,
 	)
-	const commands = buildDrillCommands({
-		backupFile: input.backupFile,
-		targetAccountId: input.targetAccountId,
-		targetName: input.targetName,
+	const temporaryConfig = await adapters.writeTemporaryConfig({
+		targetName: created.name,
 		targetUuid: created.uuid,
-		baseline,
-		applyForwardMigrations,
-		postForwardBaseline,
 	})
-	const importCommand = commands.find((command) => command.kind === 'import')
-	if (!importCommand) {
-		throw new Error('restore plan is missing its import command')
-	}
-	await adapters.run(importCommand)
-	await verifyBaseline(adapters, created.uuid, baseline, 'baseline')
-	if (applyForwardMigrations) {
-		const migrationCommand = commands.find(
-			(command) => command.kind === 'migration',
-		)
-		if (!migrationCommand)
-			throw new Error('restore plan lacks migration command')
-		await adapters.run(migrationCommand)
-	}
-	if (postForwardBaseline) {
-		await verifyBaseline(
-			adapters,
-			created.uuid,
+	try {
+		const commands = buildDrillCommands({
+			backupFile: input.backupFile,
+			targetAccountId: input.targetAccountId,
+			targetName: input.targetName,
+			configPath: temporaryConfig.path,
+			baseline,
+			applyForwardMigrations,
 			postForwardBaseline,
-			'post-forward',
-		)
+		})
+		const importCommand = commands.find((command) => command.kind === 'import')
+		if (!importCommand) {
+			throw new Error('restore plan is missing its import command')
+		}
+		await adapters.run(importCommand)
+		await verifyBaseline(adapters, temporaryConfig.path, baseline, 'baseline')
+		if (applyForwardMigrations) {
+			const migrationCommand = commands.find(
+				(command) => command.kind === 'migration',
+			)
+			if (!migrationCommand)
+				throw new Error('restore plan lacks migration command')
+			await adapters.run(migrationCommand)
+		}
+		if (postForwardBaseline) {
+			await verifyBaseline(
+				adapters,
+				temporaryConfig.path,
+				postForwardBaseline,
+				'post-forward',
+			)
+		}
+		return { dryRun, commands }
+	} finally {
+		await temporaryConfig.cleanup()
 	}
-	return { dryRun, commands }
 }

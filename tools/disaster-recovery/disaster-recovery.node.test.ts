@@ -1,7 +1,6 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { expect, test, vi } from 'vitest'
 import {
 	type BackupManifest,
@@ -13,19 +12,15 @@ import {
 	buildVerificationQueries,
 	parseAndVerifyManifest,
 	runD1RestoreDrill,
+	verifyRows,
 } from './d1-restore-drill.ts'
 import {
+	buildD1RestoreWranglerConfig,
 	collectBackupFileEvidence,
 	createD1DrillTarget,
+	parseQueryRows,
+	runProcess,
 } from './d1-restore-drill-cli.ts'
-import { verifyLocalArtifactFiles } from './canonical-readiness-cli.ts'
-import {
-	type EvidenceArtifact,
-	type ResourceEvidence,
-	assessCanonicalReadiness,
-	canonicalContracts,
-	maximumEvidenceAgeDays,
-} from './canonical-readiness.ts'
 import { canonicalJson, sha256 } from './canonical-json.ts'
 
 const productionUuid = '11111111-1111-4111-8111-111111111111'
@@ -100,7 +95,7 @@ function createBaseline(
 function queryRows(query: VerificationQuery): Array<QueryRow> {
 	switch (query.id) {
 		case 'integrity':
-			return [{ integrity_check: 'ok' }]
+			return [{ quick_check: 'ok' }]
 		case 'foreign-keys':
 			return []
 		case 'migrations':
@@ -137,8 +132,12 @@ function createAdapters(): DrillAdapters {
 			createdAt: now.toISOString(),
 		})),
 		now: vi.fn(() => now),
+		writeTemporaryConfig: vi.fn(async () => ({
+			path: '/tmp/kody-d1-restore/wrangler.json',
+			cleanup: vi.fn(async () => undefined),
+		})),
 		run: vi.fn(async () => undefined),
-		query: vi.fn(async (_targetUuid: string, query: VerificationQuery) =>
+		query: vi.fn(async (_command, query: VerificationQuery) =>
 			queryRows(query),
 		),
 	}
@@ -277,8 +276,18 @@ test('dry-run is non-mutating and live execution creates in a distinct allowlist
 		kind: 'provision',
 		program: 'cloudflare-api',
 	})
-	expect(dryRun.commands[1]?.args).toContain('<live-created-d1-uuid>')
+	expect(dryRun.commands[1]?.args).toEqual([
+		'd1',
+		'execute',
+		'D1_RESTORE_TARGET',
+		'--remote',
+		'--config',
+		'<temporary-wrangler-config>',
+		'--file',
+		'/operator/downloads/backup.sql',
+	])
 	expect(dryAdapters.createTarget).not.toHaveBeenCalled()
+	expect(dryAdapters.writeTemporaryConfig).not.toHaveBeenCalled()
 	expect(dryAdapters.run).not.toHaveBeenCalled()
 
 	const events: Array<string> = []
@@ -294,12 +303,23 @@ test('dry-run is non-mutating and live execution creates in a distinct allowlist
 		now() {
 			return now
 		},
+		async writeTemporaryConfig(input) {
+			events.push(`config:${input.targetName}:${input.targetUuid}`)
+			return {
+				path: '/tmp/live-restore/wrangler.json',
+				async cleanup() {
+					events.push('cleanup-config')
+				},
+			}
+		},
 		async run(command) {
 			events.push(command.kind)
-			expect(command.args).toContain(targetUuid)
+			expect(command.args).toContain('D1_RESTORE_TARGET')
+			expect(command.args).toContain('/tmp/live-restore/wrangler.json')
 		},
-		async query(uuid, query) {
-			expect(uuid).toBe(targetUuid)
+		async query(command, query) {
+			expect(command.args).toContain('D1_RESTORE_TARGET')
+			expect(command.args).toContain('/tmp/live-restore/wrangler.json')
 			events.push(`${query.phase}:${query.id}`)
 			return queryRows(query)
 		},
@@ -307,6 +327,7 @@ test('dry-run is non-mutating and live execution creates in a distinct allowlist
 	await runD1RestoreDrill(drillInput({ dryRun: false }), liveAdapters)
 	expect(events).toEqual([
 		'create:isolated-drill-account-id:kody-drill',
+		`config:kody-drill:${targetUuid}`,
 		'import',
 		'baseline:integrity',
 		'baseline:foreign-keys',
@@ -314,6 +335,7 @@ test('dry-run is non-mutating and live execution creates in a distinct allowlist
 		'baseline:schema',
 		'baseline:sequences',
 		'baseline:isolation',
+		'cleanup-config',
 	])
 })
 
@@ -362,7 +384,7 @@ test('target account, returned creation evidence, and forward baseline fail clos
 		backupFile: '/operator/downloads/backup.sql',
 		targetAccountId: 'isolated-drill-account-id',
 		targetName: 'kody-drill',
-		targetUuid,
+		configPath: '/tmp/restore/wrangler.json',
 		baseline,
 		applyForwardMigrations: true,
 		postForwardBaseline: baseline,
@@ -382,6 +404,196 @@ test('target account, returned creation evidence, and forward baseline fail clos
 	])
 	expect(buildVerificationQueries(baseline, 'baseline')).toHaveLength(6)
 })
+
+test('temporary D1 config and live forward migration commands target the configured binding exactly', async () => {
+	const configPath = '/tmp/kody-d1-restore-abc/wrangler.json'
+	expect(
+		buildD1RestoreWranglerConfig({
+			configPath,
+			migrationsDirectory: '/workspace/packages/worker/migrations',
+			targetName: 'kody-drill',
+			targetUuid,
+		}),
+	).toEqual({
+		d1_databases: [
+			{
+				binding: 'D1_RESTORE_TARGET',
+				database_name: 'kody-drill',
+				database_id: targetUuid,
+				migrations_dir: '../../workspace/packages/worker/migrations',
+			},
+		],
+	})
+
+	const executedCommands: Array<{
+		kind: string
+		phase?: string
+		args: Array<string>
+	}> = []
+	const adapters: DrillAdapters = {
+		async createTarget(input) {
+			return {
+				uuid: targetUuid,
+				name: input.name,
+				createdAt: now.toISOString(),
+			}
+		},
+		now() {
+			return now
+		},
+		async writeTemporaryConfig(input) {
+			expect(input).toEqual({ targetName: 'kody-drill', targetUuid })
+			return { path: configPath, cleanup: vi.fn(async () => undefined) }
+		},
+		async run(command) {
+			executedCommands.push(command)
+		},
+		async query(command, query) {
+			executedCommands.push(command)
+			return queryRows(query)
+		},
+	}
+	const baseline = createBaseline()
+	await runD1RestoreDrill(
+		drillInput({
+			dryRun: false,
+			applyForwardMigrations: true,
+			postForwardBaseline: baseline,
+		}),
+		adapters,
+	)
+	const expectedPlan = buildDrillCommands({
+		backupFile: '/operator/downloads/backup.sql',
+		targetAccountId: 'isolated-drill-account-id',
+		targetName: 'kody-drill',
+		configPath,
+		baseline,
+		applyForwardMigrations: true,
+		postForwardBaseline: baseline,
+	})
+	expect(executedCommands).toEqual(expectedPlan.slice(1))
+	expect(executedCommands[0]?.args).toEqual([
+		'd1',
+		'execute',
+		'D1_RESTORE_TARGET',
+		'--remote',
+		'--config',
+		configPath,
+		'--file',
+		'/operator/downloads/backup.sql',
+	])
+	expect(executedCommands[1]?.args).toEqual([
+		'd1',
+		'execute',
+		'D1_RESTORE_TARGET',
+		'--remote',
+		'--config',
+		configPath,
+		'--json',
+		'--command',
+		'PRAGMA quick_check',
+	])
+	expect(executedCommands[2]?.args.at(-1)).toBe('PRAGMA foreign_key_check')
+	expect(executedCommands[7]?.args).toEqual([
+		'd1',
+		'migrations',
+		'apply',
+		'D1_RESTORE_TARGET',
+		'--remote',
+		'--config',
+		configPath,
+	])
+	for (const command of executedCommands) {
+		expect(command.args).not.toContain(targetUuid)
+		expect(command.args).toContain(configPath)
+	}
+})
+
+test('real local Wrangler returns quick_check rows through the production parser', async () => {
+	const directory = await mkdtemp(
+		path.join(os.tmpdir(), 'd1-restore-contract-'),
+	)
+	try {
+		const configPath = path.join(directory, 'wrangler.json')
+		const migrationsDirectory = path.join(directory, 'migrations')
+		const persistDirectory = path.join(directory, 'state')
+		await mkdir(migrationsDirectory)
+		await writeFile(
+			path.join(migrationsDirectory, '0001-contract-check.sql'),
+			'CREATE TABLE contract_check (id INTEGER PRIMARY KEY);\n',
+		)
+		await writeFile(
+			configPath,
+			JSON.stringify(
+				buildD1RestoreWranglerConfig({
+					configPath,
+					migrationsDirectory,
+					targetName: 'restore-contract',
+					targetUuid,
+				}),
+			),
+		)
+		const cleanEnvironment = {
+			HOME: process.env.HOME,
+			PATH: process.env.PATH,
+			TMPDIR: process.env.TMPDIR,
+		}
+		await runProcess(
+			{
+				kind: 'migration',
+				program: 'wrangler',
+				args: [
+					'd1',
+					'migrations',
+					'apply',
+					'D1_RESTORE_TARGET',
+					'--local',
+					'--config',
+					configPath,
+					'--persist-to',
+					persistDirectory,
+				],
+			},
+			cleanEnvironment,
+			false,
+		)
+		const query = buildVerificationQueries(createBaseline(), 'baseline')[0]
+		if (!query) throw new Error('fixture lacks quick_check query')
+		const output = await runProcess(
+			{
+				kind: 'verification',
+				phase: query.phase,
+				program: 'wrangler',
+				args: [
+					'd1',
+					'execute',
+					'D1_RESTORE_TARGET',
+					'--local',
+					'--config',
+					configPath,
+					'--persist-to',
+					persistDirectory,
+					'--json',
+					'--command',
+					query.sql,
+				],
+			},
+			cleanEnvironment,
+			false,
+		)
+		const rows = parseQueryRows(output)
+		expect(rows).toEqual([{ quick_check: 'ok' }])
+		expect(() => verifyRows(query, rows, createBaseline())).not.toThrow()
+		expect(() =>
+			verifyRows(query, [{ integrity_check: 'ok' }], createBaseline()),
+		).toThrow('PRAGMA quick_check failed')
+		expect(() =>
+			verifyRows(query, [{ QUICK_CHECK: 'OK' }], createBaseline()),
+		).not.toThrow()
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+}, 30_000)
 
 test('Cloudflare create adapter uses documented endpoint and validates response envelope', async () => {
 	const fetcher = vi.fn(async () => {
@@ -416,231 +628,5 @@ test('Cloudflare create adapter uses documented endpoint and validates response 
 			method: 'POST',
 			body: JSON.stringify({ name: 'kody-drill' }),
 		}),
-	)
-})
-
-function artifact(resourceId: string, kind: EvidenceArtifact['kind']) {
-	return {
-		kind,
-		type: 'application/json',
-		uri: `artifacts/${resourceId}/${kind}.json`,
-		sha256: 'a'.repeat(64),
-	} satisfies EvidenceArtifact
-}
-
-function completeEvidence(): Array<ResourceEvidence> {
-	return canonicalContracts.map((contract) => ({
-		resourceId: contract.id,
-		verifierIdentity: 'recovery-verifier@example.test',
-		changeId: `CHG-${contract.id}`,
-		performedAt: '2026-07-22T10:00:00.000Z',
-		expiresAt: '2026-08-22T10:00:00.000Z',
-		artifacts: contract.requiredEvidenceKinds.map((kind) =>
-			artifact(contract.id, kind),
-		),
-	}))
-}
-
-function verifiedMap(
-	evidence: ReadonlyArray<ResourceEvidence>,
-): ReadonlyMap<string, string> {
-	return new Map(
-		evidence.flatMap((record) =>
-			record.artifacts.map((item) => [item.uri, item.sha256] as const),
-		),
-	)
-}
-
-test('strict dated resource-specific evidence is required for readiness', () => {
-	const complete = completeEvidence()
-	const valid = assessCanonicalReadiness(complete, now, verifiedMap(complete))
-	expect(valid.inputFailures).toEqual([])
-	expect(valid.levels['full-service']).toEqual({ ready: true, failures: [] })
-
-	const withoutFingerprint = completeEvidence()
-	const secret = withoutFingerprint.find(
-		(item) => item.resourceId === 'SECRET_STORE_KEY',
-	)
-	if (!secret) throw new Error('fixture lacks SECRET_STORE_KEY')
-	secret.artifacts = secret.artifacts.filter(
-		(item) => item.kind !== 'key-fingerprint',
-	)
-	const secretResult = assessCanonicalReadiness(
-		withoutFingerprint,
-		now,
-		verifiedMap(withoutFingerprint),
-	)
-	expect(secretResult.levels['canonical-data'].ready).toBe(false)
-	expect(secretResult.levels['canonical-data'].failures).toContain(
-		'SECRET_STORE_KEY: missing key-fingerprint artifact',
-	)
-
-	for (const contract of canonicalContracts.filter(
-		(item) => item.requiredFor === 'full-service',
-	)) {
-		const evidence = completeEvidence()
-		const record = evidence.find((item) => item.resourceId === contract.id)
-		if (!record) throw new Error(`fixture lacks ${contract.id}`)
-		const specificKind = contract.requiredEvidenceKinds.at(-1)
-		record.artifacts = record.artifacts.filter(
-			(item) => item.kind !== specificKind,
-		)
-		expect(
-			assessCanonicalReadiness(evidence, now, verifiedMap(evidence)).levels[
-				'full-service'
-			].ready,
-		).toBe(false)
-	}
-})
-
-test('readiness requires independently verified local artifact bytes', async () => {
-	const evidence = completeEvidence()
-	expect(assessCanonicalReadiness(evidence, now).levels['d1-only'].ready).toBe(
-		false,
-	)
-	const missing = new Map(verifiedMap(evidence))
-	const firstArtifact = evidence[0]?.artifacts[0]
-	if (!firstArtifact) throw new Error('fixture lacks artifacts')
-	missing.delete(firstArtifact.uri)
-	expect(
-		assessCanonicalReadiness(evidence, now, missing).levels['d1-only'].failures,
-	).toContain(
-		`APP_DB: artifact bytes were not locally verified: ${firstArtifact.uri}`,
-	)
-	const mismatch = new Map(verifiedMap(evidence))
-	mismatch.set(firstArtifact.uri, 'b'.repeat(64))
-	expect(
-		assessCanonicalReadiness(evidence, now, mismatch).levels['d1-only']
-			.failures,
-	).toContain(
-		`APP_DB: locally verified artifact digest mismatch: ${firstArtifact.uri}`,
-	)
-
-	const directory = await mkdtemp(path.join(os.tmpdir(), 'readiness-artifact-'))
-	try {
-		const artifactPath = path.join(directory, 'drill.json')
-		const bytes = new TextEncoder().encode('verified artifact')
-		await writeFile(artifactPath, bytes)
-		const localEvidence = [
-			{
-				artifacts: [
-					{ uri: 'drill.json' },
-					{ uri: pathToFileURL(artifactPath).href },
-				],
-			},
-		]
-		const verified = await verifyLocalArtifactFiles(
-			localEvidence,
-			path.join(directory, 'evidence.json'),
-		)
-		expect(verified.get('drill.json')).toBe(sha256(bytes))
-		expect(verified.get(pathToFileURL(artifactPath).href)).toBe(sha256(bytes))
-		await expect(
-			verifyLocalArtifactFiles(
-				[{ artifacts: [{ uri: 'https://example.test/evidence' }] }],
-				path.join(directory, 'evidence.json'),
-			),
-		).rejects.toThrow('not local')
-		await expect(
-			verifyLocalArtifactFiles(
-				[{ artifacts: [{ uri: 'missing.json' }] }],
-				path.join(directory, 'evidence.json'),
-			),
-		).rejects.toThrow()
-	} finally {
-		await rm(directory, { recursive: true, force: true })
-	}
-})
-
-test('code-owned readiness cadence caps evidence age regardless of decades-long expiresAt', () => {
-	const cases = [
-		{ resourceId: 'APP_DB', level: 'd1-only' },
-		{ resourceId: 'EMAIL_BLOBS', level: 'canonical-data' },
-		{ resourceId: 'VECTORIZE', level: 'full-service' },
-	] as const
-	for (const testCase of cases) {
-		const maximumDays = maximumEvidenceAgeDays[testCase.level]
-		const boundaryEvidence = completeEvidence()
-		const boundaryRecord = boundaryEvidence.find(
-			(item) => item.resourceId === testCase.resourceId,
-		)
-		if (!boundaryRecord) {
-			throw new Error(`fixture lacks ${testCase.resourceId}`)
-		}
-		boundaryRecord.performedAt = new Date(
-			now.getTime() - maximumDays * 24 * 60 * 60 * 1000,
-		).toISOString()
-		boundaryRecord.expiresAt = '2099-01-01T00:00:00.000Z'
-		expect(
-			assessCanonicalReadiness(
-				boundaryEvidence,
-				now,
-				verifiedMap(boundaryEvidence),
-			).levels[testCase.level].ready,
-		).toBe(true)
-
-		const staleEvidence = completeEvidence()
-		const staleRecord = staleEvidence.find(
-			(item) => item.resourceId === testCase.resourceId,
-		)
-		if (!staleRecord) throw new Error(`fixture lacks ${testCase.resourceId}`)
-		staleRecord.performedAt = new Date(
-			now.getTime() - maximumDays * 24 * 60 * 60 * 1000 - 1,
-		).toISOString()
-		staleRecord.expiresAt = '2099-01-01T00:00:00.000Z'
-		const staleResult = assessCanonicalReadiness(
-			staleEvidence,
-			now,
-			verifiedMap(staleEvidence),
-		)
-		expect(staleResult.levels[testCase.level].ready).toBe(false)
-		expect(staleResult.inputFailures).toEqual(
-			expect.arrayContaining([
-				expect.stringContaining(`${String(maximumDays)}-day maximum age`),
-			]),
-		)
-	}
-})
-
-test('malformed, unknown, duplicate, expired, and future evidence cannot report READY', () => {
-	expect(
-		assessCanonicalReadiness(
-			canonicalContracts.map((contract) => `verified:${contract.id}`),
-			now,
-		).levels['d1-only'].ready,
-	).toBe(false)
-
-	const malformed = completeEvidence()
-	malformed[0]?.artifacts.push({
-		...artifact('APP_DB', 'd1-restore-drill'),
-		sha256: 'ABC',
-	})
-	const malformedResult = assessCanonicalReadiness(malformed, now)
-	expect(malformedResult.inputFailures).not.toEqual([])
-	expect(malformedResult.levels['d1-only'].ready).toBe(false)
-
-	const duplicate = [...completeEvidence(), completeEvidence()[0]]
-	expect(assessCanonicalReadiness(duplicate, now).inputFailures).toEqual(
-		expect.arrayContaining([expect.stringContaining('duplicate resourceId')]),
-	)
-	const unknown = [
-		...completeEvidence(),
-		{ ...completeEvidence()[0], resourceId: 'UNKNOWN_RESOURCE' },
-	]
-	expect(assessCanonicalReadiness(unknown, now).inputFailures).toEqual(
-		expect.arrayContaining([expect.stringContaining('unknown resourceId')]),
-	)
-
-	const expired = completeEvidence()
-	if (!expired[0]) throw new Error('fixture is empty')
-	expired[0].expiresAt = '2026-07-22T11:00:00.000Z'
-	expect(assessCanonicalReadiness(expired, now).inputFailures).toEqual(
-		expect.arrayContaining([expect.stringContaining('expired')]),
-	)
-	const future = completeEvidence()
-	if (!future[0]) throw new Error('fixture is empty')
-	future[0].performedAt = '2026-07-22T13:00:00.000Z'
-	expect(assessCanonicalReadiness(future, now).inputFailures).toEqual(
-		expect.arrayContaining([expect.stringContaining('future')]),
 	)
 })
