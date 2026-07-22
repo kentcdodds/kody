@@ -20,12 +20,12 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { assertPackageNotPrivateForCommunityPublish } from '#worker/package-registry/package-private.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
+import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
 import { CommunityActionError } from './errors.ts'
 import {
 	countCommunityForksByListingIds,
 	deleteCommunityListing,
 	deleteCommunityRatingsByListingId,
-	getCommunityBan,
 	getCommunityActivityByIdForAdmin,
 	getCommunityForkByForkedPackageId,
 	getCommunityForkByListingAndUser,
@@ -254,13 +254,6 @@ async function cleanupFailedCommunityFork(input: {
 			}),
 		)
 	})
-}
-
-async function assertNotCommunityBanned(db: D1Database, userId: string) {
-	const ban = await getCommunityBan(db, userId)
-	if (ban) {
-		throw new CommunityActionError('banned from community participation')
-	}
 }
 
 function parseRawPackageLicense(packageJsonContent: string) {

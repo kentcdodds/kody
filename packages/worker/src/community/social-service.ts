@@ -1,7 +1,8 @@
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
+import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
 import { CommunityActionError } from './errors.ts'
-import { getCommunityBan, getCommunityListingById } from './repo.ts'
+import { getCommunityListingById } from './repo.ts'
 import { attachListingAggregatesBatch } from './service.ts'
 import {
 	countActiveListingsForOwner,
@@ -176,13 +177,6 @@ export async function updateCommunityProfile(input: {
 		numericUserId: input.numericUserId,
 		...patch,
 	})
-}
-
-async function assertNotCommunityBanned(db: D1Database, userId: string) {
-	const ban = await getCommunityBan(db, userId)
-	if (ban) {
-		throw new CommunityActionError('banned from community participation')
-	}
 }
 
 export async function followCommunityUser(input: {
