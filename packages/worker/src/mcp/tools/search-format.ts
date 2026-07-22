@@ -123,6 +123,24 @@ export type RelatedCapabilityOperation = {
 	path?: string
 }
 
+export type RelatedIntegrationPackageSuggestion =
+	| {
+			source: 'user'
+			kodyId: string
+			name: string
+			description: string
+			entityRef: string
+	  }
+	| {
+			source: 'community'
+			kodyId: string
+			name: string
+			description: string
+			listingId: string
+			publicUrl: string
+			trusted: boolean
+	  }
+
 export type SlimSearchMatch =
 	| {
 			type: 'capability'
@@ -360,6 +378,7 @@ export type SearchEntityDetailStructured =
 			refreshTokenSecretName: string | null
 			requiredHosts: Array<string>
 			authorization: IntegrationConfig['authorization'] | null
+			relatedPackageSuggestions?: Array<RelatedIntegrationPackageSuggestion>
 	  }
 
 export type SearchEntityDetail =
@@ -404,6 +423,7 @@ export type SearchEntityDetail =
 			description: string
 			row: ValueMetadata
 			config: IntegrationConfig
+			relatedPackageSuggestions?: Array<RelatedIntegrationPackageSuggestion>
 	  }
 
 export type SearchMatch =
@@ -1199,6 +1219,7 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 	if (detail.type === 'integration') {
 		const requiredHosts = detail.config.requiredHosts ?? []
 		const authorization = detail.config.authorization ?? null
+		const relatedPackageSuggestions = detail.relatedPackageSuggestions ?? []
 		const lines = [
 			`# Integration — \`${detail.config.name}\``,
 			'',
@@ -1243,6 +1264,29 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				`Reconnect with \`/connect/oauth?provider=${encodeURIComponent(detail.config.name)}\`; Kody derives the provider authorize URL from the saved integration metadata plus the current client credentials.`,
 			)
 		}
+		if (relatedPackageSuggestions.length > 0) {
+			lines.push(
+				'',
+				'## Related packages',
+				'',
+				'Integrations store auth config. Packages are the agent API for this provider — inspect or fork one of these instead of treating the integration alone as the end state.',
+				'',
+			)
+			for (const suggestion of relatedPackageSuggestions) {
+				if (suggestion.source === 'user') {
+					lines.push(
+						`- **user** ${formatMarkdownInlineCode(suggestion.kodyId)} (${formatMarkdownInlineCode(suggestion.name)}) — ${escapeMarkdownText(formatOneLineSentence(suggestion.description))} Entity: ${formatMarkdownInlineCode(suggestion.entityRef)}`,
+					)
+					continue
+				}
+				const trustLabel = suggestion.trusted
+					? 'community (trusted)'
+					: 'community'
+				lines.push(
+					`- **${trustLabel}** ${formatMarkdownInlineCode(suggestion.kodyId)} (${formatMarkdownInlineCode(suggestion.name)}) — ${escapeMarkdownText(formatOneLineSentence(suggestion.description))} Listing: ${formatMarkdownInlineCode(suggestion.listingId)} · ${formatMarkdownInlineCode(suggestion.publicUrl)}`,
+				)
+			}
+		}
 		return {
 			markdown: lines.join('\n'),
 			structured: {
@@ -1262,6 +1306,9 @@ export function formatEntityDetailMarkdown(detail: SearchEntityDetail) {
 				refreshTokenSecretName: detail.config.refreshTokenSecretName ?? null,
 				requiredHosts,
 				authorization,
+				...(relatedPackageSuggestions.length > 0
+					? { relatedPackageSuggestions }
+					: {}),
 			} satisfies SearchEntityDetailStructured,
 		}
 	}

@@ -92,6 +92,7 @@ import {
 	parseEntityRef,
 	toSlimStructuredMatches,
 } from './search-format.ts'
+import { collectIntegrationPackageSuggestions } from './integration-package-suggestions.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
 import { prependToolMetadataContent } from './tool-response-content.ts'
 import {
@@ -2408,8 +2409,10 @@ without competing semantic matches. Hidden exact queries require
 related lookups in one call. Capability detail includes an exact \`execute\`
 module snippet plus TypeScript call-shape definitions by default. Synthesized
 provider capabilities (OpenAPI, MCP server, remote connector) also list related
-operations from the same provider. Package ids may be UUIDs or kody ids, and
-hidden packages resolve here regardless of \`includeHiddenPackages\`.
+operations from the same provider. Integration detail may include a small set of
+same-provider package suggestions (user packages first, else trusted-first
+community listings). Package ids may be UUIDs or kody ids, and hidden packages
+resolve here regardless of \`includeHiddenPackages\`.
 
 Secret results expose metadata only; credential values never appear.
 
@@ -2682,6 +2685,13 @@ async function resolveEntityDetail(input: {
 		if (!integration) {
 			throw new Error('Saved integration not found for this user.')
 		}
+		const relatedPackageSuggestions =
+			await collectIntegrationPackageSuggestions({
+				env: input.agent.getEnv(),
+				baseUrl: input.callerContext.baseUrl,
+				providerName: integration.config.name,
+				packageRows: input.searchRows.packageRows,
+			})
 		return {
 			type: 'integration' as const,
 			id: integration.config.name,
@@ -2691,6 +2701,9 @@ async function resolveEntityDetail(input: {
 				`Saved OAuth integration configuration (${integration.config.flow} flow).`,
 			row: integration.row,
 			config: integration.config,
+			...(relatedPackageSuggestions.length > 0
+				? { relatedPackageSuggestions }
+				: {}),
 		}
 	}
 
