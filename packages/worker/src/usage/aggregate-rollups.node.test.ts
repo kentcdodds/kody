@@ -11,6 +11,7 @@ type RollupKeyRow = { user_id: string; metric: string; month: string }
 type EmailUsageRow = {
 	user_id: string
 	metric: string
+	month: string
 	event_count: number
 	error_count: number
 	total_duration_ms: number
@@ -27,6 +28,7 @@ function createFakeDb(
 	const rollups = input.existingRollups?.map((row) => ({ ...row })) ?? []
 	const batches: Array<Array<BoundStatement>> = []
 	const deletes: Array<BoundStatement> = []
+	const selects: Array<BoundStatement> = []
 	const db = {
 		prepare(sql: string) {
 			return {
@@ -36,6 +38,7 @@ function createFakeDb(
 						params,
 						async all() {
 							if (sql.includes('FROM email_delivery_events event')) {
+								selects.push({ sql, params })
 								return { results: input.emailUsageRows ?? [] }
 							}
 							if (!sql.includes('SELECT user_id, metric FROM usage_rollups')) {
@@ -80,7 +83,7 @@ function createFakeDb(
 			return []
 		},
 	} as unknown as D1Database
-	return { db, batches, deletes, rollups }
+	return { db, batches, deletes, selects, rollups }
 }
 
 function createAggregationEnv(db: D1Database) {
@@ -193,16 +196,27 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 			],
 		},
 	})
-	const { db, batches } = createFakeDb({
+	const { db, batches, selects } = createFakeDb({
 		emailUsageRows: [
 			{
 				user_id: 'user-a',
 				metric: 'email_received',
+				month: '2026-07',
 				event_count: 2,
 				error_count: 0,
 				total_duration_ms: 50,
 				total_cpu_ms: 0,
 				total_bytes: 4096,
+			},
+			{
+				user_id: 'user-c',
+				metric: 'email_received',
+				month: '2026-06',
+				event_count: 1,
+				error_count: 0,
+				total_duration_ms: 25,
+				total_cpu_ms: 0,
+				total_bytes: 512,
 			},
 		],
 	})
@@ -213,9 +227,9 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 	expect(result).toEqual({
 		skipped: false,
 		month: '2026-07',
-		upsertedRows: 3,
+		upsertedRows: 4,
 		deletedRows: 0,
-		users: 2,
+		users: 3,
 	})
 
 	expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -247,10 +261,12 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 		'sum(double1 * _sample_interval) AS total_duration_ms',
 	)
 	expect(query).toContain('GROUP BY blob1, blob2')
+	expect(selects[0]?.sql).toContain('message.user_id = event.user_id')
+	expect(selects[0]?.params).toEqual(['2026-07', '2026-06'])
 
 	expect(batches).toHaveLength(1)
 	const statements = batches[0] ?? []
-	expect(statements).toHaveLength(3)
+	expect(statements).toHaveLength(4)
 	expect(statements[0]?.sql).toContain('ON CONFLICT (user_id, metric, month)')
 	expect(statements[0]?.sql).toContain('event_count = excluded.event_count')
 	expect(statements[0]?.sql).not.toContain('event_count + ')
@@ -285,6 +301,17 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 		50,
 		0,
 		4096,
+		now.toISOString(),
+	])
+	expect(statements[3]?.params).toEqual([
+		'user-c',
+		'email_received',
+		'2026-06',
+		1,
+		0,
+		25,
+		0,
+		512,
 		now.toISOString(),
 	])
 })

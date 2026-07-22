@@ -147,6 +147,7 @@ FORMAT JSON
 type AnalyticsEngineSqlRow = {
 	user_id: string
 	metric: string
+	month?: string
 	event_count: number | string
 	error_count: number | string
 	total_duration_ms: number | string
@@ -156,7 +157,7 @@ type AnalyticsEngineSqlRow = {
 
 async function readIdempotentInboundEmailUsage(input: {
 	db: D1Database
-	month: string
+	months: [string, string]
 }) {
 	const result = await runD1WithRetry(() =>
 		input.db
@@ -164,6 +165,11 @@ async function readIdempotentInboundEmailUsage(input: {
 				`SELECT
 					message.user_id,
 					'email_received' AS metric,
+					substr(
+						COALESCE(message.received_at, message.created_at),
+						1,
+						7
+					) AS month,
 					COUNT(*) AS event_count,
 					0 AS error_count,
 					SUM(COALESCE(
@@ -173,7 +179,9 @@ async function readIdempotentInboundEmailUsage(input: {
 					0 AS total_cpu_ms,
 					SUM(COALESCE(message.raw_size, 0)) AS total_bytes
 				FROM email_delivery_events event
-				JOIN email_messages message ON message.id = event.message_id
+				JOIN email_messages message
+					ON message.id = event.message_id
+					AND message.user_id = event.user_id
 				WHERE event.provider = 'cloudflare-email-routing'
 					AND event.event_type = 'received'
 					AND json_extract(
@@ -184,10 +192,10 @@ async function readIdempotentInboundEmailUsage(input: {
 						COALESCE(message.received_at, message.created_at),
 						1,
 						7
-					) = ?
-				GROUP BY message.user_id`,
+					) IN (?, ?)
+				GROUP BY message.user_id, month`,
 			)
-			.bind(input.month)
+			.bind(...input.months)
 			.all<AnalyticsEngineSqlRow>(),
 	)
 	return result.results ?? []
@@ -227,6 +235,13 @@ function toCount(value: number | string) {
 
 function rollupPairKey(row: { user_id: string; metric: string }) {
 	return `${row.user_id}\n${row.metric}`
+}
+
+function previousMonth(month: string) {
+	const [year, monthNumber] = month.split('-').map(Number)
+	return new Date(Date.UTC(year ?? 1970, (monthNumber ?? 1) - 2, 1))
+		.toISOString()
+		.slice(0, 7)
 }
 
 /**
@@ -315,16 +330,18 @@ export async function aggregateUsageRollups(
 	const updatedAt = now.toISOString()
 	const emailRows = await readIdempotentInboundEmailUsage({
 		db: env.APP_DB,
-		month,
+		months: [month, previousMonth(month)],
 	})
 	const mergedRows = new Map<string, AnalyticsEngineSqlRow>()
 	for (const row of [...rows, ...emailRows]) {
 		if (!row.user_id || !row.metric) continue
-		const key = rollupPairKey(row)
+		const rowMonth = row.month ?? month
+		const key = `${rowMonth}\n${rollupPairKey(row)}`
 		const existing = mergedRows.get(key)
 		mergedRows.set(key, {
 			user_id: row.user_id,
 			metric: row.metric,
+			month: rowMonth,
 			event_count:
 				toCount(existing?.event_count ?? 0) + toCount(row.event_count),
 			error_count:
@@ -343,7 +360,7 @@ export async function aggregateUsageRollups(
 		env.APP_DB.prepare(usageRollupAbsoluteUpsertStatement).bind(
 			row.user_id,
 			row.metric,
-			month,
+			row.month ?? month,
 			toCount(row.event_count),
 			toCount(row.error_count),
 			toCount(row.total_duration_ms),
@@ -362,13 +379,16 @@ export async function aggregateUsageRollups(
 	// lag (or a dataset misconfiguration) than a genuinely event-free
 	// month; skip the stale-row cleanup rather than wiping real counters.
 	// The next hourly run reconciles once events are visible again.
+	const currentRows = presentRows.filter(
+		(row) => (row.month ?? month) === month,
+	)
 	const deletedRows =
-		presentRows.length === 0
+		currentRows.length === 0
 			? 0
 			: await deleteStaleCurrentMonthRollups({
 					db: env.APP_DB,
 					month,
-					presentPairs: new Set(presentRows.map(rollupPairKey)),
+					presentPairs: new Set(currentRows.map(rollupPairKey)),
 				})
 
 	const result = {
