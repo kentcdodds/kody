@@ -33,7 +33,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'integration-bootstrap.md',
 		title: 'Integration bootstrap guide',
 		summary:
-			'START HERE when a third-party integration must work before saving a dependent package or package app: inspect integration/secret state, stop for setup, run an authenticated smoke test, then prefer a trusted community fork before building from scratch.',
+			'START HERE when a third-party integration must work before saving a dependent package or package app: inspect integration/secret state, stop for setup, run an authenticated smoke test, then use connect nextSteps or community_search (prefer trusted) before building from scratch.',
 	},
 	secret_backed_integration: {
 		file: 'secret-backed-integration.md',
@@ -51,7 +51,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'oauth.md',
 		title: 'OAuth guide (standard path)',
 		summary:
-			'START HERE for third-party OAuth: hosted /connect/oauth, the exact redirect URI (https://heykody.dev/connect/oauth), required query params, PKCE vs confidential, and how it differs from MCP OAuth.',
+			'START HERE for third-party OAuth: hosted /connect/oauth, the exact redirect URI (https://heykody.dev/connect/oauth), required query params, PKCE vs confidential, post-connect nextSteps with trusted community helpers suggestions, and how it differs from MCP OAuth.',
 	},
 	connect_secret: {
 		file: 'account-secret-setup.md',

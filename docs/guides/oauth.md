@@ -137,6 +137,24 @@ routes) are for clients authenticating to Kody itself.
 | --------------------------------- | ---------------- |
 | API keys or PATs instead of OAuth | `connect_secret` |
 
+## After a successful connect
+
+A saved OAuth integration is **auth credentials only**. It is not an
+agent-callable package API.
+
+The `/connect/oauth` success response (and success UI) includes `nextSteps`:
+
+- clear guidance that the integration stores credentials, while a helpers
+  package is the durable agent-facing surface
+- up to three community package suggestions for the provider, with trusted
+  listings ranked first, plus fork prompts / listing links
+- a create-helpers CTA/prompt when no suitable listing exists (and as a fallback
+  when suggestions do not fit)
+
+Do not treat connect success as “the Google/GitHub/etc. package is ready.” Next
+step is smoke-test auth, then fork a close trusted community helpers package or
+create a thin helpers package.
+
 ## Agent checklist
 
 1. Confirm OAuth is the right auth shape.
@@ -146,13 +164,18 @@ routes) are for clients authenticating to Kody itself.
    `https://heykody.dev/connect/oauth`. The page shows it with a copy button.
 4. Have the user open the URL while signed in and wait for success.
 5. Run the authenticated smoke test from `integration_bootstrap`.
-6. Continue with the package or package app only after the smoke test passes.
+6. Use the connect success `nextSteps` (or `community_search`, preferring
+   `trusted`) to fork/adapt a helpers package, or create a thin helpers package
+   when none fits. Continue with dependent package apps only after that surface
+   exists and the smoke test passes.
 
 ## Package-first recommendation for OAuth integrations
 
 For OAuth integrations with a successful hosted `/connect/oauth` flow and
 passing smoke test:
 
+- treat the saved integration as credentials; put agent-facing calls in a
+  helpers package (prefer a trusted community listing from `nextSteps`)
 - build a package app when the integration needs a hosted UI
 - keep provider API calls in package-owned backend code
 - keep reusable automation in package exports
