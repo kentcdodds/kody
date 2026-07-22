@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import {
 	DEFAULT_BACKUP_MAX_SOURCE_BYTES,
@@ -452,6 +452,8 @@ test('verifies D1 identity without calling the live account endpoint', async () 
 })
 
 test('requires an integer D1 file size and accepts the byte below the ceiling', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	for (const response of [
 		identityEnvelope(undefined, false),
 		identityEnvelope('1000'),
@@ -473,9 +475,12 @@ test('requires an integer D1 file size and accepts the byte below the ceiling', 
 		fileSize: DEFAULT_BACKUP_MAX_SOURCE_BYTES - 1,
 		maxSourceBytes: DEFAULT_BACKUP_MAX_SOURCE_BYTES,
 	})
+	assert.equal(consoleError.mock.calls.length, 4)
 })
 
 test('rejects D1 size at or above the configured ceiling', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	for (const fileSize of [
 		DEFAULT_BACKUP_MAX_SOURCE_BYTES,
 		DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1,
@@ -507,6 +512,7 @@ test('rejects D1 size at or above the configured ceiling', async () => {
 		(error: unknown) =>
 			error instanceof BackupError && error.code === 'invalid-max-source-bytes',
 	)
+	assert.equal(consoleError.mock.calls.length, 3)
 })
 
 test('durable orchestration starts once and resumes numbered polls after interruption', async () => {
@@ -960,6 +966,8 @@ test('freshness accepts matching metadata and flags size/ETag drift or missing o
 })
 
 test('hourly freshness queries live D1 size and fails at the ceiling', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	let metadataRequests = 0
 	await assert.rejects(
 		checkFreshness(environment(), new Date('2026-07-22T03:45:00Z'), {
@@ -973,9 +981,12 @@ test('hourly freshness queries live D1 size and fails at the ceiling', async () 
 			error.code === 'source-size-limit-exceeded',
 	)
 	assert.equal(metadataRequests, 1)
+	assert.equal(consoleError.mock.calls.length, 1)
 })
 
 test('workflow does not start D1 export when source size exceeds the ceiling', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	const env = environment()
 	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
 	const urls: string[] = []
@@ -1006,6 +1017,7 @@ test('workflow does not start D1 export when source size exceeds the ceiling', a
 		urls.some((url) => url.endsWith('/export')),
 		false,
 	)
+	assert.equal(consoleError.mock.calls.length, 2)
 })
 
 test('workflow creation omits explicit retention and active overlap stays duplicate', async () => {
