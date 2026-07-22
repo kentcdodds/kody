@@ -8,11 +8,13 @@ in `planLimits` remain independently configured placeholders.
 
 Module: `packages/worker/src/entitlements/`
 
-- `plans.ts` — plan names (`free`, `pro`, `partner`, `max`), the `PlanLimits`
-  config per plan, `max` email caps (`maxPlanEmailLimits`), the
+- `plans.ts` — plan names (`free`, `pro`, `partner`, `max`, `unlimited`), the
+  `PlanLimits` config per plan, `max` email caps (`maxPlanEmailLimits`), the
   `EntitlementResource` registry, `resolvePlanLimit(plan, resource)`,
   `resolveEmailResourceLimit(plan, resource)`, `getPlanRank`, `parsePlanName`
-  (strict, untrusted input), `parseStoredPlanName` (stored-column reads), and
+  (strict, untrusted direct user-plan input), `parseInviteAssignablePlanName`
+  (strict invite creation), `parseStoredPlanName` and
+  `parseStoredInvitePlanName` (stored-column reads), and
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
@@ -21,13 +23,10 @@ Module: `packages/worker/src/entitlements/`
 
 ## Plan model
 
-The plan registry in `plans.ts` includes `free`, `pro`, `partner`, and `max`.
-Every plan has finite numeric limits for every resource; there are no uncapped
-tiers and no env-var backstops.
-
-Follow-up: emergency admin-only `unlimited` is intentionally deferred until a
-follow-up deployment after `0083-plan-default-free.sql` completes its residual
-sweep. Until then the live registry stays finite `max` only.
+The plan registry in `plans.ts` includes `free`, `pro`, `partner`, `max`, and
+`unlimited`. Finite plans (`free`, `pro`, `partner`, `max`) have numeric limits
+for every resource. Emergency `unlimited` bypasses entitlement ceilings (null
+limits); it is not a public, paid, or Stripe-sourced tier.
 
 `users.plan` and `invites.plan` are NOT NULL TEXT columns. Historical migrations
 (`0046-invites-email-verification.sql`, `0065-invite-plans.sql`, and
@@ -36,29 +35,67 @@ sweep. Until then the live registry stays finite `max` only.
 to `'max'` but does not change the column default. Migration
 `0083-plan-default-free.sql` reconciles migration-window residual `'unlimited'`
 to `'max'`, fails closed if any remain, and rebuilds both columns as NOT NULL
-DEFAULT `'free'`. **Live DDL defaults and writers always persist a known plan
-name (never NULL); normal creation and reset paths default to `free`.**
+DEFAULT `'free'`. Migration `0084-purge-residual-unlimited-plan.sql` sweeps any
+residual stored `'unlimited'` on `users.plan` and `invites.plan` to `'max'` and
+fails closed if any remain — a gap closer before code enables the new explicit
+admin-only `unlimited` tier. **Live DDL defaults and writers always persist a
+known plan name (never NULL); normal creation and reset paths default to
+`free`.**
 
 **Write and default:** `resolvePlanWrite` maps nullish admin/API inputs to
-`free`, which is the default for new accounts, invites without an explicit plan,
-admin-created accounts, platform-account provisioning, seed SQL, and admin plan
-resets. Explicit `max` remains a valid deliberate assignment.
+`free` for admin-created accounts, platform-account provisioning, seed SQL, and
+admin plan resets on direct user-plan paths. Explicit `max` and emergency
+`unlimited` remain valid deliberate assignments on those paths only
+(`/admin/users` and MCP `admin_user_update`). Invite creation and signup
+consumption use `resolveInvitePlanWrite`, which maps nullish inputs to `free`
+and never persists `unlimited` — only finite invite-assignable plans (`free`,
+`pro`, `partner`, `max`).
 
-**Reading stored values:** D1 reads use `parseStoredPlanName`. Known plan names
-pass through unchanged; defensive NULL, unknown stored strings, and residual
-stored `'unlimited'` fail open to `max` with a stable
-`entitlement-unknown-stored-plan` warn tag (no user data in the log). Untrusted
-admin/API input still uses strict `parsePlanName` so typos, unknown strings, and
-residual `'unlimited'` are rejected rather than coerced.
+**Reading stored values:**
 
-`users.stripe_plan` stays nullable because it is Stripe-derived; `max` is
-manual-only — admin-visible, not paid or public — and never written from Stripe
-(`parseStripePlanName` rejects it, as well as residual `'unlimited'`).
+- **`users.plan`** — `parseStoredPlanName`. Known names, including deliberate
+  `unlimited`, pass through unchanged. Defensive NULL and unknown stored strings
+  fail open to `max` with a stable `entitlement-unknown-stored-plan` warn tag
+  (no user data in the log).
+- **`invites.plan`** — `parseStoredInvitePlanName`. Invite-assignable names pass
+  through; residual stored `'unlimited'` fails open to `max` with
+  `entitlement-residual-unlimited-invite-plan`; other unknown / nullish values
+  fail open to `max` with `entitlement-unknown-stored-plan`. Residual invite
+  `unlimited` never creates an unlimited account at signup.
+- **Untrusted input** — direct user-plan assignment validates with strict
+  `parsePlanName` (accepts `unlimited` for deliberate admin assignment). Invite
+  creation validates with `parseInviteAssignablePlanName`, which rejects
+  `unlimited`.
+
+`users.stripe_plan` stays nullable because it is Stripe-derived; `max` and
+`unlimited` are manual-only — admin-visible, not paid or public — and never
+written from Stripe (`parseStripePlanName` rejects both).
 
 `resolveEffectivePlan(manual, stripe)` compares a non-null manual plan (after
-`parseStoredPlanName`) with `users.stripe_plan`. Manual `max` always wins over
-Stripe; otherwise the higher-ranked of the two is returned. Unknown or null
-`stripe_plan` values contribute nothing.
+`parseStoredPlanName`) with `users.stripe_plan`. Manual `max` and `unlimited`
+always win over Stripe; otherwise the higher-ranked of the two is returned.
+Unknown or null `stripe_plan` values contribute nothing.
+
+### Emergency `unlimited` plan
+
+`unlimited` is a true uncapped emergency override: every resource limit resolves
+to null so `assertWithinEntitlement` and daily-counter gates bypass enforcement.
+Daily counters may still accumulate uncapped for later assignment visibility.
+
+Assignment is **direct to an existing user only**, through two audited
+admin-only surfaces (both backed by `updateAdminUserPlan`):
+
+- **Admin UI** — the "Manage plan" panel on `/admin/users`
+- **MCP** — `admin_user_update` (`requiredRole: 'admin'`)
+
+Both write an `admin`-category audit event with reason
+`target_user_id=…;plan=…`.
+
+`unlimited` is never available on invite creation, signup defaults,
+admin-created accounts, platform-account provisioning, seed SQL, Stripe
+checkout, or any public paid tier. Former top-tier `'unlimited'` stored values
+were renamed to `'max'` by migrations `0082`–`0084`; only deliberate post-0084
+admin assignment creates new `unlimited` rows.
 
 ### `max` plan limits
 
@@ -94,7 +131,10 @@ to `'max'` on `users.plan` and `invites.plan` only; it does not touch
 `users.stripe_plan`, unknown plan strings, or the DDL default. Migration
 `0083-plan-default-free.sql` reconciles migration-window residual `'unlimited'`
 to `'max'`, fails closed if any remain, and rebuilds `users` and `invites` with
-NOT NULL DEFAULT `'free'`.
+NOT NULL DEFAULT `'free'`. Migration `0084-purge-residual-unlimited-plan.sql`
+reconciles any later residual `'unlimited'` on `users.plan` and `invites.plan`
+to `'max'` before code enables the new explicit admin-only `unlimited` tier; it
+does not touch `users.stripe_plan`, unknown plan strings, or DDL defaults.
 
 ## Assigning plans
 
@@ -102,13 +142,17 @@ New accounts start with `users.plan = 'free'` unless the consumed invite carries
 another plan. Migration `0065-invite-plans.sql` adds `invites.plan` (NOT NULL
 DEFAULT `'free'` after `0083-plan-default-free.sql`; writers and admin UI
 default to `free`). Password and social signup read the consumed invite's stored
-plan with `parseStoredPlanName` and copy it onto `users.plan`; missing or
-omitted invite plans are written as `free` via `resolvePlanWrite`. Admin-created
-accounts, platform-account provisioning, and seed SQL follow the same
-`resolvePlanWrite` default. Admins set invite plans when creating codes at
-`/admin/invites` (validated with strict `parsePlanName`).
+plan with `parseStoredInvitePlanName` and copy it onto `users.plan` via
+`resolveInvitePlanWrite` (finite invite-assignable plans only); missing or
+omitted invite plans are written as `free`. Residual stored invite `'unlimited'`
+coerces to `max` at read time with `entitlement-residual-unlimited-invite-plan`.
+Admin-created accounts, platform-account provisioning, and seed SQL always start
+on `free` and never accept `unlimited`. Admins set invite plans when creating
+codes at `/admin/invites` (validated with strict
+`parseInviteAssignablePlanName`, which rejects `unlimited`; emergency
+`unlimited` cannot be persisted through invites).
 
-Admins also assign or reset plans on existing users through two audited,
+Admins assign or reset plans on **existing** users through two audited,
 admin-only surfaces, both backed by `updateAdminUserPlan` in
 `packages/worker/src/app/admin-users-data.ts`:
 
@@ -116,12 +160,15 @@ admin-only surfaces, both backed by `updateAdminUserPlan` in
   `{ action: 'update_plan', userId, plan }` to `POST /admin/users.json` (guarded
   by `update:user:any`). `plan: null` maps to `free` (writers never persist
   NULL); unknown plan strings are rejected with `400` rather than coerced.
+  Emergency `unlimited` is selectable here only.
 - **MCP** — the `admin_user_update` capability (`requiredRole: 'admin'`) updates
   one user by `id` or `email` and accepts `plan: PlanName | null` (null maps to
-  `free`).
+  `free`; explicit `unlimited` is preserved for deliberate direct assignment).
 
-Both paths validate against the plan registry (`parsePlanName` / `planNames`)
-and write an `admin`-category audit event with reason `target_user_id=…;plan=…`.
+Both paths validate against the full plan registry (`parsePlanName` /
+`planNames`) and write an `admin`-category audit event with reason
+`target_user_id=…;plan=…`.
+
 Daily counters accumulate for every user regardless of plan, so assigning a
 recognized plan later binds immediately against the usage already counted that
 day.
@@ -177,7 +224,7 @@ the stable programmatic contract:
 {
 	code: 'entitlement_limit_exceeded',
 	resource: EntitlementResource, // e.g. 'scheduled_jobs'
-	plan: PlanName,                // always a known plan name (including `max`)
+  plan: PlanName,                // always a known plan name (including `max` / `unlimited`)
 	limit: number,
 	current: number,
 	upgradeHint: string,
@@ -212,15 +259,16 @@ Rules:
   `entitlement_daily_counters` table keyed by `(user_id, resource, day)` with
   UTC day keys. Call `consumeDailyEntitlement` on every attempt: it checks the
   plan limit from `resolvePlanLimit` and increments the counter in one
-  conditional D1 upsert (no check-then-increment race). Every resolved plan has
-  a finite numeric limit. Counting attempts rather than successes keeps the
-  limit abuse-resistant for permanent rejects (parse failures, entitlement/quota
-  rejects). Only typed pre-commit `RetryableInboundStorageError` failures
-  (thread prework, R2 put, D1 message/attachment storage after successful
-  cleanup) refund exactly one `email_receives_per_day` unit via
-  `refundDailyEntitlement` for the same UTC day that was charged, so Cloudflare
-  Email Routing retries do not burn the daily receive quota. Post-commit
-  bookkeeping failures do not refund or retry.
+  conditional D1 upsert (no check-then-increment race). Finite plans have a
+  numeric limit; emergency `unlimited` bypasses the gate (null limit) but
+  counters may still increment uncapped. Counting attempts rather than successes
+  keeps the limit abuse-resistant for permanent rejects (parse failures,
+  entitlement/quota rejects). Only typed pre-commit
+  `RetryableInboundStorageError` failures (thread prework, R2 put, D1
+  message/attachment storage after successful cleanup) refund exactly one
+  `email_receives_per_day` unit via `refundDailyEntitlement` for the same UTC
+  day that was charged, so Cloudflare Email Routing retries do not burn the
+  daily receive quota. Post-commit bookkeeping failures do not refund or retry.
   `incrementDailyEntitlementCounter` remains for raw counter writes (tests,
   backfills).
 - **Boolean allowances** (persistent package services) are modeled as limit `0`
@@ -295,20 +343,31 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 
 ## Enforcement points
 
-| Resource                      | Enforcement point                                                                                                              |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                |
-| `saved_packages`              | new-package branch of `package_save` and projection insert                                                                     |
-| `package_services`            | `service_start` capability path                                                                                                |
-| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                     |
-| `repo_sessions`               | `repo_open_session` before creating a new session                                                                              |
-| `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                            |
-| `email_receives_per_day`      | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)              |
-| `stored_email_messages`       | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                              |
-| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolveEmailResourceLimit`)                                 |
-| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                               |
-| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit from `resolvePlanLimit`; `max` = 5,000)                                            |
-| `storage_bytes`               | D1 payload writes (values, secrets, memories, saved-package projections, email storage) and StorageRunner write tools/app RPCs |
+| Resource                      | Enforcement point                                                                                                                   |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                     |
+| `saved_packages`              | new-package branch of `package_save` and projection insert                                                                          |
+| `package_services`            | `service_start` capability path                                                                                                     |
+| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                          |
+| `repo_sessions`               | `repo_open_session` before creating a new session                                                                                   |
+| `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                 |
+| `email_receives_per_day`      | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                   |
+| `stored_email_messages`       | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                   |
+| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolveEmailResourceLimit`; see inbound raw-MIME backstop below) |
+| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                    |
+| `concurrent_workflows`        | `createDynamicCallableWorkflow` (plan limit from `resolvePlanLimit`; `max` = 5,000)                                                 |
+| `storage_bytes`               | D1 payload writes (values, secrets, memories, saved-package projections, email storage) and StorageRunner write tools/app RPCs      |
+
+### Inbound raw-MIME platform backstop
+
+Emergency `unlimited` resolves `email_message_bytes` to null, so entitlement
+enforcement does not cap per-message size. Inbound routing still applies a hard
+platform ceiling: `handleInboundEmail` sets the MIME parser's `maxRawSize` to
+the plan cap when finite, otherwise to `maxRawMimeBytes` (512 KiB in
+`packages/worker/src/email/parser.ts`). That backstop keeps extracted bodies
+plus raw blobs within D1 row-size limits and prevents parser work on arbitrarily
+large payloads. Entitlement bypass and parser backstop are intentional: uncapped
+usage quotas do not imply uncapped parse/storage safety.
 
 ## Billing
 
@@ -344,12 +403,15 @@ in [`../environment-variables.md`](../environment-variables.md).
 - `invites.plan` — signup plan from migration `0065-invite-plans.sql`; NOT NULL
   DEFAULT `'free'` after `0083-plan-default-free.sql` (writers and admin UI
   default to `free`). Applied to `users.plan` when the invite is consumed at
-  signup via `parseStoredPlanName` and `resolvePlanWrite`.
+  signup via `parseStoredInvitePlanName` and `resolveInvitePlanWrite` (finite
+  invite-assignable plans only). Residual stored invite `'unlimited'` coerces to
+  `max` with `entitlement-residual-unlimited-invite-plan`; emergency `unlimited`
+  cannot be persisted through invites.
 - `users.stripe_customer_id`, `users.stripe_plan`,
   `users.stripe_plan_refreshed_at` — Stripe billing columns from migration
   `0066-stripe-billing.sql`; owned by `packages/worker/src/billing/`, read by
   `getUserPlan` via `resolveEffectivePlan`. `stripe_plan` stays nullable because
-  it is Stripe-derived; `max` is manual-only.
+  it is Stripe-derived; `max` and `unlimited` are manual-only.
 - `entitlement_daily_counters` — rate counters, created by migration
   `0048-user-plans-and-entitlement-counters.sql`; included in the
   account-deletion cascade (`packages/worker/src/app/account-deletion.ts`).

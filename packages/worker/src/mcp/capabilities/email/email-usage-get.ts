@@ -15,7 +15,8 @@ import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 
 const usageEntrySchema = z.object({
 	count: z.number().int().nonnegative(),
-	limit: z.number().int().nonnegative(),
+	/** Plan ceiling, or null when uncapped (emergency unlimited). */
+	limit: z.number().int().nonnegative().nullable(),
 })
 
 export const emailUsageGetCapability = defineDomainCapability(
@@ -23,7 +24,7 @@ export const emailUsageGetCapability = defineDomainCapability(
 	{
 		name: 'email_usage_get',
 		description:
-			"Read the signed-in user's email usage and limits: stored message count, today's send and receive counts, the applicable caps, and the plan name.",
+			"Read the signed-in user's email usage and limits: stored message count, today's send and receive counts, the applicable caps (null = uncapped), and the plan name.",
 		keywords: ['email', 'usage', 'quota', 'limits', 'plan', 'metrics'],
 		readOnly: true,
 		idempotent: true,
@@ -36,8 +37,12 @@ export const emailUsageGetCapability = defineDomainCapability(
 			stored_messages: usageEntrySchema,
 			sends_today: usageEntrySchema,
 			receives_today: usageEntrySchema,
-			/** Maximum raw MIME bytes per stored message. */
-			max_message_bytes: z.number().int().nonnegative(),
+			/**
+			 * Maximum raw MIME bytes per stored message, or null when the plan
+			 * does not cap message size (parser may still apply a platform
+			 * raw-MIME backstop).
+			 */
+			max_message_bytes: z.number().int().nonnegative().nullable(),
 		}),
 		async handler(_args, ctx) {
 			const user = await requireVerifiedEmailAccountUser(ctx)

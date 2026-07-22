@@ -50,9 +50,15 @@ const entitlementConsumptionSchema = z.object({
 	label: z.string(),
 	/** Finite usage count; every plan resolves a numeric current. */
 	current: z.number().int().nonnegative(),
-	/** Finite plan ceiling; every plan resolves a numeric limit. */
-	limit: z.number().int().nonnegative(),
-	/** Null when limit is the zero gate (for example persistent services). */
+	/**
+	 * Plan ceiling, or null when the plan resource is uncapped (emergency
+	 * `unlimited`).
+	 */
+	limit: z.number().int().nonnegative().nullable(),
+	/**
+	 * Null when limit is uncapped or the zero gate (for example persistent
+	 * services).
+	 */
 	percentOfLimit: z.number().nonnegative().nullable(),
 	overEightyPercent: z.boolean(),
 })
@@ -98,7 +104,7 @@ export const adminUserUsageCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_user_usage',
 		description:
-			'Read usage rollups, entitlement counters, and plan-limit consumption for one user account by id or email. Admin-only; never returns user content.',
+			'Read usage rollups, entitlement counters, and plan-limit consumption for one user account by id or email. Null limits mean uncapped (emergency unlimited). Admin-only; never returns user content.',
 		keywords: ['admin', 'usage', 'quotas', 'entitlements', 'plans', 'metering'],
 		inputSchema,
 		outputSchema,

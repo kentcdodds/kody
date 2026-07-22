@@ -52,9 +52,9 @@ import { createDb, oauthConnectionsTable, usersTable } from '#worker/db.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
 import {
-	parseStoredPlanName,
-	resolvePlanWrite,
-	type PlanName,
+	parseStoredInvitePlanName,
+	resolveInvitePlanWrite,
+	type InviteAssignablePlanName,
 } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
@@ -438,7 +438,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			// Non-production stays open without an invite, but still consumes
 			// one when supplied — same posture as password signup.
 			let consumedInviteCode: string | null = null
-			let consumedInvitePlan: PlanName | null = null
+			let consumedInvitePlan: InviteAssignablePlanName | null = null
 			async function releaseConsumedInvite() {
 				if (!consumedInviteCode) return
 				await releaseInviteUse({
@@ -463,7 +463,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					)
 				}
 				consumedInviteCode = inviteResult.invite.code
-				consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
+				consumedInvitePlan = parseStoredInvitePlanName(inviteResult.invite.plan)
 			}
 
 			// Username / stable-id lookup must share the create try/catch so a
@@ -485,7 +485,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						stable_user_id: stableUserId,
 						password_hash: oauthNoUsablePasswordHash,
 						email_verified_at: new Date().toISOString(),
-						plan: resolvePlanWrite(consumedInvitePlan),
+						plan: resolveInvitePlanWrite(consumedInvitePlan),
 					},
 					{ returnRow: true },
 				)
@@ -576,7 +576,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					email,
 					ip: requestIp,
 					path: url.pathname,
-					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider};plan=${resolvePlanWrite(consumedInvitePlan)}`,
+					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider};plan=${resolveInvitePlanWrite(consumedInvitePlan)}`,
 				})
 			}
 			return issueLogin({ id: newUser.id, email })

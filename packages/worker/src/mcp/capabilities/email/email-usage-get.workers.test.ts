@@ -169,4 +169,26 @@ test('email_usage_get returns usage for verified users and enforces auth require
 		},
 		max_message_bytes: maxPlanEmailLimits.email_message_bytes,
 	})
+
+	const unlimitedEmail = `usage-unlimited-${crypto.randomUUID()}@example.com`
+	const unlimitedUserId = await createStableUserIdFromEmail(unlimitedEmail)
+	await seedUser({ email: unlimitedEmail, plan: 'unlimited' })
+	const unlimitedResult = await emailUsageGetCapability.handler(
+		{},
+		{
+			env,
+			callerContext: buildCallerContext({
+				userId: unlimitedUserId,
+				email: unlimitedEmail,
+			}),
+		},
+	)
+	expect(unlimitedResult).toEqual({
+		plan: 'unlimited',
+		day: utcDayKey(),
+		stored_messages: { count: 0, limit: null },
+		sends_today: { count: 0, limit: null },
+		receives_today: { count: 0, limit: null },
+		max_message_bytes: null,
+	})
 })

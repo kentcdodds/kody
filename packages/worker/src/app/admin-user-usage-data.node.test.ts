@@ -280,6 +280,42 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 	])
 })
 
+test('loadAdminUserUsageData reports null limits for deliberate unlimited', async () => {
+	const email = 'unlimited-usage@example.com'
+	const usageUserId = await createStableUserIdFromEmail(email)
+	const db = createAdminUserUsageTestDb({
+		users: [
+			{
+				id: 3,
+				username: 'unlimited-user',
+				email,
+				plan: 'unlimited',
+				stable_user_id: usageUserId,
+			},
+		],
+		resourceCounts: {
+			[usageUserId]: {
+				saved_packages: 999,
+				scheduled_jobs: 999,
+			},
+		},
+	})
+
+	const data = await loadAdminUserUsageData(
+		{ APP_DB: db } as Env,
+		3,
+		new Date('2026-07-05T12:00:00.000Z'),
+	)
+
+	expect(data?.plan).toBe('unlimited')
+	expect(data?.warnings).toEqual([])
+	for (const entry of data?.entitlementConsumption ?? []) {
+		expect(entry.limit).toBeNull()
+		expect(entry.percentOfLimit).toBeNull()
+		expect(entry.overEightyPercent).toBe(false)
+	}
+})
+
 test('loadAdminUserUsageData shows max email caps for unknown stored plans', async () => {
 	const email = 'unknown-plan-email@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)

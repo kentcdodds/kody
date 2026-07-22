@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
+import {
+	inviteAssignablePlanNames,
+	residualUnlimitedInvitePlanWarningTag,
+	unknownStoredPlanWarningTag,
+} from '#worker/entitlements/plans.ts'
 import {
 	consoleWarn,
 	silenceExpectedConsoleWarns,
@@ -32,8 +36,11 @@ function createAdminInvitesTestDb(
 	return db
 }
 
-test('loadAdminInvitesData coerces unknown stored invite plans to max with a stable warn', async () => {
-	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
+test('loadAdminInvitesData coerces unknown and residual unlimited invite plans to max', async () => {
+	silenceExpectedConsoleWarns([
+		unknownStoredPlanWarningTag,
+		residualUnlimitedInvitePlanWarningTag,
+	])
 	const data = await loadAdminInvitesData({
 		APP_DB: createAdminInvitesTestDb([
 			{
@@ -47,6 +54,18 @@ test('loadAdminInvitesData coerces unknown stored invite plans to max with a sta
 				revoked_at: null,
 				created_at: '2026-07-05T00:00:00.000Z',
 				plan: 'pro',
+			},
+			{
+				code: 'RESIDUAL-UNLIMITED',
+				created_by: 1,
+				created_by_email: 'admin@example.com',
+				note: '',
+				max_uses: 1,
+				use_count: 0,
+				expires_at: null,
+				revoked_at: null,
+				created_at: '2026-07-04T12:00:00.000Z',
+				plan: 'unlimited',
 			},
 			{
 				code: 'UNKNOWN-PLAN',
@@ -63,12 +82,16 @@ test('loadAdminInvitesData coerces unknown stored invite plans to max with a sta
 		]),
 	} as Env)
 
+	expect(data.availablePlans).toEqual([...inviteAssignablePlanNames])
+	expect(data.availablePlans).toHaveLength(4)
+	expect(data.availablePlans).not.toContain('unlimited')
 	expect(data.invites).toEqual([
 		expect.objectContaining({ code: 'KNOWN-PRO', plan: 'pro' }),
+		expect.objectContaining({ code: 'RESIDUAL-UNLIMITED', plan: 'max' }),
 		expect.objectContaining({ code: 'UNKNOWN-PLAN', plan: 'max' }),
 	])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		residualUnlimitedInvitePlanWarningTag,
+	)
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
-	for (const call of consoleWarn.mock.calls) {
-		expect(call).toEqual([unknownStoredPlanWarningTag])
-	}
 })

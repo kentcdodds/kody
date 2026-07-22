@@ -186,13 +186,13 @@ export type AdminInviteListItem = {
 	expiresAt: string | null
 	revokedAt: string | null
 	createdAt: string
-	plan: AdminPlanName
+	plan: AdminInviteAssignablePlanName
 }
 
 export type AdminInvitesLoaderData = {
 	ok: true
 	invites: Array<AdminInviteListItem>
-	availablePlans: Array<AdminPlanName>
+	availablePlans: Array<AdminInviteAssignablePlanName>
 }
 
 export type AdminFeatureFlagsLoaderData = {
@@ -223,7 +223,10 @@ export type AdminUsageEntitlementResource =
 	| 'concurrent_workflows'
 	| 'storage_bytes'
 
-export type AdminPlanName = 'free' | 'partner' | 'pro' | 'max'
+export type AdminPlanName = 'free' | 'partner' | 'pro' | 'max' | 'unlimited'
+
+/** Plans selectable when creating invite codes; excludes emergency unlimited. */
+export type AdminInviteAssignablePlanName = Exclude<AdminPlanName, 'unlimited'>
 
 export type AdminUsageRollup = {
 	metric: AdminUsageMetric
@@ -238,7 +241,7 @@ export type AdminUsageEntitlementConsumption = {
 	resource: AdminUsageEntitlementResource
 	label: string
 	current: number
-	limit: number
+	limit: number | null
 	percentOfLimit: number | null
 	overEightyPercent: boolean
 }

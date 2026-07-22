@@ -22,9 +22,9 @@ import { requireUserWithRole } from '#app/permissions-server.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#app/routes.ts'
 import {
-	parsePlanName,
-	resolvePlanWrite,
-	type PlanName,
+	parseInviteAssignablePlanName,
+	resolveInvitePlanWrite,
+	type InviteAssignablePlanName,
 } from '#worker/entitlements/plans.ts'
 
 export function createAdminInvitesHandler(env: Env) {
@@ -176,7 +176,8 @@ async function handleCreateInviteAction(input: {
 		return jsonResponse(
 			{
 				ok: false,
-				error: 'Plan must be one of the known plan names, or empty for free.',
+				error:
+					'Plan must be one of free, partner, pro, or max (or empty for free). Unlimited is not invite-assignable.',
 			},
 			400,
 		)
@@ -217,21 +218,23 @@ async function handleCreateInviteAction(input: {
 }
 
 /**
- * Read an optional invite plan: missing/empty/null → `free`.
- * Unknown non-empty values are rejected. Writers never persist NULL.
+ * Read an optional invite plan: missing/empty/null → `free`. Invite-assignable
+ * plans only (`free` / `partner` / `pro` / `max`); `unlimited` and unknown
+ * non-empty values are rejected. Emergency unlimited is direct admin
+ * user-plan assignment only. Writers never persist NULL.
  */
 function readInvitePlan(
 	body: object,
-): { ok: true; plan: PlanName } | { ok: false } {
-	if (!('plan' in body)) return { ok: true, plan: resolvePlanWrite(null) }
+): { ok: true; plan: InviteAssignablePlanName } | { ok: false } {
+	if (!('plan' in body)) return { ok: true, plan: resolveInvitePlanWrite(null) }
 	const value = (body as Record<string, unknown>).plan
 	if (value === null || value === undefined) {
-		return { ok: true, plan: resolvePlanWrite(null) }
+		return { ok: true, plan: resolveInvitePlanWrite(null) }
 	}
 	if (typeof value === 'string') {
 		const trimmed = value.trim()
-		if (!trimmed) return { ok: true, plan: resolvePlanWrite(null) }
-		const plan = parsePlanName(trimmed)
+		if (!trimmed) return { ok: true, plan: resolveInvitePlanWrite(null) }
+		const plan = parseInviteAssignablePlanName(trimmed)
 		if (plan) return { ok: true, plan }
 	}
 	return { ok: false }

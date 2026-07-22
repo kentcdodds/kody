@@ -161,8 +161,10 @@ export async function loadAdminUserByIdOrEmail(
 }
 
 /**
- * Set the entitlement plan on one user account. Nullish inputs map to `free`,
- * the normal default plan; writers never persist NULL. Returns the updated
+ * Set the entitlement plan on one existing user account. Nullish inputs map to
+ * `free`, the normal default plan; writers never persist NULL. Emergency
+ * `unlimited` is valid here (direct admin assignment only — never invites,
+ * signup, admin-create, platform provisioning, or seeds). Returns the updated
  * account metadata record, or null when no user matches `id`/`email`.
  */
 export async function updateAdminUserPlan(

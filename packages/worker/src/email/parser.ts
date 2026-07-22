@@ -9,6 +9,12 @@ import {
 	type ParsedInboundEmail,
 } from './types.ts'
 
+/**
+ * Hard platform ceiling for inbound raw MIME parsing when the account plan does
+ * not cap `email_message_bytes` (emergency `unlimited`). Entitlement bypass does
+ * not disable this backstop — it keeps parser work and D1/R2 storage within safe
+ * bounds. Finite plans use their plan cap as the parser ceiling instead.
+ */
 export const maxRawMimeBytes = 512 * 1024
 
 function flattenPostalAddresses(

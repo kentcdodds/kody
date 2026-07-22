@@ -25,8 +25,8 @@ import {
 } from './account-management-components.tsx'
 import {
 	type AdminCreatedUserSetup,
+	type AdminInviteAssignablePlanName,
 	type AdminInvitesLoaderData,
-	type AdminPlanName,
 } from '#app/loader-data.ts'
 import {
 	routeLoaderRedirect,
@@ -75,7 +75,7 @@ export async function adminInvitesRouteLoader(
 export function AdminInvitesRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
 	let invites: Array<AdminInviteListItem> = []
-	let availablePlans: Array<AdminPlanName> = []
+	let availablePlans: Array<AdminInviteAssignablePlanName> = []
 	let createdUser: AdminCreatedUserSetup | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'

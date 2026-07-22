@@ -1,4 +1,7 @@
-import { resolvePlanWrite, type PlanName } from '#worker/entitlements/plans.ts'
+import {
+	resolveInvitePlanWrite,
+	type InviteAssignablePlanName,
+} from '#worker/entitlements/plans.ts'
 
 export type InviteRecord = {
 	code: string
@@ -75,7 +78,12 @@ export async function createInvite(input: {
 	note?: string | null
 	maxUses: number
 	expiresAt?: string | null
-	plan?: PlanName | null
+	/**
+	 * Preferred: invite-assignable plan. Always runtime-coerced via
+	 * {@link resolveInvitePlanWrite} so unknown / `unlimited` / nullish → `free`
+	 * even if a caller bypasses validation. Never persists `unlimited`.
+	 */
+	plan?: InviteAssignablePlanName | null
 }) {
 	const code = normalizeInviteCode(input.code) ?? generateInviteCode()
 	if (!isValidInviteCode(code)) {
@@ -87,6 +95,7 @@ export async function createInvite(input: {
 		throw new Error('Max uses must be at least 1.')
 	}
 
+	const plan = resolveInvitePlanWrite(input.plan)
 	await input.db
 		.prepare(
 			`INSERT INTO invites (code, created_by, note, max_uses, expires_at, plan)
@@ -98,7 +107,7 @@ export async function createInvite(input: {
 			input.note?.trim() ?? '',
 			input.maxUses,
 			input.expiresAt ?? null,
-			resolvePlanWrite(input.plan),
+			plan,
 		)
 		.run()
 

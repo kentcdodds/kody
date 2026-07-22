@@ -20,7 +20,7 @@ import {
 	splitEmailLocalPart,
 } from './address.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
-import { parseForwardableEmailMessage } from './parser.ts'
+import { maxRawMimeBytes, parseForwardableEmailMessage } from './parser.ts'
 import {
 	getPlatformEmailDomain,
 	getSystemEmailDomain,
@@ -371,11 +371,11 @@ export async function handleInboundEmail(
 	}
 
 	// The plan's per-message cap also becomes the parser's raw-MIME ceiling
-	// so the two size gates can never disagree.
-	const maxMessageBytes = resolveEmailResourceLimit(
-		account.plan,
-		'email_message_bytes',
-	)
+	// so the two size gates can never disagree. Emergency unlimited has a
+	// null plan cap; the parser still needs a finite platform backstop.
+	const maxMessageBytes =
+		resolveEmailResourceLimit(account.plan, 'email_message_bytes') ??
+		maxRawMimeBytes
 	// Captured at consume time so a storage-failure refund uses the same UTC day.
 	let receiveQuotaNow: Date | null = null
 	try {

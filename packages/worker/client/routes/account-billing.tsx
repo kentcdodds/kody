@@ -64,7 +64,7 @@ const planTiers: Array<{
 	},
 ]
 
-/** Mirrors server rank: free < pro < partner < max. */
+/** Mirrors server rank: free < pro < partner < max < unlimited. */
 function getPlanRank(plan: AdminPlanName): number {
 	switch (plan) {
 		case 'free':
@@ -75,6 +75,8 @@ function getPlanRank(plan: AdminPlanName): number {
 			return 2
 		case 'max':
 			return 3
+		case 'unlimited':
+			return 4
 		default: {
 			const exhaustive: never = plan
 			throw new Error(`Unknown plan: ${String(exhaustive)}`)

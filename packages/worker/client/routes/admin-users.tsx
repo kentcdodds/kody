@@ -63,8 +63,8 @@ type UsageStatus = 'loading' | 'ready' | 'error'
 const adminUsersApiPath = '/admin/users.json'
 const adminUserUsageApiPath = '/admin/users/usage.json'
 
-function formatUsageLimit(limit: number) {
-	return formatIntegerNumber(limit)
+function formatUsageLimit(limit: number | null) {
+	return limit == null ? 'Unlimited' : formatIntegerNumber(limit)
 }
 
 function formatUsagePercent(value: number | null) {

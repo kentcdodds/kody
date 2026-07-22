@@ -85,7 +85,12 @@ test('admin invite signup and email verification happy path', async ({
 	await page.getByLabel('Code').fill(inviteCode)
 	await page.getByLabel('Note').fill('E2E invite signup verification')
 	await page.getByLabel('Max uses').fill('1')
-	await page.getByLabel('Plan').selectOption('pro')
+	const invitePlanSelect = page.getByLabel('Plan')
+	await expect(invitePlanSelect.getByRole('option')).toHaveCount(4)
+	await expect(
+		invitePlanSelect.getByRole('option', { name: 'unlimited', exact: true }),
+	).toHaveCount(0)
+	await invitePlanSelect.selectOption('pro')
 	await page.getByRole('button', { name: 'Create', exact: true }).click()
 	await expect(async () => {
 		await expect(page.getByRole('heading', { name: inviteCode })).toBeVisible({

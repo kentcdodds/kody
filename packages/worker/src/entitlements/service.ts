@@ -16,8 +16,8 @@ const stableUserIdPattern = /^[a-f0-9]{64}$/i
  * Resolve the effective plan for a user. Always returns a {@link PlanName}
  * (never a meaningful null): missing email/userId, invalid stable ids, and
  * no matching row resolve to `max` without warning; stored values go through
- * {@link parseStoredPlanName} (unknown / defensive NULL / residual
- * `'unlimited'` → `max` with a stable warn tag).
+ * {@link parseStoredPlanName} (known names including deliberate `unlimited`
+ * are kept; unknown / defensive NULL → `max` with a stable warn tag).
  *
  * The MCP `userId` is the account's stored `users.stable_user_id`. Lookup
  * requires the email + stable id pair so a mismatched caller context
@@ -26,9 +26,9 @@ const stableUserIdPattern = /^[a-f0-9]{64}$/i
  * short-circuit without touching D1.
  *
  * Effective plan = f(manual users.plan, users.stripe_plan): the higher-ranked
- * of the manual grant and Stripe subscription plan is returned (`max` ranks
- * highest). Signature stays `(db, { userId, email })` so enforcement call
- * sites are unchanged.
+ * of the manual grant and Stripe subscription plan is returned (`unlimited`
+ * ranks highest; Stripe cannot source `max` or `unlimited`). Signature stays
+ * `(db, { userId, email })` so enforcement call sites are unchanged.
  */
 export async function getUserPlan(
 	db: D1Database,
@@ -545,8 +545,8 @@ export async function readEntitlementResourceUsage(input: {
 			})
 		}
 		case 'persistent_package_services':
-			// Finite 0/1 gate: the limit is 0 (not allowed) or 1 (allowed),
-			// so the current count never changes the outcome.
+			// 0/1/null gate: current count never changes the outcome
+			// (0 denies, 1 allows, null bypasses before counting).
 			return 0
 		case 'repo_sessions':
 			return await countRows(
@@ -640,7 +640,8 @@ export type AssertWithinEntitlementInput = {
  * The single enforcement helper. Every entitlement enforcement point calls
  * this and lets the thrown EntitlementLimitError propagate unchanged so the
  * error shape and user-facing message stay identical across MCP and UI
- * surfaces. Every resolved plan has finite numeric limits.
+ * surfaces. When the resolved plan limit is null (emergency `unlimited`
+ * plan), enforcement returns before counting.
  */
 export async function assertWithinEntitlement(
 	input: AssertWithinEntitlementInput,
@@ -650,6 +651,7 @@ export async function assertWithinEntitlement(
 		email: input.email,
 	})
 	const limit = resolvePlanLimit(plan, input.resource)
+	if (limit == null) return
 	const now = input.now ?? new Date()
 	const requested = input.requested ?? 1
 	const current = input.getCurrent
@@ -678,7 +680,8 @@ export async function assertWithinEntitlement(
  * This avoids the check-then-increment race that separate
  * assertWithinEntitlement + incrementDailyEntitlementCounter calls would
  * have under concurrent requests, and evaluates the UTC day key once.
- * Every resolved plan has finite numeric limits.
+ * When the plan resource limit is null (emergency `unlimited`), the counter
+ * still accumulates without a cap.
  */
 export async function consumeDailyEntitlement(input: {
 	db: D1Database
@@ -693,6 +696,15 @@ export async function consumeDailyEntitlement(input: {
 		email: input.email,
 	})
 	const limit = resolvePlanLimit(plan, input.resource)
+	if (limit == null) {
+		await incrementDailyEntitlementCounter({
+			db: input.db,
+			userId: input.userId,
+			resource: input.resource,
+			now,
+		})
+		return
+	}
 	const throwLimitError = async () => {
 		throw new EntitlementLimitError({
 			resource: input.resource,

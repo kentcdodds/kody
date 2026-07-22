@@ -210,9 +210,12 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 
 	const planSelect = page.getByLabel('Plan')
 	await expect(planSelect).toHaveValue('free')
-	await expect(planSelect.getByRole('option')).toHaveCount(4)
+	await expect(planSelect.getByRole('option')).toHaveCount(5)
 	await expect(
 		planSelect.getByRole('option', { name: 'max', exact: true }),
+	).toHaveCount(1)
+	await expect(
+		planSelect.getByRole('option', { name: 'unlimited', exact: true }),
 	).toHaveCount(1)
 	await planSelect.selectOption('pro')
 	await page.getByRole('button', { name: 'Save plan' }).click()
@@ -245,6 +248,22 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 		(user: { email: string }) => user.email === memberUser.email,
 	)
 	expect(memberAfterMaxPlan.plan).toBe('max')
+
+	await planSelect.selectOption('unlimited')
+	await page.getByRole('button', { name: 'Save plan' }).click()
+	await expect(planSelect).toHaveValue('unlimited')
+	await expect(
+		page.getByText('Updated plan to unlimited.', { exact: true }),
+	).toBeVisible()
+	const unlimitedPlanApiResponse = await page.request.get(
+		`/admin/users.json?q=rbac-${runId}`,
+	)
+	expect(unlimitedPlanApiResponse.ok()).toBe(true)
+	const unlimitedPlanPayload = await unlimitedPlanApiResponse.json()
+	const memberAfterUnlimitedPlan = unlimitedPlanPayload.users.find(
+		(user: { email: string }) => user.email === memberUser.email,
+	)
+	expect(memberAfterUnlimitedPlan.plan).toBe('unlimited')
 	expect(clientConsoleProblems).toEqual([])
 	page.off('console', captureClientConsoleProblems)
 

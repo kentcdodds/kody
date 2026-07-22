@@ -352,6 +352,13 @@ test('admin users list payload exposes only account metadata fields', async () =
 			plan: 'max',
 		}),
 	])
+	expect(payload.availablePlans).toEqual([
+		'free',
+		'partner',
+		'pro',
+		'max',
+		'unlimited',
+	])
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 })
 
@@ -624,6 +631,22 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 			action: 'update_plan',
 			result: 'success',
 			reason: 'target_user_id=2;plan=pro',
+		}),
+	)
+
+	const setUnlimitedResponse = await postUpdatePlan({
+		action: 'update_plan',
+		userId: 2,
+		plan: 'unlimited',
+	})
+	expect(setUnlimitedResponse.status).toBe(200)
+	expect((await setUnlimitedResponse.json()).users[0].plan).toBe('unlimited')
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'update_plan',
+			result: 'success',
+			reason: 'target_user_id=2;plan=unlimited',
 		}),
 	)
 

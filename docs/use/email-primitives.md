@@ -82,7 +82,12 @@ Inbound storage is quota-gated per user:
 - Plan users get their plan's limits. New accounts start on the `free` plan
   unless an invite assigns another tier. The operator-only `max` plan uses
   finite email caps (100 sends/day, 200 receives/day, 2,000 stored messages, 512
-  KiB per message); it is not a public or paid tier.
+  KiB per message); it is not a public or paid tier. Emergency `unlimited`
+  (admin direct assignment only) bypasses quota ceilings; `email_usage_get`
+  reports null limits when uncapped.
+- Even on `unlimited`, inbound mail still hits a hard platform raw-MIME ceiling
+  (512 KiB) in the parser so oversized payloads are rejected before
+  parse/storage work. Entitlement bypass does not disable that backstop.
 - Quota, size, and unverified-account rejections store at most five detailed
   `rejected` delivery events per inbox per UTC day; further rejections increment
   a single daily aggregate event (with a total count and the last reason) so

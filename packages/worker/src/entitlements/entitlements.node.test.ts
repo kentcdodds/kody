@@ -12,13 +12,18 @@ import {
 } from './errors.ts'
 import {
 	getPlanRank,
+	inviteAssignablePlanNames,
 	maxPlanEmailLimits,
+	parseInviteAssignablePlanName,
 	parsePlanName,
+	parseStoredInvitePlanName,
 	parseStoredPlanName,
 	parseStripePlanName,
 	planLimits,
 	planNames,
+	residualUnlimitedInvitePlanWarningTag,
 	resolveEffectivePlan,
+	resolveInvitePlanWrite,
 	resolvePlanLimit,
 	resolvePlanWrite,
 	unknownStoredPlanWarningTag,
@@ -236,7 +241,6 @@ test('parsePlanName accepts registered plan names and treats everything else as 
 	for (const plan of planNames) {
 		expect(parsePlanName(plan)).toBe(plan)
 	}
-	expect(parsePlanName('unlimited')).toBeNull()
 	expect(parsePlanName('enterprise')).toBeNull()
 	expect(parsePlanName(' pro ')).toBeNull()
 	expect(parsePlanName('')).toBeNull()
@@ -245,7 +249,16 @@ test('parsePlanName accepts registered plan names and treats everything else as 
 	expect(parsePlanName(1)).toBeNull()
 })
 
-test('parseStoredPlanName keeps known plans and fails open unknown/null/residual unlimited to max with a stable warn', () => {
+test('parseInviteAssignablePlanName accepts finite plans only', () => {
+	for (const plan of inviteAssignablePlanNames) {
+		expect(parseInviteAssignablePlanName(plan)).toBe(plan)
+	}
+	expect(parseInviteAssignablePlanName('unlimited')).toBeNull()
+	expect(parseInviteAssignablePlanName('enterprise')).toBeNull()
+	expect(parseInviteAssignablePlanName(null)).toBeNull()
+})
+
+test('parseStoredPlanName keeps known plans including deliberate unlimited; unknown/null fail open to max', () => {
 	consoleWarn.mockImplementation(() => {})
 	for (const plan of planNames) {
 		expect(parseStoredPlanName(plan)).toBe(plan)
@@ -258,8 +271,28 @@ test('parseStoredPlanName keeps known plans and fails open unknown/null/residual
 	expect(parseStoredPlanName('')).toBe('max')
 	expect(parseStoredPlanName(' pro ')).toBe('max')
 	expect(parseStoredPlanName(1)).toBe('max')
-	expect(parseStoredPlanName('unlimited')).toBe('max')
-	expect(consoleWarn).toHaveBeenCalledTimes(7)
+	expect(consoleWarn).toHaveBeenCalledTimes(6)
+	for (const call of consoleWarn.mock.calls) {
+		expect(call).toEqual([unknownStoredPlanWarningTag])
+	}
+})
+
+test('parseStoredInvitePlanName keeps invite-assignable plans and coerces residual unlimited to max', () => {
+	consoleWarn.mockImplementation(() => {})
+	for (const plan of inviteAssignablePlanNames) {
+		expect(parseStoredInvitePlanName(plan)).toBe(plan)
+	}
+	expect(consoleWarn).not.toHaveBeenCalled()
+
+	expect(parseStoredInvitePlanName('unlimited')).toBe('max')
+	expect(consoleWarn).toHaveBeenCalledWith(
+		residualUnlimitedInvitePlanWarningTag,
+	)
+
+	consoleWarn.mockClear()
+	expect(parseStoredInvitePlanName('enterprise-2099')).toBe('max')
+	expect(parseStoredInvitePlanName(null)).toBe('max')
+	expect(consoleWarn).toHaveBeenCalledTimes(2)
 	for (const call of consoleWarn.mock.calls) {
 		expect(call).toEqual([unknownStoredPlanWarningTag])
 	}
@@ -273,12 +306,28 @@ test('parseStripePlanName rejects max, unlimited, and unknown values', () => {
 	expect(parseStripePlanName(null)).toBeNull()
 })
 
-test('resolvePlanWrite maps nullish inputs to free', () => {
+test('resolvePlanWrite maps nullish inputs to free and preserves deliberate unlimited', () => {
 	expect(resolvePlanWrite(null)).toBe('free')
 	expect(resolvePlanWrite(undefined)).toBe('free')
 	expect(resolvePlanWrite('pro')).toBe('pro')
 	expect(resolvePlanWrite('max')).toBe('max')
+	expect(resolvePlanWrite('unlimited')).toBe('unlimited')
 	expect(resolvePlanWrite('free')).toBe('free')
+})
+
+test('resolveInvitePlanWrite keeps finite plans and coerces nullish/unknown/unlimited to free', () => {
+	expect(resolveInvitePlanWrite(null)).toBe('free')
+	expect(resolveInvitePlanWrite(undefined)).toBe('free')
+	expect(resolveInvitePlanWrite('')).toBe('free')
+	expect(resolveInvitePlanWrite('free')).toBe('free')
+	expect(resolveInvitePlanWrite('partner')).toBe('partner')
+	expect(resolveInvitePlanWrite('pro')).toBe('pro')
+	expect(resolveInvitePlanWrite('max')).toBe('max')
+	// Runtime bypass defense: never persist emergency unlimited via invites.
+	expect(resolveInvitePlanWrite('unlimited')).toBe('free')
+	expect(resolveInvitePlanWrite('enterprise-2099')).toBe('free')
+	expect(resolveInvitePlanWrite(' max ')).toBe('free')
+	expect(resolveInvitePlanWrite(1)).toBe('free')
 })
 
 test('storage byte entry estimates support net-positive upsert deltas', () => {
@@ -848,16 +897,19 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 	})
 })
 
-test('getPlanRank orders free < pro < partner < max', () => {
+test('getPlanRank orders free < pro < partner < max < unlimited', () => {
 	expect(getPlanRank('free')).toBeLessThan(getPlanRank('pro'))
 	expect(getPlanRank('pro')).toBeLessThan(getPlanRank('partner'))
 	expect(getPlanRank('partner')).toBeLessThan(getPlanRank('max'))
+	expect(getPlanRank('max')).toBeLessThan(getPlanRank('unlimited'))
 })
 
-test('resolveEffectivePlan manual max ranks above Stripe', () => {
+test('resolveEffectivePlan manual max and unlimited rank above Stripe', () => {
 	expect(resolveEffectivePlan('max', 'pro')).toBe('max')
 	expect(resolveEffectivePlan('max', 'partner')).toBe('max')
 	expect(resolveEffectivePlan('max', null)).toBe('max')
+	expect(resolveEffectivePlan('unlimited', 'partner')).toBe('unlimited')
+	expect(resolveEffectivePlan('unlimited', null)).toBe('unlimited')
 })
 
 test('resolveEffectivePlan picks the higher of manual and stripe plans', () => {
@@ -868,7 +920,7 @@ test('resolveEffectivePlan picks the higher of manual and stripe plans', () => {
 	expect(resolveEffectivePlan('pro', null)).toBe('pro')
 	expect(resolveEffectivePlan('pro', 'not-a-plan')).toBe('pro')
 	expect(resolveEffectivePlan('pro', 'personal')).toBe('pro')
-	// Stripe cannot source max or residual unlimited.
+	// Stripe cannot source max or unlimited.
 	expect(resolveEffectivePlan('free', 'max')).toBe('free')
 	expect(resolveEffectivePlan('free', 'unlimited')).toBe('free')
 })
@@ -912,18 +964,34 @@ test('max plan has finite ordinary limits, email caps, and persistent services',
 	)
 })
 
-test('unexpected stored NULL, unknown, and residual unlimited coerce to max finite limits', async () => {
+test('unlimited plan resolves all resource limits to null', () => {
+	expect(planNames).toEqual(['free', 'partner', 'pro', 'max', 'unlimited'])
+	expect(inviteAssignablePlanNames).toEqual(['free', 'partner', 'pro', 'max'])
+	for (const resource of [
+		'saved_packages',
+		'scheduled_jobs',
+		'package_services',
+		'persistent_package_services',
+		'repo_sessions',
+		'email_sends_per_day',
+		'email_receives_per_day',
+		'stored_email_messages',
+		'email_message_bytes',
+		'secrets',
+		'storage_bytes',
+		'concurrent_workflows',
+	] as const) {
+		expect(resolvePlanLimit('unlimited', resource)).toBeNull()
+	}
+})
+
+test('unexpected stored NULL and unknown coerce to max finite limits', async () => {
 	const defensiveNullEmail = 'unexpected-stored-null@example.com'
 	const unknownPlanEmail = 'unknown-plan@example.com'
-	const residualUnlimitedEmail = 'residual-unlimited@example.com'
 	const defensiveNullUserId =
 		await createStableUserIdFromEmail(defensiveNullEmail)
 	const unknownPlanUserId = await createStableUserIdFromEmail(unknownPlanEmail)
-	const residualUnlimitedUserId = await createStableUserIdFromEmail(
-		residualUnlimitedEmail,
-	)
 	const maxJobLimit = planLimits.max.maxScheduledJobs
-	const maxWorkflowLimit = planLimits.max.maxConcurrentWorkflows
 
 	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
 
@@ -981,68 +1049,69 @@ test('unexpected stored NULL, unknown, and residual unlimited coerce to max fini
 		plan: 'max',
 		limit: maxJobLimit,
 	})
-
-	const residualUnlimited = createEntitlementsTestDb({
-		users: [
-			{
-				email: residualUnlimitedEmail,
-				plan: 'unlimited',
-				stable_user_id: residualUnlimitedUserId,
-			},
-		],
-		counts: { jobs: maxJobLimit },
-	})
-	const residualDenied = await assertWithinEntitlement({
-		db: residualUnlimited.db,
-		userId: residualUnlimitedUserId,
-		email: residualUnlimitedEmail,
-		resource: 'scheduled_jobs',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(residualDenied instanceof EntitlementLimitError)) {
-		throw new Error('Expected denial for residual-unlimited→max job limit.')
-	}
-	expect(residualDenied.details).toMatchObject({
-		plan: 'max',
-		limit: maxJobLimit,
-		current: maxJobLimit,
-	})
-
-	const concurrent = createEntitlementsTestDb({
-		users: [
-			{
-				email: residualUnlimitedEmail,
-				plan: 'unlimited',
-				stable_user_id: residualUnlimitedUserId,
-			},
-		],
-		counts: { workflow_runs: maxWorkflowLimit },
-	})
-	const error = await assertWithinEntitlement({
-		db: concurrent.db,
-		userId: residualUnlimitedUserId,
-		email: residualUnlimitedEmail,
-		resource: 'concurrent_workflows',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(error instanceof EntitlementLimitError)) {
-		throw new Error('Expected an EntitlementLimitError.')
-	}
-	expect(error.details).toMatchObject({
-		plan: 'max',
-		limit: maxWorkflowLimit,
-		current: maxWorkflowLimit,
-	})
-	expect(
-		concurrent.queries.some((query) =>
-			query.sql.includes('FROM workflow_runs'),
-		),
-	).toBe(true)
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
+})
+
+test('deliberate unlimited bypasses assert and increments daily counters uncapped', async () => {
+	const unlimitedEmail = 'deliberate-unlimited@example.com'
+	const unlimitedUserId = await createStableUserIdFromEmail(unlimitedEmail)
+	const now = new Date('2026-07-05T15:00:00.000Z')
+	const maxJobLimit = planLimits.max.maxScheduledJobs
+	const { db, counters, queries } = createEntitlementsTestDb({
+		users: [
+			{
+				email: unlimitedEmail,
+				plan: 'unlimited',
+				stable_user_id: unlimitedUserId,
+			},
+		],
+		counts: { jobs: maxJobLimit + 50, workflow_runs: 10_000 },
+	})
+
+	await assertWithinEntitlement({
+		db,
+		userId: unlimitedUserId,
+		email: unlimitedEmail,
+		resource: 'scheduled_jobs',
+	})
+	await assertWithinEntitlement({
+		db,
+		userId: unlimitedUserId,
+		email: unlimitedEmail,
+		resource: 'concurrent_workflows',
+	})
+	await assertWithinEntitlement({
+		db,
+		userId: unlimitedUserId,
+		email: unlimitedEmail,
+		resource: 'persistent_package_services',
+	})
+	// Null-limit assert returns before counting current usage.
+	expect(queries.some((query) => query.sql.includes('FROM jobs'))).toBe(false)
+
+	await consumeDailyEntitlement({
+		db,
+		userId: unlimitedUserId,
+		email: unlimitedEmail,
+		resource: 'email_sends_per_day',
+		now,
+	})
+	await consumeDailyEntitlement({
+		db,
+		userId: unlimitedUserId,
+		email: unlimitedEmail,
+		resource: 'email_sends_per_day',
+		now,
+	})
+	expect(counters).toEqual([
+		{
+			user_id: unlimitedUserId,
+			resource: 'email_sends_per_day',
+			day: '2026-07-05',
+			count: 2,
+		},
+	])
+	expect(consoleWarn).not.toHaveBeenCalled()
 })
 
 test('getUserPlan resolves effective plan from manual plan and stripe_plan', async () => {
@@ -1079,7 +1148,7 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			},
 			{
 				email: unlimitedPlusProEmail,
-				plan: 'max',
+				plan: 'unlimited',
 				stripe_plan: 'pro',
 				stable_user_id: unlimitedPlusProUserId,
 			},
@@ -1112,5 +1181,5 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			userId: unlimitedPlusProUserId,
 			email: unlimitedPlusProEmail,
 		}),
-	).toBe('max')
+	).toBe('unlimited')
 })

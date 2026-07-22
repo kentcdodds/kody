@@ -208,7 +208,9 @@ Current admin capabilities:
 - `admin_user_list`
 - `admin_user_get`
 - `admin_user_create`
-- `admin_user_update`
+- `admin_user_update` — set entitlement plan on an existing user (`plan: null` →
+  `free`; explicit `unlimited` for emergency direct admin assignment only,
+  audited; never invite/signup/Stripe paths)
 - `admin_platform_account_create`
 - `admin_package_scope_grant_create`
 - `admin_package_scope_grant_revoke`

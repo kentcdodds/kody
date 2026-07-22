@@ -26,9 +26,9 @@ import { type routes } from '#app/routes.ts'
 import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import {
-	parseStoredPlanName,
-	resolvePlanWrite,
-	type PlanName,
+	parseStoredInvitePlanName,
+	resolveInvitePlanWrite,
+	type InviteAssignablePlanName,
 } from '#worker/entitlements/plans.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
@@ -203,7 +203,7 @@ export function createAuthHandler(env: Env) {
 
 				const passwordHash = await createPasswordHash(normalizedPassword)
 				let consumedInviteCode: string | null = null
-				let consumedInvitePlan: PlanName | null = null
+				let consumedInvitePlan: InviteAssignablePlanName | null = null
 				async function releaseConsumedInvite() {
 					if (!consumedInviteCode) return
 					await releaseInviteUse({
@@ -241,7 +241,9 @@ export function createAuthHandler(env: Env) {
 						)
 					}
 					consumedInviteCode = inviteResult.invite.code
-					consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
+					consumedInvitePlan = parseStoredInvitePlanName(
+						inviteResult.invite.plan,
+					)
 				}
 
 				let record: { id: number } | null = null
@@ -255,7 +257,7 @@ export function createAuthHandler(env: Env) {
 							email: normalizedEmail,
 							stable_user_id: stableUserId,
 							password_hash: passwordHash,
-							plan: resolvePlanWrite(consumedInvitePlan),
+							plan: resolveInvitePlanWrite(consumedInvitePlan),
 						},
 						{
 							returnRow: true,
@@ -438,7 +440,7 @@ export function createAuthHandler(env: Env) {
 						email: normalizedEmail,
 						ip: requestIp,
 						path: url.pathname,
-						reason: `invite_code=${consumedInviteCode};user_id=${record.id};plan=${resolvePlanWrite(consumedInvitePlan)}`,
+						reason: `invite_code=${consumedInviteCode};user_id=${record.id};plan=${resolveInvitePlanWrite(consumedInvitePlan)}`,
 					})
 				}
 				return Response.json(

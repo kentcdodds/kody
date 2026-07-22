@@ -21,12 +21,15 @@ to become.
 - [Authorization](./authorization.md): role-based access control (RBAC), admin
   routes, and the `any`-access exception to per-user isolation.
 - [Entitlements](./entitlements.md): per-user plans (`free`, `pro`, `partner`,
-  `max`; live DDL defaults and writers use `free`; `max` is a manual-only high
-  finite ceiling), finite per-plan resource limits, and the shared
-  `assertWithinEntitlement` enforcement helper (`parseStoredPlanName` for reads;
-  strict `parsePlanName` for untrusted admin/API input). Emergency admin-only
-  `unlimited` is intentionally deferred until a follow-up deployment after
-  `0083-plan-default-free.sql`'s residual sweep.
+  `max`, `unlimited`; live DDL defaults and writers use `free`; `max` is a
+  manual-only high finite ceiling; emergency `unlimited` bypasses entitlement
+  limits and is assignable only directly to existing users via `/admin/users` or
+  MCP `admin_user_update`, with audit events), finite per-plan resource limits,
+  and the shared `assertWithinEntitlement` enforcement helper
+  (`parseStoredPlanName` / `parseStoredInvitePlanName` for reads; strict
+  `parsePlanName` / `parseInviteAssignablePlanName` for untrusted admin/API
+  input). Residual stored invite `'unlimited'` coerces to `max` with
+  `entitlement-residual-unlimited-invite-plan`.
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.

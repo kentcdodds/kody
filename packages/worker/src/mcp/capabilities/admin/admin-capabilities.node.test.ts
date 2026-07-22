@@ -825,6 +825,13 @@ test('admin_user_update sets plan and maps null clear to free with audit metadat
 	})
 	expect(users.find((user) => user.id === 2)?.plan).toBe('pro')
 
+	const setUnlimited = await adminUserUpdateCapability.handler(
+		{ id: 2, plan: 'unlimited' },
+		ctx,
+	)
+	expect(setUnlimited.user).toMatchObject({ id: 2, plan: 'unlimited' })
+	expect(users.find((user) => user.id === 2)?.plan).toBe('unlimited')
+
 	const clearById = await adminUserUpdateCapability.handler(
 		{ id: 2, plan: null },
 		ctx,
@@ -837,6 +844,11 @@ test('admin_user_update sets plan and maps null clear to free with audit metadat
 			action: 'admin_user_update',
 			result: 'success',
 			reason: 'target_user_id=2;plan=pro',
+		}),
+		expect.objectContaining({
+			action: 'admin_user_update',
+			result: 'success',
+			reason: 'target_user_id=2;plan=unlimited',
 		}),
 		expect.objectContaining({
 			action: 'admin_user_update',

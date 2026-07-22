@@ -205,3 +205,28 @@ test('createInvite without plan stores free', async () => {
 		}),
 	)
 })
+
+test('createInvite coerces unlimited and unknown runtime plans to free', async () => {
+	const unlimitedDb = createInviteDb()
+	const unlimited = await createInvite({
+		db: unlimitedDb,
+		code: 'PLAN-UNLIMITED-BYPASS',
+		createdBy: 7,
+		maxUses: 1,
+		// Simulate a validation bypass that still reaches the writer.
+		plan: 'unlimited' as never,
+	})
+	expect(unlimited.plan).toBe('free')
+	expect(unlimitedDb.records.get('PLAN-UNLIMITED-BYPASS')?.plan).toBe('free')
+
+	const unknownDb = createInviteDb()
+	const unknown = await createInvite({
+		db: unknownDb,
+		code: 'PLAN-UNKNOWN-BYPASS',
+		createdBy: 7,
+		maxUses: 1,
+		plan: 'enterprise-2099' as never,
+	})
+	expect(unknown.plan).toBe('free')
+	expect(unknownDb.records.get('PLAN-UNKNOWN-BYPASS')?.plan).toBe('free')
+})

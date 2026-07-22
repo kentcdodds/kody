@@ -253,8 +253,10 @@ role. User-approved platform feedback is a narrow user-content exception.
 **For account administration, admins can see only** user id, username, email,
 email-verification state, entitlement plan, `created_at`, `updated_at`, and role
 assignments. The plan is account metadata (it drives quota enforcement), not
-user content, and admins can change it via `/admin/users` or the
-`admin_user_update` MCP capability.
+user content. Admins change it on existing users via `/admin/users` or the
+`admin_user_update` MCP capability. Emergency `unlimited` is assignable only
+through those audited direct-assignment paths — never invites, signup defaults,
+admin-created accounts, platform provisioning, or Stripe.
 
 **Admins can see and triage user-approved platform feedback.** The submit
 capability requires `user_confirmed: true` and accepts submissions only from an

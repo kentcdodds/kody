@@ -3,7 +3,10 @@ import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
+import {
+	residualUnlimitedInvitePlanWarningTag,
+	unknownStoredPlanWarningTag,
+} from '#worker/entitlements/plans.ts'
 import {
 	consoleError,
 	consoleInfo,
@@ -759,6 +762,39 @@ test('signup consuming an unknown stored invite plan fails open to max with a st
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 	for (const call of consoleWarn.mock.calls) {
 		expect(call).toEqual([unknownStoredPlanWarningTag])
+	}
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'invite_use',
+			result: 'success',
+			reason: expect.stringContaining('plan=max'),
+		}),
+	)
+})
+
+test('signup consuming a residual unlimited invite writes max with a stable warn', async () => {
+	const context = createAuthTestContext({ emailConfigured: true })
+	stubCloudflareEmailFetch({ ok: true })
+	context.testDb.addInvite('PLAN-UNLIMITED', 'unlimited')
+	consoleWarn.mockImplementation(() => {})
+
+	const response = await context.request({
+		email: 'residual-unlimited-invite@example.com',
+		username: 'residual-unlimited-invite-user',
+		password: 'password123',
+		mode: 'signup',
+		inviteCode: 'plan-unlimited',
+	})
+	expect(response.status).toBe(200)
+	expect(
+		context.testDb.users.get('residual-unlimited-invite@example.com')?.plan,
+	).toBe('max')
+	expect(consoleWarn).toHaveBeenCalledWith(
+		residualUnlimitedInvitePlanWarningTag,
+	)
+	for (const call of consoleWarn.mock.calls) {
+		expect(call).toEqual([residualUnlimitedInvitePlanWarningTag])
 	}
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
