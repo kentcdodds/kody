@@ -3,6 +3,7 @@ import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
 import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import {
+	getInboundDelivery,
 	markInboundDeliveryReceived,
 	type InboundDelivery,
 } from './inbound-delivery.ts'
@@ -383,6 +384,21 @@ export async function storeIdempotentInboundEmail(input: {
 	}
 
 	try {
+		await markInboundDeliveryReceived({ db: input.db, delivery })
+	} catch (error) {
+		const committed = await getInboundDelivery({
+			db: input.db,
+			userId: delivery.userId,
+			deliveryId: delivery.deliveryId,
+		}).catch(() => null)
+		if (committed?.state !== 'received') {
+			throw new RetryableInboundStorageError(
+				'Failed to finalize the inbound delivery ledger; the stable delivery will be retried.',
+				error,
+			)
+		}
+	}
+	try {
 		if (stored.threadId) {
 			await touchEmailThread({
 				db: input.db,
@@ -390,7 +406,6 @@ export async function storeIdempotentInboundEmail(input: {
 				lastMessageAt: input.now,
 			})
 		}
-		await markInboundDeliveryReceived({ db: input.db, delivery })
 	} catch (error) {
 		console.error(
 			'inbound-email-post-commit-bookkeeping-failed',

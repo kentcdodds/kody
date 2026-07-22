@@ -558,9 +558,9 @@ export async function reconcileStaleInboundDeliveries(input: {
 			.bind(
 				delivery.deliveryId,
 				input.userId,
+				cutoff,
 				delivery.messageId,
 				input.userId,
-				cutoff,
 			)
 			.run()
 		if (Number(claim.meta.changes ?? 0) === 0) continue
