@@ -451,8 +451,7 @@ function createAdminCapabilityTestDb(input: {
 					) {
 						const user = users.find((row) => row.id === Number(params[2]))
 						if (!user) return { meta: { changes: 0, last_row_id: 0 } }
-						user.plan =
-							params[0] == null ? 'unlimited' : String(params[0])
+						user.plan = params[0] == null ? 'unlimited' : String(params[0])
 						user.updated_at = String(params[1])
 						return { meta: { changes: 1, last_row_id: 0 } }
 					}

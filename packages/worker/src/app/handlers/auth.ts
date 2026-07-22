@@ -240,9 +240,7 @@ export function createAuthHandler(env: Env) {
 						)
 					}
 					consumedInviteCode = inviteResult.invite.code
-					consumedInvitePlan = parseStoredPlanName(
-						inviteResult.invite.plan,
-					)
+					consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
 				}
 
 				let record: { id: number } | null = null

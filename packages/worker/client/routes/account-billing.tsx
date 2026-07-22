@@ -103,10 +103,7 @@ function formatCancelDate(value: string) {
 	return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
 }
 
-function planCoversTier(
-	effectivePlan: AdminPlanName,
-	tier: PlanTier,
-): boolean {
+function planCoversTier(effectivePlan: AdminPlanName, tier: PlanTier): boolean {
 	if (effectivePlan === 'unlimited') return true
 	return getPlanRank(effectivePlan) >= getPlanRank(tier)
 }

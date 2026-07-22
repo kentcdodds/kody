@@ -11,9 +11,9 @@ Module: `packages/worker/src/entitlements/`
 - `plans.ts` — plan names (`free`, `pro`, `partner`, `unlimited`), the
   `PlanLimits` config per plan, deployment email backstops
   (`unlimitedPlanEmailLimits`), the `EntitlementResource` registry,
-  `resolvePlanLimit(plan, resource)`, `resolveEmailResourceLimit(plan, resource)`,
-  `getPlanRank`, `parsePlanName` (strict, untrusted input),
-  `parseStoredPlanName` (stored-column reads), and
+  `resolvePlanLimit(plan, resource)`,
+  `resolveEmailResourceLimit(plan, resource)`, `getPlanRank`, `parsePlanName`
+  (strict, untrusted input), `parseStoredPlanName` (stored-column reads), and
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
@@ -166,7 +166,8 @@ Rules:
 
 - `details.plan` is always a known plan name (including `unlimited` when email
   caps from `unlimitedPlanEmailLimits` apply, or when a workflow concurrency
-  `fallbackLimit` backstop applies); denial messages always quote that plan name.
+  `fallbackLimit` backstop applies); denial messages always quote that plan
+  name.
 - Never compose a custom denial message at an enforcement point; change the
   builder if the message needs work.
 - Never catch and rewrap `EntitlementLimitError` (use `isEntitlementLimitError`
@@ -183,15 +184,14 @@ Rules:
 - **Rate-style limits** (email sends and receives per day) use the
   `entitlement_daily_counters` table keyed by `(user_id, resource, day)` with
   UTC day keys. Call `consumeDailyEntitlement` on every attempt: it checks the
-  plan limit from `resolvePlanLimit` (including the `unlimited` plan's email caps
-  in `planLimits.unlimited` via `unlimitedPlanEmailLimits`) and increments the
-  counter in one conditional D1 upsert (no check-then-increment race). When the
-  resolved plan limit is null, the counter still accumulates without a cap unless
-  the caller passes `fallbackLimit` (production use: workflow concurrency only).
-  Counting attempts rather
-  than successes keeps the limit abuse-resistant for permanent rejects (parse
-  failures, entitlement/quota rejects). Only typed pre-commit
-  `RetryableInboundStorageError` failures (thread prework, R2 put, D1
+  plan limit from `resolvePlanLimit` (including the `unlimited` plan's email
+  caps in `planLimits.unlimited` via `unlimitedPlanEmailLimits`) and increments
+  the counter in one conditional D1 upsert (no check-then-increment race). When
+  the resolved plan limit is null, the counter still accumulates without a cap
+  unless the caller passes `fallbackLimit` (production use: workflow concurrency
+  only). Counting attempts rather than successes keeps the limit abuse-resistant
+  for permanent rejects (parse failures, entitlement/quota rejects). Only typed
+  pre-commit `RetryableInboundStorageError` failures (thread prework, R2 put, D1
   message/attachment storage after successful cleanup) refund exactly one
   `email_receives_per_day` unit via `refundDailyEntitlement` for the same UTC
   day that was charged, so Cloudflare Email Routing retries do not burn the
@@ -250,14 +250,14 @@ The exemplar is job scheduling: `createJob` in
 3. Call the single helper and let it throw:
 
    ```ts
-   import { assertWithinEntitlement } from "#worker/entitlements/service.ts";
+   import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 
    await assertWithinEntitlement({
      db: env.APP_DB,
      userId,
      email: userEmail,
-     resource: "scheduled_jobs",
-   });
+     resource: 'scheduled_jobs',
+   })
    ```
 
    Use `fallbackLimit` only for global backstops that must bind accounts whose

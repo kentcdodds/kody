@@ -420,10 +420,7 @@ test('package_save stays unlimited for unlimited plan users', async () => {
 	for (let index = 0; index < limit + 1; index += 1) {
 		await savePackageCapability.handler(
 			{
-				files: buildPackageFiles(
-					`unlimited-package-${index}`,
-					'unlimited',
-				),
+				files: buildPackageFiles(`unlimited-package-${index}`, 'unlimited'),
 			},
 			ctx,
 		)
