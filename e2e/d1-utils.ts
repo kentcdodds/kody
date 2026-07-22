@@ -262,6 +262,7 @@ ON CONFLICT(id) DO UPDATE SET
 	trusted_by_user_id = excluded.trusted_by_user_id,
 	trusted_at = excluded.trusted_at,
 	featured_at = excluded.featured_at,
+	published_at = CURRENT_TIMESTAMP,
 	updated_at = CURRENT_TIMESTAMP;`.trim()
 	executeE2eD1Command(sql)
 	// Icon requests resolve through the listing's KV snapshot; without one the
