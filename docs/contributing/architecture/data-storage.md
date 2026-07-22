@@ -330,6 +330,15 @@ column, `raw_mime_offload_blocked`, the unblocked inline partial index, and
 `email_raw_mime_cleanup_queue`. Runtime code from Stage 4b1 is already
 compatible with the final schema.
 
+**Expand/contract Stage 5 (migration + types):** migration
+`0078-email-sender-identities-verified-only.sql` normalizes every
+`email_sender_identities.status` to `verified`, then rebuilds the table with a
+verified-only CHECK. Because D1 keeps foreign keys on inside the migration
+transaction, the rebuild snapshots and restores
+`email_messages.sender_identity_id` (ON DELETE SET NULL) so message linkage is
+not lost. Runtime types and `ensurePlatformSenderIdentity` provision verified
+rows only.
+
 - All reads go through `loadRawMime` in `packages/worker/src/email/repo.ts`,
   which fetches the blob by `raw_mime_key` only. Attachment content extraction
   re-parses the resolved MIME the same way as before.

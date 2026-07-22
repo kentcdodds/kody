@@ -503,13 +503,8 @@ async function getSenderIdentityByEmail(input: {
 /**
  * Ensure the platform-assigned sender identity row
  * (`{username}@<platform domain>`, status `verified`) exists for the user.
- * This is the only way sender identities are created: they are provisioned
- * by the platform, never self-registered or "verified" by users. Any
- * non-verified stored status is overwritten: identity status carries no
- * authorization meaning under the platform-assigned model (outbound is
- * gated by the verified-account check and the reserved-username block, not
- * by identity rows), so a legacy 'pending'/'disabled' row is just stale
- * bookkeeping to repair.
+ * Platform provisioning is the only writer; identities are always verified.
+ * Race-tolerant with signup / first-inbound concurrency via ON CONFLICT.
  */
 export async function ensurePlatformSenderIdentity(input: {
 	db: D1Database
@@ -518,7 +513,7 @@ export async function ensurePlatformSenderIdentity(input: {
 	domain: string
 }): Promise<EmailSenderIdentityRecord> {
 	const existing = await getSenderIdentityByEmail(input)
-	if (existing?.status === 'verified') return existing
+	if (existing) return existing
 	const timestamp = nowIso()
 	await input.db
 		.prepare(
@@ -527,8 +522,6 @@ export async function ensurePlatformSenderIdentity(input: {
 			) VALUES (?, ?, ?, ?, 'verified', ?, ?, ?)
 			ON CONFLICT(user_id, email) DO UPDATE SET
 				domain = excluded.domain,
-				status = excluded.status,
-				verified_at = excluded.verified_at,
 				updated_at = excluded.updated_at`,
 		)
 		.bind(

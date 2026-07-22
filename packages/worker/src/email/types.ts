@@ -92,7 +92,7 @@ export type EmailSenderIdentityRecord = {
 	userId: string
 	email: string
 	domain: string
-	status: 'pending' | 'verified' | 'disabled'
+	status: 'verified'
 	verifiedAt: string | null
 	createdAt: string
 	updatedAt: string

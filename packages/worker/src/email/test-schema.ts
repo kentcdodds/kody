@@ -21,7 +21,7 @@ export async function ensureEmailTestSchema(db: D1Database) {
 	email TEXT NOT NULL,
 	domain TEXT,
 	display_name TEXT NOT NULL DEFAULT '',
-	status TEXT NOT NULL CHECK (status IN ('pending', 'verified', 'disabled')),
+	status TEXT NOT NULL CHECK (status IN ('verified')),
 	verified_at TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
