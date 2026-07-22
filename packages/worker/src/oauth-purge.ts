@@ -159,7 +159,7 @@ export function isInvalidOAuthPurgeCursorError(error: unknown): boolean {
 	return isInvalidOAuthPurgeCursorError(error.cause)
 }
 
-async function listPurgePage(
+export async function listOAuthPurgePage(
 	kv: KVNamespace,
 	options: { prefix: string; cursor?: string },
 ) {
@@ -190,7 +190,7 @@ async function loadGrantPage(
 	continuation: PurgeContinuation,
 	now: number,
 ) {
-	const page = await listPurgePage(kv, {
+	const page = await listOAuthPurgePage(kv, {
 		prefix: 'grant:',
 		cursor: continuation.grantCursor,
 	})
@@ -247,7 +247,7 @@ async function purgeGrantPhase(
 	let tokensPurged = 0
 
 	if (pending) {
-		const tokenPage = await listPurgePage(kv, {
+		const tokenPage = await listOAuthPurgePage(kv, {
 			prefix: pending.tokenPrefix,
 			cursor: pending.tokenCursor,
 		})
@@ -280,7 +280,7 @@ async function purgeTokenPhase(
 	kv: KVNamespace,
 	continuation: PurgeContinuation,
 ): Promise<OAuthPurgeResult> {
-	const page = await listPurgePage(kv, {
+	const page = await listOAuthPurgePage(kv, {
 		prefix: 'token:',
 		cursor: continuation.tokenCursor,
 	})
