@@ -2,6 +2,7 @@ import { createPublicKey, verify } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isExecutedDirectly } from '../node-runtime.ts'
 import {
 	type VerifiedEvidenceArtifact,
 	assessCanonicalReadiness,
@@ -188,7 +189,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 	if (!result.levels['full-service'].ready) process.exitCode = 1
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isExecutedDirectly(import.meta.url)) {
 	await main().catch((error: unknown) => {
 		console.error(error instanceof Error ? error.message : String(error))
 		process.exitCode = 1

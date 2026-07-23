@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isExecutedDirectly } from '../node-runtime.ts'
 import {
 	type BackupFileEvidence,
 	type Command,
@@ -398,7 +399,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 	else console.log('Live-created target passed all restore-drill checks.')
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isExecutedDirectly(import.meta.url)) {
 	await main().catch((error: unknown) => {
 		console.error(error instanceof Error ? error.message : String(error))
 		process.exitCode = 1

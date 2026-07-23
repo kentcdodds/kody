@@ -52,6 +52,19 @@ test('guards configured account/database allowlists and live D1 UUID/name', () =
 		(error: unknown) =>
 			error instanceof BackupError && error.code === 'source-not-allowlisted',
 	)
+	const mixedCaseEnv = environment()
+	mixedCaseEnv.SOURCE_ACCOUNT_ID = 'abcdefabcdefabcdefabcdefabcdefab'
+	mixedCaseEnv.ALLOWED_SOURCE_ACCOUNT_IDS =
+		mixedCaseEnv.SOURCE_ACCOUNT_ID.toUpperCase()
+	mixedCaseEnv.SOURCE_DATABASE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+	mixedCaseEnv.ALLOWED_SOURCE_DATABASE_IDS =
+		mixedCaseEnv.SOURCE_DATABASE_ID.toUpperCase()
+	assert.doesNotThrow(() =>
+		assertRemoteDatabaseIdentity(mixedCaseEnv, {
+			uuid: mixedCaseEnv.SOURCE_DATABASE_ID.toUpperCase(),
+			name: 'production-db',
+		}),
+	)
 })
 
 test('builds deterministic daily and Sunday-UTC weekly retention keys', () => {

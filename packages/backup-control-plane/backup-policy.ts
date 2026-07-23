@@ -30,7 +30,7 @@ export function isBackupEnabled(env: BackupEnvironment): boolean {
 function parseAllowlist(value: string, field: string): Set<string> {
 	const entries = value
 		.split(',')
-		.map((entry) => entry.trim())
+		.map((entry) => entry.trim().toLowerCase())
 		.filter(Boolean)
 	if (entries.length === 0) {
 		throw new BackupError('empty-allowlist', `${field} cannot be empty`)
@@ -52,11 +52,11 @@ export function assertConfiguredIdentity(env: BackupEnvironment): void {
 		!parseAllowlist(
 			env.ALLOWED_SOURCE_ACCOUNT_IDS,
 			'ALLOWED_SOURCE_ACCOUNT_IDS',
-		).has(env.SOURCE_ACCOUNT_ID) ||
+		).has(env.SOURCE_ACCOUNT_ID.toLowerCase()) ||
 		!parseAllowlist(
 			env.ALLOWED_SOURCE_DATABASE_IDS,
 			'ALLOWED_SOURCE_DATABASE_IDS',
-		).has(env.SOURCE_DATABASE_ID)
+		).has(env.SOURCE_DATABASE_ID.toLowerCase())
 	) {
 		throw new BackupError(
 			'source-not-allowlisted',
@@ -77,7 +77,7 @@ export function assertRemoteDatabaseIdentity(
 ): void {
 	assertConfiguredIdentity(env)
 	if (
-		database.uuid !== env.SOURCE_DATABASE_ID ||
+		database.uuid.toLowerCase() !== env.SOURCE_DATABASE_ID.toLowerCase() ||
 		database.name !== env.SOURCE_DATABASE_NAME
 	) {
 		throw new BackupError(

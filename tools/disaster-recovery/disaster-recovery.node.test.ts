@@ -429,6 +429,36 @@ test('restore trust matches runtime account IDs case-insensitively', async () =>
 	).resolves.toMatchObject({ dryRun: true })
 })
 
+test('relative disaster-recovery CLI entry paths execute main', async () => {
+	const environment = {
+		HOME: process.env.HOME,
+		PATH: process.env.PATH,
+		TMPDIR: process.env.TMPDIR,
+	}
+	await expect(
+		runProcess(
+			{
+				kind: 'verification',
+				program: process.execPath,
+				args: ['tools/disaster-recovery/d1-restore-drill-cli.ts'],
+			},
+			environment,
+			false,
+		),
+	).rejects.toThrow('Missing required argument --manifest')
+	await expect(
+		runProcess(
+			{
+				kind: 'verification',
+				program: process.execPath,
+				args: ['tools/disaster-recovery/canonical-readiness-cli.ts'],
+			},
+			environment,
+			false,
+		),
+	).rejects.toThrow('Usage: canonical-readiness-cli.ts')
+})
+
 test('SQL file evidence streams injected chunks after stat and rejects sizes without reading the dump', async () => {
 	const events: Array<string> = []
 	const evidence = await collectBackupFileEvidence('backup.sql', 6, {
