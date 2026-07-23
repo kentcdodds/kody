@@ -78,7 +78,7 @@ test('Worker-compatible Ed25519 manifest signatures reject tampering and wrong k
 		),
 		false,
 	)
-	const tamperedSignature = signature.slice()
+	const tamperedSignature = Buffer.from(signature)
 	tamperedSignature[0] = (tamperedSignature[0] ?? 0) ^ 1
 	assert.equal(
 		await crypto.subtle.verify(
