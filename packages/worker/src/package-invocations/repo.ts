@@ -468,6 +468,25 @@ export async function tryClaimStalePackageInvocation(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+export async function releasePackageInvocationClaim(input: {
+	db: D1Database
+	id: string
+	userId: string
+	claimUpdatedAt: string
+}) {
+	const result = await input.db
+		.prepare(
+			`DELETE FROM package_invocations
+			WHERE id = ?
+				AND user_id = ?
+				AND status = 'in_progress'
+				AND updated_at = ?`,
+		)
+		.bind(input.id, input.userId, input.claimUpdatedAt)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function getPackageInvocationByKey(input: {
 	db: D1Database
 	userId: string

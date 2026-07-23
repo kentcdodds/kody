@@ -88,7 +88,13 @@ INSERT INTO usage_rollups (
 	event_count, error_count,
 	total_duration_ms, total_cpu_ms, total_bytes,
 	updated_at
-) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
+WHERE ?1 = 'system:email'
+	OR EXISTS (
+		SELECT 1 FROM users
+		WHERE stable_user_id = ?1 AND deleting_at IS NULL
+	)
 ON CONFLICT (user_id, metric, month) DO UPDATE SET
 	event_count = excluded.event_count,
 	error_count = excluded.error_count,
@@ -190,6 +196,14 @@ export async function readIdempotentInboundEmailUsage(input: {
 				)
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'received'
+					AND (
+						email_delivery_events.user_id = 'system:email'
+						OR EXISTS (
+							SELECT 1 FROM users
+							WHERE stable_user_id = email_delivery_events.user_id
+								AND deleting_at IS NULL
+						)
+					)
 					AND json_extract(
 						detail_json,
 						'$.usageEffectRecordedAt'
@@ -228,6 +242,14 @@ export async function readIdempotentInboundEmailUsage(input: {
 				FROM email_delivery_events event
 				WHERE event.provider = 'cloudflare-email-routing'
 					AND event.event_type = 'received'
+					AND (
+						event.user_id = 'system:email'
+						OR EXISTS (
+							SELECT 1 FROM users
+							WHERE stable_user_id = event.user_id
+								AND deleting_at IS NULL
+						)
+					)
 					AND json_extract(
 						event.detail_json,
 						'$.usageEffectRecordedAt'
@@ -274,6 +296,37 @@ async function queryAnalyticsEngineSql(input: {
 function toCount(value: number | string) {
 	const parsed = Number(value)
 	return Number.isFinite(parsed) ? Math.round(parsed) : 0
+}
+
+async function filterLiveUsageRows(
+	db: D1Database,
+	rows: Array<AnalyticsEngineSqlRow>,
+) {
+	const systemRows = rows.filter((row) => row.user_id === 'system:email')
+	const userIds = [
+		...new Set(
+			rows
+				.map((row) => row.user_id)
+				.filter((userId) => userId && userId !== 'system:email'),
+		),
+	]
+	const live = new Set<string>()
+	for (let index = 0; index < userIds.length; index += 80) {
+		const chunk = userIds.slice(index, index + 80)
+		const placeholders = chunk.map(() => '?').join(', ')
+		const result = await runD1WithRetry(() =>
+			db
+				.prepare(
+					`SELECT stable_user_id FROM users
+					WHERE deleting_at IS NULL
+						AND stable_user_id IN (${placeholders})`,
+				)
+				.bind(...chunk)
+				.all<{ stable_user_id: string }>(),
+		)
+		for (const row of result.results ?? []) live.add(row.stable_user_id)
+	}
+	return [...systemRows, ...rows.filter((row) => live.has(row.user_id))]
 }
 
 function rollupPairKey(row: { user_id: string; metric: string }) {
@@ -337,6 +390,28 @@ async function deleteStaleCurrentMonthRollups(input: {
 	return deleted
 }
 
+async function deleteNonLiveUserRollups(input: {
+	db: D1Database
+	months: [string, string]
+}) {
+	const result = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`DELETE FROM usage_rollups
+				WHERE month IN (?, ?)
+					AND user_id != 'system:email'
+					AND NOT EXISTS (
+						SELECT 1 FROM users
+						WHERE stable_user_id = usage_rollups.user_id
+							AND deleting_at IS NULL
+					)`,
+			)
+			.bind(...input.months)
+			.run(),
+	)
+	return Number(result.meta.changes ?? 0)
+}
+
 /**
  * Recompute the current UTC month's `usage_rollups` rows from Analytics
  * Engine: upsert absolute values for every (user, metric) pair in the result
@@ -383,15 +458,23 @@ export async function aggregateUsageRollups(
 			),
 		}),
 	])
+	const [liveCurrentAnalyticsRows, livePreviousAnalyticsRows] =
+		await Promise.all([
+			filterLiveUsageRows(env.APP_DB, currentAnalyticsRows),
+			filterLiveUsageRows(env.APP_DB, previousAnalyticsRows),
+		])
 	const rows = [
-		...currentAnalyticsRows.map((row) => ({ ...row, month })),
-		...previousAnalyticsRows.map((row) => ({ ...row, month: priorMonth })),
+		...liveCurrentAnalyticsRows.map((row) => ({ ...row, month })),
+		...livePreviousAnalyticsRows.map((row) => ({
+			...row,
+			month: priorMonth,
+		})),
 	]
 	const analyticsMonthsWithRows = new Set<string>()
-	if (currentAnalyticsRows.some((row) => row.user_id && row.metric)) {
+	if (liveCurrentAnalyticsRows.some((row) => row.user_id && row.metric)) {
 		analyticsMonthsWithRows.add(month)
 	}
-	if (previousAnalyticsRows.some((row) => row.user_id && row.metric)) {
+	if (livePreviousAnalyticsRows.some((row) => row.user_id && row.metric)) {
 		analyticsMonthsWithRows.add(priorMonth)
 	}
 
@@ -400,10 +483,11 @@ export async function aggregateUsageRollups(
 		db: env.APP_DB,
 		months: [month, priorMonth],
 	})
+	const liveEmailRows = await filterLiveUsageRows(env.APP_DB, emailRows)
 	const mergedRows = new Map<string, AnalyticsEngineSqlRow>()
 	for (const row of [
 		...rows,
-		...emailRows.filter(
+		...liveEmailRows.filter(
 			(row) => row.month && analyticsMonthsWithRows.has(row.month),
 		),
 	]) {
@@ -455,7 +539,7 @@ export async function aggregateUsageRollups(
 	const currentRows = presentRows.filter(
 		(row) => (row.month ?? month) === month,
 	)
-	const deletedRows =
+	const deletedStaleRows =
 		!analyticsMonthsWithRows.has(month) || currentRows.length === 0
 			? 0
 			: await deleteStaleCurrentMonthRollups({
@@ -463,6 +547,11 @@ export async function aggregateUsageRollups(
 					month,
 					presentPairs: new Set(currentRows.map(rollupPairKey)),
 				})
+	const deletedNonLiveRows = await deleteNonLiveUserRollups({
+		db: env.APP_DB,
+		months: [month, priorMonth],
+	})
+	const deletedRows = deletedStaleRows + deletedNonLiveRows
 
 	const result = {
 		skipped: false as const,

@@ -118,6 +118,19 @@ function createDatabase(options: { failInsert?: boolean } = {}) {
 							if (query.includes('UPDATE users')) {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
+							if (query.includes('DELETE FROM package_invocations')) {
+								const table = getTable('package_invocations')
+								const index = table.findIndex(
+									(row) =>
+										row['id'] === params[0] &&
+										row['user_id'] === params[1] &&
+										row['status'] === 'in_progress' &&
+										row['updated_at'] === params[2],
+								)
+								if (index < 0) return { meta: { changes: 0 } }
+								table.splice(index, 1)
+								return { meta: { changes: 1 } }
+							}
 							if (query.includes('INTO package_invocations')) {
 								if (options.failInsert) {
 									throw new Error('D1 unavailable')
@@ -2101,4 +2114,38 @@ test('invokePackageSubscription uses the normal capability registry with package
 			claimUpdatedAt: reclaimedAt,
 		}),
 	).toBe(true)
+
+	const transientKey = 'email:message-transient:pkg-1:email.message.received'
+	repoMockModule.loadPublishedBundleArtifactByIdentity.mockRejectedValueOnce(
+		new Error('KV timeout'),
+	)
+	const transientFailure = await invokePackageSubscription({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		savedPackage,
+		topic: 'email.message.received',
+		params: {
+			event: 'email.message.received',
+			message: { id: 'message-123' },
+		},
+		idempotencyKey: transientKey,
+		source: 'email',
+	})
+	expect(transientFailure).toMatchObject({
+		status: 503,
+		body: { error: { code: 'artifact_preparation_failed' } },
+	})
+	const recoveredTransient = await invokePackageSubscription({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		savedPackage,
+		topic: 'email.message.received',
+		params: {
+			event: 'email.message.received',
+			message: { id: 'message-123' },
+		},
+		idempotencyKey: transientKey,
+		source: 'email',
+	})
+	expect(recoveredTransient.status).toBe(200)
 })

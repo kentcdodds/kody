@@ -5,6 +5,7 @@ import {
 	EntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
 import { type PlanName } from '#worker/entitlements/plans.ts'
+import { normalizeEmailAddress } from './address.ts'
 import {
 	emailRawMimeKey,
 	getEmailMessageById,
@@ -68,10 +69,17 @@ export type InboundDelivery = {
 	usageEffectRetryAt?: string
 	usageEffectLease?: string
 	usageEffectLeaseAt?: string
-	subscriptionEffectState?: 'pending' | 'processing' | 'complete'
+	subscriptionEffectState?:
+		| 'pending'
+		| 'processing'
+		| 'complete'
+		| 'dead-letter'
 	subscriptionEffectLease?: string
 	subscriptionEffectLeaseAt?: string
 	subscriptionEffectRetryAt?: string
+	subscriptionEffectAttemptCount?: number
+	subscriptionEffectDeadLetterAt?: string
+	subscriptionEffectLastError?: string
 }
 
 type InboundDeliveryEventRow = {
@@ -101,13 +109,19 @@ export async function buildInboundDelivery(input: {
 	userId: string
 	inboxId: string
 	recipient: string
+	envelopeFrom?: string
+	provider?: string
 	rawMime: string
 	quotaDay: string
 	now?: Date
 }): Promise<InboundDelivery> {
 	const now = input.now ?? new Date()
+	const envelopeFrom =
+		normalizeEmailAddress(input.envelopeFrom ?? '') ??
+		(input.envelopeFrom ?? '').trim().toLowerCase()
+	const provider = input.provider ?? inboundProvider
 	const fingerprintInput = new TextEncoder().encode(
-		`${input.userId}\u0000${input.recipient}\u0000${input.rawMime}`,
+		`${input.userId}\u0000${input.recipient}\u0000${envelopeFrom}\u0000${provider}\u0000${input.rawMime}`,
 	)
 	const fingerprint = bytesToHex(
 		new Uint8Array(await crypto.subtle.digest('SHA-256', fingerprintInput)),
@@ -233,7 +247,8 @@ function parseInboundDelivery(
 				: {}),
 			...(detail.subscriptionEffectState === 'pending' ||
 			detail.subscriptionEffectState === 'processing' ||
-			detail.subscriptionEffectState === 'complete'
+			detail.subscriptionEffectState === 'complete' ||
+			detail.subscriptionEffectState === 'dead-letter'
 				? { subscriptionEffectState: detail.subscriptionEffectState }
 				: {}),
 			...(typeof detail.subscriptionEffectLease === 'string'
@@ -244,6 +259,21 @@ function parseInboundDelivery(
 				: {}),
 			...(typeof detail.subscriptionEffectRetryAt === 'string'
 				? { subscriptionEffectRetryAt: detail.subscriptionEffectRetryAt }
+				: {}),
+			...(typeof detail.subscriptionEffectAttemptCount === 'number'
+				? {
+						subscriptionEffectAttemptCount:
+							detail.subscriptionEffectAttemptCount,
+					}
+				: {}),
+			...(typeof detail.subscriptionEffectDeadLetterAt === 'string'
+				? {
+						subscriptionEffectDeadLetterAt:
+							detail.subscriptionEffectDeadLetterAt,
+					}
+				: {}),
+			...(typeof detail.subscriptionEffectLastError === 'string'
+				? { subscriptionEffectLastError: detail.subscriptionEffectLastError }
 				: {}),
 		}
 	} catch {

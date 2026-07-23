@@ -23,6 +23,7 @@ function createFakeDb(
 	input: {
 		existingRollups?: Array<RollupKeyRow>
 		emailUsageRows?: Array<EmailUsageRow>
+		liveUserIds?: Array<string>
 	} = {},
 ) {
 	const rollups = input.existingRollups?.map((row) => ({ ...row })) ?? []
@@ -37,6 +38,15 @@ function createFakeDb(
 						sql,
 						params,
 						async all() {
+							if (sql.includes('SELECT stable_user_id FROM users')) {
+								const allowed = new Set(input.liveUserIds ?? params.map(String))
+								return {
+									results: params
+										.map(String)
+										.filter((userId) => allowed.has(userId))
+										.map((stable_user_id) => ({ stable_user_id })),
+								}
+							}
 							if (sql.includes('FROM email_delivery_events event')) {
 								selects.push({ sql, params })
 								return { results: input.emailUsageRows ?? [] }
@@ -61,6 +71,25 @@ function createFakeDb(
 								throw new Error(`Unsupported run query: ${sql}`)
 							}
 							deletes.push({ sql, params })
+							if (sql.includes('NOT EXISTS')) {
+								const months = new Set(params.slice(0, 2))
+								const live = new Set(input.liveUserIds ?? [])
+								let changes = 0
+								for (let index = rollups.length - 1; index >= 0; index -= 1) {
+									const row = rollups[index]
+									if (
+										row &&
+										months.has(row.month) &&
+										row.user_id !== 'system:email' &&
+										input.liveUserIds != null &&
+										!live.has(row.user_id)
+									) {
+										rollups.splice(index, 1)
+										changes += 1
+									}
+								}
+								return { meta: { changes } }
+							}
 							const month = params[0]
 							let changes = 0
 							for (let index = 1; index < params.length; index += 2) {
@@ -398,6 +427,56 @@ test('aggregateUsageRollups honors CLOUDFLARE_API_BASE_URL and the preview datas
 	expect(query).toContain(`timestamp >= toDateTime('2026-12-01 00:00:00')`)
 	expect(query).toContain(`timestamp < toDateTime('2027-01-01 00:00:00')`)
 	expect(batches).toHaveLength(0)
+})
+
+test('hourly aggregation cannot recreate rollups for deleting or deleted users', async () => {
+	using _fetchMock = stubFetchSequence([
+		{
+			data: ['user-live', 'user-deleting', 'user-deleted'].map((user_id) => ({
+				user_id,
+				metric: 'execute',
+				event_count: 1,
+				error_count: 0,
+				total_duration_ms: 0,
+				total_cpu_ms: 0,
+				total_bytes: 0,
+			})),
+		},
+		{ data: [] },
+	])
+	const { db, batches, rollups } = createFakeDb({
+		liveUserIds: ['user-live'],
+		existingRollups: [
+			{ user_id: 'user-deleting', metric: 'execute', month: '2026-07' },
+			{ user_id: 'user-deleted', metric: 'execute', month: '2026-07' },
+		],
+		emailUsageRows: [
+			{
+				user_id: 'user-deleting',
+				metric: 'email_received',
+				month: '2026-07',
+				event_count: 1,
+				error_count: 0,
+				total_duration_ms: 1,
+				total_cpu_ms: 0,
+				total_bytes: 10,
+			},
+		],
+	})
+
+	const result = await aggregateUsageRollups(
+		createAggregationEnv(db),
+		new Date('2026-07-15T10:00:00.000Z'),
+	)
+	expect(result).toMatchObject({
+		upsertedRows: 1,
+		deletedRows: 2,
+		users: 1,
+	})
+	expect(batches[0]?.map((statement) => statement.params[0])).toEqual([
+		'user-live',
+	])
+	expect(rollups).toEqual([])
 })
 
 test('aggregateUsageRollups deletes current-month rows absent from the Analytics Engine result', async () => {

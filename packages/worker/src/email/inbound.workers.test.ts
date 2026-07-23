@@ -964,6 +964,70 @@ test('inbound R2/D1 failures and retries reuse one quota charge, row, thread, an
 	expect(Number(threadCount?.count ?? 0)).toBe(1)
 })
 
+test('charged retry repairs after unrelated writes fill storage bytes', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `storage-retry-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `storage-retry-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	await env.APP_DB.prepare(
+		`UPDATE users SET plan = 'free' WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.run()
+	const raw = [
+		'From: Sender <sender@example.net>',
+		`To: ${address}`,
+		'Subject: Charged storage retry',
+		'Message-ID: <charged-storage-retry@example.net>',
+		'',
+		'Body',
+	].join('\r\n')
+	const first = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw,
+	})
+	await expect(
+		handleInboundEmail(first, {
+			...createInboundEnv(),
+			EMAIL_BLOBS: createFailingEmailBlobs(),
+		}),
+	).rejects.toBeInstanceOf(RetryableInboundStorageError)
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+
+	const storageLimit = planLimits.free.maxStorageBytes
+	if (storageLimit == null) throw new Error('Expected finite storage limit.')
+	await insertEmailMessage({
+		db: env.APP_DB,
+		message: {
+			direction: 'outbound',
+			userId,
+			rawSize: storageLimit,
+			processingStatus: 'sent',
+		},
+	})
+	const retry = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw,
+	})
+	await handleInboundEmail(retry, createInboundEnv())
+	expect(retry.rejectedReason).toBeNull()
+	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+	expect(
+		(await listEmailMessages({ db: env.APP_DB, userId, limit: 10 })).filter(
+			(message) => message.direction === 'inbound',
+		),
+	).toHaveLength(1)
+})
+
 test('ambiguous quota-ledger batch response charges one delivery exactly once', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
@@ -1156,6 +1220,7 @@ test('pointer-only retry after midnight enforces the current quota day', async (
 			userId,
 			inboxId: provisioned.inbox.id,
 			recipient: address,
+			envelopeFrom: 'sender@example.net',
 			rawMime: raw,
 			quotaDay: '2026-07-22',
 			now: oldNow,
@@ -1277,6 +1342,37 @@ test('byte-identical mail dedupes only inside the explicit delivery window', asy
 	} finally {
 		vi.useRealTimers()
 	}
+})
+
+test('identical MIME from distinct envelope senders creates separate deliveries', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `envelopes-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `envelopes-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	const raw = [
+		'From: Shared <shared@example.net>',
+		`To: ${address}`,
+		'Subject: Same MIME',
+		'',
+		'Identical payload.',
+	].join('\r\n')
+	for (const from of ['envelope-a@example.net', 'envelope-b@example.net']) {
+		await handleInboundEmail(
+			createForwardableEmailMessage({ from, to: address, raw }),
+			createInboundEnv(),
+		)
+	}
+	expect(
+		await listEmailMessages({ db: env.APP_DB, userId, limit: 10 }),
+	).toHaveLength(2)
+	expect(await readUserDailyReceiveCount(userId)).toBe(2)
 })
 
 test('post-rollout retry adopts a recent legacy message without duplicate row or quota', async () => {

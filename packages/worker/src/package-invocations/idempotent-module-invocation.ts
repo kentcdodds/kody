@@ -24,6 +24,7 @@ import { createRequestHash, resolveExistingInvocation } from './idempotency.ts'
 import {
 	ensureModuleArtifact,
 	isMissingPackageModuleError,
+	isTransientModuleArtifactError,
 } from './module-artifacts.ts'
 import {
 	buildExecutionErrorResponse,
@@ -33,6 +34,7 @@ import {
 import {
 	getPackageInvocationByKey,
 	insertPackageInvocationRow,
+	releasePackageInvocationClaim,
 	tryClaimStalePackageInvocation,
 	updatePackageInvocationResult,
 	type PackageInvocationStoredResponse,
@@ -82,6 +84,7 @@ export async function invokeSavedPackageModule(input: {
 					idempotencyKey: input.idempotencyKey,
 				})
 			let existing: Awaited<ReturnType<typeof getPackageInvocationByKey>>
+			let executionStarted = false
 			try {
 				existing = await lookupInvocation()
 			} catch (error) {
@@ -332,6 +335,7 @@ export async function invokeSavedPackageModule(input: {
 						topic: input.topic,
 					},
 				}
+				executionStarted = true
 				const executionResult = await runBundledModuleWithRegistry(
 					input.env,
 					callerContext,
@@ -491,6 +495,43 @@ export async function invokeSavedPackageModule(input: {
 					response,
 				)
 			} catch (error) {
+				if (
+					!executionStarted &&
+					!isMissingPackageModuleError(error) &&
+					isTransientModuleArtifactError(error)
+				) {
+					const released = await releasePackageInvocationClaim({
+						db: input.env.APP_DB,
+						id: invocationId,
+						userId: input.actor.userId,
+						claimUpdatedAt,
+					})
+					if (!released) {
+						const current = await lookupInvocation()
+						if (current?.status !== 'in_progress') {
+							return current
+								? resolveExistingInvocation({
+										record: current,
+										requestHash,
+										idempotencyKey: input.idempotencyKey,
+									})
+								: buildJsonErrorResponse({
+										status: 500,
+										code: 'idempotency_conflict_unresolved',
+										message:
+											'Transient artifact preparation lost its invocation claim.',
+										idempotencyKey: input.idempotencyKey,
+									})
+						}
+					}
+					return buildJsonErrorResponse({
+						status: 503,
+						code: 'artifact_preparation_failed',
+						message:
+							'Package artifact preparation failed before execution. Please retry.',
+						idempotencyKey: input.idempotencyKey,
+					})
+				}
 				if (isMissingPackageModuleError(error)) {
 					const response = buildJsonErrorResponse({
 						status: 404,

@@ -26,6 +26,7 @@ import {
 	type PackageModuleResolution,
 	type PackageModuleSelector,
 } from './common.ts'
+import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 
 export async function resolveSavedPackage(input: {
 	db: D1Database
@@ -193,5 +194,13 @@ export function isMissingPackageModuleError(error: unknown) {
 		(error.message.includes('does not define export') ||
 			error.message.includes('does not define a runtime target') ||
 			error.message.includes('does not define subscription'))
+	)
+}
+
+export function isTransientModuleArtifactError(error: unknown) {
+	if (isRetryableD1LockError(error)) return true
+	if (!(error instanceof Error)) return false
+	return /(?:\bD1\b|\bKV\b|bindings? (?:are|is) not available|timeout|temporar|network|fetch|could not be loaded after rebuild)/i.test(
+		error.message,
 	)
 }

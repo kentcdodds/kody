@@ -9,6 +9,7 @@ import { systemEmailOwnerId } from './system-email.ts'
 
 const subscriptionEffectLeaseMs = 5 * 60 * 1000
 const effectRetryMs = 15 * 60 * 1000
+const maxSubscriptionEffectAttempts = 3
 
 type InboundEffectsEnv = Pick<
 	Env,
@@ -198,7 +199,10 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 			WHERE id = ?
 				AND user_id = ?
 				AND event_type = 'received'
-				AND json_extract(detail_json, '$.subscriptionEffectState') != 'complete'
+				AND json_extract(
+					detail_json,
+					'$.subscriptionEffectState'
+				) NOT IN ('complete', 'dead-letter')
 				AND json_extract(detail_json, '$.finalizationToken') = ?`,
 		)
 			.bind(
@@ -288,14 +292,19 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 			.run()
 		return { outcome: 'complete' as const }
 	} catch (error) {
+		const nextAttempt = Number(delivery.subscriptionEffectAttemptCount ?? 0) + 1
+		const deadLettered = nextAttempt >= maxSubscriptionEffectAttempts
 		await input.env.APP_DB.prepare(
 			`UPDATE email_delivery_events
 			SET detail_json = json_remove(
 				json_remove(
 					json_set(
 						detail_json,
-						'$.subscriptionEffectState', 'pending',
-						'$.subscriptionEffectRetryAt', ?
+						'$.subscriptionEffectState', ?,
+						'$.subscriptionEffectRetryAt', ?,
+						'$.subscriptionEffectAttemptCount', ?,
+						'$.subscriptionEffectLastError', ?,
+						'$.subscriptionEffectDeadLetterAt', ?
 					),
 					'$.subscriptionEffectLease'
 				),
@@ -306,12 +315,27 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 				AND json_extract(detail_json, '$.subscriptionEffectLease') = ?`,
 		)
 			.bind(
-				new Date(now.getTime() + effectRetryMs).toISOString(),
+				deadLettered ? 'dead-letter' : 'pending',
+				deadLettered
+					? null
+					: new Date(now.getTime() + effectRetryMs).toISOString(),
+				nextAttempt,
+				error instanceof Error ? error.message : String(error),
+				deadLettered ? now.toISOString() : null,
 				delivery.deliveryId,
 				input.userId,
 				effectLease,
 			)
 			.run()
+		if (deadLettered) {
+			console.error('inbound-email-subscription-effect-dead-lettered', {
+				userId: input.userId,
+				deliveryId: delivery.deliveryId,
+				attemptCount: nextAttempt,
+				error,
+			})
+			return { outcome: 'dead-letter' as const }
+		}
 		throw error
 	}
 }
@@ -361,7 +385,10 @@ export async function reconcileInboundDeliveryEffectsForUser(input: {
 				OR (
 					(
 						json_extract(detail_json, '$.subscriptionEffectState') IS NULL
-						OR json_extract(detail_json, '$.subscriptionEffectState') != 'complete'
+						OR json_extract(
+							detail_json,
+							'$.subscriptionEffectState'
+						) NOT IN ('complete', 'dead-letter')
 					)
 					AND (
 						json_extract(detail_json, '$.subscriptionEffectRetryAt') IS NULL

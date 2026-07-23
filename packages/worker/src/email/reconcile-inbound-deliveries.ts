@@ -86,7 +86,10 @@ export async function sweepStaleInboundDeliveries(input: {
 						OR (
 							(
 								json_extract(detail_json, '$.subscriptionEffectState') IS NULL
-								OR json_extract(detail_json, '$.subscriptionEffectState') != 'complete'
+								OR json_extract(
+									detail_json,
+									'$.subscriptionEffectState'
+								) NOT IN ('complete', 'dead-letter')
 							)
 							AND (
 								json_extract(detail_json, '$.subscriptionEffectRetryAt') IS NULL

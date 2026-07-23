@@ -349,12 +349,6 @@ export async function handleInboundEmail(
 					requested: 0,
 					getCurrent: async () => message.rawSize,
 				})
-				await assertWithinStorageBytesEntitlement({
-					db: env.APP_DB,
-					userId,
-					email: account.email,
-					requested: estimateInboundEmailStorageBytes({ message, recipient }),
-				})
 			} catch (error) {
 				if (!isEntitlementLimitError(error)) throw error
 				// The SMTP reject reason goes to the arbitrary sender; keep it
@@ -396,6 +390,7 @@ export async function handleInboundEmail(
 				userId,
 				inboxId: inbox.id,
 				recipient,
+				envelopeFrom: message.from,
 				rawMime,
 				quotaDay: userInboundQuotaDay(quotaNow),
 				now: quotaNow,
@@ -423,9 +418,19 @@ export async function handleInboundEmail(
 				}))
 			if (!existingDelivery) {
 				try {
-					// New deliveries check the stored cap before their durable quota
-					// claim. A retry with an existing ledger bypasses this gate so a
-					// mailbox that filled meanwhile can still repair its claimed mail.
+					// New deliveries check storage bytes and stored-message caps
+					// before their durable quota claim. A retry with an existing
+					// ledger bypasses both so already-charged mail can still repair
+					// after unrelated writes fill the mailbox.
+					await assertWithinStorageBytesEntitlement({
+						db: env.APP_DB,
+						userId,
+						email: account.email,
+						requested: estimateInboundEmailStorageBytes({
+							message,
+							recipient,
+						}),
+					})
 					await assertWithinEntitlement({
 						db: env.APP_DB,
 						userId,
@@ -689,6 +694,7 @@ async function handleSystemInboundEmail(input: {
 		userId: systemEmailOwnerId,
 		inboxId: inbox.id,
 		recipient: input.recipient,
+		envelopeFrom: input.message.from,
 		rawMime,
 		quotaDay: systemInboundQuotaDay(quotaNow),
 		now: quotaNow,
