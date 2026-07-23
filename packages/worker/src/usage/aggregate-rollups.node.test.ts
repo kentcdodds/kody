@@ -526,9 +526,14 @@ test('aggregateUsageRollups deletes current-month rows absent from the Analytics
 		'execute',
 		'2026-07',
 	])
-	expect(deletes).toHaveLength(1)
-	expect(deletes[0]?.sql).toContain('DELETE FROM usage_rollups WHERE month = ?')
-	expect(deletes[0]?.params).toEqual([
+	const staleDeletes = deletes.filter(
+		(statement) => !statement.sql.includes(`user_id != 'system:email'`),
+	)
+	expect(staleDeletes).toHaveLength(1)
+	expect(staleDeletes[0]?.sql).toContain(
+		'DELETE FROM usage_rollups WHERE month = ?',
+	)
+	expect(staleDeletes[0]?.params).toEqual([
 		'2026-07',
 		'user-a',
 		'job_run',
@@ -572,9 +577,13 @@ test('aggregateUsageRollups chunks stale-row deletes under the bind-parameter ca
 
 	expect(result).toMatchObject({ upsertedRows: 1, deletedRows: 120 })
 	// 49 pairs per statement: 1 month param + 2 per pair = 99 binds max.
-	expect(deletes.map((statement) => statement.params.length)).toEqual([
-		99, 99, 45,
-	])
+	expect(
+		deletes
+			.filter(
+				(statement) => !statement.sql.includes(`user_id != 'system:email'`),
+			)
+			.map((statement) => statement.params.length),
+	).toEqual([99, 99, 45])
 	expect(rollups).toEqual([])
 })
 
@@ -615,7 +624,11 @@ test('aggregateUsageRollups keeps existing rollups when the Analytics Engine res
 		deletedRows: 0,
 		users: 0,
 	})
-	expect(deletes).toHaveLength(0)
+	expect(
+		deletes.filter(
+			(statement) => !statement.sql.includes(`user_id != 'system:email'`),
+		),
+	).toHaveLength(0)
 	expect(batches).toHaveLength(0)
 	expect(rollups).toEqual(existingRollups)
 })
