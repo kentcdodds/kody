@@ -4,6 +4,7 @@ export const routes = route({
 	home: '/',
 	connectOauth: '/connect/oauth',
 	accountIntegrations: '/account/integrations',
+	accountIntegrationDetail: '/account/integrations/:integrationName',
 	accountIntegrationsApi: '/account/integrations.json',
 	accountMcpServers: '/account/mcp-servers',
 	accountMcpServerNew: '/account/mcp-servers/new',

@@ -200,6 +200,7 @@ export function createAppRouter(env: Env) {
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrations: createAccountIntegrationsHandler(env),
+			accountIntegrationDetail: createAccountIntegrationsHandler(env),
 			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),
 			accountMcpServers: createAccountMcpServersHandler(env),
 			accountMcpServerNew: createAccountMcpServersHandler(env),
