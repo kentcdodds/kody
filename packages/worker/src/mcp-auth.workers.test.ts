@@ -95,6 +95,8 @@ type MockDbOptions = {
 function createMockDb(options: MockDbOptions = {}) {
 	const defaultEmail = options.expectedEmail ?? 'user@example.com'
 	const defaultStableUserId = options.expectedStableUserId ?? 'user'
+	const expectedLeaseUserId =
+		options.accountByStableId?.stable_user_id ?? defaultStableUserId
 	const recordVerificationLookup = (kind: VerificationLookupKind) => {
 		options.verificationLookups?.push(kind)
 	}
@@ -119,7 +121,7 @@ function createMockDb(options: MockDbOptions = {}) {
 				if (normalized.startsWith('update users')) {
 					if (
 						!normalized.includes('where stable_user_id = ?') ||
-						!boundParams.includes(defaultStableUserId)
+						!boundParams.includes(expectedLeaseUserId)
 					) {
 						throw new Error('Unscoped account write lease update.')
 					}
