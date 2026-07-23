@@ -1184,9 +1184,9 @@ test('pointer-only retry after midnight enforces the current quota day', async (
 		expect(
 			await env.APP_DB.prepare(
 				`SELECT id FROM email_delivery_events
-				WHERE user_id = ? AND provider = 'cloudflare-email-routing'`,
+				WHERE id = ? AND user_id = ?`,
 			)
-				.bind(userId)
+				.bind(pointer.deliveryId, userId)
 				.first(),
 		).toBeNull()
 	} finally {
