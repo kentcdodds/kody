@@ -182,7 +182,7 @@ test('isolation verification normalizes numeric SQLite user IDs', () => {
 	).not.toThrow()
 })
 
-test('restore trust registry is exact, checked-in empty, and cannot be replaced by operator assertions', async () => {
+test('restore trust registry is exact, pins the reviewed identities, and cannot be replaced by operator assertions', async () => {
 	expect(parseRestoreTrustRegistry(createTrustRegistry())).toEqual(
 		createTrustRegistry(),
 	)
@@ -256,10 +256,23 @@ test('restore trust registry is exact, checked-in empty, and cannot be replaced 
 		parseTrustedRestoreBaselineRegistry(checkedBaselines, parseBaseline)
 			.baselines,
 	).toEqual([])
+	// These exact identities are the reviewed allowlist for restore flows.
+	// Changing them requires updating this pin in the same reviewed change.
 	expect(parseRestoreTrustRegistry(checkedRegistry)).toEqual({
 		schemaVersion: 1,
-		productionSources: [],
-		drillTargets: [],
+		productionSources: [
+			{
+				accountId: 'a99ee2e72728dd52902ef288b7b1447d',
+				databaseId: '8c1014d1-6b41-4695-a0a2-159071f0f919',
+				databaseName: 'kody',
+			},
+		],
+		drillTargets: [
+			{
+				accountId: 'a41d50ecaf0ae0f86dd1824ef6729cb2',
+				databaseName: 'kody-dr-drill-manual',
+			},
+		],
 	})
 	await expect(
 		runD1RestoreDrill(
