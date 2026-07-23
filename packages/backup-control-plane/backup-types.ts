@@ -5,6 +5,7 @@ export type RetentionTier = 'daily' | 'weekly'
 export interface BackupEnvironment {
 	BACKUP_BUCKET: R2Bucket
 	BACKUP_WORKFLOW: Workflow
+	RESTORE_WORKFLOW: Workflow
 	CLOUDFLARE_API_TOKEN: string
 	SOURCE_ACCOUNT_ID: string
 	SOURCE_DATABASE_ID: string
@@ -21,6 +22,14 @@ export interface BackupEnvironment {
 	TRUSTED_RESTORE_BASELINE_SHA256: string
 	BACKUP_MAX_AGE_HOURS?: string
 	BACKUP_MAX_SOURCE_BYTES?: string
+	ACCESS_TEAM_DOMAIN: string
+	ACCESS_APP_AUD: string
+	ACCESS_ALLOWED_EMAIL: string
+	DRILL_ACCOUNT_ID: string
+	PRIMARY_WORKER_ORIGIN: string
+	DRILL_API_TOKEN?: string
+	RESTORE_CONFIRM_SECRET?: string
+	DR_RESTORE_SECRET?: string
 }
 
 export interface BackupPayload {
@@ -64,6 +73,24 @@ export interface LogRecord {
 		| 'freshness-stale'
 		| 'source-size-success'
 		| 'source-size-failure'
+		| 'full-backup-sealed'
+		| 'full-backup-already-sealed'
+		| 'full-backup-seal-skipped'
+		| 'full-backup-seal-failure'
+		| 'restore-drill-started'
+		| 'restore-drill-success'
+		| 'restore-drill-failure'
+		| 'production-restore-d1-import-started'
+		| 'production-restore-d1-import-complete'
+		| 'production-restore-complete'
+		| 'production-restore-failure'
+		| 'ui-run-backup'
+		| 'ui-seal-day'
+		| 'ui-run-drill'
+		| 'ui-restore-prepare'
+		| 'ui-restore-execute'
+		| 'ui-auth-rejected'
+		| 'ui-action-failure'
 	status: 'success' | 'failure' | 'stale-success' | 'disabled'
 	day?: string
 	instanceId?: string

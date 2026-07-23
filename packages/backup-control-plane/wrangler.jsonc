@@ -15,30 +15,44 @@
 			"name": "kody-production-d1-backup",
 			"class_name": "ProductionD1BackupWorkflow",
 		},
+		{
+			"binding": "RESTORE_WORKFLOW",
+			"name": "kody-production-dr-restore",
+			"class_name": "ProductionDrRestoreWorkflow",
+		},
 	],
 	"r2_buckets": [
 		{
 			"binding": "BACKUP_BUCKET",
-			"bucket_name": "replace-with-production-backup-bucket",
+			"bucket_name": "kody-production-backups",
 		},
 	],
 	"vars": {
 		// Both must be exactly "true"; safe defaults keep every schedule inert.
 		"ENABLE_PRODUCTION_D1_BACKUPS": "false",
 		"BACKUP_BENCHMARK_APPROVED": "false",
-		"SOURCE_ACCOUNT_ID": "REPLACE_WITH_ACCOUNT_UUID",
-		"SOURCE_DATABASE_ID": "REPLACE_WITH_DATABASE_UUID",
-		"SOURCE_DATABASE_NAME": "REPLACE_WITH_DATABASE_NAME",
-		"ALLOWED_SOURCE_ACCOUNT_IDS": "REPLACE_WITH_ACCOUNT_UUID",
-		"ALLOWED_SOURCE_DATABASE_IDS": "REPLACE_WITH_DATABASE_UUID",
+		// Production Kody Cloudflare account and D1 database.
+		"SOURCE_ACCOUNT_ID": "a99ee2e72728dd52902ef288b7b1447d",
+		"SOURCE_DATABASE_ID": "8c1014d1-6b41-4695-a0a2-159071f0f919",
+		"SOURCE_DATABASE_NAME": "kody",
+		"ALLOWED_SOURCE_ACCOUNT_IDS": "a99ee2e72728dd52902ef288b7b1447d",
+		"ALLOWED_SOURCE_DATABASE_IDS": "8c1014d1-6b41-4695-a0a2-159071f0f919",
 		"BUILD_COMMIT": "REPLACE_AT_DEPLOY_TIME",
 		// Non-secret provenance. The matching PKCS#8 private key is a Worker secret.
-		"BACKUP_MANIFEST_SIGNING_KEY_ID": "replace-with-approved-key-id",
+		"BACKUP_MANIFEST_SIGNING_KEY_ID": "kody-dr-2026-07",
 		"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "replace-with-base64-spki-public-key",
-		"TRUSTED_RESTORE_BASELINE_ID": "replace-with-approved-baseline-id",
-		"TRUSTED_RESTORE_BASELINE_SHA256": "replace-with-lowercase-canonical-sha256",
+		// SHA-256 of the JSON array of sorted migration filenames at the
+		// deployment commit (see docs/contributing/disaster-recovery.md).
+		"TRUSTED_RESTORE_BASELINE_ID": "kody-migration-set-2026-07",
+		"TRUSTED_RESTORE_BASELINE_SHA256": "a132fab33e6a614e861af54ac9c82ba1493f36a5c9fe02c9004ea0e755b47ea2",
 		"BACKUP_MAX_AGE_HOURS": "26",
 		// D1 GET file_size must remain strictly below this single-object ceiling.
 		"BACKUP_MAX_SOURCE_BYTES": "4500000000",
+		"ACCESS_TEAM_DOMAIN": "kentcdodds.cloudflareaccess.com",
+		"ACCESS_APP_AUD": "769c70e393e2652f5878af99333322184a35cc3aef53376344f8753805e42a76",
+		"ACCESS_ALLOWED_EMAIL": "me@kentcdodds.com",
+		// DR (KCD) account: isolated restore drills only, never production.
+		"DRILL_ACCOUNT_ID": "a41d50ecaf0ae0f86dd1824ef6729cb2",
+		"PRIMARY_WORKER_ORIGIN": "https://heykody.dev",
 	},
 }

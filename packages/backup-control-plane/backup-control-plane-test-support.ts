@@ -160,6 +160,7 @@ export class MemoryBucket {
 
 export const ACCOUNT_ID = '11111111-1111-4111-8111-111111111111'
 export const DATABASE_ID = '22222222-2222-4222-8222-222222222222'
+export const DRILL_ACCOUNT_ID = '33333333-3333-4333-8333-333333333333'
 export const BASELINE_SHA256 = 'b'.repeat(64)
 const manifestSigningKeys = generateKeyPairSync('ed25519')
 
@@ -167,6 +168,7 @@ export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 	return {
 		BACKUP_BUCKET: bucket as unknown as R2Bucket,
 		BACKUP_WORKFLOW: {} as Workflow,
+		RESTORE_WORKFLOW: {} as Workflow,
 		CLOUDFLARE_API_TOKEN: 'not-logged-secret',
 		SOURCE_ACCOUNT_ID: ACCOUNT_ID,
 		SOURCE_DATABASE_ID: DATABASE_ID,
@@ -187,6 +189,14 @@ export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 				.toString('base64'),
 		TRUSTED_RESTORE_BASELINE_ID: 'production-baseline-2026',
 		TRUSTED_RESTORE_BASELINE_SHA256: BASELINE_SHA256,
+		ACCESS_TEAM_DOMAIN: 'example.cloudflareaccess.com',
+		ACCESS_APP_AUD: 'access-app-audience',
+		ACCESS_ALLOWED_EMAIL: 'ops@example.com',
+		DRILL_ACCOUNT_ID,
+		PRIMARY_WORKER_ORIGIN: 'https://primary.example',
+		DRILL_API_TOKEN: 'drill-token',
+		RESTORE_CONFIRM_SECRET: 'restore-confirm-secret',
+		DR_RESTORE_SECRET: 'dr-restore-secret',
 	}
 }
 

@@ -9,6 +9,8 @@ import {
 	workflowInstanceId,
 } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
+import { handleControlPlaneFetch } from './control-plane-fetch.ts'
+import { sealRecentCompleteDays } from './seal-full-backup.ts'
 import {
 	enqueueBackup,
 	enqueueBackupRetry,
@@ -17,6 +19,7 @@ import {
 } from './workflow-trigger.ts'
 
 export { ProductionD1BackupWorkflow } from './backup-workflow.ts'
+export { ProductionDrRestoreWorkflow } from './restore-workflow.ts'
 
 export const BACKUP_CRON = '15 2 * * *'
 export const FRESHNESS_CRON = '45 * * * *'
@@ -115,12 +118,26 @@ async function scheduled(
 		case BACKUP_CRON:
 			await triggerBackup(env, scheduledAt)
 			return
-		case FRESHNESS_CRON:
-			await runFreshnessAndRetry({
-				checkFreshness: () => checkFreshness(env, scheduledAt),
-				retryBackup: () => retryBackup(env, scheduledAt),
-			})
+		case FRESHNESS_CRON: {
+			const results = await Promise.allSettled([
+				runFreshnessAndRetry({
+					checkFreshness: () => checkFreshness(env, scheduledAt),
+					retryBackup: () => retryBackup(env, scheduledAt),
+				}),
+				sealRecentCompleteDays(env, scheduledAt),
+			])
+			const errors = results.flatMap((result) =>
+				result.status === 'rejected' ? [result.reason] : [],
+			)
+			if (errors.length === 1) throw errors[0]
+			if (errors.length > 1) {
+				throw new AggregateError(
+					errors,
+					'Freshness/retry and full-backup sealing both failed.',
+				)
+			}
 			return
+		}
 		default:
 			throw new BackupError(
 				'unknown-schedule',
@@ -130,6 +147,9 @@ async function scheduled(
 }
 
 export default {
+	async fetch(request: Request, env: BackupEnvironment): Promise<Response> {
+		return handleControlPlaneFetch(request, env)
+	},
 	async scheduled(
 		controller: ScheduledController,
 		env: BackupEnvironment,
