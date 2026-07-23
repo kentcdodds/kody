@@ -5,6 +5,10 @@ const cloudflareAccountIdPattern = /^[0-9a-f]{32}$/i
 const resourceNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const sensitiveKeyPattern =
 	/(?:authorization|credential|password|private.?key|secret|token)/i
+const nonSecretContractKeys = new Set([
+	'tokenRequirements',
+	'd1ExportTokenRequirements',
+])
 
 type JsonRecord = Record<string, unknown>
 
@@ -757,7 +761,7 @@ export function redactBackupOutput(value: unknown): unknown {
 	return Object.fromEntries(
 		Object.entries(value).map(([key, entry]) => [
 			key,
-			key !== 'tokenRequirements' && sensitiveKeyPattern.test(key)
+			!nonSecretContractKeys.has(key) && sensitiveKeyPattern.test(key)
 				? '[REDACTED]'
 				: redactBackupOutput(entry),
 		]),

@@ -514,12 +514,21 @@ test('CLI defaults to plan and never renders its provisioner token', async () =>
 		'plan.desired.runtimeContract.enforcement',
 		'deployment-configuration-not-cloudflare-identity-api',
 	)
+	expect(JSON.parse(outputs[0] ?? '')).toHaveProperty(
+		'plan.desired.runtimeContract.d1ExportTokenRequirements.cloudflarePermission',
+		'D1 Edit',
+	)
 
 	const redacted = redactBackupOutput({
 		provisionerToken: apiToken,
 		authorization: `Bearer ${apiToken}`,
 		tokenRequirements: { runtime: 'contract' },
+		d1ExportTokenRequirements: { permission: 'D1 Edit' },
 	})
 	expect(JSON.stringify(redacted)).not.toContain(apiToken)
 	expect(redacted).toHaveProperty('tokenRequirements.runtime', 'contract')
+	expect(redacted).toHaveProperty(
+		'd1ExportTokenRequirements.permission',
+		'D1 Edit',
+	)
 })

@@ -651,7 +651,7 @@ export function verifyRows(
 	baseline: Readonly<RestoreBaseline>,
 ): void {
 	switch (query.id) {
-		case 'integrity':
+		case 'integrity': {
 			if (rows.length !== 1) {
 				throw new Error(`${query.phase} PRAGMA quick_check failed`)
 			}
@@ -665,6 +665,7 @@ export function verifyRows(
 				throw new Error(`${query.phase} PRAGMA quick_check failed`)
 			}
 			return
+		}
 		case 'foreign-keys':
 			if (rows.length !== 0) {
 				throw new Error(`${query.phase} PRAGMA foreign_key_check failed`)
