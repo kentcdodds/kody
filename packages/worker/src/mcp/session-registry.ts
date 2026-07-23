@@ -15,11 +15,14 @@ export async function registerMcpAgentSession(input: {
 		)
 		.bind(input.doId, input.userId)
 		.run()
-	const owner = await input.db
-		.prepare(`SELECT user_id FROM mcp_agent_sessions WHERE do_id = ?`)
-		.bind(input.doId)
-		.first<{ user_id: string }>()
-	if (owner?.user_id !== input.userId) {
+	const owned = await input.db
+		.prepare(
+			`SELECT 1 AS owned FROM mcp_agent_sessions
+			WHERE do_id = ? AND user_id = ?`,
+		)
+		.bind(input.doId, input.userId)
+		.first<{ owned: number }>()
+	if (owned?.owned !== 1) {
 		throw new Error('MCP agent session Durable Object ownership conflict.')
 	}
 }
