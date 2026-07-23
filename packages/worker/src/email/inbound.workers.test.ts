@@ -49,6 +49,7 @@ import {
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { AccountDeletionInProgressError } from '#app/account-deletion-state.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
 // User mail lives on the inbox. subdomain derived from APP_BASE_URL.
@@ -1110,6 +1111,87 @@ test('expired delivery-window pointers are pruned per user while active pointers
 	expect(pointers.results?.map((row) => row.id)).toEqual([
 		`email-inbound-dedupe:${active.fingerprint}`,
 	])
+})
+
+test('pointer-only retry after midnight enforces the current quota day', async () => {
+	silenceIncidentalRuntimeWarnings()
+	vi.useFakeTimers({ toFake: ['Date'] })
+	try {
+		const oldNow = new Date('2026-07-22T23:59:00.000Z')
+		const retryNow = new Date('2026-07-23T00:01:00.000Z')
+		vi.setSystemTime(oldNow)
+		await ensureEmailTestSchema(env.APP_DB)
+		const username = `midnight-${crypto.randomUUID().slice(0, 8)}`
+		const accountEmail = `midnight-${crypto.randomUUID()}@example.com`
+		const userId = await createStableUserIdFromEmail(accountEmail)
+		const address = `${username}@${platformDomain}`
+		await seedVerifiedAccount({
+			db: env.APP_DB,
+			email: accountEmail,
+			username,
+		})
+		await env.APP_DB.prepare(
+			`UPDATE users SET plan = 'free' WHERE stable_user_id = ?`,
+		)
+			.bind(userId)
+			.run()
+		const provisioned = await ensureDefaultEmailInbox({
+			db: env.APP_DB,
+			userId,
+			username,
+			domain: platformDomain,
+		})
+		if (!provisioned) throw new Error('Expected provisioned inbox.')
+		const raw = [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Midnight pointer retry',
+			'Message-ID: <midnight-pointer@example.net>',
+			'',
+			'Body',
+		].join('\r\n')
+		const pointer = await buildInboundDelivery({
+			userId,
+			inboxId: provisioned.inbox.id,
+			recipient: address,
+			rawMime: raw,
+			quotaDay: '2026-07-22',
+			now: oldNow,
+		})
+		await claimInboundDeliveryWindow({
+			db: env.APP_DB,
+			delivery: pointer,
+			now: oldNow,
+		})
+		const receiveLimit = planLimits.free.maxEmailReceivesPerDay
+		if (receiveLimit == null) throw new Error('Expected finite receive limit.')
+		await env.APP_DB.prepare(
+			`INSERT INTO entitlement_daily_counters (
+				user_id, resource, day, count, updated_at
+			) VALUES (?, 'email_receives_per_day', '2026-07-23', ?, ?)`,
+		)
+			.bind(userId, receiveLimit, retryNow.toISOString())
+			.run()
+
+		vi.setSystemTime(retryNow)
+		const retry = createForwardableEmailMessage({
+			from: 'sender@example.net',
+			to: address,
+			raw,
+		})
+		await handleInboundEmail(retry, createInboundEnv())
+		expect(retry.rejectedReason).toBe('Recipient mailbox is over quota.')
+		expect(
+			await env.APP_DB.prepare(
+				`SELECT id FROM email_delivery_events
+				WHERE user_id = ? AND provider = 'cloudflare-email-routing'`,
+			)
+				.bind(userId)
+				.first(),
+		).toBeNull()
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('byte-identical mail dedupes only inside the explicit delivery window', async () => {

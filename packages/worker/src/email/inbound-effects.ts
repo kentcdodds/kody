@@ -155,6 +155,7 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 	) {
 		return { outcome: 'stale' as const }
 	}
+	const finalizationToken = delivery.finalizationToken
 	const message = await getEmailMessageById({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -171,7 +172,7 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 				? (message.receivedAt ?? message.createdAt).slice(0, 7)
 				: now.toISOString().slice(0, 7)),
 		usageBytes: delivery.usageBytes ?? message?.rawSize ?? 0,
-		expectedFinalizationToken: input.expectedFinalizationToken,
+		expectedFinalizationToken: finalizationToken,
 		durationMs: delivery.usageDurationMs ?? input.durationMs,
 		now,
 	})
@@ -186,9 +187,15 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 			WHERE id = ?
 				AND user_id = ?
 				AND event_type = 'received'
-				AND json_extract(detail_json, '$.subscriptionEffectState') != 'complete'`,
+				AND json_extract(detail_json, '$.subscriptionEffectState') != 'complete'
+				AND json_extract(detail_json, '$.finalizationToken') = ?`,
 		)
-			.bind(now.toISOString(), delivery.deliveryId, input.userId)
+			.bind(
+				now.toISOString(),
+				delivery.deliveryId,
+				input.userId,
+				finalizationToken,
+			)
 			.run()
 		return { outcome: 'missing-message' as const }
 	}
@@ -228,8 +235,8 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 			effectLeaseAt,
 			delivery.deliveryId,
 			input.userId,
-			input.expectedFinalizationToken ?? null,
-			input.expectedFinalizationToken ?? null,
+			finalizationToken ?? null,
+			finalizationToken ?? null,
 			now.toISOString(),
 			expiredBefore,
 		)

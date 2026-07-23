@@ -434,7 +434,7 @@ export async function handleInboundEmail(
 							now: quotaNow,
 						})
 					: null)
-			if (!activeWindow && !existingDelivery) {
+			if (!existingDelivery) {
 				try {
 					// New deliveries check the stored cap before their durable quota
 					// claim. A retry with an existing ledger bypasses this gate so a
@@ -516,7 +516,10 @@ export async function handleInboundEmail(
 					existingDelivery ??
 					(await chargeUserInboundDeliveryOnce({
 						db: env.APP_DB,
-						delivery,
+						delivery: {
+							...delivery,
+							quotaDay: userInboundQuotaDay(quotaNow),
+						},
 						plan: account.plan,
 						limit: resolveEmailResourceLimit(
 							account.plan,
@@ -741,7 +744,7 @@ async function handleSystemInboundEmail(input: {
 					now: quotaNow,
 				})
 			: null)
-	if (!activeWindow && !existingDelivery) {
+	if (!existingDelivery) {
 		const storedMessages = await countStoredSystemEmailMessages({
 			db: input.env.APP_DB,
 		})
@@ -809,7 +812,10 @@ async function handleSystemInboundEmail(input: {
 		? { delivery: existingDelivery, overLimit: false as const }
 		: await chargeSystemInboundDeliveryOnce({
 				db: input.env.APP_DB,
-				delivery,
+				delivery: {
+					...delivery,
+					quotaDay: systemInboundQuotaDay(quotaNow),
+				},
 				localPart: input.localPart,
 				limit: systemEmailLimits.maxReceivesPerDay,
 				now: quotaNow,

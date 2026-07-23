@@ -895,9 +895,12 @@ export async function markInboundDeliveryReceived(input: {
 		state: 'received',
 		finalizationToken: input.delivery.storageLease,
 		subscriptionEffectState: 'pending',
-		usageDurationMs: Math.max(0, Math.round(input.usageDurationMs)),
-		usageMonth: input.usageMonth,
-		usageBytes: Math.max(0, Math.round(input.usageBytes)),
+		usageDurationMs:
+			input.delivery.usageDurationMs ??
+			Math.max(0, Math.round(input.usageDurationMs)),
+		usageMonth: input.delivery.usageMonth ?? input.usageMonth,
+		usageBytes:
+			input.delivery.usageBytes ?? Math.max(0, Math.round(input.usageBytes)),
 	}
 	delete detail.storageLease
 	delete detail.storageLeaseAt
