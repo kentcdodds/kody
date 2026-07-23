@@ -221,6 +221,29 @@ test('unknown kid forces at most one JWKS refresh per 60 seconds', async () => {
 	assert.equal(fetches, fetchesAfterFirst) // cooldown: no additional JWKS fetch
 })
 
+test('verifyAccessJwt maps JWKS AbortError to access-jwks-fetch-failed', async () => {
+	resetAccessJwksCacheForTests()
+	const { kid, sign } = rsaJwksAndSigner()
+	const env = environment()
+	const jwt = sign({ alg: 'RS256', kid }, futurePayload(env))
+	const abortError = new DOMException('The operation was aborted', 'AbortError')
+	await assert.rejects(
+		verifyAccessJwt(
+			env,
+			new Request('https://backup.example/', {
+				headers: { 'cf-access-jwt-assertion': jwt },
+			}),
+			async () => {
+				throw abortError
+			},
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'access-jwks-fetch-failed' &&
+			error.message.includes('timed out or was aborted'),
+	)
+})
+
 test('assertSameOriginMutation rejects absent or cross-site Sec-Fetch-Site', () => {
 	assert.throws(
 		() =>

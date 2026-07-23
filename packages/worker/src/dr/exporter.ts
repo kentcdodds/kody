@@ -471,11 +471,10 @@ async function exportR2Phase(input: {
 			cursor: progress.r2ListCursor ?? undefined,
 			limit: 100,
 		})
+		// Finish the whole list page before checking the tick budget. Persisting
+		// mid-page without advancing r2ListCursor would re-append the same
+		// NDJSON index lines on the next tick. List pages are bounded (≤100).
 		for (const object of listed.objects) {
-			if (Date.now() - input.startedAtMs >= input.timeBudgetMs) {
-				await persistProgress(s3, session)
-				return true
-			}
 			if (object.size > drExportMaxObjectBytes) {
 				progress.warnings.push(
 					`Skipped ${label} object ${object.key}: size ${object.size} exceeds ${drExportMaxObjectBytes} bytes`,
@@ -505,6 +504,7 @@ async function exportR2Phase(input: {
 		if (listed.truncated) {
 			progress.r2ListCursor = listed.cursor
 			await persistProgress(s3, session)
+			if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
 			continue
 		}
 		const objectKey = stagingR2IndexKey(progress.day, label)

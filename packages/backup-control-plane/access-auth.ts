@@ -45,6 +45,15 @@ async function importRsaJwk(jwk: Jwk): Promise<CryptoKey> {
 	)
 }
 
+const JWKS_FETCH_TIMEOUT_MS = 10_000
+
+function isAbortOrTimeoutError(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		(error.name === 'AbortError' || error.name === 'TimeoutError')
+	)
+}
+
 async function loadJwks(
 	teamDomain: string,
 	fetcher: typeof fetch,
@@ -53,7 +62,23 @@ async function loadJwks(
 	if (jwksCache !== null && now - jwksCache.fetchedAt < JWKS_CACHE_TTL_MS) {
 		return jwksCache.keysByKid
 	}
-	const response = await fetcher(`https://${teamDomain}/cdn-cgi/access/certs`)
+	let response: Response
+	try {
+		response = await fetcher(`https://${teamDomain}/cdn-cgi/access/certs`, {
+			signal: AbortSignal.timeout(JWKS_FETCH_TIMEOUT_MS),
+		})
+	} catch (error) {
+		if (isAbortOrTimeoutError(error)) {
+			throw new BackupError(
+				'access-jwks-fetch-failed',
+				'Access JWKS fetch timed out or was aborted',
+			)
+		}
+		throw new BackupError(
+			'access-jwks-fetch-failed',
+			'Access JWKS fetch failed',
+		)
+	}
 	if (!response.ok) {
 		throw new BackupError(
 			'access-jwks-fetch-failed',

@@ -466,6 +466,135 @@ test('R2 full-buffer ceiling is 25 MiB', () => {
 	expect(drExportMaxObjectBytes).toBe(25 * 1024 * 1024)
 })
 
+test('R2 export does not duplicate index lines across budget interruptions', async () => {
+	storageMocks.exportStorage.mockReset()
+	storageMocks.exportStorage.mockResolvedValue({
+		entries: [],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 250,
+		estimatedBytes: 0,
+	})
+	const pageOne = {
+		a: new TextEncoder().encode('a'),
+		b: new TextEncoder().encode('b'),
+	}
+	const pageTwo = {
+		c: new TextEncoder().encode('c'),
+	}
+	const all = { ...pageOne, ...pageTwo }
+	let listCalls = 0
+	const pagingR2 = {
+		async list(input?: { cursor?: string }) {
+			listCalls += 1
+			if (!input?.cursor) {
+				return {
+					objects: Object.entries(pageOne).map(([key, value]) => ({
+						key,
+						size: value.byteLength,
+						uploaded: new Date(),
+						etag: 'etag',
+						httpEtag: 'etag',
+						checksums: {},
+						version: 'v1',
+					})),
+					truncated: true,
+					cursor: 'page-2',
+				}
+			}
+			return {
+				objects: Object.entries(pageTwo).map(([key, value]) => ({
+					key,
+					size: value.byteLength,
+					uploaded: new Date(),
+					etag: 'etag',
+					httpEtag: 'etag',
+					checksums: {},
+					version: 'v1',
+				})),
+				truncated: false,
+				cursor: '',
+			}
+		},
+		async get(key: string) {
+			const value = all[key as keyof typeof all]
+			if (!value) return null
+			return {
+				arrayBuffer: async () =>
+					value.buffer.slice(
+						value.byteOffset,
+						value.byteOffset + value.byteLength,
+					),
+			}
+		},
+	} as unknown as R2Bucket
+
+	const { client } = createMemoryS3()
+	let nowMs = 1_000_000
+	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
+	const originalPut = client.put.bind(client)
+	client.put = async (key, body, options) => {
+		const result = await originalPut(key, body, options)
+		// After the first R2 list page is persisted (cursor advanced), exhaust
+		// the budget so the next tick resumes from page-2.
+		if (
+			key.includes('exporter/progress.json') &&
+			typeof body === 'string' &&
+			body.includes('"r2ListCursor":"page-2"')
+		) {
+			nowMs += 50_000
+		}
+		return result
+	}
+
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({}),
+		EMAIL_BLOBS: pagingR2,
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+
+	try {
+		const tick1 = await runDrExportTick({
+			env,
+			now: new Date('2026-07-23T01:00:00.000Z'),
+			timeBudgetMs: 20_000,
+			s3: client,
+		})
+		expect(tick1.timeBudgetExhausted).toBe(true)
+		expect(tick1.summaryWritten).toBe(false)
+
+		nowMs = 1_000_000
+		const tick2 = await runDrExportTick({
+			env,
+			now: new Date('2026-07-23T01:00:00.000Z'),
+			timeBudgetMs: 60_000,
+			s3: client,
+		})
+		expect(tick2.summaryWritten).toBe(true)
+		expect(listCalls).toBeGreaterThanOrEqual(2)
+
+		const index = (await client.getText(
+			stagingR2IndexKey('2026-07-23', 'email-blobs'),
+		))!.text
+		const keys = index
+			.trim()
+			.split('\n')
+			.filter(Boolean)
+			.map((line) => (JSON.parse(line) as { key: string }).key)
+		expect(keys).toEqual(['a', 'b', 'c'])
+		expect(new Set(keys).size).toBe(keys.length)
+	} finally {
+		dateNow.mockRestore()
+	}
+})
+
 test('initial progress shape includes phase, revision, and cursors', () => {
 	const progress = __testOnlyCreateInitialProgress(
 		'2026-07-23',

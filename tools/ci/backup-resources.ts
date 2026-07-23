@@ -93,7 +93,14 @@ export type BackupRuntimeContract = {
 		destinationAccountId: string
 		bucketName: string
 		access: 'object-read-write'
-		allowedPrefixes: ['daily/', 'weekly/']
+		allowedPrefixes: [
+			'daily/',
+			'weekly/',
+			'staging/',
+			'blobs/',
+			'escrow/',
+			'pre-restore/',
+		]
 	}
 	explicitRuntimeProhibitions: [
 		'r2.bucket.admin',
@@ -290,6 +297,24 @@ export function generateBackupDesiredState(input: {
 					maxAgeSeconds: 400 * secondsPerDay,
 				},
 			},
+			{
+				id: 'blob-store-immutable-400-days',
+				enabled: true,
+				prefix: 'blobs/',
+				condition: {
+					type: 'Age',
+					maxAgeSeconds: 400 * secondsPerDay,
+				},
+			},
+			{
+				id: 'escrow-immutable-400-days',
+				enabled: true,
+				prefix: 'escrow/',
+				condition: {
+					type: 'Age',
+					maxAgeSeconds: 400 * secondsPerDay,
+				},
+			},
 		],
 	}
 	const lifecyclePolicy: R2LifecyclePolicy = {
@@ -341,7 +366,14 @@ export function generateBackupDesiredState(input: {
 			destinationAccountId,
 			bucketName: input.bucketName,
 			access: 'object-read-write',
-			allowedPrefixes: ['daily/', 'weekly/'],
+			allowedPrefixes: [
+				'daily/',
+				'weekly/',
+				'staging/',
+				'blobs/',
+				'escrow/',
+				'pre-restore/',
+			],
 		},
 		explicitRuntimeProhibitions: [
 			'r2.bucket.admin',

@@ -41,6 +41,11 @@ export type DrRestoreCursor = {
 	storageLineOffset: number
 	/** Whether the current storage bucket has already been cleared. */
 	storageReplaceStarted: boolean
+	/**
+	 * Whether the current dump object's full sha256 was verified against the
+	 * sealed storage index before any importStorage page ran.
+	 */
+	storageDumpVerified: boolean
 	r2LabelIndex: number
 	r2LineOffset: number
 	artifactsIndex: number
@@ -87,6 +92,7 @@ function decodeCursor(raw: string | undefined): DrRestoreCursor {
 			storageIndex: 0,
 			storageLineOffset: 0,
 			storageReplaceStarted: false,
+			storageDumpVerified: false,
 			r2LabelIndex: 0,
 			r2LineOffset: 0,
 			artifactsIndex: 0,
@@ -115,6 +121,7 @@ function decodeCursor(raw: string | undefined): DrRestoreCursor {
 				'storageLineOffset',
 			),
 			storageReplaceStarted: Boolean(parsed.storageReplaceStarted),
+			storageDumpVerified: Boolean(parsed.storageDumpVerified),
 			r2LabelIndex: requireNonNegativeSafeInteger(
 				parsed.r2LabelIndex ?? 0,
 				'r2LabelIndex',
@@ -261,6 +268,21 @@ async function restoreStoragePhase(input: {
 				},
 			)
 		}
+		// Verify the full dump against the sealed index before any destructive
+		// importStorage page. Dumps are ≤16 MiB by exporter construction.
+		if (!input.cursor.storageDumpVerified) {
+			const actual = await sha256Hex(loaded.text)
+			if (actual !== entry.sha256) {
+				throw new MaintenanceFailureError(
+					`storage dump sha256 mismatch for ${dumpKey}: expected ${entry.sha256}, got ${actual}`,
+					{
+						progress: input.progress,
+						warnings: input.warnings,
+					},
+				)
+			}
+			input.cursor.storageDumpVerified = true
+		}
 		const lines = parseNdjsonLines(loaded.text)
 		const { userId, storageId } = decodeStorageIdentity(entry.storageId)
 		const runner = storageRunnerRpc({
@@ -313,6 +335,7 @@ async function restoreStoragePhase(input: {
 		input.cursor.storageIndex += 1
 		input.cursor.storageLineOffset = 0
 		input.cursor.storageReplaceStarted = false
+		input.cursor.storageDumpVerified = false
 		input.progress.storageRestored += 1
 	}
 	input.cursor.phase = 'r2'

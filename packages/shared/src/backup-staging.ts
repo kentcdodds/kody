@@ -179,6 +179,9 @@ export function parseStagingSummary(value: unknown): StagingSummary {
 		typeof value.buildCommit !== 'string' ||
 		!isFileSummary(value.storageIndex) ||
 		!isRecord(value.r2Indexes) ||
+		!Object.keys(value.r2Indexes).every((key) =>
+			(backupR2BucketLabels as ReadonlyArray<string>).includes(key),
+		) ||
 		!Object.values(value.r2Indexes).every(isFileSummary) ||
 		!isFileSummary(value.artifactsIndex) ||
 		!Number.isSafeInteger(value.blobsWritten) ||

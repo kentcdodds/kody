@@ -9,10 +9,10 @@ const ACCOUNT = '11111111-1111-4111-8111-111111111111'
 const DATABASE = '22222222-2222-4222-8222-222222222222'
 const MD5 = 'a'.repeat(32)
 
-function importPollSequence(pollResponses: Array<unknown>): typeof fetch {
+function importPollSequence(pollResponses: Array<unknown>) {
 	let phase: 'init' | 'upload' | 'ingest' | 'poll' = 'init'
 	let pollIndex = 0
-	return async (input, init) => {
+	const fetcher: typeof fetch = async (input, init) => {
 		const url = String(input)
 		if (url.includes('upload.example')) {
 			phase = 'ingest'
@@ -52,9 +52,17 @@ function importPollSequence(pollResponses: Array<unknown>): typeof fetch {
 				throw new Error(`unexpected action ${String(body.action)}`)
 		}
 	}
+	return {
+		fetcher,
+		getPollCount: () => pollIndex,
+	}
 }
 
 test('importSqlIntoD1 completes only on terminal status complete', async () => {
+	const sequence = importPollSequence([
+		{ type: 'import', success: true, status: 'active' },
+		{ type: 'import', success: true, status: 'complete' },
+	])
 	await importSqlIntoD1({
 		accountId: ACCOUNT,
 		databaseId: DATABASE,
@@ -62,17 +70,24 @@ test('importSqlIntoD1 completes only on terminal status complete', async () => {
 		sqlBody: 'CREATE TABLE t(id INTEGER);\n',
 		md5Etag: MD5,
 		options: {
-			fetcher: importPollSequence([
-				{ type: 'import', success: true, status: 'complete' },
-			]),
+			fetcher: sequence.fetcher,
 			sleep: async () => undefined,
 			maxPollAttempts: 3,
 			pollDelayMs: 1,
 		},
 	})
+	assert.equal(sequence.getPollCount(), 2)
 })
 
 test('importSqlIntoD1 completes on documented final_bookmark terminal shape', async () => {
+	const sequence = importPollSequence([
+		{ type: 'import', success: true, status: 'active' },
+		{
+			type: 'import',
+			success: true,
+			result: { final_bookmark: 'final-1', num_queries: 1 },
+		},
+	])
 	await importSqlIntoD1({
 		accountId: ACCOUNT,
 		databaseId: DATABASE,
@@ -80,21 +95,21 @@ test('importSqlIntoD1 completes on documented final_bookmark terminal shape', as
 		sqlBody: 'CREATE TABLE t(id INTEGER);\n',
 		md5Etag: MD5,
 		options: {
-			fetcher: importPollSequence([
-				{
-					type: 'import',
-					success: true,
-					result: { final_bookmark: 'final-1', num_queries: 1 },
-				},
-			]),
+			fetcher: sequence.fetcher,
 			sleep: async () => undefined,
 			maxPollAttempts: 3,
 			pollDelayMs: 1,
 		},
 	})
+	assert.equal(sequence.getPollCount(), 2)
 })
 
 test('importSqlIntoD1 does not treat bare success:true as completion', async () => {
+	const sequence = importPollSequence([
+		{ type: 'import', success: true },
+		{ type: 'import', success: true },
+		{ type: 'import', success: true },
+	])
 	await assert.rejects(
 		importSqlIntoD1({
 			accountId: ACCOUNT,
@@ -103,11 +118,7 @@ test('importSqlIntoD1 does not treat bare success:true as completion', async () 
 			sqlBody: 'CREATE TABLE t(id INTEGER);\n',
 			md5Etag: MD5,
 			options: {
-				fetcher: importPollSequence([
-					{ type: 'import', success: true },
-					{ type: 'import', success: true },
-					{ type: 'import', success: true },
-				]),
+				fetcher: sequence.fetcher,
 				sleep: async () => undefined,
 				maxPollAttempts: 3,
 				pollDelayMs: 1,
@@ -116,6 +127,7 @@ test('importSqlIntoD1 does not treat bare success:true as completion', async () 
 		(error: unknown) =>
 			error instanceof BackupError && error.code === 'import-poll-timeout',
 	)
+	assert.equal(sequence.getPollCount(), 3)
 })
 
 test('importSqlIntoD1 fails when poll expires before terminal success', async () => {
@@ -134,7 +146,7 @@ test('importSqlIntoD1 fails when poll expires before terminal success', async ()
 						success: false,
 						error: 'Not currently importing anything.',
 					},
-				]),
+				]).fetcher,
 				sleep: async () => undefined,
 				maxPollAttempts: 3,
 				pollDelayMs: 1,
@@ -160,7 +172,7 @@ test('importSqlIntoD1 fails on explicit error status', async () => {
 						status: 'error',
 						error: 'statement too long',
 					},
-				]),
+				]).fetcher,
 				sleep: async () => undefined,
 				maxPollAttempts: 3,
 				pollDelayMs: 1,

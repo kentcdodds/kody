@@ -330,6 +330,7 @@ test('decodeCursor rejects NaN, negative, and non-safe-integer fields', () => {
 				storageIndex: -1,
 				storageLineOffset: 0,
 				storageReplaceStarted: false,
+				storageDumpVerified: false,
 				r2LabelIndex: 0,
 				r2LineOffset: 0,
 				artifactsIndex: 0,
@@ -345,6 +346,7 @@ test('decodeCursor rejects NaN, negative, and non-safe-integer fields', () => {
 					storageIndex: '1',
 					storageLineOffset: 0,
 					storageReplaceStarted: false,
+					storageDumpVerified: false,
 					r2LabelIndex: 0,
 					r2LineOffset: 0,
 					artifactsIndex: 0,
@@ -361,6 +363,7 @@ test('decodeCursor rejects NaN, negative, and non-safe-integer fields', () => {
 					storageIndex: 1.5,
 					storageLineOffset: 0,
 					storageReplaceStarted: false,
+					storageDumpVerified: false,
 					r2LabelIndex: 0,
 					r2LineOffset: 0,
 					artifactsIndex: 0,
@@ -368,6 +371,43 @@ test('decodeCursor rejects NaN, negative, and non-safe-integer fields', () => {
 			),
 		),
 	).toThrow(MaintenanceFailureError)
+})
+
+test('dr-restore hard-fails on storage dump sha256 mismatch before import', async () => {
+	storageMocks.importStorage.mockReset()
+	const day = '2026-07-23'
+	const identity = encodeStorageIdentity('user-a', 'job:1')
+	const dumpBody = `${JSON.stringify({ key: 'alpha', valueJson: '{"n":1}' })}\n`
+	const storageIndex: StorageIndex = {
+		schemaVersion: 1,
+		day,
+		entries: [
+			{
+				storageId: identity,
+				objectKey: stagingStorageDumpKey(day, identity),
+				entryCount: 1,
+				bytes: dumpBody.length,
+				sha256: 'c'.repeat(64),
+			},
+		],
+	}
+	const { client } = createMemoryS3({
+		[sealedKey(day, stagingStorageIndexKey(day))]: JSON.stringify(storageIndex),
+		[sealedKey(day, stagingStorageDumpKey(day, identity))]: dumpBody,
+	})
+
+	await expect(
+		runDrRestoreTick({
+			env: baseEnv(),
+			day,
+			timeBudgetMs: 60_000,
+			s3: client,
+		}),
+	).rejects.toMatchObject({
+		name: 'MaintenanceFailureError',
+		message: expect.stringContaining('storage dump sha256 mismatch'),
+	})
+	expect(storageMocks.importStorage).not.toHaveBeenCalled()
 })
 
 test('sealed object keys rewrite staging prefix into daily/full', () => {

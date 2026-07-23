@@ -103,6 +103,8 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	).toEqual([
 		{ prefix: 'daily/', maxAgeSeconds: 35 * 86_400, enabled: true },
 		{ prefix: 'weekly/', maxAgeSeconds: 400 * 86_400, enabled: true },
+		{ prefix: 'blobs/', maxAgeSeconds: 400 * 86_400, enabled: true },
+		{ prefix: 'escrow/', maxAgeSeconds: 400 * 86_400, enabled: true },
 	])
 	expect(
 		desired.lifecyclePolicy.rules.map((rule) => ({
@@ -125,7 +127,14 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	expect(desired.runtimeContract.r2Binding).toMatchObject({
 		destinationAccountId: normalizedDestinationAccountId,
 		bucketName: 'kody-d1-backup-archive',
-		allowedPrefixes: ['daily/', 'weekly/'],
+		allowedPrefixes: [
+			'daily/',
+			'weekly/',
+			'staging/',
+			'blobs/',
+			'escrow/',
+			'pre-restore/',
+		],
 	})
 	expect(desired.readiness.bucketPrivateByDefault).toBe(true)
 	expect(desired.tokenRequirements.provisioner).toMatchObject({
