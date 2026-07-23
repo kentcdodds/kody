@@ -37,7 +37,11 @@ export function createAccountMcpServersHandler(env: Env) {
 				loaderData: { accountMcpServers },
 			})
 		},
-	} satisfies Action<typeof routes.accountMcpServers>
+	} satisfies Action<
+		| typeof routes.accountMcpServers
+		| typeof routes.accountMcpServerNew
+		| typeof routes.accountMcpServerDetail
+	>
 }
 
 export function createAccountMcpServersApiHandler(env: Env) {
@@ -128,16 +132,24 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 			let authSuccess = false
 			let authError: string | null = null
 			let serverName: string | null = null
+			let serverId: string | null = null
 			try {
 				const outcome = await hub.handleOAuthCallback({ url: request.url })
 				authSuccess = outcome.authSuccess
 				authError = outcome.authError
 				serverName = outcome.serverName
+				serverId = outcome.serverId
 			} catch (error) {
 				authError = getErrorMessage(error)
 			}
 
-			const target = new URL('/account/mcp-servers', request.url)
+			const target =
+				authSuccess && serverId
+					? new URL(
+							`/account/mcp-servers/${encodeURIComponent(serverId)}`,
+							request.url,
+						)
+					: new URL('/account/mcp-servers', request.url)
 			if (authSuccess) {
 				target.searchParams.set('auth', 'success')
 				if (serverName) {

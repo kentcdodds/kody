@@ -95,7 +95,11 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.account)]: accountRouteLoader,
 	[routePattern(routes.accountBilling)]: accountBillingRouteLoader,
 	[routePattern(routes.accountIntegrations)]: accountIntegrationsRouteLoader,
+	[routePattern(routes.accountIntegrationDetail)]:
+		accountIntegrationsRouteLoader,
 	[routePattern(routes.accountMcpServers)]: accountMcpServersRouteLoader,
+	[routePattern(routes.accountMcpServerNew)]: accountMcpServersRouteLoader,
+	[routePattern(routes.accountMcpServerDetail)]: accountMcpServersRouteLoader,
 	[routePattern(routes.accountPackageInvocationTokens)]:
 		accountPackageInvocationTokensRouteLoader,
 	[routePattern(routes.accountPackageInvocationTokenNew)]:
@@ -108,6 +112,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.accountPasskeys)]: accountPasskeysRouteLoader,
 	[routePattern(routes.accountRemoteConnectors)]:
 		accountRemoteConnectorsRouteLoader,
+	[routePattern(routes.accountRemoteConnectorNew)]:
+		accountRemoteConnectorsRouteLoader,
+	[routePattern(routes.accountRemoteConnectorDetail)]:
+		accountRemoteConnectorsRouteLoader,
 	[routePattern(routes.accountSecrets)]: accountSecretsRouteLoader,
 	[routePattern(routes.accountSecretNew)]: accountSecretsRouteLoader,
 	[routePattern(routes.accountSecretsApprove)]: accountSecretsRouteLoader,
@@ -117,6 +125,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.accountTwoFactor)]: accountTwoFactorRouteLoader,
 	[routePattern(routes.admin)]: adminUsersRouteLoader,
 	[routePattern(routes.adminUsers)]: adminUsersRouteLoader,
+	[routePattern(routes.adminUserDetail)]: adminUsersRouteLoader,
 	[routePattern(routes.adminInvites)]: adminInvitesRouteLoader,
 	[routePattern(routes.adminFeatureFlags)]: adminFeatureFlagsRouteLoader,
 	[routePattern(routes.adminRoles)]: adminRolesRouteLoader,
@@ -144,7 +153,10 @@ export const clientRoutes = {
 	[routePattern(routes.account)]: <AccountRoute />,
 	[routePattern(routes.accountBilling)]: <AccountBillingRoute />,
 	[routePattern(routes.accountIntegrations)]: <AccountIntegrationsRoute />,
+	[routePattern(routes.accountIntegrationDetail)]: <AccountIntegrationsRoute />,
 	[routePattern(routes.accountMcpServers)]: <AccountMcpServersRoute />,
+	[routePattern(routes.accountMcpServerNew)]: <AccountMcpServersRoute />,
+	[routePattern(routes.accountMcpServerDetail)]: <AccountMcpServersRoute />,
 	[routePattern(routes.accountPackageInvocationTokens)]: (
 		<AccountPackageInvocationTokensRoute />
 	),
@@ -161,6 +173,12 @@ export const clientRoutes = {
 	[routePattern(routes.accountRemoteConnectors)]: (
 		<AccountRemoteConnectorsRoute />
 	),
+	[routePattern(routes.accountRemoteConnectorNew)]: (
+		<AccountRemoteConnectorsRoute />
+	),
+	[routePattern(routes.accountRemoteConnectorDetail)]: (
+		<AccountRemoteConnectorsRoute />
+	),
 	[routePattern(routes.accountSecrets)]: <AccountSecretsRoute />,
 	[routePattern(routes.accountSecretNew)]: <AccountSecretsRoute />,
 	[routePattern(routes.accountSecretsApprove)]: <AccountSecretsRoute />,
@@ -170,6 +188,7 @@ export const clientRoutes = {
 	[routePattern(routes.accountTwoFactor)]: <AccountTwoFactorRoute />,
 	[routePattern(routes.admin)]: <AdminUsersRoute />,
 	[routePattern(routes.adminUsers)]: <AdminUsersRoute />,
+	[routePattern(routes.adminUserDetail)]: <AdminUsersRoute />,
 	[routePattern(routes.adminInvites)]: <AdminInvitesRoute />,
 	[routePattern(routes.adminFeatureFlags)]: <AdminFeatureFlagsRoute />,
 	[routePattern(routes.adminRoles)]: <AdminRolesRoute />,

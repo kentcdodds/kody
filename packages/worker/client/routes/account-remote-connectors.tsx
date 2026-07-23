@@ -2,10 +2,13 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { replaceLocation } from '#client/replace-location.ts'
+import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
 	type AccountStatus,
 	readJson,
@@ -19,6 +22,7 @@ import {
 	AccountManagementList,
 	AccountManagementListItemButton,
 	AccountManagementMessage,
+	AccountManagementSearchField,
 	AccountManagementShell,
 	AccountManagementSidebar,
 	AccountPageHeader,
@@ -79,11 +83,14 @@ type EditorState = {
 const accountRemoteConnectorsApiPath = '/account/remote-connectors.json'
 const accountRemoteConnectorsPath = '/account/remote-connectors'
 const generatedSecretBytes = 32
+const remoteConnectorsRoute = createListDetailRoute(accountRemoteConnectorsPath)
 
-function isAccountRemoteConnectorsPath(href: string) {
-	return (
-		new URL(href, 'http://localhost').pathname === accountRemoteConnectorsPath
-	)
+/**
+ * List/detail/new and `q` filter variants share one connectors payload.
+ * Key the load latch on the base path so selection and search do not refetch.
+ */
+function getDataRefreshKey(_href: string) {
+	return accountRemoteConnectorsPath
 }
 
 export async function accountRemoteConnectorsRouteLoader(
@@ -139,6 +146,30 @@ function generateSharedSecret() {
 	const bytes = new Uint8Array(generatedSecretBytes)
 	crypto.getRandomValues(bytes)
 	return bytesToBase64Url(bytes)
+}
+
+function readSearchFilter(href: string) {
+	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
+}
+
+function selectionSyncKey(selection: {
+	selectedId: string | null
+	isCreating: boolean
+}) {
+	if (selection.isCreating) return 'new'
+	if (selection.selectedId) return `id:${selection.selectedId}`
+	return 'none'
+}
+
+function connectorMatchesSearch(
+	connector: RemoteConnectorListItem,
+	search: string,
+) {
+	return matchesSearchQuery(search, [
+		connector.instanceId,
+		connector.enabled ? 'enabled' : 'disabled',
+		connector.attached ? 'attached' : 'not attached',
+	])
 }
 
 function ClipboardIcon() {
@@ -364,13 +395,65 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	const loadLatch = createRouteLoadLatch()
 	let deleteConfirm = false
 	let showSharedSecret = false
+	let syncedSelectionKey: string | null = null
 
 	const primaryButtonCss = getPrimaryButtonCss()
 	const secondaryButtonCss = getSecondaryButtonCss()
 	const dangerButtonCss = getDangerButtonCss()
 
+	function getCurrentHref() {
+		return readCurrentRouterHref(handle)
+	}
+
+	function getCurrentSearch() {
+		return new URL(getCurrentHref(), 'http://localhost').search
+	}
+
+	function syncRouterLocation(nextPath: string) {
+		// Do not pre-mark the destination as loaded: `navigate` is async
+		// (preload-then-commit), so until it commits the current href is
+		// unchanged and a pre-set would make interim renders look like a
+		// location change and fire a spurious fallback fetch for the old URL.
+		// The commit render consumes the navigation's preloaded data (or the
+		// stale marker) and marks the latch itself.
+		navigate(nextPath)
+	}
+
+	function buildHrefWithUpdatedSearch(search: string) {
+		const nextUrl = new URL(getCurrentHref(), 'http://localhost')
+		if (search) nextUrl.searchParams.set('q', search)
+		else nextUrl.searchParams.delete('q')
+		return `${nextUrl.pathname}${nextUrl.search}`
+	}
+
+	function syncEditorToSelection(selection: {
+		selectedId: string | null
+		isCreating: boolean
+	}) {
+		const nextKey = selectionSyncKey(selection)
+		if (nextKey === syncedSelectionKey) return
+		syncedSelectionKey = nextKey
+		deleteConfirm = false
+		showSharedSecret = false
+		if (selection.isCreating) {
+			editorState = createEmptyEditorState()
+			return
+		}
+		if (selection.selectedId) {
+			const selected = connectors.find(
+				(connector) => connector.id === selection.selectedId,
+			)
+			editorState = selected
+				? createEditorStateFromConnector(selected)
+				: createEmptyEditorState()
+			return
+		}
+		editorState = createEmptyEditorState()
+	}
+
 	async function loadRemoteConnectors(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
+		const href = getCurrentHref()
+		const dataKey = getDataRefreshKey(href)
 		try {
 			const response = await fetch(accountRemoteConnectorsApiPath, {
 				headers: { Accept: 'application/json' },
@@ -389,7 +472,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			applyPayload(payload)
 			status = 'ready'
 			message = null
-			loadLatch.markLoaded(href)
+			loadLatch.markLoaded(dataKey)
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
@@ -398,7 +481,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 				error instanceof Error
 					? error.message
 					: 'Unable to load remote connector settings.'
-			loadLatch.markFailed(href)
+			loadLatch.markFailed(dataKey)
 			handle.update()
 		}
 	}
@@ -416,17 +499,16 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 				? createEditorStateFromConnector(selected)
 				: createEmptyEditorState()
 			showSharedSecret = false
+			// Align with the current URL, not the post-create detail target.
+			// `navigate` is async; an interim `/new` render must not see an
+			// id-keyed sync marker and wipe the freshly seeded editor.
+			syncedSelectionKey = selectionSyncKey(
+				remoteConnectorsRoute.getSelection(getCurrentHref()),
+			)
 			return
 		}
-		if (editorState.id) {
-			const selected = connectors.find(
-				(connector) => connector.id === editorState.id,
-			)
-			editorState = selected
-				? createEditorStateFromConnector(selected)
-				: createEmptyEditorState()
-			showSharedSecret = false
-		}
+		syncedSelectionKey = null
+		syncEditorToSelection(remoteConnectorsRoute.getSelection(getCurrentHref()))
 	}
 
 	function readEditorStateFromForm(form: HTMLFormElement) {
@@ -496,6 +578,14 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			message = wasEditing
 				? 'Saved remote connector.'
 				: 'Created remote connector.'
+			if (!wasEditing && payload.selectedConnectorId) {
+				syncRouterLocation(
+					remoteConnectorsRoute.buildDetailHref(
+						payload.selectedConnectorId,
+						getCurrentSearch(),
+					),
+				)
+			}
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -537,9 +627,13 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			}
 			applyPayload(payload)
 			editorState = createEmptyEditorState()
+			syncedSelectionKey = 'none'
 			deleteConfirm = false
 			saveState = 'idle'
 			message = 'Deleted remote connector.'
+			syncRouterLocation(
+				remoteConnectorsRoute.buildListHref(getCurrentSearch()),
+			)
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -554,14 +648,40 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	function selectConnector(connector: RemoteConnectorListItem) {
 		if (saveState !== 'idle') return
 		editorState = createEditorStateFromConnector(connector)
+		syncedSelectionKey = `id:${connector.id}`
 		deleteConfirm = false
 		showSharedSecret = false
 		message = null
+		syncRouterLocation(
+			remoteConnectorsRoute.buildDetailHref(connector.id, getCurrentSearch()),
+		)
 		handle.update()
 	}
 
 	function startNewConnector() {
 		editorState = createEmptyEditorState()
+		syncedSelectionKey = 'new'
+		deleteConfirm = false
+		showSharedSecret = false
+		message = null
+		syncRouterLocation(remoteConnectorsRoute.buildNewHref(getCurrentSearch()))
+		handle.update()
+	}
+
+	function resetEditor() {
+		const selection = remoteConnectorsRoute.getSelection(getCurrentHref())
+		if (selection.isCreating) {
+			editorState = createEmptyEditorState()
+		} else if (selection.selectedId) {
+			const selected = connectors.find(
+				(connector) => connector.id === selection.selectedId,
+			)
+			editorState = selected
+				? createEditorStateFromConnector(selected)
+				: createEmptyEditorState()
+		} else {
+			editorState = createEmptyEditorState()
+		}
 		deleteConfirm = false
 		showSharedSecret = false
 		message = null
@@ -593,7 +713,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	}
 
 	function applyRouteLoaderData(href: string) {
-		if (!isAccountRemoteConnectorsPath(href)) return false
+		if (!remoteConnectorsRoute.isRoutePath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'accountRemoteConnectors',
@@ -602,20 +722,22 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		if (!routeData) return false
 		applyPayload(routeData)
 		status = 'ready'
-		message = null
-		loadLatch.markLoaded(href)
+		// Keep mutation feedback across list/detail/new navigations; explicit
+		// refetch via loadRemoteConnectors still clears message.
+		loadLatch.markLoaded(getDataRefreshKey(href))
 		return true
 	}
 
 	return () => {
-		const currentHref = readCurrentRouterHref(handle)
+		const currentHref = getCurrentHref()
+		const dataKey = getDataRefreshKey(currentHref)
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		// A same-path refresh whose loader failed leaves no preload and no
 		// href change; the stale marker forces the fallback refetch.
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad = loadLatch.needsLoad({
-			currentHref,
+			currentHref: dataKey,
 			isLoading: status === 'loading',
 			appliedRouteData,
 			needsStaleRefresh,
@@ -623,11 +745,25 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadRemoteConnectors)
 		}
+
+		const selection = remoteConnectorsRoute.getSelection(currentHref)
+		syncEditorToSelection(selection)
+		const search = readSearchFilter(currentHref)
+		const filteredConnectors = connectors.filter((connector) =>
+			connectorMatchesSearch(connector, search),
+		)
+		const selectedConnector =
+			selection.selectedId == null
+				? null
+				: (connectors.find(
+						(connector) => connector.id === selection.selectedId,
+					) ?? null)
 		const isMutating = saveState !== 'idle'
-		const isEditing = Boolean(editorState.id)
-		const selectedLabel = editorState.instanceId
-			? editorState.instanceId
-			: 'New remote connector'
+		const isEditing = selectedConnector != null
+		const showEditor = selection.isCreating || selectedConnector != null
+		const selectedLabel = selection.isCreating
+			? 'New remote connector'
+			: (selectedConnector?.instanceId ?? editorState.instanceId)
 		const connectorUrl = getEditorConnectorUrl()
 
 		return (
@@ -668,16 +804,28 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 								title="Configured connectors"
 								description="Enabled and attached entries are included in your standard MCP and chat caller context."
 							>
+								<AccountManagementSearchField
+									label="Search"
+									placeholder="Search connectors"
+									value={search}
+									onInput={(value) => {
+										replaceLocation(buildHrefWithUpdatedSearch(value))
+									}}
+								/>
 								{connectors.length === 0 ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										No remote connectors yet. Create one to get started.
 									</p>
+								) : filteredConnectors.length === 0 ? (
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										No connectors match the current filters.
+									</p>
 								) : (
 									<AccountManagementList>
-										{connectors.map((connector) => (
+										{filteredConnectors.map((connector) => (
 											<li key={connector.id}>
 												<AccountManagementListItemButton
-													active={editorState.id === connector.id}
+													active={selection.selectedId === connector.id}
 													disabled={isMutating}
 													onClick={() => selectConnector(connector)}
 												>
@@ -702,323 +850,337 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 							</AccountManagementSidebar>
 						}
 					>
-						<form
-							method="post"
-							noValidate
-							{...passwordManagerIgnoreProps}
-							mix={[
-								on('submit', (event) => {
-									event.preventDefault()
-									if (event.currentTarget instanceof HTMLFormElement) {
-										void saveConnector(event.currentTarget)
-									}
-								}),
-								css(cardCss),
-							]}
-						>
-							<div mix={css({ display: 'grid', gap: spacing.xs })}>
-								<h2 mix={css(cardTitleCss)}>{selectedLabel}</h2>
-								<p mix={css(descriptionCss)}>
-									Connector names are explicit, user-chosen, and unique across
-									your account. The shared secret is loaded into the password
-									field for editing.
-								</p>
-							</div>
+						{showEditor ? (
+							<form
+								method="post"
+								noValidate
+								{...passwordManagerIgnoreProps}
+								mix={[
+									on('submit', (event) => {
+										event.preventDefault()
+										if (event.currentTarget instanceof HTMLFormElement) {
+											void saveConnector(event.currentTarget)
+										}
+									}),
+									css(cardCss),
+								]}
+							>
+								<div mix={css({ display: 'grid', gap: spacing.xs })}>
+									<h2 mix={css(cardTitleCss)}>{selectedLabel}</h2>
+									<p mix={css(descriptionCss)}>
+										Connector names are explicit, user-chosen, and unique across
+										your account. The shared secret is loaded into the password
+										field for editing.
+									</p>
+								</div>
 
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Connector name</span>
-								<input
-									name="instanceId"
-									type="text"
-									value={editorState.instanceId}
-									placeholder="home"
-									disabled={isMutating}
-									required
-									mix={[
-										on('input', (event) => {
-											editorState = {
-												...editorState,
-												instanceId: event.currentTarget.value,
-											}
-											handle.update()
-										}),
-										css(inputCss),
-									]}
-								/>
-							</label>
-							<div mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Connector URL</span>
-								{connectorUrl ? (
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Connector name</span>
+									<input
+										name="instanceId"
+										type="text"
+										value={editorState.instanceId}
+										placeholder="home"
+										disabled={isMutating}
+										required
+										mix={[
+											on('input', (event) => {
+												editorState = {
+													...editorState,
+													instanceId: event.currentTarget.value,
+												}
+												handle.update()
+											}),
+											css(inputCss),
+										]}
+									/>
+								</label>
+								<div mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Connector URL</span>
+									{connectorUrl ? (
+										<div
+											mix={css({
+												display: 'flex',
+												gap: spacing.sm,
+												alignItems: 'stretch',
+												flexWrap: 'wrap',
+											})}
+										>
+											<code
+												mix={css({
+													flex: '1 1 22rem',
+													minWidth: 0,
+													padding: spacing.sm,
+													borderRadius: radius.md,
+													border: `1px solid ${colors.border}`,
+													backgroundColor: colors.background,
+													color: colors.text,
+													fontFamily: 'monospace',
+													fontSize: typography.fontSize.sm,
+													overflowWrap: 'anywhere',
+												})}
+											>
+												{connectorUrl}
+											</code>
+											<CopyToClipboard key={connectorUrl} url={connectorUrl} />
+										</div>
+									) : (
+										<p mix={css(descriptionCss)}>
+											Enter a connector name to build the connector WebSocket
+											URL.
+										</p>
+									)}
+									<p mix={css(descriptionCss)}>
+										Includes your username <code>{username}</code> so connector
+										sessions stay isolated to your account.
+									</p>
+								</div>
+								<div mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>
+										Shared secret
+										{editorState.hasSharedSecret ? ' (saved)' : ''}
+									</span>
 									<div
 										mix={css({
 											display: 'flex',
 											gap: spacing.sm,
-											alignItems: 'stretch',
+											alignItems: 'center',
 											flexWrap: 'wrap',
 										})}
 									>
-										<code
+										<div
 											mix={css({
-												flex: '1 1 22rem',
+												position: 'relative',
+												flex: '1 1 18rem',
 												minWidth: 0,
-												padding: spacing.sm,
-												borderRadius: radius.md,
-												border: `1px solid ${colors.border}`,
-												backgroundColor: colors.background,
-												color: colors.text,
-												fontFamily: 'monospace',
-												fontSize: typography.fontSize.sm,
-												overflowWrap: 'anywhere',
 											})}
 										>
-											{connectorUrl}
-										</code>
-										<CopyToClipboard key={connectorUrl} url={connectorUrl} />
+											{showSharedSecret ? (
+												<input
+													name="sharedSecret"
+													aria-label="Shared secret"
+													type="text"
+													value={editorState.sharedSecret}
+													placeholder="Connector hello shared secret"
+													{...passwordManagerIgnoreProps}
+													disabled={isMutating}
+													mix={[
+														on('input', (event) => {
+															setSharedSecret(event.currentTarget.value)
+															handle.update()
+														}),
+														css({
+															...inputCss,
+															paddingRight: '3rem',
+														}),
+													]}
+												/>
+											) : (
+												<input
+													name="sharedSecret"
+													aria-label="Shared secret"
+													type="password"
+													value={editorState.sharedSecret}
+													placeholder="Connector hello shared secret"
+													{...passwordManagerIgnoreProps}
+													disabled={isMutating}
+													mix={[
+														on('input', (event) => {
+															setSharedSecret(event.currentTarget.value)
+															handle.update()
+														}),
+														css({
+															...inputCss,
+															paddingRight: '3rem',
+														}),
+													]}
+												/>
+											)}
+											<button
+												type="button"
+												aria-label={
+													showSharedSecret
+														? 'Hide shared secret'
+														: 'Show shared secret'
+												}
+												title={
+													showSharedSecret
+														? 'Hide shared secret'
+														: 'Show shared secret'
+												}
+												disabled={isMutating || !editorState.sharedSecret}
+												mix={[
+													on('click', () => {
+														showSharedSecret = !showSharedSecret
+														handle.update()
+													}),
+													css(iconButtonCss),
+												]}
+											>
+												{EyeIcon({ showSecret: showSharedSecret })}
+											</button>
+										</div>
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', generateConnectorSecret),
+												css(secondaryButtonCss),
+											]}
+										>
+											Generate
+										</button>
 									</div>
-								) : (
-									<p mix={css(descriptionCss)}>
-										Enter a connector name to build the connector WebSocket URL.
-									</p>
-								)}
-								<p mix={css(descriptionCss)}>
-									Includes your username <code>{username}</code> so connector
-									sessions stay isolated to your account.
-								</p>
-							</div>
-							<div mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>
-									Shared secret
-									{editorState.hasSharedSecret ? ' (saved)' : ''}
-								</span>
+								</div>
+								<label
+									mix={css({
+										display: 'flex',
+										alignItems: 'flex-start',
+										gap: spacing.sm,
+										color: colors.text,
+									})}
+								>
+									<input
+										name="enabled"
+										type="checkbox"
+										role="switch"
+										checked={editorState.enabled}
+										disabled={isMutating}
+										mix={[
+											css(switchCss),
+											on('change', (event) => {
+												editorState = {
+													...editorState,
+													enabled: event.currentTarget.checked,
+												}
+												handle.update()
+											}),
+										]}
+									/>
+									<span>
+										<strong>Enabled</strong>
+										<br />
+										<span mix={css({ color: colors.textMuted })}>
+											Allow this connector secret to authenticate websocket
+											hello messages.
+										</span>
+									</span>
+								</label>
+								<label
+									mix={css({
+										display: 'flex',
+										alignItems: 'flex-start',
+										gap: spacing.sm,
+										color: colors.text,
+									})}
+								>
+									<input
+										name="attached"
+										type="checkbox"
+										role="switch"
+										checked={editorState.attached}
+										disabled={isMutating || !editorState.enabled}
+										mix={[
+											css(switchCss),
+											on('change', (event) => {
+												if (!editorState.enabled) {
+													event.currentTarget.checked = editorState.attached
+													return
+												}
+												editorState = {
+													...editorState,
+													attached: event.currentTarget.checked,
+												}
+												handle.update()
+											}),
+										]}
+									/>
+									<span>
+										<strong>Attach to normal Kody context</strong>
+										<br />
+										<span mix={css({ color: colors.textMuted })}>
+											Include this ref in regular MCP and chat sessions for
+											capability search, execution, and status checks.
+										</span>
+									</span>
+								</label>
+
+								{isEditing ? (
+									<div
+										mix={css({
+											color: colors.textMuted,
+											fontSize: typography.fontSize.sm,
+										})}
+									>
+										Last updated{' '}
+										{formatTimestamp(selectedConnector?.updatedAt ?? '')}
+									</div>
+								) : null}
+
 								<div
 									mix={css({
 										display: 'flex',
 										gap: spacing.sm,
-										alignItems: 'center',
 										flexWrap: 'wrap',
 									})}
 								>
-									<div
-										mix={css({
-											position: 'relative',
-											flex: '1 1 18rem',
-											minWidth: 0,
-										})}
+									<button
+										type="submit"
+										disabled={isMutating}
+										mix={css(primaryButtonCss)}
 									>
-										{showSharedSecret ? (
-											<input
-												name="sharedSecret"
-												aria-label="Shared secret"
-												type="text"
-												value={editorState.sharedSecret}
-												placeholder="Connector hello shared secret"
-												{...passwordManagerIgnoreProps}
-												disabled={isMutating}
-												mix={[
-													on('input', (event) => {
-														setSharedSecret(event.currentTarget.value)
-														handle.update()
-													}),
-													css({
-														...inputCss,
-														paddingRight: '3rem',
-													}),
-												]}
-											/>
-										) : (
-											<input
-												name="sharedSecret"
-												aria-label="Shared secret"
-												type="password"
-												value={editorState.sharedSecret}
-												placeholder="Connector hello shared secret"
-												{...passwordManagerIgnoreProps}
-												disabled={isMutating}
-												mix={[
-													on('input', (event) => {
-														setSharedSecret(event.currentTarget.value)
-														handle.update()
-													}),
-													css({
-														...inputCss,
-														paddingRight: '3rem',
-													}),
-												]}
-											/>
-										)}
+										{saveState === 'saving' ? 'Saving...' : 'Save connector'}
+									</button>
+									<button
+										type="button"
+										disabled={isMutating}
+										mix={[on('click', resetEditor), css(secondaryButtonCss)]}
+									>
+										Reset form
+									</button>
+									{isEditing ? (
 										<button
 											type="button"
-											aria-label={
-												showSharedSecret
-													? 'Hide shared secret'
-													: 'Show shared secret'
-											}
-											title={
-												showSharedSecret
-													? 'Hide shared secret'
-													: 'Show shared secret'
-											}
-											disabled={isMutating || !editorState.sharedSecret}
+											disabled={isMutating}
 											mix={[
 												on('click', () => {
-													showSharedSecret = !showSharedSecret
-													handle.update()
+													if (!deleteConfirm) {
+														deleteConfirm = true
+														handle.update()
+														return
+													}
+													void deleteConnector()
 												}),
-												css(iconButtonCss),
+												css(dangerButtonCss),
 											]}
 										>
-											{EyeIcon({ showSecret: showSharedSecret })}
+											{saveState === 'deleting'
+												? 'Deleting...'
+												: deleteConfirm
+													? 'Confirm delete'
+													: 'Delete'}
 										</button>
-									</div>
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', generateConnectorSecret),
-											css(secondaryButtonCss),
-										]}
-									>
-										Generate
-									</button>
+									) : null}
 								</div>
-							</div>
-							<label
-								mix={css({
-									display: 'flex',
-									alignItems: 'flex-start',
-									gap: spacing.sm,
-									color: colors.text,
-								})}
-							>
-								<input
-									name="enabled"
-									type="checkbox"
-									role="switch"
-									checked={editorState.enabled}
-									disabled={isMutating}
-									mix={[
-										css(switchCss),
-										on('change', (event) => {
-											editorState = {
-												...editorState,
-												enabled: event.currentTarget.checked,
-											}
-											handle.update()
-										}),
-									]}
-								/>
-								<span>
-									<strong>Enabled</strong>
-									<br />
-									<span mix={css({ color: colors.textMuted })}>
-										Allow this connector secret to authenticate websocket hello
-										messages.
-									</span>
-								</span>
-							</label>
-							<label
-								mix={css({
-									display: 'flex',
-									alignItems: 'flex-start',
-									gap: spacing.sm,
-									color: colors.text,
-								})}
-							>
-								<input
-									name="attached"
-									type="checkbox"
-									role="switch"
-									checked={editorState.attached}
-									disabled={isMutating || !editorState.enabled}
-									mix={[
-										css(switchCss),
-										on('change', (event) => {
-											if (!editorState.enabled) {
-												event.currentTarget.checked = editorState.attached
-												return
-											}
-											editorState = {
-												...editorState,
-												attached: event.currentTarget.checked,
-											}
-											handle.update()
-										}),
-									]}
-								/>
-								<span>
-									<strong>Attach to normal Kody context</strong>
-									<br />
-									<span mix={css({ color: colors.textMuted })}>
-										Include this ref in regular MCP and chat sessions for
-										capability search, execution, and status checks.
-									</span>
-								</span>
-							</label>
-
-							{isEditing ? (
-								<div
+							</form>
+						) : (
+							<div mix={css({ display: 'grid', gap: spacing.sm })}>
+								<h2
 									mix={css({
-										color: colors.textMuted,
-										fontSize: typography.fontSize.sm,
+										margin: 0,
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
+										color: colors.text,
 									})}
 								>
-									Last updated{' '}
-									{formatTimestamp(
-										connectors.find((item) => item.id === editorState.id)
-											?.updatedAt ?? '',
-									)}
-								</div>
-							) : null}
-
-							<div
-								mix={css({
-									display: 'flex',
-									gap: spacing.sm,
-									flexWrap: 'wrap',
-								})}
-							>
-								<button
-									type="submit"
-									disabled={isMutating}
-									mix={css(primaryButtonCss)}
-								>
-									{saveState === 'saving' ? 'Saving...' : 'Save connector'}
-								</button>
-								<button
-									type="button"
-									disabled={isMutating}
-									mix={[
-										on('click', startNewConnector),
-										css(secondaryButtonCss),
-									]}
-								>
-									Reset form
-								</button>
-								{isEditing ? (
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () => {
-												if (!deleteConfirm) {
-													deleteConfirm = true
-													handle.update()
-													return
-												}
-												void deleteConnector()
-											}),
-											css(dangerButtonCss),
-										]}
-									>
-										{saveState === 'deleting'
-											? 'Deleting...'
-											: deleteConfirm
-												? 'Confirm delete'
-												: 'Delete'}
-									</button>
-								) : null}
+									Select a connector
+								</h2>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Pick a connector from the list to edit it, or create a new
+									one.
+								</p>
 							</div>
-						</form>
+						)}
 					</AccountManagementLayout>
 				) : null}
 			</AccountManagementShell>

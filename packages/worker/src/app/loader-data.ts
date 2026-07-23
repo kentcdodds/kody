@@ -130,6 +130,11 @@ export type AdminUserListItem = {
 export type AdminUsersLoaderData = {
 	ok: true
 	users: Array<AdminUserListItem>
+	/**
+	 * Resolved independently of the filtered/paginated list so a deep link
+	 * (or a selected user outside the current page) still has detail data.
+	 */
+	selectedUser: AdminUserListItem | null
 	page: number
 	pageSize: number
 	total: number

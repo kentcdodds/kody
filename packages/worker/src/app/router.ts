@@ -200,8 +200,11 @@ export function createAppRouter(env: Env) {
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrations: createAccountIntegrationsHandler(env),
+			accountIntegrationDetail: createAccountIntegrationsHandler(env),
 			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),
 			accountMcpServers: createAccountMcpServersHandler(env),
+			accountMcpServerNew: createAccountMcpServersHandler(env),
+			accountMcpServerDetail: createAccountMcpServersHandler(env),
 			accountMcpServersOauthCallback:
 				createAccountMcpServersOauthCallbackHandler(env),
 			accountMcpServersApi: createAccountMcpServersApiHandler(env),
@@ -240,6 +243,8 @@ export function createAppRouter(env: Env) {
 			accountEmailChange: createAccountEmailChangeHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountRemoteConnectors: createAccountRemoteConnectorsHandler(env),
+			accountRemoteConnectorNew: createAccountRemoteConnectorsHandler(env),
+			accountRemoteConnectorDetail: createAccountRemoteConnectorsHandler(env),
 			accountRemoteConnectorsApi: createAccountRemoteConnectorsApiHandler(env),
 			accountRemoteConnectorsApiPost:
 				createAccountRemoteConnectorsApiHandler(env),
@@ -253,6 +258,7 @@ export function createAppRouter(env: Env) {
 			accountSecretsApiPost: createAccountSecretsApiHandler(env),
 			admin: createAdminHandler(env),
 			adminUsers: createAdminUsersHandler(env),
+			adminUserDetail: createAdminUsersHandler(env),
 			adminUsersApi: createAdminUsersApiHandler(env),
 			adminUsersApiPost: createAdminUsersApiHandler(env),
 			adminInvites: createAdminInvitesHandler(env),

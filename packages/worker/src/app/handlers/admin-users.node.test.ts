@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { adminUserListItemFieldNames } from './admin-users.ts'
+import { readAdminUsersSelectedUserId } from '#app/admin-users-data.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
 import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
 import {
@@ -328,10 +329,12 @@ test('admin users list payload exposes only account metadata fields', async () =
 			'ok',
 			'page',
 			'pageSize',
+			'selectedUser',
 			'total',
 			'users',
 		].sort(),
 	)
+	expect(payload.selectedUser).toBeNull()
 	for (const user of payload.users) {
 		expect(Object.keys(user).sort()).toEqual(
 			[...adminUserListItemFieldNames].sort(),
@@ -353,6 +356,90 @@ test('admin users list payload exposes only account metadata fields', async () =
 		}),
 	])
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
+})
+
+test('admin users selected param resolves outside the current page and filter', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 1,
+				username: 'admin-user',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			},
+			{
+				id: 2,
+				username: 'member',
+				email: 'member@example.com',
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+			{
+				id: 3,
+				username: 'another-member',
+				email: 'another@example.com',
+				created_at: '2026-01-05 00:00:00',
+				updated_at: '2026-01-06 00:00:00',
+			},
+		],
+		userRoles: [
+			{ user_id: 1, role_name: 'admin' },
+			{ user_id: 2, role_name: 'user' },
+			{ user_id: 3, role_name: 'user' },
+		],
+	})
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const listUsers = async (search: string) => {
+		const response = await handler.handler({
+			request: new Request(`https://example.com/admin/users.json${search}`, {
+				headers: { Accept: 'application/json' },
+			}),
+			params: {},
+			url: new URL(`https://example.com/admin/users.json${search}`),
+		} as never)
+		expect(response.status).toBe(200)
+		return response.json()
+	}
+
+	// Selected user on a later page is still returned for the detail pane.
+	const paged = await listUsers('?pageSize=1&page=1&selected=3')
+	expect(paged.users.map((user: { id: number }) => user.id)).toEqual([1])
+	expect(paged.selectedUser).toEqual(
+		expect.objectContaining({
+			id: 3,
+			username: 'another-member',
+			email: 'another@example.com',
+		}),
+	)
+
+	// Selected user excluded by the active role filter is still returned.
+	const filtered = await listUsers('?role=admin&selected=2')
+	expect(filtered.users.map((user: { id: number }) => user.id)).toEqual([1])
+	expect(filtered.selectedUser).toEqual(
+		expect.objectContaining({ id: 2, username: 'member' }),
+	)
+
+	const missing = await listUsers('?selected=99999')
+	expect(missing.selectedUser).toBeNull()
+
+	const invalid = await listUsers('?selected=not-a-number')
+	expect(invalid.selectedUser).toBeNull()
+})
+
+test('admin users selected id tolerates malformed percent-encoding in detail paths', () => {
+	expect(
+		readAdminUsersSelectedUserId('https://example.com/admin/users/%'),
+	).toBeNull()
+	expect(
+		readAdminUsersSelectedUserId('https://example.com/admin/users/%E0%A4%A'),
+	).toBeNull()
+	expect(
+		readAdminUsersSelectedUserId('https://example.com/admin/users/7'),
+	).toBe(7)
 })
 
 test('admin users list applies q and role filters to the slice and total', async () => {

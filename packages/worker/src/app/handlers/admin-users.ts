@@ -46,7 +46,7 @@ export function createAdminHandler(env: Env) {
 export function createAdminUsersHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request, params }) {
 			const admin = await requirePageUserWithRole(request, env, 'admin')
 			if (admin instanceof Response) {
 				return admin
@@ -57,7 +57,18 @@ export function createAdminUsersHandler(env: Env) {
 			// not anchor the list past the rows it can never load.
 			const pageUrl = new URL(request.url)
 			pageUrl.searchParams.delete('page')
-			const adminUsers = await loadAdminUsersData(env, pageUrl.toString())
+			const pathUserId =
+				typeof params === 'object' &&
+				params !== null &&
+				'userId' in params &&
+				typeof params.userId === 'string'
+					? params.userId
+					: undefined
+			const adminUsers = await loadAdminUsersData(
+				env,
+				pageUrl.toString(),
+				pathUserId,
+			)
 
 			return renderAppPage({
 				request,
@@ -66,7 +77,7 @@ export function createAdminUsersHandler(env: Env) {
 				loaderData: { adminUsers },
 			})
 		},
-	} satisfies Action<typeof routes.adminUsers>
+	} satisfies Action<typeof routes.adminUsers | typeof routes.adminUserDetail>
 }
 
 export function createAdminUsersApiHandler(env: Env) {

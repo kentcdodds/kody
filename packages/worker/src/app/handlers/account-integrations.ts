@@ -23,7 +23,9 @@ export function createAccountIntegrationsHandler(env: Env) {
 				loaderData: { accountIntegrations },
 			})
 		},
-	} satisfies Action<typeof routes.accountIntegrations>
+	} satisfies Action<
+		typeof routes.accountIntegrations | typeof routes.accountIntegrationDetail
+	>
 }
 
 export function createAccountIntegrationsApiHandler(env: Env) {

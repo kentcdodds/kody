@@ -2,21 +2,22 @@ import {
 	formatNullableTimestamp,
 	formatTimestamp,
 } from '#client/format-timestamp.ts'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { on } from '#client/event-mixin.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { replaceLocation } from '#client/replace-location.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, mq, spacing } from '#client/styles/tokens.ts'
+import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	fieldCss,
 	fieldLabelCss,
-	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	inputCss,
 } from '#client/styles/style-primitives.ts'
@@ -27,16 +28,22 @@ import {
 import { routes } from '#app/routes.ts'
 import { type Handle, css } from 'remix/ui'
 import {
+	AccountManagementLayout,
+	AccountManagementList,
+	AccountManagementListItemButton,
 	AccountManagementMessage,
-	AccountManagementPanel,
 	AccountManagementShell,
+	AccountManagementSidebar,
 	AdminPageHeader,
 	MetadataGrid,
-	accountManagementTableCellCss,
-	accountManagementTableCss,
 } from './account-management-components.tsx'
 
 type PageStatus = 'loading' | 'ready' | 'error'
+
+type FeedbackFilterState = {
+	status: string
+	category: string
+}
 
 const adminPlatformFeedbackApiPath = routes.adminPlatformFeedbackApi.href()
 
@@ -57,6 +64,13 @@ const categoryOptions = [
 	{ value: 'other', label: 'Other' },
 ] as const
 
+const truncatedTextCss = {
+	minWidth: 0,
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+} as const
+
 const untrustedTextCss = css({
 	margin: 0,
 	whiteSpace: 'pre-wrap',
@@ -69,6 +83,18 @@ function isAdminPlatformFeedbackPath(href: string) {
 		new URL(href, 'http://localhost').pathname ===
 		routes.adminPlatformFeedback.href()
 	)
+}
+
+function readFilterState(href: string): FeedbackFilterState {
+	const url = new URL(href, 'http://localhost')
+	return {
+		status: url.searchParams.get('status')?.trim() ?? '',
+		category: url.searchParams.get('category')?.trim() ?? '',
+	}
+}
+
+function readSelectedFeedbackId(href: string) {
+	return new URL(href, 'http://localhost').searchParams.get('feedbackId')
 }
 
 function buildFeedbackHref(currentHref: string, feedbackId: string) {
@@ -84,6 +110,22 @@ function buildPageHref(currentHref: string, page: number) {
 	url.searchParams.delete('feedbackId')
 	if (page <= 1) url.searchParams.delete('page')
 	else url.searchParams.set('page', String(page))
+	return `${url.pathname}${url.search}`
+}
+
+function buildHrefWithUpdatedFilters(
+	currentHref: string,
+	nextFilters: Partial<FeedbackFilterState>,
+) {
+	const url = new URL(currentHref, 'http://localhost')
+	const filters = { ...readFilterState(url.toString()), ...nextFilters }
+	if (filters.status) url.searchParams.set('status', filters.status)
+	else url.searchParams.delete('status')
+	if (filters.category) url.searchParams.set('category', filters.category)
+	else url.searchParams.delete('category')
+	// Filter changes re-anchor the list and clear the detail selection.
+	url.searchParams.delete('feedbackId')
+	url.searchParams.delete('page')
 	return `${url.pathname}${url.search}`
 }
 
@@ -121,6 +163,8 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 	let lastLoadedHref = ''
 	let loadingForHref: string | null = null
 	let lastFailedHref: string | null = null
+
+	const secondaryButtonCss = getSecondaryButtonCss()
 
 	function applyData(payload: AdminPlatformFeedbackLoaderData, href: string) {
 		data = payload
@@ -210,9 +254,14 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 		}
 
 		const selectedFeedback = data?.selectedFeedback ?? null
+		const selectedFeedbackId = readSelectedFeedbackId(currentHref)
+		// Read filters from the URL (not the loader payload) so the selects
+		// don't snap back to stale values while a reload is in flight.
+		const filters = readFilterState(currentHref)
 		const totalPages = data
 			? Math.max(1, Math.ceil(data.total / data.pageSize))
 			: 1
+		const hasActiveFilters = Boolean(filters.status || filters.category)
 
 		return (
 			<AccountManagementShell maxWidth="min(100%, 92rem)">
@@ -250,228 +299,304 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 							<p mix={css({ margin: 0 })}>{data.content_warning}</p>
 						</section>
 
-						<AccountManagementPanel
-							title="Feedback queue"
-							description={`${data.total} submission${data.total === 1 ? '' : 's'} match this view. List rows omit full details and account contact information.`}
+						<AccountManagementLayout
+							sidebar={
+								<AccountManagementSidebar
+									title="Feedback queue"
+									description={`${data.total} submission${data.total === 1 ? '' : 's'} match this view. List rows omit full details and account contact information.`}
+								>
+									<div mix={css({ display: 'grid', gap: spacing.sm })}>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Status</span>
+											<select
+												value={filters.status}
+												aria-label="Filter feedback by status"
+												mix={[
+													on('change', (event) => {
+														replaceLocation(
+															buildHrefWithUpdatedFilters(currentHref, {
+																status: event.currentTarget.value,
+															}),
+														)
+													}),
+													css(inputCss),
+												]}
+											>
+												{statusOptions.map((option) => (
+													<option key={option.value} value={option.value}>
+														{option.label}
+													</option>
+												))}
+											</select>
+										</label>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Category</span>
+											<select
+												value={filters.category}
+												aria-label="Filter feedback by category"
+												mix={[
+													on('change', (event) => {
+														replaceLocation(
+															buildHrefWithUpdatedFilters(currentHref, {
+																category: event.currentTarget.value,
+															}),
+														)
+													}),
+													css(inputCss),
+												]}
+											>
+												{categoryOptions.map((option) => (
+													<option key={option.value} value={option.value}>
+														{option.label}
+													</option>
+												))}
+											</select>
+										</label>
+										{hasActiveFilters ? (
+											<button
+												type="button"
+												mix={[
+													on('click', () => {
+														replaceLocation(
+															buildHrefWithUpdatedFilters(currentHref, {
+																status: '',
+																category: '',
+															}),
+														)
+													}),
+													css(secondaryButtonCss),
+												]}
+											>
+												Clear filters
+											</button>
+										) : null}
+									</div>
+
+									{data.feedback.length === 0 ? (
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											No platform feedback matches this view.
+										</p>
+									) : (
+										<AccountManagementList maxHeight="min(65vh, 48rem)">
+											{data.feedback.map((feedback) => {
+												const isActive = selectedFeedbackId === feedback.id
+												return (
+													<li key={feedback.id} mix={css({ minWidth: 0 })}>
+														<AccountManagementListItemButton
+															active={isActive}
+															onClick={() => {
+																navigate(
+																	buildFeedbackHref(currentHref, feedback.id),
+																)
+															}}
+														>
+															<strong
+																mix={css({
+																	...truncatedTextCss,
+																	display: 'block',
+																})}
+															>
+																{feedback.category}
+															</strong>
+															<span
+																mix={css({
+																	...truncatedTextCss,
+																	display: 'block',
+																	fontSize: typography.fontSize.xs,
+																	color: colors.textMuted,
+																})}
+															>
+																{feedback.status} ·{' '}
+																{formatTimestamp(feedback.created_at)} ·{' '}
+																{feedback.id}
+															</span>
+															{feedback.summary_untrusted ? (
+																<span
+																	mix={css({
+																		display: '-webkit-box',
+																		fontSize: typography.fontSize.sm,
+																		color: colors.textMuted,
+																		overflow: 'hidden',
+																		overflowWrap: 'anywhere',
+																		textOverflow: 'ellipsis',
+																		'-webkit-box-orient': 'vertical',
+																		'-webkit-line-clamp': '2',
+																	})}
+																>
+																	{feedback.summary_untrusted}
+																</span>
+															) : null}
+														</AccountManagementListItemButton>
+													</li>
+												)
+											})}
+										</AccountManagementList>
+									)}
+
+									{totalPages > 1 ? (
+										<nav
+											aria-label="Feedback pages"
+											mix={css({
+												display: 'flex',
+												alignItems: 'center',
+												gap: spacing.sm,
+												flexWrap: 'wrap',
+												marginTop: spacing.sm,
+											})}
+										>
+											{data.page > 1 ? (
+												<a
+													href={buildPageHref(currentHref, data.page - 1)}
+													mix={css({
+														...secondaryButtonCss,
+														textDecoration: 'none',
+													})}
+												>
+													Previous
+												</a>
+											) : null}
+											<span
+												mix={css({
+													color: colors.textMuted,
+													fontSize: typography.fontSize.xs,
+												})}
+											>
+												Page {data.page} of {totalPages}
+											</span>
+											{data.page < totalPages ? (
+												<a
+													href={buildPageHref(currentHref, data.page + 1)}
+													mix={css({
+														...secondaryButtonCss,
+														textDecoration: 'none',
+													})}
+												>
+													Next
+												</a>
+											) : null}
+										</nav>
+									) : null}
+								</AccountManagementSidebar>
+							}
 						>
-							<form
-								method="get"
-								action={routes.adminPlatformFeedback.href()}
+							<div
 								mix={css({
-									display: 'grid',
-									gridTemplateColumns:
-										'repeat(2, minmax(10rem, 1fr)) auto auto',
-									gap: spacing.sm,
-									alignItems: 'end',
-									[mq.mobile]: { gridTemplateColumns: '1fr' },
+									...cardCss,
+									gap: spacing.lg,
 								})}
 							>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Status</span>
-									<select
-										name="status"
-										value={data.statusFilter ?? ''}
-										mix={css(inputCss)}
-									>
-										{statusOptions.map((option) => (
-											<option key={option.value} value={option.value}>
-												{option.label}
-											</option>
-										))}
-									</select>
-								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Category</span>
-									<select
-										name="category"
-										value={data.categoryFilter ?? ''}
-										mix={css(inputCss)}
-									>
-										{categoryOptions.map((option) => (
-											<option key={option.value} value={option.value}>
-												{option.label}
-											</option>
-										))}
-									</select>
-								</label>
-								<button type="submit" mix={css(getPrimaryButtonCss())}>
-									Apply filters
-								</button>
-								<a
-									href={routes.adminPlatformFeedback.href()}
-									mix={css({
-										...getSecondaryButtonCss(),
-										textAlign: 'center',
-										textDecoration: 'none',
-									})}
-								>
-									Clear
-								</a>
-							</form>
+								{selectedFeedback ? (
+									<>
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<h2
+												mix={css({
+													margin: 0,
+													fontSize: typography.fontSize.lg,
+													fontWeight: typography.fontWeight.semibold,
+													color: colors.text,
+												})}
+											>
+												{feedbackTitle(selectedFeedback)}
+											</h2>
+											<p mix={css({ margin: 0, color: colors.textMuted })}>
+												This detail read is audit logged.
+											</p>
+										</div>
 
-							<div mix={css({ overflowX: 'auto' })}>
-								<table mix={css(accountManagementTableCss)}>
-									<thead>
-										<tr>
-											<th mix={css(accountManagementTableCellCss)}>Summary</th>
-											<th mix={css(accountManagementTableCellCss)}>Category</th>
-											<th mix={css(accountManagementTableCellCss)}>Status</th>
-											<th mix={css(accountManagementTableCellCss)}>
-												Submitted
-											</th>
-											<th mix={css(accountManagementTableCellCss)}>Updated</th>
-										</tr>
-									</thead>
-									<tbody>
-										{data.feedback.map((feedback) => (
-											<tr key={feedback.id}>
-												<td mix={css(accountManagementTableCellCss)}>
-													<a href={buildFeedbackHref(currentHref, feedback.id)}>
-														{feedback.summary_untrusted}
-													</a>
-												</td>
-												<td mix={css(accountManagementTableCellCss)}>
-													{feedback.category}
-												</td>
-												<td mix={css(accountManagementTableCellCss)}>
-													{feedback.status}
-												</td>
-												<td mix={css(accountManagementTableCellCss)}>
-													{formatTimestamp(feedback.created_at)}
-												</td>
-												<td mix={css(accountManagementTableCellCss)}>
-													{formatTimestamp(feedback.updated_at)}
-												</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							</div>
-							{data.feedback.length === 0 ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									No platform feedback matches this view.
-								</p>
-							) : null}
-							{totalPages > 1 ? (
-								<nav
-									aria-label="Feedback pages"
-									mix={css({
-										display: 'flex',
-										alignItems: 'center',
-										gap: spacing.sm,
-										flexWrap: 'wrap',
-									})}
-								>
-									{data.page > 1 ? (
-										<a
-											href={buildPageHref(currentHref, data.page - 1)}
+										<MetadataGrid
+											columns={3}
+											items={[
+												{
+													label: 'Submitter username',
+													value:
+														selectedFeedback.submitter?.username ??
+														'Account unavailable',
+												},
+												{
+													label: 'Submitter email',
+													value:
+														selectedFeedback.submitter?.email ??
+														'Account unavailable',
+												},
+												{
+													label: 'Stable user ID',
+													value:
+														selectedFeedback.submitter?.user_id ??
+														selectedFeedback.submitter_user_id,
+												},
+												{
+													label: 'Category',
+													value: selectedFeedback.category,
+												},
+												{
+													label: 'Status',
+													value: selectedFeedback.status,
+												},
+												{
+													label: 'Created',
+													value: formatTimestamp(selectedFeedback.created_at),
+												},
+												{
+													label: 'Updated',
+													value: formatTimestamp(selectedFeedback.updated_at),
+												},
+												{
+													label: 'Reviewed',
+													value: formatNullableTimestamp(
+														selectedFeedback.reviewed_at,
+													),
+												},
+												{
+													label: 'Reviewer ID',
+													value: selectedFeedback.reviewed_by_user_id ?? 'None',
+												},
+											]}
+										/>
+
+										<section mix={css(cardCss)}>
+											<strong>Summary (untrusted)</strong>
+											<pre mix={untrustedTextCss}>
+												{selectedFeedback.summary_untrusted}
+											</pre>
+										</section>
+										<section mix={css(cardCss)}>
+											<strong>Details (untrusted)</strong>
+											<pre mix={untrustedTextCss}>
+												{selectedFeedback.details_untrusted}
+											</pre>
+										</section>
+										<section mix={css(cardCss)}>
+											<strong>Admin note</strong>
+											{selectedFeedback.admin_note ? (
+												<pre mix={untrustedTextCss}>
+													{selectedFeedback.admin_note}
+												</pre>
+											) : (
+												<p mix={css({ margin: 0, color: colors.textMuted })}>
+													No admin note.
+												</p>
+											)}
+										</section>
+									</>
+								) : (
+									<div mix={css({ display: 'grid', gap: spacing.sm })}>
+										<h2
 											mix={css({
-												...getSecondaryButtonCss(),
-												textDecoration: 'none',
+												margin: 0,
+												fontSize: typography.fontSize.lg,
+												fontWeight: typography.fontWeight.semibold,
+												color: colors.text,
 											})}
 										>
-											Previous
-										</a>
-									) : null}
-									<span>
-										Page {data.page} of {totalPages}
-									</span>
-									{data.page < totalPages ? (
-										<a
-											href={buildPageHref(currentHref, data.page + 1)}
-											mix={css({
-												...getSecondaryButtonCss(),
-												textDecoration: 'none',
-											})}
-										>
-											Next
-										</a>
-									) : null}
-								</nav>
-							) : null}
-						</AccountManagementPanel>
-
-						{selectedFeedback ? (
-							<AccountManagementPanel
-								title={feedbackTitle(selectedFeedback)}
-								description="This detail read is audit logged."
-							>
-								<MetadataGrid
-									columns={3}
-									items={[
-										{
-											label: 'Submitter username',
-											value:
-												selectedFeedback.submitter?.username ??
-												'Account unavailable',
-										},
-										{
-											label: 'Submitter email',
-											value:
-												selectedFeedback.submitter?.email ??
-												'Account unavailable',
-										},
-										{
-											label: 'Stable user ID',
-											value:
-												selectedFeedback.submitter?.user_id ??
-												selectedFeedback.submitter_user_id,
-										},
-										{
-											label: 'Category',
-											value: selectedFeedback.category,
-										},
-										{
-											label: 'Status',
-											value: selectedFeedback.status,
-										},
-										{
-											label: 'Created',
-											value: formatTimestamp(selectedFeedback.created_at),
-										},
-										{
-											label: 'Updated',
-											value: formatTimestamp(selectedFeedback.updated_at),
-										},
-										{
-											label: 'Reviewed',
-											value: formatNullableTimestamp(
-												selectedFeedback.reviewed_at,
-											),
-										},
-										{
-											label: 'Reviewer ID',
-											value: selectedFeedback.reviewed_by_user_id ?? 'None',
-										},
-									]}
-								/>
-
-								<section mix={css(cardCss)}>
-									<strong>Summary (untrusted)</strong>
-									<pre mix={untrustedTextCss}>
-										{selectedFeedback.summary_untrusted}
-									</pre>
-								</section>
-								<section mix={css(cardCss)}>
-									<strong>Details (untrusted)</strong>
-									<pre mix={untrustedTextCss}>
-										{selectedFeedback.details_untrusted}
-									</pre>
-								</section>
-								<section mix={css(cardCss)}>
-									<strong>Admin note</strong>
-									{selectedFeedback.admin_note ? (
-										<pre mix={untrustedTextCss}>
-											{selectedFeedback.admin_note}
-										</pre>
-									) : (
+											Select a feedback entry
+										</h2>
 										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											No admin note.
+											Pick an entry from the queue to review it.
 										</p>
-									)}
-								</section>
-							</AccountManagementPanel>
-						) : null}
+									</div>
+								)}
+							</div>
+						</AccountManagementLayout>
 					</>
 				) : null}
 			</AccountManagementShell>

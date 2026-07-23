@@ -1,6 +1,4 @@
-import type { ConsoleMessage } from '@playwright/test'
-
-import { expect, test } from './playwright-utils.ts'
+import { expect, test, type ConsoleMessage } from './playwright-utils.ts'
 
 test('admin RBAC controls access, role assignment, and privacy boundaries', async ({
 	page,
@@ -78,10 +76,12 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(page).toHaveURL(/\/admin\/users\/?$/)
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
 	await expect(page.getByText('Unable to load admin users.')).toHaveCount(0)
-	// The detail panel must render the auto-selected user after SPA
-	// navigation (regression: preloaded loader data consumed mid-render left
-	// derivations from pre-navigation state on screen).
-	await expect(page.getByText('Account metadata only')).toBeVisible()
+	// No selection yet — empty detail pane after SPA navigation (regression:
+	// preloaded loader data consumed mid-render left derivations from
+	// pre-navigation state on screen).
+	await expect(
+		page.getByRole('heading', { name: 'Select an account' }),
+	).toBeVisible()
 	expect(
 		await page.evaluate(
 			() => (window as Window & { __e2eMarker?: boolean }).__e2eMarker,
@@ -128,8 +128,6 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	// pins the list to exactly the accounts this test seeded.
 	await page.goto(`/admin/users?q=rbac-${runId}`)
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
-	// The first user is auto-selected, so the email can render in both the
-	// list and the detail panel — assert on the list entry specifically.
 	await expect(
 		page.getByRole('button', { name: adminUser.username }),
 	).toBeVisible()
@@ -146,15 +144,22 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	const memberRecord = usersPayload.users.find(
 		(user: { email: string }) => user.email === memberUser.email,
 	)
+	const adminRecord = usersPayload.users.find(
+		(user: { email: string }) => user.email === adminUser.email,
+	)
 	expect(memberRecord).toBeTruthy()
+	expect(adminRecord).toBeTruthy()
 	expect(memberRecord.plan).toBe('free')
 	expect(JSON.stringify(memberRecord)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(memberRecord)).not.toContain('super-secret-value')
+	const memberId = Number(memberRecord.id)
+	const adminId = Number(adminRecord.id)
 
-	// The usage drill-down lives on the users page and loads for the
-	// selected account only.
-	await page.goto(`/admin/users?q=rbac-${runId}`)
+	// URL-backed selection: click updates the path, reload restores it, and a
+	// deep link opens that account's detail (use the non-first seeded user).
 	await page.getByRole('button', { name: memberUser.username }).click()
+	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberId}`))
+	await expect(page.getByText('Account metadata only')).toBeVisible()
 	await expect(page.getByText('Usage & quotas')).toBeVisible()
 	await expect(
 		page.getByText('Unable to load usage for this account.'),
@@ -162,9 +167,19 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(
 		page.getByRole('heading', { name: 'Entitlements' }),
 	).toBeVisible()
+	await page.reload()
+	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberId}`))
+	await expect(
+		page.getByRole('heading', { name: memberUser.username, exact: true }),
+	).toBeVisible()
+	await expect(page.getByText('Account metadata only')).toBeVisible()
+	await page.goto(`/admin/users/${adminId}?q=rbac-${runId}`)
+	await expect(
+		page.getByRole('heading', { name: adminUser.username, exact: true }),
+	).toBeVisible()
+	await expect(page.getByText('Account metadata only')).toBeVisible()
 	await expect(page.getByText('memberPrivateSecret')).toHaveCount(0)
 	await expect(page.getByText('super-secret-value')).toHaveCount(0)
-	const memberId = Number(memberRecord.id)
 	const usageApiResponse = await page.request.get(
 		`/admin/users/usage.json?userId=${memberId}`,
 	)

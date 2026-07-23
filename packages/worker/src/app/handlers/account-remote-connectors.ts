@@ -36,7 +36,11 @@ export function createAccountRemoteConnectorsHandler(env: Env) {
 				loaderData: { accountRemoteConnectors },
 			})
 		},
-	} satisfies Action<typeof routes.accountRemoteConnectors>
+	} satisfies Action<
+		| typeof routes.accountRemoteConnectors
+		| typeof routes.accountRemoteConnectorNew
+		| typeof routes.accountRemoteConnectorDetail
+	>
 }
 
 export function createAccountRemoteConnectorsApiHandler(env: Env) {

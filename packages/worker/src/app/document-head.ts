@@ -101,7 +101,10 @@ const routeDocumentHeads = {
 	[routePattern(routes.account)]: titleOnly('Account'),
 	[routePattern(routes.accountBilling)]: titleOnly('Billing'),
 	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
+	[routePattern(routes.accountIntegrationDetail)]: titleOnly('Integrations'),
 	[routePattern(routes.accountMcpServers)]: titleOnly('MCP servers'),
+	[routePattern(routes.accountMcpServerNew)]: titleOnly('MCP servers'),
+	[routePattern(routes.accountMcpServerDetail)]: titleOnly('MCP servers'),
 	[routePattern(routes.accountPackageInvocationTokens)]: titleOnly(
 		'Package invocation tokens',
 	),
@@ -117,6 +120,10 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountPasskeys)]: titleOnly('Passkeys'),
 	[routePattern(routes.accountRemoteConnectors)]:
 		titleOnly('Remote connectors'),
+	[routePattern(routes.accountRemoteConnectorNew)]:
+		titleOnly('Remote connectors'),
+	[routePattern(routes.accountRemoteConnectorDetail)]:
+		titleOnly('Remote connectors'),
 	[routePattern(routes.accountSecrets)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretNew)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretsApprove)]: titleOnly('Secrets'),
@@ -128,6 +135,7 @@ const routeDocumentHeads = {
 	),
 	[routePattern(routes.admin)]: titleOnly('Admin users'),
 	[routePattern(routes.adminUsers)]: titleOnly('Admin users'),
+	[routePattern(routes.adminUserDetail)]: titleOnly('Admin users'),
 	[routePattern(routes.adminInvites)]: titleOnly('Admin invites'),
 	[routePattern(routes.adminFeatureFlags)]: titleOnly('Admin feature flags'),
 	[routePattern(routes.adminRoles)]: titleOnly('Admin roles'),

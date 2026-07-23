@@ -1,8 +1,11 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
+import { replaceLocation } from '#client/replace-location.ts'
+import { matchesSearchQuery } from '#client/search-filter.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
@@ -18,6 +21,7 @@ import {
 	AccountManagementList,
 	AccountManagementListItemButton,
 	AccountManagementMessage,
+	AccountManagementSearchField,
 	AccountManagementShell,
 	AccountManagementSidebar,
 	AccountPageHeader,
@@ -62,10 +66,30 @@ type AccountMcpServersPayload = {
 type MessageTone = 'info' | 'error'
 
 const accountMcpServersApiPath = '/account/mcp-servers.json'
-const accountMcpServersPath = '/account/mcp-servers'
+const mcpServersRoute = createListDetailRoute('/account/mcp-servers')
 
-function isAccountMcpServersPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === accountMcpServersPath
+/**
+ * Latch key for the list payload. Selection segments and the client-side `q`
+ * filter do not change the GET response, so keying the latch on the base path
+ * avoids spurious refetches when only those URL parts change.
+ */
+function getDataLatchKey(_href: string) {
+	return '/account/mcp-servers'
+}
+
+function readSearchFilter(href: string) {
+	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
+}
+
+function filterServers(servers: Array<McpServerListItem>, search: string) {
+	return servers.filter((server) =>
+		matchesSearchQuery(search, [
+			server.name,
+			server.url,
+			server.state,
+			server.error,
+		]),
+	)
 }
 
 export async function accountMcpServersRouteLoader(
@@ -151,7 +175,6 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
 	let servers: Array<McpServerListItem> = []
-	let selectedId: string | null = null
 	let addName = ''
 	let addUrl = ''
 	let message: string | null = null
@@ -164,8 +187,19 @@ export function AccountMcpServersRoute(handle: Handle) {
 	const secondaryButtonCss = getSecondaryButtonCss()
 	const dangerButtonCss = getDangerButtonCss()
 
-	function selectedServer() {
-		return servers.find((server) => server.id === selectedId) ?? null
+	function getCurrentHref() {
+		return readCurrentRouterHref(handle)
+	}
+
+	function getCurrentSearch() {
+		return new URL(getCurrentHref(), 'http://localhost').search
+	}
+
+	function buildHrefWithUpdatedSearch(search: string) {
+		const nextUrl = new URL(getCurrentHref(), 'http://localhost')
+		if (search) nextUrl.searchParams.set('q', search)
+		else nextUrl.searchParams.delete('q')
+		return `${nextUrl.pathname}${nextUrl.search}`
 	}
 
 	function setMessage(nextMessage: string | null, tone: MessageTone = 'info') {
@@ -176,7 +210,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 	function consumeOAuthResult() {
 		if (oauthResultConsumed) return
 		oauthResultConsumed = true
-		const result = readOAuthResultFromHref(readCurrentRouterHref(handle))
+		const result = readOAuthResultFromHref(getCurrentHref())
 		if (!result) return
 		setMessage(result.message, result.tone)
 	}
@@ -184,16 +218,11 @@ export function AccountMcpServersRoute(handle: Handle) {
 	function applyPayload(payload: AccountMcpServersPayload) {
 		servers = payload.servers
 		deleteConfirm = false
-		if (payload.selectedServerId) {
-			selectedId = payload.selectedServerId
-		}
-		if (selectedId && !servers.some((server) => server.id === selectedId)) {
-			selectedId = null
-		}
 	}
 
 	async function loadServers(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
+		const href = getCurrentHref()
+		const latchKey = getDataLatchKey(href)
 		try {
 			const response = await fetch(accountMcpServersApiPath, {
 				headers: { Accept: 'application/json' },
@@ -209,9 +238,13 @@ export function AccountMcpServersRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load MCP server settings.')
 			}
+			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
 			applyPayload(payload)
+			// Clear a stale load-error banner; mutation success messages
+			// (info tone) survive the reload.
+			if (messageTone === 'error') setMessage(null)
 			status = 'ready'
-			loadLatch.markLoaded(href)
+			loadLatch.markLoaded(latchKey)
 			consumeOAuthResult()
 			handle.update()
 		} catch (error) {
@@ -223,7 +256,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 					: 'Unable to load MCP server settings.',
 				'error',
 			)
-			loadLatch.markFailed(href)
+			loadLatch.markFailed(latchKey)
 			handle.update()
 		}
 	}
@@ -232,6 +265,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 		body: Record<string, unknown>
 		successMessage: (payload: AccountMcpServersPayload) => string | null
 		failureMessage: string
+		afterSuccess?: (payload: AccountMcpServersPayload) => void
 	}) {
 		if (actionState !== 'idle') return
 		actionState = 'busy'
@@ -260,6 +294,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 			applyPayload(payload)
 			actionState = 'idle'
 			setMessage(input.successMessage(payload))
+			input.afterSuccess?.(payload)
 			handle.update()
 		} catch (error) {
 			actionState = 'idle'
@@ -303,27 +338,23 @@ export function AccountMcpServersRoute(handle: Handle) {
 					: 'Added MCP server.'
 			},
 			failureMessage: 'Unable to add MCP server.',
+			afterSuccess: (payload) => {
+				if (!payload.selectedServerId) return
+				// Do not pre-mark the destination as loaded: `navigate` is async
+				// (preload-then-commit). The commit render consumes preloaded data
+				// (or the stale marker) and marks the latch itself.
+				navigate(
+					mcpServersRoute.buildDetailHref(
+						payload.selectedServerId,
+						getCurrentSearch(),
+					),
+				)
+			},
 		})
 	}
 
-	function selectServer(server: McpServerListItem) {
-		if (actionState !== 'idle') return
-		selectedId = server.id
-		deleteConfirm = false
-		setMessage(null)
-		handle.update()
-	}
-
-	function startAddServer() {
-		if (actionState !== 'idle') return
-		selectedId = null
-		deleteConfirm = false
-		setMessage(null)
-		handle.update()
-	}
-
 	function applyRouteLoaderData(href: string) {
-		if (!isAccountMcpServersPath(href)) return false
+		if (!mcpServersRoute.isRoutePath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'accountMcpServers',
@@ -332,18 +363,19 @@ export function AccountMcpServersRoute(handle: Handle) {
 		if (!routeData) return false
 		applyPayload(routeData)
 		status = 'ready'
-		loadLatch.markLoaded(href)
+		loadLatch.markLoaded(getDataLatchKey(href))
 		consumeOAuthResult()
 		return true
 	}
 
 	return () => {
-		const currentHref = readCurrentRouterHref(handle)
+		const currentHref = getCurrentHref()
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
+		const latchKey = getDataLatchKey(currentHref)
 		const needsLoad = loadLatch.needsLoad({
-			currentHref,
+			currentHref: latchKey,
 			isLoading: status === 'loading',
 			appliedRouteData,
 			needsStaleRefresh,
@@ -352,7 +384,13 @@ export function AccountMcpServersRoute(handle: Handle) {
 			handle.queueTask(loadServers)
 		}
 		const isMutating = actionState !== 'idle'
-		const server = selectedServer()
+		const selection = mcpServersRoute.getSelection(currentHref)
+		const search = readSearchFilter(currentHref)
+		const filteredServers = filterServers(servers, search)
+		const server =
+			servers.find((item) => item.id === selection.selectedId) ?? null
+		const showServerNotFound =
+			selection.selectedId != null && !server && status === 'ready'
 
 		return (
 			<AccountManagementShell>
@@ -364,7 +402,15 @@ export function AccountMcpServersRoute(handle: Handle) {
 						<button
 							type="button"
 							disabled={isMutating}
-							mix={[on('click', startAddServer), css(primaryButtonCss)]}
+							mix={[
+								on('click', () => {
+									if (isMutating) return
+									deleteConfirm = false
+									setMessage(null)
+									navigate(mcpServersRoute.buildNewHref(getCurrentSearch()))
+								}),
+								css(primaryButtonCss),
+							]}
 						>
 							Add server
 						</button>
@@ -394,18 +440,40 @@ export function AccountMcpServersRoute(handle: Handle) {
 								title="Connected servers"
 								description="Tools from enabled, connected servers are callable from execute via kody.mcp['server-name'].tool_name(...)."
 							>
+								<AccountManagementSearchField
+									label="Search"
+									placeholder="Search servers"
+									value={search}
+									onInput={(value) => {
+										replaceLocation(buildHrefWithUpdatedSearch(value))
+									}}
+								/>
 								{servers.length === 0 ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										No MCP servers yet. Add one to get started.
 									</p>
+								) : filteredServers.length === 0 ? (
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										No servers match the current filters.
+									</p>
 								) : (
 									<AccountManagementList>
-										{servers.map((item) => (
+										{filteredServers.map((item) => (
 											<li key={item.id}>
 												<AccountManagementListItemButton
-													active={selectedId === item.id}
+													active={selection.selectedId === item.id}
 													disabled={isMutating}
-													onClick={() => selectServer(item)}
+													onClick={() => {
+														if (isMutating) return
+														deleteConfirm = false
+														setMessage(null)
+														navigate(
+															mcpServersRoute.buildDetailHref(
+																item.id,
+																getCurrentSearch(),
+															),
+														)
+													}}
 												>
 													<strong>{item.name}</strong>
 													<span
@@ -427,7 +495,82 @@ export function AccountMcpServersRoute(handle: Handle) {
 							</AccountManagementSidebar>
 						}
 					>
-						{server ? (
+						{selection.isCreating ? (
+							<form
+								method="post"
+								noValidate
+								mix={[
+									on('submit', (event) => {
+										event.preventDefault()
+										if (event.currentTarget instanceof HTMLFormElement) {
+											void addServer(event.currentTarget)
+										}
+									}),
+									css(cardCss),
+								]}
+							>
+								<div mix={css({ display: 'grid', gap: spacing.xs })}>
+									<h2 mix={css(cardTitleCss)}>Add MCP server</h2>
+									<p mix={css(descriptionCss)}>
+										Provide a short name and the server URL. Remote servers must
+										use https; Kody connects as an MCP client and discovers the
+										server&apos;s tools.
+									</p>
+								</div>
+
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Server name</span>
+									<input
+										name="name"
+										type="text"
+										value={addName}
+										placeholder="linear"
+										disabled={isMutating}
+										required
+										mix={[
+											on('input', (event) => {
+												addName = event.currentTarget.value
+												handle.update()
+											}),
+											css(inputCss),
+										]}
+									/>
+									<span mix={css(descriptionCss)}>
+										Lowercase letters, numbers, and dashes. Used as the
+										kody.mcp[&quot;name&quot;] namespace.
+									</span>
+								</label>
+
+								<label mix={css(fieldCss)}>
+									<span mix={css(fieldLabelCss)}>Server URL</span>
+									<input
+										name="url"
+										type="url"
+										value={addUrl}
+										placeholder="https://mcp.example.com/mcp"
+										disabled={isMutating}
+										required
+										mix={[
+											on('input', (event) => {
+												addUrl = event.currentTarget.value
+												handle.update()
+											}),
+											css(inputCss),
+										]}
+									/>
+								</label>
+
+								<div>
+									<button
+										type="submit"
+										disabled={isMutating}
+										mix={css(primaryButtonCss)}
+									>
+										{actionState === 'busy' ? 'Adding...' : 'Add server'}
+									</button>
+								</div>
+							</form>
+						) : server ? (
 							<section mix={css(cardCss)}>
 								<div mix={css({ display: 'grid', gap: spacing.xs })}>
 									<h2 mix={css(cardTitleCss)}>{server.name}</h2>
@@ -622,6 +765,11 @@ export function AccountMcpServersRoute(handle: Handle) {
 													body: { action: 'delete', id: server.id },
 													successMessage: () => 'Removed MCP server.',
 													failureMessage: 'Unable to remove MCP server.',
+													afterSuccess: () => {
+														navigate(
+															mcpServersRoute.buildListHref(getCurrentSearch()),
+														)
+													},
 												})
 											}),
 											css(dangerButtonCss),
@@ -631,81 +779,40 @@ export function AccountMcpServersRoute(handle: Handle) {
 									</button>
 								</div>
 							</section>
+						) : showServerNotFound ? (
+							<div mix={css({ ...cardCss, gap: spacing.sm })}>
+								<h2
+									mix={css({
+										margin: 0,
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
+										color: colors.text,
+									})}
+								>
+									Server not found
+								</h2>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									This MCP server does not exist for this account or is
+									unavailable.
+								</p>
+							</div>
 						) : (
-							<form
-								method="post"
-								noValidate
-								mix={[
-									on('submit', (event) => {
-										event.preventDefault()
-										if (event.currentTarget instanceof HTMLFormElement) {
-											void addServer(event.currentTarget)
-										}
-									}),
-									css(cardCss),
-								]}
-							>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2 mix={css(cardTitleCss)}>Add MCP server</h2>
-									<p mix={css(descriptionCss)}>
-										Provide a short name and the server URL. Remote servers must
-										use https; Kody connects as an MCP client and discovers the
-										server&apos;s tools.
-									</p>
-								</div>
-
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Server name</span>
-									<input
-										name="name"
-										type="text"
-										value={addName}
-										placeholder="linear"
-										disabled={isMutating}
-										required
-										mix={[
-											on('input', (event) => {
-												addName = event.currentTarget.value
-												handle.update()
-											}),
-											css(inputCss),
-										]}
-									/>
-									<span mix={css(descriptionCss)}>
-										Lowercase letters, numbers, and dashes. Used as the
-										kody.mcp[&quot;name&quot;] namespace.
-									</span>
-								</label>
-
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Server URL</span>
-									<input
-										name="url"
-										type="url"
-										value={addUrl}
-										placeholder="https://mcp.example.com/mcp"
-										disabled={isMutating}
-										required
-										mix={[
-											on('input', (event) => {
-												addUrl = event.currentTarget.value
-												handle.update()
-											}),
-											css(inputCss),
-										]}
-									/>
-								</label>
-
-								<div>
-									<button
-										type="submit"
-										disabled={isMutating}
-										mix={css(primaryButtonCss)}
-									>
-										{actionState === 'busy' ? 'Adding...' : 'Add server'}
-									</button>
-								</div>
-							</form>
+							<div mix={css({ ...cardCss, gap: spacing.sm })}>
+								<h2
+									mix={css({
+										margin: 0,
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
+										color: colors.text,
+									})}
+								>
+									Select a server
+								</h2>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Pick an MCP server from the list to inspect it, or add a new
+									one.
+								</p>
+							</div>
 						)}
 					</AccountManagementLayout>
 				) : null}

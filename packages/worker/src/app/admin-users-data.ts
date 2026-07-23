@@ -40,12 +40,59 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	roles: Array<RoleName>
 }
 
+const adminUsersBasePath = '/admin/users'
 const defaultPageSize = 20
 const maxPageSize = 100
 
 type AdminUserListFilters = {
 	query: string
 	role: RoleName | null
+}
+
+/**
+ * Resolve the selected account id from an HTML path param, a detail
+ * pathname, or the JSON API's `?selected=` query (in that order). Invalid
+ * / non-numeric values yield null so the client can show "User not found."
+ */
+export function readAdminUsersSelectedUserId(
+	requestUrl: string,
+	pathUserId?: string,
+): number | null {
+	const fromPathParam = parseSelectedUserId(pathUserId)
+	if (fromPathParam != null) return fromPathParam
+
+	const url = new URL(requestUrl, 'http://localhost')
+	const detailPrefix = `${adminUsersBasePath}/`
+	if (url.pathname.startsWith(detailPrefix)) {
+		const segment = decodePathSegment(url.pathname.slice(detailPrefix.length))
+		if (segment && !segment.includes('/')) {
+			const fromPath = parseSelectedUserId(segment)
+			if (fromPath != null) return fromPath
+		}
+	}
+
+	return parseSelectedUserId(url.searchParams.get('selected'))
+}
+
+function decodePathSegment(value: string) {
+	try {
+		return decodeURIComponent(value)
+	} catch {
+		// Malformed percent-encoding (e.g. a literal `%`) must not throw;
+		// the raw segment simply fails numeric parsing below.
+		return value
+	}
+}
+
+function parseSelectedUserId(value: string | null | undefined): number | null {
+	if (!value?.trim()) return null
+	const trimmed = value.trim()
+	const parsed = Number.parseInt(trimmed, 10)
+	if (!Number.isFinite(parsed) || parsed < 1) return null
+	// Reject leftovers like "12abc" / "usage.json" so only pure numeric ids
+	// resolve; unknown ids still load as null from the database below.
+	if (String(parsed) !== trimmed) return null
+	return parsed
 }
 
 /** Read the `q` and `role` filter query params shared by the page and API. */
@@ -89,6 +136,7 @@ function buildAdminUserListWhereClause(filters: AdminUserListFilters) {
 export async function loadAdminUsersData(
 	env: Env,
 	requestUrl: string,
+	pathUserId?: string,
 ): Promise<AdminUsersLoaderData> {
 	const url = new URL(requestUrl, 'http://localhost')
 	const { page, pageSize, offset } = readPagination(url, {
@@ -97,8 +145,9 @@ export async function loadAdminUsersData(
 	})
 	const filters = readAdminUserListFilters(url)
 	const { whereClause, params } = buildAdminUserListWhereClause(filters)
+	const selectedUserId = readAdminUsersSelectedUserId(requestUrl, pathUserId)
 
-	const [totalResult, userRows] = await Promise.all([
+	const [totalResult, userRows, selectedUser] = await Promise.all([
 		env.APP_DB.prepare(`SELECT COUNT(*) AS total FROM users ${whereClause}`)
 			.bind(...params)
 			.first<{ total: number }>(),
@@ -111,6 +160,9 @@ export async function loadAdminUsersData(
 		)
 			.bind(...params, pageSize, offset)
 			.all<AdminUserRow>(),
+		selectedUserId
+			? loadAdminUserByIdOrEmail(env.APP_DB, { id: selectedUserId })
+			: Promise.resolve(null),
 	])
 	const total = totalResult?.total ?? 0
 
@@ -122,6 +174,7 @@ export async function loadAdminUsersData(
 		users: (userRows.results ?? []).map((row) =>
 			toAdminUserListItem(row, rolesByUserId.get(row.id) ?? []),
 		),
+		selectedUser,
 		page,
 		pageSize,
 		total,

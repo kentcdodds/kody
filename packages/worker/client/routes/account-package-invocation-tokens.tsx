@@ -1,4 +1,7 @@
-import { formatNullableTimestamp } from '#client/format-timestamp.ts'
+import {
+	formatNullableTimestamp,
+	formatTimestamp,
+} from '#client/format-timestamp.ts'
 import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
 import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import {
@@ -6,11 +9,13 @@ import {
 	type AccountPackageInvocationTokensLoaderData,
 } from '#app/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
-import { createHref } from 'remix/route-pattern/href'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
+import { replaceLocation } from '#client/replace-location.ts'
+import { matchesSearchQuery } from '#client/search-filter.ts'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -46,6 +51,7 @@ import {
 	AccountManagementList,
 	AccountManagementListItemButton,
 	AccountManagementMessage,
+	AccountManagementSearchField,
 	AccountManagementShell,
 	AccountManagementSidebar,
 	AccountPageHeader,
@@ -68,8 +74,33 @@ const accountPackageInvocationTokensApiPath =
 	'/account/package-invocation-tokens.json'
 const accountPackageInvocationTokensBasePath =
 	'/account/package-invocation-tokens'
-const accountPackageInvocationTokenDetailPathPattern = `${accountPackageInvocationTokensBasePath}/:tokenId`
+const packageInvocationTokensRoute = createListDetailRoute(
+	accountPackageInvocationTokensBasePath,
+)
 const wildcardScope = '*'
+
+/**
+ * Latch key for the list payload. Selection segments and the client-side `q`
+ * filter do not change the GET response, so keying the latch on the base path
+ * avoids spurious refetches when only those URL parts change.
+ */
+function getDataLatchKey(_href: string) {
+	return accountPackageInvocationTokensBasePath
+}
+
+function readFilterState(href: string) {
+	return {
+		search:
+			new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? '',
+	}
+}
+
+const truncatedTextCss = {
+	minWidth: 0,
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap',
+} as const
 
 function createEmptyEditorState(): EditorState {
 	return {
@@ -138,20 +169,6 @@ function createEditorStateFromNewTokenQuery(href: string): EditorState {
 	}
 }
 
-function isNewTokenPath(href: string) {
-	const url = new URL(href, 'http://localhost')
-	return url.pathname === `${accountPackageInvocationTokensBasePath}/new`
-}
-
-function isAccountPackageInvocationTokensPath(href: string) {
-	const path = new URL(href, 'http://localhost').pathname
-	return (
-		path === accountPackageInvocationTokensBasePath ||
-		path === `${accountPackageInvocationTokensBasePath}/new` ||
-		path.startsWith(`${accountPackageInvocationTokensBasePath}/`)
-	)
-}
-
 export async function accountPackageInvocationTokensRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
@@ -170,25 +187,6 @@ export async function accountPackageInvocationTokensRouteLoader(
 		throw new Error('Unable to load package invocation tokens.')
 	}
 	return { accountPackageInvocationTokens: payload }
-}
-
-function getSelectedTokenIdFromPath(href: string) {
-	const url = new URL(href, 'http://localhost')
-	const detailPrefix = `${accountPackageInvocationTokensBasePath}/`
-	if (
-		url.pathname === `${accountPackageInvocationTokensBasePath}/new` ||
-		!url.pathname.startsWith(detailPrefix)
-	) {
-		return null
-	}
-	const tokenId = decodeURIComponent(url.pathname.slice(detailPrefix.length))
-	return tokenId || null
-}
-
-function buildTokenDetailPath(tokenId: string) {
-	return createHref(accountPackageInvocationTokenDetailPathPattern, {
-		tokenId,
-	})
 }
 
 function getNewTokenQueryKey(href: string) {
@@ -266,6 +264,41 @@ function tokenStatus(token: AccountPackageInvocationTokenListItem) {
 	return token.revokedAt ? 'Revoked' : 'Active'
 }
 
+function filterTokens(
+	tokens: Array<AccountPackageInvocationTokenListItem>,
+	search: string,
+	packages: Array<PackageOption>,
+) {
+	return tokens.filter((token) => {
+		const packageNames = packages
+			.filter(
+				(pkg) =>
+					token.packageIds.includes(pkg.id) ||
+					token.packageIds.includes(wildcardScope) ||
+					token.packageKodyIds.includes(pkg.kodyId) ||
+					token.packageKodyIds.includes(wildcardScope),
+			)
+			.flatMap((pkg) => [pkg.name, pkg.kodyId])
+		return matchesSearchQuery(search, [
+			token.name,
+			tokenStatus(token),
+			...token.packageIds,
+			...token.packageKodyIds,
+			...token.exportNames,
+			...token.sources,
+			...packageNames,
+		])
+	})
+}
+
+function tokenPackageSummary(token: AccountPackageInvocationTokenListItem) {
+	const scopes = [...token.packageIds, ...token.packageKodyIds]
+	if (scopes.includes(wildcardScope)) return 'Any package'
+	const count = scopes.length
+	if (count === 0) return 'No packages'
+	return `${count} package${count === 1 ? '' : 's'}`
+}
+
 function tokenStatusCss(token: AccountPackageInvocationTokenListItem) {
 	return {
 		display: 'inline-flex',
@@ -331,9 +364,24 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		}
 	}
 
+	function getCurrentHref() {
+		return readCurrentRouterHref(handle)
+	}
+
+	function getCurrentSearch() {
+		return new URL(getCurrentHref(), 'http://localhost').search
+	}
+
+	function buildHrefWithUpdatedSearch(search: string) {
+		const nextUrl = new URL(getCurrentHref(), 'http://localhost')
+		if (search) nextUrl.searchParams.set('q', search)
+		else nextUrl.searchParams.delete('q')
+		return `${nextUrl.pathname}${nextUrl.search}`
+	}
+
 	function getCurrentSelectedTokenId() {
 		return (
-			getSelectedTokenIdFromPath(readCurrentRouterHref(handle)) ??
+			packageInvocationTokensRoute.getSelection(getCurrentHref()).selectedId ??
 			selectedTokenId
 		)
 	}
@@ -350,7 +398,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 
 	async function loadTokens(signal: AbortSignal) {
 		const loadStartedAtMutationVersion = mutationVersion
-		const href = readCurrentRouterHref(handle)
+		const href = getCurrentHref()
+		const latchKey = getDataLatchKey(href)
 		try {
 			const response = await fetch(accountPackageInvocationTokensApiPath, {
 				headers: { Accept: 'application/json' },
@@ -368,13 +417,12 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error('Unable to load package invocation tokens.')
 			}
 			if (loadStartedAtMutationVersion !== mutationVersion) return
-			const latestHref = readCurrentRouterHref(handle)
-			if (href !== latestHref) return
-			applyPayload(payload, latestHref)
+			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
+			applyPayload(payload, getCurrentHref())
 			status = 'ready'
 			message = null
 			messageTone = 'info'
-			loadLatch.markLoaded(href)
+			loadLatch.markLoaded(latchKey)
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
@@ -385,7 +433,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 					? error.message
 					: 'Unable to load package invocation tokens.'
 			messageTone = 'error'
-			loadLatch.markFailed(href)
+			loadLatch.markFailed(latchKey)
 			handle.update()
 		}
 	}
@@ -413,7 +461,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			editMode = Boolean(selectedToken && !selectedToken.revokedAt)
 			return
 		}
-		if (isNewTokenPath(href)) {
+		const selection = packageInvocationTokensRoute.getSelection(href)
+		if (selection.isCreating) {
 			const queryKey = getNewTokenQueryKey(href)
 			if (queryKey !== lastNewTokenQueryKey) {
 				lastNewTokenQueryKey = queryKey
@@ -423,11 +472,10 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			}
 			return
 		}
-		const pathSelectedTokenId = getSelectedTokenIdFromPath(href)
-		if (pathSelectedTokenId) {
-			selectedTokenId = pathSelectedTokenId
+		if (selection.selectedId) {
+			selectedTokenId = selection.selectedId
 			const selectedToken = tokens.find(
-				(token) => token.id === pathSelectedTokenId,
+				(token) => token.id === selection.selectedId,
 			)
 			editorState =
 				selectedToken && !selectedToken.revokedAt
@@ -499,7 +547,8 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		editMode = false
 		message = null
 		messageTone = 'info'
-		const nextPath = `${accountPackageInvocationTokensBasePath}/new`
+		const nextPath =
+			packageInvocationTokensRoute.buildNewHref(getCurrentSearch())
 		syncRouterLocation(nextPath)
 		lastNewTokenQueryKey = getNewTokenQueryKey(nextPath)
 		handle.update()
@@ -528,8 +577,11 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		messageTone = 'info'
 		syncRouterLocation(
 			tokenId
-				? buildTokenDetailPath(tokenId)
-				: accountPackageInvocationTokensBasePath,
+				? packageInvocationTokensRoute.buildDetailHref(
+						tokenId,
+						getCurrentSearch(),
+					)
+				: packageInvocationTokensRoute.buildListHref(getCurrentSearch()),
 		)
 		handle.update()
 	}
@@ -605,14 +657,20 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to create token.')
 			}
 			mutationVersion += 1
-			applyPayload(payload, accountPackageInvocationTokensBasePath)
+			applyPayload(
+				payload,
+				packageInvocationTokensRoute.buildListHref(getCurrentSearch()),
+			)
 			saveState = 'idle'
 			message =
 				'Created token. The raw token was not stored and will not be shown again.'
 			messageTone = 'info'
 			const nextPath = payload.selectedTokenId
-				? buildTokenDetailPath(payload.selectedTokenId)
-				: accountPackageInvocationTokensBasePath
+				? packageInvocationTokensRoute.buildDetailHref(
+						payload.selectedTokenId,
+						getCurrentSearch(),
+					)
+				: packageInvocationTokensRoute.buildListHref(getCurrentSearch())
 			syncRouterLocation(nextPath)
 			handle.update()
 		} catch (error) {
@@ -691,13 +749,17 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to update token.')
 			}
 			mutationVersion += 1
-			applyPayload(payload, buildTokenDetailPath(tokenId))
+			const detailHref = packageInvocationTokensRoute.buildDetailHref(
+				tokenId,
+				getCurrentSearch(),
+			)
+			applyPayload(payload, detailHref)
 			saveState = 'idle'
 			message = nextEditorState.rawToken
 				? 'Saved token and replaced its raw value.'
 				: 'Saved token.'
 			messageTone = 'info'
-			syncRouterLocation(buildTokenDetailPath(tokenId))
+			syncRouterLocation(detailHref)
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -742,14 +804,15 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to revoke token.')
 			}
 			mutationVersion += 1
-			applyPayload(
-				{ ...payload, selectedTokenId: tokenId },
-				buildTokenDetailPath(tokenId),
+			const detailHref = packageInvocationTokensRoute.buildDetailHref(
+				tokenId,
+				getCurrentSearch(),
 			)
+			applyPayload({ ...payload, selectedTokenId: tokenId }, detailHref)
 			saveState = 'idle'
 			message = 'Revoked token.'
 			messageTone = 'info'
-			syncRouterLocation(buildTokenDetailPath(tokenId))
+			syncRouterLocation(detailHref)
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -794,11 +857,15 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to reinstate token.')
 			}
 			mutationVersion += 1
-			applyPayload(payload, buildTokenDetailPath(tokenId))
+			const detailHref = packageInvocationTokensRoute.buildDetailHref(
+				tokenId,
+				getCurrentSearch(),
+			)
+			applyPayload(payload, detailHref)
 			saveState = 'idle'
 			message = 'Reinstated token.'
 			messageTone = 'info'
-			syncRouterLocation(buildTokenDetailPath(tokenId))
+			syncRouterLocation(detailHref)
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -843,14 +910,16 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to delete token.')
 			}
 			mutationVersion += 1
-			applyPayload(payload, accountPackageInvocationTokensBasePath)
+			const listHref =
+				packageInvocationTokensRoute.buildListHref(getCurrentSearch())
+			applyPayload(payload, listHref)
 			saveState = 'idle'
 			selectedTokenId = null
 			editorState = createEmptyEditorState()
 			editMode = false
 			message = 'Deleted token permanently.'
 			messageTone = 'info'
-			syncRouterLocation(accountPackageInvocationTokensBasePath)
+			syncRouterLocation(listHref)
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -872,12 +941,17 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		editMode = !token.revokedAt
 		message = null
 		messageTone = 'info'
-		syncRouterLocation(buildTokenDetailPath(token.id))
+		syncRouterLocation(
+			packageInvocationTokensRoute.buildDetailHref(
+				token.id,
+				getCurrentSearch(),
+			),
+		)
 		handle.update()
 	}
 
 	function applyRouteLoaderData(href: string) {
-		if (!isAccountPackageInvocationTokensPath(href)) return false
+		if (!packageInvocationTokensRoute.isRoutePath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'accountPackageInvocationTokens',
@@ -888,21 +962,22 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		messageTone = 'info'
-		loadLatch.markLoaded(href)
+		loadLatch.markLoaded(getDataLatchKey(href))
 		return true
 	}
 
 	return () => {
-		const currentHref = readCurrentRouterHref(handle)
+		const currentHref = getCurrentHref()
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		// A same-path refresh whose loader failed leaves no preload and no
 		// href change; the stale marker forces the fallback refetch.
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
+		const latchKey = getDataLatchKey(currentHref)
 		const isRefreshingForLocationChange =
-			status !== 'loading' && !loadLatch.isLoadedFor(currentHref)
+			status !== 'loading' && !loadLatch.isLoadedFor(latchKey)
 		const needsLoad = loadLatch.needsLoad({
-			currentHref,
+			currentHref: latchKey,
 			isLoading: status === 'loading',
 			appliedRouteData,
 			needsStaleRefresh,
@@ -911,13 +986,14 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			handle.queueTask(loadTokens)
 		}
 		const isMutating = saveState !== 'idle'
-		const isCreatingToken = isNewTokenPath(currentHref)
-		const requestedTokenId = getSelectedTokenIdFromPath(currentHref)
+		const selection = packageInvocationTokensRoute.getSelection(currentHref)
+		const filters = readFilterState(currentHref)
+		const filteredTokens = filterTokens(tokens, filters.search, packages)
 		// The URL is the source of truth for selection in every environment:
 		// the base tokens path (no token segment) means nothing is selected,
 		// so falling back to module state here would keep a stale detail
 		// panel open after navigating back to the list.
-		const effectiveSelectedTokenId = requestedTokenId
+		const effectiveSelectedTokenId = selection.selectedId
 		const selectedToken =
 			tokens.find((token) => token.id === effectiveSelectedTokenId) ?? null
 		const isEditingSelectedToken =
@@ -926,9 +1002,13 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			selectedToken != null &&
 			!selectedToken.revokedAt
 		const showTokenNotFound =
-			requestedTokenId != null &&
+			selection.selectedId != null &&
 			!selectedToken &&
 			!isRefreshingForLocationChange
+		const showEmptySelection =
+			!selection.isCreating && selection.selectedId == null
+		const showSupportingSections =
+			selection.isCreating || selection.selectedId != null
 		const endpointTemplate = username
 			? `${invocationUrlOrigin}/@${username}/api/package-invocations/<kodyId>/<exportName>`
 			: ''
@@ -969,16 +1049,28 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 								title="Tokens"
 								description="Revoked tokens remain listed for auditability and do not authorize external invocation requests."
 							>
+								<AccountManagementSearchField
+									label="Search"
+									placeholder="Search tokens"
+									value={filters.search}
+									onInput={(value) => {
+										replaceLocation(buildHrefWithUpdatedSearch(value))
+									}}
+								/>
 								{tokens.length === 0 ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										No package invocation tokens yet.
 									</p>
+								) : filteredTokens.length === 0 ? (
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										No tokens match the current filters.
+									</p>
 								) : (
 									<AccountManagementList>
-										{tokens.map((token) => {
+										{filteredTokens.map((token) => {
 											const isSelected = effectiveSelectedTokenId === token.id
 											return (
-												<li key={token.id}>
+												<li key={token.id} mix={css({ minWidth: 0 })}>
 													<AccountManagementListItemButton
 														active={isSelected}
 														disabled={isMutating}
@@ -987,14 +1079,54 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 															selectToken(token)
 														}}
 													>
-														<strong>{token.name}</strong>
-														<span mix={css(tokenStatusCss(token))}>
+														<div
+															mix={css({
+																display: 'grid',
+																gridTemplateColumns: 'minmax(0, 1fr) auto',
+																gap: spacing.md,
+																alignItems: 'baseline',
+																minWidth: 0,
+															})}
+														>
+															<strong
+																mix={css({
+																	...truncatedTextCss,
+																	display: 'block',
+																})}
+															>
+																{token.name}
+															</strong>
+															<span
+																mix={css({
+																	fontSize: typography.fontSize.xs,
+																	color: colors.textMuted,
+																})}
+															>
+																{formatTimestamp(token.createdAt)}
+															</span>
+														</div>
+														<span
+															mix={css({
+																...truncatedTextCss,
+																display: 'block',
+																fontSize: typography.fontSize.sm,
+																color: colors.textMuted,
+															})}
+														>
 															{tokenStatus(token)}
+															{' · '}
+															{tokenPackageSummary(token)}
 														</span>
 														<span
 															mix={css({
-																color: colors.textMuted,
+																display: '-webkit-box',
 																fontSize: typography.fontSize.sm,
+																color: colors.textMuted,
+																overflow: 'hidden',
+																overflowWrap: 'anywhere',
+																textOverflow: 'ellipsis',
+																'-webkit-box-orient': 'vertical',
+																'-webkit-line-clamp': '2',
 															})}
 														>
 															Exports: {formatScope(token.exportNames)}
@@ -1009,7 +1141,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 						}
 					>
 						<div mix={css({ display: 'grid', gap: spacing.lg })}>
-							{isCreatingToken || (!requestedTokenId && !selectedToken) ? (
+							{selection.isCreating ? (
 								<form
 									method="post"
 									noValidate
@@ -1223,6 +1355,25 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 										</button>
 									</div>
 								</form>
+							) : null}
+
+							{showEmptySelection ? (
+								<div mix={css({ ...cardCss, gap: spacing.sm })}>
+									<h2
+										mix={css({
+											margin: 0,
+											fontSize: typography.fontSize.lg,
+											fontWeight: typography.fontWeight.semibold,
+											color: colors.text,
+										})}
+									>
+										Select a token
+									</h2>
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										Pick a token from the list to view or edit it, or create a
+										new one.
+									</p>
+								</div>
 							) : null}
 
 							{isEditingSelectedToken ? (
@@ -1515,28 +1666,30 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 								</form>
 							) : null}
 
-							<section mix={css(cardCss)}>
-								<h2 mix={css(cardTitleCss)}>Invocation endpoint</h2>
-								<p mix={css(descriptionCss)}>
-									External clients call this endpoint with the raw token in the
-									Authorization header.
-								</p>
-								<code
-									mix={css({
-										display: 'block',
-										padding: spacing.sm,
-										borderRadius: radius.md,
-										border: `1px solid ${colors.border}`,
-										backgroundColor: colors.background,
-										color: colors.text,
-										fontFamily: 'monospace',
-										fontSize: typography.fontSize.sm,
-										overflowWrap: 'anywhere',
-									})}
-								>
-									{endpointTemplate}
-								</code>
-							</section>
+							{showSupportingSections ? (
+								<section mix={css(cardCss)}>
+									<h2 mix={css(cardTitleCss)}>Invocation endpoint</h2>
+									<p mix={css(descriptionCss)}>
+										External clients call this endpoint with the raw token in
+										the Authorization header.
+									</p>
+									<code
+										mix={css({
+											display: 'block',
+											padding: spacing.sm,
+											borderRadius: radius.md,
+											border: `1px solid ${colors.border}`,
+											backgroundColor: colors.background,
+											color: colors.text,
+											fontFamily: 'monospace',
+											fontSize: typography.fontSize.sm,
+											overflowWrap: 'anywhere',
+										})}
+									>
+										{endpointTemplate}
+									</code>
+								</section>
+							) : null}
 
 							{selectedToken && !isEditingSelectedToken ? (
 								<section mix={css(cardCss)}>
@@ -1688,7 +1841,9 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 												editorState = createEmptyEditorState()
 												editMode = false
 												syncRouterLocation(
-													accountPackageInvocationTokensBasePath,
+													packageInvocationTokensRoute.buildListHref(
+														getCurrentSearch(),
+													),
 												)
 												handle.update()
 											}),
@@ -1700,33 +1855,36 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 								</section>
 							) : null}
 
-							<section mix={css(cardCss)}>
-								<h2 mix={css(cardTitleCss)}>Owned packages</h2>
-								<p mix={css(descriptionCss)}>
-									Concrete package scopes must refer to packages owned by this
-									account. Use <code>*</code> only for trusted personal clients.
-								</p>
-								{packages.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No saved packages yet.
+							{showSupportingSections ? (
+								<section mix={css(cardCss)}>
+									<h2 mix={css(cardTitleCss)}>Owned packages</h2>
+									<p mix={css(descriptionCss)}>
+										Concrete package scopes must refer to packages owned by this
+										account. Use <code>*</code> only for trusted personal
+										clients.
 									</p>
-								) : (
-									<ul
-										mix={css({
-											margin: 0,
-											paddingLeft: spacing.lg,
-											color: colors.text,
-										})}
-									>
-										{packages.map((savedPackage) => (
-											<li key={savedPackage.id}>
-												<strong>{savedPackage.kodyId}</strong> -{' '}
-												{savedPackage.name}
-											</li>
-										))}
-									</ul>
-								)}
-							</section>
+									{packages.length === 0 ? (
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											No saved packages yet.
+										</p>
+									) : (
+										<ul
+											mix={css({
+												margin: 0,
+												paddingLeft: spacing.lg,
+												color: colors.text,
+											})}
+										>
+											{packages.map((savedPackage) => (
+												<li key={savedPackage.id}>
+													<strong>{savedPackage.kodyId}</strong> -{' '}
+													{savedPackage.name}
+												</li>
+											))}
+										</ul>
+									)}
+								</section>
+							) : null}
 						</div>
 					</AccountManagementLayout>
 				) : null}

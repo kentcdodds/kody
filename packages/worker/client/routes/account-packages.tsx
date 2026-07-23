@@ -2,6 +2,7 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import {
 	createInfiniteList,
@@ -44,26 +45,13 @@ import {
 
 type PageStatus = 'loading' | 'ready' | 'error'
 
-const packagesBasePath = '/account/packages'
 const accountPackagesApiPath = '/account/packages.json'
+const packagesRoute = createListDetailRoute('/account/packages')
 
 type PackageFilterState = {
 	search: string
 	app: AccountPackagesAppFilter
 	sort: AccountPackagesSort
-}
-
-function isAccountPackagesPath(href: string) {
-	const path = new URL(href, 'http://localhost').pathname
-	return path === packagesBasePath || path.startsWith(`${packagesBasePath}/`)
-}
-
-function getSelectedPackageId(href: string) {
-	const pathname = new URL(href, 'http://localhost').pathname
-	const detailPrefix = `${packagesBasePath}/`
-	if (!pathname.startsWith(detailPrefix)) return null
-	const packageId = decodeURIComponent(pathname.slice(detailPrefix.length))
-	return packageId || null
 }
 
 function readFilterState(href: string): PackageFilterState {
@@ -103,15 +91,11 @@ function buildPackagesApiRequestUrl(
 		requestUrl.searchParams.set('sort', filters.sort)
 	if (options?.page != null)
 		requestUrl.searchParams.set('page', String(options.page))
-	const selectedPackageId = getSelectedPackageId(href)
+	const selectedPackageId = packagesRoute.getSelection(href).selectedId
 	if (selectedPackageId && options?.includeSelected !== false) {
 		requestUrl.searchParams.set('selected', selectedPackageId)
 	}
 	return `${requestUrl.pathname}${requestUrl.search}`
-}
-
-function buildPackageHref(packageId: string, search: string) {
-	return `${packagesBasePath}/${encodeURIComponent(packageId)}${search}`
 }
 
 export async function accountPackagesRouteLoader(
@@ -219,7 +203,7 @@ export function AccountPackagesRoute(handle: Handle) {
 		}
 		selectedPackage = payload.selectedPackage
 		message =
-			getSelectedPackageId(href) && !payload.selectedPackage
+			packagesRoute.getSelection(href).selectedId && !payload.selectedPackage
 				? 'Package not found.'
 				: null
 		status = 'ready'
@@ -304,7 +288,7 @@ export function AccountPackagesRoute(handle: Handle) {
 	}
 
 	function applyRouteLoaderData(href: string) {
-		if (!isAccountPackagesPath(href)) return false
+		if (!packagesRoute.isRoutePath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'accountPackages', href)
 		if (!routeData) return false
 		applyPayload(routeData, href)
@@ -351,7 +335,7 @@ export function AccountPackagesRoute(handle: Handle) {
 		} = packagesSnapshot
 		const filters = readFilterState(currentHref)
 		const hasActiveFilters = Boolean(filters.search || filters.app !== 'all')
-		const selectedPackageId = getSelectedPackageId(currentHref)
+		const selectedPackageId = packagesRoute.getSelection(currentHref).selectedId
 		const activePackageId = selectedPackageId ?? selectedPackage?.id ?? null
 
 		return (
@@ -448,7 +432,10 @@ export function AccountPackagesRoute(handle: Handle) {
 													active={activePackageId === pkg.id}
 													onClick={() => {
 														navigate(
-															buildPackageHref(pkg.id, getCurrentSearch()),
+															packagesRoute.buildDetailHref(
+																pkg.id,
+																getCurrentSearch(),
+															),
 														)
 													}}
 												>
