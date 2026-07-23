@@ -130,7 +130,7 @@ ${body}
 }
 
 function statusClass(ok: boolean | null): string {
-	if (ok === null) return 'warn'
+	if (ok === null) return 'muted'
 	return ok ? 'ok' : 'bad'
 }
 
@@ -139,7 +139,7 @@ function statusLabel(
 	presentLabel = 'yes',
 	absentLabel = 'no',
 ): string {
-	if (ok === null) return 'error'
+	if (ok === null) return '—'
 	return ok ? presentLabel : absentLabel
 }
 
