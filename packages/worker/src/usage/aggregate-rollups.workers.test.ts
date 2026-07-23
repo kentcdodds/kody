@@ -55,13 +55,17 @@ test('durable inbound usage survives message deletion and null message_id', asyn
 		)
 		.run()
 
-	await env.APP_DB.prepare(`DELETE FROM email_messages WHERE id = ?`)
-		.bind(messageId)
+	await env.APP_DB.prepare(
+		`DELETE FROM email_messages WHERE id = ? AND user_id = ?`,
+	)
+		.bind(messageId, userId)
 		.run()
 	await env.APP_DB.prepare(
-		`UPDATE email_delivery_events SET message_id = NULL WHERE message_id = ?`,
+		`UPDATE email_delivery_events
+		SET message_id = NULL
+		WHERE message_id = ? AND user_id = ?`,
 	)
-		.bind(messageId)
+		.bind(messageId, userId)
 		.run()
 
 	expect(

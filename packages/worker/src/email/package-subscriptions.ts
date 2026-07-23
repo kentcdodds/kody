@@ -239,12 +239,13 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 	providerEvent: CloudflareEmailDeliveryEvent
 }) {
 	const baseUrl = getAppBaseUrl({ env: input.env })
-	const { subscriptions } = await loadMatchingEmailSubscriptions({
-		env: input.env,
-		baseUrl,
-		userId: input.message.userId,
-		topic: emailDeliveryUpdatedTopic,
-	})
+	const { subscriptions, discoveryErrors } =
+		await loadMatchingEmailSubscriptions({
+			env: input.env,
+			baseUrl,
+			userId: input.message.userId,
+			topic: emailDeliveryUpdatedTopic,
+		})
 	const payload = {
 		event: emailDeliveryUpdatedTopic,
 		message: {
@@ -275,7 +276,7 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 			occurred_at: input.providerEvent.metadata.eventTimestamp,
 		},
 	}
-	return await Promise.all(
+	const responses = await Promise.all(
 		subscriptions.map(
 			async ({ savedPackage }) =>
 				await invokePackageSubscription({
@@ -289,6 +290,12 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 				}),
 		),
 	)
+	if (discoveryErrors.length > 0) {
+		throw new Error('Email delivery subscription dispatch was incomplete.', {
+			cause: discoveryErrors[0],
+		})
+	}
+	return responses
 }
 
 /**

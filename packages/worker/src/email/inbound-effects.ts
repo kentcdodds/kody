@@ -11,6 +11,14 @@ const subscriptionEffectLeaseMs = 5 * 60 * 1000
 const effectRetryMs = 15 * 60 * 1000
 const maxSubscriptionEffectAttempts = 3
 
+export function resolveSubscriptionEffectFailure(attemptCount: number) {
+	const nextAttempt = Math.max(0, Math.floor(attemptCount)) + 1
+	return {
+		attemptCount: nextAttempt,
+		deadLettered: nextAttempt >= maxSubscriptionEffectAttempts,
+	}
+}
+
 type InboundEffectsEnv = Pick<
 	Env,
 	'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL' | 'USAGE_EVENTS'
@@ -292,8 +300,11 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 			.run()
 		return { outcome: 'complete' as const }
 	} catch (error) {
-		const nextAttempt = Number(delivery.subscriptionEffectAttemptCount ?? 0) + 1
-		const deadLettered = nextAttempt >= maxSubscriptionEffectAttempts
+		const failure = resolveSubscriptionEffectFailure(
+			delivery.subscriptionEffectAttemptCount ?? 0,
+		)
+		const nextAttempt = failure.attemptCount
+		const deadLettered = failure.deadLettered
 		await input.env.APP_DB.prepare(
 			`UPDATE email_delivery_events
 			SET detail_json = json_remove(
@@ -369,6 +380,7 @@ export async function reconcileInboundDeliveryEffectsForUser(input: {
 		WHERE user_id = ?
 			AND provider = 'cloudflare-email-routing'
 			AND event_type = 'received'
+			AND json_extract(detail_json, '$.fingerprint') IS NOT NULL
 			AND (
 				(
 					json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL

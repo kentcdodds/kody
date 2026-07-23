@@ -121,6 +121,11 @@ export async function parseForwardableEmailMessage(
 export async function readForwardableEmailRawMime(
 	message: ForwardableEmailMessage,
 ) {
+	if (message.rawSize > maxRawMimeBytes) {
+		throw new Error(
+			`Inbound email raw MIME is too large (${message.rawSize} bytes, max ${maxRawMimeBytes}).`,
+		)
+	}
 	return await new Response(message.raw).text()
 }
 
