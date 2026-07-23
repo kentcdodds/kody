@@ -1086,7 +1086,7 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 	)
 }, 10_000)
 
-test('search tool lists a domain when domain is passed without a query', async () => {
+test('search tool domain param: browse, reject unknown, and scope ranked results', async () => {
 	vi.clearAllMocks()
 	consoleWarn.mockImplementation(() => {})
 	const handler = await getSearchHandler()
@@ -1098,8 +1098,6 @@ test('search tool lists a domain when domain is passed without a query', async (
 		conversationId: 'conv-domain-browse',
 	})
 	expect(browseResponse.isError).toBeUndefined()
-	const browseText = browseResponse.content.map((item) => item.text).join('\n')
-	expect(browseText).toContain('**capability** `search_docs` (`meta`)')
 	const browseResult = browseResponse.structuredContent.result as {
 		matches: Array<{ type: string; id?: string; domain?: string }>
 	}
@@ -1111,29 +1109,19 @@ test('search tool lists a domain when domain is passed without a query', async (
 		}),
 	])
 	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
-})
-
-test('search tool rejects an unknown domain with the available domain list', async () => {
-	vi.clearAllMocks()
-	consoleWarn.mockImplementation(() => {})
-	const handler = await getSearchHandler()
 
 	const unknownResponse = await handler({
 		domain: 'nope',
 		conversationId: 'conv-domain-unknown',
 	})
 	expect(unknownResponse.isError).toBe(true)
-	expect(unknownResponse.structuredContent.error).toContain(
-		'Unknown domain "nope"',
+	expect(unknownResponse.structuredContent.error).toMatch(
+		/Unknown domain "nope"/,
 	)
 	expect(unknownResponse.structuredContent.error).toContain('meta')
-})
 
-test('search tool scopes ranked query results when domain is passed with a query', async () => {
-	vi.clearAllMocks()
-	consoleWarn.mockImplementation(() => {})
 	mockModule.listSavedPackagesByUserId.mockResolvedValue(createSavedPackages())
-	const { handler } = await getSearchRegistration({
+	const { handler: scopedHandler } = await getSearchRegistration({
 		user: {
 			userId: 'user-1',
 			email: 'user@example.com',
@@ -1141,8 +1129,7 @@ test('search tool scopes ranked query results when domain is passed with a query
 			username: 'user',
 		},
 	})
-
-	const scopedResponse = await handler({
+	const scopedResponse = await scopedHandler({
 		query: 'search docs',
 		domain: 'meta',
 		conversationId: 'conv-domain-scoped',

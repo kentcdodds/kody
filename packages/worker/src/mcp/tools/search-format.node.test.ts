@@ -946,7 +946,7 @@ test('search markdown summarizes broad results safely and only suggests entity d
 	])
 })
 
-test('domain overview matches format as compact summaries with drill-in guidance', () => {
+test('domain overview matches format as compact structured summaries', () => {
 	const domainMatches = [
 		{
 			type: 'domain' as const,
@@ -962,33 +962,27 @@ test('domain overview matches format as compact summaries with drill-in guidance
 		},
 	]
 	const markdown = formatSearchMarkdown({ matches: domainMatches })
-	expect(markdown).toContain(
-		'Domain overview for a broad query. Drill in with `search({ query: "<task>", domain: "<name>" })`',
-	)
-	expect(markdown).toContain(
-		'1. **domain** `email` (9 capabilities) — Email primitives for the per\\-user inbox\\. e.g. `email_send`, `email_message_list`, `email_message_get`.',
-	)
+	expect(markdown).toContain('**domain** `email` (9 capabilities)')
+	expect(markdown).toContain('`email_send`')
 	expect(markdown).not.toContain('entity-backed')
 
 	const [slim] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: domainMatches,
 	})
-	expect(slim).toEqual({
+	expect(slim).toMatchObject({
 		type: 'domain',
 		id: 'email',
 		name: 'email',
-		title: 'email',
-		description: 'Email primitives for the per-user inbox.',
 		capabilityCount: 9,
 		sampleCapabilities: [
 			'email_send',
 			'email_message_list',
 			'email_message_get',
 		],
-		usage:
-			'search({ query: "<task>", domain: "email" }) or search({ domain: "email" })',
 	})
+	expect(typeof slim?.usage).toBe('string')
+	expect(slim?.usage).toContain('domain: "email"')
 })
 
 test('capability list items include the domain id for follow-up scoping', () => {

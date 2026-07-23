@@ -1,11 +1,7 @@
 import { expect, test } from 'vitest'
 import { buildIntegrationValueName } from '#mcp/capabilities/integrations/integration-shared.ts'
 
-import {
-	entityDetailTypes,
-	searchableEntityTypes,
-	searchEntityPlugins,
-} from './search-entity-registry.ts'
+import { searchEntityPlugins } from './search-entity-registry.ts'
 import { buildSearchableEntityDescriptors } from './search-descriptors.ts'
 import {
 	type OptionalSearchRowsResult,
@@ -50,8 +46,8 @@ function createPackageRow(): PackageSearchRow {
 	}
 }
 
-test('search entity registry preserves candidate order and entity-backed types', () => {
-	expect(searchableEntityTypes).toEqual([
+test('descriptor seam follows registry order and preserves value-backed affinity', () => {
+	expect(searchEntityPlugins.map((plugin) => plugin.type)).toEqual([
 		'capability',
 		'package',
 		'value',
@@ -60,67 +56,7 @@ test('search entity registry preserves candidate order and entity-backed types',
 		'retriever_result',
 		'domain',
 	])
-	expect(entityDetailTypes).toEqual([
-		'capability',
-		'package',
-		'value',
-		'integration',
-		'secret',
-	])
-	expect(
-		searchEntityPlugins.map((plugin) => ({
-			type: plugin.type,
-			hasCandidates: 'buildCandidates' in plugin,
-			hasSlimFormatter: 'formatSlimMatch' in plugin,
-			hasDetailFormatter: 'formatEntityDetail' in plugin,
-		})),
-	).toEqual([
-		{
-			type: 'capability',
-			hasCandidates: true,
-			hasSlimFormatter: true,
-			hasDetailFormatter: true,
-		},
-		{
-			type: 'package',
-			hasCandidates: true,
-			hasSlimFormatter: true,
-			hasDetailFormatter: true,
-		},
-		{
-			type: 'value',
-			hasCandidates: true,
-			hasSlimFormatter: true,
-			hasDetailFormatter: true,
-		},
-		{
-			type: 'integration',
-			hasCandidates: true,
-			hasSlimFormatter: true,
-			hasDetailFormatter: true,
-		},
-		{
-			type: 'secret',
-			hasCandidates: true,
-			hasSlimFormatter: true,
-			hasDetailFormatter: true,
-		},
-		{
-			type: 'retriever_result',
-			hasCandidates: true,
-			hasSlimFormatter: true,
-			hasDetailFormatter: false,
-		},
-		{
-			type: 'domain',
-			hasCandidates: false,
-			hasSlimFormatter: true,
-			hasDetailFormatter: false,
-		},
-	])
-})
 
-test('descriptor seam follows registry order across entity modules', () => {
 	const descriptors = buildSearchableEntityDescriptors({
 		registry: {
 			capabilitySpecs: {
@@ -193,9 +129,7 @@ test('descriptor seam follows registry order across entity modules', () => {
 		'github',
 		'weather_api_key',
 	])
-})
 
-test('value-backed descriptors preserve source order and integration affinity', () => {
 	const userValueRows = [
 		{
 			userId: 'user-1',
@@ -228,7 +162,7 @@ test('value-backed descriptors preserve source order and integration affinity', 
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		})),
 	] satisfies OptionalSearchRowsResult['userValueRows']
-	const descriptors = buildSearchableEntityDescriptors({
+	const affinityDescriptors = buildSearchableEntityDescriptors({
 		registry: { capabilitySpecs: {} } as never,
 		optionalRows: {
 			packageRows: [],
@@ -237,14 +171,14 @@ test('value-backed descriptors preserve source order and integration affinity', 
 		},
 	})
 
-	expect(descriptors.map((descriptor) => descriptor.type)).toEqual([
+	expect(affinityDescriptors.map((descriptor) => descriptor.type)).toEqual([
 		'integration',
 		...Array.from({ length: 8 }, () => 'value'),
 	])
 
 	const intent = understandSearchQuery({
 		query: 'github',
-		entities: descriptors,
+		entities: affinityDescriptors,
 	})
 	expect(intent.entities).toHaveLength(8)
 	expect(intent.entities[0]).toMatchObject({

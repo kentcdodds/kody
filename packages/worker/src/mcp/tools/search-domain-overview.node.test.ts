@@ -43,7 +43,7 @@ function overviewFor(query: string) {
 	})
 }
 
-test('broad domain-oriented queries return a summary for the named domain', () => {
+test('domain overviews cover named, plural, exploratory, and non-collapse cases', () => {
 	expect(overviewFor('what can you do with email')).toEqual([
 		{
 			type: 'domain',
@@ -61,31 +61,20 @@ test('broad domain-oriented queries return a summary for the named domain', () =
 	expect(overviewFor('email')).toEqual([
 		expect.objectContaining({ type: 'domain', name: 'email' }),
 	])
-})
-
-test('domain name matching folds trivial plurals in both directions', () => {
 	expect(overviewFor('what jobs exist')).toEqual([
 		expect.objectContaining({ type: 'domain', name: 'jobs' }),
 	])
 	expect(overviewFor('job')).toEqual([
 		expect.objectContaining({ type: 'domain', name: 'jobs' }),
 	])
-})
-
-test('task-specific queries never collapse into a domain overview', () => {
-	expect(overviewFor('send an email to kent')).toBeNull()
-	expect(overviewFor('list unread email from yesterday')).toBeNull()
-	expect(overviewFor('spotify playlists')).toBeNull()
-})
-
-test('pure exploration queries return an overview of every visible domain', () => {
 	expect(overviewFor('what can kody do')).toEqual([
 		expect.objectContaining({ type: 'domain', name: 'email' }),
 		expect.objectContaining({ type: 'domain', name: 'jobs' }),
 	])
-})
+	expect(overviewFor('send an email to kent')).toBeNull()
+	expect(overviewFor('list unread email from yesterday')).toBeNull()
+	expect(overviewFor('spotify playlists')).toBeNull()
 
-test('domains without caller-visible capabilities are excluded', () => {
 	const withoutJobsSpecs = Object.fromEntries(
 		Object.entries(registry.capabilitySpecs).filter(
 			([, spec]) => spec.domain !== 'jobs',
@@ -101,9 +90,6 @@ test('domains without caller-visible capabilities are excluded', () => {
 			capabilitySpecs: withoutJobsSpecs,
 		}),
 	).toEqual([expect.objectContaining({ type: 'domain', name: 'email' })])
-})
-
-test('registries without domain metadata never produce an overview', () => {
 	expect(
 		buildDomainOverviewMatches({
 			intent: understandSearchQuery({ query: 'email', entities: [] }),
