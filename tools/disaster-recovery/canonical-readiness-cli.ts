@@ -1,5 +1,5 @@
 import { createPublicKey, verify } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isExecutedDirectly } from '../node-runtime.ts'
@@ -94,17 +94,29 @@ function resolveLocalArtifactPath(
 	uri: string,
 	evidenceFilePath: string,
 ): string {
+	const evidenceDirectory = path.resolve(path.dirname(evidenceFilePath))
+	let resolved: string
 	if (uri.startsWith('file:')) {
 		const parsed = new URL(uri)
 		if (parsed.protocol !== 'file:') {
 			throw new Error(`Artifact URI is not local: ${uri}`)
 		}
-		return fileURLToPath(parsed)
+		resolved = fileURLToPath(parsed)
+	} else {
+		if (uriSchemePattern.test(uri)) {
+			throw new Error(`Artifact URI is not local: ${uri}`)
+		}
+		resolved = path.resolve(evidenceDirectory, uri)
 	}
-	if (uriSchemePattern.test(uri)) {
-		throw new Error(`Artifact URI is not local: ${uri}`)
+	const relative = path.relative(evidenceDirectory, resolved)
+	if (
+		relative === '..' ||
+		relative.startsWith(`..${path.sep}`) ||
+		path.isAbsolute(relative)
+	) {
+		throw new Error(`Artifact URI escapes the evidence directory: ${uri}`)
 	}
-	return path.resolve(path.dirname(evidenceFilePath), uri)
+	return resolved
 }
 
 export async function verifyLocalArtifactFiles(
@@ -132,11 +144,23 @@ export async function verifyLocalArtifactFiles(
 			createPublicKey(entry.publicKeyPem),
 		]),
 	)
+	const evidenceDirectory = await realpath(
+		path.resolve(path.dirname(evidenceFilePath)),
+	)
 	const verified = new Map<string, VerifiedEvidenceArtifact>()
 	await Promise.all(
 		artifacts.map(async ({ uri }) => {
 			const file = resolveLocalArtifactPath(uri, evidenceFilePath)
-			const bytes = await readFile(file)
+			const canonicalFile = await realpath(file)
+			const relative = path.relative(evidenceDirectory, canonicalFile)
+			if (
+				relative === '..' ||
+				relative.startsWith(`..${path.sep}`) ||
+				path.isAbsolute(relative)
+			) {
+				throw new Error(`Artifact URI escapes the evidence directory: ${uri}`)
+			}
+			const bytes = await readFile(canonicalFile)
 			let parsed: unknown
 			try {
 				parsed = JSON.parse(bytes.toString('utf8')) as unknown

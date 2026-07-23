@@ -6,6 +6,7 @@ import {
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	type EvidenceContent,
@@ -625,5 +626,38 @@ test('checked-in empty trust registry cannot bless operator-generated evidence',
 		).toBe(false)
 	} finally {
 		await rm(directory, { recursive: true, force: true })
+	}
+})
+
+test('readiness artifact URIs cannot escape the evidence directory', async () => {
+	const evidenceDirectory = await mkdtemp(
+		path.join(os.tmpdir(), 'readiness-evidence-root-'),
+	)
+	const outsideDirectory = await mkdtemp(
+		path.join(os.tmpdir(), 'readiness-evidence-outside-'),
+	)
+	try {
+		const outsideFile = path.join(outsideDirectory, 'outside.json')
+		await writeFile(outsideFile, '{}')
+		const { publicKey } = generateKeyPairSync('ed25519')
+		const registry = registryFor(publicKey)
+		const evidencePath = path.join(evidenceDirectory, 'evidence.json')
+		await expect(
+			verifyLocalArtifactFiles(
+				[{ artifacts: [{ uri: '../outside.json' }] }],
+				evidencePath,
+				registry,
+			),
+		).rejects.toThrow('escapes the evidence directory')
+		await expect(
+			verifyLocalArtifactFiles(
+				[{ artifacts: [{ uri: pathToFileURL(outsideFile).href }] }],
+				evidencePath,
+				registry,
+			),
+		).rejects.toThrow('escapes the evidence directory')
+	} finally {
+		await rm(evidenceDirectory, { recursive: true, force: true })
+		await rm(outsideDirectory, { recursive: true, force: true })
 	}
 })

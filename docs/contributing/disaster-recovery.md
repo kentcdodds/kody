@@ -1094,11 +1094,12 @@ no older than 100 days, and derived/operational evidence no older than 200 days.
 
 Every artifact URI must be unique across the whole evidence input and be a local
 path (resolved relative to the evidence JSON) or a `file:` URL. The CLI opens
-every file, hashes its exact bytes, parses the strict envelope, and verifies its
-Ed25519 signature. Missing, unreadable, unsigned, unhashed, mismatched, or
-duplicate-URI files fail readiness. `https:`, `s3:`, dashboard, ticket, and
-every other network URI are rejected; download evidence to an immutable local
-file before assessment.
+only files whose lexical and real paths remain inside the evidence directory,
+blocking `..`, absolute/file-URL, and symlink escape. It hashes exact bytes,
+parses the strict envelope, and verifies its Ed25519 signature. Missing,
+unreadable, unsigned, unhashed, mismatched, or duplicate-URI files fail
+readiness. `https:`, `s3:`, dashboard, ticket, and every other network URI are
+rejected; download evidence to an immutable local file before assessment.
 
 The only trust registry is the checked-in
 `tools/disaster-recovery/trusted-readiness-public-keys.json`. It is

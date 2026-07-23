@@ -105,7 +105,9 @@ matches.
 
 Artifact URIs must be unique `file:` URLs or local filesystem paths (relative
 paths are resolved beside the evidence JSON). The CLI never fetches network
-URIs. It reads each referenced file, verifies its exact-byte SHA-256 and Ed25519
+URIs. Resolved and real filesystem paths must remain inside the evidence
+directory; `..`, absolute/file-URL escape, and symlink escape fail closed. It
+reads each referenced file, verifies its exact-byte SHA-256 and Ed25519
 signature, and accepts the signing key only from the checked-in
 `trusted-readiness-public-keys.json` trust registry. Random bytes, synthetic
 metadata, unsigned envelopes, untrusted keys, duplicate URIs, malformed kind

@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isExecutedDirectly } from '../node-runtime.ts'
+import { isExecutedDirectly, resolveLocalBinary } from '../node-runtime.ts'
 import {
 	type BackupFileEvidence,
 	type Command,
@@ -148,7 +148,7 @@ export async function runProcess(
 ): Promise<string> {
 	const program =
 		command.program === 'wrangler'
-			? path.join(process.cwd(), 'node_modules', '.bin', 'wrangler')
+			? resolveLocalBinary('wrangler')
 			: command.program
 	return await new Promise<string>((resolve, reject) => {
 		const childEnvironment = {
