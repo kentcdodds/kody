@@ -17,6 +17,7 @@ import {
 	MemoryBucket,
 	RetryAfterCommitStep,
 	RetryFinalizationStep,
+	RetryUploadStep,
 	environment,
 	exportEnvelope,
 	identityEnvelope,
@@ -69,7 +70,7 @@ test('workflow retry reuses an upload committed before step persistence and writ
 	])
 	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 4)
 	assert.equal(
-		result.objectKey,
+		result.payload.sql.objectKey,
 		objectKeyForBookmark(payload.objectPrefix, 'bookmark-1'),
 	)
 	assert.deepEqual(
@@ -190,6 +191,64 @@ test('a finalization callback retry obtains another fresh signed URL', async () 
 		'https://download.example/refreshed-once',
 		'https://download.example/refreshed-twice',
 	])
+	assert.deepEqual(
+		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
+		result,
+	)
+})
+
+test('zero-byte upload retries with a fresh URL before manifest success', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const step = new RetryUploadStep()
+	let exportCalls = 0
+	const downloadUrls: string[] = []
+	const result = await runBackupRuntime(
+		env,
+		{
+			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+			payload,
+			timestamp: new Date('2026-07-22T02:15:01Z'),
+		},
+		step,
+		{
+			api: {
+				fetcher: async (input) => {
+					if (!String(input).endsWith('/export')) return identityEnvelope(1_000)
+					exportCalls += 1
+					return exportEnvelope(
+						'complete',
+						'bookmark-1',
+						`https://download.example/export-${String(exportCalls)}`,
+					)
+				},
+				sleep: async () => undefined,
+			},
+			downloadFetcher: async (input) => {
+				const url = String(input)
+				downloadUrls.push(url)
+				if (url.endsWith('export-2')) {
+					return new Response('', { headers: { 'content-length': '0' } })
+				}
+				return new Response('valid', {
+					headers: { 'content-length': '5' },
+				})
+			},
+		},
+	)
+	assert.deepEqual(step.uploadAttempts, [1, 2])
+	assert.deepEqual(downloadUrls, [
+		'https://download.example/export-2',
+		'https://download.example/export-3',
+		'https://download.example/export-4',
+	])
+	assert.equal(result.payload.sql.bytes, 5)
+	assert.equal(
+		bucket.puts.filter(({ key }) => key === result.payload.sql.objectKey)
+			.length,
+		1,
+	)
 	assert.deepEqual(
 		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
 		result,
@@ -334,6 +393,62 @@ test('source verification and manifest commit share one Workflow step boundary',
 	)
 	assert.equal(finalizationObserved, true)
 })
+
+test('manifest signing failure leaves committed SQL manifest-less and retry succeeds', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockClear()
+	consoleError.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const validPrivateKey = env.BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64
+	env.BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64 =
+		Buffer.from('invalid-pkcs8').toString('base64')
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
+	const step = new CachedUploadStep(() => undefined)
+	const options = {
+		api: {
+			fetcher: async (input: RequestInfo | URL) =>
+				String(input).endsWith('/export')
+					? exportEnvelope('complete')
+					: identityEnvelope(1_000),
+			sleep: async () => undefined,
+		},
+		downloadFetcher: async () =>
+			new Response('valid', { headers: { 'content-length': '5' } }),
+	}
+	await assert.rejects(
+		runBackupRuntime(
+			env,
+			{
+				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+				payload,
+				timestamp: new Date('2026-07-22T02:15:01Z'),
+			},
+			step,
+			options,
+		),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'manifest-signing-failed',
+	)
+	assert.notEqual(await bucket.head(objectKey), null)
+	assert.equal(await bucket.head(payload.manifestKey), null)
+
+	env.BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64 = validPrivateKey
+	await runBackupRuntime(
+		env,
+		{
+			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+			payload,
+			timestamp: new Date('2026-07-22T02:15:01Z'),
+		},
+		step,
+		options,
+	)
+	assert.notEqual(await bucket.head(payload.manifestKey), null)
+	assert.equal(consoleError.mock.calls.length, 1)
+})
+
 test('workflow does not start D1 export when source size exceeds the ceiling', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockClear()

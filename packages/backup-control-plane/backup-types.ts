@@ -1,3 +1,5 @@
+export { type BackupManifest } from '@kody-internal/shared/backup-manifest.ts'
+
 export type RetentionTier = 'daily' | 'weekly'
 
 export interface BackupEnvironment {
@@ -13,6 +15,10 @@ export interface BackupEnvironment {
 	ENABLE_PRODUCTION_D1_BACKUPS: string
 	BACKUP_BENCHMARK_APPROVED: string
 	BUILD_COMMIT: string
+	BACKUP_MANIFEST_SIGNING_KEY_ID: string
+	BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64: string
+	TRUSTED_RESTORE_BASELINE_ID: string
+	TRUSTED_RESTORE_BASELINE_SHA256: string
 	BACKUP_MAX_AGE_HOURS?: string
 	BACKUP_MAX_SOURCE_BYTES?: string
 }
@@ -22,26 +28,6 @@ export interface BackupPayload {
 	day: string
 	objectPrefix: string
 	manifestKey: string
-	retentionTier: RetentionTier
-}
-
-export interface BackupManifest {
-	schemaVersion: 1
-	source: {
-		accountId: string
-		accountName: string
-		databaseId: string
-		databaseName: string
-	}
-	bookmark: string
-	scheduledAt: string
-	startedAt: string
-	completedAt: string
-	objectKey: string
-	bytes: number
-	sha256: string
-	r2Etag: string
-	commit: string
 	retentionTier: RetentionTier
 }
 

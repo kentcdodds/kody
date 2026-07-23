@@ -109,6 +109,14 @@ remains inert until the blocking-export benchmark is approved and both enable
 variables are exactly `true`. See [Disaster recovery](./disaster-recovery.md)
 for deployment, readiness, drill, credential, and exclusion details.
 
+The backup deployment also requires reviewed non-secret
+`BACKUP_MANIFEST_SIGNING_KEY_ID`, `TRUSTED_RESTORE_BASELINE_ID`, and
+`TRUSTED_RESTORE_BASELINE_SHA256` vars. Store the matching base64-encoded
+Ed25519 PKCS#8 private key only as the
+`BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64` Worker secret. Never commit
+that private key. Restore trusts only the checked-in manifest public-key,
+production-identity, and restore-baseline registries.
+
 ## Optional Cloudflare offerings
 
 The default footprint stays intentionally small. If you want to add additional

@@ -11,10 +11,18 @@ import {
 	renderReadinessReport,
 } from './canonical-readiness.ts'
 import { sha256 } from './canonical-json.ts'
+import { parseBaseline, parseRestoreTrustRegistry } from './d1-restore-drill.ts'
+import { parseTrustedRestoreBaselineRegistry } from './restore-trust.ts'
 
 const uriSchemePattern = /^[a-z][a-z0-9+.-]*:/i
 const trustedPublicKeysFile = fileURLToPath(
 	new URL('./trusted-readiness-public-keys.json', import.meta.url),
+)
+const trustedD1IdentitiesFile = fileURLToPath(
+	new URL('./trusted-d1-restore-identities.json', import.meta.url),
+)
+const trustedRestoreBaselinesFile = fileURLToPath(
+	new URL('./trusted-restore-baselines.json', import.meta.url),
 )
 
 export type TrustedPublicKeyRegistry = {
@@ -199,6 +207,13 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 	const trustedPublicKeys = parseTrustedPublicKeyRegistry(
 		JSON.parse(await readFile(trustedPublicKeysFile, 'utf8')) as unknown,
 	)
+	const trustedD1Identities = parseRestoreTrustRegistry(
+		JSON.parse(await readFile(trustedD1IdentitiesFile, 'utf8')) as unknown,
+	)
+	const trustedRestoreBaselines = parseTrustedRestoreBaselineRegistry(
+		JSON.parse(await readFile(trustedRestoreBaselinesFile, 'utf8')) as unknown,
+		parseBaseline,
+	)
 	const verifiedArtifacts = await verifyLocalArtifactFiles(
 		evidence,
 		evidenceFile,
@@ -208,6 +223,8 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 		evidence,
 		new Date(),
 		verifiedArtifacts,
+		trustedD1Identities.productionSources,
+		trustedRestoreBaselines.baselines,
 	)
 	console.log(renderReadinessReport(result))
 	if (!result.levels['full-service'].ready) process.exitCode = 1

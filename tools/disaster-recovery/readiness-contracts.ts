@@ -52,16 +52,34 @@ export type EvidenceDetailsByKind = {
 	'contract-verification': { checksPassed: number; contractVersion: string }
 	'destination-credential-check': { credentialId: string; scope: string }
 	'd1-restore-drill': {
+		backupManifestSha256: string
 		foreignKeyViolations: 0
+		isolationBaselineSha256: string
+		migrationSetSha256: string
 		quickCheck: 'ok'
 		restoredDatabaseUuid: string
+		schemaSha256: string
+		sourceBookmark: string
+		sourceDatabaseName: string
+		sqlSha256: string
+		trustedBaselineId: string
+		trustedBaselineSha256: string
 	}
 	'd1-size-ceiling-check': {
+		backupManifestSha256: string
 		ceilingBytes: number
+		isolationBaselineSha256: string
 		measuredBytes: number
+		migrationSetSha256: string
 		monitoredAt: string
+		schemaSha256: string
 		sourceAccountId: string
+		sourceBookmark: string
+		sourceDatabaseName: string
 		sourceDatabaseUuid: string
+		sqlSha256: string
+		trustedBaselineId: string
+		trustedBaselineSha256: string
 	}
 	'escrow-recovery-drill': {
 		custodian: string

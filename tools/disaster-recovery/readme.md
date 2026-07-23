@@ -5,14 +5,20 @@ create, bind, overwrite, delete, cut over, or use Time Travel on a D1 database.
 
 ## D1 restore drill
 
-The manifest must be the exact immutable JSON downloaded from the backup control
-plane. Its SHA-256 is supplied separately by the operator and checked against
-the downloaded bytes before JSON parsing. This proves byte integrity, not source
-identity or authorization. The local SQL file's exact bytes, size, and SHA-256
-are then checked against that manifest. Backups at or above 5 GiB are rejected.
+The manifest must be the exact immutable schema-v2 envelope downloaded from the
+backup control plane. Its separately supplied SHA-256 must match the exact
+bytes, and its Ed25519 signature must verify against the sole checked-in
+`trusted-backup-manifest-public-keys.json` registry. The algorithm, schema, and
+key id are strict. An operator hash, unsigned envelope, unknown key, or caller
+key can never authorize restore. The local SQL bytes, size, and SHA-256 are then
+checked against the verified payload. Backups at or above 5 GiB are rejected.
 
-Schema, migration, sequence, and representative two-user expectations live in a
-separate baseline JSON file. The execution order is import, baseline
+Schema, migration, sequence, and representative two-user expectations live only
+in the checked-in exact-schema `trusted-restore-baselines.json` registry. The
+CLI selects entries by `--baseline-id` and optional
+`--post-forward-baseline-id`; it accepts no baseline file or registry override.
+The selected baseline canonical digest and source must match the signed manifest
+and checked production identity. The execution order is import, baseline
 verification, optional forward migrations, then optional post-forward baseline
 verification. Baseline verification always executes D1's documented
 `PRAGMA quick_check` plus `PRAGMA foreign_key_check`.
@@ -56,7 +62,7 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest restore-manifest.json \
   --manifest-sha256 <operator-supplied-sha256> \
   --backup backup.sql \
-  --baseline restore-baseline.json \
+  --baseline-id approved-production-baseline \
   --target-account-id isolated-drill-account-id \
   --target-name app-db-restore-drill
 ```
@@ -65,8 +71,8 @@ This is a dry run. Inspect its ordered commands. Add `--execute` only for the
 isolated target account after setting `CLOUDFLARE_D1_DRILL_EDIT_TOKEN` to a
 drill-only D1 Edit token for that account. The token is used for live creation,
 import, and checks and is never printed. `--apply-forward-migrations` is
-rejected unless `--post-forward-baseline post-forward-baseline.json` is also
-supplied. After target creation the tool writes a temporary Wrangler config
+rejected unless `--post-forward-baseline-id approved-post-forward-baseline` is
+also supplied. After target creation the tool writes a temporary Wrangler config
 binding `D1_RESTORE_TARGET` to the returned UUID/name and pointing
 `migrations_dir` at `packages/worker/migrations`; import, checks, and migrations
 all use that config. The local config is removed afterward. The tool never
@@ -92,9 +98,13 @@ field is excluded. The index digest covers the exact envelope file bytes. Index
 metadata must exactly equal the signed content, so an index cannot relabel an
 otherwise valid artifact.
 
-For `d1-restore-drill`, signed details must report the exact
-`destinationIdentity.resourceId` as `restoredDatabaseUuid`; destination account
-and resource identities must both differ from the source.
+For `d1-restore-drill`, signed details bind exact manifest bytes, SQL, trusted
+baseline, schema, migration-set, and isolation-baseline digests/ids plus the
+source bookmark/name, `quick_check`, foreign-key result, and restored UUID.
+These values must agree with separately signed source evidence and checked
+baseline/source registries. The restored UUID must equal
+`destinationIdentity.resourceId`; destination account and resource identities
+must both differ from the source.
 
 Every APP_DB signed `sourceIdentity.accountId` and non-null
 `destinationIdentity.accountId` must be a canonical Cloudflare account ID:

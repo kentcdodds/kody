@@ -31,6 +31,13 @@ cached upload-step result and skips its callback. Without signed-source context
 it fails with `duplicate-object-manifest-missing`. An existing manifest must
 also match that object exactly.
 
+Every canonical manifest uses schema v2 and is an Ed25519-signed envelope. Its
+signature covers deterministic canonical JSON for the SQL key, bytes, SHA-256,
+R2 ETag, source account/name and D1 UUID/name, bookmark and export timestamps,
+build commit, retention tier, trusted restore-baseline id/digest, algorithm, and
+key id. Exact envelope bytes are written only after signed-source comparison and
+signing succeed. Signing failure may leave SQL for safe retry, but no manifest.
+
 Configure the production R2 bucket lifecycle by these immutable prefixes:
 
 - `daily/`: expire after approximately 35 days.
@@ -55,7 +62,9 @@ checked-in default and deployment value are 4,500,000,000 bytes, below R2's
 5-GiB single-object limit. Configuration may lower this ceiling but cannot raise
 it. Reaching the ceiling fails export readiness and hourly observability before
 an export starts. The signed export download is independently rejected if its
-`Content-Length` exceeds 5 GiB.
+`Content-Length` is zero or at or above 5 GiB. Zero-byte rejection is retryable:
+the upload callback refreshes the bookmark URL and retries without storing or
+manifesting the empty response.
 
 Multipart capture and statement-safe split restore are not implemented. A
 database or logical SQL export above these limits is unsupported and cannot be
@@ -73,6 +82,12 @@ lock-administration credentials and from drill restore credentials. The Worker
 receives only the source token as `CLOUDFLARE_API_TOKEN` and destination object
 read/write access through `BACKUP_BUCKET`; it must not receive either
 administrative or restore credential.
+
+Set `BACKUP_MANIFEST_SIGNING_KEY_ID`, `TRUSTED_RESTORE_BASELINE_ID`, and
+`TRUSTED_RESTORE_BASELINE_SHA256` as reviewed non-secret vars. Set
+`BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64` only as a Worker secret; it
+is base64-encoded Ed25519 PKCS#8 private key material and must never appear in
+Wrangler config, logs, manifests, evidence, or signed URLs.
 
 The 02:15 UTC trigger normally creates the day's deterministic instance.
 Freshness uses the previous UTC day before 02:15 and the current day from 02:15

@@ -26,6 +26,7 @@ const resourceIds = new Set<string>(
 const evidenceKinds = new Set<string>(
 	canonicalContracts.flatMap((contract) => contract.requiredEvidenceKinds),
 )
+const lowerKebabIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 function parseDetails<K extends EvidenceKind>(
 	kind: K,
@@ -94,14 +95,39 @@ function parseDetails<K extends EvidenceKind>(
 		case 'd1-restore-drill':
 			if (
 				exactKeys(value, [
+					'backupManifestSha256',
 					'foreignKeyViolations',
+					'isolationBaselineSha256',
+					'migrationSetSha256',
 					'quickCheck',
 					'restoredDatabaseUuid',
+					'schemaSha256',
+					'sourceBookmark',
+					'sourceDatabaseName',
+					'sqlSha256',
+					'trustedBaselineId',
+					'trustedBaselineSha256',
 				]) &&
+				typeof value.backupManifestSha256 === 'string' &&
+				sha256Pattern.test(value.backupManifestSha256) &&
 				value.foreignKeyViolations === 0 &&
+				typeof value.isolationBaselineSha256 === 'string' &&
+				sha256Pattern.test(value.isolationBaselineSha256) &&
+				typeof value.migrationSetSha256 === 'string' &&
+				sha256Pattern.test(value.migrationSetSha256) &&
 				value.quickCheck === 'ok' &&
 				typeof value.restoredDatabaseUuid === 'string' &&
-				uuidPattern.test(value.restoredDatabaseUuid)
+				uuidPattern.test(value.restoredDatabaseUuid) &&
+				typeof value.schemaSha256 === 'string' &&
+				sha256Pattern.test(value.schemaSha256) &&
+				isNonemptyString(value.sourceBookmark) &&
+				isNonemptyString(value.sourceDatabaseName) &&
+				typeof value.sqlSha256 === 'string' &&
+				sha256Pattern.test(value.sqlSha256) &&
+				typeof value.trustedBaselineId === 'string' &&
+				lowerKebabIdPattern.test(value.trustedBaselineId) &&
+				typeof value.trustedBaselineSha256 === 'string' &&
+				sha256Pattern.test(value.trustedBaselineSha256)
 			) {
 				return value as EvidenceDetailsByKind[K]
 			}
@@ -109,20 +135,45 @@ function parseDetails<K extends EvidenceKind>(
 		case 'd1-size-ceiling-check':
 			if (
 				exactKeys(value, [
+					'backupManifestSha256',
 					'ceilingBytes',
+					'isolationBaselineSha256',
 					'measuredBytes',
+					'migrationSetSha256',
 					'monitoredAt',
+					'schemaSha256',
 					'sourceAccountId',
+					'sourceBookmark',
+					'sourceDatabaseName',
 					'sourceDatabaseUuid',
+					'sqlSha256',
+					'trustedBaselineId',
+					'trustedBaselineSha256',
 				]) &&
+				typeof value.backupManifestSha256 === 'string' &&
+				sha256Pattern.test(value.backupManifestSha256) &&
 				isPositiveInteger(value.ceilingBytes) &&
+				typeof value.isolationBaselineSha256 === 'string' &&
+				sha256Pattern.test(value.isolationBaselineSha256) &&
 				isNonnegativeInteger(value.measuredBytes) &&
+				typeof value.migrationSetSha256 === 'string' &&
+				sha256Pattern.test(value.migrationSetSha256) &&
 				value.ceilingBytes <= maximumSupportedD1BackupBytes &&
 				value.measuredBytes < value.ceilingBytes &&
 				isIsoDate(value.monitoredAt) &&
+				typeof value.schemaSha256 === 'string' &&
+				sha256Pattern.test(value.schemaSha256) &&
 				isNonemptyString(value.sourceAccountId) &&
+				isNonemptyString(value.sourceBookmark) &&
+				isNonemptyString(value.sourceDatabaseName) &&
 				typeof value.sourceDatabaseUuid === 'string' &&
-				uuidPattern.test(value.sourceDatabaseUuid)
+				uuidPattern.test(value.sourceDatabaseUuid) &&
+				typeof value.sqlSha256 === 'string' &&
+				sha256Pattern.test(value.sqlSha256) &&
+				typeof value.trustedBaselineId === 'string' &&
+				lowerKebabIdPattern.test(value.trustedBaselineId) &&
+				typeof value.trustedBaselineSha256 === 'string' &&
+				sha256Pattern.test(value.trustedBaselineSha256)
 			) {
 				return value as EvidenceDetailsByKind[K]
 			}

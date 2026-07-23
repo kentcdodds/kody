@@ -1,4 +1,12 @@
+import { type BackupManifest } from '@kody-internal/shared/backup-manifest.ts'
+
 import { canonicalJson, sha256 } from './canonical-json.ts'
+import {
+	resolveTrustedRestoreBaseline,
+	verifyTrustedBackupManifest,
+} from './restore-trust.ts'
+
+export { type BackupManifest } from '@kody-internal/shared/backup-manifest.ts'
 
 export const maximumD1BackupSizeBytes = 5 * 1024 * 1024 * 1024
 const sha256Pattern = /^[a-f0-9]{64}$/
@@ -6,28 +14,6 @@ const uuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const cloudflareAccountIdPattern = /^[0-9a-f]{32}$/
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/
-
-// Duplicated deliberately from backup-control-plane to keep this slice
-// independently deployable while consuming its serialized contract exactly.
-export type BackupManifest = {
-	schemaVersion: 1
-	source: {
-		accountId: string
-		accountName: string
-		databaseId: string
-		databaseName: string
-	}
-	bookmark: string
-	scheduledAt: string
-	startedAt: string
-	completedAt: string
-	objectKey: string
-	bytes: number
-	sha256: string
-	r2Etag: string
-	commit: string
-	retentionTier: 'daily' | 'weekly'
-}
 
 export type RestoreBaseline = {
 	schemaVersion: 1
@@ -115,10 +101,12 @@ export type BackupFileEvidence = {
 export type DrillInput = {
 	manifestBytes: Uint8Array
 	expectedManifestSha256: string
+	manifestPublicKeyRegistry: unknown
 	backupFileEvidence: BackupFileEvidence
 	backupFile: string
-	baseline: unknown
-	postForwardBaseline?: unknown
+	baselineId: string
+	postForwardBaselineId?: string
+	baselineRegistry: unknown
 	targetAccountId: string
 	targetName: string
 	trustRegistry: unknown
@@ -191,82 +179,20 @@ function deepFreeze<T extends Record<string, unknown>>(value: T): Readonly<T> {
 export function parseAndVerifyManifest(
 	manifestBytes: Uint8Array,
 	expectedManifestSha256: string,
+	manifestPublicKeyRegistry: unknown,
 ): Readonly<BackupManifest> {
-	assertHash(expectedManifestSha256, 'expected manifest SHA-256')
-	if (sha256(manifestBytes) !== expectedManifestSha256) {
-		throw new Error('downloaded manifest bytes do not match expected SHA-256')
-	}
-	let value: unknown
-	try {
-		value = JSON.parse(
-			new TextDecoder('utf-8', { fatal: true }).decode(manifestBytes),
-		) as unknown
-	} catch {
-		throw new Error('downloaded manifest is not valid UTF-8 JSON')
-	}
-	assertRecord(value, 'manifest')
-	assertExactKeys(
-		value,
-		[
-			'bookmark',
-			'bytes',
-			'commit',
-			'completedAt',
-			'objectKey',
-			'r2Etag',
-			'retentionTier',
-			'scheduledAt',
-			'schemaVersion',
-			'sha256',
-			'source',
-			'startedAt',
-		],
-		'manifest',
+	const manifest = verifyTrustedBackupManifest(
+		manifestBytes,
+		expectedManifestSha256,
+		manifestPublicKeyRegistry,
 	)
-	if (value.schemaVersion !== 1)
-		throw new Error('manifest schemaVersion must be 1')
-	assertRecord(value.source, 'manifest.source')
-	assertExactKeys(
-		value.source,
-		['accountId', 'accountName', 'databaseId', 'databaseName'],
-		'manifest.source',
-	)
-	for (const key of [
-		'accountId',
-		'accountName',
-		'databaseId',
-		'databaseName',
-	] as const) {
-		assertString(value.source[key], `manifest.source.${key}`)
-	}
-	if (!uuidPattern.test(value.source.databaseId as string)) {
+	if (!uuidPattern.test(manifest.payload.source.databaseId)) {
 		throw new Error('manifest.source.databaseId must be a UUID')
 	}
-	for (const key of ['bookmark', 'objectKey', 'r2Etag', 'commit'] as const) {
-		assertString(value[key], `manifest.${key}`)
-	}
-	assertHash(value.sha256, 'manifest.sha256')
-	if (!Number.isSafeInteger(value.bytes) || (value.bytes as number) <= 0) {
-		throw new Error('manifest.bytes must be a positive safe integer')
-	}
-	if ((value.bytes as number) >= maximumD1BackupSizeBytes) {
+	if (manifest.payload.sql.bytes >= maximumD1BackupSizeBytes) {
 		throw new Error('D1 backup exceeds the 5 GiB restore-drill limit')
 	}
-	for (const key of ['scheduledAt', 'startedAt', 'completedAt'] as const) {
-		assertDate(value[key], `manifest.${key}`)
-	}
-	if (
-		Date.parse(value.scheduledAt as string) >
-			Date.parse(value.startedAt as string) ||
-		Date.parse(value.startedAt as string) >
-			Date.parse(value.completedAt as string)
-	) {
-		throw new Error('manifest timestamps are out of order')
-	}
-	if (value.retentionTier !== 'daily' && value.retentionTier !== 'weekly') {
-		throw new Error('manifest.retentionTier must be daily or weekly')
-	}
-	return deepFreeze(value) as Readonly<BackupManifest>
+	return manifest
 }
 
 export function parseBaseline(
@@ -588,10 +514,10 @@ function assertTargetRequest(
 		!trustRegistry.productionSources.some(
 			(source) =>
 				source.accountId.toLowerCase() ===
-					manifest.source.accountId.toLowerCase() &&
+					manifest.payload.source.accountId.toLowerCase() &&
 				source.databaseId.toLowerCase() ===
-					manifest.source.databaseId.toLowerCase() &&
-				source.databaseName === manifest.source.databaseName,
+					manifest.payload.source.databaseId.toLowerCase() &&
+				source.databaseName === manifest.payload.source.databaseName,
 		)
 	) {
 		throw new Error(
@@ -599,11 +525,12 @@ function assertTargetRequest(
 		)
 	}
 	if (
-		targetAccountId.toLowerCase() === manifest.source.accountId.toLowerCase()
+		targetAccountId.toLowerCase() ===
+		manifest.payload.source.accountId.toLowerCase()
 	) {
 		throw new Error('target account must differ from the production account')
 	}
-	if (targetName === manifest.source.databaseName) {
+	if (targetName === manifest.payload.source.databaseName) {
 		throw new Error('target name is the production database name')
 	}
 	if (
@@ -630,7 +557,10 @@ function assertCreatedTarget(
 	if (!uuidPattern.test(created.uuid)) {
 		throw new Error('Cloudflare returned an invalid target UUID')
 	}
-	if (created.uuid.toLowerCase() === manifest.source.databaseId.toLowerCase()) {
+	if (
+		created.uuid.toLowerCase() ===
+		manifest.payload.source.databaseId.toLowerCase()
+	) {
 		throw new Error('Cloudflare returned the production database UUID')
 	}
 	if (created.name !== requestedName) {
@@ -766,28 +696,33 @@ export async function runD1RestoreDrill(
 	const manifest = parseAndVerifyManifest(
 		input.manifestBytes,
 		input.expectedManifestSha256,
+		input.manifestPublicKeyRegistry,
 	)
-	const baseline = parseBaseline(input.baseline)
-	const postForwardBaseline =
-		input.postForwardBaseline === undefined
-			? undefined
-			: parseBaseline(input.postForwardBaseline, 'post-forward baseline')
 	const trustRegistry = parseRestoreTrustRegistry(input.trustRegistry)
-	if (
-		baseline.sourceDatabaseId.toLowerCase() !==
-		manifest.source.databaseId.toLowerCase()
-	) {
-		throw new Error('baseline source database does not match backup manifest')
-	}
-	if (
-		postForwardBaseline &&
-		postForwardBaseline.sourceDatabaseId.toLowerCase() !==
-			manifest.source.databaseId.toLowerCase()
-	) {
-		throw new Error(
-			'post-forward baseline source database does not match manifest',
-		)
-	}
+	assertTargetRequest(
+		manifest,
+		input.targetAccountId,
+		input.targetName,
+		trustRegistry,
+	)
+	const baseline = resolveTrustedRestoreBaseline({
+		id: input.baselineId,
+		manifest,
+		registryValue: input.baselineRegistry,
+		restoreTrustRegistry: trustRegistry,
+		parseBaseline,
+		requireManifestDigest: true,
+	})
+	const postForwardBaseline = input.postForwardBaselineId
+		? resolveTrustedRestoreBaseline({
+				id: input.postForwardBaselineId,
+				manifest,
+				registryValue: input.baselineRegistry,
+				restoreTrustRegistry: trustRegistry,
+				parseBaseline,
+				requireManifestDigest: false,
+			})
+		: undefined
 	const applyForwardMigrations = input.applyForwardMigrations ?? false
 	if (postForwardBaseline && !applyForwardMigrations) {
 		throw new Error('post-forward baseline requires forward migrations')
@@ -795,15 +730,9 @@ export async function runD1RestoreDrill(
 	if (applyForwardMigrations && !postForwardBaseline) {
 		throw new Error('forward migrations require a post-forward baseline')
 	}
-	assertTargetRequest(
-		manifest,
-		input.targetAccountId,
-		input.targetName,
-		trustRegistry,
-	)
 	if (
-		input.backupFileEvidence.sizeBytes !== manifest.bytes ||
-		input.backupFileEvidence.sha256 !== manifest.sha256
+		input.backupFileEvidence.sizeBytes !== manifest.payload.sql.bytes ||
+		input.backupFileEvidence.sha256 !== manifest.payload.sql.sha256
 	) {
 		throw new Error('local SQL file evidence does not match the manifest')
 	}

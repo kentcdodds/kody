@@ -85,10 +85,16 @@ test('freshness switches from yesterday to today at the 02:15 backup boundary', 
 		`daily/d1/${DATABASE_ID}/2026-07-21/manifest.json`,
 		{
 			...manifest(stored),
-			scheduledAt: '2026-07-21T02:15:00.000Z',
-			startedAt: '2026-07-21T02:15:01.000Z',
-			completedAt: '2026-07-21T02:16:00.000Z',
-			objectKey: previousKey,
+			payload: {
+				...manifest(stored).payload,
+				export: {
+					...manifest(stored).payload.export,
+					scheduledAt: '2026-07-21T02:15:00.000Z',
+					startedAt: '2026-07-21T02:15:01.000Z',
+					completedAt: '2026-07-21T02:16:00.000Z',
+				},
+				sql: { ...manifest(stored).payload.sql, objectKey: previousKey },
+			},
 		},
 	)
 	assert.equal(
@@ -136,13 +142,16 @@ test('freshness compares Cloudflare account and D1 IDs case-insensitively', asyn
 		`daily/d1/${env.SOURCE_DATABASE_ID}/2026-07-22/manifest.json`,
 		{
 			...manifest(stored),
-			source: {
-				accountId: env.SOURCE_ACCOUNT_ID.toUpperCase(),
-				accountName: env.SOURCE_ACCOUNT_NAME,
-				databaseId: env.SOURCE_DATABASE_ID.toUpperCase(),
-				databaseName: env.SOURCE_DATABASE_NAME,
+			payload: {
+				...manifest(stored).payload,
+				source: {
+					accountId: env.SOURCE_ACCOUNT_ID.toUpperCase(),
+					accountName: env.SOURCE_ACCOUNT_NAME,
+					databaseId: env.SOURCE_DATABASE_ID.toUpperCase(),
+					databaseName: env.SOURCE_DATABASE_NAME,
+				},
+				sql: { ...manifest(stored).payload.sql, objectKey: key },
 			},
-			objectKey: key,
 		},
 	)
 	assert.equal(

@@ -22,6 +22,7 @@ import {
 	type BackupManifest,
 	type BackupPayload,
 } from './backup-types.ts'
+import { signBackupManifest } from './manifest-signing.ts'
 
 interface BackupRuntimeEvent {
 	instanceId: string
@@ -115,26 +116,29 @@ export async function runBackupRuntime(
 		const completedAt = await step.do('record-completion-time', async () =>
 			new Date().toISOString(),
 		)
-		const manifest: BackupManifest = {
-			schemaVersion: 1,
+		const unsignedManifest = {
 			source: {
 				accountId: env.SOURCE_ACCOUNT_ID,
 				accountName: env.SOURCE_ACCOUNT_NAME,
 				databaseId: env.SOURCE_DATABASE_ID,
 				databaseName: env.SOURCE_DATABASE_NAME,
 			},
-			bookmark: exported.bookmark,
-			scheduledAt: checkedPayload.scheduledAt,
-			startedAt,
-			completedAt,
-			objectKey: checkedObjectKey,
-			bytes: stored.bytes,
-			sha256: stored.sha256,
-			r2Etag: stored.r2Etag,
-			commit: env.BUILD_COMMIT,
+			export: {
+				bookmark: exported.bookmark,
+				scheduledAt: checkedPayload.scheduledAt,
+				startedAt,
+				completedAt,
+			},
+			sql: {
+				objectKey: checkedObjectKey,
+				bytes: stored.bytes,
+				sha256: stored.sha256,
+				r2Etag: stored.r2Etag,
+			},
+			buildCommit: env.BUILD_COMMIT,
 			retentionTier: checkedPayload.retentionTier,
 		}
-		await step.do(
+		const manifest = await step.do<BackupManifest>(
 			'verify-source-and-write-immutable-manifest',
 			{
 				retries: { limit: 4, delay: '30 seconds', backoff: 'exponential' },
@@ -156,11 +160,13 @@ export async function runBackupRuntime(
 						fetcher: options.downloadFetcher,
 					},
 				)
+				const signedManifest = await signBackupManifest(env, unsignedManifest)
 				await putImmutableManifest(
 					env.BACKUP_BUCKET,
 					checkedPayload.manifestKey,
-					manifest,
+					signedManifest,
 				)
+				return signedManifest
 			},
 		)
 		safeLog({

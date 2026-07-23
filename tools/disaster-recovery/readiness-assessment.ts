@@ -19,6 +19,7 @@ import {
 	parseIdentity,
 	sha256Pattern,
 } from './readiness-validation.ts'
+import { canonicalJson, sha256 } from './canonical-json.ts'
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000
 const resourceIds = new Set<string>(
@@ -291,6 +292,20 @@ export function assessCanonicalReadiness(
 		string,
 		VerifiedEvidenceArtifact | string
 	> = new Map(),
+	trustedProductionSources: ReadonlyArray<{
+		accountId: string
+		databaseId: string
+		databaseName: string
+	}> = [],
+	trustedBaselines: ReadonlyArray<{
+		id: string
+		canonicalSha256: string
+		baseline: {
+			schemaSha256: string
+			migrationNames: ReadonlyArray<string>
+			isolationChecks: ReadonlyArray<unknown>
+		}
+	}> = [],
 ): ReadinessResult {
 	const parsed = parseEvidence(input, now)
 	const resources = canonicalContracts.map((contract) => {
@@ -320,6 +335,82 @@ export function assessCanonicalReadiness(
 					failures.push(
 						`${contract.id}: signed artifact content does not match index metadata: ${artifact.uri}`,
 					)
+				}
+			}
+			if (contract.id === 'APP_DB') {
+				const restoreArtifact = evidence.artifacts.find(
+					(artifact) => artifact.kind === 'd1-restore-drill',
+				)
+				const sizeArtifact = evidence.artifacts.find(
+					(artifact) => artifact.kind === 'd1-size-ceiling-check',
+				)
+				const restoreVerified = restoreArtifact
+					? verifiedArtifacts.get(restoreArtifact.uri)
+					: undefined
+				const sizeVerified = sizeArtifact
+					? verifiedArtifacts.get(sizeArtifact.uri)
+					: undefined
+				if (
+					restoreVerified &&
+					typeof restoreVerified !== 'string' &&
+					sizeVerified &&
+					typeof sizeVerified !== 'string'
+				) {
+					const source = restoreVerified.envelope.content.sourceIdentity
+					const restoreDetails = restoreVerified.envelope.content
+						.details as EvidenceDetailsByKind['d1-restore-drill']
+					const sizeDetails = sizeVerified.envelope.content
+						.details as EvidenceDetailsByKind['d1-size-ceiling-check']
+					const trustedSource = trustedProductionSources.find(
+						(candidate) =>
+							candidate.accountId.toLowerCase() ===
+								source.accountId.toLowerCase() &&
+							candidate.databaseId.toLowerCase() ===
+								source.resourceId.toLowerCase() &&
+							candidate.databaseName === restoreDetails.sourceDatabaseName,
+					)
+					if (!trustedSource) {
+						failures.push(
+							'APP_DB: signed source identity/name is not a checked production source',
+						)
+					}
+					const provenanceKeys = [
+						'backupManifestSha256',
+						'isolationBaselineSha256',
+						'migrationSetSha256',
+						'schemaSha256',
+						'sourceBookmark',
+						'sourceDatabaseName',
+						'sqlSha256',
+						'trustedBaselineId',
+						'trustedBaselineSha256',
+					] as const
+					for (const key of provenanceKeys) {
+						if (restoreDetails[key] !== sizeDetails[key]) {
+							failures.push(
+								`APP_DB: signed restore ${key} does not match source evidence`,
+							)
+						}
+					}
+					const baseline = trustedBaselines.find(
+						(candidate) =>
+							candidate.id === restoreDetails.trustedBaselineId &&
+							candidate.canonicalSha256 ===
+								restoreDetails.trustedBaselineSha256,
+					)
+					if (
+						!baseline ||
+						baseline.baseline.schemaSha256 !== restoreDetails.schemaSha256 ||
+						sha256(
+							canonicalJson([...baseline.baseline.migrationNames].sort()),
+						) !== restoreDetails.migrationSetSha256 ||
+						sha256(canonicalJson(baseline.baseline.isolationChecks)) !==
+							restoreDetails.isolationBaselineSha256
+					) {
+						failures.push(
+							'APP_DB: signed restore baseline provenance is not checked or does not match',
+						)
+					}
 				}
 			}
 			for (const requiredKind of contract.requiredEvidenceKinds) {
