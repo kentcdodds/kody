@@ -211,6 +211,16 @@ export const EnvSchema = object({
 	// Override for tests/mocks; defaults to https://api.stripe.com.
 	STRIPE_API_BASE_URL: optionalUrlStringSchema,
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
+	// Disaster-recovery exporter → DR-account R2 bucket (S3 API). Disabled
+	// unless DR_EXPORT_ENABLED is the literal string "true" and credentials
+	// are present. Secrets are set out-of-band via the Cloudflare API.
+	DR_EXPORT_ENABLED: optionalNonEmptyStringSchema,
+	DR_BACKUP_ACCOUNT_ID: optionalNonEmptyStringSchema,
+	DR_BACKUP_BUCKET_NAME: optionalNonEmptyStringSchema,
+	DR_BACKUP_ACCESS_KEY_ID: optionalNonEmptyStringSchema,
+	DR_BACKUP_SECRET_ACCESS_KEY: optionalNonEmptyStringSchema,
+	// Bearer secret for POST /__maintenance/dr-restore. Fail-closed when unset.
+	DR_RESTORE_SECRET: optionalNonEmptyStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

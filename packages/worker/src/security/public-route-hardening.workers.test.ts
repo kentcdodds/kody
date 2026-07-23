@@ -100,6 +100,11 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			secret: env.CAPABILITY_REINDEX_SECRET,
 			notConfiguredMessage: 'Package privacy backfill is not configured',
 		},
+		{
+			path: '/__maintenance/dr-restore',
+			secret: env.DR_RESTORE_SECRET,
+			notConfiguredMessage: 'DR restore is not configured',
+		},
 	] as const
 
 	for (const route of registeredMaintenanceRoutes) {

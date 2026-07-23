@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => ({
 	shouldRunRetentionCron: vi.fn(() => false),
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
 	shouldRunUsageAggregationCron: vi.fn(() => false),
+	runDrExportTick: vi.fn(async () => ({ skipped: true })),
+	shouldRunDrExportCron: vi.fn(() => false),
+	isDrExportConfigured: vi.fn(() => false),
 	refreshStaleStripePlans: vi.fn(async () => ({
 		refreshed: 0,
 		failed: 0,
@@ -51,6 +54,12 @@ vi.mock('#app/retention.ts', () => ({
 vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
 	aggregateUsageRollups: mocks.aggregateUsageRollups,
 	shouldRunUsageAggregationCron: mocks.shouldRunUsageAggregationCron,
+}))
+
+vi.mock('#worker/dr/exporter.ts', () => ({
+	runDrExportTick: mocks.runDrExportTick,
+	shouldRunDrExportCron: mocks.shouldRunDrExportCron,
+	isDrExportConfigured: mocks.isDrExportConfigured,
 }))
 
 vi.mock('#worker/billing/subscription-sync.ts', () => ({

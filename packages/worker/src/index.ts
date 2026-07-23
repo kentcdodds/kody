@@ -68,6 +68,12 @@ import {
 	aggregateUsageRollups,
 	shouldRunUsageAggregationCron,
 } from '#worker/usage/aggregate-rollups.ts'
+import {
+	isDrExportConfigured,
+	runDrExportTick,
+	shouldRunDrExportCron,
+} from '#worker/dr/exporter.ts'
+import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 
 export {
@@ -251,6 +257,9 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/backfill-package-privacy') {
 			return handlePackagePrivacyBackfillRequest(request, env)
+		}
+		if (url.pathname === '/__maintenance/dr-restore') {
+			return handleDrRestoreRequest(request, env)
 		}
 		if (url.pathname === '/__maintenance/backfill-mcp-agent-sessions') {
 			return handleMcpAgentSessionBackfillRequest(request, env)
@@ -584,6 +593,12 @@ const workerHandler = {
 			lanes.push({
 				name: 'usage_aggregation',
 				run: () => aggregateUsageRollups(env, scheduledAt),
+			})
+		}
+		if (shouldRunDrExportCron(scheduledAt) && isDrExportConfigured(env)) {
+			lanes.push({
+				name: 'dr_export',
+				run: () => runDrExportTick({ env, now: scheduledAt }),
 			})
 		}
 		// Lane failures are isolated: each rejection is logged and reported to

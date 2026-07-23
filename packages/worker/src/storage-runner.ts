@@ -56,6 +56,65 @@ type StorageEstimateResult = {
 	estimatedBytes: number
 }
 
+/**
+ * Paged replace protocol for StorageRunner restore:
+ * - `replacePage: 'first'` clears the entire bucket, then writes entries
+ *   (JSON-parsed from `valueJson`).
+ * - `replacePage: 'continue'` upserts additional entries without clearing.
+ * - Callers must send pages in order for a single replace session; sending
+ *   `'first'` again restarts the replace (idempotent retry of page 1).
+ * - Empty `'first'` pages are valid and leave the bucket empty.
+ */
+export async function applyImportStoragePage(
+	storage: {
+		deleteAll: () => Promise<void> | void
+		put: (key: string, value: unknown) => Promise<void> | void
+	},
+	input: {
+		mode: 'replace'
+		replacePage: 'first' | 'continue'
+		entries: Array<{ key: string; valueJson: string }>
+	},
+): Promise<{ ok: true; written: number; cleared: boolean }> {
+	switch (input.mode) {
+		case 'replace':
+			break
+		default: {
+			const exhaustive: never = input.mode
+			throw new Error(`Unsupported importStorage mode: ${String(exhaustive)}`)
+		}
+	}
+	let cleared = false
+	switch (input.replacePage) {
+		case 'first': {
+			await storage.deleteAll()
+			cleared = true
+			break
+		}
+		case 'continue':
+			break
+		default: {
+			const exhaustive: never = input.replacePage
+			throw new Error(
+				`Unsupported importStorage replacePage: ${String(exhaustive)}`,
+			)
+		}
+	}
+	let written = 0
+	for (const entry of input.entries) {
+		const key = normalizeStorageKey(entry.key)
+		let value: unknown
+		try {
+			value = JSON.parse(entry.valueJson) as unknown
+		} catch {
+			throw new Error(`importStorage received invalid valueJson for key ${key}`)
+		}
+		await storage.put(key, value)
+		written += 1
+	}
+	return { ok: true, written, cleared }
+}
+
 export function createExecuteStorageId() {
 	return `exec:${crypto.randomUUID()}`
 }
@@ -366,6 +425,22 @@ class StorageRunnerBase extends DurableObject<Env> {
 		})
 	}
 
+	/**
+	 * Paged restore counterpart of {@link exportStorage}.
+	 * See {@link applyImportStoragePage} for the replace protocol.
+	 */
+	async importStorage(input: {
+		mode: 'replace'
+		replacePage: 'first' | 'continue'
+		entries: Array<{ key: string; valueJson: string }>
+	}): Promise<{
+		ok: true
+		written: number
+		cleared: boolean
+	}> {
+		return await applyImportStoragePage(this.ctx.storage, input)
+	}
+
 	async sqlQuery(input: {
 		query: string
 		params?: Array<unknown>
@@ -416,6 +491,11 @@ export function storageRunnerRpc(input: {
 			pageSize?: number
 			startAfter?: string | null
 		}) => Promise<StorageExportResult>
+		importStorage: (payload: {
+			mode: 'replace'
+			replacePage: 'first' | 'continue'
+			entries: Array<{ key: string; valueJson: string }>
+		}) => Promise<{ ok: true; written: number; cleared: boolean }>
 		sqlQuery: (payload: {
 			query: string
 			params?: Array<unknown>

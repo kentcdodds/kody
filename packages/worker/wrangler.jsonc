@@ -254,6 +254,12 @@
 				// created server-side for authenticated users (no public
 				// Payment Link).
 				"STRIPE_PRO_PRICE_ID": "price_1Tv3W2LAQpAnsYszSr4PGBkE",
+				// Disaster-recovery exporter → locked R2 bucket in the KCD
+				// (DR) account. The companion S3 credentials are Worker
+				// secrets set out-of-band via the Cloudflare API.
+				"DR_EXPORT_ENABLED": "true",
+				"DR_BACKUP_ACCOUNT_ID": "a41d50ecaf0ae0f86dd1824ef6729cb2",
+				"DR_BACKUP_BUCKET_NAME": "kody-production-backups",
 			},
 		},
 		"preview": {
@@ -372,6 +378,9 @@
 			"vars": {
 				"SENTRY_ENVIRONMENT": "preview",
 				"ARTIFACTS_NAMESPACE": "preview",
+				"DR_EXPORT_ENABLED": "",
+				"DR_BACKUP_ACCOUNT_ID": "",
+				"DR_BACKUP_BUCKET_NAME": "",
 			},
 		},
 		"test": {
@@ -488,6 +497,9 @@
 				"GOOGLE_CLIENT_SECRET": "MOCK_GOOGLE_CLIENT_SECRET",
 				"X_CLIENT_ID": "MOCK_X_CLIENT_ID",
 				"X_CLIENT_SECRET": "MOCK_X_CLIENT_SECRET",
+				"DR_EXPORT_ENABLED": "",
+				"DR_BACKUP_ACCOUNT_ID": "",
+				"DR_BACKUP_BUCKET_NAME": "",
 			},
 		},
 	},

@@ -23,6 +23,7 @@
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
     "agents": "0.17.4",
+    "aws4fetch": "^1.0.20",
     "croner": "^10.0.1",
     "diff": "^9.0.0",
     "isomorphic-git": "^1.38.10",
