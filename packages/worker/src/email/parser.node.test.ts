@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { parseForwardableEmailMessage } from './parser.ts'
+import {
+	maxRawMimeBytes,
+	parseForwardableEmailMessage,
+	readForwardableEmailRawMime,
+} from './parser.ts'
 
 function createMessage(
 	raw: string,
@@ -28,6 +32,14 @@ function createMessage(
 		},
 	} satisfies ForwardableEmailMessage
 }
+
+test('direct raw MIME reads enforce the parser size ceiling', async () => {
+	const message = createMessage('Subject: Too large\r\n\r\nBody')
+	Object.defineProperty(message, 'rawSize', { value: maxRawMimeBytes + 1 })
+	await expect(readForwardableEmailRawMime(message)).rejects.toThrow(
+		'raw MIME is too large',
+	)
+})
 
 test('parseForwardableEmailMessage extracts content and attachments', async () => {
 	const raw = [

@@ -31,6 +31,8 @@ type LegacyInboundCandidate = {
 	thread_id: string | null
 	raw_mime_key: string | null
 	raw_size: number
+	envelope_from: string | null
+	to_addresses_json: string
 	received_at: string | null
 	created_at: string
 }
@@ -44,6 +46,8 @@ export type InboundDelivery = {
 	userId: string
 	inboxId: string
 	recipient: string
+	envelopeFrom: string
+	provider: string
 	quotaDay: string
 	dedupeExpiresAt: string
 	state:
@@ -144,6 +148,8 @@ export async function buildInboundDelivery(input: {
 		userId: input.userId,
 		inboxId: input.inboxId,
 		recipient: input.recipient,
+		envelopeFrom,
+		provider,
 		quotaDay: input.quotaDay,
 		dedupeExpiresAt: new Date(
 			now.getTime() + inboundDeliveryDedupeWindowMs,
@@ -167,6 +173,8 @@ function parseInboundDelivery(
 			typeof detail.userId !== 'string' ||
 			typeof detail.inboxId !== 'string' ||
 			typeof detail.recipient !== 'string' ||
+			typeof detail.envelopeFrom !== 'string' ||
+			typeof detail.provider !== 'string' ||
 			typeof detail.quotaDay !== 'string' ||
 			typeof detail.dedupeExpiresAt !== 'string'
 		) {
@@ -194,6 +202,8 @@ function parseInboundDelivery(
 			userId: detail.userId,
 			inboxId: detail.inboxId,
 			recipient: detail.recipient,
+			envelopeFrom: detail.envelopeFrom,
+			provider: detail.provider,
 			quotaDay: detail.quotaDay,
 			dedupeExpiresAt: detail.dedupeExpiresAt,
 			state,
@@ -436,7 +446,9 @@ export async function adoptLegacyInboundDelivery(input: {
 	while (true) {
 		const rows: D1Result<LegacyInboundCandidate> = await input.db
 			.prepare(
-				`SELECT id, thread_id, raw_mime_key, raw_size, received_at, created_at
+				`SELECT
+				id, thread_id, raw_mime_key, raw_size, envelope_from,
+				to_addresses_json, received_at, created_at
 			FROM email_messages
 			WHERE user_id = ?
 				AND inbox_id = ?
@@ -466,8 +478,20 @@ export async function adoptLegacyInboundDelivery(input: {
 			.all<LegacyInboundCandidate>()
 		const candidates: Array<LegacyInboundCandidate> = rows.results ?? []
 		for (const row of candidates) {
+			let toAddresses: Array<unknown> = []
+			try {
+				const parsed = JSON.parse(row.to_addresses_json) as unknown
+				if (Array.isArray(parsed)) toAddresses = parsed
+			} catch {
+				continue
+			}
+			const candidateEnvelopeFrom =
+				normalizeEmailAddress(row.envelope_from ?? '') ??
+				(row.envelope_from ?? '').trim().toLowerCase()
 			if (
 				!row.raw_mime_key ||
+				candidateEnvelopeFrom !== input.delivery.envelopeFrom ||
+				!toAddresses.includes(input.delivery.recipient) ||
 				row.raw_mime_key !== emailRawMimeKey(input.delivery.userId, row.id)
 			) {
 				continue

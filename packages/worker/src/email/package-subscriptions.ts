@@ -276,26 +276,35 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 			occurred_at: input.providerEvent.metadata.eventTimestamp,
 		},
 	}
-	const responses = await Promise.all(
-		subscriptions.map(
-			async ({ savedPackage }) =>
-				await invokePackageSubscription({
-					env: input.env as Env,
-					baseUrl,
-					savedPackage,
-					topic: emailDeliveryUpdatedTopic,
-					params: payload,
-					idempotencyKey: `email-delivery:${input.providerEvent.payload.eventId}:${savedPackage.id}`,
-					source: 'email',
-				}),
-		),
+	const results = await Promise.all(
+		subscriptions.map(async ({ savedPackage }) => {
+			const response = await invokePackageSubscription({
+				env: input.env as Env,
+				baseUrl,
+				savedPackage,
+				topic: emailDeliveryUpdatedTopic,
+				params: payload,
+				idempotencyKey: `email-delivery:${input.providerEvent.payload.eventId}:${savedPackage.id}`,
+				source: 'email',
+			})
+			return {
+				response,
+				retryableCode:
+					readPreExecutionPackageInvocationInfrastructureCode(response),
+			}
+		}),
 	)
-	if (discoveryErrors.length > 0) {
+	const retryableResult = results.find((result) => result.retryableCode)
+	if (discoveryErrors.length > 0 || retryableResult) {
 		throw new Error('Email delivery subscription dispatch was incomplete.', {
-			cause: discoveryErrors[0],
+			cause:
+				discoveryErrors[0] ??
+				new Error(
+					`Retryable package invocation infrastructure response: ${retryableResult?.retryableCode}.`,
+				),
 		})
 	}
-	return responses
+	return results.map((result) => result.response)
 }
 
 /**

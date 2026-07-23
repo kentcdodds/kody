@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest'
 const emailDeliveryUpdatedTopic = 'email.message.delivery.updated'
 
 const mocks = vi.hoisted(() => ({
-	invokePackageSubscription: vi.fn(async () => ({ ok: true })),
+	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 }))
@@ -119,4 +119,31 @@ test('delivery updates fan out only through the stored message owner', async () 
 			}),
 		}),
 	)
+
+	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([savedPackage])
+	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce({
+		manifest: {
+			name: '@user/delivery-notifier',
+			kody: {
+				id: 'delivery-notifier',
+				description: 'Delivery notifier',
+				subscriptions: {
+					[emailDeliveryUpdatedTopic]: {
+						handler: './src/on-delivery.ts',
+					},
+				},
+			},
+		},
+	})
+	mocks.invokePackageSubscription.mockResolvedValueOnce({
+		status: 503,
+		body: { error: { code: 'artifact_preparation_failed' } },
+	})
+	await expect(
+		dispatchEmailDeliverySubscriptionEvents({
+			env,
+			message: message as never,
+			providerEvent: providerEvent as never,
+		}),
+	).rejects.toThrow('dispatch was incomplete')
 })

@@ -81,7 +81,9 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 	mocks.dispatchEmailDeliverySubscriptionEvents
 		.mockResolvedValueOnce([])
 		.mockResolvedValueOnce([])
-		.mockRejectedValueOnce(new Error('dispatch failed'))
+		.mockRejectedValueOnce(
+			new Error('artifact_preparation_failed: transient KV failure'),
+		)
 	const waitUntilPromises: Array<Promise<unknown>> = []
 	const ctx = {
 		waitUntil(promise: Promise<unknown>) {
@@ -132,6 +134,6 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 	})
 	expect(consoleError).toHaveBeenCalledWith(
 		'email-delivery-event-processing-failed',
-		expect.objectContaining({ message: 'dispatch failed' }),
+		expect.objectContaining({ message: expect.stringContaining('KV failure') }),
 	)
 })

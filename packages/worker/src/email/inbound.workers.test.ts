@@ -1411,6 +1411,8 @@ test('post-rollout retry adopts a recent legacy message without duplicate row or
 			direction: 'inbound',
 			userId,
 			inboxId: provisioned.inbox.id,
+			envelopeFrom: 'sender@example.net',
+			toAddresses: [address],
 			rawMime: raw,
 			rawSize: new TextEncoder().encode(raw).byteLength,
 			messageIdHeader: '<legacy-deploy-retry@example.net>',
@@ -1442,6 +1444,26 @@ test('post-rollout retry adopts a recent legacy message without duplicate row or
 			},
 		})
 	}
+	for (const [envelopeFrom, toAddresses] of [
+		['other-sender@example.net', [address]],
+		['sender@example.net', [`other-alias@${platformDomain}`]],
+	] as const) {
+		await insertEmailMessageWithRawMime({
+			db: env.APP_DB,
+			blobs: env.EMAIL_BLOBS,
+			message: {
+				id: crypto.randomUUID(),
+				direction: 'inbound',
+				userId,
+				inboxId: provisioned.inbox.id,
+				envelopeFrom,
+				toAddresses: [...toAddresses],
+				rawMime: raw,
+				rawSize: new TextEncoder().encode(raw).byteLength,
+				processingStatus: 'stored',
+			},
+		})
+	}
 	await env.APP_DB.prepare(
 		`INSERT INTO entitlement_daily_counters (
 			user_id, resource, day, count, updated_at
@@ -1469,7 +1491,7 @@ test('post-rollout retry adopts a recent legacy message without duplicate row or
 			userId,
 			limit: 40,
 		}),
-	).toHaveLength(25)
+	).toHaveLength(27)
 	const adopted = await env.APP_DB.prepare(
 		`SELECT message_id, event_type, detail_json
 		FROM email_delivery_events
