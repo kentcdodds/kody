@@ -70,8 +70,10 @@ class TestFixedLengthStream extends TransformStream<Uint8Array, Uint8Array> {
 	}
 }
 
+// Mirror the Workers runtime: DigestStream lives on crypto (not a bare
+// global); FixedLengthStream is a global.
+Object.assign(crypto as object, { DigestStream: TestDigestStream })
 Object.assign(globalThis, {
-	DigestStream: TestDigestStream,
 	FixedLengthStream: TestFixedLengthStream,
 })
 

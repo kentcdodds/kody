@@ -18,7 +18,11 @@ async function digestBody(
 	body: ReadableStream<Uint8Array>,
 	expectedBytes?: number,
 ): Promise<{ bytes: number; sha256: string }> {
-	const digest = new DigestStream('SHA-256')
+	// DigestStream is a Workers runtime extension exposed on crypto, not a
+	// bare global (verified live: `DigestStream is not defined`).
+	const digest = new (
+		crypto as unknown as { DigestStream: typeof DigestStream }
+	).DigestStream('SHA-256')
 	await body.pipeTo(digest)
 	const bytes = Number(digest.bytesWritten)
 	if (expectedBytes !== undefined && bytes !== expectedBytes) {
@@ -199,9 +203,10 @@ export async function storeSignedDownload(
 		])
 	} catch (error) {
 		if (error instanceof BackupError) throw error
+		const cause = error instanceof Error ? error.message : String(error)
 		throw new BackupError(
 			'download-interrupted',
-			'streaming the export to immutable storage failed',
+			`streaming the export to immutable storage failed: ${cause}`,
 			true,
 		)
 	}
