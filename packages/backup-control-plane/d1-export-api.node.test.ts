@@ -164,11 +164,31 @@ test('startD1Export classifies auth failures as non-retryable and retries transi
 	}
 })
 
-test('rejects malformed JSON and malformed/error export payloads', async () => {
+test('treats export status active the same as omitted status (pending)', async () => {
+	for (const response of [exportEnvelope(), exportEnvelope('active')]) {
+		const result = await startD1Export(environment(), {
+			fetcher: async () => response.clone(),
+			sleep: async () => undefined,
+		})
+		assert.equal(result.kind, 'pending')
+		assert.equal(result.bookmark, 'bookmark-1')
+	}
+})
+
+test('rejects malformed JSON and malformed/error/unknown export payloads', async () => {
 	for (const response of [
 		new Response('{', { status: 200 }),
 		Response.json({ success: true, result: { status: 'complete' } }),
 		exportEnvelope('error'),
+		Response.json({
+			success: true,
+			result: {
+				type: 'export',
+				success: true,
+				at_bookmark: 'bookmark-1',
+				status: 'weird',
+			},
+		}),
 	]) {
 		await assert.rejects(
 			startD1Export(environment(), {

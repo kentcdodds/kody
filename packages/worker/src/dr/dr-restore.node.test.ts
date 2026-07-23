@@ -11,12 +11,18 @@ import {
 } from '@kody-internal/shared/backup-staging.ts'
 import { sha256Hex } from '#worker/dr/sha256.ts'
 import {
+	__testOnlyDecodeCursor,
+	__testOnlyEncodeCursor,
 	__testOnlySealedObjectKey,
 	handleDrRestoreRequest,
 	runDrRestoreTick,
 } from '#worker/dr/dr-restore.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
-import { type DrBackupS3Client } from '#worker/dr/backup-s3.ts'
+import {
+	type DrBackupS3Client,
+	type DrBackupS3PutOptions,
+} from '#worker/dr/backup-s3.ts'
+import { MaintenanceFailureError } from '#worker/maintenance-handler.ts'
 
 const storageMocks = vi.hoisted(() => ({
 	importStorage: vi.fn(),
@@ -38,20 +44,27 @@ function createMemoryS3(seed: Record<string, string | Uint8Array> = {}) {
 	}
 	const client: DrBackupS3Client = {
 		async head(key) {
-			return { exists: objects.has(key), status: objects.has(key) ? 200 : 404 }
+			return {
+				exists: objects.has(key),
+				status: objects.has(key) ? 200 : 404,
+				etag: objects.has(key) ? '"etag"' : null,
+			}
 		},
 		async getText(key) {
 			const bytes = objects.get(key)
-			return bytes ? new TextDecoder().decode(bytes) : null
+			return bytes
+				? { text: new TextDecoder().decode(bytes), etag: '"etag"' }
+				: null
 		},
 		async getBytes(key) {
 			return objects.get(key) ?? null
 		},
-		async put(key, body) {
+		async put(key, body, _options?: DrBackupS3PutOptions) {
 			objects.set(
 				key,
 				typeof body === 'string' ? new TextEncoder().encode(body) : body,
 			)
+			return { etag: '"etag"' }
 		},
 	}
 	return { client, objects }
@@ -59,6 +72,19 @@ function createMemoryS3(seed: Record<string, string | Uint8Array> = {}) {
 
 function sealedKey(day: string, stagingKey: string) {
 	return __testOnlySealedObjectKey(day, stagingKey)
+}
+
+function baseEnv() {
+	return {
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		EMAIL_BLOBS: { put: async () => {} },
+		COMMUNITY_ASSETS: { put: async () => {} },
+		BUNDLE_ARTIFACTS_KV: { put: async () => {} },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
 }
 
 test('dr-restore auth fails closed when secret is missing and rejects wrong bearer', async () => {
@@ -140,10 +166,7 @@ test('dr-restore restores storage, R2, and artifacts in chunked ticks', async ()
 	const r2Puts: Array<{ key: string; bytes: Uint8Array }> = []
 	const kvPuts: Array<{ key: string; value: string }> = []
 	const env = {
-		DR_BACKUP_ACCOUNT_ID: 'acct',
-		DR_BACKUP_BUCKET_NAME: 'bucket',
-		DR_BACKUP_ACCESS_KEY_ID: 'key',
-		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		...baseEnv(),
 		EMAIL_BLOBS: {
 			put: async (key: string, value: ArrayBuffer | Uint8Array | string) => {
 				const bytes =
@@ -155,15 +178,11 @@ test('dr-restore restores storage, R2, and artifacts in chunked ticks', async ()
 				r2Puts.push({ key, bytes })
 			},
 		},
-		COMMUNITY_ASSETS: {
-			put: async () => {},
-		},
 		BUNDLE_ARTIFACTS_KV: {
 			put: async (key: string, value: string) => {
 				kvPuts.push({ key, value })
 			},
 		},
-		STORAGE_RUNNER: {},
 	} as unknown as Env
 
 	const first = await runDrRestoreTick({
@@ -190,7 +209,36 @@ test('dr-restore restores storage, R2, and artifacts in chunked ticks', async ()
 	).toBe(true)
 })
 
-test('dr-restore records a warning when blob sha256 verification fails', async () => {
+test('dr-restore hard-fails on missing storage dump listed in the index', async () => {
+	const day = '2026-07-23'
+	const identity = encodeStorageIdentity('user-a', 'job:1')
+	const storageIndex: StorageIndex = {
+		schemaVersion: 1,
+		day,
+		entries: [
+			{
+				storageId: identity,
+				objectKey: stagingStorageDumpKey(day, identity),
+				entryCount: 1,
+				bytes: 1,
+				sha256: 'a'.repeat(64),
+			},
+		],
+	}
+	const { client } = createMemoryS3({
+		[sealedKey(day, stagingStorageIndexKey(day))]: JSON.stringify(storageIndex),
+	})
+	await expect(
+		runDrRestoreTick({
+			env: baseEnv(),
+			day,
+			timeBudgetMs: 60_000,
+			s3: client,
+		}),
+	).rejects.toBeInstanceOf(MaintenanceFailureError)
+})
+
+test('dr-restore hard-fails on blob sha256 verification failure', async () => {
 	storageMocks.importStorage.mockReset()
 	storageMocks.importStorage.mockResolvedValue({
 		ok: true,
@@ -218,27 +266,108 @@ test('dr-restore records a warning when blob sha256 verification fails', async (
 			JSON.stringify(artifactsIndex),
 		[backupBlobKey(badDigest)]: new TextEncoder().encode('nope'),
 	})
-	const env = {
-		DR_BACKUP_ACCOUNT_ID: 'acct',
-		DR_BACKUP_BUCKET_NAME: 'bucket',
-		DR_BACKUP_ACCESS_KEY_ID: 'key',
-		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
-		EMAIL_BLOBS: { put: async () => {} },
-		COMMUNITY_ASSETS: { put: async () => {} },
-		BUNDLE_ARTIFACTS_KV: { put: async () => {} },
-		STORAGE_RUNNER: {},
-	} as unknown as Env
 
-	const result = await runDrRestoreTick({
-		env,
-		day,
-		timeBudgetMs: 60_000,
-		s3: client,
+	await expect(
+		runDrRestoreTick({
+			env: baseEnv(),
+			day,
+			timeBudgetMs: 60_000,
+			s3: client,
+		}),
+	).rejects.toMatchObject({
+		name: 'MaintenanceFailureError',
+		message: expect.stringContaining('sha256 mismatch'),
 	})
-	expect(result.done).toBe(true)
-	expect(
-		result.warnings.some((warning) => warning.includes('sha256 mismatch')),
-	).toBe(true)
+})
+
+test('dr-restore hard-fails on missing blob referenced by an index entry', async () => {
+	const day = '2026-07-23'
+	const missingDigest = 'b'.repeat(64)
+	const artifactsIndex: ArtifactsIndex = {
+		schemaVersion: 1,
+		day,
+		entries: [
+			{
+				sourceId: 'src-1',
+				entityKind: 'package',
+				entityId: 'pkg-1',
+				userId: 'user-a',
+				publishedCommit: 'commit-1',
+				snapshotSha256: missingDigest,
+			},
+		],
+	}
+	const { client } = createMemoryS3({
+		[sealedKey(day, stagingStorageIndexKey(day))]: JSON.stringify({
+			schemaVersion: 1,
+			day,
+			entries: [],
+		} satisfies StorageIndex),
+		[sealedKey(day, stagingR2IndexKey(day, 'email-blobs'))]: '',
+		[sealedKey(day, stagingR2IndexKey(day, 'community-assets'))]: '',
+		[sealedKey(day, stagingArtifactsIndexKey(day))]:
+			JSON.stringify(artifactsIndex),
+	})
+
+	await expect(
+		runDrRestoreTick({
+			env: baseEnv(),
+			day,
+			timeBudgetMs: 60_000,
+			s3: client,
+		}),
+	).rejects.toMatchObject({
+		name: 'MaintenanceFailureError',
+		message: expect.stringContaining('backup blob missing'),
+	})
+})
+
+test('decodeCursor rejects NaN, negative, and non-safe-integer fields', () => {
+	expect(() =>
+		__testOnlyDecodeCursor(
+			__testOnlyEncodeCursor({
+				phase: 'storage',
+				storageIndex: -1,
+				storageLineOffset: 0,
+				storageReplaceStarted: false,
+				r2LabelIndex: 0,
+				r2LineOffset: 0,
+				artifactsIndex: 0,
+			}),
+		),
+	).toThrow(MaintenanceFailureError)
+
+	expect(() =>
+		__testOnlyDecodeCursor(
+			btoa(
+				JSON.stringify({
+					phase: 'storage',
+					storageIndex: '1',
+					storageLineOffset: 0,
+					storageReplaceStarted: false,
+					r2LabelIndex: 0,
+					r2LineOffset: 0,
+					artifactsIndex: 0,
+				}),
+			),
+		),
+	).toThrow(MaintenanceFailureError)
+
+	expect(() =>
+		__testOnlyDecodeCursor(
+			btoa(
+				JSON.stringify({
+					phase: 'storage',
+					storageIndex: 1.5,
+					storageLineOffset: 0,
+					storageReplaceStarted: false,
+					r2LabelIndex: 0,
+					r2LineOffset: 0,
+					artifactsIndex: 0,
+				}),
+			),
+		),
+	).toThrow(MaintenanceFailureError)
 })
 
 test('sealed object keys rewrite staging prefix into daily/full', () => {

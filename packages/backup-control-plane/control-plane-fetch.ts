@@ -11,7 +11,6 @@ import {
 	errorCode,
 	isBackupEnabled,
 	safeLog,
-	utcDay,
 	workflowInstanceId,
 } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
@@ -21,11 +20,15 @@ import {
 	renderDrillReport,
 	renderEnqueueResult,
 	renderMessagePage,
+	renderRestoreAlreadyStartedPage,
 	renderRestorePreparePage,
 	renderRestoreStatusPage,
 	renderSealResult,
 } from './control-plane-ui.ts'
-import { validateSealedDayForRestore } from './production-restore.ts'
+import {
+	restoreWorkflowInstanceId,
+	validateSealedDayForRestore,
+} from './production-restore.ts'
 import {
 	issueRestoreConfirmToken,
 	verifyRestoreConfirmToken,
@@ -228,14 +231,39 @@ async function handleAuthenticated(
 					'typed database name does not match SOURCE_DATABASE_NAME',
 				)
 			}
-			const instanceId = `dr-restore-${day}-${utcDay(new Date())}-${crypto.randomUUID().slice(0, 8)}`
-			await env.RESTORE_WORKFLOW.create({
-				id: instanceId,
-				params: {
-					day,
-					requestedAt: new Date().toISOString(),
-				},
-			})
+			const instanceId = restoreWorkflowInstanceId(day, expiresAt)
+			try {
+				await env.RESTORE_WORKFLOW.create({
+					id: instanceId,
+					params: {
+						day,
+						requestedAt: new Date().toISOString(),
+					},
+				})
+			} catch {
+				let existing = false
+				try {
+					await env.RESTORE_WORKFLOW.get(instanceId)
+					existing = true
+				} catch {
+					existing = false
+				}
+				if (existing) {
+					safeLog({
+						event: 'ui-restore-execute',
+						status: 'failure',
+						day,
+						instanceId,
+						errorCode: 'restore-already-started',
+					})
+					return htmlResponse(renderRestoreAlreadyStartedPage(instanceId), 409)
+				}
+				throw new BackupError(
+					'restore-workflow-create-failed',
+					'failed to start production restore workflow',
+					true,
+				)
+			}
 			safeLog({
 				event: 'ui-restore-execute',
 				status: 'success',

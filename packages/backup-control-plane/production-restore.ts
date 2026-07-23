@@ -2,7 +2,11 @@ import { sealedFullManifestKey } from '@kody-internal/shared/backup-staging.ts'
 
 import { BackupError, backupPayload, safeLog } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
-import { type ApiOptions } from './d1-export-api.ts'
+import {
+	pollD1Export,
+	startD1Export,
+	type ApiOptions,
+} from './d1-export-api.ts'
 import { importSqlIntoD1 } from './d1-import-api.ts'
 import { verifyBackupFullManifestSignature } from './full-manifest-signing.ts'
 import { readManifest } from './immutable-storage.ts'
@@ -33,6 +37,7 @@ export type ProductionRestoreProgress = {
 	day: string
 	phase:
 		| 'validating'
+		| 'capturing-safety-export'
 		| 'importing-d1'
 		| 'restoring-stores'
 		| 'complete'
@@ -41,12 +46,16 @@ export type ProductionRestoreProgress = {
 	storeRestoreComplete: boolean
 	storeIterations: number
 	warnings: Array<string>
+	safetyExportKey?: string
+	safetyExportBytes?: number
 	errorCode?: string
 	errorMessage?: string
 	progress?: ProductionRestoreProgressValue
 }
 
 const MAX_STORE_RESTORE_ITERATIONS = 500
+const DEFAULT_SAFETY_EXPORT_POLLS = 120
+const DEFAULT_SAFETY_EXPORT_POLL_DELAY_MS = 15_000
 
 function serializeRestoreProgress(
 	value: unknown,
@@ -111,6 +120,14 @@ function requirePrimaryOrigin(env: BackupEnvironment): string {
 		)
 	}
 	return origin.replace(/\/$/, '')
+}
+
+export function restoreWorkflowInstanceId(
+	day: string,
+	expiresAt: string,
+): string {
+	const safeExpires = expiresAt.replaceAll(':', '-').replaceAll('.', '-')
+	return `dr-restore-${day}-${safeExpires}`
 }
 
 export async function validateSealedDayForRestore(
@@ -249,6 +266,86 @@ export async function callProductionDrRestore(
 	}
 }
 
+export async function capturePreRestoreSafetyExport(
+	env: BackupEnvironment,
+	day: string,
+	now: Date = new Date(),
+	options: ApiOptions & {
+		maxPollAttempts?: number
+		pollDelayMs?: number
+	} = {},
+): Promise<{ objectKey: string; bytes: number }> {
+	const fetcher = options.fetcher ?? fetch
+	const sleep =
+		options.sleep ?? ((milliseconds) => scheduler.wait(milliseconds))
+	const maxPollAttempts = options.maxPollAttempts ?? DEFAULT_SAFETY_EXPORT_POLLS
+	const pollDelayMs = options.pollDelayMs ?? DEFAULT_SAFETY_EXPORT_POLL_DELAY_MS
+
+	let state = await startD1Export(env, options)
+	for (
+		let attempt = 0;
+		attempt < maxPollAttempts && state.kind === 'pending';
+		attempt += 1
+	) {
+		await sleep(pollDelayMs)
+		state = await pollD1Export(env, state.bookmark, options)
+	}
+	if (state.kind !== 'complete') {
+		throw new BackupError(
+			'pre-restore-export-timeout',
+			'pre-restore safety export did not complete within the poll budget',
+			true,
+		)
+	}
+
+	let download: Response
+	try {
+		download = await fetcher(state.signedUrl)
+	} catch {
+		throw new BackupError(
+			'pre-restore-download-failed',
+			'pre-restore safety export download failed',
+			true,
+		)
+	}
+	if (!download.ok || download.body === null) {
+		throw new BackupError(
+			'pre-restore-download-http-error',
+			`pre-restore safety export download returned HTTP ${download.status}`,
+			download.status === 429 || download.status >= 500,
+		)
+	}
+	const contentLength = download.headers.get('content-length')
+	const objectKey = `pre-restore/${day}/${now.toISOString()}.sql`
+	if (contentLength !== null && /^\d+$/.test(contentLength)) {
+		const bytes = Number(contentLength)
+		if (!Number.isSafeInteger(bytes) || bytes <= 0) {
+			throw new BackupError(
+				'pre-restore-download-invalid-length',
+				'pre-restore safety export Content-Length is invalid',
+			)
+		}
+		await env.BACKUP_BUCKET.put(objectKey, download.body, {
+			httpMetadata: { contentType: 'application/sql' },
+		})
+		return { objectKey, bytes }
+	}
+	// Some runtimes rewrite Content-Length on constructed Response bodies;
+	// fall back to buffering so the safety snapshot still records exact bytes.
+	const buffer = new Uint8Array(await download.arrayBuffer())
+	if (buffer.byteLength === 0) {
+		throw new BackupError(
+			'pre-restore-download-empty',
+			'pre-restore safety export download was empty',
+			true,
+		)
+	}
+	await env.BACKUP_BUCKET.put(objectKey, buffer, {
+		httpMetadata: { contentType: 'application/sql' },
+	})
+	return { objectKey, bytes: buffer.byteLength }
+}
+
 export async function runProductionRestore(
 	env: BackupEnvironment,
 	payload: ProductionRestorePayload,
@@ -256,6 +353,7 @@ export async function runProductionRestore(
 		maxPollAttempts?: number
 		pollDelayMs?: number
 		onProgress?: (progress: ProductionRestoreProgress) => Promise<void> | void
+		now?: Date
 	} = {},
 ): Promise<ProductionRestoreProgress> {
 	const progress: ProductionRestoreProgress = {
@@ -279,6 +377,31 @@ export async function runProductionRestore(
 				`SQL object missing for ${payload.day}`,
 			)
 		}
+
+		progress.phase = 'capturing-safety-export'
+		await publish()
+		safeLog({
+			event: 'production-restore-safety-export-started',
+			status: 'success',
+			day: payload.day,
+		})
+		const safety = await capturePreRestoreSafetyExport(
+			env,
+			payload.day,
+			options.now ?? new Date(),
+			options,
+		)
+		progress.safetyExportKey = safety.objectKey
+		progress.safetyExportBytes = safety.bytes
+		await publish()
+		safeLog({
+			event: 'production-restore-safety-export-complete',
+			status: 'success',
+			day: payload.day,
+			objectKey: safety.objectKey,
+			bytes: safety.bytes,
+		})
+
 		progress.phase = 'importing-d1'
 		await publish()
 		safeLog({
@@ -321,6 +444,19 @@ export async function runProductionRestore(
 			await publish()
 			if (chunk.done) {
 				progress.storeRestoreComplete = true
+				if (progress.warnings.length > 0) {
+					progress.phase = 'failed'
+					progress.errorCode = 'dr-restore-warnings'
+					progress.errorMessage = `dr-restore completed with ${String(progress.warnings.length)} warning(s)`
+					await publish()
+					safeLog({
+						event: 'production-restore-failure',
+						status: 'failure',
+						day: payload.day,
+						errorCode: progress.errorCode,
+					})
+					return progress
+				}
 				progress.phase = 'complete'
 				await publish()
 				safeLog({

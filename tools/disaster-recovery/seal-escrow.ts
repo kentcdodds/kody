@@ -5,10 +5,11 @@
  * - ESCROW_SECRET_VALUE — plaintext secret to seal (never logged)
  * - ESCROW_PASSPHRASE — operator passphrase for PBKDF2 (never logged)
  * - ESCROW_LABEL — label recorded on the sealed blob
+ * - ESCROW_KEY_VERSION — optional key version segment (default `v1`)
  * - DR_BACKUP_ACCOUNT_ID / DR_BACKUP_BUCKET_NAME
  * - DR_BACKUP_ACCESS_KEY_ID / DR_BACKUP_SECRET_ACCESS_KEY
  *
- * Dependency-free: node:crypto + WebCrypto + hand-rolled SigV4 for the PUT.
+ * Dependency-free: node:crypto + hand-rolled SigV4 for the PUT.
  */
 import {
 	createCipheriv,
@@ -29,6 +30,7 @@ const pbkdf2Iterations = 600_000
 const saltBytes = 16
 const ivBytes = 12
 const keyBytes = 32
+const escrowKeyVersionPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 
 function sha256(data: string | Buffer) {
 	return createHash('sha256').update(data).digest()
@@ -43,6 +45,20 @@ function encodeRfc3986(value: string) {
 		/[!'()*]/g,
 		(char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
 	)
+}
+
+/**
+ * Build the escrow object key. Default `v1` matches
+ * {@link backupEscrowSecretStoreKeyKey} from the shared staging contract.
+ */
+export function buildEscrowSecretStoreKey(version = 'v1'): string {
+	const normalized = version.trim() || 'v1'
+	if (!escrowKeyVersionPattern.test(normalized)) {
+		throw new Error(
+			`Invalid ESCROW_KEY_VERSION "${version}": use a short alphanumeric token (e.g. v1, v2)`,
+		)
+	}
+	return `escrow/secret-store-key.${normalized}.json`
 }
 
 export function sealEscrowSecret(input: {
@@ -107,6 +123,20 @@ export function unsealEscrowSecretForTests(
 	]).toString('utf8')
 }
 
+function isWriteOnceRejection(status: number, bodyText: string) {
+	if (status === 409 || status === 412) return true
+	if (status === 403 || status === 400) {
+		const lower = bodyText.toLowerCase()
+		return (
+			lower.includes('lock') ||
+			lower.includes('retention') ||
+			lower.includes('precondition') ||
+			lower.includes('accessdenied')
+		)
+	}
+	return false
+}
+
 export async function putSealedEscrowBlob(input: {
 	accountId: string
 	bucketName: string
@@ -169,6 +199,12 @@ export async function putSealedEscrowBlob(input: {
 		body: input.body,
 	})
 	if (!response.ok) {
+		const bodyText = await response.text().catch(() => '')
+		if (isWriteOnceRejection(response.status, bodyText)) {
+			throw new Error(
+				`Escrow object ${objectKey} is write-once under the DR bucket escrow/ lock rule; a second PUT to this key is rejected (HTTP ${response.status}). Rotate by setting ESCROW_KEY_VERSION to a new version (for example v2) so the object key becomes escrow/secret-store-key.v2.json.`,
+			)
+		}
 		throw new Error(
 			`Escrow PUT failed for ${objectKey}: HTTP ${response.status}`,
 		)
@@ -196,6 +232,13 @@ export async function main(env: NodeJS.ProcessEnv = process.env) {
 			throw new Error(`Missing required environment variable: ${name}`)
 		}
 	}
+	const version = env.ESCROW_KEY_VERSION?.trim() || 'v1'
+	const objectKey = buildEscrowSecretStoreKey(version)
+	if (version === 'v1' && objectKey !== backupEscrowSecretStoreKeyKey) {
+		throw new Error(
+			`Escrow v1 key drift: built ${objectKey}, contract expects ${backupEscrowSecretStoreKeyKey}`,
+		)
+	}
 	const sealed = sealEscrowSecret({
 		secretValue: secretValue!,
 		passphrase: passphrase!,
@@ -208,11 +251,12 @@ export async function main(env: NodeJS.ProcessEnv = process.env) {
 		accessKeyId: accessKeyId!,
 		secretAccessKey: secretAccessKey!,
 		body,
+		objectKey,
 	})
 	console.log(
 		JSON.stringify({
 			ok: true,
-			objectKey: backupEscrowSecretStoreKeyKey,
+			objectKey,
 			label: sealed.label,
 			sealedAt: sealed.sealedAt,
 			iterations: sealed.iterations,

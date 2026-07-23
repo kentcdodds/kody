@@ -423,6 +423,22 @@ export function renderRestorePreparePage(input: {
 	return layout('Confirm PRODUCTION restore', body, { danger: true })
 }
 
+export function renderRestoreAlreadyStartedPage(instanceId: string): string {
+	const body = `
+<header>
+	<h1>Restore already started</h1>
+	<p>This confirmation token already started a production restore workflow. Replays map to the same instance and are rejected as duplicates.</p>
+</header>
+<section class="panel danger">
+	<div class="kv"><span>Instance</span><strong>${escapeHtml(instanceId)}</strong></div>
+	<p>
+		<a class="button" href="/restore-status?id=${encodeURIComponent(instanceId)}">View restore status</a>
+		<a class="button" href="/">Dashboard</a>
+	</p>
+</section>`
+	return layout('Restore already started', body, { danger: true })
+}
+
 export function renderRestoreStatusPage(input: {
 	instanceId: string
 	status: string

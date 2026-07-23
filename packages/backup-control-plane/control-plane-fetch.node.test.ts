@@ -77,6 +77,7 @@ test('fetch handler serves the dashboard with a valid Access JWT', async () => {
 	const jwt = sign(
 		{ alg: 'RS256', kid },
 		{
+			iss: `https://${env.ACCESS_TEAM_DOMAIN}`,
 			aud: env.ACCESS_APP_AUD,
 			email: env.ACCESS_ALLOWED_EMAIL,
 			iat: now - 5,

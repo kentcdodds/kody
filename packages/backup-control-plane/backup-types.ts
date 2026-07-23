@@ -80,6 +80,8 @@ export interface LogRecord {
 		| 'restore-drill-started'
 		| 'restore-drill-success'
 		| 'restore-drill-failure'
+		| 'production-restore-safety-export-started'
+		| 'production-restore-safety-export-complete'
 		| 'production-restore-d1-import-started'
 		| 'production-restore-d1-import-complete'
 		| 'production-restore-complete'
@@ -102,4 +104,5 @@ export interface LogRecord {
 	ageHours?: number
 	sourceBytes?: number
 	maxSourceBytes?: number
+	blobVerification?: 'sampled' | 'complete'
 }

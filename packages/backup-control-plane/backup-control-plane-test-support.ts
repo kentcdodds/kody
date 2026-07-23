@@ -427,7 +427,7 @@ export class RetryUploadStep implements BackupRuntimeStep {
 }
 
 export function exportEnvelope(
-	status?: 'complete' | 'error',
+	status?: 'complete' | 'error' | 'active',
 	bookmark = 'bookmark-1',
 	signedUrl = 'https://download.example/export.sql',
 ): Response {

@@ -9,11 +9,17 @@ import {
 import { sha256Hex } from '#worker/dr/sha256.ts'
 import {
 	__testOnlyCreateInitialProgress,
+	drExportMaxObjectBytes,
+	drExportMaxStorageDumpBufferBytes,
 	runDrExportTick,
 	shouldRunDrExportCron,
 } from '#worker/dr/exporter.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
-import { type DrBackupS3Client } from '#worker/dr/backup-s3.ts'
+import {
+	DrBackupPreconditionFailedError,
+	type DrBackupS3Client,
+	type DrBackupS3PutOptions,
+} from '#worker/dr/backup-s3.ts'
 
 const storageMocks = vi.hoisted(() => ({
 	exportStorage: vi.fn(),
@@ -25,23 +31,47 @@ vi.mock('#worker/storage-runner.ts', () => ({
 	}),
 }))
 
+function etagFor(bytes: Uint8Array) {
+	let hash = 0
+	for (const value of bytes) hash = (hash * 31 + value) >>> 0
+	return `"${hash.toString(16)}"`
+}
+
 function createMemoryS3() {
-	const objects = new Map<string, Uint8Array>()
+	const objects = new Map<string, { bytes: Uint8Array; etag: string }>()
 	const client: DrBackupS3Client = {
 		async head(key) {
-			return { exists: objects.has(key), status: objects.has(key) ? 200 : 404 }
+			const entry = objects.get(key)
+			return entry
+				? { exists: true, status: 200, etag: entry.etag }
+				: { exists: false, status: 404, etag: null }
 		},
 		async getText(key) {
-			const bytes = objects.get(key)
-			return bytes ? new TextDecoder().decode(bytes) : null
+			const entry = objects.get(key)
+			if (!entry) return null
+			return {
+				text: new TextDecoder().decode(entry.bytes),
+				etag: entry.etag,
+			}
 		},
 		async getBytes(key) {
-			return objects.get(key) ?? null
+			return objects.get(key)?.bytes ?? null
 		},
-		async put(key, body) {
+		async put(key, body, options: DrBackupS3PutOptions = {}) {
+			const existing = objects.get(key)
+			if (options.ifNoneMatch === '*' && existing) {
+				throw new DrBackupPreconditionFailedError(key)
+			}
+			if (options.ifMatch) {
+				if (!existing || existing.etag !== options.ifMatch) {
+					throw new DrBackupPreconditionFailedError(key)
+				}
+			}
 			const bytes =
 				typeof body === 'string' ? new TextEncoder().encode(body) : body
-			objects.set(key, bytes)
+			const etag = etagFor(bytes)
+			objects.set(key, { bytes, etag })
+			return { etag }
 		},
 	}
 	return { client, objects }
@@ -197,20 +227,22 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	const dumpKey = stagingStorageDumpKey(day, identity)
 	const dump = await client.getText(dumpKey)
 	expect(dump).toBeTruthy()
-	const dumpEntry = JSON.parse(dump!.trim()) as StorageDumpEntry
+	const dumpEntry = JSON.parse(dump!.text.trim()) as StorageDumpEntry
 	expect(dumpEntry).toEqual({
 		key: 'alpha',
 		valueJson: JSON.stringify({ n: 1 }),
 	})
-	const dumpDigest = await sha256Hex(dump!)
+	const dumpDigest = await sha256Hex(dump!.text)
 	expect(dumpDigest).toMatch(/^[0-9a-f]{64}$/)
 
 	const emailIndex = await client.getText(stagingR2IndexKey(day, 'email-blobs'))
-	expect(emailIndex).toContain('raw/one')
+	expect(emailIndex?.text).toContain('raw/one')
 	const blobDigest = await sha256Hex(blobBytes)
 	expect(objects.has(backupBlobKey(blobDigest))).toBe(true)
 
-	const summary = JSON.parse((await client.getText(stagingSummaryKey(day)))!)
+	const summary = JSON.parse(
+		(await client.getText(stagingSummaryKey(day)))!.text,
+	)
 	expect(summary.day).toBe(day)
 	expect(summary.storageIndex.sha256).toMatch(/^[0-9a-f]{64}$/)
 	expect(summary.blobsWritten).toBeGreaterThanOrEqual(1)
@@ -229,13 +261,14 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 	let nowMs = 1_000_000
 	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
 	const originalPut = client.put.bind(client)
-	client.put = async (key, body, contentType) => {
-		await originalPut(key, body, contentType)
+	client.put = async (key, body, options) => {
+		const result = await originalPut(key, body, options)
 		// After the first storage dump lands, exhaust the tick budget so the
 		// second storage identity is deferred to the next cron tick.
 		if (key.includes('/storage/') && key.endsWith('.ndjson')) {
 			nowMs += 50_000
 		}
+		return result
 	}
 	const env = {
 		DR_EXPORT_ENABLED: 'true',
@@ -326,12 +359,120 @@ test('blob dedupe skips PUT when HEAD reports the object already exists', async 
 	expect(objects.size).toBeGreaterThanOrEqual(putsBefore)
 })
 
-test('initial progress shape includes phase and cursors', () => {
+test('exporter skips oversized storage dumps with a summary warning', async () => {
+	storageMocks.exportStorage.mockReset()
+	const hugeValue = 'x'.repeat(drExportMaxStorageDumpBufferBytes + 1)
+	storageMocks.exportStorage.mockImplementation(
+		async (input: { startAfter?: string | null }) => {
+			if (input.startAfter) {
+				return {
+					entries: [],
+					truncated: false,
+					nextStartAfter: null,
+					pageSize: 250,
+					estimatedBytes: 0,
+				}
+			}
+			return {
+				entries: [{ key: 'huge', value: hugeValue }],
+				truncated: false,
+				nextStartAfter: null,
+				pageSize: 250,
+				estimatedBytes: hugeValue.length,
+			}
+		},
+	)
+	const { client } = createMemoryS3()
+	const identity = encodeStorageIdentity('user-a', 'job:huge')
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({
+			jobs: [{ userId: 'user-a', storageId: 'job:huge' }],
+		}),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+
+	const result = await runDrExportTick({
+		env,
+		now: new Date('2026-07-23T01:00:00.000Z'),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(result.summaryWritten).toBe(true)
+	const summary = JSON.parse(
+		(await client.getText(stagingSummaryKey('2026-07-23')))!.text,
+	)
+	expect(summary.warnings).toContain(`storage dump too large: ${identity}`)
+	expect(
+		await client.getText(stagingStorageDumpKey('2026-07-23', identity)),
+	).toBeNull()
+})
+
+test('exporter aborts quietly when progress If-Match precondition fails', async () => {
+	storageMocks.exportStorage.mockReset()
+	storageMocks.exportStorage.mockResolvedValue({
+		entries: [{ key: 'k', value: 1 }],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 250,
+		estimatedBytes: 1,
+	})
+	const { client } = createMemoryS3()
+	const originalPut = client.put.bind(client)
+	let progressPuts = 0
+	client.put = async (key, body, options) => {
+		if (key.includes('exporter/progress.json')) {
+			progressPuts += 1
+			if (progressPuts === 1) {
+				return originalPut(key, body, options)
+			}
+			throw new DrBackupPreconditionFailedError(key)
+		}
+		return originalPut(key, body, options)
+	}
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({
+			jobs: [{ userId: 'user-a', storageId: 'job:1' }],
+		}),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+
+	const result = await runDrExportTick({
+		env,
+		now: new Date('2026-07-23T01:00:00.000Z'),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(result.skipped).toBe(true)
+	expect(result.reason).toBe('progress-precondition-failed')
+})
+
+test('R2 full-buffer ceiling is 25 MiB', () => {
+	expect(drExportMaxObjectBytes).toBe(25 * 1024 * 1024)
+})
+
+test('initial progress shape includes phase, revision, and cursors', () => {
 	const progress = __testOnlyCreateInitialProgress(
 		'2026-07-23',
 		new Date('2026-07-23T01:00:00.000Z'),
 	)
 	expect(progress.phase).toBe('storage')
+	expect(progress.revision).toBe(0)
 	expect(progress.storageIndex).toBe(0)
 	expect(progress.storagePageStartAfter).toBeNull()
 	expect(progress.r2LabelIndex).toBe(0)

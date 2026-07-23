@@ -7,15 +7,39 @@ export type DrBackupS3Config = {
 	secretAccessKey: string
 }
 
+export type DrBackupS3PutOptions = {
+	contentType?: string
+	/** Strong ETag precondition for updates (R2/S3 If-Match). */
+	ifMatch?: string
+	/** Create-only precondition (R2/S3 If-None-Match, typically `*`). */
+	ifNoneMatch?: string
+}
+
+export class DrBackupPreconditionFailedError extends Error {
+	readonly key: string
+	readonly status: number
+
+	constructor(key: string, status = 412) {
+		super(`DR backup precondition failed for ${key}: HTTP ${status}`)
+		this.name = 'DrBackupPreconditionFailedError'
+		this.key = key
+		this.status = status
+	}
+}
+
 export type DrBackupS3Client = {
-	head: (key: string) => Promise<{ exists: boolean; status: number }>
-	getText: (key: string) => Promise<string | null>
+	head: (
+		key: string,
+	) => Promise<{ exists: boolean; status: number; etag: string | null }>
+	getText: (
+		key: string,
+	) => Promise<{ text: string; etag: string | null } | null>
 	getBytes: (key: string) => Promise<Uint8Array | null>
 	put: (
 		key: string,
 		body: string | Uint8Array,
-		contentType?: string,
-	) => Promise<void>
+		options?: DrBackupS3PutOptions,
+	) => Promise<{ etag: string | null }>
 }
 
 function objectUrl(config: DrBackupS3Config, key: string) {
@@ -24,6 +48,11 @@ function objectUrl(config: DrBackupS3Config, key: string) {
 		.map((part) => encodeURIComponent(part))
 		.join('/')
 	return `https://${config.accountId}.r2.cloudflarestorage.com/${encodeURIComponent(config.bucketName)}/${encodedKey}`
+}
+
+function readEtag(response: Response): string | null {
+	const etag = response.headers.get('etag')?.trim()
+	return etag && etag.length > 0 ? etag : null
 }
 
 export function createDrBackupS3Client(
@@ -46,14 +75,18 @@ export function createDrBackupS3Client(
 		async head(key) {
 			const response = await signedFetch(key, { method: 'HEAD' })
 			if (response.status === 404) {
-				return { exists: false, status: response.status }
+				return { exists: false, status: response.status, etag: null }
 			}
 			if (!response.ok && response.status !== 404) {
 				throw new Error(
 					`DR backup HEAD failed for ${key}: HTTP ${response.status}`,
 				)
 			}
-			return { exists: response.ok, status: response.status }
+			return {
+				exists: response.ok,
+				status: response.status,
+				etag: readEtag(response),
+			}
 		},
 		async getText(key) {
 			const response = await signedFetch(key, { method: 'GET' })
@@ -63,7 +96,10 @@ export function createDrBackupS3Client(
 					`DR backup GET failed for ${key}: HTTP ${response.status}`,
 				)
 			}
-			return await response.text()
+			return {
+				text: await response.text(),
+				etag: readEtag(response),
+			}
 		},
 		async getBytes(key) {
 			const response = await signedFetch(key, { method: 'GET' })
@@ -75,19 +111,30 @@ export function createDrBackupS3Client(
 			}
 			return new Uint8Array(await response.arrayBuffer())
 		},
-		async put(key, body, contentType = 'application/octet-stream') {
+		async put(key, body, options = {}) {
+			const headers: Record<string, string> = {
+				'Content-Type': options.contentType ?? 'application/octet-stream',
+			}
+			if (options.ifMatch) {
+				headers['If-Match'] = options.ifMatch
+			}
+			if (options.ifNoneMatch) {
+				headers['If-None-Match'] = options.ifNoneMatch
+			}
 			const response = await signedFetch(key, {
 				method: 'PUT',
-				headers: {
-					'Content-Type': contentType,
-				},
+				headers,
 				body: body as BodyInit,
 			})
+			if (response.status === 412) {
+				throw new DrBackupPreconditionFailedError(key, response.status)
+			}
 			if (!response.ok) {
 				throw new Error(
 					`DR backup PUT failed for ${key}: HTTP ${response.status}`,
 				)
 			}
+			return { etag: readEtag(response) }
 		},
 	}
 }

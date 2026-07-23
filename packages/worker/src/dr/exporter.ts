@@ -23,6 +23,7 @@ import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/publi
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import {
 	createDrBackupS3Client,
+	DrBackupPreconditionFailedError,
 	readDrBackupS3Config,
 	type DrBackupS3Client,
 } from '#worker/dr/backup-s3.ts'
@@ -30,7 +31,10 @@ import { sha256Hex } from '#worker/dr/sha256.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
 
 export const drExportRunTimeBudgetMs = 20_000
-export const drExportMaxObjectBytes = 100 * 1024 * 1024
+/** Skip individual R2 objects larger than this (full-buffer ceiling). */
+export const drExportMaxObjectBytes = 25 * 1024 * 1024
+/** Cap for in-progress storage NDJSON carried inside progress.json. */
+export const drExportMaxStorageDumpBufferBytes = 16 * 1024 * 1024
 const storageExportPageSize = 250
 const exporterProgressSchemaVersion = 1 as const
 
@@ -46,6 +50,8 @@ export type DrExporterProgress = {
 	day: string
 	startedAt: string
 	phase: DrExporterPhase
+	/** Monotonic counter bumped on every progress persist. */
+	revision: number
 	/** Next index into the platform storage inventory. */
 	storageIndex: number
 	/**
@@ -68,6 +74,12 @@ export type DrExporterProgress = {
 	blobsWritten: number
 	blobsReused: number
 	warnings: Array<string>
+}
+
+type ProgressSession = {
+	progress: DrExporterProgress
+	/** ETag of the loaded progress object, or null when creating. */
+	etag: string | null
 }
 
 export type DrExportTickResult = {
@@ -107,6 +119,10 @@ function formatUtcDay(date: Date) {
 	return date.toISOString().slice(0, 10)
 }
 
+function utf8ByteLength(value: string) {
+	return new TextEncoder().encode(value).byteLength
+}
+
 /**
  * Nightly DR export window: roughly 00:30–02:10 UTC on the worker's
  * every-5-minute cron. Ticks outside this window are skipped so daytime
@@ -139,6 +155,7 @@ function createInitialProgress(day: string, now: Date): DrExporterProgress {
 		day,
 		startedAt: now.toISOString(),
 		phase: 'storage',
+		revision: 0,
 		storageIndex: 0,
 		storagePageStartAfter: null,
 		storagePartialNdjson: '',
@@ -173,14 +190,18 @@ function parseProgress(value: unknown): DrExporterProgress | null {
 	) {
 		return null
 	}
-	return value as DrExporterProgress
+	const revision =
+		typeof record.revision === 'number' && Number.isSafeInteger(record.revision)
+			? record.revision
+			: 0
+	return { ...(value as DrExporterProgress), revision }
 }
 
 async function fileSummary(
 	objectKey: string,
 	body: string,
 ): Promise<StagingFileSummary> {
-	const bytes = new TextEncoder().encode(body).byteLength
+	const bytes = utf8ByteLength(body)
 	return {
 		objectKey,
 		bytes,
@@ -290,7 +311,9 @@ async function putBlobIfAbsent(input: {
 		input.progress.blobsReused += 1
 		return 'reused'
 	}
-	await input.s3.put(key, input.bytes, 'application/octet-stream')
+	await input.s3.put(key, input.bytes, {
+		contentType: 'application/octet-stream',
+	})
 	input.progress.blobsWritten += 1
 	return 'written'
 }
@@ -311,44 +334,70 @@ function r2BindingForLabel(
 	}
 }
 
-async function persistProgress(
-	s3: DrBackupS3Client,
-	progress: DrExporterProgress,
-) {
-	await s3.put(
-		stagingProgressKey(progress.day),
-		JSON.stringify(progress),
-		'application/json',
-	)
+/**
+ * Persist progress with a conditional PUT so overlapping cron ticks cannot
+ * last-write-wins corrupt the day. R2's S3 API honors If-Match / If-None-Match
+ * on PutObject (412 PreconditionFailed on conflict).
+ */
+async function persistProgress(s3: DrBackupS3Client, session: ProgressSession) {
+	session.progress.revision += 1
+	const body = JSON.stringify(session.progress)
+	const key = stagingProgressKey(session.progress.day)
+	const result = await s3.put(key, body, {
+		contentType: 'application/json',
+		...(session.etag ? { ifMatch: session.etag } : { ifNoneMatch: '*' }),
+	})
+	session.etag = result.etag ?? session.etag
 }
 
 async function loadOrCreateProgress(input: {
 	s3: DrBackupS3Client
 	day: string
 	now: Date
-}): Promise<DrExporterProgress> {
-	const raw = await input.s3.getText(stagingProgressKey(input.day))
-	if (raw) {
+}): Promise<ProgressSession> {
+	const loaded = await input.s3.getText(stagingProgressKey(input.day))
+	if (loaded) {
 		try {
-			const parsed = parseProgress(JSON.parse(raw) as unknown)
-			if (parsed && parsed.day === input.day) return parsed
+			const parsed = parseProgress(JSON.parse(loaded.text) as unknown)
+			if (parsed && parsed.day === input.day) {
+				return { progress: parsed, etag: loaded.etag }
+			}
 		} catch {
-			// Fall through and start fresh if progress is corrupt.
+			// Fall through and replace corrupt progress under If-Match.
+		}
+		return {
+			progress: createInitialProgress(input.day, input.now),
+			etag: loaded.etag,
 		}
 	}
-	return createInitialProgress(input.day, input.now)
+	return {
+		progress: createInitialProgress(input.day, input.now),
+		etag: null,
+	}
+}
+
+function skipOversizedStorageDump(
+	progress: DrExporterProgress,
+	identity: string,
+) {
+	progress.warnings.push(`storage dump too large: ${identity}`)
+	progress.storageIndex += 1
+	progress.storagePageStartAfter = null
+	progress.storagePartialNdjson = ''
+	progress.storagePartialEntryCount = 0
 }
 
 async function exportStoragePhase(input: {
 	env: Env
 	s3: DrBackupS3Client
-	progress: DrExporterProgress
+	session: ProgressSession
 	inventory: Array<StorageInventoryEntry>
 	startedAtMs: number
 	timeBudgetMs: number
 	counts: { storageDumpsCompleted: number }
 }): Promise<boolean> {
-	const { progress, inventory, s3, env } = input
+	const { session, inventory, s3, env } = input
+	const { progress } = session
 	while (progress.storageIndex < inventory.length) {
 		if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
 		const item = inventory[progress.storageIndex]!
@@ -368,14 +417,22 @@ async function exportStoragePhase(input: {
 			progress.storagePartialNdjson += ndjsonLine(dumpEntry)
 			progress.storagePartialEntryCount += 1
 		}
+		if (
+			utf8ByteLength(progress.storagePartialNdjson) >
+			drExportMaxStorageDumpBufferBytes
+		) {
+			skipOversizedStorageDump(progress, item.identity)
+			await persistProgress(s3, session)
+			continue
+		}
 		if (page.truncated && page.nextStartAfter) {
 			progress.storagePageStartAfter = page.nextStartAfter
-			await persistProgress(s3, progress)
+			await persistProgress(s3, session)
 			continue
 		}
 		const objectKey = stagingStorageDumpKey(progress.day, item.identity)
 		const body = progress.storagePartialNdjson
-		await s3.put(objectKey, body, 'application/x-ndjson')
+		await s3.put(objectKey, body, { contentType: 'application/x-ndjson' })
 		const summary = await fileSummary(objectKey, body)
 		progress.storageEntries.push({
 			storageId: item.identity,
@@ -389,22 +446,23 @@ async function exportStoragePhase(input: {
 		progress.storagePartialNdjson = ''
 		progress.storagePartialEntryCount = 0
 		input.counts.storageDumpsCompleted += 1
-		await persistProgress(s3, progress)
+		await persistProgress(s3, session)
 	}
 	progress.phase = 'r2'
-	await persistProgress(s3, progress)
+	await persistProgress(s3, session)
 	return false
 }
 
 async function exportR2Phase(input: {
 	env: Env
 	s3: DrBackupS3Client
-	progress: DrExporterProgress
+	session: ProgressSession
 	startedAtMs: number
 	timeBudgetMs: number
 	counts: { r2ObjectsProcessed: number }
 }): Promise<boolean> {
-	const { progress, s3, env } = input
+	const { session, s3, env } = input
+	const { progress } = session
 	while (progress.r2LabelIndex < backupR2BucketLabels.length) {
 		if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
 		const label = backupR2BucketLabels[progress.r2LabelIndex]!
@@ -415,7 +473,7 @@ async function exportR2Phase(input: {
 		})
 		for (const object of listed.objects) {
 			if (Date.now() - input.startedAtMs >= input.timeBudgetMs) {
-				await persistProgress(s3, progress)
+				await persistProgress(s3, session)
 				return true
 			}
 			if (object.size > drExportMaxObjectBytes) {
@@ -446,33 +504,34 @@ async function exportR2Phase(input: {
 		}
 		if (listed.truncated) {
 			progress.r2ListCursor = listed.cursor
-			await persistProgress(s3, progress)
+			await persistProgress(s3, session)
 			continue
 		}
 		const objectKey = stagingR2IndexKey(progress.day, label)
 		const body = progress.r2PartialNdjson
-		await s3.put(objectKey, body, 'application/x-ndjson')
+		await s3.put(objectKey, body, { contentType: 'application/x-ndjson' })
 		progress.r2Completed[label] = await fileSummary(objectKey, body)
 		progress.r2LabelIndex += 1
 		progress.r2ListCursor = null
 		progress.r2PartialNdjson = ''
-		await persistProgress(s3, progress)
+		await persistProgress(s3, session)
 	}
 	progress.phase = 'artifacts'
-	await persistProgress(s3, progress)
+	await persistProgress(s3, session)
 	return false
 }
 
 async function exportArtifactsPhase(input: {
 	env: Env
 	s3: DrBackupS3Client
-	progress: DrExporterProgress
+	session: ProgressSession
 	inventory: Array<ArtifactInventoryEntry>
 	startedAtMs: number
 	timeBudgetMs: number
 	counts: { artifactsProcessed: number }
 }): Promise<boolean> {
-	const { progress, s3, env, inventory } = input
+	const { session, s3, env, inventory } = input
+	const { progress } = session
 	while (progress.artifactsIndex < inventory.length) {
 		if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
 		const item = inventory[progress.artifactsIndex]!
@@ -487,7 +546,7 @@ async function exportArtifactsPhase(input: {
 			)
 			progress.artifactsIndex += 1
 			input.counts.artifactsProcessed += 1
-			await persistProgress(s3, progress)
+			await persistProgress(s3, session)
 			continue
 		}
 		const bytes = new TextEncoder().encode(snapshotText)
@@ -503,27 +562,30 @@ async function exportArtifactsPhase(input: {
 		})
 		progress.artifactsIndex += 1
 		input.counts.artifactsProcessed += 1
-		await persistProgress(s3, progress)
+		await persistProgress(s3, session)
 	}
 	progress.phase = 'finalize'
-	await persistProgress(s3, progress)
+	await persistProgress(s3, session)
 	return false
 }
 
 async function finalizeExport(input: {
 	env: Env
 	s3: DrBackupS3Client
-	progress: DrExporterProgress
+	session: ProgressSession
 	now: Date
 }): Promise<StagingSummary> {
-	const { progress, s3, env, now } = input
+	const { session, s3, env, now } = input
+	const { progress } = session
 	const storageIndexBody = JSON.stringify({
 		schemaVersion: backupStagingSchemaVersion,
 		day: progress.day,
 		entries: progress.storageEntries,
 	} satisfies StorageIndex)
 	const storageIndexKey = stagingStorageIndexKey(progress.day)
-	await s3.put(storageIndexKey, storageIndexBody, 'application/json')
+	await s3.put(storageIndexKey, storageIndexBody, {
+		contentType: 'application/json',
+	})
 	const storageIndex = await fileSummary(storageIndexKey, storageIndexBody)
 
 	const artifactsIndexBody = JSON.stringify({
@@ -532,7 +594,9 @@ async function finalizeExport(input: {
 		entries: progress.artifactEntries,
 	} satisfies ArtifactsIndex)
 	const artifactsIndexKey = stagingArtifactsIndexKey(progress.day)
-	await s3.put(artifactsIndexKey, artifactsIndexBody, 'application/json')
+	await s3.put(artifactsIndexKey, artifactsIndexBody, {
+		contentType: 'application/json',
+	})
 	const artifactsIndex = await fileSummary(
 		artifactsIndexKey,
 		artifactsIndexBody,
@@ -551,13 +615,11 @@ async function finalizeExport(input: {
 		blobsReused: progress.blobsReused,
 		warnings: progress.warnings,
 	}
-	await s3.put(
-		stagingSummaryKey(progress.day),
-		JSON.stringify(summary),
-		'application/json',
-	)
+	await s3.put(stagingSummaryKey(progress.day), JSON.stringify(summary), {
+		contentType: 'application/json',
+	})
 	progress.phase = 'done'
-	await persistProgress(s3, progress)
+	await persistProgress(s3, session)
 	return summary
 }
 
@@ -601,7 +663,8 @@ export async function runDrExportTick(input: {
 
 	const timeBudgetMs = input.timeBudgetMs ?? drExportRunTimeBudgetMs
 	const startedAtMs = Date.now()
-	const progress = await loadOrCreateProgress({ s3, day, now })
+	const session = await loadOrCreateProgress({ s3, day, now })
+	const { progress } = session
 	const counts = {
 		storageDumpsCompleted: 0,
 		r2ObjectsProcessed: 0,
@@ -609,61 +672,77 @@ export async function runDrExportTick(input: {
 	}
 	let timeBudgetExhausted = false
 
-	if (progress.phase === 'storage') {
-		const inventory = await listPlatformStorageInventory(input.env.APP_DB)
-		timeBudgetExhausted = await exportStoragePhase({
-			env: input.env,
-			s3,
-			progress,
-			inventory,
-			startedAtMs,
-			timeBudgetMs,
-			counts,
-		})
-	}
-	if (!timeBudgetExhausted && progress.phase === 'r2') {
-		timeBudgetExhausted = await exportR2Phase({
-			env: input.env,
-			s3,
-			progress,
-			startedAtMs,
-			timeBudgetMs,
-			counts,
-		})
-	}
-	if (!timeBudgetExhausted && progress.phase === 'artifacts') {
-		const inventory = await listPlatformArtifactInventory(input.env.APP_DB)
-		timeBudgetExhausted = await exportArtifactsPhase({
-			env: input.env,
-			s3,
-			progress,
-			inventory,
-			startedAtMs,
-			timeBudgetMs,
-			counts,
-		})
-	}
-	let summaryWritten = false
-	if (!timeBudgetExhausted && progress.phase === 'finalize') {
-		await finalizeExport({ env: input.env, s3, progress, now })
-		summaryWritten = true
-	}
+	try {
+		if (progress.phase === 'storage') {
+			const inventory = await listPlatformStorageInventory(input.env.APP_DB)
+			timeBudgetExhausted = await exportStoragePhase({
+				env: input.env,
+				s3,
+				session,
+				inventory,
+				startedAtMs,
+				timeBudgetMs,
+				counts,
+			})
+		}
+		if (!timeBudgetExhausted && progress.phase === 'r2') {
+			timeBudgetExhausted = await exportR2Phase({
+				env: input.env,
+				s3,
+				session,
+				startedAtMs,
+				timeBudgetMs,
+				counts,
+			})
+		}
+		if (!timeBudgetExhausted && progress.phase === 'artifacts') {
+			const inventory = await listPlatformArtifactInventory(input.env.APP_DB)
+			timeBudgetExhausted = await exportArtifactsPhase({
+				env: input.env,
+				s3,
+				session,
+				inventory,
+				startedAtMs,
+				timeBudgetMs,
+				counts,
+			})
+		}
+		let summaryWritten = false
+		if (!timeBudgetExhausted && progress.phase === 'finalize') {
+			await finalizeExport({ env: input.env, s3, session, now })
+			summaryWritten = true
+		}
 
-	const result: DrExportTickResult = {
-		day,
-		phase: progress.phase,
-		timeBudgetExhausted,
-		skipped: false,
-		storageDumpsCompleted: counts.storageDumpsCompleted,
-		r2ObjectsProcessed: counts.r2ObjectsProcessed,
-		artifactsProcessed: counts.artifactsProcessed,
-		blobsWritten: progress.blobsWritten,
-		blobsReused: progress.blobsReused,
-		warnings: progress.warnings.length,
-		summaryWritten,
+		const result: DrExportTickResult = {
+			day,
+			phase: progress.phase,
+			timeBudgetExhausted,
+			skipped: false,
+			storageDumpsCompleted: counts.storageDumpsCompleted,
+			r2ObjectsProcessed: counts.r2ObjectsProcessed,
+			artifactsProcessed: counts.artifactsProcessed,
+			blobsWritten: progress.blobsWritten,
+			blobsReused: progress.blobsReused,
+			warnings: progress.warnings.length,
+			summaryWritten,
+		}
+		console.info('dr_export_tick', JSON.stringify(result))
+		return result
+	} catch (error) {
+		if (error instanceof DrBackupPreconditionFailedError) {
+			// Another scheduled invocation owns this day's progress.json.
+			console.info(
+				'dr_export_tick',
+				JSON.stringify({
+					day,
+					skipped: true,
+					reason: 'progress-precondition-failed',
+				}),
+			)
+			return empty('progress-precondition-failed')
+		}
+		throw error
 	}
-	console.info('dr_export_tick', JSON.stringify(result))
-	return result
 }
 
 export function __testOnlyCreateInitialProgress(day: string, now: Date) {

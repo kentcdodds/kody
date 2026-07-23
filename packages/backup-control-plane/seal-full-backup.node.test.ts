@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 
 import {
+	backupBlobKey,
 	sealedFullManifestKey,
 	stagingArtifactsIndexKey,
 	stagingR2IndexKey,
@@ -70,8 +71,8 @@ async function seedCompleteDay(bucket: MemoryBucket, day = '2026-07-22') {
 			},
 		],
 	})
-	const r2IndexBody =
-		'{"key":"blob","size":1,"sha256":"' + 'e'.repeat(64) + '"}\n'
+	const blobHash = 'e'.repeat(64)
+	const r2IndexBody = `{"key":"blob","size":1,"sha256":"${blobHash}"}\n`
 	const artifactsBody = JSON.stringify({
 		schemaVersion: 1,
 		day,
@@ -84,6 +85,7 @@ async function seedCompleteDay(bucket: MemoryBucket, day = '2026-07-22') {
 	await bucket.put(storageIndexKey, storageIndexBody)
 	await bucket.put(r2IndexKey, r2IndexBody)
 	await bucket.put(artifactsKey, artifactsBody)
+	await bucket.put(backupBlobKey(blobHash), 'x')
 	const summary = {
 		schemaVersion: 1,
 		day,
@@ -152,5 +154,38 @@ test('sealFullBackupDay fails closed on staging sha mismatch', async () => {
 		(error: unknown) =>
 			error instanceof BackupError && error.code === 'staging-sha-mismatch',
 	)
+	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
+})
+
+test('sealFullBackupDay is incomplete when a referenced blob is missing', async () => {
+	const bucket = new MemoryBucket()
+	const { env, day } = await seedCompleteDay(bucket)
+	const missingHash = 'f'.repeat(64)
+	const r2IndexBody = `{"key":"blob","size":1,"sha256":"${missingHash}"}\n`
+	const r2IndexKey = stagingR2IndexKey(day, 'email-blobs')
+	await bucket.put(r2IndexKey, r2IndexBody)
+	const summaryObject = await bucket.get(stagingSummaryKey(day))
+	const summary = (await summaryObject!.json()) as {
+		r2Indexes: {
+			'email-blobs': { objectKey: string; bytes: number; sha256: string }
+		}
+		[key: string]: unknown
+	}
+	summary.r2Indexes['email-blobs'] = {
+		objectKey: r2IndexKey,
+		bytes: r2IndexBody.length,
+		sha256: sha256Text(r2IndexBody),
+	}
+	await bucket.put(stagingSummaryKey(day), JSON.stringify(summary))
+	const result = await sealFullBackupDay(
+		env,
+		day,
+		new Date(`${day}T04:00:00.000Z`),
+	)
+	assert.deepEqual(result, {
+		kind: 'incomplete',
+		day,
+		reason: 'blob-missing',
+	})
 	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
 })

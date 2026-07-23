@@ -227,10 +227,21 @@ UI-down recovery:
 
 Details:
 [`tools/disaster-recovery/readme.md`](../../tools/disaster-recovery/readme.md).
-Trust registries (`trusted-d1-restore-identities.json`,
-`trusted-backup-manifest-public-keys.json`, `trusted-restore-baselines.json`,
-`trusted-readiness-public-keys.json`) stay empty until populated by code review;
-empty registries keep CLI readiness **NOT READY**.
+Trust registries are populated only by code review, and the guardrail test in
+`restore-trust-and-verification.node.test.ts` pins their exact contents.
+`trusted-d1-restore-identities.json` and
+`trusted-backup-manifest-public-keys.json` carry the live reviewed production
+identity, drill target, and manifest verifying key.
+`trusted-restore-baselines.json` and `trusted-readiness-public-keys.json` remain
+empty, which keeps CLI baseline verification and CLI readiness fail-closed
+(**NOT READY**) — the UI drill and sealing flows are the primary operational
+paths.
+
+Known v1 restore-shape limits (documented, not bugs): R2 restore is put-only
+(objects created after the backup day are not deleted by a restore), and the
+`staging/{day}` → `daily/full/{day}` key layouts plus the `userId/storageId`
+dump identity encoding are load-bearing for bucket lock and lifecycle rules —
+changing them requires a reviewed migration of the bucket layout.
 
 ## Solo enablement checklist
 

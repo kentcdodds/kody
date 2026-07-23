@@ -8,6 +8,7 @@ import { type BackupEnvironment } from './backup-types.ts'
 
 const ACCESS_JWT_HEADER = 'cf-access-jwt-assertion'
 const JWKS_CACHE_TTL_MS = 60 * 60 * 1000
+const JWKS_FORCE_REFRESH_COOLDOWN_MS = 60 * 1000
 const CLOCK_SKEW_SECONDS = 60
 
 type Jwk = JsonWebKey & {
@@ -23,6 +24,7 @@ type CachedJwks = {
 }
 
 let jwksCache: CachedJwks | null = null
+let lastForcedJwksRefreshAt = 0
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -82,9 +84,24 @@ async function loadJwks(
 	return keysByKid
 }
 
+async function verifyWithKey(
+	key: CryptoKey,
+	headerPart: string,
+	payloadPart: string,
+	signaturePart: string,
+): Promise<boolean> {
+	return crypto.subtle.verify(
+		{ name: 'RSASSA-PKCS1-v1_5' },
+		key,
+		base64UrlToBytes(signaturePart),
+		new TextEncoder().encode(`${headerPart}.${payloadPart}`),
+	)
+}
+
 /** Test-only: clear the in-memory JWKS cache between cases. */
 export function resetAccessJwksCacheForTests(): void {
 	jwksCache = null
+	lastForcedJwksRefreshAt = 0
 }
 
 export type AccessIdentity = {
@@ -143,42 +160,45 @@ export async function verifyAccessJwt(
 		)
 	}
 	const keys = await loadJwks(teamDomain, fetcher)
-	const key = keys.get(header.kid)
-	if (key === undefined) {
-		jwksCache = null
-		const refreshed = await loadJwks(teamDomain, fetcher)
-		const retryKey = refreshed.get(header.kid)
-		if (retryKey === undefined) {
+	let verifyingKey = keys.get(header.kid)
+	if (verifyingKey === undefined) {
+		const now = Date.now()
+		if (now - lastForcedJwksRefreshAt < JWKS_FORCE_REFRESH_COOLDOWN_MS) {
 			throw new BackupError(
 				'access-jwt-unknown-kid',
 				'Access JWT kid was not found in JWKS',
 			)
 		}
-		const ok = await crypto.subtle.verify(
-			{ name: 'RSASSA-PKCS1-v1_5' },
-			retryKey,
-			base64UrlToBytes(signaturePart),
-			new TextEncoder().encode(`${headerPart}.${payloadPart}`),
-		)
-		if (!ok) {
+		lastForcedJwksRefreshAt = now
+		jwksCache = null
+		const refreshed = await loadJwks(teamDomain, fetcher)
+		verifyingKey = refreshed.get(header.kid)
+		if (verifyingKey === undefined) {
 			throw new BackupError(
-				'access-jwt-bad-signature',
-				'Access JWT signature is invalid',
+				'access-jwt-unknown-kid',
+				'Access JWT kid was not found in JWKS',
 			)
 		}
-	} else {
-		const ok = await crypto.subtle.verify(
-			{ name: 'RSASSA-PKCS1-v1_5' },
-			key,
-			base64UrlToBytes(signaturePart),
-			new TextEncoder().encode(`${headerPart}.${payloadPart}`),
+	}
+	const ok = await verifyWithKey(
+		verifyingKey,
+		headerPart,
+		payloadPart,
+		signaturePart,
+	)
+	if (!ok) {
+		throw new BackupError(
+			'access-jwt-bad-signature',
+			'Access JWT signature is invalid',
 		)
-		if (!ok) {
-			throw new BackupError(
-				'access-jwt-bad-signature',
-				'Access JWT signature is invalid',
-			)
-		}
+	}
+
+	const expectedIss = `https://${teamDomain}`
+	if (payload.iss !== expectedIss) {
+		throw new BackupError(
+			'access-jwt-iss-mismatch',
+			'Access JWT issuer is not accepted',
+		)
 	}
 
 	const nowSeconds = Math.floor(Date.now() / 1000)

@@ -39,9 +39,13 @@ function rsaJwksAndSigner() {
 	}
 }
 
-function futurePayload(overrides: Record<string, unknown> = {}) {
+function futurePayload(
+	env = environment(),
+	overrides: Record<string, unknown> = {},
+) {
 	const now = Math.floor(Date.now() / 1000)
 	return {
+		iss: `https://${env.ACCESS_TEAM_DOMAIN}`,
 		aud: 'access-app-audience',
 		email: 'ops@example.com',
 		iat: now - 10,
@@ -54,7 +58,7 @@ test('verifyAccessJwt accepts a self-signed RS256 Access assertion', async () =>
 	resetAccessJwksCacheForTests()
 	const { kid, jwks, sign } = rsaJwksAndSigner()
 	const env = environment()
-	const jwt = sign({ alg: 'RS256', kid }, futurePayload())
+	const jwt = sign({ alg: 'RS256', kid }, futurePayload(env))
 	const identity = await verifyAccessJwt(
 		env,
 		new Request('https://backup.example/', {
@@ -65,7 +69,7 @@ test('verifyAccessJwt accepts a self-signed RS256 Access assertion', async () =>
 	assert.equal(identity.email, 'ops@example.com')
 })
 
-test('verifyAccessJwt rejects wrong aud, email, expiry, signature, and missing header', async () => {
+test('verifyAccessJwt rejects wrong aud, email, iss, expiry, signature, and missing header', async () => {
 	resetAccessJwksCacheForTests()
 	const { kid, jwks, sign } = rsaJwksAndSigner()
 	const env = environment()
@@ -79,7 +83,7 @@ test('verifyAccessJwt rejects wrong aud, email, expiry, signature, and missing h
 
 	const wrongAud = sign(
 		{ alg: 'RS256', kid },
-		futurePayload({ aud: 'other-aud' }),
+		futurePayload(env, { aud: 'other-aud' }),
 	)
 	await assert.rejects(
 		verifyAccessJwt(
@@ -93,9 +97,25 @@ test('verifyAccessJwt rejects wrong aud, email, expiry, signature, and missing h
 			error instanceof BackupError && error.code === 'access-jwt-aud-mismatch',
 	)
 
+	const wrongIss = sign(
+		{ alg: 'RS256', kid },
+		futurePayload(env, { iss: 'https://other.example' }),
+	)
+	await assert.rejects(
+		verifyAccessJwt(
+			env,
+			new Request('https://backup.example/', {
+				headers: { 'cf-access-jwt-assertion': wrongIss },
+			}),
+			fetcher,
+		),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'access-jwt-iss-mismatch',
+	)
+
 	const wrongEmail = sign(
 		{ alg: 'RS256', kid },
-		futurePayload({ email: 'other@example.com' }),
+		futurePayload(env, { email: 'other@example.com' }),
 	)
 	await assert.rejects(
 		verifyAccessJwt(
@@ -111,7 +131,7 @@ test('verifyAccessJwt rejects wrong aud, email, expiry, signature, and missing h
 
 	const expired = sign(
 		{ alg: 'RS256', kid },
-		futurePayload({ exp: Math.floor(Date.now() / 1000) - 120 }),
+		futurePayload(env, { exp: Math.floor(Date.now() / 1000) - 120 }),
 	)
 	await assert.rejects(
 		verifyAccessJwt(
@@ -125,7 +145,7 @@ test('verifyAccessJwt rejects wrong aud, email, expiry, signature, and missing h
 			error instanceof BackupError && error.code === 'access-jwt-expired',
 	)
 
-	const valid = sign({ alg: 'RS256', kid }, futurePayload())
+	const valid = sign({ alg: 'RS256', kid }, futurePayload(env))
 	const tampered = `${valid.slice(0, -4)}abcd`
 	await assert.rejects(
 		verifyAccessJwt(
@@ -140,6 +160,65 @@ test('verifyAccessJwt rejects wrong aud, email, expiry, signature, and missing h
 			(error.code === 'access-jwt-bad-signature' ||
 				error.code === 'access-jwt-malformed'),
 	)
+})
+
+test('unknown kid forces at most one JWKS refresh per 60 seconds', async () => {
+	resetAccessJwksCacheForTests()
+	const env = environment()
+	let fetches = 0
+	const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+		modulusLength: 2048,
+	})
+	const knownKid = 'known-kid'
+	const jwk = publicKey.export({ format: 'jwk' })
+	const jwksWithKnown = {
+		keys: [{ ...jwk, kid: knownKid, alg: 'RS256', use: 'sig' }],
+	}
+	const signUnknown = (payload: Record<string, unknown>) => {
+		const encoded = `${encodeJwtPartForTests({ alg: 'RS256', kid: 'missing-kid' })}.${encodeJwtPartForTests(payload)}`
+		const signer = createSign('RSA-SHA256')
+		signer.update(encoded)
+		signer.end()
+		const signature = signer
+			.sign(privateKey)
+			.toString('base64')
+			.replaceAll('+', '-')
+			.replaceAll('/', '_')
+			.replaceAll('=', '')
+		return `${encoded}.${signature}`
+	}
+	const jwt = signUnknown(futurePayload(env))
+	const fetcher = async () => {
+		fetches += 1
+		return Response.json(jwksWithKnown)
+	}
+
+	await assert.rejects(
+		verifyAccessJwt(
+			env,
+			new Request('https://backup.example/', {
+				headers: { 'cf-access-jwt-assertion': jwt },
+			}),
+			fetcher,
+		),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'access-jwt-unknown-kid',
+	)
+	assert.equal(fetches, 2) // initial cache fill + one forced refresh
+
+	const fetchesAfterFirst = fetches
+	await assert.rejects(
+		verifyAccessJwt(
+			env,
+			new Request('https://backup.example/', {
+				headers: { 'cf-access-jwt-assertion': jwt },
+			}),
+			fetcher,
+		),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'access-jwt-unknown-kid',
+	)
+	assert.equal(fetches, fetchesAfterFirst) // cooldown: no additional JWKS fetch
 })
 
 test('assertSameOriginMutation rejects absent or cross-site Sec-Fetch-Site', () => {

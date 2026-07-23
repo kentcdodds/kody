@@ -6,6 +6,7 @@ import {
 } from '@kody-internal/shared/backup-full-manifest.ts'
 import {
 	assertBackupDay,
+	backupBlobKey,
 	backupR2BucketLabels,
 	parseStagingSummary,
 	sealedFullManifestKey,
@@ -33,6 +34,7 @@ import { readManifest } from './immutable-storage.ts'
 import { verifyBackupManifestSignature } from './manifest-signing.ts'
 
 const sha256Pattern = /^[0-9a-f]{64}$/
+const MAX_BLOB_HEADS_PER_SEAL = 500
 
 function hex(buffer: ArrayBuffer): string {
 	return [...new Uint8Array(buffer)]
@@ -208,6 +210,94 @@ export async function readFullManifest(
 	}
 }
 
+function collectReferencedBlobHashes(input: {
+	r2IndexBodies: Array<string>
+	artifactsBody: string
+}): Array<string> {
+	const hashes: Array<string> = []
+	const seen = new Set<string>()
+	const push = (hash: string) => {
+		if (!sha256Pattern.test(hash) || seen.has(hash)) return
+		seen.add(hash)
+		hashes.push(hash)
+	}
+	for (const body of input.r2IndexBodies) {
+		for (const line of body.split('\n')) {
+			const trimmed = line.trim()
+			if (trimmed.length === 0) continue
+			let parsed: unknown
+			try {
+				parsed = JSON.parse(trimmed) as unknown
+			} catch {
+				throw new BackupError(
+					'r2-index-corrupt',
+					'r2 index NDJSON line is corrupt',
+				)
+			}
+			if (
+				!isRecord(parsed) ||
+				typeof parsed.sha256 !== 'string' ||
+				!sha256Pattern.test(parsed.sha256)
+			) {
+				throw new BackupError(
+					'r2-index-corrupt',
+					'r2 index entry is missing a sha-256',
+				)
+			}
+			push(parsed.sha256)
+		}
+	}
+	let artifacts: unknown
+	try {
+		artifacts = JSON.parse(input.artifactsBody) as unknown
+	} catch {
+		throw new BackupError(
+			'artifacts-index-corrupt',
+			'artifacts index JSON is corrupt',
+		)
+	}
+	if (!isRecord(artifacts) || !Array.isArray(artifacts.entries)) {
+		throw new BackupError(
+			'artifacts-index-corrupt',
+			'artifacts index JSON is corrupt',
+		)
+	}
+	for (const entry of artifacts.entries) {
+		if (
+			!isRecord(entry) ||
+			typeof entry.snapshotSha256 !== 'string' ||
+			!sha256Pattern.test(entry.snapshotSha256)
+		) {
+			throw new BackupError(
+				'artifacts-index-corrupt',
+				'artifacts index entry is missing snapshotSha256',
+			)
+		}
+		push(entry.snapshotSha256)
+	}
+	return hashes
+}
+
+async function verifyReferencedBlobs(
+	bucket: R2Bucket,
+	hashes: Array<string>,
+): Promise<
+	| { kind: 'ok'; blobVerification: 'sampled' | 'complete' }
+	| { kind: 'missing'; reason: 'blob-missing' }
+> {
+	const blobVerification =
+		hashes.length > MAX_BLOB_HEADS_PER_SEAL ? 'sampled' : 'complete'
+	const toCheck = hashes.slice(0, MAX_BLOB_HEADS_PER_SEAL)
+	for (const hash of toCheck) {
+		const key = backupBlobKey(hash)
+		const head = await bucket.head(key)
+		if (head === null) {
+			return { kind: 'missing', reason: 'blob-missing' }
+		}
+	}
+	return { kind: 'ok', blobVerification }
+}
+
 async function loadVerifiedStagingSummary(
 	env: BackupEnvironment,
 	day: string,
@@ -332,10 +422,12 @@ export async function sealFullBackupDay(
 	)
 
 	const sealedR2Indexes: BackupFullManifest['payload']['r2Indexes'] = {}
+	const r2IndexBodies: Array<string> = []
 	for (const label of backupR2BucketLabels) {
 		const fileSummary = summary.r2Indexes[label]
 		if (fileSummary === undefined) continue
 		const bytes = await verifyStagingFile(env.BACKUP_BUCKET, fileSummary)
+		r2IndexBodies.push(new TextDecoder().decode(bytes))
 		const sealed = toSealedRef(day, fileSummary)
 		await putImmutableBytes(
 			env.BACKUP_BUCKET,
@@ -358,6 +450,40 @@ export async function sealFullBackupDay(
 		'application/json',
 	)
 
+	let blobHashes: Array<string>
+	try {
+		blobHashes = collectReferencedBlobHashes({
+			r2IndexBodies,
+			artifactsBody: new TextDecoder().decode(artifactsBytes),
+		})
+	} catch (error) {
+		if (
+			error instanceof BackupError &&
+			(error.code === 'r2-index-corrupt' ||
+				error.code === 'artifacts-index-corrupt')
+		) {
+			return { kind: 'incomplete', day, reason: error.code }
+		}
+		throw error
+	}
+	const blobCheck = await verifyReferencedBlobs(env.BACKUP_BUCKET, blobHashes)
+	switch (blobCheck.kind) {
+		case 'missing':
+			safeLog({
+				event: 'full-backup-seal-skipped',
+				status: 'failure',
+				day,
+				errorCode: blobCheck.reason,
+			})
+			return { kind: 'incomplete', day, reason: blobCheck.reason }
+		case 'ok':
+			break
+		default: {
+			const exhaustive: never = blobCheck
+			throw exhaustive
+		}
+	}
+
 	const fullManifest = await signBackupFullManifest(env, {
 		day,
 		d1ManifestKey: d1Payload.manifestKey,
@@ -374,6 +500,7 @@ export async function sealFullBackupDay(
 		status: 'success',
 		day,
 		manifestKey,
+		blobVerification: blobCheck.blobVerification,
 	})
 	return { kind: 'sealed', day, manifestKey, alreadySealed: false }
 }

@@ -22,9 +22,18 @@ export class ProductionDrRestoreWorkflow extends WorkflowEntrypoint<
 		step: WorkflowStep,
 	): Promise<ProductionRestoreProgress> {
 		try {
-			return await step.do('run-production-restore', async () =>
+			const progress = await step.do('run-production-restore', async () =>
 				runProductionRestore(this.env, event.payload),
 			)
+			// Persist progress (including warnings) as step output, then fail the
+			// workflow instance when restore finished with any dr-restore warnings.
+			if (progress.phase === 'failed' || progress.warnings.length > 0) {
+				throw new NonRetryableError(
+					progress.errorMessage ?? 'production restore completed with warnings',
+					progress.errorCode ?? 'dr-restore-warnings',
+				)
+			}
+			return progress
 		} catch (error) {
 			if (error instanceof BackupError && !error.retryable) {
 				throw new NonRetryableError(error.message, error.code)

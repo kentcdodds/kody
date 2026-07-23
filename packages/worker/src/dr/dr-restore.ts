@@ -73,6 +73,13 @@ function encodeCursor(cursor: DrRestoreCursor): string {
 	return btoa(JSON.stringify(cursor))
 }
 
+function requireNonNegativeSafeInteger(value: unknown, field: string): number {
+	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+		throw new Error(`invalid cursor field ${field}`)
+	}
+	return value
+}
+
 function decodeCursor(raw: string | undefined): DrRestoreCursor {
 	if (!raw) {
 		return {
@@ -99,12 +106,27 @@ function decodeCursor(raw: string | undefined): DrRestoreCursor {
 		}
 		return {
 			phase: parsed.phase,
-			storageIndex: Number(parsed.storageIndex ?? 0),
-			storageLineOffset: Number(parsed.storageLineOffset ?? 0),
+			storageIndex: requireNonNegativeSafeInteger(
+				parsed.storageIndex ?? 0,
+				'storageIndex',
+			),
+			storageLineOffset: requireNonNegativeSafeInteger(
+				parsed.storageLineOffset ?? 0,
+				'storageLineOffset',
+			),
 			storageReplaceStarted: Boolean(parsed.storageReplaceStarted),
-			r2LabelIndex: Number(parsed.r2LabelIndex ?? 0),
-			r2LineOffset: Number(parsed.r2LineOffset ?? 0),
-			artifactsIndex: Number(parsed.artifactsIndex ?? 0),
+			r2LabelIndex: requireNonNegativeSafeInteger(
+				parsed.r2LabelIndex ?? 0,
+				'r2LabelIndex',
+			),
+			r2LineOffset: requireNonNegativeSafeInteger(
+				parsed.r2LineOffset ?? 0,
+				'r2LineOffset',
+			),
+			artifactsIndex: requireNonNegativeSafeInteger(
+				parsed.artifactsIndex ?? 0,
+				'artifactsIndex',
+			),
 		}
 	} catch (error) {
 		throw new MaintenanceFailureError(
@@ -144,13 +166,25 @@ async function loadStorageIndex(
 	day: string,
 ): Promise<StorageIndex> {
 	const key = sealedObjectKey(day, stagingStorageIndexKey(day))
-	const text = await s3.getText(key)
-	if (!text) {
-		throw new Error(`sealed storage index missing at ${key}`)
+	const loaded = await s3.getText(key)
+	if (!loaded) {
+		throw new MaintenanceFailureError(
+			`sealed storage index missing at ${key}`,
+			{
+				progress: null,
+				warnings: [],
+			},
+		)
 	}
-	const parsed = JSON.parse(text) as StorageIndex
+	const parsed = JSON.parse(loaded.text) as StorageIndex
 	if (!parsed || !Array.isArray(parsed.entries)) {
-		throw new Error('sealed storage index has invalid shape')
+		throw new MaintenanceFailureError(
+			'sealed storage index has invalid shape',
+			{
+				progress: null,
+				warnings: [],
+			},
+		)
 	}
 	return parsed
 }
@@ -160,13 +194,19 @@ async function loadArtifactsIndex(
 	day: string,
 ): Promise<ArtifactsIndex> {
 	const key = sealedObjectKey(day, stagingArtifactsIndexKey(day))
-	const text = await s3.getText(key)
-	if (!text) {
-		throw new Error(`sealed artifacts index missing at ${key}`)
+	const loaded = await s3.getText(key)
+	if (!loaded) {
+		throw new MaintenanceFailureError(
+			`sealed artifacts index missing at ${key}`,
+			{ progress: null, warnings: [] },
+		)
 	}
-	const parsed = JSON.parse(text) as ArtifactsIndex
+	const parsed = JSON.parse(loaded.text) as ArtifactsIndex
 	if (!parsed || !Array.isArray(parsed.entries)) {
-		throw new Error('sealed artifacts index has invalid shape')
+		throw new MaintenanceFailureError(
+			'sealed artifacts index has invalid shape',
+			{ progress: null, warnings: [] },
+		)
 	}
 	return parsed
 }
@@ -178,12 +218,16 @@ async function verifyAndFetchBlob(
 	const key = backupBlobKey(sha256)
 	const bytes = await s3.getBytes(key)
 	if (!bytes) {
-		throw new Error(`backup blob missing: ${key}`)
+		throw new MaintenanceFailureError(`backup blob missing: ${key}`, {
+			progress: null,
+			warnings: [],
+		})
 	}
 	const actual = await sha256Hex(bytes)
 	if (actual !== sha256) {
-		throw new Error(
+		throw new MaintenanceFailureError(
 			`backup blob sha256 mismatch for ${key}: expected ${sha256}, got ${actual}`,
+			{ progress: null, warnings: [] },
 		)
 	}
 	return bytes
@@ -207,15 +251,17 @@ async function restoreStoragePhase(input: {
 			input.day,
 			stagingStorageDumpKey(input.day, entry.storageId),
 		)
-		const dumpText = await input.s3.getText(dumpKey)
-		if (!dumpText) {
-			input.warnings.push(`Missing sealed storage dump ${dumpKey}`)
-			input.cursor.storageIndex += 1
-			input.cursor.storageLineOffset = 0
-			input.cursor.storageReplaceStarted = false
-			continue
+		const loaded = await input.s3.getText(dumpKey)
+		if (!loaded) {
+			throw new MaintenanceFailureError(
+				`Missing sealed storage dump ${dumpKey}`,
+				{
+					progress: input.progress,
+					warnings: input.warnings,
+				},
+			)
 		}
-		const lines = parseNdjsonLines(dumpText)
+		const lines = parseNdjsonLines(loaded.text)
 		const { userId, storageId } = decodeStorageIdentity(entry.storageId)
 		const runner = storageRunnerRpc({
 			env: input.env,
@@ -235,7 +281,13 @@ async function restoreStoragePhase(input: {
 					typeof parsed.key !== 'string' ||
 					typeof parsed.valueJson !== 'string'
 				) {
-					throw new Error(`invalid storage dump line in ${dumpKey}`)
+					throw new MaintenanceFailureError(
+						`invalid storage dump line in ${dumpKey}`,
+						{
+							progress: input.progress,
+							warnings: input.warnings,
+						},
+					)
 				}
 				return parsed
 			})
@@ -285,14 +337,14 @@ async function restoreR2Phase(input: {
 			input.day,
 			stagingR2IndexKey(input.day, label),
 		)
-		const indexText = await input.s3.getText(indexKey)
-		if (!indexText) {
-			input.warnings.push(`Missing sealed R2 index ${indexKey}`)
-			input.cursor.r2LabelIndex += 1
-			input.cursor.r2LineOffset = 0
-			continue
+		const loaded = await input.s3.getText(indexKey)
+		if (!loaded) {
+			throw new MaintenanceFailureError(`Missing sealed R2 index ${indexKey}`, {
+				progress: input.progress,
+				warnings: input.warnings,
+			})
 		}
-		const lines = parseNdjsonLines(indexText)
+		const lines = parseNdjsonLines(loaded.text)
 		const bucket = r2BindingForLabel(input.env, label)
 		while (input.cursor.r2LineOffset < lines.length) {
 			if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
@@ -303,17 +355,17 @@ async function restoreR2Phase(input: {
 				typeof entry.key !== 'string' ||
 				typeof entry.sha256 !== 'string'
 			) {
-				throw new Error(`invalid R2 index line in ${indexKey}`)
-			}
-			try {
-				const bytes = await verifyAndFetchBlob(input.s3, entry.sha256)
-				await bucket.put(entry.key, bytes)
-				input.progress.r2ObjectsRestored += 1
-			} catch (error) {
-				input.warnings.push(
-					`Failed restoring ${label} object ${entry.key}: ${getErrorMessage(error)}`,
+				throw new MaintenanceFailureError(
+					`invalid R2 index line in ${indexKey}`,
+					{
+						progress: input.progress,
+						warnings: input.warnings,
+					},
 				)
 			}
+			const bytes = await verifyAndFetchBlob(input.s3, entry.sha256)
+			await bucket.put(entry.key, bytes)
+			input.progress.r2ObjectsRestored += 1
 			input.cursor.r2LineOffset += 1
 		}
 		input.cursor.r2LabelIndex += 1
@@ -338,22 +390,16 @@ async function restoreArtifactsPhase(input: {
 	while (input.cursor.artifactsIndex < artifactsIndex.entries.length) {
 		if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
 		const entry = artifactsIndex.entries[input.cursor.artifactsIndex]!
-		try {
-			const bytes = await verifyAndFetchBlob(input.s3, entry.snapshotSha256)
-			const kvKey = buildPublishedSourceSnapshotKvKey({
-				sourceId: entry.sourceId,
-				publishedCommit: entry.publishedCommit,
-			})
-			await input.env.BUNDLE_ARTIFACTS_KV.put(
-				kvKey,
-				new TextDecoder().decode(bytes),
-			)
-			input.progress.artifactsRestored += 1
-		} catch (error) {
-			input.warnings.push(
-				`Failed restoring artifact snapshot ${entry.sourceId}@${entry.publishedCommit}: ${getErrorMessage(error)}`,
-			)
-		}
+		const bytes = await verifyAndFetchBlob(input.s3, entry.snapshotSha256)
+		const kvKey = buildPublishedSourceSnapshotKvKey({
+			sourceId: entry.sourceId,
+			publishedCommit: entry.publishedCommit,
+		})
+		await input.env.BUNDLE_ARTIFACTS_KV.put(
+			kvKey,
+			new TextDecoder().decode(bytes),
+		)
+		input.progress.artifactsRestored += 1
 		input.cursor.artifactsIndex += 1
 	}
 	input.cursor.phase = 'done'

@@ -248,13 +248,15 @@ function parseExportState(result: JsonObject): ExportState {
 			signedUrl: completed.signed_url,
 		}
 	}
-	if (status !== undefined) {
-		throw new BackupError(
-			'export-malformed-response',
-			'D1 export returned an unknown status',
-		)
+	// Live D1 export polling returns status "active" while the export runs.
+	// Older responses omitted status entirely; both mean pending.
+	if (status === undefined || status === 'active') {
+		return { kind: 'pending', bookmark: result.at_bookmark }
 	}
-	return { kind: 'pending', bookmark: result.at_bookmark }
+	throw new BackupError(
+		'export-malformed-response',
+		'D1 export returned an unknown status',
+	)
 }
 
 async function exportRequest(
