@@ -239,7 +239,14 @@ export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
 					items={adminNavItems.map((item) => ({
 						href: item.href,
 						label: item.label,
-						active: item.paths.some((path) => path === currentPath),
+						// Prefix-aware like account nav so `/admin/users/42`
+						// keeps Users highlighted. `/admin` stays exact-only
+						// so sibling pages (`/admin/invites`, …) are unaffected.
+						active: item.paths.some(
+							(path) =>
+								path === currentPath ||
+								(path !== '/admin' && currentPath.startsWith(`${path}/`)),
+						),
 					}))}
 				/>
 			</>

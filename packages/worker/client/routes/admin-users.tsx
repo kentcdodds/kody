@@ -1,14 +1,14 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { readRouterSearch } from '#client/router-location.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { replaceLocation } from '#client/replace-location.ts'
 import {
 	createInfiniteList,
 	type InfiniteListSnapshot,
 } from '#client/infinite-list.ts'
 import { infiniteScrollSentinel } from '#client/infinite-scroll.ts'
+import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -62,6 +62,11 @@ type UsageStatus = 'loading' | 'ready' | 'error'
 
 const adminUsersApiPath = '/admin/users.json'
 const adminUserUsageApiPath = '/admin/users/usage.json'
+const {
+	isRoutePath: isAdminUsersListDetailPath,
+	getSelection,
+	buildDetailHref,
+} = createListDetailRoute('/admin/users')
 
 function formatUsageLimit(limit: number) {
 	return formatIntegerNumber(limit)
@@ -74,7 +79,7 @@ function formatUsagePercent(value: number | null) {
 
 function isAdminUsersPath(href: string) {
 	const path = new URL(href, 'http://localhost').pathname
-	return path === '/admin/users' || path === '/admin'
+	return path === '/admin' || isAdminUsersListDetailPath(href)
 }
 
 type AdminUserFilterState = {
@@ -92,29 +97,62 @@ function readFilterState(href: string): AdminUserFilterState {
 }
 
 /**
- * Initial loads must anchor the window at page 1 — seeding from a stale
- * `?page=N` link would leave every earlier page unreachable because
- * infinite scroll only appends later pages.
+ * The list window only depends on the filters, not on which user is
+ * selected — selection-only navigations keep the loaded scroll window.
  */
-function stripPageParam(search: string) {
-	const params = new URLSearchParams(search)
-	params.delete('page')
-	const next = params.toString()
-	return next ? `?${next}` : ''
+function getListKey(href: string) {
+	const filters = readFilterState(href)
+	return `q=${filters.search}&role=${filters.role}`
+}
+
+function getDataKey(href: string) {
+	const pathname = new URL(href, 'http://localhost').pathname
+	return `${pathname}?${getListKey(href)}`
+}
+
+function parseSelectedUserId(value: string | null): number | null {
+	if (!value) return null
+	const parsed = Number.parseInt(value, 10)
+	if (!Number.isFinite(parsed) || parsed < 1 || String(parsed) !== value) {
+		return null
+	}
+	return parsed
+}
+
+/**
+ * Translate a detail pathname into the JSON API's `?selected=` param and
+ * drop a stale `?page=` so initial loads always re-anchor at page one.
+ */
+function buildAdminUsersApiRequestUrl(
+	href: string,
+	options?: { page?: number; includeSelected?: boolean },
+) {
+	const pageUrl = new URL(href, 'http://localhost')
+	const requestUrl = new URL(adminUsersApiPath, 'http://localhost')
+	requestUrl.search = pageUrl.search
+	requestUrl.searchParams.delete('page')
+	if (options?.page != null) {
+		requestUrl.searchParams.set('page', String(options.page))
+	}
+	const selectedId = getSelection(href).selectedId
+	if (selectedId && options?.includeSelected !== false) {
+		requestUrl.searchParams.set('selected', selectedId)
+	} else {
+		requestUrl.searchParams.delete('selected')
+	}
+	return `${requestUrl.pathname}${requestUrl.search}`
 }
 
 export async function adminUsersRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(
-		`${adminUsersApiPath}${stripPageParam(url.search)}`,
-		{
-			headers: { Accept: 'application/json' },
-			credentials: 'include',
-			signal,
-		},
-	)
+	const href = `${url.pathname}${url.search}`
+	const response = await fetch(buildAdminUsersApiRequestUrl(href), {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
@@ -142,7 +180,9 @@ export function AdminUsersRoute(handle: Handle) {
 	})
 	let usersSnapshot: InfiniteListSnapshot<AdminUserListItem> =
 		userList.getSnapshot()
-	let selectedUserId: number | null = null
+	// Fallback when the URL-selected user is outside the loaded list window
+	// (deep link / filtered out). Prefer the in-list row when present.
+	let selectedUserFallback: AdminUserListItem | null = null
 	let message: string | null = null
 	let actionState: 'idle' | 'assigning' | 'removing' | 'saving-plan' = 'idle'
 	let selectedRoleToAssign = 'user' as RoleName
@@ -151,9 +191,10 @@ export function AdminUsersRoute(handle: Handle) {
 	let selectedPlanChoice: AdminPlanName = 'free'
 	let planDraftUserId: number | null = null
 	let loadRequestId = 0
-	let lastLoadedHref = ''
-	let loadingForHref: string | null = null
-	let lastFailedHref: string | null = null
+	let lastLoadedDataKey = ''
+	let lastLoadedListKey = ''
+	let loadingDataKey: string | null = null
+	let lastFailedDataKey: string | null = null
 	let usageStatus: UsageStatus = 'loading'
 	let usageData: AdminUserUsageLoaderData | null = null
 	let usageMessage: string | null = null
@@ -162,45 +203,60 @@ export function AdminUsersRoute(handle: Handle) {
 	let usageLoadingForUserId: number | null = null
 	let usageFailedForUserId: number | null = null
 
-	function getSelectedUser() {
+	function getCurrentHref() {
+		return readCurrentRouterHref(handle)
+	}
+
+	function getSelectedUserIdFromHref(href: string) {
+		return parseSelectedUserId(getSelection(href).selectedId)
+	}
+
+	function resolveSelectedUser(href: string) {
+		const selectedUserId = getSelectedUserIdFromHref(href)
+		if (selectedUserId == null) return null
 		return (
-			usersSnapshot.items.find((user) => user.id === selectedUserId) ?? null
+			usersSnapshot.items.find((user) => user.id === selectedUserId) ??
+			(selectedUserFallback?.id === selectedUserId
+				? selectedUserFallback
+				: null)
 		)
 	}
 
-	function ensureSelection() {
-		const users = usersSnapshot.items
-		if (
-			selectedUserId != null &&
-			!users.some((user) => user.id === selectedUserId)
-		) {
-			selectedUserId = users[0]?.id ?? null
-		}
-		if (selectedUserId == null && users.length > 0) {
-			selectedUserId = users[0]?.id ?? null
-		}
-	}
-
-	function seedUsersFromPayload(payload: AdminUsersLoaderData) {
+	function applyPayload(payload: AdminUsersLoaderData, href: string) {
 		availableRoles = payload.availableRoles
 		availablePlans = payload.availablePlans
-		loadedThroughPage = payload.page
-		// reset() invalidates any in-flight load-more so a stale page fetched
-		// for the previous filters can never append into the fresh window.
-		userList.reset()
-		userList.replaceWindow({
-			items: payload.users,
-			hasMore: payload.page * payload.pageSize < payload.total,
-			totalCount: payload.total,
-		})
+		const listKey = getListKey(href)
+		// Selection-only navigations deep in the scroll window keep the
+		// already-loaded pages; anything else reseeds from page one so
+		// filter changes and plain revisits always show fresh data.
+		if (listKey !== lastLoadedListKey || loadedThroughPage <= 1) {
+			loadedThroughPage = payload.page
+			// reset() invalidates any in-flight load-more so a stale page
+			// fetched for the previous filters can never append into the
+			// fresh window.
+			userList.reset()
+			userList.replaceWindow({
+				items: payload.users,
+				hasMore: payload.page * payload.pageSize < payload.total,
+				totalCount: payload.total,
+			})
+			lastLoadedListKey = listKey
+		}
+		selectedUserFallback = payload.selectedUser
 		resetPlanDraft()
-		ensureSelection()
+		message =
+			getSelectedUserIdFromHref(href) != null && !payload.selectedUser
+				? 'User not found.'
+				: null
+		status = 'ready'
+		lastLoadedDataKey = getDataKey(href)
+		lastFailedDataKey = null
 	}
 
 	function buildHrefWithUpdatedFilters(
 		nextFilters: Partial<AdminUserFilterState>,
 	) {
-		const url = new URL(readCurrentRouterHref(handle), 'http://localhost')
+		const url = new URL(getCurrentHref(), 'http://localhost')
 		const filters = { ...readFilterState(url.toString()), ...nextFilters }
 		if (filters.search) url.searchParams.set('q', filters.search)
 		else url.searchParams.delete('q')
@@ -209,6 +265,12 @@ export function AdminUsersRoute(handle: Handle) {
 		// Filter changes re-anchor the list at the first page.
 		url.searchParams.delete('page')
 		return `${url.pathname}${url.search}`
+	}
+
+	function buildUserDetailHref(userId: number) {
+		const url = new URL(getCurrentHref(), 'http://localhost')
+		url.searchParams.delete('page')
+		return buildDetailHref(String(userId), url.search)
 	}
 
 	async function loadUserUsage(userId: number) {
@@ -265,15 +327,20 @@ export function AdminUsersRoute(handle: Handle) {
 	}
 
 	async function loadAdminUsers() {
-		const href = readCurrentRouterHref(handle)
-		loadingForHref = href
+		const href = getCurrentHref()
+		const dataKey = getDataKey(href)
+		loadingDataKey = dataKey
 		const requestId = ++loadRequestId
 		try {
-			const response = await fetch(
-				`${adminUsersApiPath}${stripPageParam(readRouterSearch(handle))}`,
-				{ headers: { Accept: 'application/json' }, credentials: 'include' },
+			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+			})
+			if (
+				requestId !== loadRequestId ||
+				getDataKey(getCurrentHref()) !== dataKey
 			)
-			if (requestId !== loadRequestId) return
+				return
 			if (response.status === 401) {
 				window.location.assign('/login')
 				return
@@ -281,7 +348,7 @@ export function AdminUsersRoute(handle: Handle) {
 			if (response.status === 403) {
 				status = 'error'
 				message = 'You do not have permission to view admin users.'
-				lastFailedHref = href
+				lastFailedDataKey = dataKey
 				handle.update()
 				return
 			}
@@ -289,21 +356,23 @@ export function AdminUsersRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load admin users.')
 			}
-			seedUsersFromPayload(payload)
-			lastLoadedHref = href
-			status = 'ready'
-			message = null
-			lastFailedHref = null
+			applyPayload(payload, href)
 			handle.update()
 		} catch (error) {
-			if (requestId !== loadRequestId) return
+			if (
+				requestId !== loadRequestId ||
+				getDataKey(getCurrentHref()) !== dataKey
+			)
+				return
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load admin users.'
-			lastFailedHref = href
+			lastFailedDataKey = dataKey
 			handle.update()
 		} finally {
-			if (requestId === loadRequestId) loadingForHref = null
+			if (requestId === loadRequestId && loadingDataKey === dataKey) {
+				loadingDataKey = null
+			}
 		}
 	}
 
@@ -311,12 +380,16 @@ export function AdminUsersRoute(handle: Handle) {
 		if (status !== 'ready') return false
 		const nextPage = loadedThroughPage + 1
 		const loaded = await userList.loadMore(async () => {
-			const url = new URL(readCurrentRouterHref(handle), 'http://localhost')
-			url.searchParams.set('page', String(nextPage))
-			const response = await fetch(`${adminUsersApiPath}${url.search}`, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
+			const response = await fetch(
+				buildAdminUsersApiRequestUrl(getCurrentHref(), {
+					page: nextPage,
+					includeSelected: false,
+				}),
+				{
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+				},
+			)
 			if (response.status === 401) {
 				window.location.assign('/login')
 				throw new Error('Signed out.')
@@ -341,15 +414,15 @@ export function AdminUsersRoute(handle: Handle) {
 	/**
 	 * Mutation responses carry the refreshed target user; patch it in place
 	 * so a list the admin has scrolled deep into keeps its loaded window and
-	 * selection instead of resetting to the first page. A role change can
+	 * URL selection instead of resetting to the first page. A role change can
 	 * knock the target out of the active role filter, so drop rows that no
 	 * longer match and take the refreshed filtered total from the server.
 	 */
-	function applyMutationPayload(payload: AdminUsersMutationData) {
+	function applyMutationPayload(payload: AdminUsersMutationData, href: string) {
 		availableRoles = payload.availableRoles
 		availablePlans = payload.availablePlans
 		const updatedUser = payload.updatedUser
-		const { role } = readFilterState(readCurrentRouterHref(handle))
+		const { role } = readFilterState(href)
 		// The server ignores unknown role values, so only a known role counts
 		// as an active filter — otherwise every mutation would wrongly remove
 		// its target from the list.
@@ -376,22 +449,28 @@ export function AdminUsersRoute(handle: Handle) {
 			hasMore: nextItems.length < payload.total,
 			totalCount: payload.total,
 		})
+		const selectedUserId = getSelectedUserIdFromHref(href)
+		selectedUserFallback =
+			payload.selectedUser ??
+			(updatedUser &&
+			selectedUserId != null &&
+			updatedUser.id === selectedUserId
+				? updatedUser
+				: selectedUserFallback)
 		resetPlanDraft()
-		ensureSelection()
 	}
 
 	async function submitRoleAction(action: 'assign_role' | 'remove_role') {
-		const selectedUser = getSelectedUser()
+		const href = getCurrentHref()
+		const selectedUser = resolveSelectedUser(href)
 		if (!selectedUser || actionState !== 'idle') return
 		actionState = action === 'assign_role' ? 'assigning' : 'removing'
 		message = null
 		handle.update()
 		try {
-			// Carry the current query string so the server rebuilds the same
-			// page/pageSize slice the user is viewing, not page one.
-			const search = new URL(readCurrentRouterHref(handle), 'http://localhost')
-				.search
-			const response = await fetch(`${adminUsersApiPath}${search}`, {
+			// Carry filters + selected so the mutation response refreshes the
+			// same list window and selectedUser fallback the UI is showing.
+			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',
@@ -414,9 +493,8 @@ export function AdminUsersRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to update user roles.')
 			}
-			applyMutationPayload(payload)
-			selectedUserId = selectedUser.id
-			lastLoadedHref = readCurrentRouterHref(handle)
+			applyMutationPayload(payload, href)
+			lastLoadedDataKey = getDataKey(href)
 			message =
 				action === 'assign_role'
 					? `Assigned ${selectedRoleToAssign} role.`
@@ -433,18 +511,17 @@ export function AdminUsersRoute(handle: Handle) {
 	}
 
 	async function submitPlanAction() {
-		const selectedUser = getSelectedUser()
+		const href = getCurrentHref()
+		const selectedUser = resolveSelectedUser(href)
 		if (!selectedUser || actionState !== 'idle') return
 		const plan = selectedPlanChoice
 		actionState = 'saving-plan'
 		message = null
 		handle.update()
 		try {
-			// Carry the current query string so the server rebuilds the same
-			// page/pageSize slice the user is viewing, not page one.
-			const search = new URL(readCurrentRouterHref(handle), 'http://localhost')
-				.search
-			const response = await fetch(`${adminUsersApiPath}${search}`, {
+			// Carry filters + selected so the mutation response refreshes the
+			// same list window and selectedUser fallback the UI is showing.
+			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',
@@ -467,10 +544,9 @@ export function AdminUsersRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to update user plan.')
 			}
-			applyMutationPayload(payload)
+			applyMutationPayload(payload, href)
 			invalidateUsage()
-			selectedUserId = selectedUser.id
-			lastLoadedHref = readCurrentRouterHref(handle)
+			lastLoadedDataKey = getDataKey(href)
 			message = `Updated plan to ${plan}.`
 			status = 'ready'
 			actionState = 'idle'
@@ -490,48 +566,46 @@ export function AdminUsersRoute(handle: Handle) {
 		if (!isAdminUsersPath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'adminUsers', href)
 		if (!routeData) return false
-		seedUsersFromPayload(routeData)
-		lastLoadedHref = href
-		status = 'ready'
-		message = null
-		lastFailedHref = null
+		applyPayload(routeData, href)
 		return true
 	}
 
-	let lastSeenHref = ''
+	let lastSeenDataKey = ''
 
 	return () => {
-		const currentHref = readCurrentRouterHref(handle)
+		const currentHref = getCurrentHref()
+		const currentDataKey = getDataKey(currentHref)
 		// The failure latch only guards retry loops for the location that
 		// failed; leaving it (or coming back) must allow a fresh attempt.
-		if (currentHref !== lastSeenHref) {
-			lastSeenHref = currentHref
-			lastFailedHref = null
+		if (currentDataKey !== lastSeenDataKey) {
+			lastSeenDataKey = currentDataKey
+			lastFailedDataKey = null
 		}
 		// Consume route-loader data before deriving the list snapshot and
 		// `selectedUser`; deriving first would render this pass from the
 		// stale pre-navigation closure state.
 		const appliedRouteData = applyRouteLoaderData(currentHref)
 		// A same-path refresh whose loader failed leaves no preload and no
-		// href change; the stale marker forces the fallback refetch.
+		// data-key change; the stale marker forces the fallback refetch.
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad =
 			(status === 'loading' ||
-				currentHref !== lastLoadedHref ||
+				currentDataKey !== lastLoadedDataKey ||
 				needsStaleRefresh) &&
-			currentHref !== lastFailedHref &&
-			loadingForHref !== currentHref
+			currentDataKey !== lastFailedDataKey &&
+			loadingDataKey !== currentDataKey
 		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {
 			status = 'loading'
-			loadingForHref = currentHref
+			loadingDataKey = currentDataKey
 			handle.queueTask(loadAdminUsers)
 		}
 
 		const { items: users, hasMore, totalCount, isLoadingMore } = usersSnapshot
 		const filters = readFilterState(currentHref)
 		const hasActiveFilters = Boolean(filters.search || filters.role)
-		const selectedUser = getSelectedUser()
+		const selectedUserId = getSelectedUserIdFromHref(currentHref)
+		const selectedUser = resolveSelectedUser(currentHref)
 		const isMutating = actionState !== 'idle'
 
 		if (
@@ -640,9 +714,7 @@ export function AdminUsersRoute(handle: Handle) {
 													disabled={isMutating}
 													onClick={() => {
 														if (isMutating) return
-														selectedUserId = user.id
-														message = null
-														handle.update()
+														navigate(buildUserDetailHref(user.id))
 													}}
 												>
 													<strong mix={css({ display: 'block' })}>
@@ -1041,9 +1113,21 @@ export function AdminUsersRoute(handle: Handle) {
 								</AccountManagementPanel>
 							</>
 						) : (
-							<p mix={css({ margin: 0, color: colors.textMuted })}>
-								Choose an account from the list to review metadata and roles.
-							</p>
+							<div mix={css({ display: 'grid', gap: spacing.sm })}>
+								<h2
+									mix={css({
+										margin: 0,
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
+										color: colors.text,
+									})}
+								>
+									Select an account
+								</h2>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Pick an account from the list to view its details.
+								</p>
+							</div>
 						)}
 					</div>
 				</AccountManagementLayout>
