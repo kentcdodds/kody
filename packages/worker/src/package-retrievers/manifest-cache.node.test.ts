@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import {
+	deleteAllPackageRetrieverCacheEntriesForUser,
 	listPackageRetrieversForScope,
 	refreshPackageRetrieverManifestCache,
 	removePackageRetrieverManifestCacheEntries,
@@ -8,7 +9,7 @@ import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
-function createKv() {
+function createKv(pageSize = Number.POSITIVE_INFINITY) {
 	const store = new Map<string, string>()
 	const kv = {
 		get: vi.fn(async (key: string, type?: 'json') => {
@@ -21,14 +22,18 @@ function createKv() {
 		delete: vi.fn(async (key: string) => {
 			store.delete(key)
 		}),
-		list: vi.fn(async (listOptions?: { prefix?: string; cursor?: string }) => ({
-			keys: Array.from(store.keys())
+		list: vi.fn(async (listOptions?: { prefix?: string; cursor?: string }) => {
+			const matching = Array.from(store.keys())
 				.filter((key) => key.startsWith(listOptions?.prefix ?? ''))
+				.filter((key) => !listOptions?.cursor || key > listOptions.cursor)
 				.sort()
-				.map((name) => ({ name })),
-			list_complete: true,
-			cursor: undefined,
-		})),
+			const page = matching.slice(0, pageSize)
+			return {
+				keys: page.map((name) => ({ name })),
+				list_complete: page.length >= matching.length,
+				...(page.length < matching.length ? { cursor: page.at(-1) } : {}),
+			}
+		}),
 	} as unknown as KVNamespace
 	return {
 		store,
@@ -384,4 +389,33 @@ test('listPackageRetrieversForScope filters stale, malformed, and prefix-collidi
 			scope: 'search',
 		}),
 	).resolves.toEqual([expect.objectContaining({ packageId: 'package-10' })])
+})
+
+test('account cleanup paginates user prefixes and removes historical package keys', async () => {
+	const { kv, store } = createKv(1)
+	store.set(
+		'package-retriever-manifest:v1:user-1:removed-package:old-revision',
+		'{}',
+	)
+	store.set(
+		'package-retriever-index-entry:v1:user-1:search:removed-package:notes',
+		'{}',
+	)
+	store.set('package-retriever-index:v1:user-1:search', '{}')
+	store.set('package-retriever-manifest:v1:user-2:other-package:revision', '{}')
+
+	await expect(
+		deleteAllPackageRetrieverCacheEntriesForUser({
+			env: { BUNDLE_ARTIFACTS_KV: kv } as Env,
+			userId: 'user-1',
+		}),
+	).resolves.toBe(3)
+	expect([...store.keys()]).toEqual([
+		'package-retriever-manifest:v1:user-2:other-package:revision',
+	])
+	expect(kv.list).toHaveBeenCalledWith(
+		expect.objectContaining({
+			prefix: 'package-retriever-manifest:v1:user-1:',
+		}),
+	)
 })

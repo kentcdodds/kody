@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { isCapabilitySearchOffline } from '#mcp/capabilities/capability-search.ts'
 import {
@@ -141,17 +142,25 @@ export async function acknowledgeSurfacedMemories(input: {
 	conversationId: string
 	memoryIds: Array<string>
 }) {
-	const memoryIds = Array.from(
-		new Set(input.memoryIds.filter((id) => id.trim().length > 0)),
-	)
-	if (memoryIds.length === 0) return
-	const expiresAt = new Date(Date.now() + defaultSuppressionTtlMs).toISOString()
-	await acknowledgeSurfacedMemoryWrites({
+	return await withAccountWriteLease({
 		db: input.env.APP_DB,
-		userId: input.userId,
-		conversationId: input.conversationId,
-		memoryIds,
-		expiresAt,
+		stableUserId: input.userId,
+		async write() {
+			const memoryIds = Array.from(
+				new Set(input.memoryIds.filter((id) => id.trim().length > 0)),
+			)
+			if (memoryIds.length === 0) return
+			const expiresAt = new Date(
+				Date.now() + defaultSuppressionTtlMs,
+			).toISOString()
+			await acknowledgeSurfacedMemoryWrites({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				conversationId: input.conversationId,
+				memoryIds,
+				expiresAt,
+			})
+		},
 	})
 }
 
@@ -160,226 +169,243 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 	memory: MemoryRecord
 	warnings: Array<string>
 }> {
-	const normalized = normalizeMemoryPayload(input)
-	const now = new Date().toISOString()
-	const existing = input.memoryId
-		? await getMemoryById(input.env.APP_DB, input.userId, input.memoryId)
-		: null
-	if (input.memoryId && !existing) {
-		throw new Error(getMemoryMutationNotFoundMessage(input.memoryId))
-	}
-	const status = input.status ?? 'active'
-	const row: McpMemoryRow = existing
-		? {
-				...existing,
-				category: normalized.category,
-				status,
-				subject: normalized.subject,
-				summary: normalized.summary,
-				details: normalized.details,
-				tags_json: JSON.stringify(normalized.tags),
-				source_uris_json: JSON.stringify(normalized.sourceUris),
-				dedupe_key: normalized.dedupeKey,
-				updated_at: now,
-				deleted_at: null,
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.userId,
+		async write() {
+			const normalized = normalizeMemoryPayload(input)
+			const now = new Date().toISOString()
+			const existing = input.memoryId
+				? await getMemoryById(input.env.APP_DB, input.userId, input.memoryId)
+				: null
+			if (input.memoryId && !existing) {
+				throw new Error(getMemoryMutationNotFoundMessage(input.memoryId))
 			}
-		: {
-				id: crypto.randomUUID(),
-				user_id: input.userId,
-				category: normalized.category,
-				status,
-				subject: normalized.subject,
-				summary: normalized.summary,
-				details: normalized.details,
-				tags_json: JSON.stringify(normalized.tags),
-				source_uris_json: JSON.stringify(normalized.sourceUris),
-				dedupe_key: normalized.dedupeKey,
-				created_at: now,
-				updated_at: now,
-				last_accessed_at: null,
-				deleted_at: null,
+			const status = input.status ?? 'active'
+			const row: McpMemoryRow = existing
+				? {
+						...existing,
+						category: normalized.category,
+						status,
+						subject: normalized.subject,
+						summary: normalized.summary,
+						details: normalized.details,
+						tags_json: JSON.stringify(normalized.tags),
+						source_uris_json: JSON.stringify(normalized.sourceUris),
+						dedupe_key: normalized.dedupeKey,
+						updated_at: now,
+						deleted_at: null,
+					}
+				: {
+						id: crypto.randomUUID(),
+						user_id: input.userId,
+						category: normalized.category,
+						status,
+						subject: normalized.subject,
+						summary: normalized.summary,
+						details: normalized.details,
+						tags_json: JSON.stringify(normalized.tags),
+						source_uris_json: JSON.stringify(normalized.sourceUris),
+						dedupe_key: normalized.dedupeKey,
+						created_at: now,
+						updated_at: now,
+						last_accessed_at: null,
+						deleted_at: null,
+					}
+
+			await assertWithinStorageBytesEntitlement({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				email: input.userEmail,
+				requested: estimateEntitlementStorageEntryByteDelta({
+					next: {
+						key: row.id,
+						value: {
+							category: row.category,
+							status: row.status,
+							subject: row.subject,
+							summary: row.summary,
+							details: row.details,
+							tagsJson: row.tags_json,
+							sourceUrisJson: row.source_uris_json,
+							dedupeKey: row.dedupe_key,
+						},
+					},
+					existing: existing
+						? {
+								key: existing.id,
+								value: {
+									category: existing.category,
+									status: existing.status,
+									subject: existing.subject,
+									summary: existing.summary,
+									details: existing.details,
+									tagsJson: existing.tags_json,
+									sourceUrisJson: existing.source_uris_json,
+									dedupeKey: existing.dedupe_key,
+								},
+							}
+						: null,
+				}),
+			})
+
+			if (existing) {
+				const updated = await updateMemory(
+					input.env.APP_DB,
+					input.userId,
+					row.id,
+					{
+						category: row.category,
+						status: row.status,
+						subject: row.subject,
+						summary: row.summary,
+						details: row.details,
+						tags_json: row.tags_json,
+						source_uris_json: row.source_uris_json,
+						dedupe_key: row.dedupe_key,
+						last_accessed_at: row.last_accessed_at,
+						deleted_at: row.deleted_at,
+					},
+				)
+				if (!updated) {
+					throw new Error(
+						getMemoryMutationNotFoundMessage(input.memoryId ?? row.id),
+					)
+				}
+			} else {
+				await insertMemory(input.env.APP_DB, row)
 			}
 
-	await assertWithinStorageBytesEntitlement({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		email: input.userEmail,
-		requested: estimateEntitlementStorageEntryByteDelta({
-			next: {
-				key: row.id,
-				value: {
+			try {
+				await upsertMemoryVector(input.env as Env, {
+					memoryId: row.id,
+					userId: input.userId,
 					category: row.category,
 					status: row.status,
-					subject: row.subject,
-					summary: row.summary,
-					details: row.details,
-					tagsJson: row.tags_json,
-					sourceUrisJson: row.source_uris_json,
-					dedupeKey: row.dedupe_key,
-				},
-			},
-			existing: existing
-				? {
-						key: existing.id,
-						value: {
-							category: existing.category,
-							status: existing.status,
-							subject: existing.subject,
-							summary: existing.summary,
-							details: existing.details,
-							tagsJson: existing.tags_json,
-							sourceUrisJson: existing.source_uris_json,
-							dedupeKey: existing.dedupe_key,
-						},
-					}
-				: null,
-		}),
+					embedText: buildMemoryEmbedText({
+						category: row.category,
+						subject: row.subject,
+						summary: row.summary,
+						details: row.details,
+						tags: normalized.tags,
+						dedupeKey: row.dedupe_key,
+					}),
+				})
+			} catch (error) {
+				logMemoryVectorSyncError({
+					operation: 'upsert',
+					memoryId: row.id,
+					userId: input.userId,
+					category: row.category,
+					error,
+				})
+			}
+
+			const warnings =
+				input.verificationReference == null ||
+				input.verificationReference.trim() === ''
+					? [
+							'No verification_reference was supplied. Agents should run meta_memory_verify first and include a verification reference when possible.',
+						]
+					: []
+
+			return {
+				mode: existing ? 'updated' : 'created',
+				memory: toMemoryRecord(row),
+				warnings,
+			}
+		},
 	})
-
-	if (existing) {
-		const updated = await updateMemory(input.env.APP_DB, input.userId, row.id, {
-			category: row.category,
-			status: row.status,
-			subject: row.subject,
-			summary: row.summary,
-			details: row.details,
-			tags_json: row.tags_json,
-			source_uris_json: row.source_uris_json,
-			dedupe_key: row.dedupe_key,
-			last_accessed_at: row.last_accessed_at,
-			deleted_at: row.deleted_at,
-		})
-		if (!updated) {
-			throw new Error(
-				getMemoryMutationNotFoundMessage(input.memoryId ?? row.id),
-			)
-		}
-	} else {
-		await insertMemory(input.env.APP_DB, row)
-	}
-
-	try {
-		await upsertMemoryVector(input.env as Env, {
-			memoryId: row.id,
-			userId: input.userId,
-			category: row.category,
-			status: row.status,
-			embedText: buildMemoryEmbedText({
-				category: row.category,
-				subject: row.subject,
-				summary: row.summary,
-				details: row.details,
-				tags: normalized.tags,
-				dedupeKey: row.dedupe_key,
-			}),
-		})
-	} catch (error) {
-		logMemoryVectorSyncError({
-			operation: 'upsert',
-			memoryId: row.id,
-			userId: input.userId,
-			category: row.category,
-			error,
-		})
-	}
-
-	const warnings =
-		input.verificationReference == null ||
-		input.verificationReference.trim() === ''
-			? [
-					'No verification_reference was supplied. Agents should run meta_memory_verify first and include a verification reference when possible.',
-				]
-			: []
-
-	return {
-		mode: existing ? 'updated' : 'created',
-		memory: toMemoryRecord(row),
-		warnings,
-	}
 }
 
 export async function deleteMemory(
 	input: MemoryDeleteInput,
 ): Promise<MemoryRecord | null> {
-	const existing = await getMemoryById(
-		input.env.APP_DB,
-		input.userId,
-		input.memoryId,
-	)
-	if (!existing) return null
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.userId,
+		async write() {
+			const existing = await getMemoryById(
+				input.env.APP_DB,
+				input.userId,
+				input.memoryId,
+			)
+			if (!existing) return null
 
-	if (input.force) {
-		const deleted = await deleteMemoryRow(
-			input.env.APP_DB,
-			input.userId,
-			input.memoryId,
-		)
-		if (!deleted) return null
-		try {
-			await deleteMemoryVector(input.env as Env, input.memoryId)
-		} catch (error) {
-			logMemoryVectorSyncError({
-				operation: 'delete',
-				memoryId: input.memoryId,
-				userId: input.userId,
-				category: existing.category,
-				error,
-			})
-		}
-		return toMemoryRecord(existing)
-	}
+			if (input.force) {
+				const deleted = await deleteMemoryRow(
+					input.env.APP_DB,
+					input.userId,
+					input.memoryId,
+				)
+				if (!deleted) return null
+				try {
+					await deleteMemoryVector(input.env as Env, input.memoryId)
+				} catch (error) {
+					logMemoryVectorSyncError({
+						operation: 'delete',
+						memoryId: input.memoryId,
+						userId: input.userId,
+						category: existing.category,
+						error,
+					})
+				}
+				return toMemoryRecord(existing)
+			}
 
-	const now = new Date().toISOString()
-	const updated = await updateMemory(
-		input.env.APP_DB,
-		input.userId,
-		input.memoryId,
-		{
-			category: existing.category,
-			status: 'deleted',
-			subject: existing.subject,
-			summary: existing.summary,
-			details: existing.details,
-			tags_json: existing.tags_json,
-			source_uris_json: existing.source_uris_json,
-			dedupe_key: existing.dedupe_key,
-			last_accessed_at: existing.last_accessed_at,
-			deleted_at: now,
+			const now = new Date().toISOString()
+			const updated = await updateMemory(
+				input.env.APP_DB,
+				input.userId,
+				input.memoryId,
+				{
+					category: existing.category,
+					status: 'deleted',
+					subject: existing.subject,
+					summary: existing.summary,
+					details: existing.details,
+					tags_json: existing.tags_json,
+					source_uris_json: existing.source_uris_json,
+					dedupe_key: existing.dedupe_key,
+					last_accessed_at: existing.last_accessed_at,
+					deleted_at: now,
+				},
+			)
+			if (!updated) return null
+
+			const deletedRow = {
+				...existing,
+				status: 'deleted' as const,
+				deleted_at: now,
+				updated_at: now,
+			}
+			try {
+				await upsertMemoryVector(input.env as Env, {
+					memoryId: deletedRow.id,
+					userId: input.userId,
+					category: deletedRow.category,
+					status: deletedRow.status,
+					embedText: buildMemoryEmbedText({
+						category: deletedRow.category,
+						subject: deletedRow.subject,
+						summary: deletedRow.summary,
+						details: deletedRow.details,
+						tags: parseTags(deletedRow.tags_json),
+						dedupeKey: deletedRow.dedupe_key,
+					}),
+				})
+			} catch (error) {
+				logMemoryVectorSyncError({
+					operation: 'upsert',
+					memoryId: deletedRow.id,
+					userId: input.userId,
+					category: deletedRow.category,
+					error,
+				})
+			}
+			return toMemoryRecord(deletedRow)
 		},
-	)
-	if (!updated) return null
-
-	const deletedRow = {
-		...existing,
-		status: 'deleted' as const,
-		deleted_at: now,
-		updated_at: now,
-	}
-	try {
-		await upsertMemoryVector(input.env as Env, {
-			memoryId: deletedRow.id,
-			userId: input.userId,
-			category: deletedRow.category,
-			status: deletedRow.status,
-			embedText: buildMemoryEmbedText({
-				category: deletedRow.category,
-				subject: deletedRow.subject,
-				summary: deletedRow.summary,
-				details: deletedRow.details,
-				tags: parseTags(deletedRow.tags_json),
-				dedupeKey: deletedRow.dedupe_key,
-			}),
-		})
-	} catch (error) {
-		logMemoryVectorSyncError({
-			operation: 'upsert',
-			memoryId: deletedRow.id,
-			userId: input.userId,
-			category: deletedRow.category,
-			error,
-		})
-	}
-	return toMemoryRecord(deletedRow)
+	})
 }
 
 export async function getMemory(

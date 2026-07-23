@@ -1,5 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { assertAccountWritable } from '#app/account-deletion-state.ts'
+import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import { createMcpCallerContext, parseMcpCallerContext } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
@@ -770,105 +770,115 @@ export async function syncPackageJobsForPackage(input: {
 	sourceId: string
 	manifest: Awaited<ReturnType<typeof parseAuthoredPackageJson>>
 }) {
-	const desiredJobs = input.manifest.kody.jobs ?? {}
-	const existingRows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
-	const packageRows = existingRows.filter(
-		(row) => row.source_id === input.sourceId,
-	)
-	const existingByName = new Map(
-		packageRows.map((row) => [row.name, row] as const),
-	)
-	const desiredNames = new Set(Object.keys(desiredJobs))
-	const now = new Date().toISOString()
-	let schedulerStateChanged = false
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.userId,
+		async write() {
+			const desiredJobs = input.manifest.kody.jobs ?? {}
+			const existingRows = await listJobRowsByUserId(
+				input.env.APP_DB,
+				input.userId,
+			)
+			const packageRows = existingRows.filter(
+				(row) => row.source_id === input.sourceId,
+			)
+			const existingByName = new Map(
+				packageRows.map((row) => [row.name, row] as const),
+			)
+			const desiredNames = new Set(Object.keys(desiredJobs))
+			const now = new Date().toISOString()
+			let schedulerStateChanged = false
 
-	for (const [jobName, definition] of Object.entries(desiredJobs)) {
-		const existing = existingByName.get(jobName)
-		const schedule = normalizeJobSchedule(definition.schedule)
-		const timezone = normalizeJobTimezone(definition.timezone)
-		const enabled = definition.enabled ?? true
-		if (existing) {
-			const schedulerStateMatches =
-				JSON.stringify(existing.record.schedule) === JSON.stringify(schedule) &&
-				existing.record.timezone === timezone &&
-				existing.record.enabled === enabled
-			if (schedulerStateMatches) continue
-			const updated: JobRecord = {
-				...existing.record,
-				name: jobName,
-				sourceId: input.sourceId,
-				schedule,
-				timezone,
-				enabled,
-				updatedAt: now,
-				nextRunAt: computeNextRunAt({
+			for (const [jobName, definition] of Object.entries(desiredJobs)) {
+				const existing = existingByName.get(jobName)
+				const schedule = normalizeJobSchedule(definition.schedule)
+				const timezone = normalizeJobTimezone(definition.timezone)
+				const enabled = definition.enabled ?? true
+				if (existing) {
+					const schedulerStateMatches =
+						JSON.stringify(existing.record.schedule) ===
+							JSON.stringify(schedule) &&
+						existing.record.timezone === timezone &&
+						existing.record.enabled === enabled
+					if (schedulerStateMatches) continue
+					const updated: JobRecord = {
+						...existing.record,
+						name: jobName,
+						sourceId: input.sourceId,
+						schedule,
+						timezone,
+						enabled,
+						updatedAt: now,
+						nextRunAt: computeNextRunAt({
+							schedule,
+							timezone,
+						}),
+					}
+					await updateJobRow({
+						db: input.env.APP_DB,
+						userId: input.userId,
+						job: updated,
+						callerContextJson: serializeCallerContext(
+							createPackageJobCallerContext({
+								baseUrl: input.baseUrl,
+								userId: input.userId,
+								packageId: input.packageId,
+							}),
+						),
+					})
+					schedulerStateChanged = true
+					continue
+				}
+
+				const created: JobRecord = {
+					version: 1,
+					id: buildPackageJobId(input.packageId, jobName),
+					userId: input.userId,
+					name: jobName,
+					sourceId: input.sourceId,
+					publishedCommit: null,
+					storageId: createJobStorageId(
+						buildPackageJobId(input.packageId, jobName),
+					),
 					schedule,
 					timezone,
-				}),
-			}
-			await updateJobRow({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				job: updated,
-				callerContextJson: serializeCallerContext(
-					createPackageJobCallerContext({
-						baseUrl: input.baseUrl,
-						userId: input.userId,
-						packageId: input.packageId,
+					enabled,
+					killSwitchEnabled: false,
+					createdAt: now,
+					updatedAt: now,
+					nextRunAt: computeNextRunAt({
+						schedule,
+						timezone,
 					}),
-				),
-			})
-			schedulerStateChanged = true
-			continue
-		}
-
-		const created: JobRecord = {
-			version: 1,
-			id: buildPackageJobId(input.packageId, jobName),
-			userId: input.userId,
-			name: jobName,
-			sourceId: input.sourceId,
-			publishedCommit: null,
-			storageId: createJobStorageId(
-				buildPackageJobId(input.packageId, jobName),
-			),
-			schedule,
-			timezone,
-			enabled,
-			killSwitchEnabled: false,
-			createdAt: now,
-			updatedAt: now,
-			nextRunAt: computeNextRunAt({
-				schedule,
-				timezone,
-			}),
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-			runHistory: [],
-		}
-		await insertJobRow({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			job: created,
-			callerContextJson: serializeCallerContext(
-				createPackageJobCallerContext({
-					baseUrl: input.baseUrl,
+					runCount: 0,
+					successCount: 0,
+					errorCount: 0,
+					runHistory: [],
+				}
+				await insertJobRow({
+					db: input.env.APP_DB,
 					userId: input.userId,
-					packageId: input.packageId,
-				}),
-			),
-		})
-		schedulerStateChanged = true
-	}
+					job: created,
+					callerContextJson: serializeCallerContext(
+						createPackageJobCallerContext({
+							baseUrl: input.baseUrl,
+							userId: input.userId,
+							packageId: input.packageId,
+						}),
+					),
+				})
+				schedulerStateChanged = true
+			}
 
-	for (const row of packageRows) {
-		if (desiredNames.has(row.name)) continue
-		await deleteJobRow(input.env.APP_DB, input.userId, row.id)
-		await deleteJobVector(input.env, row.id)
-		schedulerStateChanged = true
-	}
-	return schedulerStateChanged
+			for (const row of packageRows) {
+				if (desiredNames.has(row.name)) continue
+				await deleteJobRow(input.env.APP_DB, input.userId, row.id)
+				await deleteJobVector(input.env, row.id)
+				schedulerStateChanged = true
+			}
+			return schedulerStateChanged
+		},
+	})
 }
 
 export async function deletePackageJobsForSourceId(input: {
@@ -876,12 +886,21 @@ export async function deletePackageJobsForSourceId(input: {
 	userId: string
 	sourceId: string
 }) {
-	const existingRows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
-	for (const row of existingRows) {
-		if (row.source_id !== input.sourceId) continue
-		await deleteJobRow(input.env.APP_DB, input.userId, row.id)
-		await deleteJobVector(input.env, row.id)
-	}
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.userId,
+		async write() {
+			const existingRows = await listJobRowsByUserId(
+				input.env.APP_DB,
+				input.userId,
+			)
+			for (const row of existingRows) {
+				if (row.source_id !== input.sourceId) continue
+				await deleteJobRow(input.env.APP_DB, input.userId, row.id)
+				await deleteJobVector(input.env, row.id)
+			}
+		},
+	})
 }
 
 function resolveCreateShape(input: JobCreateInput) {
@@ -942,88 +961,94 @@ export async function createJob(input: {
 	body: JobCreateInput
 }) {
 	const callerContext = requirePersistableJobCallerContext(input.callerContext)
-	await assertWithinEntitlement({
+	return await withAccountWriteLease({
 		db: input.env.APP_DB,
-		userId: callerContext.user.userId,
-		email: callerContext.user.email,
-		resource: 'scheduled_jobs',
+		stableUserId: callerContext.user.userId,
+		async write() {
+			await assertWithinEntitlement({
+				db: input.env.APP_DB,
+				userId: callerContext.user.userId,
+				email: callerContext.user.email,
+				resource: 'scheduled_jobs',
+			})
+			const schedule = normalizeJobSchedule(input.body.schedule)
+			const timezone = normalizeJobTimezone(input.body.timezone)
+			const now = new Date().toISOString()
+			const shape = resolveCreateShape(input.body)
+			const jobId = crypto.randomUUID()
+			const ensuredSource = await ensureEntitySource({
+				db: input.env.APP_DB,
+				env: input.env,
+				id: shape.sourceId ?? undefined,
+				userId: callerContext.user.userId,
+				entityKind: 'job',
+				entityId: jobId,
+				sourceRoot: '/',
+				requirePersistence: true,
+			})
+			const job: JobRecord = {
+				version: 1,
+				id: jobId,
+				userId: callerContext.user.userId,
+				name: normalizeJobName(input.body.name),
+				sourceId: ensuredSource.id,
+				publishedCommit: shape.publishedCommit ?? null,
+				repoCheckPolicy: shape.repoCheckPolicy,
+				storageId: createJobStorageId(jobId),
+				params: normalizeOptionalParams(input.body.params),
+				schedule,
+				timezone,
+				enabled: input.body.enabled ?? true,
+				killSwitchEnabled: input.body.killSwitchEnabled ?? false,
+				createdAt: now,
+				updatedAt: now,
+				nextRunAt: computeNextRunAt({
+					schedule,
+					timezone,
+				}),
+				runCount: 0,
+				successCount: 0,
+				errorCount: 0,
+				runHistory: [],
+			}
+			const syncedPublishedCommit = await syncArtifactSourceSnapshot({
+				env: input.env,
+				userId: callerContext.user.userId,
+				baseUrl: callerContext.baseUrl,
+				sourceId: job.sourceId,
+				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
+				files: buildJobSourceFiles({
+					job: toJobView(job),
+					moduleSource: shape.moduleSource,
+				}),
+			})
+			if (syncedPublishedCommit) {
+				job.publishedCommit = syncedPublishedCommit
+			}
+			const callerContextJson = serializeCallerContext(callerContext)
+			await insertJobRow({
+				db: input.env.APP_DB,
+				userId: callerContext.user.userId,
+				job,
+				callerContextJson,
+			})
+			await upsertJobVector(input.env, {
+				jobId: job.id,
+				userId: callerContext.user.userId,
+				embedText: buildJobEmbedText({
+					name: job.name,
+					scheduleSummary: toJobView(job).scheduleSummary,
+					sourceId: job.sourceId,
+					publishedCommit: job.publishedCommit,
+				}),
+			})
+			await syncJobManagerAlarm({
+				env: input.env,
+				userId: callerContext.user.userId,
+			})
+			return toJobView(job)
+		},
 	})
-	const schedule = normalizeJobSchedule(input.body.schedule)
-	const timezone = normalizeJobTimezone(input.body.timezone)
-	const now = new Date().toISOString()
-	const shape = resolveCreateShape(input.body)
-	const jobId = crypto.randomUUID()
-	const ensuredSource = await ensureEntitySource({
-		db: input.env.APP_DB,
-		env: input.env,
-		id: shape.sourceId ?? undefined,
-		userId: callerContext.user.userId,
-		entityKind: 'job',
-		entityId: jobId,
-		sourceRoot: '/',
-		requirePersistence: true,
-	})
-	const job: JobRecord = {
-		version: 1,
-		id: jobId,
-		userId: callerContext.user.userId,
-		name: normalizeJobName(input.body.name),
-		sourceId: ensuredSource.id,
-		publishedCommit: shape.publishedCommit ?? null,
-		repoCheckPolicy: shape.repoCheckPolicy,
-		storageId: createJobStorageId(jobId),
-		params: normalizeOptionalParams(input.body.params),
-		schedule,
-		timezone,
-		enabled: input.body.enabled ?? true,
-		killSwitchEnabled: input.body.killSwitchEnabled ?? false,
-		createdAt: now,
-		updatedAt: now,
-		nextRunAt: computeNextRunAt({
-			schedule,
-			timezone,
-		}),
-		runCount: 0,
-		successCount: 0,
-		errorCount: 0,
-		runHistory: [],
-	}
-	const syncedPublishedCommit = await syncArtifactSourceSnapshot({
-		env: input.env,
-		userId: callerContext.user.userId,
-		baseUrl: callerContext.baseUrl,
-		sourceId: job.sourceId,
-		bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
-		files: buildJobSourceFiles({
-			job: toJobView(job),
-			moduleSource: shape.moduleSource,
-		}),
-	})
-	if (syncedPublishedCommit) {
-		job.publishedCommit = syncedPublishedCommit
-	}
-	const callerContextJson = serializeCallerContext(callerContext)
-	await insertJobRow({
-		db: input.env.APP_DB,
-		userId: callerContext.user.userId,
-		job,
-		callerContextJson,
-	})
-	await upsertJobVector(input.env, {
-		jobId: job.id,
-		userId: callerContext.user.userId,
-		embedText: buildJobEmbedText({
-			name: job.name,
-			scheduleSummary: toJobView(job).scheduleSummary,
-			sourceId: job.sourceId,
-			publishedCommit: job.publishedCommit,
-		}),
-	})
-	await syncJobManagerAlarm({
-		env: input.env,
-		userId: callerContext.user.userId,
-	})
-	return toJobView(job)
 }
 
 export async function listJobs(input: { env: Env; userId: string }) {
@@ -1090,108 +1115,114 @@ export async function updateJob(input: {
 	body: JobUpdateInput
 }) {
 	const callerContext = requirePersistableJobCallerContext(input.callerContext)
-	const existingRow = await getJobRowById(
-		input.env.APP_DB,
-		callerContext.user.userId,
-		input.body.id,
-	)
-	if (!existingRow) {
-		throw new Error(`Job "${input.body.id}" was not found.`)
-	}
-	const existing = existingRow.record
-	const nextSchedule =
-		input.body.schedule !== undefined
-			? normalizeJobSchedule(input.body.schedule)
-			: existing.schedule
-	const nextTimezone =
-		input.body.timezone === null
-			? normalizeJobTimezone(null)
-			: normalizeJobTimezone(input.body.timezone ?? existing.timezone)
-	const nextEnabled = input.body.enabled ?? existing.enabled
-	const shouldRecomputeNextRunAt =
-		JSON.stringify(nextSchedule) !== JSON.stringify(existing.schedule) ||
-		nextTimezone !== existing.timezone ||
-		(existing.enabled === false && nextEnabled === true)
-	const shape = resolveUpdatedShape({
-		existing,
-		body: input.body,
-	})
-	if (
-		input.body.sourceId !== undefined &&
-		existing.sourceId != null &&
-		input.body.sourceId !== existing.sourceId
-	) {
-		throw new Error(
-			`Job "${existing.id}" cannot change sourceId after it is assigned.`,
-		)
-	}
-	const updated: JobRecord = {
-		...existing,
-		name:
-			input.body.name === undefined
-				? existing.name
-				: normalizeJobName(input.body.name),
-		sourceId: shape.sourceId,
-		publishedCommit: shape.publishedCommit ?? null,
-		repoCheckPolicy: shape.repoCheckPolicy,
-		params:
-			input.body.params === undefined
-				? existing.params
-				: normalizeOptionalParams(input.body.params),
-		schedule: nextSchedule,
-		timezone: nextTimezone,
-		enabled: nextEnabled,
-		killSwitchEnabled:
-			input.body.killSwitchEnabled ?? existing.killSwitchEnabled,
-		updatedAt: new Date().toISOString(),
-		nextRunAt: shouldRecomputeNextRunAt
-			? computeNextRunAt({
-					schedule: nextSchedule,
-					timezone: nextTimezone,
-				})
-			: existing.nextRunAt,
-	}
-	if (shouldSyncJobSourceForUpdate(input.body)) {
-		const syncedPublishedCommit = await syncArtifactSourceSnapshot({
-			env: input.env,
-			userId: callerContext.user.userId,
-			baseUrl: callerContext.baseUrl,
-			sourceId: updated.sourceId,
-			bootstrapAccess: null,
-			files: buildJobSourceFiles({
-				job: toJobView(updated),
-				moduleSource: shape.moduleSource ?? null,
-			}),
-		})
-		if (syncedPublishedCommit) {
-			updated.publishedCommit = syncedPublishedCommit
-		}
-	}
-	const nextCallerContextJson = serializeCallerContext(callerContext)
-	const didUpdate = await updateJobRow({
+	return await withAccountWriteLease({
 		db: input.env.APP_DB,
-		userId: callerContext.user.userId,
-		job: updated,
-		callerContextJson: nextCallerContextJson,
+		stableUserId: callerContext.user.userId,
+		async write() {
+			const existingRow = await getJobRowById(
+				input.env.APP_DB,
+				callerContext.user.userId,
+				input.body.id,
+			)
+			if (!existingRow) {
+				throw new Error(`Job "${input.body.id}" was not found.`)
+			}
+			const existing = existingRow.record
+			const nextSchedule =
+				input.body.schedule !== undefined
+					? normalizeJobSchedule(input.body.schedule)
+					: existing.schedule
+			const nextTimezone =
+				input.body.timezone === null
+					? normalizeJobTimezone(null)
+					: normalizeJobTimezone(input.body.timezone ?? existing.timezone)
+			const nextEnabled = input.body.enabled ?? existing.enabled
+			const shouldRecomputeNextRunAt =
+				JSON.stringify(nextSchedule) !== JSON.stringify(existing.schedule) ||
+				nextTimezone !== existing.timezone ||
+				(existing.enabled === false && nextEnabled === true)
+			const shape = resolveUpdatedShape({
+				existing,
+				body: input.body,
+			})
+			if (
+				input.body.sourceId !== undefined &&
+				existing.sourceId != null &&
+				input.body.sourceId !== existing.sourceId
+			) {
+				throw new Error(
+					`Job "${existing.id}" cannot change sourceId after it is assigned.`,
+				)
+			}
+			const updated: JobRecord = {
+				...existing,
+				name:
+					input.body.name === undefined
+						? existing.name
+						: normalizeJobName(input.body.name),
+				sourceId: shape.sourceId,
+				publishedCommit: shape.publishedCommit ?? null,
+				repoCheckPolicy: shape.repoCheckPolicy,
+				params:
+					input.body.params === undefined
+						? existing.params
+						: normalizeOptionalParams(input.body.params),
+				schedule: nextSchedule,
+				timezone: nextTimezone,
+				enabled: nextEnabled,
+				killSwitchEnabled:
+					input.body.killSwitchEnabled ?? existing.killSwitchEnabled,
+				updatedAt: new Date().toISOString(),
+				nextRunAt: shouldRecomputeNextRunAt
+					? computeNextRunAt({
+							schedule: nextSchedule,
+							timezone: nextTimezone,
+						})
+					: existing.nextRunAt,
+			}
+			if (shouldSyncJobSourceForUpdate(input.body)) {
+				const syncedPublishedCommit = await syncArtifactSourceSnapshot({
+					env: input.env,
+					userId: callerContext.user.userId,
+					baseUrl: callerContext.baseUrl,
+					sourceId: updated.sourceId,
+					bootstrapAccess: null,
+					files: buildJobSourceFiles({
+						job: toJobView(updated),
+						moduleSource: shape.moduleSource ?? null,
+					}),
+				})
+				if (syncedPublishedCommit) {
+					updated.publishedCommit = syncedPublishedCommit
+				}
+			}
+			const nextCallerContextJson = serializeCallerContext(callerContext)
+			const didUpdate = await updateJobRow({
+				db: input.env.APP_DB,
+				userId: callerContext.user.userId,
+				job: updated,
+				callerContextJson: nextCallerContextJson,
+			})
+			if (!didUpdate) {
+				throw new Error(`Job "${updated.id}" could not be updated.`)
+			}
+			await upsertJobVector(input.env, {
+				jobId: updated.id,
+				userId: callerContext.user.userId,
+				embedText: buildJobEmbedText({
+					name: updated.name,
+					scheduleSummary: toJobView(updated).scheduleSummary,
+					sourceId: updated.sourceId,
+					publishedCommit: updated.publishedCommit,
+				}),
+			})
+			await syncJobManagerAlarm({
+				env: input.env,
+				userId: callerContext.user.userId,
+			})
+			return toJobView(updated)
+		},
 	})
-	if (!didUpdate) {
-		throw new Error(`Job "${updated.id}" could not be updated.`)
-	}
-	await upsertJobVector(input.env, {
-		jobId: updated.id,
-		userId: callerContext.user.userId,
-		embedText: buildJobEmbedText({
-			name: updated.name,
-			scheduleSummary: toJobView(updated).scheduleSummary,
-			sourceId: updated.sourceId,
-			publishedCommit: updated.publishedCommit,
-		}),
-	})
-	await syncJobManagerAlarm({
-		env: input.env,
-		userId: callerContext.user.userId,
-	})
-	return toJobView(updated)
 }
 
 export async function deleteJob(input: {
@@ -1199,26 +1230,36 @@ export async function deleteJob(input: {
 	userId: string
 	jobId: string
 }) {
-	const row = await getJobRowById(input.env.APP_DB, input.userId, input.jobId)
-	if (!row) {
-		throw new Error(`Job "${input.jobId}" was not found.`)
-	}
-	await cleanupAdHocJobSource({
-		env: input.env,
-		userId: input.userId,
-		jobId: input.jobId,
-		sourceId: row.record.sourceId,
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.userId,
+		async write() {
+			const row = await getJobRowById(
+				input.env.APP_DB,
+				input.userId,
+				input.jobId,
+			)
+			if (!row) {
+				throw new Error(`Job "${input.jobId}" was not found.`)
+			}
+			await cleanupAdHocJobSource({
+				env: input.env,
+				userId: input.userId,
+				jobId: input.jobId,
+				sourceId: row.record.sourceId,
+			})
+			await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
+			await deleteJobVector(input.env, input.jobId)
+			await syncJobManagerAlarm({
+				env: input.env,
+				userId: input.userId,
+			})
+			return {
+				id: input.jobId,
+				deleted: true as const,
+			}
+		},
 	})
-	await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
-	await deleteJobVector(input.env, input.jobId)
-	await syncJobManagerAlarm({
-		env: input.env,
-		userId: input.userId,
-	})
-	return {
-		id: input.jobId,
-		deleted: true as const,
-	}
 }
 
 export async function executeJobOnce(input: {
@@ -1227,83 +1268,89 @@ export async function executeJobOnce(input: {
 	callerContext: PersistedJobCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 }): Promise<JobExecutionOutcome> {
-	const started = new Date()
-	let execution: JobExecutionResult
-	let outcome: 'success' | 'error' = 'success'
-	let finished = started
-	let durationMs = 0
-	try {
-		if (!input.callerContext) {
-			outcome = 'error'
-			execution = {
-				ok: false,
-				error:
-					'Job caller context is missing. Re-save the job to refresh its execution context.',
-				logs: [],
-			}
-		} else {
-			const runtimeCallerContext: PersistedJobCallerContext = {
-				...input.callerContext,
-				executionOrigin: 'background',
-				storageContext: {
-					sessionId: input.callerContext.storageContext?.sessionId ?? null,
-					appId: input.callerContext.storageContext?.appId ?? null,
-					packageId: input.callerContext.storageContext?.packageId ?? null,
-					storageId: input.job.storageId,
-				},
-				repoContext: input.callerContext.repoContext ?? null,
-			}
-			const result = await runRepoBackedJob({
-				env: input.env,
-				job: input.job,
-				callerContext: runtimeCallerContext,
-				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
-			})
-			if (result.error) {
-				outcome = 'error'
-			}
-			execution = result.error
-				? {
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.job.userId,
+		async write() {
+			const started = new Date()
+			let execution: JobExecutionResult
+			let outcome: 'success' | 'error' = 'success'
+			let finished = started
+			let durationMs = 0
+			try {
+				if (!input.callerContext) {
+					outcome = 'error'
+					execution = {
 						ok: false,
 						error:
-							typeof result.error === 'string'
-								? result.error
-								: formatJobError(result.error),
-						logs: result.logs ?? [],
+							'Job caller context is missing. Re-save the job to refresh its execution context.',
+						logs: [],
 					}
-				: {
-						ok: true,
-						result: result.result,
-						logs: result.logs ?? [],
+				} else {
+					const runtimeCallerContext: PersistedJobCallerContext = {
+						...input.callerContext,
+						executionOrigin: 'background',
+						storageContext: {
+							sessionId: input.callerContext.storageContext?.sessionId ?? null,
+							appId: input.callerContext.storageContext?.appId ?? null,
+							packageId: input.callerContext.storageContext?.packageId ?? null,
+							storageId: input.job.storageId,
+						},
+						repoContext: input.callerContext.repoContext ?? null,
 					}
-		}
-	} catch (error) {
-		outcome = 'error'
-		execution = {
-			ok: false,
-			error: formatJobError(error),
-			logs: [],
-		}
-	} finally {
-		finished = new Date()
-		durationMs = Math.max(0, finished.valueOf() - started.valueOf())
-		const userId = input.job.userId
-		if (userId) {
-			await recordUsage(input.env, {
-				userId,
-				eventType: 'job_run',
-				entityId: input.job.id,
+					const result = await runRepoBackedJob({
+						env: input.env,
+						job: input.job,
+						callerContext: runtimeCallerContext,
+						repoCheckPolicyOverride: input.repoCheckPolicyOverride,
+					})
+					if (result.error) {
+						outcome = 'error'
+					}
+					execution = result.error
+						? {
+								ok: false,
+								error:
+									typeof result.error === 'string'
+										? result.error
+										: formatJobError(result.error),
+								logs: result.logs ?? [],
+							}
+						: {
+								ok: true,
+								result: result.result,
+								logs: result.logs ?? [],
+							}
+				}
+			} catch (error) {
+				outcome = 'error'
+				execution = {
+					ok: false,
+					error: formatJobError(error),
+					logs: [],
+				}
+			} finally {
+				finished = new Date()
+				durationMs = Math.max(0, finished.valueOf() - started.valueOf())
+				const userId = input.job.userId
+				if (userId) {
+					await recordUsage(input.env, {
+						userId,
+						eventType: 'job_run',
+						entityId: input.job.id,
+						durationMs,
+						outcome,
+					})
+				}
+			}
+			return {
+				execution,
+				startedAt: started.toISOString(),
+				finishedAt: finished.toISOString(),
 				durationMs,
-				outcome,
-			})
-		}
-	}
-	return {
-		execution,
-		startedAt: started.toISOString(),
-		finishedAt: finished.toISOString(),
-		durationMs,
-	}
+			}
+		},
+	})
 }
 
 async function runRepoBackedJob(input: {
@@ -1368,60 +1415,70 @@ export async function runJobNow(input: {
 	callerContext?: McpCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 }) {
-	const row = await getJobRowById(input.env.APP_DB, input.userId, input.jobId)
-	if (!row) {
-		throw new Error(`Job "${input.jobId}" was not found.`)
-	}
-	const activeCallerContext = input.callerContext
-		? requirePersistableJobCallerContext(input.callerContext)
-		: row.callerContext
-	const outcome = await executeJobOnce({
-		env: input.env,
-		job: row.record,
-		callerContext: activeCallerContext,
-		repoCheckPolicyOverride: input.repoCheckPolicyOverride,
-	})
-	const updated =
-		row.record.schedule.type === 'once'
-			? applyExecutionOutcome(
-					row.record,
-					outcome,
-					outcome.execution.ok ? {} : { enabled: false },
-				)
-			: applyExecutionOutcome(row.record, outcome, {
-					nextRunAt: computeNextRunAt({
-						schedule: row.record.schedule,
-						timezone: row.record.timezone,
-						from: outcome.finishedAt,
-					}),
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.userId,
+		async write() {
+			const row = await getJobRowById(
+				input.env.APP_DB,
+				input.userId,
+				input.jobId,
+			)
+			if (!row) {
+				throw new Error(`Job "${input.jobId}" was not found.`)
+			}
+			const activeCallerContext = input.callerContext
+				? requirePersistableJobCallerContext(input.callerContext)
+				: row.callerContext
+			const outcome = await executeJobOnce({
+				env: input.env,
+				job: row.record,
+				callerContext: activeCallerContext,
+				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
+			})
+			const updated =
+				row.record.schedule.type === 'once'
+					? applyExecutionOutcome(
+							row.record,
+							outcome,
+							outcome.execution.ok ? {} : { enabled: false },
+						)
+					: applyExecutionOutcome(row.record, outcome, {
+							nextRunAt: computeNextRunAt({
+								schedule: row.record.schedule,
+								timezone: row.record.timezone,
+								from: outcome.finishedAt,
+							}),
+						})
+			const deletedAfterRun =
+				row.record.schedule.type === 'once' && outcome.execution.ok
+			if (deletedAfterRun) {
+				await archiveSuccessfulOneOffJob({
+					env: input.env,
+					job: row.record,
 				})
-	const deletedAfterRun =
-		row.record.schedule.type === 'once' && outcome.execution.ok
-	if (deletedAfterRun) {
-		await archiveSuccessfulOneOffJob({
-			env: input.env,
-			job: row.record,
-		})
-		await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
-		await deleteJobVector(input.env, input.jobId)
-		await cleanupArchivedJobArtifacts({
-			env: input.env,
-		})
-	} else {
-		await updateJobRow({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			job: updated,
-			callerContextJson: activeCallerContext
-				? serializeCallerContext(activeCallerContext)
-				: row.callerContextJson,
-		})
-	}
-	return {
-		job: toJobView(updated),
-		execution: outcome.execution,
-		deletedAfterRun,
-	}
+				await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
+				await deleteJobVector(input.env, input.jobId)
+				await cleanupArchivedJobArtifacts({
+					env: input.env,
+				})
+			} else {
+				await updateJobRow({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					job: updated,
+					callerContextJson: activeCallerContext
+						? serializeCallerContext(activeCallerContext)
+						: row.callerContextJson,
+				})
+			}
+			return {
+				job: toJobView(updated),
+				execution: outcome.execution,
+				deletedAfterRun,
+			}
+		},
+	})
 }
 
 export async function runDueJobsForUser(input: {
@@ -1429,74 +1486,79 @@ export async function runDueJobsForUser(input: {
 	userId: string
 	now?: Date
 }) {
-	await assertAccountWritable(input.env, input.userId)
-	const now = input.now ?? new Date()
-	const dueRows = await listDueJobRows(
-		input.env.APP_DB,
-		input.userId,
-		now.toISOString(),
-	)
-	const dueRowById = new Map(
-		dueRows.map((row) => [row.record.id, row] as const),
-	)
-	if (dueRows.length === 0) {
-		logJobSchedulerEvent({
-			event: 'run_due_jobs_empty',
-			userId: input.userId,
-			dueJobCount: 0,
-			reason: 'no_due_jobs',
-		})
-		return {
-			dueJobCount: 0,
-			successCount: 0,
-			errorCount: 0,
-			jobOutcomes: [] satisfies Array<SchedulerJobOutcomeLog>,
-		}
-	}
-	const result = await processDueJobs({
-		jobs: dueRows.map((row) => row.record),
-		now,
-		executeJob: async (job) => {
-			const row = dueRowById.get(job.id)
-			const callerContext = row?.callerContext ?? null
-			return executeJobOnce({
-				env: input.env,
-				job,
-				callerContext,
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.userId,
+		async write() {
+			const now = input.now ?? new Date()
+			const dueRows = await listDueJobRows(
+				input.env.APP_DB,
+				input.userId,
+				now.toISOString(),
+			)
+			const dueRowById = new Map(
+				dueRows.map((row) => [row.record.id, row] as const),
+			)
+			if (dueRows.length === 0) {
+				logJobSchedulerEvent({
+					event: 'run_due_jobs_empty',
+					userId: input.userId,
+					dueJobCount: 0,
+					reason: 'no_due_jobs',
+				})
+				return {
+					dueJobCount: 0,
+					successCount: 0,
+					errorCount: 0,
+					jobOutcomes: [] satisfies Array<SchedulerJobOutcomeLog>,
+				}
+			}
+			const result = await processDueJobs({
+				jobs: dueRows.map((row) => row.record),
+				now,
+				executeJob: async (job) => {
+					const row = dueRowById.get(job.id)
+					const callerContext = row?.callerContext ?? null
+					return executeJobOnce({
+						env: input.env,
+						job,
+						callerContext,
+					})
+				},
 			})
-		},
-	})
-	for (const job of result.saveJobs) {
-		const row = dueRowById.get(job.id)
-		await updateJobRow({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			job,
-			callerContextJson: row?.callerContextJson ?? 'null',
-		})
-	}
-	for (const jobId of result.deleteJobIds) {
-		const row = dueRowById.get(jobId)
-		if (row) {
-			await archiveSuccessfulOneOffJob({
+			for (const job of result.saveJobs) {
+				const row = dueRowById.get(job.id)
+				await updateJobRow({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					job,
+					callerContextJson: row?.callerContextJson ?? 'null',
+				})
+			}
+			for (const jobId of result.deleteJobIds) {
+				const row = dueRowById.get(jobId)
+				if (row) {
+					await archiveSuccessfulOneOffJob({
+						env: input.env,
+						job: row.record,
+						now,
+					})
+				}
+				await deleteJobRow(input.env.APP_DB, input.userId, jobId)
+				await deleteJobVector(input.env, jobId)
+			}
+			await cleanupArchivedJobArtifacts({
 				env: input.env,
-				job: row.record,
 				now,
 			})
-		}
-		await deleteJobRow(input.env.APP_DB, input.userId, jobId)
-		await deleteJobVector(input.env, jobId)
-	}
-	await cleanupArchivedJobArtifacts({
-		env: input.env,
-		now,
+			return {
+				dueJobCount: dueRows.length,
+				successCount: result.successCount,
+				errorCount: result.errorCount,
+				jobOutcomes: result.jobOutcomes,
+			}
+		},
 	})
-	return {
-		dueJobCount: dueRows.length,
-		successCount: result.successCount,
-		errorCount: result.errorCount,
-		jobOutcomes: result.jobOutcomes,
-	}
 }
 
 export async function getNextRunnableJob(input: { env: Env; userId: string }) {

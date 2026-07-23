@@ -803,14 +803,12 @@ async function listKvKeysByPrefix(input: {
 async function deleteRetrieverCache(input: {
 	env: Env
 	userId: string
-	packageIds: ReadonlyArray<string>
 	warnings: Array<string>
 }) {
 	try {
 		return await deleteAllPackageRetrieverCacheEntriesForUser({
 			env: input.env,
 			userId: input.userId,
-			packageIds: input.packageIds,
 		})
 	} catch (error) {
 		const message = getErrorMessage(error)
@@ -1005,7 +1003,6 @@ export async function deleteUserAccount(input: {
 			(await deleteRetrieverCache({
 				env: input.env,
 				userId: input.mcpUserId,
-				packageIds: inventory.savedPackages.map((pkg) => pkg.id),
 				warnings,
 			}))
 	} else if (
