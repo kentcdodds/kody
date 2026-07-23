@@ -707,7 +707,12 @@ export function verifyRows(
 				const tableRows = rows.filter((row) => row.table_name === check.table)
 				for (const expected of check.users) {
 					const keys = tableRows
-						.filter((row) => row.user_id === expected.userId)
+						.filter(
+							(row) =>
+								(typeof row.user_id === 'string' ||
+									typeof row.user_id === 'number') &&
+								String(row.user_id) === expected.userId,
+						)
 						.map((row) => String(row.primary_key))
 					if (
 						keys.length !== expected.rowCount ||

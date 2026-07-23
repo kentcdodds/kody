@@ -241,6 +241,44 @@ test('D1 drill verifies immutable manifest and supplied SQL file evidence before
 	expect(adapters.createTarget).not.toHaveBeenCalled()
 })
 
+test('isolation verification normalizes numeric SQLite user IDs', () => {
+	const baseline = createBaseline({
+		isolationChecks: [
+			{
+				table: 'messages',
+				userColumn: 'user_id',
+				primaryKeyColumn: 'id',
+				users: [
+					{
+						userId: '1',
+						rowCount: 1,
+						primaryKeySha256: sha256(canonicalJson(['message-a'])),
+					},
+					{
+						userId: '2',
+						rowCount: 1,
+						primaryKeySha256: sha256(canonicalJson(['message-b'])),
+					},
+				],
+			},
+		],
+	})
+	const query = buildVerificationQueries(baseline, 'baseline').find(
+		(candidate) => candidate.id === 'isolation',
+	)
+	if (!query) throw new Error('fixture lacks isolation query')
+	expect(() =>
+		verifyRows(
+			query,
+			[
+				{ table_name: 'messages', user_id: 1, primary_key: 'message-a' },
+				{ table_name: 'messages', user_id: 2, primary_key: 'message-b' },
+			],
+			baseline,
+		),
+	).not.toThrow()
+})
+
 test('restore trust registry is exact, checked-in empty, and cannot be replaced by operator assertions', async () => {
 	expect(parseRestoreTrustRegistry(createTrustRegistry())).toEqual(
 		createTrustRegistry(),
