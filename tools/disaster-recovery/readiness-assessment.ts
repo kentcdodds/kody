@@ -300,6 +300,11 @@ export function assessCanonicalReadiness(
 	trustedBaselines: ReadonlyArray<{
 		id: string
 		canonicalSha256: string
+		source: {
+			accountId: string
+			databaseId: string
+			databaseName: string
+		}
 		baseline: {
 			schemaSha256: string
 			migrationNames: ReadonlyArray<string>
@@ -400,6 +405,12 @@ export function assessCanonicalReadiness(
 					)
 					if (
 						!baseline ||
+						baseline.source.accountId.toLowerCase() !==
+							source.accountId.toLowerCase() ||
+						baseline.source.databaseId.toLowerCase() !==
+							source.resourceId.toLowerCase() ||
+						baseline.source.databaseName !==
+							restoreDetails.sourceDatabaseName ||
 						baseline.baseline.schemaSha256 !== restoreDetails.schemaSha256 ||
 						sha256(
 							canonicalJson([...baseline.baseline.migrationNames].sort()),

@@ -207,6 +207,7 @@ async function isD1Ready(
 	evidencePath: string,
 	registry: TrustedPublicKeyRegistry,
 	trustedSource = sourceIdentity,
+	trustedBaselineSource = sourceIdentity,
 ): Promise<boolean> {
 	const verified = await verifyLocalArtifactFiles(
 		evidence,
@@ -228,6 +229,11 @@ async function isD1Ready(
 			{
 				id: restoreProvenance.trustedBaselineId,
 				canonicalSha256: restoreProvenance.trustedBaselineSha256,
+				source: {
+					accountId: trustedBaselineSource.accountId,
+					databaseId: trustedBaselineSource.resourceId,
+					databaseName: restoreProvenance.sourceDatabaseName,
+				},
 				baseline: {
 					schemaSha256: restoreProvenance.schemaSha256,
 					migrationNames,
@@ -347,6 +353,18 @@ test('signed D1 provenance must match checked source and every bound digest', as
 				...sourceIdentity,
 				resourceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
 			}),
+		).toBe(false)
+		expect(
+			await isD1Ready(
+				fixture.evidence,
+				fixture.evidencePath,
+				registry,
+				sourceIdentity,
+				{
+					...sourceIdentity,
+					resourceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+				},
+			),
 		).toBe(false)
 
 		const restoreEnvelope = fixture.envelopes.find(
