@@ -153,19 +153,6 @@ async function cleanupInboundDurability(input: {
 	}
 }
 
-function unreadableRawDeliveryFingerprint(message: ForwardableEmailMessage) {
-	const headers = Array.from(message.headers.entries()).sort(
-		([left], [right]) => left.localeCompare(right),
-	)
-	return JSON.stringify({
-		from: message.from,
-		to: message.to,
-		rawSize: message.rawSize,
-		messageId: message.headers.get('message-id')?.trim() ?? null,
-		headers,
-	})
-}
-
 async function scheduleInboundDeliveryEffects(input: {
 	env: Parameters<typeof processInboundDeliveryEffects>[0]['env']
 	userId: string
@@ -395,19 +382,21 @@ export async function handleInboundEmail(
 				blobs: env.EMAIL_BLOBS,
 				userId,
 			})
-			let rawMime: string | null = null
-			let rawReadError: unknown
+			let rawMime: string
 			try {
 				rawMime = await readForwardableEmailRawMime(message)
 			} catch (error) {
-				rawReadError = error
+				throw new RetryableInboundStorageError(
+					'Failed to read inbound raw MIME; delivery should be retried.',
+					error,
+				)
 			}
 			const quotaNow = new Date()
 			const candidateDelivery = await buildInboundDelivery({
 				userId,
 				inboxId: inbox.id,
 				recipient,
-				rawMime: rawMime ?? unreadableRawDeliveryFingerprint(message),
+				rawMime,
 				quotaDay: userInboundQuotaDay(quotaNow),
 				now: quotaNow,
 			})
@@ -424,16 +413,14 @@ export async function handleInboundEmail(
 					userId,
 					deliveryId: delivery.deliveryId,
 				})) ??
-				(rawMime
-					? await adoptLegacyInboundDelivery({
-							db: env.APP_DB,
-							blobs: env.EMAIL_BLOBS,
-							delivery,
-							rawMime,
-							rawSize: message.rawSize,
-							now: quotaNow,
-						})
-					: null)
+				(await adoptLegacyInboundDelivery({
+					db: env.APP_DB,
+					blobs: env.EMAIL_BLOBS,
+					delivery,
+					rawMime,
+					rawSize: message.rawSize,
+					now: quotaNow,
+				}))
 			if (!existingDelivery) {
 				try {
 					// New deliveries check the stored cap before their durable quota
@@ -498,16 +485,14 @@ export async function handleInboundEmail(
 							userId,
 							deliveryId: delivery.deliveryId,
 						})) ??
-						(rawMime
-							? await adoptLegacyInboundDelivery({
-									db: env.APP_DB,
-									blobs: env.EMAIL_BLOBS,
-									delivery,
-									rawMime,
-									rawSize: message.rawSize,
-									now: quotaNow,
-								})
-							: null)
+						(await adoptLegacyInboundDelivery({
+							db: env.APP_DB,
+							blobs: env.EMAIL_BLOBS,
+							delivery,
+							rawMime,
+							rawSize: message.rawSize,
+							now: quotaNow,
+						}))
 				}
 			}
 			let claimedDelivery: InboundDelivery
@@ -564,21 +549,6 @@ export async function handleInboundEmail(
 					})
 					return
 				}
-			}
-			if (rawReadError || rawMime == null) {
-				const reason =
-					rawReadError instanceof Error
-						? rawReadError.message
-						: 'Failed to read inbound email.'
-				const rejected = await rejectClaimedInboundDelivery({
-					db: env.APP_DB,
-					message,
-					delivery: claimedDelivery,
-					reason,
-				})
-				if (!rejected) return
-				await recordReceiveUsage({ outcome: 'error' })
-				return
 			}
 			let parsed
 			try {
@@ -705,19 +675,21 @@ async function handleSystemInboundEmail(input: {
 		blobs: input.env.EMAIL_BLOBS,
 		userId: systemEmailOwnerId,
 	})
-	let rawMime: string | null = null
-	let rawReadError: unknown
+	let rawMime: string
 	try {
 		rawMime = await readForwardableEmailRawMime(input.message)
 	} catch (error) {
-		rawReadError = error
+		throw new RetryableInboundStorageError(
+			'Failed to read inbound raw MIME; delivery should be retried.',
+			error,
+		)
 	}
 	const quotaNow = new Date()
 	const candidateDelivery = await buildInboundDelivery({
 		userId: systemEmailOwnerId,
 		inboxId: inbox.id,
 		recipient: input.recipient,
-		rawMime: rawMime ?? unreadableRawDeliveryFingerprint(input.message),
+		rawMime,
 		quotaDay: systemInboundQuotaDay(quotaNow),
 		now: quotaNow,
 	})
@@ -734,16 +706,14 @@ async function handleSystemInboundEmail(input: {
 			userId: systemEmailOwnerId,
 			deliveryId: delivery.deliveryId,
 		})) ??
-		(rawMime
-			? await adoptLegacyInboundDelivery({
-					db: input.env.APP_DB,
-					blobs: input.env.EMAIL_BLOBS,
-					delivery,
-					rawMime,
-					rawSize: input.message.rawSize,
-					now: quotaNow,
-				})
-			: null)
+		(await adoptLegacyInboundDelivery({
+			db: input.env.APP_DB,
+			blobs: input.env.EMAIL_BLOBS,
+			delivery,
+			rawMime,
+			rawSize: input.message.rawSize,
+			now: quotaNow,
+		}))
 	if (!existingDelivery) {
 		const storedMessages = await countStoredSystemEmailMessages({
 			db: input.env.APP_DB,
@@ -796,16 +766,14 @@ async function handleSystemInboundEmail(input: {
 					userId: systemEmailOwnerId,
 					deliveryId: delivery.deliveryId,
 				})) ??
-				(rawMime
-					? await adoptLegacyInboundDelivery({
-							db: input.env.APP_DB,
-							blobs: input.env.EMAIL_BLOBS,
-							delivery,
-							rawMime,
-							rawSize: input.message.rawSize,
-							now: quotaNow,
-						})
-					: null)
+				(await adoptLegacyInboundDelivery({
+					db: input.env.APP_DB,
+					blobs: input.env.EMAIL_BLOBS,
+					delivery,
+					rawMime,
+					rawSize: input.message.rawSize,
+					now: quotaNow,
+				}))
 		}
 	}
 	const claim = existingDelivery
@@ -857,21 +825,6 @@ async function handleSystemInboundEmail(input: {
 			})
 			return
 		}
-	}
-	if (rawReadError || rawMime == null) {
-		const reason =
-			rawReadError instanceof Error
-				? rawReadError.message
-				: 'Failed to read inbound email.'
-		const rejected = await rejectClaimedInboundDelivery({
-			db: input.env.APP_DB,
-			message: input.message,
-			delivery: claimedDelivery,
-			reason,
-		})
-		if (!rejected) return
-		await recordReceiveUsage({ outcome: 'error' })
-		return
 	}
 	let parsed
 	try {

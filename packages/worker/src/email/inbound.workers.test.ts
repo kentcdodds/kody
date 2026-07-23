@@ -1639,7 +1639,7 @@ test('production usage outbox records one durable D1 event without retry data po
 	expect(points).toHaveLength(0)
 })
 
-test('inbound parse rejection still consumes daily receive quota', async () => {
+test('raw MIME read failure retries before quota and successful redelivery charges once', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `parse-quota-${crypto.randomUUID().slice(0, 8)}`
@@ -1652,10 +1652,11 @@ test('inbound parse rejection still consumes daily receive quota', async () => {
 		username,
 	})
 
+	const raw = 'Subject: Unreadable\r\n\r\nBody'
 	const unreadableMessage = createForwardableEmailMessage({
 		from: 'sender@example.net',
 		to: address,
-		raw: 'Subject: Unreadable\r\n\r\nBody',
+		raw,
 	})
 	Object.defineProperty(unreadableMessage, 'raw', {
 		value: new ReadableStream({
@@ -1664,9 +1665,27 @@ test('inbound parse rejection still consumes daily receive quota', async () => {
 			},
 		}),
 	})
-	await handleInboundEmail(unreadableMessage, createInboundEnv())
-	expect(unreadableMessage.rejectedReason).toMatch(/raw stream read failed/)
+	await expect(
+		handleInboundEmail(unreadableMessage, createInboundEnv()),
+	).rejects.toBeInstanceOf(RetryableInboundStorageError)
+	expect(unreadableMessage.rejectedReason).toBeNull()
+	expect(await readUserDailyReceiveCount(userId)).toBe(0)
+
+	const retry = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw,
+	})
+	await handleInboundEmail(retry, createInboundEnv())
+	expect(retry.rejectedReason).toBeNull()
 	expect(await readUserDailyReceiveCount(userId)).toBe(1)
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 10,
+		}),
+	).toHaveLength(1)
 })
 
 test('stored-message count failure happens before durable quota charge', async () => {
