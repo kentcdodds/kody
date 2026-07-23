@@ -146,7 +146,6 @@ test('freshness compares Cloudflare account and D1 IDs case-insensitively', asyn
 				...manifest(stored).payload,
 				source: {
 					accountId: env.SOURCE_ACCOUNT_ID.toUpperCase(),
-					accountName: env.SOURCE_ACCOUNT_NAME,
 					databaseId: env.SOURCE_DATABASE_ID.toUpperCase(),
 					databaseName: env.SOURCE_DATABASE_NAME,
 				},

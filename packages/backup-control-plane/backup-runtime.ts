@@ -119,7 +119,6 @@ export async function runBackupRuntime(
 		const unsignedManifest = {
 			source: {
 				accountId: env.SOURCE_ACCOUNT_ID,
-				accountName: env.SOURCE_ACCOUNT_NAME,
 				databaseId: env.SOURCE_DATABASE_ID,
 				databaseName: env.SOURCE_DATABASE_NAME,
 			},

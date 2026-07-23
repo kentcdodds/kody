@@ -10,8 +10,17 @@ backup control plane. Its separately supplied SHA-256 must match the exact
 bytes, and its Ed25519 signature must verify against the sole checked-in
 `trusted-backup-manifest-public-keys.json` registry. The algorithm, schema, and
 key id are strict. An operator hash, unsigned envelope, unknown key, or caller
-key can never authorize restore. The local SQL bytes, size, and SHA-256 are then
-checked against the verified payload. Backups at or above 5 GiB are rejected.
+key can never authorize restore. Signed source provenance contains the source
+account id plus the remotely verified D1 UUID and exact database name; it does
+not contain an unverified account display name. Backups at or above 5 GiB are
+rejected.
+
+The CLI preflights the operator SQL pathname size, then stream-copies it into a
+private temporary directory without buffering the dump in memory. It makes the
+snapshot read-only, stats and stream-hashes the snapshot against the signed
+manifest, and passes only the snapshot path to Wrangler. Replacing the operator
+pathname after staging cannot alter the import. The snapshot is removed in
+`finally` after dry-run, execution, or failure.
 
 Schema, migration, sequence, and representative two-user expectations live only
 in the checked-in exact-schema `trusted-restore-baselines.json` registry. The

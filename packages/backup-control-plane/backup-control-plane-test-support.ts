@@ -169,7 +169,6 @@ export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 		BACKUP_WORKFLOW: {} as Workflow,
 		CLOUDFLARE_API_TOKEN: 'not-logged-secret',
 		SOURCE_ACCOUNT_ID: ACCOUNT_ID,
-		SOURCE_ACCOUNT_NAME: 'production-account',
 		SOURCE_DATABASE_ID: DATABASE_ID,
 		SOURCE_DATABASE_NAME: 'production-db',
 		ALLOWED_SOURCE_ACCOUNT_IDS: ACCOUNT_ID,
@@ -461,7 +460,6 @@ export function manifest(stored: {
 		schemaVersion: backupManifestSchemaVersion,
 		source: {
 			accountId: ACCOUNT_ID,
-			accountName: 'production-account',
 			databaseId: DATABASE_ID,
 			databaseName: 'production-db',
 		},

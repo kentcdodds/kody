@@ -7,7 +7,6 @@ export type BackupManifestPayload = {
 	schemaVersion: typeof backupManifestSchemaVersion
 	source: {
 		accountId: string
-		accountName: string
 		databaseId: string
 		databaseName: string
 	}
@@ -88,7 +87,6 @@ export function parseBackupManifest(value: unknown): BackupManifest {
 		!isRecord(value.payload.source) ||
 		!hasExactKeys(value.payload.source, [
 			'accountId',
-			'accountName',
 			'databaseId',
 			'databaseName',
 		]) ||
@@ -118,7 +116,6 @@ export function parseBackupManifest(value: unknown): BackupManifest {
 	const strings = [
 		value.payload.buildCommit,
 		value.payload.source.accountId,
-		value.payload.source.accountName,
 		value.payload.source.databaseId,
 		value.payload.source.databaseName,
 		value.payload.export.bookmark,

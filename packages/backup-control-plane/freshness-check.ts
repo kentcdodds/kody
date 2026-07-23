@@ -77,7 +77,6 @@ export async function checkFreshness(
 			ageHours > maxAgeHours ||
 			manifest.payload.source.accountId.toLowerCase() !==
 				env.SOURCE_ACCOUNT_ID.toLowerCase() ||
-			manifest.payload.source.accountName !== env.SOURCE_ACCOUNT_NAME ||
 			manifest.payload.source.databaseId.toLowerCase() !==
 				env.SOURCE_DATABASE_ID.toLowerCase() ||
 			manifest.payload.source.databaseName !== env.SOURCE_DATABASE_NAME ||

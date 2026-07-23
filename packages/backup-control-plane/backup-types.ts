@@ -7,7 +7,6 @@ export interface BackupEnvironment {
 	BACKUP_WORKFLOW: Workflow
 	CLOUDFLARE_API_TOKEN: string
 	SOURCE_ACCOUNT_ID: string
-	SOURCE_ACCOUNT_NAME: string
 	SOURCE_DATABASE_ID: string
 	SOURCE_DATABASE_NAME: string
 	ALLOWED_SOURCE_ACCOUNT_IDS: string
