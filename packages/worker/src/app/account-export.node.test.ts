@@ -1084,6 +1084,16 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 	for (let index = 0; index < totalMessages; index += 1) {
 		insert.run(`message-${String(index).padStart(4, '0')}`, `Mail ${index}`)
 	}
+	sqlite.exec(`
+		INSERT INTO package_runtime_runs (
+			id, user_id, package_id, package_kody_id, surface, name, status,
+			started_at, storage_id, created_at, updated_at
+		) VALUES (
+			'service-run', 'user-aaa', 'pkg:1', 'pkg', 'service', 'svc x',
+			'success', '2026-07-05', 'service:pkg%3A1:svc%20x',
+			'2026-07-05', '2026-07-05'
+		);
+	`)
 
 	const accountExport = await createAccountExport({
 		env: { APP_DB: db } as Env,
@@ -1145,6 +1155,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 	})
 	expect(manifest.sections['d1.email_messages']?.count).toBe(totalMessages)
 	expect(manifest.sections.oauth_grants?.count).toBe(100)
+	expect(manifest.sections.storage_runners?.count).toBe(1)
 	expect(Math.max(...rowCounts)).toBeLessThanOrEqual(1)
 	expect(
 		queries.some((query) => query.includes('__account_export_rowid')),

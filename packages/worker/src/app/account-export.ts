@@ -740,6 +740,56 @@ async function countScalar(
 	return Number(row?.count ?? 0)
 }
 
+async function countUserStorageIds(env: Env, userId: string) {
+	const baseSql = `SELECT id FROM (
+		SELECT storage_id AS id FROM jobs
+			WHERE user_id = ? AND storage_id IS NOT NULL
+		UNION SELECT storage_id FROM archived_job_artifacts
+			WHERE user_id = ? AND storage_id IS NOT NULL
+		UNION SELECT storage_id FROM package_runtime_runs
+			WHERE user_id = ? AND storage_id IS NOT NULL
+		UNION SELECT id FROM saved_packages
+			WHERE user_id = ? AND has_app = 1
+	)`
+	let count = await countScalar(
+		env,
+		`SELECT COUNT(*) AS count FROM (${baseSql})`,
+		Array(4).fill(userId),
+	)
+	let afterPackageId = ''
+	let afterName = ''
+	for (;;) {
+		const page = await env.APP_DB.prepare(
+			`SELECT DISTINCT package_id, name
+			FROM package_runtime_runs
+			WHERE user_id = ? AND surface = 'service' AND name IS NOT NULL
+				AND (
+					package_id > ? OR (package_id = ? AND name > ?)
+				)
+			ORDER BY package_id, name
+			LIMIT 100`,
+		)
+			.bind(userId, afterPackageId, afterPackageId, afterName)
+			.all<{ package_id: string; name: string }>()
+		const rows = page.results ?? []
+		if (rows.length === 0) break
+		for (const row of rows) {
+			const storageId = buildPackageServiceStorageId(row.package_id, row.name)
+			const existing = await env.APP_DB.prepare(
+				`SELECT 1 AS owned FROM (${baseSql}) WHERE id = ?`,
+			)
+				.bind(userId, userId, userId, userId, storageId)
+				.first<{ owned: number }>()
+			if (existing?.owned !== 1) count += 1
+		}
+		const last = rows.at(-1)!
+		afterPackageId = last.package_id
+		afterName = last.name
+		if (rows.length < 100) break
+	}
+	return count
+}
+
 async function countUserBundleKvKeys(input: {
 	env: AccountExportEnv
 	userId: string
@@ -835,23 +885,7 @@ async function collectManifestInventoryCounts(input: {
 		r2Objects,
 	] = await Promise.all([
 		safeCount('storage ids', async () =>
-			countScalar(
-				input.env,
-				`SELECT COUNT(*) AS count FROM (
-					SELECT storage_id AS id FROM jobs
-						WHERE user_id = ? AND storage_id IS NOT NULL
-					UNION SELECT storage_id FROM archived_job_artifacts
-						WHERE user_id = ? AND storage_id IS NOT NULL
-					UNION SELECT storage_id FROM package_runtime_runs
-						WHERE user_id = ? AND storage_id IS NOT NULL
-					UNION SELECT id FROM saved_packages
-						WHERE user_id = ? AND has_app = 1
-					UNION SELECT 'service:' || package_id || char(0) || name
-						FROM package_runtime_runs
-						WHERE user_id = ? AND surface = 'service' AND name IS NOT NULL
-				)`,
-				Array(5).fill(input.userId),
-			),
+			countUserStorageIds(input.env, input.userId),
 		),
 		safeCount('remote connectors', async () =>
 			countScalar(
