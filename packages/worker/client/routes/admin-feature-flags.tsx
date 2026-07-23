@@ -48,7 +48,7 @@ function isAdminFeatureFlagsPath(href: string) {
 
 function summarizeEffectiveSource(flag: AdminFeatureFlag): string {
 	if (flag.stale) {
-		return 'stale (no longer in the code registry)'
+		return 'stale (absent from the code registry)'
 	}
 	if (!flag.global) {
 		return flag.defaultEnabled ? 'default (on)' : 'default (off)'
@@ -570,7 +570,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 							Stale flags
 						</h2>
 						<p mix={css(descriptionCss)}>
-							These keys still have database rows but are no longer in the code
+							These keys have database rows but are absent from the code
 							registry.
 						</p>
 						<div mix={css({ display: 'grid', gap: spacing.md })}>
