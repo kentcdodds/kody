@@ -20,15 +20,12 @@ async function recordInboundUsageEffect(input: {
 	userId: string
 	deliveryId: string
 	messageId: string
-	receivedAt: string | null
-	createdAt: string
 	usageMonth: string
 	usageBytes: number
 	expectedFinalizationToken?: string
 	durationMs?: number
 	now: Date
 }) {
-	const timestamp = input.receivedAt ?? input.createdAt
 	const finalizationToken = input.expectedFinalizationToken ?? null
 	if (!input.env.USAGE_EVENTS) {
 		const month = input.usageMonth
@@ -171,8 +168,6 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 		userId: input.userId,
 		deliveryId: delivery.deliveryId,
 		messageId: message.id,
-		receivedAt: message.receivedAt,
-		createdAt: message.createdAt,
 		usageMonth:
 			delivery.usageMonth ??
 			(message.receivedAt ?? message.createdAt).slice(0, 7),
