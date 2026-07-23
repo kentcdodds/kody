@@ -257,7 +257,7 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	} as never)
 	expect(successResponse.status).toBe(303)
 	const successLocation = new URL(successResponse.headers.get('Location') ?? '')
-	expect(successLocation.pathname).toBe('/account/mcp-servers')
+	expect(successLocation.pathname).toBe('/account/mcp-servers/server-1')
 	expect(successLocation.searchParams.get('auth')).toBe('success')
 	expect(successLocation.searchParams.get('server')).toBe('linear')
 
