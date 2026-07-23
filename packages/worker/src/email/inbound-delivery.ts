@@ -780,7 +780,9 @@ export async function claimInboundDeliveryStorage(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE email_delivery_events
-			SET detail_json = json_set(
+			SET event_type = 'receive_started',
+				message_id = NULL,
+				detail_json = json_set(
 				detail_json,
 				'$.state', 'storing',
 				'$.storageLease', ?,
@@ -798,6 +800,17 @@ export async function claimInboundDeliveryStorage(input: {
 					OR (
 						json_extract(detail_json, '$.state') = 'storing'
 						AND json_extract(detail_json, '$.storageLeaseAt') < ?
+					)
+					OR (
+						json_extract(detail_json, '$.state') = 'received'
+						AND NOT EXISTS (
+							SELECT 1 FROM email_messages
+							WHERE id = json_extract(
+								email_delivery_events.detail_json,
+								'$.messageId'
+							)
+								AND user_id = email_delivery_events.user_id
+						)
 					)
 				)`,
 		)

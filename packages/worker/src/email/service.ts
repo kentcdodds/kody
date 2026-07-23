@@ -395,6 +395,20 @@ export async function storeIdempotentInboundEmail(input: {
 			error,
 		)
 	}
+	const storedAttachments = await listEmailAttachmentsForMessage({
+		db: input.db,
+		messageId: delivery.messageId,
+	}).catch((error: unknown) => {
+		throw new RetryableInboundStorageError(
+			'Failed to verify inbound email attachments; the stable delivery will be retried.',
+			error,
+		)
+	})
+	if (storedAttachments.length !== parsed.attachments.length) {
+		throw new RetryableInboundStorageError(
+			'Inbound email attachment commit was incomplete; the stable delivery will be retried.',
+		)
+	}
 
 	let finalizedDelivery: InboundDelivery
 	try {

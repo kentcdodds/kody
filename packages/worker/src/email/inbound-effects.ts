@@ -19,7 +19,6 @@ async function recordInboundUsageEffect(input: {
 	env: InboundEffectsEnv
 	userId: string
 	deliveryId: string
-	messageId: string
 	usageMonth: string
 	usageBytes: number
 	expectedFinalizationToken?: string
@@ -161,21 +160,38 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 		userId: input.userId,
 		messageId: delivery.messageId,
 	})
-	if (!message) return { outcome: 'missing-message' as const }
 
 	await recordInboundUsageEffect({
 		env: input.env,
 		userId: input.userId,
 		deliveryId: delivery.deliveryId,
-		messageId: message.id,
 		usageMonth:
 			delivery.usageMonth ??
-			(message.receivedAt ?? message.createdAt).slice(0, 7),
-		usageBytes: delivery.usageBytes ?? message.rawSize ?? 0,
+			(message
+				? (message.receivedAt ?? message.createdAt).slice(0, 7)
+				: now.toISOString().slice(0, 7)),
+		usageBytes: delivery.usageBytes ?? message?.rawSize ?? 0,
 		expectedFinalizationToken: input.expectedFinalizationToken,
 		durationMs: delivery.usageDurationMs ?? input.durationMs,
 		now,
 	})
+	if (!message) {
+		await input.env.APP_DB.prepare(
+			`UPDATE email_delivery_events
+			SET detail_json = json_set(
+				detail_json,
+				'$.subscriptionEffectState', 'complete',
+				'$.subscriptionEffectMissingMessageAt', ?
+			)
+			WHERE id = ?
+				AND user_id = ?
+				AND event_type = 'received'
+				AND json_extract(detail_json, '$.subscriptionEffectState') != 'complete'`,
+		)
+			.bind(now.toISOString(), delivery.deliveryId, input.userId)
+			.run()
+		return { outcome: 'missing-message' as const }
+	}
 
 	const effectLease = crypto.randomUUID()
 	const effectLeaseAt = now.toISOString()

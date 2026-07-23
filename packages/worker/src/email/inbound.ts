@@ -83,9 +83,7 @@ async function rejectClaimedInboundDelivery(input: {
 		reason: input.reason,
 	}).catch((error: unknown) => {
 		warnRejectionAuditWriteFailed(error)
-		// Preserve permanent-rejection behavior when the audit transition itself
-		// is unavailable; only a proven competing state suppresses SMTP reject.
-		return true
+		throw error
 	})
 	if (transitioned) input.message.setReject(input.reason)
 	return transitioned
