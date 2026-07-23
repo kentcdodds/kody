@@ -147,6 +147,7 @@ function parseEvidence(
 				!exactKeys(artifact, [
 					'changeId',
 					'destinationIdentity',
+					'expiresAt',
 					'kind',
 					'outcome',
 					'performedAt',
@@ -167,7 +168,9 @@ function parseEvidence(
 				!isNonemptyString(artifact.verifierIdentity) ||
 				!isNonemptyString(artifact.changeId) ||
 				!isNonemptyString(artifact.systemVersion) ||
-				!isIsoDate(artifact.performedAt)
+				!isIsoDate(artifact.performedAt) ||
+				!isIsoDate(artifact.expiresAt) ||
+				Date.parse(artifact.expiresAt) <= Date.parse(artifact.performedAt)
 			) {
 				failures.push(`${artifactLabel}: invalid signed-evidence metadata`)
 				artifactMalformed = true
@@ -198,7 +201,8 @@ function parseEvidence(
 				artifact.verifierIdentity !== candidate.verifierIdentity ||
 				artifact.changeId !== candidate.changeId ||
 				artifact.systemVersion !== candidate.systemVersion ||
-				artifact.performedAt !== candidate.performedAt
+				artifact.performedAt !== candidate.performedAt ||
+				artifact.expiresAt !== candidate.expiresAt
 			) {
 				failures.push(`${artifactLabel}: metadata does not match its index`)
 				artifactMalformed = true
@@ -270,7 +274,8 @@ function artifactMatchesEnvelope(
 		content.verifierIdentity === artifact.verifierIdentity &&
 		content.changeId === artifact.changeId &&
 		content.systemVersion === artifact.systemVersion &&
-		content.performedAt === artifact.performedAt
+		content.performedAt === artifact.performedAt &&
+		content.expiresAt === artifact.expiresAt
 	if (!metadataMatches) return false
 	if (
 		resourceId === 'APP_DB' &&

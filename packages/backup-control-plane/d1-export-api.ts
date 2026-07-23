@@ -178,6 +178,20 @@ export async function verifySourceDatabaseIdentity(
 		name: database.name,
 	})
 	const fileSize = database.file_size as number
+	if (fileSize === 0) {
+		safeLog({
+			event: 'source-size-failure',
+			status: 'failure',
+			errorCode: 'source-size-zero',
+			sourceBytes: fileSize,
+			maxSourceBytes,
+		})
+		throw new BackupError(
+			'source-size-zero',
+			'D1 source size was zero; retry after live metadata becomes available',
+			true,
+		)
+	}
 	if (fileSize >= maxSourceBytes) {
 		safeLog({
 			event: 'source-size-failure',

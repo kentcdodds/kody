@@ -36,6 +36,7 @@ const appKinds = [
 type AppKind = (typeof appKinds)[number]
 
 const performedAt = '2026-07-22T10:00:00.000Z'
+const expiresAt = '2026-08-22T10:00:00.000Z'
 const now = new Date('2026-07-22T12:00:00.000Z')
 const sourceIdentity = {
 	accountId: '0123456789abcdef0123456789abcdef',
@@ -141,6 +142,7 @@ async function createFixture(
 			changeId: 'CHG-APP-DB-RESTORE',
 			destinationIdentity: destinationFor(kind),
 			details: detailsFor(kind),
+			expiresAt,
 			kind,
 			outcome: 'passed',
 			performedAt,
@@ -157,6 +159,7 @@ async function createFixture(
 		artifacts.push({
 			changeId: content.changeId,
 			destinationIdentity: content.destinationIdentity,
+			expiresAt: content.expiresAt,
 			kind: content.kind,
 			outcome: content.outcome,
 			performedAt: content.performedAt,
@@ -173,7 +176,7 @@ async function createFixture(
 			{
 				artifacts,
 				changeId: 'CHG-APP-DB-RESTORE',
-				expiresAt: '2026-08-22T10:00:00.000Z',
+				expiresAt,
 				performedAt,
 				resourceId: 'APP_DB',
 				schemaVersion: 1,
@@ -208,6 +211,7 @@ async function isD1Ready(
 	registry: TrustedPublicKeyRegistry,
 	trustedSource = sourceIdentity,
 	trustedBaselineSource = sourceIdentity,
+	assessmentTime = now,
 ): Promise<boolean> {
 	const verified = await verifyLocalArtifactFiles(
 		evidence,
@@ -216,7 +220,7 @@ async function isD1Ready(
 	)
 	return assessCanonicalReadiness(
 		evidence,
-		now,
+		assessmentTime,
 		verified,
 		[
 			{
@@ -243,6 +247,119 @@ async function isD1Ready(
 		],
 	).levels['d1-only'].ready
 }
+
+test('signed expiry cannot be extended by index metadata and remains code-age constrained when re-signed', async () => {
+	const directory = await mkdtemp(
+		path.join(os.tmpdir(), 'readiness-signed-expiry-'),
+	)
+	try {
+		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+		const fixture = await createFixture(directory, privateKey)
+		const registry = registryFor(publicKey)
+		expect(
+			await isD1Ready(fixture.evidence, fixture.evidencePath, registry),
+		).toBe(true)
+		expect(
+			await isD1Ready(
+				fixture.evidence,
+				fixture.evidencePath,
+				registry,
+				sourceIdentity,
+				sourceIdentity,
+				new Date('2026-08-23T10:00:00.000Z'),
+			),
+		).toBe(false)
+
+		const extendedExpiresAt = '2027-07-22T10:00:00.000Z'
+		const indexOnlyExtension = structuredClone(fixture.evidence)
+		const indexOnlyRecord = indexOnlyExtension[0]
+		if (!indexOnlyRecord || !Array.isArray(indexOnlyRecord.artifacts)) {
+			throw new Error('fixture is malformed')
+		}
+		indexOnlyRecord.expiresAt = extendedExpiresAt
+		for (const artifact of indexOnlyRecord.artifacts) {
+			;(artifact as Record<string, unknown>).expiresAt = extendedExpiresAt
+		}
+		expect(
+			await isD1Ready(indexOnlyExtension, fixture.evidencePath, registry),
+		).toBe(false)
+
+		const reSignedExtension = structuredClone(fixture.evidence)
+		const reSignedRecord = reSignedExtension[0]
+		if (!reSignedRecord || !Array.isArray(reSignedRecord.artifacts)) {
+			throw new Error('fixture is malformed')
+		}
+		reSignedRecord.expiresAt = extendedExpiresAt
+		for (const envelope of fixture.envelopes) {
+			const extendedEnvelope = signEnvelope(
+				{ ...envelope.content, expiresAt: extendedExpiresAt },
+				privateKey,
+			)
+			const bytes = Buffer.from(JSON.stringify(extendedEnvelope))
+			await writeFile(path.join(directory, extendedEnvelope.content.uri), bytes)
+			const artifact = reSignedRecord.artifacts.find(
+				(candidate) =>
+					(candidate as Record<string, unknown>).kind ===
+					extendedEnvelope.content.kind,
+			) as Record<string, unknown> | undefined
+			if (!artifact) {
+				throw new Error(
+					`fixture lacks ${extendedEnvelope.content.kind} artifact`,
+				)
+			}
+			artifact.expiresAt = extendedExpiresAt
+			artifact.sha256 = sha256(bytes)
+		}
+		expect(
+			await isD1Ready(reSignedExtension, fixture.evidencePath, registry),
+		).toBe(true)
+		expect(
+			await isD1Ready(
+				reSignedExtension,
+				fixture.evidencePath,
+				registry,
+				sourceIdentity,
+				sourceIdentity,
+				new Date('2026-08-27T10:00:00.000Z'),
+			),
+		).toBe(false)
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+})
+
+test('signed expiry requires millisecond UTC after performedAt', () => {
+	const { privateKey } = generateKeyPairSync('ed25519')
+	const content: EvidenceContent = {
+		changeId: 'CHG-APP-DB-RESTORE',
+		destinationIdentity: null,
+		details: detailsFor('inventory'),
+		expiresAt,
+		kind: 'inventory',
+		outcome: 'passed',
+		performedAt,
+		resourceId: 'APP_DB',
+		sourceIdentity,
+		systemVersion: 'kody-build-2026.07.22',
+		uri: 'inventory.json',
+		verifierIdentity: 'recovery-verifier@example.test',
+	}
+	expect(
+		parseSignedEvidenceEnvelope(signEnvelope(content, privateKey)),
+	).toBeDefined()
+	for (const invalidExpiresAt of [
+		performedAt,
+		'2026-07-22T09:59:59.999Z',
+		'2026-08-22T10:00:00Z',
+		'2026-08-22T10:00:00.000+00:00',
+	]) {
+		expect(
+			parseSignedEvidenceEnvelope(
+				signEnvelope({ ...content, expiresAt: invalidExpiresAt }, privateKey),
+			),
+		).toBeUndefined()
+	}
+})
 
 test('minimal D1 readiness requires every kind-specific signed envelope', async () => {
 	const directory = await mkdtemp(
@@ -325,6 +442,36 @@ test('minimal D1 readiness requires every kind-specific signed envelope', async 
 		expect(
 			await isD1Ready(unsupportedEvidence, fixture.evidencePath, registry),
 		).toBe(false)
+		const zeroMeasurement = signEnvelope(
+			{
+				...sizeEnvelope.content,
+				details: {
+					...(sizeEnvelope.content
+						.details as EvidenceDetailsByKind['d1-size-ceiling-check']),
+					measuredBytes: 0,
+				},
+			},
+			privateKey,
+		)
+		const zeroBytes = Buffer.from(JSON.stringify(zeroMeasurement))
+		await writeFile(
+			path.join(directory, zeroMeasurement.content.uri),
+			zeroBytes,
+		)
+		const zeroEvidence = structuredClone(fixture.evidence)
+		const zeroRecord = zeroEvidence[0]
+		if (!zeroRecord || !Array.isArray(zeroRecord.artifacts)) {
+			throw new Error('fixture is malformed')
+		}
+		const zeroArtifact = zeroRecord.artifacts.find(
+			(artifact) =>
+				(artifact as Record<string, unknown>).kind === 'd1-size-ceiling-check',
+		) as Record<string, unknown> | undefined
+		if (!zeroArtifact) throw new Error('fixture lacks size artifact')
+		zeroArtifact.sha256 = sha256(zeroBytes)
+		expect(await isD1Ready(zeroEvidence, fixture.evidencePath, registry)).toBe(
+			false,
+		)
 	} finally {
 		await rm(directory, { recursive: true, force: true })
 	}

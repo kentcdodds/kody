@@ -181,6 +181,10 @@ export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 			manifestSigningKeys.privateKey
 				.export({ format: 'der', type: 'pkcs8' })
 				.toString('base64'),
+		BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64:
+			manifestSigningKeys.publicKey
+				.export({ format: 'der', type: 'spki' })
+				.toString('base64'),
 		TRUSTED_RESTORE_BASELINE_ID: 'production-baseline-2026',
 		TRUSTED_RESTORE_BASELINE_SHA256: BASELINE_SHA256,
 	}
@@ -489,12 +493,16 @@ export function manifest(stored: {
 			keyId: 'backup-manifest-2026',
 		},
 	}
+	return signedManifest(payload)
+}
+
+export function signedManifest(payload: BackupManifestPayload): BackupManifest {
 	return {
 		schemaVersion: backupManifestSchemaVersion,
 		payload,
 		signature: {
 			algorithm: backupManifestSignatureAlgorithm,
-			keyId: 'backup-manifest-2026',
+			keyId: payload.signing.keyId,
 			value: signBytes(
 				null,
 				Buffer.from(canonicalBackupManifestPayload(payload)),

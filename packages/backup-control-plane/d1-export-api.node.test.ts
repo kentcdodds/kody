@@ -65,6 +65,36 @@ test('requires an integer D1 file size and accepts the byte below the ceiling', 
 	assert.equal(consoleError.mock.calls.length, 4)
 })
 
+test('rejects zero D1 size retryably and accepts a later positive reading', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	const consoleLog = vi.spyOn(console, 'log')
+	consoleError.mockClear()
+	consoleLog.mockClear()
+	consoleError.mockImplementation(() => undefined)
+	consoleLog.mockImplementation(() => undefined)
+
+	await assert.rejects(
+		verifySourceDatabaseIdentity(environment(), {
+			fetcher: async () => identityEnvelope(0),
+		}),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'source-size-zero' &&
+			error.retryable,
+	)
+	assert.equal(consoleError.mock.calls.length, 1)
+	assert.match(String(consoleError.mock.calls[0]?.[0]), /"source-size-zero"/)
+	assert.equal(consoleLog.mock.calls.length, 0)
+
+	assert.deepEqual(
+		await verifySourceDatabaseIdentity(environment(), {
+			fetcher: async () => identityEnvelope(1_000),
+		}),
+		{ fileSize: 1_000, maxSourceBytes: DEFAULT_BACKUP_MAX_SOURCE_BYTES },
+	)
+	assert.equal(consoleLog.mock.calls.length, 1)
+})
+
 test('rejects D1 size at or above the configured ceiling', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockClear()

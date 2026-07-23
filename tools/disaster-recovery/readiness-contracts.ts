@@ -115,6 +115,7 @@ export type EvidenceContent<K extends EvidenceKind = EvidenceKind> = {
 	changeId: string
 	destinationIdentity: ResourceIdentity | null
 	details: EvidenceDetailsByKind[K]
+	expiresAt: string
 	kind: K
 	outcome: 'passed'
 	performedAt: string
@@ -138,6 +139,7 @@ export type SignedEvidenceEnvelope<K extends EvidenceKind = EvidenceKind> = {
 export type EvidenceArtifact = {
 	changeId: string
 	destinationIdentity: ResourceIdentity | null
+	expiresAt: string
 	kind: EvidenceKind
 	outcome: 'passed'
 	performedAt: string

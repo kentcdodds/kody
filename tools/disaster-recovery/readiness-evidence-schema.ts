@@ -155,7 +155,7 @@ function parseDetails<K extends EvidenceKind>(
 				isPositiveInteger(value.ceilingBytes) &&
 				typeof value.isolationBaselineSha256 === 'string' &&
 				sha256Pattern.test(value.isolationBaselineSha256) &&
-				isNonnegativeInteger(value.measuredBytes) &&
+				isPositiveInteger(value.measuredBytes) &&
 				typeof value.migrationSetSha256 === 'string' &&
 				sha256Pattern.test(value.migrationSetSha256) &&
 				value.ceilingBytes <= maximumSupportedD1BackupBytes &&
@@ -319,6 +319,7 @@ export function parseSignedEvidenceEnvelope(
 			'changeId',
 			'destinationIdentity',
 			'details',
+			'expiresAt',
 			'kind',
 			'outcome',
 			'performedAt',
@@ -337,7 +338,9 @@ export function parseSignedEvidenceEnvelope(
 		!isNonemptyString(input.content.verifierIdentity) ||
 		!isNonemptyString(input.content.changeId) ||
 		!isNonemptyString(input.content.systemVersion) ||
-		!isIsoDate(input.content.performedAt)
+		!isIsoDate(input.content.performedAt) ||
+		!isIsoDate(input.content.expiresAt) ||
+		Date.parse(input.content.expiresAt) <= Date.parse(input.content.performedAt)
 	) {
 		return undefined
 	}

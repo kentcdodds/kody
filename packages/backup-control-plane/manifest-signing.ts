@@ -14,11 +14,11 @@ const keyIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const base64Pattern =
 	/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
-function decodeBase64(value: string): ArrayBuffer {
+function decodeBase64(value: string, description: string): ArrayBuffer {
 	if (!base64Pattern.test(value)) {
 		throw new BackupError(
 			'invalid-manifest-signing-key',
-			'manifest signing private key must be canonical base64',
+			`${description} must be canonical base64`,
 		)
 	}
 	const binary = atob(value)
@@ -60,9 +60,49 @@ function signingConfiguration(env: BackupEnvironment): {
 		keyId: env.BACKUP_MANIFEST_SIGNING_KEY_ID,
 		privateKeyPkcs8: decodeBase64(
 			env.BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64,
+			'manifest signing private key',
 		),
 		baselineId: env.TRUSTED_RESTORE_BASELINE_ID,
 		baselineSha256: env.TRUSTED_RESTORE_BASELINE_SHA256,
+	}
+}
+
+export async function verifyBackupManifestSignature(
+	env: BackupEnvironment,
+	manifest: BackupManifest,
+): Promise<boolean> {
+	if (
+		manifest.schemaVersion !== backupManifestSchemaVersion ||
+		manifest.payload.schemaVersion !== backupManifestSchemaVersion ||
+		manifest.payload.signing.algorithm !== backupManifestSignatureAlgorithm ||
+		manifest.signature.algorithm !== backupManifestSignatureAlgorithm ||
+		!keyIdPattern.test(env.BACKUP_MANIFEST_SIGNING_KEY_ID) ||
+		manifest.payload.signing.keyId !== env.BACKUP_MANIFEST_SIGNING_KEY_ID ||
+		manifest.signature.keyId !== env.BACKUP_MANIFEST_SIGNING_KEY_ID
+	) {
+		return false
+	}
+	try {
+		const publicKey = await crypto.subtle.importKey(
+			'spki',
+			decodeBase64(
+				env.BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64,
+				'manifest verifying public key',
+			),
+			backupManifestSignatureAlgorithm,
+			false,
+			['verify'],
+		)
+		return await crypto.subtle.verify(
+			backupManifestSignatureAlgorithm,
+			publicKey,
+			decodeBase64(manifest.signature.value, 'manifest signature'),
+			new TextEncoder().encode(
+				canonicalBackupManifestPayload(manifest.payload),
+			),
+		)
+	} catch {
+		return false
 	}
 }
 

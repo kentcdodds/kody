@@ -1037,7 +1037,7 @@ source-size check, the exact content shape is:
 ```
 
 `ceilingBytes` must be positive and no greater than 4,500,000,000;
-`measuredBytes` must be nonnegative and strictly less than `ceilingBytes`.
+`measuredBytes` must be positive and strictly less than `ceilingBytes`.
 `monitoredAt` must equal `performedAt`, and the detail account id and database
 UUID must equal `sourceIdentity`.
 

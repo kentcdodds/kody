@@ -92,19 +92,23 @@ deletes, binds, cuts over, or modifies production.
 Evidence is an array of exact-shape, schema-versioned `ResourceEvidence` index
 records from `canonical-readiness.ts`. Each index record binds its resource,
 verifier, change, system/build version, performed timestamp, freshness interval,
-and artifact metadata. Every resource requires inventory, source/destination
-credential checks, support and contract checks, plus its resource-specific drill
-evidence. APP_DB additionally requires a `d1-size-ceiling-check` whose measured
-bytes are strictly below a ceiling no greater than 4,500,000,000 bytes.
+and artifact metadata. The index `expiresAt` must exactly match every artifact's
+metadata and signed content. Every resource requires inventory,
+source/destination credential checks, support and contract checks, plus its
+resource-specific drill evidence. APP_DB additionally requires a
+`d1-size-ceiling-check` whose measured bytes are strictly below a ceiling no
+greater than 4,500,000,000 bytes.
 
 Each artifact is JSON with the exact versioned `SignedEvidenceEnvelope` schema.
 Its signed content binds the resource and evidence kind, unique URI, source
 resource/account identity, destination resource/account identity where
 applicable, `passed` outcome, verifier, change, system/build version, performed
-timestamp, and a strict kind-specific details object. The Ed25519 signature is
-over canonical JSON containing `schemaVersion` and `content`; the `signature`
-field is excluded. The index digest covers the exact envelope file bytes. Index
-metadata must exactly equal the signed content, so an index cannot relabel an
+timestamp, expiry timestamp, and a strict kind-specific details object.
+`performedAt` and `expiresAt` must use millisecond UTC form, and expiry must be
+later than performance. The Ed25519 signature is over canonical JSON containing
+`schemaVersion` and `content`; the `signature` field is excluded. The index
+digest covers the exact envelope file bytes. Index metadata must exactly equal
+the signed content, so an index cannot relabel or extend the lifetime of an
 otherwise valid artifact.
 
 For `d1-restore-drill`, signed details bind exact manifest bytes, SQL, trusted

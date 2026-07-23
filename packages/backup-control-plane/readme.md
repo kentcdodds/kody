@@ -57,14 +57,16 @@ three days on free plans). This is separate from R2 backup retention.
 
 This runtime does not support a 10-GB D1 database. Before every export and on
 every hourly freshness tick, it queries live D1 metadata and requires
-`file_size` to be an integer strictly below `BACKUP_MAX_SOURCE_BYTES`. The
-checked-in default and deployment value are 4,500,000,000 bytes, below R2's
-5-GiB single-object limit. Configuration may lower this ceiling but cannot raise
-it. Reaching the ceiling fails export readiness and hourly observability before
-an export starts. The signed export download is independently rejected if its
-`Content-Length` is zero or at or above 5 GiB. Zero-byte rejection is retryable:
-the upload callback refreshes the bookmark URL and retries without storing or
-manifesting the empty response.
+`file_size` to be a positive safe integer strictly below
+`BACKUP_MAX_SOURCE_BYTES`. A zero live size fails retryably before export
+readiness so a later scheduled retry or restart can recover once metadata is
+positive. The checked-in default and deployment value are 4,500,000,000 bytes,
+below R2's 5-GiB single-object limit. Configuration may lower this ceiling but
+cannot raise it. Reaching the ceiling fails export readiness and hourly
+observability before an export starts. The signed export download is
+independently rejected if its `Content-Length` is zero or at or above 5 GiB.
+Zero-byte rejection is retryable: the upload callback refreshes the bookmark URL
+and retries without storing or manifesting the empty response.
 
 Multipart capture and statement-safe split restore are not implemented. A
 database or logical SQL export above these limits is unsupported and cannot be
@@ -83,8 +85,12 @@ receives only the source token as `CLOUDFLARE_API_TOKEN` and destination object
 read/write access through `BACKUP_BUCKET`; it must not receive either
 administrative or restore credential.
 
-Set `BACKUP_MANIFEST_SIGNING_KEY_ID`, `TRUSTED_RESTORE_BASELINE_ID`, and
-`TRUSTED_RESTORE_BASELINE_SHA256` as reviewed non-secret vars. Set
+Set `BACKUP_MANIFEST_SIGNING_KEY_ID`,
+`BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64`,
+`TRUSTED_RESTORE_BASELINE_ID`, and `TRUSTED_RESTORE_BASELINE_SHA256` as reviewed
+non-secret vars. The verifying key is the base64-encoded Ed25519 SPKI public
+key; hourly freshness verifies the canonical manifest payload against it and
+treats invalid signatures or key configuration as stale. Set
 `BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64` only as a Worker secret; it
 is base64-encoded Ed25519 PKCS#8 private key material and must never appear in
 Wrangler config, logs, manifests, evidence, or signed URLs.

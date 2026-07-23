@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { generateKeyPairSync } from 'node:crypto'
 
 import { test, vi } from 'vitest'
 
@@ -17,6 +18,7 @@ import {
 	identityApi,
 	identityEnvelope,
 	manifest,
+	signedManifest,
 } from './backup-control-plane-test-support.ts'
 
 test('freshness accepts matching metadata and flags size/ETag drift or missing objects', async () => {
@@ -83,19 +85,19 @@ test('freshness switches from yesterday to today at the 02:15 backup boundary', 
 	await putImmutableManifest(
 		bucket as unknown as R2Bucket,
 		`daily/d1/${DATABASE_ID}/2026-07-21/manifest.json`,
-		{
-			...manifest(stored),
-			payload: {
-				...manifest(stored).payload,
-				export: {
-					...manifest(stored).payload.export,
-					scheduledAt: '2026-07-21T02:15:00.000Z',
-					startedAt: '2026-07-21T02:15:01.000Z',
-					completedAt: '2026-07-21T02:16:00.000Z',
-				},
-				sql: { ...manifest(stored).payload.sql, objectKey: previousKey },
+		signedManifest({
+			...manifest(stored).payload,
+			export: {
+				...manifest(stored).payload.export,
+				scheduledAt: '2026-07-21T02:15:00.000Z',
+				startedAt: '2026-07-21T02:15:01.000Z',
+				completedAt: '2026-07-21T02:16:00.000Z',
 			},
-		},
+			sql: {
+				...manifest(stored).payload.sql,
+				objectKey: previousKey,
+			},
+		}),
 	)
 	assert.equal(
 		await checkFreshness(env, new Date('2026-07-22T01:45:00Z'), identityApi()),
@@ -120,6 +122,80 @@ test('freshness reports malformed manifest schema as stale', async () => {
 	)
 })
 
+test('freshness requires a valid Ed25519 signature from the configured key', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const key = objectKeyForBookmark(
+		`daily/d1/${DATABASE_ID}/2026-07-22`,
+		'bookmark-1',
+	)
+	const stored = await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		key,
+		'https://download.example',
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
+	)
+	const validManifest = manifest(stored)
+	const manifestKey = `daily/d1/${DATABASE_ID}/2026-07-22/manifest.json`
+	const check = async (candidate = validManifest, candidateEnv = env) => {
+		await bucket.put(manifestKey, JSON.stringify(candidate))
+		return await checkFreshness(
+			candidateEnv,
+			new Date('2026-07-22T03:45:00Z'),
+			identityApi(),
+		)
+	}
+
+	assert.equal(await check(), true)
+	assert.equal(
+		await check({
+			...validManifest,
+			payload: { ...validManifest.payload, buildCommit: 'tampered' },
+		}),
+		false,
+	)
+	const signatureFirstCharacter = validManifest.signature.value[0]
+	assert.equal(
+		await check({
+			...validManifest,
+			signature: {
+				...validManifest.signature,
+				value: `${signatureFirstCharacter === 'A' ? 'B' : 'A'}${validManifest.signature.value.slice(1)}`,
+			},
+		}),
+		false,
+	)
+	const wrongPublicKey = generateKeyPairSync('ed25519')
+		.publicKey.export({ format: 'der', type: 'spki' })
+		.toString('base64')
+	assert.equal(
+		await check(validManifest, {
+			...env,
+			BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64: wrongPublicKey,
+		}),
+		false,
+	)
+	assert.equal(
+		await check(
+			signedManifest({
+				...validManifest.payload,
+				signing: {
+					...validManifest.payload.signing,
+					keyId: 'backup-manifest-other',
+				},
+			}),
+		),
+		false,
+	)
+	assert.equal(
+		await check(validManifest, {
+			...env,
+			BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64: 'not-base64!',
+		}),
+		false,
+	)
+})
+
 test('freshness compares Cloudflare account and D1 IDs case-insensitively', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
@@ -140,18 +216,15 @@ test('freshness compares Cloudflare account and D1 IDs case-insensitively', asyn
 	await putImmutableManifest(
 		bucket as unknown as R2Bucket,
 		`daily/d1/${env.SOURCE_DATABASE_ID}/2026-07-22/manifest.json`,
-		{
-			...manifest(stored),
-			payload: {
-				...manifest(stored).payload,
-				source: {
-					accountId: env.SOURCE_ACCOUNT_ID.toUpperCase(),
-					databaseId: env.SOURCE_DATABASE_ID.toUpperCase(),
-					databaseName: env.SOURCE_DATABASE_NAME,
-				},
-				sql: { ...manifest(stored).payload.sql, objectKey: key },
+		signedManifest({
+			...manifest(stored).payload,
+			source: {
+				accountId: env.SOURCE_ACCOUNT_ID.toUpperCase(),
+				databaseId: env.SOURCE_DATABASE_ID.toUpperCase(),
+				databaseName: env.SOURCE_DATABASE_NAME,
 			},
-		},
+			sql: { ...manifest(stored).payload.sql, objectKey: key },
+		}),
 	)
 	assert.equal(
 		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), {

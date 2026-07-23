@@ -23,6 +23,60 @@ import {
 	identityEnvelope,
 } from './backup-control-plane-test-support.ts'
 
+test('zero live D1 size prevents export and a later restart can succeed', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	let liveSize = 0
+	let exportCalls = 0
+	const options = {
+		api: {
+			fetcher: async (input: RequestInfo | URL) => {
+				if (!String(input).endsWith('/export')) {
+					return identityEnvelope(liveSize)
+				}
+				exportCalls += 1
+				return exportEnvelope('complete')
+			},
+			sleep: async () => undefined,
+		},
+		downloadFetcher: async () =>
+			new Response('valid', { headers: { 'content-length': '5' } }),
+	}
+	const event = {
+		instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+		payload,
+		timestamp: new Date('2026-07-22T02:15:01Z'),
+	}
+
+	await assert.rejects(
+		runBackupRuntime(
+			env,
+			event,
+			new CachedUploadStep(() => undefined),
+			options,
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'source-size-zero' &&
+			error.retryable,
+	)
+	assert.equal(exportCalls, 0)
+	assert.equal(bucket.puts.length, 0)
+
+	liveSize = 1_000
+	const result = await runBackupRuntime(
+		env,
+		event,
+		new CachedUploadStep(() => undefined),
+		options,
+	)
+	assert.equal(result.payload.sql.bytes, 5)
+	assert.equal(exportCalls, 3)
+})
+
 test('workflow retry reuses an upload committed before step persistence and writes the absent manifest', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)

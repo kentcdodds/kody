@@ -14,6 +14,7 @@ import {
 	safeLog,
 } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
+import { verifyBackupManifestSignature } from './manifest-signing.ts'
 
 function latestExpectedDate(scheduledAt: Date): Date {
 	const expected = new Date(scheduledAt)
@@ -58,8 +59,10 @@ export async function checkFreshness(
 		throw error
 	}
 	let ageHours: number | undefined
-	let stale = manifest === null
-	if (manifest !== null) {
+	const signatureValid =
+		manifest !== null && (await verifyBackupManifestSignature(env, manifest))
+	let stale = manifest === null || !signatureValid
+	if (manifest !== null && signatureValid) {
 		const validObjectKey = isBookmarkObjectKey(
 			payload.objectPrefix,
 			manifest.payload.sql.objectKey,

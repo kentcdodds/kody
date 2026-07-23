@@ -34,6 +34,7 @@
 		"BUILD_COMMIT": "REPLACE_AT_DEPLOY_TIME",
 		// Non-secret provenance. The matching PKCS#8 private key is a Worker secret.
 		"BACKUP_MANIFEST_SIGNING_KEY_ID": "replace-with-approved-key-id",
+		"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "replace-with-base64-spki-public-key",
 		"TRUSTED_RESTORE_BASELINE_ID": "replace-with-approved-baseline-id",
 		"TRUSTED_RESTORE_BASELINE_SHA256": "replace-with-lowercase-canonical-sha256",
 		"BACKUP_MAX_AGE_HOURS": "26",
