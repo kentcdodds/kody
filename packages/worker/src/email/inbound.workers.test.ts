@@ -1990,7 +1990,13 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const userId = `user-${crypto.randomUUID()}`
+	const accountEmail = `durable-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username: `durable-${crypto.randomUUID().slice(0, 8)}`,
+	})
 	const delivery = await buildInboundDelivery({
 		userId,
 		inboxId: `inbox-${crypto.randomUUID()}`,
@@ -2409,7 +2415,12 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 			env: createInboundEnv(),
 			now: sweepNow,
 		}),
-	).toMatchObject({ usersProcessed: 0, recovered: 0, cleaned: 0 })
+	).toMatchObject({
+		usersProcessed: 1,
+		recovered: 0,
+		cleaned: 0,
+		errors: 1,
+	})
 })
 
 test('insertEmailMessageWithAttachments cleans message and blob when attachment insert fails', async () => {
