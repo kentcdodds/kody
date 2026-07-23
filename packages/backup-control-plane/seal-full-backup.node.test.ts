@@ -10,7 +10,7 @@ import {
 	stagingStorageIndexKey,
 	stagingSummaryKey,
 } from '@kody-internal/shared/backup-staging.ts'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import {
 	MemoryBucket,
@@ -158,6 +158,8 @@ test('sealFullBackupDay fails closed on staging sha mismatch', async () => {
 })
 
 test('sealFullBackupDay is incomplete when a referenced blob is missing', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const { env, day } = await seedCompleteDay(bucket)
 	const missingHash = 'f'.repeat(64)

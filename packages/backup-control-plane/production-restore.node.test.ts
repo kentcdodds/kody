@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 
 import { serializeBackupFullManifest } from '@kody-internal/shared/backup-full-manifest.ts'
 import { sealedFullManifestKey } from '@kody-internal/shared/backup-staging.ts'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import {
 	MemoryBucket,
@@ -118,6 +118,8 @@ test('capturePreRestoreSafetyExport polls active then stores SQL under pre-resto
 })
 
 test('runProductionRestore returns failed progress when dr-restore emits warnings', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const { env, day, sqlMd5 } = await seedSealedRestoreDay(bucket)
 	let exportCalls = 0
