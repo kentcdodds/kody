@@ -69,10 +69,12 @@ receives only the source token as `CLOUDFLARE_API_TOKEN` and destination object
 read/write access through `BACKUP_BUCKET`; it must not receive either
 administrative or restore credential.
 
-The 02:15 UTC trigger is the only path that creates an instance. Freshness ticks
-from 02:45 through 05:45 UTC may restart that day's existing errored or
-terminated deterministic instance. They never create a missing instance; active
-and complete instances are left alone.
+The 02:15 UTC trigger is the only path that creates an instance. Freshness uses
+the previous UTC day before 02:15 and the current day from 02:15 onward, so the
+02:45 tick cannot report yesterday as success for a failed current backup.
+Freshness ticks from 02:45 through 05:45 UTC may restart that day's existing
+errored or terminated deterministic instance. They never create a missing
+instance; active and complete instances are left alone.
 
 ## Integrity checks
 

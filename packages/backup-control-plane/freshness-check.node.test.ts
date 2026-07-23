@@ -67,6 +67,40 @@ test('freshness accepts matching metadata and flags size/ETag drift or missing o
 	)
 })
 
+test('freshness switches from yesterday to today at the 02:15 backup boundary', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const previousKey = objectKeyForBookmark(
+		`daily/d1/${DATABASE_ID}/2026-07-21`,
+		'bookmark-1',
+	)
+	const stored = await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		previousKey,
+		'https://download.example',
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
+	)
+	await putImmutableManifest(
+		bucket as unknown as R2Bucket,
+		`daily/d1/${DATABASE_ID}/2026-07-21/manifest.json`,
+		{
+			...manifest(stored),
+			scheduledAt: '2026-07-21T02:15:00.000Z',
+			startedAt: '2026-07-21T02:15:01.000Z',
+			completedAt: '2026-07-21T02:16:00.000Z',
+			objectKey: previousKey,
+		},
+	)
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T01:45:00Z'), identityApi()),
+		true,
+	)
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T02:45:00Z'), identityApi()),
+		false,
+	)
+})
+
 test('hourly freshness queries live D1 size and fails at the ceiling', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockClear()

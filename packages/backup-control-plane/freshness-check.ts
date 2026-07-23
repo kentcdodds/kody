@@ -17,7 +17,10 @@ import { type BackupEnvironment } from './backup-types.ts'
 
 function latestExpectedDate(scheduledAt: Date): Date {
 	const expected = new Date(scheduledAt)
-	if (scheduledAt.getUTCHours() < 3) {
+	const beforeDailyBackup =
+		scheduledAt.getUTCHours() < 2 ||
+		(scheduledAt.getUTCHours() === 2 && scheduledAt.getUTCMinutes() < 15)
+	if (beforeDailyBackup) {
 		expected.setUTCDate(expected.getUTCDate() - 1)
 	}
 	return expected

@@ -387,6 +387,10 @@ left alone; an unknown status fails closed. If the 02:15 trigger never created
 the instance, retry-window lookup returns `missing` and does not create one. No
 missed instance is created outside 02:15.
 
+Freshness checks the previous UTC day only before the 02:15 trigger. From 02:15
+onward it requires the current day's manifest, so the 02:45 check cannot report
+yesterday's healthy backup while today's backup is missing or failed.
+
 Sunday UTC is the weekly boundary. Each day has one canonical manifest and one
 or more immutable attempt objects:
 
