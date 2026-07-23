@@ -63,10 +63,10 @@ export function assertConfiguredIdentity(env: BackupEnvironment): void {
 			'configured source identity is not allowlisted',
 		)
 	}
-	if (!env.SOURCE_ACCOUNT_NAME || !env.SOURCE_DATABASE_NAME) {
+	if (!env.SOURCE_DATABASE_NAME) {
 		throw new BackupError(
 			'missing-source-name',
-			'source account and database names are required',
+			'source database name is required',
 		)
 	}
 }

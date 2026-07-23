@@ -456,8 +456,10 @@ For each run, the Workflow:
    execution with the cached bookmark, requires the same completed bookmark,
    uses the newly returned signed URL to repeat source comparison whenever the
    canonical manifest is absent, and writes schema-version-2 signed immutable
-   manifest metadata including source identity, D1 bookmark, timestamps, key,
-   hash, ETag, build commit, and retention tier;
+   manifest metadata including source account id, remotely verified D1 UUID and
+   exact database name, D1 bookmark, timestamps, key, hash, ETag, build commit,
+   and retention tier. The manifest intentionally excludes the unverified
+   Cloudflare account display name;
 7. emits structured success/failure logs. The hourly freshness check validates
    live source identity and `file_size` against the same size ceiling before it
    validates the expected manifest identity, shape, maximum age (26 hours by
@@ -637,14 +639,20 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --execute
 ```
 
-The CLI verifies the exact manifest bytes hash and Ed25519 signature,
-independently verifies the signed source identity and signed baseline
-id/canonical digest against checked registries, stats the SQL file, rejects
-files at or above 5 GiB or with a manifest size mismatch, then computes SHA-256
-as a stream without retaining the dump in memory. It does not split oversized
-dumps. It dry-runs by default and does not create a target. With `--execute`, it
-requires `CLOUDFLARE_D1_DRILL_EDIT_TOKEN`, live-creates a new D1 database in the
-exact checked drill account with the exact checked drill name immediately before
+The CLI verifies the exact manifest bytes hash and Ed25519 signature and
+independently verifies the signed source account id, remotely verified D1 UUID
+and exact database name, plus the signed baseline id/canonical digest, against
+checked registries. It preflights the operator SQL pathname size, rejects files
+at or above 5 GiB or with a manifest size mismatch, then stream-copies it
+without multi-GiB memory buffering into a private `0700` temporary directory.
+The staged file is made read-only, then independently statted and stream-hashed
+against the signed manifest size and SHA-256. Only that private snapshot path
+can reach generated Wrangler commands; replacing the operator pathname cannot
+change imported bytes. The snapshot is removed in `finally` after dry-run or
+execution, including validation failures. It does not split oversized dumps. It
+dry-runs by default and does not create a target. With `--execute`, it requires
+`CLOUDFLARE_D1_DRILL_EDIT_TOKEN`, live-creates a new D1 database in the exact
+checked drill account with the exact checked drill name immediately before
 import, and verifies Cloudflare's returned UUID, exact requested name, and
 `created_at` against the creation window. It never creates a target in any
 account listed in `productionSources`. New creation is the empty/unbound proof.

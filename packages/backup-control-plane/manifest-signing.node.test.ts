@@ -18,7 +18,6 @@ function unsignedPayload(): Omit<
 	return {
 		source: {
 			accountId: 'a'.repeat(32),
-			accountName: 'production-account',
 			databaseId: '11111111-1111-4111-8111-111111111111',
 			databaseName: 'production-db',
 		},
