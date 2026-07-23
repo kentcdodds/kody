@@ -15,7 +15,6 @@ type BackupCliOptions = {
 	sourceAccountId: string
 	destinationAccountId: string
 	apiToken: string
-	apiBaseUrl?: string
 	bucketName: string
 	workerName: string
 	sourceD1Databases: Array<SourceD1Database>
@@ -96,7 +95,6 @@ export function parseBackupCliArgs(
 		env.CLOUDFLARE_ACCOUNT_ID?.trim() ??
 		''
 	let apiToken = env.CLOUDFLARE_API_TOKEN?.trim() ?? ''
-	let apiBaseUrl = env.CLOUDFLARE_API_BASE_URL?.trim() || undefined
 	const serviceName = env.BACKUP_SERVICE_NAME?.trim() || 'kody'
 	let bucketName =
 		env.BACKUP_R2_BUCKET_NAME?.trim() || `${serviceName}-d1-backup-archive`
@@ -126,11 +124,6 @@ export function parseBackupCliArgs(
 			case '--provisioner-token-env': {
 				const variableName = readFlagValue(argv, index, flag)
 				apiToken = env[variableName]?.trim() ?? ''
-				index += 1
-				break
-			}
-			case '--api-base-url': {
-				apiBaseUrl = readFlagValue(argv, index, flag)
 				index += 1
 				break
 			}
@@ -193,7 +186,6 @@ export function parseBackupCliArgs(
 		sourceAccountId,
 		destinationAccountId,
 		apiToken,
-		apiBaseUrl,
 		bucketName,
 		workerName,
 		sourceD1Databases,
@@ -220,7 +212,6 @@ export async function runBackupResourcesCli(input: {
 		destinationAccountId: options.destinationAccountId,
 		apiToken: options.apiToken,
 		fetcher: input.fetcher,
-		apiBaseUrl: options.apiBaseUrl,
 	})
 	const result = await ensureBackupResources({
 		api,

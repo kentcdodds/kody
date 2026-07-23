@@ -61,6 +61,9 @@ export type R2LifecyclePolicy = {
 	}>
 }
 
+type R2LockRule = R2LockPolicy['rules'][number]
+type R2LifecycleRule = R2LifecyclePolicy['rules'][number]
+
 export type BackupRuntimeContract = {
 	kind: 'dedicated-worker-runtime-contract'
 	enforcement: 'deployment-configuration-not-cloudflare-identity-api'
@@ -408,6 +411,83 @@ function samePolicy(left: unknown, right: unknown) {
 	)
 }
 
+function mergeLockPolicy(
+	existing: R2LockPolicy | undefined,
+	desired: R2LockPolicy,
+): R2LockPolicy {
+	const rules = structuredClone(existing?.rules ?? [])
+	for (const desiredRule of desired.rules) {
+		const existingIndex = rules.findIndex(({ id }) => id === desiredRule.id)
+		if (existingIndex === -1) {
+			rules.push(structuredClone(desiredRule))
+			continue
+		}
+		const existingRule = rules[existingIndex] as R2LockRule
+		if (existingRule.prefix !== desiredRule.prefix) {
+			throw new Error(
+				`R2 lock rule ${desiredRule.id} conflicts with managed prefix ${desiredRule.prefix ?? ''}.`,
+			)
+		}
+		if (existingRule.condition.type === 'Date') {
+			throw new Error(
+				`R2 lock rule ${desiredRule.id} uses a date condition whose retention strength cannot be safely compared.`,
+			)
+		}
+		const existingIsAtLeastDesired =
+			existingRule.condition.type === 'Indefinite' ||
+			(existingRule.condition.type === 'Age' &&
+				desiredRule.condition.type === 'Age' &&
+				existingRule.condition.maxAgeSeconds >=
+					desiredRule.condition.maxAgeSeconds)
+		if (existingIsAtLeastDesired) {
+			rules[existingIndex] = { ...existingRule, enabled: true }
+			continue
+		}
+		rules[existingIndex] = { ...existingRule, ...structuredClone(desiredRule) }
+	}
+	return { rules }
+}
+
+function mergeLifecyclePolicy(
+	existing: R2LifecyclePolicy | undefined,
+	desired: R2LifecyclePolicy,
+): R2LifecyclePolicy {
+	const rules = structuredClone(existing?.rules ?? [])
+	for (const desiredRule of desired.rules) {
+		const existingIndex = rules.findIndex(({ id }) => id === desiredRule.id)
+		if (existingIndex === -1) {
+			rules.push(structuredClone(desiredRule))
+			continue
+		}
+		const existingRule = rules[existingIndex] as R2LifecycleRule
+		if (existingRule.conditions.prefix !== desiredRule.conditions.prefix) {
+			throw new Error(
+				`R2 lifecycle rule ${desiredRule.id} conflicts with managed prefix ${desiredRule.conditions.prefix}.`,
+			)
+		}
+		const existingCondition = existingRule.deleteObjectsTransition?.condition
+		const desiredCondition = desiredRule.deleteObjectsTransition?.condition
+		if (existingCondition?.type === 'Date') {
+			throw new Error(
+				`R2 lifecycle rule ${desiredRule.id} uses a date condition whose retention strength cannot be safely compared.`,
+			)
+		}
+		const existingIsAtLeastDesired =
+			existingCondition?.type === 'Age' &&
+			desiredCondition?.type === 'Age' &&
+			existingCondition.maxAge >= desiredCondition.maxAge
+		if (existingIsAtLeastDesired) {
+			rules[existingIndex] = { ...existingRule, enabled: true }
+			continue
+		}
+		rules[existingIndex] = {
+			...existingRule,
+			...structuredClone(desiredRule),
+		}
+	}
+	return { rules }
+}
+
 export async function planBackupResources(input: {
 	api: BackupCloudflareApi
 	desired: BackupDesiredState
@@ -431,18 +511,26 @@ export async function planBackupResources(input: {
 			request: { name: bucketName },
 		})
 	}
-	if (!samePolicy(lockPolicy, input.desired.lockPolicy)) {
+	const effectiveLockPolicy = mergeLockPolicy(
+		lockPolicy,
+		input.desired.lockPolicy,
+	)
+	if (!samePolicy(lockPolicy, effectiveLockPolicy)) {
 		actions.push({
 			type: 'put-lock-policy',
 			bucketName,
-			request: input.desired.lockPolicy,
+			request: effectiveLockPolicy,
 		})
 	}
-	if (!samePolicy(lifecyclePolicy, input.desired.lifecyclePolicy)) {
+	const effectiveLifecyclePolicy = mergeLifecyclePolicy(
+		lifecyclePolicy,
+		input.desired.lifecyclePolicy,
+	)
+	if (!samePolicy(lifecyclePolicy, effectiveLifecyclePolicy)) {
 		actions.push({
 			type: 'put-lifecycle-policy',
 			bucketName,
-			request: input.desired.lifecyclePolicy,
+			request: effectiveLifecyclePolicy,
 		})
 	}
 	return {
@@ -490,6 +578,38 @@ export async function ensureBackupResources(input: {
 	}
 	for (const action of plan.actions) {
 		await applyBackupAction(input.api, action)
+	}
+	const bucketName = input.desired.bucket.name
+	const [bucket, lockPolicy, lifecyclePolicy] = await Promise.all([
+		input.api.getBucket(bucketName),
+		input.api.getBucketLockPolicy(bucketName),
+		input.api.getBucketLifecyclePolicy(bucketName),
+	])
+	const expectedLockPolicy =
+		plan.actions.find(
+			(
+				action,
+			): action is Extract<BackupPlanAction, { type: 'put-lock-policy' }> =>
+				action.type === 'put-lock-policy',
+		)?.request ?? mergeLockPolicy(lockPolicy, input.desired.lockPolicy)
+	const expectedLifecyclePolicy =
+		plan.actions.find(
+			(
+				action,
+			): action is Extract<
+				BackupPlanAction,
+				{ type: 'put-lifecycle-policy' }
+			> => action.type === 'put-lifecycle-policy',
+		)?.request ??
+		mergeLifecyclePolicy(lifecyclePolicy, input.desired.lifecyclePolicy)
+	if (
+		!bucket ||
+		!samePolicy(lockPolicy, expectedLockPolicy) ||
+		!samePolicy(lifecyclePolicy, expectedLifecyclePolicy)
+	) {
+		throw new Error(
+			'Cloudflare R2 backup resources did not converge after apply.',
+		)
 	}
 	return {
 		status: 'applied' as const,

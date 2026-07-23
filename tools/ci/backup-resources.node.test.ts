@@ -36,10 +36,18 @@ function createDesired(): BackupDesiredState {
 	})
 }
 
-function createFakeApi() {
+function createFakeApi(input?: {
+	bucket?: R2Bucket
+	lockPolicy?: R2LockPolicy
+	lifecyclePolicy?: R2LifecyclePolicy
+	discardPolicyWrites?: boolean
+}) {
 	let bucket: R2Bucket | undefined
 	let lockPolicy: R2LockPolicy | undefined
 	let lifecyclePolicy: R2LifecyclePolicy | undefined
+	bucket = input?.bucket
+	lockPolicy = structuredClone(input?.lockPolicy)
+	lifecyclePolicy = structuredClone(input?.lifecyclePolicy)
 	const writes: Array<string> = []
 	const api: BackupCloudflareApi = {
 		async getBucket(name) {
@@ -55,14 +63,18 @@ function createFakeApi() {
 		},
 		async putBucketLockPolicy(_bucketName, policy) {
 			writes.push('put-lock-policy')
-			lockPolicy = structuredClone(policy)
+			if (!input?.discardPolicyWrites) {
+				lockPolicy = structuredClone(policy)
+			}
 		},
 		async getBucketLifecyclePolicy() {
 			return lifecyclePolicy
 		},
 		async putBucketLifecyclePolicy(_bucketName, policy) {
 			writes.push('put-lifecycle-policy')
-			lifecyclePolicy = structuredClone(policy)
+			if (!input?.discardPolicyWrites) {
+				lifecyclePolicy = structuredClone(policy)
+			}
 		},
 	}
 	return { api, writes }
@@ -279,6 +291,13 @@ test('generation and CLI reject non-dedicated resources and invalid D1 allowlist
 		}),
 	).toThrow('Unknown backup flag: --provisioner-token')
 	expect(() =>
+		parseBackupCliArgs(['--api-base-url', 'https://example.test'], {
+			BACKUP_SOURCE_ACCOUNT_ID: sourceAccountId,
+			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
+			CLOUDFLARE_API_TOKEN: apiToken,
+		}),
+	).toThrow('Unknown backup flag: --api-base-url')
+	expect(() =>
 		parseBackupCliArgs([], {
 			BACKUP_SOURCE_ACCOUNT_ID: destinationAccountId.toLowerCase(),
 			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
@@ -336,11 +355,89 @@ test('plan and apply converge idempotently without provisioning a Worker', async
 	expect(fake.writes).toEqual([])
 })
 
+test('apply preserves unknown legal holds and stronger managed retention', async () => {
+	const desired = createDesired()
+	const unknownLockRule: R2LockPolicy['rules'][number] = {
+		id: 'legal-hold',
+		enabled: true,
+		prefix: 'investigation/',
+		condition: { type: 'Indefinite' },
+	}
+	const unknownLifecycleRule: R2LifecyclePolicy['rules'][number] = {
+		id: 'abort-stale-multipart-uploads',
+		enabled: true,
+		conditions: { prefix: '' },
+		abortMultipartUploadsTransition: {
+			condition: { type: 'Age', maxAge: 7 * 86_400 },
+		},
+	}
+	const strongerDailyLock = {
+		...desired.lockPolicy.rules[0],
+		condition: { type: 'Age' as const, maxAgeSeconds: 90 * 86_400 },
+	}
+	const strongerDailyLifecycle = {
+		...desired.lifecyclePolicy.rules[0],
+		deleteObjectsTransition: {
+			condition: { type: 'Age' as const, maxAge: 90 * 86_400 },
+		},
+	}
+	const fake = createFakeApi({
+		bucket: { name: desired.bucket.name },
+		lockPolicy: { rules: [unknownLockRule, strongerDailyLock] },
+		lifecyclePolicy: {
+			rules: [unknownLifecycleRule, strongerDailyLifecycle],
+		},
+	})
+
+	const applied = await ensureBackupResources({
+		api: fake.api,
+		desired,
+		dryRun: false,
+	})
+	const lockRequest = applied.plan.actions.find(
+		(action) => action.type === 'put-lock-policy',
+	)
+	const lifecycleRequest = applied.plan.actions.find(
+		(action) => action.type === 'put-lifecycle-policy',
+	)
+	expect(lockRequest?.request.rules).toEqual(
+		expect.arrayContaining([unknownLockRule, strongerDailyLock]),
+	)
+	expect(lifecycleRequest?.request.rules).toEqual(
+		expect.arrayContaining([unknownLifecycleRule, strongerDailyLifecycle]),
+	)
+
+	fake.writes.length = 0
+	const repeated = await ensureBackupResources({
+		api: fake.api,
+		desired,
+		dryRun: false,
+	})
+	expect(repeated.plan.actions).toEqual([])
+	expect(fake.writes).toEqual([])
+})
+
+test('apply fails when Cloudflare read-back does not contain written policies', async () => {
+	const desired = createDesired()
+	const fake = createFakeApi({ discardPolicyWrites: true })
+
+	await expect(
+		ensureBackupResources({
+			api: fake.api,
+			desired,
+			dryRun: false,
+		}),
+	).rejects.toThrow('did not converge after apply')
+})
+
 test('REST adapter uses documented bucket, lock, and lifecycle contracts', async () => {
 	const desired = createDesired()
 	const requests: Array<{ url: string; init: RequestInit }> = []
 	const responses = [
 		new Response(null, { status: 404 }),
+		jsonResponse({ name: desired.bucket.name }),
+		jsonResponse(desired.lockPolicy),
+		jsonResponse(desired.lifecyclePolicy),
 		jsonResponse({ name: desired.bucket.name }),
 		jsonResponse(desired.lockPolicy),
 		jsonResponse(desired.lifecyclePolicy),
@@ -381,6 +478,18 @@ test('REST adapter uses documented bucket, lock, and lifecycle contracts', async
 		],
 		[
 			'PUT',
+			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
+		],
+		[
+			'GET',
+			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive`,
+		],
+		[
+			'GET',
+			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive/lock`,
+		],
+		[
+			'GET',
 			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
 		],
 	])
@@ -488,9 +597,11 @@ test('REST adapter reports authentication, authorization, rate, server, and malf
 
 test('CLI defaults to plan and never renders its provisioner token', async () => {
 	const outputs: Array<string> = []
-	const fetcher = vi.fn(
-		async () => new Response(null, { status: 404 }),
-	) as typeof fetch
+	const requestUrls: Array<string> = []
+	const fetcher = vi.fn(async (url: string | URL | Request) => {
+		requestUrls.push(String(url))
+		return new Response(null, { status: 404 })
+	}) as typeof fetch
 	const result = await runBackupResourcesCli({
 		argv: [
 			'--source-d1',
@@ -502,6 +613,7 @@ test('CLI defaults to plan and never renders its provisioner token', async () =>
 			BACKUP_SOURCE_ACCOUNT_ID: sourceAccountId,
 			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
 			CLOUDFLARE_API_TOKEN: apiToken,
+			CLOUDFLARE_API_BASE_URL: 'https://attacker.example.test',
 			BACKUP_R2_BUCKET_NAME: 'kody-d1-backup-archive',
 		},
 		fetcher,
@@ -509,6 +621,9 @@ test('CLI defaults to plan and never renders its provisioner token', async () =>
 	})
 	expect(result.status).toBe('planned')
 	expect(result.appliedActions).toBe(0)
+	expect(requestUrls).toEqual([
+		`https://api.cloudflare.com/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive`,
+	])
 	expect(outputs.join('\n')).not.toContain(apiToken)
 	expect(JSON.parse(outputs[0] ?? '')).toHaveProperty(
 		'plan.desired.runtimeContract.enforcement',
