@@ -435,8 +435,9 @@ For each run, the Workflow:
 
 1. refuses to run unless both enable gates are true;
 2. verifies configured account/database allowlists and the source D1 UUID/name
-   through the source API, and requires the live D1 `file_size` to be strictly
-   below the configured, non-raisable 4,500,000,000-byte ceiling;
+   through the source API; a live D1 `file_size` of zero fails retryably as
+   `source-size-zero`, while a nonzero size must remain strictly below the
+   configured, non-raisable 4,500,000,000-byte ceiling;
 3. starts D1 export with `output_format: "polling"` and durably polls every 15
    seconds for at most 120 polls, then derives the SQL object key from the
    completed export bookmark; exhausting the bound is a terminal, non-retryable
