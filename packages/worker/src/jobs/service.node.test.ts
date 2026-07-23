@@ -629,6 +629,9 @@ function createDatabase(
 							throw new Error(`Unsupported all query: ${query}`)
 						},
 						async run() {
+							if (query.startsWith('UPDATE users')) {
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
 							if (query.startsWith('INSERT INTO secret_buckets')) {
 								const row = {
 									id: params[0],

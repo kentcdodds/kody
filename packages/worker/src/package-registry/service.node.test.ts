@@ -706,6 +706,12 @@ function createEntitlementsDatabase(input: {
 			return {
 				bind(...params: Array<unknown>) {
 					return {
+						async run() {
+							if (query.includes('UPDATE users')) {
+								return { meta: { changes: 1 } }
+							}
+							throw new Error(`Unsupported run query: ${query}`)
+						},
 						async first<T>() {
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								const user = users.find((row) => row.email === params[0])

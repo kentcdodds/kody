@@ -442,6 +442,9 @@ function createJobMutationDatabase(input: {
 							throw new Error(`Unsupported all query: ${query}`)
 						},
 						async run() {
+							if (normalized.startsWith('UPDATE users')) {
+								return { meta: { changes: 1, last_row_id: 0 } }
+							}
 							if (normalized.startsWith('UPDATE jobs SET')) {
 								const id = params[21]
 								const userId = params[22]

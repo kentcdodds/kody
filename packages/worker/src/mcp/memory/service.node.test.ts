@@ -115,6 +115,9 @@ function createMemoryTestDb() {
 							return { results: [] as Array<T>, meta: { changes: 0 } }
 						},
 						async run() {
+							if (normalizedQuery.startsWith('update users')) {
+								return { meta: { changes: 1 } }
+							}
 							if (normalizedQuery.startsWith('insert into mcp_memories')) {
 								const [
 									id,
