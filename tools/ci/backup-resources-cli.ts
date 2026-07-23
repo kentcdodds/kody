@@ -1,4 +1,4 @@
-import { pathToFileURL } from 'node:url'
+import { isExecutedDirectly } from '../node-runtime.ts'
 import {
 	createCloudflareBackupApi,
 	ensureBackupResources,
@@ -236,7 +236,6 @@ async function main() {
 	}
 }
 
-const entryPath = process.argv[1]
-if (entryPath && import.meta.url === pathToFileURL(entryPath).href) {
+if (isExecutedDirectly(import.meta.url)) {
 	await main()
 }

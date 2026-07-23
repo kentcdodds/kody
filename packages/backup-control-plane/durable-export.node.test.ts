@@ -77,6 +77,27 @@ test('durable polling hard-fails after its bounded numbered poll steps', async (
 })
 
 test('scheduled restart after poll exhaustion starts a new export state', async () => {
+	let workflowStatus: 'running' | 'errored' = 'running'
+	await assert.rejects(
+		runDurableExport(environment(), new ReplayStep(), {
+			maxPolls: 2,
+			pollIntervalSeconds: 1,
+			api: {
+				fetcher: async () => exportEnvelope(),
+				sleep: async () => undefined,
+			},
+		}),
+		(error: unknown) => {
+			const exhausted =
+				error instanceof BackupError &&
+				error.code === 'export-poll-limit' &&
+				error.retryable === false
+			if (exhausted) workflowStatus = 'errored'
+			return exhausted
+		},
+	)
+	assert.equal(workflowStatus, 'errored')
+
 	let restarts = 0
 	const workflow = {
 		async create() {
@@ -84,9 +105,10 @@ test('scheduled restart after poll exhaustion starts a new export state', async 
 		},
 		async get() {
 			return {
-				status: async () => ({ status: 'errored' as const }),
+				status: async () => ({ status: workflowStatus }),
 				restart: async () => {
 					restarts += 1
+					workflowStatus = 'running'
 				},
 			}
 		},
@@ -102,6 +124,7 @@ test('scheduled restart after poll exhaustion starts a new export state', async 
 		'restarted',
 	)
 	assert.equal(restarts, 1)
+	assert.equal(workflowStatus, 'running')
 
 	const requestBodies: unknown[] = []
 	const result = await runDurableExport(environment(), new ReplayStep(), {

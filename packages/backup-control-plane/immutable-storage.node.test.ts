@@ -341,6 +341,16 @@ test('manifest is immutable across duplicate writes and commit changes', async (
 	)
 })
 
+test('manifest reader rejects valid JSON with an invalid schema', async () => {
+	const bucket = new MemoryBucket()
+	await bucket.put('manifest.json', JSON.stringify({ schemaVersion: 1 }))
+	await assert.rejects(
+		readManifest(bucket as unknown as R2Bucket, 'manifest.json'),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'manifest-corrupt',
+	)
+})
+
 test('an existing source-matched object must also match its immutable manifest', async () => {
 	const bucket = new MemoryBucket()
 	const stored = await storeSignedDownload(

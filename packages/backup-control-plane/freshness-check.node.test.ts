@@ -101,6 +101,19 @@ test('freshness switches from yesterday to today at the 02:15 backup boundary', 
 	)
 })
 
+test('freshness reports malformed manifest schema as stale', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	await bucket.put(
+		`daily/d1/${DATABASE_ID}/2026-07-22/manifest.json`,
+		JSON.stringify({ schemaVersion: 1 }),
+	)
+	assert.equal(
+		await checkFreshness(env, new Date('2026-07-22T03:45:00Z'), identityApi()),
+		false,
+	)
+})
+
 test('freshness compares Cloudflare account and D1 IDs case-insensitively', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)

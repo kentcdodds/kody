@@ -41,7 +41,22 @@ export async function checkFreshness(
 			'BACKUP_MAX_AGE_HOURS must be a positive number',
 		)
 	}
-	const manifest = await readManifest(env.BACKUP_BUCKET, payload.manifestKey)
+	let manifest
+	try {
+		manifest = await readManifest(env.BACKUP_BUCKET, payload.manifestKey)
+	} catch (error) {
+		if (error instanceof BackupError && error.code === 'manifest-corrupt') {
+			safeLog({
+				event: 'freshness-stale',
+				status: 'stale-success',
+				day: payload.day,
+				manifestKey: payload.manifestKey,
+				errorCode: error.code,
+			})
+			return false
+		}
+		throw error
+	}
 	let ageHours: number | undefined
 	let stale = manifest === null
 	if (manifest !== null) {

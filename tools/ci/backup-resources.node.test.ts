@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { expect, test, vi } from 'vitest'
 import {
 	createCloudflareBackupApi,
@@ -22,6 +23,32 @@ const normalizedSourceAccountId = sourceAccountId.toLowerCase()
 const normalizedDestinationAccountId = destinationAccountId.toLowerCase()
 const apiToken = 'provisioner-secret-value'
 const sourceD1Uuid = '9f1c2f54-13f0-4fd4-8cf4-89ec2f9df71a'
+
+async function runRelativeResourcesCli(): Promise<{
+	status: number | null
+	stderr: string
+}> {
+	return await new Promise((resolve, reject) => {
+		const child = spawn(
+			process.execPath,
+			['tools/ci/backup-resources-cli.ts'],
+			{
+				env: {
+					HOME: process.env.HOME,
+					PATH: process.env.PATH,
+					TMPDIR: process.env.TMPDIR,
+				},
+				stdio: ['ignore', 'ignore', 'pipe'],
+			},
+		)
+		let stderr = ''
+		child.stderr.on('data', (chunk: Buffer) => {
+			stderr += chunk.toString()
+		})
+		child.on('error', reject)
+		child.on('close', (status) => resolve({ status, stderr }))
+	})
+}
 
 function createDesired(): BackupDesiredState {
 	return generateBackupDesiredState({
@@ -646,4 +673,10 @@ test('CLI defaults to plan and never renders its provisioner token', async () =>
 		'd1ExportTokenRequirements.permission',
 		'D1 Edit',
 	)
+})
+
+test('relative backup resources CLI entry path executes main', async () => {
+	const result = await runRelativeResourcesCli()
+	expect(result.status).toBe(1)
+	expect(result.stderr).toContain('Source Cloudflare account ID is required')
 })
