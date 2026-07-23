@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 
 import { type BackupRuntimeStep } from './backup-runtime.ts'
 import { type DurableExportStep } from './durable-export.ts'
-import { objectKeyForBookmark } from './backup-policy.ts'
+import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
 import { type BackupEnvironment, type BackupManifest } from './backup-types.ts'
 class TestDigestStream extends WritableStream<Uint8Array> {
 	readonly digest: Promise<ArrayBuffer>
@@ -306,9 +306,56 @@ export class CachedUploadStep implements BackupRuntimeStep {
 	async sleep(): Promise<void> {}
 }
 
+export class RetryFinalizationStep implements BackupRuntimeStep {
+	readonly finalizationAttempts: number[] = []
+	private readonly cache = new Map<string, unknown>()
+
+	async do<T>(
+		name: string,
+		config: unknown,
+		callback: () => Promise<T>,
+	): Promise<T>
+	async do<T>(name: string, callback: () => Promise<T>): Promise<T>
+	async do<T>(
+		name: string,
+		configOrCallback: unknown,
+		callback?: () => Promise<T>,
+	): Promise<T> {
+		if (this.cache.has(name)) return this.cache.get(name) as T
+		const execute =
+			typeof configOrCallback === 'function'
+				? (configOrCallback as () => Promise<T>)
+				: callback!
+		if (name === 'verify-source-and-write-immutable-manifest') {
+			for (let attempt = 1; attempt <= 2; attempt += 1) {
+				this.finalizationAttempts.push(attempt)
+				try {
+					const value = await execute()
+					this.cache.set(name, value)
+					return value
+				} catch (error) {
+					if (
+						attempt === 2 ||
+						!(error instanceof BackupError) ||
+						!error.retryable
+					) {
+						throw error
+					}
+				}
+			}
+		}
+		const value = await execute()
+		this.cache.set(name, value)
+		return value
+	}
+
+	async sleep(): Promise<void> {}
+}
+
 export function exportEnvelope(
 	status?: 'complete' | 'error',
 	bookmark = 'bookmark-1',
+	signedUrl = 'https://download.example/export.sql',
 ): Response {
 	return Response.json({
 		success: true,
@@ -317,9 +364,7 @@ export function exportEnvelope(
 			success: true,
 			at_bookmark: bookmark,
 			status,
-			...(status === 'complete'
-				? { result: { signed_url: 'https://download.example/export.sql' } }
-				: {}),
+			...(status === 'complete' ? { result: { signed_url: signedUrl } } : {}),
 			...(status === 'error' ? { error: 'internal detail' } : {}),
 		},
 	})

@@ -1,4 +1,5 @@
 import {
+	refreshCompletedD1Export,
 	verifySourceDatabaseIdentity,
 	type ApiOptions,
 } from './d1-export-api.ts'
@@ -134,13 +135,18 @@ export async function runBackupRuntime(
 				timeout: '15 minutes',
 			},
 			async () => {
+				const refreshed = await refreshCompletedD1Export(
+					env,
+					exported.bookmark,
+					options.api,
+				)
 				await assertDuplicateMatchesManifest(
 					env.BACKUP_BUCKET,
 					checkedPayload.manifestKey,
 					checkedObjectKey,
 					stored,
 					{
-						signedUrl: exported.signedUrl,
+						signedUrl: refreshed.signedUrl,
 						fetcher: options.downloadFetcher,
 					},
 				)

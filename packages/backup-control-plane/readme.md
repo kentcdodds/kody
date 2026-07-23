@@ -17,11 +17,15 @@ Each export object is immutable and bookmark-derived:
 has one canonical immutable `manifest.json`, which records the selected object
 key. If a process crashes after writing SQL but before its manifest, a later
 Workflow-step retry reuses the cached export bookmark and therefore inspects the
-same object before constructing the absent canonical manifest. Before an
-existing object can be reused, the retry re-fetches the same signed export and
-stream-compares its exact byte count and SHA-256 with R2. The finalization step
-repeats that comparison whenever the manifest is absent and writes the immutable
-manifest in the same retryable Workflow step, even when replay returns a cached
+same object before constructing the absent canonical manifest. The original
+one-hour signed URL is used only by the initial upload step. On every execution
+of the retryable finalization callback, the runtime polls D1 with the cached
+bookmark and requires a complete response for that same bookmark, obtaining a
+fresh signed URL before it stream-compares exact byte count and SHA-256 with R2.
+Pending refreshes retry; malformed responses and bookmark mismatches fail
+closed. The refresh, comparison, and immutable manifest write remain in one
+Workflow step, so a callback retry performs another export API poll instead of
+reusing a separately cached URL. This also applies when replay returns a cached
 upload-step result and skips its callback. Without signed-source context it
 fails with `duplicate-object-manifest-missing`. An existing manifest must also
 match that object exactly.

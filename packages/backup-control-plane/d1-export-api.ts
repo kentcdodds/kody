@@ -3,7 +3,11 @@ import {
 	assertRemoteDatabaseIdentity,
 	safeLog,
 } from './backup-policy.ts'
-import { type BackupEnvironment, type ExportState } from './backup-types.ts'
+import {
+	type BackupEnvironment,
+	type ExportReady,
+	type ExportState,
+} from './backup-types.ts'
 
 export interface ApiOptions {
 	fetcher?: typeof fetch
@@ -214,7 +218,11 @@ function parseExportState(result: JsonObject): ExportState {
 	}
 	if (status === 'complete') {
 		const completed = result.result
-		if (!isObject(completed) || typeof completed.signed_url !== 'string') {
+		if (
+			!isObject(completed) ||
+			typeof completed.signed_url !== 'string' ||
+			completed.signed_url.length === 0
+		) {
 			throw new BackupError(
 				'export-malformed-response',
 				'D1 completed without a signed URL',
@@ -275,4 +283,32 @@ export async function pollD1Export(
 		)
 	}
 	return exportRequest(env, bookmark, options)
+}
+
+export async function refreshCompletedD1Export(
+	env: BackupEnvironment,
+	bookmark: string,
+	options: ApiOptions = {},
+): Promise<ExportReady> {
+	const state = await pollD1Export(env, bookmark, options)
+	if (state.bookmark !== bookmark) {
+		throw new BackupError(
+			'export-bookmark-mismatch',
+			'D1 export refresh returned a different bookmark',
+		)
+	}
+	switch (state.kind) {
+		case 'complete':
+			return state
+		case 'pending':
+			throw new BackupError(
+				'export-refresh-pending',
+				'D1 export refresh did not return a completed signed URL',
+				true,
+			)
+		default: {
+			const exhaustive: never = state
+			throw exhaustive
+		}
+	}
 }

@@ -16,6 +16,7 @@ import {
 	DATABASE_ID,
 	MemoryBucket,
 	RetryAfterCommitStep,
+	RetryFinalizationStep,
 	environment,
 	exportEnvelope,
 	identityEnvelope,
@@ -57,11 +58,128 @@ test('workflow retry reuses an upload committed before step persistence and writ
 	)
 	assert.deepEqual(step.uploadResults, [false, true])
 	assert.equal(downloadCalls, 3)
-	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 1)
+	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 2)
 	assert.equal(
 		result.objectKey,
 		objectKeyForBookmark(payload.objectPrefix, 'bookmark-1'),
 	)
+	assert.deepEqual(
+		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
+		result,
+	)
+})
+
+test('finalization refreshes an initial signed URL that works exactly once', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const exportBodies: unknown[] = []
+	const downloadUrls: string[] = []
+	let exportCalls = 0
+	const result = await runBackupRuntime(
+		env,
+		{
+			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+			payload,
+			timestamp: new Date('2026-07-22T02:15:01Z'),
+		},
+		new CachedUploadStep(() => undefined),
+		{
+			api: {
+				fetcher: async (input, init) => {
+					if (!String(input).endsWith('/export')) return identityEnvelope(1_000)
+					exportBodies.push(JSON.parse(String(init?.body)))
+					exportCalls += 1
+					return exportEnvelope(
+						'complete',
+						'bookmark-1',
+						exportCalls === 1
+							? 'https://download.example/initial'
+							: 'https://download.example/refreshed',
+					)
+				},
+				sleep: async () => undefined,
+			},
+			downloadFetcher: async (input) => {
+				const url = String(input)
+				downloadUrls.push(url)
+				if (
+					url === 'https://download.example/initial' &&
+					downloadUrls.filter((called) => called === url).length > 1
+				) {
+					return new Response('', { status: 403 })
+				}
+				return new Response('valid', {
+					headers: { 'content-length': '5' },
+				})
+			},
+		},
+	)
+	assert.deepEqual(exportBodies, [
+		{ output_format: 'polling' },
+		{ output_format: 'polling', current_bookmark: 'bookmark-1' },
+	])
+	assert.deepEqual(downloadUrls, [
+		'https://download.example/initial',
+		'https://download.example/refreshed',
+	])
+	assert.deepEqual(
+		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
+		result,
+	)
+})
+
+test('a finalization callback retry obtains another fresh signed URL', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const step = new RetryFinalizationStep()
+	const downloadUrls: string[] = []
+	let exportCalls = 0
+	const result = await runBackupRuntime(
+		env,
+		{
+			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+			payload,
+			timestamp: new Date('2026-07-22T02:15:01Z'),
+		},
+		step,
+		{
+			api: {
+				fetcher: async (input) => {
+					if (!String(input).endsWith('/export')) return identityEnvelope(1_000)
+					exportCalls += 1
+					return exportEnvelope(
+						'complete',
+						'bookmark-1',
+						[
+							'https://download.example/initial',
+							'https://download.example/refreshed-once',
+							'https://download.example/refreshed-twice',
+						][exportCalls - 1],
+					)
+				},
+				sleep: async () => undefined,
+			},
+			downloadFetcher: async (input) => {
+				const url = String(input)
+				downloadUrls.push(url)
+				if (url === 'https://download.example/refreshed-once') {
+					return new Response('', { status: 503 })
+				}
+				return new Response('valid', {
+					headers: { 'content-length': '5' },
+				})
+			},
+		},
+	)
+	assert.equal(exportCalls, 3)
+	assert.deepEqual(step.finalizationAttempts, [1, 2])
+	assert.deepEqual(downloadUrls, [
+		'https://download.example/initial',
+		'https://download.example/refreshed-once',
+		'https://download.example/refreshed-twice',
+	])
 	assert.deepEqual(
 		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
 		result,

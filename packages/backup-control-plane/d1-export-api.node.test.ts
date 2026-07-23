@@ -4,6 +4,7 @@ import { test, vi } from 'vitest'
 
 import {
 	DEFAULT_BACKUP_MAX_SOURCE_BYTES,
+	refreshCompletedD1Export,
 	startD1Export,
 	verifySourceDatabaseIdentity,
 } from './d1-export-api.ts'
@@ -157,6 +158,38 @@ test('rejects malformed JSON and malformed/error export payloads', async () => {
 				sleep: async () => undefined,
 			}),
 			BackupError,
+		)
+	}
+})
+
+test('refresh requires the same bookmark and a complete nonempty signed URL', async () => {
+	const cases = [
+		{
+			response: exportEnvelope(),
+			code: 'export-refresh-pending',
+			retryable: true,
+		},
+		{
+			response: exportEnvelope('complete', 'bookmark-2'),
+			code: 'export-bookmark-mismatch',
+			retryable: false,
+		},
+		{
+			response: exportEnvelope('complete', 'bookmark-1', ''),
+			code: 'export-malformed-response',
+			retryable: false,
+		},
+	]
+	for (const expected of cases) {
+		await assert.rejects(
+			refreshCompletedD1Export(environment(), 'bookmark-1', {
+				fetcher: async () => expected.response.clone(),
+				sleep: async () => undefined,
+			}),
+			(error: unknown) =>
+				error instanceof BackupError &&
+				error.code === expected.code &&
+				error.retryable === expected.retryable,
 		)
 	}
 })
