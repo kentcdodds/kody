@@ -574,12 +574,13 @@ exact schema is:
 }
 ```
 
-Every `productionSources[].databaseId` must be a UUID. Each drill target account
-must differ from every checked production source account. The manifest's exact
-`accountId`, `databaseId`, and `databaseName` must match one checked production
-source, while the requested target's exact `accountId` and `databaseName` must
-match one checked drill target. The target name must also differ from the
-manifest's production database name.
+Every registry account ID must be canonical 32-character lowercase hex, and
+every `productionSources[].databaseId` must be a UUID. This prevents mixed-case
+duplicate trust entries. Each drill target account must differ from every
+checked production source account. Runtime account IDs and D1 UUIDs compare
+case-insensitively to canonical registry entries, while database names remain
+exact. The target name must also differ from the manifest's production database
+name.
 
 Both checked-in lists are intentionally empty until identities are approved in
 code review. Therefore both dry-run and `--execute` currently fail closed before

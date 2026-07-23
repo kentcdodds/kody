@@ -311,6 +311,31 @@ test('restore trust registry is exact, checked-in empty, and cannot be replaced 
 			}),
 		),
 	).toThrow('Cloudflare account ID')
+	expect(() =>
+		parseRestoreTrustRegistry(
+			createTrustRegistry({
+				productionSources: [
+					{
+						accountId: productionAccountId.toUpperCase(),
+						databaseId: productionUuid,
+						databaseName: 'kody-production',
+					},
+				],
+			}),
+		),
+	).toThrow('Cloudflare account ID')
+	expect(() =>
+		parseRestoreTrustRegistry(
+			createTrustRegistry({
+				drillTargets: [
+					{
+						accountId: targetAccountId.toUpperCase(),
+						databaseName: 'kody-drill',
+					},
+				],
+			}),
+		),
+	).toThrow('Cloudflare account ID')
 
 	const checkedRegistry = JSON.parse(
 		await readFile(restoreTrustRegistryPath, 'utf8'),
@@ -382,6 +407,26 @@ test('restore trust registry is exact, checked-in empty, and cannot be replaced 
 			'kody-drill',
 		]),
 	).toThrow('Unknown argument: --allowlist')
+})
+
+test('restore trust matches runtime account IDs case-insensitively', async () => {
+	const source = createManifest().source
+	const fixture = manifestFixture({
+		source: {
+			...source,
+			accountId: productionAccountId.toUpperCase(),
+		},
+	})
+	await expect(
+		runD1RestoreDrill(
+			drillInput({
+				manifestBytes: fixture.bytes,
+				expectedManifestSha256: fixture.checksum,
+				targetAccountId: targetAccountId.toUpperCase(),
+			}),
+			createAdapters(),
+		),
+	).resolves.toMatchObject({ dryRun: true })
 })
 
 test('SQL file evidence streams injected chunks after stat and rejects sizes without reading the dump', async () => {

@@ -4,7 +4,7 @@ export const maximumD1BackupSizeBytes = 5 * 1024 * 1024 * 1024
 const sha256Pattern = /^[a-f0-9]{64}$/
 const uuidPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const cloudflareAccountIdPattern = /^[0-9a-f]{32}$/i
+const cloudflareAccountIdPattern = /^[0-9a-f]{32}$/
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 // Duplicated deliberately from backup-control-plane to keep this slice
@@ -587,8 +587,10 @@ function assertTargetRequest(
 	if (
 		!trustRegistry.productionSources.some(
 			(source) =>
-				source.accountId === manifest.source.accountId &&
-				source.databaseId === manifest.source.databaseId &&
+				source.accountId.toLowerCase() ===
+					manifest.source.accountId.toLowerCase() &&
+				source.databaseId.toLowerCase() ===
+					manifest.source.databaseId.toLowerCase() &&
 				source.databaseName === manifest.source.databaseName,
 		)
 	) {
@@ -607,7 +609,7 @@ function assertTargetRequest(
 	if (
 		!trustRegistry.drillTargets.some(
 			(target) =>
-				target.accountId === targetAccountId &&
+				target.accountId.toLowerCase() === targetAccountId.toLowerCase() &&
 				target.databaseName === targetName,
 		)
 	) {

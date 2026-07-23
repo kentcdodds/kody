@@ -41,14 +41,15 @@ schema-versioned shape:
 }
 ```
 
-Its checked-in lists are intentionally empty. A production source and distinct
-drill target must be approved by code review before either dry-run or execution
-can produce a plan. The manifest source account ID, D1 UUID, and database name
-must exactly match one production entry; the requested target account ID and
-name must exactly match one drill-target entry; and the source and target
-accounts must differ. Execution creates a new D1 database through Cloudflare's
-create API immediately before import, then validates the returned UUID, name,
-and `created_at`. Successful creation is the empty/unbound evidence.
+Its checked-in lists are intentionally empty. Registry account IDs must be
+canonical 32-character lowercase hex, preventing mixed-case duplicate trust
+entries. A production source and distinct drill target must be approved by code
+review before either dry-run or execution can produce a plan. Runtime account
+IDs and D1 UUIDs compare case-insensitively to those canonical entries, while
+database names remain exact; source and target accounts must differ. Execution
+creates a new D1 database through Cloudflare's create API immediately before
+import, then validates the returned UUID, name, and `created_at`. Successful
+creation is the empty/unbound evidence.
 
 ```sh
 node tools/disaster-recovery/d1-restore-drill-cli.ts \
