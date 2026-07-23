@@ -14,17 +14,19 @@ import {
 	exportEnvelope,
 } from './backup-control-plane-test-support.ts'
 
-test('durable orchestration starts once and resumes numbered polls after interruption', async () => {
+test('durable orchestration polls immediately then resumes numbered polls after interruption', async () => {
 	const bodies: string[] = []
 	const responses = [
-		exportEnvelope(),
-		exportEnvelope(),
+		exportEnvelope('active'),
+		exportEnvelope('active'),
 		exportEnvelope('complete'),
 	]
 	const step = new ReplayStep('poll-d1-export-1')
 	const options = {
 		maxPolls: 3,
-		pollIntervalSeconds: 1,
+		pollIntervalSeconds: 15,
+		earlyPollIntervalSeconds: 2,
+		earlyPollCount: 5,
 		api: {
 			fetcher: async (_input: RequestInfo | URL, init?: RequestInit) => {
 				bodies.push(String(init?.body))
@@ -46,11 +48,8 @@ test('durable orchestration starts once and resumes numbered polls after interru
 		output_format: 'polling',
 		current_bookmark: 'bookmark-1',
 	})
-	assert.deepEqual(step.sleeps, [
-		'wait-d1-export-1',
-		'wait-d1-export-1',
-		'wait-d1-export-2',
-	])
+	// Immediate first poll (no wait before poll-1); wait only after a pending poll.
+	assert.deepEqual(step.sleeps, ['wait-d1-export-1'])
 })
 
 test('durable polling hard-fails after its bounded numbered poll steps', async () => {
@@ -59,8 +58,9 @@ test('durable polling hard-fails after its bounded numbered poll steps', async (
 		runDurableExport(environment(), step, {
 			maxPolls: 2,
 			pollIntervalSeconds: 1,
+			earlyPollIntervalSeconds: 1,
 			api: {
-				fetcher: async () => exportEnvelope(),
+				fetcher: async () => exportEnvelope('active'),
 				sleep: async () => undefined,
 			},
 		}),
@@ -76,14 +76,50 @@ test('durable polling hard-fails after its bounded numbered poll steps', async (
 	])
 })
 
+test('expired poll result restarts the export with a new bookmark', async () => {
+	const bodies: unknown[] = []
+	const responses = [
+		exportEnvelope('active', 'bookmark-old'),
+		exportEnvelope('lost'),
+		exportEnvelope('active', 'bookmark-new'),
+		exportEnvelope('complete', 'bookmark-new'),
+	]
+	const result = await runDurableExport(environment(), new ReplayStep(), {
+		maxPolls: 5,
+		pollIntervalSeconds: 15,
+		earlyPollIntervalSeconds: 2,
+		api: {
+			fetcher: async (_input, init) => {
+				bodies.push(JSON.parse(String(init?.body)))
+				return responses.shift()!
+			},
+			sleep: async () => undefined,
+		},
+	})
+	assert.equal(result.bookmark, 'bookmark-new')
+	assert.deepEqual(bodies, [
+		{ output_format: 'polling' },
+		{
+			output_format: 'polling',
+			current_bookmark: 'bookmark-old',
+		},
+		{ output_format: 'polling' },
+		{
+			output_format: 'polling',
+			current_bookmark: 'bookmark-new',
+		},
+	])
+})
+
 test('scheduled restart after poll exhaustion starts a new export state', async () => {
 	let workflowStatus: 'running' | 'errored' = 'running'
 	await assert.rejects(
 		runDurableExport(environment(), new ReplayStep(), {
 			maxPolls: 2,
 			pollIntervalSeconds: 1,
+			earlyPollIntervalSeconds: 1,
 			api: {
-				fetcher: async () => exportEnvelope(),
+				fetcher: async () => exportEnvelope('active'),
 				sleep: async () => undefined,
 			},
 		}),
@@ -130,6 +166,7 @@ test('scheduled restart after poll exhaustion starts a new export state', async 
 	const result = await runDurableExport(environment(), new ReplayStep(), {
 		maxPolls: 2,
 		pollIntervalSeconds: 1,
+		earlyPollIntervalSeconds: 1,
 		api: {
 			fetcher: async (_input, init) => {
 				requestBodies.push(JSON.parse(String(init?.body)))

@@ -88,11 +88,6 @@ export async function runBackupRuntime(
 		const exported = await runDurableExport(env, step, {
 			api: options.api,
 		})
-		const checkedObjectKey = objectKeyForBookmark(
-			checkedPayload.objectPrefix,
-			exported.bookmark,
-		)
-		objectKey = checkedObjectKey
 		const stored = await step.do(
 			'stream-export-to-immutable-r2',
 			{
@@ -100,19 +95,31 @@ export async function runBackupRuntime(
 				timeout: '15 minutes',
 			},
 			async () => {
+				// Refresh may restart the export when the short-lived poll result
+				// has expired; the returned bookmark defines the immutable object key.
 				const refreshed = await refreshCompletedD1Export(
 					env,
 					exported.bookmark,
 					options.api,
 				)
-				return storeSignedDownload(
+				const refreshedObjectKey = objectKeyForBookmark(
+					checkedPayload.objectPrefix,
+					refreshed.bookmark,
+				)
+				const uploaded = await storeSignedDownload(
 					env.BACKUP_BUCKET,
-					checkedObjectKey,
+					refreshedObjectKey,
 					refreshed.signedUrl,
 					options.downloadFetcher,
 				)
+				return {
+					...uploaded,
+					objectKey: refreshedObjectKey,
+					bookmark: refreshed.bookmark,
+				}
 			},
 		)
+		objectKey = stored.objectKey
 		const completedAt = await step.do('record-completion-time', async () =>
 			new Date().toISOString(),
 		)
@@ -123,13 +130,13 @@ export async function runBackupRuntime(
 				databaseName: env.SOURCE_DATABASE_NAME,
 			},
 			export: {
-				bookmark: exported.bookmark,
+				bookmark: stored.bookmark,
 				scheduledAt: checkedPayload.scheduledAt,
 				startedAt,
 				completedAt,
 			},
 			sql: {
-				objectKey: checkedObjectKey,
+				objectKey: stored.objectKey,
 				bytes: stored.bytes,
 				sha256: stored.sha256,
 				r2Etag: stored.r2Etag,
@@ -144,15 +151,17 @@ export async function runBackupRuntime(
 				timeout: '15 minutes',
 			},
 			async () => {
+				// Signed URL may come from a restarted export; content is verified
+				// against the already-stored object key from the upload step.
 				const refreshed = await refreshCompletedD1Export(
 					env,
-					exported.bookmark,
+					stored.bookmark,
 					options.api,
 				)
 				await assertDuplicateMatchesManifest(
 					env.BACKUP_BUCKET,
 					checkedPayload.manifestKey,
-					checkedObjectKey,
+					stored.objectKey,
 					stored,
 					{
 						signedUrl: refreshed.signedUrl,
@@ -173,7 +182,7 @@ export async function runBackupRuntime(
 			status: 'success',
 			day: checkedPayload.day,
 			instanceId: event.instanceId,
-			objectKey: checkedObjectKey,
+			objectKey: stored.objectKey,
 			manifestKey: checkedPayload.manifestKey,
 			bytes: stored.bytes,
 			sha256: stored.sha256,

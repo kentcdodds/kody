@@ -13,6 +13,11 @@ export interface ApiOptions {
 	fetcher?: typeof fetch
 	sleep?: (milliseconds: number) => Promise<void>
 	maxRequestAttempts?: number
+	maxPollAttempts?: number
+	earlyPollCount?: number
+	earlyPollDelayMs?: number
+	pollDelayMs?: number
+	maxExportRestarts?: number
 }
 
 interface JsonObject {
@@ -21,7 +26,13 @@ interface JsonObject {
 
 const DEFAULT_REQUEST_ATTEMPTS = 5
 const MAX_RETRY_DELAY = 60_000
+const DEFAULT_MAX_POLL_ATTEMPTS = 120
+const DEFAULT_EARLY_POLL_COUNT = 5
+const DEFAULT_EARLY_POLL_DELAY_MS = 2_000
+const DEFAULT_POLL_DELAY_MS = 15_000
+const DEFAULT_MAX_EXPORT_RESTARTS = 3
 export const DEFAULT_BACKUP_MAX_SOURCE_BYTES = 4_500_000_000
+export const EXPORT_RESULT_EXPIRED_ERROR = 'Not currently exporting anything.'
 
 function isObject(value: unknown): value is JsonObject {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -214,7 +225,16 @@ export async function verifySourceDatabaseIdentity(
 	return { fileSize, maxSourceBytes }
 }
 
+function isExportResultExpired(result: JsonObject): boolean {
+	return (
+		result.success === false && result.error === EXPORT_RESULT_EXPIRED_ERROR
+	)
+}
+
 function parseExportState(result: JsonObject): ExportState {
+	if (isExportResultExpired(result)) {
+		return { kind: 'lost' }
+	}
 	if (
 		result.type !== 'export' ||
 		result.success !== true ||
@@ -301,20 +321,84 @@ export async function pollD1Export(
 	return exportRequest(env, bookmark, options)
 }
 
+function pollSleepMs(pollIndex: number, options: ApiOptions): number {
+	const earlyCount = options.earlyPollCount ?? DEFAULT_EARLY_POLL_COUNT
+	const earlyDelay = options.earlyPollDelayMs ?? DEFAULT_EARLY_POLL_DELAY_MS
+	const laterDelay = options.pollDelayMs ?? DEFAULT_POLL_DELAY_MS
+	return pollIndex <= earlyCount ? earlyDelay : laterDelay
+}
+
+/**
+ * Drive an export from a start/pending/lost state to completion using the
+ * live-API-aware cadence: poll immediately, ~2s for the first few waits, then
+ * the longer interval. Restarts bare exports when the result expires.
+ */
+export async function awaitExportReady(
+	env: BackupEnvironment,
+	initial: ExportState,
+	options: ApiOptions = {},
+): Promise<ExportReady> {
+	const sleep =
+		options.sleep ?? ((milliseconds) => scheduler.wait(milliseconds))
+	const maxPolls = options.maxPollAttempts ?? DEFAULT_MAX_POLL_ATTEMPTS
+	const maxRestarts = options.maxExportRestarts ?? DEFAULT_MAX_EXPORT_RESTARTS
+	let state = initial
+	let restarts = 0
+	let polls = 0
+
+	while (true) {
+		switch (state.kind) {
+			case 'complete':
+				return state
+			case 'lost': {
+				if (restarts >= maxRestarts) {
+					throw new BackupError(
+						'export-restart-limit',
+						'D1 export result expired too many times',
+					)
+				}
+				restarts += 1
+				state = await startD1Export(env, options)
+				continue
+			}
+			case 'pending': {
+				if (polls >= maxPolls) {
+					throw new BackupError(
+						'export-poll-limit',
+						'D1 export did not complete within the bounded polling window',
+					)
+				}
+				polls += 1
+				state = await pollD1Export(env, state.bookmark, options)
+				if (state.kind === 'complete') return state
+				if (state.kind === 'lost') continue
+				if (polls < maxPolls) {
+					await sleep(pollSleepMs(polls, options))
+				}
+				continue
+			}
+			default: {
+				const exhaustive: never = state
+				throw exhaustive
+			}
+		}
+	}
+}
+
 export async function refreshCompletedD1Export(
 	env: BackupEnvironment,
 	bookmark: string,
 	options: ApiOptions = {},
 ): Promise<ExportReady> {
 	const state = await pollD1Export(env, bookmark, options)
-	if (state.bookmark !== bookmark) {
-		throw new BackupError(
-			'export-bookmark-mismatch',
-			'D1 export refresh returned a different bookmark',
-		)
-	}
 	switch (state.kind) {
 		case 'complete':
+			if (state.bookmark !== bookmark) {
+				throw new BackupError(
+					'export-bookmark-mismatch',
+					'D1 export refresh returned a different bookmark',
+				)
+			}
 			return state
 		case 'pending':
 			throw new BackupError(
@@ -322,6 +406,11 @@ export async function refreshCompletedD1Export(
 				'D1 export refresh did not return a completed signed URL',
 				true,
 			)
+		case 'lost':
+			// Short-lived poll results expire quickly; start a fresh export and
+			// fast-poll to completion. Callers must key objects by the returned
+			// bookmark (new export ⇒ new object key).
+			return awaitExportReady(env, { kind: 'lost' }, options)
 		default: {
 			const exhaustive: never = state
 			throw exhaustive

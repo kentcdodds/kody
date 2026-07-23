@@ -51,7 +51,12 @@ export interface ExportPending {
 	bookmark: string
 }
 
-export type ExportState = ExportReady | ExportPending
+/** Polling result expired from D1's short retention window. */
+export interface ExportLost {
+	kind: 'lost'
+}
+
+export type ExportState = ExportReady | ExportPending | ExportLost
 
 export interface StoredBackup {
 	bytes: number

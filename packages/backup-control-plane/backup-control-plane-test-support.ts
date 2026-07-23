@@ -427,10 +427,19 @@ export class RetryUploadStep implements BackupRuntimeStep {
 }
 
 export function exportEnvelope(
-	status?: 'complete' | 'error' | 'active',
+	status?: 'complete' | 'error' | 'active' | 'lost',
 	bookmark = 'bookmark-1',
 	signedUrl = 'https://download.example/export.sql',
 ): Response {
+	if (status === 'lost') {
+		return Response.json({
+			success: true,
+			result: {
+				success: false,
+				error: 'Not currently exporting anything.',
+			},
+		})
+	}
 	return Response.json({
 		success: true,
 		result: {

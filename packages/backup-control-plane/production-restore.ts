@@ -3,7 +3,7 @@ import { sealedFullManifestKey } from '@kody-internal/shared/backup-staging.ts'
 import { BackupError, backupPayload, safeLog } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
 import {
-	pollD1Export,
+	awaitExportReady,
 	startD1Export,
 	type ApiOptions,
 } from './d1-export-api.ts'
@@ -281,26 +281,18 @@ export async function capturePreRestoreSafetyExport(
 	const maxPollAttempts = options.maxPollAttempts ?? DEFAULT_SAFETY_EXPORT_POLLS
 	const pollDelayMs = options.pollDelayMs ?? DEFAULT_SAFETY_EXPORT_POLL_DELAY_MS
 
-	let state = await startD1Export(env, options)
-	for (
-		let attempt = 0;
-		attempt < maxPollAttempts && state.kind === 'pending';
-		attempt += 1
-	) {
-		await sleep(pollDelayMs)
-		state = await pollD1Export(env, state.bookmark, options)
-	}
-	if (state.kind !== 'complete') {
-		throw new BackupError(
-			'pre-restore-export-timeout',
-			'pre-restore safety export did not complete within the poll budget',
-			true,
-		)
-	}
+	const started = await startD1Export(env, options)
+	const completed = await awaitExportReady(env, started, {
+		...options,
+		maxPollAttempts,
+		pollDelayMs,
+		earlyPollDelayMs: Math.min(pollDelayMs, 2_000),
+		sleep,
+	})
 
 	let download: Response
 	try {
-		download = await fetcher(state.signedUrl)
+		download = await fetcher(completed.signedUrl)
 	} catch {
 		throw new BackupError(
 			'pre-restore-download-failed',

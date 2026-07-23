@@ -4,6 +4,7 @@ import { test, vi } from 'vitest'
 
 import {
 	DEFAULT_BACKUP_MAX_SOURCE_BYTES,
+	pollD1Export,
 	refreshCompletedD1Export,
 	startD1Export,
 	verifySourceDatabaseIdentity,
@@ -203,7 +204,7 @@ test('rejects malformed JSON and malformed/error/unknown export payloads', async
 test('refresh requires the same bookmark and a complete nonempty signed URL', async () => {
 	const cases = [
 		{
-			response: exportEnvelope(),
+			response: exportEnvelope('active'),
 			code: 'export-refresh-pending',
 			retryable: true,
 		},
@@ -230,4 +231,56 @@ test('refresh requires the same bookmark and a complete nonempty signed URL', as
 				error.retryable === expected.retryable,
 		)
 	}
+})
+
+test('poll lost/expired envelope is distinct from malformed responses', async () => {
+	const state = await pollD1Export(environment(), 'bookmark-1', {
+		fetcher: async () => exportEnvelope('lost'),
+		sleep: async () => undefined,
+	})
+	assert.equal(state.kind, 'lost')
+
+	await assert.rejects(
+		pollD1Export(environment(), 'bookmark-1', {
+			fetcher: async () =>
+				Response.json({
+					success: true,
+					result: { success: false, error: 'something else' },
+				}),
+			sleep: async () => undefined,
+		}),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'export-malformed-response',
+	)
+})
+
+test('refreshCompletedD1Export restarts after an expired poll result', async () => {
+	const bodies: unknown[] = []
+	const responses = [
+		exportEnvelope('lost'),
+		exportEnvelope('active', 'bookmark-2'),
+		exportEnvelope('complete', 'bookmark-2', 'https://download.example/fresh'),
+	]
+	const refreshed = await refreshCompletedD1Export(
+		environment(),
+		'bookmark-1',
+		{
+			fetcher: async (_input, init) => {
+				bodies.push(JSON.parse(String(init?.body)))
+				return responses.shift()!
+			},
+			sleep: async () => undefined,
+			earlyPollDelayMs: 1,
+			pollDelayMs: 1,
+		},
+	)
+	assert.equal(refreshed.kind, 'complete')
+	assert.equal(refreshed.bookmark, 'bookmark-2')
+	assert.equal(refreshed.signedUrl, 'https://download.example/fresh')
+	assert.deepEqual(bodies, [
+		{ output_format: 'polling', current_bookmark: 'bookmark-1' },
+		{ output_format: 'polling' },
+		{ output_format: 'polling', current_bookmark: 'bookmark-2' },
+	])
 })

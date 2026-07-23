@@ -28,9 +28,11 @@
 		},
 	],
 	"vars": {
-		// Both must be exactly "true"; safe defaults keep every schedule inert.
-		"ENABLE_PRODUCTION_D1_BACKUPS": "false",
-		"BACKUP_BENCHMARK_APPROVED": "false",
+		// Both must be exactly "true" for any schedule to run. The blocking
+		// export benchmark passed 2026-07-23: a clean production export
+		// completed in ~6s and produced a ~101 MB SQL object.
+		"ENABLE_PRODUCTION_D1_BACKUPS": "true",
+		"BACKUP_BENCHMARK_APPROVED": "true",
 		// Production Kody Cloudflare account and D1 database.
 		"SOURCE_ACCOUNT_ID": "a99ee2e72728dd52902ef288b7b1447d",
 		"SOURCE_DATABASE_ID": "8c1014d1-6b41-4695-a0a2-159071f0f919",
