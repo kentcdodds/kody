@@ -412,7 +412,8 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 		'Recipient mailbox is over quota.',
 	)
 
-	// A raw stream that fails mid-read exercises the parse-failure path.
+	// A raw stream that fails mid-read is transient and must retry before a
+	// delivery identity or quota charge is created.
 	const unreadableMessage = createForwardableEmailMessage({
 		from: 'sender@example.net',
 		to: address,
@@ -426,9 +427,10 @@ test('inbound email rejects unknown usernames, reserved locals, and foreign doma
 		}),
 	})
 
-	await handleInboundEmail(unreadableMessage, createInboundEnv())
-
-	expect(unreadableMessage.rejectedReason).toMatch(/raw stream read failed/)
+	await expect(
+		handleInboundEmail(unreadableMessage, createInboundEnv()),
+	).rejects.toBeInstanceOf(RetryableInboundStorageError)
+	expect(unreadableMessage.rejectedReason).toBeNull()
 	const rejectedMessages = await listEmailMessages({
 		db: env.APP_DB,
 		userId,
