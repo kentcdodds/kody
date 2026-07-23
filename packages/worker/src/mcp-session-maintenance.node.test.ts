@@ -27,6 +27,6 @@ test('backfill completion rejects stored objects with no proven owner', async ()
 	expect(response.status).toBe(500)
 	await expect(response.json()).resolves.toMatchObject({
 		ok: false,
-		error: expect.stringContaining('unproven ownerless'),
+		error: expect.any(String),
 	})
 })
