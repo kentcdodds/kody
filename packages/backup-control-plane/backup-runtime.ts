@@ -98,13 +98,19 @@ export async function runBackupRuntime(
 				retries: { limit: 4, delay: '30 seconds', backoff: 'exponential' },
 				timeout: '15 minutes',
 			},
-			async () =>
-				storeSignedDownload(
+			async () => {
+				const refreshed = await refreshCompletedD1Export(
+					env,
+					exported.bookmark,
+					options.api,
+				)
+				return storeSignedDownload(
 					env.BACKUP_BUCKET,
 					checkedObjectKey,
-					exported.signedUrl,
+					refreshed.signedUrl,
 					options.downloadFetcher,
-				),
+				)
+			},
 		)
 		const completedAt = await step.do('record-completion-time', async () =>
 			new Date().toISOString(),

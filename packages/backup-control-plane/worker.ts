@@ -10,8 +10,8 @@ import {
 import { type BackupEnvironment } from './backup-types.ts'
 import {
 	enqueueBackup,
-	isApprovedRetryWindow,
-	retryExistingBackup,
+	enqueueBackupRetry,
+	primaryBackupTimeForDay,
 	type EnqueueResult,
 } from './workflow-trigger.ts'
 
@@ -57,19 +57,29 @@ async function triggerBackup(
 	})
 }
 
-async function retryExisting(
+async function retryBackup(
 	env: BackupEnvironment,
 	scheduledAt: Date,
 ): Promise<void> {
-	const payload = backupPayload(env, scheduledAt)
-	const result = await retryExistingBackup(
+	const payload = backupPayload(env, primaryBackupTimeForDay(scheduledAt))
+	const result = await enqueueBackupRetry(
 		env.BACKUP_WORKFLOW,
 		env.SOURCE_DATABASE_ID,
-		payload.day,
+		payload,
+		scheduledAt,
 	)
 	switch (result) {
-		case 'missing':
+		case 'outside-window':
 		case 'duplicate':
+			return
+		case 'created':
+			safeLog({
+				event: 'backup-catch-up-enqueued',
+				status: 'success',
+				day: payload.day,
+				instanceId: workflowInstanceId(env.SOURCE_DATABASE_ID, payload.day),
+				manifestKey: payload.manifestKey,
+			})
 			return
 		case 'restarted':
 			safeLog({
@@ -106,9 +116,7 @@ async function scheduled(
 			return
 		case FRESHNESS_CRON:
 			await checkFreshness(env, scheduledAt)
-			if (isApprovedRetryWindow(scheduledAt)) {
-				await retryExisting(env, scheduledAt)
-			}
+			await retryBackup(env, scheduledAt)
 			return
 		default:
 			throw new BackupError(

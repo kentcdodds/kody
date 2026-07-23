@@ -1,4 +1,4 @@
-import { BackupError, workflowInstanceId } from './backup-policy.ts'
+import { workflowInstanceId } from './backup-policy.ts'
 import { type BackupPayload } from './backup-types.ts'
 
 export type WorkflowInstanceStatus =
@@ -24,11 +24,23 @@ interface WorkflowStarter {
 	get(id: string): Promise<WorkflowHandle>
 }
 
-export type ExistingRetryResult = 'missing' | 'duplicate' | 'restarted'
+export type RetryTickResult = EnqueueResult | 'outside-window'
 
 export function isApprovedRetryWindow(scheduledAt: Date): boolean {
 	const hour = scheduledAt.getUTCHours()
 	return scheduledAt.getUTCMinutes() === 45 && hour >= 2 && hour <= 5
+}
+
+export function primaryBackupTimeForDay(scheduledAt: Date): Date {
+	return new Date(
+		Date.UTC(
+			scheduledAt.getUTCFullYear(),
+			scheduledAt.getUTCMonth(),
+			scheduledAt.getUTCDate(),
+			2,
+			15,
+		),
+	)
 }
 
 export async function enqueueBackup(
@@ -75,43 +87,12 @@ export async function enqueueBackup(
 	}
 }
 
-export async function retryExistingBackup(
-	workflow: Pick<WorkflowStarter, 'get'>,
+export async function enqueueBackupRetry(
+	workflow: WorkflowStarter,
 	databaseId: string,
-	day: string,
-): Promise<ExistingRetryResult> {
-	const id = workflowInstanceId(databaseId, day)
-	let instance: WorkflowHandle
-	try {
-		instance = await workflow.get(id)
-	} catch {
-		return 'missing'
-	}
-	const status = await instance.status()
-	switch (status.status) {
-		case 'queued':
-		case 'running':
-		case 'paused':
-		case 'complete':
-		case 'waiting':
-		case 'waitingForPause':
-			return 'duplicate'
-		case 'errored':
-		case 'terminated':
-			await instance.restart()
-			return 'restarted'
-		case 'unknown':
-			throw new BackupError(
-				'workflow-status-unknown',
-				'cannot safely retry an instance with unknown status',
-			)
-		default: {
-			const exhaustive: never = status.status
-			void exhaustive
-			throw new BackupError(
-				'workflow-status-unexpected',
-				'cannot safely retry an instance with unexpected status',
-			)
-		}
-	}
+	payload: BackupPayload,
+	scheduledAt: Date,
+): Promise<RetryTickResult> {
+	if (!isApprovedRetryWindow(scheduledAt)) return 'outside-window'
+	return enqueueBackup(workflow, databaseId, payload)
 }

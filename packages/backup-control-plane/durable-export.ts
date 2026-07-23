@@ -84,7 +84,7 @@ export async function runDurableExport(
 			throw new BackupError(
 				'export-poll-limit',
 				'D1 export did not complete within the bounded polling window',
-				true,
+				false,
 			)
 		default: {
 			const exhaustive: never = state

@@ -2,12 +2,13 @@ import assert from 'node:assert/strict'
 
 import { test } from 'vitest'
 
-import { BackupError, backupPayload } from './backup-policy.ts'
+import { backupPayload } from './backup-policy.ts'
 import { type BackupPayload } from './backup-types.ts'
 import {
 	enqueueBackup,
+	enqueueBackupRetry,
 	isApprovedRetryWindow,
-	retryExistingBackup,
+	primaryBackupTimeForDay,
 	type WorkflowInstanceStatus,
 } from './workflow-trigger.ts'
 import {
@@ -142,31 +143,61 @@ test('hourly freshness retries are bounded to 02:45 through 05:45 UTC', () => {
 	assert.equal(isApprovedRetryWindow(new Date('2026-07-22T03:44:00Z')), false)
 })
 
-test('existing-only retry restarts a later failure without creating', async () => {
+test('missed 02:15 creation is caught up with the canonical payload', async () => {
 	let creates = 0
-	let restarts = 0
+	let created: { id: string; params: BackupPayload } | undefined
+	const workflow = {
+		async create(options: { id: string; params: BackupPayload }) {
+			creates += 1
+			created = options
+		},
+		async get() {
+			throw new Error('instance missing')
+		},
+	}
+	const tick = new Date('2026-07-22T02:45:00Z')
+	const payload = backupPayload(environment(), primaryBackupTimeForDay(tick))
+	assert.equal(
+		await enqueueBackupRetry(workflow, DATABASE_ID, payload, tick),
+		'created',
+	)
+	assert.equal(creates, 1)
+	assert.equal(created?.params.scheduledAt, '2026-07-22T02:15:00.000Z')
+	assert.equal(created?.id, `d1-backup-${DATABASE_ID}-2026-07-22`)
+})
+
+test('concurrent retry ticks idempotently create one deterministic instance', async () => {
+	let creates = 0
+	let exists = false
 	const workflow = {
 		async create() {
+			await Promise.resolve()
+			if (exists) throw new Error('instance already exists')
+			exists = true
 			creates += 1
 		},
 		async get() {
 			return {
-				status: async () => ({ status: 'errored' as const }),
-				restart: async () => {
-					restarts += 1
-				},
+				status: async () => ({ status: 'running' as const }),
+				restart: async () => undefined,
 			}
 		},
 	}
-	assert.equal(
-		await retryExistingBackup(workflow, DATABASE_ID, '2026-07-22'),
-		'restarted',
+	const tick = new Date('2026-07-22T03:45:00Z')
+	const payload = backupPayload(environment(), primaryBackupTimeForDay(tick))
+	assert.deepEqual(
+		(
+			await Promise.all([
+				enqueueBackupRetry(workflow, DATABASE_ID, payload, tick),
+				enqueueBackupRetry(workflow, DATABASE_ID, payload, tick),
+			])
+		).sort(),
+		['created', 'duplicate'],
 	)
-	assert.equal(creates, 0)
-	assert.equal(restarts, 1)
+	assert.equal(creates, 1)
 })
 
-test('existing-only retry does not create a missing deterministic instance', async () => {
+test('outside-window retry never creates a missing instance', async () => {
 	let creates = 0
 	const workflow = {
 		async create() {
@@ -176,17 +207,22 @@ test('existing-only retry does not create a missing deterministic instance', asy
 			throw new Error('instance missing')
 		},
 	}
+	const tick = new Date('2026-07-22T06:45:00Z')
+	const payload = backupPayload(environment(), primaryBackupTimeForDay(tick))
 	assert.equal(
-		await retryExistingBackup(workflow, DATABASE_ID, '2026-07-22'),
-		'missing',
+		await enqueueBackupRetry(workflow, DATABASE_ID, payload, tick),
+		'outside-window',
 	)
 	assert.equal(creates, 0)
 })
 
-test('existing-only retry leaves active/complete alone and fails closed on unknown', async () => {
+test('retry ticks leave active/complete alone and fail closed on unknown', async () => {
 	for (const status of ['running', 'complete'] as const) {
 		let restarts = 0
 		const workflow = {
+			async create() {
+				throw new Error('instance already exists')
+			},
 			async get() {
 				return {
 					status: async () => ({ status }),
@@ -196,15 +232,24 @@ test('existing-only retry leaves active/complete alone and fails closed on unkno
 				}
 			},
 		}
+		const tick = new Date('2026-07-22T03:45:00Z')
 		assert.equal(
-			await retryExistingBackup(workflow, DATABASE_ID, '2026-07-22'),
+			await enqueueBackupRetry(
+				workflow,
+				DATABASE_ID,
+				backupPayload(environment(), primaryBackupTimeForDay(tick)),
+				tick,
+			),
 			'duplicate',
 		)
 		assert.equal(restarts, 0)
 	}
 	await assert.rejects(
-		retryExistingBackup(
+		enqueueBackupRetry(
 			{
+				async create() {
+					throw new Error('instance already exists')
+				},
 				async get() {
 					return {
 						status: async () => ({ status: 'unknown' as const }),
@@ -213,9 +258,13 @@ test('existing-only retry leaves active/complete alone and fails closed on unkno
 				},
 			},
 			DATABASE_ID,
-			'2026-07-22',
+			backupPayload(
+				environment(),
+				primaryBackupTimeForDay(new Date('2026-07-22T03:45:00Z')),
+			),
+			new Date('2026-07-22T03:45:00Z'),
 		),
 		(error: unknown) =>
-			error instanceof BackupError && error.code === 'workflow-status-unknown',
+			error instanceof Error && /instance already exists/.test(error.message),
 	)
 })

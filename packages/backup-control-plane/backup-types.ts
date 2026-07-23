@@ -68,6 +68,7 @@ export interface StoredBackup {
 export interface LogRecord {
 	event:
 		| 'backup-disabled'
+		| 'backup-catch-up-enqueued'
 		| 'backup-enqueued'
 		| 'backup-overlap'
 		| 'backup-restarted'

@@ -28,7 +28,8 @@ test('workflow retry reuses an upload committed before step persistence and writ
 	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
 	const step = new RetryAfterCommitStep()
 	const apiCalls: string[] = []
-	let downloadCalls = 0
+	const downloadUrls: string[] = []
+	let exportCalls = 0
 	const result = await runBackupRuntime(
 		env,
 		{
@@ -42,14 +43,18 @@ test('workflow retry reuses an upload committed before step persistence and writ
 				fetcher: async (input) => {
 					const url = String(input)
 					apiCalls.push(url)
-					return url.endsWith('/export')
-						? exportEnvelope('complete')
-						: identityEnvelope(1_000)
+					if (!url.endsWith('/export')) return identityEnvelope(1_000)
+					exportCalls += 1
+					return exportEnvelope(
+						'complete',
+						'bookmark-1',
+						`https://download.example/url-${exportCalls}`,
+					)
 				},
 				sleep: async () => undefined,
 			},
-			downloadFetcher: async () => {
-				downloadCalls += 1
+			downloadFetcher: async (input) => {
+				downloadUrls.push(String(input))
 				return new Response('valid', {
 					headers: { 'content-length': '5' },
 				})
@@ -57,8 +62,12 @@ test('workflow retry reuses an upload committed before step persistence and writ
 		},
 	)
 	assert.deepEqual(step.uploadResults, [false, true])
-	assert.equal(downloadCalls, 3)
-	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 2)
+	assert.deepEqual(downloadUrls, [
+		'https://download.example/url-2',
+		'https://download.example/url-3',
+		'https://download.example/url-4',
+	])
+	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 4)
 	assert.equal(
 		result.objectKey,
 		objectKeyForBookmark(payload.objectPrefix, 'bookmark-1'),
@@ -69,7 +78,7 @@ test('workflow retry reuses an upload committed before step persistence and writ
 	)
 })
 
-test('finalization refreshes an initial signed URL that works exactly once', async () => {
+test('initial upload ignores a stale cached signed URL and refreshes it in the callback', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
 	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
@@ -93,9 +102,11 @@ test('finalization refreshes an initial signed URL that works exactly once', asy
 					return exportEnvelope(
 						'complete',
 						'bookmark-1',
-						exportCalls === 1
-							? 'https://download.example/initial'
-							: 'https://download.example/refreshed',
+						[
+							'https://download.example/stale-initial',
+							'https://download.example/fresh-upload',
+							'https://download.example/fresh-finalization',
+						][exportCalls - 1],
 					)
 				},
 				sleep: async () => undefined,
@@ -103,10 +114,7 @@ test('finalization refreshes an initial signed URL that works exactly once', asy
 			downloadFetcher: async (input) => {
 				const url = String(input)
 				downloadUrls.push(url)
-				if (
-					url === 'https://download.example/initial' &&
-					downloadUrls.filter((called) => called === url).length > 1
-				) {
+				if (url === 'https://download.example/stale-initial') {
 					return new Response('', { status: 403 })
 				}
 				return new Response('valid', {
@@ -118,10 +126,11 @@ test('finalization refreshes an initial signed URL that works exactly once', asy
 	assert.deepEqual(exportBodies, [
 		{ output_format: 'polling' },
 		{ output_format: 'polling', current_bookmark: 'bookmark-1' },
+		{ output_format: 'polling', current_bookmark: 'bookmark-1' },
 	])
 	assert.deepEqual(downloadUrls, [
-		'https://download.example/initial',
-		'https://download.example/refreshed',
+		'https://download.example/fresh-upload',
+		'https://download.example/fresh-finalization',
 	])
 	assert.deepEqual(
 		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
@@ -154,6 +163,7 @@ test('a finalization callback retry obtains another fresh signed URL', async () 
 						'bookmark-1',
 						[
 							'https://download.example/initial',
+							'https://download.example/refreshed-upload',
 							'https://download.example/refreshed-once',
 							'https://download.example/refreshed-twice',
 						][exportCalls - 1],
@@ -173,10 +183,10 @@ test('a finalization callback retry obtains another fresh signed URL', async () 
 			},
 		},
 	)
-	assert.equal(exportCalls, 3)
+	assert.equal(exportCalls, 4)
 	assert.deepEqual(step.finalizationAttempts, [1, 2])
 	assert.deepEqual(downloadUrls, [
-		'https://download.example/initial',
+		'https://download.example/refreshed-upload',
 		'https://download.example/refreshed-once',
 		'https://download.example/refreshed-twice',
 	])

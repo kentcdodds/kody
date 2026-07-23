@@ -18,17 +18,18 @@ has one canonical immutable `manifest.json`, which records the selected object
 key. If a process crashes after writing SQL but before its manifest, a later
 Workflow-step retry reuses the cached export bookmark and therefore inspects the
 same object before constructing the absent canonical manifest. The original
-one-hour signed URL is used only by the initial upload step. On every execution
-of the retryable finalization callback, the runtime polls D1 with the cached
-bookmark and requires a complete response for that same bookmark, obtaining a
-fresh signed URL before it stream-compares exact byte count and SHA-256 with R2.
-Pending refreshes retry; malformed responses and bookmark mismatches fail
-closed. The refresh, comparison, and immutable manifest write remain in one
-Workflow step, so a callback retry performs another export API poll instead of
-reusing a separately cached URL. This also applies when replay returns a cached
-upload-step result and skips its callback. Without signed-source context it
-fails with `duplicate-object-manifest-missing`. An existing manifest must also
-match that object exactly.
+one-hour signed URL returned by the durable export step is never used for
+transfer. On every execution of both the retryable upload callback and the
+retryable finalization callback, the runtime polls D1 with the cached bookmark
+and requires a complete response for that same bookmark, obtaining a fresh
+signed URL. Finalization then stream-compares exact byte count and SHA-256 with
+R2. Pending refreshes retry; malformed responses and bookmark mismatches fail
+closed. The final refresh, comparison, and immutable manifest write remain in
+one Workflow step, so a callback retry performs another export API poll instead
+of reusing a separately cached URL. This also applies when replay returns a
+cached upload-step result and skips its callback. Without signed-source context
+it fails with `duplicate-object-manifest-missing`. An existing manifest must
+also match that object exactly.
 
 Configure the production R2 bucket lifecycle by these immutable prefixes:
 
@@ -73,12 +74,16 @@ receives only the source token as `CLOUDFLARE_API_TOKEN` and destination object
 read/write access through `BACKUP_BUCKET`; it must not receive either
 administrative or restore credential.
 
-The 02:15 UTC trigger is the only path that creates an instance. Freshness uses
-the previous UTC day before 02:15 and the current day from 02:15 onward, so the
-02:45 tick cannot report yesterday as success for a failed current backup.
-Freshness ticks from 02:45 through 05:45 UTC may restart that day's existing
-errored or terminated deterministic instance. They never create a missing
-instance; active and complete instances are left alone.
+The 02:15 UTC trigger normally creates the day's deterministic instance.
+Freshness uses the previous UTC day before 02:15 and the current day from 02:15
+onward, so the 02:45 tick cannot report yesterday as success for a failed
+current backup. Freshness ticks from 02:45 through 05:45 UTC use the same
+deterministic id and canonical 02:15 payload to create a missed instance or
+restart an errored or terminated instance. Active and complete instances are
+left alone, and no retry tick outside that bounded window creates an instance.
+Exhausting the 120-poll export window is terminal for that Workflow execution;
+the next approved tick restarts it with fresh Workflow step state and a new
+export rather than replaying the cached pending poll sequence.
 
 ## Integrity checks
 
