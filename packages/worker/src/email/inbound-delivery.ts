@@ -761,7 +761,24 @@ export async function markInboundDeliveryRejected(input: {
 			expectedLease,
 		)
 		.run()
-	return Number(result.meta.changes ?? 0) > 0
+	if (Number(result.meta.changes ?? 0) > 0) return true
+	const current = await getInboundDelivery({
+		db: input.db,
+		userId: input.delivery.userId,
+		deliveryId: input.delivery.deliveryId,
+	})
+	if (current?.state === 'rejected') return true
+	if (current?.state === 'received') {
+		const message = await getEmailMessageById({
+			db: input.db,
+			userId: current.userId,
+			messageId: current.messageId,
+		})
+		if (message) return false
+	}
+	throw new InboundDeliveryLeaseLostError(
+		'Inbound rejection lost a state race; delivery should be retried.',
+	)
 }
 
 export async function claimInboundDeliveryStorage(input: {

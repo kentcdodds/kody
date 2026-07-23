@@ -104,9 +104,20 @@ async function recordInboundUsageEffect(input: {
 			await input.env.APP_DB.prepare(
 				`UPDATE email_delivery_events
 				SET detail_json = json_set(detail_json, '$.usageEffectRecordedAt', ?)
-				WHERE id = ? AND user_id = ? AND event_type = 'received'`,
+				WHERE id = ?
+					AND user_id = ?
+					AND event_type = 'received'
+					AND json_extract(detail_json, '$.usageEffectRecordedAt') IS NULL
+					AND json_extract(detail_json, '$.usageEffectSuppressedAt') IS NULL
+					AND (? IS NULL OR json_extract(detail_json, '$.finalizationToken') = ?)`,
 			)
-				.bind(input.now.toISOString(), input.deliveryId, input.userId)
+				.bind(
+					input.now.toISOString(),
+					input.deliveryId,
+					input.userId,
+					finalizationToken,
+					finalizationToken,
+				)
 				.run()
 			return
 		}
