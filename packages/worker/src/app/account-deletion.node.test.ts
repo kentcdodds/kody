@@ -971,16 +971,26 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	} as unknown as KVNamespace
 
 	const deletedEmailBlobKeys: Array<string> = []
+	const emailBlobKeys = new Set([
+		'email-raw:v1:user-aaa/em-1',
+		'email-raw:v1:user-aaa/em-2',
+		'email-raw:v1:user-bbb/em-3',
+	])
 	const emailBlobs = {
-		async list() {
+		async list(options?: { prefix?: string }) {
 			return {
-				objects: [],
+				objects: [...emailBlobKeys]
+					.filter((key) => key.startsWith(options?.prefix ?? ''))
+					.map((key) => ({ key })),
 				delimitedPrefixes: [],
 				truncated: false as const,
 			}
 		},
 		async delete(keys: string | Array<string>) {
-			deletedEmailBlobKeys.push(...(Array.isArray(keys) ? keys : [keys]))
+			for (const key of Array.isArray(keys) ? keys : [keys]) {
+				deletedEmailBlobKeys.push(key)
+				emailBlobKeys.delete(key)
+			}
 		},
 	} as unknown as R2Bucket
 	const deletedCommunityAssetKeys: Array<string> = []
@@ -1381,6 +1391,11 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 					})),
 				},
 				EMAIL_BLOBS: {
+					list: vi.fn(async () => ({
+						objects: [{ key: 'email-raw:v1:user-aaa/em-1' }],
+						delimitedPrefixes: [],
+						truncated: false,
+					})),
 					delete: vi.fn(async () => {
 						throw new Error('simulated R2 outage')
 					}),
@@ -1391,7 +1406,7 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 		}),
 	).rejects.toMatchObject({
 		cleanupErrors: expect.arrayContaining([
-			'Email blob delete failed for email-raw:v1:user-aaa/em-1: simulated R2 outage',
+			expect.stringContaining('Email raw MIME prefix delete failed'),
 		]),
 	})
 	expect(kvFailureRows.published_bundle_artifacts).toHaveLength(1)
