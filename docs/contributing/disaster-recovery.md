@@ -389,7 +389,10 @@ It creates a missing instance (for example, after a failed primary create),
 restarts an `errored` or `terminated` instance, and leaves a queued, running,
 paused, waiting, `waitingForPause`, or complete instance alone. Concurrent
 creates converge through the deterministic id; an unknown status fails closed.
-No missed instance is created outside the approved retry window.
+No missed instance is created outside the approved retry window. Freshness
+inspection and catch-up/restart execute as independent settled lanes: a
+transient D1 metadata error does not suppress the recovery attempt, but the
+scheduled event still fails after both lanes finish so alerting is preserved.
 
 Freshness checks the previous UTC day only before the 02:15 trigger. From 02:15
 onward it requires the current day's manifest, so the 02:45 check cannot report

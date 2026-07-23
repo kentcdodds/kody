@@ -81,9 +81,12 @@ current backup. Freshness ticks from 02:45 through 05:45 UTC use the same
 deterministic id and canonical 02:15 payload to create a missed instance or
 restart an errored or terminated instance. Active and complete instances are
 left alone, and no retry tick outside that bounded window creates an instance.
-Exhausting the 120-poll export window is terminal for that Workflow execution;
-the next approved tick restarts it with fresh Workflow step state and a new
-export rather than replaying the cached pending poll sequence.
+Freshness inspection and enqueue/restart run as independent settled lanes, so a
+transient D1 metadata failure cannot skip the approved-window recovery attempt;
+the scheduled event still fails afterward to preserve alerting. Exhausting the
+120-poll export window is terminal for that Workflow execution; the next
+approved tick restarts it with fresh Workflow step state and a new export rather
+than replaying the cached pending poll sequence.
 
 ## Integrity checks
 

@@ -1,4 +1,5 @@
 import { checkFreshness } from './freshness-check.ts'
+import { runFreshnessAndRetry } from './freshness-retry.ts'
 import {
 	BackupError,
 	backupPayload,
@@ -115,8 +116,10 @@ async function scheduled(
 			await triggerBackup(env, scheduledAt)
 			return
 		case FRESHNESS_CRON:
-			await checkFreshness(env, scheduledAt)
-			await retryBackup(env, scheduledAt)
+			await runFreshnessAndRetry({
+				checkFreshness: () => checkFreshness(env, scheduledAt),
+				retryBackup: () => retryBackup(env, scheduledAt),
+			})
 			return
 		default:
 			throw new BackupError(
