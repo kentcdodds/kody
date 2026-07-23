@@ -11,10 +11,17 @@ export async function registerMcpAgentSession(input: {
 		.prepare(
 			`INSERT INTO mcp_agent_sessions (do_id, user_id)
 			VALUES (?, ?)
-			ON CONFLICT(do_id) DO UPDATE SET user_id = excluded.user_id`,
+			ON CONFLICT(do_id) DO NOTHING`,
 		)
 		.bind(input.doId, input.userId)
 		.run()
+	const owner = await input.db
+		.prepare(`SELECT user_id FROM mcp_agent_sessions WHERE do_id = ?`)
+		.bind(input.doId)
+		.first<{ user_id: string }>()
+	if (owner?.user_id !== input.userId) {
+		throw new Error('MCP agent session Durable Object ownership conflict.')
+	}
 }
 
 export async function listMcpAgentSessionsForUser(

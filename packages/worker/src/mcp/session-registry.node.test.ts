@@ -37,4 +37,14 @@ test('MCP agent session registry is idempotent and user scoped', async () => {
 	await expect(listMcpAgentSessionsForUser(db, 'user-b')).resolves.toEqual([
 		{ doId: 'do-b' },
 	])
+	await expect(
+		registerMcpAgentSession({
+			db,
+			userId: 'user-b',
+			doId: 'do-a',
+		}),
+	).rejects.toThrow('ownership conflict')
+	await expect(listMcpAgentSessionsForUser(db, 'user-a')).resolves.toEqual([
+		{ doId: 'do-a' },
+	])
 })

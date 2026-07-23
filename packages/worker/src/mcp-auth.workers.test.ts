@@ -117,6 +117,12 @@ function createMockDb(options: MockDbOptions = {}) {
 			},
 			async run() {
 				if (normalized.startsWith('update users')) {
+					if (
+						!normalized.includes('where stable_user_id = ?') ||
+						!boundParams.includes(defaultStableUserId)
+					) {
+						throw new Error('Unscoped account write lease update.')
+					}
 					return { meta: { changes: 1 } }
 				}
 				throw new Error(`Unsupported run query: ${query}`)
