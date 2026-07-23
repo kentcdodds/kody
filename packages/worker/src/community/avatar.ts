@@ -165,9 +165,9 @@ export async function saveUserAvatar(input: {
 			})
 
 			const existing = await input.env.APP_DB.prepare(
-				`SELECT avatar_key FROM users WHERE id = ?`,
+				`SELECT avatar_key FROM users WHERE id = ? AND stable_user_id = ?`,
 			)
-				.bind(input.numericUserId)
+				.bind(input.numericUserId, input.stableUserId)
 				.first<{ avatar_key: string | null }>()
 			const previousKey =
 				existing?.avatar_key == null ? null : String(existing.avatar_key)
@@ -192,9 +192,14 @@ export async function saveUserAvatar(input: {
 			const update = await input.env.APP_DB.prepare(
 				`UPDATE users
 		SET avatar_key = ?, updated_at = ?
-		WHERE id = ? AND deleting_at IS NULL`,
+		WHERE id = ? AND stable_user_id = ? AND deleting_at IS NULL`,
 			)
-				.bind(r2Key, utcSqliteTimestamp(), input.numericUserId)
+				.bind(
+					r2Key,
+					utcSqliteTimestamp(),
+					input.numericUserId,
+					input.stableUserId,
+				)
 				.run()
 			if ((update.meta.changes ?? 0) !== 1) {
 				await input.env.COMMUNITY_ASSETS.delete(r2Key)
@@ -231,9 +236,9 @@ export async function deleteUserAvatar(input: {
 		async write() {
 			await assertAccountWritableDb(input.env.APP_DB, input.stableUserId)
 			const existing = await input.env.APP_DB.prepare(
-				`SELECT avatar_key FROM users WHERE id = ?`,
+				`SELECT avatar_key FROM users WHERE id = ? AND stable_user_id = ?`,
 			)
-				.bind(input.numericUserId)
+				.bind(input.numericUserId, input.stableUserId)
 				.first<{ avatar_key: string | null }>()
 			const previousKey =
 				existing?.avatar_key == null ? null : String(existing.avatar_key)
@@ -241,9 +246,9 @@ export async function deleteUserAvatar(input: {
 			const update = await input.env.APP_DB.prepare(
 				`UPDATE users
 				SET avatar_key = NULL, updated_at = ?
-				WHERE id = ? AND deleting_at IS NULL`,
+				WHERE id = ? AND stable_user_id = ? AND deleting_at IS NULL`,
 			)
-				.bind(utcSqliteTimestamp(), input.numericUserId)
+				.bind(utcSqliteTimestamp(), input.numericUserId, input.stableUserId)
 				.run()
 			if ((update.meta.changes ?? 0) !== 1) {
 				throw new Error(

@@ -98,9 +98,29 @@ export async function withAccountWriteLease<T>(input: {
 	if ((acquired.meta.changes ?? 0) !== 1) {
 		throw new AccountDeletionInProgressError()
 	}
+	const heartbeat = setInterval(
+		() => {
+			const refreshedExpiry = utcSqliteTimestamp(
+				new Date(Date.now() + 30 * 60 * 1000),
+			)
+			void input.db
+				.prepare(
+					`UPDATE users
+				SET active_write_expires_at = ?
+				WHERE stable_user_id = ? AND active_write_count > 0`,
+				)
+				.bind(refreshedExpiry, input.stableUserId)
+				.run()
+				.catch((error) => {
+					console.error('account-write-lease-heartbeat-failed', error)
+				})
+		},
+		5 * 60 * 1000,
+	)
 	try {
 		return await input.write()
 	} finally {
+		clearInterval(heartbeat)
 		await input.db
 			.prepare(
 				`UPDATE users
