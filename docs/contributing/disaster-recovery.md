@@ -81,8 +81,11 @@ Contract: `packages/shared/src/backup-staging.ts`.
    - **StorageRunner** — platform-wide inventory from D1, NDJSON dump per
      storage identity via `exportStorage`
    - **R2** — `EMAIL_BLOBS` and `COMMUNITY_ASSETS` listed and copied into
-     `blobs/sha256/{hash}` with per-bucket NDJSON indexes (objects above 100 MiB
-     are skipped with a warning)
+     `blobs/sha256/{hash}` with per-bucket NDJSON indexes (objects above 25 MiB
+     are skipped with a warning in the staging summary; the same summary also
+     warns when a `StorageRunner` dump exceeds the 16 MiB buffer ceiling and is
+     skipped — review dashboard warnings before treating a sealed day as
+     complete)
    - **Published artifacts** — `BUNDLE_ARTIFACTS_KV` published source snapshots
      for rows in `entity_sources` with a `published_commit`
 3. **Seal** — Control plane verifies staged checksums against

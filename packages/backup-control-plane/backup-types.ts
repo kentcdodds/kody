@@ -109,5 +109,5 @@ export interface LogRecord {
 	ageHours?: number
 	sourceBytes?: number
 	maxSourceBytes?: number
-	blobVerification?: 'sampled' | 'complete'
+	blobsVerified?: number
 }

@@ -34,7 +34,6 @@ import { readManifest } from './immutable-storage.ts'
 import { verifyBackupManifestSignature } from './manifest-signing.ts'
 
 const sha256Pattern = /^[0-9a-f]{64}$/
-const MAX_BLOB_HEADS_PER_SEAL = 500
 
 function hex(buffer: ArrayBuffer): string {
 	return [...new Uint8Array(buffer)]
@@ -282,20 +281,18 @@ async function verifyReferencedBlobs(
 	bucket: R2Bucket,
 	hashes: Array<string>,
 ): Promise<
-	| { kind: 'ok'; blobVerification: 'sampled' | 'complete' }
+	| { kind: 'ok'; blobsVerified: number }
 	| { kind: 'missing'; reason: 'blob-missing' }
 > {
-	const blobVerification =
-		hashes.length > MAX_BLOB_HEADS_PER_SEAL ? 'sampled' : 'complete'
-	const toCheck = hashes.slice(0, MAX_BLOB_HEADS_PER_SEAL)
-	for (const hash of toCheck) {
+	// Hashes are already unique from collectReferencedBlobHashes; HEAD every one.
+	for (const hash of hashes) {
 		const key = backupBlobKey(hash)
 		const head = await bucket.head(key)
 		if (head === null) {
 			return { kind: 'missing', reason: 'blob-missing' }
 		}
 	}
-	return { kind: 'ok', blobVerification }
+	return { kind: 'ok', blobsVerified: hashes.length }
 }
 
 async function loadVerifiedStagingSummary(
@@ -500,7 +497,7 @@ export async function sealFullBackupDay(
 		status: 'success',
 		day,
 		manifestKey,
-		blobVerification: blobCheck.blobVerification,
+		blobsVerified: blobCheck.blobsVerified,
 	})
 	return { kind: 'sealed', day, manifestKey, alreadySealed: false }
 }

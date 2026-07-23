@@ -339,6 +339,7 @@ export async function importSqlIntoD1(input: {
 
 	const maxPollAttempts = options.maxPollAttempts ?? DEFAULT_POLL_ATTEMPTS
 	const pollDelayMs = options.pollDelayMs ?? DEFAULT_POLL_DELAY_MS
+	let sawTerminalSuccess = false
 	for (let attempt = 1; attempt <= maxPollAttempts; attempt += 1) {
 		const pollResult = await apiJson(
 			url,
@@ -352,7 +353,8 @@ export async function importSqlIntoD1(input: {
 			},
 			options,
 		)
-		if (pollResult.status === 'complete' || pollResult.success === true) {
+		if (isTerminalImportSuccess(pollResult)) {
+			sawTerminalSuccess = true
 			return
 		}
 		if (pollResult.status === 'error') {
@@ -367,7 +369,13 @@ export async function importSqlIntoD1(input: {
 			pollResult.success === false &&
 			pollResult.error === 'Not currently importing anything.'
 		) {
-			return
+			// Only accept this after a prior terminal-success signal in this import.
+			// Otherwise the poll window expired before completion was observed.
+			if (sawTerminalSuccess) return
+			throw new BackupError(
+				'import-result-expired',
+				'D1 import poll result expired before terminal success was observed',
+			)
 		}
 		await sleep(pollDelayMs)
 	}
@@ -375,5 +383,16 @@ export async function importSqlIntoD1(input: {
 		'import-poll-timeout',
 		'D1 import polling exhausted its attempt budget',
 		true,
+	)
+}
+
+function isTerminalImportSuccess(pollResult: JsonObject): boolean {
+	if (pollResult.status === 'complete') return true
+	// Documented complete shape nests final_bookmark under result.
+	return (
+		pollResult.success === true &&
+		isObject(pollResult.result) &&
+		typeof pollResult.result.final_bookmark === 'string' &&
+		pollResult.result.final_bookmark.length > 0
 	)
 }

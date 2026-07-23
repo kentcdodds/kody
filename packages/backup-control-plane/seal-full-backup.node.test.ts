@@ -191,3 +191,50 @@ test('sealFullBackupDay is incomplete when a referenced blob is missing', async 
 	})
 	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
 })
+
+test('sealFullBackupDay verifies every referenced blob, not only the first 500', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const consoleLog = vi.spyOn(console, 'log')
+	consoleLog.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const { env, day } = await seedCompleteDay(bucket)
+	const lines: Array<string> = []
+	for (let index = 0; index < 501; index += 1) {
+		const hash = index.toString(16).padStart(64, '0')
+		lines.push(
+			JSON.stringify({ key: `blob-${String(index)}`, size: 1, sha256: hash }),
+		)
+		if (index < 500) {
+			await bucket.put(backupBlobKey(hash), 'x')
+		}
+		// Intentionally omit blob 500 so verification past the old sample cap fails.
+	}
+	const r2IndexBody = `${lines.join('\n')}\n`
+	const r2IndexKey = stagingR2IndexKey(day, 'email-blobs')
+	await bucket.put(r2IndexKey, r2IndexBody)
+	const summaryObject = await bucket.get(stagingSummaryKey(day))
+	const summary = (await summaryObject!.json()) as {
+		r2Indexes: {
+			'email-blobs': { objectKey: string; bytes: number; sha256: string }
+		}
+		[key: string]: unknown
+	}
+	summary.r2Indexes['email-blobs'] = {
+		objectKey: r2IndexKey,
+		bytes: r2IndexBody.length,
+		sha256: sha256Text(r2IndexBody),
+	}
+	await bucket.put(stagingSummaryKey(day), JSON.stringify(summary))
+	const result = await sealFullBackupDay(
+		env,
+		day,
+		new Date(`${day}T04:00:00.000Z`),
+	)
+	assert.deepEqual(result, {
+		kind: 'incomplete',
+		day,
+		reason: 'blob-missing',
+	})
+	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
+})
