@@ -337,17 +337,6 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 		now.toISOString(),
 	])
 	expect(statements[2]?.params).toEqual([
-		'user-a',
-		'email_received',
-		'2026-07',
-		2,
-		0,
-		50,
-		0,
-		4096,
-		now.toISOString(),
-	])
-	expect(statements[3]?.params).toEqual([
 		'user-c',
 		'email_received',
 		'2026-06',
@@ -356,6 +345,17 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 		125,
 		0,
 		1512,
+		now.toISOString(),
+	])
+	expect(statements[3]?.params).toEqual([
+		'user-a',
+		'email_received',
+		'2026-07',
+		2,
+		0,
+		50,
+		0,
+		4096,
 		now.toISOString(),
 	])
 })
