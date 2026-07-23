@@ -225,29 +225,40 @@ export async function deleteUserAvatar(input: {
 	numericUserId: number
 	stableUserId: string
 }): Promise<void> {
-	await assertAccountWritableDb(input.env.APP_DB, input.stableUserId)
-	const existing = await input.env.APP_DB.prepare(
-		`SELECT avatar_key FROM users WHERE id = ?`,
-	)
-		.bind(input.numericUserId)
-		.first<{ avatar_key: string | null }>()
-	const previousKey =
-		existing?.avatar_key == null ? null : String(existing.avatar_key)
+	await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.stableUserId,
+		async write() {
+			await assertAccountWritableDb(input.env.APP_DB, input.stableUserId)
+			const existing = await input.env.APP_DB.prepare(
+				`SELECT avatar_key FROM users WHERE id = ?`,
+			)
+				.bind(input.numericUserId)
+				.first<{ avatar_key: string | null }>()
+			const previousKey =
+				existing?.avatar_key == null ? null : String(existing.avatar_key)
 
-	await input.env.APP_DB.prepare(
-		`UPDATE users
-		SET avatar_key = NULL, updated_at = ?
-		WHERE id = ?`,
-	)
-		.bind(utcSqliteTimestamp(), input.numericUserId)
-		.run()
+			const update = await input.env.APP_DB.prepare(
+				`UPDATE users
+				SET avatar_key = NULL, updated_at = ?
+				WHERE id = ? AND deleting_at IS NULL`,
+			)
+				.bind(utcSqliteTimestamp(), input.numericUserId)
+				.run()
+			if ((update.meta.changes ?? 0) !== 1) {
+				throw new Error(
+					'Avatar delete was rejected because account state changed.',
+				)
+			}
 
-	if (!previousKey) return
-	try {
-		await input.env.COMMUNITY_ASSETS.delete(previousKey)
-	} catch (error) {
-		console.error('user-avatar-delete-failed', previousKey, error)
-	}
+			if (!previousKey) return
+			try {
+				await input.env.COMMUNITY_ASSETS.delete(previousKey)
+			} catch (error) {
+				console.error('user-avatar-delete-failed', previousKey, error)
+			}
+		},
+	})
 }
 
 export async function getUserAvatarObject(input: {

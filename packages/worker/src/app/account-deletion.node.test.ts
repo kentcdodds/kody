@@ -921,6 +921,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'package-retriever-index:v1:user-bbb:search',
 	]
 	const kv = {
+		async get(key: string) {
+			return kvStoreKeys.includes(key) ? '{}' : null
+		},
 		async delete(key: string) {
 			deletedKvKeys.push(key)
 		},
@@ -1461,6 +1464,7 @@ test('account deletion removes deterministic legacy retriever keys when KV listi
 		deleteUserAccount({
 			env: createSuccessfulDeletionEnv(db, {
 				BUNDLE_ARTIFACTS_KV: {
+					get: vi.fn(async () => '{}'),
 					delete: vi.fn(async (key: string) => {
 						deletedKeys.push(key)
 					}),

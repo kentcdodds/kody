@@ -161,7 +161,7 @@ export async function insertEmailMessageWithRawMime(
 			})
 		} catch (error) {
 			if (rawMimeKey != null) {
-				await blobs.delete(rawMimeKey)
+				await blobs.delete(rawMimeKey).catch(() => undefined)
 			}
 			throw error
 		}

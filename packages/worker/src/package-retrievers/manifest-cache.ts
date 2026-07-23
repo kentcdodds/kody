@@ -126,18 +126,19 @@ export async function deleteLegacyPackageRetrieverScopeIndexes(input: {
 	userId: string
 }) {
 	if (!hasRetrieverKv(input.env)) return 0
-	await Promise.all(
-		packageRetrieverScopes.map(
-			async (scope) =>
-				await getRetrieverKv(input.env).delete(
-					buildLegacyPackageRetrieverScopeIndexKey({
-						userId: input.userId,
-						scope,
-					}),
-				),
-		),
+	const kv = getRetrieverKv(input.env)
+	const deleted = await Promise.all(
+		packageRetrieverScopes.map(async (scope) => {
+			const key = buildLegacyPackageRetrieverScopeIndexKey({
+				userId: input.userId,
+				scope,
+			})
+			if ((await kv.get(key)) === null) return false
+			await kv.delete(key)
+			return true
+		}),
 	)
-	return packageRetrieverScopes.length
+	return deleted.filter(Boolean).length
 }
 
 function buildPackageRetrieverManifestCachePrefix(input: {

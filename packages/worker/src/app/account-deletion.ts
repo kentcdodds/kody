@@ -1038,6 +1038,11 @@ export async function deleteUserAccount(input: {
 		blobs: input.env.EMAIL_BLOBS,
 		keys: inventory.r2Objects
 			.filter((object) => object.binding === 'EMAIL_BLOBS')
+			.filter(
+				(object) =>
+					!object.key.startsWith(`email-raw:v1:${input.mcpUserId}/`) &&
+					!object.key.startsWith(`email-attachment:v1:${input.mcpUserId}/`),
+			)
 			.map((object) => object.key),
 		label: 'Email blob',
 		warnings,
