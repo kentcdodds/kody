@@ -8,6 +8,7 @@ import {
 	claimInboundDeliveryStorage,
 	inboundDeliveryDedupeWindowMs,
 	InboundDeliveryLeaseLostError,
+	markInboundDeliveryRejected,
 	markInboundDeliveryReceived,
 	pruneExpiredInboundDedupePointers,
 	reconcileStaleInboundDeliveries,
@@ -1789,6 +1790,103 @@ test('insertEmailMessageWithRawMime best-effort deletes R2 blob when D1 insert f
 			.bind(messageId)
 			.first(),
 	).toBeNull()
+})
+
+test('stale rejection cannot overwrite finalized delivery usage', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const accountEmail = `reject-race-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username: `reject-race-${crypto.randomUUID().slice(0, 8)}`,
+	})
+	const now = new Date('2026-07-22T12:00:00.000Z')
+	const pending = await buildInboundDelivery({
+		userId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'reject-race@example.com',
+		rawMime: 'reject race raw mime',
+		quotaDay: '2026-07-22',
+		now,
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, inbox_id, event_type, provider, provider_event_id,
+			detail_json, created_at
+		) VALUES (?, ?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+	)
+		.bind(
+			pending.deliveryId,
+			userId,
+			pending.inboxId,
+			pending.deliveryId,
+			JSON.stringify(pending),
+			now.toISOString(),
+		)
+		.run()
+	const claim = await claimInboundDeliveryStorage({
+		db: env.APP_DB,
+		delivery: pending,
+		expectedAttachmentCount: 0,
+		usageStartedAt: new Date(now.getTime() - 250).toISOString(),
+		now,
+	})
+	if (!claim.claimed || !claim.delivery.storageLease) {
+		throw new Error('Expected storage claim.')
+	}
+	await insertEmailMessage({
+		db: env.APP_DB,
+		inboundDeliveryFence: {
+			deliveryId: pending.deliveryId,
+			userId,
+			storageLease: claim.delivery.storageLease,
+		},
+		message: {
+			id: pending.messageId,
+			direction: 'inbound',
+			userId,
+			rawSize: 456,
+			processingStatus: 'stored',
+			receivedAt: now.toISOString(),
+		},
+	})
+	await markInboundDeliveryReceived({
+		db: env.APP_DB,
+		delivery: claim.delivery,
+		usageDurationMs: 250,
+		usageMonth: '2026-07',
+		usageBytes: 456,
+	})
+	await processInboundDeliveryEffects({
+		env: createInboundEnv(),
+		userId,
+		deliveryId: pending.deliveryId,
+		now,
+	})
+
+	expect(
+		await markInboundDeliveryRejected({
+			db: env.APP_DB,
+			delivery: pending,
+			reason: 'stale parse rejection',
+		}),
+	).toBe(false)
+	const durable = await env.APP_DB.prepare(
+		`SELECT event_type, detail_json FROM email_delivery_events
+		WHERE id = ? AND user_id = ?`,
+	)
+		.bind(pending.deliveryId, userId)
+		.first<{ event_type: string; detail_json: string }>()
+	expect(durable?.event_type).toBe('received')
+	expect(JSON.parse(durable!.detail_json)).toMatchObject({
+		state: 'received',
+		usageMonth: '2026-07',
+		usageBytes: 456,
+		usageDurationMs: 250,
+		usageEffectRecordedAt: expect.any(String),
+	})
 })
 
 test('lease takeover fences stale finalization and active storage from cleanup', async () => {

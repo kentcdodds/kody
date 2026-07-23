@@ -734,19 +734,34 @@ export async function markInboundDeliveryRejected(input: {
 		state: 'rejected' as const,
 		rejectionReason: input.reason,
 	}
-	await input.db
+	const expectedLease = input.delivery.storageLease ?? null
+	const result = await input.db
 		.prepare(
 			`UPDATE email_delivery_events
 			SET event_type = 'rejected', detail_json = ?
-			WHERE id = ? AND user_id = ?`,
+			WHERE id = ?
+				AND user_id = ?
+				AND event_type = 'receive_started'
+				AND json_extract(detail_json, '$.state') = ?
+				AND json_extract(detail_json, '$.messageId') = ?
+				AND json_extract(detail_json, '$.fingerprint') = ?
+				AND (
+					(? IS NULL AND json_extract(detail_json, '$.storageLease') IS NULL)
+					OR json_extract(detail_json, '$.storageLease') = ?
+				)`,
 		)
 		.bind(
 			JSON.stringify(detail),
 			input.delivery.deliveryId,
 			input.delivery.userId,
+			input.delivery.state,
+			input.delivery.messageId,
+			input.delivery.fingerprint,
+			expectedLease,
+			expectedLease,
 		)
 		.run()
-	return detail
+	return Number(result.meta.changes ?? 0) > 0
 }
 
 export async function claimInboundDeliveryStorage(input: {

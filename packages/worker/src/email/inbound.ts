@@ -71,6 +71,26 @@ function warnRejectionAuditWriteFailed(error: unknown) {
 	console.warn('email-rejection-audit-write-failed', error)
 }
 
+async function rejectClaimedInboundDelivery(input: {
+	db: D1Database
+	message: ForwardableEmailMessage
+	delivery: InboundDelivery
+	reason: string
+}) {
+	const transitioned = await markInboundDeliveryRejected({
+		db: input.db,
+		delivery: input.delivery,
+		reason: input.reason,
+	}).catch((error: unknown) => {
+		warnRejectionAuditWriteFailed(error)
+		// Preserve permanent-rejection behavior when the audit transition itself
+		// is unavailable; only a proven competing state suppresses SMTP reject.
+		return true
+	})
+	if (transitioned) input.message.setReject(input.reason)
+	return transitioned
+}
+
 function estimateInboundEmailStorageBytes(input: {
 	message: ForwardableEmailMessage
 	recipient: string
@@ -549,12 +569,13 @@ export async function handleInboundEmail(
 					rawReadError instanceof Error
 						? rawReadError.message
 						: 'Failed to read inbound email.'
-				message.setReject(reason)
-				await markInboundDeliveryRejected({
+				const rejected = await rejectClaimedInboundDelivery({
 					db: env.APP_DB,
+					message,
 					delivery: claimedDelivery,
 					reason,
-				}).catch(warnRejectionAuditWriteFailed)
+				})
+				if (!rejected) return
 				await recordReceiveUsage({ outcome: 'error' })
 				return
 			}
@@ -566,12 +587,13 @@ export async function handleInboundEmail(
 					error instanceof Error
 						? error.message
 						: 'Failed to parse inbound email.'
-				message.setReject(reason)
-				await markInboundDeliveryRejected({
+				const rejected = await rejectClaimedInboundDelivery({
 					db: env.APP_DB,
+					message,
 					delivery: claimedDelivery,
 					reason,
-				}).catch(warnRejectionAuditWriteFailed)
+				})
+				if (!rejected) return
 				await recordReceiveUsage({ outcome: 'error' })
 				return
 			}
@@ -837,12 +859,13 @@ async function handleSystemInboundEmail(input: {
 			rawReadError instanceof Error
 				? rawReadError.message
 				: 'Failed to read inbound email.'
-		input.message.setReject(reason)
-		await markInboundDeliveryRejected({
+		const rejected = await rejectClaimedInboundDelivery({
 			db: input.env.APP_DB,
+			message: input.message,
 			delivery: claimedDelivery,
 			reason,
-		}).catch(warnRejectionAuditWriteFailed)
+		})
+		if (!rejected) return
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
@@ -852,12 +875,13 @@ async function handleSystemInboundEmail(input: {
 	} catch (error) {
 		const reason =
 			error instanceof Error ? error.message : 'Failed to parse inbound email.'
-		input.message.setReject(reason)
-		await markInboundDeliveryRejected({
+		const rejected = await rejectClaimedInboundDelivery({
 			db: input.env.APP_DB,
+			message: input.message,
 			delivery: claimedDelivery,
 			reason,
-		}).catch(warnRejectionAuditWriteFailed)
+		})
+		if (!rejected) return
 		await recordReceiveUsage({ outcome: 'error' })
 		return
 	}
