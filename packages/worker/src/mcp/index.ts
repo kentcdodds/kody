@@ -127,6 +127,12 @@ class MCPBase extends McpAgent<Env, State, Props> {
 		}
 		await this.ctx.storage.deleteAll()
 	}
+	async getStoredOwnerForMaintenance() {
+		return {
+			doId: this.ctx.id.toString(),
+			userId: this.getCallerContext().user?.userId ?? null,
+		}
+	}
 }
 
 export const MCP = Sentry.instrumentDurableObjectWithSentry(

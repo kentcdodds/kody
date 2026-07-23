@@ -19,6 +19,8 @@ import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
+import { adminAccountWriteLeaseListCapability } from './admin-account-write-lease-list.ts'
+import { adminAccountWriteLeaseRepairCapability } from './admin-account-write-lease-repair.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -44,6 +46,8 @@ export const adminDomain = defineDomain({
 		adminUserGetCapability,
 		adminUserCreateCapability,
 		adminUserUpdateCapability,
+		adminAccountWriteLeaseListCapability,
+		adminAccountWriteLeaseRepairCapability,
 		adminPlatformAccountCreateCapability,
 		adminPackageScopeGrantCreateCapability,
 		adminPackageScopeGrantRevokeCapability,

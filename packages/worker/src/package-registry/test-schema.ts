@@ -41,6 +41,17 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 			// Column already exists (fresh CREATE above or prior suite setup).
 		}
 	}
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS account_write_leases (
+				token TEXT PRIMARY KEY,
+				user_id TEXT NOT NULL,
+				holder TEXT NOT NULL,
+				acquired_at TEXT NOT NULL,
+				released_at TEXT
+			)`,
+		)
+		.run()
 	try {
 		await db
 			.prepare(

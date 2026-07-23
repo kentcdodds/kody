@@ -371,6 +371,14 @@
 		{
 			"filename": "0086-mcp-agent-sessions.sql",
 			"sha256": "ed2fa13727f79f2091bf8759598defc6463023058f31faf51faee1ca3ea4d92d"
+		},
+		{
+			"filename": "0087-account-write-lease-tokens.sql",
+			"sha256": "41a4286344c26250c6176b492620e30a9a0dc83da861652205814d95b340dbf9"
+		},
+		{
+			"filename": "0088-mcp-agent-session-backfill-marker.sql",
+			"sha256": "bd098fcfe23900a35617d5ff483be270e12bd2831b17d58b17710ed8721610e6"
 		}
 	]
 }

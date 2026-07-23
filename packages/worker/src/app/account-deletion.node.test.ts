@@ -87,17 +87,32 @@ function createTestDb(
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
+								lower ===
+								'select version from deployment_backfill_markers where key = ?'
+							) {
+								results =
+									'deployment_backfill_markers' in rows
+										? (rows.deployment_backfill_markers ?? [])
+										: [{ version: 1 }]
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
 								lower.includes(
-									'select active_write_count, active_write_expires_at from users',
+									'select count(*) as count from account_write_leases',
 								)
 							) {
-								results = (rows.users ?? [])
-									.filter((row) => row['id'] === params[0])
-									.map((row) => ({
-										active_write_count: row['active_write_count'] ?? 0,
-										active_write_expires_at:
-											row['active_write_expires_at'] ?? null,
-									}))
+								const user = (rows.users ?? []).find(
+									(row) => row['id'] === params[0],
+								)
+								results = [
+									{
+										count: (rows.account_write_leases ?? []).filter(
+											(row) =>
+												row['user_id'] === user?.['stable_user_id'] &&
+												row['released_at'] == null,
+										).length,
+									},
+								]
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
@@ -1483,6 +1498,21 @@ test('account deletion reports a missing email blob binding and remains retryabl
 	])
 })
 
+test('account deletion is disabled until legacy MCP sessions are backfilled', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, stable_user_id: 'user-aaa' }],
+		deployment_backfill_markers: [],
+	})
+	await expect(
+		deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db),
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toThrow('MCP agent session backfill is incomplete')
+	expect(rows.users).toEqual([{ id: 1, stable_user_id: 'user-aaa' }])
+})
+
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
 	const { db, rows } = createTestDb(
 		{
@@ -1655,8 +1685,16 @@ test('account deletion waits for an active writer and resumes on retry', async (
 				email: 'a@example.com',
 				stable_user_id: 'user-aaa',
 				active_write_count: 1,
-				active_write_expires_at: '2999-01-01 00:00:00',
 				updated_at: '2026-07-22',
+			},
+		],
+		account_write_leases: [
+			{
+				token: 'crashed-token',
+				user_id: 'user-aaa',
+				holder: 'test',
+				acquired_at: '2000-01-01 00:00:00',
+				released_at: null,
 			},
 		],
 	})
@@ -1674,6 +1712,7 @@ test('account deletion waits for an active writer and resumes on retry', async (
 			active_write_count: 1,
 		}),
 	)
+	rows.account_write_leases![0]!['released_at'] = '2026-07-23 00:00:00'
 	rows.users![0]!['active_write_count'] = 0
 	await expect(
 		deleteUserAccount({

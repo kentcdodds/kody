@@ -25,6 +25,13 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
+		`CREATE TABLE IF NOT EXISTS account_write_leases (
+			token TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			holder TEXT NOT NULL,
+			acquired_at TEXT NOT NULL,
+			released_at TEXT
+		)`,
 		`CREATE TABLE IF NOT EXISTS saved_packages (
 			id TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,

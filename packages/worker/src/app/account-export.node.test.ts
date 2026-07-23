@@ -726,6 +726,72 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 	])
 })
 
+test('DO export sections expose bounded job manager and owned connector state', async () => {
+	const db = {
+		prepare(query: string) {
+			return {
+				bind() {
+					return {
+						async first<T>() {
+							if (query.includes('FROM remote_connector_settings')) {
+								return { owned: 1 } as T
+							}
+							return null
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	const env = {
+		APP_DB: db,
+		JOB_MANAGER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				exportUser: async () => ({
+					userId: 'user-aaa',
+					alarm: null,
+					status: 'idle',
+				}),
+			}),
+		},
+		REMOTE_CONNECTOR_SESSION: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				rpcExportUserSession: async () => ({
+					persisted: { instanceId: 'home' },
+					tools: [],
+					connected: false,
+				}),
+			}),
+		},
+	} as unknown as Env
+	const jobManager = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'job_manager',
+	})
+	expect(jobManager.items).toEqual([
+		expect.objectContaining({ userId: 'user-aaa' }),
+	])
+	expect(jobManager.truncated).toBe(false)
+
+	const connector = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'remote_connector_session',
+		instanceId: 'home',
+	})
+	expect(connector.items).toEqual([
+		expect.objectContaining({
+			instanceId: 'home',
+			export: expect.objectContaining({ connected: false }),
+		}),
+	])
+})
+
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
@@ -1060,14 +1126,30 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 
 	rowCounts.length = 0
 	queries.length = 0
+	let oauthPage = 0
 	const manifest = await createAccountExportManifest({
-		env: { APP_DB: db } as Env,
+		env: {
+			APP_DB: db,
+			OAUTH_PROVIDER: {
+				async listUserGrants() {
+					oauthPage += 1
+					return {
+						items: [{ id: `grant-${oauthPage}`, clientId: 'client' }],
+						cursor: oauthPage < 100 ? String(oauthPage) : undefined,
+					}
+				},
+			},
+		} as unknown as Env,
 		dbUserId: 1,
 		mcpUserId: 'user-aaa',
 	})
 	expect(manifest.sections['d1.email_messages']?.count).toBe(totalMessages)
+	expect(manifest.sections.oauth_grants?.count).toBe(100)
 	expect(Math.max(...rowCounts)).toBeLessThanOrEqual(1)
 	expect(
 		queries.some((query) => query.includes('__account_export_rowid')),
+	).toBe(false)
+	expect(
+		queries.some((query) => query.startsWith('SELECT storage_id FROM jobs')),
 	).toBe(false)
 })

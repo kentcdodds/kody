@@ -57,6 +57,17 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 	}
 	await db
 		.prepare(
+			`CREATE TABLE IF NOT EXISTS account_write_leases (
+				token TEXT PRIMARY KEY,
+				user_id TEXT NOT NULL,
+				holder TEXT NOT NULL,
+				acquired_at TEXT NOT NULL,
+				released_at TEXT
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
 			`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stable_user_id
 			 ON users(stable_user_id)`,
 		)

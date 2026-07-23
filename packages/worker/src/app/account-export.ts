@@ -42,6 +42,9 @@ const exportRowidColumn = '__account_export_rowid'
 export const accountExportSectionNames = [
 	'd1_table',
 	'storage_runner',
+	'job_manager',
+	'remote_connector_session',
+	'package_service',
 	'oauth_grants',
 	'artifact_repos',
 	'kv_keys',
@@ -106,6 +109,15 @@ type UserExportInventory = {
 	bundleKvKeys: Array<string>
 	r2ObjectCount: number
 	artifactRepos: Array<AccountExportArtifactRepo>
+}
+
+type ManifestInventoryCounts = {
+	storageRunners: number
+	remoteConnectorSessions: number
+	packageServices: number
+	artifactRepos: number
+	kvKeys: number
+	r2Objects: number
 }
 
 export type AccountExportManifestSection = {
@@ -717,6 +729,202 @@ async function collectInventory(input: {
 	}
 }
 
+async function countScalar(
+	env: Env,
+	sql: string,
+	params: ReadonlyArray<unknown>,
+) {
+	const row = await env.APP_DB.prepare(sql)
+		.bind(...params)
+		.first<{ count: number }>()
+	return Number(row?.count ?? 0)
+}
+
+async function countUserBundleKvKeys(input: {
+	env: AccountExportEnv
+	userId: string
+	warnings: Array<string>
+}) {
+	const deterministic = await countScalar(
+		input.env,
+		`SELECT COUNT(*) AS count FROM (
+			SELECT kv_key AS key FROM published_bundle_artifacts WHERE user_id = ?
+			UNION
+			SELECT 'source-snapshot:v1:' || id || ':' || published_commit
+				FROM entity_sources
+				WHERE user_id = ? AND published_commit IS NOT NULL
+			UNION
+			SELECT 'source-manifest-snapshot:v1:' || id || ':' || published_commit
+				FROM entity_sources
+				WHERE user_id = ? AND published_commit IS NOT NULL
+			UNION
+			SELECT 'community-snapshot:v1:' || id
+				FROM community_listings WHERE owner_user_id = ?
+		)`,
+		[input.userId, input.userId, input.userId, input.userId],
+	)
+	if (!input.env.BUNDLE_ARTIFACTS_KV?.list) return deterministic
+	let additional = 0
+	let afterId = ''
+	for (;;) {
+		const page = await input.env.APP_DB.prepare(
+			`SELECT id, published_commit
+			FROM entity_sources
+			WHERE user_id = ? AND id > ?
+			ORDER BY id
+			LIMIT 100`,
+		)
+			.bind(input.userId, afterId)
+			.all<{ id: string; published_commit: string | null }>()
+		const rows = page.results ?? []
+		if (rows.length === 0) break
+		for (const source of rows) {
+			for (const prefix of [
+				`source-snapshot:v1:${source.id}:`,
+				`source-manifest-snapshot:v1:${source.id}:`,
+			]) {
+				const canonical = source.published_commit
+					? `${prefix}${source.published_commit}`
+					: null
+				let cursor: string | undefined
+				do {
+					try {
+						const listed = await input.env.BUNDLE_ARTIFACTS_KV.list({
+							prefix,
+							cursor,
+						})
+						additional += listed.keys.filter(
+							(key) => key.name !== canonical,
+						).length
+						cursor = listed.list_complete ? undefined : listed.cursor
+					} catch (error) {
+						input.warnings.push(
+							`KV prefix listing failed for ${prefix}: ${getErrorMessage(error)}`,
+						)
+						cursor = undefined
+					}
+				} while (cursor)
+			}
+		}
+		afterId = rows.at(-1)!.id
+		if (rows.length < 100) break
+	}
+	return deterministic + additional
+}
+
+async function collectManifestInventoryCounts(input: {
+	env: AccountExportEnv
+	userId: string
+	dbUserId: number
+	warnings: Array<string>
+}): Promise<ManifestInventoryCounts> {
+	const safeCount = async (label: string, run: () => Promise<number>) => {
+		try {
+			return await run()
+		} catch (error) {
+			input.warnings.push(`Failed to count ${label}: ${getErrorMessage(error)}`)
+			return 0
+		}
+	}
+	const [
+		storageRunners,
+		remoteConnectorSessions,
+		packageServices,
+		artifactRepos,
+		kvKeys,
+		r2Objects,
+	] = await Promise.all([
+		safeCount('storage ids', async () =>
+			countScalar(
+				input.env,
+				`SELECT COUNT(*) AS count FROM (
+					SELECT storage_id AS id FROM jobs
+						WHERE user_id = ? AND storage_id IS NOT NULL
+					UNION SELECT storage_id FROM archived_job_artifacts
+						WHERE user_id = ? AND storage_id IS NOT NULL
+					UNION SELECT storage_id FROM package_runtime_runs
+						WHERE user_id = ? AND storage_id IS NOT NULL
+					UNION SELECT id FROM saved_packages
+						WHERE user_id = ? AND has_app = 1
+					UNION SELECT 'service:' || package_id || char(0) || name
+						FROM package_runtime_runs
+						WHERE user_id = ? AND surface = 'service' AND name IS NOT NULL
+				)`,
+				Array(5).fill(input.userId),
+			),
+		),
+		safeCount('remote connectors', async () =>
+			countScalar(
+				input.env,
+				`SELECT COUNT(*) AS count FROM remote_connector_settings WHERE user_id = ?`,
+				[input.userId],
+			),
+		),
+		safeCount('package services', async () =>
+			countScalar(
+				input.env,
+				`SELECT COUNT(*) AS count FROM (
+					SELECT DISTINCT package_id, name FROM package_runtime_runs
+					WHERE user_id = ? AND surface = 'service' AND name IS NOT NULL
+				)`,
+				[input.userId],
+			),
+		),
+		safeCount('artifact repos', async () =>
+			countScalar(
+				input.env,
+				`SELECT COUNT(*) AS count FROM entity_sources WHERE user_id = ?`,
+				[input.userId],
+			),
+		),
+		safeCount('bundle KV keys', async () => countUserBundleKvKeys(input)),
+		safeCount('R2 objects', async () =>
+			countAccountR2ObjectRefs({
+				env: input.env,
+				userId: input.userId,
+				dbUserId: input.dbUserId,
+			}),
+		),
+	])
+	return {
+		storageRunners,
+		remoteConnectorSessions,
+		packageServices,
+		artifactRepos,
+		kvKeys,
+		r2Objects,
+	}
+}
+
+async function countOAuthGrants(input: {
+	env: AccountExportEnv
+	userId: string
+	warnings: Array<string>
+}) {
+	const helpers = input.env.OAUTH_PROVIDER
+	if (!helpers) {
+		input.warnings.push(
+			'OAuth provider binding was unavailable; OAuth grant metadata was not exported.',
+		)
+		return 0
+	}
+	let count = 0
+	let cursor: string | undefined
+	for (;;) {
+		try {
+			const page = await helpers.listUserGrants(input.userId, { cursor })
+			count += page.items.length
+			if (!page.cursor) return count
+			cursor = page.cursor
+		} catch (error) {
+			input.warnings.push(
+				`OAuth grant listing failed after ${count} grant(s): ${getErrorMessage(error)}`,
+			)
+			return count
+		}
+	}
+}
+
 async function collectD1Tables(input: {
 	env: AccountExportEnv
 	dbUserId: number
@@ -1037,7 +1245,9 @@ function buildManifest(input: {
 	d1Sections?: Record<string, AccountExportManifestSection>
 	durableObjects?: AccountExportDurableObjects | null
 	oauthGrants?: ReadonlyArray<{ id: string; clientId: string }>
-	inventory: UserExportInventory
+	oauthGrantCount?: number
+	inventory?: UserExportInventory
+	inventoryCounts?: ManifestInventoryCounts
 	warnings: Array<string>
 }) {
 	const sections: Record<string, AccountExportManifestSection> = {
@@ -1053,39 +1263,61 @@ function buildManifest(input: {
 		}
 	}
 	sections.storage_runners = {
-		count: input.inventory.storageIds.length,
+		count:
+			input.inventoryCounts?.storageRunners ??
+			input.inventory?.storageIds.length ??
+			0,
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Storage runner '),
 		),
 	}
+	sections.job_manager = {
+		count: 1,
+		warnings: input.warnings.filter((warning) =>
+			warning.startsWith('Job manager '),
+		),
+	}
 	sections.remote_connector_sessions = {
-		count: input.inventory.remoteConnectors.length,
+		count:
+			input.inventoryCounts?.remoteConnectorSessions ??
+			input.inventory?.remoteConnectors.length ??
+			0,
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Remote connector session '),
 		),
 	}
 	sections.package_services = {
-		count: input.inventory.packageServices.length,
+		count:
+			input.inventoryCounts?.packageServices ??
+			input.inventory?.packageServices.length ??
+			0,
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Package service '),
 		),
 	}
 	sections.oauth_grants = {
-		count: input.oauthGrants?.length ?? 0,
+		count: input.oauthGrantCount ?? input.oauthGrants?.length ?? 0,
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('OAuth grant '),
 		),
 	}
 	sections.artifact_repos = {
-		count: input.inventory.artifactRepos.length,
+		count:
+			input.inventoryCounts?.artifactRepos ??
+			input.inventory?.artifactRepos.length ??
+			0,
 		warnings: [],
 	}
 	sections.kv_keys = {
-		count: input.inventory.bundleKvKeys.length,
+		count:
+			input.inventoryCounts?.kvKeys ??
+			input.inventory?.bundleKvKeys.length ??
+			0,
 		warnings: input.warnings.filter((warning) => warning.startsWith('KV ')),
 	}
 	sections.r2_object = {
-		count: input.inventory.r2ObjectCount,
+		count:
+			input.inventoryCounts?.r2Objects ?? input.inventory?.r2ObjectCount ?? 0,
 		warnings: input.warnings.filter((warning) => warning.includes('R2 object')),
 	}
 	return {
@@ -1157,20 +1389,20 @@ export async function createAccountExportManifest(input: {
 }): Promise<AccountExportManifest> {
 	const warnings: Array<string> = []
 	const generatedAt = input.generatedAt ?? new Date().toISOString()
-	const [d1Sections, inventory, oauthGrants] = await Promise.all([
+	const [d1Sections, inventoryCounts, oauthGrantCount] = await Promise.all([
 		collectD1TableCounts({
 			env: input.env,
 			dbUserId: input.dbUserId,
 			mcpUserId: input.mcpUserId,
 			warnings,
 		}),
-		collectInventory({
+		collectManifestInventoryCounts({
 			env: input.env,
 			userId: input.mcpUserId,
 			dbUserId: input.dbUserId,
 			warnings,
 		}),
-		listOAuthGrants({
+		countOAuthGrants({
 			env: input.env,
 			userId: input.mcpUserId,
 			warnings,
@@ -1181,8 +1413,8 @@ export async function createAccountExportManifest(input: {
 		dbUserId: input.dbUserId,
 		mcpUserId: input.mcpUserId,
 		d1Sections,
-		inventory,
-		oauthGrants,
+		inventoryCounts,
+		oauthGrantCount,
 		warnings,
 	})
 }
@@ -1268,6 +1500,9 @@ export async function readAccountExportSection(input: {
 	section: AccountExportSectionName
 	table?: string
 	storageId?: string
+	instanceId?: string
+	packageId?: string
+	serviceName?: string
 	pageSize?: number
 	startAfter?: string
 }): Promise<AccountExportSectionResult> {
@@ -1285,6 +1520,47 @@ export async function readAccountExportSection(input: {
 		if (!input.storageId) {
 			throw new Error('storage_id is required when section is storage_runner.')
 		}
+		let storageOwned =
+			(
+				await input.env.APP_DB.prepare(
+					`SELECT 1 AS owned FROM (
+						SELECT storage_id AS id FROM jobs WHERE user_id = ?
+						UNION SELECT storage_id FROM archived_job_artifacts WHERE user_id = ?
+						UNION SELECT storage_id FROM package_runtime_runs WHERE user_id = ?
+						UNION SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1
+					) WHERE id = ?`,
+				)
+					.bind(
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						input.storageId,
+					)
+					.first<{ owned: number }>()
+			)?.owned === 1
+		if (!storageOwned && input.storageId.startsWith('service:')) {
+			const [packagePart, servicePart] = input.storageId
+				.slice('service:'.length)
+				.split(':')
+			if (packagePart && servicePart) {
+				const row = await input.env.APP_DB.prepare(
+					`SELECT 1 AS owned FROM package_runtime_runs
+					WHERE user_id = ? AND surface = 'service'
+						AND package_id = ? AND name = ?`,
+				)
+					.bind(
+						input.mcpUserId,
+						decodeURIComponent(packagePart),
+						decodeURIComponent(servicePart),
+					)
+					.first<{ owned: number }>()
+				storageOwned = row?.owned === 1
+			}
+		}
+		if (!storageOwned) {
+			throw new Error('Storage runner was not found for account export.')
+		}
 		const pageSize = normalizePageSize(input.pageSize)
 		const runnerExport = await storageRunnerRpc({
 			env: input.env,
@@ -1300,6 +1576,99 @@ export async function readAccountExportSection(input: {
 			truncated: runnerExport.truncated,
 			nextStartAfter: runnerExport.nextStartAfter,
 			pageSize: runnerExport.pageSize,
+			warnings,
+		}
+	}
+	if (input.section === 'job_manager') {
+		return {
+			section: input.section,
+			items: [
+				await exportJobManagerForUser({
+					env: input.env,
+					userId: input.mcpUserId,
+				}),
+			],
+			truncated: false,
+			nextStartAfter: null,
+			pageSize: 1,
+			warnings,
+		}
+	}
+	if (input.section === 'remote_connector_session') {
+		if (!input.instanceId) {
+			throw new Error(
+				'instance_id is required when section is remote_connector_session.',
+			)
+		}
+		const owned = await input.env.APP_DB.prepare(
+			`SELECT 1 AS owned FROM remote_connector_settings
+			WHERE user_id = ? AND instance_id = ?`,
+		)
+			.bind(input.mcpUserId, input.instanceId)
+			.first<{ owned: number }>()
+		if (owned?.owned !== 1) {
+			throw new Error('Remote connector session was not found for export.')
+		}
+		const [exported] = await exportRemoteConnectorSessions({
+			env: input.env,
+			userId: input.mcpUserId,
+			connectors: [{ instanceId: input.instanceId }],
+			warnings,
+		})
+		return {
+			section: input.section,
+			items: exported ? [exported] : [],
+			truncated: false,
+			nextStartAfter: null,
+			pageSize: 1,
+			warnings,
+		}
+	}
+	if (input.section === 'package_service') {
+		if (!input.packageId || !input.serviceName) {
+			throw new Error(
+				'package_id and service_name are required when section is package_service.',
+			)
+		}
+		const row = await input.env.APP_DB.prepare(
+			`SELECT DISTINCT
+				r.package_id,
+				COALESCE(p.kody_id, r.package_kody_id) AS kody_id,
+				COALESCE(p.source_id, r.source_id) AS source_id,
+				r.name
+			FROM package_runtime_runs AS r
+			LEFT JOIN saved_packages AS p
+				ON p.id = r.package_id AND p.user_id = r.user_id
+			WHERE r.user_id = ? AND r.surface = 'service'
+				AND r.package_id = ? AND r.name = ?`,
+		)
+			.bind(input.mcpUserId, input.packageId, input.serviceName)
+			.first<{
+				package_id: string
+				kody_id: string
+				source_id: string | null
+				name: string
+			}>()
+		if (!row) throw new Error('Package service was not found for export.')
+		const [exported] = await exportPackageServices({
+			env: input.env,
+			userId: input.mcpUserId,
+			services: [
+				{
+					packageId: row.package_id,
+					kodyId: row.kody_id,
+					sourceId: row.source_id ?? '',
+					serviceName: row.name,
+				},
+			],
+			warnings,
+		})
+		return {
+			section: input.section,
+			items: exported ? [exported] : [],
+			truncated: false,
+			nextStartAfter: null,
+			pageSize: 1,
 			warnings,
 		}
 	}

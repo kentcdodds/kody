@@ -34,6 +34,21 @@ export const accountExportSectionCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe('Required when section is storage_runner.'),
+			instance_id: z
+				.string()
+				.min(1)
+				.optional()
+				.describe('Required when section is remote_connector_session.'),
+			package_id: z
+				.string()
+				.min(1)
+				.optional()
+				.describe('Required when section is package_service.'),
+			service_name: z
+				.string()
+				.min(1)
+				.optional()
+				.describe('Required when section is package_service.'),
 			page_size: z.number().int().min(1).max(500).optional(),
 			start_after: z
 				.string()
@@ -56,6 +71,9 @@ export const accountExportSectionCapability = defineDomainCapability(
 				section: args.section,
 				table: args.table,
 				storageId: args.storage_id,
+				instanceId: args.instance_id,
+				packageId: args.package_id,
+				serviceName: args.service_name,
 				pageSize: args.page_size,
 				startAfter: args.start_after,
 			})

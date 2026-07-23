@@ -25,11 +25,11 @@ type KvNamespaceListEntry = {
 	title: string
 }
 
-type CloudflareApiEnvelope<T> = {
+export type CloudflareApiEnvelope<T> = {
 	success?: boolean
 	result?: T
 	errors?: Array<{ code?: number | string; message?: string }>
-	result_info?: { total_pages?: number }
+	result_info?: { total_pages?: number; cursor?: string }
 }
 
 type CloudflareQueue = {
@@ -279,7 +279,7 @@ export function deleteR2Bucket({
 	console.error(`Deleted R2 bucket: ${name}`)
 }
 
-async function cloudflareApiRequest<T>(input: {
+export async function cloudflareApiRequest<T>(input: {
 	accountId: string
 	apiToken: string
 	pathname: string
