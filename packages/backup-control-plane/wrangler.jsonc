@@ -40,7 +40,7 @@
 		"BUILD_COMMIT": "REPLACE_AT_DEPLOY_TIME",
 		// Non-secret provenance. The matching PKCS#8 private key is a Worker secret.
 		"BACKUP_MANIFEST_SIGNING_KEY_ID": "kody-dr-2026-07",
-		"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "replace-with-base64-spki-public-key",
+		"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "MCowBQYDK2VwAyEA3jqjPcGTzWefE5PGyRBdUQKAEj7FFGtFIz+223sbt9A=",
 		// SHA-256 of the JSON array of sorted migration filenames at the
 		// deployment commit (see docs/contributing/disaster-recovery.md).
 		"TRUSTED_RESTORE_BASELINE_ID": "kody-migration-set-2026-07",

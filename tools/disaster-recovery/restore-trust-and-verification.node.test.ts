@@ -251,7 +251,14 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 	) as unknown
 	expect(
 		parseTrustedManifestPublicKeyRegistry(checkedManifestKeys).keys,
-	).toEqual([])
+	).toEqual([
+		{
+			algorithm: 'Ed25519',
+			keyId: 'kody-dr-2026-07',
+			publicKeyPem:
+				'-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA3jqjPcGTzWefE5PGyRBdUQKAEj7FFGtFIz+223sbt9A=\n-----END PUBLIC KEY-----\n',
+		},
+	])
 	expect(
 		parseTrustedRestoreBaselineRegistry(checkedBaselines, parseBaseline)
 			.baselines,
