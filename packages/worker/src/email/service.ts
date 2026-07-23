@@ -401,6 +401,9 @@ export async function storeIdempotentInboundEmail(input: {
 		finalizedDelivery = await markInboundDeliveryReceived({
 			db: input.db,
 			delivery,
+			usageDurationMs: delivery.usageStartedAt
+				? Date.now() - Date.parse(delivery.usageStartedAt)
+				: 0,
 		})
 	} catch (error) {
 		const committed = await getInboundDelivery({

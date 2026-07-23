@@ -1,4 +1,5 @@
 import { getInboundDelivery } from './inbound-delivery.ts'
+import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import {
 	dispatchInboundEmailSubscriptionEvents,
 	dispatchSystemInboundEmailSubscriptionEvents,
@@ -155,7 +156,7 @@ async function recordInboundUsageEffect(input: {
 		.run()
 }
 
-export async function processInboundDeliveryEffects(input: {
+async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 	env: InboundEffectsEnv
 	userId: string
 	deliveryId: string
@@ -299,6 +300,19 @@ export async function processInboundDeliveryEffects(input: {
 			.run()
 		throw error
 	}
+}
+
+export async function processInboundDeliveryEffects(
+	input: Parameters<typeof processInboundDeliveryEffectsWithLeaseHeld>[0],
+) {
+	if (input.userId === systemEmailOwnerId) {
+		return await processInboundDeliveryEffectsWithLeaseHeld(input)
+	}
+	return await withAccountWriteLease({
+		db: input.env.APP_DB,
+		stableUserId: input.userId,
+		write: async () => await processInboundDeliveryEffectsWithLeaseHeld(input),
+	})
 }
 
 export async function reconcileInboundDeliveryEffectsForUser(input: {

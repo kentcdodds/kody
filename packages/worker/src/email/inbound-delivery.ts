@@ -59,6 +59,7 @@ export type InboundDelivery = {
 	finalizationToken?: string
 	usageEffectRecordedAt?: string
 	usageEffectSuppressedAt?: string
+	usageStartedAt?: string
 	usageDurationMs?: number
 	usageEffectRetryAt?: string
 	usageEffectLease?: string
@@ -204,6 +205,9 @@ function parseInboundDelivery(
 				: {}),
 			...(typeof detail.usageEffectSuppressedAt === 'string'
 				? { usageEffectSuppressedAt: detail.usageEffectSuppressedAt }
+				: {}),
+			...(typeof detail.usageStartedAt === 'string'
+				? { usageStartedAt: detail.usageStartedAt }
 				: {}),
 			...(typeof detail.usageDurationMs === 'number'
 				? { usageDurationMs: detail.usageDurationMs }
@@ -737,7 +741,7 @@ export async function claimInboundDeliveryStorage(input: {
 	db: D1Database
 	delivery: InboundDelivery
 	expectedAttachmentCount: number
-	usageDurationMs?: number
+	usageStartedAt?: string
 	now?: Date
 }) {
 	const now = input.now ?? new Date()
@@ -755,8 +759,8 @@ export async function claimInboundDeliveryStorage(input: {
 				'$.storageLease', ?,
 				'$.storageLeaseAt', ?,
 				'$.expectedAttachmentCount', ?,
-				'$.usageDurationMs', COALESCE(
-					json_extract(detail_json, '$.usageDurationMs'),
+				'$.usageStartedAt', COALESCE(
+					json_extract(detail_json, '$.usageStartedAt'),
 					?
 				)
 			)
@@ -774,7 +778,7 @@ export async function claimInboundDeliveryStorage(input: {
 			storageLease,
 			storageLeaseAt,
 			input.expectedAttachmentCount,
-			input.usageDurationMs ?? null,
+			input.usageStartedAt ?? null,
 			input.delivery.deliveryId,
 			input.delivery.userId,
 			expiredBefore,
@@ -837,6 +841,7 @@ export async function releaseInboundDeliveryStorage(input: {
 export async function markInboundDeliveryReceived(input: {
 	db: D1Database
 	delivery: InboundDelivery
+	usageDurationMs: number
 }) {
 	if (!input.delivery.storageLease) {
 		throw new InboundDeliveryLeaseLostError(
@@ -848,6 +853,7 @@ export async function markInboundDeliveryReceived(input: {
 		state: 'received',
 		finalizationToken: input.delivery.storageLease,
 		subscriptionEffectState: 'pending',
+		usageDurationMs: Math.max(0, Math.round(input.usageDurationMs)),
 	}
 	delete detail.storageLease
 	delete detail.storageLeaseAt
@@ -919,7 +925,7 @@ async function recoverCommittedInboundDelivery(input: {
 		db: input.db,
 		delivery: input.delivery,
 		expectedAttachmentCount: parsed.attachments.length,
-		usageDurationMs: input.delivery.usageDurationMs,
+		usageStartedAt: input.delivery.usageStartedAt,
 		now: input.now,
 	})
 	if (!claim.claimed) return claim.delivery?.state === 'received'
@@ -962,6 +968,9 @@ async function recoverCommittedInboundDelivery(input: {
 		await markInboundDeliveryReceived({
 			db: input.db,
 			delivery: claim.delivery,
+			usageDurationMs: claim.delivery.usageStartedAt
+				? input.now.getTime() - Date.parse(claim.delivery.usageStartedAt)
+				: 0,
 		})
 		return true
 	} catch (error) {

@@ -4,6 +4,8 @@ import {
 	staleInboundDeliveryAgeMs,
 } from './inbound-delivery.ts'
 import { reconcileInboundDeliveryEffectsForUser } from './inbound-effects.ts'
+import { systemEmailOwnerId } from './system-email.ts'
+import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 
 const reconciliationUserBatchSize = 25
 const reconciliationTimeBudgetMs = 10_000
@@ -118,25 +120,37 @@ export async function sweepStaleInboundDeliveries(input: {
 	for (const { user_id: userId } of rows.results ?? []) {
 		if (Date.now() >= deadlineMs) break
 		try {
-			const result = await reconcileStaleInboundDeliveries({
-				db: input.env.APP_DB,
-				blobs: input.env.EMAIL_BLOBS,
-				userId,
-				now,
-				deadlineMs,
-			})
+			const reconcileUser = async () => {
+				const result = await reconcileStaleInboundDeliveries({
+					db: input.env.APP_DB,
+					blobs: input.env.EMAIL_BLOBS,
+					userId,
+					now,
+					deadlineMs,
+				})
+				const pruned = await pruneExpiredInboundDedupePointers({
+					db: input.env.APP_DB,
+					userId,
+					now,
+				})
+				const effectResult = await reconcileInboundDeliveryEffectsForUser({
+					env: input.env,
+					userId,
+					now,
+				})
+				return { result, pruned, effectResult }
+			}
+			const { result, pruned, effectResult } =
+				userId === systemEmailOwnerId
+					? await reconcileUser()
+					: await withAccountWriteLease({
+							db: input.env.APP_DB,
+							stableUserId: userId,
+							write: reconcileUser,
+						})
 			recovered += result.recovered
 			cleaned += result.cleaned
-			pointersPruned += await pruneExpiredInboundDedupePointers({
-				db: input.env.APP_DB,
-				userId,
-				now,
-			})
-			const effectResult = await reconcileInboundDeliveryEffectsForUser({
-				env: input.env,
-				userId,
-				now,
-			})
+			pointersPruned += pruned
 			effectsProcessed += effectResult.processed
 			errors += effectResult.errors
 			usersProcessed += 1

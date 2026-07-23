@@ -43,9 +43,11 @@ import {
 	consoleError,
 	consoleWarn,
 	silenceExpectedConsoleErrors,
+	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { AccountDeletionInProgressError } from '#app/account-deletion-state.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
 // User mail lives on the inbox. subdomain derived from APP_BASE_URL.
@@ -1649,6 +1651,51 @@ test('stored-message count failure happens before durable quota charge', async (
 	).toBeNull()
 })
 
+test('account deletion blocks the complete user inbound write boundary', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	const username = `deleting-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `deleting-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	await env.APP_DB.prepare(
+		`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind(new Date().toISOString(), userId)
+		.run()
+	const message = createForwardableEmailMessage({
+		from: 'sender@example.net',
+		to: address,
+		raw: [
+			'From: Sender <sender@example.net>',
+			`To: ${address}`,
+			'Subject: Deletion race',
+			'Message-ID: <deletion-race@example.net>',
+			'',
+			'Body',
+		].join('\r\n'),
+	})
+
+	await expect(
+		handleInboundEmail(message, createInboundEnv()),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT id FROM email_delivery_events WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.first(),
+	).toBeNull()
+	expect(
+		await env.EMAIL_BLOBS.list({ prefix: `email-raw:v1:${userId}/` }),
+	).toMatchObject({ objects: [] })
+})
+
 test('insertEmailMessageWithRawMime stores raw MIME in R2 and only raw_mime_key in D1', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `user-${crypto.randomUUID()}`
@@ -1762,7 +1809,7 @@ test('lease takeover fences stale finalization and active storage from cleanup',
 		storageLease: 'stale-worker',
 		storageLeaseAt: '2026-07-19T00:00:00.000Z',
 		expectedAttachmentCount: 0,
-		usageDurationMs: 123,
+		usageStartedAt: '2026-07-19T00:00:00.000Z',
 	}
 	await env.APP_DB.prepare(
 		`INSERT INTO email_delivery_events (
@@ -1784,11 +1831,11 @@ test('lease takeover fences stale finalization and active storage from cleanup',
 		db: env.APP_DB,
 		delivery: staleDelivery,
 		expectedAttachmentCount: 0,
-		usageDurationMs: 999,
+		usageStartedAt: '2026-07-22T00:00:00.000Z',
 		now,
 	})
 	if (!takeover.claimed) throw new Error('Expected storage lease takeover.')
-	expect(takeover.delivery.usageDurationMs).toBe(123)
+	expect(takeover.delivery.usageStartedAt).toBe('2026-07-19T00:00:00.000Z')
 
 	await expect(
 		insertEmailMessage({
@@ -1817,6 +1864,7 @@ test('lease takeover fences stale finalization and active storage from cleanup',
 		markInboundDeliveryReceived({
 			db: env.APP_DB,
 			delivery: staleDelivery,
+			usageDurationMs: 123,
 		}),
 	).rejects.toBeInstanceOf(InboundDeliveryLeaseLostError)
 	expect(
@@ -1941,6 +1989,7 @@ test('reconciliation rejects a ledger key outside its user MIME namespace', asyn
 test('stale inbound ledger durably retries orphan blob cleanup after R2 delete failure', async () => {
 	consoleWarn.mockImplementation(() => {})
 	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const userId = `user-${crypto.randomUUID()}`
 	const delivery = await buildInboundDelivery({
 		userId,
@@ -2027,7 +2076,7 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 		db: env.APP_DB,
 		delivery: successor,
 		expectedAttachmentCount: 0,
-		usageDurationMs: 321,
+		usageStartedAt: new Date(successorNow.getTime() - 321).toISOString(),
 		now: successorNow,
 	})
 	if (!successorClaim.claimed) throw new Error('Expected successor lease.')
@@ -2056,7 +2105,24 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 	await markInboundDeliveryReceived({
 		db: env.APP_DB,
 		delivery: successorClaim.delivery,
+		usageDurationMs: 321,
 	})
+	// Simulate a crash immediately after fenced finalization. Reconciliation
+	// receives no request-local duration and must use the persisted winner.
+	await processInboundDeliveryEffects({
+		env: createInboundEnv(),
+		userId,
+		deliveryId: successor.deliveryId,
+		now: new Date(successorNow.getTime() + 60_000),
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT event_count, total_duration_ms FROM usage_rollups
+			WHERE user_id = ? AND metric = 'email_received'`,
+		)
+			.bind(userId)
+			.first<{ event_count: number; total_duration_ms: number }>(),
+	).toEqual({ event_count: 1, total_duration_ms: 321 })
 	// Cleaner A resumes with the abandoned generation's key after the
 	// successor committed. The non-overlapping generation keeps live MIME safe.
 	await env.EMAIL_BLOBS.delete(delivery.rawMimeKey)
@@ -2139,11 +2205,22 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 })
 
 test('scheduled sweep cleans quiet-user orphans and recovers partial commits', async () => {
+	silenceExpectedConsoleWarns(['inbound-email-user-reconciliation-failed'])
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const oldNow = new Date('2026-07-19T00:00:00.000Z')
 	const sweepNow = new Date('2026-07-22T00:00:00.000Z')
-	const orphanUserId = `orphan-${crypto.randomUUID()}`
+	const seedSweepUser = async (prefix: string) => {
+		const email = `${prefix}-${crypto.randomUUID()}@example.com`
+		const stableUserId = await createStableUserIdFromEmail(email)
+		await seedVerifiedAccount({
+			db: env.APP_DB,
+			email,
+			username: `${prefix}-${crypto.randomUUID().slice(0, 8)}`,
+		})
+		return stableUserId
+	}
+	const orphanUserId = await seedSweepUser('orphan')
 	const orphan = await buildInboundDelivery({
 		userId: orphanUserId,
 		inboxId: `inbox-${crypto.randomUUID()}`,
@@ -2169,7 +2246,7 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 		)
 		.run()
 
-	const partialUserId = `partial-${crypto.randomUUID()}`
+	const partialUserId = await seedSweepUser('partial')
 	const partialRaw = [
 		'From: sender@example.net',
 		'To: partial@example.com',
@@ -2224,7 +2301,7 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 		)
 		.run()
 
-	const pointerUserId = `pointer-${crypto.randomUUID()}`
+	const pointerUserId = await seedSweepUser('pointer')
 	const expiredPointer = await buildInboundDelivery({
 		userId: pointerUserId,
 		inboxId: `inbox-${crypto.randomUUID()}`,
@@ -2238,6 +2315,45 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 		delivery: expiredPointer,
 		now: oldNow,
 	})
+	const deletingEmail = `sweep-deleting-${crypto.randomUUID()}@example.com`
+	const deletingUserId = await createStableUserIdFromEmail(deletingEmail)
+	await seedVerifiedAccount({
+		db: env.APP_DB,
+		email: deletingEmail,
+		username: `sweep-deleting-${crypto.randomUUID().slice(0, 8)}`,
+	})
+	await env.APP_DB.prepare(
+		`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind(sweepNow.toISOString(), deletingUserId)
+		.run()
+	const deletingDelivery = await buildInboundDelivery({
+		userId: deletingUserId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: 'deleting-sweep@example.com',
+		rawMime: 'deleting sweep orphan',
+		quotaDay: '2026-07-19',
+		now: oldNow,
+	})
+	await env.EMAIL_BLOBS.put(
+		deletingDelivery.rawMimeKey,
+		'deleting sweep orphan',
+	)
+	await env.APP_DB.prepare(
+		`INSERT INTO email_delivery_events (
+			id, user_id, inbox_id, event_type, provider, provider_event_id,
+			detail_json, created_at
+		) VALUES (?, ?, ?, 'receive_started', 'cloudflare-email-routing', ?, ?, ?)`,
+	)
+		.bind(
+			deletingDelivery.deliveryId,
+			deletingUserId,
+			deletingDelivery.inboxId,
+			deletingDelivery.deliveryId,
+			JSON.stringify(deletingDelivery),
+			oldNow.toISOString(),
+		)
+		.run()
 
 	expect(
 		await sweepStaleInboundDeliveries({
@@ -2245,13 +2361,14 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 			now: sweepNow,
 		}),
 	).toMatchObject({
-		usersProcessed: 3,
+		usersProcessed: 4,
 		recovered: 1,
 		cleaned: 1,
 		pointersPruned: 1,
 		effectsProcessed: 1,
-		errors: 0,
+		errors: 1,
 	})
+	expect(await env.EMAIL_BLOBS.get(deletingDelivery.rawMimeKey)).not.toBeNull()
 	expect(await env.EMAIL_BLOBS.get(orphan.rawMimeKey)).toBeNull()
 	const partialEvent = await env.APP_DB.prepare(
 		`SELECT event_type, message_id FROM email_delivery_events
