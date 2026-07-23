@@ -49,8 +49,8 @@ test('account export excluded durable objects preserve the legacy manifest list'
 test('account deletion durable object result keys are declared by the registry', () => {
 	expect([...getAccountDeletionDurableObjectResultKeys()].sort()).toEqual([
 		'jobManagers',
-		'mcpClientHubs',
 		'mcpAgentSessions',
+		'mcpClientHubs',
 		'packageRealtimeSessions',
 		'packageServiceInstances',
 		'remoteConnectorSessions',

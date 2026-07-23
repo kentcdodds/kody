@@ -115,6 +115,12 @@ function createMockDb(options: MockDbOptions = {}) {
 					meta: { changes: 0 },
 				}
 			},
+			async run() {
+				if (normalized.startsWith('update users')) {
+					return { meta: { changes: 1 } }
+				}
+				throw new Error(`Unsupported run query: ${query}`)
+			},
 			async first() {
 				const boundStableUserId =
 					typeof boundParams[0] === 'string' ? boundParams[0] : null

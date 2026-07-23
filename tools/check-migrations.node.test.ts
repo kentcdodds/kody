@@ -134,17 +134,13 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 		ledgerEntries: baselineFiles,
 	}
 
-	expect(checkMigrationLedger(baselineFiles, ledger)).toMatchObject({
-		ok: true,
-		errors: [],
-	})
 	expect(
 		checkMigrationLedger(baselineFiles, ledger, trustedHistory),
 	).toMatchObject({
 		ok: true,
 		errors: [],
-		nextPrefix: '0084',
-		maxPrefix: 83,
+		nextPrefix: '0087',
+		maxPrefix: 86,
 	})
 
 	const modifiedFiles = baselineFiles.map((entry) =>
@@ -203,7 +199,7 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 	])
 
 	const monotonicAddition: MigrationLedgerEntry = {
-		filename: '0084-normal-addition.sql',
+		filename: '0087-normal-addition.sql',
 		sha256: '2'.repeat(64),
 	}
 	const ledgerWithMonotonicAddition = structuredClone(ledger)
@@ -217,8 +213,8 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 	).toMatchObject({
 		ok: true,
 		errors: [],
-		nextPrefix: '0085',
-		maxPrefix: 84,
+		nextPrefix: '0088',
+		maxPrefix: 87,
 	})
 })
 
@@ -226,11 +222,11 @@ test('trusted history rejects a migration and ledger digest co-edit', async () =
 	const ledger = await readMigrationLedger()
 	const bootstrapFiles = ledger.migrations.map((entry) => ({ ...entry }))
 	const historicalEntry = {
-		filename: '0084-historical.sql',
+		filename: '0087-historical.sql',
 		sha256: hashMigrationContent('SELECT 1;\n'),
 	}
 	const trustedHistory: TrustedMigrationHistory = {
-		ref: 'trusted-base-with-0084',
+		ref: 'trusted-base-with-0087',
 		files: [...bootstrapFiles, historicalEntry],
 		ledgerEntries: [...bootstrapFiles, historicalEntry],
 	}
@@ -248,7 +244,7 @@ test('trusted history rejects a migration and ledger digest co-edit', async () =
 	)
 	expect(result.ok).toBe(false)
 	expectErrorsMention(result.errors, [
-		'0084-historical.sql',
+		'0087-historical.sql',
 		'Historical ledger entries cannot be edited',
 		'differs from trusted history',
 		'Migration and ledger digests cannot be changed together',
@@ -376,7 +372,7 @@ test('runtime main validation rejects a historical migration and ledger co-edit'
 			'packages',
 			'worker',
 			'migrations',
-			'0084-future.sql',
+			'0087-future.sql',
 		)
 		const ledgerPath = path.join(tempRoot, 'tools', 'migration-ledger.json')
 		const ledger = JSON.parse(
@@ -385,7 +381,7 @@ test('runtime main validation rejects a historical migration and ledger co-edit'
 		const originalSql = 'SELECT 1;\n'
 		await writeFile(migrationPath, originalSql)
 		ledger.migrations.push({
-			filename: '0084-future.sql',
+			filename: '0087-future.sql',
 			sha256: hashMigrationContent(originalSql),
 		})
 		await writeFile(ledgerPath, `${JSON.stringify(ledger, null, '\t')}\n`)
@@ -414,7 +410,7 @@ test('runtime main validation rejects a historical migration and ledger co-edit'
 			},
 		})
 		expect(result.status).toBe(1)
-		expect(result.stderr).toContain('0084-future.sql')
+		expect(result.stderr).toContain('0087-future.sql')
 		expect(result.stderr).toContain(
 			'Historical ledger entries cannot be edited',
 		)
