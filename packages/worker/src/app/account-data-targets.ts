@@ -120,6 +120,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'mcp_memory_suppression' },
 	{ kind: 'user_id', table: 'mcp_memories' },
 	{ kind: 'user_id', table: 'mcp_user_server_instructions' },
+	{ kind: 'user_id', table: 'mcp_agent_sessions' },
 	{
 		kind: 'bucket_parent',
 		table: 'value_entries',

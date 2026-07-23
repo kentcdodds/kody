@@ -1,6 +1,6 @@
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { createAccountExport } from '#app/account-export.ts'
+import { createAccountExportManifest } from '#app/account-export.ts'
 import { type routes } from '#app/routes.ts'
 
 function buildExportFilename(username: string) {
@@ -9,7 +9,7 @@ function buildExportFilename(username: string) {
 		.toLowerCase()
 		.replace(/[^a-z0-9_-]+/g, '-')
 		.replace(/^-+|-+$/g, '')
-	return `kody-account-export-${safeUsername || 'user'}.json`
+	return `kody-account-export-manifest-${safeUsername || 'user'}.json`
 }
 
 export function createAccountExportHandler(env: Env) {
@@ -23,18 +23,30 @@ export function createAccountExportHandler(env: Env) {
 					{ status: 401 },
 				)
 			}
-			const accountExport = await createAccountExport({
+			const manifest = await createAccountExportManifest({
 				env,
 				dbUserId: user.userId,
 				mcpUserId: user.mcpUser.userId,
 			})
-			const body = JSON.stringify(accountExport, null, 2)
+			const body = JSON.stringify(
+				{
+					manifest,
+					completeExport: {
+						manifestCapability: 'account_export_manifest',
+						sectionCapability: 'account_export_section',
+						note: 'This browser download is a bounded metadata manifest. Retrieve every section page, including r2_object chunks, through the account MCP export capabilities for a complete portable export.',
+					},
+				},
+				null,
+				2,
+			)
 			return new Response(body, {
 				status: 200,
 				headers: {
 					'Cache-Control': 'no-store',
 					'Content-Disposition': `attachment; filename="${buildExportFilename(user.username)}"`,
 					'Content-Type': 'application/json; charset=utf-8',
+					'X-Kody-Export-Completeness': 'manifest-only',
 				},
 			})
 		},

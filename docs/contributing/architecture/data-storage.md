@@ -79,10 +79,10 @@ Deletion must cover these user-owned surfaces:
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, and
   `PackageServiceInstance` are purged through account-deletion RPCs after their
-  D1 identifiers are collected. `MCP` objects are session-keyed by the MCP SDK
-  rather than user-keyed and are not globally enumerable; account deletion
-  revokes OAuth grants/tokens so those sessions cannot continue making
-  authorized user requests.
+  D1 identifiers are collected. `MCP` objects remain SDK session-keyed, while
+  `mcp_agent_sessions` indexes each Durable Object id by authenticated stable
+  user id so account deletion can purge stored props, conversation state,
+  raw-fetch state, and transport storage before revoking OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw email MIME blobs in `EMAIL_BLOBS` are enumerated from
@@ -151,8 +151,10 @@ hashes, and package invocation token hashes. The manifest states these
 redactions explicitly so a partial or intentionally redacted export is not
 mistaken for a complete secret backup.
 
-The browser route `GET /account/export.json` downloads a full JSON export for
-the signed-in user. The MCP capability domain `account` provides a
+The browser route `GET /account/export.json` downloads a bounded metadata
+manifest for the signed-in user and identifies the MCP capabilities required for
+a complete export. It deliberately does not inline D1 rows, Durable Object
+state, or R2 bytes. The MCP capability domain `account` provides the complete,
 migration-safe chunked interface:
 
 - `account_export_manifest` returns the manifest, counts, warnings, and chunking
@@ -169,11 +171,11 @@ migration-safe chunked interface:
   overwrites are reported instead of mixing generations. Missing objects are
   represented explicitly.
 
-D1 rows are always read with SQL-level keyset pagination: every query orders by
-the table's `rowid`, resumes strictly after an opaque cursor, and applies a SQL
-`LIMIT`, so a single query never loads a whole table. `account_export_section`
-fetches only the requested page, and the full browser export streams each table
-page by page (500 rows per query) before assembling the final JSON document.
+D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
+with SQL-level keyset pagination: every query orders by the table's `rowid`,
+resumes strictly after an opaque cursor, and applies a SQL `LIMIT`, so a single
+query never loads a whole table. `account_export_section` fetches only the
+requested page.
 
 Durable Object export behavior:
 
@@ -692,7 +694,8 @@ to `durableObjectNameFromParts`).
 - `RemoteConnectorSession`:
   `idFromName(JSON.stringify([userId.trim(), normalizedInstanceId]))`.
 - `MCP`: session-keyed by the MCP SDK rather than by user id; OAuth caller
-  context is the request-time ownership boundary.
+  context is the request-time ownership boundary and `mcp_agent_sessions`
+  provides deletion-only enumeration by stable user id.
 
 Storage ids are also stable strings: execute storage uses `exec:{uuid}`, job
 storage uses `job:{jobId}`, and package services use

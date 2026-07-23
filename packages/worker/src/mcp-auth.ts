@@ -5,6 +5,7 @@ import {
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
+import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { listAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'
@@ -157,5 +158,14 @@ export async function handleMcpRequest({
 	})
 	context.props = props
 
-	return fetchMcp(request, env, context as ExecutionContext<OAuthContextProps>)
+	return await withAccountWriteLease({
+		db: env.APP_DB,
+		stableUserId: mcpUser.userId,
+		write: async () =>
+			await fetchMcp(
+				request,
+				env,
+				context as ExecutionContext<OAuthContextProps>,
+			),
+	})
 }

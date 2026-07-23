@@ -117,12 +117,12 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 		{
 			id: 'mcp',
 			binding: 'MCP',
-			deletionResultKey: null,
+			deletionResultKey: 'mcpAgentSessions',
 			export: 'exclude',
 			excludeReason:
 				'Session-keyed by the MCP SDK and not globally enumerable; durable user data is carried by D1 and user-scoped stores instead.',
 			notes:
-				'Export-excluded only; not purged by account deletion enumeration.',
+				'Session DO ids are indexed by user in mcp_agent_sessions and purged during account deletion.',
 		},
 	] as const
 

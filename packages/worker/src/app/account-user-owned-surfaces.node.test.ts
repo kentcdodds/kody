@@ -50,6 +50,7 @@ test('account deletion durable object result keys are declared by the registry',
 	expect([...getAccountDeletionDurableObjectResultKeys()].sort()).toEqual([
 		'jobManagers',
 		'mcpClientHubs',
+		'mcpAgentSessions',
 		'packageRealtimeSessions',
 		'packageServiceInstances',
 		'remoteConnectorSessions',

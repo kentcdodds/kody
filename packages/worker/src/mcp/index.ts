@@ -20,6 +20,7 @@ import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-conne
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type RawFetchHostNudgeState } from '#mcp/raw-fetch-host-nudge.ts'
 import { listPopularAgentPackagesForUser } from '#worker/usage/agent-package-conversation-uses.ts'
+import { registerMcpAgentSession } from './session-registry.ts'
 
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
@@ -67,6 +68,13 @@ class MCPBase extends McpAgent<Env, State, Props> {
 	async init() {
 		const caller = this.getCallerContext()
 		const userId = caller.user?.userId ?? null
+		if (userId !== null) {
+			await registerMcpAgentSession({
+				db: this.env.APP_DB,
+				userId,
+				doId: this.ctx.id.toString(),
+			})
+		}
 		const [overlay, remoteConnectors, registry, popularPackages] =
 			await Promise.all([
 				userId !== null
@@ -111,6 +119,13 @@ class MCPBase extends McpAgent<Env, State, Props> {
 			'This should never happen, but somehow we did not get the baseUrl from the request handler',
 		)
 		return baseUrl
+	}
+	async purgeForAccountDeletion(input: { userId: string }) {
+		const storedUserId = this.getCallerContext().user?.userId ?? null
+		if (storedUserId !== input.userId) {
+			throw new Error('MCP agent session user scope mismatch.')
+		}
+		await this.ctx.storage.deleteAll()
 	}
 }
 

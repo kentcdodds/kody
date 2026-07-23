@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
 	createAccountExport,
+	createAccountExportManifest,
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
 } from './account-export.ts'
@@ -993,8 +994,10 @@ test('createAccountExport records partial-failure warnings and section paginatio
 
 test('D1 export reads large tables in bounded keyset pages', async () => {
 	const rowCounts: Array<number> = []
+	const queries: Array<string> = []
 	const { sqlite, db } = createMigratedDb({
 		onQueryRows: (rowCount) => rowCounts.push(rowCount),
+		onQuery: (query) => queries.push(query),
 	})
 	sqlite.exec(`
 		INSERT INTO users (
@@ -1054,4 +1057,17 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 	expect(pages).toBe(3)
 	expect(seenIds.size).toBe(totalMessages)
 	expect(Math.max(...rowCounts)).toBeLessThanOrEqual(501)
+
+	rowCounts.length = 0
+	queries.length = 0
+	const manifest = await createAccountExportManifest({
+		env: { APP_DB: db } as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(manifest.sections['d1.email_messages']?.count).toBe(totalMessages)
+	expect(Math.max(...rowCounts)).toBeLessThanOrEqual(1)
+	expect(
+		queries.some((query) => query.includes('__account_export_rowid')),
+	).toBe(false)
 })

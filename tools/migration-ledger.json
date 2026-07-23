@@ -359,6 +359,18 @@
 		{
 			"filename": "0083-plan-default-free.sql",
 			"sha256": "ef9925149fdd182ae3e6ded2b237d002305a4b883ed4350de6047c9f0debf1f8"
+		},
+		{
+			"filename": "0084-account-deleting-state.sql",
+			"sha256": "524e1dea0f536245158fb79a010d0a5204ddfe3d6b5e30ef0ae11944b1714348"
+		},
+		{
+			"filename": "0085-account-write-leases.sql",
+			"sha256": "3f10e9c847010e2269854aa5e52ff1e8d3a61fed3d300d6432ad9b0d2a8f9d47"
+		},
+		{
+			"filename": "0086-mcp-agent-sessions.sql",
+			"sha256": "ed2fa13727f79f2091bf8759598defc6463023058f31faf51faee1ca3ea4d92d"
 		}
 	]
 }

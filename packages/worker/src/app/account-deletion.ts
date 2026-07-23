@@ -34,6 +34,10 @@ import {
 	deleteAccountEmailBlobPrefixes,
 } from '#app/account-r2-prefix-cleanup.ts'
 import {
+	listMcpAgentSessionsForUser,
+	type McpAgentSession,
+} from '#mcp/session-registry.ts'
+import {
 	AccountDeletionWritersActiveError,
 	markAccountDeleting,
 } from '#app/account-deletion-state.ts'
@@ -124,6 +128,7 @@ type UserDeletionInventory = {
 	repoSessions: Array<UserRepoSessionSnapshot>
 	remoteConnectors: Array<UserRemoteConnectorSnapshot>
 	mcpServers: Array<UserMcpServerSnapshot>
+	mcpAgentSessions: Array<McpAgentSession>
 	packageServices: Array<UserPackageServiceSnapshot>
 	communityListings: Array<AccountCommunityListingSnapshot>
 }
@@ -388,6 +393,7 @@ async function collectUserDeletionInventory(input: {
 		repoSessions,
 		remoteConnectors,
 		mcpServers,
+		mcpAgentSessions,
 		packageServices,
 	] = await Promise.all([
 		listUserVectorIds(input.env, input.userId).catch((error) => {
@@ -429,6 +435,12 @@ async function collectUserDeletionInventory(input: {
 			recordInventoryError('MCP servers', error)
 			return [] as Array<UserMcpServerSnapshot>
 		}),
+		listMcpAgentSessionsForUser(input.env.APP_DB, input.userId).catch(
+			(error) => {
+				recordInventoryError('MCP agent sessions', error)
+				return [] as Array<McpAgentSession>
+			},
+		),
 		listUserPackageServices(input.env, input.userId).catch((error) => {
 			recordInventoryError('package services', error)
 			return [] as Array<UserPackageServiceSnapshot>
@@ -456,6 +468,7 @@ async function collectUserDeletionInventory(input: {
 		repoSessions,
 		remoteConnectors,
 		mcpServers,
+		mcpAgentSessions,
 		packageServices,
 		communityListings: r2Inventory.communityListings,
 	}
@@ -645,6 +658,40 @@ async function purgeMcpClientHub(input: {
 		input.warnings.push(`MCP client hub purge failed: ${message}`)
 		return 0
 	}
+}
+
+async function purgeMcpAgentSessions(input: {
+	env: Env
+	userId: string
+	sessions: ReadonlyArray<McpAgentSession>
+	warnings: Array<string>
+}) {
+	const namespace = input.env.MCP_OBJECT
+	if (!namespace) {
+		if (input.sessions.length > 0) {
+			input.warnings.push(
+				`MCP_OBJECT binding was unavailable; ${input.sessions.length} MCP agent session(s) were not purged.`,
+			)
+		}
+		return 0
+	}
+	let purged = 0
+	for (const session of input.sessions) {
+		try {
+			const stub = namespace.get(
+				namespace.idFromString(session.doId),
+			) as unknown as {
+				purgeForAccountDeletion: (payload: { userId: string }) => Promise<void>
+			}
+			await stub.purgeForAccountDeletion({ userId: input.userId })
+			purged += 1
+		} catch (error) {
+			input.warnings.push(
+				`MCP agent session purge failed for ${session.doId}: ${getErrorMessage(error)}`,
+			)
+		}
+	}
+	return purged
 }
 
 async function purgePackageRealtimeSessions(input: {
@@ -954,6 +1001,12 @@ export async function deleteUserAccount(input: {
 	result.clearedDurableObjects.mcpClientHubs = await purgeMcpClientHub({
 		env: input.env,
 		userId: input.mcpUserId,
+		warnings,
+	})
+	result.clearedDurableObjects.mcpAgentSessions = await purgeMcpAgentSessions({
+		env: input.env,
+		userId: input.mcpUserId,
+		sessions: inventory.mcpAgentSessions,
 		warnings,
 	})
 	result.clearedDurableObjects.packageRealtimeSessions =

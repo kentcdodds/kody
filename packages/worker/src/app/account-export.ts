@@ -745,6 +745,52 @@ async function collectD1Tables(input: {
 	)
 }
 
+async function collectD1TableCounts(input: {
+	env: AccountExportEnv
+	dbUserId: number
+	mcpUserId: string
+	warnings: Array<string>
+}) {
+	const conditionsByTable = buildD1TableConditions({
+		mcpUserId: input.mcpUserId,
+		dbUserId: input.dbUserId,
+	})
+	const sections: Array<[string, AccountExportManifestSection]> = []
+	for (const [table, conditions] of conditionsByTable) {
+		const where = conditions
+			.map((condition) => `(${condition.condition})`)
+			.join(' OR ')
+		try {
+			const row = await input.env.APP_DB.prepare(
+				`SELECT COUNT(*) AS count FROM ${table} WHERE (${where})`,
+			)
+				.bind(...conditions.flatMap((condition) => condition.params))
+				.first<{ count: number }>()
+			const count = Number(row?.count ?? 0)
+			const redactedColumns = [
+				...(accountExportRedactedColumnsByTable[table] ?? []),
+			].sort()
+			sections.push([
+				`d1.${table}`,
+				{
+					count,
+					warnings: [],
+					...(count > 0 && redactedColumns.length > 0
+						? { redactedColumns }
+						: {}),
+				},
+			])
+		} catch (error) {
+			const warning = `D1 export failed for ${table}: ${getErrorMessage(error)}`
+			input.warnings.push(warning)
+			sections.push([`d1.${table}`, { count: 0, warnings: [warning] }])
+		}
+	}
+	return Object.fromEntries(
+		sections.sort(([left], [right]) => left.localeCompare(right)),
+	)
+}
+
 function parseRowidCursor(startAfter: string | undefined) {
 	if (!startAfter) return 0
 	const parsed = Number.parseInt(startAfter, 10)
@@ -987,14 +1033,17 @@ function buildManifest(input: {
 	generatedAt: string
 	dbUserId: number
 	mcpUserId: string
-	d1: Record<string, AccountExportD1Table>
+	d1?: Record<string, AccountExportD1Table>
+	d1Sections?: Record<string, AccountExportManifestSection>
 	durableObjects?: AccountExportDurableObjects | null
 	oauthGrants?: ReadonlyArray<{ id: string; clientId: string }>
 	inventory: UserExportInventory
 	warnings: Array<string>
 }) {
-	const sections: Record<string, AccountExportManifestSection> = {}
-	for (const [table, exportTable] of Object.entries(input.d1)) {
+	const sections: Record<string, AccountExportManifestSection> = {
+		...input.d1Sections,
+	}
+	for (const [table, exportTable] of Object.entries(input.d1 ?? {})) {
 		sections[`d1.${table}`] = {
 			count: exportTable.rows.length,
 			warnings: exportTable.warnings,
@@ -1108,8 +1157,8 @@ export async function createAccountExportManifest(input: {
 }): Promise<AccountExportManifest> {
 	const warnings: Array<string> = []
 	const generatedAt = input.generatedAt ?? new Date().toISOString()
-	const [d1, inventory, oauthGrants] = await Promise.all([
-		collectD1Tables({
+	const [d1Sections, inventory, oauthGrants] = await Promise.all([
+		collectD1TableCounts({
 			env: input.env,
 			dbUserId: input.dbUserId,
 			mcpUserId: input.mcpUserId,
@@ -1131,7 +1180,7 @@ export async function createAccountExportManifest(input: {
 		generatedAt,
 		dbUserId: input.dbUserId,
 		mcpUserId: input.mcpUserId,
-		d1,
+		d1Sections,
 		inventory,
 		oauthGrants,
 		warnings,

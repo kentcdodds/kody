@@ -154,6 +154,15 @@ function createTestDb(
 							}
 							if (
 								lower ===
+								'select do_id from mcp_agent_sessions where user_id = ? order by do_id'
+							) {
+								results = (rows.mcp_agent_sessions ?? [])
+									.filter((row) => row['user_id'] === userId)
+									.map((row) => ({ do_id: row['do_id'] }))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower ===
 								"select distinct package_id, name from package_runtime_runs where user_id = ? and surface = 'service' and name is not null"
 							) {
 								const seen = new Set<string>()
@@ -713,6 +722,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'rc-1', user_id: userAaa, instance_id: 'home' },
 			{ id: 'rc-2', user_id: userBbb, instance_id: 'other' },
 		],
+		mcp_agent_sessions: [
+			{ do_id: 'do-user-a', user_id: userAaa },
+			{ do_id: 'do-user-b', user_id: userBbb },
+		],
 		saved_packages: [
 			{
 				id: 'pkg-1',
@@ -1034,6 +1047,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeMcpClientHubMock = vi.fn(async () => undefined)
+	const purgeMcpAgentSessionMock = vi.fn(async () => undefined)
 	const doFetchMock = vi.fn(async () => Response.json({ ok: true }))
 	const deleteVectorsMock = vi.fn(async () => undefined)
 	const env = createSuccessfulDeletionEnv(db, {
@@ -1062,6 +1076,12 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		MCP_CLIENT_HUB: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({ purgeForAccountDeletion: purgeMcpClientHubMock }),
+		},
+		MCP_OBJECT: {
+			idFromString: (id: string) => id as unknown as DurableObjectId,
+			get: () => ({
+				purgeForAccountDeletion: purgeMcpAgentSessionMock,
+			}),
 		},
 		PACKAGE_REALTIME_SESSION: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
@@ -1098,6 +1118,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	])
 	expect(rows.remote_connector_settings).toEqual([
 		{ id: 'rc-2', user_id: userBbb, instance_id: 'other' },
+	])
+	expect(rows.mcp_agent_sessions).toEqual([
+		{ do_id: 'do-user-b', user_id: userBbb },
 	])
 	expect(rows.published_bundle_artifacts).toEqual([
 		{ id: 'pba-2', user_id: userBbb, kv_key: 'bundle-artifact:v1:src-2' },
@@ -1300,10 +1323,14 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		// mcp_server_settings rows, since the hub DO can still hold OAuth
 		// tokens from failed or removed registrations.
 		mcpClientHubs: 1,
+		mcpAgentSessions: 1,
 		packageRealtimeSessions: 1,
 		packageServiceInstances: 2,
 	})
 	expect(purgeMcpClientHubMock).toHaveBeenCalledTimes(1)
+	expect(purgeMcpAgentSessionMock).toHaveBeenCalledWith({
+		userId: userAaa,
+	})
 	expect(result.warnings).toEqual([])
 })
 
