@@ -98,11 +98,18 @@ test('an existing object without a manifest is recoverable', async () => {
 	assert.equal(recovered.alreadyExisted, false)
 	await putImmutableManifest(bucket as unknown as R2Bucket, manifestKey, {
 		...manifest(recovered),
-		bookmark: 'bookmark-2',
-		objectKey: recoveryKey,
+		payload: {
+			...manifest(recovered).payload,
+			export: {
+				...manifest(recovered).payload.export,
+				bookmark: 'bookmark-2',
+			},
+			sql: { ...manifest(recovered).payload.sql, objectKey: recoveryKey },
+		},
 	})
 	assert.equal(
-		(await readManifest(bucket as unknown as R2Bucket, manifestKey))?.objectKey,
+		(await readManifest(bucket as unknown as R2Bucket, manifestKey))?.payload
+			.sql.objectKey,
 		recoveryKey,
 	)
 	assert.notEqual(await bucket.head(orphanKey), null)
@@ -283,6 +290,24 @@ test('download HTTP and malformed length failures have safe retry classification
 	)
 })
 
+test('zero-byte export is retryable and never stored', async () => {
+	const bucket = new MemoryBucket()
+	await assert.rejects(
+		storeSignedDownload(
+			bucket as unknown as R2Bucket,
+			'empty.sql',
+			'https://download.example',
+			async () => new Response('', { headers: { 'content-length': '0' } }),
+		),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'download-empty' &&
+			error.retryable,
+	)
+	assert.equal(await bucket.head('empty.sql'), null)
+	assert.equal(bucket.puts.length, 0)
+})
+
 test('pre-existing object at the size limit cannot be resumed into a manifest', async () => {
 	const bucket = new MemoryBucket()
 	await storeSignedDownload(
@@ -329,14 +354,14 @@ test('manifest is immutable across duplicate writes and commit changes', async (
 	await assert.rejects(
 		putImmutableManifest(bucket as unknown as R2Bucket, 'manifest.json', {
 			...first,
-			commit: 'different',
+			payload: { ...first.payload, buildCommit: 'different' },
 		}),
 		(error: unknown) =>
 			error instanceof BackupError && error.code === 'manifest-conflict',
 	)
 	assert.equal(
 		(await readManifest(bucket as unknown as R2Bucket, 'manifest.json'))
-			?.commit,
+			?.payload.buildCommit,
 		'abc123',
 	)
 })
@@ -359,7 +384,14 @@ test('an existing source-matched object must also match its immutable manifest',
 		'https://download.example',
 		async () => new Response('valid', { headers: { 'content-length': '5' } }),
 	)
-	const recorded = { ...manifest(stored), objectKey: 'backup.sql' }
+	const originalManifest = manifest(stored)
+	const recorded = {
+		...originalManifest,
+		payload: {
+			...originalManifest.payload,
+			sql: { ...originalManifest.payload.sql, objectKey: 'backup.sql' },
+		},
+	}
 	await putImmutableManifest(
 		bucket as unknown as R2Bucket,
 		'manifest.json',

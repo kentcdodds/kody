@@ -26,13 +26,19 @@ const applicationMigrationsDirectory = fileURLToPath(
 export const restoreTrustRegistryPath = fileURLToPath(
 	new URL('./trusted-d1-restore-identities.json', import.meta.url),
 )
+export const manifestPublicKeyRegistryPath = fileURLToPath(
+	new URL('./trusted-backup-manifest-public-keys.json', import.meta.url),
+)
+export const restoreBaselineRegistryPath = fileURLToPath(
+	new URL('./trusted-restore-baselines.json', import.meta.url),
+)
 
 type CliArguments = {
 	manifestPath: string
 	manifestSha256: string
 	backupPath: string
-	baselinePath: string
-	postForwardBaselinePath?: string
+	baselineId: string
+	postForwardBaselineId?: string
 	targetAccountId: string
 	targetName: string
 	execute: boolean
@@ -44,10 +50,10 @@ export function parseArguments(argv: ReadonlyArray<string>): CliArguments {
 	const switches = new Set<string>()
 	const valuedArguments = new Set([
 		'--backup',
-		'--baseline',
+		'--baseline-id',
 		'--manifest',
 		'--manifest-sha256',
-		'--post-forward-baseline',
+		'--post-forward-baseline-id',
 		'--target-account-id',
 		'--target-name',
 	])
@@ -80,8 +86,8 @@ export function parseArguments(argv: ReadonlyArray<string>): CliArguments {
 		manifestPath: required('--manifest'),
 		manifestSha256: required('--manifest-sha256'),
 		backupPath: required('--backup'),
-		baselinePath: required('--baseline'),
-		postForwardBaselinePath: values.get('--post-forward-baseline'),
+		baselineId: required('--baseline-id'),
+		postForwardBaselineId: values.get('--post-forward-baseline-id'),
 		targetAccountId: required('--target-account-id'),
 		targetName: required('--target-name'),
 		execute: switches.has('--execute'),
@@ -358,19 +364,26 @@ export function createAdapters(
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
 	const args = parseArguments(argv)
-	const manifestBytes = await readFile(args.manifestPath)
-	const manifest = parseAndVerifyManifest(manifestBytes, args.manifestSha256)
-	const backupFileEvidence = await collectBackupFileEvidence(
-		args.backupPath,
-		manifest.bytes,
-	)
-	const [baseline, trustRegistry] = await Promise.all([
-		readJson(args.baselinePath),
+	const [
+		manifestBytes,
+		manifestPublicKeyRegistry,
+		baselineRegistry,
+		trustRegistry,
+	] = await Promise.all([
+		readFile(args.manifestPath),
+		readJson(manifestPublicKeyRegistryPath),
+		readJson(restoreBaselineRegistryPath),
 		readJson(restoreTrustRegistryPath),
 	])
-	const postForwardBaseline = args.postForwardBaselinePath
-		? await readJson(args.postForwardBaselinePath)
-		: undefined
+	const manifest = parseAndVerifyManifest(
+		manifestBytes,
+		args.manifestSha256,
+		manifestPublicKeyRegistry,
+	)
+	const backupFileEvidence = await collectBackupFileEvidence(
+		args.backupPath,
+		manifest.payload.sql.bytes,
+	)
 	const token = args.execute
 		? process.env[drillTokenEnvironmentVariable]
 		: 'unused-in-dry-run'
@@ -383,10 +396,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 		{
 			manifestBytes,
 			expectedManifestSha256: args.manifestSha256,
+			manifestPublicKeyRegistry,
 			backupFileEvidence,
 			backupFile: args.backupPath,
-			baseline,
-			postForwardBaseline,
+			baselineId: args.baselineId,
+			postForwardBaselineId: args.postForwardBaselineId,
+			baselineRegistry,
 			targetAccountId: args.targetAccountId,
 			targetName: args.targetName,
 			trustRegistry,

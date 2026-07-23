@@ -202,6 +202,15 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   as `session_repo_namespace` so follow-up lookups resolve the correct namespace
   even after env changes.
 
+## Backup manifest signing
+
+The separately deployed backup Worker uses non-secret
+`BACKUP_MANIFEST_SIGNING_KEY_ID`, `TRUSTED_RESTORE_BASELINE_ID`, and
+`TRUSTED_RESTORE_BASELINE_SHA256` vars. Its
+`BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64` value is a secret containing
+only base64-encoded Ed25519 PKCS#8 private-key bytes. Configure it with Wrangler
+secret storage, never in a `.env`, checked config, log, or evidence artifact.
+
 ## Why Zod?
 
 Zod gives type inference for `Env`-driven values and a single runtime gate that

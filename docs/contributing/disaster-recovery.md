@@ -447,16 +447,17 @@ For each run, the Workflow:
 5. in every upload callback execution, polls with the cached bookmark for a
    fresh signed response and streams it into the destination `BACKUP_BUCKET`,
    computing bytes, SHA-256, and R2 ETag; it requires a valid `Content-Length`,
-   rejects a declared length at or above 5 GiB, and rejects a streamed
-   byte-count mismatch. The same strictly-below-5-GiB limit is enforced when an
+   rejects zero bytes or a declared length at or above 5 GiB, and rejects a
+   streamed byte-count mismatch. Zero-byte rejection is retryable and writes no
+   object or manifest. The same strictly-below-5-GiB limit is enforced when an
    immutable object already exists, so a pre-existing object at the limit cannot
    be resumed into a manifest;
 6. in one retryable finalization step, polls the export API once per callback
    execution with the cached bookmark, requires the same completed bookmark,
    uses the newly returned signed URL to repeat source comparison whenever the
-   canonical manifest is absent, and writes schema-version-1 immutable manifest
-   metadata including source identity, D1 bookmark, timestamps, key, hash, ETag,
-   build commit, and retention tier;
+   canonical manifest is absent, and writes schema-version-2 signed immutable
+   manifest metadata including source identity, D1 bookmark, timestamps, key,
+   hash, ETag, build commit, and retention tier;
 7. emits structured success/failure logs. The hourly freshness check validates
    live source identity and `file_size` against the same size ceiling before it
    validates the expected manifest identity, shape, maximum age (26 hours by
@@ -603,17 +604,24 @@ name.
 
 Both checked-in lists are intentionally empty until identities are approved in
 code review. Therefore both dry-run and `--execute` currently fail closed before
-target creation. The operator-supplied manifest SHA-256 proves the integrity of
-the exact manifest bytes; it does not trust their asserted source identity. Only
-an exact match against the checked-in `productionSources` list establishes
-source trust.
+target creation. The operator-supplied manifest SHA-256 proves exact-byte
+integrity but cannot authorize restore. Authorization additionally requires a
+valid schema-v2 Ed25519 signature from the sole checked-in, initially empty
+`trusted-backup-manifest-public-keys.json` registry and an exact match against
+`productionSources`.
+
+Restore expectations come only from the initially empty
+`trusted-restore-baselines.json` registry. Each exact-schema entry has a
+lower-kebab id, source account/D1 identity and exact database name, full
+schema/migration/sequence/isolation baseline, and verified canonical SHA-256.
+The CLI accepts ids only; it accepts no caller baseline file or registry path.
 
 ```sh
 node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest restore-manifest.json \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
   --backup downloaded-export.sql \
-  --baseline restore-baseline.json \
+  --baseline-id "<CHECKED_BASELINE_ID>" \
   --target-account-id "<CHECKED_DRILL_ACCOUNT_ID>" \
   --target-name "<CHECKED_DRILL_DATABASE_NAME>"
 
@@ -623,25 +631,25 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest restore-manifest.json \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
   --backup downloaded-export.sql \
-  --baseline restore-baseline.json \
+  --baseline-id "<CHECKED_BASELINE_ID>" \
   --target-account-id "<CHECKED_DRILL_ACCOUNT_ID>" \
   --target-name "<CHECKED_DRILL_DATABASE_NAME>" \
   --execute
 ```
 
-The CLI verifies the exact manifest bytes against the separately supplied
-manifest SHA-256 as an integrity check, independently verifies the manifest's
-exact source identity against the checked-in trust registry, stats the SQL file,
-rejects files at or above 5 GiB or with a manifest size mismatch, then computes
-SHA-256 as a stream without retaining the dump in memory. It does not split
-oversized dumps. It dry-runs by default and does not create a target. With
-`--execute`, it requires `CLOUDFLARE_D1_DRILL_EDIT_TOKEN`, live-creates a new D1
-database in the exact checked drill account with the exact checked drill name
-immediately before import, and verifies Cloudflare's returned UUID, exact
-requested name, and `created_at` against the creation window. It never creates a
-target in any account listed in `productionSources`. New creation is the
-empty/unbound proof. The drill-only token is passed to Wrangler as
-`CLOUDFLARE_API_TOKEN` with the selected target account and is never printed.
+The CLI verifies the exact manifest bytes hash and Ed25519 signature,
+independently verifies the signed source identity and signed baseline
+id/canonical digest against checked registries, stats the SQL file, rejects
+files at or above 5 GiB or with a manifest size mismatch, then computes SHA-256
+as a stream without retaining the dump in memory. It does not split oversized
+dumps. It dry-runs by default and does not create a target. With `--execute`, it
+requires `CLOUDFLARE_D1_DRILL_EDIT_TOKEN`, live-creates a new D1 database in the
+exact checked drill account with the exact checked drill name immediately before
+import, and verifies Cloudflare's returned UUID, exact requested name, and
+`created_at` against the creation window. It never creates a target in any
+account listed in `productionSources`. New creation is the empty/unbound proof.
+The drill-only token is passed to Wrangler as `CLOUDFLARE_API_TOKEN` with the
+selected target account and is never printed.
 
 After live creation, the CLI generates a temporary local Wrangler config whose
 `D1_RESTORE_TARGET` binding contains the returned target UUID and exact target
@@ -664,15 +672,15 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --manifest restore-manifest.json \
   --manifest-sha256 "<OPERATOR_SUPPLIED_MANIFEST_SHA256>" \
   --backup downloaded-export.sql \
-  --baseline restore-baseline.json \
-  --post-forward-baseline post-forward-baseline.json \
+  --baseline-id "<CHECKED_BASELINE_ID>" \
+  --post-forward-baseline-id "<CHECKED_POST_FORWARD_BASELINE_ID>" \
   --target-account-id "<CHECKED_DRILL_ACCOUNT_ID>" \
   --target-name "<CHECKED_FORWARD_DRILL_DATABASE_NAME>" \
   --apply-forward-migrations \
   --execute
 ```
 
-`--apply-forward-migrations` without `--post-forward-baseline`, and a
+`--apply-forward-migrations` without `--post-forward-baseline-id`, and a
 post-forward baseline without the migration switch, both fail closed. Delete the
 live-created drill target only through the separate approved operator cleanup
 procedure, after evidence is retained and the approved cleanup window starts.
@@ -985,11 +993,20 @@ source-size check, the exact content shape is:
 		"changeId": "<CHANGE_ID>",
 		"destinationIdentity": null,
 		"details": {
+			"backupManifestSha256": "<LOWERCASE_SHA256>",
 			"ceilingBytes": 4500000000,
+			"isolationBaselineSha256": "<LOWERCASE_SHA256>",
 			"measuredBytes": 123456789,
+			"migrationSetSha256": "<LOWERCASE_SHA256>",
 			"monitoredAt": "<UTC_ISO_TIMESTAMP_WITH_MILLISECONDS>",
+			"schemaSha256": "<LOWERCASE_SHA256>",
 			"sourceAccountId": "<SOURCE_ACCOUNT_ID>",
-			"sourceDatabaseUuid": "<SOURCE_D1_UUID>"
+			"sourceBookmark": "<D1_EXPORT_BOOKMARK>",
+			"sourceDatabaseName": "<EXACT_PRODUCTION_D1_NAME>",
+			"sourceDatabaseUuid": "<SOURCE_D1_UUID>",
+			"sqlSha256": "<LOWERCASE_SHA256>",
+			"trustedBaselineId": "<LOWER_KEBAB_BASELINE_ID>",
+			"trustedBaselineSha256": "<LOWERCASE_SHA256>"
 		},
 		"kind": "d1-size-ceiling-check",
 		"outcome": "passed",
@@ -1030,9 +1047,18 @@ database. Its exact shape is:
 			"resourceId": "<LIVE_CREATED_DRILL_D1_UUID>"
 		},
 		"details": {
+			"backupManifestSha256": "<LOWERCASE_SHA256>",
 			"foreignKeyViolations": 0,
+			"isolationBaselineSha256": "<LOWERCASE_SHA256>",
+			"migrationSetSha256": "<LOWERCASE_SHA256>",
 			"quickCheck": "ok",
-			"restoredDatabaseUuid": "<LIVE_CREATED_DRILL_D1_UUID>"
+			"restoredDatabaseUuid": "<LIVE_CREATED_DRILL_D1_UUID>",
+			"schemaSha256": "<LOWERCASE_SHA256>",
+			"sourceBookmark": "<D1_EXPORT_BOOKMARK>",
+			"sourceDatabaseName": "<EXACT_PRODUCTION_D1_NAME>",
+			"sqlSha256": "<LOWERCASE_SHA256>",
+			"trustedBaselineId": "<LOWER_KEBAB_BASELINE_ID>",
+			"trustedBaselineSha256": "<LOWERCASE_SHA256>"
 		},
 		"kind": "d1-restore-drill",
 		"outcome": "passed",
@@ -1054,10 +1080,13 @@ database. Its exact shape is:
 }
 ```
 
-The signed `restoredDatabaseUuid` must equal `destinationIdentity.resourceId`.
-Both the destination account and destination resource must differ from their
-source counterparts; a same-account drill or a reused source database UUID fails
-readiness even with a valid signature.
+The size and restore envelopes must agree on every provenance digest/id,
+bookmark, and exact database name. Baseline-derived values must match the
+checked baseline registry, and APP_DB source account/UUID/name must match the
+checked production registry. The signed `restoredDatabaseUuid` must equal
+`destinationIdentity.resourceId`. Both the destination account and destination
+resource must differ from their source counterparts; a same-account drill or a
+reused source database UUID fails readiness even with a valid signature.
 
 Every APP_DB envelope requires `sourceIdentity.accountId` and each non-null
 `destinationIdentity.accountId` to be a canonical Cloudflare account ID: exactly

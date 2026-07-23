@@ -22,7 +22,7 @@ import {
 	parseTrustedPublicKeyRegistry,
 	verifyLocalArtifactFiles,
 } from './canonical-readiness-cli.ts'
-import { sha256 } from './canonical-json.ts'
+import { canonicalJson, sha256 } from './canonical-json.ts'
 
 const appKinds = [
 	'inventory',
@@ -45,6 +45,19 @@ const destinationIdentity = {
 	accountId: 'fedcba9876543210fedcba9876543210',
 	resourceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
 }
+const migrationNames = ['0001-initial.sql']
+const isolationChecks: Array<unknown> = []
+const restoreProvenance = {
+	backupManifestSha256: '1'.repeat(64),
+	isolationBaselineSha256: sha256(canonicalJson(isolationChecks)),
+	migrationSetSha256: sha256(canonicalJson(migrationNames)),
+	schemaSha256: '3'.repeat(64),
+	sourceBookmark: 'bookmark-1',
+	sourceDatabaseName: 'kody-production',
+	sqlSha256: '2'.repeat(64),
+	trustedBaselineId: 'production-baseline-2026',
+	trustedBaselineSha256: '4'.repeat(64),
+}
 
 function detailsFor(kind: AppKind): EvidenceDetailsByKind[AppKind] {
 	switch (kind) {
@@ -63,6 +76,7 @@ function detailsFor(kind: AppKind): EvidenceDetailsByKind[AppKind] {
 			return { checksPassed: 5, contractVersion: '2026-07-22' }
 		case 'd1-size-ceiling-check':
 			return {
+				...restoreProvenance,
 				ceilingBytes: 4_500_000_000,
 				measuredBytes: 1024,
 				monitoredAt: performedAt,
@@ -71,6 +85,7 @@ function detailsFor(kind: AppKind): EvidenceDetailsByKind[AppKind] {
 			}
 		case 'd1-restore-drill':
 			return {
+				...restoreProvenance,
 				foreignKeyViolations: 0,
 				quickCheck: 'ok',
 				restoredDatabaseUuid: destinationIdentity.resourceId,
@@ -191,14 +206,36 @@ async function isD1Ready(
 	evidence: unknown,
 	evidencePath: string,
 	registry: TrustedPublicKeyRegistry,
+	trustedSource = sourceIdentity,
 ): Promise<boolean> {
 	const verified = await verifyLocalArtifactFiles(
 		evidence,
 		evidencePath,
 		registry,
 	)
-	return assessCanonicalReadiness(evidence, now, verified).levels['d1-only']
-		.ready
+	return assessCanonicalReadiness(
+		evidence,
+		now,
+		verified,
+		[
+			{
+				accountId: trustedSource.accountId,
+				databaseId: trustedSource.resourceId,
+				databaseName: restoreProvenance.sourceDatabaseName,
+			},
+		],
+		[
+			{
+				id: restoreProvenance.trustedBaselineId,
+				canonicalSha256: restoreProvenance.trustedBaselineSha256,
+				baseline: {
+					schemaSha256: restoreProvenance.schemaSha256,
+					migrationNames,
+					isolationChecks,
+				},
+			},
+		],
+	).levels['d1-only'].ready
 }
 
 test('minimal D1 readiness requires every kind-specific signed envelope', async () => {
@@ -282,6 +319,71 @@ test('minimal D1 readiness requires every kind-specific signed envelope', async 
 		expect(
 			await isD1Ready(unsupportedEvidence, fixture.evidencePath, registry),
 		).toBe(false)
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+})
+
+test('signed D1 provenance must match checked source and every bound digest', async () => {
+	const directory = await mkdtemp(
+		path.join(os.tmpdir(), 'readiness-provenance-'),
+	)
+	try {
+		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+		const fixture = await createFixture(directory, privateKey)
+		const registry = registryFor(publicKey)
+		const verified = await verifyLocalArtifactFiles(
+			fixture.evidence,
+			fixture.evidencePath,
+			registry,
+		)
+		expect(
+			assessCanonicalReadiness(fixture.evidence, now, verified).levels[
+				'd1-only'
+			].ready,
+		).toBe(false)
+		expect(
+			await isD1Ready(fixture.evidence, fixture.evidencePath, registry, {
+				...sourceIdentity,
+				resourceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+			}),
+		).toBe(false)
+
+		const restoreEnvelope = fixture.envelopes.find(
+			(envelope) => envelope.content.kind === 'd1-restore-drill',
+		)
+		if (!restoreEnvelope) throw new Error('fixture lacks restore evidence')
+		for (const [key, mismatch] of [
+			['backupManifestSha256', 'f'.repeat(64)],
+			['sqlSha256', 'f'.repeat(64)],
+			['trustedBaselineId', 'different-trusted-baseline'],
+			['trustedBaselineSha256', 'f'.repeat(64)],
+			['schemaSha256', 'f'.repeat(64)],
+			['migrationSetSha256', 'f'.repeat(64)],
+			['isolationBaselineSha256', 'f'.repeat(64)],
+		] as const) {
+			const content = structuredClone(restoreEnvelope.content)
+			const details =
+				content.details as EvidenceDetailsByKind['d1-restore-drill']
+			details[key] = mismatch
+			const signed = signEnvelope(content, privateKey)
+			const bytes = Buffer.from(JSON.stringify(signed))
+			await writeFile(path.join(directory, content.uri), bytes)
+			const evidence = structuredClone(fixture.evidence)
+			const record = evidence[0]
+			if (!record || !Array.isArray(record.artifacts)) {
+				throw new Error('fixture is malformed')
+			}
+			const artifact = record.artifacts.find(
+				(candidate) =>
+					(candidate as Record<string, unknown>).kind === 'd1-restore-drill',
+			) as Record<string, unknown> | undefined
+			if (!artifact) throw new Error('fixture lacks restore artifact')
+			artifact.sha256 = sha256(bytes)
+			expect(await isD1Ready(evidence, fixture.evidencePath, registry)).toBe(
+				false,
+			)
+		}
 	} finally {
 		await rm(directory, { recursive: true, force: true })
 	}

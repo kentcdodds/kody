@@ -1,5 +1,11 @@
-import { createHash } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign as signBytes } from 'node:crypto'
 
+import {
+	backupManifestSchemaVersion,
+	backupManifestSignatureAlgorithm,
+	canonicalBackupManifestPayload,
+	type BackupManifestPayload,
+} from '@kody-internal/shared/backup-manifest.ts'
 import { type BackupRuntimeStep } from './backup-runtime.ts'
 import { type DurableExportStep } from './durable-export.ts'
 import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
@@ -154,6 +160,8 @@ export class MemoryBucket {
 
 export const ACCOUNT_ID = '11111111-1111-4111-8111-111111111111'
 export const DATABASE_ID = '22222222-2222-4222-8222-222222222222'
+export const BASELINE_SHA256 = 'b'.repeat(64)
+const manifestSigningKeys = generateKeyPairSync('ed25519')
 
 export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 	return {
@@ -169,6 +177,13 @@ export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 		ENABLE_PRODUCTION_D1_BACKUPS: 'true',
 		BACKUP_BENCHMARK_APPROVED: 'true',
 		BUILD_COMMIT: 'abc123',
+		BACKUP_MANIFEST_SIGNING_KEY_ID: 'backup-manifest-2026',
+		BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64:
+			manifestSigningKeys.privateKey
+				.export({ format: 'der', type: 'pkcs8' })
+				.toString('base64'),
+		TRUSTED_RESTORE_BASELINE_ID: 'production-baseline-2026',
+		TRUSTED_RESTORE_BASELINE_SHA256: BASELINE_SHA256,
 	}
 }
 
@@ -352,6 +367,52 @@ export class RetryFinalizationStep implements BackupRuntimeStep {
 	async sleep(): Promise<void> {}
 }
 
+export class RetryUploadStep implements BackupRuntimeStep {
+	readonly uploadAttempts: number[] = []
+	private readonly cache = new Map<string, unknown>()
+
+	async do<T>(
+		name: string,
+		config: unknown,
+		callback: () => Promise<T>,
+	): Promise<T>
+	async do<T>(name: string, callback: () => Promise<T>): Promise<T>
+	async do<T>(
+		name: string,
+		configOrCallback: unknown,
+		callback?: () => Promise<T>,
+	): Promise<T> {
+		if (this.cache.has(name)) return this.cache.get(name) as T
+		const execute =
+			typeof configOrCallback === 'function'
+				? (configOrCallback as () => Promise<T>)
+				: callback!
+		if (name === 'stream-export-to-immutable-r2') {
+			for (let attempt = 1; attempt <= 2; attempt += 1) {
+				this.uploadAttempts.push(attempt)
+				try {
+					const value = await execute()
+					this.cache.set(name, value)
+					return value
+				} catch (error) {
+					if (
+						attempt === 2 ||
+						!(error instanceof BackupError) ||
+						!error.retryable
+					) {
+						throw error
+					}
+				}
+			}
+		}
+		const value = await execute()
+		this.cache.set(name, value)
+		return value
+	}
+
+	async sleep(): Promise<void> {}
+}
+
 export function exportEnvelope(
 	status?: 'complete' | 'error',
 	bookmark = 'bookmark-1',
@@ -396,26 +457,51 @@ export function manifest(stored: {
 	sha256: string
 	r2Etag: string
 }): BackupManifest {
-	return {
-		schemaVersion: 1,
+	const payload: BackupManifestPayload = {
+		schemaVersion: backupManifestSchemaVersion,
 		source: {
 			accountId: ACCOUNT_ID,
 			accountName: 'production-account',
 			databaseId: DATABASE_ID,
 			databaseName: 'production-db',
 		},
-		bookmark: 'bookmark-1',
-		scheduledAt: '2026-07-22T02:15:00.000Z',
-		startedAt: '2026-07-22T02:15:01.000Z',
-		completedAt: '2026-07-22T02:16:00.000Z',
-		objectKey: objectKeyForBookmark(
-			`daily/d1/${DATABASE_ID}/2026-07-22`,
-			'bookmark-1',
-		),
-		bytes: stored.bytes,
-		sha256: stored.sha256,
-		r2Etag: stored.r2Etag,
-		commit: 'abc123',
+		export: {
+			bookmark: 'bookmark-1',
+			scheduledAt: '2026-07-22T02:15:00.000Z',
+			startedAt: '2026-07-22T02:15:01.000Z',
+			completedAt: '2026-07-22T02:16:00.000Z',
+		},
+		sql: {
+			objectKey: objectKeyForBookmark(
+				`daily/d1/${DATABASE_ID}/2026-07-22`,
+				'bookmark-1',
+			),
+			bytes: stored.bytes,
+			sha256: stored.sha256,
+			r2Etag: stored.r2Etag,
+		},
+		buildCommit: 'abc123',
 		retentionTier: 'daily',
+		restoreBaseline: {
+			id: 'production-baseline-2026',
+			sha256: BASELINE_SHA256,
+		},
+		signing: {
+			algorithm: backupManifestSignatureAlgorithm,
+			keyId: 'backup-manifest-2026',
+		},
+	}
+	return {
+		schemaVersion: backupManifestSchemaVersion,
+		payload,
+		signature: {
+			algorithm: backupManifestSignatureAlgorithm,
+			keyId: 'backup-manifest-2026',
+			value: signBytes(
+				null,
+				Buffer.from(canonicalBackupManifestPayload(payload)),
+				manifestSigningKeys.privateKey,
+			).toString('base64'),
+		},
 	}
 }

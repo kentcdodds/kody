@@ -1,81 +1,12 @@
+import {
+	parseBackupManifest,
+	serializeBackupManifest,
+} from '@kody-internal/shared/backup-manifest.ts'
+
 import { BackupError } from './backup-policy.ts'
 import { type BackupManifest, type StoredBackup } from './backup-types.ts'
 
 export const MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES = 5 * 1024 * 1024 * 1024
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function hasExactKeys(
-	value: Record<string, unknown>,
-	expected: ReadonlyArray<string>,
-): boolean {
-	const actual = Object.keys(value).sort()
-	const sortedExpected = [...expected].sort()
-	return (
-		actual.length === sortedExpected.length &&
-		actual.every((key, index) => key === sortedExpected[index])
-	)
-}
-
-function isBackupManifest(value: unknown): value is BackupManifest {
-	if (
-		!isRecord(value) ||
-		!hasExactKeys(value, [
-			'bookmark',
-			'bytes',
-			'commit',
-			'completedAt',
-			'objectKey',
-			'r2Etag',
-			'retentionTier',
-			'scheduledAt',
-			'schemaVersion',
-			'sha256',
-			'source',
-			'startedAt',
-		]) ||
-		value.schemaVersion !== 1 ||
-		!isRecord(value.source) ||
-		!hasExactKeys(value.source, [
-			'accountId',
-			'accountName',
-			'databaseId',
-			'databaseName',
-		])
-	) {
-		return false
-	}
-	const strings = [
-		value.bookmark,
-		value.commit,
-		value.objectKey,
-		value.r2Etag,
-		value.source.accountId,
-		value.source.accountName,
-		value.source.databaseId,
-		value.source.databaseName,
-	]
-	const dates = [value.scheduledAt, value.startedAt, value.completedAt]
-	const timestamps = dates.map((entry) =>
-		typeof entry === 'string' ? Date.parse(entry) : Number.NaN,
-	)
-	return (
-		strings.every((entry) => typeof entry === 'string' && entry.length > 0) &&
-		timestamps.every(Number.isFinite) &&
-		(timestamps[0] ?? Number.POSITIVE_INFINITY) <=
-			(timestamps[1] ?? Number.NEGATIVE_INFINITY) &&
-		(timestamps[1] ?? Number.POSITIVE_INFINITY) <=
-			(timestamps[2] ?? Number.NEGATIVE_INFINITY) &&
-		Number.isSafeInteger(value.bytes) &&
-		Number(value.bytes) > 0 &&
-		Number(value.bytes) < MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES &&
-		typeof value.sha256 === 'string' &&
-		/^[0-9a-f]{64}$/.test(value.sha256) &&
-		(value.retentionTier === 'daily' || value.retentionTier === 'weekly')
-	)
-}
 
 function hex(buffer: ArrayBuffer): string {
 	return [...new Uint8Array(buffer)]
@@ -140,6 +71,9 @@ async function fetchSignedDownload(
 			'download-invalid-length',
 			'signed export Content-Length exceeded safe limits',
 		)
+	}
+	if (expectedBytes === 0) {
+		throw new BackupError('download-empty', 'export download is empty', true)
 	}
 	if (expectedBytes >= MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES) {
 		throw new BackupError(
@@ -280,16 +214,12 @@ export async function storeSignedDownload(
 	}
 }
 
-function stableManifest(manifest: BackupManifest): string {
-	return `${JSON.stringify(manifest)}\n`
-}
-
 export async function putImmutableManifest(
 	bucket: R2Bucket,
 	key: string,
 	manifest: BackupManifest,
 ): Promise<void> {
-	const body = stableManifest(manifest)
+	const body = serializeBackupManifest(manifest)
 	const result = await bucket.put(key, body, {
 		onlyIf: { etagDoesNotMatch: '*' },
 		httpMetadata: { contentType: 'application/json' },
@@ -351,10 +281,10 @@ export async function assertDuplicateMatchesManifest(
 		return
 	}
 	if (
-		manifest.objectKey !== objectKey ||
-		manifest.bytes !== stored.bytes ||
-		manifest.sha256 !== stored.sha256 ||
-		manifest.r2Etag !== stored.r2Etag
+		manifest.payload.sql.objectKey !== objectKey ||
+		manifest.payload.sql.bytes !== stored.bytes ||
+		manifest.payload.sql.sha256 !== stored.sha256 ||
+		manifest.payload.sql.r2Etag !== stored.r2Etag
 	) {
 		throw new BackupError(
 			'duplicate-object-manifest-mismatch',
@@ -371,10 +301,11 @@ export async function readManifest(
 	if (object === null) return null
 	try {
 		const value = await object.json<unknown>()
-		if (!isBackupManifest(value)) {
-			throw new Error('invalid backup manifest shape')
+		const manifest = parseBackupManifest(value)
+		if (manifest.payload.sql.bytes >= MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES) {
+			throw new Error('backup manifest exceeds single-object size limit')
 		}
-		return value
+		return manifest
 	} catch {
 		throw new BackupError('manifest-corrupt', 'backup manifest JSON is corrupt')
 	}

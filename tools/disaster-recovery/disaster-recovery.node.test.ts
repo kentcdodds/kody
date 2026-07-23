@@ -1,7 +1,14 @@
+import { generateKeyPairSync, sign as signBytes } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { expect, test, vi } from 'vitest'
+import {
+	backupManifestSchemaVersion,
+	backupManifestSignatureAlgorithm,
+	canonicalBackupManifestPayload,
+	type BackupManifestPayload,
+} from '@kody-internal/shared/backup-manifest.ts'
 import {
 	type BackupManifest,
 	type DrillAdapters,
@@ -12,6 +19,7 @@ import {
 	buildDrillCommands,
 	buildVerificationQueries,
 	parseAndVerifyManifest,
+	parseBaseline,
 	parseRestoreTrustRegistry,
 	runD1RestoreDrill,
 	verifyRows,
@@ -20,12 +28,20 @@ import {
 	buildD1RestoreWranglerConfig,
 	collectBackupFileEvidence,
 	createD1DrillTarget,
+	manifestPublicKeyRegistryPath,
 	parseArguments,
 	parseQueryRows,
+	restoreBaselineRegistryPath,
 	restoreTrustRegistryPath,
 	runProcess,
 } from './d1-restore-drill-cli.ts'
 import { canonicalJson, sha256 } from './canonical-json.ts'
+import {
+	type TrustedManifestPublicKeyRegistry,
+	type TrustedRestoreBaselineRegistry,
+	parseTrustedManifestPublicKeyRegistry,
+	parseTrustedRestoreBaselineRegistry,
+} from './restore-trust.ts'
 
 const productionUuid = '11111111-1111-4111-8111-111111111111'
 const targetUuid = '22222222-2222-4222-8222-222222222222'
@@ -34,33 +50,74 @@ const targetAccountId = 'b'.repeat(32)
 const backupBytes = new TextEncoder().encode('backup')
 const schemaRows: Array<Record<string, string>> = []
 const now = new Date('2026-07-22T12:00:00.000Z')
+const manifestKeys = generateKeyPairSync('ed25519')
+const manifestKeyRegistry: TrustedManifestPublicKeyRegistry = {
+	schemaVersion: 1,
+	keys: [
+		{
+			algorithm: 'Ed25519',
+			keyId: 'backup-manifest-2026',
+			publicKeyPem: manifestKeys.publicKey.export({
+				format: 'pem',
+				type: 'spki',
+			}) as string,
+		},
+	],
+}
 
 function createManifest(
-	overrides: Partial<BackupManifest> = {},
+	overrides: {
+		bytes?: number
+		source?: BackupManifestPayload['source']
+	} = {},
 ): BackupManifest {
-	return {
-		schemaVersion: 1,
-		source: {
+	const payload: BackupManifestPayload = {
+		schemaVersion: backupManifestSchemaVersion,
+		source: overrides.source ?? {
 			accountId: productionAccountId,
 			accountName: 'production-account',
 			databaseId: productionUuid,
 			databaseName: 'kody-production',
 		},
-		bookmark: 'bookmark-1',
-		scheduledAt: '2026-07-20T00:00:00.000Z',
-		startedAt: '2026-07-20T00:01:00.000Z',
-		completedAt: '2026-07-20T00:02:00.000Z',
-		objectKey: `daily/${productionUuid}/2026-07-20/backup.sql`,
-		bytes: backupBytes.byteLength,
-		sha256: sha256(backupBytes),
-		r2Etag: 'etag-1',
-		commit: 'abc123',
+		export: {
+			bookmark: 'bookmark-1',
+			scheduledAt: '2026-07-20T00:00:00.000Z',
+			startedAt: '2026-07-20T00:01:00.000Z',
+			completedAt: '2026-07-20T00:02:00.000Z',
+		},
+		sql: {
+			objectKey: `daily/${productionUuid}/2026-07-20/backup.sql`,
+			bytes: overrides.bytes ?? backupBytes.byteLength,
+			sha256: sha256(backupBytes),
+			r2Etag: 'etag-1',
+		},
+		buildCommit: 'abc123',
 		retentionTier: 'daily',
-		...overrides,
+		restoreBaseline: {
+			id: 'production-baseline-2026',
+			sha256: sha256(canonicalJson(createBaseline())),
+		},
+		signing: {
+			algorithm: backupManifestSignatureAlgorithm,
+			keyId: 'backup-manifest-2026',
+		},
+	}
+	return {
+		schemaVersion: backupManifestSchemaVersion,
+		payload,
+		signature: {
+			algorithm: backupManifestSignatureAlgorithm,
+			keyId: 'backup-manifest-2026',
+			value: signBytes(
+				null,
+				Buffer.from(canonicalBackupManifestPayload(payload)),
+				manifestKeys.privateKey,
+			).toString('base64'),
+		},
 	}
 }
 
-function manifestFixture(overrides: Partial<BackupManifest> = {}) {
+function manifestFixture(overrides: Parameters<typeof createManifest>[0] = {}) {
 	const manifest = createManifest(overrides)
 	const bytes = new TextEncoder().encode(JSON.stringify(manifest))
 	return { manifest, bytes, checksum: sha256(bytes) }
@@ -95,6 +152,36 @@ function createBaseline(
 			},
 		],
 		...overrides,
+	}
+}
+
+function createBaselineRegistry(
+	baseline = createBaseline(),
+): TrustedRestoreBaselineRegistry {
+	return {
+		schemaVersion: 1,
+		baselines: [
+			{
+				id: 'production-baseline-2026',
+				canonicalSha256: sha256(canonicalJson(baseline)),
+				source: {
+					accountId: productionAccountId,
+					databaseId: productionUuid,
+					databaseName: 'kody-production',
+				},
+				baseline,
+			},
+			{
+				id: 'post-forward-baseline-2026',
+				canonicalSha256: sha256(canonicalJson(baseline)),
+				source: {
+					accountId: productionAccountId,
+					databaseId: productionUuid,
+					databaseName: 'kody-production',
+				},
+				baseline,
+			},
+		],
 	}
 }
 
@@ -176,12 +263,14 @@ function drillInput(overrides: Record<string, unknown> = {}) {
 	return {
 		manifestBytes: fixture.bytes,
 		expectedManifestSha256: fixture.checksum,
+		manifestPublicKeyRegistry: manifestKeyRegistry,
 		backupFileEvidence: {
 			sizeBytes: backupBytes.byteLength,
 			sha256: sha256(backupBytes),
 		},
 		backupFile: '/operator/downloads/backup.sql',
-		baseline: createBaseline(),
+		baselineId: 'production-baseline-2026',
+		baselineRegistry: createBaselineRegistry(),
 		targetAccountId,
 		targetName: 'kody-drill',
 		trustRegistry: createTrustRegistry(),
@@ -191,9 +280,13 @@ function drillInput(overrides: Record<string, unknown> = {}) {
 
 test('D1 drill verifies immutable manifest and supplied SQL file evidence before any live creation', async () => {
 	const fixture = manifestFixture()
-	expect(parseAndVerifyManifest(fixture.bytes, fixture.checksum)).toEqual(
-		fixture.manifest,
-	)
+	expect(
+		parseAndVerifyManifest(
+			fixture.bytes,
+			fixture.checksum,
+			manifestKeyRegistry,
+		),
+	).toEqual(fixture.manifest)
 	const adapters = createAdapters()
 	await expect(
 		runD1RestoreDrill(
@@ -239,6 +332,61 @@ test('D1 drill verifies immutable manifest and supplied SQL file evidence before
 		),
 	).rejects.toThrow('exceeds the 5 GiB')
 	expect(adapters.createTarget).not.toHaveBeenCalled()
+})
+
+test('restore requires a trusted manifest signature and checked baseline id', async () => {
+	const fixture = manifestFixture()
+	const unsignedBytes = new TextEncoder().encode(
+		JSON.stringify({
+			schemaVersion: fixture.manifest.schemaVersion,
+			payload: fixture.manifest.payload,
+		}),
+	)
+	expect(() =>
+		parseAndVerifyManifest(
+			unsignedBytes,
+			sha256(unsignedBytes),
+			manifestKeyRegistry,
+		),
+	).toThrow('invalid versioned shape')
+
+	const tampered = structuredClone(fixture.manifest)
+	tampered.payload.sql.sha256 = 'f'.repeat(64)
+	const tamperedBytes = new TextEncoder().encode(JSON.stringify(tampered))
+	expect(() =>
+		parseAndVerifyManifest(
+			tamperedBytes,
+			sha256(tamperedBytes),
+			manifestKeyRegistry,
+		),
+	).toThrow('signature verification failed')
+
+	const unknownKey = structuredClone(fixture.manifest)
+	unknownKey.payload.signing.keyId = 'unknown-backup-key'
+	unknownKey.signature.keyId = 'unknown-backup-key'
+	unknownKey.signature.value = signBytes(
+		null,
+		Buffer.from(canonicalBackupManifestPayload(unknownKey.payload)),
+		manifestKeys.privateKey,
+	).toString('base64')
+	const unknownKeyBytes = new TextEncoder().encode(JSON.stringify(unknownKey))
+	expect(() =>
+		parseAndVerifyManifest(
+			unknownKeyBytes,
+			sha256(unknownKeyBytes),
+			manifestKeyRegistry,
+		),
+	).toThrow('signing key is not trusted')
+
+	await expect(
+		runD1RestoreDrill(
+			drillInput({
+				baseline: createBaseline({ schemaSha256: 'f'.repeat(64) }),
+				baselineId: 'operator-baseline',
+			}),
+			createAdapters(),
+		),
+	).rejects.toThrow('baseline id is not trusted')
 })
 
 test('isolation verification normalizes numeric SQLite user IDs', () => {
@@ -340,6 +488,19 @@ test('restore trust registry is exact, checked-in empty, and cannot be replaced 
 	const checkedRegistry = JSON.parse(
 		await readFile(restoreTrustRegistryPath, 'utf8'),
 	) as unknown
+	const checkedManifestKeys = JSON.parse(
+		await readFile(manifestPublicKeyRegistryPath, 'utf8'),
+	) as unknown
+	const checkedBaselines = JSON.parse(
+		await readFile(restoreBaselineRegistryPath, 'utf8'),
+	) as unknown
+	expect(
+		parseTrustedManifestPublicKeyRegistry(checkedManifestKeys).keys,
+	).toEqual([])
+	expect(
+		parseTrustedRestoreBaselineRegistry(checkedBaselines, parseBaseline)
+			.baselines,
+	).toEqual([])
 	expect(parseRestoreTrustRegistry(checkedRegistry)).toEqual({
 		schemaVersion: 1,
 		productionSources: [],
@@ -374,7 +535,6 @@ test('restore trust registry is exact, checked-in empty, and cannot be replaced 
 			drillInput({
 				manifestBytes: fabricated.bytes,
 				expectedManifestSha256: fabricated.checksum,
-				baseline: createBaseline({ sourceDatabaseId: targetUuid }),
 				allowlist: [
 					{
 						accountId: targetAccountId,
@@ -397,8 +557,8 @@ test('restore trust registry is exact, checked-in empty, and cannot be replaced 
 			'0'.repeat(64),
 			'--backup',
 			'backup.sql',
-			'--baseline',
-			'baseline.json',
+			'--baseline-id',
+			'production-baseline-2026',
 			'--allowlist',
 			'operator-registry.json',
 			'--target-account-id',
@@ -410,7 +570,7 @@ test('restore trust registry is exact, checked-in empty, and cannot be replaced 
 })
 
 test('restore trust matches runtime account IDs case-insensitively', async () => {
-	const source = createManifest().source
+	const source = createManifest().payload.source
 	const fixture = manifestFixture({
 		source: {
 			...source,
@@ -701,7 +861,7 @@ test('temporary D1 config and live forward migration commands target the configu
 		drillInput({
 			dryRun: false,
 			applyForwardMigrations: true,
-			postForwardBaseline: baseline,
+			postForwardBaselineId: 'post-forward-baseline-2026',
 		}),
 		adapters,
 	)
