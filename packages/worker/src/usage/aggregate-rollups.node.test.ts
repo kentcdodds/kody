@@ -54,6 +54,9 @@ function createFakeDb(
 							}
 						},
 						async run() {
+							if (sql.startsWith('UPDATE email_delivery_events')) {
+								return { meta: { changes: 0 } }
+							}
 							if (!sql.startsWith('DELETE FROM usage_rollups')) {
 								throw new Error(`Unsupported run query: ${sql}`)
 							}
@@ -305,7 +308,9 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 		'sum(double1 * _sample_interval) AS total_duration_ms',
 	)
 	expect(query).toContain('GROUP BY blob1, blob2')
-	expect(selects[0]?.sql).toContain('message.user_id = event.user_id')
+	expect(selects[0]?.sql).not.toContain('JOIN email_messages')
+	expect(selects[0]?.sql).toContain(`'$.usageMonth'`)
+	expect(selects[0]?.sql).toContain(`'$.usageBytes'`)
 	expect(selects[0]?.params).toEqual(['2026-07', '2026-06'])
 
 	expect(batches).toHaveLength(1)

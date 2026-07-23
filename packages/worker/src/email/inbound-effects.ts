@@ -20,9 +20,10 @@ async function recordInboundUsageEffect(input: {
 	userId: string
 	deliveryId: string
 	messageId: string
-	rawSize: number | null
 	receivedAt: string | null
 	createdAt: string
+	usageMonth: string
+	usageBytes: number
 	expectedFinalizationToken?: string
 	durationMs?: number
 	now: Date
@@ -30,7 +31,7 @@ async function recordInboundUsageEffect(input: {
 	const timestamp = input.receivedAt ?? input.createdAt
 	const finalizationToken = input.expectedFinalizationToken ?? null
 	if (!input.env.USAGE_EVENTS) {
-		const month = timestamp.slice(0, 7)
+		const month = input.usageMonth
 		try {
 			await input.env.APP_DB.batch([
 				input.env.APP_DB.prepare(
@@ -61,7 +62,7 @@ async function recordInboundUsageEffect(input: {
 					input.userId,
 					month,
 					Math.round(input.durationMs ?? 0),
-					Math.round(input.rawSize ?? 0),
+					Math.round(input.usageBytes),
 					input.now.toISOString(),
 					input.deliveryId,
 					input.userId,
@@ -72,11 +73,7 @@ async function recordInboundUsageEffect(input: {
 				input.env.APP_DB.prepare(
 					`UPDATE email_delivery_events
 					SET detail_json = json_remove(
-						json_set(
-							detail_json,
-							'$.usageEffectRecordedAt', ?,
-							'$.usageDurationMs', ?
-						),
+						json_set(detail_json, '$.usageEffectRecordedAt', ?),
 						'$.usageEffectRetryAt'
 					)
 					WHERE id = ?
@@ -91,7 +88,6 @@ async function recordInboundUsageEffect(input: {
 						AND (? IS NULL OR json_extract(detail_json, '$.finalizationToken') = ?)`,
 				).bind(
 					input.now.toISOString(),
-					Math.round(input.durationMs ?? 0),
 					input.deliveryId,
 					input.userId,
 					input.now.toISOString(),
@@ -111,19 +107,10 @@ async function recordInboundUsageEffect(input: {
 			// best-effort metering semantics without poisoning the outbox.
 			await input.env.APP_DB.prepare(
 				`UPDATE email_delivery_events
-				SET detail_json = json_set(
-					detail_json,
-					'$.usageEffectRecordedAt', ?,
-					'$.usageDurationMs', ?
-				)
+				SET detail_json = json_set(detail_json, '$.usageEffectRecordedAt', ?)
 				WHERE id = ? AND user_id = ? AND event_type = 'received'`,
 			)
-				.bind(
-					input.now.toISOString(),
-					Math.round(input.durationMs ?? 0),
-					input.deliveryId,
-					input.userId,
-				)
+				.bind(input.now.toISOString(), input.deliveryId, input.userId)
 				.run()
 			return
 		}
@@ -131,11 +118,7 @@ async function recordInboundUsageEffect(input: {
 	await input.env.APP_DB.prepare(
 		`UPDATE email_delivery_events
 		SET detail_json = json_remove(
-			json_set(
-				detail_json,
-				'$.usageEffectRecordedAt', ?,
-				'$.usageDurationMs', ?
-			),
+			json_set(detail_json, '$.usageEffectRecordedAt', ?),
 			'$.usageEffectRetryAt'
 		)
 		WHERE id = ?
@@ -147,7 +130,6 @@ async function recordInboundUsageEffect(input: {
 	)
 		.bind(
 			input.now.toISOString(),
-			Math.round(input.durationMs ?? 0),
 			input.deliveryId,
 			input.userId,
 			finalizationToken,
@@ -189,9 +171,12 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 		userId: input.userId,
 		deliveryId: delivery.deliveryId,
 		messageId: message.id,
-		rawSize: message.rawSize,
 		receivedAt: message.receivedAt,
 		createdAt: message.createdAt,
+		usageMonth:
+			delivery.usageMonth ??
+			(message.receivedAt ?? message.createdAt).slice(0, 7),
+		usageBytes: delivery.usageBytes ?? message.rawSize ?? 0,
 		expectedFinalizationToken: input.expectedFinalizationToken,
 		durationMs: delivery.usageDurationMs ?? input.durationMs,
 		now,

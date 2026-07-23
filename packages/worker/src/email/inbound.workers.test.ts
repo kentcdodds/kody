@@ -1865,6 +1865,8 @@ test('lease takeover fences stale finalization and active storage from cleanup',
 			db: env.APP_DB,
 			delivery: staleDelivery,
 			usageDurationMs: 123,
+			usageMonth: '2026-07',
+			usageBytes: 19,
 		}),
 	).rejects.toBeInstanceOf(InboundDeliveryLeaseLostError)
 	expect(
@@ -2112,6 +2114,8 @@ test('stale inbound ledger durably retries orphan blob cleanup after R2 delete f
 		db: env.APP_DB,
 		delivery: successorClaim.delivery,
 		usageDurationMs: 321,
+		usageMonth: '2026-07',
+		usageBytes: 24,
 	})
 	// Simulate a crash immediately after fenced finalization. Reconciliation
 	// receives no request-local duration and must use the persisted winner.

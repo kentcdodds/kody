@@ -29,6 +29,8 @@ type LegacyInboundCandidate = {
 	id: string
 	thread_id: string | null
 	raw_mime_key: string | null
+	raw_size: number
+	received_at: string | null
 	created_at: string
 }
 
@@ -61,6 +63,8 @@ export type InboundDelivery = {
 	usageEffectSuppressedAt?: string
 	usageStartedAt?: string
 	usageDurationMs?: number
+	usageMonth?: string
+	usageBytes?: number
 	usageEffectRetryAt?: string
 	usageEffectLease?: string
 	usageEffectLeaseAt?: string
@@ -211,6 +215,12 @@ function parseInboundDelivery(
 				: {}),
 			...(typeof detail.usageDurationMs === 'number'
 				? { usageDurationMs: detail.usageDurationMs }
+				: {}),
+			...(typeof detail.usageMonth === 'string'
+				? { usageMonth: detail.usageMonth }
+				: {}),
+			...(typeof detail.usageBytes === 'number'
+				? { usageBytes: detail.usageBytes }
 				: {}),
 			...(typeof detail.usageEffectRetryAt === 'string'
 				? { usageEffectRetryAt: detail.usageEffectRetryAt }
@@ -396,7 +406,7 @@ export async function adoptLegacyInboundDelivery(input: {
 	while (true) {
 		const rows: D1Result<LegacyInboundCandidate> = await input.db
 			.prepare(
-				`SELECT id, thread_id, raw_mime_key, created_at
+				`SELECT id, thread_id, raw_mime_key, raw_size, received_at, created_at
 			FROM email_messages
 			WHERE user_id = ?
 				AND inbox_id = ?
@@ -442,6 +452,8 @@ export async function adoptLegacyInboundDelivery(input: {
 				state: 'received',
 				finalizationToken: `legacy-adoption:${input.delivery.deliveryId}`,
 				usageEffectSuppressedAt: input.now.toISOString(),
+				usageMonth: (row.received_at ?? row.created_at).slice(0, 7),
+				usageBytes: row.raw_size,
 				subscriptionEffectState: 'pending',
 			}
 			await input.db
@@ -842,6 +854,8 @@ export async function markInboundDeliveryReceived(input: {
 	db: D1Database
 	delivery: InboundDelivery
 	usageDurationMs: number
+	usageMonth: string
+	usageBytes: number
 }) {
 	if (!input.delivery.storageLease) {
 		throw new InboundDeliveryLeaseLostError(
@@ -854,6 +868,8 @@ export async function markInboundDeliveryReceived(input: {
 		finalizationToken: input.delivery.storageLease,
 		subscriptionEffectState: 'pending',
 		usageDurationMs: Math.max(0, Math.round(input.usageDurationMs)),
+		usageMonth: input.usageMonth,
+		usageBytes: Math.max(0, Math.round(input.usageBytes)),
 	}
 	delete detail.storageLease
 	delete detail.storageLeaseAt
@@ -971,6 +987,8 @@ async function recoverCommittedInboundDelivery(input: {
 			usageDurationMs: claim.delivery.usageStartedAt
 				? input.now.getTime() - Date.parse(claim.delivery.usageStartedAt)
 				: 0,
+			usageMonth: (message.receivedAt ?? message.createdAt).slice(0, 7),
+			usageBytes: message.rawSize ?? 0,
 		})
 		return true
 	} catch (error) {

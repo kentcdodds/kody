@@ -404,6 +404,8 @@ export async function storeIdempotentInboundEmail(input: {
 			usageDurationMs: delivery.usageStartedAt
 				? Date.now() - Date.parse(delivery.usageStartedAt)
 				: 0,
+			usageMonth: (stored.receivedAt ?? stored.createdAt).slice(0, 7),
+			usageBytes: stored.rawSize ?? 0,
 		})
 	} catch (error) {
 		const committed = await getInboundDelivery({

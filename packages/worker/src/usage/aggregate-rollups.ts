@@ -155,21 +155,64 @@ type AnalyticsEngineSqlRow = {
 	total_bytes: number | string
 }
 
-async function readIdempotentInboundEmailUsage(input: {
+export async function readIdempotentInboundEmailUsage(input: {
 	db: D1Database
 	months: [string, string]
 }) {
+	await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`UPDATE email_delivery_events
+				SET detail_json = json_set(
+					detail_json,
+					'$.usageMonth', COALESCE(
+						json_extract(detail_json, '$.usageMonth'),
+						(
+							SELECT substr(
+								COALESCE(message.received_at, message.created_at),
+								1,
+								7
+							)
+							FROM email_messages message
+							WHERE message.id = email_delivery_events.message_id
+								AND message.user_id = email_delivery_events.user_id
+						)
+					),
+					'$.usageBytes', COALESCE(
+						json_extract(detail_json, '$.usageBytes'),
+						(
+							SELECT COALESCE(message.raw_size, 0)
+							FROM email_messages message
+							WHERE message.id = email_delivery_events.message_id
+								AND message.user_id = email_delivery_events.user_id
+						)
+					)
+				)
+				WHERE provider = 'cloudflare-email-routing'
+					AND event_type = 'received'
+					AND json_extract(
+						detail_json,
+						'$.usageEffectRecordedAt'
+					) IS NOT NULL
+					AND (
+						json_extract(detail_json, '$.usageMonth') IS NULL
+						OR json_extract(detail_json, '$.usageBytes') IS NULL
+					)
+					AND EXISTS (
+						SELECT 1 FROM email_messages message
+						WHERE message.id = email_delivery_events.message_id
+							AND message.user_id = email_delivery_events.user_id
+					)`,
+			)
+			.run(),
+	)
 	const result = await runD1WithRetry(() =>
 		input.db
 			.prepare(
 				`SELECT
-					message.user_id,
+					event.user_id,
 					'email_received' AS metric,
-					substr(
-						COALESCE(message.received_at, message.created_at),
-						1,
-						7
-					) AS month,
+					json_extract(event.detail_json, '$.usageMonth') AS month,
 					COUNT(*) AS event_count,
 					0 AS error_count,
 					SUM(COALESCE(
@@ -177,23 +220,22 @@ async function readIdempotentInboundEmailUsage(input: {
 						0
 					)) AS total_duration_ms,
 					0 AS total_cpu_ms,
-					SUM(COALESCE(message.raw_size, 0)) AS total_bytes
+					SUM(COALESCE(
+						json_extract(event.detail_json, '$.usageBytes'),
+						0
+					)) AS total_bytes
 				FROM email_delivery_events event
-				JOIN email_messages message
-					ON message.id = event.message_id
-					AND message.user_id = event.user_id
 				WHERE event.provider = 'cloudflare-email-routing'
 					AND event.event_type = 'received'
 					AND json_extract(
 						event.detail_json,
 						'$.usageEffectRecordedAt'
 					) IS NOT NULL
-					AND substr(
-						COALESCE(message.received_at, message.created_at),
-						1,
-						7
+					AND json_extract(
+						event.detail_json,
+						'$.usageMonth'
 					) IN (?, ?)
-				GROUP BY message.user_id, month`,
+				GROUP BY event.user_id, month`,
 			)
 			.bind(...input.months)
 			.all<AnalyticsEngineSqlRow>(),
