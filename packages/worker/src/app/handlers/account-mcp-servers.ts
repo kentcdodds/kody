@@ -37,7 +37,11 @@ export function createAccountMcpServersHandler(env: Env) {
 				loaderData: { accountMcpServers },
 			})
 		},
-	} satisfies Action<typeof routes.accountMcpServers>
+	} satisfies Action<
+		| typeof routes.accountMcpServers
+		| typeof routes.accountMcpServerNew
+		| typeof routes.accountMcpServerDetail
+	>
 }
 
 export function createAccountMcpServersApiHandler(env: Env) {

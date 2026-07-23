@@ -66,7 +66,7 @@ export function createAdminUsersHandler(env: Env) {
 				loaderData: { adminUsers },
 			})
 		},
-	} satisfies Action<typeof routes.adminUsers>
+	} satisfies Action<typeof routes.adminUsers | typeof routes.adminUserDetail>
 }
 
 export function createAdminUsersApiHandler(env: Env) {
