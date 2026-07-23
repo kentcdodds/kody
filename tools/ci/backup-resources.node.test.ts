@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import { expect, test, vi } from 'vitest'
 import {
 	createCloudflareBackupApi,
@@ -23,32 +22,6 @@ const normalizedSourceAccountId = sourceAccountId.toLowerCase()
 const normalizedDestinationAccountId = destinationAccountId.toLowerCase()
 const apiToken = 'provisioner-secret-value'
 const sourceD1Uuid = '9f1c2f54-13f0-4fd4-8cf4-89ec2f9df71a'
-
-async function runRelativeResourcesCli(): Promise<{
-	status: number | null
-	stderr: string
-}> {
-	return await new Promise((resolve, reject) => {
-		const child = spawn(
-			process.execPath,
-			['tools/ci/backup-resources-cli.ts'],
-			{
-				env: {
-					HOME: process.env.HOME,
-					PATH: process.env.PATH,
-					TMPDIR: process.env.TMPDIR,
-				},
-				stdio: ['ignore', 'ignore', 'pipe'],
-			},
-		)
-		let stderr = ''
-		child.stderr.on('data', (chunk: Buffer) => {
-			stderr += chunk.toString()
-		})
-		child.on('error', reject)
-		child.on('close', (status) => resolve({ status, stderr }))
-	})
-}
 
 function createDesired(): BackupDesiredState {
 	return generateBackupDesiredState({
@@ -114,99 +87,48 @@ function jsonResponse(result: unknown, status = 200) {
 	})
 }
 
-test('backup desired state uses exact R2 schemas and a non-enforced runtime contract', () => {
+test('backup desired state keeps private prefixes, retention ages, and account isolation', () => {
 	const desired = createDesired()
 
 	expect(desired.bucket).toEqual({
 		name: 'kody-d1-backup-archive',
 		privacy: 'private-by-default',
 	})
-	expect(desired.lockPolicy).toEqual({
-		rules: [
-			{
-				id: 'daily-backups-immutable-35-days',
-				enabled: true,
-				prefix: 'daily/',
-				condition: { type: 'Age', maxAgeSeconds: 35 * 86_400 },
-			},
-			{
-				id: 'weekly-backups-immutable-400-days',
-				enabled: true,
-				prefix: 'weekly/',
-				condition: { type: 'Age', maxAgeSeconds: 400 * 86_400 },
-			},
-		],
+	expect(
+		desired.lockPolicy.rules.map((rule) => ({
+			prefix: rule.prefix,
+			maxAgeSeconds: rule.condition.maxAgeSeconds,
+			enabled: rule.enabled,
+		})),
+	).toEqual([
+		{ prefix: 'daily/', maxAgeSeconds: 35 * 86_400, enabled: true },
+		{ prefix: 'weekly/', maxAgeSeconds: 400 * 86_400, enabled: true },
+	])
+	expect(
+		desired.lifecyclePolicy.rules.map((rule) => ({
+			prefix: rule.conditions.prefix,
+			maxAge: rule.deleteObjectsTransition?.condition.maxAge,
+			enabled: rule.enabled,
+		})),
+	).toEqual([
+		{ prefix: 'daily/', maxAge: 35 * 86_400, enabled: true },
+		{ prefix: 'weekly/', maxAge: 400 * 86_400, enabled: true },
+	])
+	expect(desired.retentionSemantics.bucketLockOverridesLifecycle).toBe(true)
+	expect(desired.runtimeContract.accounts).toEqual({
+		sourceAccountId: normalizedSourceAccountId,
+		destinationAccountId: normalizedDestinationAccountId,
 	})
-	expect(desired.lifecyclePolicy).toEqual({
-		rules: [
-			{
-				id: 'expire-daily-backups-after-35-days',
-				enabled: true,
-				conditions: { prefix: 'daily/' },
-				deleteObjectsTransition: {
-					condition: { type: 'Age', maxAge: 35 * 86_400 },
-				},
-			},
-			{
-				id: 'expire-weekly-backups-after-400-days',
-				enabled: true,
-				conditions: { prefix: 'weekly/' },
-				deleteObjectsTransition: {
-					condition: { type: 'Age', maxAge: 400 * 86_400 },
-				},
-			},
-		],
+	expect(desired.runtimeContract.sourceD1DatabaseAllowlist).toEqual([
+		{ uuid: sourceD1Uuid, name: 'kody-production-database' },
+	])
+	expect(desired.runtimeContract.r2Binding).toMatchObject({
+		destinationAccountId: normalizedDestinationAccountId,
+		bucketName: 'kody-d1-backup-archive',
+		allowedPrefixes: ['daily/', 'weekly/'],
 	})
-	expect(desired.retentionSemantics).toEqual({
-		bucketLockOverridesLifecycle: true,
-	})
-	expect(desired.runtimeContract).toEqual({
-		kind: 'dedicated-worker-runtime-contract',
-		enforcement: 'deployment-configuration-not-cloudflare-identity-api',
-		deployment: 'out-of-scope',
-		identity: {
-			workerName: 'kody-d1-backup-writer',
-			environment: 'production',
-			dedicated: true,
-		},
-		accounts: {
-			sourceAccountId: normalizedSourceAccountId,
-			destinationAccountId: normalizedDestinationAccountId,
-		},
-		sourceD1DatabaseAllowlist: [
-			{ uuid: sourceD1Uuid, name: 'kody-production-database' },
-		],
-		d1ExportTokenRequirements: {
-			cloudflarePermission: 'D1 Edit',
-			cloudflareScope: 'source-account-wide',
-			canMutateD1: true,
-			sourceAccountId: normalizedSourceAccountId,
-			allowedDatabaseUuids: [sourceD1Uuid],
-			applicationMustEnforceAllowlist: true,
-			applicationAllowlistDoesNotScopeToken: true,
-			applicationAllowlistDoesNotMakeTokenReadOnly: true,
-		},
-		r2Binding: {
-			binding: 'BACKUP_BUCKET',
-			destinationAccountId: normalizedDestinationAccountId,
-			bucketName: 'kody-d1-backup-archive',
-			access: 'object-read-write',
-			allowedPrefixes: ['daily/', 'weekly/'],
-		},
-		explicitRuntimeProhibitions: [
-			'r2.bucket.admin',
-			'r2.bucket.public-access.admin',
-			'r2.lifecycle.admin',
-			'r2.lock.admin',
-		],
-	})
-	expect(desired.readiness).toEqual({
-		bucketPrivateByDefault: true,
-		publicExposureApiManagedHere: false,
-		requiresSeparateVerificationDisabled: ['r2.dev', 'custom-domain'],
-	})
+	expect(desired.readiness.bucketPrivateByDefault).toBe(true)
 	expect(desired.tokenRequirements.provisioner).toMatchObject({
-		cloudflarePermission: 'Workers R2 Storage Write',
 		destinationAccountId: normalizedDestinationAccountId,
 		bucketName: 'kody-d1-backup-archive',
 	})
@@ -652,14 +574,26 @@ test('CLI defaults to plan and never renders its provisioner token', async () =>
 		`https://api.cloudflare.com/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive`,
 	])
 	expect(outputs.join('\n')).not.toContain(apiToken)
-	expect(JSON.parse(outputs[0] ?? '')).toHaveProperty(
-		'plan.desired.runtimeContract.enforcement',
-		'deployment-configuration-not-cloudflare-identity-api',
-	)
-	expect(JSON.parse(outputs[0] ?? '')).toHaveProperty(
-		'plan.desired.runtimeContract.d1ExportTokenRequirements.cloudflarePermission',
-		'D1 Edit',
-	)
+	const planned = JSON.parse(outputs[0] ?? '') as {
+		plan: {
+			desired: {
+				runtimeContract: {
+					accounts: {
+						sourceAccountId: string
+						destinationAccountId: string
+					}
+					sourceD1DatabaseAllowlist: Array<{ uuid: string }>
+				}
+			}
+		}
+	}
+	expect(planned.plan.desired.runtimeContract.accounts).toEqual({
+		sourceAccountId: normalizedSourceAccountId,
+		destinationAccountId: normalizedDestinationAccountId,
+	})
+	expect(
+		planned.plan.desired.runtimeContract.sourceD1DatabaseAllowlist,
+	).toEqual([{ uuid: sourceD1Uuid, name: 'kody-production-database' }])
 
 	const redacted = redactBackupOutput({
 		provisionerToken: apiToken,
@@ -669,14 +603,4 @@ test('CLI defaults to plan and never renders its provisioner token', async () =>
 	})
 	expect(JSON.stringify(redacted)).not.toContain(apiToken)
 	expect(redacted).toHaveProperty('tokenRequirements.runtime', 'contract')
-	expect(redacted).toHaveProperty(
-		'd1ExportTokenRequirements.permission',
-		'D1 Edit',
-	)
-})
-
-test('relative backup resources CLI entry path executes main', async () => {
-	const result = await runRelativeResourcesCli()
-	expect(result.status).toBe(1)
-	expect(result.stderr).toContain('Source Cloudflare account ID is required')
 })

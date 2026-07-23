@@ -23,7 +23,7 @@ import {
 	identityEnvelope,
 } from './backup-control-plane-test-support.ts'
 
-test('zero live D1 size prevents export and a later restart can succeed', async () => {
+test('source size gates block export for zero and oversize readings', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
@@ -75,6 +75,28 @@ test('zero live D1 size prevents export and a later restart can succeed', async 
 	)
 	assert.equal(result.payload.sql.bytes, 5)
 	assert.equal(exportCalls, 3)
+
+	consoleError.mockClear()
+	const oversizeUrls: string[] = []
+	await assert.rejects(
+		runBackupRuntime(env, event, new RetryAfterCommitStep(), {
+			api: {
+				fetcher: async (input) => {
+					oversizeUrls.push(String(input))
+					return identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1)
+				},
+			},
+		}),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'source-size-limit-exceeded',
+	)
+	assert.equal(oversizeUrls.length, 1)
+	assert.equal(
+		oversizeUrls.some((url) => url.endsWith('/export')),
+		false,
+	)
+	assert.equal(consoleError.mock.calls.length, 2)
 })
 
 test('workflow retry reuses an upload committed before step persistence and writes the absent manifest', async () => {
@@ -309,103 +331,60 @@ test('zero-byte upload retries with a fresh URL before manifest success', async 
 	)
 })
 
-test('workflow retry rejects an object tampered after upload and leaves the manifest absent', async () => {
+test('tampered objects are rejected for retry and cached-upload paths without writing a manifest', async () => {
 	const consoleError = vi.spyOn(console, 'error')
-	consoleError.mockClear()
 	consoleError.mockImplementation(() => undefined)
-	const bucket = new MemoryBucket()
-	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
-	const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
-	const step = new RetryAfterCommitStep(() => {
-		bucket.corrupt(objectKey, 'evil!')
-	})
-	let downloadCalls = 0
-	await assert.rejects(
-		runBackupRuntime(
-			env,
-			{
-				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-				payload,
-				timestamp: new Date('2026-07-22T02:15:01Z'),
-			},
-			step,
-			{
-				api: {
-					fetcher: async (input) =>
-						String(input).endsWith('/export')
-							? exportEnvelope('complete')
-							: identityEnvelope(1_000),
-					sleep: async () => undefined,
-				},
-				downloadFetcher: async () => {
-					downloadCalls += 1
-					return new Response('valid', {
-						headers: { 'content-length': '5' },
-					})
-				},
-			},
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'existing-object-source-mismatch' &&
-			error.retryable === false,
-	)
-	assert.equal(downloadCalls, 2)
-	assert.equal(
-		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
-		null,
-	)
-	assert.equal(consoleError.mock.calls.length, 1)
-})
 
-test('cached upload result cannot bless a tampered manifest-less object', async () => {
-	const consoleError = vi.spyOn(console, 'error')
-	consoleError.mockClear()
-	consoleError.mockImplementation(() => undefined)
-	const bucket = new MemoryBucket()
-	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
-	const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
-	const step = new CachedUploadStep(() => {
-		bucket.corrupt(objectKey, 'evil!')
-	})
-	let downloadCalls = 0
-	await assert.rejects(
-		runBackupRuntime(
-			env,
-			{
-				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-				payload,
-				timestamp: new Date('2026-07-22T02:15:01Z'),
-			},
-			step,
-			{
-				api: {
-					fetcher: async (input) =>
-						String(input).endsWith('/export')
-							? exportEnvelope('complete')
-							: identityEnvelope(1_000),
-					sleep: async () => undefined,
+	for (const createStep of [
+		(corrupt: () => void) => new RetryAfterCommitStep(corrupt),
+		(corrupt: () => void) => new CachedUploadStep(corrupt),
+	]) {
+		consoleError.mockClear()
+		const bucket = new MemoryBucket()
+		const env = environment(bucket)
+		const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+		const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
+		const step = createStep(() => {
+			bucket.corrupt(objectKey, 'evil!')
+		})
+		let downloadCalls = 0
+		await assert.rejects(
+			runBackupRuntime(
+				env,
+				{
+					instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+					payload,
+					timestamp: new Date('2026-07-22T02:15:01Z'),
 				},
-				downloadFetcher: async () => {
-					downloadCalls += 1
-					return new Response('valid', {
-						headers: { 'content-length': '5' },
-					})
+				step,
+				{
+					api: {
+						fetcher: async (input) =>
+							String(input).endsWith('/export')
+								? exportEnvelope('complete')
+								: identityEnvelope(1_000),
+						sleep: async () => undefined,
+					},
+					downloadFetcher: async () => {
+						downloadCalls += 1
+						return new Response('valid', {
+							headers: { 'content-length': '5' },
+						})
+					},
 				},
-			},
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'existing-object-source-mismatch',
-	)
-	assert.equal(downloadCalls, 2)
-	assert.equal(
-		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
-		null,
-	)
-	assert.equal(consoleError.mock.calls.length, 1)
+			),
+			(error: unknown) =>
+				error instanceof BackupError &&
+				error.code === 'existing-object-source-mismatch' &&
+				error.retryable === false,
+		)
+		assert.equal(downloadCalls, 2)
+		assert.equal(
+			await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
+			null,
+		)
+		assert.equal(consoleError.mock.calls.length, 1)
+	}
 })
 
 test('source verification and manifest commit share one Workflow step boundary', async () => {
@@ -501,41 +480,4 @@ test('manifest signing failure leaves committed SQL manifest-less and retry succ
 	)
 	assert.notEqual(await bucket.head(payload.manifestKey), null)
 	assert.equal(consoleError.mock.calls.length, 1)
-})
-
-test('workflow does not start D1 export when source size exceeds the ceiling', async () => {
-	const consoleError = vi.spyOn(console, 'error')
-	consoleError.mockClear()
-	consoleError.mockImplementation(() => undefined)
-	const env = environment()
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
-	const urls: string[] = []
-	await assert.rejects(
-		runBackupRuntime(
-			env,
-			{
-				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-				payload,
-				timestamp: new Date('2026-07-22T02:15:01Z'),
-			},
-			new RetryAfterCommitStep(),
-			{
-				api: {
-					fetcher: async (input) => {
-						urls.push(String(input))
-						return identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1)
-					},
-				},
-			},
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'source-size-limit-exceeded',
-	)
-	assert.equal(urls.length, 1)
-	assert.equal(
-		urls.some((url) => url.endsWith('/export')),
-		false,
-	)
-	assert.equal(consoleError.mock.calls.length, 2)
 })

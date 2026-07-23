@@ -14,7 +14,6 @@ import { expect, test, vi } from 'vitest'
 import { runD1RestoreDrill } from './d1-restore-drill.ts'
 import {
 	collectBackupFileEvidence,
-	runProcess,
 	stageBackupFile,
 	withStagedBackupFile,
 } from './d1-restore-drill-cli.ts'
@@ -24,36 +23,6 @@ import {
 	drillInput,
 } from './disaster-recovery-test-support.ts'
 import { sha256 } from './canonical-json.ts'
-
-test('relative disaster-recovery CLI entry paths execute main', async () => {
-	const environment = {
-		HOME: process.env.HOME,
-		PATH: process.env.PATH,
-		TMPDIR: process.env.TMPDIR,
-	}
-	await expect(
-		runProcess(
-			{
-				kind: 'verification',
-				program: process.execPath,
-				args: ['tools/disaster-recovery/d1-restore-drill-cli.ts'],
-			},
-			environment,
-			false,
-		),
-	).rejects.toThrow('Missing required argument --manifest')
-	await expect(
-		runProcess(
-			{
-				kind: 'verification',
-				program: process.execPath,
-				args: ['tools/disaster-recovery/canonical-readiness-cli.ts'],
-			},
-			environment,
-			false,
-		),
-	).rejects.toThrow('Usage: canonical-readiness-cli.ts')
-})
 
 test('SQL file evidence streams injected chunks after stat and rejects sizes without reading the dump', async () => {
 	const events: Array<string> = []

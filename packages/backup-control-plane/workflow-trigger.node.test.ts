@@ -36,98 +36,92 @@ test('workflow creation omits explicit retention and active overlap stays duplic
 	assert.equal(await enqueueBackup(workflow, DATABASE_ID, payload), 'duplicate')
 })
 
-for (const status of [
-	'queued',
-	'running',
-	'paused',
-	'complete',
-	'waiting',
-	'waitingForPause',
-] as const) {
-	test(`${status} workflow instances are not restarted`, async () => {
+test('enqueueBackup status matrix: leave active alone, restart failed, fail closed', async () => {
+	const payload = backupPayload(environment(), new Date('2026-07-22T02:15:00Z'))
+	for (const status of [
+		'queued',
+		'running',
+		'paused',
+		'complete',
+		'waiting',
+		'waitingForPause',
+	] as const) {
 		let restarts = 0
-		const workflow = {
-			async create() {
-				throw new Error('instance already exists')
-			},
-			async get() {
-				return {
-					status: async () => ({ status }),
-					restart: async () => {
-						restarts += 1
-					},
-				}
-			},
-		}
 		assert.equal(
 			await enqueueBackup(
-				workflow,
+				{
+					async create() {
+						throw new Error('instance already exists')
+					},
+					async get() {
+						return {
+							status: async () => ({ status }),
+							restart: async () => {
+								restarts += 1
+							},
+						}
+					},
+				},
 				DATABASE_ID,
-				backupPayload(environment(), new Date('2026-07-22T02:15:00Z')),
+				payload,
 			),
 			'duplicate',
 		)
 		assert.equal(restarts, 0)
-	})
-}
+	}
 
-for (const status of ['errored', 'terminated'] as const) {
-	test(`${status} workflow instances are restarted once`, async () => {
+	for (const status of ['errored', 'terminated'] as const) {
 		let restarts = 0
-		const workflow = {
-			async create() {
-				throw new Error('instance already exists')
-			},
-			async get() {
-				return {
-					status: async () => ({ status }),
-					restart: async () => {
-						restarts += 1
-					},
-				}
-			},
-		}
 		assert.equal(
 			await enqueueBackup(
-				workflow,
+				{
+					async create() {
+						throw new Error('instance already exists')
+					},
+					async get() {
+						return {
+							status: async () => ({ status }),
+							restart: async () => {
+								restarts += 1
+							},
+						}
+					},
+				},
 				DATABASE_ID,
-				backupPayload(environment(), new Date('2026-07-22T02:15:00Z')),
+				payload,
 			),
 			'restarted',
 		)
 		assert.equal(restarts, 1)
-	})
-}
+	}
 
-for (const status of ['unknown', 'unexpected'] as const) {
-	test(`${status} workflow status fails closed`, async () => {
+	for (const status of ['unknown', 'unexpected'] as const) {
 		let restarts = 0
-		const workflow = {
-			async create() {
-				throw new Error('original create failure')
-			},
-			async get() {
-				return {
-					status: async () => ({
-						status: status as WorkflowInstanceStatus,
-					}),
-					restart: async () => {
-						restarts += 1
-					},
-				}
-			},
-		}
 		await assert.rejects(
 			enqueueBackup(
-				workflow,
+				{
+					async create() {
+						throw new Error('original create failure')
+					},
+					async get() {
+						return {
+							status: async () => ({
+								status: status as WorkflowInstanceStatus,
+							}),
+							restart: async () => {
+								restarts += 1
+							},
+						}
+					},
+				},
 				DATABASE_ID,
-				backupPayload(environment(), new Date('2026-07-22T02:15:00Z')),
+				payload,
 			),
 			/original create failure/,
 		)
 		assert.equal(restarts, 0)
-	})
-}
+	}
+})
 
 test('hourly freshness retries are bounded to 02:45 through 05:45 UTC', () => {
 	for (const hour of [2, 3, 4, 5]) {

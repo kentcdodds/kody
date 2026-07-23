@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test, vi } from 'vitest'
 import { runFreshnessAndRetry } from './freshness-retry.ts'
 
-test('backup retry runs when freshness fails', async () => {
+test('freshness and retry lanes always both run and surface independent failures', async () => {
 	const retryBackup = vi.fn(async () => undefined)
 	const freshnessError = new Error('D1 metadata unavailable')
 	await assert.rejects(
@@ -15,9 +15,7 @@ test('backup retry runs when freshness fails', async () => {
 		(error: unknown) => error === freshnessError,
 	)
 	assert.equal(retryBackup.mock.calls.length, 1)
-})
 
-test('freshness runs when backup retry fails', async () => {
 	const checkFreshness = vi.fn(async () => true)
 	const retryError = new Error('Workflow API unavailable')
 	await assert.rejects(
@@ -30,23 +28,21 @@ test('freshness runs when backup retry fails', async () => {
 		(error: unknown) => error === retryError,
 	)
 	assert.equal(checkFreshness.mock.calls.length, 1)
-})
 
-test('both failures are reported after both lanes run', async () => {
-	const freshnessError = new Error('freshness failed')
-	const retryError = new Error('retry failed')
+	const bothFreshnessError = new Error('freshness failed')
+	const bothRetryError = new Error('retry failed')
 	await assert.rejects(
 		runFreshnessAndRetry({
 			checkFreshness: async () => {
-				throw freshnessError
+				throw bothFreshnessError
 			},
 			retryBackup: async () => {
-				throw retryError
+				throw bothRetryError
 			},
 		}),
 		(error: unknown) =>
 			error instanceof AggregateError &&
-			error.errors[0] === freshnessError &&
-			error.errors[1] === retryError,
+			error.errors[0] === bothFreshnessError &&
+			error.errors[1] === bothRetryError,
 	)
 })
