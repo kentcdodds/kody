@@ -240,6 +240,9 @@ export function AccountMcpServersRoute(handle: Handle) {
 			}
 			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
 			applyPayload(payload)
+			// Clear a stale load-error banner; mutation success messages
+			// (info tone) survive the reload.
+			if (messageTone === 'error') setMessage(null)
 			status = 'ready'
 			loadLatch.markLoaded(latchKey)
 			consumeOAuthResult()

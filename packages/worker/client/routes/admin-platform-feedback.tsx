@@ -255,12 +255,9 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 
 		const selectedFeedback = data?.selectedFeedback ?? null
 		const selectedFeedbackId = readSelectedFeedbackId(currentHref)
-		const filters = data
-			? {
-					status: data.statusFilter ?? '',
-					category: data.categoryFilter ?? '',
-				}
-			: readFilterState(currentHref)
+		// Read filters from the URL (not the loader payload) so the selects
+		// don't snap back to stale values while a reload is in flight.
+		const filters = readFilterState(currentHref)
 		const totalPages = data
 			? Math.max(1, Math.ceil(data.total / data.pageSize))
 			: 1
