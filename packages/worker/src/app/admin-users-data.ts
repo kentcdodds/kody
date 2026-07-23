@@ -64,7 +64,7 @@ export function readAdminUsersSelectedUserId(
 	const url = new URL(requestUrl, 'http://localhost')
 	const detailPrefix = `${adminUsersBasePath}/`
 	if (url.pathname.startsWith(detailPrefix)) {
-		const segment = decodeURIComponent(url.pathname.slice(detailPrefix.length))
+		const segment = decodePathSegment(url.pathname.slice(detailPrefix.length))
 		if (segment && !segment.includes('/')) {
 			const fromPath = parseSelectedUserId(segment)
 			if (fromPath != null) return fromPath
@@ -72,6 +72,16 @@ export function readAdminUsersSelectedUserId(
 	}
 
 	return parseSelectedUserId(url.searchParams.get('selected'))
+}
+
+function decodePathSegment(value: string) {
+	try {
+		return decodeURIComponent(value)
+	} catch {
+		// Malformed percent-encoding (e.g. a literal `%`) must not throw;
+		// the raw segment simply fails numeric parsing below.
+		return value
+	}
 }
 
 function parseSelectedUserId(value: string | null | undefined): number | null {

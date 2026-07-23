@@ -36,6 +36,19 @@ test('list-detail route helper matches base, new, and single-segment detail path
 	})
 })
 
+test('list-detail route helper tolerates malformed percent-encoding', () => {
+	expect(mcpServersRoute.getSelection('/account/mcp-servers/%')).toEqual({
+		selectedId: '%',
+		isCreating: false,
+	})
+	expect(mcpServersRoute.getSelection('/account/mcp-servers/%E0%A4%A')).toEqual(
+		{
+			selectedId: '%E0%A4%A',
+			isCreating: false,
+		},
+	)
+})
+
 test('list-detail route helper builds hrefs with optional search', () => {
 	expect(mcpServersRoute.buildListHref()).toBe('/account/mcp-servers')
 	expect(mcpServersRoute.buildListHref('?q=docs')).toBe(

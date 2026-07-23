@@ -1,3 +1,13 @@
+function decodePathSegment(value: string) {
+	try {
+		return decodeURIComponent(value)
+	} catch {
+		// Malformed percent-encoding (e.g. a literal `%`) must not throw;
+		// the raw segment simply won't match any entity id.
+		return value
+	}
+}
+
 export type ListDetailSelection = {
 	selectedId: string | null
 	isCreating: boolean
@@ -38,7 +48,7 @@ export function createListDetailRoute(basePath: string) {
 			}
 		}
 		return {
-			selectedId: decodeURIComponent(segment),
+			selectedId: decodePathSegment(segment),
 			isCreating: false,
 		}
 	}
