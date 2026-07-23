@@ -46,6 +46,13 @@ function createMemoryTestDb() {
 					return {
 						async first<T>() {
 							if (
+								normalizedQuery.startsWith(
+									'select 1 as held from account_write_leases',
+								)
+							) {
+								return { held: 1 } as T
+							}
+							if (
 								normalizedQuery.includes('from mcp_memories') &&
 								normalizedQuery.includes('where user_id = ? and id = ?')
 							) {
@@ -115,6 +122,14 @@ function createMemoryTestDb() {
 							return { results: [] as Array<T>, meta: { changes: 0 } }
 						},
 						async run() {
+							if (
+								normalizedQuery.startsWith(
+									'insert into account_write_leases',
+								) ||
+								normalizedQuery.startsWith('update account_write_leases')
+							) {
+								return { meta: { changes: 1 } }
+							}
 							if (normalizedQuery.startsWith('update users')) {
 								return { meta: { changes: 1 } }
 							}

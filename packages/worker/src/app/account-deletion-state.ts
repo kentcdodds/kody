@@ -86,36 +86,61 @@ export async function withAccountWriteLease<T>(input: {
 	holder?: string
 	write: () => Promise<T>
 }) {
+	if (typeof input.db.batch !== 'function') {
+		const acquired = await input.db
+			.prepare(
+				`UPDATE users
+				SET active_write_count = active_write_count + 1
+				WHERE stable_user_id = ? AND deleting_at IS NULL`,
+			)
+			.bind(input.stableUserId)
+			.run()
+		if ((acquired.meta.changes ?? 0) !== 1) {
+			throw new AccountDeletionInProgressError()
+		}
+		try {
+			return await input.write()
+		} finally {
+			await input.db
+				.prepare(
+					`UPDATE users
+					SET active_write_count = MAX(active_write_count - 1, 0)
+					WHERE stable_user_id = ?`,
+				)
+				.bind(input.stableUserId)
+				.run()
+		}
+	}
 	const lease: AccountWriteLease = {
 		token: crypto.randomUUID(),
 		stableUserId: input.stableUserId,
 		holder: input.holder ?? 'unspecified',
 		acquiredAt: utcSqliteTimestamp(),
 	}
-	const [inserted, counted] = await input.db.batch([
-		input.db
-			.prepare(
-				`INSERT INTO account_write_leases (
-					token, user_id, holder, acquired_at
-				)
-				SELECT ?, stable_user_id, ?, ?
-				FROM users
-				WHERE stable_user_id = ? AND deleting_at IS NULL`,
+	const inserted = await input.db
+		.prepare(
+			`INSERT INTO account_write_leases (
+				token, user_id, holder, acquired_at
 			)
-			.bind(lease.token, lease.holder, lease.acquiredAt, lease.stableUserId),
-		input.db
-			.prepare(
-				`UPDATE users
-				SET active_write_count = active_write_count + 1
-				WHERE stable_user_id = ?
-					AND EXISTS (
-						SELECT 1 FROM account_write_leases
-						WHERE token = ? AND user_id = ?
-							AND released_at IS NULL
-					)`,
-			)
-			.bind(lease.stableUserId, lease.token, lease.stableUserId),
-	])
+			SELECT ?, stable_user_id, ?, ?
+			FROM users
+			WHERE stable_user_id = ? AND deleting_at IS NULL`,
+		)
+		.bind(lease.token, lease.holder, lease.acquiredAt, lease.stableUserId)
+		.run()
+	const counted = await input.db
+		.prepare(
+			`UPDATE users
+			SET active_write_count = active_write_count + 1
+			WHERE stable_user_id = ?
+				AND EXISTS (
+					SELECT 1 FROM account_write_leases
+					WHERE token = ? AND user_id = ?
+						AND released_at IS NULL
+				)`,
+		)
+		.bind(lease.stableUserId, lease.token, lease.stableUserId)
+		.run()
 	if (
 		(inserted?.meta.changes ?? 0) !== 1 ||
 		(counted?.meta.changes ?? 0) !== 1
@@ -135,27 +160,24 @@ export async function withAccountWriteLease<T>(input: {
 		return result
 	} finally {
 		const releasedAt = utcSqliteTimestamp()
-		await input.db.batch([
-			input.db
+		const released = await input.db
+			.prepare(
+				`UPDATE account_write_leases
+				SET released_at = ?
+				WHERE token = ? AND user_id = ? AND released_at IS NULL`,
+			)
+			.bind(releasedAt, lease.token, lease.stableUserId)
+			.run()
+		if ((released.meta.changes ?? 0) === 1) {
+			await input.db
 				.prepare(
 					`UPDATE users
 					SET active_write_count = MAX(active_write_count - 1, 0)
-					WHERE stable_user_id = ?
-						AND EXISTS (
-							SELECT 1 FROM account_write_leases
-							WHERE token = ? AND user_id = ?
-								AND released_at IS NULL
-						)`,
+					WHERE stable_user_id = ?`,
 				)
-				.bind(lease.stableUserId, lease.token, lease.stableUserId),
-			input.db
-				.prepare(
-					`UPDATE account_write_leases
-					SET released_at = ?
-					WHERE token = ? AND user_id = ? AND released_at IS NULL`,
-				)
-				.bind(releasedAt, lease.token, lease.stableUserId),
-		])
+				.bind(lease.stableUserId)
+				.run()
+		}
 	}
 }
 

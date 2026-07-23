@@ -123,6 +123,20 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'mcp_agent_sessions' },
 	{ kind: 'user_id', table: 'account_write_leases' },
 	{
+		kind: 'replace_user_column',
+		table: 'account_write_lease_repairs',
+		matchColumn: 'target_user_id',
+		setColumn: 'target_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'account_write_lease_repairs',
+		matchColumn: 'repaired_by_user_id',
+		setColumn: 'repaired_by_user_id',
+		value: 'deleted-user',
+	},
+	{
 		kind: 'bucket_parent',
 		table: 'value_entries',
 		parentTable: 'value_buckets',
