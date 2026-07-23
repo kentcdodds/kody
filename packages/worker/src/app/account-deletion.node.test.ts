@@ -1421,6 +1421,41 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	])
 })
 
+test('account deletion reports a missing email blob binding and remains retryable', async () => {
+	const { db, rows } = createTestDb({
+		users: [
+			{
+				id: 1,
+				email: 'a@example.com',
+				stable_user_id: 'user-aaa',
+			},
+		],
+		email_messages: [{ id: 'message-a', user_id: 'user-aaa' }],
+	})
+	await expect(
+		deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db, {
+				EMAIL_BLOBS: undefined,
+			}),
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toMatchObject({
+		cleanupErrors: expect.arrayContaining([
+			'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
+		]),
+	})
+	expect(rows.email_messages).toEqual([
+		{ id: 'message-a', user_id: 'user-aaa' },
+	])
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			deleting_at: expect.any(String),
+		}),
+	])
+})
+
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
 	const { db, rows } = createTestDb(
 		{

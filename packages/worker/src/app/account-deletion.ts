@@ -1023,27 +1023,34 @@ export async function deleteUserAccount(input: {
 	} catch (error) {
 		warnings.push(getErrorMessage(error))
 	}
-	try {
-		result.deletedEmailBlobs = await deleteAccountEmailBlobPrefixes({
-			bucket: input.env.EMAIL_BLOBS,
-			stableUserId: input.mcpUserId,
+	const emailBlobs = input.env.EMAIL_BLOBS
+	if (!emailBlobs) {
+		warnings.push(
+			'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
+		)
+	} else {
+		try {
+			result.deletedEmailBlobs = await deleteAccountEmailBlobPrefixes({
+				bucket: emailBlobs,
+				stableUserId: input.mcpUserId,
+			})
+		} catch (error) {
+			warnings.push(getErrorMessage(error))
+		}
+		result.deletedEmailBlobs += await deleteR2Objects({
+			blobs: emailBlobs,
+			keys: inventory.r2Objects
+				.filter((object) => object.binding === 'EMAIL_BLOBS')
+				.filter(
+					(object) =>
+						!object.key.startsWith(`email-raw:v1:${input.mcpUserId}/`) &&
+						!object.key.startsWith(`email-attachment:v1:${input.mcpUserId}/`),
+				)
+				.map((object) => object.key),
+			label: 'Email blob',
+			warnings,
 		})
-	} catch (error) {
-		warnings.push(getErrorMessage(error))
 	}
-	result.deletedEmailBlobs += await deleteR2Objects({
-		blobs: input.env.EMAIL_BLOBS,
-		keys: inventory.r2Objects
-			.filter((object) => object.binding === 'EMAIL_BLOBS')
-			.filter(
-				(object) =>
-					!object.key.startsWith(`email-raw:v1:${input.mcpUserId}/`) &&
-					!object.key.startsWith(`email-attachment:v1:${input.mcpUserId}/`),
-			)
-			.map((object) => object.key),
-		label: 'Email blob',
-		warnings,
-	})
 
 	const helpers = input.env.OAUTH_PROVIDER
 	if (helpers) {
