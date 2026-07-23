@@ -4,7 +4,7 @@ import { expect, test } from 'vitest'
 
 const migration = readFileSync(
 	new URL(
-		'../../migrations/0086-email-delivery-reconciliation-index.sql',
+		'../../migrations/0089-email-delivery-reconciliation-index.sql',
 		import.meta.url,
 	),
 	'utf8',

@@ -379,6 +379,10 @@
 		{
 			"filename": "0088-mcp-agent-session-backfill-marker.sql",
 			"sha256": "bd098fcfe23900a35617d5ff483be270e12bd2831b17d58b17710ed8721610e6"
+		},
+		{
+			"filename": "0089-email-delivery-reconciliation-index.sql",
+			"sha256": "f4304dbfbf3d3ab0bdfea0b8f769a16ac39241411597ce1e693430f7888ecc5b"
 		}
 	]
 }
