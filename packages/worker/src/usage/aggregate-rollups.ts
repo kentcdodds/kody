@@ -344,6 +344,13 @@ export async function aggregateUsageRollups(
 		...currentAnalyticsRows.map((row) => ({ ...row, month })),
 		...previousAnalyticsRows.map((row) => ({ ...row, month: priorMonth })),
 	]
+	const analyticsMonthsWithRows = new Set<string>()
+	if (currentAnalyticsRows.some((row) => row.user_id && row.metric)) {
+		analyticsMonthsWithRows.add(month)
+	}
+	if (previousAnalyticsRows.some((row) => row.user_id && row.metric)) {
+		analyticsMonthsWithRows.add(priorMonth)
+	}
 
 	const updatedAt = now.toISOString()
 	const emailRows = await readIdempotentInboundEmailUsage({
@@ -351,7 +358,12 @@ export async function aggregateUsageRollups(
 		months: [month, priorMonth],
 	})
 	const mergedRows = new Map<string, AnalyticsEngineSqlRow>()
-	for (const row of [...rows, ...emailRows]) {
+	for (const row of [
+		...rows,
+		...emailRows.filter(
+			(row) => row.month && analyticsMonthsWithRows.has(row.month),
+		),
+	]) {
 		if (!row.user_id || !row.metric) continue
 		const rowMonth = row.month ?? month
 		const key = `${rowMonth}\n${rollupPairKey(row)}`
@@ -401,7 +413,7 @@ export async function aggregateUsageRollups(
 		(row) => (row.month ?? month) === month,
 	)
 	const deletedRows =
-		currentRows.length === 0
+		!analyticsMonthsWithRows.has(month) || currentRows.length === 0
 			? 0
 			: await deleteStaleCurrentMonthRollups({
 					db: env.APP_DB,

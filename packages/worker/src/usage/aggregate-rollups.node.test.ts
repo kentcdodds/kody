@@ -503,7 +503,21 @@ test('aggregateUsageRollups keeps existing rollups when the Analytics Engine res
 		{ user_id: 'user-a', metric: 'execute', month: '2026-07' },
 		{ user_id: 'user-b', metric: 'job_run', month: '2026-07' },
 	]
-	const { db, deletes, rollups } = createFakeDb({ existingRollups })
+	const { db, batches, deletes, rollups } = createFakeDb({
+		existingRollups,
+		emailUsageRows: [
+			{
+				user_id: 'user-a',
+				metric: 'email_received',
+				month: '2026-07',
+				event_count: 1,
+				error_count: 0,
+				total_duration_ms: 10,
+				total_cpu_ms: 0,
+				total_bytes: 128,
+			},
+		],
+	})
 
 	const result = await aggregateUsageRollups(
 		createAggregationEnv(db),
@@ -518,6 +532,7 @@ test('aggregateUsageRollups keeps existing rollups when the Analytics Engine res
 		users: 0,
 	})
 	expect(deletes).toHaveLength(0)
+	expect(batches).toHaveLength(0)
 	expect(rollups).toEqual(existingRollups)
 })
 
