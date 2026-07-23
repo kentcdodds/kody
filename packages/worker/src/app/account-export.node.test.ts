@@ -146,6 +146,7 @@ test('account export documents and excludes operator-owned system email rows', a
 	expect(accountExport.d1.email_messages.rows).toEqual([
 		expect.objectContaining({ id: 'user-message', user_id: 'user-aaa' }),
 	])
+	expect(accountExport.manifest.sections.r2_object?.count).toBe(1)
 	expect(accountExport.manifest.excludedD1Surfaces).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({

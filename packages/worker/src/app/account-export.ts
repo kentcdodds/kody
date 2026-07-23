@@ -1035,7 +1035,7 @@ function buildManifest(input: {
 		count: input.inventory.bundleKvKeys.length,
 		warnings: input.warnings.filter((warning) => warning.startsWith('KV ')),
 	}
-	sections.r2_objects = {
+	sections.r2_object = {
 		count: input.inventory.r2ObjectCount,
 		warnings: input.warnings.filter((warning) => warning.includes('R2 object')),
 	}
