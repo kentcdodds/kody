@@ -202,14 +202,58 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   as `session_repo_namespace` so follow-up lookups resolve the correct namespace
   even after env changes.
 
-## Backup manifest signing
+## Disaster recovery (production Worker)
 
-The separately deployed backup Worker uses non-secret
-`BACKUP_MANIFEST_SIGNING_KEY_ID`, `TRUSTED_RESTORE_BASELINE_ID`, and
-`TRUSTED_RESTORE_BASELINE_SHA256` vars. Its
-`BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64` value is a secret containing
-only base64-encoded Ed25519 PKCS#8 private-key bytes. Configure it with Wrangler
-secret storage, never in a `.env`, checked config, log, or evidence artifact.
+Optional production-only vars/secrets for the nightly non-D1 staging exporter
+and chunked restore endpoint (`packages/worker/src/dr/`). All are inert until
+`DR_EXPORT_ENABLED` is the literal string `"true"` and S3 credentials are set.
+See [Disaster recovery](./disaster-recovery.md).
+
+- `DR_EXPORT_ENABLED` — Worker var; enable staging only when `"true"`.
+- `DR_BACKUP_ACCOUNT_ID` / `DR_BACKUP_BUCKET_NAME` — DR account id and backup
+  bucket name (S3 API endpoint host uses the account id).
+- `DR_BACKUP_ACCESS_KEY_ID` / `DR_BACKUP_SECRET_ACCESS_KEY` — Worker secrets; R2
+  S3 credentials that can write `staging/` and `blobs/` in the DR bucket.
+- `DR_RESTORE_SECRET` — Worker secret; bearer token for
+  `POST /__maintenance/dr-restore`. Must match the control-plane secret of the
+  same name. Fail-closed when unset.
+
+## Backup control plane (DR account Worker)
+
+Deployed separately under `packages/backup-control-plane/` (not app CI). Enable
+gates and source identity vars live in that package's `wrangler.jsonc`.
+
+Non-secret vars:
+
+- `ENABLE_PRODUCTION_D1_BACKUPS` / `BACKUP_BENCHMARK_APPROVED` — both must be
+  exactly `"true"` or schedules stay inert.
+- `SOURCE_ACCOUNT_ID` / `SOURCE_DATABASE_ID` / `SOURCE_DATABASE_NAME` plus
+  `ALLOWED_SOURCE_ACCOUNT_IDS` / `ALLOWED_SOURCE_DATABASE_IDS`.
+- `BACKUP_MANIFEST_SIGNING_KEY_ID`,
+  `BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64`,
+  `TRUSTED_RESTORE_BASELINE_ID`, `TRUSTED_RESTORE_BASELINE_SHA256`.
+- `BACKUP_MAX_AGE_HOURS` (default 26), `BACKUP_MAX_SOURCE_BYTES` (≤ 4.5e9).
+- `ACCESS_TEAM_DOMAIN`, `ACCESS_APP_AUD`, `ACCESS_ALLOWED_EMAIL` — Zero Trust
+  Access JWT verification (policy pinned to the solo operator email).
+- `DRILL_ACCOUNT_ID` — isolated account for UI restore drills (must differ from
+  source).
+- `PRIMARY_WORKER_ORIGIN` — production Worker origin for
+  `/__maintenance/dr-restore`.
+
+Secrets (Wrangler secret storage only — never `.env`, config, logs, or
+evidence):
+
+- `CLOUDFLARE_API_TOKEN` — production-account Account D1 Edit (export +
+  production import).
+- `BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64` — base64 Ed25519 PKCS#8.
+- `DRILL_API_TOKEN` — drill-account D1 Edit for isolated UI drills.
+- `RESTORE_CONFIRM_SECRET` — HMAC secret for the 10-minute prepare→execute
+  production-restore token.
+- `DR_RESTORE_SECRET` — bearer shared with the production Worker.
+
+GitHub Actions `workflow_dispatch` escrow (`.github/workflows/dr-escrow.yml`)
+also needs `SECRET_STORE_KEY`, `SECRET_ESCROW_PASSPHRASE`, and the DR S3
+credentials (`DR_BACKUP_*`) as repository secrets.
 
 ## Why Zod?
 

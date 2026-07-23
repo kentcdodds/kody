@@ -1,5 +1,16 @@
 {
 	"schemaVersion": 1,
-	"productionSources": [],
-	"drillTargets": []
+	"productionSources": [
+		{
+			"accountId": "a99ee2e72728dd52902ef288b7b1447d",
+			"databaseId": "8c1014d1-6b41-4695-a0a2-159071f0f919",
+			"databaseName": "kody"
+		}
+	],
+	"drillTargets": [
+		{
+			"accountId": "a41d50ecaf0ae0f86dd1824ef6729cb2",
+			"databaseName": "kody-dr-drill-manual"
+		}
+	]
 }

@@ -1,7 +1,21 @@
 # Disaster-recovery drills
 
-These tools are manual, isolated readiness and restore-drill aids. They do not
-create, bind, overwrite, delete, cut over, or use Time Travel on a D1 database.
+Primary operator paths for isolated restore drills and graduated production
+restore live on the backup control-plane Admin UI (Access-protected). See
+[`docs/contributing/disaster-recovery.md`](../../docs/contributing/disaster-recovery.md).
+
+The CLIs in this directory remain the offline / manual fallback when the UI is
+unavailable, and they are still the fail-closed readiness assessor for local
+evidence envelopes.
+
+Also here:
+
+- `seal-escrow.ts` — seal `SECRET_STORE_KEY` under an operator passphrase and
+  upload `escrow/secret-store-key.v1.json` (used by
+  `.github/workflows/dr-escrow.yml`).
+
+These tools do not create, bind, overwrite, delete, cut over, or use Time Travel
+on a production D1 database.
 
 ## D1 restore drill
 

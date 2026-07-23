@@ -138,6 +138,11 @@ guarded by a bearer secret comparison.
 
 - Saved secrets are encrypted at rest with AES-GCM under `SECRET_STORE_KEY` and
   scoped by `userId` (`packages/worker/src/mcp/secrets/`).
+- `SECRET_STORE_KEY` is escrowed for disaster recovery as a passphrase-sealed
+  blob in the DR backup bucket (solo operator; see
+  [Disaster recovery](./disaster-recovery.md) and
+  [Secret rotation](./secret-rotation.md)). The plaintext key must not appear in
+  backup SQL, manifests, or repository files.
 - Outbound secret use goes through the fetch gateway
   (`packages/worker/src/mcp/fetch-gateway.ts`), which is deny-by-default: a
   secret placeholder is only substituted for a host the user explicitly approved
@@ -145,6 +150,9 @@ guarded by a bearer secret comparison.
   only reachable through the authenticated account UI.
 - User code runs in a Cloudflare Worker Loader isolate without the parent `env`;
   capabilities are RPC'd back to handlers that enforce the caller's `userId`.
+- The DR control-plane Admin UI is protected by Cloudflare Access plus in-worker
+  `Cf-Access-Jwt-Assertion` verification; production restore is a graduated
+  prepare → typed confirmation → Workflow path, never a single click.
 
 ## Accepted residual risks and out-of-scope items
 

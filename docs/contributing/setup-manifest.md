@@ -78,14 +78,22 @@ resources from bindings alone, so the deploy workflow runs
 
 ### Disaster-recovery control plane
 
-Production backups use a separate deployment and are not provisioned or deployed
-by the application workflow above. The dedicated Worker and Workflow live under
-`packages/backup-control-plane/` in an independently administered DR Cloudflare
-account. Its `BACKUP_BUCKET` R2 binding is private and uses immutable `daily/`
-and `weekly/` prefixes.
+Production backups are **not** provisioned or deployed by the application
+workflow above. The control-plane Worker/Workflows live under
+`packages/backup-control-plane/` in the independently administered DR Cloudflare
+account and are deployed via the Cloudflare API / Wrangler authenticated to that
+account. Its `BACKUP_BUCKET` R2 binding is private. Immutable prefixes include
+`daily/`, `weekly/`, `daily/full/`, and content-addressed `blobs/sha256/`.
 
-The retention administrator uses a separate provisioner token to create the
-bucket and apply 35-day daily and 400-day weekly lock/lifecycle rules:
+The production Worker also stages non-D1 canonical stores into the same bucket
+when `DR_EXPORT_ENABLED=true` (StorageRunner dumps, `EMAIL_BLOBS` /
+`COMMUNITY_ASSETS` blobs, published `BUNDLE_ARTIFACTS_KV` source snapshots). The
+control plane seals complete days and hosts the Access-protected Admin UI for
+drills and graduated production restore. See
+[Disaster recovery](./disaster-recovery.md).
+
+Use a separate provisioner token (never a Worker secret) to create the bucket
+and apply 35-day daily and 400-day weekly lock/lifecycle rules:
 
 ```sh
 node tools/ci/backup-resources-cli.ts plan \
@@ -97,24 +105,23 @@ node tools/ci/backup-resources-cli.ts plan \
 ```
 
 `apply` is an explicit mutation and must be run only after reviewing the plan.
-The runtime receives a source-account token with Cloudflare Account D1 Edit as
-the `CLOUDFLARE_API_TOKEN` Worker secret. Cloudflare grants this permission
-account-wide and it can mutate D1; the runtime's application UUID/name allowlist
-reduces operator mistakes but does not technically scope the token to one
-database or make it read-only. Keep this source runtime token separate from the
-destination R2 provisioning/lock-administration token and drill restore
-credentials. The runtime must not receive either of those credentials or R2
-bucket, lock, lifecycle, or public-access administration permissions. Scheduling
-remains inert until the blocking-export benchmark is approved and both enable
-variables are exactly `true`. See [Disaster recovery](./disaster-recovery.md)
-for deployment, readiness, drill, credential, and exclusion details.
+The control-plane runtime receives a source-account token with Cloudflare
+Account D1 Edit as `CLOUDFLARE_API_TOKEN` (export + production D1 import).
+Cloudflare grants this permission account-wide and it can mutate D1; the
+runtime's UUID/name allowlist reduces mistakes but does not scope the token.
+Keep that token separate from the provisioner token, drill token
+(`DRILL_API_TOKEN`), and production→DR S3 credentials on the app Worker.
+Scheduling remains inert until the blocking-export benchmark is approved and
+both `ENABLE_PRODUCTION_D1_BACKUPS` and `BACKUP_BENCHMARK_APPROVED` are exactly
+`"true"`.
 
-The backup deployment also requires reviewed non-secret
-`BACKUP_MANIFEST_SIGNING_KEY_ID`, `TRUSTED_RESTORE_BASELINE_ID`, and
-`TRUSTED_RESTORE_BASELINE_SHA256` vars. Store the matching base64-encoded
-Ed25519 PKCS#8 private key only as the
-`BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64` Worker secret. Never commit
-that private key. Restore trusts only the checked-in manifest public-key,
+Reviewed non-secret control-plane vars include manifest signing key id /
+verifying public key, trusted restore baseline id/digest, Access
+(`ACCESS_TEAM_DOMAIN`, `ACCESS_APP_AUD`, `ACCESS_ALLOWED_EMAIL`),
+`DRILL_ACCOUNT_ID`, and `PRIMARY_WORKER_ORIGIN`. Worker secrets include
+`BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64`, `DRILL_API_TOKEN`,
+`RESTORE_CONFIRM_SECRET`, and `DR_RESTORE_SECRET`. Never commit private keys.
+Offline CLI restore still trusts only the checked-in manifest public-key,
 production-identity, and restore-baseline registries.
 
 ## Optional Cloudflare offerings
@@ -209,7 +216,10 @@ Configure these GitHub Actions secrets and variables for workflows:
   owns the user email sending domain; Email Sending event subscriptions require
   both this zone id and the domain)
 - `COOKIE_SECRET` (same format as local)
-- `SECRET_STORE_KEY` (same format as local; required for deploys)
+- `SECRET_STORE_KEY` (same format as local; required for deploys; also sealed
+  into the DR bucket via `.github/workflows/dr-escrow.yml` using
+  `SECRET_ESCROW_PASSPHRASE` plus `DR_BACKUP_*` S3 credentials — see
+  [Disaster recovery](./disaster-recovery.md))
 - `APP_BASE_URL` (required GitHub Actions **variable** used by the deployed
   Worker as the fallback public app origin when no request URL is available —
   workflows, password-reset email sender hostname — and written into the
@@ -224,6 +234,16 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `CAPABILITY_REINDEX_SECRET` (required in production; optional locally and for
   previews; authenticates post-deploy maintenance calls such as capability
   reindex)
+- `DR_BACKUP_ACCOUNT_ID` / `DR_BACKUP_BUCKET_NAME` / `DR_BACKUP_ACCESS_KEY_ID` /
+  `DR_BACKUP_SECRET_ACCESS_KEY` (production DR staging into the DR bucket; also
+  used by `.github/workflows/dr-escrow.yml`. Pair with Worker var
+  `DR_EXPORT_ENABLED=true` only after enablement — see
+  [Disaster recovery](./disaster-recovery.md))
+- `DR_RESTORE_SECRET` (shared bearer for control-plane →
+  `POST /__maintenance/dr-restore`)
+- `SECRET_ESCROW_PASSPHRASE` (operator passphrase for sealing `SECRET_STORE_KEY`
+  into `escrow/secret-store-key.v1.json`; keep the same value in the personal
+  password manager)
 - `OAUTH_GITHUB_CLIENT_ID` / `OAUTH_GITHUB_CLIENT_SECRET`,
   `OAUTH_GOOGLE_CLIENT_ID` / `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_X_CLIENT_ID` /
   `OAUTH_X_CLIENT_SECRET` (optional; social login provider app credentials. The

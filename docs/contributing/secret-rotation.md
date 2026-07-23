@@ -29,6 +29,16 @@ Cookie signing and saved-secret encryption use separate Worker secrets:
 Rotating `SECRET_STORE_KEY` requires a re-encryption migration because AES-GCM
 has no built-in key versioning.
 
+### Escrow
+
+The live key must remain recoverable outside GitHub Actions and the deployed
+Worker. Solo escrow seals the key under an operator passphrase
+(`SECRET_ESCROW_PASSPHRASE` in the password manager and as a GitHub secret) via
+`.github/workflows/dr-escrow.yml`, which uploads
+`escrow/secret-store-key.v1.json` to the DR backup bucket. After any rotation,
+re-run that workflow so the sealed blob matches the deployed key, then
+smoke-test unsealing offline. See [Disaster recovery](./disaster-recovery.md).
+
 ### Procedure
 
 1. **Keep the old key available** in a secure migration script so you can
@@ -38,6 +48,7 @@ has no built-in key versioning.
    future `/__maintenance/reencrypt-secrets` endpoint.
 3. **Deploy** the new `SECRET_STORE_KEY` only after the re-encryption pass is
    complete and verified.
+4. **Re-seal escrow** with `dr-escrow.yml` for the new key value.
 
 ### Important notes
 
