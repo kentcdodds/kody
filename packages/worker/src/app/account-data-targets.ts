@@ -601,6 +601,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	community_stars: ['user_id'],
 	community_activity_events: ['actor_user_id'],
 	community_reports: ['listing_owner_user_id', 'resolved_by_user_id'],
+	account_write_lease_repairs: ['target_user_id', 'repaired_by_user_id'],
 	package_scope_grants: [
 		'scope_owner_user_id',
 		'grantee_user_id',

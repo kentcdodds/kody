@@ -65,10 +65,11 @@ export async function handleMcpAgentSessionBackfillCompleteRequest(
 			const summary = auditSummary as Record<string, unknown>
 			if (
 				Number(summary['failed'] ?? 0) !== 0 ||
-				Number(summary['conflicts'] ?? 0) !== 0
+				Number(summary['conflicts'] ?? 0) !== 0 ||
+				Number(summary['noOwner'] ?? 0) !== 0
 			) {
 				throw new Error(
-					'Backfill cannot complete with failures or ownership conflicts.',
+					'Backfill cannot complete with failures, ownership conflicts, or unproven ownerless objects.',
 				)
 			}
 			const completedAt = new Date().toISOString()

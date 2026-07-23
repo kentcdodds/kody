@@ -20,7 +20,11 @@ import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-conne
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type RawFetchHostNudgeState } from '#mcp/raw-fetch-host-nudge.ts'
 import { listPopularAgentPackagesForUser } from '#worker/usage/agent-package-conversation-uses.ts'
-import { registerMcpAgentSession } from './session-registry.ts'
+import {
+	readPersistedMcpAgentOwner,
+	purgePersistedMcpAgentSession,
+	registerMcpAgentSession,
+} from './session-registry.ts'
 
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
@@ -121,17 +125,17 @@ class MCPBase extends McpAgent<Env, State, Props> {
 		return baseUrl
 	}
 	async purgeForAccountDeletion(input: { userId: string }) {
-		const storedUserId = this.getCallerContext().user?.userId ?? null
-		if (storedUserId !== input.userId) {
-			throw new Error('MCP agent session user scope mismatch.')
-		}
-		await this.ctx.storage.deleteAll()
+		await purgePersistedMcpAgentSession({
+			storage: this.ctx.storage,
+			doId: this.ctx.id.toString(),
+			userId: input.userId,
+		})
 	}
 	async getStoredOwnerForMaintenance() {
-		return {
+		return readPersistedMcpAgentOwner({
+			storage: this.ctx.storage,
 			doId: this.ctx.id.toString(),
-			userId: this.getCallerContext().user?.userId ?? null,
-		}
+		})
 	}
 }
 

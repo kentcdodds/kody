@@ -124,6 +124,10 @@ export type AccountExportManifestSection = {
 	count: number
 	warnings: Array<string>
 	redactedColumns?: Array<string>
+	discovery?: {
+		section: AccountExportSectionName
+		kind?: string
+	}
 }
 
 export type AccountExportManifest = {
@@ -1304,12 +1308,17 @@ function buildManifest(input: {
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Storage runner '),
 		),
+		discovery: {
+			section: 'durable_object_summaries',
+			kind: 'storage_runner',
+		},
 	}
 	sections.job_manager = {
 		count: 1,
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Job manager '),
 		),
+		discovery: { section: 'job_manager' },
 	}
 	sections.remote_connector_sessions = {
 		count:
@@ -1319,6 +1328,10 @@ function buildManifest(input: {
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Remote connector session '),
 		),
+		discovery: {
+			section: 'durable_object_summaries',
+			kind: 'remote_connector_session',
+		},
 	}
 	sections.package_services = {
 		count:
@@ -1328,6 +1341,10 @@ function buildManifest(input: {
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Package service '),
 		),
+		discovery: {
+			section: 'durable_object_summaries',
+			kind: 'package_service',
+		},
 	}
 	sections.oauth_grants = {
 		count: input.oauthGrantCount ?? input.oauthGrants?.length ?? 0,
@@ -1537,6 +1554,11 @@ export async function readAccountExportSection(input: {
 	instanceId?: string
 	packageId?: string
 	serviceName?: string
+	kind?:
+		| 'storage_runner'
+		| 'remote_connector_session'
+		| 'package_service'
+		| 'job_manager'
 	pageSize?: number
 	startAfter?: string
 }): Promise<AccountExportSectionResult> {
@@ -1643,18 +1665,48 @@ export async function readAccountExportSection(input: {
 		if (owned?.owned !== 1) {
 			throw new Error('Remote connector session was not found for export.')
 		}
-		const [exported] = await exportRemoteConnectorSessions({
-			env: input.env,
+		const namespace = input.env.REMOTE_CONNECTOR_SESSION
+		if (!namespace) {
+			throw new Error('REMOTE_CONNECTOR_SESSION binding was unavailable.')
+		}
+		const sessionKey = userScopedConnectorSessionKey({
 			userId: input.mcpUserId,
-			connectors: [{ instanceId: input.instanceId }],
-			warnings,
+			instanceId: input.instanceId,
+		})
+		const stub = namespace.get(namespace.idFromName(sessionKey)) as unknown as {
+			rpcExportUserSessionPage: (payload: {
+				userId: string
+				instanceId: string
+				pageSize: number
+				startAfter?: string
+			}) => Promise<{
+				persisted: unknown
+				tools: Array<unknown>
+				connected: boolean
+				truncated: boolean
+				nextStartAfter: string | null
+				pageSize: number
+			}>
+		}
+		const exported = await stub.rpcExportUserSessionPage({
+			userId: input.mcpUserId,
+			instanceId: input.instanceId,
+			pageSize: normalizePageSize(input.pageSize),
+			startAfter: input.startAfter,
 		})
 		return {
 			section: input.section,
-			items: exported ? [exported] : [],
-			truncated: false,
-			nextStartAfter: null,
-			pageSize: 1,
+			items: [
+				{
+					instanceId: input.instanceId,
+					persisted: exported.persisted,
+					tools: exported.tools,
+					connected: exported.connected,
+				},
+			],
+			truncated: exported.truncated,
+			nextStartAfter: exported.nextStartAfter,
+			pageSize: exported.pageSize,
 			warnings,
 		}
 	}
@@ -1760,19 +1812,193 @@ export async function readAccountExportSection(input: {
 			break
 		}
 		case 'durable_object_summaries': {
-			const inventory = await collectInventory({
-				env: input.env,
-				userId: input.mcpUserId,
-				dbUserId: input.dbUserId,
+			if (!input.kind) {
+				throw new Error(
+					'kind is required when section is durable_object_summaries.',
+				)
+			}
+			const pageSize = normalizePageSize(input.pageSize)
+			const cursor = input.startAfter
+				? (JSON.parse(input.startAfter) as Record<string, unknown>)
+				: {}
+			if (input.kind === 'job_manager') {
+				return {
+					section: input.section,
+					items: cursor['done']
+						? []
+						: [{ kind: 'job_manager', userId: input.mcpUserId }],
+					truncated: false,
+					nextStartAfter: null,
+					pageSize: 1,
+					warnings,
+				}
+			}
+			if (input.kind === 'remote_connector_session') {
+				const afterRowid = Number(cursor['afterRowid'] ?? 0)
+				const rows = await input.env.APP_DB.prepare(
+					`SELECT rowid AS cursor, instance_id
+					FROM remote_connector_settings
+					WHERE user_id = ? AND rowid > ?
+					ORDER BY rowid LIMIT ?`,
+				)
+					.bind(input.mcpUserId, afterRowid, pageSize + 1)
+					.all<{ cursor: number; instance_id: string }>()
+				const pageRows = rows.results ?? []
+				const truncated = pageRows.length > pageSize
+				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
+				return {
+					section: input.section,
+					items: selected.map((row) => ({
+						kind: input.kind,
+						instanceId: row.instance_id,
+					})),
+					truncated,
+					nextStartAfter: truncated
+						? JSON.stringify({ afterRowid: selected.at(-1)!.cursor })
+						: null,
+					pageSize,
+					warnings,
+				}
+			}
+			if (input.kind === 'package_service') {
+				const afterPackageId = String(cursor['packageId'] ?? '')
+				const afterName = String(cursor['name'] ?? '')
+				const rows = await input.env.APP_DB.prepare(
+					`SELECT DISTINCT package_id, name
+					FROM package_runtime_runs
+					WHERE user_id = ? AND surface = 'service' AND name IS NOT NULL
+						AND (package_id > ? OR (package_id = ? AND name > ?))
+					ORDER BY package_id, name LIMIT ?`,
+				)
+					.bind(
+						input.mcpUserId,
+						afterPackageId,
+						afterPackageId,
+						afterName,
+						pageSize + 1,
+					)
+					.all<{ package_id: string; name: string }>()
+				const pageRows = rows.results ?? []
+				const truncated = pageRows.length > pageSize
+				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
+				return {
+					section: input.section,
+					items: selected.map((row) => ({
+						kind: input.kind,
+						packageId: row.package_id,
+						serviceName: row.name,
+					})),
+					truncated,
+					nextStartAfter: truncated
+						? JSON.stringify({
+								packageId: selected.at(-1)!.package_id,
+								name: selected.at(-1)!.name,
+							})
+						: null,
+					pageSize,
+					warnings,
+				}
+			}
+			const stage = String(cursor['stage'] ?? 'base')
+			if (stage === 'base') {
+				const afterId = String(cursor['afterId'] ?? '')
+				const rows = await input.env.APP_DB.prepare(
+					`SELECT id FROM (
+						SELECT storage_id AS id FROM jobs
+							WHERE user_id = ? AND storage_id IS NOT NULL
+						UNION SELECT storage_id FROM archived_job_artifacts
+							WHERE user_id = ? AND storage_id IS NOT NULL
+						UNION SELECT storage_id FROM package_runtime_runs
+							WHERE user_id = ? AND storage_id IS NOT NULL
+						UNION SELECT id FROM saved_packages
+							WHERE user_id = ? AND has_app = 1
+					) WHERE id > ? ORDER BY id LIMIT ?`,
+				)
+					.bind(
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						afterId,
+						pageSize + 1,
+					)
+					.all<{ id: string }>()
+				const pageRows = rows.results ?? []
+				const truncated = pageRows.length > pageSize
+				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
+				return {
+					section: input.section,
+					items: selected.map((row) => ({
+						kind: input.kind,
+						storageId: row.id,
+					})),
+					truncated: true,
+					nextStartAfter: JSON.stringify(
+						truncated
+							? { stage: 'base', afterId: selected.at(-1)!.id }
+							: { stage: 'service', packageId: '', name: '' },
+					),
+					pageSize,
+					warnings,
+				}
+			}
+			const afterPackageId = String(cursor['packageId'] ?? '')
+			const afterName = String(cursor['name'] ?? '')
+			const rows = await input.env.APP_DB.prepare(
+				`SELECT DISTINCT package_id, name
+				FROM package_runtime_runs
+				WHERE user_id = ? AND surface = 'service' AND name IS NOT NULL
+					AND (package_id > ? OR (package_id = ? AND name > ?))
+				ORDER BY package_id, name LIMIT ?`,
+			)
+				.bind(
+					input.mcpUserId,
+					afterPackageId,
+					afterPackageId,
+					afterName,
+					pageSize + 1,
+				)
+				.all<{ package_id: string; name: string }>()
+			const pageRows = rows.results ?? []
+			const selected = pageRows.slice(0, pageSize)
+			const resultItems: Array<{ kind: string; storageId: string }> = []
+			for (const row of selected) {
+				const storageId = buildPackageServiceStorageId(row.package_id, row.name)
+				const existing = await input.env.APP_DB.prepare(
+					`SELECT 1 AS owned FROM (
+						SELECT storage_id AS id FROM jobs WHERE user_id = ?
+						UNION SELECT storage_id FROM archived_job_artifacts WHERE user_id = ?
+						UNION SELECT storage_id FROM package_runtime_runs WHERE user_id = ?
+						UNION SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1
+					) WHERE id = ?`,
+				)
+					.bind(
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						storageId,
+					)
+					.first<{ owned: number }>()
+				if (existing?.owned !== 1) {
+					resultItems.push({ kind: input.kind, storageId })
+				}
+			}
+			const truncated = pageRows.length > pageSize
+			return {
+				section: input.section,
+				items: resultItems,
+				truncated,
+				nextStartAfter: truncated
+					? JSON.stringify({
+							stage: 'service',
+							packageId: selected.at(-1)!.package_id,
+							name: selected.at(-1)!.name,
+						})
+					: null,
+				pageSize,
 				warnings,
-			})
-			items = [
-				{ kind: 'storage_runner', ids: inventory.storageIds },
-				{ kind: 'remote_connector_session', refs: inventory.remoteConnectors },
-				{ kind: 'package_service', refs: inventory.packageServices },
-				{ kind: 'job_manager', userId: input.mcpUserId },
-			]
-			break
+			}
 		}
 		default: {
 			const exhaustive: never = input.section

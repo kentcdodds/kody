@@ -49,6 +49,15 @@ export const accountExportSectionCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe('Required when section is package_service.'),
+			kind: z
+				.enum([
+					'storage_runner',
+					'remote_connector_session',
+					'package_service',
+					'job_manager',
+				])
+				.optional()
+				.describe('Required when section is durable_object_summaries.'),
 			page_size: z.number().int().min(1).max(500).optional(),
 			start_after: z
 				.string()
@@ -74,6 +83,7 @@ export const accountExportSectionCapability = defineDomainCapability(
 				instanceId: args.instance_id,
 				packageId: args.package_id,
 				serviceName: args.service_name,
+				kind: args.kind,
 				pageSize: args.page_size,
 				startAfter: args.start_after,
 			})

@@ -251,6 +251,33 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		}
 	}
 
+	async rpcExportUserSessionPage(input: {
+		userId: string
+		instanceId: string
+		pageSize: number
+		startAfter?: string
+	}) {
+		const sessionKey = userScopedConnectorSessionKey(input)
+		if (!sessionKey) {
+			throw new Error('Remote connector session key was invalid.')
+		}
+		const start = input.startAfter
+			? Math.max(0, Number.parseInt(input.startAfter, 10))
+			: 0
+		const pageSize = Math.min(Math.max(input.pageSize, 1), 500)
+		const tools = this.stateSnapshot.tools.slice(start, start + pageSize)
+		const next = start + tools.length
+		const truncated = next < this.stateSnapshot.tools.length
+		return {
+			persisted: { ...this.stateSnapshot.persisted },
+			tools: tools.map((tool) => ({ ...tool })),
+			connected: this.ctx.getWebSockets(connectorTag).length > 0,
+			truncated,
+			nextStartAfter: truncated ? String(next) : null,
+			pageSize,
+		}
+	}
+
 	async rpcPurgeUserSession(input: { userId: string; instanceId: string }) {
 		const sessionKey = userScopedConnectorSessionKey(input)
 		if (!sessionKey) {

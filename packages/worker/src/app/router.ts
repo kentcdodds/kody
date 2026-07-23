@@ -160,9 +160,10 @@ import { createSignupHandler } from '#app/handlers/signup.ts'
 import { createWaitingListHandler } from '#app/handlers/waiting-list.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { routes } from '#app/routes.ts'
+import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
 export function createAppRouter(env: Env) {
 	const router = createRouter({
-		middleware: [],
+		middleware: [createAccountWriteLeaseMiddleware(env)],
 		async defaultHandler({ request }) {
 			return renderAppPage({
 				request,

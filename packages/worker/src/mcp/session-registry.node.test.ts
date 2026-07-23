@@ -3,8 +3,11 @@ import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	listMcpAgentSessionsForUser,
+	purgePersistedMcpAgentSession,
+	readPersistedMcpAgentOwner,
 	registerMcpAgentSession,
 } from './session-registry.ts'
+import { createMcpCallerContext } from './context.ts'
 
 test('MCP agent session registry is idempotent and user scoped', async () => {
 	const sqlite = new DatabaseSync(':memory:')
@@ -47,4 +50,40 @@ test('MCP agent session registry is idempotent and user scoped', async () => {
 	await expect(listMcpAgentSessionsForUser(db, 'user-a')).resolves.toEqual([
 		{ doId: 'do-a' },
 	])
+})
+
+test('cold MCP session owner discovery reads persisted Agents SDK props', async () => {
+	const props = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		executionOrigin: 'interactive',
+		user: {
+			userId: 'user-a',
+			email: 'a@example.com',
+			displayName: 'User A',
+		},
+	})
+	const storage = {
+		async get<T>(key: string) {
+			expect(key).toBe('props')
+			return props as T
+		},
+	}
+	await expect(
+		readPersistedMcpAgentOwner({
+			storage,
+			doId: 'cold-do',
+		}),
+	).resolves.toEqual({ doId: 'cold-do', userId: 'user-a' })
+	let purged = false
+	await purgePersistedMcpAgentSession({
+		storage: {
+			...storage,
+			async deleteAll() {
+				purged = true
+			},
+		},
+		doId: 'cold-do',
+		userId: 'user-a',
+	})
+	expect(purged).toBe(true)
 })

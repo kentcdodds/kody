@@ -128,6 +128,7 @@ export async function runMcpAgentSessionBackfill(input: {
 		await writeFile(input.auditOut, `${JSON.stringify(audit, null, 2)}\n`)
 	}
 	if (input.execute) {
+		const noOwner = rows.filter((row) => row['action'] === 'no_owner').length
 		const conflicts = failures.filter(
 			(failure) =>
 				typeof failure['error'] === 'string' &&
@@ -147,6 +148,7 @@ export async function runMcpAgentSessionBackfill(input: {
 					listed: doIds.length,
 					failed: failures.length,
 					conflicts,
+					noOwner,
 					audit,
 				},
 			},

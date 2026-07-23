@@ -434,6 +434,47 @@ test('account export separates listing-owner deletion cascades from participant 
 	])
 })
 
+test('account write lease repair export redacts the foreign party for both perspectives', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		) VALUES
+			(1, 'target', 'target@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-target'),
+			(2, 'admin', 'admin@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-admin');
+		INSERT INTO account_write_lease_repairs (
+			id, target_user_id, lease_token, lease_holder, lease_acquired_at,
+			repaired_by_user_id, reason, created_at
+		) VALUES (
+			'repair-a', 'user-target', 'token-a', 'job:run', '2026-07-05',
+			'user-admin', 'Confirmed crashed worker', '2026-07-05'
+		);
+	`)
+	const targetExport = await createAccountExport({
+		env: { APP_DB: db } as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-target',
+	})
+	expect(targetExport.d1.account_write_lease_repairs.rows).toEqual([
+		expect.objectContaining({
+			target_user_id: 'user-target',
+			repaired_by_user_id: '[redacted]',
+		}),
+	])
+	const adminExport = await createAccountExport({
+		env: { APP_DB: db } as Env,
+		dbUserId: 2,
+		mcpUserId: 'user-admin',
+	})
+	expect(adminExport.d1.account_write_lease_repairs.rows).toEqual([
+		expect.objectContaining({
+			target_user_id: '[redacted]',
+			repaired_by_user_id: 'user-admin',
+		}),
+	])
+})
+
 test('R2 export pages owned payloads in bounded chunks and reports missing objects', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
@@ -758,10 +799,13 @@ test('DO export sections expose bounded job manager and owned connector state', 
 		REMOTE_CONNECTOR_SESSION: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({
-				rpcExportUserSession: async () => ({
+				rpcExportUserSessionPage: async () => ({
 					persisted: { instanceId: 'home' },
 					tools: [],
 					connected: false,
+					truncated: false,
+					nextStartAfter: null,
+					pageSize: 100,
 				}),
 			}),
 		},
@@ -787,9 +831,64 @@ test('DO export sections expose bounded job manager and owned connector state', 
 	expect(connector.items).toEqual([
 		expect.objectContaining({
 			instanceId: 'home',
-			export: expect.objectContaining({ connected: false }),
+			connected: false,
 		}),
 	])
+})
+
+test('durable object discovery pages high-cardinality storage ids without nested arrays', async () => {
+	const ids = Array.from(
+		{ length: 1201 },
+		(_, index) => `storage-${String(index).padStart(4, '0')}`,
+	)
+	let maxRows = 0
+	const db = {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async all<T>() {
+							if (query.includes('SELECT id FROM (')) {
+								const afterId = String(params[4])
+								const limit = Number(params[5])
+								const rows = ids
+									.filter((id) => id > afterId)
+									.slice(0, limit)
+									.map((id) => ({ id }))
+								maxRows = Math.max(maxRows, rows.length)
+								return { results: rows as Array<T> }
+							}
+							if (query.includes('SELECT DISTINCT package_id, name')) {
+								return { results: [] as Array<T> }
+							}
+							throw new Error(`Unexpected query: ${query}`)
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	const seen = new Set<string>()
+	let startAfter: string | undefined
+	for (;;) {
+		const page = await readAccountExportSection({
+			env: { APP_DB: db } as Env,
+			dbUserId: 1,
+			mcpUserId: 'user-a',
+			section: 'durable_object_summaries',
+			kind: 'storage_runner',
+			pageSize: 100,
+			startAfter,
+		})
+		for (const item of page.items as Array<{ storageId: string }>) {
+			expect(Array.isArray(item.storageId)).toBe(false)
+			seen.add(item.storageId)
+		}
+		if (!page.truncated) break
+		startAfter = page.nextStartAfter ?? undefined
+	}
+	expect(seen.size).toBe(1201)
+	expect(maxRows).toBeLessThanOrEqual(101)
 })
 
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
