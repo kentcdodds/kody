@@ -204,6 +204,7 @@ export async function readIdempotentInboundEmailUsage(input: {
 							AND message.user_id = email_delivery_events.user_id
 					)`,
 			)
+			.bind()
 			.run(),
 	)
 	const result = await runD1WithRetry(() =>
