@@ -412,7 +412,9 @@ export function manifest(stored: {
 			`daily/d1/${DATABASE_ID}/2026-07-22`,
 			'bookmark-1',
 		),
-		...stored,
+		bytes: stored.bytes,
+		sha256: stored.sha256,
+		r2Etag: stored.r2Etag,
 		commit: 'abc123',
 		retentionTier: 'daily',
 	}
