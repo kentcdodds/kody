@@ -291,7 +291,11 @@ command-line token-value flag.
 The provisioner creates the private-by-default bucket and converges lock and
 lifecycle rules for `daily/` at 35 days and `weekly/` at 400 days. Public
 `r2.dev` and custom-domain exposure still require a separate check because this
-provisioner does not manage those APIs. R2 bucket locks prevent overwrite and
+provisioner does not manage those APIs. It preserves unrelated lock and
+lifecycle rules and managed rules with stronger retention, then reads all three
+resources back and fails unless the effective policies contain the managed
+minimums. Its provisioner token is sent only to the official Cloudflare API;
+there is no operator endpoint override. R2 bucket locks prevent overwrite and
 deletion and apply to existing as well as new objects. When lock rules overlap,
 the longest retention wins. Locks take precedence over lifecycle deletion, and a
 locked bucket cannot be emptied until lock rules are removed. Lifecycle deletion
@@ -378,14 +382,14 @@ dry-run, and deploy once more.
 
 ### Daily and weekly procedure
 
-The implemented Worker creates the day's Workflow only at the primary
-`02:15 UTC` trigger. On hourly freshness ticks in the bounded **02:45, 03:45,
-04:45, and 05:45 UTC** retry window, it looks up that deterministic same-day
-instance and restarts it only when its status is `errored` or `terminated`. A
-queued, running, paused, waiting, `waitingForPause`, or complete instance is
-left alone; an unknown status fails closed. If the 02:15 trigger never created
-the instance, retry-window lookup returns `missing` and does not create one. No
-missed instance is created outside 02:15.
+The primary `02:15 UTC` trigger normally creates the day's Workflow. On hourly
+freshness ticks in the bounded **02:45, 03:45, 04:45, and 05:45 UTC** retry
+window, the Worker uses the same deterministic id and canonical 02:15 payload.
+It creates a missing instance (for example, after a failed primary create),
+restarts an `errored` or `terminated` instance, and leaves a queued, running,
+paused, waiting, `waitingForPause`, or complete instance alone. Concurrent
+creates converge through the deterministic id; an unknown status fails closed.
+No missed instance is created outside the approved retry window.
 
 Freshness checks the previous UTC day only before the 02:15 trigger. From 02:15
 onward it requires the current day's manifest, so the 02:45 check cannot report
@@ -406,21 +410,23 @@ prevents duplicate day creation. Immutable R2 puts reject conflicting bytes. The
 single day manifest selects the canonical SQL attempt by its exact
 bookmark-derived `objectKey`.
 
-A manifest-less attempt object is never trusted from R2 alone. Before the
-canonical day manifest can be written, one retryable finalization step polls D1
-with the cached bookmark to obtain a fresh completed signed URL, stream-compares
-byte count and SHA-256 with R2, and writes the immutable manifest. The original
-one-hour signed URL is used only for the initial upload. Every finalization
-callback retry performs another export API poll; the URL is not cached in a
-separate Workflow step. The response must be complete and return the exact
-cached bookmark. Pending responses retry, while malformed responses and bookmark
-mismatches fail closed. Workflow can cache finalization only after manifest
-creation; otherwise replay re-runs the refresh and source verification. This
-also applies when replay returns a cached upload-step result and skips its
-callback. Missing signed-source context fails with
-`duplicate-object-manifest-missing`; unavailable, truncated, oversized, or
-mismatched source leaves the object quarantined and the manifest absent. Do not
-delete, replace, or bless that object automatically.
+A manifest-less attempt object is never trusted from R2 alone. The original
+one-hour signed URL in the durable export step result is never used for
+transfer. Every execution of the retryable upload callback polls D1 with the
+cached bookmark and uses that callback-local fresh URL. Before the canonical day
+manifest can be written, one retryable finalization step independently polls D1
+with the cached bookmark, stream-compares byte count and SHA-256 with R2, and
+writes the immutable manifest. Every upload or finalization callback retry
+performs another export API poll; neither URL is cached in a separate Workflow
+step. The response must be complete and return the exact cached bookmark.
+Pending responses retry, while malformed responses and bookmark mismatches fail
+closed. Workflow can cache finalization only after manifest creation; otherwise
+replay re-runs the refresh and source verification. This also applies when
+replay returns a cached upload-step result and skips its callback. Missing
+signed-source context fails with `duplicate-object-manifest-missing`;
+unavailable, truncated, oversized, or mismatched source leaves the object
+quarantined and the manifest absent. Do not delete, replace, or bless that
+object automatically.
 
 For each run, the Workflow:
 
@@ -430,15 +436,18 @@ For each run, the Workflow:
    below the configured, non-raisable 4,500,000,000-byte ceiling;
 3. starts D1 export with `output_format: "polling"` and durably polls every 15
    seconds for at most 120 polls, then derives the SQL object key from the
-   completed export bookmark;
+   completed export bookmark; exhausting the bound is a terminal, non-retryable
+   Workflow failure so an approved scheduled restart begins with fresh step
+   state and a new export instead of replaying the same cached polls;
 4. marks export API Workflow step outputs sensitive so the signed URL is not
    logged;
-5. streams the signed response into the destination `BACKUP_BUCKET`, computing
-   bytes, SHA-256, and R2 ETag; it requires a valid `Content-Length`, rejects a
-   declared length at or above 5 GiB, and rejects a streamed byte-count
-   mismatch. The same strictly-below-5-GiB limit is enforced when an immutable
-   object already exists, so a pre-existing object at the limit cannot be
-   resumed into a manifest;
+5. in every upload callback execution, polls with the cached bookmark for a
+   fresh signed response and streams it into the destination `BACKUP_BUCKET`,
+   computing bytes, SHA-256, and R2 ETag; it requires a valid `Content-Length`,
+   rejects a declared length at or above 5 GiB, and rejects a streamed
+   byte-count mismatch. The same strictly-below-5-GiB limit is enforced when an
+   immutable object already exists, so a pre-existing object at the limit cannot
+   be resumed into a manifest;
 6. in one retryable finalization step, polls the export API once per callback
    execution with the cached bookmark, requires the same completed bookmark,
    uses the newly returned signed URL to repeat source comparison whenever the
@@ -877,10 +886,10 @@ the intended system only.
       token is absent from runtime.
 - [ ] Both schedule gates remained false through benchmark and are true only in
       the approved deployment.
-- [ ] The sole create-capable 02:15 UTC trigger, bounded 02:45–05:45 hourly
-      existing-instance restart checks, and hourly live-D1-size plus R2
-      size/ETag freshness logs are live; no missed Workflow is created outside
-      02:15.
+- [ ] The primary 02:15 UTC trigger, bounded 02:45–05:45 same-day
+      create-or-restart catch-up checks, and hourly live-D1-size plus R2
+      size/ETag freshness logs are live; catch-up uses the canonical 02:15
+      payload and no missed Workflow is created outside the approved window.
 - [ ] Each day has one canonical manifest selecting a bookmark-derived immutable
       SQL key; orphan-attempt quarantine and restarted-export/new-key behavior
       have tested alerts and operator procedures.
