@@ -316,21 +316,39 @@ export async function aggregateUsageRollups(
 	}
 
 	const month = now.toISOString().slice(0, 'YYYY-MM'.length)
-	const rows = await queryAnalyticsEngineSql({
-		accountId,
-		apiToken,
-		baseUrl:
-			env.CLOUDFLARE_API_BASE_URL?.trim() || 'https://api.cloudflare.com',
-		query: buildMonthToDateAggregateQuery(
-			resolveUsageEventsDataset(env),
-			utcMonthBounds(now),
-		),
-	})
+	const priorMonth = previousMonth(month)
+	const priorMonthDate = new Date(
+		Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15),
+	)
+	const baseUrl =
+		env.CLOUDFLARE_API_BASE_URL?.trim() || 'https://api.cloudflare.com'
+	const dataset = resolveUsageEventsDataset(env)
+	const [currentAnalyticsRows, previousAnalyticsRows] = await Promise.all([
+		queryAnalyticsEngineSql({
+			accountId,
+			apiToken,
+			baseUrl,
+			query: buildMonthToDateAggregateQuery(dataset, utcMonthBounds(now)),
+		}),
+		queryAnalyticsEngineSql({
+			accountId,
+			apiToken,
+			baseUrl,
+			query: buildMonthToDateAggregateQuery(
+				dataset,
+				utcMonthBounds(priorMonthDate),
+			),
+		}),
+	])
+	const rows = [
+		...currentAnalyticsRows.map((row) => ({ ...row, month })),
+		...previousAnalyticsRows.map((row) => ({ ...row, month: priorMonth })),
+	]
 
 	const updatedAt = now.toISOString()
 	const emailRows = await readIdempotentInboundEmailUsage({
 		db: env.APP_DB,
-		months: [month, previousMonth(month)],
+		months: [month, priorMonth],
 	})
 	const mergedRows = new Map<string, AnalyticsEngineSqlRow>()
 	for (const row of [...rows, ...emailRows]) {

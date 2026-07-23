@@ -96,10 +96,32 @@ function createAggregationEnv(db: D1Database) {
 }
 
 function stubFetchResponse(input: { status?: number; body: unknown }) {
+	let callIndex = 0
 	const fetchMock = vi.fn(async () => {
+		const isFirst = callIndex === 0
+		callIndex += 1
+		const body = isFirst ? input.body : { data: [] }
 		return new Response(
-			typeof input.body === 'string' ? input.body : JSON.stringify(input.body),
-			{ status: input.status ?? 200 },
+			typeof body === 'string' ? body : JSON.stringify(body),
+			{ status: isFirst ? (input.status ?? 200) : 200 },
+		)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	return Object.assign(fetchMock, {
+		[Symbol.dispose]() {
+			vi.unstubAllGlobals()
+		},
+	})
+}
+
+function stubFetchSequence(bodies: Array<unknown>) {
+	let index = 0
+	const fetchMock = vi.fn(async () => {
+		const body = bodies[index] ?? bodies.at(-1) ?? { data: [] }
+		index += 1
+		return new Response(
+			typeof body === 'string' ? body : JSON.stringify(body),
+			{ status: 200 },
 		)
 	})
 	vi.stubGlobal('fetch', fetchMock)
@@ -160,9 +182,9 @@ test('aggregateUsageRollups no-ops when the binding or credentials are missing',
 	expect(deletes).toHaveLength(0)
 })
 
-test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts absolute values', async () => {
-	using fetchMock = stubFetchResponse({
-		body: {
+test('aggregateUsageRollups merges current and previous Analytics months with durable inbound usage', async () => {
+	using fetchMock = stubFetchSequence([
+		{
 			data: [
 				{
 					user_id: 'user-a',
@@ -195,7 +217,20 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 				},
 			],
 		},
-	})
+		{
+			data: [
+				{
+					user_id: 'user-c',
+					metric: 'email_received',
+					event_count: 5,
+					error_count: 2,
+					total_duration_ms: 100,
+					total_cpu_ms: 0,
+					total_bytes: 1000,
+				},
+			],
+		},
+	])
 	const { db, batches, selects } = createFakeDb({
 		emailUsageRows: [
 			{
@@ -220,7 +255,7 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 			},
 		],
 	})
-	const now = new Date('2026-07-15T10:00:00.000Z')
+	const now = new Date('2026-07-01T00:00:30.000Z')
 
 	const result = await aggregateUsageRollups(createAggregationEnv(db), now)
 
@@ -232,7 +267,7 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 		users: 3,
 	})
 
-	expect(fetchMock).toHaveBeenCalledTimes(1)
+	expect(fetchMock).toHaveBeenCalledTimes(2)
 	const [url, init] = fetchMock.mock.calls[0] as unknown as [
 		string,
 		RequestInit,
@@ -252,6 +287,15 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 	// into a later month (clock skew, backdated writes) inflate this month.
 	expect(query).toContain(`timestamp >= toDateTime('2026-07-01 00:00:00')`)
 	expect(query).toContain(`timestamp < toDateTime('2026-08-01 00:00:00')`)
+	const previousQuery = String(
+		(fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body,
+	)
+	expect(previousQuery).toContain(
+		`timestamp >= toDateTime('2026-06-01 00:00:00')`,
+	)
+	expect(previousQuery).toContain(
+		`timestamp < toDateTime('2026-07-01 00:00:00')`,
+	)
 	// Sampling-correct aggregates: counts and sums weight by _sample_interval.
 	expect(query).toContain('sum(_sample_interval) AS event_count')
 	expect(query).toContain(
@@ -307,11 +351,11 @@ test('aggregateUsageRollups queries Analytics Engine month-to-date and upserts a
 		'user-c',
 		'email_received',
 		'2026-06',
-		1,
+		6,
+		2,
+		125,
 		0,
-		25,
-		0,
-		512,
+		1512,
 		now.toISOString(),
 	])
 })
