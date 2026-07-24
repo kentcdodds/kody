@@ -5,7 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	captureException: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
-	getEntitySourceById: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
 	publishFromExternalRef: vi.fn(),
 	listPublishedPackageArtifactTargets: vi.fn(),
@@ -26,8 +26,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#worker/repo/artifacts.ts', () => ({
@@ -67,7 +67,7 @@ function setupDefaultMocks() {
 		name: '@kentcdodds/demo-package',
 		sourceId: 'source-1',
 	})
-	mockModule.getEntitySourceById.mockResolvedValue({
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-1',
 		user_id: 'user-1',
 		entity_kind: 'package',
@@ -470,7 +470,7 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 
 	setupDefaultMocks()
-	mockModule.getEntitySourceById
+	mockModule.getEntitySourceByIdForUser
 		.mockResolvedValueOnce({
 			id: 'source-1',
 			user_id: 'user-1',

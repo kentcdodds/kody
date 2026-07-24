@@ -643,24 +643,96 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 	])
 
 	mockPerformanceNow.mockReturnValueOnce(400).mockReturnValueOnce(410)
-	const allFailed = await handler({
-		entity: ['missing_a:capability', 'missing_b:capability'],
-		conversationId: 'conv-batch-all-failed',
-	})
-	expect(allFailed.isError).toBe(true)
-	expect(allFailed.structuredContent.error).toMatch(
-		/all entity lookups failed/i,
+	const observability = await import('#mcp/observability.ts')
+	const logMcpEventSpy = vi.spyOn(observability, 'logMcpEvent')
+	try {
+		const allFailed = await handler({
+			entity: ['missing_a:capability', 'missing_b:capability'],
+			conversationId: 'conv-batch-all-failed',
+		})
+		expect(allFailed.isError).toBe(true)
+		expect(allFailed.structuredContent.error).toMatch(
+			/all entity lookups failed/i,
+		)
+		expect(allFailed.structuredContent.result).toEqual([
+			expect.objectContaining({
+				entityRef: 'missing_a:capability',
+				error: expect.any(String),
+			}),
+			expect.objectContaining({
+				entityRef: 'missing_b:capability',
+				error: expect.any(String),
+			}),
+		])
+		expect(logMcpEventSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: 'failure',
+				callerError: true,
+				errorName: 'EntityBatchError',
+			}),
+		)
+	} finally {
+		logMcpEventSpy.mockRestore()
+	}
+})
+
+test('entity batch all-fail reports platform errors to Sentry (no callerError)', async () => {
+	const observability = await import('#mcp/observability.ts')
+	const logMcpEventSpy = vi.spyOn(observability, 'logMcpEvent')
+	mockModule.getSavedPackageById.mockImplementation(
+		async (_db: unknown, input: { packageId: string }) => ({
+			id: input.packageId,
+			userId: 'user-1',
+			name: input.packageId,
+			kodyId: input.packageId,
+			description: 'pkg',
+			tags: [],
+			searchText: 'pkg',
+			sourceId: `source-${input.packageId}`,
+			hasApp: false,
+			hidden: false,
+			isPrivate: true,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		}),
 	)
-	expect(allFailed.structuredContent.result).toEqual([
-		expect.objectContaining({
-			entityRef: 'missing_a:capability',
-			error: expect.any(String),
-		}),
-		expect.objectContaining({
-			entityRef: 'missing_b:capability',
-			error: expect.any(String),
-		}),
-	])
+	mockModule.loadPackageSourceBySourceId.mockRejectedValue(
+		new Error('D1 read failed'),
+	)
+	try {
+		const { handler } = await getSearchRegistration({
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+				username: 'user',
+			},
+		})
+		mockPerformanceNow.mockReturnValueOnce(500).mockReturnValueOnce(510)
+		const response = await handler({
+			entity: ['pkg-a:package', 'pkg-b:package'],
+			conversationId: 'conv-batch-platform-fail',
+		})
+		expect(response.isError).toBe(true)
+		expect(logMcpEventSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: 'failure',
+				errorName: 'EntityBatchError',
+				cause: expect.objectContaining({
+					message: 'All entity lookups failed.',
+				}),
+			}),
+		)
+		const failureCall = logMcpEventSpy.mock.calls.find(
+			(call) =>
+				(call[0] as { errorName?: string }).errorName === 'EntityBatchError',
+		)
+		expect(failureCall?.[0]).not.toHaveProperty('callerError', true)
+	} finally {
+		logMcpEventSpy.mockRestore()
+		mockModule.getSavedPackageById.mockReset()
+		mockModule.loadPackageSourceBySourceId.mockReset()
+	}
 })
 
 test('integration entity detail enriches related packages without bloating ranked search', async () => {

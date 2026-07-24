@@ -1,3 +1,4 @@
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	deterministicEmbedding,
 	embedTextForVectorize,
@@ -174,7 +175,9 @@ export async function searchUnified(input: {
 	if (domainFilter) {
 		const availableDomains = listSearchDomainNames(input.registry)
 		if (!availableDomains.includes(domainFilter)) {
-			throw new Error(
+			// Caller passed a non-domain id (often a package kody id such as
+			// "skills"). Clear from the message alone — keep it off Sentry.
+			throw new McpCallerError(
 				`Unknown domain "${domainFilter}". Available domains: ${[...availableDomains].sort().join(', ')}.`,
 			)
 		}

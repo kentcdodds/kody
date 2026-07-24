@@ -324,18 +324,9 @@ export async function runSearchTool(input: {
 				markdownParts.push(entityResult.markdown)
 			}
 			const allFailed = successCount === 0
-			const failedEntries = outcome.results.filter(
-				(
-					entry,
-				): entry is Extract<(typeof outcome.results)[number], { ok: false }> =>
-					!entry.ok,
-			)
-			// Only treat a total batch failure as caller-caused when every
-			// failed lookup was a caller mistake. Shared platform failures
-			// (DB/load) still reach Sentry.
-			const allCallerFailures =
-				failedEntries.length > 0 &&
-				failedEntries.every((entry) => entry.callerError)
+			const allFailuresAreCallerErrors =
+				allFailed &&
+				outcome.results.every((entry) => !entry.ok && entry.callerError)
 			logMcpEvent({
 				category: 'mcp',
 				tool: 'search',
@@ -348,7 +339,14 @@ export async function runSearchTool(input: {
 				...(allFailed
 					? {
 							sandboxError: false,
-							...(allCallerFailures ? { callerError: true } : {}),
+							// Only treat the batch as a caller mistake when every
+							// entry failed with McpCallerError. Mixed/platform
+							// failures must still reach Sentry.
+							...(allFailuresAreCallerErrors
+								? { callerError: true }
+								: {
+										cause: new Error('All entity lookups failed.'),
+									}),
 							errorName: 'EntityBatchError',
 							errorMessage: 'All entity lookups failed.',
 						}

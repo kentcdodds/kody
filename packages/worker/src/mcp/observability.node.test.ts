@@ -126,6 +126,18 @@ test('logMcpEvent keeps caller mistakes out of Sentry', () => {
 
 		logMcpEvent({
 			...callerFailureBase,
+			tool: 'search',
+			toolName: 'search',
+			errorName: 'McpCallerError',
+			errorMessage:
+				'Unknown domain "skills". Available domains: account, packages.',
+			cause: new McpCallerError(
+				'Unknown domain "skills". Available domains: account, packages.',
+			),
+		})
+
+		logMcpEvent({
+			...callerFailureBase,
 			capabilityName: 'repo_open_session',
 			failurePhase: 'handler',
 			errorName: 'Error',
@@ -154,7 +166,7 @@ test('logMcpEvent keeps caller mistakes out of Sentry', () => {
 		})
 	})
 
-	expect(payloads).toHaveLength(4)
+	expect(payloads).toHaveLength(5)
 	expect(sentryMock.captureException).not.toHaveBeenCalled()
 	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
 })

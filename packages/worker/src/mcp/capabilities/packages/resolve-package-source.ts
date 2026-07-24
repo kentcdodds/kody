@@ -3,7 +3,7 @@ import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 
 export type PackageSourceIdentity = {
@@ -47,8 +47,11 @@ export async function resolveOwnedPackageSource(input: {
 		const missingId = input.args.package_id ?? input.args.kody_id
 		throw new McpCallerError(`Saved package "${missingId}" was not found.`)
 	}
-	const source = await getEntitySourceById(input.db, savedPackage.sourceId)
-	if (!source || source.user_id !== input.userId) {
+	const source = await getEntitySourceByIdForUser(input.db, {
+		id: savedPackage.sourceId,
+		userId: input.userId,
+	})
+	if (!source) {
 		throw new McpCallerError('Repo source was not found for this user.')
 	}
 	return {

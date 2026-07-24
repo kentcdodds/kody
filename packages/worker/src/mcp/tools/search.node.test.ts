@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
@@ -2001,17 +2002,19 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 	expect(names).toContain('email_send')
 	expect(names).not.toContain('job_schedule')
 
-	await expect(
-		searchUnified({
-			env: {} as Env,
-			query: 'send email',
-			limit: 10,
-			userId: 'user-1',
-			registry,
-			optionalRows: emptyOptionalSearchRows,
-			domain: 'nope',
-		}),
-	).rejects.toThrow(/Unknown domain "nope"/)
+	const unknownDomain = await searchUnified({
+		env: {} as Env,
+		query: 'send email',
+		limit: 10,
+		userId: 'user-1',
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+		domain: 'nope',
+	}).catch((error: unknown) => error)
+	expect(unknownDomain).toBeInstanceOf(McpCallerError)
+	expect(unknownDomain).toMatchObject({
+		message: expect.stringMatching(/Unknown domain "nope"/),
+	})
 
 	const browse = await searchUnified({
 		env: {} as Env,

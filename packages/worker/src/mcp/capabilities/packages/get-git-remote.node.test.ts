@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest'
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
-	getEntitySourceById: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
 	resolveArtifactDefaultBranchHead: vi.fn(),
 	resolveExistingArtifactSourceRepo: vi.fn(),
 	createStubSavedPackage: vi.fn(),
@@ -24,8 +24,8 @@ vi.mock('#worker/package-registry/package-owner.ts', () => ({
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#worker/repo/artifacts.ts', async () => {
@@ -122,20 +122,25 @@ function mockPackageSource(sourceUserId = 'user-1') {
 		name: '@kentcdodds/unleashed-wifi',
 		sourceId: 'source-1',
 	})
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: sourceUserId,
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		repo_id: 'package-package-1',
-		published_commit: 'commit-1',
-		indexed_commit: null,
-		manifest_path: 'package.json',
-		source_root: '/',
-		last_external_check_at: null,
-		created_at: '2026-05-04T00:00:00.000Z',
-		updated_at: '2026-05-04T00:00:00.000Z',
-	})
+	mockModule.getEntitySourceByIdForUser.mockImplementation(
+		async (_db: unknown, input: { id: string; userId: string }) => {
+			if (input.userId !== sourceUserId) return null
+			return {
+				id: 'source-1',
+				user_id: sourceUserId,
+				entity_kind: 'package',
+				entity_id: 'package-1',
+				repo_id: 'package-package-1',
+				published_commit: 'commit-1',
+				indexed_commit: null,
+				manifest_path: 'package.json',
+				source_root: '/',
+				last_external_check_at: null,
+				created_at: '2026-05-04T00:00:00.000Z',
+				updated_at: '2026-05-04T00:00:00.000Z',
+			}
+		},
+	)
 	const createToken = vi.fn(async (scope: 'read' | 'write', ttl: number) => ({
 		id: 'token-1',
 		plaintext: `art_v1_${scope}_token?expires=${Math.floor(Date.now() / 1000) + ttl}`,
