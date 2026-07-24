@@ -14,7 +14,7 @@ function createMemoryStorage(seed: Record<string, unknown> = {}) {
 	}
 }
 
-test('importStorage first page clears then writes; continue pages append', async () => {
+test('importStorage replace workflow clears, appends, restarts, and rejects invalid JSON', async () => {
 	const storage = createMemoryStorage({ stale: true, keep: 'old' })
 
 	const first = await applyImportStoragePage(storage, {
@@ -38,25 +38,14 @@ test('importStorage first page clears then writes; continue pages append', async
 	expect(second).toEqual({ ok: true, written: 1, cleared: false })
 	expect(storage.map.get('a')).toEqual({ n: 1 })
 	expect(storage.map.get('c')).toBe(3)
-})
 
-test('importStorage first page again restarts the replace', async () => {
-	const storage = createMemoryStorage()
-	await applyImportStoragePage(storage, {
-		mode: 'replace',
-		replacePage: 'first',
-		entries: [{ key: 'old', valueJson: '"x"' }],
-	})
 	await applyImportStoragePage(storage, {
 		mode: 'replace',
 		replacePage: 'first',
 		entries: [{ key: 'new', valueJson: '"y"' }],
 	})
 	expect([...storage.map.keys()]).toEqual(['new'])
-})
 
-test('importStorage rejects invalid valueJson', async () => {
-	const storage = createMemoryStorage()
 	await expect(
 		applyImportStoragePage(storage, {
 			mode: 'replace',

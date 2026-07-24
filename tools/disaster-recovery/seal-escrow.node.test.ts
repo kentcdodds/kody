@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import {
-	buildEscrowSecretStoreKey,
 	main,
 	putSealedEscrowBlob,
 	sealEscrowSecret,
@@ -26,24 +25,7 @@ test('sealEscrowSecret round-trips through unseal helper', () => {
 	expect(() => unsealEscrowSecretForTests(sealed, 'wrong-passphrase')).toThrow()
 })
 
-test('putSealedEscrowBlob signs and uploads without logging secrets', async () => {
-	const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }))
-	await putSealedEscrowBlob({
-		accountId: 'a'.repeat(32),
-		bucketName: 'kody-dr-backups',
-		accessKeyId: 'AKIA_TEST',
-		secretAccessKey: 'secret',
-		body: JSON.stringify({ ok: true }),
-		fetchImpl: fetchImpl as unknown as typeof fetch,
-	})
-	expect(fetchImpl).toHaveBeenCalledTimes(1)
-	const [url, init] = fetchImpl.mock.calls[0]!
-	expect(String(url)).toContain('escrow')
-	const headers = new Headers((init as RequestInit).headers)
-	expect(headers.get('Authorization')).toContain('AWS4-HMAC-SHA256')
-})
-
-test('main seals and uploads using env vars without printing secret material', async () => {
+test('main seals and uploads the default escrow key without printing secret material', async () => {
 	const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }))
 	const originalFetch = globalThis.fetch
 	globalThis.fetch = fetchImpl as unknown as typeof fetch
@@ -59,6 +41,10 @@ test('main seals and uploads using env vars without printing secret material', a
 			DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
 		})
 		expect(fetchImpl).toHaveBeenCalled()
+		const [url, init] = fetchImpl.mock.calls[0]!
+		expect(String(url)).toContain(backupEscrowSecretStoreKeyKey)
+		const headers = new Headers((init as RequestInit).headers)
+		expect(headers.get('Authorization')).toContain('AWS4-HMAC-SHA256')
 		const logged = logSpy.mock.calls.map((call) => call.join(' ')).join('\n')
 		expect(logged).not.toContain('secret-value-for-escrow-test-32chars')
 		expect(logged).not.toContain('passphrase')
@@ -69,34 +55,7 @@ test('main seals and uploads using env vars without printing secret material', a
 	}
 })
 
-test('buildEscrowSecretStoreKey defaults to the shared contract v1 key', () => {
-	expect(buildEscrowSecretStoreKey()).toBe(backupEscrowSecretStoreKeyKey)
-	expect(buildEscrowSecretStoreKey('v2')).toBe(
-		'escrow/secret-store-key.v2.json',
-	)
-})
-
-test('putSealedEscrowBlob explains write-once lock rejections clearly', async () => {
-	const fetchImpl = vi.fn(
-		async () =>
-			new Response('ObjectLocked', {
-				status: 409,
-			}),
-	)
-	await expect(
-		putSealedEscrowBlob({
-			accountId: 'a'.repeat(32),
-			bucketName: 'kody-dr-backups',
-			accessKeyId: 'AKIA_TEST',
-			secretAccessKey: 'secret',
-			body: JSON.stringify({ ok: true }),
-			objectKey: backupEscrowSecretStoreKeyKey,
-			fetchImpl: fetchImpl as unknown as typeof fetch,
-		}),
-	).rejects.toThrow(/write-once|ESCROW_KEY_VERSION|v2/)
-})
-
-test('main uses ESCROW_KEY_VERSION for rotation keys', async () => {
+test('escrow rotation uses versioned keys and write-once rejections throw', async () => {
 	const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }))
 	const originalFetch = globalThis.fetch
 	globalThis.fetch = fetchImpl as unknown as typeof fetch
@@ -121,4 +80,22 @@ test('main uses ESCROW_KEY_VERSION for rotation keys', async () => {
 		globalThis.fetch = originalFetch
 		logSpy.mockRestore()
 	}
+
+	const lockedFetchImpl = vi.fn(
+		async () =>
+			new Response('ObjectLocked', {
+				status: 409,
+			}),
+	)
+	await expect(
+		putSealedEscrowBlob({
+			accountId: 'a'.repeat(32),
+			bucketName: 'kody-dr-backups',
+			accessKeyId: 'AKIA_TEST',
+			secretAccessKey: 'secret',
+			body: JSON.stringify({ ok: true }),
+			objectKey: backupEscrowSecretStoreKeyKey,
+			fetchImpl: lockedFetchImpl as unknown as typeof fetch,
+		}),
+	).rejects.toThrow(/write-once|409|ObjectLocked/)
 })

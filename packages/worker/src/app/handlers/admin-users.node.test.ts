@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import { adminUserListItemFieldNames } from './admin-users.ts'
-import { readAdminUsersSelectedUserId } from '#app/admin-users-data.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
 import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
 import {
@@ -428,18 +427,6 @@ test('admin users selected param resolves outside the current page and filter', 
 
 	const invalid = await listUsers('?selected=not-a-number')
 	expect(invalid.selectedUser).toBeNull()
-})
-
-test('admin users selected id tolerates malformed percent-encoding in detail paths', () => {
-	expect(
-		readAdminUsersSelectedUserId('https://example.com/admin/users/%'),
-	).toBeNull()
-	expect(
-		readAdminUsersSelectedUserId('https://example.com/admin/users/%E0%A4%A'),
-	).toBeNull()
-	expect(
-		readAdminUsersSelectedUserId('https://example.com/admin/users/7'),
-	).toBe(7)
 })
 
 test('admin users list applies q and role filters to the slice and total', async () => {

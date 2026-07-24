@@ -37,7 +37,7 @@ import {
 	parseTrustedRestoreBaselineRegistry,
 } from './restore-trust.ts'
 
-test('D1 drill verifies immutable manifest and supplied SQL file evidence before any live creation', async () => {
+test('D1 drill verifies manifest, SQL evidence, and isolation rows before live creation', async () => {
 	const fixture = manifestFixture()
 	expect(
 		parseAndVerifyManifest(
@@ -91,6 +91,42 @@ test('D1 drill verifies immutable manifest and supplied SQL file evidence before
 		),
 	).rejects.toThrow('exceeds the 5 GiB')
 	expect(adapters.createTarget).not.toHaveBeenCalled()
+
+	const baseline = createBaseline({
+		isolationChecks: [
+			{
+				table: 'messages',
+				userColumn: 'user_id',
+				primaryKeyColumn: 'id',
+				users: [
+					{
+						userId: '1',
+						rowCount: 1,
+						primaryKeySha256: sha256(canonicalJson(['message-a'])),
+					},
+					{
+						userId: '2',
+						rowCount: 1,
+						primaryKeySha256: sha256(canonicalJson(['message-b'])),
+					},
+				],
+			},
+		],
+	})
+	const query = buildVerificationQueries(baseline, 'baseline').find(
+		(candidate) => candidate.id === 'isolation',
+	)
+	if (!query) throw new Error('fixture lacks isolation query')
+	expect(() =>
+		verifyRows(
+			query,
+			[
+				{ table_name: 'messages', user_id: 1, primary_key: 'message-a' },
+				{ table_name: 'messages', user_id: 2, primary_key: 'message-b' },
+			],
+			baseline,
+		),
+	).not.toThrow()
 })
 
 test('restore requires a trusted manifest signature and checked baseline id', async () => {
@@ -142,44 +178,6 @@ test('restore requires a trusted manifest signature and checked baseline id', as
 			createAdapters(),
 		),
 	).rejects.toThrow('baseline id is not trusted')
-})
-
-test('isolation verification normalizes numeric SQLite user IDs', () => {
-	const baseline = createBaseline({
-		isolationChecks: [
-			{
-				table: 'messages',
-				userColumn: 'user_id',
-				primaryKeyColumn: 'id',
-				users: [
-					{
-						userId: '1',
-						rowCount: 1,
-						primaryKeySha256: sha256(canonicalJson(['message-a'])),
-					},
-					{
-						userId: '2',
-						rowCount: 1,
-						primaryKeySha256: sha256(canonicalJson(['message-b'])),
-					},
-				],
-			},
-		],
-	})
-	const query = buildVerificationQueries(baseline, 'baseline').find(
-		(candidate) => candidate.id === 'isolation',
-	)
-	if (!query) throw new Error('fixture lacks isolation query')
-	expect(() =>
-		verifyRows(
-			query,
-			[
-				{ table_name: 'messages', user_id: 1, primary_key: 'message-a' },
-				{ table_name: 'messages', user_id: 2, primary_key: 'message-b' },
-			],
-			baseline,
-		),
-	).not.toThrow()
 })
 
 test('restore trust registry is exact, pins the reviewed identities, and cannot be replaced by operator assertions', async () => {
@@ -323,6 +321,24 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 	).rejects.toThrow('manifest source identity is not approved')
 	expect(fabricatedAdapters.createTarget).not.toHaveBeenCalled()
 
+	const source = createManifest().payload.source
+	const uppercaseFixture = manifestFixture({
+		source: {
+			...source,
+			accountId: productionAccountId.toUpperCase(),
+		},
+	})
+	await expect(
+		runD1RestoreDrill(
+			drillInput({
+				manifestBytes: uppercaseFixture.bytes,
+				expectedManifestSha256: uppercaseFixture.checksum,
+				targetAccountId: targetAccountId.toUpperCase(),
+			}),
+			createAdapters(),
+		),
+	).resolves.toMatchObject({ dryRun: true })
+
 	expect(() =>
 		parseArguments([
 			'--manifest',
@@ -341,24 +357,4 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 			'kody-drill',
 		]),
 	).toThrow('Unknown argument: --allowlist')
-})
-
-test('restore trust matches runtime account IDs case-insensitively', async () => {
-	const source = createManifest().payload.source
-	const fixture = manifestFixture({
-		source: {
-			...source,
-			accountId: productionAccountId.toUpperCase(),
-		},
-	})
-	await expect(
-		runD1RestoreDrill(
-			drillInput({
-				manifestBytes: fixture.bytes,
-				expectedManifestSha256: fixture.checksum,
-				targetAccountId: targetAccountId.toUpperCase(),
-			}),
-			createAdapters(),
-		),
-	).resolves.toMatchObject({ dryRun: true })
 })

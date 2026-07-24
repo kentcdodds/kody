@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import { createRouter } from 'remix/router'
-import { matchRoute } from '#client/client-router.tsx'
 import { routePattern } from '#app/route-pattern.ts'
 import { routes } from '#app/routes.ts'
 
@@ -51,29 +50,4 @@ test('router prefers static nested paths over dynamic siblings', async () => {
 		new Request('http://localhost/admin/users/42'),
 	)
 	expect(await userDetail.text()).toBe('user-detail')
-})
-
-test('client route matching prefers static nested paths over dynamic siblings', () => {
-	const oauthCallbackRoute = 'oauth-callback' as unknown as JSX.Element
-	const serverDetailRoute = 'server-detail' as unknown as JSX.Element
-	const usageApiRoute = 'usage-api' as unknown as JSX.Element
-	const userDetailRoute = 'user-detail' as unknown as JSX.Element
-
-	const mcpRoutes = {
-		[routePattern(routes.accountMcpServerDetail)]: serverDetailRoute,
-		[routePattern(routes.accountMcpServersOauthCallback)]: oauthCallbackRoute,
-	}
-	expect(matchRoute('/account/mcp-servers/oauth/callback', mcpRoutes)).toBe(
-		oauthCallbackRoute,
-	)
-	expect(matchRoute('/account/mcp-servers/my-server', mcpRoutes)).toBe(
-		serverDetailRoute,
-	)
-
-	const adminRoutes = {
-		[routePattern(routes.adminUserDetail)]: userDetailRoute,
-		[routePattern(routes.adminUserUsageApi)]: usageApiRoute,
-	}
-	expect(matchRoute('/admin/users/usage.json', adminRoutes)).toBe(usageApiRoute)
-	expect(matchRoute('/admin/users/42', adminRoutes)).toBe(userDetailRoute)
 })

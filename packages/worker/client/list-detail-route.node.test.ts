@@ -3,7 +3,7 @@ import { createListDetailRoute } from './list-detail-route.ts'
 
 const mcpServersRoute = createListDetailRoute('/account/mcp-servers')
 
-test('list-detail route helper matches base, new, and single-segment detail paths', () => {
+test('list-detail route helper supports the URL-backed list/detail workflow', () => {
 	expect(mcpServersRoute.isRoutePath('/account/mcp-servers')).toBe(true)
 	expect(mcpServersRoute.isRoutePath('/account/mcp-servers/new')).toBe(true)
 	expect(mcpServersRoute.isRoutePath('/account/mcp-servers/server-1')).toBe(
@@ -34,9 +34,6 @@ test('list-detail route helper matches base, new, and single-segment detail path
 		selectedId: null,
 		isCreating: false,
 	})
-})
-
-test('list-detail route helper tolerates malformed percent-encoding', () => {
 	expect(mcpServersRoute.getSelection('/account/mcp-servers/%')).toEqual({
 		selectedId: '%',
 		isCreating: false,
@@ -47,9 +44,7 @@ test('list-detail route helper tolerates malformed percent-encoding', () => {
 			isCreating: false,
 		},
 	)
-})
 
-test('list-detail route helper builds hrefs with optional search', () => {
 	expect(mcpServersRoute.buildListHref()).toBe('/account/mcp-servers')
 	expect(mcpServersRoute.buildListHref('?q=docs')).toBe(
 		'/account/mcp-servers?q=docs',

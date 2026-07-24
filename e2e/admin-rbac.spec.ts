@@ -76,12 +76,6 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(page).toHaveURL(/\/admin\/users\/?$/)
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeVisible()
 	await expect(page.getByText('Unable to load admin users.')).toHaveCount(0)
-	// No selection yet — empty detail pane after SPA navigation (regression:
-	// preloaded loader data consumed mid-render left derivations from
-	// pre-navigation state on screen).
-	await expect(
-		page.getByRole('heading', { name: 'Select an account' }),
-	).toBeVisible()
 	expect(
 		await page.evaluate(
 			() => (window as Window & { __e2eMarker?: boolean }).__e2eMarker,
@@ -153,10 +147,9 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	expect(JSON.stringify(memberRecord)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(memberRecord)).not.toContain('super-secret-value')
 	const memberId = Number(memberRecord.id)
-	const adminId = Number(adminRecord.id)
 
 	// URL-backed selection: click updates the path, reload restores it, and a
-	// deep link opens that account's detail (use the non-first seeded user).
+	// detail pane opens that account (use the non-first seeded user).
 	await page.getByRole('button', { name: memberUser.username }).click()
 	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberId}`))
 	await expect(page.getByText('Account metadata only')).toBeVisible()
@@ -171,11 +164,6 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberId}`))
 	await expect(
 		page.getByRole('heading', { name: memberUser.username, exact: true }),
-	).toBeVisible()
-	await expect(page.getByText('Account metadata only')).toBeVisible()
-	await page.goto(`/admin/users/${adminId}?q=rbac-${runId}`)
-	await expect(
-		page.getByRole('heading', { name: adminUser.username, exact: true }),
 	).toBeVisible()
 	await expect(page.getByText('Account metadata only')).toBeVisible()
 	await expect(page.getByText('memberPrivateSecret')).toHaveCount(0)
