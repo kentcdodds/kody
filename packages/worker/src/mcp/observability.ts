@@ -58,13 +58,17 @@ function reportMcpFailureToSentry(
 	cause?: unknown,
 ) {
 	try {
+		// Sandbox failures are caller/user-module errors (bad Notion filters,
+		// syntax errors, thrown strings). They stay on the structured
+		// `mcp-event` log line; sending them to Sentry creates warning issues
+		// that look like platform bugs and trip triage automation.
+		if (payload.sandboxError) return
 		if (!Sentry.isInitialized()) return
 		const client = Sentry.getClient()
 		if (!client?.getOptions().dsn) return
 
 		Sentry.withScope((scope) => {
-			const level = payload.sandboxError ? 'warning' : 'error'
-			scope.setLevel(level)
+			scope.setLevel('error')
 
 			// Id only: sendDefaultPii is false and emails stay out of Sentry.
 			if (payload.userId) scope.setUser({ id: payload.userId })
@@ -81,7 +85,6 @@ function reportMcpFailureToSentry(
 			if (payload.failurePhase) {
 				scope.setTag('mcp.failure_phase', payload.failurePhase)
 			}
-			if (payload.sandboxError) scope.setTag('mcp.sandbox_error', 'true')
 			scope.setContext('mcp', {
 				baseUrl: payload.baseUrl,
 				hasUser: payload.hasUser,
