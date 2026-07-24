@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -17,10 +18,13 @@ const defaultSearchLimit = 5
 const defaultContextLimit = 2
 const maxSearchLimit = 20
 const maxContextLimit = 3
-const defaultSearchTimeoutMs = 1_000
-const defaultContextTimeoutMs = 300
+// Retrievers are optional enrichment. Keep budgets short so a slow package
+// cannot dominate search/execute wall time, but leave enough headroom for cold
+// isolate + packageStorage work. Individual failures must not fail the tool.
+const defaultSearchTimeoutMs = 3_000
+const defaultContextTimeoutMs = 1_000
 const maxSearchTimeoutMs = 5_000
-const maxContextTimeoutMs = 1_000
+const maxContextTimeoutMs = 3_000
 const maxResultSummaryLength = 1_000
 const maxResultDetailsLength = 4_000
 
@@ -214,7 +218,7 @@ async function invokeRetriever(input: {
 		},
 	)
 	if (executionResult.error) {
-		throw executionResult.error
+		throw new Error(getErrorMessage(executionResult.error))
 	}
 	const parsed = packageRetrieverOutputSchema.safeParse(executionResult.result)
 	if (!parsed.success) {
@@ -279,27 +283,53 @@ export async function runPackageRetrievers(input: {
 			scope: input.scope,
 		})
 	).slice(0, input.maxProviders ?? (input.scope === 'context' ? 3 : 10))
-	const results = (
-		await Promise.all(
-			entries.map((entry) =>
-				invokeRetriever({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					userId,
-					scope: input.scope,
-					entry,
-					query,
-					includeHiddenPackages,
-					memoryContext: input.memoryContext,
-					conversationId: input.conversationId,
-				}),
-			),
+	// Soft-fail per retriever: one stalled/buggy package must not fail MCP
+	// `search` or pre-sandbox execute memory/context enrichment. Callers already
+	// surface `warnings` to agents.
+	const settled = await Promise.allSettled(
+		entries.map((entry) =>
+			invokeRetriever({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId,
+				scope: input.scope,
+				entry,
+				query,
+				includeHiddenPackages,
+				memoryContext: input.memoryContext,
+				conversationId: input.conversationId,
+			}),
+		),
+	)
+	const results: Array<PackageRetrieverSurfaceResult> = []
+	const warnings: Array<string> = []
+	for (let index = 0; index < settled.length; index += 1) {
+		const outcome = settled[index]
+		const entry = entries[index]
+		if (!outcome || !entry) continue
+		if (outcome.status === 'fulfilled') {
+			results.push(...outcome.value)
+			continue
+		}
+		const reason = getErrorMessage(outcome.reason)
+		console.error(
+			JSON.stringify({
+				message: 'package retriever failed',
+				packageId: entry.packageId,
+				kodyId: entry.kodyId,
+				retrieverKey: entry.retrieverKey,
+				scope: input.scope,
+				reason,
+			}),
 		)
-	).flat()
+		warnings.push(
+			`Package retriever "${entry.kodyId}/${entry.retrieverKey}" failed and was skipped: ${reason}`,
+		)
+	}
 	return {
 		results: results.sort(
 			(left, right) => (right.score ?? 0) - (left.score ?? 0),
 		),
-		warnings: [],
+		warnings,
 	}
 }

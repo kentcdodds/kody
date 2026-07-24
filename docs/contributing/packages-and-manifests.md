@@ -407,6 +407,9 @@ automatic context retrieval without promoting those records to durable memory.
 - Retriever exports reach the package storage bucket through `packageStorage()`
   (writable, like every packageStorage surface); keeping retrievers read-mostly
   is a convention
+- Host budgets default to 3s for `search` and 1s for `context` (clamped to 5s /
+  3s). Optional enrichment: a timed-out or failing retriever is skipped with a
+  warning and must not fail the surrounding MCP `search` / `execute` call
 
 Example:
 
@@ -419,7 +422,7 @@ Example:
 				"name": "Personal Inbox",
 				"description": "Searches saved notes and snippets.",
 				"scopes": ["search"],
-				"timeoutMs": 1000,
+				"timeoutMs": 3000,
 				"maxResults": 5
 			}
 		}
