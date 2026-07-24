@@ -55,9 +55,10 @@ test('logMcpEvent keeps sandbox failures on mcp-event logs and skips Sentry', ()
 			userId: 'user-1',
 			sandboxError: true,
 			errorName: 'Unknown',
-			errorMessage:
-				'Notion API /data_sources/39977ef0-f2db-81c6-9147-000bd579e312/query failed: validation_error',
-			cause: 'Notion API /data_sources/.../query failed: validation_error',
+			// Thrown non-Error strings from caller/package modules (e.g.
+			// minified `b[t]?.title?.map is not a function`) share this path.
+			errorMessage: 'b[t]?.title?.map is not a function',
+			cause: 'b[t]?.title?.map is not a function',
 		})
 
 		logMcpEvent({
