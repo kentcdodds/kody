@@ -11,6 +11,10 @@ import {
 } from '#worker/feature-flags/registry.ts'
 import { getFeatureFlagsForUser } from '#worker/feature-flags/service.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
+import {
+	type McpAuthDenialReason,
+	recordMcpAuthDenial,
+} from '#mcp/auth-audit.ts'
 import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
 import { type Capability, type CapabilitySpec } from './types.ts'
 
@@ -135,33 +139,57 @@ export async function assertCallerCanAccessCapability(
 	}
 
 	const user = getUserAccessContext(callerContext)
+	const denial = describeCapabilityDenial(user, capability)
+	// A denial is the one signal we would have that a principal is walking the
+	// capability surface, so it is recorded even though it is not an error.
+	await recordMcpAuthDenial({
+		db: options.env?.APP_DB,
+		action: 'mcp_capability_denied',
+		reason: denial.reason,
+		email: callerContext.user?.email,
+		path: capability.name,
+	})
+	throw new Error(denial.message)
+}
+
+function describeCapabilityDenial(
+	user: ReturnType<typeof getUserAccessContext>,
+	capability: CapabilityAccessRequirement,
+): { reason: McpAuthDenialReason; message: string } {
 	if (!user) {
-		throw new Error(
-			`Authenticated MCP user is required to execute capability "${capability.name}".`,
-		)
+		return {
+			reason: 'no_user',
+			message: `Authenticated MCP user is required to execute capability "${capability.name}".`,
+		}
 	}
 	if (
 		capability.requiredRole &&
 		!hasRequiredRole(user, capability.requiredRole)
 	) {
-		throw new Error(
-			`MCP user lacks required role "${capability.requiredRole}" for capability "${capability.name}".`,
-		)
+		return {
+			reason: 'role',
+			message: `MCP user lacks required role "${capability.requiredRole}" for capability "${capability.name}".`,
+		}
 	}
 	if (
 		capability.requiredPermission &&
 		!hasRequiredPermission(user, capability.requiredPermission)
 	) {
-		throw new Error(
-			`MCP user lacks required permission "${capability.requiredPermission}" for capability "${capability.name}".`,
-		)
+		return {
+			reason: 'permission',
+			message: `MCP user lacks required permission "${capability.requiredPermission}" for capability "${capability.name}".`,
+		}
 	}
 	if (capability.featureFlag) {
-		throw new Error(
-			`MCP user lacks required feature flag "${capability.featureFlag}" for capability "${capability.name}".`,
-		)
+		return {
+			reason: 'feature_flag',
+			message: `MCP user lacks required feature flag "${capability.featureFlag}" for capability "${capability.name}".`,
+		}
 	}
-	throw new Error(`MCP user cannot access capability "${capability.name}".`)
+	return {
+		reason: 'denied',
+		message: `MCP user cannot access capability "${capability.name}".`,
+	}
 }
 
 export function filterCapabilityRegistryForCaller(

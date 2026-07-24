@@ -236,7 +236,14 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 		),
 	).rejects.toThrow('lacks required role "admin"')
 	expect(mockModule.listPlatformFeedbackForAdmin).not.toHaveBeenCalled()
-	expect(logAuditEventSpy).not.toHaveBeenCalled()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'mcp_capability_denied',
+			result: 'failure',
+			reason: 'role',
+		}),
+	)
 
 	mockModule.listPlatformFeedbackForAdmin.mockResolvedValue({
 		total: 3,
@@ -346,6 +353,7 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 		'Cannot dismiss platform feedback "feedback-1" from status "resolved".',
 	)
 	expect(auditEventSummaries()).toEqual([
+		'mcp_capability_denied:failure',
 		'admin_platform_feedback_list:success',
 		'admin_platform_feedback_get:success',
 		'admin_platform_feedback_update:success',

@@ -4,8 +4,13 @@ import {
 } from '@cloudflare/workers-oauth-provider'
 import { isAccountSuspended } from '#app/account-suspension.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getRequestIp } from '#app/audit-log.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
+import {
+	type McpAuthDenialReason,
+	recordMcpAuthDenial,
+} from './mcp/auth-audit.ts'
 import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'
@@ -118,6 +123,25 @@ export async function handleMcpRequest({
 		env,
 		requestUrl: url,
 	})
+	const recordRejection = async (
+		reason: McpAuthDenialReason,
+		email?: string,
+	) => {
+		await recordMcpAuthDenial({
+			db: env.APP_DB,
+			action: 'mcp_token_rejected',
+			reason,
+			email,
+			ip: getRequestIp(request),
+			path: url.pathname,
+		})
+	}
+
+	// Rejections before a grant resolves are deliberately not audited. They are
+	// reachable by any anonymous request, so writing a row per attempt would let
+	// a stranger drive unbounded D1 writes, and an unattributable "someone sent
+	// a bad token" carries little signal on its own. Flood control for anonymous
+	// traffic belongs at the edge; see docs/contributing/security.md.
 	const authHeader = request.headers.get('Authorization')
 	if (!authHeader || !authHeader.startsWith('Bearer ')) {
 		return createUnauthorizedResponse(origin)
@@ -148,6 +172,7 @@ export async function handleMcpRequest({
 	// A D1 failure inside `isAccountEmailVerified` propagates as an error
 	// instead of silently allowing access.
 	if (!mcpUser) {
+		await recordRejection('unidentified_grant')
 		return createEmailVerificationRequiredResponse(origin)
 	}
 	const emailVerified = await isAccountEmailVerified({
@@ -156,6 +181,7 @@ export async function handleMcpRequest({
 		stableUserId: mcpUser.userId,
 	})
 	if (!emailVerified) {
+		await recordRejection('email_unverified', mcpUser.email)
 		return createEmailVerificationRequiredResponse(origin)
 	}
 
@@ -169,6 +195,7 @@ export async function handleMcpRequest({
 		stableUserId: mcpUser.userId,
 	})
 	if (suspended) {
+		await recordRejection('account_suspended', mcpUser.email)
 		return createAccountSuspendedResponse()
 	}
 

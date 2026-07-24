@@ -90,6 +90,8 @@ type MockDbOptions = {
 	accountByStableId?: MockAccountRow | null
 	// Rows returned for remote connector settings queries.
 	connectorRows?: Array<Record<string, unknown>>
+	// Optional sink for audit rows written while rejecting a request.
+	auditInserts?: Array<Array<unknown>>
 	// Optional sink for which verification SQL shapes were exercised.
 	verificationLookups?: Array<VerificationLookupKind>
 }
@@ -120,6 +122,12 @@ function createMockDb(options: MockDbOptions = {}) {
 				}
 			},
 			async run() {
+				// Denials that resolve to a principal are recorded in the audit
+				// log on the way out.
+				if (normalized.startsWith('insert into audit_events')) {
+					options.auditInserts?.push(boundParams)
+					return { meta: { changes: 1 } }
+				}
 				if (normalized.startsWith('update users')) {
 					if (
 						!normalized.includes('where stable_user_id = ?') ||
@@ -544,7 +552,10 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	expect(noUserResponse.status).toBe(403)
 	expect(fetchMcpCalled).toBe(false)
 
-	// Verified but suspended accounts are rejected with a dedicated error.
+	// Verified but suspended accounts are rejected with a dedicated error, and
+	// the rejection is recorded so a suspended principal that keeps calling
+	// stays visible instead of failing silently.
+	const auditInserts: Array<Array<unknown>> = []
 	const suspendedResponse = await handleMcpRequest({
 		request,
 		env: createEnv(
@@ -554,6 +565,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 			}),
 			{},
 			{
+				auditInserts,
 				emailVerifiedAt: new Date(0).toISOString(),
 				suspendedAt: new Date(0).toISOString(),
 			},
@@ -566,6 +578,14 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 		error: 'account_suspended',
 	})
 	expect(fetchMcpCalled).toBe(false)
+	expect(auditInserts).toHaveLength(1)
+	// category, action, result, then the hashed email — never the raw address.
+	expect(auditInserts[0]?.slice(0, 3)).toEqual([
+		'auth',
+		'mcp_token_rejected',
+		'failure',
+	])
+	expect(auditInserts[0]).not.toContain('user@example.com')
 
 	// Indexed stable-user-id lookup verifies accounts when grant props lack email.
 	const fallbackEmail = 'fallback@example.com'

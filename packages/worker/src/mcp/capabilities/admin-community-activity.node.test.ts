@@ -34,7 +34,14 @@ test('admin community activity list enforces admin role, filters, paginates, and
 		adminCommunityActivityListCapability.handler({}, createContext(['user'])),
 	).rejects.toThrow('lacks required role "admin"')
 	expect(mocks.listCommunityActivityForAdmin).not.toHaveBeenCalled()
-	expect(logAuditEventSpy).not.toHaveBeenCalled()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'mcp_capability_denied',
+			result: 'failure',
+			reason: 'role',
+		}),
+	)
 
 	mocks.listCommunityActivityForAdmin.mockResolvedValue({
 		total: 3,
@@ -94,6 +101,7 @@ test('admin community activity list enforces admin role, filters, paginates, and
 	expect(result.activity[0]).not.toHaveProperty('user_id')
 	expect(result.activity[0]).not.toHaveProperty('package_source')
 	expect(auditEventSummaries()).toEqual([
+		'mcp_capability_denied:failure',
 		'admin_community_activity_list:success',
 	])
 })

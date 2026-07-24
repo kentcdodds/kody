@@ -114,6 +114,36 @@ accounts are never locked out.
 - `/mcp` requires a bearer token whose audience matches the origin
   (`packages/worker/src/mcp-auth.ts`).
 
+## MCP denial visibility
+
+MCP authentication and authorization denials are recorded in `audit_events`
+(`category: 'auth'`, `result: 'failure'`) via `recordMcpAuthDenial`
+(`packages/worker/src/mcp/auth-audit.ts`), not in Sentry. A single denial is a
+routine agent turn, so it is not an error; a burst from one principal is how
+permission probing or a compromised account would look, and the audit log is the
+surface built for that — hashed identifiers, 180-day retention, an admin-only
+query (`admin_audit_log_query`), and the failure-per-day and failure-per-hour
+charts on `/admin/insights`. Two sites record:
+
+- `handleMcpRequest` rejecting a resolved grant (`mcp_token_rejected`):
+  unidentifiable grant, unverified email, suspended account.
+- `assertCallerCanAccessCapability` refusing a capability
+  (`mcp_capability_denied`): missing user, role, permission, or feature flag.
+  This is the single choke point every capability call passes through, so it
+  covers the whole authorization surface.
+
+**Deliberately not recorded:** rejections that happen before a grant resolves —
+a missing, empty, or unparseable bearer token. Those are reachable by any
+anonymous request, so auditing them would let a stranger drive unbounded D1
+writes, and "someone sent a bad token" is not attributable to a principal. The
+consequence is that **brute-forcing or replaying tokens against `/mcp` does not
+appear in the audit log**; flood control for anonymous traffic belongs at the
+edge (Cloudflare rate limiting / WAF), not in application writes.
+
+There is also no automatic alerting. Denials are recorded and charted, but
+nothing pages anyone, so a slow, low-volume prober would be present in the data
+without necessarily drawing attention.
+
 ## Public connector routes are WebSocket-only
 
 The Worker entrypoint (`packages/worker/src/index.ts`) only forwards user-scoped
