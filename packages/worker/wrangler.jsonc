@@ -90,6 +90,20 @@
 
 	"observability": {
 		"enabled": true,
+		// Workers automatic tracing (beta): OTel-standard spans for handler
+		// invocations, outbound fetches, and binding calls (D1, KV, R2, DO,
+		// queues). Spans share the Workers Logs event quota. Inherited by all
+		// environments; local dev and tests ignore it.
+		"traces": {
+			"enabled": true,
+			// To export traces to Sentry (or any OTLP endpoint), create a
+			// Traces destination in the Cloudflare dashboard (Workers
+			// Observability -> Destinations) and reference it here by name.
+			// Referencing a destination that does not exist yet can break
+			// deploys, so only uncomment after the dashboard step. See
+			// docs/contributing/setup-manifest.md.
+			// "destinations": ["sentry-otlp-traces"],
+		},
 	},
 	"triggers": {
 		"crons": ["*/5 * * * *"],
