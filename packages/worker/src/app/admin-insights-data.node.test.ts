@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	buildAuthDays,
 	buildEmailDays,
+	buildEmailDeliveryDays,
 	buildHeatmapCells,
 	buildSignupWeeks,
 	buildUsageMonths,
@@ -77,6 +78,37 @@ test('admin insights date helpers bucket, zero-fill, and fold correctly', () => 
 	expect(emailDays).toEqual([
 		{ day: '2026-07-07', sends: 4, receives: 6 },
 		{ day: '2026-07-08', sends: 0, receives: 0 },
+	])
+
+	const emailDeliveryDays = buildEmailDeliveryDays(
+		[
+			{ day: '2026-07-07', event_type: 'delivered', n: 4 },
+			{ day: '2026-07-07', event_type: 'bounced', n: 2 },
+			{ day: '2026-07-08', event_type: 'complained', n: 1 },
+			{ day: '2026-07-08', event_type: 'not-an-outcome', n: 9 },
+		],
+		now,
+		2,
+	)
+	expect(emailDeliveryDays).toEqual([
+		{
+			day: '2026-07-07',
+			delivered: 4,
+			deferred: 0,
+			bounced: 2,
+			failed: 0,
+			rejected: 0,
+			complained: 0,
+		},
+		{
+			day: '2026-07-08',
+			delivered: 0,
+			deferred: 0,
+			bounced: 0,
+			failed: 0,
+			rejected: 0,
+			complained: 1,
+		},
 	])
 
 	const authDays = buildAuthDays(
@@ -192,6 +224,14 @@ function createInsightsTestDb() {
 							] as Array<T>,
 						}
 					}
+					if (normalizedQuery.includes('from email_delivery_events')) {
+						return {
+							results: [
+								{ day: '2026-07-08', event_type: 'delivered', n: 5 },
+								{ day: '2026-07-08', event_type: 'bounced', n: 1 },
+							] as Array<T>,
+						}
+					}
 					if (normalizedQuery.includes("coalesce(plan, 'none')")) {
 						return {
 							results: [
@@ -280,6 +320,16 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 		day: '2026-07-08',
 		sends: 3,
 		receives: 0,
+	})
+	expect(data.emailDeliveryByDay).toHaveLength(28)
+	expect(data.emailDeliveryByDay.at(-1)).toEqual({
+		day: '2026-07-08',
+		delivered: 5,
+		deferred: 0,
+		bounced: 1,
+		failed: 0,
+		rejected: 0,
+		complained: 0,
 	})
 	expect(data.authByDay.at(-1)?.success).toBe(4)
 	expect(data.authByCategory).toEqual([{ category: 'auth', count: 4 }])

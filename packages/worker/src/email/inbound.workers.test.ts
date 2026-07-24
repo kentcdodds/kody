@@ -600,6 +600,64 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 	expect(rollup).toMatchObject({ event_count: 2, error_count: 2 })
 })
 
+test('inbound email handler rejects mail for suspended accounts', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const username = `suspended-${crypto.randomUUID().slice(0, 8)}`
+	const accountEmail = `email-suspended-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	const address = `${username}@${platformDomain}`
+	await seedAccount({
+		db: env.APP_DB,
+		email: accountEmail,
+		username,
+	})
+	await env.APP_DB.prepare(
+		`UPDATE users SET suspended_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind(new Date().toISOString(), userId)
+		.run()
+
+	const message = createForwardableEmailMessage({
+		from: 'stranger@example.net',
+		to: address,
+		raw: [
+			'From: Stranger <stranger@example.net>',
+			`To: ${address}`,
+			'Subject: Should be rejected',
+			'Message-ID: <suspended-1@example.net>',
+			'',
+			'Please help.',
+		].join('\r\n'),
+	})
+	await handleInboundEmail(message, createInboundEnv())
+	expect(message.rejectedReason).toBe('Account is suspended.')
+
+	expect(
+		await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			limit: 10,
+		}),
+	).toEqual([])
+	const events = await env.APP_DB.prepare(
+		`SELECT event_type, detail_json FROM email_delivery_events WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.all<{ event_type: string; detail_json: string }>()
+	const details = (events.results ?? []).map((row) => ({
+		eventType: row.event_type,
+		detail: JSON.parse(row.detail_json) as Record<string, unknown>,
+	}))
+	expect(details.every((row) => row.eventType === 'rejected')).toBe(true)
+	expect(
+		details.find((row) => row.detail['aggregate'] !== true)?.detail,
+	).toMatchObject({
+		reason: 'Account is suspended.',
+		phase: 'account-suspension',
+	})
+})
+
 test('getEmailAttachmentById reconstructs unnamed attachments from raw MIME', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `email-attachment-user-${crypto.randomUUID()}`

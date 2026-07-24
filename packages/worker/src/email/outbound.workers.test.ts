@@ -188,6 +188,30 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 	expect(listed.map((message) => message.id)).toContain(result.message.id)
 })
 
+test('sendOutboundEmail rejects suspended accounts', async () => {
+	silenceIncidentalRuntimeWarnings()
+	await ensureEmailTestSchema(env.APP_DB)
+	const accountEmail = `suspended-${crypto.randomUUID()}@example.com`
+	const userId = await createStableUserIdFromEmail(accountEmail)
+	await seedVerifiedAccount({ email: accountEmail })
+	await env.APP_DB.prepare(
+		`UPDATE users SET suspended_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind(new Date().toISOString(), userId)
+		.run()
+
+	await expect(
+		sendOutboundEmail({
+			env: createBindingSendEnv(),
+			userId,
+			accountEmail,
+			recipientPolicy: 'self',
+			subject: 'Blocked while suspended',
+			text: 'Body',
+		}),
+	).rejects.toThrow('This account is suspended')
+})
+
 test('sendOutboundEmail rejects non-self recipients under the self policy', async () => {
 	// Usage recording degrades with a warn when the usage_rollups table is
 	// not part of this test's schema; that is incidental to the policy.

@@ -195,6 +195,15 @@ assistant features:
   `packages/worker/src/email/inbound.ts` rejects routed mail for unverified
   accounts right after username routing (`setReject` plus a bounded `rejected`
   email delivery event); nothing is stored.
+
+Platform suspension (`users.suspended_at`, set by admins from `/admin/users`)
+follows the same chokepoint pattern and also fails closed: browser session
+resolution treats a suspended session as signed out
+(`readAuthenticatedAppUser` / `loadSessionInfo`), `handleMcpRequest` rejects
+with a `403 account_suspended` JSON response after the verification gate, and
+both email directions reject (inbound with a bounded `account-suspension`
+rejection event, outbound with an error). See the "Abuse controls" section of
+[`security.md`](../security.md).
 - **Email capabilities**: every capability in the MCP `email` domain calls
   `requireVerifiedEmailAccountUser`
   (`packages/worker/src/mcp/capabilities/email/require-verified-user.ts`) as

@@ -32,6 +32,8 @@ const entitlementResourceSchema = z.enum([
 	'secrets',
 	'concurrent_workflows',
 	'storage_bytes',
+	'execute_calls_per_day',
+	'outbound_fetches_per_day',
 ])
 
 const planSchema = z.enum(planNames)

@@ -36,6 +36,8 @@ type UserRow = {
 	email: string
 	email_verified_at?: string | null
 	plan?: string | null
+	suspended_at?: string | null
+	email_outbound_paused_at?: string | null
 	created_at: string
 	updated_at: string
 }
@@ -76,6 +78,8 @@ function createAdminTestEnv(input: {
 				// Normal fixtures default to free; unknown/null stay
 				// explicit so the dedicated stored-plan coercion test can warn.
 				plan: user.plan === undefined ? 'free' : user.plan,
+				suspended_at: user.suspended_at ?? null,
+				email_outbound_paused_at: user.email_outbound_paused_at ?? null,
 			},
 		]),
 	)
@@ -199,7 +203,7 @@ function createAdminTestEnv(input: {
 								}
 								if (
 									normalizedQuery.includes(
-										'select id, username, email, email_verified_at, plan, created_at, updated_at from users where id =',
+										'select id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where id =',
 									)
 								) {
 									const user = users.get(Number(params[0]))
@@ -264,6 +268,29 @@ function createAdminTestEnv(input: {
 									if (!user) return { meta: { changes: 0 } }
 									user.plan = params[0] === null ? null : String(params[0])
 									user.updated_at = String(params[1])
+									return { meta: { changes: 1 } }
+								}
+								if (
+									normalizedQuery.includes(
+										'update users set suspended_at = ?, updated_at = ? where id =',
+									)
+								) {
+									const user = users.get(Number(params[2]))
+									if (!user) return { meta: { changes: 0 } }
+									user.suspended_at =
+										params[0] === null ? null : String(params[0])
+									user.updated_at = String(params[1])
+									return { meta: { changes: 1 } }
+								}
+								if (
+									normalizedQuery.includes(
+										'update users set email_outbound_paused_at = null, updated_at = ? where id =',
+									)
+								) {
+									const user = users.get(Number(params[1]))
+									if (!user) return { meta: { changes: 0 } }
+									user.email_outbound_paused_at = null
+									user.updated_at = String(params[0])
 									return { meta: { changes: 1 } }
 								}
 								return { meta: { changes: 0 } }
@@ -730,6 +757,120 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 		plan: 'pro',
 	})
 	expect(missingUserResponse.status).toBe(404)
+})
+
+test('suspend, unsuspend, and resume email actions update flags and log audit events', async () => {
+	logAuditEventSpy.mockClear()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 2,
+				username: 'member',
+				email: 'member@example.com',
+				email_outbound_paused_at: '2026-07-20T00:00:00.000Z',
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 2, role_name: 'user' }],
+	})
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const postAction = (body: Record<string, unknown>) =>
+		handler.handler({
+			request: new Request('https://example.com/admin/users.json', {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(body),
+			}),
+			params: {},
+			url: new URL('https://example.com/admin/users.json'),
+		} as never)
+
+	const suspendResponse = await postAction({
+		action: 'suspend_user',
+		userId: 2,
+	})
+	expect(suspendResponse.status).toBe(200)
+	const suspended = await suspendResponse.json()
+	expect(suspended.users[0].suspended_at).toBeTruthy()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'suspend_user',
+			result: 'success',
+			reason: 'target_user_id=2',
+		}),
+	)
+
+	const unsuspendResponse = await postAction({
+		action: 'unsuspend_user',
+		userId: 2,
+	})
+	expect(unsuspendResponse.status).toBe(200)
+	expect((await unsuspendResponse.json()).users[0].suspended_at).toBeNull()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'unsuspend_user',
+			result: 'success',
+			reason: 'target_user_id=2',
+		}),
+	)
+
+	const resumeResponse = await postAction({
+		action: 'resume_email_outbound',
+		userId: 2,
+	})
+	expect(resumeResponse.status).toBe(200)
+	expect(
+		(await resumeResponse.json()).users[0].email_outbound_paused_at,
+	).toBeNull()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'resume_email_outbound',
+			result: 'success',
+			reason: 'target_user_id=2',
+		}),
+	)
+
+	// Admins cannot suspend their own account (actor id is 1).
+	const selfSuspendEnv = createAdminTestEnv({
+		users: [
+			{
+				id: 1,
+				username: 'admin-user',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-01 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 1, role_name: 'admin' }],
+	})
+	const selfHandler = createAdminUsersApiHandler(selfSuspendEnv as unknown as Env)
+	const selfResponse = await selfHandler.handler({
+		request: new Request('https://example.com/admin/users.json', {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ action: 'suspend_user', userId: 1 }),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/users.json'),
+	} as never)
+	expect(selfResponse.status).toBe(400)
+
+	expect(
+		(await postAction({ action: 'suspend_user', userId: 42 })).status,
+	).toBe(404)
 })
 
 test('admin users API returns 403 without read:user:any permission', async () => {

@@ -79,6 +79,8 @@ type VerificationLookupKind =
 type MockDbOptions = {
 	// Row returned for the `email_verified_at` lookup keyed by account email.
 	emailVerifiedAt?: string | null
+	// Row returned for the `suspended_at` lookup keyed by account identity.
+	suspendedAt?: string | null
 	// Row returned for the indexed `stable_user_id` verification lookup.
 	stableUserVerifiedAt?: string | null
 	// Expected bind values for the default verified fixture identity.
@@ -159,6 +161,12 @@ function createMockDb(options: MockDbOptions = {}) {
 						stable_user_id: defaultStableUserId,
 						email_verified_at: verifiedAt,
 					} satisfies MockAccountRow
+				}
+				if (normalized.includes('select suspended_at from users')) {
+					const email =
+						typeof boundParams[0] === 'string' ? boundParams[0] : null
+					if (!email) return null
+					return { suspended_at: options.suspendedAt ?? null }
 				}
 				if (normalized.includes('email = ? and stable_user_id')) {
 					recordVerificationLookup('email_and_stable_user_id')
@@ -526,6 +534,29 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 		fetchMcp,
 	})
 	expect(noUserResponse.status).toBe(403)
+	expect(fetchMcpCalled).toBe(false)
+
+	// Verified but suspended accounts are rejected with a dedicated error.
+	const suspendedResponse = await handleMcpRequest({
+		request,
+		env: createEnv(
+			createHelpers({
+				unwrapToken: async () =>
+					createToken({ userId: 'user', email: 'user@example.com' }),
+			}),
+			{},
+			{
+				emailVerifiedAt: new Date(0).toISOString(),
+				suspendedAt: new Date(0).toISOString(),
+			},
+		),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(suspendedResponse.status).toBe(403)
+	expect(await suspendedResponse.json()).toMatchObject({
+		error: 'account_suspended',
+	})
 	expect(fetchMcpCalled).toBe(false)
 
 	// Indexed stable-user-id lookup verifies accounts when grant props lack email.

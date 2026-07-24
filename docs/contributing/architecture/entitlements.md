@@ -82,6 +82,28 @@ those caps. All other resources use the ordinary `planLimits.max` numbers.
 | `repo_sessions`               | 2,000       |
 | `secrets`                     | 10,000      |
 | `storage_bytes`               | 100 GiB     |
+| `execute_calls_per_day`       | 500,000     |
+| `outbound_fetches_per_day`    | 2,000,000   |
+
+## Compute rate limits
+
+`execute_calls_per_day` and `outbound_fetches_per_day` are daily-counter
+resources (same mechanism as `email_sends_per_day`, consumed atomically with
+`consumeDailyEntitlement`). They close the metering → enforcement loop for the
+two compute surfaces `usage-metering.md` already observes:
+
+- **Execute calls** are consumed at the top of the MCP `execute` tool handler
+  (`packages/worker/src/mcp/tools/execute.ts`) before any bundling or sandbox
+  work, so over-limit calls cost nothing. The `EntitlementLimitError`
+  propagates as a structured MCP error.
+- **Outbound fetches** are consumed at the top of `executeGatewayFetch`
+  (`packages/worker/src/mcp/fetch-gateway.ts`), which every sandbox fetch
+  passes through, before secret expansion. `FetchGatewayProps.email` carries
+  the acting user's account email for plan lookup; contexts without one
+  resolve to `max`, whose limit is still finite.
+
+Both consume only when the context has a `userId`, matching the usage-metering
+rule that events without an owning user are skipped.
 
 ## Schema history
 

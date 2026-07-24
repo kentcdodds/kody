@@ -36,6 +36,18 @@ export const adminUserMetadataSchema = z.object({
 	plan: planNameSchema.describe(
 		'Entitlement plan name. Unknown or unexpected NULL stored values resolve to max.',
 	),
+	suspended_at: z
+		.string()
+		.nullable()
+		.describe(
+			'Set when the account is platform-suspended (blocked at session, MCP, and email chokepoints).',
+		),
+	email_outbound_paused_at: z
+		.string()
+		.nullable()
+		.describe(
+			'Set when outbound email was automatically paused after spam complaints or repeated bounces.',
+		),
 	created_at: z.string(),
 	updated_at: z.string(),
 	roles: z.array(roleNameSchema),

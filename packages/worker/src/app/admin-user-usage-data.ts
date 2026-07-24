@@ -41,6 +41,8 @@ const adminUserUsageEntitlementResources = [
 	'stored_email_messages',
 	'secrets',
 	'concurrent_workflows',
+	'execute_calls_per_day',
+	'outbound_fetches_per_day',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 const warningThreshold = 0.8

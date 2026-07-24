@@ -14,8 +14,30 @@ import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 
+/**
+ * Minimal D1 stub: the daily outbound-fetch entitlement consumed by
+ * executeGatewayFetch issues one conditional upsert (allowed when
+ * meta.changes > 0); secret resolution itself is spied at the service
+ * layer. Plan lookup never touches D1 here because props carry no email
+ * (resolves to `max`).
+ */
 const env = {
-	APP_DB: {} as D1Database,
+	APP_DB: {
+		prepare() {
+			return {
+				bind() {
+					return {
+						async run() {
+							return { meta: { changes: 1 } }
+						},
+						async first() {
+							return null
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database,
 	COOKIE_SECRET: 'test-cookie-secret',
 	SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 }
@@ -23,6 +45,7 @@ const env = {
 const props = {
 	baseUrl: 'https://example.com',
 	userId: 'user-123',
+	email: null,
 	storageContext: null,
 }
 
