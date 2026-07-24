@@ -60,10 +60,12 @@ Optional Worker secret and vars (see `packages/worker/src/env-schema.ts` and
 - `SENTRY_ENVIRONMENT` — also set as a Wrangler `var` per environment in
   `packages/worker/wrangler.jsonc` for deploys.
 - `SENTRY_TRACES_SAMPLE_RATE` — optional `0`–`1`; defaults to **`1.0`** (sample
-  all traces). Set lower (e.g. `0.1`) for higher traffic or Sentry quota. Set to
-  `0` once Cloudflare's OTLP trace export into Sentry is active (see
-  `docs/contributing/setup-manifest.md`) so the SDK does not produce duplicate
-  traces; error reporting is unaffected.
+  all traces) when unset. Production pins it to `0` as a Wrangler `var` in
+  `packages/worker/wrangler.jsonc` because Workers native tracing already
+  exports OTLP traces to Sentry and duplicate SDK traces would double quota
+  usage; error reporting is unaffected. The Sentry options builder reads the raw
+  runtime env and only honors a **number**, so configure it as a JSON-number
+  `var`, not a string secret.
 
 ## MCP `execute` and outbound HTTP
 

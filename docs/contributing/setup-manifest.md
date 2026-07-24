@@ -95,8 +95,8 @@ This project uses the following resources:
       }'
     ```
 
-  - Once Sentry ingests exported OTLP traces, set `SENTRY_TRACES_SAMPLE_RATE=0`
-    to avoid duplicate SDK traces; see
+  - Production pins `SENTRY_TRACES_SAMPLE_RATE` to `0` (Wrangler var) so the
+    Sentry SDK does not duplicate the exported traces; see
     [environment-variables.md](./environment-variables.md).
 
 The checked-in
@@ -206,7 +206,8 @@ automatically:
   `vars` as `production`, `preview`, or `test`; optional override via env for
   local dev)
 - `SENTRY_TRACES_SAMPLE_RATE` (optional `0`–`1`, defaults to **`1.0`** in code
-  when unset — full sampling for low traffic; lower if volume grows)
+  when unset; production pins `0` via a Wrangler var — see
+  [environment-variables.md](./environment-variables.md))
 - `APP_COMMIT_SHA` (used as the Sentry **release** when present, in addition to
   `/health` versioning)
 - `CLOUDFLARE_API_BASE_URL` (optional; defaults to `https://api.cloudflare.com`.

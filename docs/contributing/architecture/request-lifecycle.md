@@ -229,7 +229,8 @@ account-level `sentry-otlp-traces` destination; preview and test deploys inherit
 the top-level block without a destination, so their spans stay in the Cloudflare
 dashboard. The destination itself (endpoint, auth header, fork provisioning) is
 documented in [setup-manifest.md](../setup-manifest.md), and the
-`SENTRY_TRACES_SAMPLE_RATE=0` follow-up that avoids duplicate SDK traces in
+`SENTRY_TRACES_SAMPLE_RATE` handling (production pins it to `0` to avoid
+duplicate SDK traces) in
 [environment-variables.md](../environment-variables.md).
 
 Billing note: each span is one observability event sharing the Workers Logs

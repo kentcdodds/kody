@@ -269,6 +269,13 @@
 			},
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
+				// JSON number on purpose: buildSentryOptions reads the raw
+				// runtime env and only honors a number here (string secrets
+				// are ignored). 0 disables Sentry SDK trace sampling because
+				// Workers native tracing already exports OTLP traces to
+				// Sentry via the sentry-otlp-traces destination; error
+				// capture is unaffected.
+				"SENTRY_TRACES_SAMPLE_RATE": 0,
 				"ARTIFACTS_NAMESPACE": "production",
 				// Public (non-secret) Stripe Price id for production Pro
 				// subscriptions. Coupled to the live Stripe account: if the
