@@ -1,3 +1,4 @@
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -25,7 +26,9 @@ export const repoOpenSessionCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = ctx.callerContext.user
 			if (!user) {
-				throw new Error('repo_open_session requires an authenticated user.')
+				throw new McpCallerError(
+					'repo_open_session requires an authenticated user.',
+				)
 			}
 
 			const requested = await resolveRepoSourceReference({
@@ -42,7 +45,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 						})
 			if (existingSession) {
 				if (existingSession.source_id !== requested.source.id) {
-					throw new Error(
+					throw new McpCallerError(
 						'Active repo session does not match the requested source. Discard the current session before opening a new source.',
 					)
 				}

@@ -29,8 +29,9 @@ vi.mock('@sentry/cloudflare', () => ({
 }))
 
 const { logMcpEvent } = await import('./observability.ts')
+const { McpCallerError } = await import('./caller-error.ts')
 
-test('logMcpEvent keeps sandbox failures on mcp-event logs and skips Sentry', () => {
+function captureMcpEvents(run: () => void) {
 	sentryMock.captureException.mockClear()
 	sentryMock.captureMessage.mockClear()
 	sentryMock.withScope.mockClear()
@@ -44,6 +45,25 @@ test('logMcpEvent keeps sandbox failures on mcp-event logs and skips Sentry', ()
 		}
 	}) as typeof console.info
 	try {
+		run()
+	} finally {
+		console.info = originalInfo
+	}
+	return payloads
+}
+
+const callerFailureBase = {
+	category: 'mcp',
+	tool: 'capability',
+	outcome: 'failure',
+	durationMs: 3,
+	baseUrl: 'https://example.com',
+	hasUser: true,
+	userId: 'user-1',
+} as const
+
+test('logMcpEvent keeps sandbox failures on mcp-event logs and skips Sentry', () => {
+	const payloads = captureMcpEvents(() => {
 		logMcpEvent({
 			category: 'mcp',
 			tool: 'execute',
@@ -61,24 +81,16 @@ test('logMcpEvent keeps sandbox failures on mcp-event logs and skips Sentry', ()
 		})
 
 		logMcpEvent({
-			category: 'mcp',
-			tool: 'capability',
+			...callerFailureBase,
 			capabilityName: 'value_get',
 			capabilitySource: 'builtin',
-			outcome: 'failure',
-			durationMs: 3,
-			baseUrl: 'https://example.com',
-			hasUser: true,
-			userId: 'user-1',
 			sandboxError: false,
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage: 'platform handler blew up',
 			cause: new Error('platform handler blew up'),
 		})
-	} finally {
-		console.info = originalInfo
-	}
+	})
 
 	expect(payloads).toHaveLength(2)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
@@ -99,4 +111,70 @@ test('logMcpEvent keeps sandbox failures on mcp-event logs and skips Sentry', ()
 	)
 	expect(sentryMock.scope.setLevel).toHaveBeenCalledWith('error')
 	expect(sentryMock.scope.setUser).toHaveBeenCalledWith({ id: 'user-1' })
+})
+
+test('logMcpEvent keeps caller mistakes out of Sentry', () => {
+	const payloads = captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'search',
+			failurePhase: 'handler',
+			errorName: 'McpCallerError',
+			errorMessage: 'Provide "query" or "domain".',
+			cause: new McpCallerError('Provide "query" or "domain".'),
+		})
+
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'repo_open_session',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'Opening the session failed.',
+			cause: new Error('Opening the session failed.', {
+				cause: new McpCallerError('Discard the current session first.'),
+			}),
+		})
+
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'value_get',
+			failurePhase: 'parse_input',
+			errorName: 'ZodError',
+			errorMessage: 'name: Required',
+			cause: new Error('name: Required'),
+		})
+
+		logMcpEvent({
+			...callerFailureBase,
+			tool: 'search',
+			toolName: 'search',
+			callerError: true,
+			errorName: 'EntityBatchError',
+			errorMessage: 'All entity lookups failed.',
+		})
+	})
+
+	expect(payloads).toHaveLength(4)
+	expect(sentryMock.captureException).not.toHaveBeenCalled()
+	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
+})
+
+test('logMcpEvent still reports platform failures that wrap no caller error', () => {
+	captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'package_get',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'D1 write failed.',
+			cause: new Error('D1 write failed.', {
+				cause: new Error('storage unavailable'),
+			}),
+		})
+	})
+
+	expect(sentryMock.captureException).toHaveBeenCalledTimes(1)
+	expect(sentryMock.captureException).toHaveBeenCalledWith(
+		expect.objectContaining({ message: 'D1 write failed.' }),
+	)
 })

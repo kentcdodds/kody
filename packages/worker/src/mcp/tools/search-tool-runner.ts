@@ -78,6 +78,7 @@ export async function runSearchTool(input: {
 			hasUser,
 			userId: userId ?? undefined,
 			sandboxError: false,
+			callerError: true,
 			errorName: 'ValidationError',
 			errorMessage: 'Provide "query", "entity", or "domain".',
 			message: 'Search request missing query, entity, and domain.',
@@ -332,6 +333,9 @@ export async function runSearchTool(input: {
 				...(allFailed
 					? {
 							sandboxError: false,
+							// Every requested `entityRef` was unresolvable, which
+							// means the caller asked for entities that do not exist.
+							callerError: true,
 							errorName: 'EntityBatchError',
 							errorMessage: 'All entity lookups failed.',
 						}

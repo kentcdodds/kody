@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -61,14 +62,14 @@ export const packageUpdateCapability = defineDomainCapability(
 				hidden: args.changes.hidden,
 			})
 			if (!changed) {
-				throw new Error('Saved package not found for this user.')
+				throw new McpCallerError('Saved package not found for this user.')
 			}
 			const savedPackage = await getSavedPackageById(ctx.env.APP_DB, {
 				userId: owner.ownerUserId,
 				packageId: args.package_id,
 			})
 			if (!savedPackage) {
-				throw new Error('Saved package not found for this user.')
+				throw new McpCallerError('Saved package not found for this user.')
 			}
 			return {
 				ok: true as const,

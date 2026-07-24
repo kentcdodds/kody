@@ -1,4 +1,5 @@
 import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	parseIntegrationConfig,
 	parseIntegrationJson,
@@ -68,7 +69,9 @@ export async function resolveEntityDetail(input: {
 	}
 
 	if (!input.userId) {
-		throw new Error('Authentication required to access saved user entities.')
+		throw new McpCallerError(
+			'Authentication required to access saved user entities.',
+		)
 	}
 
 	if (ref.type === 'package') {
@@ -82,7 +85,7 @@ export async function resolveEntityDetail(input: {
 				kodyId: ref.id,
 			}))
 		if (!record) {
-			throw new Error('Saved package not found for this user.')
+			throw new McpCallerError('Saved package not found for this user.')
 		}
 		const loaded = await loadPackageSourceBySourceId({
 			env: input.agent.getEnv(),

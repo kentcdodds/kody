@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { isMcpCallerError } from './caller-error.ts'
 
 export type McpToolKind = 'search' | 'execute' | 'capability' | 'app'
 
@@ -20,6 +21,11 @@ export type McpObservabilityPayload = {
 	userId?: string
 	failurePhase?: McpFailurePhase
 	sandboxError?: boolean
+	/**
+	 * Set at failure sites that report a caller mistake without throwing an
+	 * `McpCallerError` (batch lookups, early argument validation).
+	 */
+	callerError?: boolean
 	registeredCapabilityCount?: number
 	errorName?: string
 	errorMessage?: string
@@ -53,16 +59,27 @@ export function errorFields(error: unknown): {
 	return { errorName: 'Unknown', errorMessage: String(error) }
 }
 
+/**
+ * Failures the caller caused and can fix. They stay on the structured
+ * `mcp-event` log line; sending them to Sentry creates issues that look like
+ * platform bugs and trip triage automation.
+ */
+function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
+	// Sandbox failures come from caller-supplied module code (bad Notion
+	// filters, syntax errors, thrown strings).
+	if (payload.sandboxError) return true
+	// Arguments that never matched the declared schema never reached a handler.
+	if (payload.failurePhase === 'parse_input') return true
+	if (payload.callerError) return true
+	return isMcpCallerError(cause)
+}
+
 function reportMcpFailureToSentry(
 	payload: McpObservabilityPayload,
 	cause?: unknown,
 ) {
 	try {
-		// Sandbox failures are caller/user-module errors (bad Notion filters,
-		// syntax errors, thrown strings). They stay on the structured
-		// `mcp-event` log line; sending them to Sentry creates warning issues
-		// that look like platform bugs and trip triage automation.
-		if (payload.sandboxError) return
+		if (isCallerFailure(payload, cause)) return
 		if (!Sentry.isInitialized()) return
 		const client = Sentry.getClient()
 		if (!client?.getOptions().dsn) return

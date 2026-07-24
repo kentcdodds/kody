@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -115,7 +116,7 @@ export const searchCapability = defineDomainCapability(
 			const query = args.query?.trim() ?? ''
 			const domainFilter = args.domain?.trim() || undefined
 			if (!query && !domainFilter) {
-				throw new Error('Provide "query" or "domain".')
+				throw new McpCallerError('Provide "query" or "domain".')
 			}
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null

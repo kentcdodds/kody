@@ -1,3 +1,4 @@
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -15,7 +16,9 @@ function requireExactlyOnePackageSourceIdentity(input: PackageSourceIdentity) {
 		(input.package_id !== undefined ? 1 : 0) +
 		(input.kody_id !== undefined ? 1 : 0)
 	if (count !== 1) {
-		throw new Error('Provide exactly one of `package_id` or `kody_id`.')
+		throw new McpCallerError(
+			'Provide exactly one of `package_id` or `kody_id`.',
+		)
 	}
 }
 
@@ -42,11 +45,11 @@ export async function resolveOwnedPackageSource(input: {
 				})
 	if (!savedPackage) {
 		const missingId = input.args.package_id ?? input.args.kody_id
-		throw new Error(`Saved package "${missingId}" was not found.`)
+		throw new McpCallerError(`Saved package "${missingId}" was not found.`)
 	}
 	const source = await getEntitySourceById(input.db, savedPackage.sourceId)
 	if (!source || source.user_id !== input.userId) {
-		throw new Error('Repo source was not found for this user.')
+		throw new McpCallerError('Repo source was not found for this user.')
 	}
 	return {
 		packageId: savedPackage.id,

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -54,7 +55,7 @@ export const getPackageCapability = defineDomainCapability(
 				packageId: args.package_id,
 			})
 			if (!saved) {
-				throw new Error('Saved package not found for this user.')
+				throw new McpCallerError('Saved package not found for this user.')
 			}
 			const username = await resolvePublicUsername({
 				db: ctx.env.APP_DB,
