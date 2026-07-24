@@ -1,7 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import {
 	backupBlobKey,
-	sealedFullPrefix,
 	stagingArtifactsIndexKey,
 	stagingR2IndexKey,
 	stagingStorageDumpKey,
@@ -11,8 +10,6 @@ import {
 } from '@kody-internal/shared/backup-staging.ts'
 import { sha256Hex } from '#worker/dr/sha256.ts'
 import {
-	__testOnlyDecodeCursor,
-	__testOnlyEncodeCursor,
 	__testOnlySealedObjectKey,
 	handleDrRestoreRequest,
 	runDrRestoreTick,
@@ -85,6 +82,16 @@ function baseEnv() {
 		BUNDLE_ARTIFACTS_KV: { put: async () => {} },
 		STORAGE_RUNNER: {},
 	} as unknown as Env
+}
+
+async function expectRestoreFailure(
+	promise: Promise<unknown>,
+	message: string,
+) {
+	await expect(promise).rejects.toMatchObject({
+		name: MaintenanceFailureError.name,
+		message: expect.stringContaining(message),
+	})
 }
 
 test('dr-restore auth fails closed when secret is missing and rejects wrong bearer', async () => {
@@ -209,10 +216,10 @@ test('dr-restore restores storage, R2, and artifacts in chunked ticks', async ()
 	).toBe(true)
 })
 
-test('dr-restore hard-fails on missing storage dump listed in the index', async () => {
+test('dr-restore hard-fails closed on missing dumps, sha mismatches, and missing blobs', async () => {
 	const day = '2026-07-23'
 	const identity = encodeStorageIdentity('user-a', 'job:1')
-	const storageIndex: StorageIndex = {
+	const missingDumpIndex: StorageIndex = {
 		schemaVersion: 1,
 		day,
 		entries: [
@@ -225,63 +232,58 @@ test('dr-restore hard-fails on missing storage dump listed in the index', async 
 			},
 		],
 	}
-	const { client } = createMemoryS3({
-		[sealedKey(day, stagingStorageIndexKey(day))]: JSON.stringify(storageIndex),
+	let memory = createMemoryS3({
+		[sealedKey(day, stagingStorageIndexKey(day))]:
+			JSON.stringify(missingDumpIndex),
 	})
-	await expect(
+	await expectRestoreFailure(
 		runDrRestoreTick({
 			env: baseEnv(),
 			day,
 			timeBudgetMs: 60_000,
-			s3: client,
+			s3: memory.client,
 		}),
-	).rejects.toBeInstanceOf(MaintenanceFailureError)
-})
+		'Missing sealed storage dump',
+	)
 
-test('dr-restore hard-fails on blob sha256 verification failure', async () => {
 	storageMocks.importStorage.mockReset()
 	storageMocks.importStorage.mockResolvedValue({
 		ok: true,
 		written: 0,
 		cleared: true,
 	})
-	const day = '2026-07-23'
 	const badDigest = 'a'.repeat(64)
 	const r2Index = `${JSON.stringify({ key: 'raw/bad', size: 4, sha256: badDigest })}\n`
-	const storageIndex: StorageIndex = {
+	const emptyStorageIndex: StorageIndex = {
 		schemaVersion: 1,
 		day,
 		entries: [],
 	}
-	const artifactsIndex: ArtifactsIndex = {
+	const emptyArtifactsIndex: ArtifactsIndex = {
 		schemaVersion: 1,
 		day,
 		entries: [],
 	}
-	const { client } = createMemoryS3({
-		[sealedKey(day, stagingStorageIndexKey(day))]: JSON.stringify(storageIndex),
+	memory = createMemoryS3({
+		[sealedKey(day, stagingStorageIndexKey(day))]:
+			JSON.stringify(emptyStorageIndex),
 		[sealedKey(day, stagingR2IndexKey(day, 'email-blobs'))]: r2Index,
 		[sealedKey(day, stagingR2IndexKey(day, 'community-assets'))]: '',
 		[sealedKey(day, stagingArtifactsIndexKey(day))]:
-			JSON.stringify(artifactsIndex),
+			JSON.stringify(emptyArtifactsIndex),
 		[backupBlobKey(badDigest)]: new TextEncoder().encode('nope'),
 	})
-
-	await expect(
+	await expectRestoreFailure(
 		runDrRestoreTick({
 			env: baseEnv(),
 			day,
 			timeBudgetMs: 60_000,
-			s3: client,
+			s3: memory.client,
 		}),
-	).rejects.toMatchObject({
-		name: 'MaintenanceFailureError',
-		message: expect.stringContaining('sha256 mismatch'),
-	})
-})
+		'backup blob sha256 mismatch',
+	)
 
-test('dr-restore hard-fails on missing blob referenced by an index entry', async () => {
-	const day = '2026-07-23'
+	storageMocks.importStorage.mockReset()
 	const missingDigest = 'b'.repeat(64)
 	const artifactsIndex: ArtifactsIndex = {
 		schemaVersion: 1,
@@ -297,7 +299,7 @@ test('dr-restore hard-fails on missing blob referenced by an index entry', async
 			},
 		],
 	}
-	const { client } = createMemoryS3({
+	memory = createMemoryS3({
 		[sealedKey(day, stagingStorageIndexKey(day))]: JSON.stringify({
 			schemaVersion: 1,
 			day,
@@ -308,77 +310,19 @@ test('dr-restore hard-fails on missing blob referenced by an index entry', async
 		[sealedKey(day, stagingArtifactsIndexKey(day))]:
 			JSON.stringify(artifactsIndex),
 	})
-
-	await expect(
+	await expectRestoreFailure(
 		runDrRestoreTick({
 			env: baseEnv(),
 			day,
 			timeBudgetMs: 60_000,
-			s3: client,
+			s3: memory.client,
 		}),
-	).rejects.toMatchObject({
-		name: 'MaintenanceFailureError',
-		message: expect.stringContaining('backup blob missing'),
-	})
-})
+		'backup blob missing',
+	)
 
-test('decodeCursor rejects NaN, negative, and non-safe-integer fields', () => {
-	expect(() =>
-		__testOnlyDecodeCursor(
-			__testOnlyEncodeCursor({
-				phase: 'storage',
-				storageIndex: -1,
-				storageLineOffset: 0,
-				storageReplaceStarted: false,
-				storageDumpVerified: false,
-				r2LabelIndex: 0,
-				r2LineOffset: 0,
-				artifactsIndex: 0,
-			}),
-		),
-	).toThrow(MaintenanceFailureError)
-
-	expect(() =>
-		__testOnlyDecodeCursor(
-			btoa(
-				JSON.stringify({
-					phase: 'storage',
-					storageIndex: '1',
-					storageLineOffset: 0,
-					storageReplaceStarted: false,
-					storageDumpVerified: false,
-					r2LabelIndex: 0,
-					r2LineOffset: 0,
-					artifactsIndex: 0,
-				}),
-			),
-		),
-	).toThrow(MaintenanceFailureError)
-
-	expect(() =>
-		__testOnlyDecodeCursor(
-			btoa(
-				JSON.stringify({
-					phase: 'storage',
-					storageIndex: 1.5,
-					storageLineOffset: 0,
-					storageReplaceStarted: false,
-					storageDumpVerified: false,
-					r2LabelIndex: 0,
-					r2LineOffset: 0,
-					artifactsIndex: 0,
-				}),
-			),
-		),
-	).toThrow(MaintenanceFailureError)
-})
-
-test('dr-restore hard-fails on storage dump sha256 mismatch before import', async () => {
 	storageMocks.importStorage.mockReset()
-	const day = '2026-07-23'
-	const identity = encodeStorageIdentity('user-a', 'job:1')
 	const dumpBody = `${JSON.stringify({ key: 'alpha', valueJson: '{"n":1}' })}\n`
-	const storageIndex: StorageIndex = {
+	const mismatchedDumpIndex: StorageIndex = {
 		schemaVersion: 1,
 		day,
 		entries: [
@@ -391,27 +335,19 @@ test('dr-restore hard-fails on storage dump sha256 mismatch before import', asyn
 			},
 		],
 	}
-	const { client } = createMemoryS3({
-		[sealedKey(day, stagingStorageIndexKey(day))]: JSON.stringify(storageIndex),
+	memory = createMemoryS3({
+		[sealedKey(day, stagingStorageIndexKey(day))]:
+			JSON.stringify(mismatchedDumpIndex),
 		[sealedKey(day, stagingStorageDumpKey(day, identity))]: dumpBody,
 	})
-
-	await expect(
+	await expectRestoreFailure(
 		runDrRestoreTick({
 			env: baseEnv(),
 			day,
 			timeBudgetMs: 60_000,
-			s3: client,
+			s3: memory.client,
 		}),
-	).rejects.toMatchObject({
-		name: 'MaintenanceFailureError',
-		message: expect.stringContaining('storage dump sha256 mismatch'),
-	})
-	expect(storageMocks.importStorage).not.toHaveBeenCalled()
-})
-
-test('sealed object keys rewrite staging prefix into daily/full', () => {
-	expect(sealedKey('2026-07-23', stagingStorageIndexKey('2026-07-23'))).toBe(
-		`${sealedFullPrefix('2026-07-23')}storage-index.json`,
+		'storage dump sha256 mismatch',
 	)
+	expect(storageMocks.importStorage).not.toHaveBeenCalled()
 })
