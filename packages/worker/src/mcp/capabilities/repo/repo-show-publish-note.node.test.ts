@@ -139,6 +139,6 @@ test('repo_show_publish_note reads notes by source or package identity and rejec
 	).rejects.toThrow('Repo source was not found for this user.')
 	expect(mockModule.getEntitySourceByIdForUser).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({ id: 'source-1' }),
+		{ id: 'source-1', userId: 'user-1' },
 	)
 })
