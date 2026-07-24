@@ -39,9 +39,31 @@ export function filterUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
 	return null
 }
 
+/**
+ * Exact message emitted by the execute sandbox when caller code exceeds
+ * `timeoutMs` (`packages/worker/src/mcp/executor.ts`). Inline workflows rethrow
+ * that string as `new Error(...)`; `instrumentWorkflowWithSentry` then
+ * auto-captures it. MCP execute already skips sandbox failures via
+ * `sandboxError`, but workflow instrumentation still reports the rethrow.
+ * Other platform timeouts use different wording (Kit, webhook, snapshot, …).
+ */
+export const executorSandboxTimeoutMessage = 'Execution timed out'
+
+export function isExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
+	return sentryEventMessages(event).some(
+		(message) => message === executorSandboxTimeoutMessage,
+	)
+}
+
+export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
+	if (!isExecutorSandboxTimeoutSentryEvent(event)) return event
+	return null
+}
+
 export function filterSentryEvent(event: ErrorEvent) {
 	if (filterRetryableD1LockSentryEvent(event) === null) return null
 	if (filterUserModuleBundlerFailureSentryEvent(event) === null) return null
+	if (filterExecutorSandboxTimeoutSentryEvent(event) === null) return null
 	return event
 }
 
@@ -67,8 +89,10 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// forwarded them. These are transient lock-contention errors retried in
 		// app code and should not open or regress Sentry issues.
 		//
-		// User-module esbuild failures from inline workflows are similarly
-		// expected caller mistakes; see filterUserModuleBundlerFailureSentryEvent.
+		// User-module esbuild failures and executor sandbox timeouts from
+		// inline workflows are similarly expected caller mistakes; see
+		// filterUserModuleBundlerFailureSentryEvent and
+		// filterExecutorSandboxTimeoutSentryEvent.
 		beforeSend: filterSentryEvent,
 	}
 }

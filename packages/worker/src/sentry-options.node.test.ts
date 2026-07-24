@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
 import {
+	executorSandboxTimeoutMessage,
+	filterExecutorSandboxTimeoutSentryEvent,
 	filterRetryableD1LockSentryEvent,
 	filterSentryEvent,
 	filterUserModuleBundlerFailureSentryEvent,
@@ -68,11 +70,43 @@ test('filterUserModuleBundlerFailureSentryEvent drops esbuild failures in caller
 
 	const unrelated = {
 		exception: {
-			values: [{ value: 'Execution timed out' }],
+			values: [{ value: 'D1_ERROR: syntax error near INSERTZ' }],
 		},
 	}
 	expect(filterUserModuleBundlerFailureSentryEvent(unrelated)).toBe(unrelated)
 	expect(filterSentryEvent(unrelated)).toBe(unrelated)
+})
+
+test('filterExecutorSandboxTimeoutSentryEvent drops exact sandbox timeout message', () => {
+	const sandboxTimeout = {
+		exception: {
+			values: [{ value: executorSandboxTimeoutMessage }],
+		},
+	}
+	expect(filterExecutorSandboxTimeoutSentryEvent(sandboxTimeout)).toBeNull()
+	expect(filterSentryEvent(sandboxTimeout)).toBeNull()
+
+	const topLevelMessage = { message: executorSandboxTimeoutMessage }
+	expect(filterExecutorSandboxTimeoutSentryEvent(topLevelMessage)).toBeNull()
+	expect(filterSentryEvent(topLevelMessage)).toBeNull()
+
+	const similarButDifferent = {
+		exception: {
+			values: [{ value: 'Webhook sync invocation timed out.' }],
+		},
+	}
+	expect(filterExecutorSandboxTimeoutSentryEvent(similarButDifferent)).toBe(
+		similarButDifferent,
+	)
+	expect(filterSentryEvent(similarButDifferent)).toBe(similarButDifferent)
+
+	const prefixed = {
+		exception: {
+			values: [{ value: `Error: ${executorSandboxTimeoutMessage}` }],
+		},
+	}
+	expect(filterExecutorSandboxTimeoutSentryEvent(prefixed)).toBe(prefixed)
+	expect(filterSentryEvent(prefixed)).toBe(prefixed)
 })
 
 test('filterSentryEvent still drops retryable D1 lock contention', () => {
