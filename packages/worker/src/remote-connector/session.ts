@@ -166,17 +166,13 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 				`Remote connector websocket closed code=${code} wasClean=${wasClean}${reason ? ` reason=${reason}` : ''} before RPC response.`,
 			)
 		}
-		const closeMessage = `Remote connector session websocket closed code=${code} wasClean=${wasClean}${reason ? ` reason=${reason}` : ''}`
-		console.warn(closeMessage)
-		this.captureSessionMessage(closeMessage, {
-			level: 'warning',
-			extra: {
-				code,
-				reason,
-				wasClean,
-				connectorId: this.stateSnapshot.persisted.connectorId,
-			},
-		})
+		// Disconnects are expected lifecycle noise for remote connectors
+		// (laptop sleep, process restart, flaky home networks, DO migration).
+		// Keep an ops log line; do not open Sentry issues. Auth failures and
+		// message-handler bugs already capture at error level above.
+		console.warn(
+			`Remote connector session websocket closed code=${code} wasClean=${wasClean}${reason ? ` reason=${reason}` : ''}`,
+		)
 		return this.persistState()
 	}
 

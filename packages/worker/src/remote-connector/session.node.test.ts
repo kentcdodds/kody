@@ -96,8 +96,8 @@ async function createRemoteConnectorSession(
 }
 
 test('remote connector session lifecycle across restore, snapshot, heartbeat, close, and error', async () => {
-	// Websocket closes log an operational warning alongside the Sentry
-	// capture asserted below.
+	// Websocket closes log an operational warning only (no Sentry capture —
+	// disconnects are expected remote-connector lifecycle noise).
 	consoleWarn.mockImplementation(() => {})
 	const restored = await createRemoteConnectorSession({
 		storedState: {
@@ -165,12 +165,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'Remote connector session websocket closed code=1006 wasClean=false reason=network',
 	)
-	expect(captureMessageMock).toHaveBeenCalledWith(
-		expect.any(String),
-		expect.objectContaining({
-			level: 'warning',
-		}),
-	)
+	expect(captureMessageMock).not.toHaveBeenCalled()
 	expect(
 		closed.persistedEntries.get('remote-connector-session-state'),
 	).toMatchObject({
@@ -258,12 +253,7 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		{} as WebSocket,
 		new Error('abnormal close'),
 	)
-	expect(captureMessageMock).toHaveBeenCalledWith(
-		expect.any(String),
-		expect.objectContaining({
-			level: 'warning',
-		}),
-	)
+	expect(captureMessageMock).not.toHaveBeenCalled()
 	expect(
 		errored.persistedEntries.get('remote-connector-session-state'),
 	).toMatchObject({
@@ -289,7 +279,8 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	dedupe.state.getWebSockets.mockReturnValue([])
 	await dedupe.session.webSocketError(socket, new Error('abnormal close'))
 	await dedupe.session.webSocketClose(socket, 1006, 'runtime close', false)
-	expect(captureMessageMock).toHaveBeenCalledTimes(1)
+	expect(captureMessageMock).not.toHaveBeenCalled()
+	expect(consoleWarn).toHaveBeenCalled()
 	expect(dedupe.state.storage.put).toHaveBeenCalledTimes(1)
 	expect(
 		dedupe.persistedEntries.get('remote-connector-session-state'),
