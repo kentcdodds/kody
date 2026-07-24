@@ -2,6 +2,7 @@ import { defineCapability } from '#mcp/capabilities/define-capability.ts'
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { type CapabilityDomain } from '#mcp/capabilities/domain-metadata.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	type OpenApiBinding,
 	type OpenApiBindingOperation,
@@ -190,7 +191,7 @@ function createCapabilityFromOperation(input: {
 		async handler(args, ctx) {
 			const userId = ctx.callerContext.user?.userId
 			if (!userId) {
-				throw new Error(
+				throw new McpCallerError(
 					`OpenAPI capability "${binding.name}:${operation.slug}" requires an authenticated user.`,
 				)
 			}

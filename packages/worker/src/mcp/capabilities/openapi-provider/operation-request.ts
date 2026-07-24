@@ -4,6 +4,7 @@ import {
 	parseIntegrationJson,
 	type IntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { assertIntegrationHostAllowed } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { executeGatewayFetch } from '#mcp/fetch-gateway.ts'
 import {
@@ -161,7 +162,8 @@ function buildOperationUrl(input: {
 	let path = input.path.trim()
 	path = path.replace(/\{([^}/]+)\}/g, (_match, name: string) => {
 		if (!(name in input.params)) {
-			throw new Error(
+			// Caller omitted a path placeholder; clear from the message alone.
+			throw new McpCallerError(
 				`Missing required path parameter "${name}" for OpenAPI operation path ${input.path}.`,
 			)
 		}
@@ -665,13 +667,15 @@ function asStringRecord(
 ): Record<string, string> {
 	if (value == null) return {}
 	if (typeof value !== 'object' || Array.isArray(value)) {
-		throw new Error(`OpenAPI operation args.${fieldName} must be an object.`)
+		throw new McpCallerError(
+			`OpenAPI operation args.${fieldName} must be an object.`,
+		)
 	}
 	const result: Record<string, string> = {}
 	for (const [key, entry] of Object.entries(value)) {
 		if (entry == null) continue
 		if (typeof entry !== 'string' && typeof entry !== 'number') {
-			throw new Error(
+			throw new McpCallerError(
 				`OpenAPI operation args.${fieldName}.${key} must be a string or number.`,
 			)
 		}

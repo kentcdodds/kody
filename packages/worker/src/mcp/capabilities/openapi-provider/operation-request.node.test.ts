@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
@@ -220,6 +221,49 @@ test('rejects absolute and protocol-relative operation paths', async () => {
 			}),
 		).rejects.toThrow(/must be relative to the binding apiBaseUrl/)
 	}
+})
+
+test('missing path parameters throw McpCallerError so Sentry skips them', async () => {
+	const error = await executeOpenApiOperationRequest({
+		env: createEnv(),
+		userId: 'user-1',
+		baseUrl: 'https://app.example.com',
+		storageContext: null,
+		binding: {
+			...bindingBase,
+			apiBaseUrl: 'https://api.widgets.example',
+		},
+		operation: getWidget,
+		args: {},
+		globalFetch: vi.fn() as unknown as typeof fetch,
+	}).catch((caught: unknown) => caught)
+
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(error).toMatchObject({
+		message:
+			'Missing required path parameter "widgetId" for OpenAPI operation path /widgets/{widgetId}.',
+	})
+})
+
+test('non-object params throw McpCallerError', async () => {
+	const error = await executeOpenApiOperationRequest({
+		env: createEnv(),
+		userId: 'user-1',
+		baseUrl: 'https://app.example.com',
+		storageContext: null,
+		binding: {
+			...bindingBase,
+			apiBaseUrl: 'https://api.widgets.example',
+		},
+		operation: getWidget,
+		args: { params: ['not-an-object'] as unknown as Record<string, unknown> },
+		globalFetch: vi.fn() as unknown as typeof fetch,
+	}).catch((caught: unknown) => caught)
+
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(error).toMatchObject({
+		message: 'OpenAPI operation args.params must be an object.',
+	})
 })
 
 test('injects auth headers and overrides caller attempts', async () => {
