@@ -29,12 +29,15 @@ export async function handleEmailDeliveryQueue(
 					break
 				case 'stale':
 					// Out-of-order events still count toward the abuse
-					// thresholds: the bounce/complaint happened even when a
-					// newer status already superseded it.
+					// thresholds when they persisted: the bounce/complaint
+					// happened even when a newer status already superseded
+					// it. Conflicting duplicates that were not inserted only
+					// pause when persisted events back them.
 					await applyOutboundEmailAbusePause({
 						env,
 						userId: result.message.userId,
 						deliveryStatus: result.event.payload.delivery.status,
+						eventRecorded: false,
 					})
 					queueMessage.ack()
 					break
@@ -48,6 +51,7 @@ export async function handleEmailDeliveryQueue(
 						env,
 						userId: result.message.userId,
 						deliveryStatus: result.event.payload.delivery.status,
+						eventRecorded: result.outcome === 'recorded',
 					})
 					await dispatchEmailDeliverySubscriptionEvents({
 						env,

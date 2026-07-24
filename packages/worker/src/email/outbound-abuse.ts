@@ -47,12 +47,34 @@ export async function applyOutboundEmailAbusePause(input: {
 	/** Stable MCP userId of the account that sent the message. */
 	userId: string
 	deliveryStatus: EmailDeliveryStatus
+	/**
+	 * Whether this delivery event was persisted by the current processing
+	 * run (queue outcome `recorded`). Replayed and conflicting-duplicate
+	 * signals are deduped by provider_event_id at insert time, so the same
+	 * provider event can only ever count once: non-recorded signals only
+	 * pause when a matching persisted event backs them.
+	 */
+	eventRecorded: boolean
 	now?: Date
 }): Promise<{ paused: boolean }> {
 	const now = input.now ?? new Date()
 	switch (input.deliveryStatus) {
-		case 'complained':
+		case 'complained': {
+			// A freshly recorded complaint always pauses. A replayed or
+			// conflicting-duplicate complaint signal only pauses when a
+			// real persisted complaint event backs it (crash recovery
+			// between recording and pausing), never on its own.
+			if (!input.eventRecorded) {
+				const complaintsToday = await countProviderDeliveryEventsToday({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					eventType: 'complained',
+					now,
+				})
+				if (complaintsToday < 1) return { paused: false }
+			}
 			break
+		}
 		case 'bounced': {
 			const bouncesToday = await countProviderDeliveryEventsToday({
 				db: input.env.APP_DB,

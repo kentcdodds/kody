@@ -106,6 +106,7 @@ test('a spam complaint pauses outbound email once and blocks further sends', asy
 		env,
 		userId: stableUserId,
 		deliveryStatus: 'complained',
+		eventRecorded: true,
 	})
 	expect(first.paused).toBe(true)
 	const pausedAt = await readPauseTimestamp(stableUserId)
@@ -119,6 +120,7 @@ test('a spam complaint pauses outbound email once and blocks further sends', asy
 		env,
 		userId: stableUserId,
 		deliveryStatus: 'complained',
+		eventRecorded: false,
 	})
 	expect(second.paused).toBe(false)
 	expect(await readPauseTimestamp(stableUserId)).toBe(pausedAt)
@@ -179,6 +181,7 @@ test('bounces below the daily threshold do not pause; reaching it does', async (
 			env,
 			userId: stableUserId,
 			deliveryStatus: 'bounced',
+			eventRecorded: true,
 			now,
 		})
 		if (attempt < outboundEmailBouncePauseThresholdPerDay) {
@@ -199,6 +202,23 @@ test('delivered events never pause outbound email', async () => {
 		env,
 		userId: stableUserId,
 		deliveryStatus: 'delivered',
+		eventRecorded: true,
+	})
+	expect(result.paused).toBe(false)
+	expect(await readPauseTimestamp(stableUserId)).toBeNull()
+})
+
+test('a complaint signal that was never persisted does not pause on its own', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	const accountEmail = `phantom-${crypto.randomUUID()}@example.com`
+	const { stableUserId } = await seedVerifiedAccount({ email: accountEmail })
+	// Conflicting-duplicate queue outcome: the complained event's insert
+	// was deduped by provider_event_id, so no persisted complaint backs it.
+	const result = await applyOutboundEmailAbusePause({
+		env,
+		userId: stableUserId,
+		deliveryStatus: 'complained',
+		eventRecorded: false,
 	})
 	expect(result.paused).toBe(false)
 	expect(await readPauseTimestamp(stableUserId)).toBeNull()
