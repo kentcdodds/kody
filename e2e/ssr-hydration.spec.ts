@@ -214,3 +214,48 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 
 	expect(clientErrors).toEqual([])
 })
+
+test('the app hydrates on browsers without the Navigation API', async ({
+	page,
+}) => {
+	await ensurePrimaryUserExists()
+	await seedCommunityListingInE2eDatabase({
+		...alphaListing,
+		ownerEmail: primaryTestUser.email,
+		readmeContent: longReadme,
+	})
+
+	const clientErrors: Array<string> = []
+	page.on('pageerror', (error) => clientErrors.push(error.message))
+
+	// Firefox below 145 and every iOS WKWebView browser (Chrome for iOS,
+	// in-app browsers) ship without the Navigation API. Chromium has it, so
+	// shadow the getter to stand in for those clients.
+	await page.addInitScript(() => {
+		Object.defineProperty(window, 'navigation', {
+			value: undefined,
+			configurable: true,
+		})
+	})
+
+	await page.goto('/community')
+	await expect(page.getByText(alphaListing.description)).toBeVisible()
+	await page.evaluate(() => {
+		;(window as Window & { __e2eMarker?: boolean }).__e2eMarker = true
+	})
+
+	await page.getByRole('link', { name: alphaListing.name }).click()
+	await expect(page).toHaveURL(
+		new RegExp(`/community/${alphaListing.listingId}$`),
+	)
+	await expect(page.getByRole('heading', { name: 'Stars' })).toBeVisible()
+	// The marker surviving proves the client router handled the click, so
+	// hydration ran rather than the browser doing a document navigation.
+	expect(
+		await page.evaluate(
+			() => (window as Window & { __e2eMarker?: boolean }).__e2eMarker,
+		),
+	).toBe(true)
+
+	expect(clientErrors).toEqual([])
+})
