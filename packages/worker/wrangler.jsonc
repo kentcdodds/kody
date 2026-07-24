@@ -93,16 +93,11 @@
 		// Workers automatic tracing (beta): OTel-standard spans for handler
 		// invocations, outbound fetches, and binding calls (D1, KV, R2, DO,
 		// queues). Spans share the Workers Logs event quota. Inherited by all
-		// environments; local dev and tests ignore it.
+		// environments unless overridden; local dev and tests ignore it. The
+		// production env overrides this block to add the Sentry OTLP export
+		// destination, so preview spans stay in the Cloudflare dashboard only.
 		"traces": {
 			"enabled": true,
-			// Account-level OTLP export destination (Workers Observability ->
-			// Destinations). "sentry-otlp-traces" exists in the production
-			// Cloudflare account and points at the kody-cloudflare Sentry
-			// project's OTLP traces endpoint. The destination must exist in
-			// the target account before deploy; forks should create their own
-			// or remove this line. See docs/contributing/setup-manifest.md.
-			"destinations": ["sentry-otlp-traces"],
 		},
 	},
 	"triggers": {
@@ -110,6 +105,21 @@
 	},
 	"env": {
 		"production": {
+			// Replaces the top-level observability block (wrangler env keys
+			// override wholesale, so "enabled" is restated): same tracing,
+			// plus the account-level Sentry OTLP export destination
+			// "sentry-otlp-traces" (Workers Observability -> Destinations),
+			// which points at the kody-cloudflare Sentry project's OTLP
+			// traces endpoint. The destination must exist in the target
+			// account before deploy; forks create their own or remove it.
+			// See docs/contributing/setup-manifest.md.
+			"observability": {
+				"enabled": true,
+				"traces": {
+					"enabled": true,
+					"destinations": ["sentry-otlp-traces"],
+				},
+			},
 			"worker_loaders": [
 				{
 					"binding": "LOADER",

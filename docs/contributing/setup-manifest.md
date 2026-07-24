@@ -65,19 +65,36 @@ This project uses the following resources:
   - Workers automatic tracing is enabled via `observability.traces` in
     `packages/worker/wrangler.jsonc`; traces are viewable in the Workers
     Observability dashboard with no further setup.
-  - Traces are additionally exported to Sentry through the account-level
-    **Traces** destination `sentry-otlp-traces`, referenced from
-    `observability.traces.destinations`. In the production Cloudflare account it
-    points at the `kody-cloudflare` Sentry project's OTLP endpoint
-    (`https://<HOST>/api/<PROJECT_ID>/integration/otlp/v1/traces` with the
-    `x-sentry-auth: sentry sentry_key=<public key>` header derived from the
+  - Production traces are additionally exported to Sentry through the
+    account-level **Traces** destination `sentry-otlp-traces`, referenced from
+    `observability.traces.destinations` in the **production** environment only
+    (preview and test deploys keep dashboard-only tracing). In the production
+    Cloudflare account it points at the `kody-cloudflare` Sentry project's OTLP
+    endpoint (`https://<HOST>/api/<PROJECT_ID>/integration/otlp/v1/traces` with
+    the `x-sentry-auth: sentry sentry_key=<public key>` header derived from the
     project DSN).
-  - Forks must create their own destination (dashboard: **Workers Observability
-    → Destinations**, or API:
-    `POST /accounts/{account_id}/workers/observability/destinations` with
-    `configuration.logpushDataset: "opentelemetry-traces"`) under the same name,
-    or remove the `destinations` line — deploys can fail on unknown
-    destinations.
+  - Forks must create their own destination under the same name, or remove the
+    `destinations` line — deploys can fail on unknown destinations. Create it in
+    the dashboard (**Workers Observability → Destinations**, type Traces) or via
+    the API:
+
+    ```sh
+    curl -X POST \
+      "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/workers/observability/destinations" \
+      -H "Authorization: Bearer <API_TOKEN>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "sentry-otlp-traces",
+        "enabled": true,
+        "configuration": {
+          "type": "logpush",
+          "logpushDataset": "opentelemetry-traces",
+          "url": "https://<HOST>/api/<PROJECT_ID>/integration/otlp/v1/traces",
+          "headers": { "x-sentry-auth": "sentry sentry_key=<public key>" }
+        }
+      }'
+    ```
+
   - Once Sentry ingests exported OTLP traces, set the Worker secret
     `SENTRY_TRACES_SAMPLE_RATE=0` so the in-Worker Sentry SDK stops emitting a
     duplicate set of traces (error reporting is unaffected).

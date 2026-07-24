@@ -224,10 +224,12 @@ span is attributed to that span. Custom spans are available via
 `tracing.enterSpan()` from `cloudflare:workers` when application-level spans are
 worth adding.
 
-Traces are additionally exported to Sentry: `observability.traces.destinations`
-references the account-level `sentry-otlp-traces` destination (Workers
-Observability → Destinations), which points at the `kody-cloudflare` Sentry
-project's OTLP endpoint. Destination provisioning (including for forks) is
+Production traces are additionally exported to Sentry: the production
+environment's `observability.traces.destinations` references the account-level
+`sentry-otlp-traces` destination (Workers Observability → Destinations), which
+points at the `kody-cloudflare` Sentry project's OTLP endpoint. Preview and test
+deploys inherit the top-level block without a destination, so their spans stay
+in the Cloudflare dashboard. Destination provisioning (including for forks) is
 documented in [setup-manifest.md](../setup-manifest.md). Once Sentry ingests the
 exported OTLP traces, set `SENTRY_TRACES_SAMPLE_RATE=0` so the in-Worker Sentry
 SDK stops producing a second, duplicate set of traces (error capture is
