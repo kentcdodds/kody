@@ -3,7 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
-	getEntitySourceById: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	repoSessionRpc: vi.fn(),
@@ -15,8 +15,8 @@ vi.mock('#worker/repo/repo-sessions.ts', () => ({
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -77,7 +77,7 @@ function createRepoRpc(overrides?: Partial<Record<string, unknown>>) {
 
 function resetMocks() {
 	mockModule.getActiveRepoSessionByConversation.mockReset()
-	mockModule.getEntitySourceById.mockReset()
+	mockModule.getEntitySourceByIdForUser.mockReset()
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.getSavedPackageByKodyId.mockReset()
 	mockModule.repoSessionRpc.mockReset()
@@ -123,7 +123,9 @@ test('repo open → run commands → publish session workflow', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
 		createSavedPackageRow(),
 	)
-	mockModule.getEntitySourceById.mockResolvedValueOnce(createPackageSourceRow())
+	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
+		createPackageSourceRow(),
+	)
 	const openRpc = createRepoRpc()
 	openRpc.openSession.mockResolvedValueOnce({
 		id: 'session-1',
@@ -175,7 +177,7 @@ test('repo open → run commands → publish session workflow', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
 		createSavedPackageRow(),
 	)
-	mockModule.getEntitySourceById.mockResolvedValueOnce({
+	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce({
 		...createPackageSourceRow(),
 		id: 'source-other',
 		entity_id: 'package-other',
@@ -208,7 +210,7 @@ test('repo open → run commands → publish session workflow', async () => {
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(createSavedPackageRow())
 		.mockResolvedValueOnce(createSavedPackageRow())
-	mockModule.getEntitySourceById
+	mockModule.getEntitySourceByIdForUser
 		.mockResolvedValueOnce(createPackageSourceRow())
 		.mockResolvedValueOnce(createPackageSourceRow())
 	const resumeRpc = createRepoRpc()
@@ -309,7 +311,7 @@ test('repo open → run commands → publish session workflow', async () => {
 		createSavedPackageRow(),
 	)
 	mockModule.getSavedPackageById.mockResolvedValueOnce(createSavedPackageRow())
-	mockModule.getEntitySourceById
+	mockModule.getEntitySourceByIdForUser
 		.mockResolvedValueOnce(createPackageSourceRow())
 		.mockResolvedValueOnce(createPackageSourceRow())
 	const failedChecksRpc = createRepoRpc()
@@ -428,7 +430,7 @@ test('repo open → run commands → publish session workflow', async () => {
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(createSavedPackageRow())
 		.mockResolvedValueOnce(createSavedPackageRow())
-	mockModule.getEntitySourceById
+	mockModule.getEntitySourceByIdForUser
 		.mockResolvedValueOnce(createPackageSourceRow())
 		.mockResolvedValueOnce(createPackageSourceRow())
 	const publishRpc = createRepoRpc()

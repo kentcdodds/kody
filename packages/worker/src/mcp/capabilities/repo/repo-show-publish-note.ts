@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { resolveOwnedPackageSource } from '#mcp/capabilities/packages/resolve-package-source.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import {
 	kodyPublishGitNoteSchema,
 	readPublishGitNoteFromArtifactsRepo,
@@ -75,7 +75,10 @@ export const repoShowPublishNoteCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const source =
 				args.source_id !== undefined
-					? await getEntitySourceById(ctx.env.APP_DB, args.source_id)
+					? await getEntitySourceByIdForUser(ctx.env.APP_DB, {
+							id: args.source_id,
+							userId: user.userId,
+						})
 					: (
 							await resolveOwnedPackageSource({
 								db: ctx.env.APP_DB,

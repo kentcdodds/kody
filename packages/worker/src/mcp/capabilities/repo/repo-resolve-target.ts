@@ -4,7 +4,7 @@ import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
 	type repoOpenSessionInputSchema,
@@ -21,8 +21,11 @@ async function requireOwnedEntitySource(input: {
 	userId: string
 	sourceId: string
 }): Promise<EntitySourceRow> {
-	const source = await getEntitySourceById(input.db, input.sourceId)
-	if (!source || source.user_id !== input.userId) {
+	const source = await getEntitySourceByIdForUser(input.db, {
+		id: input.sourceId,
+		userId: input.userId,
+	})
+	if (!source) {
 		throw new McpCallerError('Repo source was not found for this user.')
 	}
 	return source

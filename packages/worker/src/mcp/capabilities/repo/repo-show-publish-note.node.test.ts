@@ -1,14 +1,14 @@
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
-	getEntitySourceById: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
 	resolveOwnedPackageSource: vi.fn(),
 	readPublishGitNoteFromArtifactsRepo: vi.fn(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#mcp/capabilities/packages/resolve-package-source.ts', () => ({
@@ -84,7 +84,7 @@ const sampleNote = {
 
 test('repo_show_publish_note reads notes by source or package identity and rejects cross-user access', async () => {
 	resetMocks()
-	mockModule.getEntitySourceById.mockResolvedValue(sampleSource)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(sampleSource)
 	mockModule.readPublishGitNoteFromArtifactsRepo.mockResolvedValue({
 		found: true,
 		commit: 'commit-published',
@@ -127,15 +127,18 @@ test('repo_show_publish_note reads notes by source or package identity and rejec
 	expect(byPackage.found).toBe(false)
 	expect(byPackage.commit).toBe('commit-old')
 
+	// Another user's source is filtered out by the query itself, so the lookup
+	// returns nothing rather than returning a row we then have to reject.
 	resetMocks()
-	mockModule.getEntitySourceById.mockResolvedValue({
-		...sampleSource,
-		user_id: 'other-user',
-	})
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(null)
 	await expect(
 		repoShowPublishNoteCapability.handler(
 			{ source_id: 'source-1' },
 			createContext(),
 		),
 	).rejects.toThrow('Repo source was not found for this user.')
+	expect(mockModule.getEntitySourceByIdForUser).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ id: 'source-1' }),
+	)
 })

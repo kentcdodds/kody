@@ -2,14 +2,14 @@ import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 
 const mockModule = vi.hoisted(() => ({
-	getEntitySourceById: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -22,11 +22,11 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 const { resolveRepoSourceReference } = await import('./repo-resolve-target.ts')
 
 test('resolveRepoSourceReference throws McpCallerError for missing source and package', async () => {
-	mockModule.getEntitySourceById.mockReset()
+	mockModule.getEntitySourceByIdForUser.mockReset()
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.getSavedPackageByKodyId.mockReset()
 
-	mockModule.getEntitySourceById.mockResolvedValue(null)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(null)
 	const missingSource = resolveRepoSourceReference({
 		db: {} as D1Database,
 		userId: 'user-1',
@@ -48,5 +48,35 @@ test('resolveRepoSourceReference throws McpCallerError for missing source and pa
 	await expect(missingPackage).rejects.toThrow(McpCallerError)
 	await expect(missingPackage).rejects.toThrow(
 		'Saved package "pkg-missing" was not found.',
+	)
+
+	const missingIdentity = resolveRepoSourceReference({
+		db: {} as D1Database,
+		userId: 'user-1',
+		args: {},
+	})
+
+	await expect(missingIdentity).rejects.toThrow(McpCallerError)
+	await expect(missingIdentity).rejects.toThrow(
+		'Repo source identity is required.',
+	)
+})
+
+test('resolveRepoSourceReference scopes the source lookup to the caller', async () => {
+	mockModule.getEntitySourceByIdForUser.mockReset()
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(null)
+
+	await expect(
+		resolveRepoSourceReference({
+			db: {} as D1Database,
+			userId: 'user-1',
+			args: { source_id: 'source-1' },
+		}),
+	).rejects.toThrow('Repo source was not found for this user.')
+
+	// The user predicate belongs in the query, not in a post-read comparison.
+	expect(mockModule.getEntitySourceByIdForUser).toHaveBeenCalledWith(
+		expect.anything(),
+		{ id: 'source-1', userId: 'user-1' },
 	)
 })

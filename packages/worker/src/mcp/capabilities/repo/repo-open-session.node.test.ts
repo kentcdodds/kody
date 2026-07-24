@@ -7,7 +7,7 @@ import { repoOpenSessionInputSchema } from './repo-shared.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
-	getEntitySourceById: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	repoSessionRpc: vi.fn(),
 }))
@@ -18,8 +18,8 @@ vi.mock('#worker/repo/repo-sessions.ts', () => ({
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -139,7 +139,7 @@ function createOpenSessionResult() {
 
 function resetMocks() {
 	mockModule.getActiveRepoSessionByConversation.mockReset()
-	mockModule.getEntitySourceById.mockReset()
+	mockModule.getEntitySourceByIdForUser.mockReset()
 	mockModule.getSavedPackageByKodyId.mockReset()
 	mockModule.repoSessionRpc.mockReset()
 }
@@ -193,7 +193,7 @@ test('repo_open_session enforces the repo sessions entitlement for plan users op
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
 		createSavedPackageRow(userId),
 	)
-	mockModule.getEntitySourceById.mockResolvedValueOnce(
+	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
 		createPackageSourceRow(userId),
 	)
 	const openRpc = createRepoRpc()
@@ -257,7 +257,7 @@ test('repo_open_session resumes an existing active session without enforcing the
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
 		createSavedPackageRow(userId),
 	)
-	mockModule.getEntitySourceById.mockResolvedValueOnce(
+	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
 		createPackageSourceRow(userId),
 	)
 	const resumeRpc = createRepoRpc()
@@ -309,7 +309,7 @@ test('repo_open_session allows below-max usage and denies at the max plan ceilin
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
 		createSavedPackageRow(userId),
 	)
-	mockModule.getEntitySourceById.mockResolvedValueOnce(
+	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
 		createPackageSourceRow(userId),
 	)
 	const belowMaxRpc = createRepoRpc()
@@ -347,7 +347,7 @@ test('repo_open_session allows below-max usage and denies at the max plan ceilin
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
 		createSavedPackageRow(userId),
 	)
-	mockModule.getEntitySourceById.mockResolvedValueOnce(
+	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
 		createPackageSourceRow(userId),
 	)
 	const deniedRpc = createRepoRpc()
