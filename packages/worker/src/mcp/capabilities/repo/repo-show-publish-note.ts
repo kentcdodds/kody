@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { resolveOwnedPackageSource } from '#mcp/capabilities/packages/resolve-package-source.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
 	kodyPublishGitNoteSchema,
@@ -86,11 +87,11 @@ export const repoShowPublishNoteCapability = defineDomainCapability(
 							})
 						).source
 			if (!source || source.user_id !== user.userId) {
-				throw new Error('Repo source was not found for this user.')
+				throw new McpCallerError('Repo source was not found for this user.')
 			}
 			const commit = args.commit ?? source.published_commit
 			if (!commit) {
-				throw new Error(
+				throw new McpCallerError(
 					`Source "${source.id}" has no published commit yet. Pass an explicit \`commit\` or publish source first.`,
 				)
 			}

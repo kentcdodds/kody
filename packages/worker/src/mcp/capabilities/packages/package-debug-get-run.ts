@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { getPackageRuntimeRun } from '#worker/package-runtime/package-runtime-debug.ts'
 import {
 	formatPackageRuntimeLog,
@@ -39,7 +40,9 @@ export const packageDebugGetRunCapability = defineDomainCapability(
 				runId: args.run_id,
 			})
 			if (!result) {
-				throw new Error(`Package runtime run "${args.run_id}" was not found.`)
+				throw new McpCallerError(
+					`Package runtime run "${args.run_id}" was not found.`,
+				)
 			}
 			return {
 				run: formatPackageRuntimeRun(result.run),

@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { saveValue } from '#mcp/values/service.ts'
 import {
 	assertOpenApiBindingWithinSizeLimit,
@@ -74,7 +75,9 @@ export const openapiBindingRefreshCapability = defineDomainCapability(
 				},
 			})
 			if (!existing) {
-				throw new Error(`OpenAPI binding "${args.name}" was not found.`)
+				throw new McpCallerError(
+					`OpenAPI binding "${args.name}" was not found.`,
+				)
 			}
 			const rawText = await fetchOpenApiSpecText({
 				specUrl: existing.specUrl,

@@ -1,10 +1,11 @@
 import { type z } from 'zod'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { type EntitySourceRow } from '#worker/repo/types.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
 	type repoOpenSessionInputSchema,
 	type repoResolvedTargetSchema,
@@ -22,7 +23,7 @@ async function requireOwnedEntitySource(input: {
 }): Promise<EntitySourceRow> {
 	const source = await getEntitySourceById(input.db, input.sourceId)
 	if (!source || source.user_id !== input.userId) {
-		throw new Error('Repo source was not found for this user.')
+		throw new McpCallerError('Repo source was not found for this user.')
 	}
 	return source
 }
@@ -56,7 +57,7 @@ async function requirePackageTarget(input: {
 			'package_id' in input.target
 				? input.target.package_id
 				: input.target.kody_id
-		throw new Error(`Saved package "${missingId}" was not found.`)
+		throw new McpCallerError(`Saved package "${missingId}" was not found.`)
 	}
 	const source = await requireOwnedEntitySource({
 		db: input.db,
@@ -92,7 +93,7 @@ export async function resolveRepoSourceReference(input: {
 		}
 	}
 	if (!input.args.target) {
-		throw new Error('Repo source identity is required.')
+		throw new McpCallerError('Repo source identity is required.')
 	}
 	return requirePackageTarget({
 		db: input.db,

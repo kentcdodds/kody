@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { getPackageInvocationTokenById } from '#worker/package-invocations/repo.ts'
 import { packageInvocationTokenMetadataSchema } from './shared.ts'
 
@@ -39,7 +40,9 @@ export const packageInvocationTokenGetCapability = defineDomainCapability(
 				tokenId: args.token_id,
 			})
 			if (!token) {
-				throw new Error('Package invocation token not found for this user.')
+				throw new McpCallerError(
+					'Package invocation token not found for this user.',
+				)
 			}
 			return {
 				token: {

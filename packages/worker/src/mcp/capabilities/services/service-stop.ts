@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { requirePackageServiceContext } from './shared.ts'
 
 const inputSchema = z.object({
@@ -31,7 +32,9 @@ export const serviceStopCapability = defineDomainCapability(
 				explicitPackageId: args.package_id,
 			})
 			if (!serviceContext.service) {
-				throw new Error(`Package service "${args.service_name}" was not found.`)
+				throw new McpCallerError(
+					`Package service "${args.service_name}" was not found.`,
+				)
 			}
 			const result = (await serviceContext.service.stop()) as { ok?: unknown }
 			return {

@@ -216,8 +216,20 @@ comes from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and
 
 MCP tools emit structured `mcp-event` logs via
 `packages/worker/src/mcp/observability.ts`. On failures, the same module sends
-Sentry events (with MCP tags and context); sandbox user-code failures are
-reported at **warning** severity, while capability handler bugs use **error**.
+Sentry events at **error** severity (with MCP tags and context). Failures the
+caller can clear from the message alone — `McpCallerError`,
+`failurePhase: 'parse_input'`, or an explicit `callerError` payload flag,
+including sandbox user-code failures — stay on the structured `mcp-event` log
+line and never reach Sentry; genuine platform failures still do. New "not found
+/ bad argument" throw sites in `packages/worker/src/mcp/**` should use
+`McpCallerError`.
+
+Authentication and authorization denials are deliberately **not**
+`McpCallerError`. `/mcp` rejects anonymous callers at the transport before any
+capability runs, so a denial reaching a handler means an internal caller built a
+context without a user — a defect worth an issue. Attack visibility for these
+lives in the audit log rather than the error stream; see
+[Security](../security.md).
 
 ### Workers native tracing (OpenTelemetry)
 
