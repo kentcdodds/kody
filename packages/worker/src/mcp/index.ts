@@ -6,18 +6,12 @@ import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validatio
 import { McpAgent } from 'agents/mcp'
 import { buildSentryOptions } from '../sentry-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
-import {
-	buildMcpServerInstructions,
-	type RemoteConnectorInstructionSummary,
-} from './server-instructions.ts'
+import { buildMcpServerInstructions } from './server-instructions.ts'
 import { registerTools } from './register-tools.ts'
 import { createKodyMcpServer } from './sentry-mcp-server.ts'
 import { getMcpUserServerInstructions } from './user-server-instructions-repo.ts'
 import { getCapabilityRegistryForContext } from './capabilities/registry.ts'
-import { createRemoteConnectorMcpClient } from '#worker/remote-connector/client.ts'
-import { remoteConnectorDomainId } from '#worker/remote-connector/remote-domain-id.ts'
-import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
-import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { loadRemoteConnectorInstructionSummaries } from './remote-connector-instruction-summaries.ts'
 import { type RawFetchHostNudgeState } from '#mcp/raw-fetch-host-nudge.ts'
 import { listPopularAgentPackagesForUser } from '#worker/usage/agent-package-conversation-uses.ts'
 import {
@@ -31,34 +25,6 @@ export type State = {
 	rawFetchHostNudges?: RawFetchHostNudgeState
 }
 export type Props = McpServerProps
-
-async function loadRemoteConnectorInstructionSummaries(input: {
-	env: Env
-	caller: McpCallerContext
-}): Promise<Array<RemoteConnectorInstructionSummary>> {
-	const refs = normalizeRemoteConnectorRefs(input.caller)
-	const userId = input.caller.user?.userId ?? null
-	if (refs.length === 0 || !userId) {
-		return []
-	}
-	const snapshots = await Promise.all(
-		refs.map(async (ref) => {
-			const snapshot = await createRemoteConnectorMcpClient({
-				env: input.env,
-				userId,
-				instanceId: ref.instanceId,
-			}).getSnapshot()
-			if (!snapshot) return null
-			const connectorId = snapshot.connectorId.trim()
-			return {
-				name: connectorId,
-				domain: remoteConnectorDomainId(ref),
-				description: snapshot.description ?? null,
-			}
-		}),
-	)
-	return snapshots.flatMap((snapshot) => (snapshot ? [snapshot] : []))
-}
 
 class MCPBase extends McpAgent<Env, State, Props> {
 	initialState: State = {
