@@ -42,6 +42,15 @@ test('filterUserModuleBundlerFailureSentryEvent drops esbuild failures in caller
 	).toBeNull()
 	expect(filterSentryEvent(userModuleBuildFailure)).toBeNull()
 
+	const userModuleMessageFailure = {
+		message:
+			'Build failed with 1 error:\nvirtual:.__kody_root__/entry.ts:11:49: ERROR: Unexpected "^"',
+	}
+	expect(
+		filterUserModuleBundlerFailureSentryEvent(userModuleMessageFailure),
+	).toBeNull()
+	expect(filterSentryEvent(userModuleMessageFailure)).toBeNull()
+
 	const platformBuildFailure = {
 		exception: {
 			values: [
