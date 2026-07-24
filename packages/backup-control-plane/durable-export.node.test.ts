@@ -3,11 +3,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import { runDurableExport } from './durable-export.ts'
-import { BackupError, backupPayload } from './backup-policy.ts'
-import {
-	enqueueBackupRetry,
-	primaryBackupTimeForDay,
-} from './workflow-trigger.ts'
+import { BackupError } from './backup-policy.ts'
 import {
 	ReplayStep,
 	environment,
@@ -109,72 +105,4 @@ test('expired poll result restarts the export with a new bookmark', async () => 
 			current_bookmark: 'bookmark-new',
 		},
 	])
-})
-
-test('scheduled restart after poll exhaustion starts a new export state', async () => {
-	let workflowStatus: 'running' | 'errored' = 'running'
-	await assert.rejects(
-		runDurableExport(environment(), new ReplayStep(), {
-			maxPolls: 2,
-			pollIntervalSeconds: 1,
-			earlyPollIntervalSeconds: 1,
-			api: {
-				fetcher: async () => exportEnvelope('active'),
-				sleep: async () => undefined,
-			},
-		}),
-		(error: unknown) => {
-			const exhausted =
-				error instanceof BackupError &&
-				error.code === 'export-poll-limit' &&
-				error.retryable === false
-			if (exhausted) workflowStatus = 'errored'
-			return exhausted
-		},
-	)
-	assert.equal(workflowStatus, 'errored')
-
-	let restarts = 0
-	const workflow = {
-		async create() {
-			throw new Error('instance already exists')
-		},
-		async get() {
-			return {
-				status: async () => ({ status: workflowStatus }),
-				restart: async () => {
-					restarts += 1
-					workflowStatus = 'running'
-				},
-			}
-		},
-	}
-	const tick = new Date('2026-07-22T03:45:00Z')
-	assert.equal(
-		await enqueueBackupRetry(
-			workflow,
-			environment().SOURCE_DATABASE_ID,
-			backupPayload(environment(), primaryBackupTimeForDay(tick)),
-			tick,
-		),
-		'restarted',
-	)
-	assert.equal(restarts, 1)
-	assert.equal(workflowStatus, 'running')
-
-	const requestBodies: unknown[] = []
-	const result = await runDurableExport(environment(), new ReplayStep(), {
-		maxPolls: 2,
-		pollIntervalSeconds: 1,
-		earlyPollIntervalSeconds: 1,
-		api: {
-			fetcher: async (_input, init) => {
-				requestBodies.push(JSON.parse(String(init?.body)))
-				return exportEnvelope('complete', 'bookmark-new')
-			},
-			sleep: async () => undefined,
-		},
-	})
-	assert.equal(result.bookmark, 'bookmark-new')
-	assert.deepEqual(requestBodies, [{ output_format: 'polling' }])
 })

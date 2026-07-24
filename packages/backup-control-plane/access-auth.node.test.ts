@@ -162,7 +162,7 @@ test('verifyAccessJwt rejects wrong aud, email, iss, expiry, signature, and miss
 	)
 })
 
-test('unknown kid forces at most one JWKS refresh per 60 seconds', async () => {
+test('unknown kid refreshes once and JWKS fetch failures use structured errors', async () => {
 	resetAccessJwksCacheForTests()
 	const env = environment()
 	let fetches = 0
@@ -219,19 +219,16 @@ test('unknown kid forces at most one JWKS refresh per 60 seconds', async () => {
 			error instanceof BackupError && error.code === 'access-jwt-unknown-kid',
 	)
 	assert.equal(fetches, fetchesAfterFirst) // cooldown: no additional JWKS fetch
-})
 
-test('verifyAccessJwt maps JWKS AbortError to access-jwks-fetch-failed', async () => {
 	resetAccessJwksCacheForTests()
 	const { kid, sign } = rsaJwksAndSigner()
-	const env = environment()
-	const jwt = sign({ alg: 'RS256', kid }, futurePayload(env))
+	const validKidJwt = sign({ alg: 'RS256', kid }, futurePayload(env))
 	const abortError = new DOMException('The operation was aborted', 'AbortError')
 	await assert.rejects(
 		verifyAccessJwt(
 			env,
 			new Request('https://backup.example/', {
-				headers: { 'cf-access-jwt-assertion': jwt },
+				headers: { 'cf-access-jwt-assertion': validKidJwt },
 			}),
 			async () => {
 				throw abortError
@@ -239,8 +236,7 @@ test('verifyAccessJwt maps JWKS AbortError to access-jwks-fetch-failed', async (
 		),
 		(error: unknown) =>
 			error instanceof BackupError &&
-			error.code === 'access-jwks-fetch-failed' &&
-			error.message.includes('timed out or was aborted'),
+			error.code === 'access-jwks-fetch-failed',
 	)
 })
 

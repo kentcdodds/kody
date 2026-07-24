@@ -6,7 +6,7 @@ import { BackupError } from './backup-policy.ts'
 import { ACCOUNT_ID, environment } from './backup-control-plane-test-support.ts'
 import { assertDrillAccountIsolated } from './restore-drill.ts'
 
-test('restore drill refuses to run when DRILL_ACCOUNT_ID equals SOURCE_ACCOUNT_ID', () => {
+test('restore drill refuses same account and accepts an isolated account', () => {
 	const env = environment()
 	env.DRILL_ACCOUNT_ID = ACCOUNT_ID
 	assert.throws(
@@ -15,9 +15,5 @@ test('restore drill refuses to run when DRILL_ACCOUNT_ID equals SOURCE_ACCOUNT_I
 			error instanceof BackupError &&
 			error.code === 'drill-account-not-isolated',
 	)
-})
-
-test('restore drill accepts an isolated drill account', () => {
-	const env = environment()
-	assert.doesNotThrow(() => assertDrillAccountIsolated(env))
+	assert.doesNotThrow(() => assertDrillAccountIsolated(environment()))
 })

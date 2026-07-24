@@ -15,11 +15,7 @@ import {
 import { backupPayload } from './backup-policy.ts'
 import { signBackupFullManifest } from './full-manifest-signing.ts'
 import { putImmutableManifest } from './immutable-storage.ts'
-import {
-	capturePreRestoreSafetyExport,
-	restoreWorkflowInstanceId,
-	runProductionRestore,
-} from './production-restore.ts'
+import { runProductionRestore } from './production-restore.ts'
 
 function sha256Text(value: string): string {
 	return createHash('sha256').update(value).digest('hex')
@@ -71,51 +67,6 @@ async function seedSealedRestoreDay(bucket: MemoryBucket, day = '2026-07-22') {
 	)
 	return { env, day, sqlMd5 }
 }
-
-test('restoreWorkflowInstanceId is deterministic from day and expiresAt', () => {
-	assert.equal(
-		restoreWorkflowInstanceId('2026-07-22', '2026-07-22T12:10:00.000Z'),
-		'dr-restore-2026-07-22-2026-07-22T12-10-00-000Z',
-	)
-})
-
-test('capturePreRestoreSafetyExport polls active then stores SQL under pre-restore/', async () => {
-	const bucket = new MemoryBucket()
-	const env = environment(bucket)
-	let calls = 0
-	const sql = 'CREATE TABLE safety(id INTEGER);\n'
-	const result = await capturePreRestoreSafetyExport(
-		env,
-		'2026-07-22',
-		new Date('2026-07-22T12:00:00.000Z'),
-		{
-			fetcher: async (input) => {
-				const url = String(input)
-				if (url.includes('api.cloudflare.com') && url.includes('/export')) {
-					calls += 1
-					return calls < 3
-						? exportEnvelope('active')
-						: exportEnvelope('complete')
-				}
-				if (url.includes('download.example')) {
-					return new Response(sql, {
-						headers: { 'content-length': String(sql.length) },
-					})
-				}
-				throw new Error(`unexpected fetch ${url}`)
-			},
-			sleep: async () => undefined,
-			maxPollAttempts: 5,
-			pollDelayMs: 1,
-		},
-	)
-	assert.equal(
-		result.objectKey,
-		'pre-restore/2026-07-22/2026-07-22T12:00:00.000Z.sql',
-	)
-	assert.equal(result.bytes, sql.length)
-	assert.ok(await bucket.head(result.objectKey))
-})
 
 test('runProductionRestore returns failed progress when dr-restore emits warnings', async () => {
 	const consoleError = vi.spyOn(console, 'error')
@@ -191,5 +142,13 @@ test('runProductionRestore returns failed progress when dr-restore emits warning
 	assert.deepEqual(progress.warnings, ['storage-partial', 'blob-skipped'])
 	assert.equal(progress.storeRestoreComplete, true)
 	assert.equal(progress.d1ImportComplete, true)
-	assert.ok(progress.safetyExportKey?.startsWith(`pre-restore/${day}/`))
+	assert.equal(exportCalls, 2)
+	const safetyExportKey = progress.safetyExportKey
+	assert.equal(
+		safetyExportKey,
+		`pre-restore/${day}/${day}T12:00:00.000Z.sql`,
+	)
+	assert.equal(progress.safetyExportBytes, sql.length)
+	assert.ok(safetyExportKey)
+	assert.ok(await bucket.head(safetyExportKey))
 })

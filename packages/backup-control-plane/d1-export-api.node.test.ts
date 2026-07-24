@@ -123,7 +123,7 @@ test('verifies D1 identity size gates without calling the live account endpoint'
 	assert.equal(consoleError.mock.calls.length, 3)
 })
 
-test('startD1Export classifies auth failures as non-retryable and retries transient statuses', async () => {
+test('startD1Export classifies auth, transient, and malformed responses', async () => {
 	for (const status of [401, 403]) {
 		let calls = 0
 		await assert.rejects(
@@ -163,40 +163,41 @@ test('startD1Export classifies auth failures as non-retryable and retries transi
 		assert.equal(calls, 2)
 		assert.equal(sleeps[0], status === 429 ? 2_000 : 1_000)
 	}
-})
 
-test('treats export status active the same as omitted status (pending)', async () => {
-	for (const response of [exportEnvelope(), exportEnvelope('active')]) {
-		const result = await startD1Export(environment(), {
-			fetcher: async () => response.clone(),
-			sleep: async () => undefined,
-		})
-		assert.equal(result.kind, 'pending')
-		assert.equal(result.bookmark, 'bookmark-1')
-	}
-})
-
-test('rejects malformed JSON and malformed/error/unknown export payloads', async () => {
-	for (const response of [
-		new Response('{', { status: 200 }),
-		Response.json({ success: true, result: { status: 'complete' } }),
-		exportEnvelope('error'),
-		Response.json({
-			success: true,
-			result: {
-				type: 'export',
+	const malformedCases = [
+		{
+			response: new Response('{', { status: 200 }),
+			code: 'api-malformed-json',
+		},
+		{
+			response: Response.json({ success: true, result: { status: 'complete' } }),
+			code: 'export-malformed-response',
+		},
+		{
+			response: exportEnvelope('error'),
+			code: 'export-failed',
+		},
+		{
+			response: Response.json({
 				success: true,
-				at_bookmark: 'bookmark-1',
-				status: 'weird',
-			},
-		}),
-	]) {
+				result: {
+					type: 'export',
+					success: true,
+					at_bookmark: 'bookmark-1',
+					status: 'weird',
+				},
+			}),
+			code: 'export-malformed-response',
+		},
+	]
+	for (const expected of malformedCases) {
 		await assert.rejects(
 			startD1Export(environment(), {
-				fetcher: async () => response.clone(),
+				fetcher: async () => expected.response.clone(),
 				sleep: async () => undefined,
 			}),
-			BackupError,
+			(error: unknown) =>
+				error instanceof BackupError && error.code === expected.code,
 		)
 	}
 })
@@ -233,12 +234,21 @@ test('refresh requires the same bookmark and a complete nonempty signed URL', as
 	}
 })
 
-test('poll lost/expired envelope is distinct from malformed responses', async () => {
-	const state = await pollD1Export(environment(), 'bookmark-1', {
+test('export poll and refresh workflow covers pending, expired, and malformed states', async () => {
+	for (const response of [exportEnvelope(), exportEnvelope('active')]) {
+		const result = await startD1Export(environment(), {
+			fetcher: async () => response.clone(),
+			sleep: async () => undefined,
+		})
+		assert.equal(result.kind, 'pending')
+		assert.equal(result.bookmark, 'bookmark-1')
+	}
+
+	const lost = await pollD1Export(environment(), 'bookmark-1', {
 		fetcher: async () => exportEnvelope('lost'),
 		sleep: async () => undefined,
 	})
-	assert.equal(state.kind, 'lost')
+	assert.equal(lost.kind, 'lost')
 
 	await assert.rejects(
 		pollD1Export(environment(), 'bookmark-1', {
@@ -253,9 +263,7 @@ test('poll lost/expired envelope is distinct from malformed responses', async ()
 			error instanceof BackupError &&
 			error.code === 'export-malformed-response',
 	)
-})
 
-test('refreshCompletedD1Export restarts after an expired poll result', async () => {
 	const bodies: unknown[] = []
 	const responses = [
 		exportEnvelope('lost'),

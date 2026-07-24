@@ -58,60 +58,23 @@ function importPollSequence(pollResponses: Array<unknown>) {
 	}
 }
 
-test('importSqlIntoD1 completes only on terminal status complete', async () => {
-	const sequence = importPollSequence([
-		{ type: 'import', success: true, status: 'active' },
-		{ type: 'import', success: true, status: 'complete' },
-	])
-	await importSqlIntoD1({
-		accountId: ACCOUNT,
-		databaseId: DATABASE,
-		token: 'token',
-		sqlBody: 'CREATE TABLE t(id INTEGER);\n',
-		md5Etag: MD5,
-		options: {
-			fetcher: sequence.fetcher,
-			sleep: async () => undefined,
-			maxPollAttempts: 3,
-			pollDelayMs: 1,
-		},
-	})
-	assert.equal(sequence.getPollCount(), 2)
-})
-
-test('importSqlIntoD1 completes on documented final_bookmark terminal shape', async () => {
-	const sequence = importPollSequence([
-		{ type: 'import', success: true, status: 'active' },
-		{
-			type: 'import',
-			success: true,
-			result: { final_bookmark: 'final-1', num_queries: 1 },
-		},
-	])
-	await importSqlIntoD1({
-		accountId: ACCOUNT,
-		databaseId: DATABASE,
-		token: 'token',
-		sqlBody: 'CREATE TABLE t(id INTEGER);\n',
-		md5Etag: MD5,
-		options: {
-			fetcher: sequence.fetcher,
-			sleep: async () => undefined,
-			maxPollAttempts: 3,
-			pollDelayMs: 1,
-		},
-	})
-	assert.equal(sequence.getPollCount(), 2)
-})
-
-test('importSqlIntoD1 does not treat bare success:true as completion', async () => {
-	const sequence = importPollSequence([
-		{ type: 'import', success: true },
-		{ type: 'import', success: true },
-		{ type: 'import', success: true },
-	])
-	await assert.rejects(
-		importSqlIntoD1({
+test('importSqlIntoD1 completes on terminal status and final bookmark shapes', async () => {
+	for (const pollResponses of [
+		[
+			{ type: 'import', success: true, status: 'active' },
+			{ type: 'import', success: true, status: 'complete' },
+		],
+		[
+			{ type: 'import', success: true, status: 'active' },
+			{
+				type: 'import',
+				success: true,
+				result: { final_bookmark: 'final-1', num_queries: 1 },
+			},
+		],
+	]) {
+		const sequence = importPollSequence(pollResponses)
+		await importSqlIntoD1({
 			accountId: ACCOUNT,
 			databaseId: DATABASE,
 			token: 'token',
@@ -123,64 +86,61 @@ test('importSqlIntoD1 does not treat bare success:true as completion', async () 
 				maxPollAttempts: 3,
 				pollDelayMs: 1,
 			},
-		}),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'import-poll-timeout',
-	)
-	assert.equal(sequence.getPollCount(), 3)
+		})
+		assert.equal(sequence.getPollCount(), 2)
+	}
 })
 
-test('importSqlIntoD1 fails when poll expires before terminal success', async () => {
+test('importSqlIntoD1 fails closed on non-terminal, expired, and error polls', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
-	await assert.rejects(
-		importSqlIntoD1({
-			accountId: ACCOUNT,
-			databaseId: DATABASE,
-			token: 'token',
-			sqlBody: 'CREATE TABLE t(id INTEGER);\n',
-			md5Etag: MD5,
-			options: {
-				fetcher: importPollSequence([
-					{
-						success: false,
-						error: 'Not currently importing anything.',
-					},
-				]).fetcher,
-				sleep: async () => undefined,
-				maxPollAttempts: 3,
-				pollDelayMs: 1,
-			},
-		}),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'import-result-expired',
-	)
-})
-
-test('importSqlIntoD1 fails on explicit error status', async () => {
-	await assert.rejects(
-		importSqlIntoD1({
-			accountId: ACCOUNT,
-			databaseId: DATABASE,
-			token: 'token',
-			sqlBody: 'CREATE TABLE t(id INTEGER);\n',
-			md5Etag: MD5,
-			options: {
-				fetcher: importPollSequence([
-					{
-						type: 'import',
-						status: 'error',
-						error: 'statement too long',
-					},
-				]).fetcher,
-				sleep: async () => undefined,
-				maxPollAttempts: 3,
-				pollDelayMs: 1,
-			},
-		}),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'import-failed' &&
-			error.message === 'statement too long',
-	)
+	const cases: Array<{ responses: Array<unknown>; code: string }> = [
+		{
+			responses: [
+				{ type: 'import', success: true },
+				{ type: 'import', success: true },
+				{ type: 'import', success: true },
+			],
+			code: 'import-poll-timeout',
+		},
+		{
+			responses: [
+				{
+					success: false,
+					error: 'Not currently importing anything.',
+				},
+			],
+			code: 'import-result-expired',
+		},
+		{
+			responses: [
+				{
+					type: 'import',
+					status: 'error',
+					error: 'statement too long',
+				},
+			],
+			code: 'import-failed',
+		},
+	]
+	for (const expected of cases) {
+		const sequence = importPollSequence(expected.responses)
+		await assert.rejects(
+			importSqlIntoD1({
+				accountId: ACCOUNT,
+				databaseId: DATABASE,
+				token: 'token',
+				sqlBody: 'CREATE TABLE t(id INTEGER);\n',
+				md5Etag: MD5,
+				options: {
+					fetcher: sequence.fetcher,
+					sleep: async () => undefined,
+					maxPollAttempts: 3,
+					pollDelayMs: 1,
+				},
+			}),
+			(error: unknown) =>
+				error instanceof BackupError && error.code === expected.code,
+		)
+	}
 })

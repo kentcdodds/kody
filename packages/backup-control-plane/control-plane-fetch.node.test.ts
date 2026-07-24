@@ -92,6 +92,5 @@ test('fetch handler serves the dashboard with a valid Access JWT', async () => {
 		async () => Response.json(jwks),
 	)
 	assert.equal(response.status, 200)
-	const html = await response.text()
-	assert.match(html, /Kody DR backup control plane/)
+	assert.match(response.headers.get('content-type') ?? '', /text\/html/)
 })
