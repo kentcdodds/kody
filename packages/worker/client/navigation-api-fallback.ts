@@ -5,10 +5,12 @@
  * Remix 3 beta's client runtime reads `window.navigation.updateCurrentEntry()`
  * unguarded while it boots (`@remix-run/ui`'s `startNavigationListener`), so
  * `run()` throws before a single component mounts on every browser without the
- * Navigation API — Firefox below 145 and all iOS WKWebView browsers, which
- * includes Chrome for iOS and in-app browsers. Those visitors lose the entire
- * client bundle, and since the throw happens during boot it also takes out the
- * handler that would have reported it.
+ * Navigation API. The API only reached Firefox in 147 and WebKit in 26.2, both
+ * in early 2026, so that still covers Firefox 146 and below plus every browser
+ * on iOS 26.1 and below — all of them WebKit, so Chrome for iOS and in-app
+ * browsers included. Those visitors lose the entire client bundle, and since
+ * the throw happens during boot it also takes out the handler that would have
+ * reported it.
  *
  * Kody itself never uses the Navigation API: `client-router.tsx` drives SPA
  * navigation through `history.pushState` and a document-level click handler,

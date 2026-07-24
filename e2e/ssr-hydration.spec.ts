@@ -228,9 +228,9 @@ test('the app hydrates on browsers without the Navigation API', async ({
 	const clientErrors: Array<string> = []
 	page.on('pageerror', (error) => clientErrors.push(error.message))
 
-	// Firefox below 145 and every iOS WKWebView browser (Chrome for iOS,
-	// in-app browsers) ship without the Navigation API. Chromium has it, so
-	// shadow the getter to stand in for those clients.
+	// Firefox 146 and below, and every browser on iOS 26.1 and below, ship
+	// without the Navigation API. Chromium has had it since 102, so shadow the
+	// getter to stand in for those clients.
 	await page.addInitScript(() => {
 		Object.defineProperty(window, 'navigation', {
 			value: undefined,
