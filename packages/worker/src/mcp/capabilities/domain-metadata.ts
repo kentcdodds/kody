@@ -17,6 +17,7 @@ export const capabilityDomainNames = {
 	services: 'services',
 	storage: 'storage',
 	values: 'values',
+	webhooks: 'webhooks',
 } as const
 
 export type BuiltinCapabilityDomain =

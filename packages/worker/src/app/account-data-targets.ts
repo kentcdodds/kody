@@ -163,6 +163,8 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'email_inbox_addresses' },
 	{ kind: 'user_id', table: 'email_inboxes' },
 	{ kind: 'user_id', table: 'email_sender_identities' },
+	{ kind: 'user_id', table: 'webhook_deliveries' },
+	{ kind: 'user_id', table: 'webhook_endpoints' },
 	{ kind: 'user_id', table: 'entitlement_daily_counters' },
 	{
 		kind: 'user_columns',
@@ -590,6 +592,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	secret_entries: ['encrypted_value', 'lookup_hash'],
 	users: ['password_hash'],
 	verifications: ['secret'],
+	webhook_endpoints: ['url_secret_hash', 'verification_config'],
 }
 
 // Social-graph export rows can include another user's stable id. Keep the

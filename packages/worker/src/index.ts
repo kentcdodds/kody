@@ -32,6 +32,10 @@ import {
 	handlePackageInvocationApiRequest,
 	isPackageInvocationApiRequest,
 } from './package-invocations/http.ts'
+import {
+	handleWebhookIngressRequest,
+	isWebhookIngressRequest,
+} from './webhooks/http.ts'
 import { withCors } from './utils.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { checkRateLimit, authRateLimitConfig } from '#app/rate-limit.ts'
@@ -138,7 +142,9 @@ function isNamespacedAppEndpointPath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
 	return (
 		parts[0]?.startsWith('@') === true &&
-		(parts[1] === 'packages' || parts[1] === 'connectors')
+		(parts[1] === 'packages' ||
+			parts[1] === 'connectors' ||
+			parts[1] === 'webhooks')
 	)
 }
 
@@ -463,6 +469,9 @@ const workerHandler = {
 		const url = new URL(request.url)
 		if (isPackageInvocationApiRequest(url.pathname)) {
 			return handlePackageInvocationApiRequest(request, env, ctx)
+		}
+		if (isWebhookIngressRequest(url.pathname)) {
+			return handleWebhookIngressRequest(request, env, ctx)
 		}
 
 		const connectorResponse = await handleUserScopedConnectorRequest(

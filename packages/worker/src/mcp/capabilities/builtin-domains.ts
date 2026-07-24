@@ -15,6 +15,7 @@ import { secretsDomain } from './secrets/domain.ts'
 import { servicesDomain } from './services/domain.ts'
 import { storageDomain } from './storage/domain.ts'
 import { valuesDomain } from './values/domain.ts'
+import { webhooksDomain } from './webhooks/domain.ts'
 
 /**
  * Builtin domains merged by `buildCapabilityRegistry` in `registry.ts`.
@@ -42,4 +43,5 @@ export const builtinDomains = [
 	servicesDomain,
 	storageDomain,
 	valuesDomain,
+	webhooksDomain,
 ] as const

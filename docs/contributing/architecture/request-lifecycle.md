@@ -39,7 +39,14 @@ Requests are handled in this order:
    - `/.well-known/oauth-protected-resource/mcp`
 5. MCP endpoint:
    - `/mcp` (requires OAuth bearer token)
-6. Remote connector session endpoints (internal-only Worker routes that proxy
+6. Public `@username` ingress handled in `packages/worker/src/index.ts` before
+   the OAuth provider / app router (needs `ExecutionContext` for background
+   work):
+   - `POST /@{username}/api/package-invocations/:kodyId/:exportName` — bearer
+     token package invocations
+   - `POST /@{username}/webhooks/:endpointId/:urlSecret` — inbound webhook
+     endpoints (see [Inbound webhooks](./webhooks.md))
+7. Remote connector session endpoints (internal-only Worker routes that proxy
    WebSocket upgrades and JSON-RPC helper requests to the remote connector
    session Durable Object):
    - `/@{username}/connectors/:kind/:instanceId...` — username + **`kind`** +
@@ -47,12 +54,12 @@ Requests are handled in this order:
 
    See [Remote connectors](./remote-connectors.md).
 
-7. Static assets:
+8. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
    - Matching files under `packages/worker/public/` are asset-first at the edge
      (they do not enter this Worker list). That includes OpenAI Apps domain
      verification at `/.well-known/openai-apps-challenge`.
-8. App server routes:
+9. App server routes:
    - Everything else is handled by `packages/worker/src/app/handler.ts`
 
 ## Package service runtime

@@ -34,6 +34,8 @@ Read in order for a full tour, or jump to a topic.
 - [Secrets, values, and host approval](./secrets-and-values.md)
 - [Email primitives](./email-primitives.md) — the per-user inbox, notify-self
   sends, and replies
+- [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch
+  provider POSTs to a saved-package export
 - [Mutating actions and confirmations](./mutating-actions.md)
 - [Privacy](./privacy.md) — what Kody stores and what deployment admins can see
 - [Troubleshooting](./troubleshooting.md)

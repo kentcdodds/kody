@@ -100,6 +100,7 @@ does not let admins browse:
 - Private packages and their source
 - Jobs
 - Email inboxes and messages
+- Inbound webhook endpoints and delivery logs
 - Chat threads
 - Durable storage contents
 - Remote connector configuration

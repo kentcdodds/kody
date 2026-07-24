@@ -42,6 +42,9 @@ to become.
   Classify PR paths with
   `node .agents/skills/visual-recap/scripts/classify-primitives.mjs`; validate
   with `npm run primitives:check`.
+- [Inbound webhooks](./webhooks.md): user-owned `POST /@:username/webhooks/...`
+  ingress that dispatches to a bound saved-package export (HMAC verification,
+  ack/sync modes, delivery log).
 - [Remote connectors](./remote-connectors.md): generic outbound WebSocket
   protocol, URLs, secrets, and MCP caller context for any `kind` / instance.
 - [MCP client servers](./mcp-client-servers.md): user-added remote MCP servers

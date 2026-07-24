@@ -295,6 +295,18 @@ primitives:
       - packages/worker/src/email/
       - packages/worker/src/mcp/capabilities/email/
 
+  - id: webhooks
+    group: assistant
+    name: Inbound webhooks
+    summary: User-owned webhook endpoints that dispatch to saved-package exports.
+    code:
+      - packages/worker/src/webhooks/
+      - packages/worker/src/mcp/capabilities/webhooks/
+      - packages/worker/src/app/handlers/webhook-ingress.ts
+    docs:
+      - docs/use/webhooks.md
+      - docs/contributing/architecture/webhooks.md
+
   - id: remote-connectors
     group: assistant
     name: Remote connectors

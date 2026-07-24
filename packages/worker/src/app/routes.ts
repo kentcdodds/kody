@@ -101,6 +101,7 @@ export const routes = route({
 	profileAvatar: '/profiles/:username/avatar/:cacheKey',
 	profileOgImage: '/profiles/:username/og.png',
 	profileFollowApiPost: post('/profiles/:username/follow.json'),
+	webhookIngress: post('/@:username/webhooks/:endpointId/:urlSecret'),
 	timeline: '/timeline',
 	timelineApi: '/timeline.json',
 	health: '/health',

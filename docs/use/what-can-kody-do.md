@@ -38,6 +38,9 @@ credentials, saved code, schedules, and execution.
 - **A personal email inbox** — every user gets an address; inbound mail can
   trigger automations, and your assistant can send you notifications. See
   [Email primitives](./email-primitives.md).
+- **Inbound webhook endpoints** — HTTPS URLs for Sentry, GitHub, Stripe, or any
+  provider that cannot set Bearer tokens; each endpoint dispatches to a
+  saved-package export. See [Inbound webhooks](./webhooks.md).
 - **Long-term memory** — durable memories that surface across conversations and
   across every agent connected to the same account. See
   [Memory and conversation context](./memory.md).
