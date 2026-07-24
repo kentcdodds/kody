@@ -1,6 +1,7 @@
 import { run } from 'remix/ui'
 import { REMIX_FRAME_TARGET_HEADER } from '#app/frame-constants.ts'
 import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
+import { installNavigationApiFallback } from '#client/navigation-api-fallback.ts'
 import {
 	captureClientException,
 	initSentryClient,
@@ -8,6 +9,8 @@ import {
 import { AppRoot, APP_ROOT_ENTRY_ID } from './app-root.tsx'
 
 initSentryClient(document)
+// `run()` reads `window.navigation` unguarded, so this has to land first.
+installNavigationApiFallback(window)
 
 const clientRegistry: Record<string, typeof AppRoot> = {
 	AppRoot,

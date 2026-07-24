@@ -28,6 +28,12 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	page,
 	request,
 }) => {
+	// A throw anywhere in the client runtime silently kills the rest of
+	// hydration, so the whole journey below is only meaningful if it stays
+	// error-free.
+	const clientErrors: Array<string> = []
+	page.on('pageerror', (error) => clientErrors.push(error.message))
+
 	await ensurePrimaryUserExists()
 	await seedCommunityListingInE2eDatabase({
 		...alphaListing,
@@ -205,4 +211,6 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	await expect(page).toHaveURL(/\/community$/)
 	await expect(page.getByText(betaListing.description)).toBeVisible()
 	await expect(page.getByRole('heading', { name: 'Not Found' })).toHaveCount(0)
+
+	expect(clientErrors).toEqual([])
 })
