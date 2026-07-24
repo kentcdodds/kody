@@ -94,13 +94,13 @@ two compute surfaces `usage-metering.md` already observes:
 
 - **Execute calls** are consumed at the top of the MCP `execute` tool handler
   (`packages/worker/src/mcp/tools/execute.ts`) before any bundling or sandbox
-  work, so over-limit calls cost nothing. The `EntitlementLimitError`
-  propagates as a structured MCP error.
+  work, so over-limit calls cost nothing. The `EntitlementLimitError` propagates
+  as a structured MCP error.
 - **Outbound fetches** are consumed at the top of `executeGatewayFetch`
-  (`packages/worker/src/mcp/fetch-gateway.ts`), which every sandbox fetch
-  passes through, before secret expansion. `FetchGatewayProps.email` carries
-  the acting user's account email for plan lookup; contexts without one
-  resolve to `max`, whose limit is still finite.
+  (`packages/worker/src/mcp/fetch-gateway.ts`), which every sandbox fetch passes
+  through, before secret expansion. `FetchGatewayProps.email` carries the acting
+  user's account email for plan lookup; contexts without one resolve to `max`,
+  whose limit is still finite.
 
 Both consume only when the context has a `userId`, matching the usage-metering
 rule that events without an owning user are skipped.

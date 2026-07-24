@@ -40,6 +40,31 @@ vi.mock('#worker/openapi/binding-service.ts', () => ({
 
 const { registerExecuteTool } = await import('./execute.ts')
 
+/**
+ * Minimal env stub: the daily execute entitlement consumed at the top of
+ * the tool handler issues one conditional upsert (allowed when
+ * meta.changes > 0). Plan lookup never touches D1 because these caller
+ * contexts carry no account email (resolves to `max`).
+ */
+const stubEnv = {
+	APP_DB: {
+		prepare() {
+			return {
+				bind() {
+					return {
+						async run() {
+							return { meta: { changes: 1 } }
+						},
+						async first() {
+							return null
+						},
+					}
+				},
+			}
+		},
+	},
+}
+
 const mockPerformanceNow = vi.spyOn(performance, 'now')
 
 function mockPerformanceSequence(...values: Array<number>) {
@@ -75,7 +100,7 @@ async function getExecuteRegistration(
 		server: {
 			registerTool,
 		} as never,
-		getEnv: vi.fn(() => ({})),
+		getEnv: vi.fn(() => stubEnv),
 		getCallerContext: vi.fn(() => callerContext),
 		requireDomain: vi.fn(),
 		getLoopbackExports: vi.fn(),
@@ -365,7 +390,7 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 	})
 
 	expect(mockModule.createExecutePackageInvokeTools).toHaveBeenCalledWith({
-		env: {},
+		env: stubEnv,
 		baseUrl: 'https://example.com',
 		callerContext: expect.objectContaining(callerContext),
 		conversationId: 'conv-packages',

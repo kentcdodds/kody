@@ -166,21 +166,19 @@ blast radius:
   Enforced fail-closed at every chokepoint: browser session resolution
   (`readAuthenticatedAppUser` / `loadSessionInfo` treat a suspended session as
   signed out), MCP bearer auth (`handleMcpRequest` returns a 403
-  `account_suspended` response, mirroring the email-verification gate), and
-  both email directions (inbound storage rejects with a bounded
-  `account-suspension` rejection event; outbound send throws). Set and cleared
-  through the audited `suspend_user` / `unsuspend_user` actions on
-  `POST /admin/users.json`.
+  `account_suspended` response, mirroring the email-verification gate), and both
+  email directions (inbound storage rejects with a bounded `account-suspension`
+  rejection event; outbound send throws). Set and cleared through the audited
+  `suspend_user` / `unsuspend_user` actions on `POST /admin/users.json`.
 - **Automatic outbound-email pause (`users.email_outbound_paused_at`).** The
   delivery queue evaluates provider delivery events
   (`packages/worker/src/email/outbound-abuse.ts`): one spam complaint, or five
   or more bounced sends within a UTC day, pauses that account's outbound email
-  and notifies admin accounts through the transactional sender. The pause
-  write is idempotent (only transitions NULL), the send path rejects while
-  paused, and the audited `resume_email_outbound` admin action clears it after
-  review. The `/admin/insights` "Email delivery health" chart shows
-  platform-wide outcome trends so reputation trouble is visible before
-  providers act on it.
+  and notifies admin accounts through the transactional sender. The pause write
+  is idempotent (only transitions NULL), the send path rejects while paused, and
+  the audited `resume_email_outbound` admin action clears it after review. The
+  `/admin/insights` "Email delivery health" chart shows platform-wide outcome
+  trends so reputation trouble is visible before providers act on it.
 - **Compute quotas.** `execute_calls_per_day` and `outbound_fetches_per_day`
   entitlements bound sandbox compute and egress volume per user per day (see
   [`architecture/entitlements.md`](./architecture/entitlements.md)).

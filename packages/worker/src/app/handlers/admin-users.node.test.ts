@@ -853,7 +853,9 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 		],
 		userRoles: [{ user_id: 1, role_name: 'admin' }],
 	})
-	const selfHandler = createAdminUsersApiHandler(selfSuspendEnv as unknown as Env)
+	const selfHandler = createAdminUsersApiHandler(
+		selfSuspendEnv as unknown as Env,
+	)
 	const selfResponse = await selfHandler.handler({
 		request: new Request('https://example.com/admin/users.json', {
 			method: 'POST',

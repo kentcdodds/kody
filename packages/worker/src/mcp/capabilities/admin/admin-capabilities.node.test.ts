@@ -20,6 +20,8 @@ type UserRow = {
 	email: string
 	stable_user_id: string
 	plan?: string
+	suspended_at?: string | null
+	email_outbound_paused_at?: string | null
 	created_at: string
 	updated_at: string
 	password_hash?: string
@@ -32,6 +34,8 @@ function adminTestUser(
 	return {
 		...input,
 		plan: input.plan ?? 'free',
+		suspended_at: input.suspended_at ?? null,
+		email_outbound_paused_at: input.email_outbound_paused_at ?? null,
 		stable_user_id:
 			input.stable_user_id ?? testStableUserIdFromEmail(input.email),
 	}
@@ -176,7 +180,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, email_verified_at, plan, created_at, updated_at from users where id = ?',
+							'select id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where id = ?',
 						)
 					) {
 						return (users.find((user) => user.id === params[0]) ??
@@ -203,7 +207,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, email_verified_at, plan, created_at, updated_at from users where email = ? collate nocase',
+							'select id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where email = ? collate nocase',
 						)
 					) {
 						const email = String(params[0]).toLowerCase()
@@ -279,7 +283,7 @@ function createAdminCapabilityTestDb(input: {
 				async all<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, email_verified_at, plan, created_at, updated_at from users order by id asc limit ? offset ?',
+							'select id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users order by id asc limit ? offset ?',
 						)
 					) {
 						const pageSize = Number(params[0])

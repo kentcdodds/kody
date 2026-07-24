@@ -32,6 +32,7 @@ test('runExecuteSmokeCheck executes trivial code through the dynamic worker path
 			gatewayProps: {
 				baseUrl: 'https://example.com',
 				userId: null,
+				email: null,
 				storageContext: null,
 			},
 		}),

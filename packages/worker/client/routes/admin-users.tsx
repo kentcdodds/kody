@@ -1030,8 +1030,9 @@ export function AdminUsersRoute(handle: Handle) {
 												type="button"
 												disabled={isMutating}
 												mix={[
-													on('click', () =>
-														void submitModerationAction('unsuspend_user'),
+													on(
+														'click',
+														() => void submitModerationAction('unsuspend_user'),
 													),
 													css(primaryButtonCss),
 												]}
@@ -1045,8 +1046,9 @@ export function AdminUsersRoute(handle: Handle) {
 												type="button"
 												disabled={isMutating}
 												mix={[
-													on('click', () =>
-														void submitModerationAction('suspend_user'),
+													on(
+														'click',
+														() => void submitModerationAction('suspend_user'),
 													),
 													css(secondaryButtonCss),
 												]}
@@ -1061,10 +1063,12 @@ export function AdminUsersRoute(handle: Handle) {
 												type="button"
 												disabled={isMutating}
 												mix={[
-													on('click', () =>
-														void submitModerationAction(
-															'resume_email_outbound',
-														),
+													on(
+														'click',
+														() =>
+															void submitModerationAction(
+																'resume_email_outbound',
+															),
 													),
 													css(secondaryButtonCss),
 												]}

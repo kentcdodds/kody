@@ -43,8 +43,14 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
 		kind: 'dispatch-failure',
 	})
+	// A `delivered` status keeps the outbound abuse monitor on its no-op
+	// path, so this test stays focused on queue mechanics.
 	const providerEvent = {
-		payload: { eventId: 'event-1', messageId: 'provider-1' },
+		payload: {
+			eventId: 'event-1',
+			messageId: 'provider-1',
+			delivery: { status: 'delivered' },
+		},
 	}
 	const storedMessage = { id: 'message-1', userId: 'user-1' }
 	mocks.processCloudflareEmailDeliveryEvent
