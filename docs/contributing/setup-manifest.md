@@ -95,9 +95,9 @@ This project uses the following resources:
       }'
     ```
 
-  - Once Sentry ingests exported OTLP traces, set the Worker secret
-    `SENTRY_TRACES_SAMPLE_RATE=0` so the in-Worker Sentry SDK stops emitting a
-    duplicate set of traces (error reporting is unaffected).
+  - Once Sentry ingests exported OTLP traces, set `SENTRY_TRACES_SAMPLE_RATE=0`
+    to avoid duplicate SDK traces; see
+    [environment-variables.md](./environment-variables.md).
 
 The checked-in
 [`packages/worker/wrangler.jsonc`](../../packages/worker/wrangler.jsonc)
