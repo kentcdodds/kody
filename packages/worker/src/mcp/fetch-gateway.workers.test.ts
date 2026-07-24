@@ -61,6 +61,18 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 	}).catch((error: unknown) => error)
 	expect(isEntitlementLimitError(denied)).toBe(true)
 
+	// Callers that carry no email (OpenAPI provider requests, package
+	// runtime) still bind to the caller's real plan: the gateway
+	// reverse-resolves the account from the stable userId instead of
+	// failing open to the `max` quota.
+	const deniedWithoutEmail = await executeGatewayFetch({
+		env,
+		props: { ...props, email: null },
+		request: new Request('https://api.example.net/data'),
+		globalFetch,
+	}).catch((error: unknown) => error)
+	expect(isEntitlementLimitError(deniedWithoutEmail)).toBe(true)
+
 	// Contextless fetches (no userId) are not metered against a user and
 	// pass through without consuming any counter.
 	const contextless = await executeGatewayFetch({

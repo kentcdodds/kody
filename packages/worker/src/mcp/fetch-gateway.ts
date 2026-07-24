@@ -22,7 +22,10 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import { type StorageContext } from '#mcp/storage.ts'
-import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import {
+	consumeDailyEntitlement,
+	findUserAccountByStableUserId,
+} from '#worker/entitlements/service.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 
 type FetchGatewayProps = {
@@ -30,9 +33,9 @@ type FetchGatewayProps = {
 	userId: string | null
 	/**
 	 * Acting user's account email when the caller context carries one.
-	 * Backs the entitlement plan lookup for the outbound-fetch quota; a
-	 * missing email resolves the plan to `max`, whose limit is still
-	 * finite.
+	 * Backs the entitlement plan lookup for the outbound-fetch quota;
+	 * when absent, the gateway reverse-resolves the account from the
+	 * stable userId so the caller's real plan still binds.
 	 */
 	email: string | null
 	storageContext: StorageContext | null
@@ -82,10 +85,25 @@ export async function executeGatewayFetch(input: {
 		// third-party hammering from user code. Consumed before secret
 		// expansion so over-limit requests never resolve secrets.
 		if (input.props.userId) {
+			// Plan lookup requires the account email. Callers that cannot
+			// carry one (OpenAPI provider requests, package runtime) get it
+			// reverse-resolved from the stable userId so authenticated
+			// fetches count against the caller's real plan rather than
+			// failing open to `max` (whose limit is still finite for
+			// genuinely accountless synthetic contexts).
+			const email =
+				input.props.email ??
+				(
+					await findUserAccountByStableUserId(
+						input.env.APP_DB,
+						input.props.userId,
+					)
+				)?.email ??
+				null
 			await consumeDailyEntitlement({
 				db: input.env.APP_DB,
 				userId: input.props.userId,
-				email: input.props.email,
+				email,
 				resource: 'outbound_fetches_per_day',
 			})
 		}

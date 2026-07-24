@@ -116,11 +116,12 @@ Inbound storage is quota-gated per user:
   events independently populate `delivery_status` with `delivered`, `deferred`,
   `bounced`, `failed`, `rejected`, or `complained`; use
   `email_delivery_event_list` for the event history and SMTP details.
-- Delivery events feed an automatic abuse pause: one spam complaint, or repeated
-  bounces within a UTC day, pauses outbound sending for the account (receiving
-  is unaffected). Every user sends from the same platform domain, so one
-  account's complaints damage delivery for everyone. A paused send fails with a
-  clear error; contact the operator to have the pause reviewed and cleared.
+- Delivery events feed an automatic abuse pause: one spam complaint, or five or
+  more bounced sends within a UTC day, pauses outbound sending for the account
+  (receiving is unaffected). Every user sends from the same platform domain, so
+  one account's complaints damage delivery for everyone. A paused send fails
+  with a clear error; contact the operator to have the pause reviewed and
+  cleared.
 - System inbox mail is not gated by a user plan or account-verification state.
   It has fixed platform caps and retention: messages are pruned after 90 days
   and the stored system inbox is capped so arbitrary sender traffic cannot grow

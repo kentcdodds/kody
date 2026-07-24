@@ -148,6 +148,11 @@ async function queryAdminInsights(
 			.prepare(
 				// Provider ('cloudflare-email') events only: outbound
 				// delivery outcomes, excluding inbound routing rejections.
+				// Deliberately unscoped like every other query in this
+				// admin-only platform-wide read model: the aggregation
+				// returns per-day outcome counts with no user identifiers
+				// or message content, monitoring the shared sending
+				// domain's reputation.
 				`SELECT substr(created_at, 1, 10) AS day, event_type, COUNT(*) AS n
 				 FROM email_delivery_events
 				 WHERE provider = 'cloudflare-email' AND created_at >= ?

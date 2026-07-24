@@ -15,22 +15,41 @@ import * as communityRepo from '#worker/community/repo.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 
 /**
- * Minimal D1 stub: the daily outbound-fetch entitlement consumed by
- * executeGatewayFetch issues one conditional upsert (allowed when
- * meta.changes > 0); secret resolution itself is spied at the service
- * layer. Plan lookup never touches D1 here because props carry no email
- * (resolves to `max`).
+ * Minimal D1 stub for the entitlement reads/writes executeGatewayFetch
+ * performs (account reverse-resolution `first()` and the conditional
+ * counter upsert `run()`); secret resolution itself is spied at the
+ * service layer. Both statements must bind the acting userId — the stub
+ * fails loudly when a query drops the per-user scoping.
  */
 const env = {
 	APP_DB: {
-		prepare() {
+		prepare(query: string) {
+			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			return {
-				bind() {
+				bind(...params: Array<unknown>) {
 					return {
 						async run() {
+							if (
+								normalizedQuery.includes(
+									'insert into entitlement_daily_counters',
+								) &&
+								params[0] !== 'user-123'
+							) {
+								throw new Error(
+									'Entitlement counter upsert must bind the acting userId.',
+								)
+							}
 							return { meta: { changes: 1 } }
 						},
 						async first() {
+							if (
+								normalizedQuery.includes('where stable_user_id') &&
+								params[0] !== 'user-123'
+							) {
+								throw new Error(
+									'Account reverse-resolution must bind the acting userId.',
+								)
+							}
 							return null
 						},
 					}

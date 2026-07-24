@@ -99,8 +99,10 @@ two compute surfaces `usage-metering.md` already observes:
 - **Outbound fetches** are consumed at the top of `executeGatewayFetch`
   (`packages/worker/src/mcp/fetch-gateway.ts`), which every sandbox fetch passes
   through, before secret expansion. `FetchGatewayProps.email` carries the acting
-  user's account email for plan lookup; contexts without one resolve to `max`,
-  whose limit is still finite.
+  user's account email for plan lookup; when a caller cannot carry one (OpenAPI
+  provider requests, package runtime), the gateway reverse-resolves the account
+  via `findUserAccountByStableUserId` so the caller's real plan binds. Genuinely
+  accountless synthetic contexts resolve to `max`, whose limit is still finite.
 
 Both consume only when the context has a `userId`, matching the usage-metering
 rule that events without an owning user are skipped.

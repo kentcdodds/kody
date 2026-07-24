@@ -163,9 +163,17 @@ function createMockDb(options: MockDbOptions = {}) {
 					} satisfies MockAccountRow
 				}
 				if (normalized.includes('select suspended_at from users')) {
+					// Validate the bound identity like the adjacent
+					// verification branches so a widened isAccountSuspended
+					// query scope fails this mock.
 					const email =
 						typeof boundParams[0] === 'string' ? boundParams[0] : null
-					if (!email) return null
+					if (email !== defaultEmail) return null
+					if (normalized.includes('stable_user_id')) {
+						const stableUserId =
+							typeof boundParams[1] === 'string' ? boundParams[1] : null
+						if (stableUserId !== defaultStableUserId) return null
+					}
 					return { suspended_at: options.suspendedAt ?? null }
 				}
 				if (normalized.includes('email = ? and stable_user_id')) {

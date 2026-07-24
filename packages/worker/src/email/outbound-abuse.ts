@@ -131,13 +131,14 @@ async function notifyAdminsOfOutboundEmailPause(input: {
 	try {
 		const systemDomain = getSystemEmailDomain(input.env)
 		if (!systemDomain) return
+		// The admin roster is operator-controlled and small; no LIMIT so
+		// every admin is notified.
 		const admins = await input.env.APP_DB.prepare(
 			`SELECT u.email, u.username FROM users u
 			 INNER JOIN user_roles ur ON ur.user_id = u.id
 			 INNER JOIN roles r ON r.id = ur.role_id
 			 WHERE r.name = 'admin'
-			 ORDER BY u.id ASC
-			 LIMIT 10`,
+			 ORDER BY u.id ASC`,
 		).all<{ email: string; username: string }>()
 		const recipients = (admins.results ?? []).map((row) => row.email)
 		if (recipients.length === 0) return
