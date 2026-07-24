@@ -224,13 +224,14 @@ span is attributed to that span. Custom spans are available via
 `tracing.enterSpan()` from `cloudflare:workers` when application-level spans are
 worth adding.
 
-Traces (and logs) can additionally be exported to any OTLP endpoint — Sentry
-included — by creating an account-level destination in the Cloudflare dashboard
-and referencing it from `observability.traces.destinations`; the manual
-dashboard step is documented in [setup-manifest.md](../setup-manifest.md). Once
-Sentry ingests the exported OTLP traces, set `SENTRY_TRACES_SAMPLE_RATE=0` so
-the in-Worker Sentry SDK stops producing a second, duplicate set of traces
-(error capture is unaffected by the traces sample rate).
+Traces are additionally exported to Sentry: `observability.traces.destinations`
+references the account-level `sentry-otlp-traces` destination (Workers
+Observability → Destinations), which points at the `kody-cloudflare` Sentry
+project's OTLP endpoint. Destination provisioning (including for forks) is
+documented in [setup-manifest.md](../setup-manifest.md). Once Sentry ingests the
+exported OTLP traces, set `SENTRY_TRACES_SAMPLE_RATE=0` so the in-Worker Sentry
+SDK stops producing a second, duplicate set of traces (error capture is
+unaffected by the traces sample rate).
 
 Billing note: each span is one observability event sharing the Workers Logs
 quota (10M events/month included on Workers Paid). Sampling is controlled by

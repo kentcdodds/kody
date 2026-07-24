@@ -61,19 +61,22 @@ This project uses the following resources:
   - Production and preview route embedding calls through this binding. When
     `AI_GATEWAY_ID` is configured, calls are sent through AI Gateway via the
     Workers AI binding options.
-- Workers Observability OTLP destination (optional, manual dashboard step)
+- Workers Observability OTLP destination (account-level)
   - Workers automatic tracing is enabled via `observability.traces` in
     `packages/worker/wrangler.jsonc`; traces are viewable in the Workers
     Observability dashboard with no further setup.
-  - To also export traces to Sentry (or another OTLP backend): in the Cloudflare
-    dashboard go to **Workers Observability → Destinations** and create a
-    **Traces** destination. For Sentry, the endpoint is
-    `https://<HOST>/api/<PROJECT_ID>/integration/otlp/v1/traces` with the
-    Sentry-provided auth header (see the Sentry project's OTLP settings).
-  - Then reference the destination by name from
-    `observability.traces.destinations` in `packages/worker/wrangler.jsonc` (a
-    commented `"destinations"` line marks the spot). Do not commit a destination
-    name before the dashboard destination exists — deploys can fail on unknown
+  - Traces are additionally exported to Sentry through the account-level
+    **Traces** destination `sentry-otlp-traces`, referenced from
+    `observability.traces.destinations`. In the production Cloudflare account it
+    points at the `kody-cloudflare` Sentry project's OTLP endpoint
+    (`https://<HOST>/api/<PROJECT_ID>/integration/otlp/v1/traces` with the
+    `x-sentry-auth: sentry sentry_key=<public key>` header derived from the
+    project DSN).
+  - Forks must create their own destination (dashboard: **Workers Observability
+    → Destinations**, or API:
+    `POST /accounts/{account_id}/workers/observability/destinations` with
+    `configuration.logpushDataset: "opentelemetry-traces"`) under the same name,
+    or remove the `destinations` line — deploys can fail on unknown
     destinations.
   - Once Sentry ingests exported OTLP traces, set the Worker secret
     `SENTRY_TRACES_SAMPLE_RATE=0` so the in-Worker Sentry SDK stops emitting a
