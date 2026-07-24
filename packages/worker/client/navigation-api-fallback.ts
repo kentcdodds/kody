@@ -4,13 +4,17 @@
  *
  * Remix 3 beta's client runtime reads `window.navigation.updateCurrentEntry()`
  * unguarded while it boots (`@remix-run/ui`'s `startNavigationListener`), so
- * `run()` throws before a single component mounts on every browser without the
- * Navigation API. The API only reached Firefox in 147 and WebKit in 26.2, both
- * in early 2026, so that still covers Firefox 146 and below plus every browser
- * on iOS 26.1 and below — all of them WebKit, so Chrome for iOS and in-app
- * browsers included. Those visitors lose the entire client bundle, and since
- * the throw happens during boot it also takes out the handler that would have
- * reported it.
+ * `run()` throws on every browser without the Navigation API. The API only
+ * reached Firefox in 147 and WebKit in 26.2, both in early 2026, so that still
+ * covers Firefox 146 and below plus every browser on iOS 26.1 and below — all
+ * of them WebKit, so Chrome for iOS and in-app browsers included.
+ *
+ * The throw lands after `createFrame(...)` but before `run()` returns, so
+ * hydration already in flight survives and the app stays broadly usable. What
+ * those visitors actually lose is an unhandled `TypeError` on every page load,
+ * plus the `app.addEventListener('error', ...)` wiring and `app.ready()` call
+ * in `entry.tsx` that never run — meaning client error reporting is missing
+ * for exactly the people already hitting an error.
  *
  * Kody itself never uses the Navigation API: `client-router.tsx` drives SPA
  * navigation through `history.pushState` and a document-level click handler,
