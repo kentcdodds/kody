@@ -68,9 +68,12 @@ export type PackageSubscriptionDefinition = z.infer<
 	typeof packageSubscriptionDefinitionSchema
 >
 
+/** RFC 9110 token characters for HTTP field names. */
+const httpFieldNamePattern = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+
 export const packageWebhookVerificationSchema = z.object({
 	type: z.enum(['hmac-sha256', 'hmac-sha1']),
-	header: z.string().min(1),
+	header: z.string().regex(httpFieldNamePattern),
 	secretName: z.string().min(1),
 	encoding: z.enum(['hex', 'base64']),
 	prefix: z.string().optional(),

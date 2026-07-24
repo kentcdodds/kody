@@ -274,6 +274,34 @@ test('parseAuthoredPackageJson accepts kody.webhooks and rejects unknown exports
 			manifestPath: 'package.json',
 		}),
 	).toThrow(/Duplicate webhook name/)
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/sentry-bridge',
+				exports: {
+					'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
+				},
+				kody: {
+					id: 'sentry-bridge',
+					description: 'Sentry bridge',
+					webhooks: [
+						{
+							name: 'sentry',
+							export: './handle-sentry-webhook',
+							verification: {
+								type: 'hmac-sha256',
+								header: 'bad header\nname',
+								secretName: 'sentryWebhookSecret',
+								encoding: 'hex',
+							},
+						},
+					],
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/header/)
 })
 
 test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest extensions', () => {

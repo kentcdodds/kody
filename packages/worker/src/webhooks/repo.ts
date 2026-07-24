@@ -66,7 +66,12 @@ function truncateDeliveryError(error: string | null | undefined) {
 	return `${trimmed.slice(0, webhookDeliveryErrorMaxLength - 1)}…`
 }
 
-export async function insertWebhookEndpoint(input: {
+/**
+ * Insert or rotate a minted webhook URL secret.
+ * Concurrent mints for the same (user, package, name) resolve via the unique
+ * index instead of throwing a constraint error.
+ */
+export async function upsertWebhookEndpointSecret(input: {
 	db: D1Database
 	id: string
 	userId: string
@@ -83,7 +88,11 @@ export async function insertWebhookEndpoint(input: {
 			`INSERT INTO webhook_endpoints (
 				id, user_id, package_id, webhook_name, url_secret_hash,
 				enabled, created_at, rotated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(user_id, package_id, webhook_name)
+			DO UPDATE SET
+				url_secret_hash = excluded.url_secret_hash,
+				rotated_at = excluded.rotated_at`,
 		)
 		.bind(
 			input.id,
@@ -96,16 +105,16 @@ export async function insertWebhookEndpoint(input: {
 			now,
 		)
 		.run()
-	return {
-		id: input.id,
+	const record = await getWebhookEndpointByKey({
+		db: input.db,
 		userId: input.userId,
 		packageId: input.packageId,
 		webhookName: input.webhookName,
-		urlSecretHash: input.urlSecretHash,
-		enabled: enabled === 1,
-		createdAt: now,
-		rotatedAt: now,
+	})
+	if (!record) {
+		throw new Error('Unable to upsert webhook endpoint.')
 	}
+	return record
 }
 
 export async function listWebhookEndpointsForUser(input: {
@@ -157,38 +166,6 @@ export async function getWebhookEndpointByIdForUser(input: {
 		.bind(input.endpointId, input.userId)
 		.first<WebhookEndpointRow>()
 	return row ? mapEndpointRow(row) : null
-}
-
-export async function updateWebhookEndpointSecret(input: {
-	db: D1Database
-	userId: string
-	packageId: string
-	webhookName: string
-	urlSecretHash: string
-	now?: string
-}): Promise<WebhookEndpointRecord | null> {
-	const now = input.now ?? new Date().toISOString()
-	const result = await input.db
-		.prepare(
-			`UPDATE webhook_endpoints
-			SET url_secret_hash = ?, rotated_at = ?
-			WHERE user_id = ? AND package_id = ? AND webhook_name = ?`,
-		)
-		.bind(
-			input.urlSecretHash,
-			now,
-			input.userId,
-			input.packageId,
-			input.webhookName,
-		)
-		.run()
-	if ((result.meta.changes ?? 0) === 0) return null
-	return getWebhookEndpointByKey({
-		db: input.db,
-		userId: input.userId,
-		packageId: input.packageId,
-		webhookName: input.webhookName,
-	})
 }
 
 export async function setWebhookEndpointEnabled(input: {
@@ -297,7 +274,10 @@ export async function listWebhookDeliveriesForEndpoint(input: {
 	webhookName: string
 	limit?: number
 }): Promise<Array<WebhookDeliveryRecord>> {
-	const limit = Math.min(Math.max(input.limit ?? 50, 1), 50)
+	const limit = Math.min(
+		Math.max(input.limit ?? webhookDeliveriesRetainedPerEndpoint, 1),
+		webhookDeliveriesRetainedPerEndpoint,
+	)
 	const result = await input.db
 		.prepare(
 			`SELECT *

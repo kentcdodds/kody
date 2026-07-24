@@ -12,11 +12,10 @@ import { generateWebhookUrlSecret, hashWebhookUrlSecret } from './crypto.ts'
 import { buildWebhookEndpointUrl } from './public-url.ts'
 import {
 	getWebhookEndpointByKey,
-	insertWebhookEndpoint,
 	listWebhookDeliveriesForEndpoint,
 	listWebhookEndpointsForUser,
 	setWebhookEndpointEnabled,
-	updateWebhookEndpointSecret,
+	upsertWebhookEndpointSecret,
 } from './repo.ts'
 import {
 	type WebhookDeliveryRecord,
@@ -211,34 +210,17 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 	})
 
-	const existing = await getWebhookEndpointByKey({
+	const urlSecret = await generateWebhookUrlSecret()
+	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
+	const record = await upsertWebhookEndpointSecret({
 		db: input.env.APP_DB,
+		id: crypto.randomUUID(),
 		userId: input.userId,
 		packageId: savedPackage.id,
 		webhookName,
+		urlSecretHash,
+		enabled: true,
 	})
-	const urlSecret = await generateWebhookUrlSecret()
-	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
-	const record = existing
-		? await updateWebhookEndpointSecret({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				packageId: savedPackage.id,
-				webhookName,
-				urlSecretHash,
-			})
-		: await insertWebhookEndpoint({
-				db: input.env.APP_DB,
-				id: crypto.randomUUID(),
-				userId: input.userId,
-				packageId: savedPackage.id,
-				webhookName,
-				urlSecretHash,
-				enabled: true,
-			})
-	if (!record) {
-		throw new Error('Unable to mint webhook URL.')
-	}
 
 	const username = await resolveOwnerUsername({
 		db: input.env.APP_DB,

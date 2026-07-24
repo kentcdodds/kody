@@ -70,13 +70,19 @@ function notFoundResponse() {
 	)
 }
 
+function formatPayloadLimitLabel(maxBytes: number) {
+	const megabytes = maxBytes / (1024 * 1024)
+	if (Number.isInteger(megabytes)) return `${megabytes} MB`
+	return `${maxBytes} bytes`
+}
+
 function tooLargeResponse() {
 	return jsonResponse(
 		{
 			ok: false,
 			error: {
 				code: 'payload_too_large',
-				message: 'Webhook payload exceeds the 1 MB limit.',
+				message: `Webhook payload exceeds the ${formatPayloadLimitLabel(webhookMaxPayloadBytes)} limit.`,
 			},
 		},
 		{ status: 413 },
@@ -307,6 +313,16 @@ export async function handleWebhookIngressRequest(
 		return notFoundResponse()
 	}
 
+	// Bound every subsequent delivery-log write (including pre-auth rejects).
+	const rateLimit = await checkRateLimit(
+		env.APP_DB,
+		`webhook:endpoint:${endpoint.id}`,
+		webhookRateLimitConfig,
+	)
+	if (!rateLimit.allowed) {
+		return rateLimitedResponse(rateLimit.retryAfterSeconds ?? 60)
+	}
+
 	const secretMatches = await webhookUrlSecretMatches({
 		candidate: route.urlSecret,
 		storedHash: endpoint.urlSecretHash,
@@ -376,24 +392,6 @@ export async function handleWebhookIngressRequest(
 			},
 			{ status: 409 },
 		)
-	}
-
-	const rateLimit = await checkRateLimit(
-		env.APP_DB,
-		`webhook:endpoint:${endpoint.id}`,
-		webhookRateLimitConfig,
-	)
-	if (!rateLimit.allowed) {
-		await recordDelivery({
-			db: env.APP_DB,
-			endpoint,
-			outcome: 'rejected',
-			httpStatus: 429,
-			error: 'rate_limited',
-			payloadBytes: 0,
-			receivedAt,
-		})
-		return rateLimitedResponse(rateLimit.retryAfterSeconds ?? 60)
 	}
 
 	const bodyResult = await readBodyWithCap(request, webhookMaxPayloadBytes)
