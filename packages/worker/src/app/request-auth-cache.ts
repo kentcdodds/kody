@@ -8,6 +8,7 @@
  * revocation hooks on every auth mutation path.
  */
 
+import * as Sentry from '@sentry/cloudflare'
 import {
 	destroyAuthCookie,
 	isSecureRequest,
@@ -94,6 +95,15 @@ async function resolveRequestAuth(
 		email: userRecord.email,
 		username: userRecord.username,
 	})
+
+	// Associate uncaught request errors with the signed-in user in Sentry.
+	// Id only: sendDefaultPii is false and emails stay out of Sentry. Must
+	// never break auth resolution.
+	try {
+		if (Sentry.isInitialized()) Sentry.setUser({ id: stableUserId })
+	} catch {
+		// Observability must not affect auth.
+	}
 
 	return {
 		sessionUserId: session.id,

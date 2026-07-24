@@ -2,6 +2,7 @@ type SentryScope = {
 	setLevel(_level: string): void
 	setTag(_key: string, _value: string): void
 	setContext(_key: string, _value: Record<string, unknown>): void
+	setUser(_user: Record<string, unknown> | null): void
 }
 
 type SentryClient = {
@@ -12,7 +13,10 @@ const defaultScope: SentryScope = {
 	setLevel() {},
 	setTag() {},
 	setContext() {},
+	setUser() {},
 }
+
+export function setUser(_user: Record<string, unknown> | null) {}
 
 export function isInitialized() {
 	return false

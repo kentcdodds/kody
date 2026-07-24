@@ -71,7 +71,9 @@ export function defineCapability<
 			: {}),
 		async handler(args, ctx) {
 			const startedAt = performance.now()
-			const { baseUrl, hasUser } = callerContextFields(ctx.callerContext)
+			const { baseUrl, hasUser, userId } = callerContextFields(
+				ctx.callerContext,
+			)
 			await assertCallerCanAccessCapability(ctx.callerContext, definition, {
 				env: ctx.env,
 			})
@@ -91,6 +93,7 @@ export function defineCapability<
 					durationMs: Math.round(performance.now() - startedAt),
 					baseUrl,
 					hasUser,
+					userId,
 					failurePhase: 'parse_input',
 					errorName,
 					errorMessage,
@@ -114,6 +117,7 @@ export function defineCapability<
 					durationMs: Math.round(performance.now() - startedAt),
 					baseUrl,
 					hasUser,
+					userId,
 					failurePhase: 'handler',
 					errorName,
 					errorMessage,
@@ -134,6 +138,7 @@ export function defineCapability<
 					durationMs: Math.round(performance.now() - startedAt),
 					baseUrl,
 					hasUser,
+					userId,
 				})
 				return finalized
 			} catch (error) {
@@ -148,6 +153,7 @@ export function defineCapability<
 					durationMs: Math.round(performance.now() - startedAt),
 					baseUrl,
 					hasUser,
+					userId,
 					failurePhase: 'parse_output',
 					errorName,
 					errorMessage,

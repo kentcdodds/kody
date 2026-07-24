@@ -34,6 +34,35 @@ export class WorkflowEntrypoint<TEnv = unknown, TPayload = unknown> {
 
 export class RpcTarget {}
 
+type StubSpan = {
+	readonly isTraced: boolean
+	setAttribute(key: string, value?: boolean | number | string): void
+	end(): void
+}
+
+const stubSpan: StubSpan = {
+	isTraced: false,
+	setAttribute() {},
+	end() {},
+}
+
+export const tracing = {
+	enterSpan<T, A extends Array<unknown>>(
+		_name: string,
+		callback: (span: StubSpan, ...args: A) => T,
+		...args: A
+	): T {
+		return callback(stubSpan, ...args)
+	},
+	startActiveSpan<T, A extends Array<unknown>>(
+		_name: string,
+		callback: (span: StubSpan, ...args: A) => T,
+		...args: A
+	): T {
+		return callback(stubSpan, ...args)
+	},
+}
+
 export const exports = {
 	KodyFetchGateway() {
 		return async (request: Request) => fetch(request)

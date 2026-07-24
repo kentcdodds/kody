@@ -16,6 +16,8 @@ export type McpObservabilityPayload = {
 	durationMs: number
 	baseUrl: string
 	hasUser: boolean
+	/** Stable user id of the caller, when authenticated. */
+	userId?: string
 	failurePhase?: McpFailurePhase
 	sandboxError?: boolean
 	registeredCapabilityCount?: number
@@ -36,6 +38,7 @@ export function callerContextFields(context: McpCallerContext) {
 	return {
 		baseUrl: context.baseUrl,
 		hasUser: context.user != null,
+		userId: context.user?.userId,
 		storageContext: context.storageContext ?? null,
 	}
 }
@@ -62,6 +65,9 @@ function reportMcpFailureToSentry(
 		Sentry.withScope((scope) => {
 			const level = payload.sandboxError ? 'warning' : 'error'
 			scope.setLevel(level)
+
+			// Id only: sendDefaultPii is false and emails stay out of Sentry.
+			if (payload.userId) scope.setUser({ id: payload.userId })
 
 			scope.setTag('mcp.tool', payload.tool)
 			if (payload.toolName) scope.setTag('mcp.tool_name', payload.toolName)

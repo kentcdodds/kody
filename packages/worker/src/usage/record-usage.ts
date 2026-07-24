@@ -21,7 +21,21 @@
  * paths it observes. In local dev and tests where a binding is missing it
  * degrades to a debug log. See
  * `docs/contributing/architecture/usage-metering.md`.
+ *
+ * Every recorded event also emits a `kody.usage.{eventType}` trace span (when
+ * Workers tracing is available) carrying the user id, entity id, and outcome
+ * as attributes. The chokepoints that meter usage are exactly the app-level
+ * units worth finding in traces, so this one funnel makes every trace
+ * searchable by user and feature without touching the chokepoints themselves.
  */
+
+import * as cloudflareWorkers from 'cloudflare:workers'
+
+// Older local runtimes (and the node test stub) may not expose `tracing`;
+// treat it as optional so metering keeps its never-throws contract.
+const runtimeTracing: typeof cloudflareWorkers.tracing | undefined = (
+	cloudflareWorkers as Partial<typeof cloudflareWorkers>
+).tracing
 
 export type UsageEventType =
 	| 'execute'
@@ -102,6 +116,7 @@ export async function recordUsage(
 			console.debug('usage-event-skipped', 'missing userId', event.eventType)
 			return
 		}
+		emitUsageSpan(event)
 		const timestamp = event.timestamp ?? new Date().toISOString()
 		if (env.USAGE_EVENTS) {
 			writeUsageDataPoint(env, event, timestamp)
@@ -111,6 +126,30 @@ export async function recordUsage(
 		await writeUsageRollup(env, event, timestamp)
 	} catch (error) {
 		console.warn('usage-event-record-failed', error)
+	}
+}
+
+/**
+ * Emit a marker span for one usage event, nested under whatever platform span
+ * is active in the current async context (HTTP handler, DO invocation, ...).
+ * When the invocation is not sampled, `enterSpan` still runs the callback but
+ * records nothing.
+ */
+function emitUsageSpan(event: UsageEvent) {
+	if (!runtimeTracing?.enterSpan) return
+	try {
+		runtimeTracing.enterSpan(`kody.usage.${event.eventType}`, (span) => {
+			span.setAttribute('kody.user_id', event.userId)
+			span.setAttribute('kody.event_type', event.eventType)
+			span.setAttribute('kody.outcome', event.outcome)
+			if (event.entityId) span.setAttribute('kody.entity_id', event.entityId)
+			if (event.durationMs != null) {
+				span.setAttribute('kody.duration_ms', event.durationMs)
+			}
+			if (event.bytes != null) span.setAttribute('kody.bytes', event.bytes)
+		})
+	} catch (error) {
+		console.debug('usage-span-failed', error)
 	}
 }
 

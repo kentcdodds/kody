@@ -155,6 +155,12 @@ Guarantees and rules:
 - `recordUsage` **never throws and never rejects.** Metering must not break the
   path it observes. Sink failures are logged at warn level; expected local-dev
   degradation is logged at debug level.
+- Every recorded event also emits a `kody.usage.{eventType}` **trace span**
+  (when Workers tracing is available) with `kody.user_id`, `kody.event_type`,
+  `kody.outcome`, and the optional `kody.entity_id` / `kody.duration_ms` /
+  `kody.bytes` attributes. It nests under the active platform span, so traces
+  become searchable by user and feature with no chokepoint changes. Span
+  emission follows the same never-throws contract.
 - It accepts any object with optional `USAGE_EVENTS` / `APP_DB` bindings
   (`UsageEnv`), so the full `Env` can be passed directly.
 - **Graceful degradation:** in local dev and tests where the Analytics Engine

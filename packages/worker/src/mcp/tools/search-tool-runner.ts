@@ -55,8 +55,12 @@ export async function runSearchTool(input: {
 	const timingStart = startToolTiming()
 	const conversationId = resolveConversationId(args.conversationId)
 	const callerContext = agent.getCallerContext()
-	const { baseUrl, hasUser } = callerContextFields(callerContext)
-	const userId = callerContext.user?.userId ?? null
+	const {
+		baseUrl,
+		hasUser,
+		userId: callerUserId,
+	} = callerContextFields(callerContext)
+	const userId = callerUserId ?? null
 	const includeHiddenPackages = !!args.includeHiddenPackages
 	const domainFilter = args.domain?.trim() || undefined
 	// Whitespace-only queries stay valid (memory enrichment may still run) but
@@ -72,6 +76,7 @@ export async function runSearchTool(input: {
 			durationMs: timing.durationMs,
 			baseUrl,
 			hasUser,
+			userId: userId ?? undefined,
 			sandboxError: false,
 			errorName: 'ValidationError',
 			errorMessage: 'Provide "query", "entity", or "domain".',
@@ -252,6 +257,7 @@ export async function runSearchTool(input: {
 				durationMs: timing.durationMs,
 				baseUrl,
 				hasUser,
+				userId: userId ?? undefined,
 			})
 			return {
 				content: prependToolMetadataContent(conversationId, [
@@ -322,6 +328,7 @@ export async function runSearchTool(input: {
 				durationMs: timing.durationMs,
 				baseUrl,
 				hasUser,
+				userId: userId ?? undefined,
 				...(allFailed
 					? {
 							sandboxError: false,
@@ -465,6 +472,7 @@ export async function runSearchTool(input: {
 			durationMs: timing.durationMs,
 			baseUrl,
 			hasUser,
+			userId: userId ?? undefined,
 			message: 'Search completed successfully.',
 			context: {
 				task: execution.result.intent.task.name,
@@ -506,6 +514,7 @@ export async function runSearchTool(input: {
 			durationMs: timing.durationMs,
 			baseUrl,
 			hasUser,
+			userId: userId ?? undefined,
 			sandboxError: false,
 			errorName,
 			errorMessage,

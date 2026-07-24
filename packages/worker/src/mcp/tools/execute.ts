@@ -145,7 +145,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				},
 			}
 			const resolvedConversationId = resolveConversationId(conversationId)
-			const { baseUrl, hasUser, storageContext } =
+			const { baseUrl, hasUser, userId, storageContext } =
 				callerContextFields(callerContext)
 			const activeStorageId = storageContext?.storageId ?? null
 			try {
@@ -165,6 +165,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					durationMs: timing.durationMs,
 					baseUrl,
 					hasUser,
+					userId,
 					sandboxError: false,
 					errorName,
 					errorMessage,
@@ -276,6 +277,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						durationMs,
 						baseUrl,
 						hasUser,
+						userId,
 						registeredCapabilityCount,
 						sandboxError: true,
 						errorName,
@@ -316,6 +318,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					durationMs,
 					baseUrl,
 					hasUser,
+					userId,
 					registeredCapabilityCount,
 					sandboxError: false,
 					context: activeStorageId ? { storageId: activeStorageId } : undefined,

@@ -1,7 +1,11 @@
 import { expect, test, vi } from 'vitest'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { errorFields, logMcpEvent } from '#mcp/observability.ts'
+import {
+	callerContextFields,
+	errorFields,
+	logMcpEvent,
+} from '#mcp/observability.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 
 const repoMockModule = vi.hoisted(() => ({
@@ -127,6 +131,48 @@ test('observability helpers normalize errors and emit resilient mcp-event logs',
 		console.info = originalInfo
 		console.warn = originalWarn
 	}
+})
+
+test('callerContextFields exposes the caller user id and logMcpEvent serializes it', () => {
+	expect(
+		callerContextFields({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User One',
+			},
+		}),
+	).toMatchObject({
+		baseUrl: 'https://example.com',
+		hasUser: true,
+		userId: 'user-1',
+	})
+	expect(
+		callerContextFields({ baseUrl: 'https://example.com', user: null }),
+	).toMatchObject({ hasUser: false, userId: undefined })
+
+	const originalInfo = console.info
+	let jsonArg: unknown
+	console.info = ((_tag: unknown, json?: unknown) => {
+		jsonArg = json
+	}) as typeof console.info
+	try {
+		logMcpEvent({
+			category: 'mcp',
+			tool: 'capability',
+			capabilityName: 'value_get',
+			outcome: 'success',
+			durationMs: 5,
+			baseUrl: 'https://example.com',
+			hasUser: true,
+			userId: 'user-1',
+		})
+	} finally {
+		console.info = originalInfo
+	}
+	const parsed = JSON.parse(jsonArg as string) as Record<string, unknown>
+	expect(parsed.userId).toBe('user-1')
 })
 
 test('package_save logs parse failures, rejects invalid manifests, and logs successful saves', async () => {

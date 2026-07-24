@@ -222,7 +222,11 @@ Durable Objects, queues) with no SDK in the bundle; traces appear in the Workers
 Observability dashboard next to Workers Logs, and `console.*` output inside a
 span is attributed to that span. Custom spans are available via
 `tracing.enterSpan()` from `cloudflare:workers` when application-level spans are
-worth adding.
+worth adding. App-level context rides on two hooks: every metered usage event
+emits a `kody.usage.{eventType}` child span with `kody.user_id` and entity
+attributes (see [usage-metering.md](./usage-metering.md)), and Sentry error
+events carry the signed-in user id (id only, no PII) via `Sentry.setUser` in the
+app auth resolver and the MCP failure reporter.
 
 Production deploys additionally export these traces to Sentry through the
 account-level `sentry-otlp-traces` destination; preview and test deploys inherit
