@@ -20,7 +20,7 @@
  * back to ordinary document navigation.
  *
  * Only the members the Remix runtime touches are implemented. Remove this once
- * the upstream guard ships.
+ * the upstream guard ships: https://github.com/remix-run/remix/issues/11641
  */
 
 type FallbackHistoryEntry = {

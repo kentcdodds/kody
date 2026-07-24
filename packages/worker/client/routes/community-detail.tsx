@@ -592,7 +592,8 @@ export function CommunityDetailRoute(handle: Handle) {
 			// This runs during render, and `loadStargazers` calls
 			// `handle.update()` before its first await. The runtime only wires
 			// up a component's update scheduler after its first render
-			// returns, so calling it inline throws instead of scheduling.
+			// returns, so calling it inline throws instead of scheduling:
+			// https://github.com/remix-run/remix/issues/11642
 			handle.queueTask(() => void loadStargazers(listingId))
 		}
 		return true
