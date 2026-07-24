@@ -22,6 +22,12 @@
  *   injection, plugin content, and form exfiltration to third-party origins.
  * - `connect-src 'self'` is safe because the first-party client only calls
  *   same-origin JSON endpoints; all third-party calls happen server-side.
+ *   Browser Sentry envelopes stay same-origin too via the `/sentry-tunnel`
+ *   route (see `handlers/sentry-tunnel.ts`).
+ * - `worker-src 'self' blob:` exists for Sentry Session Replay's compression
+ *   Web Worker, which is created from a blob URL. Spawning a blob worker
+ *   already requires script execution, which `script-src 'self'` still gates,
+ *   so this does not widen the injection surface.
  */
 const contentSecurityPolicy = [
 	"default-src 'self'",
@@ -34,6 +40,7 @@ const contentSecurityPolicy = [
 	"style-src 'self' 'unsafe-inline'",
 	"script-src 'self'",
 	"connect-src 'self'",
+	"worker-src 'self' blob:",
 ].join('; ')
 
 export const firstPartySecurityHeaders: Readonly<Record<string, string>> = {

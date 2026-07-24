@@ -238,6 +238,21 @@ quota (10M events/month included on Workers Paid). Sampling is controlled by
 `observability.traces.head_sampling_rate` (defaults to full sampling, fine at
 current traffic).
 
+### Browser errors and session replay
+
+The client bundle initializes `@sentry/browser` from a `kody:sentry` meta tag
+that `ssr-document.tsx` renders when `SENTRY_DSN` is configured (the DSN is a
+publishable client key). Capture is errors plus **error-only Session Replay**:
+`replaysSessionSampleRate` is `0` and `replaysOnErrorSampleRate` is `1`, so
+nothing is recorded to Sentry unless an error occurs, and replays mask all text
+and block all media (`packages/worker/client/sentry-client.ts`) because Kody
+sessions contain personal content. Envelopes are sent through the same-origin
+`POST /sentry-tunnel` route
+(`packages/worker/src/app/handlers/sentry-tunnel.ts`), which only forwards
+envelopes whose DSN matches the Worker's own `SENTRY_DSN` — this keeps the
+first-party CSP at `connect-src 'self'`. The CSP allows `worker-src blob:` for
+the replay compression Web Worker.
+
 ### Source maps
 
 `packages/worker/wrangler.jsonc` sets

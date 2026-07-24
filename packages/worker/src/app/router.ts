@@ -131,6 +131,7 @@ import {
 	createBlogRssHandler,
 } from '#app/handlers/blog.tsx'
 import { createHealthHandler } from '#app/handlers/health.ts'
+import { createSentryTunnelHandler } from '#app/handlers/sentry-tunnel.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
 import { createOgPageImageHandler } from '#app/handlers/og-page-image.ts'
@@ -179,6 +180,7 @@ export function createAppRouter(env: Env) {
 		actions: {
 			home: createHomeHandler(env),
 			health: createHealthHandler(env),
+			sentryTunnel: createSentryTunnelHandler(env),
 			login: createLoginHandler(env),
 			ogPageImage: createOgPageImageHandler(env),
 			blog: createBlogHandler(env),

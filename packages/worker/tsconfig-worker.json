@@ -39,7 +39,8 @@
 		"./src/**/*.ts",
 		"./src/**/*.tsx",
 		"./client/styles/tokens.ts",
-		"./client/styles/style-primitives.ts"
+		"./client/styles/style-primitives.ts",
+		"./client/sentry-config.ts"
 	],
 	"exclude": [
 		"**/*.test.ts",

@@ -104,6 +104,7 @@ export const routes = route({
 	timeline: '/timeline',
 	timelineApi: '/timeline.json',
 	health: '/health',
+	sentryTunnel: post('/sentry-tunnel'),
 	login: '/login',
 	ogPageImage: '/og/:page.png',
 	privacy: '/privacy',

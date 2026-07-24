@@ -1,7 +1,13 @@
 import { run } from 'remix/ui'
 import { REMIX_FRAME_TARGET_HEADER } from '#app/frame-constants.ts'
 import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
+import {
+	captureClientException,
+	initSentryClient,
+} from '#client/sentry-client.ts'
 import { AppRoot, APP_ROOT_ENTRY_ID } from './app-root.tsx'
+
+initSentryClient(document)
 
 const clientRegistry: Record<string, typeof AppRoot> = {
 	AppRoot,
@@ -40,6 +46,7 @@ const app = run({
 
 app.addEventListener('error', (event) => {
 	console.error('Client hydration error:', event.error)
+	captureClientException(event.error)
 })
 
 void app.ready()

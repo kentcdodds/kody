@@ -19,6 +19,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@remix-run/cookie": "^0.5.1",
     "@resvg/resvg-wasm": "^2.6.2",
+    "@sentry/browser": "^10.68.0",
     "@sentry/cloudflare": "^10.67.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",

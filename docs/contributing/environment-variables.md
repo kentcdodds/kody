@@ -56,7 +56,10 @@ Optional Worker secret and vars (see `packages/worker/src/env-schema.ts` and
 
 - `SENTRY_DSN` — ingest URL from your Sentry project. When unset, the Worker
   skips `Sentry.withSentry`; Durable Objects use the same options builder and
-  will not send events without a DSN.
+  will not send events without a DSN. The DSN (a publishable client key) is also
+  exposed to the browser via the `kody:sentry` meta tag to enable client error
+  capture and error-only session replay through the same-origin `/sentry-tunnel`
+  route.
 - `SENTRY_ENVIRONMENT` — also set as a Wrangler `var` per environment in
   `packages/worker/wrangler.jsonc` for deploys.
 - `SENTRY_TRACES_SAMPLE_RATE` — optional `0`–`1`; defaults to **`1.0`** (sample

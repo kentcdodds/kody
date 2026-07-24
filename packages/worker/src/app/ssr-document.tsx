@@ -10,6 +10,10 @@ import {
 	DOCUMENT_HEAD_ATTR,
 	type ResolvedDocumentHead,
 } from '#app/document-head.ts'
+import {
+	SENTRY_CONFIG_META_NAME,
+	type SentryClientConfig,
+} from '#client/sentry-config.ts'
 
 export const CLIENT_ENTRY_HREF = '/client-entry.js'
 export const STYLESHEET_HREF = '/styles.css'
@@ -19,6 +23,11 @@ export type SsrDocumentProps = AppRootProps & {
 	documentHead?: ResolvedDocumentHead
 	clientEntryHref?: string
 	stylesheetHref?: string
+	/**
+	 * Browser Sentry config (error capture + error-only replay). Omitted when
+	 * SENTRY_DSN is not configured; the DSN is a publishable client key.
+	 */
+	sentryConfig?: SentryClientConfig | null
 }
 
 function managedHeadAttr(value: string) {
@@ -145,6 +154,12 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				</title>
 				{handle.props.documentHead ? (
 					<ManagedDocumentHead head={handle.props.documentHead} />
+				) : null}
+				{handle.props.sentryConfig ? (
+					<meta
+						name={SENTRY_CONFIG_META_NAME}
+						content={JSON.stringify(handle.props.sentryConfig)}
+					/>
 				) : null}
 				<link rel="modulepreload" href={clientEntryHref} />
 				<link rel="stylesheet" href={stylesheetHref} />
