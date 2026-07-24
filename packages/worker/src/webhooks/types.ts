@@ -4,44 +4,24 @@ export type WebhookHmacAlgorithm = 'hmac-sha256' | 'hmac-sha1'
 
 export type WebhookSignatureEncoding = 'hex' | 'base64'
 
-/** Caller-facing verification config (plaintext secret, create/update only). */
-export type WebhookVerificationInput = {
+export type WebhookVerificationConfig = {
 	type: WebhookHmacAlgorithm
 	header: string
-	secret: string
+	secretName: string
 	encoding: WebhookSignatureEncoding
 	prefix?: string
 }
 
-/** Stored verification config; secret is encrypted at rest. */
-export type StoredWebhookVerificationConfig = {
-	type: WebhookHmacAlgorithm
-	header: string
-	encoding: WebhookSignatureEncoding
-	prefix?: string
-	encryptedSecret: string
-}
-
-/** Public view of verification config (never includes the secret). */
-export type PublicWebhookVerificationConfig = {
-	type: WebhookHmacAlgorithm
-	header: string
-	encoding: WebhookSignatureEncoding
-	prefix?: string
-}
-
+/** Minted URL state for a declared package webhook. */
 export type WebhookEndpointRecord = {
 	id: string
 	userId: string
-	name: string
 	packageId: string
-	exportName: string
+	webhookName: string
 	urlSecretHash: string
-	verificationConfig: StoredWebhookVerificationConfig | null
-	responseMode: WebhookResponseMode
 	enabled: boolean
 	createdAt: string
-	updatedAt: string
+	rotatedAt: string
 }
 
 export type WebhookDeliveryOutcome = 'delivered' | 'rejected' | 'failed'
@@ -50,6 +30,8 @@ export type WebhookDeliveryRecord = {
 	id: string
 	endpointId: string
 	userId: string
+	packageId: string
+	webhookName: string
 	receivedAt: string
 	outcome: WebhookDeliveryOutcome
 	httpStatus: number
@@ -59,7 +41,7 @@ export type WebhookDeliveryRecord = {
 
 export type WebhookExportParams = {
 	webhook: {
-		endpointId: string
+		packageKodyId: string
 		name: string
 		receivedAt: string
 	}

@@ -2,29 +2,28 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { listWebhookDeliveriesForUser } from '#worker/webhooks/service.ts'
+import { rotateWebhookUrlForUser } from '#worker/webhooks/service.ts'
 import {
+	mintedWebhookUrlSchema,
 	requirePackageRef,
-	toDeliveryCapability,
-	webhookDeliverySchema,
+	toMintedWebhookCapability,
 	webhookPackageRefSchema,
 } from './shared.ts'
 
-export const webhookDeliveryListCapability = defineDomainCapability(
+export const webhookUrlRotateCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
-		name: 'webhook_delivery_list',
+		name: 'webhook_url_rotate',
 		description:
-			'List recent inbound webhook deliveries for one minted package webhook (metadata only; payload bodies are never stored).',
-		keywords: ['webhook', 'delivery', 'log', 'debug', 'history'],
-		readOnly: true,
-		idempotent: true,
+			'Rotate the URL secret for an already-minted package webhook and return the new full URL once. The previous URL stops working immediately.',
+		keywords: ['webhook', 'rotate', 'secret', 'credential', 'url'],
+		readOnly: false,
+		idempotent: false,
 		destructive: false,
 		inputSchema: z
 			.object({
 				...webhookPackageRefSchema,
 				webhookName: z.string().min(1),
-				limit: z.number().int().min(1).max(50).optional(),
 			})
 			.superRefine((input, ctx) => {
 				try {
@@ -39,19 +38,21 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 				}
 			}),
 		outputSchema: z.object({
-			deliveries: z.array(webhookDeliverySchema),
+			webhook: mintedWebhookUrlSchema,
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const deliveries = await listWebhookDeliveriesForUser({
+			const rotated = await rotateWebhookUrlForUser({
 				env: ctx.env,
 				userId: user.userId,
+				email: user.email,
+				username: user.username,
 				packageId: args.packageId,
 				kodyId: args.kodyId,
 				webhookName: args.webhookName,
-				limit: args.limit,
+				requestUrl: ctx.callerContext.baseUrl,
 			})
-			return { deliveries: deliveries.map(toDeliveryCapability) }
+			return { webhook: toMintedWebhookCapability(rotated) }
 		},
 	},
 )

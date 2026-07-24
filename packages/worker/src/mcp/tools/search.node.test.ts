@@ -127,6 +127,7 @@ function leanPackage(
 			services: [],
 			subscriptions: [],
 			retrievers: [],
+			webhooks: [],
 		},
 		readmeSnippet: null,
 	}
@@ -582,6 +583,7 @@ test('optional search rows load packages and values without partial fallbacks', 
 					services: [],
 					subscriptions: [],
 					retrievers: [],
+					webhooks: [],
 				},
 			},
 		],
@@ -667,6 +669,7 @@ test('searchUnified annotates high-confidence package action matches', async () 
 			services: [],
 			subscriptions: [],
 			retrievers: [],
+			webhooks: [],
 		},
 	}
 	const result = await searchUnified({

@@ -193,6 +193,89 @@ test('parseAuthoredPackageJson accepts services, subscriptions, emits, retriever
 	])
 })
 
+test('parseAuthoredPackageJson accepts kody.webhooks and rejects unknown exports or duplicate names', () => {
+	const manifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/sentry-bridge',
+			exports: {
+				'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
+			},
+			kody: {
+				id: 'sentry-bridge',
+				description: 'Sentry bridge',
+				webhooks: [
+					{
+						name: 'sentry',
+						export: './handle-sentry-webhook',
+						responseMode: 'ack',
+						verification: {
+							type: 'hmac-sha256',
+							header: 'sentry-hook-signature',
+							secretName: 'sentryWebhookSecret',
+							encoding: 'hex',
+						},
+					},
+				],
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	expect(buildPackageSearchProjection(manifest).webhooks).toEqual([
+		{
+			name: 'sentry',
+			exportName: './handle-sentry-webhook',
+			description: null,
+			responseMode: 'ack',
+			verification: {
+				type: 'hmac-sha256',
+				header: 'sentry-hook-signature',
+				secretName: 'sentryWebhookSecret',
+				encoding: 'hex',
+			},
+		},
+	])
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/sentry-bridge',
+				exports: { '.': './index.ts' },
+				kody: {
+					id: 'sentry-bridge',
+					description: 'Sentry bridge',
+					webhooks: [
+						{
+							name: 'sentry',
+							export: './missing-export',
+						},
+					],
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/export "\.\/missing-export"/)
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/sentry-bridge',
+				exports: {
+					'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
+				},
+				kody: {
+					id: 'sentry-bridge',
+					description: 'Sentry bridge',
+					webhooks: [
+						{ name: 'sentry', export: './handle-sentry-webhook' },
+						{ name: 'sentry', export: './handle-sentry-webhook' },
+					],
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/Duplicate webhook name/)
+})
+
 test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest extensions', () => {
 	expect(() =>
 		parseAuthoredPackageJson({

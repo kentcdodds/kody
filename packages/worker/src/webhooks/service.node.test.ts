@@ -4,45 +4,94 @@ import path from 'node:path'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import {
-	createWebhookEndpointForUser,
-	deleteWebhookEndpointForUser,
-	getWebhookEndpointForUser,
-	listWebhookDeliveriesForUser,
-	listWebhookEndpointsForUserService,
-	rotateWebhookEndpointSecretForUser,
-	updateWebhookEndpointForUser,
-} from './service.ts'
 import { hashWebhookUrlSecret } from './crypto.ts'
+import {
+	listWebhookDeliveriesForUser,
+	listWebhooksForUser,
+	mintWebhookUrlForUser,
+	rotateWebhookUrlForUser,
+	setWebhookEnabledForUser,
+} from './service.ts'
 import { insertWebhookDelivery } from './repo.ts'
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 	resolveSavedPackage: vi.fn(async (input: { packageIdOrKodyId: string }) => {
 		if (
 			input.packageIdOrKodyId === 'pkg-1' ||
-			input.packageIdOrKodyId === 'demo-kody'
+			input.packageIdOrKodyId === 'sentry-bridge'
 		) {
 			return {
 				id: 'pkg-1',
-				kodyId: 'demo-kody',
-				name: 'Demo',
-				userId: 'will-be-ignored',
+				kodyId: 'sentry-bridge',
+				name: '@owner/sentry-bridge',
+				userId: 'ignored',
+				sourceId: 'src-1',
 			}
 		}
 		return null
 	}),
 }))
 
-function createEnv() {
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	listSavedPackagesByUserId: vi.fn(async () => [
+		{
+			id: 'pkg-1',
+			userId: 'will-set',
+			name: '@owner/sentry-bridge',
+			kodyId: 'sentry-bridge',
+			description: 'Sentry bridge',
+			tags: [],
+			searchText: null,
+			sourceId: 'src-1',
+			hasApp: false,
+			hidden: false,
+			isPrivate: true,
+			createdAt: '2026-07-24T00:00:00.000Z',
+			updatedAt: '2026-07-24T00:00:00.000Z',
+		},
+	]),
+	getSavedPackageByKodyId: vi.fn(),
+}))
+
+vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageManifestBySourceId: vi.fn(async () => ({
+		manifest: {
+			name: '@owner/sentry-bridge',
+			exports: {
+				'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
+			},
+			kody: {
+				id: 'sentry-bridge',
+				description: 'Sentry bridge',
+				webhooks: [
+					{
+						name: 'sentry',
+						export: './handle-sentry-webhook',
+						responseMode: 'ack',
+						verification: {
+							type: 'hmac-sha256',
+							header: 'sentry-hook-signature',
+							secretName: 'sentryWebhookSecret',
+							encoding: 'hex',
+						},
+					},
+				],
+			},
+		},
+	})),
+}))
+
+function createEnv(userId: string) {
 	const sqlite = new DatabaseSync(':memory:')
-	const migration = readFileSync(
-		path.join(
-			process.cwd(),
-			'packages/worker/migrations/0090-webhook-endpoints.sql',
+	sqlite.exec(
+		readFileSync(
+			path.join(
+				process.cwd(),
+				'packages/worker/migrations/0090-webhook-endpoints.sql',
+			),
+			'utf8',
 		),
-		'utf8',
 	)
-	sqlite.exec(migration)
 	sqlite.exec(`
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -53,18 +102,21 @@ function createEnv() {
 		);
 	`)
 	const db = createD1FromSqlite(sqlite)
-	const env = {
-		APP_DB: db,
-		APP_BASE_URL: 'https://heykody.dev',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as Env
-	return { env, db, sqlite }
+	return {
+		env: {
+			APP_DB: db,
+			APP_BASE_URL: 'https://heykody.dev',
+			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		} as Env,
+		db,
+		userId,
+	}
 }
 
-test('webhook endpoint CRUD scopes by userId, returns secret once, and lists deliveries', async () => {
-	const { env, db } = createEnv()
+test('mint/list/rotate/enable/disable webhooks are package-centered and user-scoped', async () => {
 	const userId = await createStableUserIdFromEmail('owner@example.com')
 	const otherUserId = await createStableUserIdFromEmail('other@example.com')
+	const { env, db } = createEnv(userId)
 	await db
 		.prepare(
 			`INSERT INTO users (username, email, password_hash, stable_user_id)
@@ -72,141 +124,94 @@ test('webhook endpoint CRUD scopes by userId, returns secret once, and lists del
 		)
 		.bind(userId)
 		.run()
-	await db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id)
-			VALUES ('other', 'other@example.com', 'hash', ?)`,
-		)
-		.bind(otherUserId)
-		.run()
 
-	const created = await createWebhookEndpointForUser({
+	const listedBefore = await listWebhooksForUser({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId,
+	})
+	expect(listedBefore).toHaveLength(1)
+	expect(listedBefore[0]?.minted).toBe(false)
+	expect(listedBefore[0]?.verification?.secretName).toBe('sentryWebhookSecret')
+
+	const minted = await mintWebhookUrlForUser({
 		env,
 		userId,
 		email: 'owner@example.com',
 		username: 'owner',
-		name: 'sentry-errors',
-		kodyId: 'demo-kody',
-		exportName: 'handle-webhook',
-		responseMode: 'ack',
-		verification: {
-			type: 'hmac-sha256',
-			header: 'sentry-hook-signature',
-			secret: 'sentry-client-secret',
-			encoding: 'hex',
-		},
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
 	})
+	expect(minted.url).toContain('/@owner/webhooks/sentry-bridge/sentry/')
+	expect(minted.urlSecret.length).toBeGreaterThan(10)
 
-	expect(created.url).toContain('/@owner/webhooks/')
-	expect(created.urlSecret.length).toBeGreaterThan(10)
-	expect(created.verification).toEqual({
-		type: 'hmac-sha256',
-		header: 'sentry-hook-signature',
-		encoding: 'hex',
+	const listed = await listWebhooksForUser({
+		env,
+		baseUrl: 'https://heykody.dev',
+		userId,
 	})
-	expect(JSON.stringify(created.verification)).not.toContain(
-		'sentry-client-secret',
-	)
-
-	const listed = await listWebhookEndpointsForUserService({ db, userId })
-	expect(listed).toHaveLength(1)
+	expect(listed[0]?.minted).toBe(true)
+	expect(listed[0]?.enabled).toBe(true)
 	expect(listed[0]).not.toHaveProperty('url')
-	expect(listed[0]).not.toHaveProperty('urlSecret')
-	expect(listed[0]?.verification).toEqual({
-		type: 'hmac-sha256',
-		header: 'sentry-hook-signature',
-		encoding: 'hex',
-	})
+	expect(JSON.stringify(listed)).not.toContain(minted.urlSecret)
 
-	const otherList = await listWebhookEndpointsForUserService({
-		db,
+	const otherList = await listWebhooksForUser({
+		env,
+		baseUrl: 'https://heykody.dev',
 		userId: otherUserId,
 	})
-	expect(otherList).toHaveLength(0)
+	// Mock returns the same packages for any userId — still no mint rows for other.
+	expect(otherList[0]?.minted).toBe(false)
 
-	const got = await getWebhookEndpointForUser({
-		db,
-		userId,
-		endpointId: created.id,
-	})
-	expect(got?.packageId).toBe('pkg-1')
-	expect(got?.exportName).toBe('./handle-webhook')
-
-	const crossGet = await getWebhookEndpointForUser({
-		db,
-		userId: otherUserId,
-		endpointId: created.id,
-	})
-	expect(crossGet).toBeNull()
-
-	const updated = await updateWebhookEndpointForUser({
+	const rotated = await rotateWebhookUrlForUser({
 		env,
 		userId,
-		endpointId: created.id,
-		enabled: false,
-		name: 'sentry-prod',
-		clearVerification: true,
-	})
-	expect(updated?.enabled).toBe(false)
-	expect(updated?.name).toBe('sentry-prod')
-	expect(updated?.verification).toBeNull()
-
-	const rotated = await rotateWebhookEndpointSecretForUser({
-		env,
-		userId,
-		email: 'owner@example.com',
 		username: 'owner',
-		endpointId: created.id,
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
 	})
-	expect(rotated?.urlSecret).not.toBe(created.urlSecret)
-	expect(rotated?.url).toContain(rotated?.urlSecret ?? '')
-
-	const storedHash = await db
-		.prepare(`SELECT url_secret_hash FROM webhook_endpoints WHERE id = ?`)
-		.bind(created.id)
+	expect(rotated.urlSecret).not.toBe(minted.urlSecret)
+	const stored = await db
+		.prepare(
+			`SELECT url_secret_hash FROM webhook_endpoints
+			WHERE user_id = ? AND package_id = 'pkg-1' AND webhook_name = 'sentry'`,
+		)
+		.bind(userId)
 		.first<{ url_secret_hash: string }>()
-	expect(storedHash?.url_secret_hash).toBe(
-		await hashWebhookUrlSecret(rotated!.urlSecret),
+	expect(stored?.url_secret_hash).toBe(
+		await hashWebhookUrlSecret(rotated.urlSecret),
 	)
-	expect(storedHash?.url_secret_hash).not.toBe(rotated!.urlSecret)
 
+	const disabled = await setWebhookEnabledForUser({
+		env,
+		userId,
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+		enabled: false,
+	})
+	expect(disabled.enabled).toBe(false)
+
+	const endpoint = await db
+		.prepare(`SELECT id FROM webhook_endpoints WHERE user_id = ?`)
+		.bind(userId)
+		.first<{ id: string }>()
 	await insertWebhookDelivery({
 		db,
 		id: 'del-1',
-		endpointId: created.id,
+		endpointId: endpoint!.id,
 		userId,
+		packageId: 'pkg-1',
+		webhookName: 'sentry',
 		receivedAt: '2026-07-24T01:00:00.000Z',
 		outcome: 'delivered',
 		httpStatus: 202,
-		payloadBytes: 12,
+		payloadBytes: 10,
 	})
 	const deliveries = await listWebhookDeliveriesForUser({
-		db,
+		env,
 		userId,
-		endpointId: created.id,
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
 	})
 	expect(deliveries).toHaveLength(1)
-	expect(deliveries[0]?.outcome).toBe('delivered')
-
-	await expect(
-		listWebhookDeliveriesForUser({
-			db,
-			userId: otherUserId,
-			endpointId: created.id,
-		}),
-	).rejects.toThrow(/not found/i)
-
-	const deleted = await deleteWebhookEndpointForUser({
-		db,
-		userId,
-		endpointId: created.id,
-	})
-	expect(deleted).toBe(true)
-	expect(
-		await getWebhookEndpointForUser({
-			db,
-			userId,
-			endpointId: created.id,
-		}),
-	).toBeNull()
 })

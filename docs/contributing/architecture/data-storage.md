@@ -649,10 +649,11 @@ on write unless a migration backfills existing rows.
   ingestion; `email_messages.delivery_status` is the latest provider state,
   separate from send-request `processing_status`.
 - `webhook_endpoints` / `webhook_deliveries` (`0090-webhook-endpoints.sql`)
-  store per-user inbound webhook endpoint configuration and recent delivery
-  metadata. URL secrets are SHA-256 hashed; optional HMAC verification secrets
-  are encrypted inside `verification_config`. Delivery rows never store payload
-  bodies and are pruned to the newest ~50 per endpoint on insert. See
+  store per-user minted URL state for `package.json#kody.webhooks` and recent
+  delivery metadata, keyed by `(user_id, package_id, webhook_name)`. URL secrets
+  are SHA-256 hashed; verification secrets stay in the secrets primitive
+  (`secretName` at delivery time). Delivery rows never store payload bodies and
+  are pruned to the newest ~50 per minted webhook on insert. See
   [Inbound webhooks](./webhooks.md).
 - `system_email_daily_counters` (`0051-system-email-daily-counters.sql`) stores
   fixed per-local daily receive counters for operator-owned system inboxes.

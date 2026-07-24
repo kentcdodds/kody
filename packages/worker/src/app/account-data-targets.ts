@@ -592,7 +592,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	secret_entries: ['encrypted_value', 'lookup_hash'],
 	users: ['password_hash'],
 	verifications: ['secret'],
-	webhook_endpoints: ['url_secret_hash', 'verification_config'],
+	webhook_endpoints: ['url_secret_hash'],
 }
 
 // Social-graph export rows can include another user's stable id. Keep the

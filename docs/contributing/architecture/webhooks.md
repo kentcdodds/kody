@@ -1,57 +1,63 @@
 # Inbound webhooks
 
-User-owned HTTP ingress that dispatches third-party POST payloads to a bound
-saved-package export. End-user setup lives in
+Package-centered HTTP ingress that dispatches third-party POST payloads to a
+bound saved-package export. End-user setup lives in
 [`docs/use/webhooks.md`](../../use/webhooks.md).
 
 ## Why this exists
 
-Package-invocation HTTP endpoints require `Authorization: Bearer` (see
-`packages/worker/src/package-invocations/http.ts`). Many webhook providers
-cannot set custom Authorization headers. Webhook endpoints are the
+Package-invocation HTTP endpoints require `Authorization: Bearer`. Many webhook
+providers cannot set custom Authorization headers. Webhook endpoints are the
 credential-in-URL sibling of per-user [email](../../use/email-primitives.md)
-inboxes: a public `POST` route that re-establishes ownership, verifies optional
-signatures, and invokes the owner's package export through the existing
-package-invocation runtime.
+inboxes, declared alongside other package surfaces in
+`package.json#kody.webhooks` (same family as `kody.subscriptions`).
+
+## Manifest contract
+
+Packages declare webhooks as an array under `kody.webhooks`. Each entry has a
+slug `name`, an `export` that must exist in `package.json#exports`, optional
+`responseMode` (`ack` default / `sync`), and optional HMAC `verification` that
+references a secret-store name (`secretName`) — never an inline secret. Parsing
+and export existence checks live in `parseAuthoredPackageJson` /
+`listPackageWebhooks` (`packages/worker/src/package-registry/`).
+
+Declaring a webhook does **not** open ingress. A minted URL secret in D1 does.
 
 ## Ingress path
 
-Route: `POST /@:username/webhooks/:endpointId/:urlSecret`
+Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
 
-1. Worker `fetch` in `packages/worker/src/index.ts` matches the path early (same
-   class of public `@username` ingress as package invocations) so
-   `ExecutionContext.waitUntil` is available for ack-mode dispatch.
-2. The path is also registered in `packages/worker/src/app/routes.ts` /
-   `router.ts`, and `/@*/webhooks/*` is in `run_worker_first` for all Wrangler
-   environments.
-3. Resolve `webhook_endpoints` by `endpointId`. Unknown or disabled → **404**.
-4. Resolve `:username` via `findPublicUserIdentityByUsername` and require
-   `mcpUserId === endpoint.userId`. Mismatch → **404** (and a rejected delivery
-   row for the owner).
-5. Constant-time compare the URL secret against `url_secret_hash` (SHA-256).
-   Mismatch → **404**.
-6. Enforce per-endpoint rate limit (~60/min) → **429**; payload cap 1 MB →
+1. Worker `fetch` in `packages/worker/src/index.ts` matches the path early so
+   `ExecutionContext.waitUntil` is available for ack-mode dispatch. The path is
+   also registered in `routes.ts` / `router.ts`, and `/@*/webhooks/*` is in
+   `run_worker_first` for all Wrangler environments.
+2. Resolve username → user; resolve `packageKodyId` to a saved package owned by
+   that user; load minted row keyed by `(user_id, package_id, webhook_name)`.
+3. Unminted, disabled, missing declaration (after republish rename/remove), or
+   URL-secret mismatch → **404** (indistinguishable).
+4. Constant-time compare the URL secret against `url_secret_hash` (SHA-256).
+5. Enforce per-webhook rate limit (~60/min) → **429**; payload cap 1 MB →
    **413**.
-7. When `verification_config` is set, decrypt the HMAC secret with
-   `SECRET_STORE_KEY`, verify over the raw body → **401** on failure.
-8. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
-   the endpoint's `userId`, `packageId`, and `exportName`, `source: 'webhook'`.
-9. `response_mode = ack`: respond **202** and run invocation in `waitUntil`.
-   `sync`: await (30s timeout) and return the invocation JSON, **502** on
-   failure.
-10. Every request records a `webhook_deliveries` row (no payload body). At most
-    ~50 rows are retained per endpoint (prune on insert).
+6. When verification is declared, resolve `secretName` from the owner's secret
+   store (user/package scope via package storage context). Missing secret or
+   HMAC mismatch → **401**, with a clear delivery-log error for missing secrets.
+7. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
+   the owning user / package / export, `source: 'webhook'`.
+8. `ack`: **202** + `waitUntil`. `sync`: await (30s) and return export JSON,
+   **502** on failure.
+9. Every request records a `webhook_deliveries` row (no payload body); ~50 rows
+   retained per minted webhook.
 
 ## Isolation
 
-- Every D1 row carries `user_id`. Capability CRUD always binds
+- Every D1 row carries `user_id`. Capabilities always bind
   `requireMcpUser(...).userId`.
-- Ingress may look up by endpoint id globally, then immediately re-scopes by the
-  owning user and username match — the same pattern as email address routing.
+- Ingress may look up by username + kody id + webhook name, then immediately
+  re-scopes by the owning user.
 - Account deletion/export include `webhook_deliveries` then `webhook_endpoints`.
-  Export redacts `url_secret_hash` and `verification_config`.
+  Export redacts `url_secret_hash`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
-  are hashed; verification secrets are encrypted at rest.
+  are hashed; verification secrets stay in the secrets primitive.
 
 ## Storage
 

@@ -2,53 +2,37 @@ import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
-	createWebhookEndpointForUser: vi.fn(),
-	listWebhookEndpointsForUserService: vi.fn(),
-	getWebhookEndpointForUser: vi.fn(),
-	updateWebhookEndpointForUser: vi.fn(),
-	rotateWebhookEndpointSecretForUser: vi.fn(),
-	deleteWebhookEndpointForUser: vi.fn(),
+	listWebhooksForUser: vi.fn(),
+	mintWebhookUrlForUser: vi.fn(),
+	rotateWebhookUrlForUser: vi.fn(),
+	setWebhookEnabledForUser: vi.fn(),
 	listWebhookDeliveriesForUser: vi.fn(),
 }))
 
 vi.mock('#worker/webhooks/service.ts', () => ({
-	createWebhookEndpointForUser: (...args: Array<unknown>) =>
-		mockModule.createWebhookEndpointForUser(...args),
-	listWebhookEndpointsForUserService: (...args: Array<unknown>) =>
-		mockModule.listWebhookEndpointsForUserService(...args),
-	getWebhookEndpointForUser: (...args: Array<unknown>) =>
-		mockModule.getWebhookEndpointForUser(...args),
-	updateWebhookEndpointForUser: (...args: Array<unknown>) =>
-		mockModule.updateWebhookEndpointForUser(...args),
-	rotateWebhookEndpointSecretForUser: (...args: Array<unknown>) =>
-		mockModule.rotateWebhookEndpointSecretForUser(...args),
-	deleteWebhookEndpointForUser: (...args: Array<unknown>) =>
-		mockModule.deleteWebhookEndpointForUser(...args),
+	listWebhooksForUser: (...args: Array<unknown>) =>
+		mockModule.listWebhooksForUser(...args),
+	mintWebhookUrlForUser: (...args: Array<unknown>) =>
+		mockModule.mintWebhookUrlForUser(...args),
+	rotateWebhookUrlForUser: (...args: Array<unknown>) =>
+		mockModule.rotateWebhookUrlForUser(...args),
+	setWebhookEnabledForUser: (...args: Array<unknown>) =>
+		mockModule.setWebhookEnabledForUser(...args),
 	listWebhookDeliveriesForUser: (...args: Array<unknown>) =>
 		mockModule.listWebhookDeliveriesForUser(...args),
 }))
 
-const { webhookEndpointCreateCapability } =
-	await import('./webhook-endpoint-create.ts')
-const { webhookEndpointListCapability } =
-	await import('./webhook-endpoint-list.ts')
-const { webhookEndpointGetCapability } =
-	await import('./webhook-endpoint-get.ts')
-const { webhookEndpointUpdateCapability } =
-	await import('./webhook-endpoint-update.ts')
-const { webhookEndpointRotateSecretCapability } =
-	await import('./webhook-endpoint-rotate-secret.ts')
-const { webhookEndpointDeleteCapability } =
-	await import('./webhook-endpoint-delete.ts')
+const { webhookListCapability } = await import('./webhook-list.ts')
+const { webhookUrlMintCapability } = await import('./webhook-url-mint.ts')
+const { webhookUrlRotateCapability } = await import('./webhook-url-rotate.ts')
+const { webhookEnableCapability } = await import('./webhook-enable.ts')
+const { webhookDisableCapability } = await import('./webhook-disable.ts')
 const { webhookDeliveryListCapability } =
 	await import('./webhook-delivery-list.ts')
 
 function createCapabilityContext() {
 	return {
-		env: {
-			APP_DB: {} as D1Database,
-			APP_BASE_URL: 'https://heykody.dev',
-		} as Env,
+		env: { APP_DB: {} as D1Database } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
@@ -61,47 +45,67 @@ function createCapabilityContext() {
 	}
 }
 
-const publicEndpoint = {
-	id: 'ep-1',
-	name: 'sentry',
-	packageId: 'pkg-1',
-	exportName: './handle-webhook',
-	responseMode: 'ack' as const,
-	enabled: true,
-	verification: {
-		type: 'hmac-sha256' as const,
-		header: 'sentry-hook-signature',
-		encoding: 'hex' as const,
-	},
-	createdAt: '2026-07-24T00:00:00.000Z',
-	updatedAt: '2026-07-24T00:00:00.000Z',
-}
-
-test('webhook capabilities map CRUD/delivery results without leaking secrets on list/get', async () => {
-	mockModule.createWebhookEndpointForUser.mockResolvedValue({
-		...publicEndpoint,
-		url: 'https://heykody.dev/@user/webhooks/ep-1/secret-once',
-		urlSecret: 'secret-once',
-	})
-	mockModule.listWebhookEndpointsForUserService.mockResolvedValue([
-		publicEndpoint,
+test('webhook capabilities expose mint once and never leak secrets on list', async () => {
+	mockModule.listWebhooksForUser.mockResolvedValue([
+		{
+			packageId: 'pkg-1',
+			packageKodyId: 'sentry-bridge',
+			packageName: '@user/sentry-bridge',
+			name: 'sentry',
+			exportName: './handle-sentry-webhook',
+			description: null,
+			responseMode: 'ack',
+			verification: {
+				type: 'hmac-sha256',
+				header: 'sentry-hook-signature',
+				secretName: 'sentryWebhookSecret',
+				encoding: 'hex',
+			},
+			minted: true,
+			enabled: true,
+			createdAt: '2026-07-24T00:00:00.000Z',
+			rotatedAt: '2026-07-24T00:00:00.000Z',
+		},
 	])
-	mockModule.getWebhookEndpointForUser.mockResolvedValue(publicEndpoint)
-	mockModule.updateWebhookEndpointForUser.mockResolvedValue({
-		...publicEndpoint,
-		enabled: false,
+	mockModule.mintWebhookUrlForUser.mockResolvedValue({
+		packageId: 'pkg-1',
+		packageKodyId: 'sentry-bridge',
+		name: 'sentry',
+		url: 'https://heykody.dev/@user/webhooks/sentry-bridge/sentry/secret-once',
+		urlSecret: 'secret-once',
+		enabled: true,
+		createdAt: '2026-07-24T00:00:00.000Z',
+		rotatedAt: '2026-07-24T00:00:00.000Z',
 	})
-	mockModule.rotateWebhookEndpointSecretForUser.mockResolvedValue({
-		...publicEndpoint,
-		url: 'https://heykody.dev/@user/webhooks/ep-1/new-secret',
+	mockModule.rotateWebhookUrlForUser.mockResolvedValue({
+		packageId: 'pkg-1',
+		packageKodyId: 'sentry-bridge',
+		name: 'sentry',
+		url: 'https://heykody.dev/@user/webhooks/sentry-bridge/sentry/new-secret',
 		urlSecret: 'new-secret',
+		enabled: true,
+		createdAt: '2026-07-24T00:00:00.000Z',
+		rotatedAt: '2026-07-24T01:00:00.000Z',
 	})
-	mockModule.deleteWebhookEndpointForUser.mockResolvedValue(true)
+	mockModule.setWebhookEnabledForUser.mockImplementation(
+		async (input: { enabled: boolean }) => ({
+			id: 'ep-1',
+			userId: 'user-1',
+			packageId: 'pkg-1',
+			webhookName: 'sentry',
+			urlSecretHash: 'hash',
+			enabled: input.enabled,
+			createdAt: '2026-07-24T00:00:00.000Z',
+			rotatedAt: '2026-07-24T00:00:00.000Z',
+		}),
+	)
 	mockModule.listWebhookDeliveriesForUser.mockResolvedValue([
 		{
 			id: 'del-1',
 			endpointId: 'ep-1',
 			userId: 'user-1',
+			packageId: 'pkg-1',
+			webhookName: 'sentry',
 			receivedAt: '2026-07-24T01:00:00.000Z',
 			outcome: 'delivered',
 			httpStatus: 202,
@@ -111,58 +115,46 @@ test('webhook capabilities map CRUD/delivery results without leaking secrets on 
 	])
 
 	const ctx = createCapabilityContext()
-
-	const created = await webhookEndpointCreateCapability.handler(
-		{
-			name: 'sentry',
-			packageId: 'pkg-1',
-			exportName: 'handle-webhook',
-		},
-		ctx,
-	)
-	expect(created.endpoint.url_secret).toBe('secret-once')
-	expect(mockModule.createWebhookEndpointForUser).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'user-1', username: 'user' }),
-	)
-
-	const listed = await webhookEndpointListCapability.handler({}, ctx)
-	expect(listed.endpoints).toHaveLength(1)
+	const listed = await webhookListCapability.handler({}, ctx)
+	expect(listed.webhooks[0]?.minted).toBe(true)
 	expect(JSON.stringify(listed)).not.toContain('secret-once')
-	expect(listed.endpoints[0]).not.toHaveProperty('url')
 
-	const got = await webhookEndpointGetCapability.handler({ id: 'ep-1' }, ctx)
-	expect(got.endpoint.id).toBe('ep-1')
-	expect(got.endpoint).not.toHaveProperty('url_secret')
-
-	const updated = await webhookEndpointUpdateCapability.handler(
-		{ id: 'ep-1', enabled: false },
+	const minted = await webhookUrlMintCapability.handler(
+		{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
 		ctx,
 	)
-	expect(updated.endpoint.enabled).toBe(false)
+	expect(minted.webhook.url_secret).toBe('secret-once')
 
-	const rotated = await webhookEndpointRotateSecretCapability.handler(
-		{ id: 'ep-1' },
+	const rotated = await webhookUrlRotateCapability.handler(
+		{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
 		ctx,
 	)
-	expect(rotated.endpoint.url_secret).toBe('new-secret')
+	expect(rotated.webhook.url_secret).toBe('new-secret')
 
-	const deliveries = await webhookDeliveryListCapability.handler(
-		{ endpointId: 'ep-1' },
-		ctx,
-	)
-	expect(deliveries.deliveries[0]).toEqual({
-		id: 'del-1',
-		endpoint_id: 'ep-1',
-		received_at: '2026-07-24T01:00:00.000Z',
-		outcome: 'delivered',
-		http_status: 202,
-		error: null,
-		payload_bytes: 10,
+	await expect(
+		webhookDisableCapability.handler(
+			{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
+			ctx,
+		),
+	).resolves.toEqual({
+		package_id: 'pkg-1',
+		webhook_name: 'sentry',
+		enabled: false,
+	})
+	await expect(
+		webhookEnableCapability.handler(
+			{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
+			ctx,
+		),
+	).resolves.toEqual({
+		package_id: 'pkg-1',
+		webhook_name: 'sentry',
+		enabled: true,
 	})
 
-	const deleted = await webhookEndpointDeleteCapability.handler(
-		{ id: 'ep-1' },
+	const deliveries = await webhookDeliveryListCapability.handler(
+		{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
 		ctx,
 	)
-	expect(deleted).toEqual({ id: 'ep-1', deleted: true })
+	expect(deliveries.deliveries[0]?.webhook_name).toBe('sentry')
 })

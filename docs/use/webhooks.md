@@ -1,62 +1,88 @@
-# Inbound webhook endpoints
+# Inbound webhooks
 
-Kody gives each user **inbound webhook endpoints**: HTTPS URLs that third-party
-services can POST to (Sentry, GitHub, Stripe, or any generic sender). Each
-endpoint is bound to one of your saved-package exports. When a delivery arrives,
-Kody verifies optional signatures, then invokes that export with a structured
-payload.
+Kody inbound webhooks are **package-centered**: you declare them in
+`package.json#kody.webhooks`, mint a per-user credential URL, then point a
+provider (Sentry, GitHub, Stripe, or any generic sender) at that URL. Each
+delivery invokes the bound package export.
 
-This is the HTTP sibling of [email primitives](./email-primitives.md):
-user-owned ingress that dispatches into your automations. Package-invocation
-bearer tokens are a different surface — many providers cannot set custom
-`Authorization` headers, which is why webhook endpoints embed a URL secret
-instead.
+This is the HTTP sibling of [email primitives](./email-primitives.md). Unlike
+[package invocation bearer tokens](../contributing/package-invocation-api.md),
+webhook URLs work with providers that cannot set custom `Authorization` headers.
 
-Treat every endpoint URL as a **credential**. The URL secret is returned only
-when you create or rotate an endpoint; it is never stored in plaintext and
-cannot be retrieved later.
+Treat every minted URL as a **credential**. The URL secret is returned only on
+mint/rotate and is never stored in plaintext.
 
-## Create an endpoint
+## Declare a webhook in the package manifest
+
+```json
+{
+	"name": "@you/sentry-bridge",
+	"exports": {
+		"./handle-sentry-webhook": "./src/handle-sentry-webhook.ts"
+	},
+	"kody": {
+		"id": "sentry-bridge",
+		"description": "Forward Sentry webhooks into automations",
+		"webhooks": [
+			{
+				"name": "sentry",
+				"export": "./handle-sentry-webhook",
+				"responseMode": "ack",
+				"verification": {
+					"type": "hmac-sha256",
+					"header": "sentry-hook-signature",
+					"secretName": "sentryWebhookSecret",
+					"encoding": "hex"
+				}
+			}
+		]
+	}
+}
+```
+
+Rules:
+
+- `name` is a slug unique within the package.
+- `export` must reference a declared `package.json#exports` entry (validated at
+  save/publish).
+- `responseMode` is `ack` (default) or `sync`.
+- `verification.secretName` references a **named secret in your secret store** —
+  never an inline secret value. The platform resolves it at delivery time; if
+  the secret is missing, the delivery is rejected and logged.
+
+Declaring a webhook does **not** open ingress by itself.
+
+## Mint the URL
 
 Use the MCP `webhooks` domain:
 
-1. Save a package that exports a handler (for example `./handle-webhook`).
-2. Call `webhook_endpoint_create` with a name, the package id or kody id, and
-   `exportName`. Optionally set `responseMode` (`ack` default, or `sync`) and
-   `verification` for HMAC signature checks.
-3. Store the returned `url` immediately (it includes the one-time URL secret).
-4. Paste that URL into the provider's webhook settings.
+1. Save/publish the package with `kody.webhooks`.
+2. Store the HMAC secret with `secret_set` under the name used in
+   `verification.secretName` (for example `sentryWebhookSecret`).
+3. Call `webhook_url_mint` with the package id/kody id and `webhookName`.
+4. Store the returned `url` immediately and paste it into the provider.
 
-Other capabilities: `webhook_endpoint_list`, `webhook_endpoint_get` (no
-secrets), `webhook_endpoint_update` (enable/disable, rename, rebind export,
-set/clear verification), `webhook_endpoint_rotate_secret` (new URL once),
-`webhook_endpoint_delete`, and `webhook_delivery_list` (recent delivery
-metadata; bodies are never stored).
+Other capabilities: `webhook_list` (declarations joined with minted/enabled
+state), `webhook_url_rotate`, `webhook_enable`, `webhook_disable`, and
+`webhook_delivery_list` (metadata only; bodies are never stored).
 
-## Wire a provider
+## Ingress URL
 
-Point the provider at:
+`POST https://<origin>/@<username>/webhooks/<packageKodyId>/<webhookName>/<urlSecret>`
 
-`POST https://<origin>/@<username>/webhooks/<endpointId>/<urlSecret>`
-
-- Unknown ids, disabled endpoints, username mismatches, and wrong URL secrets
-  all return **404** (no distinction).
-- Payloads larger than **1 MB** return **413**.
-- Endpoints are rate-limited to about **60 requests/minute**; excess returns
-  **429**.
-- `responseMode: ack` responds **202** `{ "ok": true }` immediately and runs the
-  export in the background.
-- `responseMode: sync` waits for the export and returns its JSON result (**502**
-  on invocation failure).
+- Unknown / unminted / disabled / renamed-away / wrong secret → **404** (no
+  distinction).
+- Payload > **1 MB** → **413**.
+- About **60 requests/minute** per minted webhook → **429**.
+- `ack`: **202** `{ "ok": true }` immediately; export runs in the background.
+- `sync`: waits for the export JSON result (**502** on failure).
 
 ## Payload shape seen by the package export
-
-The bound export receives one object argument:
 
 ```ts
 {
 	webhook: {
-		endpointId: string
+		packageKodyId: string
 		name: string
 		receivedAt: string // ISO timestamp
 	}
@@ -65,27 +91,22 @@ The bound export receives one object argument:
 		contentType: string | null
 		headers: Record<string, string> // safe allowlisted subset, lowercase keys
 		body: string // raw text
-		json: unknown | null // parsed JSON when the body is valid JSON
+		json: unknown | null
 	}
 }
 ```
 
-Example handler:
+Example export:
 
 ```js
-export async function handleWebhook(input) {
+export async function handleSentryWebhook(input) {
 	const event = input.request.json
 	// ... automate ...
 	return { ok: true }
 }
 ```
 
-## Signature verification
-
-When `verification` is set on the endpoint, Kody computes an HMAC over the **raw
-request body** and compares it (constant-time) to the named header. Mismatch or
-a missing header returns **401**. The verification secret is encrypted at rest
-with the same secret-store key used by the secrets primitive.
+## Signature verification examples
 
 ### Sentry
 
@@ -93,7 +114,7 @@ with the same secret-store key used by the secrets primitive.
 {
 	"type": "hmac-sha256",
 	"header": "sentry-hook-signature",
-	"secret": "<client-secret-from-sentry>",
+	"secretName": "sentryWebhookSecret",
 	"encoding": "hex"
 }
 ```
@@ -104,21 +125,21 @@ with the same secret-store key used by the secrets primitive.
 {
 	"type": "hmac-sha256",
 	"header": "x-hub-signature-256",
-	"secret": "<webhook-secret>",
+	"secretName": "githubWebhookSecret",
 	"encoding": "hex",
 	"prefix": "sha256="
 }
 ```
 
-Stripe-style providers typically use `hmac-sha256`, header `stripe-signature`,
-and their own signed-payload format — for Stripe's timestamped scheme you may
-still want a thin package export that validates the Stripe-specific header shape
-after Kody's generic HMAC check, or skip Kody verification and validate inside
-the export.
+## Lifecycle
+
+Republishing a package that removes or renames a webhook deactivates that
+ingress (unknown name → 404). Disable with `webhook_disable` without deleting
+the mint; re-enable with `webhook_enable`. Rotate the URL secret with
+`webhook_url_rotate` when a credential may have leaked.
 
 ## Related
 
-- Architecture: [Inbound webhooks](../contributing/architecture/webhooks.md)
 - Packages: [Packages](./packages.md)
-- Bearer-token invocations (different surface):
-  [Package invocation API](../contributing/package-invocation-api.md)
+- Architecture: [Inbound webhooks](../contributing/architecture/webhooks.md)
+- Secrets: [Secrets, values, and host approval](./secrets-and-values.md)

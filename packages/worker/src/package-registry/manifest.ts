@@ -129,8 +129,30 @@ export function parseAuthoredPackageJson(input: {
 		manifest,
 		manifestPath: input.manifestPath,
 	})
+	assertPackageWebhooks({
+		manifest,
+		manifestPath: input.manifestPath,
+	})
 
 	return manifest
+}
+
+function assertPackageWebhooks(input: {
+	manifest: AuthoredPackageJson
+	manifestPath?: string
+}) {
+	for (const webhook of input.manifest.kody.webhooks ?? []) {
+		try {
+			resolvePackageExportPath({
+				manifest: input.manifest,
+				exportName: webhook.export,
+			})
+		} catch (error) {
+			throw new Error(
+				`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.webhooks "${webhook.name}" export "${webhook.export}" is invalid: ${getErrorMessage(error)}`,
+			)
+		}
+	}
 }
 
 export function normalizePackageWorkspacePath(path: string) {
@@ -220,6 +242,44 @@ export function listPackageSubscriptions(manifest: AuthoredPackageJson) {
 			filters: subscription.filters ?? null,
 		}))
 		.sort((left, right) => left.topic.localeCompare(right.topic))
+}
+
+export type PackageWebhookManifestEntry = {
+	name: string
+	exportName: string
+	description: string | null
+	responseMode: 'ack' | 'sync'
+	verification: {
+		type: 'hmac-sha256' | 'hmac-sha1'
+		header: string
+		secretName: string
+		encoding: 'hex' | 'base64'
+		prefix?: string
+	} | null
+}
+
+export function listPackageWebhooks(
+	manifest: AuthoredPackageJson,
+): Array<PackageWebhookManifestEntry> {
+	return (manifest.kody.webhooks ?? [])
+		.map((webhook) => ({
+			name: webhook.name,
+			exportName: normalizePackageExportKey(webhook.export),
+			description: webhook.description?.trim() || null,
+			responseMode: webhook.responseMode ?? 'ack',
+			verification: webhook.verification
+				? {
+						type: webhook.verification.type,
+						header: webhook.verification.header,
+						secretName: webhook.verification.secretName,
+						encoding: webhook.verification.encoding,
+						...(webhook.verification.prefix !== undefined
+							? { prefix: webhook.verification.prefix }
+							: {}),
+					}
+				: null,
+		}))
+		.sort((left, right) => left.name.localeCompare(right.name))
 }
 
 export function listPackageEmittedEvents(manifest: AuthoredPackageJson) {
@@ -318,6 +378,7 @@ export type PackageSearchProjection = {
 		description: string
 	}>
 	retrievers: Array<PackageRetrieverManifestEntry>
+	webhooks: Array<PackageWebhookManifestEntry>
 }
 
 type LocalTypeDeclaration = PackageReferencedTypeProjection & {
@@ -940,6 +1001,7 @@ export function buildPackageSearchProjection(
 		subscriptions: listPackageSubscriptions(manifest),
 		emits: listPackageEmittedEvents(manifest),
 		retrievers: listPackageRetrievers(manifest),
+		webhooks: listPackageWebhooks(manifest),
 	}
 }
 
@@ -991,6 +1053,17 @@ export function buildPackageSearchDocument(
 			.filter((value) => value.length > 0)
 			.join(' '),
 	)
+	const webhookLines = (projection.webhooks ?? []).map((webhook) =>
+		[
+			`webhook:${webhook.name}`,
+			webhook.exportName,
+			webhook.description ?? '',
+			webhook.responseMode,
+			webhook.verification ? `verify:${webhook.verification.header}` : '',
+		]
+			.filter((value) => value.length > 0)
+			.join(' '),
+	)
 	const exportLines = projection.exports.map((exportDetail) => {
 		const functions = Array.isArray(exportDetail.functions)
 			? exportDetail.functions
@@ -1031,6 +1104,7 @@ export function buildPackageSearchDocument(
 		subscriptionLines.join('\n'),
 		emitsLines.join('\n'),
 		retrieverLines.join('\n'),
+		webhookLines.join('\n'),
 		projection.appEntry
 			? `app ${projection.appEntry}`
 			: projection.hasApp

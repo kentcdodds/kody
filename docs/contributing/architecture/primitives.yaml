@@ -298,11 +298,12 @@ primitives:
   - id: webhooks
     group: assistant
     name: Inbound webhooks
-    summary: User-owned webhook endpoints that dispatch to saved-package exports.
+    summary: Package-declared webhooks with minted URLs dispatching to exports.
     code:
       - packages/worker/src/webhooks/
       - packages/worker/src/mcp/capabilities/webhooks/
       - packages/worker/src/app/handlers/webhook-ingress.ts
+      - packages/worker/src/package-registry/
     docs:
       - docs/use/webhooks.md
       - docs/contributing/architecture/webhooks.md

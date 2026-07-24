@@ -31,6 +31,7 @@ function buildLeanPackageSearchProjection(
 		services: [],
 		subscriptions: [],
 		retrievers: [],
+		webhooks: [],
 	}
 }
 

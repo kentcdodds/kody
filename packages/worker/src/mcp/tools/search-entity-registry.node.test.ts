@@ -41,6 +41,7 @@ function createPackageRow(): PackageSearchRow {
 			services: [],
 			subscriptions: [],
 			retrievers: [],
+			webhooks: [],
 		},
 		readmeSnippet: null,
 	}

@@ -5,7 +5,11 @@ import {
 } from '#app/account-deletion-state.ts'
 import { checkRateLimit } from '#app/rate-limit.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import { resolveSecret } from '#mcp/secrets/service.ts'
 import { jsonResponse } from '#worker/json-response.ts'
+import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
+import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
+import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { invokePackageExport } from '#worker/package-invocations/service.ts'
 import {
@@ -13,8 +17,7 @@ import {
 	verifyWebhookHmacSignature,
 } from './crypto.ts'
 import { collectSafeWebhookHeaders } from './headers.ts'
-import { getWebhookEndpointById, insertWebhookDelivery } from './repo.ts'
-import { decryptWebhookVerificationSecret } from './verification.ts'
+import { getWebhookEndpointByKey, insertWebhookDelivery } from './repo.ts'
 import {
 	type WebhookDeliveryOutcome,
 	type WebhookEndpointRecord,
@@ -35,7 +38,7 @@ function decodePathComponent(value: string) {
 export function parseWebhookIngressPath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
 	if (
-		parts.length !== 4 ||
+		parts.length !== 5 ||
 		!parts[0]?.startsWith('@') ||
 		parts[0].length <= 1 ||
 		parts[1] !== 'webhooks'
@@ -43,10 +46,11 @@ export function parseWebhookIngressPath(pathname: string) {
 		return null
 	}
 	const username = decodePathComponent(parts[0].slice(1))
-	const endpointId = decodePathComponent(parts[2] ?? '')
-	const urlSecret = decodePathComponent(parts[3] ?? '')
-	if (!username || !endpointId || !urlSecret) return null
-	return { username, endpointId, urlSecret }
+	const packageKodyId = decodePathComponent(parts[2] ?? '')
+	const webhookName = decodePathComponent(parts[3] ?? '')
+	const urlSecret = decodePathComponent(parts[4] ?? '')
+	if (!username || !packageKodyId || !webhookName || !urlSecret) return null
+	return { username, packageKodyId, webhookName, urlSecret }
 }
 
 export function isWebhookIngressRequest(pathname: string) {
@@ -125,6 +129,8 @@ async function recordDelivery(input: {
 			id: crypto.randomUUID(),
 			endpointId: input.endpoint.id,
 			userId: input.endpoint.userId,
+			packageId: input.endpoint.packageId,
+			webhookName: input.endpoint.webhookName,
 			receivedAt: input.receivedAt,
 			outcome: input.outcome,
 			httpStatus: input.httpStatus,
@@ -176,7 +182,8 @@ function parseJsonBody(text: string): unknown | null {
 }
 
 function buildExportParams(input: {
-	endpoint: WebhookEndpointRecord
+	packageKodyId: string
+	webhookName: string
 	request: Request
 	bodyText: string
 	receivedAt: string
@@ -184,8 +191,8 @@ function buildExportParams(input: {
 }): WebhookExportParams {
 	return {
 		webhook: {
-			endpointId: input.endpoint.id,
-			name: input.endpoint.name,
+			packageKodyId: input.packageKodyId,
+			name: input.webhookName,
 			receivedAt: input.receivedAt,
 		},
 		request: {
@@ -202,6 +209,8 @@ async function dispatchWebhookInvocation(input: {
 	env: Env
 	baseUrl: string
 	endpoint: WebhookEndpointRecord
+	packageKodyId: string
+	exportName: string
 	params: WebhookExportParams
 	idempotencyKey: string
 }) {
@@ -216,19 +225,20 @@ async function dispatchWebhookInvocation(input: {
 			tokenId: `internal:webhook:${input.endpoint.id}`,
 			userId: input.endpoint.userId,
 			email: '',
-			displayName: `webhook:${input.endpoint.name}`,
+			displayName: `webhook:${input.packageKodyId}:${input.endpoint.webhookName}`,
 			packageIds: [input.endpoint.packageId],
-			exportNames: [input.endpoint.exportName],
+			packageKodyIds: [input.packageKodyId],
+			exportNames: [input.exportName],
 			sources: ['webhook'],
 			remoteConnectors,
 		},
 		request: {
 			packageIdOrKodyId: input.endpoint.packageId,
-			exportName: input.endpoint.exportName,
+			exportName: input.exportName,
 			params: input.params,
 			idempotencyKey: input.idempotencyKey,
 			source: 'webhook',
-			topic: `webhook:${input.endpoint.id}`,
+			topic: `webhook:${input.packageKodyId}:${input.endpoint.webhookName}`,
 		},
 	})
 }
@@ -274,28 +284,26 @@ export async function handleWebhookIngressRequest(
 	}
 
 	const receivedAt = new Date().toISOString()
-	const endpoint = await getWebhookEndpointById({
-		db: env.APP_DB,
-		endpointId: route.endpointId,
-	})
-	if (!endpoint || !endpoint.enabled) {
-		return notFoundResponse()
-	}
-
 	const routeUser = await findPublicUserIdentityByUsername({
 		db: env.APP_DB,
 		username: route.username,
 	})
-	if (!routeUser || routeUser.mcpUserId !== endpoint.userId) {
-		await recordDelivery({
-			db: env.APP_DB,
-			endpoint,
-			outcome: 'rejected',
-			httpStatus: 404,
-			error: 'username_mismatch',
-			payloadBytes: 0,
-			receivedAt,
-		})
+	if (!routeUser) return notFoundResponse()
+
+	const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
+		userId: routeUser.mcpUserId,
+		kodyId: route.packageKodyId,
+	})
+	if (!savedPackage) return notFoundResponse()
+
+	const endpoint = await getWebhookEndpointByKey({
+		db: env.APP_DB,
+		userId: routeUser.mcpUserId,
+		packageId: savedPackage.id,
+		webhookName: route.webhookName,
+	})
+	// Unminted, disabled, or unknown name → indistinguishable 404.
+	if (!endpoint || !endpoint.enabled) {
 		return notFoundResponse()
 	}
 
@@ -310,6 +318,35 @@ export async function handleWebhookIngressRequest(
 			outcome: 'rejected',
 			httpStatus: 404,
 			error: 'url_secret_mismatch',
+			payloadBytes: 0,
+			receivedAt,
+		})
+		return notFoundResponse()
+	}
+
+	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
+	let declared
+	try {
+		const loaded = await loadPackageManifestBySourceId({
+			env,
+			baseUrl,
+			userId: routeUser.mcpUserId,
+			sourceId: savedPackage.sourceId,
+		})
+		declared = listPackageWebhooks(loaded.manifest).find(
+			(webhook) => webhook.name === route.webhookName,
+		)
+	} catch {
+		declared = undefined
+	}
+	// Republished package removed/renamed the webhook → deactivate ingress.
+	if (!declared) {
+		await recordDelivery({
+			db: env.APP_DB,
+			endpoint,
+			outcome: 'rejected',
+			httpStatus: 404,
+			error: 'webhook_not_declared',
 			payloadBytes: 0,
 			receivedAt,
 		})
@@ -379,8 +416,8 @@ export async function handleWebhookIngressRequest(
 	) as ArrayBuffer
 	const bodyText = new TextDecoder().decode(bodyBytes)
 
-	if (endpoint.verificationConfig) {
-		const headerName = endpoint.verificationConfig.header
+	if (declared.verification) {
+		const headerName = declared.verification.header
 		const provided = request.headers.get(headerName)
 		if (!provided) {
 			await recordDelivery({
@@ -394,39 +431,34 @@ export async function handleWebhookIngressRequest(
 			})
 			return unauthorizedSignatureResponse()
 		}
-		let secret: string
-		try {
-			secret = await decryptWebhookVerificationSecret(
-				env,
-				endpoint.verificationConfig,
-			)
-		} catch {
+		const resolved = await resolveSecret({
+			env,
+			userId: endpoint.userId,
+			name: declared.verification.secretName,
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: endpoint.packageId,
+			},
+		})
+		if (!resolved.found || !resolved.value) {
 			await recordDelivery({
 				db: env.APP_DB,
 				endpoint,
-				outcome: 'failed',
-				httpStatus: 500,
-				error: 'verification_secret_decrypt_failed',
+				outcome: 'rejected',
+				httpStatus: 401,
+				error: `verification_secret_missing:${declared.verification.secretName}`,
 				payloadBytes: bodyBytes.byteLength,
 				receivedAt,
 			})
-			return jsonResponse(
-				{
-					ok: false,
-					error: {
-						code: 'internal_error',
-						message: 'Unable to verify webhook signature.',
-					},
-				},
-				{ status: 500 },
-			)
+			return unauthorizedSignatureResponse()
 		}
 		const valid = await verifyWebhookHmacSignature({
-			algorithm: endpoint.verificationConfig.type,
-			secret,
+			algorithm: declared.verification.type,
+			secret: resolved.value,
 			body: bodyBuffer,
-			encoding: endpoint.verificationConfig.encoding,
-			prefix: endpoint.verificationConfig.prefix,
+			encoding: declared.verification.encoding,
+			prefix: declared.verification.prefix,
 			provided,
 		})
 		if (!valid) {
@@ -445,10 +477,11 @@ export async function handleWebhookIngressRequest(
 
 	const safeHeaders = collectSafeWebhookHeaders(
 		request,
-		endpoint.verificationConfig ? [endpoint.verificationConfig.header] : [],
+		declared.verification ? [declared.verification.header] : [],
 	)
 	const params = buildExportParams({
-		endpoint,
+		packageKodyId: savedPackage.kodyId,
+		webhookName: route.webhookName,
 		request,
 		bodyText,
 		receivedAt,
@@ -456,9 +489,8 @@ export async function handleWebhookIngressRequest(
 	})
 	const deliveryId = crypto.randomUUID()
 	const idempotencyKey = `webhook:${endpoint.id}:${deliveryId}`
-	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 
-	if (endpoint.responseMode === 'ack') {
+	if (declared.responseMode === 'ack') {
 		const ackResponse = jsonResponse({ ok: true }, { status: 202 })
 		const invokePromise = (async () => {
 			try {
@@ -466,6 +498,8 @@ export async function handleWebhookIngressRequest(
 					env,
 					baseUrl,
 					endpoint,
+					packageKodyId: savedPackage.kodyId,
+					exportName: declared.exportName,
 					params,
 					idempotencyKey,
 				})
@@ -475,6 +509,8 @@ export async function handleWebhookIngressRequest(
 					id: deliveryId,
 					endpointId: endpoint.id,
 					userId: endpoint.userId,
+					packageId: endpoint.packageId,
+					webhookName: endpoint.webhookName,
 					receivedAt,
 					outcome: ok ? 'delivered' : 'failed',
 					httpStatus: ok ? 202 : 502,
@@ -487,6 +523,8 @@ export async function handleWebhookIngressRequest(
 					id: deliveryId,
 					endpointId: endpoint.id,
 					userId: endpoint.userId,
+					packageId: endpoint.packageId,
+					webhookName: endpoint.webhookName,
 					receivedAt,
 					outcome: 'failed',
 					httpStatus: 502,
@@ -509,6 +547,8 @@ export async function handleWebhookIngressRequest(
 				env,
 				baseUrl,
 				endpoint,
+				packageKodyId: savedPackage.kodyId,
+				exportName: declared.exportName,
 				params,
 				idempotencyKey,
 			}),
@@ -520,6 +560,8 @@ export async function handleWebhookIngressRequest(
 			id: deliveryId,
 			endpointId: endpoint.id,
 			userId: endpoint.userId,
+			packageId: endpoint.packageId,
+			webhookName: endpoint.webhookName,
 			receivedAt,
 			outcome: ok ? 'delivered' : 'failed',
 			httpStatus: ok ? response.status : 502,
@@ -545,6 +587,8 @@ export async function handleWebhookIngressRequest(
 			id: deliveryId,
 			endpointId: endpoint.id,
 			userId: endpoint.userId,
+			packageId: endpoint.packageId,
+			webhookName: endpoint.webhookName,
 			receivedAt,
 			outcome: 'failed',
 			httpStatus: 502,

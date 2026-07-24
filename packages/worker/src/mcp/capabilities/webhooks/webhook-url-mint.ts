@@ -2,29 +2,31 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { listWebhookDeliveriesForUser } from '#worker/webhooks/service.ts'
+import { mintWebhookUrlForUser } from '#worker/webhooks/service.ts'
 import {
+	mintedWebhookUrlSchema,
 	requirePackageRef,
-	toDeliveryCapability,
-	webhookDeliverySchema,
+	toMintedWebhookCapability,
 	webhookPackageRefSchema,
 } from './shared.ts'
 
-export const webhookDeliveryListCapability = defineDomainCapability(
+export const webhookUrlMintCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
-		name: 'webhook_delivery_list',
+		name: 'webhook_url_mint',
 		description:
-			'List recent inbound webhook deliveries for one minted package webhook (metadata only; payload bodies are never stored).',
-		keywords: ['webhook', 'delivery', 'log', 'debug', 'history'],
-		readOnly: true,
-		idempotent: true,
+			'Mint (or remint) the URL secret for a package-declared webhook and return the full ingress URL once. Treat the URL as a credential — it cannot be retrieved later (use webhook_url_rotate). Declaring kody.webhooks alone does not open ingress; minting does.',
+		keywords: ['webhook', 'mint', 'url', 'activate', 'credential', 'inbound'],
+		readOnly: false,
+		idempotent: false,
 		destructive: false,
 		inputSchema: z
 			.object({
 				...webhookPackageRefSchema,
-				webhookName: z.string().min(1),
-				limit: z.number().int().min(1).max(50).optional(),
+				webhookName: z
+					.string()
+					.min(1)
+					.describe('Webhook name from package.json#kody.webhooks[].name.'),
 			})
 			.superRefine((input, ctx) => {
 				try {
@@ -39,19 +41,21 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 				}
 			}),
 		outputSchema: z.object({
-			deliveries: z.array(webhookDeliverySchema),
+			webhook: mintedWebhookUrlSchema,
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const deliveries = await listWebhookDeliveriesForUser({
+			const minted = await mintWebhookUrlForUser({
 				env: ctx.env,
 				userId: user.userId,
+				email: user.email,
+				username: user.username,
 				packageId: args.packageId,
 				kodyId: args.kodyId,
 				webhookName: args.webhookName,
-				limit: args.limit,
+				requestUrl: ctx.callerContext.baseUrl,
 			})
-			return { deliveries: deliveries.map(toDeliveryCapability) }
+			return { webhook: toMintedWebhookCapability(minted) }
 		},
 	},
 )

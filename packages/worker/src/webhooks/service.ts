@@ -1,66 +1,56 @@
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { resolvePublicUsername } from '#app/user-lookup.ts'
-import { normalizeExportName } from '#worker/package-invocations/common.ts'
+import {
+	listPackageWebhooks,
+	type PackageWebhookManifestEntry,
+} from '#worker/package-registry/manifest.ts'
 import { resolveSavedPackage } from '#worker/package-invocations/module-artifacts.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { generateWebhookUrlSecret, hashWebhookUrlSecret } from './crypto.ts'
 import { buildWebhookEndpointUrl } from './public-url.ts'
 import {
-	deleteWebhookEndpoint,
-	getWebhookEndpointByIdForUser,
+	getWebhookEndpointByKey,
 	insertWebhookEndpoint,
 	listWebhookDeliveriesForEndpoint,
 	listWebhookEndpointsForUser,
-	updateWebhookEndpoint,
+	setWebhookEndpointEnabled,
+	updateWebhookEndpointSecret,
 } from './repo.ts'
 import {
-	encryptWebhookVerificationConfig,
-	parseWebhookVerificationInput,
-	toPublicWebhookVerificationConfig,
-} from './verification.ts'
-import {
-	type PublicWebhookVerificationConfig,
 	type WebhookDeliveryRecord,
 	type WebhookEndpointRecord,
-	type WebhookResponseMode,
-	type WebhookVerificationInput,
 } from './types.ts'
 
-export type PublicWebhookEndpoint = {
-	id: string
-	name: string
+export type ListedWebhook = {
 	packageId: string
+	packageKodyId: string
+	packageName: string
+	name: string
 	exportName: string
-	responseMode: WebhookResponseMode
-	enabled: boolean
-	verification: PublicWebhookVerificationConfig | null
-	createdAt: string
-	updatedAt: string
+	description: string | null
+	responseMode: 'ack' | 'sync'
+	verification: PackageWebhookManifestEntry['verification']
+	minted: boolean
+	enabled: boolean | null
+	createdAt: string | null
+	rotatedAt: string | null
 }
 
-export type CreatedWebhookEndpoint = PublicWebhookEndpoint & {
+export type MintedWebhookUrl = {
+	packageId: string
+	packageKodyId: string
+	name: string
 	url: string
 	urlSecret: string
-}
-
-function toPublicEndpoint(
-	record: WebhookEndpointRecord,
-): PublicWebhookEndpoint {
-	return {
-		id: record.id,
-		name: record.name,
-		packageId: record.packageId,
-		exportName: record.exportName,
-		responseMode: record.responseMode,
-		enabled: record.enabled,
-		verification: toPublicWebhookVerificationConfig(record.verificationConfig),
-		createdAt: record.createdAt,
-		updatedAt: record.updatedAt,
-	}
+	enabled: boolean
+	createdAt: string
+	rotatedAt: string
 }
 
 async function resolveOwnerUsername(input: {
 	db: D1Database
-	userId: string
 	email?: string | null
 	username?: string | null
 }) {
@@ -71,18 +61,18 @@ async function resolveOwnerUsername(input: {
 	})
 	if (!resolved) {
 		throw new Error(
-			'A public username is required to create webhook endpoint URLs.',
+			'A public username is required to mint webhook endpoint URLs.',
 		)
 	}
 	return resolved
 }
 
-async function resolveBoundPackage(input: {
+async function resolveOwnedPackage(input: {
 	db: D1Database
 	userId: string
 	packageId?: string
 	kodyId?: string
-}) {
+}): Promise<SavedPackageRecord> {
 	const packageIdOrKodyId = (input.packageId ?? input.kodyId ?? '').trim()
 	if (!packageIdOrKodyId) {
 		throw new Error('packageId or kodyId is required.')
@@ -100,236 +90,274 @@ async function resolveBoundPackage(input: {
 	return savedPackage
 }
 
-function normalizeResponseMode(value: string | undefined): WebhookResponseMode {
-	if (value === undefined || value === 'ack') return 'ack'
-	if (value === 'sync') return 'sync'
-	throw new Error('responseMode must be ack or sync.')
+async function loadDeclaredWebhook(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	savedPackage: SavedPackageRecord
+	webhookName: string
+}): Promise<PackageWebhookManifestEntry> {
+	const loaded = await loadPackageManifestBySourceId({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceId: input.savedPackage.sourceId,
+	})
+	const declared = listPackageWebhooks(loaded.manifest).find(
+		(webhook) => webhook.name === input.webhookName,
+	)
+	if (!declared) {
+		throw new Error(
+			`Package "${input.savedPackage.kodyId}" does not declare webhook "${input.webhookName}".`,
+		)
+	}
+	return declared
 }
 
-export async function createWebhookEndpointForUser(input: {
+export async function listWebhooksForUser(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	packageId?: string
+	kodyId?: string
+}): Promise<Array<ListedWebhook>> {
+	const packages = await listSavedPackagesByUserId(input.env.APP_DB, {
+		userId: input.userId,
+	})
+	const packageFilter = (input.packageId ?? input.kodyId ?? '').trim()
+	const filteredPackages = packageFilter
+		? packages.filter(
+				(entry) => entry.id === packageFilter || entry.kodyId === packageFilter,
+			)
+		: packages
+
+	const mintedByKey = new Map<string, WebhookEndpointRecord>()
+	for (const mint of await listWebhookEndpointsForUser({
+		db: input.env.APP_DB,
+		userId: input.userId,
+	})) {
+		mintedByKey.set(`${mint.packageId}:${mint.webhookName}`, mint)
+	}
+
+	const listed: Array<ListedWebhook> = []
+	for (const savedPackage of filteredPackages) {
+		const loaded = await loadPackageManifestBySourceId({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			sourceId: savedPackage.sourceId,
+		}).catch((error) => {
+			console.warn('Failed to load package manifest for webhooks', {
+				packageId: savedPackage.id,
+				sourceId: savedPackage.sourceId,
+				error,
+			})
+			return null
+		})
+		if (!loaded) continue
+		for (const webhook of listPackageWebhooks(loaded.manifest)) {
+			const mint = mintedByKey.get(`${savedPackage.id}:${webhook.name}`)
+			listed.push({
+				packageId: savedPackage.id,
+				packageKodyId: savedPackage.kodyId,
+				packageName: savedPackage.name,
+				name: webhook.name,
+				exportName: webhook.exportName,
+				description: webhook.description,
+				responseMode: webhook.responseMode,
+				verification: webhook.verification,
+				minted: mint !== undefined,
+				enabled: mint?.enabled ?? null,
+				createdAt: mint?.createdAt ?? null,
+				rotatedAt: mint?.rotatedAt ?? null,
+			})
+		}
+	}
+
+	return listed.sort(
+		(left, right) =>
+			left.packageKodyId.localeCompare(right.packageKodyId) ||
+			left.name.localeCompare(right.name),
+	)
+}
+
+export async function mintWebhookUrlForUser(input: {
 	env: Env
 	userId: string
 	email?: string | null
 	username?: string | null
-	name: string
 	packageId?: string
 	kodyId?: string
-	exportName: string
-	responseMode?: string
-	verification?: unknown
+	webhookName: string
 	requestUrl?: string | null
-}): Promise<CreatedWebhookEndpoint> {
-	const name = input.name.trim()
-	if (!name) throw new Error('name is required.')
-	const exportName = normalizeExportName(input.exportName)
-	if (!exportName) throw new Error('exportName is required.')
-	const responseMode = normalizeResponseMode(input.responseMode)
-	const savedPackage = await resolveBoundPackage({
+}): Promise<MintedWebhookUrl> {
+	const webhookName = input.webhookName.trim()
+	if (!webhookName) throw new Error('webhookName is required.')
+	const baseUrl = getAppBaseUrl({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
+	const savedPackage = await resolveOwnedPackage({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		packageId: input.packageId,
 		kodyId: input.kodyId,
 	})
+	await loadDeclaredWebhook({
+		env: input.env,
+		baseUrl,
+		userId: input.userId,
+		savedPackage,
+		webhookName,
+	})
 
-	let verificationInput: WebhookVerificationInput | null = null
-	if (input.verification !== undefined && input.verification !== null) {
-		verificationInput = parseWebhookVerificationInput(input.verification)
-	}
-	const verificationConfig = verificationInput
-		? await encryptWebhookVerificationConfig(input.env, verificationInput)
-		: null
-
+	const existing = await getWebhookEndpointByKey({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: savedPackage.id,
+		webhookName,
+	})
 	const urlSecret = await generateWebhookUrlSecret()
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
-	const endpointId = crypto.randomUUID()
-	const record = await insertWebhookEndpoint({
-		db: input.env.APP_DB,
-		id: endpointId,
-		userId: input.userId,
-		name,
-		packageId: savedPackage.id,
-		exportName,
-		urlSecretHash,
-		verificationConfig,
-		responseMode,
-	})
+	const record = existing
+		? await updateWebhookEndpointSecret({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+				urlSecretHash,
+			})
+		: await insertWebhookEndpoint({
+				db: input.env.APP_DB,
+				id: crypto.randomUUID(),
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+				urlSecretHash,
+				enabled: true,
+			})
+	if (!record) {
+		throw new Error('Unable to mint webhook URL.')
+	}
 
 	const username = await resolveOwnerUsername({
 		db: input.env.APP_DB,
-		userId: input.userId,
 		email: input.email,
 		username: input.username,
 	})
-	const origin = getAppBaseUrl({
-		env: input.env,
-		requestUrl: input.requestUrl,
-	})
 	return {
-		...toPublicEndpoint(record),
+		packageId: savedPackage.id,
+		packageKodyId: savedPackage.kodyId,
+		name: webhookName,
 		urlSecret,
 		url: buildWebhookEndpointUrl({
-			origin,
+			origin: baseUrl,
 			username,
-			endpointId: record.id,
+			packageKodyId: savedPackage.kodyId,
+			webhookName,
 			urlSecret,
 		}),
+		enabled: record.enabled,
+		createdAt: record.createdAt,
+		rotatedAt: record.rotatedAt,
 	}
 }
 
-export async function listWebhookEndpointsForUserService(input: {
-	db: D1Database
-	userId: string
-}): Promise<Array<PublicWebhookEndpoint>> {
-	const records = await listWebhookEndpointsForUser({
-		db: input.db,
-		userId: input.userId,
-	})
-	return records.map(toPublicEndpoint)
-}
-
-export async function getWebhookEndpointForUser(input: {
-	db: D1Database
-	userId: string
-	endpointId: string
-}): Promise<PublicWebhookEndpoint | null> {
-	const record = await getWebhookEndpointByIdForUser(input)
-	return record ? toPublicEndpoint(record) : null
-}
-
-export async function updateWebhookEndpointForUser(input: {
-	env: Env
-	userId: string
-	endpointId: string
-	name?: string
-	packageId?: string
-	kodyId?: string
-	exportName?: string
-	responseMode?: string
-	enabled?: boolean
-	verification?: unknown
-	clearVerification?: boolean
-}): Promise<PublicWebhookEndpoint | null> {
-	let packageId: string | undefined
-	if (input.packageId !== undefined || input.kodyId !== undefined) {
-		const savedPackage = await resolveBoundPackage({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			packageId: input.packageId,
-			kodyId: input.kodyId,
-		})
-		packageId = savedPackage.id
-	}
-
-	const exportName =
-		input.exportName === undefined
-			? undefined
-			: normalizeExportName(input.exportName)
-	const responseMode =
-		input.responseMode === undefined
-			? undefined
-			: normalizeResponseMode(input.responseMode)
-
-	let verificationConfig = undefined as
-		| Awaited<ReturnType<typeof encryptWebhookVerificationConfig>>
-		| undefined
-	if (input.clearVerification) {
-		verificationConfig = undefined
-	} else if (input.verification !== undefined && input.verification !== null) {
-		const parsed = parseWebhookVerificationInput(input.verification)
-		verificationConfig = await encryptWebhookVerificationConfig(
-			input.env,
-			parsed,
-		)
-	}
-
-	const record = await updateWebhookEndpoint({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		endpointId: input.endpointId,
-		name: input.name?.trim(),
-		packageId,
-		exportName,
-		responseMode,
-		enabled: input.enabled,
-		verificationConfig,
-		clearVerificationConfig: input.clearVerification === true,
-	})
-	return record ? toPublicEndpoint(record) : null
-}
-
-export async function rotateWebhookEndpointSecretForUser(input: {
+export async function rotateWebhookUrlForUser(input: {
 	env: Env
 	userId: string
 	email?: string | null
 	username?: string | null
-	endpointId: string
+	packageId?: string
+	kodyId?: string
+	webhookName: string
 	requestUrl?: string | null
-}): Promise<CreatedWebhookEndpoint | null> {
-	const existing = await getWebhookEndpointByIdForUser({
+}): Promise<MintedWebhookUrl> {
+	const webhookName = input.webhookName.trim()
+	if (!webhookName) throw new Error('webhookName is required.')
+	const savedPackage = await resolveOwnedPackage({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		endpointId: input.endpointId,
+		packageId: input.packageId,
+		kodyId: input.kodyId,
 	})
-	if (!existing) return null
-
-	const urlSecret = await generateWebhookUrlSecret()
-	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
-	const record = await updateWebhookEndpoint({
+	const existing = await getWebhookEndpointByKey({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		endpointId: input.endpointId,
-		urlSecretHash,
+		packageId: savedPackage.id,
+		webhookName,
 	})
-	if (!record) return null
-
-	const username = await resolveOwnerUsername({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		email: input.email,
-		username: input.username,
-	})
-	const origin = getAppBaseUrl({
-		env: input.env,
-		requestUrl: input.requestUrl,
-	})
-	return {
-		...toPublicEndpoint(record),
-		urlSecret,
-		url: buildWebhookEndpointUrl({
-			origin,
-			username,
-			endpointId: record.id,
-			urlSecret,
-		}),
+	if (!existing) {
+		throw new Error(
+			'Webhook URL has not been minted. Call webhook_url_mint first.',
+		)
 	}
+	return mintWebhookUrlForUser(input)
 }
 
-export async function deleteWebhookEndpointForUser(input: {
-	db: D1Database
+export async function setWebhookEnabledForUser(input: {
+	env: Env
 	userId: string
-	endpointId: string
-}): Promise<boolean> {
-	return deleteWebhookEndpoint(input)
+	packageId?: string
+	kodyId?: string
+	webhookName: string
+	enabled: boolean
+}): Promise<WebhookEndpointRecord> {
+	const webhookName = input.webhookName.trim()
+	if (!webhookName) throw new Error('webhookName is required.')
+	const savedPackage = await resolveOwnedPackage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.packageId,
+		kodyId: input.kodyId,
+	})
+	const updated = await setWebhookEndpointEnabled({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: savedPackage.id,
+		webhookName,
+		enabled: input.enabled,
+	})
+	if (!updated) {
+		throw new Error(
+			'Webhook URL has not been minted. Call webhook_url_mint first.',
+		)
+	}
+	return updated
 }
 
 export async function listWebhookDeliveriesForUser(input: {
-	db: D1Database
+	env: Env
 	userId: string
-	endpointId: string
+	packageId?: string
+	kodyId?: string
+	webhookName: string
 	limit?: number
 }): Promise<Array<WebhookDeliveryRecord>> {
-	const endpoint = await getWebhookEndpointByIdForUser({
-		db: input.db,
+	const webhookName = input.webhookName.trim()
+	if (!webhookName) throw new Error('webhookName is required.')
+	const savedPackage = await resolveOwnedPackage({
+		db: input.env.APP_DB,
 		userId: input.userId,
-		endpointId: input.endpointId,
+		packageId: input.packageId,
+		kodyId: input.kodyId,
 	})
-	if (!endpoint) {
-		throw new Error('Webhook endpoint not found.')
+	const mint = await getWebhookEndpointByKey({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: savedPackage.id,
+		webhookName,
+	})
+	if (!mint) {
+		throw new Error(
+			'Webhook URL has not been minted. Call webhook_url_mint first.',
+		)
 	}
 	return listWebhookDeliveriesForEndpoint({
-		db: input.db,
+		db: input.env.APP_DB,
 		userId: input.userId,
-		endpointId: input.endpointId,
+		packageId: savedPackage.id,
+		webhookName,
 		limit: input.limit,
 	})
 }

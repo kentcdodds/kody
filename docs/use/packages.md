@@ -44,6 +44,9 @@ Important fields:
 - `kody.services` — optional package-owned service runtimes
 - `kody.subscriptions` — optional event-topic subscriptions with package-local
   handlers
+- `kody.webhooks` — optional inbound webhook declarations bound to package
+  exports (mint a credential URL separately; see
+  [Inbound webhooks](./webhooks.md))
 - `kody.jobs` — optional package-owned schedules
 
 `package.json` is the manifest.
@@ -406,6 +409,13 @@ system-inbox mail dispatches the separate `email.system-message.received` topic
 to packages saved by admin users; its payload adds an `admin_url` link to the
 message in the admin interface. See [Email primitives](./email-primitives.md)
 for the full payload shapes.
+
+## Package webhooks
+
+Inbound HTTP webhooks are declared under `package.json#kody.webhooks` and bound
+to a package export. Declaring a webhook does not open ingress — mint a URL with
+`webhook_url_mint` first. Full contract, signature examples, and payload shape:
+[Inbound webhooks](./webhooks.md).
 
 ## Package-owned jobs
 

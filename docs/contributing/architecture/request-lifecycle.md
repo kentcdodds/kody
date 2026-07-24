@@ -44,8 +44,8 @@ Requests are handled in this order:
    work):
    - `POST /@{username}/api/package-invocations/:kodyId/:exportName` — bearer
      token package invocations
-   - `POST /@{username}/webhooks/:endpointId/:urlSecret` — inbound webhook
-     endpoints (see [Inbound webhooks](./webhooks.md))
+   - `POST /@{username}/webhooks/:packageKodyId/:webhookName/:urlSecret` —
+     inbound package webhooks (see [Inbound webhooks](./webhooks.md))
 7. Remote connector session endpoints (internal-only Worker routes that proxy
    WebSocket upgrades and JSON-RPC helper requests to the remote connector
    session Durable Object):

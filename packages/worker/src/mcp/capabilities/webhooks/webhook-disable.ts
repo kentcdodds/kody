@@ -2,29 +2,23 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { listWebhookDeliveriesForUser } from '#worker/webhooks/service.ts'
-import {
-	requirePackageRef,
-	toDeliveryCapability,
-	webhookDeliverySchema,
-	webhookPackageRefSchema,
-} from './shared.ts'
+import { setWebhookEnabledForUser } from '#worker/webhooks/service.ts'
+import { requirePackageRef, webhookPackageRefSchema } from './shared.ts'
 
-export const webhookDeliveryListCapability = defineDomainCapability(
+export const webhookDisableCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
-		name: 'webhook_delivery_list',
+		name: 'webhook_disable',
 		description:
-			'List recent inbound webhook deliveries for one minted package webhook (metadata only; payload bodies are never stored).',
-		keywords: ['webhook', 'delivery', 'log', 'debug', 'history'],
-		readOnly: true,
+			'Disable a minted package webhook. Ingress returns 404 while disabled (indistinguishable from unknown/unminted).',
+		keywords: ['webhook', 'disable', 'deactivate'],
+		readOnly: false,
 		idempotent: true,
 		destructive: false,
 		inputSchema: z
 			.object({
 				...webhookPackageRefSchema,
 				webhookName: z.string().min(1),
-				limit: z.number().int().min(1).max(50).optional(),
 			})
 			.superRefine((input, ctx) => {
 				try {
@@ -39,19 +33,25 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 				}
 			}),
 		outputSchema: z.object({
-			deliveries: z.array(webhookDeliverySchema),
+			package_id: z.string(),
+			webhook_name: z.string(),
+			enabled: z.literal(false),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const deliveries = await listWebhookDeliveriesForUser({
+			const updated = await setWebhookEnabledForUser({
 				env: ctx.env,
 				userId: user.userId,
 				packageId: args.packageId,
 				kodyId: args.kodyId,
 				webhookName: args.webhookName,
-				limit: args.limit,
+				enabled: false,
 			})
-			return { deliveries: deliveries.map(toDeliveryCapability) }
+			return {
+				package_id: updated.packageId,
+				webhook_name: updated.webhookName,
+				enabled: false as const,
+			}
 		},
 	},
 )

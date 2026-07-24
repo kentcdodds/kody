@@ -1,13 +1,7 @@
 import {
-	parseStoredWebhookVerificationConfig,
-	serializeStoredWebhookVerificationConfig,
-} from './verification.ts'
-import {
-	type StoredWebhookVerificationConfig,
 	type WebhookDeliveryOutcome,
 	type WebhookDeliveryRecord,
 	type WebhookEndpointRecord,
-	type WebhookResponseMode,
 	webhookDeliveriesRetainedPerEndpoint,
 	webhookDeliveryErrorMaxLength,
 } from './types.ts'
@@ -15,21 +9,20 @@ import {
 type WebhookEndpointRow = {
 	id: string
 	user_id: string
-	name: string
 	package_id: string
-	export_name: string
+	webhook_name: string
 	url_secret_hash: string
-	verification_config: string | null
-	response_mode: WebhookResponseMode
 	enabled: number
 	created_at: string
-	updated_at: string
+	rotated_at: string
 }
 
 type WebhookDeliveryRow = {
 	id: string
 	endpoint_id: string
 	user_id: string
+	package_id: string
+	webhook_name: string
 	received_at: string
 	outcome: WebhookDeliveryOutcome
 	http_status: number
@@ -41,17 +34,12 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
 	return {
 		id: row.id,
 		userId: row.user_id,
-		name: row.name,
 		packageId: row.package_id,
-		exportName: row.export_name,
+		webhookName: row.webhook_name,
 		urlSecretHash: row.url_secret_hash,
-		verificationConfig: parseStoredWebhookVerificationConfig(
-			row.verification_config,
-		),
-		responseMode: row.response_mode,
 		enabled: row.enabled === 1,
 		createdAt: row.created_at,
-		updatedAt: row.updated_at,
+		rotatedAt: row.rotated_at,
 	}
 }
 
@@ -60,6 +48,8 @@ function mapDeliveryRow(row: WebhookDeliveryRow): WebhookDeliveryRecord {
 		id: row.id,
 		endpointId: row.endpoint_id,
 		userId: row.user_id,
+		packageId: row.package_id,
+		webhookName: row.webhook_name,
 		receivedAt: row.received_at,
 		outcome: row.outcome,
 		httpStatus: row.http_status,
@@ -80,36 +70,27 @@ export async function insertWebhookEndpoint(input: {
 	db: D1Database
 	id: string
 	userId: string
-	name: string
 	packageId: string
-	exportName: string
+	webhookName: string
 	urlSecretHash: string
-	verificationConfig: StoredWebhookVerificationConfig | null
-	responseMode: WebhookResponseMode
 	enabled?: boolean
 	now?: string
 }): Promise<WebhookEndpointRecord> {
 	const now = input.now ?? new Date().toISOString()
 	const enabled = input.enabled === false ? 0 : 1
-	const verificationConfigJson = input.verificationConfig
-		? serializeStoredWebhookVerificationConfig(input.verificationConfig)
-		: null
 	await input.db
 		.prepare(
 			`INSERT INTO webhook_endpoints (
-				id, user_id, name, package_id, export_name, url_secret_hash,
-				verification_config, response_mode, enabled, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, user_id, package_id, webhook_name, url_secret_hash,
+				enabled, created_at, rotated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			input.id,
 			input.userId,
-			input.name,
 			input.packageId,
-			input.exportName,
+			input.webhookName,
 			input.urlSecretHash,
-			verificationConfigJson,
-			input.responseMode,
 			enabled,
 			now,
 			now,
@@ -118,15 +99,12 @@ export async function insertWebhookEndpoint(input: {
 	return {
 		id: input.id,
 		userId: input.userId,
-		name: input.name,
 		packageId: input.packageId,
-		exportName: input.exportName,
+		webhookName: input.webhookName,
 		urlSecretHash: input.urlSecretHash,
-		verificationConfig: input.verificationConfig,
-		responseMode: input.responseMode,
 		enabled: enabled === 1,
 		createdAt: now,
-		updatedAt: now,
+		rotatedAt: now,
 	}
 }
 
@@ -146,6 +124,24 @@ export async function listWebhookEndpointsForUser(input: {
 	return (result.results ?? []).map(mapEndpointRow)
 }
 
+export async function getWebhookEndpointByKey(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	webhookName: string
+}): Promise<WebhookEndpointRecord | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT *
+			FROM webhook_endpoints
+			WHERE user_id = ? AND package_id = ? AND webhook_name = ?
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.packageId, input.webhookName)
+		.first<WebhookEndpointRow>()
+	return row ? mapEndpointRow(row) : null
+}
+
 export async function getWebhookEndpointByIdForUser(input: {
 	db: D1Database
 	userId: string
@@ -163,124 +159,65 @@ export async function getWebhookEndpointByIdForUser(input: {
 	return row ? mapEndpointRow(row) : null
 }
 
-/** Ingress lookup by id only; caller must re-check username ownership. */
-export async function getWebhookEndpointById(input: {
-	db: D1Database
-	endpointId: string
-}): Promise<WebhookEndpointRecord | null> {
-	const row = await input.db
-		.prepare(
-			`SELECT *
-			FROM webhook_endpoints
-			WHERE id = ?
-			LIMIT 1`,
-		)
-		.bind(input.endpointId)
-		.first<WebhookEndpointRow>()
-	return row ? mapEndpointRow(row) : null
-}
-
-export async function updateWebhookEndpoint(input: {
+export async function updateWebhookEndpointSecret(input: {
 	db: D1Database
 	userId: string
-	endpointId: string
-	name?: string
-	packageId?: string
-	exportName?: string
-	urlSecretHash?: string
-	verificationConfig?: StoredWebhookVerificationConfig | null
-	clearVerificationConfig?: boolean
-	responseMode?: WebhookResponseMode
-	enabled?: boolean
+	packageId: string
+	webhookName: string
+	urlSecretHash: string
 	now?: string
 }): Promise<WebhookEndpointRecord | null> {
-	const existing = await getWebhookEndpointByIdForUser({
-		db: input.db,
-		userId: input.userId,
-		endpointId: input.endpointId,
-	})
-	if (!existing) return null
-
 	const now = input.now ?? new Date().toISOString()
-	const name = input.name ?? existing.name
-	const packageId = input.packageId ?? existing.packageId
-	const exportName = input.exportName ?? existing.exportName
-	const urlSecretHash = input.urlSecretHash ?? existing.urlSecretHash
-	const responseMode = input.responseMode ?? existing.responseMode
-	const enabled =
-		input.enabled === undefined
-			? existing.enabled
-				? 1
-				: 0
-			: input.enabled
-				? 1
-				: 0
-
-	let verificationConfig = existing.verificationConfig
-	if (input.clearVerificationConfig) {
-		verificationConfig = null
-	} else if (input.verificationConfig !== undefined) {
-		verificationConfig = input.verificationConfig
-	}
-	const verificationConfigJson = verificationConfig
-		? serializeStoredWebhookVerificationConfig(verificationConfig)
-		: null
-
-	await input.db
-		.prepare(
-			`UPDATE webhook_endpoints
-			SET name = ?,
-				package_id = ?,
-				export_name = ?,
-				url_secret_hash = ?,
-				verification_config = ?,
-				response_mode = ?,
-				enabled = ?,
-				updated_at = ?
-			WHERE id = ? AND user_id = ?`,
-		)
-		.bind(
-			name,
-			packageId,
-			exportName,
-			urlSecretHash,
-			verificationConfigJson,
-			responseMode,
-			enabled,
-			now,
-			input.endpointId,
-			input.userId,
-		)
-		.run()
-
-	return {
-		id: existing.id,
-		userId: existing.userId,
-		name,
-		packageId,
-		exportName,
-		urlSecretHash,
-		verificationConfig,
-		responseMode,
-		enabled: enabled === 1,
-		createdAt: existing.createdAt,
-		updatedAt: now,
-	}
-}
-
-export async function deleteWebhookEndpoint(input: {
-	db: D1Database
-	userId: string
-	endpointId: string
-}): Promise<boolean> {
 	const result = await input.db
 		.prepare(
-			`DELETE FROM webhook_endpoints
-			WHERE id = ? AND user_id = ?`,
+			`UPDATE webhook_endpoints
+			SET url_secret_hash = ?, rotated_at = ?
+			WHERE user_id = ? AND package_id = ? AND webhook_name = ?`,
 		)
-		.bind(input.endpointId, input.userId)
+		.bind(
+			input.urlSecretHash,
+			now,
+			input.userId,
+			input.packageId,
+			input.webhookName,
+		)
 		.run()
-	return (result.meta.changes ?? 0) > 0
+	if ((result.meta.changes ?? 0) === 0) return null
+	return getWebhookEndpointByKey({
+		db: input.db,
+		userId: input.userId,
+		packageId: input.packageId,
+		webhookName: input.webhookName,
+	})
+}
+
+export async function setWebhookEndpointEnabled(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	webhookName: string
+	enabled: boolean
+}): Promise<WebhookEndpointRecord | null> {
+	const result = await input.db
+		.prepare(
+			`UPDATE webhook_endpoints
+			SET enabled = ?
+			WHERE user_id = ? AND package_id = ? AND webhook_name = ?`,
+		)
+		.bind(
+			input.enabled ? 1 : 0,
+			input.userId,
+			input.packageId,
+			input.webhookName,
+		)
+		.run()
+	if ((result.meta.changes ?? 0) === 0) return null
+	return getWebhookEndpointByKey({
+		db: input.db,
+		userId: input.userId,
+		packageId: input.packageId,
+		webhookName: input.webhookName,
+	})
 }
 
 export async function insertWebhookDelivery(input: {
@@ -288,6 +225,8 @@ export async function insertWebhookDelivery(input: {
 	id: string
 	endpointId: string
 	userId: string
+	packageId: string
+	webhookName: string
 	receivedAt: string
 	outcome: WebhookDeliveryOutcome
 	httpStatus: number
@@ -298,13 +237,16 @@ export async function insertWebhookDelivery(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO webhook_deliveries (
-				id, endpoint_id, user_id, received_at, outcome, http_status, error, payload_bytes
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, endpoint_id, user_id, package_id, webhook_name,
+				received_at, outcome, http_status, error, payload_bytes
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			input.id,
 			input.endpointId,
 			input.userId,
+			input.packageId,
+			input.webhookName,
 			input.receivedAt,
 			input.outcome,
 			input.httpStatus,
@@ -313,17 +255,18 @@ export async function insertWebhookDelivery(input: {
 		)
 		.run()
 
-	// Keep only the most recent N rows per endpoint.
 	await input.db
 		.prepare(
 			`DELETE FROM webhook_deliveries
 			WHERE endpoint_id = ?
 				AND id NOT IN (
-					SELECT id
-					FROM webhook_deliveries
-					WHERE endpoint_id = ?
-					ORDER BY received_at DESC, id DESC
-					LIMIT ?
+					SELECT id FROM (
+						SELECT id
+						FROM webhook_deliveries
+						WHERE endpoint_id = ?
+						ORDER BY received_at DESC, id DESC
+						LIMIT ?
+					)
 				)`,
 		)
 		.bind(
@@ -337,6 +280,8 @@ export async function insertWebhookDelivery(input: {
 		id: input.id,
 		endpointId: input.endpointId,
 		userId: input.userId,
+		packageId: input.packageId,
+		webhookName: input.webhookName,
 		receivedAt: input.receivedAt,
 		outcome: input.outcome,
 		httpStatus: input.httpStatus,
@@ -348,7 +293,8 @@ export async function insertWebhookDelivery(input: {
 export async function listWebhookDeliveriesForEndpoint(input: {
 	db: D1Database
 	userId: string
-	endpointId: string
+	packageId: string
+	webhookName: string
 	limit?: number
 }): Promise<Array<WebhookDeliveryRecord>> {
 	const limit = Math.min(Math.max(input.limit ?? 50, 1), 50)
@@ -356,11 +302,11 @@ export async function listWebhookDeliveriesForEndpoint(input: {
 		.prepare(
 			`SELECT *
 			FROM webhook_deliveries
-			WHERE endpoint_id = ? AND user_id = ?
+			WHERE user_id = ? AND package_id = ? AND webhook_name = ?
 			ORDER BY received_at DESC, id DESC
 			LIMIT ?`,
 		)
-		.bind(input.endpointId, input.userId, limit)
+		.bind(input.userId, input.packageId, input.webhookName, limit)
 		.all<WebhookDeliveryRow>()
 	return (result.results ?? []).map(mapDeliveryRow)
 }

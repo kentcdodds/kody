@@ -1,34 +1,34 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { webhookDeliveryListCapability } from './webhook-delivery-list.ts'
-import { webhookEndpointCreateCapability } from './webhook-endpoint-create.ts'
-import { webhookEndpointDeleteCapability } from './webhook-endpoint-delete.ts'
-import { webhookEndpointGetCapability } from './webhook-endpoint-get.ts'
-import { webhookEndpointListCapability } from './webhook-endpoint-list.ts'
-import { webhookEndpointRotateSecretCapability } from './webhook-endpoint-rotate-secret.ts'
-import { webhookEndpointUpdateCapability } from './webhook-endpoint-update.ts'
+import { webhookDisableCapability } from './webhook-disable.ts'
+import { webhookEnableCapability } from './webhook-enable.ts'
+import { webhookListCapability } from './webhook-list.ts'
+import { webhookUrlMintCapability } from './webhook-url-mint.ts'
+import { webhookUrlRotateCapability } from './webhook-url-rotate.ts'
 
 export const webhooksDomain = defineDomain({
 	name: capabilityDomainNames.webhooks,
 	description:
-		'User-owned inbound webhook endpoints that dispatch provider POST payloads to a bound saved-package export. Create an endpoint to get a one-time credential URL, then point Sentry, GitHub, Stripe, or any generic webhook sender at it.',
+		'Package-centered inbound webhooks declared in package.json#kody.webhooks. Declare a webhook bound to a package export, mint a credential URL with webhook_url_mint, then point Sentry/GitHub/Stripe (or any provider) at it. Verification secrets are named secret-store references, never inline values.',
 	keywords: [
 		'webhook',
 		'inbound',
 		'http callback',
+		'package.json#kody.webhooks',
 		'sentry',
 		'github',
 		'stripe',
 		'signature',
 		'hmac',
+		'mint',
 	],
 	capabilities: [
-		webhookEndpointCreateCapability,
-		webhookEndpointListCapability,
-		webhookEndpointGetCapability,
-		webhookEndpointUpdateCapability,
-		webhookEndpointRotateSecretCapability,
-		webhookEndpointDeleteCapability,
+		webhookListCapability,
+		webhookUrlMintCapability,
+		webhookUrlRotateCapability,
+		webhookEnableCapability,
+		webhookDisableCapability,
 		webhookDeliveryListCapability,
 	],
 })

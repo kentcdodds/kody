@@ -68,6 +68,46 @@ export type PackageSubscriptionDefinition = z.infer<
 	typeof packageSubscriptionDefinitionSchema
 >
 
+export const packageWebhookVerificationSchema = z.object({
+	type: z.enum(['hmac-sha256', 'hmac-sha1']),
+	header: z.string().min(1),
+	secretName: z.string().min(1),
+	encoding: z.enum(['hex', 'base64']),
+	prefix: z.string().optional(),
+})
+
+export type PackageWebhookVerification = z.infer<
+	typeof packageWebhookVerificationSchema
+>
+
+export const packageWebhookDefinitionSchema = z.object({
+	name: z.string().regex(kodyPackageIdPattern),
+	export: z.string().min(1),
+	description: z.string().min(1).optional(),
+	responseMode: z.enum(['ack', 'sync']).optional(),
+	verification: packageWebhookVerificationSchema.optional(),
+})
+
+export type PackageWebhookDefinition = z.infer<
+	typeof packageWebhookDefinitionSchema
+>
+
+const packageWebhooksSchema = z
+	.array(packageWebhookDefinitionSchema)
+	.superRefine((webhooks, ctx) => {
+		const seen = new Set<string>()
+		for (const [index, webhook] of webhooks.entries()) {
+			if (seen.has(webhook.name)) {
+				ctx.addIssue({
+					code: 'custom',
+					path: [index, 'name'],
+					message: `Duplicate webhook name "${webhook.name}". Webhook names must be unique within a package.`,
+				})
+			}
+			seen.add(webhook.name)
+		}
+	})
+
 export const packageEmittedEventDefinitionSchema = z.object({
 	description: z.string().min(1),
 })
@@ -188,6 +228,7 @@ export const authoredPackageKodySchema = z.object({
 			packageRetrieverDefinitionSchema,
 		)
 		.optional(),
+	webhooks: packageWebhooksSchema.optional(),
 })
 
 export type AuthoredPackageKody = z.infer<typeof authoredPackageKodySchema>
