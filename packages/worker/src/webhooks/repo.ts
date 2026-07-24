@@ -246,19 +246,23 @@ export async function insertWebhookDelivery(input: {
 	await input.db
 		.prepare(
 			`DELETE FROM webhook_deliveries
-			WHERE endpoint_id = ?
+			WHERE user_id = ?
+				AND endpoint_id = ?
 				AND id NOT IN (
 					SELECT id FROM (
 						SELECT id
 						FROM webhook_deliveries
-						WHERE endpoint_id = ?
+						WHERE user_id = ?
+							AND endpoint_id = ?
 						ORDER BY received_at DESC, id DESC
 						LIMIT ?
 					)
 				)`,
 		)
 		.bind(
+			input.userId,
 			input.endpointId,
+			input.userId,
 			input.endpointId,
 			webhookDeliveriesRetainedPerEndpoint,
 		)

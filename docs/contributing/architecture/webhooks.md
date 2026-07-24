@@ -34,10 +34,12 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
 2. Resolve username → user; resolve `packageKodyId` to a saved package owned by
    that user; load minted row keyed by `(user_id, package_id, webhook_name)`.
 3. Unminted, disabled, missing declaration (after republish rename/remove), or
-   URL-secret mismatch → **404** (indistinguishable).
+   URL-secret mismatch → **404** (indistinguishable). URL-secret mismatches do
+   **not** write a delivery row (avoids log-flush DoS and rate-limit side
+   channels).
 4. Constant-time compare the URL secret against `url_secret_hash` (SHA-256).
-5. Enforce per-webhook rate limit (~60/min) → **429**; payload cap 1 MB →
-   **413**.
+5. After a matching URL secret, enforce per-webhook rate limit (~60/min) →
+   **429** (no delivery row on the limited path); payload cap 1 MB → **413**.
 6. When verification is declared, resolve `secretName` from the owner's secret
    store (user/package scope via package storage context). Missing secret or
    HMAC mismatch → **401**, with a clear delivery-log error for missing secrets.
@@ -45,7 +47,8 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    the owning user / package / export, `source: 'webhook'`.
 8. `ack`: **202** + `waitUntil`. `sync`: await (30s) and return export JSON,
    **502** on failure.
-9. Every request records a `webhook_deliveries` row (no payload body); ~50 rows
+9. Authenticated deliveries (and post-auth rejects such as HMAC / size / missing
+   declaration) record a `webhook_deliveries` row (no payload body); ~50 rows
    retained per minted webhook.
 
 ## Isolation
