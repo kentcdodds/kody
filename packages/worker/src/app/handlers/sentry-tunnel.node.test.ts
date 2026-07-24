@@ -68,6 +68,12 @@ test('rejects envelopes for a different DSN without forwarding', async () => {
 	)
 
 	expect(response.status).toBe(403)
+
+	// Truthy non-string dsn values must 403, not crash.
+	const nonString = await handler.handler(
+		tunnelRequest('{"dsn":{"nested":true}}\n{"type":"event"}'),
+	)
+	expect(nonString.status).toBe(403)
 	expect(fetchMock).not.toHaveBeenCalled()
 })
 

@@ -60,14 +60,17 @@ export function createSentryTunnelHandler(appEnv: SentryTunnelEnv) {
 			const headerText = new TextDecoder().decode(
 				headerEnd === -1 ? body : body.slice(0, headerEnd),
 			)
-			let envelopeDsn: string | undefined
+			let envelopeDsn: unknown
 			try {
-				const header = JSON.parse(headerText) as { dsn?: string }
+				const header = JSON.parse(headerText) as { dsn?: unknown }
 				envelopeDsn = header.dsn
 			} catch {
 				return new Response('Malformed envelope', { status: 400 })
 			}
-			if (!envelopeDsn || envelopeDsn.trim() !== configuredDsn) {
+			if (
+				typeof envelopeDsn !== 'string' ||
+				envelopeDsn.trim() !== configuredDsn
+			) {
 				return new Response('Forbidden', { status: 403 })
 			}
 
