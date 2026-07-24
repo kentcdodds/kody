@@ -52,7 +52,7 @@ export async function resolveEntityDetail(input: {
 	if (ref.type === 'capability') {
 		const spec = input.searchRows.registry.capabilitySpecs[ref.id]
 		if (!spec) {
-			throw new Error('Capability not found.')
+			throw new McpCallerError('Capability not found.')
 		}
 		const relatedOperations = collectRelatedCapabilityOperations({
 			spec,
@@ -132,7 +132,7 @@ export async function resolveEntityDetail(input: {
 				},
 			}))
 		if (!row) {
-			throw new Error('Persisted value not found for this user.')
+			throw new McpCallerError('Persisted value not found for this user.')
 		}
 		return {
 			type: 'value' as const,
@@ -149,7 +149,7 @@ export async function resolveEntityDetail(input: {
 			ref.id,
 		)
 		if (!integration) {
-			throw new Error('Saved integration not found for this user.')
+			throw new McpCallerError('Saved integration not found for this user.')
 		}
 		const relatedPackageSuggestions =
 			await collectIntegrationPackageSuggestions({
@@ -177,7 +177,7 @@ export async function resolveEntityDetail(input: {
 		(secret) => secret.name === ref.id,
 	)
 	if (!row) {
-		throw new Error('Secret not found for this user.')
+		throw new McpCallerError('Secret not found for this user.')
 	}
 	return {
 		type: 'secret' as const,
