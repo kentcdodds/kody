@@ -235,8 +235,7 @@ test('unknown kid refreshes once and JWKS fetch failures use structured errors',
 			},
 		),
 		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'access-jwks-fetch-failed',
+			error instanceof BackupError && error.code === 'access-jwks-fetch-failed',
 	)
 })
 

@@ -144,10 +144,7 @@ test('runProductionRestore returns failed progress when dr-restore emits warning
 	assert.equal(progress.d1ImportComplete, true)
 	assert.equal(exportCalls, 2)
 	const safetyExportKey = progress.safetyExportKey
-	assert.equal(
-		safetyExportKey,
-		`pre-restore/${day}/${day}T12:00:00.000Z.sql`,
-	)
+	assert.equal(safetyExportKey, `pre-restore/${day}/${day}T12:00:00.000Z.sql`)
 	assert.equal(progress.safetyExportBytes, sql.length)
 	assert.ok(safetyExportKey)
 	assert.ok(await bucket.head(safetyExportKey))

@@ -170,7 +170,10 @@ test('startD1Export classifies auth, transient, and malformed responses', async 
 			code: 'api-malformed-json',
 		},
 		{
-			response: Response.json({ success: true, result: { status: 'complete' } }),
+			response: Response.json({
+				success: true,
+				result: { status: 'complete' },
+			}),
 			code: 'export-malformed-response',
 		},
 		{
