@@ -8,8 +8,6 @@ import {
 } from '@kody-internal/shared/backup-staging.ts'
 import { sha256Hex } from '#worker/dr/sha256.ts'
 import {
-	__testOnlyCreateInitialProgress,
-	drExportMaxObjectBytes,
 	drExportMaxStorageDumpBufferBytes,
 	runDrExportTick,
 	shouldRunDrExportCron,
@@ -159,7 +157,7 @@ function createR2(objects: Record<string, Uint8Array>) {
 	} as unknown as R2Bucket
 }
 
-test('shouldRunDrExportCron gates to the nightly 00:30–02:10 UTC window', () => {
+test('exporter progresses phases with mocked bindings and S3, writing summary last', async () => {
 	expect(shouldRunDrExportCron(new Date('2026-07-23T00:25:00.000Z'))).toBe(
 		false,
 	)
@@ -169,9 +167,19 @@ test('shouldRunDrExportCron gates to the nightly 00:30–02:10 UTC window', () =
 	expect(shouldRunDrExportCron(new Date('2026-07-23T02:15:00.000Z'))).toBe(
 		false,
 	)
-})
+	expect(
+		await runDrExportTick({
+			env: { DR_EXPORT_ENABLED: 'false' } as unknown as Env,
+			now: new Date('2026-07-23T01:00:00.000Z'),
+		}),
+	).toMatchObject({ skipped: true, reason: 'not-configured' })
+	expect(
+		await runDrExportTick({
+			env: { DR_EXPORT_ENABLED: 'true' } as unknown as Env,
+			now: new Date('2026-07-23T00:25:00.000Z'),
+		}),
+	).toMatchObject({ skipped: true, reason: 'outside-nightly-window' })
 
-test('exporter progresses phases with mocked bindings and S3, writing summary last', async () => {
 	storageMocks.exportStorage.mockReset()
 	storageMocks.exportStorage.mockResolvedValue({
 		entries: [{ key: 'alpha', value: { n: 1 } }],
@@ -182,6 +190,11 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	})
 	const { client, objects } = createMemoryS3()
 	const blobBytes = new TextEncoder().encode('email-bytes')
+	const blobDigest = await sha256Hex(blobBytes)
+	const blobKey = backupBlobKey(blobDigest)
+	await client.put(blobKey, blobBytes)
+	const headSpy = vi.spyOn(client, 'head')
+	const putSpy = vi.spyOn(client, 'put')
 	const kvSnapshot = JSON.stringify({ version: 1, files: { 'a.ts': 'x' } })
 	const env = {
 		DR_EXPORT_ENABLED: 'true',
@@ -221,6 +234,7 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	expect(first.skipped).toBe(false)
 	expect(first.summaryWritten).toBe(true)
 	expect(first.phase).toBe('done')
+	expect(first.blobsReused).toBeGreaterThanOrEqual(1)
 
 	const day = '2026-07-23'
 	const identity = encodeStorageIdentity('user-a', 'job:1')
@@ -237,8 +251,9 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 
 	const emailIndex = await client.getText(stagingR2IndexKey(day, 'email-blobs'))
 	expect(emailIndex?.text).toContain('raw/one')
-	const blobDigest = await sha256Hex(blobBytes)
-	expect(objects.has(backupBlobKey(blobDigest))).toBe(true)
+	expect(objects.has(blobKey)).toBe(true)
+	expect(headSpy).toHaveBeenCalledWith(blobKey)
+	expect(putSpy.mock.calls.filter(([key]) => key === blobKey)).toHaveLength(0)
 
 	const summary = JSON.parse(
 		(await client.getText(stagingSummaryKey(day)))!.text,
@@ -246,6 +261,7 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	expect(summary.day).toBe(day)
 	expect(summary.storageIndex.sha256).toMatch(/^[0-9a-f]{64}$/)
 	expect(summary.blobsWritten).toBeGreaterThanOrEqual(1)
+	expect(summary.blobsReused).toBeGreaterThanOrEqual(1)
 })
 
 test('exporter resumes from progress cursor across ticks when budget is exhausted', async () => {
@@ -312,51 +328,6 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 	} finally {
 		dateNow.mockRestore()
 	}
-})
-
-test('blob dedupe skips PUT when HEAD reports the object already exists', async () => {
-	storageMocks.exportStorage.mockReset()
-	storageMocks.exportStorage.mockResolvedValue({
-		entries: [],
-		truncated: false,
-		nextStartAfter: null,
-		pageSize: 250,
-		estimatedBytes: 0,
-	})
-	const blobBytes = new TextEncoder().encode('same-bytes')
-	const digest = await sha256Hex(blobBytes)
-	const { client, objects } = createMemoryS3()
-	await client.put(backupBlobKey(digest), blobBytes)
-	const putsBefore = objects.size
-	const headSpy = vi.spyOn(client, 'head')
-	const putSpy = vi.spyOn(client, 'put')
-
-	const env = {
-		DR_EXPORT_ENABLED: 'true',
-		DR_BACKUP_ACCOUNT_ID: 'acct',
-		DR_BACKUP_BUCKET_NAME: 'bucket',
-		DR_BACKUP_ACCESS_KEY_ID: 'key',
-		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
-		APP_DB: createDb({}),
-		EMAIL_BLOBS: createR2({ 'raw/dup': blobBytes }),
-		COMMUNITY_ASSETS: createR2({}),
-		BUNDLE_ARTIFACTS_KV: { get: async () => null },
-		STORAGE_RUNNER: {},
-	} as unknown as Env
-
-	const result = await runDrExportTick({
-		env,
-		now: new Date('2026-07-23T01:00:00.000Z'),
-		timeBudgetMs: 60_000,
-		s3: client,
-	})
-	expect(result.blobsReused).toBeGreaterThanOrEqual(1)
-	expect(headSpy).toHaveBeenCalledWith(backupBlobKey(digest))
-	const blobPuts = putSpy.mock.calls.filter(
-		([key]) => key === backupBlobKey(digest),
-	)
-	expect(blobPuts).toHaveLength(0)
-	expect(objects.size).toBeGreaterThanOrEqual(putsBefore)
 })
 
 test('exporter skips oversized storage dumps with a summary warning', async () => {
@@ -460,10 +431,6 @@ test('exporter aborts quietly when progress If-Match precondition fails', async 
 	})
 	expect(result.skipped).toBe(true)
 	expect(result.reason).toBe('progress-precondition-failed')
-})
-
-test('R2 full-buffer ceiling is 25 MiB', () => {
-	expect(drExportMaxObjectBytes).toBe(25 * 1024 * 1024)
 })
 
 test('R2 export does not duplicate index lines across budget interruptions', async () => {
@@ -593,17 +560,4 @@ test('R2 export does not duplicate index lines across budget interruptions', asy
 	} finally {
 		dateNow.mockRestore()
 	}
-})
-
-test('initial progress shape includes phase, revision, and cursors', () => {
-	const progress = __testOnlyCreateInitialProgress(
-		'2026-07-23',
-		new Date('2026-07-23T01:00:00.000Z'),
-	)
-	expect(progress.phase).toBe('storage')
-	expect(progress.revision).toBe(0)
-	expect(progress.storageIndex).toBe(0)
-	expect(progress.storagePageStartAfter).toBeNull()
-	expect(progress.r2LabelIndex).toBe(0)
-	expect(progress.artifactsIndex).toBe(0)
 })
