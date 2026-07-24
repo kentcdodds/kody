@@ -19,6 +19,8 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 	account_type TEXT NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'platform')),
 	plan TEXT NOT NULL DEFAULT 'free',
 	deleting_at TEXT,
+	suspended_at TEXT,
+	email_outbound_paused_at TEXT,
 	active_write_count INTEGER NOT NULL DEFAULT 0,
 	active_write_expires_at TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
@@ -32,6 +34,8 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 		`account_type TEXT NOT NULL DEFAULT 'person'`,
 		`plan TEXT NOT NULL DEFAULT 'free'`,
 		'deleting_at TEXT',
+		'suspended_at TEXT',
+		'email_outbound_paused_at TEXT',
 		'active_write_count INTEGER NOT NULL DEFAULT 0',
 		'active_write_expires_at TEXT',
 	]) {

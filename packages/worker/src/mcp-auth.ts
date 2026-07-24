@@ -2,6 +2,7 @@ import {
 	type OAuthHelpers,
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
+import { isAccountSuspended } from '#app/account-suspension.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
@@ -79,6 +80,18 @@ export function createEmailVerificationRequiredResponse(origin: string) {
 	)
 }
 
+export function createAccountSuspendedResponse() {
+	return Response.json(
+		{
+			error: 'account_suspended',
+			error_description:
+				'This account is suspended, so MCP access is disabled. ' +
+				'Contact the operator of this Kody deployment to appeal.',
+		},
+		{ status: 403 },
+	)
+}
+
 function audienceMatches(
 	audience: string | Array<string> | undefined,
 	origin: string,
@@ -144,6 +157,19 @@ export async function handleMcpRequest({
 	})
 	if (!emailVerified) {
 		return createEmailVerificationRequiredResponse(origin)
+	}
+
+	// Fail-closed suspension gate, mirroring email verification: a
+	// suspended account keeps its OAuth grants (stateless tokens cannot be
+	// revoked individually) but every MCP request is rejected until an
+	// admin clears the suspension.
+	const suspended = await isAccountSuspended({
+		db: env.APP_DB,
+		email: mcpUser.email,
+		stableUserId: mcpUser.userId,
+	})
+	if (suspended) {
+		return createAccountSuspendedResponse()
 	}
 
 	const remoteConnectors = await listAttachedRemoteConnectorRefs({

@@ -4,11 +4,13 @@ import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
 import { loadAdminUserUsageData } from '#app/admin-user-usage-data.ts'
 import {
+	clearAdminUserEmailOutboundPause,
 	loadAdminUserByIdOrEmail,
 	loadAdminUsersData,
 	loadRolesByUserIds,
 	adminUserListItemFieldNames,
 	updateAdminUserPlan,
+	updateAdminUserSuspension,
 	type AdminUserListItem,
 } from '#app/admin-users-data.ts'
 import {
@@ -129,6 +131,25 @@ export function createAdminUsersApiHandler(env: Env) {
 				}
 				if (action === 'update_plan') {
 					return handleUpdatePlanAction({
+						env,
+						request,
+						url,
+						actor,
+						body,
+					})
+				}
+				if (action === 'suspend_user' || action === 'unsuspend_user') {
+					return handleSuspensionAction({
+						env,
+						request,
+						url,
+						actor,
+						body,
+						suspended: action === 'suspend_user',
+					})
+				}
+				if (action === 'resume_email_outbound') {
+					return handleResumeEmailOutboundAction({
 						env,
 						request,
 						url,
@@ -372,6 +393,95 @@ async function handleUpdatePlanAction(input: {
 		ip: requestIp,
 		path: input.url.pathname,
 		reason: `target_user_id=${targetUserId};plan=${planUpdate.plan}`,
+	})
+
+	return buildMutationResponse(input.env, input.request.url, targetUserId)
+}
+
+/**
+ * Set or clear the platform suspension. Unlike a community ban (community
+ * surfaces only), suspension is fail-closed at the browser-session, MCP,
+ * and email chokepoints.
+ */
+async function handleSuspensionAction(input: {
+	env: Env
+	request: Request
+	url: URL
+	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
+	body: object
+	suspended: boolean
+}) {
+	const targetUserId = readPositiveInt(
+		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
+		0,
+	)
+	if (!targetUserId) {
+		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
+	}
+	if (input.suspended && targetUserId === input.actor.userId) {
+		return jsonResponse(
+			{ ok: false, error: 'You cannot suspend your own account.' },
+			400,
+		)
+	}
+
+	const updatedUser = await updateAdminUserSuspension(input.env.APP_DB, {
+		id: targetUserId,
+		suspended: input.suspended,
+	})
+	if (!updatedUser) {
+		return jsonResponse({ ok: false, error: 'User not found.' }, 404)
+	}
+
+	const requestIp = getRequestIp(input.request) ?? undefined
+	void logAuditEvent({
+		category: 'admin',
+		action: input.suspended ? 'suspend_user' : 'unsuspend_user',
+		result: 'success',
+		email: input.actor.email,
+		ip: requestIp,
+		path: input.url.pathname,
+		reason: `target_user_id=${targetUserId}`,
+	})
+
+	return buildMutationResponse(input.env, input.request.url, targetUserId)
+}
+
+/**
+ * Clear an automatic outbound-email pause (set by the delivery-event
+ * abuse monitor) after reviewing the account's delivery history.
+ */
+async function handleResumeEmailOutboundAction(input: {
+	env: Env
+	request: Request
+	url: URL
+	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
+	body: object
+}) {
+	const targetUserId = readPositiveInt(
+		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
+		0,
+	)
+	if (!targetUserId) {
+		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
+	}
+
+	const updatedUser = await clearAdminUserEmailOutboundPause(input.env.APP_DB, {
+		id: targetUserId,
+	})
+	if (!updatedUser) {
+		return jsonResponse({ ok: false, error: 'User not found.' }, 404)
+	}
+
+	const requestIp = getRequestIp(input.request) ?? undefined
+	void logAuditEvent({
+		category: 'admin',
+		action: 'resume_email_outbound',
+		result: 'success',
+		email: input.actor.email,
+		ip: requestIp,
+		path: input.url.pathname,
+		reason: `target_user_id=${targetUserId}`,
 	})
 
 	return buildMutationResponse(input.env, input.request.url, targetUserId)

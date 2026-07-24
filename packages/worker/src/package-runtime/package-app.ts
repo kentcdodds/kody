@@ -1498,6 +1498,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 					props: {
 						baseUrl: input.baseUrl,
 						userId: input.userId,
+						email: input.runtime.callerContext.user?.email ?? null,
 						storageContext: {
 							sessionId: null,
 							appId: input.savedPackage.id,

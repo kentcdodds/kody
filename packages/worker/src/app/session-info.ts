@@ -24,7 +24,9 @@ export async function loadSessionInfo(
 	env: Env,
 ): Promise<LoadedSessionResult> {
 	const resolved = await loadResolvedRequestAuth(request, env)
-	if (!resolved.user) {
+	// A suspended account's session is treated as signed out everywhere,
+	// including the SSR shell (matching readAuthenticatedAppUser).
+	if (!resolved.user || resolved.user.accountSuspended) {
 		return {
 			session: null,
 			setCookie: resolved.setCookie,

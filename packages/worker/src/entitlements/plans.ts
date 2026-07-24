@@ -153,6 +153,15 @@ export type PlanLimits = {
 	maxStorageBytes: number
 	/** Maximum concurrently active workflow runs. */
 	maxConcurrentWorkflows: number
+	/** Maximum MCP execute-tool runs per UTC day. */
+	maxExecuteCallsPerDay: number
+	/**
+	 * Maximum sandbox outbound fetches (through the fetch gateway) per UTC
+	 * day. Bounds cost abuse and third-party hammering from user code; the
+	 * shared Worker egress identity means one user's fetch flood can burn
+	 * reputation for the whole deployment.
+	 */
+	maxOutboundFetchesPerDay: number
 }
 
 export const entitlementResources = [
@@ -168,6 +177,8 @@ export const entitlementResources = [
 	'secrets',
 	'storage_bytes',
 	'concurrent_workflows',
+	'execute_calls_per_day',
+	'outbound_fetches_per_day',
 ] as const
 
 export type EntitlementResource = (typeof entitlementResources)[number]
@@ -186,6 +197,8 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 	secrets: 'secrets',
 	storage_bytes: 'storage bytes',
 	concurrent_workflows: 'concurrent workflows',
+	execute_calls_per_day: 'execute calls per day',
+	outbound_fetches_per_day: 'outbound fetches per day',
 }
 
 /**
@@ -232,6 +245,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 5,
 		maxStorageBytes: 64 * 1024 * 1024,
 		maxConcurrentWorkflows: 3,
+		maxExecuteCallsPerDay: 500,
+		maxOutboundFetchesPerDay: 2_000,
 	},
 	pro: {
 		maxSavedPackages: 100,
@@ -246,6 +261,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 100,
 		maxStorageBytes: 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
+		maxExecuteCallsPerDay: 5_000,
+		maxOutboundFetchesPerDay: 20_000,
 	},
 	partner: {
 		maxSavedPackages: 200,
@@ -260,6 +277,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 100,
+		maxExecuteCallsPerDay: 10_000,
+		maxOutboundFetchesPerDay: 40_000,
 	},
 	max: {
 		// 100× pro (100) → 10_000.
@@ -283,6 +302,10 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxStorageBytes: 100 * 1024 * 1024 * 1024,
 		// 100× pro (50) → 5_000 (explicit product choice).
 		maxConcurrentWorkflows: 5_000,
+		// 100× pro (5_000) → 500_000.
+		maxExecuteCallsPerDay: 500_000,
+		// 100× pro (20_000) → 2_000_000.
+		maxOutboundFetchesPerDay: 2_000_000,
 	},
 }
 
@@ -339,6 +362,10 @@ export function resolvePlanLimit(
 			return limits.maxStorageBytes
 		case 'concurrent_workflows':
 			return limits.maxConcurrentWorkflows
+		case 'execute_calls_per_day':
+			return limits.maxExecuteCallsPerDay
+		case 'outbound_fetches_per_day':
+			return limits.maxOutboundFetchesPerDay
 		default: {
 			const exhaustive: never = resource
 			throw new Error(`Unknown entitlement resource: ${String(exhaustive)}`)

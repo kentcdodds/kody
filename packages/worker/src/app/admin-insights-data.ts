@@ -6,6 +6,7 @@ import {
 	type AdminInsightsAuthCategory,
 	type AdminInsightsAuthDay,
 	type AdminInsightsEmailDay,
+	type AdminInsightsEmailDeliveryDay,
 	type AdminInsightsHeatmapCell,
 	type AdminInsightsJobHealth,
 	type AdminInsightsLoaderData,
@@ -39,6 +40,7 @@ type UsageMonthRow = {
 	errors: number
 }
 type EmailDayRow = { day: string; resource: string; n: number }
+type EmailDeliveryDayRow = { day: string; event_type: string; n: number }
 type PlanRow = { plan: string; n: number }
 type AuthDayRow = { day: string; result: string; n: number }
 type AuthCategoryRow = { category: string; n: number }
@@ -62,7 +64,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env.APP_DB, now)
 	return await cachified({
-		key: 'admin-insights:v1',
+		key: 'admin-insights:v2',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env.APP_DB, now),
@@ -94,6 +96,7 @@ async function queryAdminInsights(
 		usersBeforeWindow,
 		usageRows,
 		emailRows,
+		emailDeliveryRows,
 		planRows,
 		authDayRows,
 		authCategoryRows,
@@ -141,6 +144,17 @@ async function queryAdminInsights(
 			)
 			.bind(dayCutoff)
 			.all<EmailDayRow>(),
+		db
+			.prepare(
+				// Provider ('cloudflare-email') events only: outbound
+				// delivery outcomes, excluding inbound routing rejections.
+				`SELECT substr(created_at, 1, 10) AS day, event_type, COUNT(*) AS n
+				 FROM email_delivery_events
+				 WHERE provider = 'cloudflare-email' AND created_at >= ?
+				 GROUP BY day, event_type`,
+			)
+			.bind(dayCutoff)
+			.all<EmailDeliveryDayRow>(),
 		db
 			.prepare(
 				`SELECT COALESCE(plan, 'none') AS plan, COUNT(*) AS n
@@ -215,6 +229,11 @@ async function queryAdminInsights(
 		),
 		emailByDay: buildEmailDays(
 			emailRows.results ?? [],
+			now,
+			adminInsightsActivityDays,
+		),
+		emailDeliveryByDay: buildEmailDeliveryDays(
+			emailDeliveryRows.results ?? [],
 			now,
 			adminInsightsActivityDays,
 		),
@@ -395,6 +414,47 @@ export function buildEmailDays(
 		}
 	}
 	return Array.from(byDay.values())
+}
+
+export function buildEmailDeliveryDays(
+	rows: Array<EmailDeliveryDayRow>,
+	now: Date,
+	days: number,
+): Array<AdminInsightsEmailDeliveryDay> {
+	const byDay = new Map<string, AdminInsightsEmailDeliveryDay>()
+	for (const day of listUtcDayKeys(now, days)) {
+		byDay.set(day, {
+			day,
+			delivered: 0,
+			deferred: 0,
+			bounced: 0,
+			failed: 0,
+			rejected: 0,
+			complained: 0,
+		})
+	}
+	for (const row of rows) {
+		const entry = byDay.get(row.day)
+		if (!entry) continue
+		if (!isEmailDeliveryOutcome(row.event_type)) continue
+		entry[row.event_type] += Number(row.n)
+	}
+	return Array.from(byDay.values())
+}
+
+const emailDeliveryOutcomes = [
+	'delivered',
+	'deferred',
+	'bounced',
+	'failed',
+	'rejected',
+	'complained',
+] as const
+
+function isEmailDeliveryOutcome(
+	value: string,
+): value is (typeof emailDeliveryOutcomes)[number] {
+	return (emailDeliveryOutcomes as ReadonlyArray<string>).includes(value)
 }
 
 export function buildAuthDays(

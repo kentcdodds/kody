@@ -31,6 +31,7 @@ export async function runExecuteSmokeCheck(env: Env) {
 		gatewayProps: {
 			baseUrl: origin,
 			userId: null,
+			email: null,
 			storageContext: null,
 		},
 		timeoutMs: 10_000,

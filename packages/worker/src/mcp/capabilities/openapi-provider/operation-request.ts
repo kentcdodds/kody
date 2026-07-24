@@ -96,6 +96,7 @@ export async function executeOpenApiOperationRequest(input: {
 		props: {
 			baseUrl: input.baseUrl,
 			userId: input.userId,
+			email: null,
 			storageContext: input.storageContext,
 		},
 		request,
@@ -123,6 +124,7 @@ export async function executeOpenApiOperationRequest(input: {
 				props: {
 					baseUrl: input.baseUrl,
 					userId: input.userId,
+					email: null,
 					storageContext: input.storageContext,
 				},
 				request: new Request(url.toString(), requestInit),
@@ -418,6 +420,7 @@ async function tryRefreshIntegrationAccessToken(input: {
 			props: {
 				baseUrl: input.baseUrl,
 				userId: input.userId,
+				email: null,
 				storageContext: input.storageContext,
 			},
 			request: new Request(input.integration.tokenUrl, {

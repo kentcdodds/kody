@@ -484,6 +484,64 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 				</ChartCard>
 
 				<ChartCard
+					title="Email delivery health"
+					sub="Outbound delivery outcomes from the provider, last 28 days. Bounces and complaints burn the shared sender domain's reputation."
+					span={12}
+					legend={
+						<ChartLegend
+							items={[
+								{ label: 'Delivered', color: chartColor.emerald },
+								{ label: 'Deferred', color: chartColor.cyan },
+								{ label: 'Bounced', color: chartColor.amber },
+								{ label: 'Failed', color: chartColor.fuchsia },
+								{ label: 'Rejected', color: chartColor.violet },
+								{ label: 'Complained', color: chartColor.rose },
+							]}
+						/>
+					}
+				>
+					<StackedBarChart
+						id="email-delivery"
+						ariaLabel="Outbound email delivery outcomes per day"
+						series={[
+							{
+								label: 'Delivered',
+								color: chartColor.emerald,
+								values: data.emailDeliveryByDay.map((day) => day.delivered),
+							},
+							{
+								label: 'Deferred',
+								color: chartColor.cyan,
+								values: data.emailDeliveryByDay.map((day) => day.deferred),
+							},
+							{
+								label: 'Bounced',
+								color: chartColor.amber,
+								values: data.emailDeliveryByDay.map((day) => day.bounced),
+							},
+							{
+								label: 'Failed',
+								color: chartColor.fuchsia,
+								values: data.emailDeliveryByDay.map((day) => day.failed),
+							},
+							{
+								label: 'Rejected',
+								color: chartColor.violet,
+								values: data.emailDeliveryByDay.map((day) => day.rejected),
+							},
+							{
+								label: 'Complained',
+								color: chartColor.rose,
+								values: data.emailDeliveryByDay.map((day) => day.complained),
+							},
+						]}
+						xLabels={data.emailDeliveryByDay.map((day) =>
+							formatDayLabel(day.day),
+						)}
+					/>
+				</ChartCard>
+
+				<ChartCard
 					title="Auth pulse"
 					sub="Authentication and account events per day, last 28 days."
 					span={8}

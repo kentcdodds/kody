@@ -184,7 +184,12 @@ export function AdminUsersRoute(handle: Handle) {
 	// (deep link / filtered out). Prefer the in-list row when present.
 	let selectedUserFallback: AdminUserListItem | null = null
 	let message: string | null = null
-	let actionState: 'idle' | 'assigning' | 'removing' | 'saving-plan' = 'idle'
+	let actionState:
+		| 'idle'
+		| 'assigning'
+		| 'removing'
+		| 'saving-plan'
+		| 'moderating' = 'idle'
 	let selectedRoleToAssign = 'user' as RoleName
 	// Draft follows the selected user (see the render body) until the admin
 	// edits it. Null stored plan values are shown/saved as `free`.
@@ -559,6 +564,59 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
+	async function submitModerationAction(
+		action: 'suspend_user' | 'unsuspend_user' | 'resume_email_outbound',
+	) {
+		const href = getCurrentHref()
+		const selectedUser = resolveSelectedUser(href)
+		if (!selectedUser || actionState !== 'idle') return
+		actionState = 'moderating'
+		message = null
+		handle.update()
+		try {
+			// Carry filters + selected so the mutation response refreshes the
+			// same list window and selectedUser fallback the UI is showing.
+			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action,
+					userId: selectedUser.id,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AdminUsersMutationData & { ok?: boolean; error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to update the account.')
+			}
+			applyMutationPayload(payload, href)
+			lastLoadedDataKey = getDataKey(href)
+			message =
+				action === 'suspend_user'
+					? 'Account suspended.'
+					: action === 'unsuspend_user'
+						? 'Account suspension cleared.'
+						: 'Outbound email resumed.'
+			status = 'ready'
+			actionState = 'idle'
+			handle.update()
+		} catch (error) {
+			actionState = 'idle'
+			message =
+				error instanceof Error ? error.message : 'Unable to update the account.'
+			handle.update()
+		}
+	}
+
 	const primaryButtonCss = getPrimaryButtonCss()
 	const secondaryButtonCss = getSecondaryButtonCss()
 
@@ -828,6 +886,18 @@ export function AdminUsersRoute(handle: Handle) {
 											value: selectedUser.plan ?? 'free',
 										},
 										{
+											label: 'Suspended',
+											value: selectedUser.suspended_at
+												? formatTimestamp(selectedUser.suspended_at)
+												: 'No',
+										},
+										{
+											label: 'Outbound email',
+											value: selectedUser.email_outbound_paused_at
+												? `Paused ${formatTimestamp(selectedUser.email_outbound_paused_at)}`
+												: 'Active',
+										},
+										{
 											label: 'Created',
 											value: formatTimestamp(selectedUser.created_at),
 										},
@@ -942,6 +1012,68 @@ export function AdminUsersRoute(handle: Handle) {
 										>
 											{actionState === 'saving-plan' ? 'Saving…' : 'Save plan'}
 										</button>
+									</div>
+								</AccountManagementPanel>
+								<AccountManagementPanel
+									title="Moderation"
+									description="Suspension blocks the account at the session, MCP, and email chokepoints. The outbound-email pause is set automatically after spam complaints or repeated bounces."
+								>
+									<div
+										mix={css({
+											display: 'flex',
+											gap: spacing.md,
+											flexWrap: 'wrap',
+										})}
+									>
+										{selectedUser.suspended_at ? (
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on('click', () =>
+														void submitModerationAction('unsuspend_user'),
+													),
+													css(primaryButtonCss),
+												]}
+											>
+												{actionState === 'moderating'
+													? 'Working…'
+													: 'Clear suspension'}
+											</button>
+										) : (
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on('click', () =>
+														void submitModerationAction('suspend_user'),
+													),
+													css(secondaryButtonCss),
+												]}
+											>
+												{actionState === 'moderating'
+													? 'Working…'
+													: 'Suspend account'}
+											</button>
+										)}
+										{selectedUser.email_outbound_paused_at ? (
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on('click', () =>
+														void submitModerationAction(
+															'resume_email_outbound',
+														),
+													),
+													css(secondaryButtonCss),
+												]}
+											>
+												{actionState === 'moderating'
+													? 'Working…'
+													: 'Resume outbound email'}
+											</button>
+										) : null}
 									</div>
 								</AccountManagementPanel>
 								<AccountManagementPanel

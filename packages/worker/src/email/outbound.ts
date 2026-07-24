@@ -1,5 +1,9 @@
 import { base64ToBytes } from '@kody-internal/shared/base64.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	accountSuspendedMessage,
+	getAccountRestrictionsByStableUserId,
+} from '#app/account-suspension.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
@@ -12,6 +16,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
+import { emailOutboundPausedMessage } from './outbound-abuse.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
 import {
 	createEmailThread,
@@ -432,6 +437,21 @@ export async function sendOutboundEmail(
 		})
 		if (!accountEmailVerified) {
 			throw new Error('Account email must be verified before sending email.')
+		}
+		// Abuse gates: a suspended account cannot send at all, and an
+		// account paused by the delivery-event abuse monitor (spam
+		// complaints / repeated bounces) stays blocked until an admin
+		// clears the pause. Both protect the shared platform sending
+		// domain's reputation.
+		const restrictions = await getAccountRestrictionsByStableUserId({
+			db: input.env.APP_DB,
+			stableUserId: input.userId,
+		})
+		if (restrictions?.suspendedAt) {
+			throw new Error(accountSuspendedMessage)
+		}
+		if (restrictions?.emailOutboundPausedAt) {
+			throw new Error(emailOutboundPausedMessage)
 		}
 		// Sends reference the platform-provisioned sender identity. It is
 		// normally created alongside the default inbox at signup; ensuring it

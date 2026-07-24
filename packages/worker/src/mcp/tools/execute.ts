@@ -49,6 +49,7 @@ import {
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { listOpenApiBindings } from '#worker/openapi/binding-service.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
+import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
 
 const executeTool = {
 	name: 'execute',
@@ -185,6 +186,18 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			}
 
 			async function runExecuteTool() {
+				// Daily execute quota, consumed before any bundling or sandbox
+				// work so over-limit calls cost nothing. The thrown
+				// EntitlementLimitError propagates through the outer catch as
+				// a structured MCP error.
+				if (callerContext.user?.userId) {
+					await consumeDailyEntitlement({
+						db: env.APP_DB,
+						userId: callerContext.user.userId,
+						email: callerContext.user.email,
+						resource: 'execute_calls_per_day',
+					})
+				}
 				const { getCapabilityRegistryForContext } =
 					await import('#mcp/capabilities/registry.ts')
 				const registry = await getCapabilityRegistryForContext({

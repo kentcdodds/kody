@@ -387,6 +387,10 @@
 		{
 			"filename": "0090-webhook-endpoints.sql",
 			"sha256": "59e680a93e93300b520ddd87ff6d86da24a97a33d651fe10ff7a842b66cfe355"
+		},
+		{
+			"filename": "0091-user-abuse-controls.sql",
+			"sha256": "a831d51f11e539c57283947fd78917f719cc5ca33b023af2f8beeec84bed53a3"
 		}
 	]
 }

@@ -1,4 +1,5 @@
 import { processCloudflareEmailDeliveryEvent } from './delivery-events.ts'
+import { applyOutboundEmailAbusePause } from './outbound-abuse.ts'
 import { dispatchEmailDeliverySubscriptionEvents } from './package-subscriptions.ts'
 
 const unmatchedRetryDelaySeconds = 30
@@ -27,10 +28,27 @@ export async function handleEmailDeliveryQueue(
 					queueMessage.retry({ delaySeconds: unmatchedRetryDelaySeconds })
 					break
 				case 'stale':
+					// Out-of-order events still count toward the abuse
+					// thresholds: the bounce/complaint happened even when a
+					// newer status already superseded it.
+					await applyOutboundEmailAbusePause({
+						env,
+						userId: result.message.userId,
+						deliveryStatus: result.event.payload.delivery.status,
+					})
 					queueMessage.ack()
 					break
 				case 'duplicate':
 				case 'recorded': {
+					// Abuse evaluation runs before subscription dispatch (and
+					// also for replayed duplicates) so a crash or dispatch
+					// failure can never skip the pause; the pause write itself
+					// is idempotent.
+					await applyOutboundEmailAbusePause({
+						env,
+						userId: result.message.userId,
+						deliveryStatus: result.event.payload.delivery.status,
+					})
 					await dispatchEmailDeliverySubscriptionEvents({
 						env,
 						message: result.message,

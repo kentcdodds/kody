@@ -122,6 +122,8 @@ export type AdminUserListItem = {
 	email_verified: boolean
 	email_verified_at: string | null
 	plan: AdminPlanName
+	suspended_at: string | null
+	email_outbound_paused_at: string | null
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -306,6 +308,21 @@ export type AdminInsightsEmailDay = {
 	receives: number
 }
 
+/**
+ * Platform-wide outbound delivery outcomes from provider delivery events.
+ * Bounce and complaint volume is the early-warning signal for shared
+ * sender-domain reputation trouble (all users send from one domain).
+ */
+export type AdminInsightsEmailDeliveryDay = {
+	day: string
+	delivered: number
+	deferred: number
+	bounced: number
+	failed: number
+	rejected: number
+	complained: number
+}
+
 export type AdminInsightsAuthDay = {
 	day: string
 	success: number
@@ -350,6 +367,7 @@ export type AdminInsightsLoaderData = {
 	signupsByWeek: Array<AdminInsightsSignupWeek>
 	usageByMonth: Array<AdminInsightsUsageMonth>
 	emailByDay: Array<AdminInsightsEmailDay>
+	emailDeliveryByDay: Array<AdminInsightsEmailDeliveryDay>
 	plans: Array<AdminInsightsPlanSlice>
 	authByDay: Array<AdminInsightsAuthDay>
 	authByCategory: Array<AdminInsightsAuthCategory>

@@ -261,7 +261,7 @@ export async function handleInboundEmail(
 			// getUserPlan / isAccountEmailVerified) so a mismatched identity pair
 			// cannot apply another account's plan or verification state.
 			const accountRow = await env.APP_DB.prepare(
-				`SELECT plan, stripe_plan, email_verified_at FROM users
+				`SELECT plan, stripe_plan, email_verified_at, suspended_at FROM users
 			WHERE email = ? AND stable_user_id = ?`,
 			)
 				.bind(identity.email, userId)
@@ -269,6 +269,7 @@ export async function handleInboundEmail(
 					plan: string
 					stripe_plan: string | null
 					email_verified_at: string | null
+					suspended_at: string | null
 				}>()
 			const account = {
 				email: identity.email,
@@ -278,6 +279,7 @@ export async function handleInboundEmail(
 					accountRow?.stripe_plan ?? null,
 				),
 				emailVerified: Boolean(accountRow?.email_verified_at),
+				suspended: Boolean(accountRow?.suspended_at),
 			}
 
 			const provisioned = await ensureDefaultEmailInbox({
@@ -332,6 +334,24 @@ export async function handleInboundEmail(
 					recipient,
 					reason,
 					phase: 'account-verification',
+				}).catch(warnRejectionAuditWriteFailed)
+				await recordReceiveUsage({ outcome: 'error' })
+				return
+			}
+
+			// A platform-suspended account cannot receive mail either; the
+			// rejection goes through the same bounded recorder so suspended
+			// aliases cannot be used to grow storage.
+			if (account.suspended) {
+				const reason = 'Account is suspended.'
+				message.setReject(reason)
+				await recordBoundedEmailRejectionEvent({
+					db: env.APP_DB,
+					userId,
+					inboxId: inbox.id,
+					recipient,
+					reason,
+					phase: 'account-suspension',
 				}).catch(warnRejectionAuditWriteFailed)
 				await recordReceiveUsage({ outcome: 'error' })
 				return

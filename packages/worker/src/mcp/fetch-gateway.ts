@@ -22,11 +22,19 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 
 type FetchGatewayProps = {
 	baseUrl: string
 	userId: string | null
+	/**
+	 * Acting user's account email when the caller context carries one.
+	 * Backs the entitlement plan lookup for the outbound-fetch quota; a
+	 * missing email resolves the plan to `max`, whose limit is still
+	 * finite.
+	 */
+	email: string | null
 	storageContext: StorageContext | null
 }
 export type { FetchGatewayProps }
@@ -69,6 +77,18 @@ export async function executeGatewayFetch(input: {
 	let meteredEntityId = readMeteredRequestHostname(input.request.url, null)
 
 	try {
+		// Daily outbound-fetch quota: every sandbox fetch leaves through
+		// this gateway, so the atomic counter here bounds cost abuse and
+		// third-party hammering from user code. Consumed before secret
+		// expansion so over-limit requests never resolve secrets.
+		if (input.props.userId) {
+			await consumeDailyEntitlement({
+				db: input.env.APP_DB,
+				userId: input.props.userId,
+				email: input.props.email,
+				resource: 'outbound_fetches_per_day',
+			})
+		}
 		const transformed = await expandSecretPlaceholders({
 			request: input.request,
 			props: input.props,

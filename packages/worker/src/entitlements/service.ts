@@ -557,6 +557,8 @@ export async function readEntitlementResourceUsage(input: {
 			)
 		case 'email_sends_per_day':
 		case 'email_receives_per_day':
+		case 'execute_calls_per_day':
+		case 'outbound_fetches_per_day':
 			return await readDailyEntitlementCounter({
 				db,
 				userId,

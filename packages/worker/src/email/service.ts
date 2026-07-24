@@ -564,7 +564,12 @@ export async function recordBoundedEmailRejectionEvent(input: {
 	inboxId: string
 	recipient: string
 	reason: string
-	phase: 'entitlement' | 'size' | 'account-verification' | 'system-limit'
+	phase:
+		| 'entitlement'
+		| 'size'
+		| 'account-verification'
+		| 'account-suspension'
+		| 'system-limit'
 	now?: Date
 }) {
 	const now = input.now ?? new Date()

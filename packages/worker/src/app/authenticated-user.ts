@@ -25,6 +25,9 @@ async function readAuthenticatedAppUserInternal(
 	const resolved = await loadResolvedRequestAuth(request, env)
 	if (!resolved.user || !resolved.sessionUserId) return null
 	if (resolved.user.accountDeleting && !allowDeleting) return null
+	// Suspension is a platform kill switch: no surface honors a suspended
+	// session, so every consumer of this helper fails closed.
+	if (resolved.user.accountSuspended) return null
 
 	return {
 		sessionUserId: resolved.sessionUserId,

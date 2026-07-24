@@ -823,6 +823,7 @@ export async function runBundledModuleWithRegistry(
 			gatewayProps: {
 				baseUrl: callerContext.baseUrl,
 				userId: callerContext.user?.userId ?? null,
+				email: callerContext.user?.email ?? null,
 				storageContext: normalizedStorageContext,
 			},
 			modules: hydratedModules,

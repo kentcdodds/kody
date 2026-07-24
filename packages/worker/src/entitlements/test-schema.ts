@@ -29,6 +29,8 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 	stripe_plan TEXT,
 	stripe_plan_refreshed_at TEXT,
 	deleting_at TEXT,
+	suspended_at TEXT,
+	email_outbound_paused_at TEXT,
 	active_write_count INTEGER NOT NULL DEFAULT 0,
 	active_write_expires_at TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
@@ -46,6 +48,8 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 		'stripe_plan TEXT',
 		'stripe_plan_refreshed_at TEXT',
 		'deleting_at TEXT',
+		'suspended_at TEXT',
+		'email_outbound_paused_at TEXT',
 		'active_write_count INTEGER NOT NULL DEFAULT 0',
 		'active_write_expires_at TEXT',
 	]) {
