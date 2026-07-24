@@ -70,6 +70,9 @@ function truncateDeliveryError(error: string | null | undefined) {
  * Insert or rotate a minted webhook URL secret.
  * Concurrent mints for the same (user, package, name) resolve via the unique
  * index instead of throwing a constraint error.
+ *
+ * When `updateEnabledOnConflict` is true (mint/activate), conflict updates also
+ * set `enabled` from the insert row. Rotate passes false so disable state sticks.
  */
 export async function upsertWebhookEndpointSecret(input: {
 	db: D1Database
@@ -79,20 +82,28 @@ export async function upsertWebhookEndpointSecret(input: {
 	webhookName: string
 	urlSecretHash: string
 	enabled?: boolean
+	updateEnabledOnConflict?: boolean
 	now?: string
 }): Promise<WebhookEndpointRecord> {
 	const now = input.now ?? new Date().toISOString()
 	const enabled = input.enabled === false ? 0 : 1
+	const conflictSql = input.updateEnabledOnConflict
+		? `ON CONFLICT(user_id, package_id, webhook_name)
+			DO UPDATE SET
+				url_secret_hash = excluded.url_secret_hash,
+				rotated_at = excluded.rotated_at,
+				enabled = excluded.enabled`
+		: `ON CONFLICT(user_id, package_id, webhook_name)
+			DO UPDATE SET
+				url_secret_hash = excluded.url_secret_hash,
+				rotated_at = excluded.rotated_at`
 	await input.db
 		.prepare(
 			`INSERT INTO webhook_endpoints (
 				id, user_id, package_id, webhook_name, url_secret_hash,
 				enabled, created_at, rotated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT(user_id, package_id, webhook_name)
-			DO UPDATE SET
-				url_secret_hash = excluded.url_secret_hash,
-				rotated_at = excluded.rotated_at`,
+			${conflictSql}`,
 		)
 		.bind(
 			input.id,

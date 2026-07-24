@@ -191,6 +191,25 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	})
 	expect(disabled.enabled).toBe(false)
 
+	const rotatedWhileDisabled = await rotateWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+	})
+	expect(rotatedWhileDisabled.enabled).toBe(false)
+
+	const reminted = await mintWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+	})
+	expect(reminted.enabled).toBe(true)
+	expect(reminted.urlSecret).not.toBe(rotatedWhileDisabled.urlSecret)
+
 	const endpoint = await db
 		.prepare(`SELECT id FROM webhook_endpoints WHERE user_id = ?`)
 		.bind(userId)

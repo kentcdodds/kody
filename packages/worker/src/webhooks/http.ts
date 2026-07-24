@@ -313,31 +313,23 @@ export async function handleWebhookIngressRequest(
 		return notFoundResponse()
 	}
 
-	// Bound every subsequent delivery-log write (including pre-auth rejects).
-	const rateLimit = await checkRateLimit(
-		env.APP_DB,
-		`webhook:endpoint:${endpoint.id}`,
-		webhookRateLimitConfig,
-	)
-	if (!rateLimit.allowed) {
-		return rateLimitedResponse(rateLimit.retryAfterSeconds ?? 60)
-	}
-
 	const secretMatches = await webhookUrlSecretMatches({
 		candidate: route.urlSecret,
 		storedHash: endpoint.urlSecretHash,
 	})
+	// Wrong secret: no delivery row (avoids log-flush DoS) and no rate-limit
+	// side channel that would distinguish minted names from unknown ones.
 	if (!secretMatches) {
-		await recordDelivery({
-			db: env.APP_DB,
-			endpoint,
-			outcome: 'rejected',
-			httpStatus: 404,
-			error: 'url_secret_mismatch',
-			payloadBytes: 0,
-			receivedAt,
-		})
 		return notFoundResponse()
+	}
+
+	const rateLimit = await checkRateLimit(
+		env.APP_DB,
+		`webhook:user:${endpoint.userId}:endpoint:${endpoint.id}`,
+		webhookRateLimitConfig,
+	)
+	if (!rateLimit.allowed) {
+		return rateLimitedResponse(rateLimit.retryAfterSeconds ?? 60)
 	}
 
 	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })

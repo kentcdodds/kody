@@ -189,9 +189,12 @@ export async function mintWebhookUrlForUser(input: {
 	kodyId?: string
 	webhookName: string
 	requestUrl?: string | null
+	/** When false, rotate secret without forcing enabled=true on conflict. */
+	activate?: boolean
 }): Promise<MintedWebhookUrl> {
 	const webhookName = input.webhookName.trim()
 	if (!webhookName) throw new Error('webhookName is required.')
+	const activate = input.activate !== false
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
 		requestUrl: input.requestUrl,
@@ -220,6 +223,7 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 		urlSecretHash,
 		enabled: true,
+		updateEnabledOnConflict: activate,
 	})
 
 	const username = await resolveOwnerUsername({
@@ -274,7 +278,10 @@ export async function rotateWebhookUrlForUser(input: {
 			'Webhook URL has not been minted. Call webhook_url_mint first.',
 		)
 	}
-	return mintWebhookUrlForUser(input)
+	return mintWebhookUrlForUser({
+		...input,
+		activate: false,
+	})
 }
 
 export async function setWebhookEnabledForUser(input: {
