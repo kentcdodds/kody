@@ -16,17 +16,21 @@ vi.mock('@sentry/cloudflare', () => ({
 	) => durableObjectClass,
 }))
 
-vi.mock('cloudflare:workers', () => ({
-	DurableObject: class {
-		protected readonly ctx: DurableObjectState
-		protected readonly env: Env
+vi.mock('cloudflare:workers', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
+	return {
+		...actual,
+		DurableObject: class {
+			protected readonly ctx: DurableObjectState
+			protected readonly env: Env
 
-		constructor(ctx: DurableObjectState, env: Env) {
-			this.ctx = ctx
-			this.env = env
-		}
-	},
-}))
+			constructor(ctx: DurableObjectState, env: Env) {
+				this.ctx = ctx
+				this.env = env
+			}
+		},
+	}
+})
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
