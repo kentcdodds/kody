@@ -47,4 +47,14 @@ test('rejects missing, malformed, or non-same-origin-tunnel configs', () => {
 			}),
 		),
 	).toBeNull()
+	// Scheme-relative URLs start with '/' but leave the origin.
+	expect(
+		parseSentryClientConfig(
+			JSON.stringify({
+				dsn: 'https://key@o1.ingest.sentry.io/2',
+				environment: 'production',
+				tunnel: '//evil.example.com/collect',
+			}),
+		),
+	).toBeNull()
 })

@@ -33,6 +33,10 @@ test('buildEnvelopeIngestUrl derives the envelope endpoint from the DSN', () => 
 	)
 	expect(buildEnvelopeIngestUrl('not a url')).toBeNull()
 	expect(buildEnvelopeIngestUrl('https://key@host.example.com/')).toBeNull()
+	// Self-hosted Sentry under a base path keeps the path prefix.
+	expect(
+		buildEnvelopeIngestUrl('https://key@sentry.example.com/sentry/456'),
+	).toBe('https://sentry.example.com/sentry/api/456/envelope/')
 })
 
 test('forwards envelopes whose dsn matches the configured DSN', async () => {

@@ -24,9 +24,13 @@ type SentryTunnelEnv = {
 export function buildEnvelopeIngestUrl(dsn: string): string | null {
 	try {
 		const dsnUrl = new URL(dsn)
-		const projectId = dsnUrl.pathname.replace(/\//g, '')
+		// Self-hosted Sentry may live under a base path:
+		// https://key@host/base/123 -> https://host/base/api/123/envelope/
+		const segments = dsnUrl.pathname.split('/').filter(Boolean)
+		const projectId = segments.pop()
 		if (!projectId) return null
-		return `https://${dsnUrl.host}/api/${projectId}/envelope/`
+		const basePath = segments.length > 0 ? `/${segments.join('/')}` : ''
+		return `https://${dsnUrl.host}${basePath}/api/${projectId}/envelope/`
 	} catch {
 		return null
 	}

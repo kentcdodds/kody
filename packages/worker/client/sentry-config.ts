@@ -28,7 +28,10 @@ export function parseSentryClientConfig(
 			!parsed.dsn ||
 			typeof parsed.environment !== 'string' ||
 			typeof parsed.tunnel !== 'string' ||
-			!parsed.tunnel.startsWith('/')
+			// Same-origin path only: reject scheme-relative URLs like
+			// //evil.example/collect, which start with '/' but leave origin.
+			!parsed.tunnel.startsWith('/') ||
+			parsed.tunnel.startsWith('//')
 		) {
 			return null
 		}
