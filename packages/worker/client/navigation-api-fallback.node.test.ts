@@ -45,7 +45,9 @@ test('navigation fallback stands in for the Navigation API only when it is missi
 	expect(win.location.replace).toHaveBeenCalledWith('https://heykody.dev/login')
 
 	const browserWithNavigation = createFakeWindow()
-	const realNavigation = { updateCurrentEntry: vi.fn() } as unknown as Navigation
+	const realNavigation = {
+		updateCurrentEntry: vi.fn(),
+	} as unknown as Navigation
 	browserWithNavigation.navigation = realNavigation
 
 	expect(installNavigationApiFallback(browserWithNavigation)).toBe(false)
