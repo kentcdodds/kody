@@ -2,6 +2,13 @@ import { type CloudflareOptions } from '@sentry/cloudflare'
 import { type ErrorEvent } from '@sentry/core'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 
+function sentryEventMessages(event: ErrorEvent) {
+	return [
+		event.message,
+		...(event.exception?.values?.map((value) => value.value) ?? []),
+	]
+}
+
 /**
  * Shared Sentry options for the Cloudflare Worker and Durable Objects.
  * `dsn` may be undefined when Sentry is not configured (local dev / opt-out).
@@ -9,6 +16,33 @@ import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 export function filterRetryableD1LockSentryEvent(event: ErrorEvent) {
 	if (!isRetryableD1LockSentryEvent(event)) return event
 	return null
+}
+
+/**
+ * Runtime bundling of caller-supplied modules (MCP execute, inline workflows)
+ * puts source under `.__kody_root__/`. When that source is invalid, esbuild
+ * throws `Build failed with … virtual:.__kody_root__/…`. Those are user-module
+ * mistakes, not platform defects — MCP execute already routes them as sandbox
+ * errors, but workflow instrumentation still auto-captures the rethrow.
+ */
+export function isUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			message.includes('Build failed with') &&
+			message.includes('.__kody_root__/'),
+	)
+}
+
+export function filterUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
+	if (!isUserModuleBundlerFailureSentryEvent(event)) return event
+	return null
+}
+
+export function filterSentryEvent(event: ErrorEvent) {
+	if (filterRetryableD1LockSentryEvent(event) === null) return null
+	if (filterUserModuleBundlerFailureSentryEvent(event) === null) return null
+	return event
 }
 
 export function buildSentryOptions(env: Env): CloudflareOptions {
@@ -32,7 +66,10 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// application capture paths (for example scheduled_lane_failed) still
 		// forwarded them. These are transient lock-contention errors retried in
 		// app code and should not open or regress Sentry issues.
-		beforeSend: filterRetryableD1LockSentryEvent,
+		//
+		// User-module esbuild failures from inline workflows are similarly
+		// expected caller mistakes; see filterUserModuleBundlerFailureSentryEvent.
+		beforeSend: filterSentryEvent,
 	}
 }
 
