@@ -583,10 +583,17 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			error.name = remoteConnectorToolsListRpcErrorName
 			throw error
 		}
-		const result = response.result as {
-			tools?: Array<RemoteConnectorSnapshot['tools'][number]>
+		const result = response.result
+		if (result === null || typeof result !== 'object') {
+			throw new Error('Malformed tools/list result.')
 		}
-		this.stateSnapshot.tools = result.tools ?? []
+		const tools = (result as { tools?: unknown }).tools
+		if (tools !== undefined && !Array.isArray(tools)) {
+			throw new Error('Malformed tools/list tools.')
+		}
+		this.stateSnapshot.tools =
+			(tools as Array<RemoteConnectorSnapshot['tools'][number]> | undefined) ??
+			[]
 		this.stateSnapshot.persisted.lastSeenAt = new Date().toISOString()
 		await this.persistState()
 	}

@@ -397,6 +397,7 @@ test('malformed tools/list snapshot responses still report to Sentry', async () 
 			extra: expect.objectContaining({
 				connectorId: 'home',
 				messageType: 'connector.jsonrpc',
+				error: 'Malformed tools/list result.',
 			}),
 		}),
 	)
