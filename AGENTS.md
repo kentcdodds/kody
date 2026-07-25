@@ -5,11 +5,11 @@ maintaining Kody). End-user / MCP usage docs live under
 [`docs/use/`](./docs/use/index.md).
 
 Kody is a multi-user personal assistant: every signed-in user gets a fully
-isolated assistant (own packages, jobs, secrets, values, memories, chat threads,
-remote connectors, email inboxes, durable storage). When adding code, every
-read/write path must be scoped by `userId`, every Durable Object id that backs
-user-owned state must be namespaced by `userId`, and every search/vector path
-must filter by `userId`. Cross-user data sharing is a bug.
+isolated assistant (own packages, jobs, secrets, values, memories, remote
+connectors, email inboxes, durable storage). When adding code, every read/write
+path must be scoped by `userId`, every Durable Object id that backs user-owned
+state must be namespaced by `userId`, and every search/vector path must filter
+by `userId`. Cross-user data sharing is a bug.
 
 Use Node 26 and npm for installs and scripts (`npm install`, `npm run ...`).
 

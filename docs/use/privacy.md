@@ -7,13 +7,13 @@ How Kody stores your data and what a deployment admin can see.
 Each signed-in user gets a fully isolated assistant. Kody stores account profile
 information (email, username, optional display name and bio, and profile
 visibility), secrets, values, memories, packages and their source, jobs, email
-inboxes and messages, chat threads, durable storage, remote connector
-configuration, OAuth grants, package invocation tokens, community social graph
-edges (follows, listing stars, and stored activity events), and any platform
-feedback you approve for submission. All of this remains scoped to your account
-except for content you deliberately make public (community listings and a public
-profile), the narrow admin review of approved platform feedback, and the
-community activity metadata described below.
+inboxes and messages, durable storage, remote connector configuration, OAuth
+grants, package invocation tokens, community social graph edges (follows,
+listing stars, and stored activity events), and any platform feedback you
+approve for submission. All of this remains scoped to your account except for
+content you deliberately make public (community listings and a public profile),
+the narrow admin review of approved platform feedback, and the community
+activity metadata described below.
 
 When profile visibility is **public**, display name, bio, public package
 metadata, follow counts, and public activity are visible on `/@username` and
@@ -101,7 +101,6 @@ does not let admins browse:
 - Jobs
 - Email inboxes and messages
 - Inbound webhook endpoints and delivery logs
-- Chat threads
 - Durable storage contents
 - Remote connector configuration
 - OAuth grants

@@ -11,7 +11,7 @@
     "#*": "./*",
     "#mcp/*": "./packages/worker/src/mcp/*"
   },
-  "description": "A starter and reference for building full stack web applications",
+  "description": "Your assistant's home — the memory, keys, code, and automations your AI agent keeps, portable across every MCP host",
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": [
       "oxfmt --no-error-on-unmatched-pattern",

@@ -27,11 +27,11 @@ export function PrivacyRoute(_handle: Handle) {
 					Each signed-in user gets a fully isolated assistant. Kody stores
 					account profile information (email and username), secrets, values,
 					memories, packages and their source, jobs, email inboxes and messages,
-					chat threads, durable storage, remote connector configuration, OAuth
-					grants, package invocation tokens, and any platform feedback you
-					approve for submission. All of this remains scoped to your account
-					except for the narrow admin review of approved platform feedback and
-					the community activity metadata described below.
+					durable storage, remote connector configuration, OAuth grants, package
+					invocation tokens, and any platform feedback you approve for
+					submission. All of this remains scoped to your account except for the
+					narrow admin review of approved platform feedback and the community
+					activity metadata described below.
 				</p>
 			</section>
 
@@ -106,7 +106,6 @@ export function PrivacyRoute(_handle: Handle) {
 					<li>Private packages and their source</li>
 					<li>Jobs</li>
 					<li>Email inboxes and messages</li>
-					<li>Chat threads</li>
 					<li>Durable storage contents</li>
 					<li>Remote connector configuration</li>
 					<li>OAuth grants</li>
