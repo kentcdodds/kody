@@ -56,6 +56,25 @@ const claudeClient: ClientInfo = {
 	clientName: 'Claude',
 	tokenEndpointAuthMethod: 'none',
 }
+// Gemini Spark custom MCP apps omit RFC 8707 `resource` on authorize.
+const geminiAuthorizeUrl =
+	'https://heykody.dev/oauth/authorize?response_type=code&client_id=QuXak4ugdtPZncjp&redirect_uri=https%3A%2F%2Foauth-redirect.googleusercontent.com%2Fr%2Fuser_bound_custom-mcp-106664623666703652842-heykody_dev&scope=profile+email&code_challenge=uMIae0HtFCz1_e_KxVlJ_W2oz1eT87iC0h4WkBB4tEc&code_challenge_method=S256&state=gemini-demo-state'
+const geminiAuthRequestWithoutResource: AuthRequest = {
+	responseType: 'code',
+	clientId: 'QuXak4ugdtPZncjp',
+	redirectUri:
+		'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-106664623666703652842-heykody_dev',
+	scope: ['profile', 'email'],
+	state: 'gemini-demo-state',
+	codeChallenge: 'uMIae0HtFCz1_e_KxVlJ_W2oz1eT87iC0h4WkBB4tEc',
+	codeChallengeMethod: 'S256',
+}
+const geminiClient: ClientInfo = {
+	clientId: geminiAuthRequestWithoutResource.clientId,
+	redirectUris: [geminiAuthRequestWithoutResource.redirectUri],
+	clientName: 'Gemini',
+	tokenEndpointAuthMethod: 'none',
+}
 
 function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 	return {
@@ -498,6 +517,46 @@ test('Claude-shaped authorize requests render and approve without throwing', asy
 	})
 	expect(capturedOptions?.request.resource).toBe('https://heykody.dev/mcp')
 	expect(capturedOptions?.request.scope).toEqual(['profile', 'email'])
+})
+
+test('Gemini-shaped authorize requests default resource to /mcp when omitted', async () => {
+	let capturedOptions: CompleteAuthorizationOptions | null = null
+	const helpers = createHelpers({
+		// Return a fresh object each time so the defaulting mutation stays local.
+		parseAuthRequest: async () => ({ ...geminiAuthRequestWithoutResource }),
+		lookupClient: async () => geminiClient,
+		async completeAuthorization(options) {
+			capturedOptions = options
+			return {
+				redirectTo:
+					'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-106664623666703652842-heykody_dev?code=demo&state=gemini-demo-state',
+			}
+		},
+	})
+	const postResponse = await handleAuthorizeRequest(
+		new Request(geminiAuthorizeUrl, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				decision: 'approve',
+				email: 'user@example.com',
+				password: 'password123',
+			}),
+		}),
+		createEnv(helpers, await createDatabase('password123')),
+	)
+
+	expect(postResponse.status).toBe(200)
+	await expect(postResponse.json()).resolves.toEqual({
+		ok: true,
+		redirectTo:
+			'https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-106664623666703652842-heykody_dev?code=demo&state=gemini-demo-state',
+	})
+	expect(capturedOptions?.request.resource).toBe('https://heykody.dev/mcp')
+	expect(geminiAuthRequestWithoutResource.resource).toBeUndefined()
 })
 
 test('session approval uses database user id when cookie email is stale', async () => {

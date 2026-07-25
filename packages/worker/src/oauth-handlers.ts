@@ -25,6 +25,8 @@ import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-mess
 import { getUsernameFormatValidationError } from '#app/username.ts'
 import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 import { oauthPaths } from '#app/oauth-paths.ts'
+import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { mcpResourcePath } from './mcp-auth.ts'
 
 export { oauthPaths }
 
@@ -214,7 +216,28 @@ function createSetCookieHeaders(cookies: Array<string | null | undefined>) {
 	return hasCookie ? headers : undefined
 }
 
-async function resolveAuthRequest(helpers: OAuthHelpers, request: Request) {
+function defaultMcpResourceForAuthRequest(
+	authRequest: AuthRequest,
+	request: Request,
+	env: Env,
+) {
+	// Gemini Spark (and some other MCP hosts) omit RFC 8707 `resource` on
+	// authorize. Without a grant resource, token exchange can mint a token with
+	// no audience, and `/mcp` rejects it. Default to the MCP resource when the
+	// client did not send one; explicit `resource` values are left unchanged.
+	if (authRequest.resource !== undefined) return
+	const origin = getAppBaseUrl({
+		env,
+		requestUrl: request.url,
+	})
+	authRequest.resource = `${origin}${mcpResourcePath}`
+}
+
+async function resolveAuthRequest(
+	helpers: OAuthHelpers,
+	request: Request,
+	env: Env,
+) {
 	try {
 		const authRequest = await helpers.parseAuthRequest(request)
 		if (!authRequest.clientId || !authRequest.redirectUri) {
@@ -227,6 +250,7 @@ async function resolveAuthRequest(helpers: OAuthHelpers, request: Request) {
 		if (!client) {
 			return { error: 'Unknown OAuth client.' }
 		}
+		defaultMcpResourceForAuthRequest(authRequest, request, env)
 		return { authRequest, client }
 	} catch (error) {
 		const message =
@@ -593,7 +617,7 @@ export async function loadOAuthAuthorizeData(
 	env: Env,
 ): Promise<OAuthAuthorizeDataResult> {
 	const helpers = getOAuthHelpers(env)
-	const resolution = await resolveAuthRequest(helpers, request)
+	const resolution = await resolveAuthRequest(helpers, request, env)
 	if ('error' in resolution) {
 		const { allowClientReset, setCookie } =
 			await resolveAuthorizeInfoResetState(
@@ -736,7 +760,7 @@ export async function handleAuthorizeRequest(
 		return handleResetClientRequest(request, env, helpers, requestIp)
 	}
 
-	const resolution = await resolveAuthRequest(helpers, request)
+	const resolution = await resolveAuthRequest(helpers, request, env)
 	if ('error' in resolution) {
 		return respondAuthorizeError(
 			request,
