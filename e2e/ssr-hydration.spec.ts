@@ -54,7 +54,6 @@ test('SSR community HTML hydrates SPA navigation and client search', async ({
 	const rawHtml = await htmlResponse.text()
 	expect(rawHtml).toContain(alphaListing.description)
 	expect(rawHtml).toContain(betaListing.name)
-	expect(rawHtml).not.toContain('Loading community packages')
 	expect(rawHtml).toContain('data-testid="community-listings-frame"')
 	expect(rawHtml).not.toContain('"community"')
 

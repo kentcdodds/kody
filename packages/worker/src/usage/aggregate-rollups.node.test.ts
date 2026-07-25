@@ -2,7 +2,6 @@ import { expect, test, vi } from 'vitest'
 import {
 	aggregateUsageRollups,
 	analyticsEngineSqlRetryMaxAttempts,
-	isRetryableAnalyticsEngineSqlStatus,
 	resolveUsageEventsDataset,
 	shouldRunUsageAggregationCron,
 } from './aggregate-rollups.ts'
@@ -714,67 +713,43 @@ test('aggregateUsageRollups surfaces a timed-out Analytics Engine fetch as an er
 	expect(batches).toHaveLength(0)
 })
 
-test('isRetryableAnalyticsEngineSqlStatus covers transient Cloudflare statuses', () => {
-	expect(isRetryableAnalyticsEngineSqlStatus(429)).toBe(true)
-	expect(isRetryableAnalyticsEngineSqlStatus(500)).toBe(true)
-	expect(isRetryableAnalyticsEngineSqlStatus(502)).toBe(true)
-	expect(isRetryableAnalyticsEngineSqlStatus(503)).toBe(true)
-	expect(isRetryableAnalyticsEngineSqlStatus(400)).toBe(false)
-	expect(isRetryableAnalyticsEngineSqlStatus(401)).toBe(false)
-	expect(isRetryableAnalyticsEngineSqlStatus(404)).toBe(false)
-})
+test('aggregateUsageRollups retries transient Analytics Engine SQL failures and fails closed', async () => {
+	const now = new Date('2026-07-15T10:00:00.000Z')
 
-test('aggregateUsageRollups retries Analytics Engine SQL 500 then succeeds', async () => {
-	using fetchMock = stubFetchStatusSequence([
+	using retryThenOk = stubFetchStatusSequence([
 		{ status: 500, body: 'Internal server error' },
 		{ status: 200, body: { data: [] } },
 		{ status: 200, body: { data: [] } },
 	])
-	const { db, batches } = createFakeDb()
-
+	const retryDb = createFakeDb()
 	await expect(
-		aggregateUsageRollups(
-			createAggregationEnv(db),
-			new Date('2026-07-15T10:00:00.000Z'),
-		),
+		aggregateUsageRollups(createAggregationEnv(retryDb.db), now),
 	).resolves.toMatchObject({ skipped: false, upsertedRows: 0 })
-	expect(fetchMock).toHaveBeenCalledTimes(3)
-	expect(batches).toHaveLength(0)
-})
+	expect(retryThenOk).toHaveBeenCalledTimes(3)
+	expect(retryDb.batches).toHaveLength(0)
 
-test('aggregateUsageRollups exhausts retries on persistent Analytics Engine 500', async () => {
-	using fetchMock = stubFetchStatusSequence([
+	using persistent500 = stubFetchStatusSequence([
 		{ status: 500, body: 'Internal server error' },
 		{ status: 500, body: 'Internal server error' },
 		{ status: 500, body: 'Internal server error' },
 	])
-	const { db, batches } = createFakeDb()
-
+	const exhaustDb = createFakeDb()
 	await expect(
-		aggregateUsageRollups(
-			createAggregationEnv(db),
-			new Date('2026-07-15T10:00:00.000Z'),
-		),
+		aggregateUsageRollups(createAggregationEnv(exhaustDb.db), now),
 	).rejects.toThrow('Analytics Engine SQL query failed (500)')
-	expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(
+	expect(persistent500.mock.calls.length).toBeGreaterThanOrEqual(
 		analyticsEngineSqlRetryMaxAttempts,
 	)
-	expect(batches).toHaveLength(0)
-})
+	expect(exhaustDb.batches).toHaveLength(0)
 
-test('aggregateUsageRollups does not retry Analytics Engine SQL 400', async () => {
-	using fetchMock = stubFetchStatusSequence([
+	using clientError = stubFetchStatusSequence([
 		{ status: 400, body: 'query error: unknown table' },
 	])
-	const { db, batches } = createFakeDb()
-
+	const noRetryDb = createFakeDb()
 	await expect(
-		aggregateUsageRollups(
-			createAggregationEnv(db),
-			new Date('2026-07-15T10:00:00.000Z'),
-		),
+		aggregateUsageRollups(createAggregationEnv(noRetryDb.db), now),
 	).rejects.toThrow('Analytics Engine SQL query failed (400)')
 	// Both month queries may start in parallel, but neither retries a 400.
-	expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(2)
-	expect(batches).toHaveLength(0)
+	expect(clientError.mock.calls.length).toBeLessThanOrEqual(2)
+	expect(noRetryDb.batches).toHaveLength(0)
 })

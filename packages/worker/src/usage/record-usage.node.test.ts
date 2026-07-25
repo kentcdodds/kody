@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 const spanCalls = vi.hoisted(() => ({
 	spans: [] as Array<{
@@ -33,11 +33,9 @@ vi.mock('cloudflare:workers', () => ({
 
 const { recordUsage } = await import('./record-usage.ts')
 
-beforeEach(() => {
+test('recordUsage emits kody.usage spans with attributes and skips empty userId', async () => {
 	spanCalls.spans.length = 0
-})
 
-test('recordUsage emits one kody.usage span with user and entity attributes', async () => {
 	await recordUsage(
 		{},
 		{
@@ -49,7 +47,6 @@ test('recordUsage emits one kody.usage span with user and entity attributes', as
 			outcome: 'error',
 		},
 	)
-
 	expect(spanCalls.spans).toEqual([
 		{
 			name: 'kody.usage.execute',
@@ -63,17 +60,8 @@ test('recordUsage emits one kody.usage span with user and entity attributes', as
 			},
 		},
 	])
-})
 
-test('recordUsage skips the span for events without a userId', async () => {
-	await recordUsage(
-		{},
-		{ userId: '', eventType: 'execute', outcome: 'success' },
-	)
-	expect(spanCalls.spans).toEqual([])
-})
-
-test('recordUsage omits optional attributes that were not measured', async () => {
+	spanCalls.spans.length = 0
 	await recordUsage(
 		{},
 		{ userId: 'user-2', eventType: 'job_run', outcome: 'success' },
@@ -88,4 +76,11 @@ test('recordUsage omits optional attributes that were not measured', async () =>
 			},
 		},
 	])
+
+	spanCalls.spans.length = 0
+	await recordUsage(
+		{},
+		{ userId: '', eventType: 'execute', outcome: 'success' },
+	)
+	expect(spanCalls.spans).toEqual([])
 })

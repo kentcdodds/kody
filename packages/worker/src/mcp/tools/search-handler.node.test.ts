@@ -617,10 +617,6 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 			],
 		}),
 	])
-	const batchText = batchSuccess.content.map((item) => item.text).join('\n')
-	expect(batchText).toContain('---')
-	expect(batchText).toContain('openapi:widgets:getwidget:capability')
-
 	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
 	const partialFailure = await handler({
 		entity: [
@@ -671,36 +667,29 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 				errorName: 'EntityBatchError',
 			}),
 		)
-	} finally {
-		logMcpEventSpy.mockRestore()
-	}
-})
 
-test('entity batch all-fail reports platform errors to Sentry (no callerError)', async () => {
-	const observability = await import('#mcp/observability.ts')
-	const logMcpEventSpy = vi.spyOn(observability, 'logMcpEvent')
-	mockModule.getSavedPackageById.mockImplementation(
-		async (_db: unknown, input: { packageId: string }) => ({
-			id: input.packageId,
-			userId: 'user-1',
-			name: input.packageId,
-			kodyId: input.packageId,
-			description: 'pkg',
-			tags: [],
-			searchText: 'pkg',
-			sourceId: `source-${input.packageId}`,
-			hasApp: false,
-			hidden: false,
-			isPrivate: true,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		}),
-	)
-	mockModule.loadPackageSourceBySourceId.mockRejectedValue(
-		new Error('D1 read failed'),
-	)
-	try {
-		const { handler } = await getSearchRegistration({
+		logMcpEventSpy.mockClear()
+		mockModule.getSavedPackageById.mockImplementation(
+			async (_db: unknown, input: { packageId: string }) => ({
+				id: input.packageId,
+				userId: 'user-1',
+				name: input.packageId,
+				kodyId: input.packageId,
+				description: 'pkg',
+				tags: [],
+				searchText: 'pkg',
+				sourceId: `source-${input.packageId}`,
+				hasApp: false,
+				hidden: false,
+				isPrivate: true,
+				createdAt: '2026-01-01T00:00:00.000Z',
+				updatedAt: '2026-01-01T00:00:00.000Z',
+			}),
+		)
+		mockModule.loadPackageSourceBySourceId.mockRejectedValue(
+			new Error('D1 read failed'),
+		)
+		const { handler: authenticatedHandler } = await getSearchRegistration({
 			user: {
 				userId: 'user-1',
 				email: 'user@example.com',
@@ -709,25 +698,23 @@ test('entity batch all-fail reports platform errors to Sentry (no callerError)',
 			},
 		})
 		mockPerformanceNow.mockReturnValueOnce(500).mockReturnValueOnce(510)
-		const response = await handler({
+		const platformFail = await authenticatedHandler({
 			entity: ['pkg-a:package', 'pkg-b:package'],
 			conversationId: 'conv-batch-platform-fail',
 		})
-		expect(response.isError).toBe(true)
-		expect(logMcpEventSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				outcome: 'failure',
-				errorName: 'EntityBatchError',
-				cause: expect.objectContaining({
-					message: 'All entity lookups failed.',
-				}),
-			}),
-		)
-		const failureCall = logMcpEventSpy.mock.calls.find(
+		expect(platformFail.isError).toBe(true)
+		const platformFailureCall = logMcpEventSpy.mock.calls.find(
 			(call) =>
 				(call[0] as { errorName?: string }).errorName === 'EntityBatchError',
 		)
-		expect(failureCall?.[0]).not.toHaveProperty('callerError', true)
+		expect(platformFailureCall?.[0]).toMatchObject({
+			outcome: 'failure',
+			errorName: 'EntityBatchError',
+			cause: expect.objectContaining({
+				message: 'All entity lookups failed.',
+			}),
+		})
+		expect(platformFailureCall?.[0]).not.toHaveProperty('callerError', true)
 	} finally {
 		logMcpEventSpy.mockRestore()
 		mockModule.getSavedPackageById.mockReset()

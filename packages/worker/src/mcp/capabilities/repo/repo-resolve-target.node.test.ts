@@ -37,6 +37,11 @@ test('resolveRepoSourceReference throws McpCallerError for missing source and pa
 	await expect(missingSource).rejects.toThrow(
 		'Repo source was not found for this user.',
 	)
+	// The user predicate belongs in the query, not in a post-read comparison.
+	expect(mockModule.getEntitySourceByIdForUser).toHaveBeenCalledWith(
+		expect.anything(),
+		{ id: 'source-missing', userId: 'user-1' },
+	)
 
 	mockModule.getSavedPackageById.mockResolvedValue(null)
 	const missingPackage = resolveRepoSourceReference({
@@ -59,24 +64,5 @@ test('resolveRepoSourceReference throws McpCallerError for missing source and pa
 	await expect(missingIdentity).rejects.toThrow(McpCallerError)
 	await expect(missingIdentity).rejects.toThrow(
 		'Repo source identity is required.',
-	)
-})
-
-test('resolveRepoSourceReference scopes the source lookup to the caller', async () => {
-	mockModule.getEntitySourceByIdForUser.mockReset()
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue(null)
-
-	await expect(
-		resolveRepoSourceReference({
-			db: {} as D1Database,
-			userId: 'user-1',
-			args: { source_id: 'source-1' },
-		}),
-	).rejects.toThrow('Repo source was not found for this user.')
-
-	// The user predicate belongs in the query, not in a post-read comparison.
-	expect(mockModule.getEntitySourceByIdForUser).toHaveBeenCalledWith(
-		expect.anything(),
-		{ id: 'source-1', userId: 'user-1' },
 	)
 })

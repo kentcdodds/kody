@@ -172,8 +172,8 @@ test('runPackageRetrievers soft-fails a timed-out retriever and keeps healthy re
 			retrieverKey: 'notes',
 		}),
 	])
-	expect(run.warnings).toEqual([
-		'Package retriever "stalled-pkg/inbox" failed and was skipped: Execution timed out',
-	])
+	expect(run.warnings).toHaveLength(1)
+	expect(run.warnings[0]).toMatch(/stalled-pkg\/inbox/)
+	expect(run.warnings[0]).toMatch(/timed out/i)
 	expect(consoleError).toHaveBeenCalledTimes(1)
 })

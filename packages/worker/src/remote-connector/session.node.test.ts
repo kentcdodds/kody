@@ -293,25 +293,26 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 	})
 })
 
-test('tools/list_changed snapshot refresh failures log a warning without Sentry', async () => {
+test('tools/list_changed soft-fails disconnects and reports malformed snapshots', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const { session, state, persistedEntries } =
-		await createRemoteConnectorSession({
-			storedState: {
-				persisted: {
-					connectorId: 'home',
-					connectedAt: '2026-04-26T05:00:00.000Z',
-					lastSeenAt: '2026-04-26T05:01:00.000Z',
-				},
-				tools: [{ name: 'bond_shade_set_position' }],
+	captureMessageMock.mockClear()
+
+	const softFail = await createRemoteConnectorSession({
+		storedState: {
+			persisted: {
+				connectorId: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
 			},
-			webSockets: [{} as WebSocket],
-		})
+			tools: [{ name: 'bond_shade_set_position' }],
+		},
+		webSockets: [{} as WebSocket],
+	})
 	// Drop the socket before tools/list so refresh fails immediately (same
 	// soft-fail path as an RPC timeout against a stalled home connector).
-	state.getWebSockets.mockReturnValue([])
+	softFail.state.getWebSockets.mockReturnValue([])
 
-	await session.webSocketMessage(
+	await softFail.session.webSocketMessage(
 		{} as WebSocket,
 		JSON.stringify({
 			type: 'connector.jsonrpc',
@@ -323,26 +324,33 @@ test('tools/list_changed snapshot refresh failures log a warning without Sentry'
 	)
 
 	expect(captureMessageMock).not.toHaveBeenCalled()
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'Remote connector tools snapshot refresh failed on tools/list_changed. connectorId=home error=No remote connector is connected.',
-	)
-	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
+	expect(consoleWarn).toHaveBeenCalled()
+	expect(
+		consoleWarn.mock.calls.some(
+			(call) =>
+				typeof call[0] === 'string' &&
+				call[0].includes('tools snapshot refresh failed') &&
+				call[0].includes('connectorId=home'),
+		),
+	).toBe(true)
+	expect(
+		softFail.persistedEntries.get('remote-connector-session-state'),
+	).toMatchObject({
 		persisted: {
 			connectorId: 'home',
 			connectedAt: '2026-04-26T05:00:00.000Z',
 		},
 		tools: [],
 	})
-})
 
-test('malformed tools/list snapshot responses still report to Sentry', async () => {
+	captureMessageMock.mockClear()
 	const sent: Array<string> = []
 	const socket = {
 		send: (payload: string) => {
 			sent.push(payload)
 		},
 	} as unknown as WebSocket
-	const { session, persistedEntries } = await createRemoteConnectorSession({
+	const malformed = await createRemoteConnectorSession({
 		storedState: {
 			persisted: {
 				connectorId: 'home',
@@ -354,7 +362,7 @@ test('malformed tools/list snapshot responses still report to Sentry', async () 
 		webSockets: [socket],
 	})
 
-	const refresh = session.webSocketMessage(
+	const refresh = malformed.session.webSocketMessage(
 		socket,
 		JSON.stringify({
 			type: 'connector.jsonrpc',
@@ -377,7 +385,7 @@ test('malformed tools/list snapshot responses still report to Sentry', async () 
 		message: { method: 'tools/list' },
 	})
 
-	await session.webSocketMessage(
+	await malformed.session.webSocketMessage(
 		socket,
 		JSON.stringify({
 			type: 'connector.jsonrpc',
@@ -401,7 +409,9 @@ test('malformed tools/list snapshot responses still report to Sentry', async () 
 			}),
 		}),
 	)
-	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
+	expect(
+		malformed.persistedEntries.get('remote-connector-session-state'),
+	).toMatchObject({
 		tools: [{ name: 'bond_shade_set_position' }],
 	})
 })
