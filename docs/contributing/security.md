@@ -139,6 +139,16 @@ MCP auth denials in the last 60 minutes cross a threshold (default 50). A KV
 cooldown prevents re-paging on the same sustained spike. Charts on
 `/admin/insights` remain the browse surface; the email is the page.
 
+A second hourly lane (`email_delivery_alert`, implemented by
+`checkEmailDeliveryBurstAndNotify` in
+`packages/worker/src/app/email-delivery-alerts.ts`) pages admins when
+platform-wide Cloudflare Email Sending outcomes of `complained`, `bounced`,
+`failed`, or `rejected` in the last 60 minutes cross a threshold (default 20).
+Cooldown is 6 hours via `BUNDLE_ARTIFACTS_KV`. This complements the per-user
+outbound pause in `outbound-abuse.ts` — that path stops one account; the cron
+pages when the shared sending domain is under platform-wide pressure. Review the
+Email delivery health chart on `/admin/insights`.
+
 **Deliberately not recorded:** rejections that happen before a grant resolves —
 a missing, empty, or unparseable bearer token. Those are reachable by any
 anonymous request, so auditing them would let a stranger drive unbounded D1
@@ -211,7 +221,9 @@ blast radius:
   is idempotent (only transitions NULL), the send path rejects while paused, and
   the audited `resume_email_outbound` admin action clears it after review. The
   `/admin/insights` "Email delivery health" chart shows platform-wide outcome
-  trends so reputation trouble is visible before providers act on it.
+  trends so reputation trouble is visible before providers act on it. The hourly
+  `email_delivery_alert` cron pages admins on a platform-wide burst (see above)
+  without replacing this per-user pause.
 - **Compute quotas.** `execute_calls_per_day` and `outbound_fetches_per_day`
   entitlements bound sandbox compute and egress volume per user per day (see
   [`architecture/entitlements.md`](./architecture/entitlements.md)).

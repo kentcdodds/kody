@@ -73,6 +73,10 @@ import {
 	shouldRunAuthDenialAlertCron,
 } from '#app/auth-denial-alerts.ts'
 import {
+	checkEmailDeliveryBurstAndNotify,
+	shouldRunEmailDeliveryAlertCron,
+} from '#app/email-delivery-alerts.ts'
+import {
 	aggregateUsageRollups,
 	shouldRunUsageAggregationCron,
 } from '#worker/usage/aggregate-rollups.ts'
@@ -612,6 +616,12 @@ const workerHandler = {
 			lanes.push({
 				name: 'auth_denial_alert',
 				run: () => checkAuthDenialBurstAndNotify({ env, now: scheduledAt }),
+			})
+		}
+		if (shouldRunEmailDeliveryAlertCron(scheduledAt)) {
+			lanes.push({
+				name: 'email_delivery_alert',
+				run: () => checkEmailDeliveryBurstAndNotify({ env, now: scheduledAt }),
 			})
 		}
 		if (shouldRunDrExportCron(scheduledAt) && isDrExportConfigured(env)) {
