@@ -19,7 +19,7 @@ export type EntitlementLimitErrorDetails = {
 
 export function buildEntitlementUpgradeHint(resource: EntitlementResource) {
 	const label = entitlementResourceLabels[resource]
-	return `Remove or finish existing ${label} you no longer need, or ask the operator of this Kody deployment to upgrade your plan.`
+	return `Remove or finish existing ${label} you no longer need, or upgrade your plan at /account/billing.`
 }
 
 /**

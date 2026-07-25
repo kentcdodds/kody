@@ -1017,6 +1017,7 @@ export type AppLoaderData = {
 	emailVerification?: EmailVerificationLoaderData
 	oauthAuthorize?: OAuthAuthorizeLoaderData
 	accountBilling?: AccountBillingLoaderData
+	accountUsage?: AccountUsageLoaderData
 }
 
 export type AccountBillingLoaderData = {
@@ -1029,6 +1030,23 @@ export type AccountBillingLoaderData = {
 	cancelAt: string | null
 	checkoutAvailable: boolean
 	error?: string
+}
+
+export type AccountUsageEntitlementConsumption = {
+	resource: string
+	label: string
+	current: number
+	limit: number
+	percentOfLimit: number | null
+	overEightyPercent: boolean
+}
+
+export type AccountUsageLoaderData = {
+	ok: true
+	plan: AdminPlanName
+	today: string
+	entitlementConsumption: Array<AccountUsageEntitlementConsumption>
+	warnings: Array<AccountUsageEntitlementConsumption>
 }
 
 export function getRequestUrl(request: Request) {

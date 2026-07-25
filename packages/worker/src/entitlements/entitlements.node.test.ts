@@ -218,6 +218,8 @@ test('entitlement limit messages always identify a known plan name', () => {
 	}
 	const message = buildEntitlementLimitMessage(details)
 	expect(message).toContain('your "max" plan')
+	expect(message).toContain('/account/billing')
+	expect(message).not.toContain('ask the operator')
 	expect(message).not.toContain('this deployment')
 	expect(parseEntitlementLimitMessage(message)).toEqual(details)
 	expect(

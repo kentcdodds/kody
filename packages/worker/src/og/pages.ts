@@ -69,6 +69,13 @@ export const publicOgPages = {
 			'How Kody stores your data and what a deployment admin can see.',
 		path: '/privacy',
 	},
+	terms: {
+		imageTitle: 'Terms',
+		imageSubtitle: 'Terms and acceptable use for this Kody deployment.',
+		ogTitle: 'Terms — Kody',
+		ogDescription: 'Terms and acceptable use for this Kody deployment.',
+		path: '/terms',
+	},
 	onboarding: {
 		imageTitle: 'Get started with Kody',
 		imageSubtitle:

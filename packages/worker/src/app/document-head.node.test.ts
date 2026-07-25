@@ -13,6 +13,7 @@ test('resolveDocumentHead covers static titles, dynamic OG, fallbacks, and absol
 	expect(resolveDocumentTitle('/account/secrets')).toBe('Secrets')
 	expect(resolveDocumentTitle('/account/secrets/new')).toBe('Secrets')
 	expect(resolveDocumentTitle('/account/billing')).toBe('Billing')
+	expect(resolveDocumentTitle('/account/usage')).toBe('Usage')
 	expect(
 		resolveDocumentTitle('/account/package-invocation-tokens/token-1'),
 	).toBe('Package invocation tokens')
@@ -21,6 +22,7 @@ test('resolveDocumentHead covers static titles, dynamic OG, fallbacks, and absol
 	expect(resolveDocumentTitle('/timeline')).toBe('Timeline')
 	expect(resolveDocumentTitle('/admin/users')).toBe('Admin users')
 	expect(resolveDocumentTitle('/privacy')).toBe('Privacy')
+	expect(resolveDocumentTitle('/terms')).toBe('Terms')
 
 	const home = resolveDocumentHead('/')
 	expect(home.og?.title).toBe("Kody — your assistant's home")

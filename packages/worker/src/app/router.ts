@@ -88,6 +88,10 @@ import {
 	createAccountBillingPortalHandler,
 	createAccountBillingSuccessHandler,
 } from '#app/handlers/account-billing.ts'
+import {
+	createAccountUsageApiHandler,
+	createAccountUsageHandler,
+} from '#app/handlers/account-usage.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import {
@@ -157,6 +161,7 @@ import {
 	createOnboardingHandler,
 } from '#app/handlers/onboarding.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
+import { createTermsHandler } from '#app/handlers/terms.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import {
 	createTwoFactorVerifyApiHandler,
@@ -207,6 +212,7 @@ export function createAppRouter(env: Env) {
 			blogPostApi: createBlogPostApiHandler(env),
 			blogPostOgImage: createBlogPostOgImageHandler(env),
 			privacy: createPrivacyHandler(env),
+			terms: createTermsHandler(env),
 			onboarding: createOnboardingHandler(env),
 			onboardingApi: createOnboardingApiHandler(env),
 			resetPassword: createResetPasswordHandler(env),
@@ -259,6 +265,8 @@ export function createAppRouter(env: Env) {
 			accountBillingCheckoutPost: createAccountBillingCheckoutApiHandler(env),
 			accountBillingSuccess: createAccountBillingSuccessHandler(env),
 			accountBillingPortal: createAccountBillingPortalHandler(env),
+			accountUsage: createAccountUsageHandler(env),
+			accountUsageApi: createAccountUsageApiHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountRemoteConnectors: createAccountRemoteConnectorsHandler(env),

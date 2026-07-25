@@ -22,6 +22,7 @@ export const usersTable = table({
 		deleting_at: c.text(),
 		suspended_at: c.text(),
 		email_outbound_paused_at: c.text(),
+		password_changed_at: c.text(),
 		active_write_count: c.integer(),
 		active_write_expires_at: c.text(),
 		created_at: c.text(),

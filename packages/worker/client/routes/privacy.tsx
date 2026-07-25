@@ -129,6 +129,10 @@ export function PrivacyRoute(_handle: Handle) {
 			</section>
 
 			<p mix={css({ margin: 0 })}>
+				<a href="/terms" mix={css(mutedLinkCss)}>
+					Terms
+				</a>
+				{' · '}
 				<a href="/" mix={css(mutedLinkCss)}>
 					Back home
 				</a>

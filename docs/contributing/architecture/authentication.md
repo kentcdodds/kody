@@ -33,7 +33,12 @@ The cookie payload stores:
 
 - `id` (user id as string)
 - `email`
-- `rememberMe` and `issuedAt` for remembered sessions
+- `issuedAt` (epoch ms when the cookie was issued or last renewed)
+- `rememberMe` when the login used remember-me
+
+Password reset confirmation writes `users.password_changed_at`. Session
+resolution rejects cookies whose `issuedAt` is missing or at/before that
+timestamp, so a reset invalidates every existing browser session.
 
 `packages/worker/src/app/handler.ts` calls `setAuthSessionSecret` on each
 request so cookie signing and verification are available to handlers.

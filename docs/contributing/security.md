@@ -132,6 +132,13 @@ charts on `/admin/insights`. Two sites record:
   This is the single choke point every capability call passes through, so it
   covers the whole authorization surface.
 
+An hourly cron lane (`auth_denial_alert` in `packages/worker/src/index.ts`,
+implemented by `checkAuthDenialBurstAndNotify` in
+`packages/worker/src/app/auth-denial-alerts.ts`) emails every admin account when
+MCP auth denials in the last 60 minutes cross a threshold (default 50). A KV
+cooldown prevents re-paging on the same sustained spike. Charts on
+`/admin/insights` remain the browse surface; the email is the page.
+
 **Deliberately not recorded:** rejections that happen before a grant resolves —
 a missing, empty, or unparseable bearer token. Those are reachable by any
 anonymous request, so auditing them would let a stranger drive unbounded D1
@@ -139,10 +146,6 @@ writes, and "someone sent a bad token" is not attributable to a principal. The
 consequence is that **brute-forcing or replaying tokens against `/mcp` does not
 appear in the audit log**; flood control for anonymous traffic belongs at the
 edge (Cloudflare rate limiting / WAF), not in application writes.
-
-There is also no automatic alerting. Denials are recorded and charted, but
-nothing pages anyone, so a slow, low-volume prober would be present in the data
-without necessarily drawing attention.
 
 ## Public connector routes are WebSocket-only
 
@@ -218,11 +221,13 @@ blast radius:
 These were reviewed and intentionally left as-is for this project. Document any
 change to these decisions here so future agents do not relitigate them.
 
-- **Stateless sessions have no server-side revocation.** `kody_session` is a
-  signed cookie with no server store, so a password reset does not invalidate
-  existing sessions and there is no global "log out everywhere". This is a
-  deliberate tradeoff of the stateless design. A future hardening would add a
-  `password_changed_at` check against a per-session `issuedAt`.
+- **Stateless sessions revoke after password reset.** `kody_session` is a signed
+  cookie with no server store, so there is no global "log out everywhere" button.
+  Password reset confirmation stamps `users.password_changed_at` and every
+  browser session carries `issuedAt`; `resolveRequestAuth` rejects cookies
+  issued at or before that timestamp (missing `issuedAt` fails closed once a
+  password change exists). A future hardening could add an explicit
+  "sign out other sessions" control without waiting for a reset.
 - **Account secret reveal is owner-scoped, not password-reauthenticated.** See
   the "Account secret reveal" section of
   [`architecture/authentication.md`](./architecture/authentication.md).

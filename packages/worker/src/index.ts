@@ -69,6 +69,10 @@ import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
 import {
+	checkAuthDenialBurstAndNotify,
+	shouldRunAuthDenialAlertCron,
+} from '#app/auth-denial-alerts.ts'
+import {
 	aggregateUsageRollups,
 	shouldRunUsageAggregationCron,
 } from '#worker/usage/aggregate-rollups.ts'
@@ -602,6 +606,12 @@ const workerHandler = {
 			lanes.push({
 				name: 'usage_aggregation',
 				run: () => aggregateUsageRollups(env, scheduledAt),
+			})
+		}
+		if (shouldRunAuthDenialAlertCron(scheduledAt)) {
+			lanes.push({
+				name: 'auth_denial_alert',
+				run: () => checkAuthDenialBurstAndNotify({ env, now: scheduledAt }),
 			})
 		}
 		if (shouldRunDrExportCron(scheduledAt) && isDrExportConfigured(env)) {

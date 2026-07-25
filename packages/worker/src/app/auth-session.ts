@@ -85,19 +85,28 @@ function createStoredAuthSession(
 	session: AuthSession,
 	now: number,
 ): StoredAuthSession {
-	if (!session.rememberMe) {
-		return {
-			id: session.id,
-			email: session.email,
-		}
-	}
-
+	// Always stamp issuedAt so password resets can invalidate every browser
+	// session, not only remember-me cookies.
 	return {
 		id: session.id,
 		email: session.email,
-		rememberMe: true,
+		rememberMe: session.rememberMe ? true : undefined,
 		issuedAt: now,
 	}
+}
+
+/**
+ * True when the signed cookie predates (or cannot prove it postdates) a
+ * password change. Missing issuedAt fails closed once password_changed_at is
+ * set, so legacy cookies cannot survive a reset.
+ */
+export function isAuthSessionInvalidatedByPasswordChange(input: {
+	issuedAt: number | undefined
+	passwordChangedAtMs: number | null
+}): boolean {
+	if (input.passwordChangedAtMs == null) return false
+	if (typeof input.issuedAt !== 'number') return true
+	return input.issuedAt <= input.passwordChangedAtMs
 }
 
 function normalizeAuthSession(session: StoredAuthSession): AuthSession {
@@ -173,32 +182,50 @@ export async function destroyAuthCookie(secure: boolean) {
 	})
 }
 
+export type ParsedAuthSession = {
+	session: AuthSession
+	issuedAt: number | undefined
+	setCookie: string | null
+}
+
+/**
+ * Parse the signed session cookie and optionally renew a remember-me cookie.
+ * Callers that need password-change invalidation should use `issuedAt`.
+ */
+export async function readParsedAuthSession(
+	request: Request,
+	now = Date.now(),
+): Promise<ParsedAuthSession | null> {
+	const cookieHeader = request.headers.get('Cookie')
+	if (!cookieHeader) return null
+
+	const stored = await getSessionCookie().parse(cookieHeader)
+	if (!stored || typeof stored !== 'string') return null
+
+	try {
+		const parsed = JSON.parse(stored)
+		if (!isStoredAuthSession(parsed)) return null
+		const session = normalizeAuthSession(parsed)
+		const setCookie = shouldRenewRememberedSession(parsed, now)
+			? await createAuthCookie(session, isSecureRequest(request), now)
+			: null
+		return {
+			session,
+			issuedAt: parsed.issuedAt,
+			setCookie,
+		}
+	} catch {
+		return null
+	}
+}
+
 export async function readAuthSessionResult(
 	request: Request,
 	now = Date.now(),
 ): Promise<AuthSessionResult> {
-	const cookieHeader = request.headers.get('Cookie')
-	if (!cookieHeader) {
+	const parsed = await readParsedAuthSession(request, now)
+	if (!parsed) {
 		return { session: null, setCookie: null }
 	}
-
-	const stored = await getSessionCookie().parse(cookieHeader)
-	if (!stored || typeof stored !== 'string') {
-		return { session: null, setCookie: null }
-	}
-
-	try {
-		const parsed = JSON.parse(stored)
-		if (isStoredAuthSession(parsed)) {
-			const session = normalizeAuthSession(parsed)
-			const setCookie = shouldRenewRememberedSession(parsed, now)
-				? await createAuthCookie(session, isSecureRequest(request), now)
-				: null
-			return { session, setCookie }
-		}
-	} catch {
-		return { session: null, setCookie: null }
-	}
-
-	return { session: null, setCookie: null }
+	return { session: parsed.session, setCookie: parsed.setCookie }
 }

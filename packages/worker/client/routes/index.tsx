@@ -9,6 +9,10 @@ import {
 } from './account-billing.tsx'
 import { AccountEmailRoute, accountEmailRouteLoader } from './account-email.tsx'
 import {
+	AccountUsageRoute,
+	accountUsageRouteLoader,
+} from './account-usage.tsx'
+import {
 	AccountIntegrationsRoute,
 	accountIntegrationsRouteLoader,
 } from './account-integrations.tsx'
@@ -91,6 +95,7 @@ import {
 	pendingVerificationRouteLoader,
 } from './pending-verification.tsx'
 import { PrivacyRoute } from './privacy.tsx'
+import { TermsRoute } from './terms.tsx'
 import {
 	OAuthAuthorizeRoute,
 	oauthAuthorizeRouteLoader,
@@ -104,6 +109,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.home)]: homeRouteLoader,
 	[routePattern(routes.account)]: accountRouteLoader,
 	[routePattern(routes.accountBilling)]: accountBillingRouteLoader,
+	[routePattern(routes.accountUsage)]: accountUsageRouteLoader,
 	[routePattern(routes.accountIntegrations)]: accountIntegrationsRouteLoader,
 	[routePattern(routes.accountIntegrationDetail)]:
 		accountIntegrationsRouteLoader,
@@ -171,6 +177,7 @@ export const clientRoutes = {
 	[routePattern(routes.home)]: <HomeRoute />,
 	[routePattern(routes.account)]: <AccountRoute />,
 	[routePattern(routes.accountBilling)]: <AccountBillingRoute />,
+	[routePattern(routes.accountUsage)]: <AccountUsageRoute />,
 	[routePattern(routes.accountIntegrations)]: <AccountIntegrationsRoute />,
 	[routePattern(routes.accountIntegrationDetail)]: <AccountIntegrationsRoute />,
 	[routePattern(routes.accountMcpServers)]: <AccountMcpServersRoute />,
@@ -234,6 +241,7 @@ export const clientRoutes = {
 	[routePattern(routes.onboarding)]: <OnboardingRoute />,
 	[routePattern(routes.pendingVerification)]: <PendingVerificationRoute />,
 	[routePattern(routes.privacy)]: <PrivacyRoute />,
+	[routePattern(routes.terms)]: <TermsRoute />,
 	[routePattern(routes.signup)]: <LoginRoute />,
 	[routePattern(routes.resetPassword)]: <ResetPasswordRoute />,
 	[routePattern(routes.verify)]: <VerifyRoute />,

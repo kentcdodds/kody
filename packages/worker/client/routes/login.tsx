@@ -691,6 +691,9 @@ export function LoginRoute(handle: Handle) {
 					<a href="/privacy" mix={css(mutedLinkCss)}>
 						Privacy
 					</a>
+					<a href="/terms" mix={css(mutedLinkCss)}>
+						Terms
+					</a>
 					<a href="/" mix={css(mutedLinkCss)}>
 						Back home
 					</a>

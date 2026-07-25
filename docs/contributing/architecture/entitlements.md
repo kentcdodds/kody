@@ -213,7 +213,7 @@ user-facing string across MCP and UI surfaces:
 
 > Plan limit reached: your "pro" plan allows at most 50 scheduled jobs and you
 > currently have 50. Remove or finish existing scheduled jobs you no longer
-> need, or ask the operator of this Kody deployment to upgrade your plan.
+> need, or upgrade your plan at /account/billing.
 
 Rules:
 

@@ -18,6 +18,11 @@ const mocks = vi.hoisted(() => ({
 	pruneSystemEmailRetention: vi.fn(async () => ({})),
 	pruneRetention: vi.fn(async () => ({})),
 	shouldRunRetentionCron: vi.fn(() => false),
+	checkAuthDenialBurstAndNotify: vi.fn(async () => ({
+		status: 'below_threshold',
+		count: 0,
+	})),
+	shouldRunAuthDenialAlertCron: vi.fn(() => false),
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
 	shouldRunUsageAggregationCron: vi.fn(() => false),
 	runDrExportTick: vi.fn(async () => ({ skipped: true })),
@@ -49,6 +54,11 @@ vi.mock('#worker/email/reconcile-inbound-deliveries.ts', () => ({
 vi.mock('#app/retention.ts', () => ({
 	pruneRetention: mocks.pruneRetention,
 	shouldRunRetentionCron: mocks.shouldRunRetentionCron,
+}))
+
+vi.mock('#app/auth-denial-alerts.ts', () => ({
+	checkAuthDenialBurstAndNotify: mocks.checkAuthDenialBurstAndNotify,
+	shouldRunAuthDenialAlertCron: mocks.shouldRunAuthDenialAlertCron,
 }))
 
 vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
@@ -84,6 +94,7 @@ function getOAuthPurgeCoordinator() {
 
 test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retention', async () => {
 	mocks.shouldRunUsageAggregationCron.mockReturnValueOnce(true)
+	mocks.shouldRunAuthDenialAlertCron.mockReturnValueOnce(true)
 	const scheduledTime = Date.parse('2026-07-05T10:00:30.000Z')
 
 	await worker.scheduled?.(
@@ -107,6 +118,9 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 	expect(mocks.aggregateUsageRollups).toHaveBeenCalledWith(
 		env,
 		new Date(scheduledTime),
+	)
+	expect(mocks.checkAuthDenialBurstAndNotify).toHaveBeenCalledWith(
+		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
 	expect(mocks.refreshStaleStripePlans).toHaveBeenCalledWith(
 		expect.objectContaining({ now: new Date(scheduledTime) }),

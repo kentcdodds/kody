@@ -11,8 +11,9 @@
 import * as Sentry from '@sentry/cloudflare'
 import {
 	destroyAuthCookie,
+	isAuthSessionInvalidatedByPasswordChange,
 	isSecureRequest,
-	readAuthSessionResult,
+	readParsedAuthSession,
 } from '#app/auth-session.ts'
 import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
@@ -56,14 +57,15 @@ async function resolveRequestAuth(
 	request: Request,
 	env: Env,
 ): Promise<ResolvedRequestAuth> {
-	const { session, setCookie } = await readAuthSessionResult(request)
-	if (!session) {
+	const parsedSession = await readParsedAuthSession(request)
+	if (!parsedSession) {
 		return {
 			sessionUserId: null,
-			setCookie: setCookie ?? undefined,
+			setCookie: undefined,
 			user: null,
 		}
 	}
+	const { session, issuedAt, setCookie } = parsedSession
 
 	const userId = /^\d+$/.test(session.id) ? Number(session.id) : NaN
 	const db = createDb(env.APP_DB)
@@ -73,6 +75,22 @@ async function resolveRequestAuth(
 			: null
 
 	if (!userRecord) {
+		return {
+			sessionUserId: session.id,
+			setCookie: await destroyAuthCookie(isSecureRequest(request)),
+			user: null,
+		}
+	}
+
+	const passwordChangedAtMs = parseSqliteTimestampMs(
+		userRecord.password_changed_at,
+	)
+	if (
+		isAuthSessionInvalidatedByPasswordChange({
+			issuedAt,
+			passwordChangedAtMs,
+		})
+	) {
 		return {
 			sessionUserId: session.id,
 			setCookie: await destroyAuthCookie(isSecureRequest(request)),
@@ -130,6 +148,16 @@ async function resolveRequestAuth(
 			),
 		},
 	}
+}
+
+function parseSqliteTimestampMs(value: string | null | undefined) {
+	if (!value) return null
+	const trimmed = value.trim()
+	if (!trimmed) return null
+	const ms = Date.parse(
+		trimmed.includes('T') ? trimmed : `${trimmed.replace(' ', 'T')}Z`,
+	)
+	return Number.isFinite(ms) ? ms : null
 }
 
 export function loadResolvedRequestAuth(

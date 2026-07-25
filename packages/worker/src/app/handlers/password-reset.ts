@@ -256,6 +256,7 @@ export function createPasswordResetConfirmHandler(env: Env) {
 			const passwordHash = await createPasswordHash(password)
 			await db.update(usersTable, resetRecord.user_id, {
 				password_hash: passwordHash,
+				password_changed_at: utcSqliteTimestamp(),
 				updated_at: utcSqliteTimestamp(),
 			})
 			await db.deleteMany(passwordResetsTable, {

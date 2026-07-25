@@ -100,6 +100,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.home)]: publicPageHead('home', DEFAULT_DOCUMENT_TITLE),
 	[routePattern(routes.account)]: titleOnly('Account'),
 	[routePattern(routes.accountBilling)]: titleOnly('Billing'),
+	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.accountIntegrationDetail)]: titleOnly('Integrations'),
 	[routePattern(routes.accountMcpServers)]: titleOnly('MCP servers'),
@@ -242,6 +243,7 @@ const routeDocumentHeads = {
 	),
 	[routePattern(routes.pendingVerification)]: titleOnly('Verify your email'),
 	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
+	[routePattern(routes.terms)]: publicPageHead('terms', 'Terms'),
 	[routePattern(routes.resetPassword)]: publicPageHead(
 		'reset-password',
 		'Reset password',
