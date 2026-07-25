@@ -115,12 +115,20 @@ resources from bindings alone, so the deploy workflow runs
 
 ### Disaster-recovery control plane
 
-Production backups are **not** provisioned or deployed by the application
-workflow above. The control-plane Worker/Workflows live under
-`packages/backup-control-plane/` in the independently administered DR Cloudflare
-account and are deployed via the Cloudflare API / Wrangler authenticated to that
-account. Its `BACKUP_BUCKET` R2 binding is private. Immutable prefixes include
-`daily/`, `weekly/`, `daily/full/`, and content-addressed `blobs/sha256/`.
+Production backup **resources** (R2 bucket locks/lifecycle) are still
+provisioned out-of-band with `tools/ci/backup-resources-cli.ts`. The
+control-plane Worker/Workflows under `packages/backup-control-plane/` live in
+the independently administered DR Cloudflare account. Its `BACKUP_BUCKET` R2
+binding is private. Immutable prefixes include `daily/`, `weekly/`,
+`daily/full/`, and content-addressed `blobs/sha256/`.
+
+Code deploys are automated by the production deploy workflow
+(`.github/workflows/deploy.yml` job `deploy-backup-control-plane`) when a `main`
+push changes `packages/backup-control-plane/` or `packages/shared/src/backup-*`,
+and on every manual `workflow_dispatch` of that workflow. The job uses
+`DR_CLOUDFLARE_API_TOKEN` + `DR_BACKUP_ACCOUNT_ID` (never the production-account
+`CLOUDFLARE_API_TOKEN`) and sets `BUILD_COMMIT` to the deploy SHA. Worker
+secrets on the control plane remain one-time / out-of-band.
 
 The production Worker also stages non-D1 canonical stores into the same bucket
 when `DR_EXPORT_ENABLED=true` (StorageRunner dumps, `EMAIL_BLOBS` /
@@ -276,9 +284,14 @@ Configure these GitHub Actions secrets and variables for workflows:
   reindex)
 - `DR_BACKUP_ACCOUNT_ID` / `DR_BACKUP_BUCKET_NAME` / `DR_BACKUP_ACCESS_KEY_ID` /
   `DR_BACKUP_SECRET_ACCESS_KEY` (production DR staging into the DR bucket; also
-  used by `.github/workflows/dr-escrow.yml`. Pair with Worker var
+  used by `.github/workflows/dr-escrow.yml`. `DR_BACKUP_ACCOUNT_ID` is also the
+  Cloudflare account id for control-plane deploys. Pair with Worker var
   `DR_EXPORT_ENABLED=true` only after enablement — see
   [Disaster recovery](./disaster-recovery.md))
+- `DR_CLOUDFLARE_API_TOKEN` (DR-account API token for
+  `deploy-backup-control-plane` in `.github/workflows/deploy.yml`. Needs Workers
+  Scripts Edit/Read, Account Workers Scripts Edit, and Workflows Edit on the DR
+  account only — keep separate from production `CLOUDFLARE_API_TOKEN`)
 - `DR_RESTORE_SECRET` (shared bearer for control-plane →
   `POST /__maintenance/dr-restore`)
 - `SECRET_ESCROW_PASSPHRASE` (operator passphrase for sealing `SECRET_STORE_KEY`

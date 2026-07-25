@@ -32,6 +32,8 @@ jobs:
     outputs:
       deploy_sha: ${{ steps.sha_guard.outputs.deploy_sha }}
       should_deploy: ${{ steps.sha_guard.outputs.should_deploy }}
+      deploy_backup_control_plane:
+        ${{ steps.sha_guard.outputs.deploy_backup_control_plane }}
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -65,12 +67,31 @@ jobs:
           echo "deploy_sha=$DEPLOY_SHA" >> "$GITHUB_OUTPUT"
           if [ "$HEAD_SHA" != "$DEPLOY_SHA" ]; then
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
             echo "Skipping deploy: target SHA is not current main HEAD."
             echo "target=$DEPLOY_SHA"
             echo "head=$HEAD_SHA"
             exit 0
           fi
           echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+
+          # Always redeploy the DR control plane on manual workflow_dispatch.
+          # On push-driven deploys, only when control-plane (or shared backup
+          # contracts) changed in the commit being deployed.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
+            echo "Backup control plane deploy: forced (workflow_dispatch)."
+            exit 0
+          fi
+
+          if git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" | grep -E \
+            '^(packages/backup-control-plane/|packages/shared/src/backup-)'; then
+            echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
+            echo "Backup control plane deploy: path filter matched."
+          else
+            echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
+            echo "Backup control plane deploy: skipped (no relevant path changes)."
+          fi
 
   deploy:
     runs-on: ubuntu-latest
@@ -341,3 +362,71 @@ jobs:
             echo "Capability reindex failed with HTTP ${status}." >&2
             exit 1
           fi
+
+  deploy-backup-control-plane:
+    runs-on: ubuntu-latest
+    name: 🛟 Deploy DR backup control plane
+    timeout-minutes: 8
+    needs: sha-guard
+    if: >-
+      needs.sha-guard.outputs.should_deploy == 'true' &&
+      needs.sha-guard.outputs.deploy_backup_control_plane == 'true'
+    environment:
+      name: production
+      url: https://kody-dr.kentcdodds.com
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.sha-guard.outputs.deploy_sha }}
+          fetch-depth: 0
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: 📥 Install Dependencies
+        run: npm ci
+
+      - name: ☁️ Deploy backup control plane to DR account
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.DR_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.DR_BACKUP_ACCOUNT_ID }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Missing GitHub Actions secret DR_CLOUDFLARE_API_TOKEN." >&2
+            echo "Create an API token in the DR (KCD) Cloudflare account with" >&2
+            echo "Workers Scripts Edit, Workers Scripts Read, Workers Tail Read," >&2
+            echo "Account Workers Scripts Edit, and Workflows Edit, then add it" >&2
+            echo "as repository secret DR_CLOUDFLARE_API_TOKEN." >&2
+            exit 1
+          fi
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "Missing GitHub Actions secret DR_BACKUP_ACCOUNT_ID." >&2
+            exit 1
+          fi
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "DR control-plane deploy attempt $attempt/$deploy_attempts"
+            set +e
+            npm run backup:deploy -- \
+              --var "BUILD_COMMIT:${DEPLOY_COMMIT_SHA}" 2>&1 | tee backup-deploy.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+            if [ "$deploy_status" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "DR control-plane deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+            echo "Retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done

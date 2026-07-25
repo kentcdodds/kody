@@ -109,6 +109,24 @@ the scheduled event still fails afterward to preserve alerting. Exhausting the
 approved tick restarts it with fresh Workflow step state and a new export rather
 than replaying the cached pending poll sequence.
 
+## Deploy
+
+GitHub Actions deploys this Worker to the DR Cloudflare account from
+`.github/workflows/deploy.yml` (`deploy-backup-control-plane`) when
+`packages/backup-control-plane/` or `packages/shared/src/backup-*` change on
+`main`. Requires repository secrets `DR_CLOUDFLARE_API_TOKEN` and
+`DR_BACKUP_ACCOUNT_ID`. Manual/emergency:
+
+```sh
+CLOUDFLARE_ACCOUNT_ID=<DR_ACCOUNT_ID> \
+  CLOUDFLARE_API_TOKEN=<DR_DEPLOY_TOKEN> \
+  npm run backup:deploy -- --var "BUILD_COMMIT:$(git rev-parse HEAD)"
+```
+
+Worker secrets (`CLOUDFLARE_API_TOKEN`, `DRILL_API_TOKEN`, signing key, restore
+secrets) are not synced by that job — set them once with Wrangler / the
+Cloudflare dashboard.
+
 ## Integrity checks
 
 The hourly freshness check compares the immutable object's R2 size and ETag to

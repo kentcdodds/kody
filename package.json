@@ -33,6 +33,7 @@
     "build:client": "npm run build:client:web",
     "build": "nx run worker:build",
     "backup:build": "wrangler deploy --dry-run --config packages/backup-control-plane/wrangler.jsonc",
+    "backup:deploy": "wrangler deploy --config packages/backup-control-plane/wrangler.jsonc",
     "backup:readiness": "node tools/disaster-recovery/canonical-readiness-cli.ts",
     "backup:resources": "node tools/ci/backup-resources-cli.ts",
     "backup:restore-drill": "node tools/disaster-recovery/d1-restore-drill-cli.ts",

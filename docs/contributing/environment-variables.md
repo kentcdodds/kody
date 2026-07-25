@@ -232,8 +232,11 @@ See [Disaster recovery](./disaster-recovery.md).
 
 ## Backup control plane (DR account Worker)
 
-Deployed separately under `packages/backup-control-plane/` (not app CI). Enable
-gates and source identity vars live in that package's `wrangler.jsonc`.
+Lives under `packages/backup-control-plane/` in the DR Cloudflare account. Code
+deploys via the production GitHub Actions workflow when control-plane / shared
+backup contract paths change (secret `DR_CLOUDFLARE_API_TOKEN` +
+`DR_BACKUP_ACCOUNT_ID`). Enable gates and source identity vars live in that
+package's `wrangler.jsonc`.
 
 Non-secret vars:
 
