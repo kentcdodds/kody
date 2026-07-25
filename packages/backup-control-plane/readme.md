@@ -114,7 +114,7 @@ than replaying the cached pending poll sequence.
 GitHub Actions deploys this Worker to the DR Cloudflare account from
 `.github/workflows/deploy.yml` (`deploy-backup-control-plane`) when
 `packages/backup-control-plane/` or `packages/shared/src/backup-*` change on
-`main`. Requires repository secrets `DR_CLOUDFLARE_API_TOKEN` and
+`main`. Requires repository secrets `DR_DEPLOY_TOKEN` and
 `DR_BACKUP_ACCOUNT_ID`. Manual/emergency:
 
 ```sh

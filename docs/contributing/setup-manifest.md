@@ -126,7 +126,7 @@ Code deploys are automated by the production deploy workflow
 (`.github/workflows/deploy.yml` job `deploy-backup-control-plane`) when a `main`
 push changes `packages/backup-control-plane/` or `packages/shared/src/backup-*`,
 and on every manual `workflow_dispatch` of that workflow. The job uses
-`DR_CLOUDFLARE_API_TOKEN` + `DR_BACKUP_ACCOUNT_ID` (never the production-account
+`DR_DEPLOY_TOKEN` + `DR_BACKUP_ACCOUNT_ID` (never the production-account
 `CLOUDFLARE_API_TOKEN`) and sets `BUILD_COMMIT` to the deploy SHA. Worker
 secrets on the control plane remain one-time / out-of-band.
 
@@ -288,10 +288,10 @@ Configure these GitHub Actions secrets and variables for workflows:
   Cloudflare account id for control-plane deploys. Pair with Worker var
   `DR_EXPORT_ENABLED=true` only after enablement — see
   [Disaster recovery](./disaster-recovery.md))
-- `DR_CLOUDFLARE_API_TOKEN` (DR-account API token for
-  `deploy-backup-control-plane` in `.github/workflows/deploy.yml`. Needs Workers
-  Scripts Edit/Read, Account Workers Scripts Edit, and Workflows Edit on the DR
-  account only — keep separate from production `CLOUDFLARE_API_TOKEN`)
+- `DR_DEPLOY_TOKEN` (DR-account API token for `deploy-backup-control-plane` in
+  `.github/workflows/deploy.yml`. Needs Workers Scripts Edit/Read, Account
+  Workers Scripts Edit, and Workflows Edit on the DR account only — keep
+  separate from production `CLOUDFLARE_API_TOKEN`)
 - `DR_RESTORE_SECRET` (shared bearer for control-plane →
   `POST /__maintenance/dr-restore`)
 - `SECRET_ESCROW_PASSPHRASE` (operator passphrase for sealing `SECRET_STORE_KEY`

@@ -392,17 +392,17 @@ jobs:
 
       - name: ☁️ Deploy backup control plane to DR account
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.DR_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.DR_DEPLOY_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.DR_BACKUP_ACCOUNT_ID }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "Missing GitHub Actions secret DR_CLOUDFLARE_API_TOKEN." >&2
+            echo "Missing GitHub Actions secret DR_DEPLOY_TOKEN." >&2
             echo "Create an API token in the DR (KCD) Cloudflare account with" >&2
             echo "Workers Scripts Edit, Workers Scripts Read, Workers Tail Read," >&2
             echo "Account Workers Scripts Edit, and Workflows Edit, then add it" >&2
-            echo "as repository secret DR_CLOUDFLARE_API_TOKEN." >&2
+            echo "as repository secret DR_DEPLOY_TOKEN." >&2
             exit 1
           fi
           if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then

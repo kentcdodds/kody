@@ -234,7 +234,7 @@ See [Disaster recovery](./disaster-recovery.md).
 
 Lives under `packages/backup-control-plane/` in the DR Cloudflare account. Code
 deploys via the production GitHub Actions workflow when control-plane / shared
-backup contract paths change (secret `DR_CLOUDFLARE_API_TOKEN` +
+backup contract paths change (secret `DR_DEPLOY_TOKEN` +
 `DR_BACKUP_ACCOUNT_ID`). Enable gates and source identity vars live in that
 package's `wrangler.jsonc`.
 

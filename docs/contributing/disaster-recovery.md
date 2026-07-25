@@ -142,9 +142,9 @@ Admin UI auth is dual-layer:
 
 The control-plane Worker deploys to the DR account from GitHub Actions
 (`.github/workflows/deploy.yml` → `deploy-backup-control-plane`) using
-`DR_CLOUDFLARE_API_TOKEN`, when `packages/backup-control-plane/` or shared
-backup contracts change on `main` (or on manual `workflow_dispatch`). Local
-Wrangler against the DR account remains available for emergencies
+`DR_DEPLOY_TOKEN`, when `packages/backup-control-plane/` or shared backup
+contracts change on `main` (or on manual `workflow_dispatch`). Local Wrangler
+against the DR account remains available for emergencies
 (`npm run backup:deploy`). Production restore requires the DR Worker to hold the
 production-account D1 token as above; Access + JWT guard every UI action that
 could use it.
@@ -290,8 +290,8 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 
 - [ ] Placeholders in `packages/backup-control-plane/wrangler.jsonc` replaced;
       both enable vars remain `"false"`.
-- [ ] `DR_CLOUDFLARE_API_TOKEN` GitHub secret set; control plane deploys from
-      Actions to the DR account; `BACKUP_BUCKET` bound; Workflows
+- [ ] `DR_DEPLOY_TOKEN` GitHub secret set; control plane deploys from Actions to
+      the DR account; `BACKUP_BUCKET` bound; Workflows
       `kody-production-d1-backup` and `kody-production-dr-restore` present;
       public bucket access off.
 - [ ] UI loads only through Access; unauthenticated and wrong-email JWTs
