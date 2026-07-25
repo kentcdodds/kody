@@ -222,12 +222,12 @@ These were reviewed and intentionally left as-is for this project. Document any
 change to these decisions here so future agents do not relitigate them.
 
 - **Stateless sessions revoke after password reset.** `kody_session` is a signed
-  cookie with no server store, so there is no global "log out everywhere" button.
-  Password reset confirmation stamps `users.password_changed_at` and every
-  browser session carries `issuedAt`; `resolveRequestAuth` rejects cookies
+  cookie with no server store, so there is no global "log out everywhere"
+  button. Password reset confirmation stamps `users.password_changed_at` and
+  every browser session carries `issuedAt`; `resolveRequestAuth` rejects cookies
   issued at or before that timestamp (missing `issuedAt` fails closed once a
-  password change exists). A future hardening could add an explicit
-  "sign out other sessions" control without waiting for a reset.
+  password change exists). A future hardening could add an explicit "sign out
+  other sessions" control without waiting for a reset.
 - **Account secret reveal is owner-scoped, not password-reauthenticated.** See
   the "Account secret reveal" section of
   [`architecture/authentication.md`](./architecture/authentication.md).

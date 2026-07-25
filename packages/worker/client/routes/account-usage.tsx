@@ -116,8 +116,7 @@ export function AccountUsageRoute(handle: Handle) {
 		} catch (error) {
 			if (signal.aborted) return
 			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load usage.'
+			message = error instanceof Error ? error.message : 'Unable to load usage.'
 			loadLatch.markFailed(href)
 			handle.update()
 		}
@@ -157,7 +156,9 @@ export function AccountUsageRoute(handle: Handle) {
 					currentHref={currentHref}
 				/>
 				{message ? (
-					<AccountManagementMessage tone="error">{message}</AccountManagementMessage>
+					<AccountManagementMessage tone="error">
+						{message}
+					</AccountManagementMessage>
 				) : null}
 				{status === 'loading' ? (
 					<p mix={css(descriptionCss)}>Loading usage…</p>

@@ -70,9 +70,8 @@ export async function checkAuthDenialBurstAndNotify(input: {
 	}
 
 	if (input.env.BUNDLE_ARTIFACTS_KV) {
-		const lastSentRaw = await input.env.BUNDLE_ARTIFACTS_KV.get(
-			authDenialAlertKvKey,
-		)
+		const lastSentRaw =
+			await input.env.BUNDLE_ARTIFACTS_KV.get(authDenialAlertKvKey)
 		const lastSentMs = lastSentRaw ? Number(lastSentRaw) : NaN
 		if (
 			Number.isFinite(lastSentMs) &&

@@ -45,7 +45,9 @@ export function TermsRoute(_handle: Handle) {
 				<p mix={css(descriptionCss)}>Do not use Kody to:</p>
 				<ul mix={css(listCss)}>
 					<li>Send spam, phishing, or other abusive email</li>
-					<li>Attack, scrape, or disrupt third-party systems without permission</li>
+					<li>
+						Attack, scrape, or disrupt third-party systems without permission
+					</li>
 					<li>Probe or abuse other users&apos; accounts or data</li>
 					<li>Circumvent plan limits, suspensions, or security controls</li>
 					<li>Host or distribute malware, or violate applicable law</li>
@@ -59,11 +61,11 @@ export function TermsRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Content and packages</h2>
 				<p mix={css(descriptionCss)}>
-					You retain rights to content you create. Community listings you publish
-					are visible to other users under the community rules. Hosted package
-					apps run author-supplied code; review packages before installing or
-					adopting them. Do not publish secrets or other people&apos;s private
-					data.
+					You retain rights to content you create. Community listings you
+					publish are visible to other users under the community rules. Hosted
+					package apps run author-supplied code; review packages before
+					installing or adopting them. Do not publish secrets or other
+					people&apos;s private data.
 				</p>
 			</section>
 
