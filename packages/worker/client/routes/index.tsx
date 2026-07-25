@@ -8,13 +8,25 @@ import {
 	accountBillingRouteLoader,
 } from './account-billing.tsx'
 import {
+	AccountEmailRoute,
+	accountEmailRouteLoader,
+} from './account-email.tsx'
+import {
 	AccountIntegrationsRoute,
 	accountIntegrationsRouteLoader,
 } from './account-integrations.tsx'
 import {
+	AccountJobsRoute,
+	accountJobsRouteLoader,
+} from './account-jobs.tsx'
+import {
 	AccountMcpServersRoute,
 	accountMcpServersRouteLoader,
 } from './account-mcp-servers.tsx'
+import {
+	AccountMemoriesRoute,
+	accountMemoriesRouteLoader,
+} from './account-memories.tsx'
 import {
 	AccountPackageInvocationTokensRoute,
 	accountPackageInvocationTokensRouteLoader,
@@ -40,6 +52,10 @@ import {
 	AccountTwoFactorRoute,
 	accountTwoFactorRouteLoader,
 } from './account-two-factor.tsx'
+import {
+	AccountValuesRoute,
+	accountValuesRouteLoader,
+} from './account-values.tsx'
 import {
 	AdminCommunityReportsRoute,
 	adminCommunityReportsRouteLoader,
@@ -122,6 +138,15 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.accountSecretUserDetail)]: accountSecretsRouteLoader,
 	[routePattern(routes.accountSecretPackageDetail)]: accountSecretsRouteLoader,
 	[routePattern(routes.accountSecretSessionDetail)]: accountSecretsRouteLoader,
+	[routePattern(routes.accountValues)]: accountValuesRouteLoader,
+	[routePattern(routes.accountValueNew)]: accountValuesRouteLoader,
+	[routePattern(routes.accountValueDetail)]: accountValuesRouteLoader,
+	[routePattern(routes.accountJobs)]: accountJobsRouteLoader,
+	[routePattern(routes.accountJobDetail)]: accountJobsRouteLoader,
+	[routePattern(routes.accountMemories)]: accountMemoriesRouteLoader,
+	[routePattern(routes.accountMemoryDetail)]: accountMemoriesRouteLoader,
+	[routePattern(routes.accountEmail)]: accountEmailRouteLoader,
+	[routePattern(routes.accountEmailDetail)]: accountEmailRouteLoader,
 	[routePattern(routes.accountTwoFactor)]: accountTwoFactorRouteLoader,
 	[routePattern(routes.admin)]: adminUsersRouteLoader,
 	[routePattern(routes.adminUsers)]: adminUsersRouteLoader,
@@ -185,6 +210,15 @@ export const clientRoutes = {
 	[routePattern(routes.accountSecretUserDetail)]: <AccountSecretsRoute />,
 	[routePattern(routes.accountSecretPackageDetail)]: <AccountSecretsRoute />,
 	[routePattern(routes.accountSecretSessionDetail)]: <AccountSecretsRoute />,
+	[routePattern(routes.accountValues)]: <AccountValuesRoute />,
+	[routePattern(routes.accountValueNew)]: <AccountValuesRoute />,
+	[routePattern(routes.accountValueDetail)]: <AccountValuesRoute />,
+	[routePattern(routes.accountJobs)]: <AccountJobsRoute />,
+	[routePattern(routes.accountJobDetail)]: <AccountJobsRoute />,
+	[routePattern(routes.accountMemories)]: <AccountMemoriesRoute />,
+	[routePattern(routes.accountMemoryDetail)]: <AccountMemoriesRoute />,
+	[routePattern(routes.accountEmail)]: <AccountEmailRoute />,
+	[routePattern(routes.accountEmailDetail)]: <AccountEmailRoute />,
 	[routePattern(routes.accountTwoFactor)]: <AccountTwoFactorRoute />,
 	[routePattern(routes.admin)]: <AdminUsersRoute />,
 	[routePattern(routes.adminUsers)]: <AdminUsersRoute />,

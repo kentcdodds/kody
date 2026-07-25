@@ -724,6 +724,245 @@ export type AccountSecretsLoaderData = {
 	approvalError: string | null
 }
 
+export type AccountValueListItem = {
+	id: string
+	name: string
+	description: string
+	valuePreview: string
+	updatedAt: string
+	ttlMs: number | null
+}
+
+export type AccountValueDetail = {
+	id: string
+	name: string
+	description: string
+	value: string
+	createdAt: string
+	updatedAt: string
+	ttlMs: number | null
+	scope: 'user'
+}
+
+export type AccountValuesLoaderData = {
+	ok: true
+	values: Array<AccountValueListItem>
+	selectedValue: AccountValueDetail | null
+	selectedValueId: string | null
+}
+
+export type AccountJobOwnership = 'ad-hoc' | 'package'
+
+/**
+ * JSON-safe blob for job params (and similar free-form payloads). Remix
+ * entry props require SerializableValue; `unknown` is not allowed.
+ */
+export type AccountLoaderJsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| Array<AccountLoaderJsonValue>
+	| { [key: string]: AccountLoaderJsonValue }
+
+export type AccountJobListItem = {
+	id: string
+	name: string
+	ownership: AccountJobOwnership
+	scheduleSummary: string
+	timezone: string
+	enabled: boolean
+	killSwitchEnabled: boolean
+	dueNow: boolean
+	lastRunStatus: 'success' | 'error' | null
+	nextRunAt: string
+	lastRunAt: string | null
+	runCount: number
+	successCount: number
+	errorCount: number
+}
+
+export type AccountJobRecentRun = {
+	startedAt: string
+	finishedAt: string
+	status: 'success' | 'error'
+	durationMs: number
+	error: string | null
+}
+
+export type AccountJobSchedule =
+	| { type: 'once'; runAt: string }
+	| { type: 'interval'; every: string }
+	| { type: 'cron'; expression: string }
+
+export type AccountJobDetail = AccountJobListItem & {
+	params: { [key: string]: AccountLoaderJsonValue } | null
+	schedule: AccountJobSchedule
+	lastRunError: string | null
+	lastDurationMs: number | null
+	recentRuns: Array<AccountJobRecentRun>
+	storageId: string
+	sourceId: string
+	publishedCommit: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export type AccountJobsAlarm = {
+	bindingAvailable: boolean
+	status: string
+	storedUserId: string | null
+	alarmScheduledFor: string | null
+	nextRunnableJobId: string | null
+	nextRunnableRunAt: string | null
+	alarmInSync: boolean | null
+}
+
+export type AccountJobsLoaderData = {
+	ok: true
+	jobs: Array<AccountJobListItem>
+	selectedJob: AccountJobDetail | null
+	selectedJobId: string | null
+	alarm?: AccountJobsAlarm
+}
+
+export type AccountMemoryStatus = 'active' | 'archived' | 'deleted'
+
+export type AccountMemoryListItem = {
+	id: string
+	subject: string
+	category: string | null
+	status: AccountMemoryStatus
+	tags: Array<string>
+	summary: string
+	updatedAt: string
+}
+
+export type AccountMemoryDetail = AccountMemoryListItem & {
+	details: string
+	sourceUris: Array<string>
+	dedupeKey: string | null
+	createdAt: string
+	lastAccessedAt: string | null
+	deletedAt: string | null
+}
+
+export type AccountMemoriesLoaderData = {
+	ok: true
+	email: string
+	username: string
+	memories: Array<AccountMemoryListItem>
+	selectedMemory: AccountMemoryDetail | null
+	query: string
+	includeDeleted: boolean
+}
+
+export type AccountEmailUsageEntry = {
+	count: number
+	limit: number
+}
+
+export type AccountEmailUsage = {
+	plan: AdminPlanName
+	day: string
+	stored_messages: AccountEmailUsageEntry
+	sends_today: AccountEmailUsageEntry
+	receives_today: AccountEmailUsageEntry
+	max_message_bytes: number
+}
+
+export type AccountEmailInboxAddress = {
+	id: string
+	address: string
+	enabled: boolean
+	created_at: string
+}
+
+export type AccountEmailInbox = {
+	id: string
+	name: string
+	description: string
+	enabled: boolean
+	addresses: Array<AccountEmailInboxAddress>
+	created_at: string
+	updated_at: string
+}
+
+export type AccountEmailMessageListItem = {
+	id: string
+	direction: 'inbound' | 'outbound'
+	inbox_id: string | null
+	thread_id: string | null
+	from_address: string | null
+	envelope_from: string | null
+	to_addresses: Array<string>
+	subject: string | null
+	message_id_header: string | null
+	processing_status: string
+	provider_message_id: string | null
+	delivery_status: string | null
+	delivery_status_at: string | null
+	error: string | null
+	received_at: string | null
+	sent_at: string | null
+	created_at: string
+	updated_at: string
+}
+
+export type AccountEmailAttachment = {
+	id: string
+	filename: string | null
+	content_type: string | null
+	content_id: string | null
+	disposition: string | null
+	size: number | null
+	storage_kind: string
+	storage_key: string | null
+	created_at: string
+}
+
+export type AccountEmailDeliveryEvent = {
+	id: string
+	event_type: string
+	provider: string | null
+	provider_message_id: string | null
+	provider_event_id: string | null
+	detail_json: string
+	created_at: string
+}
+
+export type AccountEmailMessageDetail = AccountEmailMessageListItem & {
+	cc_addresses: Array<string>
+	bcc_addresses: Array<string>
+	reply_to_addresses: Array<string>
+	in_reply_to_header: string | null
+	references: Array<string>
+	headers: { [key: string]: AccountLoaderJsonValue } | null
+	auth_results: string | null
+	text_body: string | null
+	html_body: string | null
+	raw_size: number | null
+	attachments: Array<AccountEmailAttachment>
+	delivery_events: Array<AccountEmailDeliveryEvent>
+}
+
+export type AccountEmailLoaderData = {
+	ok: true
+	emailVerified: boolean
+	email: string
+	username: string
+	inboxAddress: string | null
+	verificationMessage: string | null
+	inboxes: Array<AccountEmailInbox>
+	messages: Array<AccountEmailMessageListItem>
+	selectedMessage: AccountEmailMessageDetail | null
+	usage: AccountEmailUsage | null
+	page: number
+	pageSize: number
+	total: number
+	query: string
+}
+
 export type AuthProvidersLoaderData = {
 	ok: true
 	providers: Array<{ id: string; label: string }>
@@ -770,6 +1009,10 @@ export type AppLoaderData = {
 	accountPackageInvocationTokens?: AccountPackageInvocationTokensLoaderData
 	accountPackages?: AccountPackagesLoaderData
 	accountSecrets?: AccountSecretsLoaderData
+	accountValues?: AccountValuesLoaderData
+	accountJobs?: AccountJobsLoaderData
+	accountMemories?: AccountMemoriesLoaderData
+	accountEmail?: AccountEmailLoaderData
 	authProviders?: AuthProvidersLoaderData
 	emailVerification?: EmailVerificationLoaderData
 	oauthAuthorize?: OAuthAuthorizeLoaderData

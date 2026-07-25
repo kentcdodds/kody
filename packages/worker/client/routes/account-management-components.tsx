@@ -167,12 +167,16 @@ const accountNavItems = [
 	{ href: '/account', label: 'Overview' },
 	{ href: '/account/billing', label: 'Billing' },
 	{ href: '/account/packages', label: 'Packages' },
+	{ href: '/account/jobs', label: 'Jobs' },
 	{ href: '/account/stars', label: 'Stars' },
 	{ href: '/account/secrets', label: 'Secrets' },
+	{ href: '/account/values', label: 'Values' },
 	{ href: '/account/integrations', label: 'Integrations' },
 	{ href: '/account/package-invocation-tokens', label: 'Package tokens' },
 	{ href: '/account/remote-connectors', label: 'Connectors' },
 	{ href: '/account/mcp-servers', label: 'MCP servers' },
+	{ href: '/account/memories', label: 'Memories' },
+	{ href: '/account/email', label: 'Email' },
 ] as const
 
 function isAccountNavItemActive(itemHref: string, currentPath: string) {

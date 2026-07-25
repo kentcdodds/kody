@@ -35,6 +35,10 @@ import {
 } from '#app/handlers/admin-system-email.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
+import {
+	createAccountEmailApiHandler,
+	createAccountEmailHandler,
+} from '#app/handlers/account-email.ts'
 import { createAccountEmailChangeHandler } from '#app/handlers/account-email-change.ts'
 import { createAccountExportHandler } from '#app/handlers/account-export.ts'
 import {
@@ -42,10 +46,18 @@ import {
 	createAccountIntegrationsHandler,
 } from '#app/handlers/account-integrations.ts'
 import {
+	createAccountJobsApiHandler,
+	createAccountJobsHandler,
+} from '#app/handlers/account-jobs.ts'
+import {
 	createAccountMcpServersApiHandler,
 	createAccountMcpServersHandler,
 	createAccountMcpServersOauthCallbackHandler,
 } from '#app/handlers/account-mcp-servers.ts'
+import {
+	createAccountMemoriesApiHandler,
+	createAccountMemoriesHandler,
+} from '#app/handlers/account-memories.ts'
 import {
 	createAccountPackageInvocationTokensApiHandler,
 	createAccountPackageInvocationTokensHandler,
@@ -86,6 +98,10 @@ import {
 	createAccountSecretsApiHandler,
 	createAccountSecretsHandler,
 } from '#app/handlers/account-secrets.ts'
+import {
+	createAccountValuesApiHandler,
+	createAccountValuesHandler,
+} from '#app/handlers/account-values.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import {
 	createAuthProviderCallbackHandler,
@@ -259,6 +275,22 @@ export function createAppRouter(env: Env) {
 			accountSecretPackageDetail: createAccountSecretsHandler(env),
 			accountSecretsApi: createAccountSecretsApiHandler(env),
 			accountSecretsApiPost: createAccountSecretsApiHandler(env),
+			accountValues: createAccountValuesHandler(env),
+			accountValueNew: createAccountValuesHandler(env),
+			accountValueDetail: createAccountValuesHandler(env),
+			accountValuesApi: createAccountValuesApiHandler(env),
+			accountValuesApiPost: createAccountValuesApiHandler(env),
+			accountJobs: createAccountJobsHandler(env),
+			accountJobDetail: createAccountJobsHandler(env),
+			accountJobsApi: createAccountJobsApiHandler(env),
+			accountJobsApiPost: createAccountJobsApiHandler(env),
+			accountMemories: createAccountMemoriesHandler(env),
+			accountMemoryDetail: createAccountMemoriesHandler(env),
+			accountMemoriesApi: createAccountMemoriesApiHandler(env),
+			accountMemoriesApiPost: createAccountMemoriesApiHandler(env),
+			accountEmail: createAccountEmailHandler(env),
+			accountEmailDetail: createAccountEmailHandler(env),
+			accountEmailApi: createAccountEmailApiHandler(env),
 			admin: createAdminHandler(env),
 			adminUsers: createAdminUsersHandler(env),
 			adminUserDetail: createAdminUsersHandler(env),
