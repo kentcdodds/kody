@@ -8,10 +8,7 @@ import {
 	accountBillingRouteLoader,
 } from './account-billing.tsx'
 import { AccountEmailRoute, accountEmailRouteLoader } from './account-email.tsx'
-import {
-	AccountUsageRoute,
-	accountUsageRouteLoader,
-} from './account-usage.tsx'
+import { AccountUsageRoute, accountUsageRouteLoader } from './account-usage.tsx'
 import {
 	AccountIntegrationsRoute,
 	accountIntegrationsRouteLoader,
