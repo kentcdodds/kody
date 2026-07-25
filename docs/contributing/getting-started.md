@@ -127,7 +127,8 @@ npm run validate
 
 `npm run validate` is the single authoritative local gate. It runs format, lint,
 typecheck, unit tests, Playwright E2E, MCP E2E, backup build, and structure
-checks in parallel. CI runs the same checks as parallel jobs.
+checks in parallel. CI runs the same checks as parallel jobs (node and workers
+unit suites on separate runners).
 
 To seed a deterministic test login after migrations:
 

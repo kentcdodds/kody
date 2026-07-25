@@ -51,6 +51,8 @@
     "generate-types": "node --env-file=packages/worker/.env ./wrangler-env.ts types ./packages/worker/worker-configuration.d.ts",
     "typecheck": "nx run worker:typecheck && tsc --noEmit -p packages/backup-control-plane/tsconfig.json",
     "test": "nx run worker:test",
+    "test:node": "nx run worker:test-node",
+    "test:workers": "nx run worker:test-workers",
     "test:push": "npm run test && npm run test:e2e:run",
     "inspect": "npx -y @mcpjam/inspector inspector",
     "validate": "concurrently -n format,lint,typecheck,test,e2e,mcp,backup-build,primitives,migrations -c green,yellow,magenta,blue,cyan,red,blueBright,white,gray \"npm run format:check\" \"npm run lint\" \"npm run typecheck\" \"npm run test\" \"npm run test:e2e:run\" \"npm run test:mcp\" \"npm run backup:build\" \"npm run primitives:check\" \"npm run migrations:check\"",

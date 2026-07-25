@@ -83,8 +83,9 @@ Quick notes for getting a local kody environment running.
   executes `format:check`, `lint`, `typecheck`, unit tests, Playwright E2E, MCP
   E2E, `backup:build`, `primitives:check`, and `migrations:check` in parallel,
   reporting every failure (sibling checks are not aborted on the first failure).
-  CI runs the same checks as parallel GitHub Actions jobs (aggregated by the ✅
-  Validate job). If `npm run validate` passes locally, CI will pass.
+  CI runs the same checks as parallel GitHub Actions jobs (🧹 Static, 🧪 Node,
+  ☁️ Workers, 🔌 MCP, 🎭 E2E, aggregated by ✅ Validate). If `npm run validate`
+  passes locally, CI will pass.
 - `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
   for mutating auto-fixes. It is never required to pass `validate`.
 - `npm run format` applies formatting updates on its own.

@@ -17,8 +17,8 @@ Use Node 26 and npm for installs and scripts (`npm install`, `npm run ...`).
 
 `npm run validate` is the single authoritative local gate. It is read-only and
 runs the same checks CI runs. CI splits those checks across parallel GitHub
-Actions jobs (static, unit, MCP E2E, Playwright E2E) so heavy suites do not
-contend on one runner; the ✅ Validate job aggregates them. If
+Actions jobs (static, node unit, workers unit, MCP E2E, Playwright E2E) so heavy
+suites do not contend on one runner; the ✅ Validate job aggregates them. If
 `npm run validate` passes locally, CI will pass; if CI fails despite a green
 local `validate`, that is a bug and should be filed.
 

@@ -24,8 +24,9 @@ concurrency:
   cancel-in-progress: true
 
 # Same checks as `npm run validate`, split across runners so CPU-heavy suites
-# (unit, Playwright E2E, MCP E2E, typecheck) do not contend on one machine.
-# Local `npm run validate` remains the authoritative single-command gate.
+# (node/workers unit, Playwright E2E, MCP E2E, typecheck) do not contend on one
+# machine. Local `npm run validate` remains the authoritative single-command
+# gate.
 jobs:
   static:
     runs-on: ubuntu-latest
@@ -78,9 +79,9 @@ jobs:
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
 
-  unit:
+  node:
     runs-on: ubuntu-latest
-    name: 🧪 Unit
+    name: 🧪 Node
     timeout-minutes: 15
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
@@ -89,7 +90,7 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
-          # Unit coverage includes migration immutability helpers that need a
+          # Node coverage includes migration immutability helpers that need a
           # trusted pre-change Git base (same as migrations:check).
           fetch-depth: 0
           persist-credentials: false
@@ -98,14 +99,35 @@ jobs:
         uses: ./.github/actions/setup-validate
         with:
           worker-env: 'true'
-          migrate-local: 'true'
 
-      - name: 🧪 Unit tests
-        run: npm run test
+      - name: 🧪 Node unit tests
+        run: npm run test:node
         env:
           MIGRATION_VALIDATION_BASE: >-
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
+
+  workers:
+    runs-on: ubuntu-latest
+    name: ☁️ Workers
+    timeout-minutes: 15
+    if: >-
+      github.event_name != 'pull_request' || github.event.pull_request.draft ==
+      false
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧰 Setup
+        uses: ./.github/actions/setup-validate
+        with:
+          worker-env: 'true'
+          migrate-local: 'true'
+
+      - name: ☁️ Workers unit tests
+        run: npm run test:workers
 
   mcp:
     runs-on: ubuntu-latest
@@ -156,7 +178,8 @@ jobs:
     timeout-minutes: 2
     needs:
       - static
-      - unit
+      - node
+      - workers
       - mcp
       - e2e
     if: >-
@@ -165,17 +188,20 @@ jobs:
     steps:
       - name: ✅ All checks passed
         if: >-
-          needs.static.result == 'success' && needs.unit.result == 'success' &&
-          needs.mcp.result == 'success' && needs.e2e.result == 'success'
+          needs.static.result == 'success' && needs.node.result == 'success' &&
+          needs.workers.result == 'success' && needs.mcp.result == 'success' &&
+          needs.e2e.result == 'success'
         run: echo "All validate jobs passed"
 
       - name: ❌ Report failures
         if: >-
-          needs.static.result != 'success' || needs.unit.result != 'success' ||
-          needs.mcp.result != 'success' || needs.e2e.result != 'success'
+          needs.static.result != 'success' || needs.node.result != 'success' ||
+          needs.workers.result != 'success' || needs.mcp.result != 'success' ||
+          needs.e2e.result != 'success'
         run: |
           echo "static=${{ needs.static.result }}"
-          echo "unit=${{ needs.unit.result }}"
+          echo "node=${{ needs.node.result }}"
+          echo "workers=${{ needs.workers.result }}"
           echo "mcp=${{ needs.mcp.result }}"
           echo "e2e=${{ needs.e2e.result }}"
           exit 1
