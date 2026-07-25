@@ -814,9 +814,7 @@ test('memory suppression, email delivery, audit, and stripe webhook retention re
 	expect(
 		(
 			sqlite
-				.prepare(
-					`SELECT event_id FROM stripe_webhook_events ORDER BY event_id`,
-				)
+				.prepare(`SELECT event_id FROM stripe_webhook_events ORDER BY event_id`)
 				.all() as Array<{ event_id: string }>
 		).map((row) => row.event_id),
 	).toEqual(['evt_boundary'])
@@ -1502,8 +1500,7 @@ test('retention coverage includes every live growth-pattern table or documented 
 		const hasGlobalAuditShape =
 			table.name === 'audit_events' && columnNames.has('timestamp')
 		const hasGlobalStripeWebhookShape =
-			table.name === 'stripe_webhook_events' &&
-			columnNames.has('processed_at')
+			table.name === 'stripe_webhook_events' && columnNames.has('processed_at')
 		const hasPlatformFeedbackGrowthShape =
 			table.name === 'platform_feedback' &&
 			columnNames.has('submitter_user_id') &&
