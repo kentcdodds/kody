@@ -82,6 +82,23 @@ const deleteStatementPairLimit = 49
  */
 export const analyticsEngineSqlTimeoutMs = 30_000
 
+/**
+ * Transient Cloudflare Analytics Engine SQL API failures (5xx / 429) are
+ * retried with exponential backoff. The hourly aggregation is already
+ * idempotent, but absorbing a single blip avoids a missed rollup hour and
+ * Sentry noise from `scheduled_lane_failed`.
+ */
+export const analyticsEngineSqlRetryMaxAttempts = 3
+export const analyticsEngineSqlRetryBaseDelayMs = 200
+
+function sleep(ms: number) {
+	return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+export function isRetryableAnalyticsEngineSqlStatus(status: number) {
+	return status === 429 || (status >= 500 && status <= 599)
+}
+
 const usageRollupAbsoluteUpsertStatement = `
 INSERT INTO usage_rollups (
 	user_id, metric, month,
@@ -273,24 +290,39 @@ async function queryAnalyticsEngineSql(input: {
 	query: string
 }): Promise<Array<AnalyticsEngineSqlRow>> {
 	const url = `${input.baseUrl.replace(/\/$/, '')}/client/v4/accounts/${input.accountId}/analytics_engine/sql`
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: {
-			authorization: `Bearer ${input.apiToken}`,
-		},
-		body: input.query,
-		signal: AbortSignal.timeout(analyticsEngineSqlTimeoutMs),
-	})
-	const text = await response.text()
-	if (!response.ok) {
-		throw new Error(
+	let lastError: Error | undefined
+	for (
+		let attempt = 1;
+		attempt <= analyticsEngineSqlRetryMaxAttempts;
+		attempt++
+	) {
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${input.apiToken}`,
+			},
+			body: input.query,
+			signal: AbortSignal.timeout(analyticsEngineSqlTimeoutMs),
+		})
+		const text = await response.text()
+		if (response.ok) {
+			const parsed = JSON.parse(text) as {
+				data?: Array<AnalyticsEngineSqlRow>
+			}
+			return parsed.data ?? []
+		}
+		lastError = new Error(
 			`Analytics Engine SQL query failed (${response.status}): ${text.slice(0, 500)}`,
 		)
+		if (
+			!isRetryableAnalyticsEngineSqlStatus(response.status) ||
+			attempt === analyticsEngineSqlRetryMaxAttempts
+		) {
+			throw lastError
+		}
+		await sleep(analyticsEngineSqlRetryBaseDelayMs * 2 ** (attempt - 1))
 	}
-	const parsed = JSON.parse(text) as {
-		data?: Array<AnalyticsEngineSqlRow>
-	}
-	return parsed.data ?? []
+	throw lastError ?? new Error('Analytics Engine SQL query failed')
 }
 
 function toCount(value: number | string) {

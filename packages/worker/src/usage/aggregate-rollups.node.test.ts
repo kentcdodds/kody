@@ -1,6 +1,8 @@
 import { expect, test, vi } from 'vitest'
 import {
 	aggregateUsageRollups,
+	analyticsEngineSqlRetryMaxAttempts,
+	isRetryableAnalyticsEngineSqlStatus,
 	resolveUsageEventsDataset,
 	shouldRunUsageAggregationCron,
 } from './aggregate-rollups.ts'
@@ -154,6 +156,30 @@ function stubFetchSequence(bodies: Array<unknown>) {
 		return new Response(
 			typeof body === 'string' ? body : JSON.stringify(body),
 			{ status: 200 },
+		)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	return Object.assign(fetchMock, {
+		[Symbol.dispose]() {
+			vi.unstubAllGlobals()
+		},
+	})
+}
+
+function stubFetchStatusSequence(
+	responses: Array<{ status: number; body: unknown }>,
+) {
+	let index = 0
+	const fetchMock = vi.fn(async () => {
+		const next = responses[index] ??
+			responses.at(-1) ?? {
+				status: 200,
+				body: { data: [] },
+			}
+		index += 1
+		return new Response(
+			typeof next.body === 'string' ? next.body : JSON.stringify(next.body),
+			{ status: next.status },
 		)
 	})
 	vi.stubGlobal('fetch', fetchMock)
@@ -685,5 +711,70 @@ test('aggregateUsageRollups surfaces a timed-out Analytics Engine fetch as an er
 			new Date('2026-07-15T10:00:00.000Z'),
 		),
 	).rejects.toThrow('timed out')
+	expect(batches).toHaveLength(0)
+})
+
+test('isRetryableAnalyticsEngineSqlStatus covers transient Cloudflare statuses', () => {
+	expect(isRetryableAnalyticsEngineSqlStatus(429)).toBe(true)
+	expect(isRetryableAnalyticsEngineSqlStatus(500)).toBe(true)
+	expect(isRetryableAnalyticsEngineSqlStatus(502)).toBe(true)
+	expect(isRetryableAnalyticsEngineSqlStatus(503)).toBe(true)
+	expect(isRetryableAnalyticsEngineSqlStatus(400)).toBe(false)
+	expect(isRetryableAnalyticsEngineSqlStatus(401)).toBe(false)
+	expect(isRetryableAnalyticsEngineSqlStatus(404)).toBe(false)
+})
+
+test('aggregateUsageRollups retries Analytics Engine SQL 500 then succeeds', async () => {
+	using fetchMock = stubFetchStatusSequence([
+		{ status: 500, body: 'Internal server error' },
+		{ status: 200, body: { data: [] } },
+		{ status: 200, body: { data: [] } },
+	])
+	const { db, batches } = createFakeDb()
+
+	await expect(
+		aggregateUsageRollups(
+			createAggregationEnv(db),
+			new Date('2026-07-15T10:00:00.000Z'),
+		),
+	).resolves.toMatchObject({ skipped: false, upsertedRows: 0 })
+	expect(fetchMock).toHaveBeenCalledTimes(3)
+	expect(batches).toHaveLength(0)
+})
+
+test('aggregateUsageRollups exhausts retries on persistent Analytics Engine 500', async () => {
+	using fetchMock = stubFetchStatusSequence([
+		{ status: 500, body: 'Internal server error' },
+		{ status: 500, body: 'Internal server error' },
+		{ status: 500, body: 'Internal server error' },
+	])
+	const { db, batches } = createFakeDb()
+
+	await expect(
+		aggregateUsageRollups(
+			createAggregationEnv(db),
+			new Date('2026-07-15T10:00:00.000Z'),
+		),
+	).rejects.toThrow('Analytics Engine SQL query failed (500)')
+	expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(
+		analyticsEngineSqlRetryMaxAttempts,
+	)
+	expect(batches).toHaveLength(0)
+})
+
+test('aggregateUsageRollups does not retry Analytics Engine SQL 400', async () => {
+	using fetchMock = stubFetchStatusSequence([
+		{ status: 400, body: 'query error: unknown table' },
+	])
+	const { db, batches } = createFakeDb()
+
+	await expect(
+		aggregateUsageRollups(
+			createAggregationEnv(db),
+			new Date('2026-07-15T10:00:00.000Z'),
+		),
+	).rejects.toThrow('Analytics Engine SQL query failed (400)')
+	// Both month queries may start in parallel, but neither retries a 400.
+	expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(2)
 	expect(batches).toHaveLength(0)
 })
