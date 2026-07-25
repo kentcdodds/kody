@@ -1,5 +1,9 @@
 import * as Sentry from '@sentry/browser'
 import {
+	filterBrowserAbortSentryEvent,
+	isBrowserAbortError,
+} from '#client/sentry-browser-filters.ts'
+import {
 	parseSentryClientConfig,
 	SENTRY_CONFIG_META_NAME,
 } from '#client/sentry-config.ts'
@@ -42,6 +46,12 @@ export function initSentryClient(doc: Document) {
 			// happens.
 			replaysSessionSampleRate: 0,
 			replaysOnErrorSampleRate: 1.0,
+			// Superseded SPA navigations and user-driven aborts reject in-flight
+			// fetches with AbortError. Those are expected and not actionable —
+			// see filterBrowserAbortSentryEvent / KODY-CLOUDFLARE-23.
+			beforeSend(event, hint) {
+				return filterBrowserAbortSentryEvent(event, hint.originalException)
+			},
 		})
 		return true
 	} catch (error) {
@@ -52,6 +62,7 @@ export function initSentryClient(doc: Document) {
 
 /** Report a caught client error without letting reporting itself throw. */
 export function captureClientException(error: unknown) {
+	if (isBrowserAbortError(error)) return
 	try {
 		Sentry.captureException(error)
 	} catch {
