@@ -25,7 +25,6 @@ test('applyDynamicWorkflowSentryScope tags package workflows with user and coord
 	applyDynamicWorkflowSentryScope({
 		instanceId: 'wf-instance-1',
 		payload: {
-			version: 2,
 			sourceType: 'package',
 			userId: 'user-stable-1',
 			packageId: 'pkg-1',
@@ -69,7 +68,6 @@ test('applyDynamicWorkflowSentryScope records inline code size without package t
 	applyDynamicWorkflowSentryScope({
 		instanceId: 'wf-inline-1',
 		payload: {
-			version: 3,
 			sourceType: 'inline',
 			userId: 'user-stable-2',
 			packageContext: null,

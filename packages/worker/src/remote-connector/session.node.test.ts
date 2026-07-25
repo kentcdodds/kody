@@ -381,6 +381,10 @@ test('tools/list_changed soft-fails disconnects and reports malformed snapshots'
 		send: (payload: string) => {
 			sent.push(payload)
 		},
+		deserializeAttachment: () => ({
+			ingressSessionKey: 'session-home',
+			ingressUserId: 'user-home-1',
+		}),
 	} as unknown as WebSocket
 	const malformed = await createRemoteConnectorSession({
 		storedState: {
@@ -439,10 +443,12 @@ test('tools/list_changed soft-fails disconnects and reports malformed snapshots'
 		'remote-connector-session',
 	)
 	expect(setTagMock).toHaveBeenCalledWith('remote_connector.id', 'home')
+	expect(setUserMock).toHaveBeenCalledWith({ id: 'user-home-1' })
 	expect(setContextMock).toHaveBeenCalledWith(
 		'remote_connector',
 		expect.objectContaining({
 			connectorId: 'home',
+			userId: 'user-home-1',
 			messageType: 'connector.jsonrpc',
 			error: 'Malformed tools/list result.',
 		}),

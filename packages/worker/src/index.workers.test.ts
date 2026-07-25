@@ -344,6 +344,7 @@ test('scheduled isolates a failing lane: logs it and keeps siblings and the invo
 			expect.objectContaining({
 				lane: 'reconcile_artifacts_pushes',
 				scheduledTime: new Date(scheduledTime).toISOString(),
+				cron: '*/5 * * * *',
 			}),
 		)
 	} finally {
