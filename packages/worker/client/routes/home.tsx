@@ -47,9 +47,9 @@ const workflowSteps = [
 
 const capabilityHighlights = [
 	{
-		title: 'Use the assistant you already have',
+		title: 'Access you decide on, service by service',
 		description:
-			'Connect Kody to Claude, ChatGPT, Cursor, or Codex through MCP. Kody makes zero inference calls, so there is no second agent or model bill.',
+			'Not all-or-nothing access to your machine. You approve each credential, each host, and each package. Secrets stay server-side and never enter your assistant\u2019s context.',
 	},
 	{
 		title: 'The fastest way to start',
@@ -57,9 +57,9 @@ const capabilityHighlights = [
 			'Install a community package in one click. Every install is a fork you own—open it, change it, schedule it, or publish your version back.',
 	},
 	{
-		title: 'Self-service means ownership',
+		title: 'One-off work becomes permanent',
 		description:
-			"Bring your own OAuth apps and API keys. Your data is exportable and Kody's source is available to inspect, so your assistant stays portable.",
+			'Your agent explores against your real APIs, and once something works it saves as a package that runs on a schedule—no model in the loop, no tokens, no drift.',
 	},
 ] as const
 
@@ -149,21 +149,25 @@ export function HomeRoute(handle: Handle) {
 					<img src="/logo.png" alt="kody logo" mix={css(heroLogoCss)} />
 					<div mix={css(heroTextCss)}>
 						<h1 mix={css(heroTitleCss)}>
-							Your assistant&apos;s{' '}
-							<span mix={css({ color: colors.primaryText })}>home</span>
+							Kody{' '}
+							<span mix={css({ color: colors.primaryText })}>augments</span>{' '}
+							your agent
 						</h1>
 						<p mix={css(heroSubtitleCss)}>
-							The memory, keys, code, and automations it keeps, no matter which
-							agent you talk to. For builders who&apos;d rather own their
-							assistant than rent one.
+							It does not replace the assistant you already use. Connect Claude,
+							ChatGPT, Cursor, or Codex, and it gains your keys, your saved
+							code, and automations that keep running with your laptop closed.
 						</p>
 					</div>
 					<div mix={css(commandPillRowCss)}>
+						{renderCommandPill('connects')}
 						{renderCommandPill('remembers')}
 						{renderCommandPill('acts')}
 					</div>
 					<p mix={css(heroTaglineCss)}>
-						Kody keeps working while your computer is off.
+						Kody never calls a model. It is your assistant&apos;s home — the
+						memory, keys, code, and automations it keeps, no matter which agent
+						you talk to.
 					</p>
 					<div>
 						{onboardingStatus === 'ready' &&
