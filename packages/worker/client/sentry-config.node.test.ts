@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { parseSentryClientConfig } from './sentry-config.ts'
 
-test('parses a complete config and normalizes missing release to null', () => {
+test('parseSentryClientConfig accepts complete configs and rejects unsafe tunnels', () => {
 	expect(
 		parseSentryClientConfig(
 			JSON.stringify({
@@ -27,9 +27,7 @@ test('parses a complete config and normalizes missing release to null', () => {
 			}),
 		),
 	).toMatchObject({ release: null })
-})
 
-test('rejects missing, malformed, or non-same-origin-tunnel configs', () => {
 	expect(parseSentryClientConfig(null)).toBeNull()
 	expect(parseSentryClientConfig('')).toBeNull()
 	expect(parseSentryClientConfig('not json')).toBeNull()

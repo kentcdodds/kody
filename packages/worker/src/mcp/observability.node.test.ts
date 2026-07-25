@@ -36,6 +36,7 @@ function captureMcpEvents(run: () => void) {
 	sentryMock.captureMessage.mockClear()
 	sentryMock.withScope.mockClear()
 	sentryMock.scope.setLevel.mockClear()
+	sentryMock.scope.setUser.mockClear()
 
 	const originalInfo = console.info
 	const payloads: Array<string> = []
@@ -62,7 +63,7 @@ const callerFailureBase = {
 	userId: 'user-1',
 } as const
 
-test('logMcpEvent keeps sandbox failures on mcp-event logs and skips Sentry', () => {
+test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports platform bugs', () => {
 	const payloads = captureMcpEvents(() => {
 		logMcpEvent({
 			category: 'mcp',
@@ -80,41 +81,6 @@ test('logMcpEvent keeps sandbox failures on mcp-event logs and skips Sentry', ()
 			cause: 'Notion API /data_sources/.../query failed: validation_error',
 		})
 
-		logMcpEvent({
-			...callerFailureBase,
-			capabilityName: 'value_get',
-			capabilitySource: 'builtin',
-			sandboxError: false,
-			failurePhase: 'handler',
-			errorName: 'Error',
-			errorMessage: 'platform handler blew up',
-			cause: new Error('platform handler blew up'),
-		})
-	})
-
-	expect(payloads).toHaveLength(2)
-	expect(JSON.parse(payloads[0]!)).toMatchObject({
-		tool: 'execute',
-		outcome: 'failure',
-		sandboxError: true,
-	})
-	expect(JSON.parse(payloads[1]!)).toMatchObject({
-		tool: 'capability',
-		outcome: 'failure',
-		sandboxError: false,
-	})
-
-	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
-	expect(sentryMock.captureException).toHaveBeenCalledTimes(1)
-	expect(sentryMock.captureException).toHaveBeenCalledWith(
-		expect.objectContaining({ message: 'platform handler blew up' }),
-	)
-	expect(sentryMock.scope.setLevel).toHaveBeenCalledWith('error')
-	expect(sentryMock.scope.setUser).toHaveBeenCalledWith({ id: 'user-1' })
-})
-
-test('logMcpEvent keeps caller mistakes out of Sentry', () => {
-	const payloads = captureMcpEvents(() => {
 		logMcpEvent({
 			...callerFailureBase,
 			capabilityName: 'search',
@@ -166,13 +132,27 @@ test('logMcpEvent keeps caller mistakes out of Sentry', () => {
 		})
 	})
 
-	expect(payloads).toHaveLength(5)
+	expect(payloads).toHaveLength(6)
+	expect(JSON.parse(payloads[0]!)).toMatchObject({
+		tool: 'execute',
+		outcome: 'failure',
+		sandboxError: true,
+	})
 	expect(sentryMock.captureException).not.toHaveBeenCalled()
 	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
-})
 
-test('logMcpEvent still reports platform failures that wrap no caller error', () => {
 	captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'value_get',
+			capabilitySource: 'builtin',
+			sandboxError: false,
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'platform handler blew up',
+			cause: new Error('platform handler blew up'),
+		})
+
 		logMcpEvent({
 			...callerFailureBase,
 			capabilityName: 'package_get',
@@ -185,8 +165,16 @@ test('logMcpEvent still reports platform failures that wrap no caller error', ()
 		})
 	})
 
-	expect(sentryMock.captureException).toHaveBeenCalledTimes(1)
-	expect(sentryMock.captureException).toHaveBeenCalledWith(
+	expect(sentryMock.captureException).toHaveBeenCalledTimes(2)
+	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
+		1,
+		expect.objectContaining({ message: 'platform handler blew up' }),
+	)
+	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
+		2,
 		expect.objectContaining({ message: 'D1 write failed.' }),
 	)
+	expect(sentryMock.scope.setLevel).toHaveBeenCalledWith('error')
+	expect(sentryMock.scope.setUser).toHaveBeenCalledWith({ id: 'user-1' })
+	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
 })

@@ -1,8 +1,9 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	buildEnvelopeIngestUrl,
 	createSentryTunnelHandler,
 } from './sentry-tunnel.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const configuredDsn = 'https://publickey@o123.ingest.us.sentry.io/456'
 
@@ -23,9 +24,14 @@ function tunnelRequest(body: string | ArrayBuffer) {
 	>[0]
 }
 
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
+function stubFetch(fetchMock: ReturnType<typeof vi.fn>) {
+	vi.stubGlobal('fetch', fetchMock)
+	return {
+		[Symbol.dispose]() {
+			vi.unstubAllGlobals()
+		},
+	}
+}
 
 test('buildEnvelopeIngestUrl derives the envelope endpoint from the DSN', () => {
 	expect(buildEnvelopeIngestUrl(configuredDsn)).toBe(
@@ -39,76 +45,64 @@ test('buildEnvelopeIngestUrl derives the envelope endpoint from the DSN', () => 
 	).toBe('https://sentry.example.com/sentry/api/456/envelope/')
 })
 
-test('forwards envelopes whose dsn matches the configured DSN', async () => {
-	const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
-	vi.stubGlobal('fetch', fetchMock)
-	const handler = createSentryTunnelHandler({ SENTRY_DSN: configuredDsn })
-
-	const response = await handler.handler(
+test('sentry tunnel forwards matching envelopes and rejects everything else', async () => {
+	const forwardMock = vi.fn(async () => new Response(null, { status: 200 }))
+	using _okFetch = stubFetch(forwardMock)
+	const forwardHandler = createSentryTunnelHandler({
+		SENTRY_DSN: configuredDsn,
+	})
+	const forwarded = await forwardHandler.handler(
 		tunnelRequest(buildEnvelope(configuredDsn)),
 	)
-
-	expect(response.status).toBe(200)
-	expect(fetchMock).toHaveBeenCalledTimes(1)
-	const [ingestUrl, init] = fetchMock.mock.calls[0] as unknown as [
+	expect(forwarded.status).toBe(200)
+	expect(forwardMock).toHaveBeenCalledTimes(1)
+	const [ingestUrl, init] = forwardMock.mock.calls[0] as unknown as [
 		string,
 		RequestInit,
 	]
 	expect(ingestUrl).toBe('https://o123.ingest.us.sentry.io/api/456/envelope/')
 	expect(init.method).toBe('POST')
-})
 
-test('rejects envelopes for a different DSN without forwarding', async () => {
-	const fetchMock = vi.fn()
-	vi.stubGlobal('fetch', fetchMock)
-	const handler = createSentryTunnelHandler({ SENTRY_DSN: configuredDsn })
-
-	const response = await handler.handler(
-		tunnelRequest(buildEnvelope('https://other@o999.ingest.sentry.io/1')),
-	)
-
-	expect(response.status).toBe(403)
-
-	// Truthy non-string dsn values must 403, not crash.
-	const nonString = await handler.handler(
-		tunnelRequest('{"dsn":{"nested":true}}\n{"type":"event"}'),
-	)
-	expect(nonString.status).toBe(403)
-	expect(fetchMock).not.toHaveBeenCalled()
-})
-
-test('returns 404 when no DSN is configured and 400 on malformed envelopes', async () => {
-	const fetchMock = vi.fn()
-	vi.stubGlobal('fetch', fetchMock)
-
-	const disabled = createSentryTunnelHandler({})
+	const rejectMock = vi.fn()
+	using _rejectFetch = stubFetch(rejectMock)
+	const rejectHandler = createSentryTunnelHandler({
+		SENTRY_DSN: configuredDsn,
+	})
 	expect(
-		(await disabled.handler(tunnelRequest(buildEnvelope(configuredDsn))))
-			.status,
+		(
+			await rejectHandler.handler(
+				tunnelRequest(buildEnvelope('https://other@o999.ingest.sentry.io/1')),
+			)
+		).status,
+	).toBe(403)
+	// Truthy non-string dsn values must 403, not crash.
+	expect(
+		(
+			await rejectHandler.handler(
+				tunnelRequest('{"dsn":{"nested":true}}\n{"type":"event"}'),
+			)
+		).status,
+	).toBe(403)
+	expect(
+		(
+			await createSentryTunnelHandler({}).handler(
+				tunnelRequest(buildEnvelope(configuredDsn)),
+			)
+		).status,
 	).toBe(404)
+	expect(
+		(await rejectHandler.handler(tunnelRequest('not json\nrest'))).status,
+	).toBe(400)
+	expect(rejectMock).not.toHaveBeenCalled()
 
-	const enabled = createSentryTunnelHandler({ SENTRY_DSN: configuredDsn })
-	expect((await enabled.handler(tunnelRequest('not json\nrest'))).status).toBe(
-		400,
-	)
-	expect(fetchMock).not.toHaveBeenCalled()
-})
-
-test('returns 502 when the upstream forward fails', async () => {
-	vi.stubGlobal(
-		'fetch',
-		vi.fn(async () => {
-			throw new Error('network down')
-		}),
-	)
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	try {
-		const handler = createSentryTunnelHandler({ SENTRY_DSN: configuredDsn })
-		const response = await handler.handler(
-			tunnelRequest(buildEnvelope(configuredDsn)),
-		)
-		expect(response.status).toBe(502)
-	} finally {
-		warnSpy.mockRestore()
-	}
+	const failMock = vi.fn(async () => {
+		throw new Error('network down')
+	})
+	using _failFetch = stubFetch(failMock)
+	consoleWarn.mockImplementation(() => {})
+	const failHandler = createSentryTunnelHandler({ SENTRY_DSN: configuredDsn })
+	expect(
+		(await failHandler.handler(tunnelRequest(buildEnvelope(configuredDsn))))
+			.status,
+	).toBe(502)
 })

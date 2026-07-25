@@ -1,15 +1,12 @@
 import { expect, test } from 'vitest'
 import {
 	executorSandboxTimeoutMessage,
-	filterExecutorSandboxTimeoutSentryEvent,
-	filterRetryableD1LockSentryEvent,
 	filterSentryEvent,
-	filterUserModuleBundlerFailureSentryEvent,
 } from './sentry-options.ts'
 
-test('filterRetryableD1LockSentryEvent drops transient D1 lock contention and keeps other errors', () => {
+test('filterSentryEvent drops expected platform and caller noise and keeps real errors', () => {
 	expect(
-		filterRetryableD1LockSentryEvent({
+		filterSentryEvent({
 			exception: {
 				values: [
 					{
@@ -21,7 +18,7 @@ test('filterRetryableD1LockSentryEvent drops transient D1 lock contention and ke
 	).toBeNull()
 
 	expect(
-		filterRetryableD1LockSentryEvent({
+		filterSentryEvent({
 			exception: {
 				values: [
 					{
@@ -35,15 +32,6 @@ test('filterRetryableD1LockSentryEvent drops transient D1 lock contention and ke
 		}),
 	).toBeNull()
 
-	const unrelatedEvent = {
-		exception: {
-			values: [{ value: 'D1_ERROR: syntax error near INSERTZ' }],
-		},
-	}
-	expect(filterRetryableD1LockSentryEvent(unrelatedEvent)).toBe(unrelatedEvent)
-})
-
-test('filterUserModuleBundlerFailureSentryEvent drops esbuild failures in caller modules', () => {
 	const userModuleBuildFailure = {
 		exception: {
 			values: [
@@ -54,19 +42,23 @@ test('filterUserModuleBundlerFailureSentryEvent drops esbuild failures in caller
 			],
 		},
 	}
-	expect(
-		filterUserModuleBundlerFailureSentryEvent(userModuleBuildFailure),
-	).toBeNull()
 	expect(filterSentryEvent(userModuleBuildFailure)).toBeNull()
-
-	const userModuleMessageFailure = {
-		message:
-			'Build failed with 1 error:\nvirtual:.__kody_root__/entry.ts:11:49: ERROR: Unexpected "^"',
-	}
 	expect(
-		filterUserModuleBundlerFailureSentryEvent(userModuleMessageFailure),
+		filterSentryEvent({
+			message:
+				'Build failed with 1 error:\nvirtual:.__kody_root__/entry.ts:11:49: ERROR: Unexpected "^"',
+		}),
 	).toBeNull()
-	expect(filterSentryEvent(userModuleMessageFailure)).toBeNull()
+
+	const sandboxTimeout = {
+		exception: {
+			values: [{ value: executorSandboxTimeoutMessage }],
+		},
+	}
+	expect(filterSentryEvent(sandboxTimeout)).toBeNull()
+	expect(
+		filterSentryEvent({ message: executorSandboxTimeoutMessage }),
+	).toBeNull()
 
 	const platformBuildFailure = {
 		exception: {
@@ -78,74 +70,26 @@ test('filterUserModuleBundlerFailureSentryEvent drops esbuild failures in caller
 			],
 		},
 	}
-	expect(filterUserModuleBundlerFailureSentryEvent(platformBuildFailure)).toBe(
-		platformBuildFailure,
-	)
 	expect(filterSentryEvent(platformBuildFailure)).toBe(platformBuildFailure)
 
-	const unrelated = {
+	const syntaxError = {
 		exception: {
 			values: [{ value: 'D1_ERROR: syntax error near INSERTZ' }],
 		},
 	}
-	expect(filterUserModuleBundlerFailureSentryEvent(unrelated)).toBe(unrelated)
-	expect(filterSentryEvent(unrelated)).toBe(unrelated)
-})
+	expect(filterSentryEvent(syntaxError)).toBe(syntaxError)
 
-test('filterExecutorSandboxTimeoutSentryEvent drops exact sandbox timeout message', () => {
-	const sandboxTimeout = {
-		exception: {
-			values: [{ value: executorSandboxTimeoutMessage }],
-		},
-	}
-	expect(filterExecutorSandboxTimeoutSentryEvent(sandboxTimeout)).toBeNull()
-	expect(filterSentryEvent(sandboxTimeout)).toBeNull()
-
-	const topLevelMessage = { message: executorSandboxTimeoutMessage }
-	expect(filterExecutorSandboxTimeoutSentryEvent(topLevelMessage)).toBeNull()
-	expect(filterSentryEvent(topLevelMessage)).toBeNull()
-
-	const similarButDifferent = {
+	const webhookTimeout = {
 		exception: {
 			values: [{ value: 'Webhook sync invocation timed out.' }],
 		},
 	}
-	expect(filterExecutorSandboxTimeoutSentryEvent(similarButDifferent)).toBe(
-		similarButDifferent,
-	)
-	expect(filterSentryEvent(similarButDifferent)).toBe(similarButDifferent)
+	expect(filterSentryEvent(webhookTimeout)).toBe(webhookTimeout)
 
-	const prefixed = {
+	const prefixedSandboxTimeout = {
 		exception: {
 			values: [{ value: `Error: ${executorSandboxTimeoutMessage}` }],
 		},
 	}
-	expect(filterExecutorSandboxTimeoutSentryEvent(prefixed)).toBe(prefixed)
-	expect(filterSentryEvent(prefixed)).toBe(prefixed)
-})
-
-test('filterSentryEvent still drops retryable D1 lock contention', () => {
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value: 'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY',
-					},
-				],
-			},
-		}),
-	).toBeNull()
-
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value: 'D1_ERROR: Currently processing a long-running export.',
-					},
-				],
-			},
-		}),
-	).toBeNull()
+	expect(filterSentryEvent(prefixedSandboxTimeout)).toBe(prefixedSandboxTimeout)
 })
