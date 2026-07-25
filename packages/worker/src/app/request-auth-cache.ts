@@ -82,10 +82,11 @@ async function resolveRequestAuth(
 		}
 	}
 
-	const passwordChangedAtMs = parsePasswordChangedAtMs(
-		userRecord.password_changed_at,
-	)
+	const passwordChangedAtRaw = userRecord.password_changed_at?.trim() ?? ''
+	const passwordChangedAtMs = parsePasswordChangedAtMs(passwordChangedAtRaw)
+	// Non-empty but unparseable must fail closed — do not treat as "never changed".
 	if (
+		(passwordChangedAtRaw !== '' && passwordChangedAtMs === null) ||
 		isAuthSessionInvalidatedByPasswordChange({
 			issuedAt,
 			passwordChangedAtMs,

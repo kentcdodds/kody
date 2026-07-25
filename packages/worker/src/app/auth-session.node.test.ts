@@ -91,3 +91,10 @@ test('millisecond password_changed_at allows same-second re-login after reset', 
 		}),
 	).toBe(false)
 })
+
+test('parsePasswordChangedAtMs returns null for empty or malformed values', () => {
+	expect(parsePasswordChangedAtMs(null)).toBeNull()
+	expect(parsePasswordChangedAtMs('')).toBeNull()
+	expect(parsePasswordChangedAtMs('   ')).toBeNull()
+	expect(parsePasswordChangedAtMs('not-a-timestamp')).toBeNull()
+})
