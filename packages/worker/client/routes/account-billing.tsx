@@ -56,13 +56,14 @@ const planTiers: Array<{
 		id: 'free',
 		name: 'Free',
 		price: '$0',
-		description: 'Tight limits for trying Kody.',
+		description:
+			'Room to build real automations. Capped on daily volume, not on how much you build.',
 	},
 	{
 		id: 'pro',
 		name: 'Pro',
 		price: '$5/month',
-		description: 'Higher limits for heavier workflows and services.',
+		description: 'Higher daily volume, more services, and persistent ones.',
 	},
 ]
 

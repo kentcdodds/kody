@@ -11,6 +11,7 @@ import {
 	parseEntitlementLimitMessage,
 } from './errors.ts'
 import {
+	entitlementResources,
 	getPlanRank,
 	maxPlanEmailLimits,
 	parsePlanName,
@@ -875,19 +876,22 @@ test('resolveEffectivePlan picks the higher of manual and stripe plans', () => {
 	expect(resolveEffectivePlan('free', 'unlimited')).toBe('free')
 })
 
-test('free plan limits are stricter than pro', () => {
-	expect(planLimits.free.maxSavedPackages).toBe(5)
-	expect(planLimits.free.maxScheduledJobs).toBe(3)
-	expect(planLimits.free.maxPackageServices).toBe(1)
+// Asserts the invariant rather than the numbers. `plans.ts` says the limits are
+// placeholders meant to be tuned as metering data arrives, so pinning exact
+// values here would make every tuning change look like a regression. What must
+// never break is the ordering between plans and the persistent-services gate.
+test('free plan limits are stricter than pro for every resource', () => {
+	for (const resource of entitlementResources) {
+		expect(
+			resolvePlanLimit('free', resource),
+			`free ${resource} should be below pro`,
+		).toBeLessThan(resolvePlanLimit('pro', resource))
+	}
+	// Persistent services are the one hard gate rather than a smaller number:
+	// free cannot run them at all.
 	expect(planLimits.free.packageServicePersistentAllowed).toBe(0)
-	expect(planLimits.free.maxSavedPackages).toBeLessThan(
-		planLimits.pro.maxSavedPackages,
-	)
-	expect(planLimits.free.maxScheduledJobs).toBeLessThan(
-		planLimits.pro.maxScheduledJobs,
-	)
 	expect(resolvePlanLimit('free', 'persistent_package_services')).toBe(0)
-	expect(resolvePlanLimit('free', 'saved_packages')).toBe(5)
+	expect(resolvePlanLimit('pro', 'persistent_package_services')).toBe(1)
 })
 
 test('max plan has finite ordinary limits, email caps, and persistent services', () => {

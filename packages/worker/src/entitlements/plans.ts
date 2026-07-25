@@ -232,19 +232,39 @@ export type MaxPlanEmailResource = keyof typeof maxPlanEmailLimits
  * {@link maxPlanEmailLimits} abuse caps instead.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
+	// Free is deliberately generous on *counts* and unchanged on *rates*.
+	//
+	// Counts (packages, jobs, secrets, repo sessions) are close to free to
+	// serve — a handful of D1 rows — and they are exactly what stands between
+	// someone and the moment the product makes sense, which is the second or
+	// third automation rather than the first. Rates and long-lived compute
+	// (execute calls, outbound fetches, inbound mail, workflows, services) are
+	// the real cost and abuse surfaces and stay where they were.
+	//
+	// The old ceilings ran out during setup rather than after conviction. Five
+	// secrets is the clearest case: one OAuth integration commonly needs three
+	// (client secret, access token, refresh token), so five allowed barely one
+	// and a half integrations on a product whose whole point is holding
+	// credentials safely.
 	free: {
-		maxSavedPackages: 5,
-		maxScheduledJobs: 3,
+		maxSavedPackages: 25,
+		maxScheduledJobs: 10,
+		// Long-lived compute. Unchanged, and persistent services stay off.
 		maxPackageServices: 1,
 		packageServicePersistentAllowed: 0,
-		maxRepoSessions: 2,
-		maxEmailSendsPerDay: 5,
+		maxRepoSessions: 5,
+		// notify-self and reply-to-stored only, so the outreach-abuse surface
+		// is small; a daily digest plus a few alerts should not hit the wall.
+		maxEmailSendsPerDay: 10,
+		// Inbound volume is attacker-controlled. Unchanged.
 		maxEmailReceivesPerDay: 50,
 		maxStoredEmailMessages: 500,
 		maxEmailMessageBytes: 256 * 1024,
-		maxSecrets: 5,
+		maxSecrets: 15,
 		maxStorageBytes: 64 * 1024 * 1024,
+		// Compute. Unchanged.
 		maxConcurrentWorkflows: 3,
+		// The primary cost meter. Unchanged.
 		maxExecuteCallsPerDay: 500,
 		maxOutboundFetchesPerDay: 2_000,
 	},
