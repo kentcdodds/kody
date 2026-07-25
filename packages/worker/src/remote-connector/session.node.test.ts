@@ -292,3 +292,45 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 		tools: [],
 	})
 })
+
+test('tools/list_changed snapshot refresh failures log a warning without Sentry', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { session, state, persistedEntries } =
+		await createRemoteConnectorSession({
+			storedState: {
+				persisted: {
+					connectorId: 'home',
+					connectedAt: '2026-04-26T05:00:00.000Z',
+					lastSeenAt: '2026-04-26T05:01:00.000Z',
+				},
+				tools: [{ name: 'bond_shade_set_position' }],
+			},
+			webSockets: [{} as WebSocket],
+		})
+	// Drop the socket before tools/list so refresh fails immediately (same
+	// soft-fail path as an RPC timeout against a stalled home connector).
+	state.getWebSockets.mockReturnValue([])
+
+	await session.webSocketMessage(
+		{} as WebSocket,
+		JSON.stringify({
+			type: 'connector.jsonrpc',
+			message: {
+				jsonrpc: '2.0',
+				method: 'notifications/tools/list_changed',
+			},
+		}),
+	)
+
+	expect(captureMessageMock).not.toHaveBeenCalled()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'Remote connector tools snapshot refresh failed on tools/list_changed. connectorId=home error=No remote connector is connected.',
+	)
+	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
+		persisted: {
+			connectorId: 'home',
+			connectedAt: '2026-04-26T05:00:00.000Z',
+		},
+		tools: [],
+	})
+})

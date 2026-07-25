@@ -503,16 +503,10 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			await this.refreshToolsSnapshot()
 		} catch (error) {
 			this.stateSnapshot.tools = []
-			this.captureSessionMessage(
-				'Remote connector tools snapshot refresh failed after websocket hello.',
-				{
-					level: 'error',
-					extra: {
-						connectorId: this.stateSnapshot.persisted.connectorId,
-						error: getErrorMessage(error),
-					},
-				},
-			)
+			this.logToolsSnapshotRefreshFailure({
+				phase: 'after websocket hello',
+				error,
+			})
 			await this.persistState()
 		}
 	}
@@ -539,20 +533,27 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 				await this.refreshToolsSnapshot()
 			} catch (error) {
 				this.stateSnapshot.tools = []
-				this.captureSessionMessage(
-					'Remote connector tools snapshot refresh failed.',
-					{
-						level: 'error',
-						extra: {
-							connectorId: this.stateSnapshot.persisted.connectorId,
-							error: getErrorMessage(error),
-						},
-					},
-				)
+				this.logToolsSnapshotRefreshFailure({
+					phase: 'on tools/list_changed',
+					error,
+				})
 				await this.persistState()
 				return
 			}
 		}
+	}
+
+	private logToolsSnapshotRefreshFailure(input: {
+		phase: 'after websocket hello' | 'on tools/list_changed'
+		error: unknown
+	}) {
+		// tools/list timeouts, disconnects mid-RPC, and connector-side errors are
+		// expected remote-connector lifecycle noise (same class as websocket
+		// closes). Soft-fail by clearing tools; keep an ops log line and do not
+		// open Sentry issues. Auth failures and message-handler bugs still capture.
+		console.warn(
+			`Remote connector tools snapshot refresh failed ${input.phase}. connectorId=${this.stateSnapshot.persisted.connectorId ?? 'null'} error=${getErrorMessage(input.error)}`,
+		)
 	}
 
 	private async refreshToolsSnapshot() {
