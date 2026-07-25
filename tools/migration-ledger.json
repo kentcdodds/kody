@@ -391,6 +391,10 @@
 		{
 			"filename": "0091-user-abuse-controls.sql",
 			"sha256": "a831d51f11e539c57283947fd78917f719cc5ca33b023af2f8beeec84bed53a3"
+		},
+		{
+			"filename": "0092-password-changed-at.sql",
+			"sha256": "9b5ab5019e2c18def21e562c9f0d36fe4385817e9b1ac12e9bec6512ba16d85c"
 		}
 	]
 }

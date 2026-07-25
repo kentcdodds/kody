@@ -154,6 +154,7 @@ export function AccountUsageRoute(handle: Handle) {
 				<AccountPageHeader
 					title="Usage"
 					description="Your current plan limits and how much you are using today."
+					currentHref={currentHref}
 				/>
 				{message ? (
 					<AccountManagementMessage tone="error">{message}</AccountManagementMessage>
