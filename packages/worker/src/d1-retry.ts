@@ -9,9 +9,20 @@ function sleep(ms: number) {
 	return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Cloudflare D1 emits this while a REST/API export is in progress. Exports
+ * block other database requests for consistency (see D1 import/export docs),
+ * so production MCP/cron traffic fails for the duration of the nightly DR
+ * backup export. Same class of transient unavailability as SQLITE_BUSY.
+ */
+export const d1LongRunningExportMessage =
+	'Currently processing a long-running export'
+
 export function isRetryableD1LockMessage(message: string) {
 	return (
-		message.includes('SQLITE_BUSY') || message.includes('database is locked')
+		message.includes('SQLITE_BUSY') ||
+		message.includes('database is locked') ||
+		message.includes(d1LongRunningExportMessage)
 	)
 }
 
@@ -31,10 +42,12 @@ export function isRetryableD1LockSentryEvent(event: ErrorEvent) {
 }
 
 /**
- * Retries transient D1 lock contention (SQLITE_BUSY). D1 does not
- * automatically retry write queries, so cron lanes and long-running
- * retention batches need application-level backoff when they overlap
- * with concurrent writers.
+ * Retries transient D1 unavailability: SQLITE_BUSY lock contention and
+ * Cloudflare's "Currently processing a long-running export" (DR / REST
+ * exports block other requests). D1 does not automatically retry write
+ * queries, so cron lanes and long-running retention batches need
+ * application-level backoff when they overlap with concurrent writers or
+ * an in-flight export.
  */
 export async function runD1WithRetry<T>(
 	operation: () => Promise<T>,

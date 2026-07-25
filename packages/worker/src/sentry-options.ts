@@ -86,8 +86,10 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		sendDefaultPii: false,
 		// D1 marks SQLITE_BUSY with NOSENTRY at the storage layer, but
 		// application capture paths (for example scheduled_lane_failed) still
-		// forwarded them. These are transient lock-contention errors retried in
-		// app code and should not open or regress Sentry issues.
+		// forwarded them. The same applies to "Currently processing a
+		// long-running export" while the nightly DR D1 export holds the DB.
+		// These are transient platform unavailability errors retried in app
+		// code and should not open or regress Sentry issues.
 		//
 		// User-module esbuild failures and executor sandbox timeouts from
 		// inline workflows are similarly expected caller mistakes; see

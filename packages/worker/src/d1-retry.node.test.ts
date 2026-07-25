@@ -12,6 +12,16 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 		),
 	).toBe(true)
 	expect(isRetryableD1LockError(new Error('database is locked'))).toBe(true)
+	expect(
+		isRetryableD1LockError(
+			new Error('D1_ERROR: Currently processing a long-running export.'),
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockError(
+			new Error('Currently processing a long-running export.'),
+		),
+	).toBe(true)
 	expect(isRetryableD1LockError(new Error('syntax error near SELECT'))).toBe(
 		false,
 	)
@@ -32,6 +42,22 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
 		await expect(resultPromise).resolves.toBe('ok')
 		expect(retryOperation).toHaveBeenCalledTimes(2)
+	} finally {
+		vi.useRealTimers()
+	}
+
+	vi.useFakeTimers()
+	const exportRetryOperation = vi
+		.fn()
+		.mockRejectedValueOnce(
+			new Error('D1_ERROR: Currently processing a long-running export.'),
+		)
+		.mockResolvedValueOnce('ok')
+	try {
+		const resultPromise = runD1WithRetry(exportRetryOperation)
+		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
+		await expect(resultPromise).resolves.toBe('ok')
+		expect(exportRetryOperation).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.useRealTimers()
 	}

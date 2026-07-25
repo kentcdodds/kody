@@ -20,6 +20,21 @@ test('filterRetryableD1LockSentryEvent drops transient D1 lock contention and ke
 		}),
 	).toBeNull()
 
+	expect(
+		filterRetryableD1LockSentryEvent({
+			exception: {
+				values: [
+					{
+						value: 'Currently processing a long-running export.',
+					},
+					{
+						value: 'D1_ERROR: Currently processing a long-running export.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+
 	const unrelatedEvent = {
 		exception: {
 			values: [{ value: 'D1_ERROR: syntax error near INSERTZ' }],
@@ -116,6 +131,18 @@ test('filterSentryEvent still drops retryable D1 lock contention', () => {
 				values: [
 					{
 						value: 'D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: 'D1_ERROR: Currently processing a long-running export.',
 					},
 				],
 			},
