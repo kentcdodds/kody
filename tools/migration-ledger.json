@@ -399,6 +399,10 @@
 		{
 			"filename": "0093-stripe-webhook-events.sql",
 			"sha256": "59f95b476e4ac07d0c29b4d33426f65122756abaa030d685843d53b2b429b587"
+		},
+		{
+			"filename": "0094-activation-milestones.sql",
+			"sha256": "a267e2c1bbebf52168acd189124fc393c85165d1df6a71046be7aeefd83e5caf"
 		}
 	]
 }

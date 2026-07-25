@@ -2,7 +2,7 @@ import { refreshSavedPackageProjection } from '#worker/package-registry/service.
 import { runRepoChecks, type RepoCheckResult } from '#worker/repo/checks.ts'
 import { normalizeRepoWorkspacePath } from '#worker/repo/manifest.ts'
 import { forkCommunityListing } from './service.ts'
-import { type CrossScopeReference } from './types.ts'
+import { type CommunityForkActor, type CrossScopeReference } from './types.ts'
 
 type InstallForkSummary = {
 	forkId: string
@@ -61,6 +61,11 @@ export async function installCommunityListing(input: {
 	 * different content in the meantime.
 	 */
 	expectedPinnedCommit: string
+	/**
+	 * Defaults to `human`: one-click install is a person clicking a button.
+	 * The MCP capability passes `agent` when it drives an install itself.
+	 */
+	actor?: CommunityForkActor | null
 }): Promise<InstallCommunityListingResult> {
 	const fork = await forkCommunityListing({
 		env: input.env,
@@ -70,6 +75,7 @@ export async function installCommunityListing(input: {
 		listingId: input.listingId,
 		kodyId: input.kodyId,
 		expectedPinnedCommit: input.expectedPinnedCommit,
+		actor: input.actor ?? 'human',
 	})
 	const summary: InstallForkSummary = {
 		forkId: fork.forkId,

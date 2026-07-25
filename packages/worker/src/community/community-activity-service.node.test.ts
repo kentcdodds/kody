@@ -70,6 +70,21 @@ function createCommunityDb() {
 			'utf8',
 		),
 	)
+	sqlite.exec(`CREATE TABLE package_runtime_runs (
+		user_id TEXT NOT NULL,
+		package_id TEXT NOT NULL,
+		status TEXT NOT NULL,
+		started_at TEXT NOT NULL
+	)`)
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0094-activation-milestones.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
@@ -261,6 +276,7 @@ test('fork snapshot migration also handles preview schemas that already have sna
 	)
 	sqlite.exec(`ALTER TABLE community_forks ADD COLUMN listing_name TEXT`)
 	sqlite.exec(`ALTER TABLE community_forks ADD COLUMN listing_kody_id TEXT`)
+	sqlite.exec(`ALTER TABLE community_forks ADD COLUMN actor TEXT`)
 	sqlite.exec(`
 		INSERT INTO community_listings (
 			id, owner_user_id, package_id, source_id, kody_id, name, description,

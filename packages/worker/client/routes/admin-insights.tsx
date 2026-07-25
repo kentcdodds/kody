@@ -27,7 +27,11 @@ import {
 	AccountManagementShell,
 	AdminPageHeader,
 } from './account-management-components.tsx'
-import { type AdminInsightsLoaderData } from '#app/loader-data.ts'
+import {
+	type AdminInsightsActivation,
+	type AdminInsightsActivationStep,
+	type AdminInsightsLoaderData,
+} from '#app/loader-data.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -99,6 +103,80 @@ export async function adminInsightsRouteLoader(
 		throw new Error('Unable to load admin insights.')
 	}
 	return { adminInsights: payload }
+}
+
+const activationStepLabels: Record<
+	AdminInsightsActivationStep['step'],
+	string
+> = {
+	signed_up: 'Signed up',
+	email_verified: 'Verified email',
+	agent_connected: 'Connected an agent',
+	package_forked: 'Forked a package',
+	package_run_succeeded: 'Package ran once',
+	package_activated: 'Package ran twice',
+}
+
+function activationSubtitle(activation: AdminInsightsActivation) {
+	const median = activation.medianHoursToActivation
+	if (median == null) return 'Nobody has activated yet.'
+	const rounded = median < 1 ? '<1' : formatIntegerNumber(Math.round(median))
+	return `Median ${rounded}h from verified email to a package that ran twice.`
+}
+
+/**
+ * Horizontal funnel. Bars are scaled against the first step so the drop-off
+ * between stages is the thing you see; the per-row percentage is share of
+ * signups, which is the number worth tracking over time.
+ */
+function renderActivationFunnel(activation: AdminInsightsActivation) {
+	const total = activation.steps[0]?.users ?? 0
+	return (
+		<div mix={css({ display: 'grid', gap: spacing.sm })}>
+			{activation.steps.map((entry) => {
+				const share = total > 0 ? entry.users / total : 0
+				return (
+					<div mix={css({ display: 'grid', gap: spacing.xs })}>
+						<div
+							mix={css({
+								display: 'flex',
+								justifyContent: 'space-between',
+								gap: spacing.sm,
+								fontSize: typography.fontSize.sm,
+								color: colors.text,
+							})}
+						>
+							<span>{activationStepLabels[entry.step]}</span>
+							<span mix={css({ color: colors.textMuted })}>
+								{formatIntegerNumber(entry.users)} · {formatPercentShare(share)}
+							</span>
+						</div>
+						<div
+							role="img"
+							aria-label={`${activationStepLabels[entry.step]}: ${entry.users} users, ${formatPercentShare(share)} of signups`}
+							mix={css({
+								height: '10px',
+								borderRadius: '999px',
+								background: colors.border,
+								overflow: 'hidden',
+							})}
+						>
+							<div
+								mix={css({
+									height: '100%',
+									width: `${Math.round(share * 100)}%`,
+									background:
+										entry.step === 'package_activated'
+											? chartColor.emerald
+											: chartColor.blue,
+								})}
+							/>
+						</div>
+					</div>
+				)
+			})}
+		</div>
+	)
 }
 
 type ChartCardProps = {
@@ -368,6 +446,42 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 					[mq.tablet]: { gridTemplateColumns: 'minmax(0, 1fr)' },
 				})}
 			>
+				<ChartCard
+					title="Activation funnel"
+					sub={activationSubtitle(data.activation)}
+					span={8}
+				>
+					{renderActivationFunnel(data.activation)}
+				</ChartCard>
+				<ChartCard
+					title="Who forks packages"
+					sub="Agent-driven installs are real usage but a weaker activation signal than a person choosing one."
+					span={4}
+				>
+					<DonutChart
+						ariaLabel="Community forks by actor"
+						centerLabel="forks"
+						emptyText="No forks recorded yet."
+						slices={[
+							{
+								label: 'Person',
+								value: data.activation.forksByActor.human,
+								color: chartColor.emerald,
+							},
+							{
+								label: 'Agent',
+								value: data.activation.forksByActor.agent,
+								color: chartColor.violet,
+							},
+							{
+								label: 'Unknown',
+								value: data.activation.forksByActor.unknown,
+								color: chartColor.amber,
+							},
+						]}
+					/>
+				</ChartCard>
+
 				<ChartCard
 					title="User growth"
 					sub="Cumulative registered users over the last 12 weeks."

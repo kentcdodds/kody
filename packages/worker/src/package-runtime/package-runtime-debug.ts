@@ -1,4 +1,6 @@
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
+import { recordSuccessfulPackageRun } from '#worker/usage/activation.ts'
+
 export const packageRuntimeSurfaceValues = [
 	'export',
 	'subscription',
@@ -362,6 +364,16 @@ export async function finishPackageRuntimeRun(input: {
 			.run()
 	} catch (error) {
 		console.warn('package-runtime-debug-status-failed', error)
+	}
+
+	// Every package surface (export, job, subscription, app, service, workflow,
+	// retriever) finishes here, so this is the one place activation can observe
+	// a package actually working.
+	if (input.status === 'success') {
+		await recordSuccessfulPackageRun(input.env, {
+			userId: handle.userId,
+			packageId: handle.packageId,
+		})
 	}
 }
 

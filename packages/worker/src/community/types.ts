@@ -156,6 +156,13 @@ export type CommunityActivityRecord =
 			adaptationEffort: number
 	  })
 
+/**
+ * Who caused a fork: a person clicking install in the web app, or that
+ * person's agent calling `community_fork` over MCP. Null on rows created
+ * before the distinction was recorded.
+ */
+export type CommunityForkActor = 'human' | 'agent'
+
 export type CommunityForkRow = {
 	id: string
 	listing_id: string
@@ -167,6 +174,7 @@ export type CommunityForkRow = {
 	created_at: string
 	adopted_at: string | null
 	adoption_note: string | null
+	actor: CommunityForkActor | null
 }
 
 export type CommunityForkRecord = {

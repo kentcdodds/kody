@@ -55,6 +55,7 @@ export const communityForkCapability = defineDomainCapability(
 				expectedPackageScope,
 				listingId: args.listing_id,
 				kodyId: args.kody_id,
+				actor: 'agent',
 			})
 			return {
 				fork_id: result.forkId,

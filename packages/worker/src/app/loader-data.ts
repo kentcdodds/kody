@@ -362,6 +362,36 @@ export type AdminInsightsJobHealth = {
 	errorRuns: number
 }
 
+/**
+ * Ordered activation funnel. Each step counts users who ever reached it, so
+ * counts are monotonically non-increasing down the list.
+ */
+export type AdminInsightsActivationStep = {
+	step:
+		| 'signed_up'
+		| 'email_verified'
+		| 'agent_connected'
+		| 'package_forked'
+		| 'package_run_succeeded'
+		| 'package_activated'
+	users: number
+}
+
+export type AdminInsightsActivation = {
+	steps: Array<AdminInsightsActivationStep>
+	/**
+	 * Forks split by who caused them. Agent-driven forks are real usage but a
+	 * weaker activation signal than a person choosing to install something,
+	 * and rows predating the distinction are counted as unknown.
+	 */
+	forksByActor: { human: number; agent: number; unknown: number }
+	/**
+	 * Median hours from email verification to activation, over users who have
+	 * activated. Null when nobody has.
+	 */
+	medianHoursToActivation: number | null
+}
+
 export type AdminInsightsLoaderData = {
 	ok: true
 	generatedAt: string
@@ -376,6 +406,7 @@ export type AdminInsightsLoaderData = {
 	authHeatmap: Array<AdminInsightsHeatmapCell>
 	workflowStatuses: Array<AdminInsightsWorkflowStatus>
 	jobHealth: AdminInsightsJobHealth
+	activation: AdminInsightsActivation
 }
 
 export type AdminSystemEmailListItem = {

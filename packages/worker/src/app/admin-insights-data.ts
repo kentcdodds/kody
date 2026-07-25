@@ -3,6 +3,8 @@ import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { adminUsageMetrics } from '#app/admin-user-usage-data.ts'
 import {
+	type AdminInsightsActivation,
+	type AdminInsightsActivationStep,
 	type AdminInsightsAuthCategory,
 	type AdminInsightsAuthDay,
 	type AdminInsightsEmailDay,
@@ -52,6 +54,9 @@ type JobStatsRow = {
 	success_runs: number | null
 	error_runs: number | null
 }
+type ForkActorRow = { actor: string | null; n: number }
+type MilestoneUserRow = { milestone: string; n: number }
+type ActivationLatencyRow = { hours: number }
 
 export async function loadAdminInsightsData(
 	env: Env,
@@ -102,6 +107,7 @@ async function queryAdminInsights(
 		authCategoryRows,
 		heatmapRows,
 		workflowRows,
+		activation,
 	] = await Promise.all([
 		queryTotals(db),
 		db
@@ -204,6 +210,7 @@ async function queryAdminInsights(
 				 ORDER BY n DESC`,
 			)
 			.all<WorkflowStatusRow>(),
+		queryActivation(db),
 	])
 
 	const jobHealth: AdminInsightsJobHealth = {
@@ -267,7 +274,121 @@ async function queryAdminInsights(
 			}),
 		),
 		jobHealth,
+		activation,
 	}
+}
+
+/**
+ * The activation funnel.
+ *
+ * Signup, verification, agent connection, and forking are all derivable from
+ * durable tables, so they are read where they already live rather than
+ * duplicated. Only the run-derived steps come from
+ * `user_activation_milestones`, because run history is retention-pruned. See
+ * `packages/worker/src/usage/activation.ts`.
+ */
+async function queryActivation(
+	db: D1Database,
+): Promise<AdminInsightsActivation> {
+	const [
+		signedUp,
+		emailVerified,
+		agentConnected,
+		packageForked,
+		milestoneRows,
+		forkActorRows,
+		latencyRows,
+	] = await Promise.all([
+		countQuery(db, `SELECT COUNT(*) AS n FROM users`),
+		countQuery(
+			db,
+			`SELECT COUNT(*) AS n FROM users WHERE email_verified_at IS NOT NULL`,
+		),
+		countQuery(
+			db,
+			`SELECT COUNT(DISTINCT user_id) AS n FROM mcp_agent_sessions`,
+		),
+		countQuery(
+			db,
+			`SELECT COUNT(DISTINCT forker_user_id) AS n FROM community_forks`,
+		),
+		db
+			.prepare(
+				`SELECT milestone, COUNT(DISTINCT user_id) AS n
+				 FROM user_activation_milestones
+				 GROUP BY milestone`,
+			)
+			.all<MilestoneUserRow>(),
+		db
+			.prepare(
+				`SELECT COALESCE(actor, 'unknown') AS actor, COUNT(*) AS n
+				 FROM community_forks
+				 GROUP BY COALESCE(actor, 'unknown')`,
+			)
+			.all<ForkActorRow>(),
+		db
+			.prepare(
+				// julianday() differences are in days; ×24 gives hours. Users
+				// who activated before verifying (not expected, but possible
+				// for seeded or admin-created accounts) would skew the median
+				// negative, so they are excluded rather than clamped.
+				`SELECT (julianday(m.reached_at) - julianday(u.email_verified_at)) * 24 AS hours
+				 FROM user_activation_milestones AS m
+				 JOIN users AS u ON u.id = m.user_id
+				 WHERE m.milestone = 'package_activated'
+				   AND u.email_verified_at IS NOT NULL
+				   AND julianday(m.reached_at) >= julianday(u.email_verified_at)
+				 ORDER BY hours ASC`,
+			)
+			.all<ActivationLatencyRow>(),
+	])
+
+	const milestoneUsers = new Map<string, number>()
+	for (const row of milestoneRows.results ?? []) {
+		milestoneUsers.set(row.milestone, Number(row.n))
+	}
+
+	const forksByActor = { human: 0, agent: 0, unknown: 0 }
+	for (const row of forkActorRows.results ?? []) {
+		if (row.actor === 'human') forksByActor.human += Number(row.n)
+		else if (row.actor === 'agent') forksByActor.agent += Number(row.n)
+		else forksByActor.unknown += Number(row.n)
+	}
+
+	const steps: Array<AdminInsightsActivationStep> = [
+		{ step: 'signed_up', users: signedUp },
+		{ step: 'email_verified', users: emailVerified },
+		{ step: 'agent_connected', users: agentConnected },
+		{ step: 'package_forked', users: packageForked },
+		{
+			step: 'package_run_succeeded',
+			users: milestoneUsers.get('package_run_succeeded') ?? 0,
+		},
+		{
+			step: 'package_activated',
+			users: milestoneUsers.get('package_activated') ?? 0,
+		},
+	]
+
+	return {
+		steps,
+		forksByActor,
+		medianHoursToActivation: medianOf(
+			(latencyRows.results ?? []).map((row) => Number(row.hours)),
+		),
+	}
+}
+
+/** Median of an ascending list. Even-length lists average the middle pair. */
+export function medianOf(sortedValues: Array<number>): number | null {
+	const values = sortedValues.filter((value) => Number.isFinite(value))
+	if (values.length === 0) return null
+	const middle = Math.floor(values.length / 2)
+	if (values.length % 2 === 1) return values[middle] ?? null
+	const lower = values[middle - 1]
+	const upper = values[middle]
+	if (lower == null || upper == null) return null
+	return (lower + upper) / 2
 }
 
 async function queryTotals(

@@ -75,6 +75,7 @@ import {
 	findCommunityIconPath,
 } from './community-icon.ts'
 import {
+	type CommunityForkActor,
 	type CommunityListingRecord,
 	type CommunityListingWithAggregates,
 	type CommunityActivityKind,
@@ -871,6 +872,12 @@ export async function forkCommunityListing(input: {
 	 * confirmation and the fork cannot swap in unreviewed content.
 	 */
 	expectedPinnedCommit?: string
+	/**
+	 * Who is forking. One-click install in the web app is `human`; the
+	 * `community_fork` capability is `agent`. Recorded so activation metrics
+	 * can separate what a user chose from what their agent did on its own.
+	 */
+	actor?: CommunityForkActor | null
 }): Promise<ForkCommunityListingResult> {
 	await assertNotCommunityBanned(input.env.APP_DB, input.userId)
 
@@ -984,6 +991,7 @@ export async function forkCommunityListing(input: {
 			target_kody_id: targetKodyId,
 			listing_name: listing.name,
 			listing_kody_id: listing.kodyId,
+			actor: input.actor ?? null,
 		})
 		await enqueueRecordedCommunityActivity({
 			env: input.env,

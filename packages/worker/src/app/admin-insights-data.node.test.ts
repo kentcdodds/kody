@@ -10,6 +10,7 @@ import {
 	listUtcMonthKeys,
 	listUtcWeekStarts,
 	loadAdminInsightsData,
+	medianOf,
 	utcWeekStart,
 } from './admin-insights-data.ts'
 
@@ -196,6 +197,12 @@ function createInsightsTestDb() {
 					if (normalizedQuery.includes('from oauth_connections')) {
 						return { n: 4 } as T
 					}
+					if (normalizedQuery.includes('from mcp_agent_sessions')) {
+						return { n: 4 } as T
+					}
+					if (normalizedQuery.includes('from community_forks')) {
+						return { n: 3 } as T
+					}
 					throw new Error(`Unsupported first query: ${query}`)
 				},
 				async all<T>() {
@@ -204,6 +211,27 @@ function createInsightsTestDb() {
 						normalizedQuery.includes('group by day')
 					) {
 						return { results: [{ day: '2026-07-07', n: 2 }] as Array<T> }
+					}
+					if (normalizedQuery.includes('from user_activation_milestones')) {
+						if (normalizedQuery.includes('group by milestone')) {
+							return {
+								results: [
+									{ milestone: 'package_run_succeeded', n: 2 },
+									{ milestone: 'package_activated', n: 1 },
+								] as Array<T>,
+							}
+						}
+						// Latency query: one activated user, 36 hours after verifying.
+						return { results: [{ hours: 36 }] as Array<T> }
+					}
+					if (normalizedQuery.includes('from community_forks')) {
+						return {
+							results: [
+								{ actor: 'human', n: 2 },
+								{ actor: 'agent', n: 1 },
+								{ actor: 'unknown', n: 4 },
+							] as Array<T>,
+						}
 					}
 					if (normalizedQuery.includes('from usage_rollups')) {
 						expect(params[0]).toBe('2025-08')
@@ -344,4 +372,26 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 		successRuns: 20,
 		errorRuns: 2,
 	})
+	expect(data.activation.steps).toEqual([
+		{ step: 'signed_up', users: 8 },
+		{ step: 'email_verified', users: 5 },
+		{ step: 'agent_connected', users: 4 },
+		{ step: 'package_forked', users: 3 },
+		{ step: 'package_run_succeeded', users: 2 },
+		{ step: 'package_activated', users: 1 },
+	])
+	expect(data.activation.forksByActor).toEqual({
+		human: 2,
+		agent: 1,
+		unknown: 4,
+	})
+	expect(data.activation.medianHoursToActivation).toBe(36)
+})
+
+test('medianOf averages the middle pair and ignores non-finite values', () => {
+	expect(medianOf([])).toBeNull()
+	expect(medianOf([5])).toBe(5)
+	expect(medianOf([1, 3])).toBe(2)
+	expect(medianOf([1, 2, 3])).toBe(2)
+	expect(medianOf([1, Number.NaN, 3])).toBe(2)
 })
