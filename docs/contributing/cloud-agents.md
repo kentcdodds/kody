@@ -40,13 +40,13 @@ manually with native `unzip`:
 
 ## Quick commands
 
-| Task             | Command                                                         |
-| ---------------- | --------------------------------------------------------------- |
-| Install deps     | `npm install`                                                   |
-| Start dev        | `npm run dev` (prints the resolved URL)                         |
-| Migrate local D1 | `npm run migrate:local`                                         |
-| Seed test login  | `node tools/seed-test-data.ts --local` (see seeding note below) |
-| Full CI gate     | `npm run validate`                                              |
+| Task               | Command                                                         |
+| ------------------ | --------------------------------------------------------------- |
+| Install deps       | `npm install`                                                   |
+| Start dev          | `npm run dev` (prints the resolved URL)                         |
+| Migrate local D1   | `npm run migrate:local`                                         |
+| Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below) |
+| Full validate gate | `npm run validate` (CI runs the same checks as parallel jobs)   |
 
 ## Dev server
 

@@ -23,11 +23,14 @@ concurrency:
     github.ref }}
   cancel-in-progress: true
 
+# Same checks as `npm run validate`, split across runners so CPU-heavy suites
+# (unit, Playwright E2E, MCP E2E, typecheck) do not contend on one machine.
+# Local `npm run validate` remains the authoritative single-command gate.
 jobs:
-  validate:
+  static:
     runs-on: ubuntu-latest
-    name: ✅ Validate
-    timeout-minutes: 15
+    name: 🧹 Static
+    timeout-minutes: 10
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
@@ -40,37 +43,132 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 26
-          cache: npm
+      - name: 🧰 Setup
+        uses: ./.github/actions/setup-validate
 
-      - name: 🎭 Cache Playwright Browsers
-        uses: actions/cache@v5.0.3
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
+      # Keep running sibling static checks after a failure (same as local
+      # `npm run validate` / concurrently), unless the job was cancelled.
+      - name: ✨ Format
+        if: ${{ !cancelled() }}
+        run: npm run format:check
 
-      - name: 📥 Install Dependencies
-        run: npm ci
+      - name: 🔍 Lint
+        if: ${{ !cancelled() }}
+        run: npm run lint
 
-      - name: 📝 Prepare worker env
-        run: cp packages/worker/.env.example packages/worker/.env
+      - name: 🧠 Typecheck
+        if: ${{ !cancelled() }}
+        run: npm run typecheck
 
-      - name: 🎭 Install Playwright Browsers
-        run: npm run test:e2e:install
+      - name: 🏗️ Backup build
+        if: ${{ !cancelled() }}
+        run: npm run backup:build
 
-      - name: 🗄️ Apply D1 Migrations
-        run: npm run migrate:local
+      - name: 🗺️ Primitives
+        if: ${{ !cancelled() }}
+        run: npm run primitives:check
 
-      - name: ✅ Validate
-        run: npm run validate
+      - name: 🗄️ Migrations
+        if: ${{ !cancelled() }}
+        run: npm run migrations:check
         env:
           # PRs trust the fetched base SHA; main pushes trust the pre-push SHA.
           # The validator rejects this value if it resolves to HEAD.
           MIGRATION_VALIDATION_BASE: >-
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
+
+  unit:
+    runs-on: ubuntu-latest
+    name: 🧪 Unit
+    timeout-minutes: 15
+    if: >-
+      github.event_name != 'pull_request' || github.event.pull_request.draft ==
+      false
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧰 Setup
+        uses: ./.github/actions/setup-validate
+        with:
+          worker-env: 'true'
+          migrate-local: 'true'
+
+      - name: 🧪 Unit tests
+        run: npm run test
+
+  mcp:
+    runs-on: ubuntu-latest
+    name: 🔌 MCP
+    timeout-minutes: 10
+    if: >-
+      github.event_name != 'pull_request' || github.event.pull_request.draft ==
+      false
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧰 Setup
+        uses: ./.github/actions/setup-validate
+        with:
+          worker-env: 'true'
+
+      - name: 🔌 MCP E2E
+        run: npm run test:mcp
+
+  e2e:
+    runs-on: ubuntu-latest
+    name: 🎭 E2E
+    timeout-minutes: 15
+    if: >-
+      github.event_name != 'pull_request' || github.event.pull_request.draft ==
+      false
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧰 Setup
+        uses: ./.github/actions/setup-validate
+        with:
+          playwright: 'true'
+          worker-env: 'true'
+
+      - name: 🎭 Playwright E2E
+        run: npm run test:e2e:run
+
+  validate:
+    runs-on: ubuntu-latest
+    name: ✅ Validate
+    timeout-minutes: 2
+    needs:
+      - static
+      - unit
+      - mcp
+      - e2e
+    if: >-
+      always() && (github.event_name != 'pull_request' ||
+      github.event.pull_request.draft == false)
+    steps:
+      - name: ✅ All checks passed
+        if: >-
+          needs.static.result == 'success' && needs.unit.result == 'success' &&
+          needs.mcp.result == 'success' && needs.e2e.result == 'success'
+        run: echo "All validate jobs passed"
+
+      - name: ❌ Report failures
+        if: >-
+          needs.static.result != 'success' || needs.unit.result != 'success' ||
+          needs.mcp.result != 'success' || needs.e2e.result != 'success'
+        run: |
+          echo "static=${{ needs.static.result }}"
+          echo "unit=${{ needs.unit.result }}"
+          echo "mcp=${{ needs.mcp.result }}"
+          echo "e2e=${{ needs.e2e.result }}"
+          exit 1

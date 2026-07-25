@@ -79,11 +79,12 @@ Quick notes for getting a local kody environment running.
 - Push-time hooks intentionally stop short of `npm run validate`; MCP E2E and
   repo-wide format checks remain explicit checks because they are heavier than
   the push gate.
-- `npm run validate` is the single authoritative gate and is what CI runs. It is
-  read-only and executes `format:check`, `lint`, `typecheck`, unit tests,
-  Playwright E2E, MCP E2E, `primitives:check`, and `migrations:check` in
-  parallel, reporting every failure (sibling checks are not aborted on the first
-  failure). If `npm run validate` passes locally, CI will pass.
+- `npm run validate` is the single authoritative local gate. It is read-only and
+  executes `format:check`, `lint`, `typecheck`, unit tests, Playwright E2E, MCP
+  E2E, `backup:build`, `primitives:check`, and `migrations:check` in parallel,
+  reporting every failure (sibling checks are not aborted on the first failure).
+  CI runs the same checks as parallel GitHub Actions jobs (aggregated by the
+  ✅ Validate job). If `npm run validate` passes locally, CI will pass.
 - `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
   for mutating auto-fixes. It is never required to pass `validate`.
 - `npm run format` applies formatting updates on its own.

@@ -1,0 +1,53 @@
+name: 🧰 Setup validate
+description: Shared Node/npm setup for parallel validate jobs
+
+inputs:
+  playwright:
+    description: Cache and install Playwright Chromium when true
+    required: false
+    default: 'false'
+  worker-env:
+    description: Copy packages/worker/.env.example to .env when true
+    required: false
+    default: 'false'
+  migrate-local:
+    description: Apply local D1 migrations when true
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: 🟢 Setup Node
+      uses: actions/setup-node@v6
+      with:
+        node-version: 26
+        cache: npm
+
+    - name: 🎭 Cache Playwright Browsers
+      if: inputs.playwright == 'true'
+      uses: actions/cache@v5.0.3
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-playwright-
+
+    - name: 📥 Install Dependencies
+      shell: bash
+      run: npm ci
+
+    - name: 📝 Prepare worker env
+      if: inputs.worker-env == 'true'
+      shell: bash
+      run: cp packages/worker/.env.example packages/worker/.env
+
+    - name: 🎭 Install Playwright Browsers
+      if: inputs.playwright == 'true'
+      shell: bash
+      run: npm run test:e2e:install
+
+    - name: 🗄️ Apply D1 Migrations
+      if: inputs.migrate-local == 'true'
+      shell: bash
+      run: npm run migrate:local

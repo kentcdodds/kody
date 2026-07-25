@@ -15,9 +15,10 @@ A full-stack web application built on Cloudflare Workers with Remix 3 (beta).
 | Build                  | `npm run build`        |
 | E2E tests              | `npm run test:e2e:run` |
 
-`npm run validate` is the single authoritative gate. CI runs the same script, so
-a green local `validate` means CI will pass. `validate` is read-only; use
-`npm run validate:fix` when you want auto-fixes applied.
+`npm run validate` is the single authoritative local gate. CI runs the same
+checks as parallel jobs, so a green local `validate` means CI will pass.
+`validate` is read-only; use `npm run validate:fix` when you want auto-fixes
+applied.
 
 ## Services
 

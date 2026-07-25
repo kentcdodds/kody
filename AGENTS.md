@@ -15,15 +15,17 @@ Use Node 26 and npm for installs and scripts (`npm install`, `npm run ...`).
 
 ## Validation contract
 
-`npm run validate` is the single authoritative gate. It is read-only and runs
-the same checks CI runs — in fact CI invokes `npm run validate` literally. If
+`npm run validate` is the single authoritative local gate. It is read-only and
+runs the same checks CI runs. CI splits those checks across parallel GitHub
+Actions jobs (static, unit, MCP E2E, Playwright E2E) so heavy suites do not
+contend on one runner; the ✅ Validate job aggregates them. If
 `npm run validate` passes locally, CI will pass; if CI fails despite a green
-local `validate`, that is a bug in `validate` and should be filed.
+local `validate`, that is a bug and should be filed.
 
 - `npm run validate` runs `format:check`, `lint`, `typecheck`, unit tests,
-  Playwright E2E, MCP E2E, and repository structure checks (`primitives:check`
-  and `migrations:check`) in parallel and reports every failure (it does not
-  abort sibling checks on the first failure).
+  Playwright E2E, MCP E2E, `backup:build`, and repository structure checks
+  (`primitives:check` and `migrations:check`) in parallel and reports every
+  failure (it does not abort sibling checks on the first failure).
 - `npm run validate:fix` is the explicit opt-in for mutating auto-fixes
   (`format` + `lint:fix`). Running it is never required to pass `validate`.
 - The Husky `pre-commit` and `pre-push` hooks remain narrower fast gates; they
