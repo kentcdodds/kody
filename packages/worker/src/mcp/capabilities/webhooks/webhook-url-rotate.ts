@@ -15,7 +15,7 @@ export const webhookUrlRotateCapability = defineDomainCapability(
 	{
 		name: 'webhook_url_rotate',
 		description:
-			'Rotate the URL secret for an already-minted package webhook and return the new full URL once. The previous URL stops working immediately.',
+			'Rotate the URL secret for a minted package webhook and return the new full URL once. The replaced URL stops working immediately.',
 		keywords: ['webhook', 'rotate', 'secret', 'credential', 'url'],
 		readOnly: false,
 		idempotent: false,

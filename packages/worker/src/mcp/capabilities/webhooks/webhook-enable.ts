@@ -10,7 +10,7 @@ export const webhookEnableCapability = defineDomainCapability(
 	{
 		name: 'webhook_enable',
 		description:
-			'Enable a previously minted package webhook so ingress accepts deliveries again.',
+			'Enable a disabled package webhook so ingress accepts deliveries again.',
 		keywords: ['webhook', 'enable', 'activate'],
 		readOnly: false,
 		idempotent: true,
