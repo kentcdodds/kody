@@ -315,6 +315,14 @@ test('protected resource metadata and auth challenge resolve origin consistently
 		fetchMcp: () => new Response('ok'),
 	})
 	expect(requestOriginUnauthorizedResponse.status).toBe(401)
+	expect(requestOriginUnauthorizedResponse.headers.get('Content-Type')).toMatch(
+		/application\/json/,
+	)
+	expect(await requestOriginUnauthorizedResponse.json()).toEqual({
+		error: 'invalid_token',
+		error_description:
+			'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.',
+	})
 	expectAuthenticateHeader(
 		requestOriginUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',
 		requestOrigin,
@@ -333,6 +341,12 @@ test('protected resource metadata and auth challenge resolve origin consistently
 		appBaseUrlUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',
 		workersDevOrigin,
 	)
+})
+
+test('protected resource metadata advertises header bearer methods', () => {
+	const metadata = buildProtectedResourceMetadata('https://example.com')
+	expect(metadata.bearer_methods_supported).toEqual(['header'])
+	expect(metadata.resource).toBe('https://example.com/mcp')
 })
 
 test('mcp request enforces token audience and forwards caller props', async () => {

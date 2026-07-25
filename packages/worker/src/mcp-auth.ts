@@ -37,6 +37,11 @@ export function buildProtectedResourceMetadata(origin: string) {
 		resource: `${origin}${mcpResourcePath}`,
 		authorization_servers: [origin],
 		scopes_supported: oauthScopes,
+		// Match @cloudflare/workers-oauth-provider's path-based metadata document.
+		// Browser MCP clients (Gemini custom apps, etc.) fetch the root PRM from
+		// WWW-Authenticate; omitting this field leaves header-bearer support
+		// ambiguous and has broken Gemini's pre-DCR handshake in production.
+		bearer_methods_supported: ['header'],
 	}
 }
 
@@ -65,12 +70,22 @@ function buildWwwAuthenticateHeader(origin: string) {
 }
 
 function createUnauthorizedResponse(origin: string) {
-	return new Response(null, {
-		status: 401,
-		headers: {
-			'WWW-Authenticate': buildWwwAuthenticateHeader(origin),
+	// Keep a JSON body in addition to WWW-Authenticate. Some remote MCP clients
+	// (notably Gemini custom connected apps) treat an empty 401 as a hard
+	// connectivity failure and never start OAuth discovery / DCR.
+	return Response.json(
+		{
+			error: 'invalid_token',
+			error_description:
+				'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.',
 		},
-	})
+		{
+			status: 401,
+			headers: {
+				'WWW-Authenticate': buildWwwAuthenticateHeader(origin),
+			},
+		},
+	)
 }
 
 export function createEmailVerificationRequiredResponse(origin: string) {

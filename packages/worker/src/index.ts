@@ -188,11 +188,29 @@ async function handleUserScopedConnectorRequest(request: Request, env: Env) {
 }
 
 const appHandler = withCors({
-	getCorsHeaders(request) {
+	getCorsHeaders(request): Record<string, string> | null {
 		const url = new URL(request.url)
 		const origin = request.headers.get('Origin')
 		if (!origin) return null
 		const requestOrigin = url.origin
+		// Remote MCP clients in browser hosts (Gemini custom apps, etc.) call
+		// `/mcp` cross-origin. Reflect any Origin and expose WWW-Authenticate so
+		// the client can read the OAuth challenge; same-origin stays the default
+		// for the rest of the app.
+		if (
+			url.pathname === mcpResourcePath ||
+			url.pathname === `${mcpResourcePath}/`
+		) {
+			return {
+				'Access-Control-Allow-Origin': origin,
+				'Access-Control-Allow-Methods': 'GET, HEAD, POST, DELETE, OPTIONS',
+				'Access-Control-Allow-Headers':
+					'Authorization, Content-Type, Accept, MCP-Protocol-Version, Last-Event-ID, Mcp-Session-Id',
+				'Access-Control-Expose-Headers':
+					'WWW-Authenticate, MCP-Session-Id, Content-Type',
+				Vary: 'Origin',
+			}
+		}
 		if (origin !== requestOrigin) return null
 		return {
 			'Access-Control-Allow-Origin': origin,
@@ -319,6 +337,14 @@ const appHandler = withCors({
 
 		if (isProtectedResourceMetadataRequest(url.pathname)) {
 			return handleProtectedResourceMetadata(request, env)
+		}
+
+		// Trailing-slash variants 404 otherwise; some MCP client docs (and paste
+		// habits) include the slash. Keep the protected resource at `/mcp`.
+		if (url.pathname === `${mcpResourcePath}/`) {
+			const canonical = new URL(request.url)
+			canonical.pathname = mcpResourcePath
+			return Response.redirect(canonical.toString(), 308)
 		}
 
 		if (url.pathname === mcpResourcePath) {
