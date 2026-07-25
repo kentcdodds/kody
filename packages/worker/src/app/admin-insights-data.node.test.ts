@@ -146,7 +146,9 @@ function normalizeQuery(query: string) {
 	return query.replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
-function createInsightsTestDb() {
+function createInsightsTestDb(
+	overrides: { activationLatencyRows?: Array<{ hours: number }> } = {},
+) {
 	const db = {
 		prepare(query: string) {
 			const normalizedQuery = normalizeQuery(query)
@@ -222,7 +224,11 @@ function createInsightsTestDb() {
 							}
 						}
 						// Latency query: one activated user, 36 hours after verifying.
-						return { results: [{ hours: 36 }] as Array<T> }
+						return {
+							results: (overrides.activationLatencyRows ?? [
+								{ hours: 36 },
+							]) as Array<T>,
+						}
 					}
 					if (normalizedQuery.includes('from community_forks')) {
 						return {
@@ -386,6 +392,19 @@ test('loadAdminInsightsData assembles the dashboard payload', async () => {
 		unknown: 4,
 	})
 	expect(data.activation.medianHoursToActivation).toBe(36)
+})
+
+test('activation latency excludes users who have no usable verification date', async () => {
+	const data = await loadAdminInsightsData(
+		{ APP_DB: createInsightsTestDb({ activationLatencyRows: [] }) } as Env,
+		now,
+	)
+	// Two users reached the milestone, but neither has timing we can measure.
+	expect(data.activation.steps.at(-1)).toEqual({
+		step: 'package_activated',
+		users: 1,
+	})
+	expect(data.activation.medianHoursToActivation).toBeNull()
 })
 
 test('medianOf averages the middle pair and ignores non-finite values', () => {

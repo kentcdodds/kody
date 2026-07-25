@@ -118,8 +118,16 @@ const activationStepLabels: Record<
 }
 
 function activationSubtitle(activation: AdminInsightsActivation) {
+	const activated =
+		activation.steps.find((entry) => entry.step === 'package_activated')
+			?.users ?? 0
+	if (activated === 0) return 'Nobody has activated yet.'
 	const median = activation.medianHoursToActivation
-	if (median == null) return 'Nobody has activated yet.'
+	// Activation can be recorded without usable timing — backfilled milestones
+	// carry no verification date to measure from.
+	if (median == null) {
+		return `${formatIntegerNumber(activated)} activated; not enough timing data for a median.`
+	}
 	const rounded = median < 1 ? '<1' : formatIntegerNumber(Math.round(median))
 	return `Median ${rounded}h from verified email to a package that ran twice.`
 }
