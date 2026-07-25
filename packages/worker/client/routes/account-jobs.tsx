@@ -125,10 +125,12 @@ function ownershipLabel(ownership: AccountJobListItem['ownership']) {
 	return ownership === 'package' ? 'Package' : 'Ad-hoc'
 }
 
-function statusLabel(job: Pick<
-	AccountJobListItem,
-	'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus'
->) {
+function statusLabel(
+	job: Pick<
+		AccountJobListItem,
+		'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus'
+	>,
+) {
 	if (job.killSwitchEnabled) return 'Kill switch on'
 	if (!job.enabled) return 'Disabled'
 	if (job.dueNow) return 'Due now'
@@ -137,10 +139,12 @@ function statusLabel(job: Pick<
 	return 'Scheduled'
 }
 
-function statusColor(job: Pick<
-	AccountJobListItem,
-	'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus'
->) {
+function statusColor(
+	job: Pick<
+		AccountJobListItem,
+		'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus'
+	>,
+) {
 	if (job.killSwitchEnabled) return colors.error
 	if (!job.enabled) return colors.textMuted
 	if (job.dueNow) return colors.primary
@@ -517,7 +521,7 @@ export function AccountJobsRoute(handle: Handle) {
 									<h2 mix={css(cardTitleCss)}>{detail.name}</h2>
 									<p mix={css(descriptionCss)}>
 										{isPackage
-											? 'Package-owned job. Schedule and name are owned by package publish; kill switch and run-now are available here.'
+											? 'Package-owned job. Schedule and name are owned by package publish; kill switch and run-now are available here. Use the kill switch to stop it.'
 											: 'Ad-hoc scheduled job. You can enable or disable it, edit its schedule, or delete it.'}
 									</p>
 								</div>
@@ -998,9 +1002,7 @@ export function AccountJobsRoute(handle: Handle) {
 															enabled: !detail.enabled,
 														},
 														successMessage: () =>
-															detail.enabled
-																? 'Disabled job.'
-																: 'Enabled job.',
+															detail.enabled ? 'Disabled job.' : 'Enabled job.',
 														failureMessage: 'Unable to update job.',
 													}),
 												),
@@ -1026,39 +1028,34 @@ export function AccountJobsRoute(handle: Handle) {
 											Edit schedule
 										</button>
 									) : null}
-									<button
-										type="button"
-										disabled={isMutating}
-										mix={[
-											on('click', () => {
-												if (!deleteConfirm) {
-													deleteConfirm = true
-													handle.update()
-													return
-												}
-												void postAction({
-													body: { action: 'delete', id: detail.id },
-													successMessage: () =>
-														isPackage
-															? 'Deleted package job. It may be recreated on the next package publish.'
-															: 'Deleted job.',
-													failureMessage: 'Unable to delete job.',
-													afterSuccess: () => {
-														navigate(
-															jobsRoute.buildListHref(getCurrentSearch()),
-														)
-													},
-												})
-											}),
-											css(dangerButtonCss),
-										]}
-									>
-										{deleteConfirm
-											? isPackage
-												? 'Confirm delete (may recreate on publish)'
-												: 'Confirm delete'
-											: 'Delete'}
-									</button>
+									{isAdHoc ? (
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', () => {
+													if (!deleteConfirm) {
+														deleteConfirm = true
+														handle.update()
+														return
+													}
+													void postAction({
+														body: { action: 'delete', id: detail.id },
+														successMessage: () => 'Deleted job.',
+														failureMessage: 'Unable to delete job.',
+														afterSuccess: () => {
+															navigate(
+																jobsRoute.buildListHref(getCurrentSearch()),
+															)
+														},
+													})
+												}),
+												css(dangerButtonCss),
+											]}
+										>
+											{deleteConfirm ? 'Confirm delete' : 'Delete'}
+										</button>
+									) : null}
 								</div>
 							</section>
 						) : waitingForDetail ? (

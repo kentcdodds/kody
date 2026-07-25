@@ -7,18 +7,12 @@ import {
 	AccountBillingRoute,
 	accountBillingRouteLoader,
 } from './account-billing.tsx'
-import {
-	AccountEmailRoute,
-	accountEmailRouteLoader,
-} from './account-email.tsx'
+import { AccountEmailRoute, accountEmailRouteLoader } from './account-email.tsx'
 import {
 	AccountIntegrationsRoute,
 	accountIntegrationsRouteLoader,
 } from './account-integrations.tsx'
-import {
-	AccountJobsRoute,
-	accountJobsRouteLoader,
-} from './account-jobs.tsx'
+import { AccountJobsRoute, accountJobsRouteLoader } from './account-jobs.tsx'
 import {
 	AccountMcpServersRoute,
 	accountMcpServersRouteLoader,

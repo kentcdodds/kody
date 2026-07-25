@@ -21,9 +21,11 @@ test('account jobs page shows heading after login', async ({
 	})
 
 	await page.goto('/account/jobs')
-	await expect(page.getByRole('heading', { name: 'Jobs' })).toBeVisible()
 	await expect(
-		page.getByRole('heading', { name: 'Select a job' }),
+		page.getByRole('heading', { name: 'Jobs', exact: true }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Select a job', exact: true }),
 	).toBeVisible()
 })
 
@@ -80,12 +82,20 @@ test('account jobs detail URL persists across reload for a seeded job', async ({
 	})
 
 	await page.goto(`/account/jobs/${encodeURIComponent(jobId)}`)
-	await expect(page.getByRole('heading', { name: 'Jobs' })).toBeVisible()
-	await expect(page.getByRole('heading', { name: jobName })).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Jobs', exact: true }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: jobName, exact: true }),
+	).toBeVisible()
 
 	const detailUrl = page.url()
 	await page.reload()
 	await expect(page).toHaveURL(detailUrl)
-	await expect(page.getByRole('heading', { name: jobName })).toBeVisible()
-	await expect(page.getByText('Runs every 1h')).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: jobName, exact: true }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('definition').filter({ hasText: 'Runs every 1h' }),
+	).toBeVisible()
 })

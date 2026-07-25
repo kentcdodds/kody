@@ -84,7 +84,7 @@ function readPage(href: string) {
 function getDataKey(href: string) {
 	const url = new URL(href, 'http://localhost')
 	const selectedId = emailRoute.getSelection(href).selectedId ?? ''
-	return `${url.pathname}?q=${readSearchQuery(href)}&page=${readPage(href)}&pageSize=${url.searchParams.get('pageSize') ?? ''}&messageId=${selectedId}`
+	return `${url.pathname}?q=${readSearchQuery(href)}&page=${readPage(href)}&pageSize=${url.searchParams.get('pageSize') ?? ''}&selected=${selectedId}`
 }
 
 function buildEmailApiRequestUrl(href: string) {
@@ -97,7 +97,7 @@ function buildEmailApiRequestUrl(href: string) {
 	const pageSize = url.searchParams.get('pageSize')
 	if (pageSize) requestUrl.searchParams.set('pageSize', pageSize)
 	const selectedId = emailRoute.getSelection(href).selectedId
-	if (selectedId) requestUrl.searchParams.set('messageId', selectedId)
+	if (selectedId) requestUrl.searchParams.set('selected', selectedId)
 	return `${requestUrl.pathname}${requestUrl.search}`
 }
 
@@ -122,11 +122,7 @@ export async function accountEmailRouteLoader(
 }
 
 function messageDate(message: AccountEmailMessageListItem) {
-	return (
-		message.received_at ??
-		message.sent_at ??
-		message.created_at
-	)
+	return message.received_at ?? message.sent_at ?? message.created_at
 }
 
 function statusLabel(message: AccountEmailMessageListItem) {
@@ -266,8 +262,7 @@ export function AccountEmailRoute(handle: Handle) {
 			handle.queueTask(loadAccountEmail)
 		}
 
-		const selectedMessageId =
-			emailRoute.getSelection(currentHref).selectedId
+		const selectedMessageId = emailRoute.getSelection(currentHref).selectedId
 		const selectedMessage: AccountEmailMessageDetail | null =
 			data?.selectedMessage ?? null
 		const totalPages = data
@@ -326,8 +321,7 @@ export function AccountEmailRoute(handle: Handle) {
 											fontSize: typography.fontSize.sm,
 										})}
 									>
-										Plan {data.usage.plan}:{' '}
-										{data.usage.stored_messages.count}/
+										Plan {data.usage.plan}: {data.usage.stored_messages.count}/
 										{data.usage.stored_messages.limit} stored ·{' '}
 										{data.usage.receives_today.count}/
 										{data.usage.receives_today.limit} received today ·{' '}
@@ -361,10 +355,7 @@ export function AccountEmailRoute(handle: Handle) {
 										<>
 											<AccountManagementList maxHeight="min(65vh, 48rem)">
 												{data.messages.map((emailMessage) => (
-													<li
-														key={emailMessage.id}
-														mix={css({ minWidth: 0 })}
-													>
+													<li key={emailMessage.id} mix={css({ minWidth: 0 })}>
 														<AccountManagementListItemButton
 															active={
 																selectedMessageId === emailMessage.id ||
@@ -382,8 +373,7 @@ export function AccountEmailRoute(handle: Handle) {
 															<div
 																mix={css({
 																	display: 'grid',
-																	gridTemplateColumns:
-																		'minmax(0, 1fr) auto',
+																	gridTemplateColumns: 'minmax(0, 1fr) auto',
 																	gap: spacing.md,
 																	alignItems: 'baseline',
 																	minWidth: 0,
@@ -731,8 +721,8 @@ export function AccountEmailRoute(handle: Handle) {
 					<div mix={css({ ...cardCss, gap: spacing.sm })}>
 						{data.inboxAddress ? (
 							<p mix={css({ margin: 0 })}>
-								Your inbox address will be{' '}
-								<code>{data.inboxAddress}</code> after verification.
+								Your inbox address will be <code>{data.inboxAddress}</code>{' '}
+								after verification.
 							</p>
 						) : null}
 						<p mix={css({ margin: 0, color: colors.textMuted })}>

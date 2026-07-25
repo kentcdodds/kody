@@ -262,6 +262,48 @@ test('values API deletes a value by name', async () => {
 	})
 })
 
+test('values API rejects save and delete for reserved names without mutating', async () => {
+	const handler = createAccountValuesApiHandler(createEnv())
+	mockModule.saveValue.mockClear()
+	mockModule.deleteValue.mockClear()
+
+	const saveResponse = await handler.handler({
+		request: new Request('https://example.com/account/values.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'save',
+				name: '_integration:github',
+				value: '{"clientId":"x"}',
+				description: 'should not save',
+			}),
+		}),
+	})
+	expect(saveResponse.status).toBe(400)
+	await expect(saveResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('reserved'),
+	})
+	expect(mockModule.saveValue).not.toHaveBeenCalled()
+
+	const deleteResponse = await handler.handler({
+		request: new Request('https://example.com/account/values.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'delete',
+				name: '_integration:github',
+			}),
+		}),
+	})
+	expect(deleteResponse.status).toBe(400)
+	await expect(deleteResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('reserved'),
+	})
+	expect(mockModule.deleteValue).not.toHaveBeenCalled()
+})
+
 test('values API returns 404 when deleting a missing value', async () => {
 	mockModule.deleteValue.mockResolvedValueOnce(false)
 	const handler = createAccountValuesApiHandler(createEnv())

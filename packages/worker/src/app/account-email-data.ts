@@ -162,16 +162,17 @@ export function readAccountEmailSelectedMessageId(
 	const url = new URL(requestUrl, 'http://localhost')
 	const detailPrefix = `${accountEmailBasePath}/`
 	if (url.pathname.startsWith(detailPrefix)) {
-		const messageId = decodeURIComponent(
-			url.pathname.slice(detailPrefix.length),
-		)
-		if (messageId && !messageId.includes('/')) return messageId
+		const segment = url.pathname.slice(detailPrefix.length)
+		if (segment && !segment.includes('/')) {
+			try {
+				const messageId = decodeURIComponent(segment)
+				if (messageId) return messageId
+			} catch {
+				if (segment) return segment
+			}
+		}
 	}
-	return (
-		url.searchParams.get('messageId')?.trim() ||
-		url.searchParams.get('selected')?.trim() ||
-		null
-	)
+	return url.searchParams.get('selected')?.trim() || null
 }
 
 /** Escape LIKE wildcards so user queries match literally. */
@@ -213,7 +214,9 @@ function parseJsonStringArray(value: unknown): Array<string> {
 	}
 }
 
-function rowToListItem(row: Record<string, unknown>): AccountEmailMessageListItem {
+function rowToListItem(
+	row: Record<string, unknown>,
+): AccountEmailMessageListItem {
 	return {
 		id: String(row['id']),
 		direction: parseDirection(row['direction']),

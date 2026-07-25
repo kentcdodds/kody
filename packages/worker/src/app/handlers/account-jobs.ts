@@ -60,9 +60,7 @@ export function createAccountJobsHandler(env: Env) {
 				},
 			})
 		},
-	} satisfies Action<
-		typeof routes.accountJobs | typeof routes.accountJobDetail
-	>
+	} satisfies Action<typeof routes.accountJobs | typeof routes.accountJobDetail>
 }
 
 /**
@@ -268,6 +266,7 @@ async function handleDeleteAction(input: {
 	request: Request
 }) {
 	const id = requireJobId(input.body)
+	assertAdHocJob(id, 'be deleted')
 	await deleteJob({
 		env: input.env,
 		userId: input.user.mcpUser.userId,

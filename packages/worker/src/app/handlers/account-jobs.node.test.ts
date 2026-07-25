@@ -204,9 +204,10 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 	})
 })
 
-test('jobs API set_enabled and update reject package-owned jobs', async () => {
+test('jobs API set_enabled, update, and delete reject package-owned jobs', async () => {
 	resetInspection()
 	mockModule.updateJob.mockResolvedValue(packageJob)
+	mockModule.deleteJob.mockResolvedValue({ id: packageJob.id, deleted: true })
 	const handler = createAccountJobsApiHandler(createEnv())
 
 	const enabledResponse = await handler.handler({
@@ -244,6 +245,23 @@ test('jobs API set_enabled and update reject package-owned jobs', async () => {
 		error: expect.stringContaining('Package-owned jobs cannot'),
 	})
 	expect(mockModule.updateJob).not.toHaveBeenCalled()
+
+	const deleteResponse = await handler.handler({
+		request: new Request('https://example.com/account/jobs.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'delete',
+				id: packageJob.id,
+			}),
+		}),
+	})
+	expect(deleteResponse.status).toBe(400)
+	await expect(deleteResponse.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('Package-owned jobs cannot'),
+	})
+	expect(mockModule.deleteJob).not.toHaveBeenCalled()
 })
 
 test('jobs API mutations are user-scoped for ad-hoc jobs and kill switch', async () => {

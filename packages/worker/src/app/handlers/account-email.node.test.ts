@@ -78,22 +78,20 @@ const mockModule = vi.hoisted(() => ({
 	isAccountEmailVerified: vi.fn(async () => true),
 	getUserPlan: vi.fn(async () => 'free' as const),
 	readEntitlementResourceUsage: vi.fn(async () => 2),
-	resolveEmailResourceLimit: vi.fn(
-		(_plan: string, resource: string) => {
-			switch (resource) {
-				case 'stored_email_messages':
-					return 100
-				case 'email_sends_per_day':
-					return 20
-				case 'email_receives_per_day':
-					return 50
-				case 'email_message_bytes':
-					return 1_000_000
-				default:
-					return 0
-			}
-		},
-	),
+	resolveEmailResourceLimit: vi.fn((_plan: string, resource: string) => {
+		switch (resource) {
+			case 'stored_email_messages':
+				return 100
+			case 'email_sends_per_day':
+				return 20
+			case 'email_receives_per_day':
+				return 50
+			case 'email_message_bytes':
+				return 1_000_000
+			default:
+				return 0
+		}
+	}),
 	getPlatformEmailDomain: vi.fn(() => 'inbox.example.com'),
 	listEmailInboxesForUser: vi.fn(async () => [
 		{
@@ -163,8 +161,7 @@ vi.mock('#app/auth-session.ts', () => ({
 
 vi.mock('#app/auth-redirect.ts', () => ({
 	redirectToLogin: () => new Response(null, { status: 302 }),
-	redirectToLoginWhenUnauthenticated: () =>
-		new Response(null, { status: 302 }),
+	redirectToLoginWhenUnauthenticated: () => new Response(null, { status: 302 }),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -189,9 +186,7 @@ vi.mock('#worker/entitlements/plans.ts', async (importOriginal) => {
 	return {
 		...actual,
 		resolveEmailResourceLimit: (...args: Array<unknown>) =>
-			mockModule.resolveEmailResourceLimit(
-				...(args as [string, string]),
-			),
+			mockModule.resolveEmailResourceLimit(...(args as [string, string])),
 	}
 })
 
@@ -313,7 +308,7 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 		envWithSelection,
 	).handler({
 		request: new Request(
-			'https://example.com/account/email.json?q=Hello&page=2&pageSize=10&messageId=msg-1',
+			'https://example.com/account/email.json?q=Hello&page=2&pageSize=10&selected=msg-1',
 		),
 	})
 	expect(selectedResponse.status).toBe(200)

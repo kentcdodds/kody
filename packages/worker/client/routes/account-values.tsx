@@ -87,6 +87,13 @@ function filterValues(values: Array<AccountValueListItem>, search: string) {
 	)
 }
 
+function isReservedAccountValueName(name: string) {
+	return name.startsWith('_integration:') || name.startsWith('_openapi:')
+}
+
+const reservedAccountValueWriteError =
+	'Value names starting with _integration: or _openapi: are reserved and cannot be saved or deleted from the account UI.'
+
 function createEmptyEditorState(): EditorState {
 	return {
 		name: '',
@@ -281,9 +288,19 @@ export function AccountValuesRoute(handle: Handle) {
 	async function saveValueEntry(form?: HTMLFormElement) {
 		if (saveState !== 'idle') return
 		const nextEditorState = form ? readEditorStateFromForm(form) : editorState
+		// When editing, the name field is locked; keep the original name even if
+		// a stale form submission somehow changes it.
+		if (selectedValue) {
+			nextEditorState.name = selectedValue.name
+		}
 		editorState = nextEditorState
 		if (!nextEditorState.name.trim()) {
 			setMessage('Value name is required.', 'error')
+			handle.update()
+			return
+		}
+		if (isReservedAccountValueName(nextEditorState.name)) {
+			setMessage(reservedAccountValueWriteError, 'error')
 			handle.update()
 			return
 		}
@@ -425,11 +442,7 @@ export function AccountValuesRoute(handle: Handle) {
 
 	function applyRouteLoaderData(href: string) {
 		if (!valuesRoute.isRoutePath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'accountValues',
-			href,
-		)
+		const routeData = tryConsumeRouteLoaderData(handle, 'accountValues', href)
 		if (!routeData) return false
 		applyPayload(routeData)
 		status = 'ready'
@@ -592,7 +605,7 @@ export function AccountValuesRoute(handle: Handle) {
 									<p mix={css(descriptionCss)}>
 										{selection.isCreating
 											? 'Create a named value your packages and workflows can read. Names are unique within your user scope.'
-											: 'Edit this user-scoped value. Saving upserts by name.'}
+											: 'Edit this user-scoped value. The name is fixed; saving updates description and value only.'}
 									</p>
 								</div>
 
@@ -604,19 +617,41 @@ export function AccountValuesRoute(handle: Handle) {
 										value={editorState.name}
 										placeholder="preferred-locale"
 										disabled={isMutating}
+										readOnly={isEditing}
 										required
 										mix={[
 											on('input', (event) => {
+												if (isEditing) return
 												editorState = {
 													...editorState,
 													name: event.currentTarget.value,
 												}
 												handle.update()
 											}),
-											css(inputCss),
+											css({
+												...inputCss,
+												...(isEditing
+													? {
+															color: colors.textMuted,
+															cursor: 'default',
+														}
+													: null),
+											}),
 										]}
 									/>
 								</label>
+								{isEditing ? (
+									<p
+										mix={css({
+											margin: 0,
+											color: colors.textMuted,
+											fontSize: typography.fontSize.sm,
+										})}
+									>
+										Name cannot be changed after creation. Create a new value to
+										use a different name.
+									</p>
+								) : null}
 
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Description</span>

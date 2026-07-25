@@ -18,7 +18,9 @@ test('verified user sees the account email inbox heading and address or empty li
 	})
 
 	await page.goto('/account/email')
-	await expect(page.getByRole('heading', { name: 'Email inbox' })).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Email inbox', exact: true }),
+	).toBeVisible()
 
 	const inboxAddress = page.locator('text=/Inbox address:/i')
 	const emptyList = page.getByText('No messages in your inbox yet.')
