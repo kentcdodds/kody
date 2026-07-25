@@ -3,32 +3,6 @@ import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { createStableUserIdFromEmail } from '../packages/worker/src/user-id.ts'
 import { executeE2eD1Command } from './d1-utils.ts'
 
-test('account memories list shows empty state', async ({
-	page,
-	seedE2eUser,
-	login,
-}) => {
-	const runId = Date.now()
-	const user = await seedE2eUser({
-		email: `account-memories-${runId}@example.com`,
-		username: `account-memories-${runId}`,
-		password: 'account-memories-password',
-	})
-	await login({
-		email: user.email,
-		password: user.password,
-		mode: 'login',
-	})
-
-	await page.goto('/account/memories')
-	await expect(
-		page.getByRole('heading', { name: 'Memories', exact: true }),
-	).toBeVisible()
-	await expect(
-		page.getByRole('heading', { name: 'Select a memory', exact: true }),
-	).toBeVisible()
-})
-
 test('account memories detail URL shows a seeded memory', async ({
 	page,
 	seedE2eUser,

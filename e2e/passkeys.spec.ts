@@ -11,6 +11,18 @@ function localhostUrl(baseURL: string | undefined, pathname: string) {
 	return url.toString()
 }
 
+async function gotoLocalhost(
+	page: Page,
+	baseURL: string | undefined,
+	pathname: string,
+) {
+	// Prefer domcontentloaded: under CI load the full `load` event can stall on
+	// late assets while the app shell is already interactive.
+	await page.goto(localhostUrl(baseURL, pathname), {
+		waitUntil: 'domcontentloaded',
+	})
+}
+
 async function addVirtualAuthenticator(page: Page) {
 	const client = await page.context().newCDPSession(page)
 	await client.send('WebAuthn.enable')
@@ -26,7 +38,7 @@ async function addVirtualAuthenticator(page: Page) {
 	})
 }
 
-test('passkey lifecycle: register, sign in, delete', async ({
+test('passkey lifecycle: register, skip TOTP when 2FA enabled, sign in, delete', async ({
 	page,
 	seedE2eUser,
 	login,
@@ -39,10 +51,13 @@ test('passkey lifecycle: register, sign in, delete', async ({
 		password: 'passkey-password',
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
+	// Cross from the 127.0.0.1 API origin onto localhost before WebAuthn work so
+	// later relative navigations stay on the relying-party domain.
+	await gotoLocalhost(page, baseURL, '/account')
 	await addVirtualAuthenticator(page)
 
 	// Register a passkey from account settings.
-	await page.goto(localhostUrl(baseURL, '/account/passkeys'))
+	await gotoLocalhost(page, baseURL, '/account/passkeys')
 	await expect(
 		page.getByRole('heading', { name: 'No passkeys yet' }),
 	).toBeVisible()
@@ -64,43 +79,8 @@ test('passkey lifecycle: register, sign in, delete', async ({
 	await expect(page.getByText('Passkey renamed.')).toBeVisible()
 	await expect(passkeyList.getByText('Josh phone')).toBeVisible()
 
-	// Sign in with the passkey instead of the password.
-	await page.context().clearCookies()
-	clearAuthRateLimitsInE2eDatabase()
-	await page.goto(localhostUrl(baseURL, '/login'))
-	await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
-	await expect(page).toHaveURL(/\/account$/)
-	await expect(page.getByText(`Email: ${user.email}`)).toBeVisible()
-
-	// Delete the passkey.
-	await page.goto(localhostUrl(baseURL, '/account/passkeys'))
-	await expect(passkeyList.getByText('Josh phone')).toBeVisible()
-	await expect(passkeyList.getByText(/Last used /)).toBeVisible()
-	await expect(passkeyList.getByText('Last used Never')).toHaveCount(0)
-	await page.getByRole('button', { name: 'Delete' }).click()
-	await expect(page.getByText('Passkey deleted.')).toBeVisible()
-	await expect(
-		page.getByRole('heading', { name: 'No passkeys yet' }),
-	).toBeVisible()
-})
-
-test('passkey sign-in skips TOTP when two-factor is enabled', async ({
-	page,
-	seedE2eUser,
-	login,
-	baseURL,
-}) => {
-	const runId = Date.now()
-	const user = await seedE2eUser({
-		email: `passkey-2fa-${runId}@example.com`,
-		username: `passkey-2fa-${runId}`,
-		password: 'passkey-2fa-password',
-	})
-	await login({ email: user.email, password: user.password, mode: 'login' })
-	await addVirtualAuthenticator(page)
-
-	// Enable 2FA.
-	await page.goto(localhostUrl(baseURL, '/account/two-factor'))
+	// Enable 2FA: a verified passkey must still skip the TOTP challenge.
+	await gotoLocalhost(page, baseURL, '/account/two-factor')
 	await page.getByRole('button', { name: 'Enable 2FA' }).click()
 	const secret = (await page.getByTestId('totp-secret').textContent()) ?? ''
 	expect(secret.length).toBeGreaterThan(0)
@@ -112,16 +92,23 @@ test('passkey sign-in skips TOTP when two-factor is enabled', async ({
 		page.getByText('Two-factor authentication is enabled.'),
 	).toBeVisible()
 
-	// Register a passkey.
-	await page.goto(localhostUrl(baseURL, '/account/passkeys'))
-	await page.getByRole('button', { name: 'Register a passkey' }).click()
-	await expect(page.getByText('Passkey registered.')).toBeVisible()
-
-	// A verified passkey already satisfies MFA, so skip the TOTP challenge.
+	// Sign in with the passkey instead of the password; land on /account, not
+	// /verify.
 	await page.context().clearCookies()
 	clearAuthRateLimitsInE2eDatabase()
-	await page.goto(localhostUrl(baseURL, '/login'))
+	await gotoLocalhost(page, baseURL, '/login')
 	await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
 	await expect(page).toHaveURL(/\/account$/)
 	await expect(page.getByText(`Email: ${user.email}`)).toBeVisible()
+
+	// Delete the passkey.
+	await gotoLocalhost(page, baseURL, '/account/passkeys')
+	await expect(passkeyList.getByText('Josh phone')).toBeVisible()
+	await expect(passkeyList.getByText(/Last used /)).toBeVisible()
+	await expect(passkeyList.getByText('Last used Never')).toHaveCount(0)
+	await page.getByRole('button', { name: 'Delete' }).click()
+	await expect(page.getByText('Passkey deleted.')).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'No passkeys yet' }),
+	).toBeVisible()
 })

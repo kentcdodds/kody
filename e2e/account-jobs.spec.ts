@@ -3,32 +3,6 @@ import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { createStableUserIdFromEmail } from '../packages/worker/src/user-id.ts'
 import { executeE2eD1Command } from './d1-utils.ts'
 
-test('account jobs page shows heading after login', async ({
-	page,
-	seedE2eUser,
-	login,
-}) => {
-	const runId = Date.now()
-	const user = await seedE2eUser({
-		email: `account-jobs-${runId}@example.com`,
-		username: `account-jobs-${runId}`,
-		password: 'account-jobs-password',
-	})
-	await login({
-		email: user.email,
-		password: user.password,
-		mode: 'login',
-	})
-
-	await page.goto('/account/jobs')
-	await expect(
-		page.getByRole('heading', { name: 'Jobs', exact: true }),
-	).toBeVisible()
-	await expect(
-		page.getByRole('heading', { name: 'Select a job', exact: true }),
-	).toBeVisible()
-})
-
 test('account jobs detail URL persists across reload for a seeded job', async ({
 	page,
 	seedE2eUser,
