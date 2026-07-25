@@ -12,6 +12,9 @@ test('isBrowserAbortErrorMessage matches Chromium and common abort texts', () =>
 	).toBe(true)
 	expect(isBrowserAbortErrorMessage('The user aborted a request.')).toBe(true)
 	expect(isBrowserAbortErrorMessage('The operation was aborted.')).toBe(true)
+	expect(
+		isBrowserAbortErrorMessage('AbortError: The operation was aborted.'),
+	).toBe(true)
 	expect(isBrowserAbortErrorMessage('AbortError: aborted')).toBe(true)
 	expect(
 		isBrowserAbortErrorMessage('NetworkError when attempting to fetch'),
@@ -19,6 +22,11 @@ test('isBrowserAbortErrorMessage matches Chromium and common abort texts', () =>
 	expect(isBrowserAbortErrorMessage('TypeError: Failed to fetch')).toBe(false)
 	expect(
 		isBrowserAbortErrorMessage('The operation was aborted due to timeout.'),
+	).toBe(false)
+	expect(
+		isBrowserAbortErrorMessage(
+			'AbortError: The operation was aborted due to timeout.',
+		),
 	).toBe(false)
 })
 

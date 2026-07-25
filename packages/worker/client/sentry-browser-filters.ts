@@ -34,7 +34,6 @@ const browserAbortErrorMessages = new Set([
 	'AbortError: The operation was aborted.',
 	'The operation was aborted.',
 	'AbortError: aborted',
-	'aborted',
 ])
 
 export function isBrowserAbortErrorMessage(message: string) {
