@@ -130,14 +130,14 @@ function describeSubscriptionStatus(status: string): {
 			return {
 				label: 'Past due',
 				detail:
-					'Payment is past due. Update your payment method in Manage subscription to keep paid access.',
+					'Payment is past due, so paid plan limits are not active. Update your payment method in Manage subscription to restore Pro.',
 				tone: 'action',
 			}
 		case 'unpaid':
 			return {
 				label: 'Unpaid',
 				detail:
-					'Stripe reports this subscription as unpaid. Open Manage subscription to update billing.',
+					'Stripe reports this subscription as unpaid, so paid plan limits are not active. Open Manage subscription to restore billing.',
 				tone: 'action',
 			}
 		case 'canceled':
