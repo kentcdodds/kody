@@ -24,15 +24,21 @@ function sentryEventMessages(event: SentryErrorEventLike) {
 
 /**
  * Chromium/Edge fetch abort text from KODY-CLOUDFLARE-23 and common browser
- * variants. Matching is intentionally narrow: only AbortError-named exceptions
- * or the well-known abort message strings — never blanket-drop network errors.
+ * variants. Matching is intentionally narrow: only these exact abort strings
+ * (plus AbortError-named exceptions via `isBrowserAbortError`) — never
+ * blanket-drop network errors or timeout wording.
  */
+const browserAbortErrorMessages = new Set([
+	'AbortError: The user aborted a request.',
+	'The user aborted a request.',
+	'AbortError: The operation was aborted.',
+	'The operation was aborted.',
+	'AbortError: aborted',
+	'aborted',
+])
+
 export function isBrowserAbortErrorMessage(message: string) {
-	if (message.startsWith('AbortError:')) return true
-	return (
-		message === 'The user aborted a request.' ||
-		message === 'The operation was aborted.'
-	)
+	return browserAbortErrorMessages.has(message)
 }
 
 export function isBrowserAbortError(error: unknown) {
