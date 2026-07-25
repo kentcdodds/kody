@@ -568,12 +568,19 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		// Timeouts, disconnects mid-RPC, and "not connected" are expected
 		// remote-connector lifecycle noise (same class as websocket closes).
 		// Soft-fail by clearing tools; keep an ops log line and do not open
-		// Sentry issues.
+		// Sentry issues. Restore the in-memory cache if persistence fails so
+		// later reads are not left empty while Sentry captures the storage bug.
+		const previousTools = this.stateSnapshot.tools
 		this.stateSnapshot.tools = []
 		console.warn(
 			`Remote connector tools snapshot refresh failed ${input.phase}. connectorId=${this.stateSnapshot.persisted.connectorId ?? 'null'} error=${getErrorMessage(input.error)}`,
 		)
-		await this.persistState()
+		try {
+			await this.persistState()
+		} catch (persistError) {
+			this.stateSnapshot.tools = previousTools
+			throw persistError
+		}
 	}
 
 	private async refreshToolsSnapshot() {
@@ -584,7 +591,11 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			throw error
 		}
 		const result = response.result
-		if (result === null || typeof result !== 'object') {
+		if (
+			result === null ||
+			typeof result !== 'object' ||
+			Array.isArray(result)
+		) {
 			throw new Error('Malformed tools/list result.')
 		}
 		const tools = (result as { tools?: unknown }).tools
