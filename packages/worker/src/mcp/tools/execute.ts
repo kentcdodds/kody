@@ -146,9 +146,20 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				},
 			}
 			const resolvedConversationId = resolveConversationId(conversationId)
-			const { baseUrl, hasUser, userId, storageContext } =
-				callerContextFields(callerContext)
-			const activeStorageId = storageContext?.storageId ?? null
+			const {
+				baseUrl,
+				hasUser,
+				userId,
+				storageId: boundStorageId,
+			} = callerContextFields(callerContext)
+			const activeStorageId = boundStorageId ?? null
+			const mcpCallerFields = {
+				baseUrl,
+				hasUser,
+				userId,
+				conversationId: resolvedConversationId,
+				...(activeStorageId ? { storageId: activeStorageId } : {}),
+			}
 			try {
 				return await runExecuteTool()
 			} catch (cause) {
@@ -164,9 +175,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					toolName: 'execute',
 					outcome: 'failure',
 					durationMs: timing.durationMs,
-					baseUrl,
-					hasUser,
-					userId,
+					...mcpCallerFields,
 					sandboxError: false,
 					errorName,
 					errorMessage,
@@ -288,9 +297,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						toolName: 'execute',
 						outcome: 'failure',
 						durationMs,
-						baseUrl,
-						hasUser,
-						userId,
+						...mcpCallerFields,
 						registeredCapabilityCount,
 						sandboxError: true,
 						errorName,
@@ -329,9 +336,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					toolName: 'execute',
 					outcome: 'success',
 					durationMs,
-					baseUrl,
-					hasUser,
-					userId,
+					...mcpCallerFields,
 					registeredCapabilityCount,
 					sandboxError: false,
 					context: activeStorageId ? { storageId: activeStorageId } : undefined,

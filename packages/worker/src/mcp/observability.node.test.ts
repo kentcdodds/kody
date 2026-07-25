@@ -176,5 +176,49 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 	)
 	expect(sentryMock.scope.setLevel).toHaveBeenCalledWith('error')
 	expect(sentryMock.scope.setUser).toHaveBeenCalledWith({ id: 'user-1' })
+	expect(sentryMock.scope.setContext).toHaveBeenCalledWith(
+		'mcp',
+		expect.objectContaining({
+			baseUrl: 'https://example.com',
+			hasUser: true,
+			errorMessage: 'platform handler blew up',
+			detail: undefined,
+		}),
+	)
 	expect(sentryMock.captureMessage).not.toHaveBeenCalled()
+})
+
+test('logMcpEvent copies conversationId, storageId, and detail into Sentry mcp context', () => {
+	sentryMock.scope.setContext.mockClear()
+	sentryMock.captureException.mockClear()
+
+	captureMcpEvents(() => {
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'storage_query',
+			domain: 'storage',
+			capabilitySource: 'builtin',
+			conversationId: 'conv-storage-1',
+			storageId: 'storage-notes-1',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'no such table: notes: SQLITE_ERROR',
+			context: {
+				sqlPreview: 'SELECT * FROM notes LIMIT 1',
+			},
+			cause: new Error('no such table: notes: SQLITE_ERROR'),
+		})
+	})
+
+	expect(sentryMock.captureException).toHaveBeenCalledOnce()
+	expect(sentryMock.scope.setContext).toHaveBeenCalledWith(
+		'mcp',
+		expect.objectContaining({
+			conversationId: 'conv-storage-1',
+			storageId: 'storage-notes-1',
+			detail: {
+				sqlPreview: 'SELECT * FROM notes LIMIT 1',
+			},
+		}),
+	)
 })

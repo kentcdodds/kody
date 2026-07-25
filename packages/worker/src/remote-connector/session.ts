@@ -111,14 +111,37 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			extra?: Record<string, unknown>
 		} = {},
 	) {
-		Sentry.captureMessage(message, {
-			level: input.level ?? 'warning',
-			tags: {
-				service: 'worker',
-				worker_component: 'remote-connector-session',
-			},
-			extra: input.extra ?? {},
+		const connectorId =
+			typeof input.extra?.connectorId === 'string'
+				? input.extra.connectorId
+				: (this.stateSnapshot.persisted.connectorId ?? undefined)
+		const userId = this.resolveConnectedIngressUserId()
+		Sentry.withScope((scope) => {
+			scope.setLevel(input.level ?? 'warning')
+			scope.setTag('service', 'worker')
+			scope.setTag('worker_component', 'remote-connector-session')
+			if (connectorId) {
+				scope.setTag('remote_connector.id', connectorId)
+			}
+			if (userId) {
+				scope.setUser({ id: userId })
+			}
+			scope.setContext('remote_connector', {
+				connectorId: connectorId ?? null,
+				userId: userId ?? null,
+				connected: this.ctx.getWebSockets(connectorTag).length > 0,
+				...input.extra,
+			})
+			Sentry.captureMessage(message)
 		})
+	}
+
+	private resolveConnectedIngressUserId(): string | null {
+		for (const socket of this.ctx.getWebSockets(connectorTag)) {
+			const userId = this.loadIngressUserId(socket)
+			if (userId) return userId
+		}
+		return null
 	}
 
 	async fetch(request: Request): Promise<Response> {

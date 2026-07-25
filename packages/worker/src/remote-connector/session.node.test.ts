@@ -2,8 +2,28 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const captureMessageMock = vi.fn()
+const setTagMock = vi.fn()
+const setUserMock = vi.fn()
+const setContextMock = vi.fn()
+const setLevelMock = vi.fn()
 
 vi.mock('@sentry/cloudflare', () => ({
+	isInitialized: () => true,
+	withScope: (
+		callback: (scope: {
+			setLevel: typeof setLevelMock
+			setTag: typeof setTagMock
+			setUser: typeof setUserMock
+			setContext: typeof setContextMock
+		}) => void,
+	) => {
+		callback({
+			setLevel: setLevelMock,
+			setTag: setTagMock,
+			setUser: setUserMock,
+			setContext: setContextMock,
+		})
+	},
 	captureMessage: (...args: Array<unknown>) => captureMessageMock(...args),
 	instrumentDurableObjectWithSentry: (
 		_getOptions: unknown,
@@ -81,6 +101,10 @@ async function createRemoteConnectorSession(
 	input: Parameters<typeof createState>[0] = {},
 ) {
 	captureMessageMock.mockReset()
+	setTagMock.mockReset()
+	setUserMock.mockReset()
+	setContextMock.mockReset()
+	setLevelMock.mockReset()
 	const { state, persistedEntries } = createState(input)
 	const session = new RemoteConnectorSession(
 		{
@@ -296,6 +320,10 @@ test('remote connector session lifecycle across restore, snapshot, heartbeat, cl
 test('tools/list_changed soft-fails disconnects and reports malformed snapshots', async () => {
 	consoleWarn.mockImplementation(() => {})
 	captureMessageMock.mockClear()
+	setTagMock.mockClear()
+	setUserMock.mockClear()
+	setContextMock.mockClear()
+	setLevelMock.mockClear()
 
 	const softFail = await createRemoteConnectorSession({
 		storedState: {
@@ -344,6 +372,10 @@ test('tools/list_changed soft-fails disconnects and reports malformed snapshots'
 	})
 
 	captureMessageMock.mockClear()
+	setTagMock.mockClear()
+	setUserMock.mockClear()
+	setContextMock.mockClear()
+	setLevelMock.mockClear()
 	const sent: Array<string> = []
 	const socket = {
 		send: (payload: string) => {
@@ -400,13 +432,19 @@ test('tools/list_changed soft-fails disconnects and reports malformed snapshots'
 
 	expect(captureMessageMock).toHaveBeenCalledWith(
 		'Remote connector session message handler threw.',
+	)
+	expect(setLevelMock).toHaveBeenCalledWith('error')
+	expect(setTagMock).toHaveBeenCalledWith(
+		'worker_component',
+		'remote-connector-session',
+	)
+	expect(setTagMock).toHaveBeenCalledWith('remote_connector.id', 'home')
+	expect(setContextMock).toHaveBeenCalledWith(
+		'remote_connector',
 		expect.objectContaining({
-			level: 'error',
-			extra: expect.objectContaining({
-				connectorId: 'home',
-				messageType: 'connector.jsonrpc',
-				error: 'Malformed tools/list result.',
-			}),
+			connectorId: 'home',
+			messageType: 'connector.jsonrpc',
+			error: 'Malformed tools/list result.',
 		}),
 	)
 	expect(

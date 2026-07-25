@@ -60,8 +60,16 @@ export async function runSearchTool(input: {
 		baseUrl,
 		hasUser,
 		userId: callerUserId,
+		storageId,
 	} = callerContextFields(callerContext)
 	const userId = callerUserId ?? null
+	const mcpCallerFields = {
+		baseUrl,
+		hasUser,
+		userId: userId ?? undefined,
+		conversationId,
+		...(storageId ? { storageId } : {}),
+	}
 	const includeHiddenPackages = !!args.includeHiddenPackages
 	const domainFilter = args.domain?.trim() || undefined
 	// Whitespace-only queries stay valid (memory enrichment may still run) but
@@ -75,9 +83,7 @@ export async function runSearchTool(input: {
 			toolName: 'search',
 			outcome: 'failure',
 			durationMs: timing.durationMs,
-			baseUrl,
-			hasUser,
-			userId: userId ?? undefined,
+			...mcpCallerFields,
 			sandboxError: false,
 			callerError: true,
 			errorName: 'ValidationError',
@@ -259,9 +265,7 @@ export async function runSearchTool(input: {
 				toolName: 'search',
 				outcome: 'success',
 				durationMs: timing.durationMs,
-				baseUrl,
-				hasUser,
-				userId: userId ?? undefined,
+				...mcpCallerFields,
 			})
 			return {
 				content: prependToolMetadataContent(conversationId, [
@@ -338,9 +342,7 @@ export async function runSearchTool(input: {
 				toolName: 'search',
 				outcome: allFailed ? 'failure' : 'success',
 				durationMs: timing.durationMs,
-				baseUrl,
-				hasUser,
-				userId: userId ?? undefined,
+				...mcpCallerFields,
 				...(allFailed
 					? {
 							sandboxError: false,
@@ -502,9 +504,7 @@ export async function runSearchTool(input: {
 			toolName: 'search',
 			outcome: 'success',
 			durationMs: timing.durationMs,
-			baseUrl,
-			hasUser,
-			userId: userId ?? undefined,
+			...mcpCallerFields,
 			message: 'Search completed successfully.',
 			context: {
 				task: execution.result.intent.task.name,
@@ -544,9 +544,7 @@ export async function runSearchTool(input: {
 			toolName: 'search',
 			outcome: 'failure',
 			durationMs: timing.durationMs,
-			baseUrl,
-			hasUser,
-			userId: userId ?? undefined,
+			...mcpCallerFields,
 			sandboxError: false,
 			errorName,
 			errorMessage,

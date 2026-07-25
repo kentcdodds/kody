@@ -628,7 +628,15 @@ const workerHandler = {
 					continue
 				}
 				console.error(`scheduled_lane_failed lane=${lane.name}`, error)
-				Sentry.captureException(error)
+				Sentry.withScope((scope) => {
+					scope.setTag('scheduled.lane', lane.name)
+					scope.setContext('scheduled', {
+						lane: lane.name,
+						scheduledTime: scheduledAt.toISOString(),
+						cron: controller.cron,
+					})
+					Sentry.captureException(error)
+				})
 			}
 		}
 	},

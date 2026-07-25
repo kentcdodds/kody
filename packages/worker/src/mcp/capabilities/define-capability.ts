@@ -71,9 +71,15 @@ export function defineCapability<
 			: {}),
 		async handler(args, ctx) {
 			const startedAt = performance.now()
-			const { baseUrl, hasUser, userId } = callerContextFields(
+			const { baseUrl, hasUser, userId, storageId } = callerContextFields(
 				ctx.callerContext,
 			)
+			const mcpCallerFields = {
+				baseUrl,
+				hasUser,
+				userId,
+				...(storageId ? { storageId } : {}),
+			}
 			await assertCallerCanAccessCapability(ctx.callerContext, definition, {
 				env: ctx.env,
 			})
@@ -91,9 +97,7 @@ export function defineCapability<
 					capabilitySource: source,
 					outcome: 'failure',
 					durationMs: Math.round(performance.now() - startedAt),
-					baseUrl,
-					hasUser,
-					userId,
+					...mcpCallerFields,
 					failurePhase: 'parse_input',
 					errorName,
 					errorMessage,
@@ -115,9 +119,7 @@ export function defineCapability<
 					capabilitySource: source,
 					outcome: 'failure',
 					durationMs: Math.round(performance.now() - startedAt),
-					baseUrl,
-					hasUser,
-					userId,
+					...mcpCallerFields,
 					failurePhase: 'handler',
 					errorName,
 					errorMessage,
@@ -136,9 +138,7 @@ export function defineCapability<
 					capabilitySource: source,
 					outcome: 'success',
 					durationMs: Math.round(performance.now() - startedAt),
-					baseUrl,
-					hasUser,
-					userId,
+					...mcpCallerFields,
 				})
 				return finalized
 			} catch (error) {
@@ -151,9 +151,7 @@ export function defineCapability<
 					capabilitySource: source,
 					outcome: 'failure',
 					durationMs: Math.round(performance.now() - startedAt),
-					baseUrl,
-					hasUser,
-					userId,
+					...mcpCallerFields,
 					failurePhase: 'parse_output',
 					errorName,
 					errorMessage,

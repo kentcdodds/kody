@@ -29,6 +29,7 @@ import {
 	terminalWorkflowStatusValues,
 	type WorkflowRunStatus,
 } from './workflow-statuses.ts'
+import { applyDynamicWorkflowSentryScope } from './package-workflows-sentry.ts'
 
 export type PackageWorkflowParams = Record<string, unknown>
 
@@ -978,6 +979,10 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		step: WorkflowStep,
 	) {
 		const payload = validateDynamicCallableWorkflowPayload(event.payload)
+		applyDynamicWorkflowSentryScope({
+			payload,
+			instanceId: event.instanceId,
+		})
 		const runAt = new Date(payload.runAt)
 		if (runAt.getTime() > Date.now()) {
 			await step.sleepUntil('wait until dynamic workflow runAt', runAt)

@@ -297,6 +297,10 @@ test('scheduled isolates a failing lane: logs it and keeps siblings and the invo
 	const consoleErrorSpy = vi
 		.spyOn(console, 'error')
 		.mockImplementation(() => {})
+	const withScope = vi.spyOn(Sentry, 'withScope')
+	const captureException = vi
+		.spyOn(Sentry, 'captureException')
+		.mockImplementation(() => '')
 	mocks.reconcileArtifactsPushes.mockRejectedValueOnce(
 		new Error('reconcile exploded'),
 	)
@@ -317,8 +321,35 @@ test('scheduled isolates a failing lane: logs it and keeps siblings and the invo
 			'scheduled_lane_failed lane=reconcile_artifacts_pushes',
 			expect.objectContaining({ message: 'reconcile exploded' }),
 		)
+		expect(withScope).toHaveBeenCalled()
+		expect(captureException).toHaveBeenCalledWith(
+			expect.objectContaining({ message: 'reconcile exploded' }),
+		)
+		const scopeCallback = withScope.mock.calls[0]?.[0] as
+			| ((scope: {
+					setTag: (key: string, value: string) => void
+					setContext: (key: string, value: Record<string, unknown>) => void
+			  }) => void)
+			| undefined
+		expect(scopeCallback).toBeTypeOf('function')
+		const setTag = vi.fn()
+		const setContext = vi.fn()
+		scopeCallback?.({ setTag, setContext })
+		expect(setTag).toHaveBeenCalledWith(
+			'scheduled.lane',
+			'reconcile_artifacts_pushes',
+		)
+		expect(setContext).toHaveBeenCalledWith(
+			'scheduled',
+			expect.objectContaining({
+				lane: 'reconcile_artifacts_pushes',
+				scheduledTime: new Date(scheduledTime).toISOString(),
+			}),
+		)
 	} finally {
 		consoleErrorSpy.mockRestore()
+		withScope.mockRestore()
+		captureException.mockRestore()
 	}
 })
 

@@ -19,6 +19,16 @@ export type McpObservabilityPayload = {
 	hasUser: boolean
 	/** Stable user id of the caller, when authenticated. */
 	userId?: string
+	/**
+	 * MCP tool conversation id when the call is part of a multi-turn tool
+	 * session. Kept on context (not tags) to avoid high-cardinality indexing.
+	 */
+	conversationId?: string
+	/**
+	 * Bound durable storage id for execute/capability calls that run against a
+	 * specific bucket. Kept on context (not tags) for the same reason.
+	 */
+	storageId?: string
 	failurePhase?: McpFailurePhase
 	sandboxError?: boolean
 	/**
@@ -46,6 +56,7 @@ export function callerContextFields(context: McpCallerContext) {
 		hasUser: context.user != null,
 		userId: context.user?.userId,
 		storageContext: context.storageContext ?? null,
+		storageId: context.storageContext?.storageId ?? undefined,
 	}
 }
 
@@ -109,6 +120,11 @@ function reportMcpFailureToSentry(
 				errorName: payload.errorName,
 				errorMessage: payload.errorMessage,
 				registeredCapabilityCount: payload.registeredCapabilityCount,
+				conversationId: payload.conversationId,
+				storageId: payload.storageId,
+				// Structured call-site detail (entity refs, validation phase,
+				// intent telemetry). Nested so it cannot clobber core fields.
+				detail: payload.context,
 			})
 
 			if (cause instanceof Error) {
