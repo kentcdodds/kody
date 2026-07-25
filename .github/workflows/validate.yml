@@ -89,6 +89,9 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
+          # Unit coverage includes migration immutability helpers that need a
+          # trusted pre-change Git base (same as migrations:check).
+          fetch-depth: 0
           persist-credentials: false
 
       - name: 🧰 Setup
@@ -99,6 +102,10 @@ jobs:
 
       - name: 🧪 Unit tests
         run: npm run test
+        env:
+          MIGRATION_VALIDATION_BASE: >-
+            ${{ github.event.pull_request.base.sha || github.event.before || ''
+            }}
 
   mcp:
     runs-on: ubuntu-latest
