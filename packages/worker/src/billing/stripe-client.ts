@@ -204,6 +204,8 @@ export async function createCheckoutSession(
 		cancelUrl: string
 		customerId?: string
 		customerEmail?: string
+		/** Opaque session metadata (e.g. kody_stable_user_id for webhook lookup). */
+		metadata?: Record<string, string>
 	},
 ): Promise<{ id: string; url: string }> {
 	const priceId = input.priceId.trim()
@@ -240,6 +242,14 @@ export async function createCheckoutSession(
 		form.customer = customerId
 	} else if (customerEmail) {
 		form.customer_email = customerEmail
+	}
+	if (input.metadata) {
+		for (const [key, value] of Object.entries(input.metadata)) {
+			const trimmedKey = key.trim()
+			const trimmedValue = value.trim()
+			if (!trimmedKey || !trimmedValue) continue
+			form[`metadata[${trimmedKey}]`] = trimmedValue
+		}
 	}
 
 	const body = await stripeRequest(env, {

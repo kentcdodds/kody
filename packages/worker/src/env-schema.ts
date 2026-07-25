@@ -208,6 +208,9 @@ export const EnvSchema = object({
 	// Stripe billing — optional; when STRIPE_SECRET_KEY is unset, billing
 	// surfaces render a "not configured" notice and sync/cron/portal skip.
 	STRIPE_SECRET_KEY: optionalNonEmptyStringSchema,
+	// Stripe platform webhook signing secret (`whsec_...`). When unset,
+	// POST /webhooks/stripe returns 503.
+	STRIPE_WEBHOOK_SECRET: optionalNonEmptyStringSchema,
 	// Override for tests/mocks; defaults to https://api.stripe.com.
 	STRIPE_API_BASE_URL: optionalUrlStringSchema,
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,

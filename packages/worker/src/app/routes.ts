@@ -122,6 +122,7 @@ export const routes = route({
 	webhookIngress: post(
 		'/@:username/webhooks/:packageKodyId/:webhookName/:urlSecret',
 	),
+	stripeWebhook: post('/webhooks/stripe'),
 	timeline: '/timeline',
 	timelineApi: '/timeline.json',
 	health: '/health',

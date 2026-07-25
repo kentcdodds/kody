@@ -165,7 +165,11 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 		sessionId: 'cs_happy',
 		now,
 	})
-	expect(result).toEqual({ stripePlan: 'pro', cancelAt: null })
+	expect(result).toEqual({
+		stripePlan: 'pro',
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
 
 	const row = await readUserBilling(user.id)
 	expect(row).toEqual({

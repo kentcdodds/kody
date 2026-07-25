@@ -1,3 +1,4 @@
+import { normalizeEmail } from '#app/normalize-email.ts'
 import {
 	parseStripePlanName,
 	type PlanName,
@@ -6,6 +7,7 @@ import {
 	createBillingLinkReference,
 	isBillingConfigured,
 	resolveSubscriptionPlan,
+	type ResolvedSubscriptionPlan,
 } from './billing-config.ts'
 import {
 	BillingNotConfiguredError,
@@ -26,6 +28,7 @@ export class BillingLinkError extends Error {
 		| 'customer_already_linked'
 		| 'account_already_linked'
 		| 'stripe_error'
+		| 'user_not_found'
 
 	constructor(
 		code: BillingLinkError['code'],
@@ -51,7 +54,7 @@ export async function refreshStripePlanForUser(input: {
 	userId: number
 	customerId: string
 	now?: Date
-}): Promise<{ stripePlan: PlanName | null; cancelAt: string | null }> {
+}): Promise<ResolvedSubscriptionPlan> {
 	const now = input.now ?? new Date()
 	const subscriptions = await listSubscriptions(input.env, input.customerId)
 	const resolved = resolveSubscriptionPlan(subscriptions, input.env)
@@ -70,6 +73,129 @@ export async function refreshStripePlanForUser(input: {
 	return resolved
 }
 
+async function loadBillingUserById(
+	env: SyncEnv,
+	userId: number,
+): Promise<BillingUser | null> {
+	const row = await env.APP_DB.prepare(
+		`SELECT id, email, stable_user_id FROM users WHERE id = ?`,
+	)
+		.bind(userId)
+		.first<{ id: number; email: string; stable_user_id: string }>()
+	if (!row) return null
+	return {
+		id: row.id,
+		email: row.email,
+		stableUserId: row.stable_user_id,
+	}
+}
+
+/**
+ * Resolve the Kody user that owns a Checkout Session by verifying
+ * `client_reference_id` against `createBillingLinkReference`. Candidate users
+ * are found via stable-user-id hint (session metadata), Stripe customer id, or
+ * customer email — never by reversing the HMAC.
+ */
+export async function resolveBillingUserForCheckoutLink(input: {
+	env: SyncEnv
+	clientReferenceId: string | null | undefined
+	stableUserIdHint?: string | null
+	customerId?: string | null
+	customerEmail?: string | null
+}): Promise<BillingUser | null> {
+	const clientReferenceId = input.clientReferenceId?.trim()
+	if (!clientReferenceId) return null
+
+	const candidates: Array<BillingUser> = []
+	const seenIds = new Set<number>()
+
+	async function pushCandidate(user: BillingUser | null) {
+		if (!user || seenIds.has(user.id)) return
+		seenIds.add(user.id)
+		candidates.push(user)
+	}
+
+	const stableUserIdHint = input.stableUserIdHint?.trim()
+	if (stableUserIdHint) {
+		const row = await input.env.APP_DB.prepare(
+			`SELECT id, email, stable_user_id FROM users WHERE stable_user_id = ?`,
+		)
+			.bind(stableUserIdHint)
+			.first<{ id: number; email: string; stable_user_id: string }>()
+		await pushCandidate(
+			row
+				? {
+						id: row.id,
+						email: row.email,
+						stableUserId: row.stable_user_id,
+					}
+				: null,
+		)
+	}
+
+	const customerId = input.customerId?.trim()
+	if (customerId) {
+		const row = await input.env.APP_DB.prepare(
+			`SELECT id, email, stable_user_id FROM users WHERE stripe_customer_id = ?`,
+		)
+			.bind(customerId)
+			.first<{ id: number; email: string; stable_user_id: string }>()
+		await pushCandidate(
+			row
+				? {
+						id: row.id,
+						email: row.email,
+						stableUserId: row.stable_user_id,
+					}
+				: null,
+		)
+	}
+
+	const customerEmail = input.customerEmail?.trim()
+	if (customerEmail) {
+		const normalized = normalizeEmail(customerEmail)
+		const row = await input.env.APP_DB.prepare(
+			`SELECT id, email, stable_user_id FROM users WHERE lower(email) = ?`,
+		)
+			.bind(normalized)
+			.first<{ id: number; email: string; stable_user_id: string }>()
+		await pushCandidate(
+			row
+				? {
+						id: row.id,
+						email: row.email,
+						stableUserId: row.stable_user_id,
+					}
+				: null,
+		)
+	}
+
+	for (const candidate of candidates) {
+		const expected = await createBillingLinkReference(
+			input.env,
+			candidate.stableUserId,
+		)
+		if (expected === clientReferenceId) {
+			return candidate
+		}
+	}
+	return null
+}
+
+export async function findUserIdByStripeCustomerId(input: {
+	env: SyncEnv
+	customerId: string
+}): Promise<number | null> {
+	const customerId = input.customerId.trim()
+	if (!customerId) return null
+	const row = await input.env.APP_DB.prepare(
+		`SELECT id FROM users WHERE stripe_customer_id = ?`,
+	)
+		.bind(customerId)
+		.first<{ id: number }>()
+	return row?.id ?? null
+}
+
 /**
  * Verify a completed Stripe Checkout session belongs to the logged-in user
  * (`client_reference_id` must equal their stable user id), link the Stripe
@@ -80,7 +206,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 	user: BillingUser
 	sessionId: string
 	now?: Date
-}): Promise<{ stripePlan: PlanName | null; cancelAt: string | null }> {
+}): Promise<ResolvedSubscriptionPlan> {
 	if (!isBillingConfigured(input.env)) {
 		throw new BillingLinkError(
 			'billing_not_configured',
@@ -203,10 +329,84 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 				userId: input.user.id,
 				error: error instanceof Error ? error.message : String(error),
 			})
-			return { stripePlan: null, cancelAt: null }
+			return { stripePlan: null, cancelAt: null, subscriptionStatus: null }
 		}
 		throw error
 	}
+}
+
+/**
+ * Shared checkout-link path used by the success redirect and the
+ * `checkout.session.completed` webhook: resolve the owning user from session
+ * attribution fields, then run the same link+refresh logic.
+ */
+export async function linkStripeCustomerFromCheckoutSessionAttribution(input: {
+	env: SyncEnv
+	sessionId: string
+	clientReferenceId?: string | null
+	stableUserIdHint?: string | null
+	customerId?: string | null
+	customerEmail?: string | null
+	/** When set (success redirect), skip candidate lookup and use this user. */
+	user?: BillingUser
+	now?: Date
+}): Promise<ResolvedSubscriptionPlan> {
+	if (input.user) {
+		return linkStripeCustomerFromCheckoutSession({
+			env: input.env,
+			user: input.user,
+			sessionId: input.sessionId,
+			now: input.now,
+		})
+	}
+
+	const user = await resolveBillingUserForCheckoutLink({
+		env: input.env,
+		clientReferenceId: input.clientReferenceId,
+		stableUserIdHint: input.stableUserIdHint,
+		customerId: input.customerId,
+		customerEmail: input.customerEmail,
+	})
+	if (!user) {
+		throw new BillingLinkError(
+			'user_not_found',
+			'No Kody account matched this checkout session attribution.',
+		)
+	}
+	return linkStripeCustomerFromCheckoutSession({
+		env: input.env,
+		user,
+		sessionId: input.sessionId,
+		now: input.now,
+	})
+}
+
+export async function refreshStripePlanForStripeCustomer(input: {
+	env: SyncEnv
+	customerId: string
+	now?: Date
+}): Promise<{
+	userId: number | null
+	resolved: ResolvedSubscriptionPlan | null
+}> {
+	const userId = await findUserIdByStripeCustomerId({
+		env: input.env,
+		customerId: input.customerId,
+	})
+	if (userId == null) {
+		return { userId: null, resolved: null }
+	}
+	const user = await loadBillingUserById(input.env, userId)
+	if (!user) {
+		return { userId: null, resolved: null }
+	}
+	const resolved = await refreshStripePlanForUser({
+		env: input.env,
+		userId: user.id,
+		customerId: input.customerId,
+		now: input.now,
+	})
+	return { userId: user.id, resolved }
 }
 
 /**
@@ -260,3 +460,5 @@ export async function refreshStaleStripePlans(input: {
 export function parseStoredStripePlan(value: string | null | undefined) {
 	return parseStripePlanName(value)
 }
+
+export type { PlanName, ResolvedSubscriptionPlan }

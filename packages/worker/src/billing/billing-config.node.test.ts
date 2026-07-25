@@ -58,7 +58,11 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			],
 			env,
 		),
-	).toEqual({ stripePlan: null, cancelAt: null })
+	).toEqual({
+		stripePlan: null,
+		cancelAt: null,
+		subscriptionStatus: 'incomplete',
+	})
 
 	expect(
 		resolveSubscriptionPlan(
@@ -70,7 +74,11 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			],
 			env,
 		),
-	).toEqual({ stripePlan: 'pro', cancelAt: null })
+	).toEqual({
+		stripePlan: 'pro',
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
 
 	expect(
 		resolveSubscriptionPlan(
@@ -82,7 +90,11 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			],
 			env,
 		),
-	).toEqual({ stripePlan: 'pro', cancelAt: null })
+	).toEqual({
+		stripePlan: 'pro',
+		cancelAt: null,
+		subscriptionStatus: 'trialing',
+	})
 
 	expect(
 		resolveSubscriptionPlan(
@@ -95,7 +107,11 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			],
 			env,
 		),
-	).toEqual({ stripePlan: 'pro', cancelAt: null })
+	).toEqual({
+		stripePlan: 'pro',
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
 
 	expect(
 		resolveSubscriptionPlan(
@@ -107,7 +123,11 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			],
 			env,
 		),
-	).toEqual({ stripePlan: null, cancelAt: null })
+	).toEqual({
+		stripePlan: null,
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
 
 	expect(
 		resolveSubscriptionPlan(
@@ -120,7 +140,11 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			],
 			env,
 		),
-	).toEqual({ stripePlan: null, cancelAt: null })
+	).toEqual({
+		stripePlan: null,
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
 
 	expect(
 		resolveSubscriptionPlan(
@@ -133,7 +157,11 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			],
 			env,
 		),
-	).toEqual({ stripePlan: null, cancelAt: null })
+	).toEqual({
+		stripePlan: null,
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
 
 	const sooner = 1_700_000_000
 	const later = 1_800_000_000
@@ -161,5 +189,26 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'pro',
 		cancelAt: new Date(sooner * 1000).toISOString(),
+		subscriptionStatus: 'active',
+	})
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'canceled',
+					priceIds: ['price_pro'],
+				}),
+				subscription({
+					status: 'past_due',
+					priceIds: ['price_pro'],
+				}),
+			],
+			env,
+		),
+	).toEqual({
+		stripePlan: null,
+		cancelAt: null,
+		subscriptionStatus: 'past_due',
 	})
 })

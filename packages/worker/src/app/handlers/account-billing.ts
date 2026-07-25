@@ -19,7 +19,7 @@ import {
 } from '#worker/billing/billing-config.ts'
 import {
 	BillingLinkError,
-	linkStripeCustomerFromCheckoutSession,
+	linkStripeCustomerFromCheckoutSessionAttribution,
 } from '#worker/billing/subscription-sync.ts'
 
 function billingErrorRedirect(request: Request, errorCode: string) {
@@ -122,6 +122,9 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					successUrl,
 					cancelUrl,
 					...(customerId ? { customerId } : { customerEmail: user.email }),
+					// Lets the Stripe webhook resolve the user without reversing
+					// the HMAC client_reference_id (still verified on link).
+					metadata: { kody_stable_user_id: user.mcpUser.userId },
 				})
 				void logAuditEvent({
 					category: 'account',
@@ -173,14 +176,14 @@ export function createAccountBillingSuccessHandler(env: Env) {
 
 			const requestIp = getRequestIp(request) ?? undefined
 			try {
-				await linkStripeCustomerFromCheckoutSession({
+				await linkStripeCustomerFromCheckoutSessionAttribution({
 					env,
+					sessionId,
 					user: {
 						id: user.userId,
 						email: user.email,
 						stableUserId: user.mcpUser.userId,
 					},
-					sessionId,
 				})
 				void logAuditEvent({
 					category: 'account',

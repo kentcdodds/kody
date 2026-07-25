@@ -395,6 +395,10 @@
 		{
 			"filename": "0092-password-changed-at.sql",
 			"sha256": "9b5ab5019e2c18def21e562c9f0d36fe4385817e9b1ac12e9bec6512ba16d85c"
+		},
+		{
+			"filename": "0093-stripe-webhook-events.sql",
+			"sha256": "59f95b476e4ac07d0c29b4d33426f65122756abaa030d685843d53b2b429b587"
 		}
 	]
 }

@@ -123,6 +123,10 @@ safely. Manual `users.plan` grants and invite-assigned plans still work.
 - `STRIPE_SECRET_KEY` — Stripe secret API key. Required for checkout linking,
   portal sessions, and `stripe_plan` refresh. Synced as a Worker secret from the
   GitHub Actions secret of the same name on production deploy when set.
+- `STRIPE_WEBHOOK_SECRET` — Stripe endpoint signing secret (`whsec_...`) for
+  `POST /webhooks/stripe`. When unset, the webhook endpoint returns 503. Synced
+  as a Worker secret from the GitHub Actions secret of the same name on
+  production deploy when set.
 - `STRIPE_API_BASE_URL` — optional API base URL; defaults to
   `https://api.stripe.com` when unset. Override for tests/mocks.
 - `STRIPE_PRO_PRICE_ID` — Stripe Price id used to map active/trialing

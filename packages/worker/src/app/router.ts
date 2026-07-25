@@ -139,6 +139,7 @@ import {
 } from '#app/handlers/profile.tsx'
 import { createProfileAvatarHandler } from '#app/handlers/profile-avatar.ts'
 import { createWebhookIngressHandler } from '#app/handlers/webhook-ingress.ts'
+import { createStripeWebhookHandler } from '#app/handlers/stripe-webhook.ts'
 import {
 	createTimelineApiHandler,
 	createTimelineHandler,
@@ -340,6 +341,7 @@ export function createAppRouter(env: Env) {
 			profileOgImage: createProfileOgImageHandler(env),
 			profileFollowApiPost: createProfileFollowApiPostHandler(env),
 			webhookIngress: createWebhookIngressHandler(env),
+			stripeWebhook: createStripeWebhookHandler(env),
 			timeline: createTimelineHandler(env),
 			timelineApi: createTimelineApiHandler(env),
 			connectOauth: createConnectOauthHandler(env),

@@ -13,6 +13,22 @@ type BillingEnv = {
 
 const activeSubscriptionStatuses = new Set(['active', 'trialing'])
 
+/** Higher rank = more useful UX signal when no active/trialing sub exists. */
+const subscriptionStatusSignalRank: Record<string, number> = {
+	past_due: 100,
+	unpaid: 90,
+	incomplete: 80,
+	paused: 70,
+	incomplete_expired: 60,
+	canceled: 50,
+}
+
+export type ResolvedSubscriptionPlan = {
+	stripePlan: PlanName | null
+	cancelAt: string | null
+	subscriptionStatus: string | null
+}
+
 export function isBillingConfigured(env: BillingEnv) {
 	return Boolean(env.STRIPE_SECRET_KEY?.trim())
 }
@@ -72,15 +88,48 @@ function planFromSubscription(
 	return parseStripePlanName(metadataPlan)
 }
 
+function pickSubscriptionStatus(
+	subscriptions: ReadonlyArray<StripeSubscription>,
+): string | null {
+	let hasActive = false
+	let hasTrialing = false
+	let bestSignal: string | null = null
+	let bestRank = -1
+
+	for (const subscription of subscriptions) {
+		const status = subscription.status.trim()
+		if (!status) continue
+		if (status === 'active') {
+			hasActive = true
+			continue
+		}
+		if (status === 'trialing') {
+			hasTrialing = true
+			continue
+		}
+		const rank = subscriptionStatusSignalRank[status] ?? 1
+		if (rank > bestRank) {
+			bestRank = rank
+			bestSignal = status
+		}
+	}
+
+	if (hasActive) return 'active'
+	if (hasTrialing) return 'trialing'
+	return bestSignal
+}
+
 /**
  * Map Stripe subscriptions to the highest matching Kody plan among
  * active/trialing subscriptions, plus the soonest non-null cancel_at
- * (Unix seconds → ISO string) for display.
+ * (Unix seconds → ISO string) for display, and a UX-oriented
+ * subscriptionStatus (prefer active/trialing, else highest-signal status
+ * such as past_due).
  */
 export function resolveSubscriptionPlan(
 	subscriptions: ReadonlyArray<StripeSubscription>,
 	env: BillingEnv,
-): { stripePlan: PlanName | null; cancelAt: string | null } {
+): ResolvedSubscriptionPlan {
 	const proPriceId = getProPriceId(env)
 	let stripePlan: PlanName | null = null
 	let soonestCancelAt: number | null = null
@@ -106,5 +155,6 @@ export function resolveSubscriptionPlan(
 			soonestCancelAt == null
 				? null
 				: new Date(soonestCancelAt * 1000).toISOString(),
+		subscriptionStatus: pickSubscriptionStatus(subscriptions),
 	}
 }

@@ -343,16 +343,44 @@ manual plans only.
 
 Checkout sessions are created server-side for authenticated users via
 `POST /account/billing/checkout.json` (Stripe Checkout Session,
-`mode=subscription`, with a signed `client_reference_id`). Public Payment Links
-were removed after a card-testing incident so checkout is not reachable without
-a signed-in session. `GET /account/billing/success` verifies
-`client_reference_id` before linking `users.stripe_customer_id`, then refreshes
-`users.stripe_plan`. `GET /account/billing/portal` opens the Stripe customer
-portal for linked customers.
+`mode=subscription`, with a signed `client_reference_id` and
+`metadata.kody_stable_user_id`). Public Payment Links were removed after a
+card-testing incident so checkout is not reachable without a signed-in session.
+`GET /account/billing/success` verifies `client_reference_id` before linking
+`users.stripe_customer_id`, then refreshes `users.stripe_plan`.
+`GET /account/billing/portal` opens the Stripe customer portal for linked
+customers.
 
-`users.stripe_plan` stays fresh via an hourly cron lane
+### Webhooks (primary sync)
+
+`POST /webhooks/stripe` is the primary path for linking customers and refreshing
+plans when Stripe subscription state changes. It is unauthenticated and verifies
+the `Stripe-Signature` header with `STRIPE_WEBHOOK_SECRET` (HMAC-SHA256 over
+`${t}.${rawBody}`; ~300s timestamp tolerance). When the secret is unset, the
+endpoint returns 503.
+
+Handled event types:
+
+- `checkout.session.completed` — resolve the user via `client_reference_id`
+  matching `createBillingLinkReference` (candidates from
+  `metadata.kody_stable_user_id`, existing `stripe_customer_id`, or customer
+  email), then run the same link+refresh helper as the success redirect
+- `customer.subscription.updated` / `customer.subscription.deleted` — look up
+  the user by `users.stripe_customer_id` and call `refreshStripePlanForUser`
+- `invoice.payment_failed` — same customer lookup + refresh (surfaces
+  `subscriptionStatus` such as `past_due` for UX; does not email users)
+- Unknown event types — acknowledge `200` after recording the event id
+
+Idempotency uses migration `0093-stripe-webhook-events.sql`
+(`stripe_webhook_events.event_id` unique). Duplicate deliveries return `200`
+without re-running side effects.
+
+### Poll backup
+
+`users.stripe_plan` also stays fresh via an hourly cron lane
 (`refreshStaleStripePlans`: 25 users/sweep, 1h staleness) and an on-page refresh
-when `/account/billing` loads with data older than 60s. Migration
+when `/account/billing` loads with data older than 60s. Keep the poll as a
+backup if a webhook is missed or the success URL is never hit. Migration
 `0066-stripe-billing.sql` adds `stripe_customer_id` (unique partial index),
 `stripe_plan`, and `stripe_plan_refreshed_at`.
 

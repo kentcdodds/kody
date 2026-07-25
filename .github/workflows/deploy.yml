@@ -129,6 +129,7 @@ jobs:
           X_CLIENT_SECRET: ${{ secrets.OAUTH_X_CLIENT_SECRET }}
           KIT_API_KEY: ${{ secrets.KIT_API_KEY }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
         run: >
           node tools/ci/sync-worker-secrets.ts --env production --config
           "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
@@ -140,7 +141,8 @@ jobs:
           GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
           --set-from-env-optional X_CLIENT_ID --set-from-env-optional
           X_CLIENT_SECRET --set-from-env-optional KIT_API_KEY
-          --set-from-env-optional STRIPE_SECRET_KEY
+          --set-from-env-optional STRIPE_SECRET_KEY --set-from-env-optional
+          STRIPE_WEBHOOK_SECRET
 
       - name: 🗄️ Apply D1 Migrations
         env:

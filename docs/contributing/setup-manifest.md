@@ -232,6 +232,8 @@ automatically:
 - `STRIPE_SECRET_KEY` (optional Worker secret; enables Stripe checkout linking,
   billing portal, and `users.stripe_plan` refresh. When unset, billing degrades
   to manual plans.)
+- `STRIPE_WEBHOOK_SECRET` (optional Worker secret; Stripe webhook signing secret
+  for `POST /webhooks/stripe`. When unset, the webhook endpoint returns 503.)
 - `STRIPE_API_BASE_URL` (optional; defaults to `https://api.stripe.com`.
   Override for tests/mocks.)
 - `STRIPE_PRO_PRICE_ID` (optional Worker var; Stripe Price id mapped to the
@@ -302,6 +304,9 @@ Configure these GitHub Actions secrets and variables for workflows:
   for account billing. Production deploy syncs it when set. The Pro price id is
   a Worker var committed in `packages/worker/wrangler.jsonc`, not a GitHub
   secret.)
+- `STRIPE_WEBHOOK_SECRET` (optional GitHub / Worker secret; Stripe endpoint
+  signing secret (`whsec_...`) for platform billing webhooks at
+  `POST /webhooks/stripe`. Production deploy syncs it when set.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)

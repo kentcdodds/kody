@@ -88,4 +88,13 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 )`,
 		)
 		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+	event_id TEXT PRIMARY KEY NOT NULL,
+	event_type TEXT NOT NULL,
+	processed_at TEXT NOT NULL
+)`,
+		)
+		.run()
 }
