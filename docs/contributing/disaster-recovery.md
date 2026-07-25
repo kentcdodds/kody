@@ -188,6 +188,13 @@ Creates `kody-dr-drill-{day}-{hex}` in `DRILL_ACCOUNT_ID` (must differ from
 success (keeps it on failure for inspection). This path does not restore
 StorageRunner/R2/artifacts into production.
 
+D1 remote import enforces foreign keys while applying `CREATE TABLE`, but
+Cloudflare exports are not topologically ordered. Before upload, the control
+plane verifies the unmodified SQL MD5 against the signed manifest R2 ETag, then
+prefixes `PRAGMA foreign_keys=OFF;` and uses the prepared body's MD5 for the D1
+import init/ingest etag. Without that prelude, drills fail with errors like
+`no such table: main.users`.
+
 ### Graduated production restore
 
 1. **Prepare** — sealed full manifest + D1 manifest signatures must verify; UI

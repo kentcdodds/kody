@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import { BackupError } from './backup-policy.ts'
 import { type ApiOptions, classifyHttpStatus } from './d1-export-api.ts'
 
@@ -9,6 +11,16 @@ const DEFAULT_REQUEST_ATTEMPTS = 5
 const MAX_RETRY_DELAY = 60_000
 const DEFAULT_POLL_ATTEMPTS = 120
 const DEFAULT_POLL_DELAY_MS = 2_000
+
+/**
+ * D1 remote import enforces foreign keys while applying CREATE TABLE. Cloudflare
+ * exports are not topologically ordered, so FK references to later tables
+ * (e.g. `users`) fail with `no such table`. `PRAGMA foreign_keys=OFF` must be
+ * the first statement — see cloudflare/workers-sdk#5683 / #9349.
+ */
+export const d1ImportForeignKeysOffPrefix = 'PRAGMA foreign_keys=OFF;\n'
+
+export type D1ImportSqlBody = ReadableStream<Uint8Array> | Uint8Array | string
 
 function isObject(value: unknown): value is JsonObject {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -249,12 +261,139 @@ function hexMd5FromR2Etag(etag: string): string {
 	return trimmed
 }
 
+function toUint8Array(body: string | Uint8Array): Uint8Array {
+	return typeof body === 'string' ? new TextEncoder().encode(body) : body
+}
+
+async function consumeSqlBodyForHashes(
+	body: D1ImportSqlBody,
+	prefix: Uint8Array,
+): Promise<{
+	sourceMd5Hex: string
+	uploadMd5Hex: string
+	sourceBytes: number
+}> {
+	const sourceHash = createHash('md5')
+	const uploadHash = createHash('md5')
+	uploadHash.update(prefix)
+	let sourceBytes = 0
+
+	if (typeof body === 'string' || body instanceof Uint8Array) {
+		const bytes = toUint8Array(body)
+		sourceHash.update(bytes)
+		uploadHash.update(bytes)
+		sourceBytes = bytes.byteLength
+	} else {
+		const reader = body.getReader()
+		for (;;) {
+			const { done, value } = await reader.read()
+			if (done) break
+			if (value === undefined) continue
+			sourceHash.update(value)
+			uploadHash.update(value)
+			sourceBytes += value.byteLength
+		}
+	}
+
+	if (sourceBytes === 0) {
+		throw new BackupError('import-sql-empty', 'Backup SQL body is empty')
+	}
+
+	return {
+		sourceMd5Hex: sourceHash.digest('hex'),
+		uploadMd5Hex: uploadHash.digest('hex'),
+		sourceBytes,
+	}
+}
+
+function prependForeignKeysOffStream(
+	prefix: Uint8Array,
+	body: ReadableStream<Uint8Array>,
+): ReadableStream<Uint8Array> {
+	return new ReadableStream<Uint8Array>({
+		async start(controller) {
+			controller.enqueue(prefix)
+			const reader = body.getReader()
+			try {
+				for (;;) {
+					const { done, value } = await reader.read()
+					if (done) break
+					if (value !== undefined) controller.enqueue(value)
+				}
+				controller.close()
+			} catch (error) {
+				controller.error(error)
+				await reader.cancel(error)
+			}
+		},
+		cancel(reason) {
+			return body.cancel(reason)
+		},
+	})
+}
+
+/**
+ * Verify the unmodified backup SQL MD5, then build the FK-safe upload body and
+ * its MD5. Streams are loaded twice via `loadSqlBody` so large backups are not
+ * buffered in Worker memory.
+ */
+export async function prepareD1ImportUpload(input: {
+	sourceMd5Etag: string
+	loadSqlBody: () => Promise<D1ImportSqlBody>
+}): Promise<{
+	uploadBody: BodyInit
+	uploadMd5Hex: string
+	sourceBytes: number
+}> {
+	const expectedSourceMd5 = hexMd5FromR2Etag(input.sourceMd5Etag)
+	const prefix = new TextEncoder().encode(d1ImportForeignKeysOffPrefix)
+	const first = await input.loadSqlBody()
+	const hashes = await consumeSqlBodyForHashes(first, prefix)
+	if (hashes.sourceMd5Hex !== expectedSourceMd5) {
+		throw new BackupError(
+			'import-source-etag-mismatch',
+			'Backup SQL MD5 did not match the signed manifest R2 ETag',
+		)
+	}
+
+	const second = await input.loadSqlBody()
+	if (typeof second === 'string' || second instanceof Uint8Array) {
+		const sourceBytes = toUint8Array(second)
+		const uploadBytes = new Uint8Array(
+			prefix.byteLength + sourceBytes.byteLength,
+		)
+		uploadBytes.set(prefix, 0)
+		uploadBytes.set(sourceBytes, prefix.byteLength)
+		return {
+			uploadBody: uploadBytes,
+			uploadMd5Hex: hashes.uploadMd5Hex,
+			sourceBytes: hashes.sourceBytes,
+		}
+	}
+
+	return {
+		uploadBody: prependForeignKeysOffStream(prefix, second),
+		uploadMd5Hex: hashes.uploadMd5Hex,
+		sourceBytes: hashes.sourceBytes,
+	}
+}
+
 export async function importSqlIntoD1(input: {
 	accountId: string
 	databaseId: string
 	token: string
-	sqlBody: ReadableStream<Uint8Array> | Uint8Array | string
-	md5Etag: string
+	/**
+	 * Expected MD5 (R2 ETag) of the *unmodified* backup SQL from the signed
+	 * manifest. The bytes uploaded to D1 are prefixed with
+	 * {@link d1ImportForeignKeysOffPrefix}; their MD5 is derived after that
+	 * verify step.
+	 */
+	sourceMd5Etag: string
+	/**
+	 * Load unmodified backup SQL. Invoked twice (hash/verify, then upload) so
+	 * stream bodies do not need to be fully buffered.
+	 */
+	loadSqlBody: () => Promise<D1ImportSqlBody>
 	options?: ApiOptions & {
 		maxPollAttempts?: number
 		pollDelayMs?: number
@@ -264,7 +403,11 @@ export async function importSqlIntoD1(input: {
 	const fetcher = options.fetcher ?? fetch
 	const sleep =
 		options.sleep ?? ((milliseconds) => scheduler.wait(milliseconds))
-	const etag = hexMd5FromR2Etag(input.md5Etag)
+	const prepared = await prepareD1ImportUpload({
+		sourceMd5Etag: input.sourceMd5Etag,
+		loadSqlBody: input.loadSqlBody,
+	})
+	const etag = prepared.uploadMd5Hex
 	const url = importUrl(input.accountId, input.databaseId)
 
 	const initResult = await apiJson(
@@ -290,7 +433,7 @@ export async function importSqlIntoD1(input: {
 	try {
 		uploadResponse = await fetcher(initResult.upload_url, {
 			method: 'PUT',
-			body: input.sqlBody as BodyInit,
+			body: prepared.uploadBody,
 		})
 	} catch {
 		throw new BackupError(
@@ -313,7 +456,7 @@ export async function importSqlIntoD1(input: {
 	) {
 		throw new BackupError(
 			'import-etag-mismatch',
-			'D1 import upload ETag did not match the SQL digest',
+			'D1 import upload ETag did not match the prepared SQL digest',
 		)
 	}
 

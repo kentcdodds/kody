@@ -13,6 +13,7 @@ import {
 	signedManifest,
 } from './backup-control-plane-test-support.ts'
 import { backupPayload } from './backup-policy.ts'
+import { d1ImportForeignKeysOffPrefix } from './d1-import-api.ts'
 import { signBackupFullManifest } from './full-manifest-signing.ts'
 import { putImmutableManifest } from './immutable-storage.ts'
 import { runProductionRestore } from './production-restore.ts'
@@ -26,6 +27,10 @@ async function seedSealedRestoreDay(bucket: MemoryBucket, day = '2026-07-22') {
 	const d1Payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
 	const sqlBody = 'CREATE TABLE t(id INTEGER);\n'
 	const sqlMd5 = createHash('md5').update(sqlBody).digest('hex')
+	const preparedImportMd5 = createHash('md5')
+		.update(d1ImportForeignKeysOffPrefix)
+		.update(sqlBody)
+		.digest('hex')
 	const template = manifest({
 		bytes: sqlBody.length,
 		sha256: sha256Text(sqlBody),
@@ -65,14 +70,14 @@ async function seedSealedRestoreDay(bucket: MemoryBucket, day = '2026-07-22') {
 		sealedFullManifestKey(day),
 		serializeBackupFullManifest(full),
 	)
-	return { env, day, sqlMd5 }
+	return { env, day, preparedImportMd5 }
 }
 
 test('runProductionRestore returns failed progress when dr-restore emits warnings', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
-	const { env, day, sqlMd5 } = await seedSealedRestoreDay(bucket)
+	const { env, day, preparedImportMd5 } = await seedSealedRestoreDay(bucket)
 	let exportCalls = 0
 	const sql = 'CREATE TABLE safety(id INTEGER);\n'
 	const progress = await runProductionRestore(
@@ -123,7 +128,7 @@ test('runProductionRestore returns failed progress when dr-restore emits warning
 				if (url.includes('upload.example')) {
 					return new Response(null, {
 						status: 200,
-						headers: { etag: `"${sqlMd5}"` },
+						headers: { etag: `"${preparedImportMd5}"` },
 					})
 				}
 				if (url.includes('/__maintenance/dr-restore')) {

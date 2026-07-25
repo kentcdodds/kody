@@ -362,8 +362,8 @@ export async function runProductionRestore(
 	try {
 		await publish()
 		const validated = await validateSealedDayForRestore(env, payload.day)
-		const sqlObject = await env.BACKUP_BUCKET.get(validated.sqlObjectKey)
-		if (sqlObject === null) {
+		const sqlHead = await env.BACKUP_BUCKET.head(validated.sqlObjectKey)
+		if (sqlHead === null) {
 			throw new BackupError(
 				'restore-sql-missing',
 				`SQL object missing for ${payload.day}`,
@@ -406,8 +406,17 @@ export async function runProductionRestore(
 			accountId: env.SOURCE_ACCOUNT_ID,
 			databaseId: env.SOURCE_DATABASE_ID,
 			token: env.CLOUDFLARE_API_TOKEN,
-			sqlBody: sqlObject.body,
-			md5Etag: validated.sqlR2Etag,
+			sourceMd5Etag: validated.sqlR2Etag,
+			loadSqlBody: async () => {
+				const sqlObject = await env.BACKUP_BUCKET.get(validated.sqlObjectKey)
+				if (sqlObject?.body == null) {
+					throw new BackupError(
+						'restore-sql-missing',
+						`SQL object missing for ${payload.day}`,
+					)
+				}
+				return sqlObject.body
+			},
 			options,
 		})
 		progress.d1ImportComplete = true

@@ -1,32 +1,72 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 
 import { test, vi } from 'vitest'
 
-import { importSqlIntoD1 } from './d1-import-api.ts'
+import {
+	d1ImportForeignKeysOffPrefix,
+	importSqlIntoD1,
+	prepareD1ImportUpload,
+} from './d1-import-api.ts'
 import { BackupError } from './backup-policy.ts'
 
 const ACCOUNT = '11111111-1111-4111-8111-111111111111'
 const DATABASE = '22222222-2222-4222-8222-222222222222'
-const MD5 = 'a'.repeat(32)
+const SOURCE_SQL = 'CREATE TABLE t(id INTEGER);\n'
+const SOURCE_MD5 = createHash('md5').update(SOURCE_SQL).digest('hex')
+const UPLOAD_MD5 = createHash('md5')
+	.update(d1ImportForeignKeysOffPrefix)
+	.update(SOURCE_SQL)
+	.digest('hex')
 
 function importPollSequence(pollResponses: Array<unknown>) {
 	let phase: 'init' | 'upload' | 'ingest' | 'poll' = 'init'
 	let pollIndex = 0
+	let uploadedText: string | null = null
+	let initEtag: string | null = null
 	const fetcher: typeof fetch = async (input, init) => {
 		const url = String(input)
 		if (url.includes('upload.example')) {
 			phase = 'ingest'
+			const body = init?.body
+			if (typeof body === 'string') {
+				uploadedText = body
+			} else if (body instanceof Uint8Array) {
+				uploadedText = new TextDecoder().decode(body)
+			} else if (body instanceof ArrayBuffer) {
+				uploadedText = new TextDecoder().decode(body)
+			} else if (body instanceof ReadableStream) {
+				const reader = body.getReader()
+				const chunks: Array<Uint8Array> = []
+				for (;;) {
+					const { done, value } = await reader.read()
+					if (done) break
+					if (value) chunks.push(value)
+				}
+				const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
+				const merged = new Uint8Array(total)
+				let offset = 0
+				for (const chunk of chunks) {
+					merged.set(chunk, offset)
+					offset += chunk.byteLength
+				}
+				uploadedText = new TextDecoder().decode(merged)
+			} else {
+				throw new Error(`unexpected upload body type: ${typeof body}`)
+			}
 			return new Response(null, {
 				status: 200,
-				headers: { etag: `"${MD5}"` },
+				headers: { etag: `"${UPLOAD_MD5}"` },
 			})
 		}
 		const body = JSON.parse(String(init?.body ?? '{}')) as {
 			action?: string
+			etag?: string
 		}
 		switch (body.action) {
 			case 'init':
 				phase = 'upload'
+				initEtag = typeof body.etag === 'string' ? body.etag : null
 				return Response.json({
 					success: true,
 					result: {
@@ -55,10 +95,43 @@ function importPollSequence(pollResponses: Array<unknown>) {
 	return {
 		fetcher,
 		getPollCount: () => pollIndex,
+		getUploadedText: () => uploadedText,
+		getInitEtag: () => initEtag,
 	}
 }
 
-test('importSqlIntoD1 completes on terminal status and final bookmark shapes', async () => {
+test('prepareD1ImportUpload verifies source MD5 and prefixes foreign_keys=OFF', async () => {
+	let loads = 0
+	const prepared = await prepareD1ImportUpload({
+		sourceMd5Etag: SOURCE_MD5,
+		loadSqlBody: async () => {
+			loads += 1
+			return SOURCE_SQL
+		},
+	})
+	assert.equal(loads, 2)
+	assert.equal(prepared.uploadMd5Hex, UPLOAD_MD5)
+	assert.equal(prepared.sourceBytes, SOURCE_SQL.length)
+	assert.ok(prepared.uploadBody instanceof Uint8Array)
+	assert.equal(
+		new TextDecoder().decode(prepared.uploadBody),
+		`${d1ImportForeignKeysOffPrefix}${SOURCE_SQL}`,
+	)
+})
+
+test('prepareD1ImportUpload rejects source MD5 mismatches', async () => {
+	await assert.rejects(
+		prepareD1ImportUpload({
+			sourceMd5Etag: 'b'.repeat(32),
+			loadSqlBody: async () => SOURCE_SQL,
+		}),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'import-source-etag-mismatch',
+	)
+})
+
+test('importSqlIntoD1 uploads FK-off-prefixed SQL and uses its MD5', async () => {
 	for (const pollResponses of [
 		[
 			{ type: 'import', success: true, status: 'active' },
@@ -78,8 +151,8 @@ test('importSqlIntoD1 completes on terminal status and final bookmark shapes', a
 			accountId: ACCOUNT,
 			databaseId: DATABASE,
 			token: 'token',
-			sqlBody: 'CREATE TABLE t(id INTEGER);\n',
-			md5Etag: MD5,
+			sourceMd5Etag: SOURCE_MD5,
+			loadSqlBody: async () => SOURCE_SQL,
 			options: {
 				fetcher: sequence.fetcher,
 				sleep: async () => undefined,
@@ -88,7 +161,46 @@ test('importSqlIntoD1 completes on terminal status and final bookmark shapes', a
 			},
 		})
 		assert.equal(sequence.getPollCount(), 2)
+		assert.equal(sequence.getInitEtag(), UPLOAD_MD5)
+		assert.equal(
+			sequence.getUploadedText(),
+			`${d1ImportForeignKeysOffPrefix}${SOURCE_SQL}`,
+		)
 	}
+})
+
+test('importSqlIntoD1 streams reopen through loadSqlBody without buffering the source twice in one handle', async () => {
+	const sequence = importPollSequence([
+		{ type: 'import', success: true, status: 'complete' },
+	])
+	let loads = 0
+	await importSqlIntoD1({
+		accountId: ACCOUNT,
+		databaseId: DATABASE,
+		token: 'token',
+		sourceMd5Etag: SOURCE_MD5,
+		loadSqlBody: async () => {
+			loads += 1
+			return new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(new TextEncoder().encode(SOURCE_SQL))
+					controller.close()
+				},
+			})
+		},
+		options: {
+			fetcher: sequence.fetcher,
+			sleep: async () => undefined,
+			maxPollAttempts: 2,
+			pollDelayMs: 1,
+		},
+	})
+	assert.equal(loads, 2)
+	assert.equal(sequence.getInitEtag(), UPLOAD_MD5)
+	assert.equal(
+		sequence.getUploadedText(),
+		`${d1ImportForeignKeysOffPrefix}${SOURCE_SQL}`,
+	)
 })
 
 test('importSqlIntoD1 fails closed on non-terminal, expired, and error polls', async () => {
@@ -130,8 +242,8 @@ test('importSqlIntoD1 fails closed on non-terminal, expired, and error polls', a
 				accountId: ACCOUNT,
 				databaseId: DATABASE,
 				token: 'token',
-				sqlBody: 'CREATE TABLE t(id INTEGER);\n',
-				md5Etag: MD5,
+				sourceMd5Etag: SOURCE_MD5,
+				loadSqlBody: async () => SOURCE_SQL,
 				options: {
 					fetcher: sequence.fetcher,
 					sleep: async () => undefined,

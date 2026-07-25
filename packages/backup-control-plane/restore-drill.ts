@@ -91,8 +91,9 @@ export async function runRestoreDrill(
 			`D1 manifest signature invalid for ${day}`,
 		)
 	}
-	const sqlObject = await env.BACKUP_BUCKET.get(manifest.payload.sql.objectKey)
-	if (sqlObject === null) {
+	const sqlObjectKey = manifest.payload.sql.objectKey
+	const sqlHead = await env.BACKUP_BUCKET.head(sqlObjectKey)
+	if (sqlHead === null) {
 		throw new BackupError('drill-sql-missing', `SQL object missing for ${day}`)
 	}
 
@@ -112,7 +113,7 @@ export async function runRestoreDrill(
 		event: 'restore-drill-started',
 		status: 'success',
 		day,
-		objectKey: manifest.payload.sql.objectKey,
+		objectKey: sqlObjectKey,
 	})
 
 	try {
@@ -127,8 +128,17 @@ export async function runRestoreDrill(
 			accountId,
 			databaseId: created.uuid,
 			token,
-			sqlBody: sqlObject.body,
-			md5Etag: manifest.payload.sql.r2Etag,
+			sourceMd5Etag: manifest.payload.sql.r2Etag,
+			loadSqlBody: async () => {
+				const sqlObject = await env.BACKUP_BUCKET.get(sqlObjectKey)
+				if (sqlObject?.body == null) {
+					throw new BackupError(
+						'drill-sql-missing',
+						`SQL object missing for ${day}`,
+					)
+				}
+				return sqlObject.body
+			},
 			options,
 		})
 		const quickCheckRows = await queryD1Database({
