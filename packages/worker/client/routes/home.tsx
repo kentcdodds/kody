@@ -45,21 +45,40 @@ const workflowSteps = [
 	},
 ] as const
 
+/**
+ * Deliberately short. Each entry has to survive one question: can you get this
+ * somewhere else? Things that read well but fail that test (a template gallery,
+ * server-side secret storage, cloud scheduling, cross-host tool access) are
+ * left off, because a claim like this invites the reader to go check.
+ *
+ * Every entry carries a link to the code or docs that proves it. The source
+ * being readable is what makes that possible, and almost nothing else in this
+ * category can do it.
+ */
 const capabilityHighlights = [
 	{
-		title: 'Access you decide on, service by service',
+		title: 'One-off agent work becomes permanent',
 		description:
-			'Not all-or-nothing access to your machine. You approve each credential, each host, and each package. Secrets stay server-side and never enter your assistant\u2019s context.',
+			'Your agent explores against your real APIs, and the moment something works it saves as code that runs on a schedule with no model in the loop. Not an agent re-run on a timer—no tokens, no drift, no waiting on a model.',
+		proofLabel: 'How packages and jobs work',
+		proofHref:
+			'https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md',
 	},
 	{
-		title: 'The fastest way to start',
+		title: 'Your agent uses your keys without ever reading them',
 		description:
-			'Install a community package in one click. Every install is a fork you own—open it, change it, schedule it, or publish your version back.',
+			'It writes whatever code the job needs, and still cannot see a credential. There is no capability that returns one. Your code references secrets by name and Kody substitutes them at the network boundary, only for hosts you approved.',
+		proofLabel: 'There is no secret_get—check for yourself',
+		proofHref:
+			'https://github.com/kentcdodds/kody/tree/main/packages/worker/src/mcp/capabilities/secrets',
 	},
 	{
-		title: 'One-off work becomes permanent',
+		title: 'Every install is a fork you own',
 		description:
-			'Your agent explores against your real APIs, and once something works it saves as a package that runs on a schedule—no model in the loop, no tokens, no drift.',
+			'Install someone else\u2019s automation in one click and it lands in your account as code you own, on your credentials. Open it, change it, schedule it, publish your version back. Nothing is locked in someone else\u2019s runtime.',
+		proofLabel: 'How community packages work',
+		proofHref:
+			'https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md',
 	},
 ] as const
 
@@ -188,7 +207,11 @@ export function HomeRoute(handle: Handle) {
 						<a href={`${onboardingPath}#discovery`} mix={css(discoveryLinkCss)}>
 							Ask your agent with the discovery prompt
 						</a>
-						— no account needed.
+						— no account needed. Or see{' '}
+						<a href="#why-kody" mix={css(discoveryLinkCss)}>
+							what you can&apos;t get elsewhere
+						</a>
+						.
 					</p>
 				</section>
 
@@ -205,12 +228,15 @@ export function HomeRoute(handle: Handle) {
 					</div>
 				</section>
 
-				<section mix={css(sectionCss)}>
+				<section id="why-kody" mix={css(sectionCss)}>
 					<div mix={css(sectionHeaderCss)}>
-						<h2 mix={css(sectionTitleCss)}>What your assistant keeps</h2>
+						<h2 mix={css(sectionTitleCss)}>
+							Three things you cannot get elsewhere
+						</h2>
 						<p mix={css(sectionDescriptionCss)}>
-							Memory, keys, reusable packages, scheduled jobs, a personal inbox,
-							and durable storage—portable across every MCP host.
+							Kody also keeps your memory, keys, packages, scheduled jobs, a
+							personal inbox, and durable storage. These three are the reasons
+							it exists.
 						</p>
 					</div>
 					<div mix={css(capabilityGridCss)}>
@@ -227,16 +253,17 @@ export function HomeRoute(handle: Handle) {
 				</p>
 
 				<p mix={css(fairSourceLineCss)}>
-					Kody is{' '}
+					Kody&apos;s{' '}
 					<a
 						href="https://github.com/kentcdodds/kody"
 						target="_blank"
 						rel="noreferrer noopener"
 						mix={css(fairSourceLinkCss)}
 					>
-						Fair Source
+						source is open
 					</a>
-					, so you can inspect the code.
+					— read it, fork it, self-host it. Every claim above links to the code
+					that proves it.
 				</p>
 			</section>
 		)
@@ -272,14 +299,26 @@ function renderWorkflowStep({
 function renderCapabilityCard({
 	title,
 	description,
+	proofLabel,
+	proofHref,
 }: {
 	title: string
 	description: string
+	proofLabel: string
+	proofHref: string
 }) {
 	return (
 		<div mix={css(capabilityCardCss)}>
 			<h3 mix={css(capabilityTitleCss)}>{title}</h3>
 			<p mix={css(capabilityDescriptionCss)}>{description}</p>
+			<a
+				href={proofHref}
+				target="_blank"
+				rel="noreferrer noopener"
+				mix={css(capabilityProofLinkCss)}
+			>
+				{proofLabel}
+			</a>
 		</div>
 	)
 }
@@ -507,6 +546,13 @@ const capabilityDescriptionCss = {
 	margin: 0,
 	color: colors.textMuted,
 	lineHeight: 1.7,
+}
+
+const capabilityProofLinkCss = {
+	color: colors.primaryText,
+	fontSize: typography.fontSize.sm,
+	textDecoration: 'none',
+	':hover': { textDecoration: 'underline' },
 }
 
 const trustLineCss = {

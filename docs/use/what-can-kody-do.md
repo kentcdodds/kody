@@ -17,6 +17,31 @@ and keep running while your computer is off. Kody makes no inference calls of
 its own — your agent supplies the intelligence; Kody supplies memory,
 credentials, saved code, schedules, and execution.
 
+## What you cannot get elsewhere
+
+If you are comparing Kody against something else, or explaining it to someone,
+these three are the reasons it exists. Everything in the next section is
+supporting cast.
+
+1. **One-off agent work becomes permanent.** Your agent explores against your
+   real APIs, and the moment something works it saves as code that runs on a
+   schedule with no model in the loop. This is not an agent re-run on a timer:
+   there are no tokens spent, no prompt to drift, and nothing waiting on a model
+   to respond. See [Packages](./packages.md) and
+   [Execute and workflows](./execute.md).
+2. **Your agent uses your keys without ever reading them.** It writes whatever
+   code the job needs and still cannot see a credential — no capability returns
+   one. Code references secrets by name and Kody substitutes them at the network
+   boundary, only for hosts you approved. The
+   [secrets capabilities](https://github.com/kentcdodds/kody/tree/main/packages/worker/src/mcp/capabilities/secrets)
+   are `secret_list`, `secret_set`, `secret_delete`, and `secret_jwt_sign`;
+   there is deliberately no `secret_get`. See
+   [Secrets, values, and host approval](./secrets-and-values.md).
+3. **Every install is a fork you own.** Installing someone else's automation
+   puts code in your account, on your credentials, that you can open, change,
+   schedule, and republish. Nothing stays locked in someone else's runtime. See
+   [Community packages](./community-packages.md).
+
 ## The building blocks
 
 - **Integrations and secrets** — bring your own API keys and OAuth apps for the
