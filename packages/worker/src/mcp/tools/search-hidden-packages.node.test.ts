@@ -104,4 +104,8 @@ test('hidden package retrievers skip search by default, honor includeHiddenPacka
 		env.APP_DB,
 		'source-hidden',
 	)
-})
+	// The dynamic import above pulls in the retriever service module graph, and a
+	// cold transform of it can exceed the 5s default when the worker pool is
+	// saturated (the suite spends far longer importing than running). Same
+	// allowance as search-handler.node.test.ts, which imports the same graph.
+}, 10_000)
