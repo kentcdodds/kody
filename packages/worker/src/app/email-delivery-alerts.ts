@@ -156,7 +156,7 @@ async function notifyAdminsOfEmailDeliveryBurst(input: {
 	].join('\n\n')
 
 	try {
-		await sendCloudflareEmail(
+		const sent = await sendCloudflareEmail(
 			{
 				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
 				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
@@ -173,6 +173,14 @@ async function notifyAdminsOfEmailDeliveryBurst(input: {
 					.join('')}</body></html>`,
 			},
 		)
+		if (!sent.ok) {
+			// Do not write cooldown when Cloudflare email is unconfigured.
+			throw new Error(
+				sent.skipped
+					? 'Cloudflare email sending is not configured.'
+					: 'Failed to send email delivery reputation alert.',
+			)
+		}
 	} catch (error) {
 		console.warn('email-delivery-alert-notification-failed', error)
 		throw error

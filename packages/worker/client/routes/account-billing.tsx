@@ -481,20 +481,14 @@ export function AccountBillingRoute(handle: Handle) {
 								{showManageCta ? (
 									<a
 										href={billingPortalPath}
-										mix={[
-											on('click', (event) => {
-												event.preventDefault()
-												window.location.assign(billingPortalPath)
-											}),
-											css({
-												...(statusInfo?.tone === 'action'
-													? primaryButtonCss
-													: secondaryButtonCss),
-												display: 'inline-block',
-												textDecoration: 'none',
-												textAlign: 'center',
-											}),
-										]}
+										mix={css({
+											...(statusInfo?.tone === 'action'
+												? primaryButtonCss
+												: secondaryButtonCss),
+											display: 'inline-block',
+											textDecoration: 'none',
+											textAlign: 'center',
+										})}
 									>
 										Manage subscription
 									</a>
