@@ -379,8 +379,9 @@ without re-running side effects.
 
 `users.stripe_plan` also stays fresh via an hourly cron lane
 (`refreshStaleStripePlans`: 25 users/sweep, 1h staleness) and an on-page refresh
-when `/account/billing` loads with data older than 60s. Keep the poll as a
-backup if a webhook is missed or the success URL is never hit. Migration
+every time `/account/billing` loads (always calls Stripe so non-persisted
+`cancel_at` / `subscriptionStatus` stay current). Keep the poll as a backup if a
+webhook is missed or the success URL is never hit. Migration
 `0066-stripe-billing.sql` adds `stripe_customer_id` (unique partial index),
 `stripe_plan`, and `stripe_plan_refreshed_at`.
 

@@ -40,9 +40,11 @@ import {
 const billingApiPath = '/account/billing.json'
 const billingCheckoutApiPath = '/account/billing/checkout.json'
 const billingPath = '/account/billing'
+const billingPortalPath = '/account/billing/portal'
 
 type PaidTier = 'pro'
 type PlanTier = 'free' | PaidTier
+type SubscriptionStatusTone = 'ok' | 'warn' | 'action' | 'muted'
 
 const planTiers: Array<{
 	id: PlanTier
@@ -104,6 +106,99 @@ function formatCancelDate(value: string) {
 
 function planCoversTier(effectivePlan: AdminPlanName, tier: PlanTier): boolean {
 	return getPlanRank(effectivePlan) >= getPlanRank(tier)
+}
+
+function describeSubscriptionStatus(status: string): {
+	label: string
+	detail: string
+	tone: SubscriptionStatusTone
+} {
+	switch (status) {
+		case 'active':
+			return {
+				label: 'Active',
+				detail: 'Your Stripe subscription is active.',
+				tone: 'ok',
+			}
+		case 'trialing':
+			return {
+				label: 'Trialing',
+				detail: 'You are on a Stripe trial.',
+				tone: 'ok',
+			}
+		case 'past_due':
+			return {
+				label: 'Past due',
+				detail:
+					'Payment is past due. Update your payment method in Manage subscription to keep paid access.',
+				tone: 'action',
+			}
+		case 'unpaid':
+			return {
+				label: 'Unpaid',
+				detail:
+					'Stripe reports this subscription as unpaid. Open Manage subscription to update billing.',
+				tone: 'action',
+			}
+		case 'canceled':
+			return {
+				label: 'Canceled',
+				detail: 'This Stripe subscription is canceled.',
+				tone: 'muted',
+			}
+		case 'incomplete':
+			return {
+				label: 'Incomplete',
+				detail:
+					'Checkout did not finish. Subscribe again or open Manage subscription if a customer already exists.',
+				tone: 'warn',
+			}
+		case 'incomplete_expired':
+			return {
+				label: 'Incomplete (expired)',
+				detail:
+					'An incomplete checkout expired. Subscribe again to start billing.',
+				tone: 'muted',
+			}
+		case 'paused':
+			return {
+				label: 'Paused',
+				detail: 'This Stripe subscription is paused.',
+				tone: 'warn',
+			}
+		default:
+			return {
+				label: status.replaceAll('_', ' '),
+				detail: `Stripe subscription status: ${status}.`,
+				tone: 'muted',
+			}
+	}
+}
+
+function subscriptionStatusBadgeCss(tone: SubscriptionStatusTone) {
+	const accent =
+		tone === 'action'
+			? colors.error
+			: tone === 'warn'
+				? colors.primaryText
+				: tone === 'ok'
+					? colors.primary
+					: colors.textMuted
+	return {
+		display: 'inline-flex',
+		alignItems: 'center',
+		padding: `0.2rem ${spacing.sm}`,
+		borderRadius: radius.md,
+		border: `1px solid ${accent}`,
+		backgroundColor:
+			tone === 'action'
+				? 'color-mix(in srgb, var(--color-danger) 10%, var(--color-surface))'
+				: colors.surface,
+		color: accent,
+		fontSize: typography.fontSize.xs,
+		fontWeight: typography.fontWeight.semibold,
+		textTransform: 'capitalize' as const,
+	}
 }
 
 export async function accountBillingRouteLoader(
@@ -238,6 +333,21 @@ export function AccountBillingRoute(handle: Handle) {
 		}
 
 		const billing = status === 'ready' ? data : null
+		const subscriptionStatus = billing?.subscriptionStatus?.trim() || null
+		const statusInfo = subscriptionStatus
+			? describeSubscriptionStatus(subscriptionStatus)
+			: null
+		const paymentActionNeeded =
+			subscriptionStatus === 'past_due' || subscriptionStatus === 'unpaid'
+		const showSubscribeCta = Boolean(
+			billing?.checkoutAvailable &&
+			billing &&
+			!planCoversTier(billing.effectivePlan, 'pro') &&
+			!paymentActionNeeded,
+		)
+		const showManageCta = Boolean(
+			billing?.configured && billing.hasStripeCustomer,
+		)
 		const currentPlanItems =
 			billing && billing.manualPlan !== billing.stripePlan
 				? [
@@ -279,21 +389,55 @@ export function AccountBillingRoute(handle: Handle) {
 								granted by an administrator.
 							</AccountManagementMessage>
 						) : null}
+						{billing.configured && !billing.hasStripeCustomer ? (
+							<AccountManagementMessage tone="info">
+								No Stripe customer is linked yet. Subscribe to Pro to create one
+								and manage billing in Stripe.
+							</AccountManagementMessage>
+						) : null}
+						{billing.configured && billing.hasStripeCustomer ? (
+							<p mix={css(descriptionCss)}>
+								Stripe customer linked. Use Manage subscription for payment
+								methods, invoices, and cancellation.
+							</p>
+						) : null}
+						{statusInfo?.tone === 'action' ? (
+							<AccountManagementMessage tone="error">
+								{statusInfo.detail}
+							</AccountManagementMessage>
+						) : null}
 
 						<AccountManagementPanel
 							title="Current plan"
 							description="Your effective plan is the higher of any admin grant and your Stripe subscription."
 						>
-							<p
+							<div
 								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-									color: colors.text,
+									display: 'flex',
+									flexWrap: 'wrap',
+									alignItems: 'center',
+									gap: spacing.sm,
 								})}
 							>
-								{formatPlanLabel(billing.effectivePlan, 'Free')}
-							</p>
+								<p
+									mix={css({
+										margin: 0,
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
+										color: colors.text,
+									})}
+								>
+									{formatPlanLabel(billing.effectivePlan, 'Free')}
+								</p>
+								{statusInfo ? (
+									<span mix={css(subscriptionStatusBadgeCss(statusInfo.tone))}>
+										{statusInfo.label}
+									</span>
+								) : null}
+							</div>
+							{statusInfo && statusInfo.tone !== 'action' ? (
+								<p mix={css(descriptionCss)}>{statusInfo.detail}</p>
+							) : null}
 							{currentPlanItems.length > 0 ? (
 								<MetadataGrid items={currentPlanItems} />
 							) : null}
@@ -303,6 +447,70 @@ export function AccountBillingRoute(handle: Handle) {
 									{formatCancelDate(billing.cancelAt)}.
 								</p>
 							) : null}
+							<p mix={css(descriptionCss)}>
+								Upgrades and payment changes apply after Stripe confirms them
+								(usually within a few seconds via webhooks). Refresh this page
+								if the plan looks stale.
+							</p>
+						</AccountManagementPanel>
+
+						<AccountManagementPanel
+							title="Actions"
+							description="Subscribe, open the Stripe portal, or check entitlement use."
+						>
+							<div
+								mix={css({
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: spacing.sm,
+									alignItems: 'center',
+								})}
+							>
+								{showSubscribeCta ? (
+									<button
+										type="button"
+										disabled={checkoutPending}
+										mix={[
+											on('click', () => void startCheckout()),
+											css(primaryButtonCss),
+										]}
+									>
+										{checkoutPending ? 'Starting checkout…' : 'Subscribe'}
+									</button>
+								) : null}
+								{showManageCta ? (
+									<a
+										href={billingPortalPath}
+										mix={[
+											on('click', (event) => {
+												event.preventDefault()
+												window.location.assign(billingPortalPath)
+											}),
+											css({
+												...(statusInfo?.tone === 'action'
+													? primaryButtonCss
+													: secondaryButtonCss),
+												display: 'inline-block',
+												textDecoration: 'none',
+												textAlign: 'center',
+											}),
+										]}
+									>
+										Manage subscription
+									</a>
+								) : null}
+								<a
+									href={billing.usageHref}
+									mix={css({
+										...secondaryButtonCss,
+										display: 'inline-block',
+										textDecoration: 'none',
+										textAlign: 'center',
+									})}
+								>
+									View usage
+								</a>
+							</div>
 						</AccountManagementPanel>
 
 						<AccountManagementPanel
@@ -327,7 +535,8 @@ export function AccountBillingRoute(handle: Handle) {
 										tier.id !== 'free' &&
 										!isCurrent &&
 										!isIncluded &&
-										billing.checkoutAvailable
+										billing.checkoutAvailable &&
+										!paymentActionNeeded
 
 									return (
 										<div
@@ -394,36 +603,6 @@ export function AccountBillingRoute(handle: Handle) {
 								})}
 							</div>
 						</AccountManagementPanel>
-
-						{billing.hasStripeCustomer && billing.configured ? (
-							<AccountManagementPanel
-								title="Manage subscription"
-								description="Open the Stripe billing portal to cancel, upgrade, update payment methods, or download invoices."
-							>
-								<div>
-									{/* Server-only redirect route: bypass the SPA router with a
-									    full-page navigation, matching the app's established
-									    window.location.assign pattern. */}
-									<a
-										href="/account/billing/portal"
-										mix={[
-											on('click', (event) => {
-												event.preventDefault()
-												window.location.assign('/account/billing/portal')
-											}),
-											css({
-												...secondaryButtonCss,
-												display: 'inline-block',
-												textDecoration: 'none',
-												textAlign: 'center',
-											}),
-										]}
-									>
-										Manage subscription
-									</a>
-								</div>
-							</AccountManagementPanel>
-						) : null}
 					</>
 				) : null}
 

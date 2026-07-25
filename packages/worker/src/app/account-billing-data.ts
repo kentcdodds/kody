@@ -64,14 +64,16 @@ export async function loadAccountBillingData(input: {
 	const manualPlan: PlanName = row ? parseStoredPlanName(row.plan) : 'max'
 	let stripePlan: PlanName | null = parseStripePlanName(row?.stripe_plan)
 	let cancelAt: string | null = null
+	let subscriptionStatus: string | null = null
 	const customerId = row?.stripe_customer_id?.trim() || null
 	const hasStripeCustomer = Boolean(customerId)
 
 	if (configured && customerId) {
-		// Always refresh on page view: cancel_at is not persisted, so serving
-		// the stored stripe_plan would hide a scheduled cancellation. Billing
-		// page loads are rare enough that one Stripe call per view is fine;
-		// failures fall back to the stored plan.
+		// Always refresh on page view: cancel_at and subscriptionStatus are not
+		// persisted, so serving the stored stripe_plan would hide a scheduled
+		// cancellation or past_due state. Billing page loads are rare enough
+		// that one Stripe call per view is fine; failures fall back to the
+		// stored plan with null status.
 		try {
 			const refreshed = await refreshStripePlanForUser({
 				env: input.env,
@@ -81,6 +83,7 @@ export async function loadAccountBillingData(input: {
 			})
 			stripePlan = refreshed.stripePlan
 			cancelAt = refreshed.cancelAt
+			subscriptionStatus = refreshed.subscriptionStatus
 		} catch (refreshError) {
 			console.error('account_billing_refresh_failed', {
 				userId: input.userId,
@@ -102,7 +105,9 @@ export async function loadAccountBillingData(input: {
 		effectivePlan: resolveEffectivePlan(manualPlan, stripePlan),
 		hasStripeCustomer,
 		cancelAt,
+		subscriptionStatus,
 		checkoutAvailable,
+		usageHref: '/account/usage',
 		...(error ? { error } : {}),
 	}
 }

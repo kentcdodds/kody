@@ -1028,7 +1028,11 @@ export type AccountBillingLoaderData = {
 	effectivePlan: AdminPlanName
 	hasStripeCustomer: boolean
 	cancelAt: string | null
+	/** Stripe subscription status from on-page refresh; null if unknown/unavailable. */
+	subscriptionStatus: string | null
 	checkoutAvailable: boolean
+	/** Deep link to the account usage page (limits / consumption). */
+	usageHref: '/account/usage'
 	error?: string
 }
 
