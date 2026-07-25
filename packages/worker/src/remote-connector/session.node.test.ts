@@ -334,3 +334,73 @@ test('tools/list_changed snapshot refresh failures log a warning without Sentry'
 		tools: [],
 	})
 })
+
+test('malformed tools/list snapshot responses still report to Sentry', async () => {
+	const sent: Array<string> = []
+	const socket = {
+		send: (payload: string) => {
+			sent.push(payload)
+		},
+	} as unknown as WebSocket
+	const { session, persistedEntries } = await createRemoteConnectorSession({
+		storedState: {
+			persisted: {
+				connectorId: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [{ name: 'bond_shade_set_position' }],
+		},
+		webSockets: [socket],
+	})
+
+	const refresh = session.webSocketMessage(
+		socket,
+		JSON.stringify({
+			type: 'connector.jsonrpc',
+			message: {
+				jsonrpc: '2.0',
+				method: 'notifications/tools/list_changed',
+			},
+		}),
+	)
+
+	await vi.waitFor(() => {
+		expect(sent.length).toBeGreaterThan(0)
+	})
+	const request = JSON.parse(sent[0]!) as {
+		type: string
+		message: { id: string; method: string }
+	}
+	expect(request).toMatchObject({
+		type: 'connector.jsonrpc',
+		message: { method: 'tools/list' },
+	})
+
+	await session.webSocketMessage(
+		socket,
+		JSON.stringify({
+			type: 'connector.jsonrpc',
+			message: {
+				jsonrpc: '2.0',
+				id: request.message.id,
+				result: null,
+			},
+		}),
+	)
+	await refresh
+
+	expect(captureMessageMock).toHaveBeenCalledWith(
+		'Remote connector session message handler threw.',
+		expect.objectContaining({
+			level: 'error',
+			extra: expect.objectContaining({
+				connectorId: 'home',
+				messageType: 'connector.jsonrpc',
+			}),
+		}),
+	)
+	expect(persistedEntries.get('remote-connector-session-state')).toMatchObject({
+		tools: [{ name: 'bond_shade_set_position' }],
+	})
+})
