@@ -324,9 +324,14 @@ export async function runSearchTool(input: {
 				markdownParts.push(entityResult.markdown)
 			}
 			const allFailed = successCount === 0
+			const failedEntries = outcome.results.filter((entry) => !entry.ok)
 			const allFailuresAreCallerErrors =
-				allFailed &&
-				outcome.results.every((entry) => !entry.ok && entry.callerError)
+				allFailed && failedEntries.every((entry) => entry.callerError)
+			const entityFailures = failedEntries.map((entry) => ({
+				entityRef: entry.entityRef,
+				error: entry.error,
+				callerError: entry.callerError,
+			}))
 			logMcpEvent({
 				category: 'mcp',
 				tool: 'search',
@@ -345,10 +350,22 @@ export async function runSearchTool(input: {
 							...(allFailuresAreCallerErrors
 								? { callerError: true }
 								: {
-										cause: new Error('All entity lookups failed.'),
+										cause: new Error('All entity lookups failed.', {
+											cause: new AggregateError(
+												failedEntries.map(
+													(entry) =>
+														new Error(`${entry.entityRef}: ${entry.error}`),
+												),
+												'Entity lookup failures',
+											),
+										}),
 									}),
 							errorName: 'EntityBatchError',
 							errorMessage: 'All entity lookups failed.',
+							context: {
+								failurePhase: 'handler',
+								entityFailures,
+							},
 						}
 					: {}),
 			})

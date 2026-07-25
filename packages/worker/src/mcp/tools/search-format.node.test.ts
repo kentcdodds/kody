@@ -1,5 +1,6 @@
 import { Script, createContext } from 'node:vm'
 import { expect, test } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	compactCapabilityInputTypeDefinition,
 	formatEntityDetailMarkdown,
@@ -72,6 +73,13 @@ async function executeCapabilityExample(executeExample: string) {
 	).runInNewContext({ kody })
 	return { calls, result }
 }
+
+test('parseEntityRef rejects malformed refs as caller errors', () => {
+	expect(() => parseEntityRef('not-an-entity-ref')).toThrow(McpCallerError)
+	expect(() => parseEntityRef('foo:bar')).toThrow(/Entity type must be one of/)
+	expect(() => parseEntityRef(':capability')).toThrow(McpCallerError)
+	expect(() => parseEntityRef('id:')).toThrow(McpCallerError)
+})
 
 test('search formatting keeps entity refs and generates safe, runnable usage snippets', () => {
 	expect(parseEntityRef('user:preferred_repo:value')).toEqual({

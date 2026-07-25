@@ -669,6 +669,33 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 		)
 
 		logMcpEventSpy.mockClear()
+		mockPerformanceNow.mockReturnValueOnce(420).mockReturnValueOnce(430)
+		const malformedBatch = await handler({
+			entity: ['not-a-ref', 'thing:widget'],
+			conversationId: 'conv-batch-malformed',
+		})
+		expect(malformedBatch.isError).toBe(true)
+		expect(logMcpEventSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: 'failure',
+				callerError: true,
+				errorName: 'EntityBatchError',
+				context: expect.objectContaining({
+					entityFailures: [
+						expect.objectContaining({
+							entityRef: 'not-a-ref',
+							callerError: true,
+						}),
+						expect.objectContaining({
+							entityRef: 'thing:widget',
+							callerError: true,
+						}),
+					],
+				}),
+			}),
+		)
+
+		logMcpEventSpy.mockClear()
 		mockModule.getSavedPackageById.mockImplementation(
 			async (_db: unknown, input: { packageId: string }) => ({
 				id: input.packageId,
@@ -712,6 +739,15 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 			errorName: 'EntityBatchError',
 			cause: expect.objectContaining({
 				message: 'All entity lookups failed.',
+				cause: expect.any(AggregateError),
+			}),
+			context: expect.objectContaining({
+				entityFailures: expect.arrayContaining([
+					expect.objectContaining({
+						callerError: false,
+						error: expect.stringMatching(/D1 read failed/i),
+					}),
+				]),
 			}),
 		})
 		expect(platformFailureCall?.[0]).not.toHaveProperty('callerError', true)

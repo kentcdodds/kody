@@ -80,6 +80,18 @@ test('resolveEntityDetail reports unresolvable entity refs as caller errors', as
 		['user:missing-value:value', 'Persisted value not found for this user.'],
 		['notion:integration', 'Saved integration not found for this user.'],
 		['API_KEY:secret', 'Secret not found for this user.'],
+		[
+			'not-a-ref',
+			'Entity must use the format "{id}:{type}" where type is capability, package, secret, value, or integration.',
+		],
+		[
+			'thing:widget',
+			'Entity type must be one of: capability, package, secret, value, or integration.',
+		],
+		[
+			'workspace:preferred_repo:value',
+			'Value entity scope must be one of: session, app, or user.',
+		],
 	] as const
 
 	for (const [entity, message] of expected) {

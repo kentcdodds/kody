@@ -1,4 +1,5 @@
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { buildKodyCapabilityAccessor } from '#mcp/kody-capability-accessors.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import { type PackageJobSchedule } from '#worker/package-registry/types.ts'
@@ -140,7 +141,7 @@ export function parseEntityRef(entity: string): {
 	const trimmed = entity.trim()
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
-		throw new Error(
+		throw new McpCallerError(
 			'Entity must use the format "{id}:{type}" where type is capability, package, secret, value, or integration.',
 		)
 	}
@@ -153,12 +154,12 @@ export function parseEntityRef(entity: string): {
 		type !== 'value' &&
 		type !== 'integration'
 	) {
-		throw new Error(
+		throw new McpCallerError(
 			'Entity type must be one of: capability, package, secret, value, or integration.',
 		)
 	}
 	if (!id) {
-		throw new Error('Entity id must not be empty.')
+		throw new McpCallerError('Entity id must not be empty.')
 	}
 	return { id, type }
 }
