@@ -1,5 +1,6 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { withAccountWriteLease } from '#app/account-deletion-state.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext, parseMcpCallerContext } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
@@ -104,7 +105,7 @@ function serializeCallerContext(callerContext: PersistedJobCallerContext) {
 function normalizeJobName(name: string) {
 	const trimmed = name.trim()
 	if (!trimmed) {
-		throw new Error('Jobs require a non-empty name.')
+		throw new McpCallerError('Jobs require a non-empty name.')
 	}
 	return trimmed
 }
@@ -112,10 +113,12 @@ function normalizeJobName(name: string) {
 function normalizeJobCode(code: string) {
 	const trimmed = code.trim()
 	if (!trimmed) {
-		throw new Error('Jobs require non-empty code.')
+		throw new McpCallerError('Jobs require non-empty code.')
 	}
 	if (!hasTopLevelDefaultExport(trimmed)) {
-		throw new Error(repoBackedModuleEntrypointExportErrorMessage)
+		// Caller-supplied module shape mistake — keep it off Sentry via
+		// McpCallerError so agent retries do not open platform bug issues.
+		throw new McpCallerError(repoBackedModuleEntrypointExportErrorMessage)
 	}
 	return trimmed
 }

@@ -1,5 +1,7 @@
 import { expect, test, vi, afterEach } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-kody-execution.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
@@ -1519,16 +1521,72 @@ test('updateJob clears params, updates timezone, and disables a job', async () =
 	expect(updated.timezone).toBe('America/Denver')
 	expect(updated.enabled).toBe(false)
 
-	await expect(
-		updateJob({
-			env,
-			callerContext,
-			body: {
-				id: created.id,
-				code: '   ',
+	const emptyCodeError = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: created.id,
+			code: '   ',
+		},
+	}).catch((caught: unknown) => caught)
+	expect(emptyCodeError).toBeInstanceOf(McpCallerError)
+	expect(emptyCodeError).toMatchObject({
+		message: 'Jobs require non-empty code.',
+	})
+})
+
+test('createJob and updateJob reject modules without a default export as McpCallerError', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const bareArrowSnippet = 'async () => ({ ok: true })'
+
+	const createError = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Missing default export',
+			code: bareArrowSnippet,
+			schedule: {
+				type: 'once',
+				runAt: new Date(Date.now() + 60_000).toISOString(),
 			},
-		}),
-	).rejects.toThrow('Jobs require non-empty code.')
+		},
+	}).catch((caught: unknown) => caught)
+
+	expect(createError).toBeInstanceOf(McpCallerError)
+	expect(createError).toMatchObject({
+		message: repoBackedModuleEntrypointExportErrorMessage,
+	})
+
+	const created = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Mutable job for export check',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'once',
+				runAt: new Date(Date.now() + 60_000).toISOString(),
+			},
+		},
+	})
+
+	const updateError = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: created.id,
+			code: bareArrowSnippet,
+		},
+	}).catch((caught: unknown) => caught)
+
+	expect(updateError).toBeInstanceOf(McpCallerError)
+	expect(updateError).toMatchObject({
+		message: repoBackedModuleEntrypointExportErrorMessage,
+	})
 })
 
 test('inspectJobsForUser returns persisted job fields with alarm debug state', async () => {
