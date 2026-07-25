@@ -2,8 +2,8 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { getSystemEmailDomain } from '#worker/email/platform-address.ts'
 
 /**
- * Hourly platform-wide email delivery reputation burst check. Bad outcomes
- * (`complained`, `bounced`, `failed`, `rejected`) are already recorded in
+ * Hourly platform-wide email delivery reputation burst check. Reputation
+ * outcomes (`complained`, `bounced`) are already recorded in
  * `email_delivery_events` and charted on `/admin/insights`; this lane emails
  * admins when the last hour crosses a threshold so sender-reputation trouble
  * is not only visible in charts.
@@ -11,26 +11,24 @@ import { getSystemEmailDomain } from '#worker/email/platform-address.ts'
  * Complements the per-user outbound pause in
  * `packages/worker/src/email/outbound-abuse.ts` — that path stops one account;
  * this path pages operators when the shared domain is under platform-wide load.
+ * Watched types match that outbound-abuse reputation set (`failed` /
+ * `rejected` are delivery failures, not reputation signals).
  */
 
 export const emailDeliveryAlertWindowMinutes = 60
-/** Platform-wide bad outcomes in one hour before admins are paged. */
+/** Platform-wide reputation outcomes in one hour before admins are paged. */
 export const emailDeliveryAlertThreshold = 20
 /** Avoid re-paging on the same sustained spike every hour. */
 export const emailDeliveryAlertCooldownMinutes = 6 * 60
 export const emailDeliveryAlertKvKey = 'ops-alert:email-delivery-burst:v1'
 
 /**
- * Reputation-relevant Cloudflare Email Sending outcomes. Scoped to
- * `provider = 'cloudflare-email'` so inbound routing rejections
- * (`cloudflare-email-routing`) do not inflate the count.
+ * Reputation-relevant Cloudflare Email Sending outcomes (same signals that
+ * drive per-user outbound pause). Scoped to `provider = 'cloudflare-email'`
+ * so inbound routing rejections (`cloudflare-email-routing`) do not inflate
+ * the count.
  */
-const watchedEmailDeliveryEventTypes = [
-	'complained',
-	'bounced',
-	'failed',
-	'rejected',
-] as const
+const watchedEmailDeliveryEventTypes = ['complained', 'bounced'] as const
 
 type EmailDeliveryAlertEnv = {
 	APP_DB: D1Database
@@ -151,7 +149,7 @@ async function notifyAdminsOfEmailDeliveryBurst(input: {
 
 	const baseUrl = input.env.APP_BASE_URL?.trim() || `https://${systemDomain}`
 	const text = [
-		`Kody recorded ${input.count} reputation-relevant email delivery outcomes (complained, bounced, failed, or rejected) in the last ${input.windowMinutes} minutes (threshold ${input.threshold}).`,
+		`Kody recorded ${input.count} reputation-relevant email delivery outcomes (complained or bounced) in the last ${input.windowMinutes} minutes (threshold ${input.threshold}).`,
 		'Per-user outbound pause already stops individual abusers; a platform-wide burst can mean the shared sending domain is under pressure.',
 		`Review the Email delivery health chart at ${baseUrl}/admin/insights.`,
 		`Checked at ${input.now.toISOString()}.`,

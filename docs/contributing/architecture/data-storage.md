@@ -871,6 +871,9 @@ Current retention policies:
   any remaining rows.
 - `audit_events`: global hashed auth/security audit events keep 180 days. They
   are not user-owned D1 rows and remain independent of account deletion/export.
+- `stripe_webhook_events`: platform Stripe webhook idempotency rows keep 30 days
+  by `processed_at`. They are not user-owned and remain independent of account
+  deletion/export.
 
 Migration `0055-retention-indexes.sql` adds the global time-column indexes these
 prunes order by (`created_at` / `day` / `month` / `started_at` across users);

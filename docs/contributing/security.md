@@ -142,8 +142,9 @@ cooldown prevents re-paging on the same sustained spike. Charts on
 A second hourly lane (`email_delivery_alert`, implemented by
 `checkEmailDeliveryBurstAndNotify` in
 `packages/worker/src/app/email-delivery-alerts.ts`) pages admins when
-platform-wide Cloudflare Email Sending outcomes of `complained`, `bounced`,
-`failed`, or `rejected` in the last 60 minutes cross a threshold (default 20).
+platform-wide Cloudflare Email Sending outcomes of `complained` or `bounced`
+in the last 60 minutes cross a threshold (default 20). Those match the
+outbound-abuse reputation signals (`failed` / `rejected` are not counted).
 Cooldown is 6 hours via `BUNDLE_ARTIFACTS_KV`. This complements the per-user
 outbound pause in `outbound-abuse.ts` — that path stops one account; the cron
 pages when the shared sending domain is under platform-wide pressure. Review the

@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { silenceExpectedConsoleErrors } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createBillingLinkReference } from './billing-config.ts'
 import { buildStripeWebhookSignatureHeader } from './stripe-webhook-signature.ts'
@@ -289,6 +290,74 @@ test('stripe webhook verifies signature, links checkout, refreshes subscription,
 	})
 	expect(badSig.status).toBe(400)
 	expect(badSig.body.ok).toBe(false)
+
+	vi.unstubAllGlobals()
+})
+
+test('stripe webhook process failure returns 500 without recording the event', async () => {
+	silenceExpectedConsoleErrors([
+		'stripe_api_error',
+		'stripe_webhook_process_failed',
+	])
+	const email = `wh-fail-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({
+		email,
+		stripeCustomerId: 'cus_fail_retry',
+	})
+	const eventId = `evt_fail_${crypto.randomUUID()}`
+	const event = {
+		id: eventId,
+		type: 'customer.subscription.updated',
+		data: {
+			object: {
+				id: 'sub_fail',
+				customer: 'cus_fail_retry',
+				status: 'active',
+			},
+		},
+	}
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () => jsonResponse({ error: 'stripe down' }, 500)),
+	)
+
+	const result = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({ event }),
+		now,
+	})
+	expect(result.status).toBe(500)
+	expect(result.body.ok).toBe(false)
+	expect(await readWebhookEvent(eventId)).toBeNull()
+
+	// A later delivery must still be able to process after the failed attempt
+	// (no stuck claim that would ack duplicates with 200).
+	stubStripeFetch({
+		subscriptions: {
+			data: [
+				{
+					id: 'sub_fail',
+					status: 'active',
+					cancel_at: null,
+					items: { data: [{ price: { id: 'price_pro' } }] },
+				},
+			],
+		},
+	})
+	const retry = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({ event }),
+		now,
+	})
+	expect(retry).toEqual({ status: 200, body: { ok: true } })
+	expect(await readWebhookEvent(eventId)).toEqual({
+		event_id: eventId,
+		event_type: 'customer.subscription.updated',
+	})
+	expect(await readUserBilling(user.id)).toMatchObject({
+		stripe_customer_id: 'cus_fail_retry',
+		stripe_plan: 'pro',
+	})
 
 	vi.unstubAllGlobals()
 })

@@ -369,11 +369,13 @@ Handled event types:
   the user by `users.stripe_customer_id` and call `refreshStripePlanForUser`
 - `invoice.payment_failed` — same customer lookup + refresh (surfaces
   `subscriptionStatus` such as `past_due` for UX; does not email users)
-- Unknown event types — acknowledge `200` after recording the event id
+- Unknown event types — acknowledge `200` after process+record
 
 Idempotency uses migration `0093-stripe-webhook-events.sql`
-(`stripe_webhook_events.event_id` unique). Duplicate deliveries return `200`
-without re-running side effects.
+(`stripe_webhook_events.event_id` unique). Events are processed first (handlers
+are idempotent), then recorded. A UNIQUE conflict after a successful process is
+treated as duplicate success (`200`). Process failures return `500` without
+inserting so Stripe can retry. Rows older than 30 days are pruned by retention.
 
 ### Poll backup
 

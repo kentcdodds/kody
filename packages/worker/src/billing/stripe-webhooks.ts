@@ -1,8 +1,9 @@
 /**
  * Platform Stripe billing webhook processing (not package inbound webhooks).
  *
- * Verifies Stripe-Signature against STRIPE_WEBHOOK_SECRET, records event ids
- * for idempotency, and reuses subscription-sync helpers for link/refresh.
+ * Verifies Stripe-Signature against STRIPE_WEBHOOK_SECRET, processes the event
+ * (handlers are idempotent), then records the event id so later deliveries can
+ * short-circuit as duplicates. Failures do not insert, so Stripe can retry.
  */
 import {
 	any,
@@ -69,12 +70,16 @@ function readStringField(
 	return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-export async function claimStripeWebhookEvent(input: {
+/**
+ * Records a successfully processed event. UNIQUE conflict means another
+ * delivery already finished the same event — treat as duplicate success.
+ */
+export async function recordStripeWebhookEvent(input: {
 	env: Env
 	eventId: string
 	eventType: string
 	now?: Date
-}): Promise<'claimed' | 'duplicate'> {
+}): Promise<'recorded' | 'duplicate'> {
 	const now = input.now ?? new Date()
 	try {
 		await input.env.APP_DB.prepare(
@@ -83,7 +88,7 @@ export async function claimStripeWebhookEvent(input: {
 		)
 			.bind(input.eventId, input.eventType, now.toISOString())
 			.run()
-		return 'claimed'
+		return 'recorded'
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
 		if (/UNIQUE constraint failed/i.test(message)) {
@@ -91,17 +96,6 @@ export async function claimStripeWebhookEvent(input: {
 		}
 		throw error
 	}
-}
-
-export async function releaseStripeWebhookEventClaim(input: {
-	env: Env
-	eventId: string
-}) {
-	await input.env.APP_DB.prepare(
-		`DELETE FROM stripe_webhook_events WHERE event_id = ?`,
-	)
-		.bind(input.eventId)
-		.run()
 }
 
 async function handleCheckoutSessionCompleted(input: {
@@ -245,7 +239,7 @@ export async function processStripeWebhookEvent(input: {
 			})
 			return
 		default:
-			// Unknown types are acknowledged after idempotency insert.
+			// Unknown types are acknowledged after a successful process+record.
 			return
 	}
 }
@@ -313,16 +307,6 @@ export async function handleStripeWebhookRequest(input: {
 	}
 
 	const event = parsedEvent.value
-	const claim = await claimStripeWebhookEvent({
-		env: input.env,
-		eventId: event.id,
-		eventType: event.type,
-		now: input.now,
-	})
-	if (claim === 'duplicate') {
-		return { status: 200, body: { ok: true, duplicate: true } }
-	}
-
 	try {
 		await processStripeWebhookEvent({
 			env: input.env,
@@ -331,10 +315,6 @@ export async function handleStripeWebhookRequest(input: {
 			now: input.now,
 		})
 	} catch (error) {
-		await releaseStripeWebhookEventClaim({
-			env: input.env,
-			eventId: event.id,
-		})
 		console.error('stripe_webhook_process_failed', {
 			eventId: event.id,
 			eventType: event.type,
@@ -344,6 +324,16 @@ export async function handleStripeWebhookRequest(input: {
 			status: 500,
 			body: { ok: false, error: 'Failed to process Stripe webhook event.' },
 		}
+	}
+
+	const record = await recordStripeWebhookEvent({
+		env: input.env,
+		eventId: event.id,
+		eventType: event.type,
+		now: input.now,
+	})
+	if (record === 'duplicate') {
+		return { status: 200, body: { ok: true, duplicate: true } }
 	}
 
 	return { status: 200, body: { ok: true } }

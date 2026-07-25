@@ -61,6 +61,7 @@ export const emailMessageRetentionDays = 365
 export const entitlementDailyCounterRetentionDays = 400
 export const usageRollupRetentionMonths = 24
 export const auditEventRetentionDays = 180
+export const stripeWebhookEventRetentionDays = 30
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000
 const terminalWorkflowStatusList = terminalWorkflowStatusValues
@@ -187,6 +188,14 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 		description:
 			'Global hashed auth/security audit events keep 180 days and are independent of account deletion.',
 	},
+	{
+		table: 'stripe_webhook_events',
+		scope: 'global',
+		retentionDays: stripeWebhookEventRetentionDays,
+		batchSize: retentionDefaultBatchSize,
+		description:
+			'Stripe platform webhook idempotency rows keep 30 days by processed_at and are independent of account deletion.',
+	},
 ] as const
 
 export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> =
@@ -234,6 +243,7 @@ export type RetentionPruneResult = {
 	entitlementDailyCounters: number
 	usageRollups: number
 	auditEvents: number
+	stripeWebhookEvents: number
 	batchesPerTable: Record<string, number>
 	timeBudgetExhausted: boolean
 }
@@ -1033,6 +1043,29 @@ export async function pruneAuditEventsForRetention(input: {
 	})
 }
 
+export async function pruneStripeWebhookEventsForRetention(input: {
+	db: D1Database
+	now?: Date
+	batchSize?: number
+}) {
+	const cutoff = cutoffIso(
+		input.now ?? new Date(),
+		stripeWebhookEventRetentionDays,
+	)
+	return selectAndDeleteByIds({
+		db: input.db,
+		column: 'event_id',
+		bindings: [cutoff, input.batchSize ?? retentionDefaultBatchSize],
+		sql: `SELECT event_id
+			FROM stripe_webhook_events
+			WHERE processed_at < ?
+			ORDER BY processed_at ASC, event_id ASC
+			LIMIT ?`,
+		table: 'stripe_webhook_events',
+		idColumn: 'event_id',
+	})
+}
+
 export async function pruneRetention(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
 	now?: Date
@@ -1070,6 +1103,7 @@ export async function pruneRetention(input: {
 		entitlementDailyCounters: 0,
 		usageRollups: 0,
 		auditEvents: 0,
+		stripeWebhookEvents: 0,
 		batchesPerTable: {},
 		timeBudgetExhausted: false,
 	}
@@ -1195,6 +1229,13 @@ export async function pruneRetention(input: {
 			() => pruneAuditEventsForRetention({ db, now }),
 			(count) => {
 				result.auditEvents += count
+			},
+		),
+		countTask(
+			'stripe_webhook_events',
+			() => pruneStripeWebhookEventsForRetention({ db, now }),
+			(count) => {
+				result.stripeWebhookEvents += count
 			},
 		),
 	]

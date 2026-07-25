@@ -21,11 +21,13 @@ import {
 	prunePlatformFeedbackForRetention,
 	prunePublishedBundleArtifactsForRetention,
 	pruneRetention,
+	pruneStripeWebhookEventsForRetention,
 	pruneUsageRollupsForRetention,
 	pruneUserEmailMessagesForRetention,
 	pruneWorkflowRunsForRetention,
 	publishedBundleArtifactRetentionDays,
 	shouldRunRetentionCron,
+	stripeWebhookEventRetentionDays,
 	workflowRunRetentionDays,
 } from './retention.ts'
 import { systemEmailOwnerId } from '#worker/email/system-email.ts'
@@ -286,6 +288,11 @@ function createRetentionDb() {
 			path TEXT,
 			reason TEXT,
 			timestamp TEXT NOT NULL
+		);
+		CREATE TABLE stripe_webhook_events (
+			event_id TEXT PRIMARY KEY NOT NULL,
+			event_type TEXT NOT NULL,
+			processed_at TEXT NOT NULL
 		);
 		CREATE TABLE platform_feedback (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -705,7 +712,7 @@ test('platform feedback retention prunes terminal rows in bounded batches and ru
 	])
 })
 
-test('memory suppression, email delivery, and audit retention respect boundaries', async () => {
+test('memory suppression, email delivery, audit, and stripe webhook retention respect boundaries', async () => {
 	const { sqlite, db } = createRetentionDb()
 	for (const [memoryId, lastSeenAt, expiresAt] of [
 		[
@@ -753,6 +760,18 @@ test('memory suppression, email delivery, and audit retention respect boundaries
 			)
 			.run(timestamp)
 	}
+	for (const [eventId, processedAt] of [
+		['evt_old', daysAgo(stripeWebhookEventRetentionDays + 1)],
+		['evt_boundary', daysAgo(stripeWebhookEventRetentionDays)],
+	]) {
+		sqlite
+			.prepare(
+				`INSERT INTO stripe_webhook_events (
+				event_id, event_type, processed_at
+			) VALUES (?, 'checkout.session.completed', ?)`,
+			)
+			.run(eventId, processedAt)
+	}
 
 	expect(await pruneMemorySuppressionsForRetention({ db, now })).toEqual({
 		selected: 1,
@@ -763,6 +782,10 @@ test('memory suppression, email delivery, and audit retention respect boundaries
 		deleted: 1,
 	})
 	expect(await pruneAuditEventsForRetention({ db, now })).toEqual({
+		selected: 1,
+		deleted: 1,
+	})
+	expect(await pruneStripeWebhookEventsForRetention({ db, now })).toEqual({
 		selected: 1,
 		deleted: 1,
 	})
@@ -788,6 +811,15 @@ test('memory suppression, email delivery, and audit retention respect boundaries
 	expect(auditRows.map((row) => row.timestamp)).toEqual([
 		daysAgo(auditEventRetentionDays),
 	])
+	expect(
+		(
+			sqlite
+				.prepare(
+					`SELECT event_id FROM stripe_webhook_events ORDER BY event_id`,
+				)
+				.all() as Array<{ event_id: string }>
+		).map((row) => row.event_id),
+	).toEqual(['evt_boundary'])
 })
 
 test('email message retention deletes old user rows, R2 blobs, attachments, and orphan threads', async () => {
@@ -1469,6 +1501,9 @@ test('retention coverage includes every live growth-pattern table or documented 
 			growthPattern.test(table.name)
 		const hasGlobalAuditShape =
 			table.name === 'audit_events' && columnNames.has('timestamp')
+		const hasGlobalStripeWebhookShape =
+			table.name === 'stripe_webhook_events' &&
+			columnNames.has('processed_at')
 		const hasPlatformFeedbackGrowthShape =
 			table.name === 'platform_feedback' &&
 			columnNames.has('submitter_user_id') &&
@@ -1476,6 +1511,7 @@ test('retention coverage includes every live growth-pattern table or documented 
 		if (
 			hasUserCreatedGrowthShape ||
 			hasGlobalAuditShape ||
+			hasGlobalStripeWebhookShape ||
 			hasPlatformFeedbackGrowthShape
 		) {
 			candidateTables.add(table.name)
