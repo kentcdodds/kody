@@ -5,6 +5,7 @@ import {
 	readParsedAuthSession,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
+import { parsePasswordChangedAtMs } from '#app/request-auth-cache.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -53,6 +54,40 @@ test('isAuthSessionInvalidatedByPasswordChange fails closed for legacy cookies',
 		isAuthSessionInvalidatedByPasswordChange({
 			issuedAt: 101,
 			passwordChangedAtMs: 100,
+		}),
+	).toBe(false)
+})
+
+test('second-precision password_changed_at invalidates cookies later in the same second', () => {
+	const changedAtMs = parsePasswordChangedAtMs('2026-07-25 12:00:00')
+	expect(changedAtMs).toBe(Date.parse('2026-07-25T12:00:00.000Z') + 999)
+	expect(
+		isAuthSessionInvalidatedByPasswordChange({
+			issuedAt: Date.parse('2026-07-25T12:00:00.500Z'),
+			passwordChangedAtMs: changedAtMs,
+		}),
+	).toBe(true)
+	expect(
+		isAuthSessionInvalidatedByPasswordChange({
+			issuedAt: Date.parse('2026-07-25T12:00:01.000Z'),
+			passwordChangedAtMs: changedAtMs,
+		}),
+	).toBe(false)
+})
+
+test('millisecond password_changed_at allows same-second re-login after reset', () => {
+	const changedAtMs = parsePasswordChangedAtMs('2026-07-25T12:00:00.400Z')
+	expect(changedAtMs).toBe(Date.parse('2026-07-25T12:00:00.400Z'))
+	expect(
+		isAuthSessionInvalidatedByPasswordChange({
+			issuedAt: Date.parse('2026-07-25T12:00:00.300Z'),
+			passwordChangedAtMs: changedAtMs,
+		}),
+	).toBe(true)
+	expect(
+		isAuthSessionInvalidatedByPasswordChange({
+			issuedAt: Date.parse('2026-07-25T12:00:00.500Z'),
+			passwordChangedAtMs: changedAtMs,
 		}),
 	).toBe(false)
 })

@@ -82,7 +82,7 @@ async function resolveRequestAuth(
 		}
 	}
 
-	const passwordChangedAtMs = parseSqliteTimestampMs(
+	const passwordChangedAtMs = parsePasswordChangedAtMs(
 		userRecord.password_changed_at,
 	)
 	if (
@@ -150,14 +150,23 @@ async function resolveRequestAuth(
 	}
 }
 
-function parseSqliteTimestampMs(value: string | null | undefined) {
+/**
+ * Parse a stored password_changed_at / SQLite-style timestamp to epoch ms.
+ * Whole-second timestamps (no fractional seconds) are treated as the end of
+ * that second so cookies issued later in the same second cannot survive a
+ * reset that only recorded second precision.
+ */
+export function parsePasswordChangedAtMs(value: string | null | undefined) {
 	if (!value) return null
 	const trimmed = value.trim()
 	if (!trimmed) return null
-	const ms = Date.parse(
-		trimmed.includes('T') ? trimmed : `${trimmed.replace(' ', 'T')}Z`,
-	)
-	return Number.isFinite(ms) ? ms : null
+	const normalized = trimmed.includes('T')
+		? trimmed
+		: `${trimmed.replace(' ', 'T')}Z`
+	const ms = Date.parse(normalized)
+	if (!Number.isFinite(ms)) return null
+	const hasFractionalSeconds = /(?:[T ])\d{2}:\d{2}:\d{2}\.\d/.test(normalized)
+	return hasFractionalSeconds ? ms : ms + 999
 }
 
 export function loadResolvedRequestAuth(

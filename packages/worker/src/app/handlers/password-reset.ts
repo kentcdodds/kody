@@ -254,9 +254,11 @@ export function createPasswordResetConfirmHandler(env: Env) {
 			}
 
 			const passwordHash = await createPasswordHash(password)
+			// Millisecond ISO so same-second re-login after reset is not
+			// invalidated by second-truncated CURRENT_TIMESTAMP-style values.
 			await db.update(usersTable, resetRecord.user_id, {
 				password_hash: passwordHash,
-				password_changed_at: utcSqliteTimestamp(),
+				password_changed_at: new Date().toISOString(),
 				updated_at: utcSqliteTimestamp(),
 			})
 			await db.deleteMany(passwordResetsTable, {
