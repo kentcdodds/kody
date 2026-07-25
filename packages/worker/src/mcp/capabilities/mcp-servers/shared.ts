@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { normalizeMcpServerName } from '@kody-internal/shared/mcp-servers.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
 import {
 	getMcpServerSettingById,
@@ -66,7 +67,7 @@ export async function resolveMcpServerSetting(input: {
 }): Promise<McpServerSettingMetadata> {
 	const identifier = input.server.trim()
 	if (!identifier) {
-		throw new Error('Provide the MCP server id or name in "server".')
+		throw new McpCallerError('Provide the MCP server id or name in "server".')
 	}
 	const byId = await getMcpServerSettingById({
 		env: input.env,
@@ -82,7 +83,8 @@ export async function resolveMcpServerSetting(input: {
 	const byName = settings.find((setting) => setting.name === normalized)
 	if (byName) return byName
 	const available = settings.map((setting) => setting.name).join(', ') || 'none'
-	throw new Error(
+	// Unknown id/name is a caller mistake (stale name, typo). Keep it off Sentry.
+	throw new McpCallerError(
 		`No MCP server matches "${identifier}". Saved servers: ${available}.`,
 	)
 }
