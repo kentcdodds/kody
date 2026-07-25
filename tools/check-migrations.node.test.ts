@@ -139,8 +139,8 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 	).toMatchObject({
 		ok: true,
 		errors: [],
-		nextPrefix: '0093',
-		maxPrefix: 92,
+		nextPrefix: '0094',
+		maxPrefix: 93,
 	})
 
 	const modifiedFiles = baselineFiles.map((entry) =>
@@ -199,7 +199,7 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 	])
 
 	const monotonicAddition: MigrationLedgerEntry = {
-		filename: '0093-normal-addition.sql',
+		filename: '0094-normal-addition.sql',
 		sha256: '2'.repeat(64),
 	}
 	const ledgerWithMonotonicAddition = structuredClone(ledger)
@@ -213,8 +213,8 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 	).toMatchObject({
 		ok: true,
 		errors: [],
-		nextPrefix: '0094',
-		maxPrefix: 93,
+		nextPrefix: '0095',
+		maxPrefix: 94,
 	})
 })
 
@@ -222,11 +222,11 @@ test('trusted history rejects a migration and ledger digest co-edit', async () =
 	const ledger = await readMigrationLedger()
 	const bootstrapFiles = ledger.migrations.map((entry) => ({ ...entry }))
 	const historicalEntry = {
-		filename: '0093-historical.sql',
+		filename: '0094-historical.sql',
 		sha256: hashMigrationContent('SELECT 1;\n'),
 	}
 	const trustedHistory: TrustedMigrationHistory = {
-		ref: 'trusted-base-with-0093',
+		ref: 'trusted-base-with-0094',
 		files: [...bootstrapFiles, historicalEntry],
 		ledgerEntries: [...bootstrapFiles, historicalEntry],
 	}
@@ -244,7 +244,7 @@ test('trusted history rejects a migration and ledger digest co-edit', async () =
 	)
 	expect(result.ok).toBe(false)
 	expectErrorsMention(result.errors, [
-		'0093-historical.sql',
+		'0094-historical.sql',
 		'Historical ledger entries cannot be edited',
 		'differs from trusted history',
 		'Migration and ledger digests cannot be changed together',
