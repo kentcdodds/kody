@@ -23,13 +23,19 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 		),
 	).toBe(true)
 	expect(
-		isRetryableD1LockError(
-			new Error('D1_ERROR: Network connection lost.'),
-		),
+		isRetryableD1LockError(new Error('D1_ERROR: Network connection lost.')),
 	).toBe(true)
 	expect(isRetryableD1LockError(new Error('Network connection lost.'))).toBe(
 		true,
 	)
+	expect(
+		isRetryableD1LockError(new Error('Error: Network connection lost.')),
+	).toBe(true)
+	expect(
+		isRetryableD1LockError(
+			new Error('Network connection lost while uploading...'),
+		),
+	).toBe(false)
 	expect(isRetryableD1LockError(new Error('syntax error near SELECT'))).toBe(
 		false,
 	)

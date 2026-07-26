@@ -22,15 +22,28 @@ export const d1LongRunningExportMessage =
  * Cloudflare D1 binding transport blip (`D1_ERROR: Network connection lost.`).
  * Not an application defect — the Worker lost its session to D1 mid-query.
  * Same retry / Sentry-drop class as SQLITE_BUSY and long-running exports.
+ * Match only the exact D1 forms (optional `Error:` / `D1_ERROR:` prefixes) so
+ * unrelated "Network connection lost while …" messages stay out.
  */
 export const d1NetworkConnectionLostMessage = 'Network connection lost'
+
+function isD1NetworkConnectionLostMessage(message: string) {
+	const normalized = message
+		.trim()
+		.replace(/^Error:\s*/i, '')
+		.replace(/^D1_ERROR:\s*/i, '')
+	return (
+		normalized === d1NetworkConnectionLostMessage ||
+		normalized === `${d1NetworkConnectionLostMessage}.`
+	)
+}
 
 export function isRetryableD1LockMessage(message: string) {
 	return (
 		message.includes('SQLITE_BUSY') ||
 		message.includes('database is locked') ||
 		message.includes(d1LongRunningExportMessage) ||
-		message.includes(d1NetworkConnectionLostMessage)
+		isD1NetworkConnectionLostMessage(message)
 	)
 }
 
