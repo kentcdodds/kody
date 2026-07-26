@@ -1737,6 +1737,30 @@ test('storage_runner and package_service section reads do not load manifests for
 	}
 })
 
+test('storage_runner section treats malformed service storage ids as not found', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+	`)
+
+	await expect(
+		readAccountExportSection({
+			env: { APP_DB: db } as Env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+			section: 'storage_runner',
+			storageId: 'service:pkg%:worker%',
+		}),
+	).rejects.toThrow('Storage runner was not found for account export.')
+})
+
 test('account export source no longer reads package_runtime_runs', () => {
 	const source = readFileSync(
 		fileURLToPath(new URL('./account-export.ts', import.meta.url)),

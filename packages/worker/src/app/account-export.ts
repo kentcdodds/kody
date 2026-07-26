@@ -478,6 +478,27 @@ function exportStorageIdBaseParams(userId: string) {
 	return [userId, userId, userId, userId] as const
 }
 
+function tryDecodeURIComponent(value: string) {
+	try {
+		return decodeURIComponent(value)
+	} catch {
+		return null
+	}
+}
+
+function parseServiceStorageId(storageId: string) {
+	if (!storageId.startsWith('service:')) return null
+	const [packagePart, servicePart] = storageId
+		.slice('service:'.length)
+		.split(':')
+	if (!packagePart || !servicePart) return null
+	const packageId = tryDecodeURIComponent(packagePart)
+	const serviceName = tryDecodeURIComponent(servicePart)
+	if (packageId == null || serviceName == null) return null
+	if (!packageId || !serviceName) return null
+	return { packageId, serviceName }
+}
+
 async function isExportDiscoverableStorageId(
 	env: Env,
 	userId: string,
@@ -489,19 +510,14 @@ async function isExportDiscoverableStorageId(
 		.bind(...exportStorageIdBaseParams(userId), storageId)
 		.first<{ owned: number }>()
 	if (inBase?.owned === 1) return true
-	if (!storageId.startsWith('service:')) return false
-	const [packagePart, servicePart] = storageId
-		.slice('service:'.length)
-		.split(':')
-	if (!packagePart || !servicePart) return false
-	const packageId = decodeURIComponent(packagePart)
-	const serviceName = decodeURIComponent(servicePart)
+	const parsed = parseServiceStorageId(storageId)
+	if (!parsed) return false
 	const row = await env.APP_DB.prepare(
 		`SELECT 1 AS owned
 		FROM package_service_states
 		WHERE user_id = ? AND package_id = ? AND service_name = ?`,
 	)
-		.bind(userId, packageId, serviceName)
+		.bind(userId, parsed.packageId, parsed.serviceName)
 		.first<{ owned: number }>()
 	return row?.owned === 1
 }
