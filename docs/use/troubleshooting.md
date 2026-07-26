@@ -35,3 +35,10 @@ signed in, user-scoped package results are empty.
 If connector-provided tools appear missing, check connector status with
 **`meta_list_remote_connector_status`**. For protocol and URL requirements, see
 [Remote connectors](../contributing/architecture/remote-connectors.md).
+
+## Job, webhook, or package app failed
+
+Open **[`/account/activity`](./activity.md)** (failures-first) or ask your agent
+to use **`run_summary`** / **`run_list`** / **`run_get`**. Successful ad-hoc
+**`execute`** calls are not stored there — only execute failures and other
+runtime surfaces.

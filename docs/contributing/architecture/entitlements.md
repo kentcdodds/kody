@@ -231,7 +231,10 @@ Rules:
 - **Row-count limits** (saved packages, scheduled jobs, repo sessions, secrets,
   concurrent workflows, running package services) are counted **directly from
   their source D1 tables at the enforcement point** via built-in counters in
-  `service.ts`. They do not depend on any metering or rollup tables.
+  `service.ts`. They do not depend on any metering or rollup tables. Running
+  package services are counted from `package_service_states` (status `running`
+  and freshly heartbeaten), not from run-history rows — see
+  [Run records](./run-records.md) (`state-vs-history`).
 - **Rate-style limits** (email sends and receives per day) use the
   `entitlement_daily_counters` table keyed by `(user_id, resource, day)` with
   UTC day keys. Call `consumeDailyEntitlement` on every attempt: it checks the
@@ -257,15 +260,17 @@ Rules:
   user-owned rows with durable payloads (`email_messages.raw_size` plus
   extracted message bodies/metadata, externally stored attachments, values,
   encrypted secrets, memories, saved-package projections, jobs, repo/session
-  metadata, package invocation results, package runtime debug rows, and
-  published artifact metadata). StorageRunner Durable Object buckets expose
-  their own `estimatedBytes`; write chokepoints that target a specific bucket
-  pass `getCurrent` as `D1 estimate + target bucket estimate` and `requested` as
-  the candidate payload size when known. The counter intentionally does **not**
-  attempt to scan Cloudflare Artifacts repository contents, KV snapshot/bundle
-  bodies, R2 object listings beyond `email_messages.raw_size`, or Vectorize:
-  those stores either lack reliable byte metadata or are derived from D1 and are
-  documented in `data-storage.md`.
+  metadata, package invocation results, and published artifact metadata). Run
+  records (per-user `RunLog` Durable Object history, and any leftover
+  `package_runtime_*` D1 rows) are intentionally **excluded** from the quota —
+  they are observability history, not user content. StorageRunner Durable Object
+  buckets expose their own `estimatedBytes`; write chokepoints that target a
+  specific bucket pass `getCurrent` as `D1 estimate + target bucket estimate`
+  and `requested` as the candidate payload size when known. The counter
+  intentionally does **not** attempt to scan Cloudflare Artifacts repository
+  contents, KV snapshot/bundle bodies, R2 object listings beyond
+  `email_messages.raw_size`, or Vectorize: those stores either lack reliable
+  byte metadata or are derived from D1 and are documented in `data-storage.md`.
 
 ### Concurrency
 
@@ -323,7 +328,7 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `scheduled_jobs`              | `createJob` in `packages/worker/src/jobs/service.ts` (exemplar)                                                                |
 | `saved_packages`              | new-package branch of `package_save` and projection insert                                                                     |
-| `package_services`            | `service_start` capability path                                                                                                |
+| `package_services`            | `service_start` capability path (count from `package_service_states`)                                                          |
 | `persistent_package_services` | `service_start` for services declared `mode: 'persistent'`                                                                     |
 | `repo_sessions`               | `repo_open_session` before creating a new session                                                                              |
 | `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                            |

@@ -48,8 +48,9 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
 8. `ack`: **202** + `waitUntil`. `sync`: await (30s) and return export JSON,
    **502** on failure.
 9. Authenticated deliveries (and post-auth rejects such as HMAC / size / missing
-   declaration) record a `webhook_deliveries` row (no payload body); ~50 rows
-   retained per minted webhook.
+   declaration) record a `webhook` surface run record (no payload body). See
+   [Run records](./run-records.md). URL-secret mismatches and pre-auth rate
+   limits still write no delivery history.
 
 ## Isolation
 
@@ -57,12 +58,15 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
   `requireMcpUser(...).userId`.
 - Ingress may look up by username + kody id + webhook name, then immediately
   re-scopes by the owning user.
-- Account deletion/export include `webhook_deliveries` then `webhook_endpoints`.
-  Export redacts `url_secret_hash`.
+- Account deletion/export include `webhook_endpoints` and any leftover
+  `webhook_deliveries` rows (the deliveries table is no longer written; history
+  lives in run records). Export redacts `url_secret_hash`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
   are hashed; verification secrets stay in the secrets primitive.
 
 ## Storage
 
-See migration `0090-webhook-endpoints.sql` and
-[Data storage](./data-storage.md).
+Minted endpoint state is in migration `0090-webhook-endpoints.sql`. Delivery
+history is in the per-user `RunLog` Durable Object (`webhook` surface);
+`webhook_deliveries` remains in schema until a follow-up drop migration. See
+[Data storage](./data-storage.md) and [Run records](./run-records.md).

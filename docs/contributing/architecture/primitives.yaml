@@ -454,6 +454,16 @@ primitives:
     docs:
       - docs/contributing/architecture/usage-metering.md
 
+  - id: run-records
+    group: storage
+    name: Run records
+    summary: Per-user execution history and logs across every runtime surface.
+    code:
+      - packages/worker/src/run-records/
+      - packages/worker/src/mcp/capabilities/runs/
+    docs:
+      - docs/contributing/architecture/run-records.md
+
   - id: email-blobs-r2
     group: storage
     name: Email blob storage (R2)
@@ -556,3 +566,18 @@ invariants:
     summary: Raw secrets never appear in prompts, chat, results, or app source.
     docs:
       - docs/contributing/architecture/data-storage.md
+
+  - id: state-vs-history
+    summary:
+      Entity rows hold current state; run records hold history. Never derive
+      state from history.
+    docs:
+      - docs/contributing/architecture/run-records.md
+
+  - id: no-per-event-shared-writes
+    summary:
+      Per-event writes go to Analytics Engine or per-user DO SQLite, never the
+      shared D1 writer.
+    docs:
+      - docs/contributing/architecture/usage-metering.md
+      - docs/contributing/architecture/run-records.md

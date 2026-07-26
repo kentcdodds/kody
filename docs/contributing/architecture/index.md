@@ -34,6 +34,9 @@ to become.
   Objects.
 - [Usage Metering](./usage-metering.md): per-user usage events, the
   `recordUsage()` helper contract, and the D1 rollup table.
+- [Run records](./run-records.md): per-user execution history and logs across
+  every runtime surface (`RunLog` Durable Object, `runs` MCP domain,
+  `/account/activity`).
 - [Primitives map](./primitives.yaml): stable taxonomy of system primitives and
   invariants for the visual-recap skill
   (`.agents/skills/visual-recap/SKILL.md`). It is not a living feature changelog
@@ -44,7 +47,7 @@ to become.
   with `npm run primitives:check`.
 - [Inbound webhooks](./webhooks.md): user-owned `POST /@:username/webhooks/...`
   ingress that dispatches to a bound saved-package export (HMAC verification,
-  ack/sync modes, delivery log).
+  ack/sync modes, delivery history via run records).
 - [Remote connectors](./remote-connectors.md): generic outbound WebSocket
   protocol, URLs, secrets, and MCP caller context for any `kind` / instance.
 - [MCP client servers](./mcp-client-servers.md): user-added remote MCP servers

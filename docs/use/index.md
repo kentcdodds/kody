@@ -36,6 +36,8 @@ Read in order for a full tour, or jump to a topic.
   sends, and replies
 - [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch
   provider POSTs to a saved-package export
+- [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,
+  and other runtimes (`/account/activity` and the `runs` MCP capabilities)
 - [Mutating actions and confirmations](./mutating-actions.md)
 - [Privacy](./privacy.md) — what Kody stores and what deployment admins can see
   (Terms and Acceptable Use are in-app at `/terms`)

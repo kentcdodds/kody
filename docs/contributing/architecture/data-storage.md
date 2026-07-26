@@ -77,12 +77,13 @@ Deletion must cover these user-owned surfaces:
   represented in the deletion target list, or if the deletion target list
   references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
-  `RemoteConnectorSession`, `PackageRealtimeSession`, and
-  `PackageServiceInstance` are purged through account-deletion RPCs after their
-  D1 identifiers are collected. `MCP` objects remain SDK session-keyed, while
-  `mcp_agent_sessions` indexes each Durable Object id by authenticated stable
-  user id so account deletion can purge stored props, conversation state,
-  raw-fetch state, and transport storage before revoking OAuth grants.
+  `RemoteConnectorSession`, `PackageRealtimeSession`, `PackageServiceInstance`,
+  and `RunLog` are purged through account-deletion RPCs after their D1
+  identifiers are collected (`RunLog` is one object per user and needs no D1 id
+  scan). `MCP` objects remain SDK session-keyed, while `mcp_agent_sessions`
+  indexes each Durable Object id by authenticated stable user id so account
+  deletion can purge stored props, conversation state, raw-fetch state, and
+  transport storage before revoking OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw email MIME blobs in `EMAIL_BLOBS` are enumerated from
@@ -183,6 +184,10 @@ Durable Object export behavior:
   hold application/job/service durable state and are the primary account
   migration surface for Durable Object storage.
 - `JobManager` exposes scheduler alarm/debug state through an export RPC.
+- `RunLog` exports per-user execution history (runs + log lines) through the
+  account-export `run_records` section (`exportRuns` RPC). Retention is
+  self-enforced inside the DO (~30 days / 2,000 runs); see
+  [Run records](./run-records.md).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -237,7 +242,18 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   are only representable when the scope owner is a platform account.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
-  pointers, and run observability counters/history
+  pointers, and run observability state (`last_run_*`, counters). Execution
+  history lives in the per-user `RunLog` Durable Object (see
+  [Run records](./run-records.md)); `jobs.run_history_json` is left unwritten
+  and pending a drop migration.
+- `package_service_states` (`0095-package-service-states.sql`): authoritative
+  per-service liveness projection (`running` / `idle` / `stopped` / `error`) for
+  entitlement concurrency. Upserted and heartbeaten by the package-service
+  Durable Object; not derived from run history.
+- `package_runtime_runs` / `package_runtime_logs`
+  (`0037-package-runtime-debug.sql`): **legacy.** No longer written. Hourly
+  retention still drains leftover rows; a follow-up migration drops the tables.
+  New execution history is in `RunLog`.
 - `entity_sources`: durable mapping from user-facing entities to Artifacts repos
   and their latest published commit
 - `saved_packages`: package metadata/search projection derived from published
@@ -415,6 +431,9 @@ via `durableObjectNameFromParts`); domain helpers such as
 `userScopedConnectorSessionKey` delegate to that module.
 
 - `JobManager` — `jobManagerDurableObjectName(userId)` → `idFromName(userId)`.
+- `RunLog` — `runLogDurableObjectName(userId)` → `idFromName(userId)`. One
+  execution-history DO per user; there is no `user_id` column inside it because
+  the DO identity is the user. See [Run records](./run-records.md).
 - `McpClientHub` — `mcpClientHubDurableObjectName(userId)` →
   `idFromName(userId.trim())`.
 - `StorageRunner` — `storageRunnerDurableObjectName(userId, storageId)` →
@@ -476,6 +495,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `MCP_OBJECT` (Durable Objects)
 - `REMOTE_CONNECTOR_SESSION` (Durable Objects)
 - `JOB_MANAGER` (Durable Objects)
+- `RUN_LOG` (Durable Objects; per-user run records — see
+  [Run records](./run-records.md))
 - `STORAGE_RUNNER` (Durable Objects)
 - `REPO_SESSION` (Durable Objects)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects)
@@ -626,9 +647,11 @@ on write unless a migration backfills existing rows.
   `jobs.run_history_json`, and `jobs.repo_check_policy_json`
   (`packages/worker/migrations/0018-jobs.sql`,
   `0025-jobs-repo-check-policy.sql`, `packages/worker/src/jobs/repo.ts`).
-  `run_history_json` is capped in code; the other fields rely on parser and
-  normalizer compatibility. Package jobs persist both `storageContext.appId` for
-  value scope and `storageContext.packageId` for package-owned secret scope.
+  `run_history_json` is **no longer written** (run records own history; the
+  column remains until a follow-up drop migration). The other fields rely on
+  parser and normalizer compatibility. Package jobs persist both
+  `storageContext.appId` for value scope and `storageContext.packageId` for
+  package-owned secret scope.
 - `saved_packages.tags_json` and `community_listings.tags_json`
   (`0027-saved-packages.sql`, `0045-community-listings.sql`) are `string[]`
   projections.
@@ -649,12 +672,13 @@ on write unless a migration backfills existing rows.
   ingestion; `email_messages.delivery_status` is the latest provider state,
   separate from send-request `processing_status`.
 - `webhook_endpoints` / `webhook_deliveries` (`0090-webhook-endpoints.sql`)
-  store per-user minted URL state for `package.json#kody.webhooks` and recent
-  delivery metadata, keyed by `(user_id, package_id, webhook_name)`. URL secrets
-  are SHA-256 hashed; verification secrets stay in the secrets primitive
-  (`secretName` at delivery time). Delivery rows never store payload bodies and
-  are pruned to the newest ~50 per minted webhook on insert. See
-  [Inbound webhooks](./webhooks.md).
+  store per-user minted URL state for `package.json#kody.webhooks`, keyed by
+  `(user_id, package_id, webhook_name)`. URL secrets are SHA-256 hashed;
+  verification secrets stay in the secrets primitive (`secretName` at delivery
+  time). Delivery history is recorded as `webhook` surface run records (see
+  [Run records](./run-records.md) and [Inbound webhooks](./webhooks.md));
+  `webhook_deliveries` is **no longer written** and remains until a follow-up
+  drop migration. Account deletion/export still include leftover delivery rows.
 - `system_email_daily_counters` (`0051-system-email-daily-counters.sql`) stores
   fixed per-local daily receive counters for operator-owned system inboxes.
   These counters are not user entitlements and are pruned by the system-email
@@ -677,8 +701,10 @@ on write unless a migration backfills existing rows.
   token-refresh writes) always require the grant. Package-scoped secrets are
   owned exclusively by the package id in their bucket binding.
 - `package_runtime_runs.metadata_json` and `package_runtime_logs.fields_json`
-  (`0037-package-runtime-debug.sql`) store bounded debug metadata and log
-  fields.
+  (`0037-package-runtime-debug.sql`) are **legacy** JSON shapes. Those tables
+  are no longer written; new metadata and log fields live in the `RunLog`
+  Durable Object (`runs.metadata_json`, `run_logs.fields_json`). A follow-up
+  migration drops the D1 tables.
 
 ### Durable Object id contracts
 
@@ -691,6 +717,7 @@ builders are centralized in
 to `durableObjectNameFromParts`).
 
 - `JobManager`: `idFromName(userId)` (no trim).
+- `RunLog`: `idFromName(userId)` (no trim); one execution-history DO per user.
 - `McpClientHub`: `idFromName(userId.trim())`.
 - `StorageRunner`: `idFromName(JSON.stringify([userId, storageId]))`.
 - `RepoSession`: `idFromName(repo_sessions.id)`; the key is not user-prefixed,
@@ -823,15 +850,16 @@ documented exemption.
 
 Current retention policies:
 
-- `package_runtime_runs` / `package_runtime_logs`: keep 30 days of debug runs
-  and at most 500 runs per `(user_id, package_id)`. Logs are deleted before
-  their runs, and orphan logs are pruned separately. Rows with
-  `status = 'running'`, active invocation/workflow/session references, or a
-  running child debug run are kept. The age prune is index-driven; the
-  per-package cap prune ranks only a bounded set of the largest
-  `(user_id, package_id)` pairs per batch (`packageRuntimeCapPairsPerBatch`)
-  instead of window-ranking the whole table, so it stays cheap as the table
-  grows.
+- `package_runtime_runs` / `package_runtime_logs`: **legacy drain only.** New
+  run records self-prune inside the per-user `RunLog` Durable Object (about 30
+  days and at most 2,000 runs per user, failure-last — see
+  [Run records](./run-records.md)). These D1 lanes keep draining leftover rows
+  (30 days / at most 500 runs per `(user_id, package_id)`, with the same
+  running/reference keep rules as before) until a follow-up migration drops the
+  tables. Logs are deleted before their runs, and orphan logs are pruned
+  separately. The age prune is index-driven; the per-package cap prune ranks
+  only a bounded set of the largest `(user_id, package_id)` pairs per batch
+  (`packageRuntimeCapPairsPerBatch`) instead of window-ranking the whole table.
 - `package_invocations`: keep terminal idempotency rows for 90 days. Rows with
   `status = 'in_progress'` are never pruned so duplicate requests cannot bypass
   the in-flight guard.

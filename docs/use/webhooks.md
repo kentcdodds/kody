@@ -64,7 +64,9 @@ Use the MCP `webhooks` domain:
 
 Other capabilities: `webhook_list` (declarations joined with minted/enabled
 state), `webhook_url_rotate`, `webhook_enable`, `webhook_disable`, and
-`webhook_delivery_list` (metadata only; bodies are never stored).
+`webhook_delivery_list` (metadata only; bodies are never stored). The same
+delivery history also appears under [Activity](./activity.md)
+(`/account/activity` and the `runs` capabilities).
 
 ## Ingress URL
 
