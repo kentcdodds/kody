@@ -7,6 +7,7 @@ export type UserOwnedDurableObjectSurface = {
 		| 'mcp_client_hub'
 		| 'package_realtime_session'
 		| 'package_service_instance'
+		| 'run_log'
 		| 'mcp'
 	binding: string
 	/** Result key used in AccountDeletionResult.clearedDurableObjects when purged */
@@ -113,6 +114,14 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			binding: 'PACKAGE_SERVICE_INSTANCE',
 			deletionResultKey: 'packageServiceInstances',
 			export: 'include',
+		},
+		{
+			id: 'run_log',
+			binding: 'RUN_LOG',
+			deletionResultKey: 'runLogs',
+			export: 'include',
+			notes:
+				'Execution history and captured logs across every runtime surface. Self-prunes inside the DO rather than through a retention cron lane.',
 		},
 		{
 			id: 'mcp',

@@ -410,9 +410,9 @@ export async function readUserD1StorageBytes(input: {
 			WHERE user_id = ?`,
 			[userId],
 		),
-		// Runtime run/log records are observability history, not user content.
-		// They are intentionally excluded from the storage quota (and are moving
-		// out of D1 into a per-user Durable Object).
+		// Run records are observability history, not user content, and now live
+		// in a per-user RunLog Durable Object. They are intentionally excluded
+		// from the storage quota.
 		sumStorageBytes(
 			db,
 			`SELECT COALESCE(SUM(

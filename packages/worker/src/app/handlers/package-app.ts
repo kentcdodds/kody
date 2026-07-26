@@ -125,7 +125,7 @@ function createPackageAppErrorResponse(input: {
 			summary:
 				'The package app started, but its own request handler failed while processing this request.',
 			nextStep:
-				'Ask the package owner to inspect recent package runtime debug runs for this app.',
+				'Ask the package owner to check recent runs for this app under Account → Activity.',
 		},
 		'realtime-connect': {
 			title: 'Package realtime connection failed',

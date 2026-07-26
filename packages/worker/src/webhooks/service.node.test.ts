@@ -6,7 +6,6 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { hashWebhookUrlSecret } from './crypto.ts'
 import {
-	listWebhookDeliveriesForUser,
 	listWebhooksForUser,
 	mintWebhookUrlForUser,
 	rotateWebhookUrlForUser,
@@ -208,35 +207,4 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	})
 	expect(reminted.enabled).toBe(true)
 	expect(reminted.urlSecret).not.toBe(rotatedWhileDisabled.urlSecret)
-
-	const endpoint = await db
-		.prepare(`SELECT id FROM webhook_endpoints WHERE user_id = ?`)
-		.bind(userId)
-		.first<{ id: string }>()
-	await db
-		.prepare(
-			`INSERT INTO webhook_deliveries (
-				id, endpoint_id, user_id, package_id, webhook_name,
-				received_at, outcome, http_status, error, payload_bytes
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-		)
-		.bind(
-			'del-1',
-			endpoint!.id,
-			userId,
-			'pkg-1',
-			'sentry',
-			'2026-07-24T01:00:00.000Z',
-			'delivered',
-			202,
-			10,
-		)
-		.run()
-	const deliveries = await listWebhookDeliveriesForUser({
-		env,
-		userId,
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
-	})
-	expect(deliveries).toHaveLength(1)
 })

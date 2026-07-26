@@ -12,15 +12,11 @@ import { generateWebhookUrlSecret, hashWebhookUrlSecret } from './crypto.ts'
 import { buildWebhookEndpointUrl } from './public-url.ts'
 import {
 	getWebhookEndpointByKey,
-	listWebhookDeliveriesForEndpoint,
 	listWebhookEndpointsForUser,
 	setWebhookEndpointEnabled,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
-import {
-	type WebhookDeliveryRecord,
-	type WebhookEndpointRecord,
-} from './types.ts'
+import { type WebhookEndpointRecord } from './types.ts'
 
 export type ListedWebhook = {
 	packageId: string
@@ -313,40 +309,4 @@ export async function setWebhookEnabledForUser(input: {
 		)
 	}
 	return updated
-}
-
-export async function listWebhookDeliveriesForUser(input: {
-	env: Env
-	userId: string
-	packageId?: string
-	kodyId?: string
-	webhookName: string
-	limit?: number
-}): Promise<Array<WebhookDeliveryRecord>> {
-	const webhookName = input.webhookName.trim()
-	if (!webhookName) throw new Error('webhookName is required.')
-	const savedPackage = await resolveOwnedPackage({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		packageId: input.packageId,
-		kodyId: input.kodyId,
-	})
-	const mint = await getWebhookEndpointByKey({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		packageId: savedPackage.id,
-		webhookName,
-	})
-	if (!mint) {
-		throw new Error(
-			'Webhook URL has not been minted. Call webhook_url_mint first.',
-		)
-	}
-	return listWebhookDeliveriesForEndpoint({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		packageId: savedPackage.id,
-		webhookName,
-		limit: input.limit,
-	})
 }

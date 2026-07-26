@@ -1,9 +1,4 @@
-import {
-	type WebhookDeliveryOutcome,
-	type WebhookDeliveryRecord,
-	type WebhookEndpointRecord,
-	webhookDeliveriesRetainedPerEndpoint,
-} from './types.ts'
+import { type WebhookEndpointRecord } from './types.ts'
 
 type WebhookEndpointRow = {
 	id: string
@@ -16,19 +11,6 @@ type WebhookEndpointRow = {
 	rotated_at: string
 }
 
-type WebhookDeliveryRow = {
-	id: string
-	endpoint_id: string
-	user_id: string
-	package_id: string
-	webhook_name: string
-	received_at: string
-	outcome: WebhookDeliveryOutcome
-	http_status: number
-	error: string | null
-	payload_bytes: number
-}
-
 function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
 	return {
 		id: row.id,
@@ -39,21 +21,6 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
 		enabled: row.enabled === 1,
 		createdAt: row.created_at,
 		rotatedAt: row.rotated_at,
-	}
-}
-
-function mapDeliveryRow(row: WebhookDeliveryRow): WebhookDeliveryRecord {
-	return {
-		id: row.id,
-		endpointId: row.endpoint_id,
-		userId: row.user_id,
-		packageId: row.package_id,
-		webhookName: row.webhook_name,
-		receivedAt: row.received_at,
-		outcome: row.outcome,
-		httpStatus: row.http_status,
-		error: row.error,
-		payloadBytes: row.payload_bytes,
 	}
 }
 
@@ -197,28 +164,4 @@ export async function setWebhookEndpointEnabled(input: {
 		packageId: input.packageId,
 		webhookName: input.webhookName,
 	})
-}
-
-export async function listWebhookDeliveriesForEndpoint(input: {
-	db: D1Database
-	userId: string
-	packageId: string
-	webhookName: string
-	limit?: number
-}): Promise<Array<WebhookDeliveryRecord>> {
-	const limit = Math.min(
-		Math.max(input.limit ?? webhookDeliveriesRetainedPerEndpoint, 1),
-		webhookDeliveriesRetainedPerEndpoint,
-	)
-	const result = await input.db
-		.prepare(
-			`SELECT *
-			FROM webhook_deliveries
-			WHERE user_id = ? AND package_id = ? AND webhook_name = ?
-			ORDER BY received_at DESC, id DESC
-			LIMIT ?`,
-		)
-		.bind(input.userId, input.packageId, input.webhookName, limit)
-		.all<WebhookDeliveryRow>()
-	return (result.results ?? []).map(mapDeliveryRow)
 }
