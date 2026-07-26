@@ -41,6 +41,12 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 			reason:
 				'Per-package activation success counters must outlive retention-pruned run history; they are removed only by account deletion.',
 		},
+		{
+			table: 'user_storage_buckets',
+			kind: 'durable_forever',
+			reason:
+				'Per-user durable storage bucket ownership is current state for backup, export, and deletion enumeration; it is removed only by account deletion.',
+		},
 	] as const
 
 export function getAccountRetentionDispositionCoverage(): Set<string> {

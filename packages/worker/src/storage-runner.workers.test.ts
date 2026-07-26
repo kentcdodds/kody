@@ -4,6 +4,12 @@ import { expect, test } from 'vitest'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import {
+	clearStorageBucketRegistrationDedupeForTests,
+	flushStorageBucketRegistrationsForTests,
+	listUserStorageBucketIds,
+} from '#worker/storage-buckets/service.ts'
+import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	createStorageKodyTools,
@@ -11,6 +17,11 @@ import {
 	StorageRunner,
 	storageRunnerRpc,
 } from './storage-runner.ts'
+
+async function ensureStorageRunnerTestSchema() {
+	await ensureUserStorageBucketsTestSchema(env.APP_DB)
+	clearStorageBucketRegistrationDedupeForTests()
+}
 
 async function ensureStorageBytesEmailTestSchema() {
 	await ensureEntitlementTestSchema(env.APP_DB)
@@ -83,6 +94,7 @@ async function seedPlannedStorageUser(input: {
 }
 
 test('storage runner preserves isolated state per storage id', async () => {
+	await ensureStorageRunnerTestSchema()
 	const storageIdA = createExecuteStorageId()
 	const storageIdB = createExecuteStorageId()
 	const runnerA = storageRunnerRpc({
@@ -160,6 +172,7 @@ test('storage runner preserves isolated state per storage id', async () => {
 
 test('storage runner write tools enforce storage byte entitlements for planned users', async () => {
 	await ensureStorageBytesEmailTestSchema()
+	clearStorageBucketRegistrationDedupeForTests()
 	const limit = planLimits.pro.maxStorageBytes
 	if (limit === null) throw new Error('Expected a numeric pro storage cap.')
 	const plannedEmail = `storage-planned-${crypto.randomUUID()}@example.com`
@@ -226,6 +239,7 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 })
 
 test('storage runner supports raw SQL with explicit writable access', async () => {
+	await ensureStorageRunnerTestSchema()
 	const storageId = createExecuteStorageId()
 	const runner = storageRunnerRpc({
 		env,
@@ -273,6 +287,7 @@ test('storage runner supports raw SQL with explicit writable access', async () =
 })
 
 test('storage runner enforces read-only SQL policy for mutations, multi-statement queries, and literal semicolons', async () => {
+	await ensureStorageRunnerTestSchema()
 	const storageId = createExecuteStorageId()
 	const runner = storageRunnerRpc({
 		env,
@@ -332,4 +347,73 @@ test('storage runner enforces read-only SQL policy for mutations, multi-statemen
 		rowsRead: 0,
 		rowsWritten: 0,
 	})
+})
+
+test('storage runner registers buckets on writes but not on reads', async () => {
+	await ensureStorageRunnerTestSchema()
+	const userId = `storage-register-${crypto.randomUUID()}`
+	const writeStorageId = createExecuteStorageId()
+	const readStorageId = createExecuteStorageId()
+	const writer = storageRunnerRpc({
+		env,
+		userId,
+		storageId: writeStorageId,
+	})
+	const reader = storageRunnerRpc({
+		env,
+		userId,
+		storageId: readStorageId,
+	})
+
+	await reader.getValue({ key: 'missing' })
+	await reader.listValues({ pageSize: 10 })
+	await reader.exportStorage({ pageSize: 10 })
+	await reader.sqlQuery({
+		query: 'select 1 as ok',
+		writable: false,
+	})
+	await flushStorageBucketRegistrationsForTests()
+	await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([])
+
+	await writer.setValue({ key: 'counter', value: 1 })
+	await flushStorageBucketRegistrationsForTests()
+	await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([
+		writeStorageId,
+	])
+})
+
+test('storage runner dedupes bucket registration to one D1 write per isolate', async () => {
+	await ensureStorageRunnerTestSchema()
+	const userId = `storage-dedupe-${crypto.randomUUID()}`
+	const storageId = createExecuteStorageId()
+	let insertCount = 0
+	const originalPrepare = env.APP_DB.prepare.bind(env.APP_DB)
+	env.APP_DB.prepare = ((sql: string) => {
+		if (sql.includes('INSERT INTO user_storage_buckets')) {
+			insertCount += 1
+		}
+		return originalPrepare(sql)
+	}) as typeof env.APP_DB.prepare
+
+	try {
+		const runner = storageRunnerRpc({
+			env,
+			userId,
+			storageId,
+		})
+		await runner.setValue({ key: 'a', value: 1 })
+		await runner.setValue({ key: 'b', value: 2 })
+		await runner.deleteValue({ key: 'a' })
+		await runner.sqlQuery({
+			query: 'create table if not exists t (id integer primary key)',
+			writable: true,
+		})
+		await flushStorageBucketRegistrationsForTests()
+		expect(insertCount).toBe(1)
+		await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([
+			storageId,
+		])
+	} finally {
+		env.APP_DB.prepare = originalPrepare
+	}
 })

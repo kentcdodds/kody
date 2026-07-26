@@ -1,3 +1,5 @@
+import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
+
 /**
  * Non-destructive schema for entitlement primitives in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
@@ -13,6 +15,9 @@
  * stable_user_id TEXT` (SQLite cannot add NOT NULL without a default); callers
  * must insert concrete ids before relying on the unique index. Adding `plan`
  * to preexisting tables uses `NOT NULL DEFAULT 'free'`.
+ *
+ * Also provisions `user_storage_buckets` because entitlement suites that touch
+ * StorageRunner writes register ownership through that table.
  */
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await db
@@ -116,4 +121,5 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 )`,
 		)
 		.run()
+	await ensureUserStorageBucketsTestSchema(db)
 }

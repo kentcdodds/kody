@@ -411,6 +411,10 @@
 		{
 			"filename": "0096-user-package-run-successes.sql",
 			"sha256": "bec0c57fc3254eb17db094499095009985df84e7c309adbebc70704df8928daf"
+		},
+		{
+			"filename": "0097-user-storage-buckets.sql",
+			"sha256": "280af0890f1e517830535f9379d1d90b5bc05b9da5b1d8a5c6b9423ca3da842b"
 		}
 	]
 }
