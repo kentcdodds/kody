@@ -33,7 +33,7 @@ export const d1NetworkConnectionLostMessage = 'Network connection lost'
  * D1's storage/backend hit an internal fault and surfaces a support reference.
  * Same retry / Sentry-drop class as SQLITE_BUSY and binding transport blips.
  * Require the `reference =` token so bare "internal error" from app code
- * stays retryable/Sentry-visible.
+ * stays non-retryable and Sentry-visible.
  */
 const d1InternalErrorReferencePattern =
 	/^internal error;\s*reference\s*=\s*[A-Za-z0-9]+$/i
