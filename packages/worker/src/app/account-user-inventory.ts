@@ -28,7 +28,9 @@ function packageServiceKey(service: AccountUserPackageService) {
 }
 
 /**
- * Enumerate package services for account deletion/export.
+ * Enumerate package services for account deletion and one-shot full export
+ * inventory. Not for paginated export discovery — that path uses D1 keyset SQL
+ * only (see account-export durable_object_summaries).
  *
  * Authoritative sources are the package manifest (`kody.services`) unioned with
  * projected `package_service_states` rows. Manifest loads can fail (network /
@@ -122,9 +124,12 @@ export async function listAccountUserPackageServices(input: {
 }
 
 /**
- * Enumerate StorageRunner bucket ids owned by a user for account
- * deletion/export. Unions authoritative entity tables, the user storage-bucket
- * registry, declared/projected package services, and current RunLog ids.
+ * Enumerate StorageRunner bucket ids for account deletion and one-shot full
+ * export inventory. Not for paginated export discovery — that path uses D1
+ * keyset SQL only (see account-export durable_object_summaries).
+ *
+ * Unions authoritative entity tables, the user storage-bucket registry,
+ * declared/projected package services, and current RunLog ids.
  */
 export async function listAccountUserStorageIds(input: {
 	env: Env

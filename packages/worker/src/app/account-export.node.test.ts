@@ -11,74 +11,6 @@ import {
 } from './account-export.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
-const inventoryMocks = vi.hoisted(() => ({
-	listAccountUserStorageIds:
-		vi.fn<
-			(input: {
-				env: Env
-				userId: string
-				baseUrl: string
-			}) => Promise<Array<string>>
-		>(),
-	listAccountUserPackageServices: vi.fn<
-		(input: { env: Env; userId: string; baseUrl: string }) => Promise<
-			Array<{
-				packageId: string
-				kodyId: string
-				sourceId: string
-				serviceName: string
-			}>
-		>
-	>(),
-}))
-
-vi.mock('#app/account-user-inventory.ts', async (importOriginal) => {
-	const actual = (await importOriginal()) as {
-		listAccountUserStorageIds: (input: {
-			env: Env
-			userId: string
-			baseUrl: string
-		}) => Promise<Array<string>>
-		listAccountUserPackageServices: (input: {
-			env: Env
-			userId: string
-			baseUrl: string
-		}) => Promise<
-			Array<{
-				packageId: string
-				kodyId: string
-				sourceId: string
-				serviceName: string
-			}>
-		>
-	}
-	return {
-		...actual,
-		listAccountUserStorageIds: (input: {
-			env: Env
-			userId: string
-			baseUrl: string
-		}) => {
-			if (inventoryMocks.listAccountUserStorageIds.getMockImplementation()) {
-				return inventoryMocks.listAccountUserStorageIds(input)
-			}
-			return actual.listAccountUserStorageIds(input)
-		},
-		listAccountUserPackageServices: (input: {
-			env: Env
-			userId: string
-			baseUrl: string
-		}) => {
-			if (
-				inventoryMocks.listAccountUserPackageServices.getMockImplementation()
-			) {
-				return inventoryMocks.listAccountUserPackageServices(input)
-			}
-			return actual.listAccountUserPackageServices(input)
-		},
-	}
-})
-
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
 	for (const fileName of readdirSync(migrationsDir)
@@ -911,33 +843,124 @@ test('durable object discovery pages high-cardinality storage ids without nested
 		{ length: 1201 },
 		(_, index) => `storage-${String(index).padStart(4, '0')}`,
 	)
-	inventoryMocks.listAccountUserStorageIds.mockResolvedValue(ids)
-	try {
-		const seen = new Set<string>()
-		let startAfter: string | undefined
-		let pages = 0
-		for (;;) {
-			const page = await readAccountExportSection({
-				env: { APP_DB: {} } as Env,
-				dbUserId: 1,
-				mcpUserId: 'user-a',
-				section: 'durable_object_summaries',
-				kind: 'storage_runner',
-				pageSize: 100,
-				startAfter,
-			})
-			pages += 1
-			for (const item of page.items as Array<{ storageId: string }>) {
-				expect(Array.isArray(item.storageId)).toBe(false)
-				seen.add(item.storageId)
+	let maxRows = 0
+	const db = {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async all<T>() {
+							if (query.includes('SELECT id FROM (')) {
+								const afterId = String(params[4])
+								const limit = Number(params[5])
+								const rows = ids
+									.filter((id) => id > afterId)
+									.slice(0, limit)
+									.map((id) => ({ id }))
+								maxRows = Math.max(maxRows, rows.length)
+								return { results: rows as Array<T> }
+							}
+							if (query.includes('FROM package_service_states')) {
+								return { results: [] as Array<T> }
+							}
+							throw new Error(`Unexpected query: ${query}`)
+						},
+						async first<T>() {
+							return null as T | null
+						},
+					}
+				},
 			}
-			if (!page.truncated) break
-			startAfter = page.nextStartAfter ?? undefined
+		},
+	} as unknown as D1Database
+	const seen = new Set<string>()
+	let startAfter: string | undefined
+	for (;;) {
+		const page = await readAccountExportSection({
+			env: { APP_DB: db } as Env,
+			dbUserId: 1,
+			mcpUserId: 'user-a',
+			section: 'durable_object_summaries',
+			kind: 'storage_runner',
+			pageSize: 100,
+			startAfter,
+		})
+		for (const item of page.items as Array<{ storageId: string }>) {
+			expect(Array.isArray(item.storageId)).toBe(false)
+			seen.add(item.storageId)
 		}
-		expect(seen.size).toBe(1201)
-		expect(pages).toBe(13)
+		if (!page.truncated) break
+		startAfter = page.nextStartAfter ?? undefined
+	}
+	expect(seen.size).toBe(1201)
+	expect(maxRows).toBeLessThanOrEqual(101)
+})
+
+test('durable object discovery paging does not load package manifests', async () => {
+	const loadManifest = vi.spyOn(
+		await import('#worker/package-registry/source.ts'),
+		'loadPackageManifestBySourceId',
+	)
+	loadManifest.mockRejectedValue(new Error('manifest should not be loaded'))
+	try {
+		const { sqlite, db } = createMigratedDb()
+		sqlite.exec(`
+			INSERT INTO users (
+				id, username, email, password_hash, created_at, updated_at,
+				email_verified_at, stable_user_id
+			)
+			VALUES (
+				1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+				'2026-07-05', '2026-07-05', 'user-aaa'
+			);
+			INSERT INTO saved_packages (
+				id, user_id, name, kody_id, description, tags_json, source_id,
+				has_app, hidden, is_private, created_at, updated_at
+			) VALUES (
+				'pkg-1', 'user-aaa', 'Pkg', 'pkg', '', '[]',
+				'src-1', 0, 0, 1, '2026-07-05', '2026-07-05'
+			);
+			INSERT INTO user_storage_buckets (
+				user_id, storage_id, kind, created_at, last_seen_at
+			) VALUES (
+				'user-aaa', 'exec:page-1', 'execute', '2026-07-05', '2026-07-05'
+			);
+			INSERT INTO package_service_states (
+				user_id, package_id, service_name, status, started_at, updated_at
+			) VALUES (
+				'user-aaa', 'pkg-1', 'worker', 'idle',
+				null, '2026-07-05T00:00:00.000Z'
+			);
+		`)
+
+		const storagePage = await readAccountExportSection({
+			env: { APP_DB: db } as Env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+			section: 'durable_object_summaries',
+			kind: 'storage_runner',
+			pageSize: 50,
+		})
+		expect(storagePage.items.length).toBeGreaterThan(0)
+
+		const servicePage = await readAccountExportSection({
+			env: { APP_DB: db } as Env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+			section: 'durable_object_summaries',
+			kind: 'package_service',
+			pageSize: 50,
+		})
+		expect(servicePage.items).toEqual([
+			{
+				kind: 'package_service',
+				packageId: 'pkg-1',
+				serviceName: 'worker',
+			},
+		])
+		expect(loadManifest).not.toHaveBeenCalled()
 	} finally {
-		inventoryMocks.listAccountUserStorageIds.mockReset()
+		loadManifest.mockRestore()
 	}
 })
 

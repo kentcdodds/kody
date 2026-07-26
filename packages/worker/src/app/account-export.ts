@@ -15,7 +15,10 @@ import {
 	readAccountR2ExportPage,
 } from '#app/account-r2-export.ts'
 import { exportJobManagerForUser } from '#worker/jobs/manager-client.ts'
-import { packageServiceRpc } from '#worker/package-runtime/package-service.ts'
+import {
+	buildPackageServiceStorageId,
+	packageServiceRpc,
+} from '#worker/package-runtime/package-service.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
@@ -451,6 +454,18 @@ async function listUserStorageIds(env: Env, userId: string) {
 		baseUrl: 'https://account-export.invalid',
 	})
 }
+
+/** D1-only base storage ids used by discovery paging (no manifests / RunLog). */
+const exportStorageIdBaseSql = `SELECT id FROM (
+	SELECT storage_id AS id FROM jobs
+		WHERE user_id = ? AND storage_id IS NOT NULL
+	UNION SELECT storage_id FROM archived_job_artifacts
+		WHERE user_id = ? AND storage_id IS NOT NULL
+	UNION SELECT storage_id FROM user_storage_buckets
+		WHERE user_id = ?
+	UNION SELECT id FROM saved_packages
+		WHERE user_id = ? AND has_app = 1
+)`
 
 async function listUserSourceSnapshots(env: Env, userId: string) {
 	const rows = await selectRows<{
@@ -1775,54 +1790,138 @@ export async function readAccountExportSection(input: {
 				}
 			}
 			if (input.kind === 'package_service') {
+				// Discovery pages are D1-only keyset SQL so each page stays cheap
+				// and bounded. Manifest-declared services (never projected into
+				// package_service_states) are included by the one-shot
+				// listAccountUserPackageServices path used for full export
+				// inventory and account deletion — not here.
 				const afterPackageId = String(cursor['packageId'] ?? '')
 				const afterName = String(cursor['name'] ?? '')
-				const services = await listUserPackageServices(
-					input.env,
-					input.mcpUserId,
+				const rows = await input.env.APP_DB.prepare(
+					`SELECT package_id, service_name AS name
+					FROM package_service_states
+					WHERE user_id = ?
+						AND (package_id > ? OR (package_id = ? AND service_name > ?))
+					ORDER BY package_id, service_name
+					LIMIT ?`,
 				)
-				const pageRows = services.filter(
-					(service) =>
-						service.packageId > afterPackageId ||
-						(service.packageId === afterPackageId &&
-							service.serviceName > afterName),
-				)
+					.bind(
+						input.mcpUserId,
+						afterPackageId,
+						afterPackageId,
+						afterName,
+						pageSize + 1,
+					)
+					.all<{ package_id: string; name: string }>()
+				const pageRows = rows.results ?? []
 				const truncated = pageRows.length > pageSize
 				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
 				return {
 					section: input.section,
-					items: selected.map((service) => ({
+					items: selected.map((row) => ({
 						kind: input.kind,
-						packageId: service.packageId,
-						serviceName: service.serviceName,
+						packageId: row.package_id,
+						serviceName: row.name,
 					})),
 					truncated,
 					nextStartAfter: truncated
 						? JSON.stringify({
-								packageId: selected.at(-1)!.packageId,
-								name: selected.at(-1)!.serviceName,
+								packageId: selected.at(-1)!.package_id,
+								name: selected.at(-1)!.name,
 							})
 						: null,
 					pageSize,
 					warnings,
 				}
 			}
-			const afterId = String(cursor['afterId'] ?? '')
-			const storageIds = (await listUserStorageIds(input.env, input.mcpUserId))
-				.slice()
-				.sort((left, right) => left.localeCompare(right))
-			const pageRows = storageIds.filter((id) => id > afterId)
+			// Discovery pages are D1-only keyset SQL (user_storage_buckets +
+			// entity tables + package_service_states). Do not call
+			// listAccountUserStorageIds / listAccountUserPackageServices here —
+			// those helpers fetch package manifests and are for one-shot full
+			// export inventory and account deletion completeness.
+			const stage = String(cursor['stage'] ?? 'base')
+			if (stage === 'base') {
+				const afterId = String(cursor['afterId'] ?? '')
+				const rows = await input.env.APP_DB.prepare(
+					`${exportStorageIdBaseSql} WHERE id > ? ORDER BY id LIMIT ?`,
+				)
+					.bind(
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						afterId,
+						pageSize + 1,
+					)
+					.all<{ id: string }>()
+				const pageRows = rows.results ?? []
+				const truncated = pageRows.length > pageSize
+				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
+				return {
+					section: input.section,
+					items: selected.map((row) => ({
+						kind: input.kind,
+						storageId: row.id,
+					})),
+					truncated: true,
+					nextStartAfter: JSON.stringify(
+						truncated
+							? { stage: 'base', afterId: selected.at(-1)!.id }
+							: { stage: 'service', packageId: '', name: '' },
+					),
+					pageSize,
+					warnings,
+				}
+			}
+			const afterPackageId = String(cursor['packageId'] ?? '')
+			const afterName = String(cursor['name'] ?? '')
+			const rows = await input.env.APP_DB.prepare(
+				`SELECT package_id, service_name AS name
+				FROM package_service_states
+				WHERE user_id = ?
+					AND (package_id > ? OR (package_id = ? AND service_name > ?))
+				ORDER BY package_id, service_name
+				LIMIT ?`,
+			)
+				.bind(
+					input.mcpUserId,
+					afterPackageId,
+					afterPackageId,
+					afterName,
+					pageSize + 1,
+				)
+				.all<{ package_id: string; name: string }>()
+			const pageRows = rows.results ?? []
+			const selected = pageRows.slice(0, pageSize)
+			const resultItems: Array<{ kind: string; storageId: string }> = []
+			for (const row of selected) {
+				const storageId = buildPackageServiceStorageId(row.package_id, row.name)
+				const existing = await input.env.APP_DB.prepare(
+					`SELECT 1 AS owned FROM (${exportStorageIdBaseSql}) WHERE id = ?`,
+				)
+					.bind(
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						input.mcpUserId,
+						storageId,
+					)
+					.first<{ owned: number }>()
+				if (existing?.owned !== 1) {
+					resultItems.push({ kind: input.kind, storageId })
+				}
+			}
 			const truncated = pageRows.length > pageSize
-			const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
 			return {
 				section: input.section,
-				items: selected.map((storageId) => ({
-					kind: input.kind,
-					storageId,
-				})),
+				items: resultItems,
 				truncated,
 				nextStartAfter: truncated
-					? JSON.stringify({ afterId: selected.at(-1)! })
+					? JSON.stringify({
+							stage: 'service',
+							packageId: selected.at(-1)!.package_id,
+							name: selected.at(-1)!.name,
+						})
 					: null,
 				pageSize,
 				warnings,
