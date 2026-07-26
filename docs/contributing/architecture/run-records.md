@@ -139,16 +139,14 @@ deployment. Putting every execute failure, job run, webhook delivery, and
 service wake on that writer would serialize unrelated user traffic — the same
 reason usage metering writes Analytics Engine data points instead of upserting
 D1 per event (see [Usage metering](./usage-metering.md) § Sinks). Per-user DO
-SQLite keeps write contention on the user who produced the events.
-
-Writers do not use D1 tables `package_runtime_runs` / `package_runtime_logs`.
-Hourly retention drains any remaining rows; a follow-up migration drops the
-tables. See [Data storage](./data-storage.md).
+SQLite keeps write contention on the user who produced the events. That is the
+`no-per-event-shared-writes` invariant: per-event writes go to Analytics Engine
+or per-user DO SQLite, never the shared D1 writer.
 
 ## Retention
 
 Enforced **inside the DO on every `finishRun`**, not by a global cron lane over
-a shared table:
+a shared D1 table:
 
 | Cap                       | Value                                           |
 | ------------------------- | ----------------------------------------------- |
@@ -173,8 +171,7 @@ authoritative D1 projection upserted and heartbeaten by the service Durable
 Object. History rows can outlive an evicted DO or stay `running` after a crash,
 so they are not a reliable liveness signal. Jobs keep `last_run_*` and counters
 on the `jobs` row for the same reason — those fields are entity state, not a
-substitute for run history. `jobs.run_history_json` is intentionally left
-unwritten.
+substitute for run history.
 
 ## Recipe: instrumenting a new surface
 
