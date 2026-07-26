@@ -403,6 +403,26 @@ test('saveSecret rejects unavailable scoped storage as McpCallerError', async ()
 			error.message ===
 				'Secret scope "session" is unavailable in this context.',
 	)
+
+	await expect(
+		saveSecret({
+			env,
+			userId: 'user-123',
+			scope: 'package',
+			name: 'token',
+			value: 'missing-package',
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: null,
+			},
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message ===
+				'Secret scope "package" is unavailable in this context.',
+	)
 })
 
 test('listPackageSecretsByPackageIds groups package-owned secrets', async () => {
