@@ -18,11 +18,19 @@ function sleep(ms: number) {
 export const d1LongRunningExportMessage =
 	'Currently processing a long-running export'
 
+/**
+ * Cloudflare D1 binding transport blip (`D1_ERROR: Network connection lost.`).
+ * Not an application defect — the Worker lost its session to D1 mid-query.
+ * Same retry / Sentry-drop class as SQLITE_BUSY and long-running exports.
+ */
+export const d1NetworkConnectionLostMessage = 'Network connection lost'
+
 export function isRetryableD1LockMessage(message: string) {
 	return (
 		message.includes('SQLITE_BUSY') ||
 		message.includes('database is locked') ||
-		message.includes(d1LongRunningExportMessage)
+		message.includes(d1LongRunningExportMessage) ||
+		message.includes(d1NetworkConnectionLostMessage)
 	)
 }
 
@@ -42,12 +50,13 @@ export function isRetryableD1LockSentryEvent(event: ErrorEvent) {
 }
 
 /**
- * Retries transient D1 unavailability: SQLITE_BUSY lock contention and
+ * Retries transient D1 unavailability: SQLITE_BUSY lock contention,
  * Cloudflare's "Currently processing a long-running export" (DR / REST
- * exports block other requests). D1 does not automatically retry write
- * queries, so cron lanes and long-running retention batches need
- * application-level backoff when they overlap with concurrent writers or
- * an in-flight export.
+ * exports block other requests), and binding "Network connection lost"
+ * transport blips. D1 does not automatically retry write queries, so cron
+ * lanes and long-running retention batches need application-level backoff
+ * when they overlap with concurrent writers, an in-flight export, or a
+ * brief D1 session drop.
  */
 export async function runD1WithRetry<T>(
 	operation: () => Promise<T>,

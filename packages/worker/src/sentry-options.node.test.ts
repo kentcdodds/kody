@@ -32,6 +32,21 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).toBeNull()
 
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: 'Network connection lost.' }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: 'D1_ERROR: Network connection lost.' }],
+			},
+		}),
+	).toBeNull()
+
 	const userModuleBuildFailure = {
 		exception: {
 			values: [
