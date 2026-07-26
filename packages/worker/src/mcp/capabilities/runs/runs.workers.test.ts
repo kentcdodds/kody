@@ -107,7 +107,11 @@ test(
 			userId: ownerId,
 			id: 'run-job-err',
 			startedAt: new Date(startedAtBase).toISOString(),
-			context: baseContext({ surface: 'job', jobId: 'job-a', name: 'with-logs' }),
+			context: baseContext({
+				surface: 'job',
+				jobId: 'job-a',
+				name: 'with-logs',
+			}),
 			status: 'error',
 			error: new Error('boom'),
 			logs: ['line-one', 'line-two'],
