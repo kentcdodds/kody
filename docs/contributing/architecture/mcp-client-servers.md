@@ -50,8 +50,8 @@ the `/mcp` endpoint (where Kody is the server) and complements remote connectors
    requesting a fresh authorization URL.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
-   `/account/mcp-servers?auth=error` when it does not, for user feedback.
-   Tokens live only in the DO storage; they never reach D1 or the client.
+   `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens
+   live only in the DO storage; they never reach D1 or the client.
 
 Because the callback is resolved through the session cookie, the OAuth state is
 always looked up in the hub belonging to the signed-in user — cross-user
