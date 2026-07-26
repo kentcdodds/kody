@@ -14,6 +14,10 @@ import {
 } from 'cloudflare:workers'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import {
+	readPreExecutionPackageInvocationInfrastructureCode,
+	readRetryablePackageInvocationInfrastructureCode,
+} from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageExport } from '#worker/package-invocations/service.ts'
 import { packageWorkflowInvocationSource } from './package-invocation-sources.ts'
 import {
@@ -173,6 +177,45 @@ function getWorkflowInvocationErrorMessage(response: {
 	return typeof message === 'string' && message.trim()
 		? message
 		: `Package workflow export failed with HTTP ${response.status}.`
+}
+
+function readWorkflowInvocationErrorCode(response: {
+	status: number
+	body: unknown
+}) {
+	const body = response.body
+	if (!body || typeof body !== 'object' || Array.isArray(body)) return null
+	const error = (body as Record<string, unknown>)['error']
+	if (!error || typeof error !== 'object' || Array.isArray(error)) return null
+	const code = (error as Record<string, unknown>)['code']
+	return typeof code === 'string' && code.trim() ? code : null
+}
+
+// Sandbox throws are HTTP 500 `execution_failed`; client mistakes are 4xx.
+// Known infrastructure codes and other 5xx/unexpected statuses stay plain Errors.
+function isPackageWorkflowUserCodeFailure(response: {
+	status: number
+	body: Record<string, unknown>
+}) {
+	if (readRetryablePackageInvocationInfrastructureCode(response)) return false
+	if (readPreExecutionPackageInvocationInfrastructureCode(response)) {
+		return false
+	}
+	if (readWorkflowInvocationErrorCode(response) === 'execution_failed') {
+		return true
+	}
+	return response.status >= 400 && response.status < 500
+}
+
+function throwWorkflowInvocationFailure(response: {
+	status: number
+	body: Record<string, unknown>
+}): never {
+	const message = getWorkflowInvocationErrorMessage(response)
+	if (isPackageWorkflowUserCodeFailure(response)) {
+		throw new UserCodeError(message)
+	}
+	throw new Error(message)
 }
 
 function normalizeNonEmptyString(value: string, fieldName: string) {
@@ -1149,7 +1192,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				},
 			})
 			if (response.status < 200 || response.status >= 300) {
-				throw new UserCodeError(getWorkflowInvocationErrorMessage(response))
+				throwWorkflowInvocationFailure(response)
 			}
 			const result = {
 				status: response.status,

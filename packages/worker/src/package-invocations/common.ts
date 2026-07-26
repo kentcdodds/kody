@@ -129,11 +129,16 @@ export function createRepoContext(source: EntitySourceRow) {
 	}
 }
 
+/**
+ * `null` means the caller already owns the run record. Package-backed workflows
+ * record in `package-workflows.ts` (with `workflowId` + pre-invocation errors),
+ * so the inner invoke must not open a second row.
+ */
 export function resolveInvocationRuntimeSurface(input: {
 	selector: PackageModuleSelector
 	source: string | null
-}): RunSurface {
-	if (input.source === packageWorkflowInvocationSource) return 'workflow'
+}): RunSurface | null {
+	if (input.source === packageWorkflowInvocationSource) return null
 	switch (input.selector.kind) {
 		case 'export':
 			return 'export'

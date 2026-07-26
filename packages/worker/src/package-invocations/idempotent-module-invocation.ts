@@ -316,25 +316,28 @@ export async function invokeSavedPackageModule(input: {
 					kodyId: input.savedPackage.kodyId,
 					sourceId: input.savedPackage.sourceId,
 				}
-				const runRecord: RunRecordContext = {
-					packageId: input.savedPackage.id,
-					kodyId: input.savedPackage.kodyId,
-					sourceId: input.savedPackage.sourceId,
-					publishedCommit: repoSource?.published_commit ?? null,
-					surface: runtimeSurface,
-					name: resolveInvocationRuntimeName({
-						surface: runtimeSurface,
-						invocationName: input.invocationName,
-						topic: input.topic,
-					}),
-					invocationId,
-					idempotencyKey: input.idempotencyKey,
-					metadata: {
-						exportName: input.invocationName,
-						source: input.source,
-						topic: input.topic,
-					},
-				}
+				const runRecord: RunRecordContext | null =
+					runtimeSurface == null
+						? null
+						: {
+								packageId: input.savedPackage.id,
+								kodyId: input.savedPackage.kodyId,
+								sourceId: input.savedPackage.sourceId,
+								publishedCommit: repoSource?.published_commit ?? null,
+								surface: runtimeSurface,
+								name: resolveInvocationRuntimeName({
+									surface: runtimeSurface,
+									invocationName: input.invocationName,
+									topic: input.topic,
+								}),
+								invocationId,
+								idempotencyKey: input.idempotencyKey,
+								metadata: {
+									exportName: input.invocationName,
+									source: input.source,
+									topic: input.topic,
+								},
+							}
 				executionStarted = true
 				const executionResult = await runBundledModuleWithRegistry(
 					input.env,

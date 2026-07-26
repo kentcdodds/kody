@@ -771,12 +771,387 @@ test('DynamicCallableWorkflowBase rejects package export redirect responses', as
 			}),
 		}),
 	)
+	const finishError =
+		runRecordMocks.finishRunRecord.mock.calls.at(-1)?.[0]?.error
+	expect(finishError).toBeInstanceOf(Error)
+	expect(finishError).not.toBeInstanceOf(UserCodeError)
+})
+
+test('package workflow records exactly one workflow run with workflowId', async () => {
+	runRecordMocks.beginRunRecord.mockClear()
+	runRecordMocks.finishRunRecord.mockClear()
+	const binding = createStatefulWorkflowBinding()
+	const env = {
+		APP_DB: createWorkflowRunsDatabase(),
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			workflowName: 'shade-event',
+			runAt: '2026-05-03T12:34:56.000Z',
+			idempotencyKey: 'package-single-run-record',
+			params: { key: 'north' },
+		},
+	})
+	const queued = binding.instances.get(created.id)
+	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	invocationMocks.invokePackageExport.mockReset()
+	invocationMocks.invokePackageExport.mockResolvedValueOnce({
+		status: 200,
+		body: { result: { ok: true } },
+	})
+	const stepDo = vi.fn(
+		async (_name: string, _config: unknown, callback: () => unknown) =>
+			await callback(),
+	)
+	await new DynamicCallableWorkflowBase(
+		{ waitUntil: vi.fn() } as unknown as ExecutionContext,
+		env,
+	).run(
+		{
+			payload: queued.params as never,
+			timestamp: new Date(),
+			instanceId: created.id,
+		},
+		{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+	)
+	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledTimes(1)
+	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			context: expect.objectContaining({
+				surface: 'workflow',
+				name: 'shade-event',
+				packageId: 'pkg-1',
+				workflowId: created.id,
+				metadata: {
+					sourceType: 'package',
+					exportName: './workflow-run-event',
+				},
+			}),
+		}),
+	)
+	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledTimes(1)
+	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledWith(
+		expect.objectContaining({ status: 'success' }),
+	)
+	expect(invocationMocks.invokePackageExport).toHaveBeenCalledWith(
+		expect.objectContaining({
+			request: expect.objectContaining({
+				source: 'package-workflow',
+			}),
+		}),
+	)
+})
+
+test('inline workflow records exactly one workflow run with workflowId', async () => {
+	runRecordMocks.beginRunRecord.mockClear()
+	runRecordMocks.finishRunRecord.mockClear()
+	const binding = createStatefulWorkflowBinding()
+	const env = {
+		APP_DB: createWorkflowRunsDatabase(),
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			code: 'export default async function main(){ return { ok: true }; }',
+			workflowName: 'inline-once',
+			runAt: '2026-05-03T12:34:56.000Z',
+			idempotencyKey: 'inline-single-run-record',
+		},
+	})
+	const queued = binding.instances.get(created.id)
+	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	invocationMocks.runModuleWithRegistry.mockReset()
+	invocationMocks.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+	const stepDo = vi.fn(
+		async (_name: string, _config: unknown, callback: () => unknown) =>
+			await callback(),
+	)
+	await new DynamicCallableWorkflowBase(
+		{ waitUntil: vi.fn() } as unknown as ExecutionContext,
+		env,
+	).run(
+		{
+			payload: queued.params as never,
+			timestamp: new Date(),
+			instanceId: created.id,
+		},
+		{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+	)
+	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledTimes(1)
+	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledWith(
+		expect.objectContaining({
+			context: expect.objectContaining({
+				surface: 'workflow',
+				name: 'inline-once',
+				workflowId: created.id,
+				metadata: { sourceType: 'inline' },
+			}),
+		}),
+	)
+	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledTimes(1)
+	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledWith(
+		expect.objectContaining({ status: 'success' }),
+	)
+})
+
+test('package workflow records failures before the inner invocation starts', async () => {
+	runRecordMocks.beginRunRecord.mockClear()
+	runRecordMocks.finishRunRecord.mockClear()
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			packageId: 'pkg-1',
+			exportName: './workflow-run-event',
+			runAt: '2026-05-03T12:34:56.000Z',
+			idempotencyKey: 'package-pre-invocation-failure',
+		},
+	})
+	const queued = binding.instances.get(created.id)
+	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockReset()
+	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockResolvedValue([])
+	invocationMocks.invokePackageExport.mockReset()
+	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockRejectedValueOnce(
+		new Error('remote connector lookup failed'),
+	)
+	const stepDo = vi.fn(
+		async (_name: string, _config: unknown, callback: () => unknown) =>
+			await callback(),
+	)
+	await expect(
+		new DynamicCallableWorkflowBase(
+			{ waitUntil: vi.fn() } as unknown as ExecutionContext,
+			env,
+		).run(
+			{
+				payload: queued.params as never,
+				timestamp: new Date(),
+				instanceId: created.id,
+			},
+			{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+		),
+	).rejects.toThrow('remote connector lookup failed')
+	expect(invocationMocks.invokePackageExport).not.toHaveBeenCalled()
+	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledTimes(1)
+	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledWith(
+		expect.objectContaining({
+			context: expect.objectContaining({
+				surface: 'workflow',
+				workflowId: created.id,
+			}),
+		}),
+	)
 	expect(runRecordMocks.finishRunRecord).toHaveBeenCalledWith(
 		expect.objectContaining({
 			status: 'error',
-			error: expect.any(UserCodeError),
+			error: expect.objectContaining({
+				message: 'remote connector lookup failed',
+			}),
 		}),
 	)
+	expect(db.workflowRuns.get(created.id)).toMatchObject({
+		status: 'errored',
+		last_error: 'remote connector lookup failed',
+	})
+})
+
+test('package workflow sandbox and 4xx failures throw UserCodeError', async () => {
+	const { UserCodeError, isUserCodeError } =
+		await import('#worker/user-code-error.ts')
+	const cases = [
+		{
+			idempotencyKey: 'package-execution-failed-user-code',
+			response: {
+				status: 500,
+				body: {
+					ok: false,
+					error: {
+						code: 'execution_failed',
+						message: 'boom from user package',
+					},
+				},
+			},
+			message: 'boom from user package',
+		},
+		{
+			idempotencyKey: 'package-export-not-found-user-code',
+			response: {
+				status: 404,
+				body: {
+					ok: false,
+					error: {
+						code: 'export_not_found',
+						message: 'Export "./missing" was not found.',
+					},
+				},
+			},
+			message: 'Export "./missing" was not found.',
+		},
+	] as const
+
+	for (const testCase of cases) {
+		runRecordMocks.beginRunRecord.mockClear()
+		runRecordMocks.finishRunRecord.mockClear()
+		const binding = createStatefulWorkflowBinding()
+		const env = {
+			APP_DB: createWorkflowRunsDatabase(),
+			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+			APP_BASE_URL: 'https://app.example.com',
+		} as Env
+		const created = await createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			packageContext: null,
+			body: {
+				packageId: 'pkg-1',
+				exportName: './workflow-run-event',
+				runAt: '2026-05-03T12:34:56.000Z',
+				idempotencyKey: testCase.idempotencyKey,
+			},
+		})
+		const queued = binding.instances.get(created.id)
+		if (!queued?.params) throw new Error('Expected queued workflow payload.')
+		invocationMocks.invokePackageExport.mockReset()
+		invocationMocks.invokePackageExport.mockResolvedValueOnce(testCase.response)
+		const stepDo = vi.fn(
+			async (_name: string, _config: unknown, callback: () => unknown) =>
+				await callback(),
+		)
+		await expect(
+			new DynamicCallableWorkflowBase(
+				{ waitUntil: vi.fn() } as unknown as ExecutionContext,
+				env,
+			).run(
+				{
+					payload: queued.params as never,
+					timestamp: new Date(),
+					instanceId: created.id,
+				},
+				{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+			),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof UserCodeError &&
+				error.message === testCase.message &&
+				isUserCodeError(error),
+		)
+		expect(runRecordMocks.finishRunRecord).toHaveBeenCalledWith(
+			expect.objectContaining({
+				status: 'error',
+				error: expect.any(UserCodeError),
+			}),
+		)
+	}
+})
+
+test('package workflow infrastructure failures are not UserCodeError', async () => {
+	const { UserCodeError } = await import('#worker/user-code-error.ts')
+	const cases = [
+		{
+			idempotencyKey: 'package-artifact-prep-infra',
+			response: {
+				status: 503,
+				body: {
+					ok: false,
+					error: {
+						code: 'artifact_preparation_failed',
+						message: 'Package artifact preparation failed before execution.',
+					},
+				},
+			},
+			message: 'Package artifact preparation failed before execution.',
+		},
+		{
+			idempotencyKey: 'package-invocation-failed-infra',
+			response: {
+				status: 500,
+				body: {
+					ok: false,
+					error: {
+						code: 'invocation_failed',
+						message: 'Durable Object storage blew up.',
+					},
+				},
+			},
+			message: 'Durable Object storage blew up.',
+		},
+	] as const
+
+	for (const testCase of cases) {
+		runRecordMocks.beginRunRecord.mockClear()
+		runRecordMocks.finishRunRecord.mockClear()
+		const binding = createStatefulWorkflowBinding()
+		const env = {
+			APP_DB: createWorkflowRunsDatabase(),
+			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+			APP_BASE_URL: 'https://app.example.com',
+		} as Env
+		const created = await createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			packageContext: null,
+			body: {
+				packageId: 'pkg-1',
+				exportName: './workflow-run-event',
+				runAt: '2026-05-03T12:34:56.000Z',
+				idempotencyKey: testCase.idempotencyKey,
+			},
+		})
+		const queued = binding.instances.get(created.id)
+		if (!queued?.params) throw new Error('Expected queued workflow payload.')
+		invocationMocks.invokePackageExport.mockReset()
+		invocationMocks.invokePackageExport.mockResolvedValueOnce(testCase.response)
+		const stepDo = vi.fn(
+			async (_name: string, _config: unknown, callback: () => unknown) =>
+				await callback(),
+		)
+		await expect(
+			new DynamicCallableWorkflowBase(
+				{ waitUntil: vi.fn() } as unknown as ExecutionContext,
+				env,
+			).run(
+				{
+					payload: queued.params as never,
+					timestamp: new Date(),
+					instanceId: created.id,
+				},
+				{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+			),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof Error &&
+				!(error instanceof UserCodeError) &&
+				error.message === testCase.message,
+		)
+		const finishError =
+			runRecordMocks.finishRunRecord.mock.calls.at(-1)?.[0]?.error
+		expect(finishError).toBeInstanceOf(Error)
+		expect(finishError).not.toBeInstanceOf(UserCodeError)
+	}
 })
 
 test('createDynamicCallableWorkflow verifies package ownership before queueing package exports', async () => {
