@@ -56,13 +56,24 @@ function runMatchesWebhookName(run: RunRecord, webhookName: string) {
 	return metadataName === webhookName
 }
 
+function inferDeliveryOutcome(
+	run: RunRecord,
+): (typeof webhookOutcomeValues)[number] {
+	const fromMetadata = metadataOutcome(run.metadata)
+	if (fromMetadata) return fromMetadata
+	if (run.status === 'success') return 'delivered'
+	const httpStatus = metadataNumber(run.metadata, ['http_status', 'httpStatus'])
+	if (httpStatus != null && httpStatus >= 400 && httpStatus < 500) {
+		return 'rejected'
+	}
+	return 'failed'
+}
+
 function toDeliveryFromRunRecord(run: RunRecord) {
-	const outcome =
-		metadataOutcome(run.metadata) ??
-		(run.status === 'success' ? 'delivered' : 'failed')
+	const outcome = inferDeliveryOutcome(run)
 	const httpStatus =
 		metadataNumber(run.metadata, ['http_status', 'httpStatus']) ??
-		(outcome === 'delivered' ? 202 : 502)
+		(outcome === 'delivered' ? 202 : outcome === 'rejected' ? 400 : 502)
 	const payloadBytes =
 		metadataNumber(run.metadata, ['payload_bytes', 'payloadBytes']) ?? 0
 	const webhookName =
