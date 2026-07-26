@@ -36,6 +36,24 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 			new Error('Network connection lost while uploading...'),
 		),
 	).toBe(false)
+	expect(
+		isRetryableD1LockError(
+			new Error(
+				'D1_ERROR: internal error; reference = 0u3odos5iotccpol68ppc0eg',
+			),
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockError(
+			new Error('internal error; reference = 0u3odos5iotccpol68ppc0eg'),
+		),
+	).toBe(true)
+	expect(isRetryableD1LockError(new Error('internal error'))).toBe(false)
+	expect(
+		isRetryableD1LockError(
+			new Error('D1_ERROR: internal error while applying migration'),
+		),
+	).toBe(false)
 	expect(isRetryableD1LockError(new Error('syntax error near SELECT'))).toBe(
 		false,
 	)
@@ -86,6 +104,24 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
 		await expect(resultPromise).resolves.toBe('ok')
 		expect(networkRetryOperation).toHaveBeenCalledTimes(2)
+	} finally {
+		vi.useRealTimers()
+	}
+
+	vi.useFakeTimers()
+	const internalErrorRetryOperation = vi
+		.fn()
+		.mockRejectedValueOnce(
+			new Error(
+				'D1_ERROR: internal error; reference = 0u3odos5iotccpol68ppc0eg',
+			),
+		)
+		.mockResolvedValueOnce('ok')
+	try {
+		const resultPromise = runD1WithRetry(internalErrorRetryOperation)
+		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
+		await expect(resultPromise).resolves.toBe('ok')
+		expect(internalErrorRetryOperation).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.useRealTimers()
 	}

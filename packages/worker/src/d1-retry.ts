@@ -27,15 +27,34 @@ export const d1LongRunningExportMessage =
  */
 export const d1NetworkConnectionLostMessage = 'Network connection lost'
 
-function isD1NetworkConnectionLostMessage(message: string) {
-	const normalized = message
+/**
+ * Cloudflare D1 opaque platform failure
+ * (`D1_ERROR: internal error; reference = <id>`). Not an application defect —
+ * D1's storage/backend hit an internal fault and surfaces a support reference.
+ * Same retry / Sentry-drop class as SQLITE_BUSY and binding transport blips.
+ * Require the `reference =` token so bare "internal error" from app code
+ * stays retryable/Sentry-visible.
+ */
+const d1InternalErrorReferencePattern =
+	/^internal error;\s*reference\s*=\s*[A-Za-z0-9]+$/i
+
+function stripD1ErrorPrefixes(message: string) {
+	return message
 		.trim()
 		.replace(/^Error:\s*/i, '')
 		.replace(/^D1_ERROR:\s*/i, '')
+}
+
+function isD1NetworkConnectionLostMessage(message: string) {
+	const normalized = stripD1ErrorPrefixes(message)
 	return (
 		normalized === d1NetworkConnectionLostMessage ||
 		normalized === `${d1NetworkConnectionLostMessage}.`
 	)
+}
+
+function isD1InternalErrorMessage(message: string) {
+	return d1InternalErrorReferencePattern.test(stripD1ErrorPrefixes(message))
 }
 
 export function isRetryableD1LockMessage(message: string) {
@@ -43,7 +62,8 @@ export function isRetryableD1LockMessage(message: string) {
 		message.includes('SQLITE_BUSY') ||
 		message.includes('database is locked') ||
 		message.includes(d1LongRunningExportMessage) ||
-		isD1NetworkConnectionLostMessage(message)
+		isD1NetworkConnectionLostMessage(message) ||
+		isD1InternalErrorMessage(message)
 	)
 }
 
@@ -65,11 +85,12 @@ export function isRetryableD1LockSentryEvent(event: ErrorEvent) {
 /**
  * Retries transient D1 unavailability: SQLITE_BUSY lock contention,
  * Cloudflare's "Currently processing a long-running export" (DR / REST
- * exports block other requests), and binding "Network connection lost"
- * transport blips. D1 does not automatically retry write queries, so cron
- * lanes and long-running retention batches need application-level backoff
- * when they overlap with concurrent writers, an in-flight export, or a
- * brief D1 session drop.
+ * exports block other requests), binding "Network connection lost"
+ * transport blips, and opaque "internal error; reference = …" platform
+ * faults. D1 does not automatically retry write queries, so cron lanes and
+ * long-running retention batches need application-level backoff when they
+ * overlap with concurrent writers, an in-flight export, a brief D1 session
+ * drop, or a D1 backend blip.
  */
 export async function runD1WithRetry<T>(
 	operation: () => Promise<T>,

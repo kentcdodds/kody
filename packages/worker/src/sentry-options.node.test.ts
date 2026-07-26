@@ -47,12 +47,41 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).toBeNull()
 
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'D1_ERROR: internal error; reference = 0u3odos5iotccpol68ppc0eg',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{ value: 'internal error; reference = 0u3odos5iotccpol68ppc0eg' },
+				],
+			},
+		}),
+	).toBeNull()
+
 	const unrelatedNetworkLoss = {
 		exception: {
 			values: [{ value: 'Network connection lost while uploading...' }],
 		},
 	}
 	expect(filterSentryEvent(unrelatedNetworkLoss)).toBe(unrelatedNetworkLoss)
+
+	const bareInternalError = {
+		exception: {
+			values: [{ value: 'internal error' }],
+		},
+	}
+	expect(filterSentryEvent(bareInternalError)).toBe(bareInternalError)
 
 	const userModuleBuildFailure = {
 		exception: {

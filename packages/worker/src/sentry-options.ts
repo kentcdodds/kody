@@ -88,9 +88,10 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// application capture paths (for example scheduled_lane_failed) still
 		// forwarded them. The same applies to "Currently processing a
 		// long-running export" while the nightly DR D1 export holds the DB,
-		// and to "Network connection lost" when the D1 binding drops mid-
-		// query. These are transient platform unavailability errors retried
-		// in app code and should not open or regress Sentry issues.
+		// "Network connection lost" when the D1 binding drops mid-query, and
+		// opaque "internal error; reference = …" platform faults. These are
+		// transient platform unavailability errors retried in app code and
+		// should not open or regress Sentry issues.
 		//
 		// User-module esbuild failures and executor sandbox timeouts from
 		// inline workflows are similarly expected caller mistakes; see
