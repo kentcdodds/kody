@@ -197,12 +197,14 @@ async function listUserStorageIds(
 	env: Env,
 	userId: string,
 	warnings?: Array<string>,
+	packageServices?: ReadonlyArray<UserPackageServiceSnapshot>,
 ) {
 	return await listAccountUserStorageIds({
 		env,
 		userId,
 		baseUrl: 'https://account-deletion.invalid',
 		warnings,
+		packageServices,
 	})
 }
 
@@ -284,6 +286,8 @@ async function listUserPackageServices(
 		userId,
 		baseUrl: 'https://account-deletion.invalid',
 		warnings,
+		// Legacy pre-#955 service arm via includeLegacyRuntimeRuns (issue #956).
+		includeLegacyRuntimeRuns: true,
 	})
 }
 
@@ -342,6 +346,16 @@ async function collectUserDeletionInventory(input: {
 		input.warnings.push(warning)
 		inventoryErrors.push(warning)
 	}
+	// Enumerate services first so storage-id listing can reuse the result and
+	// avoid a second package-manifest pass in the same request.
+	const packageServices = await listUserPackageServices(
+		input.env,
+		input.userId,
+		input.warnings,
+	).catch((error) => {
+		recordInventoryError('package services', error)
+		return [] as Array<UserPackageServiceSnapshot>
+	})
 	const [
 		vectorIds,
 		storageIds,
@@ -352,18 +366,20 @@ async function collectUserDeletionInventory(input: {
 		remoteConnectors,
 		mcpServers,
 		mcpAgentSessions,
-		packageServices,
 	] = await Promise.all([
 		listUserVectorIds(input.env, input.userId).catch((error) => {
 			recordInventoryError('vector ids', error)
 			return [] as Array<string>
 		}),
-		listUserStorageIds(input.env, input.userId, input.warnings).catch(
-			(error) => {
-				recordInventoryError('storage ids', error)
-				return [] as Array<string>
-			},
-		),
+		listUserStorageIds(
+			input.env,
+			input.userId,
+			input.warnings,
+			packageServices,
+		).catch((error) => {
+			recordInventoryError('storage ids', error)
+			return [] as Array<string>
+		}),
 		collectAccountR2Inventory({
 			env: input.env,
 			userId: input.userId,
@@ -399,12 +415,6 @@ async function collectUserDeletionInventory(input: {
 			(error) => {
 				recordInventoryError('MCP agent sessions', error)
 				return [] as Array<McpAgentSession>
-			},
-		),
-		listUserPackageServices(input.env, input.userId, input.warnings).catch(
-			(error) => {
-				recordInventoryError('package services', error)
-				return [] as Array<UserPackageServiceSnapshot>
 			},
 		),
 	])

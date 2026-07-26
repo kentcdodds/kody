@@ -204,6 +204,37 @@ function createTestDb(
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
+								lower.includes('from package_runtime_runs as r') &&
+								lower.includes("r.surface = 'service'")
+							) {
+								const seen = new Set<string>()
+								results = []
+								for (const row of rows.package_runtime_runs ?? []) {
+									if (row['user_id'] !== userId) continue
+									if (row['surface'] !== 'service') continue
+									if (row['name'] == null) continue
+									const savedPackage = (rows.saved_packages ?? []).find(
+										(pkg) =>
+											pkg['id'] === row['package_id'] &&
+											pkg['user_id'] === row['user_id'],
+									)
+									const key = `${String(row['package_id'])}:${String(row['name'])}`
+									if (seen.has(key)) continue
+									seen.add(key)
+									results.push({
+										package_id: row['package_id'],
+										kody_id:
+											savedPackage?.['kody_id'] ??
+											row['package_kody_id'] ??
+											null,
+										source_id:
+											savedPackage?.['source_id'] ?? row['source_id'] ?? null,
+										name: row['name'],
+									})
+								}
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
 								lower.includes(
 									'select storage_id as storageid from user_storage_buckets',
 								)
@@ -1983,6 +2014,120 @@ test('account deletion purges a PackageServiceInstance known only via package_se
 	)
 })
 
+test('account deletion purges a PackageServiceInstance known only via legacy package_runtime_runs', async () => {
+	const userId = 'user-legacy-runs-only'
+	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
+	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
+	const { db } = createTestDb({
+		users: [{ id: 1, email: 'legacy@example.com', stable_user_id: userId }],
+		saved_packages: [
+			{
+				id: 'pkg-legacy',
+				user_id: userId,
+				kody_id: 'legacy-pkg',
+				source_id: 'src-legacy',
+				has_app: 0,
+			},
+		],
+		package_runtime_runs: [
+			{
+				id: 'run-legacy-only',
+				user_id: userId,
+				package_id: 'pkg-legacy',
+				package_kody_id: 'legacy-pkg',
+				source_id: 'src-legacy',
+				surface: 'service',
+				name: 'only-in-runtime-runs',
+				status: 'succeeded',
+				started_at: '2026-07-05T00:00:00.000Z',
+				finished_at: '2026-07-05T00:00:01.000Z',
+			},
+		],
+	})
+
+	const listSaved = vi.spyOn(
+		await import('#worker/package-registry/repo.ts'),
+		'listSavedPackagesByUserId',
+	)
+	listSaved.mockResolvedValue([
+		{
+			id: 'pkg-legacy',
+			userId,
+			name: 'Legacy Package',
+			kodyId: 'legacy-pkg',
+			description: '',
+			tags: [],
+			searchText: null,
+			sourceId: 'src-legacy',
+			hasApp: false,
+			hidden: false,
+			isPrivate: true,
+			createdAt: '2026-07-05T00:00:00.000Z',
+			updatedAt: '2026-07-05T00:00:00.000Z',
+		},
+	])
+	const loadManifest = vi.spyOn(
+		await import('#worker/package-registry/source.ts'),
+		'loadPackageManifestBySourceId',
+	)
+	loadManifest.mockResolvedValue({
+		source: {
+			id: 'src-legacy',
+			userId,
+			entityKind: 'package',
+			entityId: 'pkg-legacy',
+			repoId: 'repo-1',
+			manifestPath: 'package.json',
+			sourceRoot: '.',
+			publishedCommit: null,
+		},
+		manifest: {
+			name: 'legacy-pkg',
+			kody: {
+				services: {},
+			},
+		},
+	} as never)
+
+	try {
+		const result = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db, {
+				BUNDLE_ARTIFACTS_KV: {
+					get: async () => null,
+					async list() {
+						return { keys: [], list_complete: true as const }
+					},
+					delete: async () => undefined,
+				},
+				PACKAGE_SERVICE_INSTANCE: {
+					idFromName,
+					get: () => ({ fetch: serviceFetch }),
+				},
+			}),
+			dbUserId: 1,
+			mcpUserId: userId,
+		})
+
+		expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
+		expect(serviceFetch).toHaveBeenCalledTimes(1)
+		const request = serviceFetch.mock.calls[0]?.[0] as Request
+		expect(new URL(request.url).pathname).toContain('/purge')
+		const body = (await request.clone().json()) as {
+			binding: { packageId: string; serviceName: string }
+		}
+		expect(body.binding).toMatchObject({
+			packageId: 'pkg-legacy',
+			serviceName: 'only-in-runtime-runs',
+		})
+		expect(idFromName).toHaveBeenCalledWith(
+			JSON.stringify([userId, 'pkg-legacy', 'only-in-runtime-runs']),
+		)
+	} finally {
+		loadManifest.mockRestore()
+		listSaved.mockRestore()
+	}
+})
+
 test('account deletion purges a service declared only in the package manifest', async () => {
 	const userId = 'user-manifest-only'
 	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
@@ -2195,14 +2340,13 @@ test('account deletion continues when manifest load fails and still purges state
 	}
 })
 
-test('owned account deletion/export/DR sources no longer read package_runtime_runs', () => {
-	const owned = [
+test('export and DR sources no longer read package_runtime_runs; deletion inventory keeps the legacy arm', () => {
+	const mustNotRead = [
 		'./account-deletion.ts',
 		'./account-export.ts',
-		'./account-user-inventory.ts',
 		'../dr/exporter.ts',
 	]
-	for (const relative of owned) {
+	for (const relative of mustNotRead) {
 		const source = readFileSync(
 			fileURLToPath(new URL(relative, import.meta.url)),
 			'utf8',
@@ -2212,4 +2356,10 @@ test('owned account deletion/export/DR sources no longer read package_runtime_ru
 			`${relative} must not read package_runtime_runs`,
 		).toBe(false)
 	}
+	const inventory = readFileSync(
+		fileURLToPath(new URL('./account-user-inventory.ts', import.meta.url)),
+		'utf8',
+	)
+	expect(inventory.includes('package_runtime_runs')).toBe(true)
+	expect(inventory.includes('includeLegacyRuntimeRuns')).toBe(true)
 })

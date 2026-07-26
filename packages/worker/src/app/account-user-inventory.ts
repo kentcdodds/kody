@@ -36,10 +36,28 @@ function reportManifestEnumerationWarning(
 	if (!warnings.includes(message)) warnings.push(message)
 }
 
+function upsertPackageService(
+	byKey: Map<string, AccountUserPackageService>,
+	service: AccountUserPackageService,
+) {
+	const key = packageServiceKey(service)
+	const existing = byKey.get(key)
+	if (existing) {
+		byKey.set(key, {
+			packageId: existing.packageId,
+			kodyId: existing.kodyId || service.kodyId,
+			sourceId: existing.sourceId || service.sourceId,
+			serviceName: existing.serviceName,
+		})
+		return
+	}
+	byKey.set(key, service)
+}
+
 /**
  * Enumerate package services for account deletion and one-shot full export
  * inventory. Not for paginated export discovery — that path uses D1 keyset SQL
- * only (see account-export durable_object_summaries).
+ * plus RunLog (see account-export durable_object_summaries).
  *
  * Authoritative sources are the package manifest (`kody.services`) unioned with
  * projected `package_service_states` rows. Manifest loads can fail (network /
@@ -47,12 +65,19 @@ function reportManifestEnumerationWarning(
  * deletion never aborts for a missing manifest. Pass `warnings` so callers can
  * surface that degradation in their result (incomplete deletion must not look
  * clean).
+ *
+ * Pass `includeLegacyRuntimeRuns: true` on the deletion path only. That arm
+ * catches pre-#955 services whose DOs still exist but never projected into
+ * `package_service_states` and are no longer declared in the manifest.
+ * Migration 0097 backfills storage-bucket ownership, not service identity.
+ * Remove once `package_runtime_runs` drains (~2026-08-25); tracked by #956.
  */
 export async function listAccountUserPackageServices(input: {
 	env: Env
 	userId: string
 	baseUrl: string
 	warnings?: Array<string>
+	includeLegacyRuntimeRuns?: boolean
 }): Promise<Array<AccountUserPackageService>> {
 	const stateRows = await input.env.APP_DB.prepare(
 		`SELECT
@@ -75,13 +100,12 @@ export async function listAccountUserPackageServices(input: {
 
 	const byKey = new Map<string, AccountUserPackageService>()
 	for (const row of stateRows.results ?? []) {
-		const service: AccountUserPackageService = {
+		upsertPackageService(byKey, {
 			packageId: row.package_id,
 			kodyId: row.kody_id ?? '',
 			sourceId: row.source_id ?? '',
 			serviceName: row.name,
-		}
-		byKey.set(packageServiceKey(service), service)
+		})
 	}
 
 	try {
@@ -97,24 +121,12 @@ export async function listAccountUserPackageServices(input: {
 					sourceId: savedPackage.sourceId,
 				})
 				for (const service of listPackageServices(loaded.manifest)) {
-					const entry: AccountUserPackageService = {
+					upsertPackageService(byKey, {
 						packageId: savedPackage.id,
 						kodyId: savedPackage.kodyId,
 						sourceId: savedPackage.sourceId,
 						serviceName: service.name,
-					}
-					const key = packageServiceKey(entry)
-					const existing = byKey.get(key)
-					if (existing) {
-						byKey.set(key, {
-							packageId: existing.packageId,
-							kodyId: existing.kodyId || entry.kodyId,
-							sourceId: existing.sourceId || entry.sourceId,
-							serviceName: existing.serviceName,
-						})
-						continue
-					}
-					byKey.set(key, entry)
+					})
 				}
 			} catch (error) {
 				reportManifestEnumerationWarning(
@@ -130,6 +142,42 @@ export async function listAccountUserPackageServices(input: {
 		)
 	}
 
+	if (input.includeLegacyRuntimeRuns) {
+		// Legacy arm for account deletion only (issue #956): remove once
+		// package_runtime_runs drains (~2026-08-25). Covers pre-#955 service
+		// DOs that never projected into package_service_states and are no
+		// longer declared in the package manifest. 0097 backfills storage
+		// bucket ids, not (packageId, serviceName) tuples.
+		const legacyRows = await input.env.APP_DB.prepare(
+			`SELECT
+				r.package_id AS package_id,
+				COALESCE(p.kody_id, r.package_kody_id) AS kody_id,
+				COALESCE(p.source_id, r.source_id) AS source_id,
+				r.name AS name
+			FROM package_runtime_runs AS r
+			LEFT JOIN saved_packages AS p
+				ON p.id = r.package_id AND p.user_id = r.user_id
+			WHERE r.user_id = ?
+				AND r.surface = 'service'
+				AND r.name IS NOT NULL`,
+		)
+			.bind(input.userId)
+			.all<{
+				package_id: string
+				kody_id: string | null
+				source_id: string | null
+				name: string
+			}>()
+		for (const row of legacyRows.results ?? []) {
+			upsertPackageService(byKey, {
+				packageId: row.package_id,
+				kodyId: row.kody_id ?? '',
+				sourceId: row.source_id ?? '',
+				serviceName: row.name,
+			})
+		}
+	}
+
 	return Array.from(byKey.values()).sort((left, right) => {
 		const byPackage = left.packageId.localeCompare(right.packageId)
 		if (byPackage !== 0) return byPackage
@@ -140,16 +188,21 @@ export async function listAccountUserPackageServices(input: {
 /**
  * Enumerate StorageRunner bucket ids for account deletion and one-shot full
  * export inventory. Not for paginated export discovery — that path uses D1
- * keyset SQL only (see account-export durable_object_summaries).
+ * keyset SQL plus RunLog (see account-export durable_object_summaries).
  *
  * Unions authoritative entity tables, the user storage-bucket registry,
  * declared/projected package services, and current RunLog ids.
+ *
+ * Pass `packageServices` when the caller already enumerated services in this
+ * request to avoid loading package manifests twice.
  */
 export async function listAccountUserStorageIds(input: {
 	env: Env
 	userId: string
 	baseUrl: string
 	warnings?: Array<string>
+	includeLegacyRuntimeRuns?: boolean
+	packageServices?: ReadonlyArray<AccountUserPackageService>
 }): Promise<Array<string>> {
 	const [
 		jobRows,
@@ -178,7 +231,9 @@ export async function listAccountUserStorageIds(input: {
 		)
 			.bind(input.userId)
 			.all<{ id: string }>(),
-		listAccountUserPackageServices(input),
+		input.packageServices
+			? Promise.resolve([...input.packageServices])
+			: listAccountUserPackageServices(input),
 		listRunRecordStorageIds({ env: input.env, userId: input.userId }),
 	])
 	return uniqueStrings([

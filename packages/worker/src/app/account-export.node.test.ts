@@ -1621,7 +1621,19 @@ test('storage_runners count matches ids enumerable by discovery paging', async (
 		);
 	`)
 
-	const env = { APP_DB: db } as Env
+	const env = {
+		APP_DB: db,
+		RUN_LOG: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				listStorageIds: async () => [
+					'exec:adhoc',
+					'exec:runlog-only',
+					'job:job-1',
+				],
+			}),
+		},
+	} as unknown as Env
 	const manifest = await createAccountExportManifest({
 		env,
 		dbUserId: 1,
@@ -1649,6 +1661,59 @@ test('storage_runners count matches ids enumerable by discovery paging', async (
 		startAfter = page.nextStartAfter ?? undefined
 	}
 	expect(seen.size).toBe(expectedCount)
+	expect(seen.has('exec:runlog-only')).toBe(true)
+})
+
+test('storage_runner section exports a RunLog-only storage id', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+	`)
+
+	const exportStorage = vi.fn(async () => ({
+		entries: [{ key: 'runlog', value: { ok: true } }],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 100,
+		estimatedBytes: 8,
+	}))
+	const env = {
+		APP_DB: db,
+		STORAGE_RUNNER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({ exportStorage }),
+		},
+		RUN_LOG: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				listStorageIds: async () => ['exec:runlog-export-only'],
+			}),
+		},
+	} as unknown as Env
+
+	const manifest = await createAccountExportManifest({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(manifest.sections.storage_runners?.count).toBe(1)
+
+	const section = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'storage_runner',
+		storageId: 'exec:runlog-export-only',
+	})
+	expect(section.items).toEqual([{ key: 'runlog', value: { ok: true } }])
+	expect(exportStorage).toHaveBeenCalledTimes(1)
 })
 
 test('storage_runner and package_service section reads do not load manifests for D1-known rows', async () => {
@@ -1747,6 +1812,19 @@ test('storage_runner section treats malformed service storage ids as not found',
 		VALUES (
 			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
 			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+		INSERT INTO saved_packages (
+			id, user_id, name, kody_id, description, tags_json, source_id,
+			has_app, hidden, is_private, created_at, updated_at
+		) VALUES (
+			'pkg%', 'user-aaa', 'Malformed', 'malformed', '', '[]',
+			'src-malformed', 0, 0, 1, '2026-07-05', '2026-07-05'
+		);
+		INSERT INTO package_service_states (
+			user_id, package_id, service_name, status, started_at, updated_at
+		) VALUES (
+			'user-aaa', 'pkg%', 'worker%', 'idle',
+			null, '2026-07-05T00:00:00.000Z'
 		);
 	`)
 

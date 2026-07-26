@@ -31,6 +31,7 @@ import { userScopedConnectorSessionKey } from '#worker/remote-connector/connecto
 import { type RemoteConnectorSessionExport } from '#worker/remote-connector/types.ts'
 import {
 	exportRunRecords,
+	listRunRecordStorageIds,
 	summarizeRunRecords,
 } from '#worker/run-records/service.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
@@ -453,16 +454,18 @@ async function listUserStorageIds(
 	env: Env,
 	userId: string,
 	warnings?: Array<string>,
+	packageServices?: ReadonlyArray<UserPackageServiceSnapshot>,
 ) {
 	return await listAccountUserStorageIds({
 		env,
 		userId,
 		baseUrl: 'https://account-export.invalid',
 		warnings,
+		packageServices,
 	})
 }
 
-/** D1-only base storage ids used by discovery paging (no manifests / RunLog). */
+/** D1 entity/registry storage ids used by discovery paging (no manifests). */
 const exportStorageIdBaseSql = `SELECT id FROM (
 	SELECT storage_id AS id FROM jobs
 		WHERE user_id = ? AND storage_id IS NOT NULL
@@ -499,6 +502,26 @@ function parseServiceStorageId(storageId: string) {
 	return { packageId, serviceName }
 }
 
+async function listExportD1DiscoverableStorageIds(env: Env, userId: string) {
+	const [baseRows, serviceRows] = await Promise.all([
+		env.APP_DB.prepare(exportStorageIdBaseSql)
+			.bind(...exportStorageIdBaseParams(userId))
+			.all<{ id: string }>(),
+		env.APP_DB.prepare(
+			`SELECT package_id, service_name AS name
+			FROM package_service_states
+			WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.all<{ package_id: string; name: string }>(),
+	])
+	const ids = new Set((baseRows.results ?? []).map((row) => row.id))
+	for (const row of serviceRows.results ?? []) {
+		ids.add(buildPackageServiceStorageId(row.package_id, row.name))
+	}
+	return ids
+}
+
 async function isExportDiscoverableStorageId(
 	env: Env,
 	userId: string,
@@ -511,15 +534,18 @@ async function isExportDiscoverableStorageId(
 		.first<{ owned: number }>()
 	if (inBase?.owned === 1) return true
 	const parsed = parseServiceStorageId(storageId)
-	if (!parsed) return false
-	const row = await env.APP_DB.prepare(
-		`SELECT 1 AS owned
-		FROM package_service_states
-		WHERE user_id = ? AND package_id = ? AND service_name = ?`,
-	)
-		.bind(userId, parsed.packageId, parsed.serviceName)
-		.first<{ owned: number }>()
-	return row?.owned === 1
+	if (parsed) {
+		const row = await env.APP_DB.prepare(
+			`SELECT 1 AS owned
+			FROM package_service_states
+			WHERE user_id = ? AND package_id = ? AND service_name = ?`,
+		)
+			.bind(userId, parsed.packageId, parsed.serviceName)
+			.first<{ owned: number }>()
+		if (row?.owned === 1) return true
+	}
+	const runRecordStorageIds = await listRunRecordStorageIds({ env, userId })
+	return runRecordStorageIds.includes(storageId)
 }
 
 async function resolveExportPackageService(input: {
@@ -739,23 +765,37 @@ async function collectInventory(input: {
 	dbUserId: number
 	warnings: Array<string>
 }): Promise<UserExportInventory> {
+	// Enumerate services first so storage-id listing can reuse the result and
+	// avoid a second package-manifest pass in the same request.
+	const packageServices = await listUserPackageServices(
+		input.env,
+		input.userId,
+		input.warnings,
+	).catch((error) => {
+		input.warnings.push(
+			`Failed to enumerate package services: ${getErrorMessage(error)}`,
+		)
+		return [] as Array<UserPackageServiceSnapshot>
+	})
 	const [
 		storageIds,
 		sourceSnapshots,
 		savedPackages,
 		remoteConnectors,
-		packageServices,
 		communityListingIds,
 		r2ObjectCount,
 	] = await Promise.all([
-		listUserStorageIds(input.env, input.userId, input.warnings).catch(
-			(error) => {
-				input.warnings.push(
-					`Failed to enumerate storage ids: ${getErrorMessage(error)}`,
-				)
-				return [] as Array<string>
-			},
-		),
+		listUserStorageIds(
+			input.env,
+			input.userId,
+			input.warnings,
+			packageServices,
+		).catch((error) => {
+			input.warnings.push(
+				`Failed to enumerate storage ids: ${getErrorMessage(error)}`,
+			)
+			return [] as Array<string>
+		}),
 		listUserSourceSnapshots(input.env, input.userId).catch((error) => {
 			input.warnings.push(
 				`Failed to enumerate entity sources: ${getErrorMessage(error)}`,
@@ -774,14 +814,6 @@ async function collectInventory(input: {
 			)
 			return [] as Array<UserRemoteConnectorSnapshot>
 		}),
-		listUserPackageServices(input.env, input.userId, input.warnings).catch(
-			(error) => {
-				input.warnings.push(
-					`Failed to enumerate package services: ${getErrorMessage(error)}`,
-				)
-				return [] as Array<UserPackageServiceSnapshot>
-			},
-		),
 		listUserCommunityListingIds(input.env, input.userId).catch((error) => {
 			input.warnings.push(
 				`Failed to enumerate community listings: ${getErrorMessage(error)}`,
@@ -845,23 +877,15 @@ async function countScalar(
 }
 
 async function countUserStorageIds(env: Env, userId: string) {
-	// Match durable_object_summaries discovery: base D1 union plus service
-	// storage ids from package_service_states that are not already in base.
-	const [baseRows, serviceRows] = await Promise.all([
-		env.APP_DB.prepare(exportStorageIdBaseSql)
-			.bind(...exportStorageIdBaseParams(userId))
-			.all<{ id: string }>(),
-		env.APP_DB.prepare(
-			`SELECT package_id, service_name AS name
-			FROM package_service_states
-			WHERE user_id = ?`,
-		)
-			.bind(userId)
-			.all<{ package_id: string; name: string }>(),
+	// Match durable_object_summaries discovery: D1 base + package_service_states
+	// + RunLog storage ids (one RunLog RPC, not per-package manifests).
+	const [d1Ids, runRecordStorageIds] = await Promise.all([
+		listExportD1DiscoverableStorageIds(env, userId),
+		listRunRecordStorageIds({ env, userId }),
 	])
-	const ids = new Set((baseRows.results ?? []).map((row) => row.id))
-	for (const row of serviceRows.results ?? []) {
-		ids.add(buildPackageServiceStorageId(row.package_id, row.name))
+	const ids = new Set(d1Ids)
+	for (const storageId of runRecordStorageIds) {
+		ids.add(storageId)
 	}
 	return ids.size
 }
@@ -1994,11 +2018,12 @@ export async function readAccountExportSection(input: {
 					warnings,
 				}
 			}
-			// Discovery pages are D1-only keyset SQL (user_storage_buckets +
-			// entity tables + package_service_states). Do not call
+			// Discovery pages: D1 keyset SQL (user_storage_buckets + entity
+			// tables + package_service_states) then RunLog-only ids. Do not call
 			// listAccountUserStorageIds / listAccountUserPackageServices here —
 			// those helpers fetch package manifests and are for one-shot full
-			// export inventory and account deletion completeness.
+			// export inventory and account deletion completeness. RunLog is one
+			// Durable Object RPC per request, not per package.
 			const stage = String(cursor['stage'] ?? 'base')
 			if (stage === 'base') {
 				const afterId = String(cursor['afterId'] ?? '')
@@ -2033,62 +2058,104 @@ export async function readAccountExportSection(input: {
 					warnings,
 				}
 			}
-			const afterPackageId = String(cursor['packageId'] ?? '')
-			const afterName = String(cursor['name'] ?? '')
-			const rows = await input.env.APP_DB.prepare(
-				`SELECT package_id, service_name AS name
-				FROM package_service_states
-				WHERE user_id = ?
-					AND (package_id > ? OR (package_id = ? AND service_name > ?))
-				ORDER BY package_id, service_name
-				LIMIT ?`,
-			)
-				.bind(
-					input.mcpUserId,
-					afterPackageId,
-					afterPackageId,
-					afterName,
-					pageSize + 1,
+			if (stage === 'service') {
+				const afterPackageId = String(cursor['packageId'] ?? '')
+				const afterName = String(cursor['name'] ?? '')
+				const rows = await input.env.APP_DB.prepare(
+					`SELECT package_id, service_name AS name
+					FROM package_service_states
+					WHERE user_id = ?
+						AND (package_id > ? OR (package_id = ? AND service_name > ?))
+					ORDER BY package_id, service_name
+					LIMIT ?`,
 				)
-				.all<{ package_id: string; name: string }>()
-			const pageRows = rows.results ?? []
-			const selected = pageRows.slice(0, pageSize)
-			const resultItems: Array<{ kind: string; storageId: string }> = []
-			const candidateIds = selected.map((row) =>
-				buildPackageServiceStorageId(row.package_id, row.name),
-			)
-			const alreadyInBase = new Set<string>()
-			if (candidateIds.length > 0) {
-				const placeholders = candidateIds.map(() => '?').join(', ')
-				const existing = await input.env.APP_DB.prepare(
-					`SELECT id FROM (${exportStorageIdBaseSql}) WHERE id IN (${placeholders})`,
+					.bind(
+						input.mcpUserId,
+						afterPackageId,
+						afterPackageId,
+						afterName,
+						pageSize + 1,
+					)
+					.all<{ package_id: string; name: string }>()
+				const pageRows = rows.results ?? []
+				const selected = pageRows.slice(0, pageSize)
+				const resultItems: Array<{ kind: string; storageId: string }> = []
+				const candidateIds = selected.map((row) =>
+					buildPackageServiceStorageId(row.package_id, row.name),
 				)
-					.bind(...exportStorageIdBaseParams(input.mcpUserId), ...candidateIds)
-					.all<{ id: string }>()
-				for (const row of existing.results ?? []) {
-					alreadyInBase.add(row.id)
+				const alreadyInBase = new Set<string>()
+				if (candidateIds.length > 0) {
+					const placeholders = candidateIds.map(() => '?').join(', ')
+					const existing = await input.env.APP_DB.prepare(
+						`SELECT id FROM (${exportStorageIdBaseSql}) WHERE id IN (${placeholders})`,
+					)
+						.bind(
+							...exportStorageIdBaseParams(input.mcpUserId),
+							...candidateIds,
+						)
+						.all<{ id: string }>()
+					for (const row of existing.results ?? []) {
+						alreadyInBase.add(row.id)
+					}
+				}
+				for (const storageId of candidateIds) {
+					if (!alreadyInBase.has(storageId)) {
+						resultItems.push({ kind: input.kind, storageId })
+					}
+				}
+				const truncated = pageRows.length > pageSize
+				return {
+					section: input.section,
+					items: resultItems,
+					truncated: true,
+					nextStartAfter: JSON.stringify(
+						truncated
+							? {
+									stage: 'service',
+									packageId: selected.at(-1)!.package_id,
+									name: selected.at(-1)!.name,
+								}
+							: { stage: 'runlog', afterId: '' },
+					),
+					pageSize,
+					warnings,
 				}
 			}
-			for (const storageId of candidateIds) {
-				if (!alreadyInBase.has(storageId)) {
-					resultItems.push({ kind: input.kind, storageId })
+			if (stage === 'runlog') {
+				const afterId = String(cursor['afterId'] ?? '')
+				const [d1Ids, runRecordStorageIds] = await Promise.all([
+					listExportD1DiscoverableStorageIds(input.env, input.mcpUserId),
+					listRunRecordStorageIds({
+						env: input.env,
+						userId: input.mcpUserId,
+					}),
+				])
+				const exclusive = runRecordStorageIds
+					.filter((storageId) => !d1Ids.has(storageId))
+					.sort((left, right) => left.localeCompare(right))
+				const pageRows = exclusive.filter((storageId) => storageId > afterId)
+				const truncated = pageRows.length > pageSize
+				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
+				return {
+					section: input.section,
+					items: selected.map((storageId) => ({
+						kind: input.kind,
+						storageId,
+					})),
+					truncated,
+					nextStartAfter: truncated
+						? JSON.stringify({
+								stage: 'runlog',
+								afterId: selected.at(-1)!,
+							})
+						: null,
+					pageSize,
+					warnings,
 				}
 			}
-			const truncated = pageRows.length > pageSize
-			return {
-				section: input.section,
-				items: resultItems,
-				truncated,
-				nextStartAfter: truncated
-					? JSON.stringify({
-							stage: 'service',
-							packageId: selected.at(-1)!.package_id,
-							name: selected.at(-1)!.name,
-						})
-					: null,
-				pageSize,
-				warnings,
-			}
+			throw new Error(
+				`Unknown durable_object_summaries storage_runner stage: ${stage}`,
+			)
 		}
 		default: {
 			const exhaustive: never = input.section
