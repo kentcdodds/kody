@@ -1,6 +1,9 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { RunLog } from './run-log-do.ts'
@@ -682,3 +685,77 @@ test('clearRunRecords empties the Durable Object', async () => {
 	})
 	expect(await getRunRecord({ env, userId, runId: handle!.id })).toBeNull()
 })
+
+test(
+	'logs from a real failing sandbox execution land in RunLog via getRunRecord',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const userId = uniqueUserId('sandbox-fail-logs')
+		const callerContext = createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId,
+				email: 'sandbox-fail-logs@example.com',
+				displayName: 'Sandbox Fail Logs',
+			},
+		})
+		const bundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			sourceFiles: {
+				'entry.ts': [
+					'export default async function main() {',
+					"\tconsole.log('alpha')",
+					"\tconsole.warn('heads up')",
+					"\tconsole.error('captured error')",
+					"\tthrow new Error('sandbox boom')",
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				runRecord: {
+					surface: 'execute',
+					name: 'failing-console-logs',
+				},
+			},
+		)
+		expect(result.error).toBe('sandbox boom')
+		expect(result.logs).toEqual([
+			'alpha',
+			'[warn] heads up',
+			'[error] captured error',
+		])
+
+		const page = await listRunRecords({
+			env,
+			userId,
+			filter: { surface: 'execute', name: 'failing-console-logs' },
+		})
+		expect(page.runs).toHaveLength(1)
+		expect(page.runs[0]?.status).toBe('error')
+		expect(page.runs[0]?.errorMessage).toBe('sandbox boom')
+
+		const detail = await getRunRecord({
+			env,
+			userId,
+			runId: page.runs[0]!.id,
+		})
+		expect(detail).not.toBeNull()
+		expect(detail?.logs.map((entry) => entry.message)).toEqual([
+			'alpha',
+			'[warn] heads up',
+			'[error] captured error',
+		])
+		expect(detail?.logs.every((entry) => entry.level === 'log')).toBe(true)
+	},
+)
