@@ -583,6 +583,9 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	private enforceRetention() {
+		// Reconcile first so stranded `running` rows become terminal `error`
+		// before the count cap runs — that is how a cap full of in-flight rows
+		// still converges once they pass the stale TTL.
 		this.reconcileStaleRunning()
 
 		const cutoff = new Date(Date.now() - retentionMs).toISOString()
@@ -603,15 +606,14 @@ class RunLogBase extends DurableObject<Env> {
 		const excess = total - runRecordMaxRunsPerUser
 		if (excess > 0) {
 			const deleteCount = Math.min(excess, maxExcessDeletesPerFinish)
-			// Failure-last via status-scoped scans on idx_runs_status_started_id
-			// instead of ORDER BY (status = 'error') expression sort.
+			// In-flight rows are never cap-evicted (same as age prune). Order is
+			// oldest success, then oldest error. Stale `running` becomes
+			// evictable only after reconcile demotes it to `error` above.
+			// Genuinely in-flight rows can therefore push the stored count
+			// briefly above runRecordMaxRunsPerUser until they finish or go
+			// stale — that is intentional, not a broken cap.
 			const ids: Array<string> = []
 			ids.push(...this.deleteOldestWithStatus('success', deleteCount))
-			if (ids.length < deleteCount) {
-				ids.push(
-					...this.deleteOldestWithStatus('running', deleteCount - ids.length),
-				)
-			}
 			if (ids.length < deleteCount) {
 				ids.push(
 					...this.deleteOldestWithStatus('error', deleteCount - ids.length),

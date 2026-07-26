@@ -504,6 +504,171 @@ test('retention deletes successes before errors when over the run cap', async ()
 	expect(oldestSuccessGone).toBe(0)
 })
 
+test('cap eviction never deletes in-flight running rows', async () => {
+	const userId = uniqueUserId('cap-protect-running')
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const baseMs = Date.now() - 3_600_000
+	// Fewer successes than the eventual excess so the old success→running→error
+	// order would delete the in-flight row after successes are exhausted.
+	const successCount = 2
+	const errorCount = runRecordMaxRunsPerUser
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		for (let index = 0; index < successCount; index += 1) {
+			const startedAt = new Date(baseMs + index).toISOString()
+			insertRunRow(state, {
+				id: `success-${index}`,
+				status: 'success',
+				startedAt,
+				finishedAt: startedAt,
+			})
+		}
+		insertRunRow(state, {
+			id: 'still-running',
+			status: 'running',
+			startedAt: new Date(baseMs + successCount).toISOString(),
+			finishedAt: null,
+		})
+		for (let index = 0; index < errorCount; index += 1) {
+			const startedAt = new Date(
+				baseMs + successCount + 1 + index,
+			).toISOString()
+			insertRunRow(state, {
+				id: `error-${index}`,
+				status: 'error',
+				startedAt,
+				finishedAt: startedAt,
+			})
+		}
+	})
+	const seeded = successCount + 1 + errorCount
+	await armRetentionOnNextFinish(userId, seeded)
+
+	await finishRunRecord({
+		env,
+		handle: {
+			id: 'cap-running-trigger',
+			userId,
+			startedAt: new Date(baseMs + seeded + 10).toISOString(),
+			persistence: 'eager',
+			context: baseContext({ surface: 'job', name: 'cap-running-trigger' }),
+		},
+		status: 'success',
+	})
+
+	const running = await getRunRecord({ env, userId, runId: 'still-running' })
+	expect(running?.run.status).toBe('running')
+
+	const counts = await runInDurableObject(
+		stub,
+		async (_instance: RunLog, state) => ({
+			successes: state.storage.sql
+				.exec<{ n: number }>(
+					`SELECT COUNT(*) AS n FROM runs WHERE status = 'success'`,
+				)
+				.one().n,
+			errors: state.storage.sql
+				.exec<{ n: number }>(
+					`SELECT COUNT(*) AS n FROM runs WHERE status = 'error'`,
+				)
+				.one().n,
+			running: state.storage.sql
+				.exec<{ n: number }>(
+					`SELECT COUNT(*) AS n FROM runs WHERE status = 'running'`,
+				)
+				.one().n,
+			success0: state.storage.sql
+				.exec<{ n: number }>(
+					`SELECT COUNT(*) AS n FROM runs WHERE id = 'success-0'`,
+				)
+				.one().n,
+			error0: state.storage.sql
+				.exec<{ n: number }>(
+					`SELECT COUNT(*) AS n FROM runs WHERE id = 'error-0'`,
+				)
+				.one().n,
+		}),
+	)
+	// Excess was 4: 3 successes (2 seeded + trigger) then 1 oldest error.
+	// The in-flight row is skipped entirely.
+	expect(counts.success0).toBe(0)
+	expect(counts.successes).toBe(0)
+	expect(counts.running).toBe(1)
+	expect(counts.error0).toBe(0)
+	expect(counts.errors).toBe(errorCount - 1)
+})
+
+test('stale running rows become cap-evictable after reconcile', async () => {
+	const userId = uniqueUserId('stale-cap-evict')
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const baseMs = Date.now() - 3_600_000
+	const staleStartedAt = new Date(
+		Date.now() - runRecordStaleRunningTtlMs - 60_000,
+	).toISOString()
+	const successCount = 2
+	const errorCount = runRecordMaxRunsPerUser - 2
+	const staleCount = 5
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		for (let index = 0; index < successCount; index += 1) {
+			const startedAt = new Date(baseMs + index).toISOString()
+			insertRunRow(state, {
+				id: `success-${index}`,
+				status: 'success',
+				startedAt,
+				finishedAt: startedAt,
+			})
+		}
+		for (let index = 0; index < staleCount; index += 1) {
+			insertRunRow(state, {
+				id: `stale-${index}`,
+				status: 'running',
+				startedAt: new Date(Date.parse(staleStartedAt) + index).toISOString(),
+				finishedAt: null,
+			})
+		}
+		for (let index = 0; index < errorCount; index += 1) {
+			const startedAt = new Date(baseMs + 10_000 + index).toISOString()
+			insertRunRow(state, {
+				id: `error-${index}`,
+				status: 'error',
+				startedAt,
+				finishedAt: startedAt,
+			})
+		}
+	})
+	const seeded = successCount + staleCount + errorCount
+	await armRetentionOnNextFinish(userId, seeded)
+
+	await finishRunRecord({
+		env,
+		handle: {
+			id: 'stale-cap-trigger',
+			userId,
+			startedAt: new Date(baseMs + seeded + 10).toISOString(),
+			persistence: 'eager',
+			context: baseContext({ surface: 'job', name: 'stale-cap-trigger' }),
+		},
+		status: 'success',
+	})
+
+	// Reconcile demotes stale running → Interrupted errors (oldest started_at),
+	// then cap eviction drains successes and those demoted errors before newer
+	// seeded errors.
+	const stale0 = await getRunRecord({ env, userId, runId: 'stale-0' })
+	expect(stale0).toBeNull()
+	const remainingRunning = await runInDurableObject(
+		stub,
+		async (_instance: RunLog, state) =>
+			state.storage.sql
+				.exec<{ n: number }>(
+					`SELECT COUNT(*) AS n FROM runs WHERE status = 'running'`,
+				)
+				.one().n,
+	)
+	expect(remainingRunning).toBe(0)
+})
+
 test('amortized retention still enforces the age cap', async () => {
 	const userId = uniqueUserId('age-retention')
 	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
