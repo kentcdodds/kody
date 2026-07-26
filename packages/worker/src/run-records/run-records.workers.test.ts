@@ -8,12 +8,16 @@ import {
 	finishRunRecord,
 	getRunRecord,
 	listRunRecords,
+	recordRunRecord,
 	runLogRpc,
 	summarizeRunRecords,
 } from './service.ts'
 import {
 	runRecordMaxLogEntriesPerRun,
 	runRecordMaxRunsPerUser,
+	runRecordRetentionDays,
+	runRecordRetentionEveryNFinishes,
+	runRecordStaleRunningTtlMs,
 	type RunRecordContext,
 	type RunRecordHandle,
 } from './types.ts'
@@ -33,6 +37,60 @@ function baseContext(overrides?: Partial<RunRecordContext>): RunRecordContext {
 async function drainWaitUntil(pending: Array<Promise<unknown>>) {
 	await Promise.all(pending)
 	pending.length = 0
+}
+
+async function armRetentionOnNextFinish(userId: string, runCount?: number) {
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		state.storage.sql.exec(
+			`INSERT INTO run_log_meta (key, value) VALUES (?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			'finishes_since_retention',
+			runRecordRetentionEveryNFinishes - 1,
+		)
+		if (typeof runCount === 'number') {
+			state.storage.sql.exec(
+				`INSERT INTO run_log_meta (key, value) VALUES (?, ?)
+				ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+				'run_count',
+				runCount,
+			)
+		}
+	})
+}
+
+function insertRunRow(
+	state: DurableObjectState,
+	input: {
+		id: string
+		status: 'running' | 'success' | 'error'
+		startedAt: string
+		finishedAt?: string | null
+		name?: string | null
+		surface?: string
+	},
+) {
+	const finishedAt = input.finishedAt ?? null
+	state.storage.sql.exec(
+		`INSERT INTO runs (
+			id, surface, status, name, package_id, package_kody_id, source_id,
+			published_commit, storage_id, job_id, workflow_id, invocation_id,
+			session_id, idempotency_key, parent_run_id, started_at, finished_at,
+			duration_ms, error_name, error_message, metadata_json, created_at,
+			updated_at
+		) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL,
+			NULL, NULL, NULL, NULL, NULL, ?, ?, ?, NULL, NULL, '{}', ?, ?)`,
+		input.id,
+		input.surface ?? 'job',
+		input.status,
+		input.name ?? null,
+		input.startedAt,
+		finishedAt,
+		finishedAt == null ? null : 1,
+		input.startedAt,
+		finishedAt ?? input.startedAt,
+	)
 }
 
 test('eager surface begin then finish writes one successful run', async () => {
@@ -95,6 +153,52 @@ test('finishRunRecord alone still upserts a complete row when startRun never lan
 			fields: null,
 		},
 	])
+})
+
+test('recordRunRecord writes a terminal row in one call without begin', async () => {
+	const userId = uniqueUserId('record-one-shot')
+	const handle = await recordRunRecord({
+		env,
+		userId,
+		context: baseContext({
+			surface: 'webhook',
+			name: 'hook-a',
+		}),
+		status: 'success',
+		logs: ['delivered'],
+	})
+	expect(handle).not.toBeNull()
+	const detail = await getRunRecord({ env, userId, runId: handle!.id })
+	expect(detail?.run.status).toBe('success')
+	expect(detail?.run.surface).toBe('webhook')
+	expect(detail?.run.name).toBe('hook-a')
+	expect(detail?.logs).toHaveLength(1)
+})
+
+test('finishRunRecord waitUntil does not block the caller', async () => {
+	const userId = uniqueUserId('finish-wait-until')
+	const handle: RunRecordHandle = {
+		id: crypto.randomUUID(),
+		userId,
+		startedAt: new Date().toISOString(),
+		persistence: 'eager',
+		context: baseContext({ surface: 'export', name: 'bg-finish' }),
+	}
+	const pending: Array<Promise<unknown>> = []
+	const finishReturn = finishRunRecord({
+		env,
+		handle,
+		status: 'success',
+		logs: ['async'],
+		waitUntil: (promise) => {
+			pending.push(promise)
+		},
+	})
+	await expect(finishReturn).resolves.toBeUndefined()
+	expect(pending).toHaveLength(1)
+	await drainWaitUntil(pending)
+	const detail = await getRunRecord({ env, userId, runId: handle.id })
+	expect(detail?.run.status).toBe('success')
 })
 
 test('execute surface persists nothing on success and one row on error', async () => {
@@ -166,7 +270,7 @@ test('logs round-trip in sequence order and keep only the newest 200', async () 
 	expect(detail?.run.logCount).toBe(runRecordMaxLogEntriesPerRun)
 })
 
-test('listRunRecords filters by surface/status/jobId and paginates with cursors', async () => {
+test('listRunRecords filters by surface/status/jobId/name and paginates with cursors', async () => {
 	const userId = uniqueUserId('list-filter')
 	const startedAtBase = Date.now() - 60_000
 	for (let index = 0; index < 5; index += 1) {
@@ -178,7 +282,7 @@ test('listRunRecords filters by surface/status/jobId and paginates with cursors'
 			context: baseContext({
 				surface: index % 2 === 0 ? 'job' : 'export',
 				jobId: index < 3 ? 'job-shared' : 'job-other',
-				name: `run-${index}`,
+				name: index < 2 ? 'shared-name' : `run-${index}`,
 			}),
 		}
 		await finishRunRecord({
@@ -213,6 +317,13 @@ test('listRunRecords filters by surface/status/jobId and paginates with cursors'
 		'run-1',
 		'run-0',
 	])
+
+	const byName = await listRunRecords({
+		env,
+		userId,
+		filter: { name: 'shared-name' },
+	})
+	expect(byName.runs.map((run) => run.id)).toEqual(['run-1', 'run-0'])
 
 	const page1 = await listRunRecords({
 		env,
@@ -290,47 +401,30 @@ test('retention deletes successes before errors when over the run cap', async ()
 	const userId = uniqueUserId('retention')
 	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 	const baseMs = Date.now() - 3_600_000
+	const successCount = runRecordMaxRunsPerUser
+	const errorCount = 10
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)
-		const successCount = runRecordMaxRunsPerUser
-		const errorCount = 10
 		for (let index = 0; index < successCount; index += 1) {
 			const startedAt = new Date(baseMs + index).toISOString()
-			state.storage.sql.exec(
-				`INSERT INTO runs (
-					id, surface, status, name, package_id, package_kody_id, source_id,
-					published_commit, storage_id, job_id, workflow_id, invocation_id,
-					session_id, idempotency_key, parent_run_id, started_at, finished_at,
-					duration_ms, error_name, error_message, metadata_json, created_at,
-					updated_at
-				) VALUES (?, 'job', 'success', NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-					NULL, NULL, NULL, NULL, NULL, ?, ?, 1, NULL, NULL, '{}', ?, ?)`,
-				`success-${index}`,
+			insertRunRow(state, {
+				id: `success-${index}`,
+				status: 'success',
 				startedAt,
-				startedAt,
-				startedAt,
-				startedAt,
-			)
+				finishedAt: startedAt,
+			})
 		}
 		for (let index = 0; index < errorCount; index += 1) {
 			const startedAt = new Date(baseMs + successCount + index).toISOString()
-			state.storage.sql.exec(
-				`INSERT INTO runs (
-					id, surface, status, name, package_id, package_kody_id, source_id,
-					published_commit, storage_id, job_id, workflow_id, invocation_id,
-					session_id, idempotency_key, parent_run_id, started_at, finished_at,
-					duration_ms, error_name, error_message, metadata_json, created_at,
-					updated_at
-				) VALUES (?, 'job', 'error', NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-					NULL, NULL, NULL, NULL, NULL, ?, ?, 1, 'Error', 'boom', '{}', ?, ?)`,
-				`error-${index}`,
+			insertRunRow(state, {
+				id: `error-${index}`,
+				status: 'error',
 				startedAt,
-				startedAt,
-				startedAt,
-				startedAt,
-			)
+				finishedAt: startedAt,
+			})
 		}
 	})
+	await armRetentionOnNextFinish(userId, successCount + errorCount)
 
 	const handle: RunRecordHandle = {
 		id: 'retention-trigger',
@@ -372,6 +466,95 @@ test('retention deletes successes before errors when over the run cap', async ()
 		},
 	)
 	expect(oldestSuccessGone).toBe(0)
+})
+
+test('amortized retention still enforces the age cap', async () => {
+	const userId = uniqueUserId('age-retention')
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const oldStartedAt = new Date(
+		Date.now() - (runRecordRetentionDays + 2) * 24 * 60 * 60 * 1000,
+	).toISOString()
+	const recentStartedAt = new Date(Date.now() - 60_000).toISOString()
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		insertRunRow(state, {
+			id: 'old-success',
+			status: 'success',
+			startedAt: oldStartedAt,
+			finishedAt: oldStartedAt,
+		})
+		insertRunRow(state, {
+			id: 'recent-success',
+			status: 'success',
+			startedAt: recentStartedAt,
+			finishedAt: recentStartedAt,
+		})
+	})
+	await armRetentionOnNextFinish(userId, 2)
+
+	await finishRunRecord({
+		env,
+		handle: {
+			id: 'age-trigger',
+			userId,
+			startedAt: new Date().toISOString(),
+			persistence: 'eager',
+			context: baseContext({ surface: 'job', name: 'age-trigger' }),
+		},
+		status: 'success',
+	})
+
+	const ids = (await listRunRecords({ env, userId })).runs.map((run) => run.id)
+	expect(ids).toContain('recent-success')
+	expect(ids).toContain('age-trigger')
+	expect(ids).not.toContain('old-success')
+})
+
+test('stale running rows are reconciled to interrupted errors', async () => {
+	const userId = uniqueUserId('stale-running')
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const staleStartedAt = new Date(
+		Date.now() - runRecordStaleRunningTtlMs - 60_000,
+	).toISOString()
+	const freshStartedAt = new Date().toISOString()
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		insertRunRow(state, {
+			id: 'stale-running',
+			status: 'running',
+			startedAt: staleStartedAt,
+			finishedAt: null,
+		})
+		insertRunRow(state, {
+			id: 'fresh-running',
+			status: 'running',
+			startedAt: freshStartedAt,
+			finishedAt: null,
+		})
+	})
+	await armRetentionOnNextFinish(userId, 2)
+
+	await finishRunRecord({
+		env,
+		handle: {
+			id: 'stale-trigger',
+			userId,
+			startedAt: new Date().toISOString(),
+			persistence: 'eager',
+			context: baseContext({ surface: 'job', name: 'stale-trigger' }),
+		},
+		status: 'success',
+	})
+
+	const stale = await getRunRecord({ env, userId, runId: 'stale-running' })
+	expect(stale?.run.status).toBe('error')
+	expect(stale?.run.errorName).toBe('Interrupted')
+	expect(stale?.run.errorMessage).toMatch(/outcome unknown/i)
+	expect(stale?.run.finishedAt).toBeTruthy()
+
+	const fresh = await getRunRecord({ env, userId, runId: 'fresh-running' })
+	expect(fresh?.run.status).toBe('running')
+	expect(fresh?.run.finishedAt).toBeNull()
 })
 
 test('clearRunRecords empties the Durable Object', async () => {

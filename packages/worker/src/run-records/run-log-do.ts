@@ -16,14 +16,24 @@ import {
 	runRecordMaxTextBytes,
 	runRecordDefaultPageSize,
 	runRecordMaxPageSize,
+	runRecordRetentionAlarmMs,
 	runRecordRetentionDays,
+	runRecordRetentionEveryNFinishes,
+	runRecordStaleRunningTtlMs,
 	runSurfaceValues,
 } from './types.ts'
 
 const textEncoder = new TextEncoder()
 const maxAgeDeletesPerFinish = 100
 const maxExcessDeletesPerFinish = 100
-const maxOrphanLogDeletesPerFinish = 100
+const maxStaleRunningReconcilesPerPass = 100
+
+const metaRunCountKey = 'run_count'
+const metaFinishesSinceRetentionKey = 'finishes_since_retention'
+
+const staleRunningErrorName = 'Interrupted'
+const staleRunningErrorMessage =
+	'Run did not finish; outcome unknown (reconciled after stale running TTL).'
 
 export type RunLogRowInput = {
 	id: string
@@ -63,6 +73,7 @@ type ListRunsInput = {
 	status?: RunStatus | null
 	packageId?: string | null
 	jobId?: string | null
+	name?: string | null
 	since?: string | null
 	limit: number
 	cursor?: string | null
@@ -222,6 +233,11 @@ class RunLogBase extends DurableObject<Env> {
 		super(ctx, env)
 		this.ctx.blockConcurrencyWhile(async () => {
 			this.initializeSchema()
+			this.ensureRunCountMeta()
+			const currentAlarm = await this.ctx.storage.getAlarm()
+			if (currentAlarm == null) {
+				await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
+			}
 		})
 	}
 
@@ -253,20 +269,34 @@ class RunLogBase extends DurableObject<Env> {
 				updated_at TEXT NOT NULL
 			)
 		`)
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS run_log_meta (
+				key TEXT PRIMARY KEY NOT NULL,
+				value INTEGER NOT NULL
+			)
+		`)
 		this.ctx.storage.sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC, id DESC)`,
 		)
+		// Replace pre-id composites so keyset list filters can use covering indexes.
+		this.ctx.storage.sql.exec(`DROP INDEX IF EXISTS idx_runs_surface_started`)
 		this.ctx.storage.sql.exec(
-			`CREATE INDEX IF NOT EXISTS idx_runs_surface_started ON runs(surface, started_at DESC)`,
+			`CREATE INDEX IF NOT EXISTS idx_runs_surface_started_id ON runs(surface, started_at DESC, id DESC)`,
+		)
+		this.ctx.storage.sql.exec(`DROP INDEX IF EXISTS idx_runs_status_started`)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_runs_status_started_id ON runs(status, started_at DESC, id DESC)`,
+		)
+		this.ctx.storage.sql.exec(`DROP INDEX IF EXISTS idx_runs_job_started`)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_runs_job_started_id ON runs(job_id, started_at DESC, id DESC)`,
+		)
+		this.ctx.storage.sql.exec(`DROP INDEX IF EXISTS idx_runs_package_started`)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_runs_package_started_id ON runs(package_id, started_at DESC, id DESC)`,
 		)
 		this.ctx.storage.sql.exec(
-			`CREATE INDEX IF NOT EXISTS idx_runs_status_started ON runs(status, started_at DESC)`,
-		)
-		this.ctx.storage.sql.exec(
-			`CREATE INDEX IF NOT EXISTS idx_runs_job_started ON runs(job_id, started_at DESC)`,
-		)
-		this.ctx.storage.sql.exec(
-			`CREATE INDEX IF NOT EXISTS idx_runs_package_started ON runs(package_id, started_at DESC)`,
+			`CREATE INDEX IF NOT EXISTS idx_runs_name_started_id ON runs(name, started_at DESC, id DESC)`,
 		)
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS run_logs (
@@ -278,6 +308,52 @@ class RunLogBase extends DurableObject<Env> {
 				PRIMARY KEY (run_id, sequence)
 			)
 		`)
+	}
+
+	private getMeta(key: string): number | null {
+		const row = this.ctx.storage.sql
+			.exec<{ value: number }>(
+				`SELECT value FROM run_log_meta WHERE key = ? LIMIT 1`,
+				key,
+			)
+			.toArray()[0]
+		return row == null ? null : Number(row.value) || 0
+	}
+
+	private setMeta(key: string, value: number) {
+		this.ctx.storage.sql.exec(
+			`INSERT INTO run_log_meta (key, value) VALUES (?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			key,
+			value,
+		)
+	}
+
+	private ensureRunCountMeta() {
+		if (this.getMeta(metaRunCountKey) != null) return
+		const countRow = this.ctx.storage.sql
+			.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs`)
+			.one()
+		this.setMeta(metaRunCountKey, Number(countRow.n ?? 0) || 0)
+		if (this.getMeta(metaFinishesSinceRetentionKey) == null) {
+			this.setMeta(metaFinishesSinceRetentionKey, 0)
+		}
+	}
+
+	private adjustRunCount(delta: number) {
+		if (delta === 0) return
+		const current = this.getMeta(metaRunCountKey) ?? 0
+		this.setMeta(metaRunCountKey, Math.max(0, current + delta))
+	}
+
+	private runExists(runId: string) {
+		const row = this.ctx.storage.sql
+			.exec<{ ok: number }>(
+				`SELECT 1 AS ok FROM runs WHERE id = ? LIMIT 1`,
+				runId,
+			)
+			.toArray()[0]
+		return row != null
 	}
 
 	private upsertRun(run: RunLogRowInput, mode: 'ignore' | 'replace') {
@@ -352,9 +428,74 @@ class RunLogBase extends DurableObject<Env> {
 			this.ctx.storage.sql.exec(`DELETE FROM run_logs WHERE run_id = ?`, id)
 			this.ctx.storage.sql.exec(`DELETE FROM runs WHERE id = ?`, id)
 		}
+		this.adjustRunCount(-ids.length)
+	}
+
+	/**
+	 * Prefer marking stranded `running` rows terminal over deleting them: an
+	 * interrupted attempt is useful history. `error` + Interrupted is used
+	 * because the public status union has no dedicated unknown-outcome value;
+	 * live "is it running?" state must not be read from these rows anyway.
+	 */
+	private reconcileStaleRunning() {
+		const cutoff = new Date(
+			Date.now() - runRecordStaleRunningTtlMs,
+		).toISOString()
+		const finishedAt = new Date().toISOString()
+		const stale = this.ctx.storage.sql
+			.exec<{ id: string; started_at: string }>(
+				`SELECT id, started_at FROM runs
+				WHERE status = 'running' AND started_at < ?
+				ORDER BY started_at ASC
+				LIMIT ?`,
+				cutoff,
+				maxStaleRunningReconcilesPerPass,
+			)
+			.toArray()
+		for (const row of stale) {
+			const startedMs = Date.parse(row.started_at)
+			const finishedMs = Date.parse(finishedAt)
+			const durationMs =
+				Number.isFinite(startedMs) && Number.isFinite(finishedMs)
+					? Math.max(0, finishedMs - startedMs)
+					: null
+			this.ctx.storage.sql.exec(
+				`UPDATE runs
+				SET status = 'error',
+					finished_at = ?,
+					duration_ms = ?,
+					error_name = ?,
+					error_message = ?,
+					updated_at = ?
+				WHERE id = ? AND status = 'running'`,
+				finishedAt,
+				durationMs,
+				staleRunningErrorName,
+				staleRunningErrorMessage,
+				finishedAt,
+				row.id,
+			)
+		}
+	}
+
+	private deleteOldestWithStatus(status: RunStatus, limit: number) {
+		if (limit <= 0) return [] as Array<string>
+		return this.ctx.storage.sql
+			.exec<{ id: string }>(
+				`SELECT id FROM runs
+				WHERE status = ?
+				ORDER BY started_at ASC
+				LIMIT ?`,
+				status,
+				limit,
+			)
+			.toArray()
+			.map((row) => row.id)
 	}
 
 	private enforceRetention() {
+		this.reconcileStaleRunning()
+
 		const cutoff = new Date(
 			Date.now() - runRecordRetentionDays * 24 * 60 * 60 * 1000,
 		).toISOString()
@@ -371,43 +512,57 @@ class RunLogBase extends DurableObject<Env> {
 			.map((row) => row.id)
 		this.deleteRunsByIds(expired)
 
-		const countRow = this.ctx.storage.sql
-			.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs`)
-			.one()
-		const total = Number(countRow.n ?? 0)
+		const total = this.getMeta(metaRunCountKey) ?? 0
 		const excess = total - runRecordMaxRunsPerUser
 		if (excess > 0) {
 			const deleteCount = Math.min(excess, maxExcessDeletesPerFinish)
-			const oldest = this.ctx.storage.sql
-				.exec<{ id: string }>(
-					`SELECT id FROM runs
-					ORDER BY (status = 'error') ASC, started_at ASC
-					LIMIT ?`,
-					deleteCount,
+			// Failure-last via status-scoped scans on idx_runs_status_started_id
+			// instead of ORDER BY (status = 'error') expression sort.
+			const ids: Array<string> = []
+			ids.push(...this.deleteOldestWithStatus('success', deleteCount))
+			if (ids.length < deleteCount) {
+				ids.push(
+					...this.deleteOldestWithStatus('running', deleteCount - ids.length),
 				)
-				.toArray()
-				.map((row) => row.id)
-			this.deleteRunsByIds(oldest)
+			}
+			if (ids.length < deleteCount) {
+				ids.push(
+					...this.deleteOldestWithStatus('error', deleteCount - ids.length),
+				)
+			}
+			this.deleteRunsByIds(ids)
 		}
 
-		const orphans = this.ctx.storage.sql
-			.exec<{ run_id: string }>(
-				`SELECT DISTINCT run_id FROM run_logs
-				WHERE run_id NOT IN (SELECT id FROM runs)
-				LIMIT ?`,
-				maxOrphanLogDeletesPerFinish,
-			)
-			.toArray()
-		for (const orphan of orphans) {
-			this.ctx.storage.sql.exec(
-				`DELETE FROM run_logs WHERE run_id = ?`,
-				orphan.run_id,
-			)
+		this.setMeta(metaFinishesSinceRetentionKey, 0)
+	}
+
+	private maybeEnforceRetention() {
+		const finishes = (this.getMeta(metaFinishesSinceRetentionKey) ?? 0) + 1
+		this.setMeta(metaFinishesSinceRetentionKey, finishes)
+		if (finishes >= runRecordRetentionEveryNFinishes) {
+			this.enforceRetention()
 		}
 	}
 
+	private async ensureRetentionAlarm() {
+		const currentAlarm = await this.ctx.storage.getAlarm()
+		if (currentAlarm == null) {
+			await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
+		}
+	}
+
+	async alarm(): Promise<void> {
+		this.enforceRetention()
+		await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
+	}
+
 	async startRun(input: { run: RunLogRowInput }): Promise<{ ok: true }> {
+		const existed = this.runExists(input.run.id)
 		this.upsertRun(input.run, 'ignore')
+		if (!existed && this.runExists(input.run.id)) {
+			this.adjustRunCount(1)
+		}
+		await this.ensureRetentionAlarm()
 		return { ok: true }
 	}
 
@@ -415,9 +570,14 @@ class RunLogBase extends DurableObject<Env> {
 		run: RunLogRowInput
 		logs: Array<RunLogEntryInput>
 	}): Promise<{ ok: true }> {
+		const existed = this.runExists(input.run.id)
 		this.upsertRun(input.run, 'replace')
 		this.replaceLogs(input.run.id, input.logs)
-		this.enforceRetention()
+		if (!existed) {
+			this.adjustRunCount(1)
+		}
+		this.maybeEnforceRetention()
+		await this.ensureRetentionAlarm()
 		return { ok: true }
 	}
 
@@ -440,6 +600,10 @@ class RunLogBase extends DurableObject<Env> {
 		if (input.jobId) {
 			clauses.push('r.job_id = ?')
 			params.push(input.jobId)
+		}
+		if (input.name) {
+			clauses.push('r.name = ?')
+			params.push(input.name)
 		}
 		if (input.since) {
 			clauses.push('r.started_at >= ?')
@@ -616,8 +780,14 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	async clearAll(): Promise<{ ok: true }> {
+		await this.ctx.storage.deleteAlarm().catch(() => {
+			// Best effort: deleteAll below still clears persisted alarm state.
+		})
 		await this.ctx.storage.deleteAll()
 		this.initializeSchema()
+		this.setMeta(metaRunCountKey, 0)
+		this.setMeta(metaFinishesSinceRetentionKey, 0)
+		await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
 		return { ok: true }
 	}
 }

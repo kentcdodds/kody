@@ -169,6 +169,8 @@ export type RunRecordFilter = {
 	status?: RunStatus | null
 	packageId?: string | null
 	jobId?: string | null
+	/** Exact match on the run's display `name` (e.g. webhook or job name). */
+	name?: string | null
 	/** ISO 8601 lower bound on `startedAt`, inclusive. */
 	since?: string | null
 }
@@ -201,3 +203,18 @@ export const runRecordMaxTextBytes = 16 * 1024
 export const runRecordMaxJsonBytes = 32 * 1024
 export const runRecordDefaultPageSize = 25
 export const runRecordMaxPageSize = 100
+
+/**
+ * Age/excess retention and stale-`running` reconciliation run every Nth
+ * `finishRun` (and on the DO alarm), not on every finish.
+ */
+export const runRecordRetentionEveryNFinishes = 32
+
+/**
+ * `running` rows older than this are marked terminal with outcome-unknown.
+ * History only — live service/job state lives on entity rows, not here.
+ */
+export const runRecordStaleRunningTtlMs = 24 * 60 * 60 * 1000
+
+/** How often the DO alarm re-runs retention when the object is otherwise idle. */
+export const runRecordRetentionAlarmMs = 60 * 60 * 1000

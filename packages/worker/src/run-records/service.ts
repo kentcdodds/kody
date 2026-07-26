@@ -168,6 +168,11 @@ export function runLogRpc(input: { env: Env; userId: string }): RunLogRpc {
 	) as unknown as RunLogRpc
 }
 
+/**
+ * Never throws: a run record is observability, so a broken record must not
+ * fail the run it observes. Callers treat a `null` handle as "not recording"
+ * and keep going. Same contract as `recordUsage`.
+ */
 export function beginRunRecord(input: {
 	env: Env
 	userId?: string | null
@@ -179,91 +184,156 @@ export function beginRunRecord(input: {
 	const context = input.context
 	if (!namespace || !userId || !context) return null
 
-	const id = crypto.randomUUID()
-	const startedAt = new Date().toISOString()
-	const persistence = runPersistenceForSurface(context.surface)
-	const handle: RunRecordHandle = {
-		id,
-		userId,
-		startedAt,
-		persistence,
-		context,
-	}
-
-	if (persistence === 'eager') {
-		const run = buildRunRow({
-			handle,
-			status: 'running',
-			finishedAt: null,
-			durationMs: null,
-			errorName: null,
-			errorMessage: null,
-			updatedAt: startedAt,
-		})
-		// A dropped startRun is deliberately harmless: finishRun upserts the
-		// complete row. That is why begin can stay off the request critical path.
-		const startPromise = runLogRpc({ env: input.env, userId })
-			.startRun({ run })
-			.catch((error: unknown) => {
-				console.warn('run-record-start-failed', error)
-			})
-		if (input.waitUntil) {
-			input.waitUntil(startPromise)
-		} else {
-			void startPromise
+	try {
+		const id = crypto.randomUUID()
+		const startedAt = new Date().toISOString()
+		const persistence = runPersistenceForSurface(context.surface)
+		const handle: RunRecordHandle = {
+			id,
+			userId,
+			startedAt,
+			persistence,
+			context,
 		}
-	}
 
-	return handle
+		if (persistence === 'eager') {
+			const run = buildRunRow({
+				handle,
+				status: 'running',
+				finishedAt: null,
+				durationMs: null,
+				errorName: null,
+				errorMessage: null,
+				updatedAt: startedAt,
+			})
+			// A dropped startRun is deliberately harmless: finishRun upserts the
+			// complete row. That is why begin can stay off the request critical path.
+			const startPromise = runLogRpc({ env: input.env, userId })
+				.startRun({ run })
+				.catch((error: unknown) => {
+					console.warn('run-record-start-failed', error)
+				})
+			if (input.waitUntil) {
+				input.waitUntil(startPromise)
+			} else {
+				void startPromise
+			}
+		}
+
+		return handle
+	} catch (error) {
+		console.warn('run-record-begin-failed', error)
+		return null
+	}
 }
 
+/**
+ * Never throws, including the activation milestone write it fans out to: the
+ * terminal record and the milestone both observe the run, so neither may fail
+ * it.
+ */
 export async function finishRunRecord(input: {
 	env: Env
 	handle: RunRecordHandle | null
 	status: RunTerminalStatus
 	logs?: Array<RunRecordLogInput>
 	error?: unknown
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<void> {
 	const handle = input.handle
 	if (!handle) return
 	if (handle.persistence === 'on-failure' && input.status === 'success') {
 		return
 	}
-	try {
-		if (runLogBinding(input.env)) {
-			const finishedAt = new Date().toISOString()
-			const durationMs = Math.max(
-				0,
-				Date.parse(finishedAt) - Date.parse(handle.startedAt),
-			)
-			const { errorName, errorMessage } = getErrorFields(input.error)
-			const run = buildRunRow({
-				handle,
-				status: input.status,
-				finishedAt,
-				durationMs,
-				errorName,
-				errorMessage,
-				updatedAt: finishedAt,
-			})
-			await runLogRpc({ env: input.env, userId: handle.userId }).finishRun({
-				run,
-				logs: normalizeLogs(input.logs),
-			})
-		}
-	} catch (error) {
-		console.warn('run-record-finish-failed', error)
-	}
 
-	if (input.status === 'success') {
-		const packageId = normalizeOptionalString(handle.context.packageId)
-		if (packageId) {
-			await recordSuccessfulPackageRun(input.env, {
-				userId: handle.userId,
-				packageId,
-			})
+	const work = (async () => {
+		try {
+			if (runLogBinding(input.env)) {
+				const finishedAt = new Date().toISOString()
+				const durationMs = Math.max(
+					0,
+					Date.parse(finishedAt) - Date.parse(handle.startedAt),
+				)
+				const { errorName, errorMessage } = getErrorFields(input.error)
+				const run = buildRunRow({
+					handle,
+					status: input.status,
+					finishedAt,
+					durationMs,
+					errorName,
+					errorMessage,
+					updatedAt: finishedAt,
+				})
+				await runLogRpc({ env: input.env, userId: handle.userId }).finishRun({
+					run,
+					logs: normalizeLogs(input.logs),
+				})
+			}
+		} catch (error) {
+			console.warn('run-record-finish-failed', error)
 		}
+
+		if (input.status === 'success') {
+			const packageId = normalizeOptionalString(handle.context.packageId)
+			if (packageId) {
+				try {
+					await recordSuccessfulPackageRun(input.env, {
+						userId: handle.userId,
+						packageId,
+					})
+				} catch (error) {
+					console.warn('run-record-activation-failed', error)
+				}
+			}
+		}
+	})()
+
+	if (input.waitUntil) {
+		input.waitUntil(work)
+		return
 	}
+	await work
+}
+
+/**
+ * One-RPC terminal write for callers that have no work between begin and
+ * finish. Equivalent to minting a handle and calling `finishRunRecord` without
+ * `beginRunRecord` (finish already upserts a complete row). Prefer this over a
+ * no-op begin when the surface is known to be terminal-only.
+ */
+export async function recordRunRecord(input: {
+	env: Env
+	userId?: string | null
+	context?: RunRecordContext | null
+	status: RunTerminalStatus
+	logs?: Array<RunRecordLogInput>
+	error?: unknown
+	startedAt?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
+}): Promise<RunRecordHandle | null> {
+	const namespace = runLogBinding(input.env)
+	const userId = normalizeOptionalString(input.userId ?? undefined)
+	const context = input.context
+	if (!namespace || !userId || !context) return null
+
+	const startedAt =
+		normalizeOptionalString(input.startedAt) ?? new Date().toISOString()
+	const handle: RunRecordHandle = {
+		id: crypto.randomUUID(),
+		userId,
+		startedAt,
+		persistence: runPersistenceForSurface(context.surface),
+		context,
+	}
+	await finishRunRecord({
+		env: input.env,
+		handle,
+		status: input.status,
+		logs: input.logs,
+		error: input.error,
+		waitUntil: input.waitUntil,
+	})
+	return handle
 }
 
 export async function listRunRecords(input: {
@@ -285,6 +355,7 @@ export async function listRunRecords(input: {
 		status: input.filter?.status ?? null,
 		packageId: normalizeOptionalString(input.filter?.packageId),
 		jobId: normalizeOptionalString(input.filter?.jobId),
+		name: normalizeOptionalString(input.filter?.name),
 		since: normalizeOptionalString(input.filter?.since),
 		limit,
 		cursor: input.cursor ?? null,
