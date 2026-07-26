@@ -1383,3 +1383,76 @@ test('account export includes run_records section with runs and log lines', asyn
 		},
 	])
 })
+
+test('account export includes a package service known only via package_service_states', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+		INSERT INTO saved_packages (
+			id, user_id, name, kody_id, description, tags_json, source_id,
+			has_app, hidden, is_private, created_at, updated_at
+		) VALUES (
+			'pkg-states', 'user-aaa', 'States Package', 'states-pkg', '', '[]',
+			'src-states', 0, 0, 1, '2026-07-05', '2026-07-05'
+		);
+		INSERT INTO package_service_states (
+			user_id, package_id, service_name, status, started_at, updated_at
+		) VALUES (
+			'user-aaa', 'pkg-states', 'only-in-states', 'running',
+			'2026-07-05T00:00:00.000Z', '2026-07-05T00:00:00.000Z'
+		);
+	`)
+
+	const statusMock = vi.fn(async () =>
+		Response.json({
+			package_id: 'pkg-states',
+			kody_id: 'states-pkg',
+			service_name: 'only-in-states',
+			status: 'running',
+			auto_start: false,
+			mode: 'bounded',
+			timeout_ms: 30_000,
+			stop_requested: false,
+			active_run_id: null,
+			next_alarm_at: null,
+			last_error: null,
+			last_started_at: '2026-07-05T00:00:00.000Z',
+			last_stopped_at: null,
+			last_run_finished_at: null,
+			last_result: null,
+		}),
+	)
+
+	const accountExport = await createAccountExport({
+		env: {
+			APP_DB: db,
+			PACKAGE_SERVICE_INSTANCE: {
+				idFromName: (name: string) => name as unknown as DurableObjectId,
+				get: () => ({ fetch: statusMock }),
+			},
+		} as unknown as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		generatedAt: '2026-07-05T00:00:00.000Z',
+	})
+
+	expect(accountExport.manifest.sections.package_services?.count).toBe(1)
+	expect(accountExport.durableObjects.packageServices).toEqual([
+		expect.objectContaining({
+			packageId: 'pkg-states',
+			serviceName: 'only-in-states',
+			status: expect.objectContaining({
+				service_name: 'only-in-states',
+				status: 'running',
+			}),
+		}),
+	])
+	expect(statusMock).toHaveBeenCalledTimes(1)
+})

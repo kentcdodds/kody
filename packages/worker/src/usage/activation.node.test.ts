@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
+	countsTowardPackageActivation,
 	recordActivationMilestone,
 	recordSuccessfulPackageRun,
 } from './activation.ts'
@@ -28,36 +29,15 @@ function createActivationDb() {
 			package_id TEXT,
 			PRIMARY KEY (user_id, milestone)
 		);
+		CREATE TABLE user_package_run_successes (
+			user_id TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			success_count INTEGER NOT NULL CHECK (success_count >= 0),
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, package_id)
+		);
 	`)
 	return { sqlite, db: createD1FromSqlite(sqlite) }
-}
-
-function insertRun(
-	sqlite: DatabaseSync,
-	input: {
-		id: string
-		userId: string
-		packageId: string
-		status: 'success' | 'error'
-		startedAt: string
-	},
-) {
-	sqlite
-		.prepare(
-			`INSERT INTO package_runtime_runs (
-				id, user_id, package_id, package_kody_id, surface, status,
-				started_at, created_at, updated_at
-			) VALUES (?, ?, ?, 'kody-id', 'job', ?, ?, ?, ?)`,
-		)
-		.run(
-			input.id,
-			input.userId,
-			input.packageId,
-			input.status,
-			input.startedAt,
-			input.startedAt,
-			input.startedAt,
-		)
 }
 
 function listMilestones(sqlite: DatabaseSync, userId: string) {
@@ -69,60 +49,130 @@ function listMilestones(sqlite: DatabaseSync, userId: string) {
 		.all(userId) as Array<{ milestone: string; package_id: string | null }>
 }
 
-test('activation requires the same package to succeed twice', async () => {
+function listSuccessCounts(sqlite: DatabaseSync, userId: string) {
+	return sqlite
+		.prepare(
+			`SELECT package_id, success_count FROM user_package_run_successes
+			 WHERE user_id = ? ORDER BY package_id`,
+		)
+		.all(userId) as Array<{ package_id: string; success_count: number }>
+}
+
+test('activation requires the same package to succeed twice on the durable counter', async () => {
 	const { sqlite, db } = createActivationDb()
 	const env = { APP_DB: db }
 
-	insertRun(sqlite, {
-		id: 'run-1',
-		userId: 'user-1',
-		packageId: 'pkg-a',
-		status: 'success',
-		startedAt: '2026-07-01T00:00:00.000Z',
-	})
 	await recordSuccessfulPackageRun(env, {
 		userId: 'user-1',
 		packageId: 'pkg-a',
+		surface: 'job',
 	})
 	expect(listMilestones(sqlite, 'user-1').map((row) => row.milestone)).toEqual([
 		'package_run_succeeded',
+	])
+	expect(listSuccessCounts(sqlite, 'user-1')).toEqual([
+		{ package_id: 'pkg-a', success_count: 1 },
 	])
 
 	// A different package succeeding once is still a user in setup, not a user
 	// with something working unattended.
-	insertRun(sqlite, {
-		id: 'run-2',
-		userId: 'user-1',
-		packageId: 'pkg-b',
-		status: 'success',
-		startedAt: '2026-07-02T00:00:00.000Z',
-	})
 	await recordSuccessfulPackageRun(env, {
 		userId: 'user-1',
 		packageId: 'pkg-b',
+		surface: 'service',
 	})
 	expect(listMilestones(sqlite, 'user-1').map((row) => row.milestone)).toEqual([
 		'package_run_succeeded',
 	])
+	expect(listSuccessCounts(sqlite, 'user-1')).toEqual([
+		{ package_id: 'pkg-a', success_count: 1 },
+		{ package_id: 'pkg-b', success_count: 1 },
+	])
 
-	insertRun(sqlite, {
-		id: 'run-3',
-		userId: 'user-1',
-		packageId: 'pkg-a',
-		status: 'success',
-		startedAt: '2026-07-03T00:00:00.000Z',
-	})
 	await recordSuccessfulPackageRun(env, {
 		userId: 'user-1',
 		packageId: 'pkg-a',
+		surface: 'job',
 	})
 	expect(listMilestones(sqlite, 'user-1')).toEqual([
 		{ milestone: 'package_activated', package_id: 'pkg-a' },
 		{ milestone: 'package_run_succeeded', package_id: 'pkg-a' },
 	])
+	expect(listSuccessCounts(sqlite, 'user-1')).toEqual([
+		{ package_id: 'pkg-a', success_count: 2 },
+		{ package_id: 'pkg-b', success_count: 1 },
+	])
 })
 
-test('milestones keep their first timestamp and failed runs never activate', async () => {
+test('terminal package_activated fast path does not re-query or rewrite counters', async () => {
+	const { sqlite, db } = createActivationDb()
+	const env = { APP_DB: db }
+
+	await recordActivationMilestone(env, {
+		userId: 'user-fast',
+		milestone: 'package_activated',
+		packageId: 'pkg-a',
+		reachedAt: '2026-07-01T00:00:00.000Z',
+	})
+
+	const prepareCalls: Array<string> = []
+	const originalPrepare = db.prepare.bind(db)
+	db.prepare = ((query: string) => {
+		prepareCalls.push(query.replace(/\s+/g, ' ').trim())
+		return originalPrepare(query)
+	}) as typeof db.prepare
+
+	await recordSuccessfulPackageRun(env, {
+		userId: 'user-fast',
+		packageId: 'pkg-a',
+		surface: 'job',
+	})
+	await recordSuccessfulPackageRun(env, {
+		userId: 'user-fast',
+		packageId: 'pkg-b',
+		surface: 'workflow',
+	})
+
+	expect(prepareCalls).toEqual([
+		'SELECT 1 AS n FROM user_activation_milestones WHERE user_id = ?1 AND milestone = ?2',
+		'SELECT 1 AS n FROM user_activation_milestones WHERE user_id = ?1 AND milestone = ?2',
+	])
+	expect(listSuccessCounts(sqlite, 'user-fast')).toEqual([])
+	expect(listMilestones(sqlite, 'user-fast')).toEqual([
+		{ milestone: 'package_activated', package_id: 'pkg-a' },
+	])
+})
+
+test('webhook and app_fetch successes do not count toward activation', async () => {
+	const { sqlite, db } = createActivationDb()
+	const env = { APP_DB: db }
+
+	expect(countsTowardPackageActivation('webhook')).toBe(false)
+	expect(countsTowardPackageActivation('app_fetch')).toBe(false)
+	expect(countsTowardPackageActivation('job')).toBe(true)
+	expect(countsTowardPackageActivation(undefined)).toBe(true)
+
+	await recordSuccessfulPackageRun(env, {
+		userId: 'user-http',
+		packageId: 'pkg-a',
+		surface: 'webhook',
+	})
+	await recordSuccessfulPackageRun(env, {
+		userId: 'user-http',
+		packageId: 'pkg-a',
+		surface: 'app_fetch',
+	})
+	await recordSuccessfulPackageRun(env, {
+		userId: 'user-http',
+		packageId: 'pkg-a',
+		surface: 'webhook',
+	})
+
+	expect(listMilestones(sqlite, 'user-http')).toEqual([])
+	expect(listSuccessCounts(sqlite, 'user-http')).toEqual([])
+})
+
+test('milestones keep their first timestamp', async () => {
 	const { sqlite, db } = createActivationDb()
 	const env = { APP_DB: db }
 
@@ -148,29 +198,6 @@ test('milestones keep their first timestamp and failed runs never activate', asy
 		reached_at: '2026-07-01T00:00:00.000Z',
 		package_id: 'pkg-a',
 	})
-
-	// Two failed runs of one package must not count toward activation.
-	insertRun(sqlite, {
-		id: 'run-e1',
-		userId: 'user-3',
-		packageId: 'pkg-c',
-		status: 'error',
-		startedAt: '2026-07-01T00:00:00.000Z',
-	})
-	insertRun(sqlite, {
-		id: 'run-e2',
-		userId: 'user-3',
-		packageId: 'pkg-c',
-		status: 'error',
-		startedAt: '2026-07-02T00:00:00.000Z',
-	})
-	await recordSuccessfulPackageRun(env, {
-		userId: 'user-3',
-		packageId: 'pkg-c',
-	})
-	expect(listMilestones(sqlite, 'user-3').map((row) => row.milestone)).toEqual([
-		'package_run_succeeded',
-	])
 })
 
 test('activation instrumentation never throws without a database', async () => {
@@ -183,4 +210,27 @@ test('activation instrumentation never throws without a database', async () => {
 			{ userId: 'user-1', milestone: 'package_activated' },
 		),
 	).resolves.toBeUndefined()
+})
+
+test('activation write failures never throw to the caller', async () => {
+	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+	const env = {
+		APP_DB: {
+			prepare() {
+				throw new Error('d1 unavailable')
+			},
+		} as unknown as D1Database,
+	}
+	await expect(
+		recordSuccessfulPackageRun(env, {
+			userId: 'user-1',
+			packageId: 'pkg-a',
+			surface: 'job',
+		}),
+	).resolves.toBeUndefined()
+	expect(warnSpy).toHaveBeenCalledWith(
+		'activation-run-record-failed',
+		expect.any(Error),
+	)
+	warnSpy.mockRestore()
 })

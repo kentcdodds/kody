@@ -280,6 +280,7 @@ export async function finishRunRecord(input: {
 					await recordSuccessfulPackageRun(input.env, {
 						userId: handle.userId,
 						packageId,
+						surface: handle.context.surface,
 					})
 				} catch (error) {
 					console.warn('run-record-activation-failed', error)
@@ -316,14 +317,19 @@ export async function recordRunRecord(input: {
 	const context = input.context
 	if (!namespace || !userId || !context) return null
 
-	const startedAt =
-		normalizeOptionalString(input.startedAt) ?? new Date().toISOString()
-	const handle: RunRecordHandle = {
-		id: crypto.randomUUID(),
-		userId,
-		startedAt,
-		persistence: runPersistenceForSurface(context.surface),
-		context,
+	let handle: RunRecordHandle
+	try {
+		handle = {
+			id: crypto.randomUUID(),
+			userId,
+			startedAt:
+				normalizeOptionalString(input.startedAt) ?? new Date().toISOString(),
+			persistence: runPersistenceForSurface(context.surface),
+			context,
+		}
+	} catch (error) {
+		console.warn('run-record-begin-failed', error)
+		return null
 	}
 	await finishRunRecord({
 		env: input.env,

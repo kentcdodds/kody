@@ -35,6 +35,12 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 			reason:
 				'Memories are durable user-curated content removed by explicit user action or account deletion, not by time-based retention.',
 		},
+		{
+			table: 'user_package_run_successes',
+			kind: 'durable_forever',
+			reason:
+				'Per-package activation success counters must outlive retention-pruned run history; they are removed only by account deletion.',
+		},
 	] as const
 
 export function getAccountRetentionDispositionCoverage(): Set<string> {

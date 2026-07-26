@@ -401,6 +401,12 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					source: 'auto-start',
 				})
 			}
+		} else if (this.stateSnapshot.binding) {
+			// Warm-start after upgrades that introduced package_service_states:
+			// project on construction (and therefore on the first post-upgrade
+			// alarm wake) so inventory converges without waiting for a lifecycle
+			// transition.
+			await this.projectServiceStateToD1()
 		}
 	}
 

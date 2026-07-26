@@ -177,11 +177,22 @@ function createTestDb(
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
-								lower ===
-								"select distinct package_id, name from package_runtime_runs where user_id = ? and surface = 'service' and name is not null"
+								lower.includes('select distinct package_id, name from (') &&
+								lower.includes('from package_service_states') &&
+								lower.includes('from package_runtime_runs')
 							) {
 								const seen = new Set<string>()
 								results = []
+								for (const row of rows.package_service_states ?? []) {
+									if (row['user_id'] !== userId) continue
+									const key = `${String(row['package_id'])}:${String(row['service_name'])}`
+									if (seen.has(key)) continue
+									seen.add(key)
+									results.push({
+										package_id: row['package_id'],
+										name: row['service_name'],
+									})
+								}
 								for (const row of rows.package_runtime_runs ?? []) {
 									if (
 										row['user_id'] !== userId ||
@@ -200,9 +211,29 @@ function createTestDb(
 								}
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
-							if (lower.startsWith('select distinct r.package_id,')) {
+							if (
+								lower.includes('from package_service_states as s') &&
+								lower.includes('from package_runtime_runs as r')
+							) {
 								const seen = new Set<string>()
 								results = []
+								for (const row of rows.package_service_states ?? []) {
+									if (row['user_id'] !== userId) continue
+									const savedPackage = (rows.saved_packages ?? []).find(
+										(pkg) =>
+											pkg['id'] === row['package_id'] &&
+											pkg['user_id'] === row['user_id'],
+									)
+									const key = `${String(row['package_id'])}:${String(row['service_name'])}`
+									if (seen.has(key)) continue
+									seen.add(key)
+									results.push({
+										package_id: row['package_id'],
+										kody_id: savedPackage?.['kody_id'] ?? null,
+										source_id: savedPackage?.['source_id'] ?? null,
+										name: row['service_name'],
+									})
+								}
 								for (const row of rows.package_runtime_runs ?? []) {
 									if (
 										row['user_id'] !== userId ||
@@ -1306,7 +1337,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		jobVectorId(packageJobId),
 		'package_pkg-1',
 	])
-	expect(clearStorageMock).toHaveBeenCalledTimes(6)
+	expect(clearStorageMock).toHaveBeenCalledTimes(7)
 	expect(purgeJobManagerMock).toHaveBeenCalledTimes(1)
 	expect(purgeRepoSessionMock).toHaveBeenCalledWith({
 		sessionId: 'rs-1',
@@ -1317,7 +1348,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 
 		instanceId: 'home',
 	})
-	expect(doFetchMock).toHaveBeenCalledTimes(3)
+	expect(doFetchMock).toHaveBeenCalledTimes(4)
 
 	// Bundle KV keys for the deleted user were removed; the other user's keys
 	// remain in storage.
@@ -1382,7 +1413,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	)
 	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({
-		storageRunners: 6,
+		storageRunners: 7,
 		runLogs: 1,
 		jobManagers: 1,
 		repoSessions: 1,
@@ -1393,7 +1424,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		mcpClientHubs: 1,
 		mcpAgentSessions: 1,
 		packageRealtimeSessions: 1,
-		packageServiceInstances: 2,
+		packageServiceInstances: 3,
 	})
 	expect(clearRunLogMock).toHaveBeenCalledTimes(1)
 	expect(purgeMcpClientHubMock).toHaveBeenCalledTimes(1)
@@ -1872,4 +1903,107 @@ test('account deletion empties the user RunLog DO and leaves other users untouch
 		true,
 	)
 	expect(clearedStorageIds.some((id) => id.includes('bbb-bucket'))).toBe(false)
+})
+
+test('account deletion purges a PackageServiceInstance known only via package_service_states', async () => {
+	const userId = 'user-states-only'
+	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
+	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
+	const { db } = createTestDb({
+		users: [{ id: 1, email: 'states@example.com', stable_user_id: userId }],
+		saved_packages: [
+			{
+				id: 'pkg-states',
+				user_id: userId,
+				kody_id: 'states-pkg',
+				source_id: 'src-states',
+				has_app: 0,
+			},
+		],
+		package_service_states: [
+			{
+				user_id: userId,
+				package_id: 'pkg-states',
+				service_name: 'only-in-states',
+				status: 'running',
+				started_at: '2026-07-05T00:00:00.000Z',
+				updated_at: '2026-07-05T00:00:00.000Z',
+			},
+		],
+	})
+
+	const result = await deleteUserAccount({
+		env: createSuccessfulDeletionEnv(db, {
+			BUNDLE_ARTIFACTS_KV: {
+				get: async () => null,
+				async list() {
+					return { keys: [], list_complete: true as const }
+				},
+				delete: async () => undefined,
+			},
+			PACKAGE_SERVICE_INSTANCE: {
+				idFromName,
+				get: () => ({ fetch: serviceFetch }),
+			},
+		}),
+		dbUserId: 1,
+		mcpUserId: userId,
+	})
+
+	expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
+	expect(serviceFetch).toHaveBeenCalledTimes(1)
+	const request = serviceFetch.mock.calls[0]?.[0] as Request
+	expect(new URL(request.url).pathname).toContain('/purge')
+	const body = (await request.clone().json()) as {
+		binding: { packageId: string; serviceName: string }
+	}
+	expect(body.binding).toMatchObject({
+		packageId: 'pkg-states',
+		serviceName: 'only-in-states',
+	})
+	expect(idFromName).toHaveBeenCalledWith(
+		JSON.stringify([userId, 'pkg-states', 'only-in-states']),
+	)
+})
+
+test('account deletion still purges a service known only via legacy package_runtime_runs', async () => {
+	const userId = 'user-legacy-only'
+	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
+	const { db } = createTestDb({
+		users: [{ id: 1, email: 'legacy@example.com', stable_user_id: userId }],
+		package_runtime_runs: [
+			{
+				id: 'run-legacy',
+				user_id: userId,
+				package_id: 'pkg-legacy',
+				package_kody_id: 'legacy-pkg',
+				source_id: 'src-legacy',
+				surface: 'service',
+				name: 'only-in-runs',
+				storage_id: null,
+			},
+		],
+	})
+
+	const result = await deleteUserAccount({
+		env: createSuccessfulDeletionEnv(db, {
+			PACKAGE_SERVICE_INSTANCE: {
+				idFromName: (name: string) => name as unknown as DurableObjectId,
+				get: () => ({ fetch: serviceFetch }),
+			},
+		}),
+		dbUserId: 1,
+		mcpUserId: userId,
+	})
+
+	expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
+	const request = serviceFetch.mock.calls[0]?.[0] as Request
+	const body = (await request.clone().json()) as {
+		binding: { packageId: string; serviceName: string; kodyId: string }
+	}
+	expect(body.binding).toMatchObject({
+		packageId: 'pkg-legacy',
+		serviceName: 'only-in-runs',
+		kodyId: 'legacy-pkg',
+	})
 })

@@ -8,17 +8,37 @@
  * Only run-derived milestones live here. Signup, verification, agent
  * connection, and first fork are all derivable from durable tables and are
  * read directly by the insights dashboard; storing them again would create two
- * sources of truth. Run history is different: `package_runtime_runs` is
- * retention-pruned, so a milestone that is not captured when it happens cannot
- * be recovered.
+ * sources of truth. Run history is different: it is retention-pruned (and no
+ * longer written to D1), so a milestone that is not captured when it happens
+ * cannot be recovered. Success counts therefore live in
+ * `user_package_run_successes`, not in run history.
  *
  * Like `recordUsage`, these writes never throw. Instrumentation must not break
  * the paths it observes.
  */
 
+import { type RunSurface } from '#worker/run-records/types.ts'
+
 export type ActivationMilestone = 'package_run_succeeded' | 'package_activated'
 
 export type ActivationEnv = { APP_DB?: D1Database }
+
+/**
+ * Surfaces that count toward package activation. High-frequency request
+ * handlers (`webhook`, `app_fetch`) are excluded: activation means the user got
+ * a package working as an unattended capability (job, service, workflow, …),
+ * not that an HTTP handler returned 200 twice. Omitting `surface` keeps the
+ * prior "any package-scoped success" behavior for callers that have not wired
+ * the field yet.
+ */
+const activationExcludedSurfaces = new Set<RunSurface>(['webhook', 'app_fetch'])
+
+export function countsTowardPackageActivation(
+	surface: RunSurface | null | undefined,
+): boolean {
+	if (surface == null) return true
+	return !activationExcludedSurfaces.has(surface)
+}
 
 const insertMilestoneStatement = `
 INSERT OR IGNORE INTO user_activation_milestones (
@@ -26,10 +46,14 @@ INSERT OR IGNORE INTO user_activation_milestones (
 ) VALUES (?1, ?2, ?3, ?4)
 `.trim()
 
-const countSuccessfulRunsStatement = `
-SELECT COUNT(*) AS n
-FROM package_runtime_runs
-WHERE user_id = ?1 AND package_id = ?2 AND status = 'success'
+const incrementSuccessCountStatement = `
+INSERT INTO user_package_run_successes (
+	user_id, package_id, success_count, updated_at
+) VALUES (?1, ?2, 1, ?3)
+ON CONFLICT(user_id, package_id) DO UPDATE SET
+	success_count = success_count + 1,
+	updated_at = excluded.updated_at
+RETURNING success_count
 `.trim()
 
 const hasMilestoneStatement = `
@@ -76,30 +100,40 @@ export async function recordActivationMilestone(
  */
 export async function recordSuccessfulPackageRun(
 	env: ActivationEnv,
-	input: { userId: string; packageId: string },
+	input: {
+		userId: string
+		packageId: string
+		surface?: RunSurface | null
+	},
 ): Promise<void> {
 	if (!env.APP_DB || !input.userId || !input.packageId) return
+	if (!countsTowardPackageActivation(input.surface)) return
 	try {
 		if (await hasMilestone(env, input.userId, 'package_activated')) return
+
+		const updatedAt = new Date().toISOString()
+		const row = await env.APP_DB.prepare(incrementSuccessCountStatement)
+			.bind(input.userId, input.packageId, updatedAt)
+			.first<{ success_count: number }>()
+		const successCount = Number(row?.success_count ?? 0)
 
 		await recordActivationMilestone(env, {
 			userId: input.userId,
 			milestone: 'package_run_succeeded',
 			packageId: input.packageId,
+			reachedAt: updatedAt,
 		})
 
 		// Counted per package rather than per user: two different packages that
 		// each ran once is a user still in setup, not a user with something
 		// working.
-		const row = await env.APP_DB.prepare(countSuccessfulRunsStatement)
-			.bind(input.userId, input.packageId)
-			.first<{ n: number }>()
-		if (Number(row?.n ?? 0) < 2) return
+		if (successCount < 2) return
 
 		await recordActivationMilestone(env, {
 			userId: input.userId,
 			milestone: 'package_activated',
 			packageId: input.packageId,
+			reachedAt: updatedAt,
 		})
 	} catch (error) {
 		console.warn('activation-run-record-failed', error)

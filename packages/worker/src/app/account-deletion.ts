@@ -229,11 +229,21 @@ async function listUserStorageIds(env: Env, userId: string) {
 			.bind(userId)
 			.all<{ id: string }>(),
 		env.APP_DB.prepare(
-			`SELECT DISTINCT package_id, name
+			`SELECT DISTINCT package_id, name FROM (
+				SELECT package_id, service_name AS name
+				FROM package_service_states
+				WHERE user_id = ?
+				UNION
+				-- Legacy arm: remove once the follow-up drop migration for
+				-- package_runtime_runs lands.
+				SELECT package_id, name
 				FROM package_runtime_runs
-				WHERE user_id = ? AND surface = 'service' AND name IS NOT NULL`,
+				WHERE user_id = ?
+					AND surface = 'service'
+					AND name IS NOT NULL
+			)`,
 		)
-			.bind(userId)
+			.bind(userId, userId)
 			.all<{ package_id: string; name: string }>(),
 		listRunRecordStorageIds({ env, userId }),
 	])
@@ -320,27 +330,46 @@ async function listUserMcpServers(env: Env, userId: string) {
 async function listUserPackageServices(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
 		`SELECT DISTINCT
-			r.package_id,
-			COALESCE(p.kody_id, r.package_kody_id) AS kody_id,
-			COALESCE(p.source_id, r.source_id) AS source_id,
-			r.name
-		FROM package_runtime_runs AS r
-		LEFT JOIN saved_packages AS p
-			ON p.id = r.package_id AND p.user_id = r.user_id
-		WHERE r.user_id = ?
-			AND r.surface = 'service'
-			AND r.name IS NOT NULL`,
+			package_id,
+			kody_id,
+			source_id,
+			name
+		FROM (
+			SELECT
+				s.package_id AS package_id,
+				p.kody_id AS kody_id,
+				p.source_id AS source_id,
+				s.service_name AS name
+			FROM package_service_states AS s
+			LEFT JOIN saved_packages AS p
+				ON p.id = s.package_id AND p.user_id = s.user_id
+			WHERE s.user_id = ?
+			UNION
+			-- Legacy arm: remove once the follow-up drop migration for
+			-- package_runtime_runs lands.
+			SELECT
+				r.package_id AS package_id,
+				COALESCE(p.kody_id, r.package_kody_id) AS kody_id,
+				COALESCE(p.source_id, r.source_id) AS source_id,
+				r.name AS name
+			FROM package_runtime_runs AS r
+			LEFT JOIN saved_packages AS p
+				ON p.id = r.package_id AND p.user_id = r.user_id
+			WHERE r.user_id = ?
+				AND r.surface = 'service'
+				AND r.name IS NOT NULL
+		)`,
 	)
-		.bind(userId)
+		.bind(userId, userId)
 		.all<{
 			package_id: string
-			kody_id: string
+			kody_id: string | null
 			source_id: string | null
 			name: string
 		}>()
 	return (rows.results ?? []).map((row) => ({
 		packageId: row.package_id,
-		kodyId: row.kody_id,
+		kodyId: row.kody_id ?? '',
 		sourceId: row.source_id ?? '',
 		serviceName: row.name,
 	}))

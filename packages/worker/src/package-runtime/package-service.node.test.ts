@@ -740,3 +740,62 @@ test('durable object restore keeps the persisted crash-loop backoff after evicti
 		vi.useRealTimers()
 	}
 })
+
+test('package service restore projects current state into package_service_states', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T14:00:00.000Z'))
+	const upserts: Array<Array<unknown>> = []
+	const appDb = {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async run() {
+							if (query.includes('INSERT INTO package_service_states')) {
+								upserts.push(params)
+							}
+							return { meta: { changes: 1 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	try {
+		const restored = createPackageServiceState()
+		restored.persistedEntries.set('package-service-state', {
+			binding: serviceBinding,
+			autoStart: false,
+			mode: 'bounded',
+			timeoutMs: 30_000,
+			stopRequested: false,
+			currentRunId: null,
+			nextAlarmAt: null,
+			nextAlarmSource: null,
+			lastStartedAt: '2026-07-05T13:00:00.000Z',
+			lastStoppedAt: '2026-07-05T13:05:00.000Z',
+			status: 'stopped',
+			lastError: null,
+			lastResult: { ok: true },
+			lastRunFinishedAt: '2026-07-05T13:05:00.000Z',
+			consecutiveFailureCount: 0,
+		})
+		new PackageServiceInstance(restored.state, { APP_DB: appDb } as Env)
+		await waitForRestoreState(restored.state)
+
+		expect(upserts).toEqual([
+			[
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+				'stopped',
+				null,
+				'2026-07-05T14:00:00.000Z',
+			],
+		])
+	} finally {
+		vi.useRealTimers()
+	}
+})

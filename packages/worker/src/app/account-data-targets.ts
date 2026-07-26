@@ -118,6 +118,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'package_service_states' },
 	{ kind: 'user_id', table: 'usage_rollups' },
 	{ kind: 'user_id', table: 'user_activation_milestones' },
+	{ kind: 'user_id', table: 'user_package_run_successes' },
 	{ kind: 'user_id', table: 'agent_package_conversation_uses' },
 	{ kind: 'mcp_memory_suppression' },
 	{ kind: 'user_id', table: 'mcp_memories' },

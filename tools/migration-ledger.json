@@ -407,6 +407,10 @@
 		{
 			"filename": "0095-package-service-states.sql",
 			"sha256": "7a540172a3bc0058d43271f986c5003ddba755fde9f95d9f0d57c7bcbc780604"
+		},
+		{
+			"filename": "0096-user-package-run-successes.sql",
+			"sha256": "bec0c57fc3254eb17db094499095009985df84e7c309adbebc70704df8928daf"
 		}
 	]
 }
