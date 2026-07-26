@@ -134,14 +134,11 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 		ledgerEntries: baselineFiles,
 	}
 
-	expect(
-		checkMigrationLedger(baselineFiles, ledger, trustedHistory),
-	).toMatchObject({
-		ok: true,
-		errors: [],
-		nextPrefix: '0095',
-		maxPrefix: 94,
-	})
+	const baseline = checkMigrationLedger(baselineFiles, ledger, trustedHistory)
+	expect(baseline).toMatchObject({ ok: true, errors: [] })
+	expect(baseline.nextPrefix).toBe(
+		formatMigrationPrefix(baseline.maxPrefix + 1),
+	)
 
 	const modifiedFiles = baselineFiles.map((entry) =>
 		entry.filename === '0001-init.sql'
@@ -199,7 +196,7 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 	])
 
 	const monotonicAddition: MigrationLedgerEntry = {
-		filename: '0095-normal-addition.sql',
+		filename: `${baseline.nextPrefix}-normal-addition.sql`,
 		sha256: '2'.repeat(64),
 	}
 	const ledgerWithMonotonicAddition = structuredClone(ledger)
@@ -213,8 +210,8 @@ test('migration ledger rejects historical mutation and lower-prefix additions wh
 	).toMatchObject({
 		ok: true,
 		errors: [],
-		nextPrefix: '0096',
-		maxPrefix: 95,
+		nextPrefix: formatMigrationPrefix(baseline.maxPrefix + 2),
+		maxPrefix: baseline.maxPrefix + 1,
 	})
 })
 

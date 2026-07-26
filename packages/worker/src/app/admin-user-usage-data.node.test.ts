@@ -75,7 +75,7 @@ function createAdminUserUsageTestDb(input: {
 		if (normalizedQuery.includes('from jobs')) {
 			return counts.scheduled_jobs ?? 0
 		}
-		if (normalizedQuery.includes('from package_runtime_runs')) {
+		if (normalizedQuery.includes('from package_service_states')) {
 			return counts.package_services ?? 0
 		}
 		if (normalizedQuery.includes('from repo_sessions')) {
