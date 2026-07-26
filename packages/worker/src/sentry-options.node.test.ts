@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { UserCodeError } from './user-code-error.ts'
 import {
 	executorSandboxTimeoutMessage,
 	filterSentryEvent,
@@ -143,4 +144,38 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		},
 	}
 	expect(filterSentryEvent(prefixedSandboxTimeout)).toBe(prefixedSandboxTimeout)
+})
+
+test('filterSentryEvent drops UserCodeError via originalException hint', () => {
+	const event = {
+		exception: {
+			values: [{ type: 'UserCodeError', value: 'boom' }],
+		},
+	}
+	expect(
+		filterSentryEvent(event, {
+			originalException: new UserCodeError('boom'),
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent(event, {
+			originalException: new Error('wrapper', {
+				cause: new UserCodeError('boom'),
+			}),
+		}),
+	).toBeNull()
+})
+
+test('filterSentryEvent keeps genuine platform errors', () => {
+	const event = {
+		exception: {
+			values: [{ type: 'Error', value: 'Durable Object storage failed' }],
+		},
+	}
+	expect(
+		filterSentryEvent(event, {
+			originalException: new Error('Durable Object storage failed'),
+		}),
+	).toBe(event)
+	expect(filterSentryEvent(event)).toBe(event)
 })

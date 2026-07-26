@@ -30,6 +30,7 @@ vi.mock('@sentry/cloudflare', () => ({
 
 const { logMcpEvent } = await import('./observability.ts')
 const { McpCallerError } = await import('./caller-error.ts')
+const { UserCodeError } = await import('#worker/user-code-error.ts')
 
 function captureMcpEvents(run: () => void) {
 	sentryMock.captureException.mockClear()
@@ -130,9 +131,18 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			errorName: 'EntityBatchError',
 			errorMessage: 'All entity lookups failed.',
 		})
+
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'user_module_run',
+			failurePhase: 'handler',
+			errorName: 'UserCodeError',
+			errorMessage: 'boom from user code',
+			cause: new UserCodeError('boom from user code'),
+		})
 	})
 
-	expect(payloads).toHaveLength(6)
+	expect(payloads).toHaveLength(7)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

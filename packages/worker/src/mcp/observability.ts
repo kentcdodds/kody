@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
 
 export type McpToolKind = 'search' | 'execute' | 'capability' | 'app'
@@ -82,6 +83,7 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	// Arguments that never matched the declared schema never reached a handler.
 	if (payload.failurePhase === 'parse_input') return true
 	if (payload.callerError) return true
+	if (isUserCodeError(cause)) return true
 	return isMcpCallerError(cause)
 }
 

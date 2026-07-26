@@ -1,6 +1,7 @@
 import { type CloudflareOptions } from '@sentry/cloudflare'
-import { type ErrorEvent } from '@sentry/core'
+import { type ErrorEvent, type EventHint } from '@sentry/core'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
+import { isUserCodeError } from './user-code-error.ts'
 
 function sentryEventMessages(event: ErrorEvent) {
 	return [
@@ -19,11 +20,27 @@ export function filterRetryableD1LockSentryEvent(event: ErrorEvent) {
 }
 
 /**
+ * Primary drop path for user-authored failures. Boundaries that know the code
+ * is user-supplied throw `UserCodeError`; `beforeSend` receives that as
+ * `hint.originalException` (including when wrapped further up the cause chain).
+ */
+export function filterUserCodeErrorSentryEvent(
+	_event: ErrorEvent,
+	hint?: EventHint,
+) {
+	if (isUserCodeError(hint?.originalException)) return null
+	return _event
+}
+
+/**
  * Runtime bundling of caller-supplied modules (MCP execute, inline workflows)
  * puts source under `.__kody_root__/`. When that source is invalid, esbuild
  * throws `Build failed with … virtual:.__kody_root__/…`. Those are user-module
  * mistakes, not platform defects — MCP execute already routes them as sandbox
  * errors, but workflow instrumentation still auto-captures the rethrow.
+ *
+ * Backstop for paths that cannot throw `UserCodeError` (e.g. bundler failures
+ * that escape before a marked wrap). Prefer marking at the boundary.
  */
 export function isUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
 	return sentryEventMessages(event).some(
@@ -42,10 +59,14 @@ export function filterUserModuleBundlerFailureSentryEvent(event: ErrorEvent) {
 /**
  * Exact message emitted by the execute sandbox when caller code exceeds
  * `timeoutMs` (`packages/worker/src/mcp/executor.ts`). Inline workflows rethrow
- * that string as `new Error(...)`; `instrumentWorkflowWithSentry` then
+ * that string as `UserCodeError`; `instrumentWorkflowWithSentry` then
  * auto-captures it. MCP execute already skips sandbox failures via
  * `sandboxError`, but workflow instrumentation still reports the rethrow.
  * Other platform timeouts use different wording (Kit, webhook, snapshot, …).
+ *
+ * Backstop for unmarked timeout rethrows. Prefer `UserCodeError` at the
+ * boundary; keep this in sync with `executorSandboxTimeoutMessage` in
+ * `mcp/executor.ts`.
  */
 export const executorSandboxTimeoutMessage = 'Execution timed out'
 
@@ -60,8 +81,11 @@ export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
 	return null
 }
 
-export function filterSentryEvent(event: ErrorEvent) {
+export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
+	// Marker first: primary mechanism for user-authored failures.
+	if (filterUserCodeErrorSentryEvent(event, hint) === null) return null
 	if (filterRetryableD1LockSentryEvent(event) === null) return null
+	// String-match backstops for paths that cannot yet be marked.
 	if (filterUserModuleBundlerFailureSentryEvent(event) === null) return null
 	if (filterExecutorSandboxTimeoutSentryEvent(event) === null) return null
 	return event
@@ -93,8 +117,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// transient platform unavailability errors retried in app code and
 		// should not open or regress Sentry issues.
 		//
-		// User-module esbuild failures and executor sandbox timeouts from
-		// inline workflows are similarly expected caller mistakes; see
+		// User-authored failures are dropped primarily via `UserCodeError`
+		// (`filterUserCodeErrorSentryEvent`). Bundler / sandbox-timeout string
+		// matches remain as backstops for unmarked paths; see
 		// filterUserModuleBundlerFailureSentryEvent and
 		// filterExecutorSandboxTimeoutSentryEvent.
 		beforeSend: filterSentryEvent,

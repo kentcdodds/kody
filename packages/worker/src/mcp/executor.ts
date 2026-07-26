@@ -40,6 +40,7 @@ import {
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
+import { executorSandboxTimeoutMessage } from '#worker/sentry-options.ts'
 
 export { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 
@@ -421,7 +422,7 @@ function createExecutorModule(input: {
 		'    let __timeoutId;',
 		'    try {',
 		'      const __timeoutPromise = new Promise((_, reject) => {',
-		`        __timeoutId = setTimeout(() => reject(new Error("Execution timed out")), ${input.timeoutMs});`,
+		`        __timeoutId = setTimeout(() => reject(new Error(${JSON.stringify(executorSandboxTimeoutMessage)})), ${input.timeoutMs});`,
 		'      });',
 		'      const result = await Promise.race([',
 		...userCodeInvocation,

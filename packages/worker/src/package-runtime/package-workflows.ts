@@ -24,6 +24,8 @@ import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settin
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
+import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
+import { UserCodeError } from '#worker/user-code-error.ts'
 import {
 	activeWorkflowStatusValues,
 	terminalWorkflowStatusValues,
@@ -1020,9 +1022,12 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				workflowStepDoConfig,
 				async () => {
 					if (payload.sourceType === 'package') {
-						return await this.invokePackageWorkflowExport(payload)
+						return await this.invokePackageWorkflowExport(
+							payload,
+							event.instanceId,
+						)
 					}
-					return await this.invokeInlineWorkflowCode(payload)
+					return await this.invokeInlineWorkflowCode(payload, event.instanceId)
 				},
 			)
 		} catch (error) {
@@ -1091,47 +1096,85 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 
 	private async invokePackageWorkflowExport(
 		payload: Extract<DynamicCallableWorkflowPayload, { sourceType: 'package' }>,
+		instanceId: string,
 	): Promise<JsonValue> {
-		const remoteConnectors = await listAttachedRemoteConnectorRefs({
+		const runHandle = beginRunRecord({
 			env: this.env,
 			userId: payload.userId,
-		})
-		const response = await invokePackageExport({
-			env: this.env,
-			baseUrl: getAppBaseUrl({
-				env: this.env,
-			}),
-			token: {
-				tokenId: packageWorkflowTokenId,
-				userId: payload.userId,
-				email: '',
-				displayName: `package:${payload.packageId}`,
-				packageIds: [payload.packageId],
-				packageKodyIds: [payload.kodyId],
-				exportNames: [payload.exportName],
-				sources: [packageWorkflowInvocationSource],
-				remoteConnectors,
-			},
-			request: {
-				packageIdOrKodyId: payload.packageId,
-				exportName: payload.exportName,
-				params: payload.params,
+			context: {
+				surface: 'workflow',
+				name: payload.workflowName,
+				packageId: payload.packageId,
+				kodyId: payload.kodyId,
+				sourceId: payload.sourceId,
+				workflowId: instanceId,
 				idempotencyKey: payload.idempotencyKey,
-				source: packageWorkflowInvocationSource,
-				topic: payload.workflowName,
+				metadata: {
+					sourceType: 'package',
+					exportName: payload.exportName,
+				},
+			},
+			waitUntil: (promise) => {
+				this.ctx.waitUntil(promise)
 			},
 		})
-		if (response.status < 200 || response.status >= 300) {
-			throw new Error(getWorkflowInvocationErrorMessage(response))
-		}
-		return {
-			status: response.status,
-			body: toJsonSafeValue(response.body),
+		try {
+			const remoteConnectors = await listAttachedRemoteConnectorRefs({
+				env: this.env,
+				userId: payload.userId,
+			})
+			const response = await invokePackageExport({
+				env: this.env,
+				baseUrl: getAppBaseUrl({
+					env: this.env,
+				}),
+				token: {
+					tokenId: packageWorkflowTokenId,
+					userId: payload.userId,
+					email: '',
+					displayName: `package:${payload.packageId}`,
+					packageIds: [payload.packageId],
+					packageKodyIds: [payload.kodyId],
+					exportNames: [payload.exportName],
+					sources: [packageWorkflowInvocationSource],
+					remoteConnectors,
+				},
+				request: {
+					packageIdOrKodyId: payload.packageId,
+					exportName: payload.exportName,
+					params: payload.params,
+					idempotencyKey: payload.idempotencyKey,
+					source: packageWorkflowInvocationSource,
+					topic: payload.workflowName,
+				},
+			})
+			if (response.status < 200 || response.status >= 300) {
+				throw new UserCodeError(getWorkflowInvocationErrorMessage(response))
+			}
+			const result = {
+				status: response.status,
+				body: toJsonSafeValue(response.body),
+			}
+			await finishRunRecord({
+				env: this.env,
+				handle: runHandle,
+				status: 'success',
+			})
+			return result
+		} catch (error) {
+			await finishRunRecord({
+				env: this.env,
+				handle: runHandle,
+				status: 'error',
+				error,
+			})
+			throw error
 		}
 	}
 
 	private async invokeInlineWorkflowCode(
 		payload: Extract<DynamicCallableWorkflowPayload, { sourceType: 'inline' }>,
+		instanceId: string,
 	): Promise<JsonValue> {
 		if (payload.packageContext === undefined) {
 			throw new Error(
@@ -1145,39 +1188,75 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			env: this.env,
 			userId: payload.userId,
 		})
-		const result = await runModuleWithRegistry(
-			this.env,
-			createMcpCallerContext({
-				baseUrl: getAppBaseUrl({
-					env: this.env,
-				}),
-				executionOrigin: 'background',
-				user: {
-					userId: payload.userId,
-					email: '',
-					username: undefined,
-					displayName: `workflow:${payload.workflowName}`,
+		const runHandle = beginRunRecord({
+			env: this.env,
+			userId: payload.userId,
+			context: {
+				surface: 'workflow',
+				name: payload.workflowName,
+				workflowId: instanceId,
+				storageId: null,
+				idempotencyKey: payload.idempotencyKey,
+				metadata: {
+					sourceType: 'inline',
 				},
-				storageContext: payload.packageContext
-					? {
-							sessionId: null,
-							appId: payload.packageContext.packageId,
-							packageId: payload.packageContext.packageId,
-							storageId: null,
-						}
-					: null,
-				remoteConnectors,
-			}),
-			payload.code,
-			payload.params,
-			{
-				packageContext: payload.packageContext,
 			},
-		)
-		if (result.error) {
-			throw new Error(result.error)
+			waitUntil: (promise) => {
+				this.ctx.waitUntil(promise)
+			},
+		})
+		let logs: Array<string> | undefined
+		try {
+			const result = await runModuleWithRegistry(
+				this.env,
+				createMcpCallerContext({
+					baseUrl: getAppBaseUrl({
+						env: this.env,
+					}),
+					executionOrigin: 'background',
+					user: {
+						userId: payload.userId,
+						email: '',
+						username: undefined,
+						displayName: `workflow:${payload.workflowName}`,
+					},
+					storageContext: payload.packageContext
+						? {
+								sessionId: null,
+								appId: payload.packageContext.packageId,
+								packageId: payload.packageContext.packageId,
+								storageId: null,
+							}
+						: null,
+					remoteConnectors,
+				}),
+				payload.code,
+				payload.params,
+				{
+					packageContext: payload.packageContext,
+				},
+			)
+			logs = result.logs
+			if (result.error) {
+				throw new UserCodeError(result.error)
+			}
+			await finishRunRecord({
+				env: this.env,
+				handle: runHandle,
+				status: 'success',
+				logs,
+			})
+			return toJsonSafeValue(result.result) as JsonValue
+		} catch (error) {
+			await finishRunRecord({
+				env: this.env,
+				handle: runHandle,
+				status: 'error',
+				logs,
+				error,
+			})
+			throw error
 		}
-		return toJsonSafeValue(result.result) as JsonValue
 	}
 }
 
