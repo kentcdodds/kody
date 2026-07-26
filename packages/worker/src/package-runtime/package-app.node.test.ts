@@ -211,6 +211,9 @@ const packageAppRuntimeMock = vi.hoisted(() => ({
 	assertPublishedSourceCanRebuildWithoutInstallingDeps: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	packageAppRuntimeBridge: vi.fn((input: unknown) => input),
+	resolvePackageMountedSecret: vi.fn(),
+	beginRunRecord: vi.fn(),
+	finishRunRecord: vi.fn(async () => {}),
 }))
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
@@ -260,6 +263,20 @@ vi.mock('./published-source-dependencies.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		packageAppRuntimeMock.getEntitySourceById(...args),
+}))
+
+vi.mock('#mcp/secrets/package-access.ts', () => ({
+	isPackageSecretAccessUnavailableError: (error: unknown) =>
+		error instanceof Error && error.message === 'secret-unavailable',
+	resolvePackageMountedSecret: (...args: Array<unknown>) =>
+		packageAppRuntimeMock.resolvePackageMountedSecret(...args),
+}))
+
+vi.mock('#worker/run-records/service.ts', () => ({
+	beginRunRecord: (...args: Array<unknown>) =>
+		packageAppRuntimeMock.beginRunRecord(...args),
+	finishRunRecord: (...args: Array<unknown>) =>
+		packageAppRuntimeMock.finishRunRecord(...args),
 }))
 
 function createPackageAppTestSource() {
@@ -318,6 +335,10 @@ function resetPackageAppRuntimeMocks() {
 	packageAppRuntimeMock.persistPublishedBundleArtifact.mockReset()
 	packageAppRuntimeMock.assertPublishedSourceCanRebuildWithoutInstallingDeps.mockReset()
 	packageAppRuntimeMock.getEntitySourceById.mockReset()
+	packageAppRuntimeMock.resolvePackageMountedSecret.mockReset()
+	packageAppRuntimeMock.beginRunRecord.mockReset()
+	packageAppRuntimeMock.finishRunRecord.mockReset()
+	packageAppRuntimeMock.finishRunRecord.mockResolvedValue(undefined)
 	packageAppRuntimeMock.hydrateKodyRuntimeModules.mockImplementation(
 		async ({ modules }: { modules: Record<string, string> }) => ({
 			modules,
@@ -326,8 +347,37 @@ function resetPackageAppRuntimeMocks() {
 	)
 }
 
-const { buildPackageAppWorker, createPackageAppWorkerId } =
-	await import('./package-app.ts')
+const {
+	buildPackageAppWorker,
+	createPackageAppWorkerId,
+	PackageAppRuntimeBridge,
+} = await import('./package-app.ts')
+
+const { redactedSecretText } =
+	await import('#mcp/secrets/execution-secret-redactor.ts')
+
+function createPackageAppRuntimeBridgeForTest() {
+	const waitUntilTasks: Array<Promise<unknown>> = []
+	const bridge = new PackageAppRuntimeBridge(
+		{
+			props: {
+				baseUrl: 'https://example.com',
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+				packageId: 'package-1',
+				kodyId: 'example',
+				sourceId: 'source-1',
+				publishedCommit: 'commit-1',
+			},
+			waitUntil: (promise: Promise<unknown>) => {
+				waitUntilTasks.push(promise)
+			},
+		} as never,
+		{} as Env,
+	)
+	return { bridge, waitUntilTasks }
+}
 
 test('buildPackageAppWorker loads published app artifacts with artifactName null', async () => {
 	resetPackageAppRuntimeMocks()
@@ -752,4 +802,122 @@ test('buildPackageAppWorker skips published artifact lookup when publishedCommit
 		packageAppRuntimeMock.persistPublishedBundleArtifact,
 	).not.toHaveBeenCalled()
 	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledTimes(1)
+})
+
+test('package app worker source finishes run records via waitUntil', async () => {
+	const sourceText = await readFile(
+		new URL('./package-app.ts', import.meta.url),
+		'utf8',
+	)
+	expect(sourceText).toContain(
+		'executionCtx.waitUntil(runtimeBridge.packageRuntimeRunFinish(input));',
+	)
+	expect(sourceText).toContain('finishRuntimeRun(runtimeBridge, this.ctx, {')
+	expect(sourceText).not.toContain('await finishRuntimeRun(')
+})
+
+test('package app runtime bridge redacts resolved secrets from run record logs and errors', async () => {
+	resetPackageAppRuntimeMocks()
+	const secretValue = 'pkg-app-secret-value-9f3c'
+	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
+		value: secretValue,
+	})
+	let resolveFinish: (() => void) | undefined
+	const finishGate = new Promise<void>((resolve) => {
+		resolveFinish = resolve
+	})
+	packageAppRuntimeMock.finishRunRecord.mockImplementation(async () => {
+		await finishGate
+	})
+	const { bridge, waitUntilTasks } = createPackageAppRuntimeBridgeForTest()
+	const runHandle = {
+		id: 'run-1',
+		userId: 'user-1',
+		startedAt: '2026-07-26T00:00:00.000Z',
+		persistence: 'eager' as const,
+		context: {
+			surface: 'app_fetch' as const,
+			packageId: 'package-1',
+		},
+	}
+
+	await expect(
+		bridge.packageSecretGet({ alias: 'api-token' }),
+	).resolves.toEqual({ value: secretValue })
+
+	await expect(
+		bridge.packageRuntimeRunFinish({
+			run: runHandle,
+			status: 'error',
+			logs: [
+				{
+					level: 'log',
+					message: `token=${secretValue}`,
+				},
+				`also ${secretValue}`,
+			],
+			error: {
+				name: 'Error',
+				message: `boom ${secretValue}`,
+			},
+		}),
+	).resolves.toEqual({ ok: true })
+
+	// Finish is scheduled on waitUntil; the HTTP/RPC path must not await it.
+	expect(waitUntilTasks).toHaveLength(1)
+	expect(packageAppRuntimeMock.finishRunRecord).toHaveBeenCalledTimes(1)
+	resolveFinish?.()
+	await Promise.all(waitUntilTasks)
+
+	expect(packageAppRuntimeMock.finishRunRecord).toHaveBeenCalledWith({
+		env: {},
+		handle: runHandle,
+		status: 'error',
+		logs: [
+			{
+				level: 'log',
+				message: `token=${redactedSecretText}`,
+			},
+			`also ${redactedSecretText}`,
+		],
+		error: {
+			name: 'Error',
+			message: `boom ${redactedSecretText}`,
+		},
+	})
+	const finishInput = packageAppRuntimeMock.finishRunRecord.mock
+		.calls[0]?.[0] as {
+		logs: Array<unknown>
+		error: { message: string }
+	}
+	expect(JSON.stringify(finishInput.logs)).not.toContain(secretValue)
+	expect(finishInput.error.message).not.toContain(secretValue)
+})
+
+test('package app runtime bridge redacts secrets from Error instances in finish payload', async () => {
+	resetPackageAppRuntimeMocks()
+	const secretValue = 'pkg-app-thrown-secret-value-4a1b'
+	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
+		value: secretValue,
+	})
+	const { bridge, waitUntilTasks } = createPackageAppRuntimeBridgeForTest()
+
+	await bridge.packageSecretGet({ alias: 'api-token' })
+	await bridge.packageRuntimeRunFinish({
+		run: null,
+		status: 'error',
+		logs: [{ level: 'error', message: secretValue }],
+		error: new Error(`failed with ${secretValue}`),
+	})
+	await Promise.all(waitUntilTasks)
+
+	const finishInput = packageAppRuntimeMock.finishRunRecord.mock
+		.calls[0]?.[0] as {
+		logs: Array<{ message: string }>
+		error: Error
+	}
+	expect(finishInput.logs[0]?.message).toBe(redactedSecretText)
+	expect(finishInput.error).toBeInstanceOf(Error)
+	expect(finishInput.error.message).toBe(`failed with ${redactedSecretText}`)
+	expect(finishInput.error.message).not.toContain(secretValue)
 })

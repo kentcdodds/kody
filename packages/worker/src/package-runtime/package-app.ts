@@ -51,6 +51,10 @@ import {
 	isPackageSecretAccessUnavailableError,
 	resolvePackageMountedSecret,
 } from '#mcp/secrets/package-access.ts'
+import {
+	createExecutionSecretRedactor,
+	type ExecutionSecretRedactor,
+} from '#mcp/secrets/execution-secret-redactor.ts'
 import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
 import {
 	type RunRecordHandle,
@@ -580,8 +584,8 @@ async function startRuntimeRun(runtimeBridge, input) {
 	return await runtimeBridge.packageRuntimeRunStart(input);
 }
 
-async function finishRuntimeRun(runtimeBridge, input) {
-	await runtimeBridge.packageRuntimeRunFinish(input);
+function finishRuntimeRun(runtimeBridge, executionCtx, input) {
+	executionCtx.waitUntil(runtimeBridge.packageRuntimeRunFinish(input));
 }
 
 function resolveRealtimeHandler(userModule, facetName) {
@@ -646,14 +650,14 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				}
 				return await fetchHandler(request, runtimeEnv, this.ctx);
 			});
-			await finishRuntimeRun(runtimeBridge, {
+			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'success',
 				logs: consoleCapture.logs,
 			});
 			return response;
 		} catch (error) {
-			await finishRuntimeRun(runtimeBridge, {
+			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'error',
 				error: serializeRuntimeError(error),
@@ -708,14 +712,14 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				}
 				return await instance.onRealtimeEvent(payload, runtimeEnv, this.ctx);
 			});
-			await finishRuntimeRun(runtimeBridge, {
+			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'success',
 				logs: consoleCapture.logs,
 			});
 			return result;
 		} catch (error) {
-			await finishRuntimeRun(runtimeBridge, {
+			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'error',
 				error: serializeRuntimeError(error),
@@ -741,12 +745,38 @@ type PackageAppRuntimeBridgeProps = {
 	publishedCommit: string | null
 }
 
+function redactRunRecordLogs(
+	logs: Array<RunRecordLogInput> | undefined,
+	secretRedactor: ExecutionSecretRedactor,
+): Array<RunRecordLogInput> | undefined {
+	if (!logs) return logs
+	return logs.map((entry) => {
+		if (typeof entry === 'string') {
+			return secretRedactor.redactErrorMessage(entry)
+		}
+		return {
+			...entry,
+			message: secretRedactor.redactErrorMessage(entry.message),
+		}
+	})
+}
+
+function redactRunRecordError(
+	error: unknown,
+	secretRedactor: ExecutionSecretRedactor,
+): unknown {
+	if (error === undefined) return undefined
+	return secretRedactor.redactUnknown(error)
+}
+
 export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	Env,
 	PackageAppRuntimeBridgeProps
 > {
 	private packageRuntimeInvokeTools: Promise<PackageInvokeTools> | null = null
 	private packageEventTools: Promise<PackageEventTools> | null = null
+	private readonly secretRedactor: ExecutionSecretRedactor =
+		createExecutionSecretRedactor()
 
 	private createCallerContext(storageId: string | null) {
 		return createMcpCallerContext({
@@ -842,13 +872,18 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		error?: unknown
 		logs?: Array<RunRecordLogInput>
 	}) {
-		await finishRunRecord({
+		const logs = redactRunRecordLogs(input.logs, this.secretRedactor)
+		const error = redactRunRecordError(input.error, this.secretRedactor)
+		const finishPromise = finishRunRecord({
 			env: this.env,
 			handle: input.run,
 			status: input.status,
-			error: input.error,
-			logs: input.logs,
+			error,
+			logs,
+		}).catch((finishError: unknown) => {
+			console.warn('package-app-run-record-finish-failed', finishError)
 		})
+		this.ctx.waitUntil(finishPromise)
 		return { ok: true }
 	}
 
@@ -1053,6 +1088,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			packageId: this.ctx.props.packageId,
 			alias: input.alias,
 		})
+		this.secretRedactor.track(resolved.value)
 		return {
 			value: resolved.value,
 		}
