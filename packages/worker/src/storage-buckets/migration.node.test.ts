@@ -39,6 +39,15 @@ test('user_storage_buckets migration backfills jobs, apps, and runtime-only buck
 			'2026-07-04T00:00:00.000Z', '2026-07-05T00:00:00.000Z'
 		);
 
+		INSERT INTO archived_job_artifacts (
+			id, job_id, user_id, source_id, published_commit, storage_id,
+			retain_until, created_at, updated_at
+		) VALUES (
+			'archived-1', 'job-deleted', 'user-a', 'source-job-2', 'abc123',
+			'job:job-deleted', '2026-09-01T00:00:00.000Z',
+			'2026-07-07T00:00:00.000Z', '2026-07-08T00:00:00.000Z'
+		);
+
 		INSERT INTO package_runtime_runs (
 			id, user_id, package_id, package_kody_id, surface, status,
 			started_at, storage_id, created_at, updated_at
@@ -46,6 +55,17 @@ test('user_storage_buckets migration backfills jobs, apps, and runtime-only buck
 			'run-adhoc-1', 'user-a', 'pkg-none', 'none', 'export', 'success',
 			'2026-07-06T00:00:00.000Z', 'exec:legacy-only',
 			'2026-07-06T00:00:00.000Z', '2026-07-06T00:01:00.000Z'
+		);
+
+		-- Same bucket in both an authoritative table and run history: the
+		-- authoritative kind must win, since the rescue arm runs last.
+		INSERT INTO package_runtime_runs (
+			id, user_id, package_id, package_kody_id, surface, status,
+			started_at, storage_id, created_at, updated_at
+		) VALUES (
+			'run-job-1', 'user-a', 'pkg-none', 'none', 'export', 'success',
+			'2026-07-09T00:00:00.000Z', 'job:job-1',
+			'2026-07-09T00:00:00.000Z', '2026-07-09T00:01:00.000Z'
 		);
 	`)
 
@@ -79,6 +99,13 @@ test('user_storage_buckets migration backfills jobs, apps, and runtime-only buck
 			kind: 'job',
 			created_at: '2026-07-01T00:00:00.000Z',
 			last_seen_at: '2026-07-02T00:00:00.000Z',
+		},
+		{
+			user_id: 'user-a',
+			storage_id: 'job:job-deleted',
+			kind: 'job',
+			created_at: '2026-07-07T00:00:00.000Z',
+			last_seen_at: '2026-07-08T00:00:00.000Z',
 		},
 		{
 			user_id: 'user-a',
