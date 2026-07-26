@@ -47,20 +47,12 @@ function metadataOutcome(
 	return null
 }
 
-function runMatchesWebhookName(run: RunRecord, webhookName: string) {
-	if (run.name === webhookName) return true
-	const metadataName = metadataString(run.metadata, [
-		'webhook_name',
-		'webhookName',
-	])
-	return metadataName === webhookName
-}
-
-function inferDeliveryOutcome(
+function deliveryOutcome(
 	run: RunRecord,
 ): (typeof webhookOutcomeValues)[number] {
-	const fromMetadata = metadataOutcome(run.metadata)
-	if (fromMetadata) return fromMetadata
+	const explicit = metadataOutcome(run.metadata)
+	if (explicit) return explicit
+	// Legacy records written before outcome was always stored in metadata.
 	if (run.status === 'success') return 'delivered'
 	const httpStatus = metadataNumber(run.metadata, ['http_status', 'httpStatus'])
 	if (httpStatus != null && httpStatus >= 400 && httpStatus < 500) {
@@ -70,7 +62,7 @@ function inferDeliveryOutcome(
 }
 
 function toDeliveryFromRunRecord(run: RunRecord) {
-	const outcome = inferDeliveryOutcome(run)
+	const outcome = deliveryOutcome(run)
 	const httpStatus =
 		metadataNumber(run.metadata, ['http_status', 'httpStatus']) ??
 		(outcome === 'delivered' ? 202 : outcome === 'rejected' ? 400 : 502)
@@ -157,13 +149,11 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 				filter: {
 					surface: 'webhook',
 					packageId: savedPackage.id,
+					name: webhookName,
 				},
-				limit: Math.min(Math.max(limit * 4, limit), 100),
+				limit,
 			})
-			const deliveries = page.runs
-				.filter((run) => runMatchesWebhookName(run, webhookName))
-				.slice(0, limit)
-				.map(toDeliveryFromRunRecord)
+			const deliveries = page.runs.map(toDeliveryFromRunRecord)
 			return { deliveries }
 		},
 	},

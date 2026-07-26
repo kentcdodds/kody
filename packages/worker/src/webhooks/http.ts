@@ -12,7 +12,7 @@ import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { invokePackageExport } from '#worker/package-invocations/service.ts'
-import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
+import { recordRunRecord } from '#worker/run-records/service.ts'
 import {
 	webhookUrlSecretMatches,
 	verifyWebhookHmacSignature,
@@ -121,6 +121,10 @@ function unauthorizedSignatureResponse() {
 	)
 }
 
+function waitUntilFrom(ctx?: ExecutionContext) {
+	return ctx ? (promise: Promise<unknown>) => ctx.waitUntil(promise) : undefined
+}
+
 async function recordDelivery(input: {
 	env: Env
 	endpoint: WebhookEndpointRecord
@@ -130,11 +134,12 @@ async function recordDelivery(input: {
 	error?: string | null
 	payloadBytes: number
 	invocationId?: string
+	startedAt: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	try {
 		const status = input.outcome === 'delivered' ? 'success' : 'error'
-		const handle = beginRunRecord({
+		await recordRunRecord({
 			env: input.env,
 			userId: input.endpoint.userId,
 			context: {
@@ -147,15 +152,13 @@ async function recordDelivery(input: {
 					endpointId: input.endpoint.id,
 					httpStatus: input.httpStatus,
 					payloadBytes: input.payloadBytes,
+					outcome: input.outcome,
 				},
 			},
-			waitUntil: input.waitUntil,
-		})
-		await finishRunRecord({
-			env: input.env,
-			handle,
 			status,
 			error: input.error ?? undefined,
+			startedAt: input.startedAt,
+			waitUntil: input.waitUntil,
 		})
 	} catch (error) {
 		console.error('[webhooks] failed to record delivery', error)
@@ -304,6 +307,7 @@ export async function handleWebhookIngressRequest(
 	}
 
 	const receivedAt = new Date().toISOString()
+	const waitUntil = waitUntilFrom(ctx)
 	const routeUser = await findPublicUserIdentityByUsername({
 		db: env.APP_DB,
 		username: route.username,
@@ -371,7 +375,8 @@ export async function handleWebhookIngressRequest(
 			httpStatus: 404,
 			error: 'webhook_not_declared',
 			payloadBytes: 0,
-			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
+			startedAt: receivedAt,
+			waitUntil,
 		})
 		return notFoundResponse()
 	}
@@ -388,7 +393,8 @@ export async function handleWebhookIngressRequest(
 			httpStatus: 409,
 			error: 'account_deleting',
 			payloadBytes: 0,
-			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
+			startedAt: receivedAt,
+			waitUntil,
 		})
 		return jsonResponse(
 			{
@@ -412,7 +418,8 @@ export async function handleWebhookIngressRequest(
 			httpStatus: 413,
 			error: 'payload_too_large',
 			payloadBytes: bodyResult.payloadBytes,
-			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
+			startedAt: receivedAt,
+			waitUntil,
 		})
 		return bodyResult.response
 	}
@@ -435,7 +442,8 @@ export async function handleWebhookIngressRequest(
 				httpStatus: 401,
 				error: 'missing_signature',
 				payloadBytes: bodyBytes.byteLength,
-				waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
+				startedAt: receivedAt,
+				waitUntil,
 			})
 			return unauthorizedSignatureResponse()
 		}
@@ -458,7 +466,8 @@ export async function handleWebhookIngressRequest(
 				httpStatus: 401,
 				error: `verification_secret_missing:${declared.verification.secretName}`,
 				payloadBytes: bodyBytes.byteLength,
-				waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
+				startedAt: receivedAt,
+				waitUntil,
 			})
 			return unauthorizedSignatureResponse()
 		}
@@ -479,7 +488,8 @@ export async function handleWebhookIngressRequest(
 				httpStatus: 401,
 				error: 'invalid_signature',
 				payloadBytes: bodyBytes.byteLength,
-				waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
+				startedAt: receivedAt,
+				waitUntil,
 			})
 			return unauthorizedSignatureResponse()
 		}
@@ -523,6 +533,8 @@ export async function handleWebhookIngressRequest(
 					error: ok ? null : `invocation_status_${response.status}`,
 					payloadBytes: bodyBytes.byteLength,
 					invocationId: deliveryId,
+					startedAt: receivedAt,
+					waitUntil,
 				})
 			} catch (error) {
 				await recordDelivery({
@@ -534,6 +546,8 @@ export async function handleWebhookIngressRequest(
 					error: error instanceof Error ? error.message : 'invocation_failed',
 					payloadBytes: bodyBytes.byteLength,
 					invocationId: deliveryId,
+					startedAt: receivedAt,
+					waitUntil,
 				})
 			}
 		})()
@@ -568,7 +582,8 @@ export async function handleWebhookIngressRequest(
 			error: ok ? null : `invocation_status_${response.status}`,
 			payloadBytes: bodyBytes.byteLength,
 			invocationId: deliveryId,
-			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
+			startedAt: receivedAt,
+			waitUntil,
 		})
 		if (!ok) {
 			return jsonResponse(
@@ -593,7 +608,8 @@ export async function handleWebhookIngressRequest(
 			error: error instanceof Error ? error.message : 'invocation_failed',
 			payloadBytes: bodyBytes.byteLength,
 			invocationId: deliveryId,
-			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
+			startedAt: receivedAt,
+			waitUntil,
 		})
 		return jsonResponse(
 			{

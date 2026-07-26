@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
 import type * as PackageInvocationServiceModule from '#worker/package-invocations/service.ts'
+import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { clearRunRecords, listRunRecords } from '#worker/run-records/service.ts'
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -12,6 +13,8 @@ const mocks = vi.hoisted(() => ({
 	invokePackageExport: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	resolveSecret: vi.fn(),
+	beginRunRecord: vi.fn(),
+	recordRunRecord: vi.fn(),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', async () => {
@@ -33,6 +36,27 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mocks.resolveSecret(...args),
 }))
+
+vi.mock('#worker/run-records/service.ts', async () => {
+	const actual = await vi.importActual<typeof RunRecordsServiceModule>(
+		'#worker/run-records/service.ts',
+	)
+	return {
+		...actual,
+		beginRunRecord: (...args: Array<unknown>) => {
+			mocks.beginRunRecord(...args)
+			return actual.beginRunRecord(
+				...(args as Parameters<typeof actual.beginRunRecord>),
+			)
+		},
+		recordRunRecord: (...args: Array<unknown>) => {
+			mocks.recordRunRecord(...args)
+			return actual.recordRunRecord(
+				...(args as Parameters<typeof actual.recordRunRecord>),
+			)
+		},
+	}
+})
 
 async function ensureSchema(db: D1Database) {
 	await db
@@ -332,6 +356,7 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 	expect(delivered?.kodyId).toBe('sentry-bridge')
 	expect(delivered?.metadata).toMatchObject({
 		httpStatus: 202,
+		outcome: 'delivered',
 	})
 	expect(await countWebhookDeliveryRows('sentry')).toBe(0)
 
@@ -452,4 +477,128 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		headers: { 'content-type': 'application/octet-stream' },
 	})
 	expect(tooLarge.status).toBe(413)
+})
+
+test('webhook delivery records with one DO write, real startedAt duration, and explicit outcome', async () => {
+	silenceExpectedConsoleWarns(['activation-run-record-failed'])
+	await ensureSchema(env.APP_DB)
+	await env.APP_DB.prepare(`DELETE FROM webhook_deliveries`).run()
+	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
+	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
+	await env.APP_DB.prepare(`DELETE FROM users`).run()
+
+	const userId = await seedOwner()
+	await clearRunRecords({ env, userId })
+	const urlSecret = 'url-secret-plain'
+	await mintWebhook({
+		userId,
+		webhookName: 'sync-hook',
+		urlSecret,
+		id: 'mint-sync-single-write',
+	})
+	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
+
+	mocks.beginRunRecord.mockClear()
+	mocks.recordRunRecord.mockClear()
+	mocks.invokePackageExport.mockReset()
+	mocks.invokePackageExport.mockImplementation(async () => {
+		await new Promise((resolve) => setTimeout(resolve, 25))
+		return {
+			status: 200,
+			body: { ok: true, result: { handled: true } },
+		}
+	})
+
+	const response = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'sync-hook',
+		urlSecret,
+		body: JSON.stringify({ sync: true }),
+	})
+	expect(response.status).toBe(200)
+
+	expect(mocks.beginRunRecord).not.toHaveBeenCalled()
+	expect(mocks.recordRunRecord).toHaveBeenCalledTimes(1)
+	const recordInput = mocks.recordRunRecord.mock.calls[0]?.[0] as {
+		startedAt: string
+		waitUntil: ((promise: Promise<unknown>) => void) | undefined
+		context: { metadata: { outcome: string } }
+	}
+	expect(typeof recordInput.waitUntil).toBe('function')
+	expect(recordInput.context.metadata.outcome).toBe('delivered')
+
+	const invokeArgs = mocks.invokePackageExport.mock.calls[0]?.[0] as {
+		request: {
+			params: { webhook: { receivedAt: string } }
+		}
+	}
+	expect(recordInput.startedAt).toBe(
+		invokeArgs.request.params.webhook.receivedAt,
+	)
+
+	const delivered = (await listDeliveries(userId, 'sync-hook'))[0]
+	expect(delivered?.status).toBe('success')
+	expect(delivered?.startedAt).toBe(recordInput.startedAt)
+	expect(delivered?.durationMs).toBeGreaterThan(0)
+	expect(delivered?.metadata).toMatchObject({
+		outcome: 'delivered',
+		httpStatus: 200,
+	})
+})
+
+test('webhook delivery records explicit rejected and failed outcomes', async () => {
+	silenceExpectedConsoleWarns(['activation-run-record-failed'])
+	await ensureSchema(env.APP_DB)
+	await env.APP_DB.prepare(`DELETE FROM webhook_deliveries`).run()
+	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
+	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
+	await env.APP_DB.prepare(`DELETE FROM users`).run()
+
+	const userId = await seedOwner()
+	await clearRunRecords({ env, userId })
+	const urlSecret = 'url-secret-plain'
+	await mintWebhook({
+		userId,
+		webhookName: 'sync-hook',
+		urlSecret,
+		id: 'mint-sync-outcomes',
+	})
+	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
+
+	const tooLarge = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'sync-hook',
+		urlSecret,
+		body: new Uint8Array(1024 * 1024 + 1),
+		headers: { 'content-type': 'application/octet-stream' },
+	})
+	expect(tooLarge.status).toBe(413)
+	const rejected = (await listDeliveries(userId, 'sync-hook')).find(
+		(run) => run.metadata?.['outcome'] === 'rejected',
+	)
+	expect(rejected?.metadata).toMatchObject({
+		outcome: 'rejected',
+		httpStatus: 413,
+	})
+
+	mocks.invokePackageExport.mockReset()
+	mocks.invokePackageExport.mockResolvedValue({
+		status: 500,
+		body: { ok: false },
+	})
+	const failedResponse = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'sync-hook',
+		urlSecret,
+		body: JSON.stringify({ boom: true }),
+	})
+	expect(failedResponse.status).toBe(502)
+	const failed = (await listDeliveries(userId, 'sync-hook')).find(
+		(run) => run.metadata?.['outcome'] === 'failed',
+	)
+	expect(failed?.status).toBe('error')
+	expect(failed?.metadata).toMatchObject({
+		outcome: 'failed',
+		httpStatus: 502,
+	})
 })
