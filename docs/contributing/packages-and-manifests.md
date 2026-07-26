@@ -154,6 +154,12 @@ await packages.invokeChecked({
 })
 ```
 
+The `kodyId` field is the bare `package.json#kody.id` value (for example,
+`github`), not the npm-scoped `package.json.name` (for example,
+`@kentcdodds/github`). Static `kody:@scope/package/export` imports use the
+npm-scoped name; dynamic `packages.*` invocation uses the bare Kody id (or the
+saved package's immutable `packageId`).
+
 This path deliberately does not rewrite to a static `kody:@...` import during
 bundle construction. It resolves the target saved package and export at call
 time through the package invocation service, using the current authenticated

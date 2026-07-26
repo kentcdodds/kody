@@ -131,6 +131,11 @@ exhaustive.
 Package runtime code can invoke another package owned by the same user without
 statically importing it:
 
+`packages.check`, `packages.invoke`, and `packages.invokeChecked` take the bare
+`package.json#kody.id` value as `kodyId` (for example, `github`). Do not pass
+the npm-scoped `package.json.name` (for example, `@kentcdodds/github`). The
+scoped name belongs in static `kody:@scope/package/export` imports instead.
+
 ```ts
 import { packages } from 'kody:runtime'
 
@@ -200,9 +205,9 @@ that includes the package invocation error code in the message. If the
 pre-invoke check fails, `packages.invokeChecked` rejects before invoking the
 target export.
 
-The primary identifier is `kodyId`; `kody_id`, `packageId`, and `package_id` are
-accepted aliases for compatibility. `exportName` is required, and `export_name`
-is accepted as an alias.
+The primary identifier is the bare `kodyId`; `kody_id`, `packageId`, and
+`package_id` are accepted aliases for compatibility. `exportName` is required,
+and `export_name` is accepted as an alias.
 
 Package runtime contexts and authenticated ad hoc MCP `execute` calls can call
 `packages.invoke`, and resolution is scoped to packages owned by the current

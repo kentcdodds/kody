@@ -1234,9 +1234,21 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 		}),
 	).resolves.toMatchObject({
 		ok: false,
-		message: 'Saved package "missing-package" was not found for this user.',
-		problems: ['Saved package "missing-package" was not found for this user.'],
+		message:
+			'Saved package "missing-package" was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").',
+		problems: [
+			'Saved package "missing-package" was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").',
+		],
 	})
+	await expect(
+		tools.invokeChecked({
+			kodyId: '@kentcdodds/discord-general-chat',
+			exportName: './handle-discord-message-created',
+			params: {},
+		}),
+	).rejects.toThrow(
+		'packages.invokeChecked check failed: Saved package "@kentcdodds/discord-general-chat" was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").',
+	)
 	await expect(
 		tools.check({
 			kodyId: 'discord-general-chat',
@@ -1323,7 +1335,7 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 			exportName: './handle-discord-message-created',
 		}),
 	).rejects.toThrow(
-		'[package_not_found] Saved package "missing-package" was not found for this user.',
+		'[package_not_found] Saved package "missing-package" was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").',
 	)
 
 	repoMockModule.getSavedPackageByKodyId.mockReset()

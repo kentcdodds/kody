@@ -44,7 +44,9 @@ helpers are runtime exports:
   contexts or authenticated execute calls when you need dynamic current-version
   invocation through `packages.check(...)`, `packages.invoke(...)`, or
   `packages.invokeChecked(...)`. Prefer `invokeChecked` unless you already
-  called `check` and are passing `check.invoke` to `invoke`
+  called `check` and are passing `check.invoke` to `invoke`. Pass the bare
+  `package.json#kody.id` as `kodyId` (for example, `github`), not the npm-scoped
+  `package.json.name` (for example, `@kentcdodds/github`)
 - use **`import { serviceContext } from 'kody:runtime'`** inside package service
   code when you need the current service identity; it is **`null`** outside
   package service runs
@@ -59,8 +61,10 @@ helpers are runtime exports:
   package-service timeout
 - use **`import thing from 'kody:@scope/my-package/export-name'`** or
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
-  saved package export by full package name. Static `kody:@...` imports are
-  pinned to the dependency's published artifact when the caller is bundled.
+  saved package export by npm-scoped package name. Unlike dynamic
+  `packages.invokeChecked` calls, static `kody:@...` imports use the scoped name
+  and are pinned to the dependency's published artifact when the caller is
+  bundled.
 
 `kody:runtime` is always supplied by the Kody host at execution time. Saved
 package artifacts do not contain a copy of the host runtime implementation, so
@@ -151,7 +155,8 @@ entered as its own package runtime. Authenticated execute calls may import
 `packages` from `kody:runtime` and use `packages.check`, `packages.invoke`, or
 `packages.invokeChecked`; prefer `packages.invokeChecked` when execute needs to
 enter a saved package export so that target code receives its package runtime
-context.
+context. Those methods resolve the bare `kodyId`, such as `my-package`, rather
+than the npm-scoped package name, such as `@scope/my-package`.
 
 When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity

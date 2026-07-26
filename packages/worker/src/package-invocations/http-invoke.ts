@@ -1,6 +1,7 @@
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { recordAgentPackageConversationUse } from '#worker/usage/agent-package-conversation-uses.ts'
 import {
+	buildSavedPackageNotFoundMessage,
 	internalExecuteRuntimeInvokeTokenId,
 	internalPackageRuntimeInvokeTokenId,
 	normalizeExportName,
@@ -102,7 +103,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 		return buildJsonErrorResponse({
 			status: 404,
 			code: 'package_not_found',
-			message: `Saved package "${packageIdOrKodyId}" was not found for this user.`,
+			message: buildSavedPackageNotFoundMessage(packageIdOrKodyId),
 			idempotencyKey,
 		})
 	}
@@ -183,7 +184,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 		return buildJsonErrorResponse({
 			status: 404,
 			code: 'package_not_found',
-			message: `Saved package "${packageIdOrKodyId}" was not found for this user.`,
+			message: buildSavedPackageNotFoundMessage(packageIdOrKodyId),
 			idempotencyKey,
 		})
 	}
@@ -263,7 +264,7 @@ export async function invokePackageExportWithToolFactories(input: {
 		return buildJsonErrorResponse({
 			status: 404,
 			code: 'package_not_found',
-			message: `Saved package "${packageIdOrKodyId}" was not found for this user.`,
+			message: buildSavedPackageNotFoundMessage(packageIdOrKodyId),
 			idempotencyKey,
 		})
 	}

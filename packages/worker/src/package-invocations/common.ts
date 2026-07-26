@@ -116,6 +116,10 @@ export function normalizeNullableString(value: string | null | undefined) {
 	return trimmed && trimmed.length > 0 ? trimmed : null
 }
 
+export function buildSavedPackageNotFoundMessage(packageIdOrKodyId: string) {
+	return `Saved package ${JSON.stringify(packageIdOrKodyId)} was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").`
+}
+
 export function buildPackageInvocationStorageId(packageId: string) {
 	// Shared with packageStorage() so all surfaces name the same bucket. Since
 	// the ambient `storage` binding was removed from invocation runs, this only

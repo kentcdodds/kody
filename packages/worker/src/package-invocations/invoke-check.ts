@@ -12,7 +12,10 @@ import {
 	loadPackageManifestBySourceId,
 	loadPackageSourceBySourceId,
 } from '#worker/package-registry/source.ts'
-import { normalizeExportName } from './common.ts'
+import {
+	buildSavedPackageNotFoundMessage,
+	normalizeExportName,
+} from './common.ts'
 import {
 	buildNormalizedPackageInvokeInput,
 	parsePackageInvokeInput,
@@ -92,7 +95,7 @@ export async function checkPackageInvokeForRuntime(input: {
 		packageIdOrKodyId: request.packageIdOrKodyId,
 	})
 	if (!savedPackage) {
-		const message = `Saved package "${request.packageIdOrKodyId}" was not found for this user.`
+		const message = buildSavedPackageNotFoundMessage(request.packageIdOrKodyId)
 		return createPackageInvokeCheckFailure({
 			message,
 			problems: [message],

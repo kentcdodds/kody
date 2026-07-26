@@ -512,6 +512,8 @@ export const packageSearchEntityPlugin = {
 			files: detail.files,
 		})
 		const maintain = buildPackageMaintainSnippets(detail.record.kodyId)
+		const invokeCheckedUsage = `packages.invokeChecked({ kodyId: ${JSON.stringify(detail.record.kodyId)}, exportName, params })`
+		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
 			'',
@@ -532,6 +534,11 @@ export const packageSearchEntityPlugin = {
 			'',
 			`- Git lane: \`${maintain.gitLane}\` → clone → edit → push → \`${maintain.publish}\``,
 			'- Tool-only: `package_save` / repo sessions; full guide: `coding_guide_get({ guide: "package_authoring" })`',
+			'',
+			'## Invoke vs import',
+			'',
+			`- Dynamic/current version: ${formatMarkdownInlineCode(invokeCheckedUsage)}. The \`kodyId\` is the bare Kody id (${formatMarkdownInlineCode(detail.record.kodyId)}), not the npm-scoped package name (${formatMarkdownInlineCode(detail.record.name)}).`,
+			`- Static/bundled snapshot: ${formatMarkdownInlineCode(rootImportUsage)}. Static \`kody:\` imports use the npm-scoped package name.`,
 		]
 		if (appEntry) {
 			lines.push(
@@ -618,7 +625,7 @@ export const packageSearchEntityPlugin = {
 				entityRef: buildEntityRef(detail.record.kodyId, 'package'),
 				title: detail.title,
 				description: detail.description,
-				usage: buildPackageRootImportUsage(detail.record.name),
+				usage: rootImportUsage,
 				packageId: detail.record.id,
 				kodyId: detail.record.kodyId,
 				name: detail.record.name,
