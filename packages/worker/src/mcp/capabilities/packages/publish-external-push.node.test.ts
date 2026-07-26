@@ -2,7 +2,6 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
-	captureException: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
@@ -11,11 +10,6 @@ const mockModule = vi.hoisted(() => ({
 	listPublishedPackageArtifactTargets: vi.fn(),
 	rebuildPublishedPackageArtifact: vi.fn(),
 	getStaticPackageDependentsSummary: vi.fn(),
-}))
-
-vi.mock('@sentry/cloudflare', () => ({
-	captureException: (...args: Array<unknown>) =>
-		mockModule.captureException(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -458,15 +452,7 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 			sessionId: 'external-publish-source-1-retry-2',
 		}),
 	)
-	expect(mockModule.captureException).toHaveBeenCalledWith(
-		expect.any(Error),
-		expect.objectContaining({
-			tags: {
-				scope: 'package_publish_external_push.transient-do-reset',
-			},
-		}),
-	)
-	// Each transient reset leaves exactly one retry warn trail.
+	// Each transient reset leaves exactly one retry warn trail (no Sentry).
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 
 	setupDefaultMocks()
@@ -527,8 +513,8 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 	})
 
 	setupDefaultMocks()
-	mockModule.captureException.mockClear()
 	mockModule.publishFromExternalRef.mockClear()
+	consoleWarn.mockClear()
 	mockModule.publishFromExternalRef.mockRejectedValue(
 		new Error('Durable Object exceeded its CPU time limit and was reset'),
 	)
@@ -541,7 +527,7 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 		/could not recover after 3 transient Durable Object reset attempts/,
 	)
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(3)
-	expect(mockModule.captureException).toHaveBeenCalledTimes(3)
+	expect(consoleWarn).toHaveBeenCalledTimes(3)
 
 	setupDefaultMocks()
 	mockModule.publishFromExternalRef.mockClear()

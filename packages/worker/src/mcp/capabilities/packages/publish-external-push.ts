@@ -1,4 +1,3 @@
-import * as Sentry from '@sentry/cloudflare'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -64,6 +63,8 @@ function logExternalPublishRetry(input: {
 	nextDelayMs: number
 	error: unknown
 }) {
+	// Log-only: DO isolate memory/CPU resets are retried; do not open Sentry
+	// issues per attempt. Exhausted retries still throw and hit MCP observability.
 	const errorMessage = getErrorMessage(input.error)
 	console.warn(
 		JSON.stringify({
@@ -77,20 +78,6 @@ function logExternalPublishRetry(input: {
 			errorMessage,
 		}),
 	)
-	Sentry.captureException(input.error, {
-		tags: {
-			scope: 'package_publish_external_push.transient-do-reset',
-		},
-		extra: {
-			sourceId: input.sourceId,
-			repoId: input.repoId,
-			packageId: input.packageId,
-			newCommit: input.newCommit,
-			attempt: input.attempt,
-			nextDelayMs: input.nextDelayMs,
-			errorMessage,
-		},
-	})
 }
 
 async function delay(ms: number) {
