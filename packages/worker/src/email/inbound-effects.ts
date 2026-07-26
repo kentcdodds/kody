@@ -161,6 +161,7 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 	expectedFinalizationToken?: string
 	durationMs?: number
 	now?: Date
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const now = input.now ?? new Date()
 	const delivery = await getInboundDelivery({
@@ -272,12 +273,14 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 			await dispatchSystemInboundEmailSubscriptionEvents({
 				env: input.env,
 				message,
+				waitUntil: input.waitUntil,
 			})
 		} else {
 			await dispatchInboundEmailSubscriptionEvents({
 				env: input.env,
 				userId: input.userId,
 				message,
+				waitUntil: input.waitUntil,
 			})
 		}
 		await input.env.APP_DB.prepare(

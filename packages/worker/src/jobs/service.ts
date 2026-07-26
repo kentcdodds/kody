@@ -467,6 +467,7 @@ async function rebuildAndExecuteJobArtifact(input: {
 		kodyId: string
 		sourceId: string
 	} | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	if (!input.job.sourceId) {
 		throw new Error('Repo-backed job source is missing.')
@@ -492,6 +493,7 @@ async function rebuildAndExecuteJobArtifact(input: {
 		callerContext: input.callerContext,
 		artifact,
 		bypassLogs: [],
+		waitUntil: input.waitUntil,
 	})
 }
 
@@ -503,6 +505,7 @@ async function executePublishedJobArtifact(input: {
 		| PublishedBundleArtifact
 		| Awaited<ReturnType<typeof ensurePublishedBundleArtifactForJob>>
 	bypassLogs: Array<string>
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<ExecuteResult> {
 	const source = await getEntitySourceById(input.env.APP_DB, input.job.sourceId)
 	const callerContext = {
@@ -549,6 +552,7 @@ async function executePublishedJobArtifact(input: {
 					packageContext,
 					parentRunRecord: runRecord,
 					packageInvokeDepth: 0,
+					waitUntil: input.waitUntil,
 				}
 				return {
 					packageInvokeTools: createPackageRuntimeInvokeTools(sharedInput),
@@ -574,6 +578,7 @@ async function executePublishedJobArtifact(input: {
 			...(packageContext ? { packageContext } : {}),
 			runRecord,
 			...(packageRuntimeTools ?? {}),
+			waitUntil: input.waitUntil,
 		},
 	).then((result) => ({
 		...result,
@@ -1270,6 +1275,7 @@ export async function executeJobOnce(input: {
 	job: JobRecord
 	callerContext: PersistedJobCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<JobExecutionOutcome> {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -1306,6 +1312,7 @@ export async function executeJobOnce(input: {
 						job: input.job,
 						callerContext: runtimeCallerContext,
 						repoCheckPolicyOverride: input.repoCheckPolicyOverride,
+						waitUntil: input.waitUntil,
 					})
 					if (result.error) {
 						outcome = 'error'
@@ -1361,6 +1368,7 @@ async function runRepoBackedJob(input: {
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<ExecuteResult> {
 	const resolved = await resolvePublishedJobSource({
 		env: input.env,
@@ -1398,6 +1406,7 @@ async function runRepoBackedJob(input: {
 			callerContext: input.callerContext,
 			artifact: loadedArtifact.artifact,
 			bypassLogs: [],
+			waitUntil: input.waitUntil,
 		})
 	}
 	return await rebuildAndExecuteJobArtifact({
@@ -1408,6 +1417,7 @@ async function runRepoBackedJob(input: {
 		entryPoint: resolved.entryPoint,
 		artifactName: resolved.artifactName,
 		packageContext: resolved.packageContext,
+		waitUntil: input.waitUntil,
 	})
 }
 
@@ -1417,6 +1427,7 @@ export async function runJobNow(input: {
 	jobId: string
 	callerContext?: McpCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -1438,6 +1449,7 @@ export async function runJobNow(input: {
 				job: row.record,
 				callerContext: activeCallerContext,
 				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
+				waitUntil: input.waitUntil,
 			})
 			const updated =
 				row.record.schedule.type === 'once'
@@ -1488,6 +1500,7 @@ export async function runDueJobsForUser(input: {
 	env: Env
 	userId: string
 	now?: Date
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -1526,6 +1539,7 @@ export async function runDueJobsForUser(input: {
 						env: input.env,
 						job,
 						callerContext,
+						waitUntil: input.waitUntil,
 					})
 				},
 			})

@@ -349,7 +349,9 @@ test('system inbound email dispatches email.system-message.received to admin-sav
 		})
 		await handleInboundEmail(message, createInboundEnv(), ctx)
 		expect(message.rejectedReason).toBeNull()
-		await Promise.all(waitUntilPromises)
+		for (let index = 0; index < waitUntilPromises.length; index += 1) {
+			await waitUntilPromises[index]
+		}
 
 		const [stored] = await listEmailMessages({
 			db: env.APP_DB,
@@ -423,7 +425,9 @@ test('system inbound email dispatch is a no-op without admins or RBAC tables', a
 	})
 	await handleInboundEmail(message, createInboundEnv(), ctx)
 	expect(message.rejectedReason).toBeNull()
-	await Promise.all(waitUntilPromises)
+	for (let index = 0; index < waitUntilPromises.length; index += 1) {
+		await waitUntilPromises[index]
+	}
 
 	const messages = await listEmailMessages({
 		db: env.APP_DB,

@@ -132,6 +132,7 @@ test('email delivery Queue acknowledges permanent outcomes and retries unmatched
 			env: expect.anything(),
 			message: storedMessage,
 			providerEvent,
+			waitUntil: expect.any(Function),
 		},
 	)
 	expect(consoleWarn).toHaveBeenCalledWith('email-delivery-event-unmatched', {

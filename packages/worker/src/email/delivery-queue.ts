@@ -8,8 +8,9 @@ export const emailDeliveryQueueName = 'kody-email-delivery'
 export async function handleEmailDeliveryQueue(
 	batch: MessageBatch<unknown>,
 	env: Env,
-	_ctx: ExecutionContext,
+	ctx: ExecutionContext,
 ) {
+	const waitUntil = (promise: Promise<unknown>) => ctx.waitUntil(promise)
 	for (const queueMessage of batch.messages) {
 		try {
 			const result = await processCloudflareEmailDeliveryEvent({
@@ -57,6 +58,7 @@ export async function handleEmailDeliveryQueue(
 						env,
 						message: result.message,
 						providerEvent: result.event,
+						waitUntil,
 					})
 					queueMessage.ack()
 					break

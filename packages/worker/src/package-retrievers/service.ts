@@ -99,6 +99,7 @@ async function invokeRetriever(input: {
 		constraints?: Array<string>
 	} | null
 	conversationId?: string
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.userId,
@@ -185,6 +186,7 @@ async function invokeRetriever(input: {
 		packageContext,
 		parentRunRecord: runRecord,
 		packageInvokeDepth: 0,
+		waitUntil: input.waitUntil,
 	}
 	const executionResult = await runBundledModuleWithRegistry(
 		input.env,
@@ -215,6 +217,7 @@ async function invokeRetriever(input: {
 			),
 			packageEventTools: createPackageEventTools(packageRuntimeToolsInput),
 			executorTimeoutMs: clampTimeout(input.entry.timeoutMs, input.scope),
+			waitUntil: input.waitUntil,
 		},
 	)
 	if (executionResult.error) {
@@ -261,6 +264,7 @@ export async function runPackageRetrievers(input: {
 	} | null
 	conversationId?: string
 	maxProviders?: number
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const userId = input.userId?.trim()
 	const query = input.query.trim()
@@ -298,6 +302,7 @@ export async function runPackageRetrievers(input: {
 				includeHiddenPackages,
 				memoryContext: input.memoryContext,
 				conversationId: input.conversationId,
+				waitUntil: input.waitUntil,
 			}),
 		),
 	)

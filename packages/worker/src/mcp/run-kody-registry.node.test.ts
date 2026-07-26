@@ -2491,3 +2491,96 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 		createExecuteExecutorSpy.mockRestore()
 	}
 })
+
+test('runBundledModuleWithRegistry schedules finish via waitUntil when provided', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-wait-until',
+			email: 'wait@example.com',
+			displayName: 'Wait User',
+		},
+	})
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+	const handle = {
+		id: 'run-wait-until-1',
+		userId: 'user-wait-until',
+		startedAt: '2026-07-26T00:00:00.000Z',
+		persistence: 'eager' as const,
+		context: {
+			surface: 'subscription' as const,
+			name: 'email.message.received',
+		},
+	}
+	const runRecords = await import('#worker/run-records/service.ts')
+	const beginSpy = vi
+		.spyOn(runRecords, 'beginRunRecord')
+		.mockReturnValue(handle)
+	let resolveFinish: (() => void) | undefined
+	const finishGate = new Promise<void>((resolve) => {
+		resolveFinish = resolve
+	})
+	const finishSpy = vi
+		.spyOn(runRecords, 'finishRunRecord')
+		.mockImplementation(async (input) => {
+			if (input.waitUntil) {
+				input.waitUntil(
+					(async () => {
+						await finishGate
+					})(),
+				)
+				return
+			}
+			await finishGate
+		})
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return { result: 'ok', logs: [] }
+			},
+		} as never)
+	const waitUntilTasks: Array<Promise<unknown>> = []
+
+	try {
+		const resultPromise = runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				runRecord: {
+					surface: 'subscription',
+					name: 'email.message.received',
+				},
+				waitUntil: (promise) => {
+					waitUntilTasks.push(promise)
+				},
+			},
+		)
+		const result = await resultPromise
+		expect(result.error).toBeUndefined()
+		expect(finishSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				handle,
+				status: 'success',
+				waitUntil: expect.any(Function),
+			}),
+		)
+		expect(waitUntilTasks).toHaveLength(1)
+		resolveFinish?.()
+		await Promise.all(waitUntilTasks)
+	} finally {
+		beginSpy.mockRestore()
+		finishSpy.mockRestore()
+		createExecuteExecutorSpy.mockRestore()
+	}
+})

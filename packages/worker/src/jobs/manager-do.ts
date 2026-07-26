@@ -176,6 +176,9 @@ export class JobManagerBase extends DurableObject<Env> {
 			const result = await runDueJobsForUser({
 				env: this.env,
 				userId,
+				waitUntil: (promise) => {
+					this.ctx.waitUntil(promise)
+				},
 			})
 			logJobSchedulerEvent({
 				event: 'run_due_jobs_completed',
@@ -226,6 +229,9 @@ export class JobManagerBase extends DurableObject<Env> {
 				jobId: input.jobId,
 				callerContext: input.callerContext ?? null,
 				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
+				waitUntil: (promise) => {
+					this.ctx.waitUntil(promise)
+				},
 			})
 		} catch (error) {
 			originalError = error

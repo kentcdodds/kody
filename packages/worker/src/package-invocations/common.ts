@@ -80,6 +80,15 @@ export type PackageRuntimeToolFactoryInput = {
 	packageContext: PackageRuntimeContext | null
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
+	/**
+	 * When set, nested package/export/subscription run-record finishes are
+	 * scheduled on this callback instead of being awaited.
+	 */
+	waitUntil?: (promise: Promise<unknown>) => void
+}
+
+export function waitUntilFromExecutionContext(ctx?: ExecutionContext) {
+	return ctx ? (promise: Promise<unknown>) => ctx.waitUntil(promise) : undefined
 }
 
 export type PackageRuntimeToolFactories = {

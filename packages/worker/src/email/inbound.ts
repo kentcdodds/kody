@@ -162,12 +162,16 @@ async function scheduleInboundDeliveryEffects(input: {
 	ctx?: ExecutionContext
 	logLabel: string
 }) {
+	const waitUntil = input.ctx
+		? (promise: Promise<unknown>) => input.ctx!.waitUntil(promise)
+		: undefined
 	const promise = processInboundDeliveryEffects({
 		env: input.env,
 		userId: input.userId,
 		deliveryId: input.deliveryId,
 		expectedFinalizationToken: input.expectedFinalizationToken,
 		durationMs: input.durationMs,
+		waitUntil,
 	})
 	if (input.ctx) {
 		input.ctx.waitUntil(
@@ -193,7 +197,7 @@ export async function handleInboundEmail(
 		| 'USER_EMAIL_DOMAIN'
 		| 'USAGE_EVENTS'
 	>,
-	_ctx?: ExecutionContext,
+	ctx?: ExecutionContext,
 ) {
 	const recipient = normalizeEmailAddress(message.to)
 	if (!recipient) {
@@ -230,7 +234,7 @@ export async function handleInboundEmail(
 			recipient,
 			localPart: localBase,
 			systemDomain,
-			ctx: _ctx,
+			ctx,
 		})
 		return
 	}
@@ -569,7 +573,7 @@ export async function handleInboundEmail(
 						userId,
 						deliveryId: claimedDelivery.deliveryId,
 						durationMs: Date.now() - receiveStartedAtMs,
-						ctx: _ctx,
+						ctx,
 						logLabel: 'Inbound email effect reconciliation failed',
 					})
 					return
@@ -634,7 +638,7 @@ export async function handleInboundEmail(
 				expectedFinalizationToken:
 					storedResult.finalizedDelivery.finalizationToken,
 				durationMs: Date.now() - receiveStartedAtMs,
-				ctx: _ctx,
+				ctx,
 				logLabel: 'Inbound email effect dispatch failed',
 			})
 		},

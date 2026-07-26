@@ -74,6 +74,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 	runtimeInvokeDepth?: number
 	conversationId?: string | null
 	toolFactories: PackageRuntimeToolFactories
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -137,6 +138,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 		notFoundCode: 'export_not_found',
 		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 		toolFactories: input.toolFactories,
+		waitUntil: input.waitUntil,
 	})
 }
 
@@ -153,6 +155,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 	request: PackageInvocationRequest
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -211,6 +214,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 		notFoundCode: 'export_not_found',
 		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 		toolFactories: input.toolFactories,
+		waitUntil: input.waitUntil,
 	})
 }
 
@@ -221,6 +225,7 @@ export async function invokePackageExportWithToolFactories(input: {
 	request: PackageInvocationRequest
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -302,5 +307,6 @@ export async function invokePackageExportWithToolFactories(input: {
 		notFoundCode: 'export_not_found',
 		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 		toolFactories: input.toolFactories,
+		waitUntil: input.waitUntil,
 	})
 }

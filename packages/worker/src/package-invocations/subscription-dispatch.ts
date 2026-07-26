@@ -136,6 +136,7 @@ export function createPackageEventToolsWithToolFactories(input: {
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
+	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageEventTools {
 	return {
 		dispatch: async (rawInput) => {
@@ -207,6 +208,7 @@ export function createPackageEventToolsWithToolFactories(input: {
 					actorDisplayName: `package:${packageContext.kodyId}`,
 					runtimeInvokeDepth: packageInvokeDepth + 1,
 					toolFactories: input.toolFactories,
+					waitUntil: input.waitUntil,
 				})
 				const replayed =
 					(response.body['idempotency'] as { replayed?: unknown } | undefined)
@@ -258,6 +260,7 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 	actorDisplayName?: string
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const topic = normalizePackageSubscriptionTopic(input.topic)
 	const idempotencyKey = input.idempotencyKey.trim()
@@ -292,5 +295,6 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 		notFoundCode: 'subscription_not_found',
 		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 		toolFactories: input.toolFactories,
+		waitUntil: input.waitUntil,
 	})
 }

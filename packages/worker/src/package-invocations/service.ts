@@ -54,6 +54,7 @@ export function createPackageRuntimeInvokeTools(input: {
 	packageContext: PackageRuntimeContext | null
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
+	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageInvokeTools {
 	return createPackageRuntimeInvokeToolsWithToolFactories({
 		...input,
@@ -68,6 +69,7 @@ export function createPackageEventTools(input: {
 	packageContext: PackageRuntimeContext | null
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
+	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageEventTools {
 	return createPackageEventToolsWithToolFactories({
 		...input,
@@ -83,6 +85,7 @@ export function createExecutePackageInvokeTools(input: {
 	packageInvokeDepth?: number
 	/** MCP execute conversation id for agent-facing popularity recording. */
 	conversationId?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageInvokeTools {
 	return createExecutePackageInvokeToolsWithToolFactories({
 		...input,
@@ -96,6 +99,7 @@ export async function invokePackageExport(input: {
 	token: PackageInvocationTokenScope
 	request: PackageInvocationRequest
 	runtimeInvokeDepth?: number
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<PackageInvocationResponse> {
 	return await invokePackageExportWithToolFactories({
 		...input,
@@ -114,6 +118,7 @@ export async function invokePackageSubscription(input: {
 	actorTokenId?: string
 	actorDisplayName?: string
 	runtimeInvokeDepth?: number
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	return await invokePackageSubscriptionWithToolFactories({
 		...input,

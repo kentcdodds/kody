@@ -154,6 +154,7 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 	retryDiscoveryFailures?: boolean
 	retryInvocationInfrastructureFailures?: boolean
 	retryOnlyPreExecutionInfrastructureFailures?: boolean
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const adminUserIds = await listAdminStableUserIds(input.env.APP_DB)
 	if (adminUserIds.length === 0) {
@@ -205,6 +206,7 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 				idempotencyKey: input.buildIdempotencyKey(savedPackage),
 				source: input.source,
 				actorTokenId: input.actorTokenId,
+				waitUntil: input.waitUntil,
 			})
 			if (response.status < 200 || response.status >= 400) {
 				console.warn('admin-package-subscription-handler-failed', {

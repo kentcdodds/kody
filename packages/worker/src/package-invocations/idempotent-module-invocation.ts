@@ -62,6 +62,7 @@ export async function invokeSavedPackageModule(input: {
 	notFoundCode: 'export_not_found' | 'subscription_not_found'
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -455,6 +456,7 @@ export async function invokeSavedPackageModule(input: {
 								packageContext,
 								parentRunRecord: runRecord,
 								packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
+								waitUntil: input.waitUntil,
 							}),
 						packageEventTools: input.toolFactories.createPackageEventTools({
 							env: input.env,
@@ -463,7 +465,9 @@ export async function invokeSavedPackageModule(input: {
 							packageContext,
 							parentRunRecord: runRecord,
 							packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
+							waitUntil: input.waitUntil,
 						}),
+						waitUntil: input.waitUntil,
 					},
 				)
 				let response: PackageInvocationStoredResponse

@@ -8,15 +8,16 @@ import {
 } from '#app/account-deletion-state.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { packageInvocationRootExportRouteSegment } from '@kody-internal/shared/public-urls.ts'
-import {
-	invokePackageExport,
-	type PackageInvocationTokenScope,
-} from './service.ts'
+import { waitUntilFromExecutionContext } from './common.ts'
 import {
 	getActivePackageInvocationTokenByHash,
 	hashPackageInvocationBearerToken,
 	updatePackageInvocationTokenLastUsed,
 } from './repo.ts'
+import {
+	invokePackageExport,
+	type PackageInvocationTokenScope,
+} from './service.ts'
 
 type PackageInvocationRequestBody = {
 	params?: Record<string, unknown>
@@ -368,6 +369,7 @@ export async function handlePackageInvocationApiRequest(
 				source,
 				topic,
 			},
+			waitUntil: waitUntilFromExecutionContext(ctx),
 		})
 	} catch (error) {
 		if (!(error instanceof AccountDeletionInProgressError)) throw error

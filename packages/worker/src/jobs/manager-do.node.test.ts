@@ -383,6 +383,7 @@ test('alarm logs firing, due-job outcomes, and resyncs the next alarm', async ()
 	expect(mockModule.runDueJobsForUser).toHaveBeenCalledWith({
 		env: {} as Env,
 		userId: 'user-123',
+		waitUntil: expect.any(Function),
 	})
 	expect(mockModule.logJobSchedulerEvent).toHaveBeenNthCalledWith(1, {
 		event: 'alarm_fired',

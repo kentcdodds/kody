@@ -172,6 +172,7 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>
 	userId: string
 	message: EmailMessageRecord
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
@@ -206,6 +207,7 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 					topic: inboundEmailReceiptTopic,
 				}),
 				source: 'email',
+				waitUntil: input.waitUntil,
 			})
 			const retryableCode =
 				readPreExecutionPackageInvocationInfrastructureCode(response)
@@ -237,6 +239,7 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>
 	message: EmailMessageRecord
 	providerEvent: CloudflareEmailDeliveryEvent
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const baseUrl = getAppBaseUrl({ env: input.env })
 	const { subscriptions, discoveryErrors } =
@@ -286,6 +289,7 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 				params: payload,
 				idempotencyKey: `email-delivery:${input.providerEvent.payload.eventId}:${savedPackage.id}`,
 				source: 'email',
+				waitUntil: input.waitUntil,
 			})
 			return {
 				response,
@@ -319,6 +323,7 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 export async function dispatchSystemInboundEmailSubscriptionEvents(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>
 	message: EmailMessageRecord
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const baseUrl = getAppBaseUrl({
 		env: input.env,
@@ -355,5 +360,6 @@ export async function dispatchSystemInboundEmailSubscriptionEvents(input: {
 				packageId: savedPackage.id,
 				topic: systemInboundEmailReceiptTopic,
 			}),
+		waitUntil: input.waitUntil,
 	})
 }

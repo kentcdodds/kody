@@ -3364,8 +3364,10 @@ export default async function main(input = {}) {
 		await handleInboundEmail(secondMessage, createInboundEnv(), ctx)
 		expect(secondMessage.rejectedReason).toBeNull()
 
-		for (const entry of subscriptionCalls) {
-			if (entry['waitUntil'] instanceof Promise) {
+		// Drain effects and any nested run-record finishes scheduled via waitUntil.
+		for (let index = 0; index < subscriptionCalls.length; index += 1) {
+			const entry = subscriptionCalls[index]
+			if (entry?.['waitUntil'] instanceof Promise) {
 				await entry['waitUntil']
 			}
 		}
