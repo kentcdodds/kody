@@ -15,6 +15,10 @@ import {
 } from './account-integrations.tsx'
 import { AccountJobsRoute, accountJobsRouteLoader } from './account-jobs.tsx'
 import {
+	AccountActivityRoute,
+	accountActivityRouteLoader,
+} from './account-activity.tsx'
+import {
 	AccountMcpServersRoute,
 	accountMcpServersRouteLoader,
 } from './account-mcp-servers.tsx'
@@ -140,6 +144,8 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.accountValueDetail)]: accountValuesRouteLoader,
 	[routePattern(routes.accountJobs)]: accountJobsRouteLoader,
 	[routePattern(routes.accountJobDetail)]: accountJobsRouteLoader,
+	[routePattern(routes.accountActivity)]: accountActivityRouteLoader,
+	[routePattern(routes.accountActivityDetail)]: accountActivityRouteLoader,
 	[routePattern(routes.accountMemories)]: accountMemoriesRouteLoader,
 	[routePattern(routes.accountMemoryDetail)]: accountMemoriesRouteLoader,
 	[routePattern(routes.accountEmail)]: accountEmailRouteLoader,
@@ -213,6 +219,8 @@ export const clientRoutes = {
 	[routePattern(routes.accountValueDetail)]: <AccountValuesRoute />,
 	[routePattern(routes.accountJobs)]: <AccountJobsRoute />,
 	[routePattern(routes.accountJobDetail)]: <AccountJobsRoute />,
+	[routePattern(routes.accountActivity)]: <AccountActivityRoute />,
+	[routePattern(routes.accountActivityDetail)]: <AccountActivityRoute />,
 	[routePattern(routes.accountMemories)]: <AccountMemoriesRoute />,
 	[routePattern(routes.accountMemoryDetail)]: <AccountMemoriesRoute />,
 	[routePattern(routes.accountEmail)]: <AccountEmailRoute />,

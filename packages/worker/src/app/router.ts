@@ -46,6 +46,10 @@ import {
 	createAccountIntegrationsHandler,
 } from '#app/handlers/account-integrations.ts'
 import {
+	createAccountActivityApiHandler,
+	createAccountActivityHandler,
+} from '#app/handlers/account-activity.ts'
+import {
 	createAccountJobsApiHandler,
 	createAccountJobsHandler,
 } from '#app/handlers/account-jobs.ts'
@@ -293,6 +297,9 @@ export function createAppRouter(env: Env) {
 			accountJobDetail: createAccountJobsHandler(env),
 			accountJobsApi: createAccountJobsApiHandler(env),
 			accountJobsApiPost: createAccountJobsApiHandler(env),
+			accountActivity: createAccountActivityHandler(env),
+			accountActivityDetail: createAccountActivityHandler(env),
+			accountActivityApi: createAccountActivityApiHandler(env),
 			accountMemories: createAccountMemoriesHandler(env),
 			accountMemoryDetail: createAccountMemoriesHandler(env),
 			accountMemoriesApi: createAccountMemoriesApiHandler(env),

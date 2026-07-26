@@ -814,9 +814,10 @@ export type AccountJobListItem = {
 }
 
 export type AccountJobRecentRun = {
+	id: string
 	startedAt: string
 	finishedAt: string
-	status: 'success' | 'error'
+	status: 'success' | 'error' | 'running'
 	durationMs: number
 	error: string | null
 }
@@ -855,6 +856,76 @@ export type AccountJobsLoaderData = {
 	selectedJob: AccountJobDetail | null
 	selectedJobId: string | null
 	alarm?: AccountJobsAlarm
+}
+
+export type AccountActivityStatusFilter = 'error' | 'all' | 'running'
+
+export type AccountActivitySurfaceFilter =
+	| 'all'
+	| 'execute'
+	| 'export'
+	| 'subscription'
+	| 'app_fetch'
+	| 'app_realtime'
+	| 'service'
+	| 'job'
+	| 'workflow'
+	| 'retriever'
+	| 'webhook'
+
+export type AccountActivityRunListItem = {
+	id: string
+	surface: Exclude<AccountActivitySurfaceFilter, 'all'>
+	status: 'running' | 'success' | 'error'
+	name: string | null
+	startedAt: string
+	finishedAt: string | null
+	durationMs: number | null
+	errorName: string | null
+	errorMessage: string | null
+	packageId: string | null
+	jobId: string | null
+	logCount: number
+}
+
+export type AccountActivityRunLog = {
+	sequence: number
+	level: 'debug' | 'info' | 'log' | 'warn' | 'error'
+	message: string
+	fields: { [key: string]: AccountLoaderJsonValue } | null
+}
+
+export type AccountActivityRunDetail = AccountActivityRunListItem & {
+	kodyId: string | null
+	sourceId: string | null
+	publishedCommit: string | null
+	storageId: string | null
+	workflowId: string | null
+	invocationId: string | null
+	sessionId: string | null
+	idempotencyKey: string | null
+	parentRunId: string | null
+	metadata: { [key: string]: AccountLoaderJsonValue }
+	logs: Array<AccountActivityRunLog>
+}
+
+export type AccountActivitySummary = {
+	since: string
+	total: number
+	errors: number
+	running: number
+}
+
+export type AccountActivityLoaderData = {
+	ok: true
+	statusFilter: AccountActivityStatusFilter
+	surfaceFilter: AccountActivitySurfaceFilter
+	summary: AccountActivitySummary
+	runs: Array<AccountActivityRunListItem>
+	nextCursor: string | null
+	selectedRun: AccountActivityRunDetail | null
+	selectedRunId: string | null
+	retentionDays: number
 }
 
 export type AccountMemoryStatus = 'active' | 'archived' | 'deleted'
@@ -1042,6 +1113,7 @@ export type AppLoaderData = {
 	accountSecrets?: AccountSecretsLoaderData
 	accountValues?: AccountValuesLoaderData
 	accountJobs?: AccountJobsLoaderData
+	accountActivity?: AccountActivityLoaderData
 	accountMemories?: AccountMemoriesLoaderData
 	accountEmail?: AccountEmailLoaderData
 	authProviders?: AuthProvidersLoaderData

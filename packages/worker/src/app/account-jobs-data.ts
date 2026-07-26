@@ -6,6 +6,7 @@ import {
 import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
 import { inspectJobsForUser } from '#worker/jobs/service.ts'
 import { type JobSchedule, type JobView } from '#worker/jobs/types.ts'
+import { listRunRecords } from '#worker/run-records/service.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -31,9 +32,10 @@ export type AccountJobListItem = {
 }
 
 export type AccountJobRecentRun = {
+	id: string
 	startedAt: string
 	finishedAt: string
-	status: 'success' | 'error'
+	status: 'success' | 'error' | 'running'
 	durationMs: number
 	error: string | null
 }
@@ -73,6 +75,7 @@ export type AccountJobsLoaderData = {
 
 const accountJobsBasePath = '/account/jobs'
 const packageJobIdPrefix = 'package-job:'
+const recentRunsLimit = 20
 
 export function isPackageOwnedJobId(jobId: string) {
 	return jobId.startsWith(packageJobIdPrefix)
@@ -126,26 +129,50 @@ function toListItem(
 	}
 }
 
-function toDetail(job: JobView): AccountJobDetail {
-	const inspection = buildJobInspectionOutput(job)
+async function loadRecentRunsForJob(input: {
+	env: Env
+	userId: string
+	jobId: string
+}): Promise<Array<AccountJobRecentRun>> {
+	const page = await listRunRecords({
+		env: input.env,
+		userId: input.userId,
+		filter: { jobId: input.jobId },
+		limit: recentRunsLimit,
+	})
+	return page.runs.map((run) => ({
+		id: run.id,
+		startedAt: run.startedAt,
+		finishedAt: run.finishedAt ?? run.startedAt,
+		status: run.status,
+		durationMs: run.durationMs ?? 0,
+		error: run.errorMessage,
+	}))
+}
+
+async function toDetail(input: {
+	env: Env
+	userId: string
+	job: JobView
+}): Promise<AccountJobDetail> {
+	const inspection = buildJobInspectionOutput(input.job)
+	const recentRuns = await loadRecentRunsForJob({
+		env: input.env,
+		userId: input.userId,
+		jobId: input.job.id,
+	})
 	return {
-		...toListItem(job, inspection),
-		params: job.params ?? null,
-		schedule: job.schedule,
-		lastRunError: job.lastRunError ?? null,
-		lastDurationMs: job.lastDurationMs ?? null,
-		recentRuns: inspection.recent_runs.map((entry) => ({
-			startedAt: entry.started_at,
-			finishedAt: entry.finished_at,
-			status: entry.status,
-			durationMs: entry.duration_ms,
-			error: entry.error,
-		})),
-		storageId: job.storageId,
-		sourceId: job.sourceId,
-		publishedCommit: job.publishedCommit,
-		createdAt: job.createdAt,
-		updatedAt: job.updatedAt,
+		...toListItem(input.job, inspection),
+		params: input.job.params ?? null,
+		schedule: input.job.schedule,
+		lastRunError: input.job.lastRunError ?? null,
+		lastDurationMs: input.job.lastDurationMs ?? null,
+		recentRuns,
+		storageId: input.job.storageId,
+		sourceId: input.job.sourceId,
+		publishedCommit: input.job.publishedCommit,
+		createdAt: input.job.createdAt,
+		updatedAt: input.job.updatedAt,
 	}
 }
 
@@ -184,7 +211,13 @@ export async function loadAccountJobsData(input: {
 	return {
 		ok: true,
 		jobs: inspection.jobs.map((job) => toListItem(job)),
-		selectedJob: selectedRecord ? toDetail(selectedRecord) : null,
+		selectedJob: selectedRecord
+			? await toDetail({
+					env: input.env,
+					userId,
+					job: selectedRecord,
+				})
+			: null,
 		selectedJobId,
 		alarm: toAlarm(inspection.alarm),
 	}

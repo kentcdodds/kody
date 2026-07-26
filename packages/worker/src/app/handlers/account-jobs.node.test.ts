@@ -86,6 +86,7 @@ const mockModule = vi.hoisted(() => ({
 	deleteJob: vi.fn(),
 	runJobNowViaManager: vi.fn(),
 	getAppBaseUrl: vi.fn(() => 'https://example.com'),
+	listRunRecords: vi.fn(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -122,6 +123,11 @@ vi.mock('#worker/jobs/manager-client.ts', () => ({
 		mockModule.runJobNowViaManager(...args),
 }))
 
+vi.mock('#worker/run-records/service.ts', () => ({
+	listRunRecords: (...args: Array<unknown>) =>
+		mockModule.listRunRecords(...args),
+}))
+
 const { createAccountJobsApiHandler } = await import('./account-jobs.ts')
 
 function createEnv() {
@@ -136,6 +142,39 @@ function resetInspection(jobs = [adHocJob, packageJob]) {
 		jobs,
 		alarm: alarmState,
 	})
+	mockModule.listRunRecords.mockImplementation(
+		async (input: { filter?: { jobId?: string | null } }) => {
+			const jobId = input.filter?.jobId
+			const job = jobs.find((entry) => entry.id === jobId)
+			return {
+				runs: (job?.runHistory ?? []).map((entry, index) => ({
+					id: `${jobId}-run-${index}`,
+					surface: 'job' as const,
+					status: entry.status,
+					name: job?.name ?? null,
+					packageId: null,
+					kodyId: null,
+					sourceId: job?.sourceId ?? null,
+					publishedCommit: job?.publishedCommit ?? null,
+					storageId: job?.storageId ?? null,
+					jobId: jobId ?? null,
+					workflowId: null,
+					invocationId: null,
+					sessionId: null,
+					idempotencyKey: null,
+					parentRunId: null,
+					startedAt: entry.startedAt,
+					finishedAt: entry.finishedAt,
+					durationMs: entry.durationMs,
+					errorName: entry.error ? 'Error' : null,
+					errorMessage: entry.error ?? null,
+					metadata: {},
+					logCount: 0,
+				})),
+				nextCursor: null,
+			}
+		},
+	)
 }
 
 test('jobs API lists jobs with ownership and selected detail', async () => {
@@ -192,6 +231,7 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 			schedule: { type: 'cron', expression: '0 9 * * *' },
 			recentRuns: [
 				expect.objectContaining({
+					id: 'job-adhoc-1-run-0',
 					status: 'success',
 					durationMs: 120,
 					error: null,

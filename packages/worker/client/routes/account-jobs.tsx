@@ -44,6 +44,7 @@ import {
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	inputCss,
+	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
 
 type MessageTone = 'info' | 'error'
@@ -818,9 +819,10 @@ export function AccountJobsRoute(handle: Handle) {
 															'Status',
 															'Duration',
 															'Error',
+															'',
 														].map((heading) => (
 															<th
-																key={heading}
+																key={heading || 'logs'}
 																mix={css({
 																	textAlign: 'left',
 																	padding: spacing.sm,
@@ -836,9 +838,7 @@ export function AccountJobsRoute(handle: Handle) {
 												</thead>
 												<tbody>
 													{detail.recentRuns.map((run) => (
-														<tr
-															key={`${run.startedAt}-${run.finishedAt}-${run.status}`}
-														>
+														<tr key={run.id}>
 															<td
 																mix={css({
 																	padding: spacing.sm,
@@ -862,7 +862,9 @@ export function AccountJobsRoute(handle: Handle) {
 																	color:
 																		run.status === 'error'
 																			? colors.error
-																			: colors.primary,
+																			: run.status === 'running'
+																				? colors.textMuted
+																				: colors.primary,
 																})}
 															>
 																{run.status}
@@ -885,6 +887,19 @@ export function AccountJobsRoute(handle: Handle) {
 																})}
 															>
 																{run.error ?? '—'}
+															</td>
+															<td
+																mix={css({
+																	padding: spacing.sm,
+																	borderBottom: `1px solid ${colors.border}`,
+																})}
+															>
+																<a
+																	href={`/account/activity/${encodeURIComponent(run.id)}`}
+																	mix={css(primaryLinkCss)}
+																>
+																	Logs
+																</a>
 															</td>
 														</tr>
 													))}
