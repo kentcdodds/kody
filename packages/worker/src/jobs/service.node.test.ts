@@ -15,6 +15,7 @@ import {
 	createJob,
 	deleteJob,
 	executeJobOnce,
+	getJob,
 	getJobInspection,
 	inspectJobsForUser,
 	runJobNow,
@@ -1449,16 +1450,18 @@ test('updateJob and deleteJob reject another user trying to mutate or remove a j
 		},
 	}) as PersistedJobCallerContext
 
-	await expect(
-		updateJob({
-			env,
-			callerContext: otherCallerContext,
-			body: {
-				id: created.id,
-				enabled: false,
-			},
-		}),
-	).rejects.toThrow(`Job "${created.id}" was not found.`)
+	const updateError = await updateJob({
+		env,
+		callerContext: otherCallerContext,
+		body: {
+			id: created.id,
+			enabled: false,
+		},
+	}).catch((caught: unknown) => caught)
+	expect(updateError).toBeInstanceOf(McpCallerError)
+	expect(updateError).toMatchObject({
+		message: `Job "${created.id}" was not found.`,
+	})
 
 	let inspection = await getJobInspection({
 		env,
@@ -1467,13 +1470,15 @@ test('updateJob and deleteJob reject another user trying to mutate or remove a j
 	})
 	expect(inspection.job.enabled).toBe(true)
 
-	await expect(
-		deleteJob({
-			env,
-			userId: 'user-999',
-			jobId: created.id,
-		}),
-	).rejects.toThrow(`Job "${created.id}" was not found.`)
+	const deleteError = await deleteJob({
+		env,
+		userId: 'user-999',
+		jobId: created.id,
+	}).catch((caught: unknown) => caught)
+	expect(deleteError).toBeInstanceOf(McpCallerError)
+	expect(deleteError).toMatchObject({
+		message: `Job "${created.id}" was not found.`,
+	})
 
 	inspection = await getJobInspection({
 		env,
@@ -1481,6 +1486,44 @@ test('updateJob and deleteJob reject another user trying to mutate or remove a j
 		jobId: created.id,
 	})
 	expect(inspection.job.id).toBe(created.id)
+})
+
+test('missing job ids throw McpCallerError from get/inspect/run-now', async () => {
+	const env = {
+		APP_DB: createDatabase(),
+	} as Env
+	const missingJobId = 'missing-job-id'
+	const userId = createBaseCallerContext().user.userId
+
+	const getError = await getJob({
+		env,
+		userId,
+		jobId: missingJobId,
+	}).catch((caught: unknown) => caught)
+	expect(getError).toBeInstanceOf(McpCallerError)
+	expect(getError).toMatchObject({
+		message: `Job "${missingJobId}" was not found.`,
+	})
+
+	const inspectionError = await getJobInspection({
+		env,
+		userId,
+		jobId: missingJobId,
+	}).catch((caught: unknown) => caught)
+	expect(inspectionError).toBeInstanceOf(McpCallerError)
+	expect(inspectionError).toMatchObject({
+		message: `Job "${missingJobId}" was not found.`,
+	})
+
+	const runNowError = await runJobNow({
+		env,
+		userId,
+		jobId: missingJobId,
+	}).catch((caught: unknown) => caught)
+	expect(runNowError).toBeInstanceOf(McpCallerError)
+	expect(runNowError).toMatchObject({
+		message: `Job "${missingJobId}" was not found.`,
+	})
 })
 
 test('updateJob clears params, updates timezone, and disables a job', async () => {

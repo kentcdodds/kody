@@ -1071,7 +1071,9 @@ export async function getJob(input: {
 }) {
 	const row = await getJobRowById(input.env.APP_DB, input.userId, input.jobId)
 	if (!row) {
-		throw new Error(`Job "${input.jobId}" was not found.`)
+		// Caller-supplied job id that does not resolve for this user — keep it
+		// off Sentry via McpCallerError (agent typos / stale ids are routine).
+		throw new McpCallerError(`Job "${input.jobId}" was not found.`)
 	}
 	return toJobView(row.record)
 }
@@ -1133,7 +1135,7 @@ export async function updateJob(input: {
 				input.body.id,
 			)
 			if (!existingRow) {
-				throw new Error(`Job "${input.body.id}" was not found.`)
+				throw new McpCallerError(`Job "${input.body.id}" was not found.`)
 			}
 			const existing = existingRow.record
 			const nextSchedule =
@@ -1248,7 +1250,7 @@ export async function deleteJob(input: {
 				input.jobId,
 			)
 			if (!row) {
-				throw new Error(`Job "${input.jobId}" was not found.`)
+				throw new McpCallerError(`Job "${input.jobId}" was not found.`)
 			}
 			await cleanupAdHocJobSource({
 				env: input.env,
@@ -1439,7 +1441,7 @@ export async function runJobNow(input: {
 				input.jobId,
 			)
 			if (!row) {
-				throw new Error(`Job "${input.jobId}" was not found.`)
+				throw new McpCallerError(`Job "${input.jobId}" was not found.`)
 			}
 			const activeCallerContext = input.callerContext
 				? requirePersistableJobCallerContext(input.callerContext)
