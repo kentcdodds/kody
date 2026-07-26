@@ -631,15 +631,16 @@ test('run recording degrades to a warning instead of failing the observed run', 
 	expect(page.runs[0]?.status).toBe('success')
 })
 
-test('fresh finishes do not arm a retention alarm', async () => {
-	const userId = uniqueUserId('no-alarm')
+test('fresh finishes arm a far-future retention alarm for the new row', async () => {
+	const userId = uniqueUserId('far-alarm')
 	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const startedAtMs = Date.now()
 	await finishRunRecord({
 		env,
 		handle: {
 			id: crypto.randomUUID(),
 			userId,
-			startedAt: new Date().toISOString(),
+			startedAt: new Date(startedAtMs).toISOString(),
 			persistence: 'eager',
 			context: baseContext({ surface: 'job', name: 'fresh' }),
 		},
@@ -649,7 +650,11 @@ test('fresh finishes do not arm a retention alarm', async () => {
 		stub,
 		async (_instance: RunLog, state) => state.storage.getAlarm(),
 	)
-	expect(alarmAt).toBeNull()
+	expect(alarmAt).toBeTypeOf('number')
+	// One-shot at the row's age deadline — not an immediate/hourly wake.
+	expect(alarmAt).toBeGreaterThan(
+		startedAtMs + runRecordRetentionDays * 24 * 60 * 60 * 1000 - 5_000,
+	)
 })
 
 test('retention alarm self-terminates when a pass leaves nothing pending', async () => {
@@ -689,6 +694,92 @@ test('retention alarm self-terminates when a pass leaves nothing pending', async
 	)
 	expect(after.remaining).toBe(0)
 	expect(after.alarmAt).toBeNull()
+})
+
+test('write after idle re-arms alarm and age-prunes without the finish counter', async () => {
+	const userId = uniqueUserId('idle-rearm')
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const oldStartedAt = new Date(
+		Date.now() - (runRecordRetentionDays + 2) * 24 * 60 * 60 * 1000,
+	).toISOString()
+
+	// Drive to self-terminating idle (empty DO, no alarm).
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		insertRunRow(state, {
+			id: 'seed-old',
+			status: 'success',
+			startedAt: oldStartedAt,
+			finishedAt: oldStartedAt,
+		})
+		state.storage.sql.exec(
+			`INSERT INTO run_log_meta (key, value) VALUES (?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			'run_count',
+			1,
+		)
+		await state.storage.deleteAlarm()
+		await instance.alarm()
+	})
+	const idle = await runInDurableObject(
+		stub,
+		async (_instance: RunLog, state) => ({
+			alarmAt: await state.storage.getAlarm(),
+			remaining: state.storage.sql
+				.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs`)
+				.one().n,
+		}),
+	)
+	expect(idle.remaining).toBe(0)
+	expect(idle.alarmAt).toBeNull()
+
+	const runId = 'post-idle-run'
+	await finishRunRecord({
+		env,
+		handle: {
+			id: runId,
+			userId,
+			startedAt: new Date().toISOString(),
+			persistence: 'eager',
+			context: baseContext({ surface: 'job', name: 'post-idle' }),
+		},
+		status: 'success',
+	})
+
+	const armed = await runInDurableObject(
+		stub,
+		async (_instance: RunLog, state) => state.storage.getAlarm(),
+	)
+	expect(armed).toBeTypeOf('number')
+
+	// Age the row past the cutoff without bumping the amortized finish counter.
+	const expiredStartedAt = new Date(
+		Date.now() - (runRecordRetentionDays + 3) * 24 * 60 * 60 * 1000,
+	).toISOString()
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		state.storage.sql.exec(
+			`UPDATE runs SET started_at = ?, finished_at = ?, updated_at = ? WHERE id = ?`,
+			expiredStartedAt,
+			expiredStartedAt,
+			expiredStartedAt,
+			runId,
+		)
+		state.storage.sql.exec(
+			`INSERT INTO run_log_meta (key, value) VALUES (?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			'finishes_since_retention',
+			0,
+		)
+		await state.storage.deleteAlarm()
+		await instance.alarm()
+	})
+
+	const pruned = await getRunRecord({ env, userId, runId })
+	expect(pruned).toBeNull()
+	const afterAlarm = await runInDurableObject(
+		stub,
+		async (_instance: RunLog, state) => state.storage.getAlarm(),
+	)
+	expect(afterAlarm).toBeNull()
 })
 
 test('clearRunRecords empties the Durable Object', async () => {

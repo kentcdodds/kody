@@ -236,10 +236,15 @@ function clampMetadataJson(metadataJson: string) {
 class RunLogBase extends DurableObject<Env> {
 	/**
 	 * In-isolate cache: once we know an alarm is scheduled, hot finishes skip
-	 * getAlarm/setAlarm. Cleared when a pass self-terminates with no due work.
+	 * getAlarm/setAlarm. Cleared when a pass self-terminates with no rows left
+	 * to prune, or when a new `running` insert may need an earlier wake.
 	 */
 	private retentionAlarmArmed = false
-	/** In-isolate: hasPendingRetentionWork() was false; skip re-probing. */
+	/**
+	 * In-isolate: the DO is empty of future retention work. Cleared on every
+	 * startRun/finishRun write so ensureRetentionAlarm re-arms for the new
+	 * row's due-time instead of trusting a stale idle conclusion.
+	 */
 	private retentionIdleConfirmed = false
 
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -248,6 +253,8 @@ class RunLogBase extends DurableObject<Env> {
 			this.initializeSchema()
 			this.ensureRunCountMeta()
 			// Observe existing alarm only — never arm in the constructor.
+			// An unvisited DO never runs (platform constraint); the first write
+			// re-converges via ensureRetentionAlarm after clearing idle.
 			this.retentionAlarmArmed = (await this.ctx.storage.getAlarm()) != null
 		})
 	}
@@ -520,39 +527,59 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * True when retention work is already due or due within one alarm period:
-	 * over the count cap, finished rows past / near the age cutoff, or
-	 * `running` rows past / near the stale TTL.
+	 * Arming rule (keep this comment accurate — reviewers rely on it):
+	 *
+	 * - Schedule at most one alarm for the soonest retention due-time:
+	 *   over-cap → now; oldest finished → started_at + retention; oldest
+	 *   running → started_at + stale TTL. Empty DOs stay disarmed.
+	 * - `retentionAlarmArmed` skips getAlarm/setAlarm on hot finishes once
+	 *   scheduled (over-cap still forces a near-term resync).
+	 * - `retentionIdleConfirmed` skips re-evaluation only while no new row
+	 *   has been written; every startRun/finishRun write clears it so the
+	 *   next ensure re-arms for that row's future due-time.
+	 * - alarm() self-terminates only when nothing remains to ever prune;
+	 *   otherwise it reschedules for the next due-time (not hourly forever).
+	 * - An unvisited DO never runs (platform constraint). Cold start observes
+	 *   any existing alarm; the first write re-converges via ensure.
 	 */
-	private hasPendingRetentionWork() {
-		if (this.getRunCount() > runRecordMaxRunsPerUser) return true
+	private nextRetentionDueAtMs(): number | null {
+		if (this.getRunCount() > runRecordMaxRunsPerUser) {
+			return Date.now()
+		}
 
-		const now = Date.now()
-		const ageSoonCutoff = new Date(
-			now - retentionMs + runRecordRetentionAlarmMs,
-		).toISOString()
-		const ageDue = this.ctx.storage.sql
-			.exec<{ ok: number }>(
-				`SELECT 1 AS ok FROM runs
-				WHERE started_at < ? AND status != 'running'
+		let next: number | null = null
+		const consider = (at: number) => {
+			if (!Number.isFinite(at)) return
+			if (next == null || at < next) next = at
+		}
+
+		const oldestFinished = this.ctx.storage.sql
+			.exec<{ started_at: string }>(
+				`SELECT started_at FROM runs
+				WHERE status != 'running'
+				ORDER BY started_at ASC
 				LIMIT 1`,
-				ageSoonCutoff,
 			)
 			.toArray()[0]
-		if (ageDue) return true
+		if (oldestFinished) {
+			consider(Date.parse(oldestFinished.started_at) + retentionMs)
+		}
 
-		const staleSoonCutoff = new Date(
-			now - runRecordStaleRunningTtlMs + runRecordRetentionAlarmMs,
-		).toISOString()
-		const staleDue = this.ctx.storage.sql
-			.exec<{ ok: number }>(
-				`SELECT 1 AS ok FROM runs
-				WHERE status = 'running' AND started_at < ?
+		const oldestRunning = this.ctx.storage.sql
+			.exec<{ started_at: string }>(
+				`SELECT started_at FROM runs
+				WHERE status = 'running'
+				ORDER BY started_at ASC
 				LIMIT 1`,
-				staleSoonCutoff,
 			)
 			.toArray()[0]
-		return staleDue != null
+		if (oldestRunning) {
+			consider(
+				Date.parse(oldestRunning.started_at) + runRecordStaleRunningTtlMs,
+			)
+		}
+
+		return next
 	}
 
 	private enforceRetention() {
@@ -604,49 +631,45 @@ class RunLogBase extends DurableObject<Env> {
 		}
 	}
 
-	/**
-	 * Arming rule: schedule an alarm only while `hasPendingRetentionWork()` is
-	 * true (over cap, age-due/soon, or stale-running due/soon). Hot finishes
-	 * that already armed — or already confirmed idle — skip storage. When a
-	 * retention pass leaves nothing due, the alarm self-terminates; the next
-	 * write re-arms via this method if new work appears — so idle users are
-	 * not woken forever.
-	 */
 	private async ensureRetentionAlarm() {
 		const overCap = this.getRunCount() > runRecordMaxRunsPerUser
 		if (this.retentionAlarmArmed && !overCap) return
 		if (!this.retentionAlarmArmed && this.retentionIdleConfirmed && !overCap) {
 			return
 		}
-		if (!overCap && !this.hasPendingRetentionWork()) {
+
+		const next = this.nextRetentionDueAtMs()
+		if (next == null) {
 			this.retentionIdleConfirmed = true
+			this.retentionAlarmArmed = false
 			return
 		}
 
 		this.retentionIdleConfirmed = false
+		const alarmAt = Math.max(next, Date.now() + 1_000)
 		const existing = await this.ctx.storage.getAlarm()
 		if (
 			existing != null &&
-			existing <= Date.now() + runRecordRetentionAlarmMs
+			Math.abs(existing - alarmAt) < runRecordRetentionAlarmMs
 		) {
 			this.retentionAlarmArmed = true
 			return
 		}
-		await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
+		await this.ctx.storage.setAlarm(alarmAt)
 		this.retentionAlarmArmed = true
 	}
 
 	async alarm(): Promise<void> {
 		this.enforceRetention()
-		// Self-terminating: re-arm only while work remains after this pass.
-		if (this.hasPendingRetentionWork()) {
-			await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
-			this.retentionAlarmArmed = true
-			this.retentionIdleConfirmed = false
-		} else {
+		const next = this.nextRetentionDueAtMs()
+		if (next == null) {
 			this.retentionAlarmArmed = false
 			this.retentionIdleConfirmed = true
+			return
 		}
+		await this.ctx.storage.setAlarm(Math.max(next, Date.now() + 1_000))
+		this.retentionAlarmArmed = true
+		this.retentionIdleConfirmed = false
 	}
 
 	async startRun(input: { run: RunLogRowInput }): Promise<{ ok: true }> {
@@ -656,6 +679,10 @@ class RunLogBase extends DurableObject<Env> {
 			// INSERT OR IGNORE: count only when the row is new.
 			if (this.runExists(input.run.id)) {
 				this.adjustRunCount(1)
+				// New row ⇒ future age/stale work exists; idle conclusion is stale.
+				// Clear armed too: a new `running` row may need an earlier wake.
+				this.retentionIdleConfirmed = false
+				this.retentionAlarmArmed = false
 			}
 		}
 		await this.ensureRetentionAlarm()
@@ -672,6 +699,10 @@ class RunLogBase extends DurableObject<Env> {
 		if (!existed) {
 			this.adjustRunCount(1)
 		}
+		// Any write invalidates idle. Keep `retentionAlarmArmed` so repeated
+		// finishes inside an already-scheduled window stay off alarm storage;
+		// terminal rows only push age deadlines later.
+		this.retentionIdleConfirmed = false
 		this.maybeEnforceRetention()
 		await this.ensureRetentionAlarm()
 		return { ok: true }
