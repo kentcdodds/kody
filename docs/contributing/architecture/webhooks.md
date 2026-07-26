@@ -35,11 +35,12 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    that user; load minted row keyed by `(user_id, package_id, webhook_name)`.
 3. Unminted, disabled, missing declaration (after republish rename/remove), or
    URL-secret mismatch → **404** (indistinguishable). URL-secret mismatches do
-   **not** write a delivery row (avoids log-flush DoS and rate-limit side
+   **not** record delivery history (avoids log-flush DoS and rate-limit side
    channels).
 4. Constant-time compare the URL secret against `url_secret_hash` (SHA-256).
 5. After a matching URL secret, enforce per-webhook rate limit (~60/min) →
-   **429** (no delivery row on the limited path); payload cap 1 MB → **413**.
+   **429** (no delivery history on the limited path); payload cap 1 MB →
+   **413**.
 6. When verification is declared, resolve `secretName` from the owner's secret
    store (user/package scope via package storage context). Missing secret or
    HMAC mismatch → **401**, with a clear delivery-log error for missing secrets.
@@ -58,15 +59,14 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
   `requireMcpUser(...).userId`.
 - Ingress may look up by username + kody id + webhook name, then immediately
   re-scopes by the owning user.
-- Account deletion/export include `webhook_endpoints` and any remaining
-  `webhook_deliveries` rows (writers do not use the deliveries table; history
-  lives in run records). Export redacts `url_secret_hash`.
+- Account deletion/export include `webhook_endpoints` (minted URL state).
+  Delivery history lives in run records and is covered with the rest of `RunLog`
+  export/deletion. Export redacts `url_secret_hash`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
   are hashed; verification secrets stay in the secrets primitive.
 
 ## Storage
 
 Minted endpoint state is in migration `0090-webhook-endpoints.sql`. Delivery
-history is in the per-user `RunLog` Durable Object (`webhook` surface);
-`webhook_deliveries` remains in schema until a follow-up drop migration. See
-[Data storage](./data-storage.md) and [Run records](./run-records.md).
+history is in the per-user `RunLog` Durable Object (`webhook` surface), not in
+D1. See [Data storage](./data-storage.md) and [Run records](./run-records.md).

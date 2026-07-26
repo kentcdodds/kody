@@ -261,16 +261,16 @@ Rules:
   extracted message bodies/metadata, externally stored attachments, values,
   encrypted secrets, memories, saved-package projections, jobs, repo/session
   metadata, package invocation results, and published artifact metadata). Run
-  records (per-user `RunLog` Durable Object history, and any leftover
-  `package_runtime_*` D1 rows) are intentionally **excluded** from the quota —
-  they are observability history, not user content. StorageRunner Durable Object
-  buckets expose their own `estimatedBytes`; write chokepoints that target a
-  specific bucket pass `getCurrent` as `D1 estimate + target bucket estimate`
-  and `requested` as the candidate payload size when known. The counter
-  intentionally does **not** attempt to scan Cloudflare Artifacts repository
-  contents, KV snapshot/bundle bodies, R2 object listings beyond
-  `email_messages.raw_size`, or Vectorize: those stores either lack reliable
-  byte metadata or are derived from D1 and are documented in `data-storage.md`.
+  records in the per-user `RunLog` Durable Object are intentionally **excluded**
+  from the quota — they are observability history, not user content.
+  StorageRunner Durable Object buckets expose their own `estimatedBytes`; write
+  chokepoints that target a specific bucket pass `getCurrent` as
+  `D1 estimate + target bucket estimate` and `requested` as the candidate
+  payload size when known. The counter intentionally does **not** attempt to
+  scan Cloudflare Artifacts repository contents, KV snapshot/bundle bodies, R2
+  object listings beyond `email_messages.raw_size`, or Vectorize: those stores
+  either lack reliable byte metadata or are derived from D1 and are documented
+  in `data-storage.md`.
 
 ### Concurrency
 

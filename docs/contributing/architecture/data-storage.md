@@ -244,16 +244,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
   pointers, and run observability state (`last_run_*`, counters). Execution
   history lives in the per-user `RunLog` Durable Object (see
-  [Run records](./run-records.md)); `jobs.run_history_json` is left unwritten
-  and pending a drop migration.
+  [Run records](./run-records.md)).
 - `package_service_states` (`0095-package-service-states.sql`): authoritative
   per-service liveness projection (`running` / `idle` / `stopped` / `error`) for
   entitlement concurrency. Upserted and heartbeaten by the package-service
   Durable Object; not derived from run history.
-- `package_runtime_runs` / `package_runtime_logs`
-  (`0037-package-runtime-debug.sql`): **unwritten leftovers.** Writers do not
-  use these tables. Hourly retention drains any remaining rows; a follow-up
-  migration drops the tables. Execution history lives in `RunLog`.
 - `entity_sources`: durable mapping from user-facing entities to Artifacts repos
   and their latest published commit
 - `saved_packages`: package metadata/search projection derived from published
@@ -643,14 +638,12 @@ The following columns store JSON whose schema is defined in TypeScript rather
 than in D1 constraints. Changes must be backward compatible on read and additive
 on write unless a migration backfills existing rows.
 
-- `jobs.params_json`, `jobs.schedule_json`, `jobs.caller_context_json`,
-  `jobs.run_history_json`, and `jobs.repo_check_policy_json`
-  (`packages/worker/migrations/0018-jobs.sql`,
-  `0025-jobs-repo-check-policy.sql`, `packages/worker/src/jobs/repo.ts`).
-  `run_history_json` is **unwritten** (run records own history; the column
-  remains until a follow-up drop migration). The other fields rely on parser and
-  normalizer compatibility. Package jobs persist both `storageContext.appId` for
-  value scope and `storageContext.packageId` for package-owned secret scope.
+- `jobs.params_json`, `jobs.schedule_json`, `jobs.caller_context_json`, and
+  `jobs.repo_check_policy_json` (`packages/worker/migrations/0018-jobs.sql`,
+  `0025-jobs-repo-check-policy.sql`, `packages/worker/src/jobs/repo.ts`) rely on
+  parser and normalizer compatibility. Package jobs persist both
+  `storageContext.appId` for value scope and `storageContext.packageId` for
+  package-owned secret scope.
 - `saved_packages.tags_json` and `community_listings.tags_json`
   (`0027-saved-packages.sql`, `0045-community-listings.sql`) are `string[]`
   projections.
@@ -670,15 +663,13 @@ on write unless a migration backfills existing rows.
   delivery details. Provider event ids are unique for idempotent Queue
   ingestion; `email_messages.delivery_status` is the latest provider state,
   separate from send-request `processing_status`.
-- `webhook_endpoints` / `webhook_deliveries` (`0090-webhook-endpoints.sql`)
-  store per-user minted URL state for `package.json#kody.webhooks`, keyed by
+- `webhook_endpoints` (`0090-webhook-endpoints.sql`) stores per-user minted URL
+  state for `package.json#kody.webhooks`, keyed by
   `(user_id, package_id, webhook_name)`. URL secrets are SHA-256 hashed;
   verification secrets stay in the secrets primitive (`secretName` at delivery
   time). Delivery history is recorded as `webhook` surface run records (see
-  [Run records](./run-records.md) and [Inbound webhooks](./webhooks.md));
-  writers do not use `webhook_deliveries`; the table remains until a follow-up
-  drop migration. Account deletion/export still include any remaining delivery
-  rows.
+  [Run records](./run-records.md) and [Inbound webhooks](./webhooks.md)), not as
+  D1 rows.
 - `system_email_daily_counters` (`0051-system-email-daily-counters.sql`) stores
   fixed per-local daily receive counters for operator-owned system inboxes.
   These counters are not user entitlements and are pruned by the system-email
@@ -700,11 +691,6 @@ on write unless a migration backfills existing rows.
   Mutations from package code (`secret_set` / `secret_delete` / OpenAPI
   token-refresh writes) always require the grant. Package-scoped secrets are
   owned exclusively by the package id in their bucket binding.
-- `package_runtime_runs.metadata_json` and `package_runtime_logs.fields_json`
-  (`0037-package-runtime-debug.sql`) are **unwritten** leftover JSON shapes.
-  Writers do not use those tables; metadata and log fields live in the `RunLog`
-  Durable Object (`runs.metadata_json`, `run_logs.fields_json`). A follow-up
-  migration drops the D1 tables.
 
 ### Durable Object id contracts
 
@@ -850,16 +836,6 @@ documented exemption.
 
 Current retention policies:
 
-- `package_runtime_runs` / `package_runtime_logs`: **drain-only leftovers.** Run
-  records self-prune inside the per-user `RunLog` Durable Object (about 30 days
-  and at most 2,000 runs per user, failure-last — see
-  [Run records](./run-records.md)). These D1 lanes drain any remaining rows (30
-  days / at most 500 runs per `(user_id, package_id)`, keeping `running` rows
-  and referenced runs) until a follow-up migration drops the tables. Logs are
-  deleted before their runs, and orphan logs are pruned separately. The age
-  prune is index-driven; the per-package cap prune ranks only a bounded set of
-  the largest `(user_id, package_id)` pairs per batch
-  (`packageRuntimeCapPairsPerBatch`) instead of window-ranking the whole table.
 - `package_invocations`: keep terminal idempotency rows for 90 days. Rows with
   `status = 'in_progress'` are never pruned so duplicate requests cannot bypass
   the in-flight guard.
