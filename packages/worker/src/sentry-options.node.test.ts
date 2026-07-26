@@ -225,7 +225,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).toBeNull()
 
-	const exhaustedPublishRecovery = {
+	const exhaustedPublishRecoveryInline = {
 		exception: {
 			values: [
 				{
@@ -234,8 +234,23 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			],
 		},
 	}
-	expect(filterSentryEvent(exhaustedPublishRecovery)).toBe(
-		exhaustedPublishRecovery,
+	expect(filterSentryEvent(exhaustedPublishRecoveryInline)).toBe(
+		exhaustedPublishRecoveryInline,
+	)
+
+	const exhaustedPublishRecoveryChained = {
+		exception: {
+			values: [
+				{
+					value:
+						'package_publish_external_push could not recover after 3 transient Durable Object reset attempts',
+				},
+				{ value: durableObjectIsolateMemoryResetMessage },
+			],
+		},
+	}
+	expect(filterSentryEvent(exhaustedPublishRecoveryChained)).toBe(
+		exhaustedPublishRecoveryChained,
 	)
 
 	const unrelatedDoFailure = {

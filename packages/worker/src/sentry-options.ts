@@ -112,10 +112,15 @@ export function isDurableObjectIsolateResetMessage(message: string) {
 }
 
 export function isDurableObjectIsolateResetSentryEvent(event: ErrorEvent) {
-	return sentryEventMessages(event).some(
-		(message) =>
-			typeof message === 'string' &&
-			isDurableObjectIsolateResetMessage(message),
+	const messages = sentryEventMessages(event).filter(
+		(message): message is string =>
+			typeof message === 'string' && message.trim().length > 0,
+	)
+	// Drop only when every reported message is a bare reset. A chained cause
+	// that pairs a recovery/wrapper value with an inner reset must stay visible.
+	return (
+		messages.length > 0 &&
+		messages.every((message) => isDurableObjectIsolateResetMessage(message))
 	)
 }
 
