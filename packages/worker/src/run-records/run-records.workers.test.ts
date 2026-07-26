@@ -1,6 +1,8 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { RunLog } from './run-log-do.ts'
 import {
 	beginRunRecord,
@@ -20,6 +22,7 @@ import {
 	runRecordStaleRunningTtlMs,
 	type RunRecordContext,
 	type RunRecordHandle,
+	type RunSurface,
 } from './types.ts'
 
 function uniqueUserId(label: string) {
@@ -555,6 +558,44 @@ test('stale running rows are reconciled to interrupted errors', async () => {
 	const fresh = await getRunRecord({ env, userId, runId: 'fresh-running' })
 	expect(fresh?.run.status).toBe('running')
 	expect(fresh?.run.finishedAt).toBeNull()
+})
+
+test('run recording degrades to a warning instead of failing the observed run', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const userId = uniqueUserId('never-throws')
+	expect(
+		beginRunRecord({
+			env,
+			userId,
+			context: baseContext({ surface: 'not-a-surface' as RunSurface }),
+		}),
+	).toBeNull()
+
+	// `user_activation_milestones` is absent from this suite's D1 schema, so the
+	// activation milestone write fans out into a failure the run must survive.
+	await finishRunRecord({
+		env,
+		handle: {
+			id: crypto.randomUUID(),
+			userId,
+			startedAt: new Date().toISOString(),
+			persistence: 'eager',
+			context: baseContext({
+				surface: 'subscription',
+				name: 'email.message.received',
+				packageId: 'package-1',
+			}),
+		},
+		status: 'success',
+	})
+
+	expect(consoleWarn.mock.calls.map(([message]) => message)).toEqual([
+		'run-record-begin-failed',
+		'activation-run-record-failed',
+	])
+	const page = await listRunRecords({ env, userId })
+	expect(page.runs).toHaveLength(1)
+	expect(page.runs[0]?.status).toBe('success')
 })
 
 test('clearRunRecords empties the Durable Object', async () => {
