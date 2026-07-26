@@ -65,6 +65,13 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 	expect(isRetryableD1LockError(new Error('internal error'))).toBe(false)
 	expect(
 		isRetryableD1LockError(
+			new Error(
+				'D1_ERROR: Internal error in D1 DB storage caused object to be reset',
+			),
+		),
+	).toBe(false)
+	expect(
+		isRetryableD1LockError(
 			new Error('D1_ERROR: internal error while applying migration'),
 		),
 	).toBe(false)

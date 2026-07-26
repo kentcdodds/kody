@@ -107,6 +107,18 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 	expect(filterSentryEvent(bareInternalError)).toBe(bareInternalError)
 
+	const bareObjectReset = {
+		exception: {
+			values: [
+				{
+					value:
+						'D1_ERROR: Internal error in D1 DB storage caused object to be reset',
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(bareObjectReset)).toBe(bareObjectReset)
+
 	const userModuleBuildFailure = {
 		exception: {
 			values: [
