@@ -68,6 +68,30 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			},
 		}),
 	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'D1_ERROR: Internal error in D1 DB storage caused object to be reset; reference = 8t4dqqpoq1ctvjr8kca8fl4c',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Internal error in D1 DB storage caused object to be reset; reference = 8t4dqqpoq1ctvjr8kca8fl4c',
+					},
+				],
+			},
+		}),
+	).toBeNull()
 
 	const unrelatedNetworkLoss = {
 		exception: {
