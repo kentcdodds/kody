@@ -417,3 +417,64 @@ test('storage runner dedupes bucket registration to one D1 write per isolate', a
 		env.APP_DB.prepare = originalPrepare
 	}
 })
+
+test('clearStorage during account-deletion purge must not recreate ownership rows', async () => {
+	await ensureStorageRunnerTestSchema()
+	const userId = `storage-delete-race-${crypto.randomUUID()}`
+	const storageId = createExecuteStorageId()
+	const runner = storageRunnerRpc({
+		env,
+		userId,
+		storageId,
+	})
+
+	await runner.setValue({ key: 'keep-until-purge', value: 1 })
+	await flushStorageBucketRegistrationsForTests()
+	await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([
+		storageId,
+	])
+
+	// Account deletion often runs in a fresh isolate, so in-memory dedupe
+	// cannot paper over a clearStorage registration race.
+	clearStorageBucketRegistrationDedupeForTests()
+
+	// Hold any ownership upsert until after the D1 delete so a fire-and-forget
+	// clearStorage registration cannot win the race before the assertion.
+	let releaseInsert: (() => void) | null = null
+	const insertGate = new Promise<void>((resolve) => {
+		releaseInsert = resolve
+	})
+	const originalPrepare = env.APP_DB.prepare.bind(env.APP_DB)
+	env.APP_DB.prepare = ((sql: string) => {
+		const statement = originalPrepare(sql)
+		if (!sql.includes('INSERT INTO user_storage_buckets')) {
+			return statement
+		}
+		return {
+			bind(...params: Array<unknown>) {
+				const bound = statement.bind(...params)
+				return {
+					async run() {
+						await insertGate
+						return await bound.run()
+					},
+				}
+			},
+		}
+	}) as typeof env.APP_DB.prepare
+
+	try {
+		await runner.clearStorage()
+		await env.APP_DB.prepare(
+			`DELETE FROM user_storage_buckets WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.run()
+		releaseInsert?.()
+		await flushStorageBucketRegistrationsForTests()
+		await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([])
+	} finally {
+		env.APP_DB.prepare = originalPrepare
+		releaseInsert?.()
+	}
+})

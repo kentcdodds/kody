@@ -507,6 +507,12 @@ export function storageRunnerRpc(input: {
 		}) => Promise<StorageSqlResult>
 	}
 
+	// Registration must never run on a path that executes after the owning
+	// user's D1 rows are removed. Account deletion clears StorageRunner DOs
+	// via clearStorage, then deletes user_storage_buckets; registering on
+	// clear would fire-and-forget an upsert that can recreate rows for a
+	// deleted user. Clearing also is not evidence of use — prior writes
+	// already registered the bucket.
 	const registerOwnedBucket = () => {
 		registerStorageBucket({
 			env: input.env,
@@ -526,10 +532,7 @@ export function storageRunnerRpc(input: {
 			registerOwnedBucket()
 			return runner.deleteValue(payload)
 		},
-		clearStorage: () => {
-			registerOwnedBucket()
-			return runner.clearStorage()
-		},
+		clearStorage: () => runner.clearStorage(),
 		getEstimatedBytes: () => runner.getEstimatedBytes(),
 		listValues: (payload: {
 			prefix?: string | null
