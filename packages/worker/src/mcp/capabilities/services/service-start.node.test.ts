@@ -49,7 +49,7 @@ function createEntitlementsTestDb(input: {
 								const user = users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
 							}
-							if (query.includes('FROM package_runtime_runs')) {
+							if (query.includes('FROM package_service_states')) {
 								const hasExclusion = query.includes('AND NOT (package_id = ?')
 								const excludedPackageId = hasExclusion ? params[2] : null
 								const excludedName = hasExclusion ? params[3] : null

@@ -410,45 +410,9 @@ export async function readUserD1StorageBytes(input: {
 			WHERE user_id = ?`,
 			[userId],
 		),
-		sumStorageBytes(
-			db,
-			`SELECT COALESCE(SUM(
-				${textBytesExpression([
-					'package_id',
-					'package_kody_id',
-					'source_id',
-					'published_commit',
-					'name',
-					'error_name',
-					'error_message',
-					'storage_id',
-					'job_id',
-					'workflow_id',
-					'invocation_id',
-					'session_id',
-					'idempotency_key',
-					'parent_run_id',
-					'metadata_json',
-				])}
-			), 0) AS count
-			FROM package_runtime_runs
-			WHERE user_id = ?`,
-			[userId],
-		),
-		sumStorageBytes(
-			db,
-			`SELECT COALESCE(SUM(
-				${textBytesExpression([
-					'package_id',
-					'level',
-					'message',
-					'fields_json',
-				])}
-			), 0) AS count
-			FROM package_runtime_logs
-			WHERE user_id = ?`,
-			[userId],
-		),
+		// Runtime run/log records are observability history, not user content.
+		// They are intentionally excluded from the storage quota (and are moving
+		// out of D1 into a per-user Durable Object).
 		sumStorageBytes(
 			db,
 			`SELECT COALESCE(SUM(
@@ -471,18 +435,24 @@ export async function readUserD1StorageBytes(input: {
 }
 
 /**
- * Recency window for counting running package services. Service runs are
- * tracked in package_runtime_runs; rows can be left in 'running' after a
- * hard eviction, so stale rows older than this window are ignored to avoid
- * permanently locking a user out of their quota.
+ * Staleness threshold for counting a `package_service_states` row as running.
+ *
+ * This is not the old history-table hack relocated. `package_service_states`
+ * is an authoritative state projection that Durable Objects upsert on
+ * lifecycle transitions and actively heartbeat (refreshing `updated_at`)
+ * while a service is alive. A hard DO eviction that never restores should
+ * clear the row on restore; the threshold is defense-in-depth for the case
+ * where the DO never comes back and the best-effort D1 write did not land.
+ * Heartbeats keep live services well inside this window.
  */
-const runningServiceCountWindowMs = 24 * 60 * 60 * 1000
+export const packageServiceStateStaleMs = 24 * 60 * 60 * 1000
 
 /**
- * Count distinct recently-running package services for a user. Enforcement
- * points that start a specific service should pass `excludeService` so a
- * stale 'running' row for that same service can never block its own
- * restart (starting it again does not add a new running service).
+ * Count currently-running package services for a user from
+ * `package_service_states`. Enforcement points that start a specific service
+ * should pass `excludeService` so a stale 'running' row for that same
+ * service can never block its own restart (starting it again does not add a
+ * new running service).
  */
 export async function countRunningPackageServices(input: {
 	db: D1Database
@@ -491,13 +461,13 @@ export async function countRunningPackageServices(input: {
 	now?: Date
 }): Promise<number> {
 	const now = input.now ?? new Date()
-	const windowStart = new Date(
-		now.valueOf() - runningServiceCountWindowMs,
+	const freshAfter = new Date(
+		now.valueOf() - packageServiceStateStaleMs,
 	).toISOString()
 	const exclusion = input.excludeService
-		? `AND NOT (package_id = ? AND COALESCE(name, '') = ?)`
+		? `AND NOT (package_id = ? AND service_name = ?)`
 		: ''
-	const params: Array<unknown> = [input.userId, windowStart]
+	const params: Array<unknown> = [input.userId, freshAfter]
 	if (input.excludeService) {
 		params.push(
 			input.excludeService.packageId,
@@ -506,12 +476,11 @@ export async function countRunningPackageServices(input: {
 	}
 	return await countRows(
 		input.db,
-		`SELECT COUNT(DISTINCT package_id || '/' || COALESCE(name, '')) AS count
-		FROM package_runtime_runs
+		`SELECT COUNT(*) AS count
+		FROM package_service_states
 		WHERE user_id = ?
-			AND surface = 'service'
 			AND status = 'running'
-			AND started_at >= ?
+			AND updated_at >= ?
 			${exclusion}`,
 		params,
 	)

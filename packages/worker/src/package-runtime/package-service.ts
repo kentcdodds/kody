@@ -21,6 +21,12 @@ import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from './publishe
 const serviceStateStorageKey = 'package-service-state'
 const packageServiceRetryDelayMs = 5_000
 const packageServiceRetryMaxDelayMs = 15 * 60 * 1000
+/**
+ * How often a running service refreshes `package_service_states.updated_at`.
+ * Must stay well below `packageServiceStateStaleMs` in entitlements so live
+ * services are never dropped from the concurrency count.
+ */
+const packageServiceStateHeartbeatMs = 60 * 60 * 1000
 
 export type PackageServiceBindingState = {
 	userId: string
@@ -31,6 +37,8 @@ export type PackageServiceBindingState = {
 	serviceName: string
 }
 
+type PackageServiceProjectedStatus = 'running' | 'idle' | 'stopped' | 'error'
+
 type PackageServiceState = {
 	binding: PackageServiceBindingState | null
 	autoStart: boolean
@@ -39,7 +47,7 @@ type PackageServiceState = {
 	stopRequested: boolean
 	currentRunId: string | null
 	nextAlarmAt: string | null
-	nextAlarmSource: 'service' | 'auto-start' | null
+	nextAlarmSource: 'service' | 'auto-start' | 'heartbeat' | null
 	lastStartedAt: string | null
 	lastStoppedAt: string | null
 	status: 'idle' | 'running' | 'stopping' | 'stopped' | 'error'
@@ -112,6 +120,75 @@ function createInitialPackageServiceState(): PackageServiceState {
 		lastRunFinishedAt: null,
 		consecutiveFailureCount: 0,
 	}
+}
+
+/**
+ * Map DO status onto the D1 projection. `stopping` still holds a concurrency
+ * slot until the run actually finishes, so it projects as `running`.
+ */
+export function projectPackageServiceStatus(
+	status: PackageServiceState['status'],
+): PackageServiceProjectedStatus {
+	switch (status) {
+		case 'running':
+		case 'stopping':
+			return 'running'
+		case 'idle':
+			return 'idle'
+		case 'stopped':
+			return 'stopped'
+		case 'error':
+			return 'error'
+		default: {
+			const exhaustive: never = status
+			throw new Error(`Unknown package service status: ${String(exhaustive)}`)
+		}
+	}
+}
+
+export async function upsertPackageServiceState(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	serviceName: string
+	status: PackageServiceProjectedStatus
+	startedAt: string | null
+	updatedAt: string
+}): Promise<void> {
+	await input.db
+		.prepare(
+			`INSERT INTO package_service_states (
+				user_id, package_id, service_name, status, started_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT(user_id, package_id, service_name) DO UPDATE SET
+				status = excluded.status,
+				started_at = excluded.started_at,
+				updated_at = excluded.updated_at`,
+		)
+		.bind(
+			input.userId,
+			input.packageId,
+			input.serviceName,
+			input.status,
+			input.status === 'running' ? input.startedAt : null,
+			input.updatedAt,
+		)
+		.run()
+}
+
+export async function deletePackageServiceState(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	serviceName: string
+}): Promise<void> {
+	await input.db
+		.prepare(
+			`DELETE FROM package_service_states
+			WHERE user_id = ? AND package_id = ? AND service_name = ?`,
+		)
+		.bind(input.userId, input.packageId, input.serviceName)
+		.run()
 }
 
 function getPackageServiceNamespace(env: Env) {
@@ -296,6 +373,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			this.stateSnapshot.status = 'stopped'
 			this.stateSnapshot.lastStoppedAt = new Date().toISOString()
 			await this.persistState()
+			await this.projectServiceStateToD1()
 			// The eviction interrupted the run at an unknown time, so meter the run
 			// itself (it happened, and was not a user-code failure) without a
 			// duration instead of never metering it or approximating one.
@@ -328,6 +406,61 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 
 	private async persistState() {
 		await this.ctx.storage.put(serviceStateStorageKey, this.stateSnapshot)
+	}
+
+	/**
+	 * Best-effort D1 projection of service liveness for entitlement counting.
+	 * Failures must never break the service path; stop/error/idle writes still
+	 * attempt to clear `running` so quota is released when D1 is healthy.
+	 */
+	private async projectServiceStateToD1() {
+		const binding = this.stateSnapshot.binding
+		if (!binding) return
+		try {
+			await upsertPackageServiceState({
+				db: this.env.APP_DB,
+				userId: binding.userId,
+				packageId: binding.packageId,
+				serviceName: binding.serviceName,
+				status: projectPackageServiceStatus(this.stateSnapshot.status),
+				startedAt: this.stateSnapshot.lastStartedAt,
+				updatedAt: new Date().toISOString(),
+			})
+		} catch {
+			// Best-effort: D1 outages must not take down package services.
+		}
+	}
+
+	private async deleteProjectedServiceState(
+		binding: PackageServiceBindingState,
+	) {
+		try {
+			await deletePackageServiceState({
+				db: this.env.APP_DB,
+				userId: binding.userId,
+				packageId: binding.packageId,
+				serviceName: binding.serviceName,
+			})
+		} catch {
+			// Best-effort cleanup on purge.
+		}
+	}
+
+	private async ensureRunningHeartbeat() {
+		if (!this.stateSnapshot.currentRunId) return
+		if (this.stateSnapshot.nextAlarmAt) {
+			const nextAtMs = Date.parse(this.stateSnapshot.nextAlarmAt)
+			if (
+				!Number.isNaN(nextAtMs) &&
+				nextAtMs - Date.now() <= packageServiceStateHeartbeatMs
+			) {
+				return
+			}
+		}
+		await this.scheduleAlarm({
+			runAt: new Date(Date.now() + packageServiceStateHeartbeatMs),
+			source: 'heartbeat',
+		})
 	}
 
 	private async initializeBinding(
@@ -368,7 +501,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 
 	private async scheduleAlarm(input: {
 		runAt: Date | string
-		source?: 'service' | 'auto-start'
+		source?: 'service' | 'auto-start' | 'heartbeat'
 	}) {
 		const runAtDate =
 			typeof input.runAt === 'string' ? new Date(input.runAt) : input.runAt
@@ -464,13 +597,15 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		this.stateSnapshot.lastRunFinishedAt = new Date(finishedAtMs).toISOString()
 		this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
 		await this.persistState()
+		await this.projectServiceStateToD1()
 		if (stopRequested) {
 			await this.clearAlarm()
 		} else if (
 			this.stateSnapshot.autoStart &&
 			(this.stateSnapshot.mode !== 'persistent' ||
 				input.nextStatus === 'error') &&
-			!this.stateSnapshot.nextAlarmAt
+			(!this.stateSnapshot.nextAlarmAt ||
+				this.stateSnapshot.nextAlarmSource === 'heartbeat')
 		) {
 			await this.scheduleAlarm({
 				runAt: buildPackageServiceRetryTime(
@@ -716,6 +851,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			this.stateSnapshot.stopRequested = false
 			this.stateSnapshot.status = 'running'
 			await this.persistState()
+			await this.projectServiceStateToD1()
+			await this.ensureRunningHeartbeat()
 			return Response.json({
 				ok: true,
 				run_id: this.stateSnapshot.currentRunId,
@@ -733,6 +870,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		this.stateSnapshot.lastStartedAt = startedAt
 		this.stateSnapshot.lastError = null
 		await this.persistState()
+		await this.projectServiceStateToD1()
+		await this.ensureRunningHeartbeat()
 		const task = this.runServiceInBackground({
 			binding: loaded.resolvedBinding,
 			runId,
@@ -791,6 +930,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			this.stateSnapshot.status = 'stopped'
 		}
 		await this.clearAlarm()
+		await this.projectServiceStateToD1()
 		return Response.json({
 			ok: true,
 		})
@@ -804,12 +944,14 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		} catch {
 			// Continue with hard deletion even if package/source lookup fails.
 		}
+		const binding = this.stateSnapshot.binding ?? input.binding
 		this.stateSnapshot = createInitialPackageServiceState()
 		this.activeRunPromise = null
 		await this.ctx.storage.deleteAlarm().catch(() => {
 			// Best effort cleanup before deleteAll.
 		})
 		await this.ctx.storage.deleteAll()
+		await this.deleteProjectedServiceState(binding)
 		return Response.json({
 			ok: true,
 		})
@@ -846,7 +988,14 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		this.stateSnapshot.nextAlarmAt = null
 		this.stateSnapshot.nextAlarmSource = null
 		await this.persistState()
-		if (this.stateSnapshot.currentRunId) return
+		if (this.stateSnapshot.currentRunId) {
+			await this.projectServiceStateToD1()
+			await this.ensureRunningHeartbeat()
+			return
+		}
+		if (alarmSource === 'heartbeat') {
+			return
+		}
 		try {
 			const loaded = await loadSavedPackageService({
 				env: this.env,
@@ -869,6 +1018,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				this.stateSnapshot.lastStartedAt = startedAt
 				this.stateSnapshot.lastError = null
 				await this.persistState()
+				await this.projectServiceStateToD1()
+				await this.ensureRunningHeartbeat()
 				const task = this.runServiceInBackground({
 					binding: loaded.resolvedBinding,
 					runId,
@@ -882,6 +1033,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			this.stateSnapshot.status = 'error'
 			this.stateSnapshot.consecutiveFailureCount += 1
 			await this.persistState()
+			await this.projectServiceStateToD1()
 			if (
 				this.stateSnapshot.autoStart &&
 				!this.stateSnapshot.stopRequested &&

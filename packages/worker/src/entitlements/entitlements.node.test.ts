@@ -28,10 +28,12 @@ import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
+	countRunningPackageServices,
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageEntryBytes,
 	getUserPlan,
 	incrementDailyEntitlementCounter,
+	packageServiceStateStaleMs,
 	refundDailyEntitlement,
 } from './service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
@@ -1119,4 +1121,54 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			email: unlimitedPlusProEmail,
 		}),
 	).toBe('max')
+})
+
+test('countRunningPackageServices queries package_service_states with staleness and excludeService', async () => {
+	const now = new Date('2026-07-26T12:00:00.000Z')
+	const queries: Array<{ sql: string; params: Array<unknown> }> = []
+	const db = {
+		prepare(query: string) {
+			return {
+				bind(...params: Array<unknown>) {
+					queries.push({ sql: query, params })
+					return {
+						async first<T>() {
+							return { count: 2 } as T
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	expect(
+		await countRunningPackageServices({
+			db,
+			userId: 'user-1',
+			now,
+		}),
+	).toBe(2)
+	expect(queries[0]?.sql).toContain('FROM package_service_states')
+	expect(queries[0]?.sql).not.toContain('package_runtime_runs')
+	expect(queries[0]?.params).toEqual([
+		'user-1',
+		new Date(now.valueOf() - packageServiceStateStaleMs).toISOString(),
+	])
+
+	queries.length = 0
+	await countRunningPackageServices({
+		db,
+		userId: 'user-1',
+		now,
+		excludeService: { packageId: 'pkg-1', serviceName: 'worker' },
+	})
+	expect(queries[0]?.sql).toContain(
+		'AND NOT (package_id = ? AND service_name = ?)',
+	)
+	expect(queries[0]?.params).toEqual([
+		'user-1',
+		new Date(now.valueOf() - packageServiceStateStaleMs).toISOString(),
+		'pkg-1',
+		'worker',
+	])
 })

@@ -725,6 +725,32 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'log-1', run_id: 'run-1', user_id: userAaa, package_id: 'pkg-1' },
 			{ id: 'log-2', run_id: 'run-3', user_id: userBbb, package_id: 'pkg-2' },
 		],
+		package_service_states: [
+			{
+				user_id: userAaa,
+				package_id: 'pkg-1',
+				service_name: 'sync',
+				status: 'running',
+				started_at: '2026-07-05T00:00:00.000Z',
+				updated_at: '2026-07-05T00:00:00.000Z',
+			},
+			{
+				user_id: userAaa,
+				package_id: 'pkg-1',
+				service_name: 'idle-worker',
+				status: 'idle',
+				started_at: null,
+				updated_at: '2026-07-05T00:00:00.000Z',
+			},
+			{
+				user_id: userBbb,
+				package_id: 'pkg-2',
+				service_name: 'sync',
+				status: 'running',
+				started_at: '2026-07-05T00:00:00.000Z',
+				updated_at: '2026-07-05T00:00:00.000Z',
+			},
+		],
 		mcp_memories: [
 			{ id: 'mem-1', user_id: userAaa },
 			{ id: 'mem-2', user_id: userBbb },
@@ -1206,6 +1232,16 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(rows.package_runtime_logs).toEqual([
 		{ id: 'log-2', run_id: 'run-3', user_id: userBbb, package_id: 'pkg-2' },
 	])
+	expect(rows.package_service_states).toEqual([
+		{
+			user_id: userBbb,
+			package_id: 'pkg-2',
+			service_name: 'sync',
+			status: 'running',
+			started_at: '2026-07-05T00:00:00.000Z',
+			updated_at: '2026-07-05T00:00:00.000Z',
+		},
+	])
 	expect(rows.community_listings).toEqual([
 		{ id: 'listing-2', owner_user_id: userBbb, pinned_commit: 'commit-2' },
 	])
@@ -1299,6 +1335,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.email_attachments).toBe(1)
 	expect(result.deletedRowCounts.package_runtime_runs).toBe(3)
 	expect(result.deletedRowCounts.package_runtime_logs).toBe(1)
+	expect(result.deletedRowCounts.package_service_states).toBe(2)
 	expect(result.deletedRowCounts.community_listings).toBe(1)
 	expect(result.deletedRowCounts.community_forks).toBe(2)
 	expect(result.deletedRowCounts.community_ratings).toBe(2)

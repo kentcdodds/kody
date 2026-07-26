@@ -403,6 +403,10 @@
 		{
 			"filename": "0094-activation-milestones.sql",
 			"sha256": "a267e2c1bbebf52168acd189124fc393c85165d1df6a71046be7aeefd83e5caf"
+		},
+		{
+			"filename": "0095-package-service-states.sql",
+			"sha256": "7a540172a3bc0058d43271f986c5003ddba755fde9f95d9f0d57c7bcbc780604"
 		}
 	]
 }

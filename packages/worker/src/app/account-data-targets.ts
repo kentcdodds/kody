@@ -115,6 +115,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'workflow_runs' },
 	{ kind: 'user_id', table: 'package_runtime_logs' },
 	{ kind: 'user_id', table: 'package_runtime_runs' },
+	{ kind: 'user_id', table: 'package_service_states' },
 	{ kind: 'user_id', table: 'usage_rollups' },
 	{ kind: 'user_id', table: 'user_activation_milestones' },
 	{ kind: 'user_id', table: 'agent_package_conversation_uses' },
