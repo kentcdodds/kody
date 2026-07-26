@@ -81,6 +81,48 @@ export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
 	return null
 }
 
+/**
+ * Exact Cloudflare Durable Object isolate-reset messages. When a DO hits its
+ * memory or CPU limit, the platform resets the isolate and surfaces this error
+ * to the RPC caller (for example `job_run_now` → JobManager). The next call
+ * gets a fresh isolate; app-level retry is unsafe for non-idempotent jobs, and
+ * moving heavy orchestration off JobManager is an architectural change outside
+ * a triage fix. Match only the bare platform strings so wrapped failures such
+ * as exhausted `package_publish_external_push` recovery messages stay visible.
+ */
+export const durableObjectIsolateMemoryResetMessage =
+	"Durable Object's isolate exceeded its memory limit and was reset."
+
+export const durableObjectIsolateCpuResetMessage =
+	'Durable Object exceeded its CPU time limit and was reset.'
+
+function normalizeDurableObjectIsolateResetMessage(message: string) {
+	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
+	return withoutErrorPrefix.endsWith('.')
+		? withoutErrorPrefix
+		: `${withoutErrorPrefix}.`
+}
+
+export function isDurableObjectIsolateResetMessage(message: string) {
+	const normalized = normalizeDurableObjectIsolateResetMessage(message)
+	return (
+		normalized === durableObjectIsolateMemoryResetMessage ||
+		normalized === durableObjectIsolateCpuResetMessage
+	)
+}
+
+export function isDurableObjectIsolateResetSentryEvent(event: ErrorEvent) {
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' && isDurableObjectIsolateResetMessage(message),
+	)
+}
+
+export function filterDurableObjectIsolateResetSentryEvent(event: ErrorEvent) {
+	if (!isDurableObjectIsolateResetSentryEvent(event)) return event
+	return null
+}
+
 export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	// Marker first: primary mechanism for user-authored failures.
 	if (filterUserCodeErrorSentryEvent(event, hint) === null) return null
@@ -88,6 +130,7 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	// String-match backstops for paths that cannot yet be marked.
 	if (filterUserModuleBundlerFailureSentryEvent(event) === null) return null
 	if (filterExecutorSandboxTimeoutSentryEvent(event) === null) return null
+	if (filterDurableObjectIsolateResetSentryEvent(event) === null) return null
 	return event
 }
 
@@ -122,7 +165,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// (`filterUserCodeErrorSentryEvent`). Bundler / sandbox-timeout string
 		// matches remain as backstops for unmarked paths; see
 		// filterUserModuleBundlerFailureSentryEvent and
-		// filterExecutorSandboxTimeoutSentryEvent.
+		// filterExecutorSandboxTimeoutSentryEvent. Bare Cloudflare Durable
+		// Object isolate memory/CPU reset strings are dropped the same way —
+		// see filterDurableObjectIsolateResetSentryEvent.
 		beforeSend: filterSentryEvent,
 	}
 }

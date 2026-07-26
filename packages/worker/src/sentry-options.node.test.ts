@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest'
 import { isUserCodeError, UserCodeError } from './user-code-error.ts'
 import {
+	durableObjectIsolateCpuResetMessage,
+	durableObjectIsolateMemoryResetMessage,
 	executorSandboxTimeoutMessage,
 	filterSentryEvent,
 } from './sentry-options.ts'
@@ -183,4 +185,64 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).toBe(platformEvent)
 	expect(filterSentryEvent(platformEvent)).toBe(platformEvent)
+
+	// Bare Cloudflare DO isolate resets (memory / CPU) are transient platform
+	// limit hits — drop exact strings, including optional `Error:` prefix and
+	// missing trailing period. Wrapped recovery failures must stay visible.
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: durableObjectIsolateMemoryResetMessage }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							"Error: Durable Object's isolate exceeded its memory limit and was reset.",
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Durable Object exceeded its CPU time limit and was reset',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			message: durableObjectIsolateCpuResetMessage,
+		}),
+	).toBeNull()
+
+	const exhaustedPublishRecovery = {
+		exception: {
+			values: [
+				{
+					value: `package_publish_external_push could not recover after 3 transient Durable Object reset attempts: ${durableObjectIsolateMemoryResetMessage}`,
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(exhaustedPublishRecovery)).toBe(
+		exhaustedPublishRecovery,
+	)
+
+	const unrelatedDoFailure = {
+		exception: {
+			values: [{ value: 'Durable Object was reset during migration' }],
+		},
+	}
+	expect(filterSentryEvent(unrelatedDoFailure)).toBe(unrelatedDoFailure)
 })
