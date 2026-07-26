@@ -112,6 +112,12 @@ async function seedVerifiedAccount(input: {
 	await seedAccount(input)
 }
 
+// Package subscription dispatch boots the real Worker Loader sandbox, which
+// costs seconds per run. The shared default is 5s locally (20s in CI), so
+// budget these explicitly like the other sandbox-executing suites rather than
+// letting them flake under a loaded `npm run validate`.
+const subscriptionDispatchTimeoutMs = 60_000
+
 test('inbound email routes {username}@platform-domain and auto-provisions the default inbox', async () => {
 	// Usage recording degrades with a warn when the usage_rollups table is
 	// not part of this test's schema; that is incidental to routing.
@@ -3021,30 +3027,32 @@ test('ambiguous D1 commit response repairs the stable delivery without duplicate
 	).toEqual({ count: 1 })
 })
 
-test('inbound email handler dispatches package subscriptions for stored inbound email', async () => {
-	// The subscription runtime warns on optional lookups (usage rollups, MCP
-	// server refs) whose tables are not part of this test's schema.
-	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	const username = `subscriber-${crypto.randomUUID().slice(0, 8)}`
-	const accountEmail = `email-subscription-user-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	const address = `${username}@${platformDomain}`
-	const replyFrom = `${username}@${platformDomain}`
-	const sourceId = `source-${crypto.randomUUID()}`
-	const packageId = `package-${crypto.randomUUID()}`
-	const bundleKv = new Map<string, string>()
-	const subscriptionCalls: Array<Record<string, unknown>> = []
+test(
+	'inbound email handler dispatches package subscriptions for stored inbound email',
+	async () => {
+		// The subscription runtime warns on optional lookups (usage rollups, MCP
+		// server refs) whose tables are not part of this test's schema.
+		silenceIncidentalRuntimeWarnings()
+		await ensureEmailTestSchema(env.APP_DB)
+		const username = `subscriber-${crypto.randomUUID().slice(0, 8)}`
+		const accountEmail = `email-subscription-user-${crypto.randomUUID()}@example.com`
+		const userId = await createStableUserIdFromEmail(accountEmail)
+		const address = `${username}@${platformDomain}`
+		const replyFrom = `${username}@${platformDomain}`
+		const sourceId = `source-${crypto.randomUUID()}`
+		const packageId = `package-${crypto.randomUUID()}`
+		const bundleKv = new Map<string, string>()
+		const subscriptionCalls: Array<Record<string, unknown>> = []
 
-	const db = env.APP_DB
-	await seedVerifiedAccount({
-		db,
-		email: accountEmail,
-		username,
-	})
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS saved_packages (
+		const db = env.APP_DB
+		await seedVerifiedAccount({
+			db,
+			email: accountEmail,
+			username,
+		})
+		await db
+			.prepare(
+				`CREATE TABLE IF NOT EXISTS saved_packages (
 				id TEXT PRIMARY KEY,
 				user_id TEXT NOT NULL,
 				name TEXT NOT NULL,
@@ -3059,20 +3067,20 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			)`,
-		)
-		.run()
-	try {
-		await db
-			.prepare(
-				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
 			)
 			.run()
-	} catch {
-		// Column already present on newer schemas.
-	}
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS entity_sources (
+		try {
+			await db
+				.prepare(
+					`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
+				)
+				.run()
+		} catch {
+			// Column already present on newer schemas.
+		}
+		await db
+			.prepare(
+				`CREATE TABLE IF NOT EXISTS entity_sources (
 				id TEXT PRIMARY KEY,
 				user_id TEXT NOT NULL,
 				entity_kind TEXT NOT NULL,
@@ -3085,11 +3093,11 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
+			)
+			.run()
+		await db
+			.prepare(
+				`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
 				id TEXT PRIMARY KEY,
 				user_id TEXT NOT NULL,
 				source_id TEXT NOT NULL,
@@ -3102,17 +3110,17 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 				created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 				updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 			)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE UNIQUE INDEX IF NOT EXISTS idx_published_bundle_artifacts_identity
+			)
+			.run()
+		await db
+			.prepare(
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_published_bundle_artifacts_identity
 			ON published_bundle_artifacts(user_id, source_id, artifact_kind, COALESCE(artifact_name, ''), entry_point)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS package_invocations (
+			)
+			.run()
+		await db
+			.prepare(
+				`CREATE TABLE IF NOT EXISTS package_invocations (
 				id TEXT PRIMARY KEY,
 				user_id TEXT NOT NULL,
 				token_id TEXT NOT NULL,
@@ -3128,97 +3136,97 @@ test('inbound email handler dispatches package subscriptions for stored inbound 
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE UNIQUE INDEX IF NOT EXISTS idx_package_invocations_key
+			)
+			.run()
+		await db
+			.prepare(
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_package_invocations_key
 			ON package_invocations(user_id, token_id, package_id, export_name, idempotency_key)`,
-		)
-		.run()
+			)
+			.run()
 
-	const now = new Date().toISOString()
-	await db
-		.prepare(
-			`INSERT INTO saved_packages (
+		const now = new Date().toISOString()
+		await db
+			.prepare(
+				`INSERT INTO saved_packages (
 				id, user_id, name, kody_id, description, tags_json, search_text, source_id, has_app, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			packageId,
-			userId,
-			'@kentcdodds/package-email-notifier',
-			'package-email-notifier',
-			'Package email notifier',
-			'[]',
-			null,
-			sourceId,
-			0,
-			now,
-			now,
-		)
-		.run()
-	await db
-		.prepare(
-			`INSERT INTO entity_sources (
+			)
+			.bind(
+				packageId,
+				userId,
+				'@kentcdodds/package-email-notifier',
+				'package-email-notifier',
+				'Package email notifier',
+				'[]',
+				null,
+				sourceId,
+				0,
+				now,
+				now,
+			)
+			.run()
+		await db
+			.prepare(
+				`INSERT INTO entity_sources (
 				id, user_id, entity_kind, entity_id, repo_id, published_commit, indexed_commit, manifest_path, source_root, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			sourceId,
-			userId,
-			'package',
-			packageId,
-			'repo-1',
-			'commit-1',
-			null,
-			'package.json',
-			'/',
-			now,
-			now,
-		)
-		.run()
+			)
+			.bind(
+				sourceId,
+				userId,
+				'package',
+				packageId,
+				'repo-1',
+				'commit-1',
+				null,
+				'package.json',
+				'/',
+				now,
+				now,
+			)
+			.run()
 
-	const manifest = {
-		name: '@kentcdodds/package-email-notifier',
-		exports: {
-			'.': './src/index.ts',
-		},
-		kody: {
-			id: 'package-email-notifier',
-			description: 'Package email notifier',
-			subscriptions: {
-				'email.message.received': {
-					handler: './src/email-message-received.ts',
+		const manifest = {
+			name: '@kentcdodds/package-email-notifier',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'package-email-notifier',
+				description: 'Package email notifier',
+				subscriptions: {
+					'email.message.received': {
+						handler: './src/email-message-received.ts',
+					},
 				},
 			},
-		},
-	}
-	bundleKv.set(
-		buildPublishedSourceManifestSnapshotKvKey({
-			sourceId,
-			publishedCommit: 'commit-1',
-		}),
-		JSON.stringify({
-			version: 1,
-			sourceId,
-			publishedCommit: 'commit-1',
-			manifestPath: 'package.json',
-			manifestContent: JSON.stringify(manifest),
-			createdAt: now,
-		}),
-	)
+		}
+		bundleKv.set(
+			buildPublishedSourceManifestSnapshotKvKey({
+				sourceId,
+				publishedCommit: 'commit-1',
+			}),
+			JSON.stringify({
+				version: 1,
+				sourceId,
+				publishedCommit: 'commit-1',
+				manifestPath: 'package.json',
+				manifestContent: JSON.stringify(manifest),
+				createdAt: now,
+			}),
+		)
 
-	const subscriptionArtifact = {
-		version: 1,
-		kind: 'module',
-		artifactName: 'subscription:email.message.received',
-		sourceId,
-		publishedCommit: 'commit-1',
-		entryPoint: 'src/email-message-received.ts',
-		mainModule: 'dist/subscription.js',
-		modules: {
-			'.__kody_virtual__/runtime.js': `
+		const subscriptionArtifact = {
+			version: 1,
+			kind: 'module',
+			artifactName: 'subscription:email.message.received',
+			sourceId,
+			publishedCommit: 'commit-1',
+			entryPoint: 'src/email-message-received.ts',
+			mainModule: 'dist/subscription.js',
+			modules: {
+				'.__kody_virtual__/runtime.js': `
 import { AsyncLocalStorage } from 'node:async_hooks';
 const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
 const __kodyGlobal = globalThis;
@@ -3229,7 +3237,7 @@ const runtime = __kodyRuntimeStorage.getStore() ?? {};
 export const kody = runtime.kody;
 export const email = runtime.email ?? null;
 `.trim(),
-			'dist/subscription.js': `
+				'dist/subscription.js': `
 import { email } from '../.__kody_virtual__/runtime.js'
 
 export default async function main(input = {}) {
@@ -3256,194 +3264,194 @@ export default async function main(input = {}) {
   }
 }
 `,
-		},
-		dependencies: [],
-		packageContext: {
-			packageId,
-			kodyId: 'package-email-notifier',
-			sourceId,
-		},
-		serviceContext: null,
-		createdAt: now,
-	}
-	const artifactJson = JSON.stringify(subscriptionArtifact)
-	const artifactKey = `bundle-artifact:v1:${sourceId}:commit-1:module:subscription:email.message.received:src/email-message-received.ts`
-	bundleKv.set(artifactKey, artifactJson)
-	await db
-		.prepare(
-			`INSERT INTO published_bundle_artifacts (
+			},
+			dependencies: [],
+			packageContext: {
+				packageId,
+				kodyId: 'package-email-notifier',
+				sourceId,
+			},
+			serviceContext: null,
+			createdAt: now,
+		}
+		const artifactJson = JSON.stringify(subscriptionArtifact)
+		const artifactKey = `bundle-artifact:v1:${sourceId}:commit-1:module:subscription:email.message.received:src/email-message-received.ts`
+		bundleKv.set(artifactKey, artifactJson)
+		await db
+			.prepare(
+				`INSERT INTO published_bundle_artifacts (
 				id, user_id, source_id, published_commit, artifact_kind, artifact_name, entry_point, kv_key, dependencies_json, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			`artifact-${crypto.randomUUID()}`,
-			userId,
-			sourceId,
-			'commit-1',
-			'module',
-			'subscription:email.message.received',
-			'src/email-message-received.ts',
-			artifactKey,
-			'[]',
-			now,
-			now,
-		)
-		.run()
+			)
+			.bind(
+				`artifact-${crypto.randomUUID()}`,
+				userId,
+				sourceId,
+				'commit-1',
+				'module',
+				'subscription:email.message.received',
+				'src/email-message-received.ts',
+				artifactKey,
+				'[]',
+				now,
+				now,
+			)
+			.run()
 
-	const ctx = {
-		waitUntil(promise: Promise<unknown>) {
-			subscriptionCalls.push({ waitUntil: promise })
-		},
-		passThroughOnException() {},
-	} as ExecutionContext
+		const ctx = {
+			waitUntil(promise: Promise<unknown>) {
+				subscriptionCalls.push({ waitUntil: promise })
+			},
+			passThroughOnException() {},
+		} as ExecutionContext
 
-	const originalKv = env.BUNDLE_ARTIFACTS_KV
-	const originalEmailBinding = env.EMAIL
-	Object.assign(env, {
-		BUNDLE_ARTIFACTS_KV: {
-			async get(key: string, type?: string) {
-				const value = bundleKv.get(key) ?? null
-				if (value == null) return null
-				if (type === 'json') {
-					return JSON.parse(value) as unknown
+		const originalKv = env.BUNDLE_ARTIFACTS_KV
+		const originalEmailBinding = env.EMAIL
+		Object.assign(env, {
+			BUNDLE_ARTIFACTS_KV: {
+				async get(key: string, type?: string) {
+					const value = bundleKv.get(key) ?? null
+					if (value == null) return null
+					if (type === 'json') {
+						return JSON.parse(value) as unknown
+					}
+					return value
+				},
+				async put() {
+					return undefined
+				},
+				async delete() {
+					return undefined
+				},
+			},
+			EMAIL: {
+				async send() {
+					return { messageId: `provider-${crypto.randomUUID()}` }
+				},
+			},
+		})
+
+		try {
+			const firstMessage = createForwardableEmailMessage({
+				from: 'stranger@example.net',
+				to: address,
+				raw: [
+					'From: Stranger <stranger@example.net>',
+					`To: ${address}`,
+					'Subject: Stored mail',
+					'Message-ID: <stored@example.net>',
+					'Content-Type: multipart/mixed; boundary="mail-boundary"',
+					'',
+					'--mail-boundary',
+					'Content-Type: text/plain; charset="utf-8"',
+					'',
+					'Stored body.',
+					'--mail-boundary',
+					'Content-Type: text/plain; name="note.txt"',
+					'Content-Disposition: attachment; filename="note.txt"',
+					'',
+					'Attachment text',
+					'--mail-boundary--',
+				].join('\r\n'),
+			})
+			await handleInboundEmail(firstMessage, createInboundEnv(), ctx)
+			expect(firstMessage.rejectedReason).toBeNull()
+
+			const secondMessage = createForwardableEmailMessage({
+				from: 'agent@trusted.example',
+				to: address,
+				raw: [
+					'From: Agent <agent@trusted.example>',
+					`To: ${address}`,
+					'Subject: Approved sender',
+					'Message-ID: <approved@trusted.example>',
+					'',
+					'Approved body.',
+				].join('\r\n'),
+			})
+			await handleInboundEmail(secondMessage, createInboundEnv(), ctx)
+			expect(secondMessage.rejectedReason).toBeNull()
+
+			// Drain effects and any nested run-record finishes scheduled via waitUntil.
+			for (let index = 0; index < subscriptionCalls.length; index += 1) {
+				const entry = subscriptionCalls[index]
+				if (entry?.['waitUntil'] instanceof Promise) {
+					await entry['waitUntil']
 				}
-				return value
-			},
-			async put() {
-				return undefined
-			},
-			async delete() {
-				return undefined
-			},
-		},
-		EMAIL: {
-			async send() {
-				return { messageId: `provider-${crypto.randomUUID()}` }
-			},
-		},
-	})
-
-	try {
-		const firstMessage = createForwardableEmailMessage({
-			from: 'stranger@example.net',
-			to: address,
-			raw: [
-				'From: Stranger <stranger@example.net>',
-				`To: ${address}`,
-				'Subject: Stored mail',
-				'Message-ID: <stored@example.net>',
-				'Content-Type: multipart/mixed; boundary="mail-boundary"',
-				'',
-				'--mail-boundary',
-				'Content-Type: text/plain; charset="utf-8"',
-				'',
-				'Stored body.',
-				'--mail-boundary',
-				'Content-Type: text/plain; name="note.txt"',
-				'Content-Disposition: attachment; filename="note.txt"',
-				'',
-				'Attachment text',
-				'--mail-boundary--',
-			].join('\r\n'),
-		})
-		await handleInboundEmail(firstMessage, createInboundEnv(), ctx)
-		expect(firstMessage.rejectedReason).toBeNull()
-
-		const secondMessage = createForwardableEmailMessage({
-			from: 'agent@trusted.example',
-			to: address,
-			raw: [
-				'From: Agent <agent@trusted.example>',
-				`To: ${address}`,
-				'Subject: Approved sender',
-				'Message-ID: <approved@trusted.example>',
-				'',
-				'Approved body.',
-			].join('\r\n'),
-		})
-		await handleInboundEmail(secondMessage, createInboundEnv(), ctx)
-		expect(secondMessage.rejectedReason).toBeNull()
-
-		// Drain effects and any nested run-record finishes scheduled via waitUntil.
-		for (let index = 0; index < subscriptionCalls.length; index += 1) {
-			const entry = subscriptionCalls[index]
-			if (entry?.['waitUntil'] instanceof Promise) {
-				await entry['waitUntil']
 			}
-		}
 
-		const invocations = await db
-			.prepare(
-				`SELECT export_name, topic, source, response_json
+			const invocations = await db
+				.prepare(
+					`SELECT export_name, topic, source, response_json
 				FROM package_invocations
 				WHERE package_id = ?
 				ORDER BY created_at ASC, id ASC`,
+				)
+				.bind(packageId)
+				.all<Record<string, unknown>>()
+			expect(invocations.results).toHaveLength(2)
+			const responses = (invocations.results ?? []).map((row) =>
+				JSON.parse(String(row['response_json'])),
+			) as Array<{ status: number; body: Record<string, unknown> }>
+			const outboundMessages = await listEmailMessages({
+				db: env.APP_DB,
+				userId,
+				direction: 'outbound',
+				limit: 10,
+			})
+			expect(invocations.results?.map((row) => row['export_name'])).toEqual([
+				'subscription:email.message.received',
+				'subscription:email.message.received',
+			])
+			expect(invocations.results?.map((row) => row['topic'])).toEqual([
+				'email.message.received',
+				'email.message.received',
+			])
+			expect(invocations.results?.map((row) => row['source'])).toEqual([
+				'email',
+				'email',
+			])
+			expect(responses[0]?.body).toMatchObject({
+				ok: true,
+				result: {
+					eventType: 'received',
+					textBody: 'Stored body.\n',
+					attachmentText: 'Attachment text\n',
+					replyText: 'Thanks for the email.',
+					replyDirection: 'outbound',
+				},
+			})
+			expect(responses[1]?.body).toMatchObject({
+				ok: true,
+				result: {
+					eventType: 'received',
+					textBody: 'Approved body.\n',
+					attachmentText: null,
+					replyText: 'Thanks for the email.',
+					replyDirection: 'outbound',
+				},
+			})
+			expect(outboundMessages).toHaveLength(2)
+			// Replies always go out from the platform-assigned username address.
+			expect(outboundMessages.map((message) => message.fromAddress)).toEqual([
+				replyFrom,
+				replyFrom,
+			])
+			expect(
+				outboundMessages.map((message) => message.processingStatus),
+			).toEqual(['sent', 'sent'])
+			expect(outboundMessages.map((message) => message.subject).sort()).toEqual(
+				['Re: Approved sender', 'Re: Stored mail'],
 			)
-			.bind(packageId)
-			.all<Record<string, unknown>>()
-		expect(invocations.results).toHaveLength(2)
-		const responses = (invocations.results ?? []).map((row) =>
-			JSON.parse(String(row['response_json'])),
-		) as Array<{ status: number; body: Record<string, unknown> }>
-		const outboundMessages = await listEmailMessages({
-			db: env.APP_DB,
-			userId,
-			direction: 'outbound',
-			limit: 10,
-		})
-		expect(invocations.results?.map((row) => row['export_name'])).toEqual([
-			'subscription:email.message.received',
-			'subscription:email.message.received',
-		])
-		expect(invocations.results?.map((row) => row['topic'])).toEqual([
-			'email.message.received',
-			'email.message.received',
-		])
-		expect(invocations.results?.map((row) => row['source'])).toEqual([
-			'email',
-			'email',
-		])
-		expect(responses[0]?.body).toMatchObject({
-			ok: true,
-			result: {
-				eventType: 'received',
-				textBody: 'Stored body.\n',
-				attachmentText: 'Attachment text\n',
-				replyText: 'Thanks for the email.',
-				replyDirection: 'outbound',
-			},
-		})
-		expect(responses[1]?.body).toMatchObject({
-			ok: true,
-			result: {
-				eventType: 'received',
-				textBody: 'Approved body.\n',
-				attachmentText: null,
-				replyText: 'Thanks for the email.',
-				replyDirection: 'outbound',
-			},
-		})
-		expect(outboundMessages).toHaveLength(2)
-		// Replies always go out from the platform-assigned username address.
-		expect(outboundMessages.map((message) => message.fromAddress)).toEqual([
-			replyFrom,
-			replyFrom,
-		])
-		expect(outboundMessages.map((message) => message.processingStatus)).toEqual(
-			['sent', 'sent'],
-		)
-		expect(outboundMessages.map((message) => message.subject).sort()).toEqual([
-			'Re: Approved sender',
-			'Re: Stored mail',
-		])
-		expect(outboundMessages.map((message) => message.textBody).sort()).toEqual([
-			'Thanks for the email.',
-			'Thanks for the email.',
-		])
-	} finally {
-		Object.assign(env, {
-			BUNDLE_ARTIFACTS_KV: originalKv,
-			EMAIL: originalEmailBinding,
-		})
-	}
-})
+			expect(
+				outboundMessages.map((message) => message.textBody).sort(),
+			).toEqual(['Thanks for the email.', 'Thanks for the email.'])
+		} finally {
+			Object.assign(env, {
+				BUNDLE_ARTIFACTS_KV: originalKv,
+				EMAIL: originalEmailBinding,
+			})
+		}
+	},
+	subscriptionDispatchTimeoutMs,
+)

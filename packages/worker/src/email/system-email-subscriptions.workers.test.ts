@@ -270,129 +270,139 @@ export default async function main(input = {}) {
 	return { packageId, sourceId }
 }
 
-test('system inbound email dispatches email.system-message.received to admin-saved packages only', async () => {
-	// The subscription runtime warns on optional lookups (e.g. MCP server
-	// refs) whose tables are not part of this test's schema.
-	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-	await ensurePackageSubscriptionTestSchema(env.APP_DB)
-	await ensureRbacTestSchema(env.APP_DB)
+// Package subscription dispatch boots the real Worker Loader sandbox, which
+// costs seconds per run. The shared default is 5s locally (20s in CI), so
+// budget these explicitly like the other sandbox-executing suites rather than
+// letting them flake under a loaded `npm run validate`.
+const subscriptionDispatchTimeoutMs = 60_000
 
-	const adminEmail = `system-sub-admin-${crypto.randomUUID()}@example.com`
-	const adminStableId = await createStableUserIdFromEmail(adminEmail)
-	const adminAccountId = await seedAccount({
-		email: adminEmail,
-		username: `sysadmin-${crypto.randomUUID().slice(0, 8)}`,
-	})
-	await assignAdminRole(adminAccountId)
+test(
+	'system inbound email dispatches email.system-message.received to admin-saved packages only',
+	async () => {
+		// The subscription runtime warns on optional lookups (e.g. MCP server
+		// refs) whose tables are not part of this test's schema.
+		silenceIncidentalRuntimeWarnings()
+		await ensureEmailTestSchema(env.APP_DB)
+		await ensureUsageRollupsTestSchema(env.APP_DB)
+		await ensurePackageSubscriptionTestSchema(env.APP_DB)
+		await ensureRbacTestSchema(env.APP_DB)
 
-	const regularEmail = `system-sub-user-${crypto.randomUUID()}@example.com`
-	const regularStableId = await createStableUserIdFromEmail(regularEmail)
-	await seedAccount({
-		email: regularEmail,
-		username: `sysuser-${crypto.randomUUID().slice(0, 8)}`,
-	})
-
-	const bundleKv = new Map<string, string>()
-	const adminPackage = await seedSubscribedPackage({
-		bundleKv,
-		userId: adminStableId,
-		scope: 'sysadmin',
-	})
-	// A non-admin saving the identical subscription must never receive
-	// operator system mail.
-	const regularPackage = await seedSubscribedPackage({
-		bundleKv,
-		userId: regularStableId,
-		scope: 'sysuser',
-	})
-
-	const waitUntilPromises: Array<Promise<unknown>> = []
-	const ctx = {
-		waitUntil(promise: Promise<unknown>) {
-			waitUntilPromises.push(promise)
-		},
-		passThroughOnException() {},
-	} as ExecutionContext
-
-	const originalKv = env.BUNDLE_ARTIFACTS_KV
-	Object.assign(env, {
-		BUNDLE_ARTIFACTS_KV: {
-			async get(key: string, type?: string) {
-				const value = bundleKv.get(key) ?? null
-				if (value == null) return null
-				if (type === 'json') return JSON.parse(value) as unknown
-				return value
-			},
-			async put() {
-				return undefined
-			},
-			async delete() {
-				return undefined
-			},
-		},
-	})
-
-	try {
-		const message = createForwardableEmailMessage({
-			from: 'provider@example.net',
-			to: `postmaster@${systemDomain}`,
-			raw: [
-				'From: Provider <provider@example.net>',
-				`To: postmaster@${systemDomain}`,
-				'Subject: Delivery report',
-				'Message-ID: <system-subscription@example.net>',
-				'',
-				'System body.',
-			].join('\r\n'),
+		const adminEmail = `system-sub-admin-${crypto.randomUUID()}@example.com`
+		const adminStableId = await createStableUserIdFromEmail(adminEmail)
+		const adminAccountId = await seedAccount({
+			email: adminEmail,
+			username: `sysadmin-${crypto.randomUUID().slice(0, 8)}`,
 		})
-		await handleInboundEmail(message, createInboundEnv(), ctx)
-		expect(message.rejectedReason).toBeNull()
-		for (let index = 0; index < waitUntilPromises.length; index += 1) {
-			await waitUntilPromises[index]
-		}
+		await assignAdminRole(adminAccountId)
 
-		const [stored] = await listEmailMessages({
-			db: env.APP_DB,
-			userId: systemEmailOwnerId,
-			limit: 1,
+		const regularEmail = `system-sub-user-${crypto.randomUUID()}@example.com`
+		const regularStableId = await createStableUserIdFromEmail(regularEmail)
+		await seedAccount({
+			email: regularEmail,
+			username: `sysuser-${crypto.randomUUID().slice(0, 8)}`,
 		})
-		expect(stored).toBeDefined()
-		if (!stored) throw new Error('Expected stored system message')
 
-		const invocations = await env.APP_DB.prepare(
-			`SELECT package_id, export_name, topic, source, idempotency_key, response_json
+		const bundleKv = new Map<string, string>()
+		const adminPackage = await seedSubscribedPackage({
+			bundleKv,
+			userId: adminStableId,
+			scope: 'sysadmin',
+		})
+		// A non-admin saving the identical subscription must never receive
+		// operator system mail.
+		const regularPackage = await seedSubscribedPackage({
+			bundleKv,
+			userId: regularStableId,
+			scope: 'sysuser',
+		})
+
+		const waitUntilPromises: Array<Promise<unknown>> = []
+		const ctx = {
+			waitUntil(promise: Promise<unknown>) {
+				waitUntilPromises.push(promise)
+			},
+			passThroughOnException() {},
+		} as ExecutionContext
+
+		const originalKv = env.BUNDLE_ARTIFACTS_KV
+		Object.assign(env, {
+			BUNDLE_ARTIFACTS_KV: {
+				async get(key: string, type?: string) {
+					const value = bundleKv.get(key) ?? null
+					if (value == null) return null
+					if (type === 'json') return JSON.parse(value) as unknown
+					return value
+				},
+				async put() {
+					return undefined
+				},
+				async delete() {
+					return undefined
+				},
+			},
+		})
+
+		try {
+			const message = createForwardableEmailMessage({
+				from: 'provider@example.net',
+				to: `postmaster@${systemDomain}`,
+				raw: [
+					'From: Provider <provider@example.net>',
+					`To: postmaster@${systemDomain}`,
+					'Subject: Delivery report',
+					'Message-ID: <system-subscription@example.net>',
+					'',
+					'System body.',
+				].join('\r\n'),
+			})
+			await handleInboundEmail(message, createInboundEnv(), ctx)
+			expect(message.rejectedReason).toBeNull()
+			for (let index = 0; index < waitUntilPromises.length; index += 1) {
+				await waitUntilPromises[index]
+			}
+
+			const [stored] = await listEmailMessages({
+				db: env.APP_DB,
+				userId: systemEmailOwnerId,
+				limit: 1,
+			})
+			expect(stored).toBeDefined()
+			if (!stored) throw new Error('Expected stored system message')
+
+			const invocations = await env.APP_DB.prepare(
+				`SELECT package_id, export_name, topic, source, idempotency_key, response_json
 			FROM package_invocations
 			WHERE package_id IN (?, ?)`,
-		)
-			.bind(adminPackage.packageId, regularPackage.packageId)
-			.all<Record<string, unknown>>()
-		expect(invocations.results).toHaveLength(1)
-		const invocation = invocations.results?.[0]
-		expect(invocation).toMatchObject({
-			package_id: adminPackage.packageId,
-			export_name: `subscription:${systemTopic}`,
-			topic: systemTopic,
-			source: 'email',
-			idempotency_key: `email:${stored.id}:${adminPackage.packageId}:${systemTopic}`,
-		})
-		const response = JSON.parse(String(invocation?.['response_json'])) as {
-			body: Record<string, unknown>
+			)
+				.bind(adminPackage.packageId, regularPackage.packageId)
+				.all<Record<string, unknown>>()
+			expect(invocations.results).toHaveLength(1)
+			const invocation = invocations.results?.[0]
+			expect(invocation).toMatchObject({
+				package_id: adminPackage.packageId,
+				export_name: `subscription:${systemTopic}`,
+				topic: systemTopic,
+				source: 'email',
+				idempotency_key: `email:${stored.id}:${adminPackage.packageId}:${systemTopic}`,
+			})
+			const response = JSON.parse(String(invocation?.['response_json'])) as {
+				body: Record<string, unknown>
+			}
+			expect(response.body).toMatchObject({
+				ok: true,
+				result: {
+					event: systemTopic,
+					messageId: stored.id,
+					subject: 'Delivery report',
+					adminUrl: `${platformBaseUrl}/admin/system-email?messageId=${encodeURIComponent(stored.id)}`,
+				},
+			})
+		} finally {
+			Object.assign(env, { BUNDLE_ARTIFACTS_KV: originalKv })
 		}
-		expect(response.body).toMatchObject({
-			ok: true,
-			result: {
-				event: systemTopic,
-				messageId: stored.id,
-				subject: 'Delivery report',
-				adminUrl: `${platformBaseUrl}/admin/system-email?messageId=${encodeURIComponent(stored.id)}`,
-			},
-		})
-	} finally {
-		Object.assign(env, { BUNDLE_ARTIFACTS_KV: originalKv })
-	}
-})
+	},
+	subscriptionDispatchTimeoutMs,
+)
 
 test('system inbound email dispatch is a no-op without admins or RBAC tables', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
