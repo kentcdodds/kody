@@ -38,6 +38,7 @@ interface __BaseEnv_Env {
 	OAUTH_PURGE_COORDINATOR: DurableObjectNamespace<import("./src/index").OAuthPurgeCoordinator>;
 	JOB_MANAGER: DurableObjectNamespace<import("./src/index").JobManager>;
 	STORAGE_RUNNER: DurableObjectNamespace<import("./src/index").StorageRunner>;
+	RUN_LOG: DurableObjectNamespace<import("./src/index").RunLog>;
 	REPO_SESSION: DurableObjectNamespace<import("./src/index").RepoSession>;
 	PACKAGE_REALTIME_SESSION: DurableObjectNamespace<import("./src/index").PackageRealtimeSession>;
 	PACKAGE_SERVICE_INSTANCE: DurableObjectNamespace<import("./src/index").PackageServiceInstance>;
@@ -46,7 +47,7 @@ interface __BaseEnv_Env {
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "MCP" | "JobManager" | "StorageRunner" | "RepoSession" | "PackageRealtimeSession" | "PackageServiceInstance" | "RemoteConnectorSession" | "McpClientHub" | "OAuthPurgeCoordinator";
+		durableNamespaces: "MCP" | "JobManager" | "StorageRunner" | "RunLog" | "RepoSession" | "PackageRealtimeSession" | "PackageServiceInstance" | "RemoteConnectorSession" | "McpClientHub" | "OAuthPurgeCoordinator";
 	}
 	interface Env extends __BaseEnv_Env {}
 }

@@ -5,6 +5,7 @@ import { McpClientHub } from './mcp-client/hub.ts'
 import { MCP } from './mcp/index.ts'
 import { JobManager } from './jobs/manager-do.ts'
 import { StorageRunner } from './storage-runner.ts'
+import { RunLog } from './run-records/run-log-do.ts'
 import { RepoSession } from './repo/repo-session-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { PackageServiceInstance } from '#worker/package-runtime/package-service.ts'
@@ -100,6 +101,7 @@ export {
 	DynamicCallableWorkflow,
 	PackageAppRuntimeBridge,
 	StorageRunner,
+	RunLog,
 	OAuthPurgeCoordinator,
 }
 

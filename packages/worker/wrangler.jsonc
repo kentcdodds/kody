@@ -86,6 +86,10 @@
 			"new_sqlite_classes": ["OAuthPurgeCoordinator"],
 			"tag": "v19",
 		},
+		{
+			"new_sqlite_classes": ["RunLog"],
+			"tag": "v20",
+		},
 	],
 
 	"observability": {
@@ -173,6 +177,10 @@
 					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
+					},
+					{
+						"class_name": "RunLog",
+						"name": "RUN_LOG",
 					},
 					{
 						"class_name": "RepoSession",
@@ -350,6 +358,10 @@
 						"name": "STORAGE_RUNNER",
 					},
 					{
+						"class_name": "RunLog",
+						"name": "RUN_LOG",
+					},
+					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
 					},
@@ -470,6 +482,10 @@
 					{
 						"class_name": "StorageRunner",
 						"name": "STORAGE_RUNNER",
+					},
+					{
+						"class_name": "RunLog",
+						"name": "RUN_LOG",
 					},
 					{
 						"class_name": "RepoSession",

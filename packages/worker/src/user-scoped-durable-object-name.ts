@@ -25,6 +25,11 @@ export function jobManagerDurableObjectName(userId: string) {
 	return userId
 }
 
+/** RunLog — one execution-history DO per user. */
+export function runLogDurableObjectName(userId: string) {
+	return userId
+}
+
 /** McpClientHub — one client-hub DO per user (trimmed). */
 export function mcpClientHubDurableObjectName(userId: string) {
 	return userId.trim()
