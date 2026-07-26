@@ -15,6 +15,10 @@ import {
 } from '#worker/package-runtime/package-service.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import {
+	clearRunRecords,
+	listRunRecordStorageIds,
+} from '#worker/run-records/service.ts'
+import {
 	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
 	buildUserScopedTargetMatch,
@@ -192,36 +196,47 @@ async function listUserVectorIds(env: Env, userId: string) {
 }
 
 async function listUserStorageIds(env: Env, userId: string) {
-	const [jobRows, archivedRows, runtimeRows, packageRows, serviceRows] =
-		await Promise.all([
-			env.APP_DB.prepare(
-				`SELECT storage_id FROM jobs WHERE user_id = ? AND storage_id IS NOT NULL`,
-			)
-				.bind(userId)
-				.all<{ storage_id: string }>(),
-			env.APP_DB.prepare(
-				`SELECT storage_id FROM archived_job_artifacts WHERE user_id = ? AND storage_id IS NOT NULL`,
-			)
-				.bind(userId)
-				.all<{ storage_id: string }>(),
-			env.APP_DB.prepare(
-				`SELECT storage_id FROM package_runtime_runs WHERE user_id = ? AND storage_id IS NOT NULL`,
-			)
-				.bind(userId)
-				.all<{ storage_id: string }>(),
-			env.APP_DB.prepare(
-				`SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1`,
-			)
-				.bind(userId)
-				.all<{ id: string }>(),
-			env.APP_DB.prepare(
-				`SELECT DISTINCT package_id, name
+	const [
+		jobRows,
+		archivedRows,
+		runtimeRows,
+		packageRows,
+		serviceRows,
+		runRecordStorageIds,
+	] = await Promise.all([
+		env.APP_DB.prepare(
+			`SELECT storage_id FROM jobs WHERE user_id = ? AND storage_id IS NOT NULL`,
+		)
+			.bind(userId)
+			.all<{ storage_id: string }>(),
+		env.APP_DB.prepare(
+			`SELECT storage_id FROM archived_job_artifacts WHERE user_id = ? AND storage_id IS NOT NULL`,
+		)
+			.bind(userId)
+			.all<{ storage_id: string }>(),
+		// Keep reading package_runtime_runs for storage ids: that table still
+		// holds legacy rows written before RunLog, and is deliberately not
+		// dropped yet. Remove this D1 read once the follow-up drop migration
+		// lands.
+		env.APP_DB.prepare(
+			`SELECT storage_id FROM package_runtime_runs WHERE user_id = ? AND storage_id IS NOT NULL`,
+		)
+			.bind(userId)
+			.all<{ storage_id: string }>(),
+		env.APP_DB.prepare(
+			`SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1`,
+		)
+			.bind(userId)
+			.all<{ id: string }>(),
+		env.APP_DB.prepare(
+			`SELECT DISTINCT package_id, name
 				FROM package_runtime_runs
 				WHERE user_id = ? AND surface = 'service' AND name IS NOT NULL`,
-			)
-				.bind(userId)
-				.all<{ package_id: string; name: string }>(),
-		])
+		)
+			.bind(userId)
+			.all<{ package_id: string; name: string }>(),
+		listRunRecordStorageIds({ env, userId }),
+	])
 	return uniqueStrings([
 		...(jobRows.results ?? []).map((row) => row.storage_id),
 		...(archivedRows.results ?? []).map((row) => row.storage_id),
@@ -230,6 +245,7 @@ async function listUserStorageIds(env: Env, userId: string) {
 		...(serviceRows.results ?? []).map((row) =>
 			buildPackageServiceStorageId(row.package_id, row.name),
 		),
+		...runRecordStorageIds,
 	])
 }
 
@@ -537,6 +553,27 @@ async function clearStorageRunners(input: {
 		}
 	}
 	return cleared
+}
+
+async function clearRunLog(input: {
+	env: Env
+	userId: string
+	warnings: Array<string>
+}): Promise<number> {
+	try {
+		if (!(input.env as Partial<Env>).RUN_LOG) {
+			input.warnings.push(
+				'RUN_LOG binding was unavailable; the user run log Durable Object was not purged.',
+			)
+			return 0
+		}
+		await clearRunRecords({ env: input.env, userId: input.userId })
+		return 1
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(`Run log clear failed: ${message}`)
+		return 0
+	}
 }
 
 async function purgeJobManager(input: {
@@ -1029,6 +1066,11 @@ export async function deleteUserAccount(input: {
 		env: input.env,
 		userId: input.mcpUserId,
 		storageIds: inventory.storageIds,
+		warnings,
+	})
+	result.clearedDurableObjects.runLogs = await clearRunLog({
+		env: input.env,
+		userId: input.mcpUserId,
 		warnings,
 	})
 

@@ -103,6 +103,13 @@ Restore rebuilds these; do not treat them as recovery media:
 - OAuth KV / browser sessions / provider tokens — users reconnect
 - Queues, Workflow instances, Durable Object alarms — recreate from config + D1
 - Derived community icons and ordinary KV caches
+- **RunLog / run records** — per-user execution history (runs + console log
+  lines) lives in the `RunLog` Durable Object with ~30 day self-enforced
+  retention. It is observability data, not a canonical store. The production DR
+  exporter stages a fixed set of stores (StorageRunner NDJSON, R2 blob indexes,
+  published artifact snapshots) and does **not** enumerate or dump `RunLog`.
+  Account export/deletion cover run records for user-facing portability and
+  purge; disaster recovery deliberately does not.
 
 ### Honest gaps
 
@@ -115,6 +122,13 @@ Restore rebuilds these; do not treat them as recovery media:
   sealed dump. Storage ids absent from the inventory are not deleted by restore.
 - R2 restore puts sealed objects back by key; it does not sweep orphans that
   appeared after the sealed day.
+- **StorageRunner inventory still reads `package_runtime_runs` in D1** for
+  storage ids (plus jobs, archived artifacts, app packages, and service names).
+  New runs write storage ids only into `RunLog`, so a StorageRunner bucket
+  referenced solely by a post-migration run record is not yet picked up by the
+  platform DR inventory. Account deletion/export union `RunLog` storage ids for
+  purge/portability; extending DR inventory the same way is a separate follow-up
+  if those orphan-only buckets matter for sealed-day completeness.
 
 ## Credentials and Access
 
@@ -341,6 +355,7 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 - Multipart D1 capture / statement-safe split restore
 - Full Artifacts Git history or unpublished repo-session work
 - Backup of Vectorize, OAuth KV, queues, Workflow runtime, alarms (rebuild)
+- Backup of `RunLog` run records (observability; ~30 day DO self-retention)
 - Plaintext `SECRET_STORE_KEY` or other credentials inside backup media
 - Using `tools/export-d1-remote-to-sqlite.sh` as DR
 

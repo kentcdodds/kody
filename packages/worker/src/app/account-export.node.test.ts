@@ -1263,3 +1263,123 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 		queries.some((query) => query.startsWith('SELECT storage_id FROM jobs')),
 	).toBe(false)
 })
+
+test('account export includes run_records section with runs and log lines', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+	`)
+	const run = {
+		id: 'run-export-1',
+		surface: 'job' as const,
+		status: 'success' as const,
+		name: 'nightly',
+		packageId: null,
+		kodyId: null,
+		sourceId: null,
+		publishedCommit: null,
+		storageId: 'job:nightly',
+		jobId: 'job-1',
+		workflowId: null,
+		invocationId: null,
+		sessionId: null,
+		idempotencyKey: null,
+		parentRunId: null,
+		startedAt: '2026-07-26T00:00:00.000Z',
+		finishedAt: '2026-07-26T00:00:01.000Z',
+		durationMs: 1000,
+		errorName: null,
+		errorMessage: null,
+		metadata: {},
+		logCount: 2,
+	}
+	const logs = [
+		{
+			runId: 'run-export-1',
+			sequence: 0,
+			level: 'log' as const,
+			message: 'starting',
+			fields: null,
+		},
+		{
+			runId: 'run-export-1',
+			sequence: 1,
+			level: 'info' as const,
+			message: 'done',
+			fields: { ok: true },
+		},
+	]
+	const env = {
+		APP_DB: db,
+		STORAGE_RUNNER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				exportStorage: async () => ({
+					entries: [],
+					truncated: false,
+					nextStartAfter: null,
+					pageSize: 100,
+				}),
+			}),
+		},
+		RUN_LOG: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				exportRuns: async () => ({
+					runs: [run],
+					logs,
+					nextStartAfter: null,
+					truncated: false,
+				}),
+				listStorageIds: async () => ['job:nightly'],
+				summarize: async () => ({
+					since: '1970-01-01T00:00:00.000Z',
+					total: 1,
+					errors: 0,
+					running: 0,
+					bySurface: [],
+				}),
+			}),
+		},
+		JOB_MANAGER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				exportUser: async () => ({ userId: 'user-aaa' }),
+			}),
+		},
+	} as unknown as Env
+
+	const accountExport = await createAccountExport({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(accountExport.manifest.sections.run_records?.count).toBe(1)
+	expect(accountExport.durableObjects.runRecords).toEqual({
+		runs: [run],
+		logs,
+		nextStartAfter: null,
+		truncated: false,
+	})
+
+	const section = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'run_records',
+	})
+	expect(section.truncated).toBe(false)
+	expect(section.items).toEqual([
+		{
+			run,
+			logs,
+		},
+	])
+})

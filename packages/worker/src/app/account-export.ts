@@ -27,6 +27,11 @@ import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { userScopedConnectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
 import { type RemoteConnectorSessionExport } from '#worker/remote-connector/types.ts'
+import {
+	exportRunRecords,
+	listRunRecordStorageIds,
+	summarizeRunRecords,
+} from '#worker/run-records/service.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 
 const accountExportSchemaVersion = 1
@@ -43,6 +48,7 @@ export const accountExportSectionNames = [
 	'd1_table',
 	'storage_runner',
 	'job_manager',
+	'run_records',
 	'remote_connector_session',
 	'package_service',
 	'oauth_grants',
@@ -113,6 +119,7 @@ type UserExportInventory = {
 
 type ManifestInventoryCounts = {
 	storageRunners: number
+	runRecords: number
 	remoteConnectorSessions: number
 	packageServices: number
 	artifactRepos: number
@@ -184,6 +191,7 @@ export type AccountExportArtifactRepo = {
 
 type AccountExportDurableObjects = {
 	jobManager: unknown | null
+	runRecords: Awaited<ReturnType<typeof exportRunRecords>> | null
 	remoteConnectorSessions: Array<{
 		instanceId: string
 		export: RemoteConnectorSessionExport | null
@@ -437,36 +445,47 @@ async function collectD1TableRows(input: {
 }
 
 async function listUserStorageIds(env: Env, userId: string) {
-	const [jobRows, archivedRows, runtimeRows, packageRows, serviceRows] =
-		await Promise.all([
-			selectRows<{ storage_id: string }>(
-				env,
-				`SELECT storage_id FROM jobs WHERE user_id = ? AND storage_id IS NOT NULL`,
-				[userId],
-			),
-			selectRows<{ storage_id: string }>(
-				env,
-				`SELECT storage_id FROM archived_job_artifacts WHERE user_id = ? AND storage_id IS NOT NULL`,
-				[userId],
-			),
-			selectRows<{ storage_id: string }>(
-				env,
-				`SELECT storage_id FROM package_runtime_runs WHERE user_id = ? AND storage_id IS NOT NULL`,
-				[userId],
-			),
-			selectRows<{ id: string }>(
-				env,
-				`SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1`,
-				[userId],
-			),
-			selectRows<{ package_id: string; name: string }>(
-				env,
-				`SELECT DISTINCT package_id, name
+	const [
+		jobRows,
+		archivedRows,
+		runtimeRows,
+		packageRows,
+		serviceRows,
+		runRecordStorageIds,
+	] = await Promise.all([
+		selectRows<{ storage_id: string }>(
+			env,
+			`SELECT storage_id FROM jobs WHERE user_id = ? AND storage_id IS NOT NULL`,
+			[userId],
+		),
+		selectRows<{ storage_id: string }>(
+			env,
+			`SELECT storage_id FROM archived_job_artifacts WHERE user_id = ? AND storage_id IS NOT NULL`,
+			[userId],
+		),
+		// Keep reading package_runtime_runs for storage ids: that table still
+		// holds legacy rows written before RunLog, and is deliberately not
+		// dropped yet. Remove this D1 read once the follow-up drop migration
+		// lands.
+		selectRows<{ storage_id: string }>(
+			env,
+			`SELECT storage_id FROM package_runtime_runs WHERE user_id = ? AND storage_id IS NOT NULL`,
+			[userId],
+		),
+		selectRows<{ id: string }>(
+			env,
+			`SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1`,
+			[userId],
+		),
+		selectRows<{ package_id: string; name: string }>(
+			env,
+			`SELECT DISTINCT package_id, name
 				FROM package_runtime_runs
 				WHERE user_id = ? AND surface = 'service' AND name IS NOT NULL`,
-				[userId],
-			),
-		])
+			[userId],
+		),
+		listRunRecordStorageIds({ env, userId }),
+	])
 	return uniqueStrings([
 		...jobRows.map((row) => row.storage_id),
 		...archivedRows.map((row) => row.storage_id),
@@ -475,6 +494,7 @@ async function listUserStorageIds(env: Env, userId: string) {
 		...serviceRows.map((row) =>
 			buildPackageServiceStorageId(row.package_id, row.name),
 		),
+		...runRecordStorageIds,
 	])
 }
 
@@ -760,6 +780,7 @@ async function countUserStorageIds(env: Env, userId: string) {
 		`SELECT COUNT(*) AS count FROM (${baseSql})`,
 		Array(4).fill(userId),
 	)
+	const countedExtraIds = new Set<string>()
 	let afterPackageId = ''
 	let afterName = ''
 	for (;;) {
@@ -784,12 +805,28 @@ async function countUserStorageIds(env: Env, userId: string) {
 			)
 				.bind(userId, userId, userId, userId, storageId)
 				.first<{ owned: number }>()
-			if (existing?.owned !== 1) count += 1
+			if (existing?.owned !== 1 && !countedExtraIds.has(storageId)) {
+				countedExtraIds.add(storageId)
+				count += 1
+			}
 		}
 		const last = rows.at(-1)!
 		afterPackageId = last.package_id
 		afterName = last.name
 		if (rows.length < 100) break
+	}
+	const runRecordStorageIds = await listRunRecordStorageIds({ env, userId })
+	for (const storageId of runRecordStorageIds) {
+		if (countedExtraIds.has(storageId)) continue
+		const existing = await env.APP_DB.prepare(
+			`SELECT 1 AS owned FROM (${baseSql}) WHERE id = ?`,
+		)
+			.bind(userId, userId, userId, userId, storageId)
+			.first<{ owned: number }>()
+		if (existing?.owned !== 1) {
+			countedExtraIds.add(storageId)
+			count += 1
+		}
 	}
 	return count
 }
@@ -882,6 +919,7 @@ async function collectManifestInventoryCounts(input: {
 	}
 	const [
 		storageRunners,
+		runRecords,
 		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
@@ -891,6 +929,13 @@ async function collectManifestInventoryCounts(input: {
 		safeCount('storage ids', async () =>
 			countUserStorageIds(input.env, input.userId),
 		),
+		safeCount('run records', async () => {
+			const summary = await summarizeRunRecords({
+				env: input.env,
+				userId: input.userId,
+			})
+			return summary.total
+		}),
 		safeCount('remote connectors', async () =>
 			countScalar(
 				input.env,
@@ -926,6 +971,7 @@ async function collectManifestInventoryCounts(input: {
 	])
 	return {
 		storageRunners,
+		runRecords,
 		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
@@ -1145,6 +1191,29 @@ async function exportStorageRunners(input: {
 	return storageRunners
 }
 
+async function exportUserRunRecords(input: {
+	env: AccountExportEnv
+	userId: string
+	warnings: Array<string>
+}) {
+	try {
+		const runRecords = await exportRunRecords({
+			env: input.env,
+			userId: input.userId,
+			pageSize: maxExportPageSize,
+		})
+		if (runRecords.truncated) {
+			input.warnings.push(
+				`Run records were truncated in the full export; use account_export_section with section "run_records" to retrieve additional pages.`,
+			)
+		}
+		return runRecords
+	} catch (error) {
+		input.warnings.push(`Run records export failed: ${getErrorMessage(error)}`)
+		return null
+	}
+}
+
 async function exportRemoteConnectorSessions(input: {
 	env: AccountExportEnv
 	userId: string
@@ -1237,7 +1306,7 @@ async function exportDurableObjects(input: {
 	inventory: UserExportInventory
 	warnings: Array<string>
 }): Promise<AccountExportDurableObjects> {
-	const [storageRunners, remoteConnectorSessions, packageServices] =
+	const [storageRunners, remoteConnectorSessions, packageServices, runRecords] =
 		await Promise.all([
 			exportStorageRunners({
 				env: input.env,
@@ -1257,6 +1326,11 @@ async function exportDurableObjects(input: {
 				services: input.inventory.packageServices,
 				warnings: input.warnings,
 			}),
+			exportUserRunRecords({
+				env: input.env,
+				userId: input.userId,
+				warnings: input.warnings,
+			}),
 		])
 	let jobManager: unknown | null = null
 	try {
@@ -1269,6 +1343,7 @@ async function exportDurableObjects(input: {
 	}
 	return {
 		jobManager,
+		runRecords,
 		remoteConnectorSessions,
 		packageServices,
 		storageRunners,
@@ -1319,6 +1394,16 @@ function buildManifest(input: {
 			warning.startsWith('Job manager '),
 		),
 		discovery: { section: 'job_manager' },
+	}
+	sections.run_records = {
+		count:
+			input.durableObjects?.runRecords?.runs.length ??
+			input.inventoryCounts?.runRecords ??
+			0,
+		warnings: input.warnings.filter((warning) =>
+			warning.startsWith('Run records '),
+		),
+		discovery: { section: 'run_records' },
 	}
 	sections.remote_connector_sessions = {
 		count:
@@ -1615,6 +1700,13 @@ export async function readAccountExportSection(input: {
 			}
 		}
 		if (!storageOwned) {
+			const runRecordStorageIds = await listRunRecordStorageIds({
+				env: input.env,
+				userId: input.mcpUserId,
+			})
+			storageOwned = runRecordStorageIds.includes(input.storageId)
+		}
+		if (!storageOwned) {
 			throw new Error('Storage runner was not found for account export.')
 		}
 		const pageSize = normalizePageSize(input.pageSize)
@@ -1647,6 +1739,26 @@ export async function readAccountExportSection(input: {
 			truncated: false,
 			nextStartAfter: null,
 			pageSize: 1,
+			warnings,
+		}
+	}
+	if (input.section === 'run_records') {
+		const pageSize = normalizePageSize(input.pageSize)
+		const page = await exportRunRecords({
+			env: input.env,
+			userId: input.mcpUserId,
+			pageSize,
+			startAfter: input.startAfter,
+		})
+		return {
+			section: input.section,
+			items: page.runs.map((run) => ({
+				run,
+				logs: page.logs.filter((log) => log.runId === run.id),
+			})),
+			truncated: page.truncated,
+			nextStartAfter: page.nextStartAfter,
+			pageSize,
 			warnings,
 		}
 	}

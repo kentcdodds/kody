@@ -79,6 +79,9 @@ const terminalWorkflowStatusList = terminalWorkflowStatusValues
  * in `retention.node.test.ts` remains a second net for discovering new tables.
  */
 export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
+	// New run records self-prune inside the per-user RunLog Durable Object
+	// (age + count caps on every finish). These D1 lanes exist only to drain
+	// legacy package_runtime_runs / package_runtime_logs rows.
 	{
 		table: 'package_runtime_runs',
 		scope: 'per-user',

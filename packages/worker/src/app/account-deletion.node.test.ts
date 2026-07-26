@@ -511,6 +511,13 @@ function createSuccessfulDeletionEnv(
 			idFromName: durableObjectId,
 			get: () => ({ clearStorage: async () => ({ ok: true as const }) }),
 		},
+		RUN_LOG: {
+			idFromName: durableObjectId,
+			get: () => ({
+				clearAll: async () => ({ ok: true as const }),
+				listStorageIds: async () => [] as Array<string>,
+			}),
+		},
 		JOB_MANAGER: {
 			idFromName: durableObjectId,
 			get: () => ({ purgeUser: async () => ({ ok: true as const }) }),
@@ -1084,6 +1091,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	} as unknown as R2Bucket
 
 	const clearStorageMock = vi.fn(async () => ({ ok: true as const }))
+	const clearRunLogMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeJobManagerMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
@@ -1101,6 +1109,13 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		STORAGE_RUNNER: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({ clearStorage: clearStorageMock }),
+		},
+		RUN_LOG: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				clearAll: clearRunLogMock,
+				listStorageIds: async () => [] as Array<string>,
+			}),
 		},
 		JOB_MANAGER: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
@@ -1368,6 +1383,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({
 		storageRunners: 6,
+		runLogs: 1,
 		jobManagers: 1,
 		repoSessions: 1,
 		remoteConnectorSessions: 1,
@@ -1379,6 +1395,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		packageRealtimeSessions: 1,
 		packageServiceInstances: 2,
 	})
+	expect(clearRunLogMock).toHaveBeenCalledTimes(1)
 	expect(purgeMcpClientHubMock).toHaveBeenCalledTimes(1)
 	expect(purgeMcpAgentSessionMock).toHaveBeenCalledWith({
 		userId: userAaa,
@@ -1759,4 +1776,100 @@ test('account deletion waits for an active writer and resumes on retry', async (
 		}),
 	).resolves.toEqual(expect.objectContaining({ warnings: [] }))
 	expect(rows.users).toEqual([])
+})
+
+test('account deletion empties the user RunLog DO and leaves other users untouched', async () => {
+	const userAaa = 'user-aaa'
+	const userBbb = 'user-bbb'
+	const runLogByUser = new Map<
+		string,
+		{
+			runs: Array<{ id: string; storageId: string | null }>
+			logs: Array<{ runId: string; message: string }>
+		}
+	>([
+		[
+			userAaa,
+			{
+				runs: [{ id: 'run-a', storageId: 'run-only-bucket' }],
+				logs: [{ runId: 'run-a', message: 'aaa console output' }],
+			},
+		],
+		[
+			userBbb,
+			{
+				runs: [{ id: 'run-b', storageId: 'bbb-bucket' }],
+				logs: [{ runId: 'run-b', message: 'bbb console output' }],
+			},
+		],
+	])
+	const clearedStorageIds: Array<string> = []
+	const { db } = createTestDb({
+		users: [
+			{ id: 1, email: 'a@example.com', stable_user_id: userAaa },
+			{ id: 2, email: 'b@example.com', stable_user_id: userBbb },
+		],
+	})
+	const env = createSuccessfulDeletionEnv(db, {
+		STORAGE_RUNNER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: (id: DurableObjectId) => ({
+				clearStorage: async () => {
+					clearedStorageIds.push(String(id))
+					return { ok: true as const }
+				},
+			}),
+		},
+		RUN_LOG: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: (id: DurableObjectId) => {
+				const userId = String(id)
+				return {
+					listStorageIds: async () => {
+						const state = runLogByUser.get(userId)
+						return (state?.runs ?? [])
+							.map((run) => run.storageId)
+							.filter((value): value is string => value != null)
+					},
+					clearAll: async () => {
+						const state = runLogByUser.get(userId)
+						if (state) {
+							state.runs = []
+							state.logs = []
+						}
+						return { ok: true as const }
+					},
+					exportRuns: async () => {
+						const state = runLogByUser.get(userId) ?? {
+							runs: [],
+							logs: [],
+						}
+						return {
+							runs: state.runs,
+							logs: state.logs,
+							nextStartAfter: null,
+							truncated: false,
+						}
+					},
+				}
+			},
+		},
+	})
+
+	const result = await deleteUserAccount({
+		env,
+		dbUserId: 1,
+		mcpUserId: userAaa,
+	})
+
+	expect(result.clearedDurableObjects.runLogs).toBe(1)
+	expect(runLogByUser.get(userAaa)).toEqual({ runs: [], logs: [] })
+	expect(runLogByUser.get(userBbb)).toEqual({
+		runs: [{ id: 'run-b', storageId: 'bbb-bucket' }],
+		logs: [{ runId: 'run-b', message: 'bbb console output' }],
+	})
+	expect(clearedStorageIds.some((id) => id.includes('run-only-bucket'))).toBe(
+		true,
+	)
+	expect(clearedStorageIds.some((id) => id.includes('bbb-bucket'))).toBe(false)
 })
