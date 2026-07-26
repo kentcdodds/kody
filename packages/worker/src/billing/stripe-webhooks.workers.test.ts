@@ -150,9 +150,10 @@ async function signedWebhookRequest(input: {
 	})
 }
 
-test('stripe webhook returns 503 when webhook secret is unset', async () => {
+test('stripe webhook verifies signature, links checkout, refreshes subscription, and is idempotent', async () => {
+	// Guard: returns 503 when webhook secret is not configured.
 	await ensureEntitlementTestSchema(env.APP_DB)
-	const result = await handleStripeWebhookRequest({
+	const unconfigured = await handleStripeWebhookRequest({
 		env: createWebhookEnv({ STRIPE_WEBHOOK_SECRET: '' }),
 		request: new Request('https://test.kody.dev/webhooks/stripe', {
 			method: 'POST',
@@ -160,11 +161,10 @@ test('stripe webhook returns 503 when webhook secret is unset', async () => {
 		}),
 		now,
 	})
-	expect(result.status).toBe(503)
-	expect(result.body.ok).toBe(false)
-})
+	expect(unconfigured.status).toBe(503)
+	expect(unconfigured.body.ok).toBe(false)
 
-test('stripe webhook verifies signature, links checkout, refreshes subscription, and is idempotent', async () => {
+	// Main journey: checkout completion, subscription update, unknown event, bad signature.
 	const email = `wh-checkout-${crypto.randomUUID()}@example.com`
 	const user = await seedUser({ email })
 	stubStripeFetch({

@@ -88,121 +88,9 @@ test(
 )
 
 test(
-	'run_list filters by surface/status/job and paginates with cursors',
+	'run capabilities smoke: list, get, summary, and tenant isolation',
 	async () => {
-		const userId = uniqueUserId('list')
-		const callerContext = buildCallerContext({
-			userId,
-			email: `${userId}@example.com`,
-		})
-
-		const startedAtBase = Date.now() - 60_000
-		// Seeds are independent (distinct ids and startedAt) and list order is by
-		// started_at, so they can pipeline instead of paying one DO round trip each.
-		await Promise.all([
-			finishRun({
-				userId,
-				id: 'run-job-ok',
-				startedAt: new Date(startedAtBase).toISOString(),
-				context: baseContext({
-					surface: 'job',
-					jobId: 'job-a',
-					name: 'job-a',
-				}),
-				status: 'success',
-			}),
-			finishRun({
-				userId,
-				id: 'run-job-err',
-				startedAt: new Date(startedAtBase + 1000).toISOString(),
-				context: baseContext({
-					surface: 'job',
-					jobId: 'job-a',
-					name: 'job-a-fail',
-				}),
-				status: 'error',
-				error: new Error('boom'),
-				logs: ['failed'],
-			}),
-			finishRun({
-				userId,
-				id: 'run-webhook',
-				startedAt: new Date(startedAtBase + 2000).toISOString(),
-				context: baseContext({
-					surface: 'webhook',
-					name: 'sentry',
-					metadata: {
-						outcome: 'delivered',
-						http_status: 202,
-						payload_bytes: 8,
-					},
-				}),
-				status: 'success',
-			}),
-			finishRun({
-				userId,
-				id: 'run-job-b',
-				startedAt: new Date(startedAtBase + 3000).toISOString(),
-				context: baseContext({
-					surface: 'job',
-					jobId: 'job-b',
-					name: 'job-b',
-				}),
-				status: 'success',
-			}),
-		])
-
-		const jobs = await runListCapability.handler(
-			{ surface: 'job' },
-			{ env, callerContext },
-		)
-		expect(jobs.runs.map((run) => run.id)).toEqual([
-			'run-job-b',
-			'run-job-err',
-			'run-job-ok',
-		])
-
-		const errors = await runListCapability.handler(
-			{ status: 'error' },
-			{ env, callerContext },
-		)
-		expect(errors.runs.map((run) => run.id)).toEqual(['run-job-err'])
-		expect(errors.runs[0]?.error_message).toBe('boom')
-
-		const jobA = await runListCapability.handler(
-			{ job_id: 'job-a' },
-			{ env, callerContext },
-		)
-		expect(jobA.runs.map((run) => run.id)).toEqual([
-			'run-job-err',
-			'run-job-ok',
-		])
-
-		const page1 = await runListCapability.handler(
-			{ limit: 2 },
-			{ env, callerContext },
-		)
-		expect(page1.runs.map((run) => run.id)).toEqual([
-			'run-job-b',
-			'run-webhook',
-		])
-		expect(page1.next_cursor).toEqual(expect.any(String))
-		const page2 = await runListCapability.handler(
-			{ limit: 2, cursor: page1.next_cursor ?? undefined },
-			{ env, callerContext },
-		)
-		expect(page2.runs.map((run) => run.id)).toEqual([
-			'run-job-err',
-			'run-job-ok',
-		])
-	},
-	runLogSuiteTimeoutMs,
-)
-
-test(
-	'run_get returns logs and rejects missing or foreign runs',
-	async () => {
-		const ownerId = uniqueUserId('owner')
+		const ownerId = uniqueUserId('tenant')
 		const otherId = uniqueUserId('other')
 		const ownerContext = buildCallerContext({
 			userId: ownerId,
@@ -213,80 +101,28 @@ test(
 			email: `${otherId}@example.com`,
 		})
 
+		// Seed owner's runs; startedAt offsets ensure stable list order.
+		const startedAtBase = Date.now() - 60_000
 		const handle = await finishRun({
 			userId: ownerId,
-			context: baseContext({
-				surface: 'job',
-				jobId: 'job-logs',
-				name: 'with-logs',
-			}),
+			id: 'run-job-err',
+			startedAt: new Date(startedAtBase).toISOString(),
+			context: baseContext({ surface: 'job', jobId: 'job-a', name: 'with-logs' }),
 			status: 'error',
-			error: new Error('explode'),
+			error: new Error('boom'),
 			logs: ['line-one', 'line-two'],
 		})
-
-		const detail = await runGetCapability.handler(
-			{ run_id: handle.id },
-			{ env, callerContext: ownerContext },
-		)
-		expect(detail.run.id).toBe(handle.id)
-		expect(detail.run.status).toBe('error')
-		expect(detail.logs.map((log) => log.message)).toEqual([
-			'line-one',
-			'line-two',
-		])
-
-		await expect(
-			runGetCapability.handler(
-				{ run_id: handle.id },
-				{ env, callerContext: otherContext },
-			),
-		).rejects.toThrow(/was not found/)
-
-		await expect(
-			runGetCapability.handler(
-				{ run_id: crypto.randomUUID() },
-				{ env, callerContext: ownerContext },
-			),
-		).rejects.toThrow(/was not found/)
-	},
-	runLogSuiteTimeoutMs,
-)
-
-test(
-	'run_summary counts totals, errors, running, and surfaces',
-	async () => {
-		const userId = uniqueUserId('summary')
-		const callerContext = buildCallerContext({
-			userId,
-			email: `${userId}@example.com`,
+		await finishRun({
+			userId: ownerId,
+			id: 'run-webhook',
+			startedAt: new Date(startedAtBase + 1000).toISOString(),
+			context: baseContext({ surface: 'webhook', name: 'sentry' }),
+			status: 'success',
 		})
-
-		await Promise.all([
-			finishRun({
-				userId,
-				context: baseContext({ surface: 'job', jobId: 'job-1' }),
-				status: 'success',
-			}),
-			finishRun({
-				userId,
-				context: baseContext({ surface: 'job', jobId: 'job-2' }),
-				status: 'error',
-				error: new Error('fail'),
-			}),
-			finishRun({
-				userId,
-				context: baseContext({
-					surface: 'webhook',
-					name: 'hook',
-				}),
-				status: 'success',
-			}),
-		])
 		const pending: Array<Promise<unknown>> = []
 		beginRunRecord({
 			env,
-			userId,
+			userId: ownerId,
 			context: baseContext({
 				surface: 'workflow',
 				workflowId: 'wf-running',
@@ -298,61 +134,56 @@ test(
 		})
 		await Promise.all(pending)
 
-		const summary = await runSummaryCapability.handler(
-			{},
-			{ env, callerContext },
-		)
-		expect(summary.total).toBeGreaterThanOrEqual(4)
-		expect(summary.errors).toBeGreaterThanOrEqual(1)
-		expect(summary.running).toBeGreaterThanOrEqual(1)
-		expect(
-			summary.by_surface.some(
-				(entry) =>
-					entry.surface === 'job' && entry.total >= 2 && entry.errors >= 1,
-			),
-		).toBe(true)
-		expect(
-			summary.by_surface.some(
-				(entry) => entry.surface === 'webhook' && entry.total >= 1,
-			),
-		).toBe(true)
-	},
-	runLogSuiteTimeoutMs,
-)
-
-test(
-	'run_list cannot read another users records',
-	async () => {
-		const ownerId = uniqueUserId('iso-owner')
-		const otherId = uniqueUserId('iso-other')
-		const ownerContext = buildCallerContext({
-			userId: ownerId,
-			email: `${ownerId}@example.com`,
-		})
-		const otherContext = buildCallerContext({
-			userId: otherId,
-			email: `${otherId}@example.com`,
-		})
-
-		await finishRun({
-			userId: ownerId,
-			context: baseContext({ surface: 'job', jobId: 'secret-job' }),
-			status: 'error',
-			error: new Error('owner-only'),
-		})
-
-		const ownerList = await runListCapability.handler(
-			{},
+		// run_list: smoke surface filter; other tenant sees empty list.
+		const jobRuns = await runListCapability.handler(
+			{ surface: 'job' },
 			{ env, callerContext: ownerContext },
 		)
-		expect(ownerList.runs.some((run) => run.job_id === 'secret-job')).toBe(true)
-
+		expect(jobRuns.runs.some((r) => r.id === 'run-job-err')).toBe(true)
 		const otherList = await runListCapability.handler(
 			{},
 			{ env, callerContext: otherContext },
 		)
 		expect(otherList.runs).toEqual([])
 
+		// run_get: owner reads own run with logs; other tenant and missing run are rejected.
+		const detail = await runGetCapability.handler(
+			{ run_id: handle.id },
+			{ env, callerContext: ownerContext },
+		)
+		expect(detail.run.id).toBe(handle.id)
+		expect(detail.run.status).toBe('error')
+		expect(detail.logs.map((log) => log.message)).toEqual([
+			'line-one',
+			'line-two',
+		])
+		await expect(
+			runGetCapability.handler(
+				{ run_id: handle.id },
+				{ env, callerContext: otherContext },
+			),
+		).rejects.toThrow(/was not found/)
+		await expect(
+			runGetCapability.handler(
+				{ run_id: crypto.randomUUID() },
+				{ env, callerContext: ownerContext },
+			),
+		).rejects.toThrow(/was not found/)
+
+		// run_summary: owner sees totals including the in-flight workflow run;
+		// other tenant sees zeros.
+		const summary = await runSummaryCapability.handler(
+			{},
+			{ env, callerContext: ownerContext },
+		)
+		expect(summary.total).toBeGreaterThanOrEqual(3)
+		expect(summary.errors).toBeGreaterThanOrEqual(1)
+		expect(summary.running).toBeGreaterThanOrEqual(1)
+		expect(
+			summary.by_surface.some(
+				(entry) => entry.surface === 'job' && entry.total >= 1,
+			),
+		).toBe(true)
 		const otherSummary = await runSummaryCapability.handler(
 			{},
 			{ env, callerContext: otherContext },

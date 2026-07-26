@@ -46,12 +46,14 @@ async function buildEntryBundle(input: {
 }
 
 test(
-	'console.log/warn/error from a user module are captured with existing prefixes',
+	'console capture contract: levels on success, capture through throw, and unshimmed methods',
 	{ timeout: 60_000 },
 	async () => {
 		silenceIncidentalRuntimeWarnings()
-		const userId = 'user-console-capture-levels'
-		const bundle = await buildEntryBundle({
+		const userId = 'user-console-capture-contract'
+
+		// log/warn/error levels are captured with the correct prefix on success.
+		const levelsBundle = await buildEntryBundle({
 			env,
 			userId,
 			source: [
@@ -64,31 +66,24 @@ test(
 				'}',
 			].join('\n'),
 		})
-		const result = await runBundledModuleWithRegistry(
+		const levelsResult = await runBundledModuleWithRegistry(
 			env,
 			createCaller(userId),
-			bundle,
+			levelsBundle,
 			undefined,
 			{ skipCapabilityRegistry: true },
 		)
-		expect(result.error).toBeUndefined()
-		expect(result.result).toBe('ok')
-		expect(result.logs).toEqual([
+		expect(levelsResult.error).toBeUndefined()
+		expect(levelsResult.result).toBe('ok')
+		expect(levelsResult.logs).toEqual([
 			'alpha',
 			'beta',
 			'[warn] heads up',
 			'[error] boom line',
 		])
-	},
-)
 
-test(
-	'console logs are captured when user code throws',
-	{ timeout: 60_000 },
-	async () => {
-		silenceIncidentalRuntimeWarnings()
-		const userId = 'user-console-capture-throw'
-		const bundle = await buildEntryBundle({
+		// Logs emitted before a throw are still captured in the result.
+		const throwBundle = await buildEntryBundle({
 			env,
 			userId,
 			source: [
@@ -99,15 +94,44 @@ test(
 				'}',
 			].join('\n'),
 		})
-		const result = await runBundledModuleWithRegistry(
+		const throwResult = await runBundledModuleWithRegistry(
 			env,
 			createCaller(userId),
-			bundle,
+			throwBundle,
 			undefined,
 			{ skipCapabilityRegistry: true },
 		)
-		expect(result.error).toBe('sandbox boom')
-		expect(result.logs).toEqual(['before throw', '[warn] about to fail'])
+		expect(throwResult.error).toBe('sandbox boom')
+		expect(throwResult.logs).toEqual(['before throw', '[warn] about to fail'])
+
+		// Unshimmed console methods (table, dir, count, time, …) do not throw;
+		// only console.log output is included in the captured logs.
+		const unshimmedBundle = await buildEntryBundle({
+			env,
+			userId,
+			source: [
+				'export default async function main() {',
+				"\tconsole.log('before table')",
+				'\tconsole.table({ ok: true })',
+				'\tconsole.dir({ ok: true })',
+				"\tconsole.count('label')",
+				"\tconsole.countReset('label')",
+				"\tconsole.time('t')",
+				"\tconsole.timeEnd('t')",
+				"\treturn 'ok'",
+				'}',
+			].join('\n'),
+		})
+		const unshimmedResult = await runBundledModuleWithRegistry(
+			env,
+			createCaller(userId),
+			unshimmedBundle,
+			undefined,
+			{ skipCapabilityRegistry: true },
+		)
+		expect(unshimmedResult.error).toBeUndefined()
+		expect(unshimmedResult.result).toBe('ok')
+		expect(unshimmedResult.logs).toEqual(['before table'])
 	},
 )
 
@@ -157,40 +181,5 @@ test(
 		expect(second.logs).not.toEqual(
 			expect.arrayContaining(['first-run', 'first-run-tail']),
 		)
-	},
-)
-
-test(
-	'unshimmed console methods do not throw for user modules',
-	{ timeout: 60_000 },
-	async () => {
-		silenceIncidentalRuntimeWarnings()
-		const userId = 'user-console-capture-unshimmed'
-		const bundle = await buildEntryBundle({
-			env,
-			userId,
-			source: [
-				'export default async function main() {',
-				"\tconsole.log('before table')",
-				'\tconsole.table({ ok: true })',
-				'\tconsole.dir({ ok: true })',
-				"\tconsole.count('label')",
-				"\tconsole.countReset('label')",
-				"\tconsole.time('t')",
-				"\tconsole.timeEnd('t')",
-				"\treturn 'ok'",
-				'}',
-			].join('\n'),
-		})
-		const result = await runBundledModuleWithRegistry(
-			env,
-			createCaller(userId),
-			bundle,
-			undefined,
-			{ skipCapabilityRegistry: true },
-		)
-		expect(result.error).toBeUndefined()
-		expect(result.result).toBe('ok')
-		expect(result.logs).toEqual(['before table'])
 	},
 )
