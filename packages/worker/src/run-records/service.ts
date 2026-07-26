@@ -11,12 +11,14 @@ import {
 	type RunRecordContext,
 	type RunRecordFilter,
 	type RunRecordHandle,
+	type RunLogLevel,
 	type RunRecordLog,
 	type RunRecordLogInput,
 	type RunRecordPage,
 	type RunRecordSummary,
 	type RunStatus,
 	type RunTerminalStatus,
+	runLogLevelValues,
 	runPersistenceForSurface,
 	runRecordDefaultPageSize,
 	runRecordMaxJsonBytes,
@@ -94,6 +96,25 @@ function getErrorFields(error: unknown) {
 	}
 }
 
+/**
+ * The sandbox executor flattens console output to strings and encodes the
+ * level as a leading `[warn] ` / `[error] ` marker. Recover the structured
+ * level so readers can filter and colour by it instead of pattern-matching
+ * message text.
+ */
+function splitLeveledLogMessage(message: string): {
+	level: RunLogLevel
+	message: string
+} {
+	for (const level of runLogLevelValues) {
+		const marker = `[${level}] `
+		if (message.startsWith(marker)) {
+			return { level, message: message.slice(marker.length) }
+		}
+	}
+	return { level: 'log', message }
+}
+
 function normalizeLogs(
 	logs: Array<RunRecordLogInput> | undefined,
 ): Array<RunLogEntryInput> {
@@ -101,10 +122,11 @@ function normalizeLogs(
 		.slice(-runRecordMaxLogEntriesPerRun)
 		.map((entry, index) => {
 			if (typeof entry === 'string') {
+				const split = splitLeveledLogMessage(String(entry))
 				return {
 					sequence: index,
-					level: 'log' as const,
-					message: truncateUtf8(String(entry), runRecordMaxTextBytes),
+					level: split.level,
+					message: truncateUtf8(split.message, runRecordMaxTextBytes),
 					fieldsJson: null,
 				}
 			}

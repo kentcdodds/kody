@@ -276,6 +276,36 @@ test('logs round-trip in sequence order and keep only the newest 200', async () 
 	expect(detail?.run.logCount).toBe(runRecordMaxLogEntriesPerRun)
 })
 
+test('sandbox level markers become structured log levels', async () => {
+	const userId = uniqueUserId('log-levels')
+	const handle = beginRunRecord({
+		env,
+		userId,
+		context: baseContext({ surface: 'job' }),
+	})
+	await finishRunRecord({
+		env,
+		handle,
+		status: 'error',
+		error: new Error('boom'),
+		logs: [
+			'plain line',
+			'[warn] slow upstream',
+			'[error] missing items array',
+			'[info] retrying',
+			'[debug] cursor=42',
+		],
+	})
+	const detail = await getRunRecord({ env, userId, runId: handle!.id })
+	expect(detail?.logs.map((entry) => [entry.level, entry.message])).toEqual([
+		['log', 'plain line'],
+		['warn', 'slow upstream'],
+		['error', 'missing items array'],
+		['info', 'retrying'],
+		['debug', 'cursor=42'],
+	])
+})
+
 test('listRunRecords filters by surface/status/jobId/name and paginates with cursors', async () => {
 	const userId = uniqueUserId('list-filter')
 	const startedAtBase = Date.now() - 60_000
@@ -751,11 +781,13 @@ test(
 			runId: page.runs[0]!.id,
 		})
 		expect(detail).not.toBeNull()
-		expect(detail?.logs.map((entry) => entry.message)).toEqual([
-			'alpha',
-			'[warn] heads up',
-			'[error] captured error',
+		// The sandbox flattens console output to strings with a level marker;
+		// persistence recovers the structured level so readers can filter and
+		// colour by it rather than pattern-matching message text.
+		expect(detail?.logs.map((entry) => [entry.level, entry.message])).toEqual([
+			['log', 'alpha'],
+			['warn', 'heads up'],
+			['error', 'captured error'],
 		])
-		expect(detail?.logs.every((entry) => entry.level === 'log')).toBe(true)
 	},
 )
