@@ -6,6 +6,7 @@ const mockModule = vi.hoisted(() => ({
 	deleteJob: vi.fn(),
 	getJobInspection: vi.fn(),
 	inspectJobsForUser: vi.fn(),
+	listRunRecords: vi.fn(),
 	listWorkflowRunsForUser: vi.fn(),
 	runJobNowViaManager: vi.fn(),
 	updateJob: vi.fn(),
@@ -31,6 +32,11 @@ vi.mock('#worker/package-runtime/package-workflows.ts', () => ({
 		mockModule.listWorkflowRunsForUser(...args),
 }))
 
+vi.mock('#worker/run-records/service.ts', () => ({
+	listRunRecords: (...args: Array<unknown>) =>
+		mockModule.listRunRecords(...args),
+}))
+
 const { jobScheduleCapability } = await import('./job-schedule.ts')
 const { jobScheduleOnceCapability } = await import('./job-schedule-once.ts')
 const { jobDeleteCapability } = await import('./job-delete.ts')
@@ -45,9 +51,11 @@ function resetMocks() {
 	mockModule.deleteJob.mockReset()
 	mockModule.getJobInspection.mockReset()
 	mockModule.inspectJobsForUser.mockReset()
+	mockModule.listRunRecords.mockReset()
 	mockModule.listWorkflowRunsForUser.mockReset()
 	mockModule.runJobNowViaManager.mockReset()
 	mockModule.updateJob.mockReset()
+	mockModule.listRunRecords.mockResolvedValue({ runs: [], nextCursor: null })
 }
 
 test('job_update and job_delete require authentication and mutate existing jobs for the signed-in user', async () => {
@@ -200,15 +208,7 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 		run_count: 2,
 		success_count: 1,
 		error_count: 1,
-		run_history: [
-			{
-				started_at: '2026-04-20T11:00:00.000Z',
-				finished_at: '2026-04-20T11:01:00.000Z',
-				status: 'error',
-				duration_ms: 60000,
-				error: 'Timed out',
-			},
-		],
+		run_history: [],
 	})
 
 	mockModule.updateJob.mockResolvedValueOnce({
@@ -396,14 +396,7 @@ test('job_run_now executes jobs immediately and preserves failed one-off jobs fo
 			run_count: 1,
 			success_count: 1,
 			error_count: 0,
-			run_history: [
-				{
-					started_at: '2026-04-20T10:05:00.000Z',
-					finished_at: '2026-04-20T10:05:00.000Z',
-					status: 'success',
-					duration_ms: 42,
-				},
-			],
+			run_history: [],
 		},
 		execution: {
 			ok: true,
@@ -744,15 +737,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			runCount: 2,
 			successCount: 1,
 			errorCount: 1,
-			runHistory: [
-				{
-					startedAt: '2026-04-20T08:59:58.000Z',
-					finishedAt: '2026-04-20T09:00:00.000Z',
-					status: 'error',
-					durationMs: 1200,
-					error: 'Timed out',
-				},
-			],
+			runHistory: [],
 		},
 		alarm: {
 			bindingAvailable: true,
@@ -764,6 +749,35 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			alarmInSync: false,
 		},
 	})
+	mockModule.listRunRecords.mockResolvedValue({
+		runs: [
+			{
+				id: 'run-err-1',
+				surface: 'job',
+				status: 'error',
+				name: 'Turn lights off',
+				packageId: null,
+				kodyId: null,
+				sourceId: 'source-123',
+				publishedCommit: null,
+				storageId: 'job:job-123',
+				jobId: 'job-123',
+				workflowId: null,
+				invocationId: null,
+				sessionId: null,
+				idempotencyKey: null,
+				parentRunId: null,
+				startedAt: '2026-04-20T08:59:58.000Z',
+				finishedAt: '2026-04-20T09:00:00.000Z',
+				durationMs: 1200,
+				errorName: 'Error',
+				errorMessage: 'Timed out',
+				metadata: {},
+				logCount: 2,
+			},
+		],
+		nextCursor: null,
+	})
 
 	try {
 		const listResult = await jobListCapability.handler(
@@ -773,6 +787,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 				callerContext,
 			},
 		)
+		expect(mockModule.listRunRecords).not.toHaveBeenCalled()
 		const getResult = await jobGetCapability.handler(
 			{ id: 'job-123' },
 			{
@@ -809,6 +824,12 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			jobId: 'job-123',
 			includeCode: false,
 		})
+		expect(mockModule.listRunRecords).toHaveBeenCalledWith({
+			env,
+			userId: 'user-123',
+			filter: { jobId: 'job-123', surface: 'job' },
+			limit: 10,
+		})
 		expect(getResult.job).toMatchObject({
 			id: 'job-123',
 			source_id: 'source-123',
@@ -821,6 +842,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			last_duration_ms: 1200,
 			recent_runs: [
 				{
+					id: 'run-err-1',
 					started_at: '2026-04-20T08:59:58.000Z',
 					finished_at: '2026-04-20T09:00:00.000Z',
 					status: 'error',
@@ -878,6 +900,10 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 				code: sourceCode,
 				error: null,
 			},
+		})
+		mockModule.listRunRecords.mockResolvedValue({
+			runs: [],
+			nextCursor: null,
 		})
 
 		const sourceResult = await jobGetCapability.handler(

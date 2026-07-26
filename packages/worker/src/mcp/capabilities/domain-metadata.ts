@@ -13,6 +13,7 @@ export const capabilityDomainNames = {
 	openapi: 'openapi',
 	packages: 'packages',
 	repo: 'repo',
+	runs: 'runs',
 	secrets: 'secrets',
 	services: 'services',
 	storage: 'storage',

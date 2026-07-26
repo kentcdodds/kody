@@ -6,7 +6,9 @@ const mockModule = vi.hoisted(() => ({
 	mintWebhookUrlForUser: vi.fn(),
 	rotateWebhookUrlForUser: vi.fn(),
 	setWebhookEnabledForUser: vi.fn(),
-	listWebhookDeliveriesForUser: vi.fn(),
+	resolveSavedPackage: vi.fn(),
+	getWebhookEndpointByKey: vi.fn(),
+	listRunRecords: vi.fn(),
 }))
 
 vi.mock('#worker/webhooks/service.ts', () => ({
@@ -18,8 +20,21 @@ vi.mock('#worker/webhooks/service.ts', () => ({
 		mockModule.rotateWebhookUrlForUser(...args),
 	setWebhookEnabledForUser: (...args: Array<unknown>) =>
 		mockModule.setWebhookEnabledForUser(...args),
-	listWebhookDeliveriesForUser: (...args: Array<unknown>) =>
-		mockModule.listWebhookDeliveriesForUser(...args),
+}))
+
+vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
+	resolveSavedPackage: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackage(...args),
+}))
+
+vi.mock('#worker/webhooks/repo.ts', () => ({
+	getWebhookEndpointByKey: (...args: Array<unknown>) =>
+		mockModule.getWebhookEndpointByKey(...args),
+}))
+
+vi.mock('#worker/run-records/service.ts', () => ({
+	listRunRecords: (...args: Array<unknown>) =>
+		mockModule.listRunRecords(...args),
 }))
 
 const { webhookListCapability } = await import('./webhook-list.ts')
@@ -99,20 +114,84 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 			rotatedAt: '2026-07-24T00:00:00.000Z',
 		}),
 	)
-	mockModule.listWebhookDeliveriesForUser.mockResolvedValue([
-		{
-			id: 'del-1',
-			endpointId: 'ep-1',
-			userId: 'user-1',
-			packageId: 'pkg-1',
-			webhookName: 'sentry',
-			receivedAt: '2026-07-24T01:00:00.000Z',
-			outcome: 'delivered',
-			httpStatus: 202,
-			error: null,
-			payloadBytes: 10,
-		},
-	])
+	mockModule.resolveSavedPackage.mockResolvedValue({
+		id: 'pkg-1',
+		kodyId: 'sentry-bridge',
+		name: '@user/sentry-bridge',
+		userId: 'user-1',
+		sourceId: 'src-1',
+	})
+	mockModule.getWebhookEndpointByKey.mockResolvedValue({
+		id: 'ep-1',
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		webhookName: 'sentry',
+		urlSecretHash: 'hash',
+		enabled: true,
+		createdAt: '2026-07-24T00:00:00.000Z',
+		rotatedAt: '2026-07-24T00:00:00.000Z',
+	})
+	mockModule.listRunRecords.mockResolvedValue({
+		runs: [
+			{
+				id: 'del-1',
+				surface: 'webhook',
+				status: 'success',
+				name: 'sentry',
+				packageId: 'pkg-1',
+				kodyId: 'sentry-bridge',
+				sourceId: null,
+				publishedCommit: null,
+				storageId: null,
+				jobId: null,
+				workflowId: null,
+				invocationId: null,
+				sessionId: null,
+				idempotencyKey: null,
+				parentRunId: null,
+				startedAt: '2026-07-24T01:00:00.000Z',
+				finishedAt: '2026-07-24T01:00:01.000Z',
+				durationMs: 1000,
+				errorName: null,
+				errorMessage: null,
+				metadata: {
+					outcome: 'delivered',
+					http_status: 202,
+					payload_bytes: 10,
+				},
+				logCount: 0,
+			},
+			{
+				id: 'del-other',
+				surface: 'webhook',
+				status: 'error',
+				name: 'other-hook',
+				packageId: 'pkg-1',
+				kodyId: 'sentry-bridge',
+				sourceId: null,
+				publishedCommit: null,
+				storageId: null,
+				jobId: null,
+				workflowId: null,
+				invocationId: null,
+				sessionId: null,
+				idempotencyKey: null,
+				parentRunId: null,
+				startedAt: '2026-07-24T00:30:00.000Z',
+				finishedAt: '2026-07-24T00:30:01.000Z',
+				durationMs: 1000,
+				errorName: 'Error',
+				errorMessage: 'nope',
+				metadata: {
+					outcome: 'failed',
+					http_status: 502,
+					payload_bytes: 4,
+				},
+				logCount: 0,
+			},
+		],
+		nextCursor: null,
+	})
 
 	const ctx = createCapabilityContext()
 	const listed = await webhookListCapability.handler({}, ctx)
@@ -156,5 +235,25 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
 		ctx,
 	)
-	expect(deliveries.deliveries[0]?.webhook_name).toBe('sentry')
+	expect(deliveries.deliveries).toEqual([
+		{
+			id: 'del-1',
+			package_id: 'pkg-1',
+			webhook_name: 'sentry',
+			received_at: '2026-07-24T01:00:00.000Z',
+			outcome: 'delivered',
+			http_status: 202,
+			error: null,
+			payload_bytes: 10,
+		},
+	])
+	expect(mockModule.listRunRecords).toHaveBeenCalledWith({
+		env: ctx.env,
+		userId: 'user-1',
+		filter: {
+			surface: 'webhook',
+			packageId: 'pkg-1',
+		},
+		limit: 100,
+	})
 })

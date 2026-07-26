@@ -13,7 +13,7 @@ export const jobListCapability = defineDomainCapability(
 	{
 		name: 'job_list',
 		description:
-			'List scheduled jobs for the signed-in user with status, counters, recent run history, and job-manager alarm state for debugging scheduling issues.',
+			"List scheduled jobs for the signed-in user with status, counters, and job-manager alarm state for debugging scheduling issues. recent_runs is empty here for efficiency; use job_get for one job's recent runs or run_list/run_summary for cross-job failure history.",
 		keywords: [
 			'job',
 			'list',
@@ -36,7 +36,9 @@ export const jobListCapability = defineDomainCapability(
 				userId: user.userId,
 			})
 			return {
-				jobs: inspection.jobs.map((job) => buildJobInspectionOutput(job)),
+				jobs: inspection.jobs.map((job) =>
+					buildJobInspectionOutput(job, { recentRuns: [] }),
+				),
 				alarm: buildJobManagerDebugOutput(inspection.alarm),
 			}
 		},

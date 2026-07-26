@@ -11,6 +11,7 @@ import {
 	type JobUpdateInput,
 	type JobView,
 } from '#worker/jobs/types.ts'
+import { type RunRecord } from '#worker/run-records/types.ts'
 
 const onceScheduleSchema = z.object({
 	type: z.literal('once'),
@@ -125,6 +126,10 @@ export const jobGetInputSchema = z
 const nonNegativeIntegerSchema = z.number().int().min(0)
 
 const jobRunHistoryEntrySchema = z.object({
+	id: z
+		.string()
+		.optional()
+		.describe('Run record id for drill-down with run_get when available.'),
 	started_at: z.string(),
 	finished_at: z.string(),
 	status: z.enum(['success', 'error']),
@@ -133,12 +138,18 @@ const jobRunHistoryEntrySchema = z.object({
 })
 
 const runHistoryEntrySchema = z.object({
+	id: z
+		.string()
+		.optional()
+		.describe('Run record id for drill-down with run_get when available.'),
 	started_at: z.string(),
 	finished_at: z.string(),
 	status: z.enum(['success', 'error']),
 	duration_ms: nonNegativeIntegerSchema,
 	error: z.string().optional(),
 })
+
+export type JobRecentRunOutput = z.infer<typeof jobRunHistoryEntrySchema>
 
 export const jobInspectionSchema = z.object({
 	id: z.string(),
@@ -449,7 +460,25 @@ export function buildJobScheduleOutput(created: JobView) {
 	}
 }
 
-export function buildJobViewOutput(job: JobView) {
+export function formatJobRecentRunFromRecord(
+	run: RunRecord,
+): JobRecentRunOutput | null {
+	if (run.status === 'running' || run.finishedAt == null) return null
+	return {
+		id: run.id,
+		started_at: run.startedAt,
+		finished_at: run.finishedAt,
+		status: run.status,
+		duration_ms: run.durationMs ?? 0,
+		error: run.errorMessage,
+	}
+}
+
+export function buildJobViewOutput(
+	job: JobView,
+	input: { recentRuns?: Array<JobRecentRunOutput> } = {},
+) {
+	const recentRuns = input.recentRuns ?? []
 	return {
 		job_id: job.id,
 		name: job.name,
@@ -472,12 +501,13 @@ export function buildJobViewOutput(job: JobView) {
 		run_count: job.runCount,
 		success_count: job.successCount,
 		error_count: job.errorCount,
-		run_history: job.runHistory.map((entry) => ({
-			started_at: entry.startedAt,
-			finished_at: entry.finishedAt,
+		run_history: recentRuns.map((entry) => ({
+			id: entry.id,
+			started_at: entry.started_at,
+			finished_at: entry.finished_at,
 			status: entry.status,
-			duration_ms: entry.durationMs,
-			error: entry.error,
+			duration_ms: entry.duration_ms,
+			...(entry.error ? { error: entry.error } : {}),
 		})),
 	}
 }
@@ -499,7 +529,7 @@ export function buildJobSourceInspectionOutput(source: JobSourceInspection) {
 
 export function buildJobInspectionOutput(
 	job: JobView,
-	input: { now?: Date } = {},
+	input: { now?: Date; recentRuns?: Array<JobRecentRunOutput> } = {},
 ) {
 	const now = input.now ?? new Date()
 	const nextRunAtValue = new Date(job.nextRunAt).valueOf()
@@ -532,13 +562,7 @@ export function buildJobInspectionOutput(
 		run_count: job.runCount,
 		success_count: job.successCount,
 		error_count: job.errorCount,
-		recent_runs: job.runHistory.map((entry) => ({
-			started_at: entry.startedAt,
-			finished_at: entry.finishedAt,
-			status: entry.status,
-			duration_ms: entry.durationMs,
-			error: entry.error ?? null,
-		})),
+		recent_runs: input.recentRuns ?? [],
 	}
 }
 

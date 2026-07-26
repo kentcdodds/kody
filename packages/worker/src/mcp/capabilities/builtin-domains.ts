@@ -11,6 +11,7 @@ import { metaDomain } from './meta/domain.ts'
 import { openapiDomain } from './openapi/domain.ts'
 import { packagesDomain } from './packages/domain.ts'
 import { repoDomain } from './repo/domain.ts'
+import { runsDomain } from './runs/domain.ts'
 import { secretsDomain } from './secrets/domain.ts'
 import { servicesDomain } from './services/domain.ts'
 import { storageDomain } from './storage/domain.ts'
@@ -39,6 +40,7 @@ export const builtinDomains = [
 	openapiDomain,
 	packagesDomain,
 	repoDomain,
+	runsDomain,
 	secretsDomain,
 	servicesDomain,
 	storageDomain,
