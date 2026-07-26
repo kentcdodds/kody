@@ -415,6 +415,10 @@
 		{
 			"filename": "0097-user-storage-buckets.sql",
 			"sha256": "280af0890f1e517830535f9379d1d90b5bc05b9da5b1d8a5c6b9423ca3da842b"
+		},
+		{
+			"filename": "0098-backfill-package-service-states.sql",
+			"sha256": "e10562862d228d694b0516bf278ef81bdfb8a27c2691e8299f13b81582c41eda"
 		}
 	]
 }
