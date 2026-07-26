@@ -107,6 +107,8 @@ export const internalExecuteRuntimeInvokeTokenId = 'internal:execute-runtime'
 export const maxPackageRuntimeInvokeDepth = 8
 export const packageInvocationScopeWildcard = '*'
 
+const npmScopedPackageNamePattern = /^@[^/\s]+\/[^/\s]+$/
+
 export function normalizeExportName(exportName: string) {
 	return normalizePackageInvocationExportName(exportName)
 }
@@ -117,7 +119,9 @@ export function normalizeNullableString(value: string | null | undefined) {
 }
 
 export function buildSavedPackageNotFoundMessage(packageIdOrKodyId: string) {
-	return `Saved package ${JSON.stringify(packageIdOrKodyId)} was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").`
+	const message = `Saved package ${JSON.stringify(packageIdOrKodyId)} was not found for this user.`
+	if (!npmScopedPackageNamePattern.test(packageIdOrKodyId)) return message
+	return `${message} Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").`
 }
 
 export function buildPackageInvocationStorageId(packageId: string) {
