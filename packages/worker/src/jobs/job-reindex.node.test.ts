@@ -60,7 +60,6 @@ function buildJobRow(id: string, userId = 'user-1') {
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 	return { id, user_id: userId, record }
 }

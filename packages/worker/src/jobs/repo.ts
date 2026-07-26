@@ -25,6 +25,7 @@ type JobRowRecord = {
 	run_count: number
 	success_count: number
 	error_count: number
+	// Intentionally left unwritten pending a follow-up drop migration.
 	run_history_json: string
 }
 
@@ -59,7 +60,6 @@ function serializeJob(job: JobRecord) {
 		run_count: job.runCount,
 		success_count: job.successCount,
 		error_count: job.errorCount,
-		run_history_json: JSON.stringify(job.runHistory),
 	}
 }
 
@@ -123,10 +123,6 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		runCount: Number(row['run_count']) || 0,
 		successCount: Number(row['success_count']) || 0,
 		errorCount: Number(row['error_count']) || 0,
-		runHistory: parseJson<JobRecord['runHistory']>(
-			String(row['run_history_json'] ?? '[]'),
-			[],
-		),
 	}
 	return {
 		id: record.id,
@@ -155,6 +151,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		run_count: record.runCount,
 		success_count: record.successCount,
 		error_count: record.errorCount,
+		// Column retained unread into JobRecord pending a follow-up drop migration.
 		run_history_json: String(row['run_history_json'] ?? '[]'),
 		record,
 		callerContextJson: String(row['caller_context_json']),
@@ -207,7 +204,8 @@ export async function insertJobRow(input: {
 			serialized.run_count,
 			serialized.success_count,
 			serialized.error_count,
-			serialized.run_history_json,
+			// Intentionally left unwritten as history; default empty blob only.
+			'[]',
 		)
 		.run()
 }
@@ -225,7 +223,7 @@ export async function updateJobRow(input: {
 				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
 				enabled = ?, kill_switch_enabled = ?, caller_context_json = ?, updated_at = ?,
 				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
-				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?, run_history_json = ?
+				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?
 			WHERE id = ? AND user_id = ?`,
 		)
 		.bind(
@@ -249,7 +247,6 @@ export async function updateJobRow(input: {
 			serialized.run_count,
 			serialized.success_count,
 			serialized.error_count,
-			serialized.run_history_json,
 			serialized.id,
 			input.userId,
 		)

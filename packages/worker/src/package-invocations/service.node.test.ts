@@ -702,7 +702,7 @@ function createRuntimeDispatchTools(db: D1Database) {
 			kodyId: 'discord-gateway',
 			sourceId: 'source-gateway',
 		},
-		parentRuntimeDebug: {
+		parentRunRecord: {
 			packageId: 'pkg-gateway',
 			kodyId: 'discord-gateway',
 			sourceId: 'source-gateway',
@@ -731,7 +731,7 @@ function createRuntimeEventTools(db: D1Database) {
 			kodyId: 'discord-gateway',
 			sourceId: 'source-gateway',
 		},
-		parentRuntimeDebug: {
+		parentRunRecord: {
 			packageId: 'pkg-gateway',
 			kodyId: 'discord-gateway',
 			sourceId: 'source-gateway',
@@ -1143,7 +1143,7 @@ test('execute runtime invokeChecked invokes target package with execute provenan
 			kodyId: 'discord-general-chat',
 			sourceId: 'source-subscriber',
 		},
-		runtimeDebug: {
+		runRecord: {
 			packageId: 'pkg-subscriber',
 			kodyId: 'discord-general-chat',
 			surface: 'export',
@@ -1305,7 +1305,7 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 				kodyId: 'discord-gateway',
 				sourceId: 'source-gateway',
 			},
-			parentRuntimeDebug: {
+			parentRunRecord: {
 				packageId: 'pkg-gateway',
 				kodyId: 'discord-gateway',
 				sourceId: 'source-gateway',
@@ -1376,7 +1376,7 @@ test('package runtime auto idempotency keys include parent runtime identity', as
 			baseUrl: 'https://kody.dev',
 			callerContext,
 			packageContext,
-			parentRuntimeDebug: {
+			parentRunRecord: {
 				packageId: 'pkg-gateway',
 				kodyId: 'discord-gateway',
 				sourceId: 'source-gateway',

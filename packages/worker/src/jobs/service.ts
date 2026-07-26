@@ -522,18 +522,20 @@ async function executePublishedJobArtifact(input: {
 			: null,
 	}
 	const packageContext = input.artifact.packageContext ?? null
-	const runtimeDebug = packageContext
-		? {
-				packageId: packageContext.packageId,
-				kodyId: packageContext.kodyId,
-				sourceId: packageContext.sourceId ?? input.job.sourceId,
-				publishedCommit: source?.published_commit ?? input.job.publishedCommit,
-				surface: 'job' as const,
-				name: input.job.name,
-				storageId: input.job.storageId,
-				jobId: input.job.id,
-			}
-		: null
+	const runRecord = {
+		surface: 'job' as const,
+		name: input.job.name,
+		jobId: input.job.id,
+		storageId: input.job.storageId,
+		sourceId: packageContext?.sourceId ?? input.job.sourceId,
+		publishedCommit: source?.published_commit ?? input.job.publishedCommit,
+		...(packageContext
+			? {
+					packageId: packageContext.packageId,
+					kodyId: packageContext.kodyId,
+				}
+			: {}),
+	}
 	const packageRuntimeTools = packageContext
 		? await (async () => {
 				// Avoid a top-level jobs -> package-invocations cycle during capability
@@ -545,7 +547,7 @@ async function executePublishedJobArtifact(input: {
 					baseUrl: input.callerContext.baseUrl,
 					callerContext,
 					packageContext,
-					parentRuntimeDebug: runtimeDebug,
+					parentRunRecord: runRecord,
 					packageInvokeDepth: 0,
 				}
 				return {
@@ -570,7 +572,7 @@ async function executePublishedJobArtifact(input: {
 				writable: true,
 			},
 			...(packageContext ? { packageContext } : {}),
-			runtimeDebug,
+			runRecord,
 			...(packageRuntimeTools ?? {}),
 		},
 	).then((result) => ({
@@ -856,7 +858,6 @@ export async function syncPackageJobsForPackage(input: {
 					runCount: 0,
 					successCount: 0,
 					errorCount: 0,
-					runHistory: [],
 				}
 				await insertJobRow({
 					db: input.env.APP_DB,
@@ -1012,7 +1013,6 @@ export async function createJob(input: {
 				runCount: 0,
 				successCount: 0,
 				errorCount: 0,
-				runHistory: [],
 			}
 			const syncedPublishedCommit = await syncArtifactSourceSnapshot({
 				env: input.env,

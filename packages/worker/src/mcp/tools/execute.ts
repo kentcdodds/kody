@@ -262,6 +262,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									packageInvokeTools,
 									rawFetchHostSink: rawFetchHosts.sink,
 									conversationId: resolvedConversationId,
+									runRecord: {
+										surface: 'execute',
+										name: null,
+										storageId: activeStorageId,
+										metadata: {
+											conversationId: resolvedConversationId,
+										},
+									},
 								},
 							)
 						} catch (cause) {

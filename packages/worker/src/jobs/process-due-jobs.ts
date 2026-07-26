@@ -14,8 +14,6 @@ export type ProcessDueJobsResult = {
 	jobOutcomes: Array<SchedulerJobOutcomeLog>
 }
 
-const maxRunHistoryEntries = 10
-
 export async function processDueJobs(input: {
 	jobs: Array<JobRecord>
 	now?: Date
@@ -166,15 +164,5 @@ export function applyExecutionOutcome(
 		runCount: job.runCount + 1,
 		successCount: job.successCount + (outcome.execution.ok ? 1 : 0),
 		errorCount: job.errorCount + (outcome.execution.ok ? 0 : 1),
-		runHistory: [
-			{
-				startedAt: outcome.startedAt,
-				finishedAt: outcome.finishedAt,
-				status,
-				durationMs: outcome.durationMs,
-				...(executionError ? { error: executionError } : {}),
-			},
-			...job.runHistory,
-		].slice(0, maxRunHistoryEntries),
 	}
 }

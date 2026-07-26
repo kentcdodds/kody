@@ -67,11 +67,8 @@ import {
 	createUnboundRuntimeHelperMessage,
 	findUnboundRuntimeHelperAccess,
 } from '#worker/package-runtime/unbound-runtime-helpers.ts'
-import {
-	beginPackageRuntimeRun,
-	finishPackageRuntimeRun,
-	type PackageRuntimeDebugContext,
-} from '#worker/package-runtime/package-runtime-debug.ts'
+import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
+import { type RunRecordContext } from '#worker/run-records/types.ts'
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
@@ -623,6 +620,7 @@ export async function runModuleWithRegistry(
 		 * package deps are credited toward agent-facing package popularity.
 		 */
 		conversationId?: string | null
+		runRecord?: RunRecordContext | null
 	},
 ): Promise<ExecuteResult> {
 	const userId = callerContext.user?.userId ?? ''
@@ -673,16 +671,6 @@ export async function runModuleWithRegistry(
 			conversationId: options?.conversationId ?? null,
 		},
 	)
-}
-
-async function finishPackageRuntimeRunBestEffort(
-	input: Parameters<typeof finishPackageRuntimeRun>[0],
-) {
-	try {
-		await finishPackageRuntimeRun(input)
-	} catch (error) {
-		console.warn('package-runtime-debug-finish-unhandled', error)
-	}
 }
 
 /**
@@ -743,7 +731,7 @@ export async function runBundledModuleWithRegistry(
 		packageEventTools?: PackageEventTools
 		skipCapabilityRegistry?: boolean
 		executorTimeoutMs?: number | null
-		runtimeDebug?: PackageRuntimeDebugContext | null
+		runRecord?: RunRecordContext | null
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
 		conversationId?: string | null
@@ -753,22 +741,22 @@ export async function runBundledModuleWithRegistry(
 	const normalizedStorageContext = normalizeStorageContext(
 		callerContext.storageContext ?? null,
 	)
-	const runtimeDebugContext = options?.runtimeDebug
+	const runRecordContext = options?.runRecord
 		? {
-				...options.runtimeDebug,
+				...options.runRecord,
 				storageId:
-					options.runtimeDebug.storageId ??
+					options.runRecord.storageId ??
 					options.storageTools?.storageId ??
 					normalizedStorageContext?.storageId ??
 					null,
 			}
 		: null
-	const runtimeDebugRun = await beginPackageRuntimeRun({
+	const runRecordHandle = beginRunRecord({
 		env,
 		userId: callerContext.user?.userId ?? null,
-		context: runtimeDebugContext,
+		context: runRecordContext,
 	})
-	let runtimeDebugFinished = false
+	let runRecordFinished = false
 	// The metering span covers the whole bundled run (module hydration,
 	// provider assembly, and sandbox execution) so pre-executor failures are
 	// still counted as failed package runs.
@@ -928,13 +916,13 @@ ${runtimeHelperRuntimePropertySource}
 			const result = await executor.execute(wrapped, providers)
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 			if (!result.error) {
-				await finishPackageRuntimeRunBestEffort({
+				await finishRunRecord({
 					env,
-					handle: runtimeDebugRun,
+					handle: runRecordHandle,
 					status: 'success',
 					logs: sanitizedResult.logs ?? [],
 				})
-				runtimeDebugFinished = true
+				runRecordFinished = true
 				await recordPackageExportUsage('success')
 				return sanitizedResult
 			}
@@ -955,33 +943,33 @@ ${runtimeHelperRuntimePropertySource}
 						error: secretRedactor.redactErrorMessage(rewrittenMessage),
 					}
 				: sanitizedResult
-			await finishPackageRuntimeRunBestEffort({
+			await finishRunRecord({
 				env,
-				handle: runtimeDebugRun,
+				handle: runRecordHandle,
 				status: 'error',
 				logs: finalResult.logs ?? [],
 				error: finalResult.error,
 			})
-			runtimeDebugFinished = true
+			runRecordFinished = true
 			await recordPackageExportUsage('error')
 			return finalResult
 		} catch (error) {
-			if (!runtimeDebugFinished) {
-				await finishPackageRuntimeRunBestEffort({
+			if (!runRecordFinished) {
+				await finishRunRecord({
 					env,
-					handle: runtimeDebugRun,
+					handle: runRecordHandle,
 					status: 'error',
 					error,
 				})
-				runtimeDebugFinished = true
+				runRecordFinished = true
 			}
 			throw error
 		}
 	} catch (error) {
-		if (!runtimeDebugFinished) {
-			await finishPackageRuntimeRunBestEffort({
+		if (!runRecordFinished) {
+			await finishRunRecord({
 				env,
-				handle: runtimeDebugRun,
+				handle: runRecordHandle,
 				status: 'error',
 				error,
 			})

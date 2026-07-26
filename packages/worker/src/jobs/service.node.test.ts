@@ -737,7 +737,7 @@ function createDatabase(
 									run_count: params[20],
 									success_count: params[21],
 									error_count: params[22],
-									run_history_json: params[23],
+									run_history_json: params[23] ?? '[]',
 								}
 								upsert(
 									'jobs',
@@ -749,9 +749,15 @@ function createDatabase(
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
+								const existingJob = selectOne(
+									'jobs',
+									(existing) =>
+										existing['id'] === params[20] &&
+										existing['user_id'] === params[21],
+								)
 								const row = {
-									id: params[21],
-									user_id: params[22],
+									id: params[20],
+									user_id: params[21],
 									name: params[0],
 									source_id: params[1],
 									published_commit: params[2],
@@ -772,14 +778,8 @@ function createDatabase(
 									run_count: params[17],
 									success_count: params[18],
 									error_count: params[19],
-									run_history_json: params[20],
-									created_at:
-										selectOne(
-											'jobs',
-											(existing) =>
-												existing['id'] === params[21] &&
-												existing['user_id'] === params[22],
-										)?.['created_at'] ?? params[11],
+									run_history_json: existingJob?.['run_history_json'] ?? '[]',
+									created_at: existingJob?.['created_at'] ?? params[11],
 								}
 								upsert(
 									'jobs',
@@ -1620,15 +1620,6 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 	jobRow.record.runCount = 3
 	jobRow.record.successCount = 1
 	jobRow.record.errorCount = 2
-	jobRow.record.runHistory = [
-		{
-			startedAt: '2026-04-20T10:00:00.000Z',
-			finishedAt: '2026-04-20T10:05:00.000Z',
-			status: 'error',
-			durationMs: 321,
-			error: 'Worker fetch failed',
-		},
-	]
 	jobRow.record.nextRunAt = '2026-04-20T10:00:00.000Z'
 	jobRow.record.updatedAt = '2026-04-20T10:05:00.000Z'
 	await (
@@ -1681,15 +1672,6 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 			runCount: 3,
 			successCount: 1,
 			errorCount: 2,
-			runHistory: [
-				{
-					startedAt: '2026-04-20T10:00:00.000Z',
-					finishedAt: '2026-04-20T10:05:00.000Z',
-					status: 'error',
-					durationMs: 321,
-					error: 'Worker fetch failed',
-				},
-			],
 		}),
 	])
 })
@@ -1741,7 +1723,6 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	})
 	expect(inspected.alarm).toEqual({
 		bindingAvailable: true,
@@ -2282,7 +2263,19 @@ test('executeJobOnce runs repo-backed one-off jobs from kody.json manifests', as
 				storageId: `job:${jobView.id}`,
 				writable: true,
 			},
+			runRecord: {
+				surface: 'job',
+				name: 'Capability-created one-off job',
+				jobId: jobView.id,
+				storageId: `job:${jobView.id}`,
+				sourceId: jobView.sourceId,
+				publishedCommit: 'published-commit-1',
+			},
 		})
+		expect(executeSpy.mock.calls[0]?.[4]).not.toHaveProperty(
+			'runRecord.packageId',
+		)
+		expect(executeSpy.mock.calls[0]?.[4]).not.toHaveProperty('runRecord.kodyId')
 		repoSessionRpcSpy.mockRestore()
 	} finally {
 		executeSpy.mockRestore()
@@ -2523,7 +2516,6 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 	const sessionClient = {
 		openSession: vi
@@ -2741,7 +2733,6 @@ test('executeJobOnce rebuilds stale published job bundles after the source commi
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 	const executeSpy = vi
 		.spyOn(
@@ -2830,7 +2821,6 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 	const sessionClient = {
 		openSession: vi.fn(async () => ({
@@ -2964,7 +2954,6 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 	const sessionClient = {
 		openSession: vi.fn(async () => ({
@@ -3122,7 +3111,6 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 	const sessionClient = {
 		openSession: vi.fn(async () => ({
@@ -3281,7 +3269,6 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 
 	const sessionClient = {
@@ -3448,7 +3435,6 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 
 	const discardFailure = new Error('D1 delete failed')
@@ -3568,7 +3554,6 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 
 	const sessionClient = {
@@ -3767,7 +3752,6 @@ test('executeJobOnce returns an error when kody secret policy would reject execu
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 
 	const executeSpy = vi

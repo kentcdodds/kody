@@ -1,6 +1,6 @@
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
-import { type PackageRuntimeDebugContext } from '#worker/package-runtime/package-runtime-debug.ts'
+import { type RunRecordContext } from '#worker/run-records/types.ts'
 import { normalizeExportName, type PackageRuntimeContext } from './common.ts'
 import { type ParsedPackageInvokeInput } from './input-parsing.ts'
 import { buildJsonErrorResponse } from './responses.ts'
@@ -46,14 +46,14 @@ export async function createRequestHash(input: {
 
 export async function createAutoPackageInvokeIdempotencyKey(input: {
 	callerPackageContext: PackageRuntimeContext | null
-	parentRuntimeDebug: PackageRuntimeDebugContext | null
+	parentRunRecord: RunRecordContext | null
 	sequence: number
 	request: ParsedPackageInvokeInput
 }) {
 	if (!input.callerPackageContext) {
 		return `pkginvoke:${crypto.randomUUID()}`
 	}
-	const parentKey = input.parentRuntimeDebug?.idempotencyKey?.trim()
+	const parentKey = input.parentRunRecord?.idempotencyKey?.trim()
 	if (!parentKey) {
 		return `pkginvoke:${crypto.randomUUID()}`
 	}
@@ -63,8 +63,8 @@ export async function createAutoPackageInvokeIdempotencyKey(input: {
 			canonicalJsonStringify({
 				callerPackageId: input.callerPackageContext.packageId,
 				parentKey,
-				parentSurface: input.parentRuntimeDebug?.surface ?? null,
-				parentName: input.parentRuntimeDebug?.name ?? null,
+				parentSurface: input.parentRunRecord?.surface ?? null,
+				parentName: input.parentRunRecord?.name ?? null,
 				sequence: input.sequence,
 				packageIdOrKodyId: input.request.packageIdOrKodyId,
 				exportName: normalizeExportName(input.request.exportName),

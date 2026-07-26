@@ -19,14 +19,6 @@ export type JobSchedule =
 
 export type JobRunStatus = 'success' | 'error'
 
-export type JobRunHistoryEntry = {
-	startedAt: string
-	finishedAt: string
-	status: JobRunStatus
-	durationMs: number
-	error?: string
-}
-
 export type JobRepoCheckPolicy = {
 	allowTypecheckFailures?: boolean
 }
@@ -55,7 +47,8 @@ export type JobRecord = {
 	runCount: number
 	successCount: number
 	errorCount: number
-	runHistory: Array<JobRunHistoryEntry>
+	// `jobs.run_history_json` is intentionally left unwritten; run records own
+	// history. Column stays until a follow-up drop migration.
 }
 
 export type JobView = Omit<JobRecord, 'userId'> & {

@@ -12,7 +12,6 @@ import {
 	rotateWebhookUrlForUser,
 	setWebhookEnabledForUser,
 } from './service.ts'
-import { insertWebhookDelivery } from './repo.ts'
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 	resolveSavedPackage: vi.fn(async (input: { packageIdOrKodyId: string }) => {
@@ -214,18 +213,25 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 		.prepare(`SELECT id FROM webhook_endpoints WHERE user_id = ?`)
 		.bind(userId)
 		.first<{ id: string }>()
-	await insertWebhookDelivery({
-		db,
-		id: 'del-1',
-		endpointId: endpoint!.id,
-		userId,
-		packageId: 'pkg-1',
-		webhookName: 'sentry',
-		receivedAt: '2026-07-24T01:00:00.000Z',
-		outcome: 'delivered',
-		httpStatus: 202,
-		payloadBytes: 10,
-	})
+	await db
+		.prepare(
+			`INSERT INTO webhook_deliveries (
+				id, endpoint_id, user_id, package_id, webhook_name,
+				received_at, outcome, http_status, error, payload_bytes
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+		)
+		.bind(
+			'del-1',
+			endpoint!.id,
+			userId,
+			'pkg-1',
+			'sentry',
+			'2026-07-24T01:00:00.000Z',
+			'delivered',
+			202,
+			10,
+		)
+		.run()
 	const deliveries = await listWebhookDeliveriesForUser({
 		env,
 		userId,

@@ -446,8 +446,8 @@ function createJobMutationDatabase(input: {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
 							if (normalized.startsWith('UPDATE jobs SET')) {
-								const id = params[21]
-								const userId = params[22]
+								const id = params[20]
+								const userId = params[21]
 								const existing = selectOne(
 									'jobs',
 									(row) => row['id'] === id && row['user_id'] === userId,
@@ -475,7 +475,6 @@ function createJobMutationDatabase(input: {
 									run_count: params[17],
 									success_count: params[18],
 									error_count: params[19],
-									run_history_json: params[20],
 								}
 								const rows = table('jobs')
 								const index = rows.findIndex(
@@ -598,7 +597,7 @@ function createJobRow(
 		run_count: job.runCount,
 		success_count: job.successCount,
 		error_count: job.errorCount,
-		run_history_json: JSON.stringify(job.runHistory),
+		run_history_json: '[]',
 	}
 }
 
@@ -694,7 +693,6 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 	}
 	const db = createJobMutationDatabase({
 		jobs: [createJobRow(job, callerContext)],
@@ -2359,6 +2357,137 @@ export default async () => (await storage.sql('select 1')).rows`,
 			hydrateSpy.mockRestore()
 		}
 	} finally {
+		createExecuteExecutorSpy.mockRestore()
+	}
+})
+
+test('runBundledModuleWithRegistry finishes execute run records on failure only', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-execute-records',
+			email: 'execute@example.com',
+			displayName: 'Execute User',
+		},
+	})
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+	const handle = {
+		id: 'run-execute-1',
+		userId: 'user-execute-records',
+		startedAt: '2026-07-26T00:00:00.000Z',
+		persistence: 'on-failure' as const,
+		context: {
+			surface: 'execute' as const,
+			name: null,
+			storageId: 'storage-1',
+			metadata: { conversationId: 'conv-1' },
+		},
+	}
+	const runRecords = await import('#worker/run-records/service.ts')
+	const beginSpy = vi
+		.spyOn(runRecords, 'beginRunRecord')
+		.mockReturnValue(handle)
+	const persistedStatuses: Array<string> = []
+	const finishSpy = vi
+		.spyOn(runRecords, 'finishRunRecord')
+		.mockImplementation(async (input) => {
+			const current = input.handle
+			if (!current) return
+			if (current.persistence === 'on-failure' && input.status === 'success') {
+				return
+			}
+			persistedStatuses.push(input.status)
+		})
+	let executeResult: { result: unknown; error?: unknown; logs: Array<string> } =
+		{
+			result: 'ok',
+			logs: ['success log'],
+		}
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return executeResult
+			},
+		} as never)
+
+	try {
+		const success = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				runRecord: {
+					surface: 'execute',
+					name: null,
+					storageId: 'storage-1',
+					metadata: { conversationId: 'conv-1' },
+				},
+			},
+		)
+		expect(success.error).toBeUndefined()
+		expect(beginSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-execute-records',
+				context: expect.objectContaining({
+					surface: 'execute',
+					storageId: 'storage-1',
+				}),
+			}),
+		)
+		expect(finishSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				handle,
+				status: 'success',
+				logs: ['success log'],
+			}),
+		)
+		expect(persistedStatuses).toEqual([])
+
+		beginSpy.mockClear()
+		finishSpy.mockClear()
+		executeResult = {
+			result: undefined,
+			error: 'boom',
+			logs: ['failure log'],
+		}
+		const failure = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				runRecord: {
+					surface: 'execute',
+					name: null,
+					storageId: 'storage-1',
+					metadata: { conversationId: 'conv-1' },
+				},
+			},
+		)
+		expect(failure.error).toBe('boom')
+		expect(finishSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				handle,
+				status: 'error',
+				logs: ['failure log'],
+				error: 'boom',
+			}),
+		)
+		expect(persistedStatuses).toEqual(['error'])
+	} finally {
+		beginSpy.mockRestore()
+		finishSpy.mockRestore()
 		createExecuteExecutorSpy.mockRestore()
 	}
 })

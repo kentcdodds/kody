@@ -3,7 +3,7 @@ import { persistableExecutionArtifacts } from '#mcp/downstream-mcp-result.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { withAccountWriteLease } from '#app/account-deletion-state.ts'
-import { type PackageRuntimeDebugContext } from '#worker/package-runtime/package-runtime-debug.ts'
+import { type RunRecordContext } from '#worker/run-records/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
@@ -316,7 +316,7 @@ export async function invokeSavedPackageModule(input: {
 					kodyId: input.savedPackage.kodyId,
 					sourceId: input.savedPackage.sourceId,
 				}
-				const runtimeDebug: PackageRuntimeDebugContext = {
+				const runRecord: RunRecordContext = {
 					packageId: input.savedPackage.id,
 					kodyId: input.savedPackage.kodyId,
 					sourceId: input.savedPackage.sourceId,
@@ -349,7 +349,7 @@ export async function invokeSavedPackageModule(input: {
 						// No ambient `storage` binding: package code reaches its bucket via
 						// `packageStorage()` (granted through packageContext below). Legacy
 						// ambient use gets the structured runtime_helper_unbound hint.
-						runtimeDebug,
+						runRecord,
 						emailTools: {
 							getMessage: async (messageId) => {
 								const loaded = await getEmailMessageWithAttachmentsById({
@@ -450,7 +450,7 @@ export async function invokeSavedPackageModule(input: {
 								baseUrl: input.baseUrl,
 								callerContext,
 								packageContext,
-								parentRuntimeDebug: runtimeDebug,
+								parentRunRecord: runRecord,
 								packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
 							}),
 						packageEventTools: input.toolFactories.createPackageEventTools({
@@ -458,7 +458,7 @@ export async function invokeSavedPackageModule(input: {
 							baseUrl: input.baseUrl,
 							callerContext,
 							packageContext,
-							parentRuntimeDebug: runtimeDebug,
+							parentRunRecord: runRecord,
 							packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
 						}),
 					},

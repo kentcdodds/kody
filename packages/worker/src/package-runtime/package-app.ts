@@ -51,12 +51,12 @@ import {
 	isPackageSecretAccessUnavailableError,
 	resolvePackageMountedSecret,
 } from '#mcp/secrets/package-access.ts'
+import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
 import {
-	beginPackageRuntimeRun,
-	finishPackageRuntimeRun,
-	type PackageRuntimeRunHandle,
-	type PackageRuntimeStatus,
-} from './package-runtime-debug.ts'
+	type RunRecordHandle,
+	type RunRecordLogInput,
+	type RunTerminalStatus,
+} from '#worker/run-records/types.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -533,6 +533,49 @@ function serializeRuntimeError(error) {
 	};
 }
 
+function createConsoleLogCapture() {
+	const logs = [];
+	const previousConsole = globalThis.console;
+	const push = (level, args) => {
+		logs.push({
+			level,
+			message: args.map((value) => String(value)).join(' '),
+		});
+	};
+	const captureConsole = {
+		...previousConsole,
+		debug: (...args) => {
+			push('debug', args);
+			previousConsole.debug(...args);
+		},
+		info: (...args) => {
+			push('info', args);
+			previousConsole.info(...args);
+		},
+		log: (...args) => {
+			push('log', args);
+			previousConsole.log(...args);
+		},
+		warn: (...args) => {
+			push('warn', args);
+			previousConsole.warn(...args);
+		},
+		error: (...args) => {
+			push('error', args);
+			previousConsole.error(...args);
+		},
+	};
+	return {
+		logs,
+		install() {
+			globalThis.console = captureConsole;
+		},
+		restore() {
+			globalThis.console = previousConsole;
+		},
+	};
+}
+
 async function startRuntimeRun(runtimeBridge, input) {
 	return await runtimeBridge.packageRuntimeRunStart(input);
 }
@@ -581,11 +624,13 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				method: request.method,
 			},
 		});
+		const consoleCapture = createConsoleLogCapture();
 		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
 		);
 		try {
+			consoleCapture.install();
 			const response = await __kodyRuntimeStorage.run(runtime, async () => {
 				const userModule = await import(${JSON.stringify(`./${input.mainModule}`)});
 				const runtimeEnv = createPackageAppEnv(this.env, userModule);
@@ -604,6 +649,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			await finishRuntimeRun(runtimeBridge, {
 				run: runtimeRun,
 				status: 'success',
+				logs: consoleCapture.logs,
 			});
 			return response;
 		} catch (error) {
@@ -611,8 +657,11 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				run: runtimeRun,
 				status: 'error',
 				error: serializeRuntimeError(error),
+				logs: consoleCapture.logs,
 			});
 			throw error;
+		} finally {
+			consoleCapture.restore();
 		}
 	}
 
@@ -627,11 +676,13 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				topic: payload?.topic,
 			},
 		});
+		const consoleCapture = createConsoleLogCapture();
 		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
 		);
 		try {
+			consoleCapture.install();
 			const result = await __kodyRuntimeStorage.run(runtime, async () => {
 				const userModule = await import(${JSON.stringify(`./${input.mainModule}`)});
 				const runtimeEnv = createPackageAppEnv(this.env, userModule);
@@ -660,6 +711,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			await finishRuntimeRun(runtimeBridge, {
 				run: runtimeRun,
 				status: 'success',
+				logs: consoleCapture.logs,
 			});
 			return result;
 		} catch (error) {
@@ -667,8 +719,11 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				run: runtimeRun,
 				status: 'error',
 				error: serializeRuntimeError(error),
+				logs: consoleCapture.logs,
 			});
 			throw error;
+		} finally {
+			consoleCapture.restore();
 		}
 	}
 }
@@ -761,8 +816,8 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		name?: string | null
 		sessionId?: string | null
 		metadata?: Record<string, unknown> | null
-	}): Promise<PackageRuntimeRunHandle | null> {
-		return await beginPackageRuntimeRun({
+	}): Promise<RunRecordHandle | null> {
+		return beginRunRecord({
 			env: this.env,
 			userId: this.ctx.props.userId,
 			context: {
@@ -775,16 +830,19 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				sessionId: input.sessionId,
 				metadata: input.metadata,
 			},
+			waitUntil: (promise) => {
+				this.ctx.waitUntil(promise)
+			},
 		})
 	}
 
 	async packageRuntimeRunFinish(input: {
-		run: PackageRuntimeRunHandle | null
-		status: Exclude<PackageRuntimeStatus, 'running'>
+		run: RunRecordHandle | null
+		status: RunTerminalStatus
 		error?: unknown
-		logs?: Array<string>
+		logs?: Array<RunRecordLogInput>
 	}) {
-		await finishPackageRuntimeRun({
+		await finishRunRecord({
 			env: this.env,
 			handle: input.run,
 			status: input.status,
@@ -1130,7 +1188,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 						baseUrl: this.ctx.props.baseUrl,
 						callerContext: this.createCallerContext(this.ctx.props.packageId),
 						packageContext,
-						parentRuntimeDebug: null,
+						parentRunRecord: null,
 						packageInvokeDepth: 0,
 					})
 				},
@@ -1156,7 +1214,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 						baseUrl: this.ctx.props.baseUrl,
 						callerContext: this.createCallerContext(this.ctx.props.packageId),
 						packageContext,
-						parentRuntimeDebug: null,
+						parentRunRecord: null,
 						packageInvokeDepth: 0,
 					})
 				},

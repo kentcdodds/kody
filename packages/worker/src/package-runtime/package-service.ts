@@ -771,7 +771,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				storageId: runtime.storageId,
 			},
 		})
-		const runtimeDebug = {
+		const runRecord = {
 			packageId: binding.packageId,
 			kodyId: binding.kodyId,
 			sourceId: binding.sourceId,
@@ -789,7 +789,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			baseUrl: binding.baseUrl,
 			callerContext,
 			packageContext: runtime.packageContext,
-			parentRuntimeDebug: runtimeDebug,
+			parentRunRecord: runRecord,
 			packageInvokeDepth: 0,
 		}
 		const result = await runBundledModuleWithRegistry(
@@ -817,7 +817,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					storageId: runtime.storageId,
 					writable: true,
 				},
-				runtimeDebug,
+				runRecord,
 				packageInvokeTools: createPackageRuntimeInvokeTools(
 					packageRuntimeToolsInput,
 				),

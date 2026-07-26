@@ -132,9 +132,9 @@ test('runPackageRetrievers soft-fails a timed-out retriever and keeps healthy re
 			_caller: unknown,
 			_bundle: unknown,
 			_params: unknown,
-			options: { runtimeDebug?: { name?: string } },
+			options: { runRecord?: { name?: string } },
 		) => {
-			if (options.runtimeDebug?.name === 'inbox') {
+			if (options.runRecord?.name === 'inbox') {
 				return { result: undefined, error: 'Execution timed out' }
 			}
 			return {

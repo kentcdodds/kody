@@ -8,7 +8,8 @@ function createCronJob(overrides: Partial<JobRecord> = {}): JobRecord {
 		id: 'job-1',
 		userId: 'user-1',
 		name: 'Morning job',
-		code: 'export default async () => ({ ok: true })',
+		sourceId: 'source-1',
+		publishedCommit: null,
 		storageId: 'job:job-1',
 		schedule: {
 			type: 'cron',
@@ -23,7 +24,6 @@ function createCronJob(overrides: Partial<JobRecord> = {}): JobRecord {
 		runCount: 0,
 		successCount: 0,
 		errorCount: 0,
-		runHistory: [],
 		...overrides,
 	}
 }
@@ -95,6 +95,8 @@ test('processDueJobs handles cron batching and once-job delete, preserve, and re
 			}),
 		]),
 	)
+	expect(batchResult.saveJobs[0]).not.toHaveProperty('runHistory')
+	expect(batchResult.saveJobs[1]).not.toHaveProperty('runHistory')
 
 	const failedOnceJob = createCronJob({
 		id: 'job-once',

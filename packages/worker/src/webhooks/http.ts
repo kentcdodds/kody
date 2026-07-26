@@ -12,12 +12,13 @@ import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { invokePackageExport } from '#worker/package-invocations/service.ts'
+import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
 import {
 	webhookUrlSecretMatches,
 	verifyWebhookHmacSignature,
 } from './crypto.ts'
 import { collectSafeWebhookHeaders } from './headers.ts'
-import { getWebhookEndpointByKey, insertWebhookDelivery } from './repo.ts'
+import { getWebhookEndpointByKey } from './repo.ts'
 import {
 	type WebhookDeliveryOutcome,
 	type WebhookEndpointRecord,
@@ -121,27 +122,40 @@ function unauthorizedSignatureResponse() {
 }
 
 async function recordDelivery(input: {
-	db: D1Database
+	env: Env
 	endpoint: WebhookEndpointRecord
+	kodyId: string
 	outcome: WebhookDeliveryOutcome
 	httpStatus: number
 	error?: string | null
 	payloadBytes: number
-	receivedAt: string
+	invocationId?: string
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	try {
-		await insertWebhookDelivery({
-			db: input.db,
-			id: crypto.randomUUID(),
-			endpointId: input.endpoint.id,
+		const status = input.outcome === 'delivered' ? 'success' : 'error'
+		const handle = beginRunRecord({
+			env: input.env,
 			userId: input.endpoint.userId,
-			packageId: input.endpoint.packageId,
-			webhookName: input.endpoint.webhookName,
-			receivedAt: input.receivedAt,
-			outcome: input.outcome,
-			httpStatus: input.httpStatus,
-			error: input.error,
-			payloadBytes: input.payloadBytes,
+			context: {
+				surface: 'webhook',
+				name: input.endpoint.webhookName,
+				packageId: input.endpoint.packageId,
+				kodyId: input.kodyId,
+				invocationId: input.invocationId ?? crypto.randomUUID(),
+				metadata: {
+					endpointId: input.endpoint.id,
+					httpStatus: input.httpStatus,
+					payloadBytes: input.payloadBytes,
+				},
+			},
+			waitUntil: input.waitUntil,
+		})
+		await finishRunRecord({
+			env: input.env,
+			handle,
+			status,
+			error: input.error ?? undefined,
 		})
 	} catch (error) {
 		console.error('[webhooks] failed to record delivery', error)
@@ -350,13 +364,14 @@ export async function handleWebhookIngressRequest(
 	// Republished package removed/renamed the webhook → deactivate ingress.
 	if (!declared) {
 		await recordDelivery({
-			db: env.APP_DB,
+			env,
 			endpoint,
+			kodyId: savedPackage.kodyId,
 			outcome: 'rejected',
 			httpStatus: 404,
 			error: 'webhook_not_declared',
 			payloadBytes: 0,
-			receivedAt,
+			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
 		})
 		return notFoundResponse()
 	}
@@ -366,13 +381,14 @@ export async function handleWebhookIngressRequest(
 	} catch (error) {
 		if (!(error instanceof AccountDeletionInProgressError)) throw error
 		await recordDelivery({
-			db: env.APP_DB,
+			env,
 			endpoint,
+			kodyId: savedPackage.kodyId,
 			outcome: 'rejected',
 			httpStatus: 409,
 			error: 'account_deleting',
 			payloadBytes: 0,
-			receivedAt,
+			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
 		})
 		return jsonResponse(
 			{
@@ -389,13 +405,14 @@ export async function handleWebhookIngressRequest(
 	const bodyResult = await readBodyWithCap(request, webhookMaxPayloadBytes)
 	if (!bodyResult.ok) {
 		await recordDelivery({
-			db: env.APP_DB,
+			env,
 			endpoint,
+			kodyId: savedPackage.kodyId,
 			outcome: 'rejected',
 			httpStatus: 413,
 			error: 'payload_too_large',
 			payloadBytes: bodyResult.payloadBytes,
-			receivedAt,
+			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
 		})
 		return bodyResult.response
 	}
@@ -411,13 +428,14 @@ export async function handleWebhookIngressRequest(
 		const provided = request.headers.get(headerName)
 		if (!provided) {
 			await recordDelivery({
-				db: env.APP_DB,
+				env,
 				endpoint,
+				kodyId: savedPackage.kodyId,
 				outcome: 'rejected',
 				httpStatus: 401,
 				error: 'missing_signature',
 				payloadBytes: bodyBytes.byteLength,
-				receivedAt,
+				waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
 			})
 			return unauthorizedSignatureResponse()
 		}
@@ -433,13 +451,14 @@ export async function handleWebhookIngressRequest(
 		})
 		if (!resolved.found || !resolved.value) {
 			await recordDelivery({
-				db: env.APP_DB,
+				env,
 				endpoint,
+				kodyId: savedPackage.kodyId,
 				outcome: 'rejected',
 				httpStatus: 401,
 				error: `verification_secret_missing:${declared.verification.secretName}`,
 				payloadBytes: bodyBytes.byteLength,
-				receivedAt,
+				waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
 			})
 			return unauthorizedSignatureResponse()
 		}
@@ -453,13 +472,14 @@ export async function handleWebhookIngressRequest(
 		})
 		if (!valid) {
 			await recordDelivery({
-				db: env.APP_DB,
+				env,
 				endpoint,
+				kodyId: savedPackage.kodyId,
 				outcome: 'rejected',
 				httpStatus: 401,
 				error: 'invalid_signature',
 				payloadBytes: bodyBytes.byteLength,
-				receivedAt,
+				waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
 			})
 			return unauthorizedSignatureResponse()
 		}
@@ -494,32 +514,26 @@ export async function handleWebhookIngressRequest(
 					idempotencyKey,
 				})
 				const ok = response.status >= 200 && response.status < 300
-				await insertWebhookDelivery({
-					db: env.APP_DB,
-					id: deliveryId,
-					endpointId: endpoint.id,
-					userId: endpoint.userId,
-					packageId: endpoint.packageId,
-					webhookName: endpoint.webhookName,
-					receivedAt,
+				await recordDelivery({
+					env,
+					endpoint,
+					kodyId: savedPackage.kodyId,
 					outcome: ok ? 'delivered' : 'failed',
 					httpStatus: ok ? 202 : 502,
 					error: ok ? null : `invocation_status_${response.status}`,
 					payloadBytes: bodyBytes.byteLength,
+					invocationId: deliveryId,
 				})
 			} catch (error) {
-				await insertWebhookDelivery({
-					db: env.APP_DB,
-					id: deliveryId,
-					endpointId: endpoint.id,
-					userId: endpoint.userId,
-					packageId: endpoint.packageId,
-					webhookName: endpoint.webhookName,
-					receivedAt,
+				await recordDelivery({
+					env,
+					endpoint,
+					kodyId: savedPackage.kodyId,
 					outcome: 'failed',
 					httpStatus: 502,
 					error: error instanceof Error ? error.message : 'invocation_failed',
 					payloadBytes: bodyBytes.byteLength,
+					invocationId: deliveryId,
 				})
 			}
 		})()
@@ -545,18 +559,16 @@ export async function handleWebhookIngressRequest(
 			webhookSyncInvocationTimeoutMs,
 		)
 		const ok = response.status >= 200 && response.status < 300
-		await insertWebhookDelivery({
-			db: env.APP_DB,
-			id: deliveryId,
-			endpointId: endpoint.id,
-			userId: endpoint.userId,
-			packageId: endpoint.packageId,
-			webhookName: endpoint.webhookName,
-			receivedAt,
+		await recordDelivery({
+			env,
+			endpoint,
+			kodyId: savedPackage.kodyId,
 			outcome: ok ? 'delivered' : 'failed',
 			httpStatus: ok ? response.status : 502,
 			error: ok ? null : `invocation_status_${response.status}`,
 			payloadBytes: bodyBytes.byteLength,
+			invocationId: deliveryId,
+			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
 		})
 		if (!ok) {
 			return jsonResponse(
@@ -572,18 +584,16 @@ export async function handleWebhookIngressRequest(
 		}
 		return jsonResponse(response.body, { status: response.status })
 	} catch (error) {
-		await insertWebhookDelivery({
-			db: env.APP_DB,
-			id: deliveryId,
-			endpointId: endpoint.id,
-			userId: endpoint.userId,
-			packageId: endpoint.packageId,
-			webhookName: endpoint.webhookName,
-			receivedAt,
+		await recordDelivery({
+			env,
+			endpoint,
+			kodyId: savedPackage.kodyId,
 			outcome: 'failed',
 			httpStatus: 502,
 			error: error instanceof Error ? error.message : 'invocation_failed',
 			payloadBytes: bodyBytes.byteLength,
+			invocationId: deliveryId,
+			waitUntil: ctx ? (promise) => ctx.waitUntil(promise) : undefined,
 		})
 		return jsonResponse(
 			{

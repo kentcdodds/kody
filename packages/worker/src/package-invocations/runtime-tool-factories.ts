@@ -4,7 +4,7 @@ import {
 	type PackageInvokeInput,
 	type PackageInvokeTools,
 } from '#mcp/run-kody-registry.ts'
-import { type PackageRuntimeDebugContext } from '#worker/package-runtime/package-runtime-debug.ts'
+import { type RunRecordContext } from '#worker/run-records/types.ts'
 import {
 	maxPackageRuntimeInvokeDepth,
 	type PackageInvocationResponse,
@@ -24,7 +24,7 @@ export function createPackageRuntimeInvokeToolsWithToolFactories(input: {
 	baseUrl: string
 	callerContext: ReturnType<typeof createMcpCallerContext>
 	packageContext: PackageRuntimeContext | null
-	parentRuntimeDebug?: PackageRuntimeDebugContext | null
+	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
 }): PackageInvokeTools {
@@ -38,7 +38,7 @@ export function createExecutePackageInvokeToolsWithToolFactories(input: {
 	env: Env
 	baseUrl: string
 	callerContext: ReturnType<typeof createMcpCallerContext>
-	parentRuntimeDebug?: PackageRuntimeDebugContext | null
+	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
 	/** MCP execute conversation id for agent-facing popularity recording. */
 	conversationId?: string | null
@@ -57,7 +57,7 @@ function createPackageInvokeTools(input: {
 	baseUrl: string
 	callerContext: ReturnType<typeof createMcpCallerContext>
 	packageContext: PackageRuntimeContext | null
-	parentRuntimeDebug?: PackageRuntimeDebugContext | null
+	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
 	callerKind: 'package' | 'execute'
 	conversationId?: string | null
@@ -88,7 +88,7 @@ function createPackageInvokeTools(input: {
 			request.idempotencyKey ??
 			(await createAutoPackageInvokeIdempotencyKey({
 				callerPackageContext: packageContext,
-				parentRuntimeDebug: input.parentRuntimeDebug ?? null,
+				parentRunRecord: input.parentRunRecord ?? null,
 				sequence: autoIdempotencySequence,
 				request,
 			}))

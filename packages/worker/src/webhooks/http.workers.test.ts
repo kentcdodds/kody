@@ -2,6 +2,8 @@ import { env } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
 import type * as PackageInvocationServiceModule from '#worker/package-invocations/service.ts'
+import { clearRunRecords, listRunRecords } from '#worker/run-records/service.ts'
+import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { computeWebhookHmacSignature, hashWebhookUrlSecret } from './crypto.ts'
 import { handleWebhookIngressRequest } from './http.ts'
@@ -218,25 +220,29 @@ async function postWebhook(input: {
 	return response
 }
 
-async function listDeliveries(webhookName: string) {
+async function listDeliveries(userId: string, webhookName: string) {
+	const page = await listRunRecords({
+		env,
+		userId,
+		filter: { surface: 'webhook' },
+		limit: 100,
+	})
+	return page.runs.filter((run) => run.name === webhookName)
+}
+
+async function countWebhookDeliveryRows(webhookName: string) {
 	const result = await env.APP_DB.prepare(
-		`SELECT outcome, http_status, error, user_id, webhook_name
+		`SELECT COUNT(*) AS count
 		FROM webhook_deliveries
-		WHERE webhook_name = ?
-		ORDER BY received_at DESC`,
+		WHERE webhook_name = ?`,
 	)
 		.bind(webhookName)
-		.all<{
-			outcome: string
-			http_status: number
-			error: string | null
-			user_id: string
-			webhook_name: string
-		}>()
-	return result.results ?? []
+		.first<{ count: number }>()
+	return Number(result?.count ?? 0)
 }
 
 test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isolation', async () => {
+	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	await ensureSchema(env.APP_DB)
 	await env.APP_DB.prepare(`DELETE FROM webhook_deliveries`).run()
 	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
@@ -244,6 +250,7 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 	await env.APP_DB.prepare(`DELETE FROM users`).run()
 
 	const userId = await seedOwner()
+	await clearRunRecords({ env, userId })
 	const urlSecret = 'url-secret-plain'
 	await mintWebhook({ userId, webhookName: 'sentry', urlSecret })
 	await mintWebhook({
@@ -319,7 +326,14 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		receivedAt: expect.any(String),
 	})
 	expect(invokeArgs.request.params.request.json).toEqual({ event: 'push' })
-	expect((await listDeliveries('sentry'))[0]?.outcome).toBe('delivered')
+	const delivered = (await listDeliveries(userId, 'sentry'))[0]
+	expect(delivered?.status).toBe('success')
+	expect(delivered?.packageId).toBe('pkg-1')
+	expect(delivered?.kodyId).toBe('sentry-bridge')
+	expect(delivered?.metadata).toMatchObject({
+		httpStatus: 202,
+	})
+	expect(await countWebhookDeliveryRows('sentry')).toBe(0)
 
 	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
 	mocks.invokePackageExport.mockClear()
@@ -334,6 +348,8 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		ok: true,
 		result: { handled: true },
 	})
+	expect((await listDeliveries(userId, 'sync-hook'))[0]?.status).toBe('success')
+	expect(await countWebhookDeliveryRows('sync-hook')).toBe(0)
 
 	expect(
 		(
@@ -401,8 +417,11 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 	})
 	expect(missingSecret.status).toBe(401)
 	expect(
-		(await listDeliveries('sentry')).some((row) =>
-			row.error?.startsWith('verification_secret_missing:'),
+		(await listDeliveries(userId, 'sentry')).some(
+			(run) =>
+				run.status === 'error' &&
+				typeof run.errorMessage === 'string' &&
+				run.errorMessage.startsWith('verification_secret_missing:'),
 		),
 	).toBe(true)
 

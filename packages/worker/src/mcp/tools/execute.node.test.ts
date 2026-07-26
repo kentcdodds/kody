@@ -358,6 +358,14 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 		expect.objectContaining({
 			packageInvokeTools,
 			conversationId: 'conv-packages',
+			runRecord: {
+				surface: 'execute',
+				name: null,
+				storageId: null,
+				metadata: {
+					conversationId: 'conv-packages',
+				},
+			},
 		}),
 	)
 

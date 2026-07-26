@@ -161,7 +161,7 @@ async function invokeRetriever(input: {
 		kodyId: input.entry.kodyId,
 		sourceId: input.entry.sourceId,
 	}
-	const runtimeDebug = {
+	const runRecord = {
 		packageId: input.entry.packageId,
 		kodyId: input.entry.kodyId,
 		sourceId: input.entry.sourceId,
@@ -183,7 +183,7 @@ async function invokeRetriever(input: {
 		baseUrl: input.baseUrl,
 		callerContext,
 		packageContext,
-		parentRuntimeDebug: runtimeDebug,
+		parentRunRecord: runRecord,
 		packageInvokeDepth: 0,
 	}
 	const executionResult = await runBundledModuleWithRegistry(
@@ -209,7 +209,7 @@ async function invokeRetriever(input: {
 			// context since it shipped — so retrievers staying read-mostly is a
 			// convention, not a runtime constraint.
 			packageContext,
-			runtimeDebug,
+			runRecord,
 			packageInvokeTools: createPackageRuntimeInvokeTools(
 				packageRuntimeToolsInput,
 			),

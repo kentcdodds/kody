@@ -3,7 +3,6 @@ import {
 	type WebhookDeliveryRecord,
 	type WebhookEndpointRecord,
 	webhookDeliveriesRetainedPerEndpoint,
-	webhookDeliveryErrorMaxLength,
 } from './types.ts'
 
 type WebhookEndpointRow = {
@@ -56,14 +55,6 @@ function mapDeliveryRow(row: WebhookDeliveryRow): WebhookDeliveryRecord {
 		error: row.error,
 		payloadBytes: row.payload_bytes,
 	}
-}
-
-function truncateDeliveryError(error: string | null | undefined) {
-	if (!error) return null
-	const trimmed = error.trim()
-	if (!trimmed) return null
-	if (trimmed.length <= webhookDeliveryErrorMaxLength) return trimmed
-	return `${trimmed.slice(0, webhookDeliveryErrorMaxLength - 1)}…`
 }
 
 /**
@@ -206,80 +197,6 @@ export async function setWebhookEndpointEnabled(input: {
 		packageId: input.packageId,
 		webhookName: input.webhookName,
 	})
-}
-
-export async function insertWebhookDelivery(input: {
-	db: D1Database
-	id: string
-	endpointId: string
-	userId: string
-	packageId: string
-	webhookName: string
-	receivedAt: string
-	outcome: WebhookDeliveryOutcome
-	httpStatus: number
-	error?: string | null
-	payloadBytes: number
-}): Promise<WebhookDeliveryRecord> {
-	const error = truncateDeliveryError(input.error)
-	await input.db
-		.prepare(
-			`INSERT INTO webhook_deliveries (
-				id, endpoint_id, user_id, package_id, webhook_name,
-				received_at, outcome, http_status, error, payload_bytes
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			input.id,
-			input.endpointId,
-			input.userId,
-			input.packageId,
-			input.webhookName,
-			input.receivedAt,
-			input.outcome,
-			input.httpStatus,
-			error,
-			input.payloadBytes,
-		)
-		.run()
-
-	await input.db
-		.prepare(
-			`DELETE FROM webhook_deliveries
-			WHERE user_id = ?
-				AND endpoint_id = ?
-				AND id NOT IN (
-					SELECT id FROM (
-						SELECT id
-						FROM webhook_deliveries
-						WHERE user_id = ?
-							AND endpoint_id = ?
-						ORDER BY received_at DESC, id DESC
-						LIMIT ?
-					)
-				)`,
-		)
-		.bind(
-			input.userId,
-			input.endpointId,
-			input.userId,
-			input.endpointId,
-			webhookDeliveriesRetainedPerEndpoint,
-		)
-		.run()
-
-	return {
-		id: input.id,
-		endpointId: input.endpointId,
-		userId: input.userId,
-		packageId: input.packageId,
-		webhookName: input.webhookName,
-		receivedAt: input.receivedAt,
-		outcome: input.outcome,
-		httpStatus: input.httpStatus,
-		error,
-		payloadBytes: input.payloadBytes,
-	}
 }
 
 export async function listWebhookDeliveriesForEndpoint(input: {
