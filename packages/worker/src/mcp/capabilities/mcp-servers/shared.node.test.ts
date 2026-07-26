@@ -63,6 +63,7 @@ test('resolveMcpServerSetting throws McpCallerError for blank server identifiers
 		'Provide the MCP server id or name in "server".',
 	)
 	expect(mockModule.getMcpServerSettingById).not.toHaveBeenCalled()
+	expect(mockModule.listMcpServerSettings).not.toHaveBeenCalled()
 })
 
 test('resolveMcpServerSetting resolves by id or normalized name', async () => {
