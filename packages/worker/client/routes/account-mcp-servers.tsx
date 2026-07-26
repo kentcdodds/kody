@@ -631,6 +631,14 @@ export function AccountMcpServersRoute(handle: Handle) {
 									</AccountManagementMessage>
 								) : null}
 
+								{server.state === 'authenticating' && !server.authUrl ? (
+									<AccountManagementMessage tone="error">
+										Authorization is incomplete and no authorization link is
+										available. Click Reconnect to restart OAuth, or remove and
+										add the server again.
+									</AccountManagementMessage>
+								) : null}
+
 								{server.authUrl && server.state === 'authenticating' ? (
 									<div
 										mix={css({

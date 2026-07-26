@@ -5,6 +5,10 @@ import { DurableObjectOAuthClientProvider } from 'agents/mcp/do-oauth-client-pro
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
+	isStuckMcpAuthenticatingWithoutAuthUrl,
+	resolveMcpOAuthCallbackOutcome,
+} from './oauth-callback-outcome.ts'
+import {
 	type McpClientHubSnapshot,
 	type McpServerConnectResult,
 	type McpServerConnectionState,
@@ -182,7 +186,11 @@ class McpClientHubBase extends DurableObject<Env> {
 				})
 			}
 		}
-		return this.buildConnectResult(input.serverId)
+		const connected = this.buildConnectResult(input.serverId)
+		if (isStuckMcpAuthenticatingWithoutAuthUrl(connected)) {
+			return await this.recoverStuckAuthenticating(input.serverId)
+		}
+		return connected
 	}
 
 	/** Re-discover tools for a connected server. */
@@ -208,6 +216,11 @@ class McpClientHubBase extends DurableObject<Env> {
 	 * Complete an OAuth authorization redirect. The worker forwards the
 	 * callback URL (including `code` and `state`) after authenticating the
 	 * browser session that owns this hub.
+	 *
+	 * Success is reported only when the MCP connection reaches `ready`. The
+	 * Agents SDK `authSuccess` flag alone is not enough: it can clear the
+	 * stored auth URL and leave the connection in `authenticating` with no
+	 * error after a provider (e.g. Clerk) authorization redirect.
 	 */
 	async handleOAuthCallback(input: {
 		url: string
@@ -233,13 +246,54 @@ class McpClientHubBase extends DurableObject<Env> {
 			await this.manager.waitForConnections({
 				timeout: connectionSettleTimeoutMs,
 			})
+			let connection = this.buildConnectResult(serverId)
+			if (isStuckMcpAuthenticatingWithoutAuthUrl(connection)) {
+				connection = await this.recoverStuckAuthenticating(serverId)
+			}
+			return resolveMcpOAuthCallbackOutcome({
+				sdkAuthSuccess: true,
+				sdkAuthError: result.authError ?? null,
+				serverId,
+				serverName,
+				connection,
+			})
 		}
-		return {
+		return resolveMcpOAuthCallbackOutcome({
+			sdkAuthSuccess: result.authSuccess,
+			sdkAuthError: result.authError ?? null,
 			serverId,
-			authSuccess: result.authSuccess,
-			authError: result.authError ?? null,
 			serverName,
+			connection: serverId ? this.buildConnectResult(serverId) : null,
+		})
+	}
+
+	/**
+	 * Clear unusable tokens and reconnect so the Agents SDK can mint a fresh
+	 * auth URL. Needed when SQL `auth_url` was cleared on callback success but
+	 * the live connection never reached `ready`.
+	 */
+	private async recoverStuckAuthenticating(
+		serverId: string,
+	): Promise<McpServerConnectResult> {
+		const connection = this.manager.mcpConnections[serverId]
+		const authProvider = connection?.options.transport.authProvider
+		if (
+			authProvider &&
+			typeof authProvider.invalidateCredentials === 'function'
+		) {
+			try {
+				await authProvider.invalidateCredentials('tokens')
+			} catch {
+				// Best-effort: reconnect below still regenerates OAuth when possible.
+			}
 		}
+		const result = await this.manager.connectToServer(serverId)
+		if (result.state === 'connected') {
+			await this.manager.discoverIfConnected(serverId, {
+				timeoutMs: discoverTimeoutMs,
+			})
+		}
+		return this.buildConnectResult(serverId)
 	}
 
 	async getSnapshot(): Promise<McpClientHubSnapshot> {

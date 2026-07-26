@@ -42,7 +42,13 @@ the `/mcp` endpoint (where Kody is the server) and complements remote connectors
    the browser session cookie, forwards the full callback URL to that user's hub
    DO, and the SDK exchanges the code (matching the `state` parameter to the
    pending authorization) and establishes the connection.
-5. The route redirects to `/account/mcp-servers?auth=success|error` for user
+5. The hub only treats the callback as successful when the connection reaches
+   `ready`. If the Agents SDK reports `authSuccess` but the connection stays in
+   `authenticating` (including the stuck case with no stored auth URL after the
+   SDK clears it), the route redirects with `auth=error` and a concrete reason.
+   Reconnect also recovers that stuck state by invalidating unusable tokens and
+   requesting a fresh authorization URL.
+6. The route redirects to `/account/mcp-servers?auth=success|error` for user
    feedback. Tokens live only in the DO storage; they never reach D1 or the
    client.
 

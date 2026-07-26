@@ -143,13 +143,12 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				authError = getErrorMessage(error)
 			}
 
-			const target =
-				authSuccess && serverId
-					? new URL(
-							`/account/mcp-servers/${encodeURIComponent(serverId)}`,
-							request.url,
-						)
-					: new URL('/account/mcp-servers', request.url)
+			const target = serverId
+				? new URL(
+						`/account/mcp-servers/${encodeURIComponent(serverId)}`,
+						request.url,
+					)
+				: new URL('/account/mcp-servers', request.url)
 			if (authSuccess) {
 				target.searchParams.set('auth', 'success')
 				if (serverName) {

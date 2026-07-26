@@ -275,6 +275,29 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	} as never)
 	expect(failureResponse.status).toBe(303)
 	const failureLocation = new URL(failureResponse.headers.get('Location') ?? '')
+	expect(failureLocation.pathname).toBe('/account/mcp-servers')
 	expect(failureLocation.searchParams.get('auth')).toBe('error')
 	expect(failureLocation.searchParams.get('reason')).toBe('Invalid state.')
+
+	mockModule.handleOAuthCallback.mockResolvedValueOnce({
+		serverId: 'server-1',
+		authSuccess: false,
+		authError: 'Authorization completed, but no authorization link.',
+		serverName: 'linear',
+	})
+	const incompleteResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz.server-1',
+		),
+		params: {},
+	} as never)
+	expect(incompleteResponse.status).toBe(303)
+	const incompleteLocation = new URL(
+		incompleteResponse.headers.get('Location') ?? '',
+	)
+	expect(incompleteLocation.pathname).toBe('/account/mcp-servers/server-1')
+	expect(incompleteLocation.searchParams.get('auth')).toBe('error')
+	expect(incompleteLocation.searchParams.get('reason')).toContain(
+		'no authorization link',
+	)
 })
