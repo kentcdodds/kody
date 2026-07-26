@@ -114,7 +114,8 @@ export function isDurableObjectIsolateResetMessage(message: string) {
 export function isDurableObjectIsolateResetSentryEvent(event: ErrorEvent) {
 	return sentryEventMessages(event).some(
 		(message) =>
-			typeof message === 'string' && isDurableObjectIsolateResetMessage(message),
+			typeof message === 'string' &&
+			isDurableObjectIsolateResetMessage(message),
 	)
 }
 

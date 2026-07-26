@@ -213,8 +213,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			exception: {
 				values: [
 					{
-						value:
-							'Durable Object exceeded its CPU time limit and was reset',
+						value: 'Durable Object exceeded its CPU time limit and was reset',
 					},
 				],
 			},
