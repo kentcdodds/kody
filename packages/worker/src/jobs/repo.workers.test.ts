@@ -27,8 +27,7 @@ async function ensureJobsSchema() {
 			next_run_at TEXT NOT NULL,
 			run_count INTEGER NOT NULL DEFAULT 0,
 			success_count INTEGER NOT NULL DEFAULT 0,
-			error_count INTEGER NOT NULL DEFAULT 0,
-			run_history_json TEXT NOT NULL DEFAULT '[]'
+			error_count INTEGER NOT NULL DEFAULT 0
 		)`,
 	).run()
 	await env.APP_DB.prepare(`DELETE FROM jobs`).run()

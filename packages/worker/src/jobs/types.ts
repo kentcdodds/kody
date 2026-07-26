@@ -47,8 +47,6 @@ export type JobRecord = {
 	runCount: number
 	successCount: number
 	errorCount: number
-	// `jobs.run_history_json` is intentionally left unwritten; run records own
-	// history. Column stays until a follow-up drop migration.
 }
 
 export type JobView = Omit<JobRecord, 'userId'> & {

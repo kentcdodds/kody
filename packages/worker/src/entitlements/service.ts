@@ -344,7 +344,6 @@ export async function readUserD1StorageBytes(input: {
 					'caller_context_json',
 					'last_run_status',
 					'last_run_error',
-					'run_history_json',
 					'source_id',
 					'published_commit',
 					'storage_id',

@@ -10,14 +10,12 @@ import {
 	getRetentionPolicyCoverage,
 	memorySuppressionRetentionDays,
 	packageInvocationRetentionDays,
-	packageRuntimeRunRetentionDays,
 	platformFeedbackRetentionDays,
 	pruneAuditEventsForRetention,
 	pruneEmailDeliveryEventsForRetention,
 	pruneEntitlementDailyCountersForRetention,
 	pruneMemorySuppressionsForRetention,
 	prunePackageInvocationsForRetention,
-	prunePackageRuntimeRetention,
 	prunePlatformFeedbackForRetention,
 	prunePublishedBundleArtifactsForRetention,
 	pruneRetention,
@@ -101,44 +99,6 @@ function createD1FromSqlite(
 function createRetentionDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
-		CREATE TABLE package_runtime_runs (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			package_id TEXT NOT NULL,
-			package_kody_id TEXT NOT NULL,
-			source_id TEXT,
-			published_commit TEXT,
-			surface TEXT NOT NULL,
-			name TEXT,
-			status TEXT NOT NULL,
-			started_at TEXT NOT NULL,
-			finished_at TEXT,
-			duration_ms INTEGER,
-			error_name TEXT,
-			error_message TEXT,
-			storage_id TEXT,
-			job_id TEXT,
-			workflow_id TEXT,
-			invocation_id TEXT,
-			session_id TEXT,
-			idempotency_key TEXT,
-			parent_run_id TEXT,
-			metadata_json TEXT NOT NULL DEFAULT '{}',
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		);
-		CREATE TABLE package_runtime_logs (
-			id TEXT PRIMARY KEY,
-			run_id TEXT NOT NULL,
-			user_id TEXT NOT NULL,
-			package_id TEXT NOT NULL,
-			timestamp TEXT NOT NULL,
-			sequence INTEGER NOT NULL,
-			level TEXT NOT NULL,
-			message TEXT NOT NULL,
-			fields_json TEXT,
-			created_at TEXT NOT NULL
-		);
 		CREATE TABLE package_invocations (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
@@ -313,50 +273,6 @@ function daysAgo(days: number) {
 	return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString()
 }
 
-function insertRuntimeRun(
-	db: DatabaseSync,
-	input: {
-		id: string
-		packageId?: string
-		status?: string
-		startedAt: string
-		invocationId?: string | null
-		workflowId?: string | null
-		sessionId?: string | null
-		parentRunId?: string | null
-	},
-) {
-	db.prepare(
-		`INSERT INTO package_runtime_runs (
-			id, user_id, package_id, package_kody_id, surface, status, started_at,
-			invocation_id, workflow_id, session_id, parent_run_id, created_at, updated_at
-		) VALUES (?, 'user-1', ?, ?, 'export', ?, ?, ?, ?, ?, ?, ?, ?)`,
-	).run(
-		input.id,
-		input.packageId ?? 'pkg-1',
-		input.packageId ?? 'pkg-1',
-		input.status ?? 'success',
-		input.startedAt,
-		input.invocationId ?? null,
-		input.workflowId ?? null,
-		input.sessionId ?? null,
-		input.parentRunId ?? null,
-		input.startedAt,
-		input.startedAt,
-	)
-	db.prepare(
-		`INSERT INTO package_runtime_logs (
-			id, run_id, user_id, package_id, timestamp, sequence, level, message, created_at
-		) VALUES (?, ?, 'user-1', ?, ?, 0, 'log', 'message', ?)`,
-	).run(
-		`log-${input.id}`,
-		input.id,
-		input.packageId ?? 'pkg-1',
-		input.startedAt,
-		input.startedAt,
-	)
-}
-
 function insertEmailMessage(
 	db: DatabaseSync,
 	input: {
@@ -432,151 +348,6 @@ test('retention cron runs only on the hourly gate', () => {
 	expect(shouldRunRetentionCron(new Date('2026-07-07T03:05:00.000Z'))).toBe(
 		false,
 	)
-})
-
-test('runtime retention prunes old runs, caps per package, and keeps active references', async () => {
-	const { sqlite, db } = createRetentionDb()
-	const cutoff = daysAgo(packageRuntimeRunRetentionDays)
-	insertRuntimeRun(sqlite, { id: 'old-delete', startedAt: daysAgo(31) })
-	insertRuntimeRun(sqlite, { id: 'boundary-keep', startedAt: cutoff })
-	insertRuntimeRun(sqlite, {
-		id: 'running-keep',
-		status: 'running',
-		startedAt: daysAgo(31),
-	})
-	sqlite
-		.prepare(
-			`INSERT INTO package_invocations (
-			id, user_id, token_id, package_id, package_kody_id, export_name,
-			idempotency_key, request_hash, status, created_at, updated_at
-		) VALUES ('inv-active', 'user-1', 'token', 'pkg-1', 'pkg-1', '.', 'key', 'hash', 'in_progress', ?, ?)`,
-		)
-		.run(daysAgo(31), daysAgo(31))
-	insertRuntimeRun(sqlite, {
-		id: 'invocation-keep',
-		startedAt: daysAgo(31),
-		invocationId: 'inv-active',
-	})
-	sqlite
-		.prepare(
-			`INSERT INTO workflow_runs (
-			id, user_id, source_type, workflow_name, idempotency_key, run_at, status,
-			created_at, updated_at
-		) VALUES ('workflow-active', 'user-1', 'inline', 'wf', 'key', ?, 'running', ?, ?)`,
-		)
-		.run(daysAgo(31), daysAgo(31), daysAgo(31))
-	insertRuntimeRun(sqlite, {
-		id: 'workflow-keep',
-		startedAt: daysAgo(31),
-		workflowId: 'workflow-active',
-	})
-	sqlite
-		.prepare(
-			`INSERT INTO repo_sessions (
-			id, user_id, source_id, status, created_at, updated_at
-		) VALUES ('session-active', 'user-1', 'source-1', 'active', ?, ?)`,
-		)
-		.run(daysAgo(31), daysAgo(31))
-	insertRuntimeRun(sqlite, {
-		id: 'session-keep',
-		startedAt: daysAgo(31),
-		sessionId: 'session-active',
-	})
-	insertRuntimeRun(sqlite, { id: 'parent-keep', startedAt: daysAgo(31) })
-	insertRuntimeRun(sqlite, {
-		id: 'child-running',
-		status: 'running',
-		startedAt: daysAgo(1),
-		parentRunId: 'parent-keep',
-	})
-	for (let index = 0; index < 502; index += 1) {
-		insertRuntimeRun(sqlite, {
-			id: `cap-${String(index).padStart(3, '0')}`,
-			packageId: 'pkg-cap',
-			startedAt: new Date(now.getTime() - index * 1000).toISOString(),
-		})
-	}
-	sqlite
-		.prepare(
-			`INSERT INTO package_runtime_logs (
-			id, run_id, user_id, package_id, timestamp, sequence, level, message, created_at
-		) VALUES ('orphan-log', 'missing-run', 'user-1', 'pkg-1', ?, 0, 'log', 'orphan', ?)`,
-		)
-		.run(daysAgo(40), daysAgo(40))
-
-	const result = await prunePackageRuntimeRetention({ db, now, batchSize: 20 })
-
-	expect(result).toEqual({
-		deletedRuns: 3,
-		deletedLogs: 3,
-		deletedOrphanLogs: 1,
-		hasMore: false,
-	})
-	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain('boundary-keep')
-	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain('running-keep')
-	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain(
-		'invocation-keep',
-	)
-	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain('workflow-keep')
-	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain('session-keep')
-	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain('parent-keep')
-	expect(idsForTable(sqlite, 'package_runtime_runs')).not.toContain(
-		'old-delete',
-	)
-	expect(idsForTable(sqlite, 'package_runtime_runs')).not.toContain('cap-500')
-	expect(idsForTable(sqlite, 'package_runtime_runs')).not.toContain('cap-501')
-	expect(idsForTable(sqlite, 'package_runtime_logs')).not.toContain(
-		'orphan-log',
-	)
-})
-
-test('runtime cap retention ranks bounded candidate pairs largest first', async () => {
-	const { sqlite, db } = createRetentionDb()
-	for (const [packageId, runCount] of [
-		['pkg-large', 503],
-		['pkg-small', 502],
-	] as const) {
-		for (let index = 0; index < runCount; index += 1) {
-			insertRuntimeRun(sqlite, {
-				id: `${packageId}-${String(index).padStart(3, '0')}`,
-				packageId,
-				startedAt: new Date(now.getTime() - index * 1000).toISOString(),
-			})
-		}
-	}
-
-	const first = await prunePackageRuntimeRetention({
-		db,
-		now,
-		batchSize: 50,
-		maxCapPairs: 1,
-	})
-	expect(first.deletedRuns).toBe(3)
-	expect(first.hasMore).toBe(true)
-	expect(idsForTable(sqlite, 'package_runtime_runs')).not.toContain(
-		'pkg-large-502',
-	)
-	expect(idsForTable(sqlite, 'package_runtime_runs')).toContain('pkg-small-501')
-
-	const second = await prunePackageRuntimeRetention({
-		db,
-		now,
-		batchSize: 50,
-		maxCapPairs: 1,
-	})
-	expect(second.deletedRuns).toBe(2)
-	expect(idsForTable(sqlite, 'package_runtime_runs')).not.toContain(
-		'pkg-small-501',
-	)
-
-	const third = await prunePackageRuntimeRetention({
-		db,
-		now,
-		batchSize: 50,
-		maxCapPairs: 1,
-	})
-	expect(third.deletedRuns).toBe(0)
-	expect(third.hasMore).toBe(false)
 })
 
 test('package invocation and workflow retention keeps boundary and active idempotency rows', async () => {

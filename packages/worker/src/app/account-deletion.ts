@@ -286,8 +286,6 @@ async function listUserPackageServices(
 		userId,
 		baseUrl: 'https://account-deletion.invalid',
 		warnings,
-		// Legacy pre-#955 service arm via includeLegacyRuntimeRuns (issue #956).
-		includeLegacyRuntimeRuns: true,
 	})
 }
 

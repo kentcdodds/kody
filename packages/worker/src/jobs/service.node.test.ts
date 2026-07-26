@@ -738,7 +738,6 @@ function createDatabase(
 									run_count: params[20],
 									success_count: params[21],
 									error_count: params[22],
-									run_history_json: params[23] ?? '[]',
 								}
 								upsert(
 									'jobs',
@@ -779,7 +778,6 @@ function createDatabase(
 									run_count: params[17],
 									success_count: params[18],
 									error_count: params[19],
-									run_history_json: existingJob?.['run_history_json'] ?? '[]',
 									created_at: existingJob?.['created_at'] ?? params[11],
 								}
 								upsert(

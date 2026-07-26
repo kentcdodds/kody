@@ -25,7 +25,7 @@ test('account jobs detail URL persists across reload for a seeded job', async ({
 			id, user_id, name, source_id, published_commit, storage_id,
 			params_json, schedule_json, timezone, enabled, kill_switch_enabled,
 			caller_context_json, created_at, updated_at, next_run_at,
-			run_count, success_count, error_count, run_history_json
+			run_count, success_count, error_count
 		) VALUES (
 			${quoteSqlString(jobId)},
 			${quoteSqlString(userId)},
@@ -44,8 +44,7 @@ test('account jobs detail URL persists across reload for a seeded job', async ({
 			${quoteSqlString(nextRunAt)},
 			0,
 			0,
-			0,
-			'[]'
+			0
 		)`,
 	)
 

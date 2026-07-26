@@ -326,7 +326,7 @@ test('webhook_delivery_list pushes name filter and returns a full page for one w
 	})
 })
 
-test('webhook_delivery_list round-trips explicit outcomes and maps legacy records', async () => {
+test('webhook_delivery_list round-trips explicit outcomes', async () => {
 	mockModule.resolveSavedPackage.mockResolvedValue({
 		id: 'pkg-1',
 		kodyId: 'sentry-bridge',
@@ -382,38 +382,6 @@ test('webhook_delivery_list round-trips explicit outcomes and maps legacy record
 				},
 				errorMessage: 'invocation_failed',
 			}),
-			makeWebhookRun({
-				id: 'legacy-rejected',
-				name: 'sentry',
-				status: 'error',
-				startedAt: '2026-07-24T00:30:00.000Z',
-				metadata: {
-					httpStatus: 413,
-					payloadBytes: 4,
-				},
-				errorMessage: 'payload_too_large',
-			}),
-			makeWebhookRun({
-				id: 'legacy-failed',
-				name: 'sentry',
-				status: 'error',
-				startedAt: '2026-07-24T00:20:00.000Z',
-				metadata: {
-					httpStatus: 502,
-					payloadBytes: 5,
-				},
-				errorMessage: 'invocation_failed',
-			}),
-			makeWebhookRun({
-				id: 'legacy-delivered',
-				name: 'sentry',
-				status: 'success',
-				startedAt: '2026-07-24T00:10:00.000Z',
-				metadata: {
-					httpStatus: 202,
-					payloadBytes: 6,
-				},
-			}),
 		],
 		nextCursor: null,
 	})
@@ -428,8 +396,5 @@ test('webhook_delivery_list round-trips explicit outcomes and maps legacy record
 		['delivered-1', 'delivered'],
 		['rejected-1', 'rejected'],
 		['failed-1', 'failed'],
-		['legacy-rejected', 'rejected'],
-		['legacy-failed', 'failed'],
-		['legacy-delivered', 'delivered'],
 	])
 })

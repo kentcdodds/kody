@@ -1,6 +1,5 @@
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -1837,12 +1836,4 @@ test('storage_runner section treats malformed service storage ids as not found',
 			storageId: 'service:pkg%:worker%',
 		}),
 	).rejects.toThrow('Storage runner was not found for account export.')
-})
-
-test('account export source no longer reads package_runtime_runs', () => {
-	const source = readFileSync(
-		fileURLToPath(new URL('./account-export.ts', import.meta.url)),
-		'utf8',
-	)
-	expect(source.includes('package_runtime_runs')).toBe(false)
 })

@@ -113,8 +113,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'package_invocations' },
 	{ kind: 'user_id', table: 'package_invocation_tokens' },
 	{ kind: 'user_id', table: 'workflow_runs' },
-	{ kind: 'user_id', table: 'package_runtime_logs' },
-	{ kind: 'user_id', table: 'package_runtime_runs' },
 	{ kind: 'user_id', table: 'package_service_states' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },
 	{ kind: 'user_id', table: 'usage_rollups' },
@@ -167,7 +165,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'email_inbox_addresses' },
 	{ kind: 'user_id', table: 'email_inboxes' },
 	{ kind: 'user_id', table: 'email_sender_identities' },
-	{ kind: 'user_id', table: 'webhook_deliveries' },
 	{ kind: 'user_id', table: 'webhook_endpoints' },
 	{ kind: 'user_id', table: 'entitlement_daily_counters' },
 	{

@@ -597,7 +597,6 @@ function createJobRow(
 		run_count: job.runCount,
 		success_count: job.successCount,
 		error_count: job.errorCount,
-		run_history_json: '[]',
 	}
 }
 

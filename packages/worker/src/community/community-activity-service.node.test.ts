@@ -70,12 +70,15 @@ function createCommunityDb() {
 			'utf8',
 		),
 	)
-	sqlite.exec(`CREATE TABLE package_runtime_runs (
-		user_id TEXT NOT NULL,
-		package_id TEXT NOT NULL,
-		status TEXT NOT NULL,
-		started_at TEXT NOT NULL
-	)`)
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0037-package-runtime-debug.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
 	sqlite.exec(
 		readFileSync(
 			new URL(

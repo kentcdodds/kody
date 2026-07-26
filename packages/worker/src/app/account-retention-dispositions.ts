@@ -5,8 +5,6 @@ export type AccountRetentionDisposition =
 
 export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposition> =
 	[
-		{ table: 'package_runtime_runs', kind: 'scheduled_policy' },
-		{ table: 'package_runtime_logs', kind: 'scheduled_policy' },
 		{ table: 'package_invocations', kind: 'scheduled_policy' },
 		{
 			table: 'mcp_memory_conversation_suppressions',

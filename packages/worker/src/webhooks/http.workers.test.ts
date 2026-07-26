@@ -106,22 +106,6 @@ async function ensureSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
-			`CREATE TABLE IF NOT EXISTS webhook_deliveries (
-				id TEXT PRIMARY KEY,
-				endpoint_id TEXT NOT NULL,
-				user_id TEXT NOT NULL,
-				package_id TEXT NOT NULL,
-				webhook_name TEXT NOT NULL,
-				received_at TEXT NOT NULL,
-				outcome TEXT NOT NULL,
-				http_status INTEGER NOT NULL,
-				error TEXT,
-				payload_bytes INTEGER NOT NULL DEFAULT 0
-			)`,
-		)
-		.run()
-	await db
-		.prepare(
 			`CREATE TABLE IF NOT EXISTS remote_connector_settings (
 				id TEXT PRIMARY KEY,
 				user_id TEXT NOT NULL,
@@ -254,21 +238,9 @@ async function listDeliveries(userId: string, webhookName: string) {
 	return page.runs.filter((run) => run.name === webhookName)
 }
 
-async function countWebhookDeliveryRows(webhookName: string) {
-	const result = await env.APP_DB.prepare(
-		`SELECT COUNT(*) AS count
-		FROM webhook_deliveries
-		WHERE webhook_name = ?`,
-	)
-		.bind(webhookName)
-		.first<{ count: number }>()
-	return Number(result?.count ?? 0)
-}
-
 test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isolation', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	await ensureSchema(env.APP_DB)
-	await env.APP_DB.prepare(`DELETE FROM webhook_deliveries`).run()
 	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
 	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
 	await env.APP_DB.prepare(`DELETE FROM users`).run()
@@ -358,7 +330,6 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		httpStatus: 202,
 		outcome: 'delivered',
 	})
-	expect(await countWebhookDeliveryRows('sentry')).toBe(0)
 
 	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
 	mocks.invokePackageExport.mockClear()
@@ -374,7 +345,6 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		result: { handled: true },
 	})
 	expect((await listDeliveries(userId, 'sync-hook'))[0]?.status).toBe('success')
-	expect(await countWebhookDeliveryRows('sync-hook')).toBe(0)
 
 	expect(
 		(
@@ -482,7 +452,6 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 test('webhook delivery records with one DO write, real startedAt duration, and explicit outcome', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	await ensureSchema(env.APP_DB)
-	await env.APP_DB.prepare(`DELETE FROM webhook_deliveries`).run()
 	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
 	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
 	await env.APP_DB.prepare(`DELETE FROM users`).run()
@@ -549,7 +518,6 @@ test('webhook delivery records with one DO write, real startedAt duration, and e
 test('webhook delivery records explicit rejected and failed outcomes', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	await ensureSchema(env.APP_DB)
-	await env.APP_DB.prepare(`DELETE FROM webhook_deliveries`).run()
 	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
 	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
 	await env.APP_DB.prepare(`DELETE FROM users`).run()

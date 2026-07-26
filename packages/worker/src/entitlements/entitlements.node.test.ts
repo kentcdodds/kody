@@ -58,8 +58,6 @@ function createEntitlementsTestDb(
 				| 'saved_packages'
 				| 'jobs'
 				| 'repo_sessions'
-				| 'package_runtime_runs'
-				| 'package_runtime_logs'
 				| 'package_invocations'
 				| 'published_bundle_artifacts'
 				| 'secret_entries'
@@ -93,8 +91,6 @@ function createEntitlementsTestDb(
 			'jobs',
 			'repo_sessions',
 			'package_invocations',
-			'package_runtime_runs',
-			'package_runtime_logs',
 			'published_bundle_artifacts',
 			'workflow_runs',
 		] as const
@@ -1149,7 +1145,6 @@ test('countRunningPackageServices queries package_service_states with staleness 
 		}),
 	).toBe(2)
 	expect(queries[0]?.sql).toContain('FROM package_service_states')
-	expect(queries[0]?.sql).not.toContain('package_runtime_runs')
 	expect(queries[0]?.params).toEqual([
 		'user-1',
 		new Date(now.valueOf() - packageServiceStateStaleMs).toISOString(),

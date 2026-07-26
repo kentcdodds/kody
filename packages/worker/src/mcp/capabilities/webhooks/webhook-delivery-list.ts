@@ -52,12 +52,6 @@ function deliveryOutcome(
 ): (typeof webhookOutcomeValues)[number] {
 	const explicit = metadataOutcome(run.metadata)
 	if (explicit) return explicit
-	// Legacy records written before outcome was always stored in metadata.
-	if (run.status === 'success') return 'delivered'
-	const httpStatus = metadataNumber(run.metadata, ['http_status', 'httpStatus'])
-	if (httpStatus != null && httpStatus >= 400 && httpStatus < 500) {
-		return 'rejected'
-	}
 	return 'failed'
 }
 

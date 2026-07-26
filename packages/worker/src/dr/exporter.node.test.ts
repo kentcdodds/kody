@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { expect, test, vi } from 'vitest'
 import {
 	backupBlobKey,
@@ -590,12 +588,4 @@ test('DR inventory includes registry buckets and package_service_states services
 		'service:pkg-1:worker',
 	])
 	expect(inventory.every((entry) => entry.userId === 'user-a')).toBe(true)
-})
-
-test('DR exporter source no longer reads package_runtime_runs', () => {
-	const source = readFileSync(
-		fileURLToPath(new URL('./exporter.ts', import.meta.url)),
-		'utf8',
-	)
-	expect(source.includes('package_runtime_runs')).toBe(false)
 })

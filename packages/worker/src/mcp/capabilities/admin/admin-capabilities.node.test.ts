@@ -160,7 +160,6 @@ function createAdminCapabilityTestDb(input: {
 			'saved_packages',
 			'jobs',
 			'repo_sessions',
-			'package_runtime_runs',
 			'secret_entries',
 			'workflow_runs',
 		] as const

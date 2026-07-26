@@ -419,6 +419,10 @@
 		{
 			"filename": "0098-backfill-package-service-states.sql",
 			"sha256": "e10562862d228d694b0516bf278ef81bdfb8a27c2691e8299f13b81582c41eda"
+		},
+		{
+			"filename": "0099-drop-run-history-legacy.sql",
+			"sha256": "b3c25eb9855ddc2d15ec7c5d848e71e3fc25ddc8f4d247845a9c85216027bb26"
 		}
 	]
 }

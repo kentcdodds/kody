@@ -25,8 +25,6 @@ type JobRowRecord = {
 	run_count: number
 	success_count: number
 	error_count: number
-	// Intentionally left unwritten pending a follow-up drop migration.
-	run_history_json: string
 }
 
 export type JobRow = JobRowRecord & {
@@ -151,8 +149,6 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		run_count: record.runCount,
 		success_count: record.successCount,
 		error_count: record.errorCount,
-		// Column retained unread into JobRecord pending a follow-up drop migration.
-		run_history_json: String(row['run_history_json'] ?? '[]'),
 		record,
 		callerContextJson: String(row['caller_context_json']),
 		callerContext: parseJson<PersistedJobCallerContext | null>(
@@ -177,8 +173,8 @@ export async function insertJobRow(input: {
 				id, user_id, name, source_id, published_commit, repo_check_policy_json, storage_id, params_json, schedule_json, timezone, enabled,
 				kill_switch_enabled, caller_context_json, created_at, updated_at,
 				last_run_at, last_run_status, last_run_error, last_duration_ms,
-				next_run_at, run_count, success_count, error_count, run_history_json
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				next_run_at, run_count, success_count, error_count
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			serialized.id,
@@ -204,8 +200,6 @@ export async function insertJobRow(input: {
 			serialized.run_count,
 			serialized.success_count,
 			serialized.error_count,
-			// Intentionally left unwritten as history; default empty blob only.
-			'[]',
 		)
 		.run()
 }

@@ -42,15 +42,7 @@ export const publishedBundleArtifactRetentionBatchSize = 100
  * batch per table per hour.
  */
 export const retentionRunTimeBudgetMs = 20_000
-/**
- * Upper bound on distinct (user_id, package_id) pairs examined per runtime-run
- * cap batch, largest pairs first, so the cap prune never ranks the whole
- * table in one query.
- */
-export const packageRuntimeCapPairsPerBatch = 20
 
-export const packageRuntimeRunRetentionDays = 30
-export const packageRuntimeMaxRunsPerPackage = 500
 export const packageInvocationRetentionDays = 90
 export const memorySuppressionRetentionDays = 90
 export const workflowRunRetentionDays = 90
@@ -79,25 +71,6 @@ const terminalWorkflowStatusList = terminalWorkflowStatusValues
  * in `retention.node.test.ts` remains a second net for discovering new tables.
  */
 export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
-	// New run records self-prune inside the per-user RunLog Durable Object
-	// (age + count caps on every finish). These D1 lanes exist only to drain
-	// legacy package_runtime_runs / package_runtime_logs rows.
-	{
-		table: 'package_runtime_runs',
-		scope: 'per-user',
-		retentionDays: packageRuntimeRunRetentionDays,
-		maxRowsPerPartition: packageRuntimeMaxRunsPerPackage,
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'Runtime debug runs keep 30 days and at most 500 rows per user/package. Running or actively referenced runs are kept.',
-	},
-	{
-		table: 'package_runtime_logs',
-		scope: 'per-user',
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'Runtime logs follow retained runtime runs; orphan logs are pruned in small batches.',
-	},
 	{
 		table: 'package_invocations',
 		scope: 'per-user',
@@ -219,11 +192,6 @@ export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> 
 		}))
 
 export type RetentionPruneResult = {
-	runtimeRuns: {
-		deletedRuns: number
-		deletedLogs: number
-		deletedOrphanLogs: number
-	}
 	packageInvocations: number
 	memorySuppressions: number
 	workflowRuns: number
@@ -382,158 +350,6 @@ async function deletePublishedBundleArtifactRowIfStillStale(input: {
 			.run(),
 	)
 	return result.meta.changes ?? 0
-}
-
-/**
- * Keep-conditions shared by the age prune and the per-package cap prune.
- * Expects the outer query to alias package_runtime_runs as `run`.
- */
-const runtimeRunKeepConditions = `run.status != 'running'
-	AND NOT EXISTS (
-		SELECT 1
-		FROM package_invocations AS invocation
-		WHERE invocation.user_id = run.user_id
-			AND invocation.id = run.invocation_id
-			AND invocation.status = 'in_progress'
-	)
-	AND NOT EXISTS (
-		SELECT 1
-		FROM workflow_runs AS workflow
-		WHERE workflow.user_id = run.user_id
-			AND workflow.id = run.workflow_id
-			AND (
-				workflow.status IS NULL
-				OR workflow.status NOT IN (${terminalWorkflowStatusList})
-			)
-	)
-	AND NOT EXISTS (
-		SELECT 1
-		FROM repo_sessions AS session
-		WHERE session.user_id = run.user_id
-			AND session.id = run.session_id
-			AND session.status = 'active'
-	)
-	AND NOT EXISTS (
-		SELECT 1
-		FROM package_runtime_runs AS child_run
-		WHERE child_run.user_id = run.user_id
-			AND child_run.parent_run_id = run.id
-			AND child_run.status = 'running'
-	)`
-
-export async function prunePackageRuntimeRetention(input: {
-	db: D1Database
-	now?: Date
-	batchSize?: number
-	maxCapPairs?: number
-}) {
-	const now = input.now ?? new Date()
-	const cutoff = cutoffIso(now, packageRuntimeRunRetentionDays)
-	const batchSize = input.batchSize ?? retentionDefaultBatchSize
-	const maxCapPairs = input.maxCapPairs ?? packageRuntimeCapPairsPerBatch
-	const ageRunIds = await selectIds({
-		db: input.db,
-		bindings: [cutoff, batchSize],
-		sql: `SELECT id
-			FROM package_runtime_runs AS run
-			WHERE run.started_at < ?
-				AND ${runtimeRunKeepConditions}
-			ORDER BY run.started_at ASC, run.id ASC
-			LIMIT ?`,
-	})
-	const runIds = new Set<IdValue>(ageRunIds)
-	// The per-(user, package) cap prune examines a bounded set of the largest
-	// pairs per batch instead of ranking the whole table with a window
-	// function; remaining pairs are picked up by later batches or runs.
-	let capPairCount = 0
-	let capDeletedCandidates = 0
-	if (runIds.size < batchSize) {
-		const { results: pairs } = await runD1WithRetry(() =>
-			input.db
-				.prepare(
-					`SELECT user_id, package_id, COUNT(*) AS run_count
-				FROM package_runtime_runs
-				GROUP BY user_id, package_id
-				HAVING COUNT(*) > ?
-				ORDER BY run_count DESC
-				LIMIT ?`,
-				)
-				.bind(packageRuntimeMaxRunsPerPackage, maxCapPairs)
-				.all<{ user_id: string; package_id: string; run_count: number }>(),
-		)
-		capPairCount = (pairs ?? []).length
-		for (const pair of pairs ?? []) {
-			if (runIds.size >= batchSize) break
-			const capIds = await selectIds({
-				db: input.db,
-				bindings: [
-					pair.user_id,
-					pair.package_id,
-					pair.user_id,
-					pair.package_id,
-					packageRuntimeMaxRunsPerPackage,
-					batchSize - runIds.size,
-				],
-				sql: `SELECT id
-					FROM package_runtime_runs AS run
-					WHERE run.user_id = ?
-						AND run.package_id = ?
-						AND run.id NOT IN (
-							SELECT recent.id
-							FROM package_runtime_runs AS recent
-							WHERE recent.user_id = ?
-								AND recent.package_id = ?
-							ORDER BY recent.started_at DESC, recent.id DESC
-							LIMIT ?
-						)
-						AND ${runtimeRunKeepConditions}
-					ORDER BY run.started_at ASC, run.id ASC
-					LIMIT ?`,
-			})
-			for (const id of capIds) {
-				capDeletedCandidates += 1
-				runIds.add(id)
-			}
-		}
-	}
-	const ids = [...runIds]
-	const deletedLogs = await deleteByIds({
-		db: input.db,
-		table: 'package_runtime_logs',
-		idColumn: 'run_id',
-		ids,
-	})
-	const deletedRuns = await deleteByIds({
-		db: input.db,
-		table: 'package_runtime_runs',
-		idColumn: 'id',
-		ids,
-	})
-	const orphanLogIds = await selectIds({
-		db: input.db,
-		bindings: [batchSize],
-		sql: `SELECT log.id
-			FROM package_runtime_logs AS log
-			WHERE NOT EXISTS (
-				SELECT 1
-				FROM package_runtime_runs AS run
-				WHERE run.user_id = log.user_id AND run.id = log.run_id
-			)
-			ORDER BY log.created_at ASC, log.id ASC
-			LIMIT ?`,
-	})
-	const deletedOrphanLogs = await deleteByIds({
-		db: input.db,
-		table: 'package_runtime_logs',
-		idColumn: 'id',
-		ids: orphanLogIds,
-	})
-	const hasMore =
-		ageRunIds.length >= batchSize ||
-		ids.length >= batchSize ||
-		orphanLogIds.length >= batchSize ||
-		(capDeletedCandidates > 0 && capPairCount >= maxCapPairs)
-	return { deletedRuns, deletedLogs, deletedOrphanLogs, hasMore }
 }
 
 export async function prunePackageInvocationsForRetention(input: {
@@ -1083,7 +899,6 @@ export async function pruneRetention(input: {
 	// for blob reasons so a blocked head cannot wedge later batches.
 	let emailMessagesCursor: EmailMessageRetentionCursor | null = null
 	const result: RetentionPruneResult = {
-		runtimeRuns: { deletedRuns: 0, deletedLogs: 0, deletedOrphanLogs: 0 },
 		packageInvocations: 0,
 		memorySuppressions: 0,
 		workflowRuns: 0,
@@ -1130,17 +945,6 @@ export async function pruneRetention(input: {
 		done: boolean
 		run: () => Promise<boolean>
 	}> = [
-		{
-			table: 'package_runtime_runs',
-			done: false,
-			run: async () => {
-				const batch = await prunePackageRuntimeRetention({ db, now })
-				result.runtimeRuns.deletedRuns += batch.deletedRuns
-				result.runtimeRuns.deletedLogs += batch.deletedLogs
-				result.runtimeRuns.deletedOrphanLogs += batch.deletedOrphanLogs
-				return batch.hasMore
-			},
-		},
 		countTask(
 			'package_invocations',
 			() => prunePackageInvocationsForRetention({ db, now }),

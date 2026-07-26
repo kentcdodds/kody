@@ -65,19 +65,12 @@ function upsertPackageService(
  * deletion never aborts for a missing manifest. Pass `warnings` so callers can
  * surface that degradation in their result (incomplete deletion must not look
  * clean).
- *
- * Pass `includeLegacyRuntimeRuns: true` on the deletion path only. That arm
- * catches pre-#955 services whose DOs still exist but never projected into
- * `package_service_states` and are no longer declared in the manifest.
- * Migration 0097 backfills storage-bucket ownership, not service identity.
- * Remove once `package_runtime_runs` drains (~2026-08-25); tracked by #956.
  */
 export async function listAccountUserPackageServices(input: {
 	env: Env
 	userId: string
 	baseUrl: string
 	warnings?: Array<string>
-	includeLegacyRuntimeRuns?: boolean
 }): Promise<Array<AccountUserPackageService>> {
 	const stateRows = await input.env.APP_DB.prepare(
 		`SELECT
@@ -142,42 +135,6 @@ export async function listAccountUserPackageServices(input: {
 		)
 	}
 
-	if (input.includeLegacyRuntimeRuns) {
-		// Legacy arm for account deletion only (issue #956): remove once
-		// package_runtime_runs drains (~2026-08-25). Covers pre-#955 service
-		// DOs that never projected into package_service_states and are no
-		// longer declared in the package manifest. 0097 backfills storage
-		// bucket ids, not (packageId, serviceName) tuples.
-		const legacyRows = await input.env.APP_DB.prepare(
-			`SELECT
-				r.package_id AS package_id,
-				COALESCE(p.kody_id, r.package_kody_id) AS kody_id,
-				COALESCE(p.source_id, r.source_id) AS source_id,
-				r.name AS name
-			FROM package_runtime_runs AS r
-			LEFT JOIN saved_packages AS p
-				ON p.id = r.package_id AND p.user_id = r.user_id
-			WHERE r.user_id = ?
-				AND r.surface = 'service'
-				AND r.name IS NOT NULL`,
-		)
-			.bind(input.userId)
-			.all<{
-				package_id: string
-				kody_id: string | null
-				source_id: string | null
-				name: string
-			}>()
-		for (const row of legacyRows.results ?? []) {
-			upsertPackageService(byKey, {
-				packageId: row.package_id,
-				kodyId: row.kody_id ?? '',
-				sourceId: row.source_id ?? '',
-				serviceName: row.name,
-			})
-		}
-	}
-
 	return Array.from(byKey.values()).sort((left, right) => {
 		const byPackage = left.packageId.localeCompare(right.packageId)
 		if (byPackage !== 0) return byPackage
@@ -201,7 +158,6 @@ export async function listAccountUserStorageIds(input: {
 	userId: string
 	baseUrl: string
 	warnings?: Array<string>
-	includeLegacyRuntimeRuns?: boolean
 	packageServices?: ReadonlyArray<AccountUserPackageService>
 }): Promise<Array<string>> {
 	const [

@@ -733,8 +733,6 @@ function createEntitlementsDatabase(input: {
 								'jobs',
 								'repo_sessions',
 								'package_invocations',
-								'package_runtime_runs',
-								'package_runtime_logs',
 								'published_bundle_artifacts',
 							]
 							if (
