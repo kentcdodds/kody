@@ -369,8 +369,7 @@ test('value service rejects unavailable scoped storage', async () => {
 	).rejects.toSatisfy(
 		(error: unknown) =>
 			error instanceof McpCallerError &&
-			error.message ===
-				'Value scope "session" is unavailable in this context.',
+			error.message === 'Value scope "session" is unavailable in this context.',
 	)
 })
 
