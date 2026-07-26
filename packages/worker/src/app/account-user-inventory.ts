@@ -27,6 +27,15 @@ function packageServiceKey(service: AccountUserPackageService) {
 	return `${service.packageId}\0${service.serviceName}`
 }
 
+function reportManifestEnumerationWarning(
+	warnings: Array<string> | undefined,
+	message: string,
+) {
+	console.warn(message)
+	if (!warnings) return
+	if (!warnings.includes(message)) warnings.push(message)
+}
+
 /**
  * Enumerate package services for account deletion and one-shot full export
  * inventory. Not for paginated export discovery — that path uses D1 keyset SQL
@@ -35,12 +44,15 @@ function packageServiceKey(service: AccountUserPackageService) {
  * Authoritative sources are the package manifest (`kody.services`) unioned with
  * projected `package_service_states` rows. Manifest loads can fail (network /
  * source bindings); those failures warn and fall back to state-table rows so
- * deletion never aborts for a missing manifest.
+ * deletion never aborts for a missing manifest. Pass `warnings` so callers can
+ * surface that degradation in their result (incomplete deletion must not look
+ * clean).
  */
 export async function listAccountUserPackageServices(input: {
 	env: Env
 	userId: string
 	baseUrl: string
+	warnings?: Array<string>
 }): Promise<Array<AccountUserPackageService>> {
 	const stateRows = await input.env.APP_DB.prepare(
 		`SELECT
@@ -105,13 +117,15 @@ export async function listAccountUserPackageServices(input: {
 					byKey.set(key, entry)
 				}
 			} catch (error) {
-				console.warn(
+				reportManifestEnumerationWarning(
+					input.warnings,
 					`Failed to load package manifest for service enumeration (package ${savedPackage.id}): ${getErrorMessage(error)}`,
 				)
 			}
 		}
 	} catch (error) {
-		console.warn(
+		reportManifestEnumerationWarning(
+			input.warnings,
 			`Failed to enumerate package services from manifests for user ${input.userId}: ${getErrorMessage(error)}`,
 		)
 	}
@@ -135,6 +149,7 @@ export async function listAccountUserStorageIds(input: {
 	env: Env
 	userId: string
 	baseUrl: string
+	warnings?: Array<string>
 }): Promise<Array<string>> {
 	const [
 		jobRows,

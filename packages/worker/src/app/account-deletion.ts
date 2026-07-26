@@ -193,11 +193,16 @@ async function listUserVectorIds(env: Env, userId: string) {
 	return ids
 }
 
-async function listUserStorageIds(env: Env, userId: string) {
+async function listUserStorageIds(
+	env: Env,
+	userId: string,
+	warnings?: Array<string>,
+) {
 	return await listAccountUserStorageIds({
 		env,
 		userId,
 		baseUrl: 'https://account-deletion.invalid',
+		warnings,
 	})
 }
 
@@ -269,11 +274,16 @@ async function listUserMcpServers(env: Env, userId: string) {
 	return (rows.results ?? []).map((row) => ({ id: row.id }))
 }
 
-async function listUserPackageServices(env: Env, userId: string) {
+async function listUserPackageServices(
+	env: Env,
+	userId: string,
+	warnings?: Array<string>,
+) {
 	return await listAccountUserPackageServices({
 		env,
 		userId,
 		baseUrl: 'https://account-deletion.invalid',
+		warnings,
 	})
 }
 
@@ -348,10 +358,12 @@ async function collectUserDeletionInventory(input: {
 			recordInventoryError('vector ids', error)
 			return [] as Array<string>
 		}),
-		listUserStorageIds(input.env, input.userId).catch((error) => {
-			recordInventoryError('storage ids', error)
-			return [] as Array<string>
-		}),
+		listUserStorageIds(input.env, input.userId, input.warnings).catch(
+			(error) => {
+				recordInventoryError('storage ids', error)
+				return [] as Array<string>
+			},
+		),
 		collectAccountR2Inventory({
 			env: input.env,
 			userId: input.userId,
@@ -389,10 +401,12 @@ async function collectUserDeletionInventory(input: {
 				return [] as Array<McpAgentSession>
 			},
 		),
-		listUserPackageServices(input.env, input.userId).catch((error) => {
-			recordInventoryError('package services', error)
-			return [] as Array<UserPackageServiceSnapshot>
-		}),
+		listUserPackageServices(input.env, input.userId, input.warnings).catch(
+			(error) => {
+				recordInventoryError('package services', error)
+				return [] as Array<UserPackageServiceSnapshot>
+			},
+		),
 	])
 	const bundleKvKeys = await listUserBundleKvKeys({
 		env: input.env,

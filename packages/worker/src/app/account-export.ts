@@ -15,6 +15,8 @@ import {
 	readAccountR2ExportPage,
 } from '#app/account-r2-export.ts'
 import { exportJobManagerForUser } from '#worker/jobs/manager-client.ts'
+import { listPackageServices } from '#worker/package-registry/manifest.ts'
+import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
 	buildPackageServiceStorageId,
 	packageServiceRpc,
@@ -447,11 +449,16 @@ async function collectD1TableRows(input: {
 	return section
 }
 
-async function listUserStorageIds(env: Env, userId: string) {
+async function listUserStorageIds(
+	env: Env,
+	userId: string,
+	warnings?: Array<string>,
+) {
 	return await listAccountUserStorageIds({
 		env,
 		userId,
 		baseUrl: 'https://account-export.invalid',
+		warnings,
 	})
 }
 
@@ -467,6 +474,106 @@ const exportStorageIdBaseSql = `SELECT id FROM (
 		WHERE user_id = ? AND has_app = 1
 )`
 
+function exportStorageIdBaseParams(userId: string) {
+	return [userId, userId, userId, userId] as const
+}
+
+async function isExportDiscoverableStorageId(
+	env: Env,
+	userId: string,
+	storageId: string,
+) {
+	const inBase = await env.APP_DB.prepare(
+		`SELECT 1 AS owned FROM (${exportStorageIdBaseSql}) WHERE id = ?`,
+	)
+		.bind(...exportStorageIdBaseParams(userId), storageId)
+		.first<{ owned: number }>()
+	if (inBase?.owned === 1) return true
+	if (!storageId.startsWith('service:')) return false
+	const [packagePart, servicePart] = storageId
+		.slice('service:'.length)
+		.split(':')
+	if (!packagePart || !servicePart) return false
+	const packageId = decodeURIComponent(packagePart)
+	const serviceName = decodeURIComponent(servicePart)
+	const row = await env.APP_DB.prepare(
+		`SELECT 1 AS owned
+		FROM package_service_states
+		WHERE user_id = ? AND package_id = ? AND service_name = ?`,
+	)
+		.bind(userId, packageId, serviceName)
+		.first<{ owned: number }>()
+	return row?.owned === 1
+}
+
+async function resolveExportPackageService(input: {
+	env: Env
+	userId: string
+	packageId: string
+	serviceName: string
+	warnings: Array<string>
+}) {
+	const stateRow = await input.env.APP_DB.prepare(
+		`SELECT
+			s.package_id AS package_id,
+			p.kody_id AS kody_id,
+			p.source_id AS source_id,
+			s.service_name AS name
+		FROM package_service_states AS s
+		LEFT JOIN saved_packages AS p
+			ON p.id = s.package_id AND p.user_id = s.user_id
+		WHERE s.user_id = ?
+			AND s.package_id = ?
+			AND s.service_name = ?`,
+	)
+		.bind(input.userId, input.packageId, input.serviceName)
+		.first<{
+			package_id: string
+			kody_id: string | null
+			source_id: string | null
+			name: string
+		}>()
+	if (stateRow) {
+		return {
+			packageId: stateRow.package_id,
+			kodyId: stateRow.kody_id ?? '',
+			sourceId: stateRow.source_id ?? '',
+			serviceName: stateRow.name,
+		}
+	}
+
+	const savedPackage = await input.env.APP_DB.prepare(
+		`SELECT id, kody_id, source_id
+		FROM saved_packages
+		WHERE user_id = ? AND id = ?`,
+	)
+		.bind(input.userId, input.packageId)
+		.first<{ id: string; kody_id: string; source_id: string }>()
+	if (!savedPackage) return null
+	try {
+		const loaded = await loadPackageManifestBySourceId({
+			env: input.env,
+			baseUrl: 'https://account-export.invalid',
+			userId: input.userId,
+			sourceId: savedPackage.source_id,
+		})
+		const declared = listPackageServices(loaded.manifest).some(
+			(service) => service.name === input.serviceName,
+		)
+		if (!declared) return null
+		return {
+			packageId: savedPackage.id,
+			kodyId: savedPackage.kody_id,
+			sourceId: savedPackage.source_id,
+			serviceName: input.serviceName,
+		}
+	} catch (error) {
+		input.warnings.push(
+			`Failed to load package manifest for service export (${input.packageId}/${input.serviceName}): ${getErrorMessage(error)}`,
+		)
+		return null
+	}
+}
 async function listUserSourceSnapshots(env: Env, userId: string) {
 	const rows = await selectRows<{
 		id: string
@@ -528,11 +635,16 @@ async function listUserRemoteConnectors(env: Env, userId: string) {
 	}))
 }
 
-async function listUserPackageServices(env: Env, userId: string) {
+async function listUserPackageServices(
+	env: Env,
+	userId: string,
+	warnings?: Array<string>,
+) {
 	return await listAccountUserPackageServices({
 		env,
 		userId,
 		baseUrl: 'https://account-export.invalid',
+		warnings,
 	})
 }
 
@@ -620,12 +732,14 @@ async function collectInventory(input: {
 		communityListingIds,
 		r2ObjectCount,
 	] = await Promise.all([
-		listUserStorageIds(input.env, input.userId).catch((error) => {
-			input.warnings.push(
-				`Failed to enumerate storage ids: ${getErrorMessage(error)}`,
-			)
-			return [] as Array<string>
-		}),
+		listUserStorageIds(input.env, input.userId, input.warnings).catch(
+			(error) => {
+				input.warnings.push(
+					`Failed to enumerate storage ids: ${getErrorMessage(error)}`,
+				)
+				return [] as Array<string>
+			},
+		),
 		listUserSourceSnapshots(input.env, input.userId).catch((error) => {
 			input.warnings.push(
 				`Failed to enumerate entity sources: ${getErrorMessage(error)}`,
@@ -644,12 +758,14 @@ async function collectInventory(input: {
 			)
 			return [] as Array<UserRemoteConnectorSnapshot>
 		}),
-		listUserPackageServices(input.env, input.userId).catch((error) => {
-			input.warnings.push(
-				`Failed to enumerate package services: ${getErrorMessage(error)}`,
-			)
-			return [] as Array<UserPackageServiceSnapshot>
-		}),
+		listUserPackageServices(input.env, input.userId, input.warnings).catch(
+			(error) => {
+				input.warnings.push(
+					`Failed to enumerate package services: ${getErrorMessage(error)}`,
+				)
+				return [] as Array<UserPackageServiceSnapshot>
+			},
+		),
 		listUserCommunityListingIds(input.env, input.userId).catch((error) => {
 			input.warnings.push(
 				`Failed to enumerate community listings: ${getErrorMessage(error)}`,
@@ -713,8 +829,25 @@ async function countScalar(
 }
 
 async function countUserStorageIds(env: Env, userId: string) {
-	const ids = await listUserStorageIds(env, userId)
-	return ids.length
+	// Match durable_object_summaries discovery: base D1 union plus service
+	// storage ids from package_service_states that are not already in base.
+	const [baseRows, serviceRows] = await Promise.all([
+		env.APP_DB.prepare(exportStorageIdBaseSql)
+			.bind(...exportStorageIdBaseParams(userId))
+			.all<{ id: string }>(),
+		env.APP_DB.prepare(
+			`SELECT package_id, service_name AS name
+			FROM package_service_states
+			WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.all<{ package_id: string; name: string }>(),
+	])
+	const ids = new Set((baseRows.results ?? []).map((row) => row.id))
+	for (const row of serviceRows.results ?? []) {
+		ids.add(buildPackageServiceStorageId(row.package_id, row.name))
+	}
+	return ids.size
 }
 
 async function countUserBundleKvKeys(input: {
@@ -829,10 +962,17 @@ async function collectManifestInventoryCounts(input: {
 				[input.userId],
 			),
 		),
-		safeCount('package services', async () => {
-			const services = await listUserPackageServices(input.env, input.userId)
-			return services.length
-		}),
+		safeCount('package services', async () =>
+			countScalar(
+				input.env,
+				`SELECT COUNT(*) AS count FROM (
+					SELECT DISTINCT package_id, service_name
+					FROM package_service_states
+					WHERE user_id = ?
+				)`,
+				[input.userId],
+			),
+		),
 		safeCount('artifact repos', async () =>
 			countScalar(
 				input.env,
@@ -1541,8 +1681,11 @@ export async function readAccountExportSection(input: {
 		if (!input.storageId) {
 			throw new Error('storage_id is required when section is storage_runner.')
 		}
-		const storageIds = await listUserStorageIds(input.env, input.mcpUserId)
-		const storageOwned = storageIds.includes(input.storageId)
+		const storageOwned = await isExportDiscoverableStorageId(
+			input.env,
+			input.mcpUserId,
+			input.storageId,
+		)
 		if (!storageOwned) {
 			throw new Error('Storage runner was not found for account export.')
 		}
@@ -1665,12 +1808,13 @@ export async function readAccountExportSection(input: {
 				'package_id and service_name are required when section is package_service.',
 			)
 		}
-		const services = await listUserPackageServices(input.env, input.mcpUserId)
-		const service = services.find(
-			(entry) =>
-				entry.packageId === input.packageId &&
-				entry.serviceName === input.serviceName,
-		)
+		const service = await resolveExportPackageService({
+			env: input.env,
+			userId: input.mcpUserId,
+			packageId: input.packageId,
+			serviceName: input.serviceName,
+			warnings,
+		})
 		if (!service) throw new Error('Package service was not found for export.')
 		const [exported] = await exportPackageServices({
 			env: input.env,
@@ -1894,20 +2038,23 @@ export async function readAccountExportSection(input: {
 			const pageRows = rows.results ?? []
 			const selected = pageRows.slice(0, pageSize)
 			const resultItems: Array<{ kind: string; storageId: string }> = []
-			for (const row of selected) {
-				const storageId = buildPackageServiceStorageId(row.package_id, row.name)
+			const candidateIds = selected.map((row) =>
+				buildPackageServiceStorageId(row.package_id, row.name),
+			)
+			const alreadyInBase = new Set<string>()
+			if (candidateIds.length > 0) {
+				const placeholders = candidateIds.map(() => '?').join(', ')
 				const existing = await input.env.APP_DB.prepare(
-					`SELECT 1 AS owned FROM (${exportStorageIdBaseSql}) WHERE id = ?`,
+					`SELECT id FROM (${exportStorageIdBaseSql}) WHERE id IN (${placeholders})`,
 				)
-					.bind(
-						input.mcpUserId,
-						input.mcpUserId,
-						input.mcpUserId,
-						input.mcpUserId,
-						storageId,
-					)
-					.first<{ owned: number }>()
-				if (existing?.owned !== 1) {
+					.bind(...exportStorageIdBaseParams(input.mcpUserId), ...candidateIds)
+					.all<{ id: string }>()
+				for (const row of existing.results ?? []) {
+					alreadyInBase.add(row.id)
+				}
+			}
+			for (const storageId of candidateIds) {
+				if (!alreadyInBase.has(storageId)) {
 					resultItems.push({ kind: input.kind, storageId })
 				}
 			}

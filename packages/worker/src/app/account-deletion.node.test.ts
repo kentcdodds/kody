@@ -180,8 +180,7 @@ function createTestDb(
 							}
 							if (
 								lower.includes('from package_service_states as s') &&
-								lower.includes('left join saved_packages as p') &&
-								!lower.includes('from package_runtime_runs')
+								lower.includes('left join saved_packages as p')
 							) {
 								const seen = new Set<string>()
 								results = []
@@ -217,92 +216,6 @@ function createTestDb(
 											String(right.storageId),
 										),
 									)
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
-								lower.includes('select distinct package_id, name from (') &&
-								lower.includes('from package_service_states') &&
-								lower.includes('from package_runtime_runs')
-							) {
-								const seen = new Set<string>()
-								results = []
-								for (const row of rows.package_service_states ?? []) {
-									if (row['user_id'] !== userId) continue
-									const key = `${String(row['package_id'])}:${String(row['service_name'])}`
-									if (seen.has(key)) continue
-									seen.add(key)
-									results.push({
-										package_id: row['package_id'],
-										name: row['service_name'],
-									})
-								}
-								for (const row of rows.package_runtime_runs ?? []) {
-									if (
-										row['user_id'] !== userId ||
-										row['surface'] !== 'service' ||
-										row['name'] == null
-									) {
-										continue
-									}
-									const key = `${String(row['package_id'])}:${String(row['name'])}`
-									if (seen.has(key)) continue
-									seen.add(key)
-									results.push({
-										package_id: row['package_id'],
-										name: row['name'],
-									})
-								}
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
-								lower.includes('from package_service_states as s') &&
-								lower.includes('from package_runtime_runs as r')
-							) {
-								const seen = new Set<string>()
-								results = []
-								for (const row of rows.package_service_states ?? []) {
-									if (row['user_id'] !== userId) continue
-									const savedPackage = (rows.saved_packages ?? []).find(
-										(pkg) =>
-											pkg['id'] === row['package_id'] &&
-											pkg['user_id'] === row['user_id'],
-									)
-									const key = `${String(row['package_id'])}:${String(row['service_name'])}`
-									if (seen.has(key)) continue
-									seen.add(key)
-									results.push({
-										package_id: row['package_id'],
-										kody_id: savedPackage?.['kody_id'] ?? null,
-										source_id: savedPackage?.['source_id'] ?? null,
-										name: row['service_name'],
-									})
-								}
-								for (const row of rows.package_runtime_runs ?? []) {
-									if (
-										row['user_id'] !== userId ||
-										row['surface'] !== 'service' ||
-										row['name'] == null
-									) {
-										continue
-									}
-									const savedPackage = (rows.saved_packages ?? []).find(
-										(pkg) =>
-											pkg['id'] === row['package_id'] &&
-											pkg['user_id'] === row['user_id'],
-									)
-									const sourceId =
-										savedPackage?.['source_id'] ?? row['source_id']
-									const key = `${String(row['package_id'])}:${String(row['name'])}`
-									if (seen.has(key)) continue
-									seen.add(key)
-									results.push({
-										package_id: row['package_id'],
-										kody_id:
-											savedPackage?.['kody_id'] ?? row['package_kody_id'],
-										source_id: sourceId,
-										name: row['name'],
-									})
-								}
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
@@ -2233,23 +2146,35 @@ test('account deletion continues when manifest load fails and still purges state
 	loadManifest.mockRejectedValue(new Error('manifest unavailable'))
 
 	try {
-		const result = await deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				BUNDLE_ARTIFACTS_KV: {
-					get: async () => null,
-					async list() {
-						return { keys: [], list_complete: true as const }
+		let result
+		try {
+			result = await deleteUserAccount({
+				env: createSuccessfulDeletionEnv(db, {
+					BUNDLE_ARTIFACTS_KV: {
+						get: async () => null,
+						async list() {
+							return { keys: [], list_complete: true as const }
+						},
+						delete: async () => undefined,
 					},
-					delete: async () => undefined,
-				},
-				PACKAGE_SERVICE_INSTANCE: {
-					idFromName: (name: string) => name as unknown as DurableObjectId,
-					get: () => ({ fetch: serviceFetch }),
-				},
-			}),
-			dbUserId: 1,
-			mcpUserId: userId,
-		})
+					PACKAGE_SERVICE_INSTANCE: {
+						idFromName: (name: string) => name as unknown as DurableObjectId,
+						get: () => ({ fetch: serviceFetch }),
+					},
+				}),
+				dbUserId: 1,
+				mcpUserId: userId,
+			})
+		} catch (error) {
+			expect(error).toBeInstanceOf(AccountDeletionCleanupError)
+			const cleanupError = error as AccountDeletionCleanupError
+			expect(
+				cleanupError.cleanupErrors.some((warning) =>
+					warning.includes('Failed to load package manifest'),
+				),
+			).toBe(true)
+			result = cleanupError.partialResult
+		}
 
 		expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
 		const request = serviceFetch.mock.calls[0]?.[0] as Request
@@ -2266,6 +2191,7 @@ test('account deletion continues when manifest load fails and still purges state
 	} finally {
 		loadManifest.mockRestore()
 		listSaved.mockRestore()
+		consoleWarn.mockReset()
 	}
 })
 
