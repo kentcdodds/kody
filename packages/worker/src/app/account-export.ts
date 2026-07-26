@@ -15,10 +15,7 @@ import {
 	readAccountR2ExportPage,
 } from '#app/account-r2-export.ts'
 import { exportJobManagerForUser } from '#worker/jobs/manager-client.ts'
-import {
-	buildPackageServiceStorageId,
-	packageServiceRpc,
-} from '#worker/package-runtime/package-service.ts'
+import { packageServiceRpc } from '#worker/package-runtime/package-service.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
@@ -29,10 +26,13 @@ import { userScopedConnectorSessionKey } from '#worker/remote-connector/connecto
 import { type RemoteConnectorSessionExport } from '#worker/remote-connector/types.ts'
 import {
 	exportRunRecords,
-	listRunRecordStorageIds,
 	summarizeRunRecords,
 } from '#worker/run-records/service.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
+import {
+	listAccountUserPackageServices,
+	listAccountUserStorageIds,
+} from '#app/account-user-inventory.ts'
 
 const accountExportSchemaVersion = 1
 const defaultExportPageSize = 100
@@ -445,67 +445,11 @@ async function collectD1TableRows(input: {
 }
 
 async function listUserStorageIds(env: Env, userId: string) {
-	const [
-		jobRows,
-		archivedRows,
-		runtimeRows,
-		packageRows,
-		serviceRows,
-		runRecordStorageIds,
-	] = await Promise.all([
-		selectRows<{ storage_id: string }>(
-			env,
-			`SELECT storage_id FROM jobs WHERE user_id = ? AND storage_id IS NOT NULL`,
-			[userId],
-		),
-		selectRows<{ storage_id: string }>(
-			env,
-			`SELECT storage_id FROM archived_job_artifacts WHERE user_id = ? AND storage_id IS NOT NULL`,
-			[userId],
-		),
-		// Keep reading package_runtime_runs for storage ids: that table still
-		// holds legacy rows written before RunLog, and is deliberately not
-		// dropped yet. Remove this D1 read once the follow-up drop migration
-		// lands.
-		selectRows<{ storage_id: string }>(
-			env,
-			`SELECT storage_id FROM package_runtime_runs WHERE user_id = ? AND storage_id IS NOT NULL`,
-			[userId],
-		),
-		selectRows<{ id: string }>(
-			env,
-			`SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1`,
-			[userId],
-		),
-		selectRows<{ package_id: string; name: string }>(
-			env,
-			`SELECT DISTINCT package_id, name FROM (
-				SELECT package_id, service_name AS name
-				FROM package_service_states
-				WHERE user_id = ?
-				UNION
-				-- Legacy arm: remove once the follow-up drop migration for
-				-- package_runtime_runs lands.
-				SELECT package_id, name
-				FROM package_runtime_runs
-				WHERE user_id = ?
-					AND surface = 'service'
-					AND name IS NOT NULL
-			)`,
-			[userId, userId],
-		),
-		listRunRecordStorageIds({ env, userId }),
-	])
-	return uniqueStrings([
-		...jobRows.map((row) => row.storage_id),
-		...archivedRows.map((row) => row.storage_id),
-		...runtimeRows.map((row) => row.storage_id),
-		...packageRows.map((row) => row.id),
-		...serviceRows.map((row) =>
-			buildPackageServiceStorageId(row.package_id, row.name),
-		),
-		...runRecordStorageIds,
-	])
+	return await listAccountUserStorageIds({
+		env,
+		userId,
+		baseUrl: 'https://account-export.invalid',
+	})
 }
 
 async function listUserSourceSnapshots(env: Env, userId: string) {
@@ -570,51 +514,11 @@ async function listUserRemoteConnectors(env: Env, userId: string) {
 }
 
 async function listUserPackageServices(env: Env, userId: string) {
-	const rows = await selectRows<{
-		package_id: string
-		kody_id: string | null
-		source_id: string | null
-		name: string
-	}>(
+	return await listAccountUserPackageServices({
 		env,
-		`SELECT DISTINCT
-			package_id,
-			kody_id,
-			source_id,
-			name
-		FROM (
-			SELECT
-				s.package_id AS package_id,
-				p.kody_id AS kody_id,
-				p.source_id AS source_id,
-				s.service_name AS name
-			FROM package_service_states AS s
-			LEFT JOIN saved_packages AS p
-				ON p.id = s.package_id AND p.user_id = s.user_id
-			WHERE s.user_id = ?
-			UNION
-			-- Legacy arm: remove once the follow-up drop migration for
-			-- package_runtime_runs lands.
-			SELECT
-				r.package_id AS package_id,
-				COALESCE(p.kody_id, r.package_kody_id) AS kody_id,
-				COALESCE(p.source_id, r.source_id) AS source_id,
-				r.name AS name
-			FROM package_runtime_runs AS r
-			LEFT JOIN saved_packages AS p
-				ON p.id = r.package_id AND p.user_id = r.user_id
-			WHERE r.user_id = ?
-				AND r.surface = 'service'
-				AND r.name IS NOT NULL
-		)`,
-		[userId, userId],
-	)
-	return rows.map((row) => ({
-		packageId: row.package_id,
-		kodyId: row.kody_id ?? '',
-		sourceId: row.source_id ?? '',
-		serviceName: row.name,
-	}))
+		userId,
+		baseUrl: 'https://account-export.invalid',
+	})
 }
 
 async function listUserBundleKvKeys(input: {
@@ -794,80 +698,8 @@ async function countScalar(
 }
 
 async function countUserStorageIds(env: Env, userId: string) {
-	const baseSql = `SELECT id FROM (
-		SELECT storage_id AS id FROM jobs
-			WHERE user_id = ? AND storage_id IS NOT NULL
-		UNION SELECT storage_id FROM archived_job_artifacts
-			WHERE user_id = ? AND storage_id IS NOT NULL
-		UNION SELECT storage_id FROM package_runtime_runs
-			WHERE user_id = ? AND storage_id IS NOT NULL
-		UNION SELECT id FROM saved_packages
-			WHERE user_id = ? AND has_app = 1
-	)`
-	let count = await countScalar(
-		env,
-		`SELECT COUNT(*) AS count FROM (${baseSql})`,
-		Array(4).fill(userId),
-	)
-	const countedExtraIds = new Set<string>()
-	let afterPackageId = ''
-	let afterName = ''
-	for (;;) {
-		const page = await env.APP_DB.prepare(
-			`SELECT DISTINCT package_id, name FROM (
-				SELECT package_id, service_name AS name
-				FROM package_service_states
-				WHERE user_id = ?
-				UNION
-				-- Legacy arm: remove once the follow-up drop migration for
-				-- package_runtime_runs lands.
-				SELECT package_id, name
-				FROM package_runtime_runs
-				WHERE user_id = ?
-					AND surface = 'service'
-					AND name IS NOT NULL
-			)
-			WHERE (
-				package_id > ? OR (package_id = ? AND name > ?)
-			)
-			ORDER BY package_id, name
-			LIMIT 100`,
-		)
-			.bind(userId, userId, afterPackageId, afterPackageId, afterName)
-			.all<{ package_id: string; name: string }>()
-		const rows = page.results ?? []
-		if (rows.length === 0) break
-		for (const row of rows) {
-			const storageId = buildPackageServiceStorageId(row.package_id, row.name)
-			const existing = await env.APP_DB.prepare(
-				`SELECT 1 AS owned FROM (${baseSql}) WHERE id = ?`,
-			)
-				.bind(userId, userId, userId, userId, storageId)
-				.first<{ owned: number }>()
-			if (existing?.owned !== 1 && !countedExtraIds.has(storageId)) {
-				countedExtraIds.add(storageId)
-				count += 1
-			}
-		}
-		const last = rows.at(-1)!
-		afterPackageId = last.package_id
-		afterName = last.name
-		if (rows.length < 100) break
-	}
-	const runRecordStorageIds = await listRunRecordStorageIds({ env, userId })
-	for (const storageId of runRecordStorageIds) {
-		if (countedExtraIds.has(storageId)) continue
-		const existing = await env.APP_DB.prepare(
-			`SELECT 1 AS owned FROM (${baseSql}) WHERE id = ?`,
-		)
-			.bind(userId, userId, userId, userId, storageId)
-			.first<{ owned: number }>()
-		if (existing?.owned !== 1) {
-			countedExtraIds.add(storageId)
-			count += 1
-		}
-	}
-	return count
+	const ids = await listUserStorageIds(env, userId)
+	return ids.length
 }
 
 async function countUserBundleKvKeys(input: {
@@ -982,27 +814,10 @@ async function collectManifestInventoryCounts(input: {
 				[input.userId],
 			),
 		),
-		safeCount('package services', async () =>
-			countScalar(
-				input.env,
-				`SELECT COUNT(*) AS count FROM (
-					SELECT DISTINCT package_id, name FROM (
-						SELECT package_id, service_name AS name
-						FROM package_service_states
-						WHERE user_id = ?
-						UNION
-						-- Legacy arm: remove once the follow-up drop migration for
-						-- package_runtime_runs lands.
-						SELECT package_id, name
-						FROM package_runtime_runs
-						WHERE user_id = ?
-							AND surface = 'service'
-							AND name IS NOT NULL
-					)
-				)`,
-				[input.userId, input.userId],
-			),
-		),
+		safeCount('package services', async () => {
+			const services = await listUserPackageServices(input.env, input.userId)
+			return services.length
+		}),
 		safeCount('artifact repos', async () =>
 			countScalar(
 				input.env,
@@ -1711,65 +1526,8 @@ export async function readAccountExportSection(input: {
 		if (!input.storageId) {
 			throw new Error('storage_id is required when section is storage_runner.')
 		}
-		let storageOwned =
-			(
-				await input.env.APP_DB.prepare(
-					`SELECT 1 AS owned FROM (
-						SELECT storage_id AS id FROM jobs WHERE user_id = ?
-						UNION SELECT storage_id FROM archived_job_artifacts WHERE user_id = ?
-						UNION SELECT storage_id FROM package_runtime_runs WHERE user_id = ?
-						UNION SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1
-					) WHERE id = ?`,
-				)
-					.bind(
-						input.mcpUserId,
-						input.mcpUserId,
-						input.mcpUserId,
-						input.mcpUserId,
-						input.storageId,
-					)
-					.first<{ owned: number }>()
-			)?.owned === 1
-		if (!storageOwned && input.storageId.startsWith('service:')) {
-			const [packagePart, servicePart] = input.storageId
-				.slice('service:'.length)
-				.split(':')
-			if (packagePart && servicePart) {
-				const packageId = decodeURIComponent(packagePart)
-				const serviceName = decodeURIComponent(servicePart)
-				const row = await input.env.APP_DB.prepare(
-					`SELECT 1 AS owned FROM (
-						SELECT 1 AS owned
-						FROM package_service_states
-						WHERE user_id = ? AND package_id = ? AND service_name = ?
-						UNION
-						-- Legacy arm: remove once the follow-up drop migration for
-						-- package_runtime_runs lands.
-						SELECT 1 AS owned
-						FROM package_runtime_runs
-						WHERE user_id = ? AND surface = 'service'
-							AND package_id = ? AND name = ?
-					)`,
-				)
-					.bind(
-						input.mcpUserId,
-						packageId,
-						serviceName,
-						input.mcpUserId,
-						packageId,
-						serviceName,
-					)
-					.first<{ owned: number }>()
-				storageOwned = row?.owned === 1
-			}
-		}
-		if (!storageOwned) {
-			const runRecordStorageIds = await listRunRecordStorageIds({
-				env: input.env,
-				userId: input.mcpUserId,
-			})
-			storageOwned = runRecordStorageIds.includes(input.storageId)
-		}
+		const storageIds = await listUserStorageIds(input.env, input.mcpUserId)
+		const storageOwned = storageIds.includes(input.storageId)
 		if (!storageOwned) {
 			throw new Error('Storage runner was not found for account export.')
 		}
@@ -1892,67 +1650,17 @@ export async function readAccountExportSection(input: {
 				'package_id and service_name are required when section is package_service.',
 			)
 		}
-		const row = await input.env.APP_DB.prepare(
-			`SELECT DISTINCT
-				package_id,
-				kody_id,
-				source_id,
-				name
-			FROM (
-				SELECT
-					s.package_id AS package_id,
-					p.kody_id AS kody_id,
-					p.source_id AS source_id,
-					s.service_name AS name
-				FROM package_service_states AS s
-				LEFT JOIN saved_packages AS p
-					ON p.id = s.package_id AND p.user_id = s.user_id
-				WHERE s.user_id = ?
-					AND s.package_id = ?
-					AND s.service_name = ?
-				UNION
-				-- Legacy arm: remove once the follow-up drop migration for
-				-- package_runtime_runs lands.
-				SELECT
-					r.package_id AS package_id,
-					COALESCE(p.kody_id, r.package_kody_id) AS kody_id,
-					COALESCE(p.source_id, r.source_id) AS source_id,
-					r.name AS name
-				FROM package_runtime_runs AS r
-				LEFT JOIN saved_packages AS p
-					ON p.id = r.package_id AND p.user_id = r.user_id
-				WHERE r.user_id = ?
-					AND r.surface = 'service'
-					AND r.package_id = ?
-					AND r.name = ?
-			)`,
+		const services = await listUserPackageServices(input.env, input.mcpUserId)
+		const service = services.find(
+			(entry) =>
+				entry.packageId === input.packageId &&
+				entry.serviceName === input.serviceName,
 		)
-			.bind(
-				input.mcpUserId,
-				input.packageId,
-				input.serviceName,
-				input.mcpUserId,
-				input.packageId,
-				input.serviceName,
-			)
-			.first<{
-				package_id: string
-				kody_id: string | null
-				source_id: string | null
-				name: string
-			}>()
-		if (!row) throw new Error('Package service was not found for export.')
+		if (!service) throw new Error('Package service was not found for export.')
 		const [exported] = await exportPackageServices({
 			env: input.env,
 			userId: input.mcpUserId,
-			services: [
-				{
-					packageId: row.package_id,
-					kodyId: row.kody_id ?? '',
-					sourceId: row.source_id ?? '',
-					serviceName: row.name,
-				},
-			],
+			services: [service],
 			warnings,
 		})
 		return {
@@ -2069,160 +1777,52 @@ export async function readAccountExportSection(input: {
 			if (input.kind === 'package_service') {
 				const afterPackageId = String(cursor['packageId'] ?? '')
 				const afterName = String(cursor['name'] ?? '')
-				const rows = await input.env.APP_DB.prepare(
-					`SELECT DISTINCT package_id, name FROM (
-						SELECT package_id, service_name AS name
-						FROM package_service_states
-						WHERE user_id = ?
-						UNION
-						-- Legacy arm: remove once the follow-up drop migration for
-						-- package_runtime_runs lands.
-						SELECT package_id, name
-						FROM package_runtime_runs
-						WHERE user_id = ?
-							AND surface = 'service'
-							AND name IS NOT NULL
-					)
-					WHERE (package_id > ? OR (package_id = ? AND name > ?))
-					ORDER BY package_id, name LIMIT ?`,
+				const services = await listUserPackageServices(
+					input.env,
+					input.mcpUserId,
 				)
-					.bind(
-						input.mcpUserId,
-						input.mcpUserId,
-						afterPackageId,
-						afterPackageId,
-						afterName,
-						pageSize + 1,
-					)
-					.all<{ package_id: string; name: string }>()
-				const pageRows = rows.results ?? []
+				const pageRows = services.filter(
+					(service) =>
+						service.packageId > afterPackageId ||
+						(service.packageId === afterPackageId &&
+							service.serviceName > afterName),
+				)
 				const truncated = pageRows.length > pageSize
 				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
 				return {
 					section: input.section,
-					items: selected.map((row) => ({
+					items: selected.map((service) => ({
 						kind: input.kind,
-						packageId: row.package_id,
-						serviceName: row.name,
+						packageId: service.packageId,
+						serviceName: service.serviceName,
 					})),
 					truncated,
 					nextStartAfter: truncated
 						? JSON.stringify({
-								packageId: selected.at(-1)!.package_id,
-								name: selected.at(-1)!.name,
+								packageId: selected.at(-1)!.packageId,
+								name: selected.at(-1)!.serviceName,
 							})
 						: null,
 					pageSize,
 					warnings,
 				}
 			}
-			const stage = String(cursor['stage'] ?? 'base')
-			if (stage === 'base') {
-				const afterId = String(cursor['afterId'] ?? '')
-				const rows = await input.env.APP_DB.prepare(
-					`SELECT id FROM (
-						SELECT storage_id AS id FROM jobs
-							WHERE user_id = ? AND storage_id IS NOT NULL
-						UNION SELECT storage_id FROM archived_job_artifacts
-							WHERE user_id = ? AND storage_id IS NOT NULL
-						UNION SELECT storage_id FROM package_runtime_runs
-							WHERE user_id = ? AND storage_id IS NOT NULL
-						UNION SELECT id FROM saved_packages
-							WHERE user_id = ? AND has_app = 1
-					) WHERE id > ? ORDER BY id LIMIT ?`,
-				)
-					.bind(
-						input.mcpUserId,
-						input.mcpUserId,
-						input.mcpUserId,
-						input.mcpUserId,
-						afterId,
-						pageSize + 1,
-					)
-					.all<{ id: string }>()
-				const pageRows = rows.results ?? []
-				const truncated = pageRows.length > pageSize
-				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
-				return {
-					section: input.section,
-					items: selected.map((row) => ({
-						kind: input.kind,
-						storageId: row.id,
-					})),
-					truncated: true,
-					nextStartAfter: JSON.stringify(
-						truncated
-							? { stage: 'base', afterId: selected.at(-1)!.id }
-							: { stage: 'service', packageId: '', name: '' },
-					),
-					pageSize,
-					warnings,
-				}
-			}
-			const afterPackageId = String(cursor['packageId'] ?? '')
-			const afterName = String(cursor['name'] ?? '')
-			const rows = await input.env.APP_DB.prepare(
-				`SELECT DISTINCT package_id, name FROM (
-					SELECT package_id, service_name AS name
-					FROM package_service_states
-					WHERE user_id = ?
-					UNION
-					-- Legacy arm: remove once the follow-up drop migration for
-					-- package_runtime_runs lands.
-					SELECT package_id, name
-					FROM package_runtime_runs
-					WHERE user_id = ?
-						AND surface = 'service'
-						AND name IS NOT NULL
-				)
-				WHERE (package_id > ? OR (package_id = ? AND name > ?))
-				ORDER BY package_id, name LIMIT ?`,
-			)
-				.bind(
-					input.mcpUserId,
-					input.mcpUserId,
-					afterPackageId,
-					afterPackageId,
-					afterName,
-					pageSize + 1,
-				)
-				.all<{ package_id: string; name: string }>()
-			const pageRows = rows.results ?? []
-			const selected = pageRows.slice(0, pageSize)
-			const resultItems: Array<{ kind: string; storageId: string }> = []
-			for (const row of selected) {
-				const storageId = buildPackageServiceStorageId(row.package_id, row.name)
-				const existing = await input.env.APP_DB.prepare(
-					`SELECT 1 AS owned FROM (
-						SELECT storage_id AS id FROM jobs WHERE user_id = ?
-						UNION SELECT storage_id FROM archived_job_artifacts WHERE user_id = ?
-						UNION SELECT storage_id FROM package_runtime_runs WHERE user_id = ?
-						UNION SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1
-					) WHERE id = ?`,
-				)
-					.bind(
-						input.mcpUserId,
-						input.mcpUserId,
-						input.mcpUserId,
-						input.mcpUserId,
-						storageId,
-					)
-					.first<{ owned: number }>()
-				if (existing?.owned !== 1) {
-					resultItems.push({ kind: input.kind, storageId })
-				}
-			}
+			const afterId = String(cursor['afterId'] ?? '')
+			const storageIds = (await listUserStorageIds(input.env, input.mcpUserId))
+				.slice()
+				.sort((left, right) => left.localeCompare(right))
+			const pageRows = storageIds.filter((id) => id > afterId)
 			const truncated = pageRows.length > pageSize
+			const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
 			return {
 				section: input.section,
-				items: resultItems,
+				items: selected.map((storageId) => ({
+					kind: input.kind,
+					storageId,
+				})),
 				truncated,
 				nextStartAfter: truncated
-					? JSON.stringify({
-							stage: 'service',
-							packageId: selected.at(-1)!.package_id,
-							name: selected.at(-1)!.name,
-						})
+					? JSON.stringify({ afterId: selected.at(-1)! })
 					: null,
 				pageSize,
 				warnings,

@@ -20,6 +20,7 @@ import {
 } from '@kody-internal/shared/backup-staging.ts'
 import { buildPackageServiceStorageId } from '#worker/package-runtime/package-service.ts'
 import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { listPlatformStorageBuckets } from '#worker/storage-buckets/service.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import {
 	createDrBackupS3Client,
@@ -223,7 +224,11 @@ function ndjsonLine(value: unknown) {
 export async function listPlatformStorageInventory(
 	db: D1Database,
 ): Promise<Array<StorageInventoryEntry>> {
-	const [jobRows, archivedRows, runtimeRows, packageRows, serviceRows] =
+	// Platform-wide DR has only a D1Database (no per-user Env / network), so
+	// service buckets come from projected `package_service_states` rather than
+	// package manifests. Ad-hoc / execute buckets come from the authoritative
+	// `user_storage_buckets` registry via `listPlatformStorageBuckets`.
+	const [jobRows, archivedRows, registeredBuckets, packageRows, serviceRows] =
 		await Promise.all([
 			db
 				.prepare(
@@ -237,12 +242,7 @@ export async function listPlatformStorageInventory(
 					FROM archived_job_artifacts WHERE storage_id IS NOT NULL`,
 				)
 				.all<{ userId: string; storageId: string }>(),
-			db
-				.prepare(
-					`SELECT user_id AS userId, storage_id AS storageId
-					FROM package_runtime_runs WHERE storage_id IS NOT NULL`,
-				)
-				.all<{ userId: string; storageId: string }>(),
+			listPlatformStorageBuckets({ db }),
 			db
 				.prepare(
 					`SELECT user_id AS userId, id AS storageId
@@ -251,9 +251,9 @@ export async function listPlatformStorageInventory(
 				.all<{ userId: string; storageId: string }>(),
 			db
 				.prepare(
-					`SELECT DISTINCT user_id AS userId, package_id AS packageId, name AS serviceName
-					FROM package_runtime_runs
-					WHERE surface = 'service' AND name IS NOT NULL`,
+					`SELECT DISTINCT user_id AS userId, package_id AS packageId,
+						service_name AS serviceName
+					FROM package_service_states`,
 				)
 				.all<{
 					userId: string
@@ -272,7 +272,7 @@ export async function listPlatformStorageInventory(
 	}
 	for (const row of jobRows.results ?? []) push(row.userId, row.storageId)
 	for (const row of archivedRows.results ?? []) push(row.userId, row.storageId)
-	for (const row of runtimeRows.results ?? []) push(row.userId, row.storageId)
+	for (const row of registeredBuckets) push(row.userId, row.storageId)
 	for (const row of packageRows.results ?? []) push(row.userId, row.storageId)
 	for (const row of serviceRows.results ?? []) {
 		push(

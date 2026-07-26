@@ -1,5 +1,6 @@
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -8,6 +9,75 @@ import {
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
 } from './account-export.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
+
+const inventoryMocks = vi.hoisted(() => ({
+	listAccountUserStorageIds:
+		vi.fn<
+			(input: {
+				env: Env
+				userId: string
+				baseUrl: string
+			}) => Promise<Array<string>>
+		>(),
+	listAccountUserPackageServices: vi.fn<
+		(input: { env: Env; userId: string; baseUrl: string }) => Promise<
+			Array<{
+				packageId: string
+				kodyId: string
+				sourceId: string
+				serviceName: string
+			}>
+		>
+	>(),
+}))
+
+vi.mock('#app/account-user-inventory.ts', async (importOriginal) => {
+	const actual = (await importOriginal()) as {
+		listAccountUserStorageIds: (input: {
+			env: Env
+			userId: string
+			baseUrl: string
+		}) => Promise<Array<string>>
+		listAccountUserPackageServices: (input: {
+			env: Env
+			userId: string
+			baseUrl: string
+		}) => Promise<
+			Array<{
+				packageId: string
+				kodyId: string
+				sourceId: string
+				serviceName: string
+			}>
+		>
+	}
+	return {
+		...actual,
+		listAccountUserStorageIds: (input: {
+			env: Env
+			userId: string
+			baseUrl: string
+		}) => {
+			if (inventoryMocks.listAccountUserStorageIds.getMockImplementation()) {
+				return inventoryMocks.listAccountUserStorageIds(input)
+			}
+			return actual.listAccountUserStorageIds(input)
+		},
+		listAccountUserPackageServices: (input: {
+			env: Env
+			userId: string
+			baseUrl: string
+		}) => {
+			if (
+				inventoryMocks.listAccountUserPackageServices.getMockImplementation()
+			) {
+				return inventoryMocks.listAccountUserPackageServices(input)
+			}
+			return actual.listAccountUserPackageServices(input)
+		},
+	}
+})
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
@@ -841,54 +911,34 @@ test('durable object discovery pages high-cardinality storage ids without nested
 		{ length: 1201 },
 		(_, index) => `storage-${String(index).padStart(4, '0')}`,
 	)
-	let maxRows = 0
-	const db = {
-		prepare(query: string) {
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async all<T>() {
-							if (query.includes('SELECT id FROM (')) {
-								const afterId = String(params[4])
-								const limit = Number(params[5])
-								const rows = ids
-									.filter((id) => id > afterId)
-									.slice(0, limit)
-									.map((id) => ({ id }))
-								maxRows = Math.max(maxRows, rows.length)
-								return { results: rows as Array<T> }
-							}
-							if (query.includes('SELECT DISTINCT package_id, name')) {
-								return { results: [] as Array<T> }
-							}
-							throw new Error(`Unexpected query: ${query}`)
-						},
-					}
-				},
+	inventoryMocks.listAccountUserStorageIds.mockResolvedValue(ids)
+	try {
+		const seen = new Set<string>()
+		let startAfter: string | undefined
+		let pages = 0
+		for (;;) {
+			const page = await readAccountExportSection({
+				env: { APP_DB: {} } as Env,
+				dbUserId: 1,
+				mcpUserId: 'user-a',
+				section: 'durable_object_summaries',
+				kind: 'storage_runner',
+				pageSize: 100,
+				startAfter,
+			})
+			pages += 1
+			for (const item of page.items as Array<{ storageId: string }>) {
+				expect(Array.isArray(item.storageId)).toBe(false)
+				seen.add(item.storageId)
 			}
-		},
-	} as unknown as D1Database
-	const seen = new Set<string>()
-	let startAfter: string | undefined
-	for (;;) {
-		const page = await readAccountExportSection({
-			env: { APP_DB: db } as Env,
-			dbUserId: 1,
-			mcpUserId: 'user-a',
-			section: 'durable_object_summaries',
-			kind: 'storage_runner',
-			pageSize: 100,
-			startAfter,
-		})
-		for (const item of page.items as Array<{ storageId: string }>) {
-			expect(Array.isArray(item.storageId)).toBe(false)
-			seen.add(item.storageId)
+			if (!page.truncated) break
+			startAfter = page.nextStartAfter ?? undefined
 		}
-		if (!page.truncated) break
-		startAfter = page.nextStartAfter ?? undefined
+		expect(seen.size).toBe(1201)
+		expect(pages).toBe(13)
+	} finally {
+		inventoryMocks.listAccountUserStorageIds.mockReset()
 	}
-	expect(seen.size).toBe(1201)
-	expect(maxRows).toBeLessThanOrEqual(101)
 })
 
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
@@ -1184,12 +1234,10 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 		insert.run(`message-${String(index).padStart(4, '0')}`, `Mail ${index}`)
 	}
 	sqlite.exec(`
-		INSERT INTO package_runtime_runs (
-			id, user_id, package_id, package_kody_id, surface, name, status,
-			started_at, storage_id, created_at, updated_at
+		INSERT INTO user_storage_buckets (
+			user_id, storage_id, kind, created_at, last_seen_at
 		) VALUES (
-			'service-run', 'user-aaa', 'pkg:1', 'pkg', 'service', 'svc x',
-			'success', '2026-07-05', 'service:pkg%3A1:svc%20x',
+			'user-aaa', 'service:pkg%3A1:svc%20x', 'service',
 			'2026-07-05', '2026-07-05'
 		);
 	`)
@@ -1258,9 +1306,6 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 	expect(Math.max(...rowCounts)).toBeLessThanOrEqual(1)
 	expect(
 		queries.some((query) => query.includes('__account_export_rowid')),
-	).toBe(false)
-	expect(
-		queries.some((query) => query.startsWith('SELECT storage_id FROM jobs')),
 	).toBe(false)
 })
 
@@ -1385,6 +1430,7 @@ test('account export includes run_records section with runs and log lines', asyn
 })
 
 test('account export includes a package service known only via package_service_states', async () => {
+	consoleWarn.mockImplementation(() => {})
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
 		INSERT INTO users (
@@ -1455,4 +1501,65 @@ test('account export includes a package service known only via package_service_s
 		}),
 	])
 	expect(statusMock).toHaveBeenCalledTimes(1)
+})
+
+test('account export includes a storage runner known only via user_storage_buckets', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+		INSERT INTO user_storage_buckets (
+			user_id, storage_id, kind, created_at, last_seen_at
+		) VALUES (
+			'user-aaa', 'exec:export-only', 'execute',
+			'2026-07-05', '2026-07-05'
+		);
+	`)
+
+	const exportStorage = vi.fn(async () => ({
+		entries: [{ key: 'alpha', value: { n: 1 } }],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 100,
+		estimatedBytes: 10,
+	}))
+
+	const env = {
+		APP_DB: db,
+		STORAGE_RUNNER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({ exportStorage }),
+		},
+	} as unknown as Env
+
+	const manifest = await createAccountExportManifest({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(manifest.sections.storage_runners?.count).toBe(1)
+
+	const section = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'storage_runner',
+		storageId: 'exec:export-only',
+	})
+	expect(section.items).toEqual([{ key: 'alpha', value: { n: 1 } }])
+	expect(exportStorage).toHaveBeenCalledTimes(1)
+})
+
+test('account export source no longer reads package_runtime_runs', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('./account-export.ts', import.meta.url)),
+		'utf8',
+	)
+	expect(source.includes('package_runtime_runs')).toBe(false)
 })

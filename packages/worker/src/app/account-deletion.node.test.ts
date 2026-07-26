@@ -1,5 +1,6 @@
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -15,6 +16,7 @@ import {
 	AccountDeletionWritersActiveError,
 	assertAccountWritable,
 } from './account-deletion-state.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
@@ -174,6 +176,47 @@ function createTestDb(
 								results = (rows.mcp_agent_sessions ?? [])
 									.filter((row) => row['user_id'] === userId)
 									.map((row) => ({ do_id: row['do_id'] }))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower.includes('from package_service_states as s') &&
+								lower.includes('left join saved_packages as p') &&
+								!lower.includes('from package_runtime_runs')
+							) {
+								const seen = new Set<string>()
+								results = []
+								for (const row of rows.package_service_states ?? []) {
+									if (row['user_id'] !== userId) continue
+									const savedPackage = (rows.saved_packages ?? []).find(
+										(pkg) =>
+											pkg['id'] === row['package_id'] &&
+											pkg['user_id'] === row['user_id'],
+									)
+									const key = `${String(row['package_id'])}:${String(row['service_name'])}`
+									if (seen.has(key)) continue
+									seen.add(key)
+									results.push({
+										package_id: row['package_id'],
+										kody_id: savedPackage?.['kody_id'] ?? null,
+										source_id: savedPackage?.['source_id'] ?? null,
+										name: row['service_name'],
+									})
+								}
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower.includes(
+									'select storage_id as storageid from user_storage_buckets',
+								)
+							) {
+								results = (rows.user_storage_buckets ?? [])
+									.filter((row) => row['user_id'] === userId)
+									.map((row) => ({ storageId: row['storage_id'] }))
+									.sort((left, right) =>
+										String(left.storageId).localeCompare(
+											String(right.storageId),
+										),
+									)
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
@@ -781,12 +824,32 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				updated_at: '2026-07-05T00:00:00.000Z',
 			},
 			{
+				user_id: userAaa,
+				package_id: 'pkg-orphan',
+				service_name: 'legacy-sync',
+				status: 'idle',
+				started_at: null,
+				updated_at: '2026-07-05T00:00:00.000Z',
+			},
+			{
 				user_id: userBbb,
 				package_id: 'pkg-2',
 				service_name: 'sync',
 				status: 'running',
 				started_at: '2026-07-05T00:00:00.000Z',
 				updated_at: '2026-07-05T00:00:00.000Z',
+			},
+		],
+		user_storage_buckets: [
+			{
+				user_id: userAaa,
+				storage_id: 'exec:run-2',
+				kind: 'execute',
+			},
+			{
+				user_id: userBbb,
+				storage_id: 'service:pkg-2:sync',
+				kind: 'service',
 			},
 		],
 		mcp_memories: [
@@ -1288,6 +1351,13 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			updated_at: '2026-07-05T00:00:00.000Z',
 		},
 	])
+	expect(rows.user_storage_buckets).toEqual([
+		{
+			user_id: userBbb,
+			storage_id: 'service:pkg-2:sync',
+			kind: 'service',
+		},
+	])
 	expect(rows.community_listings).toEqual([
 		{ id: 'listing-2', owner_user_id: userBbb, pinned_commit: 'commit-2' },
 	])
@@ -1381,7 +1451,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.deletedRowCounts.email_attachments).toBe(1)
 	expect(result.deletedRowCounts.package_runtime_runs).toBe(3)
 	expect(result.deletedRowCounts.package_runtime_logs).toBe(1)
-	expect(result.deletedRowCounts.package_service_states).toBe(2)
+	expect(result.deletedRowCounts.package_service_states).toBe(3)
+	expect(result.deletedRowCounts.user_storage_buckets).toBe(1)
 	expect(result.deletedRowCounts.community_listings).toBe(1)
 	expect(result.deletedRowCounts.community_forks).toBe(2)
 	expect(result.deletedRowCounts.community_ratings).toBe(2)
@@ -1905,6 +1976,39 @@ test('account deletion empties the user RunLog DO and leaves other users untouch
 	expect(clearedStorageIds.some((id) => id.includes('bbb-bucket'))).toBe(false)
 })
 
+test('account deletion purges a StorageRunner known only via user_storage_buckets', async () => {
+	const userId = 'user-bucket-only'
+	const clearStorage = vi.fn(async () => ({ ok: true as const }))
+	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
+	const { db } = createTestDb({
+		users: [{ id: 1, email: 'bucket@example.com', stable_user_id: userId }],
+		user_storage_buckets: [
+			{
+				user_id: userId,
+				storage_id: 'exec:adhoc-only',
+				kind: 'execute',
+			},
+		],
+	})
+
+	const result = await deleteUserAccount({
+		env: createSuccessfulDeletionEnv(db, {
+			STORAGE_RUNNER: {
+				idFromName,
+				get: () => ({ clearStorage }),
+			},
+		}),
+		dbUserId: 1,
+		mcpUserId: userId,
+	})
+
+	expect(result.clearedDurableObjects.storageRunners).toBe(1)
+	expect(clearStorage).toHaveBeenCalledTimes(1)
+	expect(idFromName).toHaveBeenCalledWith(
+		JSON.stringify([userId, 'exec:adhoc-only']),
+	)
+})
+
 test('account deletion purges a PackageServiceInstance known only via package_service_states', async () => {
 	const userId = 'user-states-only'
 	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
@@ -1966,44 +2070,220 @@ test('account deletion purges a PackageServiceInstance known only via package_se
 	)
 })
 
-test('account deletion still purges a service known only via legacy package_runtime_runs', async () => {
-	const userId = 'user-legacy-only'
+test('account deletion purges a service declared only in the package manifest', async () => {
+	const userId = 'user-manifest-only'
 	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
 	const { db } = createTestDb({
-		users: [{ id: 1, email: 'legacy@example.com', stable_user_id: userId }],
-		package_runtime_runs: [
+		users: [{ id: 1, email: 'manifest@example.com', stable_user_id: userId }],
+		saved_packages: [
 			{
-				id: 'run-legacy',
+				id: 'pkg-manifest',
 				user_id: userId,
-				package_id: 'pkg-legacy',
-				package_kody_id: 'legacy-pkg',
-				source_id: 'src-legacy',
-				surface: 'service',
-				name: 'only-in-runs',
-				storage_id: null,
+				kody_id: 'manifest-pkg',
+				source_id: 'src-manifest',
+				has_app: 0,
+				name: 'Manifest Package',
+				description: '',
+				tags_json: '[]',
+				search_text: null,
+				hidden: 0,
+				is_private: 1,
+				created_at: '2026-07-05T00:00:00.000Z',
+				updated_at: '2026-07-05T00:00:00.000Z',
 			},
 		],
 	})
 
-	const result = await deleteUserAccount({
-		env: createSuccessfulDeletionEnv(db, {
-			PACKAGE_SERVICE_INSTANCE: {
-				idFromName: (name: string) => name as unknown as DurableObjectId,
-				get: () => ({ fetch: serviceFetch }),
+	const loadManifest = vi.spyOn(
+		await import('#worker/package-registry/source.ts'),
+		'loadPackageManifestBySourceId',
+	)
+	loadManifest.mockResolvedValue({
+		source: {
+			id: 'src-manifest',
+			userId,
+			entityKind: 'package',
+			entityId: 'pkg-manifest',
+			repoId: 'repo-1',
+			manifestPath: 'package.json',
+			sourceRoot: '.',
+			publishedCommit: null,
+		},
+		manifest: {
+			name: 'manifest-pkg',
+			kody: {
+				services: {
+					'only-in-manifest': {
+						entry: './services/only-in-manifest.ts',
+					},
+				},
 			},
-		}),
-		dbUserId: 1,
-		mcpUserId: userId,
+		},
+	} as never)
+
+	const listSaved = vi.spyOn(
+		await import('#worker/package-registry/repo.ts'),
+		'listSavedPackagesByUserId',
+	)
+	listSaved.mockResolvedValue([
+		{
+			id: 'pkg-manifest',
+			userId,
+			name: 'Manifest Package',
+			kodyId: 'manifest-pkg',
+			description: '',
+			tags: [],
+			searchText: null,
+			sourceId: 'src-manifest',
+			hasApp: false,
+			hidden: false,
+			isPrivate: true,
+			createdAt: '2026-07-05T00:00:00.000Z',
+			updatedAt: '2026-07-05T00:00:00.000Z',
+		},
+	])
+
+	try {
+		const result = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db, {
+				BUNDLE_ARTIFACTS_KV: {
+					get: async () => null,
+					async list() {
+						return { keys: [], list_complete: true as const }
+					},
+					delete: async () => undefined,
+				},
+				PACKAGE_SERVICE_INSTANCE: {
+					idFromName: (name: string) => name as unknown as DurableObjectId,
+					get: () => ({ fetch: serviceFetch }),
+				},
+			}),
+			dbUserId: 1,
+			mcpUserId: userId,
+		})
+
+		expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
+		const request = serviceFetch.mock.calls[0]?.[0] as Request
+		const body = (await request.clone().json()) as {
+			binding: { packageId: string; serviceName: string; kodyId: string }
+		}
+		expect(body.binding).toMatchObject({
+			packageId: 'pkg-manifest',
+			serviceName: 'only-in-manifest',
+			kodyId: 'manifest-pkg',
+		})
+	} finally {
+		loadManifest.mockRestore()
+		listSaved.mockRestore()
+	}
+})
+
+test('account deletion continues when manifest load fails and still purges state-table services', async () => {
+	const userId = 'user-manifest-fail'
+	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
+	consoleWarn.mockImplementation(() => {})
+	const { db } = createTestDb({
+		users: [{ id: 1, email: 'fail@example.com', stable_user_id: userId }],
+		saved_packages: [
+			{
+				id: 'pkg-fail',
+				user_id: userId,
+				kody_id: 'fail-pkg',
+				source_id: 'src-fail',
+				has_app: 0,
+			},
+		],
+		package_service_states: [
+			{
+				user_id: userId,
+				package_id: 'pkg-fail',
+				service_name: 'known-in-states',
+				status: 'idle',
+				started_at: null,
+				updated_at: '2026-07-05T00:00:00.000Z',
+			},
+		],
 	})
 
-	expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
-	const request = serviceFetch.mock.calls[0]?.[0] as Request
-	const body = (await request.clone().json()) as {
-		binding: { packageId: string; serviceName: string; kodyId: string }
+	const listSaved = vi.spyOn(
+		await import('#worker/package-registry/repo.ts'),
+		'listSavedPackagesByUserId',
+	)
+	listSaved.mockResolvedValue([
+		{
+			id: 'pkg-fail',
+			userId,
+			name: 'Fail Package',
+			kodyId: 'fail-pkg',
+			description: '',
+			tags: [],
+			searchText: null,
+			sourceId: 'src-fail',
+			hasApp: false,
+			hidden: false,
+			isPrivate: true,
+			createdAt: '2026-07-05T00:00:00.000Z',
+			updatedAt: '2026-07-05T00:00:00.000Z',
+		},
+	])
+	const loadManifest = vi.spyOn(
+		await import('#worker/package-registry/source.ts'),
+		'loadPackageManifestBySourceId',
+	)
+	loadManifest.mockRejectedValue(new Error('manifest unavailable'))
+
+	try {
+		const result = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db, {
+				BUNDLE_ARTIFACTS_KV: {
+					get: async () => null,
+					async list() {
+						return { keys: [], list_complete: true as const }
+					},
+					delete: async () => undefined,
+				},
+				PACKAGE_SERVICE_INSTANCE: {
+					idFromName: (name: string) => name as unknown as DurableObjectId,
+					get: () => ({ fetch: serviceFetch }),
+				},
+			}),
+			dbUserId: 1,
+			mcpUserId: userId,
+		})
+
+		expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
+		const request = serviceFetch.mock.calls[0]?.[0] as Request
+		const body = (await request.clone().json()) as {
+			binding: { packageId: string; serviceName: string }
+		}
+		expect(body.binding).toMatchObject({
+			packageId: 'pkg-fail',
+			serviceName: 'known-in-states',
+		})
+		expect(consoleWarn).toHaveBeenCalledWith(
+			expect.stringContaining('Failed to load package manifest'),
+		)
+	} finally {
+		loadManifest.mockRestore()
+		listSaved.mockRestore()
 	}
-	expect(body.binding).toMatchObject({
-		packageId: 'pkg-legacy',
-		serviceName: 'only-in-runs',
-		kodyId: 'legacy-pkg',
-	})
+})
+
+test('owned account deletion/export/DR sources no longer read package_runtime_runs', () => {
+	const owned = [
+		'./account-deletion.ts',
+		'./account-export.ts',
+		'./account-user-inventory.ts',
+		'../dr/exporter.ts',
+	]
+	for (const relative of owned) {
+		const source = readFileSync(
+			fileURLToPath(new URL(relative, import.meta.url)),
+			'utf8',
+		)
+		expect(
+			source.includes('package_runtime_runs'),
+			`${relative} must not read package_runtime_runs`,
+		).toBe(false)
+	}
 })

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { expect, test, vi } from 'vitest'
 import {
 	backupBlobKey,
@@ -9,6 +11,7 @@ import {
 import { sha256Hex } from '#worker/dr/sha256.ts'
 import {
 	drExportMaxStorageDumpBufferBytes,
+	listPlatformStorageInventory,
 	runDrExportTick,
 	shouldRunDrExportCron,
 } from '#worker/dr/exporter.ts'
@@ -23,10 +26,22 @@ const storageMocks = vi.hoisted(() => ({
 	exportStorage: vi.fn(),
 }))
 
+const storageBucketMocks = vi.hoisted(() => ({
+	listPlatformStorageBuckets: vi.fn(
+		async () => [] as Array<{ userId: string; storageId: string }>,
+	),
+}))
+
 vi.mock('#worker/storage-runner.ts', () => ({
 	storageRunnerRpc: () => ({
 		exportStorage: storageMocks.exportStorage,
 	}),
+}))
+
+vi.mock('#worker/storage-buckets/service.ts', () => ({
+	listPlatformStorageBuckets: storageBucketMocks.listPlatformStorageBuckets,
+	listUserStorageBucketIds: vi.fn(async () => []),
+	registerStorageBucket: vi.fn(),
 }))
 
 function etagFor(bytes: Uint8Array) {
@@ -78,7 +93,6 @@ function createMemoryS3() {
 function createDb(results: {
 	jobs?: Array<{ userId: string; storageId: string }>
 	archived?: Array<{ userId: string; storageId: string }>
-	runtime?: Array<{ userId: string; storageId: string }>
 	packages?: Array<{ userId: string; storageId: string }>
 	services?: Array<{
 		userId: string
@@ -103,14 +117,8 @@ function createDb(results: {
 					if (sql.includes('FROM archived_job_artifacts')) {
 						return { results: results.archived ?? [] }
 					}
-					if (
-						sql.includes("surface = 'service'") ||
-						sql.includes('surface = "service"')
-					) {
+					if (sql.includes('FROM package_service_states')) {
 						return { results: results.services ?? [] }
-					}
-					if (sql.includes('FROM package_runtime_runs')) {
-						return { results: results.runtime ?? [] }
 					}
 					if (sql.includes('FROM saved_packages')) {
 						return { results: results.packages ?? [] }
@@ -560,4 +568,34 @@ test('R2 export does not duplicate index lines across budget interruptions', asy
 	} finally {
 		dateNow.mockRestore()
 	}
+})
+
+test('DR inventory includes registry buckets and package_service_states services', async () => {
+	storageBucketMocks.listPlatformStorageBuckets.mockResolvedValueOnce([
+		{ userId: 'user-a', storageId: 'exec:adhoc-only' },
+	])
+	const inventory = await listPlatformStorageInventory(
+		createDb({
+			services: [
+				{
+					userId: 'user-a',
+					packageId: 'pkg-1',
+					serviceName: 'worker',
+				},
+			],
+		}),
+	)
+	expect(inventory.map((entry) => entry.storageId).sort()).toEqual([
+		'exec:adhoc-only',
+		'service:pkg-1:worker',
+	])
+	expect(inventory.every((entry) => entry.userId === 'user-a')).toBe(true)
+})
+
+test('DR exporter source no longer reads package_runtime_runs', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('./exporter.ts', import.meta.url)),
+		'utf8',
+	)
+	expect(source.includes('package_runtime_runs')).toBe(false)
 })
