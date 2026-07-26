@@ -598,6 +598,66 @@ test('run recording degrades to a warning instead of failing the observed run', 
 	expect(page.runs[0]?.status).toBe('success')
 })
 
+test('fresh finishes do not arm a retention alarm', async () => {
+	const userId = uniqueUserId('no-alarm')
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	await finishRunRecord({
+		env,
+		handle: {
+			id: crypto.randomUUID(),
+			userId,
+			startedAt: new Date().toISOString(),
+			persistence: 'eager',
+			context: baseContext({ surface: 'job', name: 'fresh' }),
+		},
+		status: 'success',
+	})
+	const alarmAt = await runInDurableObject(
+		stub,
+		async (_instance: RunLog, state) => state.storage.getAlarm(),
+	)
+	expect(alarmAt).toBeNull()
+})
+
+test('retention alarm self-terminates when a pass leaves nothing pending', async () => {
+	const userId = uniqueUserId('alarm-stop')
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const oldStartedAt = new Date(
+		Date.now() - (runRecordRetentionDays + 2) * 24 * 60 * 60 * 1000,
+	).toISOString()
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		insertRunRow(state, {
+			id: 'old-only',
+			status: 'success',
+			startedAt: oldStartedAt,
+			finishedAt: oldStartedAt,
+		})
+		state.storage.sql.exec(
+			`INSERT INTO run_log_meta (key, value) VALUES (?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			'run_count',
+			1,
+		)
+		// Invoke the handler directly; clear any prior schedule so a leftover
+		// platform alarm is not mistaken for a re-arm.
+		await state.storage.deleteAlarm()
+		await instance.alarm()
+	})
+
+	const after = await runInDurableObject(
+		stub,
+		async (_instance: RunLog, state) => ({
+			alarmAt: await state.storage.getAlarm(),
+			remaining: state.storage.sql
+				.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs`)
+				.one().n,
+		}),
+	)
+	expect(after.remaining).toBe(0)
+	expect(after.alarmAt).toBeNull()
+})
+
 test('clearRunRecords empties the Durable Object', async () => {
 	const userId = uniqueUserId('clear')
 	const handle = beginRunRecord({

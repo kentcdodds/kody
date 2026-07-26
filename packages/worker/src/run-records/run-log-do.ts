@@ -30,10 +30,15 @@ const maxStaleRunningReconcilesPerPass = 100
 
 const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
+const metaSchemaVersionKey = 'schema_version'
+/** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
+const runLogSchemaVersion = 2
 
 const staleRunningErrorName = 'Interrupted'
 const staleRunningErrorMessage =
 	'Run did not finish; outcome unknown (reconciled after stale running TTL).'
+
+const retentionMs = runRecordRetentionDays * 24 * 60 * 60 * 1000
 
 export type RunLogRowInput = {
 	id: string
@@ -229,19 +234,34 @@ function clampMetadataJson(metadataJson: string) {
 }
 
 class RunLogBase extends DurableObject<Env> {
+	/**
+	 * In-isolate cache: once we know an alarm is scheduled, hot finishes skip
+	 * getAlarm/setAlarm. Cleared when a pass self-terminates with no due work.
+	 */
+	private retentionAlarmArmed = false
+	/** In-isolate: hasPendingRetentionWork() was false; skip re-probing. */
+	private retentionIdleConfirmed = false
+
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env)
 		this.ctx.blockConcurrencyWhile(async () => {
 			this.initializeSchema()
 			this.ensureRunCountMeta()
-			const currentAlarm = await this.ctx.storage.getAlarm()
-			if (currentAlarm == null) {
-				await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
-			}
+			// Observe existing alarm only — never arm in the constructor.
+			this.retentionAlarmArmed = (await this.ctx.storage.getAlarm()) != null
 		})
 	}
 
 	private initializeSchema() {
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS run_log_meta (
+				key TEXT PRIMARY KEY NOT NULL,
+				value INTEGER NOT NULL
+			)
+		`)
+		const installedVersion = this.getMeta(metaSchemaVersionKey)
+		if (installedVersion === runLogSchemaVersion) return
+
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS runs (
 				id TEXT PRIMARY KEY NOT NULL,
@@ -267,12 +287,6 @@ class RunLogBase extends DurableObject<Env> {
 				metadata_json TEXT NOT NULL DEFAULT '{}',
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
-			)
-		`)
-		this.ctx.storage.sql.exec(`
-			CREATE TABLE IF NOT EXISTS run_log_meta (
-				key TEXT PRIMARY KEY NOT NULL,
-				value INTEGER NOT NULL
 			)
 		`)
 		this.ctx.storage.sql.exec(
@@ -308,6 +322,7 @@ class RunLogBase extends DurableObject<Env> {
 				PRIMARY KEY (run_id, sequence)
 			)
 		`)
+		this.setMeta(metaSchemaVersionKey, runLogSchemaVersion)
 	}
 
 	private getMeta(key: string): number | null {
@@ -334,16 +349,26 @@ class RunLogBase extends DurableObject<Env> {
 		const countRow = this.ctx.storage.sql
 			.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs`)
 			.one()
-		this.setMeta(metaRunCountKey, Number(countRow.n ?? 0) || 0)
-		if (this.getMeta(metaFinishesSinceRetentionKey) == null) {
-			this.setMeta(metaFinishesSinceRetentionKey, 0)
-		}
+		const count = Number(countRow.n ?? 0) || 0
+		this.setMeta(metaRunCountKey, count)
+		this.setMeta(metaFinishesSinceRetentionKey, 0)
+	}
+
+	private getRunCount() {
+		return this.getMeta(metaRunCountKey) ?? 0
 	}
 
 	private adjustRunCount(delta: number) {
 		if (delta === 0) return
-		const current = this.getMeta(metaRunCountKey) ?? 0
-		this.setMeta(metaRunCountKey, Math.max(0, current + delta))
+		this.setMeta(metaRunCountKey, Math.max(0, this.getRunCount() + delta))
+	}
+
+	private getFinishesSinceRetention() {
+		return this.getMeta(metaFinishesSinceRetentionKey) ?? 0
+	}
+
+	private setFinishesSinceRetention(value: number) {
+		this.setMeta(metaFinishesSinceRetentionKey, value)
 	}
 
 	private runExists(runId: string) {
@@ -476,6 +501,7 @@ class RunLogBase extends DurableObject<Env> {
 				row.id,
 			)
 		}
+		return stale.length
 	}
 
 	private deleteOldestWithStatus(status: RunStatus, limit: number) {
@@ -493,12 +519,46 @@ class RunLogBase extends DurableObject<Env> {
 			.map((row) => row.id)
 	}
 
+	/**
+	 * True when retention work is already due or due within one alarm period:
+	 * over the count cap, finished rows past / near the age cutoff, or
+	 * `running` rows past / near the stale TTL.
+	 */
+	private hasPendingRetentionWork() {
+		if (this.getRunCount() > runRecordMaxRunsPerUser) return true
+
+		const now = Date.now()
+		const ageSoonCutoff = new Date(
+			now - retentionMs + runRecordRetentionAlarmMs,
+		).toISOString()
+		const ageDue = this.ctx.storage.sql
+			.exec<{ ok: number }>(
+				`SELECT 1 AS ok FROM runs
+				WHERE started_at < ? AND status != 'running'
+				LIMIT 1`,
+				ageSoonCutoff,
+			)
+			.toArray()[0]
+		if (ageDue) return true
+
+		const staleSoonCutoff = new Date(
+			now - runRecordStaleRunningTtlMs + runRecordRetentionAlarmMs,
+		).toISOString()
+		const staleDue = this.ctx.storage.sql
+			.exec<{ ok: number }>(
+				`SELECT 1 AS ok FROM runs
+				WHERE status = 'running' AND started_at < ?
+				LIMIT 1`,
+				staleSoonCutoff,
+			)
+			.toArray()[0]
+		return staleDue != null
+	}
+
 	private enforceRetention() {
 		this.reconcileStaleRunning()
 
-		const cutoff = new Date(
-			Date.now() - runRecordRetentionDays * 24 * 60 * 60 * 1000,
-		).toISOString()
+		const cutoff = new Date(Date.now() - retentionMs).toISOString()
 		const expired = this.ctx.storage.sql
 			.exec<{ id: string }>(
 				`SELECT id FROM runs
@@ -512,7 +572,7 @@ class RunLogBase extends DurableObject<Env> {
 			.map((row) => row.id)
 		this.deleteRunsByIds(expired)
 
-		const total = this.getMeta(metaRunCountKey) ?? 0
+		const total = this.getRunCount()
 		const excess = total - runRecordMaxRunsPerUser
 		if (excess > 0) {
 			const deleteCount = Math.min(excess, maxExcessDeletesPerFinish)
@@ -533,34 +593,70 @@ class RunLogBase extends DurableObject<Env> {
 			this.deleteRunsByIds(ids)
 		}
 
-		this.setMeta(metaFinishesSinceRetentionKey, 0)
+		this.setFinishesSinceRetention(0)
 	}
 
 	private maybeEnforceRetention() {
-		const finishes = (this.getMeta(metaFinishesSinceRetentionKey) ?? 0) + 1
-		this.setMeta(metaFinishesSinceRetentionKey, finishes)
+		const finishes = this.getFinishesSinceRetention() + 1
+		this.setFinishesSinceRetention(finishes)
 		if (finishes >= runRecordRetentionEveryNFinishes) {
 			this.enforceRetention()
 		}
 	}
 
+	/**
+	 * Arming rule: schedule an alarm only while `hasPendingRetentionWork()` is
+	 * true (over cap, age-due/soon, or stale-running due/soon). Hot finishes
+	 * that already armed — or already confirmed idle — skip storage. When a
+	 * retention pass leaves nothing due, the alarm self-terminates; the next
+	 * write re-arms via this method if new work appears — so idle users are
+	 * not woken forever.
+	 */
 	private async ensureRetentionAlarm() {
-		const currentAlarm = await this.ctx.storage.getAlarm()
-		if (currentAlarm == null) {
-			await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
+		const overCap = this.getRunCount() > runRecordMaxRunsPerUser
+		if (this.retentionAlarmArmed && !overCap) return
+		if (!this.retentionAlarmArmed && this.retentionIdleConfirmed && !overCap) {
+			return
 		}
+		if (!overCap && !this.hasPendingRetentionWork()) {
+			this.retentionIdleConfirmed = true
+			return
+		}
+
+		this.retentionIdleConfirmed = false
+		const existing = await this.ctx.storage.getAlarm()
+		if (
+			existing != null &&
+			existing <= Date.now() + runRecordRetentionAlarmMs
+		) {
+			this.retentionAlarmArmed = true
+			return
+		}
+		await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
+		this.retentionAlarmArmed = true
 	}
 
 	async alarm(): Promise<void> {
 		this.enforceRetention()
-		await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
+		// Self-terminating: re-arm only while work remains after this pass.
+		if (this.hasPendingRetentionWork()) {
+			await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
+			this.retentionAlarmArmed = true
+			this.retentionIdleConfirmed = false
+		} else {
+			this.retentionAlarmArmed = false
+			this.retentionIdleConfirmed = true
+		}
 	}
 
 	async startRun(input: { run: RunLogRowInput }): Promise<{ ok: true }> {
 		const existed = this.runExists(input.run.id)
-		this.upsertRun(input.run, 'ignore')
-		if (!existed && this.runExists(input.run.id)) {
-			this.adjustRunCount(1)
+		if (!existed) {
+			this.upsertRun(input.run, 'ignore')
+			// INSERT OR IGNORE: count only when the row is new.
+			if (this.runExists(input.run.id)) {
+				this.adjustRunCount(1)
+			}
 		}
 		await this.ensureRetentionAlarm()
 		return { ok: true }
@@ -784,10 +880,11 @@ class RunLogBase extends DurableObject<Env> {
 			// Best effort: deleteAll below still clears persisted alarm state.
 		})
 		await this.ctx.storage.deleteAll()
+		this.retentionAlarmArmed = false
+		this.retentionIdleConfirmed = true
 		this.initializeSchema()
 		this.setMeta(metaRunCountKey, 0)
 		this.setMeta(metaFinishesSinceRetentionKey, 0)
-		await this.ctx.storage.setAlarm(Date.now() + runRecordRetentionAlarmMs)
 		return { ok: true }
 	}
 }
