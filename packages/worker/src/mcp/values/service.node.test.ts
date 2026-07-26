@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	deleteAllAppScopedValues,
 	deleteValue,
@@ -347,7 +348,30 @@ test('value service rejects unavailable scoped storage', async () => {
 				appId: null,
 			},
 		}),
-	).rejects.toThrow('Value scope "app" is unavailable in this context.')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message === 'Value scope "app" is unavailable in this context.',
+	)
+
+	await expect(
+		saveValue({
+			env,
+			userId: 'user-123',
+			scope: 'session',
+			name: 'workspaceSlug',
+			value: 'missing-session',
+			storageContext: {
+				sessionId: null,
+				appId: null,
+			},
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message ===
+				'Value scope "session" is unavailable in this context.',
+	)
 })
 
 test('deleteAllAppScopedValues removes all app-scoped values for one app', async () => {

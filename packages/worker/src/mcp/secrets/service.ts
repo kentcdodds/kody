@@ -1,3 +1,4 @@
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	normalizeAllowedCapabilities,
 	parseAllowedCapabilities,
@@ -582,7 +583,9 @@ async function getOrCreateSecretBucket(input: {
 }) {
 	const bindingKey = getSecretBindingKey(input.scope, input.storageContext)
 	if (bindingKey == null) {
-		throw new Error(
+		// Caller asked for session/package scope without that binding in the
+		// current storage context. Keep it off Sentry via McpCallerError.
+		throw new McpCallerError(
 			`Secret scope "${input.scope}" is unavailable in this context.`,
 		)
 	}

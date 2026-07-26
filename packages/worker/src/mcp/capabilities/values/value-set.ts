@@ -31,7 +31,9 @@ export const valueSetCapability = defineDomainCapability(
 			scope: z
 				.enum(valueScopeValues)
 				.default('session')
-				.describe('Storage scope for the value.'),
+				.describe(
+					'Storage scope for the value. "session" requires an active session context; use "user" for durable values from MCP or other contexts without a session.',
+				)
 		}),
 		outputSchema: valueMetadataSchema,
 		async handler(args, ctx: CapabilityContext) {

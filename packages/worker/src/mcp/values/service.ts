@@ -1,3 +1,4 @@
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	getStorageBindingKey,
 	resolveStorageScopeOrder,
@@ -261,7 +262,10 @@ async function getOrCreateValueBucket(input: {
 }) {
 	const bindingKey = getStorageBindingKey(input.scope, input.storageContext)
 	if (bindingKey == null) {
-		throw new Error(
+		// Caller asked for session/app scope without that binding in the
+		// current storage context (common for MCP value_set with default
+		// scope "session"). Keep it off Sentry via McpCallerError.
+		throw new McpCallerError(
 			`Value scope "${input.scope}" is unavailable in this context.`,
 		)
 	}

@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -373,6 +374,35 @@ test('resolveSecret returns the first scope hit in precedence order', async () =
 		allowedCapabilities: [],
 		allowedPackages: [],
 	})
+})
+
+test('saveSecret rejects unavailable scoped storage as McpCallerError', async () => {
+	const testDb = createSecretTestDb()
+	const env = {
+		APP_DB: testDb.db,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	}
+
+	await expect(
+		saveSecret({
+			env,
+			userId: 'user-123',
+			scope: 'session',
+			name: 'token',
+			value: 'missing-session',
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: null,
+			},
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message ===
+				'Secret scope "session" is unavailable in this context.',
+	)
 })
 
 test('listPackageSecretsByPackageIds groups package-owned secrets', async () => {
