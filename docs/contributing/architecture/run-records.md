@@ -141,9 +141,9 @@ reason usage metering writes Analytics Engine data points instead of upserting
 D1 per event (see [Usage metering](./usage-metering.md) § Sinks). Per-user DO
 SQLite keeps write contention on the user who produced the events.
 
-Legacy D1 tables `package_runtime_runs` / `package_runtime_logs` are no longer
-written. Hourly retention still drains leftover rows; a follow-up migration
-drops the tables. See [Data storage](./data-storage.md).
+Writers do not use D1 tables `package_runtime_runs` / `package_runtime_logs`.
+Hourly retention drains any remaining rows; a follow-up migration drops the
+tables. See [Data storage](./data-storage.md).
 
 ## Retention
 
@@ -168,15 +168,13 @@ per finish so a single RPC stays bounded.
 Entity rows hold **current state**. Run records hold **history**. Never derive
 live state (is this service running? how many?) by querying run records.
 
-The motivating failure mode: entitlement concurrency used to count running
-package services by scanning `package_runtime_runs` for recent `running` rows.
-Evicted Durable Objects left stranded `running` history forever, so the counter
-needed a 24-hour recency window and still could not tell state from leftovers.
-Concurrency now reads `package_service_states` (migration `0095`), an
+Entitlement concurrency reads `package_service_states` (migration `0095`), an
 authoritative D1 projection upserted and heartbeaten by the service Durable
-Object. Jobs keep `last_run_*` and counters on the `jobs` row for the same
-reason — those fields are entity state, not a substitute for run history.
-`jobs.run_history_json` is intentionally left unwritten.
+Object. History rows can outlive an evicted DO or stay `running` after a crash,
+so they are not a reliable liveness signal. Jobs keep `last_run_*` and counters
+on the `jobs` row for the same reason — those fields are entity state, not a
+substitute for run history. `jobs.run_history_json` is intentionally left
+unwritten.
 
 ## Recipe: instrumenting a new surface
 

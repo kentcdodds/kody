@@ -58,8 +58,8 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
   `requireMcpUser(...).userId`.
 - Ingress may look up by username + kody id + webhook name, then immediately
   re-scopes by the owning user.
-- Account deletion/export include `webhook_endpoints` and any leftover
-  `webhook_deliveries` rows (the deliveries table is no longer written; history
+- Account deletion/export include `webhook_endpoints` and any remaining
+  `webhook_deliveries` rows (writers do not use the deliveries table; history
   lives in run records). Export redacts `url_secret_hash`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
   are hashed; verification secrets stay in the secrets primitive.
