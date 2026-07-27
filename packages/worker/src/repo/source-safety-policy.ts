@@ -7,6 +7,7 @@ import {
 } from '#worker/package-registry/package-private.ts'
 import {
 	type ArtifactRepoHandle,
+	type ArtifactToken,
 	resolveArtifactDefaultBranchHead,
 	resolveExistingArtifactSourceRepo,
 } from './artifacts.ts'
@@ -144,6 +145,10 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 	source: EntitySourceRow
 	operation: string
 	requirePublishedCommitHead?: boolean
+	accessToken?: {
+		scope: 'read' | 'write'
+		ttlSeconds: number
+	}
 }): Promise<{
 	sourceId: string
 	publishedCommit: string
@@ -151,6 +156,7 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 	defaultBranch: string
 	remote: string
 	repo: ArtifactRepoHandle
+	accessToken: ArtifactToken | null
 } | null> {
 	if (input.source.entity_kind !== 'package') {
 		return null
@@ -191,8 +197,22 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 		)
 	}
 	let head: Awaited<ReturnType<typeof resolveArtifactDefaultBranchHead>>
+	let accessToken: ArtifactToken | null = null
 	try {
-		head = await resolveArtifactDefaultBranchHead({ repo })
+		if (input.accessToken) {
+			const [info, minted] = await Promise.all([
+				repo.info(),
+				repo.createToken(input.accessToken.scope, input.accessToken.ttlSeconds),
+			])
+			accessToken = minted
+			head = await resolveArtifactDefaultBranchHead({
+				repo,
+				token: minted.plaintext,
+				info,
+			})
+		} else {
+			head = await resolveArtifactDefaultBranchHead({ repo })
+		}
 	} catch (error) {
 		const message = getErrorMessage(error)
 		throw new Error(
@@ -232,6 +252,7 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 		defaultBranch: head.defaultBranch,
 		remote: head.remote,
 		repo,
+		accessToken,
 	}
 }
 

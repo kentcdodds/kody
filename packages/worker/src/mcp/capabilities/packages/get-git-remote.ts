@@ -132,24 +132,45 @@ export const getGitRemoteCapability = defineDomainCapability(
 					kody_id: requestedKodyId,
 				},
 			})
-			if (args.scope === 'write') {
-				await assertRestorablePackageSourceSnapshot({
-					env: ctx.env,
-					userId: owner.ownerUserId,
-					source,
-					operation: 'package_get_git_remote write access',
-				})
-			}
-			const sourceHead = await assertPublishedPackageSourceRepoHead({
+			const headPromise = assertPublishedPackageSourceRepoHead({
 				env: ctx.env,
 				source,
 				operation: 'package_get_git_remote',
+				accessToken: {
+					scope: args.scope,
+					ttlSeconds: args.ttl_seconds,
+				},
 			})
+			let sourceHead: Awaited<typeof headPromise>
+			if (args.scope === 'write') {
+				const [snapshotResult, headResult] = await Promise.allSettled([
+					assertRestorablePackageSourceSnapshot({
+						env: ctx.env,
+						userId: owner.ownerUserId,
+						source,
+						operation: 'package_get_git_remote write access',
+					}),
+					headPromise,
+				])
+				if (snapshotResult.status === 'rejected') {
+					throw snapshotResult.reason
+				}
+				if (headResult.status === 'rejected') {
+					throw headResult.reason
+				}
+				sourceHead = headResult.value
+			} else {
+				sourceHead = await headPromise
+			}
 			if (!sourceHead) {
 				throw new Error('package_get_git_remote requires a package source.')
 			}
-			const { repo } = sourceHead
-			const token = await repo.createToken(args.scope, args.ttl_seconds)
+			const token = sourceHead.accessToken
+			if (!token) {
+				throw new Error(
+					'package_get_git_remote failed to mint an artifact access token.',
+				)
+			}
 			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = source.entity_id
 			return {

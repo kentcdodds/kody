@@ -4,10 +4,21 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
-	resolveArtifactDefaultBranchHead: vi.fn(),
 	resolveExistingArtifactSourceRepo: vi.fn(),
 	createStubSavedPackage: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
+	listServerRefs: vi.fn(),
+}))
+
+vi.mock('isomorphic-git', () => ({
+	default: {
+		listServerRefs: (...args: Array<unknown>) =>
+			mockModule.listServerRefs(...args),
+	},
+}))
+
+vi.mock('isomorphic-git/http/web', () => ({
+	default: {},
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -32,8 +43,6 @@ vi.mock('#worker/repo/artifacts.ts', async () => {
 	const actual = await vi.importActual('#worker/repo/artifacts.ts')
 	return {
 		...(actual as object),
-		resolveArtifactDefaultBranchHead: (...args: Array<unknown>) =>
-			mockModule.resolveArtifactDefaultBranchHead(...args),
 		resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
 			mockModule.resolveExistingArtifactSourceRepo(...args),
 	}
@@ -63,35 +72,46 @@ function resetMocks() {
 	mockModule.resolvePackageOwnerContext.mockResolvedValue(personalOwner())
 }
 
-function createContext(userId = 'user-1') {
+function createPublishedSnapshot() {
+	return {
+		version: 1,
+		sourceId: 'source-1',
+		repoId: 'package-package-1',
+		entityKind: 'package',
+		entityId: 'package-1',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		files: {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/unleashed-wifi',
+				exports: { '.': './src/index.ts' },
+				kody: {
+					id: 'unleashed-wifi',
+					description: 'Unleashed WiFi controls.',
+				},
+			}),
+			'src/index.ts': 'export default async function main() {}\n',
+		},
+		createdAt: '2026-05-04T00:00:00.000Z',
+	}
+}
+
+function createContext(
+	userId = 'user-1',
+	options: { snapshot?: unknown | null } = {},
+) {
+	const snapshot =
+		options.snapshot === undefined
+			? createPublishedSnapshot()
+			: options.snapshot
 	return {
 		env: {
 			APP_DB: {},
 			BUNDLE_ARTIFACTS_KV: {
 				async get(_key: string, type?: 'text' | 'json') {
 					if (type !== 'json') return null
-					return {
-						version: 1,
-						sourceId: 'source-1',
-						repoId: 'package-package-1',
-						entityKind: 'package',
-						entityId: 'package-1',
-						publishedCommit: 'commit-1',
-						manifestPath: 'package.json',
-						sourceRoot: '/',
-						files: {
-							'package.json': JSON.stringify({
-								name: '@kentcdodds/unleashed-wifi',
-								exports: { '.': './src/index.ts' },
-								kody: {
-									id: 'unleashed-wifi',
-									description: 'Unleashed WiFi controls.',
-								},
-							}),
-							'src/index.ts': 'export default async function main() {}\n',
-						},
-						createdAt: '2026-05-04T00:00:00.000Z',
-					}
+					return snapshot
 				},
 			},
 		} as unknown as Env,
@@ -147,22 +167,20 @@ function mockPackageSource(sourceUserId = 'user-1') {
 		scope,
 		expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
 	}))
+	const remote =
+		'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git'
 	const repo = {
 		info: vi.fn(async () => ({
-			remote:
-				'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
+			remote,
 			defaultBranch: 'main',
 		})),
 		createToken,
 	}
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue(repo)
-	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValue({
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
-		defaultBranch: 'main',
-		commit: 'commit-1',
-	})
-	return { createToken }
+	mockModule.listServerRefs.mockResolvedValue([
+		{ ref: 'refs/heads/main', oid: 'commit-1' },
+	])
+	return { createToken, remote, repo }
 }
 
 test('get_git_remote returns scoped artifact remotes and rejects invalid input', async () => {
@@ -187,14 +205,19 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 	).rejects.toThrow('Repo source was not found for this user.')
 
 	resetMocks()
-	const { createToken } = mockPackageSource()
+	const { createToken, remote } = mockPackageSource()
 	const before = Date.now()
 	const writeResult = await getGitRemoteCapability.handler(
 		{ package_id: 'package-1', ttl_seconds: 1800 },
 		createContext(),
 	)
 	const writeExpiresAt = new Date(writeResult.expires_at).getTime()
+	expect(createToken).toHaveBeenCalledTimes(1)
 	expect(createToken).toHaveBeenCalledWith('write', 1800)
+	expect(writeResult.package_id).toBe('package-1')
+	expect(writeResult.kody_id).toBe('unleashed-wifi')
+	expect(writeResult.created).toBe(false)
+	expect(writeResult.remote).toBe(remote)
 	expect(writeResult.scope).toBe('write')
 	expect(writeExpiresAt).toBeGreaterThanOrEqual(before + 1799 * 1000)
 	expect(writeExpiresAt).toBeLessThanOrEqual(Date.now() + 1801 * 1000)
@@ -204,8 +227,15 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 	expect(writeResult.git_extra_header).toBe(
 		'Authorization: Bearer art_v1_write_token',
 	)
-	expect(writeResult.setup_commands.length).toBeGreaterThan(0)
-	expect(writeResult.setup_commands[0]).toMatch(/^git -c http\.extraHeader=/)
+	expect(writeResult.setup_commands).toEqual([
+		`git -c http.extraHeader='Authorization: Bearer art_v1_write_token' clone '${remote}' 'package-1'`,
+		`cd 'package-1'`,
+		`git remote add kody '${remote}'`,
+		`git config remote.kody.fetch '+refs/heads/*:refs/remotes/kody/*'`,
+		`git config --add remote.kody.fetch '+refs/notes/*:refs/notes/*'`,
+		`git -c http.extraHeader='Authorization: Bearer art_v1_write_token' fetch kody 'refs/notes/*:refs/notes/*'`,
+		`git -c http.extraHeader='Authorization: Bearer art_v1_write_token' push kody HEAD:'main'`,
+	])
 
 	resetMocks()
 	const readSetup = mockPackageSource()
@@ -213,8 +243,18 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 		{ kody_id: 'unleashed-wifi', scope: 'read' },
 		createContext(),
 	)
+	expect(readSetup.createToken).toHaveBeenCalledTimes(1)
 	expect(readSetup.createToken).toHaveBeenCalledWith('read', 14_400)
 	expect(readResult.scope).toBe('read')
+	expect(readResult.remote).toBe(readSetup.remote)
+	expect(readResult.authenticated_remote).toContain(
+		'https://x:art_v1_read_token@',
+	)
+	expect(readResult.git_extra_header).toBe(
+		'Authorization: Bearer art_v1_read_token',
+	)
+	expect(readResult.setup_commands[0]).toMatch(/^git -c http\.extraHeader=/)
+	expect(readResult.setup_commands.at(-1)).toContain("HEAD:'main'")
 
 	resetMocks()
 	mockPackageSource()
@@ -230,6 +270,28 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 			createContext(),
 		),
 	).rejects.toThrow()
+})
+
+test('get_git_remote write scope blocks when no restorable backup snapshot exists', async () => {
+	resetMocks()
+	mockPackageSource()
+	await expect(
+		getGitRemoteCapability.handler(
+			{ package_id: 'package-1', scope: 'write' },
+			createContext('user-1', { snapshot: null }),
+		),
+	).rejects.toThrow('Stop and report this source recovery problem')
+})
+
+test('get_git_remote prefers package-not-found over snapshot errors', async () => {
+	resetMocks()
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	await expect(
+		getGitRemoteCapability.handler(
+			{ package_id: 'missing' },
+			createContext('user-1', { snapshot: null }),
+		),
+	).rejects.toThrow('Saved package "missing" was not found.')
 })
 
 test('get_git_remote create mode registers stubs for owner and delegated scopes', async () => {
