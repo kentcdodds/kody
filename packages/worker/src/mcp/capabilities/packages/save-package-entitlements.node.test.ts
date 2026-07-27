@@ -111,13 +111,12 @@ function createDatabase(
 							}
 							if (
 								query.includes('SELECT username') &&
-								query.includes('FROM users')
+								query.includes('FROM users') &&
+								query.includes('stable_user_id')
 							) {
 								return selectOne(
 									'users',
-									(row) =>
-										String(row['email']).toLowerCase() ===
-										String(params[0]).toLowerCase(),
+									(row) => row['stable_user_id'] === params[0],
 								) as T | null
 							}
 							if (

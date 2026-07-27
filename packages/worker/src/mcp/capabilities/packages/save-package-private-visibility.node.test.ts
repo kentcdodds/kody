@@ -75,14 +75,12 @@ function createDatabase(users: Array<Record<string, unknown>>) {
 							}
 							if (
 								query.includes('SELECT username') &&
-								query.includes('FROM users')
+								query.includes('FROM users') &&
+								query.includes('stable_user_id')
 							) {
 								return (
-									users.find(
-										(row) =>
-											String(row['email']).toLowerCase() ===
-											String(params[0]).toLowerCase(),
-									) ?? null
+									users.find((row) => row['stable_user_id'] === params[0]) ??
+									null
 								)
 							}
 							if (
