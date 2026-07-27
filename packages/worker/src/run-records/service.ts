@@ -1,7 +1,6 @@
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
 import { recordSuccessfulPackageRun } from '#worker/usage/activation.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
-import { dispatchRunErrorSubscriptionEvents } from './package-subscriptions.ts'
 import {
 	type RunLogEntryInput,
 	type RunLogRowInput,
@@ -319,6 +318,13 @@ export async function finishRunRecord(input: {
 			handle.context.surface !== 'subscription'
 		) {
 			try {
+				// Dynamic import: a static edge to package-subscriptions pulls
+				// package-invocations and deepens the account-export cycle
+				// (account-export → … → account-export-shared → account-export),
+				// leaving z.enum(accountExportSectionNames) undefined at module load.
+				const { dispatchRunErrorSubscriptionEvents } = await import(
+					'./package-subscriptions.ts'
+				)
 				await dispatchRunErrorSubscriptionEvents({
 					env: input.env,
 					userId: handle.userId,
