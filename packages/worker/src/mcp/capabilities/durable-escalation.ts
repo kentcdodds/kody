@@ -117,6 +117,10 @@ function waitForAbort(signal: AbortSignal) {
 	})
 }
 
+type SettledInlineRun<T> =
+	| { kind: 'completed'; value: T }
+	| { kind: 'rejected'; error: unknown }
+
 /**
  * Attempt `run` within a wall-clock budget. On budget exhaustion, create a
  * durable Cloudflare Workflow for the same work and return a handle instead of
@@ -191,8 +195,22 @@ export async function runWithDurableEscalation<T>(input: {
 			controller.abort()
 		}, budgetMs)
 
-		const runPromise = input.run(controller.signal)
-		// Prevent unhandled rejection if we abandon the inline attempt on abort.
+		const settledRef: { current: SettledInlineRun<T> | null } = {
+			current: null,
+		}
+		const runPromise = input.run(controller.signal).then(
+			(value) => {
+				settledRef.current = { kind: 'completed', value }
+				return value
+			},
+			(error: unknown) => {
+				settledRef.current = { kind: 'rejected', error }
+				throw error
+			},
+		)
+		// The inline attempt is not cancelled on budget expiry (and must not be:
+		// aborting mid-publish could leave partial state). Keep the rejection
+		// handled so an abandoned-in-flight attempt cannot surface unhandled.
 		void runPromise.catch(() => {})
 
 		try {
@@ -211,7 +229,7 @@ export async function runWithDurableEscalation<T>(input: {
 			}
 			if (raced.kind === 'rejected') {
 				if (controller.signal.aborted) {
-					// Fall through to durable dispatch.
+					// Fall through: prefer any same-tick settlement below, else dispatch.
 				} else {
 					return {
 						kind: 'failed',
@@ -219,6 +237,27 @@ export async function runWithDurableEscalation<T>(input: {
 					}
 				}
 			}
+
+			// Drain microtasks so a run that finished in the same turn as the
+			// abort is observed before we create a redundant workflow.
+			await Promise.resolve()
+			const settled = settledRef.current
+			if (settled?.kind === 'completed') {
+				return { kind: 'completed', value: settled.value }
+			}
+			if (settled?.kind === 'rejected' && !controller.signal.aborted) {
+				return {
+					kind: 'failed',
+					error: getErrorMessage(settled.error),
+				}
+			}
+			// Inline work may still be running. We dispatch anyway rather than
+			// awaiting it (awaiting would reintroduce the opaque MCP timeout).
+			// Overlap is intentional and safe for publish: we do not cancel the
+			// in-flight attempt (partial apply is worse than duplication), the
+			// durable re-entry is idempotent on matching published_commit
+			// (already_published), and RepoSession DO RPCs serialize per session
+			// id so the common first-attempt session cannot interleave mutations.
 		} finally {
 			clearTimeout(timer)
 		}

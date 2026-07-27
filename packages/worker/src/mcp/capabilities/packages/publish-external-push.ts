@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -335,22 +336,39 @@ async function getPublishStaticDependents(input: {
 	})
 }
 
-function buildExternalPublishIdempotencyParts(input: {
+/**
+ * Every input that changes publish semantics for durable dedupe. Adding a
+ * field here is a compile-time break at the call site that builds this object,
+ * and the canonical JSON blob below includes every property automatically.
+ */
+export type ExternalPublishSemanticInput = {
 	ownerUserId: string
 	packageId: string
 	newCommit: string
-}) {
+	allowForce: boolean
+	destructiveOverwriteConfirmed: boolean
+}
+
+export function buildExternalPublishIdempotencyParts(
+	input: ExternalPublishSemanticInput,
+) {
 	// Caller identity is applied by runWithDurableEscalation (workflow_runs are
-	// user-scoped). Keep owner/package/commit here so the key stays meaningful.
-	// Distinct delegates may each dispatch for the same publish; that is safe
-	// because re-invoking publish when published_commit already matches HEAD
-	// returns already_published without checks or D1 writes.
+	// user-scoped). Distinct delegates may each dispatch for the same publish;
+	// that is safe because re-invoking publish when published_commit already
+	// matches HEAD returns already_published without checks or D1 writes.
 	return [
 		'package_publish_external_push',
-		input.ownerUserId,
-		input.packageId,
-		input.newCommit,
+		canonicalJsonStringify(input),
 	] as const
+}
+
+function shouldEscalateExternalPublish(executionOrigin: string | undefined) {
+	// Fail closed: only interactive MCP calls escalate. Missing origin and
+	// background (durable workflow re-entry) must not create another workflow.
+	// package-workflows invokeInlineWorkflowCode always sets background today;
+	// requiring an explicit interactive origin still prevents a self-replicating
+	// chain if any future path forgets to set it.
+	return executionOrigin === 'interactive'
 }
 
 async function runExternalPublishAttempt(input: {
@@ -494,7 +512,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 	{
 		name: 'package_publish_external_push',
 		description:
-			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Common cases return the full synchronous result. If the publish exceeds the inline budget (~55s), the work is dispatched once to a durable workflow (idempotent per owner/package/commit) and this capability returns status dispatched with a workflow_id to poll via workflow_run_list instead of hanging until an opaque execute timeout.',
+			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Common cases return the full synchronous result. If the publish exceeds the inline budget (~55s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflow_run_list instead of hanging until an opaque execute timeout.',
 		keywords: ['package', 'publish', 'git', 'artifacts', 'external', 'push'],
 		readOnly: false,
 		idempotent: true,
@@ -538,12 +556,17 @@ export const publishExternalPushCapability = defineDomainCapability(
 				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
 			}
 
-			// Durable workflow re-entry uses executionOrigin "background" and must
-			// not escalate again (avoids recursive workflow creation).
-			if (ctx.callerContext.executionOrigin === 'background') {
+			if (!shouldEscalateExternalPublish(ctx.callerContext.executionOrigin)) {
 				return await runExternalPublishAttempt(publishInput)
 			}
 
+			const semanticInput = {
+				ownerUserId: owner.ownerUserId,
+				packageId,
+				newCommit,
+				allowForce: args.allow_force,
+				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
+			} satisfies ExternalPublishSemanticInput
 			const durableParams = {
 				...(args.package_id ? { package_id: args.package_id } : {}),
 				...(args.kody_id ? { kody_id: args.kody_id } : {}),
@@ -556,11 +579,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				userId: user.userId,
 				userEmail: user.email,
 				budgetMs: defaultDurableEscalationBudgetMs,
-				idempotencyParts: buildExternalPublishIdempotencyParts({
-					ownerUserId: owner.ownerUserId,
-					packageId,
-					newCommit,
-				}),
+				idempotencyParts: buildExternalPublishIdempotencyParts(semanticInput),
 				workflowName: 'package_publish_external_push',
 				packageContext: {
 					packageId,

@@ -459,3 +459,157 @@ test('runWithDurableEscalation never throws and reports structured failures', as
 		error: 'Missing DYNAMIC_CALLABLE_WORKFLOWS binding.',
 	})
 })
+
+test('budget abort dispatches while the inline attempt is still in flight', async () => {
+	const events: Array<string> = []
+	mockModule.createDynamicCallableWorkflow.mockImplementation(async () => {
+		events.push('dispatched')
+		return {
+			ok: true,
+			id: 'dynwf-overlap-1',
+			workflow_name: 'package_publish_external_push',
+			source_type: 'inline',
+			run_at: '2026-07-27T00:00:00.000Z',
+			plan_date: '2026-07-27',
+			status: 'queued',
+		}
+	})
+
+	let releaseInline: (() => void) | null = null
+	const outcome = await runWithDurableEscalation({
+		env: {
+			APP_DB: createWorkflowRunsDb(),
+			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		} as Env,
+		userId: 'user-1',
+		idempotencyParts: ['publish', 'pkg-1', 'overlap'],
+		workflowName: 'package_publish_external_push',
+		durableCode: 'export default async function main() { return null }',
+		budgetMs: 30,
+		run: async (signal) => {
+			events.push('run-start')
+			await new Promise<void>((resolve) => {
+				signal.addEventListener(
+					'abort',
+					() => {
+						events.push('aborted')
+						resolve()
+					},
+					{ once: true },
+				)
+			})
+			// Stay in flight after abort until the test releases us. The helper
+			// must dispatch without awaiting this completion.
+			await new Promise<void>((resolve) => {
+				releaseInline = resolve
+			})
+			events.push('run-end')
+			return { status: 'published' }
+		},
+	})
+
+	expect(outcome.kind).toBe('dispatched')
+	expect(events).toEqual(['run-start', 'aborted', 'dispatched'])
+	expect(events).not.toContain('run-end')
+	releaseInline?.()
+})
+
+test('force and non-force semantic keys do not reuse each other under dedupe', async () => {
+	const hangUntilAborted = async (signal: AbortSignal) =>
+		await new Promise<never>((_resolve, reject) => {
+			signal.addEventListener(
+				'abort',
+				() => reject(new DOMException('Aborted', 'AbortError')),
+				{ once: true },
+			)
+		})
+
+	const safeParts = [
+		'package_publish_external_push',
+		'{"allowForce":false,"destructiveOverwriteConfirmed":false,"newCommit":"commit-new","ownerUserId":"owner-1","packageId":"package-1"}',
+	]
+	const forceParts = [
+		'package_publish_external_push',
+		'{"allowForce":true,"destructiveOverwriteConfirmed":true,"newCommit":"commit-new","ownerUserId":"owner-1","packageId":"package-1"}',
+	]
+	const safeKey = buildCallerScopedIdempotencyKey({
+		userId: 'user-1',
+		parts: safeParts,
+	})
+	const forceKey = buildCallerScopedIdempotencyKey({
+		userId: 'user-1',
+		parts: forceParts,
+	})
+	expect(safeKey).not.toBe(forceKey)
+
+	mockModule.createDynamicCallableWorkflow
+		.mockResolvedValueOnce({
+			ok: true,
+			id: 'dynwf-safe',
+			workflow_name: 'package_publish_external_push',
+			source_type: 'inline',
+			run_at: '2026-07-27T00:00:00.000Z',
+			plan_date: '2026-07-27',
+			status: 'queued',
+		})
+		.mockResolvedValueOnce({
+			ok: true,
+			id: 'dynwf-force',
+			workflow_name: 'package_publish_external_push',
+			source_type: 'inline',
+			run_at: '2026-07-27T00:00:00.000Z',
+			plan_date: '2026-07-27',
+			status: 'queued',
+		})
+
+	const rows: Array<Record<string, unknown>> = []
+	const db = createWorkflowRunsDb(rows)
+
+	const safe = await runWithDurableEscalation({
+		env: {
+			APP_DB: db,
+			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		} as Env,
+		userId: 'user-1',
+		idempotencyParts: safeParts,
+		workflowName: 'package_publish_external_push',
+		durableCode: 'export default async function main() { return null }',
+		budgetMs: 30,
+		run: hangUntilAborted,
+	})
+	expect(safe).toEqual({
+		kind: 'dispatched',
+		handle: expect.objectContaining({
+			workflow_id: 'dynwf-safe',
+			idempotency_key: safeKey,
+		}),
+	})
+	rows.push({
+		id: 'dynwf-safe',
+		user_id: 'user-1',
+		workflow_name: 'package_publish_external_push',
+		idempotency_key: safeKey,
+		status: 'running',
+	})
+
+	const force = await runWithDurableEscalation({
+		env: {
+			APP_DB: db,
+			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		} as Env,
+		userId: 'user-1',
+		idempotencyParts: forceParts,
+		workflowName: 'package_publish_external_push',
+		durableCode: 'export default async function main() { return null }',
+		budgetMs: 30,
+		run: hangUntilAborted,
+	})
+	expect(force).toEqual({
+		kind: 'dispatched',
+		handle: expect.objectContaining({
+			workflow_id: 'dynwf-force',
+			idempotency_key: forceKey,
+		}),
+	})
+	expect(mockModule.createDynamicCallableWorkflow).toHaveBeenCalledTimes(2)
+})

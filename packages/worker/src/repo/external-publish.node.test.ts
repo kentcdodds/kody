@@ -184,7 +184,9 @@ test('returns no-op when commit is already current', async () => {
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 
 	// Re-invoking after a partial/timed-out publish whose D1 published_commit
-	// already matches the pushed HEAD must stay a no-op (safe durable retry).
+	// already matches the pushed HEAD must stay a no-op. This is what makes
+	// overlapping inline + durable escalation safe: the second attempt cannot
+	// double-apply checks or D1 writes.
 	await expect(
 		publishFromExternalRef({
 			env: { APP_DB: {} } as Env,

@@ -62,7 +62,7 @@ vi.mock('#mcp/capabilities/durable-escalation.ts', () => ({
 		mockModule.runWithDurableEscalation(...args),
 }))
 
-const { publishExternalPushCapability } =
+const { buildExternalPublishIdempotencyParts, publishExternalPushCapability } =
 	await import('./publish-external-push.ts')
 
 function setupDefaultMocks() {
@@ -113,7 +113,9 @@ function setupDefaultMocks() {
 	)
 }
 
-function createContext(executionOrigin?: 'interactive' | 'background') {
+function createContext(
+	executionOrigin: 'interactive' | 'background' | 'omit' = 'interactive',
+) {
 	return {
 		env: {
 			APP_DB: {
@@ -134,7 +136,7 @@ function createContext(executionOrigin?: 'interactive' | 'background') {
 		} as unknown as Env,
 		callerContext: {
 			baseUrl: 'https://kody.test',
-			executionOrigin,
+			...(executionOrigin === 'omit' ? {} : { executionOrigin }),
 			user: {
 				userId: 'user-1',
 				email: 'user@example.com',
@@ -468,14 +470,61 @@ test('ineligible publishes return structured results without durable escalation 
 		userId: string
 		idempotencyParts: ReadonlyArray<string>
 	}
-	// workflow_runs rows are scoped by acting userId; parts keep owner/package/commit.
+	// workflow_runs rows are scoped by acting userId; parts keep full semantic input.
 	expect(escalationInput.userId).toBe('user-1')
-	expect(escalationInput.idempotencyParts).toEqual([
-		'package_publish_external_push',
-		'user-1',
-		'package-1',
-		'commit-new',
-	])
+	expect(escalationInput.idempotencyParts).toEqual(
+		buildExternalPublishIdempotencyParts({
+			ownerUserId: 'user-1',
+			packageId: 'package-1',
+			newCommit: 'commit-new',
+			allowForce: false,
+			destructiveOverwriteConfirmed: false,
+		}),
+	)
+})
+
+test('force and non-force publishes get distinct durable idempotency keys', () => {
+	const base = {
+		ownerUserId: 'owner-1',
+		packageId: 'package-1',
+		newCommit: 'commit-new',
+	}
+	const safe = buildExternalPublishIdempotencyParts({
+		...base,
+		allowForce: false,
+		destructiveOverwriteConfirmed: false,
+	})
+	const force = buildExternalPublishIdempotencyParts({
+		...base,
+		allowForce: true,
+		destructiveOverwriteConfirmed: true,
+	})
+	expect(safe).not.toEqual(force)
+	expect(safe[1]).toContain('"allowForce":false')
+	expect(force[1]).toContain('"allowForce":true')
+})
+
+test('missing executionOrigin fails closed and does not escalate', async () => {
+	setupDefaultMocks()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+	})
+
+	const result = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext('omit'),
+	)
+	expect(result.status).toBe('published')
+	expect(mockModule.runWithDurableEscalation).not.toHaveBeenCalled()
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
 })
 
 test('budget exhaustion returns a dispatched handle and background re-entry skips escalation', async () => {
@@ -484,14 +533,20 @@ test('budget exhaustion returns a dispatched handle and background re-entry skip
 		branch: 'main',
 		commit: 'commit-new',
 	})
+	const expectedParts = buildExternalPublishIdempotencyParts({
+		ownerUserId: 'user-1',
+		packageId: 'package-1',
+		newCommit: 'commit-new',
+		allowForce: false,
+		destructiveOverwriteConfirmed: false,
+	})
 	mockModule.runWithDurableEscalation.mockResolvedValue({
 		kind: 'dispatched',
 		handle: {
 			status: 'dispatched',
 			workflow_id: 'dynwf-publish-1',
 			workflow_name: 'package_publish_external_push',
-			idempotency_key:
-				'user-1:package_publish_external_push:user-1:package-1:commit-new',
+			idempotency_key: ['user-1', ...expectedParts].join(':'),
 			run_status: 'queued',
 			message: 'dispatched',
 		},
@@ -505,8 +560,7 @@ test('budget exhaustion returns a dispatched handle and background re-entry skip
 		status: 'dispatched',
 		workflow_id: 'dynwf-publish-1',
 		workflow_name: 'package_publish_external_push',
-		idempotency_key:
-			'user-1:package_publish_external_push:user-1:package-1:commit-new',
+		idempotency_key: ['user-1', ...expectedParts].join(':'),
 		run_status: 'queued',
 		message: 'dispatched',
 	})
@@ -514,12 +568,7 @@ test('budget exhaustion returns a dispatched handle and background re-entry skip
 	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
-			idempotencyParts: [
-				'package_publish_external_push',
-				'user-1',
-				'package-1',
-				'commit-new',
-			],
+			idempotencyParts: expectedParts,
 		}),
 	)
 
