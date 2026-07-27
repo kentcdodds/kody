@@ -349,8 +349,8 @@ manual plans only.
 Checkout sessions are created server-side for authenticated users via
 `POST /account/billing/checkout.json` (Stripe Checkout Session,
 `mode=subscription`, with a signed `client_reference_id` and
-`metadata.kody_stable_user_id`). Public Payment Links were removed after a
-card-testing incident so checkout is not reachable without a signed-in session.
+`metadata.kody_stable_user_id`). There is no public Payment Link path — checkout
+requires a signed-in session so unauthenticated card-testing is not possible.
 `GET /account/billing/success` verifies `client_reference_id` before linking
 `users.stripe_customer_id`, then refreshes `users.stripe_plan`.
 `GET /account/billing/portal` opens the Stripe customer portal for linked

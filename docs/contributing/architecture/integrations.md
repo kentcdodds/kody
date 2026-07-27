@@ -51,12 +51,10 @@ connections must be removed before their app.
 
 Account export includes both tables. Rows contain secret _names_ and the inline
 `client_id`, never encrypted secret payloads. Exporting `client_id` is
-deliberate: it is not a credential value, and the same identifier was previously
-portable as an ordinary user value.
+deliberate: it is a non-secret OAuth client identifier, not a credential value.
 
-Leftover `<provider>-client-id` values in the values store (when present) are
-ordinary user data left after migration; they are not the live source of truth
-for integrations.
+Any `<provider>-client-id` rows in the values store are ordinary user data; they
+are not the live source of truth for integrations.
 
 ## Two independent host gates
 
