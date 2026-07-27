@@ -58,11 +58,28 @@ export interface ExportLost {
 
 export type ExportState = ExportReady | ExportPending | ExportLost
 
+/**
+ * Statement-length statistics for one exported SQL object, measured while
+ * streaming during upload. `oversizedStatementCount > 0` means the object is
+ * not restorable through the D1 import API (statement too long:
+ * SQLITE_TOOBIG); the backup still lands, but the condition is logged as a
+ * failure-status event and persisted next to the object as
+ * `<objectKey>.stats.json` so dashboards and health checks can alert on it.
+ */
+export interface SqlStatementStats {
+	maxStatementBytes: number
+	oversizedStatementCount: number
+	/** The import statement-length limit the stats were measured against. */
+	limit: number
+}
+
 export interface StoredBackup {
 	bytes: number
 	sha256: string
 	r2Etag: string
 	alreadyExisted: boolean
+	/** Absent only on step results cached by pre-stats deployments. */
+	sqlStatementStats?: SqlStatementStats
 }
 
 export interface LogRecord {
@@ -74,6 +91,8 @@ export interface LogRecord {
 		| 'backup-restarted'
 		| 'backup-success'
 		| 'backup-failure'
+		| 'backup-sql-stats'
+		| 'backup-unrestorable-statements'
 		| 'freshness-success'
 		| 'freshness-stale'
 		| 'source-size-success'
@@ -110,4 +129,6 @@ export interface LogRecord {
 	sourceBytes?: number
 	maxSourceBytes?: number
 	blobsVerified?: number
+	maxStatementBytes?: number
+	oversizedStatementCount?: number
 }

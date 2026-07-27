@@ -325,57 +325,11 @@ export class CachedUploadStep implements BackupRuntimeStep {
 		this.cache.set(name, value)
 		if (name === 'stream-export-to-immutable-r2') this.afterUpload()
 		if (
-			name === 'verify-source-and-write-immutable-manifest' &&
+			name === 'verify-stored-object-and-write-immutable-manifest' &&
 			this.afterFinalization
 		) {
 			await this.afterFinalization()
 		}
-		return value
-	}
-
-	async sleep(): Promise<void> {}
-}
-
-export class RetryFinalizationStep implements BackupRuntimeStep {
-	readonly finalizationAttempts: number[] = []
-	private readonly cache = new Map<string, unknown>()
-
-	async do<T>(
-		name: string,
-		config: unknown,
-		callback: () => Promise<T>,
-	): Promise<T>
-	async do<T>(name: string, callback: () => Promise<T>): Promise<T>
-	async do<T>(
-		name: string,
-		configOrCallback: unknown,
-		callback?: () => Promise<T>,
-	): Promise<T> {
-		if (this.cache.has(name)) return this.cache.get(name) as T
-		const execute =
-			typeof configOrCallback === 'function'
-				? (configOrCallback as () => Promise<T>)
-				: callback!
-		if (name === 'verify-source-and-write-immutable-manifest') {
-			for (let attempt = 1; attempt <= 2; attempt += 1) {
-				this.finalizationAttempts.push(attempt)
-				try {
-					const value = await execute()
-					this.cache.set(name, value)
-					return value
-				} catch (error) {
-					if (
-						attempt === 2 ||
-						!(error instanceof BackupError) ||
-						!error.retryable
-					) {
-						throw error
-					}
-				}
-			}
-		}
-		const value = await execute()
-		this.cache.set(name, value)
 		return value
 	}
 
