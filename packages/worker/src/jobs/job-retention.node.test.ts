@@ -183,6 +183,20 @@ test('upcoming never-ran once jobs and enabled recurring jobs are skipped', () =
 			now,
 		}),
 	).toEqual({ eligible: false, reason: 'active_recurring' })
+
+	// Kill switch pauses execution; it must not age out a held recurring job.
+	expect(
+		evaluateJobRetentionEligibility({
+			job: createJob({
+				enabled: true,
+				killSwitchEnabled: true,
+				schedule: { type: 'interval', every: '1h' },
+				lastRunAt: '2026-01-01T00:00:00.000Z',
+			}),
+			preferences,
+			now,
+		}),
+	).toEqual({ eligible: false, reason: 'active_recurring' })
 })
 
 test('disabled recurring ad-hoc jobs age out after disabled retention days', () => {

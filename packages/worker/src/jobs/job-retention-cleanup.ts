@@ -17,10 +17,14 @@ import {
 } from './scheduler-logging.ts'
 
 /**
- * Total wall-clock budget for one job-retention cron run. Mirrors the general
- * retention prune pattern so backlogs shrink across hourly ticks.
+ * Total wall-clock budget for one job-retention cron run. Candidate SQL already
+ * excludes live/held jobs; remaining inactive rows are skipped or deleted
+ * cheaply so backlogs shrink across hourly ticks without a durable cursor.
  */
 export const jobRetentionRunTimeBudgetMs = 15_000
+
+/** Stay under D1's 100 bound-parameter limit when loading user preferences. */
+const maxUserIdsPerPreferencesQuery = 50
 
 export type JobRetentionCleanupResult = {
 	scanned: number
@@ -122,28 +126,35 @@ async function loadPreferencesByUserId(
 	if (userIds.length === 0) {
 		return preferences
 	}
-	const placeholders = userIds.map(() => '?').join(', ')
-	const { results } = await db
-		.prepare(
-			`SELECT
-				stable_user_id,
-				job_retention_success_once_days,
-				job_retention_failed_once_days,
-				job_retention_disabled_recurring_days
-			FROM users
-			WHERE stable_user_id IN (${placeholders})`,
-		)
-		.bind(...userIds)
-		.all<UserRetentionRow>()
-	for (const row of results ?? []) {
-		preferences.set(
-			row.stable_user_id,
-			resolveJobRetentionPreferences({
-				successOnceDays: row.job_retention_success_once_days,
-				failedOrNeverRanOnceDays: row.job_retention_failed_once_days,
-				disabledRecurringDays: row.job_retention_disabled_recurring_days,
-			}),
-		)
+	for (
+		let offset = 0;
+		offset < userIds.length;
+		offset += maxUserIdsPerPreferencesQuery
+	) {
+		const chunk = userIds.slice(offset, offset + maxUserIdsPerPreferencesQuery)
+		const placeholders = chunk.map(() => '?').join(', ')
+		const { results } = await db
+			.prepare(
+				`SELECT
+					stable_user_id,
+					job_retention_success_once_days,
+					job_retention_failed_once_days,
+					job_retention_disabled_recurring_days
+				FROM users
+				WHERE stable_user_id IN (${placeholders})`,
+			)
+			.bind(...chunk)
+			.all<UserRetentionRow>()
+		for (const row of results ?? []) {
+			preferences.set(
+				row.stable_user_id,
+				resolveJobRetentionPreferences({
+					successOnceDays: row.job_retention_success_once_days,
+					failedOrNeverRanOnceDays: row.job_retention_failed_once_days,
+					disabledRecurringDays: row.job_retention_disabled_recurring_days,
+				}),
+			)
+		}
 	}
 	return preferences
 }

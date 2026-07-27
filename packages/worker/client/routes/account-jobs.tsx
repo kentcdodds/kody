@@ -1258,7 +1258,9 @@ export function AccountJobsRoute(handle: Handle) {
 															detail.schedule.type === 'once' &&
 															payload.runNow?.ok
 														) {
-															return `Job run finished. Kept for ${retention.successOnceDays} days · Preserve to keep forever.`
+															return detail.preserved
+																? 'Job run finished. Preserved — will not be auto-deleted.'
+																: `Job run finished. Kept for ${retention.successOnceDays} days · Preserve to keep forever.`
 														}
 														return 'Job run requested.'
 													},

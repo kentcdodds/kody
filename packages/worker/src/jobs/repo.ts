@@ -362,9 +362,14 @@ export async function deleteJobRow(
 export const maxJobRetentionCandidatesPerRun = 100
 
 /**
- * Broad candidate scan for the platform job retention sweeper. Excludes
- * preserved and package-owned rows in SQL; eligibility age/category checks
- * happen in application code so account preferences can vary per user.
+ * Candidate scan for the platform job retention sweeper. Excludes preserved,
+ * package-owned, and clearly held/active rows in SQL so hourly budget is not
+ * spent re-walking live jobs:
+ * - enabled recurring (including kill-switched pause)
+ * - enabled never-ran once that is still runnable
+ * Age/category eligibility still runs in application code so account
+ * preferences can vary per user. Not-yet-aged inactive rows are skipped cheaply;
+ * deletes shrink that set across hourly ticks.
  */
 export async function listJobRetentionCandidateRows(
 	db: D1Database,
@@ -379,6 +384,19 @@ export async function listJobRetentionCandidateRows(
 			WHERE preserved = 0
 				AND id NOT LIKE 'package-job:%'
 				AND id > ?
+				AND NOT (
+					(
+						enabled = 1
+						AND json_extract(schedule_json, '$.type') != 'once'
+					)
+					OR (
+						enabled = 1
+						AND kill_switch_enabled = 0
+						AND json_extract(schedule_json, '$.type') = 'once'
+						AND run_count = 0
+						AND last_run_at IS NULL
+					)
+				)
 			ORDER BY id ASC
 			LIMIT ?`,
 		)

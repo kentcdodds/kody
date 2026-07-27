@@ -224,6 +224,8 @@ export function evaluateJobRetentionEligibility(input: {
 	}
 
 	// Recurring (cron / interval): only disabled ad-hoc jobs age out.
+	// Kill-switched-but-still-enabled jobs are a user pause, not disabled —
+	// do not treat them as retention candidates.
 	if (job.enabled) {
 		return { eligible: false, reason: 'active_recurring' }
 	}

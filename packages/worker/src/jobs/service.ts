@@ -1232,12 +1232,14 @@ export async function deleteJob(input: {
 			const storageId = row.record.storageId
 			await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
 			await deleteJobVector(input.env, input.jobId)
+			let storageCleared = false
 			try {
 				await storageRunnerRpc({
 					env: input.env,
 					userId: input.userId,
 					storageId,
 				}).clearStorage()
+				storageCleared = true
 			} catch (error) {
 				logJobSchedulerError({
 					event: 'job_storage_clear_failed',
@@ -1247,20 +1249,24 @@ export async function deleteJob(input: {
 					...schedulerErrorFields(error),
 				})
 			}
-			try {
-				await input.env.APP_DB.prepare(
-					`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?`,
-				)
-					.bind(input.userId, storageId)
-					.run()
-			} catch (error) {
-				logJobSchedulerError({
-					event: 'job_storage_bucket_unregister_failed',
-					userId: input.userId,
-					jobId: input.jobId,
-					reason: 'job_delete',
-					...schedulerErrorFields(error),
-				})
+			// Keep the bucket registration when clear fails so storage_bytes
+			// still accounts for orphaned DO data and a later sweep can retry.
+			if (storageCleared) {
+				try {
+					await input.env.APP_DB.prepare(
+						`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?`,
+					)
+						.bind(input.userId, storageId)
+						.run()
+				} catch (error) {
+					logJobSchedulerError({
+						event: 'job_storage_bucket_unregister_failed',
+						userId: input.userId,
+						jobId: input.jobId,
+						reason: 'job_delete',
+						...schedulerErrorFields(error),
+					})
+				}
 			}
 			await syncJobManagerAlarm({
 				env: input.env,
