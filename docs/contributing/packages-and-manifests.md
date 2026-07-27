@@ -289,20 +289,24 @@ surface for declared subscriptions. It reads the signed-in user's saved package
 manifests and returns package id, `kody.id`, package name, topic, handler,
 description, and filters, optionally narrowed by exact topic.
 
-For inbound email, `email.message.received` dispatches after a routed message is
-stored. The payload is intentionally metadata-first: message id, address
+For inbound email, `email.message.received` dispatches after an accepted routed
+message is stored. Quarantined inbound mail dispatches
+`email.message.quarantined` instead (same metadata-first payload, different
+topic). The payload is intentionally metadata-first: message id, address
 metadata, headers useful for threading, processing status, timestamps, and
 attachment metadata. Do not embed parsed bodies or attachment bytes in the
 event. Handlers should fetch full bodies or bytes only when needed through
 `email_message_get`, `email_attachment_get`, or the package runtime `email`
-helper.
+helper. Reclassifying a stored message later does not retroactively dispatch
+either topic.
 
 Operator system-inbox mail (`system:email` owner) dispatches the separate
 `email.system-message.received` topic to packages saved by users who hold the
-admin role at dispatch time. The payload is the same metadata-first envelope
-plus an `admin_url` link to the message in `/admin/system-email`. Handlers run
-as the admin package owner (not the system owner), so user-scoped email reads do
-not apply to the system message.
+admin role at dispatch time, only when the message is accepted. Quarantined
+system-inbox mail is stored but never dispatched. The payload is the same
+metadata-first envelope plus an `admin_url` link to the message in
+`/admin/system-email`. Handlers run as the admin package owner (not the system
+owner), so user-scoped email reads do not apply to the system message.
 
 Successful consent-gated platform-feedback inserts enqueue
 `platform.feedback.submitted` for durable package-subscription delivery. Fan-out

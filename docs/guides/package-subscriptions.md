@@ -58,8 +58,9 @@ fan-out, or deciding whether a package already subscribes to a topic.
 
 ## `email.message.received`
 
-Stored inbound email dispatches `email.message.received` after Kody stores the
-message and attachment metadata.
+Accepted stored inbound email dispatches `email.message.received` after Kody
+stores the message and attachment metadata. Quarantined mail uses
+`email.message.quarantined` instead.
 
 Handlers receive a metadata-first payload:
 
@@ -101,6 +102,13 @@ bodies, parsed headers beyond the event metadata, or attachment bytes only when
 the handler needs them with `email_message_get`, `email_attachment_get`, or the
 package runtime `email` helper.
 
+## `email.message.quarantined`
+
+Quarantined stored inbound email dispatches `email.message.quarantined` instead
+of `email.message.received`. The payload matches `email.message.received` with
+`event: 'email.message.quarantined'`. Reclassifying a message later does not
+retroactively dispatch either topic.
+
 ## `email.message.delivery.updated`
 
 Outbound Email Sending lifecycle changes dispatch
@@ -117,10 +125,11 @@ delivery history but do not dispatch after a newer status.
 
 ## `email.system-message.received` (admins)
 
-Mail stored in the operator-owned system inbox (`kody@<apex>`, `support@<apex>`,
-and the other reserved system locals) dispatches `email.system-message.received`
-to packages saved by users who hold the admin role at dispatch time. Non-admin
-subscribers never receive system mail.
+Accepted mail stored in the operator-owned system inbox (`kody@<apex>`,
+`support@<apex>`, and the other reserved system locals) dispatches
+`email.system-message.received` to packages saved by users who hold the admin
+role at dispatch time. Quarantined system-inbox mail is stored but never
+dispatched. Non-admin subscribers never receive system mail.
 
 The payload matches `email.message.received` (with
 `event: 'email.system-message.received'`) plus an `admin_url` string linking to

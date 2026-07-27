@@ -916,6 +916,7 @@ export async function listEmailMessages(input: {
 	direction?: EmailDirection | null
 	processingStatus?: EmailProcessingStatus | null
 	deliveryStatus?: EmailDeliveryStatus | null
+	classification?: EmailClassification | null
 	limit: number
 }) {
 	const result = await input.db
@@ -927,6 +928,7 @@ export async function listEmailMessages(input: {
 				AND (? IS NULL OR direction = ?)
 				AND (? IS NULL OR processing_status = ?)
 				AND (? IS NULL OR delivery_status = ?)
+				AND (? IS NULL OR classification = ?)
 			ORDER BY created_at DESC, id DESC
 			LIMIT ?`,
 		)
@@ -940,6 +942,8 @@ export async function listEmailMessages(input: {
 			input.processingStatus ?? null,
 			input.deliveryStatus ?? null,
 			input.deliveryStatus ?? null,
+			input.classification ?? null,
+			input.classification ?? null,
 			input.limit,
 		)
 		.all<Record<string, unknown>>()

@@ -15,6 +15,9 @@ import { adminPlatformFeedbackUpdateCapability } from './admin-platform-feedback
 import { adminUserUsageCapability } from './admin-user-usage.ts'
 import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
 import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
+import { adminSystemEmailSenderRuleDeleteCapability } from './admin-system-email-sender-rule-delete.ts'
+import { adminSystemEmailSenderRuleListCapability } from './admin-system-email-sender-rule-list.ts'
+import { adminSystemEmailSenderRuleSetCapability } from './admin-system-email-sender-rule-set.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
@@ -59,6 +62,9 @@ export const adminDomain = defineDomain({
 		adminFeatureFlagOverrideCapability,
 		adminSystemEmailListCapability,
 		adminSystemEmailGetCapability,
+		adminSystemEmailSenderRuleListCapability,
+		adminSystemEmailSenderRuleSetCapability,
+		adminSystemEmailSenderRuleDeleteCapability,
 		adminPlatformFeedbackListCapability,
 		adminPlatformFeedbackGetCapability,
 		adminPlatformFeedbackUpdateCapability,

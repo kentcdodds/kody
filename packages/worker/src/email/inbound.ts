@@ -20,6 +20,7 @@ import {
 } from './address.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
+import { evaluateEmailSenderRules } from './sender-rules.ts'
 import {
 	parseForwardableEmailRawMime,
 	readForwardableEmailRawMime,
@@ -361,6 +362,29 @@ export async function handleInboundEmail(
 				return
 			}
 
+			const senderAddress = normalizeEmailAddress(message.from)
+			if (senderAddress) {
+				const senderRule = await evaluateEmailSenderRules({
+					db: env.APP_DB,
+					userId,
+					senderAddress,
+				})
+				if (senderRule?.effect === 'block') {
+					const reason = 'Message rejected by recipient policy.'
+					message.setReject(reason)
+					await recordBoundedEmailRejectionEvent({
+						db: env.APP_DB,
+						userId,
+						inboxId: inbox.id,
+						recipient,
+						reason,
+						phase: 'sender-policy',
+					}).catch(warnRejectionAuditWriteFailed)
+					await recordReceiveUsage({ outcome: 'error' })
+					return
+				}
+			}
+
 			try {
 				// Size first: an oversize message is rejected without consuming any
 				// of the owner's daily receive quota (griefing resistance) and
@@ -683,6 +707,29 @@ async function handleSystemInboundEmail(input: {
 			durationMs: Date.now() - receiveStartedAtMs,
 			outcome: recordInput.outcome,
 		})
+	}
+
+	const systemSenderAddress = normalizeEmailAddress(input.message.from)
+	if (systemSenderAddress) {
+		const senderRule = await evaluateEmailSenderRules({
+			db: input.env.APP_DB,
+			userId: systemEmailOwnerId,
+			senderAddress: systemSenderAddress,
+		})
+		if (senderRule?.effect === 'block') {
+			const reason = 'Message rejected by recipient policy.'
+			input.message.setReject(reason)
+			await recordBoundedEmailRejectionEvent({
+				db: input.env.APP_DB,
+				userId: systemEmailOwnerId,
+				inboxId: inbox.id,
+				recipient: input.recipient,
+				reason,
+				phase: 'sender-policy',
+			}).catch(warnRejectionAuditWriteFailed)
+			await recordReceiveUsage({ outcome: 'error' })
+			return
+		}
 	}
 
 	if (input.message.rawSize > systemEmailLimits.maxMessageBytes) {

@@ -231,6 +231,9 @@ Current admin capabilities:
 - `admin_feature_flag_override`
 - `admin_system_email_list`
 - `admin_system_email_get`
+- `admin_system_email_sender_rule_list`
+- `admin_system_email_sender_rule_set`
+- `admin_system_email_sender_rule_delete`
 - `admin_platform_feedback_list`
 - `admin_platform_feedback_get`
 - `admin_platform_feedback_update`

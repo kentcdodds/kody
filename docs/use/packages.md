@@ -405,15 +405,17 @@ topic. This is the generic discovery step before building fan-out, debugging why
 an event did or did not dispatch, or checking which packages subscribe to
 `email.message.received`.
 
-For stored inbound email, the topic is `email.message.received`. Its payload is
-metadata-first: handlers receive the stored message id, recipient and sender
-metadata, timestamps, processing status, and attachment metadata. Fetch parsed
-bodies or attachment bytes only when needed with `email_message_get`,
-`email_attachment_get`, or the `email` helper from `kody:runtime`. Operator
-system-inbox mail dispatches the separate `email.system-message.received` topic
-to packages saved by admin users; its payload adds an `admin_url` link to the
-message in the admin interface. See [Email primitives](./email-primitives.md)
-for the full payload shapes.
+For accepted stored inbound email, the topic is `email.message.received`.
+Quarantined inbound email dispatches `email.message.quarantined` instead. Both
+payloads are metadata-first: handlers receive the stored message id, recipient
+and sender metadata, timestamps, processing status, and attachment metadata.
+Fetch parsed bodies or attachment bytes only when needed with
+`email_message_get`, `email_attachment_get`, or the `email` helper from
+`kody:runtime`. Operator system-inbox mail dispatches the separate
+`email.system-message.received` topic to packages saved by admin users when the
+message is accepted (quarantined system mail is stored but not dispatched); its
+payload adds an `admin_url` link to the message in the admin interface. See
+[Email primitives](./email-primitives.md) for the full payload shapes.
 
 ## Package webhooks
 

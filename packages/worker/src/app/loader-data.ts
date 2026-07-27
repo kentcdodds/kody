@@ -1029,6 +1029,8 @@ export type AccountEmailMessageListItem = {
 	subject: string | null
 	message_id_header: string | null
 	processing_status: string
+	classification: 'accepted' | 'quarantined'
+	classification_reason: string | null
 	provider_message_id: string | null
 	delivery_status: string | null
 	delivery_status_at: string | null
@@ -1091,6 +1093,8 @@ export type AccountEmailLoaderData = {
 	pageSize: number
 	total: number
 	query: string
+	/** `null` means no classification filter (all messages). */
+	classification: 'accepted' | 'quarantined' | null
 }
 
 export type AuthProvidersLoaderData = {
