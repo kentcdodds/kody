@@ -58,7 +58,7 @@ export const integrationConfigSchema = z.object({
 	 * `usePkce: true` with `confidential` flow.
 	 */
 	usePkce: z.boolean().optional().nullable(),
-	clientIdValueName: z.string().min(1),
+	clientId: z.string().min(1),
 	clientSecretSecretName: z.string().min(1).optional().nullable(),
 	accessTokenSecretName: z.string().min(1),
 	refreshTokenSecretName: z.string().min(1).optional().nullable(),
@@ -92,30 +92,6 @@ export type IntegrationSaveInput = z.infer<typeof integrationSaveSchema>
 export function normalizeIntegrationConfig(
 	value: IntegrationConfig,
 ): IntegrationConfig {
-	const normalized = normalizeIntegrationConfigFields(value)
-	return {
-		...normalized,
-		clientIdValueName: value.clientIdValueName.trim(),
-	}
-}
-
-/**
- * Flat integration config with inline `clientId` (D1 / capability shape).
- * Same as {@link IntegrationConfig} except `clientIdValueName` → `clientId`.
- */
-export const integrationConfigWithClientIdSchema = integrationConfigSchema
-	.omit({ clientIdValueName: true })
-	.extend({
-		clientId: z.string().min(1),
-	})
-
-export type IntegrationConfigWithClientId = z.infer<
-	typeof integrationConfigWithClientIdSchema
->
-
-export function normalizeIntegrationConfigWithClientId(
-	value: IntegrationConfigWithClientId,
-): IntegrationConfigWithClientId {
 	const normalized = normalizeIntegrationConfigFields(value)
 	return {
 		...normalized,
@@ -193,59 +169,14 @@ export function normalizeIntegrationAuthorization(
 }
 
 export function mergeIntegrationConfig(
-	current: IntegrationConfigWithClientId,
+	current: IntegrationConfig,
 	update: IntegrationSaveInput,
-): IntegrationConfigWithClientId {
-	return normalizeIntegrationConfigWithClientId({
+): IntegrationConfig {
+	return normalizeIntegrationConfig({
 		...current,
 		...update,
 		name: update.name,
 	})
-}
-
-const integrationValuePrefix = '_integration:'
-
-export function buildIntegrationValueName(name: string) {
-	return `${integrationValuePrefix}${canonicalIntegrationName(name)}`
-}
-
-export function parseIntegrationValueName(name: string) {
-	if (!name.startsWith(integrationValuePrefix)) return null
-	const integrationName = name.slice(integrationValuePrefix.length)
-	// Only canonical keys count as integrations; a non-canonical suffix cannot
-	// have been written by any current write path.
-	if (
-		integrationName.length === 0 ||
-		integrationName !== canonicalIntegrationName(integrationName)
-	) {
-		return null
-	}
-	return integrationName
-}
-
-export function parseIntegrationConfig(
-	value: unknown,
-	fallbackName: string | null,
-) {
-	const record =
-		value && typeof value === 'object' && !Array.isArray(value) ? value : null
-	const configCandidate =
-		record && typeof (record as Record<string, unknown>).name === 'string'
-			? record
-			: record && fallbackName
-				? { ...record, name: fallbackName }
-				: record
-	const parsed = integrationConfigSchema.safeParse(configCandidate)
-	if (parsed.success) return normalizeIntegrationConfig(parsed.data)
-	return null
-}
-
-export function parseIntegrationJson(raw: string) {
-	try {
-		return JSON.parse(raw)
-	} catch {
-		return null
-	}
 }
 
 function isHttpUrl(raw: string) {

@@ -2,12 +2,48 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import {
-	parseIntegrationConfig,
+	normalizeIntegrationConfig,
 	type IntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { getJoinedIntegrationByName } from './repo.ts'
 import { toIntegrationConfig } from './service.ts'
+
+/** Historical `_integration:*` value blob shape (pre-0100), with client id as a sibling value name. */
+type LegacyIntegrationValue = {
+	name: string
+	tokenUrl?: string
+	apiBaseUrl?: string | null
+	flow: string
+	usePkce?: boolean | null
+	clientIdValueName: string
+	clientSecretSecretName?: string | null
+	accessTokenSecretName: string
+	refreshTokenSecretName?: string | null
+	requiredHosts?: Array<string>
+	tokenExchangeStyle?: string | null
+	authorization?: {
+		authorizeUrl: string
+		scopes: Array<string>
+		scopeSeparator?: string | null
+		extraAuthorizeParams?: Record<string, string>
+	} | null
+}
+
+function expectedConfigFromLegacy(
+	legacy: LegacyIntegrationValue,
+	clientId: string,
+): IntegrationConfig {
+	const { clientIdValueName: _ignored, ...rest } = legacy
+	return normalizeIntegrationConfig({
+		...rest,
+		flow: rest.flow as IntegrationConfig['flow'],
+		tokenExchangeStyle: rest.tokenExchangeStyle as
+			| IntegrationConfig['tokenExchangeStyle']
+			| undefined,
+		clientId,
+	})
+}
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const oauthAppsMigration = '0100-user-oauth-apps-and-integrations.sql'
@@ -71,18 +107,18 @@ function nScopes(count: number) {
 	return Array.from({ length: count }, (_, index) => `scope.${index}`)
 }
 
-function googleConfig(input: {
+function googleLegacyConfig(input: {
 	name: string
 	scopeCount: number
 	hostCount: number
 	accessTokenSecretName: string
 	refreshTokenSecretName: string
-}) {
+}): LegacyIntegrationValue {
 	return {
 		name: input.name,
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 		apiBaseUrl: 'https://www.googleapis.com',
-		flow: 'pkce' as const,
+		flow: 'pkce',
 		clientIdValueName: 'google-client-id',
 		clientSecretSecretName: 'googleClientSecret',
 		accessTokenSecretName: input.accessTokenSecretName,
@@ -137,29 +173,29 @@ test('0100 migrates oauth apps/connections with production-shaped dedupe fixture
 		value: 'google-client-id-value',
 	})
 
-	const googleFixtures = [
-		googleConfig({
+	const googleFixtures: Array<LegacyIntegrationValue> = [
+		googleLegacyConfig({
 			name: 'google',
 			scopeCount: 11,
 			hostCount: 10,
 			accessTokenSecretName: 'googleAccessToken',
 			refreshTokenSecretName: 'googleRefreshToken',
 		}),
-		googleConfig({
+		googleLegacyConfig({
 			name: 'google-calendar',
 			scopeCount: 12,
 			hostCount: 10,
 			accessTokenSecretName: 'googleCalendarAccessToken',
 			refreshTokenSecretName: 'googleCalendarRefreshToken',
 		}),
-		googleConfig({
+		googleLegacyConfig({
 			name: 'google-mail',
 			scopeCount: 6,
 			hostCount: 7,
 			accessTokenSecretName: 'googleMailAccessToken',
 			refreshTokenSecretName: 'googleMailRefreshToken',
 		}),
-		googleConfig({
+		googleLegacyConfig({
 			name: 'google-drive',
 			scopeCount: 6,
 			hostCount: 7,
@@ -168,29 +204,29 @@ test('0100 migrates oauth apps/connections with production-shaped dedupe fixture
 		}),
 	]
 
-	const github = {
+	const github: LegacyIntegrationValue = {
 		name: 'github',
 		tokenUrl: 'https://github.com/login/oauth/access_token',
 		apiBaseUrl: 'https://api.github.com',
-		flow: 'confidential' as const,
+		flow: 'confidential',
 		clientIdValueName: 'github-client-id',
 		clientSecretSecretName: 'githubClientSecret',
 		accessTokenSecretName: 'githubAccessToken',
 		refreshTokenSecretName: null,
 		requiredHosts: ['github.com', 'api.github.com'],
 	}
-	const githubKent = {
+	const githubKent: LegacyIntegrationValue = {
 		...github,
 		name: 'github-kent',
 		clientSecretSecretName: 'githubKentClientSecret',
 		accessTokenSecretName: 'githubKentAccessToken',
 	}
 
-	const xConfig = {
+	const xConfig: LegacyIntegrationValue = {
 		name: 'x',
 		tokenUrl: 'https://api.twitter.com/2/oauth2/token',
 		apiBaseUrl: 'https://api.twitter.com',
-		flow: 'pkce' as const,
+		flow: 'pkce',
 		clientIdValueName: 'x-client-id',
 		clientSecretSecretName: null,
 		accessTokenSecretName: 'xAccessToken',
@@ -203,7 +239,7 @@ test('0100 migrates oauth apps/connections with production-shaped dedupe fixture
 			extraAuthorizeParams: {},
 		},
 	}
-	const xKodykoala = {
+	const xKodykoala: LegacyIntegrationValue = {
 		...xConfig,
 		name: 'x-kodykoala',
 		accessTokenSecretName: 'xKodykoalaAccessToken',
@@ -216,11 +252,11 @@ test('0100 migrates oauth apps/connections with production-shaped dedupe fixture
 		},
 	}
 
-	const tesla = {
+	const tesla: LegacyIntegrationValue = {
 		name: 'tesla',
 		tokenUrl: 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token',
 		apiBaseUrl: 'https://fleet-api.prd.vn.cloud.tesla.com',
-		flow: 'pkce' as const,
+		flow: 'pkce',
 		clientIdValueName: 'tesla-client-id',
 		clientSecretSecretName: null,
 		accessTokenSecretName: 'teslaAccessToken',
@@ -228,6 +264,7 @@ test('0100 migrates oauth apps/connections with production-shaped dedupe fixture
 		requiredHosts: ['fleet-api.prd.vn.cloud.tesla.com'],
 	}
 
+	// Intentionally missing tokenUrl so 0100 leaves this non-migratable row alone.
 	const malformed = {
 		name: 'broken',
 		apiBaseUrl: 'https://example.com',
@@ -258,7 +295,7 @@ test('0100 migrates oauth apps/connections with production-shaped dedupe fixture
 		value: JSON.stringify(malformed),
 	})
 
-	const userBGoogle = googleConfig({
+	const userBGoogle = googleLegacyConfig({
 		name: 'google',
 		scopeCount: 11,
 		hostCount: 10,
@@ -271,13 +308,13 @@ test('0100 migrates oauth apps/connections with production-shaped dedupe fixture
 		value: JSON.stringify(userBGoogle),
 	})
 
-	const preMigrationByKey = new Map<string, IntegrationConfig>()
+	const expectedByKey = new Map<string, IntegrationConfig>()
 	for (const config of [...userAConfigs, userBGoogle]) {
-		const parsed = parseIntegrationConfig(config, config.name)
-		expect(parsed).not.toBeNull()
-		if (!parsed) continue
 		const userId = config === userBGoogle ? 'user-b' : 'user-a'
-		preMigrationByKey.set(`${userId}:${parsed.name}`, parsed)
+		expectedByKey.set(
+			`${userId}:${config.name}`,
+			expectedConfigFromLegacy(config, expectedClientId(config.name)),
+		)
 	}
 
 	applyMigration(db, oauthAppsMigration)
@@ -422,7 +459,7 @@ test('0100 migrates oauth apps/connections with production-shaped dedupe fixture
 	).toEqual(['google'])
 
 	const d1 = createD1FromSqlite(db)
-	for (const [key, before] of preMigrationByKey) {
+	for (const [key, expected] of expectedByKey) {
 		const [userId, name] = key.split(':') as [string, string]
 		const joined = await getJoinedIntegrationByName({
 			db: d1,
@@ -431,12 +468,7 @@ test('0100 migrates oauth apps/connections with production-shaped dedupe fixture
 		})
 		expect(joined).not.toBeNull()
 		if (!joined) continue
-		const after = toIntegrationConfig(joined.app, joined.connection)
-		const { clientIdValueName: _ignored, ...rest } = before
-		expect(after).toEqual({
-			...rest,
-			clientId: expectedClientId(name),
-		})
+		expect(toIntegrationConfig(joined.app, joined.connection)).toEqual(expected)
 	}
 
 	const userAListed = await getJoinedIntegrationByName({
@@ -477,11 +509,11 @@ test('0100 splits apps when credentials match but token_url differs', async () =
 		value: 'same-client-id',
 	})
 
-	const left = {
+	const left: LegacyIntegrationValue = {
 		name: 'provider-alpha',
 		tokenUrl: 'https://auth.example.com/oauth/token',
 		apiBaseUrl: 'https://api.example.com',
-		flow: 'pkce' as const,
+		flow: 'pkce',
 		clientIdValueName: 'shared-client-id',
 		clientSecretSecretName: 'sharedClientSecret',
 		accessTokenSecretName: 'alphaAccessToken',
@@ -494,15 +526,17 @@ test('0100 splits apps when credentials match but token_url differs', async () =
 			extraAuthorizeParams: {},
 		},
 	}
-	const right = {
+	const right: LegacyIntegrationValue = {
 		...left,
 		name: 'provider-beta',
 		tokenUrl: 'https://auth.example.com/oauth/v2/token',
 		accessTokenSecretName: 'betaAccessToken',
 		refreshTokenSecretName: 'betaRefreshToken',
 		authorization: {
-			...left.authorization,
+			authorizeUrl: 'https://auth.example.com/oauth/authorize',
 			scopes: ['write'],
+			scopeSeparator: ' ',
+			extraAuthorizeParams: {},
 		},
 	}
 

@@ -2,7 +2,7 @@ import { buildCommunityPublicUrl } from '#mcp/capabilities/community/shared.ts'
 import { getDomain } from 'tldts'
 import {
 	canonicalIntegrationName,
-	type IntegrationConfigWithClientId,
+	type IntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { searchCommunityListings } from '#worker/community/service.ts'
 import { type RelatedIntegrationPackageSuggestion } from './search-format.ts'
@@ -12,7 +12,7 @@ export const maxIntegrationPackageSuggestions = 3
 const communitySuggestionCandidateLimit = 12
 
 type IntegrationProviderMetadata = Pick<
-	IntegrationConfigWithClientId,
+	IntegrationConfig,
 	'name' | 'tokenUrl' | 'apiBaseUrl' | 'requiredHosts' | 'authorization'
 >
 

@@ -37,8 +37,8 @@ import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
 	canonicalIntegrationName,
-	normalizeIntegrationConfigWithClientId,
-	integrationConfigWithClientIdSchema,
+	normalizeIntegrationConfig,
+	integrationConfigSchema,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { upsertIntegration } from '#worker/integrations/service.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
@@ -619,7 +619,7 @@ async function saveIntegrationConfig(input: {
 	if (!providerKey) {
 		throw new Error('Provider must contain letters or numbers.')
 	}
-	const parsed = integrationConfigWithClientIdSchema.safeParse({
+	const parsed = integrationConfigSchema.safeParse({
 		name: input.provider,
 		tokenUrl: input.tokenUrl,
 		apiBaseUrl: input.apiBaseUrl,
@@ -644,7 +644,7 @@ async function saveIntegrationConfig(input: {
 	const integration = await upsertIntegration({
 		env: input.env,
 		userId: input.userId,
-		config: normalizeIntegrationConfigWithClientId(parsed.data),
+		config: normalizeIntegrationConfig(parsed.data),
 	})
 	return integration.name
 }

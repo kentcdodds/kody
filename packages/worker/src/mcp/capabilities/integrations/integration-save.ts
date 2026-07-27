@@ -6,19 +6,19 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	getIntegration,
 	upsertIntegration,
-	type IntegrationConfigWithClientId,
+	type IntegrationConfig,
 } from '#worker/integrations/service.ts'
 import {
-	integrationConfigWithClientIdSchema,
+	integrationConfigSchema,
 	integrationSaveSchema,
 	mergeIntegrationConfig,
-	normalizeIntegrationConfigWithClientId,
+	normalizeIntegrationConfig,
 } from './integration-shared.ts'
 
 const inputSchema = integrationSaveSchema
 
 const outputSchema = z.object({
-	integration: integrationConfigWithClientIdSchema,
+	integration: integrationConfigSchema,
 })
 
 export const integrationSaveCapability = defineDomainCapability(
@@ -64,8 +64,8 @@ export const integrationSaveCapability = defineDomainCapability(
 
 function createNewIntegrationConfig(
 	args: z.infer<typeof inputSchema>,
-): IntegrationConfigWithClientId {
-	const parsed = integrationConfigWithClientIdSchema.safeParse({
+): IntegrationConfig {
+	const parsed = integrationConfigSchema.safeParse({
 		name: args.name,
 		tokenUrl: args.tokenUrl,
 		apiBaseUrl: args.apiBaseUrl ?? null,
@@ -94,5 +94,5 @@ function createNewIntegrationConfig(
 			`Cannot create integration "${args.name}": missing or invalid required fields — ${details}`,
 		)
 	}
-	return normalizeIntegrationConfigWithClientId(parsed.data)
+	return normalizeIntegrationConfig(parsed.data)
 }

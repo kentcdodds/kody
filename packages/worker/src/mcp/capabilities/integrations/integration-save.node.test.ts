@@ -10,10 +10,8 @@ import { integrationOauthAppListCapability } from './integration-oauth-app-list.
 import { integrationOauthAppRotateCredentialsCapability } from './integration-oauth-app-rotate-credentials.ts'
 import { integrationSaveCapability } from './integration-save.ts'
 import {
-	buildIntegrationValueName,
-	integrationConfigWithClientIdSchema,
+	integrationConfigSchema,
 	mergeIntegrationConfig,
-	parseIntegrationValueName,
 } from './integration-shared.ts'
 
 const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
@@ -79,7 +77,7 @@ const googleBase = {
 }
 
 test('mergeIntegrationConfig and integration_save create a new app + connection with clientId shape', async () => {
-	const current = integrationConfigWithClientIdSchema.parse({
+	const current = integrationConfigSchema.parse({
 		name: 'spotify',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
 		apiBaseUrl: 'https://api.spotify.com/v1',
@@ -427,14 +425,6 @@ test('integration identity is the canonical provider key across save and lookup'
 		{ env, callerContext: caller('user-123') },
 	)
 	expect(got.integration?.name).toBe('github')
-
-	// Value-name helpers remain for concurrent migration callers.
-	expect(buildIntegrationValueName('GitHub')).toBe('_integration:github')
-	expect(buildIntegrationValueName('Spotify Family')).toBe(
-		'_integration:spotify-family',
-	)
-	expect(parseIntegrationValueName('_integration:github')).toBe('github')
-	expect(parseIntegrationValueName('_integration:GitHub')).toBeNull()
 
 	await expect(
 		integrationSaveCapability.handler(

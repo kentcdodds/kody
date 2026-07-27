@@ -14,7 +14,7 @@ import {
 import { type StorageContext } from '#mcp/storage.ts'
 import {
 	getIntegration,
-	type IntegrationConfigWithClientId,
+	type IntegrationConfig,
 } from '#worker/integrations/service.ts'
 import {
 	normalizeApiBaseUrl,
@@ -62,7 +62,7 @@ export async function executeOpenApiOperationRequest(input: {
 	})
 	assertPinnedToApiBaseUrl(url, input.binding.apiBaseUrl)
 
-	let integration: IntegrationConfigWithClientId | null = null
+	let integration: IntegrationConfig | null = null
 	if (input.binding.auth.kind === 'integration') {
 		integration = await loadIntegrationConfig({
 			env: input.env,
@@ -206,7 +206,7 @@ async function loadIntegrationConfig(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	provider: string
-}): Promise<IntegrationConfigWithClientId> {
+}): Promise<IntegrationConfig> {
 	const integration = await getIntegration({
 		env: input.env,
 		userId: input.userId,
@@ -223,7 +223,7 @@ async function loadIntegrationConfig(input: {
 function buildRequestHeaders(input: {
 	userHeaders: Record<string, string>
 	auth: OpenApiBinding['auth']
-	integration: IntegrationConfigWithClientId | null
+	integration: IntegrationConfig | null
 	requestBody: OpenApiBindingOperation['requestBody']
 	hasBody: boolean
 }) {
@@ -348,7 +348,7 @@ async function tryRefreshIntegrationAccessToken(input: {
 	userId: string
 	baseUrl: string
 	provider: string
-	integration: IntegrationConfigWithClientId
+	integration: IntegrationConfig
 	storageContext: StorageContext | null
 	globalFetch?: typeof fetch
 }): Promise<{ ok: boolean; guidance?: string }> {

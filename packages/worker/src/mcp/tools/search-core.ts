@@ -306,7 +306,11 @@ export async function searchUnified(input: {
 			}
 		}),
 	)
-	const candidates = candidateResults.flatMap((result) => result.candidates)
+	// Annotate the flatMap callback: `as const` plugins infer distinct candidate
+	// array element types, and without this TS widens the union to `unknown[]`.
+	const candidates = candidateResults.flatMap(
+		(result): Array<SearchCandidate> => result.candidates,
+	)
 	const candidateTimings: Pick<
 		SearchPhaseTimings,
 		'capabilityCandidatesMs' | 'packageCandidatesMs'

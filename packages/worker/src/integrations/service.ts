@@ -1,8 +1,8 @@
 import {
 	canonicalIntegrationName,
-	integrationConfigWithClientIdSchema,
-	normalizeIntegrationConfigWithClientId,
-	type IntegrationConfigWithClientId,
+	integrationConfigSchema,
+	normalizeIntegrationConfig,
+	type IntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import {
@@ -26,12 +26,12 @@ import {
 	type UserOauthAppWithConnectionCount,
 } from './types.ts'
 
-export type { IntegrationConfigWithClientId }
+export type { IntegrationConfig }
 
 export function toIntegrationConfig(
 	app: UserOauthApp,
 	connection: UserIntegrationConnection,
-): IntegrationConfigWithClientId {
+): IntegrationConfig {
 	const authorization =
 		app.authorizeUrl == null
 			? null
@@ -41,7 +41,7 @@ export function toIntegrationConfig(
 					scopeSeparator: app.scopeSeparator,
 					extraAuthorizeParams: app.extraAuthorizeParams,
 				}
-	return normalizeIntegrationConfigWithClientId({
+	return normalizeIntegrationConfig({
 		name: connection.name,
 		tokenUrl: app.tokenUrl,
 		apiBaseUrl: app.apiBaseUrl,
@@ -60,7 +60,7 @@ export function toIntegrationConfig(
 export async function listIntegrations(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-}): Promise<Array<IntegrationConfigWithClientId>> {
+}): Promise<Array<IntegrationConfig>> {
 	const rows = await listJoinedIntegrationsForUser({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -82,7 +82,7 @@ export async function getIntegration(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	name: string
-}): Promise<IntegrationConfigWithClientId | null> {
+}): Promise<IntegrationConfig | null> {
 	const joined = await getJoinedIntegration({
 		env: input.env,
 		userId: input.userId,
@@ -109,12 +109,12 @@ export async function getJoinedIntegration(input: {
 export async function upsertIntegration(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-	config: IntegrationConfigWithClientId
+	config: IntegrationConfig
 	description?: string | null
 	accountLabel?: string | null
-}): Promise<IntegrationConfigWithClientId> {
-	const parsed = integrationConfigWithClientIdSchema.parse(input.config)
-	const config = normalizeIntegrationConfigWithClientId(parsed)
+}): Promise<IntegrationConfig> {
+	const parsed = integrationConfigSchema.parse(input.config)
+	const config = normalizeIntegrationConfig(parsed)
 	const now = new Date().toISOString()
 	const existing = await getJoinedIntegrationByName({
 		db: input.env.APP_DB,
@@ -398,7 +398,7 @@ export async function deleteOauthAppIfUnused(input: {
 function buildOauthAppRow(input: {
 	userId: string
 	slug: string
-	config: IntegrationConfigWithClientId
+	config: IntegrationConfig
 	label: string | null
 	createdAt: string
 	updatedAt: string

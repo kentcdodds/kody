@@ -3,7 +3,7 @@ import {
 	deterministicEmbedding,
 	lexicalScore,
 } from '#mcp/capabilities/capability-search.ts'
-import { type IntegrationConfigWithClientId } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { type IntegrationConfig } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { toIntegrationConfig } from '#worker/integrations/service.ts'
 
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
@@ -21,7 +21,7 @@ import { extractSearchTokens } from '../understand-search-query.ts'
 
 function describeIntegration(input: {
 	description: string
-	flow: IntegrationConfigWithClientId['flow']
+	flow: IntegrationConfig['flow']
 }) {
 	return (
 		input.description.trim() ||
@@ -32,7 +32,7 @@ function describeIntegration(input: {
 export function buildIntegrationSearchDocument(input: {
 	integrationName: string
 	description: string
-	config: IntegrationConfigWithClientId
+	config: IntegrationConfig
 }): string {
 	return [
 		input.integrationName,

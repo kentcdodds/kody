@@ -1,4 +1,4 @@
-import { type IntegrationConfigWithClientId } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { type IntegrationConfig } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
@@ -226,7 +226,7 @@ export type SlimSearchMatch =
 			clientSecretSecretName: string | null
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
-			authorization: IntegrationConfigWithClientId['authorization'] | null
+			authorization: IntegrationConfig['authorization'] | null
 			nextStep?: string
 	  }
 	| {
@@ -369,7 +369,7 @@ export type SearchEntityDetailStructured =
 			title: string
 			description: string
 			usage: string
-			flow: IntegrationConfigWithClientId['flow']
+			flow: IntegrationConfig['flow']
 			tokenUrl: string
 			apiBaseUrl: string | null
 			clientId: string
@@ -377,7 +377,7 @@ export type SearchEntityDetailStructured =
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
 			requiredHosts: Array<string>
-			authorization: IntegrationConfigWithClientId['authorization'] | null
+			authorization: IntegrationConfig['authorization'] | null
 			relatedPackageSuggestions?: Array<RelatedIntegrationPackageSuggestion>
 	  }
 
@@ -421,7 +421,7 @@ export type SearchEntityDetail =
 			id: string
 			title: string
 			description: string
-			config: IntegrationConfigWithClientId
+			config: IntegrationConfig
 			relatedPackageSuggestions?: Array<RelatedIntegrationPackageSuggestion>
 	  }
 
@@ -484,7 +484,7 @@ export type SearchMatch =
 			clientSecretSecretName: string | null
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
-			authorization?: IntegrationConfigWithClientId['authorization'] | null
+			authorization?: IntegrationConfig['authorization'] | null
 	  }
 	| {
 			type: 'secret'

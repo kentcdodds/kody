@@ -4,14 +4,14 @@ import {
 	getJoinedIntegration,
 	listJoinedIntegrations,
 	toIntegrationConfig,
-	type IntegrationConfigWithClientId,
+	type IntegrationConfig,
 } from '#worker/integrations/service.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
 >
 
-export type AccountIntegrationRecord = IntegrationConfigWithClientId & {
+export type AccountIntegrationRecord = IntegrationConfig & {
 	appSlug: string
 	provider: string
 	appLabel: string | null

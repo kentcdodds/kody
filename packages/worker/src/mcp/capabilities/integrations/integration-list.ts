@@ -7,10 +7,10 @@ import {
 	type CapabilityContext,
 } from '#mcp/capabilities/types.ts'
 import { listIntegrations } from '#worker/integrations/service.ts'
-import { integrationConfigWithClientIdSchema } from './integration-shared.ts'
+import { integrationConfigSchema } from './integration-shared.ts'
 
 const outputSchema = z.object({
-	integrations: z.array(integrationConfigWithClientIdSchema),
+	integrations: z.array(integrationConfigSchema),
 })
 
 export const integrationListCapability = defineDomainCapability(
