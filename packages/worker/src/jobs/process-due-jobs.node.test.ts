@@ -18,6 +18,7 @@ function createCronJob(overrides: Partial<JobRecord> = {}): JobRecord {
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-12T00:00:00.000Z',
 		updatedAt: '2026-04-12T00:00:00.000Z',
 		nextRunAt: '2026-04-12T07:00:00.000Z',
@@ -28,7 +29,7 @@ function createCronJob(overrides: Partial<JobRecord> = {}): JobRecord {
 	}
 }
 
-test('processDueJobs handles cron batching and once-job delete, preserve, and reschedule outcomes', async () => {
+test('processDueJobs handles cron batching and once-job retain, preserve, and reschedule outcomes', async () => {
 	const now = new Date('2026-04-12T07:00:00.000Z')
 	const first = createCronJob({ id: 'job-1' })
 	const second = createCronJob({ id: 'job-2', name: 'Second job' })
@@ -169,15 +170,24 @@ test('processDueJobs handles cron batching and once-job delete, preserve, and re
 			}
 		},
 	})
-	expect(successOnceResult.deleteJobIds).toEqual(['job-once-success'])
-	expect(successOnceResult.saveJobs).toEqual([])
+	expect(successOnceResult.deleteJobIds).toEqual([])
+	expect(successOnceResult.saveJobs).toEqual([
+		expect.objectContaining({
+			id: 'job-once-success',
+			enabled: false,
+			lastRunStatus: 'success',
+			runCount: 1,
+			successCount: 1,
+			errorCount: 0,
+		}),
+	])
 	expect(successOnceResult.jobOutcomes).toEqual([
 		{
 			jobId: 'job-once-success',
 			scheduleType: 'once',
 			outcome: 'success',
-			nextRunAt: null,
-			deleted: true,
+			nextRunAt: '2026-04-12T07:00:00.000Z',
+			deleted: false,
 		},
 	])
 

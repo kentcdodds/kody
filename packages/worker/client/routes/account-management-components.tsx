@@ -298,13 +298,14 @@ export function AccountManagementLayout(
 				gridTemplateColumns: `${handle.props.sidebarWidth ?? 'minmax(18rem, 22rem)'} minmax(0, 1fr)`,
 				gap: spacing.lg,
 				alignItems: 'start',
+				minWidth: 0,
 				[mq.mobile]: {
 					gridTemplateColumns: '1fr',
 				},
 			})}
 		>
 			{handle.props.sidebar}
-			<div mix={css({ display: 'grid', gap: spacing.lg })}>
+			<div mix={css({ display: 'grid', gap: spacing.lg, minWidth: 0 })}>
 				{handle.props.children}
 			</div>
 		</section>
@@ -325,47 +326,80 @@ export function AccountManagementSidebar(
 			mix={css({
 				...cardCss,
 				alignSelf: 'start',
+				// Grid items default to min-width:auto; without this, long
+				// search placeholders / unbreakable tokens expand past the
+				// sidebar track and paint over the detail pane.
+				minWidth: 0,
+				maxWidth: '100%',
+				overflow: 'hidden',
 			})}
 		>
-			<div mix={css({ display: 'grid', gap: spacing.xs })}>
+			<div mix={css({ display: 'grid', gap: spacing.xs, minWidth: 0 })}>
 				<h2 mix={css(cardTitleCss)}>{handle.props.title}</h2>
-				<p mix={css(descriptionCss)}>{handle.props.description}</p>
+				<p
+					mix={css({
+						...descriptionCss,
+						overflowWrap: 'anywhere',
+					})}
+				>
+					{handle.props.description}
+				</p>
 			</div>
 			{handle.props.children}
 		</aside>
 	)
 }
 
+/**
+ * Default in-sidebar scroll viewport for management lists. Keeps long result
+ * sets from stretching the whole page; callers can override per page.
+ */
+export const accountManagementListMaxHeight = 'min(65vh, 48rem)'
+
 type AccountManagementListProps = {
 	children: AccountManagementSlot
-	maxHeight?: string
+	/**
+	 * Scroll viewport height. Defaults to {@link accountManagementListMaxHeight}.
+	 * Pass `null` only for the rare list that should grow with the page.
+	 */
+	maxHeight?: string | null
 }
 
 export function AccountManagementList(
 	handle: Handle<AccountManagementListProps>,
 ) {
-	return () => (
-		<div
-			mix={css({
-				maxHeight: handle.props.maxHeight,
-				overflowY: handle.props.maxHeight ? 'auto' : undefined,
-				overflowX: handle.props.maxHeight ? 'hidden' : undefined,
-				paddingRight: handle.props.maxHeight ? spacing.xs : undefined,
-			})}
-		>
-			<ul
+	return () => {
+		const maxHeight =
+			handle.props.maxHeight === undefined
+				? accountManagementListMaxHeight
+				: handle.props.maxHeight
+		const scrollable = maxHeight != null
+
+		return (
+			<div
 				mix={css({
-					listStyle: 'none',
-					padding: 0,
-					margin: 0,
-					display: 'grid',
-					gap: spacing.sm,
+					minWidth: 0,
+					maxHeight: scrollable ? maxHeight : undefined,
+					overflowY: scrollable ? 'auto' : undefined,
+					overflowX: scrollable ? 'hidden' : undefined,
+					paddingRight: scrollable ? spacing.xs : undefined,
 				})}
 			>
-				{handle.props.children}
-			</ul>
-		</div>
-	)
+				<ul
+					mix={css({
+						listStyle: 'none',
+						padding: 0,
+						margin: 0,
+						display: 'grid',
+						gap: spacing.sm,
+						minWidth: 0,
+					})}
+				>
+					{handle.props.children}
+				</ul>
+			</div>
+		)
+	}
 }
 
 type AccountManagementSearchFieldProps = {
@@ -384,7 +418,7 @@ export function AccountManagementSearchField(
 	handle: Handle<AccountManagementSearchFieldProps>,
 ) {
 	return () => (
-		<label mix={css(fieldCss)}>
+		<label mix={css({ ...fieldCss, minWidth: 0 })}>
 			<span mix={css(fieldLabelCss)}>{handle.props.label}</span>
 			<input
 				type="search"
@@ -399,6 +433,8 @@ export function AccountManagementSearchField(
 					),
 					css({
 						...inputCss,
+						minWidth: 0,
+						maxWidth: '100%',
 						paddingRight: spacing.xl,
 					}),
 				]}
@@ -426,11 +462,13 @@ export function AccountManagementListItemButton(
 				css({
 					width: '100%',
 					minWidth: 0,
+					maxWidth: '100%',
 					textAlign: 'left',
 					display: 'grid',
 					gap: spacing.xs,
 					padding: spacing.md,
 					overflow: 'hidden',
+					overflowWrap: 'anywhere',
 					borderRadius: radius.md,
 					border: `1px solid ${
 						handle.props.active ? colors.primary : colors.border

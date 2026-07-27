@@ -425,7 +425,7 @@ export function AccountPackagesRoute(handle: Handle) {
 								</p>
 							) : (
 								<>
-									<AccountManagementList maxHeight="min(65vh, 48rem)">
+									<AccountManagementList>
 										{packages.map((pkg) => (
 											<li key={pkg.id} mix={css({ minWidth: 0 })}>
 												<AccountManagementListItemButton

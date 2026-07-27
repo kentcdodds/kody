@@ -163,6 +163,7 @@ export const jobInspectionSchema = z.object({
 	timezone: z.string(),
 	enabled: z.boolean(),
 	kill_switch_enabled: z.boolean(),
+	preserved: z.boolean(),
 	created_at: z.string(),
 	updated_at: z.string(),
 	next_run_at: z.string(),
@@ -257,6 +258,7 @@ export const jobViewOutputSchema = z.object({
 	timezone: z.string(),
 	enabled: z.boolean(),
 	kill_switch_enabled: z.boolean(),
+	preserved: z.boolean(),
 	created_at: z.string(),
 	updated_at: z.string(),
 	last_run_at: z.string().optional(),
@@ -342,6 +344,12 @@ export const jobUpdateInputSchema = z
 			.describe(
 				'Force the job off regardless of schedule. This remains visible in job_list and job_get for debugging.',
 			),
+		preserved: z
+			.boolean()
+			.optional()
+			.describe(
+				'When true, platform job auto-cleanup never deletes this job. Preserved jobs still count toward scheduled_jobs and storage_bytes entitlements. Forever keep is only available via Preserve — account retention preferences cannot be unbounded.',
+			),
 	})
 	.refine(
 		(input) =>
@@ -351,7 +359,8 @@ export const jobUpdateInputSchema = z
 			input.schedule !== undefined ||
 			input.timezone !== undefined ||
 			input.enabled !== undefined ||
-			input.kill_switch_enabled !== undefined,
+			input.kill_switch_enabled !== undefined ||
+			input.preserved !== undefined,
 		{
 			message: 'Provide at least one mutable field to update.',
 		},
@@ -363,7 +372,7 @@ export const jobRunNowOutputSchema = z.object({
 	deleted_after_run: z
 		.boolean()
 		.describe(
-			'Whether the job was deleted after this run, which happens for one-off schedules.',
+			'Whether the job was deleted after this run. One-off jobs are retained for account/platform cleanup instead of being deleted immediately.',
 		),
 })
 
@@ -491,6 +500,7 @@ export function buildJobViewOutput(
 		timezone: job.timezone,
 		enabled: job.enabled,
 		kill_switch_enabled: job.killSwitchEnabled,
+		preserved: job.preserved,
 		created_at: job.createdAt,
 		updated_at: job.updatedAt,
 		last_run_at: job.lastRunAt,
@@ -551,6 +561,7 @@ export function buildJobInspectionOutput(
 		timezone: job.timezone,
 		enabled: job.enabled,
 		kill_switch_enabled: job.killSwitchEnabled,
+		preserved: job.preserved,
 		created_at: job.createdAt,
 		updated_at: job.updatedAt,
 		next_run_at: job.nextRunAt,
@@ -603,6 +614,7 @@ export function resolveJobUpdateBody(
 		timezone: input.timezone,
 		enabled: input.enabled,
 		killSwitchEnabled: input.kill_switch_enabled,
+		preserved: input.preserved,
 	}
 }
 

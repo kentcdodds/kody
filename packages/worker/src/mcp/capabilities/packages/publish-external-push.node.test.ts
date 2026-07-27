@@ -10,6 +10,7 @@ const mockModule = vi.hoisted(() => ({
 	listPublishedPackageArtifactTargets: vi.fn(),
 	rebuildPublishedPackageArtifact: vi.fn(),
 	getStaticPackageDependentsSummary: vi.fn(),
+	runWithDurableEscalation: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -51,7 +52,17 @@ vi.mock('#worker/repo/published-source.ts', () => ({
 	},
 }))
 
-const { publishExternalPushCapability } =
+vi.mock('#mcp/capabilities/durable-escalation.ts', () => ({
+	defaultDurableEscalationBudgetMs: 55_000,
+	buildCallerScopedIdempotencyKey: (input: {
+		userId: string
+		parts: ReadonlyArray<string>
+	}) => [input.userId, ...input.parts].join(':'),
+	runWithDurableEscalation: (...args: Array<unknown>) =>
+		mockModule.runWithDurableEscalation(...args),
+}))
+
+const { buildExternalPublishIdempotencyParts, publishExternalPushCapability } =
 	await import('./publish-external-push.ts')
 
 function setupDefaultMocks() {
@@ -94,28 +105,42 @@ function setupDefaultMocks() {
 		},
 		kvKey: 'bundle-key',
 	})
+	mockModule.runWithDurableEscalation.mockImplementation(
+		async (input: { run: (signal: AbortSignal) => Promise<unknown> }) => {
+			const value = await input.run(new AbortController().signal)
+			return { kind: 'completed', value }
+		},
+	)
 }
 
-function createContext() {
+function createContext(
+	executionOrigin: 'interactive' | 'background' | 'omit' = 'interactive',
+) {
 	return {
 		env: {
 			APP_DB: {
-				prepare() {
+				prepare(query: string) {
 					return {
 						bind() {
 							return {
-								first: async () => ({ username: 'user' }),
+								first: async () => {
+									if (query.includes('FROM workflow_runs')) return null
+									return { username: 'user' }
+								},
 							}
 						},
 					}
 				},
 			},
+			DYNAMIC_CALLABLE_WORKFLOWS: {},
 		} as unknown as Env,
 		callerContext: {
 			baseUrl: 'https://kody.test',
+			...(executionOrigin === 'omit' ? {} : { executionOrigin }),
 			user: {
 				userId: 'user-1',
 				email: 'user@example.com',
+				username: 'user',
 				displayName: 'User',
 			},
 			remoteConnectors: null,
@@ -165,6 +190,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 		}),
 	)
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
+	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledTimes(1)
 
 	const targets = [
 		{
@@ -390,6 +416,7 @@ test('force publish passes destructive confirmation through and refuses without 
 			allowForce: false,
 		}),
 	)
+	expect(mockModule.runWithDurableEscalation).toHaveBeenCalled()
 
 	mockModule.publishFromExternalRef.mockResolvedValue({
 		status: 'published',
@@ -412,6 +439,154 @@ test('force publish passes destructive confirmation through and refuses without 
 			destructiveOverwriteConfirmed: true,
 		}),
 	)
+})
+
+test('ineligible publishes return structured results without durable escalation dispatch', async () => {
+	setupDefaultMocks()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'checks_failed',
+		failed_checks: [{ kind: 'typecheck', ok: false, message: 'type error' }],
+		manifest: {},
+		run_id: 'run-1',
+	})
+
+	const failed = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+	expect(failed).toEqual({
+		status: 'checks_failed',
+		failed_checks: [{ kind: 'typecheck', ok: false, message: 'type error' }],
+		manifest: {},
+		run_id: 'run-1',
+	})
+	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledTimes(1)
+	const escalationInput = mockModule.runWithDurableEscalation.mock
+		.calls[0]?.[0] as {
+		userId: string
+		idempotencyParts: ReadonlyArray<string>
+	}
+	// workflow_runs rows are scoped by acting userId; parts keep full semantic input.
+	expect(escalationInput.userId).toBe('user-1')
+	expect(escalationInput.idempotencyParts).toEqual(
+		buildExternalPublishIdempotencyParts({
+			ownerUserId: 'user-1',
+			packageId: 'package-1',
+			newCommit: 'commit-new',
+			allowForce: false,
+			destructiveOverwriteConfirmed: false,
+		}),
+	)
+})
+
+test('force and non-force publishes get distinct durable idempotency keys', () => {
+	const base = {
+		ownerUserId: 'owner-1',
+		packageId: 'package-1',
+		newCommit: 'commit-new',
+	}
+	const safe = buildExternalPublishIdempotencyParts({
+		...base,
+		allowForce: false,
+		destructiveOverwriteConfirmed: false,
+	})
+	const force = buildExternalPublishIdempotencyParts({
+		...base,
+		allowForce: true,
+		destructiveOverwriteConfirmed: true,
+	})
+	expect(safe).not.toEqual(force)
+	expect(safe[1]).toContain('"allowForce":false')
+	expect(force[1]).toContain('"allowForce":true')
+})
+
+test('missing executionOrigin fails closed and does not escalate', async () => {
+	setupDefaultMocks()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+	})
+
+	const result = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext('omit'),
+	)
+	expect(result.status).toBe('published')
+	expect(mockModule.runWithDurableEscalation).not.toHaveBeenCalled()
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
+})
+
+test('budget exhaustion returns a dispatched handle and background re-entry skips escalation', async () => {
+	setupDefaultMocks()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	const expectedParts = buildExternalPublishIdempotencyParts({
+		ownerUserId: 'user-1',
+		packageId: 'package-1',
+		newCommit: 'commit-new',
+		allowForce: false,
+		destructiveOverwriteConfirmed: false,
+	})
+	mockModule.runWithDurableEscalation.mockResolvedValue({
+		kind: 'dispatched',
+		handle: {
+			status: 'dispatched',
+			workflow_id: 'dynwf-publish-1',
+			workflow_name: 'package_publish_external_push',
+			idempotency_key: ['user-1', ...expectedParts].join(':'),
+			run_status: 'queued',
+			message: 'dispatched',
+		},
+	})
+
+	const dispatched = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext('interactive'),
+	)
+	expect(dispatched).toEqual({
+		status: 'dispatched',
+		workflow_id: 'dynwf-publish-1',
+		workflow_name: 'package_publish_external_push',
+		idempotency_key: ['user-1', ...expectedParts].join(':'),
+		run_status: 'queued',
+		message: 'dispatched',
+	})
+	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
+	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			idempotencyParts: expectedParts,
+		}),
+	)
+
+	mockModule.runWithDurableEscalation.mockClear()
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+	})
+	const background = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext('background'),
+	)
+	expect(background.status).toBe('published')
+	expect(mockModule.runWithDurableEscalation).not.toHaveBeenCalled()
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
 })
 
 test('publishExternalPush recovers from transient Durable Object resets', async () => {

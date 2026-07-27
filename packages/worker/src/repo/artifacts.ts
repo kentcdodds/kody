@@ -522,16 +522,22 @@ export async function listArtifactServerRefs(input: {
 
 export async function resolveArtifactDefaultBranchHead(input: {
 	repo: ArtifactRepoHandle
+	token?: string
+	info?: ArtifactRepoInfo | null
 }) {
-	const info = await input.repo.info()
+	const [info, tokenPlaintext] = await Promise.all([
+		input.info === undefined ? input.repo.info() : Promise.resolve(input.info),
+		input.token !== undefined
+			? Promise.resolve(input.token)
+			: input.repo.createToken('read', 300).then((token) => token.plaintext),
+	])
 	if (!info?.remote) {
 		throw new Error('Artifact repo remote URL is unavailable.')
 	}
-	const token = await input.repo.createToken('read', 300)
 	const refName = `refs/heads/${info.defaultBranch || 'main'}`
 	const refs = await listArtifactServerRefs({
 		remote: info.remote,
-		token: token.plaintext,
+		token: tokenPlaintext,
 		prefix: refName,
 	})
 	const branchRef = refs.find((ref) => ref.ref === refName)

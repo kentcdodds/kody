@@ -46,7 +46,7 @@ function expectedConfigFromLegacy(
 }
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const oauthAppsMigration = '0100-user-oauth-apps-and-integrations.sql'
+const oauthAppsMigration = '0101-user-oauth-apps-and-integrations.sql'
 
 function applyMigrationsBefore(db: DatabaseSync, exclusiveUpperBound: string) {
 	for (const fileName of readdirSync(migrationsDirectory)

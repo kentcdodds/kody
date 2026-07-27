@@ -425,7 +425,11 @@
 			"sha256": "b3c25eb9855ddc2d15ec7c5d848e71e3fc25ddc8f4d247845a9c85216027bb26"
 		},
 		{
-			"filename": "0100-user-oauth-apps-and-integrations.sql",
+			"filename": "0100-job-retention.sql",
+			"sha256": "17f1553221e3a112017889ccd77ca30f475554c48e052172eeb3cc48a0fb7daf"
+		},
+		{
+			"filename": "0101-user-oauth-apps-and-integrations.sql",
 			"sha256": "d26af3d1f535d8329dc711ad367d5dfa5bf484046fd48c1f8df83f4093668a5d"
 		}
 	]

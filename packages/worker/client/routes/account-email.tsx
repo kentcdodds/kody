@@ -353,7 +353,7 @@ export function AccountEmailRoute(handle: Handle) {
 										</p>
 									) : (
 										<>
-											<AccountManagementList maxHeight="min(65vh, 48rem)">
+											<AccountManagementList>
 												{data.messages.map((emailMessage) => (
 													<li key={emailMessage.id} mix={css({ minWidth: 0 })}>
 														<AccountManagementListItemButton

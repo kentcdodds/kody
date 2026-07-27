@@ -1,4 +1,9 @@
 import { expect, test, vi } from 'vitest'
+import {
+	d1LockRetryBaseDelayMs,
+	d1LockRetryMaxAttempts,
+} from '#worker/d1-retry.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	buildSavedPackageEmbedText: vi.fn(),
@@ -132,7 +137,7 @@ test('saved package reindex embeds full manifests with user-scoped metadata', as
 
 test('saved package reindex skips failed manifest loads and continues the batch', async () => {
 	resetMocks()
-	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	consoleError.mockImplementation(() => {})
 	const upsert = vi.fn()
 	const env = {
 		APP_DB: {},
@@ -192,40 +197,101 @@ test('saved package reindex skips failed manifest loads and continues the batch'
 	mockModule.buildSavedPackageEmbedText.mockReturnValue('tasks manifest embed')
 	mockModule.embedTextsForVectorize.mockResolvedValue([[0.4, 0.5, 0.6]])
 
-	try {
-		await expect(
-			reindexSavedPackageVectors(env, {
-				baseUrl: 'https://kody.example.com',
-			}),
-		).resolves.toEqual({
-			upserted: 1,
-			failed: 1,
-			failures: [
-				{
-					id: 'package_pkg-bad',
-					phase: 'load',
-					error: 'manifest missing',
-				},
-			],
-			warning: '1 saved package vector(s) failed to reindex',
-		})
-
-		expect(mockModule.embedTextsForVectorize).toHaveBeenCalledWith(env, [
-			'tasks manifest embed',
-		])
-		expect(upsert).toHaveBeenCalledWith([
+	await expect(
+		reindexSavedPackageVectors(env, {
+			baseUrl: 'https://kody.example.com',
+		}),
+	).resolves.toEqual({
+		upserted: 1,
+		failed: 1,
+		failures: [
 			{
-				id: 'package_pkg-good',
-				values: [0.4, 0.5, 0.6],
-				metadata: {
-					kind: 'package',
-					userId: 'user-1',
-				},
+				id: 'package_pkg-bad',
+				phase: 'load',
+				error: 'manifest missing',
 			},
-		])
+		],
+		warning: '1 saved package vector(s) failed to reindex',
+	})
+
+	expect(mockModule.embedTextsForVectorize).toHaveBeenCalledWith(env, [
+		'tasks manifest embed',
+	])
+	expect(upsert).toHaveBeenCalledWith([
+		{
+			id: 'package_pkg-good',
+			values: [0.4, 0.5, 0.6],
+			metadata: {
+				kind: 'package',
+				userId: 'user-1',
+			},
+		},
+	])
+})
+
+test('saved package reindex retries a transient D1 export error on page listing', async () => {
+	resetMocks()
+	const upsert = vi.fn()
+	const env = { APP_DB: {} } as Env
+	const pkg = buildSavedPackage('pkg-1')
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: { name: pkg.name },
+	})
+	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
+	mockModule.embedTextsForVectorize.mockResolvedValue([[0.1]])
+	mockModule.listSavedPackagesPage
+		.mockRejectedValueOnce(
+			new Error('D1_ERROR: Currently processing a long-running export.'),
+		)
+		.mockResolvedValueOnce([pkg])
+
+	vi.useFakeTimers()
+	try {
+		const resultPromise = reindexSavedPackageVectors(env, {
+			baseUrl: 'https://kody.example.com',
+		})
+		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
+		await expect(resultPromise).resolves.toEqual({ upserted: 1 })
 	} finally {
-		consoleError.mockRestore()
+		vi.useRealTimers()
 	}
+
+	expect(mockModule.listSavedPackagesPage).toHaveBeenCalledTimes(2)
+	expect(upsert).toHaveBeenCalledTimes(1)
+})
+
+test('saved package reindex surfaces page listing failures after the retry budget', async () => {
+	resetMocks()
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert: vi.fn() })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.listSavedPackagesPage.mockRejectedValue(
+		new Error('D1_ERROR: Currently processing a long-running export.'),
+	)
+
+	vi.useFakeTimers()
+	try {
+		const resultPromise = reindexSavedPackageVectors({ APP_DB: {} } as Env, {
+			baseUrl: 'https://kody.example.com',
+		})
+		const expectation = expect(resultPromise).rejects.toThrow(
+			'Currently processing a long-running export',
+		)
+		for (let attempt = 1; attempt < d1LockRetryMaxAttempts; attempt++) {
+			await vi.advanceTimersByTimeAsync(
+				d1LockRetryBaseDelayMs * 2 ** (attempt - 1),
+			)
+		}
+		await expectation
+	} finally {
+		vi.useRealTimers()
+	}
+
+	expect(mockModule.listSavedPackagesPage).toHaveBeenCalledTimes(
+		d1LockRetryMaxAttempts,
+	)
+	expect(mockModule.loadPackageManifestBySourceId).not.toHaveBeenCalled()
 })
 
 test('saved package reindex walks keyset pages and merges the page results', async () => {

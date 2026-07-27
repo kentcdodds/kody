@@ -75,7 +75,6 @@ import {
 import {
 	deleteArchivedJobArtifact,
 	listArchivedJobArtifactsDueBefore,
-	upsertArchivedJobArtifact,
 } from './archived-artifacts-repo.ts'
 import {
 	deletePublishedSourceSnapshot,
@@ -590,37 +589,6 @@ function buildPackageJobId(packageId: string, jobName: string) {
 	return `package-job:${packageId}:${encodeURIComponent(jobName)}`
 }
 
-function computeArchivedJobRetainUntil(input: { now?: Date } = {}) {
-	const now = input.now ?? new Date()
-	return new Date(now.valueOf() + 60 * 60 * 1000).toISOString()
-}
-
-async function archiveSuccessfulOneOffJob(input: {
-	env: Env
-	job: JobRecord
-	now?: Date
-}) {
-	if (!input.job.sourceId || !input.job.publishedCommit) {
-		return
-	}
-	await upsertArchivedJobArtifact({
-		db: input.env.APP_DB,
-		jobId: input.job.id,
-		userId: input.job.userId,
-		sourceId: input.job.sourceId,
-		publishedCommit: input.job.publishedCommit,
-		storageId: input.job.storageId,
-		retainUntil: computeArchivedJobRetainUntil({ now: input.now }),
-	})
-	logJobSchedulerEvent({
-		event: 'job_artifact_archived',
-		userId: input.job.userId,
-		jobId: input.job.id,
-		sourceId: input.job.sourceId,
-		reason: 'successful_one_off_retention',
-	})
-}
-
 async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 	const due = await listArchivedJobArtifactsDueBefore(
 		input.env.APP_DB,
@@ -854,6 +822,7 @@ export async function syncPackageJobsForPackage(input: {
 					timezone,
 					enabled,
 					killSwitchEnabled: false,
+					preserved: false,
 					createdAt: now,
 					updatedAt: now,
 					nextRunAt: computeNextRunAt({
@@ -1009,6 +978,7 @@ export async function createJob(input: {
 				timezone,
 				enabled: input.body.enabled ?? true,
 				killSwitchEnabled: input.body.killSwitchEnabled ?? false,
+				preserved: input.body.preserved ?? false,
 				createdAt: now,
 				updatedAt: now,
 				nextRunAt: computeNextRunAt({
@@ -1182,6 +1152,7 @@ export async function updateJob(input: {
 				enabled: nextEnabled,
 				killSwitchEnabled:
 					input.body.killSwitchEnabled ?? existing.killSwitchEnabled,
+				preserved: input.body.preserved ?? existing.preserved,
 				updatedAt: new Date().toISOString(),
 				nextRunAt: shouldRecomputeNextRunAt
 					? computeNextRunAt({
@@ -1258,8 +1229,45 @@ export async function deleteJob(input: {
 				jobId: input.jobId,
 				sourceId: row.record.sourceId,
 			})
+			const storageId = row.record.storageId
 			await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
 			await deleteJobVector(input.env, input.jobId)
+			let storageCleared = false
+			try {
+				await storageRunnerRpc({
+					env: input.env,
+					userId: input.userId,
+					storageId,
+				}).clearStorage()
+				storageCleared = true
+			} catch (error) {
+				logJobSchedulerError({
+					event: 'job_storage_clear_failed',
+					userId: input.userId,
+					jobId: input.jobId,
+					reason: 'job_delete',
+					...schedulerErrorFields(error),
+				})
+			}
+			// Keep the bucket registration when clear fails so storage_bytes
+			// still accounts for orphaned DO data and a later sweep can retry.
+			if (storageCleared) {
+				try {
+					await input.env.APP_DB.prepare(
+						`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?`,
+					)
+						.bind(input.userId, storageId)
+						.run()
+				} catch (error) {
+					logJobSchedulerError({
+						event: 'job_storage_bucket_unregister_failed',
+						userId: input.userId,
+						jobId: input.jobId,
+						reason: 'job_delete',
+						...schedulerErrorFields(error),
+					})
+				}
+			}
 			await syncJobManagerAlarm({
 				env: input.env,
 				userId: input.userId,
@@ -1453,42 +1461,30 @@ export async function runJobNow(input: {
 				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 				waitUntil: input.waitUntil,
 			})
-			const updated =
+			const updated = applyExecutionOutcome(
+				row.record,
+				outcome,
 				row.record.schedule.type === 'once'
-					? applyExecutionOutcome(
-							row.record,
-							outcome,
-							outcome.execution.ok ? {} : { enabled: false },
-						)
-					: applyExecutionOutcome(row.record, outcome, {
+					? { enabled: false }
+					: {
 							nextRunAt: computeNextRunAt({
 								schedule: row.record.schedule,
 								timezone: row.record.timezone,
 								from: outcome.finishedAt,
 							}),
-						})
-			const deletedAfterRun =
-				row.record.schedule.type === 'once' && outcome.execution.ok
-			if (deletedAfterRun) {
-				await archiveSuccessfulOneOffJob({
-					env: input.env,
-					job: row.record,
-				})
-				await deleteJobRow(input.env.APP_DB, input.userId, input.jobId)
-				await deleteJobVector(input.env, input.jobId)
-				await cleanupArchivedJobArtifacts({
-					env: input.env,
-				})
-			} else {
-				await updateJobRow({
-					db: input.env.APP_DB,
-					userId: input.userId,
-					job: updated,
-					callerContextJson: activeCallerContext
-						? serializeCallerContext(activeCallerContext)
-						: row.callerContextJson,
-				})
-			}
+						},
+			)
+			// Successful once jobs are retained for account/platform cleanup
+			// rather than deleted immediately.
+			const deletedAfterRun = false
+			await updateJobRow({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				job: updated,
+				callerContextJson: activeCallerContext
+					? serializeCallerContext(activeCallerContext)
+					: row.callerContextJson,
+			})
 			return {
 				job: toJobView(updated),
 				execution: outcome.execution,
@@ -1553,18 +1549,6 @@ export async function runDueJobsForUser(input: {
 					job,
 					callerContextJson: row?.callerContextJson ?? 'null',
 				})
-			}
-			for (const jobId of result.deleteJobIds) {
-				const row = dueRowById.get(jobId)
-				if (row) {
-					await archiveSuccessfulOneOffJob({
-						env: input.env,
-						job: row.record,
-						now,
-					})
-				}
-				await deleteJobRow(input.env.APP_DB, input.userId, jobId)
-				await deleteJobVector(input.env, jobId)
 			}
 			await cleanupArchivedJobArtifacts({
 				env: input.env,

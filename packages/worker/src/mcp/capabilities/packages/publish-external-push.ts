@@ -1,6 +1,11 @@
 import { z } from 'zod'
+import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	defaultDurableEscalationBudgetMs,
+	runWithDurableEscalation,
+} from '#mcp/capabilities/durable-escalation.ts'
 import {
 	errorCauseChainIncludes,
 	getErrorMessage,
@@ -44,6 +49,11 @@ const inputSchema = z.object({
 
 const externalPublishRetryDelaysMs = [100, 500] as const
 
+const durablePublishWorkflowCode = `import { kody } from 'kody:runtime'
+export default async function main(params = {}) {
+	return await kody.package_publish_external_push(params)
+}`
+
 function isTransientDurableObjectResetError(error: unknown) {
 	return errorCauseChainIncludes(
 		error,
@@ -80,8 +90,29 @@ function logExternalPublishRetry(input: {
 	)
 }
 
-async function delay(ms: number) {
-	await new Promise((resolve) => setTimeout(resolve, ms))
+function assertNotAborted(signal: AbortSignal | undefined) {
+	if (signal?.aborted) {
+		throw new DOMException('The publish attempt was aborted.', 'AbortError')
+	}
+}
+
+async function delay(ms: number, signal?: AbortSignal) {
+	assertNotAborted(signal)
+	if (!signal) {
+		await new Promise((resolve) => setTimeout(resolve, ms))
+		return
+	}
+	await new Promise<void>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			signal.removeEventListener('abort', onAbort)
+			resolve()
+		}, ms)
+		const onAbort = () => {
+			clearTimeout(timer)
+			reject(new DOMException('The publish attempt was aborted.', 'AbortError'))
+		}
+		signal.addEventListener('abort', onAbort, { once: true })
+	})
 }
 
 const checkSchema = z.object({
@@ -214,7 +245,17 @@ const outputSchema = z.discriminatedUnion('status', [
 		static_dependents: staticDependentsSchema,
 		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
 	}),
+	z.object({
+		status: z.literal('dispatched'),
+		workflow_id: z.string(),
+		workflow_name: z.string(),
+		idempotency_key: z.string(),
+		run_status: z.string().nullable(),
+		message: z.string(),
+	}),
 ])
+
+type PublishExternalPushResult = z.infer<typeof outputSchema>
 
 function readSecretMountsFromPackageJson(content: string | undefined) {
 	if (!content) return null
@@ -295,12 +336,183 @@ async function getPublishStaticDependents(input: {
 	})
 }
 
+/**
+ * Every input that changes publish semantics for durable dedupe. Adding a
+ * field here is a compile-time break at the call site that builds this object,
+ * and the canonical JSON blob below includes every property automatically.
+ */
+export type ExternalPublishSemanticInput = {
+	ownerUserId: string
+	packageId: string
+	newCommit: string
+	allowForce: boolean
+	destructiveOverwriteConfirmed: boolean
+}
+
+export function buildExternalPublishIdempotencyParts(
+	input: ExternalPublishSemanticInput,
+) {
+	// Caller identity is applied by runWithDurableEscalation (workflow_runs are
+	// user-scoped). Distinct delegates may each dispatch for the same publish;
+	// that is safe because re-invoking publish when published_commit already
+	// matches HEAD returns already_published without checks or D1 writes.
+	return [
+		'package_publish_external_push',
+		canonicalJsonStringify(input),
+	] as const
+}
+
+function shouldEscalateExternalPublish(executionOrigin: string | undefined) {
+	// Fail closed: only interactive MCP calls escalate. Missing origin and
+	// background (durable workflow re-entry) must not create another workflow.
+	// package-workflows invokeInlineWorkflowCode always sets background today;
+	// requiring an explicit interactive origin still prevents a self-replicating
+	// chain if any future path forgets to set it.
+	return executionOrigin === 'interactive'
+}
+
+async function runExternalPublishAttempt(input: {
+	env: Env
+	baseUrl: string
+	ownerUserId: string
+	expectedPackageScope: string
+	packageId: string
+	kodyId: string
+	source: {
+		id: string
+		repo_id: string
+	}
+	newCommit: string
+	allowForce: boolean
+	destructiveOverwriteConfirmed: boolean
+	signal?: AbortSignal
+}): Promise<Exclude<PublishExternalPushResult, { status: 'dispatched' }>> {
+	const maxAttempts = externalPublishRetryDelaysMs.length + 1
+	let lastTransientError: unknown = null
+	for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
+		assertNotAborted(input.signal)
+		const attempt = attemptIndex + 1
+		const sessionId =
+			attemptIndex === 0
+				? `external-publish-${input.source.id}`
+				: `external-publish-${input.source.id}-retry-${attempt}`
+		try {
+			const result = await repoSessionRpc(
+				input.env,
+				sessionId,
+			).publishFromExternalRef({
+				sessionId,
+				sourceId: input.source.id,
+				userId: input.ownerUserId,
+				newCommit: input.newCommit,
+				expectedHead: input.newCommit,
+				allowForce: input.allowForce,
+				destructiveOverwriteConfirmed: input.destructiveOverwriteConfirmed,
+				baseUrl: input.baseUrl,
+				rebuildPackageArtifacts: false,
+				expectedPackageScope: input.expectedPackageScope,
+			})
+			assertNotAborted(input.signal)
+			if (result.status === 'already_published') {
+				if (!result.published_commit) {
+					throw new Error(
+						`Package "${input.packageId}" is already published, but no published commit is available to rebuild artifacts.`,
+					)
+				}
+				await rebuildPublishedPackageArtifactsViaRepoSession({
+					env: input.env,
+					rpcSessionId: sessionId,
+					sourceId: input.source.id,
+					userId: input.ownerUserId,
+					publishedCommit: result.published_commit,
+					baseUrl: input.baseUrl,
+				})
+				return {
+					...result,
+					static_dependents: await getPublishStaticDependents({
+						db: input.env.APP_DB,
+						userId: input.ownerUserId,
+						sourceId: input.source.id,
+						publishedCommit: result.published_commit,
+					}),
+					pending_secret_package_approvals:
+						await getPendingSecretApprovalsForPublishedPackage({
+							env: input.env,
+							baseUrl: input.baseUrl,
+							userId: input.ownerUserId,
+							packageId: input.packageId,
+							kodyId: input.kodyId,
+							sourceId: input.source.id,
+						}),
+				} as const
+			}
+			if (result.status !== 'published') {
+				return result
+			}
+			await rebuildPublishedPackageArtifactsViaRepoSession({
+				env: input.env,
+				rpcSessionId: sessionId,
+				sourceId: input.source.id,
+				userId: input.ownerUserId,
+				publishedCommit: result.published_commit,
+				baseUrl: input.baseUrl,
+			})
+			return {
+				...result,
+				static_dependents: await getPublishStaticDependents({
+					db: input.env.APP_DB,
+					userId: input.ownerUserId,
+					sourceId: input.source.id,
+					publishedCommit: result.published_commit,
+				}),
+				pending_secret_package_approvals:
+					await getPendingSecretApprovalsForPublishedPackage({
+						env: input.env,
+						baseUrl: input.baseUrl,
+						userId: input.ownerUserId,
+						packageId: input.packageId,
+						kodyId: input.kodyId,
+						sourceId: input.source.id,
+					}),
+			} as const
+		} catch (error) {
+			assertNotAborted(input.signal)
+			if (!isTransientDurableObjectResetError(error)) {
+				throw error
+			}
+			lastTransientError = error
+			const willRetry = attemptIndex < externalPublishRetryDelaysMs.length
+			const nextDelayMs = willRetry
+				? (externalPublishRetryDelaysMs[attemptIndex] ?? 0)
+				: 0
+			logExternalPublishRetry({
+				sourceId: input.source.id,
+				repoId: input.source.repo_id,
+				packageId: input.packageId,
+				newCommit: input.newCommit,
+				attempt,
+				nextDelayMs,
+				error,
+			})
+			if (!willRetry) {
+				break
+			}
+			await delay(nextDelayMs, input.signal)
+		}
+	}
+	throw new Error(
+		`package_publish_external_push could not recover after ${maxAttempts} transient Durable Object reset attempts: ${getErrorMessage(
+			lastTransientError,
+		)}`,
+	)
+}
+
 export const publishExternalPushCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_publish_external_push',
 		description:
-			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically.',
+			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Common cases return the full synchronous result. If the publish exceeds the inline budget (~55s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflow_run_list instead of hanging until an opaque execute timeout.',
 		keywords: ['package', 'publish', 'git', 'artifacts', 'external', 'push'],
 		readOnly: false,
 		idempotent: true,
@@ -315,140 +527,88 @@ export const publishExternalPushCapability = defineDomainCapability(
 				args.package_scope,
 			)
 			const expectedPackageScope = owner.ownerScope
-			const maxAttempts = externalPublishRetryDelaysMs.length + 1
-			let lastTransientError: unknown = null
-			for (
-				let attemptIndex = 0;
-				attemptIndex < maxAttempts;
-				attemptIndex += 1
-			) {
-				const attempt = attemptIndex + 1
-				const { packageId, kodyId, source } = await resolveOwnedPackageSource({
-					db: ctx.env.APP_DB,
-					userId: owner.ownerUserId,
-					args: {
-						package_id: args.package_id,
-						kody_id: args.kody_id,
-					},
-				})
-				const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)
-				const newCommit = head.commit
-				if (!newCommit) {
+			const { packageId, kodyId, source } = await resolveOwnedPackageSource({
+				db: ctx.env.APP_DB,
+				userId: owner.ownerUserId,
+				args: {
+					package_id: args.package_id,
+					kody_id: args.kody_id,
+				},
+			})
+			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)
+			const newCommit = head.commit
+			if (!newCommit) {
+				throw new Error(
+					`Artifacts repo "${source.repo_id}" has no published HEAD to reconcile.`,
+				)
+			}
+
+			const publishInput = {
+				env: ctx.env,
+				baseUrl: ctx.callerContext.baseUrl,
+				ownerUserId: owner.ownerUserId,
+				expectedPackageScope,
+				packageId,
+				kodyId,
+				source: { id: source.id, repo_id: source.repo_id },
+				newCommit,
+				allowForce: args.allow_force,
+				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
+			}
+
+			if (!shouldEscalateExternalPublish(ctx.callerContext.executionOrigin)) {
+				return await runExternalPublishAttempt(publishInput)
+			}
+
+			const semanticInput = {
+				ownerUserId: owner.ownerUserId,
+				packageId,
+				newCommit,
+				allowForce: args.allow_force,
+				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
+			} satisfies ExternalPublishSemanticInput
+			const durableParams = {
+				...(args.package_id ? { package_id: args.package_id } : {}),
+				...(args.kody_id ? { kody_id: args.kody_id } : {}),
+				...(args.package_scope ? { package_scope: args.package_scope } : {}),
+				allow_force: args.allow_force,
+				confirm_destructive_overwrite: args.confirm_destructive_overwrite,
+			}
+			const outcome = await runWithDurableEscalation({
+				env: ctx.env,
+				userId: user.userId,
+				userEmail: user.email,
+				budgetMs: defaultDurableEscalationBudgetMs,
+				idempotencyParts: buildExternalPublishIdempotencyParts(semanticInput),
+				workflowName: 'package_publish_external_push',
+				packageContext: {
+					packageId,
+					kodyId,
+					sourceId: source.id,
+				},
+				durableCode: durablePublishWorkflowCode,
+				durableParams,
+				run: async (signal) =>
+					await runExternalPublishAttempt({
+						...publishInput,
+						signal,
+					}),
+			})
+
+			switch (outcome.kind) {
+				case 'completed':
+					return outcome.value
+				case 'dispatched':
+					return outcome.handle
+				case 'failed':
+					throw new Error(outcome.error)
+				default: {
+					const exhaustive: never = outcome
 					throw new Error(
-						`Artifacts repo "${source.repo_id}" has no published HEAD to reconcile.`,
+						`Unexpected durable escalation outcome: ${JSON.stringify(exhaustive)}`,
 					)
 				}
-				const sessionId =
-					attemptIndex === 0
-						? `external-publish-${source.id}`
-						: `external-publish-${source.id}-retry-${attempt}`
-				try {
-					const result = await repoSessionRpc(
-						ctx.env,
-						sessionId,
-					).publishFromExternalRef({
-						sessionId,
-						sourceId: source.id,
-						userId: owner.ownerUserId,
-						newCommit,
-						expectedHead: newCommit,
-						allowForce: args.allow_force,
-						destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
-						baseUrl: ctx.callerContext.baseUrl,
-						rebuildPackageArtifacts: false,
-						expectedPackageScope,
-					})
-					if (result.status === 'already_published') {
-						if (!result.published_commit) {
-							throw new Error(
-								`Package "${packageId}" is already published, but no published commit is available to rebuild artifacts.`,
-							)
-						}
-						await rebuildPublishedPackageArtifactsViaRepoSession({
-							env: ctx.env,
-							rpcSessionId: sessionId,
-							sourceId: source.id,
-							userId: owner.ownerUserId,
-							publishedCommit: result.published_commit,
-							baseUrl: ctx.callerContext.baseUrl,
-						})
-						return {
-							...result,
-							static_dependents: await getPublishStaticDependents({
-								db: ctx.env.APP_DB,
-								userId: owner.ownerUserId,
-								sourceId: source.id,
-								publishedCommit: result.published_commit,
-							}),
-							pending_secret_package_approvals:
-								await getPendingSecretApprovalsForPublishedPackage({
-									env: ctx.env,
-									baseUrl: ctx.callerContext.baseUrl,
-									userId: owner.ownerUserId,
-									packageId,
-									kodyId,
-									sourceId: source.id,
-								}),
-						} as const
-					}
-					if (result.status !== 'published') {
-						return result
-					}
-					await rebuildPublishedPackageArtifactsViaRepoSession({
-						env: ctx.env,
-						rpcSessionId: sessionId,
-						sourceId: source.id,
-						userId: owner.ownerUserId,
-						publishedCommit: result.published_commit,
-						baseUrl: ctx.callerContext.baseUrl,
-					})
-					return {
-						...result,
-						static_dependents: await getPublishStaticDependents({
-							db: ctx.env.APP_DB,
-							userId: owner.ownerUserId,
-							sourceId: source.id,
-							publishedCommit: result.published_commit,
-						}),
-						pending_secret_package_approvals:
-							await getPendingSecretApprovalsForPublishedPackage({
-								env: ctx.env,
-								baseUrl: ctx.callerContext.baseUrl,
-								userId: owner.ownerUserId,
-								packageId,
-								kodyId,
-								sourceId: source.id,
-							}),
-					} as const
-				} catch (error) {
-					if (!isTransientDurableObjectResetError(error)) {
-						throw error
-					}
-					lastTransientError = error
-					const willRetry = attemptIndex < externalPublishRetryDelaysMs.length
-					const nextDelayMs = willRetry
-						? (externalPublishRetryDelaysMs[attemptIndex] ?? 0)
-						: 0
-					logExternalPublishRetry({
-						sourceId: source.id,
-						repoId: source.repo_id,
-						packageId,
-						newCommit,
-						attempt,
-						nextDelayMs,
-						error,
-					})
-					if (!willRetry) {
-						break
-					}
-					await delay(nextDelayMs)
-				}
 			}
-			throw new Error(
-				`package_publish_external_push could not recover after ${maxAttempts} transient Durable Object reset attempts: ${getErrorMessage(
-					lastTransientError,
-				)}`,
-			)
 		},
 	},
 )

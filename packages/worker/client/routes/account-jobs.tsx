@@ -219,6 +219,21 @@ export function AccountJobsRoute(handle: Handle) {
 	let actionState: 'idle' | 'busy' = 'idle'
 	let jobs: Array<AccountJobListItem> = []
 	let selectedJob: AccountJobDetail | null = null
+	let retention: AccountJobsLoaderData['retention'] = {
+		successOnceDays: 14,
+		failedOrNeverRanOnceDays: 60,
+		disabledRecurringDays: 90,
+		defaults: {
+			successOnce: 14,
+			failedOrNeverRanOnce: 60,
+			disabledRecurring: 90,
+		},
+	}
+	let retentionDraft = {
+		successOnceDays: '14',
+		failedOrNeverRanOnceDays: '60',
+		disabledRecurringDays: '90',
+	}
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	const loadLatch = createRouteLoadLatch()
@@ -261,9 +276,19 @@ export function AccountJobsRoute(handle: Handle) {
 		messageTone = tone
 	}
 
+	function applyRetention(next: AccountJobsLoaderData['retention']) {
+		retention = next
+		retentionDraft = {
+			successOnceDays: String(next.successOnceDays),
+			failedOrNeverRanOnceDays: String(next.failedOrNeverRanOnceDays),
+			disabledRecurringDays: String(next.disabledRecurringDays),
+		}
+	}
+
 	function applyPayload(payload: AccountJobsLoaderData) {
 		jobs = payload.jobs
 		selectedJob = payload.selectedJob
+		applyRetention(payload.retention)
 		deleteConfirm = false
 		editing = false
 		editState = payload.selectedJob
@@ -434,7 +459,7 @@ export function AccountJobsRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Jobs"
-					description="Inspect scheduled jobs for your account, toggle the kill switch, run jobs now, and edit ad-hoc schedules. Package-owned job schedules are managed by package publish."
+					description="Inspect scheduled jobs, toggle kill switch or Preserve, run jobs now, and edit ad-hoc schedules. Completed ad-hoc jobs are cleaned up automatically after your retention windows; longer retention uses more scheduled job slots and storage."
 					currentHref={currentHref}
 				/>
 
@@ -451,6 +476,137 @@ export function AccountJobsRoute(handle: Handle) {
 					>
 						{message}
 					</AccountManagementMessage>
+				) : null}
+
+				{status === 'ready' ? (
+					<section
+						mix={css({
+							...cardCss,
+							marginBottom: spacing.lg,
+							display: 'grid',
+							gap: spacing.md,
+						})}
+					>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<h2 mix={css(cardTitleCss)}>Job retention</h2>
+							<p mix={css(descriptionCss)}>
+								Platform defaults clean up successful one-off jobs after{' '}
+								{retention.defaults.successOnce} days, failed or never-ran
+								one-offs after {retention.defaults.failedOrNeverRanOnce} days,
+								and disabled recurring ad-hoc jobs after{' '}
+								{retention.defaults.disabledRecurring} days. Longer windows keep
+								more jobs counting toward scheduled job slots and storage bytes.
+								Keep forever only with Preserve on a job — retention cannot be
+								unbounded.
+							</p>
+						</div>
+						<div
+							mix={css({
+								display: 'grid',
+								gap: spacing.md,
+								gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))',
+							})}
+						>
+							<label mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>Successful one-off (days)</span>
+								<input
+									type="number"
+									min={1}
+									max={365}
+									value={retentionDraft.successOnceDays}
+									disabled={isMutating}
+									mix={[
+										on('input', (event) => {
+											retentionDraft = {
+												...retentionDraft,
+												successOnceDays: (
+													event.currentTarget as HTMLInputElement
+												).value,
+											}
+											handle.update()
+										}),
+										css(inputCss),
+									]}
+								/>
+							</label>
+							<label mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>
+									Failed / never-ran one-off (days)
+								</span>
+								<input
+									type="number"
+									min={1}
+									max={365}
+									value={retentionDraft.failedOrNeverRanOnceDays}
+									disabled={isMutating}
+									mix={[
+										on('input', (event) => {
+											retentionDraft = {
+												...retentionDraft,
+												failedOrNeverRanOnceDays: (
+													event.currentTarget as HTMLInputElement
+												).value,
+											}
+											handle.update()
+										}),
+										css(inputCss),
+									]}
+								/>
+							</label>
+							<label mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>Disabled recurring (days)</span>
+								<input
+									type="number"
+									min={1}
+									max={365}
+									value={retentionDraft.disabledRecurringDays}
+									disabled={isMutating}
+									mix={[
+										on('input', (event) => {
+											retentionDraft = {
+												...retentionDraft,
+												disabledRecurringDays: (
+													event.currentTarget as HTMLInputElement
+												).value,
+											}
+											handle.update()
+										}),
+										css(inputCss),
+									]}
+								/>
+							</label>
+						</div>
+						<div>
+							<button
+								type="button"
+								disabled={isMutating}
+								mix={[
+									on('click', () =>
+										postAction({
+											body: {
+												action: 'update_retention',
+												successOnceDays: Number(retentionDraft.successOnceDays),
+												failedOrNeverRanOnceDays: Number(
+													retentionDraft.failedOrNeverRanOnceDays,
+												),
+												disabledRecurringDays: Number(
+													retentionDraft.disabledRecurringDays,
+												),
+												selectedJobId: selection.selectedId,
+											},
+											successMessage: () =>
+												'Updated job retention preferences.',
+											failureMessage:
+												'Unable to update job retention preferences.',
+										}),
+									),
+									css(secondaryButtonCss),
+								]}
+							>
+								Save retention
+							</button>
+						</div>
+					</section>
 				) : null}
 
 				{status === 'ready' ? (
@@ -538,7 +694,7 @@ export function AccountJobsRoute(handle: Handle) {
 										{listEmptyMessage}
 									</p>
 								) : (
-									<AccountManagementList maxHeight="min(65vh, 48rem)">
+									<AccountManagementList>
 										{filteredJobs.map((item) => (
 											<li key={item.id}>
 												<AccountManagementListItemButton
@@ -578,23 +734,45 @@ export function AccountJobsRoute(handle: Handle) {
 														</strong>
 														<span
 															mix={css({
+																display: 'flex',
+																gap: spacing.xs,
 																flexShrink: 0,
-																fontSize: typography.fontSize.xs,
-																color:
-																	item.ownership === 'package'
-																		? colors.primary
-																		: colors.textMuted,
-																border: `1px solid ${
-																	item.ownership === 'package'
-																		? colors.primary
-																		: colors.border
-																}`,
-																borderRadius: radius.md,
-																padding: `0 ${spacing.sm}`,
-																lineHeight: '1.4rem',
+																alignItems: 'center',
 															})}
 														>
-															{ownershipLabel(item.ownership)}
+															{item.preserved ? (
+																<span
+																	mix={css({
+																		fontSize: typography.fontSize.xs,
+																		color: colors.text,
+																		border: `1px solid ${colors.border}`,
+																		borderRadius: radius.md,
+																		padding: `0 ${spacing.sm}`,
+																		lineHeight: '1.4rem',
+																	})}
+																>
+																	Preserved
+																</span>
+															) : null}
+															<span
+																mix={css({
+																	fontSize: typography.fontSize.xs,
+																	color:
+																		item.ownership === 'package'
+																			? colors.primary
+																			: colors.textMuted,
+																	border: `1px solid ${
+																		item.ownership === 'package'
+																			? colors.primary
+																			: colors.border
+																	}`,
+																	borderRadius: radius.md,
+																	padding: `0 ${spacing.sm}`,
+																	lineHeight: '1.4rem',
+																})}
+															>
+																{ownershipLabel(item.ownership)}
+															</span>
 														</span>
 													</span>
 													<span
@@ -631,7 +809,7 @@ export function AccountJobsRoute(handle: Handle) {
 									<p mix={css(descriptionCss)}>
 										{isPackage
 											? 'Package-owned job. Schedule and name are owned by package publish; kill switch and run-now are available here. Use the kill switch to stop it.'
-											: 'Ad-hoc scheduled job. You can enable or disable it, edit its schedule, or delete it.'}
+											: 'Ad-hoc scheduled job. You can enable or disable it, edit its schedule, Preserve it from auto-cleanup, or delete it.'}
 									</p>
 								</div>
 
@@ -640,6 +818,12 @@ export function AccountJobsRoute(handle: Handle) {
 										{
 											label: 'Ownership',
 											value: ownershipLabel(detail.ownership),
+										},
+										{
+											label: 'Preserve',
+											value: detail.preserved
+												? 'On (never auto-deleted)'
+												: 'Off',
 										},
 										{
 											label: 'Status',
@@ -1070,6 +1254,14 @@ export function AccountJobsRoute(handle: Handle) {
 																	: '.'
 															}`
 														}
+														if (
+															detail.schedule.type === 'once' &&
+															payload.runNow?.ok
+														) {
+															return detail.preserved
+																? 'Job run finished. Preserved — will not be auto-deleted.'
+																: `Job run finished. Kept for ${retention.successOnceDays} days · Preserve to keep forever.`
+														}
 														return 'Job run requested.'
 													},
 													failureMessage: 'Unable to run job now.',
@@ -1112,6 +1304,31 @@ export function AccountJobsRoute(handle: Handle) {
 											? 'Clear kill switch'
 											: 'Enable kill switch'}
 									</button>
+									{isAdHoc ? (
+										<button
+											type="button"
+											disabled={isMutating}
+											mix={[
+												on('click', () =>
+													postAction({
+														body: {
+															action: 'set_preserved',
+															id: detail.id,
+															preserved: !detail.preserved,
+														},
+														successMessage: () =>
+															detail.preserved
+																? 'Cleared Preserve. This job can age out under retention.'
+																: 'Preserved. This job will not be auto-deleted.',
+														failureMessage: 'Unable to update Preserve.',
+													}),
+												),
+												css(secondaryButtonCss),
+											]}
+										>
+											{detail.preserved ? 'Clear Preserve' : 'Preserve'}
+										</button>
+									) : null}
 									{isAdHoc ? (
 										<button
 											type="button"

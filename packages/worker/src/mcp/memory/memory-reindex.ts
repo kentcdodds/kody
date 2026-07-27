@@ -7,6 +7,7 @@ import {
 	reindexVectorCandidates,
 	type VectorReindexResult,
 } from '#mcp/capabilities/reindex-batches.ts'
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
 import { listMemoriesPage } from './repo.ts'
 import { memoryVectorId } from './memory-vectorize.ts'
@@ -29,11 +30,13 @@ export async function reindexMemoryVectors(
 	const pageResults: Array<VectorReindexResult> = []
 	let afterId: string | null = null
 	while (true) {
-		const rows = await listMemoriesPage({
-			db: env.APP_DB,
-			afterId,
-			limit: reindexPageSize,
-		})
+		const rows = await runD1WithRetry(() =>
+			listMemoriesPage({
+				db: env.APP_DB,
+				afterId,
+				limit: reindexPageSize,
+			}),
+		)
 		if (rows.length === 0) break
 		pageResults.push(
 			await reindexVectorCandidates({

@@ -1,5 +1,4 @@
-import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { normalizeRemoteConnectorInstanceId } from '@kody-internal/shared/remote-connectors.ts'
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import {
 	hasRemoteConnectorSharedSecretForRef,
 	listRemoteConnectorSharedSecretsForRef,
@@ -39,24 +38,23 @@ function timingSafeStringEquals(left: string, right: string) {
 	return isEqual && leftBytes.length === rightBytes.length
 }
 
+/**
+ * Read persisted connector shared secrets with D1 retry. Failures must
+ * propagate — swallowing them as "no secrets" made websocket hello treat
+ * transient D1 blips as invalid-secret auth rejects.
+ */
 async function listStoredSharedSecrets(input: {
 	userId: string
 	instanceId: string
 	env: Env
 }) {
-	try {
-		return await listRemoteConnectorSharedSecretsForRef({
+	return await runD1WithRetry(() =>
+		listRemoteConnectorSharedSecretsForRef({
 			env: input.env,
 			userId: input.userId,
 			instanceId: input.instanceId,
-		})
-	} catch (error) {
-		const detail = getErrorMessage(error)
-		console.error(
-			`[remote-connectors] failed to read persisted shared secrets for ${input.userId} ${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
-		)
-		return []
-	}
+		}),
+	)
 }
 
 async function storedSharedSecretExists(input: {
@@ -64,19 +62,13 @@ async function storedSharedSecretExists(input: {
 	instanceId: string
 	env: Env
 }) {
-	try {
-		return await hasRemoteConnectorSharedSecretForRef({
+	return await runD1WithRetry(() =>
+		hasRemoteConnectorSharedSecretForRef({
 			env: input.env,
 			userId: input.userId,
 			instanceId: input.instanceId,
-		})
-	} catch (error) {
-		const detail = getErrorMessage(error)
-		console.error(
-			`[remote-connectors] failed to check persisted shared secret for ${input.userId} ${normalizeRemoteConnectorInstanceId(input.instanceId)}: ${detail}`,
-		)
-		return false
-	}
+		}),
+	)
 }
 
 export async function resolveRemoteConnectorSharedSecret(input: {

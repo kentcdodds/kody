@@ -446,8 +446,8 @@ function createJobMutationDatabase(input: {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
 							if (normalized.startsWith('UPDATE jobs SET')) {
-								const id = params[20]
-								const userId = params[21]
+								const id = params[21]
+								const userId = params[22]
 								const existing = selectOne(
 									'jobs',
 									(row) => row['id'] === id && row['user_id'] === userId,
@@ -465,16 +465,17 @@ function createJobMutationDatabase(input: {
 									timezone: params[7],
 									enabled: params[8],
 									kill_switch_enabled: params[9],
-									caller_context_json: params[10],
-									updated_at: params[11],
-									last_run_at: params[12],
-									last_run_status: params[13],
-									last_run_error: params[14],
-									last_duration_ms: params[15],
-									next_run_at: params[16],
-									run_count: params[17],
-									success_count: params[18],
-									error_count: params[19],
+									preserved: params[10],
+									caller_context_json: params[11],
+									updated_at: params[12],
+									last_run_at: params[13],
+									last_run_status: params[14],
+									last_run_error: params[15],
+									last_duration_ms: params[16],
+									next_run_at: params[17],
+									run_count: params[18],
+									success_count: params[19],
+									error_count: params[20],
 								}
 								const rows = table('jobs')
 								const index = rows.findIndex(
@@ -496,6 +497,12 @@ function createJobMutationDatabase(input: {
 										last_row_id: 0,
 									},
 								}
+							}
+							if (
+								normalized ===
+								'DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?'
+							) {
+								return { meta: { changes: 0, last_row_id: 0 } }
 							}
 							if (
 								normalized ===
@@ -586,6 +593,7 @@ function createJobRow(
 		timezone: job.timezone,
 		enabled: job.enabled ? 1 : 0,
 		kill_switch_enabled: job.killSwitchEnabled ? 1 : 0,
+		preserved: job.preserved ? 1 : 0,
 		caller_context_json: JSON.stringify(callerContext),
 		created_at: job.createdAt,
 		updated_at: job.updatedAt,
@@ -686,6 +694,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-16T00:05:00.000Z',
@@ -752,6 +761,16 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 							nextRunAt: null,
 						}
 					},
+				}
+			},
+		},
+		STORAGE_RUNNER: {
+			idFromName(name: string) {
+				return name as unknown as DurableObjectId
+			},
+			get() {
+				return {
+					clearStorage: async () => ({ ok: true as const }),
 				}
 			},
 		},

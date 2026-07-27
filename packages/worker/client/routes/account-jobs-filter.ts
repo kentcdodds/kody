@@ -11,6 +11,7 @@ export type FilterableAccountJob = {
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
+	preserved?: boolean
 	dueNow: boolean
 	lastRunStatus: string | null
 	nextRunAt: string
@@ -80,6 +81,7 @@ export function filterAccountJobs<Job extends FilterableAccountJob>(
 			job.lastRunStatus,
 			job.enabled ? 'enabled' : 'disabled',
 			job.killSwitchEnabled ? 'kill switch' : '',
+			job.preserved ? 'preserved' : '',
 			job.dueNow ? 'due' : '',
 			job.scheduleType,
 		])

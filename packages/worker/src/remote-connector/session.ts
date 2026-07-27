@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { normalizeRemoteConnectorInstanceId } from '@kody-internal/shared/remote-connectors.ts'
+import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
 	type RemoteConnectorHelloMessage,
@@ -433,6 +434,51 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		}
 	}
 
+	private rejectHelloSharedSecretLookupFailure(input: {
+		ws: WebSocket
+		connectorId: string
+		userId: string
+		error: unknown
+	}) {
+		const detail = getErrorMessage(input.error)
+		if (isRetryableD1LockError(input.error)) {
+			// Same class as other D1 blips already dropped from Sentry: keep an
+			// ops warn, ask the connector to reconnect, and do not report a
+			// false "invalid shared secret" auth failure.
+			console.warn(
+				`Remote connector shared-secret lookup failed during websocket hello (transient D1). connectorId=${input.connectorId} error=${detail}`,
+			)
+			input.ws.send(
+				stringifyRemoteConnectorMessage({
+					type: 'server.error',
+					message:
+						'Connector authentication temporarily unavailable. Retry shortly.',
+				}),
+			)
+			input.ws.close(1013, 'secret-lookup-retry')
+			return
+		}
+		this.captureSessionMessage(
+			'Remote connector session failed shared-secret lookup for websocket hello.',
+			{
+				level: 'error',
+				userId: input.userId,
+				extra: {
+					connectorId: input.connectorId,
+					error: detail,
+				},
+			},
+		)
+		input.ws.send(
+			stringifyRemoteConnectorMessage({
+				type: 'server.error',
+				message:
+					'Connector authentication temporarily unavailable. Retry shortly.',
+			}),
+		)
+		input.ws.close(1011, 'secret-lookup-failed')
+	}
+
 	private async handleHello(
 		ws: WebSocket,
 		message: RemoteConnectorHelloMessage,
@@ -491,18 +537,40 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			return
 		}
 
-		const secretMatches = await remoteConnectorSharedSecretMatches({
-			userId: ingressUserId,
-			instanceId: canonicalInstanceId,
-			sharedSecret: message.sharedSecret,
-			env: this.env,
-		})
-		if (!secretMatches) {
-			const hasExpectedSecret = await hasRemoteConnectorSharedSecret({
+		let secretMatches: boolean
+		try {
+			secretMatches = await remoteConnectorSharedSecretMatches({
 				userId: ingressUserId,
 				instanceId: canonicalInstanceId,
+				sharedSecret: message.sharedSecret,
 				env: this.env,
 			})
+		} catch (error) {
+			this.rejectHelloSharedSecretLookupFailure({
+				ws,
+				connectorId: canonicalInstanceId,
+				userId: ingressUserId,
+				error,
+			})
+			return
+		}
+		if (!secretMatches) {
+			let hasExpectedSecret: boolean
+			try {
+				hasExpectedSecret = await hasRemoteConnectorSharedSecret({
+					userId: ingressUserId,
+					instanceId: canonicalInstanceId,
+					env: this.env,
+				})
+			} catch (error) {
+				this.rejectHelloSharedSecretLookupFailure({
+					ws,
+					connectorId: canonicalInstanceId,
+					userId: ingressUserId,
+					error,
+				})
+				return
+			}
 			this.captureSessionMessage(
 				'Remote connector session rejected websocket hello.',
 				{

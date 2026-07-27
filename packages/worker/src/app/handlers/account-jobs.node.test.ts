@@ -12,6 +12,7 @@ const adHocJob = {
 	timezone: 'UTC',
 	enabled: true,
 	killSwitchEnabled: false,
+	preserved: false,
 	createdAt: new Date(0).toISOString(),
 	updatedAt: new Date(0).toISOString(),
 	nextRunAt: new Date('2026-07-26T09:00:00.000Z').toISOString(),
@@ -87,6 +88,16 @@ const mockModule = vi.hoisted(() => ({
 	runJobNowViaManager: vi.fn(),
 	getAppBaseUrl: vi.fn(() => 'https://example.com'),
 	listRunRecords: vi.fn(),
+	readJobRetentionPreferencesForUser: vi.fn(async () => ({
+		successOnceDays: 14,
+		failedOrNeverRanOnceDays: 60,
+		disabledRecurringDays: 90,
+	})),
+	updateJobRetentionPreferencesForUser: vi.fn(async (input) => ({
+		successOnceDays: input.successOnceDays,
+		failedOrNeverRanOnceDays: input.failedOrNeverRanOnceDays,
+		disabledRecurringDays: input.disabledRecurringDays,
+	})),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -121,6 +132,13 @@ vi.mock('#worker/jobs/service.ts', () => ({
 vi.mock('#worker/jobs/manager-client.ts', () => ({
 	runJobNowViaManager: (...args: Array<unknown>) =>
 		mockModule.runJobNowViaManager(...args),
+}))
+
+vi.mock('#worker/jobs/job-retention-cleanup.ts', () => ({
+	readJobRetentionPreferencesForUser: (...args: Array<unknown>) =>
+		mockModule.readJobRetentionPreferencesForUser(...args),
+	updateJobRetentionPreferencesForUser: (...args: Array<unknown>) =>
+		mockModule.updateJobRetentionPreferencesForUser(...args),
 }))
 
 vi.mock('#worker/run-records/service.ts', () => ({
@@ -194,6 +212,16 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 		ok: true,
 		selectedJobId: null,
 		selectedJob: null,
+		retention: {
+			successOnceDays: 14,
+			failedOrNeverRanOnceDays: 60,
+			disabledRecurringDays: 90,
+			defaults: {
+				successOnce: 14,
+				failedOrNeverRanOnce: 60,
+				disabledRecurring: 90,
+			},
+		},
 		jobs: [
 			expect.objectContaining({
 				id: 'job-adhoc-1',
@@ -202,6 +230,7 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 				scheduleType: 'cron',
 				enabled: true,
 				killSwitchEnabled: false,
+				preserved: false,
 			}),
 			expect.objectContaining({
 				id: 'package-job:pkg-1:nightly',
@@ -346,6 +375,7 @@ test('jobs API mutations are user-scoped for ad-hoc jobs and kill switch', async
 	mockModule.updateJob.mockResolvedValue({
 		...packageJob,
 		killSwitchEnabled: true,
+		preserved: false,
 	})
 	const killSwitchResponse = await handler.handler({
 		request: new Request('https://example.com/account/jobs.json', {
@@ -355,6 +385,7 @@ test('jobs API mutations are user-scoped for ad-hoc jobs and kill switch', async
 				action: 'set_kill_switch',
 				id: packageJob.id,
 				killSwitchEnabled: true,
+				preserved: false,
 			}),
 		}),
 	})

@@ -1295,11 +1295,9 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 
 test('publishFromExternalRef rejects stale expected HEAD values', async () => {
 	setCommonSessionFixtures()
-	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValueOnce({
-		defaultBranch: 'main',
-		commit: 'commit-new',
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
-	})
+	// Clone tip (git.log depth 1) is the remote default-branch HEAD at clone
+	// time; a mismatch with expectedHead means the Artifacts tip moved.
+	mockModule.gitState.headCommit = 'commit-new'
 
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
 
@@ -1314,6 +1312,7 @@ test('publishFromExternalRef rejects stale expected HEAD values', async () => {
 	).rejects.toThrow(
 		'Artifacts HEAD changed from "commit-stale" to "commit-new" before publish.',
 	)
+	expect(mockModule.resolveArtifactDefaultBranchHead).not.toHaveBeenCalled()
 })
 
 test('publishFromExternalRef checks fast-forward ancestry through shell git adapter', async () => {

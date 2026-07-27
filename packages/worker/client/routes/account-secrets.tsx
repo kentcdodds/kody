@@ -1388,7 +1388,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									No secrets match the current filters.
 								</p>
 							) : (
-								<AccountManagementList maxHeight="min(65vh, 48rem)">
+								<AccountManagementList>
 									{filteredSecrets.map((secret) => {
 										const isActive = activeSecretId === secret.id
 										return (

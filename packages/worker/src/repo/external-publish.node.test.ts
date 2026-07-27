@@ -182,6 +182,30 @@ test('returns no-op when commit is already current', async () => {
 	})
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+
+	// Re-invoking after a partial/timed-out publish whose D1 published_commit
+	// already matches the pushed HEAD must stay a no-op. This is what makes
+	// overlapping inline + durable escalation safe: the second attempt cannot
+	// double-apply checks or D1 writes.
+	await expect(
+		publishFromExternalRef({
+			env: { APP_DB: {} } as Env,
+			sourceId: 'source-1',
+			userId: 'user-1',
+			newCommit: 'commit-old',
+			isFastForward: async () => {
+				throw new Error('must not check ancestry when already published')
+			},
+			workspace: workspace(),
+			files: {},
+			baseUrl: 'https://kody.test',
+		}),
+	).resolves.toEqual({
+		status: 'already_published',
+		published_commit: 'commit-old',
+	})
+	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
 test('non-fast-forward publish requires allowForce, destructive confirmation, and a restorable backup snapshot', async () => {
