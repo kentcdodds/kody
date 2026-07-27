@@ -91,16 +91,15 @@ async function loadMatchingRunErrorSubscriptions(input: {
 			userId: input.userId,
 		})
 	} catch (error) {
-		if (
+		// Best-effort: discovery must not reject the dispatcher. Missing-table
+		// (local/test DBs) is silent; other DB failures are recorded for warn.
+		const missingTable =
 			error instanceof Error &&
 			error.message.includes('no such table: saved_packages')
-		) {
-			return {
-				subscriptions: [] as Array<LoadedRunErrorSubscription>,
-				discoveryErrors: [] as Array<unknown>,
-			}
+		return {
+			subscriptions: [] as Array<LoadedRunErrorSubscription>,
+			discoveryErrors: missingTable ? [] : [error],
 		}
-		throw error
 	}
 	const settled = await Promise.allSettled(
 		savedPackages.map(async (savedPackage) => {
@@ -194,7 +193,6 @@ export async function dispatchRunErrorSubscriptionEvents(input: {
 		if (result.status === 'rejected') {
 			console.warn('run.error.recorded package subscription invoke failed', {
 				runId: input.run.id,
-				userId: input.userId,
 				error: result.reason,
 			})
 		}
@@ -204,7 +202,6 @@ export async function dispatchRunErrorSubscriptionEvents(input: {
 			'run.error.recorded package subscription discovery incomplete',
 			{
 				runId: input.run.id,
-				userId: input.userId,
 				errorCount: discoveryErrors.length,
 				error: discoveryErrors[0],
 			},

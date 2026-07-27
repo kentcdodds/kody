@@ -233,6 +233,42 @@ test('does not throw when discovery or invocation infrastructure fails', async (
 	warn.mockRestore()
 })
 
+test('does not throw when listing saved packages fails', async () => {
+	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+	mocks.listSavedPackagesByUserId.mockRejectedValueOnce(
+		new Error('D1 unavailable'),
+	)
+	mocks.invokePackageSubscription.mockClear()
+
+	await expect(
+		dispatchRunErrorSubscriptionEvents({
+			env: {
+				APP_DB: {},
+				BUNDLE_ARTIFACTS_KV: {},
+				APP_BASE_URL: 'https://example.com',
+			} as Env,
+			userId: 'user-1',
+			run: errorRun() as never,
+		}),
+	).resolves.toEqual([])
+
+	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
+	expect(warn).toHaveBeenCalledWith(
+		'run.error.recorded package subscription discovery incomplete',
+		expect.objectContaining({
+			runId: 'run-1',
+			errorCount: 1,
+		}),
+	)
+	const warnPayload = warn.mock.calls.find(
+		(call) =>
+			call[0] ===
+			'run.error.recorded package subscription discovery incomplete',
+	)?.[1] as Record<string, unknown> | undefined
+	expect(warnPayload).not.toHaveProperty('userId')
+	warn.mockRestore()
+})
+
 test('isolates sibling handler failures with allSettled semantics', async () => {
 	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	const first = {
