@@ -159,8 +159,14 @@ SELECT
 	json_extract(e.value, '$.authorization.authorizeUrl'),
 	NULLIF(trim(json_extract(e.value, '$.apiBaseUrl')), ''),
 	json_extract(e.value, '$.flow'),
+	-- Match normalizeIntegrationConfig: store usePkce only when it differs
+	-- from the flow default (pkce→on, confidential→off). Otherwise NULL so
+	-- findOauthAppByAppTuple matches application-layer upserts.
 	CASE
 		WHEN json_extract(e.value, '$.usePkce') IS NULL THEN NULL
+		WHEN json_extract(e.value, '$.usePkce') = (
+			json_extract(e.value, '$.flow') = 'pkce'
+		) THEN NULL
 		WHEN json_extract(e.value, '$.usePkce') = 0 THEN 0
 		ELSE 1
 	END,

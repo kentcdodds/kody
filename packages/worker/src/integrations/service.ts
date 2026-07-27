@@ -298,7 +298,7 @@ export async function getOauthApp(input: {
 	userId: string
 	slug: string
 }): Promise<UserOauthApp | null> {
-	const slug = input.slug.trim()
+	const slug = canonicalizeOauthAppSlug(input.slug)
 	if (!slug) return null
 	return getOauthAppBySlug({
 		db: input.env.APP_DB,
@@ -314,7 +314,7 @@ export async function rotateOauthAppClientCredentials(input: {
 	clientId: string
 	clientSecretSecretName?: string | null
 }): Promise<UserOauthApp> {
-	const slug = input.slug.trim()
+	const slug = canonicalizeOauthAppSlug(input.slug)
 	const clientId = input.clientId.trim()
 	if (!slug) throw new Error('OAuth app slug is required.')
 	if (!clientId) throw new Error('Client id is required.')
@@ -370,7 +370,7 @@ export async function deleteOauthAppIfUnused(input: {
 	userId: string
 	slug: string
 }): Promise<boolean> {
-	const slug = input.slug.trim()
+	const slug = canonicalizeOauthAppSlug(input.slug)
 	if (!slug) return false
 	const existing = await getOauthAppBySlug({
 		db: input.env.APP_DB,
@@ -393,6 +393,10 @@ export async function deleteOauthAppIfUnused(input: {
 		userId: input.userId,
 		slug,
 	})
+}
+
+function canonicalizeOauthAppSlug(slug: string) {
+	return canonicalIntegrationName(slug.trim())
 }
 
 function buildOauthAppRow(input: {

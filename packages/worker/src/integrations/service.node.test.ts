@@ -5,17 +5,28 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	deleteOauthAppIfUnused,
 	getIntegration,
+	getOauthApp,
 	listIntegrations,
 	listOauthApps,
+	listJoinedIntegrations,
 	rotateOauthAppClientCredentials,
 	upsertIntegration,
 } from './service.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
+const oauthAppsMigration = '0101-user-oauth-apps-and-integrations.sql'
 
 function applyAllMigrations(db: DatabaseSync) {
 	for (const fileName of readdirSync(migrationsDirectory)
 		.filter((file) => file.endsWith('.sql'))
+		.sort()) {
+		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
+	}
+}
+
+function applyMigrationsBefore(db: DatabaseSync, exclusiveUpperBound: string) {
+	for (const fileName of readdirSync(migrationsDirectory)
+		.filter((file) => file.endsWith('.sql') && file < exclusiveUpperBound)
 		.sort()) {
 		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
 	}
@@ -188,4 +199,145 @@ test('deleteOauthAppIfUnused is blocked while connections exist', async () => {
 
 	const stillThere = await getIntegration({ env, userId, name: 'google' })
 	expect(stillThere?.name).toBe('google')
+})
+
+test('upsertIntegration reuses a migrated confidential app that stored usePkce false as NULL', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyMigrationsBefore(sqlite, oauthAppsMigration)
+	sqlite
+		.prepare(
+			`INSERT INTO value_buckets (
+				id, user_id, scope, binding_key, expires_at, created_at, updated_at
+			) VALUES (?, ?, 'user', '', NULL, ?, ?)`,
+		)
+		.run(
+			'bucket-reuse',
+			'user-reuse',
+			'2026-01-01T00:00:00.000Z',
+			'2026-01-01T00:00:00.000Z',
+		)
+	sqlite
+		.prepare(
+			`INSERT INTO value_entries (
+				bucket_id, name, description, value, created_at, updated_at
+			) VALUES (?, ?, '', ?, ?, ?)`,
+		)
+		.run(
+			'bucket-reuse',
+			'canva-client-id',
+			'canva-client-id-value',
+			'2026-02-01T00:00:00.000Z',
+			'2026-02-02T00:00:00.000Z',
+		)
+	sqlite
+		.prepare(
+			`INSERT INTO value_entries (
+				bucket_id, name, description, value, created_at, updated_at
+			) VALUES (?, ?, '', ?, ?, ?)`,
+		)
+		.run(
+			'bucket-reuse',
+			'_integration:canva',
+			JSON.stringify({
+				name: 'canva',
+				tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+				apiBaseUrl: 'https://api.canva.com',
+				flow: 'confidential',
+				usePkce: false,
+				clientIdValueName: 'canva-client-id',
+				clientSecretSecretName: 'canvaClientSecret',
+				accessTokenSecretName: 'canvaAccessToken',
+				refreshTokenSecretName: 'canvaRefreshToken',
+				requiredHosts: ['api.canva.com'],
+				tokenExchangeStyle: 'basic-form',
+			}),
+			'2026-02-01T00:00:00.000Z',
+			'2026-02-02T00:00:00.000Z',
+		)
+	sqlite.exec(
+		readFileSync(new URL(oauthAppsMigration, migrationsDirectory), 'utf8'),
+	)
+
+	const stored = sqlite
+		.prepare(
+			`SELECT slug, flow, use_pkce FROM user_oauth_apps WHERE user_id = ?`,
+		)
+		.get('user-reuse') as {
+		slug: string
+		flow: string
+		use_pkce: number | null
+	}
+	expect(stored).toEqual({
+		slug: 'canva',
+		flow: 'confidential',
+		use_pkce: null,
+	})
+
+	const env = { APP_DB: createD1FromSqlite(sqlite) } as Pick<Env, 'APP_DB'>
+	await upsertIntegration({
+		env,
+		userId: 'user-reuse',
+		config: {
+			name: 'canva-team',
+			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+			apiBaseUrl: 'https://api.canva.com',
+			flow: 'confidential',
+			usePkce: false,
+			clientId: 'canva-client-id-value',
+			clientSecretSecretName: 'canvaClientSecret',
+			accessTokenSecretName: 'canvaTeamAccessToken',
+			refreshTokenSecretName: 'canvaTeamRefreshToken',
+			requiredHosts: ['api.canva.com'],
+			tokenExchangeStyle: 'basic-form',
+		},
+	})
+
+	const apps = await listOauthApps({ env, userId: 'user-reuse' })
+	expect(apps).toHaveLength(1)
+	expect(apps[0]).toMatchObject({
+		slug: 'canva',
+		connectionCount: 2,
+		usePkce: null,
+		flow: 'confidential',
+	})
+	const joined = await listJoinedIntegrations({ env, userId: 'user-reuse' })
+	expect(joined.map(({ connection }) => connection.name).sort()).toEqual([
+		'canva',
+		'canva-team',
+	])
+	expect(joined.every(({ app }) => app.slug === 'canva')).toBe(true)
+})
+
+test('getOauthApp and rotateOauthAppClientCredentials canonicalize mixed-case slugs', async () => {
+	const { env } = createEnv()
+	const userId = 'user-slug-case'
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: baseGoogleConfig,
+	})
+
+	const found = await getOauthApp({ env, userId, slug: 'Google' })
+	expect(found).toMatchObject({
+		slug: 'google',
+		clientId: 'google-client-id-value',
+	})
+
+	const rotated = await rotateOauthAppClientCredentials({
+		env,
+		userId,
+		slug: ' Google ',
+		clientId: 'google-client-id-rotated',
+		clientSecretSecretName: 'googleClientSecretRotated',
+	})
+	expect(rotated).toMatchObject({
+		slug: 'google',
+		clientId: 'google-client-id-rotated',
+		clientSecretSecretName: 'googleClientSecretRotated',
+	})
+
+	await expect(
+		deleteOauthAppIfUnused({ env, userId, slug: 'GOOGLE' }),
+	).rejects.toThrow(/still has 1 connection/)
 })

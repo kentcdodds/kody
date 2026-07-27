@@ -841,3 +841,91 @@ test('0100 assertion abort rolls back and preserves _integration value rows', ()
 			.all(),
 	).toEqual([])
 })
+
+test('0101 stores use_pkce matching normalizeIntegrationConfig flow defaults', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, oauthAppsMigration)
+
+	insertUserBucket(db, { bucketId: 'bucket-pkce', userId: 'user-pkce' })
+	insertValue(db, {
+		bucketId: 'bucket-pkce',
+		name: 'shared-client-id',
+		value: 'shared-client-id-value',
+	})
+
+	const cases: Array<{
+		name: string
+		flow: 'pkce' | 'confidential'
+		usePkce: boolean
+		expectedUsePkce: number | null
+	}> = [
+		{
+			name: 'flow-pkce-default-on',
+			flow: 'pkce',
+			usePkce: true,
+			expectedUsePkce: null,
+		},
+		{
+			name: 'flow-pkce-explicit-off',
+			flow: 'pkce',
+			usePkce: false,
+			expectedUsePkce: 0,
+		},
+		{
+			name: 'flow-confidential-default-off',
+			flow: 'confidential',
+			usePkce: false,
+			expectedUsePkce: null,
+		},
+		{
+			name: 'flow-confidential-explicit-on',
+			flow: 'confidential',
+			usePkce: true,
+			expectedUsePkce: 1,
+		},
+	]
+
+	for (const entry of cases) {
+		insertValue(db, {
+			bucketId: 'bucket-pkce',
+			name: `_integration:${entry.name}`,
+			value: JSON.stringify({
+				name: entry.name,
+				tokenUrl: 'https://auth.example.com/oauth/token',
+				apiBaseUrl: 'https://api.example.com',
+				flow: entry.flow,
+				usePkce: entry.usePkce,
+				clientIdValueName: 'shared-client-id',
+				clientSecretSecretName: `${entry.name}Secret`,
+				accessTokenSecretName: `${entry.name}AccessToken`,
+				refreshTokenSecretName: null,
+				requiredHosts: ['api.example.com'],
+			}),
+		})
+	}
+
+	applyMigration(db, oauthAppsMigration)
+
+	const rows = db
+		.prepare(
+			`SELECT slug, flow, use_pkce
+			FROM user_oauth_apps
+			WHERE user_id = 'user-pkce'
+			ORDER BY slug ASC`,
+		)
+		.all() as Array<{
+		slug: string
+		flow: string
+		use_pkce: number | null
+	}>
+
+	expect(rows).toEqual(
+		cases
+			.map((entry) => ({
+				slug: entry.name,
+				flow: entry.flow,
+				use_pkce: entry.expectedUsePkce,
+			}))
+			.sort((left, right) => left.slug.localeCompare(right.slug)),
+	)
+})
