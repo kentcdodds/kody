@@ -15,6 +15,7 @@ import {
 	getJoinedIntegrationByName,
 	getOauthAppBySlug,
 	listJoinedIntegrationsForUser,
+	listOauthAppsByProvider,
 	listOauthAppsWithConnectionCounts,
 	updateOauthAppClientCredentials,
 	upsertIntegrationConnection,
@@ -309,6 +310,45 @@ export async function getOauthApp(input: {
 		userId: input.userId,
 		slug,
 	})
+}
+
+/**
+ * Resolve an OAuth app for connect-flow setup when there is no connection
+ * named `name` yet. Exact slug match first; otherwise the provider family
+ * derived via `providerFromSlug` (e.g. `google-calendar` → `google`).
+ *
+ * Family fallback only prefills when every candidate shares the same
+ * `clientId`. Differing client ids (e.g. `spotify` vs `spotify-family`) are
+ * ambiguous — return null rather than guess.
+ */
+export async function findOauthAppForProviderSetup(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+}): Promise<UserOauthApp | null> {
+	const slug = canonicalizeOauthAppSlug(input.name)
+	if (!slug) return null
+
+	const exact = await getOauthAppBySlug({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		slug,
+	})
+	if (exact) return exact
+
+	const family = providerFromSlug(slug)
+	const candidates = await listOauthAppsByProvider({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		provider: family,
+	})
+	if (candidates.length === 0) return null
+	if (candidates.length === 1) return candidates[0] ?? null
+
+	const clientIds = new Set(candidates.map((app) => app.clientId))
+	if (clientIds.size !== 1) return null
+
+	return candidates.find((app) => app.slug === family) ?? candidates[0] ?? null
 }
 
 export async function rotateOauthAppClientCredentials(input: {

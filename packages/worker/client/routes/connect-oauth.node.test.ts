@@ -476,6 +476,62 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 	})
 })
 
+test('shared-app family lookup prefills google-calendar from the google app payload', () => {
+	// integrations.json?name=google-calendar resolves the shared `google` app
+	// (slug ≠ name) and returns this shape; the client must still merge the
+	// client id for a fresh multi-account setup session.
+	const storedFromFamilyLookup = parseStoredIntegrationConfig(
+		{
+			name: 'google-calendar',
+			appSlug: 'google',
+			provider: 'google',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'pkce',
+			clientId: 'shared-google-client',
+			clientSecretSecretName: null,
+			accessTokenSecretName: 'google-calendarAccessToken',
+			refreshTokenSecretName: 'google-calendarRefreshToken',
+			requiredHosts: [],
+			authorization: {
+				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+				scopes: [],
+				scopeSeparator: null,
+				extraAuthorizeParams: { access_type: 'offline' },
+			},
+		},
+		null,
+	)
+	expect(storedFromFamilyLookup?.clientId).toBe('shared-google-client')
+
+	const config = mergeConnectOauthConfig({
+		queryConfig: {
+			provider: 'google-calendar',
+			providerKey: 'google-calendar',
+			authorizeHost: 'accounts.google.com',
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com',
+			scopes: ['calendar.readonly'],
+			flow: 'pkce',
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: ' ',
+			extraAuthorizeParams: {},
+			providerSetupInstructions: null,
+			dashboardUrl: null,
+			allowedHosts: ['www.googleapis.com'],
+		},
+		storedIntegration: storedFromFamilyLookup,
+	})
+	expect(config).toMatchObject({
+		provider: 'google-calendar',
+		clientId: 'shared-google-client',
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		accessTokenSecretName: 'google-calendarAccessToken',
+	})
+})
+
 test('abandoned setup still prefills client id from a connectionless app on a fresh session', () => {
 	// This is the regression: after setup we persist the app (not only session
 	// storage). A later visit with no session snapshot must still see the

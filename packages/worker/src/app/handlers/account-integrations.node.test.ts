@@ -162,7 +162,7 @@ const mockModule = vi.hoisted(() => ({
 			updatedAt: '1970-01-01T00:00:00.001Z',
 		},
 	})),
-	getOauthApp: vi.fn(async () => null),
+	findOauthAppForProviderSetup: vi.fn(async () => null),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -191,7 +191,8 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 			mockModule.listJoinedIntegrations(...args),
 		getJoinedIntegration: (...args: Array<unknown>) =>
 			mockModule.getJoinedIntegration(...args),
-		getOauthApp: (...args: Array<unknown>) => mockModule.getOauthApp(...args),
+		findOauthAppForProviderSetup: (...args: Array<unknown>) =>
+			mockModule.findOauthAppForProviderSetup(...args),
 	}
 })
 
@@ -355,7 +356,7 @@ test('integrations API returns one connection by name for the connect OAuth flow
 
 test('integrations API returns null when a named connection is missing', async () => {
 	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
-	mockModule.getOauthApp.mockResolvedValueOnce(null)
+	mockModule.findOauthAppForProviderSetup.mockResolvedValueOnce(null)
 	const handler = createAccountIntegrationsApiHandler(createEnv())
 	const response = await handler.handler({
 		request: new Request(
@@ -370,9 +371,9 @@ test('integrations API returns null when a named connection is missing', async (
 	})
 })
 
-test('integrations API falls back to a connectionless OAuth app so abandoned setup still returns the client id', async () => {
+test('integrations API falls back to provider-setup app resolution so abandoned setup still returns the client id', async () => {
 	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
-	mockModule.getOauthApp.mockResolvedValueOnce({
+	mockModule.findOauthAppForProviderSetup.mockResolvedValueOnce({
 		userId: 'stable-user-1',
 		slug: 'spotify',
 		provider: 'spotify',
@@ -412,9 +413,58 @@ test('integrations API falls back to a connectionless OAuth app so abandoned set
 			},
 		},
 	})
-	expect(mockModule.getOauthApp).toHaveBeenCalledWith({
+	expect(mockModule.findOauthAppForProviderSetup).toHaveBeenCalledWith({
 		env: expect.any(Object),
 		userId: 'stable-user-1',
-		slug: 'spotify',
+		name: 'spotify',
+	})
+})
+
+test('integrations API prefills a shared family app when setting up google-calendar', async () => {
+	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
+	mockModule.findOauthAppForProviderSetup.mockResolvedValueOnce({
+		userId: 'stable-user-1',
+		slug: 'google',
+		provider: 'google',
+		label: null,
+		clientId: 'shared-google-client',
+		clientSecretSecretName: null,
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+		apiBaseUrl: 'https://www.googleapis.com',
+		flow: 'pkce' as const,
+		usePkce: null,
+		tokenExchangeStyle: null,
+		scopeSeparator: null,
+		extraAuthorizeParams: { access_type: 'offline' },
+		createdAt,
+		updatedAt,
+	})
+	const handler = createAccountIntegrationsApiHandler(createEnv())
+	const response = await handler.handler({
+		request: new Request(
+			'https://example.com/account/integrations.json?name=google-calendar',
+		),
+		params: {},
+	} as never)
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	expect(payload).toMatchObject({
+		ok: true,
+		integration: {
+			name: 'google-calendar',
+			appSlug: 'google',
+			clientId: 'shared-google-client',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			accessTokenSecretName: 'google-calendarAccessToken',
+		},
+	})
+	expect(JSON.stringify(payload)).not.toMatch(
+		/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/,
+	)
+	expect(mockModule.findOauthAppForProviderSetup).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		userId: 'stable-user-1',
+		name: 'google-calendar',
 	})
 })

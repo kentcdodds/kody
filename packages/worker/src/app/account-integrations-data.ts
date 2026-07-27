@@ -2,8 +2,8 @@ import { type AccountIntegrationsLoaderData } from '#app/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import {
+	findOauthAppForProviderSetup,
 	getJoinedIntegration,
-	getOauthApp,
 	listJoinedIntegrations,
 	toIntegrationConfig,
 	type IntegrationConfig,
@@ -40,14 +40,20 @@ function toAccountIntegrationRecord(input: {
 }
 
 /**
- * Convert a connectionless OAuth app (unfinished setup) into the connect-flow
- * payload shape. Secret names are defaults so reconnect can proceed; the
- * connection row is still created only after token exchange.
+ * Convert an OAuth app (connectionless setup, or family fallback for a new
+ * account name) into the connect-flow payload shape. `requestedName` is the
+ * connection name being set up — it may differ from `app.slug` when the app
+ * was reused across accounts. Secret names are defaults for the new
+ * connection; the connection row is still created only after token exchange.
  */
 function toAppOnlyIntegrationRecord(
 	app: UserOauthApp,
+	requestedName: string,
 ): AccountIntegrationRecord {
-	const providerKey = canonicalIntegrationName(app.slug) || app.slug
+	const providerKey =
+		canonicalIntegrationName(requestedName) ||
+		canonicalIntegrationName(app.slug) ||
+		app.slug
 	return {
 		name: providerKey,
 		appSlug: app.slug,
@@ -108,6 +114,7 @@ export async function loadAccountIntegrationByName(
 	user: AuthenticatedUser,
 	name: string,
 ): Promise<AccountIntegrationRecord | null> {
+	// 1. Existing connection (reconnect) — connection name, not app slug.
 	const joined = await getJoinedIntegration({
 		env,
 		userId: user.mcpUser.userId,
@@ -115,13 +122,13 @@ export async function loadAccountIntegrationByName(
 	})
 	if (joined) return toAccountIntegrationRecord(joined)
 
-	// Unfinished setup persists an app with no connection. Surface it for the
-	// connect flow so a later session still sees the entered client id.
-	const app = await getOauthApp({
+	// 2–3. Exact app slug, else unambiguous provider-family app (shared-app
+	// multi-account setup where slug may be `google` for `google-calendar`).
+	const app = await findOauthAppForProviderSetup({
 		env,
 		userId: user.mcpUser.userId,
-		slug: name,
+		name,
 	})
 	if (!app) return null
-	return toAppOnlyIntegrationRecord(app)
+	return toAppOnlyIntegrationRecord(app, name)
 }

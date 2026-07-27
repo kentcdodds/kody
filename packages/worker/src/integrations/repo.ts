@@ -121,6 +121,23 @@ export async function getOauthAppBySlug(input: {
 	return row ? mapOauthAppRow(row) : null
 }
 
+export async function listOauthAppsByProvider(input: {
+	db: D1Database
+	userId: string
+	provider: string
+}): Promise<Array<UserOauthApp>> {
+	const result = await input.db
+		.prepare(
+			`SELECT ${appSelectColumns}
+			FROM user_oauth_apps
+			WHERE user_id = ? AND provider = ?
+			ORDER BY slug ASC`,
+		)
+		.bind(input.userId, input.provider)
+		.all<UserOauthAppRow>()
+	return (result.results ?? []).map(mapOauthAppRow)
+}
+
 export async function findOauthAppByClientCredentials(input: {
 	db: D1Database
 	userId: string
