@@ -9,7 +9,7 @@ import {
 
 export const openApiBindingNamePattern = /^[a-z0-9][a-z0-9_-]{0,63}$/
 export const maxOpenApiBindingOperations = 100
-/** Soft cap aligned with typical D1/value-entry practicality; narrow selection if exceeded. */
+/** Soft cap for registry/synthesis practicality; narrow selection if exceeded. */
 export const maxOpenApiBindingSerializedBytes = 900_000
 
 const httpsUrlSchema = z
@@ -145,26 +145,6 @@ export type ResolveOpenApiSelectionResult = {
 	warnings: Array<string>
 }
 
-const openApiValuePrefix = '_openapi:'
-
-export function buildOpenApiBindingValueName(name: string) {
-	return `${openApiValuePrefix}${name}`
-}
-
-export function parseOpenApiBindingValueName(name: string) {
-	if (!name.startsWith(openApiValuePrefix)) return null
-	const bindingName = name.slice(openApiValuePrefix.length).trim()
-	return bindingName.length > 0 ? bindingName : null
-}
-
-export function parseOpenApiBindingJson(raw: string) {
-	try {
-		return JSON.parse(raw)
-	} catch {
-		return null
-	}
-}
-
 export function normalizeOpenApiBinding(value: OpenApiBinding): OpenApiBinding {
 	return {
 		...value,
@@ -281,7 +261,7 @@ export function assertOpenApiBindingWithinSizeLimit(binding: OpenApiBinding) {
 	const bytes = new TextEncoder().encode(serialized).byteLength
 	if (bytes > maxOpenApiBindingSerializedBytes) {
 		throw new Error(
-			`OpenAPI binding snapshot is ${bytes} bytes, exceeding the ${maxOpenApiBindingSerializedBytes}-byte values-store cap. Narrow the selection (fewer operations or smaller schemas) and try again.`,
+			`OpenAPI binding snapshot is ${bytes} bytes, exceeding the ${maxOpenApiBindingSerializedBytes}-byte registry/synthesis size cap. Narrow the selection (fewer operations or smaller schemas) and try again.`,
 		)
 	}
 	return serialized

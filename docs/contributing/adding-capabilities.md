@@ -77,7 +77,7 @@ driven by the `mcp_server_settings` D1 table and per-user hub snapshots.
 **OpenAPI bindings:** the same runtime merge also synthesizes `openapi:<name>`
 domains from the user's curated OpenAPI provider bindings (see
 [`architecture/openapi-bindings.md`](./architecture/openapi-bindings.md)),
-stored as user-scoped values-store config and invoked as
+stored in user-scoped D1 tables and invoked as
 `kody.openapi["<name>"].<operation_slug>(input)`.
 
 `defineCapability()` in
@@ -231,6 +231,9 @@ Current admin capabilities:
 - `admin_feature_flag_override`
 - `admin_system_email_list`
 - `admin_system_email_get`
+- `admin_system_email_sender_rule_list`
+- `admin_system_email_sender_rule_set`
+- `admin_system_email_sender_rule_delete`
 - `admin_platform_feedback_list`
 - `admin_platform_feedback_get`
 - `admin_platform_feedback_update`

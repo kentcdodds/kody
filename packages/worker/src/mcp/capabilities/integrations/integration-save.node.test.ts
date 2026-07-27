@@ -106,7 +106,7 @@ test('mergeIntegrationConfig and integration_save create a new app + connection 
 				scopeSeparator: ' ',
 				extraAuthorizeParams: { prompt: 'consent' },
 			},
-			requiredHosts: ['api.spotify.com'],
+			requiredHosts: ['https://api.spotify.com/v1', 'accounts.spotify.com'],
 		}),
 	).toEqual({
 		...current,
@@ -117,7 +117,7 @@ test('mergeIntegrationConfig and integration_save create a new app + connection 
 			scopeSeparator: null,
 			extraAuthorizeParams: { prompt: 'consent' },
 		},
-		requiredHosts: ['api.spotify.com'],
+		requiredHosts: ['accounts.spotify.com', 'api.spotify.com'],
 	})
 
 	const { env } = createEnv()

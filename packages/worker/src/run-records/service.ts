@@ -269,6 +269,7 @@ export async function finishRunRecord(input: {
 	}
 
 	const work = (async () => {
+		let persistedRun: RunLogRowInput | null = null
 		try {
 			if (runLogBinding(input.env)) {
 				const finishedAt = new Date().toISOString()
@@ -290,6 +291,7 @@ export async function finishRunRecord(input: {
 					run,
 					logs: normalizeLogs(input.logs),
 				})
+				persistedRun = run
 			}
 		} catch (error) {
 			console.warn('run-record-finish-failed', error)
@@ -307,6 +309,29 @@ export async function finishRunRecord(input: {
 				} catch (error) {
 					console.warn('run-record-activation-failed', error)
 				}
+			}
+		}
+
+		if (
+			persistedRun &&
+			input.status === 'error' &&
+			handle.context.surface !== 'subscription'
+		) {
+			try {
+				// Dynamic import: a static edge to package-subscriptions pulls
+				// package-invocations and deepens the account-export cycle
+				// (account-export → … → account-export-shared → account-export),
+				// leaving z.enum(accountExportSectionNames) undefined at module load.
+				const { dispatchRunErrorSubscriptionEvents } =
+					await import('./package-subscriptions.ts')
+				await dispatchRunErrorSubscriptionEvents({
+					env: input.env,
+					userId: handle.userId,
+					run: persistedRun,
+					waitUntil: input.waitUntil,
+				})
+			} catch (error) {
+				console.warn('run-error-subscription-dispatch-failed', error)
 			}
 		}
 	})()

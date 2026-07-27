@@ -1,7 +1,6 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
-	isReservedAccountValueName,
 	loadAccountValuesData,
 	userScopedStorageContext,
 } from '#app/account-values-data.ts'
@@ -105,25 +104,15 @@ export function createAccountValuesApiHandler(env: Env) {
 	} satisfies Action<typeof routes.accountValuesApi>
 }
 
-const reservedAccountValueWriteError =
-	'Value names starting with _integration: or _openapi: are reserved and cannot be saved or deleted from the account UI.'
-
-function assertWritableAccountValueName(name: string) {
-	if (!name) {
-		throw new Error('Value name is required.')
-	}
-	if (isReservedAccountValueName(name)) {
-		throw new Error(reservedAccountValueWriteError)
-	}
-}
-
 async function handleSaveAction(input: {
 	env: Env
 	user: AuthenticatedUser
 	body: object
 }) {
 	const name = readTrimmedStringOrEmpty(input.body, 'name')
-	assertWritableAccountValueName(name)
+	if (!name) {
+		throw new Error('Value name is required.')
+	}
 	const value = readTrimmedStringOrEmpty(input.body, 'value')
 	const description = readOptionalDescription(input.body)
 	const saved = await saveValue({
@@ -153,7 +142,9 @@ async function handleDeleteAction(input: {
 	body: object
 }) {
 	const name = readTrimmedStringOrEmpty(input.body, 'name')
-	assertWritableAccountValueName(name)
+	if (!name) {
+		throw new Error('Value name is required.')
+	}
 	const deleted = await deleteValue({
 		env: input.env,
 		userId: input.user.mcpUser.userId,

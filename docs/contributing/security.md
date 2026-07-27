@@ -198,6 +198,24 @@ guarded by a bearer secret comparison.
   `Cf-Access-Jwt-Assertion` verification; production restore is a graduated
   prepare → typed confirmation → Workflow path, never a single click.
 
+## Inbound email spam controls
+
+Inbound mail is classified at receive time (`accepted` or `quarantined`) before
+package subscription dispatch. Per-user sender rules run first (exact address or
+domain with subdomain matching; address rules beat domain rules): `block`
+rejects at SMTP before quota is charged, `quarantine` stores as flagged, `allow`
+bypasses the auth-verdict quarantine. When no rule matches, Kody parses
+Authentication-Results (DMARC fail, or SPF fail/softfail without DKIM pass →
+quarantine; missing header fails open). Accepted user mail dispatches
+`email.message.received`; quarantined user mail dispatches
+`email.message.quarantined` instead. Quarantined operator system-inbox mail is
+stored but suppresses `email.system-message.received`. Reclassification never
+retroactively fires subscription events. Users manage rules via
+`email_sender_rule_*` (200-rule cap) and reclassify via `email_message_classify`
+or `/account/email`; operators use `admin_system_email_sender_rule_*` for system
+inboxes. Upstream, Cloudflare Email Routing already rejects mail failing both
+SPF and DKIM and honors sender DMARC policy.
+
 ## Abuse controls (suspension, email pause, compute quotas)
 
 One bad actor can poison shared platform identity — every user sends mail from

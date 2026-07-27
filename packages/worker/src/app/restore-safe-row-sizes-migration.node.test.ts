@@ -5,7 +5,7 @@ import { expect, test } from 'vitest'
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
 /** Upper bound (exclusive): only migrations before this file are applied as setup. */
-const restoreSafeRowSizesMigration = '0102-restore-safe-row-sizes.sql'
+const restoreSafeRowSizesMigration = '0105-restore-safe-row-sizes.sql'
 
 /** D1 wraps each migration file in a transaction; mirror that here. */
 function applyMigrationLikeD1(db: DatabaseSync, fileName: string) {

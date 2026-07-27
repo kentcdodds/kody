@@ -52,13 +52,23 @@ Use the MCP `email` domain:
   With attachments, the whole message (bodies plus decoded attachment bytes)
   must fit the plan's `email_message_bytes` per-message cap.
 - `email_attachment_get` returns stored attachment bytes by attachment id.
-- `email_message_list` lists stored inbound and outbound messages.
+- `email_message_list` lists stored inbound and outbound messages. Rows include
+  `classification` and `classification_reason`; pass an optional
+  `classification` filter (`accepted` or `quarantined`) to narrow the list.
 - `email_message_search` searches stored messages by case-insensitive substring
   match against the subject, header `From`, and envelope sender. It accepts the
   same `inbox_id` / `direction` / `processing_status` / `delivery_status`
   filters and limit caps as `email_message_list`.
 - `email_message_get` returns parsed bodies, headers, thread metadata, and
   attachment metadata.
+- `email_message_classify` reclassifies a stored inbound message as `accepted`
+  or `quarantined`. Reclassification never retroactively dispatches package
+  subscription events.
+- `email_sender_rule_list` lists sender allow/block/quarantine rules.
+- `email_sender_rule_set` creates or updates a sender rule by address or domain
+  (`kind` / `value` / `effect` / optional `note`).
+- `email_sender_rule_delete` deletes one sender rule by id. Each user may store
+  at most 200 sender rules.
 - `email_delivery_event_list` lists stored delivery history, including final
   Email Sending outcomes, SMTP responses, bounces, rejections, and complaints.
 - `email_usage_get` returns the signed-in user's email usage and limits: stored
@@ -127,9 +137,10 @@ Inbound storage is quota-gated per user:
   and the stored system inbox is capped so arbitrary sender traffic cannot grow
   without bound.
 - Stored inbound mail is the source of truth. If a user wants email automation,
-  they can publish a package that subscribes to the stored inbound email topic
-  `email.message.received` using normal package subscriptions. This is package
-  behavior, not a separate Kody-owned email handler or agent-loop primitive.
+  they can publish a package that subscribes to the stored inbound email topics
+  `email.message.received` or `email.message.quarantined` using normal package
+  subscriptions. This is package behavior, not a separate Kody-owned email
+  handler or agent-loop primitive.
 - Subscription event payloads are metadata-first. Package handlers receive the
   stored message id and receipt metadata, then use `email_message_get` or
   `email_attachment_get` (or `import { email } from 'kody:runtime'`) when they
@@ -138,16 +149,53 @@ Inbound storage is quota-gated per user:
   package user, package-owned storage `package:<packageId>` via
   `packageStorage()`, package/repo context, and the standard capability registry
   subject to the usual secret and capability approval rules. For
-  `email.message.received`, `import { email }` from `kody:runtime` is available
-  as a convenience helper for message lookup, attachment lookup, and replies.
+  `email.message.received` and `email.message.quarantined`, `import { email }`
+  from `kody:runtime` is available as a convenience helper for message lookup,
+  attachment lookup, and replies.
 - Attachments are metadata-first by default; raw MIME for small messages is
   stored so on-demand attachment lookup can reconstruct bytes locally.
+- Cloudflare Email Routing already rejects mail that fails both SPF and DKIM and
+  honors sender DMARC policy before Kody sees the message. Kody's own spam
+  controls (below) run on mail that still reaches storage.
+
+## Spam controls
+
+Inbound mail is classified at receive time. Each stored message carries
+`classification` (`accepted` or `quarantined`) and an optional human-readable
+`classification_reason`. Decision order:
+
+1. **Per-user sender rules** — exact address or domain match (domain rules also
+   match subdomains). Address rules beat domain rules. Effects:
+   - `block` rejects at SMTP before any receive quota is charged.
+   - `quarantine` stores the message as quarantined.
+   - `allow` stores the message as accepted and bypasses the auth-verdict
+     quarantine step below.
+2. **Authentication-Results verdict** — when no sender rule decides the outcome,
+   Kody parses the stored SPF/DKIM/DMARC results. DMARC `fail`, or SPF
+   `fail`/`softfail` without a DKIM `pass`, quarantines the message. A missing
+   Authentication-Results header fails open to `accepted`.
+
+Each user may store at most 200 sender rules. Manage them with
+`email_sender_rule_list`, `email_sender_rule_set` (kind / value / effect /
+note), and `email_sender_rule_delete`. Reclassify a stored inbound message with
+`email_message_classify`, or filter `email_message_list` by `classification`.
+
+On `/account/email`, quarantined messages show a Quarantined badge (with the
+reason as tooltip/secondary text), the list can filter to Quarantined only, and
+inbound messages offer Mark as spam / Not spam actions that call the same
+reclassification path.
+
+Subscription dispatch uses the receive-time classification exactly once:
+accepted mail fires `email.message.received`; quarantined mail fires
+`email.message.quarantined` instead. Later reclassification never retroactively
+dispatches either topic.
 
 ## `email.message.received` package subscription
 
-Stored inbound email dispatches the package subscription topic
+Accepted stored inbound email dispatches the package subscription topic
 `email.message.received` after the message and attachment metadata are stored.
-Packages subscribe in `package.json#kody.subscriptions`:
+Quarantined mail uses `email.message.quarantined` instead (same payload shape,
+different event name). Packages subscribe in `package.json#kody.subscriptions`:
 
 ```json
 {
@@ -200,8 +248,16 @@ type EmailMessageReceivedEvent = {
 The event does not include parsed bodies or attachment bytes. Fetch those only
 when the handler needs them with `email_message_get`, `email_attachment_get`, or
 the package runtime `email` helper. Use `package_subscriptions_list` with
-`topic: "email.message.received"` to discover which saved packages subscribe for
-the signed-in user.
+`topic: "email.message.received"` or `topic: "email.message.quarantined"` to
+discover which saved packages subscribe for the signed-in user.
+
+## `email.message.quarantined` package subscription
+
+Quarantined stored inbound email dispatches `email.message.quarantined` instead
+of `email.message.received`. The payload shape matches
+`EmailMessageReceivedEvent` with `event: 'email.message.quarantined'`. Packages
+that should react to spam or suspect mail subscribe to this topic; packages that
+only want trusted inbound mail stay on `email.message.received`.
 
 ## `email.message.delivery.updated` package subscription
 
@@ -264,10 +320,17 @@ do not dispatch after a newer delivery state has already been stored.
 
 Mail stored in the operator-owned system inbox (`kody`, `support`, `abuse`,
 `postmaster`, `security`, and `admin` at the apex) dispatches the separate
-package subscription topic `email.system-message.received`. It fans out to
-packages saved by users who hold the admin role at dispatch time — a non-admin
-saving the same subscription never receives system mail, and a revoked admin
-stops receiving immediately.
+package subscription topic `email.system-message.received` when the message is
+accepted. It fans out to packages saved by users who hold the admin role at
+dispatch time — a non-admin saving the same subscription never receives system
+mail, and a revoked admin stops receiving immediately.
+
+Quarantined system-inbox mail is stored for operators but never dispatches
+`email.system-message.received` (or any other admin package subscription).
+Operators manage system sender rules with `admin_system_email_sender_rule_list`,
+`admin_system_email_sender_rule_set`, and
+`admin_system_email_sender_rule_delete` (same address/domain matching and
+effects as user sender rules, scoped to the `system:email` owner).
 
 The payload is the same metadata-first envelope as `email.message.received`
 (with `event: 'email.system-message.received'`), plus one extra field:

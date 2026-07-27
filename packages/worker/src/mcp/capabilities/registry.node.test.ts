@@ -131,6 +131,13 @@ test('the email domain no longer exposes self-service inbox or sender-identity c
 	expect(capabilityMap.email_reply).toBeTruthy()
 	expect(capabilityMap.email_message_list).toBeTruthy()
 	expect(capabilityMap.email_message_get).toBeTruthy()
+	expect(capabilityMap.email_message_classify).toBeTruthy()
+	expect(capabilityMap.email_sender_rule_list).toBeTruthy()
+	expect(capabilityMap.email_sender_rule_set).toBeTruthy()
+	expect(capabilityMap.email_sender_rule_delete).toBeTruthy()
+	expect(capabilityMap.admin_system_email_sender_rule_list).toBeTruthy()
+	expect(capabilityMap.admin_system_email_sender_rule_set).toBeTruthy()
+	expect(capabilityMap.admin_system_email_sender_rule_delete).toBeTruthy()
 })
 
 test('getCapabilityRegistryForContext keeps healthy capabilities when a connector snapshot stalls', async () => {

@@ -216,7 +216,7 @@ test('descriptor seam follows registry order and preserves value-backed affinity
 	})
 })
 
-test('value search descriptors exclude platform-reserved openapi bindings', () => {
+test('value search descriptors include underscore-prefixed ordinary values', () => {
 	const descriptors = buildSearchableEntityDescriptors({
 		registry: { capabilitySpecs: {} } as never,
 		optionalRows: {
@@ -225,9 +225,9 @@ test('value search descriptors exclude platform-reserved openapi bindings', () =
 			userValueRows: [
 				{
 					userId: 'user-1',
-					name: '_openapi:widgets',
+					name: '_scratch:widgets',
 					value: '{"provider":"widgets"}',
-					description: 'Widgets OpenAPI binding',
+					description: 'Scratch widgets config',
 					scope: 'user',
 					appId: null,
 					ttlMs: null,
@@ -250,9 +250,8 @@ test('value search descriptors exclude platform-reserved openapi bindings', () =
 		},
 	})
 
-	expect(descriptors.map((descriptor) => descriptor.type)).toEqual(['value'])
-	expect(descriptors[0]).toMatchObject({
-		type: 'value',
-		id: 'user:preferred_repo',
-	})
+	expect(descriptors.map((descriptor) => descriptor.id).sort()).toEqual([
+		'user:_scratch%3Awidgets',
+		'user:preferred_repo',
+	])
 })

@@ -3,8 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { deleteValue } from '#mcp/values/service.ts'
-import { buildOpenApiBindingValueName } from '#worker/openapi/binding-shared.ts'
+import { deleteOpenApiBinding } from '#worker/openapi/binding-service.ts'
 
 const inputSchema = z
 	.object({
@@ -38,15 +37,10 @@ export const openapiBindingDeleteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const deleted = await deleteValue({
+			const deleted = await deleteOpenApiBinding({
 				env: ctx.env,
 				userId: user.userId,
-				name: buildOpenApiBindingValueName(args.name),
-				scope: 'user',
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-				},
+				name: args.name,
 			})
 			return { deleted }
 		},

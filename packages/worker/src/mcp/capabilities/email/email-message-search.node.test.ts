@@ -81,6 +81,8 @@ test('email_message_search requires a signed-in, verified user and forwards the 
 			subject: 'Invoice #123',
 			messageIdHeader: '<invoice@acme.example>',
 			processingStatus: 'stored',
+			classification: 'accepted',
+			classificationReason: null,
 			providerMessageId: null,
 			error: null,
 			receivedAt: '2026-07-01T00:00:00.000Z',

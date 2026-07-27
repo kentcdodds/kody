@@ -53,9 +53,6 @@ Account export includes both tables. Rows contain secret _names_ and the inline
 `client_id`, never encrypted secret payloads. Exporting `client_id` is
 deliberate: it is a non-secret OAuth client identifier, not a credential value.
 
-Any `<provider>-client-id` rows in the values store are ordinary user data; they
-are not the live source of truth for integrations.
-
 ## Two independent host gates
 
 Outbound OAuth calls enforce two allowlists that are not collapsed:
@@ -93,6 +90,20 @@ Capability and search detail surfaces keep a **flat connection-shaped** config
 (`clientId`, secret names, endpoints, `authorization`, `requiredHosts`) so
 callers do not need to join app and connection themselves.
 
+## Account UI
+
+`/account/integrations` lists connections grouped under the OAuth app they
+share. Each app also has its own page at `/account/integrations/apps/:appSlug`
+(a connection named `apps` still resolves at `/account/integrations/apps`). The
+app page shows provider metadata, client id, client-secret secret name (never
+values), endpoints, flow / PKCE / exchange style, timestamps, and the
+connections that would be affected by a credential rotation. The rotate form
+posts to `/account/integrations.json` with
+`action: "rotate_oauth_app_credentials"`: it stores a new client-secret value in
+the secret store (when provided), then calls `rotateOauthAppClientCredentials`
+so every sibling connection picks up the new client id / secret name on the next
+join.
+
 ## Capability surface
 
 Domain: `integrations`
@@ -106,14 +117,17 @@ Domain: `integrations`
 | `integration_registry_search` / `integration_discover` | Untrusted integrations.sh research                            |
 | `openapi_spec_summarize` / `openapi_client_scaffold`   | Spec research helpers (bindings live in the `openapi` domain) |
 
-OpenAPI provider bindings (`_openapi:*` values-store config) are a separate
-primitive; see [OpenAPI provider bindings](./openapi-bindings.md).
+OpenAPI provider bindings (`user_openapi_bindings` /
+`user_openapi_binding_operations`) are a separate primitive; see
+[OpenAPI provider bindings](./openapi-bindings.md).
 
 ## Account deletion order
 
 Deletion targets in `account-data-targets.ts` list `user_integrations` before
 `user_oauth_apps` so the `ON DELETE RESTRICT` FK cannot block cleanup when
-cascades are disabled.
+cascades are disabled. OpenAPI binding cleanup (child operations before parent
+bindings) is documented in
+[OpenAPI provider bindings](./openapi-bindings.md#account-deletion-order).
 
 ## Related docs
 

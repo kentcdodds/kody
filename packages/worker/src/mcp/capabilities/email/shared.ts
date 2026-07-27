@@ -1,9 +1,13 @@
 import { z } from 'zod'
 import {
+	emailClassificationValues,
 	emailDeliveryStatusValues,
 	type EmailMessageRecord,
+	type EmailSenderRuleRecord,
 	emailDirectionValues,
 	emailProcessingStatusValues,
+	emailSenderRuleEffectValues,
+	emailSenderRuleKindValues,
 } from '#worker/email/types.ts'
 
 export const emailInboxSchema = z.object({
@@ -38,12 +42,24 @@ export const emailMessageSummarySchema = z.object({
 	subject: z.string().nullable(),
 	message_id_header: z.string().nullable(),
 	processing_status: z.enum(emailProcessingStatusValues),
+	classification: z.enum(emailClassificationValues),
+	classification_reason: z.string().nullable(),
 	provider_message_id: z.string().nullable(),
 	delivery_status: z.enum(emailDeliveryStatusValues).nullable(),
 	delivery_status_at: z.string().nullable(),
 	error: z.string().nullable(),
 	received_at: z.string().nullable(),
 	sent_at: z.string().nullable(),
+	created_at: z.string(),
+	updated_at: z.string(),
+})
+
+export const emailSenderRuleSchema = z.object({
+	id: z.string(),
+	kind: z.enum(emailSenderRuleKindValues),
+	value: z.string(),
+	effect: z.enum(emailSenderRuleEffectValues),
+	note: z.string(),
 	created_at: z.string(),
 	updated_at: z.string(),
 })
@@ -90,6 +106,8 @@ export function toMessageSummary(message: EmailMessageRecord) {
 		subject: message.subject,
 		message_id_header: message.messageIdHeader,
 		processing_status: message.processingStatus,
+		classification: message.classification,
+		classification_reason: message.classificationReason,
 		provider_message_id: message.providerMessageId,
 		delivery_status: message.deliveryStatus ?? null,
 		delivery_status_at: message.deliveryStatusAt ?? null,
@@ -98,6 +116,18 @@ export function toMessageSummary(message: EmailMessageRecord) {
 		sent_at: message.sentAt,
 		created_at: message.createdAt,
 		updated_at: message.updatedAt,
+	}
+}
+
+export function toSenderRule(rule: EmailSenderRuleRecord) {
+	return {
+		id: rule.id,
+		kind: rule.kind,
+		value: rule.value,
+		effect: rule.effect,
+		note: rule.note,
+		created_at: rule.createdAt,
+		updated_at: rule.updatedAt,
 	}
 }
 

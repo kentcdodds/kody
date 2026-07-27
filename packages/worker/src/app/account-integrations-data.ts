@@ -1,10 +1,16 @@
-import { type AccountIntegrationListItem } from '#app/loader-data.ts'
+import {
+	type AccountIntegrationListItem,
+	type AccountOauthAppListItem,
+} from '#app/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import {
 	findOauthAppForProviderSetup,
 	getJoinedIntegration,
+	getOauthApp,
 	listJoinedIntegrations,
+	listOauthApps,
 	toIntegrationConfig,
 	type OauthAppSetupPrefill,
 } from '#worker/integrations/service.ts'
@@ -14,6 +20,7 @@ type AuthenticatedUser = NonNullable<
 >
 
 export type AccountIntegrationRecord = AccountIntegrationListItem
+export type AccountOauthAppRecord = AccountOauthAppListItem
 
 function toAccountIntegrationRecord(input: {
 	app: Parameters<typeof toIntegrationConfig>[0]
@@ -79,6 +86,29 @@ function toAppOnlyIntegrationRecord(
 	}
 }
 
+function buildOauthAppRecords(
+	apps: Awaited<ReturnType<typeof listOauthApps>>,
+	joined: Awaited<ReturnType<typeof listJoinedIntegrations>>,
+): Array<AccountOauthAppRecord> {
+	const connectionsByAppSlug = new Map<
+		string,
+		Array<{ name: string; accountLabel: string | null }>
+	>()
+	for (const { app, connection } of joined) {
+		const existing = connectionsByAppSlug.get(app.slug) ?? []
+		existing.push({
+			name: connection.name,
+			accountLabel: connection.accountLabel,
+		})
+		connectionsByAppSlug.set(app.slug, existing)
+	}
+	return apps
+		.map((app) =>
+			toOauthAppPublic(app, connectionsByAppSlug.get(app.slug) ?? []),
+		)
+		.sort((left, right) => left.slug.localeCompare(right.slug))
+}
+
 export async function loadAccountIntegrationsData(
 	env: Env,
 	user: AuthenticatedUser,
@@ -87,11 +117,13 @@ export async function loadAccountIntegrationsData(
 	email: string
 	username: string
 	integrations: Array<AccountIntegrationRecord>
+	apps: Array<AccountOauthAppRecord>
 }> {
-	const joined = await listJoinedIntegrations({
-		env,
-		userId: user.mcpUser.userId,
-	})
+	const userId = user.mcpUser.userId
+	const [joined, apps] = await Promise.all([
+		listJoinedIntegrations({ env, userId }),
+		listOauthApps({ env, userId }),
+	])
 	const integrations = joined
 		.map((entry) => toAccountIntegrationRecord(entry))
 		.sort((left, right) => {
@@ -105,7 +137,29 @@ export async function loadAccountIntegrationsData(
 		email: user.email,
 		username: user.username,
 		integrations,
+		apps: buildOauthAppRecords(apps, joined),
 	}
+}
+
+export async function loadAccountOauthAppBySlug(
+	env: Env,
+	user: AuthenticatedUser,
+	slug: string,
+): Promise<AccountOauthAppRecord | null> {
+	const userId = user.mcpUser.userId
+	const app = await getOauthApp({ env, userId, slug })
+	if (!app) return null
+	const joined = await listJoinedIntegrations({ env, userId })
+	const connections = joined
+		.filter((entry) => entry.app.slug === app.slug)
+		.map(({ connection }) => ({
+			name: connection.name,
+			accountLabel: connection.accountLabel,
+		}))
+	return toOauthAppPublic(
+		{ ...app, connectionCount: connections.length },
+		connections,
+	)
 }
 
 export async function loadAccountIntegrationByName(

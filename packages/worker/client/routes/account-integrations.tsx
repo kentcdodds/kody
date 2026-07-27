@@ -2,15 +2,19 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import {
 	type AccountIntegrationListItem,
 	type AccountIntegrationsLoaderData,
+	type AccountOauthAppListItem,
 } from '#app/loader-data.ts'
+import { routes } from '#app/routes.ts'
 import { type Handle, css } from 'remix/ui'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
+import { on } from '#client/event-mixin.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { ProviderIcon } from '#client/provider-icons.tsx'
 import {
 	type AccountStatus,
@@ -42,6 +46,7 @@ import {
 	integrationDisplayName,
 	oauthAppDisplayName,
 } from '#client/routes/integration-filter.ts'
+import { matchesSearchQuery } from '#client/search-filter.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -51,14 +56,63 @@ import {
 	detailItemCss,
 	detailLabelCss,
 	detailValueCss,
+	fieldCss,
+	fieldLabelCss,
+	getDangerButtonCss,
 	getPrimaryButtonCss,
+	inputCss,
 	insetCardCss,
 	primaryLinkCss,
 	sectionTitleCss,
 } from '#client/styles/style-primitives.ts'
 
-const accountIntegrationsApiPath = '/account/integrations.json'
+const accountIntegrationsApiPath = routes.accountIntegrationsApi.href()
 const integrationsRoute = createListDetailRoute('/account/integrations')
+const oauthAppsPathPrefix = `${routes.accountIntegrations.href()}/apps/`
+
+function decodePathSegment(value: string) {
+	try {
+		return decodeURIComponent(value)
+	} catch {
+		return value
+	}
+}
+
+function readSelectedOauthAppSlug(href: string): string | null {
+	const pathname = new URL(href, 'http://localhost').pathname
+	if (!pathname.startsWith(oauthAppsPathPrefix)) return null
+	const segment = pathname.slice(oauthAppsPathPrefix.length)
+	if (!segment || segment.includes('/')) return null
+	return decodePathSegment(segment)
+}
+
+function buildOauthAppHref(appSlug: string, search = '') {
+	return `${routes.accountOauthAppDetail.href({ appSlug })}${search}`
+}
+
+function oauthAppTitle(app: AccountOauthAppListItem) {
+	return app.label?.trim() || app.provider || app.slug
+}
+
+function filterOauthApps(
+	apps: ReadonlyArray<AccountOauthAppListItem>,
+	query: string,
+) {
+	return apps.filter((app) =>
+		matchesSearchQuery(query, [
+			app.slug,
+			app.provider,
+			app.label,
+			app.clientId,
+			app.clientSecretSecretName,
+			app.tokenUrl,
+			app.authorizeUrl,
+			app.apiBaseUrl,
+			...app.connections.map((connection) => connection.name),
+			...app.connections.map((connection) => connection.accountLabel),
+		]),
+	)
+}
 
 const providerCatalogGridCss = {
 	display: 'grid',
@@ -161,7 +215,15 @@ function connectionStatusLabel(integration: AccountIntegrationListItem) {
 export function AccountIntegrationsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let integrations: Array<AccountIntegrationListItem> = []
+	let apps: Array<AccountOauthAppListItem> = []
 	let message: string | null = null
+	let rotateClientId = ''
+	let rotateClientSecret = ''
+	let rotateConfirmed = false
+	let rotateStatus: 'idle' | 'saving' = 'idle'
+	let rotateMessage: string | null = null
+	let rotateMessageTone: 'error' | 'info' = 'info'
+	let lastRotateAppSlug: string | null = null
 	const loadLatch = createRouteLoadLatch()
 
 	function getCurrentHref() {
@@ -177,6 +239,16 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		if (search) nextUrl.searchParams.set('q', search)
 		else nextUrl.searchParams.delete('q')
 		return `${nextUrl.pathname}${nextUrl.search}`
+	}
+
+	function resetRotateForm(app: AccountOauthAppListItem | null) {
+		rotateClientId = app?.clientId ?? ''
+		rotateClientSecret = ''
+		rotateConfirmed = false
+		rotateStatus = 'idle'
+		rotateMessage = null
+		rotateMessageTone = 'info'
+		lastRotateAppSlug = app?.slug ?? null
 	}
 
 	async function loadIntegrations(signal: AbortSignal) {
@@ -199,6 +271,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			}
 			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
 			integrations = payload.integrations
+			apps = payload.apps ?? []
 			status = 'ready'
 			message = null
 			loadLatch.markLoaded(latchKey)
@@ -222,10 +295,91 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		)
 		if (!routeData) return false
 		integrations = routeData.integrations
+		apps = routeData.apps ?? []
 		status = 'ready'
 		message = null
 		loadLatch.markLoaded(getDataLatchKey(href))
 		return true
+	}
+
+	async function submitRotateCredentials(app: AccountOauthAppListItem) {
+		if (rotateStatus === 'saving') return
+		const clientId = rotateClientId.trim()
+		const clientSecret = rotateClientSecret.trim()
+		if (!rotateConfirmed) {
+			rotateMessage =
+				'Confirm that every connection on this app should use the new credentials.'
+			rotateMessageTone = 'error'
+			handle.update()
+			return
+		}
+		if (!clientId && !clientSecret) {
+			rotateMessage = 'Provide a new client id and/or client secret.'
+			rotateMessageTone = 'error'
+			handle.update()
+			return
+		}
+		if (clientId === app.clientId && !clientSecret) {
+			rotateMessage = 'Enter a new client id or client secret to rotate.'
+			rotateMessageTone = 'error'
+			handle.update()
+			return
+		}
+		rotateStatus = 'saving'
+		rotateMessage = null
+		handle.update()
+		try {
+			const response = await fetch(accountIntegrationsApiPath, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Accept: 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'rotate_oauth_app_credentials',
+					appSlug: app.slug,
+					...(clientId ? { clientId } : {}),
+					...(clientSecret ? { clientSecret } : {}),
+					confirm: true,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<{
+				ok: boolean
+				error?: string
+				app?: AccountOauthAppListItem
+			}>(response)
+			if (!response.ok || !payload?.ok || !payload.app) {
+				throw new Error(payload?.error || 'Unable to rotate credentials.')
+			}
+			apps = apps.map((entry) =>
+				entry.slug === payload.app!.slug ? payload.app! : entry,
+			)
+			integrations = integrations.map((entry) =>
+				entry.appSlug === payload.app!.slug
+					? {
+							...entry,
+							clientId: payload.app!.clientId,
+							clientSecretSecretName: payload.app!.clientSecretSecretName,
+							appLabel: payload.app!.label,
+						}
+					: entry,
+			)
+			resetRotateForm(payload.app)
+			rotateMessage = 'Rotated shared OAuth app credentials.'
+			rotateMessageTone = 'info'
+			handle.update()
+		} catch (error) {
+			rotateStatus = 'idle'
+			rotateMessage =
+				error instanceof Error ? error.message : 'Unable to rotate credentials.'
+			rotateMessageTone = 'error'
+			handle.update()
+		}
 	}
 
 	return () => {
@@ -247,26 +401,50 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		}
 
 		const selection = integrationsRoute.getSelection(currentHref)
+		const selectedAppSlug = readSelectedOauthAppSlug(currentHref)
 		const search = readSearchFilter(currentHref)
 		const setupIntro =
 			integrations.length === 0
 				? 'No integrations yet. Pick a service and copy its prompt into your agent — setup takes a few minutes.'
 				: 'Add another service: copy a prompt into your agent.'
 		const filteredIntegrations = filterIntegrations(integrations, search)
+		const filteredApps = filterOauthApps(apps, search)
+		const connectionAppSlugs = new Set(
+			filteredIntegrations.map((integration) => integration.appSlug),
+		)
+		const connectionlessApps = filteredApps.filter(
+			(app) => app.connectionCount === 0 && !connectionAppSlugs.has(app.slug),
+		)
 		const selectedIntegration =
-			integrations.find(
-				(integration) => integration.name === selection.selectedId,
-			) ?? null
+			selectedAppSlug == null
+				? (integrations.find(
+						(integration) => integration.name === selection.selectedId,
+					) ?? null)
+				: null
+		const selectedApp =
+			selectedAppSlug != null
+				? (apps.find((app) => app.slug === selectedAppSlug) ?? null)
+				: null
+		if (selectedApp && lastRotateAppSlug !== selectedApp.slug) {
+			resetRotateForm(selectedApp)
+		}
 		const selectedAppConnectionCount = selectedIntegration
 			? integrations.filter(
 					(entry) => entry.appSlug === selectedIntegration.appSlug,
 				).length
 			: 0
 		const showIntegrationNotFound =
-			selection.selectedId != null && !selectedIntegration && status === 'ready'
+			selectedAppSlug == null &&
+			selection.selectedId != null &&
+			!selectedIntegration &&
+			status === 'ready'
+		const showOauthAppNotFound =
+			selectedAppSlug != null && !selectedApp && status === 'ready'
 		const connectHref = selectedIntegration
 			? buildConnectOauthHref(selectedIntegration)
 			: null
+		const hasSidebarMatches =
+			filteredIntegrations.length > 0 || connectionlessApps.length > 0
 
 		return (
 			<AccountManagementShell>
@@ -295,7 +473,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						sidebar={
 							<AccountManagementSidebar
 								title="Connected integrations"
-								description="Select a connection to view its status or reconnect OAuth. Connections that share an OAuth app are grouped together."
+								description="Select a connection or open its shared OAuth app to view status, reconnect, or rotate client credentials."
 							>
 								<AccountManagementSearchField
 									label="Search"
@@ -305,12 +483,12 @@ export function AccountIntegrationsRoute(handle: Handle) {
 										replaceLocation(buildHrefWithUpdatedSearch(value))
 									}}
 								/>
-								{integrations.length === 0 ? (
+								{integrations.length === 0 && apps.length === 0 ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										No integrations yet. Copy a setup prompt below to get
 										started.
 									</p>
-								) : filteredIntegrations.length === 0 ? (
+								) : !hasSidebarMatches ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										No integrations match the current filters.
 									</p>
@@ -320,39 +498,61 @@ export function AccountIntegrationsRoute(handle: Handle) {
 											(group) => {
 												const appTitle = oauthAppDisplayName(group)
 												const showAppHeader = group.connections.length > 1
+												const appActive = selectedAppSlug === group.appSlug
 												return (
 													<div
 														key={group.appSlug}
 														mix={css({ display: 'grid', gap: spacing.xs })}
 													>
-														{showAppHeader ? (
-															<div
-																mix={css({
+														<button
+															type="button"
+															mix={[
+																on('click', () => {
+																	navigate(
+																		buildOauthAppHref(
+																			group.appSlug,
+																			getCurrentSearch(),
+																		),
+																	)
+																}),
+																css({
 																	display: 'grid',
 																	gap: spacing.xs,
-																	padding: `0 ${spacing.xs}`,
+																	padding: `${spacing.xs} ${spacing.sm}`,
+																	border: 'none',
+																	borderRadius: radius.md,
+																	backgroundColor: appActive
+																		? colors.primarySoftest
+																		: 'transparent',
+																	color: colors.text,
+																	textAlign: 'left',
+																	cursor: 'pointer',
+																	'&:hover': {
+																		backgroundColor: colors.primarySoftest,
+																	},
+																}),
+															]}
+														>
+															<strong
+																mix={css({
+																	...truncatedTextCss,
+																	fontSize: typography.fontSize.sm,
+																	color: colors.text,
 																})}
 															>
-																<strong
-																	mix={css({
-																		...truncatedTextCss,
-																		fontSize: typography.fontSize.sm,
-																		color: colors.text,
-																	})}
-																>
-																	{appTitle}
-																</strong>
-																<span
-																	mix={css({
-																		fontSize: typography.fontSize.sm,
-																		color: colors.textMuted,
-																	})}
-																>
-																	{group.connections.length} connections ·
-																	shared OAuth app
-																</span>
-															</div>
-														) : null}
+																{appTitle}
+															</strong>
+															<span
+																mix={css({
+																	fontSize: typography.fontSize.sm,
+																	color: colors.textMuted,
+																})}
+															>
+																{showAppHeader
+																	? `${group.connections.length} connections · shared OAuth app`
+																	: 'OAuth app'}
+															</span>
+														</button>
 														<AccountManagementList>
 															{group.connections.map((integration) => (
 																<li
@@ -422,12 +622,313 @@ export function AccountIntegrationsRoute(handle: Handle) {
 												)
 											},
 										)}
+										{connectionlessApps.map((app) => (
+											<div
+												key={app.slug}
+												mix={css({ display: 'grid', gap: spacing.xs })}
+											>
+												<button
+													type="button"
+													mix={[
+														on('click', () => {
+															navigate(
+																buildOauthAppHref(app.slug, getCurrentSearch()),
+															)
+														}),
+														css({
+															display: 'grid',
+															gap: spacing.xs,
+															padding: `${spacing.xs} ${spacing.sm}`,
+															border: 'none',
+															borderRadius: radius.md,
+															backgroundColor:
+																selectedAppSlug === app.slug
+																	? colors.primarySoftest
+																	: 'transparent',
+															color: colors.text,
+															textAlign: 'left',
+															cursor: 'pointer',
+															'&:hover': {
+																backgroundColor: colors.primarySoftest,
+															},
+														}),
+													]}
+												>
+													<strong
+														mix={css({
+															...truncatedTextCss,
+															fontSize: typography.fontSize.sm,
+															color: colors.text,
+														})}
+													>
+														{oauthAppTitle(app)}
+													</strong>
+													<span
+														mix={css({
+															fontSize: typography.fontSize.sm,
+															color: colors.textMuted,
+														})}
+													>
+														OAuth app · no connections yet
+													</span>
+												</button>
+											</div>
+										))}
 									</div>
 								)}
 							</AccountManagementSidebar>
 						}
 					>
-						{selectedIntegration ? (
+						{selectedApp ? (
+							<section mix={css(cardCss)}>
+								<header
+									mix={css({
+										display: 'flex',
+										alignItems: 'flex-start',
+										justifyContent: 'space-between',
+										gap: spacing.md,
+									})}
+								>
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<h2 mix={css(cardTitleCss)}>
+											{oauthAppTitle(selectedApp)}
+										</h2>
+										<p mix={css(descriptionCss)}>
+											Shared OAuth app <code>{selectedApp.slug}</code>
+											{selectedApp.connections.length > 0
+												? ` · ${selectedApp.connections.length} connection${selectedApp.connections.length === 1 ? '' : 's'}`
+												: ' · no connections yet'}
+										</p>
+									</div>
+									<span
+										mix={css({
+											width: 'max-content',
+											padding: `${spacing.xs} ${spacing.sm}`,
+											borderRadius: radius.full,
+											backgroundColor: colors.primarySoftest,
+											color: colors.primaryText,
+											fontSize: typography.fontSize.sm,
+											fontWeight: typography.fontWeight.medium,
+										})}
+									>
+										{selectedApp.flow}
+									</span>
+								</header>
+
+								<section mix={css(detailGridCss)}>
+									{renderIntegrationDetail('Provider', selectedApp.provider)}
+									{renderIntegrationDetail('Slug', selectedApp.slug)}
+									{renderIntegrationDetail(
+										'Label',
+										formatOptional(selectedApp.label),
+									)}
+									{renderIntegrationDetail('Client ID', selectedApp.clientId)}
+									{renderIntegrationDetail(
+										'Client-secret secret name',
+										formatOptional(selectedApp.clientSecretSecretName),
+									)}
+									{renderIntegrationDetail('Token URL', selectedApp.tokenUrl)}
+									{renderIntegrationDetail(
+										'Authorize URL',
+										formatOptional(selectedApp.authorizeUrl),
+									)}
+									{renderIntegrationDetail(
+										'API base URL',
+										formatOptional(selectedApp.apiBaseUrl),
+									)}
+									{renderIntegrationDetail('Flow', selectedApp.flow)}
+									{renderIntegrationDetail(
+										'PKCE',
+										selectedApp.usePkce == null
+											? selectedApp.flow === 'pkce'
+												? 'Default on'
+												: 'Default off'
+											: selectedApp.usePkce
+												? 'Enabled'
+												: 'Disabled',
+									)}
+									{renderIntegrationDetail(
+										'Token exchange style',
+										formatOptional(selectedApp.tokenExchangeStyle),
+									)}
+									{renderIntegrationDetail(
+										'Created',
+										formatTimestamp(selectedApp.createdAt),
+									)}
+									{renderIntegrationDetail(
+										'Updated',
+										formatTimestamp(selectedApp.updatedAt),
+									)}
+								</section>
+
+								<section mix={css(insetCardCss)}>
+									<h3 mix={css(sectionTitleCss)}>Connections using this app</h3>
+									{selectedApp.connections.length === 0 ? (
+										<p mix={css(descriptionCss)}>
+											No connections yet. Finish connect setup for a provider
+											that uses this app, or reconnect from a connection detail
+											page.
+										</p>
+									) : (
+										<ul
+											mix={css({
+												margin: 0,
+												paddingLeft: spacing.lg,
+												display: 'grid',
+												gap: spacing.xs,
+											})}
+										>
+											{selectedApp.connections.map((connection) => (
+												<li key={connection.name}>
+													<a
+														href={integrationsRoute.buildDetailHref(
+															connection.name,
+															getCurrentSearch(),
+														)}
+														mix={css(primaryLinkCss)}
+													>
+														{connection.accountLabel?.trim() || connection.name}
+													</a>
+													{connection.accountLabel?.trim() ? (
+														<span
+															mix={css({
+																color: colors.textMuted,
+																fontSize: typography.fontSize.sm,
+															})}
+														>
+															{' '}
+															(<code>{connection.name}</code>)
+														</span>
+													) : null}
+												</li>
+											))}
+										</ul>
+									)}
+								</section>
+
+								<section mix={css(insetCardCss)}>
+									<h3 mix={css(sectionTitleCss)}>Rotate client credentials</h3>
+									<p mix={css(descriptionCss)}>
+										Rotating credentials updates this shared OAuth app once.
+										Every connection below will use the new client id and client
+										secret on the next authorize or token exchange.
+									</p>
+									{selectedApp.connections.length > 0 ? (
+										<ul
+											mix={css({
+												margin: 0,
+												paddingLeft: spacing.lg,
+												display: 'grid',
+												gap: spacing.xs,
+												color: colors.text,
+											})}
+										>
+											{selectedApp.connections.map((connection) => (
+												<li key={`rotate-${connection.name}`}>
+													{connection.accountLabel?.trim() || connection.name} (
+													<code>{connection.name}</code>)
+												</li>
+											))}
+										</ul>
+									) : (
+										<p mix={css(descriptionCss)}>
+											No connections currently share these credentials.
+										</p>
+									)}
+									{rotateMessage ? (
+										<AccountManagementMessage tone={rotateMessageTone}>
+											{rotateMessage}
+										</AccountManagementMessage>
+									) : null}
+									<form
+										mix={[
+											on('submit', (event) => {
+												event.preventDefault()
+												void submitRotateCredentials(selectedApp)
+											}),
+											css({
+												display: 'grid',
+												gap: spacing.md,
+												marginTop: spacing.sm,
+											}),
+										]}
+									>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>
+												Client ID (optional to keep current)
+											</span>
+											<input
+												type="text"
+												name="oauthAppClientId"
+												value={rotateClientId}
+												{...passwordManagerIgnoreProps}
+												mix={[
+													on('input', (event) => {
+														rotateClientId = event.currentTarget.value
+														handle.update()
+													}),
+													css(inputCss),
+												]}
+											/>
+										</label>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>New client secret</span>
+											<input
+												type="password"
+												name="oauthAppClientSecret"
+												value={rotateClientSecret}
+												{...passwordManagerIgnoreProps}
+												mix={[
+													on('input', (event) => {
+														rotateClientSecret = event.currentTarget.value
+														handle.update()
+													}),
+													css(inputCss),
+												]}
+											/>
+										</label>
+										<label
+											mix={css({
+												display: 'flex',
+												alignItems: 'flex-start',
+												gap: spacing.sm,
+												color: colors.text,
+												fontSize: typography.fontSize.sm,
+											})}
+										>
+											<input
+												type="checkbox"
+												checked={rotateConfirmed}
+												mix={on('change', (event) => {
+													rotateConfirmed = event.currentTarget.checked
+													handle.update()
+												})}
+											/>
+											<span>
+												I understand this updates credentials for
+												{selectedApp.connections.length === 0
+													? ' this OAuth app'
+													: selectedApp.connections.length === 1
+														? ' 1 connection that shares this OAuth app'
+														: ` all ${selectedApp.connections.length} connections that share this OAuth app`}
+												.
+											</span>
+										</label>
+										<div>
+											<button
+												type="submit"
+												disabled={rotateStatus === 'saving' || !rotateConfirmed}
+												mix={css(getDangerButtonCss())}
+											>
+												{rotateStatus === 'saving'
+													? 'Rotating...'
+													: 'Rotate credentials'}
+											</button>
+										</div>
+									</form>
+								</section>
+							</section>
+						) : selectedIntegration ? (
 							<section mix={css(cardCss)}>
 								<header
 									mix={css({
@@ -443,7 +944,16 @@ export function AccountIntegrationsRoute(handle: Handle) {
 										</h2>
 										<p mix={css(descriptionCss)}>
 											Connection <code>{selectedIntegration.name}</code> on
-											OAuth app <code>{selectedIntegration.appSlug}</code>
+											OAuth app{' '}
+											<a
+												href={buildOauthAppHref(
+													selectedIntegration.appSlug,
+													getCurrentSearch(),
+												)}
+												mix={css(primaryLinkCss)}
+											>
+												<code>{selectedIntegration.appSlug}</code>
+											</a>
 											{selectedAppConnectionCount > 1
 												? ` · ${selectedAppConnectionCount} connections share this app`
 												: ''}
@@ -509,6 +1019,17 @@ export function AccountIntegrationsRoute(handle: Handle) {
 											),
 										)}
 									</div>
+									<p mix={css({ ...descriptionCss, marginTop: spacing.sm })}>
+										<a
+											href={buildOauthAppHref(
+												selectedIntegration.appSlug,
+												getCurrentSearch(),
+											)}
+											mix={css(primaryLinkCss)}
+										>
+											Manage OAuth app
+										</a>
+									</p>
 								</section>
 
 								<section mix={css(detailGridCss)}>
@@ -541,6 +1062,23 @@ export function AccountIntegrationsRoute(handle: Handle) {
 									</p>
 								)}
 							</section>
+						) : showOauthAppNotFound ? (
+							<div mix={css({ ...cardCss, gap: spacing.sm })}>
+								<h2
+									mix={css({
+										margin: 0,
+										fontSize: typography.fontSize.lg,
+										fontWeight: typography.fontWeight.semibold,
+										color: colors.text,
+									})}
+								>
+									OAuth app not found
+								</h2>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									This OAuth app does not exist for this account or is
+									unavailable.
+								</p>
+							</div>
 						) : showIntegrationNotFound ? (
 							<div mix={css({ ...cardCss, gap: spacing.sm })}>
 								<h2
@@ -571,8 +1109,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 									Select an integration
 								</h2>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Pick an integration from the list to view its status, or
-									reconnect it.
+									Pick a connection or OAuth app from the list to view its
+									status, reconnect, or rotate shared credentials.
 								</p>
 							</div>
 						)}

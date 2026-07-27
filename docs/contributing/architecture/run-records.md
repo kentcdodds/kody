@@ -247,6 +247,16 @@ Modelled on the
 | **Usage metering**              | How many / how long / aggregate cost pressure   | Analytics Engine + D1 `usage_rollups`     |
 | **Sentry**                      | Platform defects operators should fix           | Sentry project                            |
 | **Entity state columns/tables** | Current status (`last_run_*`, service liveness) | D1 entity rows / `package_service_states` |
+| **Package subscriptions**       | Same-user reaction to terminal errors           | Best-effort dispatch after `finishRun`    |
+
+After a successful terminal `finishRun` with `status: 'error'`,
+`finishRunRecord` best-effort dispatches `run.error.recorded` to the owning
+user’s packages that declare the topic (see
+`packages/worker/src/run-records/package-subscriptions.ts` and
+[Package subscriptions](../../guides/package-subscriptions.md)). Emission skips
+`surface === 'subscription'` so a failing notifier cannot recurse. Discovery and
+invocation infrastructure failures are warned, never thrown into the observed
+run path. There is no Queue for this topic in v1.
 
 **Usage metering** and run records are the aggregates/records pair: metering is
 sampling-tolerant and quota-oriented; run records are user-facing history.

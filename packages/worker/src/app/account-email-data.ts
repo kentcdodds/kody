@@ -25,9 +25,11 @@ import {
 	listEmailInboxesForUser,
 } from '#worker/email/repo.ts'
 import {
+	emailClassificationValues,
 	emailDeliveryStatusValues,
 	emailDirectionValues,
 	emailProcessingStatusValues,
+	type EmailClassification,
 	type EmailDeliveryStatus,
 	type EmailDirection,
 	type EmailProcessingStatus,
@@ -85,6 +87,8 @@ export type AccountEmailMessageListItem = {
 	subject: string | null
 	message_id_header: string | null
 	processing_status: EmailProcessingStatus
+	classification: EmailClassification
+	classification_reason: string | null
 	provider_message_id: string | null
 	delivery_status: EmailDeliveryStatus | null
 	delivery_status_at: string | null
@@ -152,6 +156,8 @@ export type AccountEmailLoaderData = {
 	pageSize: number
 	total: number
 	query: string
+	/** `null` means no classification filter (all messages). */
+	classification: EmailClassification | null
 }
 
 export function readAccountEmailSelectedMessageId(
@@ -202,6 +208,24 @@ function parseDeliveryStatus(value: unknown): EmailDeliveryStatus | null {
 		: null
 }
 
+function parseClassification(value: unknown): EmailClassification {
+	if (value == null) return 'accepted'
+	const raw = String(value)
+	return (emailClassificationValues as ReadonlyArray<string>).includes(raw)
+		? (raw as EmailClassification)
+		: 'accepted'
+}
+
+export function readAccountEmailClassificationFilter(
+	requestUrl: string,
+): EmailClassification | null {
+	const url = new URL(requestUrl, 'http://localhost')
+	const raw = url.searchParams.get('classification')?.trim() ?? ''
+	return (emailClassificationValues as ReadonlyArray<string>).includes(raw)
+		? (raw as EmailClassification)
+		: null
+}
+
 function parseJsonStringArray(value: unknown): Array<string> {
 	if (typeof value !== 'string' || !value) return []
 	try {
@@ -233,6 +257,11 @@ function rowToListItem(
 				? null
 				: String(row['message_id_header']),
 		processing_status: parseProcessingStatus(row['processing_status']),
+		classification: parseClassification(row['classification']),
+		classification_reason:
+			row['classification_reason'] == null
+				? null
+				: String(row['classification_reason']),
 		provider_message_id:
 			row['provider_message_id'] == null
 				? null
@@ -254,9 +283,11 @@ async function countAndListMessages(input: {
 	db: D1Database
 	userId: string
 	query: string
+	classification: EmailClassification | null
 	pageSize: number
 	offset: number
 }) {
+	const classification = input.classification
 	if (input.query) {
 		const pattern = `%${escapeLikePattern(input.query.toLowerCase())}%`
 		const [totalResult, messageRows] = await Promise.all([
@@ -265,19 +296,28 @@ async function countAndListMessages(input: {
 					`SELECT COUNT(*) AS total
 					FROM email_messages
 					WHERE user_id = ?
+						AND (? IS NULL OR classification = ?)
 						AND (
 							LOWER(subject) LIKE ? ESCAPE '\\'
 							OR LOWER(from_address) LIKE ? ESCAPE '\\'
 							OR LOWER(COALESCE(envelope_from, '')) LIKE ? ESCAPE '\\'
 						)`,
 				)
-				.bind(input.userId, pattern, pattern, pattern)
+				.bind(
+					input.userId,
+					classification,
+					classification,
+					pattern,
+					pattern,
+					pattern,
+				)
 				.first<{ total: number }>(),
 			input.db
 				.prepare(
 					`SELECT *
 					FROM email_messages
 					WHERE user_id = ?
+						AND (? IS NULL OR classification = ?)
 						AND (
 							LOWER(subject) LIKE ? ESCAPE '\\'
 							OR LOWER(from_address) LIKE ? ESCAPE '\\'
@@ -288,6 +328,8 @@ async function countAndListMessages(input: {
 				)
 				.bind(
 					input.userId,
+					classification,
+					classification,
 					pattern,
 					pattern,
 					pattern,
@@ -307,19 +349,27 @@ async function countAndListMessages(input: {
 			.prepare(
 				`SELECT COUNT(*) AS total
 				FROM email_messages
-				WHERE user_id = ?`,
+				WHERE user_id = ?
+					AND (? IS NULL OR classification = ?)`,
 			)
-			.bind(input.userId)
+			.bind(input.userId, classification, classification)
 			.first<{ total: number }>(),
 		input.db
 			.prepare(
 				`SELECT *
 				FROM email_messages
 				WHERE user_id = ?
+					AND (? IS NULL OR classification = ?)
 				ORDER BY created_at DESC, id DESC
 				LIMIT ? OFFSET ?`,
 			)
-			.bind(input.userId, input.pageSize, input.offset)
+			.bind(
+				input.userId,
+				classification,
+				classification,
+				input.pageSize,
+				input.offset,
+			)
 			.all<Record<string, unknown>>(),
 	])
 	return {
@@ -429,6 +479,8 @@ async function loadSelectedMessage(input: {
 	const detail = toMessageDetail(message, attachments)
 	return {
 		...detail,
+		classification: message.classification,
+		classification_reason: message.classificationReason,
 		delivery_events: deliveryEvents.map((event) => ({
 			id: event.id,
 			event_type: event.eventType,
@@ -459,6 +511,7 @@ function emptyVerifiedShell(input: {
 	page: number
 	pageSize: number
 	query: string
+	classification: EmailClassification | null
 	emailVerified: boolean
 }): AccountEmailLoaderData {
 	return {
@@ -481,6 +534,7 @@ function emptyVerifiedShell(input: {
 		pageSize: input.pageSize,
 		total: 0,
 		query: input.query,
+		classification: input.classification,
 	}
 }
 
@@ -496,6 +550,7 @@ export async function loadAccountEmailData(input: {
 		maxPageSize,
 	})
 	const query = url.searchParams.get('q')?.trim() ?? ''
+	const classification = readAccountEmailClassificationFilter(input.request.url)
 	const userId = input.user.mcpUser.userId
 	const emailVerified =
 		input.user.emailVerified ||
@@ -512,6 +567,7 @@ export async function loadAccountEmailData(input: {
 			page,
 			pageSize,
 			query,
+			classification,
 			emailVerified: false,
 		})
 	}
@@ -526,6 +582,7 @@ export async function loadAccountEmailData(input: {
 			db: input.env.APP_DB,
 			userId,
 			query,
+			classification,
 			pageSize,
 			offset,
 		}),
@@ -562,5 +619,6 @@ export async function loadAccountEmailData(input: {
 		pageSize,
 		total: listResult.total,
 		query,
+		classification,
 	}
 }

@@ -112,6 +112,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.accountBilling)]: accountBillingRouteLoader,
 	[routePattern(routes.accountUsage)]: accountUsageRouteLoader,
 	[routePattern(routes.accountIntegrations)]: accountIntegrationsRouteLoader,
+	[routePattern(routes.accountOauthAppDetail)]: accountIntegrationsRouteLoader,
 	[routePattern(routes.accountIntegrationDetail)]:
 		accountIntegrationsRouteLoader,
 	[routePattern(routes.accountMcpServers)]: accountMcpServersRouteLoader,
@@ -182,6 +183,7 @@ export const clientRoutes = {
 	[routePattern(routes.accountBilling)]: <AccountBillingRoute />,
 	[routePattern(routes.accountUsage)]: <AccountUsageRoute />,
 	[routePattern(routes.accountIntegrations)]: <AccountIntegrationsRoute />,
+	[routePattern(routes.accountOauthAppDetail)]: <AccountIntegrationsRoute />,
 	[routePattern(routes.accountIntegrationDetail)]: <AccountIntegrationsRoute />,
 	[routePattern(routes.accountMcpServers)]: <AccountMcpServersRoute />,
 	[routePattern(routes.accountMcpServerNew)]: <AccountMcpServersRoute />,

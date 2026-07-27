@@ -105,8 +105,9 @@ spec and stores a resolved operation snapshot (1..100 operations; more → error
 narrow the selection). DELETE-method operations are excluded unless
 `includeDestructive` is true, and are always tagged destructive.
 
-Bindings are user-scoped, non-secret values-store config (`_openapi:<name>`).
-Credentials stay in secrets / integrations.
+Bindings are user-scoped, non-secret D1 config (`user_openapi_bindings` plus
+per-operation `user_openapi_binding_operations` rows). Credentials stay in
+secrets / integrations.
 
 At runtime the capability registry synthesizes an `openapi:<name>` domain per
 binding. Invoke from execute:

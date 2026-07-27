@@ -13,11 +13,15 @@ import { listEmailAttachmentsForMessage } from './repo.ts'
 import { type EmailAttachmentRecord, type EmailMessageRecord } from './types.ts'
 
 const inboundEmailReceiptTopic = 'email.message.received'
+export const inboundEmailQuarantinedTopic = 'email.message.quarantined'
 const systemInboundEmailReceiptTopic = 'email.system-message.received'
 export const emailDeliveryUpdatedTopic = 'email.message.delivery.updated'
 
 type EmailReceiptSubscriptionEnvelope = {
-	event: typeof inboundEmailReceiptTopic | typeof systemInboundEmailReceiptTopic
+	event:
+		| typeof inboundEmailReceiptTopic
+		| typeof inboundEmailQuarantinedTopic
+		| typeof systemInboundEmailReceiptTopic
 	message: {
 		id: string
 		inbox_id: string | null
@@ -31,6 +35,8 @@ type EmailReceiptSubscriptionEnvelope = {
 		in_reply_to_header: string | null
 		references: Array<string>
 		processing_status: EmailMessageRecord['processingStatus']
+		classification: EmailMessageRecord['classification']
+		classification_reason: string | null
 		received_at: string | null
 		created_at: string
 	}
@@ -97,6 +103,8 @@ function buildEmailEventPayload(input: {
 			in_reply_to_header: input.message.inReplyToHeader,
 			references: stringArray(input.message.references),
 			processing_status: input.message.processingStatus,
+			classification: input.message.classification,
+			classification_reason: input.message.classificationReason,
 			received_at: input.message.receivedAt,
 			created_at: input.message.createdAt,
 		},
@@ -181,15 +189,19 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 		db: input.env.APP_DB,
 		messageId: input.message.id,
 	})
+	const topic =
+		input.message.classification === 'quarantined'
+			? inboundEmailQuarantinedTopic
+			: inboundEmailReceiptTopic
 	const { subscriptions, discoveryErrors } =
 		await loadMatchingEmailSubscriptions({
 			env: input.env,
 			baseUrl,
 			userId: input.userId,
-			topic: inboundEmailReceiptTopic,
+			topic,
 		})
 	const eventPayload = buildEmailEventPayload({
-		event: inboundEmailReceiptTopic,
+		event: topic,
 		message: input.message,
 		attachments,
 	})
@@ -199,12 +211,12 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 				env: input.env as Env,
 				baseUrl,
 				savedPackage,
-				topic: inboundEmailReceiptTopic,
+				topic,
 				params: eventPayload as Record<string, unknown>,
 				idempotencyKey: buildSubscriptionIdempotencyKey({
 					messageId: input.message.id,
 					packageId: savedPackage.id,
-					topic: inboundEmailReceiptTopic,
+					topic,
 				}),
 				source: 'email',
 				waitUntil: input.waitUntil,

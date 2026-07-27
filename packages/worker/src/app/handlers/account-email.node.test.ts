@@ -13,6 +13,8 @@ const messageRow = {
 	subject: 'Hello from sender',
 	message_id_header: '<msg-1@example.com>',
 	processing_status: 'stored',
+	classification: 'accepted',
+	classification_reason: null,
 	provider_message_id: null,
 	delivery_status: null,
 	delivery_status_at: null,
@@ -47,6 +49,8 @@ const messageRecord = {
 	rawMimeKey: null,
 	rawSize: 128,
 	processingStatus: 'stored' as const,
+	classification: 'accepted' as const,
+	classificationReason: null,
 	providerMessageId: null,
 	deliveryStatus: null,
 	deliveryStatusAt: null,
@@ -147,6 +151,7 @@ const mockModule = vi.hoisted(() => ({
 			createdAt: new Date(0).toISOString(),
 		},
 	]),
+	setEmailMessageClassification: vi.fn(async () => true),
 	prepare: vi.fn(),
 }))
 
@@ -210,6 +215,8 @@ vi.mock('#worker/email/repo.ts', () => ({
 		mockModule.listEmailAttachmentsForMessage(...args),
 	listEmailDeliveryEvents: (...args: Array<unknown>) =>
 		mockModule.listEmailDeliveryEvents(...args),
+	setEmailMessageClassification: (...args: Array<unknown>) =>
+		mockModule.setEmailMessageClassification(...args),
 }))
 
 const { createAccountEmailApiHandler } = await import('./account-email.ts')
@@ -285,6 +292,8 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 				subject: 'Hello from sender',
 				direction: 'inbound',
 				from_address: 'sender@example.com',
+				classification: 'accepted',
+				classification_reason: null,
 			}),
 		],
 		selectedMessage: null,
@@ -299,6 +308,7 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 		pageSize: 25,
 		total: 1,
 		query: '',
+		classification: null,
 	})
 
 	mockModule.prepare.mockClear()
@@ -328,10 +338,13 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 		page: 2,
 		pageSize: 10,
 		query: 'Hello',
+		classification: null,
 		selectedMessage: expect.objectContaining({
 			id: 'msg-1',
 			text_body: 'Plain text body',
 			html_body: '<p>HTML body</p>',
+			classification: 'accepted',
+			classification_reason: null,
 			attachments: [
 				expect.objectContaining({
 					id: 'att-1',
@@ -347,20 +360,146 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 		}),
 	})
 
-	const postResponse = await handler.handler({
+	const putResponse = await handler.handler({
 		request: new Request('https://example.com/account/email.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'anything' }),
+			method: 'PUT',
 		}),
 	})
-	expect(postResponse.status).toBe(405)
+	expect(putResponse.status).toBe(405)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null as never)
 	const unauthorizedResponse = await handler.handler({
 		request: new Request('https://example.com/account/email.json'),
 	})
 	expect(unauthorizedResponse.status).toBe(401)
+})
+
+test('email API filters quarantined messages and surfaces classification', async () => {
+	const quarantinedRow = {
+		...messageRow,
+		id: 'msg-quarantined',
+		classification: 'quarantined',
+		classification_reason: 'DMARC failed.',
+	}
+	let prepareCall = 0
+	mockModule.prepare.mockImplementation((sql: string) => {
+		prepareCall += 1
+		expect(sql).toContain('(? IS NULL OR classification = ?)')
+		if (prepareCall % 2 === 1) return createCountResult(1)
+		return createListResult([quarantinedRow])
+	})
+	mockModule.getEmailMessageById.mockResolvedValueOnce({
+		...messageRecord,
+		id: 'msg-quarantined',
+		classification: 'quarantined',
+		classificationReason: 'DMARC failed.',
+	})
+
+	const env = {
+		APP_DB: {
+			prepare: (...args: Array<unknown>) =>
+				mockModule.prepare(...(args as [string])),
+		} as unknown as D1Database,
+		APP_BASE_URL: 'https://example.com',
+		COOKIE_SECRET: 'secret',
+	} as Env
+	const response = await createAccountEmailApiHandler(env).handler({
+		request: new Request(
+			'https://example.com/account/email.json?classification=quarantined&selected=msg-quarantined',
+		),
+	})
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		classification: 'quarantined',
+		messages: [
+			expect.objectContaining({
+				id: 'msg-quarantined',
+				classification: 'quarantined',
+				classification_reason: 'DMARC failed.',
+			}),
+		],
+		selectedMessage: expect.objectContaining({
+			id: 'msg-quarantined',
+			classification: 'quarantined',
+			classification_reason: 'DMARC failed.',
+		}),
+	})
+})
+
+test('email API classifies inbound messages as spam or not spam', async () => {
+	mockModule.setEmailMessageClassification.mockClear()
+	mockModule.prepare.mockClear()
+	const env = createEnv()
+	const handler = createAccountEmailApiHandler(env)
+
+	const quarantineResponse = await handler.handler({
+		request: new Request('https://example.com/account/email.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'classify',
+				message_id: 'msg-1',
+				classification: 'quarantined',
+			}),
+		}),
+	})
+	expect(quarantineResponse.status).toBe(200)
+	expect(mockModule.setEmailMessageClassification).toHaveBeenCalledWith({
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		messageId: 'msg-1',
+		classification: 'quarantined',
+		classificationReason: 'Reclassified by user.',
+	})
+	await expect(quarantineResponse.json()).resolves.toMatchObject({
+		ok: true,
+		selectedMessage: expect.objectContaining({ id: 'msg-1' }),
+	})
+
+	mockModule.setEmailMessageClassification.mockClear()
+	const acceptResponse = await handler.handler({
+		request: new Request('https://example.com/account/email.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'classify',
+				message_id: 'msg-1',
+				classification: 'accepted',
+			}),
+		}),
+	})
+	expect(acceptResponse.status).toBe(200)
+	expect(mockModule.setEmailMessageClassification).toHaveBeenCalledWith({
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		messageId: 'msg-1',
+		classification: 'accepted',
+		classificationReason: null,
+	})
+
+	mockModule.setEmailMessageClassification.mockResolvedValueOnce(false)
+	const missingResponse = await handler.handler({
+		request: new Request('https://example.com/account/email.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'classify',
+				message_id: 'missing',
+				classification: 'quarantined',
+			}),
+		}),
+	})
+	expect(missingResponse.status).toBe(404)
+
+	const invalidActionResponse = await handler.handler({
+		request: new Request('https://example.com/account/email.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ action: 'delete' }),
+		}),
+	})
+	expect(invalidActionResponse.status).toBe(400)
 })
 
 test('email API gates unverified accounts and skips mailbox queries', async () => {
@@ -403,6 +542,7 @@ test('email API gates unverified accounts and skips mailbox queries', async () =
 		selectedMessage: null,
 		usage: null,
 		total: 0,
+		classification: null,
 	})
 })
 

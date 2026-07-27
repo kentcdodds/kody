@@ -269,6 +269,34 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 		return { outcome: 'usage-only' as const }
 	}
 	try {
+		if (
+			input.userId === systemEmailOwnerId &&
+			message.classification === 'quarantined'
+		) {
+			await input.env.APP_DB.prepare(
+				`UPDATE email_delivery_events
+				SET detail_json = json_remove(
+					json_remove(
+						json_remove(
+							json_set(
+								detail_json,
+								'$.subscriptionEffectState', 'complete',
+								'$.subscriptionEffectSuppressedQuarantineAt', ?
+							),
+							'$.subscriptionEffectLease'
+						),
+						'$.subscriptionEffectLeaseAt'
+					),
+					'$.subscriptionEffectRetryAt'
+				)
+				WHERE id = ?
+					AND user_id = ?
+					AND json_extract(detail_json, '$.subscriptionEffectLease') = ?`,
+			)
+				.bind(now.toISOString(), delivery.deliveryId, input.userId, effectLease)
+				.run()
+			return { outcome: 'complete' as const }
+		}
 		if (input.userId === systemEmailOwnerId) {
 			await dispatchSystemInboundEmailSubscriptionEvents({
 				env: input.env,

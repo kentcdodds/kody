@@ -231,10 +231,9 @@ async function loadOpenApiBindingsForRegistry(input: {
 		return await listOpenApiBindings({
 			env: input.env,
 			userId: input.userId,
-			storageContext: null,
 		})
 	} catch {
-		// A values-store failure must not break builtin capabilities.
+		// A binding-store failure must not break builtin capabilities.
 		return []
 	}
 }

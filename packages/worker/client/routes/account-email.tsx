@@ -27,7 +27,11 @@ import {
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
+	fieldCss,
+	fieldLabelCss,
+	getDangerButtonCss,
 	getSecondaryButtonCss,
+	inputCss,
 } from '#client/styles/style-primitives.ts'
 import {
 	type AccountEmailLoaderData,
@@ -36,9 +40,24 @@ import {
 } from '#app/loader-data.ts'
 
 type PageStatus = 'loading' | 'ready' | 'error'
+type ClassifyState = 'idle' | 'saving'
+type ClassificationFilter = 'all' | 'quarantined'
 
 const accountEmailApiPath = '/account/email.json'
 const emailRoute = createListDetailRoute('/account/email')
+
+const quarantinedBadgeCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	padding: `0.2rem ${spacing.sm}`,
+	borderRadius: radius.md,
+	border: `1px solid ${colors.danger}`,
+	backgroundColor:
+		'color-mix(in srgb, var(--color-danger) 10%, var(--color-surface))',
+	color: colors.danger,
+	fontSize: typography.fontSize.xs,
+	fontWeight: typography.fontWeight.semibold,
+} as const
 
 const emailBodyPreCss = css({
 	margin: 0,
@@ -77,6 +96,13 @@ function readPage(href: string) {
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
 }
 
+function readClassificationFilter(href: string): ClassificationFilter {
+	const raw = new URL(href, 'http://localhost').searchParams
+		.get('classification')
+		?.trim()
+	return raw === 'quarantined' ? 'quarantined' : 'all'
+}
+
 /**
  * List window depends on search + page; selection also needs a server fetch
  * for message bodies, so the data key includes the selected message id.
@@ -84,7 +110,7 @@ function readPage(href: string) {
 function getDataKey(href: string) {
 	const url = new URL(href, 'http://localhost')
 	const selectedId = emailRoute.getSelection(href).selectedId ?? ''
-	return `${url.pathname}?q=${readSearchQuery(href)}&page=${readPage(href)}&pageSize=${url.searchParams.get('pageSize') ?? ''}&selected=${selectedId}`
+	return `${url.pathname}?q=${readSearchQuery(href)}&page=${readPage(href)}&pageSize=${url.searchParams.get('pageSize') ?? ''}&classification=${readClassificationFilter(href)}&selected=${selectedId}`
 }
 
 function buildEmailApiRequestUrl(href: string) {
@@ -96,6 +122,10 @@ function buildEmailApiRequestUrl(href: string) {
 	if (page) requestUrl.searchParams.set('page', page)
 	const pageSize = url.searchParams.get('pageSize')
 	if (pageSize) requestUrl.searchParams.set('pageSize', pageSize)
+	const classification = readClassificationFilter(href)
+	if (classification !== 'all') {
+		requestUrl.searchParams.set('classification', classification)
+	}
 	const selectedId = emailRoute.getSelection(href).selectedId
 	if (selectedId) requestUrl.searchParams.set('selected', selectedId)
 	return `${requestUrl.pathname}${requestUrl.search}`
@@ -142,12 +172,15 @@ export function AccountEmailRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
 	let data: AccountEmailLoaderData | null = null
 	let message: string | null = null
+	let messageTone: 'error' | 'info' = 'info'
+	let classifyState: ClassifyState = 'idle'
 	let loadRequestId = 0
 	let lastLoadedDataKey = ''
 	let loadingDataKey: string | null = null
 	let lastFailedDataKey: string | null = null
 
 	const secondaryButtonCss = getSecondaryButtonCss()
+	const dangerButtonCss = getDangerButtonCss()
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
@@ -172,6 +205,14 @@ export function AccountEmailRoute(handle: Handle) {
 		return `${nextUrl.pathname}${nextUrl.search}`
 	}
 
+	function buildHrefWithClassification(filter: ClassificationFilter) {
+		const nextUrl = new URL(getCurrentHref(), 'http://localhost')
+		if (filter === 'all') nextUrl.searchParams.delete('classification')
+		else nextUrl.searchParams.set('classification', filter)
+		nextUrl.searchParams.delete('page')
+		return `${nextUrl.pathname}${nextUrl.search}`
+	}
+
 	function applyPayload(payload: AccountEmailLoaderData, href: string) {
 		data = payload
 		const selectedId = emailRoute.getSelection(href).selectedId
@@ -180,9 +221,71 @@ export function AccountEmailRoute(handle: Handle) {
 			: selectedId && !payload.selectedMessage
 				? 'Message not found.'
 				: null
+		messageTone =
+			!payload.emailVerified || (selectedId && !payload.selectedMessage)
+				? 'error'
+				: 'info'
 		status = 'ready'
 		lastLoadedDataKey = getDataKey(href)
 		lastFailedDataKey = null
+	}
+
+	async function classifySelectedMessage(
+		classification: 'accepted' | 'quarantined',
+	) {
+		const selected = data?.selectedMessage
+		if (
+			!selected ||
+			selected.direction !== 'inbound' ||
+			classifyState !== 'idle'
+		)
+			return
+		classifyState = 'saving'
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(buildEmailApiRequestUrl(getCurrentHref()), {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'classify',
+					message_id: selected.id,
+					classification,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountEmailLoaderData & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(
+					payload?.error || 'Unable to update message classification.',
+				)
+			}
+			applyPayload(payload, getCurrentHref())
+			classifyState = 'idle'
+			message =
+				classification === 'quarantined'
+					? 'Marked as spam.'
+					: 'Marked as not spam.'
+			messageTone = 'info'
+			handle.update()
+		} catch (error) {
+			classifyState = 'idle'
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to update message classification.'
+			messageTone = 'error'
+			handle.update()
+		}
 	}
 
 	async function loadAccountEmail() {
@@ -221,6 +324,7 @@ export function AccountEmailRoute(handle: Handle) {
 				error instanceof Error
 					? error.message
 					: 'Unable to load your email inbox.'
+			messageTone = 'error'
 			lastFailedDataKey = dataKey
 			handle.update()
 		} finally {
@@ -270,6 +374,10 @@ export function AccountEmailRoute(handle: Handle) {
 			: 1
 		const currentPage = data?.page ?? readPage(currentHref)
 		const searchQuery = data?.query ?? readSearchQuery(currentHref)
+		const classificationFilter =
+			data?.classification === 'quarantined'
+				? 'quarantined'
+				: readClassificationFilter(currentHref)
 		const showUnverified = data != null && !data.emailVerified
 
 		return (
@@ -287,9 +395,7 @@ export function AccountEmailRoute(handle: Handle) {
 				{message ? (
 					<AccountManagementMessage
 						tone={
-							status === 'error' || showUnverified || selectedMessageId
-								? 'error'
-								: 'info'
+							status === 'error' || messageTone === 'error' ? 'error' : 'info'
 						}
 					>
 						{message}
@@ -337,18 +443,47 @@ export function AccountEmailRoute(handle: Handle) {
 									title="Messages"
 									description="Select a message to read its body and metadata."
 								>
-									<AccountManagementSearchField
-										label="Search"
-										placeholder="Search subject or from"
-										value={searchQuery}
-										onInput={(value) => {
-											replaceLocation(buildHrefWithUpdatedSearch(value))
-										}}
-									/>
+									<div
+										mix={css({
+											display: 'grid',
+											gap: spacing.sm,
+										})}
+									>
+										<AccountManagementSearchField
+											label="Search"
+											placeholder="Search subject or from"
+											value={searchQuery}
+											onInput={(value) => {
+												replaceLocation(buildHrefWithUpdatedSearch(value))
+											}}
+										/>
+										<label mix={css(fieldCss)}>
+											<span mix={css(fieldLabelCss)}>Filter</span>
+											<select
+												value={classificationFilter}
+												aria-label="Filter messages by classification"
+												mix={[
+													on('change', (event) => {
+														const nextFilter =
+															event.currentTarget.value === 'quarantined'
+																? 'quarantined'
+																: 'all'
+														replaceLocation(
+															buildHrefWithClassification(nextFilter),
+														)
+													}),
+													css(inputCss),
+												]}
+											>
+												<option value="all">All messages</option>
+												<option value="quarantined">Quarantined</option>
+											</select>
+										</label>
+									</div>
 									{status === 'ready' && data.messages.length === 0 ? (
 										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											{searchQuery
-												? 'No messages match the current search.'
+											{searchQuery || classificationFilter !== 'all'
+												? 'No messages match the current filters.'
 												: 'No messages in your inbox yet.'}
 										</p>
 									) : (
@@ -413,14 +548,30 @@ export function AccountEmailRoute(handle: Handle) {
 															</span>
 															<span
 																mix={css({
-																	...truncatedTextCss,
-																	display: 'block',
+																	display: 'flex',
+																	flexWrap: 'wrap',
+																	gap: spacing.xs,
+																	alignItems: 'center',
 																	fontSize: typography.fontSize.xs,
 																	color: colors.textMuted,
 																})}
 															>
-																{directionLabel(emailMessage.direction)} ·{' '}
-																{statusLabel(emailMessage)}
+																<span>
+																	{directionLabel(emailMessage.direction)} ·{' '}
+																	{statusLabel(emailMessage)}
+																</span>
+																{emailMessage.classification ===
+																'quarantined' ? (
+																	<span
+																		title={
+																			emailMessage.classification_reason ??
+																			'Quarantined'
+																		}
+																		mix={css(quarantinedBadgeCss)}
+																	>
+																		Quarantined
+																	</span>
+																) : null}
 															</span>
 														</AccountManagementListItemButton>
 													</li>
@@ -493,21 +644,94 @@ export function AccountEmailRoute(handle: Handle) {
 							{selectedMessage ? (
 								<div mix={css({ ...cardCss, gap: spacing.lg })}>
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2
+										<div
 											mix={css({
-												margin: 0,
-												fontSize: typography.fontSize.lg,
-												fontWeight: typography.fontWeight.semibold,
-												color: colors.text,
-												overflowWrap: 'anywhere',
+												display: 'flex',
+												flexWrap: 'wrap',
+												gap: spacing.sm,
+												alignItems: 'center',
 											})}
 										>
-											{selectedMessage.subject || '(no subject)'}
-										</h2>
+											<h2
+												mix={css({
+													margin: 0,
+													fontSize: typography.fontSize.lg,
+													fontWeight: typography.fontWeight.semibold,
+													color: colors.text,
+													overflowWrap: 'anywhere',
+												})}
+											>
+												{selectedMessage.subject || '(no subject)'}
+											</h2>
+											{selectedMessage.classification === 'quarantined' ? (
+												<span
+													title={
+														selectedMessage.classification_reason ??
+														'Quarantined'
+													}
+													mix={css(quarantinedBadgeCss)}
+												>
+													Quarantined
+												</span>
+											) : null}
+										</div>
 										<p mix={css({ margin: 0, color: colors.textMuted })}>
 											{directionLabel(selectedMessage.direction)} message
 										</p>
+										{selectedMessage.classification === 'quarantined' &&
+										selectedMessage.classification_reason ? (
+											<p
+												mix={css({
+													margin: 0,
+													color: colors.textMuted,
+													fontSize: typography.fontSize.sm,
+												})}
+											>
+												{selectedMessage.classification_reason}
+											</p>
+										) : null}
 									</div>
+									{selectedMessage.direction === 'inbound' ? (
+										<div
+											mix={css({
+												display: 'flex',
+												flexWrap: 'wrap',
+												gap: spacing.sm,
+											})}
+										>
+											{selectedMessage.classification === 'quarantined' ? (
+												<button
+													type="button"
+													disabled={classifyState !== 'idle'}
+													mix={[
+														on('click', () => {
+															void classifySelectedMessage('accepted')
+														}),
+														css(secondaryButtonCss),
+													]}
+												>
+													{classifyState === 'saving'
+														? 'Updating…'
+														: 'Not spam'}
+												</button>
+											) : (
+												<button
+													type="button"
+													disabled={classifyState !== 'idle'}
+													mix={[
+														on('click', () => {
+															void classifySelectedMessage('quarantined')
+														}),
+														css(dangerButtonCss),
+													]}
+												>
+													{classifyState === 'saving'
+														? 'Updating…'
+														: 'Mark as spam'}
+												</button>
+											)}
+										</div>
+									) : null}
 									<MetadataGrid
 										columns={3}
 										items={[
@@ -541,6 +765,10 @@ export function AccountEmailRoute(handle: Handle) {
 											{
 												label: 'Delivery',
 												value: selectedMessage.delivery_status ?? 'None',
+											},
+											{
+												label: 'Classification',
+												value: selectedMessage.classification,
 											},
 											{
 												label: 'CC',

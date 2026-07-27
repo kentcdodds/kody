@@ -58,8 +58,9 @@ fan-out, or deciding whether a package already subscribes to a topic.
 
 ## `email.message.received`
 
-Stored inbound email dispatches `email.message.received` after Kody stores the
-message and attachment metadata.
+Accepted stored inbound email dispatches `email.message.received` after Kody
+stores the message and attachment metadata. Quarantined mail uses
+`email.message.quarantined` instead.
 
 Handlers receive a metadata-first payload:
 
@@ -101,6 +102,13 @@ bodies, parsed headers beyond the event metadata, or attachment bytes only when
 the handler needs them with `email_message_get`, `email_attachment_get`, or the
 package runtime `email` helper.
 
+## `email.message.quarantined`
+
+Quarantined stored inbound email dispatches `email.message.quarantined` instead
+of `email.message.received`. The payload matches `email.message.received` with
+`event: 'email.message.quarantined'`. Reclassifying a message later does not
+retroactively dispatch either topic.
+
 ## `email.message.delivery.updated`
 
 Outbound Email Sending lifecycle changes dispatch
@@ -117,10 +125,11 @@ delivery history but do not dispatch after a newer status.
 
 ## `email.system-message.received` (admins)
 
-Mail stored in the operator-owned system inbox (`kody@<apex>`, `support@<apex>`,
-and the other reserved system locals) dispatches `email.system-message.received`
-to packages saved by users who hold the admin role at dispatch time. Non-admin
-subscribers never receive system mail.
+Accepted mail stored in the operator-owned system inbox (`kody@<apex>`,
+`support@<apex>`, and the other reserved system locals) dispatches
+`email.system-message.received` to packages saved by users who hold the admin
+role at dispatch time. Quarantined system-inbox mail is stored but never
+dispatched. Non-admin subscribers never receive system mail.
 
 The payload matches `email.message.received` (with
 `event: 'email.system-message.received'`) plus an `admin_url` string linking to
@@ -197,6 +206,57 @@ redelivery safe, but a stored failed invocation replays rather than
 automatically rerunning; the DLQ is the recovery surface. Terminal handler
 execution failures are isolated without preventing attempts for sibling
 subscribers.
+
+## `run.error.recorded`
+
+When a user-scoped Activity / run record finishes with `status: 'error'`, Kody
+dispatches `run.error.recorded` to packages saved by that same user that declare
+the topic. Delivery is best-effort after a successful run-record Durable Object
+write — there is no Queue / DLQ for this topic in v1. Failures during subscriber
+discovery or package-invocation infrastructure are logged and do not fail the
+observed run.
+
+Handlers receive a metadata-first payload:
+
+```ts
+type RunErrorRecordedEvent = {
+	event: 'run.error.recorded'
+	run: {
+		id: string
+		surface: string
+		name: string | null
+		package_id: string | null
+		kody_id: string | null
+		source_id: string | null
+		published_commit: string | null
+		storage_id: string | null
+		job_id: string | null
+		workflow_id: string | null
+		invocation_id: string | null
+		session_id: string | null
+		parent_run_id: string | null
+		started_at: string
+		finished_at: string | null
+		duration_ms: number | null
+		error_name: string | null
+		error_message: string | null
+	}
+	activity_url: string
+}
+```
+
+`activity_url` is built from the trusted deployment origin and links to
+`/account/activity/<runId>`. The event deliberately omits log lines and the full
+run `metadata` blob — fetch detail with `run_get` when needed. Error name and
+message use the same truncation budget as the stored run record.
+
+Recursion guard: runs whose surface is `subscription` never emit this event.
+Subscription-handler failures themselves create run records; emitting again
+would recurse. Successful runs and `execute` successes (which are not persisted)
+never emit. Failed `execute` calls do persist and do emit.
+
+Use this topic for notifier packages that email, write to Sheets, spawn an
+agent, or otherwise react when something in the user's account fails.
 
 ## `community.activity.recorded` (admins)
 

@@ -126,8 +126,14 @@ Prefer integration names like `<provider>-<purpose>` when multiple accounts may
 exist: `google` for a default account, `google-business` for a business account,
 or `google-youtube-brand` for a brand identity. Agents should call
 `integration_list` up front when a provider may have multiple accounts
-connected. Use `integration_oauth_app_list` before rotating shared client
-credentials.
+connected.
+
+Manage shared OAuth apps from `/account/integrations/apps/<app-slug>` (also
+linked from the grouped app headers on `/account/integrations`). That page shows
+app metadata, every connection that shares the credentials, and a form to rotate
+the client secret (and optionally the client id) with an explicit confirmation
+step. Agents can still call `integration_oauth_app_list` and
+`integration_oauth_app_rotate_credentials` when working outside the account UI.
 
 ## Not the same as MCP OAuth
 

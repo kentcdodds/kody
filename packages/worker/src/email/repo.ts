@@ -1,10 +1,15 @@
 import {
+<<<<<<< HEAD
 	maxRestorableTextColumnBytes,
 	truncateToUtf8Bytes,
 	utf8ByteLength,
 } from '@kody-internal/shared/backup-restore-safety.ts'
 import {
+=======
+	emailClassificationValues,
+>>>>>>> origin/main
 	type EmailAttachmentRecord,
+	type EmailClassification,
 	type EmailDeliveryEventRecord,
 	type EmailDirection,
 	type EmailDeliveryEventType,
@@ -145,6 +150,16 @@ function mapThreadRow(row: Record<string, unknown>): EmailThreadRecord {
 	}
 }
 
+function mapClassification(value: unknown): EmailClassification {
+	if (value == null) return 'accepted'
+	const classification = String(value)
+	return (emailClassificationValues as ReadonlyArray<string>).includes(
+		classification,
+	)
+		? (classification as EmailClassification)
+		: 'accepted'
+}
+
 function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 	return {
 		id: String(row['id']),
@@ -195,6 +210,11 @@ function mapMessageRow(row: Record<string, unknown>): EmailMessageRecord {
 			row['raw_mime_key'] == null ? null : String(row['raw_mime_key']),
 		rawSize: row['raw_size'] == null ? null : Number(row['raw_size']),
 		processingStatus: String(row['processing_status']) as EmailProcessingStatus,
+		classification: mapClassification(row['classification']),
+		classificationReason:
+			row['classification_reason'] == null
+				? null
+				: String(row['classification_reason']),
 		providerMessageId:
 			row['provider_message_id'] == null
 				? null
@@ -682,6 +702,8 @@ export async function insertEmailMessage(input: {
 		rawMimeKey?: string | null
 		rawSize?: number | null
 		processingStatus: EmailProcessingStatus
+		classification?: EmailClassification
+		classificationReason?: string | null
 		providerMessageId?: string | null
 		error?: string | null
 		receivedAt?: string | null
@@ -718,6 +740,8 @@ export async function insertEmailMessage(input: {
 		raw_mime_key: input.message.rawMimeKey ?? null,
 		raw_size: input.message.rawSize ?? 0,
 		processing_status: input.message.processingStatus,
+		classification: input.message.classification ?? 'accepted',
+		classification_reason: input.message.classificationReason ?? null,
 		provider_message_id: input.message.providerMessageId ?? null,
 		error: input.message.error ?? null,
 		received_at: input.message.receivedAt ?? null,
@@ -734,11 +758,12 @@ export async function insertEmailMessage(input: {
 				bcc_addresses_json, reply_to_addresses_json, subject, message_id_header,
 				in_reply_to_header, references_json, headers_json, auth_results,
 				text_body, html_body, raw_mime_key, raw_size, processing_status,
+				classification, classification_reason,
 				provider_message_id, error, received_at, sent_at,
 				created_at, updated_at
 			) ${
 				fence
-					? `SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+					? `SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 						WHERE EXISTS (
 							SELECT 1 FROM email_delivery_events
 							WHERE id = ?
@@ -746,7 +771,7 @@ export async function insertEmailMessage(input: {
 								AND json_extract(detail_json, '$.state') = 'storing'
 								AND json_extract(detail_json, '$.storageLease') = ?
 						)`
-					: 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					: 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 			}`,
 		)
 		.bind(
@@ -773,6 +798,8 @@ export async function insertEmailMessage(input: {
 			row.raw_mime_key,
 			row.raw_size,
 			row.processing_status,
+			row.classification,
+			row.classification_reason,
 			row.provider_message_id,
 			row.error,
 			row.received_at,
@@ -837,6 +864,38 @@ export async function getEmailMessageById(input: {
 	return row ? mapMessageRow(row) : null
 }
 
+/**
+ * Reclassify a stored inbound message (spam <-> not spam). Reclassifying to
+ * `accepted` does not retroactively dispatch package subscription events; the
+ * receive-time classification decides dispatch exactly once.
+ */
+export async function setEmailMessageClassification(input: {
+	db: D1Database
+	userId: string
+	messageId: string
+	classification: EmailClassification
+	classificationReason?: string | null
+	now?: string
+}) {
+	const result = await input.db
+		.prepare(
+			`UPDATE email_messages
+			SET classification = ?, classification_reason = ?, updated_at = ?
+			WHERE id = ?
+				AND user_id = ?
+				AND direction = 'inbound'`,
+		)
+		.bind(
+			input.classification,
+			input.classificationReason ?? null,
+			input.now ?? new Date().toISOString(),
+			input.messageId,
+			input.userId,
+		)
+		.run()
+	return Number(result.meta.changes ?? 0) > 0
+}
+
 export async function getOutboundEmailMessageByProviderMessageId(input: {
 	db: D1Database
 	providerMessageId: string
@@ -885,6 +944,7 @@ export async function listEmailMessages(input: {
 	direction?: EmailDirection | null
 	processingStatus?: EmailProcessingStatus | null
 	deliveryStatus?: EmailDeliveryStatus | null
+	classification?: EmailClassification | null
 	limit: number
 }) {
 	const result = await input.db
@@ -896,6 +956,7 @@ export async function listEmailMessages(input: {
 				AND (? IS NULL OR direction = ?)
 				AND (? IS NULL OR processing_status = ?)
 				AND (? IS NULL OR delivery_status = ?)
+				AND (? IS NULL OR classification = ?)
 			ORDER BY created_at DESC, id DESC
 			LIMIT ?`,
 		)
@@ -909,6 +970,8 @@ export async function listEmailMessages(input: {
 			input.processingStatus ?? null,
 			input.deliveryStatus ?? null,
 			input.deliveryStatus ?? null,
+			input.classification ?? null,
+			input.classification ?? null,
 			input.limit,
 		)
 		.all<Record<string, unknown>>()
