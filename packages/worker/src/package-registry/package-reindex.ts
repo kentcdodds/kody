@@ -9,6 +9,7 @@ import {
 	type VectorReindexFailure,
 	type VectorReindexResult,
 } from '#mcp/capabilities/reindex-batches.ts'
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { listSavedPackagesPage, savedPackageVectorId } from './repo.ts'
@@ -33,10 +34,12 @@ export async function reindexSavedPackageVectors(
 	const pageResults: Array<VectorReindexResult> = []
 	let afterId: string | null = null
 	while (true) {
-		const rows = await listSavedPackagesPage(env.APP_DB, {
-			afterId,
-			limit: reindexPageSize,
-		})
+		const rows = await runD1WithRetry(() =>
+			listSavedPackagesPage(env.APP_DB, {
+				afterId,
+				limit: reindexPageSize,
+			}),
+		)
 		if (rows.length === 0) break
 		const loadFailures: Array<VectorReindexFailure> = []
 		const candidates: Array<VectorReindexCandidate> = []

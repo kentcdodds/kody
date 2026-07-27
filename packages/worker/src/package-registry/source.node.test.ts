@@ -1,4 +1,8 @@
 import { expect, test, vi } from 'vitest'
+import {
+	d1LockRetryBaseDelayMs,
+	d1LongRunningExportMessage,
+} from '#worker/d1-retry.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
@@ -378,4 +382,61 @@ test('loadPackageSourceBySourceId evicts failed published source loads before re
 	})
 
 	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(2)
+})
+
+test('loadPackageManifestBySourceId retries transient D1 export errors on the source row read', async () => {
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.loadPublishedEntityManifest.mockReset()
+	const bundleKv = {
+		get: vi.fn(async () => null),
+		put: vi.fn(async () => undefined),
+		delete: vi.fn(async () => undefined),
+	} as unknown as KVNamespace
+	const source = createPackageSourceRow({
+		id: 'source-retry-export',
+		publishedCommit: 'commit-retry-1',
+	})
+	const manifest = {
+		name: '@kentcdodds/example-package',
+		exports: { '.': './index.js' },
+		kody: {
+			id: 'example-package',
+			description: 'Example package',
+		},
+	}
+	mockModule.getEntitySourceById
+		.mockRejectedValueOnce(
+			new Error(`D1_ERROR: ${d1LongRunningExportMessage}.`),
+		)
+		.mockResolvedValueOnce(source)
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source,
+		content: JSON.stringify(manifest),
+		manifest,
+	})
+
+	vi.useFakeTimers()
+	try {
+		const resultPromise = loadPackageManifestBySourceId({
+			env: {
+				APP_DB: {},
+				BUNDLE_ARTIFACTS_KV: bundleKv,
+			} as Env,
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			sourceId: 'source-retry-export',
+		})
+		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
+		await expect(resultPromise).resolves.toMatchObject({
+			manifest: {
+				name: '@kentcdodds/example-package',
+				kody: { id: 'example-package' },
+			},
+		})
+	} finally {
+		vi.useRealTimers()
+	}
+
+	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
+	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
 })

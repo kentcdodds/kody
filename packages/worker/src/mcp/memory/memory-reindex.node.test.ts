@@ -1,4 +1,8 @@
 import { expect, test, vi } from 'vitest'
+import {
+	d1LockRetryBaseDelayMs,
+	d1LockRetryMaxAttempts,
+} from '#worker/d1-retry.ts'
 import { type McpMemoryRow } from './types.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -104,4 +108,58 @@ test('memory reindex returns zero upserts for an empty table', async () => {
 		upserted: 0,
 	})
 	expect(mockModule.listMemoriesPage).toHaveBeenCalledTimes(1)
+})
+
+test('memory reindex retries a transient D1 export error on page listing', async () => {
+	resetMocks()
+	const upsert = vi.fn()
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.embedTextsForVectorize.mockResolvedValue([[0.1]])
+	mockModule.listMemoriesPage
+		.mockRejectedValueOnce(
+			new Error('D1_ERROR: Currently processing a long-running export.'),
+		)
+		.mockResolvedValueOnce([buildMemoryRow('memory-1')])
+
+	vi.useFakeTimers()
+	try {
+		const resultPromise = reindexMemoryVectors({ APP_DB: {} } as Env)
+		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
+		await expect(resultPromise).resolves.toEqual({ upserted: 1 })
+	} finally {
+		vi.useRealTimers()
+	}
+
+	expect(mockModule.listMemoriesPage).toHaveBeenCalledTimes(2)
+	expect(upsert).toHaveBeenCalledTimes(1)
+})
+
+test('memory reindex surfaces page listing failures after the retry budget', async () => {
+	resetMocks()
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert: vi.fn() })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.listMemoriesPage.mockRejectedValue(
+		new Error('D1_ERROR: Currently processing a long-running export.'),
+	)
+
+	vi.useFakeTimers()
+	try {
+		const resultPromise = reindexMemoryVectors({ APP_DB: {} } as Env)
+		const expectation = expect(resultPromise).rejects.toThrow(
+			'Currently processing a long-running export',
+		)
+		for (let attempt = 1; attempt < d1LockRetryMaxAttempts; attempt++) {
+			await vi.advanceTimersByTimeAsync(
+				d1LockRetryBaseDelayMs * 2 ** (attempt - 1),
+			)
+		}
+		await expectation
+	} finally {
+		vi.useRealTimers()
+	}
+
+	expect(mockModule.listMemoriesPage).toHaveBeenCalledTimes(
+		d1LockRetryMaxAttempts,
+	)
 })

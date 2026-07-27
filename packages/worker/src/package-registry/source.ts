@@ -1,3 +1,4 @@
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
@@ -97,7 +98,9 @@ async function resolvePackageSourceRow(input: {
 	userId: string
 	sourceId: string
 }) {
-	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	const source = await runD1WithRetry(() =>
+		getEntitySourceById(input.env.APP_DB, input.sourceId),
+	)
 	if (!source || source.user_id !== input.userId) {
 		throw new Error(`Saved package source "${input.sourceId}" was not found.`)
 	}

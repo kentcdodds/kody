@@ -9,6 +9,7 @@ import {
 } from '#mcp/capabilities/reindex-batches.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { listJobRowsPage } from './repo.ts'
 import { toJobView } from './schedule.ts'
 
@@ -30,10 +31,12 @@ export async function reindexJobVectors(
 	const pageResults: Array<VectorReindexResult> = []
 	let afterId: string | null = null
 	while (true) {
-		const rows = await listJobRowsPage(env.APP_DB, {
-			afterId,
-			limit: reindexPageSize,
-		})
+		const rows = await runD1WithRetry(() =>
+			listJobRowsPage(env.APP_DB, {
+				afterId,
+				limit: reindexPageSize,
+			}),
+		)
 		if (rows.length === 0) break
 		const candidates = rows
 			.filter((row) => row.user_id)
