@@ -108,6 +108,8 @@ test('account jobs defaults to active view and can show history', async ({
 	const activeJobName = `Active job ${runId}`
 	const historyJobId = crypto.randomUUID()
 	const historyJobName = `Past once job ${runId}`
+	const packageJobId = `package-job:pkg-${runId}:nightly`
+	const packageJobName = `Package job ${runId}`
 	insertJob({
 		userId,
 		jobId: activeJobId,
@@ -129,6 +131,15 @@ test('account jobs defaults to active view and can show history', async ({
 		nextRunAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
 		now,
 	})
+	insertJob({
+		userId,
+		jobId: packageJobId,
+		jobName: packageJobName,
+		schedule: { type: 'interval', every: '1d' },
+		enabled: 1,
+		nextRunAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+		now,
+	})
 
 	await login({
 		email: user.email,
@@ -141,11 +152,31 @@ test('account jobs defaults to active view and can show history', async ({
 		page.getByRole('heading', { name: 'Jobs', exact: true }),
 	).toBeVisible()
 	await expect(page.getByLabel('Jobs view filter')).toHaveValue('active')
+	await expect(page.getByLabel('Jobs ownership filter')).toHaveValue('all')
 	await expect(page.getByText(activeJobName, { exact: true })).toBeVisible()
+	await expect(page.getByText(packageJobName, { exact: true })).toBeVisible()
 	await expect(page.getByText(historyJobName, { exact: true })).toHaveCount(0)
 
 	await page.getByLabel('Jobs view filter').selectOption('history')
 	await expect(page).toHaveURL(/view=history/)
 	await expect(page.getByText(historyJobName, { exact: true })).toBeVisible()
 	await expect(page.getByText(activeJobName, { exact: true })).toHaveCount(0)
+
+	await page.getByLabel('Jobs view filter').selectOption('all')
+	await expect(page).toHaveURL(/view=all/)
+	await expect(page.getByText(activeJobName, { exact: true })).toBeVisible()
+	await expect(page.getByText(historyJobName, { exact: true })).toBeVisible()
+	await expect(page.getByText(packageJobName, { exact: true })).toBeVisible()
+
+	await page.getByLabel('Jobs ownership filter').selectOption('package')
+	await expect(page).toHaveURL(/ownership=package/)
+	await expect(page.getByText(packageJobName, { exact: true })).toBeVisible()
+	await expect(page.getByText(activeJobName, { exact: true })).toHaveCount(0)
+	await expect(page.getByText(historyJobName, { exact: true })).toHaveCount(0)
+
+	await page.getByLabel('Jobs ownership filter').selectOption('ad-hoc')
+	await expect(page).toHaveURL(/ownership=ad-hoc/)
+	await expect(page.getByText(activeJobName, { exact: true })).toBeVisible()
+	await expect(page.getByText(historyJobName, { exact: true })).toBeVisible()
+	await expect(page.getByText(packageJobName, { exact: true })).toHaveCount(0)
 })

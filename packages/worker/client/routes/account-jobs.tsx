@@ -13,8 +13,10 @@ import {
 } from '#client/routes/account-approval-shared.ts'
 import {
 	filterAccountJobs,
+	readJobsOwnershipFilter,
 	readJobsSearchFilter,
 	readJobsViewFilter,
+	type AccountJobsOwnershipFilter,
 	type AccountJobsViewFilter,
 } from '#client/routes/account-jobs-filter.ts'
 import {
@@ -72,12 +74,23 @@ const viewFilterOptions: Array<{
 }> = [
 	{ value: 'active', label: 'Active' },
 	{ value: 'history', label: 'History' },
+	{ value: 'all', label: 'All' },
+]
+
+const ownershipFilterOptions: Array<{
+	value: AccountJobsOwnershipFilter
+	label: string
+}> = [
+	{ value: 'all', label: 'All ownership' },
+	{ value: 'ad-hoc', label: 'Ad-hoc' },
+	{ value: 'package', label: 'Package' },
 ]
 
 /**
  * Latch key includes the selected job id because detail fields (recent runs,
- * params, errors) are loaded with `?selected=`. The client-side `q` / `view`
- * filters are omitted so search typing and view toggles do not refetch.
+ * params, errors) are loaded with `?selected=`. The client-side `q` / `view` /
+ * `ownership` filters are omitted so search typing and filter toggles do not
+ * refetch.
  */
 function getDataLatchKey(href: string) {
 	const selectedId = jobsRoute.getSelection(href).selectedId
@@ -90,15 +103,18 @@ function emptyJobsMessage(input: {
 	totalCount: number
 	filteredCount: number
 	view: AccountJobsViewFilter
+	ownership: AccountJobsOwnershipFilter
 	search: string
 }) {
 	if (input.totalCount === 0) return 'No scheduled jobs yet.'
 	if (input.filteredCount > 0) return null
-	if (input.search) return 'No jobs match the current filters.'
+	if (input.search || input.ownership !== 'all' || input.view === 'all') {
+		return 'No jobs match the current filters.'
+	}
 	if (input.view === 'history') {
 		return 'No inactive or past jobs.'
 	}
-	return 'No active or upcoming jobs. Switch to History to see disabled or past jobs.'
+	return 'No active or upcoming jobs. Switch to History or All to see other jobs.'
 }
 
 function buildJobsApiRequestUrl(href: string) {
@@ -225,14 +241,18 @@ export function AccountJobsRoute(handle: Handle) {
 	function buildHrefWithUpdatedFilters(next: {
 		search?: string
 		view?: AccountJobsViewFilter
+		ownership?: AccountJobsOwnershipFilter
 	}) {
 		const nextUrl = new URL(getCurrentHref(), 'http://localhost')
 		const search = next.search ?? nextUrl.searchParams.get('q')?.trim() ?? ''
 		const view = next.view ?? readJobsViewFilter(nextUrl.href)
+		const ownership = next.ownership ?? readJobsOwnershipFilter(nextUrl.href)
 		if (search) nextUrl.searchParams.set('q', search)
 		else nextUrl.searchParams.delete('q')
-		if (view === 'history') nextUrl.searchParams.set('view', 'history')
-		else nextUrl.searchParams.delete('view')
+		if (view === 'active') nextUrl.searchParams.delete('view')
+		else nextUrl.searchParams.set('view', view)
+		if (ownership === 'all') nextUrl.searchParams.delete('ownership')
+		else nextUrl.searchParams.set('ownership', ownership)
 		return `${nextUrl.pathname}${nextUrl.search}`
 	}
 
@@ -379,11 +399,17 @@ export function AccountJobsRoute(handle: Handle) {
 		const selection = jobsRoute.getSelection(currentHref)
 		const search = readJobsSearchFilter(currentHref)
 		const view = readJobsViewFilter(currentHref)
-		const filteredJobs = filterAccountJobs(jobs, { view, search })
+		const ownership = readJobsOwnershipFilter(currentHref)
+		const filteredJobs = filterAccountJobs(jobs, {
+			view,
+			ownership,
+			search,
+		})
 		const listEmptyMessage = emptyJobsMessage({
 			totalCount: jobs.length,
 			filteredCount: filteredJobs.length,
 			view,
+			ownership,
 			search,
 		})
 		const detail =
@@ -433,7 +459,7 @@ export function AccountJobsRoute(handle: Handle) {
 						sidebar={
 							<AccountManagementSidebar
 								title="Scheduled jobs"
-								description="Default view shows active and upcoming jobs. Switch to History for disabled or past jobs."
+								description="Default view shows active and upcoming jobs. Filter by ownership or switch to History/All for other jobs."
 							>
 								<div mix={css({ display: 'grid', gap: spacing.sm })}>
 									<label mix={css(fieldCss)}>
@@ -444,7 +470,11 @@ export function AccountJobsRoute(handle: Handle) {
 											mix={[
 												on('change', (event) => {
 													const value = event.currentTarget.value
-													if (value !== 'active' && value !== 'history') {
+													if (
+														value !== 'active' &&
+														value !== 'history' &&
+														value !== 'all'
+													) {
 														return
 													}
 													replaceLocation(
@@ -455,6 +485,37 @@ export function AccountJobsRoute(handle: Handle) {
 											]}
 										>
 											{viewFilterOptions.map((option) => (
+												<option key={option.value} value={option.value}>
+													{option.label}
+												</option>
+											))}
+										</select>
+									</label>
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>Ownership</span>
+										<select
+											aria-label="Jobs ownership filter"
+											value={ownership}
+											mix={[
+												on('change', (event) => {
+													const value = event.currentTarget.value
+													if (
+														value !== 'all' &&
+														value !== 'ad-hoc' &&
+														value !== 'package'
+													) {
+														return
+													}
+													replaceLocation(
+														buildHrefWithUpdatedFilters({
+															ownership: value,
+														}),
+													)
+												}),
+												css(inputCss),
+											]}
+										>
+											{ownershipFilterOptions.map((option) => (
 												<option key={option.value} value={option.value}>
 													{option.label}
 												</option>
@@ -477,7 +538,7 @@ export function AccountJobsRoute(handle: Handle) {
 										{listEmptyMessage}
 									</p>
 								) : (
-									<AccountManagementList>
+									<AccountManagementList maxHeight="min(65vh, 48rem)">
 										{filteredJobs.map((item) => (
 											<li key={item.id}>
 												<AccountManagementListItemButton

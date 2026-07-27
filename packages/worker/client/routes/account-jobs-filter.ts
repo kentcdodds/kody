@@ -1,6 +1,7 @@
 import { matchesSearchQuery } from '#client/search-filter.ts'
 
-export type AccountJobsViewFilter = 'active' | 'history'
+export type AccountJobsViewFilter = 'active' | 'history' | 'all'
+export type AccountJobsOwnershipFilter = 'all' | 'ad-hoc' | 'package'
 
 export type FilterableAccountJob = {
 	id: string
@@ -34,8 +35,18 @@ export function readJobsViewFilter(href: string): AccountJobsViewFilter {
 	const value = new URL(href, 'http://localhost').searchParams
 		.get('view')
 		?.trim()
-	if (value === 'history') return 'history'
+	if (value === 'history' || value === 'all') return value
 	return 'active'
+}
+
+export function readJobsOwnershipFilter(
+	href: string,
+): AccountJobsOwnershipFilter {
+	const value = new URL(href, 'http://localhost').searchParams
+		.get('ownership')
+		?.trim()
+	if (value === 'ad-hoc' || value === 'package') return value
+	return 'all'
 }
 
 export function readJobsSearchFilter(href: string) {
@@ -46,14 +57,20 @@ export function filterAccountJobs<Job extends FilterableAccountJob>(
 	jobs: ReadonlyArray<Job>,
 	input: {
 		view: AccountJobsViewFilter
+		ownership: AccountJobsOwnershipFilter
 		search: string
 		nowMs?: number
 	},
 ): Array<Job> {
 	const nowMs = input.nowMs ?? Date.now()
 	return jobs.filter((job) => {
-		const active = isActiveAccountJob(job, nowMs)
-		if (input.view === 'active' ? !active : active) return false
+		if (input.ownership !== 'all' && job.ownership !== input.ownership) {
+			return false
+		}
+		if (input.view !== 'all') {
+			const active = isActiveAccountJob(job, nowMs)
+			if (input.view === 'active' ? !active : active) return false
+		}
 		return matchesSearchQuery(input.search, [
 			job.name,
 			job.id,

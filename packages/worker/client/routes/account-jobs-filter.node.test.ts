@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	filterAccountJobs,
 	isActiveAccountJob,
+	readJobsOwnershipFilter,
 	readJobsViewFilter,
 	type FilterableAccountJob,
 } from './account-jobs-filter.ts'
@@ -68,21 +69,46 @@ test('isActiveAccountJob keeps enabled jobs and future disabled once jobs', () =
 	).toBe(false)
 })
 
-test('readJobsViewFilter defaults to active and accepts history', () => {
+test('readJobsViewFilter defaults to active and accepts history/all', () => {
 	expect(readJobsViewFilter('/account/jobs')).toBe('active')
 	expect(readJobsViewFilter('/account/jobs?view=active')).toBe('active')
 	expect(readJobsViewFilter('/account/jobs?view=history')).toBe('history')
+	expect(readJobsViewFilter('/account/jobs?view=all')).toBe('all')
 	expect(readJobsViewFilter('/account/jobs?view=nope')).toBe('active')
 })
 
-test('filterAccountJobs defaults to active ops surface and supports history', () => {
+test('readJobsOwnershipFilter defaults to all and accepts package/ad-hoc', () => {
+	expect(readJobsOwnershipFilter('/account/jobs')).toBe('all')
+	expect(readJobsOwnershipFilter('/account/jobs?ownership=all')).toBe('all')
+	expect(readJobsOwnershipFilter('/account/jobs?ownership=package')).toBe(
+		'package',
+	)
+	expect(readJobsOwnershipFilter('/account/jobs?ownership=ad-hoc')).toBe(
+		'ad-hoc',
+	)
+	expect(readJobsOwnershipFilter('/account/jobs?ownership=nope')).toBe('all')
+})
+
+test('filterAccountJobs supports view and ownership filters', () => {
 	const jobs = [
-		job({ id: 'live-cron', name: 'Live digest', enabled: true }),
+		job({
+			id: 'live-cron',
+			name: 'Live digest',
+			enabled: true,
+			ownership: 'ad-hoc',
+		}),
+		job({
+			id: 'live-package',
+			name: 'Package digest',
+			enabled: true,
+			ownership: 'package',
+		}),
 		job({
 			id: 'upcoming-once',
 			name: 'Tomorrow ping',
 			enabled: false,
 			scheduleType: 'once',
+			ownership: 'ad-hoc',
 			nextRunAt: '2026-07-28T09:00:00.000Z',
 		}),
 		job({
@@ -90,31 +116,64 @@ test('filterAccountJobs defaults to active ops surface and supports history', ()
 			name: 'Failed ping',
 			enabled: false,
 			scheduleType: 'once',
+			ownership: 'ad-hoc',
 			nextRunAt: '2026-07-20T09:00:00.000Z',
 		}),
 		job({
-			id: 'disabled-cron',
-			name: 'Old digest',
+			id: 'disabled-package',
+			name: 'Old package digest',
 			enabled: false,
 			scheduleType: 'cron',
+			ownership: 'package',
 		}),
 	]
 
 	expect(
-		filterAccountJobs(jobs, { view: 'active', search: '', nowMs }).map(
-			(item) => item.id,
-		),
-	).toEqual(['live-cron', 'upcoming-once'])
-
-	expect(
-		filterAccountJobs(jobs, { view: 'history', search: '', nowMs }).map(
-			(item) => item.id,
-		),
-	).toEqual(['failed-once', 'disabled-cron'])
+		filterAccountJobs(jobs, {
+			view: 'active',
+			ownership: 'all',
+			search: '',
+			nowMs,
+		}).map((item) => item.id),
+	).toEqual(['live-cron', 'live-package', 'upcoming-once'])
 
 	expect(
 		filterAccountJobs(jobs, {
 			view: 'history',
+			ownership: 'all',
+			search: '',
+			nowMs,
+		}).map((item) => item.id),
+	).toEqual(['failed-once', 'disabled-package'])
+
+	expect(
+		filterAccountJobs(jobs, {
+			view: 'all',
+			ownership: 'all',
+			search: '',
+			nowMs,
+		}).map((item) => item.id),
+	).toEqual([
+		'live-cron',
+		'live-package',
+		'upcoming-once',
+		'failed-once',
+		'disabled-package',
+	])
+
+	expect(
+		filterAccountJobs(jobs, {
+			view: 'active',
+			ownership: 'package',
+			search: '',
+			nowMs,
+		}).map((item) => item.id),
+	).toEqual(['live-package'])
+
+	expect(
+		filterAccountJobs(jobs, {
+			view: 'history',
+			ownership: 'ad-hoc',
 			search: 'failed',
 			nowMs,
 		}).map((item) => item.id),
