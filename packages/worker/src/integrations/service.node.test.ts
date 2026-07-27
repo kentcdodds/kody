@@ -858,7 +858,7 @@ test('upsertOauthAppWithoutConnection matching a connected app does not rewrite 
 	})
 })
 
-test('findOauthAppForProviderSetup prefills a shared family app for google-calendar', async () => {
+test('findOauthAppForProviderSetup prefills every field when the family agrees (google)', async () => {
 	const { env } = createEnv()
 	const userId = 'user-family-prefill'
 
@@ -877,16 +877,80 @@ test('findOauthAppForProviderSetup prefills a shared family app for google-calen
 		slug: 'google',
 		provider: 'google',
 		clientId: 'google-client-id-value',
+		clientSecretSecretName: null,
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 		apiBaseUrl: 'https://www.googleapis.com',
 		flow: 'pkce',
+		extraAuthorizeParams: { access_type: 'offline' },
 	})
 	// Prefill is app metadata only — no token secret values on the app row.
 	expect(found).not.toHaveProperty('accessTokenSecretName')
 	expect(found).not.toHaveProperty('refreshTokenSecretName')
 	expect(JSON.stringify(found)).not.toMatch(
 		/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/,
+	)
+})
+
+test('findOauthAppForProviderSetup prefills shared client id but not disagreed secret names (github)', async () => {
+	const { env } = createEnv()
+	const userId = 'user-github-family'
+
+	const githubBase = {
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		apiBaseUrl: 'https://api.github.com',
+		flow: 'confidential' as const,
+		clientId: 'shared-github-client-id',
+		requiredHosts: ['api.github.com'],
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['repo'],
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+		},
+	}
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...githubBase,
+			name: 'github',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			refreshTokenSecretName: null,
+		},
+	})
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...githubBase,
+			name: 'github-kent',
+			clientSecretSecretName: 'github-kentClientSecret',
+			accessTokenSecretName: 'githubKentAccessToken',
+			refreshTokenSecretName: null,
+		},
+	})
+
+	const found = await findOauthAppForProviderSetup({
+		env,
+		userId,
+		name: 'github-work',
+	})
+	expect(found).toMatchObject({
+		slug: 'github',
+		provider: 'github',
+		clientId: 'shared-github-client-id',
+		clientSecretSecretName: null,
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		authorizeUrl: 'https://github.com/login/oauth/authorize',
+		apiBaseUrl: 'https://api.github.com',
+		flow: 'confidential',
+	})
+	expect(found?.clientSecretSecretName).toBeNull()
+	expect(JSON.stringify(found)).not.toMatch(
+		/githubClientSecret|github-kentClientSecret/,
 	)
 })
 
@@ -936,7 +1000,7 @@ test('findOauthAppForProviderSetup prefers an exact slug over family fallback', 
 	})
 })
 
-test('findOauthAppForProviderSetup does not guess when family apps disagree on client id', async () => {
+test('findOauthAppForProviderSetup omits client id when family apps disagree on it', async () => {
 	const { env } = createEnv()
 	const userId = 'user-spotify-family'
 
@@ -988,13 +1052,19 @@ test('findOauthAppForProviderSetup does not guess when family apps disagree on c
 	])
 	expect(new Set(apps.map((app) => app.clientId)).size).toBe(2)
 
-	// No connection named spotify-kids; family has disagreeing client ids.
 	const found = await findOauthAppForProviderSetup({
 		env,
 		userId,
 		name: 'spotify-kids',
 	})
-	expect(found).toBeNull()
+	expect(found).not.toBeNull()
+	expect(found?.clientId).toBeNull()
+	expect(found).toMatchObject({
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		authorizeUrl: 'https://accounts.spotify.com/authorize',
+		apiBaseUrl: 'https://api.spotify.com/v1',
+		flow: 'pkce',
+	})
 })
 
 test('findOauthAppForProviderSetup returns the exact connectionless app slug', async () => {

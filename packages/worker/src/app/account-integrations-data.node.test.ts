@@ -137,7 +137,7 @@ test('loadAccountIntegrationByName reconnects through the connection, not family
 	})
 })
 
-test('loadAccountIntegrationByName does not guess among disagreeing family client ids', async () => {
+test('loadAccountIntegrationByName omits client id when family apps disagree on it', async () => {
 	const { env } = createEnv()
 	const userId = 'user-spotify-split'
 
@@ -187,7 +187,74 @@ test('loadAccountIntegrationByName does not guess among disagreeing family clien
 		fakeUser(userId),
 		'spotify-kids',
 	)
-	expect(record).toBeNull()
+	expect(record).toMatchObject({
+		name: 'spotify-kids',
+		clientId: '',
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		flow: 'pkce',
+	})
+})
+
+test('loadAccountIntegrationByName prefills shared github client id but not disagreed secret names', async () => {
+	const { env } = createEnv()
+	const userId = 'user-github-split'
+
+	const githubBase = {
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		apiBaseUrl: 'https://api.github.com',
+		flow: 'confidential' as const,
+		clientId: 'shared-github-client-id',
+		requiredHosts: ['api.github.com'],
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['repo'],
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+		},
+	}
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...githubBase,
+			name: 'github',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			refreshTokenSecretName: null,
+		},
+	})
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...githubBase,
+			name: 'github-kent',
+			clientSecretSecretName: 'github-kentClientSecret',
+			accessTokenSecretName: 'githubKentAccessToken',
+			refreshTokenSecretName: null,
+		},
+	})
+
+	const record = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'github-work',
+	)
+	expect(record).toMatchObject({
+		name: 'github-work',
+		clientId: 'shared-github-client-id',
+		clientSecretSecretName: null,
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		flow: 'confidential',
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+		},
+	})
+	expect(record?.clientSecretSecretName).toBeNull()
+	expect(JSON.stringify(record)).not.toMatch(
+		/githubClientSecret|github-kentClientSecret/,
+	)
 })
 
 test('loadAccountIntegrationByName surfaces a connectionless exact-slug setup app', async () => {

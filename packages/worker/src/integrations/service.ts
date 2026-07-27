@@ -313,19 +313,44 @@ export async function getOauthApp(input: {
 }
 
 /**
+ * App-level fields the connect-flow setup UI can prefill. Exact slug / sole
+ * family member returns every field from that app. Multi-app family fallback
+ * fills each field only when every candidate agrees; disagreed fields are
+ * null so the UI does not invent a secret name or endpoint.
+ */
+export type OauthAppSetupPrefill = {
+	userId: string
+	slug: string
+	provider: string
+	label: string | null
+	clientId: string | null
+	clientSecretSecretName: string | null
+	tokenUrl: string | null
+	authorizeUrl: string | null
+	apiBaseUrl: string | null
+	flow: UserOauthApp['flow'] | null
+	usePkce: boolean | null
+	tokenExchangeStyle: UserOauthApp['tokenExchangeStyle']
+	scopeSeparator: string | null
+	extraAuthorizeParams: Record<string, string> | null
+	createdAt: string
+	updatedAt: string
+}
+
+/**
  * Resolve an OAuth app for connect-flow setup when there is no connection
  * named `name` yet. Exact slug match first; otherwise the provider family
  * derived via `providerFromSlug` (e.g. `google-calendar` → `google`).
  *
- * Family fallback only prefills when every candidate shares the same
- * `clientId`. Differing client ids (e.g. `spotify` vs `spotify-family`) are
- * ambiguous — return null rather than guess.
+ * Family fallback merges field-by-field: a field is prefilled only when every
+ * candidate agrees on it (e.g. shared `clientId` with differing secret names
+ * still prefills the client id and leaves the secret name empty).
  */
 export async function findOauthAppForProviderSetup(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	name: string
-}): Promise<UserOauthApp | null> {
+}): Promise<OauthAppSetupPrefill | null> {
 	const slug = canonicalizeOauthAppSlug(input.name)
 	if (!slug) return null
 
@@ -334,7 +359,7 @@ export async function findOauthAppForProviderSetup(input: {
 		userId: input.userId,
 		slug,
 	})
-	if (exact) return exact
+	if (exact) return oauthAppToSetupPrefill(exact)
 
 	const family = providerFromSlug(slug)
 	const candidates = await listOauthAppsByProvider({
@@ -343,12 +368,111 @@ export async function findOauthAppForProviderSetup(input: {
 		provider: family,
 	})
 	if (candidates.length === 0) return null
-	if (candidates.length === 1) return candidates[0] ?? null
+	if (candidates.length === 1) {
+		const sole = candidates[0]
+		return sole ? oauthAppToSetupPrefill(sole) : null
+	}
 
-	const clientIds = new Set(candidates.map((app) => app.clientId))
-	if (clientIds.size !== 1) return null
+	const merged = mergeOauthAppFamilyPrefill({
+		userId: input.userId,
+		family,
+		candidates,
+	})
+	return setupPrefillHasAgreedField(merged) ? merged : null
+}
 
-	return candidates.find((app) => app.slug === family) ?? candidates[0] ?? null
+function oauthAppToSetupPrefill(app: UserOauthApp): OauthAppSetupPrefill {
+	return {
+		userId: app.userId,
+		slug: app.slug,
+		provider: app.provider,
+		label: app.label,
+		clientId: app.clientId,
+		clientSecretSecretName: app.clientSecretSecretName,
+		tokenUrl: app.tokenUrl,
+		authorizeUrl: app.authorizeUrl,
+		apiBaseUrl: app.apiBaseUrl,
+		flow: app.flow,
+		usePkce: app.usePkce,
+		tokenExchangeStyle: app.tokenExchangeStyle,
+		scopeSeparator: app.scopeSeparator,
+		extraAuthorizeParams: app.extraAuthorizeParams,
+		createdAt: app.createdAt,
+		updatedAt: app.updatedAt,
+	}
+}
+
+function mergeOauthAppFamilyPrefill(input: {
+	userId: string
+	family: string
+	candidates: Array<UserOauthApp>
+}): OauthAppSetupPrefill {
+	const { candidates, family, userId } = input
+	const first = candidates[0]
+	if (!first) {
+		throw new Error(
+			'mergeOauthAppFamilyPrefill requires at least one candidate.',
+		)
+	}
+	return {
+		userId,
+		slug: family,
+		provider: family,
+		label: null,
+		clientId: agreedSetupValue(candidates.map((app) => app.clientId)),
+		clientSecretSecretName: agreedSetupValue(
+			candidates.map((app) => app.clientSecretSecretName),
+		),
+		tokenUrl: agreedSetupValue(candidates.map((app) => app.tokenUrl)),
+		authorizeUrl: agreedSetupValue(candidates.map((app) => app.authorizeUrl)),
+		apiBaseUrl: agreedSetupValue(candidates.map((app) => app.apiBaseUrl)),
+		flow: agreedSetupValue(candidates.map((app) => app.flow)),
+		usePkce: agreedSetupValue(candidates.map((app) => app.usePkce)),
+		tokenExchangeStyle: agreedSetupValue(
+			candidates.map((app) => app.tokenExchangeStyle),
+		),
+		scopeSeparator: agreedSetupValue(
+			candidates.map((app) => app.scopeSeparator),
+		),
+		extraAuthorizeParams: agreedSetupValue(
+			candidates.map((app) => app.extraAuthorizeParams),
+			sameExtraAuthorizeParams,
+		),
+		createdAt: first.createdAt,
+		updatedAt: first.updatedAt,
+	}
+}
+
+function agreedSetupValue<T>(
+	values: Array<T>,
+	equal: (left: T, right: T) => boolean = Object.is,
+): T | null {
+	const first = values[0]
+	if (first === undefined) return null
+	return values.every((value) => equal(value, first)) ? first : null
+}
+
+function sameExtraAuthorizeParams(
+	left: Record<string, string>,
+	right: Record<string, string>,
+) {
+	return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function setupPrefillHasAgreedField(prefill: OauthAppSetupPrefill) {
+	return Boolean(
+		prefill.clientId ||
+		prefill.clientSecretSecretName ||
+		prefill.tokenUrl ||
+		prefill.authorizeUrl ||
+		prefill.apiBaseUrl ||
+		prefill.flow ||
+		typeof prefill.usePkce === 'boolean' ||
+		prefill.tokenExchangeStyle ||
+		prefill.scopeSeparator ||
+		(prefill.extraAuthorizeParams &&
+			Object.keys(prefill.extraAuthorizeParams).length > 0),
+	)
 }
 
 export async function rotateOauthAppClientCredentials(input: {

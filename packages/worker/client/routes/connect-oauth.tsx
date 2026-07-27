@@ -1379,7 +1379,7 @@ export function toStoredIntegrationConfig(
 		name: integration.name,
 		tokenUrl: integration.tokenUrl,
 		apiBaseUrl: integration.apiBaseUrl?.trim() || null,
-		flow: integration.flow,
+		...(integration.flow ? { flow: integration.flow } : {}),
 		usePkce:
 			typeof integration.usePkce === 'boolean' ? integration.usePkce : null,
 		clientId: integration.clientId,
@@ -1534,8 +1534,12 @@ export function mergeConnectOauthConfig(input: {
 		input.storedIntegration?.authorization?.authorizeUrl ??
 		null
 	const authorizeHost = authorizeUrl ? safeParseHost(authorizeUrl) : null
+	// Empty string means "family prefill could not agree" — fall through to
+	// the query/default rather than wiping a known endpoint.
 	const tokenUrl =
-		input.storedIntegration?.tokenUrl ?? input.queryConfig.tokenUrl
+		input.storedIntegration?.tokenUrl?.trim() ||
+		input.queryConfig.tokenUrl ||
+		null
 	const tokenHost = tokenUrl ? safeParseHost(tokenUrl) : null
 	if (
 		!provider ||
@@ -1587,7 +1591,7 @@ export function mergeConnectOauthConfig(input: {
 		extraAuthorizeParams,
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
-		clientId: input.storedIntegration?.clientId ?? '',
+		clientId: input.storedIntegration?.clientId?.trim() || '',
 		clientSecretSecretName:
 			flow === 'confidential'
 				? (input.storedIntegration?.clientSecretSecretName ??
