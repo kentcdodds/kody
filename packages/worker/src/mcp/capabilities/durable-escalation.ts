@@ -3,10 +3,7 @@ import {
 	createDynamicCallableWorkflow,
 	type PackageWorkflowCreateResult,
 } from '#worker/package-runtime/package-workflows.ts'
-import {
-	activeWorkflowStatusValues,
-	type WorkflowRunStatus,
-} from '#worker/package-runtime/workflow-statuses.ts'
+import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 
 /** Soft budget under MCP execute's ~90s hard cap, leaving room to dispatch. */
 export const defaultDurableEscalationBudgetMs = 55_000
@@ -25,7 +22,17 @@ export type DurableEscalationOutcome<T> =
 	| { kind: 'dispatched'; handle: DurableEscalationHandle }
 	| { kind: 'failed'; error: string }
 
-const activeWorkflowStatuses = new Set<string>(activeWorkflowStatusValues)
+/**
+ * workflow_runs statuses that mean a durable dispatch is already underway.
+ * Defined as the complement of terminal statuses so the set stays aligned with
+ * createDynamicCallableWorkflow: active Cloudflare statuses plus any
+ * transitional D1 projection status written before the instance is queued
+ * (today that transitional value is `creating`). New pre-active statuses are
+ * covered automatically; only completed/errored/terminated runs allow another
+ * inline attempt.
+ */
+export const alreadyDispatchedWorkflowStatusExclusion =
+	terminalWorkflowStatusValues
 
 /**
  * Compose a workflow_runs idempotency key that is always scoped to the same
@@ -64,7 +71,7 @@ function createDispatchedHandle(input: {
 	}
 }
 
-async function findActiveWorkflowRunByIdempotencyKey(input: {
+async function findAlreadyDispatchedWorkflowRunByIdempotencyKey(input: {
 	db: D1Database
 	userId: string
 	idempotencyKey: string
@@ -72,34 +79,31 @@ async function findActiveWorkflowRunByIdempotencyKey(input: {
 	id: string
 	workflowName: string
 	idempotencyKey: string
-	status: WorkflowRunStatus | null
+	status: string | null
 } | null> {
 	const trimmedKey = input.idempotencyKey.trim()
 	if (!trimmedKey) return null
-	const placeholders = activeWorkflowStatusValues.map(() => '?').join(', ')
+	const placeholders = alreadyDispatchedWorkflowStatusExclusion
+		.map(() => '?')
+		.join(', ')
 	const row = await input.db
 		.prepare(
 			`SELECT id, workflow_name, idempotency_key, status
 			FROM workflow_runs
 			WHERE user_id = ?
 				AND idempotency_key = ?
-				AND status IN (${placeholders})
+				AND COALESCE(status, '') NOT IN (${placeholders})
 			ORDER BY created_at ASC
 			LIMIT 1`,
 		)
-		.bind(input.userId, trimmedKey, ...activeWorkflowStatusValues)
+		.bind(input.userId, trimmedKey, ...alreadyDispatchedWorkflowStatusExclusion)
 		.first<Record<string, unknown>>()
 	if (!row) return null
-	const status =
-		typeof row['status'] === 'string' &&
-		activeWorkflowStatuses.has(row['status'])
-			? (row['status'] as WorkflowRunStatus)
-			: null
 	return {
 		id: String(row['id']),
 		workflowName: String(row['workflow_name']),
 		idempotencyKey: String(row['idempotency_key']),
-		status,
+		status: typeof row['status'] === 'string' ? row['status'] : null,
 	}
 }
 
@@ -157,7 +161,7 @@ export async function runWithDurableEscalation<T>(input: {
 
 	try {
 		if (input.env.APP_DB) {
-			const existing = await findActiveWorkflowRunByIdempotencyKey({
+			const existing = await findAlreadyDispatchedWorkflowRunByIdempotencyKey({
 				db: input.env.APP_DB,
 				userId: input.userId,
 				idempotencyKey,

@@ -1,10 +1,11 @@
 import { expect, test, vi } from 'vitest'
 import {
+	alreadyDispatchedWorkflowStatusExclusion,
 	buildCallerScopedIdempotencyKey,
 	defaultDurableEscalationBudgetMs,
 	runWithDurableEscalation,
 } from './durable-escalation.ts'
-import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
+import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createDynamicCallableWorkflow: vi.fn(),
@@ -30,16 +31,23 @@ function createWorkflowRunsDb(rows: Array<Record<string, unknown>> = []) {
 							}
 							const userId = params[0]
 							const idempotencyKey = params[1]
-							const statusFilter = new Set(
+							const excludedStatuses = new Set(
 								params.slice(2).map((value) => String(value)),
 							)
+							const usesNotIn = query.includes('NOT IN')
 							return (
-								rows.find(
-									(row) =>
-										row['user_id'] === userId &&
-										row['idempotency_key'] === idempotencyKey &&
-										statusFilter.has(String(row['status'] ?? '')),
-								) ?? null
+								rows.find((row) => {
+									if (
+										row['user_id'] !== userId ||
+										row['idempotency_key'] !== idempotencyKey
+									) {
+										return false
+									}
+									const status = String(row['status'] ?? '')
+									return usesNotIn
+										? !excludedStatuses.has(status)
+										: excludedStatuses.has(status)
+								}) ?? null
 							)
 						},
 					}
@@ -158,7 +166,6 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 		idempotency_key: expectedKey,
 		status: 'running',
 	}
-	expect(activeWorkflowStatusValues).toContain('running')
 
 	const second = await runWithDurableEscalation({
 		env: {
@@ -184,6 +191,62 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 	})
 	expect(mockModule.createDynamicCallableWorkflow).not.toHaveBeenCalled()
 	expect(hangUntilAborted).toHaveBeenCalledTimes(1)
+})
+
+test('mid-creation workflow_runs rows are treated as already dispatched', async () => {
+	expect(alreadyDispatchedWorkflowStatusExclusion).toEqual(
+		terminalWorkflowStatusValues,
+	)
+	expect(alreadyDispatchedWorkflowStatusExclusion).not.toContain('creating')
+
+	const hangUntilAborted = vi.fn(
+		async (signal: AbortSignal) =>
+			await new Promise<never>((_resolve, reject) => {
+				signal.addEventListener(
+					'abort',
+					() => {
+						reject(new DOMException('Aborted', 'AbortError'))
+					},
+					{ once: true },
+				)
+			}),
+	)
+	const expectedKey = buildCallerScopedIdempotencyKey({
+		userId: 'user-1',
+		parts: publishParts,
+	})
+	const creatingRow = {
+		id: 'dynwf-creating-1',
+		user_id: 'user-1',
+		workflow_name: 'package_publish_external_push',
+		idempotency_key: expectedKey,
+		status: 'creating',
+	}
+
+	const outcome = await runWithDurableEscalation({
+		env: {
+			APP_DB: createWorkflowRunsDb([creatingRow]),
+			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		} as Env,
+		userId: 'user-1',
+		idempotencyParts: publishParts,
+		workflowName: 'package_publish_external_push',
+		durableCode: 'export default async function main() { return null }',
+		budgetMs: 30,
+		run: hangUntilAborted,
+	})
+
+	expect(outcome).toEqual({
+		kind: 'dispatched',
+		handle: expect.objectContaining({
+			status: 'dispatched',
+			workflow_id: 'dynwf-creating-1',
+			idempotency_key: expectedKey,
+			run_status: 'creating',
+		}),
+	})
+	expect(hangUntilAborted).not.toHaveBeenCalled()
+	expect(mockModule.createDynamicCallableWorkflow).not.toHaveBeenCalled()
 })
 
 test('different acting callers get non-colliding dedupe; same caller still reuses', async () => {

@@ -25,13 +25,35 @@ function describePackageArtifactTarget(
 function buildRebuildFailureMessage(input: {
 	sourceId: string
 	publishedCommit: string
-	target?: PublishedPackageArtifactBuildTarget
-	error: unknown
+	succeeded: ReadonlyArray<PublishedPackageArtifactBuildTarget>
+	failed: ReadonlyArray<{
+		target: PublishedPackageArtifactBuildTarget
+		error: unknown
+	}>
+	error?: unknown
 }) {
-	const target = input.target
-		? ` target { ${describePackageArtifactTarget(input.target)} }`
-		: ''
-	return `Package source publish succeeded, but bundle artifact rebuild failed for source "${input.sourceId}" at commit "${input.publishedCommit}"${target}. Cause: ${formatErrorCauseChain(input.error)}. Re-run the publish capability to repair artifacts.`
+	const succeededSummary =
+		input.succeeded.length === 0
+			? 'none'
+			: input.succeeded
+					.map((target) => `{ ${describePackageArtifactTarget(target)} }`)
+					.join(', ')
+	const failedSummary =
+		input.failed.length === 0
+			? input.error
+				? formatErrorCauseChain(input.error)
+				: 'unknown'
+			: input.failed
+					.map(
+						({ target, error }) =>
+							`{ ${describePackageArtifactTarget(target)} }: ${formatErrorCauseChain(error)}`,
+					)
+					.join('; ')
+	// Partial artifact writes were already possible with sequential rebuilds
+	// (earlier targets stay written when a later one fails). Bounded concurrency
+	// only widens that to the in-flight peer in the current chunk; later chunks
+	// are not scheduled after a failure.
+	return `Package source publish succeeded, but bundle artifact rebuild failed for source "${input.sourceId}" at commit "${input.publishedCommit}". Succeeded: ${succeededSummary}. Failed: ${failedSummary}. Re-run the publish capability to repair artifacts.`
 }
 
 export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
@@ -56,15 +78,26 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 			buildRebuildFailureMessage({
 				sourceId: input.sourceId,
 				publishedCommit: input.publishedCommit,
+				succeeded: [],
+				failed: [],
 				error,
 			}),
 			{ cause: error },
 		)
 	}
+
+	const succeeded: Array<PublishedPackageArtifactBuildTarget> = []
+	const failed: Array<{
+		target: PublishedPackageArtifactBuildTarget
+		error: unknown
+	}> = []
+
 	for (const targetChunk of chunkArray(
 		targets,
 		publishedPackageArtifactRebuildConcurrency,
 	)) {
+		if (failed.length > 0) break
+
 		const settled = await Promise.allSettled(
 			targetChunk.map(async (target) => {
 				await session.rebuildPublishedPackageArtifact({
@@ -75,20 +108,30 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 					target,
 					baseUrl: input.baseUrl,
 				})
+				return target
 			}),
 		)
+
 		for (const [index, result] of settled.entries()) {
-			if (result.status === 'fulfilled') continue
 			const target = targetChunk[index]
-			throw new Error(
-				buildRebuildFailureMessage({
-					sourceId: input.sourceId,
-					publishedCommit: input.publishedCommit,
-					target,
-					error: result.reason,
-				}),
-				{ cause: result.reason },
-			)
+			if (!target) continue
+			if (result.status === 'fulfilled') {
+				succeeded.push(target)
+				continue
+			}
+			failed.push({ target, error: result.reason })
 		}
 	}
+
+	if (failed.length === 0) return
+
+	throw new Error(
+		buildRebuildFailureMessage({
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+			succeeded,
+			failed,
+		}),
+		{ cause: failed[0]?.error },
+	)
 }
