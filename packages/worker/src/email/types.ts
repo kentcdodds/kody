@@ -29,6 +29,19 @@ export const emailDeliveryEventTypeValues = [
 export type EmailDeliveryEventType =
 	(typeof emailDeliveryEventTypeValues)[number]
 
+export const emailClassificationValues = ['accepted', 'quarantined'] as const
+export type EmailClassification = (typeof emailClassificationValues)[number]
+
+export const emailSenderRuleKindValues = ['address', 'domain'] as const
+export type EmailSenderRuleKind = (typeof emailSenderRuleKindValues)[number]
+
+export const emailSenderRuleEffectValues = [
+	'allow',
+	'block',
+	'quarantine',
+] as const
+export type EmailSenderRuleEffect = (typeof emailSenderRuleEffectValues)[number]
+
 export type EmailMailbox = {
 	name: string | null
 	address: string
@@ -132,12 +145,25 @@ export type EmailMessageRecord = {
 	rawMimeKey: string | null
 	rawSize: number | null
 	processingStatus: EmailProcessingStatus
+	classification: EmailClassification
+	classificationReason: string | null
 	providerMessageId: string | null
 	deliveryStatus: EmailDeliveryStatus | null
 	deliveryStatusAt: string | null
 	error: string | null
 	receivedAt: string | null
 	sentAt: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export type EmailSenderRuleRecord = {
+	id: string
+	userId: string
+	kind: EmailSenderRuleKind
+	value: string
+	effect: EmailSenderRuleEffect
+	note: string
 	createdAt: string
 	updatedAt: string
 }

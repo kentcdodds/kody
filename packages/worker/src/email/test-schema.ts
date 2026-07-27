@@ -7,6 +7,7 @@ export async function ensureEmailTestSchema(db: D1Database) {
 	const statements = [
 		`DROP TABLE IF EXISTS system_email_daily_counters;`,
 		`DROP TABLE IF EXISTS email_sender_policies;`,
+		`DROP TABLE IF EXISTS email_sender_rules;`,
 		`DROP TABLE IF EXISTS email_delivery_events;`,
 		`DROP TABLE IF EXISTS email_attachments;`,
 		`DROP TABLE IF EXISTS email_messages;`,
@@ -88,6 +89,8 @@ ON email_sender_identities(user_id, email);`,
 	raw_mime_key TEXT,
 	raw_size INTEGER NOT NULL DEFAULT 0,
 	processing_status TEXT NOT NULL CHECK (processing_status IN ('stored', 'sent', 'failed')),
+	classification TEXT NOT NULL DEFAULT 'accepted' CHECK (classification IN ('accepted', 'quarantined')),
+	classification_reason TEXT,
 	provider_message_id TEXT,
 	delivery_status TEXT CHECK (
 		delivery_status IS NULL OR delivery_status IN (
@@ -101,6 +104,19 @@ ON email_sender_identities(user_id, email);`,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );`,
+
+		`CREATE TABLE IF NOT EXISTS email_sender_rules (
+	id TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL,
+	kind TEXT NOT NULL CHECK (kind IN ('address', 'domain')),
+	value TEXT NOT NULL,
+	effect TEXT NOT NULL CHECK (effect IN ('allow', 'block', 'quarantine')),
+	note TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_sender_rules_user_kind_value
+ON email_sender_rules(user_id, kind, value);`,
 
 		`CREATE TABLE IF NOT EXISTS email_attachments (
 	id TEXT PRIMARY KEY,
