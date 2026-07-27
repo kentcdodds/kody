@@ -1,6 +1,7 @@
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
 import { recordSuccessfulPackageRun } from '#worker/usage/activation.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import { dispatchRunErrorSubscriptionEvents } from './package-subscriptions.ts'
 import {
 	type RunLogEntryInput,
 	type RunLogRowInput,
@@ -269,6 +270,7 @@ export async function finishRunRecord(input: {
 	}
 
 	const work = (async () => {
+		let persistedRun: RunLogRowInput | null = null
 		try {
 			if (runLogBinding(input.env)) {
 				const finishedAt = new Date().toISOString()
@@ -290,6 +292,7 @@ export async function finishRunRecord(input: {
 					run,
 					logs: normalizeLogs(input.logs),
 				})
+				persistedRun = run
 			}
 		} catch (error) {
 			console.warn('run-record-finish-failed', error)
@@ -307,6 +310,23 @@ export async function finishRunRecord(input: {
 				} catch (error) {
 					console.warn('run-record-activation-failed', error)
 				}
+			}
+		}
+
+		if (
+			persistedRun &&
+			input.status === 'error' &&
+			handle.context.surface !== 'subscription'
+		) {
+			try {
+				await dispatchRunErrorSubscriptionEvents({
+					env: input.env,
+					userId: handle.userId,
+					run: persistedRun,
+					waitUntil: input.waitUntil,
+				})
+			} catch (error) {
+				console.warn('run-error-subscription-dispatch-failed', error)
 			}
 		}
 	})()

@@ -198,6 +198,57 @@ automatically rerunning; the DLQ is the recovery surface. Terminal handler
 execution failures are isolated without preventing attempts for sibling
 subscribers.
 
+## `run.error.recorded`
+
+When a user-scoped Activity / run record finishes with `status: 'error'`, Kody
+dispatches `run.error.recorded` to packages saved by that same user that declare
+the topic. Delivery is best-effort after a successful run-record Durable Object
+write — there is no Queue / DLQ for this topic in v1. Failures during subscriber
+discovery or package-invocation infrastructure are logged and do not fail the
+observed run.
+
+Handlers receive a metadata-first payload:
+
+```ts
+type RunErrorRecordedEvent = {
+	event: 'run.error.recorded'
+	run: {
+		id: string
+		surface: string
+		name: string | null
+		package_id: string | null
+		kody_id: string | null
+		source_id: string | null
+		published_commit: string | null
+		storage_id: string | null
+		job_id: string | null
+		workflow_id: string | null
+		invocation_id: string | null
+		session_id: string | null
+		parent_run_id: string | null
+		started_at: string
+		finished_at: string | null
+		duration_ms: number | null
+		error_name: string | null
+		error_message: string | null
+	}
+	activity_url: string
+}
+```
+
+`activity_url` is built from the trusted deployment origin and links to
+`/account/activity/<runId>`. The event deliberately omits log lines and the full
+run `metadata` blob — fetch detail with `run_get` when needed. Error name and
+message use the same truncation budget as the stored run record.
+
+Recursion guard: runs whose surface is `subscription` never emit this event.
+Subscription-handler failures themselves create run records; emitting again
+would recurse. Successful runs and `execute` successes (which are not persisted)
+never emit. Failed `execute` calls do persist and do emit.
+
+Use this topic for notifier packages that email, write to Sheets, spawn an
+agent, or otherwise react when something in the user's account fails.
+
 ## `community.activity.recorded` (admins)
 
 Successful community fork and rating writes enqueue a durable

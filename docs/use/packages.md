@@ -403,7 +403,7 @@ Use the built-in `package_subscriptions_list` capability to discover the
 signed-in user's saved package subscriptions, optionally filtered by exact
 topic. This is the generic discovery step before building fan-out, debugging why
 an event did or did not dispatch, or checking which packages subscribe to
-`email.message.received`.
+`email.message.received` or `run.error.recorded`.
 
 For stored inbound email, the topic is `email.message.received`. Its payload is
 metadata-first: handlers receive the stored message id, recipient and sender
@@ -414,6 +414,13 @@ system-inbox mail dispatches the separate `email.system-message.received` topic
 to packages saved by admin users; its payload adds an `admin_url` link to the
 message in the admin interface. See [Email primitives](./email-primitives.md)
 for the full payload shapes.
+
+When a run in your Activity finishes with an error, Kody dispatches
+`run.error.recorded` to your packages that declare that topic. The payload is
+metadata-first (run id, surface, identifiers, truncated error fields, and an
+`activity_url` deep link). Fetch logs and full detail with `run_get` when
+needed. See [Activity](./activity.md) and the
+[package subscriptions guide](../guides/package-subscriptions.md).
 
 ## Package webhooks
 
