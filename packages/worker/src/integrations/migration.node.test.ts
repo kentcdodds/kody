@@ -60,6 +60,33 @@ function applyMigration(db: DatabaseSync, fileName: string) {
 	db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
 }
 
+/** D1 wraps each migration file in a transaction. */
+function applyMigrationLikeD1(db: DatabaseSync, fileName: string) {
+	const sql = readFileSync(new URL(fileName, migrationsDirectory), 'utf8')
+	db.exec('BEGIN')
+	try {
+		db.exec(sql)
+		db.exec('COMMIT')
+	} catch (error) {
+		db.exec('ROLLBACK')
+		throw error
+	}
+}
+
+function listIntegrationValueNames(db: DatabaseSync, userId: string) {
+	return (
+		db
+			.prepare(
+				`SELECT e.name
+				FROM value_entries e
+				INNER JOIN value_buckets b ON b.id = e.bucket_id
+				WHERE b.user_id = ? AND e.name GLOB '_integration:*'
+				ORDER BY e.name ASC`,
+			)
+			.all(userId) as Array<{ name: string }>
+	).map((row) => row.name)
+}
+
 function insertUserBucket(
 	db: DatabaseSync,
 	input: { bucketId: string; userId: string },
@@ -610,4 +637,207 @@ test('0100 splits apps when credentials match but token_url differs', async () =
 	expect(toIntegrationConfig(beta!.app, beta!.connection).tokenUrl).toBe(
 		'https://auth.example.com/oauth/v2/token',
 	)
+})
+
+test('0100 capture/delete/remain predicates stay alias-equivalent', () => {
+	const sql = readFileSync(
+		new URL(oauthAppsMigration, migrationsDirectory),
+		'utf8',
+	)
+	const normalizePredicate = (block: string, entryAlias: string) =>
+		block.replaceAll(entryAlias, '<entry>').replace(/\s+/g, ' ').trim()
+
+	const captureMatch =
+		/INSERT INTO __migration_0100_source \([\s\S]*?WHERE (?<predicate>b\.scope = 'user'[\s\S]*?);/.exec(
+			sql,
+		)
+	const deleteMatch =
+		/DELETE FROM value_entries\nWHERE EXISTS \([\s\S]*?WHERE b\.id = value_entries\.bucket_id\n\t\tAND (?<predicate>b\.scope = 'user'[\s\S]*?)\n\);/.exec(
+			sql,
+		)
+	const remainMatch =
+		/migratable _integration:\* value rows remain after backfill[\s\S]*?WHERE (?<predicate>b\.scope = 'user'[\s\S]*?)\n\);/.exec(
+			sql,
+		)
+
+	expect(captureMatch?.groups?.predicate).toBeTruthy()
+	expect(deleteMatch?.groups?.predicate).toBeTruthy()
+	expect(remainMatch?.groups?.predicate).toBeTruthy()
+
+	const capture = normalizePredicate(captureMatch!.groups!.predicate, 'e.')
+	const deleted = normalizePredicate(
+		deleteMatch!.groups!.predicate,
+		'value_entries.',
+	)
+	const remain = normalizePredicate(remainMatch!.groups!.predicate, 'e.')
+
+	expect(capture).toBe(deleted)
+	expect(capture).toBe(remain)
+	expect(capture).toContain("LIKE '\\_integration:%' ESCAPE '\\'")
+	expect(capture).toContain('length(substr(<entry>name, 14)) > 0')
+	expect(capture).toContain("GLOB '*[a-z0-9]*'")
+})
+
+test('0100 leaves empty-name and unresolved-clientId _integration values untouched', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, oauthAppsMigration)
+
+	insertUserBucket(db, { bucketId: 'bucket-survive', userId: 'user-survive' })
+	insertValue(db, {
+		bucketId: 'bucket-survive',
+		name: 'real-client-id',
+		value: 'real-client-id-value',
+	})
+
+	const migratable = {
+		name: 'ok',
+		tokenUrl: 'https://auth.example.com/oauth/token',
+		apiBaseUrl: 'https://api.example.com',
+		flow: 'pkce',
+		clientIdValueName: 'real-client-id',
+		clientSecretSecretName: null,
+		accessTokenSecretName: 'okAccessToken',
+		refreshTokenSecretName: null,
+		requiredHosts: ['api.example.com'],
+	}
+	const emptyName = {
+		...migratable,
+		name: '',
+		accessTokenSecretName: 'emptyAccessToken',
+	}
+	const missingClientId = {
+		...migratable,
+		name: 'missing-client',
+		clientIdValueName: 'does-not-exist',
+		accessTokenSecretName: 'missingAccessToken',
+	}
+	const emptyClientId = {
+		...migratable,
+		name: 'empty-client',
+		clientIdValueName: 'blank-client-id',
+		accessTokenSecretName: 'blankAccessToken',
+	}
+
+	insertValue(db, {
+		bucketId: 'bucket-survive',
+		name: 'blank-client-id',
+		value: '   ',
+	})
+	insertValue(db, {
+		bucketId: 'bucket-survive',
+		name: '_integration:ok',
+		value: JSON.stringify(migratable),
+	})
+	insertValue(db, {
+		bucketId: 'bucket-survive',
+		name: '_integration:',
+		value: JSON.stringify(emptyName),
+	})
+	insertValue(db, {
+		bucketId: 'bucket-survive',
+		name: '_integration:missing-client',
+		value: JSON.stringify(missingClientId),
+	})
+	insertValue(db, {
+		bucketId: 'bucket-survive',
+		name: '_integration:empty-client',
+		value: JSON.stringify(emptyClientId),
+	})
+	insertValue(db, {
+		bucketId: 'bucket-survive',
+		name: '_integration:GitHub',
+		value: JSON.stringify({ ...migratable, name: 'GitHub' }),
+	})
+
+	applyMigrationLikeD1(db, oauthAppsMigration)
+
+	expect(listIntegrationValueNames(db, 'user-survive')).toEqual([
+		'_integration:',
+		'_integration:GitHub',
+		'_integration:empty-client',
+		'_integration:missing-client',
+	])
+	expect(
+		db
+			.prepare(
+				`SELECT name FROM user_integrations
+				WHERE user_id = 'user-survive'
+				ORDER BY name ASC`,
+			)
+			.all(),
+	).toEqual([{ name: 'ok' }])
+	expect(
+		db
+			.prepare(
+				`SELECT slug FROM user_oauth_apps
+				WHERE user_id = 'user-survive'
+				ORDER BY slug ASC`,
+			)
+			.all(),
+	).toEqual([{ slug: 'ok' }])
+})
+
+test('0100 assertion abort rolls back and preserves _integration value rows', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, oauthAppsMigration)
+
+	insertUserBucket(db, { bucketId: 'bucket-abort', userId: 'user-abort' })
+	insertValue(db, {
+		bucketId: 'bucket-abort',
+		name: 'abort-client-id',
+		value: 'abort-client-id-value',
+	})
+	insertValue(db, {
+		bucketId: 'bucket-abort',
+		name: '_integration:abort-me',
+		value: JSON.stringify({
+			name: 'abort-me',
+			tokenUrl: 'https://auth.example.com/oauth/token',
+			apiBaseUrl: 'https://api.example.com',
+			flow: 'pkce',
+			clientIdValueName: 'abort-client-id',
+			clientSecretSecretName: null,
+			accessTokenSecretName: 'abortAccessToken',
+			refreshTokenSecretName: null,
+			requiredHosts: ['api.example.com'],
+		}),
+	})
+
+	const beforeIntegrationValues = listIntegrationValueNames(db, 'user-abort')
+	expect(beforeIntegrationValues).toEqual(['_integration:abort-me'])
+
+	// Force the post-delete "migratable rows remain" assertion to fire by
+	// ignoring deletes of `_integration:*` values. Created outside the
+	// migration transaction so the ignore survives until rollback.
+	db.exec(`
+		CREATE TRIGGER test_keep_integration_values
+		BEFORE DELETE ON value_entries
+		WHEN OLD.name GLOB '_integration:*'
+		BEGIN
+			SELECT RAISE(IGNORE);
+		END;
+	`)
+
+	expect(() => applyMigrationLikeD1(db, oauthAppsMigration)).toThrow(
+		/CHECK constraint failed: 0/,
+	)
+
+	expect(listIntegrationValueNames(db, 'user-abort')).toEqual(
+		beforeIntegrationValues,
+	)
+	expect(
+		db
+			.prepare(
+				`SELECT name FROM sqlite_master
+				 WHERE type = 'table'
+				   AND name IN (
+						'user_oauth_apps',
+						'user_integrations',
+						'__migration_0100_source',
+						'__migration_0100_app_groups',
+						'__migration_assertions'
+					)`,
+			)
+			.all(),
+	).toEqual([])
 })

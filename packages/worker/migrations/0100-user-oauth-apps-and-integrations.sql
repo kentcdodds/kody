@@ -15,10 +15,44 @@
 -- full app-level tuple (credentials + endpoints + flow options). Connections
 -- merge into one app only when they agree on every app-level field; any
 -- disagreement yields separate apps so no config is silently rewritten.
--- App slug is min(connection_name) per group; connection names are unique per
--- user and each connection is in exactly one group, so those minima cannot
--- collide. Then deletes only the migrated integration value rows. Client-id
--- values and any non-migratable `_integration:*` rows are left untouched.
+--
+-- Slug collision cannot occur: app slug is min(connection_name) per group, each
+-- connection belongs to exactly one group, and connection names are already
+-- unique per user. value_buckets has UNIQUE(user_id, scope, binding_key) and
+-- user-scope rows always use binding_key = '', so there is exactly one
+-- user-scope bucket per user; value_entries is keyed (bucket_id, name).
+-- Therefore (user_id, name) is unique for user-scope `_integration:*` rows.
+--
+-- Then deletes only the migrated integration value rows. Client-id values and
+-- any non-migratable `_integration:*` rows are left untouched.
+--
+-- Migratable name/value predicate (must stay identical across capture INSERT,
+-- DELETE, and post-delete assertion — only the entry alias differs):
+--   <entry>.name LIKE '\_integration:%' ESCAPE '\'
+--   AND length(substr(<entry>.name, 14)) > 0
+--   AND substr(<entry>.name, 14) = trim(substr(<entry>.name, 14))
+--   AND substr(<entry>.name, 14) = lower(substr(<entry>.name, 14))
+--   AND substr(<entry>.name, 14) NOT LIKE '-%'
+--   AND substr(<entry>.name, 14) NOT LIKE '%-'
+--   AND substr(<entry>.name, 14) NOT GLOB '*[^a-z0-9._-]*'
+--   AND substr(<entry>.name, 14) GLOB '*[a-z0-9]*'
+--   AND json_valid(<entry>.value)
+--   AND json_extract(<entry>.value, '$.tokenUrl') IS NOT NULL
+--   AND trim(json_extract(<entry>.value, '$.tokenUrl')) != ''
+--   AND json_extract(<entry>.value, '$.accessTokenSecretName') IS NOT NULL
+--   AND trim(json_extract(<entry>.value, '$.accessTokenSecretName')) != ''
+--   AND json_extract(<entry>.value, '$.flow') IN ('pkce', 'confidential')
+--   AND trim(cid.value) != ''
+--   AND (
+--     json_extract(<entry>.value, '$.tokenExchangeStyle') IS NULL
+--     OR json_extract(<entry>.value, '$.tokenExchangeStyle') IN (
+--       'form', 'basic-json', 'basic-form'
+--     )
+--   )
+-- The name checks mirror parseIntegrationValueName / normalizeProviderKey:
+-- non-empty canonical lowercase kebab (no leading/trailing '-', only
+-- [a-z0-9._-], at least one alphanumeric). Empty `_integration:` and
+-- non-canonical suffixes survive as values.
 
 CREATE TABLE IF NOT EXISTS user_oauth_apps (
 	user_id TEXT NOT NULL,
@@ -64,8 +98,13 @@ ON user_integrations(user_id, app_slug);
 CREATE INDEX IF NOT EXISTS idx_user_oauth_apps_user_provider
 ON user_oauth_apps(user_id, provider);
 
+-- Restart-safe staging: drop leftovers from a prior failed attempt, then recreate.
+DROP TABLE IF EXISTS __migration_0100_source;
+DROP TABLE IF EXISTS __migration_0100_app_groups;
+DROP TABLE IF EXISTS __migration_assertions;
+
 -- Staging table so app insert + connection insert share one grouping definition.
-CREATE TABLE __migration_0100_source (
+CREATE TABLE IF NOT EXISTS __migration_0100_source (
 	user_id TEXT NOT NULL,
 	connection_name TEXT NOT NULL,
 	description TEXT NOT NULL,
@@ -142,6 +181,13 @@ INNER JOIN value_entries cid
 	AND cid.name = json_extract(e.value, '$.clientIdValueName')
 WHERE b.scope = 'user'
 	AND e.name LIKE '\_integration:%' ESCAPE '\'
+	AND length(substr(e.name, 14)) > 0
+	AND substr(e.name, 14) = trim(substr(e.name, 14))
+	AND substr(e.name, 14) = lower(substr(e.name, 14))
+	AND substr(e.name, 14) NOT LIKE '-%'
+	AND substr(e.name, 14) NOT LIKE '%-'
+	AND substr(e.name, 14) NOT GLOB '*[^a-z0-9._-]*'
+	AND substr(e.name, 14) GLOB '*[a-z0-9]*'
 	AND json_valid(e.value)
 	AND json_extract(e.value, '$.tokenUrl') IS NOT NULL
 	AND trim(json_extract(e.value, '$.tokenUrl')) != ''
@@ -158,7 +204,7 @@ WHERE b.scope = 'user'
 		)
 	);
 
-CREATE TABLE __migration_0100_app_groups (
+CREATE TABLE IF NOT EXISTS __migration_0100_app_groups (
 	user_id TEXT NOT NULL,
 	slug TEXT NOT NULL,
 	client_id TEXT NOT NULL,
@@ -302,7 +348,7 @@ INNER JOIN __migration_0100_app_groups g
 	AND s.extra_authorize_params_json IS g.extra_authorize_params_json;
 
 -- __migration_assertions intentionally uses CHECK (0) as an unreachable trap.
-CREATE TABLE __migration_assertions (
+CREATE TABLE IF NOT EXISTS __migration_assertions (
 	message TEXT NOT NULL CHECK (0)
 );
 
@@ -359,6 +405,13 @@ WHERE EXISTS (
 	WHERE b.id = value_entries.bucket_id
 		AND b.scope = 'user'
 		AND value_entries.name LIKE '\_integration:%' ESCAPE '\'
+		AND length(substr(value_entries.name, 14)) > 0
+		AND substr(value_entries.name, 14) = trim(substr(value_entries.name, 14))
+		AND substr(value_entries.name, 14) = lower(substr(value_entries.name, 14))
+		AND substr(value_entries.name, 14) NOT LIKE '-%'
+		AND substr(value_entries.name, 14) NOT LIKE '%-'
+		AND substr(value_entries.name, 14) NOT GLOB '*[^a-z0-9._-]*'
+		AND substr(value_entries.name, 14) GLOB '*[a-z0-9]*'
 		AND json_valid(value_entries.value)
 		AND json_extract(value_entries.value, '$.tokenUrl') IS NOT NULL
 		AND trim(json_extract(value_entries.value, '$.tokenUrl')) != ''
@@ -388,6 +441,13 @@ WHERE EXISTS (
 		AND cid.name = json_extract(e.value, '$.clientIdValueName')
 	WHERE b.scope = 'user'
 		AND e.name LIKE '\_integration:%' ESCAPE '\'
+		AND length(substr(e.name, 14)) > 0
+		AND substr(e.name, 14) = trim(substr(e.name, 14))
+		AND substr(e.name, 14) = lower(substr(e.name, 14))
+		AND substr(e.name, 14) NOT LIKE '-%'
+		AND substr(e.name, 14) NOT LIKE '%-'
+		AND substr(e.name, 14) NOT GLOB '*[^a-z0-9._-]*'
+		AND substr(e.name, 14) GLOB '*[a-z0-9]*'
 		AND json_valid(e.value)
 		AND json_extract(e.value, '$.tokenUrl') IS NOT NULL
 		AND trim(json_extract(e.value, '$.tokenUrl')) != ''
@@ -405,6 +465,6 @@ WHERE EXISTS (
 		)
 );
 
-DROP TABLE __migration_assertions;
-DROP TABLE __migration_0100_app_groups;
-DROP TABLE __migration_0100_source;
+DROP TABLE IF EXISTS __migration_assertions;
+DROP TABLE IF EXISTS __migration_0100_app_groups;
+DROP TABLE IF EXISTS __migration_0100_source;
