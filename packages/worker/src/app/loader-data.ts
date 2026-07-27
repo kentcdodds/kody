@@ -796,11 +796,17 @@ export type AccountLoaderJsonValue =
 	| Array<AccountLoaderJsonValue>
 	| { [key: string]: AccountLoaderJsonValue }
 
+export type AccountJobSchedule =
+	| { type: 'once'; runAt: string }
+	| { type: 'interval'; every: string }
+	| { type: 'cron'; expression: string }
+
 export type AccountJobListItem = {
 	id: string
 	name: string
 	ownership: AccountJobOwnership
 	scheduleSummary: string
+	scheduleType: AccountJobSchedule['type']
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
@@ -821,11 +827,6 @@ export type AccountJobRecentRun = {
 	durationMs: number
 	error: string | null
 }
-
-export type AccountJobSchedule =
-	| { type: 'once'; runAt: string }
-	| { type: 'interval'; every: string }
-	| { type: 'cron'; expression: string }
 
 export type AccountJobDetail = AccountJobListItem & {
 	params: { [key: string]: AccountLoaderJsonValue } | null

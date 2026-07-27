@@ -19,6 +19,7 @@ export type AccountJobListItem = {
 	name: string
 	ownership: JobOwnership
 	scheduleSummary: string
+	scheduleType: JobSchedule['type']
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
@@ -116,6 +117,7 @@ function toListItem(
 		name: job.name,
 		ownership: jobOwnershipForId(job.id),
 		scheduleSummary: job.scheduleSummary,
+		scheduleType: job.schedule.type,
 		timezone: job.timezone,
 		enabled: job.enabled,
 		killSwitchEnabled: job.killSwitchEnabled,

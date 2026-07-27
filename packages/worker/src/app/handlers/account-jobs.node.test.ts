@@ -199,12 +199,14 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 				id: 'job-adhoc-1',
 				ownership: 'ad-hoc',
 				scheduleSummary: adHocJob.scheduleSummary,
+				scheduleType: 'cron',
 				enabled: true,
 				killSwitchEnabled: false,
 			}),
 			expect.objectContaining({
 				id: 'package-job:pkg-1:nightly',
 				ownership: 'package',
+				scheduleType: 'interval',
 			}),
 		],
 		alarm: expect.objectContaining({

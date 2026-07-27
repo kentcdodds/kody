@@ -5,13 +5,18 @@ import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
-import { matchesSearchQuery } from '#client/search-filter.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
 	type AccountStatus,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
+import {
+	filterAccountJobs,
+	readJobsSearchFilter,
+	readJobsViewFilter,
+	type AccountJobsViewFilter,
+} from '#client/routes/account-jobs-filter.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -61,10 +66,18 @@ type EditState = {
 const accountJobsApiPath = '/account/jobs.json'
 const jobsRoute = createListDetailRoute('/account/jobs')
 
+const viewFilterOptions: Array<{
+	value: AccountJobsViewFilter
+	label: string
+}> = [
+	{ value: 'active', label: 'Active' },
+	{ value: 'history', label: 'History' },
+]
+
 /**
  * Latch key includes the selected job id because detail fields (recent runs,
- * params, errors) are loaded with `?selected=`. The client-side `q` filter is
- * omitted so search typing does not refetch.
+ * params, errors) are loaded with `?selected=`. The client-side `q` / `view`
+ * filters are omitted so search typing and view toggles do not refetch.
  */
 function getDataLatchKey(href: string) {
 	const selectedId = jobsRoute.getSelection(href).selectedId
@@ -73,24 +86,19 @@ function getDataLatchKey(href: string) {
 		: '/account/jobs'
 }
 
-function readSearchFilter(href: string) {
-	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
-}
-
-function filterJobs(jobs: Array<AccountJobListItem>, search: string) {
-	return jobs.filter((job) =>
-		matchesSearchQuery(search, [
-			job.name,
-			job.id,
-			job.ownership,
-			job.scheduleSummary,
-			job.timezone,
-			job.lastRunStatus,
-			job.enabled ? 'enabled' : 'disabled',
-			job.killSwitchEnabled ? 'kill switch' : '',
-			job.dueNow ? 'due' : '',
-		]),
-	)
+function emptyJobsMessage(input: {
+	totalCount: number
+	filteredCount: number
+	view: AccountJobsViewFilter
+	search: string
+}) {
+	if (input.totalCount === 0) return 'No scheduled jobs yet.'
+	if (input.filteredCount > 0) return null
+	if (input.search) return 'No jobs match the current filters.'
+	if (input.view === 'history') {
+		return 'No inactive or past jobs.'
+	}
+	return 'No active or upcoming jobs. Switch to History to see disabled or past jobs.'
 }
 
 function buildJobsApiRequestUrl(href: string) {
@@ -214,10 +222,17 @@ export function AccountJobsRoute(handle: Handle) {
 		return new URL(getCurrentHref(), 'http://localhost').search
 	}
 
-	function buildHrefWithUpdatedSearch(search: string) {
+	function buildHrefWithUpdatedFilters(next: {
+		search?: string
+		view?: AccountJobsViewFilter
+	}) {
 		const nextUrl = new URL(getCurrentHref(), 'http://localhost')
+		const search = next.search ?? nextUrl.searchParams.get('q')?.trim() ?? ''
+		const view = next.view ?? readJobsViewFilter(nextUrl.href)
 		if (search) nextUrl.searchParams.set('q', search)
 		else nextUrl.searchParams.delete('q')
+		if (view === 'history') nextUrl.searchParams.set('view', 'history')
+		else nextUrl.searchParams.delete('view')
 		return `${nextUrl.pathname}${nextUrl.search}`
 	}
 
@@ -362,8 +377,15 @@ export function AccountJobsRoute(handle: Handle) {
 		}
 		const isMutating = actionState !== 'idle'
 		const selection = jobsRoute.getSelection(currentHref)
-		const search = readSearchFilter(currentHref)
-		const filteredJobs = filterJobs(jobs, search)
+		const search = readJobsSearchFilter(currentHref)
+		const view = readJobsViewFilter(currentHref)
+		const filteredJobs = filterAccountJobs(jobs, { view, search })
+		const listEmptyMessage = emptyJobsMessage({
+			totalCount: jobs.length,
+			filteredCount: filteredJobs.length,
+			view,
+			search,
+		})
 		const detail =
 			selectedJob && selectedJob.id === selection.selectedId
 				? selectedJob
@@ -411,23 +433,48 @@ export function AccountJobsRoute(handle: Handle) {
 						sidebar={
 							<AccountManagementSidebar
 								title="Scheduled jobs"
-								description="Ad-hoc jobs and package-owned jobs for this account."
+								description="Default view shows active and upcoming jobs. Switch to History for disabled or past jobs."
 							>
-								<AccountManagementSearchField
-									label="Search"
-									placeholder="Search jobs"
-									value={search}
-									onInput={(value) => {
-										replaceLocation(buildHrefWithUpdatedSearch(value))
-									}}
-								/>
-								{jobs.length === 0 ? (
+								<div mix={css({ display: 'grid', gap: spacing.sm })}>
+									<label mix={css(fieldCss)}>
+										<span mix={css(fieldLabelCss)}>View</span>
+										<select
+											aria-label="Jobs view filter"
+											value={view}
+											mix={[
+												on('change', (event) => {
+													const value = event.currentTarget.value
+													if (value !== 'active' && value !== 'history') {
+														return
+													}
+													replaceLocation(
+														buildHrefWithUpdatedFilters({ view: value }),
+													)
+												}),
+												css(inputCss),
+											]}
+										>
+											{viewFilterOptions.map((option) => (
+												<option key={option.value} value={option.value}>
+													{option.label}
+												</option>
+											))}
+										</select>
+									</label>
+									<AccountManagementSearchField
+										label="Search"
+										placeholder="Search jobs"
+										value={search}
+										onInput={(value) => {
+											replaceLocation(
+												buildHrefWithUpdatedFilters({ search: value }),
+											)
+										}}
+									/>
+								</div>
+								{listEmptyMessage ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No scheduled jobs yet.
-									</p>
-								) : filteredJobs.length === 0 ? (
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										No jobs match the current filters.
+										{listEmptyMessage}
 									</p>
 								) : (
 									<AccountManagementList>
