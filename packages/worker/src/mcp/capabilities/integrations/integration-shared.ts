@@ -77,7 +77,7 @@ export const integrationSaveSchema = z
 		apiBaseUrl: z.string().url().nullable().optional(),
 		flow: z.enum(integrationFlowValues).optional(),
 		usePkce: z.boolean().nullable().optional(),
-		clientIdValueName: z.string().min(1).optional(),
+		clientId: z.string().min(1).optional(),
 		clientSecretSecretName: z.string().min(1).nullable().optional(),
 		accessTokenSecretName: z.string().min(1).optional(),
 		refreshTokenSecretName: z.string().min(1).nullable().optional(),
@@ -92,6 +92,53 @@ export type IntegrationSaveInput = z.infer<typeof integrationSaveSchema>
 export function normalizeIntegrationConfig(
 	value: IntegrationConfig,
 ): IntegrationConfig {
+	const normalized = normalizeIntegrationConfigFields(value)
+	return {
+		...normalized,
+		clientIdValueName: value.clientIdValueName.trim(),
+	}
+}
+
+/**
+ * Flat integration config with inline `clientId` (D1 / capability shape).
+ * Same as {@link IntegrationConfig} except `clientIdValueName` → `clientId`.
+ */
+export const integrationConfigWithClientIdSchema = integrationConfigSchema
+	.omit({ clientIdValueName: true })
+	.extend({
+		clientId: z.string().min(1),
+	})
+
+export type IntegrationConfigWithClientId = z.infer<
+	typeof integrationConfigWithClientIdSchema
+>
+
+export function normalizeIntegrationConfigWithClientId(
+	value: IntegrationConfigWithClientId,
+): IntegrationConfigWithClientId {
+	const normalized = normalizeIntegrationConfigFields(value)
+	return {
+		...normalized,
+		clientId: value.clientId.trim(),
+	}
+}
+
+function normalizeIntegrationConfigFields(
+	value: Pick<
+		IntegrationConfig,
+		| 'name'
+		| 'tokenUrl'
+		| 'apiBaseUrl'
+		| 'flow'
+		| 'usePkce'
+		| 'clientSecretSecretName'
+		| 'accessTokenSecretName'
+		| 'refreshTokenSecretName'
+		| 'requiredHosts'
+		| 'tokenExchangeStyle'
+		| 'authorization'
+	>,
+) {
 	const authorization = value.authorization
 		? normalizeIntegrationAuthorization(value.authorization)
 		: null
@@ -109,7 +156,6 @@ export function normalizeIntegrationConfig(
 		apiBaseUrl: value.apiBaseUrl?.trim() || null,
 		flow: value.flow,
 		...(usePkce == null ? {} : { usePkce }),
-		clientIdValueName: value.clientIdValueName.trim(),
 		clientSecretSecretName: value.clientSecretSecretName?.trim() || null,
 		accessTokenSecretName: value.accessTokenSecretName.trim(),
 		refreshTokenSecretName: value.refreshTokenSecretName?.trim() || null,
@@ -119,7 +165,7 @@ export function normalizeIntegrationConfig(
 	}
 }
 
-function normalizeIntegrationAuthorization(
+export function normalizeIntegrationAuthorization(
 	value: IntegrationAuthorization,
 ): IntegrationAuthorization {
 	const scopeSeparator =
@@ -147,10 +193,10 @@ function normalizeIntegrationAuthorization(
 }
 
 export function mergeIntegrationConfig(
-	current: IntegrationConfig,
+	current: IntegrationConfigWithClientId,
 	update: IntegrationSaveInput,
-): IntegrationConfig {
-	return normalizeIntegrationConfig({
+): IntegrationConfigWithClientId {
+	return normalizeIntegrationConfigWithClientId({
 		...current,
 		...update,
 		name: update.name,

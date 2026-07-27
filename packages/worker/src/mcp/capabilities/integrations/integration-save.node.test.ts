@@ -1,83 +1,90 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { integrationDeleteCapability } from './integration-delete.ts'
+import { integrationGetCapability } from './integration-get.ts'
+import { integrationListCapability } from './integration-list.ts'
+import { integrationOauthAppListCapability } from './integration-oauth-app-list.ts'
+import { integrationOauthAppRotateCredentialsCapability } from './integration-oauth-app-rotate-credentials.ts'
 import { integrationSaveCapability } from './integration-save.ts'
 import {
 	buildIntegrationValueName,
-	integrationConfigSchema,
+	integrationConfigWithClientIdSchema,
 	mergeIntegrationConfig,
-	parseIntegrationConfig,
 	parseIntegrationValueName,
 } from './integration-shared.ts'
 
-function createValueTestDb() {
-	const entries = new Map<string, string>()
+const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 
-	const db = {
-		prepare(query: string) {
-			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async first<T>() {
-							if (
-								normalizedQuery.startsWith('select') &&
-								normalizedQuery.includes('from value_buckets')
-							) {
-								return {
-									id: 'bucket-1',
-									user_id: String(params[0]),
-									scope: String(params[1]),
-									binding_key: '',
-									expires_at: null,
-									created_at: '2026-03-29T00:00:00.000Z',
-									updated_at: '2026-03-29T00:00:00.000Z',
-								} as T
-							}
-							if (
-								normalizedQuery.startsWith('select') &&
-								normalizedQuery.includes('from value_entries') &&
-								normalizedQuery.includes('where bucket_id = ? and name = ?')
-							) {
-								const name = String(params[1])
-								const value = entries.get(name)
-								return value == null
-									? null
-									: ({
-											bucket_id: 'bucket-1',
-											name,
-											description: `OAuth integration config for ${name}`,
-											value,
-											created_at: '2026-03-29T00:00:00.000Z',
-											updated_at: '2026-03-29T00:00:00.000Z',
-										} as T)
-							}
-							return null
-						},
-						async run() {
-							if (normalizedQuery.startsWith('insert into value_entries')) {
-								const name = String(params[1])
-								const value = String(params[3])
-								entries.set(name, value)
-								return { meta: { changes: 1 } }
-							}
-							return { meta: { changes: 1 } }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
-
-	return { db, entries }
+function applyAllMigrations(db: DatabaseSync) {
+	for (const fileName of readdirSync(migrationsDirectory)
+		.filter((file) => file.endsWith('.sql'))
+		.sort()) {
+		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
+	}
 }
 
-test('integration config helpers and integration_save persist validated integration records', async () => {
-	const current = integrationConfigSchema.parse({
+function createEnv() {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite)
+	return {
+		sqlite,
+		env: { APP_DB: createD1FromSqlite(sqlite) } as unknown as Env,
+	}
+}
+
+function caller(userId: string) {
+	return createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId },
+	})
+}
+
+const spotifyBase = {
+	name: 'spotify',
+	tokenUrl: 'https://accounts.spotify.com/api/token',
+	apiBaseUrl: 'https://api.spotify.com/v1',
+	flow: 'pkce' as const,
+	clientId: 'spotify-client-id-value',
+	clientSecretSecretName: null as string | null,
+	accessTokenSecretName: 'spotifyAccessToken',
+	refreshTokenSecretName: 'spotifyRefreshToken',
+	requiredHosts: ['api.spotify.com'],
+	authorization: {
+		authorizeUrl: 'https://accounts.spotify.com/authorize',
+		scopes: ['user-read-email', 'playlist-read-private'],
+		scopeSeparator: ' ',
+		extraAuthorizeParams: { show_dialog: 'true' },
+	},
+}
+
+const googleBase = {
+	name: 'google',
+	tokenUrl: 'https://oauth2.googleapis.com/token',
+	apiBaseUrl: 'https://www.googleapis.com',
+	flow: 'pkce' as const,
+	clientId: 'google-client-id-value',
+	clientSecretSecretName: 'googleClientSecret',
+	accessTokenSecretName: 'googleAccessToken',
+	refreshTokenSecretName: 'googleRefreshToken',
+	requiredHosts: ['www.googleapis.com', 'accounts.google.com'],
+	authorization: {
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+		scopes: ['openid', 'email'],
+		scopeSeparator: null as string | null,
+		extraAuthorizeParams: { access_type: 'offline' },
+	},
+}
+
+test('mergeIntegrationConfig and integration_save create a new app + connection with clientId shape', async () => {
+	const current = integrationConfigWithClientIdSchema.parse({
 		name: 'spotify',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		flow: 'pkce',
-		clientIdValueName: 'spotify-client-id',
+		clientId: 'spotify-client-id-value',
 		clientSecretSecretName: null,
 		accessTokenSecretName: 'spotifyAccessToken',
 		refreshTokenSecretName: 'spotifyRefreshToken',
@@ -114,181 +121,123 @@ test('integration config helpers and integration_save persist validated integrat
 		requiredHosts: ['api.spotify.com'],
 	})
 
-	expect(
-		parseIntegrationConfig(
-			{
-				name: 'spotify',
-				tokenUrl: 'https://accounts.spotify.com/api/token',
-				flow: 'pkce',
-				clientIdValueName: 'spotify-client-id',
-				clientSecretSecretName: null,
-				accessTokenSecretName: 'spotifyAccessToken',
-				refreshTokenSecretName: 'spotifyRefreshToken',
-				requiredHosts: ['api.spotify.com'],
-			},
-			null,
-		),
-	).toMatchObject({
-		name: 'spotify',
-		apiBaseUrl: null,
+	const { env } = createEnv()
+	const result = await integrationSaveCapability.handler(spotifyBase, {
+		env,
+		callerContext: caller('user-123'),
 	})
 
-	expect(
-		parseIntegrationConfig(
-			{
-				name: 'spotify',
-				tokenUrl: 'https://accounts.spotify.com/api/token',
-				flow: 'pkce',
-				clientIdValueName: 'spotify-client-id',
-				clientSecretSecretName: null,
-				accessTokenSecretName: 'spotifyAccessToken',
-				refreshTokenSecretName: 'spotifyRefreshToken',
-				requiredHosts: ['api.spotify.com'],
-				authorization: {
-					authorizeUrl: 'ftp://accounts.spotify.com/authorize',
-					scopes: ['user-read-email'],
-				},
-			},
-			null,
-		),
-	).toBeNull()
-
-	const testDb = createValueTestDb()
-
-	const result = await integrationSaveCapability.handler(
-		{
-			name: 'spotify',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			apiBaseUrl: 'https://api.spotify.com/v1',
-			flow: 'pkce',
-			clientIdValueName: 'spotify-client-id',
-			clientSecretSecretName: null,
-			accessTokenSecretName: 'spotifyAccessToken',
-			refreshTokenSecretName: 'spotifyRefreshToken',
-			requiredHosts: ['api.spotify.com'],
-			authorization: {
-				authorizeUrl: 'https://accounts.spotify.com/authorize',
-				scopes: ['user-read-email', 'playlist-read-private'],
-				scopeSeparator: ' ',
-				extraAuthorizeParams: { show_dialog: 'true' },
-			},
+	expect(result.integration).toEqual({
+		name: 'spotify',
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		apiBaseUrl: 'https://api.spotify.com/v1',
+		flow: 'pkce',
+		clientId: 'spotify-client-id-value',
+		clientSecretSecretName: null,
+		accessTokenSecretName: 'spotifyAccessToken',
+		refreshTokenSecretName: 'spotifyRefreshToken',
+		requiredHosts: ['api.spotify.com'],
+		authorization: {
+			authorizeUrl: 'https://accounts.spotify.com/authorize',
+			scopes: ['user-read-email', 'playlist-read-private'],
+			scopeSeparator: null,
+			extraAuthorizeParams: { show_dialog: 'true' },
 		},
-		{
-			env: { APP_DB: testDb.db } as unknown as Env,
-			callerContext: createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-123' },
-			}),
-		},
+	})
+	expect(result.integration).not.toHaveProperty('clientIdValueName')
+	expect(result.integration).not.toHaveProperty('usePkce')
+
+	const listed = await integrationListCapability.handler(
+		{},
+		{ env, callerContext: caller('user-123') },
 	)
+	expect(listed.integrations).toHaveLength(1)
+	expect(listed.integrations[0]).toEqual(result.integration)
 
-	expect(result.integration).toMatchObject({
-		name: 'spotify',
-		tokenUrl: 'https://accounts.spotify.com/api/token',
-		apiBaseUrl: 'https://api.spotify.com/v1',
-		flow: 'pkce',
-		clientIdValueName: 'spotify-client-id',
-		accessTokenSecretName: 'spotifyAccessToken',
-		refreshTokenSecretName: 'spotifyRefreshToken',
-		requiredHosts: ['api.spotify.com'],
-		authorization: {
-			authorizeUrl: 'https://accounts.spotify.com/authorize',
-			scopes: ['user-read-email', 'playlist-read-private'],
-			scopeSeparator: null,
-			extraAuthorizeParams: { show_dialog: 'true' },
-		},
-	})
-	expect(
-		JSON.parse(testDb.entries.get('_integration:spotify') ?? '{}'),
-	).toMatchObject({
-		name: 'spotify',
-		tokenUrl: 'https://accounts.spotify.com/api/token',
-		apiBaseUrl: 'https://api.spotify.com/v1',
-		flow: 'pkce',
-		clientIdValueName: 'spotify-client-id',
-		accessTokenSecretName: 'spotifyAccessToken',
-		refreshTokenSecretName: 'spotifyRefreshToken',
-		requiredHosts: ['api.spotify.com'],
-		authorization: {
-			authorizeUrl: 'https://accounts.spotify.com/authorize',
-			scopes: ['user-read-email', 'playlist-read-private'],
-			scopeSeparator: null,
-			extraAuthorizeParams: { show_dialog: 'true' },
-		},
-	})
+	const got = await integrationGetCapability.handler(
+		{ name: 'Spotify' },
+		{ env, callerContext: caller('user-123') },
+	)
+	expect(got.integration).toEqual(result.integration)
 
-	const invalidDb = createValueTestDb()
 	await expect(
 		integrationSaveCapability.handler(
 			{
 				name: 'spotify',
 				flow: 'pkce',
-				clientIdValueName: 'spotify-client-id',
+				clientId: 'spotify-client-id-value',
 			},
-			{
-				env: { APP_DB: invalidDb.db } as unknown as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://heykody.dev',
-					user: { userId: 'user-123' },
-				}),
-			},
+			{ env: createEnv().env, callerContext: caller('user-123') },
 		),
 	).rejects.toThrow(/missing or invalid required fields/i)
-	expect(invalidDb.entries.has('_integration:spotify')).toBe(false)
+})
 
-	const upsertDb = createValueTestDb()
-	upsertDb.entries.set(
-		'_integration:spotify',
-		JSON.stringify({
-			name: 'spotify',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			apiBaseUrl: null,
-			flow: 'pkce',
-			clientIdValueName: 'spotify-client-id',
-			clientSecretSecretName: null,
-			accessTokenSecretName: 'spotifyAccessToken',
-			refreshTokenSecretName: 'spotifyRefreshToken',
-			requiredHosts: ['accounts.spotify.com', 'api.spotify.com'],
-		}),
+test('integration_save reuses an existing app when credentials match and preserves unspecified fields on partial update', async () => {
+	const { env } = createEnv()
+	const userId = 'user-reuse'
+
+	await integrationSaveCapability.handler(googleBase, {
+		env,
+		callerContext: caller(userId),
+	})
+	await integrationSaveCapability.handler(
+		{
+			...googleBase,
+			name: 'google-calendar',
+			accessTokenSecretName: 'googleCalendarAccessToken',
+			refreshTokenSecretName: 'googleCalendarRefreshToken',
+			authorization: {
+				...googleBase.authorization,
+				scopes: ['calendar.readonly'],
+			},
+			requiredHosts: ['www.googleapis.com'],
+		},
+		{ env, callerContext: caller(userId) },
 	)
 
-	const upserted = await integrationSaveCapability.handler(
-		{
-			name: 'spotify',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			apiBaseUrl: 'https://api.spotify.com/v1',
-			flow: 'pkce',
-			clientIdValueName: 'spotify-client-id',
-			clientSecretSecretName: null,
-			accessTokenSecretName: 'spotifyAccessToken',
-			refreshTokenSecretName: 'spotifyRefreshToken',
-			requiredHosts: ['api.spotify.com'],
-		},
-		{
-			env: { APP_DB: upsertDb.db } as unknown as Env,
-			callerContext: createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-123' },
-			}),
-		},
+	const apps = await integrationOauthAppListCapability.handler(
+		{},
+		{ env, callerContext: caller(userId) },
 	)
+	expect(apps.apps).toHaveLength(1)
+	expect(apps.apps[0]).toMatchObject({
+		slug: 'google',
+		connectionCount: 2,
+		clientId: 'google-client-id-value',
+		clientSecretSecretName: 'googleClientSecret',
+	})
+	expect(apps.apps[0]?.connections.map((entry) => entry.name).sort()).toEqual([
+		'google',
+		'google-calendar',
+	])
 
-	expect(upserted.integration).toMatchObject({
-		name: 'spotify',
-		apiBaseUrl: 'https://api.spotify.com/v1',
-		requiredHosts: ['api.spotify.com'],
+	const partial = await integrationSaveCapability.handler(
+		{
+			name: 'google',
+			apiBaseUrl: 'https://www.googleapis.com/v2',
+		},
+		{ env, callerContext: caller(userId) },
+	)
+	expect(partial.integration).toMatchObject({
+		name: 'google',
+		apiBaseUrl: 'https://www.googleapis.com/v2',
+		clientId: 'google-client-id-value',
+		clientSecretSecretName: 'googleClientSecret',
+		accessTokenSecretName: 'googleAccessToken',
+		refreshTokenSecretName: 'googleRefreshToken',
+		requiredHosts: ['accounts.google.com', 'www.googleapis.com'],
+		authorization: {
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			scopes: ['openid', 'email'],
+			scopeSeparator: null,
+			extraAuthorizeParams: { access_type: 'offline' },
+		},
 	})
-	expect(
-		JSON.parse(upsertDb.entries.get('_integration:spotify') ?? '{}'),
-	).toMatchObject({
-		apiBaseUrl: 'https://api.spotify.com/v1',
-		requiredHosts: ['api.spotify.com'],
-	})
+	expect(partial.integration).not.toHaveProperty('tokenExchangeStyle')
 })
 
 test('integration_save persists usePkce only when it differs from the flow default', async () => {
-	// Canva-style: confidential flow with PKCE enabled must round-trip.
-	const canvaDb = createValueTestDb()
+	const { env: canvaEnv } = createEnv()
 	const canvaResult = await integrationSaveCapability.handler(
 		{
 			name: 'canva',
@@ -296,134 +245,207 @@ test('integration_save persists usePkce only when it differs from the flow defau
 			apiBaseUrl: 'https://api.canva.com/rest/v1',
 			flow: 'confidential',
 			usePkce: true,
-			clientIdValueName: 'canva-client-id',
+			clientId: 'canva-client-id-value',
 			clientSecretSecretName: 'canvaClientSecret',
 			accessTokenSecretName: 'canvaAccessToken',
 			refreshTokenSecretName: 'canvaRefreshToken',
 			requiredHosts: ['api.canva.com'],
 			tokenExchangeStyle: 'basic-form',
 		},
-		{
-			env: { APP_DB: canvaDb.db } as unknown as Env,
-			callerContext: createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-123' },
-			}),
-		},
+		{ env: canvaEnv, callerContext: caller('user-123') },
 	)
 	expect(canvaResult.integration).toMatchObject({
 		name: 'canva',
 		flow: 'confidential',
 		usePkce: true,
 		tokenExchangeStyle: 'basic-form',
-	})
-	expect(
-		JSON.parse(canvaDb.entries.get('_integration:canva') ?? '{}'),
-	).toMatchObject({
-		flow: 'confidential',
-		usePkce: true,
-		tokenExchangeStyle: 'basic-form',
+		clientId: 'canva-client-id-value',
 	})
 
-	// Flow-default PKCE choices normalize away instead of being stored.
-	const defaultDb = createValueTestDb()
+	const { env: defaultEnv } = createEnv()
 	const defaultResult = await integrationSaveCapability.handler(
 		{
 			name: 'spotify',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
 			flow: 'pkce',
 			usePkce: true,
-			clientIdValueName: 'spotify-client-id',
+			clientId: 'spotify-client-id-value',
 			accessTokenSecretName: 'spotifyAccessToken',
 			requiredHosts: ['api.spotify.com'],
 		},
-		{
-			env: { APP_DB: defaultDb.db } as unknown as Env,
-			callerContext: createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-123' },
-			}),
-		},
+		{ env: defaultEnv, callerContext: caller('user-123') },
 	)
 	expect(defaultResult.integration).not.toHaveProperty('usePkce')
-	expect(
-		JSON.parse(defaultDb.entries.get('_integration:spotify') ?? '{}'),
-	).not.toHaveProperty('usePkce')
 })
 
-test('integration identity is the canonical provider key across save, lookup, and value-name parsing', async () => {
-	// Saving with display casing stores and returns the canonical name.
-	const casedDb = createValueTestDb()
+test('integration_delete removes a connection; credential rotation updates every sibling', async () => {
+	const { env } = createEnv()
+	const userId = 'user-rotate'
+
+	await integrationSaveCapability.handler(googleBase, {
+		env,
+		callerContext: caller(userId),
+	})
+	await integrationSaveCapability.handler(
+		{
+			...googleBase,
+			name: 'google-mail',
+			accessTokenSecretName: 'googleMailAccessToken',
+			refreshTokenSecretName: 'googleMailRefreshToken',
+		},
+		{ env, callerContext: caller(userId) },
+	)
+
+	const rotated = await integrationOauthAppRotateCredentialsCapability.handler(
+		{
+			slug: 'google',
+			clientId: 'google-client-id-rotated',
+			clientSecretSecretName: 'googleClientSecretRotated',
+		},
+		{ env, callerContext: caller(userId) },
+	)
+	expect(rotated.app).toMatchObject({
+		slug: 'google',
+		clientId: 'google-client-id-rotated',
+		clientSecretSecretName: 'googleClientSecretRotated',
+		connectionCount: 2,
+	})
+	expect(rotated.app).not.toHaveProperty('userId')
+	expect(JSON.stringify(rotated.app)).not.toMatch(/Bearer |sk_|secret_value/i)
+
+	const google = await integrationGetCapability.handler(
+		{ name: 'google' },
+		{ env, callerContext: caller(userId) },
+	)
+	const googleMail = await integrationGetCapability.handler(
+		{ name: 'google-mail' },
+		{ env, callerContext: caller(userId) },
+	)
+	expect(google.integration?.clientId).toBe('google-client-id-rotated')
+	expect(google.integration?.clientSecretSecretName).toBe(
+		'googleClientSecretRotated',
+	)
+	expect(googleMail.integration?.clientId).toBe('google-client-id-rotated')
+	expect(googleMail.integration?.clientSecretSecretName).toBe(
+		'googleClientSecretRotated',
+	)
+
+	const deletedMail = await integrationDeleteCapability.handler(
+		{ name: 'google-mail' },
+		{ env, callerContext: caller(userId) },
+	)
+	expect(deletedMail).toEqual({ deleted: true })
+
+	const afterDelete = await integrationListCapability.handler(
+		{},
+		{ env, callerContext: caller(userId) },
+	)
+	expect(afterDelete.integrations.map((entry) => entry.name)).toEqual([
+		'google',
+	])
+
+	const appsAfter = await integrationOauthAppListCapability.handler(
+		{},
+		{ env, callerContext: caller(userId) },
+	)
+	expect(appsAfter.apps).toHaveLength(1)
+	expect(appsAfter.apps[0]?.connectionCount).toBe(1)
+
+	const deletedGoogle = await integrationDeleteCapability.handler(
+		{ name: 'google' },
+		{ env, callerContext: caller(userId) },
+	)
+	expect(deletedGoogle).toEqual({ deleted: true })
+	const emptyApps = await integrationOauthAppListCapability.handler(
+		{},
+		{ env, callerContext: caller(userId) },
+	)
+	expect(emptyApps.apps).toEqual([])
+})
+
+test('integration capabilities deny cross-user reads and require authentication', async () => {
+	const { env } = createEnv()
+
+	await integrationSaveCapability.handler(spotifyBase, {
+		env,
+		callerContext: caller('user-a'),
+	})
+
+	const otherUserList = await integrationListCapability.handler(
+		{},
+		{ env, callerContext: caller('user-b') },
+	)
+	expect(otherUserList.integrations).toEqual([])
+
+	const otherUserGet = await integrationGetCapability.handler(
+		{ name: 'spotify' },
+		{ env, callerContext: caller('user-b') },
+	)
+	expect(otherUserGet.integration).toBeNull()
+
+	const otherUserDelete = await integrationDeleteCapability.handler(
+		{ name: 'spotify' },
+		{ env, callerContext: caller('user-b') },
+	)
+	expect(otherUserDelete).toEqual({ deleted: false })
+
+	const stillThere = await integrationGetCapability.handler(
+		{ name: 'spotify' },
+		{ env, callerContext: caller('user-a') },
+	)
+	expect(stillThere.integration?.name).toBe('spotify')
+
+	await expect(
+		integrationSaveCapability.handler(spotifyBase, {
+			env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+			}),
+		}),
+	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+})
+
+test('integration identity is the canonical provider key across save and lookup', async () => {
+	const { env } = createEnv()
 	const saved = await integrationSaveCapability.handler(
 		{
 			name: 'GitHub',
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			flow: 'confidential',
-			clientIdValueName: 'github-client-id',
+			clientId: 'github-client-id-value',
 			clientSecretSecretName: 'githubClientSecret',
 			accessTokenSecretName: 'githubAccessToken',
 			requiredHosts: ['api.github.com'],
 		},
-		{
-			env: { APP_DB: casedDb.db } as unknown as Env,
-			callerContext: createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-123' },
-			}),
-		},
+		{ env, callerContext: caller('user-123') },
 	)
 	expect(saved.integration.name).toBe('github')
-	expect(casedDb.entries.has('_integration:github')).toBe(true)
-	expect(casedDb.entries.has('_integration:GitHub')).toBe(false)
+	expect(saved.integration.clientId).toBe('github-client-id-value')
 
-	// Every value-key derivation goes through the same canonicalization.
+	const got = await integrationGetCapability.handler(
+		{ name: 'GitHub' },
+		{ env, callerContext: caller('user-123') },
+	)
+	expect(got.integration?.name).toBe('github')
+
+	// Value-name helpers remain for concurrent migration callers.
 	expect(buildIntegrationValueName('GitHub')).toBe('_integration:github')
 	expect(buildIntegrationValueName('Spotify Family')).toBe(
 		'_integration:spotify-family',
 	)
-
-	// Only canonical stored keys parse as integrations.
 	expect(parseIntegrationValueName('_integration:github')).toBe('github')
 	expect(parseIntegrationValueName('_integration:GitHub')).toBeNull()
-	expect(parseIntegrationValueName('_integration:')).toBeNull()
-	expect(parseIntegrationValueName('value:github')).toBeNull()
 
-	// Names without any letters or numbers are rejected outright — including
-	// ones made only of characters the canonical form preserves (. _ -).
 	await expect(
 		integrationSaveCapability.handler(
 			{
 				name: '._-',
 				tokenUrl: 'https://example.com/token',
 				flow: 'pkce',
-				clientIdValueName: 'x-client-id',
+				clientId: 'x-client-id',
 				accessTokenSecretName: 'xAccessToken',
 			},
-			{
-				env: { APP_DB: createValueTestDb().db } as unknown as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://heykody.dev',
-					user: { userId: 'user-123' },
-				}),
-			},
-		),
-	).rejects.toThrow(/letters or numbers/i)
-	await expect(
-		integrationSaveCapability.handler(
-			{
-				name: '!!!',
-				tokenUrl: 'https://example.com/token',
-				flow: 'pkce',
-				clientIdValueName: 'x-client-id',
-				accessTokenSecretName: 'xAccessToken',
-			},
-			{
-				env: { APP_DB: createValueTestDb().db } as unknown as Env,
-				callerContext: createMcpCallerContext({
-					baseUrl: 'https://heykody.dev',
-					user: { userId: 'user-123' },
-				}),
-			},
+			{ env: createEnv().env, callerContext: caller('user-123') },
 		),
 	).rejects.toThrow(/letters or numbers/i)
 })

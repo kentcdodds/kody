@@ -6,16 +6,11 @@ import {
 	emptyCapabilityInputSchema,
 	type CapabilityContext,
 } from '#mcp/capabilities/types.ts'
-import { listValues } from '#mcp/values/service.ts'
-import {
-	integrationConfigSchema,
-	parseIntegrationConfig,
-	parseIntegrationValueName,
-	parseIntegrationJson,
-} from './integration-shared.ts'
+import { listIntegrations } from '#worker/integrations/service.ts'
+import { integrationConfigWithClientIdSchema } from './integration-shared.ts'
 
 const outputSchema = z.object({
-	integrations: z.array(integrationConfigSchema),
+	integrations: z.array(integrationConfigWithClientIdSchema),
 })
 
 export const integrationListCapability = defineDomainCapability(
@@ -23,7 +18,14 @@ export const integrationListCapability = defineDomainCapability(
 	{
 		name: 'integration_list',
 		description: 'List saved OAuth integration configurations.',
-		keywords: ['integration', 'oauth', 'config', 'registry', 'list', 'value'],
+		keywords: [
+			'integration',
+			'oauth',
+			'config',
+			'registry',
+			'list',
+			'connection',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -31,28 +33,10 @@ export const integrationListCapability = defineDomainCapability(
 		outputSchema,
 		async handler(_args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const values = await listValues({
+			const integrations = await listIntegrations({
 				env: ctx.env,
 				userId: user.userId,
-				scope: 'user',
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-					storageId: ctx.callerContext.storageContext?.storageId ?? null,
-				},
 			})
-			const integrations = values
-				.map((value) => {
-					const integrationName = parseIntegrationValueName(value.name)
-					if (!integrationName) return null
-					return parseIntegrationConfig(
-						parseIntegrationJson(value.value),
-						integrationName,
-					)
-				})
-				.filter((entry): entry is z.infer<typeof integrationConfigSchema> =>
-					Boolean(entry),
-				)
 			return { integrations }
 		},
 	},

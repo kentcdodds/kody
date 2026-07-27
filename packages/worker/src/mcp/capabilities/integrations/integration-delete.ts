@@ -3,8 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { deleteValue } from '#mcp/values/service.ts'
-import { buildIntegrationValueName } from './integration-shared.ts'
+import { deleteIntegration } from '#worker/integrations/service.ts'
 
 const inputSchema = z.object({
 	name: z.string().min(1).describe('Integration name to delete.'),
@@ -18,8 +17,16 @@ export const integrationDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
 		name: 'integration_delete',
-		description: 'Delete a saved OAuth integration configuration by name.',
-		keywords: ['integration', 'oauth', 'config', 'registry', 'delete', 'value'],
+		description:
+			'Delete a saved OAuth integration connection by name. When it is the last connection on its OAuth app, the unused app is removed too.',
+		keywords: [
+			'integration',
+			'oauth',
+			'config',
+			'registry',
+			'delete',
+			'connection',
+		],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
@@ -27,15 +34,10 @@ export const integrationDeleteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const deleted = await deleteValue({
+			const deleted = await deleteIntegration({
 				env: ctx.env,
 				userId: user.userId,
-				name: buildIntegrationValueName(args.name),
-				scope: 'user',
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-				},
+				name: args.name,
 			})
 			return { deleted }
 		},

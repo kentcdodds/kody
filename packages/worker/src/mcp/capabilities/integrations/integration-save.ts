@@ -3,21 +3,22 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
-	buildIntegrationValueName,
-	integrationConfigSchema,
+	getIntegration,
+	upsertIntegration,
+	type IntegrationConfigWithClientId,
+} from '#worker/integrations/service.ts'
+import {
+	integrationConfigWithClientIdSchema,
 	integrationSaveSchema,
 	mergeIntegrationConfig,
-	normalizeIntegrationConfig,
-	parseIntegrationConfig,
-	parseIntegrationJson,
+	normalizeIntegrationConfigWithClientId,
 } from './integration-shared.ts'
 
 const inputSchema = integrationSaveSchema
 
 const outputSchema = z.object({
-	integration: integrationConfigSchema,
+	integration: integrationConfigWithClientIdSchema,
 })
 
 export const integrationSaveCapability = defineDomainCapability(
@@ -25,7 +26,7 @@ export const integrationSaveCapability = defineDomainCapability(
 	{
 		name: 'integration_save',
 		description:
-			'Create or update an OAuth integration configuration for the signed-in user. Names are normalized to a canonical lowercase-kebab provider key and stored as a user-scoped value with a _integration: prefix.',
+			'Create or update an OAuth integration connection for the signed-in user. Names are normalized to a canonical lowercase-kebab provider key. Partial updates merge into the existing connection; matching client credentials reuse a shared OAuth app across connections.',
 		keywords: [
 			'integration',
 			'oauth',
@@ -34,7 +35,7 @@ export const integrationSaveCapability = defineDomainCapability(
 			'save',
 			'update',
 			'upsert',
-			'value',
+			'connection',
 		],
 		readOnly: false,
 		idempotent: true,
@@ -43,56 +44,34 @@ export const integrationSaveCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const storageContext = {
-				sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-				appId: ctx.callerContext.storageContext?.appId ?? null,
-			}
-			const existing = await getValue({
+			const existing = await getIntegration({
 				env: ctx.env,
 				userId: user.userId,
-				name: buildIntegrationValueName(args.name),
-				scope: 'user',
-				storageContext,
+				name: args.name,
 			})
-			const existingIntegration =
-				existing == null
-					? null
-					: parseIntegrationConfig(
-							parseIntegrationJson(existing.value),
-							args.name,
-						)
-			const integration = existingIntegration
-				? mergeIntegrationConfig(existingIntegration, args)
+			const config = existing
+				? mergeIntegrationConfig(existing, args)
 				: createNewIntegrationConfig(args)
-			const value = await saveValue({
+			const integration = await upsertIntegration({
 				env: ctx.env,
 				userId: user.userId,
-				userEmail: user.email,
-				name: buildIntegrationValueName(integration.name),
-				value: JSON.stringify(integration),
-				scope: 'user',
-				description: `OAuth integration config for ${integration.name}`,
-				storageContext,
+				config,
 			})
-			const parsed = parseIntegrationConfig(
-				parseIntegrationJson(value.value),
-				integration.name,
-			)
-			return {
-				integration: parsed ?? integration,
-			}
+			return { integration }
 		},
 	},
 )
 
-function createNewIntegrationConfig(args: z.infer<typeof inputSchema>) {
-	const parsed = integrationConfigSchema.safeParse({
+function createNewIntegrationConfig(
+	args: z.infer<typeof inputSchema>,
+): IntegrationConfigWithClientId {
+	const parsed = integrationConfigWithClientIdSchema.safeParse({
 		name: args.name,
 		tokenUrl: args.tokenUrl,
 		apiBaseUrl: args.apiBaseUrl ?? null,
 		flow: args.flow,
 		...(args.usePkce !== undefined ? { usePkce: args.usePkce } : {}),
-		clientIdValueName: args.clientIdValueName,
+		clientId: args.clientId,
 		clientSecretSecretName: args.clientSecretSecretName ?? null,
 		accessTokenSecretName: args.accessTokenSecretName,
 		refreshTokenSecretName: args.refreshTokenSecretName ?? null,
@@ -115,5 +94,5 @@ function createNewIntegrationConfig(args: z.infer<typeof inputSchema>) {
 			`Cannot create integration "${args.name}": missing or invalid required fields — ${details}`,
 		)
 	}
-	return normalizeIntegrationConfig(parsed.data)
+	return normalizeIntegrationConfigWithClientId(parsed.data)
 }

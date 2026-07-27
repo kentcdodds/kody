@@ -3,20 +3,15 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { getValue } from '#mcp/values/service.ts'
-import {
-	buildIntegrationValueName,
-	integrationConfigSchema,
-	parseIntegrationConfig,
-	parseIntegrationJson,
-} from './integration-shared.ts'
+import { getIntegration } from '#worker/integrations/service.ts'
+import { integrationConfigWithClientIdSchema } from './integration-shared.ts'
 
 const inputSchema = z.object({
 	name: z.string().min(1).describe('Integration name to read.'),
 })
 
 const outputSchema = z.object({
-	integration: integrationConfigSchema.nullable(),
+	integration: integrationConfigWithClientIdSchema.nullable(),
 })
 
 export const integrationGetCapability = defineDomainCapability(
@@ -24,7 +19,14 @@ export const integrationGetCapability = defineDomainCapability(
 	{
 		name: 'integration_get',
 		description: 'Read an OAuth integration configuration by name.',
-		keywords: ['integration', 'oauth', 'config', 'registry', 'read', 'value'],
+		keywords: [
+			'integration',
+			'oauth',
+			'config',
+			'registry',
+			'read',
+			'connection',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -32,27 +34,12 @@ export const integrationGetCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const value = await getValue({
+			const integration = await getIntegration({
 				env: ctx.env,
 				userId: user.userId,
-				name: buildIntegrationValueName(args.name),
-				scope: 'user',
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-					storageId: ctx.callerContext.storageContext?.storageId ?? null,
-				},
+				name: args.name,
 			})
-			if (!value) {
-				return { integration: null }
-			}
-			const parsed = parseIntegrationConfig(
-				parseIntegrationJson(value.value),
-				args.name,
-			)
-			return {
-				integration: parsed,
-			}
+			return { integration }
 		},
 	},
 )
