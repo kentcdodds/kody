@@ -1,6 +1,9 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { loadAccountIntegrationsData } from '#app/account-integrations-data.ts'
+import {
+	loadAccountIntegrationByName,
+	loadAccountIntegrationsData,
+} from '#app/account-integrations-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -39,6 +42,14 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 
 			if (request.method !== 'GET') {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
+			}
+
+			const name = new URL(request.url).searchParams.get('name')?.trim()
+			if (name) {
+				return jsonResponse({
+					ok: true,
+					integration: await loadAccountIntegrationByName(env, user, name),
+				})
 			}
 
 			return jsonResponse(await loadAccountIntegrationsData(env, user))

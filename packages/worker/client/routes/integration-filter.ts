@@ -2,10 +2,13 @@ import { matchesSearchQuery } from '#client/search-filter.ts'
 
 export type SearchableIntegration = {
 	name: string
-	valueName: string
+	appSlug: string
+	provider: string
+	appLabel?: string | null
+	accountLabel?: string | null
 	tokenUrl: string
 	apiBaseUrl?: string | null
-	clientIdValueName: string
+	clientId: string
 	clientSecretSecretName?: string | null
 	accessTokenSecretName: string
 	refreshTokenSecretName?: string | null
@@ -16,6 +19,16 @@ export type SearchableIntegration = {
 	} | null
 }
 
+export type IntegrationAppGroup<
+	integration extends SearchableIntegration = SearchableIntegration,
+> = {
+	appSlug: string
+	provider: string
+	appLabel: string | null
+	clientId: string
+	connections: Array<integration>
+}
+
 export function filterIntegrations<integration extends SearchableIntegration>(
 	integrations: ReadonlyArray<integration>,
 	query: string,
@@ -23,10 +36,13 @@ export function filterIntegrations<integration extends SearchableIntegration>(
 	return integrations.filter((integration) =>
 		matchesSearchQuery(query, [
 			integration.name,
-			integration.valueName,
+			integration.appSlug,
+			integration.provider,
+			integration.appLabel,
+			integration.accountLabel,
 			integration.tokenUrl,
 			integration.apiBaseUrl,
-			integration.clientIdValueName,
+			integration.clientId,
 			integration.clientSecretSecretName,
 			integration.accessTokenSecretName,
 			integration.refreshTokenSecretName,
@@ -35,4 +51,35 @@ export function filterIntegrations<integration extends SearchableIntegration>(
 			...(integration.authorization?.scopes ?? []),
 		]),
 	)
+}
+
+export function groupIntegrationsByApp<
+	integration extends SearchableIntegration,
+>(
+	integrations: ReadonlyArray<integration>,
+): Array<IntegrationAppGroup<integration>> {
+	const groups = new Map<string, IntegrationAppGroup<integration>>()
+	for (const integration of integrations) {
+		const existing = groups.get(integration.appSlug)
+		if (existing) {
+			existing.connections.push(integration)
+			continue
+		}
+		groups.set(integration.appSlug, {
+			appSlug: integration.appSlug,
+			provider: integration.provider,
+			appLabel: integration.appLabel ?? null,
+			clientId: integration.clientId,
+			connections: [integration],
+		})
+	}
+	return Array.from(groups.values())
+}
+
+export function integrationDisplayName(integration: SearchableIntegration) {
+	return integration.accountLabel?.trim() || integration.name
+}
+
+export function oauthAppDisplayName(group: IntegrationAppGroup) {
+	return group.appLabel?.trim() || group.provider || group.appSlug
 }

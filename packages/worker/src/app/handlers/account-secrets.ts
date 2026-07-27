@@ -1,8 +1,5 @@
 import { jsonResponse } from '#worker/json-response.ts'
-import {
-	normalizeProviderKey,
-	safeParseHost,
-} from '@kody-internal/shared/url-hosts.ts'
+import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import { type Action } from 'remix/router'
 import {
 	buildAccountSecretId,
@@ -39,9 +36,11 @@ import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
-	buildIntegrationValueName,
-	parseIntegrationConfig,
+	canonicalIntegrationName,
+	normalizeIntegrationConfigWithClientId,
+	integrationConfigWithClientIdSchema,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { upsertIntegration } from '#worker/integrations/service.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import {
 	buildOAuthTokenExchangeFailurePayload,
@@ -242,7 +241,7 @@ async function handleConnectOauthAction(input: {
 	const authorizeUrl = readOptionalString(input.body, 'authorizeUrl')
 	const flow = readOptionalString(input.body, 'flow')
 	const usePkce = readOptionalBoolean(input.body, 'usePkce')
-	const clientIdValueName = readOptionalString(input.body, 'clientIdValueName')
+	const clientId = readOptionalString(input.body, 'clientId')
 	const clientSecretSecretName = readOptionalString(
 		input.body,
 		'clientSecretSecretName',
@@ -285,11 +284,8 @@ async function handleConnectOauthAction(input: {
 	if (flow && flow !== 'pkce' && flow !== 'confidential') {
 		return jsonResponse({ ok: false, error: 'Invalid OAuth flow.' }, 400)
 	}
-	if (!clientIdValueName) {
-		return jsonResponse(
-			{ ok: false, error: 'Client ID value name is required.' },
-			400,
-		)
+	if (!clientId) {
+		return jsonResponse({ ok: false, error: 'Client ID is required.' }, 400)
 	}
 	if (!accessTokenSecretName) {
 		return jsonResponse(
@@ -349,13 +345,12 @@ async function handleConnectOauthAction(input: {
 	const integrationName = await saveIntegrationConfig({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
-		userEmail: input.user.mcpUser.email,
 		provider,
 		tokenUrl,
 		apiBaseUrl,
 		flow: flow === 'confidential' ? 'confidential' : 'pkce',
 		usePkce,
-		clientIdValueName,
+		clientId,
 		clientSecretSecretName,
 		accessTokenSecretName,
 		refreshTokenSecretName,
@@ -363,7 +358,6 @@ async function handleConnectOauthAction(input: {
 			tokenUrl,
 			tokenExchangeStyle: readOptionalString(input.body, 'tokenExchangeStyle'),
 		}),
-		tokenPayload: tokenRecord,
 		allowedHosts,
 		authorization: authorizeUrl
 			? {
@@ -603,18 +597,16 @@ async function handleOAuthExchangeAction(input: {
 async function saveIntegrationConfig(input: {
 	env: Env
 	userId: string
-	userEmail: string
 	provider: string
 	tokenUrl: string
 	apiBaseUrl: string | null
 	flow: 'pkce' | 'confidential'
 	usePkce: boolean | null
-	clientIdValueName: string
+	clientId: string
 	clientSecretSecretName: string | null
 	accessTokenSecretName: string
 	refreshTokenSecretName: string | null
 	tokenExchangeStyle: TokenExchangeStyle | null
-	tokenPayload: Record<string, unknown>
 	allowedHosts: Array<string>
 	authorization: {
 		authorizeUrl: string
@@ -623,44 +615,36 @@ async function saveIntegrationConfig(input: {
 		extraAuthorizeParams: Record<string, string>
 	} | null
 }) {
-	const providerKey = normalizeProviderKey(input.provider)
+	const providerKey = canonicalIntegrationName(input.provider)
 	if (!providerKey) {
 		throw new Error('Provider must contain letters or numbers.')
 	}
-	const integration = parseIntegrationConfig(
-		{
-			name: input.provider,
-			tokenUrl: input.tokenUrl,
-			apiBaseUrl: input.apiBaseUrl,
-			flow: input.flow,
-			...(input.usePkce == null ? {} : { usePkce: input.usePkce }),
-			clientIdValueName: input.clientIdValueName,
-			clientSecretSecretName:
-				input.flow === 'confidential'
-					? (input.clientSecretSecretName ?? `${providerKey}ClientSecret`)
-					: null,
-			accessTokenSecretName: input.accessTokenSecretName,
-			refreshTokenSecretName: input.refreshTokenSecretName,
-			requiredHosts: input.allowedHosts,
-			...(input.tokenExchangeStyle && input.tokenExchangeStyle !== 'form'
-				? { tokenExchangeStyle: input.tokenExchangeStyle }
-				: {}),
-			...(input.authorization ? { authorization: input.authorization } : {}),
-		},
-		input.provider,
-	)
-	if (!integration) {
+	const parsed = integrationConfigWithClientIdSchema.safeParse({
+		name: input.provider,
+		tokenUrl: input.tokenUrl,
+		apiBaseUrl: input.apiBaseUrl,
+		flow: input.flow,
+		...(input.usePkce == null ? {} : { usePkce: input.usePkce }),
+		clientId: input.clientId,
+		clientSecretSecretName:
+			input.flow === 'confidential'
+				? (input.clientSecretSecretName ?? `${providerKey}ClientSecret`)
+				: null,
+		accessTokenSecretName: input.accessTokenSecretName,
+		refreshTokenSecretName: input.refreshTokenSecretName,
+		requiredHosts: input.allowedHosts,
+		...(input.tokenExchangeStyle && input.tokenExchangeStyle !== 'form'
+			? { tokenExchangeStyle: input.tokenExchangeStyle }
+			: {}),
+		...(input.authorization ? { authorization: input.authorization } : {}),
+	})
+	if (!parsed.success) {
 		throw new Error('OAuth integration configuration is invalid.')
 	}
-	await saveValue({
+	const integration = await upsertIntegration({
 		env: input.env,
 		userId: input.userId,
-		userEmail: input.userEmail,
-		name: buildIntegrationValueName(integration.name),
-		value: JSON.stringify(integration),
-		scope: 'user',
-		description: `OAuth integration config for ${integration.name}`,
-		storageContext: { sessionId: null, appId: null, packageId: null },
+		config: normalizeIntegrationConfigWithClientId(parsed.data),
 	})
 	return integration.name
 }

@@ -36,7 +36,12 @@ import {
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
 } from '#client/routes/integration-provider-catalog.ts'
-import { filterIntegrations } from '#client/routes/integration-filter.ts'
+import {
+	filterIntegrations,
+	groupIntegrationsByApp,
+	integrationDisplayName,
+	oauthAppDisplayName,
+} from '#client/routes/integration-filter.ts'
 import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
@@ -252,6 +257,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			integrations.find(
 				(integration) => integration.name === selection.selectedId,
 			) ?? null
+		const selectedAppConnectionCount = selectedIntegration
+			? integrations.filter(
+					(entry) => entry.appSlug === selectedIntegration.appSlug,
+				).length
+			: 0
 		const showIntegrationNotFound =
 			selection.selectedId != null && !selectedIntegration && status === 'ready'
 		const connectHref = selectedIntegration
@@ -285,11 +295,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						sidebar={
 							<AccountManagementSidebar
 								title="Connected integrations"
-								description="Select an integration to view its status or reconnect OAuth."
+								description="Select a connection to view its status or reconnect OAuth. Connections that share an OAuth app are grouped together."
 							>
 								<AccountManagementSearchField
 									label="Search"
-									placeholder="Search names, hosts, scopes, or stored values"
+									placeholder="Search names, hosts, scopes, or client IDs"
 									value={search}
 									onInput={(value) => {
 										replaceLocation(buildHrefWithUpdatedSearch(value))
@@ -305,56 +315,114 @@ export function AccountIntegrationsRoute(handle: Handle) {
 										No integrations match the current filters.
 									</p>
 								) : (
-									<AccountManagementList>
-										{filteredIntegrations.map((integration) => (
-											<li
-												key={integration.valueName}
-												mix={css({ minWidth: 0 })}
-											>
-												<AccountManagementListItemButton
-													active={selection.selectedId === integration.name}
-													onClick={() => {
-														navigate(
-															integrationsRoute.buildDetailHref(
-																integration.name,
-																getCurrentSearch(),
-															),
-														)
-													}}
-												>
-													<strong
-														mix={css({
-															...truncatedTextCss,
-															display: 'block',
-														})}
+									<div mix={css({ display: 'grid', gap: spacing.md })}>
+										{groupIntegrationsByApp(filteredIntegrations).map(
+											(group) => {
+												const appTitle = oauthAppDisplayName(group)
+												const showAppHeader = group.connections.length > 1
+												return (
+													<div
+														key={group.appSlug}
+														mix={css({ display: 'grid', gap: spacing.xs })}
 													>
-														{integration.name}
-													</strong>
-													<span
-														mix={css({
-															...truncatedTextCss,
-															display: 'block',
-															fontSize: typography.fontSize.sm,
-															color: colors.textMuted,
-														})}
-													>
-														{connectionStatusLabel(integration)} ·{' '}
-														{integration.flow}
-													</span>
-													<span
-														mix={css({
-															...truncatedTextCss,
-															display: 'block',
-															fontSize: typography.fontSize.sm,
-															color: colors.textMuted,
-														})}
-													>
-														Stored as {integration.valueName}
-													</span>
-												</AccountManagementListItemButton>
-											</li>
-										))}
-									</AccountManagementList>
+														{showAppHeader ? (
+															<div
+																mix={css({
+																	display: 'grid',
+																	gap: spacing.xs,
+																	padding: `0 ${spacing.xs}`,
+																})}
+															>
+																<strong
+																	mix={css({
+																		...truncatedTextCss,
+																		fontSize: typography.fontSize.sm,
+																		color: colors.text,
+																	})}
+																>
+																	{appTitle}
+																</strong>
+																<span
+																	mix={css({
+																		fontSize: typography.fontSize.sm,
+																		color: colors.textMuted,
+																	})}
+																>
+																	{group.connections.length} connections ·
+																	shared OAuth app
+																</span>
+															</div>
+														) : null}
+														<AccountManagementList>
+															{group.connections.map((integration) => (
+																<li
+																	key={integration.name}
+																	mix={css({ minWidth: 0 })}
+																>
+																	<AccountManagementListItemButton
+																		active={
+																			selection.selectedId === integration.name
+																		}
+																		onClick={() => {
+																			navigate(
+																				integrationsRoute.buildDetailHref(
+																					integration.name,
+																					getCurrentSearch(),
+																				),
+																			)
+																		}}
+																	>
+																		<strong
+																			mix={css({
+																				...truncatedTextCss,
+																				display: 'block',
+																			})}
+																		>
+																			{integrationDisplayName(integration)}
+																		</strong>
+																		<span
+																			mix={css({
+																				...truncatedTextCss,
+																				display: 'block',
+																				fontSize: typography.fontSize.sm,
+																				color: colors.textMuted,
+																			})}
+																		>
+																			{connectionStatusLabel(integration)} ·{' '}
+																			{integration.flow}
+																		</span>
+																		{showAppHeader ? (
+																			<span
+																				mix={css({
+																					...truncatedTextCss,
+																					display: 'block',
+																					fontSize: typography.fontSize.sm,
+																					color: colors.textMuted,
+																				})}
+																			>
+																				{integration.name}
+																			</span>
+																		) : (
+																			<span
+																				mix={css({
+																					...truncatedTextCss,
+																					display: 'block',
+																					fontSize: typography.fontSize.sm,
+																					color: colors.textMuted,
+																				})}
+																			>
+																				{appTitle}
+																			</span>
+																		)}
+																	</AccountManagementListItemButton>
+																</li>
+															))}
+														</AccountManagementList>
+													</div>
+												)
+											},
+										)}
+									</div>
 								)}
 							</AccountManagementSidebar>
 						}
@@ -370,9 +438,15 @@ export function AccountIntegrationsRoute(handle: Handle) {
 									})}
 								>
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>{selectedIntegration.name}</h2>
+										<h2 mix={css(cardTitleCss)}>
+											{integrationDisplayName(selectedIntegration)}
+										</h2>
 										<p mix={css(descriptionCss)}>
-											Stored as {selectedIntegration.valueName}
+											Connection <code>{selectedIntegration.name}</code> on
+											OAuth app <code>{selectedIntegration.appSlug}</code>
+											{selectedAppConnectionCount > 1
+												? ` · ${selectedAppConnectionCount} connections share this app`
+												: ''}
 										</p>
 									</div>
 									<span
@@ -412,11 +486,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 								</section>
 
 								<section mix={css(insetCardCss)}>
-									<h3 mix={css(sectionTitleCss)}>Stored names</h3>
+									<h3 mix={css(sectionTitleCss)}>OAuth app & secrets</h3>
 									<div mix={css(detailGridCss)}>
 										{renderIntegrationDetail(
-											'Client ID value',
-											selectedIntegration.clientIdValueName,
+											'Client ID',
+											selectedIntegration.clientId,
 										)}
 										{renderIntegrationDetail(
 											'Client secret',

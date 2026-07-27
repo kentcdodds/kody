@@ -11,7 +11,8 @@
 		"paths": {
 			"#app/*": ["./src/app/*"],
 			"#client/*": ["./client/*"],
-			"#worker/*": ["./src/*"]
+			"#worker/*": ["./src/*"],
+			"#mcp/*": ["./src/mcp/*"]
 		}
 	},
 	"include": [
@@ -37,7 +38,8 @@
 		"./src/app/safe-redirect.ts",
 		"./src/feature-flags/registry.ts",
 		"./src/feature-flags/types.ts",
-		"./src/og/pages.ts"
+		"./src/og/pages.ts",
+		"./src/mcp/values/value-name-guards.ts"
 	],
 	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]
 }

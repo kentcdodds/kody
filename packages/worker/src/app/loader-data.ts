@@ -579,15 +579,20 @@ export type EmailVerificationLoaderData =
 
 export type AccountIntegrationListItem = {
 	name: string
-	valueName: string
+	appSlug: string
+	provider: string
+	appLabel: string | null
+	accountLabel: string | null
 	tokenUrl: string
 	apiBaseUrl?: string | null
 	flow: 'pkce' | 'confidential'
-	clientIdValueName: string
+	usePkce?: boolean | null
+	clientId: string
 	clientSecretSecretName?: string | null
 	accessTokenSecretName: string
 	refreshTokenSecretName?: string | null
 	requiredHosts?: Array<string>
+	tokenExchangeStyle?: 'form' | 'basic-json' | 'basic-form' | null
 	authorization?: {
 		authorizeUrl: string
 		scopes: Array<string>
@@ -603,6 +608,11 @@ export type AccountIntegrationsLoaderData = {
 	email: string
 	username: string
 	integrations: Array<AccountIntegrationListItem>
+}
+
+export type AccountIntegrationDetailLoaderData = {
+	ok: true
+	integration: AccountIntegrationListItem | null
 }
 
 export type AccountMcpServerListItem = {

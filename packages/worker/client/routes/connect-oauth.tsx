@@ -7,6 +7,7 @@ import {
 	safeParseHost,
 } from '@kody-internal/shared/url-hosts.ts'
 import {
+	type AccountIntegrationDetailLoaderData,
 	type AccountIntegrationListItem,
 	type AccountSecretsLoaderData,
 } from '#app/loader-data.ts'
@@ -84,7 +85,7 @@ type ConnectOauthConfig = {
 	extraAuthorizeParams: Record<string, string>
 	providerSetupInstructions: string | null
 	dashboardUrl: string | null
-	clientIdValueName: string
+	clientId: string
 	clientSecretSecretName: string | null
 	accessTokenSecretName: string
 	refreshTokenSecretName: string
@@ -95,8 +96,7 @@ type StoredIntegrationAuthorization = NonNullable<
 	NonNullable<AccountIntegrationListItem['authorization']>
 >
 
-// Persisted integration values share the core account-integration payload shape
-// but omit account-only metadata and normalize nullable fields after parsing.
+// Server-returned integration config used to prefill reconnects.
 type StoredIntegrationConfig = Omit<
 	AccountIntegrationListItem,
 	| 'apiBaseUrl'
@@ -106,25 +106,24 @@ type StoredIntegrationConfig = Omit<
 	| 'refreshTokenSecretName'
 	| 'requiredHosts'
 	| 'updatedAt'
-	| 'valueName'
+	| 'appSlug'
+	| 'provider'
+	| 'appLabel'
+	| 'accountLabel'
 > & {
 	apiBaseUrl: string | null
 	clientSecretSecretName: string | null
 	refreshTokenSecretName: string | null
 	requiredHosts: Array<string>
-	usePkce: boolean | null
+	usePkce?: boolean | null
 	/** Omitted when unset so persisted JSON stays sparse (matches pre-import shape). */
 	tokenExchangeStyle?: TokenExchangeStyle | null
-	authorization: StoredIntegrationAuthorization | null
+	authorization?: StoredIntegrationAuthorization | null
 }
 
 type OAuthExchangeResult =
 	| { ok: true; data: Record<string, unknown>; status: number }
 	| { ok: false; status: number; error: string }
-
-type SaveValueResult =
-	| { ok: true; value: { value: string } }
-	| { ok: false; error: string }
 
 type SaveSecretResult = { ok: true } | { ok: false; error: string }
 
@@ -167,7 +166,6 @@ export function ConnectOauthRoute(handle: Handle) {
 	let currentStep: 'setup' | 'connect' | 'callback' | 'success' = 'setup'
 	let config: ConnectOauthConfig | null = null
 	let existingIntegrationConfig: StoredIntegrationConfig | null = null
-	let existingIntegrationValueName: string | null = null
 	let accessTokenSaved = false
 	let refreshTokenSaved = false
 	let hasConfigError = false
@@ -385,7 +383,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		persistConfig(nextConfig)
 		const url = new URL(nextConfig.authorizeUrl)
 		url.searchParams.set('response_type', 'code')
-		const clientId = await readValue(nextConfig.clientIdValueName)
+		const clientId = nextConfig.clientId.trim()
 		if (!clientId) {
 			throw new Error('Missing client ID. Save it before connecting.')
 		}
@@ -426,22 +424,6 @@ export function ConnectOauthRoute(handle: Handle) {
 		return true
 	}
 
-	const readValue = async (name: string) => {
-		const response = await fetch('/account/secrets.json', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Accept: 'application/json',
-			},
-			credentials: 'include',
-			body: JSON.stringify({ action: 'value_get', name }),
-		})
-		if (redirectToLoginOn401(response)) return null
-		const payload = await response.json().catch(() => null)
-		if (!response.ok || payload?.ok !== true) return null
-		return typeof payload.value?.value === 'string' ? payload.value.value : null
-	}
-
 	const listSecrets = async () => {
 		const response = await fetch('/account/secrets.json', {
 			method: 'GET',
@@ -467,27 +449,32 @@ export function ConnectOauthRoute(handle: Handle) {
 
 	const readExistingIntegrationConfig = async (
 		queryConfig: ConnectOauthQueryConfig,
-	) => {
-		// Integration identity is the canonical provider key, so a single
-		// deterministic lookup replaces the historical raw-name probe.
-		const valueName = buildIntegrationValueName(queryConfig.providerKey)
-		const raw = await readValue(valueName)
-		const parsed = raw
-			? parseStoredIntegrationConfig(raw, queryConfig.provider)
-			: null
-		return parsed
-			? { valueName, integration: parsed }
-			: { valueName: null, integration: null }
+	): Promise<StoredIntegrationConfig | null> => {
+		const response = await fetch(
+			`/account/integrations.json?name=${encodeURIComponent(queryConfig.providerKey)}`,
+			{
+				method: 'GET',
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+			},
+		)
+		if (redirectToLoginOn401(response)) return null
+		const payload = (await response
+			.json()
+			.catch(() => null)) as AccountIntegrationDetailLoaderData | null
+		if (!response.ok || payload?.ok !== true || !payload.integration) {
+			return null
+		}
+		return toStoredIntegrationConfig(payload.integration)
 	}
 
 	const initializeSetupState = async (nextConfig: ConnectOauthConfig) => {
-		const clientId = await readValue(nextConfig.clientIdValueName)
 		const secrets = nextConfig.clientSecretSecretName
 			? await listSecrets()
 			: null
-		clientIdInput = clientId ?? ''
+		clientIdInput = nextConfig.clientId
 		clientSecretInput = ''
-		hasStoredClientId = Boolean(clientId?.trim())
+		hasStoredClientId = Boolean(nextConfig.clientId.trim())
 		hasStoredClientSecret = Boolean(
 			nextConfig.clientSecretSecretName &&
 			secrets?.some(
@@ -499,7 +486,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		revealStoredClientSecretField = false
 		const setupStatus = summarizeStoredSetupState({
 			flow: nextConfig.flow,
-			clientId,
+			clientId: nextConfig.clientId,
 			hasStoredClientSecret,
 		})
 		if (setupStatus.isReady) {
@@ -518,35 +505,6 @@ export function ConnectOauthRoute(handle: Handle) {
 				: missingDetails,
 		)
 		setStep('setup')
-	}
-
-	const saveValue = async (
-		name: string,
-		value: string,
-		description: string,
-	): Promise<SaveValueResult> => {
-		const response = await fetch('/account/secrets.json', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Accept: 'application/json',
-			},
-			credentials: 'include',
-			body: JSON.stringify({
-				action: 'value_set',
-				name,
-				value,
-				description,
-			}),
-		})
-		if (redirectToLoginOn401(response)) {
-			return { ok: false, error: 'Session expired.' }
-		}
-		const payload = await response.json().catch(() => null)
-		if (!response.ok || payload?.ok !== true || !payload.value?.value) {
-			return { ok: false, error: payload?.error || 'Unable to save value.' }
-		}
-		return { ok: true, value: { value: String(payload.value.value) } }
 	}
 
 	const saveSecret = async (
@@ -588,7 +546,7 @@ export function ConnectOauthRoute(handle: Handle) {
 	): Promise<OAuthExchangeResult> => {
 		const params = new URLSearchParams()
 		params.set('grant_type', 'authorization_code')
-		const clientId = await readValue(nextConfig.clientIdValueName)
+		const clientId = nextConfig.clientId.trim()
 		if (!clientId) {
 			return { ok: false, status: 0, error: 'Missing client ID.' }
 		}
@@ -680,15 +638,8 @@ export function ConnectOauthRoute(handle: Handle) {
 				revealStoredClientSecretField = false
 				clientSecretInput = ''
 			}
-			const clientIdResult = await saveValue(
-				config.clientIdValueName,
-				clientId,
-				`${config.provider} OAuth client ID`,
-			)
-			if (!clientIdResult.ok) {
-				setStatus(clientIdResult.error, 'error')
-				return
-			}
+			config = { ...config, clientId }
+			persistConfig(config)
 			hasStoredClientId = true
 			setStatus('Saved OAuth client configuration.', 'info')
 			setStep('connect')
@@ -770,7 +721,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				flow: config.flow,
 				usePkce: config.usePkce,
 				tokenExchangeStyle: config.tokenExchangeStyle,
-				clientIdValueName: config.clientIdValueName,
+				clientId: config.clientId,
 				clientSecretSecretName: config.clientSecretSecretName,
 				allowedHosts: config.allowedHosts,
 				accessTokenSecretName: config.accessTokenSecretName,
@@ -868,12 +819,8 @@ export function ConnectOauthRoute(handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Existing integration config</h2>
 				<p mix={css(descriptionCss)}>
-					Loaded from{' '}
-					<code>
-						{existingIntegrationValueName ??
-							buildIntegrationValueName(config?.provider ?? '')}
-					</code>
-					.
+					Loaded your saved connection{' '}
+					<code>{existingIntegrationConfig.name}</code>.
 				</p>
 				<div mix={css(detailGridCss)}>
 					<div mix={css(detailItemCss)}>
@@ -897,9 +844,9 @@ export function ConnectOauthRoute(handle: Handle) {
 						</div>
 					) : null}
 					<div mix={css(detailItemCss)}>
-						<span mix={css(detailLabelCss)}>Client ID value</span>
+						<span mix={css(detailLabelCss)}>Client ID</span>
 						<code mix={css(detailValueCss)}>
-							{existingIntegrationConfig.clientIdValueName}
+							{existingIntegrationConfig.clientId}
 						</code>
 					</div>
 					<div mix={css(detailItemCss)}>
@@ -970,9 +917,8 @@ export function ConnectOauthRoute(handle: Handle) {
 				(queryConfig
 					? mergeConnectOauthConfig({
 							queryConfig,
-							storedIntegration: (
-								await readExistingIntegrationConfig(queryConfig)
-							).integration,
+							storedIntegration:
+								await readExistingIntegrationConfig(queryConfig),
 						})
 					: null)
 			if (!nextConfig) {
@@ -992,11 +938,10 @@ export function ConnectOauthRoute(handle: Handle) {
 			return
 		}
 		const existingIntegration = await readExistingIntegrationConfig(queryConfig)
-		existingIntegrationConfig = existingIntegration.integration
-		existingIntegrationValueName = existingIntegration.valueName
+		existingIntegrationConfig = existingIntegration
 		const nextConfig = mergeConnectOauthConfig({
 			queryConfig,
-			storedIntegration: existingIntegration.integration,
+			storedIntegration: existingIntegration,
 		})
 		if (!nextConfig) {
 			hasConfigError = true
@@ -1122,8 +1067,9 @@ export function ConnectOauthRoute(handle: Handle) {
 								/>
 							</label>
 							<p mix={css(descriptionCss)}>
-								Saved as <code>{config.clientIdValueName}</code>
-								{hasStoredClientId ? '.' : ' after you continue.'}
+								{hasStoredClientId
+									? 'Stored on the OAuth app for this connection.'
+									: 'Saved on the OAuth app when you finish connecting.'}
 							</p>
 							{config.flow === 'confidential' ? (
 								hasStoredClientSecret && !revealStoredClientSecretField ? (
@@ -1196,9 +1142,9 @@ export function ConnectOauthRoute(handle: Handle) {
 						<p mix={css({ margin: 0, color: colors.text })}>
 							Start the OAuth flow. You will be redirected to the provider.
 						</p>
-						{existingIntegrationConfig ? (
+						{existingIntegrationConfig && hasStoredClientId ? (
 							<p mix={css(descriptionCss)}>
-								Using stored client ID <code>{config.clientIdValueName}</code>
+								Using stored client ID
 								{config.flow === 'confidential' && hasStoredClientSecret
 									? ` and stored client secret ${config.clientSecretSecretName ?? ''}.`
 									: '.'}
@@ -1373,20 +1319,50 @@ function normalizeHosts(hosts: Array<string>) {
 	).sort()
 }
 
-/**
- * Integration identity is the canonical provider key; mirrors
- * buildIntegrationValueName in integration-shared.ts.
- */
-export function buildIntegrationValueName(provider: string) {
-	return `_integration:${normalizeProviderKey(provider)}`
+export function toStoredIntegrationConfig(
+	integration: AccountIntegrationListItem,
+): StoredIntegrationConfig {
+	return {
+		name: integration.name,
+		tokenUrl: integration.tokenUrl,
+		apiBaseUrl: integration.apiBaseUrl?.trim() || null,
+		flow: integration.flow,
+		usePkce:
+			typeof integration.usePkce === 'boolean' ? integration.usePkce : null,
+		clientId: integration.clientId,
+		clientSecretSecretName: integration.clientSecretSecretName?.trim() || null,
+		accessTokenSecretName: integration.accessTokenSecretName,
+		refreshTokenSecretName: integration.refreshTokenSecretName?.trim() || null,
+		requiredHosts: normalizeHosts(integration.requiredHosts ?? []),
+		...(integration.tokenExchangeStyle
+			? { tokenExchangeStyle: integration.tokenExchangeStyle }
+			: {}),
+		authorization: integration.authorization
+			? {
+					authorizeUrl: integration.authorization.authorizeUrl,
+					scopes: integration.authorization.scopes,
+					scopeSeparator: integration.authorization.scopeSeparator ?? null,
+					extraAuthorizeParams:
+						integration.authorization.extraAuthorizeParams ?? {},
+				}
+			: null,
+	}
 }
 
+/**
+ * Parses a stored/server integration payload for reconnect helpers and tests.
+ * Accepts either a JSON string or an already-decoded object with inline
+ * `clientId` (the first-class integrations table shape).
+ */
 export function parseStoredIntegrationConfig(
-	raw: string,
+	raw: string | Record<string, unknown>,
 	fallbackProvider: string | null,
 ): StoredIntegrationConfig | null {
 	try {
-		const parsed = JSON.parse(raw) as Record<string, unknown>
+		const parsed =
+			typeof raw === 'string'
+				? (JSON.parse(raw) as Record<string, unknown>)
+				: raw
 		const name =
 			typeof parsed.name === 'string' && parsed.name.trim()
 				? parsed.name.trim()
@@ -1395,10 +1371,8 @@ export function parseStoredIntegrationConfig(
 			typeof parsed.tokenUrl === 'string' ? parsed.tokenUrl.trim() : ''
 		const flow = parsed.flow === 'confidential' ? 'confidential' : 'pkce'
 		const usePkce = typeof parsed.usePkce === 'boolean' ? parsed.usePkce : null
-		const clientIdValueName =
-			typeof parsed.clientIdValueName === 'string'
-				? parsed.clientIdValueName.trim()
-				: ''
+		const clientId =
+			typeof parsed.clientId === 'string' ? parsed.clientId.trim() : ''
 		const accessTokenSecretName =
 			typeof parsed.accessTokenSecretName === 'string'
 				? parsed.accessTokenSecretName.trim()
@@ -1424,7 +1398,7 @@ export function parseStoredIntegrationConfig(
 		const authorization = parseStoredIntegrationAuthorization(
 			parsed.authorization,
 		)
-		if (!name || !tokenUrl || !clientIdValueName || !accessTokenSecretName) {
+		if (!name || !tokenUrl || !clientId || !accessTokenSecretName) {
 			return null
 		}
 		return {
@@ -1436,7 +1410,7 @@ export function parseStoredIntegrationConfig(
 					: null,
 			flow,
 			usePkce,
-			clientIdValueName,
+			clientId,
 			clientSecretSecretName,
 			accessTokenSecretName,
 			refreshTokenSecretName,
@@ -1560,8 +1534,7 @@ export function mergeConnectOauthConfig(input: {
 		extraAuthorizeParams,
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
-		clientIdValueName:
-			input.storedIntegration?.clientIdValueName ?? `${providerKey}-client-id`,
+		clientId: input.storedIntegration?.clientId ?? '',
 		clientSecretSecretName:
 			flow === 'confidential'
 				? (input.storedIntegration?.clientSecretSecretName ??
@@ -1626,7 +1599,7 @@ export function parseSessionConnectOauthConfig(
 		(record.flow === 'pkce' || record.flow === 'confidential') &&
 		typeof record.usePkce === 'boolean' &&
 		typeof record.scopeSeparator === 'string' &&
-		typeof record.clientIdValueName === 'string' &&
+		typeof record.clientId === 'string' &&
 		typeof record.accessTokenSecretName === 'string' &&
 		Array.isArray(record.scopes) &&
 		Array.isArray(record.allowedHosts) &&

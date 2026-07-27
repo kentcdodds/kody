@@ -1,51 +1,56 @@
 import { type AccountIntegrationsLoaderData } from '#app/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
-	type IntegrationConfig,
-	parseIntegrationConfig,
-	parseIntegrationJson,
-	parseIntegrationValueName,
-} from '#mcp/capabilities/integrations/integration-shared.ts'
-import { listValues } from '#mcp/values/service.ts'
+	getJoinedIntegration,
+	listJoinedIntegrations,
+	toIntegrationConfig,
+	type IntegrationConfigWithClientId,
+} from '#worker/integrations/service.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
 >
 
-type AccountIntegrationListItem = IntegrationConfig & {
-	valueName: string
+export type AccountIntegrationRecord = IntegrationConfigWithClientId & {
+	appSlug: string
+	provider: string
+	appLabel: string | null
+	accountLabel: string | null
 	createdAt: string
 	updatedAt: string
+}
+
+function toAccountIntegrationRecord(input: {
+	app: Parameters<typeof toIntegrationConfig>[0]
+	connection: Parameters<typeof toIntegrationConfig>[1]
+}): AccountIntegrationRecord {
+	const config = toIntegrationConfig(input.app, input.connection)
+	return {
+		...config,
+		appSlug: input.app.slug,
+		provider: input.app.provider,
+		appLabel: input.app.label,
+		accountLabel: input.connection.accountLabel,
+		createdAt: input.connection.createdAt,
+		updatedAt: input.connection.updatedAt,
+	}
 }
 
 export async function loadAccountIntegrationsData(
 	env: Env,
 	user: AuthenticatedUser,
 ): Promise<AccountIntegrationsLoaderData> {
-	const values = await listValues({
+	const joined = await listJoinedIntegrations({
 		env,
 		userId: user.mcpUser.userId,
-		scope: 'user',
-		storageContext: { sessionId: null, appId: null },
 	})
-	const integrations = values
-		.map((value) => {
-			const integrationName = parseIntegrationValueName(value.name)
-			if (!integrationName) return null
-			const config = parseIntegrationConfig(
-				parseIntegrationJson(value.value),
-				integrationName,
-			)
-			if (!config) return null
-			return {
-				...config,
-				valueName: value.name,
-				createdAt: value.createdAt,
-				updatedAt: value.updatedAt,
-			}
+	const integrations = joined
+		.map((entry) => toAccountIntegrationRecord(entry))
+		.sort((left, right) => {
+			const appCompare = left.appSlug.localeCompare(right.appSlug)
+			if (appCompare !== 0) return appCompare
+			return left.name.localeCompare(right.name)
 		})
-		.filter((entry): entry is AccountIntegrationListItem => Boolean(entry))
-		.sort((left, right) => left.name.localeCompare(right.name))
 
 	return {
 		ok: true,
@@ -53,4 +58,18 @@ export async function loadAccountIntegrationsData(
 		username: user.username,
 		integrations,
 	}
+}
+
+export async function loadAccountIntegrationByName(
+	env: Env,
+	user: AuthenticatedUser,
+	name: string,
+): Promise<AccountIntegrationRecord | null> {
+	const joined = await getJoinedIntegration({
+		env,
+		userId: user.mcpUser.userId,
+		name,
+	})
+	if (!joined) return null
+	return toAccountIntegrationRecord(joined)
 }
