@@ -1,7 +1,6 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
-	isReservedAccountValueName,
 	loadAccountValuesData,
 	userScopedStorageContext,
 } from '#app/account-values-data.ts'
@@ -105,15 +104,9 @@ export function createAccountValuesApiHandler(env: Env) {
 	} satisfies Action<typeof routes.accountValuesApi>
 }
 
-const reservedAccountValueWriteError =
-	'Value names starting with _integration: or _openapi: are reserved and cannot be saved or deleted from the account UI.'
-
 function assertWritableAccountValueName(name: string) {
 	if (!name) {
 		throw new Error('Value name is required.')
-	}
-	if (isReservedAccountValueName(name)) {
-		throw new Error(reservedAccountValueWriteError)
 	}
 }
 

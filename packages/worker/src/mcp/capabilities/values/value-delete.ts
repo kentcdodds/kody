@@ -4,7 +4,6 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { deleteValue } from '#mcp/values/service.ts'
-import { assertValueNameAllowed } from '#mcp/values/value-name-guards.ts'
 import { valueScopeValues } from '#mcp/values/types.ts'
 
 export const valueDeleteCapability = defineDomainCapability(
@@ -29,7 +28,6 @@ export const valueDeleteCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const name = args.name.trim()
-			assertValueNameAllowed(name)
 			return {
 				deleted: await deleteValue({
 					env: ctx.env,

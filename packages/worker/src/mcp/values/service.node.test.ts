@@ -519,7 +519,7 @@ test('listValues uses one metadata query across buckets and preserves ordering',
 	).toEqual([])
 })
 
-test('saveValue permits platform-reserved openapi prefix for internal callers', async () => {
+test('saveValue permits underscore-prefixed ordinary value names', async () => {
 	const testDb = createValueTestDb()
 	const env = { APP_DB: testDb.db }
 
@@ -527,13 +527,13 @@ test('saveValue permits platform-reserved openapi prefix for internal callers', 
 		env,
 		userId: 'user-platform',
 		scope: 'user',
-		name: '_openapi:widgets',
+		name: '_scratch:widgets',
 		value: '{"provider":"widgets"}',
-		description: 'Widgets OpenAPI binding',
+		description: 'Scratch widgets config',
 	})
 
 	expect(saved).toMatchObject({
-		name: '_openapi:widgets',
+		name: '_scratch:widgets',
 		value: '{"provider":"widgets"}',
 		scope: 'user',
 	})
@@ -541,11 +541,11 @@ test('saveValue permits platform-reserved openapi prefix for internal callers', 
 		await getValue({
 			env,
 			userId: 'user-platform',
-			name: '_openapi:widgets',
+			name: '_scratch:widgets',
 			scope: 'user',
 		}),
 	).toMatchObject({
-		name: '_openapi:widgets',
+		name: '_scratch:widgets',
 		value: '{"provider":"widgets"}',
 	})
 })

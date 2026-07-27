@@ -397,6 +397,11 @@ async function handleConnectOauthAction(input: {
 		})
 		refreshSaved = true
 	}
+	const persistRefreshTokenSecretName =
+		refreshTokenSecretName &&
+		(refreshSaved || approvedHostsBySecretName.has(refreshTokenSecretName))
+			? refreshTokenSecretName
+			: null
 
 	const integrationName = await saveIntegrationConfig({
 		env: input.env,
@@ -409,7 +414,7 @@ async function handleConnectOauthAction(input: {
 		clientId,
 		clientSecretSecretName,
 		accessTokenSecretName,
-		refreshTokenSecretName,
+		refreshTokenSecretName: persistRefreshTokenSecretName,
 		tokenExchangeStyle: resolveTokenExchangeStyle({
 			tokenUrl,
 			tokenExchangeStyle: readOptionalString(input.body, 'tokenExchangeStyle'),
@@ -426,7 +431,7 @@ async function handleConnectOauthAction(input: {
 	})
 	const approvalSecretNames = [
 		accessTokenSecretName,
-		...(refreshSaved && refreshTokenSecretName ? [refreshTokenSecretName] : []),
+		...(persistRefreshTokenSecretName ? [persistRefreshTokenSecretName] : []),
 	]
 	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
 	try {

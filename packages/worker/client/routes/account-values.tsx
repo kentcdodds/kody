@@ -45,7 +45,6 @@ import {
 	type AccountValueListItem,
 	type AccountValuesLoaderData,
 } from '#app/loader-data.ts'
-import { isPlatformReservedValueName } from '#mcp/values/value-name-guards.ts'
 
 type EditorState = {
 	name: string
@@ -87,13 +86,6 @@ function filterValues(values: Array<AccountValueListItem>, search: string) {
 		]),
 	)
 }
-
-function isReservedAccountValueName(name: string) {
-	return isPlatformReservedValueName(name)
-}
-
-const reservedAccountValueWriteError =
-	'Value names starting with _integration: or _openapi: are reserved and cannot be saved or deleted from the account UI.'
 
 function createEmptyEditorState(): EditorState {
 	return {
@@ -297,11 +289,6 @@ export function AccountValuesRoute(handle: Handle) {
 		editorState = nextEditorState
 		if (!nextEditorState.name.trim()) {
 			setMessage('Value name is required.', 'error')
-			handle.update()
-			return
-		}
-		if (isReservedAccountValueName(nextEditorState.name)) {
-			setMessage(reservedAccountValueWriteError, 'error')
 			handle.update()
 			return
 		}

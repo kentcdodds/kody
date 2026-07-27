@@ -25,7 +25,7 @@ function buildCallerContext() {
 	})
 }
 
-test('value list/set hide and reject platform-reserved prefixes', async () => {
+test('value list/set treat underscore-prefixed names as ordinary values', async () => {
 	mockModule.listValues.mockResolvedValue([
 		{
 			name: 'preferred_repo',
@@ -38,26 +38,26 @@ test('value list/set hide and reject platform-reserved prefixes', async () => {
 			ttlMs: null,
 		},
 		{
-			name: '_integration:github',
+			name: '_scratch:notes',
 			scope: 'user',
-			value: '{}',
-			description: 'GitHub OAuth integration',
-			appId: null,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-			ttlMs: null,
-		},
-		{
-			name: '_openapi:widgets',
-			scope: 'user',
-			value: '{}',
-			description: 'Widgets OpenAPI binding',
+			value: 'todo',
+			description: 'Scratch notes',
 			appId: null,
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 			ttlMs: null,
 		},
 	])
+	mockModule.saveValue.mockResolvedValue({
+		name: '_scratch:notes',
+		scope: 'user',
+		value: 'updated',
+		description: 'Scratch notes',
+		appId: null,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+		ttlMs: null,
+	})
 
 	const listed = await valueListCapability.handler(
 		{},
@@ -66,29 +66,31 @@ test('value list/set hide and reject platform-reserved prefixes', async () => {
 			callerContext: buildCallerContext(),
 		},
 	)
-	expect(listed.values.map((entry) => entry.name)).toEqual(['preferred_repo'])
+	expect(listed.values.map((entry) => entry.name)).toEqual([
+		'preferred_repo',
+		'_scratch:notes',
+	])
 
 	const env = {} as Env
 	const callerContext = buildCallerContext()
 	await expect(
 		valueSetCapability.handler(
 			{
-				name: '_integration:github',
-				value: '{}',
+				name: '_scratch:notes',
+				value: 'updated',
 				scope: 'user',
 			},
 			{ env, callerContext },
 		),
-	).rejects.toThrow(Error)
-	await expect(
-		valueSetCapability.handler(
-			{
-				name: '_openapi:widgets',
-				value: '{}',
-				scope: 'user',
-			},
-			{ env, callerContext },
-		),
-	).rejects.toThrow(Error)
-	expect(mockModule.saveValue).not.toHaveBeenCalled()
+	).resolves.toMatchObject({
+		name: '_scratch:notes',
+		value: 'updated',
+	})
+	expect(mockModule.saveValue).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: '_scratch:notes',
+			value: 'updated',
+			scope: 'user',
+		}),
+	)
 })

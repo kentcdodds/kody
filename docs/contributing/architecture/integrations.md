@@ -53,9 +53,6 @@ Account export includes both tables. Rows contain secret _names_ and the inline
 `client_id`, never encrypted secret payloads. Exporting `client_id` is
 deliberate: it is a non-secret OAuth client identifier, not a credential value.
 
-Any `<provider>-client-id` rows in the values store are ordinary user data; they
-are not the live source of truth for integrations.
-
 ## Two independent host gates
 
 Outbound OAuth calls enforce two allowlists that are not collapsed:

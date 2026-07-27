@@ -16,19 +16,10 @@ import {
 } from './service.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const oauthAppsMigration = '0101-user-oauth-apps-and-integrations.sql'
 
 function applyAllMigrations(db: DatabaseSync) {
 	for (const fileName of readdirSync(migrationsDirectory)
 		.filter((file) => file.endsWith('.sql'))
-		.sort()) {
-		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
-	}
-}
-
-function applyMigrationsBefore(db: DatabaseSync, exclusiveUpperBound: string) {
-	for (const fileName of readdirSync(migrationsDirectory)
-		.filter((file) => file.endsWith('.sql') && file < exclusiveUpperBound)
 		.sort()) {
 		db.exec(readFileSync(new URL(fileName, migrationsDirectory), 'utf8'))
 	}
@@ -60,6 +51,29 @@ const baseGoogleConfig = {
 		extraAuthorizeParams: { access_type: 'offline' },
 	},
 }
+
+test('upsertIntegration normalizes URL-shaped required hosts to bare hostnames', async () => {
+	const { env } = createEnv()
+	const userId = 'user-hosts'
+
+	const saved = await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...baseGoogleConfig,
+			requiredHosts: [
+				'https://www.googleapis.com',
+				'HTTPS://ACCOUNTS.GOOGLE.COM/o/oauth2',
+				'oauth2.googleapis.com',
+			],
+		},
+	})
+	expect(saved.requiredHosts).toEqual([
+		'accounts.google.com',
+		'oauth2.googleapis.com',
+		'www.googleapis.com',
+	])
+})
 
 test('upsertIntegration reuses an existing app when the full app tuple matches', async () => {
 	const { env } = createEnv()
@@ -203,62 +217,48 @@ test('deleteOauthAppIfUnused is blocked while connections exist', async () => {
 	expect(stillThere?.name).toBe('google')
 })
 
-test('upsertIntegration reuses a migrated confidential app that stored usePkce false as NULL', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	applyMigrationsBefore(sqlite, oauthAppsMigration)
+test('upsertIntegration reuses a confidential app that stored usePkce false as NULL', async () => {
+	const { env, sqlite } = createEnv()
+	const now = '2026-02-01T00:00:00.000Z'
 	sqlite
 		.prepare(
-			`INSERT INTO value_buckets (
-				id, user_id, scope, binding_key, expires_at, created_at, updated_at
-			) VALUES (?, ?, 'user', '', NULL, ?, ?)`,
+			`INSERT INTO user_oauth_apps (
+				user_id, slug, provider, label, client_id, client_secret_secret_name,
+				token_url, authorize_url, api_base_url, flow, use_pkce,
+				token_exchange_style, scope_separator, extra_authorize_params_json,
+				created_at, updated_at
+			) VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, 'confidential', NULL, ?, NULL, '{}', ?, ?)`,
 		)
 		.run(
-			'bucket-reuse',
 			'user-reuse',
-			'2026-01-01T00:00:00.000Z',
-			'2026-01-01T00:00:00.000Z',
-		)
-	sqlite
-		.prepare(
-			`INSERT INTO value_entries (
-				bucket_id, name, description, value, created_at, updated_at
-			) VALUES (?, ?, '', ?, ?, ?)`,
-		)
-		.run(
-			'bucket-reuse',
-			'canva-client-id',
+			'canva',
+			'canva',
 			'canva-client-id-value',
-			'2026-02-01T00:00:00.000Z',
-			'2026-02-02T00:00:00.000Z',
+			'canvaClientSecret',
+			'https://api.canva.com/rest/v1/oauth/token',
+			'https://api.canva.com',
+			'basic-form',
+			now,
+			now,
 		)
 	sqlite
 		.prepare(
-			`INSERT INTO value_entries (
-				bucket_id, name, description, value, created_at, updated_at
-			) VALUES (?, ?, '', ?, ?, ?)`,
+			`INSERT INTO user_integrations (
+				user_id, name, app_slug, account_label, description, scopes_json,
+				required_hosts_json, access_token_secret_name, refresh_token_secret_name,
+				connected_at, token_refreshed_at, created_at, updated_at
+			) VALUES (?, ?, ?, NULL, '', '[]', ?, ?, ?, NULL, NULL, ?, ?)`,
 		)
 		.run(
-			'bucket-reuse',
-			'_integration:canva',
-			JSON.stringify({
-				name: 'canva',
-				tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
-				apiBaseUrl: 'https://api.canva.com',
-				flow: 'confidential',
-				usePkce: false,
-				clientIdValueName: 'canva-client-id',
-				clientSecretSecretName: 'canvaClientSecret',
-				accessTokenSecretName: 'canvaAccessToken',
-				refreshTokenSecretName: 'canvaRefreshToken',
-				requiredHosts: ['api.canva.com'],
-				tokenExchangeStyle: 'basic-form',
-			}),
-			'2026-02-01T00:00:00.000Z',
-			'2026-02-02T00:00:00.000Z',
+			'user-reuse',
+			'canva',
+			'canva',
+			JSON.stringify(['api.canva.com']),
+			'canvaAccessToken',
+			'canvaRefreshToken',
+			now,
+			now,
 		)
-	sqlite.exec(
-		readFileSync(new URL(oauthAppsMigration, migrationsDirectory), 'utf8'),
-	)
 
 	const stored = sqlite
 		.prepare(
@@ -275,7 +275,6 @@ test('upsertIntegration reuses a migrated confidential app that stored usePkce f
 		use_pkce: null,
 	})
 
-	const env = { APP_DB: createD1FromSqlite(sqlite) } as Pick<Env, 'APP_DB'>
 	await upsertIntegration({
 		env,
 		userId: 'user-reuse',
