@@ -1,6 +1,15 @@
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
-import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
+import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { formatErrorCauseChain } from '@kody-internal/shared/error-message.ts'
+import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+
+/**
+ * Same-session rebuild RPCs hit one Durable Object, which serializes
+ * execution. Depth 2 pipelines the next RPC while the DO finishes the current
+ * one (cuts inter-call worker round-trip idle time) without flooding the DO
+ * input gate the way unbounded Promise.all would.
+ */
+export const publishedPackageArtifactRebuildConcurrency = 2
 
 function describePackageArtifactTarget(
 	target: PublishedPackageArtifactBuildTarget,
@@ -52,25 +61,33 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 			{ cause: error },
 		)
 	}
-	for (const target of targets) {
-		try {
-			await session.rebuildPublishedPackageArtifact({
-				sessionId: input.repoSessionId,
-				sourceId: input.sourceId,
-				userId: input.userId,
-				publishedCommit: input.publishedCommit,
-				target,
-				baseUrl: input.baseUrl,
-			})
-		} catch (error) {
+	for (const targetChunk of chunkArray(
+		targets,
+		publishedPackageArtifactRebuildConcurrency,
+	)) {
+		const settled = await Promise.allSettled(
+			targetChunk.map(async (target) => {
+				await session.rebuildPublishedPackageArtifact({
+					sessionId: input.repoSessionId,
+					sourceId: input.sourceId,
+					userId: input.userId,
+					publishedCommit: input.publishedCommit,
+					target,
+					baseUrl: input.baseUrl,
+				})
+			}),
+		)
+		for (const [index, result] of settled.entries()) {
+			if (result.status === 'fulfilled') continue
+			const target = targetChunk[index]
 			throw new Error(
 				buildRebuildFailureMessage({
 					sourceId: input.sourceId,
 					publishedCommit: input.publishedCommit,
 					target,
-					error,
+					error: result.reason,
 				}),
-				{ cause: error },
+				{ cause: result.reason },
 			)
 		}
 	}

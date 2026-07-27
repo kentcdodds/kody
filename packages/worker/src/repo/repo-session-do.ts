@@ -21,7 +21,6 @@ import {
 	type ArtifactRepoInfo,
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
-	resolveArtifactDefaultBranchHead,
 	resolveExistingArtifactSourceRepo,
 	resolveArtifactSourceRepo,
 } from './artifacts.ts'
@@ -1945,16 +1944,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			scope: 'read',
 		})
 		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
-		if (input.expectedHead) {
-			const currentHead = await resolveArtifactDefaultBranchHead({
-				repo: sourceRepo,
-			})
-			if (currentHead?.commit !== input.expectedHead) {
-				throw new Error(
-					`Artifacts HEAD changed from "${input.expectedHead}" to "${currentHead?.commit ?? 'unknown'}" before publish.`,
-				)
-			}
-		}
 		await this.resetWorkspace()
 		await this.workspace.mkdir(repoSessionWorkspacePrefix, {
 			recursive: true,
@@ -1969,6 +1958,17 @@ class RepoSessionBase extends DurableObject<Env> {
 					token: sourceAccess.token,
 				}),
 			})
+			// Race protection without a second Artifacts REST HEAD resolve: the
+			// single-branch clone tip is the remote default-branch HEAD at clone
+			// time. Compare it to the worker-resolved expectedHead before checkout.
+			if (input.expectedHead) {
+				const clonedHead = await this.getHeadCommit()
+				if (clonedHead !== input.expectedHead) {
+					throw new Error(
+						`Artifacts HEAD changed from "${input.expectedHead}" to "${clonedHead ?? 'unknown'}" before publish.`,
+					)
+				}
+			}
 			await this.git.checkout({
 				dir: repoSessionWorkspacePrefix,
 				ref: input.newCommit,
@@ -1976,6 +1976,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			})
 		} catch (error) {
 			const message = getErrorMessage(error)
+			if (message.includes('Artifacts HEAD changed from')) {
+				throw error
+			}
 			throw new Error(
 				buildSourceRecoveryProblemMessage({
 					source,
