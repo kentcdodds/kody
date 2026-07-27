@@ -46,6 +46,16 @@ records both success and error.
 If a successful one-off `execute` is missing from Activity, that is expected —
 check the original tool result instead.
 
+## React to failures from a package
+
+Packages can subscribe to the `run.error.recorded` topic in
+`package.json#kody.subscriptions`. When one of your runs finishes with an error,
+Kody dispatches a metadata-first event (run identifiers, truncated error fields,
+and an `activity_url` link to this page) to matching handlers in your account.
+Use that to email yourself, write to a sheet, spawn an agent, or otherwise
+follow up. See [Packages](./packages.md) and the
+[package subscriptions guide](../guides/package-subscriptions.md).
+
 ## Related
 
 - [Execute and workflows](./execute.md)

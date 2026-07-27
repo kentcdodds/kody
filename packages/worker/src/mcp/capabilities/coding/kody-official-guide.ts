@@ -75,7 +75,7 @@ export const kodyOfficialGuideCatalog = {
 		file: 'package-subscriptions.md',
 		title: 'Package subscription guide',
 		summary:
-			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscriptions_list and follow metadata-first email plus consent-gated admin-only platform.feedback.submitted notification guidance.',
+			'Use package.json#kody.subscriptions for package-owned event handlers; discover subscribers with package_subscriptions_list and follow metadata-first email, run.error.recorded activity notifiers, plus consent-gated admin-only platform.feedback.submitted notification guidance.',
 	},
 	platform_friction: {
 		file: 'platform-friction.md',
@@ -157,7 +157,7 @@ const guideFieldSchema = z
 			'`connect_secret`: /account/secrets/new for API keys, PATs, and other secret collection steps.',
 			'`package_invocation_token_setup`: /account/package-invocation-tokens/new setup URL shape, owner-scoped /@:username/api/package-invocations invocation route shape, query params, and bearer-token safety policy for external package invocation clients.',
 			'`package_service_pattern`: package-native long-lived service architecture built on package services and package app realtime.',
-			'`package_subscriptions`: package-owned event subscriptions, package_subscriptions_list discovery, metadata-first email payloads, and consent-gated admin-only platform.feedback.submitted notifications with untrusted text, submitter identity, and an admin deep link.',
+			'`package_subscriptions`: package-owned event subscriptions, package_subscriptions_list discovery, metadata-first email and run.error.recorded payloads, and consent-gated admin-only platform.feedback.submitted notifications with untrusted text, submitter identity, and an admin deep link.',
 			'`platform_friction`: choose an inline fix, an approved memory workflow, or attributed platform feedback after showing the exact proposal and notification disclosure and receiving explicit user approval, writing one actionable issue per submission.',
 		].join(' '),
 	)
@@ -244,6 +244,9 @@ const allKeywords = [
 		'package.json#kody.subscriptions',
 		'email.message.received',
 		'email message received',
+		'run.error.recorded',
+		'run error recorded',
+		'activity error notification',
 		'platform.feedback.submitted',
 		'platform feedback submitted',
 		'feedback notification event',

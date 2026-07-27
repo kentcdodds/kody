@@ -300,6 +300,14 @@ event. Handlers should fetch full bodies or bytes only when needed through
 helper. Reclassifying a stored message later does not retroactively dispatch
 either topic.
 
+For user Activity failures, `run.error.recorded` dispatches best-effort after a
+successful run-record write for the owning user. The payload is metadata-first
+(run identifiers, truncated error fields, and a trusted `activity_url`); it
+omits log lines and the full metadata blob. Subscription-surface failures do not
+emit (recursion guard). See
+[Package subscriptions](../guides/package-subscriptions.md) and
+[Run records](./architecture/run-records.md).
+
 Operator system-inbox mail (`system:email` owner) dispatches the separate
 `email.system-message.received` topic to packages saved by users who hold the
 admin role at dispatch time, only when the message is accepted. Quarantined
