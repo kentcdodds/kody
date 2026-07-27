@@ -54,6 +54,10 @@ vi.mock('#worker/repo/published-source.ts', () => ({
 
 vi.mock('#mcp/capabilities/durable-escalation.ts', () => ({
 	defaultDurableEscalationBudgetMs: 55_000,
+	buildCallerScopedIdempotencyKey: (input: {
+		userId: string
+		parts: ReadonlyArray<string>
+	}) => [input.userId, ...input.parts].join(':'),
 	runWithDurableEscalation: (...args: Array<unknown>) =>
 		mockModule.runWithDurableEscalation(...args),
 }))
@@ -461,11 +465,17 @@ test('ineligible publishes return structured results without durable escalation 
 	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledTimes(1)
 	const escalationInput = mockModule.runWithDurableEscalation.mock
 		.calls[0]?.[0] as {
-		idempotencyKey: string
+		userId: string
+		idempotencyParts: ReadonlyArray<string>
 	}
-	expect(escalationInput.idempotencyKey).toBe(
-		'package_publish_external_push:user-1:package-1:commit-new',
-	)
+	// workflow_runs rows are scoped by acting userId; parts keep owner/package/commit.
+	expect(escalationInput.userId).toBe('user-1')
+	expect(escalationInput.idempotencyParts).toEqual([
+		'package_publish_external_push',
+		'user-1',
+		'package-1',
+		'commit-new',
+	])
 })
 
 test('budget exhaustion returns a dispatched handle and background re-entry skips escalation', async () => {
@@ -481,7 +491,7 @@ test('budget exhaustion returns a dispatched handle and background re-entry skip
 			workflow_id: 'dynwf-publish-1',
 			workflow_name: 'package_publish_external_push',
 			idempotency_key:
-				'package_publish_external_push:user-1:package-1:commit-new',
+				'user-1:package_publish_external_push:user-1:package-1:commit-new',
 			run_status: 'queued',
 			message: 'dispatched',
 		},
@@ -496,11 +506,22 @@ test('budget exhaustion returns a dispatched handle and background re-entry skip
 		workflow_id: 'dynwf-publish-1',
 		workflow_name: 'package_publish_external_push',
 		idempotency_key:
-			'package_publish_external_push:user-1:package-1:commit-new',
+			'user-1:package_publish_external_push:user-1:package-1:commit-new',
 		run_status: 'queued',
 		message: 'dispatched',
 	})
 	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
+	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			idempotencyParts: [
+				'package_publish_external_push',
+				'user-1',
+				'package-1',
+				'commit-new',
+			],
+		}),
+	)
 
 	mockModule.runWithDurableEscalation.mockClear()
 	mockModule.publishFromExternalRef.mockResolvedValue({

@@ -27,6 +27,28 @@ export type DurableEscalationOutcome<T> =
 
 const activeWorkflowStatuses = new Set<string>(activeWorkflowStatusValues)
 
+/**
+ * Compose a workflow_runs idempotency key that is always scoped to the same
+ * acting `userId` used for row lookup/create. Callers pass operation-specific
+ * parts only; they must not invent a key under a different identity.
+ */
+export function buildCallerScopedIdempotencyKey(input: {
+	userId: string
+	parts: ReadonlyArray<string>
+}) {
+	const userId = input.userId.trim()
+	if (!userId) {
+		throw new Error('Durable escalation userId must not be empty.')
+	}
+	const parts = input.parts.map((part) => part.trim()).filter(Boolean)
+	if (parts.length === 0) {
+		throw new Error(
+			'Durable escalation requires at least one idempotency part.',
+		)
+	}
+	return [userId, ...parts].join(':')
+}
+
 function createDispatchedHandle(input: {
 	workflow: PackageWorkflowCreateResult
 	idempotencyKey: string
@@ -95,13 +117,21 @@ function waitForAbort(signal: AbortSignal) {
  * Attempt `run` within a wall-clock budget. On budget exhaustion, create a
  * durable Cloudflare Workflow for the same work and return a handle instead of
  * hanging past MCP execute's timeout. Never throws.
+ *
+ * Idempotency is always caller-scoped: `idempotencyParts` are joined with the
+ * same `userId` used for workflow_runs lookup/create, so keys cannot silently
+ * disagree with row ownership.
  */
 export async function runWithDurableEscalation<T>(input: {
 	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS'>
 	userId: string
 	userEmail?: string | null
 	budgetMs?: number
-	idempotencyKey: string
+	/**
+	 * Operation-specific key segments (not including userId). The helper
+	 * prefixes `userId` so workflow_runs dedupe stays aligned with row scope.
+	 */
+	idempotencyParts: ReadonlyArray<string>
 	workflowName: string
 	packageContext?: {
 		packageId: string
@@ -112,11 +142,16 @@ export async function runWithDurableEscalation<T>(input: {
 	durableParams?: Record<string, unknown>
 	run: (signal: AbortSignal) => Promise<T>
 }): Promise<DurableEscalationOutcome<T>> {
-	const idempotencyKey = input.idempotencyKey.trim()
-	if (!idempotencyKey) {
+	let idempotencyKey: string
+	try {
+		idempotencyKey = buildCallerScopedIdempotencyKey({
+			userId: input.userId,
+			parts: input.idempotencyParts,
+		})
+	} catch (error) {
 		return {
 			kind: 'failed',
-			error: 'Durable escalation requires a non-empty idempotencyKey.',
+			error: getErrorMessage(error),
 		}
 	}
 

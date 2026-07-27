@@ -335,12 +335,22 @@ async function getPublishStaticDependents(input: {
 	})
 }
 
-function buildExternalPublishIdempotencyKey(input: {
+function buildExternalPublishIdempotencyParts(input: {
 	ownerUserId: string
 	packageId: string
 	newCommit: string
 }) {
-	return `package_publish_external_push:${input.ownerUserId}:${input.packageId}:${input.newCommit}`
+	// Caller identity is applied by runWithDurableEscalation (workflow_runs are
+	// user-scoped). Keep owner/package/commit here so the key stays meaningful.
+	// Distinct delegates may each dispatch for the same publish; that is safe
+	// because re-invoking publish when published_commit already matches HEAD
+	// returns already_published without checks or D1 writes.
+	return [
+		'package_publish_external_push',
+		input.ownerUserId,
+		input.packageId,
+		input.newCommit,
+	] as const
 }
 
 async function runExternalPublishAttempt(input: {
@@ -534,11 +544,6 @@ export const publishExternalPushCapability = defineDomainCapability(
 				return await runExternalPublishAttempt(publishInput)
 			}
 
-			const idempotencyKey = buildExternalPublishIdempotencyKey({
-				ownerUserId: owner.ownerUserId,
-				packageId,
-				newCommit,
-			})
 			const durableParams = {
 				...(args.package_id ? { package_id: args.package_id } : {}),
 				...(args.kody_id ? { kody_id: args.kody_id } : {}),
@@ -551,7 +556,11 @@ export const publishExternalPushCapability = defineDomainCapability(
 				userId: user.userId,
 				userEmail: user.email,
 				budgetMs: defaultDurableEscalationBudgetMs,
-				idempotencyKey,
+				idempotencyParts: buildExternalPublishIdempotencyParts({
+					ownerUserId: owner.ownerUserId,
+					packageId,
+					newCommit,
+				}),
 				workflowName: 'package_publish_external_push',
 				packageContext: {
 					packageId,

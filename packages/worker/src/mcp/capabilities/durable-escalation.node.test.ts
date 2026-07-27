@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import {
+	buildCallerScopedIdempotencyKey,
 	defaultDurableEscalationBudgetMs,
 	runWithDurableEscalation,
 } from './durable-escalation.ts'
@@ -48,6 +49,13 @@ function createWorkflowRunsDb(rows: Array<Record<string, unknown>> = []) {
 	} as unknown as D1Database
 }
 
+const publishParts = [
+	'package_publish_external_push',
+	'owner-platform',
+	'package-1',
+	'commit-new',
+] as const
+
 test('runWithDurableEscalation returns the inline result when work finishes within budget', async () => {
 	const run = vi.fn(async () => ({ status: 'published', commit: 'abc' }))
 	const outcome = await runWithDurableEscalation({
@@ -56,7 +64,7 @@ test('runWithDurableEscalation returns the inline result when work finishes with
 			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
 		} as Env,
 		userId: 'user-1',
-		idempotencyKey: 'publish:pkg-1:commit-1',
+		idempotencyParts: ['publish', 'pkg-1', 'commit-1'],
 		workflowName: 'package_publish_external_push',
 		durableCode: 'export default async function main() { return null }',
 		budgetMs: 5_000,
@@ -73,7 +81,7 @@ test('runWithDurableEscalation returns the inline result when work finishes with
 	expect(defaultDurableEscalationBudgetMs).toBeLessThan(90_000)
 })
 
-test('runWithDurableEscalation dispatches once on budget exhaustion and reuses an active run', async () => {
+test('runWithDurableEscalation dispatches once on budget exhaustion and reuses an active run for the same caller', async () => {
 	mockModule.createDynamicCallableWorkflow.mockResolvedValue({
 		ok: true,
 		id: 'dynwf-escalated-1',
@@ -97,6 +105,11 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 			}),
 	)
 
+	const expectedKey = buildCallerScopedIdempotencyKey({
+		userId: 'user-1',
+		parts: publishParts,
+	})
+
 	const first = await runWithDurableEscalation({
 		env: {
 			APP_DB: createWorkflowRunsDb(),
@@ -104,7 +117,7 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 		} as Env,
 		userId: 'user-1',
 		userEmail: 'user@example.com',
-		idempotencyKey: 'publish:pkg-1:commit-slow',
+		idempotencyParts: publishParts,
 		workflowName: 'package_publish_external_push',
 		durableCode:
 			'import { kody } from "kody:runtime"; export default async function main(p) { return await kody.package_publish_external_push(p) }',
@@ -119,7 +132,7 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 			status: 'dispatched',
 			workflow_id: 'dynwf-escalated-1',
 			workflow_name: 'package_publish_external_push',
-			idempotency_key: 'publish:pkg-1:commit-slow',
+			idempotency_key: expectedKey,
 			run_status: 'queued',
 			message: expect.stringMatching(/dispatched to a durable workflow/i),
 		},
@@ -130,7 +143,7 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 			userId: 'user-1',
 			userEmail: 'user@example.com',
 			body: expect.objectContaining({
-				idempotencyKey: 'publish:pkg-1:commit-slow',
+				idempotencyKey: expectedKey,
 				workflowName: 'package_publish_external_push',
 				params: { package_id: 'pkg-1' },
 			}),
@@ -142,7 +155,7 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 		id: 'dynwf-escalated-1',
 		user_id: 'user-1',
 		workflow_name: 'package_publish_external_push',
-		idempotency_key: 'publish:pkg-1:commit-slow',
+		idempotency_key: expectedKey,
 		status: 'running',
 	}
 	expect(activeWorkflowStatusValues).toContain('running')
@@ -153,7 +166,7 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
 		} as Env,
 		userId: 'user-1',
-		idempotencyKey: 'publish:pkg-1:commit-slow',
+		idempotencyParts: publishParts,
 		workflowName: 'package_publish_external_push',
 		durableCode: 'export default async function main() { return null }',
 		budgetMs: 30,
@@ -165,12 +178,159 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 		handle: expect.objectContaining({
 			status: 'dispatched',
 			workflow_id: 'dynwf-escalated-1',
-			idempotency_key: 'publish:pkg-1:commit-slow',
+			idempotency_key: expectedKey,
 			run_status: 'running',
 		}),
 	})
 	expect(mockModule.createDynamicCallableWorkflow).not.toHaveBeenCalled()
 	expect(hangUntilAborted).toHaveBeenCalledTimes(1)
+})
+
+test('different acting callers get non-colliding dedupe; same caller still reuses', async () => {
+	const hangUntilAborted = async (signal: AbortSignal) =>
+		await new Promise<never>((_resolve, reject) => {
+			signal.addEventListener(
+				'abort',
+				() => {
+					reject(new DOMException('Aborted', 'AbortError'))
+				},
+				{ once: true },
+			)
+		})
+
+	const delegateAKey = buildCallerScopedIdempotencyKey({
+		userId: 'delegate-a',
+		parts: publishParts,
+	})
+	const delegateBKey = buildCallerScopedIdempotencyKey({
+		userId: 'delegate-b',
+		parts: publishParts,
+	})
+	expect(delegateAKey).not.toBe(delegateBKey)
+	expect(delegateAKey).toBe(
+		'delegate-a:package_publish_external_push:owner-platform:package-1:commit-new',
+	)
+	expect(delegateBKey).toBe(
+		'delegate-b:package_publish_external_push:owner-platform:package-1:commit-new',
+	)
+
+	mockModule.createDynamicCallableWorkflow
+		.mockResolvedValueOnce({
+			ok: true,
+			id: 'dynwf-delegate-a',
+			workflow_name: 'package_publish_external_push',
+			source_type: 'inline',
+			run_at: '2026-07-27T00:00:00.000Z',
+			plan_date: '2026-07-27',
+			status: 'queued',
+		})
+		.mockResolvedValueOnce({
+			ok: true,
+			id: 'dynwf-delegate-b',
+			workflow_name: 'package_publish_external_push',
+			source_type: 'inline',
+			run_at: '2026-07-27T00:00:00.000Z',
+			plan_date: '2026-07-27',
+			status: 'queued',
+		})
+
+	const activeRows: Array<Record<string, unknown>> = []
+	const sharedDb = createWorkflowRunsDb(activeRows)
+
+	const delegateA = await runWithDurableEscalation({
+		env: {
+			APP_DB: sharedDb,
+			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		} as Env,
+		userId: 'delegate-a',
+		idempotencyParts: publishParts,
+		workflowName: 'package_publish_external_push',
+		durableCode: 'export default async function main() { return null }',
+		budgetMs: 30,
+		run: hangUntilAborted,
+	})
+	expect(delegateA).toEqual({
+		kind: 'dispatched',
+		handle: expect.objectContaining({
+			workflow_id: 'dynwf-delegate-a',
+			idempotency_key: delegateAKey,
+		}),
+	})
+	activeRows.push({
+		id: 'dynwf-delegate-a',
+		user_id: 'delegate-a',
+		workflow_name: 'package_publish_external_push',
+		idempotency_key: delegateAKey,
+		status: 'running',
+	})
+
+	// A second acting caller must not reuse the first caller's active row even
+	// when owner/package/commit parts match (workflow_runs are user-scoped).
+	const delegateB = await runWithDurableEscalation({
+		env: {
+			APP_DB: sharedDb,
+			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		} as Env,
+		userId: 'delegate-b',
+		idempotencyParts: publishParts,
+		workflowName: 'package_publish_external_push',
+		durableCode: 'export default async function main() { return null }',
+		budgetMs: 30,
+		run: hangUntilAborted,
+	})
+	expect(delegateB).toEqual({
+		kind: 'dispatched',
+		handle: expect.objectContaining({
+			workflow_id: 'dynwf-delegate-b',
+			idempotency_key: delegateBKey,
+		}),
+	})
+	expect(mockModule.createDynamicCallableWorkflow).toHaveBeenCalledTimes(2)
+	expect(mockModule.createDynamicCallableWorkflow).toHaveBeenNthCalledWith(
+		1,
+		expect.objectContaining({
+			userId: 'delegate-a',
+			body: expect.objectContaining({ idempotencyKey: delegateAKey }),
+		}),
+	)
+	expect(mockModule.createDynamicCallableWorkflow).toHaveBeenNthCalledWith(
+		2,
+		expect.objectContaining({
+			userId: 'delegate-b',
+			body: expect.objectContaining({ idempotencyKey: delegateBKey }),
+		}),
+	)
+
+	mockModule.createDynamicCallableWorkflow.mockClear()
+	activeRows.push({
+		id: 'dynwf-delegate-b',
+		user_id: 'delegate-b',
+		workflow_name: 'package_publish_external_push',
+		idempotency_key: delegateBKey,
+		status: 'running',
+	})
+
+	const delegateARepeat = await runWithDurableEscalation({
+		env: {
+			APP_DB: sharedDb,
+			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		} as Env,
+		userId: 'delegate-a',
+		idempotencyParts: publishParts,
+		workflowName: 'package_publish_external_push',
+		durableCode: 'export default async function main() { return null }',
+		budgetMs: 30,
+		run: hangUntilAborted,
+	})
+	expect(delegateARepeat).toEqual({
+		kind: 'dispatched',
+		handle: expect.objectContaining({
+			workflow_id: 'dynwf-delegate-a',
+			idempotency_key: delegateAKey,
+			run_status: 'running',
+		}),
+	})
+	expect(mockModule.createDynamicCallableWorkflow).not.toHaveBeenCalled()
 })
 
 test('runWithDurableEscalation never throws and reports structured failures', async () => {
@@ -180,7 +340,7 @@ test('runWithDurableEscalation never throws and reports structured failures', as
 			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
 		} as Env,
 		userId: 'user-1',
-		idempotencyKey: 'publish:pkg-1:fail',
+		idempotencyParts: ['publish', 'pkg-1', 'fail'],
 		workflowName: 'package_publish_external_push',
 		durableCode: 'export default async function main() { return null }',
 		budgetMs: 5_000,
@@ -193,20 +353,20 @@ test('runWithDurableEscalation never throws and reports structured failures', as
 		error: 'checks blew up',
 	})
 
-	const emptyKey = await runWithDurableEscalation({
+	const emptyParts = await runWithDurableEscalation({
 		env: {
 			APP_DB: createWorkflowRunsDb(),
 			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
 		} as Env,
 		userId: 'user-1',
-		idempotencyKey: '   ',
+		idempotencyParts: ['   ', ''],
 		workflowName: 'package_publish_external_push',
 		durableCode: 'export default async function main() { return null }',
 		run: async () => ({ ok: true }),
 	})
-	expect(emptyKey).toEqual({
+	expect(emptyParts).toEqual({
 		kind: 'failed',
-		error: 'Durable escalation requires a non-empty idempotencyKey.',
+		error: 'Durable escalation requires at least one idempotency part.',
 	})
 
 	mockModule.createDynamicCallableWorkflow.mockRejectedValue(
@@ -218,7 +378,7 @@ test('runWithDurableEscalation never throws and reports structured failures', as
 			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
 		} as Env,
 		userId: 'user-1',
-		idempotencyKey: 'publish:pkg-1:dispatch-fail',
+		idempotencyParts: ['publish', 'pkg-1', 'dispatch-fail'],
 		workflowName: 'package_publish_external_push',
 		durableCode: 'export default async function main() { return null }',
 		budgetMs: 20,
