@@ -1098,6 +1098,82 @@ export async function runRepoChecks(input: {
 					userId: input.userId,
 				}
 			: null
+	// The TypeScript check runs BEFORE bundle validation, inside a helper
+	// scope. The language service allocates a large JS heap (the compiler
+	// plus a full program over the snapshot) that becomes collectable once
+	// this closure returns, while esbuild-wasm memory grown during bundling
+	// stays resident for the isolate's lifetime (the wasm instance is a
+	// module-level singleton and wasm memories never shrink). Typechecking
+	// first keeps peak isolate memory near max(typecheck, bundling) instead
+	// of their sum — checks over large multi-entrypoint packages were
+	// exceeding the Durable Object memory limit and killing publishes
+	// (kentcdodds/kody#987). The reported `results` order is unchanged:
+	// bundle before typecheck.
+	const typecheckResult: RepoCheckResult = await (async () => {
+		if (missingCallableTypecheckTargets.length > 0) {
+			return {
+				kind: 'typecheck',
+				ok: false,
+				message: `Typecheck skipped because callable package runtime entrypoint(s) are missing from the repo session snapshot: ${missingCallableTypecheckTargets
+					.map((path) => `"${path}"`)
+					.join(', ')}.`,
+			}
+		}
+		const callableTargetsMissingDefaultExport =
+			collectEntrypointsMissingDefaultExport({
+				snapshot,
+				targets: callableTypecheckTargets,
+			})
+		if (callableTargetsMissingDefaultExport.length > 0) {
+			return {
+				kind: 'typecheck',
+				ok: false,
+				message: formatMissingDefaultExportMessage(
+					callableTargetsMissingDefaultExport,
+				),
+			}
+		}
+		if (callableTypecheckTargets.length === 0) {
+			return {
+				kind: 'typecheck',
+				ok: true,
+				message: 'No callable package runtime entrypoint(s) to typecheck.',
+			}
+		}
+		const typecheckFileSystem = createRepoChecksFileSystem({
+			fileSystem: snapshot,
+		})
+		const baseTsconfig = snapshot.read(repoChecksSyntheticTsconfigPath)
+		if (baseTsconfig != null) {
+			typecheckFileSystem.write(
+				repoChecksSyntheticTsconfigExtendsPath.slice('./'.length),
+				baseTsconfig,
+			)
+		}
+		typecheckFileSystem.write(
+			repoChecksSyntheticTsconfigPath,
+			buildRepoChecksTsconfig(baseTsconfig),
+		)
+		const { createTypescriptLanguageService } =
+			await loadWorkerBundlerTypescriptTools()
+		const { fileSystem, languageService } =
+			await createTypescriptLanguageService({
+				fileSystem: typecheckFileSystem,
+			})
+		const diagnostics = getPackageTypecheckDiagnostics({
+			targets: callableTypecheckTargets,
+			languageService,
+			fileSystem,
+		})
+		return {
+			kind: 'typecheck',
+			ok: diagnostics.every((entry) => entry.diagnostics.length === 0),
+			message: diagnostics.every((entry) => entry.diagnostics.length === 0)
+				? `No semantic diagnostics for ${callableTypecheckTargets.length} callable package runtime entrypoint(s).`
+				: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+		}
+	})()
+
 	const bundleCheckResult =
 		missingBundleTargets.length > 0
 			? {
@@ -1125,107 +1201,7 @@ export async function runRepoChecks(input: {
 		ok: bundleCheckResult.ok,
 		message: bundleCheckResult.message,
 	})
-
-	if (missingCallableTypecheckTargets.length > 0) {
-		results.push({
-			kind: 'typecheck',
-			ok: false,
-			message: `Typecheck skipped because callable package runtime entrypoint(s) are missing from the repo session snapshot: ${missingCallableTypecheckTargets
-				.map((path) => `"${path}"`)
-				.join(', ')}.`,
-		})
-		results.push({
-			kind: 'lint',
-			ok: lintCheck.ok,
-			message: lintCheck.message,
-		})
-		return {
-			ok: results.every((result) => result.ok),
-			results,
-			manifest,
-			sourceFiles,
-		}
-	}
-
-	const callableTargetsMissingDefaultExport =
-		collectEntrypointsMissingDefaultExport({
-			snapshot,
-			targets: callableTypecheckTargets,
-		})
-	if (callableTargetsMissingDefaultExport.length > 0) {
-		results.push({
-			kind: 'typecheck',
-			ok: false,
-			message: formatMissingDefaultExportMessage(
-				callableTargetsMissingDefaultExport,
-			),
-		})
-		results.push({
-			kind: 'lint',
-			ok: lintCheck.ok,
-			message: lintCheck.message,
-		})
-		return {
-			ok: results.every((result) => result.ok),
-			results,
-			manifest,
-			sourceFiles,
-		}
-	}
-
-	if (callableTypecheckTargets.length === 0) {
-		results.push({
-			kind: 'typecheck',
-			ok: true,
-			message: 'No callable package runtime entrypoint(s) to typecheck.',
-		})
-		results.push({
-			kind: 'lint',
-			ok: lintCheck.ok,
-			message: lintCheck.message,
-		})
-		return {
-			ok: results.every((result) => result.ok),
-			results,
-			manifest,
-			sourceFiles,
-		}
-	}
-
-	const typecheckFileSystem = createRepoChecksFileSystem({
-		fileSystem: snapshot,
-	})
-	const baseTsconfig = snapshot.read(repoChecksSyntheticTsconfigPath)
-	if (baseTsconfig != null) {
-		typecheckFileSystem.write(
-			repoChecksSyntheticTsconfigExtendsPath.slice('./'.length),
-			baseTsconfig,
-		)
-	}
-	typecheckFileSystem.write(
-		repoChecksSyntheticTsconfigPath,
-		buildRepoChecksTsconfig(baseTsconfig),
-	)
-	const { createTypescriptLanguageService } =
-		await loadWorkerBundlerTypescriptTools()
-	const { fileSystem, languageService } = await createTypescriptLanguageService(
-		{
-			fileSystem: typecheckFileSystem,
-		},
-	)
-	const diagnostics = getPackageTypecheckDiagnostics({
-		targets: callableTypecheckTargets,
-		languageService,
-		fileSystem,
-	})
-	results.push({
-		kind: 'typecheck',
-		ok: diagnostics.every((entry) => entry.diagnostics.length === 0),
-		message: diagnostics.every((entry) => entry.diagnostics.length === 0)
-			? `No semantic diagnostics for ${callableTypecheckTargets.length} callable package runtime entrypoint(s).`
-			: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
-	})
-
+	results.push(typecheckResult)
 	results.push({
 		kind: 'lint',
 		ok: lintCheck.ok,
