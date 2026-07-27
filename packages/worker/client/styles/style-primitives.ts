@@ -168,6 +168,7 @@ export const descriptionCss = {
 export const fieldCss = {
 	display: 'grid',
 	gap: spacing.xs,
+	minWidth: 0,
 }
 
 export const fieldLabelCss = {
@@ -178,6 +179,8 @@ export const fieldLabelCss = {
 
 export const inputCss = {
 	width: '100%',
+	minWidth: 0,
+	maxWidth: '100%',
 	padding: spacing.sm,
 	borderRadius: radius.md,
 	border: `1px solid ${colors.border}`,

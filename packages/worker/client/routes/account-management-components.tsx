@@ -298,13 +298,14 @@ export function AccountManagementLayout(
 				gridTemplateColumns: `${handle.props.sidebarWidth ?? 'minmax(18rem, 22rem)'} minmax(0, 1fr)`,
 				gap: spacing.lg,
 				alignItems: 'start',
+				minWidth: 0,
 				[mq.mobile]: {
 					gridTemplateColumns: '1fr',
 				},
 			})}
 		>
 			{handle.props.sidebar}
-			<div mix={css({ display: 'grid', gap: spacing.lg })}>
+			<div mix={css({ display: 'grid', gap: spacing.lg, minWidth: 0 })}>
 				{handle.props.children}
 			</div>
 		</section>
@@ -325,11 +326,24 @@ export function AccountManagementSidebar(
 			mix={css({
 				...cardCss,
 				alignSelf: 'start',
+				// Grid items default to min-width:auto; without this, long
+				// search placeholders / unbreakable tokens expand past the
+				// sidebar track and paint over the detail pane.
+				minWidth: 0,
+				maxWidth: '100%',
+				overflow: 'hidden',
 			})}
 		>
-			<div mix={css({ display: 'grid', gap: spacing.xs })}>
+			<div mix={css({ display: 'grid', gap: spacing.xs, minWidth: 0 })}>
 				<h2 mix={css(cardTitleCss)}>{handle.props.title}</h2>
-				<p mix={css(descriptionCss)}>{handle.props.description}</p>
+				<p
+					mix={css({
+						...descriptionCss,
+						overflowWrap: 'anywhere',
+					})}
+				>
+					{handle.props.description}
+				</p>
 			</div>
 			{handle.props.children}
 		</aside>
@@ -347,6 +361,7 @@ export function AccountManagementList(
 	return () => (
 		<div
 			mix={css({
+				minWidth: 0,
 				maxHeight: handle.props.maxHeight,
 				overflowY: handle.props.maxHeight ? 'auto' : undefined,
 				overflowX: handle.props.maxHeight ? 'hidden' : undefined,
@@ -360,6 +375,7 @@ export function AccountManagementList(
 					margin: 0,
 					display: 'grid',
 					gap: spacing.sm,
+					minWidth: 0,
 				})}
 			>
 				{handle.props.children}
@@ -384,7 +400,7 @@ export function AccountManagementSearchField(
 	handle: Handle<AccountManagementSearchFieldProps>,
 ) {
 	return () => (
-		<label mix={css(fieldCss)}>
+		<label mix={css({ ...fieldCss, minWidth: 0 })}>
 			<span mix={css(fieldLabelCss)}>{handle.props.label}</span>
 			<input
 				type="search"
@@ -399,6 +415,8 @@ export function AccountManagementSearchField(
 					),
 					css({
 						...inputCss,
+						minWidth: 0,
+						maxWidth: '100%',
 						paddingRight: spacing.xl,
 					}),
 				]}
@@ -426,11 +444,13 @@ export function AccountManagementListItemButton(
 				css({
 					width: '100%',
 					minWidth: 0,
+					maxWidth: '100%',
 					textAlign: 'left',
 					display: 'grid',
 					gap: spacing.xs,
 					padding: spacing.md,
 					overflow: 'hidden',
+					overflowWrap: 'anywhere',
 					borderRadius: radius.md,
 					border: `1px solid ${
 						handle.props.active ? colors.primary : colors.border

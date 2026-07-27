@@ -400,7 +400,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 								) : (
 									<AccountManagementList>
 										{filteredMemories.map((item) => (
-											<li key={item.id}>
+											<li key={item.id} mix={css({ minWidth: 0 })}>
 												<AccountManagementListItemButton
 													active={selection.selectedId === item.id}
 													disabled={isMutating}
@@ -416,7 +416,14 @@ export function AccountMemoriesRoute(handle: Handle) {
 														)
 													}}
 												>
-													<strong>{item.subject}</strong>
+													<strong
+														mix={css({
+															minWidth: 0,
+															overflowWrap: 'anywhere',
+														})}
+													>
+														{item.subject}
+													</strong>
 													<span
 														mix={css({
 															color: statusColor(item.status),
@@ -431,6 +438,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 															mix={css({
 																color: colors.textMuted,
 																fontSize: typography.fontSize.sm,
+																overflowWrap: 'anywhere',
 															})}
 														>
 															{item.tags.join(', ')}
@@ -440,6 +448,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 														mix={css({
 															color: colors.textMuted,
 															fontSize: typography.fontSize.sm,
+															overflowWrap: 'anywhere',
 														})}
 													>
 														{item.summary}
