@@ -98,21 +98,18 @@ test('memory reindex walks keyset pages and merges the page results', async () =
 	expect(new Set(upsertedIds).size).toBe(201)
 })
 
-test('memory reindex returns zero upserts for an empty table', async () => {
+test('memory reindex retries transient D1 export page errors then surfaces exhaustion', async () => {
 	resetMocks()
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert: vi.fn() })
+	const upsert = vi.fn()
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
 	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.listMemoriesPage.mockResolvedValue([])
-
+	mockModule.embedTextsForVectorize.mockResolvedValue([[0.1]])
+	mockModule.listMemoriesPage.mockResolvedValueOnce([])
 	await expect(reindexMemoryVectors({ APP_DB: {} } as Env)).resolves.toEqual({
 		upserted: 0,
 	})
-	expect(mockModule.listMemoriesPage).toHaveBeenCalledTimes(1)
-})
 
-test('memory reindex retries a transient D1 export error on page listing', async () => {
 	resetMocks()
-	const upsert = vi.fn()
 	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
 	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
 	mockModule.embedTextsForVectorize.mockResolvedValue([[0.1]])
@@ -124,18 +121,15 @@ test('memory reindex retries a transient D1 export error on page listing', async
 
 	vi.useFakeTimers()
 	try {
-		const resultPromise = reindexMemoryVectors({ APP_DB: {} } as Env)
+		const recoverPromise = reindexMemoryVectors({ APP_DB: {} } as Env)
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
-		await expect(resultPromise).resolves.toEqual({ upserted: 1 })
+		await expect(recoverPromise).resolves.toEqual({ upserted: 1 })
 	} finally {
 		vi.useRealTimers()
 	}
-
 	expect(mockModule.listMemoriesPage).toHaveBeenCalledTimes(2)
 	expect(upsert).toHaveBeenCalledTimes(1)
-})
 
-test('memory reindex surfaces page listing failures after the retry budget', async () => {
 	resetMocks()
 	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert: vi.fn() })
 	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
@@ -145,8 +139,8 @@ test('memory reindex surfaces page listing failures after the retry budget', asy
 
 	vi.useFakeTimers()
 	try {
-		const resultPromise = reindexMemoryVectors({ APP_DB: {} } as Env)
-		const expectation = expect(resultPromise).rejects.toThrow(
+		const exhaustedPromise = reindexMemoryVectors({ APP_DB: {} } as Env)
+		const expectation = expect(exhaustedPromise).rejects.toThrow(
 			'Currently processing a long-running export',
 		)
 		for (let attempt = 1; attempt < d1LockRetryMaxAttempts; attempt++) {

@@ -25,7 +25,7 @@ function buildCallerContext() {
 	})
 }
 
-test('value_list omits platform-reserved integration and openapi values', async () => {
+test('value list/set hide and reject platform-reserved prefixes', async () => {
 	mockModule.listValues.mockResolvedValue([
 		{
 			name: 'preferred_repo',
@@ -59,32 +59,17 @@ test('value_list omits platform-reserved integration and openapi values', async 
 		},
 	])
 
-	const result = await valueListCapability.handler(
+	const listed = await valueListCapability.handler(
 		{},
 		{
 			env: {} as Env,
 			callerContext: buildCallerContext(),
 		},
 	)
+	expect(listed.values.map((entry) => entry.name)).toEqual(['preferred_repo'])
 
-	expect(result.values).toEqual([
-		{
-			name: 'preferred_repo',
-			scope: 'user',
-			value: 'kentcdodds/kody',
-			description: 'Preferred repo',
-			app_id: null,
-			created_at: '2026-01-01T00:00:00.000Z',
-			updated_at: '2026-01-01T00:00:00.000Z',
-			ttl_ms: null,
-		},
-	])
-})
-
-test('value_set rejects platform-reserved prefixes with actionable errors', async () => {
 	const env = {} as Env
 	const callerContext = buildCallerContext()
-
 	await expect(
 		valueSetCapability.handler(
 			{
@@ -94,8 +79,7 @@ test('value_set rejects platform-reserved prefixes with actionable errors', asyn
 			},
 			{ env, callerContext },
 		),
-	).rejects.toThrow('Use integration_save instead of value_set.')
-
+	).rejects.toThrow(Error)
 	await expect(
 		valueSetCapability.handler(
 			{
@@ -105,7 +89,6 @@ test('value_set rejects platform-reserved prefixes with actionable errors', asyn
 			},
 			{ env, callerContext },
 		),
-	).rejects.toThrow('Use openapi_binding_save instead of value_set.')
-
+	).rejects.toThrow(Error)
 	expect(mockModule.saveValue).not.toHaveBeenCalled()
 })

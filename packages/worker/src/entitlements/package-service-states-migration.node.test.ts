@@ -13,7 +13,7 @@ function applyMigrationsBefore(db: DatabaseSync, exclusiveUpperBound: string) {
 	}
 }
 
-test('backfill migration is a no-op when no legacy service runs exist', () => {
+test('backfill migration rescues stopped service runs without clobbering live states', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, backfillMigration)
 
@@ -21,9 +21,34 @@ test('backfill migration is a no-op when no legacy service runs exist', () => {
 		INSERT INTO package_service_states (
 			user_id, package_id, service_name, status, started_at, updated_at
 		) VALUES (
-			'user-a', 'pkg-3', 'live-service', 'running',
+			'user-a', 'pkg-live', 'live-service', 'running',
 			'2026-07-26T00:00:00.000Z', '2026-07-26T01:00:00.000Z'
 		);
+
+		INSERT INTO package_runtime_runs (
+			id, user_id, package_id, package_kody_id, surface, name, status,
+			started_at, created_at, updated_at
+		) VALUES
+			(
+				'run-1', 'user-a', 'pkg-orphan', 'orphan', 'service', 'orphan-service',
+				'success', '2026-06-01T00:00:00.000Z',
+				'2026-06-01T00:00:00.000Z', '2026-06-01T00:00:00.000Z'
+			),
+			(
+				'run-2', 'user-a', 'pkg-orphan', 'orphan', 'service', 'orphan-service',
+				'error', '2026-06-15T00:00:00.000Z',
+				'2026-06-15T00:00:00.000Z', '2026-06-15T00:00:00.000Z'
+			),
+			(
+				'run-3', 'user-a', 'pkg-live', 'live', 'service', 'live-service',
+				'success', '2026-05-01T00:00:00.000Z',
+				'2026-05-01T00:00:00.000Z', '2026-05-01T00:00:00.000Z'
+			),
+			(
+				'run-4', 'user-a', 'pkg-export', 'export', 'export', 'default',
+				'success', '2026-06-01T00:00:00.000Z',
+				'2026-06-01T00:00:00.000Z', '2026-06-01T00:00:00.000Z'
+			);
 	`)
 
 	db.exec(readFileSync(new URL(backfillMigration, migrationsDirectory), 'utf8'))
@@ -32,7 +57,7 @@ test('backfill migration is a no-op when no legacy service runs exist', () => {
 		.prepare(
 			`SELECT package_id, service_name, status, started_at, updated_at
 			FROM package_service_states
-			ORDER BY package_id ASC`,
+			ORDER BY package_id ASC, service_name ASC`,
 		)
 		.all() as Array<{
 		package_id: string
@@ -44,11 +69,18 @@ test('backfill migration is a no-op when no legacy service runs exist', () => {
 
 	expect(rows).toEqual([
 		{
-			package_id: 'pkg-3',
+			package_id: 'pkg-live',
 			service_name: 'live-service',
 			status: 'running',
 			started_at: '2026-07-26T00:00:00.000Z',
 			updated_at: '2026-07-26T01:00:00.000Z',
+		},
+		{
+			package_id: 'pkg-orphan',
+			service_name: 'orphan-service',
+			status: 'stopped',
+			started_at: null,
+			updated_at: '2026-06-15T00:00:00.000Z',
 		},
 	])
 })

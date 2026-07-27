@@ -481,27 +481,15 @@ test('ineligible publishes return structured results without durable escalation 
 			destructiveOverwriteConfirmed: false,
 		}),
 	)
-})
-
-test('force and non-force publishes get distinct durable idempotency keys', () => {
-	const base = {
-		ownerUserId: 'owner-1',
-		packageId: 'package-1',
-		newCommit: 'commit-new',
-	}
-	const safe = buildExternalPublishIdempotencyParts({
-		...base,
-		allowForce: false,
-		destructiveOverwriteConfirmed: false,
-	})
-	const force = buildExternalPublishIdempotencyParts({
-		...base,
-		allowForce: true,
-		destructiveOverwriteConfirmed: true,
-	})
-	expect(safe).not.toEqual(force)
-	expect(safe[1]).toContain('"allowForce":false')
-	expect(force[1]).toContain('"allowForce":true')
+	expect(
+		buildExternalPublishIdempotencyParts({
+			ownerUserId: 'user-1',
+			packageId: 'package-1',
+			newCommit: 'commit-new',
+			allowForce: true,
+			destructiveOverwriteConfirmed: true,
+		}),
+	).not.toEqual(escalationInput.idempotencyParts)
 })
 
 test('missing executionOrigin fails closed and does not escalate', async () => {

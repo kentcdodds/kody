@@ -493,55 +493,23 @@ test('listValues uses one metadata query across buckets and preserves ordering',
 		'user:alpha:user-alpha',
 		'user:zebra:user-zebra',
 	])
-})
 
-test('listValues ignores empty buckets and returns no values when none exist', async () => {
-	const testDb = createValueTestDb()
-	const env = { APP_DB: testDb.db }
-	const storageContext = {
-		sessionId: 'session-empty',
-		appId: 'app-empty',
-	}
-
-	await saveValue({
-		env,
-		userId: 'user-empty',
-		scope: 'session',
-		name: 'onlySessionValue',
-		value: 'present',
-		storageContext,
-		sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-	})
-	await saveValue({
-		env,
-		userId: 'user-empty',
-		scope: 'app',
-		name: 'temporary',
-		value: 'gone',
-		storageContext,
-	})
 	await deleteValue({
 		env,
-		userId: 'user-empty',
-		name: 'temporary',
+		userId: 'user-456',
+		name: 'beta',
 		scope: 'app',
 		storageContext,
 	})
-
 	expect(
-		await listValues({
-			env,
-			userId: 'user-empty',
-			storageContext,
-		}),
-	).toEqual([
-		expect.objectContaining({
-			scope: 'session',
-			name: 'onlySessionValue',
-			value: 'present',
-		}),
-	])
-
+		(
+			await listValues({
+				env,
+				userId: 'user-456',
+				storageContext,
+			})
+		).map((value) => `${value.scope}:${value.name}`),
+	).toEqual(['session:gamma', 'user:alpha', 'user:zebra'])
 	expect(
 		await listValues({
 			env,

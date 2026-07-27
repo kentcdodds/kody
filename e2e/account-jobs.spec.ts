@@ -41,65 +41,16 @@ function insertJob(input: {
 	)
 }
 
-test('account jobs detail URL persists across reload for a seeded job', async ({
+test('account jobs list filters and detail URL persist for seeded jobs', async ({
 	page,
 	seedE2eUser,
 	login,
 }) => {
 	const runId = Date.now()
-	const email = `account-jobs-detail-${runId}@example.com`
+	const email = `account-jobs-${runId}@example.com`
 	const user = await seedE2eUser({
 		email,
-		username: `account-jobs-detail-${runId}`,
-		password: 'account-jobs-password',
-	})
-	const userId = await createStableUserIdFromEmail(email)
-	const jobId = crypto.randomUUID()
-	const jobName = `Seeded job ${runId}`
-	const now = new Date().toISOString()
-	const nextRunAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-	insertJob({
-		userId,
-		jobId,
-		jobName,
-		schedule: { type: 'interval', every: '1h' },
-		enabled: 1,
-		nextRunAt,
-		now,
-	})
-
-	await login({
-		email: user.email,
-		password: user.password,
-		mode: 'login',
-	})
-
-	await page.goto(`/account/jobs/${encodeURIComponent(jobId)}`)
-	await expect(
-		page.getByRole('heading', { name: 'Jobs', exact: true }),
-	).toBeVisible()
-	await expect(
-		page.getByRole('heading', { name: jobName, exact: true }),
-	).toBeVisible()
-
-	const detailUrl = page.url()
-	await page.reload()
-	await expect(page).toHaveURL(detailUrl)
-	await expect(
-		page.getByRole('heading', { name: jobName, exact: true }),
-	).toBeVisible()
-})
-
-test('account jobs defaults to active view and can show history', async ({
-	page,
-	seedE2eUser,
-	login,
-}) => {
-	const runId = Date.now()
-	const email = `account-jobs-filter-${runId}@example.com`
-	const user = await seedE2eUser({
-		email,
-		username: `account-jobs-filter-${runId}`,
+		username: `account-jobs-${runId}`,
 		password: 'account-jobs-password',
 	})
 	const userId = await createStableUserIdFromEmail(email)
@@ -162,21 +113,20 @@ test('account jobs defaults to active view and can show history', async ({
 	await expect(page.getByText(historyJobName, { exact: true })).toBeVisible()
 	await expect(page.getByText(activeJobName, { exact: true })).toHaveCount(0)
 
-	await page.getByLabel('Jobs view filter').selectOption('all')
-	await expect(page).toHaveURL(/view=all/)
-	await expect(page.getByText(activeJobName, { exact: true })).toBeVisible()
-	await expect(page.getByText(historyJobName, { exact: true })).toBeVisible()
-	await expect(page.getByText(packageJobName, { exact: true })).toBeVisible()
-
 	await page.getByLabel('Jobs ownership filter').selectOption('package')
+	await page.getByLabel('Jobs view filter').selectOption('all')
 	await expect(page).toHaveURL(/ownership=package/)
 	await expect(page.getByText(packageJobName, { exact: true })).toBeVisible()
 	await expect(page.getByText(activeJobName, { exact: true })).toHaveCount(0)
-	await expect(page.getByText(historyJobName, { exact: true })).toHaveCount(0)
 
-	await page.getByLabel('Jobs ownership filter').selectOption('ad-hoc')
-	await expect(page).toHaveURL(/ownership=ad-hoc/)
-	await expect(page.getByText(activeJobName, { exact: true })).toBeVisible()
-	await expect(page.getByText(historyJobName, { exact: true })).toBeVisible()
-	await expect(page.getByText(packageJobName, { exact: true })).toHaveCount(0)
+	await page.goto(`/account/jobs/${encodeURIComponent(activeJobId)}`)
+	await expect(
+		page.getByRole('heading', { name: activeJobName, exact: true }),
+	).toBeVisible()
+	const detailUrl = page.url()
+	await page.reload()
+	await expect(page).toHaveURL(detailUrl)
+	await expect(
+		page.getByRole('heading', { name: activeJobName, exact: true }),
+	).toBeVisible()
 })

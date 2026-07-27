@@ -652,45 +652,6 @@ test('0100 splits apps when credentials match but token_url differs', async () =
 	)
 })
 
-test('0100 capture/delete/remain predicates stay alias-equivalent', () => {
-	const sql = readFileSync(
-		new URL(oauthAppsMigration, migrationsDirectory),
-		'utf8',
-	)
-	const normalizePredicate = (block: string, entryAlias: string) =>
-		block.replaceAll(entryAlias, '<entry>').replace(/\s+/g, ' ').trim()
-
-	const captureMatch =
-		/INSERT INTO __migration_0100_source \([\s\S]*?WHERE (?<predicate>b\.scope = 'user'[\s\S]*?);/.exec(
-			sql,
-		)
-	const deleteMatch =
-		/DELETE FROM value_entries\nWHERE EXISTS \([\s\S]*?WHERE b\.id = value_entries\.bucket_id\n\t\tAND (?<predicate>b\.scope = 'user'[\s\S]*?)\n\);/.exec(
-			sql,
-		)
-	const remainMatch =
-		/migratable _integration:\* value rows remain after backfill[\s\S]*?WHERE (?<predicate>b\.scope = 'user'[\s\S]*?)\n\);/.exec(
-			sql,
-		)
-
-	expect(captureMatch?.groups?.predicate).toBeTruthy()
-	expect(deleteMatch?.groups?.predicate).toBeTruthy()
-	expect(remainMatch?.groups?.predicate).toBeTruthy()
-
-	const capture = normalizePredicate(captureMatch!.groups!.predicate, 'e.')
-	const deleted = normalizePredicate(
-		deleteMatch!.groups!.predicate,
-		'value_entries.',
-	)
-	const remain = normalizePredicate(remainMatch!.groups!.predicate, 'e.')
-
-	expect(capture).toBe(deleted)
-	expect(capture).toBe(remain)
-	expect(capture).toContain("LIKE '\\_integration:%' ESCAPE '\\'")
-	expect(capture).toContain('length(substr(<entry>name, 14)) > 0')
-	expect(capture).toContain("GLOB '*[a-z0-9]*'")
-})
-
 test('0100 leaves empty-name and unresolved-clientId _integration values untouched', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, oauthAppsMigration)

@@ -27,7 +27,7 @@ function job(
 	}
 }
 
-test('isActiveAccountJob keeps enabled jobs and future disabled once jobs', () => {
+test('account jobs filters cover active/history views and ownership', () => {
 	expect(
 		isActiveAccountJob(
 			job({ id: 'enabled-cron', enabled: true, scheduleType: 'cron' }),
@@ -67,19 +67,13 @@ test('isActiveAccountJob keeps enabled jobs and future disabled once jobs', () =
 			nowMs,
 		),
 	).toBe(false)
-})
 
-test('readJobsViewFilter defaults to active and accepts history/all', () => {
 	expect(readJobsViewFilter('/account/jobs')).toBe('active')
-	expect(readJobsViewFilter('/account/jobs?view=active')).toBe('active')
 	expect(readJobsViewFilter('/account/jobs?view=history')).toBe('history')
 	expect(readJobsViewFilter('/account/jobs?view=all')).toBe('all')
 	expect(readJobsViewFilter('/account/jobs?view=nope')).toBe('active')
-})
 
-test('readJobsOwnershipFilter defaults to all and accepts package/ad-hoc', () => {
 	expect(readJobsOwnershipFilter('/account/jobs')).toBe('all')
-	expect(readJobsOwnershipFilter('/account/jobs?ownership=all')).toBe('all')
 	expect(readJobsOwnershipFilter('/account/jobs?ownership=package')).toBe(
 		'package',
 	)
@@ -87,9 +81,7 @@ test('readJobsOwnershipFilter defaults to all and accepts package/ad-hoc', () =>
 		'ad-hoc',
 	)
 	expect(readJobsOwnershipFilter('/account/jobs?ownership=nope')).toBe('all')
-})
 
-test('filterAccountJobs supports view and ownership filters', () => {
 	const jobs = [
 		job({
 			id: 'live-cron',

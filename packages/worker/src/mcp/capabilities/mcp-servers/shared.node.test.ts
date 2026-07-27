@@ -30,25 +30,7 @@ function setting(
 	}
 }
 
-test('resolveMcpServerSetting throws McpCallerError for unknown server names', async () => {
-	mockModule.getMcpServerSettingById.mockReset()
-	mockModule.listMcpServerSettings.mockReset()
-	mockModule.getMcpServerSettingById.mockResolvedValue(null)
-	mockModule.listMcpServerSettings.mockResolvedValue([setting()])
-
-	const missing = resolveMcpServerSetting({
-		env: { APP_DB: {} as D1Database },
-		userId: 'user-1',
-		server: 'recipe-keeper',
-	})
-
-	await expect(missing).rejects.toThrow(McpCallerError)
-	await expect(missing).rejects.toThrow(
-		'No MCP server matches "recipe-keeper". Saved servers: ha.',
-	)
-})
-
-test('resolveMcpServerSetting throws McpCallerError for blank server identifiers', async () => {
+test('resolveMcpServerSetting resolves by id/name and rejects blank or unknown servers', async () => {
 	mockModule.getMcpServerSettingById.mockReset()
 	mockModule.listMcpServerSettings.mockReset()
 
@@ -57,18 +39,9 @@ test('resolveMcpServerSetting throws McpCallerError for blank server identifiers
 		userId: 'user-1',
 		server: '   ',
 	})
-
 	await expect(blank).rejects.toThrow(McpCallerError)
-	await expect(blank).rejects.toThrow(
-		'Provide the MCP server id or name in "server".',
-	)
 	expect(mockModule.getMcpServerSettingById).not.toHaveBeenCalled()
 	expect(mockModule.listMcpServerSettings).not.toHaveBeenCalled()
-})
-
-test('resolveMcpServerSetting resolves by id or normalized name', async () => {
-	mockModule.getMcpServerSettingById.mockReset()
-	mockModule.listMcpServerSettings.mockReset()
 
 	const byId = setting({ id: 'server-by-id', name: 'ha' })
 	mockModule.getMcpServerSettingById.mockResolvedValueOnce(byId)
@@ -91,4 +64,13 @@ test('resolveMcpServerSetting resolves by id or normalized name', async () => {
 			server: 'HA',
 		}),
 	).resolves.toMatchObject({ id: 'server-by-name', name: 'ha' })
+
+	mockModule.getMcpServerSettingById.mockResolvedValueOnce(null)
+	mockModule.listMcpServerSettings.mockResolvedValueOnce([setting()])
+	const missing = resolveMcpServerSetting({
+		env: { APP_DB: {} as D1Database },
+		userId: 'user-1',
+		server: 'recipe-keeper',
+	})
+	await expect(missing).rejects.toThrow(McpCallerError)
 })

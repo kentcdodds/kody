@@ -27,8 +27,8 @@ function createEmptyRemoteConnectorSettingsDb() {
 	})
 }
 
-test('remote connector shared secrets are not read from environment variables', async () => {
-	const env = {
+test('remote connector shared-secret reads ignore env vars and retry transient D1 failures', async () => {
+	const envWithoutSettings = {
 		APP_DB: createEmptyRemoteConnectorSettingsDb(),
 		SECRET_STORE_KEY: 'x'.repeat(32),
 		REMOTE_CONNECTOR_SECRETS: {
@@ -39,14 +39,14 @@ test('remote connector shared secrets are not read from environment variables', 
 
 	await expect(
 		resolveRemoteConnectorSharedSecret({
-			env,
+			env: envWithoutSettings,
 			userId: 'user-aaa',
 			instanceId: 'alpha',
 		}),
 	).resolves.toBeUndefined()
 	await expect(
 		remoteConnectorSharedSecretMatches({
-			env,
+			env: envWithoutSettings,
 			userId: 'user-aaa',
 			instanceId: 'alpha',
 			sharedSecret: 'alpha-secret',
@@ -54,53 +54,47 @@ test('remote connector shared secrets are not read from environment variables', 
 	).resolves.toBe(false)
 	await expect(
 		hasRemoteConnectorSharedSecret({
-			env,
+			env: envWithoutSettings,
 			userId: 'user-aaa',
 			instanceId: 'home',
 		}),
 	).resolves.toBe(false)
-})
 
-test('remote connector shared-secret reads retry transient D1 locks then succeed', async () => {
-	const all = vi
+	const retryThenSucceed = vi
 		.fn()
 		.mockRejectedValueOnce(
 			new Error('D1_ERROR: NOSENTRY database is locked: SQLITE_BUSY'),
 		)
 		.mockResolvedValueOnce({ results: [] })
-	const env = {
-		APP_DB: createRemoteConnectorSettingsDb({ all }),
+	const retryEnv = {
+		APP_DB: createRemoteConnectorSettingsDb({ all: retryThenSucceed }),
 		SECRET_STORE_KEY: 'x'.repeat(32),
 	} as Env
-
 	vi.useFakeTimers()
 	try {
 		const resultPromise = remoteConnectorSharedSecretMatches({
-			env,
+			env: retryEnv,
 			userId: 'user-aaa',
 			instanceId: 'home',
 			sharedSecret: 'home-secret',
 		})
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
 		await expect(resultPromise).resolves.toBe(false)
-		expect(all).toHaveBeenCalledTimes(2)
+		expect(retryThenSucceed).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.useRealTimers()
 	}
-})
 
-test('remote connector shared-secret reads propagate non-retryable D1 failures', async () => {
-	const all = vi
+	const nonRetryable = vi
 		.fn()
 		.mockRejectedValue(new Error('D1_ERROR: syntax error near SELECT'))
-	const env = {
-		APP_DB: createRemoteConnectorSettingsDb({ all }),
+	const nonRetryableEnv = {
+		APP_DB: createRemoteConnectorSettingsDb({ all: nonRetryable }),
 		SECRET_STORE_KEY: 'x'.repeat(32),
 	} as Env
-
 	await expect(
 		remoteConnectorSharedSecretMatches({
-			env,
+			env: nonRetryableEnv,
 			userId: 'user-aaa',
 			instanceId: 'home',
 			sharedSecret: 'home-secret',
@@ -108,27 +102,24 @@ test('remote connector shared-secret reads propagate non-retryable D1 failures',
 	).rejects.toThrow('syntax error')
 	await expect(
 		hasRemoteConnectorSharedSecret({
-			env,
+			env: nonRetryableEnv,
 			userId: 'user-aaa',
 			instanceId: 'home',
 		}),
 	).rejects.toThrow('syntax error')
-	expect(all).toHaveBeenCalledTimes(2)
-})
+	expect(nonRetryable).toHaveBeenCalledTimes(2)
 
-test('remote connector shared-secret reads exhaust retryable D1 failures instead of returning empty', async () => {
-	const all = vi
+	const exhausted = vi
 		.fn()
 		.mockRejectedValue(new Error('D1_ERROR: Network connection lost.'))
-	const env = {
-		APP_DB: createRemoteConnectorSettingsDb({ all }),
+	const exhaustedEnv = {
+		APP_DB: createRemoteConnectorSettingsDb({ all: exhausted }),
 		SECRET_STORE_KEY: 'x'.repeat(32),
 	} as Env
-
 	vi.useFakeTimers()
 	try {
 		const resultPromise = remoteConnectorSharedSecretMatches({
-			env,
+			env: exhaustedEnv,
 			userId: 'user-aaa',
 			instanceId: 'home',
 			sharedSecret: 'home-secret',
@@ -142,7 +133,7 @@ test('remote connector shared-secret reads exhaust retryable D1 failures instead
 			)
 		}
 		await rejection
-		expect(all).toHaveBeenCalledTimes(d1LockRetryMaxAttempts)
+		expect(exhausted).toHaveBeenCalledTimes(d1LockRetryMaxAttempts)
 	} finally {
 		vi.useRealTimers()
 	}

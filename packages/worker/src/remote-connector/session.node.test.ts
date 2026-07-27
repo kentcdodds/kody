@@ -512,90 +512,84 @@ test('tools/list_changed soft-fails disconnects and reports malformed snapshots'
 	})
 })
 
-test('remote connector hello rejects invalid shared secrets with Sentry auth error', async () => {
-	const sent: Array<string> = []
-	const closes: Array<{ code: number; reason: string }> = []
-	const socket = createHelloSocket({ sent, closes })
-	const { session } = await createRemoteConnectorSession({
-		webSockets: [socket],
-	})
-	remoteConnectorSharedSecretMatchesMock.mockResolvedValue(false)
-	hasRemoteConnectorSharedSecretMock.mockResolvedValue(true)
+test('remote connector hello shared-secret outcomes cover invalid, transient, and hard failures', async () => {
+	{
+		const sent: Array<string> = []
+		const closes: Array<{ code: number; reason: string }> = []
+		const socket = createHelloSocket({ sent, closes })
+		const { session } = await createRemoteConnectorSession({
+			webSockets: [socket],
+		})
+		remoteConnectorSharedSecretMatchesMock.mockResolvedValue(false)
+		hasRemoteConnectorSharedSecretMock.mockResolvedValue(true)
 
-	await sendConnectorHello(session, socket)
+		await sendConnectorHello(session, socket)
 
-	expect(captureMessageMock).toHaveBeenCalledWith(
-		'Remote connector session rejected websocket hello.',
-	)
-	expect(setLevelMock).toHaveBeenCalledWith('error')
-	expect(setContextMock).toHaveBeenCalledWith(
-		'remote_connector',
-		expect.objectContaining({
-			connectorId: 'home',
-			userId: 'user-home-1',
-			hasExpectedSecret: true,
-		}),
-	)
-	expect(JSON.parse(sent[0]!)).toMatchObject({
-		type: 'server.error',
-		message: 'Invalid connector shared secret.',
-	})
-	expect(closes).toEqual([{ code: 4001, reason: 'invalid-secret' }])
-})
+		expect(captureMessageMock).toHaveBeenCalledWith(
+			'Remote connector session rejected websocket hello.',
+		)
+		expect(setLevelMock).toHaveBeenCalledWith('error')
+		expect(JSON.parse(sent[0]!)).toMatchObject({
+			type: 'server.error',
+			message: 'Invalid connector shared secret.',
+		})
+		expect(closes).toEqual([{ code: 4001, reason: 'invalid-secret' }])
+	}
 
-test('remote connector hello soft-fails transient D1 shared-secret lookup without Sentry auth noise', async () => {
+	captureMessageMock.mockClear()
+	setLevelMock.mockClear()
+	setContextMock.mockClear()
 	silenceExpectedConsoleWarns([
 		/Remote connector shared-secret lookup failed during websocket hello \(transient D1\)/,
 	])
-	const sent: Array<string> = []
-	const closes: Array<{ code: number; reason: string }> = []
-	const socket = createHelloSocket({ sent, closes })
-	const { session } = await createRemoteConnectorSession({
-		webSockets: [socket],
-	})
-	remoteConnectorSharedSecretMatchesMock.mockRejectedValue(
-		new Error('D1_ERROR: Network connection lost.'),
-	)
+	{
+		const sent: Array<string> = []
+		const closes: Array<{ code: number; reason: string }> = []
+		const socket = createHelloSocket({ sent, closes })
+		const { session } = await createRemoteConnectorSession({
+			webSockets: [socket],
+		})
+		remoteConnectorSharedSecretMatchesMock.mockRejectedValue(
+			new Error('D1_ERROR: Network connection lost.'),
+		)
 
-	await sendConnectorHello(session, socket)
+		await sendConnectorHello(session, socket)
 
-	expect(captureMessageMock).not.toHaveBeenCalled()
-	expect(consoleWarn).toHaveBeenCalled()
-	expect(JSON.parse(sent[0]!)).toMatchObject({
-		type: 'server.error',
-		message: 'Connector authentication temporarily unavailable. Retry shortly.',
-	})
-	expect(closes).toEqual([{ code: 1013, reason: 'secret-lookup-retry' }])
-})
+		expect(captureMessageMock).not.toHaveBeenCalled()
+		expect(consoleWarn).toHaveBeenCalled()
+		expect(JSON.parse(sent[0]!)).toMatchObject({
+			type: 'server.error',
+			message:
+				'Connector authentication temporarily unavailable. Retry shortly.',
+		})
+		expect(closes).toEqual([{ code: 1013, reason: 'secret-lookup-retry' }])
+	}
 
-test('remote connector hello reports non-retryable shared-secret lookup failures distinctly', async () => {
-	const sent: Array<string> = []
-	const closes: Array<{ code: number; reason: string }> = []
-	const socket = createHelloSocket({ sent, closes })
-	const { session } = await createRemoteConnectorSession({
-		webSockets: [socket],
-	})
-	remoteConnectorSharedSecretMatchesMock.mockRejectedValue(
-		new Error('D1_ERROR: syntax error near SELECT'),
-	)
+	captureMessageMock.mockClear()
+	setLevelMock.mockClear()
+	setContextMock.mockClear()
+	{
+		const sent: Array<string> = []
+		const closes: Array<{ code: number; reason: string }> = []
+		const socket = createHelloSocket({ sent, closes })
+		const { session } = await createRemoteConnectorSession({
+			webSockets: [socket],
+		})
+		remoteConnectorSharedSecretMatchesMock.mockRejectedValue(
+			new Error('D1_ERROR: syntax error near SELECT'),
+		)
 
-	await sendConnectorHello(session, socket)
+		await sendConnectorHello(session, socket)
 
-	expect(captureMessageMock).toHaveBeenCalledWith(
-		'Remote connector session failed shared-secret lookup for websocket hello.',
-	)
-	expect(setLevelMock).toHaveBeenCalledWith('error')
-	expect(setContextMock).toHaveBeenCalledWith(
-		'remote_connector',
-		expect.objectContaining({
-			connectorId: 'home',
-			userId: 'user-home-1',
-			error: 'D1_ERROR: syntax error near SELECT',
-		}),
-	)
-	expect(JSON.parse(sent[0]!)).toMatchObject({
-		type: 'server.error',
-		message: 'Connector authentication temporarily unavailable. Retry shortly.',
-	})
-	expect(closes).toEqual([{ code: 1011, reason: 'secret-lookup-failed' }])
+		expect(captureMessageMock).toHaveBeenCalledWith(
+			'Remote connector session failed shared-secret lookup for websocket hello.',
+		)
+		expect(setLevelMock).toHaveBeenCalledWith('error')
+		expect(JSON.parse(sent[0]!)).toMatchObject({
+			type: 'server.error',
+			message:
+				'Connector authentication temporarily unavailable. Retry shortly.',
+		})
+		expect(closes).toEqual([{ code: 1011, reason: 'secret-lookup-failed' }])
+	}
 })

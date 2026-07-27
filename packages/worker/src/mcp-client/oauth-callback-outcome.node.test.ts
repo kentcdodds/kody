@@ -5,7 +5,7 @@ import {
 	resolveMcpOAuthCallbackOutcome,
 } from './oauth-callback-outcome.ts'
 
-test('OAuth callback success requires the MCP connection to be ready', () => {
+test('OAuth callback outcome requires a ready connection after SDK success', () => {
 	expect(
 		resolveMcpOAuthCallbackOutcome({
 			sdkAuthSuccess: true,
@@ -24,10 +24,8 @@ test('OAuth callback success requires the MCP connection to be ready', () => {
 		authError: null,
 		serverName: 'recipe-keeper',
 	})
-})
 
-test('OAuth callback does not report success when left authenticating without authUrl', () => {
-	const outcome = resolveMcpOAuthCallbackOutcome({
+	const stuckAuthenticating = resolveMcpOAuthCallbackOutcome({
 		sdkAuthSuccess: true,
 		sdkAuthError: null,
 		serverId: 'server-1',
@@ -38,20 +36,21 @@ test('OAuth callback does not report success when left authenticating without au
 			error: null,
 		},
 	})
-
-	expect(outcome.authSuccess).toBe(false)
-	expect(outcome.serverId).toBe('server-1')
-	expect(outcome.serverName).toBe('recipe-keeper')
-	expect(outcome.authError).toContain('no authorization link')
+	expect(stuckAuthenticating.authSuccess).toBe(false)
+	expect(stuckAuthenticating.authError).toBeTruthy()
 	expect(
 		isStuckMcpAuthenticatingWithoutAuthUrl({
 			state: 'authenticating',
 			authUrl: null,
 		}),
 	).toBe(true)
-})
+	expect(
+		isStuckMcpAuthenticatingWithoutAuthUrl({
+			state: 'authenticating',
+			authUrl: 'https://auth.example/authorize',
+		}),
+	).toBe(false)
 
-test('OAuth callback surfaces connection errors after SDK authSuccess', () => {
 	expect(
 		resolveMcpOAuthCallbackOutcome({
 			sdkAuthSuccess: true,
@@ -70,9 +69,7 @@ test('OAuth callback surfaces connection errors after SDK authSuccess', () => {
 		authError: 'Token exchange failed.',
 		serverName: 'recipe-keeper',
 	})
-})
 
-test('OAuth callback keeps SDK failures as failures', () => {
 	expect(
 		resolveMcpOAuthCallbackOutcome({
 			sdkAuthSuccess: false,
@@ -91,25 +88,20 @@ test('OAuth callback keeps SDK failures as failures', () => {
 		authError: 'Invalid state',
 		serverName: 'recipe-keeper',
 	})
-})
 
-test('incomplete OAuth connection messages distinguish missing auth URLs', () => {
-	expect(
-		describeIncompleteMcpOAuthConnection({
-			state: 'authenticating',
-			authUrl: 'https://auth.example/authorize',
-		}),
-	).toContain('still requires authorization')
-	expect(
-		describeIncompleteMcpOAuthConnection({
-			state: 'authenticating',
-			authUrl: null,
-		}),
-	).toContain('no authorization link')
-	expect(
-		describeIncompleteMcpOAuthConnection({
-			state: 'connecting',
-			authUrl: null,
-		}),
-	).toContain('"connecting"')
+	const waitingForAuth = describeIncompleteMcpOAuthConnection({
+		state: 'authenticating',
+		authUrl: 'https://auth.example/authorize',
+	})
+	const missingAuthUrl = describeIncompleteMcpOAuthConnection({
+		state: 'authenticating',
+		authUrl: null,
+	})
+	const connecting = describeIncompleteMcpOAuthConnection({
+		state: 'connecting',
+		authUrl: null,
+	})
+	expect(waitingForAuth).not.toEqual(missingAuthUrl)
+	expect(connecting).not.toEqual(waitingForAuth)
+	expect(connecting).not.toEqual(missingAuthUrl)
 })

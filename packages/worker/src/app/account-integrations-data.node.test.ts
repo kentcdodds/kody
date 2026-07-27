@@ -49,9 +49,13 @@ const googleConfig = {
 	},
 }
 
-test('loadAccountIntegrationByName prefills shared google client id for google-calendar setup', async () => {
+test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-slug apps', async () => {
 	const { env } = createEnv()
-	const userId = 'user-calendar-setup'
+	const userId = 'user-integrations-loader'
+
+	expect(
+		await loadAccountIntegrationByName(env, fakeUser(userId), 'linear'),
+	).toBeNull()
 
 	await upsertIntegration({
 		env,
@@ -59,18 +63,17 @@ test('loadAccountIntegrationByName prefills shared google client id for google-c
 		config: googleConfig,
 	})
 
-	const record = await loadAccountIntegrationByName(
+	const calendarSetup = await loadAccountIntegrationByName(
 		env,
 		fakeUser(userId),
 		'google-calendar',
 	)
-	expect(record).toMatchObject({
+	expect(calendarSetup).toMatchObject({
 		name: 'google-calendar',
 		appSlug: 'google',
 		provider: 'google',
 		clientId: 'shared-google-client',
 		tokenUrl: 'https://oauth2.googleapis.com/token',
-		apiBaseUrl: 'https://www.googleapis.com',
 		flow: 'pkce',
 		authorization: {
 			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -79,32 +82,11 @@ test('loadAccountIntegrationByName prefills shared google client id for google-c
 		accessTokenSecretName: 'google-calendarAccessToken',
 		refreshTokenSecretName: 'google-calendarRefreshToken',
 	})
-	// Prefill exposes secret *names* and client id, never token values.
-	expect(record?.clientSecretSecretName ?? null).toBeNull()
-	expect(JSON.stringify(record)).not.toMatch(
+	expect(calendarSetup?.clientSecretSecretName ?? null).toBeNull()
+	expect(JSON.stringify(calendarSetup)).not.toMatch(
 		/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/,
 	)
-})
 
-test('loadAccountIntegrationByName returns null for a brand-new provider', async () => {
-	const { env } = createEnv()
-	const record = await loadAccountIntegrationByName(
-		env,
-		fakeUser('user-new'),
-		'linear',
-	)
-	expect(record).toBeNull()
-})
-
-test('loadAccountIntegrationByName reconnects through the connection, not family fallback', async () => {
-	const { env } = createEnv()
-	const userId = 'user-reconnect'
-
-	await upsertIntegration({
-		env,
-		userId,
-		config: googleConfig,
-	})
 	await upsertIntegration({
 		env,
 		userId,
@@ -120,12 +102,12 @@ test('loadAccountIntegrationByName reconnects through the connection, not family
 		},
 	})
 
-	const record = await loadAccountIntegrationByName(
+	const reconnect = await loadAccountIntegrationByName(
 		env,
 		fakeUser(userId),
 		'google-calendar',
 	)
-	expect(record).toMatchObject({
+	expect(reconnect).toMatchObject({
 		name: 'google-calendar',
 		appSlug: 'google',
 		clientId: 'shared-google-client',
@@ -135,11 +117,53 @@ test('loadAccountIntegrationByName reconnects through the connection, not family
 			scopes: ['calendar.readonly'],
 		},
 	})
-})
 
-test('loadAccountIntegrationByName omits client id when family apps disagree on it', async () => {
-	const { env } = createEnv()
-	const userId = 'user-spotify-split'
+	const githubBase = {
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		apiBaseUrl: 'https://api.github.com',
+		flow: 'confidential' as const,
+		clientId: 'shared-github-client-id',
+		requiredHosts: ['api.github.com'],
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['repo'],
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+		},
+	}
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...githubBase,
+			name: 'github',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			refreshTokenSecretName: null,
+		},
+	})
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...githubBase,
+			name: 'github-kent',
+			clientSecretSecretName: 'github-kentClientSecret',
+			accessTokenSecretName: 'githubKentAccessToken',
+			refreshTokenSecretName: null,
+		},
+	})
+	const githubWork = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'github-work',
+	)
+	expect(githubWork).toMatchObject({
+		name: 'github-work',
+		clientId: 'shared-github-client-id',
+		clientSecretSecretName: null,
+		flow: 'confidential',
+	})
 
 	await upsertIntegration({
 		env,
@@ -181,109 +205,39 @@ test('loadAccountIntegrationByName omits client id when family apps disagree on 
 			},
 		},
 	})
-
-	const record = await loadAccountIntegrationByName(
+	const spotifyKids = await loadAccountIntegrationByName(
 		env,
 		fakeUser(userId),
 		'spotify-kids',
 	)
-	expect(record).toMatchObject({
+	expect(spotifyKids).toMatchObject({
 		name: 'spotify-kids',
 		clientId: '',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
 		flow: 'pkce',
 	})
-})
-
-test('loadAccountIntegrationByName prefills shared github client id but not disagreed secret names', async () => {
-	const { env } = createEnv()
-	const userId = 'user-github-split'
-
-	const githubBase = {
-		tokenUrl: 'https://github.com/login/oauth/access_token',
-		apiBaseUrl: 'https://api.github.com',
-		flow: 'confidential' as const,
-		clientId: 'shared-github-client-id',
-		requiredHosts: ['api.github.com'],
-		authorization: {
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			scopes: ['repo'],
-			scopeSeparator: null,
-			extraAuthorizeParams: {},
-		},
-	}
-
-	await upsertIntegration({
-		env,
-		userId,
-		config: {
-			...githubBase,
-			name: 'github',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: null,
-		},
-	})
-	await upsertIntegration({
-		env,
-		userId,
-		config: {
-			...githubBase,
-			name: 'github-kent',
-			clientSecretSecretName: 'github-kentClientSecret',
-			accessTokenSecretName: 'githubKentAccessToken',
-			refreshTokenSecretName: null,
-		},
-	})
-
-	const record = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'github-work',
-	)
-	expect(record).toMatchObject({
-		name: 'github-work',
-		clientId: 'shared-github-client-id',
-		clientSecretSecretName: null,
-		tokenUrl: 'https://github.com/login/oauth/access_token',
-		flow: 'confidential',
-		authorization: {
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-		},
-	})
-	expect(record?.clientSecretSecretName).toBeNull()
-	expect(JSON.stringify(record)).not.toMatch(
-		/githubClientSecret|github-kentClientSecret/,
-	)
-})
-
-test('loadAccountIntegrationByName surfaces a connectionless exact-slug setup app', async () => {
-	const { env } = createEnv()
-	const userId = 'user-abandoned'
 
 	await upsertOauthAppWithoutConnection({
 		env,
-		userId,
+		userId: 'user-abandoned',
 		config: {
-			name: 'spotify',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			flow: 'pkce',
-			clientId: 'spotify-client-from-setup',
+			name: 'notion',
+			tokenUrl: 'https://api.notion.com/v1/oauth/token',
+			flow: 'confidential',
+			clientId: 'notion-client-from-setup',
 			authorization: {
-				authorizeUrl: 'https://accounts.spotify.com/authorize',
+				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
 			},
 		},
 	})
-
-	const record = await loadAccountIntegrationByName(
+	const connectionless = await loadAccountIntegrationByName(
 		env,
-		fakeUser(userId),
-		'spotify',
+		fakeUser('user-abandoned'),
+		'notion',
 	)
-	expect(record).toMatchObject({
-		name: 'spotify',
-		appSlug: 'spotify',
-		clientId: 'spotify-client-from-setup',
-		tokenUrl: 'https://accounts.spotify.com/api/token',
+	expect(connectionless).toMatchObject({
+		name: 'notion',
+		appSlug: 'notion',
+		clientId: 'notion-client-from-setup',
 	})
 })

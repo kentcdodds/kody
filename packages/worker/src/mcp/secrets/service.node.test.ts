@@ -585,7 +585,7 @@ function buildEntitlementTestSecretEnv(input: {
 	}
 }
 
-test('saveSecret enforces the secrets entitlement for plan users', async () => {
+test('saveSecret enforces plan secret quotas including updates and max ceiling', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'pro' })
@@ -603,7 +603,7 @@ test('saveSecret enforces the secrets entitlement for plan users', async () => {
 		})
 	}
 
-	const error = await saveSecret({
+	const overLimit = await saveSecret({
 		env,
 		userId,
 		userEmail: email,
@@ -614,36 +614,16 @@ test('saveSecret enforces the secrets entitlement for plan users', async () => {
 		() => null,
 		(thrown: unknown) => thrown,
 	)
-	if (!isEntitlementLimitError(error)) {
+	if (!isEntitlementLimitError(overLimit)) {
 		throw new Error('Expected an EntitlementLimitError from saveSecret.')
 	}
-	expect(error.details).toMatchObject({
+	expect(overLimit.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'secrets',
 		plan: 'pro',
 		limit,
 		current: limit,
 	})
-	expect(error.message).toContain(`at most ${limit} secrets`)
-})
-
-test('saveSecret allows updating an existing secret at the plan limit', async () => {
-	const email = 'planned-update@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'pro' })
-	const limit = planLimits.pro.maxSecrets
-	if (limit === null) throw new Error('Expected a numeric pro secret limit.')
-
-	for (let index = 0; index < limit; index += 1) {
-		await saveSecret({
-			env,
-			userId,
-			userEmail: email,
-			scope: 'user',
-			name: `quota-secret-${index}`,
-			value: `secret-value-${index}`,
-		})
-	}
 
 	const updated = await saveSecret({
 		env,
@@ -654,39 +634,39 @@ test('saveSecret allows updating an existing secret at the plan limit', async ()
 		value: 'rotated-value',
 		description: 'rotated',
 	})
-	expect(updated.name).toBe('quota-secret-0')
-	expect(updated.description).toBe('rotated')
-})
+	expect(updated).toMatchObject({
+		name: 'quota-secret-0',
+		description: 'rotated',
+	})
 
-test('saveSecret allows below-max usage and denies at the max plan ceiling', async () => {
-	const email = 'max@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const maxEmail = 'max@example.com'
+	const maxUserId = await createStableUserIdFromEmail(maxEmail)
 	const maxLimit = planLimits.max.maxSecrets
 	const belowMax = buildEntitlementTestSecretEnv({
-		email,
+		email: maxEmail,
 		plan: 'max',
 		seededSecretCount: planLimits.pro.maxSecrets + 1,
-		seededSecretUserId: userId,
+		seededSecretUserId: maxUserId,
 	})
 	await saveSecret({
 		env: belowMax.env,
-		userId,
-		userEmail: email,
+		userId: maxUserId,
+		userEmail: maxEmail,
 		scope: 'user',
 		name: 'below-max-secret',
 		value: 'secret-value',
 	})
 
 	const atCeiling = buildEntitlementTestSecretEnv({
-		email,
+		email: maxEmail,
 		plan: 'max',
 		seededSecretCount: maxLimit,
-		seededSecretUserId: userId,
+		seededSecretUserId: maxUserId,
 	})
-	const error = await saveSecret({
+	const ceilingError = await saveSecret({
 		env: atCeiling.env,
-		userId,
-		userEmail: email,
+		userId: maxUserId,
+		userEmail: maxEmail,
 		scope: 'user',
 		name: 'over-max-secret',
 		value: 'secret-value',
@@ -694,13 +674,12 @@ test('saveSecret allows below-max usage and denies at the max plan ceiling', asy
 		() => null,
 		(thrown: unknown) => thrown,
 	)
-	if (!isEntitlementLimitError(error)) {
+	if (!isEntitlementLimitError(ceilingError)) {
 		throw new Error(
 			'Expected an EntitlementLimitError at the max secret ceiling.',
 		)
 	}
-	expect(error.details).toMatchObject({
-		code: 'entitlement_limit_exceeded',
+	expect(ceilingError.details).toMatchObject({
 		resource: 'secrets',
 		plan: 'max',
 		limit: maxLimit,

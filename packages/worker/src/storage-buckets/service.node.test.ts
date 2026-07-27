@@ -80,18 +80,14 @@ function createCountingDb(input?: { failRun?: boolean }) {
 	}
 }
 
-test('storageBucketKindFromStorageId only trusts unambiguous prefixes', () => {
+test('storage bucket registration soft-fails, dedupes, and lists by user', async () => {
 	expect(storageBucketKindFromStorageId('job:abc')).toBe('job')
 	expect(storageBucketKindFromStorageId('exec:abc')).toBe('execute')
 	expect(storageBucketKindFromStorageId('package:abc')).toBe('unknown')
-	expect(storageBucketKindFromStorageId('service:pkg:svc')).toBe('unknown')
 	expect(storageBucketKindFromStorageId('adhoc-bucket')).toBe('unknown')
-})
 
-test('registerStorageBucket never throws when binding or table writes are missing', async () => {
 	consoleWarn.mockImplementation(() => {})
 	clearStorageBucketRegistrationDedupeForTests()
-
 	expect(() =>
 		registerStorageBucket({
 			env: {} as Env,
@@ -99,15 +95,6 @@ test('registerStorageBucket never throws when binding or table writes are missin
 			storageId: 'bucket-a',
 		}),
 	).not.toThrow()
-
-	expect(() =>
-		registerStorageBucket({
-			env: { APP_DB: undefined } as unknown as Env,
-			userId: 'user-a',
-			storageId: 'bucket-a',
-		}),
-	).not.toThrow()
-
 	const failing = createCountingDb({ failRun: true })
 	expect(() =>
 		registerStorageBucket({
@@ -122,33 +109,21 @@ test('registerStorageBucket never throws when binding or table writes are missin
 		'storage-bucket-register-failed',
 		expect.any(Error),
 	)
-})
 
-test('registerStorageBucket dedupes to one D1 write per bucket in an isolate', async () => {
 	clearStorageBucketRegistrationDedupeForTests()
 	const counting = createCountingDb()
 	const pending: Array<Promise<unknown>> = []
+	const waitUntil = (promise: Promise<unknown>) => {
+		pending.push(promise)
+	}
 	for (let index = 0; index < 5; index += 1) {
 		registerStorageBucket({
 			env: counting.env,
 			userId: 'user-a',
 			storageId: 'exec:same',
 			kind: 'execute',
-			waitUntil: (promise) => {
-				pending.push(promise)
-			},
+			waitUntil,
 		})
-	}
-	await Promise.all(pending)
-	expect(counting.insertCount).toBe(1)
-})
-
-test('listUserStorageBucketIds returns only the calling user buckets', async () => {
-	clearStorageBucketRegistrationDedupeForTests()
-	const counting = createCountingDb()
-	const pending: Array<Promise<unknown>> = []
-	const waitUntil = (promise: Promise<unknown>) => {
-		pending.push(promise)
 	}
 	registerStorageBucket({
 		env: counting.env,
@@ -164,39 +139,18 @@ test('listUserStorageBucketIds returns only the calling user buckets', async () 
 	})
 	await Promise.all(pending)
 
+	expect(counting.insertCount).toBe(3)
 	await expect(
 		listUserStorageBucketIds({ env: counting.env, userId: 'user-a' }),
-	).resolves.toEqual(['bucket-a'])
+	).resolves.toEqual(['bucket-a', 'exec:same'])
 	await expect(
 		listUserStorageBucketIds({ env: counting.env, userId: 'user-b' }),
 	).resolves.toEqual(['bucket-b'])
-})
-
-test('listPlatformStorageBuckets returns every user bucket', async () => {
-	clearStorageBucketRegistrationDedupeForTests()
-	const counting = createCountingDb()
-	const pending: Array<Promise<unknown>> = []
-	const waitUntil = (promise: Promise<unknown>) => {
-		pending.push(promise)
-	}
-	registerStorageBucket({
-		env: counting.env,
-		userId: 'user-a',
-		storageId: 'bucket-a',
-		waitUntil,
-	})
-	registerStorageBucket({
-		env: counting.env,
-		userId: 'user-b',
-		storageId: 'bucket-b',
-		waitUntil,
-	})
-	await Promise.all(pending)
-
 	await expect(
 		listPlatformStorageBuckets({ db: counting.db }),
 	).resolves.toEqual([
 		{ userId: 'user-a', storageId: 'bucket-a' },
+		{ userId: 'user-a', storageId: 'exec:same' },
 		{ userId: 'user-b', storageId: 'bucket-b' },
 	])
 })

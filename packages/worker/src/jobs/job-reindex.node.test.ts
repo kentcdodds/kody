@@ -136,7 +136,7 @@ test('job reindex walks keyset pages and merges the page results', async () => {
 	expect(new Set(upsertedIds).size).toBe(201)
 })
 
-test('job reindex retries a transient D1 export error on page listing', async () => {
+test('job reindex retries transient D1 export page errors then surfaces exhaustion', async () => {
 	resetMocks()
 	const upsert = vi.fn()
 	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
@@ -150,18 +150,15 @@ test('job reindex retries a transient D1 export error on page listing', async ()
 
 	vi.useFakeTimers()
 	try {
-		const resultPromise = reindexJobVectors({ APP_DB: {} } as Env)
+		const recoverPromise = reindexJobVectors({ APP_DB: {} } as Env)
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
-		await expect(resultPromise).resolves.toEqual({ upserted: 1 })
+		await expect(recoverPromise).resolves.toEqual({ upserted: 1 })
 	} finally {
 		vi.useRealTimers()
 	}
-
 	expect(mockModule.listJobRowsPage).toHaveBeenCalledTimes(2)
 	expect(upsert).toHaveBeenCalledTimes(1)
-})
 
-test('job reindex surfaces page listing failures after the retry budget', async () => {
 	resetMocks()
 	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert: vi.fn() })
 	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
@@ -171,8 +168,8 @@ test('job reindex surfaces page listing failures after the retry budget', async 
 
 	vi.useFakeTimers()
 	try {
-		const resultPromise = reindexJobVectors({ APP_DB: {} } as Env)
-		const expectation = expect(resultPromise).rejects.toThrow(
+		const exhaustedPromise = reindexJobVectors({ APP_DB: {} } as Env)
+		const expectation = expect(exhaustedPromise).rejects.toThrow(
 			'Currently processing a long-running export',
 		)
 		for (let attempt = 1; attempt < d1LockRetryMaxAttempts; attempt++) {

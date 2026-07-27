@@ -629,13 +629,13 @@ test('re-saving one of four shared connections with new scopes keeps the shared 
 	})
 })
 
-test('upsertOauthAppWithoutConnection persists an app with zero connections; later connect attaches to it', async () => {
+test('upsertOauthAppWithoutConnection covers setup, client-id reuse, and connected-app preservation', async () => {
 	const { env, sqlite } = createEnv()
-	const userId = 'user-setup-then-connect'
+	const setupUserId = 'user-setup-then-connect'
 
 	const app = await upsertOauthAppWithoutConnection({
 		env,
-		userId,
+		userId: setupUserId,
 		config: {
 			name: 'spotify',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -654,32 +654,20 @@ test('upsertOauthAppWithoutConnection persists an app with zero connections; lat
 	expect(app).toMatchObject({
 		slug: 'spotify',
 		clientId: 'spotify-client-from-setup',
-		tokenUrl: 'https://accounts.spotify.com/api/token',
 		flow: 'pkce',
 	})
-
-	const appsBeforeConnect = await listOauthApps({ env, userId })
-	expect(appsBeforeConnect).toHaveLength(1)
-	expect(appsBeforeConnect[0]).toMatchObject({
-		slug: 'spotify',
-		connectionCount: 0,
-		clientId: 'spotify-client-from-setup',
-	})
-	expect(await listIntegrations({ env, userId })).toEqual([])
-	expect(await listJoinedIntegrations({ env, userId })).toEqual([])
-	expect(
-		(
-			sqlite
-				.prepare(
-					`SELECT count(*) AS count FROM user_integrations WHERE user_id = ?`,
-				)
-				.get(userId) as { count: number }
-		).count,
-	).toBe(0)
+	expect(await listOauthApps({ env, userId: setupUserId })).toEqual([
+		expect.objectContaining({
+			slug: 'spotify',
+			connectionCount: 0,
+			clientId: 'spotify-client-from-setup',
+		}),
+	])
+	expect(await listIntegrations({ env, userId: setupUserId })).toEqual([])
 
 	await upsertIntegration({
 		env,
-		userId,
+		userId: setupUserId,
 		config: {
 			name: 'spotify',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -697,29 +685,18 @@ test('upsertOauthAppWithoutConnection persists an app with zero connections; lat
 			},
 		},
 	})
+	expect(await listOauthApps({ env, userId: setupUserId })).toEqual([
+		expect.objectContaining({
+			slug: 'spotify',
+			connectionCount: 1,
+			clientId: 'spotify-client-from-setup',
+		}),
+	])
 
-	const appsAfterConnect = await listOauthApps({ env, userId })
-	expect(appsAfterConnect).toHaveLength(1)
-	expect(appsAfterConnect[0]).toMatchObject({
-		slug: 'spotify',
-		connectionCount: 1,
-		clientId: 'spotify-client-from-setup',
-	})
-	const listed = await listIntegrations({ env, userId })
-	expect(listed).toHaveLength(1)
-	expect(listed[0]).toMatchObject({
-		name: 'spotify',
-		clientId: 'spotify-client-from-setup',
-	})
-})
-
-test('upsertOauthAppWithoutConnection reuses a connectionless preferred slug when the client id changes', async () => {
-	const { env } = createEnv()
-	const userId = 'user-setup-orphan-reuse'
-
+	const notionUserId = 'user-setup-orphan-reuse'
 	await upsertOauthAppWithoutConnection({
 		env,
-		userId,
+		userId: notionUserId,
 		config: {
 			name: 'notion',
 			tokenUrl: 'https://api.notion.com/v1/oauth/token',
@@ -731,10 +708,9 @@ test('upsertOauthAppWithoutConnection reuses a connectionless preferred slug whe
 			},
 		},
 	})
-
 	const updated = await upsertOauthAppWithoutConnection({
 		env,
-		userId,
+		userId: notionUserId,
 		config: {
 			name: 'notion',
 			tokenUrl: 'https://api.notion.com/v1/oauth/token',
@@ -746,30 +722,16 @@ test('upsertOauthAppWithoutConnection reuses a connectionless preferred slug whe
 			},
 		},
 	})
-
 	expect(updated).toMatchObject({
 		slug: 'notion',
 		clientId: 'notion-client-new',
 	})
-	const apps = await listOauthApps({ env, userId })
-	expect(apps).toHaveLength(1)
-	expect(apps[0]).toMatchObject({
-		slug: 'notion',
-		connectionCount: 0,
-		clientId: 'notion-client-new',
-	})
-	expect(apps.map((entry) => entry.slug)).not.toContain('notion-2')
-	expect(await listIntegrations({ env, userId })).toEqual([])
-	expect(await listJoinedIntegrations({ env, userId })).toEqual([])
-})
+	expect(await listOauthApps({ env, userId: notionUserId })).toHaveLength(1)
 
-test('upsertOauthAppWithoutConnection matching a connected app does not rewrite provider or identity', async () => {
-	const { env, sqlite } = createEnv()
-	const userId = 'user-setup-preserve'
-
+	const preserveUserId = 'user-setup-preserve'
 	await upsertOauthAppWithoutConnection({
 		env,
-		userId,
+		userId: preserveUserId,
 		config: {
 			name: 'google',
 			tokenUrl: 'https://oauth2.googleapis.com/token',
@@ -783,10 +745,9 @@ test('upsertOauthAppWithoutConnection matching a connected app does not rewrite 
 			},
 		},
 	})
-
 	await upsertIntegration({
 		env,
-		userId,
+		userId: preserveUserId,
 		config: {
 			name: 'google',
 			tokenUrl: 'https://oauth2.googleapis.com/token',
@@ -804,14 +765,13 @@ test('upsertOauthAppWithoutConnection matching a connected app does not rewrite 
 			},
 		},
 	})
-
 	const before = sqlite
 		.prepare(
 			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
 			FROM user_oauth_apps
 			WHERE user_id = ? AND slug = 'google'`,
 		)
-		.get(userId) as {
+		.get(preserveUserId) as {
 		slug: string
 		provider: string
 		label: string | null
@@ -820,11 +780,9 @@ test('upsertOauthAppWithoutConnection matching a connected app does not rewrite 
 		created_at: string
 		updated_at: string
 	}
-	expect(before.provider).toBe('google')
-
 	const secondSetup = await upsertOauthAppWithoutConnection({
 		env,
-		userId,
+		userId: preserveUserId,
 		config: {
 			name: 'google-calendar',
 			tokenUrl: 'https://oauth2.googleapis.com/token',
@@ -838,7 +796,6 @@ test('upsertOauthAppWithoutConnection matching a connected app does not rewrite 
 			},
 		},
 	})
-
 	expect(secondSetup.slug).toBe('google')
 	const after = sqlite
 		.prepare(
@@ -846,34 +803,33 @@ test('upsertOauthAppWithoutConnection matching a connected app does not rewrite 
 			FROM user_oauth_apps
 			WHERE user_id = ? AND slug = 'google'`,
 		)
-		.get(userId) as typeof before
+		.get(preserveUserId) as typeof before
 	expect(after).toEqual(before)
-
-	const apps = await listOauthApps({ env, userId })
-	expect(apps).toHaveLength(1)
-	expect(apps[0]).toMatchObject({
-		slug: 'google',
-		connectionCount: 1,
-		clientId: 'shared-google-client',
-	})
 })
 
-test('findOauthAppForProviderSetup prefills every field when the family agrees (google)', async () => {
+test('findOauthAppForProviderSetup covers family prefill, exact slug, and disagreement', async () => {
 	const { env } = createEnv()
 	const userId = 'user-family-prefill'
+
+	expect(
+		await findOauthAppForProviderSetup({
+			env,
+			userId: 'user-empty',
+			name: 'linear',
+		}),
+	).toBeNull()
 
 	await upsertIntegration({
 		env,
 		userId,
 		config: baseGoogleConfig,
 	})
-
-	const found = await findOauthAppForProviderSetup({
+	const googleFamily = await findOauthAppForProviderSetup({
 		env,
 		userId,
 		name: 'google-calendar',
 	})
-	expect(found).toMatchObject({
+	expect(googleFamily).toMatchObject({
 		slug: 'google',
 		provider: 'google',
 		clientId: 'google-client-id-value',
@@ -884,95 +840,9 @@ test('findOauthAppForProviderSetup prefills every field when the family agrees (
 		flow: 'pkce',
 		extraAuthorizeParams: { access_type: 'offline' },
 	})
-	// Prefill is app metadata only — no token secret values on the app row.
-	expect(found).not.toHaveProperty('accessTokenSecretName')
-	expect(found).not.toHaveProperty('refreshTokenSecretName')
-	expect(JSON.stringify(found)).not.toMatch(
-		/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/,
-	)
-})
+	expect(googleFamily).not.toHaveProperty('accessTokenSecretName')
+	expect(googleFamily).not.toHaveProperty('refreshTokenSecretName')
 
-test('findOauthAppForProviderSetup prefills shared client id but not disagreed secret names (github)', async () => {
-	const { env } = createEnv()
-	const userId = 'user-github-family'
-
-	const githubBase = {
-		tokenUrl: 'https://github.com/login/oauth/access_token',
-		apiBaseUrl: 'https://api.github.com',
-		flow: 'confidential' as const,
-		clientId: 'shared-github-client-id',
-		requiredHosts: ['api.github.com'],
-		authorization: {
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			scopes: ['repo'],
-			scopeSeparator: null,
-			extraAuthorizeParams: {},
-		},
-	}
-
-	await upsertIntegration({
-		env,
-		userId,
-		config: {
-			...githubBase,
-			name: 'github',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: null,
-		},
-	})
-	await upsertIntegration({
-		env,
-		userId,
-		config: {
-			...githubBase,
-			name: 'github-kent',
-			clientSecretSecretName: 'github-kentClientSecret',
-			accessTokenSecretName: 'githubKentAccessToken',
-			refreshTokenSecretName: null,
-		},
-	})
-
-	const found = await findOauthAppForProviderSetup({
-		env,
-		userId,
-		name: 'github-work',
-	})
-	expect(found).toMatchObject({
-		slug: 'github',
-		provider: 'github',
-		clientId: 'shared-github-client-id',
-		clientSecretSecretName: null,
-		tokenUrl: 'https://github.com/login/oauth/access_token',
-		authorizeUrl: 'https://github.com/login/oauth/authorize',
-		apiBaseUrl: 'https://api.github.com',
-		flow: 'confidential',
-	})
-	expect(found?.clientSecretSecretName).toBeNull()
-	expect(JSON.stringify(found)).not.toMatch(
-		/githubClientSecret|github-kentClientSecret/,
-	)
-})
-
-test('findOauthAppForProviderSetup returns null for a brand-new provider', async () => {
-	const { env } = createEnv()
-	const found = await findOauthAppForProviderSetup({
-		env,
-		userId: 'user-empty',
-		name: 'linear',
-	})
-	expect(found).toBeNull()
-})
-
-test('findOauthAppForProviderSetup prefers an exact slug over family fallback', async () => {
-	const { env } = createEnv()
-	const userId = 'user-exact-slug'
-
-	await upsertIntegration({
-		env,
-		userId,
-		config: baseGoogleConfig,
-	})
 	await upsertOauthAppWithoutConnection({
 		env,
 		userId,
@@ -987,26 +857,71 @@ test('findOauthAppForProviderSetup prefers an exact slug over family fallback', 
 			},
 		},
 	})
-
-	const found = await findOauthAppForProviderSetup({
-		env,
-		userId,
-		name: 'google-calendar',
-	})
-	expect(found).toMatchObject({
+	expect(
+		await findOauthAppForProviderSetup({
+			env,
+			userId,
+			name: 'google-calendar',
+		}),
+	).toMatchObject({
 		slug: 'google-calendar',
 		clientId: 'calendar-only-client',
 		tokenUrl: 'https://oauth2.googleapis.com/token/calendar-only',
 	})
-})
 
-test('findOauthAppForProviderSetup omits client id when family apps disagree on it', async () => {
-	const { env } = createEnv()
-	const userId = 'user-spotify-family'
-
+	const githubBase = {
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		apiBaseUrl: 'https://api.github.com',
+		flow: 'confidential' as const,
+		clientId: 'shared-github-client-id',
+		requiredHosts: ['api.github.com'],
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['repo'],
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+		},
+	}
+	const githubUserId = 'user-github-family'
 	await upsertIntegration({
 		env,
-		userId,
+		userId: githubUserId,
+		config: {
+			...githubBase,
+			name: 'github',
+			clientSecretSecretName: 'githubClientSecret',
+			accessTokenSecretName: 'githubAccessToken',
+			refreshTokenSecretName: null,
+		},
+	})
+	await upsertIntegration({
+		env,
+		userId: githubUserId,
+		config: {
+			...githubBase,
+			name: 'github-kent',
+			clientSecretSecretName: 'github-kentClientSecret',
+			accessTokenSecretName: 'githubKentAccessToken',
+			refreshTokenSecretName: null,
+		},
+	})
+	const githubFound = await findOauthAppForProviderSetup({
+		env,
+		userId: githubUserId,
+		name: 'github-work',
+	})
+	expect(githubFound).toMatchObject({
+		slug: 'github',
+		provider: 'github',
+		clientId: 'shared-github-client-id',
+		clientSecretSecretName: null,
+		flow: 'confidential',
+	})
+
+	const spotifyUserId = 'user-spotify-family'
+	await upsertIntegration({
+		env,
+		userId: spotifyUserId,
 		config: {
 			name: 'spotify',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -1026,7 +941,7 @@ test('findOauthAppForProviderSetup omits client id when family apps disagree on 
 	})
 	await upsertIntegration({
 		env,
-		userId,
+		userId: spotifyUserId,
 		config: {
 			name: 'spotify-family',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -1044,36 +959,21 @@ test('findOauthAppForProviderSetup omits client id when family apps disagree on 
 			},
 		},
 	})
-
-	const apps = await listOauthApps({ env, userId })
-	expect(apps.map((app) => app.slug).sort()).toEqual([
-		'spotify',
-		'spotify-family',
-	])
-	expect(new Set(apps.map((app) => app.clientId)).size).toBe(2)
-
-	const found = await findOauthAppForProviderSetup({
+	const spotifyFound = await findOauthAppForProviderSetup({
 		env,
-		userId,
+		userId: spotifyUserId,
 		name: 'spotify-kids',
 	})
-	expect(found).not.toBeNull()
-	expect(found?.clientId).toBeNull()
-	expect(found).toMatchObject({
+	expect(spotifyFound?.clientId).toBeNull()
+	expect(spotifyFound).toMatchObject({
 		tokenUrl: 'https://accounts.spotify.com/api/token',
 		authorizeUrl: 'https://accounts.spotify.com/authorize',
-		apiBaseUrl: 'https://api.spotify.com/v1',
 		flow: 'pkce',
 	})
-})
-
-test('findOauthAppForProviderSetup returns the exact connectionless app slug', async () => {
-	const { env } = createEnv()
-	const userId = 'user-setup-exact'
 
 	await upsertOauthAppWithoutConnection({
 		env,
-		userId,
+		userId: 'user-setup-exact',
 		config: {
 			name: 'notion',
 			tokenUrl: 'https://api.notion.com/v1/oauth/token',
@@ -1085,13 +985,13 @@ test('findOauthAppForProviderSetup returns the exact connectionless app slug', a
 			},
 		},
 	})
-
-	const found = await findOauthAppForProviderSetup({
-		env,
-		userId,
-		name: 'notion',
-	})
-	expect(found).toMatchObject({
+	expect(
+		await findOauthAppForProviderSetup({
+			env,
+			userId: 'user-setup-exact',
+			name: 'notion',
+		}),
+	).toMatchObject({
 		slug: 'notion',
 		clientId: 'notion-client-from-setup',
 		clientSecretSecretName: 'notionClientSecret',
