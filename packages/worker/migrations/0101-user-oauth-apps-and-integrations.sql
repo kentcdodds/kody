@@ -154,9 +154,15 @@ SELECT
 	e.created_at,
 	e.updated_at,
 	trim(cid.value),
-	NULLIF(trim(json_extract(e.value, '$.clientSecretSecretName')), ''),
+	-- Match buildOauthAppRow: client secrets are confidential-only. pkce rows
+	-- must store NULL so findOauthAppByAppTuple matches application upserts.
+	CASE
+		WHEN json_extract(e.value, '$.flow') = 'confidential'
+		THEN NULLIF(trim(json_extract(e.value, '$.clientSecretSecretName')), '')
+		ELSE NULL
+	END,
 	trim(json_extract(e.value, '$.tokenUrl')),
-	json_extract(e.value, '$.authorization.authorizeUrl'),
+	NULLIF(trim(json_extract(e.value, '$.authorization.authorizeUrl')), ''),
 	NULLIF(trim(json_extract(e.value, '$.apiBaseUrl')), ''),
 	json_extract(e.value, '$.flow'),
 	-- Match normalizeIntegrationConfig: store usePkce only when it differs
@@ -170,14 +176,82 @@ SELECT
 		WHEN json_extract(e.value, '$.usePkce') = 0 THEN 0
 		ELSE 1
 	END,
-	json_extract(e.value, '$.tokenExchangeStyle'),
-	json_extract(e.value, '$.authorization.scopeSeparator'),
+	-- Match buildOauthAppRow: 'form' is the default exchange style → NULL.
+	CASE
+		WHEN json_extract(e.value, '$.tokenExchangeStyle') IS NULL THEN NULL
+		WHEN json_extract(e.value, '$.tokenExchangeStyle') = 'form' THEN NULL
+		ELSE json_extract(e.value, '$.tokenExchangeStyle')
+	END,
+	-- Match normalizeIntegrationAuthorization: default scope separator (' ')
+	-- is stored as NULL.
+	CASE
+		WHEN json_extract(e.value, '$.authorization.scopeSeparator') IS NULL
+		THEN NULL
+		WHEN json_extract(e.value, '$.authorization.scopeSeparator') = ' '
+		THEN NULL
+		ELSE json_extract(e.value, '$.authorization.scopeSeparator')
+	END,
+	-- Match normalizeIntegrationAuthorization: rebuild with sorted keys so the
+	-- stored JSON is byte-identical to JSON.stringify of the sorted object.
+	-- ORDER BY key uses SQLite BINARY collation; the app sorts with
+	-- localeCompare. They agree for the lowercase snake_case OAuth param keys
+	-- providers use; mixed-case keys could diverge.
+	-- Missing authorization / missing extraAuthorizeParams / explicit {} all
+	-- yield '{}' (json_group_object over zero rows returns '{}', not NULL).
 	COALESCE(
-		json_extract(e.value, '$.authorization.extraAuthorizeParams'),
+		(
+			SELECT json_group_object(key, value)
+			FROM (
+				SELECT trim(key) AS key, value
+				FROM json_each(
+					COALESCE(
+						json_extract(
+							e.value,
+							'$.authorization.extraAuthorizeParams'
+						),
+						'{}'
+					)
+				)
+				WHERE typeof(key) = 'text' AND trim(key) != ''
+				ORDER BY key
+			)
+		),
 		'{}'
 	),
-	COALESCE(json_extract(e.value, '$.authorization.scopes'), '[]'),
-	COALESCE(json_extract(e.value, '$.requiredHosts'), '[]'),
+	-- Match normalizeIntegrationAuthorization scopes: trim, drop empties,
+	-- preserve encounter order (not sorted).
+	COALESCE(
+		(
+			SELECT json_group_array(scope)
+			FROM (
+				SELECT trim(value) AS scope
+				FROM json_each(
+					COALESCE(
+						json_extract(e.value, '$.authorization.scopes'),
+						'[]'
+					)
+				)
+				WHERE typeof(value) = 'text' AND trim(value) != ''
+			)
+		),
+		'[]'
+	),
+	-- Match normalizeAllowedHosts: trim, lowercase, dedupe, sort.
+	COALESCE(
+		(
+			SELECT json_group_array(host)
+			FROM (
+				SELECT lower(trim(value)) AS host
+				FROM json_each(
+					COALESCE(json_extract(e.value, '$.requiredHosts'), '[]')
+				)
+				WHERE typeof(value) = 'text' AND trim(value) != ''
+				GROUP BY host
+				ORDER BY host
+			)
+		),
+		'[]'
+	),
 	trim(json_extract(e.value, '$.accessTokenSecretName')),
 	NULLIF(trim(json_extract(e.value, '$.refreshTokenSecretName')), '')
 FROM value_entries e
