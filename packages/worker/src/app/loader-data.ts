@@ -609,11 +609,41 @@ export type AccountIntegrationListItem = {
 	updatedAt: string
 }
 
+export type AccountOauthAppConnectionRef = {
+	name: string
+	accountLabel: string | null
+}
+
+/**
+ * Shared OAuth app projection for the account UI. Includes secret *names* and
+ * sibling connection refs only — never secret or token values.
+ */
+export type AccountOauthAppListItem = {
+	slug: string
+	provider: string
+	label: string | null
+	clientId: string
+	clientSecretSecretName: string | null
+	tokenUrl: string
+	authorizeUrl: string | null
+	apiBaseUrl: string | null
+	flow: 'pkce' | 'confidential'
+	usePkce: boolean | null
+	tokenExchangeStyle: 'form' | 'basic-json' | 'basic-form' | null
+	scopeSeparator: string | null
+	extraAuthorizeParams: Record<string, string>
+	connectionCount: number
+	connections: Array<AccountOauthAppConnectionRef>
+	createdAt: string
+	updatedAt: string
+}
+
 export type AccountIntegrationsLoaderData = {
 	ok: true
 	email: string
 	username: string
 	integrations: Array<AccountIntegrationListItem>
+	apps: Array<AccountOauthAppListItem>
 }
 
 export type AccountIntegrationDetailLoaderData = {
