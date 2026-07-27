@@ -34,7 +34,6 @@ import { type routes } from '#app/routes.ts'
 import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
-import { getValue, saveValue } from '#mcp/values/service.ts'
 import {
 	canonicalIntegrationName,
 	normalizeIntegrationConfig,
@@ -148,12 +147,6 @@ export function createAccountSecretsApiHandler(env: Env) {
 					body,
 				})
 			}
-			if (action === 'value_get') {
-				return handleValueGetAction({ env, user, body })
-			}
-			if (action === 'value_set') {
-				return handleValueSetAction({ env, user, body })
-			}
 			if (action === 'delete') {
 				return handleDeleteAction({
 					request,
@@ -188,55 +181,6 @@ export function createAccountSecretsApiHandler(env: Env) {
 			return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 		},
 	} satisfies Action<typeof routes.accountSecretsApi>
-}
-
-async function handleValueGetAction(input: {
-	env: Env
-	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
-	body: object
-}) {
-	const name = readString(input.body, 'name')
-	if (!name) {
-		return jsonResponse({ ok: false, error: 'Value name is required.' }, 400)
-	}
-	const value = await getValue({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		name,
-		scope: 'user',
-		storageContext: { sessionId: null, appId: null, packageId: null },
-	})
-	return jsonResponse({
-		ok: true,
-		value: value ? { value: value.value } : null,
-	})
-}
-
-async function handleValueSetAction(input: {
-	env: Env
-	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
-	body: object
-}) {
-	const name = readString(input.body, 'name')
-	const value = readString(input.body, 'value')
-	if (!name || !value) {
-		return jsonResponse(
-			{ ok: false, error: 'Value name and value are required.' },
-			400,
-		)
-	}
-	const description = readOptionalString(input.body, 'description') ?? ''
-	const saved = await saveValue({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		userEmail: input.user.mcpUser.email,
-		name,
-		value,
-		scope: 'user',
-		description,
-		storageContext: { sessionId: null, appId: null, packageId: null },
-	})
-	return jsonResponse({ ok: true, value: { value: saved.value } })
 }
 
 async function handleSaveOauthAppAction(input: {
