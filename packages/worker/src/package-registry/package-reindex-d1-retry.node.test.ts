@@ -143,8 +143,11 @@ test('saved package reindex retries transient D1 export errors then reports exha
 
 	resetMocks()
 	consoleError.mockImplementation(() => {})
+	const exhaustedUpsert = vi.fn()
 	stubSuccessfulManifestLoad(pkg.sourceId)
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.getCapabilityVectorIndex.mockReturnValue({
+		upsert: exhaustedUpsert,
+	})
 	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
 	mockModule.listSavedPackagesPage.mockResolvedValue([pkg])
 	mockModule.getEntitySourceById.mockRejectedValue(exportError())
@@ -180,5 +183,5 @@ test('saved package reindex retries transient D1 export errors then reports exha
 		d1LockRetryMaxAttempts,
 	)
 	expect(mockModule.loadPublishedEntityManifest).not.toHaveBeenCalled()
-	expect(upsert).not.toHaveBeenCalled()
+	expect(exhaustedUpsert).not.toHaveBeenCalled()
 })
