@@ -64,7 +64,8 @@ const googleBase = {
 	apiBaseUrl: 'https://www.googleapis.com',
 	flow: 'pkce' as const,
 	clientId: 'google-client-id-value',
-	clientSecretSecretName: 'googleClientSecret',
+	// pkce apps do not persist a client secret (confidential-only at write time).
+	clientSecretSecretName: null as string | null,
 	accessTokenSecretName: 'googleAccessToken',
 	refreshTokenSecretName: 'googleRefreshToken',
 	requiredHosts: ['www.googleapis.com', 'accounts.google.com'],
@@ -202,7 +203,7 @@ test('integration_save reuses an existing app when credentials match and preserv
 		slug: 'google',
 		connectionCount: 2,
 		clientId: 'google-client-id-value',
-		clientSecretSecretName: 'googleClientSecret',
+		clientSecretSecretName: null,
 	})
 	expect(apps.apps[0]?.connections.map((entry) => entry.name).sort()).toEqual([
 		'google',
@@ -220,7 +221,7 @@ test('integration_save reuses an existing app when credentials match and preserv
 		name: 'google',
 		apiBaseUrl: 'https://www.googleapis.com/v2',
 		clientId: 'google-client-id-value',
-		clientSecretSecretName: 'googleClientSecret',
+		clientSecretSecretName: null,
 		accessTokenSecretName: 'googleAccessToken',
 		refreshTokenSecretName: 'googleRefreshToken',
 		requiredHosts: ['accounts.google.com', 'www.googleapis.com'],

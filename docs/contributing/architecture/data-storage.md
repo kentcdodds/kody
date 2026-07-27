@@ -290,8 +290,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `user_integrations` (`0101-user-oauth-apps-and-integrations.sql`): per-user
   OAuth connections keyed by `(user_id, name)`, with composite FK
   `(user_id, app_slug) → user_oauth_apps(user_id, slug)` (`ON DELETE RESTRICT`).
-  Holds scopes, `requiredHosts`, and access/refresh token secret names.
-  Credential values stay in `secret_entries`.
+  Holds `scopes_json`, `required_hosts_json`, and access/refresh token secret
+  names. Secret credential values stay in `secret_entries`; the non-secret
+  `client_id` is stored inline on `user_oauth_apps`.
 
 App access pattern:
 

@@ -476,6 +476,93 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 	})
 })
 
+test('abandoned setup still prefills client id from a connectionless app on a fresh session', () => {
+	// This is the regression: after setup we persist the app (not only session
+	// storage). A later visit with no session snapshot must still see the
+	// client id via the integrations.json?name= lookup payload.
+	const storedFromAppOnlyLookup = parseStoredIntegrationConfig(
+		{
+			name: 'spotify',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
+			apiBaseUrl: null,
+			flow: 'pkce',
+			clientId: 'spotify-client-from-setup',
+			clientSecretSecretName: null,
+			accessTokenSecretName: 'spotifyAccessToken',
+			refreshTokenSecretName: 'spotifyRefreshToken',
+			requiredHosts: [],
+			authorization: {
+				authorizeUrl: 'https://accounts.spotify.com/authorize',
+				scopes: [],
+				scopeSeparator: null,
+				extraAuthorizeParams: {},
+			},
+		},
+		null,
+	)
+	expect(storedFromAppOnlyLookup?.clientId).toBe('spotify-client-from-setup')
+
+	const withPersistedApp = mergeConnectOauthConfig({
+		queryConfig: {
+			provider: 'spotify',
+			providerKey: 'spotify',
+			authorizeHost: 'accounts.spotify.com',
+			authorizeUrl: 'https://accounts.spotify.com/authorize',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
+			apiBaseUrl: null,
+			scopes: ['user-read-playback-state'],
+			flow: 'pkce',
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: ' ',
+			extraAuthorizeParams: {},
+			providerSetupInstructions: null,
+			dashboardUrl: null,
+			allowedHosts: ['accounts.spotify.com'],
+		},
+		storedIntegration: storedFromAppOnlyLookup,
+	})
+	expect(withPersistedApp?.clientId).toBe('spotify-client-from-setup')
+	expect(
+		summarizeStoredSetupState({
+			flow: 'pkce',
+			clientId: withPersistedApp?.clientId ?? '',
+			hasStoredClientSecret: false,
+		}).isReady,
+	).toBe(true)
+
+	// Without the setup-time app persist, a fresh session has no stored
+	// integration and the client id field is empty — the bug this test guards.
+	const withoutPersistedApp = mergeConnectOauthConfig({
+		queryConfig: {
+			provider: 'spotify',
+			providerKey: 'spotify',
+			authorizeHost: 'accounts.spotify.com',
+			authorizeUrl: 'https://accounts.spotify.com/authorize',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
+			apiBaseUrl: null,
+			scopes: ['user-read-playback-state'],
+			flow: 'pkce',
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: ' ',
+			extraAuthorizeParams: {},
+			providerSetupInstructions: null,
+			dashboardUrl: null,
+			allowedHosts: ['accounts.spotify.com'],
+		},
+		storedIntegration: null,
+	})
+	expect(withoutPersistedApp?.clientId).toBe('')
+	expect(
+		summarizeStoredSetupState({
+			flow: 'pkce',
+			clientId: withoutPersistedApp?.clientId ?? '',
+			hasStoredClientSecret: false,
+		}).isReady,
+	).toBe(false)
+})
+
 test('connect OAuth keeps slack comma scope separators and extra authorize params', () => {
 	const slackConfig = mergeConnectOauthConfig({
 		queryConfig: {

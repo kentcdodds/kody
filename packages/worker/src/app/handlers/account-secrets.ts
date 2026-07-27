@@ -40,7 +40,10 @@ import {
 	normalizeIntegrationConfig,
 	integrationConfigSchema,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
-import { upsertIntegration } from '#worker/integrations/service.ts'
+import {
+	upsertIntegration,
+	upsertOauthAppWithoutConnection,
+} from '#worker/integrations/service.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import {
 	buildOAuthTokenExchangeFailurePayload,
@@ -159,6 +162,13 @@ export function createAccountSecretsApiHandler(env: Env) {
 					body,
 				})
 			}
+			if (action === 'save_oauth_app') {
+				return handleSaveOauthAppAction({
+					env,
+					user,
+					body,
+				})
+			}
 			if (action === 'connect_oauth') {
 				return handleConnectOauthAction({
 					request,
@@ -227,6 +237,108 @@ async function handleValueSetAction(input: {
 		storageContext: { sessionId: null, appId: null, packageId: null },
 	})
 	return jsonResponse({ ok: true, value: { value: saved.value } })
+}
+
+async function handleSaveOauthAppAction(input: {
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	body: object
+}) {
+	const provider = readString(input.body, 'provider')
+	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
+	const apiBaseUrl = readOptionalString(input.body, 'apiBaseUrl')
+	const authorizeUrl = readOptionalString(input.body, 'authorizeUrl')
+	const flow = readOptionalString(input.body, 'flow')
+	const usePkce = readOptionalBoolean(input.body, 'usePkce')
+	const clientId = readOptionalString(input.body, 'clientId')
+	const clientSecretSecretName = readOptionalString(
+		input.body,
+		'clientSecretSecretName',
+	)
+	const scopeSeparator = readRawOptionalString(input.body, 'scopeSeparator')
+	const extraAuthorizeParams = readStringRecord(
+		input.body,
+		'extraAuthorizeParams',
+	)
+
+	if (!provider) {
+		return jsonResponse({ ok: false, error: 'Provider is required.' }, 400)
+	}
+	if (!tokenUrl) {
+		return jsonResponse({ ok: false, error: 'Token URL is required.' }, 400)
+	}
+	if (!clientId) {
+		return jsonResponse({ ok: false, error: 'Client ID is required.' }, 400)
+	}
+	if (flow && flow !== 'pkce' && flow !== 'confidential') {
+		return jsonResponse({ ok: false, error: 'Invalid OAuth flow.' }, 400)
+	}
+	if (authorizeUrl) {
+		const authorizeHost = safeParseHost(authorizeUrl)
+		if (!authorizeHost) {
+			return jsonResponse(
+				{ ok: false, error: 'Authorize URL is invalid.' },
+				400,
+			)
+		}
+	}
+
+	try {
+		const app = await upsertOauthAppWithoutConnection({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			config: {
+				name: provider,
+				tokenUrl,
+				apiBaseUrl,
+				flow: flow === 'confidential' ? 'confidential' : 'pkce',
+				...(usePkce == null ? {} : { usePkce }),
+				clientId,
+				clientSecretSecretName,
+				tokenExchangeStyle: resolveTokenExchangeStyle({
+					tokenUrl,
+					tokenExchangeStyle: readOptionalString(
+						input.body,
+						'tokenExchangeStyle',
+					),
+				}),
+				authorization: authorizeUrl
+					? {
+							authorizeUrl,
+							scopes: [],
+							scopeSeparator,
+							extraAuthorizeParams,
+						}
+					: null,
+			},
+		})
+		return jsonResponse({
+			ok: true,
+			app: {
+				slug: app.slug,
+				provider: app.provider,
+				clientId: app.clientId,
+				clientSecretSecretName: app.clientSecretSecretName,
+				tokenUrl: app.tokenUrl,
+				authorizeUrl: app.authorizeUrl,
+				apiBaseUrl: app.apiBaseUrl,
+				flow: app.flow,
+				usePkce: app.usePkce,
+				tokenExchangeStyle: app.tokenExchangeStyle,
+			},
+		})
+	} catch (error) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					error instanceof Error
+						? error.message
+						: 'Unable to save OAuth app configuration.',
+			},
+			400,
+		)
+	}
 }
 
 async function handleConnectOauthAction(input: {

@@ -1,6 +1,7 @@
 import {
 	canonicalIntegrationName,
 	integrationConfigSchema,
+	normalizeIntegrationAuthorization,
 	normalizeIntegrationConfig,
 	type IntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
@@ -27,6 +28,39 @@ import {
 } from './types.ts'
 
 export type { IntegrationConfig }
+
+/**
+ * App-level OAuth config (no connection / token secret fields). Used by
+ * connect-flow setup to persist a client id before token exchange.
+ */
+export type OauthAppConfigInput = {
+	name: string
+	tokenUrl: string
+	apiBaseUrl?: string | null
+	flow: IntegrationConfig['flow']
+	usePkce?: boolean | null
+	clientId: string
+	clientSecretSecretName?: string | null
+	tokenExchangeStyle?: IntegrationConfig['tokenExchangeStyle']
+	authorization?: {
+		authorizeUrl: string
+		scopes?: Array<string>
+		scopeSeparator?: string | null
+		extraAuthorizeParams?: Record<string, string>
+	} | null
+}
+
+type OauthAppWriteConfig = {
+	name: string
+	tokenUrl: string
+	apiBaseUrl: string | null
+	flow: IntegrationConfig['flow']
+	usePkce?: boolean
+	clientId: string
+	clientSecretSecretName: string | null
+	tokenExchangeStyle?: NonNullable<IntegrationConfig['tokenExchangeStyle']>
+	authorization?: NonNullable<IntegrationConfig['authorization']>
+}
 
 export function toIntegrationConfig(
 	app: UserOauthApp,
@@ -122,94 +156,12 @@ export async function upsertIntegration(input: {
 		name: config.name,
 	})
 
-	const appRowFields = buildOauthAppRow({
-		userId: input.userId,
-		slug: config.name,
-		config,
-		label: null,
-		createdAt: now,
-		updatedAt: now,
-	})
-	const matchedApp = await findOauthAppByAppTuple({
+	const { appSlug } = await resolveOrCreateOauthApp({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		clientId: appRowFields.client_id,
-		clientSecretSecretName: appRowFields.client_secret_secret_name,
-		tokenUrl: appRowFields.token_url,
-		authorizeUrl: appRowFields.authorize_url,
-		apiBaseUrl: appRowFields.api_base_url,
-		flow: appRowFields.flow,
-		usePkce: appRowFields.use_pkce,
-		tokenExchangeStyle: appRowFields.token_exchange_style,
-		scopeSeparator: appRowFields.scope_separator,
-		extraAuthorizeParamsJson: appRowFields.extra_authorize_params_json,
+		config: oauthAppWriteConfigFromIntegration(config),
+		existingConnectionApp: existing?.app ?? null,
 	})
-
-	let appSlug: string
-	if (matchedApp) {
-		appSlug = matchedApp.slug
-		await upsertOauthApp({
-			db: input.env.APP_DB,
-			row: {
-				...appRowFields,
-				slug: matchedApp.slug,
-				label: matchedApp.label,
-				created_at: matchedApp.createdAt,
-				updated_at: now,
-			},
-		})
-	} else if (existing) {
-		const siblingCount = await countConnectionsForApp({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			appSlug: existing.app.slug,
-		})
-		if (siblingCount <= 1) {
-			appSlug = existing.app.slug
-			await upsertOauthApp({
-				db: input.env.APP_DB,
-				row: {
-					...appRowFields,
-					slug: existing.app.slug,
-					label: existing.app.label,
-					created_at: existing.app.createdAt,
-					updated_at: now,
-				},
-			})
-		} else {
-			appSlug = await allocateAppSlug({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				preferredSlug: config.name,
-			})
-			await upsertOauthApp({
-				db: input.env.APP_DB,
-				row: {
-					...appRowFields,
-					slug: appSlug,
-					label: null,
-					created_at: now,
-					updated_at: now,
-				},
-			})
-		}
-	} else {
-		appSlug = await allocateAppSlug({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			preferredSlug: config.name,
-		})
-		await upsertOauthApp({
-			db: input.env.APP_DB,
-			row: {
-				...appRowFields,
-				slug: appSlug,
-				label: null,
-				created_at: now,
-				updated_at: now,
-			},
-		})
-	}
 
 	await upsertIntegrationConnection({
 		db: input.env.APP_DB,
@@ -238,6 +190,14 @@ export async function upsertIntegration(input: {
 		},
 	})
 
+	if (existing && existing.app.slug !== appSlug) {
+		await deleteOauthAppIfNoConnections({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			appSlug: existing.app.slug,
+		})
+	}
+
 	const saved = await getIntegration({
 		env: input.env,
 		userId: input.userId,
@@ -245,6 +205,38 @@ export async function upsertIntegration(input: {
 	})
 	if (!saved) {
 		throw new Error(`Failed to upsert integration "${config.name}".`)
+	}
+	return saved
+}
+
+/**
+ * Persist an OAuth app row (client id + endpoints) without creating a
+ * connection. Used by the connect-oauth setup step so the client id survives
+ * abandoning the flow before token exchange.
+ *
+ * Shares resolve/create rules with `upsertIntegration`'s app branch, including
+ * full-tuple reuse and reclaiming a connectionless preferred slug when the
+ * user re-runs setup with an edited client id.
+ */
+export async function upsertOauthAppWithoutConnection(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	config: OauthAppConfigInput
+}): Promise<UserOauthApp> {
+	const config = normalizeOauthAppConfig(input.config)
+	const { appSlug } = await resolveOrCreateOauthApp({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		config,
+		existingConnectionApp: null,
+	})
+	const saved = await getOauthAppBySlug({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		slug: appSlug,
+	})
+	if (!saved) {
+		throw new Error(`Failed to persist OAuth app "${appSlug}".`)
 	}
 	return saved
 }
@@ -268,19 +260,31 @@ export async function deleteIntegration(input: {
 		name,
 	})
 	if (!deleted) return false
-	const remaining = await countConnectionsForApp({
+	await deleteOauthAppIfNoConnections({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		appSlug: existing.app.slug,
 	})
+	return true
+}
+
+async function deleteOauthAppIfNoConnections(input: {
+	db: D1Database
+	userId: string
+	appSlug: string
+}): Promise<void> {
+	const remaining = await countConnectionsForApp({
+		db: input.db,
+		userId: input.userId,
+		appSlug: input.appSlug,
+	})
 	if (remaining === 0) {
 		await deleteOauthApp({
-			db: input.env.APP_DB,
+			db: input.db,
 			userId: input.userId,
-			slug: existing.app.slug,
+			slug: input.appSlug,
 		})
 	}
-	return true
 }
 
 export async function listOauthApps(input: {
@@ -399,23 +403,204 @@ function canonicalizeOauthAppSlug(slug: string) {
 	return canonicalIntegrationName(slug.trim())
 }
 
+function oauthAppWriteConfigFromIntegration(
+	config: IntegrationConfig,
+): OauthAppWriteConfig {
+	return {
+		name: config.name,
+		tokenUrl: config.tokenUrl,
+		apiBaseUrl: config.apiBaseUrl ?? null,
+		flow: config.flow,
+		...(typeof config.usePkce === 'boolean' ? { usePkce: config.usePkce } : {}),
+		clientId: config.clientId,
+		clientSecretSecretName: config.clientSecretSecretName ?? null,
+		...(config.tokenExchangeStyle
+			? { tokenExchangeStyle: config.tokenExchangeStyle }
+			: {}),
+		...(config.authorization ? { authorization: config.authorization } : {}),
+	}
+}
+
+function normalizeOauthAppConfig(
+	value: OauthAppConfigInput,
+): OauthAppWriteConfig {
+	const preferredSlug = canonicalIntegrationName(value.name)
+	if (!preferredSlug) {
+		throw new Error('Provider must contain letters or numbers.')
+	}
+	const clientId = value.clientId.trim()
+	if (!clientId) {
+		throw new Error('Client ID is required.')
+	}
+	const tokenUrl = value.tokenUrl.trim()
+	if (!tokenUrl) {
+		throw new Error('Token URL is required.')
+	}
+	const authorization = value.authorization
+		? normalizeIntegrationAuthorization({
+				authorizeUrl: value.authorization.authorizeUrl,
+				scopes: value.authorization.scopes ?? [],
+				scopeSeparator: value.authorization.scopeSeparator ?? null,
+				extraAuthorizeParams: value.authorization.extraAuthorizeParams ?? {},
+			})
+		: null
+	// Store usePkce only when it differs from the flow default so tuple
+	// matching stays aligned with normalizeIntegrationConfig / migration.
+	const usePkce =
+		typeof value.usePkce === 'boolean' &&
+		value.usePkce !== (value.flow === 'pkce')
+			? value.usePkce
+			: null
+	const tokenExchangeStyle = value.tokenExchangeStyle ?? null
+	return {
+		name: preferredSlug,
+		tokenUrl,
+		apiBaseUrl: value.apiBaseUrl?.trim() || null,
+		flow: value.flow,
+		...(usePkce == null ? {} : { usePkce }),
+		clientId,
+		clientSecretSecretName: value.clientSecretSecretName?.trim() || null,
+		...(tokenExchangeStyle ? { tokenExchangeStyle } : {}),
+		...(authorization ? { authorization } : {}),
+	}
+}
+
+/**
+ * Resolve or create the OAuth app row for this config. Shared by
+ * `upsertIntegration` (then attaches a connection) and
+ * `upsertOauthAppWithoutConnection` (setup with zero connections).
+ */
+async function resolveOrCreateOauthApp(input: {
+	db: D1Database
+	userId: string
+	config: OauthAppWriteConfig
+	existingConnectionApp: UserOauthApp | null
+}): Promise<{ appSlug: string }> {
+	const now = new Date().toISOString()
+	const appTupleFields = buildOauthAppRow({
+		userId: input.userId,
+		slug: input.config.name,
+		config: input.config,
+		label: null,
+		createdAt: now,
+		updatedAt: now,
+	})
+	const matchedApp = await findOauthAppByAppTuple({
+		db: input.db,
+		userId: input.userId,
+		clientId: appTupleFields.client_id,
+		clientSecretSecretName: appTupleFields.client_secret_secret_name,
+		tokenUrl: appTupleFields.token_url,
+		authorizeUrl: appTupleFields.authorize_url,
+		apiBaseUrl: appTupleFields.api_base_url,
+		flow: appTupleFields.flow,
+		usePkce: appTupleFields.use_pkce,
+		tokenExchangeStyle: appTupleFields.token_exchange_style,
+		scopeSeparator: appTupleFields.scope_separator,
+		extraAuthorizeParamsJson: appTupleFields.extra_authorize_params_json,
+	})
+
+	if (matchedApp) {
+		// Additive reuse: attach/return only. Do not rewrite slug-derived
+		// identity (provider), label, created_at, or updated_at on the app.
+		return { appSlug: matchedApp.slug }
+	}
+
+	if (input.existingConnectionApp) {
+		const siblingCount = await countConnectionsForApp({
+			db: input.db,
+			userId: input.userId,
+			appSlug: input.existingConnectionApp.slug,
+		})
+		if (siblingCount <= 1) {
+			// Sole owner: update app-level fields in place, keeping slug identity.
+			await upsertOauthApp({
+				db: input.db,
+				row: buildOauthAppRow({
+					userId: input.userId,
+					slug: input.existingConnectionApp.slug,
+					config: input.config,
+					label: input.existingConnectionApp.label,
+					createdAt: input.existingConnectionApp.createdAt,
+					updatedAt: now,
+				}),
+			})
+			return { appSlug: input.existingConnectionApp.slug }
+		}
+	}
+
+	const preferred = await getOauthAppBySlug({
+		db: input.db,
+		userId: input.userId,
+		slug: input.config.name,
+	})
+	if (preferred) {
+		const connectionCount = await countConnectionsForApp({
+			db: input.db,
+			userId: input.userId,
+			appSlug: preferred.slug,
+		})
+		// An unfinished setup leaves an app with zero connections. Reuse that
+		// slug when the user re-runs setup (or connects) for the same provider
+		// key so we do not pile up orphan apps as they edit the client id.
+		if (connectionCount === 0) {
+			await upsertOauthApp({
+				db: input.db,
+				row: buildOauthAppRow({
+					userId: input.userId,
+					slug: preferred.slug,
+					config: input.config,
+					label: preferred.label,
+					createdAt: preferred.createdAt,
+					updatedAt: now,
+				}),
+			})
+			return { appSlug: preferred.slug }
+		}
+	}
+
+	const appSlug = await allocateAppSlug({
+		db: input.db,
+		userId: input.userId,
+		preferredSlug: input.config.name,
+	})
+	await upsertOauthApp({
+		db: input.db,
+		row: buildOauthAppRow({
+			userId: input.userId,
+			slug: appSlug,
+			config: input.config,
+			label: null,
+			createdAt: now,
+			updatedAt: now,
+		}),
+	})
+	return { appSlug }
+}
+
 function buildOauthAppRow(input: {
 	userId: string
 	slug: string
-	config: IntegrationConfig
+	config: OauthAppWriteConfig
 	label: string | null
 	createdAt: string
 	updatedAt: string
 }) {
 	const provider = providerFromSlug(input.slug)
 	const authorization = input.config.authorization ?? null
+	const tokenExchangeStyle = input.config.tokenExchangeStyle ?? null
 	return {
 		user_id: input.userId,
 		slug: input.slug,
 		provider,
 		label: input.label,
 		client_id: input.config.clientId,
-		client_secret_secret_name: input.config.clientSecretSecretName ?? null,
+		// Client secrets are only meaningful for confidential apps; pkce rows
+		// must store NULL so setup and connect tuple-match the same way.
+		client_secret_secret_name:
+			input.config.flow === 'confidential'
+				? (input.config.clientSecretSecretName ?? null)
+				: null,
 		token_url: input.config.tokenUrl,
 		authorize_url: authorization?.authorizeUrl ?? null,
 		api_base_url: input.config.apiBaseUrl ?? null,
@@ -426,7 +611,12 @@ function buildOauthAppRow(input: {
 					? 1
 					: 0
 				: null,
-		token_exchange_style: input.config.tokenExchangeStyle ?? null,
+		// 'form' is the default exchange style; store NULL so migrated rows and
+		// connect-flow writes share one tuple shape.
+		token_exchange_style:
+			tokenExchangeStyle && tokenExchangeStyle !== 'form'
+				? tokenExchangeStyle
+				: null,
 		scope_separator: authorization?.scopeSeparator ?? null,
 		extra_authorize_params_json: JSON.stringify(
 			authorization?.extraAuthorizeParams ?? {},

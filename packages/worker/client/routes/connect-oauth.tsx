@@ -127,6 +127,10 @@ type OAuthExchangeResult =
 
 type SaveSecretResult = { ok: true } | { ok: false; error: string }
 
+type SaveOauthAppResult =
+	| { ok: true; clientId: string }
+	| { ok: false; error: string }
+
 type ConnectOauthHostApprovalLink = {
 	secretName: string
 	host: string
@@ -604,6 +608,49 @@ export function ConnectOauthRoute(handle: Handle) {
 		return { ok: true, data, status: response.status }
 	}
 
+	const saveOauthApp = async (
+		nextConfig: ConnectOauthConfig,
+	): Promise<SaveOauthAppResult> => {
+		const response = await fetch('/account/secrets.json', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Accept: 'application/json',
+			},
+			credentials: 'include',
+			body: JSON.stringify({
+				action: 'save_oauth_app',
+				provider: nextConfig.provider,
+				authorizeUrl: nextConfig.authorizeUrl,
+				tokenUrl: nextConfig.tokenUrl,
+				apiBaseUrl: nextConfig.apiBaseUrl,
+				flow: nextConfig.flow,
+				usePkce: nextConfig.usePkce,
+				tokenExchangeStyle: nextConfig.tokenExchangeStyle,
+				clientId: nextConfig.clientId,
+				clientSecretSecretName: nextConfig.clientSecretSecretName,
+				scopeSeparator: nextConfig.scopeSeparator,
+				extraAuthorizeParams: nextConfig.extraAuthorizeParams,
+			}),
+		})
+		if (redirectToLoginOn401(response)) {
+			return { ok: false, error: 'Session expired.' }
+		}
+		const payload = await response.json().catch(() => null)
+		if (!response.ok || payload?.ok !== true) {
+			return {
+				ok: false,
+				error: payload?.error || 'Unable to save OAuth app configuration.',
+			}
+		}
+		const savedClientId =
+			typeof payload.app?.clientId === 'string' ? payload.app.clientId : null
+		if (!savedClientId) {
+			return { ok: false, error: 'Unable to save OAuth app configuration.' }
+		}
+		return { ok: true, clientId: savedClientId }
+	}
+
 	const handleSetupSubmit = async (event: Event) => {
 		event.preventDefault()
 		if (!config || submitting) return
@@ -638,7 +685,13 @@ export function ConnectOauthRoute(handle: Handle) {
 				revealStoredClientSecretField = false
 				clientSecretInput = ''
 			}
-			config = { ...config, clientId }
+			const nextConfig = { ...config, clientId }
+			const appResult = await saveOauthApp(nextConfig)
+			if (!appResult.ok) {
+				setStatus(appResult.error, 'error')
+				return
+			}
+			config = { ...nextConfig, clientId: appResult.clientId }
 			persistConfig(config)
 			hasStoredClientId = true
 			setStatus('Saved OAuth client configuration.', 'info')

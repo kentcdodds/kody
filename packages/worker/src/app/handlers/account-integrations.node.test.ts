@@ -162,6 +162,7 @@ const mockModule = vi.hoisted(() => ({
 			updatedAt: '1970-01-01T00:00:00.001Z',
 		},
 	})),
+	getOauthApp: vi.fn(async () => null),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -190,6 +191,7 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 			mockModule.listJoinedIntegrations(...args),
 		getJoinedIntegration: (...args: Array<unknown>) =>
 			mockModule.getJoinedIntegration(...args),
+		getOauthApp: (...args: Array<unknown>) => mockModule.getOauthApp(...args),
 	}
 })
 
@@ -353,6 +355,7 @@ test('integrations API returns one connection by name for the connect OAuth flow
 
 test('integrations API returns null when a named connection is missing', async () => {
 	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
+	mockModule.getOauthApp.mockResolvedValueOnce(null)
 	const handler = createAccountIntegrationsApiHandler(createEnv())
 	const response = await handler.handler({
 		request: new Request(
@@ -364,5 +367,54 @@ test('integrations API returns null when a named connection is missing', async (
 	await expect(response.json()).resolves.toEqual({
 		ok: true,
 		integration: null,
+	})
+})
+
+test('integrations API falls back to a connectionless OAuth app so abandoned setup still returns the client id', async () => {
+	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
+	mockModule.getOauthApp.mockResolvedValueOnce({
+		userId: 'stable-user-1',
+		slug: 'spotify',
+		provider: 'spotify',
+		label: null,
+		clientId: 'spotify-client-from-setup',
+		clientSecretSecretName: null,
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		authorizeUrl: 'https://accounts.spotify.com/authorize',
+		apiBaseUrl: null,
+		flow: 'pkce' as const,
+		usePkce: null,
+		tokenExchangeStyle: null,
+		scopeSeparator: null,
+		extraAuthorizeParams: {},
+		createdAt,
+		updatedAt,
+	})
+	const handler = createAccountIntegrationsApiHandler(createEnv())
+	const response = await handler.handler({
+		request: new Request(
+			'https://example.com/account/integrations.json?name=spotify',
+		),
+		params: {},
+	} as never)
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		integration: {
+			name: 'spotify',
+			appSlug: 'spotify',
+			clientId: 'spotify-client-from-setup',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
+			flow: 'pkce',
+			authorization: {
+				authorizeUrl: 'https://accounts.spotify.com/authorize',
+				scopes: [],
+			},
+		},
+	})
+	expect(mockModule.getOauthApp).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		userId: 'stable-user-1',
+		slug: 'spotify',
 	})
 })

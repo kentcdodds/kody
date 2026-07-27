@@ -116,9 +116,11 @@ Integration identity is the canonical provider key: names are normalized to
 lowercase kebab (letters, numbers, `.`, `_`, `-`) on every save and lookup, so
 `GitHub`, `github`, and `Git Hub` all resolve to the same `github` connection.
 Each connection is a D1 row in `user_integrations` keyed by `(user_id, name)`.
-Connections that share the same OAuth client credentials and provider endpoints
-share one `user_oauth_apps` row; rotating that app's client credentials updates
-every sibling connection.
+Connections share one `user_oauth_apps` row only when their entire app-level
+configuration matches: client credentials, provider endpoints, flow and PKCE,
+token exchange style, scope separator, and extra authorize params. Anything that
+differs gets its own app. Rotating an app's client credentials updates every
+connection sharing it.
 
 Prefer integration names like `<provider>-<purpose>` when multiple accounts may
 exist: `google` for a default account, `google-business` for a business account,

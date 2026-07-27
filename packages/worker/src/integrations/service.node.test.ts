@@ -11,6 +11,7 @@ import {
 	listJoinedIntegrations,
 	rotateOauthAppClientCredentials,
 	upsertIntegration,
+	upsertOauthAppWithoutConnection,
 } from './service.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -47,7 +48,7 @@ const baseGoogleConfig = {
 	apiBaseUrl: 'https://www.googleapis.com',
 	flow: 'pkce' as const,
 	clientId: 'google-client-id-value',
-	clientSecretSecretName: 'googleClientSecret',
+	clientSecretSecretName: null as string | null,
 	accessTokenSecretName: 'googleAccessToken',
 	refreshTokenSecretName: 'googleRefreshToken',
 	requiredHosts: ['www.googleapis.com', 'accounts.google.com'],
@@ -340,4 +341,518 @@ test('getOauthApp and rotateOauthAppClientCredentials canonicalize mixed-case sl
 	await expect(
 		deleteOauthAppIfUnused({ env, userId, slug: 'GOOGLE' }),
 	).rejects.toThrow(/still has 1 connection/)
+})
+
+test('reusing a matched app does not rewrite provider or other app identity fields', async () => {
+	const { env, sqlite } = createEnv()
+	const userId = 'user-provider-preserve'
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: baseGoogleConfig,
+	})
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...baseGoogleConfig,
+			name: 'google-calendar',
+			accessTokenSecretName: 'googleCalendarAccessToken',
+			refreshTokenSecretName: 'googleCalendarRefreshToken',
+		},
+	})
+
+	const before = sqlite
+		.prepare(
+			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
+			FROM user_oauth_apps
+			WHERE user_id = ? AND slug = 'google'`,
+		)
+		.get(userId) as {
+		slug: string
+		provider: string
+		label: string | null
+		client_id: string
+		token_url: string
+		created_at: string
+		updated_at: string
+	}
+	expect(before.provider).toBe('google')
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...baseGoogleConfig,
+			name: 'acme-thing',
+			accessTokenSecretName: 'acmeAccessToken',
+			refreshTokenSecretName: 'acmeRefreshToken',
+			authorization: {
+				...baseGoogleConfig.authorization,
+				scopes: ['acme.scope'],
+			},
+			requiredHosts: ['www.googleapis.com'],
+		},
+	})
+
+	const after = sqlite
+		.prepare(
+			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
+			FROM user_oauth_apps
+			WHERE user_id = ? AND slug = 'google'`,
+		)
+		.get(userId) as typeof before
+
+	expect(after).toEqual(before)
+	expect(after.provider).toBe('google')
+
+	const apps = await listOauthApps({ env, userId })
+	expect(apps).toHaveLength(1)
+	expect(apps[0]?.connectionCount).toBe(3)
+})
+
+test('moving the last connection off an app deletes the orphan app row', async () => {
+	const { env, sqlite } = createEnv()
+	const userId = 'user-orphan'
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: baseGoogleConfig,
+	})
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...baseGoogleConfig,
+			name: 'solo-app',
+			clientId: 'solo-client-id',
+			clientSecretSecretName: 'soloClientSecret',
+			accessTokenSecretName: 'soloAccessToken',
+			refreshTokenSecretName: 'soloRefreshToken',
+		},
+	})
+	expect(
+		sqlite
+			.prepare(
+				`SELECT slug FROM user_oauth_apps WHERE user_id = ? ORDER BY slug`,
+			)
+			.all(userId),
+	).toEqual([{ slug: 'google' }, { slug: 'solo-app' }])
+
+	// Rematch solo-app onto the google app tuple → previous solo app is orphaned.
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...baseGoogleConfig,
+			name: 'solo-app',
+			accessTokenSecretName: 'soloAccessToken',
+			refreshTokenSecretName: 'soloRefreshToken',
+		},
+	})
+
+	expect(
+		sqlite
+			.prepare(
+				`SELECT slug FROM user_oauth_apps WHERE user_id = ? ORDER BY slug`,
+			)
+			.all(userId),
+	).toEqual([{ slug: 'google' }])
+	expect(
+		sqlite
+			.prepare(
+				`SELECT name, app_slug FROM user_integrations
+				WHERE user_id = ? ORDER BY name`,
+			)
+			.all(userId),
+	).toEqual([
+		{ name: 'google', app_slug: 'google' },
+		{ name: 'solo-app', app_slug: 'google' },
+	])
+})
+
+test('moving a non-last connection off an app leaves siblings intact', async () => {
+	const { env, sqlite } = createEnv()
+	const userId = 'user-sibling-keep'
+
+	for (const name of [
+		'google',
+		'google-calendar',
+		'google-mail',
+		'google-drive',
+	] as const) {
+		await upsertIntegration({
+			env,
+			userId,
+			config: {
+				...baseGoogleConfig,
+				name,
+				accessTokenSecretName: `${name}AccessToken`,
+				refreshTokenSecretName: `${name}RefreshToken`,
+				authorization: {
+					...baseGoogleConfig.authorization,
+					scopes: name === 'google' ? ['openid', 'email'] : [`${name}.scope`],
+				},
+			},
+		})
+	}
+
+	expect(
+		(
+			sqlite
+				.prepare(
+					`SELECT count(*) AS count FROM user_integrations
+					WHERE user_id = ? AND app_slug = 'google'`,
+				)
+				.get(userId) as { count: number }
+		).count,
+	).toBe(4)
+
+	// Move one connection to a different app tuple; the google app keeps 3.
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...baseGoogleConfig,
+			name: 'google-drive',
+			tokenUrl: 'https://oauth2.googleapis.com/token/other',
+			accessTokenSecretName: 'googleDriveAccessToken',
+			refreshTokenSecretName: 'googleDriveRefreshToken',
+		},
+	})
+
+	const googleApp = sqlite
+		.prepare(
+			`SELECT slug, provider FROM user_oauth_apps
+			WHERE user_id = ? AND slug = 'google'`,
+		)
+		.get(userId) as { slug: string; provider: string }
+	expect(googleApp).toEqual({ slug: 'google', provider: 'google' })
+	expect(
+		(
+			sqlite
+				.prepare(
+					`SELECT count(*) AS count FROM user_integrations
+					WHERE user_id = ? AND app_slug = 'google'`,
+				)
+				.get(userId) as { count: number }
+		).count,
+	).toBe(3)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT name, app_slug FROM user_integrations
+				WHERE user_id = ? AND name = 'google-drive'`,
+			)
+			.get(userId),
+	).toEqual({ name: 'google-drive', app_slug: 'google-drive' })
+})
+
+test('re-saving one of four shared connections with new scopes keeps the shared app', async () => {
+	const { env, sqlite } = createEnv()
+	const userId = 'user-four-shared'
+
+	const names = [
+		'google',
+		'google-calendar',
+		'google-mail',
+		'google-drive',
+	] as const
+	for (const name of names) {
+		await upsertIntegration({
+			env,
+			userId,
+			config: {
+				...baseGoogleConfig,
+				name,
+				accessTokenSecretName: `${name}AccessToken`,
+				refreshTokenSecretName: `${name}RefreshToken`,
+				authorization: {
+					...baseGoogleConfig.authorization,
+					scopes: [`${name}.initial`],
+				},
+				requiredHosts: ['www.googleapis.com', 'accounts.google.com'],
+			},
+		})
+	}
+
+	const beforeApp = sqlite
+		.prepare(
+			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
+			FROM user_oauth_apps WHERE user_id = ?`,
+		)
+		.get(userId)
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...baseGoogleConfig,
+			name: 'google-mail',
+			accessTokenSecretName: 'googleMailAccessToken',
+			refreshTokenSecretName: 'googleMailRefreshToken',
+			authorization: {
+				...baseGoogleConfig.authorization,
+				scopes: ['gmail.modify', 'gmail.readonly'],
+			},
+			requiredHosts: ['gmail.googleapis.com'],
+		},
+	})
+
+	const afterApp = sqlite
+		.prepare(
+			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
+			FROM user_oauth_apps WHERE user_id = ?`,
+		)
+		.get(userId)
+	expect(afterApp).toEqual(beforeApp)
+
+	const connections = sqlite
+		.prepare(
+			`SELECT name, app_slug, scopes_json, required_hosts_json
+			FROM user_integrations WHERE user_id = ? ORDER BY name`,
+		)
+		.all(userId) as Array<{
+		name: string
+		app_slug: string
+		scopes_json: string
+		required_hosts_json: string
+	}>
+	expect(connections).toHaveLength(4)
+	expect(connections.every((row) => row.app_slug === 'google')).toBe(true)
+	expect(connections.find((row) => row.name === 'google-mail')).toMatchObject({
+		scopes_json: JSON.stringify(['gmail.modify', 'gmail.readonly']),
+		required_hosts_json: JSON.stringify(['gmail.googleapis.com']),
+	})
+})
+
+test('upsertOauthAppWithoutConnection persists an app with zero connections; later connect attaches to it', async () => {
+	const { env, sqlite } = createEnv()
+	const userId = 'user-setup-then-connect'
+
+	const app = await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: {
+			name: 'spotify',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
+			apiBaseUrl: null,
+			flow: 'pkce',
+			usePkce: true,
+			clientId: 'spotify-client-from-setup',
+			authorization: {
+				authorizeUrl: 'https://accounts.spotify.com/authorize',
+				scopes: [],
+				scopeSeparator: ' ',
+				extraAuthorizeParams: {},
+			},
+		},
+	})
+	expect(app).toMatchObject({
+		slug: 'spotify',
+		clientId: 'spotify-client-from-setup',
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		flow: 'pkce',
+	})
+
+	const appsBeforeConnect = await listOauthApps({ env, userId })
+	expect(appsBeforeConnect).toHaveLength(1)
+	expect(appsBeforeConnect[0]).toMatchObject({
+		slug: 'spotify',
+		connectionCount: 0,
+		clientId: 'spotify-client-from-setup',
+	})
+	expect(await listIntegrations({ env, userId })).toEqual([])
+	expect(await listJoinedIntegrations({ env, userId })).toEqual([])
+	expect(
+		(
+			sqlite
+				.prepare(
+					`SELECT count(*) AS count FROM user_integrations WHERE user_id = ?`,
+				)
+				.get(userId) as { count: number }
+		).count,
+	).toBe(0)
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			name: 'spotify',
+			tokenUrl: 'https://accounts.spotify.com/api/token',
+			apiBaseUrl: null,
+			flow: 'pkce',
+			clientId: 'spotify-client-from-setup',
+			accessTokenSecretName: 'spotifyAccessToken',
+			refreshTokenSecretName: 'spotifyRefreshToken',
+			requiredHosts: ['api.spotify.com'],
+			authorization: {
+				authorizeUrl: 'https://accounts.spotify.com/authorize',
+				scopes: ['user-read-email'],
+				scopeSeparator: ' ',
+				extraAuthorizeParams: {},
+			},
+		},
+	})
+
+	const appsAfterConnect = await listOauthApps({ env, userId })
+	expect(appsAfterConnect).toHaveLength(1)
+	expect(appsAfterConnect[0]).toMatchObject({
+		slug: 'spotify',
+		connectionCount: 1,
+		clientId: 'spotify-client-from-setup',
+	})
+	const listed = await listIntegrations({ env, userId })
+	expect(listed).toHaveLength(1)
+	expect(listed[0]).toMatchObject({
+		name: 'spotify',
+		clientId: 'spotify-client-from-setup',
+	})
+})
+
+test('upsertOauthAppWithoutConnection reuses a connectionless preferred slug when the client id changes', async () => {
+	const { env } = createEnv()
+	const userId = 'user-setup-orphan-reuse'
+
+	await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: {
+			name: 'notion',
+			tokenUrl: 'https://api.notion.com/v1/oauth/token',
+			flow: 'confidential',
+			clientId: 'notion-client-old',
+			clientSecretSecretName: 'notionClientSecret',
+			authorization: {
+				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
+			},
+		},
+	})
+
+	const updated = await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: {
+			name: 'notion',
+			tokenUrl: 'https://api.notion.com/v1/oauth/token',
+			flow: 'confidential',
+			clientId: 'notion-client-new',
+			clientSecretSecretName: 'notionClientSecret',
+			authorization: {
+				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
+			},
+		},
+	})
+
+	expect(updated).toMatchObject({
+		slug: 'notion',
+		clientId: 'notion-client-new',
+	})
+	const apps = await listOauthApps({ env, userId })
+	expect(apps).toHaveLength(1)
+	expect(apps[0]).toMatchObject({
+		slug: 'notion',
+		connectionCount: 0,
+		clientId: 'notion-client-new',
+	})
+	expect(apps.map((entry) => entry.slug)).not.toContain('notion-2')
+	expect(await listIntegrations({ env, userId })).toEqual([])
+	expect(await listJoinedIntegrations({ env, userId })).toEqual([])
+})
+
+test('upsertOauthAppWithoutConnection matching a connected app does not rewrite provider or identity', async () => {
+	const { env, sqlite } = createEnv()
+	const userId = 'user-setup-preserve'
+
+	await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: {
+			name: 'google',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'pkce',
+			clientId: 'shared-google-client',
+			authorization: {
+				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+				scopes: [],
+				extraAuthorizeParams: { access_type: 'offline' },
+			},
+		},
+	})
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			name: 'google',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'pkce',
+			clientId: 'shared-google-client',
+			accessTokenSecretName: 'googleAccessToken',
+			refreshTokenSecretName: 'googleRefreshToken',
+			requiredHosts: ['www.googleapis.com'],
+			authorization: {
+				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+				scopes: ['openid', 'email'],
+				scopeSeparator: null,
+				extraAuthorizeParams: { access_type: 'offline' },
+			},
+		},
+	})
+
+	const before = sqlite
+		.prepare(
+			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
+			FROM user_oauth_apps
+			WHERE user_id = ? AND slug = 'google'`,
+		)
+		.get(userId) as {
+		slug: string
+		provider: string
+		label: string | null
+		client_id: string
+		token_url: string
+		created_at: string
+		updated_at: string
+	}
+	expect(before.provider).toBe('google')
+
+	const secondSetup = await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: {
+			name: 'google-calendar',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'pkce',
+			clientId: 'shared-google-client',
+			authorization: {
+				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+				scopes: [],
+				extraAuthorizeParams: { access_type: 'offline' },
+			},
+		},
+	})
+
+	expect(secondSetup.slug).toBe('google')
+	const after = sqlite
+		.prepare(
+			`SELECT slug, provider, label, client_id, token_url, created_at, updated_at
+			FROM user_oauth_apps
+			WHERE user_id = ? AND slug = 'google'`,
+		)
+		.get(userId) as typeof before
+	expect(after).toEqual(before)
+
+	const apps = await listOauthApps({ env, userId })
+	expect(apps).toHaveLength(1)
+	expect(apps[0]).toMatchObject({
+		slug: 'google',
+		connectionCount: 1,
+		clientId: 'shared-google-client',
+	})
 })

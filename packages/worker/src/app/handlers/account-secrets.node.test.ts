@@ -45,6 +45,40 @@ const mockModule = vi.hoisted(() => ({
 		...input.config,
 		name: String(input.config.name).toLowerCase(),
 	})),
+	upsertOauthAppWithoutConnection: vi.fn(
+		async (input: {
+			config: {
+				name: string
+				clientId: string
+				tokenUrl: string
+				flow: 'pkce' | 'confidential'
+				clientSecretSecretName?: string | null
+				apiBaseUrl?: string | null
+				usePkce?: boolean | null
+				tokenExchangeStyle?: string | null
+			}
+		}) => ({
+			userId: 'stable-user-1',
+			slug: String(input.config.name).toLowerCase().replace(/\s+/g, '-'),
+			provider: String(input.config.name)
+				.toLowerCase()
+				.replace(/\s+/g, '-')
+				.split('-')[0],
+			label: null,
+			clientId: input.config.clientId,
+			clientSecretSecretName: input.config.clientSecretSecretName ?? null,
+			tokenUrl: input.config.tokenUrl,
+			authorizeUrl: null,
+			apiBaseUrl: input.config.apiBaseUrl ?? null,
+			flow: input.config.flow,
+			usePkce: input.config.usePkce ?? null,
+			tokenExchangeStyle: input.config.tokenExchangeStyle ?? null,
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+		}),
+	),
 	searchCommunityListings: vi.fn(async () => []),
 }))
 
@@ -118,6 +152,8 @@ vi.mock('#mcp/values/service.ts', () => ({
 vi.mock('#worker/integrations/service.ts', () => ({
 	upsertIntegration: (...args: Array<unknown>) =>
 		mockModule.upsertIntegration(...args),
+	upsertOauthAppWithoutConnection: (...args: Array<unknown>) =>
+		mockModule.upsertOauthAppWithoutConnection(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -133,6 +169,134 @@ function createEnv() {
 		COOKIE_SECRET: 'secret',
 	} as Env
 }
+
+test('save_oauth_app persists the app (client id + endpoints) before authorize redirect', async () => {
+	mockModule.upsertOauthAppWithoutConnection.mockClear()
+	const handler = createAccountSecretsApiHandler(createEnv())
+
+	const response = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'save_oauth_app',
+				provider: 'GitHub',
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				flow: 'pkce',
+				usePkce: true,
+				clientId: 'github-client-id-value',
+				scopeSeparator: ' ',
+				extraAuthorizeParams: { prompt: 'consent' },
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		app: {
+			slug: 'github',
+			clientId: 'github-client-id-value',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			flow: 'pkce',
+		},
+	})
+	expect(mockModule.upsertOauthAppWithoutConnection).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			config: expect.objectContaining({
+				name: 'GitHub',
+				clientId: 'github-client-id-value',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				flow: 'pkce',
+				usePkce: true,
+				authorization: {
+					authorizeUrl: 'https://github.com/login/oauth/authorize',
+					scopes: [],
+					scopeSeparator: ' ',
+					extraAuthorizeParams: { prompt: 'consent' },
+				},
+			}),
+		}),
+	)
+	expect(mockModule.upsertIntegration).not.toHaveBeenCalled()
+	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+})
+
+test('save_oauth_app reuses an existing app when setting up a second account with the same client credentials', async () => {
+	mockModule.upsertOauthAppWithoutConnection.mockClear()
+	mockModule.upsertOauthAppWithoutConnection.mockImplementation(
+		async (input: { config: { name: string; clientId: string } }) => ({
+			userId: 'stable-user-1',
+			slug: 'google',
+			provider: 'google',
+			label: null,
+			clientId: input.config.clientId,
+			clientSecretSecretName: null,
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'pkce' as const,
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+		}),
+	)
+	const handler = createAccountSecretsApiHandler(createEnv())
+
+	const first = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'save_oauth_app',
+				provider: 'google',
+				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+				tokenUrl: 'https://oauth2.googleapis.com/token',
+				apiBaseUrl: 'https://www.googleapis.com',
+				flow: 'pkce',
+				clientId: 'shared-google-client',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(first.status).toBe(200)
+	await expect(first.json()).resolves.toMatchObject({
+		ok: true,
+		app: { slug: 'google', clientId: 'shared-google-client' },
+	})
+
+	const second = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'save_oauth_app',
+				provider: 'google-calendar',
+				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+				tokenUrl: 'https://oauth2.googleapis.com/token',
+				apiBaseUrl: 'https://www.googleapis.com',
+				flow: 'pkce',
+				clientId: 'shared-google-client',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(second.status).toBe(200)
+	await expect(second.json()).resolves.toMatchObject({
+		ok: true,
+		app: { slug: 'google', clientId: 'shared-google-client' },
+	})
+	expect(mockModule.upsertOauthAppWithoutConnection).toHaveBeenCalledTimes(2)
+	expect(mockModule.upsertIntegration).not.toHaveBeenCalled()
+})
 
 test('connect oauth saves tokens via the secret store and persists app+connection through the integrations service', async () => {
 	mockModule.upsertIntegration.mockClear()
