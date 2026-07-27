@@ -40,25 +40,32 @@ const spotifyIntegration = {
 	tokenUrl: 'https://accounts.spotify.test/api/token',
 	apiBaseUrl: 'https://api.spotify.test/v1',
 	flow: 'pkce' as const,
-	clientIdValueName: 'spotifyClientId',
+	clientId: 'spotify-client-id',
 	clientSecretSecretName: null,
 	accessTokenSecretName: 'spotifyAccessToken',
 	refreshTokenSecretName: 'spotifyRefreshToken',
 	requiredHosts: ['api.spotify.test'],
 }
 
-function createKody() {
+const githubConfidentialIntegration = {
+	name: 'github',
+	tokenUrl: 'https://github.test/login/oauth/access_token',
+	apiBaseUrl: 'https://api.github.test',
+	flow: 'confidential' as const,
+	clientId: 'github-client-id',
+	clientSecretSecretName: 'githubClientSecret',
+	accessTokenSecretName: 'githubAccessToken',
+	refreshTokenSecretName: 'githubRefreshToken',
+	requiredHosts: ['api.github.test'],
+}
+
+function createKody(integration = spotifyIntegration) {
 	const secretSetCalls: Array<SecretSetCall> = []
 	const kody = {
 		async integration_get(args: CapabilityArgs) {
 			const name = args.name
-			expect(name).toBe('spotify')
-			return { integration: spotifyIntegration }
-		},
-		async value_get(args: CapabilityArgs) {
-			const name = args.name
-			expect(name).toBe('spotifyClientId')
-			return { value: 'spotify-client-id' }
+			expect(name).toBe(integration.name)
+			return { integration }
 		},
 		async secret_set(args: CapabilityArgs) {
 			const call = args as SecretSetCall
@@ -190,9 +197,12 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	])
 	expect(rotatedRefreshFetchCalls).toHaveLength(1)
 	expect(rotatedRefreshFetchCalls[0]?.method).toBe('POST')
-	expect(await rotatedRefreshFetchCalls[0]?.text()).toContain(
+	const rotatedRefreshBody = await rotatedRefreshFetchCalls[0]?.text()
+	expect(rotatedRefreshBody).toContain(
 		'refresh_token=%7B%7Bsecret%3AspotifyRefreshToken%7Cscope%3Duser%7D%7D',
 	)
+	expect(rotatedRefreshBody).toContain('client_id=spotify-client-id')
+	expect(rotatedRefreshBody).not.toContain('client_secret=')
 
 	const storedTokenFetchCalls: Array<Request> = []
 	const { kody: storedTokenKody, secretSetCalls: storedSecretSetCalls } =
@@ -388,5 +398,37 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 			scope: 'openid',
 			grant_type: 'client_credentials',
 		}).toString(),
+	)
+})
+
+test('confidential-flow token refresh includes inline client id and client secret placeholder', async () => {
+	const fetchCalls: Array<Request> = []
+	const { kody, secretSetCalls } = createKody(githubConfidentialIntegration)
+	{
+		using _server = createMswNodeServer([
+			http.post(githubConfidentialIntegration.tokenUrl, async ({ request }) => {
+				fetchCalls.push(request.clone())
+				return HttpResponse.json({ access_token: 'new-github-access' })
+			}),
+		])
+		const accessToken = await refreshAccessToken(kody, 'github')
+		expect(accessToken).toBe('new-github-access')
+	}
+	expect(secretSetCalls).toEqual([
+		{
+			name: 'githubAccessToken',
+			value: 'new-github-access',
+			scope: 'user',
+		},
+	])
+	expect(fetchCalls).toHaveLength(1)
+	const body = await fetchCalls[0]?.text()
+	expect(body).toContain('grant_type=refresh_token')
+	expect(body).toContain('client_id=github-client-id')
+	expect(body).toContain(
+		'client_secret=%7B%7Bsecret%3AgithubClientSecret%7Cscope%3Duser%7D%7D',
+	)
+	expect(body).toContain(
+		'refresh_token=%7B%7Bsecret%3AgithubRefreshToken%7Cscope%3Duser%7D%7D',
 	)
 })

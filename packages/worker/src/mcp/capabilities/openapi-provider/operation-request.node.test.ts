@@ -1,11 +1,26 @@
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { IntegrationHostNotAllowedError } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
+import * as integrationsService from '#worker/integrations/service.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
 import { executeOpenApiOperationRequest } from './operation-request.ts'
+
+const spotifyIntegrationConfig = {
+	name: 'spotify',
+	tokenUrl: 'https://accounts.spotify.com/api/token',
+	apiBaseUrl: 'https://api.spotify.com/v1',
+	flow: 'pkce' as const,
+	clientId: 'client-id-value',
+	clientSecretSecretName: null,
+	accessTokenSecretName: 'spotifyAccessToken',
+	refreshTokenSecretName: 'spotifyRefreshToken',
+	requiredHosts: ['api.spotify.com', 'accounts.spotify.com'],
+	authorization: null,
+}
 
 const bindingBase: OpenApiBinding = {
 	name: 'widgets',
@@ -484,6 +499,9 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 	const usageSpy = vi
 		.spyOn(usageModule, 'recordUsage')
 		.mockResolvedValue(undefined)
+	const getIntegrationSpy = vi
+		.spyOn(integrationsService, 'getIntegration')
+		.mockResolvedValue(spotifyIntegrationConfig)
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue({
@@ -508,30 +526,14 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 			allowedPackages: [],
 		})
 
-	const entries = new Map<string, string>([
-		[
-			'_integration:spotify',
-			JSON.stringify({
-				name: 'spotify',
-				tokenUrl: 'https://accounts.spotify.com/api/token',
-				apiBaseUrl: 'https://api.spotify.com/v1',
-				flow: 'pkce',
-				clientIdValueName: 'spotify-client-id',
-				clientSecretSecretName: null,
-				accessTokenSecretName: 'spotifyAccessToken',
-				refreshTokenSecretName: 'spotifyRefreshToken',
-				requiredHosts: ['api.spotify.com', 'accounts.spotify.com'],
-			}),
-		],
-		['spotify-client-id', 'client-id-value'],
-	])
-
 	try {
 		let apiCalls = 0
 		let firstUnauthorizedResponse: Response | null = null
 		const fetchStub = vi.fn(async (request: Request) => {
 			if (request.url.includes('/api/token')) {
-				expect(await request.text()).toContain('grant_type=refresh_token')
+				const body = await request.text()
+				expect(body).toContain('grant_type=refresh_token')
+				expect(body).toContain('client_id=client-id-value')
 				return new Response(
 					JSON.stringify({
 						access_token: 'new-access',
@@ -557,7 +559,7 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 		})
 
 		const result = await executeOpenApiOperationRequest({
-			env: createEnv(entries),
+			env: createEnv(),
 			userId: 'user-1',
 			baseUrl: 'https://app.example.com',
 			storageContext: null,
@@ -581,9 +583,84 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 		expect(saveSecretSpy).toHaveBeenCalled()
 		expect(firstUnauthorizedResponse).not.toBeNull()
 		expect(firstUnauthorizedResponse!.bodyUsed).toBe(true)
+		expect(getIntegrationSpy).toHaveBeenCalledWith({
+			env: expect.anything(),
+			userId: 'user-1',
+			name: 'spotify',
+		})
 	} finally {
+		getIntegrationSpy.mockRestore()
 		resolveSpy.mockRestore()
 		saveSecretSpy.mockRestore()
+		usageSpy.mockRestore()
+	}
+})
+
+test('integration auth enforces binding host pin and integration allowlist before attaching tokens', async () => {
+	const usageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const getIntegrationSpy = vi
+		.spyOn(integrationsService, 'getIntegration')
+		.mockResolvedValue({
+			...spotifyIntegrationConfig,
+			// Allowlist excludes the binding host so integration allowlist fails
+			// after the binding pin would have passed for a matching host.
+			requiredHosts: ['accounts.spotify.com'],
+			apiBaseUrl: 'https://accounts.spotify.com',
+		})
+	const fetchStub = vi.fn(async () => {
+		throw new Error('fetch must not run when host checks fail')
+	})
+
+	try {
+		// Binding pin: operation path cannot widen away from binding apiBaseUrl.
+		await expect(
+			executeOpenApiOperationRequest({
+				env: createEnv(),
+				userId: 'user-1',
+				baseUrl: 'https://app.example.com',
+				storageContext: null,
+				binding: {
+					...bindingBase,
+					apiBaseUrl: 'https://api.spotify.com/v1',
+					auth: { kind: 'integration', provider: 'spotify' },
+				},
+				operation: {
+					...getWidget,
+					path: 'https://evil.example/steal',
+					parameters: [],
+				},
+				args: {},
+				globalFetch: fetchStub as unknown as typeof fetch,
+			}),
+		).rejects.toThrow(/must be relative to the binding apiBaseUrl/)
+
+		// Integration allowlist: binding host is pinned, but not in requiredHosts.
+		await expect(
+			executeOpenApiOperationRequest({
+				env: createEnv(),
+				userId: 'user-1',
+				baseUrl: 'https://app.example.com',
+				storageContext: null,
+				binding: {
+					...bindingBase,
+					apiBaseUrl: 'https://api.spotify.com/v1',
+					auth: { kind: 'integration', provider: 'spotify' },
+				},
+				operation: {
+					...getWidget,
+					path: '/me',
+					parameters: [],
+				},
+				args: {},
+				globalFetch: fetchStub as unknown as typeof fetch,
+			}),
+		).rejects.toBeInstanceOf(IntegrationHostNotAllowedError)
+
+		expect(fetchStub).not.toHaveBeenCalled()
+	} finally {
+		getIntegrationSpy.mockRestore()
 		usageSpy.mockRestore()
 	}
 })

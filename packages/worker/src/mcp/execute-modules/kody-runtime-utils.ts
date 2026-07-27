@@ -20,7 +20,7 @@ type IntegrationConfig = {
 	tokenUrl: string
 	apiBaseUrl?: string | null
 	flow: 'pkce' | 'confidential'
-	clientIdValueName: string
+	clientId: string
 	clientSecretSecretName?: string | null
 	accessTokenSecretName: string
 	refreshTokenSecretName?: string | null
@@ -36,17 +36,6 @@ type IntegrationConfig = {
 type IntegrationGetResult = {
 	integration: IntegrationConfig | null
 }
-
-type ValueGetResult = {
-	name: string
-	scope: string
-	value: string
-	description: string
-	app_id: string | null
-	created_at: string
-	updated_at: string
-	ttl_ms: number | null
-} | null
 
 export type ExecuteRequestInput = string | URL | Request
 
@@ -84,7 +73,6 @@ export const secretHeaders = {
 
 export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'integration_get',
-	'value_get',
 	'secret_set',
 ] as const
 
@@ -213,25 +201,6 @@ async function readIntegrationConfig(
 	return integration
 }
 
-async function readClientId(
-	kody: KodyNamespace,
-	integration: IntegrationConfig,
-) {
-	const valueGet = kody.value_get
-	if (typeof valueGet !== 'function') {
-		throw new Error('kody.value_get is not available in this sandbox.')
-	}
-	const value = (await valueGet({
-		name: integration.clientIdValueName,
-	})) as ValueGetResult
-	if (!value?.value) {
-		throw new Error(
-			`Client ID value "${integration.clientIdValueName}" was not found.`,
-		)
-	}
-	return value.value
-}
-
 async function persistSecret(
 	kody: KodyNamespace,
 	providerName: string,
@@ -261,7 +230,12 @@ async function refreshAccessTokenWithIntegration(
 	providerName: string,
 	integration: IntegrationConfig,
 ) {
-	const clientId = await readClientId(kody, integration)
+	const clientId = integration.clientId.trim()
+	if (!clientId) {
+		throw new Error(
+			`Integration "${providerName}" does not define a client id.`,
+		)
+	}
 	const refreshTokenSecretName =
 		integration.refreshTokenSecretName?.trim() ?? ''
 	if (!refreshTokenSecretName) {
@@ -588,19 +562,6 @@ const __kodyReadIntegrationConfig = async (providerName) => {
   }
   return integration;
 };
-const __kodyReadClientId = async (integration) => {
-  const valueGet = kody.value_get;
-  if (typeof valueGet !== 'function') {
-    throw new Error('kody.value_get is not available in this sandbox.');
-  }
-  const value = await valueGet({ name: integration.clientIdValueName });
-  if (!value?.value) {
-    throw new Error(
-      \`Client ID value "\${integration.clientIdValueName}" was not found.\`,
-    );
-  }
-  return value.value;
-};
 const __kodyPersistSecret = async (
   providerName,
   secretName,
@@ -670,7 +631,12 @@ const __kodyResolveRequestUrl = (input, integration) => {
 };
 const __kodyRefreshAccessToken = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);
-  const clientId = await __kodyReadClientId(integration);
+  const clientId = integration.clientId.trim();
+  if (!clientId) {
+    throw new Error(
+      \`Integration "\${providerName}" does not define a client id.\`,
+    );
+  }
   const refreshTokenSecretName = integration.refreshTokenSecretName?.trim() ?? '';
   if (!refreshTokenSecretName) {
     throw new Error(

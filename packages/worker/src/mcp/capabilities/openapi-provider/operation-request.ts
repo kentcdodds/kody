@@ -1,9 +1,3 @@
-import {
-	buildIntegrationValueName,
-	parseIntegrationConfig,
-	parseIntegrationJson,
-	type IntegrationConfig,
-} from '#mcp/capabilities/integrations/integration-shared.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { assertIntegrationHostAllowed } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { executeGatewayFetch } from '#mcp/fetch-gateway.ts'
@@ -18,7 +12,10 @@ import {
 	updateUserSecretForPackage,
 } from '#mcp/secrets/service.ts'
 import { type StorageContext } from '#mcp/storage.ts'
-import { getValue } from '#mcp/values/service.ts'
+import {
+	getIntegration,
+	type IntegrationConfigWithClientId,
+} from '#worker/integrations/service.ts'
 import {
 	normalizeApiBaseUrl,
 	type OpenApiBinding,
@@ -65,7 +62,7 @@ export async function executeOpenApiOperationRequest(input: {
 	})
 	assertPinnedToApiBaseUrl(url, input.binding.apiBaseUrl)
 
-	let integration: IntegrationConfig | null = null
+	let integration: IntegrationConfigWithClientId | null = null
 	if (input.binding.auth.kind === 'integration') {
 		integration = await loadIntegrationConfig({
 			env: input.env,
@@ -209,35 +206,24 @@ async function loadIntegrationConfig(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	provider: string
-}): Promise<IntegrationConfig> {
-	const value = await getValue({
+}): Promise<IntegrationConfigWithClientId> {
+	const integration = await getIntegration({
 		env: input.env,
 		userId: input.userId,
-		name: buildIntegrationValueName(input.provider),
-		scope: 'user',
-		storageContext: null,
+		name: input.provider,
 	})
-	if (!value) {
+	if (!integration) {
 		throw new Error(
 			`Integration "${input.provider}" was not found for OpenAPI binding auth.`,
 		)
 	}
-	const parsed = parseIntegrationConfig(
-		parseIntegrationJson(value.value),
-		input.provider,
-	)
-	if (!parsed) {
-		throw new Error(
-			`Integration "${input.provider}" config is invalid for OpenAPI binding auth.`,
-		)
-	}
-	return parsed
+	return integration
 }
 
 function buildRequestHeaders(input: {
 	userHeaders: Record<string, string>
 	auth: OpenApiBinding['auth']
-	integration: IntegrationConfig | null
+	integration: IntegrationConfigWithClientId | null
 	requestBody: OpenApiBindingOperation['requestBody']
 	hasBody: boolean
 }) {
@@ -362,7 +348,7 @@ async function tryRefreshIntegrationAccessToken(input: {
 	userId: string
 	baseUrl: string
 	provider: string
-	integration: IntegrationConfig
+	integration: IntegrationConfigWithClientId
 	storageContext: StorageContext | null
 	globalFetch?: typeof fetch
 }): Promise<{ ok: boolean; guidance?: string }> {
@@ -375,18 +361,11 @@ async function tryRefreshIntegrationAccessToken(input: {
 		}
 	}
 
-	let clientId: string
-	try {
-		clientId = await readClientIdValue({
-			env: input.env,
-			userId: input.userId,
-			valueName: input.integration.clientIdValueName,
-		})
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+	const clientId = input.integration.clientId.trim()
+	if (!clientId) {
 		return {
 			ok: false,
-			guidance: `OpenAPI request returned HTTP 401; host-side token refresh could not read client id: ${message}. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
+			guidance: `OpenAPI request returned HTTP 401; integration "${input.provider}" has no clientId. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
 		}
 	}
 
@@ -553,24 +532,6 @@ async function assertPackageCanUpdateUserSecret(input: {
 		resolved,
 		intent: 'mutate',
 	})
-}
-
-async function readClientIdValue(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
-	valueName: string
-}) {
-	const value = await getValue({
-		env: input.env,
-		userId: input.userId,
-		name: input.valueName,
-		scope: 'user',
-		storageContext: null,
-	})
-	if (!value?.value) {
-		throw new Error(`Client ID value "${input.valueName}" was not found.`)
-	}
-	return value.value
 }
 
 async function readOperationResponse(

@@ -1,3 +1,4 @@
+import { FetchInterceptor } from '@mswjs/interceptors/fetch'
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import {
@@ -24,7 +25,7 @@ const spotifyIntegration = {
 	tokenUrl: 'https://accounts.spotify.test/api/token',
 	apiBaseUrl: 'https://api.spotify.com/v1',
 	flow: 'pkce' as const,
-	clientIdValueName: 'spotifyClientId',
+	clientId: 'spotify-client-id',
 	clientSecretSecretName: null,
 	accessTokenSecretName: 'spotifyAccessToken',
 	refreshTokenSecretName: 'spotifyRefreshToken',
@@ -38,11 +39,6 @@ function createKody() {
 			const name = args.name
 			expect(name).toBe('spotify')
 			return { integration: spotifyIntegration }
-		},
-		async value_get(args: CapabilityArgs) {
-			const name = args.name
-			expect(name).toBe('spotifyClientId')
-			return { value: 'spotify-client-id' }
 		},
 		async secret_set(args: CapabilityArgs) {
 			const call = args as SecretSetCall
@@ -130,9 +126,6 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 		async integration_get() {
 			return { integration: emptyIntegration }
 		},
-		async value_get() {
-			return { value: 'spotify-client-id' }
-		},
 		async secret_set(args: CapabilityArgs) {
 			const call = args as { name: string; value: string; scope: string }
 			return { name: call.name, scope: call.scope }
@@ -158,4 +151,78 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 		emptyAllowlistFetch('https://anything.example/data'),
 	).rejects.toThrow(/no allowed hosts configured/)
 	expect(emptyAllowlistFetchCalls.length).toBe(fetchCallsBefore)
+})
+
+test('createAuthenticatedFetch attaches bearer placeholder and refreshes on 401 with inline client id', async () => {
+	const { kody, secretSetCalls } = createKody()
+	const fetchCalls: Array<Request> = []
+	let apiCalls = 0
+	{
+		using _interceptor = (() => {
+			const interceptor = new FetchInterceptor()
+			interceptor.on('request', ({ request, controller }) => {
+				void (async () => {
+					try {
+						fetchCalls.push(request.clone())
+						if (request.url === spotifyIntegration.tokenUrl) {
+							await controller.respondWith(
+								Response.json(
+									{ access_token: fakeAccessToken },
+									{ headers: { 'content-type': 'application/json' } },
+								),
+							)
+							return
+						}
+						apiCalls += 1
+						if (apiCalls === 1) {
+							await controller.respondWith(
+								Response.json(
+									{ error: 'expired' },
+									{
+										status: 401,
+										headers: { 'content-type': 'application/json' },
+									},
+								),
+							)
+							return
+						}
+						await controller.respondWith(
+							Response.json(
+								{ ok: true },
+								{ headers: { 'content-type': 'application/json' } },
+							),
+						)
+					} catch (error) {
+						controller.errorWith(error)
+					}
+				})()
+			})
+			interceptor.apply()
+			return {
+				[Symbol.dispose]() {
+					interceptor.dispose()
+				},
+			}
+		})()
+		const authenticatedFetch = await createAuthenticatedFetch(kody, 'spotify')
+		const response = await authenticatedFetch('https://api.spotify.com/v1/me')
+		expect(await response.json()).toEqual({ ok: true })
+	}
+
+	expect(fetchCalls).toHaveLength(3)
+	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
+		spotifyAccessTokenPlaceholder,
+	)
+	expect(fetchCalls[1]?.url).toBe(spotifyIntegration.tokenUrl)
+	expect(await fetchCalls[1]?.text()).toContain('client_id=spotify-client-id')
+	expect(fetchCalls[2]?.headers.get('authorization')).toBe(
+		`Bearer ${fakeAccessToken}`,
+	)
+	expect(secretSetCalls).toEqual([
+		{
+			name: 'spotifyAccessToken',
+			value: fakeAccessToken,
+			scope: 'user',
+		},
+	])
 })
