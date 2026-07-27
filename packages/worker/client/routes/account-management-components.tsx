@@ -350,38 +350,56 @@ export function AccountManagementSidebar(
 	)
 }
 
+/**
+ * Default in-sidebar scroll viewport for management lists. Keeps long result
+ * sets from stretching the whole page; callers can override per page.
+ */
+export const accountManagementListMaxHeight = 'min(65vh, 48rem)'
+
 type AccountManagementListProps = {
 	children: AccountManagementSlot
-	maxHeight?: string
+	/**
+	 * Scroll viewport height. Defaults to {@link accountManagementListMaxHeight}.
+	 * Pass `null` only for the rare list that should grow with the page.
+	 */
+	maxHeight?: string | null
 }
 
 export function AccountManagementList(
 	handle: Handle<AccountManagementListProps>,
 ) {
-	return () => (
-		<div
-			mix={css({
-				minWidth: 0,
-				maxHeight: handle.props.maxHeight,
-				overflowY: handle.props.maxHeight ? 'auto' : undefined,
-				overflowX: handle.props.maxHeight ? 'hidden' : undefined,
-				paddingRight: handle.props.maxHeight ? spacing.xs : undefined,
-			})}
-		>
-			<ul
+	return () => {
+		const maxHeight =
+			handle.props.maxHeight === undefined
+				? accountManagementListMaxHeight
+				: handle.props.maxHeight
+		const scrollable = maxHeight != null
+
+		return (
+			<div
 				mix={css({
-					listStyle: 'none',
-					padding: 0,
-					margin: 0,
-					display: 'grid',
-					gap: spacing.sm,
 					minWidth: 0,
+					maxHeight: scrollable ? maxHeight : undefined,
+					overflowY: scrollable ? 'auto' : undefined,
+					overflowX: scrollable ? 'hidden' : undefined,
+					paddingRight: scrollable ? spacing.xs : undefined,
 				})}
 			>
-				{handle.props.children}
-			</ul>
-		</div>
-	)
+				<ul
+					mix={css({
+						listStyle: 'none',
+						padding: 0,
+						margin: 0,
+						display: 'grid',
+						gap: spacing.sm,
+						minWidth: 0,
+					})}
+				>
+					{handle.props.children}
+				</ul>
+			</div>
+		)
+	}
 }
 
 type AccountManagementSearchFieldProps = {

@@ -538,7 +538,7 @@ export function AccountJobsRoute(handle: Handle) {
 										{listEmptyMessage}
 									</p>
 								) : (
-									<AccountManagementList maxHeight="min(65vh, 48rem)">
+									<AccountManagementList>
 										{filteredJobs.map((item) => (
 											<li key={item.id}>
 												<AccountManagementListItemButton

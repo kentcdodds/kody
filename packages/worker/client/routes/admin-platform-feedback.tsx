@@ -377,7 +377,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 											No platform feedback matches this view.
 										</p>
 									) : (
-										<AccountManagementList maxHeight="min(65vh, 48rem)">
+										<AccountManagementList>
 											{data.feedback.map((feedback) => {
 												const isActive = selectedFeedbackId === feedback.id
 												return (

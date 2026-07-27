@@ -764,7 +764,7 @@ export function AdminUsersRoute(handle: Handle) {
 								</p>
 							) : (
 								<>
-									<AccountManagementList maxHeight="min(65vh, 48rem)">
+									<AccountManagementList>
 										{users.map((user) => (
 											<li key={user.id} mix={css({ minWidth: 0 })}>
 												<AccountManagementListItemButton
