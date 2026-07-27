@@ -129,7 +129,7 @@ test('email_sender_rule_set maps validation and limit errors to plain Error mess
 	const env = createEnv()
 	mocks.upsertEmailSenderRule.mockRejectedValueOnce(
 		new EmailSenderRuleValidationError(
-			'Domain sender rules require a bare domain with at least one "." and no spaces or "@".',
+			'Domain sender rules require a bare domain with at least one "." and no spaces, "@", "%", or "_".',
 		),
 	)
 	await expect(
@@ -138,7 +138,7 @@ test('email_sender_rule_set maps validation and limit errors to plain Error mess
 			{ env, callerContext: createUserContext() },
 		),
 	).rejects.toThrow(
-		'Domain sender rules require a bare domain with at least one "." and no spaces or "@".',
+		'Domain sender rules require a bare domain with at least one "." and no spaces, "@", "%", or "_".',
 	)
 
 	mocks.upsertEmailSenderRule.mockRejectedValueOnce(

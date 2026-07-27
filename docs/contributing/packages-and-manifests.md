@@ -289,8 +289,8 @@ surface for declared subscriptions. It reads the signed-in user's saved package
 manifests and returns package id, `kody.id`, package name, topic, handler,
 description, and filters, optionally narrowed by exact topic.
 
-For inbound email, `email.message.received` dispatches after an accepted routed
-message is stored. Quarantined inbound mail dispatches
+For user-owned inbound email, `email.message.received` dispatches after an
+accepted routed message is stored. Quarantined inbound mail dispatches
 `email.message.quarantined` instead (same metadata-first payload, different
 topic). The payload is intentionally metadata-first: message id, address
 metadata, headers useful for threading, processing status, timestamps, and

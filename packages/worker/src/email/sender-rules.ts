@@ -32,18 +32,25 @@ function normalizeSenderRuleValue(value: string) {
 function assertValidSenderRuleValue(kind: EmailSenderRuleKind, value: string) {
 	if (kind === 'address') {
 		const parts = value.split('@')
-		if (parts.length !== 2 || !parts[0] || !parts[1]) {
+		if (parts.length !== 2 || !parts[0] || !parts[1] || /\s/.test(value)) {
 			throw new EmailSenderRuleValidationError(
-				'Address sender rules require exactly one "@" with non-empty local and domain parts.',
+				'Address sender rules require exactly one "@" with non-empty local and domain parts and no whitespace.',
 			)
 		}
 		return
 	}
 
 	if (kind === 'domain') {
-		if (value.includes('@') || /\s/.test(value) || !value.includes('.')) {
+		// `%` and `_` are SQLite LIKE wildcards and the stored value is used in
+		// the subdomain-suffix LIKE pattern, so they must never reach storage.
+		if (
+			value.includes('@') ||
+			/\s/.test(value) ||
+			!value.includes('.') ||
+			/[%_]/.test(value)
+		) {
 			throw new EmailSenderRuleValidationError(
-				'Domain sender rules require a bare domain with at least one "." and no spaces or "@".',
+				'Domain sender rules require a bare domain with at least one "." and no spaces, "@", "%", or "_".',
 			)
 		}
 		return
@@ -129,27 +136,18 @@ export async function upsertEmailSenderRule(input: {
 		})
 	}
 
-	const countRow = await input.db
-		.prepare(
-			`SELECT COUNT(*) AS count
-			FROM email_sender_rules
-			WHERE user_id = ?`,
-		)
-		.bind(input.userId)
-		.first<{ count: number }>()
-	const count = Number(countRow?.count ?? 0)
-	if (count >= maxEmailSenderRulesPerUser) {
-		throw new EmailSenderRuleLimitError(
-			`Sender rule limit reached: at most ${String(maxEmailSenderRulesPerUser)} rules per user.`,
-		)
-	}
-
+	// The cap is enforced inside the INSERT itself so concurrent upserts
+	// cannot race past a separate count check.
 	const id = crypto.randomUUID()
-	await input.db
+	const inserted = await input.db
 		.prepare(
 			`INSERT INTO email_sender_rules (
 				id, user_id, kind, value, effect, note, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			SELECT ?, ?, ?, ?, ?, ?, ?, ?
+			WHERE (
+				SELECT COUNT(*) FROM email_sender_rules WHERE user_id = ?
+			) < ?`,
 		)
 		.bind(
 			id,
@@ -160,8 +158,15 @@ export async function upsertEmailSenderRule(input: {
 			note,
 			timestamp,
 			timestamp,
+			input.userId,
+			maxEmailSenderRulesPerUser,
 		)
 		.run()
+	if (Number(inserted.meta.changes ?? 0) === 0) {
+		throw new EmailSenderRuleLimitError(
+			`Sender rule limit reached: at most ${String(maxEmailSenderRulesPerUser)} rules per user.`,
+		)
+	}
 
 	return {
 		id,

@@ -108,6 +108,38 @@ test('upsertEmailSenderRule rejects invalid address and domain values', async ()
 		}),
 	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
 
+	await expect(
+		upsertEmailSenderRule({
+			db: env.APP_DB,
+			userId,
+			kind: 'address',
+			value: 'us er@example.com',
+			effect: 'block',
+		}),
+	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
+
+	// LIKE wildcards must never reach the stored value used in the
+	// subdomain-suffix pattern.
+	await expect(
+		upsertEmailSenderRule({
+			db: env.APP_DB,
+			userId,
+			kind: 'domain',
+			value: 'bad%domain.com',
+			effect: 'block',
+		}),
+	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
+
+	await expect(
+		upsertEmailSenderRule({
+			db: env.APP_DB,
+			userId,
+			kind: 'domain',
+			value: 'bad_domain.com',
+			effect: 'block',
+		}),
+	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
+
 	expect(await listEmailSenderRules({ db: env.APP_DB, userId })).toEqual([])
 })
 
