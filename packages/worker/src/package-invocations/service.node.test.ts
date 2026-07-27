@@ -9,6 +9,7 @@ import {
 	invokePackageSubscription,
 } from './service.ts'
 import {
+	maxStoredInvocationResponseJsonBytes,
 	tryClaimStalePackageInvocation,
 	updatePackageInvocationResult,
 } from './repo.ts'
@@ -1621,6 +1622,56 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 		'package invocation idempotency persistence failed',
 		expect.any(Error),
 	)
+})
+
+test('oversized terminal responses are not stored so backups stay restorable', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		// Serialized response_json above maxStoredInvocationResponseJsonBytes.
+		result: { blob: 'x'.repeat(maxStoredInvocationResponseJsonBytes + 1) },
+		logs: [],
+	})
+
+	const first = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-oversized',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+	const duplicate = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-oversized',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+
+	// The first call still returns the live response in full.
+	expect(first.status).toBe(200)
+	expect(first.body).toMatchObject({ ok: true })
+	// The duplicate is deduplicated (no re-execution) but cannot replay the
+	// dropped oversized response.
+	expect(duplicate.status).toBe(409)
+	expect(duplicate.body).toMatchObject({
+		ok: false,
+		error: { code: 'idempotency_response_unavailable' },
+		idempotency: { key: 'evt-oversized', replayed: false },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
 test('invokePackageExport enforces source scopes for wildcard tokens', async () => {

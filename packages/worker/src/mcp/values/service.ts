@@ -1,3 +1,7 @@
+import {
+	maxRestorableTextColumnBytes,
+	utf8ByteLength,
+} from '@kody-internal/shared/backup-restore-safety.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	getStorageBindingKey,
@@ -61,6 +65,13 @@ export async function saveValue(input: SaveValueInput): Promise<ValueMetadata> {
 	const value = input.value.trim()
 	if (!value) {
 		throw new Error('Value is required.')
+	}
+	if (utf8ByteLength(value) > maxRestorableTextColumnBytes) {
+		// Oversized D1 rows serialize into export statements that D1's import
+		// path rejects, which would make production backups un-restorable.
+		throw new McpCallerError(
+			`Value is too large to store (${utf8ByteLength(value)} bytes; the limit is ${maxRestorableTextColumnBytes}). Store large payloads in a durable storage bucket instead and keep values small.`,
+		)
 	}
 	const description = input.description?.trim() ?? ''
 	const bucket = await getOrCreateValueBucket({

@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { maxRestorableTextColumnBytes } from '@kody-internal/shared/backup-restore-safety.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	deleteAllAppScopedValues,
@@ -371,6 +372,37 @@ test('value service rejects unavailable scoped storage', async () => {
 			error instanceof McpCallerError &&
 			error.message === 'Value scope "session" is unavailable in this context.',
 	)
+})
+
+test('value service rejects values too large for restorable D1 backups', async () => {
+	const testDb = createValueTestDb()
+	const env = { APP_DB: testDb.db }
+
+	await expect(
+		saveValue({
+			env,
+			userId: 'user-123',
+			scope: 'user',
+			name: 'giantHistoryCache',
+			value: 'x'.repeat(maxRestorableTextColumnBytes + 1),
+			storageContext: { sessionId: null, appId: null },
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message.includes('too large to store'),
+	)
+
+	// A value at the limit is accepted.
+	const saved = await saveValue({
+		env,
+		userId: 'user-123',
+		scope: 'user',
+		name: 'largeButRestorable',
+		value: 'x'.repeat(maxRestorableTextColumnBytes),
+		storageContext: { sessionId: null, appId: null },
+	})
+	expect(saved.name).toBe('largeButRestorable')
 })
 
 test('deleteAllAppScopedValues removes all app-scoped values for one app', async () => {

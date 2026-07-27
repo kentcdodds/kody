@@ -431,6 +431,10 @@
 		{
 			"filename": "0101-user-oauth-apps-and-integrations.sql",
 			"sha256": "70cf3f8dce4159b57e6dbbd7c929a387d12a2ab078ecdf8180d4ba963074180e"
+		},
+		{
+			"filename": "0102-restore-safe-row-sizes.sql",
+			"sha256": "0c40218da221b778df2869e0533828844fabe3664423b07a3466721ba924f6c5"
 		}
 	]
 }

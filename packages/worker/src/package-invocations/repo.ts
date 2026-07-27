@@ -5,7 +5,33 @@ import {
 	string,
 	type InferOutput,
 } from 'remix/data-schema'
+import {
+	maxRestorableTextColumnBytes,
+	utf8ByteLength,
+} from '@kody-internal/shared/backup-restore-safety.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
+
+/**
+ * Replay-cache ceiling for `response_json`. Rows above this would serialize
+ * into D1 export statements that D1's import path rejects (SQLITE_TOOBIG),
+ * making the whole backup un-restorable. Oversized terminal responses are
+ * stored as NULL; idempotent duplicates of those invocations get the
+ * existing `idempotency_response_unavailable` outcome instead of a replay.
+ */
+export const maxStoredInvocationResponseJsonBytes = maxRestorableTextColumnBytes
+
+function boundedResponseJson(
+	response: PackageInvocationStoredResponse,
+): string | null {
+	const responseJson = JSON.stringify({
+		status: response.status,
+		body: response.body,
+	})
+	if (utf8ByteLength(responseJson) > maxStoredInvocationResponseJsonBytes) {
+		return null
+	}
+	return responseJson
+}
 
 const packageInvocationRowSchema = object({
 	id: string(),
@@ -392,10 +418,7 @@ export async function insertPackageInvocationRow(input: {
 }) {
 	const now = new Date().toISOString()
 	const responseJson = input.row.response
-		? JSON.stringify({
-				status: input.row.response.status,
-				body: input.row.response.body,
-			})
+		? boundedResponseJson(input.row.response)
 		: null
 	const result = await input.db
 		.prepare(
@@ -524,10 +547,7 @@ export async function updatePackageInvocationResult(input: {
 	response: PackageInvocationStoredResponse
 	claimUpdatedAt: string
 }) {
-	const responseJson = JSON.stringify({
-		status: input.response.status,
-		body: input.response.body,
-	})
+	const responseJson = boundedResponseJson(input.response)
 	const result = await input.db
 		.prepare(
 			`UPDATE package_invocations
