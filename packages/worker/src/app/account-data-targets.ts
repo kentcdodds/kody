@@ -170,6 +170,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'email_inbox_addresses' },
 	{ kind: 'user_id', table: 'email_inboxes' },
 	{ kind: 'user_id', table: 'email_sender_identities' },
+	{ kind: 'user_id', table: 'email_sender_rules' },
 	{ kind: 'user_id', table: 'webhook_endpoints' },
 	{ kind: 'user_id', table: 'entitlement_daily_counters' },
 	{
