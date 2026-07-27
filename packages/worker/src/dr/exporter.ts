@@ -125,13 +125,29 @@ function utf8ByteLength(value: string) {
 }
 
 /**
- * Nightly DR export window: roughly 00:30–02:10 UTC on the worker's
- * every-5-minute cron. Ticks outside this window are skipped so daytime
- * traffic is not competing with a full-platform export.
+ * Nightly DR export window: roughly 00:30–06:10 UTC on the worker's
+ * every-5-minute cron (~68 ticks × 20 s ≈ 22 minutes of staging work).
+ * Ticks outside this window are skipped so daytime traffic is not competing
+ * with a full-platform export. The original 00:30–02:10 window never
+ * finished a night's staging at production scale (the exporter was still in
+ * the artifacts phase every day), so no `exporter/summary.json` was ever
+ * written and no day could be sealed. Completed days exit cheaply via the
+ * `already-complete` check.
  */
 export function shouldRunDrExportCron(now: Date) {
 	const minutes = now.getUTCHours() * 60 + now.getUTCMinutes()
-	return minutes >= 30 && minutes <= 2 * 60 + 10
+	return minutes >= 30 && minutes <= 6 * 60 + 10
+}
+
+/**
+ * One cron tick after the export window closes (06:15–06:19 UTC). The
+ * watchdog fails loudly (lane failure → Sentry) when the night's staging
+ * summary is missing, because the exporter itself never errors when it
+ * merely runs out of window.
+ */
+export function shouldRunDrExportWatchdogCron(now: Date) {
+	const minutes = now.getUTCHours() * 60 + now.getUTCMinutes()
+	return minutes >= 6 * 60 + 15 && minutes < 6 * 60 + 20
 }
 
 export function isDrExportConfigured(
@@ -743,6 +759,67 @@ export async function runDrExportTick(input: {
 		}
 		throw error
 	}
+}
+
+export type DrExportWatchdogResult = {
+	day: string
+	skipped: boolean
+	reason?: string
+	summaryPresent: boolean
+}
+
+/**
+ * Post-window health check for the nightly staging exporter. Throws when the
+ * day's `exporter/summary.json` is missing so the scheduled-lane handler
+ * reports the failure to Sentry — an incomplete night is otherwise silent
+ * (the exporter just stops getting ticks when the window closes).
+ */
+export async function runDrExportWatchdogTick(input: {
+	env: Env
+	now?: Date
+	s3?: DrBackupS3Client
+}): Promise<DrExportWatchdogResult> {
+	const now = input.now ?? new Date()
+	const day = formatUtcDay(now)
+	if (!isDrExportConfigured(input.env)) {
+		return {
+			day,
+			skipped: true,
+			reason: 'not-configured',
+			summaryPresent: false,
+		}
+	}
+	const config = readDrBackupS3Config(input.env)
+	if (!config) {
+		return {
+			day,
+			skipped: true,
+			reason: 'not-configured',
+			summaryPresent: false,
+		}
+	}
+	const s3 = input.s3 ?? createDrBackupS3Client(config)
+	const summary = await s3.getText(stagingSummaryKey(day))
+	if (summary) {
+		console.info(
+			'dr_export_watchdog',
+			JSON.stringify({ day, summaryPresent: true }),
+		)
+		return { day, skipped: false, summaryPresent: true }
+	}
+	const progressText = await s3.getText(stagingProgressKey(day))
+	let phase = 'missing'
+	let detail = ''
+	if (progressText) {
+		const progress = parseProgress(JSON.parse(progressText.text) as unknown)
+		if (progress) {
+			phase = progress.phase
+			detail = ` storageIndex=${progress.storageIndex} artifactsIndex=${progress.artifactsIndex} revision=${progress.revision} warnings=${progress.warnings.length}`
+		}
+	}
+	throw new Error(
+		`DR staging summary missing for ${day} after the export window closed (progress phase=${phase}${detail}). The night's non-D1 backup is incomplete and the day cannot be sealed.`,
+	)
 }
 
 export function __testOnlyCreateInitialProgress(day: string, now: Date) {

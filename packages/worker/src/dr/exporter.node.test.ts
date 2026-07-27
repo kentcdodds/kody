@@ -11,7 +11,9 @@ import {
 	drExportMaxStorageDumpBufferBytes,
 	listPlatformStorageInventory,
 	runDrExportTick,
+	runDrExportWatchdogTick,
 	shouldRunDrExportCron,
+	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
 import {
@@ -169,10 +171,19 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	)
 	expect(shouldRunDrExportCron(new Date('2026-07-23T00:30:00.000Z'))).toBe(true)
 	expect(shouldRunDrExportCron(new Date('2026-07-23T01:45:00.000Z'))).toBe(true)
-	expect(shouldRunDrExportCron(new Date('2026-07-23T02:10:00.000Z'))).toBe(true)
-	expect(shouldRunDrExportCron(new Date('2026-07-23T02:15:00.000Z'))).toBe(
+	expect(shouldRunDrExportCron(new Date('2026-07-23T06:10:00.000Z'))).toBe(true)
+	expect(shouldRunDrExportCron(new Date('2026-07-23T06:15:00.000Z'))).toBe(
 		false,
 	)
+	expect(
+		shouldRunDrExportWatchdogCron(new Date('2026-07-23T06:10:00.000Z')),
+	).toBe(false)
+	expect(
+		shouldRunDrExportWatchdogCron(new Date('2026-07-23T06:15:00.000Z')),
+	).toBe(true)
+	expect(
+		shouldRunDrExportWatchdogCron(new Date('2026-07-23T06:20:00.000Z')),
+	).toBe(false)
 	expect(
 		await runDrExportTick({
 			env: { DR_EXPORT_ENABLED: 'false' } as unknown as Env,
@@ -588,4 +599,62 @@ test('DR inventory includes registry buckets and package_service_states services
 		'service:pkg-1:worker',
 	])
 	expect(inventory.every((entry) => entry.userId === 'user-a')).toBe(true)
+})
+
+test('watchdog passes on a written summary and fails loudly on an incomplete night', async () => {
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+	} as unknown as Env
+	const now = new Date('2026-07-23T06:15:00.000Z')
+
+	expect(
+		await runDrExportWatchdogTick({
+			env: { DR_EXPORT_ENABLED: 'false' } as unknown as Env,
+			now,
+		}),
+	).toMatchObject({ skipped: true, reason: 'not-configured' })
+
+	const { client } = createMemoryS3()
+	await client.put(
+		stagingSummaryKey('2026-07-23'),
+		new TextEncoder().encode('{}'),
+	)
+	expect(await runDrExportWatchdogTick({ env, now, s3: client })).toMatchObject(
+		{ day: '2026-07-23', summaryPresent: true },
+	)
+
+	const incomplete = createMemoryS3()
+	await incomplete.client.put(
+		'staging/2026-07-23/exporter/progress.json',
+		new TextEncoder().encode(
+			JSON.stringify({
+				schemaVersion: 1,
+				day: '2026-07-23',
+				startedAt: '2026-07-23T00:30:00.000Z',
+				phase: 'artifacts',
+				revision: 42,
+				storageIndex: 10,
+				storagePageStartAfter: null,
+				storagePartialNdjson: '',
+				storagePartialEntryCount: 0,
+				storageEntries: [],
+				r2LabelIndex: 2,
+				r2ListCursor: null,
+				r2PartialNdjson: '',
+				r2Completed: {},
+				artifactsIndex: 7,
+				artifactEntries: [],
+				blobsWritten: 0,
+				blobsReused: 0,
+				warnings: [],
+			}),
+		),
+	)
+	await expect(
+		runDrExportWatchdogTick({ env, now, s3: incomplete.client }),
+	).rejects.toThrow(/summary missing for 2026-07-23.*phase=artifacts/)
 })

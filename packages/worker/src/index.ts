@@ -85,7 +85,9 @@ import {
 import {
 	isDrExportConfigured,
 	runDrExportTick,
+	runDrExportWatchdogTick,
 	shouldRunDrExportCron,
+	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
@@ -661,6 +663,15 @@ const workerHandler = {
 			lanes.push({
 				name: 'dr_export',
 				run: () => runDrExportTick({ env, now: scheduledAt }),
+			})
+		}
+		if (
+			shouldRunDrExportWatchdogCron(scheduledAt) &&
+			isDrExportConfigured(env)
+		) {
+			lanes.push({
+				name: 'dr_export_watchdog',
+				run: () => runDrExportWatchdogTick({ env, now: scheduledAt }),
 			})
 		}
 		// Lane failures are isolated: each rejection is logged and reported to

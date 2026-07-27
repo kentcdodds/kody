@@ -49,10 +49,10 @@ administered **DR (“KCD”) Cloudflare account**:
 ```text
 Production worker (source account)          Backup control plane (DR account)
 ───────────────────────────────             ────────────────────────────────
-Nightly */5 ticks 00:30–02:10 UTC           02:15 UTC: D1 export Workflow
+Nightly */5 ticks 00:30–06:10 UTC           02:15 UTC: D1 export Workflow
   stage StorageRunner / R2 / artifacts  →   Hourly: D1 freshness + catch-up
   into staging/{day}/...                    Hourly: seal complete days
-                                            Admin UI: drill / production restore
+06:15 UTC: staging watchdog → Sentry        Admin UI: drill / production restore
 ```
 
 ### Bucket layout
@@ -94,6 +94,33 @@ Contract: `packages/shared/src/backup-staging.ts`.
    full-backup manifest (`packages/shared/src/backup-full-manifest.ts`). Hourly
    freshness also attempts to seal the last three complete days; the UI can seal
    a day on demand.
+
+### Restore-safe row sizes
+
+D1's import path rejects individual SQL statements above its ~100 KB
+statement-length limit (`statement too long: SQLITE_TOOBIG`), and D1 exports
+write one INSERT per row — so a single oversized row makes the whole D1 backup
+un-importable. This is not hypothetical: drills of the 2026-07-26 production
+export failed on oversized `package_invocations.response_json` rows until the
+rows were bounded.
+
+- Write paths bound large text columns via
+  `packages/shared/src/backup-restore-safety.ts` (64 KiB per column):
+  package-invocation replay caches are dropped when oversized, stored email
+  bodies are truncated (raw MIME in R2 stays canonical), and `value_set` rejects
+  oversized values (use durable storage instead).
+- The control plane measures statement lengths while streaming every export and
+  writes `<objectKey>.stats.json` beside the SQL. A nonzero
+  `oversizedStatementCount` logs `backup-unrestorable-statements` (failure
+  status): the backup still lands, but treat that day as unrestorable via the
+  import API and fix the offending write path.
+
+`TRUSTED_RESTORE_BASELINE_SHA256` is the SHA-256 of the JSON array of sorted
+migration filenames at the deployment commit; recompute when adding a migration:
+
+```sh
+node -e "const fs=require('node:fs'),{createHash}=require('node:crypto');console.log(createHash('sha256').update(JSON.stringify(fs.readdirSync('packages/worker/migrations').filter(f=>f.endsWith('.sql')).sort())).digest('hex'))"
+```
 
 ### Derived stores (not backed up)
 
@@ -236,14 +263,15 @@ config, and expect users to reauthorize OAuth and remote connectors.
 
 | When (UTC)               | Who               | What                                                                                               |
 | ------------------------ | ----------------- | -------------------------------------------------------------------------------------------------- |
-| `*/5` during 00:30–02:10 | Production worker | Stage non-D1 stores for the current UTC day                                                        |
+| `*/5` during 00:30–06:10 | Production worker | Stage non-D1 stores for the current UTC day (cheap no-op once the summary exists)                  |
+| 06:15                    | Production worker | Staging watchdog: a missing `exporter/summary.json` fails the lane → Sentry                        |
 | 02:15                    | Control plane     | Primary D1 export Workflow                                                                         |
 | 02:45–05:45 hourly       | Control plane     | Catch-up create/restart of same-day D1 Workflow                                                    |
 | Hourly `:45`             | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days |
 
 Hourly freshness does not SHA-256 the SQL bytes; drills do. Page yourself on
-`freshness-stale`, size-ceiling hits, missing manifests, seal failures, or
-unexpected disablement of the enable gates.
+`freshness-stale`, size-ceiling hits, missing manifests, seal failures,
+`backup-unrestorable-statements`, or unexpected disablement of the enable gates.
 
 ## Offline CLI fallback
 
