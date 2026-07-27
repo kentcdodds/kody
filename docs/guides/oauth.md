@@ -114,15 +114,18 @@ and the current client credentials.
 
 Integration identity is the canonical provider key: names are normalized to
 lowercase kebab (letters, numbers, `.`, `_`, `-`) on every save and lookup, so
-`GitHub`, `github`, and `Git Hub` all resolve to the same `github` record. There
-is exactly one stored value per integration, keyed
-`_integration:<canonical-name>`.
+`GitHub`, `github`, and `Git Hub` all resolve to the same `github` connection.
+Each connection is a D1 row in `user_integrations` keyed by `(user_id, name)`.
+Connections that share the same OAuth client credentials and provider endpoints
+share one `user_oauth_apps` row; rotating that app's client credentials updates
+every sibling connection.
 
 Prefer integration names like `<provider>-<purpose>` when multiple accounts may
 exist: `google` for a default account, `google-business` for a business account,
 or `google-youtube-brand` for a brand identity. Agents should call
 `integration_list` up front when a provider may have multiple accounts
-connected.
+connected. Use `integration_oauth_app_list` before rotating shared client
+credentials.
 
 ## Not the same as MCP OAuth
 

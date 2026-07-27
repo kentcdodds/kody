@@ -259,6 +259,17 @@ primitives:
       - packages/worker/src/mcp/capabilities/secrets/
       - packages/worker/src/security/
 
+  - id: integrations
+    group: assistant
+    name: OAuth integrations
+    summary:
+      Per-user OAuth apps and connections; credentials stay in the secret store.
+    code:
+      - packages/worker/src/integrations/
+      - packages/worker/src/mcp/capabilities/integrations/
+    docs:
+      - docs/contributing/architecture/integrations.md
+
   - id: memories
     group: assistant
     name: Memories
@@ -537,6 +548,7 @@ invariants:
     summary: Enforce integration host allowlists before attaching OAuth tokens.
     docs:
       - docs/contributing/architecture/index.md
+      - docs/contributing/architecture/integrations.md
 
   - id: canonical-repo-source
     summary: Artifacts repos are canonical package/job source; D1 is metadata.

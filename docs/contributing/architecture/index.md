@@ -56,6 +56,10 @@ to become.
 - [OpenAPI provider bindings](./openapi-bindings.md): user-scoped curated
   OpenAPI bindings with runtime-synthesized `openapi:<name>` domains callable
   via `kody.openapi[...]` (host approval never widened by untrusted specs).
+- [OAuth integrations](./integrations.md): first-class OAuth apps and
+  connections in D1 (`user_oauth_apps` / `user_integrations`), secret-store
+  credential references, dual host gates, `/connect/oauth`, and
+  `createAuthenticatedFetch`.
 - [Local Agent Bridge Direction](./local-agent-bridge.md): proposed direction
   for securely reaching local-network systems through an outbound agent
   connection.

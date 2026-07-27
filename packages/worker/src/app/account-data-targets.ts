@@ -150,6 +150,11 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		parentTable: 'secret_buckets',
 	},
 	{ kind: 'user_id', table: 'secret_buckets' },
+	// Connections reference OAuth apps with ON DELETE RESTRICT, so delete
+	// user_integrations before user_oauth_apps. Neither table stores credential
+	// values (only secret names + the non-secret OAuth client id).
+	{ kind: 'user_id', table: 'user_integrations' },
+	{ kind: 'user_id', table: 'user_oauth_apps' },
 	{ kind: 'user_id', table: 'remote_connector_settings' },
 	{ kind: 'user_id', table: 'mcp_server_settings' },
 	{ kind: 'user_id', table: 'archived_job_artifacts' },
