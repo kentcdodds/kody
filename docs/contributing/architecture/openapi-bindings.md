@@ -15,13 +15,15 @@ binding CRUD and refresh live in `openapi`.
 
 ## Storage shape
 
-- Bindings are **user-scoped**, non-secret values-store config keyed
-  `_openapi:<name>`.
+- Bindings are **user-scoped** D1 rows in `user_openapi_bindings`, keyed by
+  `(user_id, name)`, with one child row per curated operation in
+  `user_openapi_binding_operations` keyed by `(user_id, binding_name, slug)`.
 - Each binding holds: name, `specUrl`, `apiBaseUrl`, an auth reference
   (`integration` | `bearerSecret` | `headerSecret` | `basicSecrets` | `none`), a
   curated selection (`operationIds` / `tags` / `pathPrefixes`),
   `includeDestructive` (default false), and a resolved operation snapshot
-  (1..100 operations) produced at save/refresh time.
+  (1..100 operations) produced at save/refresh time. Operations live in the
+  child table so refreshes rewrite small rows instead of one large blob.
 - Credentials stay in secrets or saved integrations — binding config stores
   names only.
 

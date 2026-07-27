@@ -431,6 +431,10 @@
 		{
 			"filename": "0101-user-oauth-apps-and-integrations.sql",
 			"sha256": "70cf3f8dce4159b57e6dbbd7c929a387d12a2ab078ecdf8180d4ba963074180e"
+		},
+		{
+			"filename": "0102-user-openapi-bindings.sql",
+			"sha256": "95d70085084babb483ee2cccf6d0b1609e9bb3a0fd93f9293d5342d9b4d9b56c"
 		}
 	]
 }

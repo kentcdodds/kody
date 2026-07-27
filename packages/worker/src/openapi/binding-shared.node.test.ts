@@ -1,11 +1,9 @@
 import { expect, test } from 'vitest'
 import {
 	assertOpenApiBindingWithinSizeLimit,
-	buildOpenApiBindingValueName,
 	maxOpenApiBindingOperations,
 	openApiBindingNamePattern,
 	openApiBindingSaveInputSchema,
-	parseOpenApiBindingValueName,
 	resolveOpenApiSelection,
 	type OpenApiBinding,
 } from './binding-shared.ts'
@@ -28,17 +26,12 @@ function op(
 	}
 }
 
-test('binding name regex and value-name helpers', () => {
+test('binding name regex matches openApiBindingNamePattern', () => {
 	expect(openApiBindingNamePattern.test('github')).toBe(true)
 	expect(openApiBindingNamePattern.test('gh_api-1')).toBe(true)
 	expect(openApiBindingNamePattern.test('Github')).toBe(false)
 	expect(openApiBindingNamePattern.test('-bad')).toBe(false)
 	expect(openApiBindingNamePattern.test('a'.repeat(65))).toBe(false)
-
-	expect(buildOpenApiBindingValueName('github')).toBe('_openapi:github')
-	expect(parseOpenApiBindingValueName('_openapi:github')).toBe('github')
-	expect(parseOpenApiBindingValueName('_integration:github')).toBeNull()
-	expect(parseOpenApiBindingValueName('_openapi:')).toBeNull()
 })
 
 test('save input schema requires at least one selector and https urls', () => {
@@ -243,6 +236,6 @@ test('serialized binding size cap rejects oversized snapshots', () => {
 	} satisfies OpenApiBinding
 
 	expect(() => assertOpenApiBindingWithinSizeLimit(binding)).toThrow(
-		/exceeding the .* values-store cap/,
+		/exceeding the .* registry\/synthesis size cap/,
 	)
 })

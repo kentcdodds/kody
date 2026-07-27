@@ -77,7 +77,7 @@ driven by the `mcp_server_settings` D1 table and per-user hub snapshots.
 **OpenAPI bindings:** the same runtime merge also synthesizes `openapi:<name>`
 domains from the user's curated OpenAPI provider bindings (see
 [`architecture/openapi-bindings.md`](./architecture/openapi-bindings.md)),
-stored as user-scoped values-store config and invoked as
+stored in user-scoped D1 tables and invoked as
 `kody.openapi["<name>"].<operation_slug>(input)`.
 
 `defineCapability()` in

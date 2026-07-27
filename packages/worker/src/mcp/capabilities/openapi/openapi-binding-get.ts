@@ -72,11 +72,6 @@ export const openapiBindingGetCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: user.userId,
 				name: args.name,
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-					storageId: ctx.callerContext.storageContext?.storageId ?? null,
-				},
 			})
 			if (!binding) {
 				return { binding: null }

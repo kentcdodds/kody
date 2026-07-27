@@ -155,6 +155,9 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	// values (only secret names + the non-secret OAuth client id).
 	{ kind: 'user_id', table: 'user_integrations' },
 	{ kind: 'user_id', table: 'user_oauth_apps' },
+	// OpenAPI binding operations before bindings (composite FK child).
+	{ kind: 'user_id', table: 'user_openapi_binding_operations' },
+	{ kind: 'user_id', table: 'user_openapi_bindings' },
 	{ kind: 'user_id', table: 'remote_connector_settings' },
 	{ kind: 'user_id', table: 'mcp_server_settings' },
 	{ kind: 'user_id', table: 'archived_job_artifacts' },
