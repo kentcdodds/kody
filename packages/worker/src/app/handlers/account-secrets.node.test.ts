@@ -109,12 +109,14 @@ vi.mock('#app/app-base-url.ts', () => ({
 	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
 }))
 
-vi.mock('#mcp/secrets/allowed-hosts.ts', () => ({
-	normalizeAllowedHosts: (hosts: Array<string>) =>
-		Array.from(
-			new Set(hosts.map((host) => host.trim().toLowerCase()).filter(Boolean)),
-		),
-}))
+vi.mock('#mcp/secrets/allowed-hosts.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#mcp/secrets/allowed-hosts.ts')>()
+	return {
+		normalizeAllowedHosts: actual.normalizeAllowedHosts,
+		normalizeHost: actual.normalizeHost,
+	}
+})
 
 vi.mock('#mcp/secrets/allowed-capabilities.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AllowedCapabilities>()
@@ -457,6 +459,64 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			config: expect.objectContaining({
 				name: 'spotify',
 				clientId: 'spotify-client-id-value',
+				refreshTokenSecretName: null,
+			}),
+		}),
+	)
+
+	mockModule.listSecrets.mockResolvedValueOnce([
+		{
+			name: 'spotifyAccessToken',
+			scope: 'user',
+			description: '',
+			packageId: null,
+			allowedHosts: ['api.spotify.com', 'accounts.spotify.com'],
+			allowedCapabilities: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+		{
+			name: 'spotifyRefreshToken',
+			scope: 'user',
+			description: '',
+			packageId: null,
+			allowedHosts: ['api.spotify.com', 'accounts.spotify.com'],
+			allowedCapabilities: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	])
+	mockModule.upsertIntegration.mockClear()
+	const spotifyReconnect = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'connect_oauth',
+				provider: 'spotify',
+				authorizeUrl: 'https://accounts.spotify.com/authorize',
+				tokenUrl: 'https://accounts.spotify.com/api/token',
+				apiBaseUrl: 'https://api.spotify.com/v1',
+				scopes: ['user-read-playback-state'],
+				flow: 'pkce',
+				clientId: 'spotify-client-id-value',
+				accessTokenSecretName: 'spotifyAccessToken',
+				refreshTokenSecretName: 'spotifyRefreshToken',
+				allowedHosts: ['api.spotify.com'],
+				tokenPayload: {
+					access_token: 'rotated-access-token',
+				},
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(spotifyReconnect.status).toBe(200)
+	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
+		expect.objectContaining({
+			config: expect.objectContaining({
+				name: 'spotify',
 				refreshTokenSecretName: 'spotifyRefreshToken',
 			}),
 		}),
@@ -570,6 +630,48 @@ test('connect oauth rejects invalid authorization metadata', async () => {
 		} as never),
 	).rejects.toThrow('OAuth integration configuration is invalid.')
 	expect(mockModule.upsertIntegration).not.toHaveBeenCalled()
+})
+
+test('connect oauth normalizes URL-shaped allowed hosts to bare hostnames', async () => {
+	mockModule.upsertIntegration.mockClear()
+	const handler = createAccountSecretsApiHandler(createEnv())
+
+	const response = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'connect_oauth',
+				provider: 'linkedin',
+				tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+				apiBaseUrl: 'https://api.linkedin.com',
+				flow: 'pkce',
+				clientId: 'linkedin-client-id',
+				accessTokenSecretName: 'linkedinAccessToken',
+				refreshTokenSecretName: 'linkedinRefreshToken',
+				allowedHosts: ['https://api.linkedin.com', 'www.linkedin.com'],
+				tokenPayload: {
+					access_token: 'access-token',
+				},
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		allowedHosts: ['api.linkedin.com', 'www.linkedin.com'],
+		refreshTokenSaved: false,
+	})
+	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
+		expect.objectContaining({
+			config: expect.objectContaining({
+				requiredHosts: ['api.linkedin.com', 'www.linkedin.com'],
+				refreshTokenSecretName: null,
+			}),
+		}),
+	)
 })
 
 test('connect oauth reuses an existing OAuth app when connecting a second account with the same client id', async () => {
@@ -730,7 +832,7 @@ test('host approval view and approve persist normalized hosts for the selected s
 		expect.objectContaining({
 			name: 'cloudflareToken',
 			scope: 'user',
-			allowedHosts: ['api.github.com', 'api.cloudflare.com'],
+			allowedHosts: ['api.cloudflare.com', 'api.github.com'],
 			storageContext: { sessionId: null, appId: null, packageId: null },
 		}),
 	)

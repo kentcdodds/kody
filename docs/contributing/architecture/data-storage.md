@@ -293,6 +293,17 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   Holds `scopes_json`, `required_hosts_json`, and access/refresh token secret
   names. Secret credential values stay in `secret_entries`; the non-secret
   `client_id` is stored inline on `user_oauth_apps`.
+- `user_openapi_bindings` (`0102-user-openapi-bindings.sql`): per-user OpenAPI
+  provider binding rows keyed by `(user_id, name)`. Holds `spec_url`,
+  `api_base_url`, `auth_json`, `selection_json`, `include_destructive`, and
+  optional description / spec metadata. See
+  [OpenAPI provider bindings](./openapi-bindings.md).
+- `user_openapi_binding_operations` (`0102-user-openapi-bindings.sql`):
+  per-operation child rows keyed by `(user_id, binding_name, slug)`, with
+  composite FK `(user_id, binding_name) → user_openapi_bindings(user_id, name)`
+  (`ON DELETE CASCADE`). Holds `operation_json` for each curated operation
+  snapshot entry. Account deletion lists operations before bindings so cleanup
+  does not rely on CASCADE.
 
 App access pattern:
 
@@ -711,6 +722,12 @@ on write unless a migration backfills existing rows.
   string list, and a host string list respectively. Parsers in the integrations
   data-access layer own the shapes; credential values are never stored in these
   columns (only secret names and the inline non-secret `client_id`).
+- `user_openapi_bindings.auth_json`, `user_openapi_bindings.selection_json`, and
+  `user_openapi_binding_operations.operation_json`
+  (`0102-user-openapi-bindings.sql`, `packages/worker/src/openapi/`) store the
+  auth discriminant, selection object, and per-operation snapshot object.
+  Parsers in the OpenAPI binding service own the shapes; credential values are
+  never stored (only secret / integration name references inside `auth_json`).
 
 ### Durable Object id contracts
 

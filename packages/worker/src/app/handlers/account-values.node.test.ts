@@ -28,20 +28,10 @@ const mockModule = vi.hoisted(() => ({
 			ttlMs: null,
 		},
 		{
-			name: '_integration:github',
+			name: '_scratch:notes',
 			scope: 'user' as const,
-			value: '{"clientId":"x"}',
-			description: 'reserved',
-			appId: null,
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			ttlMs: null,
-		},
-		{
-			name: '_openapi:widgets',
-			scope: 'user' as const,
-			value: '{"ops":[]}',
-			description: 'reserved',
+			value: 'todo',
+			description: 'Scratch notes',
 			appId: null,
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
@@ -111,6 +101,14 @@ test('values API lists, selects, saves, and deletes user-scoped values', async (
 				name: 'theme',
 				description: 'UI theme preference',
 				valuePreview: 'dark',
+				updatedAt: new Date(0).toISOString(),
+				ttlMs: null,
+			},
+			{
+				id: '_scratch:notes',
+				name: '_scratch:notes',
+				description: 'Scratch notes',
+				valuePreview: 'todo',
 				updatedAt: new Date(0).toISOString(),
 				ttlMs: null,
 			},
@@ -211,62 +209,49 @@ test('values API lists, selects, saves, and deletes user-scoped values', async (
 	})
 })
 
-test('values API rejects reserved names, missing deletes, invalid actions, and unauthenticated requests', async () => {
+test('values API rejects missing deletes, invalid actions, and unauthenticated requests', async () => {
 	const handler = createAccountValuesApiHandler(createEnv())
 	mockModule.saveValue.mockClear()
 	mockModule.deleteValue.mockClear()
 
-	const reservedIntegrationSave = await handler.handler({
+	mockModule.saveValue.mockResolvedValueOnce({
+		name: '_scratch:notes',
+		scope: 'user' as const,
+		value: 'updated',
+		description: 'Scratch notes',
+		appId: null,
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		ttlMs: null,
+	})
+	mockModule.listValues.mockResolvedValueOnce([
+		{
+			name: '_scratch:notes',
+			scope: 'user' as const,
+			value: 'updated',
+			description: 'Scratch notes',
+			appId: null,
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			ttlMs: null,
+		},
+	])
+	const underscoreSave = await handler.handler({
 		request: new Request('https://example.com/account/values.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				action: 'save',
-				name: '_integration:github',
-				value: '{"clientId":"x"}',
-				description: 'should not save',
+				name: '_scratch:notes',
+				value: 'updated',
+				description: 'Scratch notes',
 			}),
 		}),
 	})
-	expect(reservedIntegrationSave.status).toBe(400)
-	await expect(reservedIntegrationSave.json()).resolves.toMatchObject({
-		ok: false,
-		error: expect.stringContaining('reserved'),
-	})
-	expect(mockModule.saveValue).not.toHaveBeenCalled()
-
-	const reservedOpenApiSave = await handler.handler({
-		request: new Request('https://example.com/account/values.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'save',
-				name: '_openapi:widgets',
-				value: '{"ops":[]}',
-				description: 'should not save',
-			}),
-		}),
-	})
-	expect(reservedOpenApiSave.status).toBe(400)
-	await expect(reservedOpenApiSave.json()).resolves.toMatchObject({
-		ok: false,
-		error: expect.stringContaining('reserved'),
-	})
-	expect(mockModule.saveValue).not.toHaveBeenCalled()
-
-	const reservedDelete = await handler.handler({
-		request: new Request('https://example.com/account/values.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'delete',
-				name: '_integration:github',
-			}),
-		}),
-	})
-	expect(reservedDelete.status).toBe(400)
-	await expect(reservedDelete.json()).resolves.toMatchObject({ ok: false })
-	expect(mockModule.deleteValue).not.toHaveBeenCalled()
+	expect(underscoreSave.status).toBe(200)
+	expect(mockModule.saveValue).toHaveBeenCalledWith(
+		expect.objectContaining({ name: '_scratch:notes' }),
+	)
 
 	mockModule.deleteValue.mockResolvedValueOnce(false)
 	const missingDelete = await handler.handler({

@@ -1,6 +1,5 @@
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getValue, listValues } from '#mcp/values/service.ts'
-import { isPlatformReservedValueName } from '#mcp/values/value-name-guards.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -35,10 +34,6 @@ export type AccountValuesLoaderData = {
 	values: Array<AccountValueListItem>
 	selectedValue: AccountValueDetail | null
 	selectedValueId: string | null
-}
-
-export function isReservedAccountValueName(name: string) {
-	return isPlatformReservedValueName(name)
 }
 
 export function truncateValuePreview(
@@ -136,14 +131,11 @@ export async function loadAccountValuesData(input: {
 		scope: 'user',
 		storageContext: userScopedStorageContext,
 	})
-	const visible = listed.filter(
-		(entry) => !isReservedAccountValueName(entry.name),
-	)
-	const values = visible.map(toListItem)
+	const values = listed.map(toListItem)
 
 	let selectedValue: AccountValueDetail | null = null
-	if (selectedValueId && !isReservedAccountValueName(selectedValueId)) {
-		const fromList = visible.find((entry) => entry.name === selectedValueId)
+	if (selectedValueId) {
+		const fromList = listed.find((entry) => entry.name === selectedValueId)
 		if (fromList) {
 			selectedValue = toDetail(fromList)
 		} else {
@@ -160,17 +152,11 @@ export async function loadAccountValuesData(input: {
 		}
 	}
 
-	const resolvedSelectedId =
-		selectedValue?.id ??
-		(selectedValueId && !isReservedAccountValueName(selectedValueId)
-			? selectedValueId
-			: null)
-
 	return {
 		ok: true,
 		values,
 		selectedValue,
-		selectedValueId: resolvedSelectedId,
+		selectedValueId: selectedValue?.id ?? selectedValueId,
 	}
 }
 

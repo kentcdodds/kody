@@ -1,5 +1,4 @@
 import { lexicalScore } from '#mcp/capabilities/capability-search.ts'
-import { isPlatformReservedValueName } from '#mcp/values/value-name-guards.ts'
 import {
 	buildValueEntityId,
 	describeValue,
@@ -16,7 +15,6 @@ import { buildCandidateBaseScore } from '../search-scoring.ts'
 export const valueSearchEntityPlugin = {
 	type: 'value',
 	buildValueRowDescriptor(row) {
-		if (isPlatformReservedValueName(row.name)) return undefined
 		return {
 			type: 'value',
 			id: buildValueEntityId(row),
@@ -29,7 +27,6 @@ export const valueSearchEntityPlugin = {
 	buildCandidates(input) {
 		return input.optionalRows.userValueRows
 			.flatMap((row) => {
-				if (isPlatformReservedValueName(row.name)) return []
 				const lexical = lexicalScore(
 					input.query,
 					[row.name, row.description, row.scope, row.value].join('\n'),

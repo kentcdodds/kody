@@ -6,7 +6,11 @@ import {
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
 } from '#worker/integrations/service.ts'
-import { loadAccountIntegrationByName } from './account-integrations-data.ts'
+import {
+	loadAccountIntegrationByName,
+	loadAccountIntegrationsData,
+	loadAccountOauthAppBySlug,
+} from './account-integrations-data.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
@@ -28,6 +32,8 @@ function createEnv() {
 
 function fakeUser(userId: string) {
 	return {
+		email: 'user@example.com',
+		username: 'user',
 		mcpUser: { userId, email: 'user@example.com', username: 'user' },
 	} as Parameters<typeof loadAccountIntegrationByName>[1]
 }
@@ -240,4 +246,93 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 		appSlug: 'notion',
 		clientId: 'notion-client-from-setup',
 	})
+})
+
+test('loadAccountIntegrationsData includes OAuth apps with their connections', async () => {
+	const { env } = createEnv()
+	const userId = 'user-integrations-apps-loader'
+
+	await upsertIntegration({
+		env,
+		userId,
+		config: googleConfig,
+	})
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...googleConfig,
+			name: 'google-calendar',
+			accessTokenSecretName: 'googleCalendarAccessToken',
+			refreshTokenSecretName: 'googleCalendarRefreshToken',
+			authorization: {
+				...googleConfig.authorization,
+				scopes: ['calendar.readonly'],
+			},
+		},
+	})
+	await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: {
+			name: 'notion',
+			tokenUrl: 'https://api.notion.com/v1/oauth/token',
+			flow: 'confidential',
+			clientId: 'notion-client-from-setup',
+			clientSecretSecretName: 'notionClientSecret',
+			authorization: {
+				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
+			},
+		},
+	})
+
+	const payload = await loadAccountIntegrationsData(env, fakeUser(userId))
+	expect(payload.ok).toBe(true)
+	expect(payload.integrations.map((entry) => entry.name).sort()).toEqual([
+		'google',
+		'google-calendar',
+	])
+	expect(payload.apps).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				slug: 'google',
+				provider: 'google',
+				clientId: 'shared-google-client',
+				clientSecretSecretName: null,
+				connectionCount: 2,
+				connections: expect.arrayContaining([
+					expect.objectContaining({ name: 'google' }),
+					expect.objectContaining({ name: 'google-calendar' }),
+				]),
+			}),
+			expect.objectContaining({
+				slug: 'notion',
+				provider: 'notion',
+				clientId: 'notion-client-from-setup',
+				clientSecretSecretName: 'notionClientSecret',
+				connectionCount: 0,
+				connections: [],
+			}),
+		]),
+	)
+	expect(JSON.stringify(payload)).not.toMatch(
+		/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/,
+	)
+
+	const googleApp = await loadAccountOauthAppBySlug(
+		env,
+		fakeUser(userId),
+		'google',
+	)
+	expect(googleApp).toMatchObject({
+		slug: 'google',
+		clientId: 'shared-google-client',
+		connectionCount: 2,
+	})
+	expect(
+		await loadAccountOauthAppBySlug(env, fakeUser(userId), 'missing'),
+	).toBeNull()
+	expect(
+		await loadAccountOauthAppBySlug(env, fakeUser('other-user'), 'google'),
+	).toBeNull()
 })

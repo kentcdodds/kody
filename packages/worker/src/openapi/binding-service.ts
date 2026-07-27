@@ -1,39 +1,29 @@
-import { type StorageContext } from '#mcp/storage.ts'
-import { getValue, listValues } from '#mcp/values/service.ts'
 import {
-	buildOpenApiBindingValueName,
+	assertOpenApiBindingWithinSizeLimit,
 	parseOpenApiBinding,
-	parseOpenApiBindingJson,
-	parseOpenApiBindingValueName,
 	type OpenApiBinding,
 } from '#worker/openapi/binding-shared.ts'
+import {
+	deleteOpenApiBindingByName,
+	getOpenApiBindingByName,
+	listOpenApiBindingsForUser,
+	upsertOpenApiBinding,
+	type OpenApiBindingWithOperations,
+} from '#worker/openapi/repo.ts'
 
 export async function listOpenApiBindings(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-	storageContext?: StorageContext | null
 }): Promise<Array<OpenApiBinding>> {
-	const values = await listValues({
-		env: input.env,
+	const rows = await listOpenApiBindingsForUser({
+		db: input.env.APP_DB,
 		userId: input.userId,
-		scope: 'user',
-		storageContext: {
-			sessionId: input.storageContext?.sessionId ?? null,
-			appId: input.storageContext?.appId ?? null,
-			storageId: input.storageContext?.storageId ?? null,
-		},
 	})
 	const bindings: Array<OpenApiBinding> = []
-	for (const value of values) {
-		const bindingName = parseOpenApiBindingValueName(value.name)
-		if (!bindingName) continue
-		const parsed = parseOpenApiBinding(
-			parseOpenApiBindingJson(value.value),
-			bindingName,
-		)
+	for (const row of rows) {
+		const parsed = toOpenApiBinding(row)
 		if (parsed) bindings.push(parsed)
 	}
-	bindings.sort((left, right) => left.name.localeCompare(right.name, 'en'))
 	return bindings
 }
 
@@ -41,19 +31,82 @@ export async function getOpenApiBinding(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 	name: string
-	storageContext?: StorageContext | null
 }): Promise<OpenApiBinding | null> {
-	const value = await getValue({
-		env: input.env,
+	const row = await getOpenApiBindingByName({
+		db: input.env.APP_DB,
 		userId: input.userId,
-		name: buildOpenApiBindingValueName(input.name),
-		scope: 'user',
-		storageContext: {
-			sessionId: input.storageContext?.sessionId ?? null,
-			appId: input.storageContext?.appId ?? null,
-			storageId: input.storageContext?.storageId ?? null,
-		},
+		name: input.name,
 	})
-	if (!value) return null
-	return parseOpenApiBinding(parseOpenApiBindingJson(value.value), input.name)
+	if (!row) return null
+	return toOpenApiBinding(row)
+}
+
+export async function saveOpenApiBinding(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	binding: OpenApiBinding
+}): Promise<void> {
+	assertOpenApiBindingWithinSizeLimit(input.binding)
+	const existing = await getOpenApiBindingByName({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name: input.binding.name,
+	})
+	await upsertOpenApiBinding({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		binding: input.binding,
+		createdAt: existing?.binding.created_at,
+	})
+}
+
+export async function deleteOpenApiBinding(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+}): Promise<boolean> {
+	return deleteOpenApiBindingByName({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name: input.name,
+	})
+}
+
+function toOpenApiBinding(
+	row: OpenApiBindingWithOperations,
+): OpenApiBinding | null {
+	const operations: Array<unknown> = []
+	for (const operation of row.operations) {
+		const parsed = parseJson(operation.operation_json)
+		if (parsed == null) return null
+		operations.push(parsed)
+	}
+	const auth = parseJson(row.binding.auth_json)
+	const selection = parseJson(row.binding.selection_json)
+	if (auth == null || selection == null) return null
+
+	return parseOpenApiBinding(
+		{
+			name: row.binding.name,
+			specUrl: row.binding.spec_url,
+			apiBaseUrl: row.binding.api_base_url,
+			description: row.binding.description,
+			auth,
+			selection,
+			includeDestructive: row.binding.include_destructive === 1,
+			specTitle: row.binding.spec_title,
+			specVersion: row.binding.spec_version,
+			operations,
+			updatedAt: row.binding.updated_at,
+		},
+		row.binding.name,
+	)
+}
+
+function parseJson(raw: string): unknown {
+	try {
+		return JSON.parse(raw)
+	} catch {
+		return null
+	}
 }

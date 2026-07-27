@@ -3,7 +3,6 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { assertValueNameAllowed } from '#mcp/values/value-name-guards.ts'
 import { getValue } from '#mcp/values/service.ts'
 import { valueScopeValues } from '#mcp/values/types.ts'
 import { valueMetadataSchema } from './shared.ts'
@@ -31,7 +30,6 @@ export const valueGetCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const name = args.name.trim()
-			assertValueNameAllowed(name)
 			const value = await getValue({
 				env: ctx.env,
 				userId: user.userId,

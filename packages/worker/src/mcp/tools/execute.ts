@@ -580,11 +580,6 @@ async function listOpenApiBindingHosts(input: {
 		const bindings = await listOpenApiBindings({
 			env: input.env,
 			userId,
-			storageContext: {
-				sessionId: input.callerContext.storageContext?.sessionId ?? null,
-				appId: input.callerContext.storageContext?.appId ?? null,
-				storageId: input.callerContext.storageContext?.storageId ?? null,
-			},
 		})
 		const hosts = new Set<string>()
 		for (const binding of bindings) {

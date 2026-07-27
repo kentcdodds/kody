@@ -4,8 +4,13 @@ export const routes = route({
 	home: '/',
 	connectOauth: '/connect/oauth',
 	accountIntegrations: '/account/integrations',
+	// More specific than `:integrationName` so a connection named `apps` still
+	// resolves at `/account/integrations/apps` while OAuth apps live under
+	// `/account/integrations/apps/:appSlug`.
+	accountOauthAppDetail: '/account/integrations/apps/:appSlug',
 	accountIntegrationDetail: '/account/integrations/:integrationName',
 	accountIntegrationsApi: '/account/integrations.json',
+	accountIntegrationsApiPost: post('/account/integrations.json'),
 	accountMcpServers: '/account/mcp-servers',
 	accountMcpServerNew: '/account/mcp-servers/new',
 	accountMcpServerDetail: '/account/mcp-servers/:serverId',

@@ -3,16 +3,14 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { saveValue } from '#mcp/values/service.ts'
 import {
-	assertOpenApiBindingWithinSizeLimit,
-	buildOpenApiBindingValueName,
 	normalizeOpenApiBinding,
 	openApiBindingSaveInputSchema,
 	resolveOpenApiSelection,
 	toOpenApiBindingSummary,
 	type OpenApiBinding,
 } from '#worker/openapi/binding-shared.ts'
+import { saveOpenApiBinding } from '#worker/openapi/binding-service.ts'
 import { fetchOpenApiSpecText } from '#worker/openapi/fetch-spec.ts'
 import { parseOpenApiSpec } from '#worker/openapi/parse-spec.ts'
 
@@ -36,7 +34,7 @@ export const openapiBindingSaveCapability = defineDomainCapability(
 	{
 		name: 'openapi_binding_save',
 		description:
-			'Create or replace a curated OpenAPI provider binding for the signed-in user. Fetches the https spec, resolves the selection to a concrete operation snapshot (max 100), and stores non-secret config under _openapi:<name>. Credentials stay in secrets; saving a binding never approves hosts (host approval remains in the account security UI / the integration requiredHosts). Specs are untrusted third-party content.',
+			'Create or replace a curated OpenAPI provider binding for the signed-in user. Fetches the https spec, resolves the selection to a concrete operation snapshot (max 100), and stores non-secret config in D1. Credentials stay in secrets; saving a binding never approves hosts (host approval remains in the account security UI / the integration requiredHosts). Specs are untrusted third-party content.',
 		keywords: [
 			'openapi',
 			'binding',
@@ -74,19 +72,10 @@ export const openapiBindingSaveCapability = defineDomainCapability(
 				operations: resolved.operations,
 				updatedAt: new Date().toISOString(),
 			} satisfies OpenApiBinding)
-			const serialized = assertOpenApiBindingWithinSizeLimit(binding)
-			await saveValue({
+			await saveOpenApiBinding({
 				env: ctx.env,
 				userId: user.userId,
-				userEmail: user.email,
-				name: buildOpenApiBindingValueName(binding.name),
-				value: serialized,
-				scope: 'user',
-				description: `OpenAPI provider binding for ${binding.name}`,
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-				},
+				binding,
 			})
 			return {
 				binding: toOpenApiBindingSummary(binding),

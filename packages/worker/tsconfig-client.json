@@ -38,8 +38,7 @@
 		"./src/app/safe-redirect.ts",
 		"./src/feature-flags/registry.ts",
 		"./src/feature-flags/types.ts",
-		"./src/og/pages.ts",
-		"./src/mcp/values/value-name-guards.ts"
+		"./src/og/pages.ts"
 	],
 	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]
 }

@@ -49,11 +49,6 @@ export const openapiBindingListCapability = defineDomainCapability(
 			const bindings = await listOpenApiBindings({
 				env: ctx.env,
 				userId: user.userId,
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-					storageId: ctx.callerContext.storageContext?.storageId ?? null,
-				},
 			})
 			return {
 				bindings: bindings.map(toOpenApiBindingSummary),

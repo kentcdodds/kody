@@ -4,17 +4,17 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { saveValue } from '#mcp/values/service.ts'
 import {
-	assertOpenApiBindingWithinSizeLimit,
-	buildOpenApiBindingValueName,
 	normalizeOpenApiBinding,
 	resolveOpenApiSelection,
 	toOpenApiBindingSummary,
 	type OpenApiBinding,
 	type OpenApiBindingOperation,
 } from '#worker/openapi/binding-shared.ts'
-import { getOpenApiBinding } from '#worker/openapi/binding-service.ts'
+import {
+	getOpenApiBinding,
+	saveOpenApiBinding,
+} from '#worker/openapi/binding-service.ts'
 import { fetchOpenApiSpecText } from '#worker/openapi/fetch-spec.ts'
 import { parseOpenApiSpec } from '#worker/openapi/parse-spec.ts'
 
@@ -68,11 +68,6 @@ export const openapiBindingRefreshCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: user.userId,
 				name: args.name,
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-					storageId: ctx.callerContext.storageContext?.storageId ?? null,
-				},
 			})
 			if (!existing) {
 				throw new McpCallerError(
@@ -95,19 +90,10 @@ export const openapiBindingRefreshCapability = defineDomainCapability(
 				operations: resolved.operations,
 				updatedAt: new Date().toISOString(),
 			} satisfies OpenApiBinding)
-			const serialized = assertOpenApiBindingWithinSizeLimit(next)
-			await saveValue({
+			await saveOpenApiBinding({
 				env: ctx.env,
 				userId: user.userId,
-				userEmail: user.email,
-				name: buildOpenApiBindingValueName(next.name),
-				value: serialized,
-				scope: 'user',
-				description: `OpenAPI provider binding for ${next.name}`,
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-				},
+				binding: next,
 			})
 			const diff = diffOperationSnapshots(existing.operations, next.operations)
 			return {
