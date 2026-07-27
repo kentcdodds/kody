@@ -45,6 +45,7 @@ import {
 	type AccountValueListItem,
 	type AccountValuesLoaderData,
 } from '#app/loader-data.ts'
+import { isPlatformReservedValueName } from '#mcp/values/value-name-guards.ts'
 
 type EditorState = {
 	name: string
@@ -88,7 +89,7 @@ function filterValues(values: Array<AccountValueListItem>, search: string) {
 }
 
 function isReservedAccountValueName(name: string) {
-	return name.startsWith('_integration:') || name.startsWith('_openapi:')
+	return isPlatformReservedValueName(name)
 }
 
 const reservedAccountValueWriteError =

@@ -3,7 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { assertValueNameAllowed } from '#mcp/values/value-name-guards.ts'
+import { assertAgentWritableValueName } from '#mcp/values/value-name-guards.ts'
 import { saveValue } from '#mcp/values/service.ts'
 import { valueScopeValues } from '#mcp/values/types.ts'
 import { valueMetadataSchema } from './shared.ts'
@@ -39,7 +39,7 @@ export const valueSetCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const name = args.name.trim()
-			assertValueNameAllowed(name)
+			assertAgentWritableValueName(name)
 			const value = await saveValue({
 				env: ctx.env,
 				userId: user.userId,

@@ -550,3 +550,34 @@ test('listValues ignores empty buckets and returns no values when none exist', a
 		}),
 	).toEqual([])
 })
+
+test('saveValue permits platform-reserved openapi prefix for internal callers', async () => {
+	const testDb = createValueTestDb()
+	const env = { APP_DB: testDb.db }
+
+	const saved = await saveValue({
+		env,
+		userId: 'user-platform',
+		scope: 'user',
+		name: '_openapi:widgets',
+		value: '{"provider":"widgets"}',
+		description: 'Widgets OpenAPI binding',
+	})
+
+	expect(saved).toMatchObject({
+		name: '_openapi:widgets',
+		value: '{"provider":"widgets"}',
+		scope: 'user',
+	})
+	expect(
+		await getValue({
+			env,
+			userId: 'user-platform',
+			name: '_openapi:widgets',
+			scope: 'user',
+		}),
+	).toMatchObject({
+		name: '_openapi:widgets',
+		value: '{"provider":"widgets"}',
+	})
+})

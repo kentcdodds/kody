@@ -1,5 +1,6 @@
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getValue, listValues } from '#mcp/values/service.ts'
+import { isPlatformReservedValueName } from '#mcp/values/value-name-guards.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -8,7 +9,6 @@ type AuthenticatedUser = NonNullable<
 
 const accountValuesBasePath = '/account/values'
 const valuePreviewMaxLength = 80
-const reservedValuePrefixes = ['_integration:', '_openapi:'] as const
 
 export type AccountValueListItem = {
 	id: string
@@ -38,7 +38,7 @@ export type AccountValuesLoaderData = {
 }
 
 export function isReservedAccountValueName(name: string) {
-	return reservedValuePrefixes.some((prefix) => name.startsWith(prefix))
+	return isPlatformReservedValueName(name)
 }
 
 export function truncateValuePreview(

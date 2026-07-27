@@ -216,7 +216,7 @@ test('values API rejects reserved names, missing deletes, invalid actions, and u
 	mockModule.saveValue.mockClear()
 	mockModule.deleteValue.mockClear()
 
-	const reservedSave = await handler.handler({
+	const reservedIntegrationSave = await handler.handler({
 		request: new Request('https://example.com/account/values.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -228,8 +228,27 @@ test('values API rejects reserved names, missing deletes, invalid actions, and u
 			}),
 		}),
 	})
-	expect(reservedSave.status).toBe(400)
-	await expect(reservedSave.json()).resolves.toMatchObject({
+	expect(reservedIntegrationSave.status).toBe(400)
+	await expect(reservedIntegrationSave.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringContaining('reserved'),
+	})
+	expect(mockModule.saveValue).not.toHaveBeenCalled()
+
+	const reservedOpenApiSave = await handler.handler({
+		request: new Request('https://example.com/account/values.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'save',
+				name: '_openapi:widgets',
+				value: '{"ops":[]}',
+				description: 'should not save',
+			}),
+		}),
+	})
+	expect(reservedOpenApiSave.status).toBe(400)
+	await expect(reservedOpenApiSave.json()).resolves.toMatchObject({
 		ok: false,
 		error: expect.stringContaining('reserved'),
 	})
