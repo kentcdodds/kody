@@ -94,4 +94,22 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 	await expect(
 		resolvePackageOwnerContext(env.APP_DB, actorUser, 'missing-scope-xyz'),
 	).rejects.toThrow(/not a platform account scope/)
+
+	// Email on the caller context can drift (for example mid-request email
+	// change) while stable_user_id stays authoritative — package scope must
+	// still resolve from identity, not email.
+	const staleEmail = `stale-${crypto.randomUUID()}@example.com`
+	expect(
+		await resolvePackageOwnerContext(env.APP_DB, {
+			userId: person.stableUserId,
+			email: staleEmail,
+			displayName: person.username,
+		}),
+	).toEqual({
+		ownerUserId: person.stableUserId,
+		ownerScope: person.username,
+		ownerEmail: staleEmail,
+		actorUserId: person.stableUserId,
+		delegated: false,
+	})
 })

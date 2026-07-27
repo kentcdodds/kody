@@ -16,18 +16,34 @@ function normalizePackageScopeUsername(value: unknown) {
 	return username
 }
 
+/**
+ * Resolve the caller's personal package scope (username without "@").
+ *
+ * Identity is the MCP stable user id (`users.stable_user_id`), matching
+ * `buildMcpUserContextFromGrantProps`. Looking up by email is wrong: a
+ * concurrent email change (or any email/context drift) leaves the grant's
+ * stable id intact but makes an email query miss the row.
+ *
+ * When auth already attached a validated username to the caller context, use
+ * it — that snapshot is refreshed from D1 on every MCP/request auth path.
+ */
 export async function getMcpUserPackageScope(
 	db: D1Database,
 	user: McpUserContext,
 ) {
+	const contextUsername = user.username?.trim()
+	if (contextUsername) {
+		return normalizePackageScopeUsername(contextUsername)
+	}
+
 	const row = await db
 		.prepare(
 			`SELECT username
 			FROM users
-			WHERE lower(email) = lower(?)
+			WHERE stable_user_id = ?
 			LIMIT 1`,
 		)
-		.bind(user.email)
+		.bind(user.userId)
 		.first<UsernameRow>()
 	if (!row) {
 		throw new Error(
