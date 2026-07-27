@@ -14,6 +14,7 @@ import { type routes } from '#app/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runJobNowViaManager } from '#worker/jobs/manager-client.ts'
+import { updateJobRetentionPreferencesForUser } from '#worker/jobs/job-retention-cleanup.ts'
 import { deleteJob, updateJob } from '#worker/jobs/service.ts'
 import { type JobSchedule, type JobUpdateInput } from '#worker/jobs/types.ts'
 
@@ -101,6 +102,17 @@ export function createAccountJobsApiHandler(env: Env) {
 				}
 				if (action === 'set_kill_switch') {
 					return await handleSetKillSwitchAction({ env, user, body, request })
+				}
+				if (action === 'set_preserved') {
+					return await handleSetPreservedAction({ env, user, body, request })
+				}
+				if (action === 'update_retention') {
+					return await handleUpdateRetentionAction({
+						env,
+						user,
+						body,
+						request,
+					})
 				}
 				if (action === 'run_now') {
 					return await handleRunNowAction({ env, user, body, request })
@@ -232,6 +244,69 @@ async function handleSetKillSwitchAction(input: {
 	)
 }
 
+async function handleSetPreservedAction(input: {
+	env: Env
+	user: AuthenticatedUser
+	body: object
+	request: Request
+}) {
+	const id = requireJobId(input.body)
+	assertAdHocJob(id, 'change preserve state')
+	const preserved = readBoolean(input.body, 'preserved')
+	if (preserved === null) {
+		throw new Error('preserved must be a boolean.')
+	}
+	await updateJob({
+		env: input.env,
+		callerContext: buildCallerContext(input),
+		body: { id, preserved },
+	})
+	return jsonResponse(
+		await reloadJobsPayload({
+			...input,
+			selectedJobId: id,
+		}),
+	)
+}
+
+async function handleUpdateRetentionAction(input: {
+	env: Env
+	user: AuthenticatedUser
+	body: object
+	request: Request
+}) {
+	const successOnceDays = readNumber(input.body, 'successOnceDays')
+	const failedOrNeverRanOnceDays = readNumber(
+		input.body,
+		'failedOrNeverRanOnceDays',
+	)
+	const disabledRecurringDays = readNumber(input.body, 'disabledRecurringDays')
+	if (
+		successOnceDays === null ||
+		failedOrNeverRanOnceDays === null ||
+		disabledRecurringDays === null
+	) {
+		throw new Error(
+			'Retention days must be numbers between 1 and 365. Forever keep is only available via Preserve on a job.',
+		)
+	}
+	await updateJobRetentionPreferencesForUser({
+		db: input.env.APP_DB,
+		userId: input.user.mcpUser.userId,
+		successOnceDays,
+		failedOrNeverRanOnceDays,
+		disabledRecurringDays,
+	})
+	const selectedJobId =
+		readTrimmedStringOrEmpty(input.body, 'selectedJobId') || null
+	return jsonResponse(
+		await reloadJobsPayload({
+			...input,
+			selectedJobId,
+		}),
+	)
+}
+
 async function handleRunNowAction(input: {
 	env: Env
 	user: AuthenticatedUser
@@ -327,6 +402,11 @@ async function handleUpdateAction(input: {
 function readBoolean(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'boolean' ? value : null
+}
+
+function readNumber(body: object, key: string) {
+	const value = (body as Record<string, unknown>)[key]
+	return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 function readOptionalTrimmedString(body: object, key: string) {

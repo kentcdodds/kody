@@ -810,6 +810,7 @@ export type AccountJobListItem = {
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
+	preserved: boolean
 	dueNow: boolean
 	lastRunStatus: 'success' | 'error' | null
 	nextRunAt: string
@@ -857,6 +858,16 @@ export type AccountJobsLoaderData = {
 	selectedJob: AccountJobDetail | null
 	selectedJobId: string | null
 	alarm?: AccountJobsAlarm
+	retention: {
+		successOnceDays: number
+		failedOrNeverRanOnceDays: number
+		disabledRecurringDays: number
+		defaults: {
+			successOnce: number
+			failedOrNeverRanOnce: number
+			disabledRecurring: number
+		}
+	}
 }
 
 export type AccountActivityStatusFilter = 'error' | 'all' | 'running'

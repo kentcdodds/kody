@@ -47,6 +47,11 @@ const jobManagerMockModule = vi.hoisted(() => ({
 	getJobManagerDebugState: vi.fn(),
 }))
 
+const storageRunnerMockModule = vi.hoisted(() => ({
+	clearStorage: vi.fn(async () => ({ ok: true as const })),
+	getEstimatedBytes: vi.fn(async () => ({ estimatedBytes: 0 })),
+}))
+
 vi.mock('#worker/repo/source-service.ts', () => ({
 	ensureEntitySource: (...args: Array<unknown>) =>
 		repoMockModule.ensureEntitySource(...args),
@@ -83,6 +88,47 @@ vi.mock('./manager-client.ts', () => ({
 		jobManagerMockModule.getJobManagerDebugState(...args),
 }))
 
+vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
+	const actual = (await importOriginal()) as Record<string, unknown>
+	return {
+		...actual,
+		storageRunnerRpc: () => ({
+			clearStorage: (...args: Array<unknown>) =>
+				storageRunnerMockModule.clearStorage(...args),
+			getEstimatedBytes: (...args: Array<unknown>) =>
+				storageRunnerMockModule.getEstimatedBytes(...args),
+			getValue: async () => ({ ok: true, key: '', value: null }),
+			setValue: async ({ key }: { key: string }) => ({ ok: true, key }),
+			deleteValue: async ({ key }: { key: string }) => ({
+				ok: true,
+				key,
+				deleted: true,
+			}),
+			listValues: async () => ({
+				entries: [],
+				estimatedBytes: 0,
+				truncated: false,
+				nextStartAfter: null,
+				pageSize: 50,
+			}),
+			exportStorage: async () => ({
+				entries: [],
+				estimatedBytes: 0,
+				truncated: false,
+				nextStartAfter: null,
+				pageSize: 50,
+			}),
+			importStorage: async () => ({ ok: true, written: 0, cleared: false }),
+			sqlQuery: async () => ({
+				ok: true,
+				columns: [],
+				rows: [],
+				rowsAffected: 0,
+			}),
+		}),
+	}
+})
+
 // eslint-disable-next-line epic-web/prefer-dispose-in-tests -- this legacy suite restores global spies across many integration-style tests.
 afterEach(() => {
 	vi.restoreAllMocks()
@@ -107,6 +153,12 @@ afterEach(() => {
 		nextRunnableJobId: null,
 		nextRunnableRunAt: null,
 		alarmInSync: null,
+	})
+	storageRunnerMockModule.clearStorage.mockClear()
+	storageRunnerMockModule.clearStorage.mockResolvedValue({ ok: true })
+	storageRunnerMockModule.getEstimatedBytes.mockClear()
+	storageRunnerMockModule.getEstimatedBytes.mockResolvedValue({
+		estimatedBytes: 0,
 	})
 })
 
@@ -298,6 +350,7 @@ function createDatabase(
 		['entity_sources', []],
 		['published_bundle_artifacts', []],
 		['archived_job_artifacts', []],
+		['user_storage_buckets', []],
 		['jobs', (initialRows.jobs ?? []).map((row) => ({ ...row }))],
 		['users', (initialRows.users ?? []).map((row) => ({ ...row }))],
 	])
@@ -727,17 +780,18 @@ function createDatabase(
 									timezone: params[9],
 									enabled: params[10],
 									kill_switch_enabled: params[11],
-									caller_context_json: params[12],
-									created_at: params[13],
-									updated_at: params[14],
-									last_run_at: params[15],
-									last_run_status: params[16],
-									last_run_error: params[17],
-									last_duration_ms: params[18],
-									next_run_at: params[19],
-									run_count: params[20],
-									success_count: params[21],
-									error_count: params[22],
+									preserved: params[12],
+									caller_context_json: params[13],
+									created_at: params[14],
+									updated_at: params[15],
+									last_run_at: params[16],
+									last_run_status: params[17],
+									last_run_error: params[18],
+									last_duration_ms: params[19],
+									next_run_at: params[20],
+									run_count: params[21],
+									success_count: params[22],
+									error_count: params[23],
 								}
 								upsert(
 									'jobs',
@@ -752,12 +806,12 @@ function createDatabase(
 								const existingJob = selectOne(
 									'jobs',
 									(existing) =>
-										existing['id'] === params[20] &&
-										existing['user_id'] === params[21],
+										existing['id'] === params[21] &&
+										existing['user_id'] === params[22],
 								)
 								const row = {
-									id: params[20],
-									user_id: params[21],
+									id: params[21],
+									user_id: params[22],
 									name: params[0],
 									source_id: params[1],
 									published_commit: params[2],
@@ -768,17 +822,18 @@ function createDatabase(
 									timezone: params[7],
 									enabled: params[8],
 									kill_switch_enabled: params[9],
-									caller_context_json: params[10],
-									updated_at: params[11],
-									last_run_at: params[12],
-									last_run_status: params[13],
-									last_run_error: params[14],
-									last_duration_ms: params[15],
-									next_run_at: params[16],
-									run_count: params[17],
-									success_count: params[18],
-									error_count: params[19],
-									created_at: existingJob?.['created_at'] ?? params[11],
+									preserved: params[10],
+									caller_context_json: params[11],
+									updated_at: params[12],
+									last_run_at: params[13],
+									last_run_status: params[14],
+									last_run_error: params[15],
+									last_duration_ms: params[16],
+									next_run_at: params[17],
+									run_count: params[18],
+									success_count: params[19],
+									error_count: params[20],
+									created_at: existingJob?.['created_at'] ?? params[12],
 								}
 								upsert(
 									'jobs',
@@ -971,6 +1026,19 @@ function createDatabase(
 											'jobs',
 											(row) =>
 												row['id'] === params[0] && row['user_id'] === params[1],
+										),
+										last_row_id: 0,
+									},
+								}
+							}
+							if (query.startsWith('DELETE FROM user_storage_buckets')) {
+								return {
+									meta: {
+										changes: deleteWhere(
+											'user_storage_buckets',
+											(row) =>
+												row['user_id'] === params[0] &&
+												row['storage_id'] === params[1],
 										),
 										last_row_id: 0,
 									},
@@ -2551,6 +2619,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -2768,6 +2837,7 @@ test('executeJobOnce rebuilds stale published job bundles after the source commi
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -2856,6 +2926,7 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -2989,6 +3060,7 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3146,6 +3218,7 @@ test('executeJobOnce preserves bypass audit logs when execution fails after a ty
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3304,6 +3377,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3470,6 +3544,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3589,6 +3664,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3787,6 +3863,7 @@ test('executeJobOnce returns an error when kody secret policy would reject execu
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3885,7 +3962,7 @@ test('executeJobOnce returns an error when kody secret policy would reject execu
 	}
 })
 
-test('runJobNow deletes vectors for once jobs', async () => {
+test('runJobNow retains once jobs for retention cleanup instead of deleting them', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const bundleKv = createBundleArtifactsKv()
@@ -3903,7 +3980,7 @@ test('runJobNow deletes vectors for once jobs', async () => {
 		env,
 		callerContext,
 		body: {
-			name: 'Run once and delete vector',
+			name: 'Run once and retain',
 			code: 'export default async () => ({ ok: true })',
 			schedule: {
 				type: 'once',
@@ -3944,7 +4021,7 @@ test('runJobNow deletes vectors for once jobs', async () => {
 					id: 'run-once',
 					description: 'Runs from repo',
 					jobs: {
-						'Run once and delete vector': {
+						'Run once and retain': {
 							entry: './src/job.ts',
 							schedule: {
 								type: 'once',
@@ -3968,7 +4045,7 @@ test('runJobNow deletes vectors for once jobs', async () => {
 								id: 'run-once',
 								description: 'Runs from repo',
 								jobs: {
-									'Run once and delete vector': {
+									'Run once and retain': {
 										entry: './src/job.ts',
 										schedule: {
 											type: 'once',
@@ -4021,11 +4098,20 @@ test('runJobNow deletes vectors for once jobs', async () => {
 			result: { ok: true },
 			logs: [],
 		})
-		expect(deleteByIds).toHaveBeenCalledWith([`job_${jobView.id}`])
+		expect(result.deletedAfterRun).toBe(false)
+		expect(deleteByIds).not.toHaveBeenCalled()
 		const row = await (
 			await import('./repo.ts')
 		).getJobRowById(db, callerContext.user.userId, jobView.id)
-		expect(row).toBeNull()
+		expect(row?.record).toEqual(
+			expect.objectContaining({
+				id: jobView.id,
+				enabled: false,
+				lastRunStatus: 'success',
+				runCount: 1,
+				successCount: 1,
+			}),
+		)
 	} finally {
 		repoSessionRpcSpy.mockRestore()
 		executeSpy.mockRestore()

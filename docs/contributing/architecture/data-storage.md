@@ -242,9 +242,12 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   are only representable when the scope owner is a platform account.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
-  pointers, and run observability state (`last_run_*`, counters). Execution
-  history lives in the per-user `RunLog` Durable Object (see
-  [Run records](./run-records.md)).
+  pointers, run observability state (`last_run_*`, counters), and `preserved`
+  (skip platform auto-cleanup). Account retention windows live on `users`
+  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed ad-hoc
+  jobs are cleaned by the hourly `job_retention` sweeper; package-owned and
+  preserved jobs are not. Execution history lives in the per-user `RunLog`
+  Durable Object (see [Run records](./run-records.md)).
 - `package_service_states` (`0095-package-service-states.sql`): authoritative
   per-service liveness projection (`running` / `idle` / `stopped` / `error`) for
   entitlement concurrency. Upserted and heartbeaten by the package-service
@@ -599,10 +602,10 @@ Artifacts tokens.
 
 Reconcile runs as one lane of the scheduled handler in
 `packages/worker/src/index.ts`, alongside repo-session cleanup, system-email
-retention, general retention, and hourly usage-rollup aggregation. Lane failures
-are isolated: each rejected lane is logged with a `scheduled_lane_failed` tag
-and reported to Sentry, and the handler never throws, so one broken lane cannot
-abort or mask the others.
+retention, general retention, job retention, and hourly usage-rollup
+aggregation. Lane failures are isolated: each rejected lane is logged with a
+`scheduled_lane_failed` tag and reported to Sentry, and the handler never
+throws, so one broken lane cannot abort or mask the others.
 
 Production note:
 
@@ -884,6 +887,9 @@ prunes order by (`created_at` / `day` / `month` / `started_at` across users);
 per-user composite indexes cannot serve those ordered scans.
 
 Documented exemptions: `archived_job_artifacts` is exempt because job artifact
-cleanup is driven by each row's `retain_until` value, and `mcp_memories` is
-exempt because memories are durable user-curated content removed by explicit
-user action or account deletion rather than by time-based retention.
+cleanup is driven by each row's `retain_until` value, `jobs` are cleaned by the
+hourly `job_retention` sweeper (account/platform retention windows; package and
+preserved jobs stay until explicit delete, package sync, or account deletion),
+and `mcp_memories` is exempt because memories are durable user-curated content
+removed by explicit user action or account deletion rather than by time-based
+retention.

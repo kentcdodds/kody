@@ -69,6 +69,7 @@ import { refreshStaleStripePlans } from '#worker/billing/subscription-sync.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
+import { pruneJobRetention } from '#worker/jobs/job-retention-cleanup.ts'
 import {
 	checkAuthDenialBurstAndNotify,
 	shouldRunAuthDenialAlertCron,
@@ -632,6 +633,10 @@ const workerHandler = {
 			lanes.push({
 				name: 'retention',
 				run: () => pruneRetention({ env, now: scheduledAt }),
+			})
+			lanes.push({
+				name: 'job_retention',
+				run: () => pruneJobRetention({ env, now: scheduledAt }),
 			})
 		}
 		if (shouldRunUsageAggregationCron(scheduledAt)) {

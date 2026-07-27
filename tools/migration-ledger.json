@@ -423,6 +423,10 @@
 		{
 			"filename": "0099-drop-run-history-legacy.sql",
 			"sha256": "b3c25eb9855ddc2d15ec7c5d848e71e3fc25ddc8f4d247845a9c85216027bb26"
+		},
+		{
+			"filename": "0100-job-retention.sql",
+			"sha256": "17f1553221e3a112017889ccd77ca30f475554c48e052172eeb3cc48a0fb7daf"
 		}
 	]
 }

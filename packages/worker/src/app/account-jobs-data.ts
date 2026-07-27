@@ -4,6 +4,11 @@ import {
 	buildJobManagerDebugOutput,
 } from '#mcp/capabilities/jobs/shared.ts'
 import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
+import {
+	defaultJobRetentionDays,
+	type JobRetentionPreferences,
+} from '#worker/jobs/job-retention.ts'
+import { readJobRetentionPreferencesForUser } from '#worker/jobs/job-retention-cleanup.ts'
 import { inspectJobsForUser } from '#worker/jobs/service.ts'
 import { type JobSchedule, type JobView } from '#worker/jobs/types.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
@@ -23,6 +28,7 @@ export type AccountJobListItem = {
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
+	preserved: boolean
 	dueNow: boolean
 	lastRunStatus: 'success' | 'error' | null
 	nextRunAt: string
@@ -66,12 +72,17 @@ export type AccountJobsAlarm = {
 	alarmInSync: boolean | null
 }
 
+export type AccountJobRetentionPreferences = JobRetentionPreferences & {
+	defaults: typeof defaultJobRetentionDays
+}
+
 export type AccountJobsLoaderData = {
 	ok: true
 	jobs: Array<AccountJobListItem>
 	selectedJob: AccountJobDetail | null
 	selectedJobId: string | null
 	alarm?: AccountJobsAlarm
+	retention: AccountJobRetentionPreferences
 }
 
 const accountJobsBasePath = '/account/jobs'
@@ -121,6 +132,7 @@ function toListItem(
 		timezone: job.timezone,
 		enabled: job.enabled,
 		killSwitchEnabled: job.killSwitchEnabled,
+		preserved: job.preserved,
 		dueNow: inspection.due_now,
 		lastRunStatus: job.lastRunStatus ?? null,
 		nextRunAt: job.nextRunAt,
@@ -209,6 +221,10 @@ export async function loadAccountJobsData(input: {
 	const selectedRecord = selectedJobId
 		? (inspection.jobs.find((job) => job.id === selectedJobId) ?? null)
 		: null
+	const retentionPreferences = await readJobRetentionPreferencesForUser({
+		db: input.env.APP_DB,
+		userId,
+	})
 
 	return {
 		ok: true,
@@ -222,5 +238,9 @@ export async function loadAccountJobsData(input: {
 			: null,
 		selectedJobId,
 		alarm: toAlarm(inspection.alarm),
+		retention: {
+			...retentionPreferences,
+			defaults: defaultJobRetentionDays,
+		},
 	}
 }

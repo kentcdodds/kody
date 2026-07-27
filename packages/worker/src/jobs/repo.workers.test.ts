@@ -17,6 +17,7 @@ async function ensureJobsSchema() {
 			timezone TEXT NOT NULL,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 			kill_switch_enabled INTEGER NOT NULL DEFAULT 0 CHECK (kill_switch_enabled IN (0, 1)),
+			preserved INTEGER NOT NULL DEFAULT 0 CHECK (preserved IN (0, 1)),
 			caller_context_json TEXT NOT NULL,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
@@ -97,6 +98,7 @@ test('listDueJobRows caps a due-job backlog at maxDueJobsPerAlarm, oldest first'
 		userId,
 		nextRunAt: '2026-04-20T00:00:00.000Z',
 		killSwitchEnabled: true,
+		preserved: false,
 	})
 	await insertJob({
 		id: 'future',

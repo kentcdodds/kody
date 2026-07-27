@@ -54,6 +54,7 @@ function buildJobRow(id: string, userId = 'user-1') {
 		timezone: 'UTC',
 		enabled: true,
 		killSwitchEnabled: false,
+		preserved: false,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
 		nextRunAt: '2026-01-01T00:00:00.000Z',

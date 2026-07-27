@@ -70,6 +70,7 @@ primitives:
     code:
       - packages/worker/src/index.ts
       - packages/worker/src/jobs/reconcile-artifacts-pushes.ts
+      - packages/worker/src/jobs/job-retention-cleanup.ts
       - packages/worker/src/repo/repo-session-cleanup.ts
       - packages/worker/src/app/retention.ts
       - packages/worker/src/app/auth-denial-alerts.ts

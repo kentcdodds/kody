@@ -50,17 +50,8 @@ export async function processDueJobs(input: {
 		}
 
 		if (job.schedule.type === 'once') {
-			if (outcome.execution.ok) {
-				deleteJobIds.push(job.id)
-				jobOutcomes.push({
-					jobId: job.id,
-					scheduleType: job.schedule.type,
-					outcome: 'success',
-					nextRunAt: null,
-					deleted: true,
-				})
-				continue
-			}
+			// Keep completed once jobs for platform/account retention. The
+			// retention sweeper deletes aged rows later unless preserved.
 			const updated = applyExecutionOutcome(job, outcome, {
 				updatedAt: now.toISOString(),
 				enabled: false,
@@ -69,10 +60,10 @@ export async function processDueJobs(input: {
 			jobOutcomes.push({
 				jobId: job.id,
 				scheduleType: job.schedule.type,
-				outcome: 'failure',
+				outcome: outcome.execution.ok ? 'success' : 'failure',
 				nextRunAt: updated.nextRunAt,
 				deleted: false,
-				error: executionError,
+				...(executionError ? { error: executionError } : {}),
 			})
 			continue
 		}

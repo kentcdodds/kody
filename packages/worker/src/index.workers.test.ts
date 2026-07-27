@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 	cleanupRepoSessionBranches: vi.fn(async () => ({})),
 	pruneSystemEmailRetention: vi.fn(async () => ({})),
 	pruneRetention: vi.fn(async () => ({})),
+	pruneJobRetention: vi.fn(async () => ({})),
 	shouldRunRetentionCron: vi.fn(() => false),
 	checkAuthDenialBurstAndNotify: vi.fn(async () => ({
 		status: 'below_threshold',
@@ -59,6 +60,10 @@ vi.mock('#worker/email/reconcile-inbound-deliveries.ts', () => ({
 vi.mock('#app/retention.ts', () => ({
 	pruneRetention: mocks.pruneRetention,
 	shouldRunRetentionCron: mocks.shouldRunRetentionCron,
+}))
+
+vi.mock('#worker/jobs/job-retention-cleanup.ts', () => ({
+	pruneJobRetention: mocks.pruneJobRetention,
 }))
 
 vi.mock('#app/auth-denial-alerts.ts', () => ({

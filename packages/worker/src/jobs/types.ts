@@ -37,6 +37,11 @@ export type JobRecord = {
 	timezone: string
 	enabled: boolean
 	killSwitchEnabled: boolean
+	/**
+	 * When true, platform job auto-cleanup never deletes this job. Preserved
+	 * jobs still count toward `scheduled_jobs` and `storage_bytes`.
+	 */
+	preserved: boolean
 	createdAt: string
 	updatedAt: string
 	lastRunAt?: string
@@ -111,6 +116,7 @@ export type JobCreateInput = {
 	timezone?: string | null
 	enabled?: boolean
 	killSwitchEnabled?: boolean
+	preserved?: boolean
 }
 
 export type JobUpdateInput = {
@@ -125,6 +131,7 @@ export type JobUpdateInput = {
 	timezone?: string | null
 	enabled?: boolean
 	killSwitchEnabled?: boolean
+	preserved?: boolean
 }
 
 export type JobUpsertInput = {
@@ -139,4 +146,5 @@ export type JobUpsertInput = {
 	timezone?: string | null
 	enabled?: boolean
 	killSwitchEnabled?: boolean
+	preserved?: boolean
 }
