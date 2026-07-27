@@ -2,11 +2,14 @@ import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
+import type * as IntegrationsService from '#worker/integrations/service.ts'
+import { type JoinedIntegration } from '#worker/integrations/types.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	getValue: vi.fn(),
+	getJoinedIntegration: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	collectIntegrationPackageSuggestions: vi.fn(),
 }))
@@ -26,6 +29,17 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 vi.mock('#mcp/values/service.ts', () => ({
 	getValue: (...args: Array<unknown>) => mockModule.getValue(...args),
 }))
+
+vi.mock('#worker/integrations/service.ts', async () => {
+	const actual = await vi.importActual<typeof IntegrationsService>(
+		'#worker/integrations/service.ts',
+	)
+	return {
+		...actual,
+		getJoinedIntegration: (...args: Array<unknown>) =>
+			mockModule.getJoinedIntegration(...args),
+	}
+})
 
 vi.mock('./integration-package-suggestions.ts', () => ({
 	collectIntegrationPackageSuggestions: (...args: Array<unknown>) =>
@@ -53,14 +67,57 @@ function emptySearchRows() {
 	return {
 		userValueRows: [],
 		userSecretRows: [],
+		userIntegrationRows: [],
 		packageRows: [],
 		registry: { capabilitySpecs: {} },
+		warnings: [],
+	}
+}
+
+function createJoinedIntegration(name: string): JoinedIntegration {
+	const now = '2026-01-01T00:00:00.000Z'
+	return {
+		app: {
+			userId: 'user-1',
+			slug: name,
+			provider: name,
+			label: null,
+			clientId: `${name}-client-id-value`,
+			clientSecretSecretName: `${name}-client-secret`,
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+			createdAt: now,
+			updatedAt: now,
+		},
+		connection: {
+			userId: 'user-1',
+			name,
+			appSlug: name,
+			accountLabel: null,
+			description: `${name} OAuth integration`,
+			scopes: ['repo'],
+			requiredHosts: ['api.github.com'],
+			accessTokenSecretName: `${name}-access-token`,
+			refreshTokenSecretName: null,
+			connectedAt: null,
+			tokenRefreshedAt: null,
+			createdAt: now,
+			updatedAt: now,
+		},
 	}
 }
 
 test('resolveEntityDetail reports unresolvable entity refs as caller errors', async () => {
 	mockModule.getValue.mockReset()
 	mockModule.getValue.mockResolvedValue(null)
+	mockModule.getJoinedIntegration.mockReset()
+	mockModule.getJoinedIntegration.mockResolvedValue(null)
 
 	const agent = createAgent()
 	const callerContext = agent.getCallerContext()
@@ -99,4 +156,72 @@ test('resolveEntityDetail reports unresolvable entity refs as caller errors', as
 		await expect(detail).rejects.toThrow(McpCallerError)
 		await expect(detail).rejects.toThrow(message)
 	}
+})
+
+test('resolveEntityDetail loads {name}:integration via getJoinedIntegration', async () => {
+	const joined = createJoinedIntegration('github')
+	mockModule.getJoinedIntegration.mockReset()
+	mockModule.getJoinedIntegration.mockResolvedValue(joined)
+	mockModule.collectIntegrationPackageSuggestions.mockReset()
+	mockModule.collectIntegrationPackageSuggestions.mockResolvedValue([])
+
+	const agent = createAgent()
+	const detail = await resolveEntityDetail({
+		agent,
+		callerContext: agent.getCallerContext(),
+		userId: 'user-1',
+		username: 'user',
+		entity: 'github:integration',
+		searchRows: emptySearchRows() as never,
+	})
+
+	expect(mockModule.getJoinedIntegration).toHaveBeenCalledWith({
+		env: { APP_DB: {} },
+		userId: 'user-1',
+		name: 'github',
+	})
+	expect(detail).toMatchObject({
+		type: 'integration',
+		id: 'github',
+		title: 'github',
+		description: 'github OAuth integration',
+		config: {
+			name: 'github',
+			clientId: 'github-client-id-value',
+			clientSecretSecretName: 'github-client-secret',
+			accessTokenSecretName: 'github-access-token',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+		},
+	})
+	expect(detail).not.toHaveProperty('row')
+	expect(JSON.stringify(detail)).not.toContain('secret-value')
+})
+
+test('resolveEntityDetail keeps integrations isolated by userId', async () => {
+	mockModule.getJoinedIntegration.mockReset()
+	mockModule.getJoinedIntegration.mockImplementation(
+		async (input: { userId: string; name: string }) => {
+			if (input.userId !== 'user-1' || input.name !== 'github') return null
+			return createJoinedIntegration('github')
+		},
+	)
+	mockModule.collectIntegrationPackageSuggestions.mockResolvedValue([])
+
+	const agent = createAgent()
+	await expect(
+		resolveEntityDetail({
+			agent,
+			callerContext: agent.getCallerContext(),
+			userId: 'user-2',
+			username: 'other',
+			entity: 'github:integration',
+			searchRows: emptySearchRows() as never,
+		}),
+	).rejects.toThrow('Saved integration not found for this user.')
+
+	expect(mockModule.getJoinedIntegration).toHaveBeenCalledWith({
+		env: { APP_DB: {} },
+		userId: 'user-2',
+		name: 'github',
+	})
 })

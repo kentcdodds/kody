@@ -114,7 +114,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 				flow: 'confidential',
 				tokenUrl: 'https://github.com/login/oauth/access_token',
 				apiBaseUrl: 'https://api.github.com',
-				clientIdValueName: 'github_client_id',
+				clientId: 'github_client_id',
 				clientSecretSecretName: 'github_client_secret',
 				accessTokenSecretName: 'github_access_token',
 				refreshTokenSecretName: 'github_refresh_token',
@@ -144,7 +144,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 				tokenUrl: 'https://example.com/token',
 				apiBaseUrl: 'https://example.com/api',
 				requiredHosts: ['example.com'],
-				clientIdValueName: 'client-id',
+				clientId: 'client-id',
 				clientSecretSecretName: 'client-secret',
 				accessTokenSecretName: 'access-token',
 				refreshTokenSecretName: 'refresh-token',
@@ -231,22 +231,12 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		id: 'github',
 		title: 'github',
 		description: 'GitHub OAuth integration config',
-		row: {
-			name: '_integration:github',
-			scope: 'user',
-			value: '{}',
-			description: 'GitHub OAuth integration config',
-			appId: null,
-			createdAt: '2026-03-20T00:00:00.000Z',
-			updatedAt: '2026-03-20T00:00:00.000Z',
-			ttlMs: null,
-		},
 		config: {
 			name: 'github',
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			apiBaseUrl: 'https://api.github.com',
 			flow: 'confidential',
-			clientIdValueName: 'github_client_id',
+			clientId: 'github_client_id',
 			clientSecretSecretName: 'github_client_secret',
 			accessTokenSecretName: 'github_access_token',
 			refreshTokenSecretName: null,
@@ -275,6 +265,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	expect(integrationDetail.structured).toMatchObject({
 		type: 'integration',
 		entityRef: 'github:integration',
+		clientId: 'github_client_id',
 		relatedPackageSuggestions: [
 			expect.objectContaining({
 				source: 'user',
@@ -289,28 +280,20 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	})
 	expect(integrationDetail.markdown).toContain('github:package')
 	expect(integrationDetail.markdown).toContain('listing-1')
+	expect(integrationDetail.markdown).toContain('Client ID: `github_client_id`')
+	expect(integrationDetail.markdown).not.toContain('Client ID value name')
 
 	const leanIntegrationDetail = formatEntityDetailMarkdown({
 		type: 'integration',
 		id: 'github',
 		title: 'github',
 		description: 'GitHub OAuth integration config',
-		row: {
-			name: '_integration:github',
-			scope: 'user',
-			value: '{}',
-			description: 'GitHub OAuth integration config',
-			appId: null,
-			createdAt: '2026-03-20T00:00:00.000Z',
-			updatedAt: '2026-03-20T00:00:00.000Z',
-			ttlMs: null,
-		},
 		config: {
 			name: 'github',
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			apiBaseUrl: 'https://api.github.com',
 			flow: 'confidential',
-			clientIdValueName: 'github_client_id',
+			clientId: 'github_client_id',
 			clientSecretSecretName: 'github_client_secret',
 			accessTokenSecretName: 'github_access_token',
 			refreshTokenSecretName: null,
@@ -846,7 +829,7 @@ test('search markdown summarizes broad results safely and only suggests entity d
 				tokenUrl: 'https://github.com/login/oauth/access_token',
 				apiBaseUrl: 'https://api.github.com',
 				requiredHosts: ['api.github.com'],
-				clientIdValueName: 'github-client-id',
+				clientId: 'github-client-id',
 				clientSecretSecretName: 'github-client-secret',
 				accessTokenSecretName: 'github-access-token',
 				refreshTokenSecretName: 'github-refresh-token',

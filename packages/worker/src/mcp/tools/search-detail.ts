@@ -1,10 +1,5 @@
 import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import {
-	parseIntegrationConfig,
-	parseIntegrationJson,
-	parseIntegrationValueName,
-} from '#mcp/capabilities/integrations/integration-shared.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	buildValueEntityId,
@@ -12,7 +7,10 @@ import {
 	parseValueEntityId,
 } from '#mcp/tools/search-entities.ts'
 import { getValue } from '#mcp/values/service.ts'
-import { type ValueMetadata } from '#mcp/values/types.ts'
+import {
+	getJoinedIntegration,
+	toIntegrationConfig,
+} from '#worker/integrations/service.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -23,22 +21,6 @@ import { collectIntegrationPackageSuggestions } from './integration-package-sugg
 import { parseEntityRef } from './search-format.ts'
 import { collectRelatedCapabilityOperations } from './search-related-capabilities.ts'
 import { type SearchRowsAndRegistry } from './search-types.ts'
-
-function findIntegrationDetail(
-	rows: Array<ValueMetadata>,
-	integrationName: string,
-) {
-	for (const row of rows) {
-		if (parseIntegrationValueName(row.name) !== integrationName) continue
-		const config = parseIntegrationConfig(
-			parseIntegrationJson(row.value),
-			integrationName,
-		)
-		if (!config) continue
-		return { row, config }
-	}
-	return null
-}
 
 export async function resolveEntityDetail(input: {
 	agent: McpRegistrationAgent
@@ -144,29 +126,30 @@ export async function resolveEntityDetail(input: {
 	}
 
 	if (ref.type === 'integration') {
-		const integration = findIntegrationDetail(
-			input.searchRows.userValueRows,
-			ref.id,
-		)
-		if (!integration) {
+		const joined = await getJoinedIntegration({
+			env: input.agent.getEnv(),
+			userId: input.userId,
+			name: ref.id,
+		})
+		if (!joined) {
 			throw new McpCallerError('Saved integration not found for this user.')
 		}
+		const config = toIntegrationConfig(joined.app, joined.connection)
 		const relatedPackageSuggestions =
 			await collectIntegrationPackageSuggestions({
 				env: input.agent.getEnv(),
 				baseUrl: input.callerContext.baseUrl,
-				integration: integration.config,
+				integration: config,
 				packageRows: input.searchRows.packageRows,
 			})
 		return {
 			type: 'integration' as const,
-			id: integration.config.name,
-			title: integration.config.name,
+			id: config.name,
+			title: config.name,
 			description:
-				integration.row.description.trim() ||
-				`Saved OAuth integration configuration (${integration.config.flow} flow).`,
-			row: integration.row,
-			config: integration.config,
+				joined.connection.description.trim() ||
+				`Saved OAuth integration configuration (${config.flow} flow).`,
+			config,
 			...(relatedPackageSuggestions.length > 0
 				? { relatedPackageSuggestions }
 				: {}),

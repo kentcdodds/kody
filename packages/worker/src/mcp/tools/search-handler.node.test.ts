@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as IntegrationsService from '#worker/integrations/service.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -24,6 +25,8 @@ const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(async () => []),
 	listUserSecretsForSearch: vi.fn(async () => []),
 	listValues: vi.fn(async () => []),
+	listJoinedIntegrations: vi.fn(async () => []),
+	getJoinedIntegration: vi.fn(async () => null),
 	loadPackageSourceBySourceId: vi.fn(),
 	loadRelevantMemoriesForTool: vi.fn(async () => null),
 	acknowledgeToolMemories: vi.fn(async () => undefined),
@@ -71,6 +74,19 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 vi.mock('#mcp/values/service.ts', () => ({
 	listValues: (...args: Array<unknown>) => mockModule.listValues(...args),
 }))
+
+vi.mock('#worker/integrations/service.ts', async () => {
+	const actual = await vi.importActual<typeof IntegrationsService>(
+		'#worker/integrations/service.ts',
+	)
+	return {
+		...actual,
+		listJoinedIntegrations: (...args: Array<unknown>) =>
+			mockModule.listJoinedIntegrations(...args),
+		getJoinedIntegration: (...args: Array<unknown>) =>
+			mockModule.getJoinedIntegration(...args),
+	}
+})
 
 vi.mock('./memory-tool-context.ts', async () => {
 	const actual = await vi.importActual('./memory-tool-context.ts')
@@ -765,28 +781,47 @@ test('integration entity detail enriches related packages without bloating ranke
 		displayName: 'User',
 		username: 'user',
 	}
-	const githubIntegrationValue = {
-		name: '_integration:github',
-		scope: 'user' as const,
-		value: JSON.stringify({
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com',
-			flow: 'confidential',
-			clientIdValueName: 'github-client-id',
+	const now = '2026-01-01T00:00:00.000Z'
+	const githubJoinedIntegration = {
+		app: {
+			userId: 'user-1',
+			slug: 'github',
+			provider: 'github',
+			label: null,
+			clientId: 'github-client-id-value',
 			clientSecretSecretName: 'github-client-secret',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential' as const,
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+			createdAt: now,
+			updatedAt: now,
+		},
+		connection: {
+			userId: 'user-1',
+			name: 'github',
+			appSlug: 'github',
+			accountLabel: null,
+			description: 'GitHub OAuth integration',
+			scopes: [],
+			requiredHosts: ['api.github.com', 'github.com'],
 			accessTokenSecretName: 'github-access-token',
 			refreshTokenSecretName: null,
-			requiredHosts: ['api.github.com', 'github.com'],
-		}),
-		description: 'GitHub OAuth integration',
-		appId: null,
-		createdAt: '2026-01-01T00:00:00.000Z',
-		updatedAt: '2026-01-01T00:00:00.000Z',
-		ttlMs: null,
+			connectedAt: null,
+			tokenRefreshedAt: null,
+			createdAt: now,
+			updatedAt: now,
+		},
 	}
 
 	vi.clearAllMocks()
-	mockModule.listValues.mockResolvedValue([githubIntegrationValue])
+	mockModule.listValues.mockResolvedValue([])
+	mockModule.listJoinedIntegrations.mockResolvedValue([githubJoinedIntegration])
+	mockModule.getJoinedIntegration.mockResolvedValue(githubJoinedIntegration)
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
 	mockModule.searchCommunityListings.mockResolvedValue([
 		{
@@ -907,7 +942,9 @@ test('integration entity detail enriches related packages without bloating ranke
 	expect(suggestions.map((item) => item.kodyId)).toEqual(['github'])
 
 	vi.clearAllMocks()
-	mockModule.listValues.mockResolvedValue([githubIntegrationValue])
+	mockModule.listValues.mockResolvedValue([])
+	mockModule.listJoinedIntegrations.mockResolvedValue([githubJoinedIntegration])
+	mockModule.getJoinedIntegration.mockResolvedValue(githubJoinedIntegration)
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([
 		{
 			id: 'pkg-user-github',

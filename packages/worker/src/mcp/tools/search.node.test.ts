@@ -8,12 +8,12 @@ import {
 } from '#mcp/capabilities/capability-search.ts'
 import { filterCapabilityRegistryForCaller } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
-import { buildIntegrationValueName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { synthesizeMcpServerToolDomain } from '#mcp/capabilities/mcp-server/index.ts'
 import { synthesizeOpenApiProviderDomain } from '#mcp/capabilities/openapi-provider/index.ts'
 import { synthesizeRemoteToolDomain } from '#mcp/capabilities/remote-connector/index.ts'
 import { repoGetCheckStatusCapability } from '#mcp/capabilities/repo/index.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { type JoinedIntegration } from '#worker/integrations/types.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
 import type * as PackageRegistrySource from '#worker/package-registry/source.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
@@ -26,6 +26,76 @@ import {
 	type OptionalSearchRowsResult,
 	type PackageSearchRow,
 } from './search.ts'
+
+function createJoinedIntegration(input: {
+	userId?: string
+	name: string
+	description?: string
+	appSlug?: string
+	provider?: string
+	clientId?: string
+	tokenUrl?: string
+	apiBaseUrl?: string | null
+	authorizeUrl?: string | null
+	flow?: JoinedIntegration['app']['flow']
+	scopes?: Array<string>
+	requiredHosts?: Array<string>
+	accessTokenSecretName?: string
+	refreshTokenSecretName?: string | null
+	clientSecretSecretName?: string | null
+}): JoinedIntegration {
+	const userId = input.userId ?? 'user-1'
+	const appSlug = input.appSlug ?? input.name
+	const now = '2026-04-20T00:00:00.000Z'
+	return {
+		app: {
+			userId,
+			slug: appSlug,
+			provider: input.provider ?? appSlug.split('-')[0] ?? appSlug,
+			label: null,
+			clientId: input.clientId ?? `${input.name}-client-id`,
+			clientSecretSecretName:
+				input.clientSecretSecretName === undefined
+					? `${input.name}-client-secret`
+					: input.clientSecretSecretName,
+			tokenUrl: input.tokenUrl ?? 'https://oauth2.googleapis.com/token',
+			authorizeUrl:
+				input.authorizeUrl === undefined
+					? 'https://accounts.google.com/o/oauth2/v2/auth'
+					: input.authorizeUrl,
+			apiBaseUrl:
+				input.apiBaseUrl === undefined
+					? 'https://www.googleapis.com'
+					: input.apiBaseUrl,
+			flow: input.flow ?? 'confidential',
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+			createdAt: now,
+			updatedAt: now,
+		},
+		connection: {
+			userId,
+			name: input.name,
+			appSlug,
+			accountLabel: null,
+			description: input.description ?? `${input.name} integration`,
+			scopes: input.scopes ?? [],
+			requiredHosts: input.requiredHosts ?? [],
+			accessTokenSecretName:
+				input.accessTokenSecretName ?? `${input.name}-access-token`,
+			refreshTokenSecretName:
+				input.refreshTokenSecretName === undefined
+					? `${input.name}-refresh-token`
+					: input.refreshTokenSecretName,
+			connectedAt: null,
+			tokenRefreshedAt: null,
+			createdAt: now,
+			updatedAt: now,
+		},
+	}
+}
 
 function buildRoleGatedSearchRegistry() {
 	const publicCapability = defineDomainCapability('meta', {
@@ -71,9 +141,10 @@ const emptyOptionalSearchRows = {
 	packageRows: [],
 	userSecretRows: [],
 	userValueRows: [],
+	userIntegrationRows: [],
 } satisfies Pick<
 	OptionalSearchRowsResult,
-	'packageRows' | 'userSecretRows' | 'userValueRows'
+	'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
 >
 
 function createDeterministicAiBinding(): Ai {
@@ -276,25 +347,20 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				updatedAt: '2026-04-20T00:00:00.000Z',
 				ttlMs: null,
 			},
-			{
-				name: buildIntegrationValueName('github'),
-				scope: 'user',
-				value: JSON.stringify({
-					tokenUrl: 'https://delta.example/token',
-					apiBaseUrl: 'https://epsilon.example/api',
-					flow: 'confidential',
-					clientIdValueName: 'github-client-id',
-					clientSecretSecretName: 'github-client-secret',
-					accessTokenSecretName: 'github-access-token',
-					refreshTokenSecretName: 'github-refresh-token',
-					requiredHosts: ['epsilon.example'],
-				}),
+		],
+		userIntegrationRows: [
+			createJoinedIntegration({
+				name: 'github',
 				description: 'alpha beta gamma integration',
-				appId: null,
-				createdAt: '2026-04-20T00:00:00.000Z',
-				updatedAt: '2026-04-20T00:00:00.000Z',
-				ttlMs: null,
-			},
+				tokenUrl: 'https://delta.example/token',
+				apiBaseUrl: 'https://epsilon.example/api',
+				authorizeUrl: null,
+				clientId: 'github-client-id',
+				clientSecretSecretName: 'github-client-secret',
+				accessTokenSecretName: 'github-access-token',
+				refreshTokenSecretName: 'github-refresh-token',
+				requiredHosts: ['epsilon.example'],
+			}),
 		],
 		warnings: [],
 	} satisfies OptionalSearchRowsResult
@@ -328,7 +394,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				type: 'integration',
 				integrationName: 'github',
 				tokenUrl: 'https://delta.example/token',
-				clientIdValueName: 'github-client-id',
+				clientId: 'github-client-id',
 				clientSecretSecretName: 'github-client-secret',
 				accessTokenSecretName: 'github-access-token',
 				refreshTokenSecretName: 'github-refresh-token',
@@ -338,6 +404,184 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				name: 'alpha-secret',
 			}),
 		]),
+	)
+})
+
+test('searchUnified matches integrations by provider name, scope, and required host', async () => {
+	const registry = buildCapabilityRegistry([])
+	const googleAppSlug = 'google'
+	const optionalRows = {
+		...emptyOptionalSearchRows,
+		userIntegrationRows: [
+			createJoinedIntegration({
+				name: 'google-calendar',
+				appSlug: googleAppSlug,
+				provider: 'google',
+				description: 'Calendar connection',
+				clientId: 'shared-google-client-id',
+				scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
+				requiredHosts: ['www.googleapis.com'],
+			}),
+			createJoinedIntegration({
+				name: 'spotify',
+				description: 'Spotify music',
+				tokenUrl: 'https://accounts.spotify.com/api/token',
+				apiBaseUrl: 'https://api.spotify.com',
+				authorizeUrl: 'https://accounts.spotify.com/authorize',
+				clientId: 'spotify-client-id',
+				scopes: ['user-read-playback-state'],
+				requiredHosts: ['api.spotify.com'],
+			}),
+		],
+	} satisfies OptionalSearchRowsResult
+
+	const byProvider = await searchUnified({
+		env: {} as Env,
+		query: 'google-calendar',
+		limit: 5,
+		userId: 'user-1',
+		registry,
+		optionalRows,
+	})
+	expect(byProvider.matches[0]).toMatchObject({
+		type: 'integration',
+		integrationName: 'google-calendar',
+		clientId: 'shared-google-client-id',
+	})
+
+	const byScope = await searchUnified({
+		env: {} as Env,
+		query: 'calendar.readonly',
+		limit: 5,
+		userId: 'user-1',
+		registry,
+		optionalRows,
+	})
+	expect(byScope.matches).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				type: 'integration',
+				integrationName: 'google-calendar',
+			}),
+		]),
+	)
+
+	const byHost = await searchUnified({
+		env: {} as Env,
+		query: 'api.spotify.com',
+		limit: 5,
+		userId: 'user-1',
+		registry,
+		optionalRows,
+	})
+	expect(byHost.matches[0]).toMatchObject({
+		type: 'integration',
+		integrationName: 'spotify',
+		requiredHosts: ['api.spotify.com'],
+	})
+})
+
+test('searchUnified returns four connections on one shared OAuth app as distinct entities', async () => {
+	const registry = buildCapabilityRegistry([])
+	const sharedApp = {
+		appSlug: 'google',
+		provider: 'google',
+		clientId: 'shared-google-client-id',
+		clientSecretSecretName: 'google-client-secret',
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		apiBaseUrl: 'https://www.googleapis.com',
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+	} as const
+	const connections = [
+		'google',
+		'google-calendar',
+		'google-mail',
+		'google-drive',
+	] as const
+	const optionalRows = {
+		...emptyOptionalSearchRows,
+		userIntegrationRows: connections.map((name) =>
+			createJoinedIntegration({
+				...sharedApp,
+				name,
+				description: `${name} connection`,
+				scopes: [`scope-for-${name}`],
+				requiredHosts: ['www.googleapis.com'],
+				accessTokenSecretName: `${name}-access-token`,
+				refreshTokenSecretName: `${name}-refresh-token`,
+			}),
+		),
+	} satisfies OptionalSearchRowsResult
+
+	const result = await searchUnified({
+		env: {} as Env,
+		query: 'google www.googleapis.com',
+		limit: 10,
+		userId: 'user-1',
+		registry,
+		optionalRows,
+	})
+	const integrationNames = result.matches
+		.filter((match) => match.type === 'integration')
+		.map((match) => match.integrationName)
+		.sort()
+	expect(integrationNames).toEqual([...connections].sort())
+	expect(
+		result.matches
+			.filter((match) => match.type === 'integration')
+			.every(
+				(match) =>
+					match.type === 'integration' &&
+					match.clientId === 'shared-google-client-id',
+			),
+	).toBe(true)
+})
+
+test('searchUnified integration candidates stay scoped to the caller userId rows', async () => {
+	const registry = buildCapabilityRegistry([])
+	const optionalRows = {
+		...emptyOptionalSearchRows,
+		userIntegrationRows: [
+			createJoinedIntegration({
+				userId: 'user-1',
+				name: 'github',
+				description: 'user-1 github',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				requiredHosts: ['api.github.com'],
+			}),
+		],
+	} satisfies OptionalSearchRowsResult
+
+	const user1 = await searchUnified({
+		env: {} as Env,
+		query: 'github',
+		limit: 5,
+		userId: 'user-1',
+		registry,
+		optionalRows,
+	})
+	expect(user1.matches).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				type: 'integration',
+				integrationName: 'github',
+			}),
+		]),
+	)
+
+	// Loader rows are already user-scoped; an empty load for another user must
+	// not surface the first user's integrations.
+	const user2 = await searchUnified({
+		env: {} as Env,
+		query: 'github',
+		limit: 5,
+		userId: 'user-2',
+		registry,
+		optionalRows: emptyOptionalSearchRows,
+	})
+	expect(user2.matches.filter((match) => match.type === 'integration')).toEqual(
+		[],
 	)
 })
 
@@ -537,6 +781,7 @@ test('optional search rows load packages and values without partial fallbacks', 
 		packageRows: [],
 		userSecretRows: [],
 		userValueRows: [],
+		userIntegrationRows: [],
 	}
 
 	await expect(
@@ -547,6 +792,7 @@ test('optional search rows load packages and values without partial fallbacks', 
 			},
 			loadUserSecrets: async () => [],
 			loadUserValues: async () => [],
+			loadUserIntegrations: async () => [],
 		}),
 	).rejects.toThrow('packages unavailable')
 
@@ -590,11 +836,13 @@ test('optional search rows load packages and values without partial fallbacks', 
 		],
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => [],
+		loadUserIntegrations: async () => [],
 	})
 	expect(savedPackage.packageRows).toHaveLength(1)
 	expect(savedPackage.packageRows[0]?.record.kodyId).toBe('roku-remote')
 	expect(savedPackage.userSecretRows).toEqual([])
 	expect(savedPackage.userValueRows).toEqual([])
+	expect(savedPackage.userIntegrationRows).toEqual([])
 	expect(savedPackage.warnings).toEqual([])
 
 	await expect(
@@ -605,6 +853,7 @@ test('optional search rows load packages and values without partial fallbacks', 
 			loadUserValues: async () => {
 				throw new Error('values unavailable')
 			},
+			loadUserIntegrations: async () => [],
 		}),
 	).rejects.toThrow('values unavailable')
 
@@ -615,6 +864,9 @@ test('optional search rows load packages and values without partial fallbacks', 
 		},
 		loadUserSecrets: async () => [],
 		loadUserValues: async () => {
+			throw new Error('should not run')
+		},
+		loadUserIntegrations: async () => {
 			throw new Error('should not run')
 		},
 	})
@@ -683,6 +935,7 @@ test('searchUnified annotates high-confidence package action matches', async () 
 			packageRows: [packageRow],
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 
@@ -726,6 +979,7 @@ test('searchUnified annotates high-confidence package action matches', async () 
 			],
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 	const broadPackageMatch = broadQuery.matches.find(
@@ -817,6 +1071,7 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 			packageRows: rows.rows,
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 
@@ -880,6 +1135,7 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 			packageRows: failedHydration.rows,
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 	expect(degraded.matches).toEqual(
@@ -935,6 +1191,7 @@ test('searchUnified degrades to lexical package ranking when the vector query th
 			],
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 
@@ -1282,7 +1539,12 @@ test('searchUnified shares query embedding, fail-closes package isolation, and k
 		limit: 5,
 		userId: 'user-1',
 		registry,
-		optionalRows: { packageRows, userSecretRows: [], userValueRows: [] },
+		optionalRows: {
+			packageRows,
+			userSecretRows: [],
+			userValueRows: [],
+			userIntegrationRows: [],
+		},
 	})
 	expect(aiRunCount).toBe(1)
 	expect(maxInFlightQueries).toBeGreaterThanOrEqual(2)
@@ -1308,6 +1570,7 @@ test('searchUnified shares query embedding, fail-closes package isolation, and k
 			packageRows: [packageRows[0]!],
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 	expect(packageQueryCount).toBe(0)
@@ -1325,6 +1588,7 @@ test('searchUnified shares query embedding, fail-closes package isolation, and k
 					packageRows: [packageRows[0]!],
 					userSecretRows: [],
 					userValueRows: [],
+					userIntegrationRows: [],
 				},
 			})
 		).matches.filter((match) => match.type === 'package'),
@@ -1349,6 +1613,7 @@ test('searchUnified shares query embedding, fail-closes package isolation, and k
 			],
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 	expect(packageQueryCount).toBe(0)
@@ -1413,6 +1678,7 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 			packageRows: [opsPackage, notesPackage],
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 	expect(live.intent.task.name).toBe('inspect')
@@ -1443,6 +1709,7 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 			packageRows: [notesPackage],
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 	expect(packageOriented.matches[0]).toMatchObject({
@@ -1471,6 +1738,7 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 					ttlMs: null,
 				},
 			],
+			userIntegrationRows: [],
 		},
 	})
 	expect(genericValue.intent.task.name).toBe('inspect')
@@ -1654,9 +1922,10 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 				ttlMs: null,
 			},
 		],
+		userIntegrationRows: [],
 	} satisfies Pick<
 		OptionalSearchRowsResult,
-		'packageRows' | 'userSecretRows' | 'userValueRows'
+		'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
 	>
 
 	const cases = [
@@ -1755,6 +2024,7 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 				packageRows: mixedCandidateRows.packageRows,
 				userSecretRows: [],
 				userValueRows: [],
+				userIntegrationRows: [],
 			},
 		})
 		const exactPackageIndex = exactPackage.matches.findIndex(
@@ -1779,6 +2049,7 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 				packageRows: [],
 				userSecretRows: [],
 				userValueRows: mixedCandidateRows.userValueRows,
+				userIntegrationRows: [],
 			},
 		})
 		const exactValueIndex = exactValue.matches.findIndex(
@@ -1985,6 +2256,7 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 			],
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 		domain: 'email',
 	})

@@ -24,7 +24,7 @@ export type SearchEntityCandidateInput = {
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 	optionalRows: Pick<
 		OptionalSearchRowsResult,
-		'packageRows' | 'userSecretRows' | 'userValueRows'
+		'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
 	>
 	retrieverResults: Array<PackageRetrieverSurfaceResult>
 	queryEmbedding: ReadonlyArray<number>
@@ -35,7 +35,7 @@ export type SearchEntityDescriptorInput = {
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 	optionalRows: Pick<
 		OptionalSearchRowsResult,
-		'packageRows' | 'userSecretRows' | 'userValueRows'
+		'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
 	>
 }
 

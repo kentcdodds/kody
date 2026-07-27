@@ -3,11 +3,8 @@ import {
 	deterministicEmbedding,
 	lexicalScore,
 } from '#mcp/capabilities/capability-search.ts'
-import {
-	parseIntegrationConfig,
-	parseIntegrationJson,
-	parseIntegrationValueName,
-} from '#mcp/capabilities/integrations/integration-shared.ts'
+import { type IntegrationConfigWithClientId } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { toIntegrationConfig } from '#worker/integrations/service.ts'
 
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 import {
@@ -22,10 +19,20 @@ import {
 import { buildCandidateBaseScore } from '../search-scoring.ts'
 import { extractSearchTokens } from '../understand-search-query.ts'
 
+function describeIntegration(input: {
+	description: string
+	flow: IntegrationConfigWithClientId['flow']
+}) {
+	return (
+		input.description.trim() ||
+		`Saved OAuth integration configuration (${input.flow} flow).`
+	)
+}
+
 export function buildIntegrationSearchDocument(input: {
 	integrationName: string
 	description: string
-	config: NonNullable<ReturnType<typeof parseIntegrationConfig>>
+	config: IntegrationConfigWithClientId
 }): string {
 	return [
 		input.integrationName,
@@ -43,46 +50,38 @@ export function buildIntegrationSearchDocument(input: {
 
 export const integrationSearchEntityPlugin = {
 	type: 'integration',
-	buildValueRowDescriptor(row) {
-		const integrationName = parseIntegrationValueName(row.name)
-		if (!integrationName) return undefined
-		const config = parseIntegrationConfig(
-			parseIntegrationJson(row.value),
-			integrationName,
-		)
-		if (!config) return undefined
-		return {
-			type: 'integration',
-			id: integrationName,
-			title: integrationName,
-			primaryAliases: [integrationName],
-			secondaryAliases: [
-				row.description,
-				config.apiBaseUrl ?? '',
-				config.tokenUrl,
-				config.flow,
-			],
-			tertiaryAliases: [
-				...(config.requiredHosts ?? []),
-				...(config.apiBaseUrl ? extractSearchTokens(config.apiBaseUrl) : []),
-			],
-		}
+	buildDescriptors(input) {
+		return input.optionalRows.userIntegrationRows.map(({ app, connection }) => {
+			const config = toIntegrationConfig(app, connection)
+			return {
+				type: 'integration' as const,
+				id: connection.name,
+				title: connection.name,
+				primaryAliases: [connection.name],
+				secondaryAliases: [
+					connection.description,
+					config.apiBaseUrl ?? '',
+					config.tokenUrl,
+					config.flow,
+				],
+				tertiaryAliases: [
+					...(config.requiredHosts ?? []),
+					...(config.apiBaseUrl ? extractSearchTokens(config.apiBaseUrl) : []),
+				],
+			}
+		})
 	},
 	buildCandidates(input) {
-		return input.optionalRows.userValueRows
-			.flatMap((row) => {
-				const integrationName = parseIntegrationValueName(row.name)
-				if (!integrationName) return []
-				const config = parseIntegrationConfig(
-					parseIntegrationJson(row.value),
-					integrationName,
-				)
-				if (!config) return []
+		return input.optionalRows.userIntegrationRows
+			.map(({ app, connection }) => {
+				const config = toIntegrationConfig(app, connection)
+				const description = describeIntegration({
+					description: connection.description,
+					flow: config.flow,
+				})
 				const document = buildIntegrationSearchDocument({
-					integrationName,
-					description:
-						row.description.trim() ||
-						`Saved OAuth integration configuration (${config.flow} flow).`,
+					integrationName: connection.name,
+					description,
 					config,
 				})
 				const lexical = lexicalScore(input.query, document)
@@ -90,44 +89,40 @@ export const integrationSearchEntityPlugin = {
 					input.queryEmbedding,
 					deterministicEmbedding(document),
 				)
-				return [
-					{
-						match: {
-							type: 'integration' as const,
-							integrationName,
-							title: integrationName,
-							description:
-								row.description.trim() ||
-								`Saved OAuth integration configuration (${config.flow} flow).`,
-							flow: config.flow,
-							tokenUrl: config.tokenUrl,
-							apiBaseUrl: config.apiBaseUrl ?? null,
-							requiredHosts: config.requiredHosts ?? [],
-							clientIdValueName: config.clientIdValueName,
-							clientSecretSecretName: config.clientSecretSecretName ?? null,
-							accessTokenSecretName: config.accessTokenSecretName,
-							refreshTokenSecretName: config.refreshTokenSecretName ?? null,
-							authorization: config.authorization ?? null,
-						},
+				return {
+					match: {
 						type: 'integration' as const,
-						id: integrationName,
-						title: integrationName,
-						searchFields: [
-							integrationName,
-							row.description,
-							config.flow,
-							config.apiBaseUrl ?? '',
-							config.tokenUrl,
-							config.authorization?.authorizeUrl ?? '',
-							...(config.authorization?.scopes ?? []),
-							...(config.requiredHosts ?? []),
-						],
-						scoreComponents: buildCandidateBaseScore({
-							lexical,
-							vector,
-						}),
+						integrationName: connection.name,
+						title: connection.name,
+						description,
+						flow: config.flow,
+						tokenUrl: config.tokenUrl,
+						apiBaseUrl: config.apiBaseUrl ?? null,
+						requiredHosts: config.requiredHosts ?? [],
+						clientId: config.clientId,
+						clientSecretSecretName: config.clientSecretSecretName ?? null,
+						accessTokenSecretName: config.accessTokenSecretName,
+						refreshTokenSecretName: config.refreshTokenSecretName ?? null,
+						authorization: config.authorization ?? null,
 					},
-				]
+					type: 'integration' as const,
+					id: connection.name,
+					title: connection.name,
+					searchFields: [
+						connection.name,
+						connection.description,
+						config.flow,
+						config.apiBaseUrl ?? '',
+						config.tokenUrl,
+						config.authorization?.authorizeUrl ?? '',
+						...(config.authorization?.scopes ?? []),
+						...(config.requiredHosts ?? []),
+					],
+					scoreComponents: buildCandidateBaseScore({
+						lexical,
+						vector,
+					}),
+				}
 			})
 			.filter((candidate) => candidate.scoreComponents.base > 0)
 	},
@@ -144,7 +139,7 @@ export const integrationSearchEntityPlugin = {
 			tokenUrl: match.tokenUrl,
 			apiBaseUrl: match.apiBaseUrl,
 			requiredHosts: match.requiredHosts,
-			clientIdValueName: match.clientIdValueName,
+			clientId: match.clientId,
 			clientSecretSecretName: match.clientSecretSecretName,
 			accessTokenSecretName: match.accessTokenSecretName,
 			refreshTokenSecretName: match.refreshTokenSecretName,
@@ -178,7 +173,7 @@ export const integrationSearchEntityPlugin = {
 			'',
 			'## Related stored names',
 			'',
-			`- Client ID value name: \`${detail.config.clientIdValueName}\``,
+			`- Client ID: \`${detail.config.clientId}\``,
 			`- Client secret secret name: ${detail.config.clientSecretSecretName ? `\`${detail.config.clientSecretSecretName}\`` : 'none'}`,
 			`- Access token secret name: \`${detail.config.accessTokenSecretName}\``,
 			`- Refresh token secret name: ${detail.config.refreshTokenSecretName ? `\`${detail.config.refreshTokenSecretName}\`` : 'none'}`,
@@ -236,7 +231,7 @@ export const integrationSearchEntityPlugin = {
 				flow: detail.config.flow,
 				tokenUrl: detail.config.tokenUrl,
 				apiBaseUrl: detail.config.apiBaseUrl ?? null,
-				clientIdValueName: detail.config.clientIdValueName,
+				clientId: detail.config.clientId,
 				clientSecretSecretName: detail.config.clientSecretSecretName ?? null,
 				accessTokenSecretName: detail.config.accessTokenSecretName,
 				refreshTokenSecretName: detail.config.refreshTokenSecretName ?? null,

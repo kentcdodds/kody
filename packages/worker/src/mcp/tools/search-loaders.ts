@@ -5,6 +5,8 @@ import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { listValues } from '#mcp/values/service.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
+import { listJoinedIntegrations } from '#worker/integrations/service.ts'
+import { type JoinedIntegration } from '#worker/integrations/types.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import {
 	getRemoteConnectorStatus,
@@ -57,20 +59,28 @@ export async function loadOptionalSearchRows(input: {
 	loadPackages: () => Promise<LoadedPackageRows>
 	loadUserSecrets: () => Promise<Array<SecretSearchRow>>
 	loadUserValues: () => Promise<Array<ValueMetadata>>
+	loadUserIntegrations: () => Promise<Array<JoinedIntegration>>
 }): Promise<OptionalSearchRowsResult> {
 	if (!input.userId) {
 		return {
 			packageRows: [],
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 			warnings: [],
 		}
 	}
 
-	const [loadedPackageRows, userSecretRows, userValueRows] = await Promise.all([
+	const [
+		loadedPackageRows,
+		userSecretRows,
+		userValueRows,
+		userIntegrationRows,
+	] = await Promise.all([
 		input.loadPackages(),
 		input.loadUserSecrets(),
 		input.loadUserValues(),
+		input.loadUserIntegrations(),
 	])
 	const packageRows = Array.isArray(loadedPackageRows)
 		? loadedPackageRows
@@ -80,6 +90,7 @@ export async function loadOptionalSearchRows(input: {
 		packageRows,
 		userSecretRows,
 		userValueRows,
+		userIntegrationRows,
 		warnings: [],
 	}
 }
@@ -127,6 +138,11 @@ export async function loadSearchRowsAndRegistry(input: {
 						sessionId: input.callerContext.storageContext?.sessionId ?? null,
 						appId: input.callerContext.storageContext?.appId ?? null,
 					},
+				}),
+			loadUserIntegrations: () =>
+				listJoinedIntegrations({
+					env: input.env,
+					userId: input.userId!,
 				}),
 		}),
 	])

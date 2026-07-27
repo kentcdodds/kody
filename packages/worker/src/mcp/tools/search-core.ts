@@ -163,7 +163,7 @@ export async function searchUnified(input: {
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 	optionalRows: Pick<
 		OptionalSearchRowsResult,
-		'packageRows' | 'userSecretRows' | 'userValueRows'
+		'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
 	>
 	retrieverResults?: Array<PackageRetrieverSurfaceResult>
 	/** Optional capability domain id; scopes ranked results to that domain's capabilities. */
@@ -188,7 +188,12 @@ export async function searchUnified(input: {
 	// Domain scoping is a capability-graph drill-down; user-owned entities
 	// (packages, values, integrations, secrets, retrievers) have no domain.
 	const optionalRows = domainFilter
-		? { packageRows: [], userSecretRows: [], userValueRows: [] }
+		? {
+				packageRows: [],
+				userSecretRows: [],
+				userValueRows: [],
+				userIntegrationRows: [],
+			}
 		: input.optionalRows
 	const retrieverResults = domainFilter ? [] : (input.retrieverResults ?? [])
 	if (!query) {
@@ -381,6 +386,7 @@ export async function searchPackages(input: {
 			packageRows: input.rows,
 			userSecretRows: [],
 			userValueRows: [],
+			userIntegrationRows: [],
 		},
 	})
 	return {

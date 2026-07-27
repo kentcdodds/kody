@@ -23,6 +23,7 @@ const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(async () => []),
 	listUserSecretsForSearch: vi.fn(async () => []),
 	listValues: vi.fn(async () => []),
+	listJoinedIntegrations: vi.fn(async () => []),
 	loadRelevantMemoriesForTool: vi.fn(async () => null),
 	acknowledgeToolMemories: vi.fn(async () => undefined),
 	buildMemoryRetrievalQuery: vi.fn(
@@ -67,6 +68,11 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 
 vi.mock('#mcp/values/service.ts', () => ({
 	listValues: (...args: Array<unknown>) => mockModule.listValues(...args),
+}))
+
+vi.mock('#worker/integrations/service.ts', () => ({
+	listJoinedIntegrations: (...args: Array<unknown>) =>
+		mockModule.listJoinedIntegrations(...args),
 }))
 
 vi.mock('#mcp/tools/memory-tool-context.ts', () => ({

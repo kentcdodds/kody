@@ -1,4 +1,4 @@
-import { type IntegrationConfig } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { type IntegrationConfigWithClientId } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
@@ -222,11 +222,11 @@ export type SlimSearchMatch =
 			tokenUrl: string
 			apiBaseUrl: string | null
 			requiredHosts: Array<string>
-			clientIdValueName: string
+			clientId: string
 			clientSecretSecretName: string | null
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
-			authorization: IntegrationConfig['authorization'] | null
+			authorization: IntegrationConfigWithClientId['authorization'] | null
 			nextStep?: string
 	  }
 	| {
@@ -369,15 +369,15 @@ export type SearchEntityDetailStructured =
 			title: string
 			description: string
 			usage: string
-			flow: IntegrationConfig['flow']
+			flow: IntegrationConfigWithClientId['flow']
 			tokenUrl: string
 			apiBaseUrl: string | null
-			clientIdValueName: string
+			clientId: string
 			clientSecretSecretName: string | null
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
 			requiredHosts: Array<string>
-			authorization: IntegrationConfig['authorization'] | null
+			authorization: IntegrationConfigWithClientId['authorization'] | null
 			relatedPackageSuggestions?: Array<RelatedIntegrationPackageSuggestion>
 	  }
 
@@ -421,8 +421,7 @@ export type SearchEntityDetail =
 			id: string
 			title: string
 			description: string
-			row: ValueMetadata
-			config: IntegrationConfig
+			config: IntegrationConfigWithClientId
 			relatedPackageSuggestions?: Array<RelatedIntegrationPackageSuggestion>
 	  }
 
@@ -481,11 +480,11 @@ export type SearchMatch =
 			tokenUrl: string
 			apiBaseUrl: string | null
 			requiredHosts: Array<string>
-			clientIdValueName: string
+			clientId: string
 			clientSecretSecretName: string | null
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
-			authorization?: IntegrationConfig['authorization'] | null
+			authorization?: IntegrationConfigWithClientId['authorization'] | null
 	  }
 	| {
 			type: 'secret'

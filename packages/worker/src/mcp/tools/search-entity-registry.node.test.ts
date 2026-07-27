@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { buildIntegrationValueName } from '#mcp/capabilities/integrations/integration-shared.ts'
+import { type JoinedIntegration } from '#worker/integrations/types.ts'
 
 import { searchEntityPlugins } from './search-entity-registry.ts'
 import { buildSearchableEntityDescriptors } from './search-descriptors.ts'
@@ -47,6 +47,54 @@ function createPackageRow(): PackageSearchRow {
 	}
 }
 
+function createJoinedIntegration(input: {
+	userId?: string
+	name: string
+	description?: string
+	scopes?: Array<string>
+	requiredHosts?: Array<string>
+	appSlug?: string
+}): JoinedIntegration {
+	const userId = input.userId ?? 'user-1'
+	const appSlug = input.appSlug ?? input.name
+	const now = '2026-01-01T00:00:00.000Z'
+	return {
+		app: {
+			userId,
+			slug: appSlug,
+			provider: appSlug.split('-')[0] ?? appSlug,
+			label: null,
+			clientId: `${input.name}_client_id`,
+			clientSecretSecretName: `${input.name}_client_secret`,
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+			createdAt: now,
+			updatedAt: now,
+		},
+		connection: {
+			userId,
+			name: input.name,
+			appSlug,
+			accountLabel: null,
+			description: input.description ?? `${input.name} integration`,
+			scopes: input.scopes ?? [],
+			requiredHosts: input.requiredHosts ?? ['api.github.com'],
+			accessTokenSecretName: `${input.name}_access_token`,
+			refreshTokenSecretName: null,
+			connectedAt: null,
+			tokenRefreshedAt: null,
+			createdAt: now,
+			updatedAt: now,
+		},
+	}
+}
+
 test('descriptor seam follows registry order and preserves value-backed affinity', () => {
 	expect(searchEntityPlugins.map((plugin) => plugin.type)).toEqual([
 		'capability',
@@ -85,25 +133,12 @@ test('descriptor seam follows registry order and preserves value-backed affinity
 					createdAt: '2026-01-01T00:00:00.000Z',
 					updatedAt: '2026-01-01T00:00:00.000Z',
 				},
-				{
-					userId: 'user-1',
-					name: buildIntegrationValueName('GitHub'),
-					value: JSON.stringify({
-						name: 'github',
-						tokenUrl: 'https://github.com/login/oauth/access_token',
-						apiBaseUrl: 'https://api.github.com',
-						flow: 'confidential',
-						clientIdValueName: 'github_client_id',
-						clientSecretSecretName: 'github_client_secret',
-						accessTokenSecretName: 'github_access_token',
-					}),
+			],
+			userIntegrationRows: [
+				createJoinedIntegration({
+					name: 'github',
 					description: 'GitHub integration',
-					scope: 'user',
-					appId: null,
-					ttlMs: null,
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
+				}),
 			],
 			userSecretRows: [
 				{
@@ -131,50 +166,43 @@ test('descriptor seam follows registry order and preserves value-backed affinity
 		'weather_api_key',
 	])
 
-	const userValueRows = [
-		{
-			userId: 'user-1',
-			name: buildIntegrationValueName('github'),
-			value: JSON.stringify({
-				name: 'github',
-				tokenUrl: 'https://github.com/login/oauth/access_token',
-				apiBaseUrl: 'https://api.github.com',
-				flow: 'confidential',
-				clientIdValueName: 'github_client_id',
-				clientSecretSecretName: 'github_client_secret',
-				accessTokenSecretName: 'github_access_token',
-			}),
+	const userIntegrationRows = [
+		createJoinedIntegration({
+			name: 'github',
 			description: 'GitHub integration',
-			scope: 'user' as const,
-			appId: null,
-			ttlMs: null,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		},
-		...Array.from({ length: 8 }, (_, index) => ({
-			userId: 'user-1',
-			name: `github_value_${index}`,
-			value: `github value ${index}`,
-			description: 'GitHub preference',
-			scope: 'user' as const,
-			appId: null,
-			ttlMs: null,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
-		})),
-	] satisfies OptionalSearchRowsResult['userValueRows']
+		}),
+	] satisfies OptionalSearchRowsResult['userIntegrationRows']
+	const userValueRows = Array.from({ length: 8 }, (_, index) => ({
+		userId: 'user-1',
+		name: `github_value_${index}`,
+		value: `github value ${index}`,
+		description: 'GitHub preference',
+		scope: 'user' as const,
+		appId: null,
+		ttlMs: null,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	})) satisfies OptionalSearchRowsResult['userValueRows']
 	const affinityDescriptors = buildSearchableEntityDescriptors({
 		registry: { capabilitySpecs: {} } as never,
 		optionalRows: {
 			packageRows: [],
 			userSecretRows: [],
 			userValueRows,
+			userIntegrationRows,
 		},
 	})
 
 	expect(affinityDescriptors.map((descriptor) => descriptor.type)).toEqual([
+		'value',
+		'value',
+		'value',
+		'value',
+		'value',
+		'value',
+		'value',
+		'value',
 		'integration',
-		...Array.from({ length: 8 }, () => 'value'),
 	])
 
 	const intent = understandSearchQuery({
@@ -185,5 +213,46 @@ test('descriptor seam follows registry order and preserves value-backed affinity
 	expect(intent.entities[0]).toMatchObject({
 		type: 'integration',
 		id: 'github',
+	})
+})
+
+test('value search descriptors exclude platform-reserved openapi bindings', () => {
+	const descriptors = buildSearchableEntityDescriptors({
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: {
+			packageRows: [],
+			userSecretRows: [],
+			userValueRows: [
+				{
+					userId: 'user-1',
+					name: '_openapi:widgets',
+					value: '{"provider":"widgets"}',
+					description: 'Widgets OpenAPI binding',
+					scope: 'user',
+					appId: null,
+					ttlMs: null,
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+				{
+					userId: 'user-1',
+					name: 'preferred_repo',
+					value: 'kentcdodds/kody',
+					description: 'Preferred repo',
+					scope: 'user',
+					appId: null,
+					ttlMs: null,
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+			userIntegrationRows: [],
+		},
+	})
+
+	expect(descriptors.map((descriptor) => descriptor.type)).toEqual(['value'])
+	expect(descriptors[0]).toMatchObject({
+		type: 'value',
+		id: 'user:preferred_repo',
 	})
 })
