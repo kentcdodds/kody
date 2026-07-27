@@ -251,6 +251,30 @@ test('0102 migrates a valid _openapi binding with exploded operations', async ()
 	expect(loaded).toEqual(expected)
 })
 
+function expectMigrationAbortPreservesValues(
+	db: DatabaseSync,
+	userId: string,
+	beforeNames: Array<string>,
+) {
+	expect(() => applyMigrationLikeD1(db, openApiBindingsMigration)).toThrow(
+		/CHECK constraint failed: 0/,
+	)
+	expect(listOpenApiValueNames(db, userId)).toEqual(beforeNames)
+	expect(
+		db
+			.prepare(
+				`SELECT name FROM sqlite_master
+				 WHERE type = 'table'
+				   AND name IN (
+						'user_openapi_bindings',
+						'user_openapi_binding_operations',
+						'__migration_assertions'
+					)`,
+			)
+			.all(),
+	).toEqual([])
+}
+
 test('0102 aborts when a non-migratable _openapi value row exists', () => {
 	const db = new DatabaseSync(':memory:')
 	applyMigrationsBefore(db, openApiBindingsMigration)
@@ -280,23 +304,54 @@ test('0102 aborts when a non-migratable _openapi value row exists', () => {
 
 	const beforeNames = listOpenApiValueNames(db, 'user-abort')
 	expect(beforeNames).toEqual(['_openapi:broken', '_openapi:widgets'])
+	expectMigrationAbortPreservesValues(db, 'user-abort', beforeNames)
+})
 
-	expect(() => applyMigrationLikeD1(db, openApiBindingsMigration)).toThrow(
-		/CHECK constraint failed: 0/,
-	)
+test('0102 aborts when an operation is missing a slug', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, openApiBindingsMigration)
 
-	expect(listOpenApiValueNames(db, 'user-abort')).toEqual(beforeNames)
-	expect(
-		db
-			.prepare(
-				`SELECT name FROM sqlite_master
-				 WHERE type = 'table'
-				   AND name IN (
-						'user_openapi_bindings',
-						'user_openapi_binding_operations',
-						'__migration_assertions'
-					)`,
-			)
-			.all(),
-	).toEqual([])
+	insertUserBucket(db, { bucketId: 'bucket-noslug', userId: 'user-noslug' })
+	const binding = sampleBinding({ name: 'noslug' })
+	insertValue(db, {
+		bucketId: 'bucket-noslug',
+		name: '_openapi:noslug',
+		value: JSON.stringify({
+			...binding,
+			operations: [
+				binding.operations[0],
+				{
+					...binding.operations[1],
+					slug: '',
+				},
+			],
+		}),
+	})
+
+	const beforeNames = listOpenApiValueNames(db, 'user-noslug')
+	expect(beforeNames).toEqual(['_openapi:noslug'])
+	expectMigrationAbortPreservesValues(db, 'user-noslug', beforeNames)
+})
+
+test('0102 aborts when operations contain duplicate slugs', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, openApiBindingsMigration)
+
+	insertUserBucket(db, { bucketId: 'bucket-dup', userId: 'user-dup' })
+	const binding = sampleBinding({ name: 'dupes' })
+	insertValue(db, {
+		bucketId: 'bucket-dup',
+		name: '_openapi:dupes',
+		value: JSON.stringify({
+			...binding,
+			operations: [
+				binding.operations[0],
+				{ ...binding.operations[1], slug: binding.operations[0]!.slug },
+			],
+		}),
+	})
+
+	const beforeNames = listOpenApiValueNames(db, 'user-dup')
+	expect(beforeNames).toEqual(['_openapi:dupes'])
+	expectMigrationAbortPreservesValues(db, 'user-dup', beforeNames)
 })

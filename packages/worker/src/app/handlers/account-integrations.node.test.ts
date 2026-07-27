@@ -239,6 +239,7 @@ const mockModule = vi.hoisted(() => ({
 		createdAt: '1970-01-01T00:00:00.000Z',
 		updatedAt: '1970-01-01T00:00:00.002Z',
 	})),
+	listSecrets: vi.fn(async () => []),
 	saveSecret: vi.fn(async () => ({
 		name: 'googleClientSecret',
 		scope: 'user' as const,
@@ -270,6 +271,7 @@ vi.mock('#app/ssr-render.tsx', () => ({
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
+	listSecrets: (...args: Array<unknown>) => mockModule.listSecrets(...args),
 	saveSecret: (...args: Array<unknown>) => mockModule.saveSecret(...args),
 	setSecretAllowedHosts: (...args: Array<unknown>) =>
 		mockModule.setSecretAllowedHosts(...args),
@@ -640,6 +642,12 @@ test('integrations API rotates OAuth app credentials for the authenticated user'
 		userId: 'stable-user-1',
 		slug: 'google',
 	})
+	expect(mockModule.listSecrets).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		userId: 'stable-user-1',
+		scope: 'user',
+		storageContext: { sessionId: null, appId: null, packageId: null },
+	})
 	expect(mockModule.saveSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'stable-user-1',
@@ -648,6 +656,18 @@ test('integrations API rotates OAuth app credentials for the authenticated user'
 			scope: 'user',
 		}),
 	)
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		userId: 'stable-user-1',
+		name: 'googleClientSecret',
+		scope: 'user',
+		allowedHosts: [
+			'accounts.google.com',
+			'oauth2.googleapis.com',
+			'www.googleapis.com',
+		],
+		storageContext: { sessionId: null, appId: null, packageId: null },
+	})
 	expect(mockModule.rotateOauthAppClientCredentials).toHaveBeenCalledWith({
 		env: expect.any(Object),
 		userId: 'stable-user-1',
@@ -671,6 +691,55 @@ test('integrations API rotates OAuth app credentials for the authenticated user'
 	})
 	expect(JSON.stringify(payload)).not.toMatch(
 		/new-google-client-secret|"access_token"\s*:|"refresh_token"\s*:/,
+	)
+})
+
+test('integrations API merge-keeps pre-existing client-secret allowed hosts on rotate', async () => {
+	mockModule.listSecrets.mockResolvedValueOnce([
+		{
+			name: 'googleClientSecret',
+			scope: 'user' as const,
+			description: 'google OAuth client secret',
+			packageId: null,
+			allowedHosts: ['oauth2.googleapis.com', 'custom-package-api.example.com'],
+			allowedCapabilities: [],
+			allowedPackages: [],
+			createdAt: '1970-01-01T00:00:00.000Z',
+			updatedAt: '1970-01-01T00:00:00.001Z',
+			ttlMs: null,
+		},
+	])
+	const handler = createAccountIntegrationsApiHandler(createEnv())
+	const response = await handler.handler({
+		request: new Request('https://example.com/account/integrations.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'rotate_oauth_app_credentials',
+				appSlug: 'google',
+				clientSecret: 'rotated-secret-value',
+				confirm: true,
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		userId: 'stable-user-1',
+		name: 'googleClientSecret',
+		scope: 'user',
+		allowedHosts: [
+			'accounts.google.com',
+			'custom-package-api.example.com',
+			'oauth2.googleapis.com',
+			'www.googleapis.com',
+		],
+		storageContext: { sessionId: null, appId: null, packageId: null },
+	})
+	expect(JSON.stringify(await response.json())).not.toMatch(
+		/rotated-secret-value/,
 	)
 })
 

@@ -28,8 +28,22 @@
 --   AND json_extract(<entry>.value, '$.auth') IS NOT NULL
 --   AND json_extract(<entry>.value, '$.selection') IS NOT NULL
 --   AND json_array_length(json_extract(<entry>.value, '$.operations')) >= 1
+--   AND NOT EXISTS (
+--     SELECT 1
+--     FROM json_each(<entry>.value, '$.operations') AS op
+--     WHERE typeof(json_extract(op.value, '$.slug')) != 'text'
+--       OR trim(json_extract(op.value, '$.slug')) = ''
+--   )
+--   AND NOT EXISTS (
+--     SELECT 1
+--     FROM json_each(<entry>.value, '$.operations') AS op
+--     GROUP BY json_extract(op.value, '$.slug')
+--     HAVING count(*) > 1
+--   )
 -- The name checks mirror openApiBindingNamePattern:
 -- ^[a-z0-9][a-z0-9_-]{0,63}$ (lowercase, 1..64 chars, starts alphanumeric).
+-- Operation slug checks ensure every element has a non-empty text slug and
+-- slugs are unique within the array, so INSERT cannot hit NOT NULL / PK errors.
 
 CREATE TABLE IF NOT EXISTS user_openapi_bindings (
 	user_id TEXT NOT NULL,
@@ -93,6 +107,18 @@ WHERE (
 		AND json_extract(e.value, '$.auth') IS NOT NULL
 		AND json_extract(e.value, '$.selection') IS NOT NULL
 		AND json_array_length(json_extract(e.value, '$.operations')) >= 1
+		AND NOT EXISTS (
+			SELECT 1
+			FROM json_each(e.value, '$.operations') AS op
+			WHERE typeof(json_extract(op.value, '$.slug')) != 'text'
+				OR trim(json_extract(op.value, '$.slug')) = ''
+		)
+		AND NOT EXISTS (
+			SELECT 1
+			FROM json_each(e.value, '$.operations') AS op
+			GROUP BY json_extract(op.value, '$.slug')
+			HAVING count(*) > 1
+		)
 );
 
 INSERT INTO user_openapi_bindings (
@@ -144,7 +170,19 @@ WHERE e.name LIKE '\_openapi:%' ESCAPE '\'
 	AND trim(json_extract(e.value, '$.apiBaseUrl')) != ''
 	AND json_extract(e.value, '$.auth') IS NOT NULL
 	AND json_extract(e.value, '$.selection') IS NOT NULL
-	AND json_array_length(json_extract(e.value, '$.operations')) >= 1;
+	AND json_array_length(json_extract(e.value, '$.operations')) >= 1
+	AND NOT EXISTS (
+		SELECT 1
+		FROM json_each(e.value, '$.operations') AS op
+		WHERE typeof(json_extract(op.value, '$.slug')) != 'text'
+			OR trim(json_extract(op.value, '$.slug')) = ''
+	)
+	AND NOT EXISTS (
+		SELECT 1
+		FROM json_each(e.value, '$.operations') AS op
+		GROUP BY json_extract(op.value, '$.slug')
+		HAVING count(*) > 1
+	);
 
 INSERT INTO user_openapi_binding_operations (
 	user_id,
@@ -174,7 +212,19 @@ WHERE e.name LIKE '\_openapi:%' ESCAPE '\'
 	AND trim(json_extract(e.value, '$.apiBaseUrl')) != ''
 	AND json_extract(e.value, '$.auth') IS NOT NULL
 	AND json_extract(e.value, '$.selection') IS NOT NULL
-	AND json_array_length(json_extract(e.value, '$.operations')) >= 1;
+	AND json_array_length(json_extract(e.value, '$.operations')) >= 1
+	AND NOT EXISTS (
+		SELECT 1
+		FROM json_each(e.value, '$.operations') AS bad
+		WHERE typeof(json_extract(bad.value, '$.slug')) != 'text'
+			OR trim(json_extract(bad.value, '$.slug')) = ''
+	)
+	AND NOT EXISTS (
+		SELECT 1
+		FROM json_each(e.value, '$.operations') AS bad
+		GROUP BY json_extract(bad.value, '$.slug')
+		HAVING count(*) > 1
+	);
 
 -- Migrated binding count must equal migratable source count.
 INSERT INTO __migration_assertions (message)
@@ -198,6 +248,18 @@ WHERE (
 		AND json_extract(e.value, '$.auth') IS NOT NULL
 		AND json_extract(e.value, '$.selection') IS NOT NULL
 		AND json_array_length(json_extract(e.value, '$.operations')) >= 1
+		AND NOT EXISTS (
+			SELECT 1
+			FROM json_each(e.value, '$.operations') AS op
+			WHERE typeof(json_extract(op.value, '$.slug')) != 'text'
+				OR trim(json_extract(op.value, '$.slug')) = ''
+		)
+		AND NOT EXISTS (
+			SELECT 1
+			FROM json_each(e.value, '$.operations') AS op
+			GROUP BY json_extract(op.value, '$.slug')
+			HAVING count(*) > 1
+		)
 ) != (SELECT count(*) FROM user_openapi_bindings);
 
 -- Operation row count must equal the summed operations array lengths.
@@ -224,6 +286,18 @@ WHERE (
 		AND json_extract(e.value, '$.auth') IS NOT NULL
 		AND json_extract(e.value, '$.selection') IS NOT NULL
 		AND json_array_length(json_extract(e.value, '$.operations')) >= 1
+		AND NOT EXISTS (
+			SELECT 1
+			FROM json_each(e.value, '$.operations') AS op
+			WHERE typeof(json_extract(op.value, '$.slug')) != 'text'
+				OR trim(json_extract(op.value, '$.slug')) = ''
+		)
+		AND NOT EXISTS (
+			SELECT 1
+			FROM json_each(e.value, '$.operations') AS op
+			GROUP BY json_extract(op.value, '$.slug')
+			HAVING count(*) > 1
+		)
 );
 
 DELETE FROM value_entries

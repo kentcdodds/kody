@@ -434,7 +434,7 @@
 		},
 		{
 			"filename": "0102-user-openapi-bindings.sql",
-			"sha256": "95d70085084babb483ee2cccf6d0b1609e9bb3a0fd93f9293d5342d9b4d9b56c"
+			"sha256": "a4c6dedf7d037709e26a74f0b28e39a87723f5e0ad8dc05c07ecea09ec19f87b"
 		},
 		{
 			"filename": "0103-integration-data-hygiene.sql",

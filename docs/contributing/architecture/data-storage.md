@@ -302,7 +302,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   per-operation child rows keyed by `(user_id, binding_name, slug)`, with
   composite FK `(user_id, binding_name) → user_openapi_bindings(user_id, name)`
   (`ON DELETE CASCADE`). Holds `operation_json` for each curated operation
-  snapshot entry.
+  snapshot entry. Account deletion lists operations before bindings so cleanup
+  does not rely on CASCADE.
 
 App access pattern:
 

@@ -125,7 +125,9 @@ OpenAPI provider bindings (`user_openapi_bindings` /
 
 Deletion targets in `account-data-targets.ts` list `user_integrations` before
 `user_oauth_apps` so the `ON DELETE RESTRICT` FK cannot block cleanup when
-cascades are disabled.
+cascades are disabled. OpenAPI binding cleanup (child operations before parent
+bindings) is documented in
+[OpenAPI provider bindings](./openapi-bindings.md#account-deletion-order).
 
 ## Related docs
 

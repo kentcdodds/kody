@@ -41,6 +41,12 @@ binding CRUD and refresh live in `openapi`.
 - `openapi_binding_refresh` re-fetches the spec, re-applies the stored
   selection, and reports added/removed operations.
 
+## Account deletion order
+
+Deletion targets in `account-data-targets.ts` list
+`user_openapi_binding_operations` before `user_openapi_bindings` so the
+composite FK child is cleared first when cascades are disabled.
+
 ## Security invariants
 
 - Specs are untrusted third-party content (bounded HTTPS fetch, no remote

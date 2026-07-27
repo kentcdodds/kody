@@ -13,7 +13,11 @@ import { renderAppPage } from '#app/ssr-render.tsx'
 import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
-import { saveSecret, setSecretAllowedHosts } from '#mcp/secrets/service.ts'
+import {
+	listSecrets,
+	saveSecret,
+	setSecretAllowedHosts,
+} from '#mcp/secrets/service.ts'
 import {
 	getOauthApp,
 	listJoinedIntegrations,
@@ -135,7 +139,26 @@ async function handleRotateOauthAppCredentials(input: {
 			const secretName =
 				existing.clientSecretSecretName ??
 				`${canonicalIntegrationName(existing.slug) || existing.slug}ClientSecret`
-			const allowedHosts = oauthAppSecretAllowedHosts(existing)
+			const storageContext = {
+				sessionId: null,
+				appId: null,
+				packageId: null,
+			}
+			// Merge endpoint hosts into any pre-existing allowlist so rotation
+			// cannot silently drop hosts packages already rely on.
+			const currentSecrets = await listSecrets({
+				env: input.env,
+				userId,
+				scope: 'user',
+				storageContext,
+			})
+			const existingSecret = currentSecrets.find(
+				(secret) => secret.name === secretName && secret.scope === 'user',
+			)
+			const allowedHosts = normalizeAllowedHosts([
+				...(existingSecret?.allowedHosts ?? []),
+				...oauthAppSecretAllowedHosts(existing),
+			])
 			await saveSecret({
 				env: input.env,
 				userId,
@@ -144,7 +167,7 @@ async function handleRotateOauthAppCredentials(input: {
 				value: input.body.clientSecret,
 				scope: 'user',
 				description: `${existing.provider} OAuth client secret`,
-				storageContext: { sessionId: null, appId: null, packageId: null },
+				storageContext,
 			})
 			await setSecretAllowedHosts({
 				env: input.env,
@@ -152,7 +175,7 @@ async function handleRotateOauthAppCredentials(input: {
 				name: secretName,
 				scope: 'user',
 				allowedHosts,
-				storageContext: { sessionId: null, appId: null, packageId: null },
+				storageContext,
 			})
 			nextClientSecretSecretName = secretName
 		}
@@ -199,11 +222,11 @@ function oauthAppSecretAllowedHosts(app: {
 	tokenUrl: string
 	authorizeUrl: string | null
 	apiBaseUrl: string | null
-}) {
+}): Array<string> {
 	const hosts = [
 		safeParseHost(app.tokenUrl),
 		app.authorizeUrl ? safeParseHost(app.authorizeUrl) : null,
 		app.apiBaseUrl ? safeParseHost(app.apiBaseUrl) : null,
 	].filter((host): host is string => Boolean(host))
-	return normalizeAllowedHosts(hosts)
+	return hosts
 }
