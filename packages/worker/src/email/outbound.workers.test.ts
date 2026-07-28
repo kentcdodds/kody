@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import {
@@ -221,32 +222,37 @@ test('sendOutboundEmail rejects non-self recipients under the self policy', asyn
 	const userId = await createStableUserIdFromEmail(accountEmail)
 	await seedVerifiedAccount({ email: accountEmail })
 
-	await expect(
-		sendOutboundEmail({
-			env: createBindingSendEnv(),
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			to: 'someone-else@example.net',
-			subject: 'Blocked',
-			text: 'Body',
-		}),
-	).rejects.toThrow(
-		`email_send only delivers to your own account email (${accountEmail})`,
-	)
+	const nonSelfError = await sendOutboundEmail({
+		env: createBindingSendEnv(),
+		userId,
+		accountEmail,
+		recipientPolicy: 'self',
+		to: 'someone-else@example.net',
+		subject: 'Blocked',
+		text: 'Body',
+	}).catch((caught: unknown) => caught)
+	// Agent mistakes (third-party `to`) must stay off Sentry as McpCallerError.
+	expect(nonSelfError).toBeInstanceOf(McpCallerError)
+	expect(nonSelfError).toMatchObject({
+		message: expect.stringContaining(
+			`email_send only delivers to your own account email (${accountEmail})`,
+		),
+	})
 	// Malformed explicit recipients are rejected instead of silently dropped
 	// (a dropped value would fall back to the account email).
-	await expect(
-		sendOutboundEmail({
-			env: createBindingSendEnv(),
-			userId,
-			accountEmail,
-			recipientPolicy: 'self',
-			to: 'not-an-email',
-			subject: 'Blocked',
-			text: 'Body',
-		}),
-	).rejects.toThrow('Invalid recipient email address: not-an-email')
+	const invalidError = await sendOutboundEmail({
+		env: createBindingSendEnv(),
+		userId,
+		accountEmail,
+		recipientPolicy: 'self',
+		to: 'not-an-email',
+		subject: 'Blocked',
+		text: 'Body',
+	}).catch((caught: unknown) => caught)
+	expect(invalidError).toBeInstanceOf(McpCallerError)
+	expect(invalidError).toMatchObject({
+		message: 'Invalid recipient email address: not-an-email',
+	})
 	// Providing the own account email explicitly is allowed.
 	const allowed = await sendOutboundEmail({
 		env: createBindingSendEnv(),

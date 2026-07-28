@@ -8,6 +8,7 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#app/email-verification.ts'
 import { normalizeEmail } from '#app/normalize-email.ts'
 import { withAccountWriteLease } from '#app/account-deletion-state.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
@@ -122,13 +123,17 @@ function resolveSelfRecipients(input: {
 	const normalized = values.map((value) => {
 		const address = normalizeEmailAddress(value)
 		if (!address) {
-			throw new Error(`Invalid recipient email address: ${value}`)
+			// Caller-supplied address that does not parse — keep it off Sentry.
+			throw new McpCallerError(`Invalid recipient email address: ${value}`)
 		}
 		return address
 	})
 	const disallowed = normalized.filter((value) => value !== accountEmail)
 	if (disallowed.length > 0) {
-		throw new Error(
+		// email_send is notify-self only; agents often pass a third-party
+		// address by mistake. That is a routine caller correction (use
+		// email_reply), not a platform defect — keep it off Sentry.
+		throw new McpCallerError(
 			`email_send only delivers to your own account email (${accountEmail}). Use email_reply to answer stored inbound messages.`,
 		)
 	}
