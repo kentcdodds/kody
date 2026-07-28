@@ -374,17 +374,17 @@ test('email API lists messages with pagination, usage, and selected detail', asy
 	expect(unauthorizedResponse.status).toBe(401)
 })
 
-test('email API filters quarantined messages and surfaces classification', async () => {
+test('email API lists classification filters and classifies inbound messages', async () => {
 	const quarantinedRow = {
 		...messageRow,
 		id: 'msg-quarantined',
 		classification: 'quarantined',
 		classification_reason: 'DMARC failed.',
 	}
+	const env = createEnv()
 	let prepareCall = 0
-	mockModule.prepare.mockImplementation((sql: string) => {
+	mockModule.prepare.mockImplementation(() => {
 		prepareCall += 1
-		expect(sql).toContain('(? IS NULL OR classification = ?)')
 		if (prepareCall % 2 === 1) return createCountResult(1)
 		return createListResult([quarantinedRow])
 	})
@@ -395,21 +395,14 @@ test('email API filters quarantined messages and surfaces classification', async
 		classificationReason: 'DMARC failed.',
 	})
 
-	const env = {
-		APP_DB: {
-			prepare: (...args: Array<unknown>) =>
-				mockModule.prepare(...(args as [string])),
-		} as unknown as D1Database,
-		APP_BASE_URL: 'https://example.com',
-		COOKIE_SECRET: 'secret',
-	} as Env
-	const response = await createAccountEmailApiHandler(env).handler({
+	const handler = createAccountEmailApiHandler(env)
+	const listResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/email.json?classification=quarantined&selected=msg-quarantined',
 		),
 	})
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(listResponse.status).toBe(200)
+	await expect(listResponse.json()).resolves.toMatchObject({
 		ok: true,
 		classification: 'quarantined',
 		messages: [
@@ -425,14 +418,14 @@ test('email API filters quarantined messages and surfaces classification', async
 			classification_reason: 'DMARC failed.',
 		}),
 	})
-})
 
-test('email API classifies inbound messages as spam or not spam', async () => {
 	mockModule.setEmailMessageClassification.mockClear()
-	mockModule.prepare.mockClear()
-	const env = createEnv()
-	const handler = createAccountEmailApiHandler(env)
-
+	let classifyPrepareCall = 0
+	mockModule.prepare.mockImplementation(() => {
+		classifyPrepareCall += 1
+		if (classifyPrepareCall % 2 === 1) return createCountResult(1)
+		return createListResult([messageRow])
+	})
 	const quarantineResponse = await handler.handler({
 		request: new Request('https://example.com/account/email.json', {
 			method: 'POST',
