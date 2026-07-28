@@ -1604,7 +1604,7 @@ test('heavy check phases run in throwaway isolates when the env has the bindings
 		string,
 		{ expirationTtl: number },
 	]
-	expect(stagingKey.startsWith('repo-checks-staging:v1:')).toBe(true)
+	expect(stagingKey.startsWith('repo-checks-staging:v1:user-123:')).toBe(true)
 	expect(JSON.parse(stagedBody).sourceFiles['src/a.ts']).toContain(
 		'export default',
 	)
@@ -1621,6 +1621,11 @@ test('heavy check phases run in throwaway isolates when the env has the bindings
 		(request) => request.phase === 'typecheck',
 	)
 	expect(typecheckRequests).toHaveLength(1)
+	expect(typecheckRequests[0]).toMatchObject({ userId: 'user-123' })
+	// Throwaway isolate ids are namespaced by the requesting user.
+	for (const [name] of namespace.idFromName.mock.calls) {
+		expect(name as string).toContain('-user-123-')
+	}
 	const bundleRequests = phaseRequests.filter(
 		(request) => request.phase === 'bundle-chunk',
 	)

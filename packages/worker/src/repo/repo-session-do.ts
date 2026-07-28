@@ -47,6 +47,7 @@ import {
 	validatePackageBundles,
 } from './checks.ts'
 import {
+	isolatedCheckStagingKeyBelongsToUser,
 	type IsolatedCheckPhaseOutcome,
 	type IsolatedCheckPhaseRequest,
 } from './isolated-check-phases.ts'
@@ -1683,6 +1684,18 @@ class RepoSessionBase extends DurableObject<Env> {
 	async runIsolatedCheckPhase(
 		input: IsolatedCheckPhaseRequest,
 	): Promise<IsolatedCheckPhaseOutcome> {
+		if (
+			!isolatedCheckStagingKeyBelongsToUser({
+				stagingKey: input.stagingKey,
+				userId: input.userId,
+			})
+		) {
+			return {
+				ok: false,
+				message:
+					'Isolated check phase staging key does not belong to the requesting user.',
+			}
+		}
 		const staged = await this.env.BUNDLE_ARTIFACTS_KV.get<{
 			sourceFiles?: Record<string, string>
 		}>(input.stagingKey, 'json')

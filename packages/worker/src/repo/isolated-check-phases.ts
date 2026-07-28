@@ -44,8 +44,27 @@ export type IsolatedCheckPhaseRequest =
 	| {
 			phase: 'typecheck'
 			stagingKey: string
+			userId: string
 			typecheckTargets: Array<PackageCallableTypecheckTarget>
 	  }
+
+/**
+ * Staged snapshots are user-owned content, so the staging key is namespaced
+ * by `userId` and the consuming Durable Object verifies the key belongs to
+ * the requesting user before reading it.
+ */
+export function isolatedCheckStagingKeyForUser(userId: string) {
+	return `${isolatedCheckStagingKeyPrefix}${userId}:${crypto.randomUUID()}`
+}
+
+export function isolatedCheckStagingKeyBelongsToUser(input: {
+	stagingKey: string
+	userId: string
+}) {
+	return input.stagingKey.startsWith(
+		`${isolatedCheckStagingKeyPrefix}${input.userId}:`,
+	)
+}
 
 export type IsolatedCheckPhaseOutcome = {
 	ok: boolean
@@ -59,7 +78,10 @@ type IsolatedCheckPhaseStub = {
 }
 
 export type IsolatedCheckPhaseRunner = {
-	stage(sourceFiles: Record<string, string>): Promise<string>
+	stage(input: {
+		userId: string
+		sourceFiles: Record<string, string>
+	}): Promise<string>
 	run(request: IsolatedCheckPhaseRequest): Promise<IsolatedCheckPhaseOutcome>
 	discard(stagingKey: string): Promise<void>
 }
@@ -98,19 +120,25 @@ export function createIsolatedCheckPhaseRunner(
 	)?.BUNDLE_ARTIFACTS_KV
 	if (!namespace || !stagingKv) return null
 	return {
-		async stage(sourceFiles) {
-			const stagingKey = `${isolatedCheckStagingKeyPrefix}${crypto.randomUUID()}`
-			await stagingKv.put(stagingKey, JSON.stringify({ sourceFiles }), {
-				expirationTtl: stagingTtlSeconds,
-			})
+		async stage(input) {
+			const stagingKey = isolatedCheckStagingKeyForUser(input.userId)
+			await stagingKv.put(
+				stagingKey,
+				JSON.stringify({ sourceFiles: input.sourceFiles }),
+				{
+					expirationTtl: stagingTtlSeconds,
+				},
+			)
 			return stagingKey
 		},
 		async run(request) {
-			// A fresh id per phase invocation puts every heavy phase in its own
-			// isolate. The instance never touches its Durable Object storage,
-			// so nothing persists for the random name.
+			// A fresh, user-namespaced id per phase invocation puts every heavy
+			// phase in its own isolate. The instance never touches its Durable
+			// Object storage, so nothing persists for the random name.
 			const stub = namespace.get(
-				namespace.idFromName(`isolated-check-phase-${crypto.randomUUID()}`),
+				namespace.idFromName(
+					`isolated-check-phase-${request.userId}-${crypto.randomUUID()}`,
+				),
 			) as unknown as IsolatedCheckPhaseStub
 			try {
 				return await stub.runIsolatedCheckPhase(request)

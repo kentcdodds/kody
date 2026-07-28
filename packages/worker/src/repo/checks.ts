@@ -1287,8 +1287,13 @@ export async function runRepoChecks(input: {
 		missingBundleTargets.length === 0 &&
 		bundleTargets.length > 0
 	const stagingKey =
-		isolatedRunner && (wantsLanguageServiceTypecheck || wantsBundleValidation)
-			? await isolatedRunner.stage(sourceFiles)
+		isolatedRunner &&
+		bundleContext &&
+		(wantsLanguageServiceTypecheck || wantsBundleValidation)
+			? await isolatedRunner.stage({
+					userId: bundleContext.userId,
+					sourceFiles,
+				})
 			: null
 
 	let typecheckResult: RepoCheckResult
@@ -1326,10 +1331,11 @@ export async function runRepoChecks(input: {
 				}
 			}
 			const outcome =
-				isolatedRunner && stagingKey
+				isolatedRunner && stagingKey && bundleContext
 					? await isolatedRunner.run({
 							phase: 'typecheck',
 							stagingKey,
+							userId: bundleContext.userId,
 							typecheckTargets: callableTypecheckTargets,
 						})
 					: await runPackageTypecheckLanguageService({

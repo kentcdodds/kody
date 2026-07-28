@@ -1403,7 +1403,7 @@ test('runIsolatedCheckPhase loads staged files from KV and dispatches the phase'
 
 	const bundleOutcome = await session.runIsolatedCheckPhase({
 		phase: 'bundle-chunk',
-		stagingKey: 'repo-checks-staging:v1:abc',
+		stagingKey: 'repo-checks-staging:v1:user-1:abc',
 		baseUrl: '/',
 		userId: 'user-1',
 		bundleTargets: [{ path: 'src/index.ts', bundleKind: 'callable' }],
@@ -1419,7 +1419,8 @@ test('runIsolatedCheckPhase loads staged files from KV and dispatches the phase'
 
 	const typecheckOutcome = await session.runIsolatedCheckPhase({
 		phase: 'typecheck',
-		stagingKey: 'repo-checks-staging:v1:abc',
+		stagingKey: 'repo-checks-staging:v1:user-1:abc',
+		userId: 'user-1',
 		typecheckTargets: [
 			{ path: 'src/index.ts', includeStorage: false, emittedEventTopics: [] },
 		],
@@ -1436,9 +1437,22 @@ test('runIsolatedCheckPhase loads staged files from KV and dispatches the phase'
 	kv.get.mockResolvedValueOnce(null)
 	const expired = await session.runIsolatedCheckPhase({
 		phase: 'typecheck',
-		stagingKey: 'repo-checks-staging:v1:gone',
+		stagingKey: 'repo-checks-staging:v1:user-1:gone',
+		userId: 'user-1',
 		typecheckTargets: [],
 	})
 	expect(expired.ok).toBe(false)
 	expect(expired.message).toContain('staging data expired')
+
+	// A staging key namespaced to another user is rejected before any read.
+	kv.get.mockClear()
+	const crossUser = await session.runIsolatedCheckPhase({
+		phase: 'typecheck',
+		stagingKey: 'repo-checks-staging:v1:user-2:abc',
+		userId: 'user-1',
+		typecheckTargets: [],
+	})
+	expect(crossUser.ok).toBe(false)
+	expect(crossUser.message).toContain('does not belong to the requesting user')
+	expect(kv.get).not.toHaveBeenCalled()
 })
