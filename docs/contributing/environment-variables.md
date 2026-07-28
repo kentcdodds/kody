@@ -70,6 +70,20 @@ Optional Worker secret and vars (see `packages/worker/src/env-schema.ts` and
   runtime env and only honors a **number**, so configure it as a JSON-number
   `var`, not a string secret.
 
+## Fathom Analytics
+
+Optional Wrangler `var` (public, non-secret; see
+`packages/worker/src/env-schema.ts` and `packages/worker/src/app/ssr-document.tsx`):
+
+- `FATHOM_SITE_ID` — the Fathom Analytics site id. When set, SSR pages embed
+  the Fathom tracker script (`https://cdn.usefathom.com/script.js` with
+  `data-spa="auto"` so SPA navigations are tracked). Production sets it in
+  `packages/worker/wrangler.jsonc`; it is intentionally unset for local dev,
+  preview, and tests so those environments never send pageviews. The CSP in
+  `packages/worker/src/app/security-headers.ts` allowlists
+  `https://cdn.usefathom.com` in `script-src` and `img-src` for the tracker
+  and its image beacon.
+
 ## MCP `execute` and outbound HTTP
 
 MCP `execute` runs sandboxed JavaScript with a global `fetch`. Calls to

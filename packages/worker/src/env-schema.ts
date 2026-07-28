@@ -181,6 +181,10 @@ export const EnvSchema = object({
 	SENTRY_DSN: optionalUrlStringSchema,
 	SENTRY_ENVIRONMENT: optionalNonEmptyStringSchema,
 	SENTRY_TRACES_SAMPLE_RATE: optionalSentryTracesSampleRateSchema,
+	// Fathom Analytics site id (public, non-secret). When set, SSR pages embed
+	// the Fathom tracker script; when unset (local dev, preview, tests) no
+	// analytics script is rendered.
+	FATHOM_SITE_ID: optionalNonEmptyStringSchema,
 	WRANGLER_IS_LOCAL_DEV: optionalNonEmptyStringSchema,
 	GITHUB_CLIENT_ID: optionalNonEmptyStringSchema,
 	GITHUB_CLIENT_SECRET: optionalNonEmptyStringSchema,

@@ -286,6 +286,9 @@
 				// capture is unaffected.
 				"SENTRY_TRACES_SAMPLE_RATE": 0,
 				"ARTIFACTS_NAMESPACE": "production",
+				// Fathom Analytics site id (public, non-secret). Production
+				// only so local dev, preview, and tests never send pageviews.
+				"FATHOM_SITE_ID": "WKKSDJGN",
 				// Public (non-secret) Stripe Price id for production Pro
 				// subscriptions. Coupled to the live Stripe account: if the
 				// price is regenerated in Stripe, update this value in the

@@ -24,6 +24,10 @@
  *   same-origin JSON endpoints; all third-party calls happen server-side.
  *   Browser Sentry envelopes stay same-origin too via the `/sentry-tunnel`
  *   route (see `handlers/sentry-tunnel.ts`).
+ * - `https://cdn.usefathom.com` in `script-src` and `img-src` allows the
+ *   Fathom Analytics tracker (rendered only when FATHOM_SITE_ID is set, see
+ *   `ssr-document.tsx`): the script loads from that host and reports
+ *   pageviews via an image beacon to the same host.
  * - `worker-src 'self' blob:` exists for Sentry Session Replay's compression
  *   Web Worker, which is created from a blob URL. Spawning a blob worker
  *   already requires script execution, which `script-src 'self'` still gates,
@@ -35,10 +39,10 @@ const contentSecurityPolicy = [
 	"object-src 'none'",
 	"frame-ancestors 'none'",
 	"form-action 'self'",
-	"img-src 'self' data: blob:",
+	"img-src 'self' data: blob: https://cdn.usefathom.com",
 	"font-src 'self' data:",
 	"style-src 'self' 'unsafe-inline'",
-	"script-src 'self'",
+	"script-src 'self' https://cdn.usefathom.com",
 	"connect-src 'self'",
 	"worker-src 'self' blob:",
 ].join('; ')

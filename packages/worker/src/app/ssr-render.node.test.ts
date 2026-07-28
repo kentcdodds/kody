@@ -375,6 +375,33 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	)
 })
 
+test('renderAppPage embeds the Fathom tracker only when FATHOM_SITE_ID is set', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const withoutFathom = await renderAppPage({
+		request: new Request('https://example.com/login'),
+		env,
+	})
+	expect(withoutFathom.status).toBe(200)
+	const withoutFathomHtml = await readResponseText(withoutFathom)
+	expect(withoutFathomHtml).not.toContain('cdn.usefathom.com')
+
+	const withFathom = await renderAppPage({
+		request: new Request('https://example.com/login'),
+		env: { ...env, FATHOM_SITE_ID: 'WKKSDJGN' } as Env,
+	})
+	expect(withFathom.status).toBe(200)
+	const withFathomHtml = await readResponseText(withFathom)
+	expect(withFathomHtml).toContain('https://cdn.usefathom.com/script.js')
+	expect(withFathomHtml).toContain('data-site="WKKSDJGN"')
+	expect(withFathomHtml).toContain('data-spa="auto"')
+	const csp = withFathom.headers.get('Content-Security-Policy')
+	expect(csp).toContain("script-src 'self' https://cdn.usefathom.com")
+	expect(csp).toContain("img-src 'self' data: blob: https://cdn.usefathom.com")
+})
+
 test('renderAppPage configures session secret before reading cookies', async () => {
 	resetDataCacheForTests()
 	resetAuthSessionSecretForTests()

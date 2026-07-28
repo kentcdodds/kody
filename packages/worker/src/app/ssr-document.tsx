@@ -28,6 +28,11 @@ export type SsrDocumentProps = AppRootProps & {
 	 * SENTRY_DSN is not configured; the DSN is a publishable client key.
 	 */
 	sentryConfig?: SentryClientConfig | null
+	/**
+	 * Fathom Analytics site id (public). Omitted when FATHOM_SITE_ID is not
+	 * configured (local dev, preview, tests) so no tracker script is embedded.
+	 */
+	fathomSiteId?: string | null
 }
 
 function managedHeadAttr(value: string) {
@@ -160,6 +165,16 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 						name={SENTRY_CONFIG_META_NAME}
 						content={JSON.stringify(handle.props.sentryConfig)}
 					/>
+				) : null}
+				{handle.props.fathomSiteId ? (
+					// data-spa="auto" makes Fathom track client-side (pushState)
+					// navigations, not just full document loads.
+					<script
+						src="https://cdn.usefathom.com/script.js"
+						data-site={handle.props.fathomSiteId}
+						data-spa="auto"
+						defer
+					></script>
 				) : null}
 				<link rel="modulepreload" href={clientEntryHref} />
 				<link rel="stylesheet" href={stylesheetHref} />

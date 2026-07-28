@@ -216,6 +216,10 @@ automatically:
 - `SENTRY_TRACES_SAMPLE_RATE` (optional `0`–`1`, defaults to **`1.0`** in code
   when unset; production pins `0` via a Wrangler var — see
   [environment-variables.md](./environment-variables.md))
+- `FATHOM_SITE_ID` (optional public Wrangler var; when set, SSR pages embed the
+  Fathom Analytics tracker script. Committed for production in
+  `packages/worker/wrangler.jsonc`; intentionally unset for local dev, preview,
+  and tests — see [environment-variables.md](./environment-variables.md))
 - `APP_COMMIT_SHA` (used as the Sentry **release** when present, in addition to
   `/health` versioning)
 - `CLOUDFLARE_API_BASE_URL` (optional; defaults to `https://api.cloudflare.com`.

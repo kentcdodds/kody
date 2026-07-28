@@ -66,6 +66,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 				tunnel: SENTRY_TUNNEL_PATH,
 			}
 		: null
+	const fathomSiteId = parsedEnv.FATHOM_SITE_ID?.trim() || null
 
 	const stream = renderToStream(
 		// Remix server components accept props via handle.props; JSX typing is loose here.
@@ -79,6 +80,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 				clientEntryHref={clientEntryHref}
 				stylesheetHref={stylesheetHref}
 				sentryConfig={sentryConfig}
+				fathomSiteId={fathomSiteId}
 			/>
 		) as RemixNode,
 		{
