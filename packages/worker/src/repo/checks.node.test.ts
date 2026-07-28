@@ -170,6 +170,7 @@ async function runPackageJobTypecheckChecks(
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: typeScriptFileSystem,
 		languageService: {
+			dispose: vi.fn(),
 			getSemanticDiagnostics,
 		},
 	})
@@ -341,6 +342,7 @@ test('runRepoChecks strips repo-session workspace prefixes from package snapshot
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: typeScriptFileSystem,
 		languageService: {
+			dispose: vi.fn(),
 			getSemanticDiagnostics,
 		},
 	})
@@ -574,6 +576,7 @@ test('runRepoChecks validates every persisted package artifact target before pub
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: typeScriptFileSystem,
 		languageService: {
+			dispose: vi.fn(),
 			getSemanticDiagnostics,
 		},
 	})
@@ -666,6 +669,7 @@ test('runRepoChecks still reports unknown globals for package-owned jobs', async
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: typeScriptFileSystem,
 		languageService: {
+			dispose: vi.fn(),
 			getSemanticDiagnostics,
 		},
 	})
@@ -729,6 +733,7 @@ test('runRepoChecks injects package tsconfig overlays that allow optional .ts im
 		mockModule.createTypescriptLanguageService.mockResolvedValue({
 			fileSystem: typeScriptFileSystem,
 			languageService: {
+				dispose: vi.fn(),
 				getSemanticDiagnostics: vi.fn(() => []),
 			},
 		})
@@ -1040,6 +1045,7 @@ test('runRepoChecks surfaces bundle validation failures when runtime bundling ca
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: unresolvedTypeScriptFileSystem,
 		languageService: {
+			dispose: vi.fn(),
 			getSemanticDiagnostics: vi.fn(() => []),
 		},
 	})
@@ -1126,6 +1132,7 @@ test('runRepoChecks surfaces bundle validation failures when runtime bundling ca
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: unresolvedVersionTypeScriptFileSystem,
 		languageService: {
+			dispose: vi.fn(),
 			getSemanticDiagnostics: vi.fn(() => []),
 		},
 	})
@@ -1193,6 +1200,7 @@ test('runRepoChecks fails before publish when an exported module artifact cannot
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: typeScriptFileSystem,
 		languageService: {
+			dispose: vi.fn(),
 			getSemanticDiagnostics: vi.fn(() => []),
 		},
 	})
@@ -1282,6 +1290,7 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 	mockModule.createTypescriptLanguageService.mockResolvedValue({
 		fileSystem: typeScriptFileSystem,
 		languageService: {
+			dispose: vi.fn(),
 			getSemanticDiagnostics,
 		},
 	})
