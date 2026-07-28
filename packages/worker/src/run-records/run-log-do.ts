@@ -397,18 +397,29 @@ class RunLogBase extends DurableObject<Env> {
 		return row != null
 	}
 
-	private findRunByIdempotencyKey(idempotencyKey: string): RunRecord | null {
+	private findRunByIdempotencyKey(input: {
+		idempotencyKey: string
+		surface?: RunSurface | null
+	}): RunRecord | null {
 		// Prefer an in-flight row, then the newest terminal row, so execute
-		// replay sees the attempt that still owns the key.
+		// replay sees the attempt that still owns the key. Scope by surface
+		// when provided so execute keys cannot collide with package/workflow
+		// history that reused the same string.
+		const clauses = ['r.idempotency_key = ?']
+		const params: Array<SqlStorageValue> = [input.idempotencyKey]
+		if (input.surface) {
+			clauses.push('r.surface = ?')
+			params.push(input.surface)
+		}
 		const row = this.ctx.storage.sql
 			.exec<Record<string, SqlStorageValue>>(
 				`SELECT r.*,
 					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
 				FROM runs r
-				WHERE r.idempotency_key = ?
+				WHERE ${clauses.join(' AND ')}
 				ORDER BY (r.status = 'running') DESC, r.started_at DESC, r.id DESC
 				LIMIT 1`,
-				idempotencyKey,
+				...params,
 			)
 			.toArray()[0]
 		if (!row) return null
@@ -734,7 +745,10 @@ class RunLogBase extends DurableObject<Env> {
 	}> {
 		const key = input.run.idempotencyKey?.trim() || null
 		if (key) {
-			const existing = this.findRunByIdempotencyKey(key)
+			const existing = this.findRunByIdempotencyKey({
+				idempotencyKey: key,
+				surface: input.run.surface,
+			})
 			if (existing) {
 				return { claimed: false, run: existing }
 			}
@@ -774,10 +788,36 @@ class RunLogBase extends DurableObject<Env> {
 
 	async getRunByIdempotencyKey(input: {
 		idempotencyKey: string
+		surface?: RunSurface | null
 	}): Promise<RunRecord | null> {
 		const key = input.idempotencyKey.trim()
 		if (!key) return null
-		return this.findRunByIdempotencyKey(key)
+		return this.findRunByIdempotencyKey({
+			idempotencyKey: key,
+			surface: input.surface ?? null,
+		})
+	}
+
+	/**
+	 * Delete a still-`running` row (and its logs) so a failed setup path can
+	 * release an idempotency key without poisoning later retries.
+	 */
+	async deleteRunIfRunning(input: {
+		runId: string
+	}): Promise<{ deleted: boolean }> {
+		const row = this.ctx.storage.sql
+			.exec<{ status: string }>(
+				`SELECT status FROM runs WHERE id = ? LIMIT 1`,
+				input.runId,
+			)
+			.toArray()[0]
+		if (!row || row.status !== 'running') {
+			return { deleted: false }
+		}
+		this.deleteRunsByIds([input.runId])
+		this.retentionIdleConfirmed = false
+		await this.ensureRetentionAlarm()
+		return { deleted: true }
 	}
 
 	async finishRun(input: {
@@ -1032,7 +1072,11 @@ export type RunLogRpc = {
 	}) => Promise<{ run: RunRecord; logs: Array<RunRecordLog> } | null>
 	getRunByIdempotencyKey: (input: {
 		idempotencyKey: string
+		surface?: RunSurface | null
 	}) => Promise<RunRecord | null>
+	deleteRunIfRunning: (input: {
+		runId: string
+	}) => Promise<{ deleted: boolean }>
 	summarize: (input: { since: string }) => Promise<RunRecordSummary>
 	listStorageIds: () => Promise<Array<string>>
 	exportRuns: (input: ExportRunsInput) => Promise<{

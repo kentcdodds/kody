@@ -8,6 +8,7 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { RunLog } from './run-log-do.ts'
 import {
+	abandonRunRecord,
 	beginRunRecord,
 	claimRunRecord,
 	clearRunRecords,
@@ -1021,6 +1022,7 @@ test('keyed execute claims eagerly, retains bounded result, and replays without 
 		env,
 		userId,
 		idempotencyKey: key,
+		surface: 'execute',
 	})
 	expect(byKey?.id).toBe(first.handle.id)
 	expect(byKey?.status).toBe('success')
@@ -1066,6 +1068,58 @@ test('keyed execute claims eagerly, retains bounded result, and replays without 
 		filter: { surface: 'execute' },
 	})
 	expect(page.runs.map((run) => run.id)).toEqual([first.handle.id])
+})
+
+test('idempotency lookup is surface-scoped and abandon releases running claims', async () => {
+	const userId = uniqueUserId('surface-key')
+	const sharedKey = `shared-key-${crypto.randomUUID()}`
+	await recordRunRecord({
+		env,
+		userId,
+		context: {
+			surface: 'workflow',
+			name: 'wf',
+			idempotencyKey: sharedKey,
+		},
+		status: 'success',
+		result: { from: 'workflow' },
+	})
+	const executeClaim = await claimRunRecord({
+		env,
+		userId,
+		context: {
+			surface: 'execute',
+			idempotencyKey: sharedKey,
+		},
+	})
+	expect(executeClaim?.claimed).toBe(true)
+	if (!executeClaim || !executeClaim.claimed) throw new Error('expected claim')
+
+	const executeLookup = await getRunRecordByIdempotencyKey({
+		env,
+		userId,
+		idempotencyKey: sharedKey,
+		surface: 'execute',
+	})
+	expect(executeLookup?.id).toBe(executeClaim.handle.id)
+	expect(executeLookup?.surface).toBe('execute')
+
+	await abandonRunRecord({ env, handle: executeClaim.handle })
+	expect(
+		await getRunRecordByIdempotencyKey({
+			env,
+			userId,
+			idempotencyKey: sharedKey,
+			surface: 'execute',
+		}),
+	).toBeNull()
+	const workflowStillThere = await getRunRecordByIdempotencyKey({
+		env,
+		userId,
+		idempotencyKey: sharedKey,
+		surface: 'workflow',
+	})
+	expect(workflowStillThere?.metadata['result']).toEqual({ from: 'workflow' })
 })
 
 test('snapshotRunRecordResult keeps small values and marks oversized ones', () => {

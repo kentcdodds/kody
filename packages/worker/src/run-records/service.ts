@@ -540,13 +540,37 @@ export async function getRunRecordByIdempotencyKey(input: {
 	env: Env
 	userId: string
 	idempotencyKey: string
+	surface?: RunRecordContext['surface'] | null
 }): Promise<RunRecord | null> {
 	const key = normalizeOptionalString(input.idempotencyKey)
 	if (!runLogBinding(input.env) || !key) return null
 	return await runLogRpc({
 		env: input.env,
 		userId: input.userId,
-	}).getRunByIdempotencyKey({ idempotencyKey: key })
+	}).getRunByIdempotencyKey({
+		idempotencyKey: key,
+		surface: input.surface ?? null,
+	})
+}
+
+/**
+ * Release a claimed `running` row after setup failure (before sandbox work).
+ * Never throws. Terminal rows are left alone so legitimate finishes stay put.
+ */
+export async function abandonRunRecord(input: {
+	env: Env
+	handle: RunRecordHandle | null
+}): Promise<void> {
+	const handle = input.handle
+	if (!handle || !runLogBinding(input.env)) return
+	try {
+		await runLogRpc({
+			env: input.env,
+			userId: handle.userId,
+		}).deleteRunIfRunning({ runId: handle.id })
+	} catch (error) {
+		console.warn('run-record-abandon-failed', error)
+	}
 }
 
 export async function summarizeRunRecords(input: {

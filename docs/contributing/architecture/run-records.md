@@ -130,9 +130,12 @@ Rules:
   execute) should pass it so `run_get` can show what the handler returned.
 - Keyed execute claims the idempotency key through `claimRunRecord` (awaited DO
   RPC) before sandbox work so a concurrent retry sees `running` or the terminal
-  row instead of starting a second attempt. Claim is select-then-insert inside
-  one DO RPC (serialized), not a unique SQL constraint — other surfaces may
-  reuse idempotency keys across history.
+  row instead of starting a second attempt. Lookups are scoped by
+  `(surface, idempotency_key)` so execute keys cannot collide with
+  package/workflow history. Claim is select-then-insert inside one DO RPC
+  (serialized), not a unique SQL constraint — other surfaces may reuse
+  idempotency keys across history. Setup failures before sandbox work
+  `abandonRunRecord` (delete if still `running`) so keys are not poisoned.
 - Bundled-module runners (`runBundledModuleWithRegistry`) accept a `runRecord`
   context (and an optional pre-claimed `runRecordHandle`) and call begin/finish
   internally; surfaces that do not go through that helper call the service

@@ -51,8 +51,10 @@ import { listOpenApiBindings } from '#worker/openapi/binding-service.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
 import {
+	abandonRunRecord,
 	claimRunRecord,
 	finishRunRecord,
+	getRunRecord,
 	getRunRecordByIdempotencyKey,
 } from '#worker/run-records/service.ts'
 import {
@@ -192,13 +194,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				// Nested-function assignments are invisible to TS control-flow
 				// analysis on the outer `let`, so reassert the declared type.
 				const claimedHandle = claimedRunHandle as RunRecordHandle | null
+				// Setup failures happen before sandbox work: release the key so
+				// a later retry is not poisoned by a non-sandbox error.
 				if (claimedHandle) {
-					await finishRunRecord({
-						env,
-						handle: claimedHandle,
-						status: 'error',
-						error: cause,
-					})
+					await abandonRunRecord({ env, handle: claimedHandle })
 				}
 				const timing = finishToolTiming(timingStart)
 				const error = cause instanceof Error ? cause : new Error(String(cause))
@@ -222,7 +221,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					structuredContent: {
 						conversationId: resolvedConversationId,
 						timing,
-						...(claimedHandle ? { runId: claimedHandle.id } : {}),
 						error: error.message,
 					},
 					isError: true,
@@ -232,14 +230,15 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			async function runExecuteTool() {
 				const normalizedIdempotencyKey =
 					normalizeExecuteIdempotencyKey(idempotencyKey)
-				// Look up / claim a keyed run before consuming quota so
-				// transport-timeout retries and lost races return
-				// replay/in-progress without burning another daily slot.
+				// Look up an existing keyed execute run before consuming quota
+				// so transport-timeout retries can replay / report in-progress
+				// without burning another daily slot.
 				if (normalizedIdempotencyKey && callerContext.user?.userId) {
 					const existing = await getRunRecordByIdempotencyKey({
 						env,
 						userId: callerContext.user.userId,
 						idempotencyKey: normalizedIdempotencyKey,
+						surface: 'execute',
 					})
 					if (existing) {
 						const timing = finishToolTiming(timingStart)
@@ -250,6 +249,20 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							activeStorageId,
 						})
 					}
+				}
+
+				// Daily execute quota, consumed before claim/bundling/sandbox
+				// so over-limit calls cost nothing and do not poison a key.
+				if (callerContext.user?.userId) {
+					await consumeDailyEntitlement({
+						db: env.APP_DB,
+						userId: callerContext.user.userId,
+						email: callerContext.user.email,
+						resource: 'execute_calls_per_day',
+					})
+				}
+
+				if (normalizedIdempotencyKey && callerContext.user?.userId) {
 					const claim = await claimRunRecord({
 						env,
 						userId: callerContext.user.userId,
@@ -278,19 +291,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						})
 					}
 					claimedRunHandle = claim.handle
-				}
-
-				// Daily execute quota, consumed before any bundling or sandbox
-				// work so over-limit calls cost nothing. The thrown
-				// EntitlementLimitError propagates through the outer catch as
-				// a structured MCP error (and finalizes any claimed key).
-				if (callerContext.user?.userId) {
-					await consumeDailyEntitlement({
-						db: env.APP_DB,
-						userId: callerContext.user.userId,
-						email: callerContext.user.email,
-						resource: 'execute_calls_per_day',
-					})
 				}
 
 				const { getCapabilityRegistryForContext } =
@@ -364,16 +364,23 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							// Bundling the caller-provided module (syntax errors,
 							// unresolved imports) throws before the sandbox runs;
 							// route it through the sandbox-error result path so it
-							// is not logged as a platform failure. Finish any
-							// pre-claimed keyed run so retries can replay the error
-							// instead of seeing a stuck `running` row.
+							// is not logged as a platform failure. Finish a still-
+							// running claimed row only — if the registry already
+							// wrote a terminal row, do not double-finish.
 							if (claimedRunHandle) {
-								await finishRunRecord({
+								const current = await getRunRecord({
 									env,
-									handle: claimedRunHandle,
-									status: 'error',
-									error: cause,
+									userId: claimedRunHandle.userId,
+									runId: claimedRunHandle.id,
 								})
+								if (current?.run.status === 'running') {
+									await finishRunRecord({
+										env,
+										handle: claimedRunHandle,
+										status: 'error',
+										error: cause,
+									})
+								}
 							}
 							return {
 								result: undefined,

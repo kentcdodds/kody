@@ -15,8 +15,10 @@ import {
 	resolveConversationId,
 } from '#mcp/tools/tool-call-context.ts'
 import {
+	abandonRunRecord,
 	claimRunRecord,
 	finishRunRecord,
+	getRunRecord,
 	getRunRecordByIdempotencyKey,
 } from '#worker/run-records/service.ts'
 import {
@@ -136,6 +138,7 @@ export const executeCapability = defineDomainCapability(
 					env: ctx.env,
 					userId,
 					idempotencyKey,
+					surface: 'execute',
 				})
 				if (existing) {
 					if (existing.status === 'running') {
@@ -272,12 +275,24 @@ export const executeCapability = defineDomainCapability(
 				)
 			} catch (cause) {
 				if (claimedRunHandle) {
-					await finishRunRecord({
+					const current = await getRunRecord({
 						env: ctx.env,
-						handle: claimedRunHandle,
-						status: 'error',
-						error: cause,
+						userId: claimedRunHandle.userId,
+						runId: claimedRunHandle.id,
 					})
+					if (current?.run.status === 'running') {
+						await finishRunRecord({
+							env: ctx.env,
+							handle: claimedRunHandle,
+							status: 'error',
+							error: cause,
+						})
+					} else if (!current) {
+						await abandonRunRecord({
+							env: ctx.env,
+							handle: claimedRunHandle,
+						})
+					}
 				}
 				return {
 					ok: false,
