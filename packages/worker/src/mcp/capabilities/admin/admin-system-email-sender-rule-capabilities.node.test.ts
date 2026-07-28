@@ -45,7 +45,7 @@ function createContext(roles: Array<string>) {
 	}
 }
 
-test('admin system email sender rule capabilities enforce admin role', async () => {
+test('admin system email sender rules require admin and operate on systemEmailOwnerId', async () => {
 	await expect(
 		adminSystemEmailSenderRuleListCapability.handler(
 			{},
@@ -75,9 +75,7 @@ test('admin system email sender rule capabilities enforce admin role', async () 
 			reason: 'role',
 		}),
 	)
-})
 
-test('admin system email sender rule capabilities operate on systemEmailOwnerId', async () => {
 	const rule = {
 		id: 'system-rule-1',
 		userId: systemEmailOwnerId,

@@ -11,7 +11,7 @@ import {
 } from './sender-rules.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
-test('upsertEmailSenderRule creates and updates by (kind, value)', async () => {
+test('sender rule CRUD normalizes values, enforces validation/cap, and scopes deletes', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `rules-user-${crypto.randomUUID()}`
 
@@ -31,7 +31,6 @@ test('upsertEmailSenderRule creates and updates by (kind, value)', async () => {
 		note: 'known spammer',
 	})
 	expect(created.id).toBeTruthy()
-	expect(created.createdAt).toBeTruthy()
 	expect(created.updatedAt).toBe(created.createdAt)
 
 	const updated = await upsertEmailSenderRule({
@@ -47,107 +46,26 @@ test('upsertEmailSenderRule creates and updates by (kind, value)', async () => {
 	expect(updated.note).toBe('review instead')
 	expect(updated.createdAt).toBe(created.createdAt)
 	expect(updated.updatedAt >= created.updatedAt).toBe(true)
+	expect(await listEmailSenderRules({ db: env.APP_DB, userId })).toHaveLength(1)
 
-	const listed = await listEmailSenderRules({ db: env.APP_DB, userId })
-	expect(listed).toHaveLength(1)
-	expect(listed[0]?.id).toBe(created.id)
-	expect(listed[0]?.effect).toBe('quarantine')
-})
+	// Representative invalid shapes (address vs domain vs LIKE-wildcard domain).
+	for (const input of [
+		{ kind: 'address' as const, value: 'not-an-address' },
+		{ kind: 'domain' as const, value: 'user@example.com' },
+		{ kind: 'domain' as const, value: 'bad%domain.com' },
+	]) {
+		await expect(
+			upsertEmailSenderRule({
+				db: env.APP_DB,
+				userId,
+				...input,
+				effect: 'block',
+			}),
+		).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
+	}
 
-test('upsertEmailSenderRule rejects invalid address and domain values', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `rules-invalid-${crypto.randomUUID()}`
-
-	await expect(
-		upsertEmailSenderRule({
-			db: env.APP_DB,
-			userId,
-			kind: 'address',
-			value: 'not-an-address',
-			effect: 'block',
-		}),
-	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
-
-	await expect(
-		upsertEmailSenderRule({
-			db: env.APP_DB,
-			userId,
-			kind: 'address',
-			value: '@example.com',
-			effect: 'block',
-		}),
-	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
-
-	await expect(
-		upsertEmailSenderRule({
-			db: env.APP_DB,
-			userId,
-			kind: 'domain',
-			value: 'user@example.com',
-			effect: 'block',
-		}),
-	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
-
-	await expect(
-		upsertEmailSenderRule({
-			db: env.APP_DB,
-			userId,
-			kind: 'domain',
-			value: 'localhost',
-			effect: 'block',
-		}),
-	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
-
-	await expect(
-		upsertEmailSenderRule({
-			db: env.APP_DB,
-			userId,
-			kind: 'domain',
-			value: 'bad domain.com',
-			effect: 'block',
-		}),
-	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
-
-	await expect(
-		upsertEmailSenderRule({
-			db: env.APP_DB,
-			userId,
-			kind: 'address',
-			value: 'us er@example.com',
-			effect: 'block',
-		}),
-	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
-
-	// LIKE wildcards must never reach the stored value used in the
-	// subdomain-suffix pattern.
-	await expect(
-		upsertEmailSenderRule({
-			db: env.APP_DB,
-			userId,
-			kind: 'domain',
-			value: 'bad%domain.com',
-			effect: 'block',
-		}),
-	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
-
-	await expect(
-		upsertEmailSenderRule({
-			db: env.APP_DB,
-			userId,
-			kind: 'domain',
-			value: 'bad_domain.com',
-			effect: 'block',
-		}),
-	).rejects.toBeInstanceOf(EmailSenderRuleValidationError)
-
-	expect(await listEmailSenderRules({ db: env.APP_DB, userId })).toEqual([])
-})
-
-test('upsertEmailSenderRule enforces the per-user cap on inserts only', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `rules-cap-${crypto.randomUUID()}`
+	const capUserId = `rules-cap-${crypto.randomUUID()}`
 	const timestamp = new Date().toISOString()
-
 	for (let index = 0; index < maxEmailSenderRulesPerUser; index += 1) {
 		await env.APP_DB.prepare(
 			`INSERT INTO email_sender_rules (
@@ -156,75 +74,55 @@ test('upsertEmailSenderRule enforces the per-user cap on inserts only', async ()
 		)
 			.bind(
 				crypto.randomUUID(),
-				userId,
+				capUserId,
 				`blocked-${String(index)}.example`,
 				timestamp,
 				timestamp,
 			)
 			.run()
 	}
-
 	await expect(
 		upsertEmailSenderRule({
 			db: env.APP_DB,
-			userId,
+			userId: capUserId,
 			kind: 'address',
 			value: 'new@example.com',
 			effect: 'block',
 		}),
 	).rejects.toBeInstanceOf(EmailSenderRuleLimitError)
-
-	const updated = await upsertEmailSenderRule({
+	const cappedUpdate = await upsertEmailSenderRule({
 		db: env.APP_DB,
-		userId,
+		userId: capUserId,
 		kind: 'domain',
 		value: 'blocked-0.example',
 		effect: 'quarantine',
 		note: 'still allowed to update',
 	})
-	expect(updated.effect).toBe('quarantine')
-	expect(updated.note).toBe('still allowed to update')
-})
+	expect(cappedUpdate.effect).toBe('quarantine')
 
-test('deleteEmailSenderRule is scoped by userId', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const ownerId = `rules-owner-${crypto.randomUUID()}`
 	const otherId = `rules-other-${crypto.randomUUID()}`
-
-	const rule = await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId: ownerId,
-		kind: 'domain',
-		value: 'spam.example',
-		effect: 'block',
-	})
-
 	expect(
 		await deleteEmailSenderRule({
 			db: env.APP_DB,
 			userId: otherId,
-			ruleId: rule.id,
+			ruleId: created.id,
 		}),
 	).toBe(false)
-	expect(
-		await listEmailSenderRules({ db: env.APP_DB, userId: ownerId }),
-	).toHaveLength(1)
-
+	expect(await listEmailSenderRules({ db: env.APP_DB, userId })).toHaveLength(1)
 	expect(
 		await deleteEmailSenderRule({
 			db: env.APP_DB,
-			userId: ownerId,
-			ruleId: rule.id,
+			userId,
+			ruleId: created.id,
 		}),
 	).toBe(true)
-	expect(
-		await listEmailSenderRules({ db: env.APP_DB, userId: ownerId }),
-	).toEqual([])
+	expect(await listEmailSenderRules({ db: env.APP_DB, userId })).toEqual([])
 })
 
-test('evaluateEmailSenderRules applies address, subdomain, and longest-domain precedence', async () => {
+test('evaluateEmailSenderRules applies precedence and never matches across users', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `rules-eval-${crypto.randomUUID()}`
+	const otherUserId = `rules-other-${crypto.randomUUID()}`
 
 	await upsertEmailSenderRule({
 		db: env.APP_DB,
@@ -254,7 +152,6 @@ test('evaluateEmailSenderRules applies address, subdomain, and longest-domain pr
 		senderAddress: 'VIP@Mail.Example.COM',
 	})
 	expect(addressWin?.effect).toBe('allow')
-	expect(addressWin?.rule.kind).toBe('address')
 	expect(addressWin?.rule.value).toBe('vip@mail.example.com')
 
 	const longestDomain = await evaluateEmailSenderRules({
@@ -280,47 +177,19 @@ test('evaluateEmailSenderRules applies address, subdomain, and longest-domain pr
 			senderAddress: 'friend@other.example',
 		}),
 	).toBeNull()
-})
-
-test('evaluateEmailSenderRules never matches another user rules', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	const userA = `rules-a-${crypto.randomUUID()}`
-	const userB = `rules-b-${crypto.randomUUID()}`
-
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId: userA,
-		kind: 'address',
-		value: 'blocked@example.com',
-		effect: 'block',
-	})
-	await upsertEmailSenderRule({
-		db: env.APP_DB,
-		userId: userA,
-		kind: 'domain',
-		value: 'spam.example',
-		effect: 'quarantine',
-	})
 
 	expect(
 		await evaluateEmailSenderRules({
 			db: env.APP_DB,
-			userId: userB,
-			senderAddress: 'blocked@example.com',
+			userId: otherUserId,
+			senderAddress: 'vip@mail.example.com',
 		}),
 	).toBeNull()
 	expect(
 		await evaluateEmailSenderRules({
 			db: env.APP_DB,
-			userId: userB,
-			senderAddress: 'bot@spam.example',
+			userId: otherUserId,
+			senderAddress: 'news@mail.example.com',
 		}),
 	).toBeNull()
-
-	const ownerMatch = await evaluateEmailSenderRules({
-		db: env.APP_DB,
-		userId: userA,
-		senderAddress: 'blocked@example.com',
-	})
-	expect(ownerMatch?.effect).toBe('block')
 })

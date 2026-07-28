@@ -60,7 +60,7 @@ function createUserContext(userId = 'user-1') {
 	})
 }
 
-test('email_sender_rule_set/list/delete happy path scopes to the signed-in user', async () => {
+test('email_sender_rule_set/list/delete scopes to the caller and maps domain errors', async () => {
 	const env = createEnv()
 	const rule = {
 		id: 'rule-1',
@@ -123,49 +123,42 @@ test('email_sender_rule_set/list/delete happy path scopes to the signed-in user'
 		ruleId: 'rule-1',
 	})
 	expect(deleteResult).toEqual({ deleted: true })
-})
 
-test('email_sender_rule_set maps validation and limit errors to plain Error messages', async () => {
-	const env = createEnv()
+	// Domain errors become plain Error with the original message (not typed classes).
 	mocks.upsertEmailSenderRule.mockRejectedValueOnce(
-		new EmailSenderRuleValidationError(
-			'Domain sender rules require a bare domain with at least one "." and no spaces, "@", "%", or "_".',
-		),
+		new EmailSenderRuleValidationError('validation-failed'),
 	)
-	await expect(
-		emailSenderRuleSetCapability.handler(
+	const validationError = await emailSenderRuleSetCapability
+		.handler(
 			{ kind: 'domain', value: 'not a domain', effect: 'block' },
 			{ env, callerContext: createUserContext() },
-		),
-	).rejects.toThrow(
-		'Domain sender rules require a bare domain with at least one "." and no spaces, "@", "%", or "_".',
-	)
+		)
+		.then(
+			() => null,
+			(error: unknown) => error,
+		)
+	expect(validationError).toBeInstanceOf(Error)
+	expect(validationError).not.toBeInstanceOf(EmailSenderRuleValidationError)
+	expect((validationError as Error).message).toBe('validation-failed')
 
 	mocks.upsertEmailSenderRule.mockRejectedValueOnce(
-		new EmailSenderRuleLimitError(
-			'Sender rule limit reached: at most 200 rules per user.',
-		),
+		new EmailSenderRuleLimitError('limit-reached'),
 	)
 	await expect(
 		emailSenderRuleSetCapability.handler(
 			{ kind: 'address', value: 'a@example.com', effect: 'allow' },
 			{ env, callerContext: createUserContext() },
 		),
-	).rejects.toThrow('Sender rule limit reached: at most 200 rules per user.')
-})
+	).rejects.toThrow('limit-reached')
 
-test('email_sender_rule_delete is isolated across users and reports not-found', async () => {
-	const env = createEnv()
 	mocks.deleteEmailSenderRule.mockResolvedValueOnce(false)
-
 	await expect(
 		emailSenderRuleDeleteCapability.handler(
 			{ rule_id: 'other-user-rule' },
 			{ env, callerContext: createUserContext('user-1') },
 		),
 	).rejects.toThrow('Email sender rule not found: other-user-rule')
-
-	expect(mocks.deleteEmailSenderRule).toHaveBeenCalledWith({
+	expect(mocks.deleteEmailSenderRule).toHaveBeenLastCalledWith({
 		db: env.APP_DB,
 		userId: 'user-1',
 		ruleId: 'other-user-rule',

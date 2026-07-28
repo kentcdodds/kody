@@ -210,10 +210,6 @@ async function seedInboundSubscription(topic: string) {
 	return savedPackage
 }
 
-test('exports the quarantined inbound topic constant', () => {
-	expect(exportedQuarantinedTopic).toBe(inboundEmailQuarantinedTopic)
-})
-
 test('accepted inbound messages dispatch email.message.received with classification fields', async () => {
 	mocks.invokePackageSubscription.mockClear()
 	const savedPackage = await seedInboundSubscription(inboundEmailReceiptTopic)
@@ -256,6 +252,7 @@ test('accepted inbound messages dispatch email.message.received with classificat
 })
 
 test('quarantined inbound messages dispatch email.message.quarantined and not received', async () => {
+	expect(exportedQuarantinedTopic).toBe(inboundEmailQuarantinedTopic)
 	mocks.invokePackageSubscription.mockClear()
 	const savedPackage = await seedInboundSubscription(
 		inboundEmailQuarantinedTopic,

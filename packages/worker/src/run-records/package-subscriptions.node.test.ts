@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const runErrorRecordedTopic = 'run.error.recorded'
 
@@ -54,11 +55,38 @@ function errorRun(overrides: Record<string, unknown> = {}) {
 	}
 }
 
-test('exports the locked run.error.recorded topic', () => {
-	expect(exportedTopic).toBe(runErrorRecordedTopic)
-})
+function createEnv() {
+	return {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {},
+		APP_BASE_URL: 'https://example.com',
+	} as Env
+}
 
-test('run.error.recorded fans out only to the owning user packages', async () => {
+function subscribedManifest(input: {
+	name: string
+	kodyId: string
+	handler?: string
+}) {
+	return {
+		manifest: {
+			name: input.name,
+			kody: {
+				id: input.kodyId,
+				description: 'Error notifier',
+				subscriptions: {
+					[runErrorRecordedTopic]: {
+						handler: input.handler ?? './src/on-run-error.ts',
+					},
+				},
+			},
+		},
+	}
+}
+
+test('run.error.recorded fans out only to owning-user packages with a lean payload', async () => {
+	expect(exportedTopic).toBe(runErrorRecordedTopic)
+
 	const savedPackage = {
 		id: 'package-1',
 		userId: 'user-1',
@@ -67,25 +95,13 @@ test('run.error.recorded fans out only to the owning user packages', async () =>
 		name: '@user/error-notifier',
 	}
 	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([savedPackage])
-	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce({
-		manifest: {
+	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce(
+		subscribedManifest({
 			name: '@user/error-notifier',
-			kody: {
-				id: 'error-notifier',
-				description: 'Error notifier',
-				subscriptions: {
-					[runErrorRecordedTopic]: {
-						handler: './src/on-run-error.ts',
-					},
-				},
-			},
-		},
-	})
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-		APP_BASE_URL: 'https://example.com',
-	} as Env
+			kodyId: 'error-notifier',
+		}),
+	)
+	const env = createEnv()
 	const run = errorRun()
 
 	const results = await dispatchRunErrorSubscriptionEvents({
@@ -138,46 +154,59 @@ test('run.error.recorded fans out only to the owning user packages', async () =>
 	expect(params?.['run']).not.toHaveProperty('logs')
 })
 
-test('skips dispatch for subscription-surface errors to prevent recursion', async () => {
-	mocks.invokePackageSubscription.mockClear()
-	mocks.listSavedPackagesByUserId.mockClear()
-	const results = await dispatchRunErrorSubscriptionEvents({
-		env: {
-			APP_DB: {},
-			BUNDLE_ARTIFACTS_KV: {},
-			APP_BASE_URL: 'https://example.com',
-		} as Env,
-		userId: 'user-1',
-		run: errorRun({ surface: 'subscription' }) as never,
-	})
-	expect(results).toEqual([])
+test('run.error.recorded skips recursion/non-errors and never throws on handler failures', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mocks.invokePackageSubscription.mockReset()
+	mocks.listSavedPackagesByUserId.mockReset()
+	mocks.loadPackageManifestBySourceId.mockReset()
+	const env = createEnv()
+
+	await expect(
+		dispatchRunErrorSubscriptionEvents({
+			env,
+			userId: 'user-1',
+			run: errorRun({ surface: 'subscription' }) as never,
+		}),
+	).resolves.toEqual([])
+	await expect(
+		dispatchRunErrorSubscriptionEvents({
+			env,
+			userId: 'user-1',
+			run: errorRun({
+				status: 'success',
+				errorName: null,
+				errorMessage: null,
+			}) as never,
+		}),
+	).resolves.toEqual([])
 	expect(mocks.listSavedPackagesByUserId).not.toHaveBeenCalled()
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
-})
 
-test('skips dispatch for non-error terminal status', async () => {
-	mocks.invokePackageSubscription.mockClear()
-	mocks.listSavedPackagesByUserId.mockClear()
-	const results = await dispatchRunErrorSubscriptionEvents({
-		env: {
-			APP_DB: {},
-			BUNDLE_ARTIFACTS_KV: {},
-			APP_BASE_URL: 'https://example.com',
-		} as Env,
-		userId: 'user-1',
-		run: errorRun({
-			status: 'success',
-			errorName: null,
-			errorMessage: null,
-		}) as never,
-	})
-	expect(results).toEqual([])
-	expect(mocks.listSavedPackagesByUserId).not.toHaveBeenCalled()
+	mocks.listSavedPackagesByUserId.mockRejectedValueOnce(
+		new Error('D1 unavailable'),
+	)
+	await expect(
+		dispatchRunErrorSubscriptionEvents({
+			env,
+			userId: 'user-1',
+			run: errorRun() as never,
+		}),
+	).resolves.toEqual([])
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
-})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'run.error.recorded package subscription discovery incomplete',
+		expect.objectContaining({
+			runId: 'run-1',
+			errorCount: 1,
+		}),
+	)
+	const discoveryWarn = consoleWarn.mock.calls.find(
+		(call) =>
+			call[0] ===
+			'run.error.recorded package subscription discovery incomplete',
+	)?.[1] as Record<string, unknown> | undefined
+	expect(discoveryWarn).not.toHaveProperty('userId')
 
-test('does not throw when discovery or invocation infrastructure fails', async () => {
-	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	const matchingPackage = {
 		id: 'package-1',
 		userId: 'user-1',
@@ -192,134 +221,50 @@ test('does not throw when discovery or invocation infrastructure fails', async (
 		kodyId: 'broken',
 		name: '@user/broken',
 	}
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
-		matchingPackage,
-		brokenPackage,
-	])
-	mocks.loadPackageManifestBySourceId
-		.mockResolvedValueOnce({
-			manifest: {
-				name: '@user/error-notifier',
-				kody: {
-					id: 'error-notifier',
-					description: 'Error notifier',
-					subscriptions: {
-						[runErrorRecordedTopic]: {
-							handler: './src/on-run-error.ts',
-						},
-					},
-				},
-			},
-		})
-		.mockRejectedValueOnce(new Error('manifest unavailable'))
-	mocks.invokePackageSubscription.mockResolvedValueOnce({
-		status: 503,
-		body: { error: { code: 'artifact_preparation_failed' } },
-	})
-
-	await expect(
-		dispatchRunErrorSubscriptionEvents({
-			env: {
-				APP_DB: {},
-				BUNDLE_ARTIFACTS_KV: {},
-				APP_BASE_URL: 'https://example.com',
-			} as Env,
-			userId: 'user-1',
-			run: errorRun() as never,
-		}),
-	).resolves.toEqual([null])
-
-	expect(warn).toHaveBeenCalled()
-	warn.mockRestore()
-})
-
-test('does not throw when listing saved packages fails', async () => {
-	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	mocks.listSavedPackagesByUserId.mockRejectedValueOnce(
-		new Error('D1 unavailable'),
-	)
-	mocks.invokePackageSubscription.mockClear()
-
-	await expect(
-		dispatchRunErrorSubscriptionEvents({
-			env: {
-				APP_DB: {},
-				BUNDLE_ARTIFACTS_KV: {},
-				APP_BASE_URL: 'https://example.com',
-			} as Env,
-			userId: 'user-1',
-			run: errorRun() as never,
-		}),
-	).resolves.toEqual([])
-
-	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
-	expect(warn).toHaveBeenCalledWith(
-		'run.error.recorded package subscription discovery incomplete',
-		expect.objectContaining({
-			runId: 'run-1',
-			errorCount: 1,
-		}),
-	)
-	const warnPayload = warn.mock.calls.find(
-		(call) =>
-			call[0] ===
-			'run.error.recorded package subscription discovery incomplete',
-	)?.[1] as Record<string, unknown> | undefined
-	expect(warnPayload).not.toHaveProperty('userId')
-	warn.mockRestore()
-})
-
-test('isolates sibling handler failures with allSettled semantics', async () => {
-	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const first = {
-		id: 'package-1',
+	const sibling = {
+		id: 'package-3',
 		userId: 'user-1',
-		sourceId: 'source-1',
-		kodyId: 'notifier-a',
-		name: '@user/notifier-a',
-	}
-	const second = {
-		id: 'package-2',
-		userId: 'user-1',
-		sourceId: 'source-2',
+		sourceId: 'source-3',
 		kodyId: 'notifier-b',
 		name: '@user/notifier-b',
 	}
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([first, second])
-	mocks.loadPackageManifestBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => ({
-			manifest: {
-				name:
-					input.sourceId === 'source-1'
-						? '@user/notifier-a'
-						: '@user/notifier-b',
-				kody: {
-					id: input.sourceId === 'source-1' ? 'notifier-a' : 'notifier-b',
-					description: 'notifier',
-					subscriptions: {
-						[runErrorRecordedTopic]: {
-							handler: './src/on-run-error.ts',
-						},
-					},
-				},
-			},
-		}),
-	)
+	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
+		matchingPackage,
+		brokenPackage,
+		sibling,
+	])
+	mocks.loadPackageManifestBySourceId
+		.mockResolvedValueOnce(
+			subscribedManifest({
+				name: '@user/error-notifier',
+				kodyId: 'error-notifier',
+			}),
+		)
+		.mockRejectedValueOnce(new Error('manifest unavailable'))
+		.mockResolvedValueOnce(
+			subscribedManifest({
+				name: '@user/notifier-b',
+				kodyId: 'notifier-b',
+			}),
+		)
 	mocks.invokePackageSubscription
 		.mockRejectedValueOnce(new Error('handler boom'))
 		.mockResolvedValueOnce({ status: 200, body: { ok: true } })
 
-	const results = await dispatchRunErrorSubscriptionEvents({
-		env: {
-			APP_DB: {},
-			BUNDLE_ARTIFACTS_KV: {},
-			APP_BASE_URL: 'https://example.com',
-		} as Env,
-		userId: 'user-1',
-		run: errorRun() as never,
-	})
-
-	expect(results).toEqual([null, { status: 200, body: { ok: true } }])
+	await expect(
+		dispatchRunErrorSubscriptionEvents({
+			env,
+			userId: 'user-1',
+			run: errorRun() as never,
+		}),
+	).resolves.toEqual([null, { status: 200, body: { ok: true } }])
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
-	warn.mockRestore()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'run.error.recorded package subscription invoke failed',
+		expect.objectContaining({ runId: 'run-1', error: expect.any(Error) }),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'Failed to load package manifest for run.error.recorded subscription',
+		expect.objectContaining({ packageId: 'package-2' }),
+	)
 })

@@ -36,7 +36,7 @@ function createContext() {
 	}
 }
 
-test('email_message_classify quarantines with a user reason and accepts with null reason', async () => {
+test('email_message_classify updates classification and reports not-found', async () => {
 	const context = createContext()
 	mocks.setEmailMessageClassification.mockResolvedValueOnce(true)
 
@@ -74,12 +74,8 @@ test('email_message_classify quarantines with a user reason and accepts with nul
 		classification: 'accepted',
 		classificationReason: null,
 	})
-})
 
-test('email_message_classify reports not-found for missing or non-inbound messages', async () => {
-	const context = createContext()
 	mocks.setEmailMessageClassification.mockResolvedValueOnce(false)
-
 	await expect(
 		emailMessageClassifyCapability.handler(
 			{ message_id: 'missing', classification: 'quarantined' },

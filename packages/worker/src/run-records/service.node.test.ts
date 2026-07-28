@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mocks = vi.hoisted(() => ({
 	dispatchRunErrorSubscriptionEvents: vi.fn(async () => []),
@@ -33,30 +34,32 @@ function createEnv() {
 	} as unknown as Env
 }
 
-test('finishRunRecord dispatches run.error.recorded after a persisted error', async () => {
-	mocks.dispatchRunErrorSubscriptionEvents.mockClear()
-	mocks.finishRun.mockClear()
+test('finishRunRecord dispatches run.error.recorded only for persisted non-subscription errors', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mocks.dispatchRunErrorSubscriptionEvents.mockReset()
+	mocks.finishRun.mockReset()
+	mocks.finishRun.mockResolvedValue({ ok: true })
+	mocks.dispatchRunErrorSubscriptionEvents.mockResolvedValue([])
 	const env = createEnv()
-	const handle = beginRunRecord({
+
+	const errorHandle = beginRunRecord({
 		env,
 		userId: 'user-1',
 		context: { surface: 'job', name: 'daily', jobId: 'job-1' },
 	})
-	expect(handle).not.toBeNull()
-
+	expect(errorHandle).not.toBeNull()
 	await finishRunRecord({
 		env,
-		handle,
+		handle: errorHandle,
 		status: 'error',
 		error: new Error('boom'),
 	})
-
 	expect(mocks.finishRun).toHaveBeenCalledTimes(1)
 	expect(mocks.dispatchRunErrorSubscriptionEvents).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
 			run: expect.objectContaining({
-				id: handle!.id,
+				id: errorHandle!.id,
 				status: 'error',
 				surface: 'job',
 				errorName: 'Error',
@@ -64,12 +67,8 @@ test('finishRunRecord dispatches run.error.recorded after a persisted error', as
 			}),
 		}),
 	)
-})
 
-test('finishRunRecord does not dispatch for success or subscription surface', async () => {
 	mocks.dispatchRunErrorSubscriptionEvents.mockClear()
-	const env = createEnv()
-
 	const successHandle = beginRunRecord({
 		env,
 		userId: 'user-1',
@@ -94,11 +93,7 @@ test('finishRunRecord does not dispatch for success or subscription surface', as
 		error: new Error('handler failed'),
 	})
 	expect(mocks.dispatchRunErrorSubscriptionEvents).not.toHaveBeenCalled()
-})
 
-test('recordRunRecord error path also dispatches through finishRunRecord', async () => {
-	mocks.dispatchRunErrorSubscriptionEvents.mockClear()
-	const env = createEnv()
 	await recordRunRecord({
 		env,
 		userId: 'user-1',
@@ -116,35 +111,26 @@ test('recordRunRecord error path also dispatches through finishRunRecord', async
 			}),
 		}),
 	)
-})
 
-test('finishRunRecord does not dispatch when finishRun RPC fails', async () => {
 	mocks.dispatchRunErrorSubscriptionEvents.mockClear()
 	mocks.finishRun.mockRejectedValueOnce(new Error('do unavailable'))
-	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const env = createEnv()
-	const handle = beginRunRecord({
+	const rpcFailHandle = beginRunRecord({
 		env,
 		userId: 'user-1',
 		context: { surface: 'job', name: 'daily' },
 	})
 	await finishRunRecord({
 		env,
-		handle,
+		handle: rpcFailHandle,
 		status: 'error',
 		error: new Error('boom'),
 	})
 	expect(mocks.dispatchRunErrorSubscriptionEvents).not.toHaveBeenCalled()
-	warn.mockRestore()
-})
 
-test('finishRunRecord swallows dispatch failures', async () => {
 	mocks.dispatchRunErrorSubscriptionEvents.mockRejectedValueOnce(
 		new Error('dispatch exploded'),
 	)
-	const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const env = createEnv()
-	const handle = beginRunRecord({
+	const swallowHandle = beginRunRecord({
 		env,
 		userId: 'user-1',
 		context: { surface: 'webhook', name: 'hook' },
@@ -152,14 +138,13 @@ test('finishRunRecord swallows dispatch failures', async () => {
 	await expect(
 		finishRunRecord({
 			env,
-			handle,
+			handle: swallowHandle,
 			status: 'error',
 			error: new Error('boom'),
 		}),
 	).resolves.toBeUndefined()
-	expect(warn).toHaveBeenCalledWith(
+	expect(consoleWarn).toHaveBeenCalledWith(
 		'run-error-subscription-dispatch-failed',
 		expect.any(Error),
 	)
-	warn.mockRestore()
 })
