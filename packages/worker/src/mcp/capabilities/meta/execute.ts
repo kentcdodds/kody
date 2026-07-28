@@ -143,7 +143,9 @@ export const executeCapability = defineDomainCapability(
 				if (existing) {
 					if (existing.status === 'running') {
 						return {
-							ok: false,
+							// Match the public execute tool: in-progress is not a
+							// failure — callers should poll run_get / retry the key.
+							ok: true,
 							conversationId,
 							...(storage ? { storage } : {}),
 							runId: existing.id,
@@ -207,7 +209,7 @@ export const executeCapability = defineDomainCapability(
 				if (!claim.claimed) {
 					if (claim.run.status === 'running') {
 						return {
-							ok: false,
+							ok: true,
 							conversationId,
 							...(storage ? { storage } : {}),
 							runId: claim.run.id,
