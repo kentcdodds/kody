@@ -203,6 +203,51 @@ test('importSqlIntoD1 streams reopen through loadSqlBody without buffering the s
 	)
 })
 
+test('importSqlIntoD1 pipes stream uploads through FixedLengthStream when available', async () => {
+	// Presigned D1 import upload URLs reject chunked bodies with HTTP 411;
+	// the Workers runtime only emits Content-Length for FixedLengthStream.
+	const constructedLengths: Array<number> = []
+	class StubFixedLengthStream extends TransformStream<Uint8Array, Uint8Array> {
+		constructor(expectedLength: number) {
+			super()
+			constructedLengths.push(expectedLength)
+		}
+	}
+	const globalWithStream = globalThis as { FixedLengthStream?: unknown }
+	globalWithStream.FixedLengthStream = StubFixedLengthStream
+	try {
+		const sequence = importPollSequence([
+			{ type: 'import', success: true, status: 'complete' },
+		])
+		await importSqlIntoD1({
+			accountId: ACCOUNT,
+			databaseId: DATABASE,
+			token: 'token',
+			sourceMd5Etag: SOURCE_MD5,
+			loadSqlBody: async () =>
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(SOURCE_SQL))
+						controller.close()
+					},
+				}),
+			options: {
+				fetcher: sequence.fetcher,
+				sleep: async () => undefined,
+				maxPollAttempts: 2,
+				pollDelayMs: 1,
+			},
+		})
+		const expectedUpload = `${d1ImportForeignKeysOffPrefix}${SOURCE_SQL}`
+		assert.deepEqual(constructedLengths, [
+			new TextEncoder().encode(expectedUpload).byteLength,
+		])
+		assert.equal(sequence.getUploadedText(), expectedUpload)
+	} finally {
+		delete globalWithStream.FixedLengthStream
+	}
+})
+
 test('importSqlIntoD1 fails closed on non-terminal, expired, and error polls', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)

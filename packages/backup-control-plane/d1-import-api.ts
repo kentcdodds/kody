@@ -332,6 +332,34 @@ function prependForeignKeysOffStream(
 	})
 }
 
+type FixedLengthStreamConstructor = new (expectedLength: number) => {
+	readable: ReadableStream<Uint8Array>
+	writable: WritableStream<Uint8Array>
+}
+
+/**
+ * Workers `fetch` sends plain `ReadableStream` bodies with chunked
+ * transfer-encoding and no `Content-Length`, which presigned D1 import
+ * upload URLs reject with HTTP 411 (seen live on the 2026-07-28 restore
+ * drill). Piping through `FixedLengthStream` makes the runtime emit
+ * `Content-Length`. The global is Workers-only; in Node (unit tests with
+ * mock fetchers) the stream is returned unchanged.
+ */
+function withKnownLength(
+	stream: ReadableStream<Uint8Array>,
+	totalBytes: number,
+): ReadableStream<Uint8Array> {
+	const FixedLengthStream = (
+		globalThis as { FixedLengthStream?: FixedLengthStreamConstructor }
+	).FixedLengthStream
+	if (FixedLengthStream === undefined) return stream
+	const fixed = new FixedLengthStream(totalBytes)
+	// Failures propagate through the piped readable and surface as an upload
+	// error; the catch only suppresses the duplicate unhandled rejection.
+	void stream.pipeTo(fixed.writable).catch(() => {})
+	return fixed.readable
+}
+
 /**
  * Verify the unmodified backup SQL MD5, then build the FK-safe upload body and
  * its MD5. Streams are loaded twice via `loadSqlBody` so large backups are not
@@ -372,7 +400,10 @@ export async function prepareD1ImportUpload(input: {
 	}
 
 	return {
-		uploadBody: prependForeignKeysOffStream(prefix, second),
+		uploadBody: withKnownLength(
+			prependForeignKeysOffStream(prefix, second),
+			prefix.byteLength + hashes.sourceBytes,
+		),
 		uploadMd5Hex: hashes.uploadMd5Hex,
 		sourceBytes: hashes.sourceBytes,
 	}
