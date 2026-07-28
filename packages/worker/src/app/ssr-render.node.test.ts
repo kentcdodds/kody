@@ -388,6 +388,20 @@ test('renderAppPage embeds the Fathom tracker only when FATHOM_SITE_ID is set', 
 	const withoutFathomHtml = await readResponseText(withoutFathom)
 	expect(withoutFathomHtml).not.toContain('cdn.usefathom.com')
 
+	const whitespaceOnly = await renderAppPage({
+		request: new Request('https://example.com/login'),
+		env: { ...env, FATHOM_SITE_ID: '   ' } as Env,
+	})
+	expect(await readResponseText(whitespaceOnly)).not.toContain(
+		'cdn.usefathom.com',
+	)
+
+	const padded = await renderAppPage({
+		request: new Request('https://example.com/login'),
+		env: { ...env, FATHOM_SITE_ID: ' WKKSDJGN ' } as Env,
+	})
+	expect(await readResponseText(padded)).toContain('data-site="WKKSDJGN"')
+
 	const withFathom = await renderAppPage({
 		request: new Request('https://example.com/login'),
 		env: { ...env, FATHOM_SITE_ID: 'WKKSDJGN' } as Env,
