@@ -133,7 +133,7 @@ Optional Worker secret and vars for account subscription billing
 (`packages/worker/src/billing/`, routes under `/account/billing`). When
 `STRIPE_SECRET_KEY` is unset, billing is disabled: the account billing page
 shows plan info plus a "not configured" notice, and success/portal/cron skip
-safely. Manual `users.plan` grants and invite-assigned plans still work.
+safely. Manual `users.plan` grants and invite-assigned plans apply regardless.
 
 - `STRIPE_SECRET_KEY` — Stripe secret API key. Required for checkout linking,
   portal sessions, and `stripe_plan` refresh. Synced as a Worker secret from the

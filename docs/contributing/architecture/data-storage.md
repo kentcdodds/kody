@@ -392,7 +392,7 @@ rows only.
 
 - All reads go through `loadRawMime` in `packages/worker/src/email/repo.ts`,
   which fetches the blob by `raw_mime_key` only. Attachment content extraction
-  re-parses the resolved MIME the same way as before.
+  re-parses the resolved MIME from that blob.
 - Message deletes always delete the deterministic
   `emailRawMimeKey(userId, messageId)` from R2 (production writers always store
   that canonical key): `deleteEmailMessageById` (best-effort after the D1 row

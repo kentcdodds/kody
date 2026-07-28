@@ -130,7 +130,7 @@ conversations** in which a signed-in user’s agents used a saved package via MC
   also be within max age), join `saved_packages` for `kody_id` + description,
   top 8 for `buildMcpServerInstructions`. Cold start (no rows) omits the
   section. List failures (missing table, transient D1 errors) return `[]` so MCP
-  init stays up during migration rollout.
+  init stays up.
 - Writes are best-effort and never throw into the invoke path (same spirit as
   `recordUsage`). Do **not** widen `usage_rollups` for conversation cardinality.
 

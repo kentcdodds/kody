@@ -112,7 +112,7 @@ rows were bounded.
 - The control plane measures statement lengths while streaming every export and
   writes `<objectKey>.stats.json` beside the SQL. A nonzero
   `oversizedStatementCount` logs `backup-unrestorable-statements` (failure
-  status): the backup still lands, but treat that day as unrestorable via the
+  status): the backup completes, but treat that day as unrestorable via the
   import API and fix the offending write path.
 
 `TRUSTED_RESTORE_BASELINE_SHA256` is the SHA-256 of the JSON array of sorted

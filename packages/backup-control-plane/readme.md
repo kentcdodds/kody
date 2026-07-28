@@ -40,7 +40,7 @@ oversized statement means the object is not restorable through the D1 import
 API. The measurements are persisted as `<objectKey>.stats.json` next to the SQL
 object and logged as `backup-sql-stats`; an oversized count above zero
 additionally logs `backup-unrestorable-statements` with failure status. The
-backup itself still completes — application write paths bound row sizes (see
+backup itself completes — application write paths bound row sizes (see
 `packages/shared/src/backup-restore-safety.ts`), so a nonzero count indicates a
 new unbounded write path that must be fixed.
 

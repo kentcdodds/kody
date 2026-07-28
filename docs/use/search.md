@@ -12,9 +12,9 @@ The **search** tool finds **built-in capabilities**, **saved packages**,
 **Hidden saved packages** are excluded from ranked **query** results by default.
 Pass **`includeHiddenPackages: true`** to include them. Hiding is not deletion:
 known-id **`entity`** lookups (for example `my-package:package`),
-**`package_list`**, and **`package_get`** still work. Use **`package_update`**
-with **`changes: { hidden: true }`** to hide a package (or `false` to unhide
-it). See [Packages](./packages.md#hidden-packages).
+**`package_list`**, and **`package_get`** return hidden packages. Use
+**`package_update`** with **`changes: { hidden: true }`** to hide a package (or
+`false` to unhide it). See [Packages](./packages.md#hidden-packages).
 
 ## Queries and ranking
 

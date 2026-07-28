@@ -94,8 +94,8 @@ callers do not need to join app and connection themselves.
 
 `/account/integrations` lists connections grouped under the OAuth app they
 share. Each app also has its own page at `/account/integrations/apps/:appSlug`
-(a connection named `apps` still resolves at `/account/integrations/apps`). The
-app page shows provider metadata, client id, client-secret secret name (never
+(a connection named `apps` resolves at `/account/integrations/apps`). The app
+page shows provider metadata, client id, client-secret secret name (never
 values), endpoints, flow / PKCE / exchange style, timestamps, and the
 connections that would be affected by a credential rotation. The rotate form
 posts to `/account/integrations.json` with

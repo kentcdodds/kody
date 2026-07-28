@@ -183,7 +183,7 @@ LIMIT ?4
 			conversationCount: Number(row.conversation_count) || 0,
 		}))
 	} catch (error) {
-		// MCP init must stay up during migration rollout / transient D1 errors.
+		// MCP init must stay up when the table is missing or D1 errors transiently.
 		console.warn('agent-package-conversation-use-list-failed', error)
 		return []
 	}

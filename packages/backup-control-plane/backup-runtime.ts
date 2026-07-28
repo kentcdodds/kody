@@ -28,7 +28,7 @@ import { signBackupManifest } from './manifest-signing.ts'
 /**
  * Persist per-object statement-length statistics next to the SQL object and
  * log them. An oversized statement means the object cannot be re-imported
- * through the D1 import API (SQLITE_TOOBIG); the backup still completes, but
+ * through the D1 import API (SQLITE_TOOBIG); the backup completes, but
  * the condition is logged with failure status so observability and health
  * checks can alert on an un-restorable day.
  */
