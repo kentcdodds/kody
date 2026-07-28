@@ -11,6 +11,7 @@ import {
 } from './errors.ts'
 import { resolveSecret, type ResolvedSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
+import { type StorageContext } from '#mcp/storage.ts'
 import { getCommunityForkByForkedPackageId } from '#worker/community/repo.ts'
 import {
 	loadPackageManifestBySourceId,
@@ -123,6 +124,63 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 			approvalUrl,
 		}),
 	)
+}
+
+/**
+ * Fail-closed authorization check for secret writes. Call this before any
+ * provider token request that may rotate refresh tokens so a later permission
+ * denial cannot strand the integration. Writes from package code always
+ * require an `allowed_packages` grant.
+ */
+export async function assertCanSetSecrets(input: {
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	userId: string
+	baseUrl: string
+	secrets: Array<{
+		name: string
+		scope: SecretScope
+	}>
+	storageContext?: StorageContext | null
+}) {
+	if (input.secrets.length === 0) {
+		throw new Error('At least one secret is required.')
+	}
+	const storageContext: StorageContext | null = input.storageContext
+		? {
+				sessionId: input.storageContext.sessionId ?? null,
+				appId: input.storageContext.appId ?? null,
+				packageId: input.storageContext.packageId ?? null,
+				storageId: input.storageContext.storageId ?? null,
+			}
+		: null
+	const packageId = storageContext?.packageId?.trim() ?? ''
+	for (const secret of input.secrets) {
+		const name = secret.name.trim()
+		if (!name) throw new Error('Secret name is required.')
+		if (secret.scope === 'user' && packageId) {
+			const resolved = await resolveSecret({
+				env: input.env,
+				userId: input.userId,
+				name,
+				scope: 'user',
+				storageContext,
+			})
+			if (!resolved.found) {
+				throw new McpCallerError(
+					'Package runtimes cannot create user-scoped secrets. Create the secret from the account page and approve the package first.',
+				)
+			}
+			await assertPackageCanAccessResolvedSecret({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				storageContext,
+				secretName: name,
+				resolved,
+				intent: 'mutate',
+			})
+		}
+	}
 }
 
 export async function loadPackageSecretMounts(input: {

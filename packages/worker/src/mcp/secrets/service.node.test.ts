@@ -8,7 +8,9 @@ import {
 	resolveSecret,
 	saveSecret,
 	setSecretAllowedPackages,
+	setSecretsAtomically,
 	updateUserSecretForPackage,
+	updateUserSecretsForPackageAtomically,
 } from './service.ts'
 
 type SecretBucketRow = {
@@ -90,7 +92,7 @@ function createSecretTestDb(
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			return {
 				bind(...params: Array<unknown>) {
-					return {
+					const statement = {
 						async first<T>() {
 							if (
 								normalizedQuery.includes(
@@ -217,6 +219,34 @@ function createSecretTestDb(
 							return { results: [] as Array<T>, meta: { changes: 0 } }
 						},
 						async run() {
+							if (normalizedQuery.includes('raise(abort')) {
+								const [userId, ...rest] = params as Array<string | number>
+								const expectedCount = Number(rest[rest.length - 1])
+								const packageId = String(rest[rest.length - 2])
+								const names = rest.slice(0, -2).map(String)
+								const bucket = buckets.get(
+									getBucketKey(String(userId), 'user', ''),
+								)
+								let approvedCount = 0
+								if (bucket) {
+									for (const name of names) {
+										const entry = entries.get(getEntryKey(bucket.id, name))
+										if (!entry) continue
+										const allowedPackages = JSON.parse(
+											entry.allowed_packages,
+										) as Array<string>
+										if (allowedPackages.includes(packageId)) {
+											approvedCount += 1
+										}
+									}
+								}
+								if (approvedCount < expectedCount) {
+									throw new Error(
+										'D1_ERROR: package cannot mutate one or more secrets: SQLITE_ABORT',
+									)
+								}
+								return { meta: { changes: 0 } }
+							}
 							if (
 								normalizedQuery.startsWith(
 									'update secret_entries set description = ?',
@@ -302,7 +332,41 @@ function createSecretTestDb(
 							return { meta: { changes: 0 } }
 						},
 					}
+					return statement
 				},
+			}
+		},
+		async batch(
+			statements: Array<{ run: () => Promise<{ meta: { changes: number } }> }>,
+		) {
+			const snapshotBuckets = new Map(
+				Array.from(buckets.entries()).map(([key, value]) => [
+					key,
+					{ ...value },
+				]),
+			)
+			const snapshotEntries = new Map(
+				Array.from(entries.entries()).map(([key, value]) => [
+					key,
+					{ ...value },
+				]),
+			)
+			try {
+				const results = []
+				for (const statement of statements) {
+					results.push(await statement.run())
+				}
+				return results
+			} catch (error) {
+				buckets.clear()
+				for (const [key, value] of snapshotBuckets) {
+					buckets.set(key, value)
+				}
+				entries.clear()
+				for (const [key, value] of snapshotEntries) {
+					entries.set(key, value)
+				}
+				throw error
 			}
 		},
 	} as unknown as D1Database
@@ -515,7 +579,136 @@ test('updateUserSecretForPackage atomically requires an existing package approva
 			name: 'shared-token',
 			value: 'unauthorized-value',
 		}),
-	).rejects.toThrow('is not approved for package "package-2"')
+	).rejects.toThrow('not approved for package "package-2"')
+})
+
+test('setSecretsAtomically persists refresh then access tokens together for package grants', async () => {
+	const testDb = createSecretTestDb()
+	const env = {
+		APP_DB: testDb.db,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	}
+	await saveSecret({
+		env,
+		userId: 'user-123',
+		scope: 'user',
+		name: 'xRefreshToken',
+		value: 'old-refresh',
+	})
+	await saveSecret({
+		env,
+		userId: 'user-123',
+		scope: 'user',
+		name: 'xAccessToken',
+		value: 'old-access',
+	})
+	await setSecretAllowedPackages({
+		env,
+		userId: 'user-123',
+		scope: 'user',
+		name: 'xRefreshToken',
+		allowedPackages: ['package-1'],
+	})
+	await setSecretAllowedPackages({
+		env,
+		userId: 'user-123',
+		scope: 'user',
+		name: 'xAccessToken',
+		allowedPackages: ['package-1'],
+	})
+
+	await setSecretsAtomically({
+		env,
+		userId: 'user-123',
+		secrets: [
+			{ name: 'xRefreshToken', value: 'new-refresh', scope: 'user' },
+			{ name: 'xAccessToken', value: 'new-access', scope: 'user' },
+		],
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'package-1',
+			storageId: null,
+		},
+	})
+
+	await expect(
+		resolveSecret({
+			env,
+			userId: 'user-123',
+			scope: 'user',
+			name: 'xRefreshToken',
+		}),
+	).resolves.toMatchObject({ found: true, value: 'new-refresh' })
+	await expect(
+		resolveSecret({
+			env,
+			userId: 'user-123',
+			scope: 'user',
+			name: 'xAccessToken',
+		}),
+	).resolves.toMatchObject({ found: true, value: 'new-access' })
+})
+
+test('updateUserSecretsForPackageAtomically leaves both secrets unchanged when any grant is missing', async () => {
+	const testDb = createSecretTestDb()
+	const env = {
+		APP_DB: testDb.db,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	}
+	await saveSecret({
+		env,
+		userId: 'user-123',
+		scope: 'user',
+		name: 'xRefreshToken',
+		value: 'old-refresh',
+	})
+	await saveSecret({
+		env,
+		userId: 'user-123',
+		scope: 'user',
+		name: 'xAccessToken',
+		value: 'old-access',
+	})
+	await setSecretAllowedPackages({
+		env,
+		userId: 'user-123',
+		scope: 'user',
+		name: 'xRefreshToken',
+		allowedPackages: ['package-1'],
+	})
+	// Access token deliberately has no package grant.
+
+	await expect(
+		updateUserSecretsForPackageAtomically({
+			env,
+			userId: 'user-123',
+			packageId: 'package-1',
+			secrets: [
+				{ name: 'xRefreshToken', value: 'new-refresh' },
+				{ name: 'xAccessToken', value: 'new-access' },
+			],
+		}),
+	).rejects.toThrow('not approved for package "package-1"')
+
+	await expect(
+		resolveSecret({
+			env,
+			userId: 'user-123',
+			scope: 'user',
+			name: 'xRefreshToken',
+		}),
+	).resolves.toMatchObject({ found: true, value: 'old-refresh' })
+	await expect(
+		resolveSecret({
+			env,
+			userId: 'user-123',
+			scope: 'user',
+			name: 'xAccessToken',
+		}),
+	).resolves.toMatchObject({ found: true, value: 'old-access' })
 })
 
 test('resolveSecret ignores a corrupted lower-precedence entry when a higher scope resolves', async () => {

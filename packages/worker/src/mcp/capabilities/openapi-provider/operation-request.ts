@@ -5,12 +5,8 @@ import {
 	buildBasicAuthSecretPlaceholder,
 	buildSecretPlaceholder,
 } from '#mcp/secrets/placeholders.ts'
-import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
-import {
-	resolveSecret,
-	saveSecret,
-	updateUserSecretForPackage,
-} from '#mcp/secrets/service.ts'
+import { assertCanSetSecrets } from '#mcp/secrets/package-access.ts'
+import { setSecretsAtomically } from '#mcp/secrets/service.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
 	getIntegration,
@@ -369,6 +365,33 @@ async function tryRefreshIntegrationAccessToken(input: {
 		}
 	}
 
+	const accessTokenSecretName = input.integration.accessTokenSecretName.trim()
+	if (!accessTokenSecretName) {
+		return {
+			ok: false,
+			guidance: `OpenAPI request returned HTTP 401; integration "${input.provider}" has no accessTokenSecretName. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
+		}
+	}
+
+	try {
+		await assertCanSetSecrets({
+			env: input.env,
+			userId: input.userId,
+			baseUrl: input.baseUrl,
+			secrets: [
+				{ name: refreshTokenSecretName, scope: 'user' },
+				{ name: accessTokenSecretName, scope: 'user' },
+			],
+			storageContext: input.storageContext,
+		})
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		return {
+			ok: false,
+			guidance: `OpenAPI request returned HTTP 401; cannot persist refreshed tokens for integration "${input.provider}": ${message}. Call refreshAccessToken("${input.provider}") from execute after approving the package for those secrets, then retry.`,
+		}
+	}
+
 	const params = new URLSearchParams()
 	params.set('grant_type', 'refresh_token')
 	params.set(
@@ -439,99 +462,45 @@ async function tryRefreshIntegrationAccessToken(input: {
 		}
 	}
 
-	await saveUserSecretFromOpenApiRefresh({
-		env: input.env,
-		userId: input.userId,
-		baseUrl: input.baseUrl,
-		storageContext: input.storageContext,
-		name: input.integration.accessTokenSecretName,
-		value: payload.access_token,
-		description: `Access token for integration ${input.provider}`,
-	})
+	const secretsToPersist: Array<{
+		name: string
+		value: string
+		scope: 'user'
+		description: string
+	}> = []
 	if (
 		typeof payload.refresh_token === 'string' &&
 		payload.refresh_token.length > 0
 	) {
-		await saveUserSecretFromOpenApiRefresh({
-			env: input.env,
-			userId: input.userId,
-			baseUrl: input.baseUrl,
-			storageContext: input.storageContext,
+		secretsToPersist.push({
 			name: refreshTokenSecretName,
 			value: payload.refresh_token,
+			scope: 'user',
 			description: `Refresh token for integration ${input.provider}`,
 		})
 	}
-	return { ok: true }
-}
+	secretsToPersist.push({
+		name: accessTokenSecretName,
+		value: payload.access_token,
+		scope: 'user',
+		description: `Access token for integration ${input.provider}`,
+	})
 
-async function saveUserSecretFromOpenApiRefresh(input: {
-	env: Env
-	userId: string
-	baseUrl: string
-	storageContext: StorageContext | null
-	name: string
-	value: string
-	description: string
-}) {
-	const packageId = input.storageContext?.packageId?.trim() ?? ''
-	if (packageId) {
-		await assertPackageCanUpdateUserSecret({
+	try {
+		await setSecretsAtomically({
 			env: input.env,
 			userId: input.userId,
-			baseUrl: input.baseUrl,
+			secrets: secretsToPersist,
 			storageContext: input.storageContext,
-			secretName: input.name,
 		})
-		return updateUserSecretForPackage({
-			env: input.env,
-			userId: input.userId,
-			packageId,
-			name: input.name,
-			value: input.value,
-			description: input.description,
-		})
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		return {
+			ok: false,
+			guidance: `OpenAPI request returned HTTP 401; failed to persist refreshed tokens for integration "${input.provider}": ${message}. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
+		}
 	}
-	return saveSecret({
-		env: input.env,
-		userId: input.userId,
-		name: input.name,
-		value: input.value,
-		scope: 'user',
-		description: input.description,
-		storageContext: input.storageContext,
-	})
-}
-
-async function assertPackageCanUpdateUserSecret(input: {
-	env: Env
-	userId: string
-	baseUrl: string
-	storageContext: StorageContext | null
-	secretName: string
-}) {
-	if (!input.storageContext?.packageId) return
-	const resolved = await resolveSecret({
-		env: input.env,
-		userId: input.userId,
-		name: input.secretName,
-		scope: 'user',
-		storageContext: input.storageContext,
-	})
-	if (!resolved.found) {
-		throw new Error(
-			`Package runtime cannot create missing user secret "${input.secretName}" during OpenAPI token refresh.`,
-		)
-	}
-	await assertPackageCanAccessResolvedSecret({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		storageContext: input.storageContext,
-		secretName: input.secretName,
-		resolved,
-		intent: 'mutate',
-	})
+	return { ok: true }
 }
 
 async function readOperationResponse(

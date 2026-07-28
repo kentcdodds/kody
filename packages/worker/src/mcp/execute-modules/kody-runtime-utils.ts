@@ -73,7 +73,7 @@ export const secretHeaders = {
 
 export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'integration_get',
-	'secret_set',
+	'secret_set_many',
 ] as const
 
 /**
@@ -201,27 +201,64 @@ async function readIntegrationConfig(
 	return integration
 }
 
-async function persistSecret(
+async function assertSecretsCanBePersisted(
 	kody: KodyNamespace,
 	providerName: string,
-	secretName: string,
-	secretKind: 'access token' | 'refresh token',
-	value: string,
+	secrets: Array<{
+		name: string
+		secretKind: 'access token' | 'refresh token'
+	}>,
 ) {
-	const secretSet = kody.secret_set
-	if (typeof secretSet !== 'function') {
-		throw new Error('kody.secret_set is not available in this sandbox.')
+	const secretSetMany = kody.secret_set_many
+	if (typeof secretSetMany !== 'function') {
+		throw new Error('kody.secret_set_many is not available in this sandbox.')
 	}
-	const normalizedSecretName = secretName.trim()
-	if (!normalizedSecretName) {
-		throw new Error(
-			`Integration "${providerName}" does not define an ${secretKind} secret name.`,
-		)
+	const entries = secrets.map((secret) => {
+		const normalizedSecretName = secret.name.trim()
+		if (!normalizedSecretName) {
+			throw new Error(
+				`Integration "${providerName}" does not define an ${secret.secretKind} secret name.`,
+			)
+		}
+		return {
+			name: normalizedSecretName,
+			scope: 'user' as const,
+		}
+	})
+	await secretSetMany({
+		secrets: entries,
+		assertOnly: true,
+	})
+}
+
+async function persistSecretsAtomically(
+	kody: KodyNamespace,
+	providerName: string,
+	secrets: Array<{
+		name: string
+		secretKind: 'access token' | 'refresh token'
+		value: string
+	}>,
+) {
+	const secretSetMany = kody.secret_set_many
+	if (typeof secretSetMany !== 'function') {
+		throw new Error('kody.secret_set_many is not available in this sandbox.')
 	}
-	await secretSet({
-		name: normalizedSecretName,
-		value,
-		scope: 'user',
+	const entries = secrets.map((secret) => {
+		const normalizedSecretName = secret.name.trim()
+		if (!normalizedSecretName) {
+			throw new Error(
+				`Integration "${providerName}" does not define an ${secret.secretKind} secret name.`,
+			)
+		}
+		return {
+			name: normalizedSecretName,
+			value: secret.value,
+			scope: 'user' as const,
+		}
+	})
+	await secretSetMany({
+		secrets: entries,
 	})
 }
 
@@ -243,6 +280,20 @@ async function refreshAccessTokenWithIntegration(
 			`Integration "${providerName}" does not define a refresh token secret name.`,
 		)
 	}
+	const accessTokenSecretName = integration.accessTokenSecretName.trim()
+	if (!accessTokenSecretName) {
+		throw new Error(
+			`Integration "${providerName}" does not define an access token secret name.`,
+		)
+	}
+
+	// Fail closed before the provider request: rotating providers invalidate
+	// the old refresh token as soon as they issue a replacement. A later
+	// allowed_packages denial would permanently strand the integration.
+	await assertSecretsCanBePersisted(kody, providerName, [
+		{ name: refreshTokenSecretName, secretKind: 'refresh token' },
+		{ name: accessTokenSecretName, secretKind: 'access token' },
+	])
 
 	const params = new URLSearchParams()
 	params.set('grant_type', 'refresh_token')
@@ -287,25 +338,31 @@ async function refreshAccessTokenWithIntegration(
 		)
 	}
 
+	// Refresh-token-before-access-token is load-bearing for rotating providers:
+	// if a process dies mid-write, keeping the new refresh token is preferable
+	// to keeping only the new access token. The atomic batch makes partial
+	// commits impossible; order is still preserved inside the batch.
+	const secretsToPersist: Array<{
+		name: string
+		secretKind: 'access token' | 'refresh token'
+		value: string
+	}> = []
 	if (
 		typeof payload.refresh_token === 'string' &&
 		payload.refresh_token.length > 0
 	) {
-		await persistSecret(
-			kody,
-			providerName,
-			refreshTokenSecretName,
-			'refresh token',
-			payload.refresh_token,
-		)
+		secretsToPersist.push({
+			name: refreshTokenSecretName,
+			secretKind: 'refresh token',
+			value: payload.refresh_token,
+		})
 	}
-	await persistSecret(
-		kody,
-		providerName,
-		integration.accessTokenSecretName,
-		'access token',
-		payload.access_token,
-	)
+	secretsToPersist.push({
+		name: accessTokenSecretName,
+		secretKind: 'access token',
+		value: payload.access_token,
+	})
+	await persistSecretsAtomically(kody, providerName, secretsToPersist)
 
 	return payload.access_token
 }
@@ -562,26 +619,54 @@ const __kodyReadIntegrationConfig = async (providerName) => {
   }
   return integration;
 };
-const __kodyPersistSecret = async (
+const __kodyAssertSecretsCanBePersisted = async (
   providerName,
-  secretName,
-  secretKind,
-  value,
+  secrets,
 ) => {
-  const secretSet = kody.secret_set;
-  if (typeof secretSet !== 'function') {
-    throw new Error('kody.secret_set is not available in this sandbox.');
+  const secretSetMany = kody.secret_set_many;
+  if (typeof secretSetMany !== 'function') {
+    throw new Error('kody.secret_set_many is not available in this sandbox.');
   }
-  const normalizedSecretName = secretName.trim();
-  if (!normalizedSecretName) {
-    throw new Error(
-      \`Integration "\${providerName}" does not define an \${secretKind} secret name.\`,
-    );
+  const entries = secrets.map((secret) => {
+    const normalizedSecretName = secret.name.trim();
+    if (!normalizedSecretName) {
+      throw new Error(
+        \`Integration "\${providerName}" does not define an \${secret.secretKind} secret name.\`,
+      );
+    }
+    return {
+      name: normalizedSecretName,
+      scope: 'user',
+    };
+  });
+  await secretSetMany({
+    secrets: entries,
+    assertOnly: true,
+  });
+};
+const __kodyPersistSecretsAtomically = async (
+  providerName,
+  secrets,
+) => {
+  const secretSetMany = kody.secret_set_many;
+  if (typeof secretSetMany !== 'function') {
+    throw new Error('kody.secret_set_many is not available in this sandbox.');
   }
-  await secretSet({
-    name: normalizedSecretName,
-    value,
-    scope: 'user',
+  const entries = secrets.map((secret) => {
+    const normalizedSecretName = secret.name.trim();
+    if (!normalizedSecretName) {
+      throw new Error(
+        \`Integration "\${providerName}" does not define an \${secret.secretKind} secret name.\`,
+      );
+    }
+    return {
+      name: normalizedSecretName,
+      value: secret.value,
+      scope: 'user',
+    };
+  });
+  await secretSetMany({
+    secrets: entries,
   });
 };
 const __kodyGetNormalizedApiBaseUrl = (integration) => {
@@ -643,6 +728,16 @@ const __kodyRefreshAccessToken = async (providerName) => {
       \`Integration "\${providerName}" does not define a refresh token secret name.\`,
     );
   }
+  const accessTokenSecretName = integration.accessTokenSecretName.trim();
+  if (!accessTokenSecretName) {
+    throw new Error(
+      \`Integration "\${providerName}" does not define an access token secret name.\`,
+    );
+  }
+  await __kodyAssertSecretsCanBePersisted(providerName, [
+    { name: refreshTokenSecretName, secretKind: 'refresh token' },
+    { name: accessTokenSecretName, secretKind: 'access token' },
+  ]);
   const params = new URLSearchParams();
   params.set('grant_type', 'refresh_token');
   params.set(
@@ -681,20 +776,20 @@ const __kodyRefreshAccessToken = async (providerName) => {
       \`Token refresh for integration "\${providerName}" did not return an access_token.\`,
     );
   }
+  const secretsToPersist = [];
   if (typeof payload.refresh_token === 'string' && payload.refresh_token.length > 0) {
-    await __kodyPersistSecret(
-      providerName,
-      refreshTokenSecretName,
-      'refresh token',
-      payload.refresh_token,
-    );
+    secretsToPersist.push({
+      name: refreshTokenSecretName,
+      secretKind: 'refresh token',
+      value: payload.refresh_token,
+    });
   }
-  await __kodyPersistSecret(
-    providerName,
-    integration.accessTokenSecretName,
-    'access token',
-    payload.access_token,
-  );
+  secretsToPersist.push({
+    name: accessTokenSecretName,
+    secretKind: 'access token',
+    value: payload.access_token,
+  });
+  await __kodyPersistSecretsAtomically(providerName, secretsToPersist);
   return payload.access_token;
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {

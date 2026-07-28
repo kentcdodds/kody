@@ -10,10 +10,13 @@ import {
 import { assertIntegrationHostAllowed } from './integration-host-allowlist.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
-type SecretSetCall = {
-	name: string
-	value: string
-	scope: string
+type SecretSetManyCall = {
+	secrets: Array<{
+		name: string
+		value?: string
+		scope: string
+	}>
+	assertOnly?: boolean
 }
 
 const fakeAccessToken = 'test-access-token-abc123'
@@ -33,21 +36,25 @@ const spotifyIntegration = {
 }
 
 function createKody() {
-	const secretSetCalls: Array<SecretSetCall> = []
+	const secretSetManyCalls: Array<SecretSetManyCall> = []
 	const kody = {
 		async integration_get(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe('spotify')
 			return { integration: spotifyIntegration }
 		},
-		async secret_set(args: CapabilityArgs) {
-			const call = args as SecretSetCall
-			secretSetCalls.push(call)
-			return { name: call.name, scope: call.scope }
+		async secret_set_many(args: CapabilityArgs) {
+			const call = args as SecretSetManyCall
+			secretSetManyCalls.push(call)
+			return {
+				ok: true,
+				assertOnly: Boolean(call.assertOnly),
+				secrets: [],
+			}
 		},
 	} satisfies KodyNamespace
 
-	return { kody, secretSetCalls }
+	return { kody, secretSetManyCalls }
 }
 
 function createSpotifyHandlers(fetchCalls: Array<Request>) {
@@ -126,9 +133,8 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 		async integration_get() {
 			return { integration: emptyIntegration }
 		},
-		async secret_set(args: CapabilityArgs) {
-			const call = args as { name: string; value: string; scope: string }
-			return { name: call.name, scope: call.scope }
+		async secret_set_many() {
+			return { ok: true, assertOnly: false, secrets: [] }
 		},
 	} satisfies KodyNamespace
 
@@ -154,7 +160,7 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 })
 
 test('createAuthenticatedFetch attaches bearer placeholder and refreshes on 401 with inline client id', async () => {
-	const { kody, secretSetCalls } = createKody()
+	const { kody, secretSetManyCalls } = createKody()
 	const fetchCalls: Array<Request> = []
 	let apiCalls = 0
 	{
@@ -218,11 +224,22 @@ test('createAuthenticatedFetch attaches bearer placeholder and refreshes on 401 
 	expect(fetchCalls[2]?.headers.get('authorization')).toBe(
 		`Bearer ${fakeAccessToken}`,
 	)
-	expect(secretSetCalls).toEqual([
+	expect(secretSetManyCalls).toEqual([
 		{
-			name: 'spotifyAccessToken',
-			value: fakeAccessToken,
-			scope: 'user',
+			secrets: [
+				{ name: 'spotifyRefreshToken', scope: 'user' },
+				{ name: 'spotifyAccessToken', scope: 'user' },
+			],
+			assertOnly: true,
+		},
+		{
+			secrets: [
+				{
+					name: 'spotifyAccessToken',
+					value: fakeAccessToken,
+					scope: 'user',
+				},
+			],
 		},
 	])
 })

@@ -510,21 +510,36 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 			scope: 'user',
 			allowedHosts: ['api.spotify.com', 'accounts.spotify.com'],
 			allowedCapabilities: [],
-		})
-	const saveSecretSpy = vi
-		.spyOn(secretService, 'saveSecret')
-		.mockResolvedValue({
-			name: 'spotifyAccessToken',
-			scope: 'user',
-			description: '',
-			packageId: null,
-			createdAt: '2026-03-29T00:00:00.000Z',
-			updatedAt: '2026-03-29T00:00:00.000Z',
-			ttlMs: null,
-			allowedHosts: [],
-			allowedCapabilities: [],
 			allowedPackages: [],
 		})
+	const setSecretsSpy = vi
+		.spyOn(secretService, 'setSecretsAtomically')
+		.mockResolvedValue([
+			{
+				name: 'spotifyRefreshToken',
+				scope: 'user',
+				description: '',
+				packageId: null,
+				createdAt: '2026-03-29T00:00:00.000Z',
+				updatedAt: '2026-03-29T00:00:00.000Z',
+				ttlMs: null,
+				allowedHosts: [],
+				allowedCapabilities: [],
+				allowedPackages: [],
+			},
+			{
+				name: 'spotifyAccessToken',
+				scope: 'user',
+				description: '',
+				packageId: null,
+				createdAt: '2026-03-29T00:00:00.000Z',
+				updatedAt: '2026-03-29T00:00:00.000Z',
+				ttlMs: null,
+				allowedHosts: [],
+				allowedCapabilities: [],
+				allowedPackages: [],
+			},
+		])
 
 	try {
 		let apiCalls = 0
@@ -580,7 +595,25 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 		expect(result.ok).toBe(true)
 		expect(result.body).toEqual({ ok: true })
 		expect(apiCalls).toBe(2)
-		expect(saveSecretSpy).toHaveBeenCalled()
+		expect(setSecretsSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-1',
+				secrets: [
+					{
+						name: 'spotifyRefreshToken',
+						value: 'new-refresh',
+						scope: 'user',
+						description: 'Refresh token for integration spotify',
+					},
+					{
+						name: 'spotifyAccessToken',
+						value: 'new-access',
+						scope: 'user',
+						description: 'Access token for integration spotify',
+					},
+				],
+			}),
+		)
 		expect(firstUnauthorizedResponse).not.toBeNull()
 		expect(firstUnauthorizedResponse!.bodyUsed).toBe(true)
 		expect(getIntegrationSpy).toHaveBeenCalledWith({
@@ -591,7 +624,7 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 	} finally {
 		getIntegrationSpy.mockRestore()
 		resolveSpy.mockRestore()
-		saveSecretSpy.mockRestore()
+		setSecretsSpy.mockRestore()
 		usageSpy.mockRestore()
 	}
 })

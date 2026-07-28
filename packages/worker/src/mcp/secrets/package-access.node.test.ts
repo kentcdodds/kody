@@ -29,6 +29,7 @@ vi.mock('./service.ts', () => ({
 }))
 
 const {
+	assertCanSetSecrets,
 	assertPackageCanAccessResolvedSecret,
 	buildPackageApprovalErrorForMounts,
 	PackageSecretAccessDeniedError,
@@ -293,6 +294,39 @@ test('mutate intent requires an allowed-packages grant even for self-authored pa
 	).resolves.toBeUndefined()
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(1)
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
+})
+
+test('assertCanSetSecrets fails closed for mutate grants before any provider work', async () => {
+	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(null)
+	mockModule.resolveSecret.mockResolvedValue({
+		found: true,
+		value: 'secret',
+		scope: 'user',
+		allowedHosts: [],
+		allowedCapabilities: [],
+		allowedPackages: [],
+	})
+
+	await expect(
+		assertCanSetSecrets({
+			env: {
+				APP_DB: {} as D1Database,
+				SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+			},
+			userId: 'user-1',
+			baseUrl: 'https://example.com',
+			secrets: [
+				{ name: 'xRefreshToken', scope: 'user' },
+				{ name: 'xAccessToken', scope: 'user' },
+			],
+			storageContext: {
+				sessionId: null,
+				packageId: 'pkg-1',
+			},
+		}),
+	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
+	expect(mockModule.resolveSecret).toHaveBeenCalled()
 })
 
 test('resolvePackageMountedSecret rejects package runtime calls without a matching packageId', async () => {

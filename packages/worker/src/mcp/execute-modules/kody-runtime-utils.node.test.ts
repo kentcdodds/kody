@@ -13,10 +13,13 @@ import {
 } from './kody-runtime-utils.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
-type SecretSetCall = {
-	name: string
-	value: string
-	scope: string
+type SecretSetManyCall = {
+	secrets: Array<{
+		name: string
+		value?: string
+		scope: string
+	}>
+	assertOnly?: boolean
 }
 
 type SandboxHelpers = {
@@ -59,25 +62,45 @@ const githubConfidentialIntegration = {
 	requiredHosts: ['api.github.test'],
 }
 
-function createKody(integration = spotifyIntegration) {
-	const secretSetCalls: Array<SecretSetCall> = []
+function createKody(
+	integration = spotifyIntegration,
+	options: {
+		onSecretSetMany?: (call: SecretSetManyCall) => void | Promise<void>
+	} = {},
+) {
+	const secretSetManyCalls: Array<SecretSetManyCall> = []
+	const storedSecrets = new Map<string, string>()
 	const kody = {
 		async integration_get(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe(integration.name)
 			return { integration }
 		},
-		async secret_set(args: CapabilityArgs) {
-			const call = args as SecretSetCall
-			secretSetCalls.push(call)
+		async secret_set_many(args: CapabilityArgs) {
+			const call = args as SecretSetManyCall
+			secretSetManyCalls.push(call)
+			await options.onSecretSetMany?.(call)
+			if (!call.assertOnly) {
+				for (const secret of call.secrets) {
+					if (typeof secret.value === 'string') {
+						storedSecrets.set(secret.name, secret.value)
+					}
+				}
+			}
 			return {
-				name: call.name,
-				scope: call.scope,
+				ok: true,
+				assertOnly: Boolean(call.assertOnly),
+				secrets: call.assertOnly
+					? []
+					: call.secrets.map((secret) => ({
+							name: secret.name,
+							scope: secret.scope,
+						})),
 			}
 		},
 	} satisfies KodyNamespace
 
-	return { kody, secretSetCalls }
+	return { kody, secretSetManyCalls, storedSecrets }
 }
 
 function createSpotifyHandlers(options: {
@@ -168,7 +191,7 @@ function createSpotifyFetchInterceptor(
 
 test('kody oauth helpers refresh tokens, retry on missing or expired access tokens, and persist rotations', async () => {
 	const rotatedRefreshFetchCalls: Array<Request> = []
-	const { kody: rotatedKody, secretSetCalls: rotatedSecretSetCalls } =
+	const { kody: rotatedKody, secretSetManyCalls: rotatedSecretSetManyCalls } =
 		createKody()
 	{
 		using _server = createMswNodeServer(
@@ -183,16 +206,27 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		const rotatedAccessToken = await refreshAccessToken(rotatedKody, 'spotify')
 		expect(rotatedAccessToken).toBe('new-access-token')
 	}
-	expect(rotatedSecretSetCalls).toEqual([
+	expect(rotatedSecretSetManyCalls).toEqual([
 		{
-			name: 'spotifyRefreshToken',
-			value: 'new-refresh-token',
-			scope: 'user',
+			secrets: [
+				{ name: 'spotifyRefreshToken', scope: 'user' },
+				{ name: 'spotifyAccessToken', scope: 'user' },
+			],
+			assertOnly: true,
 		},
 		{
-			name: 'spotifyAccessToken',
-			value: 'new-access-token',
-			scope: 'user',
+			secrets: [
+				{
+					name: 'spotifyRefreshToken',
+					value: 'new-refresh-token',
+					scope: 'user',
+				},
+				{
+					name: 'spotifyAccessToken',
+					value: 'new-access-token',
+					scope: 'user',
+				},
+			],
 		},
 	])
 	expect(rotatedRefreshFetchCalls).toHaveLength(1)
@@ -205,8 +239,10 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	expect(rotatedRefreshBody).not.toContain('client_secret=')
 
 	const storedTokenFetchCalls: Array<Request> = []
-	const { kody: storedTokenKody, secretSetCalls: storedSecretSetCalls } =
-		createKody()
+	const {
+		kody: storedTokenKody,
+		secretSetManyCalls: storedSecretSetManyCalls,
+	} = createKody()
 	{
 		using _server = createMswNodeServer(
 			createSpotifyHandlers({
@@ -230,11 +266,13 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	expect(storedTokenFetchCalls[0]?.headers.get('authorization')).toBe(
 		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
-	expect(storedSecretSetCalls).toEqual([])
+	expect(storedSecretSetManyCalls).toEqual([])
 
 	const missingTokenFetchCalls: Array<Request> = []
-	const { kody: missingTokenKody, secretSetCalls: missingSecretSetCalls } =
-		createKody()
+	const {
+		kody: missingTokenKody,
+		secretSetManyCalls: missingSecretSetManyCalls,
+	} = createKody()
 	{
 		using _spotifyFetch = createSpotifyFetchInterceptor({
 			tokenPayload: { access_token: 'new-access-token' },
@@ -248,11 +286,22 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		const missingTokenResponse = await missingTokenFetch('/me?market=US')
 		expect(await missingTokenResponse.json()).toEqual({ ok: true })
 	}
-	expect(missingSecretSetCalls).toEqual([
+	expect(missingSecretSetManyCalls).toEqual([
 		{
-			name: 'spotifyAccessToken',
-			value: 'new-access-token',
-			scope: 'user',
+			secrets: [
+				{ name: 'spotifyRefreshToken', scope: 'user' },
+				{ name: 'spotifyAccessToken', scope: 'user' },
+			],
+			assertOnly: true,
+		},
+		{
+			secrets: [
+				{
+					name: 'spotifyAccessToken',
+					value: 'new-access-token',
+					scope: 'user',
+				},
+			],
 		},
 	])
 	expect(missingTokenFetchCalls).toHaveLength(3)
@@ -267,8 +316,10 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	)
 
 	const expiredTokenFetchCalls: Array<Request> = []
-	const { kody: expiredTokenKody, secretSetCalls: expiredSecretSetCalls } =
-		createKody()
+	const {
+		kody: expiredTokenKody,
+		secretSetManyCalls: expiredSecretSetManyCalls,
+	} = createKody()
 	{
 		using _spotifyFetch = createSpotifyFetchInterceptor({
 			tokenPayload: { access_token: 'new-access-token' },
@@ -285,11 +336,22 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		const expiredTokenResponse = await expiredTokenFetch('/me?market=US')
 		expect(await expiredTokenResponse.json()).toEqual({ ok: true })
 	}
-	expect(expiredSecretSetCalls).toEqual([
+	expect(expiredSecretSetManyCalls).toEqual([
 		{
-			name: 'spotifyAccessToken',
-			value: 'new-access-token',
-			scope: 'user',
+			secrets: [
+				{ name: 'spotifyRefreshToken', scope: 'user' },
+				{ name: 'spotifyAccessToken', scope: 'user' },
+			],
+			assertOnly: true,
+		},
+		{
+			secrets: [
+				{
+					name: 'spotifyAccessToken',
+					value: 'new-access-token',
+					scope: 'user',
+				},
+			],
 		},
 	])
 	expect(expiredTokenFetchCalls).toHaveLength(3)
@@ -304,6 +366,134 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	)
 })
 
+test('token refresh asserts package grants before the provider request and never consumes the token on denial', async () => {
+	const fetchCalls: Array<Request> = []
+	const { kody, secretSetManyCalls, storedSecrets } = createKody(
+		spotifyIntegration,
+		{
+			onSecretSetMany(call) {
+				if (call.assertOnly) {
+					throw new Error(
+						'Secret "spotifyRefreshToken" is not allowed for package "@test/spotify".',
+					)
+				}
+			},
+		},
+	)
+	{
+		using _server = createMswNodeServer(
+			createSpotifyHandlers({
+				tokenPayload: {
+					access_token: 'should-not-be-issued',
+					refresh_token: 'should-not-be-issued',
+				},
+				fetchCalls,
+			}),
+		)
+		await expect(refreshAccessToken(kody, 'spotify')).rejects.toThrow(
+			'Secret "spotifyRefreshToken" is not allowed for package "@test/spotify".',
+		)
+	}
+	expect(fetchCalls).toEqual([])
+	expect(secretSetManyCalls).toEqual([
+		{
+			secrets: [
+				{ name: 'spotifyRefreshToken', scope: 'user' },
+				{ name: 'spotifyAccessToken', scope: 'user' },
+			],
+			assertOnly: true,
+		},
+	])
+	expect(storedSecrets.size).toBe(0)
+})
+
+test('token refresh keeps prior secret state when the atomic persist fails after a rotated provider response', async () => {
+	const fetchCalls: Array<Request> = []
+	const { kody, secretSetManyCalls, storedSecrets } = createKody(
+		spotifyIntegration,
+		{
+			onSecretSetMany(call) {
+				if (call.assertOnly) return
+				throw new Error('simulated second-write failure')
+			},
+		},
+	)
+	storedSecrets.set('spotifyRefreshToken', 'old-refresh-token')
+	storedSecrets.set('spotifyAccessToken', 'old-access-token')
+	{
+		using _server = createMswNodeServer(
+			createSpotifyHandlers({
+				tokenPayload: {
+					access_token: 'new-access-token',
+					refresh_token: 'new-refresh-token',
+				},
+				fetchCalls,
+			}),
+		)
+		await expect(refreshAccessToken(kody, 'spotify')).rejects.toThrow(
+			'simulated second-write failure',
+		)
+	}
+	expect(fetchCalls).toHaveLength(1)
+	expect(secretSetManyCalls).toEqual([
+		{
+			secrets: [
+				{ name: 'spotifyRefreshToken', scope: 'user' },
+				{ name: 'spotifyAccessToken', scope: 'user' },
+			],
+			assertOnly: true,
+		},
+		{
+			secrets: [
+				{
+					name: 'spotifyRefreshToken',
+					value: 'new-refresh-token',
+					scope: 'user',
+				},
+				{
+					name: 'spotifyAccessToken',
+					value: 'new-access-token',
+					scope: 'user',
+				},
+			],
+		},
+	])
+	// Atomic persist failed as one unit: neither rotated secret was committed.
+	expect(Object.fromEntries(storedSecrets)).toEqual({
+		spotifyRefreshToken: 'old-refresh-token',
+		spotifyAccessToken: 'old-access-token',
+	})
+})
+
+test('successful token rotation persists refresh then access secrets together', async () => {
+	const fetchCalls: Array<Request> = []
+	const { kody, secretSetManyCalls, storedSecrets } = createKody()
+	storedSecrets.set('spotifyRefreshToken', 'old-refresh-token')
+	storedSecrets.set('spotifyAccessToken', 'old-access-token')
+	{
+		using _server = createMswNodeServer(
+			createSpotifyHandlers({
+				tokenPayload: {
+					access_token: 'new-access-token',
+					refresh_token: 'new-refresh-token',
+				},
+				fetchCalls,
+			}),
+		)
+		const accessToken = await refreshAccessToken(kody, 'spotify')
+		expect(accessToken).toBe('new-access-token')
+	}
+	expect(fetchCalls).toHaveLength(1)
+	expect(secretSetManyCalls[1]?.secrets.map((secret) => secret.name)).toEqual([
+		'spotifyRefreshToken',
+		'spotifyAccessToken',
+	])
+	expect(Object.fromEntries(storedSecrets)).toEqual({
+		spotifyRefreshToken: 'new-refresh-token',
+		spotifyAccessToken: 'new-access-token',
+	})
+})
+
 test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, authenticated fetch, secrets, and client credentials', async () => {
 	const prelude = createExecuteHelperPrelude()
 	const createSandboxHelpers = new Function(
@@ -312,7 +502,7 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
 
 	const fetchCalls: Array<Request> = []
-	const { kody, secretSetCalls } = createKody()
+	const { kody, secretSetManyCalls } = createKody()
 	{
 		using _server = createMswNodeServer(
 			createSpotifyHandlers({
@@ -329,16 +519,27 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 		await authenticatedFetch('/me')
 		expect(accessToken).toBe('new-access-token')
 	}
-	expect(secretSetCalls).toEqual([
+	expect(secretSetManyCalls).toEqual([
 		{
-			name: 'spotifyRefreshToken',
-			value: 'new-refresh-token',
-			scope: 'user',
+			secrets: [
+				{ name: 'spotifyRefreshToken', scope: 'user' },
+				{ name: 'spotifyAccessToken', scope: 'user' },
+			],
+			assertOnly: true,
 		},
 		{
-			name: 'spotifyAccessToken',
-			value: 'new-access-token',
-			scope: 'user',
+			secrets: [
+				{
+					name: 'spotifyRefreshToken',
+					value: 'new-refresh-token',
+					scope: 'user',
+				},
+				{
+					name: 'spotifyAccessToken',
+					value: 'new-access-token',
+					scope: 'user',
+				},
+			],
 		},
 	])
 	expect(fetchCalls).toHaveLength(2)
@@ -403,7 +604,7 @@ test('createExecuteHelperPrelude exposes sandbox helpers for token refresh, auth
 
 test('confidential-flow token refresh includes inline client id and client secret placeholder', async () => {
 	const fetchCalls: Array<Request> = []
-	const { kody, secretSetCalls } = createKody(githubConfidentialIntegration)
+	const { kody, secretSetManyCalls } = createKody(githubConfidentialIntegration)
 	{
 		using _server = createMswNodeServer([
 			http.post(githubConfidentialIntegration.tokenUrl, async ({ request }) => {
@@ -414,11 +615,22 @@ test('confidential-flow token refresh includes inline client id and client secre
 		const accessToken = await refreshAccessToken(kody, 'github')
 		expect(accessToken).toBe('new-github-access')
 	}
-	expect(secretSetCalls).toEqual([
+	expect(secretSetManyCalls).toEqual([
 		{
-			name: 'githubAccessToken',
-			value: 'new-github-access',
-			scope: 'user',
+			secrets: [
+				{ name: 'githubRefreshToken', scope: 'user' },
+				{ name: 'githubAccessToken', scope: 'user' },
+			],
+			assertOnly: true,
+		},
+		{
+			secrets: [
+				{
+					name: 'githubAccessToken',
+					value: 'new-github-access',
+					scope: 'user',
+				},
+			],
 		},
 	])
 	expect(fetchCalls).toHaveLength(1)

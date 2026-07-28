@@ -31,9 +31,10 @@ import {
 	listSecretMetadataForBucket,
 	listUserScopeSecretMetadata,
 	removePackageFromSecretApprovals,
-	updateApprovedUserSecretEntryForPackage,
+	updateApprovedUserSecretEntriesForPackageAtomically,
 	upsertSecretBucket,
 	upsertSecretEntry,
+	upsertSecretEntriesAtomically,
 } from './repo.ts'
 import {
 	assertWithinEntitlement,
@@ -198,13 +199,121 @@ export async function updateUserSecretForPackage(input: {
 	value: string
 	description?: string | null
 }) {
-	const name = input.name.trim()
-	if (!name) throw new Error('Secret name is required.')
-	assertSecretNameAllowed(name)
-	const value = input.value.trim()
-	if (!value) throw new Error('Secret value is required.')
+	const [saved] = await updateUserSecretsForPackageAtomically({
+		env: input.env,
+		userId: input.userId,
+		userEmail: input.userEmail,
+		packageId: input.packageId,
+		secrets: [
+			{
+				name: input.name,
+				value: input.value,
+				description: input.description,
+			},
+		],
+	})
+	if (!saved) {
+		throw new Error(
+			`User secret "${input.name.trim()}" no longer exists or is not approved for package "${input.packageId.trim()}".`,
+		)
+	}
+	return saved
+}
+
+/**
+ * Persist multiple secrets in one D1 batch. Callers that rotate OAuth refresh
+ * tokens must pass the refresh-token entry before the access-token entry.
+ * Package contexts must call `assertCanSetSecrets` before any provider request
+ * that consumes a rotating refresh token; the package write path also
+ * fail-closes in SQL if any secret lacks the grant.
+ */
+export async function setSecretsAtomically(input: {
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	userId: string
+	userEmail?: string | null
+	secrets: Array<{
+		name: string
+		value: string
+		scope: SecretScope
+		description?: string | null
+	}>
+	storageContext?: StorageContext | null
+}): Promise<Array<SecretMetadata>> {
+	if (input.secrets.length === 0) {
+		throw new Error('At least one secret is required.')
+	}
+
+	const storageContext = input.storageContext ?? null
+	const packageId = storageContext?.packageId?.trim() ?? ''
+	const scopes = new Set(input.secrets.map((secret) => secret.scope))
+	if (scopes.size !== 1) {
+		throw new Error('Atomic secret writes must share a single scope.')
+	}
+	const scope = input.secrets[0]?.scope
+	if (!scope) {
+		throw new Error('At least one secret is required.')
+	}
+
+	if (scope === 'user' && packageId) {
+		for (const secret of input.secrets) {
+			const name = secret.name.trim()
+			if (!name) throw new Error('Secret name is required.')
+			const existing = await resolveSecret({
+				env: input.env,
+				userId: input.userId,
+				name,
+				scope: 'user',
+				storageContext,
+			})
+			if (!existing.found) {
+				throw new McpCallerError(
+					'Package runtimes cannot create user-scoped secrets. Create the secret from the account page and approve the package first.',
+				)
+			}
+		}
+		return updateUserSecretsForPackageAtomically({
+			env: input.env,
+			userId: input.userId,
+			userEmail: input.userEmail,
+			packageId,
+			secrets: input.secrets.map((secret) => ({
+				name: secret.name,
+				value: secret.value,
+				description: secret.description,
+			})),
+		})
+	}
+
+	return saveSecretsAtomically({
+		env: input.env,
+		userId: input.userId,
+		userEmail: input.userEmail,
+		scope,
+		secrets: input.secrets.map((secret) => ({
+			name: secret.name,
+			value: secret.value,
+			description: secret.description,
+		})),
+		storageContext,
+	})
+}
+
+export async function updateUserSecretsForPackageAtomically(input: {
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	userId: string
+	userEmail?: string | null
+	packageId: string
+	secrets: Array<{
+		name: string
+		value: string
+		description?: string | null
+	}>
+}): Promise<Array<SecretMetadata>> {
 	const packageId = input.packageId.trim()
 	if (!packageId) throw new Error('Package id is required.')
+	if (input.secrets.length === 0) {
+		throw new Error('At least one secret is required.')
+	}
 
 	const bucket = await getExistingBucketForScope({
 		db: input.env.APP_DB,
@@ -213,71 +322,220 @@ export async function updateUserSecretForPackage(input: {
 		storageContext: null,
 	})
 	if (!bucket) throw new Error('User secret not found.')
-	const existingEntry = await getSecretEntry({
-		db: input.env.APP_DB,
-		bucketId: bucket.id,
-		name,
-	})
-	if (!existingEntry) throw new Error('User secret not found.')
 
-	const description = input.description?.trim() ?? existingEntry.description
-	const encryptedValue = await encryptSecretValue(input.env, value)
-	await assertWithinStorageBytesEntitlement({
+	const now = new Date().toISOString()
+	const prepared: Array<{
+		name: string
+		description: string
+		encryptedValue: string
+		existingEntry: NonNullable<Awaited<ReturnType<typeof getSecretEntry>>>
+	}> = []
+
+	for (const secret of input.secrets) {
+		const name = secret.name.trim()
+		if (!name) throw new Error('Secret name is required.')
+		assertSecretNameAllowed(name)
+		const value = secret.value.trim()
+		if (!value) throw new Error('Secret value is required.')
+		const existingEntry = await getSecretEntry({
+			db: input.env.APP_DB,
+			bucketId: bucket.id,
+			name,
+		})
+		if (!existingEntry) throw new Error('User secret not found.')
+		const description = secret.description?.trim() ?? existingEntry.description
+		const encryptedValue = await encryptSecretValue(input.env, value)
+		await assertWithinStorageBytesEntitlement({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			email: input.userEmail,
+			requested: estimateEntitlementStorageEntryByteDelta({
+				next: {
+					key: name,
+					value: {
+						description,
+						encryptedValue,
+						allowedHosts: existingEntry.allowed_hosts,
+						allowedCapabilities: existingEntry.allowed_capabilities,
+						allowedPackages: existingEntry.allowed_packages,
+					},
+				},
+				existing: {
+					key: existingEntry.name,
+					value: {
+						description: existingEntry.description,
+						encryptedValue: existingEntry.encrypted_value,
+						allowedHosts: existingEntry.allowed_hosts,
+						allowedCapabilities: existingEntry.allowed_capabilities,
+						allowedPackages: existingEntry.allowed_packages,
+					},
+				},
+			}),
+		})
+		prepared.push({ name, description, encryptedValue, existingEntry })
+	}
+
+	try {
+		await updateApprovedUserSecretEntriesForPackageAtomically({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			packageId,
+			updates: prepared.map((entry) => ({
+				name: entry.name,
+				description: entry.description,
+				encryptedValue: entry.encryptedValue,
+				updatedAt: now,
+			})),
+		})
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (
+			message.includes('package cannot mutate one or more secrets') ||
+			/ABORT/i.test(message)
+		) {
+			const names = prepared.map((entry) => entry.name).join(', ')
+			throw new Error(
+				`User secret(s) "${names}" no longer exist or are not approved for package "${packageId}".`,
+			)
+		}
+		throw error
+	}
+
+	return prepared.map((entry) =>
+		toSecretMetadata({
+			name: entry.name,
+			scope: 'user',
+			description: entry.description,
+			packageId: null,
+			allowedHosts: parseAllowedHosts(entry.existingEntry.allowed_hosts),
+			allowedCapabilities: parseAllowedCapabilities(
+				entry.existingEntry.allowed_capabilities,
+			),
+			allowedPackages: parseAllowedPackages(
+				entry.existingEntry.allowed_packages,
+			),
+			createdAt: entry.existingEntry.created_at,
+			updatedAt: now,
+			expiresAt: bucket.expires_at,
+		}),
+	)
+}
+
+async function saveSecretsAtomically(input: {
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	userId: string
+	userEmail?: string | null
+	scope: SecretScope
+	secrets: Array<{
+		name: string
+		value: string
+		description?: string | null
+	}>
+	storageContext?: StorageContext | null
+}): Promise<Array<SecretMetadata>> {
+	const bucket = await getOrCreateSecretBucket({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		email: input.userEmail,
-		requested: estimateEntitlementStorageEntryByteDelta({
-			next: {
-				key: name,
-				value: {
-					description,
-					encryptedValue,
-					allowedHosts: existingEntry.allowed_hosts,
-					allowedCapabilities: existingEntry.allowed_capabilities,
-					allowedPackages: existingEntry.allowed_packages,
-				},
-			},
-			existing: {
-				key: existingEntry.name,
-				value: {
-					description: existingEntry.description,
-					encryptedValue: existingEntry.encrypted_value,
-					allowedHosts: existingEntry.allowed_hosts,
-					allowedCapabilities: existingEntry.allowed_capabilities,
-					allowedPackages: existingEntry.allowed_packages,
-				},
-			},
-		}),
+		scope: input.scope,
+		storageContext: input.storageContext ?? null,
+		sessionExpiresAt: null,
 	})
 	const now = new Date().toISOString()
-	const updated = await updateApprovedUserSecretEntryForPackage({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		packageId,
-		name,
-		description,
-		encryptedValue,
-		updatedAt: now,
-	})
-	if (!updated) {
-		throw new Error(
-			`User secret "${name}" no longer exists or is not approved for package "${packageId}".`,
-		)
+	const prepared: Array<{
+		name: string
+		description: string
+		encryptedValue: string
+		existingEntry: Awaited<ReturnType<typeof getSecretEntry>>
+	}> = []
+
+	for (const secret of input.secrets) {
+		const name = secret.name.trim()
+		if (!name) throw new Error('Secret name is required.')
+		assertSecretNameAllowed(name)
+		const value = secret.value.trim()
+		if (!value) throw new Error('Secret value is required.')
+		const description = secret.description?.trim() ?? ''
+		const existingEntry = await getSecretEntry({
+			db: input.env.APP_DB,
+			bucketId: bucket.id,
+			name,
+		})
+		if (existingEntry == null) {
+			await assertWithinEntitlement({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				email: input.userEmail,
+				resource: 'secrets',
+			})
+		}
+		const encryptedValue = await encryptSecretValue(input.env, value)
+		await assertWithinStorageBytesEntitlement({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			email: input.userEmail,
+			requested: estimateEntitlementStorageEntryByteDelta({
+				next: {
+					key: name,
+					value: {
+						description,
+						encryptedValue,
+						allowedHosts: existingEntry?.allowed_hosts ?? '[]',
+						allowedCapabilities: existingEntry?.allowed_capabilities ?? '[]',
+						allowedPackages: existingEntry?.allowed_packages ?? '[]',
+					},
+				},
+				existing: existingEntry
+					? {
+							key: existingEntry.name,
+							value: {
+								description: existingEntry.description,
+								encryptedValue: existingEntry.encrypted_value,
+								allowedHosts: existingEntry.allowed_hosts,
+								allowedCapabilities: existingEntry.allowed_capabilities,
+								allowedPackages: existingEntry.allowed_packages,
+							},
+						}
+					: null,
+			}),
+		})
+		prepared.push({ name, description, encryptedValue, existingEntry })
 	}
-	return toSecretMetadata({
-		name,
-		scope: 'user',
-		description,
-		packageId: null,
-		allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
-		allowedCapabilities: parseAllowedCapabilities(
-			existingEntry.allowed_capabilities,
-		),
-		allowedPackages: parseAllowedPackages(existingEntry.allowed_packages),
-		createdAt: existingEntry.created_at,
-		updatedAt: now,
-		expiresAt: bucket.expires_at,
+
+	await upsertSecretEntriesAtomically({
+		db: input.env.APP_DB,
+		rows: prepared.map((entry) => ({
+			bucket_id: bucket.id,
+			name: entry.name,
+			description: entry.description,
+			encrypted_value: entry.encryptedValue,
+			allowed_hosts: entry.existingEntry?.allowed_hosts ?? '[]',
+			allowed_capabilities: entry.existingEntry?.allowed_capabilities ?? '[]',
+			allowed_packages: entry.existingEntry?.allowed_packages ?? '[]',
+			created_at: entry.existingEntry?.created_at ?? now,
+			updated_at: now,
+		})),
 	})
+
+	return prepared.map((entry) =>
+		toSecretMetadata({
+			name: entry.name,
+			scope: input.scope,
+			description: entry.description,
+			packageId: input.scope === 'package' ? bucket.binding_key : null,
+			allowedHosts: entry.existingEntry
+				? parseAllowedHosts(entry.existingEntry.allowed_hosts)
+				: [],
+			allowedCapabilities: entry.existingEntry
+				? parseAllowedCapabilities(entry.existingEntry.allowed_capabilities)
+				: [],
+			allowedPackages: entry.existingEntry
+				? parseAllowedPackages(entry.existingEntry.allowed_packages)
+				: [],
+			createdAt: entry.existingEntry?.created_at ?? now,
+			updatedAt: now,
+			expiresAt: bucket.expires_at,
+		}),
+	)
 }
 
 export async function listSecrets(
