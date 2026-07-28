@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.kentcdodds%2Fkody.svg)](https://mcptoplist.com/server/io.github.kentcdodds%2Fkody)
+
 <div align="center">
   <img src="./packages/worker/public/logo.png" alt="kody logo" width="400" />
 
