@@ -19,11 +19,12 @@ import {
 	type RunStatus,
 	type RunTerminalStatus,
 	runLogLevelValues,
-	runPersistenceForSurface,
+	runPersistenceForContext,
 	runRecordDefaultPageSize,
 	runRecordMaxJsonBytes,
 	runRecordMaxLogEntriesPerRun,
 	runRecordMaxPageSize,
+	runRecordMaxResultSnapshotBytes,
 	runRecordMaxTextBytes,
 } from './types.ts'
 
@@ -67,6 +68,33 @@ function serializeJson(value: unknown, maxBytes = runRecordMaxJsonBytes) {
 			__truncated__: true,
 			preview,
 		})
+	}
+	return wrapped
+}
+
+/**
+ * Bound a JSON-serializable handler result for `metadata.result`. Oversized
+ * values become `{ __truncated__: true, preview }` so `run_get` stays useful
+ * without blowing per-user DO storage.
+ */
+export function snapshotRunRecordResult(
+	value: unknown,
+	maxBytes = runRecordMaxResultSnapshotBytes,
+): unknown {
+	const safe = toJsonSafeValue(value)
+	const json = JSON.stringify(safe)
+	if (textEncoder.encode(json).length <= maxBytes) return safe
+	let preview = truncateUtf8(json, Math.max(0, maxBytes - 64))
+	let wrapped: { __truncated__: true; preview: string } = {
+		__truncated__: true,
+		preview,
+	}
+	while (
+		textEncoder.encode(JSON.stringify(wrapped)).length > maxBytes &&
+		preview.length > 0
+	) {
+		preview = preview.slice(0, Math.floor(preview.length * 0.8))
+		wrapped = { __truncated__: true, preview }
 	}
 	return wrapped
 }
@@ -209,7 +237,7 @@ export function beginRunRecord(input: {
 	try {
 		const id = crypto.randomUUID()
 		const startedAt = new Date().toISOString()
-		const persistence = runPersistenceForSurface(context.surface)
+		const persistence = runPersistenceForContext(context)
 		const handle: RunRecordHandle = {
 			id,
 			userId,
@@ -230,6 +258,8 @@ export function beginRunRecord(input: {
 			})
 			// A dropped startRun is deliberately harmless: finishRun upserts the
 			// complete row. That is why begin can stay off the request critical path.
+			// Keyed execute must use {@link claimRunRecord} instead so the running
+			// row is visible before work starts (replay / in-progress lookups).
 			const startPromise = runLogRpc({ env: input.env, userId })
 				.startRun({ run })
 				.catch((error: unknown) => {
@@ -250,6 +280,66 @@ export function beginRunRecord(input: {
 }
 
 /**
+ * Awaited claim for keyed runs (execute with `idempotencyKey`). Returns the
+ * existing owner when the key is already taken so callers can replay or report
+ * in-progress without starting a duplicate sandbox.
+ *
+ * Never throws: same observability contract as {@link beginRunRecord}.
+ */
+export async function claimRunRecord(input: {
+	env: Env
+	userId?: string | null
+	context?: RunRecordContext | null
+}): Promise<
+	| { claimed: true; handle: RunRecordHandle }
+	| { claimed: false; run: RunRecord }
+	| null
+> {
+	const namespace = runLogBinding(input.env)
+	const userId = normalizeOptionalString(input.userId ?? undefined)
+	const context = input.context
+	if (!namespace || !userId || !context) return null
+	const idempotencyKey = normalizeOptionalString(context.idempotencyKey)
+	if (!idempotencyKey) return null
+
+	try {
+		const startedAt = new Date().toISOString()
+		const handle: RunRecordHandle = {
+			id: crypto.randomUUID(),
+			userId,
+			startedAt,
+			persistence: runPersistenceForContext({
+				...context,
+				idempotencyKey,
+			}),
+			context: {
+				...context,
+				idempotencyKey,
+			},
+		}
+		const run = buildRunRow({
+			handle,
+			status: 'running',
+			finishedAt: null,
+			durationMs: null,
+			errorName: null,
+			errorMessage: null,
+			updatedAt: startedAt,
+		})
+		const claimed = await runLogRpc({ env: input.env, userId }).claimRun({
+			run,
+		})
+		if (!claimed.claimed) {
+			return { claimed: false, run: claimed.run }
+		}
+		return { claimed: true, handle }
+	} catch (error) {
+		console.warn('run-record-claim-failed', error)
+		return null
+	}
+}
+
+/**
  * Never throws, including the activation milestone write it fans out to: the
  * terminal record and the milestone both observe the run, so neither may fail
  * it.
@@ -260,6 +350,11 @@ export async function finishRunRecord(input: {
 	status: RunTerminalStatus
 	logs?: Array<RunRecordLogInput>
 	error?: unknown
+	/**
+	 * Optional JSON-serializable handler result retained under
+	 * `metadata.result` (bounded; see {@link snapshotRunRecordResult}).
+	 */
+	result?: unknown
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<void> {
 	const handle = input.handle
@@ -278,8 +373,21 @@ export async function finishRunRecord(input: {
 					Date.parse(finishedAt) - Date.parse(handle.startedAt),
 				)
 				const { errorName, errorMessage } = getErrorFields(input.error)
+				const metadata =
+					input.result === undefined
+						? handle.context.metadata
+						: {
+								...(handle.context.metadata ?? {}),
+								result: snapshotRunRecordResult(input.result),
+							}
 				const run = buildRunRow({
-					handle,
+					handle: {
+						...handle,
+						context: {
+							...handle.context,
+							metadata,
+						},
+					},
 					status: input.status,
 					finishedAt,
 					durationMs,
@@ -356,6 +464,7 @@ export async function recordRunRecord(input: {
 	status: RunTerminalStatus
 	logs?: Array<RunRecordLogInput>
 	error?: unknown
+	result?: unknown
 	startedAt?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<RunRecordHandle | null> {
@@ -371,7 +480,7 @@ export async function recordRunRecord(input: {
 			userId,
 			startedAt:
 				normalizeOptionalString(input.startedAt) ?? new Date().toISOString(),
-			persistence: runPersistenceForSurface(context.surface),
+			persistence: runPersistenceForContext(context),
 			context,
 		}
 	} catch (error) {
@@ -384,6 +493,7 @@ export async function recordRunRecord(input: {
 		status: input.status,
 		logs: input.logs,
 		error: input.error,
+		result: input.result,
 		waitUntil: input.waitUntil,
 	})
 	return handle
@@ -424,6 +534,19 @@ export async function getRunRecord(input: {
 	return await runLogRpc({ env: input.env, userId: input.userId }).getRun({
 		runId: input.runId,
 	})
+}
+
+export async function getRunRecordByIdempotencyKey(input: {
+	env: Env
+	userId: string
+	idempotencyKey: string
+}): Promise<RunRecord | null> {
+	const key = normalizeOptionalString(input.idempotencyKey)
+	if (!runLogBinding(input.env) || !key) return null
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).getRunByIdempotencyKey({ idempotencyKey: key })
 }
 
 export async function summarizeRunRecords(input: {

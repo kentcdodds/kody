@@ -9,16 +9,20 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
 import { RunLog } from './run-log-do.ts'
 import {
 	beginRunRecord,
+	claimRunRecord,
 	clearRunRecords,
 	finishRunRecord,
 	getRunRecord,
+	getRunRecordByIdempotencyKey,
 	listRunRecords,
 	recordRunRecord,
 	runLogRpc,
+	snapshotRunRecordResult,
 	summarizeRunRecords,
 } from './service.ts'
 import {
 	runRecordMaxLogEntriesPerRun,
+	runRecordMaxResultSnapshotBytes,
 	runRecordMaxRunsPerUser,
 	runRecordRetentionDays,
 	runRecordRetentionEveryNFinishes,
@@ -969,3 +973,139 @@ test(
 		])
 	},
 )
+
+test('keyed execute claims eagerly, retains bounded result, and replays without a second claim', async () => {
+	const userId = uniqueUserId('keyed-execute')
+	const key = `execute-key-${crypto.randomUUID()}`
+	const first = await claimRunRecord({
+		env,
+		userId,
+		context: {
+			surface: 'execute',
+			name: null,
+			idempotencyKey: key,
+			metadata: { conversationId: 'conv-keyed' },
+		},
+	})
+	expect(first?.claimed).toBe(true)
+	if (!first || !first.claimed) throw new Error('expected claim')
+	expect(first.handle.persistence).toBe('eager')
+
+	const whileRunning = await claimRunRecord({
+		env,
+		userId,
+		context: {
+			surface: 'execute',
+			idempotencyKey: key,
+		},
+	})
+	expect(whileRunning).toEqual({
+		claimed: false,
+		run: expect.objectContaining({
+			id: first.handle.id,
+			status: 'running',
+			idempotencyKey: key,
+		}),
+	})
+
+	const oversized = { blob: 'x'.repeat(runRecordMaxResultSnapshotBytes + 512) }
+	await finishRunRecord({
+		env,
+		handle: first.handle,
+		status: 'success',
+		result: oversized,
+		logs: ['done'],
+	})
+
+	const byKey = await getRunRecordByIdempotencyKey({
+		env,
+		userId,
+		idempotencyKey: key,
+	})
+	expect(byKey?.id).toBe(first.handle.id)
+	expect(byKey?.status).toBe('success')
+	expect(byKey?.metadata['result']).toEqual(
+		expect.objectContaining({
+			__truncated__: true,
+			preview: expect.any(String),
+		}),
+	)
+
+	const replay = await claimRunRecord({
+		env,
+		userId,
+		context: {
+			surface: 'execute',
+			idempotencyKey: key,
+		},
+	})
+	expect(replay).toEqual({
+		claimed: false,
+		run: expect.objectContaining({
+			id: first.handle.id,
+			status: 'success',
+		}),
+	})
+
+	// Key-less execute success still does not persist.
+	const keyless = beginRunRecord({
+		env,
+		userId,
+		context: { surface: 'execute', name: 'keyless-ok' },
+	})
+	expect(keyless?.persistence).toBe('on-failure')
+	await finishRunRecord({
+		env,
+		handle: keyless,
+		status: 'success',
+		result: { ignored: true },
+	})
+	const page = await listRunRecords({
+		env,
+		userId,
+		filter: { surface: 'execute' },
+	})
+	expect(page.runs.map((run) => run.id)).toEqual([first.handle.id])
+})
+
+test('snapshotRunRecordResult keeps small values and marks oversized ones', () => {
+	expect(snapshotRunRecordResult({ ok: true, agentId: 'abc' })).toEqual({
+		ok: true,
+		agentId: 'abc',
+	})
+	const huge = 'y'.repeat(runRecordMaxResultSnapshotBytes + 100)
+	expect(snapshotRunRecordResult({ payload: huge })).toEqual({
+		__truncated__: true,
+		preview: expect.stringContaining('... [truncated]'),
+	})
+})
+
+test('webhook/export finish retains metadata.result for run_get', async () => {
+	const userId = uniqueUserId('result-snapshot')
+	const handle = await recordRunRecord({
+		env,
+		userId,
+		context: {
+			surface: 'webhook',
+			name: 'sentry',
+			metadata: {
+				endpointId: 'ep-1',
+				httpStatus: 202,
+				outcome: 'delivered',
+			},
+		},
+		status: 'success',
+		result: { skipped: 'other-project' },
+	})
+	expect(handle).not.toBeNull()
+	const detail = await getRunRecord({
+		env,
+		userId,
+		runId: handle!.id,
+	})
+	expect(detail?.run.metadata).toMatchObject({
+		endpointId: 'ep-1',
+		outcome: 'delivered',
+		result: { skipped: 'other-project' },
+	})
+})

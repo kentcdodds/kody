@@ -32,7 +32,7 @@ const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-const runLogSchemaVersion = 2
+const runLogSchemaVersion = 3
 
 const staleRunningErrorName = 'Interrupted'
 const staleRunningErrorMessage =
@@ -319,6 +319,12 @@ class RunLogBase extends DurableObject<Env> {
 		this.ctx.storage.sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_runs_name_started_id ON runs(name, started_at DESC, id DESC)`,
 		)
+		// Caller-supplied execute keys (and other surfaces that set a key) must
+		// be unique per user so claim/replay can stay race-free inside one DO.
+		this.ctx.storage.sql.exec(
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_idempotency_key
+			ON runs(idempotency_key) WHERE idempotency_key IS NOT NULL`,
+		)
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS run_logs (
 				run_id TEXT NOT NULL,
@@ -386,6 +392,36 @@ class RunLogBase extends DurableObject<Env> {
 			)
 			.toArray()[0]
 		return row != null
+	}
+
+	private findRunByIdempotencyKey(idempotencyKey: string): RunRecord | null {
+		const row = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT r.*,
+					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
+				FROM runs r
+				WHERE r.idempotency_key = ?
+				LIMIT 1`,
+				idempotencyKey,
+			)
+			.toArray()[0]
+		if (!row) return null
+		return mapRunRow(row, Number(row['log_count'] ?? 0) || 0)
+	}
+
+	private insertRunningRun(run: RunLogRowInput) {
+		const existed = this.runExists(run.id)
+		if (!existed) {
+			this.upsertRun(run, 'ignore')
+			// INSERT OR IGNORE: count only when the row is new.
+			if (this.runExists(run.id)) {
+				this.adjustRunCount(1)
+				// New row ⇒ future age/stale work exists; idle conclusion is stale.
+				// Clear armed too: a new `running` row may need an earlier wake.
+				this.retentionIdleConfirmed = false
+				this.retentionAlarmArmed = false
+			}
+		}
 	}
 
 	private upsertRun(run: RunLogRowInput, mode: 'ignore' | 'replace') {
@@ -675,20 +711,67 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	async startRun(input: { run: RunLogRowInput }): Promise<{ ok: true }> {
-		const existed = this.runExists(input.run.id)
-		if (!existed) {
-			this.upsertRun(input.run, 'ignore')
-			// INSERT OR IGNORE: count only when the row is new.
-			if (this.runExists(input.run.id)) {
-				this.adjustRunCount(1)
-				// New row ⇒ future age/stale work exists; idle conclusion is stale.
-				// Clear armed too: a new `running` row may need an earlier wake.
-				this.retentionIdleConfirmed = false
-				this.retentionAlarmArmed = false
-			}
-		}
+		this.insertRunningRun(input.run)
 		await this.ensureRetentionAlarm()
 		return { ok: true }
+	}
+
+	/**
+	 * Atomically claim an idempotency key (or return the existing owner). DO
+	 * RPCs are serialized, so select-then-insert here is race-free without a
+	 * separate lock. Callers that need keyed execute replay use this instead of
+	 * fire-and-forget `startRun`.
+	 */
+	async claimRun(input: { run: RunLogRowInput }): Promise<{
+		claimed: boolean
+		run: RunRecord
+	}> {
+		const key = input.run.idempotencyKey?.trim() || null
+		if (key) {
+			const existing = this.findRunByIdempotencyKey(key)
+			if (existing) {
+				return { claimed: false, run: existing }
+			}
+		}
+		this.insertRunningRun(input.run)
+		await this.ensureRetentionAlarm()
+		const inserted =
+			(await this.getRun({ runId: input.run.id }))?.run ??
+			mapRunRow(
+				{
+					id: input.run.id,
+					surface: input.run.surface,
+					status: input.run.status,
+					name: input.run.name,
+					package_id: input.run.packageId,
+					package_kody_id: input.run.kodyId,
+					source_id: input.run.sourceId,
+					published_commit: input.run.publishedCommit,
+					storage_id: input.run.storageId,
+					job_id: input.run.jobId,
+					workflow_id: input.run.workflowId,
+					invocation_id: input.run.invocationId,
+					session_id: input.run.sessionId,
+					idempotency_key: input.run.idempotencyKey,
+					parent_run_id: input.run.parentRunId,
+					started_at: input.run.startedAt,
+					finished_at: input.run.finishedAt,
+					duration_ms: input.run.durationMs,
+					error_name: input.run.errorName,
+					error_message: input.run.errorMessage,
+					metadata_json: input.run.metadataJson,
+				},
+				0,
+			)
+		return { claimed: true, run: inserted }
+	}
+
+	async getRunByIdempotencyKey(input: {
+		idempotencyKey: string
+	}): Promise<RunRecord | null> {
+		const key = input.idempotencyKey.trim()
+		if (!key) return null
+		return this.findRunByIdempotencyKey(key)
 	}
 
 	async finishRun(input: {
@@ -929,6 +1012,10 @@ export const RunLog = Sentry.instrumentDurableObjectWithSentry(
 
 export type RunLogRpc = {
 	startRun: (input: { run: RunLogRowInput }) => Promise<{ ok: true }>
+	claimRun: (input: { run: RunLogRowInput }) => Promise<{
+		claimed: boolean
+		run: RunRecord
+	}>
 	finishRun: (input: {
 		run: RunLogRowInput
 		logs: Array<RunLogEntryInput>
@@ -937,6 +1024,9 @@ export type RunLogRpc = {
 	getRun: (input: {
 		runId: string
 	}) => Promise<{ run: RunRecord; logs: Array<RunRecordLog> } | null>
+	getRunByIdempotencyKey: (input: {
+		idempotencyKey: string
+	}) => Promise<RunRecord | null>
 	summarize: (input: { since: string }) => Promise<RunRecordSummary>
 	listStorageIds: () => Promise<Array<string>>
 	exportRuns: (input: ExportRunsInput) => Promise<{

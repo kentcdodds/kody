@@ -53,9 +53,12 @@ export type RunLogLevel = (typeof runLogLevelValues)[number]
  * - `eager`: a `running` row is written at begin so an evicted or hung run is
  *   still visible. Used by every surface a user cannot watch interactively.
  * - `on-failure`: nothing is persisted unless the run ends in `error`. Used
- *   only by `execute`, which is the highest-volume surface and already returns
- *   its result (and logs) inline to the caller. Success counts for `execute`
- *   come from Analytics Engine via usage metering, not from run records.
+ *   only by key-less `execute`, which is the highest-volume surface and already
+ *   returns its result (and logs) inline to the caller. Success counts for
+ *   key-less `execute` come from Analytics Engine via usage metering, not from
+ *   run records. When the caller supplies an `idempotencyKey`, execute upgrades
+ *   to `eager` so a client-side transport timeout can still recover the outcome
+ *   via `run_get` / keyed replay.
  */
 export type RunPersistence = 'eager' | 'on-failure'
 
@@ -101,6 +104,20 @@ export type RunRecordContext = {
 	idempotencyKey?: string | null
 	parentRunId?: string | null
 	metadata?: Record<string, unknown> | null
+}
+
+/**
+ * Persistence for one begin/finish pair. Same as
+ * {@link runPersistenceForSurface} except keyed `execute` upgrades to `eager`.
+ */
+export function runPersistenceForContext(
+	context: Pick<RunRecordContext, 'surface' | 'idempotencyKey'>,
+): RunPersistence {
+	const key = context.idempotencyKey?.trim()
+	if (context.surface === 'execute' && key) {
+		return 'eager'
+	}
+	return runPersistenceForSurface(context.surface)
 }
 
 /**
@@ -201,6 +218,14 @@ export const runRecordMaxRunsPerUser = 2_000
 export const runRecordMaxLogEntriesPerRun = 200
 export const runRecordMaxTextBytes = 16 * 1024
 export const runRecordMaxJsonBytes = 32 * 1024
+/**
+ * Bound for `metadata.result` snapshots retained on finish. Kept small so
+ * per-user DO storage and the existing retention policy stay healthy; oversized
+ * values are replaced with `{ __truncated__: true, preview }`.
+ */
+export const runRecordMaxResultSnapshotBytes = 4 * 1024
+/** Max length for caller-supplied execute `idempotencyKey` values. */
+export const runRecordMaxIdempotencyKeyLength = 256
 export const runRecordDefaultPageSize = 25
 export const runRecordMaxPageSize = 100
 
