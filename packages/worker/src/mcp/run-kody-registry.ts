@@ -68,7 +68,10 @@ import {
 	findUnboundRuntimeHelperAccess,
 } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
-import { type RunRecordContext } from '#worker/run-records/types.ts'
+import {
+	type RunRecordContext,
+	type RunRecordHandle,
+} from '#worker/run-records/types.ts'
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
@@ -621,6 +624,7 @@ export async function runModuleWithRegistry(
 		 */
 		conversationId?: string | null
 		runRecord?: RunRecordContext | null
+		runRecordHandle?: RunRecordHandle | null
 		/**
 		 * When set, terminal run-record writes are scheduled on this callback
 		 * (typically `ctx.waitUntil`) instead of being awaited. Observability
@@ -629,7 +633,7 @@ export async function runModuleWithRegistry(
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
 	},
-): Promise<ExecuteResult> {
+): Promise<ExecuteResult & { runId?: string }> {
 	const userId = callerContext.user?.userId ?? ''
 	const bundled = await buildKodyModuleBundle({
 		env,
@@ -739,6 +743,11 @@ export async function runBundledModuleWithRegistry(
 		skipCapabilityRegistry?: boolean
 		executorTimeoutMs?: number | null
 		runRecord?: RunRecordContext | null
+		/**
+		 * Pre-claimed handle from {@link claimRunRecord} (keyed execute). When
+		 * set, begin is skipped so the running row already owns the key.
+		 */
+		runRecordHandle?: RunRecordHandle | null
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
 		conversationId?: string | null
@@ -750,7 +759,7 @@ export async function runBundledModuleWithRegistry(
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
 	},
-): Promise<ExecuteResult> {
+): Promise<ExecuteResult & { runId?: string }> {
 	const secretRedactor = createExecutionSecretRedactor()
 	const normalizedStorageContext = normalizeStorageContext(
 		callerContext.storageContext ?? null,
@@ -766,13 +775,16 @@ export async function runBundledModuleWithRegistry(
 			}
 		: null
 	const waitUntil = options?.waitUntil
-	const runRecordHandle = beginRunRecord({
-		env,
-		userId: callerContext.user?.userId ?? null,
-		context: runRecordContext,
-		waitUntil,
-	})
+	const runRecordHandle =
+		options?.runRecordHandle ??
+		beginRunRecord({
+			env,
+			userId: callerContext.user?.userId ?? null,
+			context: runRecordContext,
+			waitUntil,
+		})
 	let runRecordFinished = false
+	let exposeRunId = runRecordHandle?.persistence === 'eager'
 	// The metering span covers the whole bundled run (module hydration,
 	// provider assembly, and sandbox execution) so pre-executor failures are
 	// still counted as failed package runs.
@@ -795,16 +807,27 @@ export async function runBundledModuleWithRegistry(
 		status: 'success' | 'error'
 		logs?: Array<string>
 		error?: unknown
+		result?: unknown
 	}) {
+		if (input.status === 'error') {
+			exposeRunId = Boolean(runRecordHandle)
+		}
 		await finishRunRecord({
 			env,
 			handle: runRecordHandle,
 			status: input.status,
 			logs: input.logs,
 			error: input.error,
+			result: input.result,
 			waitUntil,
 		})
 		runRecordFinished = true
+	}
+	function withRunId<T extends ExecuteResult>(
+		result: T,
+	): T & { runId?: string } {
+		if (!exposeRunId || !runRecordHandle) return result
+		return { ...result, runId: runRecordHandle.id }
 	}
 	try {
 		// Hydration can install additional published-package sources (literal
@@ -950,9 +973,10 @@ ${runtimeHelperRuntimePropertySource}
 				await finishObservedRun({
 					status: 'success',
 					logs: sanitizedResult.logs ?? [],
+					result: sanitizedResult.result,
 				})
 				await recordPackageExportUsage('success')
-				return sanitizedResult
+				return withRunId(sanitizedResult)
 			}
 			const rewrittenMessage =
 				(await rewriteCapabilitySecretError({
@@ -977,7 +1001,7 @@ ${runtimeHelperRuntimePropertySource}
 				error: finalResult.error,
 			})
 			await recordPackageExportUsage('error')
-			return finalResult
+			return withRunId(finalResult)
 		} catch (error) {
 			if (!runRecordFinished) {
 				await finishObservedRun({

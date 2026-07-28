@@ -134,6 +134,8 @@ async function recordDelivery(input: {
 	error?: string | null
 	payloadBytes: number
 	invocationId?: string
+	/** Handler return value from the bound package export (bounded on finish). */
+	result?: unknown
 	startedAt: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
@@ -157,12 +159,18 @@ async function recordDelivery(input: {
 			},
 			status,
 			error: input.error ?? undefined,
+			result: input.result,
 			startedAt: input.startedAt,
 			waitUntil: input.waitUntil,
 		})
 	} catch (error) {
 		console.error('[webhooks] failed to record delivery', error)
 	}
+}
+
+function readInvocationHandlerResult(body: unknown): unknown {
+	if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+	return (body as Record<string, unknown>)['result']
 }
 
 async function readBodyWithCap(
@@ -533,6 +541,7 @@ export async function handleWebhookIngressRequest(
 					error: ok ? null : `invocation_status_${response.status}`,
 					payloadBytes: bodyBytes.byteLength,
 					invocationId: deliveryId,
+					result: readInvocationHandlerResult(response.body),
 					startedAt: receivedAt,
 					waitUntil,
 				})
@@ -582,6 +591,7 @@ export async function handleWebhookIngressRequest(
 			error: ok ? null : `invocation_status_${response.status}`,
 			payloadBytes: bodyBytes.byteLength,
 			invocationId: deliveryId,
+			result: readInvocationHandlerResult(response.body),
 			startedAt: receivedAt,
 			waitUntil,
 		})

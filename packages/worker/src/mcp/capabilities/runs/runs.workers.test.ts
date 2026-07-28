@@ -52,6 +52,7 @@ async function finishRun(input: {
 	startedAt?: string
 	logs?: Array<string>
 	error?: unknown
+	result?: unknown
 }) {
 	const handle: RunRecordHandle = {
 		id: input.id ?? crypto.randomUUID(),
@@ -66,6 +67,7 @@ async function finishRun(input: {
 		status: input.status,
 		logs: input.logs,
 		error: input.error,
+		result: input.result,
 	})
 	return handle
 }
@@ -194,6 +196,41 @@ test(
 		)
 		expect(otherSummary.total).toBe(0)
 		expect(otherSummary.errors).toBe(0)
+	},
+	runLogSuiteTimeoutMs,
+)
+
+test(
+	'run_get exposes bounded metadata.result for webhook deliveries',
+	async () => {
+		const userId = uniqueUserId('webhook-result')
+		const callerContext = buildCallerContext({
+			userId,
+			email: `${userId}@example.com`,
+		})
+		const handle = await finishRun({
+			userId,
+			context: baseContext({
+				surface: 'webhook',
+				name: 'sentry',
+				metadata: {
+					endpointId: 'ep-result',
+					httpStatus: 202,
+					outcome: 'delivered',
+				},
+			}),
+			status: 'success',
+			result: { ok: true, agentId: 'agent-123' },
+		})
+		const detail = await runGetCapability.handler(
+			{ run_id: handle.id },
+			{ env, callerContext },
+		)
+		expect(detail.run.metadata).toMatchObject({
+			endpointId: 'ep-result',
+			outcome: 'delivered',
+			result: { ok: true, agentId: 'agent-123' },
+		})
 	},
 	runLogSuiteTimeoutMs,
 )

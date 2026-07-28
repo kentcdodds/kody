@@ -39,6 +39,6 @@ If connector-provided tools appear missing, check connector status with
 ## Job, webhook, or package app failed
 
 Open **[`/account/activity`](./activity.md)** (failures-first) or ask your agent
-to use **`run_summary`** / **`run_list`** / **`run_get`**. Successful ad-hoc
-**`execute`** calls are not stored there — only execute failures and other
-runtime surfaces.
+to use **`run_summary`** / **`run_list`** / **`run_get`**. Successful key-less
+ad-hoc **`execute`** calls are not stored there — only execute failures, keyed
+execute runs (including successes), and other runtime surfaces.

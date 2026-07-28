@@ -13,6 +13,15 @@ import {
 	memoryContextInputField,
 	resolveConversationId,
 } from '#mcp/tools/tool-call-context.ts'
+import {
+	claimRunRecord,
+	finishRunRecord,
+	getRunRecordByIdempotencyKey,
+} from '#worker/run-records/service.ts'
+import {
+	runRecordMaxIdempotencyKeyLength,
+	type RunRecordHandle,
+} from '#worker/run-records/types.ts'
 
 const storageOutputSchema = z.object({
 	id: z.string(),
@@ -22,6 +31,10 @@ const executeOutputSchema = z.object({
 	ok: z.boolean(),
 	conversationId: z.string(),
 	storage: storageOutputSchema.optional(),
+	runId: z.string().optional(),
+	replayed: z.boolean().optional(),
+	inProgress: z.boolean().optional(),
+	status: z.enum(['running', 'success', 'error']).optional(),
 	returnedBytes: z.number().int().nonnegative().optional(),
 	truncated: z.boolean().optional(),
 	note: z.string().optional(),
@@ -77,6 +90,14 @@ export const executeCapability = defineDomainCapability(
 				),
 			conversationId: conversationIdInputField,
 			memoryContext: memoryContextInputField,
+			idempotencyKey: z
+				.string()
+				.min(1)
+				.max(runRecordMaxIdempotencyKeyLength)
+				.optional()
+				.describe(
+					`Optional caller-supplied idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). When set, persist the run eagerly with a bounded result snapshot and replay finished/in-progress outcomes instead of re-executing. Key-less execute stays on-failure-only.`,
+				),
 		}),
 		outputSchema: executeOutputSchema,
 		async handler(
@@ -87,6 +108,7 @@ export const executeCapability = defineDomainCapability(
 				writable?: boolean
 				responseLimit?: number
 				conversationId?: string
+				idempotencyKey?: string
 			},
 			ctx: CapabilityContext,
 		) {
@@ -104,31 +126,172 @@ export const executeCapability = defineDomainCapability(
 				},
 			}
 			const conversationId = resolveConversationId(args.conversationId)
+			const storage = resolvedStorageId ? { id: resolvedStorageId } : undefined
+			const idempotencyKey = args.idempotencyKey?.trim() || null
+			const userId = callerContext.user?.userId ?? null
+
+			if (idempotencyKey && userId) {
+				const existing = await getRunRecordByIdempotencyKey({
+					env: ctx.env,
+					userId,
+					idempotencyKey,
+				})
+				if (existing) {
+					if (existing.status === 'running') {
+						return {
+							ok: false,
+							conversationId,
+							...(storage ? { storage } : {}),
+							runId: existing.id,
+							inProgress: true,
+							status: 'running' as const,
+							logs: [],
+						}
+					}
+					const retained = existing.metadata['result']
+					if (existing.status === 'error') {
+						return {
+							ok: false,
+							conversationId,
+							...(storage ? { storage } : {}),
+							runId: existing.id,
+							replayed: true,
+							status: 'error' as const,
+							error:
+								existing.errorMessage ??
+								'Execute failed (replayed from run record).',
+							...(retained !== undefined ? { result: retained } : {}),
+							logs: [],
+						}
+					}
+					return {
+						ok: true,
+						conversationId,
+						...(storage ? { storage } : {}),
+						runId: existing.id,
+						replayed: true,
+						status: 'success' as const,
+						result: retained,
+						logs: [],
+					}
+				}
+			}
+
+			let claimedRunHandle: RunRecordHandle | null = null
+			if (idempotencyKey && userId) {
+				const claim = await claimRunRecord({
+					env: ctx.env,
+					userId,
+					context: {
+						surface: 'execute',
+						name: null,
+						storageId: resolvedStorageId,
+						idempotencyKey,
+						metadata: { conversationId },
+					},
+				})
+				if (claim && !claim.claimed) {
+					if (claim.run.status === 'running') {
+						return {
+							ok: false,
+							conversationId,
+							...(storage ? { storage } : {}),
+							runId: claim.run.id,
+							inProgress: true,
+							status: 'running' as const,
+							logs: [],
+						}
+					}
+					const retained = claim.run.metadata['result']
+					if (claim.run.status === 'error') {
+						return {
+							ok: false,
+							conversationId,
+							...(storage ? { storage } : {}),
+							runId: claim.run.id,
+							replayed: true,
+							status: 'error' as const,
+							error:
+								claim.run.errorMessage ??
+								'Execute failed (replayed from run record).',
+							...(retained !== undefined ? { result: retained } : {}),
+							logs: [],
+						}
+					}
+					return {
+						ok: true,
+						conversationId,
+						...(storage ? { storage } : {}),
+						runId: claim.run.id,
+						replayed: true,
+						status: 'success' as const,
+						result: retained,
+						logs: [],
+					}
+				}
+				if (claim?.claimed) {
+					claimedRunHandle = claim.handle
+				}
+			}
+
 			const { runModuleWithRegistry } =
 				await import('#mcp/run-kody-registry.ts')
-			const result = await runModuleWithRegistry(
-				ctx.env,
-				callerContext,
-				args.code,
-				args.params,
-				{
-					storageTools: resolvedStorageId
-						? {
-								userId: callerContext.user?.userId ?? '',
-								storageId: resolvedStorageId,
-								writable: args.writable ?? false,
-							}
-						: undefined,
-				},
-			)
+			let result: Awaited<ReturnType<typeof runModuleWithRegistry>>
+			try {
+				result = await runModuleWithRegistry(
+					ctx.env,
+					callerContext,
+					args.code,
+					args.params,
+					{
+						storageTools: resolvedStorageId
+							? {
+									userId: callerContext.user?.userId ?? '',
+									storageId: resolvedStorageId,
+									writable: args.writable ?? false,
+								}
+							: undefined,
+						runRecordHandle: claimedRunHandle,
+						runRecord: {
+							surface: 'execute',
+							name: null,
+							storageId: resolvedStorageId,
+							idempotencyKey,
+							metadata: { conversationId },
+						},
+					},
+				)
+			} catch (cause) {
+				if (claimedRunHandle) {
+					await finishRunRecord({
+						env: ctx.env,
+						handle: claimedRunHandle,
+						status: 'error',
+						error: cause,
+					})
+				}
+				return {
+					ok: false,
+					conversationId,
+					...(storage ? { storage } : {}),
+					...(claimedRunHandle ? { runId: claimedRunHandle.id } : {}),
+					error: getErrorMessage(cause),
+					errorDetails: getExecutionErrorDetails(cause),
+					logs: [],
+				}
+			}
 			const logs = result.logs ?? []
-			const storage = resolvedStorageId ? { id: resolvedStorageId } : undefined
+			const runId =
+				typeof result.runId === 'string'
+					? result.runId
+					: (claimedRunHandle?.id ?? undefined)
 
 			if (result.error) {
 				return {
 					ok: false,
 					conversationId,
 					...(storage ? { storage } : {}),
+					...(runId ? { runId } : {}),
 					error: getErrorMessage(result.error),
 					errorDetails: getExecutionErrorDetails(result.error),
 					logs,
@@ -143,6 +306,7 @@ export const executeCapability = defineDomainCapability(
 				ok: true,
 				conversationId,
 				...(storage ? { storage } : {}),
+				...(runId ? { runId } : {}),
 				returnedBytes: limitedResult.returnedBytes,
 				...(limitedResult.truncated
 					? {

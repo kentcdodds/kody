@@ -329,6 +329,7 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 	expect(delivered?.metadata).toMatchObject({
 		httpStatus: 202,
 		outcome: 'delivered',
+		result: { handled: true },
 	})
 
 	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
@@ -512,6 +513,7 @@ test('webhook delivery records with one DO write, real startedAt duration, and e
 	expect(delivered?.metadata).toMatchObject({
 		outcome: 'delivered',
 		httpStatus: 200,
+		result: { handled: true },
 	})
 })
 

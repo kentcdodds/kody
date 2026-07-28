@@ -50,6 +50,16 @@ import {
 import { listOpenApiBindings } from '#worker/openapi/binding-service.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import {
+	claimRunRecord,
+	finishRunRecord,
+	getRunRecordByIdempotencyKey,
+} from '#worker/run-records/service.ts'
+import {
+	runRecordMaxIdempotencyKeyLength,
+	type RunRecord,
+	type RunRecordHandle,
+} from '#worker/run-records/types.ts'
 
 const executeTool = {
 	name: 'execute',
@@ -109,6 +119,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
+				idempotencyKey: z
+					.string()
+					.min(1)
+					.max(runRecordMaxIdempotencyKeyLength)
+					.optional()
+					.describe(
+						`Optional caller-supplied idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). When set, the run is persisted eagerly (including successes) with a bounded result snapshot so a client-side MCP transport timeout can recover via run_get or by retrying the same key. Retries of a finished key return the retained result with replayed: true; retries while still running return inProgress: true with the runId — neither re-executes. Key-less execute stays on-failure-only (successes are not recorded).`,
+					),
 			},
 			annotations: executeTool.annotations,
 		},
@@ -120,6 +138,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			responseLimit,
 			conversationId,
 			memoryContext,
+			idempotencyKey,
 		}: {
 			code: string
 			params?: Record<string, unknown>
@@ -128,6 +147,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			responseLimit?: number
 			conversationId?: string
 			memoryContext?: z.infer<typeof memoryContextInputField>
+			idempotencyKey?: string
 		}) => {
 			const timingStart = startToolTiming()
 			const env = agent.getEnv()
@@ -195,6 +215,28 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			}
 
 			async function runExecuteTool() {
+				const normalizedIdempotencyKey =
+					normalizeExecuteIdempotencyKey(idempotencyKey)
+				// Look up an existing keyed run before consuming quota so
+				// transport-timeout retries can replay / report in-progress
+				// without burning another daily execute slot.
+				if (normalizedIdempotencyKey && callerContext.user?.userId) {
+					const existing = await getRunRecordByIdempotencyKey({
+						env,
+						userId: callerContext.user.userId,
+						idempotencyKey: normalizedIdempotencyKey,
+					})
+					if (existing) {
+						const timing = finishToolTiming(timingStart)
+						return buildKeyedExecuteLookupResponse({
+							run: existing,
+							conversationId: resolvedConversationId,
+							timing,
+							activeStorageId,
+						})
+					}
+				}
+
 				// Daily execute quota, consumed before any bundling or sandbox
 				// work so over-limit calls cost nothing. The thrown
 				// EntitlementLimitError propagates through the outer catch as
@@ -206,6 +248,35 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						email: callerContext.user.email,
 						resource: 'execute_calls_per_day',
 					})
+				}
+
+				let claimedRunHandle: RunRecordHandle | null = null
+				if (normalizedIdempotencyKey && callerContext.user?.userId) {
+					const claim = await claimRunRecord({
+						env,
+						userId: callerContext.user.userId,
+						context: {
+							surface: 'execute',
+							name: null,
+							storageId: activeStorageId,
+							idempotencyKey: normalizedIdempotencyKey,
+							metadata: {
+								conversationId: resolvedConversationId,
+							},
+						},
+					})
+					if (claim && !claim.claimed) {
+						const timing = finishToolTiming(timingStart)
+						return buildKeyedExecuteLookupResponse({
+							run: claim.run,
+							conversationId: resolvedConversationId,
+							timing,
+							activeStorageId,
+						})
+					}
+					if (claim?.claimed) {
+						claimedRunHandle = claim.handle
+					}
 				}
 				const { getCapabilityRegistryForContext } =
 					await import('#mcp/capabilities/registry.ts')
@@ -262,10 +333,12 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									packageInvokeTools,
 									rawFetchHostSink: rawFetchHosts.sink,
 									conversationId: resolvedConversationId,
+									runRecordHandle: claimedRunHandle,
 									runRecord: {
 										surface: 'execute',
 										name: null,
 										storageId: activeStorageId,
+										idempotencyKey: normalizedIdempotencyKey,
 										metadata: {
 											conversationId: resolvedConversationId,
 										},
@@ -276,11 +349,22 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							// Bundling the caller-provided module (syntax errors,
 							// unresolved imports) throws before the sandbox runs;
 							// route it through the sandbox-error result path so it
-							// is not logged as a platform failure.
+							// is not logged as a platform failure. Finish any
+							// pre-claimed keyed run so retries can replay the error
+							// instead of seeing a stuck `running` row.
+							if (claimedRunHandle) {
+								await finishRunRecord({
+									env,
+									handle: claimedRunHandle,
+									status: 'error',
+									error: cause,
+								})
+							}
 							return {
 								result: undefined,
 								error: getErrorMessage(cause),
 								logs: [],
+								...(claimedRunHandle ? { runId: claimedRunHandle.id } : {}),
 							}
 						}
 					},
@@ -295,6 +379,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					hostCounts: rawFetchHosts.hostCounts(),
 					usedIntegrationAuthHelpers: codeUsesIntegrationAuthHelpers(code),
 				})
+				const runId =
+					typeof result.runId === 'string'
+						? result.runId
+						: (claimedRunHandle?.id ?? undefined)
 
 				if (result.error) {
 					const errorDetails = getExecutionErrorDetails(result.error)
@@ -325,6 +413,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							conversationId: resolvedConversationId,
 							timing,
 							...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
+							...(runId ? { runId } : {}),
 							returnedBytes: 0,
 							error: errorMessage,
 							errorDetails,
@@ -377,6 +466,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								...(activeStorageId
 									? { storage: { id: activeStorageId } }
 									: {}),
+								...(runId ? { runId } : {}),
 								returnedBytes: 0,
 								error: message,
 								result: passthrough?.structuredResult ?? null,
@@ -406,6 +496,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								...(activeStorageId
 									? { storage: { id: activeStorageId } }
 									: {}),
+								...(runId ? { runId } : {}),
 								returnedBytes: contentLimited.returnedBytes,
 								truncated: true,
 								note: contentLimited.note,
@@ -436,6 +527,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							conversationId: resolvedConversationId,
 							timing,
 							...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
+							...(runId ? { runId } : {}),
 							returnedBytes:
 								contentLimited.returnedBytes +
 								(companionLimited?.returnedBytes ?? 0),
@@ -492,6 +584,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						conversationId: resolvedConversationId,
 						timing,
 						...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
+						...(runId ? { runId } : {}),
 						returnedBytes: structuredResultValue.returnedBytes,
 						...(structuredResultValue.truncated
 							? {
@@ -511,6 +604,100 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			}
 		},
 	)
+}
+
+function normalizeExecuteIdempotencyKey(
+	value: string | undefined,
+): string | null {
+	const trimmed = value?.trim()
+	if (!trimmed) return null
+	return trimmed.slice(0, runRecordMaxIdempotencyKeyLength)
+}
+
+function buildKeyedExecuteLookupResponse(input: {
+	run: RunRecord
+	conversationId: string
+	timing: {
+		startedAt: string
+		endedAt: string
+		durationMs: number
+	}
+	activeStorageId: string | null
+}) {
+	const storage = input.activeStorageId
+		? { storage: { id: input.activeStorageId } }
+		: {}
+	if (input.run.status === 'running') {
+		return {
+			content: prependToolMetadataContent(input.conversationId, [
+				{
+					type: 'text',
+					text: `Execute still in progress (runId: ${input.run.id}). Poll run_get with that id, or retry with the same idempotencyKey.`,
+				},
+			]),
+			structuredContent: {
+				conversationId: input.conversationId,
+				timing: input.timing,
+				...storage,
+				runId: input.run.id,
+				inProgress: true,
+				status: 'running' as const,
+			},
+			isError: false,
+		}
+	}
+
+	const retainedResult = input.run.metadata['result']
+	if (input.run.status === 'error') {
+		const errorMessage =
+			input.run.errorMessage ?? 'Execute failed (replayed from run record).'
+		return {
+			content: prependToolMetadataContent(input.conversationId, [
+				{
+					type: 'text',
+					text: `Error: ${errorMessage}`,
+				},
+			]),
+			structuredContent: {
+				conversationId: input.conversationId,
+				timing: input.timing,
+				...storage,
+				runId: input.run.id,
+				replayed: true,
+				returnedBytes: 0,
+				error: errorMessage,
+				...(input.run.errorName ? { errorName: input.run.errorName } : {}),
+				...(retainedResult !== undefined ? { result: retainedResult } : {}),
+				logs: [] as Array<unknown>,
+			},
+			isError: true,
+		}
+	}
+
+	return {
+		content: prependToolMetadataContent(input.conversationId, [
+			{
+				type: 'text',
+				text: formatLimitedExecutionOutput({
+					value: retainedResult,
+					truncated: false,
+					note: undefined,
+					displayText: undefined,
+				}),
+			},
+		]),
+		structuredContent: {
+			conversationId: input.conversationId,
+			timing: input.timing,
+			...storage,
+			runId: input.run.id,
+			replayed: true,
+			returnedBytes: 0,
+			result: retainedResult,
+			logs: [] as Array<unknown>,
+		},
+		isError: false,
+	}
 }
 
 function formatRawFetchHostNudgeContent(nudges: Array<string>) {

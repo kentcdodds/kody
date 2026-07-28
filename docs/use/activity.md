@@ -33,18 +33,23 @@ does not surface those names yet.
 
 Records are kept about **30 days**, capped per account, and pruned so failures
 tend to outlive successes. Payload bodies for inbound webhooks are never stored
-— only delivery metadata and logs.
+— only delivery metadata, a bounded handler-result snapshot when available, and
+logs. Package exports and keyed execute runs similarly retain a small
+`metadata.result` snapshot (truncated when large).
 
-## Successful `execute` calls are not listed
+## Successful key-less `execute` calls are not listed
 
-Ad-hoc MCP **`execute`** calls that succeed are **not** written to Activity. You
-already get the result and logs in the tool response, and success volume is
-tracked separately for usage. **Failed** `execute` calls do appear. Every other
-surface (jobs, webhooks, package apps, services, workflows, exports, and so on)
-records both success and error.
+Ad-hoc MCP **`execute`** calls that succeed **without** an `idempotencyKey` are
+**not** written to Activity. You already get the result and logs in the tool
+response, and success volume is tracked separately for usage. **Failed**
+`execute` calls do appear, and execute calls that pass an `idempotencyKey` are
+recorded eagerly (including successes) so a client-side timeout can recover via
+`run_get` or a keyed retry. Every other surface (jobs, webhooks, package apps,
+services, workflows, exports, and so on) records both success and error.
 
-If a successful one-off `execute` is missing from Activity, that is expected —
-check the original tool result instead.
+If a successful one-off `execute` without a key is missing from Activity, that
+is expected — check the original tool result instead. See
+[Execute and workflows](./execute.md) for keyed recovery.
 
 ## React to failures from a package
 

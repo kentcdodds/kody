@@ -21,6 +21,8 @@ export const executeToolSandboxSurfaceDescription = `Sandbox surface:
 - \`await kody.secret_list({ scope? })\` — metadata only. \`secret_set\` — persist values already in trusted execution (e.g. refreshed tokens); write-only. No \`secret_get\` / \`secrets\` helpers in the sandbox.
 - \`value_get\` / \`value_list\` for non-secret persisted config.`
 
+export const executeToolIdempotencyDescription = `Optional \`idempotencyKey\` (max 256 chars): when set, Kody persists the run eagerly (including successes) with a bounded result snapshot under the run record. If the MCP client times out (-32001) while the sandbox continues, retry with the same key to get \`replayed: true\` plus the retained result and \`runId\`, or an \`inProgress: true\` response with \`runId\` while still running — neither re-executes. Poll \`run_get\` with that \`runId\`. Key-less execute stays on-failure-only (successes are not listed in Activity).`
+
 export const executeToolCallPlanningDescription = `Prefer one \`execute\` when the workflow is clear; split calls when you need new user input or a changed plan.`
 
 export const executeToolExampleDescription = `Example:
@@ -44,6 +46,7 @@ export const executeToolDescriptionFragments = [
 	executeToolOverviewDescription,
 	executeToolProjectionRuleDescription,
 	executeToolSandboxSurfaceDescription,
+	executeToolIdempotencyDescription,
 	executeToolCallPlanningDescription,
 	executeToolExampleDescription,
 	executeToolRawContentDescription,

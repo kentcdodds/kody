@@ -60,7 +60,7 @@ export const runListCapability = defineDomainCapability(
 	{
 		name: 'run_list',
 		description:
-			'List recent execution history across jobs, webhooks, package apps, services, workflows, and other runtimes so you can debug failures, crashes, and "why did my job stop working" questions. Successful ad-hoc execute runs are intentionally not recorded (only execute failures are); every other surface records both success and error. Records are retained about 30 days, capped per user, and pruned failure-last (successes drop before errors).',
+			'List recent execution history across jobs, webhooks, package apps, services, workflows, and other runtimes so you can debug failures, crashes, and "why did my job stop working" questions. Key-less successful ad-hoc execute runs are intentionally not recorded (only execute failures are, plus execute calls that supplied an idempotencyKey); every other surface records both success and error. Terminal rows may include a bounded metadata.result snapshot. Records are retained about 30 days, capped per user, and pruned failure-last (successes drop before errors).',
 		keywords: [
 			'run',
 			'runs',

@@ -51,14 +51,26 @@ Add new members there — never invent ad hoc surface strings at call sites.
 
 - **`eager`** — every surface except `execute`. A `running` row is written at
   begin so an evicted or hung run is still visible in history.
-- **`on-failure`** — `execute` only. Nothing is persisted unless the run ends in
-  `error`.
+- **`on-failure`** — key-less `execute` only. Nothing is persisted unless the
+  run ends in `error`.
 
-`execute` is on-failure because it is the highest-volume surface and already
-returns its result (and logs) inline to the caller. Success counts for ad-hoc
-execute come from Analytics Engine via [usage metering](./usage-metering.md),
-not from run records. Users who look for successful `execute` rows in Activity
-will not find them; that is intentional.
+`runPersistenceForContext(context)` is what begin/finish actually use: same as
+the surface default, except **`execute` with a caller-supplied `idempotencyKey`
+upgrades to `eager`**.
+
+Key-less `execute` stays on-failure because it is the highest-volume surface and
+already returns its result (and logs) inline to the caller. Success counts for
+key-less ad-hoc execute come from Analytics Engine via
+[usage metering](./usage-metering.md), not from run records. Users who look for
+successful key-less `execute` rows in Activity will not find them; that is
+intentional.
+
+When an external MCP client times out (for example MCP error `-32001`) while the
+sandbox continues, a keyed execute call still has a recoverable record: the
+caller can poll `run_get` with the returned `runId`, or retry `execute` with the
+same `idempotencyKey` to receive a `replayed: true` result (or
+`inProgress: true` while the first attempt is still running) without starting a
+duplicate sandbox.
 
 ## Begin / finish contract
 
@@ -110,9 +122,20 @@ Rules:
   request critical path.
 - **`on-failure` + `success` is a no-op** at finish (no DO write).
 - Finish **never throws into the observed path**. Sink failures log a warning.
+- Finish may accept an optional JSON-serializable **`result`**. When present it
+  is stored under `metadata.result` after a bounded snapshot
+  (`runRecordMaxResultSnapshotBytes`, currently 4 KiB). Oversized values become
+  `{ __truncated__: true, preview }`. Eager surfaces that produce a handler
+  return value (at minimum webhook deliveries and package exports, plus keyed
+  execute) should pass it so `run_get` can show what the handler returned.
+- Keyed execute claims the idempotency key through `claimRunRecord` (awaited DO
+  RPC) before sandbox work so a concurrent retry sees `running` or the terminal
+  row instead of starting a second attempt. Key uniqueness is enforced per user
+  inside the `RunLog` DO.
 - Bundled-module runners (`runBundledModuleWithRegistry`) accept a `runRecord`
-  context and call begin/finish internally; surfaces that do not go through that
-  helper call the service directly (webhooks, package apps, and similar).
+  context (and an optional pre-claimed `runRecordHandle`) and call begin/finish
+  internally; surfaces that do not go through that helper call the service
+  directly (webhooks, package apps, and similar).
 
 ## Per-user Durable Object
 
@@ -148,12 +171,13 @@ or per-user DO SQLite, never the shared D1 writer.
 Enforced **inside the DO on every `finishRun`**, not by a global cron lane over
 a shared D1 table:
 
-| Cap                       | Value                                           |
-| ------------------------- | ----------------------------------------------- |
-| Age                       | ~30 days (`runRecordRetentionDays`)             |
-| Count                     | 2,000 runs per user (`runRecordMaxRunsPerUser`) |
-| Log lines per run         | 200                                             |
-| Text / JSON field budgets | 16 KiB / 32 KiB truncated                       |
+| Cap                        | Value                                           |
+| -------------------------- | ----------------------------------------------- |
+| Age                        | ~30 days (`runRecordRetentionDays`)             |
+| Count                      | 2,000 runs per user (`runRecordMaxRunsPerUser`) |
+| Log lines per run          | 200                                             |
+| Text / JSON field budgets  | 16 KiB / 32 KiB truncated                       |
+| `metadata.result` snapshot | 4 KiB (`runRecordMaxResultSnapshotBytes`)       |
 
 Age prune deletes finished runs older than the cutoff (rows still `running` are
 kept). Count prune deletes the oldest excess rows **failure-last**: successes
@@ -260,7 +284,8 @@ run path. There is no Queue for this topic in v1.
 
 **Usage metering** and run records are the aggregates/records pair: metering is
 sampling-tolerant and quota-oriented; run records are user-facing history.
-Successful ad-hoc `execute` appears only in metering.
+Successful key-less ad-hoc `execute` appears only in metering. Keyed execute
+successes are retained as run records so timed-out clients can recover.
 
 **Sentry** must not open issues for user-authored failures. Boundaries that know
 the code is user-supplied throw `UserCodeError`

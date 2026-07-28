@@ -16,6 +16,9 @@ const mockModule = vi.hoisted(() => ({
 		},
 	})),
 	listOpenApiBindings: vi.fn(async () => []),
+	getRunRecordByIdempotencyKey: vi.fn(async () => null),
+	claimRunRecord: vi.fn(async () => null),
+	finishRunRecord: vi.fn(async () => undefined),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -37,6 +40,21 @@ vi.mock('#worker/openapi/binding-service.ts', () => ({
 	listOpenApiBindings: (...args: Array<unknown>) =>
 		mockModule.listOpenApiBindings(...args),
 }))
+
+vi.mock('#worker/run-records/service.ts', async () => {
+	const actual = await vi.importActual<
+		typeof import('#worker/run-records/service.ts')
+	>('#worker/run-records/service.ts')
+	return {
+		...actual,
+		getRunRecordByIdempotencyKey: (...args: Array<unknown>) =>
+			mockModule.getRunRecordByIdempotencyKey(...args),
+		claimRunRecord: (...args: Array<unknown>) =>
+			mockModule.claimRunRecord(...args),
+		finishRunRecord: (...args: Array<unknown>) =>
+			mockModule.finishRunRecord(...args),
+	}
+})
 
 const { registerExecuteTool } = await import('./execute.ts')
 
@@ -151,11 +169,16 @@ async function getExecuteHandler(
 		writable?: boolean
 		responseLimit?: number
 		conversationId?: string
+		idempotencyKey?: string
 	}) => Promise<{
 		content: Array<ContentBlock>
 		structuredContent: {
 			conversationId: string
 			storage?: { id: string }
+			runId?: string
+			replayed?: boolean
+			inProgress?: boolean
+			status?: string
 			returnedBytes: number
 			truncated?: boolean
 			note?: string
@@ -358,10 +381,12 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 		expect.objectContaining({
 			packageInvokeTools,
 			conversationId: 'conv-packages',
+			runRecordHandle: null,
 			runRecord: {
 				surface: 'execute',
 				name: null,
 				storageId: null,
+				idempotencyKey: null,
 				metadata: {
 					conversationId: 'conv-packages',
 				},
@@ -736,4 +761,139 @@ export default async () => ({ ok: true })`,
 	expect(authHelperTipped.structuredContent.warnings?.[0]).not.toBe(
 		tipped.structuredContent.warnings?.[0],
 	)
+})
+
+test('execute tool replays finished keyed runs and reports in-progress without re-executing', async () => {
+	const authenticatedCaller = {
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-keyed-execute',
+			email: 'keyed@example.com',
+			displayName: 'Keyed',
+		},
+	}
+	const finishedRun = {
+		id: 'run-finished-1',
+		surface: 'execute' as const,
+		status: 'success' as const,
+		name: null,
+		packageId: null,
+		kodyId: null,
+		sourceId: null,
+		publishedCommit: null,
+		storageId: null,
+		jobId: null,
+		workflowId: null,
+		invocationId: null,
+		sessionId: null,
+		idempotencyKey: 'spawn-agent-1',
+		parentRunId: null,
+		startedAt: '2026-07-28T00:00:00.000Z',
+		finishedAt: '2026-07-28T00:00:01.000Z',
+		durationMs: 1000,
+		errorName: null,
+		errorMessage: null,
+		metadata: { result: { ok: true, agentId: 'agent-9' } },
+		logCount: 0,
+	}
+	const handler = await getExecuteHandler(authenticatedCaller)
+	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce(finishedRun)
+	mockPerformanceSequence(1, 2)
+	const replayed = await handler({
+		code: 'export default async () => ({ shouldNotRun: true })',
+		idempotencyKey: 'spawn-agent-1',
+		conversationId: 'conv-replay',
+	})
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(replayed.isError).toBe(false)
+	expect(replayed.structuredContent).toMatchObject({
+		runId: 'run-finished-1',
+		replayed: true,
+		result: { ok: true, agentId: 'agent-9' },
+	})
+
+	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce({
+		...finishedRun,
+		id: 'run-running-1',
+		status: 'running',
+		finishedAt: null,
+		durationMs: null,
+		metadata: {},
+	})
+	mockPerformanceSequence(3, 4)
+	const inProgress = await handler({
+		code: 'export default async () => ({ shouldNotRun: true })',
+		idempotencyKey: 'spawn-agent-1',
+		conversationId: 'conv-running',
+	})
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(inProgress.isError).toBe(false)
+	expect(inProgress.structuredContent).toMatchObject({
+		runId: 'run-running-1',
+		inProgress: true,
+		status: 'running',
+	})
+})
+
+test('execute tool claims a keyed run, passes the handle, and returns runId', async () => {
+	const authenticatedCaller = {
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-claim-execute',
+			email: 'claim@example.com',
+			displayName: 'Claim',
+		},
+	}
+	const claimedHandle = {
+		id: 'run-claimed-1',
+		userId: 'user-claim-execute',
+		startedAt: '2026-07-28T00:00:00.000Z',
+		persistence: 'eager' as const,
+		context: {
+			surface: 'execute' as const,
+			idempotencyKey: 'claim-key-1',
+		},
+	}
+	const handler = await getExecuteHandler(authenticatedCaller)
+	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce(null)
+	mockModule.claimRunRecord.mockResolvedValueOnce({
+		claimed: true,
+		handle: claimedHandle,
+	})
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { spawned: true },
+		logs: [],
+		runId: 'run-claimed-1',
+	})
+	mockPerformanceSequence(5, 6)
+	const response = await handler({
+		code: 'export default async () => ({ spawned: true })',
+		idempotencyKey: 'claim-key-1',
+		conversationId: 'conv-claim',
+	})
+	expect(mockModule.claimRunRecord).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-claim-execute',
+			context: expect.objectContaining({
+				surface: 'execute',
+				idempotencyKey: 'claim-key-1',
+			}),
+		}),
+	)
+	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.anything(),
+		'export default async () => ({ spawned: true })',
+		undefined,
+		expect.objectContaining({
+			runRecordHandle: claimedHandle,
+			runRecord: expect.objectContaining({
+				idempotencyKey: 'claim-key-1',
+			}),
+		}),
+	)
+	expect(response.structuredContent).toMatchObject({
+		runId: 'run-claimed-1',
+		result: { spawned: true },
+	})
 })

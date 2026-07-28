@@ -58,12 +58,17 @@ test('execute capability runs modules through the shared execute runtime', async
 		}),
 		expect.stringContaining('execute-ok'),
 		undefined,
-		{
+		expect.objectContaining({
 			storageTools: {
 				userId: 'user-1',
 				storageId: 'package:agent-turns',
 				writable: true,
 			},
-		},
+			runRecordHandle: null,
+			runRecord: expect.objectContaining({
+				surface: 'execute',
+				storageId: 'package:agent-turns',
+			}),
+		}),
 	)
 })

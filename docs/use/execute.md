@@ -109,6 +109,29 @@ long-running work (>~60s, batch sweeps, migrations, polling loops), use one
 **execute** call to submit `workflows.create({ code, params })`, then inspect
 progress with `workflow_run_list` instead of chaining many MCP tool calls.
 
+### Recovering from MCP client timeouts
+
+Some MCP clients abort the tool call (for example error `-32001` Request timed
+out) while Kody’s sandbox may still be running. Key-less successful execute
+calls are not written to Activity, so that timeout can leave you unsure whether
+side effects already happened.
+
+Pass an optional **`idempotencyKey`** (string, max 256 characters) when the call
+must be recoverable:
+
+- Kody persists that execute run **eagerly** (a `running` row at start, terminal
+  row at finish) and stores a **bounded result snapshot** on the run record.
+- The tool response includes **`runId`** whenever a record exists — poll
+  **`run_get`** with it if the client timed out.
+- Retrying with the **same** `idempotencyKey` after completion returns the
+  retained result with **`replayed: true`** and the same **`runId`** (no second
+  sandbox).
+- Retrying while the first attempt is still running returns
+  **`inProgress: true`** with the **`runId`** (no duplicate start).
+
+Omit the key for ordinary short calls; key-less execute stays on-failure-only so
+Activity is not flooded with successful one-offs.
+
 To read field shapes while coding, use **search** with
 **`entity: "{name}:capability"`** for builtin capability type definitions, or
 inspect the relevant saved package with **`entity: "{kody_id}:package"`**.
