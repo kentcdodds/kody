@@ -1,13 +1,10 @@
 import {
-<<<<<<< HEAD
 	maxRestorableTextColumnBytes,
 	truncateToUtf8Bytes,
 	utf8ByteLength,
 } from '@kody-internal/shared/backup-restore-safety.ts'
 import {
-=======
 	emailClassificationValues,
->>>>>>> origin/main
 	type EmailAttachmentRecord,
 	type EmailClassification,
 	type EmailDeliveryEventRecord,
