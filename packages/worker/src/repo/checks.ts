@@ -839,21 +839,27 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 			fileSystem: typecheckFileSystem,
 		},
 	)
-	const diagnostics = getPackageTypecheckDiagnostics({
-		targets: input.entryPoints.map((entryPoint) => ({
-			path: entryPoint.path,
-			includeStorage: entryPoint.includeStorage === true,
-			emittedEventTopics: input.emittedEventTopics ?? [],
-		})),
-		languageService,
-		fileSystem,
-	})
-	const ok = diagnostics.every((entry) => entry.diagnostics.length === 0)
-	return {
-		ok,
-		message: ok
-			? `No semantic diagnostics for ${input.entryPoints.length} package runtime entrypoint(s).`
-			: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+	try {
+		const diagnostics = getPackageTypecheckDiagnostics({
+			targets: input.entryPoints.map((entryPoint) => ({
+				path: entryPoint.path,
+				includeStorage: entryPoint.includeStorage === true,
+				emittedEventTopics: input.emittedEventTopics ?? [],
+			})),
+			languageService,
+			fileSystem,
+		})
+		const ok = diagnostics.every((entry) => entry.diagnostics.length === 0)
+		return {
+			ok,
+			message: ok
+				? `No semantic diagnostics for ${input.entryPoints.length} package runtime entrypoint(s).`
+				: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+		}
+	} finally {
+		// Release the compiler program eagerly; large snapshots otherwise keep
+		// the whole TypeScript program reachable until GC gets around to it.
+		languageService.dispose()
 	}
 }
 
@@ -1160,17 +1166,22 @@ export async function runRepoChecks(input: {
 			await createTypescriptLanguageService({
 				fileSystem: typecheckFileSystem,
 			})
-		const diagnostics = getPackageTypecheckDiagnostics({
-			targets: callableTypecheckTargets,
-			languageService,
-			fileSystem,
-		})
-		return {
-			kind: 'typecheck',
-			ok: diagnostics.every((entry) => entry.diagnostics.length === 0),
-			message: diagnostics.every((entry) => entry.diagnostics.length === 0)
-				? `No semantic diagnostics for ${callableTypecheckTargets.length} callable package runtime entrypoint(s).`
-				: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+		try {
+			const diagnostics = getPackageTypecheckDiagnostics({
+				targets: callableTypecheckTargets,
+				languageService,
+				fileSystem,
+			})
+			return {
+				kind: 'typecheck',
+				ok: diagnostics.every((entry) => entry.diagnostics.length === 0),
+				message: diagnostics.every((entry) => entry.diagnostics.length === 0)
+					? `No semantic diagnostics for ${callableTypecheckTargets.length} callable package runtime entrypoint(s).`
+					: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+			}
+		} finally {
+			// Release the compiler program before bundling allocates.
+			languageService.dispose()
 		}
 	})()
 
