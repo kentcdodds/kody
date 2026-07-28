@@ -1,4 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	buildSecretPackageApprovalUrl,
 	buildSecretPackageBulkApprovalUrlIfNeeded,
@@ -22,9 +23,30 @@ type SecretMountDefinition = {
 	scope?: SecretScope
 }
 
-export class PackageSecretMountError extends Error {}
-export class PackageSecretMissingError extends Error {}
-export class PackageSecretAccessDeniedError extends Error {}
+/**
+ * Package secret mount/approval failures the caller can clear (approve the
+ * package, declare a mount, create the secret). Subclass McpCallerError so
+ * MCP observability keeps them off Sentry — they are policy denials, not
+ * platform defects.
+ */
+export class PackageSecretMountError extends McpCallerError {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options)
+		this.name = 'PackageSecretMountError'
+	}
+}
+export class PackageSecretMissingError extends McpCallerError {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options)
+		this.name = 'PackageSecretMissingError'
+	}
+}
+export class PackageSecretAccessDeniedError extends McpCallerError {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options)
+		this.name = 'PackageSecretAccessDeniedError'
+	}
+}
 
 export function isPackageSecretAccessUnavailableError(error: unknown) {
 	return (

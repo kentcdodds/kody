@@ -30,6 +30,8 @@ vi.mock('@sentry/cloudflare', () => ({
 
 const { logMcpEvent } = await import('./observability.ts')
 const { McpCallerError } = await import('./caller-error.ts')
+const { PackageSecretAccessDeniedError } =
+	await import('./secrets/package-access.ts')
 const { UserCodeError } = await import('#worker/user-code-error.ts')
 
 function captureMcpEvents(run: () => void) {
@@ -140,9 +142,23 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			errorMessage: 'boom from user code',
 			cause: new UserCodeError('boom from user code'),
 		})
+
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'secret_set',
+			domain: 'secrets',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'PackageSecretAccessDeniedError',
+			errorMessage:
+				'Secret "x-kodykoalaAccessToken" is not allowed for package "x".',
+			cause: new PackageSecretAccessDeniedError(
+				'Secret "x-kodykoalaAccessToken" is not allowed for package "x".',
+			),
+		})
 	})
 
-	expect(payloads).toHaveLength(7)
+	expect(payloads).toHaveLength(8)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

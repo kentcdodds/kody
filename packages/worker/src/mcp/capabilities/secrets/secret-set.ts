@@ -4,6 +4,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import {
 	resolveSecret,
@@ -66,7 +67,7 @@ export const secretSetCapability = defineDomainCapability(
 					storageContext,
 				})
 				if (!existing.found) {
-					throw new Error(
+					throw new McpCallerError(
 						'Package runtimes cannot create user-scoped secrets. Create the secret from the account page and approve the package first.',
 					)
 				}

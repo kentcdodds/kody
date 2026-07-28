@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { parsePackageAccessRequiredMessage } from './errors.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -30,6 +31,7 @@ vi.mock('./service.ts', () => ({
 const {
 	assertPackageCanAccessResolvedSecret,
 	buildPackageApprovalErrorForMounts,
+	PackageSecretAccessDeniedError,
 	resolvePackageMountedSecret,
 } = await import('./package-access.ts')
 
@@ -133,12 +135,13 @@ test('community-forked packages require an allowed-packages grant for user secre
 			},
 		}),
 	).rejects.toSatisfy((error: unknown) => {
-		const message = error instanceof Error ? error.message : String(error)
-		const parsed = parsePackageAccessRequiredMessage(message)
+		if (!(error instanceof PackageSecretAccessDeniedError)) return false
+		if (!(error instanceof McpCallerError)) return false
+		const parsed = parsePackageAccessRequiredMessage(error.message)
 		return (
 			parsed?.secretName === 'userToken' &&
 			parsed.packageName === 'discord-gateway' &&
-			message.includes('/account/secrets/user/userToken')
+			error.message.includes('/account/secrets/user/userToken')
 		)
 	})
 })
@@ -222,10 +225,11 @@ test('adopted community forks still require an allowed-packages grant for mutate
 			intent: 'mutate',
 		}),
 	).rejects.toSatisfy((error: unknown) => {
-		const message = error instanceof Error ? error.message : String(error)
 		return (
-			parsePackageAccessRequiredMessage(message)?.packageName ===
-			'discord-gateway'
+			error instanceof PackageSecretAccessDeniedError &&
+			error instanceof McpCallerError &&
+			parsePackageAccessRequiredMessage(error.message)?.packageName ===
+				'discord-gateway'
 		)
 	})
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
@@ -255,12 +259,13 @@ test('mutate intent requires an allowed-packages grant even for self-authored pa
 			intent: 'mutate',
 		}),
 	).rejects.toSatisfy((error: unknown) => {
-		const message = error instanceof Error ? error.message : String(error)
-		const parsed = parsePackageAccessRequiredMessage(message)
+		if (!(error instanceof PackageSecretAccessDeniedError)) return false
+		if (!(error instanceof McpCallerError)) return false
+		const parsed = parsePackageAccessRequiredMessage(error.message)
 		return (
 			parsed?.secretName === 'userToken' &&
 			parsed.packageName === 'discord-gateway' &&
-			message.includes('/account/secrets/user/userToken')
+			error.message.includes('/account/secrets/user/userToken')
 		)
 	})
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
