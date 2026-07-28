@@ -7,9 +7,10 @@ registries populated only via code review, source/drill identity allowlists, D1
 size ceilings, and drill-before-production-restore.
 
 This document describes the designed end state. Treat every checklist item as
-unproven until you have live evidence for that item. Code-complete packages are
-not proof that the DR account, bucket locks, secrets, schedules, Access policy,
-or escrow blob are live.
+unproven until you have live evidence for that item (see the
+[live evidence log](#live-evidence-log)). Code-complete packages are not proof
+that the DR account, bucket locks, secrets, schedules, Access policy, or escrow
+blob are live.
 
 Primary operator surface:
 
@@ -21,6 +22,23 @@ Primary operator surface:
 - Destination provisioner: `node tools/ci/backup-resources-cli.ts plan|apply`.
 
 Do not use `tools/export-d1-remote-to-sqlite.sh` as a backup or restore tool.
+
+## Live evidence log
+
+First-proven dates for each lane (newest first). Re-prove and update after
+material schema/storage/pipeline changes; a lane is only as trusted as its most
+recent evidence.
+
+| Date (UTC) | Lane proven                                                                                                                                                                                                                                                                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-07-28 | Isolated restore drill green through the product UI against a sealed day (`PRAGMA quick_check` ok, table counts plausible, temp database cleaned up). Required [#1002](https://github.com/kentcdodds/kody/pull/1002): presigned D1 import uploads reject chunked bodies with HTTP 411, so stream uploads go through `FixedLengthStream`.                       |
+| 2026-07-28 | First sealed full-backup day (`daily/full/2026-07-28/manifest.json`). Required [#1000](https://github.com/kentcdodds/kody/pull/1000): bucket-lock rules reject puts on existing keys with error 10069 before conditionals are evaluated, and exporter resume became identity-driven after mid-window inventory drift produced duplicate storage-index entries. |
+| 2026-07-28 | First completed staging run (`staging/2026-07-28/exporter/summary.json`; 186 storage dumps, R2 indexes, artifacts index).                                                                                                                                                                                                                                      |
+| 2026-07-26 | First verified nightly D1 export (signed manifest, stored-object digest verified; ~118 MB).                                                                                                                                                                                                                                                                    |
+
+Still unproven live: graduated production restore into the production database
+(drill-level evidence only; it shares the now-fixed upload path), the offline
+escrow unseal smoke test, and `weekly/` retention aging through its lifecycle.
 
 ## Objectives
 
