@@ -2,6 +2,23 @@ import { createIsomorphicGitFs } from './isomorphic-git-fs.ts'
 
 type EphemeralGitFileSystem = Parameters<typeof createIsomorphicGitFs>[0]
 
+/**
+ * Collapse `.` / `..` segments and empty parts so isomorphic-git walker paths
+ * like `/repo/.` resolve to the same store key as `/repo`.
+ */
+function normalizeFsPath(path: string): string {
+	const parts: Array<string> = []
+	for (const part of path.split('/')) {
+		if (!part || part === '.') continue
+		if (part === '..') {
+			parts.pop()
+			continue
+		}
+		parts.push(part)
+	}
+	return parts.length === 0 ? '/' : `/${parts.join('/')}`
+}
+
 export function createEphemeralGitWorkspace() {
 	const store = new Map<string, Uint8Array>()
 	const symlinkTargets = new Map<string, string>()
@@ -22,21 +39,32 @@ export function createEphemeralGitWorkspace() {
 		return `/${parts.join('/')}`
 	}
 	function readStoredBytes(path: string, depth = 0): Uint8Array {
+		const normalized = normalizeFsPath(path)
 		if (depth > 16) {
-			throw Object.assign(new Error(`ELOOP: ${path}`), { code: 'ELOOP' })
+			throw Object.assign(new Error(`ELOOP: ${normalized}`), { code: 'ELOOP' })
 		}
-		const target = symlinkTargets.get(path)
+		const target = symlinkTargets.get(normalized)
 		if (target != null) {
-			return readStoredBytes(resolveSymlinkPath(path, target), depth + 1)
+			return readStoredBytes(resolveSymlinkPath(normalized, target), depth + 1)
 		}
-		const bytes = store.get(path)
+		const bytes = store.get(normalized)
 		if (!bytes) {
-			throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' })
+			throw Object.assign(new Error(`ENOENT: ${normalized}`), {
+				code: 'ENOENT',
+			})
 		}
 		return bytes
 	}
 	function storedStat(path: string, followSymlink: boolean) {
-		const target = symlinkTargets.get(path)
+		const normalized = normalizeFsPath(path)
+		if (normalized === '/') {
+			return {
+				type: 'directory' as const,
+				size: 0,
+				mtime: new Date(),
+			}
+		}
+		const target = symlinkTargets.get(normalized)
 		if (target != null && !followSymlink) {
 			return {
 				type: 'symlink' as const,
@@ -45,17 +73,19 @@ export function createEphemeralGitWorkspace() {
 			}
 		}
 		if (target != null) {
-			return storedStat(resolveSymlinkPath(path, target), true)
+			return storedStat(resolveSymlinkPath(normalized, target), true)
 		}
-		if (!store.has(path)) {
-			throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' })
+		if (!store.has(normalized)) {
+			throw Object.assign(new Error(`ENOENT: ${normalized}`), {
+				code: 'ENOENT',
+			})
 		}
 		const isDirectory = [...store.keys()].some(
-			(key) => key.startsWith(`${path}/`) && key !== path,
+			(key) => key.startsWith(`${normalized}/`) && key !== normalized,
 		)
 		return {
 			type: isDirectory ? ('directory' as const) : ('file' as const),
-			size: store.get(path)?.byteLength ?? 0,
+			size: store.get(normalized)?.byteLength ?? 0,
 			mtime: new Date(),
 		}
 	}
@@ -63,29 +93,34 @@ export function createEphemeralGitWorkspace() {
 		readFile: async (path) => textDecoder.decode(readStoredBytes(path)),
 		readFileBytes: async (path) => readStoredBytes(path),
 		writeFile: async (path, data) => {
-			symlinkTargets.delete(path)
-			store.set(path, textEncoder.encode(data))
+			const normalized = normalizeFsPath(path)
+			symlinkTargets.delete(normalized)
+			store.set(normalized, textEncoder.encode(data))
 		},
 		writeFileBytes: async (path, data) => {
-			symlinkTargets.delete(path)
-			store.set(path, data)
+			const normalized = normalizeFsPath(path)
+			symlinkTargets.delete(normalized)
+			store.set(normalized, data)
 		},
 		rm: async (path, options) => {
+			const normalized = normalizeFsPath(path)
 			if (options?.recursive) {
 				for (const key of [...store.keys()]) {
-					if (key === path || key.startsWith(`${path}/`)) {
+					if (key === normalized || key.startsWith(`${normalized}/`)) {
 						store.delete(key)
 						symlinkTargets.delete(key)
 					}
 				}
 				return
 			}
-			store.delete(path)
-			symlinkTargets.delete(path)
+			store.delete(normalized)
+			symlinkTargets.delete(normalized)
 		},
 		mkdir: async (path, options) => {
+			const normalized = normalizeFsPath(path)
+			if (normalized === '/') return
 			if (options?.recursive) {
-				const parts = path.split('/').filter(Boolean)
+				const parts = normalized.split('/').filter(Boolean)
 				let current = ''
 				for (const part of parts) {
 					current = `${current}/${part}`
@@ -94,11 +129,12 @@ export function createEphemeralGitWorkspace() {
 				}
 				return
 			}
-			symlinkTargets.delete(path)
-			store.set(path, new Uint8Array())
+			symlinkTargets.delete(normalized)
+			store.set(normalized, new Uint8Array())
 		},
 		readdir: async (path) => {
-			const prefix = path.endsWith('/') ? path : `${path}/`
+			const normalized = normalizeFsPath(path)
+			const prefix = normalized === '/' ? '/' : `${normalized}/`
 			const names = new Set<string>()
 			for (const key of store.keys()) {
 				if (!key.startsWith(prefix)) continue
@@ -111,15 +147,19 @@ export function createEphemeralGitWorkspace() {
 		stat: async (path) => storedStat(path, true),
 		lstat: async (path) => storedStat(path, false),
 		readlink: async (path) => {
-			const target = symlinkTargets.get(path)
+			const normalized = normalizeFsPath(path)
+			const target = symlinkTargets.get(normalized)
 			if (target == null) {
-				throw Object.assign(new Error(`EINVAL: ${path}`), { code: 'EINVAL' })
+				throw Object.assign(new Error(`EINVAL: ${normalized}`), {
+					code: 'EINVAL',
+				})
 			}
 			return target
 		},
 		symlink: async (target, path) => {
-			store.set(path, textEncoder.encode(target))
-			symlinkTargets.set(path, target)
+			const normalized = normalizeFsPath(path)
+			store.set(normalized, textEncoder.encode(target))
+			symlinkTargets.set(normalized, target)
 		},
 	}
 	return {

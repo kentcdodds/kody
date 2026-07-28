@@ -3,7 +3,8 @@ import { expect, test, vi } from 'vitest'
 const mockGit = vi.hoisted(() => ({
 	addNote: vi.fn(async () => 'note-commit-1'),
 	push: vi.fn(async () => ({ ok: true, refs: {} })),
-	clone: vi.fn(async () => undefined),
+	init: vi.fn(async () => undefined),
+	addRemote: vi.fn(async () => undefined),
 	fetch: vi.fn(async () => ({ ok: true, refs: {} })),
 	readNote: vi.fn(async () => new TextEncoder().encode('{"v":1}\n')),
 }))
@@ -197,7 +198,8 @@ test('publish git notes build, parse, write, and read from artifacts repos', asy
 		commitOid: 'commit-1',
 	}
 
-	mockGit.clone.mockClear()
+	mockGit.init.mockClear()
+	mockGit.addRemote.mockClear()
 	mockGit.fetch.mockClear()
 	mockGit.readNote.mockClear()
 	mockGit.fetch.mockRejectedValueOnce(
@@ -208,6 +210,23 @@ test('publish git notes build, parse, write, and read from artifacts repos', asy
 
 	const missingNotesRef = await readPublishGitNoteFromArtifactsRepo(readInput)
 	expect(missingNotesRef.found).toBe(false)
+	expect(mockGit.init).toHaveBeenCalledWith(
+		expect.objectContaining({ dir: '/repo' }),
+	)
+	expect(mockGit.addRemote).toHaveBeenCalledWith(
+		expect.objectContaining({
+			dir: '/repo',
+			remote: 'origin',
+			url: 'https://example.com/repo.git',
+		}),
+	)
+	expect(mockGit.fetch).toHaveBeenCalledWith(
+		expect.objectContaining({
+			dir: '/repo',
+			remote: 'origin',
+			ref: 'refs/notes/commits',
+		}),
+	)
 	expect(mockGit.readNote).not.toHaveBeenCalled()
 
 	mockGit.fetch.mockRejectedValueOnce(new Error('HTTP Error: 401 Unauthorized'))

@@ -273,19 +273,20 @@ export async function readPublishGitNoteFromArtifactsRepo(input: {
 		remote: info.remote,
 		token: token.plaintext,
 	})
+	// Notes live only under refs/notes/commits — init + fetch that ref (no
+	// working-tree checkout). A full clone/checkout previously crashed the
+	// ephemeral FS walker on `lstat('/repo/.')` and pulled an unused branch tip.
 	const workspace = createEphemeralGitWorkspace()
 	const auth = buildArtifactsGitAuth({ token: token.plaintext })
-	await git.clone({
+	await git.init({
 		fs: workspace.fs,
-		http,
 		dir: workspace.dir,
+	})
+	await git.addRemote({
+		fs: workspace.fs,
+		dir: workspace.dir,
+		remote: 'origin',
 		url: remote,
-		depth: 1,
-		singleBranch: true,
-		ref: info.defaultBranch || 'main',
-		onAuth() {
-			return auth
-		},
 	})
 	try {
 		await git.fetch({
