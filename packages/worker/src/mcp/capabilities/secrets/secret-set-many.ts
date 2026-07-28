@@ -68,7 +68,8 @@ const secretSetManyCapabilityInputJsonSchema = (() => {
 	) {
 		return schema
 	}
-	const secretsProperty = properties.secrets
+	const propertyMap = properties as Record<string, unknown>
+	const secretsProperty = propertyMap.secrets
 	if (
 		!secretsProperty ||
 		typeof secretsProperty !== 'object' ||
@@ -76,11 +77,13 @@ const secretSetManyCapabilityInputJsonSchema = (() => {
 	) {
 		return schema
 	}
-	const items = (secretsProperty as { items?: unknown }).items
+	const secretsObject = secretsProperty as Record<string, unknown>
+	const items = secretsObject.items
 	if (!items || typeof items !== 'object' || Array.isArray(items)) {
 		return schema
 	}
-	const itemProperties = (items as { properties?: unknown }).properties
+	const itemsObject = items as Record<string, unknown>
+	const itemProperties = itemsObject.properties
 	if (
 		!itemProperties ||
 		typeof itemProperties !== 'object' ||
@@ -88,7 +91,8 @@ const secretSetManyCapabilityInputJsonSchema = (() => {
 	) {
 		return schema
 	}
-	const valueProperty = (itemProperties as Record<string, unknown>).value
+	const itemPropertyMap = itemProperties as Record<string, unknown>
+	const valueProperty = itemPropertyMap.value
 	if (
 		!valueProperty ||
 		typeof valueProperty !== 'object' ||
@@ -99,15 +103,15 @@ const secretSetManyCapabilityInputJsonSchema = (() => {
 	return {
 		...schema,
 		properties: {
-			...properties,
+			...propertyMap,
 			secrets: {
-				...secretsProperty,
+				...secretsObject,
 				items: {
-					...items,
+					...itemsObject,
 					properties: {
-						...itemProperties,
+						...itemPropertyMap,
 						value: {
-							...valueProperty,
+							...(valueProperty as Record<string, unknown>),
 							[secretInputSchemaFlag]: true,
 						},
 					},
