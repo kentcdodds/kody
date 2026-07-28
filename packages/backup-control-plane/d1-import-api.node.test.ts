@@ -214,6 +214,7 @@ test('importSqlIntoD1 pipes stream uploads through FixedLengthStream when availa
 		}
 	}
 	const globalWithStream = globalThis as { FixedLengthStream?: unknown }
+	const previousFixedLengthStream = globalWithStream.FixedLengthStream
 	globalWithStream.FixedLengthStream = StubFixedLengthStream
 	try {
 		const sequence = importPollSequence([
@@ -244,7 +245,11 @@ test('importSqlIntoD1 pipes stream uploads through FixedLengthStream when availa
 		])
 		assert.equal(sequence.getUploadedText(), expectedUpload)
 	} finally {
-		delete globalWithStream.FixedLengthStream
+		if (previousFixedLengthStream === undefined) {
+			delete globalWithStream.FixedLengthStream
+		} else {
+			globalWithStream.FixedLengthStream = previousFixedLengthStream
+		}
 	}
 })
 
