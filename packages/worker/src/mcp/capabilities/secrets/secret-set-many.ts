@@ -1,4 +1,4 @@
-import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
+import { secretInputSchemaFlag } from '@kody-internal/shared/secret-input-schema.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -55,10 +55,67 @@ const secretSetManyInputSchema = z
 		}
 	})
 
-const secretSetManyCapabilityInputJsonSchema = markSecretInputFields(
-	z.toJSONSchema(secretSetManyInputSchema) as Record<string, unknown>,
-	['secrets'],
-) as Record<string, unknown>
+const secretSetManyCapabilityInputJsonSchema = (() => {
+	const schema = z.toJSONSchema(secretSetManyInputSchema) as Record<
+		string,
+		unknown
+	>
+	const properties = schema.properties
+	if (
+		!properties ||
+		typeof properties !== 'object' ||
+		Array.isArray(properties)
+	) {
+		return schema
+	}
+	const secretsProperty = properties.secrets
+	if (
+		!secretsProperty ||
+		typeof secretsProperty !== 'object' ||
+		Array.isArray(secretsProperty)
+	) {
+		return schema
+	}
+	const items = (secretsProperty as { items?: unknown }).items
+	if (!items || typeof items !== 'object' || Array.isArray(items)) {
+		return schema
+	}
+	const itemProperties = (items as { properties?: unknown }).properties
+	if (
+		!itemProperties ||
+		typeof itemProperties !== 'object' ||
+		Array.isArray(itemProperties)
+	) {
+		return schema
+	}
+	const valueProperty = (itemProperties as Record<string, unknown>).value
+	if (
+		!valueProperty ||
+		typeof valueProperty !== 'object' ||
+		Array.isArray(valueProperty)
+	) {
+		return schema
+	}
+	return {
+		...schema,
+		properties: {
+			...properties,
+			secrets: {
+				...secretsProperty,
+				items: {
+					...items,
+					properties: {
+						...itemProperties,
+						value: {
+							...valueProperty,
+							[secretInputSchemaFlag]: true,
+						},
+					},
+				},
+			},
+		},
+	}
+})() as Record<string, unknown>
 
 const secretSetManyOutputSchema = z.object({
 	ok: z.literal(true),

@@ -204,9 +204,10 @@ export async function updateApprovedUserSecretEntryForPackage(input: {
 }
 
 /**
- * Atomically update multiple package-approved user secrets. Aborts the whole
- * batch (no partial commit) when any named secret is missing or lacks the
- * package in `allowed_packages`. Statement order is preserved.
+ * Atomically update multiple package-approved user secrets. Uses one UPDATE so
+ * either every named secret is rewritten or none are (fail-closed when any
+ * secret is missing or lacks the package in `allowed_packages`). Statement
+ * order of `updates` is preserved in the CASE bindings for determinism.
  */
 export async function updateApprovedUserSecretEntriesForPackageAtomically(input: {
 	db: D1Database
@@ -220,42 +221,89 @@ export async function updateApprovedUserSecretEntriesForPackageAtomically(input:
 	}>
 }): Promise<void> {
 	if (input.updates.length === 0) return
+	if (input.updates.length === 1) {
+		const only = input.updates[0]
+		if (!only) return
+		const updated = await updateApprovedUserSecretEntryForPackage({
+			db: input.db,
+			userId: input.userId,
+			packageId: input.packageId,
+			name: only.name,
+			description: only.description,
+			encryptedValue: only.encryptedValue,
+			updatedAt: only.updatedAt,
+		})
+		if (!updated) {
+			throw new Error('package cannot mutate one or more secrets')
+		}
+		return
+	}
+
 	const names = input.updates.map((update) => update.name)
 	const namePlaceholders = names.map(() => '?').join(', ')
-	const assertAllApproved = input.db
+	const descriptionCase = names.map(() => 'WHEN ? THEN ?').join(' ')
+	const encryptedCase = names.map(() => 'WHEN ? THEN ?').join(' ')
+	const updatedAt = input.updates[0]?.updatedAt
+	if (!updatedAt) {
+		throw new Error('At least one secret update is required.')
+	}
+
+	const result = await input.db
 		.prepare(
-			`SELECT RAISE(ABORT, 'package cannot mutate one or more secrets')
-			WHERE (
-				SELECT COUNT(*)
-				FROM secret_entries e
-				JOIN secret_buckets b ON b.id = e.bucket_id
-				WHERE b.user_id = ?
-					AND b.scope = 'user'
-					AND b.binding_key = ''
-					AND e.name IN (${namePlaceholders})
-					AND json_valid(e.allowed_packages)
-					AND EXISTS (
-						SELECT 1
-						FROM json_each(e.allowed_packages)
-						WHERE value = ?
-					)
-			) < ?`,
+			`UPDATE secret_entries
+			SET
+				description = CASE name ${descriptionCase} ELSE description END,
+				encrypted_value = CASE name ${encryptedCase} ELSE encrypted_value END,
+				updated_at = ?
+			WHERE name IN (${namePlaceholders})
+				AND bucket_id = (
+					SELECT id
+					FROM secret_buckets
+					WHERE user_id = ? AND scope = 'user' AND binding_key = ''
+					LIMIT 1
+				)
+				AND json_valid(allowed_packages)
+				AND EXISTS (
+					SELECT 1
+					FROM json_each(allowed_packages)
+					WHERE value = ?
+				)
+				AND (
+					SELECT COUNT(*)
+					FROM secret_entries e
+					JOIN secret_buckets b ON b.id = e.bucket_id
+					WHERE b.user_id = ?
+						AND b.scope = 'user'
+						AND b.binding_key = ''
+						AND e.name IN (${namePlaceholders})
+						AND json_valid(e.allowed_packages)
+						AND EXISTS (
+							SELECT 1
+							FROM json_each(e.allowed_packages)
+							WHERE value = ?
+						)
+				) = ?`,
 		)
-		.bind(input.userId, ...names, input.packageId, names.length)
-	await input.db.batch([
-		assertAllApproved,
-		...input.updates.map((update) =>
-			prepareUpdateApprovedUserSecretEntryForPackageStatement({
-				db: input.db,
-				userId: input.userId,
-				packageId: input.packageId,
-				name: update.name,
-				description: update.description,
-				encryptedValue: update.encryptedValue,
-				updatedAt: update.updatedAt,
-			}),
-		),
-	])
+		.bind(
+			...input.updates.flatMap((update) => [update.name, update.description]),
+			...input.updates.flatMap((update) => [
+				update.name,
+				update.encryptedValue,
+			]),
+			updatedAt,
+			...names,
+			input.userId,
+			input.packageId,
+			input.userId,
+			...names,
+			input.packageId,
+			names.length,
+		)
+		.run()
+
+	if ((result.meta.changes ?? 0) !== names.length) {
+		throw new Error('package cannot mutate one or more secrets')
+	}
 }
 
 export async function deleteSecretEntry(input: {

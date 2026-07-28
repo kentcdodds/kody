@@ -219,33 +219,60 @@ function createSecretTestDb(
 							return { results: [] as Array<T>, meta: { changes: 0 } }
 						},
 						async run() {
-							if (normalizedQuery.includes('raise(abort')) {
-								const [userId, ...rest] = params as Array<string | number>
-								const expectedCount = Number(rest[rest.length - 1])
-								const packageId = String(rest[rest.length - 2])
-								const names = rest.slice(0, -2).map(String)
-								const bucket = buckets.get(
-									getBucketKey(String(userId), 'user', ''),
+							if (
+								normalizedQuery.includes(
+									'update secret_entries set description = case name',
 								)
-								let approvedCount = 0
-								if (bucket) {
-									for (const name of names) {
-										const entry = entries.get(getEntryKey(bucket.id, name))
-										if (!entry) continue
-										const allowedPackages = JSON.parse(
-											entry.allowed_packages,
-										) as Array<string>
-										if (allowedPackages.includes(packageId)) {
-											approvedCount += 1
-										}
-									}
-								}
-								if (approvedCount < expectedCount) {
-									throw new Error(
-										'D1_ERROR: package cannot mutate one or more secrets: SQLITE_ABORT',
+							) {
+								// Multi-secret atomic CASE update bind order:
+								// [name, description]*N, [name, encrypted]*N, updatedAt,
+								// names*N, userId, packageId, userId, names*N, packageId, expectedCount
+								const expectedCount = Number(params[params.length - 1])
+								const packageId = String(params[params.length - 2])
+								const namesStart = expectedCount * 4 + 1
+								const names = params
+									.slice(namesStart, namesStart + expectedCount)
+									.map(String)
+								const userId = String(params[namesStart + expectedCount])
+								const updatedAt = String(params[expectedCount * 4])
+								const descriptions = new Map<string, string>()
+								const encryptedValues = new Map<string, string>()
+								for (let index = 0; index < expectedCount; index += 1) {
+									descriptions.set(
+										String(params[index * 2]),
+										String(params[index * 2 + 1]),
+									)
+									encryptedValues.set(
+										String(params[expectedCount * 2 + index * 2]),
+										String(params[expectedCount * 2 + index * 2 + 1]),
 									)
 								}
-								return { meta: { changes: 0 } }
+								const bucket = buckets.get(getBucketKey(userId, 'user', ''))
+								if (!bucket) return { meta: { changes: 0 } }
+								let approvedCount = 0
+								for (const name of names) {
+									const entry = entries.get(getEntryKey(bucket.id, name))
+									if (!entry) continue
+									const allowedPackages = JSON.parse(
+										entry.allowed_packages,
+									) as Array<string>
+									if (allowedPackages.includes(packageId)) {
+										approvedCount += 1
+									}
+								}
+								if (approvedCount !== expectedCount) {
+									return { meta: { changes: 0 } }
+								}
+								for (const name of names) {
+									const entry = entries.get(getEntryKey(bucket.id, name))
+									if (!entry) continue
+									entry.description =
+										descriptions.get(name) ?? entry.description
+									entry.encrypted_value =
+										encryptedValues.get(name) ?? entry.encrypted_value
+									entry.updated_at = updatedAt
+								}
+								return { meta: { changes: expectedCount } }
 							}
 							if (
 								normalizedQuery.startsWith(

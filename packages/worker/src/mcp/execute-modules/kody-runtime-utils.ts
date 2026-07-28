@@ -73,6 +73,7 @@ export const secretHeaders = {
 
 export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'integration_get',
+	'secret_set',
 	'secret_set_many',
 ] as const
 

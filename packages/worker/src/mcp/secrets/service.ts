@@ -330,6 +330,7 @@ export async function updateUserSecretsForPackageAtomically(input: {
 		encryptedValue: string
 		existingEntry: NonNullable<Awaited<ReturnType<typeof getSecretEntry>>>
 	}> = []
+	let requestedStorageBytes = 0
 
 	for (const secret of input.secrets) {
 		const name = secret.name.trim()
@@ -345,35 +346,37 @@ export async function updateUserSecretsForPackageAtomically(input: {
 		if (!existingEntry) throw new Error('User secret not found.')
 		const description = secret.description?.trim() ?? existingEntry.description
 		const encryptedValue = await encryptSecretValue(input.env, value)
-		await assertWithinStorageBytesEntitlement({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			email: input.userEmail,
-			requested: estimateEntitlementStorageEntryByteDelta({
-				next: {
-					key: name,
-					value: {
-						description,
-						encryptedValue,
-						allowedHosts: existingEntry.allowed_hosts,
-						allowedCapabilities: existingEntry.allowed_capabilities,
-						allowedPackages: existingEntry.allowed_packages,
-					},
+		requestedStorageBytes += estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: name,
+				value: {
+					description,
+					encryptedValue,
+					allowedHosts: existingEntry.allowed_hosts,
+					allowedCapabilities: existingEntry.allowed_capabilities,
+					allowedPackages: existingEntry.allowed_packages,
 				},
-				existing: {
-					key: existingEntry.name,
-					value: {
-						description: existingEntry.description,
-						encryptedValue: existingEntry.encrypted_value,
-						allowedHosts: existingEntry.allowed_hosts,
-						allowedCapabilities: existingEntry.allowed_capabilities,
-						allowedPackages: existingEntry.allowed_packages,
-					},
+			},
+			existing: {
+				key: existingEntry.name,
+				value: {
+					description: existingEntry.description,
+					encryptedValue: existingEntry.encrypted_value,
+					allowedHosts: existingEntry.allowed_hosts,
+					allowedCapabilities: existingEntry.allowed_capabilities,
+					allowedPackages: existingEntry.allowed_packages,
 				},
-			}),
+			},
 		})
 		prepared.push({ name, description, encryptedValue, existingEntry })
 	}
+
+	await assertWithinStorageBytesEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.userEmail,
+		requested: requestedStorageBytes,
+	})
 
 	try {
 		await updateApprovedUserSecretEntriesForPackageAtomically({
@@ -389,10 +392,7 @@ export async function updateUserSecretsForPackageAtomically(input: {
 		})
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
-		if (
-			message.includes('package cannot mutate one or more secrets') ||
-			/ABORT/i.test(message)
-		) {
+		if (message.includes('package cannot mutate one or more secrets')) {
 			const names = prepared.map((entry) => entry.name).join(', ')
 			throw new Error(
 				`User secret(s) "${names}" no longer exist or are not approved for package "${packageId}".`,
@@ -447,6 +447,8 @@ async function saveSecretsAtomically(input: {
 		encryptedValue: string
 		existingEntry: Awaited<ReturnType<typeof getSecretEntry>>
 	}> = []
+	let newSecretCount = 0
+	let requestedStorageBytes = 0
 
 	for (const secret of input.secrets) {
 		const name = secret.name.trim()
@@ -461,45 +463,51 @@ async function saveSecretsAtomically(input: {
 			name,
 		})
 		if (existingEntry == null) {
-			await assertWithinEntitlement({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				email: input.userEmail,
-				resource: 'secrets',
-			})
+			newSecretCount += 1
 		}
 		const encryptedValue = await encryptSecretValue(input.env, value)
-		await assertWithinStorageBytesEntitlement({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			email: input.userEmail,
-			requested: estimateEntitlementStorageEntryByteDelta({
-				next: {
-					key: name,
-					value: {
-						description,
-						encryptedValue,
-						allowedHosts: existingEntry?.allowed_hosts ?? '[]',
-						allowedCapabilities: existingEntry?.allowed_capabilities ?? '[]',
-						allowedPackages: existingEntry?.allowed_packages ?? '[]',
-					},
+		requestedStorageBytes += estimateEntitlementStorageEntryByteDelta({
+			next: {
+				key: name,
+				value: {
+					description,
+					encryptedValue,
+					allowedHosts: existingEntry?.allowed_hosts ?? '[]',
+					allowedCapabilities: existingEntry?.allowed_capabilities ?? '[]',
+					allowedPackages: existingEntry?.allowed_packages ?? '[]',
 				},
-				existing: existingEntry
-					? {
-							key: existingEntry.name,
-							value: {
-								description: existingEntry.description,
-								encryptedValue: existingEntry.encrypted_value,
-								allowedHosts: existingEntry.allowed_hosts,
-								allowedCapabilities: existingEntry.allowed_capabilities,
-								allowedPackages: existingEntry.allowed_packages,
-							},
-						}
-					: null,
-			}),
+			},
+			existing: existingEntry
+				? {
+						key: existingEntry.name,
+						value: {
+							description: existingEntry.description,
+							encryptedValue: existingEntry.encrypted_value,
+							allowedHosts: existingEntry.allowed_hosts,
+							allowedCapabilities: existingEntry.allowed_capabilities,
+							allowedPackages: existingEntry.allowed_packages,
+						},
+					}
+				: null,
 		})
 		prepared.push({ name, description, encryptedValue, existingEntry })
 	}
+
+	if (newSecretCount > 0) {
+		await assertWithinEntitlement({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			email: input.userEmail,
+			resource: 'secrets',
+			requested: newSecretCount,
+		})
+	}
+	await assertWithinStorageBytesEntitlement({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		email: input.userEmail,
+		requested: requestedStorageBytes,
+	})
 
 	await upsertSecretEntriesAtomically({
 		db: input.env.APP_DB,
