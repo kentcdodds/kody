@@ -3,6 +3,10 @@ import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtim
 import { repoSessionDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type RepoRunCommandsResult } from './repo-session-commands.ts'
 import {
+	type IsolatedCheckPhaseOutcome,
+	type IsolatedCheckPhaseRequest,
+} from './isolated-check-phases.ts'
+import {
 	type RepoSourceBootstrapResult,
 	type RepoSearchMode,
 	type RepoSearchOutputMode,
@@ -109,6 +113,9 @@ export type RepoSessionRpc = {
 		userId: string
 		expectedPackageScope?: string
 	}) => Promise<RepoSessionCheckRun>
+	runIsolatedCheckPhase: (
+		payload: IsolatedCheckPhaseRequest,
+	) => Promise<IsolatedCheckPhaseOutcome>
 	getCheckStatus: (payload: {
 		sessionId: string
 		userId: string

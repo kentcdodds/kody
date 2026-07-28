@@ -116,6 +116,15 @@ const mockModule = vi.hoisted(() => {
 			},
 		})),
 		writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
+		validatePackageBundles: vi.fn(async () => ({
+			ok: true,
+			message: 'Bundled 2 package target(s) successfully.',
+		})),
+		runPackageTypecheckLanguageService: vi.fn(async () => ({
+			ok: true,
+			message:
+				'No semantic diagnostics for 1 callable package runtime entrypoint(s).',
+		})),
 	}
 })
 
@@ -336,6 +345,10 @@ vi.mock('./manifest.ts', () => ({
 
 vi.mock('./checks.ts', () => ({
 	runRepoChecks: (...args: Array<unknown>) => mockModule.runRepoChecks(...args),
+	validatePackageBundles: (...args: Array<unknown>) =>
+		mockModule.validatePackageBundles(...args),
+	runPackageTypecheckLanguageService: (...args: Array<unknown>) =>
+		mockModule.runPackageTypecheckLanguageService(...args),
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
@@ -1374,4 +1387,58 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 			scope: 'repo.publishFromExternalRef.publish-git-note',
 		}),
 	)
+})
+
+test('runIsolatedCheckPhase loads staged files from KV and dispatches the phase', async () => {
+	const staged = {
+		sourceFiles: { 'package.json': '{"name":"@kody/demo"}' },
+	}
+	const kv = {
+		get: vi.fn(async () => staged),
+	}
+	const session = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: kv,
+	} as unknown as Env)
+
+	const bundleOutcome = await session.runIsolatedCheckPhase({
+		phase: 'bundle-chunk',
+		stagingKey: 'repo-checks-staging:v1:abc',
+		baseUrl: '/',
+		userId: 'user-1',
+		bundleTargets: [{ path: 'src/index.ts', bundleKind: 'callable' }],
+	})
+	expect(bundleOutcome.ok).toBe(true)
+	expect(mockModule.validatePackageBundles).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			sourceFiles: staged.sourceFiles,
+			entryPoints: [{ path: 'src/index.ts', bundleKind: 'callable' }],
+		}),
+	)
+
+	const typecheckOutcome = await session.runIsolatedCheckPhase({
+		phase: 'typecheck',
+		stagingKey: 'repo-checks-staging:v1:abc',
+		typecheckTargets: [
+			{ path: 'src/index.ts', includeStorage: false, emittedEventTopics: [] },
+		],
+	})
+	expect(typecheckOutcome.ok).toBe(true)
+	expect(mockModule.runPackageTypecheckLanguageService).toHaveBeenCalledWith({
+		sourceFiles: staged.sourceFiles,
+		targets: [
+			{ path: 'src/index.ts', includeStorage: false, emittedEventTopics: [] },
+		],
+	})
+
+	// Expired staging fails closed with an actionable message.
+	kv.get.mockResolvedValueOnce(null)
+	const expired = await session.runIsolatedCheckPhase({
+		phase: 'typecheck',
+		stagingKey: 'repo-checks-staging:v1:gone',
+		typecheckTargets: [],
+	})
+	expect(expired.ok).toBe(false)
+	expect(expired.message).toContain('staging data expired')
 })

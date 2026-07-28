@@ -34,6 +34,11 @@ import {
 	repoBackedModuleEntrypointExportErrorMessage,
 	repoCapabilitiesModuleTypecheckHarnessPath,
 } from './repo-kody-execution.ts'
+import {
+	createIsolatedCheckPhaseRunner,
+	isolatedBundleChunkSize,
+	type IsolatedCheckPhaseRunner,
+} from './isolated-check-phases.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
 
 export type RepoCheckKind =
@@ -472,12 +477,12 @@ declare const storage: KodyStorageRuntime;
 `.trim()
 }
 
-type PackageBundleTarget = {
+export type PackageBundleTarget = {
 	path: string
 	bundleKind: 'app' | 'callable' | 'importable'
 }
 
-type PackageCallableTypecheckTarget = {
+export type PackageCallableTypecheckTarget = {
 	path: string
 	includeStorage: boolean
 	emittedEventTopics: Array<string>
@@ -677,7 +682,7 @@ function validateStaticKodyPackageDependencyDeclarations(input: {
 	}
 }
 
-async function validatePackageBundles(input: {
+export async function validatePackageBundles(input: {
 	env: Env
 	baseUrl: string
 	userId: string
@@ -891,7 +896,8 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 				: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
 		}
 	} finally {
-		// Release the compiler program eagerly; large snapshots otherwise keep
+		// `using` needs Symbol.dispose in the worker lib target; manual
+		// disposal releases the compiler program eagerly instead of keeping
 		// the whole TypeScript program reachable until GC gets around to it.
 		languageService.dispose()
 	}
@@ -1003,6 +1009,98 @@ function buildLintCheck(sourceFiles: Record<string, string>): {
 			"bucket in the package's own runtime and keeps working when the code is statically imported into " +
 			'another context. Ambient `storage` remains only for ad hoc execute code with a `storageId` bound on ' +
 			'the execute call.',
+	}
+}
+
+/**
+ * The expensive half of the typecheck check: a TypeScript language service
+ * over the full source snapshot. Exported so throwaway check-phase isolates
+ * can run it against KV-staged source files (see isolated-check-phases.ts).
+ */
+export async function runPackageTypecheckLanguageService(input: {
+	sourceFiles: Record<string, string>
+	targets: Array<PackageCallableTypecheckTarget>
+}): Promise<{ ok: boolean; message: string }> {
+	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
+	const snapshot = await createFileSystemSnapshot(
+		(async function* () {
+			for (const [path, content] of Object.entries(input.sourceFiles)) {
+				yield [path, content] as const
+			}
+		})(),
+	)
+	const typecheckFileSystem = createRepoChecksFileSystem({
+		fileSystem: snapshot,
+	})
+	const baseTsconfig = snapshot.read(repoChecksSyntheticTsconfigPath)
+	if (baseTsconfig != null) {
+		typecheckFileSystem.write(
+			repoChecksSyntheticTsconfigExtendsPath.slice('./'.length),
+			baseTsconfig,
+		)
+	}
+	typecheckFileSystem.write(
+		repoChecksSyntheticTsconfigPath,
+		buildRepoChecksTsconfig(baseTsconfig),
+	)
+	const { createTypescriptLanguageService } =
+		await loadWorkerBundlerTypescriptTools()
+	const { fileSystem, languageService } = await createTypescriptLanguageService(
+		{
+			fileSystem: typecheckFileSystem,
+		},
+	)
+	try {
+		const diagnostics = getPackageTypecheckDiagnostics({
+			targets: input.targets,
+			languageService,
+			fileSystem,
+		})
+		const ok = diagnostics.every((entry) => entry.diagnostics.length === 0)
+		return {
+			ok,
+			message: ok
+				? `No semantic diagnostics for ${input.targets.length} callable package runtime entrypoint(s).`
+				: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
+		}
+	} finally {
+		// Release the compiler program before anything else allocates.
+		languageService.dispose()
+	}
+}
+
+async function runChunkedBundleValidation(input: {
+	runner: IsolatedCheckPhaseRunner
+	stagingKey: string
+	baseUrl: string
+	userId: string
+	entryPoints: Array<PackageBundleTarget>
+}) {
+	const failures: Array<string> = []
+	for (
+		let start = 0;
+		start < input.entryPoints.length;
+		start += isolatedBundleChunkSize
+	) {
+		const chunk = input.entryPoints.slice(
+			start,
+			start + isolatedBundleChunkSize,
+		)
+		const outcome = await input.runner.run({
+			phase: 'bundle-chunk',
+			stagingKey: input.stagingKey,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			bundleTargets: chunk,
+		})
+		if (!outcome.ok) failures.push(outcome.message)
+	}
+	return {
+		ok: failures.length === 0,
+		message:
+			failures.length === 0
+				? `Bundled ${input.entryPoints.length} package target(s) successfully.`
+				: failures.join('\n'),
 	}
 }
 
@@ -1169,109 +1267,113 @@ export async function runRepoChecks(input: {
 					userId: input.userId,
 				}
 			: null
-	// The TypeScript check runs BEFORE bundle validation, inside a helper
-	// scope. The language service allocates a large JS heap (the compiler
-	// plus a full program over the snapshot) that becomes collectable once
-	// this closure returns, while esbuild-wasm memory grown during bundling
-	// stays resident for the isolate's lifetime (the wasm instance is a
-	// module-level singleton and wasm memories never shrink). Typechecking
-	// first keeps peak isolate memory near max(typecheck, bundling) instead
-	// of their sum — checks over large multi-entrypoint packages were
-	// exceeding the Durable Object memory limit and killing publishes
-	// (kentcdodds/kody#987). The reported `results` order is unchanged:
-	// bundle before typecheck.
-	const typecheckResult: RepoCheckResult = await (async () => {
-		if (missingCallableTypecheckTargets.length > 0) {
-			return {
-				kind: 'typecheck',
-				ok: false,
-				message: `Typecheck skipped because callable package runtime entrypoint(s) are missing from the repo session snapshot: ${missingCallableTypecheckTargets
-					.map((path) => `"${path}"`)
-					.join(', ')}.`,
-			}
-		}
-		const callableTargetsMissingDefaultExport =
-			collectEntrypointsMissingDefaultExport({
-				snapshot,
-				targets: callableTypecheckTargets,
-			})
-		if (callableTargetsMissingDefaultExport.length > 0) {
-			return {
-				kind: 'typecheck',
-				ok: false,
-				message: formatMissingDefaultExportMessage(
-					callableTargetsMissingDefaultExport,
-				),
-			}
-		}
-		if (callableTypecheckTargets.length === 0) {
-			return {
-				kind: 'typecheck',
-				ok: true,
-				message: 'No callable package runtime entrypoint(s) to typecheck.',
-			}
-		}
-		const typecheckFileSystem = createRepoChecksFileSystem({
-			fileSystem: snapshot,
-		})
-		const baseTsconfig = snapshot.read(repoChecksSyntheticTsconfigPath)
-		if (baseTsconfig != null) {
-			typecheckFileSystem.write(
-				repoChecksSyntheticTsconfigExtendsPath.slice('./'.length),
-				baseTsconfig,
-			)
-		}
-		typecheckFileSystem.write(
-			repoChecksSyntheticTsconfigPath,
-			buildRepoChecksTsconfig(baseTsconfig),
-		)
-		const { createTypescriptLanguageService } =
-			await loadWorkerBundlerTypescriptTools()
-		const { fileSystem, languageService } =
-			await createTypescriptLanguageService({
-				fileSystem: typecheckFileSystem,
-			})
-		try {
-			const diagnostics = getPackageTypecheckDiagnostics({
-				targets: callableTypecheckTargets,
-				languageService,
-				fileSystem,
-			})
-			return {
-				kind: 'typecheck',
-				ok: diagnostics.every((entry) => entry.diagnostics.length === 0),
-				message: diagnostics.every((entry) => entry.diagnostics.length === 0)
-					? `No semantic diagnostics for ${callableTypecheckTargets.length} callable package runtime entrypoint(s).`
-					: formatPackageTypecheckDiagnostics(diagnostics).join('\n'),
-			}
-		} finally {
-			// Release the compiler program before bundling allocates.
-			languageService.dispose()
-		}
-	})()
+	// Heavy phases (TypeScript language service, esbuild-wasm bundling) run
+	// in fresh throwaway isolates whenever the env carries the bindings for
+	// it: one large package could otherwise push this isolate (session
+	// workspace + git state + checks) over the Durable Object memory limit
+	// and kill every publish attempt (kentcdodds/kody#987). Without the
+	// bindings (unit tests, minimal envs) the phases run inline; typecheck
+	// then runs BEFORE bundling so its disposable heap never stacks on top
+	// of esbuild-wasm memory, which stays resident once grown. The reported
+	// `results` order is unchanged: bundle before typecheck.
+	const isolatedRunner = bundleContext
+		? createIsolatedCheckPhaseRunner(bundleContext.env)
+		: null
+	const wantsLanguageServiceTypecheck =
+		missingCallableTypecheckTargets.length === 0 &&
+		callableTypecheckTargets.length > 0
+	const wantsBundleValidation =
+		bundleContext !== null &&
+		missingBundleTargets.length === 0 &&
+		bundleTargets.length > 0
+	const stagingKey =
+		isolatedRunner && (wantsLanguageServiceTypecheck || wantsBundleValidation)
+			? await isolatedRunner.stage(sourceFiles)
+			: null
 
-	const bundleCheckResult =
-		missingBundleTargets.length > 0
-			? {
+	let typecheckResult: RepoCheckResult
+	let bundleCheckResult: { ok: boolean; message: string }
+	try {
+		typecheckResult = await (async (): Promise<RepoCheckResult> => {
+			if (missingCallableTypecheckTargets.length > 0) {
+				return {
+					kind: 'typecheck',
 					ok: false,
-					message: formatBundleCheckMessage({
-						missingEntryPoints: missingBundleTargets,
-						targetCount: bundleTargets.length,
-					}),
+					message: `Typecheck skipped because callable package runtime entrypoint(s) are missing from the repo session snapshot: ${missingCallableTypecheckTargets
+						.map((path) => `"${path}"`)
+						.join(', ')}.`,
 				}
-			: bundleContext
-				? await validatePackageBundles({
-						...bundleContext,
-						sourceFiles,
-						entryPoints: bundleTargets,
-					})
-				: {
-						ok: true,
+			}
+			const callableTargetsMissingDefaultExport =
+				collectEntrypointsMissingDefaultExport({
+					snapshot,
+					targets: callableTypecheckTargets,
+				})
+			if (callableTargetsMissingDefaultExport.length > 0) {
+				return {
+					kind: 'typecheck',
+					ok: false,
+					message: formatMissingDefaultExportMessage(
+						callableTargetsMissingDefaultExport,
+					),
+				}
+			}
+			if (callableTypecheckTargets.length === 0) {
+				return {
+					kind: 'typecheck',
+					ok: true,
+					message: 'No callable package runtime entrypoint(s) to typecheck.',
+				}
+			}
+			const outcome =
+				isolatedRunner && stagingKey
+					? await isolatedRunner.run({
+							phase: 'typecheck',
+							stagingKey,
+							typecheckTargets: callableTypecheckTargets,
+						})
+					: await runPackageTypecheckLanguageService({
+							sourceFiles,
+							targets: callableTypecheckTargets,
+						})
+			return { kind: 'typecheck', ...outcome }
+		})()
+
+		bundleCheckResult =
+			missingBundleTargets.length > 0
+				? {
+						ok: false,
 						message: formatBundleCheckMessage({
 							missingEntryPoints: missingBundleTargets,
 							targetCount: bundleTargets.length,
 						}),
 					}
+				: bundleContext
+					? isolatedRunner && stagingKey
+						? await runChunkedBundleValidation({
+								runner: isolatedRunner,
+								stagingKey,
+								baseUrl: bundleContext.baseUrl,
+								userId: bundleContext.userId,
+								entryPoints: bundleTargets,
+							})
+						: await validatePackageBundles({
+								...bundleContext,
+								sourceFiles,
+								entryPoints: bundleTargets,
+							})
+					: {
+							ok: true,
+							message: formatBundleCheckMessage({
+								missingEntryPoints: missingBundleTargets,
+								targetCount: bundleTargets.length,
+							}),
+						}
+	} finally {
+		if (isolatedRunner && stagingKey) {
+			await isolatedRunner.discard(stagingKey)
+		}
+	}
 	results.push({
 		kind: 'bundle',
 		ok: bundleCheckResult.ok,

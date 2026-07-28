@@ -41,7 +41,15 @@ import {
 	toRepoSessionInfoResult,
 	toRepoSessionTreeResult,
 } from './repo-session-tree.ts'
-import { runRepoChecks } from './checks.ts'
+import {
+	runPackageTypecheckLanguageService,
+	runRepoChecks,
+	validatePackageBundles,
+} from './checks.ts'
+import {
+	type IsolatedCheckPhaseOutcome,
+	type IsolatedCheckPhaseRequest,
+} from './isolated-check-phases.ts'
 import { parseRepoManifest } from './manifest.ts'
 import {
 	type EntityKind,
@@ -1662,6 +1670,49 @@ class RepoSessionBase extends DurableObject<Env> {
 		)
 		await this.touchRepoSession(sessionRow)
 		return this.readCheckStatus()
+	}
+
+	/**
+	 * Pure-compute entrypoint for one heavy repo-check phase, invoked on a
+	 * throwaway Durable Object id so the phase's peak memory lives in its own
+	 * isolate (see isolated-check-phases.ts and kentcdodds/kody#987). It has
+	 * no session and never touches this instance's storage; the staged source
+	 * files come from a short-TTL KV entry written by the orchestrating
+	 * checks run.
+	 */
+	async runIsolatedCheckPhase(
+		input: IsolatedCheckPhaseRequest,
+	): Promise<IsolatedCheckPhaseOutcome> {
+		const staged = await this.env.BUNDLE_ARTIFACTS_KV.get<{
+			sourceFiles?: Record<string, string>
+		}>(input.stagingKey, 'json')
+		const sourceFiles = staged?.sourceFiles
+		if (!sourceFiles) {
+			return {
+				ok: false,
+				message:
+					'Isolated check phase staging data expired or is missing; run the checks again.',
+			}
+		}
+		if (input.phase === 'bundle-chunk') {
+			return await validatePackageBundles({
+				env: this.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceFiles,
+				entryPoints: input.bundleTargets,
+			})
+		}
+		if (input.phase === 'typecheck') {
+			return await runPackageTypecheckLanguageService({
+				sourceFiles,
+				targets: input.typecheckTargets,
+			})
+		}
+		const exhaustive: never = input
+		throw new Error(
+			`Unsupported isolated check phase: ${JSON.stringify(exhaustive)}`,
+		)
 	}
 
 	async listPublishedPackageArtifactTargets(input: {

@@ -32,6 +32,7 @@ import {
 	repoChecksSourceMaxTotalBytes,
 	runRepoChecks,
 } from './checks.ts'
+import { isolatedBundleChunkSize } from './isolated-check-phases.ts'
 
 type MockSnapshot = {
 	read: ReturnType<typeof vi.fn>
@@ -1519,4 +1520,198 @@ export default async function main() {
 	)
 	expect(aliasedStorageLint).toMatchObject({ kind: 'lint', ok: false })
 	expect(aliasedStorageLint?.message).toContain('packageStorage()')
+})
+
+test('heavy check phases run in throwaway isolates when the env has the bindings', async () => {
+	setupDefaultBundleMocks()
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/offloaded-package',
+				kodyId: 'offloaded-package',
+				description: 'Package with enough targets to require chunking',
+				exports: {
+					'.': './src/index.ts',
+					'./a': './src/a.ts',
+					'./b': './src/b.ts',
+					'./c': './src/c.ts',
+					'./d': './src/d.ts',
+					'./e': './src/e.ts',
+				},
+				jobs: {
+					daily: {
+						entry: './src/index.ts',
+						schedule: { type: 'interval', every: '1d' },
+					},
+				},
+			}),
+		],
+		...['index', 'a', 'b', 'c', 'd', 'e'].map(
+			(name) =>
+				[
+					`src/${name}.ts`,
+					`export default async function ${name}() {\n\treturn '${name}'\n}\n`,
+				] as const,
+		),
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const phaseRequests: Array<Record<string, unknown>> = []
+	const stub = {
+		runIsolatedCheckPhase: vi.fn(async (request: Record<string, unknown>) => {
+			phaseRequests.push(request)
+			return request.phase === 'typecheck'
+				? { ok: true, message: 'No semantic diagnostics (isolated).' }
+				: { ok: true, message: 'chunk ok' }
+		}),
+	}
+	const kv = {
+		put: vi.fn(async () => undefined),
+		delete: vi.fn(async () => undefined),
+	}
+	const namespace = {
+		idFromName: vi.fn((name: string) => ({ name })),
+		get: vi.fn(() => stub),
+	}
+	const env = {
+		REPO_SESSION: namespace,
+		BUNDLE_ARTIFACTS_KV: kv,
+	} as unknown as Env
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		env,
+		baseUrl: '/',
+		userId: 'user-123',
+	})
+
+	expect(result.ok).toBe(true)
+	// The staged snapshot is written once with a TTL and cleaned up after.
+	expect(kv.put).toHaveBeenCalledTimes(1)
+	const [stagingKey, stagedBody, stagedOptions] = kv.put.mock.calls[0] as [
+		string,
+		string,
+		{ expirationTtl: number },
+	]
+	expect(stagingKey.startsWith('repo-checks-staging:v1:')).toBe(true)
+	expect(JSON.parse(stagedBody).sourceFiles['src/a.ts']).toContain(
+		'export default',
+	)
+	expect(stagedOptions.expirationTtl).toBeGreaterThan(0)
+	expect(kv.delete).toHaveBeenCalledWith(stagingKey)
+
+	// The language service and bundlers never run in this isolate.
+	expect(mockModule.createTypescriptLanguageService).not.toHaveBeenCalled()
+	expect(mockModule.buildKodyModuleBundle).not.toHaveBeenCalled()
+
+	// One typecheck phase plus ceil(targets / chunk) bundle chunks, each in a
+	// fresh throwaway isolate.
+	const typecheckRequests = phaseRequests.filter(
+		(request) => request.phase === 'typecheck',
+	)
+	expect(typecheckRequests).toHaveLength(1)
+	const bundleRequests = phaseRequests.filter(
+		(request) => request.phase === 'bundle-chunk',
+	)
+	const chunkSizes = bundleRequests.map(
+		(request) => (request.bundleTargets as Array<unknown>).length,
+	)
+	const totalTargets = chunkSizes.reduce((sum, size) => sum + size, 0)
+	expect(totalTargets).toBeGreaterThanOrEqual(6)
+	expect(Math.max(...chunkSizes)).toBeLessThanOrEqual(isolatedBundleChunkSize)
+	expect(bundleRequests.length).toBe(
+		Math.ceil(totalTargets / isolatedBundleChunkSize),
+	)
+	const distinctIsolateNames = new Set(
+		namespace.idFromName.mock.calls.map(([name]) => name as string),
+	)
+	expect(distinctIsolateNames.size).toBe(phaseRequests.length)
+
+	const bundleResult = result.results.find((entry) => entry.kind === 'bundle')
+	expect(bundleResult).toMatchObject({
+		ok: true,
+		message: `Bundled ${totalTargets} package target(s) successfully.`,
+	})
+	const typecheckResult = result.results.find(
+		(entry) => entry.kind === 'typecheck',
+	)
+	expect(typecheckResult).toMatchObject({
+		ok: true,
+		message: 'No semantic diagnostics (isolated).',
+	})
+})
+
+test('an isolate reset during a check phase becomes a failed check, not a crash', async () => {
+	setupDefaultBundleMocks()
+	const files = new Map<string, string>([
+		[
+			'package.json',
+			createPackageManifest({
+				packageName: '@kody/oversized-package',
+				kodyId: 'oversized-package',
+				description: 'Package whose bundle phase exceeds isolate limits',
+			}),
+		],
+		[
+			'src/index.ts',
+			`export default async function main() {\n\treturn 'ok'\n}\n`,
+		],
+	])
+	const snapshot = createSnapshotFromFiles(files)
+	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
+
+	const stub = {
+		runIsolatedCheckPhase: vi.fn(async (request: { phase: string }) => {
+			if (request.phase === 'bundle-chunk') {
+				throw new Error(
+					"Durable Object's isolate exceeded its memory limit and was reset.",
+				)
+			}
+			return { ok: true, message: 'No semantic diagnostics (isolated).' }
+		}),
+	}
+	const env = {
+		REPO_SESSION: {
+			idFromName: vi.fn((name: string) => ({ name })),
+			get: vi.fn(() => stub),
+		},
+		BUNDLE_ARTIFACTS_KV: {
+			put: vi.fn(async () => undefined),
+			delete: vi.fn(async () => undefined),
+		},
+	} as unknown as Env
+
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		env,
+		baseUrl: '/',
+		userId: 'user-123',
+	})
+
+	expect(result.ok).toBe(false)
+	const bundleResult = result.results.find((entry) => entry.kind === 'bundle')
+	expect(bundleResult?.ok).toBe(false)
+	expect(bundleResult?.message).toContain(
+		"exceeded the isolated check runner's",
+	)
 })
