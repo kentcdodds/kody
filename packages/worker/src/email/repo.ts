@@ -1,4 +1,9 @@
 import {
+	maxRestorableTextColumnBytes,
+	truncateToUtf8Bytes,
+	utf8ByteLength,
+} from '@kody-internal/shared/backup-restore-safety.ts'
+import {
 	emailClassificationValues,
 	type EmailAttachmentRecord,
 	type EmailClassification,
@@ -16,6 +21,26 @@ import {
 
 function nowIso() {
 	return new Date().toISOString()
+}
+
+export const emailBodyTruncationNotice =
+	'\n[truncated for backup-safe storage; the full message is retained in the raw MIME object]'
+
+/**
+ * Bound stored email body columns so a full `email_messages` row stays
+ * below D1's import statement limit (oversized rows make D1 backups
+ * un-importable). The canonical full message remains in the R2 raw MIME
+ * object referenced by `raw_mime_key`.
+ */
+function boundedEmailBody(body: string | null | undefined): string | null {
+	if (body == null) return null
+	if (utf8ByteLength(body) <= maxRestorableTextColumnBytes) return body
+	return (
+		truncateToUtf8Bytes(
+			body,
+			maxRestorableTextColumnBytes - utf8ByteLength(emailBodyTruncationNotice),
+		) + emailBodyTruncationNotice
+	)
 }
 
 export type EmailInboundDeliveryFence = {
@@ -707,8 +732,8 @@ export async function insertEmailMessage(input: {
 			? JSON.stringify(input.message.headers)
 			: '{}',
 		auth_results: input.message.authResults ?? null,
-		text_body: input.message.textBody ?? null,
-		html_body: input.message.htmlBody ?? null,
+		text_body: boundedEmailBody(input.message.textBody),
+		html_body: boundedEmailBody(input.message.htmlBody),
 		raw_mime_key: input.message.rawMimeKey ?? null,
 		raw_size: input.message.rawSize ?? 0,
 		processing_status: input.message.processingStatus,

@@ -32,7 +32,9 @@ const mocks = vi.hoisted(() => ({
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
 	shouldRunUsageAggregationCron: vi.fn(() => false),
 	runDrExportTick: vi.fn(async () => ({ skipped: true })),
+	runDrExportWatchdogTick: vi.fn(async () => ({ skipped: true })),
 	shouldRunDrExportCron: vi.fn(() => false),
+	shouldRunDrExportWatchdogCron: vi.fn(() => false),
 	isDrExportConfigured: vi.fn(() => false),
 	refreshStaleStripePlans: vi.fn(async () => ({
 		refreshed: 0,
@@ -83,7 +85,9 @@ vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
 
 vi.mock('#worker/dr/exporter.ts', () => ({
 	runDrExportTick: mocks.runDrExportTick,
+	runDrExportWatchdogTick: mocks.runDrExportWatchdogTick,
 	shouldRunDrExportCron: mocks.shouldRunDrExportCron,
+	shouldRunDrExportWatchdogCron: mocks.shouldRunDrExportWatchdogCron,
 	isDrExportConfigured: mocks.isDrExportConfigured,
 }))
 

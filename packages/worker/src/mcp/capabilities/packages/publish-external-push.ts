@@ -233,7 +233,12 @@ const outputSchema = z.discriminatedUnion('status', [
 	z.object({
 		status: z.literal('checks_failed'),
 		failed_checks: z.array(checkSchema),
-		manifest: z.unknown(),
+		manifest: z
+			.unknown()
+			.nullable()
+			.describe(
+				'Parsed package.json when available; null when the manifest itself failed validation or was missing.',
+			),
 		run_id: z.string(),
 	}),
 	z.object({

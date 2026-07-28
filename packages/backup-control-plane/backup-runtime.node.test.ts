@@ -16,7 +16,6 @@ import {
 	DATABASE_ID,
 	MemoryBucket,
 	RetryAfterCommitStep,
-	RetryFinalizationStep,
 	RetryUploadStep,
 	environment,
 	exportEnvelope,
@@ -74,7 +73,9 @@ test('source size gates block export for zero and oversize readings', async () =
 		options,
 	)
 	assert.equal(result.payload.sql.bytes, 5)
-	assert.equal(exportCalls, 3)
+	// One export start plus one upload-callback refresh; finalization never
+	// polls D1 again.
+	assert.equal(exportCalls, 2)
 
 	consoleError.mockClear()
 	const oversizeUrls: string[] = []
@@ -142,9 +143,8 @@ test('workflow retry reuses an upload committed before step persistence and writ
 	assert.deepEqual(downloadUrls, [
 		'https://download.example/url-2',
 		'https://download.example/url-3',
-		'https://download.example/url-4',
 	])
-	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 4)
+	assert.equal(apiCalls.filter((url) => url.endsWith('/export')).length, 3)
 	assert.equal(
 		result.payload.sql.objectKey,
 		objectKeyForBookmark(payload.objectPrefix, 'bookmark-1'),
@@ -153,6 +153,17 @@ test('workflow retry reuses an upload committed before step persistence and writ
 		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
 		result,
 	)
+	// Statement stats are persisted next to the SQL object.
+	const statsObject = await (bucket as unknown as R2Bucket).get(
+		`${result.payload.sql.objectKey}.stats.json`,
+	)
+	assert.notEqual(statsObject, null)
+	const stats = JSON.parse(await statsObject!.text()) as {
+		maxStatementBytes: number
+		oversizedStatementCount: number
+	}
+	assert.equal(stats.oversizedStatementCount, 0)
+	assert.ok(stats.maxStatementBytes > 0)
 })
 
 test('initial upload ignores a stale cached signed URL and refreshes it in the callback', async () => {
@@ -203,73 +214,59 @@ test('initial upload ignores a stale cached signed URL and refreshes it in the c
 	assert.deepEqual(exportBodies, [
 		{ output_format: 'polling' },
 		{ output_format: 'polling', current_bookmark: 'bookmark-1' },
-		{ output_format: 'polling', current_bookmark: 'bookmark-1' },
 	])
-	assert.deepEqual(downloadUrls, [
-		'https://download.example/fresh-upload',
-		'https://download.example/fresh-finalization',
-	])
+	// The stale initial URL is never used and finalization performs no D1
+	// download at all: it verifies the stored object against the durable
+	// upload-step digest instead.
+	assert.deepEqual(downloadUrls, ['https://download.example/fresh-upload'])
 	assert.deepEqual(
 		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
 		result,
 	)
 })
 
-test('a finalization callback retry obtains another fresh signed URL', async () => {
+test('a replayed finalization tolerates the already-written manifest and stats', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
 	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
-	const step = new RetryFinalizationStep()
-	const downloadUrls: string[] = []
-	let exportCalls = 0
-	const result = await runBackupRuntime(
-		env,
-		{
-			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-			payload,
-			timestamp: new Date('2026-07-22T02:15:01Z'),
+	const options = {
+		api: {
+			fetcher: async (input: RequestInfo | URL) =>
+				String(input).endsWith('/export')
+					? exportEnvelope('complete')
+					: identityEnvelope(1_000),
+			sleep: async () => undefined,
 		},
-		step,
-		{
-			api: {
-				fetcher: async (input) => {
-					if (!String(input).endsWith('/export')) return identityEnvelope(1_000)
-					exportCalls += 1
-					return exportEnvelope(
-						'complete',
-						'bookmark-1',
-						[
-							'https://download.example/initial',
-							'https://download.example/refreshed-upload',
-							'https://download.example/refreshed-once',
-							'https://download.example/refreshed-twice',
-						][exportCalls - 1],
-					)
-				},
-				sleep: async () => undefined,
-			},
-			downloadFetcher: async (input) => {
-				const url = String(input)
-				downloadUrls.push(url)
-				if (url === 'https://download.example/refreshed-once') {
-					return new Response('', { status: 503 })
-				}
-				return new Response('valid', {
-					headers: { 'content-length': '5' },
-				})
-			},
-		},
+		downloadFetcher: async () =>
+			new Response('valid', { headers: { 'content-length': '5' } }),
+	}
+	const event = {
+		instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+		payload,
+		timestamp: new Date('2026-07-22T02:15:01Z'),
+	}
+	const step = new CachedUploadStep(() => undefined)
+	const first = await runBackupRuntime(env, event, step, options)
+	// Replaying the same instance returns every cached step result without
+	// re-executing uploads or manifest writes.
+	const replay = await runBackupRuntime(env, event, step, options)
+	assert.deepEqual(replay, first)
+
+	// A *new* execution over an already-manifested day fails closed on the
+	// immutable manifest instead of silently replacing it.
+	await new Promise((resolve) => setTimeout(resolve, 2))
+	await assert.rejects(
+		runBackupRuntime(env, event, new CachedUploadStep(() => undefined), {
+			...options,
+		}),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'manifest-conflict',
 	)
-	assert.equal(exportCalls, 4)
-	assert.deepEqual(step.finalizationAttempts, [1, 2])
-	assert.deepEqual(downloadUrls, [
-		'https://download.example/refreshed-upload',
-		'https://download.example/refreshed-once',
-		'https://download.example/refreshed-twice',
-	])
 	assert.deepEqual(
 		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
-		result,
+		first,
 	)
 })
 
@@ -317,7 +314,6 @@ test('zero-byte upload retries with a fresh URL before manifest success', async 
 	assert.deepEqual(downloadUrls, [
 		'https://download.example/export-2',
 		'https://download.example/export-3',
-		'https://download.example/export-4',
 	])
 	assert.equal(result.payload.sql.bytes, 5)
 	assert.equal(
@@ -335,9 +331,21 @@ test('tampered objects are rejected for retry and cached-upload paths without wr
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 
-	for (const createStep of [
-		(corrupt: () => void) => new RetryAfterCommitStep(corrupt),
-		(corrupt: () => void) => new CachedUploadStep(corrupt),
+	// Corruption surfaces at the layer that next touches the object: an
+	// upload-step retry compares the existing object against the signed
+	// source download, while a cached upload result is re-verified against
+	// the durable step digest at finalization (no D1 download).
+	for (const { createStep, expectedCode, expectedDownloads } of [
+		{
+			createStep: (corrupt: () => void) => new RetryAfterCommitStep(corrupt),
+			expectedCode: 'existing-object-source-mismatch',
+			expectedDownloads: 2,
+		},
+		{
+			createStep: (corrupt: () => void) => new CachedUploadStep(corrupt),
+			expectedCode: 'stored-object-mismatch',
+			expectedDownloads: 1,
+		},
 	]) {
 		consoleError.mockClear()
 		const bucket = new MemoryBucket()
@@ -375,10 +383,10 @@ test('tampered objects are rejected for retry and cached-upload paths without wr
 			),
 			(error: unknown) =>
 				error instanceof BackupError &&
-				error.code === 'existing-object-source-mismatch' &&
+				error.code === expectedCode &&
 				error.retryable === false,
 		)
-		assert.equal(downloadCalls, 2)
+		assert.equal(downloadCalls, expectedDownloads)
 		assert.equal(
 			await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
 			null,

@@ -21,8 +21,63 @@ import {
 	type BackupEnvironment,
 	type BackupManifest,
 	type BackupPayload,
+	type SqlStatementStats,
 } from './backup-types.ts'
 import { signBackupManifest } from './manifest-signing.ts'
+
+/**
+ * Persist per-object statement-length statistics next to the SQL object and
+ * log them. An oversized statement means the object cannot be re-imported
+ * through the D1 import API (SQLITE_TOOBIG); the backup still completes, but
+ * the condition is logged with failure status so observability and health
+ * checks can alert on an un-restorable day.
+ */
+async function recordSqlStatementStats(input: {
+	env: BackupEnvironment
+	day: string
+	instanceId: string
+	objectKey: string
+	stats: SqlStatementStats | undefined
+}): Promise<void> {
+	const { stats } = input
+	// Step replays from pre-stats deployments have no measurements to record.
+	if (!stats) return
+	safeLog({
+		event: 'backup-sql-stats',
+		status: stats.oversizedStatementCount > 0 ? 'failure' : 'success',
+		day: input.day,
+		instanceId: input.instanceId,
+		objectKey: input.objectKey,
+		maxStatementBytes: stats.maxStatementBytes,
+		oversizedStatementCount: stats.oversizedStatementCount,
+	})
+	if (stats.oversizedStatementCount > 0) {
+		safeLog({
+			event: 'backup-unrestorable-statements',
+			status: 'failure',
+			day: input.day,
+			instanceId: input.instanceId,
+			objectKey: input.objectKey,
+			maxStatementBytes: stats.maxStatementBytes,
+			oversizedStatementCount: stats.oversizedStatementCount,
+		})
+	}
+	const body = JSON.stringify({
+		schemaVersion: 1,
+		day: input.day,
+		objectKey: input.objectKey,
+		maxStatementBytes: stats.maxStatementBytes,
+		oversizedStatementCount: stats.oversizedStatementCount,
+		importStatementLimitBytes: stats.limit,
+	})
+	// The stats object is advisory; an existing object from a replayed step
+	// wins and is left alone (the prefix is under the bucket's immutable
+	// lock, so overwrites are rejected anyway).
+	await input.env.BACKUP_BUCKET.put(`${input.objectKey}.stats.json`, body, {
+		onlyIf: { etagDoesNotMatch: '*' },
+		httpMetadata: { contentType: 'application/json' },
+	})
+}
 
 interface BackupRuntimeEvent {
 	instanceId: string
@@ -145,28 +200,23 @@ export async function runBackupRuntime(
 			retentionTier: checkedPayload.retentionTier,
 		}
 		const manifest = await step.do<BackupManifest>(
-			'verify-source-and-write-immutable-manifest',
+			'verify-stored-object-and-write-immutable-manifest',
 			{
 				retries: { limit: 4, delay: '30 seconds', backoff: 'exponential' },
 				timeout: '15 minutes',
 			},
 			async () => {
-				// Signed URL may come from a restarted export; content is verified
-				// against the already-stored object key from the upload step.
-				const refreshed = await refreshCompletedD1Export(
-					env,
-					stored.bookmark,
-					options.api,
-				)
+				// Finalization verifies the stored object against the durable
+				// upload-step digest (size, ETag, full SHA-256 re-read). It must
+				// not re-download from D1: expired poll results can only be
+				// refreshed by starting a new export of a *newer* database
+				// state, whose bytes legitimately differ from the stored object
+				// whenever production wrote anything in between.
 				await assertDuplicateMatchesManifest(
 					env.BACKUP_BUCKET,
 					checkedPayload.manifestKey,
 					stored.objectKey,
 					stored,
-					{
-						signedUrl: refreshed.signedUrl,
-						fetcher: options.downloadFetcher,
-					},
 				)
 				const signedManifest = await signBackupManifest(env, unsignedManifest)
 				await putImmutableManifest(
@@ -176,6 +226,18 @@ export async function runBackupRuntime(
 				)
 				return signedManifest
 			},
+		)
+		await step.do(
+			'record-statement-stats',
+			{ retries: { limit: 2, delay: '10 seconds' }, timeout: '2 minutes' },
+			async () =>
+				recordSqlStatementStats({
+					env,
+					day: checkedPayload.day,
+					instanceId: event.instanceId,
+					objectKey: stored.objectKey,
+					stats: stored.sqlStatementStats,
+				}),
 		)
 		safeLog({
 			event: 'backup-success',

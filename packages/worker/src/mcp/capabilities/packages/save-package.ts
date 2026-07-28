@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -39,6 +41,25 @@ import {
 	packageSummarySchema,
 	pendingPackageSecretApprovalsSchema,
 } from './shared.ts'
+
+function parseSavedPackageManifest(input: {
+	content: string
+	expectedPackageScope: string
+}) {
+	try {
+		const manifest = parseAuthoredPackageJson({
+			content: input.content,
+			manifestPath: 'package.json',
+			expectedPackageScope: input.expectedPackageScope,
+		})
+		assertKodyDescriptionLength(manifest.kody.description)
+		return manifest
+	} catch (error) {
+		// Caller-authored package.json mistakes (wrong kody.dependencies shape,
+		// scope mismatches, etc.) — keep them off Sentry via McpCallerError.
+		throw new McpCallerError(getErrorMessage(error), { cause: error })
+	}
+}
 
 const inputSchema = z
 	.object({
@@ -147,7 +168,9 @@ export const savePackageCapability = defineDomainCapability(
 			let files = normalizeFiles(args.files)
 			let packageJsonContent = files['package.json']
 			if (!packageJsonContent) {
-				throw new Error('Saved packages require a root package.json file.')
+				throw new McpCallerError(
+					'Saved packages require a root package.json file.',
+				)
 			}
 			const expectedPackageScope = owner.ownerScope
 			const existing =
@@ -158,9 +181,8 @@ export const savePackageCapability = defineDomainCapability(
 						})
 					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
 							userId: owner.ownerUserId,
-							kodyId: parseAuthoredPackageJson({
+							kodyId: parseSavedPackageManifest({
 								content: packageJsonContent,
-								manifestPath: 'package.json',
 								expectedPackageScope,
 							}).kody.id,
 						})
@@ -174,12 +196,10 @@ export const savePackageCapability = defineDomainCapability(
 				packageJsonContent = injectDefaultPrivateField(packageJsonContent)
 				files = { ...files, 'package.json': packageJsonContent }
 			}
-			const manifest = parseAuthoredPackageJson({
+			const manifest = parseSavedPackageManifest({
 				content: packageJsonContent,
-				manifestPath: 'package.json',
 				expectedPackageScope,
 			})
-			assertKodyDescriptionLength(manifest.kody.description)
 			const packageId = existing?.id ?? args.package_id ?? crypto.randomUUID()
 			const canonicalExistingSource =
 				existing == null

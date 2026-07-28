@@ -19,17 +19,30 @@ key. If a process crashes after writing SQL but before its manifest, a later
 Workflow-step retry reuses the cached export bookmark and therefore inspects the
 same object before constructing the absent canonical manifest. The original
 one-hour signed URL returned by the durable export step is never used for
-transfer. On every execution of both the retryable upload callback and the
-retryable finalization callback, the runtime polls D1 with the cached bookmark
-and requires a complete response for that same bookmark, obtaining a fresh
-signed URL. Finalization then stream-compares exact byte count and SHA-256 with
-R2. Pending refreshes retry; malformed responses and bookmark mismatches fail
-closed. The final refresh, comparison, and immutable manifest write remain in
-one Workflow step, so a callback retry performs another export API poll instead
-of reusing a separately cached URL. This also applies when replay returns a
-cached upload-step result and skips its callback. Without signed-source context
-it fails with `duplicate-object-manifest-missing`. An existing manifest must
-also match that object exactly.
+transfer. On every execution of the retryable upload callback, the runtime polls
+D1 with the cached bookmark and requires a complete response for that same
+bookmark, obtaining a fresh signed URL; the upload stream-verifies exact byte
+count and SHA-256 against R2 while writing. Finalization deliberately does
+**not** poll D1 again: expired poll results can only be refreshed by starting a
+new export of a _newer_ database state, whose bytes legitimately differ from the
+stored object whenever production wrote anything in between (this exact mismatch
+made roughly every other nightly backup fail terminally with
+`existing-object-source-mismatch` before 2026-07-27). Instead, finalization
+re-reads the stored object and requires its size, R2 ETag, and full SHA-256 to
+match the durable upload-step result (`stored-object-mismatch` /
+`stored-object-missing` fail closed), then signs and writes the manifest in the
+same Workflow step. An existing manifest must match that object exactly.
+
+While streaming the upload, the runtime also measures SQL statement lengths
+(quote-aware semicolon splitting). D1's import path rejects statements above its
+~100 KB statement limit with `statement too long: SQLITE_TOOBIG`, so an
+oversized statement means the object is not restorable through the D1 import
+API. The measurements are persisted as `<objectKey>.stats.json` next to the SQL
+object and logged as `backup-sql-stats`; an oversized count above zero
+additionally logs `backup-unrestorable-statements` with failure status. The
+backup itself still completes — application write paths bound row sizes (see
+`packages/shared/src/backup-restore-safety.ts`), so a nonzero count indicates a
+new unbounded write path that must be fixed.
 
 Every canonical manifest uses schema v2 and is an Ed25519-signed envelope. Its
 signature covers deterministic canonical JSON for the SQL key, bytes, SHA-256,

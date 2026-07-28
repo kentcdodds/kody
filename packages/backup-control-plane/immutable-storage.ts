@@ -2,11 +2,84 @@ import {
 	parseBackupManifest,
 	serializeBackupManifest,
 } from '@kody-internal/shared/backup-manifest.ts'
+import { d1ImportMaxStatementBytes } from '@kody-internal/shared/backup-restore-safety.ts'
 
 import { BackupError } from './backup-policy.ts'
-import { type BackupManifest, type StoredBackup } from './backup-types.ts'
+import {
+	type BackupManifest,
+	type SqlStatementStats,
+	type StoredBackup,
+} from './backup-types.ts'
 
 export const MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES = 5 * 1024 * 1024 * 1024
+
+const SINGLE_QUOTE = 0x27
+const SEMICOLON = 0x3b
+
+/**
+ * Streaming, quote-aware SQL statement-length scanner. D1's import path
+ * rejects statements above {@link d1ImportMaxStatementBytes} with
+ * SQLITE_TOOBIG, so a backup containing one is not restorable through the
+ * D1 import API. Statement boundaries are semicolons outside single-quoted
+ * string literals (doubled `''` escapes toggle twice and cancel out; dumps
+ * do not contain comments).
+ */
+export function createSqlStatementScanner(limit = d1ImportMaxStatementBytes): {
+	update: (chunk: Uint8Array) => void
+	finish: () => SqlStatementStats
+} {
+	let inString = false
+	let currentStatementBytes = 0
+	let maxStatementBytes = 0
+	let oversizedStatementCount = 0
+
+	function closeStatement() {
+		if (currentStatementBytes > maxStatementBytes) {
+			maxStatementBytes = currentStatementBytes
+		}
+		if (currentStatementBytes > limit) oversizedStatementCount += 1
+		currentStatementBytes = 0
+	}
+
+	return {
+		update(chunk: Uint8Array) {
+			let index = 0
+			while (index < chunk.length) {
+				if (inString) {
+					const quote = chunk.indexOf(SINGLE_QUOTE, index)
+					if (quote === -1) {
+						currentStatementBytes += chunk.length - index
+						return
+					}
+					currentStatementBytes += quote - index + 1
+					inString = false
+					index = quote + 1
+					continue
+				}
+				const quote = chunk.indexOf(SINGLE_QUOTE, index)
+				const semicolon = chunk.indexOf(SEMICOLON, index)
+				if (semicolon !== -1 && (quote === -1 || semicolon < quote)) {
+					currentStatementBytes += semicolon - index + 1
+					closeStatement()
+					index = semicolon + 1
+					continue
+				}
+				if (quote !== -1) {
+					currentStatementBytes += quote - index + 1
+					inString = true
+					index = quote + 1
+					continue
+				}
+				currentStatementBytes += chunk.length - index
+				return
+			}
+		},
+		finish(): SqlStatementStats {
+			if (currentStatementBytes > 0) closeStatement()
+			return { maxStatementBytes, oversizedStatementCount, limit }
+		},
+	}
+}
 
 function hex(buffer: ArrayBuffer): string {
 	return [...new Uint8Array(buffer)]
@@ -17,13 +90,32 @@ function hex(buffer: ArrayBuffer): string {
 async function digestBody(
 	body: ReadableStream<Uint8Array>,
 	expectedBytes?: number,
-): Promise<{ bytes: number; sha256: string }> {
+): Promise<{
+	bytes: number
+	sha256: string
+	sqlStatementStats: SqlStatementStats
+}> {
 	// DigestStream is a Workers runtime extension exposed on crypto, not a
 	// bare global (verified live: `DigestStream is not defined`).
 	const digest = new (
 		crypto as unknown as { DigestStream: typeof DigestStream }
 	).DigestStream('SHA-256')
-	await body.pipeTo(digest)
+	const scanner = createSqlStatementScanner()
+	const writer = digest.getWriter()
+	const reader = body.getReader()
+	try {
+		for (;;) {
+			const { done, value } = await reader.read()
+			if (done) break
+			if (value === undefined) continue
+			scanner.update(value)
+			await writer.write(value)
+		}
+		await writer.close()
+	} catch (error) {
+		await writer.abort(error).catch(() => undefined)
+		throw error
+	}
 	const bytes = Number(digest.bytesWritten)
 	if (expectedBytes !== undefined && bytes !== expectedBytes) {
 		throw new BackupError(
@@ -32,7 +124,11 @@ async function digestBody(
 			true,
 		)
 	}
-	return { bytes, sha256: hex(await digest.digest) }
+	return {
+		bytes,
+		sha256: hex(await digest.digest),
+		sqlStatementStats: scanner.finish(),
+	}
 }
 
 interface SignedDownload {
@@ -138,7 +234,11 @@ async function inspectExisting(
 			'existing export is at or above the single-object backup size limit',
 		)
 	}
-	let digest: { bytes: number; sha256: string }
+	let digest: {
+		bytes: number
+		sha256: string
+		sqlStatementStats: SqlStatementStats
+	}
 	let sourceDigest: { bytes: number; sha256: string }
 	try {
 		;[digest, sourceDigest] = await Promise.all([
@@ -163,9 +263,56 @@ async function inspectExisting(
 		)
 	}
 	return {
-		...digest,
+		bytes: digest.bytes,
+		sha256: digest.sha256,
+		sqlStatementStats: digest.sqlStatementStats,
 		r2Etag: object.etag,
 		alreadyExisted: true,
+	}
+}
+
+/**
+ * Verify the immutable object still matches the durable upload-step result
+ * (size, ETag, and a full SHA-256 re-read). This is the finalization-time
+ * integrity check: the upload step already proved the object matches the
+ * signed export source, and D1 poll results are short-lived and may only be
+ * refreshable by starting a new export of a *newer* database state, so
+ * re-downloading from D1 cannot be used to re-verify the stored object.
+ */
+export async function verifyStoredObjectMatches(
+	bucket: R2Bucket,
+	objectKey: string,
+	stored: StoredBackup,
+): Promise<void> {
+	const object = await bucket.get(objectKey)
+	if (object === null) {
+		throw new BackupError(
+			'stored-object-missing',
+			'immutable backup object disappeared after the upload step',
+		)
+	}
+	if (object.size !== stored.bytes || object.etag !== stored.r2Etag) {
+		throw new BackupError(
+			'stored-object-mismatch',
+			'immutable backup object no longer matches the upload step result',
+		)
+	}
+	let digest: { bytes: number; sha256: string }
+	try {
+		digest = await digestBody(object.body, object.size)
+	} catch (error) {
+		if (error instanceof BackupError) throw error
+		throw new BackupError(
+			'download-interrupted',
+			'streaming the immutable object for finalization verification failed',
+			true,
+		)
+	}
+	if (digest.sha256 !== stored.sha256) {
+		throw new BackupError(
+			'stored-object-mismatch',
+			'immutable backup object no longer matches the upload step result',
+		)
 	}
 }
 
@@ -213,7 +360,9 @@ export async function storeSignedDownload(
 	if (object === null) return inspectExisting(bucket, key, digestPromise)
 	const digest = await digestPromise
 	return {
-		...digest,
+		bytes: digest.bytes,
+		sha256: digest.sha256,
+		sqlStatementStats: digest.sqlStatementStats,
 		r2Etag: object.etag,
 		alreadyExisted: false,
 	}
@@ -251,38 +400,10 @@ export async function assertDuplicateMatchesManifest(
 	manifestKey: string,
 	objectKey: string,
 	stored: StoredBackup,
-	signedSource?: {
-		signedUrl: string
-		fetcher?: typeof fetch
-	},
 ): Promise<void> {
 	const manifest = await readManifest(bucket, manifestKey)
 	if (manifest === null) {
-		if (!signedSource) {
-			throw new BackupError(
-				'duplicate-object-manifest-missing',
-				'backup object has no manifest and no signed source verification',
-			)
-		}
-		const download = await fetchSignedDownload(
-			signedSource.signedUrl,
-			signedSource.fetcher ?? fetch,
-		)
-		const verified = await inspectExisting(
-			bucket,
-			objectKey,
-			digestBody(download.body, download.expectedBytes),
-		)
-		if (
-			verified.bytes !== stored.bytes ||
-			verified.sha256 !== stored.sha256 ||
-			verified.r2Etag !== stored.r2Etag
-		) {
-			throw new BackupError(
-				'duplicate-object-source-proof-mismatch',
-				'signed source verification does not match the stored step result',
-			)
-		}
+		await verifyStoredObjectMatches(bucket, objectKey, stored)
 		return
 	}
 	if (

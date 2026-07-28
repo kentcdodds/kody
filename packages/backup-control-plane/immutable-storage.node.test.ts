@@ -6,6 +6,7 @@ import { test } from 'vitest'
 import {
 	MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES,
 	assertDuplicateMatchesManifest,
+	createSqlStatementScanner,
 	putImmutableManifest,
 	readManifest,
 	storeSignedDownload,
@@ -47,7 +48,52 @@ test('streams once with an immutable conditional, checksum, byte count, and ETag
 	assert.equal(duplicate.sha256, stored.sha256)
 })
 
-test('an existing object without a manifest is recoverable', async () => {
+test('a missing manifest is finalized from the durable upload-step digest', async () => {
+	const bucket = new MemoryBucket()
+	const prefix = `daily/d1/${DATABASE_ID}/2026-07-22`
+	const manifestKey = `${prefix}/manifest.json`
+	const objectKey = objectKeyForBookmark(prefix, 'bookmark-1')
+	const stored = await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		objectKey,
+		'https://download.example',
+		async () => new Response('valid', { headers: { 'content-length': '5' } }),
+	)
+	// Finalization verifies the stored object against the upload-step
+	// result; it never re-downloads from D1 (an expired poll can only be
+	// refreshed by exporting a newer database state).
+	await assert.doesNotReject(
+		assertDuplicateMatchesManifest(
+			bucket as unknown as R2Bucket,
+			manifestKey,
+			objectKey,
+			stored,
+		),
+	)
+	await assert.rejects(
+		assertDuplicateMatchesManifest(
+			bucket as unknown as R2Bucket,
+			manifestKey,
+			`${prefix}/backup-missing.sql`,
+			stored,
+		),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'stored-object-missing',
+	)
+	bucket.corrupt(objectKey, 'other')
+	await assert.rejects(
+		assertDuplicateMatchesManifest(
+			bucket as unknown as R2Bucket,
+			manifestKey,
+			objectKey,
+			stored,
+		),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'stored-object-mismatch',
+	)
+})
+
+test('an orphaned object from a crashed run does not block a later manifest', async () => {
 	const bucket = new MemoryBucket()
 	const prefix = `daily/d1/${DATABASE_ID}/2026-07-22`
 	const manifestKey = `${prefix}/manifest.json`
@@ -57,36 +103,6 @@ test('an existing object without a manifest is recoverable', async () => {
 		orphanKey,
 		'https://download.example',
 		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
-	const duplicate = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		orphanKey,
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
-	await assert.rejects(
-		assertDuplicateMatchesManifest(
-			bucket as unknown as R2Bucket,
-			manifestKey,
-			orphanKey,
-			duplicate,
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'duplicate-object-manifest-missing',
-	)
-	await assert.doesNotReject(
-		assertDuplicateMatchesManifest(
-			bucket as unknown as R2Bucket,
-			manifestKey,
-			orphanKey,
-			duplicate,
-			{
-				signedUrl: 'https://download.example',
-				fetcher: async () =>
-					new Response('valid', { headers: { 'content-length': '5' } }),
-			},
-		),
 	)
 	const recoveryKey = objectKeyForBookmark(prefix, 'bookmark-2')
 	const recovered = await storeSignedDownload(
@@ -113,6 +129,39 @@ test('an existing object without a manifest is recoverable', async () => {
 		recoveryKey,
 	)
 	assert.notEqual(await bucket.head(orphanKey), null)
+})
+
+test('sql statement stats measure quote-aware statement lengths during upload', async () => {
+	const bucket = new MemoryBucket()
+	// Two statements: the second hides semicolons and an escaped quote
+	// inside a string literal, and spans multiple lines.
+	const sql = `CREATE TABLE t (v TEXT);\nINSERT INTO t VALUES ('semi;colon''s\nnewline');\n`
+	const bytes = new TextEncoder().encode(sql)
+	const stored = await storeSignedDownload(
+		bucket as unknown as R2Bucket,
+		'stats.sql',
+		'https://download.example',
+		async () =>
+			new Response(bytes, {
+				headers: { 'content-length': String(bytes.byteLength) },
+			}),
+	)
+	assert.deepEqual(stored.sqlStatementStats, {
+		maxStatementBytes: new TextEncoder().encode(
+			`\nINSERT INTO t VALUES ('semi;colon''s\nnewline');`,
+		).byteLength,
+		oversizedStatementCount: 0,
+		limit: 100_000,
+	})
+
+	const scanner = createSqlStatementScanner(10)
+	scanner.update(new TextEncoder().encode("INSERT INTO t VALUES ('long"))
+	scanner.update(new TextEncoder().encode("er than limit');\nSELECT 1;"))
+	assert.deepEqual(scanner.finish(), {
+		maxStatementBytes: 43,
+		oversizedStatementCount: 1,
+		limit: 10,
+	})
 })
 
 test('truncated and interrupted downloads fail retryably, then a retry succeeds', async () => {

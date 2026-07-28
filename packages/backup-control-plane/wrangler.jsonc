@@ -45,9 +45,10 @@
 		"BACKUP_MANIFEST_SIGNING_KEY_ID": "kody-dr-2026-07",
 		"BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64": "MCowBQYDK2VwAyEA3jqjPcGTzWefE5PGyRBdUQKAEj7FFGtFIz+223sbt9A=",
 		// SHA-256 of the JSON array of sorted migration filenames at the
-		// deployment commit (see docs/contributing/disaster-recovery.md).
+		// deployment commit; recompute when adding a migration (recipe in
+		// docs/contributing/disaster-recovery.md).
 		"TRUSTED_RESTORE_BASELINE_ID": "kody-migration-set-2026-07",
-		"TRUSTED_RESTORE_BASELINE_SHA256": "a132fab33e6a614e861af54ac9c82ba1493f36a5c9fe02c9004ea0e755b47ea2",
+		"TRUSTED_RESTORE_BASELINE_SHA256": "98fdc7b903645bad2df504f03ea6c6bd80a8ba0b7b28939cae515a408563c310",
 		"BACKUP_MAX_AGE_HOURS": "26",
 		// D1 GET file_size must remain strictly below this single-object ceiling.
 		"BACKUP_MAX_SOURCE_BYTES": "4500000000",

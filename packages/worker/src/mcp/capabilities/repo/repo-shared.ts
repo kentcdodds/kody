@@ -463,12 +463,17 @@ export const repoCheckResultSchema = z.object({
 export const repoRunChecksOutputSchema = z.object({
 	ok: z.boolean(),
 	results: z.array(repoCheckResultSchema),
-	manifest: z.object({
-		name: z.string(),
-		kody_id: z.string(),
-		description: z.string(),
-		has_app: z.boolean(),
-	}),
+	manifest: z
+		.object({
+			name: z.string(),
+			kody_id: z.string(),
+			description: z.string(),
+			has_app: z.boolean(),
+		})
+		.nullable()
+		.describe(
+			'Parsed package.json summary when available; null when the manifest itself failed validation or was missing.',
+		),
 })
 
 const repoRunCommandResultSchema = z.object({
@@ -478,7 +483,7 @@ const repoRunCommandResultSchema = z.object({
 	output: z.unknown(),
 })
 
-export function normalizeRepoManifestSummary(manifest: {
+type RepoManifestSummaryInput = {
 	name?: unknown
 	title?: unknown
 	description?: unknown
@@ -487,7 +492,26 @@ export function normalizeRepoManifestSummary(manifest: {
 		description?: unknown
 		app?: unknown
 	}
-}) {
+}
+
+type RepoManifestSummary = {
+	name: string
+	kody_id: string
+	description: string
+	has_app: boolean
+}
+
+export function normalizeRepoManifestSummary(manifest: null): null
+export function normalizeRepoManifestSummary(
+	manifest: RepoManifestSummaryInput,
+): RepoManifestSummary
+export function normalizeRepoManifestSummary(
+	manifest: RepoManifestSummaryInput | null,
+): RepoManifestSummary | null
+export function normalizeRepoManifestSummary(
+	manifest: RepoManifestSummaryInput | null,
+): RepoManifestSummary | null {
+	if (manifest == null) return null
 	const packageName =
 		typeof manifest.name === 'string'
 			? manifest.name

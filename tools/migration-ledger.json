@@ -443,6 +443,10 @@
 		{
 			"filename": "0104-email-sender-rules-and-classification.sql",
 			"sha256": "3e3d120bbf2bdee3dfcbb939bd7b5f9bca9380d5c6e84b0a94818d34eaaee3bd"
+		},
+		{
+			"filename": "0105-restore-safe-row-sizes.sql",
+			"sha256": "0c40218da221b778df2869e0533828844fabe3664423b07a3466721ba924f6c5"
 		}
 	]
 }
