@@ -6,6 +6,7 @@ import {
 	wrapDownstreamMcpToolResult,
 } from '#mcp/downstream-mcp-result.ts'
 import { formatRawFetchHostNudge } from '#mcp/raw-fetch-host-nudge.ts'
+import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
@@ -42,9 +43,9 @@ vi.mock('#worker/openapi/binding-service.ts', () => ({
 }))
 
 vi.mock('#worker/run-records/service.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('#worker/run-records/service.ts')
-	>('#worker/run-records/service.ts')
+	const actual = await vi.importActual<typeof RunRecordsServiceModule>(
+		'#worker/run-records/service.ts',
+	)
 	return {
 		...actual,
 		getRunRecordByIdempotencyKey: (...args: Array<unknown>) =>
