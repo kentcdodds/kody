@@ -50,11 +50,45 @@ export type RepoCheckResult = {
 	message: string
 }
 
-export type RepoCheckRunResult = {
-	ok: boolean
+export type RepoCheckRunResult =
+	| {
+			ok: true
+			results: Array<RepoCheckResult>
+			manifest: AuthoredPackageJson
+			sourceFiles: Record<string, string>
+	  }
+	| {
+			ok: false
+			results: Array<RepoCheckResult>
+			/**
+			 * Present when the authored package.json parsed and only later checks
+			 * failed. Null when the manifest itself is missing or invalid — callers
+			 * must use `results` (kind `manifest`) for the failure message.
+			 */
+			manifest: AuthoredPackageJson | null
+			sourceFiles: Record<string, string>
+	  }
+
+function toRepoCheckRunResult(input: {
 	results: Array<RepoCheckResult>
 	manifest: AuthoredPackageJson
 	sourceFiles: Record<string, string>
+}): RepoCheckRunResult {
+	const ok = input.results.every((result) => result.ok)
+	if (ok) {
+		return {
+			ok: true,
+			results: input.results,
+			manifest: input.manifest,
+			sourceFiles: input.sourceFiles,
+		}
+	}
+	return {
+		ok: false,
+		results: input.results,
+		manifest: input.manifest,
+		sourceFiles: input.sourceFiles,
+	}
 }
 
 const executeTypecheckPreludePath = '.__kody_repo_runtime__.d.ts'
@@ -980,14 +1014,46 @@ export async function runRepoChecks(input: {
 }): Promise<RepoCheckRunResult> {
 	const manifestContent = await input.workspace.readFile(input.manifestPath)
 	if (manifestContent == null) {
-		throw new Error(`Manifest "${input.manifestPath}" was not found.`)
+		// Caller-authored source mistake (missing package.json). Return a failed
+		// check instead of throwing so MCP publish surfaces checks_failed and
+		// does not open a Sentry "platform bug" issue.
+		return {
+			ok: false,
+			results: [
+				{
+					kind: 'manifest',
+					ok: false,
+					message: `Manifest "${input.manifestPath}" was not found.`,
+				},
+			],
+			manifest: null,
+			sourceFiles: {},
+		}
 	}
-	const manifest = parseAuthoredPackageJson({
-		content: manifestContent,
-		manifestPath: input.manifestPath,
-		expectedPackageScope: input.expectedPackageScope,
-	})
-	assertKodyDescriptionLength(manifest.kody.description)
+	let manifest: AuthoredPackageJson
+	try {
+		manifest = parseAuthoredPackageJson({
+			content: manifestContent,
+			manifestPath: input.manifestPath,
+			expectedPackageScope: input.expectedPackageScope,
+		})
+		assertKodyDescriptionLength(manifest.kody.description)
+	} catch (error) {
+		// Invalid package.json shape (e.g. kody.dependencies as an object) is a
+		// caller fix — keep it on the check result path, not as an exception.
+		return {
+			ok: false,
+			results: [
+				{
+					kind: 'manifest',
+					ok: false,
+					message: getErrorMessage(error),
+				},
+			],
+			manifest: null,
+			sourceFiles: {},
+		}
+	}
 	const results: Array<RepoCheckResult> = [
 		{
 			kind: 'manifest',
@@ -1036,12 +1102,11 @@ export async function runRepoChecks(input: {
 			ok: false,
 			message: sourceWalk.message,
 		})
-		return {
-			ok: false,
+		return toRepoCheckRunResult({
 			results,
 			manifest,
 			sourceFiles: {},
-		}
+		})
 	}
 	const sourceFiles = sourceWalk.collected
 	const lintCheck = buildLintCheck(sourceFiles)
@@ -1139,12 +1204,11 @@ export async function runRepoChecks(input: {
 			ok: lintCheck.ok,
 			message: lintCheck.message,
 		})
-		return {
-			ok: results.every((result) => result.ok),
+		return toRepoCheckRunResult({
 			results,
 			manifest,
 			sourceFiles,
-		}
+		})
 	}
 
 	const callableTargetsMissingDefaultExport =
@@ -1165,12 +1229,11 @@ export async function runRepoChecks(input: {
 			ok: lintCheck.ok,
 			message: lintCheck.message,
 		})
-		return {
-			ok: results.every((result) => result.ok),
+		return toRepoCheckRunResult({
 			results,
 			manifest,
 			sourceFiles,
-		}
+		})
 	}
 
 	if (callableTypecheckTargets.length === 0) {
@@ -1184,12 +1247,11 @@ export async function runRepoChecks(input: {
 			ok: lintCheck.ok,
 			message: lintCheck.message,
 		})
-		return {
-			ok: results.every((result) => result.ok),
+		return toRepoCheckRunResult({
 			results,
 			manifest,
 			sourceFiles,
-		}
+		})
 	}
 
 	const typecheckFileSystem = createRepoChecksFileSystem({
@@ -1232,10 +1294,9 @@ export async function runRepoChecks(input: {
 		message: lintCheck.message,
 	})
 
-	return {
-		ok: results.every((result) => result.ok),
+	return toRepoCheckRunResult({
 		results,
 		manifest,
 		sourceFiles,
-	}
+	})
 }

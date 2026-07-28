@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
@@ -239,53 +240,53 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 		}),
 	}
 
-	await expect(
-		handler(
-			{
-				files: [
-					{
-						path: 'package.json',
-						content: JSON.stringify({
-							name: 'pkg',
-							kody: {
-								id: 'pkg',
-								description: 'missing exports',
-							},
-						}),
-					},
-				],
-			},
-			signedInContext,
-		),
-	).rejects.toThrow('Invalid package.json')
+	const invalidManifest = handler(
+		{
+			files: [
+				{
+					path: 'package.json',
+					content: JSON.stringify({
+						name: 'pkg',
+						kody: {
+							id: 'pkg',
+							description: 'missing exports',
+						},
+					}),
+				},
+			],
+		},
+		signedInContext,
+	)
+	await expect(invalidManifest).rejects.toThrow(McpCallerError)
+	await expect(invalidManifest).rejects.toThrow('Invalid package.json')
 
-	await expect(
-		handler(
-			{
-				files: [
-					{
-						path: 'package.json',
-						content: JSON.stringify({
-							name: '@other/observed-package',
-							exports: {
-								'.': './src/index.ts',
-							},
-							kody: {
-								id: 'observed-package',
-								description: 'Observation test package.',
-							},
-						}),
-					},
-					{
-						path: 'src/index.ts',
-						content:
-							'export default async function main() { return { ok: true } }\n',
-					},
-				],
-			},
-			signedInContext,
-		),
-	).rejects.toThrow(
+	const wrongScope = handler(
+		{
+			files: [
+				{
+					path: 'package.json',
+					content: JSON.stringify({
+						name: '@other/observed-package',
+						exports: {
+							'.': './src/index.ts',
+						},
+						kody: {
+							id: 'observed-package',
+							description: 'Observation test package.',
+						},
+					}),
+				},
+				{
+					path: 'src/index.ts',
+					content:
+						'export default async function main() { return { ok: true } }\n',
+				},
+			],
+		},
+		signedInContext,
+	)
+	await expect(wrongScope).rejects.toThrow(McpCallerError)
+	await expect(wrongScope).rejects.toThrow(
 		'package.json name "@other/observed-package" must use the authenticated user\'s package scope "@user/*".',
 	)
 	expect(repoMockModule.ensureEntitySource).not.toHaveBeenCalled()

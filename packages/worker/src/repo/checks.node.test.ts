@@ -812,6 +812,44 @@ test('runRepoChecks injects package tsconfig overlays that allow optional .ts im
 	).toBe(repoTsconfig)
 })
 
+test('runRepoChecks returns a failed manifest check for object-shaped kody.dependencies instead of throwing', async () => {
+	// Agents sometimes confuse npm dependencies (object map) with
+	// kody.dependencies (string array). Publish must return checks_failed, not
+	// throw — otherwise MCP observability opens a Sentry platform-bug issue.
+	const result = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				JSON.stringify({
+					name: '@kody/object-deps',
+					exports: {
+						'.': './src/index.ts',
+					},
+					kody: {
+						id: 'object-deps',
+						description: 'Uses object-shaped kody.dependencies by mistake',
+						dependencies: {
+							'@kentcdodds/helper': 'latest',
+						},
+					},
+				}),
+			],
+			['src/index.ts', 'export const ready = true\n'],
+		]),
+	)
+	expect(result.ok).toBe(false)
+	expect(result.manifest).toBeNull()
+	expect(result.results).toEqual([
+		expect.objectContaining({
+			kind: 'manifest',
+			ok: false,
+			message: expect.stringMatching(
+				/expected array, received object[\s\S]*kody\.dependencies/,
+			),
+		}),
+	])
+})
+
 test('runRepoChecks validates static kody package import declarations across missing, declared, type-only, declaration files, mixed exports, dynamic imports, invalid declarations, and unused declarations', async () => {
 	const missingDeclaration = await runChecksOnWorkspaceFiles(
 		new Map<string, string>([
@@ -957,29 +995,36 @@ test('runRepoChecks validates static kody package import declarations across mis
 		]),
 	)
 
-	await expect(
-		runChecksOnWorkspaceFiles(
-			new Map<string, string>([
-				[
-					'package.json',
-					JSON.stringify({
-						name: '@kody/invalid-dependency-declaration',
-						exports: {
-							'.': './src/index.ts',
-						},
-						kody: {
-							id: 'invalid-dependency-declaration',
-							description: 'Declares an invalid Kody dependency',
-							dependencies: ['@kentcdodds/helper/run'],
-						},
-					}),
-				],
-				['src/index.ts', 'export const ready = true\n'],
-			]),
-		),
-	).rejects.toThrow(
-		'Static Kody package dependencies must be scoped package names like "@scope/package".',
+	const invalidDeclaration = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				JSON.stringify({
+					name: '@kody/invalid-dependency-declaration',
+					exports: {
+						'.': './src/index.ts',
+					},
+					kody: {
+						id: 'invalid-dependency-declaration',
+						description: 'Declares an invalid Kody dependency',
+						dependencies: ['@kentcdodds/helper/run'],
+					},
+				}),
+			],
+			['src/index.ts', 'export const ready = true\n'],
+		]),
 	)
+	expect(invalidDeclaration.ok).toBe(false)
+	expect(invalidDeclaration.manifest).toBeNull()
+	expect(invalidDeclaration.results).toEqual([
+		expect.objectContaining({
+			kind: 'manifest',
+			ok: false,
+			message: expect.stringContaining(
+				'Static Kody package dependencies must be scoped package names like "@scope/package".',
+			),
+		}),
+	])
 
 	const unusedDeclaration = await runChecksOnWorkspaceFiles(
 		new Map<string, string>([

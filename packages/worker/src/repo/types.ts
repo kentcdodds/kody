@@ -279,7 +279,8 @@ export type RepoSessionCheckRun = {
 		ok: boolean
 		message: string
 	}>
-	manifest: AuthoredPackageJson
+	/** Null when package.json itself failed to parse or was missing. */
+	manifest: AuthoredPackageJson | null
 	runId: string
 	treeHash: string
 	checkedAt: string
@@ -322,7 +323,8 @@ export type RepoExternalPublishResult =
 	| {
 			status: 'checks_failed'
 			failed_checks: NonNullable<RepoSessionCheckStatus['results']>
-			manifest: AuthoredPackageJson
+			/** Null when package.json itself failed to parse or was missing. */
+			manifest: AuthoredPackageJson | null
 			run_id: string
 	  }
 	| {
