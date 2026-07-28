@@ -30,7 +30,10 @@ import {
 	signBackupFullManifest,
 	verifyBackupFullManifestSignature,
 } from './full-manifest-signing.ts'
-import { readManifest } from './immutable-storage.ts'
+import {
+	isBucketLockPolicyPutError,
+	readManifest,
+} from './immutable-storage.ts'
 import { verifyBackupManifestSignature } from './manifest-signing.ts'
 
 const sha256Pattern = /^[0-9a-f]{64}$/
@@ -141,10 +144,19 @@ async function putImmutableBytes(
 	bytes: Uint8Array,
 	contentType: string,
 ): Promise<void> {
-	const result = await bucket.put(key, bytes, {
-		onlyIf: { etagDoesNotMatch: '*' },
-		httpMetadata: { contentType },
-	})
+	// A bucket-lock rule rejects puts on existing keys with error 10069
+	// before evaluating the conditional, so a partially sealed day (or a
+	// duplicate index entry) must fall through to byte comparison instead of
+	// failing the whole seal.
+	const result = await bucket
+		.put(key, bytes, {
+			onlyIf: { etagDoesNotMatch: '*' },
+			httpMetadata: { contentType },
+		})
+		.catch((error: unknown) => {
+			if (isBucketLockPolicyPutError(error)) return null
+			throw error
+		})
 	if (result !== null) return
 	const existing = await bucket.get(key)
 	if (existing === null) {
@@ -172,10 +184,15 @@ async function putImmutableFullManifest(
 	manifest: BackupFullManifest,
 ): Promise<void> {
 	const body = serializeBackupFullManifest(manifest)
-	const result = await bucket.put(key, body, {
-		onlyIf: { etagDoesNotMatch: '*' },
-		httpMetadata: { contentType: 'application/json' },
-	})
+	const result = await bucket
+		.put(key, body, {
+			onlyIf: { etagDoesNotMatch: '*' },
+			httpMetadata: { contentType: 'application/json' },
+		})
+		.catch((error: unknown) => {
+			if (isBucketLockPolicyPutError(error)) return null
+			throw error
+		})
 	if (result !== null) return
 	const existing = await bucket.get(key)
 	if (existing === null) {

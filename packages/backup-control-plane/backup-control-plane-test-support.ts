@@ -82,6 +82,16 @@ export class MemoryBucket {
 	private readonly objects = new Map<string, Uint8Array>()
 	private readonly reportedSizes = new Map<string, number>()
 	private nextPutRace: { key: string; bytes: Uint8Array } | undefined
+	private lockPolicyEnabled = false
+
+	/**
+	 * Emulate an R2 bucket-lock rule: puts targeting an existing key are
+	 * rejected with error 10069 before conditional headers are evaluated
+	 * (matches live behavior on the locked backup prefixes).
+	 */
+	enableLockPolicy(): void {
+		this.lockPolicyEnabled = true
+	}
 
 	async put(
 		key: string,
@@ -92,6 +102,9 @@ export class MemoryBucket {
 		if (this.nextPutRace?.key === key) {
 			this.objects.set(key, this.nextPutRace.bytes)
 			this.nextPutRace = undefined
+		}
+		if (this.lockPolicyEnabled && this.objects.has(key)) {
+			throw new Error('put: The object is locked by the bucket policy. (10069)')
 		}
 		if (
 			options.onlyIf &&

@@ -26,7 +26,11 @@ function sha256Text(value: string): string {
 	return createHash('sha256').update(value).digest('hex')
 }
 
-async function seedCompleteDay(bucket: MemoryBucket, day = '2026-07-22') {
+async function seedCompleteDay(
+	bucket: MemoryBucket,
+	day = '2026-07-22',
+	options: { duplicateIndexEntry?: boolean } = {},
+) {
 	const env = environment(bucket)
 	const d1Payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
 	const sqlBody = 'CREATE TABLE t(id INTEGER);\n'
@@ -58,18 +62,19 @@ async function seedCompleteDay(bucket: MemoryBucket, day = '2026-07-22') {
 
 	const dumpKey = stagingStorageDumpKey(day, 'user-storage-1')
 	const dumpBody = '{"key":"a","valueJson":"1"}\n'
+	const indexEntry = {
+		storageId: 'user-storage-1',
+		objectKey: dumpKey,
+		entryCount: 1,
+		bytes: dumpBody.length,
+		sha256: sha256Text(dumpBody),
+	}
 	const storageIndexBody = JSON.stringify({
 		schemaVersion: 1,
 		day,
-		entries: [
-			{
-				storageId: 'user-storage-1',
-				objectKey: dumpKey,
-				entryCount: 1,
-				bytes: dumpBody.length,
-				sha256: sha256Text(dumpBody),
-			},
-		],
+		entries: options.duplicateIndexEntry
+			? [indexEntry, indexEntry]
+			: [indexEntry],
 	})
 	const blobHash = 'e'.repeat(64)
 	const r2IndexBody = `{"key":"blob","size":1,"sha256":"${blobHash}"}\n`
@@ -143,6 +148,39 @@ test('sealFullBackupDay seals a complete day and is idempotent', async () => {
 	assert.equal(second.kind, 'sealed')
 	if (second.kind !== 'sealed') return
 	assert.equal(second.alreadySealed, true)
+})
+
+test('sealFullBackupDay completes over locked partial state and duplicate index entries', async () => {
+	// Reproduces the 2026-07-28 production wedge: the bucket-lock rule
+	// rejects puts on existing keys with error 10069, the storage index
+	// contained duplicate entries from mid-window inventory drift, and a
+	// partial earlier attempt had already copied some sealed objects. The
+	// seal must fall through to byte comparison in all three situations.
+	const bucket = new MemoryBucket()
+	bucket.enableLockPolicy()
+	const { env, day } = await seedCompleteDay(bucket, '2026-07-22', {
+		duplicateIndexEntry: true,
+	})
+	// Simulate the partial earlier attempt: the dump is already sealed.
+	const dumpBody = '{"key":"a","valueJson":"1"}\n'
+	await bucket.put(
+		`daily/full/${day}/storage/${encodeURIComponent('user-storage-1')}.ndjson`,
+		dumpBody,
+	)
+
+	const result = await sealFullBackupDay(
+		env,
+		day,
+		new Date(`${day}T04:00:00.000Z`),
+	)
+	assert.equal(result.kind, 'sealed')
+	if (result.kind !== 'sealed') return
+	assert.equal(result.alreadySealed, false)
+	const sealed = await readFullManifest(
+		bucket as unknown as R2Bucket,
+		sealedFullManifestKey(day),
+	)
+	assert.equal(sealed?.payload.day, day)
 })
 
 test('sealFullBackupDay fails closed on staging sha mismatch', async () => {

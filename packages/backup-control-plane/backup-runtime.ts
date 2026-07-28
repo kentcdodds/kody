@@ -6,6 +6,7 @@ import {
 import { runDurableExport, type DurableExportStep } from './durable-export.ts'
 import {
 	assertDuplicateMatchesManifest,
+	isBucketLockPolicyPutError,
 	putImmutableManifest,
 	storeSignedDownload,
 } from './immutable-storage.ts'
@@ -72,10 +73,14 @@ async function recordSqlStatementStats(input: {
 	})
 	// The stats object is advisory; an existing object from a replayed step
 	// wins and is left alone (the prefix is under the bucket's immutable
-	// lock, so overwrites are rejected anyway).
+	// lock, which rejects puts on existing keys with error 10069 before the
+	// conditional is evaluated).
 	await input.env.BACKUP_BUCKET.put(`${input.objectKey}.stats.json`, body, {
 		onlyIf: { etagDoesNotMatch: '*' },
 		httpMetadata: { contentType: 'application/json' },
+	}).catch((error: unknown) => {
+		if (isBucketLockPolicyPutError(error)) return null
+		throw error
 	})
 }
 

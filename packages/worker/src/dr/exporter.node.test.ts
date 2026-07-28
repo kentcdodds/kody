@@ -347,6 +347,89 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 	}
 })
 
+test('inventory drift between ticks neither duplicates nor skips storage dumps', async () => {
+	storageMocks.exportStorage.mockReset()
+	storageMocks.exportStorage.mockResolvedValue({
+		entries: [{ key: 'k', value: 1 }],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 250,
+		estimatedBytes: 1,
+	})
+	const { client } = createMemoryS3()
+	let nowMs = 1_000_000
+	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
+	const originalPut = client.put.bind(client)
+	client.put = async (key, body, options) => {
+		const result = await originalPut(key, body, options)
+		// Exhaust the budget after the first dump so the run resumes on the
+		// next tick against a drifted inventory.
+		if (key.includes('/storage/') && key.endsWith('.ndjson')) {
+			nowMs += 50_000
+		}
+		return result
+	}
+	// Sorted inventory starts as [job:2, job:3]; tick 1 completes job:2.
+	const jobs = [
+		{ userId: 'user-a', storageId: 'job:2' },
+		{ userId: 'user-a', storageId: 'job:3' },
+	]
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({ jobs }),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+	const now = new Date('2026-07-23T01:00:00.000Z')
+
+	try {
+		const tick1 = await runDrExportTick({
+			env,
+			now,
+			timeBudgetMs: 20_000,
+			s3: client,
+		})
+		expect(tick1.storageDumpsCompleted).toBe(1)
+
+		// A job registers a new bucket mid-window that sorts BEFORE the
+		// completed identity. A positional cursor would re-dump job:2
+		// (duplicate index entry) and never dump job:1.
+		jobs.unshift({ userId: 'user-a', storageId: 'job:1' })
+
+		nowMs = 1_000_000
+		const tick2 = await runDrExportTick({
+			env,
+			now,
+			timeBudgetMs: 200_000,
+			s3: client,
+		})
+		expect(tick2.summaryWritten).toBe(true)
+
+		const summary = JSON.parse(
+			(await client.getText(stagingSummaryKey('2026-07-23')))!.text,
+		)
+		const storageIndex = JSON.parse(
+			(await client.getText(summary.storageIndex.objectKey))!.text,
+		) as { entries: Array<{ storageId: string }> }
+		const identities = storageIndex.entries.map((entry) => entry.storageId)
+		expect(identities.sort()).toEqual([
+			encodeStorageIdentity('user-a', 'job:1'),
+			encodeStorageIdentity('user-a', 'job:2'),
+			encodeStorageIdentity('user-a', 'job:3'),
+		])
+		expect(new Set(identities).size).toBe(identities.length)
+		expect(storageMocks.exportStorage.mock.calls.length).toBe(3)
+	} finally {
+		dateNow.mockRestore()
+	}
+})
+
 test('exporter skips oversized storage dumps with a summary warning', async () => {
 	storageMocks.exportStorage.mockReset()
 	const hugeValue = 'x'.repeat(drExportMaxStorageDumpBufferBytes + 1)

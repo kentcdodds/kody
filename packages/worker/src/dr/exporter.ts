@@ -53,13 +53,24 @@ export type DrExporterProgress = {
 	phase: DrExporterPhase
 	/** Monotonic counter bumped on every progress persist. */
 	revision: number
-	/** Next index into the platform storage inventory. */
+	/**
+	 * Count of storage identities completed or skipped. The inventory is
+	 * re-listed every tick and can drift mid-run (jobs registering new
+	 * buckets), so resume is identity-driven, not positional; this field is
+	 * observability only.
+	 */
 	storageIndex: number
 	/**
 	 * Within the current storage dump: key cursor for exportStorage paging.
 	 * Null means the next storage identity has not started yet.
 	 */
 	storagePageStartAfter: string | null
+	/**
+	 * Identity the partial page state below belongs to. Guards resumed
+	 * partial pages against inventory drift between ticks; absent/mismatched
+	 * identity resets the partial state.
+	 */
+	storagePartialIdentity?: string | null
 	/** Accumulated NDJSON for the in-progress storage dump (resumed pages). */
 	storagePartialNdjson: string
 	storagePartialEntryCount: number
@@ -175,6 +186,7 @@ function createInitialProgress(day: string, now: Date): DrExporterProgress {
 		revision: 0,
 		storageIndex: 0,
 		storagePageStartAfter: null,
+		storagePartialIdentity: null,
 		storagePartialNdjson: '',
 		storagePartialEntryCount: 0,
 		storageEntries: [],
@@ -392,15 +404,34 @@ async function loadOrCreateProgress(input: {
 	}
 }
 
+const oversizedStorageDumpWarningPrefix = 'storage dump too large: '
+
+function resetPartialStorageState(progress: DrExporterProgress) {
+	progress.storagePageStartAfter = null
+	progress.storagePartialIdentity = null
+	progress.storagePartialNdjson = ''
+	progress.storagePartialEntryCount = 0
+}
+
 function skipOversizedStorageDump(
 	progress: DrExporterProgress,
 	identity: string,
 ) {
-	progress.warnings.push(`storage dump too large: ${identity}`)
+	progress.warnings.push(`${oversizedStorageDumpWarningPrefix}${identity}`)
 	progress.storageIndex += 1
-	progress.storagePageStartAfter = null
-	progress.storagePartialNdjson = ''
-	progress.storagePartialEntryCount = 0
+	resetPartialStorageState(progress)
+}
+
+function collectHandledStorageIdentities(progress: DrExporterProgress) {
+	const handled = new Set(
+		progress.storageEntries.map((entry) => entry.storageId),
+	)
+	for (const warning of progress.warnings) {
+		if (warning.startsWith(oversizedStorageDumpWarningPrefix)) {
+			handled.add(warning.slice(oversizedStorageDumpWarningPrefix.length))
+		}
+	}
+	return handled
 }
 
 async function exportStoragePhase(input: {
@@ -414,9 +445,24 @@ async function exportStoragePhase(input: {
 }): Promise<boolean> {
 	const { session, inventory, s3, env } = input
 	const { progress } = session
-	while (progress.storageIndex < inventory.length) {
+	// Identity-driven resume: the inventory is re-listed every tick and can
+	// drift mid-run (jobs registering new buckets during the export window),
+	// which shifts positions in the sorted list. A positional cursor then
+	// dumps the same identity twice — producing duplicate storage-index
+	// entries that later wedge sealing — or silently skips identities.
+	const handledIdentities = collectHandledStorageIdentities(progress)
+	for (;;) {
 		if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
-		const item = inventory[progress.storageIndex]!
+		const item = inventory.find(
+			(candidate) => !handledIdentities.has(candidate.identity),
+		)
+		if (!item) break
+		if (progress.storagePartialIdentity !== item.identity) {
+			// The persisted partial page state belongs to a different (drifted)
+			// identity; restart this identity's dump from its first page.
+			resetPartialStorageState(progress)
+			progress.storagePartialIdentity = item.identity
+		}
 		const page = await storageRunnerRpc({
 			env,
 			userId: item.userId,
@@ -438,6 +484,7 @@ async function exportStoragePhase(input: {
 			drExportMaxStorageDumpBufferBytes
 		) {
 			skipOversizedStorageDump(progress, item.identity)
+			handledIdentities.add(item.identity)
 			await persistProgress(s3, session)
 			continue
 		}
@@ -457,10 +504,9 @@ async function exportStoragePhase(input: {
 			bytes: summary.bytes,
 			sha256: summary.sha256,
 		})
+		handledIdentities.add(item.identity)
 		progress.storageIndex += 1
-		progress.storagePageStartAfter = null
-		progress.storagePartialNdjson = ''
-		progress.storagePartialEntryCount = 0
+		resetPartialStorageState(progress)
 		input.counts.storageDumpsCompleted += 1
 		await persistProgress(s3, session)
 	}

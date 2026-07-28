@@ -13,6 +13,23 @@ import {
 
 export const MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES = 5 * 1024 * 1024 * 1024
 
+/**
+ * R2 rejects any put targeting an existing object under a bucket-lock rule
+ * with `put: The object is locked by the bucket policy. (10069)` before
+ * evaluating conditional headers, so the `onlyIf: { etagDoesNotMatch: '*' }`
+ * create-only pattern throws on locked prefixes instead of returning null.
+ * Verified live 2026-07-28: sealing wedged hourly on the locked `daily/`
+ * prefix. Treat the rejection as "object already exists" so retries and
+ * replays fall through to byte comparison.
+ */
+export function isBucketLockPolicyPutError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error)
+	return (
+		message.includes('locked by the bucket policy') ||
+		message.includes('(10069)')
+	)
+}
+
 const SINGLE_QUOTE = 0x27
 const SEMICOLON = 0x3b
 
@@ -342,6 +359,10 @@ export async function storeSignedDownload(
 					onlyIf: { etagDoesNotMatch: '*' },
 					httpMetadata: { contentType: 'application/sql' },
 				})
+				.catch((error: unknown) => {
+					if (isBucketLockPolicyPutError(error)) return null
+					throw error
+				})
 				.then(async (result) => {
 					if (result === null && !r2Body.locked) await r2Body.cancel()
 					return result
@@ -374,10 +395,15 @@ export async function putImmutableManifest(
 	manifest: BackupManifest,
 ): Promise<void> {
 	const body = serializeBackupManifest(manifest)
-	const result = await bucket.put(key, body, {
-		onlyIf: { etagDoesNotMatch: '*' },
-		httpMetadata: { contentType: 'application/json' },
-	})
+	const result = await bucket
+		.put(key, body, {
+			onlyIf: { etagDoesNotMatch: '*' },
+			httpMetadata: { contentType: 'application/json' },
+		})
+		.catch((error: unknown) => {
+			if (isBucketLockPolicyPutError(error)) return null
+			throw error
+		})
 	if (result !== null) return
 	const existing = await bucket.get(key)
 	if (existing === null) {
