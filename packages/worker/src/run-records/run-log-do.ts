@@ -32,7 +32,7 @@ const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-const runLogSchemaVersion = 3
+const runLogSchemaVersion = 4
 
 const staleRunningErrorName = 'Interrupted'
 const staleRunningErrorMessage =
@@ -319,10 +319,13 @@ class RunLogBase extends DurableObject<Env> {
 		this.ctx.storage.sql.exec(
 			`CREATE INDEX IF NOT EXISTS idx_runs_name_started_id ON runs(name, started_at DESC, id DESC)`,
 		)
-		// Caller-supplied execute keys (and other surfaces that set a key) must
-		// be unique per user so claim/replay can stay race-free inside one DO.
+		// Non-unique: package invocations / workflows may reuse the same
+		// idempotency key across history. Keyed execute claim/replay stays
+		// race-free because claimRun select-then-insert runs in one DO RPC.
+		// Drop any unique index from schema v3 so warm objects can migrate.
+		this.ctx.storage.sql.exec(`DROP INDEX IF EXISTS idx_runs_idempotency_key`)
 		this.ctx.storage.sql.exec(
-			`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_idempotency_key
+			`CREATE INDEX IF NOT EXISTS idx_runs_idempotency_key
 			ON runs(idempotency_key) WHERE idempotency_key IS NOT NULL`,
 		)
 		this.ctx.storage.sql.exec(`
@@ -395,12 +398,15 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	private findRunByIdempotencyKey(idempotencyKey: string): RunRecord | null {
+		// Prefer an in-flight row, then the newest terminal row, so execute
+		// replay sees the attempt that still owns the key.
 		const row = this.ctx.storage.sql
 			.exec<Record<string, SqlStorageValue>>(
 				`SELECT r.*,
 					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
 				FROM runs r
 				WHERE r.idempotency_key = ?
+				ORDER BY (r.status = 'running') DESC, r.started_at DESC, r.id DESC
 				LIMIT 1`,
 				idempotencyKey,
 			)

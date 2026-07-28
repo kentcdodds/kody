@@ -130,8 +130,9 @@ Rules:
   execute) should pass it so `run_get` can show what the handler returned.
 - Keyed execute claims the idempotency key through `claimRunRecord` (awaited DO
   RPC) before sandbox work so a concurrent retry sees `running` or the terminal
-  row instead of starting a second attempt. Key uniqueness is enforced per user
-  inside the `RunLog` DO.
+  row instead of starting a second attempt. Claim is select-then-insert inside
+  one DO RPC (serialized), not a unique SQL constraint — other surfaces may
+  reuse idempotency keys across history.
 - Bundled-module runners (`runBundledModuleWithRegistry`) accept a `runRecord`
   context (and an optional pre-claimed `runRecordHandle`) and call begin/finish
   internally; surfaces that do not go through that helper call the service

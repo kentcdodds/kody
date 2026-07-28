@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type ExecuteResult } from '@cloudflare/codemode'
 import {
 	defaultExecutionResponseLimitBytes,
 	getExecutionErrorDetails,
@@ -190,7 +191,17 @@ export const executeCapability = defineDomainCapability(
 						metadata: { conversationId },
 					},
 				})
-				if (claim && !claim.claimed) {
+				if (!claim) {
+					return {
+						ok: false,
+						conversationId,
+						...(storage ? { storage } : {}),
+						error:
+							'Unable to claim execute idempotency key; RUN_LOG is unavailable.',
+						logs: [],
+					}
+				}
+				if (!claim.claimed) {
 					if (claim.run.status === 'running') {
 						return {
 							ok: false,
@@ -229,15 +240,13 @@ export const executeCapability = defineDomainCapability(
 						logs: [],
 					}
 				}
-				if (claim?.claimed) {
-					claimedRunHandle = claim.handle
-				}
+				claimedRunHandle = claim.handle
 			}
 
-			const { runModuleWithRegistry } =
-				await import('#mcp/run-kody-registry.ts')
-			let result: Awaited<ReturnType<typeof runModuleWithRegistry>>
+			let result: ExecuteResult & { runId?: string }
 			try {
+				const { runModuleWithRegistry } =
+					await import('#mcp/run-kody-registry.ts')
 				result = await runModuleWithRegistry(
 					ctx.env,
 					callerContext,

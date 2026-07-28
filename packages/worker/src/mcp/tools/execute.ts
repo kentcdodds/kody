@@ -180,12 +180,26 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				conversationId: resolvedConversationId,
 				...(activeStorageId ? { storageId: activeStorageId } : {}),
 			}
+			let claimedRunHandle: RunRecordHandle | null = null
 			try {
 				return await runExecuteTool()
 			} catch (cause) {
 				// Setup failures (registry build, module bundling, executor
 				// creation) must return a structured MCP error instead of an
 				// unhandled rejection, mirroring the search tool boundary.
+				// Finalize any pre-claimed keyed run so retries can replay the
+				// error instead of seeing a stuck `running` row.
+				// Nested-function assignments are invisible to TS control-flow
+				// analysis on the outer `let`, so reassert the declared type.
+				const claimedHandle = claimedRunHandle as RunRecordHandle | null
+				if (claimedHandle) {
+					await finishRunRecord({
+						env,
+						handle: claimedHandle,
+						status: 'error',
+						error: cause,
+					})
+				}
 				const timing = finishToolTiming(timingStart)
 				const error = cause instanceof Error ? cause : new Error(String(cause))
 				const { errorName, errorMessage } = errorFields(error)
@@ -208,6 +222,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					structuredContent: {
 						conversationId: resolvedConversationId,
 						timing,
+						...(claimedHandle ? { runId: claimedHandle.id } : {}),
 						error: error.message,
 					},
 					isError: true,
@@ -217,9 +232,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			async function runExecuteTool() {
 				const normalizedIdempotencyKey =
 					normalizeExecuteIdempotencyKey(idempotencyKey)
-				// Look up an existing keyed run before consuming quota so
-				// transport-timeout retries can replay / report in-progress
-				// without burning another daily execute slot.
+				// Look up / claim a keyed run before consuming quota so
+				// transport-timeout retries and lost races return
+				// replay/in-progress without burning another daily slot.
 				if (normalizedIdempotencyKey && callerContext.user?.userId) {
 					const existing = await getRunRecordByIdempotencyKey({
 						env,
@@ -235,23 +250,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							activeStorageId,
 						})
 					}
-				}
-
-				// Daily execute quota, consumed before any bundling or sandbox
-				// work so over-limit calls cost nothing. The thrown
-				// EntitlementLimitError propagates through the outer catch as
-				// a structured MCP error.
-				if (callerContext.user?.userId) {
-					await consumeDailyEntitlement({
-						db: env.APP_DB,
-						userId: callerContext.user.userId,
-						email: callerContext.user.email,
-						resource: 'execute_calls_per_day',
-					})
-				}
-
-				let claimedRunHandle: RunRecordHandle | null = null
-				if (normalizedIdempotencyKey && callerContext.user?.userId) {
 					const claim = await claimRunRecord({
 						env,
 						userId: callerContext.user.userId,
@@ -265,7 +263,12 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							},
 						},
 					})
-					if (claim && !claim.claimed) {
+					if (!claim) {
+						throw new Error(
+							'Unable to claim execute idempotency key; RUN_LOG is unavailable.',
+						)
+					}
+					if (!claim.claimed) {
 						const timing = finishToolTiming(timingStart)
 						return buildKeyedExecuteLookupResponse({
 							run: claim.run,
@@ -274,10 +277,22 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							activeStorageId,
 						})
 					}
-					if (claim?.claimed) {
-						claimedRunHandle = claim.handle
-					}
+					claimedRunHandle = claim.handle
 				}
+
+				// Daily execute quota, consumed before any bundling or sandbox
+				// work so over-limit calls cost nothing. The thrown
+				// EntitlementLimitError propagates through the outer catch as
+				// a structured MCP error (and finalizes any claimed key).
+				if (callerContext.user?.userId) {
+					await consumeDailyEntitlement({
+						db: env.APP_DB,
+						userId: callerContext.user.userId,
+						email: callerContext.user.email,
+						resource: 'execute_calls_per_day',
+					})
+				}
+
 				const { getCapabilityRegistryForContext } =
 					await import('#mcp/capabilities/registry.ts')
 				const registry = await getCapabilityRegistryForContext({
