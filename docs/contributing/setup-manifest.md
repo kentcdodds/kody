@@ -80,13 +80,17 @@ This project uses the following resources:
     `PACKAGE_APP_BASE_URL` is set without `APP_BASE_URL` rather than publishing
     a partial set. Any domain attached out-of-band must be added here before the
     next deploy, or that deploy will remove it.
-  - The route deliberately does **not** live in
-    `packages/worker/wrangler.jsonc`: `npm run dev` runs `wrangler dev` against
-    the **production** environment, and Wrangler resolves local request URLs
-    against the first configured route, so a committed route makes every local
-    request arrive as `http://kodyapps.dev/...` — canonical URLs, OAuth resource
-    metadata, and login redirects then point at the production domain from
-    localhost.
+  - Publishing routes also flips `workers_dev` to `false`, which silently drops
+    the `<name>.<subdomain>.workers.dev` trigger (Cloudflare then answers that
+    hostname with error 1042). The generator sets `workers_dev: true` alongside
+    the routes so that backup access path — which MCP clients may point at, and
+    which the deploy's URL fallback looks for — survives.
+  - The routes deliberately do **not** live in `packages/worker/wrangler.jsonc`:
+    `npm run dev` runs `wrangler dev` against the **production** environment,
+    and Wrangler resolves local request URLs against the first configured route,
+    so a committed route makes every local request arrive as
+    `http://kodyapps.dev/...` — canonical URLs, OAuth resource metadata, and
+    login redirects then point at the production domain from localhost.
   - The app origin (`heykody.dev`) stays attached out-of-band; Wrangler does not
     remove routes that the config omits.
   - Attaching a custom domain needs a deploy token with edit access to the

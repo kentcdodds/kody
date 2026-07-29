@@ -765,8 +765,13 @@ function addPackageAppCustomDomainRoute(input: {
 			.filter((hostname) => !routedHostnames.has(hostname))
 			.map((pattern) => ({ pattern, custom_domain: true })),
 	]
+	// Publishing routes flips `workers_dev` to false, which removed the
+	// `<name>.<subdomain>.workers.dev` trigger the deploy previously kept as a
+	// backup access path (and that MCP clients may be pointed at). Ask for it
+	// explicitly so adding a custom domain does not silently take it away.
+	input.targetEnv.workers_dev = true
 	console.error(
-		`Custom domain routes: ${appHostname} (APP_BASE_URL), ${packageAppHostname} (PACKAGE_APP_BASE_URL)`,
+		`Custom domain routes: ${appHostname} (APP_BASE_URL), ${packageAppHostname} (PACKAGE_APP_BASE_URL); workers.dev trigger kept`,
 	)
 }
 

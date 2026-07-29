@@ -68,6 +68,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 					assets?: { run_worker_first?: Array<string> }
 					r2_buckets?: Array<{ binding: string; bucket_name: string }>
 					routes?: Array<{ pattern: string; custom_domain?: boolean }>
+					workers_dev?: boolean
 					vars?: Record<string, unknown>
 				}
 			}
@@ -114,6 +115,8 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 				custom_domain: true,
 			},
 		])
+		// Publishing routes otherwise drops the workers.dev trigger.
+		expect(productionConfig.env?.production?.workers_dev).toBe(true)
 
 		const previewOutPath = path.join(tempDir, 'wrangler-preview.generated.json')
 		await writeGeneratedWranglerConfig({
@@ -150,8 +153,9 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-pr-123-email-blobs' },
 		])
 		// Preview serves package apps inline on its own origin, so it publishes no
-		// routes and keeps whatever domains are attached out-of-band.
+		// routes and keeps whatever domains and triggers it already had.
 		expect(previewConfig.env?.preview?.routes).toBeUndefined()
+		expect(previewConfig.env?.preview?.workers_dev).toBeUndefined()
 		expect(consoleError).toHaveBeenCalledWith(
 			`Wrote generated Wrangler config: ${previewOutPath}`,
 		)
