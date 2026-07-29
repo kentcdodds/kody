@@ -7,6 +7,7 @@ import {
 	parseValueEntityId,
 } from '#mcp/tools/search-entities.ts'
 import { getValue } from '#mcp/values/service.ts'
+import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	getJoinedIntegration,
 	toIntegrationConfig,
@@ -69,12 +70,15 @@ export async function resolveEntityDetail(input: {
 		if (!record) {
 			throw new McpCallerError('Saved package not found for this user.')
 		}
+		const env = input.agent.getEnv()
 		const loaded = await loadPackageSourceBySourceId({
-			env: input.agent.getEnv(),
+			env,
 			baseUrl: input.callerContext.baseUrl,
 			userId: input.userId,
 			sourceId: record.sourceId,
 		})
+		const packageAppOrigin =
+			getPackageAppBaseUrl({ env }) ?? input.callerContext.baseUrl
 		return {
 			type: 'package' as const,
 			id: record.kodyId,
@@ -88,7 +92,7 @@ export async function resolveEntityDetail(input: {
 			hostedUrl:
 				record.hasApp && input.username
 					? buildPackageAppUrl({
-							origin: input.callerContext.baseUrl,
+							origin: packageAppOrigin,
 							username: input.username,
 							kodyId: record.kodyId,
 						})

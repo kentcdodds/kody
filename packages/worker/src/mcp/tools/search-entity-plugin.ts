@@ -44,6 +44,8 @@ export type SearchEntitySlimFormatInput<
 > = {
 	match: Match
 	baseUrl: string
+	/** Origin for hosted package apps when separate from the app origin. */
+	packageAppBaseUrl?: string | null
 	username?: string | null
 }
 

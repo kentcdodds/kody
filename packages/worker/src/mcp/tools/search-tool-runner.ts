@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
+import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
@@ -494,6 +495,7 @@ export async function runSearchTool(input: {
 			matches: toSlimStructuredMatches({
 				matches: trimmedPayload.matches,
 				baseUrl,
+				packageAppBaseUrl: getPackageAppBaseUrl({ env: agent.getEnv() }),
 				username,
 			}),
 		}

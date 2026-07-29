@@ -225,3 +225,53 @@ test('resolveEntityDetail keeps integrations isolated by userId', async () => {
 		name: 'github',
 	})
 })
+
+test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', async () => {
+	mockModule.getSavedPackageByKodyId.mockReset()
+	mockModule.getSavedPackageByKodyId.mockResolvedValue({
+		packageId: 'pkg-1',
+		kodyId: 'demo',
+		name: '@user/demo',
+		description: 'Demo package',
+		hasApp: true,
+		sourceId: 'source-1',
+	})
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockReset()
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: { kody: {} },
+		files: {},
+	})
+
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'user',
+		},
+	})
+	const agent = {
+		getEnv: () =>
+			({
+				APP_DB: {},
+				PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
+			}) as Env,
+		getCallerContext: () => callerContext,
+	} as unknown as McpRegistrationAgent
+
+	const detail = await resolveEntityDetail({
+		agent,
+		callerContext,
+		userId: 'user-1',
+		username: 'kentcdodds',
+		entity: 'demo:package',
+		searchRows: emptySearchRows() as never,
+	})
+
+	expect(detail).toMatchObject({
+		type: 'package',
+		hostedUrl: 'https://kodyapps.dev/@kentcdodds/packages/demo',
+		baseUrl: 'https://heykody.dev',
+	})
+})

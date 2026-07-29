@@ -7,6 +7,7 @@ import {
 export function toSlimStructuredMatches(input: {
 	matches: Array<SearchMatch>
 	baseUrl: string
+	packageAppBaseUrl?: string | null
 	username?: string | null
 }): Array<SlimSearchMatch> {
 	return input.matches.map((match) => {
@@ -17,6 +18,7 @@ export function toSlimStructuredMatches(input: {
 		return plugin.formatSlimMatch({
 			match: match as never,
 			baseUrl: input.baseUrl,
+			packageAppBaseUrl: input.packageAppBaseUrl,
 			username: input.username,
 		})
 	})
