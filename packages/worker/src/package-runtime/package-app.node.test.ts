@@ -954,20 +954,38 @@ test('package app runtime bridge packageStorage methods grant by provenance and 
 	const { bridge } = createPackageAppRuntimeBridgeForTest({
 		packageStorageGrantIds: ['package-1', 'dep-package'],
 	})
-	const storageGet = vi
-		.spyOn(bridge, 'storageGet')
-		.mockResolvedValue({ value: 'granted-value' })
-	const storageSet = vi
-		.spyOn(bridge, 'storageSet')
-		.mockResolvedValue({ ok: true })
+	const getValue = vi.fn(async () => ({ value: 'granted-value' }))
+	const setValue = vi.fn(async () => ({ ok: true }))
+	const getStorageRunner = vi
+		.spyOn(
+			bridge as unknown as {
+				getStorageRunner: (storageId: string) => unknown
+			},
+			'getStorageRunner',
+		)
+		.mockImplementation((storageId: string) => ({
+			storageId,
+			getValue,
+			setValue,
+			listValues: vi.fn(),
+			sqlQuery: vi.fn(),
+			deleteValue: vi.fn(),
+			clearStorage: vi.fn(),
+		}))
+	vi.spyOn(
+		bridge as unknown as {
+			assertStorageWriteAllowed: (input: unknown) => Promise<void>
+		},
+		'assertStorageWriteAllowed',
+	).mockResolvedValue(undefined)
 
 	await expect(
 		bridge.packageStorageGet({ packageId: 'package-1', key: 'count' }),
 	).resolves.toEqual({ value: 'granted-value' })
-	expect(storageGet).toHaveBeenCalledWith({
-		storageId: buildPackageStorageId('package-1'),
-		key: 'count',
-	})
+	expect(getStorageRunner).toHaveBeenCalledWith(
+		buildPackageStorageId('package-1'),
+	)
+	expect(getValue).toHaveBeenCalledWith({ key: 'count' })
 
 	await expect(
 		bridge.packageStorageSet({
@@ -976,20 +994,89 @@ test('package app runtime bridge packageStorage methods grant by provenance and 
 			value: true,
 		}),
 	).resolves.toEqual({ ok: true })
-	expect(storageSet).toHaveBeenCalledWith({
-		storageId: buildPackageStorageId('dep-package'),
-		key: 'flag',
-		value: true,
-	})
+	expect(getStorageRunner).toHaveBeenCalledWith(
+		buildPackageStorageId('dep-package'),
+	)
+	expect(setValue).toHaveBeenCalledWith({ key: 'flag', value: true })
 
 	await expect(
 		bridge.packageStorageGet({ packageId: 'victim-package', key: 'secret' }),
 	).rejects.toThrow(createPackageStorageAccessDeniedMessage('victim-package'))
-	expect(storageGet).toHaveBeenCalledTimes(1)
+	expect(getValue).toHaveBeenCalledTimes(2)
 
 	await expect(
 		bridge.packageStorageClear({ packageId: '   ' }),
 	).rejects.toThrow('packageStorage requires a non-empty package id.')
+})
+
+test('package app runtime bridge raw storage methods are namespace-locked to the app package id', async () => {
+	const { bridge } = createPackageAppRuntimeBridgeForTest()
+	const getValue = vi.fn(async () => ({ value: 'owned' }))
+	const setValue = vi.fn(async () => ({ ok: true }))
+	const getStorageRunner = vi
+		.spyOn(
+			bridge as unknown as {
+				getStorageRunner: (storageId: string) => unknown
+			},
+			'getStorageRunner',
+		)
+		.mockImplementation(() => ({
+			getValue,
+			setValue,
+			listValues: vi.fn(),
+			sqlQuery: vi.fn(),
+			deleteValue: vi.fn(),
+			clearStorage: vi.fn(),
+		}))
+	vi.spyOn(
+		bridge as unknown as {
+			assertStorageWriteAllowed: (input: unknown) => Promise<void>
+		},
+		'assertStorageWriteAllowed',
+	).mockResolvedValue(undefined)
+
+	await expect(
+		bridge.storageGet({ storageId: 'package-1', key: 'root' }),
+	).resolves.toEqual({ value: 'owned' })
+	await expect(
+		bridge.storageGet({
+			storageId: 'package-1:facet:main',
+			key: 'facet',
+		}),
+	).resolves.toEqual({ value: 'owned' })
+	await expect(
+		bridge.storageSet({
+			storageId: 'package-1:Counter:instance-a',
+			key: 'n',
+			value: 1,
+		}),
+	).resolves.toEqual({ ok: true })
+	expect(getStorageRunner).toHaveBeenCalledWith('package-1')
+	expect(getStorageRunner).toHaveBeenCalledWith('package-1:facet:main')
+	expect(getStorageRunner).toHaveBeenCalledWith('package-1:Counter:instance-a')
+
+	const outsideNamespaceError =
+		/outside this app's namespace[\s\S]*packageStorage\(\)/
+	await expect(
+		bridge.storageGet({
+			storageId: buildPackageStorageId('victim-package'),
+			key: 'secret',
+		}),
+	).rejects.toThrow(outsideNamespaceError)
+	await expect(
+		bridge.storageSet({
+			storageId: 'job:nightly',
+			key: 'state',
+			value: true,
+		}),
+	).rejects.toThrow(outsideNamespaceError)
+	await expect(
+		bridge.storageGet({ storageId: 'other-package', key: 'x' }),
+	).rejects.toThrow(outsideNamespaceError)
+	await expect(
+		bridge.storageGet({ storageId: '   ', key: 'x' }),
+	).rejects.toThrow('Package app storage requires a non-empty storage id.')
+	expect(getStorageRunner).toHaveBeenCalledTimes(4)
 })
 
 test('buildPackageAppWorker passes packageStorage grant ids from root, static, and dynamic deps', async () => {

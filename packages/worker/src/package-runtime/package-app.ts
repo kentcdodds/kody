@@ -859,6 +859,35 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
+	/**
+	 * Security model for package-app storage:
+	 * - Raw `storage*` methods are namespace-locked to this app's own buckets
+	 *   (`packageId` and `${packageId}:…`). The bridge stub is reachable from
+	 *   user code via `Object.create(env)`, so these methods must never accept
+	 *   arbitrary same-user ids (`package:…`, `job:…`, other package roots).
+	 * - `package:{…}` durable buckets are reached only through the
+	 *   grant-validated `packageStorage*` methods (`assertPackageStorageGranted`
+	 *   from bundler-controlled provenance).
+	 */
+	private assertAppOwnedStorageId(storageId: string) {
+		const normalizedStorageId = storageId.trim()
+		if (!normalizedStorageId) {
+			throw new Error('Package app storage requires a non-empty storage id.')
+		}
+		const packageId = this.ctx.props.packageId
+		if (
+			normalizedStorageId === packageId ||
+			normalizedStorageId.startsWith(`${packageId}:`)
+		) {
+			return normalizedStorageId
+		}
+		throw new Error(
+			`Package app storage id "${normalizedStorageId}" is outside this app's namespace. ` +
+				`Raw storage methods only accept "${packageId}" or ids prefixed with "${packageId}:". ` +
+				'Saved-package durable buckets use packageStorage() and are gated by bundler provenance grants.',
+		)
+	}
+
 	private assertPackageStorageGranted(packageId: string) {
 		const normalizedPackageId = packageId.trim()
 		if (!normalizedPackageId) {
@@ -1026,7 +1055,8 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async storageGet(input: { storageId: string; key: string }) {
-		return await this.getStorageRunner(input.storageId).getValue({
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.getStorageRunner(storageId).getValue({
 			key: input.key,
 		})
 	}
@@ -1037,21 +1067,21 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		pageSize?: number
 		startAfter?: string | null
 	}) {
-		return await this.getStorageRunner(input.storageId).listValues({
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.getStorageRunner(storageId).listValues({
 			prefix: input.prefix,
 			pageSize: input.pageSize,
 			startAfter: input.startAfter,
 		})
 	}
 
-	async storageSql(input: {
+	private async sqlQueryWithEntitlement(input: {
 		storageId: string
 		query: string
 		params?: Array<unknown>
-		writable?: boolean
+		writable: boolean
 	}) {
-		const writable = input.writable ?? false
-		if (writable) {
+		if (input.writable) {
 			await this.assertStorageWriteAllowed({
 				storageId: input.storageId,
 				requested: estimateEntitlementStorageSqlWriteBytes({
@@ -1063,11 +1093,15 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		return await this.getStorageRunner(input.storageId).sqlQuery({
 			query: input.query,
 			params: input.params,
-			writable,
+			writable: input.writable,
 		})
 	}
 
-	async storageSet(input: { storageId: string; key: string; value: unknown }) {
+	private async setValueWithEntitlement(input: {
+		storageId: string
+		key: string
+		value: unknown
+	}) {
 		const existing = await this.getStorageRunner(input.storageId).getValue({
 			key: input.key,
 		})
@@ -1093,20 +1127,49 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
+	async storageSql(input: {
+		storageId: string
+		query: string
+		params?: Array<unknown>
+		writable?: boolean
+	}) {
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.sqlQueryWithEntitlement({
+			storageId,
+			query: input.query,
+			params: input.params,
+			writable: input.writable ?? false,
+		})
+	}
+
+	async storageSet(input: { storageId: string; key: string; value: unknown }) {
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.setValueWithEntitlement({
+			storageId,
+			key: input.key,
+			value: input.value,
+		})
+	}
+
 	async storageDelete(input: { storageId: string; key: string }) {
-		return await this.getStorageRunner(input.storageId).deleteValue({
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.getStorageRunner(storageId).deleteValue({
 			key: input.key,
 		})
 	}
 
 	async storageClear(input: { storageId: string }) {
-		return await this.getStorageRunner(input.storageId).clearStorage()
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.getStorageRunner(storageId).clearStorage()
 	}
 
 	async packageStorageGet(input: { packageId: string; key: string }) {
 		const packageId = this.assertPackageStorageGranted(input.packageId)
-		return await this.storageGet({
-			storageId: buildPackageStorageId(packageId),
+		// Provenance-granted package: buckets intentionally bypass the app
+		// namespace lock on raw storage* (assertAppOwnedStorageId).
+		return await this.getStorageRunner(
+			buildPackageStorageId(packageId),
+		).getValue({
 			key: input.key,
 		})
 	}
@@ -1118,8 +1181,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		startAfter?: string | null
 	}) {
 		const packageId = this.assertPackageStorageGranted(input.packageId)
-		return await this.storageList({
-			storageId: buildPackageStorageId(packageId),
+		return await this.getStorageRunner(
+			buildPackageStorageId(packageId),
+		).listValues({
 			prefix: input.prefix,
 			pageSize: input.pageSize,
 			startAfter: input.startAfter,
@@ -1133,11 +1197,11 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		writable?: boolean
 	}) {
 		const packageId = this.assertPackageStorageGranted(input.packageId)
-		return await this.storageSql({
+		return await this.sqlQueryWithEntitlement({
 			storageId: buildPackageStorageId(packageId),
 			query: input.query,
 			params: input.params,
-			writable: input.writable,
+			writable: input.writable ?? false,
 		})
 	}
 
@@ -1147,7 +1211,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		value: unknown
 	}) {
 		const packageId = this.assertPackageStorageGranted(input.packageId)
-		return await this.storageSet({
+		return await this.setValueWithEntitlement({
 			storageId: buildPackageStorageId(packageId),
 			key: input.key,
 			value: input.value,
@@ -1156,17 +1220,18 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	async packageStorageDelete(input: { packageId: string; key: string }) {
 		const packageId = this.assertPackageStorageGranted(input.packageId)
-		return await this.storageDelete({
-			storageId: buildPackageStorageId(packageId),
+		return await this.getStorageRunner(
+			buildPackageStorageId(packageId),
+		).deleteValue({
 			key: input.key,
 		})
 	}
 
 	async packageStorageClear(input: { packageId: string }) {
 		const packageId = this.assertPackageStorageGranted(input.packageId)
-		return await this.storageClear({
-			storageId: buildPackageStorageId(packageId),
-		})
+		return await this.getStorageRunner(
+			buildPackageStorageId(packageId),
+		).clearStorage()
 	}
 
 	async refreshAccessToken(providerName: string) {

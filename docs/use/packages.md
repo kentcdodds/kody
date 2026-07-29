@@ -315,7 +315,11 @@ declaring package's own bucket no matter where the code runs:
   ad hoc `execute` call or into another package, each module reads and writes
   the bucket of the package it came from, under the calling user's account.
   Ambient `storage` cannot do this; the binding is per-run, so statically
-  imported code sees the caller's bucket or `undefined`.
+  imported code sees the caller's bucket or `undefined`. Note that grants are
+  per-bundle, not per-module: statically importing a package grants the whole
+  bundle read/write access to that package's bucket, so treat static imports as
+  a trust decision and use `packages.invokeChecked` when you want the other
+  package's own runtime to mediate access.
 
 ```ts
 import { packageStorage } from 'kody:runtime'
@@ -497,7 +501,8 @@ package.
 - Schedule and execution metadata are package-owned config (D1 job rows keyed to
   the package)
 - Each job run binds a job-scoped scratch bucket
-  (`job:package-job:{packageId}:{jobName}`); that bucket is run-local
+  (`job:package-job:{packageId}:{encodeURIComponent(jobName)}`); that bucket is
+  run-local
 - Package config (secrets, values, manifest mounts) stays keyed by the saved
   package id
 - Shared durable data goes through `packageStorage()`

@@ -459,8 +459,8 @@ storage homes as follows:
   package-internal DO namespaces are extra StorageRunner buckets under the
   package id, not a general actor model.
 - **Package jobs** — schedule metadata in D1 `jobs`; run-local scratch in
-  `job:package-job:{packageId}:{jobName}`; shared durable data in package
-  storage.
+  `job:package-job:{packageId}:{encodeURIComponent(jobName)}`; shared durable
+  data in package storage.
 
 ## Per-user Durable Object naming
 

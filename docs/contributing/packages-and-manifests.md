@@ -96,9 +96,10 @@ A saved package is the only top-level persisted primitive. Five concepts:
    (`{packageId}:{exportName}:{name}`) are app-only StorageRunner buckets under
    the package namespace, not separate saved primitives.
 5. **Package jobs** — `package.json#kody.jobs` with schedule/execution metadata
-   in D1 `jobs` rows; each run binds `job:package-job:{packageId}:{jobName}`
-   scratch storage; package config stays keyed by the saved package id; shared
-   durable data uses `packageStorage()`.
+   in D1 `jobs` rows; each run binds
+   `job:package-job:{packageId}:{encodeURIComponent(jobName)}` scratch storage;
+   package config stays keyed by the saved package id; shared durable data uses
+   `packageStorage()`.
 
 ## Package exports
 
