@@ -13,6 +13,10 @@ import {
 	parseAccountSecretPath,
 } from '@kody-internal/shared/account-secret-route.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import {
+	createListDetailRoute,
+	type ListDetailSelection,
+} from '#client/list-detail-route.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -82,11 +86,6 @@ type EditorState = {
 	allowedPackages: Array<string>
 }
 
-type SelectionState = {
-	selectedSecretId: string | null
-	isCreating: boolean
-}
-
 type SecretFilterScope = 'all' | 'user' | 'package'
 
 type SecretFilterState = {
@@ -96,11 +95,11 @@ type SecretFilterState = {
 }
 
 const secretsBasePath = '/account/secrets'
-
-function isAccountSecretsPath(href: string) {
-	const path = new URL(href, 'http://localhost').pathname
-	return path === secretsBasePath || path.startsWith(`${secretsBasePath}/`)
-}
+const secretsRoute = createListDetailRoute(secretsBasePath, {
+	parseDetailId(pathname) {
+		return parseAccountSecretPath(pathname)?.id ?? null
+	},
+})
 
 function formatRelativeTtl(ttlMs: number | null) {
 	if (ttlMs == null) return 'No expiry'
@@ -234,33 +233,6 @@ function createEditorStateFromSecret(secret: AccountSecretDetail): EditorState {
 	}
 }
 
-function getSelectionState(href: string): SelectionState {
-	const url = new URL(href, 'http://localhost')
-	if (url.pathname === `${secretsBasePath}/new`) {
-		return {
-			selectedSecretId: null,
-			isCreating: true,
-		}
-	}
-	if (url.pathname === `${secretsBasePath}/approve`) {
-		return {
-			selectedSecretId: null,
-			isCreating: false,
-		}
-	}
-	const parsedPath = parseAccountSecretPath(url.pathname)
-	if (parsedPath) {
-		return {
-			selectedSecretId: parsedPath.id,
-			isCreating: false,
-		}
-	}
-	return {
-		selectedSecretId: null,
-		isCreating: false,
-	}
-}
-
 function buildSecretsHref(pathname: string, search: string) {
 	return `${pathname}${search}`
 }
@@ -385,11 +357,11 @@ function buildSecretHref(
 }
 
 function buildNewSecretHref(search = '') {
-	return buildSecretsHref(`${secretsBasePath}/new`, search)
+	return secretsRoute.buildNewHref(search)
 }
 
 function buildBaseSecretsHref(search = '') {
-	return buildSecretsHref(secretsBasePath, search)
+	return secretsRoute.buildListHref(search)
 }
 
 function getDataRefreshKey(href: string) {
@@ -409,11 +381,11 @@ function getDataRefreshKey(href: string) {
 
 function buildSecretsApiRequestUrl(href: string) {
 	const pageUrl = new URL(href, 'http://localhost')
-	const selection = getSelectionState(href)
+	const selection = secretsRoute.getSelection(href)
 	const requestUrl = new URL(accountSecretsApiPath, 'http://localhost')
 	requestUrl.search = pageUrl.search
-	if (selection.selectedSecretId) {
-		requestUrl.searchParams.set('selected', selection.selectedSecretId)
+	if (selection.selectedId) {
+		requestUrl.searchParams.set('selected', selection.selectedId)
 	} else {
 		requestUrl.searchParams.delete('selected')
 	}
@@ -553,7 +525,7 @@ export function AccountSecretsRoute(handle: Handle) {
 		return `${nextUrl.pathname}${nextUrl.search}`
 	}
 
-	function syncEditorState(selection: SelectionState) {
+	function syncEditorState(selection: ListDetailSelection) {
 		deleteSecretCheck.reset()
 		showSecretValue = false
 		if (selection.isCreating) {
@@ -572,7 +544,7 @@ export function AccountSecretsRoute(handle: Handle) {
 
 	function applyPayload(
 		payload: AccountSecretsLoaderData,
-		selection: SelectionState,
+		selection: ListDetailSelection,
 		nextMessage: string | null,
 	) {
 		packageOptions = payload.packageOptions
@@ -597,9 +569,7 @@ export function AccountSecretsRoute(handle: Handle) {
 		message =
 			nextMessage ??
 			payload.approvalError ??
-			(selection.selectedSecretId &&
-			!payload.selectedSecret &&
-			!payload.approval
+			(selection.selectedId && !payload.selectedSecret && !payload.approval
 				? 'Secret not found.'
 				: null)
 		status = 'ready'
@@ -616,7 +586,7 @@ export function AccountSecretsRoute(handle: Handle) {
 
 	async function loadAccountSecrets() {
 		const href = getCurrentHref()
-		const selection = getSelectionState(href)
+		const selection = secretsRoute.getSelection(href)
 		const dataKey = getDataRefreshKey(href)
 		const requestId = ++loadRequestId
 		loadingDataKey = dataKey
@@ -692,11 +662,11 @@ export function AccountSecretsRoute(handle: Handle) {
 
 		try {
 			const currentUrl = new URL(getCurrentHref(), 'http://localhost')
-			const selection = getSelectionState(currentUrl.toString())
+			const selection = secretsRoute.getSelection(currentUrl.toString())
 			const requestUrl = new URL(accountSecretsApiPath, currentUrl)
 			requestUrl.search = currentUrl.search
-			if (selection.selectedSecretId) {
-				requestUrl.searchParams.set('selected', selection.selectedSecretId)
+			if (selection.selectedId) {
+				requestUrl.searchParams.set('selected', selection.selectedId)
 			}
 			const payload = await submitApprovalRequest<
 				AccountSecretsLoaderData & { error?: string; ok?: boolean }
@@ -825,8 +795,8 @@ export function AccountSecretsRoute(handle: Handle) {
 			}
 
 			const wasCreating = !submittedEditorState.currentId
-			const nextSelection: SelectionState = {
-				selectedSecretId: payload.selectedSecret?.id ?? null,
+			const nextSelection: ListDetailSelection = {
+				selectedId: payload.selectedSecret?.id ?? null,
 				isCreating: false,
 			}
 			applyPayload(
@@ -886,7 +856,7 @@ export function AccountSecretsRoute(handle: Handle) {
 
 			applyPayload(
 				payload,
-				{ selectedSecretId: null, isCreating: false },
+				{ selectedId: null, isCreating: false },
 				'Deleted secret.',
 			)
 			deleteSecretCheck.reset()
@@ -980,10 +950,10 @@ export function AccountSecretsRoute(handle: Handle) {
 	}
 
 	function applyRouteLoaderData(href: string) {
-		if (!isAccountSecretsPath(href)) return false
+		if (!secretsRoute.isRoutePath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'accountSecrets', href)
 		if (!routeData) return false
-		const selection = getSelectionState(href)
+		const selection = secretsRoute.getSelection(href)
 		applyPayload(routeData, selection, routeData.approvalError)
 		lastLoadedDataKey = getDataRefreshKey(href)
 		lastFailedDataKey = null
@@ -1017,7 +987,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			handle.queueTask(loadAccountSecrets)
 		}
 
-		const selection = getSelectionState(currentHref)
+		const selection = secretsRoute.getSelection(currentHref)
 		const filters = readFilterState(currentHref, packageOptions)
 		const filteredSecrets = filterSecrets(secrets, filters, packagesById)
 		const packageSelectOptions = packageOptions.map((packageOption) => {
@@ -1040,8 +1010,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			...packageSelectOptions,
 		]
 
-		const activeSecretId =
-			selection.selectedSecretId ?? selectedSecret?.id ?? null
+		const activeSecretId = selection.selectedId ?? selectedSecret?.id ?? null
 		const isMutating = saveState !== 'idle' || submittingApprovalAction != null
 		const canCreatePackageSecrets = packageOptions.length > 0
 		const showEditor = selection.isCreating || selectedSecret != null

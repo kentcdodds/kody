@@ -9,6 +9,7 @@ type ButtonLikeProps = {
 		blur?: BlurHandler
 		click?: ClickHandler
 	}
+	onFirstClick?: ClickHandler
 	[key: string]: unknown
 }
 
@@ -48,6 +49,7 @@ export function createDoubleCheck(handle: Handle) {
 			const onClick: ClickHandler = (event) => {
 				if (!doubleCheck) {
 					event.preventDefault()
+					buttonProps.onFirstClick?.(event)
 					setDoubleCheck(true)
 					return
 				}
