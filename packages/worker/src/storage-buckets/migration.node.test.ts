@@ -90,3 +90,42 @@ test('user_storage_buckets migration backfills jobs, apps, and archived job buck
 		},
 	])
 })
+
+test('user_storage_buckets package-kind migration reclassifies package and service buckets', () => {
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, '0108-user-storage-buckets-package-kind.sql')
+	db.exec(`
+		INSERT INTO user_storage_buckets (
+			user_id, storage_id, kind, created_at, last_seen_at
+		) VALUES
+			('user-a', 'package:abc', 'unknown', '2026-07-01T00:00:00.000Z', '2026-07-02T00:00:00.000Z'),
+			('user-a', 'service:abc', 'unknown', '2026-07-01T00:00:00.000Z', '2026-07-02T00:00:00.000Z'),
+			('user-a', 'job:abc', 'job', '2026-07-01T00:00:00.000Z', '2026-07-02T00:00:00.000Z');
+	`)
+	applyMigration(db, '0108-user-storage-buckets-package-kind.sql')
+	const rows = db
+		.prepare(
+			`SELECT storage_id, kind FROM user_storage_buckets ORDER BY storage_id ASC`,
+		)
+		.all() as Array<{ storage_id: string; kind: string }>
+	expect(rows).toEqual([
+		{ storage_id: 'job:abc', kind: 'job' },
+		{ storage_id: 'package:abc', kind: 'package' },
+		{ storage_id: 'service:abc', kind: 'service' },
+	])
+	db.exec(`
+		INSERT INTO user_storage_buckets (
+			user_id, storage_id, kind, created_at, last_seen_at
+		) VALUES (
+			'user-a', 'package:fresh', 'package',
+			'2026-07-03T00:00:00.000Z', '2026-07-03T00:00:00.000Z'
+		);
+	`)
+	expect(
+		db
+			.prepare(
+				`SELECT kind FROM user_storage_buckets WHERE storage_id = 'package:fresh'`,
+			)
+			.get() as { kind: string },
+	).toEqual({ kind: 'package' })
+})
