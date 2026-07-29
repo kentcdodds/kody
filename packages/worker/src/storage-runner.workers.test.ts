@@ -263,6 +263,8 @@ test('storage runner storage byte entitlement aggregates only inventoried user b
 
 	const estimateA = (await runnerA.getEstimatedBytes()).estimatedBytes
 	const estimateB = (await runnerB.getEstimatedBytes()).estimatedBytes
+	expect(estimateA).toBeGreaterThan(0)
+	expect(estimateB).toBeGreaterThan(0)
 	const initialD1Bytes = await readUserD1StorageBytes({
 		db: env.APP_DB,
 		userId,
@@ -273,6 +275,9 @@ test('storage runner storage byte entitlement aggregates only inventoried user b
 	)
 		.bind(targetD1Bytes - initialD1Bytes, userId)
 		.run()
+	await expect(
+		readUserD1StorageBytes({ db: env.APP_DB, userId }),
+	).resolves.toBe(targetD1Bytes)
 
 	const aggregateDenied = await assertStorageRunnerWriteWithinEntitlement({
 		env,

@@ -603,17 +603,26 @@ export async function assertStorageRunnerWriteWithinEntitlement(input: {
 				offset < storageIds.length;
 				offset += maxConcurrentStorageEstimateReads
 			) {
-				const estimates = await Promise.all(
-					storageIds
-						.slice(offset, offset + maxConcurrentStorageEstimateReads)
-						.map((storageId) =>
-							storageRunnerRpc({
-								env: input.env,
-								userId: input.userId,
-								storageId,
-							}).getEstimatedBytes(),
-						),
-				)
+				let estimates: Array<StorageEstimateResult>
+				try {
+					estimates = await Promise.all(
+						storageIds
+							.slice(offset, offset + maxConcurrentStorageEstimateReads)
+							.map((storageId) =>
+								storageRunnerRpc({
+									env: input.env,
+									userId: input.userId,
+									storageId,
+								}).getEstimatedBytes(),
+							),
+					)
+				} catch (error) {
+					// An unreadable bucket cannot safely be treated as zero usage.
+					throw new Error(
+						'Unable to verify the storage byte entitlement because a bucket estimate could not be read.',
+						{ cause: error },
+					)
+				}
 				durableObjectBytes += estimates.reduce(
 					(total, estimate) => total + estimate.estimatedBytes,
 					0,
