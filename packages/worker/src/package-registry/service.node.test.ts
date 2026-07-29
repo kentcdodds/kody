@@ -46,6 +46,9 @@ const mockModule = vi.hoisted(() => ({
 	cleanupArtifactReposForPackage: vi.fn(),
 	deleteAllPackageScopedSecrets: vi.fn(),
 	removeAllSecretApprovalsForPackage: vi.fn(),
+	deleteAllAppScopedValues: vi.fn(),
+	clearStorage: vi.fn(async () => ({ ok: true as const })),
+	storageRunnerRpc: vi.fn(),
 }))
 
 vi.mock('./manifest.ts', () => ({
@@ -73,6 +76,27 @@ vi.mock('#worker/package-runtime/package-service.ts', () => ({
 		mockModule.listSavedPackageServices(...args),
 	packageServiceRpc: (...args: Array<unknown>) =>
 		mockModule.packageServiceRpc(...args),
+	buildPackageServiceStorageId: (packageId: string, serviceName: string) =>
+		`service:${encodeURIComponent(packageId)}:${encodeURIComponent(serviceName)}`,
+}))
+
+vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
+	const actual = (await importOriginal()) as Record<string, unknown>
+	return {
+		...actual,
+		storageRunnerRpc: (...args: Array<unknown>) => {
+			mockModule.storageRunnerRpc(...args)
+			return {
+				clearStorage: (...clearArgs: Array<unknown>) =>
+					mockModule.clearStorage(...clearArgs),
+			}
+		},
+	}
+})
+
+vi.mock('#mcp/values/service.ts', () => ({
+	deleteAllAppScopedValues: (...args: Array<unknown>) =>
+		mockModule.deleteAllAppScopedValues(...args),
 }))
 
 vi.mock('#worker/package-retrievers/manifest-cache.ts', () => ({
@@ -143,12 +167,21 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 const { deleteSavedPackageProjection, refreshSavedPackageProjection } =
 	await import('./service.ts')
 
-function createEnv(userId = 'user-1') {
+function createEnv(
+	userId = 'user-1',
+	options?: {
+		storageBuckets?: Array<{ userId: string; storageId: string }>
+	},
+) {
 	// Projection refresh asserts finite storage bytes (default/missing plan →
 	// `max`). Stub DB answers storage SUM queries with 0 so unplanned unit
 	// fixtures keep focusing on job/artifact side effects.
 	return {
-		APP_DB: createEntitlementsDatabase({ users: [], userId }),
+		APP_DB: createEntitlementsDatabase({
+			users: [],
+			userId,
+			storageBuckets: options?.storageBuckets,
+		}),
 		PACKAGE_SERVICE_INSTANCE: mockPackageServiceNamespace(),
 	} as Env
 }
@@ -195,6 +228,11 @@ function setupDefaultMocks() {
 		start: vi.fn().mockResolvedValue({ ok: true }),
 		stop: vi.fn().mockResolvedValue({ ok: true }),
 	})
+	mockModule.deleteAllAppScopedValues.mockResolvedValue(undefined)
+	mockModule.storageRunnerRpc.mockClear()
+	mockModule.clearStorage.mockReset()
+	mockModule.clearStorage.mockResolvedValue({ ok: true as const })
+	mockModule.listJobRowsByUserId.mockResolvedValue([])
 }
 
 test('refreshSavedPackageProjection syncs the job manager only when package jobs change', async () => {
@@ -691,15 +729,224 @@ test('deleteSavedPackageProjection cleans secrets when package projection is mis
 		userId: 'user-1',
 		packageId: 'missing-package',
 	})
+	expect(mockModule.deleteAllAppScopedValues).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		appId: 'missing-package',
+	})
+	expect(mockModule.clearStorage).toHaveBeenCalled()
+})
+
+test('deleteSavedPackageProjection clears package-owned storage buckets and inventory rows', async () => {
+	setupDefaultMocks()
+	const packageId = 'b2fda105-005a-4e2b-9f22-1513b6752da2'
+	const jobStorageId = `job:package-job:${packageId}:event-runner`
+	const serviceStorageId = `service:${encodeURIComponent(packageId)}:${encodeURIComponent('realtime-supervisor')}`
+	const packageStorageId = `package:${encodeURIComponent(packageId)}`
+	const facetStorageId = `${packageId}:facet:main`
+	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+	const otherUserBucket = {
+		userId: 'user-2',
+		storageId: packageStorageId,
+	}
+	const otherPackageBucket = {
+		userId: 'user-1',
+		storageId: `package:${encodeURIComponent(otherPackageId)}`,
+	}
+	const storageBuckets = [
+		{ userId: 'user-1', storageId: packageStorageId },
+		{ userId: 'user-1', storageId: packageId },
+		{ userId: 'user-1', storageId: jobStorageId },
+		{ userId: 'user-1', storageId: serviceStorageId },
+		{ userId: 'user-1', storageId: facetStorageId },
+		otherUserBucket,
+		otherPackageBucket,
+		{
+			userId: 'user-1',
+			storageId: `job:package-job:${otherPackageId}:nightly`,
+		},
+	]
+	const env = createEnv('user-1', { storageBuckets })
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: packageId,
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+	})
+	mockModule.listSavedPackageServices.mockResolvedValue({
+		savedPackage: {
+			id: packageId,
+			kodyId: 'shade-automation',
+		},
+		services: [
+			{
+				name: 'realtime-supervisor',
+				entry: './src/services/realtime-supervisor.ts',
+				autoStart: true,
+				mode: 'persistent',
+				timeoutMs: null,
+			},
+		],
+	})
+	mockModule.listJobRowsByUserId.mockResolvedValue([
+		{
+			id: `package-job:${packageId}:event-runner`,
+			source_id: 'source-1',
+			storage_id: jobStorageId,
+		},
+	])
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId,
+	})
+
+	const clearedStorageIds = mockModule.storageRunnerRpc.mock.calls.map(
+		(call) => (call[0] as { storageId: string }).storageId,
+	)
+	expect(clearedStorageIds).toEqual(
+		expect.arrayContaining([
+			packageStorageId,
+			packageId,
+			jobStorageId,
+			serviceStorageId,
+			facetStorageId,
+		]),
+	)
+	expect(clearedStorageIds).not.toContain(otherPackageBucket.storageId)
+	expect(clearedStorageIds).not.toContain(
+		`job:package-job:${otherPackageId}:nightly`,
+	)
+	for (const call of mockModule.storageRunnerRpc.mock.calls) {
+		expect(call[0]).toMatchObject({ userId: 'user-1' })
+	}
+	expect(mockModule.clearStorage).toHaveBeenCalledTimes(
+		clearedStorageIds.length,
+	)
+	expect(storageBuckets).toEqual(
+		expect.arrayContaining([
+			otherUserBucket,
+			otherPackageBucket,
+			{
+				userId: 'user-1',
+				storageId: `job:package-job:${otherPackageId}:nightly`,
+			},
+		]),
+	)
+	const remainingKeys = new Set(
+		storageBuckets.map((row) => `${row.userId}:${row.storageId}`),
+	)
+	for (const storageId of [
+		packageStorageId,
+		packageId,
+		jobStorageId,
+		serviceStorageId,
+		facetStorageId,
+	]) {
+		expect(remainingKeys.has(`user-1:${storageId}`)).toBe(false)
+	}
+	expect(mockModule.deleteAllAppScopedValues).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		appId: packageId,
+	})
+})
+
+test('deleteSavedPackageProjection keeps inventory when clearStorage fails and continues delete', async () => {
+	consoleWarn.mockImplementation(() => {})
+	setupDefaultMocks()
+	const packageId = 'b2fda105-005a-4e2b-9f22-1513b6752da2'
+	const packageStorageId = `package:${encodeURIComponent(packageId)}`
+	const failingStorageId = `${packageId}:facet:main`
+	const storageBuckets = [
+		{ userId: 'user-1', storageId: packageStorageId },
+		{ userId: 'user-1', storageId: failingStorageId },
+		{ userId: 'user-1', storageId: packageId },
+	]
+	const env = createEnv('user-1', { storageBuckets })
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: packageId,
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+	})
+	mockModule.listJobRowsByUserId.mockResolvedValue([])
+	mockModule.clearStorage.mockImplementation(async () => {
+		const call = mockModule.storageRunnerRpc.mock.calls.at(-1)?.[0] as
+			| { storageId: string }
+			| undefined
+		if (call?.storageId === failingStorageId) {
+			throw new Error('do unavailable')
+		}
+		return { ok: true as const }
+	})
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId,
+	})
+
+	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(env.APP_DB, {
+		userId: 'user-1',
+		packageId,
+	})
+	expect(mockModule.deleteAllAppScopedValues).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		appId: packageId,
+	})
+	expect(storageBuckets.map((row) => row.storageId)).toContain(failingStorageId)
+	expect(storageBuckets.map((row) => row.storageId)).not.toContain(
+		packageStorageId,
+	)
+	expect(storageBuckets.map((row) => row.storageId)).not.toContain(packageId)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('"message":"package storage clear failed"'),
+	)
+})
+
+test('deleteSavedPackageProjection clears deterministic storage when projection is missing', async () => {
+	setupDefaultMocks()
+	const packageId = 'b2fda105-005a-4e2b-9f22-1513b6752da2'
+	const packageStorageId = `package:${encodeURIComponent(packageId)}`
+	const facetStorageId = `${packageId}:facet:main`
+	const storageBuckets = [
+		{ userId: 'user-1', storageId: packageStorageId },
+		{ userId: 'user-1', storageId: packageId },
+		{ userId: 'user-1', storageId: facetStorageId },
+	]
+	const env = createEnv('user-1', { storageBuckets })
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId,
+	})
+
+	const clearedStorageIds = mockModule.storageRunnerRpc.mock.calls.map(
+		(call) => (call[0] as { storageId: string }).storageId,
+	)
+	expect(clearedStorageIds).toEqual(
+		expect.arrayContaining([packageStorageId, packageId, facetStorageId]),
+	)
+	expect(storageBuckets).toEqual([])
+	expect(mockModule.deleteAllAppScopedValues).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		appId: packageId,
+	})
 })
 
 function createEntitlementsDatabase(input: {
 	users?: Array<{ email: string; plan: string | null }>
 	savedPackageCount?: number
 	userId: string
+	storageBuckets?: Array<{ userId: string; storageId: string }>
 }) {
 	const users = input.users ?? []
 	const savedPackageCount = input.savedPackageCount ?? 0
+	const storageBuckets = input.storageBuckets ?? []
 
 	return {
 		prepare(query: string) {
@@ -709,6 +956,30 @@ function createEntitlementsDatabase(input: {
 						async run() {
 							if (query.includes('UPDATE users')) {
 								return { meta: { changes: 1 } }
+							}
+							if (
+								query.includes(
+									'DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?',
+								)
+							) {
+								const userId = String(params[0])
+								const storageId = String(params[1])
+								const before = storageBuckets.length
+								for (
+									let index = storageBuckets.length - 1;
+									index >= 0;
+									index--
+								) {
+									const row = storageBuckets[index]
+									if (
+										row &&
+										row.userId === userId &&
+										row.storageId === storageId
+									) {
+										storageBuckets.splice(index, 1)
+									}
+								}
+								return { meta: { changes: before - storageBuckets.length } }
 							}
 							throw new Error(`Unsupported run query: ${query}`)
 						},
@@ -743,6 +1014,34 @@ function createEntitlementsDatabase(input: {
 								return { count: 0 } as T
 							}
 							throw new Error(`Unsupported first query: ${query}`)
+						},
+						async all<T>() {
+							if (
+								query.includes('FROM user_storage_buckets') &&
+								query.includes('SELECT storage_id AS storageId')
+							) {
+								const userId = String(params[0])
+								const exactPackageId = String(params[1])
+								const facetPrefix = String(params[2])
+								const packageStorageId = String(params[3])
+								const servicePrefix = String(params[4])
+								const jobPrefix = String(params[5])
+								const results = storageBuckets
+									.filter((row) => {
+										if (row.userId !== userId) return false
+										const id = row.storageId
+										return (
+											id === exactPackageId ||
+											id.startsWith(facetPrefix) ||
+											id === packageStorageId ||
+											id.startsWith(servicePrefix) ||
+											id.startsWith(jobPrefix)
+										)
+									})
+									.map((row) => ({ storageId: row.storageId }))
+								return { results: results as Array<T> }
+							}
+							throw new Error(`Unsupported all query: ${query}`)
 						},
 					}
 				},
