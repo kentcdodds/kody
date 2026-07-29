@@ -169,41 +169,7 @@ test('importSqlIntoD1 uploads FK-off-prefixed SQL and uses its MD5', async () =>
 	}
 })
 
-test('importSqlIntoD1 streams reopen through loadSqlBody without buffering the source twice in one handle', async () => {
-	const sequence = importPollSequence([
-		{ type: 'import', success: true, status: 'complete' },
-	])
-	let loads = 0
-	await importSqlIntoD1({
-		accountId: ACCOUNT,
-		databaseId: DATABASE,
-		token: 'token',
-		sourceMd5Etag: SOURCE_MD5,
-		loadSqlBody: async () => {
-			loads += 1
-			return new ReadableStream<Uint8Array>({
-				start(controller) {
-					controller.enqueue(new TextEncoder().encode(SOURCE_SQL))
-					controller.close()
-				},
-			})
-		},
-		options: {
-			fetcher: sequence.fetcher,
-			sleep: async () => undefined,
-			maxPollAttempts: 2,
-			pollDelayMs: 1,
-		},
-	})
-	assert.equal(loads, 2)
-	assert.equal(sequence.getInitEtag(), UPLOAD_MD5)
-	assert.equal(
-		sequence.getUploadedText(),
-		`${d1ImportForeignKeysOffPrefix}${SOURCE_SQL}`,
-	)
-})
-
-test('importSqlIntoD1 pipes stream uploads through FixedLengthStream when available', async () => {
+test('importSqlIntoD1 streams reopen through loadSqlBody and wraps uploads in FixedLengthStream when available', async () => {
 	// Presigned D1 import upload URLs reject chunked bodies with HTTP 411;
 	// the Workers runtime only emits Content-Length for FixedLengthStream.
 	const constructedLengths: Array<number> = []
@@ -220,18 +186,21 @@ test('importSqlIntoD1 pipes stream uploads through FixedLengthStream when availa
 		const sequence = importPollSequence([
 			{ type: 'import', success: true, status: 'complete' },
 		])
+		let loads = 0
 		await importSqlIntoD1({
 			accountId: ACCOUNT,
 			databaseId: DATABASE,
 			token: 'token',
 			sourceMd5Etag: SOURCE_MD5,
-			loadSqlBody: async () =>
-				new ReadableStream<Uint8Array>({
+			loadSqlBody: async () => {
+				loads += 1
+				return new ReadableStream<Uint8Array>({
 					start(controller) {
 						controller.enqueue(new TextEncoder().encode(SOURCE_SQL))
 						controller.close()
 					},
-				}),
+				})
+			},
 			options: {
 				fetcher: sequence.fetcher,
 				sleep: async () => undefined,
@@ -240,10 +209,12 @@ test('importSqlIntoD1 pipes stream uploads through FixedLengthStream when availa
 			},
 		})
 		const expectedUpload = `${d1ImportForeignKeysOffPrefix}${SOURCE_SQL}`
+		assert.equal(loads, 2)
+		assert.equal(sequence.getInitEtag(), UPLOAD_MD5)
+		assert.equal(sequence.getUploadedText(), expectedUpload)
 		assert.deepEqual(constructedLengths, [
 			new TextEncoder().encode(expectedUpload).byteLength,
 		])
-		assert.equal(sequence.getUploadedText(), expectedUpload)
 	} finally {
 		if (previousFixedLengthStream === undefined) {
 			delete globalWithStream.FixedLengthStream

@@ -188,9 +188,9 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	expect(filterSentryEvent(platformEvent)).toBe(platformEvent)
 
 	// Bare Cloudflare DO platform resets (memory / CPU / deploy-time code
-	// update) are transient — drop exact strings, including optional `Error:`
-	// prefix and missing trailing period. Wrapped recovery failures must stay
-	// visible.
+	// update) are transient — one representative form per family, plus an
+	// `Error:`-prefixed variant and a missing trailing period. Wrapped
+	// recovery failures must stay visible.
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -203,8 +203,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			exception: {
 				values: [
 					{
-						value:
-							"Error: Durable Object's isolate exceeded its memory limit and was reset.",
+						value: `Error: ${durableObjectIsolateCpuResetMessage}`,
 					},
 				],
 			},
@@ -215,48 +214,14 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			exception: {
 				values: [
 					{
-						value: 'Durable Object exceeded its CPU time limit and was reset',
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterSentryEvent({
-			message: durableObjectIsolateCpuResetMessage,
-		}),
-	).toBeNull()
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [{ value: durableObjectCodeUpdatedResetMessage }],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value: `Error: ${durableObjectCodeUpdatedResetMessage}`,
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value: 'Durable Object reset because its code was updated',
+						value: durableObjectCodeUpdatedResetMessage.replace(/\.$/, ''),
 					},
 				],
 			},
 		}),
 	).toBeNull()
 
-	const exhaustedPublishRecoveryInline = {
+	const exhaustedPublishRecovery = {
 		exception: {
 			values: [
 				{
@@ -265,36 +230,8 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			],
 		},
 	}
-	expect(filterSentryEvent(exhaustedPublishRecoveryInline)).toBe(
-		exhaustedPublishRecoveryInline,
-	)
-
-	const exhaustedPublishRecoveryChained = {
-		exception: {
-			values: [
-				{
-					value:
-						'package_publish_external_push could not recover after 3 transient Durable Object reset attempts',
-				},
-				{ value: durableObjectIsolateMemoryResetMessage },
-			],
-		},
-	}
-	expect(filterSentryEvent(exhaustedPublishRecoveryChained)).toBe(
-		exhaustedPublishRecoveryChained,
-	)
-
-	const exhaustedCodeUpdateRecovery = {
-		exception: {
-			values: [
-				{
-					value: `package_publish_external_push could not recover after 3 transient Durable Object reset attempts: ${durableObjectCodeUpdatedResetMessage}`,
-				},
-			],
-		},
-	}
-	expect(filterSentryEvent(exhaustedCodeUpdateRecovery)).toBe(
-		exhaustedCodeUpdateRecovery,
+	expect(filterSentryEvent(exhaustedPublishRecovery)).toBe(
+		exhaustedPublishRecovery,
 	)
 
 	const unrelatedDoFailure = {

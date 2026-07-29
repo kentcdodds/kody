@@ -1,6 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { parsePackageAccessRequiredMessage } from './errors.ts'
+import {
+	parsePackageAccessRequiredBatchMessage,
+	parsePackageAccessRequiredMessage,
+} from './errors.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -32,6 +35,7 @@ const {
 	assertCanSetSecrets,
 	assertPackageCanAccessResolvedSecret,
 	buildPackageApprovalErrorForMounts,
+	findMissingPackageApprovals,
 	PackageSecretAccessDeniedError,
 	resolvePackageMountedSecret,
 } = await import('./package-access.ts')
@@ -56,243 +60,127 @@ const communityFork = {
 	adoptionNote: null,
 }
 
-test('package-owned secrets do not require an allowed-packages grant', async () => {
+const userSecretResolved = {
+	found: true as const,
+	value: 'secret',
+	scope: 'user' as const,
+	allowedHosts: [] as Array<string>,
+	allowedCapabilities: [] as Array<string>,
+	allowedPackages: [] as Array<string>,
+}
+
+function accessInput(
+	overrides: Partial<
+		Parameters<typeof assertPackageCanAccessResolvedSecret>[0]
+	> = {},
+) {
+	return {
+		env: { APP_DB: {} as D1Database },
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+		storageContext: {
+			sessionId: null,
+			packageId: 'pkg-1',
+		},
+		secretName: 'userToken',
+		resolved: userSecretResolved,
+		...overrides,
+	}
+}
+
+function expectAccessDenied(error: unknown, secretName = 'userToken') {
+	expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(parsePackageAccessRequiredMessage((error as Error).message)).toEqual({
+		secretName,
+		packageName: 'discord-gateway',
+	})
+}
+
+test('package secret access grants cover owned, self-authored, forked, adopted, and mutate intents', async () => {
 	await expect(
-		assertPackageCanAccessResolvedSecret({
-			env: { APP_DB: {} as D1Database },
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-			},
-			secretName: 'packageToken',
-			resolved: {
-				found: true,
-				value: 'secret',
-				scope: 'package',
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: [],
-			},
-		}),
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				secretName: 'packageToken',
+				resolved: {
+					...userSecretResolved,
+					scope: 'package',
+				},
+			}),
+		),
 	).resolves.toBeUndefined()
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
-})
 
-test('self-authored packages may use user secrets without an allowed-packages grant', async () => {
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
-
 	await expect(
-		assertPackageCanAccessResolvedSecret({
-			env: { APP_DB: {} as D1Database },
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-			},
-			secretName: 'userToken',
-			resolved: {
-				found: true,
-				value: 'secret',
-				scope: 'user',
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: [],
-			},
-		}),
+		assertPackageCanAccessResolvedSecret(accessInput()),
 	).resolves.toBeUndefined()
 	expect(mockModule.getCommunityForkByForkedPackageId).toHaveBeenCalledWith(
 		expect.anything(),
 		{ forkerUserId: 'user-1', forkedPackageId: 'pkg-1' },
 	)
-})
 
-test('community-forked packages require an allowed-packages grant for user secrets', async () => {
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(
 		communityFork,
 	)
-
 	await expect(
-		assertPackageCanAccessResolvedSecret({
-			env: { APP_DB: {} as D1Database },
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-			},
-			secretName: 'userToken',
-			resolved: {
-				found: true,
-				value: 'secret',
-				scope: 'user',
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: [],
-			},
-		}),
+		assertPackageCanAccessResolvedSecret(accessInput()),
 	).rejects.toSatisfy((error: unknown) => {
-		if (!(error instanceof PackageSecretAccessDeniedError)) return false
-		if (!(error instanceof McpCallerError)) return false
-		const parsed = parsePackageAccessRequiredMessage(error.message)
-		return (
-			parsed?.secretName === 'userToken' &&
-			parsed.packageName === 'discord-gateway' &&
-			error.message.includes('/account/secrets/user/userToken')
-		)
+		expectAccessDenied(error)
+		return true
 	})
-})
 
-test('community-forked packages with an allowed-packages grant may use user secrets', async () => {
 	await expect(
-		assertPackageCanAccessResolvedSecret({
-			env: { APP_DB: {} as D1Database },
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-			},
-			secretName: 'userToken',
-			resolved: {
-				found: true,
-				value: 'secret',
-				scope: 'user',
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: ['pkg-1'],
-			},
-		}),
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				resolved: {
+					...userSecretResolved,
+					allowedPackages: ['pkg-1'],
+				},
+			}),
+		),
 	).resolves.toBeUndefined()
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
-})
 
-test('adopted community forks may use user secrets without an allowed-packages grant', async () => {
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
 		...communityFork,
 		adoptedAt: '2026-07-01T00:00:00.000Z',
 		adoptionNote: 'Reviewed source; trusted for my use.',
 	})
-
 	await expect(
-		assertPackageCanAccessResolvedSecret({
-			env: { APP_DB: {} as D1Database },
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-			},
-			secretName: 'userToken',
-			resolved: {
-				found: true,
-				value: 'secret',
-				scope: 'user',
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: [],
-			},
-		}),
+		assertPackageCanAccessResolvedSecret(accessInput()),
 	).resolves.toBeUndefined()
-})
 
-test('adopted community forks still require an allowed-packages grant for mutate', async () => {
+	// Mutate always needs an allowed-packages grant (self-authored and adopted
+	// forks alike); the fork lookup is skipped for mutate.
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-
 	await expect(
-		assertPackageCanAccessResolvedSecret({
-			env: { APP_DB: {} as D1Database },
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-			},
-			secretName: 'userToken',
-			resolved: {
-				found: true,
-				value: 'secret',
-				scope: 'user',
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: [],
-			},
-			intent: 'mutate',
-		}),
+		assertPackageCanAccessResolvedSecret(accessInput({ intent: 'mutate' })),
 	).rejects.toSatisfy((error: unknown) => {
-		return (
-			error instanceof PackageSecretAccessDeniedError &&
-			error instanceof McpCallerError &&
-			parsePackageAccessRequiredMessage(error.message)?.packageName ===
-				'discord-gateway'
-		)
-	})
-	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
-})
-
-test('mutate intent requires an allowed-packages grant even for self-authored packages', async () => {
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-
-	await expect(
-		assertPackageCanAccessResolvedSecret({
-			env: { APP_DB: {} as D1Database },
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-			},
-			secretName: 'userToken',
-			resolved: {
-				found: true,
-				value: 'secret',
-				scope: 'user',
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: [],
-			},
-			intent: 'mutate',
-		}),
-	).rejects.toSatisfy((error: unknown) => {
-		if (!(error instanceof PackageSecretAccessDeniedError)) return false
-		if (!(error instanceof McpCallerError)) return false
-		const parsed = parsePackageAccessRequiredMessage(error.message)
-		return (
-			parsed?.secretName === 'userToken' &&
-			parsed.packageName === 'discord-gateway' &&
-			error.message.includes('/account/secrets/user/userToken')
-		)
+		expectAccessDenied(error)
+		return true
 	})
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 
+	mockModule.getSavedPackageById.mockClear()
+	mockModule.getCommunityForkByForkedPackageId.mockClear()
 	await expect(
-		assertPackageCanAccessResolvedSecret({
-			env: { APP_DB: {} as D1Database },
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-			},
-			secretName: 'userToken',
-			resolved: {
-				found: true,
-				value: 'secret',
-				scope: 'user',
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: ['pkg-1'],
-			},
-			intent: 'mutate',
-		}),
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				intent: 'mutate',
+				resolved: {
+					...userSecretResolved,
+					allowedPackages: ['pkg-1'],
+				},
+			}),
+		),
 	).resolves.toBeUndefined()
-	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(1)
+	// Grant short-circuits before package/fork lookups.
+	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 })
 
@@ -329,7 +217,7 @@ test('assertCanSetSecrets fails closed for mutate grants before any provider wor
 	expect(mockModule.resolveSecret).toHaveBeenCalled()
 })
 
-test('resolvePackageMountedSecret rejects package runtime calls without a matching packageId', async () => {
+test('resolvePackageMountedSecret requires matching package runtime context and resolves approved mounts', async () => {
 	const runtimeError =
 		'Package secret access requires a matching server-side package runtime context.'
 	const baseInput = {
@@ -375,9 +263,7 @@ test('resolvePackageMountedSecret rejects package runtime calls without a matchi
 			},
 		}),
 	).rejects.toThrow(runtimeError)
-})
 
-test('resolvePackageMountedSecret resolves approved user secret when package id matches', async () => {
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
 		manifest: {
@@ -449,7 +335,7 @@ test('resolvePackageMountedSecret resolves approved user secret when package id 
 	)
 })
 
-test('package access helpers treat missing approvals consistently', () => {
+test('package approval helpers parse structured messages and skip trusted packages', async () => {
 	expect(buildPackageApprovalErrorForMounts({ entries: [] })).toBeNull()
 	const approvalMessage = buildPackageApprovalErrorForMounts({
 		entries: [
@@ -485,13 +371,21 @@ test('package access helpers treat missing approvals consistently', () => {
 			},
 		],
 	})
-	expect(batchMessage).toContain('bulkApprovalUrl')
-	expect(batchMessage).toContain('/account/secrets/approve?')
-	expect(batchMessage).toContain('names=discordBotToken')
-})
+	const batchParsed = parsePackageAccessRequiredBatchMessage(batchMessage ?? '')
+	expect(batchParsed?.entries).toEqual([
+		expect.objectContaining({
+			secretName: 'discordBotToken',
+			packageId: 'pkg-1',
+			kodyId: 'release',
+		}),
+		expect.objectContaining({
+			secretName: 'xAccessToken',
+			packageId: 'pkg-1',
+			kodyId: 'release',
+		}),
+	])
+	expect(batchParsed?.bulkApprovalUrl).toContain('/account/secrets/approve?')
 
-test('findMissingPackageApprovals skips self-authored and adopted forks, reports unapproved community forks', async () => {
-	const { findMissingPackageApprovals } = await import('./package-access.ts')
 	const mounts = {
 		discordBotToken: {
 			name: 'discordBotTokenKentPersonalAutomation',

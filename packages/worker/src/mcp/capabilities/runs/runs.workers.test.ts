@@ -122,8 +122,17 @@ test(
 			userId: ownerId,
 			id: 'run-webhook',
 			startedAt: new Date(startedAtBase + 1000).toISOString(),
-			context: baseContext({ surface: 'webhook', name: 'sentry' }),
+			context: baseContext({
+				surface: 'webhook',
+				name: 'sentry',
+				metadata: {
+					endpointId: 'ep-result',
+					httpStatus: 202,
+					outcome: 'delivered',
+				},
+			}),
 			status: 'success',
+			result: { ok: true, agentId: 'agent-123' },
 		})
 		const pending: Array<Promise<unknown>> = []
 		beginRunRecord({
@@ -163,6 +172,15 @@ test(
 			'line-one',
 			'line-two',
 		])
+		const webhookDetail = await runGetCapability.handler(
+			{ run_id: 'run-webhook' },
+			{ env, callerContext: ownerContext },
+		)
+		expect(webhookDetail.run.metadata).toMatchObject({
+			endpointId: 'ep-result',
+			outcome: 'delivered',
+			result: { ok: true, agentId: 'agent-123' },
+		})
 		await expect(
 			runGetCapability.handler(
 				{ run_id: handle.id },
@@ -196,41 +214,6 @@ test(
 		)
 		expect(otherSummary.total).toBe(0)
 		expect(otherSummary.errors).toBe(0)
-	},
-	runLogSuiteTimeoutMs,
-)
-
-test(
-	'run_get exposes bounded metadata.result for webhook deliveries',
-	async () => {
-		const userId = uniqueUserId('webhook-result')
-		const callerContext = buildCallerContext({
-			userId,
-			email: `${userId}@example.com`,
-		})
-		const handle = await finishRun({
-			userId,
-			context: baseContext({
-				surface: 'webhook',
-				name: 'sentry',
-				metadata: {
-					endpointId: 'ep-result',
-					httpStatus: 202,
-					outcome: 'delivered',
-				},
-			}),
-			status: 'success',
-			result: { ok: true, agentId: 'agent-123' },
-		})
-		const detail = await runGetCapability.handler(
-			{ run_id: handle.id },
-			{ env, callerContext },
-		)
-		expect(detail.run.metadata).toMatchObject({
-			endpointId: 'ep-result',
-			outcome: 'delivered',
-			result: { ok: true, agentId: 'agent-123' },
-		})
 	},
 	runLogSuiteTimeoutMs,
 )

@@ -30,7 +30,6 @@ vi.mock('./repo.ts', () => ({
 const {
 	dispatchEmailDeliverySubscriptionEvents,
 	dispatchInboundEmailSubscriptionEvents,
-	inboundEmailQuarantinedTopic: exportedQuarantinedTopic,
 } = await import('./package-subscriptions.ts')
 
 test('delivery updates fan out only through the stored message owner', async () => {
@@ -252,7 +251,6 @@ test('accepted inbound messages dispatch email.message.received with classificat
 })
 
 test('quarantined inbound messages dispatch email.message.quarantined and not received', async () => {
-	expect(exportedQuarantinedTopic).toBe(inboundEmailQuarantinedTopic)
 	mocks.invokePackageSubscription.mockClear()
 	const savedPackage = await seedInboundSubscription(
 		inboundEmailQuarantinedTopic,

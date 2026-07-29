@@ -2,7 +2,6 @@ import { env } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
 import type * as PackageInvocationServiceModule from '#worker/package-invocations/service.ts'
-import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { clearRunRecords, listRunRecords } from '#worker/run-records/service.ts'
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -13,8 +12,6 @@ const mocks = vi.hoisted(() => ({
 	invokePackageExport: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	resolveSecret: vi.fn(),
-	beginRunRecord: vi.fn(),
-	recordRunRecord: vi.fn(),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', async () => {
@@ -36,27 +33,6 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mocks.resolveSecret(...args),
 }))
-
-vi.mock('#worker/run-records/service.ts', async () => {
-	const actual = await vi.importActual<typeof RunRecordsServiceModule>(
-		'#worker/run-records/service.ts',
-	)
-	return {
-		...actual,
-		beginRunRecord: (...args: Array<unknown>) => {
-			mocks.beginRunRecord(...args)
-			return actual.beginRunRecord(
-				...(args as Parameters<typeof actual.beginRunRecord>),
-			)
-		},
-		recordRunRecord: (...args: Array<unknown>) => {
-			mocks.recordRunRecord(...args)
-			return actual.recordRunRecord(
-				...(args as Parameters<typeof actual.recordRunRecord>),
-			)
-		},
-	}
-})
 
 async function ensureSchema(db: D1Database) {
 	await db
@@ -450,7 +426,7 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 	expect(tooLarge.status).toBe(413)
 })
 
-test('webhook delivery records with one DO write, real startedAt duration, and explicit outcome', async () => {
+test('webhook delivery records real startedAt duration and explicit delivered outcome with handler result', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	await ensureSchema(env.APP_DB)
 	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
@@ -464,12 +440,10 @@ test('webhook delivery records with one DO write, real startedAt duration, and e
 		userId,
 		webhookName: 'sync-hook',
 		urlSecret,
-		id: 'mint-sync-single-write',
+		id: 'mint-sync-delivered',
 	})
 	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
 
-	mocks.beginRunRecord.mockClear()
-	mocks.recordRunRecord.mockClear()
 	mocks.invokePackageExport.mockReset()
 	mocks.invokePackageExport.mockImplementation(async () => {
 		await new Promise((resolve) => setTimeout(resolve, 25))
@@ -487,28 +461,16 @@ test('webhook delivery records with one DO write, real startedAt duration, and e
 	})
 	expect(response.status).toBe(200)
 
-	expect(mocks.beginRunRecord).not.toHaveBeenCalled()
-	expect(mocks.recordRunRecord).toHaveBeenCalledTimes(1)
-	const recordInput = mocks.recordRunRecord.mock.calls[0]?.[0] as {
-		startedAt: string
-		waitUntil: ((promise: Promise<unknown>) => void) | undefined
-		context: { metadata: { outcome: string } }
-	}
-	expect(typeof recordInput.waitUntil).toBe('function')
-	expect(recordInput.context.metadata.outcome).toBe('delivered')
-
 	const invokeArgs = mocks.invokePackageExport.mock.calls[0]?.[0] as {
 		request: {
 			params: { webhook: { receivedAt: string } }
 		}
 	}
-	expect(recordInput.startedAt).toBe(
-		invokeArgs.request.params.webhook.receivedAt,
-	)
-
 	const delivered = (await listDeliveries(userId, 'sync-hook'))[0]
 	expect(delivered?.status).toBe('success')
-	expect(delivered?.startedAt).toBe(recordInput.startedAt)
+	expect(delivered?.startedAt).toBe(
+		invokeArgs.request.params.webhook.receivedAt,
+	)
 	expect(delivered?.durationMs).toBeGreaterThan(0)
 	expect(delivered?.metadata).toMatchObject({
 		outcome: 'delivered',

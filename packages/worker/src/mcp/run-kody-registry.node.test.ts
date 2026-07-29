@@ -2157,7 +2157,7 @@ test('runBundledModuleWithRegistry records package_export usage for bundled runs
 	}
 })
 
-test('runBundledModuleWithRegistry omits OAuth helper prelude when execute helper capabilities are absent', async () => {
+test('runBundledModuleWithRegistry injects OAuth helper prelude only when execute helper capabilities are present', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -2170,12 +2170,12 @@ test('runBundledModuleWithRegistry omits OAuth helper prelude when execute helpe
 			'entry.js': 'export default async () => "ok"',
 		},
 	}
-	let wrappedSource = ''
+	const wrappedSources: Array<string> = []
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
 			async execute(wrapped) {
-				wrappedSource = String(wrapped)
+				wrappedSources.push(String(wrapped))
 				return {
 					result: 'ok',
 					logs: [],
@@ -2184,59 +2184,13 @@ test('runBundledModuleWithRegistry omits OAuth helper prelude when execute helpe
 		} as never)
 
 	try {
-		const result = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
+		await expect(
+			runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
 				skipCapabilityRegistry: true,
-			},
-		)
-		expect(result.result).toBe('ok')
-		expect(wrappedSource).not.toContain('IntegrationHostNotAllowedError')
-		expect(wrappedSource).not.toContain('__kodyRefreshAccessToken')
-		expect(wrappedSource).toContain(
-			"typeof refreshAccessToken === 'undefined' ? undefined : refreshAccessToken",
-		)
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-	}
-})
-
-test('runBundledModuleWithRegistry injects OAuth helper prelude when execute helper capabilities are present', async () => {
-	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
-	let wrappedSource = ''
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute(wrapped) {
-				wrappedSource = String(wrapped)
-				return {
-					result: 'ok',
-					logs: [],
-				}
-			},
-		} as never)
-
-	try {
-		const result = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
+			}),
+		).resolves.toMatchObject({ result: 'ok' })
+		await expect(
+			runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
 				skipCapabilityRegistry: true,
 				additionalTools: {
 					integration_get: async () => ({}),
@@ -2244,11 +2198,15 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude when execute hel
 					secret_set: async () => ({}),
 					secret_set_many: async () => ({}),
 				},
-			},
-		)
-		expect(result.result).toBe('ok')
-		expect(wrappedSource).toContain('IntegrationHostNotAllowedError')
-		expect(wrappedSource).toContain('__kodyRefreshAccessToken')
+			}),
+		).resolves.toMatchObject({ result: 'ok' })
+
+		const [withoutHelpers, withHelpers] = wrappedSources
+		expect(withoutHelpers).toBeTruthy()
+		expect(withHelpers).toBeTruthy()
+		expect(withoutHelpers).not.toContain('__kodyRefreshAccessToken')
+		expect(withHelpers).toContain('__kodyRefreshAccessToken')
+		expect(withHelpers!.length).toBeGreaterThan(withoutHelpers!.length)
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 	}

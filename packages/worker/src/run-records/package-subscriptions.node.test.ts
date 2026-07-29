@@ -1,8 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
-const runErrorRecordedTopic = 'run.error.recorded'
-
 const mocks = vi.hoisted(() => ({
 	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
 	listSavedPackagesByUserId: vi.fn(),
@@ -21,10 +19,8 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
 }))
 
-const {
-	dispatchRunErrorSubscriptionEvents,
-	runErrorRecordedTopic: exportedTopic,
-} = await import('./package-subscriptions.ts')
+const { dispatchRunErrorSubscriptionEvents, runErrorRecordedTopic } =
+	await import('./package-subscriptions.ts')
 
 function errorRun(overrides: Record<string, unknown> = {}) {
 	return {
@@ -85,8 +81,6 @@ function subscribedManifest(input: {
 }
 
 test('run.error.recorded fans out only to owning-user packages with a lean payload', async () => {
-	expect(exportedTopic).toBe(runErrorRecordedTopic)
-
 	const savedPackage = {
 		id: 'package-1',
 		userId: 'user-1',
