@@ -9,6 +9,7 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { createUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
+import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import {
 	createKodyRemoteProxy,
 	createKodyProviderProxySource,
@@ -417,6 +418,111 @@ test('createExecuteExecutor aligns dynamic worker compatibility with shared opti
 
 	const workerOptions = fakeLoader.createdOptions.get(fakeLoader.ids[0]!)
 	expect(workerOptions).toMatchObject(createDynamicWorkerCompatibilityOptions())
+})
+
+test('createExecuteExecutor queues nested evaluations at four without blocking an unrelated request', async () => {
+	let evaluationCount = 0
+	let activeEvaluations = 0
+	let maxActiveEvaluations = 0
+	const childReleases: Array<() => void> = []
+	let nestedEnv: Env
+	const exports = createExecutorTestExports()
+	const providers = [{ name: 'kody', fns: {} }]
+	const loader = {
+		get(_id: string, factory: () => FakeWorkerOptions) {
+			factory()
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate() {
+							evaluationCount += 1
+							activeEvaluations += 1
+							maxActiveEvaluations = Math.max(
+								maxActiveEvaluations,
+								activeEvaluations,
+							)
+							if (evaluationCount === 1) {
+								const nestedResults = await Promise.all(
+									Array.from({ length: 5 }, async (_, index) => {
+										return await createExecuteExecutor({
+											env: nestedEnv,
+											exports,
+											gatewayProps: createGatewayProps('nested-user'),
+										}).execute(`async () => ${index}`, providers)
+									}),
+								)
+								activeEvaluations -= 1
+								return {
+									result: nestedResults.length,
+									logs: [],
+								}
+							}
+							await new Promise<void>((resolve) => {
+								childReleases.push(resolve)
+							})
+							activeEvaluations -= 1
+							return { result: 'child', logs: [] }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+	nestedEnv = createExecutorTestEnv(loader)
+
+	const rootExecution = createExecuteExecutor({
+		env: nestedEnv,
+		exports,
+		gatewayProps: createGatewayProps('nested-user'),
+	}).execute('async () => "root"', providers)
+
+	await expect.poll(() => childReleases.length).toBe(3)
+	expect(evaluationCount).toBe(4)
+	expect(maxActiveEvaluations).toBe(4)
+
+	let independentStarted = false
+	let releaseIndependent: (() => void) | null = null
+	const independentLoader = {
+		get() {
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate() {
+							independentStarted = true
+							await new Promise<void>((resolve) => {
+								releaseIndependent = resolve
+							})
+							return { result: 'independent', logs: [] }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+	const independentExecution = createExecuteExecutor({
+		env: createExecutorTestEnv(independentLoader),
+		exports,
+		gatewayProps: createGatewayProps('independent-user'),
+	}).execute('async () => "independent"', providers)
+	await expect.poll(() => independentStarted).toBe(true)
+	releaseIndependent?.()
+	await expect(independentExecution).resolves.toMatchObject({
+		result: 'independent',
+	})
+
+	childReleases.shift()?.()
+	await expect.poll(() => evaluationCount).toBe(5)
+	expect(activeEvaluations).toBe(4)
+	childReleases.shift()?.()
+	await expect.poll(() => evaluationCount).toBe(6)
+	expect(activeEvaluations).toBe(4)
+	for (const release of childReleases.splice(0)) {
+		release()
+	}
+
+	await expect(rootExecution).resolves.toMatchObject({ result: 5 })
+	expect(maxActiveEvaluations).toBe(4)
+	expect(activeEvaluations).toBe(0)
 })
 
 test('createExecuteExecutor reuses stable dynamic worker ids until binding context or module graph changes', async () => {
@@ -1115,6 +1221,48 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		kind: 'sandbox_runtime_stale',
 		nextStep: expect.stringContaining('fresh sandbox'),
 		suggestedAction: { type: 'report_bug' },
+	})
+
+	expect(
+		getExecutionErrorDetails(new Error('Too many concurrent dynamic workers')),
+	).toMatchObject({
+		kind: 'dynamic_worker_capacity_exceeded',
+		limit: 4,
+		nextStep: expect.stringContaining('Retry'),
+		suggestedAction: { type: 'retry' },
+	})
+	expect(
+		getExecutionErrorDetails(
+			new Error(
+				'[invocation_failed] Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations. Wait for one to finish before starting another.',
+			),
+		),
+	).toMatchObject({
+		kind: 'dynamic_worker_capacity_exceeded',
+		limit: 4,
+		suggestedAction: { type: 'retry' },
+	})
+	expect(
+		getExecutionErrorDetails(
+			new Error('Too many concurrent dynamic worker requests'),
+		),
+	).toBeNull()
+
+	const storageEstimateError = createStorageEstimateReadError({
+		storageId: 'package:unreadable',
+		attempts: 3,
+		cause: new Error('RPC disconnected'),
+	})
+	expect(
+		getExecutionErrorDetails(
+			new Error('Nested execute failed.', { cause: storageEstimateError }),
+		),
+	).toMatchObject({
+		kind: 'storage_estimate_unavailable',
+		storageId: 'package:unreadable',
+		attempts: 3,
+		nextStep: expect.stringContaining('safely blocked'),
+		suggestedAction: { type: 'retry' },
 	})
 
 	const errors = [

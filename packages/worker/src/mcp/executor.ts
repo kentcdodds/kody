@@ -6,10 +6,14 @@ import {
 	type ResolvedProvider,
 } from '@cloudflare/codemode'
 import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
-import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	getErrorCauseChain,
+	getErrorMessage,
+} from '@kody-internal/shared/error-message.ts'
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
 import {
 	readBaseUrlHostname,
@@ -41,6 +45,7 @@ import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.t
 import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { executorSandboxTimeoutMessage } from '#worker/sentry-options.ts'
+import { parseStorageEstimateReadErrorMessage } from '#worker/storage-estimate-error.ts'
 
 export { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 
@@ -51,6 +56,14 @@ const maxSupportedExecutorTimeoutMs = 2_147_483_647
 const dynamicWorkerMainModule = 'executor.js'
 const dynamicWorkerIdPrefix = 'kody-'
 const dynamicWorkerCacheKeyVersion = 3
+// Cloudflare caps Worker Loader evaluations at four for one incoming request.
+// Async-local state shares that budget with nested evaluations while keeping
+// unrelated requests out of the same queue.
+const maxConcurrentDynamicWorkerEvaluationsPerRequest = 4
+const dynamicWorkerCapacityErrorMessages = [
+	'Too many concurrent dynamic workers',
+	'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
+] as const
 const reservedProviderNames = new Set(['__dispatchers', '__logs'])
 const validProviderNamePattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 const javascriptReservedWords = new Set([
@@ -131,6 +144,62 @@ type DynamicWorkerEntrypoint = {
 		logs?: Array<string>
 		rawFetchHosts?: Array<string>
 	}>
+}
+
+type DynamicWorkerEvaluationGate = {
+	active: number
+	queue: Array<() => void>
+}
+
+const dynamicWorkerEvaluationGateStorage =
+	new AsyncLocalStorage<DynamicWorkerEvaluationGate>()
+
+async function withDynamicWorkerEvaluationPermit<T>(
+	evaluate: () => Promise<T>,
+): Promise<T> {
+	const inheritedGate = dynamicWorkerEvaluationGateStorage.getStore()
+	if (inheritedGate) {
+		return await runWithDynamicWorkerEvaluationPermit(inheritedGate, evaluate)
+	}
+	const requestGate: DynamicWorkerEvaluationGate = {
+		active: 0,
+		queue: [],
+	}
+	return await dynamicWorkerEvaluationGateStorage.run(
+		requestGate,
+		async () =>
+			await runWithDynamicWorkerEvaluationPermit(requestGate, evaluate),
+	)
+}
+
+async function runWithDynamicWorkerEvaluationPermit<T>(
+	gate: DynamicWorkerEvaluationGate,
+	evaluate: () => Promise<T>,
+): Promise<T> {
+	if (gate.active < maxConcurrentDynamicWorkerEvaluationsPerRequest) {
+		gate.active += 1
+	} else {
+		await new Promise<void>((resolve) => {
+			gate.queue.push(resolve)
+		})
+	}
+	try {
+		return await evaluate()
+	} finally {
+		const next = gate.queue.shift()
+		if (next) {
+			// Transfer this permit directly to the oldest waiter.
+			next()
+		} else {
+			gate.active -= 1
+		}
+	}
+}
+
+function isDynamicWorkerCapacityErrorMessage(message: string) {
+	return dynamicWorkerCapacityErrorMessages.some((candidate) =>
+		message.includes(candidate),
+	)
 }
 
 export function createKodyRemoteProxy(input: {
@@ -295,7 +364,9 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				const entrypoint = input.loader
 					.get(workerId, () => workerOptions)
 					.getEntrypoint() as unknown as DynamicWorkerEntrypoint
-				const response = await entrypoint.evaluate(dispatchers)
+				const response = await withDynamicWorkerEvaluationPermit(
+					async () => await entrypoint.evaluate(dispatchers),
+				)
 				if (input.rawFetchHostSink) {
 					for (const hostname of response.rawFetchHosts ?? []) {
 						input.rawFetchHostSink.add(hostname)
@@ -784,6 +855,25 @@ export type ExecutionErrorDetails =
 				type: 'report_bug'
 			}
 	  }
+	| {
+			kind: 'dynamic_worker_capacity_exceeded'
+			message: string
+			nextStep: string
+			limit: number
+			suggestedAction: {
+				type: 'retry'
+			}
+	  }
+	| {
+			kind: 'storage_estimate_unavailable'
+			message: string
+			nextStep: string
+			storageId: string
+			attempts: number
+			suggestedAction: {
+				type: 'retry'
+			}
+	  }
 
 export function getExecutionErrorDetails(
 	error: unknown,
@@ -797,6 +887,37 @@ export function getExecutionErrorDetails(
 	const entitlementDetails = parseEntitlementLimitMessage(message)
 	if (entitlementDetails) {
 		return toEntitlementExecutionErrorDetails(message, entitlementDetails)
+	}
+
+	const causeMessages = getErrorCauseChain(error).map(getErrorMessage)
+	if (causeMessages.some(isDynamicWorkerCapacityErrorMessage)) {
+		return {
+			kind: 'dynamic_worker_capacity_exceeded',
+			message,
+			nextStep:
+				'Retry the execution. Kody limits dynamic worker evaluations to the platform maximum for each request; if this repeats, report the platform-capacity error.',
+			limit: maxConcurrentDynamicWorkerEvaluationsPerRequest,
+			suggestedAction: {
+				type: 'retry',
+			},
+		}
+	}
+
+	for (const causeMessage of causeMessages) {
+		const storageEstimateDetails =
+			parseStorageEstimateReadErrorMessage(causeMessage)
+		if (storageEstimateDetails) {
+			return {
+				kind: 'storage_estimate_unavailable',
+				message,
+				nextStep: `Retry the storage write. Kody could not verify current usage for storageId ${JSON.stringify(storageEstimateDetails.storageId)} after ${storageEstimateDetails.attempts} attempts, so the write was safely blocked.`,
+				storageId: storageEstimateDetails.storageId,
+				attempts: storageEstimateDetails.attempts,
+				suggestedAction: {
+					type: 'retry',
+				},
+			}
+		}
 	}
 
 	const hostApprovalDetails = parseHostApprovalRequiredMessage(message)

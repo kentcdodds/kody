@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { applyImportStoragePage } from '#worker/storage-runner.ts'
+import {
+	applyImportStoragePage,
+	readStorageEstimateWithRetry,
+} from '#worker/storage-runner.ts'
 
 function createMemoryStorage(seed: Record<string, unknown> = {}) {
 	const map = new Map<string, unknown>(Object.entries(seed))
@@ -53,4 +56,41 @@ test('importStorage replace workflow clears, appends, restarts, and rejects inva
 			entries: [{ key: 'bad', valueJson: '{not-json' }],
 		}),
 	).rejects.toThrow(/invalid valueJson/)
+})
+
+test('storage estimate reads retry individual transient failures and fail closed after exhaustion', async () => {
+	let transientAttempts = 0
+	await expect(
+		readStorageEstimateWithRetry({
+			storageId: 'package:transient',
+			async getEstimatedBytes() {
+				transientAttempts += 1
+				if (transientAttempts < 3) {
+					throw new Error(`transient RPC failure ${transientAttempts}`)
+				}
+				return { estimatedBytes: 4_096 }
+			},
+		}),
+	).resolves.toEqual({ estimatedBytes: 4_096 })
+	expect(transientAttempts).toBe(3)
+
+	let exhaustedAttempts = 0
+	let finalCause: Error | null = null
+	const exhausted = await readStorageEstimateWithRetry({
+		storageId: 'package:"unreadable"',
+		async getEstimatedBytes() {
+			exhaustedAttempts += 1
+			finalCause = new Error(`RPC failure ${exhaustedAttempts}`)
+			throw finalCause
+		},
+	}).then(
+		() => null,
+		(error: unknown) => error,
+	)
+	expect(exhaustedAttempts).toBe(3)
+	expect(exhausted).toBeInstanceOf(Error)
+	expect((exhausted as Error).message).toBe(
+		'Unable to verify the storage byte entitlement because the bucket estimate for storageId "package:\\"unreadable\\"" could not be read after 3 attempts.',
+	)
+	expect((exhausted as Error).cause).toBe(finalCause)
 })

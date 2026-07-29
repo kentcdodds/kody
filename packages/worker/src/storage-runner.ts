@@ -12,11 +12,13 @@ import {
 	registerStorageBucket,
 	storageBucketKindFromStorageId,
 } from '#worker/storage-buckets/service.ts'
+import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
 const maxConcurrentStorageEstimateReads = 16
+const storageEstimateRetryDelaysMs = [10, 25] as const
 
 type StorageEntry = {
 	key: string
@@ -60,6 +62,31 @@ type StorageClearResult = {
 
 type StorageEstimateResult = {
 	estimatedBytes: number
+}
+
+export async function readStorageEstimateWithRetry(input: {
+	storageId: string
+	getEstimatedBytes: () => Promise<StorageEstimateResult>
+}): Promise<StorageEstimateResult> {
+	let attempts = 0
+	while (true) {
+		attempts += 1
+		try {
+			return await input.getEstimatedBytes()
+		} catch (cause) {
+			const retryDelayMs = storageEstimateRetryDelaysMs[attempts - 1]
+			if (retryDelayMs === undefined) {
+				throw createStorageEstimateReadError({
+					storageId: input.storageId,
+					attempts,
+					cause,
+				})
+			}
+			await new Promise<void>((resolve) => {
+				setTimeout(resolve, retryDelayMs)
+			})
+		}
+	}
 }
 
 /**
@@ -603,26 +630,23 @@ export async function assertStorageRunnerWriteWithinEntitlement(input: {
 				offset < storageIds.length;
 				offset += maxConcurrentStorageEstimateReads
 			) {
-				let estimates: Array<StorageEstimateResult>
-				try {
-					estimates = await Promise.all(
-						storageIds
-							.slice(offset, offset + maxConcurrentStorageEstimateReads)
-							.map((storageId) =>
-								storageRunnerRpc({
-									env: input.env,
-									userId: input.userId,
-									storageId,
-								}).getEstimatedBytes(),
-							),
-					)
-				} catch (error) {
-					// An unreadable bucket cannot safely be treated as zero usage.
-					throw new Error(
-						'Unable to verify the storage byte entitlement because a bucket estimate could not be read.',
-						{ cause: error },
-					)
-				}
+				const estimates = await Promise.all(
+					storageIds
+						.slice(offset, offset + maxConcurrentStorageEstimateReads)
+						.map((storageId) =>
+							readStorageEstimateWithRetry({
+								storageId,
+								// Resolve the RPC stub for each attempt. A transiently disposed
+								// stub must not be reused by the retry.
+								getEstimatedBytes: async () =>
+									await storageRunnerRpc({
+										env: input.env,
+										userId: input.userId,
+										storageId,
+									}).getEstimatedBytes(),
+							}),
+						),
+				)
 				durableObjectBytes += estimates.reduce(
 					(total, estimate) => total + estimate.estimatedBytes,
 					0,
