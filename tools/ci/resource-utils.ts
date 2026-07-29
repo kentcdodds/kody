@@ -672,18 +672,50 @@ function sortWranglerMigrations(migrations: Array<Record<string, unknown>>) {
 	migrations.splice(0, migrations.length, ...orderedMigrations)
 }
 
+function readHostnameVar(input: {
+	resolvedVars: Record<string, unknown>
+	varName: 'APP_BASE_URL' | 'PACKAGE_APP_BASE_URL'
+	baseConfigPath: string
+	envName: WranglerEnvName
+}) {
+	const configured = input.resolvedVars[input.varName]
+	if (typeof configured !== 'string' || !configured.trim()) return null
+
+	let hostname: string
+	try {
+		hostname = new URL(configured.trim()).hostname
+	} catch {
+		return fail(
+			`wrangler config "${input.baseConfigPath}" has an invalid "env.${input.envName}.vars.${input.varName}": ${configured}`,
+		)
+	}
+	if (!hostname) {
+		return fail(
+			`wrangler config "${input.baseConfigPath}" has a "env.${input.envName}.vars.${input.varName}" without a hostname: ${configured}`,
+		)
+	}
+	return hostname
+}
+
 /**
- * Attach the hosted-package-app origin to the deployed Worker as a Workers
- * custom domain, derived from that environment's `PACKAGE_APP_BASE_URL`.
+ * Publish the Worker's Cloudflare custom domains, derived from the environment's
+ * `APP_BASE_URL` and `PACKAGE_APP_BASE_URL`.
  *
- * The route is generated instead of committed because Wrangler resolves **local
+ * **`routes` is the complete custom-domain set for the script, not an addition to
+ * it.** A deploy that lists only the package-app domain detaches the app origin
+ * and deletes its DNS record, which takes production down. So the app origin is
+ * always listed alongside the package-app origin, and a package-app origin
+ * without an app origin fails the deploy instead of publishing a partial set.
+ *
+ * The routes are generated instead of committed because Wrangler resolves **local
  * dev** request URLs against the first configured route: a committed
  * `custom_domain` route makes every `npm run dev` request arrive as
- * `https://<package app host>/...`, so local logins and redirects leave
- * localhost. Deriving it from the var also keeps the two from drifting — the
- * host the Worker routes on is the host the deploy provisions.
+ * `https://<that host>/...`, so local logins and redirects leave localhost.
+ * Deriving them from the vars also keeps routing and provisioning from drifting —
+ * the hosts the Worker routes on are the hosts the deploy attaches.
  *
- * Environments without the var (preview, test) get no route.
+ * Environments with no `PACKAGE_APP_BASE_URL` (preview, test) publish no routes
+ * at all and keep whatever domains were attached out-of-band.
  */
 function addPackageAppCustomDomainRoute(input: {
 	targetEnv: Record<string, unknown>
@@ -691,38 +723,50 @@ function addPackageAppCustomDomainRoute(input: {
 	baseConfigPath: string
 	envName: WranglerEnvName
 }) {
-	const configuredBaseUrl = input.resolvedVars.PACKAGE_APP_BASE_URL
-	if (typeof configuredBaseUrl !== 'string' || !configuredBaseUrl.trim()) return
+	const packageAppHostname = readHostnameVar({
+		resolvedVars: input.resolvedVars,
+		varName: 'PACKAGE_APP_BASE_URL',
+		baseConfigPath: input.baseConfigPath,
+		envName: input.envName,
+	})
+	if (!packageAppHostname) return
 
-	let packageAppHostname: string
-	try {
-		packageAppHostname = new URL(configuredBaseUrl.trim()).hostname
-	} catch {
+	const appHostname = readHostnameVar({
+		resolvedVars: input.resolvedVars,
+		varName: 'APP_BASE_URL',
+		baseConfigPath: input.baseConfigPath,
+		envName: input.envName,
+	})
+	if (!appHostname) {
 		return fail(
-			`wrangler config "${input.baseConfigPath}" has an invalid "env.${input.envName}.vars.PACKAGE_APP_BASE_URL": ${configuredBaseUrl}`,
+			`wrangler config "${input.baseConfigPath}" sets "env.${input.envName}.vars.PACKAGE_APP_BASE_URL" without "APP_BASE_URL". Publishing custom domains would detach the app origin and delete its DNS record; set APP_BASE_URL for this deploy.`,
 		)
 	}
-	if (!packageAppHostname) {
+	if (appHostname === packageAppHostname) {
 		return fail(
-			`wrangler config "${input.baseConfigPath}" has a "env.${input.envName}.vars.PACKAGE_APP_BASE_URL" without a hostname: ${configuredBaseUrl}`,
+			`wrangler config "${input.baseConfigPath}" points "env.${input.envName}.vars.APP_BASE_URL" and "PACKAGE_APP_BASE_URL" at the same host (${appHostname}). Hosted package apps must be a separate registrable domain.`,
 		)
 	}
 
 	const existingRoutes = Array.isArray(input.targetEnv.routes)
 		? (input.targetEnv.routes as Array<unknown>)
 		: []
-	const alreadyRouted = existingRoutes.some((route) => {
-		if (!route || typeof route !== 'object') return false
-		return (route as Record<string, unknown>).pattern === packageAppHostname
-	})
-	if (alreadyRouted) return
+	const routedHostnames = new Set(
+		existingRoutes.flatMap((route) => {
+			if (!route || typeof route !== 'object') return []
+			const pattern = (route as Record<string, unknown>).pattern
+			return typeof pattern === 'string' ? [pattern] : []
+		}),
+	)
 
 	input.targetEnv.routes = [
 		...existingRoutes,
-		{ pattern: packageAppHostname, custom_domain: true },
+		...[appHostname, packageAppHostname]
+			.filter((hostname) => !routedHostnames.has(hostname))
+			.map((pattern) => ({ pattern, custom_domain: true })),
 	]
 	console.error(
-		`Package app custom domain route: ${packageAppHostname} (from PACKAGE_APP_BASE_URL)`,
+		`Custom domain routes: ${appHostname} (APP_BASE_URL), ${packageAppHostname} (PACKAGE_APP_BASE_URL)`,
 	)
 }
 

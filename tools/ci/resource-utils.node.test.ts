@@ -51,6 +51,9 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 			communityAssetsBucketName: 'kody-community-assets',
 			emailBlobsBucketName: 'kody-email-blobs',
+			// CI injects the app origin the same way; the deploy needs it to publish
+			// a complete custom-domain set.
+			workerVars: { APP_BASE_URL: 'https://heykody.dev' },
 		})
 
 		const productionConfig = parseJsonc<{
@@ -94,13 +97,18 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-email-blobs' },
 		])
 		// Hosted package apps need their own registrable domain attached to the
-		// Worker. The route is generated from PACKAGE_APP_BASE_URL rather than
+		// Worker. The routes are generated from the base-URL vars rather than
 		// committed, because a committed route would make `wrangler dev` resolve
 		// every local request as that production host.
+		//
+		// `routes` replaces the Worker's whole custom-domain set, so the app origin
+		// must be listed too: publishing only the package-app domain detaches
+		// heykody.dev and deletes its DNS record.
 		const packageAppBaseUrl =
 			productionConfig.env?.production?.vars?.PACKAGE_APP_BASE_URL
 		expect(typeof packageAppBaseUrl).toBe('string')
 		expect(productionConfig.env?.production?.routes).toEqual([
+			{ pattern: 'heykody.dev', custom_domain: true },
 			{
 				pattern: new URL(String(packageAppBaseUrl)).hostname,
 				custom_domain: true,
@@ -141,12 +149,39 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			},
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-pr-123-email-blobs' },
 		])
-		// Preview serves package apps inline on its own origin, so it gets no
-		// package-app custom domain.
+		// Preview serves package apps inline on its own origin, so it publishes no
+		// routes and keeps whatever domains are attached out-of-band.
 		expect(previewConfig.env?.preview?.routes).toBeUndefined()
 		expect(consoleError).toHaveBeenCalledWith(
 			`Wrote generated Wrangler config: ${previewOutPath}`,
 		)
+
+		// Publishing a package-app domain without the app origin would replace the
+		// Worker's custom-domain set with a partial one, detaching the app origin
+		// and deleting its DNS record. That must fail the deploy, not ship.
+		const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+			throw new Error('process.exit called')
+		}) as never)
+		try {
+			await expect(
+				writeGeneratedWranglerConfig({
+					baseConfigPath: workerWranglerConfigPath,
+					outConfigPath: path.join(tempDir, 'wrangler-no-app-origin.json'),
+					envName: 'production',
+					d1DatabaseName: 'kody',
+					d1DatabaseId: 'dry-run-kody',
+					oauthKvId: 'dry-run-kody-oauth',
+					bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+					communityAssetsBucketName: 'kody-community-assets',
+					emailBlobsBucketName: 'kody-email-blobs',
+				}),
+			).rejects.toThrow('process.exit called')
+			expect(consoleError).toHaveBeenCalledWith(
+				expect.stringContaining('without "APP_BASE_URL"'),
+			)
+		} finally {
+			exitSpy.mockRestore()
+		}
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}

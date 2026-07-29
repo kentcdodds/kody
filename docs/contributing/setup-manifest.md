@@ -65,15 +65,21 @@ This project uses the following resources:
   - Production: `kodyapps.dev` (zone in the same Cloudflare account, on
     Cloudflare nameservers), attached to the production Worker as a Workers
     **custom domain**, which provisions the DNS record and edge certificate.
-  - The attach happens on deploy, but the route is **generated, not committed**:
-    `writeGeneratedWranglerConfig` (`tools/ci/resource-utils.ts`) derives
-    `routes: [{ pattern: <PACKAGE_APP_BASE_URL host>, custom_domain: true }]`
-    for the target environment while writing
-    `packages/worker/wrangler-production.generated.json`. The var
-    `PACKAGE_APP_BASE_URL=https://kodyapps.dev` in
-    `packages/worker/wrangler.jsonc` is therefore the single source of truth for
-    both the host the Worker routes on and the domain the deploy attaches; they
-    cannot drift.
+  - The attach happens on deploy, but the routes are **generated, not
+    committed**: `writeGeneratedWranglerConfig` (`tools/ci/resource-utils.ts`)
+    derives one `custom_domain` route per base-URL var (`APP_BASE_URL` and
+    `PACKAGE_APP_BASE_URL`) while writing
+    `packages/worker/wrangler-production.generated.json`. Those vars are the
+    single source of truth for both the hosts the Worker routes on and the
+    domains the deploy attaches, so the two cannot drift.
+  - **`routes` replaces the Worker's whole custom-domain set — it does not add
+    to it.** A deploy that listed only `kodyapps.dev` detached `heykody.dev` and
+    deleted its DNS record, taking production down until the following deploy
+    republished both. That is why the app origin is always listed alongside the
+    package-app origin, and why the generator fails the deploy when
+    `PACKAGE_APP_BASE_URL` is set without `APP_BASE_URL` rather than publishing
+    a partial set. Any domain attached out-of-band must be added here before the
+    next deploy, or that deploy will remove it.
   - The route deliberately does **not** live in
     `packages/worker/wrangler.jsonc`: `npm run dev` runs `wrangler dev` against
     the **production** environment, and Wrangler resolves local request URLs
