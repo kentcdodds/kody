@@ -20,6 +20,11 @@ import {
 	AccountManagementShell,
 } from '#client/routes/account-management-components.tsx'
 import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
+import {
+	fetchOnboardingPayload,
+	onboardingApiPath,
+	type OnboardingPayload,
+} from '#client/routes/onboarding-payload.ts'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import { OnboardingDiyCard } from '#client/routes/onboarding-diy-card.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
@@ -38,21 +43,6 @@ import {
 	mutedLinkCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
-
-export type OnboardingPayload = {
-	ok: true
-	loggedIn: boolean
-	mcpServerUrl: string
-	setupPrompt: string
-	discoveryPrompt: string
-	hasMcpClient: boolean
-	emailVerified: boolean
-	needsOnboarding: boolean
-	featuredListings: Array<OnboardingFeaturedListing>
-}
-
-export const onboardingApiPath = '/onboarding.json'
-export { onboardingPath }
 
 function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
@@ -84,17 +74,6 @@ export async function onboardingRouteLoader(
 		)
 	}
 	return { onboarding: payload }
-}
-
-export async function fetchOnboardingPayload(signal?: AbortSignal) {
-	const response = await fetch(onboardingApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	const payload = await readJson<OnboardingPayload>(response)
-	if (!response.ok || !payload?.ok) return null
-	return payload
 }
 
 export function OnboardingRoute(handle: Handle) {

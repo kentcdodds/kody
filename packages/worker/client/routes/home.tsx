@@ -6,9 +6,9 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
 import {
 	fetchOnboardingPayload,
-	onboardingPath,
 	type OnboardingPayload,
-} from '#client/routes/onboarding.tsx'
+} from '#client/routes/onboarding-payload.ts'
+import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import { pendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import {
@@ -165,7 +165,16 @@ export function HomeRoute(handle: Handle) {
 					</div>
 				) : null}
 				<section mix={css(heroCardCss)}>
-					<img src="/logo.png" alt="kody logo" mix={css(heroLogoCss)} />
+					<img
+						src="/logo-480.webp"
+						srcSet="/logo-240.webp 240w, /logo-480.webp 480w"
+						sizes="(max-width: 640px) 168px, 240px"
+						width={480}
+						height={480}
+						fetchPriority="high"
+						alt="kody logo"
+						mix={css(heroLogoCss)}
+					/>
 					<div mix={css(heroTextCss)}>
 						<h1 mix={css(heroTitleCss)}>
 							Kody{' '}

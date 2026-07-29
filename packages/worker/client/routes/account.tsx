@@ -49,7 +49,7 @@ import {
 import {
 	fetchOnboardingPayload,
 	type OnboardingPayload,
-} from '#client/routes/onboarding.tsx'
+} from '#client/routes/onboarding-payload.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
