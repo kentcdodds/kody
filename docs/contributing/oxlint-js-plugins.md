@@ -46,6 +46,13 @@ Another live example is `kody-custom/prefer-loader-data-types`, which scopes
 itself to `packages/worker/client/routes/**` and reports route-local TypeScript
 payload declarations that should instead be imported from `#app/loader-data.ts`.
 
+`kody-custom/enforce-import-boundaries` shows the pattern for a data-driven
+rule: the boundaries and their allowlists are plain objects at the top of the
+plugin, and the matching helpers are exported so
+`tools/oxlint/import-boundaries.node.test.ts` can assert the configuration
+without spawning the linter. See [import boundaries](./import-boundaries.md) for
+the layering it enforces.
+
 ## Verify manually
 
 Create a temporary file containing the sentinel identifier and run:

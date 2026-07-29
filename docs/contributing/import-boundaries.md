@@ -1,0 +1,55 @@
+# Import boundaries
+
+`packages/worker/src` has three layers, and imports may only point downward:
+
+| Layer                                       | Path                       | Holds                                                                                     |
+| ------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
+| App (`#app/*`)                              | `packages/worker/src/app/` | Request handlers, loader payload types, the typed route table, SSR and client-facing code |
+| MCP capabilities (`#mcp/*`)                 | `packages/worker/src/mcp/` | The MCP server, capability registry, capability implementations                           |
+| Shared primitives (the rest of `#worker/*`) | `packages/worker/src/`     | Domain services, repositories, and infrastructure both layers build on                    |
+
+The app layer may import MCP capabilities and shared primitives. MCP
+capabilities may import shared primitives. Nothing may import upward. When two
+layers need the same code, extract it into a neutral `#worker/*` module rather
+than reaching sideways or upward.
+
+## What is enforced
+
+`kody-custom/enforce-import-boundaries` (see
+[oxlint JS plugins](./oxlint-js-plugins.md)) fails `npm run lint` on:
+
+- any `#app/*` import from a file under `packages/worker/src/mcp/`
+- any `#mcp/*` import from a file under `packages/worker/src/package-registry/`
+
+The rule covers static imports, re-exports (`export … from`), dynamic
+`import()`, and `vi.mock` / `vi.unmock` specifiers, so tests cannot route around
+it.
+
+`#app/handlers/*` is never allowlistable from `#mcp/*`. A capability that needs
+handler logic is the wrong shape — the shared part belongs in a `#worker/*`
+module that both the handler and the capability call.
+
+## Adding to the allowlist
+
+Each boundary in `tools/oxlint/local-plugin.js` carries an `allowedSpecifiers`
+list, and every entry needs a `reason` saying why the edge cannot be extracted
+yet. `tools/oxlint/import-boundaries.node.test.ts` asserts that every entry is
+documented. Prefer extracting a neutral module over adding an entry; the
+allowlist exists to freeze the edges that already exist, not to make room for
+new ones.
+
+## Known remaining cycles
+
+These are not covered by the rule yet:
+
+- `#worker/jobs/*` and `#mcp/jobs-vectorize.ts` / `#mcp/jobs-embed.ts` import
+  each other's building blocks. The job vector id and embed-text helpers should
+  move to a neutral module the way `#worker/vectorize/*` did.
+- Several non-MCP subsystems (`#worker/community/*`, `#worker/email/*`,
+  `#worker/webhooks/*`, `#worker/package-invocations/*`) still import `#app/*`
+  data modules. Extending the rule to all of `#worker/*` would need those
+  extracted first.
+- The admin data readers under `#worker/admin/*` take their payload envelope
+  types from `#app/loader-data.ts`. The import is type-only and erased at build
+  time, but relocating the shared loader payload contract out of the app layer
+  would remove it.

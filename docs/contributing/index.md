@@ -9,6 +9,8 @@ style, tests, MCP kody, and runtime architecture.
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)
 - [Setup](./setup.md), [code style](./code-style.md),
   [testing](./testing-principles.md)
+- [Import boundaries](./import-boundaries.md) (enforced app / MCP / shared
+  primitive layering)
 - [Package discovery routing evaluation](./package-discovery-evaluation.md)
 - [Cursor Cloud Agent notes](./cloud-agents.md)
 - [Production backup and disaster recovery](./disaster-recovery.md)

@@ -9,8 +9,8 @@ import { adminPackageScopeGrantCreateCapability } from '#mcp/capabilities/admin/
 import { adminPackageScopeGrantListCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-list.ts'
 import { adminPackageScopeGrantRevokeCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-revoke.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { insertPackageScopeGrant } from './scope-grants.ts'
-import { ensurePackageScopeGrantsTestSchema } from './test-schema.ts'
+import { insertPackageScopeGrant } from '#worker/package-registry/scope-grants.ts'
+import { ensurePackageScopeGrantsTestSchema } from '#worker/package-registry/test-schema.ts'
 
 function reservedPlatformUsername() {
 	return `kody-r-${crypto.randomUUID().replaceAll('-', '').slice(0, 8)}`

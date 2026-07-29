@@ -139,9 +139,170 @@ const preferLoaderDataTypesRule = {
 	},
 }
 
+/**
+ * Enforced import direction between worker layers. `#app/*` is the HTTP/UI
+ * layer, `#mcp/*` is the capability layer beneath it, and the rest of
+ * `#worker/*` holds primitives both layers build on. Imports may only point
+ * downward, so shared code has to be extracted into a neutral `#worker/*`
+ * module instead of growing a cycle.
+ *
+ * Each boundary lists the `allowedSpecifiers` that still cross it. Add to a
+ * list only with a `reason` explaining why the edge cannot be extracted yet —
+ * a new violation should fail lint, not quietly join the list.
+ */
+export const importBoundaries = [
+	{
+		id: 'mcp-to-app',
+		filePattern: /(^|\/)packages\/worker\/src\/mcp\/.+$/,
+		forbiddenPrefix: '#app/',
+		message:
+			'#mcp/* must not import from #app/*. Extract the shared code into a neutral #worker/* module (see docs/contributing/import-boundaries.md).',
+		allowedSpecifiers: [
+			{
+				specifier: '#app/app-base-url.ts',
+				reason:
+					'Builds absolute app URLs from the app-layer deployment config. TODO: move the base-URL resolver into a neutral #worker/* module.',
+			},
+			{
+				specifier: '#app/community-public.ts',
+				reason:
+					'Builds public avatar and listing URLs from the typed route table in #app/routes.ts, which is app-layer by definition. TODO: extract the URL builders behind a neutral interface.',
+			},
+		],
+		/**
+		 * Never allowlisted: request handlers are the top of the app layer, so
+		 * a capability that needs handler logic is always the wrong shape.
+		 */
+		neverAllowedPrefix: '#app/handlers/',
+		neverAllowedMessage:
+			'#mcp/* must never import an #app/handlers/* request handler. Move the shared logic into a neutral #worker/* module.',
+	},
+	{
+		id: 'package-registry-to-mcp',
+		filePattern: /(^|\/)packages\/worker\/src\/package-registry\/.+$/,
+		forbiddenPrefix: '#mcp/',
+		message:
+			'#worker/package-registry/* must not import from #mcp/*. Extract the shared code into a neutral #worker/* module (see docs/contributing/import-boundaries.md).',
+		allowedSpecifiers: [
+			{
+				specifier: '#mcp/secrets/service.ts',
+				reason:
+					'Package deletion revokes package-scoped secrets and approvals, which the MCP secrets service owns. TODO: move secret storage into a neutral #worker/secrets module.',
+			},
+		],
+		neverAllowedPrefix: null,
+		neverAllowedMessage: null,
+	},
+]
+
+function findBoundaryViolation(boundary, specifier) {
+	if (
+		boundary.neverAllowedPrefix &&
+		specifier.startsWith(boundary.neverAllowedPrefix)
+	) {
+		return boundary.neverAllowedMessage
+	}
+	if (!specifier.startsWith(boundary.forbiddenPrefix)) return null
+	const allowed = boundary.allowedSpecifiers.some(
+		(entry) => entry.specifier === specifier,
+	)
+	return allowed ? null : boundary.message
+}
+
+/**
+ * Boundaries that apply to `filename`. Exported so the rule and its test agree
+ * on which files each boundary covers.
+ */
+export function getImportBoundariesForFile(filename) {
+	const normalized = normalizeFilePath(filename)
+	return importBoundaries.filter((boundary) =>
+		boundary.filePattern.test(normalized),
+	)
+}
+
+/**
+ * The message a boundary would report for `specifier`, or null when the import
+ * is allowed. Exported for `import-boundaries.node.test.ts`.
+ */
+export function findImportBoundaryViolation(filename, specifier) {
+	for (const boundary of getImportBoundariesForFile(filename)) {
+		const detail = findBoundaryViolation(boundary, specifier)
+		if (detail) return detail
+	}
+	return null
+}
+
+const enforceImportBoundariesRule = {
+	meta: {
+		type: 'problem',
+		docs: {
+			description:
+				'Enforce the worker layer import direction so the mcp/app and package-registry/mcp cycles cannot grow.',
+		},
+		schema: [],
+		messages: {
+			crossesBoundary: '{{detail}}',
+		},
+	},
+	createOnce(context) {
+		let activeBoundaries = []
+
+		function check(node, specifier) {
+			if (typeof specifier !== 'string') return
+			for (const boundary of activeBoundaries) {
+				const detail = findBoundaryViolation(boundary, specifier)
+				if (!detail) continue
+				context.report({
+					node,
+					messageId: 'crossesBoundary',
+					data: { detail },
+				})
+				return
+			}
+		}
+
+		return {
+			Program() {
+				activeBoundaries = getImportBoundariesForFile(context.filename)
+			},
+			ImportDeclaration(node) {
+				check(node, node.source.value)
+			},
+			ExportNamedDeclaration(node) {
+				if (!node.source) return
+				check(node, node.source.value)
+			},
+			ExportAllDeclaration(node) {
+				check(node, node.source.value)
+			},
+			ImportExpression(node) {
+				if (node.source.type !== 'Literal') return
+				check(node, node.source.value)
+			},
+			// `vi.mock('#app/...')` reaches across the same boundary, so tests
+			// cannot route around the rule.
+			CallExpression(node) {
+				const [first] = node.arguments
+				if (first?.type !== 'Literal') return
+				if (
+					node.callee.type === 'MemberExpression' &&
+					node.callee.object.type === 'Identifier' &&
+					node.callee.object.name === 'vi' &&
+					node.callee.property.type === 'Identifier' &&
+					(node.callee.property.name === 'mock' ||
+						node.callee.property.name === 'unmock')
+				) {
+					check(node, first.value)
+				}
+			},
+		}
+	},
+}
+
 const plugin = {
 	meta: { name: 'kody-custom' },
 	rules: {
+		'enforce-import-boundaries': enforceImportBoundariesRule,
 		'no-example-identifier': noExampleIdentifierRule,
 		'no-literal-frame-src': noLiteralFrameSrcRule,
 		'prefer-loader-data-types': preferLoaderDataTypesRule,
