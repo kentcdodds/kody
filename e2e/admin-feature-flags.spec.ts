@@ -34,8 +34,8 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 	).toBeVisible()
 
 	const demoFlagSection = page
-		.locator('section')
-		.filter({ has: page.getByRole('heading', { name: 'demo-indicator' }) })
+		.getByRole('heading', { name: 'demo-indicator' })
+		.locator('xpath=ancestor::section[1]')
 
 	const enabledCheckbox = demoFlagSection.getByLabel('Enabled')
 	if (await enabledCheckbox.isChecked()) {
