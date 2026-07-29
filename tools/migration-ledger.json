@@ -447,6 +447,10 @@
 		{
 			"filename": "0105-restore-safe-row-sizes.sql",
 			"sha256": "0c40218da221b778df2869e0533828844fabe3664423b07a3466721ba924f6c5"
+		},
+		{
+			"filename": "0107-job-execution-claims.sql",
+			"sha256": "2912bf29b37f179cf6517e02a064a509089c146edf49ab829f92927a517c5242"
 		}
 	]
 }

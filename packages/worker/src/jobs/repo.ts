@@ -26,12 +26,20 @@ type JobRowRecord = {
 	run_count: number
 	success_count: number
 	error_count: number
+	claim_token: string | null
+	running_since: string | null
+	lease_expires_at: string | null
+	claimed_scheduled_for: string | null
+	retry_scheduled_for: string | null
+	retry_count: number
+	last_completed_scheduled_for: string | null
 }
 
 export type JobRow = JobRowRecord & {
 	record: JobRecord
 	callerContextJson: string
 	callerContext: PersistedJobCallerContext | null
+	schedulerWakeAt: string
 }
 
 function serializeJob(job: JobRecord) {
@@ -153,6 +161,24 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		run_count: record.runCount,
 		success_count: record.successCount,
 		error_count: record.errorCount,
+		claim_token: row['claim_token'] == null ? null : String(row['claim_token']),
+		running_since:
+			row['running_since'] == null ? null : String(row['running_since']),
+		lease_expires_at:
+			row['lease_expires_at'] == null ? null : String(row['lease_expires_at']),
+		claimed_scheduled_for:
+			row['claimed_scheduled_for'] == null
+				? null
+				: String(row['claimed_scheduled_for']),
+		retry_scheduled_for:
+			row['retry_scheduled_for'] == null
+				? null
+				: String(row['retry_scheduled_for']),
+		retry_count: Number(row['retry_count']) || 0,
+		last_completed_scheduled_for:
+			row['last_completed_scheduled_for'] == null
+				? null
+				: String(row['last_completed_scheduled_for']),
 		record,
 		callerContextJson: String(row['caller_context_json']),
 		callerContext: parseJson<PersistedJobCallerContext | null>(
@@ -161,6 +187,10 @@ function mapRow(row: Record<string, unknown>): JobRow {
 				: String(row['caller_context_json']),
 			null,
 		),
+		schedulerWakeAt:
+			row['scheduler_wake_at'] == null
+				? record.nextRunAt
+				: String(row['scheduler_wake_at']),
 	}
 }
 
@@ -222,7 +252,10 @@ export async function updateJobRow(input: {
 				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
 				enabled = ?, kill_switch_enabled = ?, preserved = ?, caller_context_json = ?, updated_at = ?,
 				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
-				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?
+				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?,
+				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
+				claimed_scheduled_for = NULL, retry_scheduled_for = NULL,
+				retry_count = 0
 			WHERE id = ? AND user_id = ?`,
 		)
 		.bind(
@@ -316,10 +349,19 @@ export async function listDueJobRows(
 				AND enabled = 1
 				AND kill_switch_enabled = 0
 				AND next_run_at <= ?
+				AND (
+					claim_token IS NULL
+					OR lease_expires_at IS NULL
+					OR lease_expires_at <= ?
+				)
+				AND (
+					last_completed_scheduled_for IS NULL
+					OR last_completed_scheduled_for != COALESCE(retry_scheduled_for, next_run_at)
+				)
 			ORDER BY next_run_at ASC, name ASC
 			LIMIT ?`,
 		)
-		.bind(userId, nowIso, maxDueJobsPerAlarm)
+		.bind(userId, nowIso, nowIso, maxDueJobsPerAlarm)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
 }
@@ -327,19 +369,169 @@ export async function listDueJobRows(
 export async function getNextRunnableJobRow(
 	db: D1Database,
 	userId: string,
+	nowIso = new Date().toISOString(),
 ): Promise<JobRow | null> {
 	const result = await db
 		.prepare(
-			`SELECT * FROM jobs
+			`SELECT jobs.*,
+				CASE
+					WHEN claim_token IS NOT NULL
+						AND lease_expires_at IS NOT NULL
+						AND lease_expires_at > ?
+					THEN lease_expires_at
+					ELSE next_run_at
+				END AS scheduler_wake_at
+			FROM jobs
 			WHERE user_id = ?
 				AND enabled = 1
 				AND kill_switch_enabled = 0
-			ORDER BY next_run_at ASC, name ASC
+				AND (
+					last_completed_scheduled_for IS NULL
+					OR last_completed_scheduled_for != COALESCE(retry_scheduled_for, next_run_at)
+				)
+			ORDER BY scheduler_wake_at ASC, name ASC
 			LIMIT 1`,
 		)
-		.bind(userId)
+		.bind(nowIso, userId)
 		.first<Record<string, unknown>>()
 	return result ? mapRow(result) : null
+}
+
+/**
+ * Scheduled executions use a ten-minute lease, comfortably above the
+ * sandbox's default 90-second maximum runtime. A single conditional D1 write
+ * is the ownership boundary; reading due rows alone never grants ownership.
+ */
+export const jobExecutionLeaseMs = 10 * 60 * 1_000
+
+export async function claimJobRow(input: {
+	db: D1Database
+	userId: string
+	jobId: string
+	now: Date
+	claimToken: string
+}): Promise<JobRow | null> {
+	const nowIso = input.now.toISOString()
+	const leaseExpiresAt = new Date(
+		input.now.valueOf() + jobExecutionLeaseMs,
+	).toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs SET
+				claim_token = ?,
+				running_since = ?,
+				lease_expires_at = ?,
+				claimed_scheduled_for = COALESCE(retry_scheduled_for, next_run_at)
+			WHERE id = ?
+				AND user_id = ?
+				AND enabled = 1
+				AND kill_switch_enabled = 0
+				AND next_run_at <= ?
+				AND (
+					claim_token IS NULL
+					OR lease_expires_at IS NULL
+					OR lease_expires_at <= ?
+				)
+				AND (
+					last_completed_scheduled_for IS NULL
+					OR last_completed_scheduled_for != COALESCE(retry_scheduled_for, next_run_at)
+				)
+			RETURNING *`,
+		)
+		.bind(
+			input.claimToken,
+			nowIso,
+			leaseExpiresAt,
+			input.jobId,
+			input.userId,
+			nowIso,
+			nowIso,
+		)
+		.first<Record<string, unknown>>()
+	return result ? mapRow(result) : null
+}
+
+export async function finalizeClaimedJobRow(input: {
+	db: D1Database
+	userId: string
+	job: JobRecord
+	callerContextJson: string
+	claimToken: string
+	scheduledFor: string
+}): Promise<boolean> {
+	const serialized = serializeJob(input.job)
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs SET
+				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
+				enabled = ?, kill_switch_enabled = ?, preserved = ?, caller_context_json = ?, updated_at = ?,
+				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
+				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?,
+				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
+				claimed_scheduled_for = NULL, retry_scheduled_for = NULL,
+				retry_count = 0, last_completed_scheduled_for = ?
+			WHERE id = ? AND user_id = ? AND claim_token = ?`,
+		)
+		.bind(
+			serialized.name,
+			serialized.source_id,
+			serialized.published_commit,
+			serialized.repo_check_policy_json,
+			serialized.storage_id,
+			serialized.params_json,
+			serialized.schedule_json,
+			serialized.timezone,
+			serialized.enabled,
+			serialized.kill_switch_enabled,
+			serialized.preserved,
+			input.callerContextJson,
+			serialized.updated_at,
+			serialized.last_run_at,
+			serialized.last_run_status,
+			serialized.last_run_error,
+			serialized.last_duration_ms,
+			serialized.next_run_at,
+			serialized.run_count,
+			serialized.success_count,
+			serialized.error_count,
+			input.scheduledFor,
+			serialized.id,
+			input.userId,
+			input.claimToken,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
+export async function retryClaimedJobRow(input: {
+	db: D1Database
+	userId: string
+	jobId: string
+	claimToken: string
+	nextRunAt: string
+}): Promise<boolean> {
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs SET
+				next_run_at = ?,
+				updated_at = ?,
+				retry_scheduled_for = claimed_scheduled_for,
+				retry_count = retry_count + 1,
+				claim_token = NULL,
+				running_since = NULL,
+				lease_expires_at = NULL,
+				claimed_scheduled_for = NULL
+			WHERE id = ? AND user_id = ? AND claim_token = ?`,
+		)
+		.bind(
+			input.nextRunAt,
+			new Date().toISOString(),
+			input.jobId,
+			input.userId,
+			input.claimToken,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function deleteJobRow(
