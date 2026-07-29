@@ -14,7 +14,7 @@ const mockModule = vi.hoisted(() => ({
 	listJobRowsPage: vi.fn(),
 }))
 
-vi.mock('#mcp/capabilities/capability-search.ts', () => ({
+vi.mock('#worker/vectorize/embedding.ts', () => ({
 	embedTextForVectorize: (...args: Array<unknown>) =>
 		mockModule.embedTextForVectorize(...args),
 	embedTextsForVectorize: (...args: Array<unknown>) =>

@@ -14,7 +14,7 @@ const mockModule = vi.hoisted(() => ({
 	loadPackageManifestBySourceId: vi.fn(),
 }))
 
-vi.mock('#mcp/capabilities/capability-search.ts', () => ({
+vi.mock('#worker/vectorize/embedding.ts', () => ({
 	embedTextsForVectorize: (...args: Array<unknown>) =>
 		mockModule.embedTextsForVectorize(...args),
 	getCapabilityVectorIndex: (...args: Array<unknown>) =>

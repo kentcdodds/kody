@@ -1,4 +1,4 @@
-import { lexicalScore } from '#mcp/capabilities/capability-search.ts'
+import { lexicalScore } from '#worker/vectorize/scoring.ts'
 
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 import { buildCandidateBaseScore } from '../search-scoring.ts'

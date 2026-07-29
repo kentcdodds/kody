@@ -1,5 +1,5 @@
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
-import { buildLengthSafeVectorId } from '#mcp/capabilities/vector-ids.ts'
+import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 import { type SavedPackageRecord, type SavedPackageRow } from './types.ts'
 
 export function savedPackageVectorId(packageId: string) {

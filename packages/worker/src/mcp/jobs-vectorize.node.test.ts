@@ -6,7 +6,7 @@ const mockModule = vi.hoisted(() => ({
 	isCapabilitySearchOffline: vi.fn(),
 }))
 
-vi.mock('#mcp/capabilities/capability-search.ts', () => ({
+vi.mock('#worker/vectorize/embedding.ts', () => ({
 	embedTextForVectorize: (...args: Array<unknown>) =>
 		mockModule.embedTextForVectorize(...args),
 	getCapabilityVectorIndex: (...args: Array<unknown>) =>

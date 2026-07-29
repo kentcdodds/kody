@@ -3,7 +3,7 @@ import {
 	deterministicEmbedding,
 	embedTextForVectorize,
 	isCapabilitySearchOffline,
-} from '#mcp/capabilities/capability-search.ts'
+} from '#worker/vectorize/embedding.ts'
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 

@@ -452,8 +452,8 @@ primitives:
     name: Vectorize search
     summary: Capability and package vector search filtered by userId.
     code:
+      - packages/worker/src/vectorize
       - packages/worker/src/mcp/capabilities/capability-search.ts
-      - packages/worker/src/mcp/capabilities/vector-ids.ts
     docs:
       - docs/contributing/architecture/data-storage.md
 

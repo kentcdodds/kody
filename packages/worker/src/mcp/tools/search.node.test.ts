@@ -5,7 +5,7 @@ import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-regi
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	deterministicEmbedding,
-} from '#mcp/capabilities/capability-search.ts'
+} from '#worker/vectorize/embedding.ts'
 import { filterCapabilityRegistryForCaller } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { synthesizeMcpServerToolDomain } from '#mcp/capabilities/mcp-server/index.ts'

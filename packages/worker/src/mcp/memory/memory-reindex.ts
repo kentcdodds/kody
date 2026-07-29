@@ -1,12 +1,12 @@
 import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
-} from '#mcp/capabilities/capability-search.ts'
+} from '#worker/vectorize/embedding.ts'
 import {
 	mergeVectorReindexResults,
 	reindexVectorCandidates,
 	type VectorReindexResult,
-} from '#mcp/capabilities/reindex-batches.ts'
+} from '#worker/vectorize/reindex-batches.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
 import { listMemoriesPage } from './repo.ts'

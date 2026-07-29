@@ -1,8 +1,5 @@
-import {
-	cosineSimilarity,
-	deterministicEmbedding,
-	lexicalScore,
-} from '#mcp/capabilities/capability-search.ts'
+import { deterministicEmbedding } from '#worker/vectorize/embedding.ts'
+import { cosineSimilarity, lexicalScore } from '#worker/vectorize/scoring.ts'
 import { type IntegrationConfig } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { toIntegrationConfig } from '#worker/integrations/service.ts'
 

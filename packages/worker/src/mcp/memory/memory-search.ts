@@ -1,15 +1,17 @@
 import {
-	CAPABILITY_SEARCH_RRF_K,
-	cosineSimilarity,
 	deterministicEmbedding,
 	embedTextForVectorize,
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
+} from '#worker/vectorize/embedding.ts'
+import {
+	CAPABILITY_SEARCH_RRF_K,
+	cosineSimilarity,
 	lexicalScore,
 	reciprocalRankFusion,
 	sortIdsByScore,
-} from '#mcp/capabilities/capability-search.ts'
-import { getRawIdFromPassthroughVectorId } from '#mcp/capabilities/vector-ids.ts'
+} from '#worker/vectorize/scoring.ts'
+import { getRawIdFromPassthroughVectorId } from '#worker/vectorize/vector-ids.ts'
 import { parseJsonStringArray } from './json-string-array.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
 import { type McpMemoryRow, type MemorySearchMatch } from './types.ts'

@@ -4,7 +4,7 @@ const mockModule = vi.hoisted(() => ({
 	embedTextsForVectorize: vi.fn(),
 }))
 
-vi.mock('./capability-search.ts', () => ({
+vi.mock('./embedding.ts', () => ({
 	embedTextsForVectorize: (...args: Array<unknown>) =>
 		mockModule.embedTextsForVectorize(...args),
 }))

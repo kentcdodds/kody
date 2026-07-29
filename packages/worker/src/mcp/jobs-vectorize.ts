@@ -2,8 +2,8 @@ import {
 	embedTextForVectorize,
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
-} from '#mcp/capabilities/capability-search.ts'
-import { buildLengthSafeVectorId } from '#mcp/capabilities/vector-ids.ts'
+} from '#worker/vectorize/embedding.ts'
+import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 
 export function jobVectorId(jobId: string): string {
 	return buildLengthSafeVectorId({ prefix: 'job', rawId: jobId })

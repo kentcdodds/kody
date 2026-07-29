@@ -1,4 +1,4 @@
-import { blendLexicalAndVectorScore } from '#mcp/capabilities/capability-search.ts'
+import { blendLexicalAndVectorScore } from '#worker/vectorize/scoring.ts'
 
 import { type SearchMatch } from './search-format.ts'
 import {
