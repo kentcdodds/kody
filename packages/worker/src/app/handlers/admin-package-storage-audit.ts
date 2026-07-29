@@ -14,6 +14,7 @@ import {
 
 const defaultAppPackageLimit = 200
 const maxAppPackageLimit = 500
+const maxOrphanAppBuckets = 500
 const maxConcurrentPackageAuditProbes = 5
 
 export type PackageStorageAuditPackageRow = {
@@ -42,6 +43,7 @@ export type PackageStorageAuditReport = {
 		packagesWithAmbientImports: number
 		orphanAppBuckets: number
 		truncated: boolean
+		orphanTruncated: boolean
 	}
 }
 
@@ -85,7 +87,7 @@ export async function buildPackageStorageAuditReport(input: {
 	baseUrl: string
 	limit: number
 }): Promise<PackageStorageAuditReport> {
-	const [appPackagePage, orphanAppBuckets] = await Promise.all([
+	const [appPackagePage, orphanPage] = await Promise.all([
 		listAppPackagesForAudit({
 			db: input.env.APP_DB,
 			limit: input.limit,
@@ -113,7 +115,7 @@ export async function buildPackageStorageAuditReport(input: {
 	return {
 		ok: true,
 		packages,
-		orphanAppBuckets,
+		orphanAppBuckets: orphanPage.rows,
 		totals: {
 			appPackages: packages.length,
 			nonEmptyLegacyBuckets: packages.filter(
@@ -124,8 +126,9 @@ export async function buildPackageStorageAuditReport(input: {
 			packagesWithAmbientImports: packages.filter(
 				(row) => row.ambientStorageImportFiles.length > 0,
 			).length,
-			orphanAppBuckets: orphanAppBuckets.length,
+			orphanAppBuckets: orphanPage.rows.length,
 			truncated: appPackagePage.truncated,
+			orphanTruncated: orphanPage.truncated,
 		},
 	}
 }
@@ -153,20 +156,29 @@ async function listAppPackagesForAudit(input: {
 	}
 }
 
-async function listOrphanAppBuckets(input: {
-	db: D1Database
-}): Promise<Array<PackageStorageAuditOrphanBucket>> {
+async function listOrphanAppBuckets(input: { db: D1Database }): Promise<{
+	rows: Array<PackageStorageAuditOrphanBucket>
+	truncated: boolean
+}> {
 	const result = await input.db
 		.prepare(
 			`SELECT b.user_id AS userId, b.storage_id AS storageId,
 				b.last_seen_at AS lastSeenAt
 			FROM user_storage_buckets b
-			LEFT JOIN saved_packages p ON p.id = b.storage_id
+			LEFT JOIN saved_packages p
+				ON p.id = b.storage_id AND p.user_id = b.user_id
 			WHERE b.kind = 'app' AND p.id IS NULL
-			ORDER BY b.user_id ASC, b.storage_id ASC`,
+			ORDER BY b.user_id ASC, b.storage_id ASC
+			LIMIT ?`,
 		)
+		.bind(maxOrphanAppBuckets + 1)
 		.all<PackageStorageAuditOrphanBucket>()
-	return result.results ?? []
+	const rows = result.results ?? []
+	const truncated = rows.length > maxOrphanAppBuckets
+	return {
+		rows: truncated ? rows.slice(0, maxOrphanAppBuckets) : rows,
+		truncated,
+	}
 }
 
 async function auditAppPackage(input: {

@@ -580,31 +580,44 @@ async function readStorageEstimateChunkWithRetry(input: {
 	userId: string
 	storageIds: Array<string>
 }): Promise<Array<StorageEstimateResult>> {
-	const readChunk = () =>
-		Promise.all(
-			input.storageIds.map((storageId) =>
-				storageRunnerRpc({
-					env: input.env,
-					userId: input.userId,
-					storageId,
-				}).getEstimatedBytes(),
-			),
-		)
-	try {
-		return await readChunk()
-	} catch {
-		await new Promise<void>((resolve) => {
-			setTimeout(resolve, storageEstimateReadRetryDelayMs)
-		})
-		try {
-			return await readChunk()
-		} catch (retryError) {
-			// An unreadable bucket cannot safely be treated as zero usage.
-			throw new Error(
-				'Unable to verify the storage byte entitlement because a bucket estimate could not be read.',
-				{ cause: retryError },
-			)
+	const readOne = (storageId: string) =>
+		storageRunnerRpc({
+			env: input.env,
+			userId: input.userId,
+			storageId,
+		}).getEstimatedBytes()
+
+	// Wait for every first-attempt read to settle before retrying so a fast
+	// rejection cannot overlap still-pending peers and exceed the fan-out cap.
+	const firstAttempt = await Promise.allSettled(
+		input.storageIds.map((storageId) => readOne(storageId)),
+	)
+	const firstValues: Array<StorageEstimateResult> = []
+	let firstFailed = false
+	for (const result of firstAttempt) {
+		if (result.status === 'fulfilled') {
+			firstValues.push(result.value)
+			continue
 		}
+		firstFailed = true
+	}
+	if (!firstFailed) {
+		return firstValues
+	}
+
+	await new Promise<void>((resolve) => {
+		setTimeout(resolve, storageEstimateReadRetryDelayMs)
+	})
+	try {
+		return await Promise.all(
+			input.storageIds.map((storageId) => readOne(storageId)),
+		)
+	} catch (retryError) {
+		// An unreadable bucket cannot safely be treated as zero usage.
+		throw new Error(
+			'Unable to verify the storage byte entitlement because a bucket estimate could not be read.',
+			{ cause: retryError },
+		)
 	}
 }
 

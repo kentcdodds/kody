@@ -67,6 +67,10 @@ function createAdminActor(roles: Array<RoleName>) {
 	}
 }
 
+function packageOwnershipKey(userId: string, packageId: string) {
+	return `${userId}\0${packageId}`
+}
+
 function createAuditTestEnv(input: {
 	packages: Array<SavedPackageRow>
 	buckets: Array<StorageBucketRow>
@@ -111,18 +115,27 @@ function createAuditTestEnv(input: {
 				}
 				if (
 					normalized.includes('from user_storage_buckets b') &&
-					normalized.includes("kind = 'app'")
+					normalized.includes("kind = 'app'") &&
+					normalized.includes('p.user_id = b.user_id')
 				) {
-					const packageIds = new Set(input.packages.map((row) => row.packageId))
+					const limit = Number(params[0] ?? Number.POSITIVE_INFINITY)
+					const ownedKeys = new Set(
+						input.packages.map((row) =>
+							packageOwnershipKey(row.userId, row.packageId),
+						),
+					)
 					const rows = input.buckets
 						.filter(
-							(row) => row.kind === 'app' && !packageIds.has(row.storageId),
+							(row) =>
+								row.kind === 'app' &&
+								!ownedKeys.has(packageOwnershipKey(row.userId, row.storageId)),
 						)
 						.sort((left, right) => {
 							const byUser = left.userId.localeCompare(right.userId)
 							if (byUser !== 0) return byUser
 							return left.storageId.localeCompare(right.storageId)
 						})
+						.slice(0, limit)
 						.map((row) => ({
 							userId: row.userId,
 							storageId: row.storageId,
@@ -236,6 +249,14 @@ test('admin package storage audit requires admin and returns the audit report', 
 			lastSeenAt: '2026-07-02T00:00:00.000Z',
 		},
 		{
+			// Cross-user collision: storage_id matches user-b's package, but the
+			// bucket belongs to user-a, so it must still count as an orphan.
+			userId: 'user-a',
+			storageId: 'pkg-ambient',
+			kind: 'app',
+			lastSeenAt: '2026-07-02T12:00:00.000Z',
+		},
+		{
 			userId: 'user-a',
 			storageId: 'job:still-here',
 			kind: 'job',
@@ -307,10 +328,16 @@ test('admin package storage audit requires admin and returns the audit report', 
 			appPackages: 5,
 			nonEmptyLegacyBuckets: 1,
 			packagesWithAmbientImports: 1,
-			orphanAppBuckets: 1,
+			orphanAppBuckets: 2,
 			truncated: false,
+			orphanTruncated: false,
 		},
 		orphanAppBuckets: [
+			{
+				userId: 'user-a',
+				storageId: 'pkg-ambient',
+				lastSeenAt: '2026-07-02T12:00:00.000Z',
+			},
 			{
 				userId: 'user-z',
 				storageId: 'deleted-pkg',
@@ -395,6 +422,7 @@ test('admin package storage audit supports limit truncation', async () => {
 			packagesWithAmbientImports: 0,
 			orphanAppBuckets: 0,
 			truncated: true,
+			orphanTruncated: false,
 		},
 	})
 })

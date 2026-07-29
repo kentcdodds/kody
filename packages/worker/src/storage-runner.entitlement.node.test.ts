@@ -38,7 +38,7 @@ const { assertStorageRunnerWriteWithinEntitlement } =
 	await import('#worker/storage-runner.ts')
 
 function createEstimateEnv(
-	getEstimatedBytes: () => Promise<{ estimatedBytes: number }>,
+	getEstimatedBytes: (storageId: string) => Promise<{ estimatedBytes: number }>,
 ) {
 	return {
 		APP_DB: {
@@ -48,9 +48,13 @@ function createEstimateEnv(
 		},
 		STORAGE_RUNNER: {
 			idFromName: (name: string) => name,
-			get: () => ({
-				getEstimatedBytes,
-			}),
+			get: (name: string) => {
+				const parts = JSON.parse(name) as [string, string]
+				const storageId = parts[1]
+				return {
+					getEstimatedBytes: () => getEstimatedBytes(storageId),
+				}
+			},
 		},
 	} as unknown as Env
 }
@@ -65,7 +69,7 @@ test('assertStorageRunnerWriteWithinEntitlement retries a failed estimate chunk 
 	vi.useFakeTimers()
 	try {
 		const assertion = assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(getEstimatedBytes),
+			env: createEstimateEnv(() => getEstimatedBytes()),
 			userId: 'user-1',
 			email: null,
 			storageId: 'bucket-a',
@@ -88,7 +92,7 @@ test('assertStorageRunnerWriteWithinEntitlement fails closed when the retry also
 	vi.useFakeTimers()
 	try {
 		const assertion = assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(getEstimatedBytes),
+			env: createEstimateEnv(() => getEstimatedBytes()),
 			userId: 'user-1',
 			email: null,
 			storageId: 'bucket-a',
@@ -103,4 +107,73 @@ test('assertStorageRunnerWriteWithinEntitlement fails closed when the retry also
 	} finally {
 		vi.useRealTimers()
 	}
+})
+
+test('estimate chunk retry waits for pending first-attempt reads before retrying', async () => {
+	const chunkStorageIds = ['fast-fail', 'slow-ok'] as const
+	mockModule.listUserStorageBucketIds.mockResolvedValue([...chunkStorageIds])
+
+	let inFlight = 0
+	let maxInFlight = 0
+	let resolveSlow: (() => void) | undefined
+	const slowPending = new Promise<void>((resolve) => {
+		resolveSlow = resolve
+	})
+	const callCounts = new Map<string, number>()
+
+	const getEstimatedBytes = async (storageId: string) => {
+		inFlight += 1
+		maxInFlight = Math.max(maxInFlight, inFlight)
+		const callCount = (callCounts.get(storageId) ?? 0) + 1
+		callCounts.set(storageId, callCount)
+		try {
+			if (storageId === 'fast-fail') {
+				if (callCount === 1) {
+					// Yield so the peer read is in-flight before this rejects;
+					// a sync throw would never overlap and miss the fan-out bug.
+					await Promise.resolve()
+					throw new Error('fast fail on first attempt')
+				}
+				return { estimatedBytes: 8 }
+			}
+			if (storageId === 'slow-ok') {
+				if (callCount === 1) {
+					await slowPending
+				}
+				return { estimatedBytes: 16 }
+			}
+			throw new Error(`Unexpected storageId: ${storageId}`)
+		} finally {
+			inFlight -= 1
+		}
+	}
+
+	const assertion = assertStorageRunnerWriteWithinEntitlement({
+		env: createEstimateEnv(getEstimatedBytes),
+		userId: 'user-1',
+		email: null,
+		storageId: 'fast-fail',
+		requested: 1,
+	})
+
+	await vi.waitFor(() => {
+		expect(callCounts.get('fast-fail')).toBe(1)
+		expect(callCounts.get('slow-ok')).toBe(1)
+	})
+	expect(maxInFlight).toBe(chunkStorageIds.length)
+
+	// Even after the retry delay elapses, the second wave must not start while
+	// the slow first-attempt peer is still in flight (allSettled must win).
+	await new Promise<void>((resolve) => {
+		setTimeout(resolve, storageEstimateReadRetryDelayMs + 50)
+	})
+	expect(callCounts.get('fast-fail')).toBe(1)
+	expect(callCounts.get('slow-ok')).toBe(1)
+
+	resolveSlow?.()
+	await expect(assertion).resolves.toBeUndefined()
+
+	expect(callCounts.get('fast-fail')).toBe(2)
+	expect(callCounts.get('slow-ok')).toBe(2)
+	expect(maxInFlight).toBe(chunkStorageIds.length)
 })
