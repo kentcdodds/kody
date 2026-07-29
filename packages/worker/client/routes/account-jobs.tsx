@@ -2,6 +2,7 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
@@ -237,7 +238,7 @@ export function AccountJobsRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	const loadLatch = createRouteLoadLatch()
-	let deleteConfirm = false
+	const deleteJobCheck = createDoubleCheck(handle)
 	let editState: EditState | null = null
 	let editing = false
 
@@ -289,7 +290,7 @@ export function AccountJobsRoute(handle: Handle) {
 		jobs = payload.jobs
 		selectedJob = payload.selectedJob
 		applyRetention(payload.retention)
-		deleteConfirm = false
+		deleteJobCheck.reset()
 		editing = false
 		editState = payload.selectedJob
 			? createEditState(payload.selectedJob)
@@ -702,7 +703,7 @@ export function AccountJobsRoute(handle: Handle) {
 													disabled={isMutating}
 													onClick={() => {
 														if (isMutating) return
-														deleteConfirm = false
+														deleteJobCheck.reset()
 														editing = false
 														setMessage(null)
 														navigate(
@@ -1373,27 +1374,26 @@ export function AccountJobsRoute(handle: Handle) {
 											type="button"
 											disabled={isMutating}
 											mix={[
-												on('click', () => {
-													if (!deleteConfirm) {
-														deleteConfirm = true
-														handle.update()
-														return
-													}
-													void postAction({
-														body: { action: 'delete', id: detail.id },
-														successMessage: () => 'Deleted job.',
-														failureMessage: 'Unable to delete job.',
-														afterSuccess: () => {
-															navigate(
-																jobsRoute.buildListHref(getCurrentSearch()),
-															)
-														},
-													})
+												...deleteJobCheck.getButtonMix({
+													on: {
+														click: () =>
+															void postAction({
+																body: { action: 'delete', id: detail.id },
+																successMessage: () => 'Deleted job.',
+																failureMessage: 'Unable to delete job.',
+																afterSuccess: () => {
+																	navigate(
+																		jobsRoute.buildListHref(getCurrentSearch()),
+																	)
+																},
+															}),
+													},
+													resetAfterAction: false,
 												}),
 												css(dangerButtonCss),
 											]}
 										>
-											{deleteConfirm ? 'Confirm delete' : 'Delete'}
+											{deleteJobCheck.doubleCheck ? 'Confirm delete' : 'Delete'}
 										</button>
 									) : null}
 								</div>

@@ -2,6 +2,7 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
@@ -180,7 +181,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	const loadLatch = createRouteLoadLatch()
-	let deleteConfirm = false
+	const deleteServerCheck = createDoubleCheck(handle)
 	let oauthResultConsumed = false
 
 	const primaryButtonCss = getPrimaryButtonCss()
@@ -217,7 +218,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 
 	function applyPayload(payload: AccountMcpServersPayload) {
 		servers = payload.servers
-		deleteConfirm = false
+		deleteServerCheck.reset()
 	}
 
 	async function loadServers(signal: AbortSignal) {
@@ -405,7 +406,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 							mix={[
 								on('click', () => {
 									if (isMutating) return
-									deleteConfirm = false
+									deleteServerCheck.reset()
 									setMessage(null)
 									navigate(mcpServersRoute.buildNewHref(getCurrentSearch()))
 								}),
@@ -465,7 +466,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 													disabled={isMutating}
 													onClick={() => {
 														if (isMutating) return
-														deleteConfirm = false
+														deleteServerCheck.reset()
 														setMessage(null)
 														navigate(
 															mcpServersRoute.buildDetailHref(
@@ -763,27 +764,30 @@ export function AccountMcpServersRoute(handle: Handle) {
 										type="button"
 										disabled={isMutating}
 										mix={[
-											on('click', () => {
-												if (!deleteConfirm) {
-													deleteConfirm = true
-													handle.update()
-													return
-												}
-												void postAction({
-													body: { action: 'delete', id: server.id },
-													successMessage: () => 'Removed MCP server.',
-													failureMessage: 'Unable to remove MCP server.',
-													afterSuccess: () => {
-														navigate(
-															mcpServersRoute.buildListHref(getCurrentSearch()),
-														)
-													},
-												})
+											...deleteServerCheck.getButtonMix({
+												on: {
+													click: () =>
+														void postAction({
+															body: { action: 'delete', id: server.id },
+															successMessage: () => 'Removed MCP server.',
+															failureMessage: 'Unable to remove MCP server.',
+															afterSuccess: () => {
+																navigate(
+																	mcpServersRoute.buildListHref(
+																		getCurrentSearch(),
+																	),
+																)
+															},
+														}),
+												},
+												resetAfterAction: false,
 											}),
 											css(dangerButtonCss),
 										]}
 									>
-										{deleteConfirm ? 'Confirm remove' : 'Remove'}
+										{deleteServerCheck.doubleCheck
+											? 'Confirm remove'
+											: 'Remove'}
 									</button>
 								</div>
 							</section>

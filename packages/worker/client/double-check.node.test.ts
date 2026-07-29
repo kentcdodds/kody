@@ -26,11 +26,13 @@ function invoke(mixin: unknown, event: Event) {
 test('double check button mix requires two clicks, resets on blur, then invokes action', () => {
 	const handle = { update: vi.fn() }
 	const action = vi.fn()
+	const firstClickAction = vi.fn()
 	const doubleCheck = createDoubleCheck(handle as never)
 	const mix = doubleCheck.getButtonMix({
 		on: {
 			click: action,
 		},
+		onFirstClick: firstClickAction,
 	})
 
 	expect(mix).toHaveLength(2)
@@ -45,6 +47,7 @@ test('double check button mix requires two clicks, resets on blur, then invokes 
 	expect(firstClick.preventDefault).toHaveBeenCalled()
 	expect(doubleCheck.doubleCheck).toBe(true)
 	expect(action).not.toHaveBeenCalled()
+	expect(firstClickAction).toHaveBeenCalledTimes(1)
 
 	invoke(mix[0], new Event('blur'))
 	expect(doubleCheck.doubleCheck).toBe(false)
@@ -58,6 +61,7 @@ test('double check button mix requires two clicks, resets on blur, then invokes 
 	expect(thirdClick.preventDefault).toHaveBeenCalled()
 	expect(doubleCheck.doubleCheck).toBe(true)
 	expect(action).not.toHaveBeenCalled()
+	expect(firstClickAction).toHaveBeenCalledTimes(2)
 
 	const fourthClick = {
 		preventDefault: vi.fn(),
@@ -66,5 +70,17 @@ test('double check button mix requires two clicks, resets on blur, then invokes 
 
 	expect(fourthClick.preventDefault).not.toHaveBeenCalled()
 	expect(action).toHaveBeenCalledTimes(1)
+	expect(firstClickAction).toHaveBeenCalledTimes(2)
 	expect(doubleCheck.doubleCheck).toBe(false)
+
+	const persistentCheck = createDoubleCheck(handle as never)
+	const persistentAction = vi.fn()
+	const persistentMix = persistentCheck.getButtonMix({
+		on: { click: persistentAction },
+		resetAfterAction: false,
+	})
+	invoke(persistentMix[1], { preventDefault: vi.fn() } as unknown as Event)
+	invoke(persistentMix[1], { preventDefault: vi.fn() } as unknown as Event)
+	expect(persistentAction).toHaveBeenCalledTimes(1)
+	expect(persistentCheck.doubleCheck).toBe(true)
 })

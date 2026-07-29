@@ -2,6 +2,12 @@ import { expect, test } from 'vitest'
 import { createListDetailRoute } from './list-detail-route.ts'
 
 const mcpServersRoute = createListDetailRoute('/account/mcp-servers')
+const nestedRoute = createListDetailRoute('/account/secrets', {
+	parseDetailId(pathname) {
+		const match = /^\/account\/secrets\/user\/([^/]+)$/.exec(pathname)
+		return match?.[1] ? decodeURIComponent(match[1]) : null
+	},
+})
 
 test('list-detail route helper supports the URL-backed list/detail workflow', () => {
 	expect(mcpServersRoute.isRoutePath('/account/mcp-servers')).toBe(true)
@@ -59,4 +65,17 @@ test('list-detail route helper supports the URL-backed list/detail workflow', ()
 	expect(mcpServersRoute.buildDetailHref('server 1', '?q=docs')).toBe(
 		'/account/mcp-servers/server%201?q=docs',
 	)
+
+	expect(nestedRoute.getSelection('/account/secrets/new')).toEqual({
+		selectedId: null,
+		isCreating: true,
+	})
+	expect(nestedRoute.getSelection('/account/secrets/user/api%20key')).toEqual({
+		selectedId: 'api key',
+		isCreating: false,
+	})
+	expect(nestedRoute.getSelection('/account/secrets/approve')).toEqual({
+		selectedId: null,
+		isCreating: false,
+	})
 })

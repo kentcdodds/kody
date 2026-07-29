@@ -2,6 +2,7 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -154,7 +155,7 @@ export function AccountValuesRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	const loadLatch = createRouteLoadLatch()
-	let deleteConfirm = false
+	const deleteValueCheck = createDoubleCheck(handle)
 	let syncedSelectionKey: string | null = null
 
 	const primaryButtonCss = getPrimaryButtonCss()
@@ -195,7 +196,7 @@ export function AccountValuesRoute(handle: Handle) {
 		const nextKey = selectionSyncKey(selection)
 		if (nextKey === syncedSelectionKey) return
 		syncedSelectionKey = nextKey
-		deleteConfirm = false
+		deleteValueCheck.reset()
 		if (selection.isCreating) {
 			editorState = createEmptyEditorState()
 			selectedValue = null
@@ -221,7 +222,7 @@ export function AccountValuesRoute(handle: Handle) {
 	function applyPayload(payload: AccountValuesLoaderData) {
 		values = payload.values
 		selectedValue = payload.selectedValue
-		deleteConfirm = false
+		deleteValueCheck.reset()
 		if (payload.selectedValue) {
 			editorState = createEditorStateFromDetail(payload.selectedValue)
 			syncedSelectionKey = selectionSyncKey(
@@ -379,7 +380,7 @@ export function AccountValuesRoute(handle: Handle) {
 			selectedValue = null
 			editorState = createEmptyEditorState()
 			syncedSelectionKey = 'none'
-			deleteConfirm = false
+			deleteValueCheck.reset()
 			saveState = 'idle'
 			setMessage('Deleted value.')
 			syncRouterLocation(valuesRoute.buildListHref(getCurrentSearch()))
@@ -396,7 +397,7 @@ export function AccountValuesRoute(handle: Handle) {
 
 	function selectValue(entry: AccountValueListItem) {
 		if (saveState !== 'idle') return
-		deleteConfirm = false
+		deleteValueCheck.reset()
 		setMessage(null)
 		syncRouterLocation(
 			valuesRoute.buildDetailHref(entry.id, getCurrentSearch()),
@@ -408,7 +409,7 @@ export function AccountValuesRoute(handle: Handle) {
 		editorState = createEmptyEditorState()
 		selectedValue = null
 		syncedSelectionKey = 'new'
-		deleteConfirm = false
+		deleteValueCheck.reset()
 		setMessage(null)
 		syncRouterLocation(valuesRoute.buildNewHref(getCurrentSearch()))
 		handle.update()
@@ -423,7 +424,7 @@ export function AccountValuesRoute(handle: Handle) {
 		} else {
 			editorState = createEmptyEditorState()
 		}
-		deleteConfirm = false
+		deleteValueCheck.reset()
 		setMessage(null)
 		handle.update()
 	}
@@ -736,20 +737,17 @@ export function AccountValuesRoute(handle: Handle) {
 											type="button"
 											disabled={isMutating}
 											mix={[
-												on('click', () => {
-													if (!deleteConfirm) {
-														deleteConfirm = true
-														handle.update()
-														return
-													}
-													void deleteValueEntry()
+												...deleteValueCheck.getButtonMix({
+													on: {
+														click: () => void deleteValueEntry(),
+													},
 												}),
 												css(dangerButtonCss),
 											]}
 										>
 											{saveState === 'deleting'
 												? 'Deleting...'
-												: deleteConfirm
+												: deleteValueCheck.doubleCheck
 													? 'Confirm delete'
 													: 'Delete'}
 										</button>

@@ -13,11 +13,18 @@ export type ListDetailSelection = {
 	isCreating: boolean
 }
 
+type ListDetailRouteOptions = {
+	parseDetailId?: (pathname: string) => string | null
+}
+
 function appendSearch(pathname: string, search?: string) {
 	return `${pathname}${search ?? ''}`
 }
 
-export function createListDetailRoute(basePath: string) {
+export function createListDetailRoute(
+	basePath: string,
+	options: ListDetailRouteOptions = {},
+) {
 	const newPath = `${basePath}/new`
 	const detailPrefix = `${basePath}/`
 
@@ -32,6 +39,12 @@ export function createListDetailRoute(basePath: string) {
 			return {
 				selectedId: null,
 				isCreating: true,
+			}
+		}
+		if (options.parseDetailId) {
+			return {
+				selectedId: options.parseDetailId(pathname),
+				isCreating: false,
 			}
 		}
 		if (!pathname.startsWith(detailPrefix)) {
