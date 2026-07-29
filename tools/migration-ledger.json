@@ -455,6 +455,10 @@
 		{
 			"filename": "0108-user-storage-buckets-package-kind.sql",
 			"sha256": "e5740a356896d759734a7699468dd67b7a7967cabfc20cded818dd01ae2f9f18"
+		},
+		{
+			"filename": "0109-delete-stranded-app-value-buckets.sql",
+			"sha256": "449a52a02206dd8801ab82f0e71720868a4c55ab22f7ba3097cb6e19c8036d57"
 		}
 	]
 }
