@@ -251,6 +251,34 @@ export async function loadPublishedBundleArtifactByIdentity(input: {
 	}
 }
 
+/**
+ * True when a published bundle artifact already exists for this target
+ * identity at `publishedCommit` (row + KV payload). Used to skip rebuild work
+ * that would only rewrite the same commit's artifact.
+ */
+export async function isPublishedPackageArtifactBuiltForCommit(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	publishedCommit: string
+	target: PublishedPackageArtifactBuildTarget
+}) {
+	if (!hasPublishedRuntimeArtifacts(input.env)) return false
+	const loaded = await loadPublishedBundleArtifactByIdentity({
+		env: input.env,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		kind: input.target.kind,
+		artifactName: input.target.artifactName,
+		entryPoint: input.target.entryPoint,
+	})
+	if (!loaded?.artifact) return false
+	return (
+		loaded.row.publishedCommit === input.publishedCommit &&
+		loaded.artifact.publishedCommit === input.publishedCommit
+	)
+}
+
 export async function persistPublishedPackageArtifactTarget(
 	input: {
 		env: Env
