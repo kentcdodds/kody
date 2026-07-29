@@ -37,8 +37,9 @@ recent evidence.
 | 2026-07-26 | First verified nightly D1 export (signed manifest, stored-object digest verified; ~118 MB).                                                                                                                                                                                                                                                                    |
 
 Still unproven live: graduated production restore into the production database
-(drill-level evidence only; it shares the now-fixed upload path), the offline
-escrow unseal smoke test, and `weekly/` retention aging through its lifecycle.
+(drill-level evidence only; it shares the `FixedLengthStream` upload path), the
+offline escrow unseal smoke test, and `weekly/` retention aging through its
+lifecycle.
 
 ## Objectives
 

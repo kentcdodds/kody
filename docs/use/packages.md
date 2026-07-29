@@ -58,8 +58,8 @@ account username. Changing your username on `/account` rewrites every saved
 package to the new `@{username}/…` name (including same-account `kody:@` imports
 and `kody.dependencies`), publishes an automatic update commit per package, and
 republishes any community listing that was already pinned to that package's
-latest commit. Third-party integrations and dynamic invocations that hard-code
-the old `@{username}` scope still need to be updated by their owners.
+latest commit. Third-party integrations and dynamic invocations that hard-code a
+previous `@{username}` scope need updates from their owners.
 
 ### npm dependencies
 
@@ -206,8 +206,8 @@ pre-invoke check fails, `packages.invokeChecked` rejects before invoking the
 target export.
 
 The primary identifier is the bare `kodyId`; `kody_id`, `packageId`, and
-`package_id` are accepted aliases for compatibility. `exportName` is required,
-and `export_name` is accepted as an alias.
+`package_id` are accepted aliases. `exportName` is required, and `export_name`
+is accepted as an alias.
 
 Package runtime contexts and authenticated ad hoc MCP `execute` calls can call
 `packages.invoke`, and resolution is scoped to packages owned by the current

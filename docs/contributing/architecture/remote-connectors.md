@@ -31,8 +31,8 @@ All messages are **JSON objects** with a **`type`** field.
      `living-room`). Connector names are globally unique per user.
    - **`sharedSecret`:** string — must match an enabled shared secret saved for
      the connector in D1.
-   - **`connectorKind`:** ignored by Kody (may still be sent for compatibility
-     with connector-kit clients).
+   - **`connectorKind`:** ignored by Kody (optional; connector-kit clients may
+     send it).
 
 2. **`connector.heartbeat`**
    - **`type`:** `"connector.heartbeat"`
