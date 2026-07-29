@@ -1,5 +1,5 @@
 const storageEstimateReadErrorPattern =
-	/^Unable to verify the storage byte entitlement because the bucket estimate for storageId ("(?:\\.|[^"\\])*") could not be read after (\d+) attempts\.$/u
+	/Unable to verify the storage byte entitlement because the bucket estimate for storageId ("(?:\\.|[^"\\])*") could not be read after (\d+) attempts\./u
 
 export type StorageEstimateReadErrorDetails = {
 	storageId: string

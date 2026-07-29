@@ -1,4 +1,5 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { listAdminStableUserIds } from '#worker/identity/permissions-db.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -194,36 +195,37 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 		return []
 	}
 	const params = await input.getParams()
-	const invoked = await mapSettledInChunks(
-		subscriptions,
-		async ({ savedPackage }) => {
-			const response = await invokePackageSubscription({
-				env: input.env as Env,
-				baseUrl: input.baseUrl,
-				savedPackage,
-				topic: input.topic,
-				params,
-				idempotencyKey: input.buildIdempotencyKey(savedPackage),
-				source: input.source,
-				actorTokenId: input.actorTokenId,
-				waitUntil: input.waitUntil,
-			})
-			if (response.status < 200 || response.status >= 400) {
-				console.warn('admin-package-subscription-handler-failed', {
+	const invoked = await runWithDynamicWorkerEvaluationBudget(
+		async () =>
+			await mapSettledInChunks(subscriptions, async ({ savedPackage }) => {
+				const response = await invokePackageSubscription({
+					env: input.env as Env,
+					baseUrl: input.baseUrl,
+					savedPackage,
 					topic: input.topic,
-					packageId: savedPackage.id,
-					status: response.status,
+					params,
+					idempotencyKey: input.buildIdempotencyKey(savedPackage),
+					source: input.source,
+					actorTokenId: input.actorTokenId,
+					waitUntil: input.waitUntil,
 				})
-			}
-			return {
-				response,
-				retryableInfrastructureCode: input.retryInvocationInfrastructureFailures
-					? input.retryOnlyPreExecutionInfrastructureFailures
-						? readPreExecutionPackageInvocationInfrastructureCode(response)
-						: readRetryablePackageInvocationInfrastructureCode(response)
-					: null,
-			}
-		},
+				if (response.status < 200 || response.status >= 400) {
+					console.warn('admin-package-subscription-handler-failed', {
+						topic: input.topic,
+						packageId: savedPackage.id,
+						status: response.status,
+					})
+				}
+				return {
+					response,
+					retryableInfrastructureCode:
+						input.retryInvocationInfrastructureFailures
+							? input.retryOnlyPreExecutionInfrastructureFailures
+								? readPreExecutionPackageInvocationInfrastructureCode(response)
+								: readRetryablePackageInvocationInfrastructureCode(response)
+							: null,
+				}
+			}),
 	)
 	const invocationInfrastructureErrors: Array<unknown> = []
 	const responses = invoked.map((result, index) => {

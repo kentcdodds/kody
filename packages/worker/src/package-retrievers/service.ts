@@ -1,5 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
@@ -290,21 +291,24 @@ export async function runPackageRetrievers(input: {
 	// Soft-fail per retriever: one stalled/buggy package must not fail MCP
 	// `search` or pre-sandbox execute memory/context enrichment. Callers already
 	// surface `warnings` to agents.
-	const settled = await Promise.allSettled(
-		entries.map((entry) =>
-			invokeRetriever({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId,
-				scope: input.scope,
-				entry,
-				query,
-				includeHiddenPackages,
-				memoryContext: input.memoryContext,
-				conversationId: input.conversationId,
-				waitUntil: input.waitUntil,
-			}),
-		),
+	const settled = await runWithDynamicWorkerEvaluationBudget(
+		async () =>
+			await Promise.allSettled(
+				entries.map((entry) =>
+					invokeRetriever({
+						env: input.env,
+						baseUrl: input.baseUrl,
+						userId,
+						scope: input.scope,
+						entry,
+						query,
+						includeHiddenPackages,
+						memoryContext: input.memoryContext,
+						conversationId: input.conversationId,
+						waitUntil: input.waitUntil,
+					}),
+				),
+			),
 	)
 	const results: Array<PackageRetrieverSurfaceResult> = []
 	const warnings: Array<string> = []

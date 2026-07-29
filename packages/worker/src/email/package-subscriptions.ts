@@ -1,4 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import {
 	dispatchAdminPackageSubscriptionEvent,
 	readPreExecutionPackageInvocationInfrastructureCode,
@@ -205,31 +206,34 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 		message: input.message,
 		attachments,
 	})
-	const settled = await Promise.allSettled(
-		subscriptions.map(async ({ savedPackage }) => {
-			const response = await invokePackageSubscription({
-				env: input.env as Env,
-				baseUrl,
-				savedPackage,
-				topic,
-				params: eventPayload as Record<string, unknown>,
-				idempotencyKey: buildSubscriptionIdempotencyKey({
-					messageId: input.message.id,
-					packageId: savedPackage.id,
-					topic,
+	const settled = await runWithDynamicWorkerEvaluationBudget(
+		async () =>
+			await Promise.allSettled(
+				subscriptions.map(async ({ savedPackage }) => {
+					const response = await invokePackageSubscription({
+						env: input.env as Env,
+						baseUrl,
+						savedPackage,
+						topic,
+						params: eventPayload as Record<string, unknown>,
+						idempotencyKey: buildSubscriptionIdempotencyKey({
+							messageId: input.message.id,
+							packageId: savedPackage.id,
+							topic,
+						}),
+						source: 'email',
+						waitUntil: input.waitUntil,
+					})
+					const retryableCode =
+						readPreExecutionPackageInvocationInfrastructureCode(response)
+					if (retryableCode) {
+						throw new Error(
+							`Retryable package invocation infrastructure response: ${retryableCode}.`,
+						)
+					}
+					return response
 				}),
-				source: 'email',
-				waitUntil: input.waitUntil,
-			})
-			const retryableCode =
-				readPreExecutionPackageInvocationInfrastructureCode(response)
-			if (retryableCode) {
-				throw new Error(
-					`Retryable package invocation infrastructure response: ${retryableCode}.`,
-				)
-			}
-			return response
-		}),
+			),
 	)
 	const invocationError = settled.find(
 		(result): result is PromiseRejectedResult => result.status === 'rejected',
@@ -291,24 +295,27 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 			occurred_at: input.providerEvent.metadata.eventTimestamp,
 		},
 	}
-	const results = await Promise.all(
-		subscriptions.map(async ({ savedPackage }) => {
-			const response = await invokePackageSubscription({
-				env: input.env as Env,
-				baseUrl,
-				savedPackage,
-				topic: emailDeliveryUpdatedTopic,
-				params: payload,
-				idempotencyKey: `email-delivery:${input.providerEvent.payload.eventId}:${savedPackage.id}`,
-				source: 'email',
-				waitUntil: input.waitUntil,
-			})
-			return {
-				response,
-				retryableCode:
-					readPreExecutionPackageInvocationInfrastructureCode(response),
-			}
-		}),
+	const results = await runWithDynamicWorkerEvaluationBudget(
+		async () =>
+			await Promise.all(
+				subscriptions.map(async ({ savedPackage }) => {
+					const response = await invokePackageSubscription({
+						env: input.env as Env,
+						baseUrl,
+						savedPackage,
+						topic: emailDeliveryUpdatedTopic,
+						params: payload,
+						idempotencyKey: `email-delivery:${input.providerEvent.payload.eventId}:${savedPackage.id}`,
+						source: 'email',
+						waitUntil: input.waitUntil,
+					})
+					return {
+						response,
+						retryableCode:
+							readPreExecutionPackageInvocationInfrastructureCode(response),
+					}
+				}),
+			),
 	)
 	const retryableResult = results.find((result) => result.retryableCode)
 	if (discoveryErrors.length > 0 || retryableResult) {

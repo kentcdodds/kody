@@ -110,6 +110,15 @@ export function collectLiteralImportNodes(
 				nodes.push({ ...literalNode, kind: 'dynamic' })
 			}
 		}
+		if (
+			typedNode.type === 'TSImportType' &&
+			options?.includeTypeOnly === true
+		) {
+			const literalNode = readLiteralStringNode(typedNode.source)
+			if (literalNode) {
+				nodes.push({ ...literalNode, kind: 'static' })
+			}
+		}
 		for (const value of Object.values(
 			typedNode as unknown as Record<string, unknown>,
 		)) {
@@ -130,8 +139,13 @@ export function collectLiteralImportNodes(
 	return nodes.sort((left, right) => left.start - right.start)
 }
 
-export function collectLiteralImportSpecifiers(source: string): Array<string> {
-	return collectLiteralImportNodes(source).map((node) => node.specifier)
+export function collectLiteralImportSpecifiers(
+	source: string,
+	options?: { includeTypeOnly?: boolean },
+): Array<string> {
+	return collectLiteralImportNodes(source, options).map(
+		(node) => node.specifier,
+	)
 }
 
 export function collectDynamicImportExpressionNodes(

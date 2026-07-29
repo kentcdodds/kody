@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -12,12 +13,19 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 		mockModule.runModuleWithRegistry(...args),
 }))
 
-vi.mock('#mcp/capabilities/access-control.ts', () => ({
-	resolveCallerFeatureFlags: (...args: Array<unknown>) =>
-		mockModule.resolveCallerFeatureFlags(...args),
-	assertCallerCanAccessCapability: (...args: Array<unknown>) =>
-		mockModule.assertCallerCanAccessCapability(...args),
-}))
+vi.mock(
+	'#mcp/capabilities/access-control.ts',
+	async (importOriginal: () => Promise<typeof AccessControlModule>) => {
+		const actual = await importOriginal()
+		return {
+			...actual,
+			resolveCallerFeatureFlags: (...args: Array<unknown>) =>
+				mockModule.resolveCallerFeatureFlags(...args),
+			assertCallerCanAccessCapability: (...args: Array<unknown>) =>
+				mockModule.assertCallerCanAccessCapability(...args),
+		}
+	},
+)
 
 const { executeCapability } = await import('./execute.ts')
 

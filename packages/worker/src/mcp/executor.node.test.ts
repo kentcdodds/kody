@@ -21,6 +21,7 @@ import {
 	formatLimitedExecutionOutput,
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
+	runWithDynamicWorkerEvaluationBudget,
 } from './executor.ts'
 import { assertGeneratedExecutorSourceIsBundleSafe } from './kody-remote-proxy-source.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
@@ -418,6 +419,86 @@ test('createExecuteExecutor aligns dynamic worker compatibility with shared opti
 
 	const workerOptions = fakeLoader.createdOptions.get(fakeLoader.ids[0]!)
 	expect(workerOptions).toMatchObject(createDynamicWorkerCompatibilityOptions())
+})
+
+test('explicit request budgets cap independent roots at four without blocking separate requests', async () => {
+	type BudgetState = {
+		active: number
+		maxActive: number
+		started: number
+		releases: Array<() => void>
+	}
+	const createBudgetState = (): BudgetState => ({
+		active: 0,
+		maxActive: 0,
+		started: 0,
+		releases: [],
+	})
+	const createBlockingLoader = (state: BudgetState) =>
+		({
+			get(_id: string, factory: () => FakeWorkerOptions) {
+				factory()
+				return {
+					getEntrypoint() {
+						return {
+							async evaluate() {
+								state.started += 1
+								state.active += 1
+								state.maxActive = Math.max(state.maxActive, state.active)
+								await new Promise<void>((resolve) => {
+									state.releases.push(() => {
+										state.active -= 1
+										resolve()
+									})
+								})
+								return { result: 'done', logs: [] }
+							},
+						}
+					},
+				}
+			},
+		}) as unknown as Env['LOADER']
+	const exports = createExecutorTestExports()
+	const providers = [{ name: 'kody', fns: {} }]
+	const runFiveRoots = (userId: string, state: BudgetState) =>
+		runWithDynamicWorkerEvaluationBudget(
+			async () =>
+				await Promise.all(
+					Array.from({ length: 5 }, async (_, index) => {
+						return await createExecuteExecutor({
+							env: createExecutorTestEnv(createBlockingLoader(state)),
+							exports,
+							gatewayProps: createGatewayProps(userId),
+						}).execute(`async () => ${index}`, providers)
+					}),
+				),
+		)
+
+	const firstState = createBudgetState()
+	const firstRequest = runFiveRoots('first-request-user', firstState)
+	await expect.poll(() => firstState.started).toBe(4)
+	expect(firstState.active).toBe(4)
+	expect(firstState.maxActive).toBe(4)
+
+	const secondState = createBudgetState()
+	const secondRequest = runFiveRoots('second-request-user', secondState)
+	await expect.poll(() => secondState.started).toBe(4)
+	expect(secondState.active).toBe(4)
+	expect(secondState.maxActive).toBe(4)
+
+	firstState.releases.shift()?.()
+	secondState.releases.shift()?.()
+	await expect.poll(() => firstState.started).toBe(5)
+	await expect.poll(() => secondState.started).toBe(5)
+	expect(firstState.active).toBe(4)
+	expect(secondState.active).toBe(4)
+
+	for (const release of firstState.releases.splice(0)) release()
+	for (const release of secondState.releases.splice(0)) release()
+	await expect(firstRequest).resolves.toHaveLength(5)
+	await expect(secondRequest).resolves.toHaveLength(5)
+	expect(firstState.active).toBe(0)
+	expect(secondState.active).toBe(0)
 })
 
 test('createExecuteExecutor queues nested evaluations at four without blocking an unrelated request', async () => {
@@ -1366,7 +1447,9 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	})
 	expect(
 		getExecutionErrorDetails(
-			new Error('Nested execute failed.', { cause: storageEstimateError }),
+			new Error('Nested execute failed.', {
+				cause: new Error(`[execution_failed] ${storageEstimateError.message}`),
+			}),
 		),
 	).toMatchObject({
 		kind: 'storage_estimate_unavailable',

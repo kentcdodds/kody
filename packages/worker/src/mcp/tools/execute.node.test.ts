@@ -6,6 +6,7 @@ import {
 	wrapDownstreamMcpToolResult,
 } from '#mcp/downstream-mcp-result.ts'
 import { formatRawFetchHostNudge } from '#mcp/raw-fetch-host-nudge.ts'
+import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -28,10 +29,17 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 		mockModule.runModuleWithRegistry(...args),
 }))
 
-vi.mock('#mcp/capabilities/access-control.ts', () => ({
-	resolveCallerFeatureFlags: (...args: Array<unknown>) =>
-		mockModule.resolveCallerFeatureFlags(...args),
-}))
+vi.mock(
+	'#mcp/capabilities/access-control.ts',
+	async (importOriginal: () => Promise<typeof AccessControlModule>) => {
+		const actual = await importOriginal()
+		return {
+			...actual,
+			resolveCallerFeatureFlags: (...args: Array<unknown>) =>
+				mockModule.resolveCallerFeatureFlags(...args),
+		}
+	},
+)
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
 	getCapabilityRegistryForContext: (...args: Array<unknown>) =>

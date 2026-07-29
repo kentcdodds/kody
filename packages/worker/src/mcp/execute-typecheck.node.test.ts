@@ -212,6 +212,20 @@ export default async function run() {
 			packages: createLoadedPackages(stringContract),
 		}),
 	).resolves.toBeUndefined()
+
+	await expect(
+		assertAdHocExecuteTypechecks({
+			source: `import call from 'kody:@kentcdodds/static-contract'
+export default async function run() {
+	return await call({ name: 7 })
+}`,
+			packages: createLoadedPackages('', {
+				omitTypesTarget: true,
+				runtimeSource:
+					'export default async function call(input: { name: number }): Promise<number> { return input.name }',
+			}),
+		}),
+	).resolves.toBeUndefined()
 })
 
 test('ad hoc execute typecheck rejects oversized source before loading the compiler', async () => {
@@ -223,4 +237,38 @@ test('ad hoc execute typecheck rejects oversized source before loading the compi
 	).rejects.toThrow(
 		'entry.ts exceeds the 524288-byte pre-execution TypeScript source limit.',
 	)
+
+	const packages = createLoadedPackages(stringContract)
+	const loaded = packages.get('@kentcdodds/static-contract')!
+	for (let index = 0; index < 500; index += 1) {
+		loaded.files[`src/generated-${index}.ts`] = 'export {}'
+	}
+	await expect(
+		assertAdHocExecuteTypechecks({
+			source: 'export default function run() {}',
+			packages,
+		}),
+	).rejects.toThrow(
+		'Published Kody package types exceed the pre-execution TypeScript graph limit (500 files or 5242880 bytes).',
+	)
+})
+
+test('ad hoc execute typecheck bounds concurrent active and queued checks', async () => {
+	const checks = Array.from({ length: 5 }, () =>
+		assertAdHocExecuteTypechecks({
+			source: 'export default function run() { return "ok" }',
+			packages: new Map() as LoadedKodyGraphPackages,
+		}),
+	)
+	const results = await Promise.allSettled(checks)
+
+	expect(
+		results.filter((result) => result.status === 'fulfilled'),
+	).toHaveLength(4)
+	const rejected = results.filter((result) => result.status === 'rejected')
+	expect(rejected).toHaveLength(1)
+	expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+		name: 'ExecuteTypecheckError',
+		message: expect.stringContaining('already has 4 active or queued requests'),
+	})
 })

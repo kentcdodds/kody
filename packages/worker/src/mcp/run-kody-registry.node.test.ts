@@ -1579,8 +1579,14 @@ test('runModuleWithRegistry only installs the pre-execution typecheck hook when 
 
 		expect(buildBundleMock).toHaveBeenCalledTimes(2)
 		expect(buildBundleMock.mock.calls[0]?.[0].beforeBundle).toBeUndefined()
+		expect(buildBundleMock.mock.calls[0]?.[0].includeTypeOnlyKodyPackages).toBe(
+			false,
+		)
 		expect(buildBundleMock.mock.calls[1]?.[0].beforeBundle).toEqual(
 			expect.any(Function),
+		)
+		expect(buildBundleMock.mock.calls[1]?.[0].includeTypeOnlyKodyPackages).toBe(
+			true,
 		)
 	} finally {
 		createExecuteExecutorSpy.mockRestore()

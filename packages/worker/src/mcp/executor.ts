@@ -159,15 +159,12 @@ type DynamicWorkerEvaluationContext = {
 const dynamicWorkerEvaluationGateStorage =
 	new AsyncLocalStorage<DynamicWorkerEvaluationContext>()
 
-async function withDynamicWorkerEvaluationPermit<T>(
-	evaluate: () => Promise<T>,
+export async function runWithDynamicWorkerEvaluationBudget<T>(
+	callback: () => Promise<T>,
 ): Promise<T> {
 	const inheritedContext = dynamicWorkerEvaluationGateStorage.getStore()
 	if (inheritedContext) {
-		return await runWithDynamicWorkerEvaluationPermit(
-			inheritedContext,
-			evaluate,
-		)
+		return await callback()
 	}
 	const requestContext: DynamicWorkerEvaluationContext = {
 		gate: {
@@ -176,11 +173,19 @@ async function withDynamicWorkerEvaluationPermit<T>(
 		},
 		depth: 0,
 	}
-	return await dynamicWorkerEvaluationGateStorage.run(
-		requestContext,
-		async () =>
-			await runWithDynamicWorkerEvaluationPermit(requestContext, evaluate),
-	)
+	return await dynamicWorkerEvaluationGateStorage.run(requestContext, callback)
+}
+
+async function withDynamicWorkerEvaluationPermit<T>(
+	evaluate: () => Promise<T>,
+): Promise<T> {
+	return await runWithDynamicWorkerEvaluationBudget(async () => {
+		const context = dynamicWorkerEvaluationGateStorage.getStore()
+		if (!context) {
+			throw new Error('Dynamic worker evaluation budget was not initialized.')
+		}
+		return await runWithDynamicWorkerEvaluationPermit(context, evaluate)
+	})
 }
 
 async function runWithDynamicWorkerEvaluationPermit<T>(

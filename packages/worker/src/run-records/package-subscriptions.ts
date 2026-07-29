@@ -1,4 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
@@ -113,7 +114,10 @@ async function loadMatchingRunErrorSubscriptions(input: {
 				(candidate) => candidate.topic === runErrorRecordedTopic,
 			)
 			if (!subscription) return null
-			return { savedPackage, subscription } satisfies LoadedRunErrorSubscription
+			return {
+				savedPackage,
+				subscription,
+			} satisfies LoadedRunErrorSubscription
 		}),
 	)
 	const subscriptions: Array<LoadedRunErrorSubscription> = []
@@ -164,30 +168,33 @@ export async function dispatchRunErrorSubscriptionEvents(input: {
 		run: input.run,
 		activityUrl: buildActivityUrl({ baseUrl, runId: input.run.id }),
 	})
-	const settled = await Promise.allSettled(
-		subscriptions.map(async ({ savedPackage }) => {
-			const response = await invokePackageSubscription({
-				env: input.env as Env,
-				baseUrl,
-				savedPackage,
-				topic: runErrorRecordedTopic,
-				params: eventPayload as Record<string, unknown>,
-				idempotencyKey: buildSubscriptionIdempotencyKey({
-					runId: input.run.id,
-					packageId: savedPackage.id,
+	const settled = await runWithDynamicWorkerEvaluationBudget(
+		async () =>
+			await Promise.allSettled(
+				subscriptions.map(async ({ savedPackage }) => {
+					const response = await invokePackageSubscription({
+						env: input.env as Env,
+						baseUrl,
+						savedPackage,
+						topic: runErrorRecordedTopic,
+						params: eventPayload as Record<string, unknown>,
+						idempotencyKey: buildSubscriptionIdempotencyKey({
+							runId: input.run.id,
+							packageId: savedPackage.id,
+						}),
+						source: 'run-records',
+						waitUntil: input.waitUntil,
+					})
+					const retryableCode =
+						readPreExecutionPackageInvocationInfrastructureCode(response)
+					if (retryableCode) {
+						throw new Error(
+							`Retryable package invocation infrastructure response: ${retryableCode}.`,
+						)
+					}
+					return response
 				}),
-				source: 'run-records',
-				waitUntil: input.waitUntil,
-			})
-			const retryableCode =
-				readPreExecutionPackageInvocationInfrastructureCode(response)
-			if (retryableCode) {
-				throw new Error(
-					`Retryable package invocation infrastructure response: ${retryableCode}.`,
-				)
-			}
-			return response
-		}),
+			),
 	)
 	for (const result of settled) {
 		if (result.status === 'rejected') {

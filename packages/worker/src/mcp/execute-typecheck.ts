@@ -43,6 +43,7 @@ type ReusableTypecheckService = {
 	languageService: {
 		getSyntacticDiagnostics(path: string): Array<TypecheckDiagnostic>
 		getSemanticDiagnostics(path: string): Array<TypecheckDiagnostic>
+		dispose?(): void
 	}
 }
 
@@ -60,6 +61,8 @@ const typecheckModuleSourcePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const maxExecuteTypecheckSourceBytes = 512 * 1024
 const maxExecuteTypecheckPackageFiles = 500
 const maxExecuteTypecheckPackageBytes = 5 * 1024 * 1024
+const maxPendingExecuteTypechecks = 4
+const maxExecuteTypecheckHoldMs = 2_000
 
 class MemoryTypecheckFileSystem implements TypecheckFileSystem {
 	readonly #files: Map<string, string>
@@ -127,6 +130,7 @@ function createRuntimeTypes() {
 let reusableTypecheckServicePromise: Promise<ReusableTypecheckService> | null =
 	null
 let typecheckQueue = Promise.resolve()
+let pendingTypecheckCount = 0
 
 async function loadTypescriptLanguageService() {
 	// Keep the multi-megabyte compiler out of the default-off Worker's eager
@@ -157,17 +161,52 @@ async function getReusableTypecheckService() {
 }
 
 async function withTypecheckLock<T>(
-	callback: (service: ReusableTypecheckService) => Promise<T> | T,
+	callback: (service: ReusableTypecheckService) => T,
 ) {
+	if (pendingTypecheckCount >= maxPendingExecuteTypechecks) {
+		throw new ExecuteTypecheckError([
+			`The pre-execution TypeScript checker already has ${maxPendingExecuteTypechecks} active or queued requests. Retry after one finishes.`,
+		])
+	}
+	pendingTypecheckCount += 1
 	const previous = typecheckQueue
 	let release: () => void = () => {}
 	typecheckQueue = new Promise<void>((resolve) => {
 		release = resolve
 	})
 	await previous
+	const holdStartedAtMs = Date.now()
+	let timeoutId: ReturnType<typeof setTimeout> | null = null
 	try {
-		return await callback(await getReusableTypecheckService())
+		const service = await Promise.race([
+			getReusableTypecheckService(),
+			new Promise<never>((_resolve, reject) => {
+				timeoutId = setTimeout(() => {
+					reject(
+						new ExecuteTypecheckError([
+							`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckHoldMs}ms service startup budget.`,
+						]),
+					)
+				}, maxExecuteTypecheckHoldMs)
+			}),
+		])
+		if (timeoutId !== null) {
+			clearTimeout(timeoutId)
+			timeoutId = null
+		}
+		const result = callback(service)
+		const elapsedMs = Date.now() - holdStartedAtMs
+		if (elapsedMs > maxExecuteTypecheckHoldMs) {
+			service.languageService.dispose?.()
+			reusableTypecheckServicePromise = null
+			throw new ExecuteTypecheckError([
+				`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckHoldMs}ms execution budget.`,
+			])
+		}
+		return result
 	} finally {
+		if (timeoutId !== null) clearTimeout(timeoutId)
+		pendingTypecheckCount -= 1
 		release()
 	}
 }
@@ -476,7 +515,7 @@ export async function assertAdHocExecuteTypechecks(input: {
 	packages: LoadedKodyGraphPackages
 }) {
 	assertTypecheckInputWithinLimits(input)
-	await withTypecheckLock(async ({ fileSystem, languageService }) => {
+	await withTypecheckLock(({ fileSystem, languageService }) => {
 		clearRequestFiles(fileSystem)
 		try {
 			const rewrittenEntry = rewriteStaticKodyImports({

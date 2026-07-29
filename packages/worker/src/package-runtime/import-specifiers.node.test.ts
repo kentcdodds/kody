@@ -23,3 +23,20 @@ test('collectLiteralImportSpecifiers ignores type-only import and export sources
 		'kody:@kentcdodds/dynamic',
 	])
 })
+
+test('collectLiteralImportSpecifiers includes declarations and TS import types when requested', () => {
+	const specifiers = collectLiteralImportSpecifiers(
+		[
+			'import type { Config } from "kody:@kentcdodds/types/config"',
+			'export type { Other } from "kody:@kentcdodds/types/other"',
+			'type Detail = import("kody:@kentcdodds/types/detail").Detail',
+		].join('\n'),
+		{ includeTypeOnly: true },
+	)
+
+	expect(specifiers).toEqual([
+		'kody:@kentcdodds/types/config',
+		'kody:@kentcdodds/types/other',
+		'kody:@kentcdodds/types/detail',
+	])
+})
