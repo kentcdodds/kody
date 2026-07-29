@@ -505,6 +505,10 @@ test('createExecuteExecutor fails fast when nested fan-out saturates its request
 	let evaluationCount = 0
 	let maxActiveEvaluations = 0
 	let activeEvaluations = 0
+	let releaseChildren: () => void = () => {}
+	const threeChildrenStarted = new Promise<void>((resolve) => {
+		releaseChildren = resolve
+	})
 	let nestedEnv: Env
 	const exports = createExecutorTestExports()
 	const providers = [{ name: 'kody', fns: {} }]
@@ -532,6 +536,8 @@ test('createExecuteExecutor fails fast when nested fan-out saturates its request
 									}),
 								)
 							}
+							if (evaluationCount === 4) releaseChildren()
+							await threeChildrenStarted
 							activeEvaluations -= 1
 							return { result: 'child', logs: [] }
 						},
