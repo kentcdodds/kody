@@ -54,6 +54,13 @@ function applyResolvedDocumentHead(resolved: ResolvedDocumentHead) {
 	// stale OG/canonical/RSS nodes that no longer apply.
 	removeManagedHeadNodes(head)
 
+	if (resolved.description) {
+		appendMeta(head, 'description', {
+			name: 'description',
+			content: resolved.description,
+		})
+	}
+
 	if (resolved.og) {
 		appendMeta(head, 'og:title', {
 			property: 'og:title',

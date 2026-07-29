@@ -28,6 +28,10 @@ test('resolveDocumentHead covers static titles, dynamic OG, fallbacks, and absol
 	expect(home.og?.title).toBe("Kody — your assistant's home")
 	expect(home.og?.imagePath).toBe('/og/home.png')
 	expect(home.canonicalPath).toBe('/')
+	expect(home.description).toBe(home.og?.description)
+	expect(home.description).toBe(
+		"Your assistant's home — memory, keys, code, and automations, portable across every MCP host.",
+	)
 
 	const login = resolveDocumentHead('/login')
 	expect(login.og?.title).toBe('Sign in — Kody')
@@ -133,4 +137,8 @@ test('resolveDocumentHead covers static titles, dynamic OG, fallbacks, and absol
 	expect(resolved.canonicalUrl).toBe('https://heykody.dev/blog')
 	expect(resolved.og?.imageUrl).toBe('https://heykody.dev/og/blog.png')
 	expect(resolved.links?.[0]?.href).toBe('https://heykody.dev/blog/rss.xml')
+	expect(resolved.description).toBe(
+		'Updates and positioning posts from Kent C. Dodds about Kody.',
+	)
+	expect(resolved.description).toBe(resolved.og?.description)
 })

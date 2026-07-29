@@ -10,6 +10,7 @@ import { createAccountHandler } from '#app/handlers/account.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
+import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -412,8 +413,59 @@ test('renderAppPage embeds the Fathom tracker only when FATHOM_SITE_ID is set', 
 	expect(withFathomHtml).toContain('data-site="WKKSDJGN"')
 	expect(withFathomHtml).toContain('data-spa="auto"')
 	const csp = withFathom.headers.get('Content-Security-Policy')
-	expect(csp).toContain("script-src 'self' https://cdn.usefathom.com")
+	expect(csp).toContain(
+		"script-src 'self' https://cdn.usefathom.com https://static.cloudflareinsights.com",
+	)
 	expect(csp).toContain("img-src 'self' data: blob: https://cdn.usefathom.com")
+	expect(csp).toContain("connect-src 'self' https://cloudflareinsights.com")
+})
+
+test('renderAppPage emits a doctype, meta description, and inlines the stylesheet when assets provide it', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	resetInlineStylesheetCache()
+	const env = createTestEnv(createUserTestDb([]))
+
+	// Without an ASSETS binding: doctype plus the stylesheet <link> fallback.
+	const withoutAssets = await renderAppPage({
+		request: new Request('https://example.com/'),
+		env,
+	})
+	const withoutAssetsHtml = await readResponseText(withoutAssets)
+	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
+	expect(withoutAssetsHtml).toContain('rel="stylesheet"')
+	expect(withoutAssetsHtml).toContain('name="description"')
+
+	// With ASSETS serving the stylesheet: inline <style>, no stylesheet link.
+	const assets = {
+		fetch: async (request: Request) =>
+			new URL(request.url).pathname === '/styles.css'
+				? new Response(':root { --inline-marker: 1; }')
+				: new Response('not found', { status: 404 }),
+	}
+	const withAssets = await renderAppPage({
+		request: new Request('https://example.com/'),
+		env: { ...env, ASSETS: assets } as Env,
+	})
+	const withAssetsHtml = await readResponseText(withAssets)
+	expect(withAssetsHtml).toContain(
+		'<style>:root { --inline-marker: 1; }</style>',
+	)
+	expect(withAssetsHtml).not.toContain('rel="stylesheet"')
+
+	// CSS needing HTML escaping must fall back to the <link> (the stream
+	// renderer escapes text children, which would corrupt selectors).
+	resetInlineStylesheetCache()
+	const unsafeAssets = {
+		fetch: async () => new Response('.card > p { color: red; }'),
+	}
+	const withUnsafeCss = await renderAppPage({
+		request: new Request('https://example.com/'),
+		env: { ...env, ASSETS: unsafeAssets } as Env,
+	})
+	const withUnsafeCssHtml = await readResponseText(withUnsafeCss)
+	expect(withUnsafeCssHtml).toContain('rel="stylesheet"')
+	expect(withUnsafeCssHtml).not.toContain('.card &gt; p')
 })
 
 test('renderAppPage configures session secret before reading cookies', async () => {

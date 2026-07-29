@@ -32,6 +32,7 @@ export type DocumentHeadOg = {
  */
 export type DocumentHeadDescriptor = {
 	title: string
+	description?: string
 	canonicalPath?: string
 	og?: DocumentHeadOg
 	links?: Array<DocumentHeadLink>
@@ -39,6 +40,7 @@ export type DocumentHeadDescriptor = {
 
 export type ResolvedDocumentHead = {
 	title: string
+	description?: string
 	canonicalUrl?: string
 	og?: {
 		title: string
@@ -278,17 +280,23 @@ export function resolveDocumentHead(
 	loaderData?: Partial<AppLoaderData>,
 ): DocumentHeadDescriptor {
 	const match = documentHeadMatcher.match(new URL(pathname, documentHeadOrigin))
-	if (!match) return titleOnly(NOT_FOUND_DOCUMENT_TITLE)
+	if (!match) {
+		return titleOnly(NOT_FOUND_DOCUMENT_TITLE)
+	}
 
 	const resolver = match.data
-	if (typeof resolver === 'function') {
-		return resolver({
-			pathname,
-			params: match.params,
-			loaderData,
-		})
-	}
-	return resolver
+	const descriptor =
+		typeof resolver === 'function'
+			? resolver({
+					pathname,
+					params: match.params,
+					loaderData,
+				})
+			: resolver
+
+	const description = descriptor.description ?? descriptor.og?.description
+	if (description === undefined) return descriptor
+	return { ...descriptor, description }
 }
 
 export function resolveDocumentTitle(
@@ -310,6 +318,7 @@ export function absolutizeDocumentHead(
 
 	return {
 		title: descriptor.title,
+		description: descriptor.description,
 		canonicalUrl: descriptor.canonicalPath
 			? toAbsolute(descriptor.canonicalPath)
 			: undefined,

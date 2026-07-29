@@ -19,6 +19,7 @@ import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { getClientModulePreloadHrefs } from '#app/client-preload-manifest.ts'
+import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import {
@@ -27,6 +28,35 @@ import {
 } from '#client/sentry-config.ts'
 import '#app/frame-registrations.ts'
 import { resolveRegisteredFrameHtml } from '#app/frame-registry.ts'
+
+/**
+ * The remix/ui stream renderer emits markup starting at `<html>`; without a
+ * doctype the browser parses the document in quirks mode.
+ */
+function prependDoctype(stream: ReadableStream<Uint8Array>) {
+	const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
+	void (async () => {
+		const writer = writable.getWriter()
+		try {
+			await writer.write(new TextEncoder().encode('<!DOCTYPE html>'))
+			writer.releaseLock()
+			await stream.pipeTo(writable)
+		} catch (error) {
+			// Client disconnects abort the pipe; make sure both ends close.
+			try {
+				await stream.cancel(error)
+			} catch {
+				// Already errored or cancelled.
+			}
+			try {
+				await writable.abort(error)
+			} catch {
+				// Already aborted by pipeTo.
+			}
+		}
+	})()
+	return readable
+}
 
 export type RenderAppPageInput = {
 	request: Request
@@ -72,13 +102,17 @@ export async function renderAppPage(input: RenderAppPageInput) {
 
 	// Warm lazy route chunks before streaming so SSR HTML includes the real
 	// route tree (dynamic import resolves in the worker bundle), and resolve
-	// the modulepreload hints for those chunks in parallel.
-	const [, modulePreloadHrefs] = await Promise.all([
+	// the modulepreload hints and inline stylesheet in parallel.
+	const [, modulePreloadHrefs, inlineStylesheet] = await Promise.all([
 		preloadClientRouteModules(`${requestUrl.pathname}${requestUrl.search}`),
 		getClientModulePreloadHrefs({
 			assets: env.ASSETS,
 			buildId: getClientBuildId(parsedEnv),
 			pathname: requestUrl.pathname,
+		}),
+		getInlineStylesheet({
+			assets: env.ASSETS,
+			buildId: getClientBuildId(parsedEnv),
 		}),
 	])
 
@@ -94,6 +128,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 				clientEntryHref={clientEntryHref}
 				stylesheetHref={stylesheetHref}
 				modulePreloadHrefs={modulePreloadHrefs}
+				inlineStylesheet={inlineStylesheet}
 				sentryConfig={sentryConfig}
 				fathomSiteId={fathomSiteId}
 			/>
@@ -132,7 +167,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	}
 
 	return applyFirstPartySecurityHeaders(
-		new Response(stream, {
+		new Response(prependDoctype(stream), {
 			status: status ?? 200,
 			headers,
 		}),

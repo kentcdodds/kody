@@ -13,7 +13,7 @@ export const ogPalette = {
 	/** --color-text */
 	text: '#0f172a',
 	/** --color-text-muted */
-	muted: '#64748b',
+	muted: '#475569',
 	/** --color-border */
 	border: '#cbd5e1',
 	/** --color-primary */

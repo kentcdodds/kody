@@ -167,7 +167,7 @@ export function HomeRoute(handle: Handle) {
 				<section mix={css(heroCardCss)}>
 					<img
 						src="/logo-480.webp"
-						srcSet="/logo-240.webp 240w, /logo-480.webp 480w"
+						srcSet="/logo-240.webp 240w, /logo-336.webp 336w, /logo-480.webp 480w"
 						sizes="(max-width: 640px) 168px, 240px"
 						width={480}
 						height={480}
