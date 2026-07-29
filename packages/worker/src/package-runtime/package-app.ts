@@ -8,6 +8,7 @@ import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
 	buildKodyFns,
+	collectPackageStorageGrantIds,
 	type PackageEventTools,
 	type PackageInvokeTools,
 } from '#mcp/run-kody-registry.ts'
@@ -30,6 +31,8 @@ import { PromiseLruCache } from '#worker/package-registry/published-package-cach
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
 	assertStorageRunnerWriteWithinEntitlement,
+	buildPackageStorageId,
+	createPackageStorageAccessDeniedMessage,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
 import {
@@ -509,6 +512,43 @@ function createRuntime(runtimeBridge, packageContext) {
 	return {
 		kody: createKodyProxy(runtimeBridge),
 		storage: createStorageProxy(runtimeBridge, packageId),
+		__kodyPackageStorage: (storagePackageId) => ({
+			id: 'package:' + encodeURIComponent(storagePackageId),
+			get: async (key) =>
+				(
+					await runtimeBridge.packageStorageGet({
+						packageId: storagePackageId,
+						key,
+					})
+				).value,
+			list: async (options = {}) =>
+				await runtimeBridge.packageStorageList({
+					...options,
+					packageId: storagePackageId,
+				}),
+			sql: async (query, params = []) =>
+				await runtimeBridge.packageStorageSql({
+					packageId: storagePackageId,
+					query,
+					params,
+					writable: true,
+				}),
+			set: async (key, value) =>
+				await runtimeBridge.packageStorageSet({
+					packageId: storagePackageId,
+					key,
+					value,
+				}),
+			delete: async (key) =>
+				await runtimeBridge.packageStorageDelete({
+					packageId: storagePackageId,
+					key,
+				}),
+			clear: async () =>
+				await runtimeBridge.packageStorageClear({
+					packageId: storagePackageId,
+				}),
+		}),
 		refreshAccessToken: async (providerName) =>
 			await runtimeBridge.refreshAccessToken(providerName),
 		createAuthenticatedFetch: createAuthenticatedFetchHelper(runtimeBridge),
@@ -743,6 +783,7 @@ type PackageAppRuntimeBridgeProps = {
 	kodyId: string
 	sourceId: string
 	publishedCommit: string | null
+	packageStorageGrantIds: Array<string>
 }
 
 function redactRunRecordLogs(
@@ -816,6 +857,20 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			storageId: input.storageId,
 			requested: input.requested,
 		})
+	}
+
+	private assertPackageStorageGranted(packageId: string) {
+		const normalizedPackageId = packageId.trim()
+		if (!normalizedPackageId) {
+			throw new Error('packageStorage requires a non-empty package id.')
+		}
+		const grantedPackageIds = new Set(this.ctx.props.packageStorageGrantIds)
+		if (!grantedPackageIds.has(normalizedPackageId)) {
+			throw new Error(
+				createPackageStorageAccessDeniedMessage(normalizedPackageId),
+			)
+		}
+		return normalizedPackageId
 	}
 
 	private getRealtimeSessionRpc() {
@@ -1046,6 +1101,72 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	async storageClear(input: { storageId: string }) {
 		return await this.getStorageRunner(input.storageId).clearStorage()
+	}
+
+	async packageStorageGet(input: { packageId: string; key: string }) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.storageGet({
+			storageId: buildPackageStorageId(packageId),
+			key: input.key,
+		})
+	}
+
+	async packageStorageList(input: {
+		packageId: string
+		prefix?: string | null
+		pageSize?: number
+		startAfter?: string | null
+	}) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.storageList({
+			storageId: buildPackageStorageId(packageId),
+			prefix: input.prefix,
+			pageSize: input.pageSize,
+			startAfter: input.startAfter,
+		})
+	}
+
+	async packageStorageSql(input: {
+		packageId: string
+		query: string
+		params?: Array<unknown>
+		writable?: boolean
+	}) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.storageSql({
+			storageId: buildPackageStorageId(packageId),
+			query: input.query,
+			params: input.params,
+			writable: input.writable,
+		})
+	}
+
+	async packageStorageSet(input: {
+		packageId: string
+		key: string
+		value: unknown
+	}) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.storageSet({
+			storageId: buildPackageStorageId(packageId),
+			key: input.key,
+			value: input.value,
+		})
+	}
+
+	async packageStorageDelete(input: { packageId: string; key: string }) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.storageDelete({
+			storageId: buildPackageStorageId(packageId),
+			key: input.key,
+		})
+	}
+
+	async packageStorageClear(input: { packageId: string }) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.storageClear({
+			storageId: buildPackageStorageId(packageId),
+		})
 	}
 
 	async refreshAccessToken(providerName: string) {
@@ -1549,12 +1670,24 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		sourceFiles: input.sourceFiles,
 	})
 	const mainModule = 'package-app-entry.js'
-	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		modules: bundled.modules,
-	})
+	const { modules: hydratedModules, dynamicDependencyPackageIds } =
+		await hydrateKodyRuntimeModules({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			modules: bundled.modules,
+		})
+	const packageStorageGrantIds = [
+		...collectPackageStorageGrantIds({
+			packageContext: {
+				packageId: input.savedPackage.id,
+				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
+			},
+			dependencies: bundled.dependencies,
+			dynamicDependencyPackageIds,
+		}),
+	]
 	const modules = {
 		...hydratedModules,
 		[mainModule]: createPackageAppWorkerSource({
@@ -1578,6 +1711,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 					kodyId: input.savedPackage.kodyId,
 					sourceId: input.savedPackage.sourceId,
 					publishedCommit: input.savedPackage.publishedCommit,
+					packageStorageGrantIds,
 				},
 			}),
 			__kodyPackageContext: {
