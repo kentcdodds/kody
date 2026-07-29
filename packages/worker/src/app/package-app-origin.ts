@@ -116,12 +116,11 @@ function createPackageAppSessionRequiredResponse(input: {
 	)
 }
 
+// Built with the URL constructor rather than by assigning `protocol`/`host`:
+// those setters keep the original port, so swapping origins by mutation turns
+// `http://localhost:8787/x` into `https://kodyapps.dev:8787/x`.
 function replaceOrigin(input: { url: URL; origin: string }) {
-	const target = new URL(input.url)
-	const origin = new URL(input.origin)
-	target.protocol = origin.protocol
-	target.host = origin.host
-	return target
+	return new URL(`${input.url.pathname}${input.url.search}`, input.origin)
 }
 
 /**

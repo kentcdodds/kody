@@ -114,12 +114,14 @@ headers. This holds regardless of hosting mode, so local dev and preview are
 covered too.
 
 **2. A separate registrable domain (production).** `PACKAGE_APP_BASE_URL`
-(production Worker var, `https://kodyapps.dev`) makes package apps cross-site
-from the app origin, so the `SameSite=Lax`, `HttpOnly` `kody_session` cookie
-never attaches to them and cross-origin `fetch` from package pages has no CORS
-grant (`withCors` only reflects same-origin, plus `/mcp`). It must stay a
-**separate registrable domain**: a subdomain of the app origin would still be
-same-site for cookie purposes. `getPackageAppBaseUrl`
+(production Worker var, `https://kodyapps.dev`, with the domain attached to the
+Worker as a Cloudflare custom domain — see
+[`setup-manifest.md`](./setup-manifest.md)) makes package apps cross-site from
+the app origin, so the `SameSite=Lax`, `HttpOnly` `kody_session` cookie never
+attaches to them and cross-origin `fetch` from package pages has no CORS grant
+(`withCors` only reflects same-origin, plus `/mcp`). It must stay a **separate
+registrable domain**: a subdomain of the app origin would still be same-site for
+cookie purposes. `getPackageAppBaseUrl`
 (`packages/worker/src/app/app-base-url.ts`) resolves it, and `getAppBaseUrl`
 refuses to resolve the package-app origin as the app origin so package runtime
 callbacks and first-party links always point back at the app.
@@ -144,10 +146,14 @@ in the Worker `fetch` handler:
   terminates in a `403` that links back to the app origin, so a browser that
   refuses the cookie fails visibly instead of ping-ponging between hosts.
 
-When `PACKAGE_APP_BASE_URL` is unset — local dev, preview, tests, E2E — package
-apps keep being served inline on the app origin by `handlePackageAppRequest`.
-That path is still credential-stripped, but it is same-origin, so **do not treat
-a local deploy as representative of the production isolation boundary**.
+When no package-app origin resolves — preview, tests, E2E, and `npm run dev`,
+which ignores an origin a local server cannot answer on — package apps keep
+being served inline on the app origin by `handlePackageAppRequest`. That path is
+still credential-stripped, but it is same-origin, so **do not treat a local run
+as representative of the production isolation boundary**. To exercise the
+two-origin flow locally, set
+`PACKAGE_APP_BASE_URL=http://packages.localhost:<port>` in
+`packages/worker/.env`.
 
 The cross-site handoff (how the owner is recognized on the package-app origin
 without giving package code a first-party session) is documented in

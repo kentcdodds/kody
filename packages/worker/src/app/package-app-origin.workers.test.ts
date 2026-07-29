@@ -10,7 +10,9 @@ import {
 	seedAccount,
 } from '#worker/test-support/workers-seed.ts'
 
-const appOrigin = 'https://app.kody.test'
+// Different ports on purpose: swapping origins by mutating a `URL` keeps the
+// original port, and identical ports would hide that.
+const appOrigin = 'https://app.kody.test:8788'
 const packageAppOrigin = 'https://packages.kody.test'
 const ownerEmail = 'pkg-owner@example.com'
 const ownerUsername = 'pkg-owner'

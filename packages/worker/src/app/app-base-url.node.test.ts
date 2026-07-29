@@ -52,6 +52,25 @@ test('the package-app origin is configurable and never resolves as the app origi
 		}),
 	).toBe('https://kodyapps.dev')
 
+	// `npm run dev` runs the production Wrangler env, so local dev sees the
+	// committed production value and must ignore an origin it cannot serve.
+	expect(
+		getPackageAppBaseUrl({
+			env: {
+				PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
+				WRANGLER_IS_LOCAL_DEV: 'true',
+			},
+		}),
+	).toBeNull()
+	expect(
+		getPackageAppBaseUrl({
+			env: {
+				PACKAGE_APP_BASE_URL: 'http://packages.localhost:3742',
+				WRANGLER_IS_LOCAL_DEV: 'true',
+			},
+		}),
+	).toBe('http://packages.localhost:3742')
+
 	const env = {
 		APP_BASE_URL: 'https://heykody.dev',
 		PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',

@@ -1,8 +1,21 @@
 const DEFAULT_APP_BASE_URL = 'https://heykody.dev'
 
-type AppBaseUrlEnv = {
-	APP_BASE_URL?: string | null
+type PackageAppBaseUrlEnv = {
 	PACKAGE_APP_BASE_URL?: string | null
+	WRANGLER_IS_LOCAL_DEV?: string | null
+}
+
+type AppBaseUrlEnv = PackageAppBaseUrlEnv & {
+	APP_BASE_URL?: string | null
+}
+
+function isLocallyServableHostname(hostname: string) {
+	return (
+		hostname === 'localhost' ||
+		hostname === '127.0.0.1' ||
+		hostname === '[::1]' ||
+		hostname.endsWith('.localhost')
+	)
 }
 
 /**
@@ -11,17 +24,29 @@ type AppBaseUrlEnv = {
  *
  * Production sets `PACKAGE_APP_BASE_URL` to a separate registrable domain so
  * author-supplied package code is cross-site from the first-party app origin
- * and can never receive the owner's `kody_session` cookie. Local dev, preview,
- * and tests leave it unset and keep the path-based same-origin behavior.
+ * and can never receive the owner's `kody_session` cookie. Preview, tests, and
+ * E2E leave it unset and keep the path-based same-origin behavior.
+ *
+ * `npm run dev` runs against the **production** Wrangler environment, so the
+ * committed production value reaches local dev too. A local server cannot serve
+ * the real package-app domain, so local dev only honors an origin it can
+ * actually answer on (`localhost`, `127.0.0.1`, `*.localhost`) — set
+ * `PACKAGE_APP_BASE_URL=http://packages.localhost:<port>` in
+ * `packages/worker/.env` to exercise the two-origin flow locally.
  */
-export function getPackageAppBaseUrl(input: {
-	env: { PACKAGE_APP_BASE_URL?: string | null }
-}) {
+export function getPackageAppBaseUrl(input: { env: PackageAppBaseUrlEnv }) {
 	const configured = input.env.PACKAGE_APP_BASE_URL?.trim()
 	if (!configured) return null
 
 	try {
-		return new URL(configured).origin
+		const configuredUrl = new URL(configured)
+		if (
+			input.env.WRANGLER_IS_LOCAL_DEV?.trim() &&
+			!isLocallyServableHostname(configuredUrl.hostname)
+		) {
+			return null
+		}
+		return configuredUrl.origin
 	} catch {
 		// Runtime env validation should already catch this; fall back to the
 		// same-origin behavior instead of routing to a bogus host.

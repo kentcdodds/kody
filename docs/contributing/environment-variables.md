@@ -92,13 +92,19 @@ Optional Wrangler `var` (public, non-secret; see
 `packages/worker/src/app/package-app-origin.ts`):
 
 - `PACKAGE_APP_BASE_URL` — origin hosted package apps are served from.
-  Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`,
-  attached as a Workers `custom_domain` route on the production env so the
-  deploy provisions DNS and the certificate. It **must be a separate registrable
-  domain** from `APP_BASE_URL`: that is what makes author-supplied package code
-  cross-site, so the `SameSite=Lax` `kody_session` cookie never reaches it.
-  Intentionally unset for local dev, preview, tests, and E2E, which keep serving
-  package apps inline on the app origin at `/@{username}/packages/*`. See
+  Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`;
+  the domain itself is attached to the Worker as a Cloudflare custom domain
+  out-of-band (see [setup-manifest.md](./setup-manifest.md)). It **must be a
+  separate registrable domain** from `APP_BASE_URL`: that is what makes
+  author-supplied package code cross-site, so the `SameSite=Lax` `kody_session`
+  cookie never reaches it. Preview, tests, and E2E leave it unset and keep
+  serving package apps inline on the app origin at `/@{username}/packages/*`.
+
+  `npm run dev` runs the **production** Wrangler environment, so the committed
+  production value reaches local dev too; `getPackageAppBaseUrl` ignores an
+  origin a local server cannot answer on, which keeps `npm run dev` inline. Set
+  `PACKAGE_APP_BASE_URL=http://packages.localhost:<port>` in
+  `packages/worker/.env` to exercise the two-origin flow locally. See
   [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
 
 ## MCP `execute` and outbound HTTP
