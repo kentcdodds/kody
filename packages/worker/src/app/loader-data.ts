@@ -7,7 +7,10 @@ import {
 	type PublicCommunityStargazer,
 	type PublicProfilePackageItem,
 } from '#app/community-public-types.ts'
-import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import {
+	type PermissionString,
+	type RoleName,
+} from '#worker/identity/permissions.ts'
 import { type AdminFeatureFlag } from '#worker/feature-flags/types.ts'
 
 export type { ProfileVisibility }

@@ -13,7 +13,7 @@ import {
 	resolveApprovalRequest,
 	toPackageOptions,
 } from '#app/account-secrets-data.ts'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadConnectOauthNextSteps } from '#app/connect-oauth-next-steps.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'

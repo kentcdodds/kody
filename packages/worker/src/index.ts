@@ -40,7 +40,7 @@ import {
 import { withCors } from './utils.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { checkRateLimit, authRateLimitConfig } from '#app/rate-limit.ts'
-import { getRequestIp } from '#app/audit-log.ts'
+import { getRequestIp } from '#worker/audit-log.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
@@ -68,7 +68,7 @@ import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-del
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { refreshStaleStripePlans } from '#worker/billing/subscription-sync.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
-import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
 import { pruneJobRetention } from '#worker/jobs/job-retention-cleanup.ts'
 import {

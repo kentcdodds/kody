@@ -3,7 +3,7 @@ import {
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import { isAccountSuspended } from '#app/account-suspension.ts'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getRequestIp } from '#worker/audit-log.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'

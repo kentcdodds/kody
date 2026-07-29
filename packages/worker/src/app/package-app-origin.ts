@@ -1,6 +1,6 @@
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
-import { getAppBaseUrl, getPackageAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl, getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { isSecureRequest } from '#app/auth-session.ts'

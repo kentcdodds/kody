@@ -1,6 +1,6 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import {
 	AccountDeletionInProgressError,

@@ -44,7 +44,7 @@ import {
 	formatMonthKeyLabel,
 	usageMetricSeries,
 } from '#client/charts/usage-metric-series.ts'
-import { type RoleName } from '#app/permissions.ts'
+import { type RoleName } from '#worker/identity/permissions.ts'
 import {
 	type AdminPlanName,
 	type AdminUserListItem,

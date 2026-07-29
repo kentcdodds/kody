@@ -25,7 +25,7 @@ import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-mess
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 import { oauthPaths } from '#app/oauth-paths.ts'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { mcpResourcePath } from './mcp-auth.ts'
 
 export { oauthPaths }

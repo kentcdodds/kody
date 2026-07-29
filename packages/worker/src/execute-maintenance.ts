@@ -1,5 +1,5 @@
 import { exports as workerExports } from 'cloudflare:workers'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { createExecuteExecutor } from '#mcp/executor.ts'
 import { handleSecretMaintenanceRequest } from './maintenance-handler.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'

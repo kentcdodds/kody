@@ -24,7 +24,7 @@ import {
 	primaryLinkCss,
 } from './styles/style-primitives.ts'
 import { type AppLoaderData } from '#app/loader-data.ts'
-import { userHasRole } from '#app/permissions.ts'
+import { userHasRole } from '#worker/identity/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from './styles/tokens.ts'
 import { WaitlistBanner } from './waitlist-banner.tsx'

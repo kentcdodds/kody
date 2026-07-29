@@ -7,7 +7,7 @@ import {
 	buildStylesheetHref,
 	getClientBuildId,
 } from '#app/client-build-id.ts'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import {
 	absolutizeDocumentHead,

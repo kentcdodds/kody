@@ -1,4 +1,4 @@
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { type OnboardingFeaturedListing } from '#app/community-public-types.ts'
 import { type OnboardingLoaderData } from '#app/loader-data.ts'
 

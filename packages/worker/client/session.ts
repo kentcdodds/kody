@@ -5,7 +5,7 @@ import {
 	roleNames,
 	type PermissionString,
 	type RoleName,
-} from '#app/permissions.ts'
+} from '#worker/identity/permissions.ts'
 import {
 	featureFlagKeys,
 	type FeatureFlagKey,

@@ -12,7 +12,7 @@ import {
 	type WorkflowEvent,
 	type WorkflowStep,
 } from 'cloudflare:workers'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	readPreExecutionPackageInvocationInfrastructureCode,

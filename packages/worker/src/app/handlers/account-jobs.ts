@@ -5,7 +5,7 @@ import {
 	loadAccountJobsData,
 	type AccountJobsLoaderData,
 } from '#app/account-jobs-data.ts'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type AccountJobsLoaderData as AppAccountJobsLoaderData } from '#app/loader-data.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'

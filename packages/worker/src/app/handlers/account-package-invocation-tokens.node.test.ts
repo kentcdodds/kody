@@ -82,7 +82,7 @@ vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: async () => new Response('ok'),
 }))
 
-vi.mock('#app/app-base-url.ts', () => ({
+vi.mock('#worker/app-base-url.ts', () => ({
 	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
 }))
 

@@ -1,5 +1,5 @@
 import { type Action } from 'remix/router'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { type routes } from '#app/routes.ts'
 import { getPublicOgPage } from '#worker/og/pages.ts'
 

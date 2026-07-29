@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { type Action } from 'remix/router'
-import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	buildInstallAdaptPrompt,
