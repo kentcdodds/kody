@@ -164,8 +164,11 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 		mockModule.deleteEntitySource(...args),
 }))
 
-const { deleteSavedPackageProjection, refreshSavedPackageProjection } =
-	await import('./service.ts')
+const {
+	deleteSavedPackageProjection,
+	filterPackageOwnedStorageIdsFromInventory,
+	refreshSavedPackageProjection,
+} = await import('./service.ts')
 
 function createEnv(
 	userId = 'user-1',
@@ -820,9 +823,6 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 	for (const call of mockModule.storageRunnerRpc.mock.calls) {
 		expect(call[0]).toMatchObject({ userId: 'user-1' })
 	}
-	expect(mockModule.clearStorage).toHaveBeenCalledTimes(
-		clearedStorageIds.length,
-	)
 	expect(storageBuckets).toEqual(
 		expect.arrayContaining([
 			otherUserBucket,
@@ -938,6 +938,157 @@ test('deleteSavedPackageProjection clears deterministic storage when projection 
 	})
 })
 
+test('filterPackageOwnedStorageIdsFromInventory exact-matches only for non-UUID package ids', () => {
+	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+	const inventory = [
+		'job',
+		'package:job',
+		'job:ad-hoc-1',
+		`job:package-job:${otherPackageId}:nightly`,
+		'job:facet:main',
+		'service:job:realtime',
+		'%',
+		'package:%25',
+		'exec:scratch-1',
+		`${otherPackageId}:facet:main`,
+	]
+
+	expect(
+		filterPackageOwnedStorageIdsFromInventory({
+			packageId: 'job',
+			storageIds: inventory,
+		}).toSorted(),
+	).toEqual(['job', 'package:job'].toSorted())
+
+	expect(
+		filterPackageOwnedStorageIdsFromInventory({
+			packageId: '%',
+			storageIds: inventory,
+		}).toSorted(),
+	).toEqual(['%', 'package:%25'].toSorted())
+
+	expect(
+		filterPackageOwnedStorageIdsFromInventory({
+			packageId: 'exec',
+			storageIds: [...inventory, 'exec', 'package:exec'],
+		}).toSorted(),
+	).toEqual(['exec', 'package:exec'].toSorted())
+})
+
+test('filterPackageOwnedStorageIdsFromInventory applies UUID-gated prefixes', () => {
+	const packageId = 'b2fda105-005a-4e2b-9f22-1513b6752da2'
+	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+	const packageStorageId = `package:${encodeURIComponent(packageId)}`
+	const facetStorageId = `${packageId}:facet:main`
+	const jobStorageId = `job:package-job:${packageId}:event-runner`
+	const serviceStorageId = `service:${encodeURIComponent(packageId)}:realtime-supervisor`
+	const inventory = [
+		packageId,
+		packageStorageId,
+		facetStorageId,
+		jobStorageId,
+		serviceStorageId,
+		'job:ad-hoc-1',
+		`job:package-job:${otherPackageId}:nightly`,
+		`${otherPackageId}:facet:main`,
+		`service:${encodeURIComponent(otherPackageId)}:other`,
+		'exec:scratch-1',
+	]
+
+	expect(
+		filterPackageOwnedStorageIdsFromInventory({
+			packageId,
+			storageIds: inventory,
+		}).toSorted(),
+	).toEqual(
+		[
+			packageId,
+			packageStorageId,
+			facetStorageId,
+			jobStorageId,
+			serviceStorageId,
+		].toSorted(),
+	)
+})
+
+test('deleteSavedPackageProjection does not clear unrelated buckets for package id "job"', async () => {
+	setupDefaultMocks()
+	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+	const storageBuckets = [
+		{ userId: 'user-1', storageId: 'job' },
+		{ userId: 'user-1', storageId: 'package:job' },
+		{ userId: 'user-1', storageId: 'job:ad-hoc-1' },
+		{
+			userId: 'user-1',
+			storageId: `job:package-job:${otherPackageId}:nightly`,
+		},
+		{ userId: 'user-1', storageId: 'job:facet:main' },
+	]
+	const env = createEnv('user-1', { storageBuckets })
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'job',
+		kodyId: 'job-pkg',
+		sourceId: 'source-job',
+	})
+	mockModule.listJobRowsByUserId.mockResolvedValue([])
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId: 'job',
+	})
+
+	const clearedStorageIds = mockModule.storageRunnerRpc.mock.calls.map(
+		(call) => (call[0] as { storageId: string }).storageId,
+	)
+	expect(clearedStorageIds.toSorted()).toEqual(
+		['job', 'package:job'].toSorted(),
+	)
+	expect(storageBuckets.map((row) => row.storageId).toSorted()).toEqual(
+		[
+			'job:ad-hoc-1',
+			`job:package-job:${otherPackageId}:nightly`,
+			'job:facet:main',
+		].toSorted(),
+	)
+})
+
+test('deleteSavedPackageProjection does not clear unrelated buckets for package id "%"', async () => {
+	setupDefaultMocks()
+	const packageId = '%'
+	const packageStorageId = `package:${encodeURIComponent(packageId)}`
+	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+	const storageBuckets = [
+		{ userId: 'user-1', storageId: packageId },
+		{ userId: 'user-1', storageId: packageStorageId },
+		{ userId: 'user-1', storageId: 'job:ad-hoc-1' },
+		{ userId: 'user-1', storageId: `${otherPackageId}:facet:main` },
+		{ userId: 'user-1', storageId: 'exec:scratch-1' },
+	]
+	const env = createEnv('user-1', { storageBuckets })
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId,
+	})
+
+	const clearedStorageIds = mockModule.storageRunnerRpc.mock.calls.map(
+		(call) => (call[0] as { storageId: string }).storageId,
+	)
+	expect(clearedStorageIds.toSorted()).toEqual(
+		[packageId, packageStorageId].toSorted(),
+	)
+	expect(storageBuckets.map((row) => row.storageId).toSorted()).toEqual(
+		[
+			'job:ad-hoc-1',
+			`${otherPackageId}:facet:main`,
+			'exec:scratch-1',
+		].toSorted(),
+	)
+})
+
 function createEntitlementsDatabase(input: {
 	users?: Array<{ email: string; plan: string | null }>
 	savedPackageCount?: number
@@ -1018,27 +1169,16 @@ function createEntitlementsDatabase(input: {
 						async all<T>() {
 							if (
 								query.includes('FROM user_storage_buckets') &&
-								query.includes('SELECT storage_id AS storageId')
+								query.includes('SELECT storage_id AS storageId') &&
+								query.includes('WHERE user_id = ?')
 							) {
 								const userId = String(params[0])
-								const exactPackageId = String(params[1])
-								const facetPrefix = String(params[2])
-								const packageStorageId = String(params[3])
-								const servicePrefix = String(params[4])
-								const jobPrefix = String(params[5])
 								const results = storageBuckets
-									.filter((row) => {
-										if (row.userId !== userId) return false
-										const id = row.storageId
-										return (
-											id === exactPackageId ||
-											id.startsWith(facetPrefix) ||
-											id === packageStorageId ||
-											id.startsWith(servicePrefix) ||
-											id.startsWith(jobPrefix)
-										)
-									})
+									.filter((row) => row.userId === userId)
 									.map((row) => ({ storageId: row.storageId }))
+									.sort((left, right) =>
+										left.storageId.localeCompare(right.storageId),
+									)
 								return { results: results as Array<T> }
 							}
 							throw new Error(`Unsupported all query: ${query}`)

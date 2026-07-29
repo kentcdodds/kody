@@ -47,10 +47,14 @@ import {
 	removeAllSecretApprovalsForPackage,
 } from '#mcp/secrets/service.ts'
 import { deleteAllAppScopedValues } from '#mcp/values/service.ts'
+import { listUserStorageBucketIds } from '#worker/storage-buckets/service.ts'
 import {
 	buildPackageStorageId,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
+
+const savedPackageIdUuidPattern =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -79,38 +83,60 @@ function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
 }
 
+/**
+ * Inventory prefix matching is UUID-gated on purpose. `package_save` accepts
+ * arbitrary non-empty package ids, so a raw prefix like `{packageId}:` can
+ * collide with reserved storage namespaces (`job:`, `exec:`, …) or carry LIKE
+ * metacharacters (`%`, `_`; `encodeURIComponent` can also introduce `%`). A
+ * UUID cannot contain `:` or those metacharacters and cannot equal the reserved
+ * namespace literals, which makes `{uuid}:…`, `service:{encodeURIComponent(uuid)}:…`,
+ * and `job:package-job:{uuid}:…` unambiguous. Non-UUID packages still clear the
+ * deterministic set (package bucket, raw id, job/service scratch ids from D1 /
+ * listed services); an orphaned facet bucket for a weird id stays inventoriable
+ * for account deletion.
+ */
+export function filterPackageOwnedStorageIdsFromInventory(input: {
+	packageId: string
+	storageIds: ReadonlyArray<string>
+}): Array<string> {
+	const packageStorageId = buildPackageStorageId(input.packageId)
+	const matched = new Set<string>()
+	for (const storageId of input.storageIds) {
+		if (storageId === input.packageId || storageId === packageStorageId) {
+			matched.add(storageId)
+		}
+	}
+	if (!savedPackageIdUuidPattern.test(input.packageId)) {
+		return [...matched]
+	}
+	const facetPrefix = `${input.packageId}:`
+	const servicePrefix = `service:${encodeURIComponent(input.packageId)}:`
+	const jobPrefix = `job:package-job:${input.packageId}:`
+	for (const storageId of input.storageIds) {
+		if (
+			storageId.startsWith(facetPrefix) ||
+			storageId.startsWith(servicePrefix) ||
+			storageId.startsWith(jobPrefix)
+		) {
+			matched.add(storageId)
+		}
+	}
+	return [...matched]
+}
+
 async function listPackageOwnedStorageIdsFromInventory(input: {
-	db: D1Database
+	env: Env
 	userId: string
 	packageId: string
 }): Promise<Array<string>> {
-	const packageStorageId = buildPackageStorageId(input.packageId)
-	const servicePrefix = `service:${encodeURIComponent(input.packageId)}:`
-	const jobPrefix = `job:package-job:${input.packageId}:`
-	const facetPrefix = `${input.packageId}:`
-	const result = await input.db
-		.prepare(
-			`SELECT storage_id AS storageId
-			FROM user_storage_buckets
-			WHERE user_id = ?
-				AND (
-					storage_id = ?
-					OR storage_id LIKE ? || '%'
-					OR storage_id = ?
-					OR storage_id LIKE ? || '%'
-					OR storage_id LIKE ? || '%'
-				)`,
-		)
-		.bind(
-			input.userId,
-			input.packageId,
-			facetPrefix,
-			packageStorageId,
-			servicePrefix,
-			jobPrefix,
-		)
-		.all<{ storageId: string }>()
-	return (result.results ?? []).map((row) => row.storageId)
+	const storageIds = await listUserStorageBucketIds({
+		env: input.env,
+		userId: input.userId,
+	})
+	return filterPackageOwnedStorageIdsFromInventory({
+		packageId: input.packageId,
+		storageIds,
+	})
 }
 
 async function clearPackageOwnedStorageBucket(input: {
@@ -488,7 +514,7 @@ export async function deleteSavedPackageProjection(input: {
 			}
 			try {
 				const inventoryIds = await listPackageOwnedStorageIdsFromInventory({
-					db: input.env.APP_DB,
+					env: input.env,
 					userId: input.userId,
 					packageId: input.packageId,
 				})
