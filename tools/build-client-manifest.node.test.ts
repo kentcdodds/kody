@@ -1,8 +1,22 @@
 import { expect, test } from 'vitest'
 import {
 	buildClientPreloadManifest,
+	lazyAreaNames,
 	type ClientMetafile,
 } from './build-client-manifest.ts'
+
+test('lazy area names match the client router contract', () => {
+	// Must stay in sync with the areas registered in
+	// packages/worker/client/lazy-route.tsx (lazy-route.node.test.ts pins the
+	// same literal).
+	expect([...lazyAreaNames].sort()).toEqual([
+		'account-area',
+		'admin-area',
+		'blog-area',
+		'community-area',
+		'onboarding-area',
+	])
+})
 
 const output = (imports: Array<{ path: string; kind: string }>) => ({
 	imports,
@@ -33,6 +47,10 @@ test('manifest contains the entry static closure and per-area unique chunks', ()
 			]),
 			[chunk('chunk-C.js')]: output([]),
 			[chunk('sentry-init-H2.js')]: output([]),
+			[chunk('admin-area-H3.js')]: output([]),
+			[chunk('blog-area-H4.js')]: output([]),
+			[chunk('community-area-H5.js')]: output([]),
+			[chunk('onboarding-area-H6.js')]: output([]),
 		},
 	}
 
@@ -54,5 +72,16 @@ test('manifest contains the entry static closure and per-area unique chunks', ()
 test('manifest builder rejects a metafile without the client entry', () => {
 	expect(() => buildClientPreloadManifest({ outputs: {} })).toThrow(
 		/client-entry\.js not found/,
+	)
+})
+
+test('manifest builder rejects a metafile missing a lazy area chunk', () => {
+	const metafile: ClientMetafile = {
+		outputs: {
+			'packages/worker/public/client-entry.js': output([]),
+		},
+	}
+	expect(() => buildClientPreloadManifest(metafile)).toThrow(
+		/Lazy area chunk for "account-area" not found/,
 	)
 })

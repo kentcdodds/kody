@@ -71,14 +71,16 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	const fathomSiteId = parsedEnv.FATHOM_SITE_ID?.trim() || null
 
 	// Warm lazy route chunks before streaming so SSR HTML includes the real
-	// route tree (dynamic import resolves in the worker bundle).
-	await preloadClientRouteModules(`${requestUrl.pathname}${requestUrl.search}`)
-
-	const modulePreloadHrefs = await getClientModulePreloadHrefs({
-		assets: env.ASSETS,
-		buildId: getClientBuildId(parsedEnv),
-		pathname: requestUrl.pathname,
-	})
+	// route tree (dynamic import resolves in the worker bundle), and resolve
+	// the modulepreload hints for those chunks in parallel.
+	const [, modulePreloadHrefs] = await Promise.all([
+		preloadClientRouteModules(`${requestUrl.pathname}${requestUrl.search}`),
+		getClientModulePreloadHrefs({
+			assets: env.ASSETS,
+			buildId: getClientBuildId(parsedEnv),
+			pathname: requestUrl.pathname,
+		}),
+	])
 
 	const stream = renderToStream(
 		// Remix server components accept props via handle.props; JSX typing is loose here.

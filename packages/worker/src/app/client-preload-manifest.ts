@@ -59,7 +59,11 @@ async function loadManifest(
 	} catch {
 		// Missing or malformed manifest just means no preload hints.
 	}
-	manifestCache = { buildId, manifest }
+	// Only cache a usable manifest: a transient assets fetch failure must not
+	// pin "no hints" for the whole isolate lifetime.
+	if (manifest) {
+		manifestCache = { buildId, manifest }
+	}
 	return manifest
 }
 

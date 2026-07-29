@@ -29,6 +29,8 @@ import {
 const BUFFER_CAP = 20
 /** Max delay before loading Sentry when the page is idle (requestIdleCallback timeout / setTimeout fallback). */
 const IDLE_LOAD_TIMEOUT_MS = 2500
+/** Chunk-load attempts before giving up on error reporting for this page. */
+const MAX_LOAD_ATTEMPTS = 3
 
 type CaptureFn = (error: unknown) => void
 
@@ -37,6 +39,7 @@ let captureImpl: CaptureFn | null = null
 let errorBuffer: Array<unknown> = []
 let buffering = false
 let loadPromise: Promise<void> | null = null
+let loadAttempts = 0
 let onWindowError: ((event: ErrorEvent) => void) | null = null
 let onUnhandledRejection: ((event: PromiseRejectionEvent) => void) | null = null
 
@@ -47,10 +50,11 @@ function shouldIgnoreBufferedError(error: unknown) {
 function enqueueBufferedError(error: unknown) {
 	if (!buffering || captureImpl) return
 	if (shouldIgnoreBufferedError(error)) return
-	if (errorBuffer.length >= BUFFER_CAP) {
-		errorBuffer.shift()
+	// Keep the earliest errors when full — the first failure is usually the
+	// most diagnostic one.
+	if (errorBuffer.length < BUFFER_CAP) {
+		errorBuffer.push(error)
 	}
-	errorBuffer.push(error)
 	// First (and any subsequent) buffered error loads Sentry immediately so
 	// early crashes are not stuck waiting for idle.
 	void ensureSentryLoaded()
@@ -99,6 +103,10 @@ function ensureSentryLoaded() {
 	if (!config) {
 		return Promise.resolve()
 	}
+	if (loadAttempts >= MAX_LOAD_ATTEMPTS) {
+		return Promise.resolve()
+	}
+	loadAttempts += 1
 	loadPromise = (async () => {
 		try {
 			// Dynamic import is intentional: keeps `@sentry/*` in a separate
@@ -121,8 +129,14 @@ function ensureSentryLoaded() {
 			}
 		} catch (error) {
 			console.warn('sentry-client-init-failed', error)
-			removeBufferListeners()
-			errorBuffer = []
+			// Keep the buffer and listeners so a later error can retry the
+			// chunk load (a transient network failure must not permanently
+			// disable error reporting for the page).
+			loadPromise = null
+			if (loadAttempts >= MAX_LOAD_ATTEMPTS) {
+				removeBufferListeners()
+				errorBuffer = []
+			}
 		}
 	})()
 	return loadPromise

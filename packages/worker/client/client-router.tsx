@@ -232,6 +232,14 @@ function runIntentPrefetch(destination: URL) {
 	// focusin lands after the navigation consumed the prefetch slot).
 	if (destinationPath === getCurrentPathWithSearchAndHash()) return
 	if (destinationPath === activeNavigationPath) return
+	// Warm the destination's lazy code chunk too — loaders in lazy areas pull
+	// their own chunk, but loaderless lazy routes (e.g. /connect/oauth) would
+	// otherwise wait for the chunk at navigation time.
+	void preloadClientRouteModules(
+		`${destination.pathname}${destination.search}`,
+	).catch(() => {
+		// Speculative; navigation handles real failures.
+	})
 	const loader = matchRouteLoader(destination)
 	if (!loader) return
 	prefetchRouteOnIntent(
@@ -470,17 +478,19 @@ async function runNavigationWithLoader(
 	const prefetched = takePrefetchedRouteResult(nextPath, signal)
 
 	// Warm the destination lazy route chunk alongside the loader. A failed
-	// chunk import (e.g. hashed names rotated after a deploy) falls back to a
-	// full document navigation instead of committing a broken SPA tree. The
-	// failure is captured as a flag (never a rejection) so an unrelated loader
-	// error can not leave this promise as an unhandled rejection.
+	// chunk import is retried once (transient network blip), then falls back
+	// to a full document navigation (e.g. hashed names rotated after a
+	// deploy) instead of committing a broken SPA tree. The failure is
+	// captured as a flag (never a rejection) so an unrelated loader error can
+	// not leave this promise as an unhandled rejection.
 	let chunkLoadFailed = false
-	const preloadPromise = preloadClientRouteModules(
-		`${destination.pathname}${destination.search}`,
-	).catch((error: unknown) => {
-		chunkLoadFailed = true
-		console.error('Route chunk preload failed:', error)
-	})
+	const destinationPathWithSearch = `${destination.pathname}${destination.search}`
+	const preloadPromise = preloadClientRouteModules(destinationPathWithSearch)
+		.catch(() => preloadClientRouteModules(destinationPathWithSearch))
+		.catch((error: unknown) => {
+			chunkLoadFailed = true
+			console.error('Route chunk preload failed:', error)
+		})
 
 	try {
 		let loadedData: Partial<AppLoaderData> | undefined

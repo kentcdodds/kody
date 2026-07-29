@@ -33,8 +33,9 @@ export type ClientPreloadManifest = {
 }
 
 // Keep in sync with the area names registered in
-// packages/worker/client/lazy-route.tsx (`clientRouteAreaNameForPath`).
-const lazyAreaNames = [
+// packages/worker/client/lazy-route.tsx (`clientRouteAreaNameForPath`);
+// enforced by packages/worker/client/lazy-route.node.test.ts.
+export const lazyAreaNames = [
 	'account-area',
 	'admin-area',
 	'blog-area',
@@ -100,7 +101,13 @@ export function buildClientPreloadManifest(
 			const base = path.posix.basename(outputPath.split(path.sep).join('/'))
 			return base.startsWith(`${areaName}-`) && base.endsWith('.js')
 		})
-		if (!areaOutput) continue
+		if (!areaOutput) {
+			// A missing area chunk means the barrel got renamed or eagerly
+			// bundled — fail loudly instead of silently dropping hints.
+			throw new Error(
+				`Lazy area chunk for "${areaName}" not found in esbuild metafile outputs`,
+			)
+		}
 		const areaHrefs = [
 			areaOutput,
 			...staticImportClosure(metafile, areaOutput).filter(

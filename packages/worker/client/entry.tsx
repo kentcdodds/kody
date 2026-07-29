@@ -14,6 +14,8 @@ const clientRegistry: Record<string, typeof AppRoot> = {
 	AppRoot,
 }
 
+const bootChunkReloadFlag = 'kody:boot-chunk-reload'
+
 async function boot() {
 	// `run()` starts hydration immediately; `app.ready()` only waits for it to
 	// finish. Warm the current route chunk first so LazyRoute sees a hot cache
@@ -22,10 +24,28 @@ async function boot() {
 		await preloadClientRouteModules(
 			`${window.location.pathname}${window.location.search}`,
 		)
+		try {
+			sessionStorage.removeItem(bootChunkReloadFlag)
+		} catch {
+			// Storage may be unavailable (private mode); the flag is best-effort.
+		}
 	} catch (error: unknown) {
+		console.error('Client route preload failed:', error)
+		// A stale cached entry referencing rotated chunk hashes cannot hydrate
+		// this route. One forced reload fetches a fresh document (HTML is
+		// no-store) whose entry href points at the current build; the flag
+		// prevents a reload loop when the chunk is genuinely missing.
+		try {
+			if (!sessionStorage.getItem(bootChunkReloadFlag)) {
+				sessionStorage.setItem(bootChunkReloadFlag, '1')
+				window.location.reload()
+				return
+			}
+		} catch {
+			// Storage unavailable: fall through and hydrate anyway.
+		}
 		// Still hydrate: LazyRoute will retry the import. A hard chunk miss may
 		// leave a brief empty route, which is better than never booting.
-		console.error('Client route preload failed:', error)
 	}
 
 	const app = run({
