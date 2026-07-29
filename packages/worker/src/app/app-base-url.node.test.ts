@@ -70,6 +70,18 @@ test('the package-app origin is configurable and never resolves as the app origi
 			},
 		}),
 	).toBe('http://packages.localhost:3742')
+	// Only the literal 'true' means local dev, so a stray value cannot pull
+	// package apps back onto the app origin in a real deployment.
+	for (const localDevFlag of ['false', '0', 'no', ' ']) {
+		expect(
+			getPackageAppBaseUrl({
+				env: {
+					PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
+					WRANGLER_IS_LOCAL_DEV: localDevFlag,
+				},
+			}),
+		).toBe('https://kodyapps.dev')
+	}
 
 	const env = {
 		APP_BASE_URL: 'https://heykody.dev',

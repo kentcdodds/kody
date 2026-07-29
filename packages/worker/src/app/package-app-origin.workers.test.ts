@@ -140,7 +140,20 @@ test('hosted package apps move to the package-app origin behind a single-use han
 		'Saved package app not found.',
 	)
 
-	// 4. The package-app session is re-checked against the account on every
+	// 4. A stale or forged token alongside a valid session is ignored rather than
+	// rejected, and never reaches package code (the request is rewritten without
+	// it before serving).
+	const staleTokenUrl = new URL(cleanLocation)
+	staleTokenUrl.searchParams.set(packageAppHandoffQueryParam, `${handoffToken}`)
+	const staleTokenResponse = await workerFetch(staleTokenUrl, {
+		headers: { Cookie: packageSessionCookie },
+	})
+	expect(staleTokenResponse.status).toBe(404)
+	await expect(staleTokenResponse.text()).resolves.toBe(
+		'Saved package app not found.',
+	)
+
+	// 5. The package-app session is re-checked against the account on every
 	// request, so suspension and password changes revoke package-app access too.
 	for (const [column, value] of [
 		['suspended_at', new Date().toISOString()],
@@ -160,7 +173,7 @@ test('hosted package apps move to the package-app origin behind a single-use han
 			.run()
 	}
 
-	// 5. Replaying the consumed token is refused, and so is any request without a
+	// 6. Replaying the consumed token is refused, and so is any request without a
 	// package-app session. Both terminate here (never a redirect back to the app
 	// origin) so a browser that drops the cookie cannot ping-pong between hosts.
 	for (const request of [handoffLocation, cleanLocation]) {
@@ -179,7 +192,7 @@ test('hosted package apps move to the package-app origin behind a single-use han
 		error: 'Package app session required',
 	})
 
-	// 6. Nothing first-party is reachable on the package-app origin.
+	// 7. Nothing first-party is reachable on the package-app origin.
 	for (const path of [
 		'/account/secrets.json',
 		'/login',
@@ -195,12 +208,12 @@ test('hosted package apps move to the package-app origin behind a single-use han
 		await expect(response.text()).resolves.toBe('Not Found')
 	}
 
-	// 7. The bare package-app origin is a plausible bookmark; send it home.
+	// 8. The bare package-app origin is a plausible bookmark; send it home.
 	const rootResponse = await workerFetch(`${packageAppOrigin}/`)
 	expect(rootResponse.status).toBe(302)
 	expect(rootResponse.headers.get('Location')).toBe(`${appOrigin}/`)
 
-	// 8. The package-app session is not an app session: the app origin refuses it
+	// 9. The package-app session is not an app session: the app origin refuses it
 	// and sends the visitor to log in.
 	const appOriginWithPackageCookie = await workerFetch(
 		`${appOrigin}/@${ownerUsername}/packages/demo`,

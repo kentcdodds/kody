@@ -91,7 +91,7 @@ Optional Wrangler `var` (public, non-secret; see
 `packages/worker/src/app/app-base-url.ts` and
 `packages/worker/src/app/package-app-origin.ts`):
 
-- `PACKAGE_APP_BASE_URL` — origin hosted package apps are served from.
+- `PACKAGE_APP_BASE_URL` — the origin that hosted package apps are served from.
   Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`,
   and the deploy derives a Workers `custom_domain` route from it so Cloudflare
   provisions DNS and the edge certificate (see

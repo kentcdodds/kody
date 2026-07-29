@@ -363,10 +363,13 @@ the app origin mints `<base64url payload>.<HMAC-SHA256>`:
   use. Replay protection is best effort (KV is eventually consistent) and is
   skipped when the binding is missing; signature and expiry always fail closed.
 
-It travels in the `__kody_handoff` query parameter of the cross-origin redirect,
-which is why it is so short-lived: the package-app origin immediately redirects
-to the same URL without it, so it does not stay in the address bar, and it
-cannot be reused from history or a referrer.
+It travels in the `__kody_handoff` query parameter of a cross-origin redirect,
+which is why it is deliberately this weak. A token in a URL is exposed to
+browser history, referrers, and anything that logs URLs; the package-app origin
+redirects straight to the same URL without it, which reduces that exposure but
+cannot eliminate it. The 60-second expiry and the single-use burn are what bound
+the damage when a token does leak. A request that still carries the parameter is
+rewritten without it before package code sees it.
 
 **Package-app session cookie**
 (`packages/worker/src/app/package-app-session.ts`). Exchanging a valid token

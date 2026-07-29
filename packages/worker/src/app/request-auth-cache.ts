@@ -73,14 +73,10 @@ async function resolveRequestAuth(
 		}
 	}
 
-	const passwordChangedAtRaw = userRecord.password_changed_at?.trim() ?? ''
-	const passwordChangedAtMs = parsePasswordChangedAtMs(passwordChangedAtRaw)
-	// Non-empty but unparseable must fail closed — do not treat as "never changed".
 	if (
-		(passwordChangedAtRaw !== '' && passwordChangedAtMs === null) ||
-		isAuthSessionInvalidatedByPasswordChange({
+		isSessionInvalidatedByStoredPasswordChange({
 			issuedAt,
-			passwordChangedAtMs,
+			storedPasswordChangedAt: userRecord.password_changed_at,
 		})
 	) {
 		return {
@@ -159,6 +155,27 @@ export function parsePasswordChangedAtMs(value: string | null | undefined) {
 	if (!Number.isFinite(ms)) return null
 	const hasFractionalSeconds = /(?:[T ])\d{2}:\d{2}:\d{2}\.\d/.test(normalized)
 	return hasFractionalSeconds ? ms : ms + 999
+}
+
+/**
+ * True when a session predates the account's stored `password_changed_at`.
+ *
+ * Every session flavor (browser `kody_session`, package-app `kody_pkg_session`)
+ * must share this decision, so a password reset can never revoke one and leave
+ * another alive. Fails closed twice: a stored timestamp that exists but cannot be
+ * parsed invalidates the session, and so does a missing `issuedAt`.
+ */
+export function isSessionInvalidatedByStoredPasswordChange(input: {
+	issuedAt: number | undefined
+	storedPasswordChangedAt: string | null | undefined
+}): boolean {
+	const passwordChangedAtRaw = input.storedPasswordChangedAt?.trim() ?? ''
+	const passwordChangedAtMs = parsePasswordChangedAtMs(passwordChangedAtRaw)
+	if (passwordChangedAtRaw !== '' && passwordChangedAtMs === null) return true
+	return isAuthSessionInvalidatedByPasswordChange({
+		issuedAt: input.issuedAt,
+		passwordChangedAtMs,
+	})
 }
 
 export function loadResolvedRequestAuth(

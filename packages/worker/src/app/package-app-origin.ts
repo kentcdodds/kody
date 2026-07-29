@@ -242,7 +242,17 @@ async function handleRequestOnPackageAppOrigin(input: {
 		})
 	}
 
-	return await servePackageAppRequest({ request, env, owner, packagePath })
+	// A token that reaches here is stale, forged, or for another package, so it is
+	// worthless — but it is still an internal auth artifact, and package code has
+	// no business seeing one. Serve the request as if it never carried a token.
+	return await servePackageAppRequest({
+		request: handoffToken
+			? new Request(withoutHandoffToken(url), request)
+			: request,
+		env,
+		owner,
+		packagePath,
+	})
 }
 
 /**

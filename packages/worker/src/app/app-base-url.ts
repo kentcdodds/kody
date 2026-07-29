@@ -2,7 +2,7 @@ const DEFAULT_APP_BASE_URL = 'https://heykody.dev'
 
 type PackageAppBaseUrlEnv = {
 	PACKAGE_APP_BASE_URL?: string | null
-	WRANGLER_IS_LOCAL_DEV?: string | null
+	WRANGLER_IS_LOCAL_DEV?: string | undefined
 }
 
 type AppBaseUrlEnv = PackageAppBaseUrlEnv & {
@@ -40,8 +40,10 @@ export function getPackageAppBaseUrl(input: { env: PackageAppBaseUrlEnv }) {
 
 	try {
 		const configuredUrl = new URL(configured)
+		// Exact 'true' like `isNonProductionRuntime`: any other value must not be
+		// able to switch package apps back to the app origin in a real deployment.
 		if (
-			input.env.WRANGLER_IS_LOCAL_DEV?.trim() &&
+			input.env.WRANGLER_IS_LOCAL_DEV === 'true' &&
 			!isLocallyServableHostname(configuredUrl.hostname)
 		) {
 			return null

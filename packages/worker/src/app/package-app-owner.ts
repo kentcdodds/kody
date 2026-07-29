@@ -1,5 +1,4 @@
-import { isAuthSessionInvalidatedByPasswordChange } from '#app/auth-session.ts'
-import { parsePasswordChangedAtMs } from '#app/request-auth-cache.ts'
+import { isSessionInvalidatedByStoredPasswordChange } from '#app/request-auth-cache.ts'
 import { resolveDisplayName } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
@@ -39,14 +38,12 @@ export async function resolvePackageAppOwnerByUserId(input: {
 	if (!userRecord) return null
 	if (userRecord.deleting_at || userRecord.suspended_at) return null
 
-	const passwordChangedAtRaw = userRecord.password_changed_at?.trim() ?? ''
-	const passwordChangedAtMs = parsePasswordChangedAtMs(passwordChangedAtRaw)
-	// Non-empty but unparseable must fail closed — do not treat as "never changed".
-	if (passwordChangedAtRaw !== '' && passwordChangedAtMs === null) return null
+	// Shared with browser session resolution so a password reset can never revoke
+	// one session flavor and leave the other alive.
 	if (
-		isAuthSessionInvalidatedByPasswordChange({
+		isSessionInvalidatedByStoredPasswordChange({
 			issuedAt: input.issuedAt,
-			passwordChangedAtMs,
+			storedPasswordChangedAt: userRecord.password_changed_at,
 		})
 	) {
 		return null
