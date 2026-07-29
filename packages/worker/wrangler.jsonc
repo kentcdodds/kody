@@ -124,6 +124,18 @@
 					"destinations": ["sentry-otlp-traces"],
 				},
 			},
+			// Hosted package apps are served from their own registrable domain so
+			// author-supplied code is cross-site from the app origin and can never
+			// receive the `kody_session` cookie (see docs/contributing/security.md).
+			// A `custom_domain` route provisions the DNS record and certificate on
+			// deploy. The app origin (heykody.dev) stays attached out-of-band;
+			// Wrangler never removes routes it does not list.
+			"routes": [
+				{
+					"pattern": "kodyapps.dev",
+					"custom_domain": true,
+				},
+			],
 			"worker_loaders": [
 				{
 					"binding": "LOADER",
@@ -286,6 +298,13 @@
 				// capture is unaffected.
 				"SENTRY_TRACES_SAMPLE_RATE": 0,
 				"ARTIFACTS_NAMESPACE": "production",
+				// Origin hosted package apps are served from. Must stay a
+				// separate registrable domain from APP_BASE_URL — that is what
+				// makes package code cross-site from the app origin, so
+				// `kody_session` never attaches to it. Intentionally unset for
+				// local dev, preview, and tests, which keep serving package
+				// apps inline on the app origin.
+				"PACKAGE_APP_BASE_URL": "https://kodyapps.dev",
 				// Fathom Analytics site id (public, non-secret). Production
 				// only so local dev, preview, and tests never send pageviews.
 				"FATHOM_SITE_ID": "WKKSDJGN",

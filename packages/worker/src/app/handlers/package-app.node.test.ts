@@ -235,7 +235,7 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 	)
 })
 
-test('handlePackageAppRequest routes websocket package paths to realtime session manager', async () => {
+test('handlePackageAppRequest routes websocket package paths to realtime session manager without owner credentials', async () => {
 	resetMocks()
 
 	const request = new Request(
@@ -243,6 +243,10 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 		{
 			headers: {
 				Upgrade: 'websocket',
+				Cookie: 'kody_session=owner-session',
+				Authorization: 'Bearer owner-token',
+				'X-Kody-Connector-User-Id': 'user-1',
+				'X-Custom-Package-Header': 'kept',
 			},
 		},
 	)
@@ -251,11 +255,75 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 
 	expect(response.status).toBe(200)
 	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
-	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledWith(
-		request,
-		'chat',
-	)
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
+
+	// The realtime connect hook receives the upgrade request headers, so the
+	// owner's credentials must already be gone by this point.
+	const [connectRequest, facet] = mockModule.packageRealtimeConnect.mock
+		.calls[0] as [Request, string]
+	expect(facet).toBe('chat')
+	expect(connectRequest.url).toBe(request.url)
+	expect(connectRequest.headers.get('Cookie')).toBeNull()
+	expect(connectRequest.headers.get('Authorization')).toBeNull()
+	expect(connectRequest.headers.get('X-Kody-Connector-User-Id')).toBeNull()
+	expect(connectRequest.headers.get('X-Custom-Package-Header')).toBe('kept')
+})
+
+test('handlePackageAppRequest forwards package code a request stripped of owner credentials', async () => {
+	resetMocks()
+
+	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
+		source: {
+			published_commit: 'commit-1',
+			manifest_path: 'package.json',
+			source_root: '/',
+		},
+		manifest: {
+			name: '@kody/example',
+			kody: { id: 'example', app: { entry: 'app.js' } },
+		},
+	})
+	const forwardedRequests: Array<Request> = []
+	mockModule.buildPackageAppWorker.mockResolvedValueOnce({
+		entrypointName: 'entry',
+		stub: {
+			getEntrypoint: () => ({
+				async fetch(forwarded: Request) {
+					forwardedRequests.push(forwarded)
+					return new Response('ok')
+				},
+			}),
+		},
+	})
+
+	const response = await handlePackageAppRequest(
+		new Request('https://example.com/@test-user/packages/example/notes?tab=1', {
+			method: 'POST',
+			headers: {
+				Cookie: 'kody_session=owner-session',
+				Authorization: 'Bearer owner-token',
+				'X-Kody-Connector-Session-Key': 'internal',
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ note: 'hello' }),
+		}),
+		{} as Env,
+	)
+
+	expect(response.status).toBe(200)
+	const forwardedRequest = forwardedRequests[0]
+	expect(forwardedRequest).toBeDefined()
+	if (!forwardedRequest) return
+	// Package code sees its own path and body, never the owner's credentials.
+	expect(new URL(forwardedRequest.url).pathname).toBe('/notes')
+	expect(new URL(forwardedRequest.url).search).toBe('?tab=1')
+	expect(forwardedRequest.headers.get('Cookie')).toBeNull()
+	expect(forwardedRequest.headers.get('Authorization')).toBeNull()
+	expect(
+		forwardedRequest.headers.get('X-Kody-Connector-Session-Key'),
+	).toBeNull()
+	expect(forwardedRequest.headers.get('Content-Type')).toBe('application/json')
+	await expect(forwardedRequest.json()).resolves.toEqual({ note: 'hello' })
 })
 
 test('handlePackageAppRequest returns not found when the URL username does not match the signed-in user', async () => {

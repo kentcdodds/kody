@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { getAppBaseUrl } from './app-base-url.ts'
+import { getAppBaseUrl, getPackageAppBaseUrl } from './app-base-url.ts'
 
 test('getAppBaseUrl prefers the request origin when present', () => {
 	expect(
@@ -35,5 +35,33 @@ test('getAppBaseUrl falls back to APP_BASE_URL then heykody.dev', () => {
 			env: {},
 			requestUrl: null,
 		}),
+	).toBe('https://heykody.dev')
+})
+
+test('the package-app origin is configurable and never resolves as the app origin', () => {
+	expect(getPackageAppBaseUrl({ env: {} })).toBeNull()
+	expect(
+		getPackageAppBaseUrl({ env: { PACKAGE_APP_BASE_URL: '  ' } }),
+	).toBeNull()
+	expect(
+		getPackageAppBaseUrl({ env: { PACKAGE_APP_BASE_URL: 'not-a-url' } }),
+	).toBeNull()
+	expect(
+		getPackageAppBaseUrl({
+			env: { PACKAGE_APP_BASE_URL: 'https://kodyapps.dev/ignored' },
+		}),
+	).toBe('https://kodyapps.dev')
+
+	const env = {
+		APP_BASE_URL: 'https://heykody.dev',
+		PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
+	}
+	// Package runtime callbacks and first-party links resolved while serving a
+	// package app must point at the app origin, never at the package-app host.
+	expect(
+		getAppBaseUrl({ env, requestUrl: 'https://kodyapps.dev/@me/packages/x' }),
+	).toBe('https://heykody.dev')
+	expect(
+		getAppBaseUrl({ env, requestUrl: 'https://heykody.dev/@me/packages/x' }),
 	).toBe('https://heykody.dev')
 })

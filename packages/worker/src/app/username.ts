@@ -40,6 +40,13 @@ export function displayNameFromEmail(email: string) {
 	return email.split('@')[0] || 'user'
 }
 
+/** Display name for an account: its username, or an email fallback when unusable. */
+export function resolveDisplayName(input: { email: string; username: string }) {
+	return getUsernameFormatValidationError(input.username)
+		? displayNameFromEmail(input.email)
+		: input.username
+}
+
 export function getUsernameValidationError(username: string) {
 	const formatError = getUsernameFormatValidationError(username)
 	if (formatError) {

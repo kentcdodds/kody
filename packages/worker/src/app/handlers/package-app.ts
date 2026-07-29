@@ -4,6 +4,7 @@ import { createHtmlResponse } from 'remix/response/html'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
+import { type PackageAppOwner } from '#app/package-app-owner.ts'
 import { getUsernameFormatValidationError } from '#app/username.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import {
@@ -41,6 +42,45 @@ function parsePackageAppPath(pathname: string) {
 
 export function isPackageAppRequestPath(pathname: string) {
 	return parsePackageAppPath(pathname) !== null
+}
+
+export type PackageAppPath = NonNullable<ReturnType<typeof parsePackageAppPath>>
+
+export function parsePackageAppRequestPath(pathname: string) {
+	return parsePackageAppPath(pathname)
+}
+
+// Credentials that must never reach author-supplied package code. `Cookie`
+// carries the owner's `kody_session`, `Authorization` carries MCP bearer tokens,
+// and the `X-Kody-*` family is worker-internal auth (connector session keys and
+// user ids). Stripping is unconditional: it is required when package apps share
+// the app origin and harmless when they are served cross-site.
+const strippedPackageRequestHeaders = [
+	'cookie',
+	'authorization',
+	'proxy-authorization',
+]
+
+/**
+ * Clone a request for package code with every credential header removed.
+ *
+ * Used for both the forwarded HTTP request and the realtime connect upgrade,
+ * because the realtime `connect` hook receives the request headers too.
+ */
+export function createPackageCodeRequest(
+	request: Request,
+	url: string | URL = request.url,
+) {
+	const packageCodeRequest = new Request(url.toString(), request)
+	for (const headerName of strippedPackageRequestHeaders) {
+		packageCodeRequest.headers.delete(headerName)
+	}
+	for (const headerName of [...packageCodeRequest.headers.keys()]) {
+		if (headerName.toLowerCase().startsWith('x-kody-')) {
+			packageCodeRequest.headers.delete(headerName)
+		}
+	}
+	return packageCodeRequest
 }
 
 function parsePackageRealtimePath(restPath: string) {
@@ -238,24 +278,30 @@ function createPackageAppErrorResponse(input: {
 	)
 }
 
-export async function handlePackageAppRequest(request: Request, env: Env) {
+/**
+ * Serve a hosted package app for an already-authenticated owner.
+ *
+ * The owner is resolved by the caller because the two hosting modes authenticate
+ * differently: inline (same-origin) mode uses the `kody_session` cookie, and the
+ * package-app origin uses its own host-scoped `kody_pkg_session` cookie (see
+ * `packages/worker/src/app/package-app-origin.ts`).
+ */
+export async function servePackageAppRequest(input: {
+	request: Request
+	env: Env
+	owner: PackageAppOwner
+	packagePath: PackageAppPath
+}) {
+	const { request, env, owner, packagePath } = input
 	const requestUrl = new URL(request.url)
-	const packagePath = parsePackageAppPath(requestUrl.pathname)
-	if (!packagePath) {
-		return new Response('Saved package app not found.', { status: 404 })
-	}
 	const { kodyId } = packagePath
 	const packageRealtimeRestPath = packagePath.restPath
 	const forwardedPackageRestPath = packagePath.restPath
-	const user = await readAuthenticatedAppUser(request, env)
-	if (!user) {
-		return redirectToLoginWhenUnauthenticated(request, env)
-	}
-	if (user.username !== packagePath.username) {
+	if (owner.username !== packagePath.username) {
 		return new Response('Saved package app not found.', { status: 404 })
 	}
 	const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
-		userId: user.mcpUser.userId,
+		userId: owner.userId,
 		kodyId,
 	})
 	if (!savedPackage || !savedPackage.hasApp) {
@@ -267,12 +313,12 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 		try {
 			return await packageRealtimeSessionRpc({
 				env,
-				userId: user.mcpUser.userId,
+				userId: owner.userId,
 				packageId: savedPackage.id,
 				kodyId: savedPackage.kodyId,
 				sourceId: savedPackage.sourceId,
 				baseUrl,
-			}).connect(request, packageRealtimePath.facet)
+			}).connect(createPackageCodeRequest(request), packageRealtimePath.facet)
 		} catch (error) {
 			console.error('Package realtime handler failed:', error)
 			reportPackageAppFailure({
@@ -302,16 +348,16 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 			loadPackageManifestBySourceId({
 				env,
 				baseUrl,
-				userId: user.mcpUser.userId,
+				userId: owner.userId,
 				sourceId: savedPackage.sourceId,
 			}),
 			createPackageAppCallerContext({
 				baseUrl,
 				user: {
-					userId: user.mcpUser.userId,
-					email: user.email,
-					displayName: user.displayName,
-					username: user.username,
+					userId: owner.userId,
+					email: owner.email,
+					displayName: owner.displayName,
+					username: owner.username,
 				},
 				packageId: savedPackage.id,
 			}),
@@ -319,7 +365,7 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 		const appWorker = await buildPackageAppWorker({
 			env,
 			baseUrl,
-			userId: user.mcpUser.userId,
+			userId: owner.userId,
 			savedPackage: {
 				id: savedPackage.id,
 				kodyId: savedPackage.kodyId,
@@ -335,7 +381,7 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 				const packageSource = await loadPackageSourceBySourceId({
 					env,
 					baseUrl,
-					userId: user.mcpUser.userId,
+					userId: owner.userId,
 					sourceId: savedPackage.sourceId,
 				})
 				return packageSource.files
@@ -347,7 +393,7 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 		entrypoint = appWorker.stub.getEntrypoint(appWorker.entrypointName)
 		const forwardedUrl = new URL(requestUrl)
 		forwardedUrl.pathname = forwardedPackageRestPath
-		forwardedRequest = new Request(forwardedUrl.toString(), request)
+		forwardedRequest = createPackageCodeRequest(request, forwardedUrl)
 	} catch (error) {
 		console.error('Package app handler failed:', error)
 		reportPackageAppFailure({
@@ -380,4 +426,35 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 			packageName: savedPackage.name,
 		})
 	}
+}
+
+/**
+ * Serve a hosted package app inline on the app origin, authenticated by the
+ * browser `kody_session` cookie.
+ *
+ * This is the local dev / preview / test path. When `PACKAGE_APP_BASE_URL` is
+ * configured, package apps are served from that origin instead and this handler
+ * is never reached — see `packages/worker/src/app/package-app-origin.ts`.
+ */
+export async function handlePackageAppRequest(request: Request, env: Env) {
+	const requestUrl = new URL(request.url)
+	const packagePath = parsePackageAppPath(requestUrl.pathname)
+	if (!packagePath) {
+		return new Response('Saved package app not found.', { status: 404 })
+	}
+	const user = await readAuthenticatedAppUser(request, env)
+	if (!user) {
+		return redirectToLoginWhenUnauthenticated(request, env)
+	}
+	return await servePackageAppRequest({
+		request,
+		env,
+		packagePath,
+		owner: {
+			userId: user.mcpUser.userId,
+			username: user.username,
+			email: user.email,
+			displayName: user.displayName,
+		},
+	})
 }

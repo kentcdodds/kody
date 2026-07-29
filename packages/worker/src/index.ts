@@ -61,6 +61,7 @@ import {
 	handlePackageAppRequest,
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
+import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-deliveries.ts'
@@ -363,6 +364,9 @@ const appHandler = withCors({
 			})
 		}
 
+		// Inline (same-origin) package apps. Deployments that configure
+		// PACKAGE_APP_BASE_URL never reach this branch: handlePackageAppOriginRequest
+		// redirects these paths to the package-app origin first.
 		if (isPackageAppRequestPath(url.pathname)) {
 			return handlePackageAppRequest(request, env)
 		}
@@ -506,6 +510,16 @@ function createOAuthProviderExceptionResponse(
 const workerHandler = {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url)
+
+		// Host isolation for hosted package apps runs before every other route:
+		// nothing first-party may be reachable on the package-app origin, and the
+		// app origin must not execute package code once that origin is configured.
+		const packageAppOriginResponse = await handlePackageAppOriginRequest(
+			request,
+			env,
+		)
+		if (packageAppOriginResponse) return packageAppOriginResponse
+
 		if (isPackageInvocationApiRequest(url.pathname)) {
 			return handlePackageInvocationApiRequest(request, env, ctx)
 		}

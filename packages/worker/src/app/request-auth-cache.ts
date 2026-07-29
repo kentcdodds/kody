@@ -17,10 +17,7 @@ import {
 } from '#app/auth-session.ts'
 import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
 import { type PermissionString, type RoleName } from '#app/permissions.ts'
-import {
-	displayNameFromEmail,
-	getUsernameFormatValidationError,
-} from '#app/username.ts'
+import { resolveDisplayName } from '#app/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
@@ -46,12 +43,6 @@ export type ResolvedRequestAuth = {
 }
 
 const requestAuthStore = new WeakMap<Request, Promise<ResolvedRequestAuth>>()
-
-function getDisplayName(input: { email: string; username: string }) {
-	return getUsernameFormatValidationError(input.username)
-		? displayNameFromEmail(input.email)
-		: input.username
-}
 
 async function resolveRequestAuth(
 	request: Request,
@@ -111,7 +102,7 @@ async function resolveRequestAuth(
 	}
 
 	const stableUserId = resolveUserStableId(userRecord)
-	const displayName = getDisplayName({
+	const displayName = resolveDisplayName({
 		email: userRecord.email,
 		username: userRecord.username,
 	})
