@@ -80,3 +80,65 @@ export function filterBrowserAbortSentryEvent<T extends SentryErrorEventLike>(
 	if (isBrowserAbortSentryEvent(event, originalException)) return null
 	return event
 }
+
+/**
+ * Firefox throws when page JS (Remix hydration or Sentry Session Replay /
+ * rrweb `startRecording`) touches a DOM node the content compartment cannot
+ * read — typically an extension-injected Xray wrapper or a cross-origin
+ * object. Signature from production issue 7639685398 / MDN
+ * "Permission denied to access property". Not actionable in app code.
+ *
+ * Match is intentionally narrow: only this Firefox wording (optional
+ * "on cross-origin object" suffix). Never blanket-drop SecurityError /
+ * DOMException generally.
+ */
+const firefoxDomPermissionDeniedMessage =
+	/^Permission denied to access property ["'][^"']+["'](?: on cross-origin object)?\.?$/
+
+export function isFirefoxDomPermissionDeniedMessage(message: string) {
+	return firefoxDomPermissionDeniedMessage.test(message)
+}
+
+export function isFirefoxDomPermissionDeniedError(error: unknown) {
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isFirefoxDomPermissionDeniedMessage(error.message)
+}
+
+export function isFirefoxDomPermissionDeniedSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isFirefoxDomPermissionDeniedError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isFirefoxDomPermissionDeniedMessage(message),
+	)
+}
+
+export function filterFirefoxDomPermissionDeniedSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isFirefoxDomPermissionDeniedSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
+/** Combined browser beforeSend / capture gate used by the client SDK. */
+export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
+	event: T,
+	originalException?: unknown,
+): T | null {
+	if (filterBrowserAbortSentryEvent(event, originalException) === null) {
+		return null
+	}
+	if (
+		filterFirefoxDomPermissionDeniedSentryEvent(event, originalException) ===
+		null
+	) {
+		return null
+	}
+	return event
+}
