@@ -87,6 +87,23 @@ should receive that input through normal function arguments.
 
 Top-level `await` is acceptable when needed.
 
+## Pre-execution TypeScript diagnostics
+
+Kody can run a TypeScript check before starting an ad hoc execute sandbox. This
+is controlled by the **`execute-pre-exec-typecheck`** feature flag and is off by
+default. During the initial rollout, only explicitly opted-in users receive the
+check. The public **execute** tool and the nested **`meta.execute`** capability
+use the same caller-scoped flag; saved-package exports, jobs, workflows, and
+services are not changed by this flag.
+
+When enabled, type errors are returned through the normal execute error result
+before the module's default export runs. Use those diagnostics to correct the
+module and retry. If a module unexpectedly stops before execution during the
+rollout, compare the reported TypeScript diagnostics with the same module for a
+caller whose flag is off. Operators can disable the user's override (or the
+global flag, if a broader rollout was started) to return immediately to the
+previous bundle-and-run behavior.
+
 ## npm packages on Workers
 
 **execute** and saved packages may import npm packages directly when they are

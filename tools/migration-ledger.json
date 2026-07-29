@@ -455,6 +455,10 @@
 		{
 			"filename": "0108-user-storage-buckets-package-kind.sql",
 			"sha256": "e5740a356896d759734a7699468dd67b7a7967cabfc20cded818dd01ae2f9f18"
+		},
+		{
+			"filename": "0109-enable-execute-pre-exec-typecheck-for-kentcdodds.sql",
+			"sha256": "b5a30dc7757e5b02ff745d23910ebdf94ba2ef284c6f7b29498d5d6ddd9dd4b2"
 		}
 	]
 }

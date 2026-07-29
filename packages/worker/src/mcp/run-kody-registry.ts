@@ -10,6 +10,7 @@ import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { createExecuteExecutor } from '#mcp/executor.ts'
+import { assertAdHocExecuteTypechecks } from '#mcp/execute-typecheck.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import {
 	getAdditionalPropertiesSchema,
@@ -619,6 +620,11 @@ export async function runModuleWithRegistry(
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
 		/**
+		 * Opts ad hoc source into a semantic TypeScript check after its static
+		 * Kody packages load and before bundling or sandbox execution begins.
+		 */
+		preExecTypecheck?: boolean
+		/**
 		 * When set (MCP public `execute` tool), static/dynamic `kody:@…`
 		 * package deps are credited toward agent-facing package popularity.
 		 */
@@ -644,6 +650,14 @@ export async function runModuleWithRegistry(
 		},
 		entryPoint: 'entry.ts',
 		reuseCachedBundle: true,
+		beforeBundle: options?.preExecTypecheck
+			? async ({ packages }) => {
+					await assertAdHocExecuteTypechecks({
+						source: code,
+						packages,
+					})
+				}
+			: undefined,
 	})
 	const conversationId = options?.conversationId?.trim()
 	if (conversationId && userId) {

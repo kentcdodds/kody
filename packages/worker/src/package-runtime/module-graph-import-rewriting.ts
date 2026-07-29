@@ -65,6 +65,13 @@ type RewriteReplacement = {
 	value: string
 }
 
+export type LoadedKodyGraphPackage = LoadedPackageSource & {
+	row: SavedPackageRecord
+	prefix: string
+}
+
+export type LoadedKodyGraphPackages = Map<string, LoadedKodyGraphPackage>
+
 type RewriteState = {
 	env: Env
 	baseUrl: string
@@ -85,16 +92,13 @@ type RewriteState = {
 	rootPackageId: string | null
 	proxies: Map<string, string>
 	dynamicPackageImports: Map<string, string>
-	packages: Map<
-		string,
-		LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
-	>
+	packages: LoadedKodyGraphPackages
 }
 
 async function maybeEnsurePublishedArtifactTarget(input: {
 	state: RewriteState
 	specifier: string
-	loaded: LoadedPackageSource & { row: SavedPackageRecord; prefix: string }
+	loaded: LoadedKodyGraphPackage
 }): Promise<string | null> {
 	if (!input.loaded.source.published_commit) {
 		return null
@@ -164,7 +168,7 @@ function assertReplacementsDoNotOverlap(
 async function ensurePackageLoaded(
 	state: RewriteState,
 	specifier: string,
-): Promise<LoadedPackageSource & { row: SavedPackageRecord; prefix: string }> {
+): Promise<LoadedKodyGraphPackage> {
 	const parsed = parseKodyPackageSpecifier(specifier)
 	const packageKey = parsed.packageName
 	const existing = state.packages.get(packageKey)

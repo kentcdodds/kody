@@ -328,6 +328,13 @@ test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation
 				global: null,
 				overrides: [],
 			},
+			{
+				key: 'execute-pre-exec-typecheck',
+				stale: false,
+				defaultEnabled: false,
+				global: null,
+				overrides: [],
+			},
 		],
 	})
 
@@ -355,6 +362,10 @@ test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation
 					note: 'canary',
 					updatedBy: 1,
 				},
+			},
+			{
+				key: 'execute-pre-exec-typecheck',
+				global: null,
 			},
 		],
 	})
@@ -488,6 +499,10 @@ test('admin feature flags set_user_override validates user identity and existenc
 						enabled: true,
 					}),
 				],
+			},
+			{
+				key: 'execute-pre-exec-typecheck',
+				overrides: [],
 			},
 		],
 	})

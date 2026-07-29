@@ -19,6 +19,7 @@ import {
 import {
 	collectDynamicPackageImportProxyModules,
 	prepareKodyGraphFiles,
+	type LoadedKodyGraphPackages,
 } from './module-graph-import-rewriting.ts'
 import { resolveDirectKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
 import {
@@ -92,6 +93,14 @@ export async function buildKodyModuleBundle(input: {
 	rootPackageId?: string | null
 	// Opt-in: cache createWorkerBundle by prepared-files digest (see createModuleBundleCacheKey).
 	reuseCachedBundle?: boolean
+	/**
+	 * Runs after the static Kody dependency graph is loaded and before the
+	 * bundler is entered. Callers can inspect the already-loaded package
+	 * sources without paying for a second package-resolution pass.
+	 */
+	beforeBundle?: (input: {
+		packages: LoadedKodyGraphPackages
+	}) => void | Promise<void>
 }) {
 	const { files, packages } = await prepareKodyGraphFiles({
 		env: input.env,
@@ -114,6 +123,7 @@ export async function buildKodyModuleBundle(input: {
 			normalizedEntrypoint,
 		),
 	})
+	await input.beforeBundle?.({ packages })
 
 	const assembleBundle = async (): Promise<RuntimeBundle> => {
 		const bundle = await createWorkerBundle({

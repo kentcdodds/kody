@@ -19,6 +19,8 @@ import {
 	limitMcpContentBlocks,
 	validateDownstreamMcpContentBlocks,
 } from '#mcp/downstream-mcp-result.ts'
+import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
+import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
@@ -50,6 +52,7 @@ import {
 import { listOpenApiBindings } from '#worker/openapi/binding-service.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	abandonRunRecord,
 	claimRunRecord,
@@ -293,12 +296,11 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					claimedRunHandle = claim.handle
 				}
 
-				const { getCapabilityRegistryForContext } =
-					await import('#mcp/capabilities/registry.ts')
 				const registry = await getCapabilityRegistryForContext({
 					env,
 					callerContext,
 				})
+				const featureFlags = await resolveCallerFeatureFlags(env, callerContext)
 				const surfacedMemories = await surfaceToolMemories({
 					env,
 					callerContext,
@@ -319,15 +321,12 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					},
 					async () => {
 						const packageInvokeTools = callerContext.user?.userId
-							? await import('#worker/package-invocations/service.ts').then(
-									({ createExecutePackageInvokeTools }) =>
-										createExecutePackageInvokeTools({
-											env,
-											baseUrl: callerContext.baseUrl,
-											callerContext,
-											conversationId: resolvedConversationId,
-										}),
-								)
+							? await createExecutePackageInvokeTools({
+									env,
+									baseUrl: callerContext.baseUrl,
+									callerContext,
+									conversationId: resolvedConversationId,
+								})
 							: undefined
 						try {
 							return await runModuleWithRegistry(
@@ -348,6 +347,8 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									packageInvokeTools,
 									rawFetchHostSink: rawFetchHosts.sink,
 									conversationId: resolvedConversationId,
+									preExecTypecheck:
+										featureFlags['execute-pre-exec-typecheck'] === true,
 									runRecordHandle: claimedRunHandle,
 									runRecord: {
 										surface: 'execute',

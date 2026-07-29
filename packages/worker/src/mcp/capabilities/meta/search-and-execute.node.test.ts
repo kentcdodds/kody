@@ -3,6 +3,8 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
+	resolveCallerFeatureFlags: vi.fn(),
+	assertCallerCanAccessCapability: vi.fn(async () => undefined),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -10,10 +12,21 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 		mockModule.runModuleWithRegistry(...args),
 }))
 
+vi.mock('#mcp/capabilities/access-control.ts', () => ({
+	resolveCallerFeatureFlags: (...args: Array<unknown>) =>
+		mockModule.resolveCallerFeatureFlags(...args),
+	assertCallerCanAccessCapability: (...args: Array<unknown>) =>
+		mockModule.assertCallerCanAccessCapability(...args),
+}))
+
 const { executeCapability } = await import('./execute.ts')
 
 test('execute capability runs modules through the shared execute runtime', async () => {
 	vi.clearAllMocks()
+	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
+		'demo-indicator': false,
+		'execute-pre-exec-typecheck': false,
+	})
 	mockModule.runModuleWithRegistry.mockResolvedValue({
 		result: { marker: 'execute-ok' },
 		logs: [{ level: 'info', message: 'ran' }],
@@ -69,6 +82,50 @@ test('execute capability runs modules through the shared execute runtime', async
 				surface: 'execute',
 				storageId: 'package:agent-turns',
 			}),
+			preExecTypecheck: false,
 		}),
+	)
+})
+
+test('execute capability passes the opted-in pre-exec typecheck to the shared runtime', async () => {
+	vi.clearAllMocks()
+	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
+		'demo-indicator': false,
+		'execute-pre-exec-typecheck': true,
+	})
+	mockModule.runModuleWithRegistry.mockResolvedValue({
+		result: { marker: 'typecheck-enabled' },
+		logs: [],
+	})
+
+	await executeCapability.handler(
+		{
+			code: 'export default async function main() { return { marker: "typecheck-enabled" } }',
+		},
+		{
+			env: {} as Env,
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: {
+					userId: 'user-1',
+					email: 'user@example.com',
+					displayName: 'User',
+				},
+			}),
+		},
+	)
+
+	expect(mockModule.resolveCallerFeatureFlags).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			user: expect.objectContaining({ userId: 'user-1' }),
+		}),
+	)
+	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.anything(),
+		expect.any(String),
+		undefined,
+		expect.objectContaining({ preExecTypecheck: true }),
 	)
 })

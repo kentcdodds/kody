@@ -10,7 +10,10 @@ import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
 import { type Capability } from './types.ts'
 
 function createFlagMap(enabled: boolean): CallerFeatureFlags {
-	return { 'demo-indicator': enabled }
+	return {
+		'demo-indicator': enabled,
+		'execute-pre-exec-typecheck': enabled,
+	}
 }
 
 function createFlaggedCapability(name = 'example_flagged'): Capability {

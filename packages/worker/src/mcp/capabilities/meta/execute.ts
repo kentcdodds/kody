@@ -5,8 +5,10 @@ import {
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
 } from '#mcp/executor.ts'
+import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
@@ -250,8 +252,10 @@ export const executeCapability = defineDomainCapability(
 
 			let result: ExecuteResult & { runId?: string }
 			try {
-				const { runModuleWithRegistry } =
-					await import('#mcp/run-kody-registry.ts')
+				const featureFlags = await resolveCallerFeatureFlags(
+					ctx.env,
+					callerContext,
+				)
 				result = await runModuleWithRegistry(
 					ctx.env,
 					callerContext,
@@ -265,6 +269,8 @@ export const executeCapability = defineDomainCapability(
 									writable: args.writable ?? false,
 								}
 							: undefined,
+						preExecTypecheck:
+							featureFlags['execute-pre-exec-typecheck'] === true,
 						runRecordHandle: claimedRunHandle,
 						runRecord: {
 							surface: 'execute',

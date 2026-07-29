@@ -19,6 +19,12 @@ export const featureFlagDefinitions = [
 		description:
 			'Reserved for exercising the feature flag system end-to-end. When enabled it shows a small demo indicator in the app UI. Safe to toggle.',
 	},
+	{
+		key: 'execute-pre-exec-typecheck',
+		defaultEnabled: false,
+		description:
+			'Runs the pre-execution TypeScript checker for ad hoc execute modules before sandbox execution. Keep off globally during rollout and enable with per-user overrides.',
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']

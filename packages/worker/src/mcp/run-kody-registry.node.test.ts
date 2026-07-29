@@ -1544,6 +1544,49 @@ export default async function run() {
 	}
 })
 
+test('runModuleWithRegistry only installs the pre-execution typecheck hook when opted in', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const buildBundleMock = vi.mocked(buildKodyModuleBundle)
+	buildBundleMock.mockClear()
+	const createExecuteExecutorSpy = vi
+		.spyOn(mcpExecutor, 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return { result: 'ok', logs: [] }
+			},
+		} as never)
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const capabilityRegistry = buildCapabilityRegistry([])
+
+	try {
+		await runModuleWithRegistry(
+			{} as Env,
+			callerContext,
+			'export default async function run() { return "unchecked" }',
+			undefined,
+			{ capabilityRegistry },
+		)
+		await runModuleWithRegistry(
+			{} as Env,
+			callerContext,
+			'export default async function run() { return "checked" }',
+			undefined,
+			{ capabilityRegistry, preExecTypecheck: true },
+		)
+
+		expect(buildBundleMock).toHaveBeenCalledTimes(2)
+		expect(buildBundleMock.mock.calls[0]?.[0].beforeBundle).toBeUndefined()
+		expect(buildBundleMock.mock.calls[1]?.[0].beforeBundle).toEqual(
+			expect.any(Function),
+		)
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+	}
+})
+
 test('runBundledModuleWithRegistry passes params and injects runtime helpers', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []

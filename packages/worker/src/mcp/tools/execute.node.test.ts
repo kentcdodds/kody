@@ -11,6 +11,7 @@ import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
 	createExecutePackageInvokeTools: vi.fn(),
+	resolveCallerFeatureFlags: vi.fn(),
 	getCapabilityRegistryForContext: vi.fn(async () => ({
 		capabilityHandlers: {
 			coding_guide_get: true,
@@ -25,6 +26,11 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runModuleWithRegistry: (...args: Array<unknown>) =>
 		mockModule.runModuleWithRegistry(...args),
+}))
+
+vi.mock('#mcp/capabilities/access-control.ts', () => ({
+	resolveCallerFeatureFlags: (...args: Array<unknown>) =>
+		mockModule.resolveCallerFeatureFlags(...args),
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
@@ -113,6 +119,10 @@ async function getExecuteRegistration(
 	} = {},
 ) {
 	vi.clearAllMocks()
+	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
+		'demo-indicator': false,
+		'execute-pre-exec-typecheck': false,
+	})
 	const registerTool = vi.fn()
 
 	await registerExecuteTool({
@@ -238,6 +248,7 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 					coding_guide_get: true,
 				},
 			},
+			preExecTypecheck: false,
 		}),
 	)
 	expect(mcpContentResponse.isError).toBe(false)
@@ -486,6 +497,61 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 			returnedBytes: 0,
 			logs: [{ level: 'error', message: 'failed' }],
 		}),
+	)
+})
+
+test('execute enables the pre-exec typecheck only for an opted-in caller', async () => {
+	const callerContext = {
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'stable-feature-flag-user',
+			displayName: 'Feature flag user',
+		},
+	}
+	const defaultHandler = await getExecuteHandler(callerContext)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+
+	await defaultHandler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-default-typecheck',
+	})
+
+	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
+		expect.anything(),
+		expect.anything(),
+		expect.any(String),
+		undefined,
+		expect.objectContaining({ preExecTypecheck: false }),
+	)
+
+	const optedInHandler = await getExecuteHandler(callerContext)
+	mockModule.resolveCallerFeatureFlags.mockResolvedValueOnce({
+		'demo-indicator': false,
+		'execute-pre-exec-typecheck': true,
+	})
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+
+	await optedInHandler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-enabled-typecheck',
+	})
+
+	expect(mockModule.resolveCallerFeatureFlags).toHaveBeenCalledWith(
+		stubEnv,
+		expect.objectContaining(callerContext),
+	)
+	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
+		expect.anything(),
+		expect.anything(),
+		expect.any(String),
+		undefined,
+		expect.objectContaining({ preExecTypecheck: true }),
 	)
 })
 
