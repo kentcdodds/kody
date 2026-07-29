@@ -74,6 +74,39 @@ Nightly */5 ticks 00:30–06:10 UTC           02:15 UTC: D1 export Workflow
 06:15 UTC: staging watchdog → Sentry        Admin UI: drill / production restore
 ```
 
+### What intentionally lives on the DR (KCD) account
+
+The DR (“KCD”) Cloudflare account (`a41d50ecaf0ae0f86dd1824ef6729cb2`) is the
+old pre-migration production account, kept as the independently administered DR
+destination. Production runs on the Kody account
+(`a99ee2e72728dd52902ef288b7b1447d`). Future account cleanups must not delete
+the kody-named resources below — they are intentional cross-account leftovers.
+
+**DR / backup stack (this runbook):**
+
+- Worker `kody-production-d1-backups` (hourly + nightly crons)
+- Workflows `kody-production-d1-backup` and `kody-production-dr-restore`
+- Locked R2 bucket `kody-production-backups`
+- Custom domain `kody-dr.kentcdodds.com`
+
+**Personal journaling package data** (not platform infrastructure; reached via
+API tokens from Kent's personal Kody packages, not Worker bindings):
+
+- D1 `kody-journals`
+- Vectorize index `kody-journals`
+- R2 buckets `kody-journals` and `kody-journals-backup`
+
+**AI Gateway `kody`** — still used by personal package jobs against that
+account's Workers AI. The platform's own `AI_GATEWAY_ID` routes through the
+same-named gateway on the production (Kody) account via the Workers AI binding,
+which is account-scoped; the two gateways are independent.
+
+A 2026-07-29 cleanup ([#656](https://github.com/kentcdodds/kody/issues/656))
+removed the last orphaned platform leftovers on the KCD account (stale
+`kody-capabilities-prod` / `kody-capabilities-preview` Vectorize indexes; the
+old production workers, KV namespaces, preview D1, and the `heykody.dev` zone
+were already gone or moved).
+
 ### Bucket layout
 
 Contract: `packages/shared/src/backup-staging.ts`.
