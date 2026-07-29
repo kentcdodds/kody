@@ -1,15 +1,18 @@
-import { getUniqueConstraintField } from '#app/database-errors.ts'
-import { normalizeEmail } from '#app/normalize-email.ts'
+import { getUniqueConstraintField } from '#worker/database-errors.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
 	adminPasswordSetupTokenExpiryMs,
 	createPasswordResetToken,
-} from '#app/password-reset-tokens.ts'
-import { assignUserRole } from '#app/permissions-db.ts'
+} from '#worker/identity/password-reset-tokens.ts'
+import { assignUserRole } from '#worker/identity/permissions-db.ts'
 import {
 	getAvailableGeneratedUsername,
 	userExistsByUsername,
-} from '#app/generated-username.ts'
-import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
+} from '#worker/identity/generated-username.ts'
+import {
+	getUsernameValidationError,
+	normalizeUsername,
+} from '#worker/identity/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const adminCreatedNoUsablePasswordHash = 'admin_created_no_usable_password'

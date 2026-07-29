@@ -1,11 +1,11 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
+import { deterministicEmbedding } from '#worker/vectorize/embedding.ts'
 import {
 	blendLexicalAndVectorScore,
 	cosineSimilarity,
-	deterministicEmbedding,
 	lexicalScore,
-} from '#mcp/capabilities/capability-search.ts'
+} from '#worker/vectorize/scoring.ts'
 import { buildPackageReadmeDetail } from '#worker/package-registry/package-readme.ts'
 import {
 	getSavedPackageById,

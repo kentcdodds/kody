@@ -1,5 +1,5 @@
 import { type AdminRolesLoaderData } from '#app/loader-data.ts'
-import { type PermissionString } from '#app/permissions.ts'
+import { type PermissionString } from '#worker/identity/permissions.ts'
 
 export async function loadAdminRolesData(
 	env: Env,

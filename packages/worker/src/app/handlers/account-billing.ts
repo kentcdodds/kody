@@ -1,7 +1,7 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountBillingData } from '#app/account-billing-data.ts'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'

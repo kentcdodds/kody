@@ -3,6 +3,7 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -393,7 +394,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	let editorState = createEmptyEditorState()
 	let message: string | null = null
 	const loadLatch = createRouteLoadLatch()
-	let deleteConfirm = false
+	const deleteConnectorCheck = createDoubleCheck(handle)
 	let showSharedSecret = false
 	let syncedSelectionKey: string | null = null
 
@@ -433,7 +434,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		const nextKey = selectionSyncKey(selection)
 		if (nextKey === syncedSelectionKey) return
 		syncedSelectionKey = nextKey
-		deleteConfirm = false
+		deleteConnectorCheck.reset()
 		showSharedSecret = false
 		if (selection.isCreating) {
 			editorState = createEmptyEditorState()
@@ -490,7 +491,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		username = payload.username
 		connectorUrlOrigin = payload.connectorUrlOrigin
 		connectors = payload.connectors
-		deleteConfirm = false
+		deleteConnectorCheck.reset()
 		if (payload.selectedConnectorId) {
 			const selected = connectors.find(
 				(connector) => connector.id === payload.selectedConnectorId,
@@ -628,7 +629,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			applyPayload(payload)
 			editorState = createEmptyEditorState()
 			syncedSelectionKey = 'none'
-			deleteConfirm = false
+			deleteConnectorCheck.reset()
 			saveState = 'idle'
 			message = 'Deleted remote connector.'
 			syncRouterLocation(
@@ -649,7 +650,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		if (saveState !== 'idle') return
 		editorState = createEditorStateFromConnector(connector)
 		syncedSelectionKey = `id:${connector.id}`
-		deleteConfirm = false
+		deleteConnectorCheck.reset()
 		showSharedSecret = false
 		message = null
 		syncRouterLocation(
@@ -661,7 +662,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 	function startNewConnector() {
 		editorState = createEmptyEditorState()
 		syncedSelectionKey = 'new'
-		deleteConfirm = false
+		deleteConnectorCheck.reset()
 		showSharedSecret = false
 		message = null
 		syncRouterLocation(remoteConnectorsRoute.buildNewHref(getCurrentSearch()))
@@ -682,7 +683,7 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 		} else {
 			editorState = createEmptyEditorState()
 		}
-		deleteConfirm = false
+		deleteConnectorCheck.reset()
 		showSharedSecret = false
 		message = null
 		handle.update()
@@ -1143,20 +1144,17 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 											type="button"
 											disabled={isMutating}
 											mix={[
-												on('click', () => {
-													if (!deleteConfirm) {
-														deleteConfirm = true
-														handle.update()
-														return
-													}
-													void deleteConnector()
+												...deleteConnectorCheck.getButtonMix({
+													on: {
+														click: () => void deleteConnector(),
+													},
 												}),
 												css(dangerButtonCss),
 											]}
 										>
 											{saveState === 'deleting'
 												? 'Deleting...'
-												: deleteConfirm
+												: deleteConnectorCheck.doubleCheck
 													? 'Confirm delete'
 													: 'Delete'}
 										</button>

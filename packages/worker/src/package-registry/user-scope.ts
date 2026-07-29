@@ -1,5 +1,8 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
-import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
+import {
+	getUsernameValidationError,
+	normalizeUsername,
+} from '#worker/identity/username.ts'
 
 type UsernameRow = {
 	username?: unknown

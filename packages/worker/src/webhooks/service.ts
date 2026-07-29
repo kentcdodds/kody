@@ -1,5 +1,5 @@
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { resolvePublicUsername } from '#app/user-lookup.ts'
+import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	listPackageWebhooks,
 	type PackageWebhookManifestEntry,

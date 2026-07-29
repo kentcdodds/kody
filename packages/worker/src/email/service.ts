@@ -1,7 +1,7 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
-import { withAccountWriteLease } from '#app/account-deletion-state.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { normalizeEmailAddress } from './address.ts'
 import { resolveInboundEmailAuthVerdict } from './auth-verdict.ts'
 import {

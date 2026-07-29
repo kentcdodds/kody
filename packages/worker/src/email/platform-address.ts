@@ -1,5 +1,5 @@
-import { normalizeEmail } from '#app/normalize-email.ts'
-import { isReservedUsername } from '#app/reserved-usernames.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
+import { isReservedUsername } from '#worker/identity/reserved-usernames.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 
 /**

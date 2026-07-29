@@ -1,4 +1,4 @@
-import { normalizeEmail } from '#app/normalize-email.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
 	parseStripePlanName,
 	type PlanName,

@@ -8,7 +8,7 @@ import {
 import {
 	createAccountExportManifest,
 	resolveAccountExportDbUserId,
-} from '#app/account-export.ts'
+} from '#worker/account/export.ts'
 import { accountExportManifestOutputSchema } from './account-export-shared.ts'
 
 export const accountExportManifestCapability = defineDomainCapability(

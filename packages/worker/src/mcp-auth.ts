@@ -4,14 +4,14 @@ import {
 } from '@cloudflare/workers-oauth-provider'
 import { isAccountSuspended } from '#app/account-suspension.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { getRequestIp } from '#app/audit-log.ts'
-import { isAccountEmailVerified } from '#app/email-verification.ts'
+import { getRequestIp } from '#worker/audit-log.ts'
+import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
 import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
 } from './mcp/auth-audit.ts'
-import { withAccountWriteLease } from '#app/account-deletion-state.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { listAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'

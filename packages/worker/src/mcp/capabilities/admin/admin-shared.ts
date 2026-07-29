@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { logAuditEvent, redactEmailRecipient } from '#app/audit-log.ts'
-import { roleNames } from '#app/permissions.ts'
+import { logAuditEvent, redactEmailRecipient } from '#worker/audit-log.ts'
+import { roleNames } from '#worker/identity/permissions.ts'
 import { planNames } from '#worker/entitlements/plans.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 

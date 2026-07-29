@@ -6,7 +6,7 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	readAccountExportSection,
 	resolveAccountExportDbUserId,
-} from '#app/account-export.ts'
+} from '#worker/account/export.ts'
 import {
 	accountExportSectionOutputSchema,
 	accountExportSectionSchema,

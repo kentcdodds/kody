@@ -6,7 +6,7 @@ import {
 } from './http.ts'
 import { hashPackageInvocationBearerToken } from './repo.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { AccountDeletionInProgressError } from '#app/account-deletion-state.ts'
+import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 
 const invocationMockModule = vi.hoisted(() => ({
 	invokePackageExport: vi.fn(),

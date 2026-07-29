@@ -3,7 +3,7 @@ import {
 	auditEventCategories,
 	auditEventResults,
 	queryAuditLog,
-} from '#app/audit-log.ts'
+} from '#worker/audit-log.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {

@@ -1,4 +1,4 @@
-import { getUsernameFormatValidationError } from '#app/username.ts'
+import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { type SearchMatch } from '#mcp/tools/search-format.ts'
 import {
 	getSavedPackageById,

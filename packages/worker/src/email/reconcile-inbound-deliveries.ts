@@ -5,7 +5,7 @@ import {
 } from './inbound-delivery.ts'
 import { reconcileInboundDeliveryEffectsForUser } from './inbound-effects.ts'
 import { systemEmailOwnerId } from './system-email.ts'
-import { withAccountWriteLease } from '#app/account-deletion-state.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 
 const reconciliationUserBatchSize = 25
 const reconciliationTimeBudgetMs = 10_000

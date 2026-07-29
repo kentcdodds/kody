@@ -1,6 +1,9 @@
 import { type JsonSchemaToolDescriptor } from '@cloudflare/codemode'
 import { z, type ZodType } from 'zod'
-import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import {
+	type PermissionString,
+	type RoleName,
+} from '#worker/identity/permissions.ts'
 import { type FeatureFlagKey } from '#worker/feature-flags/registry.ts'
 import { type CapabilityDomain } from './domain-metadata.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'

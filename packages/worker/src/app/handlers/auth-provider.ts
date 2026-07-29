@@ -1,6 +1,6 @@
 import { type Action } from 'remix/router'
 import { jsonResponse } from '#worker/json-response.ts'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import {
 	createAuthCookie,
@@ -8,17 +8,17 @@ import {
 	isSecureRequest,
 	readAuthSessionResult,
 } from '#app/auth-session.ts'
-import { getUniqueConstraintField } from '#app/database-errors.ts'
+import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
-import { getAvailableUsernameFromBase } from '#app/generated-username.ts'
+import { getAvailableUsernameFromBase } from '#worker/identity/generated-username.ts'
 import {
 	consumeInviteCode,
 	type InviteConsumeFailureReason,
 	normalizeInviteCode,
 	releaseInviteUse,
 } from '#app/invites.ts'
-import { normalizeEmail } from '#app/normalize-email.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
 	oauthLoginErrorMessages,
 	type OauthLoginErrorCode,
@@ -40,10 +40,10 @@ import {
 	type OauthProfile,
 	type OauthProviderId,
 } from '#app/oauth-providers.ts'
-import { assignUserRole } from '#app/permissions-db.ts'
+import { assignUserRole } from '#worker/identity/permissions-db.ts'
 import { type routes } from '#app/routes.ts'
 import { isTwoFactorEnabled } from '#app/two-factor.ts'
-import { usernameFromEmail } from '#app/username.ts'
+import { usernameFromEmail } from '#worker/identity/username.ts'
 import {
 	createVerifySessionCookie,
 	setVerifySessionSecret,

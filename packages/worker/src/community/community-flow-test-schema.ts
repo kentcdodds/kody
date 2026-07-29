@@ -1,39 +1,24 @@
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
+
 /**
- * Community flow workers-unit schema. Keeps production-parity
- * `plan TEXT NOT NULL DEFAULT 'free'` from migration 0083. Non-historical seeds
- * may set `'max'` or `'free'` explicitly when plan matters.
+ * Community flow workers-unit schema. Adds the community/social tables and the
+ * profile columns the social migration introduced on top of the shared `users`
+ * schema.
  */
 export async function ensureCommunityFlowSchema(db: D1Database) {
+	await ensureUsersTestSchema({
+		db,
+		columns: [
+			'display_name',
+			'bio',
+			'avatar_key',
+			'profile_visibility',
+			'stripe_customer_id',
+			'stripe_plan',
+			'stripe_plan_refreshed_at',
+		],
+	})
 	const statements = [
-		`CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-			username TEXT NOT NULL UNIQUE,
-			email TEXT NOT NULL UNIQUE,
-			stable_user_id TEXT,
-			display_name TEXT,
-			bio TEXT,
-			avatar_key TEXT,
-			profile_visibility TEXT NOT NULL DEFAULT 'public' CHECK (profile_visibility IN ('public', 'private')),
-			password_hash TEXT NOT NULL,
-			plan TEXT NOT NULL DEFAULT 'free',
-			stripe_customer_id TEXT,
-			stripe_plan TEXT,
-			stripe_plan_refreshed_at TEXT,
-			deleting_at TEXT,
-			suspended_at TEXT,
-			email_outbound_paused_at TEXT,
-			active_write_count INTEGER NOT NULL DEFAULT 0,
-			active_write_expires_at TEXT,
-			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-		)`,
-		`CREATE TABLE IF NOT EXISTS account_write_leases (
-			token TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			holder TEXT NOT NULL,
-			acquired_at TEXT NOT NULL,
-			released_at TEXT
-		)`,
 		`CREATE TABLE IF NOT EXISTS saved_packages (
 			id TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,
@@ -235,27 +220,15 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		await db.prepare(statement).run()
 	}
 
-	// Best-effort ALTERs for persisted worker DBs that already created the
-	// older IF NOT EXISTS tables without the social columns.
-	const additiveAlters = [
-		`ALTER TABLE users ADD COLUMN stable_user_id TEXT`,
-		`ALTER TABLE users ADD COLUMN display_name TEXT`,
-		`ALTER TABLE users ADD COLUMN bio TEXT`,
-		`ALTER TABLE users ADD COLUMN avatar_key TEXT`,
-		`ALTER TABLE users ADD COLUMN profile_visibility TEXT NOT NULL DEFAULT 'public'`,
-		`ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'`,
-		`ALTER TABLE users ADD COLUMN deleting_at TEXT`,
-		`ALTER TABLE users ADD COLUMN suspended_at TEXT`,
-		`ALTER TABLE users ADD COLUMN email_outbound_paused_at TEXT`,
-		`ALTER TABLE users ADD COLUMN active_write_count INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE users ADD COLUMN active_write_expires_at TEXT`,
-		`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
-	]
-	for (const statement of additiveAlters) {
-		try {
-			await db.prepare(statement).run()
-		} catch {
-			// Column already present.
-		}
+	// Best-effort ALTER for persisted worker DBs that already created the older
+	// IF NOT EXISTS saved_packages table without the visibility column.
+	try {
+		await db
+			.prepare(
+				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
+			)
+			.run()
+	} catch {
+		// Column already present.
 	}
 }

@@ -2,7 +2,7 @@ import {
 	getUsernameValidationError,
 	normalizeUsername,
 	usernameFromEmail,
-} from '#app/username.ts'
+} from '#worker/identity/username.ts'
 
 export async function userExistsByUsername(db: D1Database, username: string) {
 	const row = await db

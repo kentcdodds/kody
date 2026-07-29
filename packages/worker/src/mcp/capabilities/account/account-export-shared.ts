@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { accountExportSectionNames } from '#app/account-export.ts'
+import { accountExportSectionNames } from '#worker/account/export.ts'
 
 export const accountExportSectionSchema = z.enum(accountExportSectionNames)
 

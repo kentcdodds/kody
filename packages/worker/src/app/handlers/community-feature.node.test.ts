@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { createCommunityFeatureApiPostHandler } from './community-feature.ts'
-import type * as AuditLog from '#app/audit-log.ts'
+import type * as AuditLog from '#worker/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	requireUserWithRole: vi.fn(),
@@ -19,7 +19,7 @@ vi.mock('#worker/community/service.ts', () => ({
 		mockModule.setCommunityListingFeatured(...args),
 }))
 
-vi.mock('#app/audit-log.ts', async (importOriginal) => {
+vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,

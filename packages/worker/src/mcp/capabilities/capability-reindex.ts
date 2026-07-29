@@ -1,11 +1,9 @@
-import {
-	buildCapabilityEmbedText,
-	getCapabilityVectorIndex,
-} from './capability-search.ts'
+import { buildCapabilityEmbedText } from './capability-search.ts'
+import { getCapabilityVectorIndex } from '#worker/vectorize/embedding.ts'
 import {
 	reindexVectorCandidates,
 	type VectorReindexResult,
-} from './reindex-batches.ts'
+} from '#worker/vectorize/reindex-batches.ts'
 import { type CapabilitySpec } from './types.ts'
 
 export async function reindexCapabilityVectors(

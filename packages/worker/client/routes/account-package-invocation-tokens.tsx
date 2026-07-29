@@ -12,6 +12,7 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
@@ -349,7 +350,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 	let lastNewTokenQueryKey = ''
 	let mutationVersion = 0
 	let revokeConfirm = false
-	let deleteConfirm = false
+	const deleteTokenCheck = createDoubleCheck(handle)
 	let editMode = false
 
 	const primaryButtonCss = getPrimaryButtonCss()
@@ -447,7 +448,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		packages = payload.packages
 		tokens = payload.tokens
 		revokeConfirm = false
-		deleteConfirm = false
+		deleteTokenCheck.reset()
 		if (payload.selectedTokenId) {
 			selectedTokenId = payload.selectedTokenId
 			const selectedToken = tokens.find(
@@ -543,7 +544,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		editorState = createEmptyEditorState()
 		selectedTokenId = null
 		revokeConfirm = false
-		deleteConfirm = false
+		deleteTokenCheck.reset()
 		editMode = false
 		message = null
 		messageTone = 'info'
@@ -560,7 +561,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		selectedTokenId = token.id
 		editMode = true
 		revokeConfirm = false
-		deleteConfirm = false
+		deleteTokenCheck.reset()
 		message = null
 		messageTone = 'info'
 		handle.update()
@@ -572,7 +573,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 		editorState = createEmptyEditorState()
 		editMode = false
 		revokeConfirm = false
-		deleteConfirm = false
+		deleteTokenCheck.reset()
 		message = null
 		messageTone = 'info'
 		syncRouterLocation(
@@ -937,7 +938,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			: createEditorStateFromToken(token)
 		lastNewTokenQueryKey = ''
 		revokeConfirm = false
-		deleteConfirm = false
+		deleteTokenCheck.reset()
 		editMode = !token.revokedAt
 		message = null
 		messageTone = 'info'
@@ -1625,7 +1626,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 												on('click', () => {
 													if (!revokeConfirm) {
 														revokeConfirm = true
-														deleteConfirm = false
+														deleteTokenCheck.reset()
 														handle.update()
 														return
 													}
@@ -1644,21 +1645,20 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 											type="button"
 											disabled={isMutating}
 											mix={[
-												on('click', () => {
-													if (!deleteConfirm) {
-														deleteConfirm = true
+												...deleteTokenCheck.getButtonMix({
+													onFirstClick: () => {
 														revokeConfirm = false
-														handle.update()
-														return
-													}
-													void deleteSelectedToken()
+													},
+													on: {
+														click: () => void deleteSelectedToken(),
+													},
 												}),
 												css(dangerButtonCss),
 											]}
 										>
 											{saveState === 'deleting'
 												? 'Deleting...'
-												: deleteConfirm
+												: deleteTokenCheck.doubleCheck
 													? 'Confirm permanent delete'
 													: 'Delete permanently'}
 										</button>
@@ -1782,7 +1782,7 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 														on('click', () => {
 															if (!revokeConfirm) {
 																revokeConfirm = true
-																deleteConfirm = false
+																deleteTokenCheck.reset()
 																handle.update()
 																return
 															}
@@ -1803,21 +1803,20 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 											type="button"
 											disabled={isMutating}
 											mix={[
-												on('click', () => {
-													if (!deleteConfirm) {
-														deleteConfirm = true
+												...deleteTokenCheck.getButtonMix({
+													onFirstClick: () => {
 														revokeConfirm = false
-														handle.update()
-														return
-													}
-													void deleteSelectedToken()
+													},
+													on: {
+														click: () => void deleteSelectedToken(),
+													},
 												}),
 												css(dangerButtonCss),
 											]}
 										>
 											{saveState === 'deleting'
 												? 'Deleting...'
-												: deleteConfirm
+												: deleteTokenCheck.doubleCheck
 													? 'Confirm permanent delete'
 													: 'Delete permanently'}
 										</button>

@@ -1,7 +1,7 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { object, parseSafe, string } from 'remix/data-schema'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import {
 	createAuthCookie,

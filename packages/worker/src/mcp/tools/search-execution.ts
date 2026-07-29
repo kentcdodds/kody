@@ -1,4 +1,4 @@
-import { resolvePublicUsername } from '#app/user-lookup.ts'
+import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { runPackageRetrievers } from '#worker/package-retrievers/service.ts'
 import { type RemoteConnectorStatus } from '#worker/remote-connector/status.ts'

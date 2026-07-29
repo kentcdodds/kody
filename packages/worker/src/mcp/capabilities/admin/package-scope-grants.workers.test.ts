@@ -3,14 +3,14 @@ import { expect, test } from 'vitest'
 import {
 	createPlatformAccount,
 	type PlatformAccountCreateError,
-} from '#app/platform-account-creation.ts'
+} from '#worker/identity/platform-account-creation.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { adminPackageScopeGrantCreateCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-create.ts'
 import { adminPackageScopeGrantListCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-list.ts'
 import { adminPackageScopeGrantRevokeCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-revoke.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { insertPackageScopeGrant } from './scope-grants.ts'
-import { ensurePackageScopeGrantsTestSchema } from './test-schema.ts'
+import { insertPackageScopeGrant } from '#worker/package-registry/scope-grants.ts'
+import { ensurePackageScopeGrantsTestSchema } from '#worker/package-registry/test-schema.ts'
 
 function reservedPlatformUsername() {
 	return `kody-r-${crypto.randomUUID().replaceAll('-', '').slice(0, 8)}`

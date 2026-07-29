@@ -4,7 +4,7 @@ import { emailRawMimeKey } from '#worker/email/repo.ts'
 import {
 	type AccountR2Binding,
 	type AccountR2ObjectRef,
-} from './account-r2-inventory.ts'
+} from './r2-inventory.ts'
 
 const accountR2CursorVersion = 1
 const accountR2ChunkBytes = 256 * 1024

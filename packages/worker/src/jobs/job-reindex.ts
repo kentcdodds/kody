@@ -1,12 +1,12 @@
 import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
-} from '#mcp/capabilities/capability-search.ts'
+} from '#worker/vectorize/embedding.ts'
 import {
 	mergeVectorReindexResults,
 	reindexVectorCandidates,
 	type VectorReindexResult,
-} from '#mcp/capabilities/reindex-batches.ts'
+} from '#worker/vectorize/reindex-batches.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'

@@ -5,9 +5,9 @@ import {
 	getAccountRestrictionsByStableUserId,
 } from '#app/account-suspension.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
-import { isAccountEmailVerified } from '#app/email-verification.ts'
-import { normalizeEmail } from '#app/normalize-email.ts'
-import { withAccountWriteLease } from '#app/account-deletion-state.ts'
+import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	assertWithinEntitlement,

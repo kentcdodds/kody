@@ -9,14 +9,14 @@ import {
 	getAccountDeletionDurableObjectResultKeys,
 	getAccountExportExcludedDurableObjects,
 	getAccountUserOwnedSurfaceCoverage,
-} from './account-user-owned-surfaces.ts'
+} from './user-owned-surfaces.ts'
 
 const accountDeletionSource = readFileSync(
-	fileURLToPath(new URL('./account-deletion.ts', import.meta.url)),
+	fileURLToPath(new URL('../app/account-deletion.ts', import.meta.url)),
 	'utf8',
 )
 const accountExportSource = readFileSync(
-	fileURLToPath(new URL('./account-export.ts', import.meta.url)),
+	fileURLToPath(new URL('./export.ts', import.meta.url)),
 	'utf8',
 )
 const manifestCacheSource = readFileSync(
@@ -72,7 +72,7 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	).toBe(true)
 
 	expect(accountDeletionSource).toContain(
-		"from '#app/account-user-owned-surfaces.ts'",
+		"from '#worker/account/user-owned-surfaces.ts'",
 	)
 	expect(accountDeletionSource).toContain(
 		'getAccountDeletionDurableObjectResultKeys',

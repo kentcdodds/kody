@@ -10,8 +10,8 @@ import {
 	createVerifySessionCookie,
 	setVerifySessionSecret,
 } from '#app/verify-session.ts'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
-import { getUniqueConstraintField } from '#app/database-errors.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
 import {
 	consumeInviteCode,
@@ -19,11 +19,14 @@ import {
 	normalizeInviteCode,
 	releaseInviteUse,
 } from '#app/invites.ts'
-import { normalizeEmail } from '#app/normalize-email.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { normalizeRedirectTo } from '#app/safe-redirect.ts'
-import { assignUserRole } from '#app/permissions-db.ts'
+import { assignUserRole } from '#worker/identity/permissions-db.ts'
 import { type routes } from '#app/routes.ts'
-import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
+import {
+	getUsernameValidationError,
+	normalizeUsername,
+} from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import {
 	parseStoredPlanName,

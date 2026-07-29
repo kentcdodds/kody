@@ -44,9 +44,9 @@ Examples: `read:user:own`, `update:user:any`, `read:role:any`.
   `requireMcpUserWithPermission(ctx, '<action>:<entity>:any')`. No general query
   helper infers `any` from context.
 
-The typed registry in `packages/worker/src/app/permissions.ts` is the source of
-truth for valid permission strings. Call sites pass literal `PermissionString`
-values so typos and undeclared entities are compile errors.
+The typed registry in `packages/worker/src/identity/permissions.ts` is the
+source of truth for valid permission strings. Call sites pass literal
+`PermissionString` values so typos and undeclared entities are compile errors.
 
 ### Baseline roles
 
@@ -85,7 +85,7 @@ Four D1 tables. The one account-scoped table, `user_roles`, is keyed on integer
 
 ## Typed registry and extending it
 
-`packages/worker/src/app/permissions.ts` exports:
+`packages/worker/src/identity/permissions.ts` exports:
 
 - `permissionActions`, `permissionEntities`, `permissionAccesses` — const arrays
 - `PermissionString` — template literal type
@@ -99,9 +99,9 @@ To add a new entity:
 2. Write a migration (next free prefix under `packages/worker/migrations/`)
    inserting the new permission rows and attaching them to roles via
    `role_permissions`.
-3. The drift test in `packages/worker/src/app/permissions.node.test.ts` compares
-   migration `INSERT` rows to `listRegistryPermissionStrings()` and role
-   attachment rules — drift fails `npm run validate`.
+3. The drift test in `packages/worker/src/identity/permissions.node.test.ts`
+   compares migration `INSERT` rows to `listRegistryPermissionStrings()` and
+   role attachment rules — drift fails `npm run validate`.
 
 ## Server guards
 
@@ -424,8 +424,8 @@ assignment happens through the admin UI.
 
 ## What to read when changing authorization
 
-- `packages/worker/src/app/permissions.ts` — typed registry
-- `packages/worker/src/app/permissions-db.ts` — D1 queries
+- `packages/worker/src/identity/permissions.ts` — typed registry
+- `packages/worker/src/identity/permissions-db.ts` — D1 queries
 - `packages/worker/src/app/permissions-server.ts` — request guards
 - `packages/worker/migrations/0043-rbac.sql` — schema and seed data
 - `packages/worker/migrations/0044-rbac-backfill-user-role.sql` — role backfill

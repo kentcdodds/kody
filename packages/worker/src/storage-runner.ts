@@ -8,6 +8,7 @@ import {
 	readUserD1StorageBytes,
 } from '#worker/entitlements/service.ts'
 import {
+	listUserStorageBucketIds,
 	registerStorageBucket,
 	storageBucketKindFromStorageId,
 } from '#worker/storage-buckets/service.ts'
@@ -15,6 +16,7 @@ import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-obje
 
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
+const maxConcurrentStorageEstimateReads = 16
 
 type StorageEntry = {
 	key: string
@@ -571,21 +573,63 @@ export async function assertStorageRunnerWriteWithinEntitlement(input: {
 	storageId: string
 	requested?: number
 }) {
-	const runner = storageRunnerRpc({
-		env: input.env,
-		userId: input.userId,
-		storageId: input.storageId,
-	})
 	await assertWithinStorageBytesEntitlement({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.email,
 		requested: input.requested,
-		getCurrent: async () =>
-			(await readUserD1StorageBytes({
-				db: input.env.APP_DB,
-				userId: input.userId,
-			})) + (await runner.getEstimatedBytes()).estimatedBytes,
+		getCurrent: async () => {
+			const [d1Bytes, registeredStorageIds] = await Promise.all([
+				readUserD1StorageBytes({
+					db: input.env.APP_DB,
+					userId: input.userId,
+				}),
+				listUserStorageBucketIds({
+					env: input.env,
+					userId: input.userId,
+				}),
+			])
+			// Registration is asynchronous, so include the bucket being written even
+			// when its inventory row has not landed yet. The Set avoids double-counting
+			// once it is registered. Estimate reads are batched to cap concurrent DO
+			// fan-out; total work remains O(bucket count) so every inventoried bucket is
+			// counted exactly. Bucket inventories are expected to remain small.
+			const storageIds = [
+				...new Set([...registeredStorageIds, input.storageId]),
+			]
+			let durableObjectBytes = 0
+			for (
+				let offset = 0;
+				offset < storageIds.length;
+				offset += maxConcurrentStorageEstimateReads
+			) {
+				let estimates: Array<StorageEstimateResult>
+				try {
+					estimates = await Promise.all(
+						storageIds
+							.slice(offset, offset + maxConcurrentStorageEstimateReads)
+							.map((storageId) =>
+								storageRunnerRpc({
+									env: input.env,
+									userId: input.userId,
+									storageId,
+								}).getEstimatedBytes(),
+							),
+					)
+				} catch (error) {
+					// An unreadable bucket cannot safely be treated as zero usage.
+					throw new Error(
+						'Unable to verify the storage byte entitlement because a bucket estimate could not be read.',
+						{ cause: error },
+					)
+				}
+				durableObjectBytes += estimates.reduce(
+					(total, estimate) => total + estimate.estimatedBytes,
+					0,
+				)
+			}
+			return d1Bytes + durableObjectBytes
+		},
 	})
 }
 

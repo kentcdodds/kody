@@ -1,13 +1,15 @@
 import {
-	CAPABILITY_SEARCH_RRF_K,
-	cosineSimilarity,
 	deterministicEmbedding,
 	embedTextForVectorize,
 	getCapabilityVectorIndex,
+} from '#worker/vectorize/embedding.ts'
+import {
+	CAPABILITY_SEARCH_RRF_K,
+	cosineSimilarity,
 	lexicalScore,
 	reciprocalRankFusion,
 	sortIdsByScore,
-} from '#mcp/capabilities/capability-search.ts'
+} from '#worker/vectorize/scoring.ts'
 import { buildExternalPackageInvocationDescriptor } from '#worker/package-invocations/public-url.ts'
 import {
 	buildPackageSearchDocument,

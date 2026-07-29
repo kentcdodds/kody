@@ -3,7 +3,7 @@ import {
 	outboundEmailSchema,
 	type OutboundEmail,
 } from '@kody-internal/shared/outbound-email.ts'
-import { redactEmailRecipient } from '#app/audit-log.ts'
+import { redactEmailRecipient } from '#worker/audit-log.ts'
 
 type CloudflareEmailClientConfig = {
 	accountId?: string

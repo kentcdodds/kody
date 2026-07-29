@@ -1,4 +1,4 @@
-import { logAuditEvent } from '#app/audit-log.ts'
+import { logAuditEvent } from '#worker/audit-log.ts'
 
 /**
  * Why MCP auth denials go to the audit log instead of Sentry.

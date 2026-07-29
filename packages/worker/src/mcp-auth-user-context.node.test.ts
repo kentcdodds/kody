@@ -5,7 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	getUserRolesAndPermissions: vi.fn(),
 }))
 
-vi.mock('#app/permissions-db.ts', () => ({
+vi.mock('#worker/identity/permissions-db.ts', () => ({
 	getUserRolesAndPermissions: (...args: Array<unknown>) =>
 		mockModule.getUserRolesAndPermissions(...args),
 }))

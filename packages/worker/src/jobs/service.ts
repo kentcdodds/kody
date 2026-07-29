@@ -1,10 +1,18 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type ExecuteResult } from '@cloudflare/codemode'
 import { withAccountWriteLease } from '#app/account-deletion-state.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext, parseMcpCallerContext } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
-import { type ExecuteResult } from '@cloudflare/codemode'
+import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import {
+	abandonRunRecord,
+	claimRunRecord,
+	finishRunRecord,
+	getRunRecord,
+} from '#worker/run-records/service.ts'
+import { type RunRecordHandle } from '#worker/run-records/types.ts'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
 import {
 	getJobManagerDebugState,
@@ -12,13 +20,25 @@ import {
 } from './manager-client.ts'
 import {
 	deleteJobRow,
+	claimJobRow,
+	finalizeClaimedJobRow,
 	getJobRowById,
 	listDueJobRows,
 	listJobRowsByUserId,
 	getNextRunnableJobRow,
 	insertJobRow,
+	retryClaimedJobRow,
 	updateJobRow,
 } from './repo.ts'
+import {
+	buildScheduledJobIdempotencyKey,
+	computeJobRetryAt,
+	executeOrReplayScheduledJobRun,
+	isTransientJobExecutionError,
+	markPreExecutionTransientError,
+	resolveScheduledJobCallerContext,
+	TransientJobExecutionError,
+} from './execution-safety.ts'
 import {
 	computeNextRunAt,
 	formatJobError,
@@ -54,7 +74,6 @@ import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-kody-execution.ts'
-import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	deleteEntitySource,
@@ -467,6 +486,8 @@ async function rebuildAndExecuteJobArtifact(input: {
 		sourceId: string
 	} | null
 	waitUntil?: (promise: Promise<unknown>) => void
+	runRecordHandle?: RunRecordHandle | null
+	idempotencyKey?: string | null
 }) {
 	if (!input.job.sourceId) {
 		throw new Error('Repo-backed job source is missing.')
@@ -480,6 +501,8 @@ async function rebuildAndExecuteJobArtifact(input: {
 		entryPoint: input.entryPoint,
 		artifactName: input.artifactName,
 		packageContext: input.packageContext ?? null,
+	}).catch((error: unknown) => {
+		throw markPreExecutionTransientError(error)
 	})
 	if (!artifact) {
 		throw new Error(
@@ -493,6 +516,8 @@ async function rebuildAndExecuteJobArtifact(input: {
 		artifact,
 		bypassLogs: [],
 		waitUntil: input.waitUntil,
+		runRecordHandle: input.runRecordHandle,
+		idempotencyKey: input.idempotencyKey,
 	})
 }
 
@@ -505,8 +530,15 @@ async function executePublishedJobArtifact(input: {
 		| Awaited<ReturnType<typeof ensurePublishedBundleArtifactForJob>>
 	bypassLogs: Array<string>
 	waitUntil?: (promise: Promise<unknown>) => void
+	runRecordHandle?: RunRecordHandle | null
+	idempotencyKey?: string | null
 }): Promise<ExecuteResult> {
-	const source = await getEntitySourceById(input.env.APP_DB, input.job.sourceId)
+	const source = await getEntitySourceById(
+		input.env.APP_DB,
+		input.job.sourceId,
+	).catch((error: unknown) => {
+		throw markPreExecutionTransientError(error)
+	})
 	const callerContext = {
 		...input.callerContext,
 		repoContext: source
@@ -531,6 +563,7 @@ async function executePublishedJobArtifact(input: {
 		storageId: input.job.storageId,
 		sourceId: packageContext?.sourceId ?? input.job.sourceId,
 		publishedCommit: source?.published_commit ?? input.job.publishedCommit,
+		...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
 		...(packageContext
 			? {
 					packageId: packageContext.packageId,
@@ -576,8 +609,9 @@ async function executePublishedJobArtifact(input: {
 			},
 			...(packageContext ? { packageContext } : {}),
 			runRecord,
+			runRecordHandle: input.runRecordHandle,
 			...(packageRuntimeTools ?? {}),
-			waitUntil: input.waitUntil,
+			waitUntil: input.runRecordHandle ? undefined : input.waitUntil,
 		},
 	).then((result) => ({
 		...result,
@@ -1286,6 +1320,8 @@ export async function executeJobOnce(input: {
 	callerContext: PersistedJobCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	waitUntil?: (promise: Promise<unknown>) => void
+	runRecordHandle?: RunRecordHandle | null
+	idempotencyKey?: string | null
 }): Promise<JobExecutionOutcome> {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -1296,6 +1332,7 @@ export async function executeJobOnce(input: {
 			let outcome: 'success' | 'error' = 'success'
 			let finished = started
 			let durationMs = 0
+			let completedOccurrence = false
 			try {
 				if (!input.callerContext) {
 					outcome = 'error'
@@ -1305,6 +1342,7 @@ export async function executeJobOnce(input: {
 							'Job caller context is missing. Re-save the job to refresh its execution context.',
 						logs: [],
 					}
+					completedOccurrence = true
 				} else {
 					const runtimeCallerContext: PersistedJobCallerContext = {
 						...input.callerContext,
@@ -1323,6 +1361,8 @@ export async function executeJobOnce(input: {
 						callerContext: runtimeCallerContext,
 						repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 						waitUntil: input.waitUntil,
+						runRecordHandle: input.runRecordHandle,
+						idempotencyKey: input.idempotencyKey,
 					})
 					if (result.error) {
 						outcome = 'error'
@@ -1341,19 +1381,24 @@ export async function executeJobOnce(input: {
 								result: result.result,
 								logs: result.logs ?? [],
 							}
+					completedOccurrence = true
 				}
 			} catch (error) {
+				if (error instanceof TransientJobExecutionError) {
+					throw error
+				}
 				outcome = 'error'
 				execution = {
 					ok: false,
 					error: formatJobError(error),
 					logs: [],
 				}
+				completedOccurrence = true
 			} finally {
 				finished = new Date()
 				durationMs = Math.max(0, finished.valueOf() - started.valueOf())
 				const userId = input.job.userId
-				if (userId) {
+				if (userId && completedOccurrence) {
 					await recordUsage(input.env, {
 						userId,
 						eventType: 'job_run',
@@ -1379,14 +1424,21 @@ async function runRepoBackedJob(input: {
 	callerContext: PersistedJobCallerContext
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	waitUntil?: (promise: Promise<unknown>) => void
+	runRecordHandle?: RunRecordHandle | null
+	idempotencyKey?: string | null
 }): Promise<ExecuteResult> {
 	const resolved = await resolvePublishedJobSource({
 		env: input.env,
 		userId: input.callerContext.user.userId,
 		job: input.job,
-	}).catch((error: unknown) => ({
-		error: formatJobError(error),
-	}))
+	}).catch((error: unknown) => {
+		if (isTransientJobExecutionError(error)) {
+			throw markPreExecutionTransientError(error)
+		}
+		return {
+			error: formatJobError(error),
+		}
+	})
 	if ('error' in resolved) {
 		return {
 			error: resolved.error,
@@ -1401,6 +1453,8 @@ async function runRepoBackedJob(input: {
 		kind: 'job',
 		artifactName: resolved.artifactName,
 		entryPoint: resolved.entryPoint,
+	}).catch((error: unknown) => {
+		throw markPreExecutionTransientError(error)
 	})
 	if (
 		loadedArtifact?.artifact &&
@@ -1417,6 +1471,8 @@ async function runRepoBackedJob(input: {
 			artifact: loadedArtifact.artifact,
 			bypassLogs: [],
 			waitUntil: input.waitUntil,
+			runRecordHandle: input.runRecordHandle,
+			idempotencyKey: input.idempotencyKey,
 		})
 	}
 	return await rebuildAndExecuteJobArtifact({
@@ -1428,6 +1484,8 @@ async function runRepoBackedJob(input: {
 		artifactName: resolved.artifactName,
 		packageContext: resolved.packageContext,
 		waitUntil: input.waitUntil,
+		runRecordHandle: input.runRecordHandle,
+		idempotencyKey: input.idempotencyKey,
 	})
 }
 
@@ -1494,6 +1552,78 @@ export async function runJobNow(input: {
 	})
 }
 
+async function executeClaimedScheduledJob(input: {
+	env: Env
+	row: NonNullable<Awaited<ReturnType<typeof claimJobRow>>>
+	scheduledFor: string
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	const idempotencyKey = buildScheduledJobIdempotencyKey({
+		jobId: input.row.record.id,
+		scheduledFor: input.scheduledFor,
+	})
+	const claim = await claimRunRecord({
+		env: input.env,
+		userId: input.row.record.userId,
+		context: {
+			surface: 'job',
+			name: input.row.record.name,
+			jobId: input.row.record.id,
+			storageId: input.row.record.storageId,
+			sourceId: input.row.record.sourceId,
+			publishedCommit: input.row.record.publishedCommit,
+			idempotencyKey,
+			metadata: {
+				scheduledFor: input.scheduledFor,
+			},
+		},
+	})
+	try {
+		const outcome = await executeOrReplayScheduledJobRun({
+			claim,
+			execute: async (handle) =>
+				executeJobOnce({
+					env: input.env,
+					job: input.row.record,
+					callerContext: resolveScheduledJobCallerContext({
+						rowUserId: input.row.record.userId,
+						callerContext: input.row.callerContext,
+					}),
+					waitUntil: input.waitUntil,
+					runRecordHandle: handle,
+					idempotencyKey,
+				}),
+		})
+		if (claim?.claimed) {
+			const retained = await getRunRecord({
+				env: input.env,
+				userId: claim.handle.userId,
+				runId: claim.handle.id,
+			}).catch(() => null)
+			if (!retained || retained.run.status === 'running') {
+				await finishRunRecord({
+					env: input.env,
+					handle: claim.handle,
+					status: outcome.execution.ok ? 'success' : 'error',
+					logs: outcome.execution.logs,
+					...(outcome.execution.ok
+						? { result: outcome.execution.result }
+						: { error: outcome.execution.error }),
+				})
+			}
+		}
+		return outcome
+	} catch (error) {
+		if (claim?.claimed && error instanceof TransientJobExecutionError) {
+			await abandonRunRecord({
+				env: input.env,
+				handle: claim.handle,
+			})
+		}
+		throw error
+	}
+}
+
 export async function runDueJobsForUser(input: {
 	env: Env
 	userId: string
@@ -1510,9 +1640,6 @@ export async function runDueJobsForUser(input: {
 				input.userId,
 				now.toISOString(),
 			)
-			const dueRowById = new Map(
-				dueRows.map((row) => [row.record.id, row] as const),
-			)
 			if (dueRows.length === 0) {
 				logJobSchedulerEvent({
 					event: 'run_due_jobs_empty',
@@ -1527,38 +1654,100 @@ export async function runDueJobsForUser(input: {
 					jobOutcomes: [] satisfies Array<SchedulerJobOutcomeLog>,
 				}
 			}
-			const result = await processDueJobs({
-				jobs: dueRows.map((row) => row.record),
-				now,
-				executeJob: async (job) => {
-					const row = dueRowById.get(job.id)
-					const callerContext = row?.callerContext ?? null
-					return executeJobOnce({
-						env: input.env,
-						job,
-						callerContext,
-						waitUntil: input.waitUntil,
-					})
-				},
-			})
-			for (const job of result.saveJobs) {
-				const row = dueRowById.get(job.id)
-				await updateJobRow({
+			let claimedJobCount = 0
+			let successCount = 0
+			let errorCount = 0
+			const jobOutcomes: Array<SchedulerJobOutcomeLog> = []
+			for (const dueRow of dueRows) {
+				const claimToken = crypto.randomUUID()
+				const claimNow = input.now ?? new Date()
+				const row = await claimJobRow({
 					db: input.env.APP_DB,
 					userId: input.userId,
-					job,
-					callerContextJson: row?.callerContextJson ?? 'null',
+					jobId: dueRow.id,
+					now: claimNow,
+					claimToken,
 				})
+				if (!row?.claimed_scheduled_for) {
+					continue
+				}
+				claimedJobCount += 1
+				try {
+					const outcome = await executeClaimedScheduledJob({
+						env: input.env,
+						row,
+						scheduledFor: row.claimed_scheduled_for,
+						waitUntil: input.waitUntil,
+					})
+					const result = await processDueJobs({
+						jobs: [row.record],
+						now,
+						async executeJob() {
+							return outcome
+						},
+					})
+					const updated = result.saveJobs[0]
+					if (!updated) {
+						throw new Error(
+							`Scheduled job "${row.id}" produced no final job state.`,
+						)
+					}
+					const finalized = await finalizeClaimedJobRow({
+						db: input.env.APP_DB,
+						userId: input.userId,
+						job: updated,
+						callerContextJson: row.callerContextJson,
+						claimToken,
+						scheduledFor: row.claimed_scheduled_for,
+					})
+					if (!finalized) {
+						throw new Error(
+							`Scheduled job "${row.id}" lost its fenced execution claim before finalization.`,
+						)
+					}
+					successCount += result.successCount
+					errorCount += result.errorCount
+					jobOutcomes.push(...result.jobOutcomes)
+				} catch (error) {
+					if (!(error instanceof TransientJobExecutionError)) {
+						throw error
+					}
+					const retryAt = computeJobRetryAt({
+						now: input.now ?? new Date(),
+						retryCount: row.retry_count,
+					})
+					const retried = await retryClaimedJobRow({
+						db: input.env.APP_DB,
+						userId: input.userId,
+						jobId: row.id,
+						claimToken,
+						nextRunAt: retryAt,
+					})
+					if (!retried) {
+						throw new Error(
+							`Scheduled job "${row.id}" lost its fenced execution claim before retry transition.`,
+						)
+					}
+					errorCount += 1
+					jobOutcomes.push({
+						jobId: row.id,
+						scheduleType: row.record.schedule.type,
+						outcome: 'failure',
+						nextRunAt: retryAt,
+						deleted: false,
+						error: error.message,
+					})
+				}
 			}
 			await cleanupArchivedJobArtifacts({
 				env: input.env,
 				now,
 			})
 			return {
-				dueJobCount: dueRows.length,
-				successCount: result.successCount,
-				errorCount: result.errorCount,
-				jobOutcomes: result.jobOutcomes,
+				dueJobCount: claimedJobCount,
+				successCount,
+				errorCount,
+				jobOutcomes,
 			}
 		},
 	})
@@ -1566,5 +1755,10 @@ export async function runDueJobsForUser(input: {
 
 export async function getNextRunnableJob(input: { env: Env; userId: string }) {
 	const row = await getNextRunnableJobRow(input.env.APP_DB, input.userId)
-	return row?.record ?? null
+	return row
+		? {
+				...row.record,
+				nextRunAt: row.schedulerWakeAt,
+			}
+		: null
 }

@@ -1,7 +1,7 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAdminFeatureFlagsData } from '#app/admin-feature-flags-data.ts'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'

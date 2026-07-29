@@ -1,11 +1,11 @@
-import { getUniqueConstraintField } from '#app/database-errors.ts'
-import { userExistsByUsername } from '#app/generated-username.ts'
-import { normalizeEmail } from '#app/normalize-email.ts'
-import { isReservedUsername } from '#app/reserved-usernames.ts'
+import { getUniqueConstraintField } from '#worker/database-errors.ts'
+import { userExistsByUsername } from '#worker/identity/generated-username.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
+import { isReservedUsername } from '#worker/identity/reserved-usernames.ts'
 import {
 	getUsernameFormatValidationError,
 	normalizeUsername,
-} from '#app/username.ts'
+} from '#worker/identity/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const platformAccountNoUsablePasswordHash =

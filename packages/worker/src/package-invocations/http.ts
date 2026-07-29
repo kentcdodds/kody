@@ -1,11 +1,11 @@
 import { jsonResponse } from '#worker/json-response.ts'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
-import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import {
 	AccountDeletionInProgressError,
 	assertAccountWritable,
-} from '#app/account-deletion-state.ts'
+} from '#worker/account/deletion-state.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { packageInvocationRootExportRouteSegment } from '@kody-internal/shared/public-urls.ts'
 import { waitUntilFromExecutionContext } from './common.ts'

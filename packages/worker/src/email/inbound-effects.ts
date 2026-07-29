@@ -1,5 +1,5 @@
 import { getInboundDelivery } from './inbound-delivery.ts'
-import { withAccountWriteLease } from '#app/account-deletion-state.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import {
 	dispatchInboundEmailSubscriptionEvents,
 	dispatchSystemInboundEmailSubscriptionEvents,

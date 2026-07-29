@@ -7,7 +7,7 @@ import {
 	createAccountExportManifest,
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
-} from './account-export.ts'
+} from './export.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 function applyMigrations(db: DatabaseSync) {

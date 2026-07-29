@@ -1,5 +1,5 @@
 import { isSessionInvalidatedByStoredPasswordChange } from '#app/request-auth-cache.ts'
-import { resolveDisplayName } from '#app/username.ts'
+import { resolveDisplayName } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 

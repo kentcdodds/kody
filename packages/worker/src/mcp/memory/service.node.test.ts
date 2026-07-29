@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	deterministicEmbedding,
-} from '#mcp/capabilities/capability-search.ts'
+} from '#worker/vectorize/embedding.ts'
 import {
 	acknowledgeSurfacedMemories,
 	deleteMemory,

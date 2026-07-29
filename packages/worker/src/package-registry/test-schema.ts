@@ -1,71 +1,16 @@
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
+
 /**
  * Schema for package scope grant / platform account workers-unit tests.
  * Local D1 does not apply migrations, so suites provision the tables they need.
- * Mirrors users columns from early migrations plus 0052/0075 (stable_user_id),
- * 0072 (account_type, package_scope_grants), 0081 (`plan` NOT NULL), and 0083
- * (`plan` NOT NULL DEFAULT `'free'`). Non-historical seeds may set
- * `'max'` or `'free'` explicitly when plan matters.
+ * Adds migration 0072 (`users.account_type`, `package_scope_grants`) and the
+ * audit rows those mutations write on top of the shared `users` schema.
  */
 export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS users (
-	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-	username TEXT NOT NULL UNIQUE,
-	email TEXT NOT NULL UNIQUE,
-	password_hash TEXT NOT NULL,
-	email_verified_at TEXT,
-	stable_user_id TEXT NOT NULL,
-	account_type TEXT NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'platform')),
-	plan TEXT NOT NULL DEFAULT 'free',
-	deleting_at TEXT,
-	suspended_at TEXT,
-	email_outbound_paused_at TEXT,
-	active_write_count INTEGER NOT NULL DEFAULT 0,
-	active_write_expires_at TEXT,
-	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-)`,
-		)
-		.run()
-	for (const column of [
-		'email_verified_at TEXT',
-		'stable_user_id TEXT',
-		`account_type TEXT NOT NULL DEFAULT 'person'`,
-		`plan TEXT NOT NULL DEFAULT 'free'`,
-		'deleting_at TEXT',
-		'suspended_at TEXT',
-		'email_outbound_paused_at TEXT',
-		'active_write_count INTEGER NOT NULL DEFAULT 0',
-		'active_write_expires_at TEXT',
-	]) {
-		try {
-			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()
-		} catch {
-			// Column already exists (fresh CREATE above or prior suite setup).
-		}
-	}
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS account_write_leases (
-				token TEXT PRIMARY KEY,
-				user_id TEXT NOT NULL,
-				holder TEXT NOT NULL,
-				acquired_at TEXT NOT NULL,
-				released_at TEXT
-			)`,
-		)
-		.run()
-	try {
-		await db
-			.prepare(
-				`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stable_user_id
-				 ON users(stable_user_id)`,
-			)
-			.run()
-	} catch {
-		// Index already exists or partial legacy index remains from an earlier suite.
-	}
+	await ensureUsersTestSchema({
+		db,
+		columns: ['email_verified_at', 'account_type'],
+	})
 	await db.prepare(`DROP TABLE IF EXISTS package_scope_grants`).run()
 	await db
 		.prepare(

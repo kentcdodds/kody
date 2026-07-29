@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { listActiveAccountWriteLeases } from '#app/account-deletion-state.ts'
+import { listActiveAccountWriteLeases } from '#worker/account/deletion-state.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {

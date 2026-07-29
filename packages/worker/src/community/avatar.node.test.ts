@@ -6,7 +6,7 @@ import {
 	processUserAvatar,
 	saveUserAvatar,
 } from './avatar.ts'
-import { AccountDeletionInProgressError } from '#app/account-deletion-state.ts'
+import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 
 function createPngHeader(width: number, height: number) {
 	const bytes = new Uint8Array(24)

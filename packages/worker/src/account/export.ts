@@ -8,12 +8,12 @@ import {
 	getAccountExportExcludedD1Surfaces,
 	isExcludedFromAccountExport,
 	getAccountD1UserColumnCoverage,
-} from '#app/account-data-targets.ts'
-import { getAccountExportExcludedDurableObjects } from '#app/account-user-owned-surfaces.ts'
+} from '#worker/account/data-targets.ts'
+import { getAccountExportExcludedDurableObjects } from '#worker/account/user-owned-surfaces.ts'
 import {
 	countAccountR2ObjectRefs,
 	readAccountR2ExportPage,
-} from '#app/account-r2-export.ts'
+} from '#worker/account/r2-export.ts'
 import { exportJobManagerForUser } from '#worker/jobs/manager-client.ts'
 import { listPackageServices } from '#worker/package-registry/manifest.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
@@ -38,7 +38,7 @@ import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
-} from '#app/account-user-inventory.ts'
+} from '#worker/account/user-inventory.ts'
 
 const accountExportSchemaVersion = 1
 const defaultExportPageSize = 100

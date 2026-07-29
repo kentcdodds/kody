@@ -48,7 +48,7 @@ import {
 } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { AccountDeletionInProgressError } from '#app/account-deletion-state.ts'
+import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 
 const platformBaseUrl = 'https://kody.example.com'

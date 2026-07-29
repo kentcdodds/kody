@@ -1,8 +1,8 @@
-import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
+import { getUserRolesAndPermissions } from '#worker/identity/permissions-db.ts'
 import {
 	displayNameFromEmail,
 	getUsernameFormatValidationError,
-} from '#app/username.ts'
+} from '#worker/identity/username.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
 type McpOAuthGrantProps = {

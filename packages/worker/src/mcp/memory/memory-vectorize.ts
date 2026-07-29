@@ -2,8 +2,8 @@ import {
 	embedTextForVectorize,
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
-} from '#mcp/capabilities/capability-search.ts'
-import { buildLengthSafeVectorId } from '#mcp/capabilities/vector-ids.ts'
+} from '#worker/vectorize/embedding.ts'
+import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 import { type MemoryStatus } from './types.ts'
 
 export function memoryVectorId(memoryId: string): string {

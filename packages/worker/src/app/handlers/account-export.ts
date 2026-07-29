@@ -1,6 +1,6 @@
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { createAccountExportManifest } from '#app/account-export.ts'
+import { createAccountExportManifest } from '#worker/account/export.ts'
 import { type routes } from '#app/routes.ts'
 
 function buildExportFilename(username: string) {

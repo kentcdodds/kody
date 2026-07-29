@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { planNames } from '#worker/entitlements/plans.ts'
-import { loadAdminUserByIdOrEmail } from '#app/admin-users-data.ts'
-import { loadAdminUserUsageData } from '#app/admin-user-usage-data.ts'
+import { loadAdminUserByIdOrEmail } from '#worker/admin/users-data.ts'
+import { loadAdminUserUsageData } from '#worker/admin/user-usage-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {

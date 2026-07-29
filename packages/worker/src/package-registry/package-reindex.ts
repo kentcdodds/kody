@@ -1,14 +1,14 @@
 import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
-} from '#mcp/capabilities/capability-search.ts'
+} from '#worker/vectorize/embedding.ts'
 import {
 	mergeVectorReindexResults,
 	reindexVectorCandidates,
 	type VectorReindexCandidate,
 	type VectorReindexFailure,
 	type VectorReindexResult,
-} from '#mcp/capabilities/reindex-batches.ts'
+} from '#worker/vectorize/reindex-batches.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'

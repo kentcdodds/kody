@@ -1,7 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { withAccountWriteLease } from '#app/account-deletion-state.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { type StorageContext } from '#mcp/storage.ts'
-import { isCapabilitySearchOffline } from '#mcp/capabilities/capability-search.ts'
+import { isCapabilitySearchOffline } from '#worker/vectorize/embedding.ts'
 import {
 	acknowledgeSurfacedMemoryWrites,
 	deleteMemory as deleteMemoryRow,

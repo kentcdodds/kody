@@ -17,7 +17,7 @@ import {
 	type AdminUsageMonthRollup,
 	type AdminUsageRollup,
 	type AdminUserUsageLoaderData,
-} from './loader-data.ts'
+} from '#app/loader-data.ts'
 
 export const adminUsageMetrics = [
 	'execute',

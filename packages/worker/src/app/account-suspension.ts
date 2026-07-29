@@ -9,7 +9,7 @@
  * admin from the admin users page.
  */
 
-import { normalizeEmail } from '#app/normalize-email.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 
 export const accountSuspendedMessage =

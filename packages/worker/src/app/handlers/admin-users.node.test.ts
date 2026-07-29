@@ -1,13 +1,16 @@
 import { expect, test, vi } from 'vitest'
 import { adminUserListItemFieldNames } from './admin-users.ts'
-import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import {
+	type PermissionString,
+	type RoleName,
+} from '#worker/identity/permissions.ts'
 import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
 import {
 	consoleWarn,
 	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
-import type * as AuditLog from '#app/audit-log.ts'
+import type * as AuditLog from '#worker/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -20,7 +23,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 
 // The shared audit-log-spy setup file routes logAuditEvent; this test also
 // needs a deterministic request IP for its audit assertions.
-vi.mock('#app/audit-log.ts', async (importOriginal) => {
+vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,

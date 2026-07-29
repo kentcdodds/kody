@@ -1,6 +1,6 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
-import { logAuditEvent } from '#app/audit-log.ts'
-import { getUsernameFormatValidationError } from '#app/username.ts'
+import { logAuditEvent } from '#worker/audit-log.ts'
+import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
 	getPlatformAccountByUsername,
 	hasPackageScopeGrant,

@@ -9,8 +9,8 @@ import {
 	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { type AdminUsageRollup } from './loader-data.ts'
-import { loadAdminUserUsageData } from './admin-user-usage-data.ts'
+import { type AdminUsageRollup } from '#app/loader-data.ts'
+import { loadAdminUserUsageData } from './user-usage-data.ts'
 
 type UserRow = {
 	id: number

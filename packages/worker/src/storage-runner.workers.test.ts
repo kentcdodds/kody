@@ -3,6 +3,7 @@ import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
+import { readUserD1StorageBytes } from '#worker/entitlements/service.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import {
 	clearStorageBucketRegistrationDedupeForTests,
@@ -12,6 +13,7 @@ import {
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
+	assertStorageRunnerWriteWithinEntitlement,
 	createStorageKodyTools,
 	createExecuteStorageId,
 	StorageRunner,
@@ -236,6 +238,92 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 			value: 'new-value',
 		}),
 	).resolves.toEqual({ ok: true, key: 'new-key' })
+})
+
+test('storage runner storage byte entitlement aggregates only inventoried user buckets', async () => {
+	await ensureStorageBytesEmailTestSchema()
+	clearStorageBucketRegistrationDedupeForTests()
+	const limit = planLimits.pro.maxStorageBytes
+	const email = `storage-aggregate-${crypto.randomUUID()}@example.com`
+	const userId = await seedPlannedStorageUser({
+		email,
+		plan: 'pro',
+		rawSize: 0,
+	})
+	const storageIdA = createExecuteStorageId()
+	const storageIdB = createExecuteStorageId()
+	const runnerA = storageRunnerRpc({ env, userId, storageId: storageIdA })
+	const runnerB = storageRunnerRpc({ env, userId, storageId: storageIdB })
+	await runnerA.setValue({ key: 'first-bucket', value: 'stored bytes' })
+	await runnerB.setValue({ key: 'second-bucket', value: 'stored bytes' })
+	await flushStorageBucketRegistrationsForTests()
+	await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual(
+		[storageIdA, storageIdB].sort(),
+	)
+
+	const estimateA = (await runnerA.getEstimatedBytes()).estimatedBytes
+	const estimateB = (await runnerB.getEstimatedBytes()).estimatedBytes
+	expect(estimateA).toBeGreaterThan(0)
+	expect(estimateB).toBeGreaterThan(0)
+	const initialD1Bytes = await readUserD1StorageBytes({
+		db: env.APP_DB,
+		userId,
+	})
+	const targetD1Bytes = limit - estimateB - 1
+	await env.APP_DB.prepare(
+		`UPDATE email_messages SET raw_size = ? WHERE user_id = ?`,
+	)
+		.bind(targetD1Bytes - initialD1Bytes, userId)
+		.run()
+	await expect(
+		readUserD1StorageBytes({ db: env.APP_DB, userId }),
+	).resolves.toBe(targetD1Bytes)
+
+	const aggregateDenied = await assertStorageRunnerWriteWithinEntitlement({
+		env,
+		userId,
+		email,
+		storageId: storageIdB,
+		requested: 1,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(aggregateDenied instanceof EntitlementLimitError)) {
+		throw new Error(
+			'Expected aggregate bucket usage to exceed the entitlement.',
+		)
+	}
+	expect(aggregateDenied.details).toMatchObject({
+		resource: 'storage_bytes',
+		limit,
+		current: targetD1Bytes + estimateA + estimateB,
+	})
+
+	// The first bucket still exists physically, but removing its ownership row
+	// makes it ineligible for this user's aggregate. The remaining single bucket
+	// is exactly at the allowed boundary and retains the previous behavior.
+	await env.APP_DB.prepare(
+		`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?`,
+	)
+		.bind(userId, storageIdA)
+		.run()
+	await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([
+		storageIdB,
+	])
+	await expect(
+		assertStorageRunnerWriteWithinEntitlement({
+			env,
+			userId,
+			email,
+			storageId: storageIdB,
+			requested: 1,
+		}),
+	).resolves.toBeUndefined()
+	await expect(runnerA.getValue({ key: 'first-bucket' })).resolves.toEqual({
+		key: 'first-bucket',
+		value: 'stored bytes',
+	})
 })
 
 test('storage runner supports raw SQL with explicit writable access', async () => {

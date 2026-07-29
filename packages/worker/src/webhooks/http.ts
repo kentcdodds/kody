@@ -2,9 +2,9 @@ import { getAppBaseUrl } from '#app/app-base-url.ts'
 import {
 	AccountDeletionInProgressError,
 	assertAccountWritable,
-} from '#app/account-deletion-state.ts'
+} from '#worker/account/deletion-state.ts'
 import { checkRateLimit } from '#app/rate-limit.ts'
-import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'

@@ -3,7 +3,7 @@ import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import {
 	assertAccountWritableDb,
 	withAccountWriteLease,
-} from '#app/account-deletion-state.ts'
+} from '#worker/account/deletion-state.ts'
 import {
 	readJpegDimensions,
 	readPngDimensions,

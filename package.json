@@ -118,8 +118,5 @@
     "sharp": true,
     "unrs-resolver": true,
     "workerd": true
-  },
-  "dependencies": {
-    "tldts": "^7.4.9"
   }
 }

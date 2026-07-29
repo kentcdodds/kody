@@ -2,7 +2,7 @@ import {
 	embedTextForVectorize,
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
-} from '#mcp/capabilities/capability-search.ts'
+} from '#worker/vectorize/embedding.ts'
 import { savedPackageVectorId } from './repo.ts'
 
 export async function upsertSavedPackageVector(

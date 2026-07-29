@@ -7,7 +7,7 @@ import {
 	markAccountDeleting,
 	repairAccountWriteLease,
 	withAccountWriteLease,
-} from './account-deletion-state.ts'
+} from './deletion-state.ts'
 
 test('non-expiring lease blocks deletion until audited repair fences callback', async () => {
 	const sqlite = new DatabaseSync(':memory:')

@@ -349,7 +349,9 @@ export function ConnectOauthRoute(handle: Handle) {
 	const persistConfig = (nextConfig: ConnectOauthConfig) => {
 		try {
 			sessionStorage.setItem(configStorageKey, JSON.stringify(nextConfig))
-		} catch {}
+		} catch {
+			// Config caching is best-effort; the required OAuth state write below still fails visibly.
+		}
 	}
 
 	const readStoredConfig = (): ConnectOauthConfig | null => {
@@ -1354,7 +1356,9 @@ function parseScopes(raw: string | null) {
 			if (Array.isArray(parsed)) {
 				return parsed.map((value) => String(value)).filter(Boolean)
 			}
-		} catch {}
+		} catch {
+			// Invalid JSON falls back to the tolerant delimited-list parser.
+		}
 	}
 	return trimmed
 		.split(/[\s,]+/)
@@ -1791,7 +1795,9 @@ function parseExtraParams(raw: string | null) {
 				Object.entries(parsed).map(([key, value]) => [key, String(value)]),
 			) as Record<string, string>
 		}
-	} catch {}
+	} catch {
+		// Invalid JSON is tolerated as an empty parameter map.
+	}
 	return {}
 }
 

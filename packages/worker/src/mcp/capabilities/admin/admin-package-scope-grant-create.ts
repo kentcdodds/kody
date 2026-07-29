@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { normalizeUsername } from '#app/username.ts'
+import { normalizeUsername } from '#worker/identity/username.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'

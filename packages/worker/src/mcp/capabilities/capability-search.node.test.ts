@@ -1,9 +1,11 @@
 import { expect, test } from 'vitest'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
+	deterministicEmbedding,
+} from '#worker/vectorize/embedding.ts'
+import {
 	CAPABILITY_VECTOR_KIND,
 	buildCapabilityVectorMetadataFilter,
-	deterministicEmbedding,
 	searchCapabilities,
 } from './capability-search.ts'
 import { type CapabilitySpec } from './types.ts'
