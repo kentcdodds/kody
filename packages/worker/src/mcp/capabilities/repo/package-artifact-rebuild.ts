@@ -85,6 +85,33 @@ async function filterTargetsNeedingRebuild(input: {
 	return { remaining, alreadyBuilt }
 }
 
+async function listTargetsOrThrow(input: {
+	session: ReturnType<typeof repoSessionRpc>
+	repoSessionId?: string
+	sourceId: string
+	userId: string
+	publishedCommit: string
+}) {
+	try {
+		return await input.session.listPublishedPackageArtifactTargets({
+			sessionId: input.repoSessionId,
+			sourceId: input.sourceId,
+			userId: input.userId,
+		})
+	} catch (error) {
+		throw new Error(
+			buildRebuildFailureMessage({
+				sourceId: input.sourceId,
+				publishedCommit: input.publishedCommit,
+				succeeded: [],
+				failed: [],
+				error,
+			}),
+			{ cause: error },
+		)
+	}
+}
+
 async function rebuildPublishedPackageArtifactsOnSession(input: {
 	env: Env
 	rpcSessionId: string
@@ -168,25 +195,13 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 	const isolatedRunner = createIsolatedArtifactRebuildRunner(input.env)
 
 	if (!isolatedRunner) {
-		let targets: Array<PublishedPackageArtifactBuildTarget>
-		try {
-			targets = await session.listPublishedPackageArtifactTargets({
-				sessionId: input.repoSessionId,
-				sourceId: input.sourceId,
-				userId: input.userId,
-			})
-		} catch (error) {
-			throw new Error(
-				buildRebuildFailureMessage({
-					sourceId: input.sourceId,
-					publishedCommit: input.publishedCommit,
-					succeeded: [],
-					failed: [],
-					error,
-				}),
-				{ cause: error },
-			)
-		}
+		const targets = await listTargetsOrThrow({
+			session,
+			repoSessionId: input.repoSessionId,
+			sourceId: input.sourceId,
+			userId: input.userId,
+			publishedCommit: input.publishedCommit,
+		})
 		await rebuildPublishedPackageArtifactsOnSession({
 			...input,
 			targets,
@@ -196,25 +211,13 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 
 	// List + skip before staging so already_published / repair resumes do not
 	// pay collectWorkspaceFiles + KV stage when nothing remains to rebuild.
-	let targets: Array<PublishedPackageArtifactBuildTarget>
-	try {
-		targets = await session.listPublishedPackageArtifactTargets({
-			sessionId: input.repoSessionId,
-			sourceId: input.sourceId,
-			userId: input.userId,
-		})
-	} catch (error) {
-		throw new Error(
-			buildRebuildFailureMessage({
-				sourceId: input.sourceId,
-				publishedCommit: input.publishedCommit,
-				succeeded: [],
-				failed: [],
-				error,
-			}),
-			{ cause: error },
-		)
-	}
+	const targets = await listTargetsOrThrow({
+		session,
+		repoSessionId: input.repoSessionId,
+		sourceId: input.sourceId,
+		userId: input.userId,
+		publishedCommit: input.publishedCommit,
+	})
 
 	const { remaining, alreadyBuilt } = await filterTargetsNeedingRebuild({
 		env: input.env,
@@ -254,11 +257,15 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 	}> = []
 
 	try {
-		for (const targetChunk of chunkArray(
+		const targetChunks = chunkArray(
 			remaining,
 			publishedPackageArtifactRebuildConcurrency,
-		)) {
+		)
+		for (const [chunkIndex, targetChunk] of targetChunks.entries()) {
 			if (failed.length > 0) break
+			if (chunkIndex > 0) {
+				await isolatedRunner.touch(stagingKey)
+			}
 
 			const settled = await Promise.allSettled(
 				targetChunk.map(async (target) => {

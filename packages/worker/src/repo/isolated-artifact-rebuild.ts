@@ -19,7 +19,8 @@ import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtim
  *
  * Workspace source files are staged once in KV with a short TTL (collected by
  * the session DO) and fetched by each rebuild isolate; the RPC payloads stay
- * small.
+ * small. The orchestrator refreshes that TTL between target chunks so large
+ * packages cannot outlive the initial lease mid-fan-out.
  */
 
 export const isolatedArtifactRebuildStagingKeyPrefix =
@@ -68,10 +69,11 @@ type IsolatedArtifactRebuildStub = {
 }
 
 export type IsolatedArtifactRebuildRunner = {
-	stage(input: {
-		userId: string
-		sourceFiles: Record<string, string>
-	}): Promise<string>
+	/**
+	 * Re-put the existing staging payload so its TTL resets. Call between
+	 * rebuild chunks so multi-target publishes do not expire mid-fan-out.
+	 */
+	touch(stagingKey: string): Promise<void>
 	run(
 		request: IsolatedArtifactRebuildRequest,
 	): Promise<IsolatedArtifactRebuildOutcome>
@@ -113,16 +115,12 @@ export function createIsolatedArtifactRebuildRunner(
 	)?.BUNDLE_ARTIFACTS_KV
 	if (!namespace || !stagingKv) return null
 	return {
-		async stage(input) {
-			const stagingKey = isolatedArtifactRebuildStagingKeyForUser(input.userId)
-			await stagingKv.put(
-				stagingKey,
-				JSON.stringify({ sourceFiles: input.sourceFiles }),
-				{
-					expirationTtl: stagingTtlSeconds,
-				},
-			)
-			return stagingKey
+		async touch(stagingKey) {
+			const payload = await stagingKv.get(stagingKey, 'text')
+			if (payload == null) return
+			await stagingKv.put(stagingKey, payload, {
+				expirationTtl: stagingTtlSeconds,
+			})
 		},
 		async run(request) {
 			// A fresh, user-namespaced id per target puts every heavy rebuild

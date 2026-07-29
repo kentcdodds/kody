@@ -71,9 +71,10 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 		ok: true,
 		message: 'rebuilt',
 	}))
+	const touch = vi.fn(async () => undefined)
 	const discard = vi.fn(async () => undefined)
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		stage: vi.fn(),
+		touch,
 		run,
 		discard,
 	})
@@ -122,16 +123,21 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 		1,
 	)
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
+	expect(touch).not.toHaveBeenCalled()
 
 	releaseGates.splice(0).forEach((release) => release())
 	await vi.waitFor(() => {
 		expect(run).toHaveBeenCalledTimes(3)
 	})
+	expect(touch).toHaveBeenCalledWith(
+		'repo-artifact-rebuild-staging:v1:user-1:stage-1',
+	)
 	releaseGates.splice(0).forEach((release) => release())
 	await rebuildPromise
 
 	expect(maxInFlight).toBe(2)
 	expect(run).toHaveBeenCalledTimes(3)
+	expect(touch).toHaveBeenCalledTimes(1)
 	expect(discard).toHaveBeenCalledWith(
 		'repo-artifact-rebuild-staging:v1:user-1:stage-1',
 	)
@@ -151,7 +157,7 @@ test('isolated rebuild skips targets already built for the published commit', as
 	const run = vi.fn(async () => ({ ok: true, message: 'rebuilt' }))
 	const discard = vi.fn(async () => undefined)
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		stage: vi.fn(),
+		touch: vi.fn(),
 		run,
 		discard,
 	})
@@ -193,7 +199,7 @@ test('does not stage workspace when every artifact target is already built', asy
 	const run = vi.fn(async () => ({ ok: true, message: 'rebuilt' }))
 	const discard = vi.fn(async () => undefined)
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		stage: vi.fn(),
+		touch: vi.fn(),
 		run,
 		discard,
 	})
@@ -239,9 +245,10 @@ test('isolated rebuild failure stops later chunks, discards staging, and reports
 		}
 		return { ok: true, message: 'rebuilt' }
 	})
+	const touch = vi.fn(async () => undefined)
 	const discard = vi.fn(async () => undefined)
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		stage: vi.fn(),
+		touch,
 		run,
 		discard,
 	})
@@ -265,6 +272,7 @@ test('isolated rebuild failure stops later chunks, discards staging, and reports
 	).rejects.toThrow(
 		/Succeeded: \{ kind "module", artifact "\.", entry "src\/a\.ts", bundle "module" \}\. Failed: \{ kind "module", artifact "\.\/b", entry "src\/b\.ts", bundle "module" \}: bundle b failed/,
 	)
+	expect(touch).not.toHaveBeenCalled()
 
 	expect(run).toHaveBeenCalledTimes(2)
 	expect(run).not.toHaveBeenCalledWith(

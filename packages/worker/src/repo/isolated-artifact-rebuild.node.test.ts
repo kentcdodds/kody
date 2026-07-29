@@ -46,29 +46,28 @@ test('createIsolatedArtifactRebuildRunner returns null without bindings', () => 
 	).toBeNull()
 })
 
-test('runner stages to KV, fans out one target per throwaway DO, and maps reset errors', async () => {
+test('runner touches staging TTL, fans out one target per throwaway DO, and maps reset errors', async () => {
 	const put = vi.fn(async () => undefined)
+	const get = vi.fn(async () =>
+		JSON.stringify({ sourceFiles: { 'package.json': '{}' } }),
+	)
 	const del = vi.fn(async () => undefined)
 	const runIsolatedArtifactRebuild = vi.fn(async () => ({
 		ok: true,
 		message: 'rebuilt',
 	}))
 	const idFromName = vi.fn((name: string) => ({ name }))
-	const get = vi.fn(() => ({ runIsolatedArtifactRebuild }))
+	const getStub = vi.fn(() => ({ runIsolatedArtifactRebuild }))
 	const runner = createIsolatedArtifactRebuildRunner({
-		REPO_SESSION: { idFromName, get },
-		BUNDLE_ARTIFACTS_KV: { put, delete: del },
+		REPO_SESSION: { idFromName, get: getStub },
+		BUNDLE_ARTIFACTS_KV: { put, get, delete: del },
 	} as unknown as Env)
 	expect(runner).not.toBeNull()
 	if (!runner) throw new Error('expected runner')
 
-	const stagingKey = await runner.stage({
-		userId: 'user-1',
-		sourceFiles: { 'package.json': '{}' },
-	})
-	expect(
-		stagingKey.startsWith(`${isolatedArtifactRebuildStagingKeyPrefix}user-1:`),
-	).toBe(true)
+	const stagingKey = `${isolatedArtifactRebuildStagingKeyPrefix}user-1:stage-1`
+	await runner.touch(stagingKey)
+	expect(get).toHaveBeenCalledWith(stagingKey, 'text')
 	expect(put).toHaveBeenCalledWith(
 		stagingKey,
 		JSON.stringify({ sourceFiles: { 'package.json': '{}' } }),

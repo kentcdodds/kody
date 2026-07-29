@@ -3,6 +3,7 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as Artifacts from './artifacts.ts'
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
+import type * as PublishedBundleArtifactsModule from '#worker/package-runtime/published-bundle-artifacts.ts'
 
 const mockModule = vi.hoisted(() => {
 	const gitState = {
@@ -379,9 +380,9 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
 })
 
 vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('#worker/package-runtime/published-bundle-artifacts.ts')
-	>('#worker/package-runtime/published-bundle-artifacts.ts')
+	const actual = await vi.importActual<typeof PublishedBundleArtifactsModule>(
+		'#worker/package-runtime/published-bundle-artifacts.ts',
+	)
 	return {
 		...actual,
 		isPublishedPackageArtifactBuiltForCommit: (...args: Array<unknown>) =>
