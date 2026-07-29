@@ -2,6 +2,10 @@ import { expect, test } from 'vitest'
 import { maxRestorableTextColumnBytes } from '@kody-internal/shared/backup-restore-safety.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	getStorageBindingKey,
+	resolveStorageScopeOrder,
+} from '#mcp/storage-bindings.ts'
+import {
 	deleteAllAppScopedValues,
 	deleteValue,
 	getValue,
@@ -371,6 +375,34 @@ test('value service rejects unavailable scoped storage', async () => {
 		(error: unknown) =>
 			error instanceof McpCallerError &&
 			error.message === 'Value scope "session" is unavailable in this context.',
+	)
+})
+
+test('value service rejects app scope when only storageId is bound', async () => {
+	const testDb = createValueTestDb()
+	const env = { APP_DB: testDb.db }
+	const storageContext = {
+		sessionId: null,
+		appId: null,
+		storageId: 'job:job-123',
+	}
+
+	expect(getStorageBindingKey('app', storageContext)).toBeNull()
+	expect(resolveStorageScopeOrder(storageContext)).toEqual(['user'])
+
+	await expect(
+		saveValue({
+			env,
+			userId: 'user-123',
+			scope: 'app',
+			name: 'workspaceSlug',
+			value: 'job-scratch-as-app',
+			storageContext,
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message === 'Value scope "app" is unavailable in this context.',
 	)
 })
 
