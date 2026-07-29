@@ -1,86 +1,25 @@
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 
 /**
  * Non-destructive schema for entitlement primitives in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
- * needs. Mirrors migrations 0001 (users), 0046 (users.email_verified_at),
- * 0048 (entitlement_daily_counters), 0052 + 0075 (`stable_user_id` NOT NULL +
- * unique index), 0066 (Stripe billing columns), 0081 (`plan` NOT NULL), and
- * 0083 (`plan` NOT NULL DEFAULT `'free'`). Non-historical test seeds may set
- * `'max'` or `'free'` explicitly when plan matters.
- *
- * Fresh `CREATE TABLE` uses `stable_user_id TEXT NOT NULL` and
- * `plan TEXT NOT NULL DEFAULT 'free'`. Preexisting shared `users` tables
- * can only gain `stable_user_id` via `ALTER TABLE ... ADD COLUMN
- * stable_user_id TEXT` (SQLite cannot add NOT NULL without a default); callers
- * must insert concrete ids before relying on the unique index. Adding `plan`
- * to preexisting tables uses `NOT NULL DEFAULT 'free'`.
+ * needs. Mirrors migrations 0048 (entitlement_daily_counters) and 0066 (Stripe
+ * billing columns) on top of the shared `users` schema.
  *
  * Also provisions `user_storage_buckets` because entitlement suites that touch
  * StorageRunner writes register ownership through that table.
  */
 export async function ensureEntitlementTestSchema(db: D1Database) {
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS users (
-	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-	username TEXT NOT NULL UNIQUE,
-	email TEXT NOT NULL UNIQUE,
-	password_hash TEXT NOT NULL,
-	email_verified_at TEXT,
-	stable_user_id TEXT NOT NULL,
-	plan TEXT NOT NULL DEFAULT 'free',
-	stripe_customer_id TEXT,
-	stripe_plan TEXT,
-	stripe_plan_refreshed_at TEXT,
-	deleting_at TEXT,
-	suspended_at TEXT,
-	email_outbound_paused_at TEXT,
-	active_write_count INTEGER NOT NULL DEFAULT 0,
-	active_write_expires_at TEXT,
-	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-)`,
-		)
-		.run()
-	for (const column of [
-		'email_verified_at TEXT',
-		// Preexisting shared tables: ALTER ADD COLUMN cannot express NOT NULL
-		// without a default; nullable TEXT matches migration 0052's add step.
-		'stable_user_id TEXT',
-		`plan TEXT NOT NULL DEFAULT 'free'`,
-		'stripe_customer_id TEXT',
-		'stripe_plan TEXT',
-		'stripe_plan_refreshed_at TEXT',
-		'deleting_at TEXT',
-		'suspended_at TEXT',
-		'email_outbound_paused_at TEXT',
-		'active_write_count INTEGER NOT NULL DEFAULT 0',
-		'active_write_expires_at TEXT',
-	]) {
-		try {
-			await db.prepare(`ALTER TABLE users ADD COLUMN ${column}`).run()
-		} catch {
-			// The column already exists (fresh CREATE above or migrations).
-		}
-	}
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS account_write_leases (
-				token TEXT PRIMARY KEY,
-				user_id TEXT NOT NULL,
-				holder TEXT NOT NULL,
-				acquired_at TEXT NOT NULL,
-				released_at TEXT
-			)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stable_user_id
-			 ON users(stable_user_id)`,
-		)
-		.run()
+	await ensureUsersTestSchema({
+		db,
+		columns: [
+			'email_verified_at',
+			'stripe_customer_id',
+			'stripe_plan',
+			'stripe_plan_refreshed_at',
+		],
+	})
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS entitlement_daily_counters (
