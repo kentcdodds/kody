@@ -114,8 +114,8 @@ headers. This holds regardless of hosting mode, so local dev and preview are
 covered too.
 
 **2. A separate registrable domain (production).** `PACKAGE_APP_BASE_URL`
-(production Worker var, `https://kodyapps.dev`, with the domain attached to the
-Worker as a Cloudflare custom domain — see
+(production Worker var, `https://kodyapps.dev`; the deploy attaches that host to
+the Worker as a Cloudflare custom domain — see
 [`setup-manifest.md`](./setup-manifest.md)) makes package apps cross-site from
 the app origin, so the `SameSite=Lax`, `HttpOnly` `kody_session` cookie never
 attaches to them and cross-origin `fetch` from package pages has no CORS grant

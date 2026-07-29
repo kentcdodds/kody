@@ -64,6 +64,8 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 				production?: {
 					assets?: { run_worker_first?: Array<string> }
 					r2_buckets?: Array<{ binding: string; bucket_name: string }>
+					routes?: Array<{ pattern: string; custom_domain?: boolean }>
+					vars?: Record<string, unknown>
 				}
 			}
 		}>(await readFile(productionOutPath, 'utf8'))
@@ -91,6 +93,19 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			{ binding: 'COMMUNITY_ASSETS', bucket_name: 'kody-community-assets' },
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-email-blobs' },
 		])
+		// Hosted package apps need their own registrable domain attached to the
+		// Worker. The route is generated from PACKAGE_APP_BASE_URL rather than
+		// committed, because a committed route would make `wrangler dev` resolve
+		// every local request as that production host.
+		const packageAppBaseUrl =
+			productionConfig.env?.production?.vars?.PACKAGE_APP_BASE_URL
+		expect(typeof packageAppBaseUrl).toBe('string')
+		expect(productionConfig.env?.production?.routes).toEqual([
+			{
+				pattern: new URL(String(packageAppBaseUrl)).hostname,
+				custom_domain: true,
+			},
+		])
 
 		const previewOutPath = path.join(tempDir, 'wrangler-preview.generated.json')
 		await writeGeneratedWranglerConfig({
@@ -112,6 +127,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 				preview?: {
 					assets?: { run_worker_first?: Array<string> }
 					r2_buckets?: Array<{ binding: string; bucket_name: string }>
+					routes?: Array<{ pattern: string; custom_domain?: boolean }>
 				}
 			}
 		}>(await readFile(previewOutPath, 'utf8'))
@@ -125,6 +141,9 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			},
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-pr-123-email-blobs' },
 		])
+		// Preview serves package apps inline on its own origin, so it gets no
+		// package-app custom domain.
+		expect(previewConfig.env?.preview?.routes).toBeUndefined()
 		expect(consoleError).toHaveBeenCalledWith(
 			`Wrote generated Wrangler config: ${previewOutPath}`,
 		)

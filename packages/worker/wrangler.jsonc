@@ -290,8 +290,18 @@
 				// separate registrable domain from APP_BASE_URL — that is what
 				// makes package code cross-site from the app origin, so
 				// `kody_session` never attaches to it. Intentionally unset for
-				// local dev, preview, and tests, which keep serving package
-				// apps inline on the app origin.
+				// preview and tests, which keep serving package apps inline on
+				// the app origin.
+				//
+				// The deploy attaches this host to the Worker as a Workers
+				// custom domain: tools/ci/resource-utils.ts derives a
+				// `custom_domain` route from this var when it generates the
+				// deploy config, which provisions DNS and the edge certificate.
+				// The route deliberately does not live here, because Wrangler
+				// resolves *local dev* request URLs against the first configured
+				// route — every `npm run dev` request would arrive as
+				// https://kodyapps.dev/... and send local logins to the real
+				// domain. See docs/contributing/setup-manifest.md.
 				"PACKAGE_APP_BASE_URL": "https://kodyapps.dev",
 				// Fathom Analytics site id (public, non-secret). Production
 				// only so local dev, preview, and tests never send pageviews.

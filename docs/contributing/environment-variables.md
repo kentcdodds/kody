@@ -92,13 +92,14 @@ Optional Wrangler `var` (public, non-secret; see
 `packages/worker/src/app/package-app-origin.ts`):
 
 - `PACKAGE_APP_BASE_URL` — origin hosted package apps are served from.
-  Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`;
-  the domain itself is attached to the Worker as a Cloudflare custom domain
-  out-of-band (see [setup-manifest.md](./setup-manifest.md)). It **must be a
-  separate registrable domain** from `APP_BASE_URL`: that is what makes
-  author-supplied package code cross-site, so the `SameSite=Lax` `kody_session`
-  cookie never reaches it. Preview, tests, and E2E leave it unset and keep
-  serving package apps inline on the app origin at `/@{username}/packages/*`.
+  Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`,
+  and the deploy derives a Workers `custom_domain` route from it so Cloudflare
+  provisions DNS and the edge certificate (see
+  [setup-manifest.md](./setup-manifest.md)). It **must be a separate registrable
+  domain** from `APP_BASE_URL`: that is what makes author-supplied package code
+  cross-site, so the `SameSite=Lax` `kody_session` cookie never reaches it.
+  Preview, tests, and E2E leave it unset and keep serving package apps inline on
+  the app origin at `/@{username}/packages/*`.
 
   `npm run dev` runs the **production** Wrangler environment, so the committed
   production value reaches local dev too; `getPackageAppBaseUrl` ignores an

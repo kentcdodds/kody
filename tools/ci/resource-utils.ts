@@ -672,6 +672,60 @@ function sortWranglerMigrations(migrations: Array<Record<string, unknown>>) {
 	migrations.splice(0, migrations.length, ...orderedMigrations)
 }
 
+/**
+ * Attach the hosted-package-app origin to the deployed Worker as a Workers
+ * custom domain, derived from that environment's `PACKAGE_APP_BASE_URL`.
+ *
+ * The route is generated instead of committed because Wrangler resolves **local
+ * dev** request URLs against the first configured route: a committed
+ * `custom_domain` route makes every `npm run dev` request arrive as
+ * `https://<package app host>/...`, so local logins and redirects leave
+ * localhost. Deriving it from the var also keeps the two from drifting — the
+ * host the Worker routes on is the host the deploy provisions.
+ *
+ * Environments without the var (preview, test) get no route.
+ */
+function addPackageAppCustomDomainRoute(input: {
+	targetEnv: Record<string, unknown>
+	resolvedVars: Record<string, unknown>
+	baseConfigPath: string
+	envName: WranglerEnvName
+}) {
+	const configuredBaseUrl = input.resolvedVars.PACKAGE_APP_BASE_URL
+	if (typeof configuredBaseUrl !== 'string' || !configuredBaseUrl.trim()) return
+
+	let packageAppHostname: string
+	try {
+		packageAppHostname = new URL(configuredBaseUrl.trim()).hostname
+	} catch {
+		return fail(
+			`wrangler config "${input.baseConfigPath}" has an invalid "env.${input.envName}.vars.PACKAGE_APP_BASE_URL": ${configuredBaseUrl}`,
+		)
+	}
+	if (!packageAppHostname) {
+		return fail(
+			`wrangler config "${input.baseConfigPath}" has a "env.${input.envName}.vars.PACKAGE_APP_BASE_URL" without a hostname: ${configuredBaseUrl}`,
+		)
+	}
+
+	const existingRoutes = Array.isArray(input.targetEnv.routes)
+		? (input.targetEnv.routes as Array<unknown>)
+		: []
+	const alreadyRouted = existingRoutes.some((route) => {
+		if (!route || typeof route !== 'object') return false
+		return (route as Record<string, unknown>).pattern === packageAppHostname
+	})
+	if (alreadyRouted) return
+
+	input.targetEnv.routes = [
+		...existingRoutes,
+		{ pattern: packageAppHostname, custom_domain: true },
+	]
+	console.error(
+		`Package app custom domain route: ${packageAppHostname} (from PACKAGE_APP_BASE_URL)`,
+	)
+}
+
 export async function writeGeneratedWranglerConfig({
 	baseConfigPath,
 	outConfigPath,
@@ -864,6 +918,13 @@ export async function writeGeneratedWranglerConfig({
 		}
 	}
 	;(targetEnv as Record<string, unknown>).vars = resolvedVars
+
+	addPackageAppCustomDomainRoute({
+		targetEnv: targetEnv as Record<string, unknown>,
+		resolvedVars,
+		baseConfigPath,
+		envName,
+	})
 
 	const migrations = config.migrations
 	if (extraMigrations && extraMigrations.length > 0) {
