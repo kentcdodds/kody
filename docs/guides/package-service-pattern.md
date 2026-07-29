@@ -48,6 +48,10 @@ Example manifest shape:
 
 ## Runtime model
 
+Package services are the package-wide coordination unit (alarms, lifecycle,
+liveness). They are not a general actor abstraction and not a separate saved
+primitive. Durable data lives in package storage.
+
 Package services run as **background-managed** service instances:
 
 - `service_start` returns immediately with a running state
@@ -200,8 +204,10 @@ from durable state.
 
 A long-lived package service usually needs a second delivery plane:
 
-- package app realtime sessions for human/operator UIs
+- package app realtime sessions (and app facets) for human/operator UIs —
+  realtime/coordination details, not the persistence mechanism
 - package exports or jobs for reusable downstream logic
 
 Keep connection ingest, downstream formatting, and UI concerns separate so the
-service can stay focused on connection lifecycle and event normalization.
+service can stay focused on connection lifecycle and event normalization. Shared
+durable state stays in `packageStorage()`.

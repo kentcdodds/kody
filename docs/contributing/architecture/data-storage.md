@@ -441,6 +441,27 @@ Storage split:
   due jobs
 - `StorageRunner` SQLite: isolated durable state addressed by `storageId`
 
+### Package state model
+
+Saved packages are the only top-level persisted primitive. Their state maps onto
+storage homes as follows:
+
+- **Package source** — Cloudflare Artifacts repos + D1 `entity_sources`
+  projections; `package.json` is authoritative.
+- **Package config** — D1/secret/value rows keyed by the saved package id
+  (manifest metadata, package-scoped secrets, app-scoped values with
+  `appId = packageId`).
+- **Package storage** — StorageRunner bucket
+  `package:{encodeURIComponent(packageId)}` via `buildPackageStorageId` /
+  `packageStorage()`. Shared durable data for every package surface.
+- **Package coordination** — `PackageServiceInstance` DO holds lifecycle and
+  alarms only; durable data stays in package storage. App facets and
+  package-internal DO namespaces are extra StorageRunner buckets under the
+  package id, not a general actor model.
+- **Package jobs** — schedule metadata in D1 `jobs`; run-local scratch in
+  `job:package-job:{packageId}:{jobName}`; shared durable data in package
+  storage.
+
 ## Per-user Durable Object naming
 
 The Durable Objects whose state is intrinsically owned by one user are named so
@@ -754,9 +775,21 @@ to `durableObjectNameFromParts`).
   context is the request-time ownership boundary and `mcp_agent_sessions`
   provides deletion-only enumeration by stable user id.
 
-Storage ids are also stable strings: execute storage uses `exec:{uuid}`, job
-storage uses `job:{jobId}`, and package services use
-`service:{encodeURIComponent(packageId)}:{encodeURIComponent(serviceName)}`.
+Storage ids are also stable strings. Changing a form strands the old bucket:
+
+- `exec:{uuid}` — ad hoc execute storage bound on the call.
+- `job:{jobId}` — non-package job scratch storage (and the generic job id form).
+- `job:package-job:{packageId}:{encodeURIComponent(jobName)}` — package-owned
+  job run scratch.
+- `package:{encodeURIComponent(packageId)}` — package bucket behind
+  `packageStorage()` / `buildPackageStorageId(packageId)`.
+- Raw saved package id (no prefix) — legacy package-app root ambient bucket;
+  distinct from `package:{...}`. New app code uses `packageStorage()`.
+- `{packageId}:facet:{facetName}` — package-app facet StorageRunner buckets.
+- `{packageId}:{exportName}:{name}` — package-app internal Durable Object
+  namespace StorageRunner buckets.
+- `service:{encodeURIComponent(packageId)}:{encodeURIComponent(serviceName)}` —
+  package service run scratch (lifecycle lives on `PackageServiceInstance`).
 
 ### KV key contracts
 

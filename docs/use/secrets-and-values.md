@@ -125,6 +125,17 @@ every pending secret and approves them in one click. Single-secret links still
 work for one-off grants. For community forks, reviewing the source and calling
 `community_fork_adopt` is an alternative to sending those approval links.
 
+## Package config vs package storage
+
+Package-scoped secrets and app-scoped values are **package config**: they are
+keyed by the saved package id (secret buckets for the package; value buckets use
+`appId` set to that package id). They hold credentials and readable settings,
+not application records.
+
+Durable package data — rows, documents, checkpoints — lives in the package
+storage bucket via `packageStorage()`. See
+[Package state model](./packages.md#package-state-model).
+
 ## Values
 
 Use **values** capabilities for readable non-secret configuration that generated

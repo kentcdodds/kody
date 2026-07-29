@@ -36,8 +36,12 @@ For non-trivial or integration-backed package apps, prefer this split:
   `package.json#kody.app.entry`
 - package exports: reusable modules and callable default exports declared in
   `package.json.exports`
-- internal backend modules / Durable Objects / facets: integration lookups,
-  provider API calls, persistence, validation, and mutations
+- durable data: `packageStorage()` for the shared package bucket
+- long-lived coordination / alarms: a package service
+  (`package.json#kody.services`) when the app needs background-managed work
+- internal backend modules / Durable Objects / facets: app-internal realtime and
+  coordination details (integration lookups, provider API calls, validation,
+  mutations) — not the persistence mechanism
 - inline HTML/code renders: acceptable for quick prototypes or one-off
   experiments, not the default package app pattern
 

@@ -146,12 +146,12 @@ Inbound storage is quota-gated per user:
   `email_attachment_get` (or `import { email } from 'kody:runtime'`) when they
   need bodies or attachment bytes.
 - Subscription handlers run with the normal package runtime context: signed-in
-  package user, package-owned storage `package:<packageId>` via
-  `packageStorage()`, package/repo context, and the standard capability registry
-  subject to the usual secret and capability approval rules. For
-  `email.message.received` and `email.message.quarantined`, `import { email }`
-  from `kody:runtime` is available as a convenience helper for message lookup,
-  attachment lookup, and replies.
+  package user, package-owned storage via `packageStorage()`
+  (`package:{encodeURIComponent(packageId)}`), package/repo context, and the
+  standard capability registry subject to the usual secret and capability
+  approval rules. For `email.message.received` and `email.message.quarantined`,
+  `import { email }` from `kody:runtime` is available as a convenience helper
+  for message lookup, attachment lookup, and replies.
 - Attachments are metadata-first by default; raw MIME for small messages is
   stored so on-demand attachment lookup can reconstruct bytes locally.
 - Cloudflare Email Routing already rejects mail that fails both SPF and DKIM and
