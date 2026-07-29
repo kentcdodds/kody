@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { isUserCodeError, UserCodeError } from './user-code-error.ts'
 import {
+	durableObjectCodeUpdatedResetMessage,
 	durableObjectIsolateCpuResetMessage,
 	durableObjectIsolateMemoryResetMessage,
 	executorSandboxTimeoutMessage,
@@ -186,9 +187,10 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	).toBe(platformEvent)
 	expect(filterSentryEvent(platformEvent)).toBe(platformEvent)
 
-	// Bare Cloudflare DO isolate resets (memory / CPU) are transient platform
-	// limit hits — drop exact strings, including optional `Error:` prefix and
-	// missing trailing period. Wrapped recovery failures must stay visible.
+	// Bare Cloudflare DO platform resets (memory / CPU / deploy-time code
+	// update) are transient — drop exact strings, including optional `Error:`
+	// prefix and missing trailing period. Wrapped recovery failures must stay
+	// visible.
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -224,6 +226,35 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			message: durableObjectIsolateCpuResetMessage,
 		}),
 	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [{ value: durableObjectCodeUpdatedResetMessage }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: `Error: ${durableObjectCodeUpdatedResetMessage}`,
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: 'Durable Object reset because its code was updated',
+					},
+				],
+			},
+		}),
+	).toBeNull()
 
 	const exhaustedPublishRecoveryInline = {
 		exception: {
@@ -251,6 +282,19 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 	expect(filterSentryEvent(exhaustedPublishRecoveryChained)).toBe(
 		exhaustedPublishRecoveryChained,
+	)
+
+	const exhaustedCodeUpdateRecovery = {
+		exception: {
+			values: [
+				{
+					value: `package_publish_external_push could not recover after 3 transient Durable Object reset attempts: ${durableObjectCodeUpdatedResetMessage}`,
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(exhaustedCodeUpdateRecovery)).toBe(
+		exhaustedCodeUpdateRecovery,
 	)
 
 	const unrelatedDoFailure = {

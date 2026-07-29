@@ -82,19 +82,24 @@ export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
 }
 
 /**
- * Exact Cloudflare Durable Object isolate-reset messages. When a DO hits its
- * memory or CPU limit, the platform resets the isolate and surfaces this error
- * to the RPC caller (for example `job_run_now` → JobManager). The next call
- * gets a fresh isolate; app-level retry is unsafe for non-idempotent jobs, and
- * moving heavy orchestration off JobManager is an architectural change outside
- * a triage fix. Match only the bare platform strings so wrapped failures such
- * as exhausted `package_publish_external_push` recovery messages stay visible.
+ * Exact Cloudflare Durable Object platform-reset messages. When a DO hits its
+ * memory or CPU limit, or when a deploy replaces DO code under an in-flight
+ * RPC/alarm (for example cron `oauth_purge_expired` → OAuthPurgeCoordinator),
+ * the platform resets the isolate and surfaces one of these errors to the
+ * caller. The next call gets a fresh isolate; app-level retry is unsafe for
+ * non-idempotent jobs, and moving heavy orchestration off JobManager is an
+ * architectural change outside a triage fix. Match only the bare platform
+ * strings so wrapped failures such as exhausted
+ * `package_publish_external_push` recovery messages stay visible.
  */
 export const durableObjectIsolateMemoryResetMessage =
 	"Durable Object's isolate exceeded its memory limit and was reset."
 
 export const durableObjectIsolateCpuResetMessage =
 	'Durable Object exceeded its CPU time limit and was reset.'
+
+export const durableObjectCodeUpdatedResetMessage =
+	'Durable Object reset because its code was updated.'
 
 function normalizeDurableObjectIsolateResetMessage(message: string) {
 	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
@@ -107,7 +112,8 @@ export function isDurableObjectIsolateResetMessage(message: string) {
 	const normalized = normalizeDurableObjectIsolateResetMessage(message)
 	return (
 		normalized === durableObjectIsolateMemoryResetMessage ||
-		normalized === durableObjectIsolateCpuResetMessage
+		normalized === durableObjectIsolateCpuResetMessage ||
+		normalized === durableObjectCodeUpdatedResetMessage
 	)
 }
 
@@ -172,8 +178,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// matches remain as backstops for unmarked paths; see
 		// filterUserModuleBundlerFailureSentryEvent and
 		// filterExecutorSandboxTimeoutSentryEvent. Bare Cloudflare Durable
-		// Object isolate memory/CPU reset strings are dropped the same way —
-		// see filterDurableObjectIsolateResetSentryEvent.
+		// Object platform reset strings (memory/CPU limits and deploy-time
+		// code updates) are dropped the same way — see
+		// filterDurableObjectIsolateResetSentryEvent.
 		beforeSend: filterSentryEvent,
 	}
 }
