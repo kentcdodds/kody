@@ -94,6 +94,7 @@ export const routes = route({
 	adminFeatureFlags: '/admin/feature-flags',
 	adminFeatureFlagsApi: '/admin/feature-flags.json',
 	adminFeatureFlagsApiPost: post('/admin/feature-flags.json'),
+	adminPackageStorageAuditApi: '/admin/package-storage-audit.json',
 	adminCommunityReports: '/admin/community-reports',
 	adminCommunityReportsApi: '/admin/community-reports.json',
 	adminCommunityReportsApiPost: post('/admin/community-reports.json'),

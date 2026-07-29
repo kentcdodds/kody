@@ -18,7 +18,15 @@ import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-obje
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
 const maxConcurrentStorageEstimateReads = 16
-const storageEstimateRetryDelaysMs = [10, 25] as const
+/** One bounded pause before re-reading a failed estimate chunk. */
+export const storageEstimateReadRetryDelayMs = 150
+/**
+ * `ctx.storage.sql.databaseSize` for a never-written StorageRunner DO (one
+ * SQLite page). Audit/entitlement callers that need a "has user data" signal
+ * must compare against this floor rather than treating any positive size as
+ * non-empty.
+ */
+export const emptyStorageRunnerEstimatedBytes = 4096
 
 type StorageEntry = {
 	key: string
@@ -62,31 +70,6 @@ type StorageClearResult = {
 
 type StorageEstimateResult = {
 	estimatedBytes: number
-}
-
-export async function readStorageEstimateWithRetry(input: {
-	storageId: string
-	getEstimatedBytes: () => Promise<StorageEstimateResult>
-}): Promise<StorageEstimateResult> {
-	let attempts = 0
-	while (true) {
-		attempts += 1
-		try {
-			return await input.getEstimatedBytes()
-		} catch (cause) {
-			const retryDelayMs = storageEstimateRetryDelaysMs[attempts - 1]
-			if (retryDelayMs === undefined) {
-				throw createStorageEstimateReadError({
-					storageId: input.storageId,
-					attempts,
-					cause,
-				})
-			}
-			await new Promise<void>((resolve) => {
-				setTimeout(resolve, retryDelayMs)
-			})
-		}
-	}
 }
 
 /**
@@ -593,6 +576,58 @@ export function storageRunnerRpc(input: {
 	}
 }
 
+async function readStorageEstimateChunkWithRetry(input: {
+	env: Env
+	userId: string
+	storageIds: Array<string>
+}): Promise<Array<StorageEstimateResult>> {
+	const readOne = (storageId: string) =>
+		storageRunnerRpc({
+			env: input.env,
+			userId: input.userId,
+			storageId,
+		}).getEstimatedBytes()
+
+	// Wait for every first-attempt read to settle before retrying so a fast
+	// rejection cannot overlap still-pending peers and exceed the fan-out cap.
+	const firstAttempt = await Promise.allSettled(
+		input.storageIds.map((storageId) => readOne(storageId)),
+	)
+	const firstValues: Array<StorageEstimateResult> = []
+	let firstFailed = false
+	for (const result of firstAttempt) {
+		if (result.status === 'fulfilled') {
+			firstValues.push(result.value)
+			continue
+		}
+		firstFailed = true
+	}
+	if (!firstFailed) {
+		return firstValues
+	}
+
+	await new Promise<void>((resolve) => {
+		setTimeout(resolve, storageEstimateReadRetryDelayMs)
+	})
+	const retry = await Promise.allSettled(
+		input.storageIds.map((storageId) => readOne(storageId)),
+	)
+	const retryValues: Array<StorageEstimateResult> = []
+	for (const [index, result] of retry.entries()) {
+		if (result.status === 'fulfilled') {
+			retryValues.push(result.value)
+			continue
+		}
+		// An unreadable bucket cannot safely be treated as zero usage.
+		throw createStorageEstimateReadError({
+			storageId: input.storageIds[index] ?? 'unknown',
+			attempts: 2,
+			cause: result.reason,
+		})
+	}
+	return retryValues
+}
+
 export async function assertStorageRunnerWriteWithinEntitlement(input: {
 	env: Env
 	userId: string
@@ -630,23 +665,15 @@ export async function assertStorageRunnerWriteWithinEntitlement(input: {
 				offset < storageIds.length;
 				offset += maxConcurrentStorageEstimateReads
 			) {
-				const estimates = await Promise.all(
-					storageIds
-						.slice(offset, offset + maxConcurrentStorageEstimateReads)
-						.map((storageId) =>
-							readStorageEstimateWithRetry({
-								storageId,
-								// Resolve the RPC stub for each attempt. A transiently disposed
-								// stub must not be reused by the retry.
-								getEstimatedBytes: async () =>
-									await storageRunnerRpc({
-										env: input.env,
-										userId: input.userId,
-										storageId,
-									}).getEstimatedBytes(),
-							}),
-						),
+				const chunkIds = storageIds.slice(
+					offset,
+					offset + maxConcurrentStorageEstimateReads,
 				)
+				const estimates = await readStorageEstimateChunkWithRetry({
+					env: input.env,
+					userId: input.userId,
+					storageIds: chunkIds,
+				})
 				durableObjectBytes += estimates.reduce(
 					(total, estimate) => total + estimate.estimatedBytes,
 					0,

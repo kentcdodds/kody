@@ -960,7 +960,9 @@ function moduleImportsAmbientStorage(source: string) {
 	return false
 }
 
-function collectAmbientStorageImportFiles(sourceFiles: Record<string, string>) {
+export function collectAmbientStorageImportFiles(
+	sourceFiles: Record<string, string>,
+) {
 	const filePaths: Array<string> = []
 	for (const [filePath, source] of Object.entries(sourceFiles)) {
 		if (!scannableModuleFilePattern.test(filePath)) continue
