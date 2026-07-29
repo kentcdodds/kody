@@ -211,9 +211,10 @@ package-owned jobs and non-package jobs created with `job_schedule` or
 
 - bound storage is execute-, app-, or job-owned durable state; saved-package
   invocation runs (exports, subscriptions, retrievers) bind no ambient `storage`
-  — package code reaches its own bucket through `packageStorage()`
+  — package code, including package apps, reaches the shared package bucket
+  through `packageStorage()`
 - package service runs also get writable service-owned durable state scoped to
-  the declared service name
+  the declared service name; shared durable data still uses `packageStorage()`
 - package service runs are background-managed by the service Durable Object, so
   `service_start` returns immediately with a running state while the service
   code continues in the background until it finishes, errors, or cooperatively

@@ -230,7 +230,8 @@ Execution includes:
 
 - package context
 - repo context when a published source exists
-- writable package storage bound to `package:<packageId>`
+- writable package storage bound to `package:{encodeURIComponent(packageId)}`
+  (`packageStorage()`)
 - user context from the scoped token config
 
 ## Rate limiting and auditing

@@ -24,6 +24,12 @@ export type SsrDocumentProps = AppRootProps & {
 	clientEntryHref?: string
 	stylesheetHref?: string
 	/**
+	 * Hashed chunk hrefs the entry (and current route's lazy area) will
+	 * import, from the build-time client manifest. Preloading them avoids a
+	 * request waterfall before hydration. Empty in dev.
+	 */
+	modulePreloadHrefs?: Array<string>
+	/**
 	 * Browser Sentry config (error capture + error-only replay). Omitted when
 	 * SENTRY_DSN is not configured; the DSN is a publishable client key.
 	 */
@@ -177,6 +183,9 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					></script>
 				) : null}
 				<link rel="modulepreload" href={clientEntryHref} />
+				{(handle.props.modulePreloadHrefs ?? []).map((href) => (
+					<link key={href} rel="modulepreload" href={href} />
+				))}
 				<link rel="stylesheet" href={stylesheetHref} />
 			</head>
 			<body>

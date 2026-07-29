@@ -16,9 +16,50 @@ Think in terms of:
 - package services
 - package subscriptions
 - package-owned jobs
+- package-owned retrievers
+- package-owned webhooks
 
 Packages are the saved-entity unit across search, execute, repo editing, and UI
 hosting.
+
+## Package state model
+
+A saved package is the only top-level persisted primitive. Five concepts make up
+its state:
+
+1. **Package source** — repo-backed code and manifest rooted at `package.json`
+   (Artifacts repos plus D1 `entity_sources` projections). `package.json` is the
+   source of truth.
+2. **Package config** — configuration owned by the saved package id: manifest
+   metadata (`package.json#kody`), package-scoped secrets (secret buckets keyed
+   by the saved package id, mounted via `kody.secretMounts`), and app-scoped
+   values (value buckets keyed by `appId`, which package surfaces set to the
+   saved package id).
+3. **Package storage** — the package's durable StorageRunner (SQLite) bucket,
+   reached via `packageStorage()` from `kody:runtime`. This is the durable-data
+   primitive for every package surface: exports/invocations, subscriptions,
+   retrievers, jobs, services, and package apps.
+4. **Package coordination** — package services (`package.json#kody.services`)
+   are the package-wide named stateful coordination unit: long-lived,
+   background-managed, and alarm-capable (`serviceContext.setAlarm` /
+   `clearAlarm`), with lifecycle status. Durable data still lives in package
+   storage; the service holds lifecycle/liveness only. There is no separate
+   general actor abstraction. App facets and package-internal Durable Object
+   namespaces are app-only implementation details layered on package storage,
+   not separate saved primitives.
+5. **Package jobs** — scheduled execution owned by the package
+   (`package.json#kody.jobs`): schedule/execution metadata lives in D1 job rows;
+   each job run binds a job-scoped scratch bucket; package config stays keyed by
+   the saved package id; shared durable data goes through `packageStorage()`.
+
+When to use which:
+
+- Durable package data → `packageStorage()`
+- Credentials and non-secret config → package secrets and values
+- Long-lived coordination and alarms → a package service
+- Scheduled work → a package job
+- Per-app realtime internals → app facets (implementation detail, not the
+  persistence mechanism)
 
 ## `package.json`
 
@@ -38,16 +79,20 @@ Important fields:
   surface, auth notes, and longer detail in README / Intent / `searchText` /
   export docs
 - `kody.tags` — package tags
+- `kody.searchText` — optional longer search text beyond the short description
 - `kody.dependencies` — direct saved package names imported through static
   `kody:@...` imports
+- `kody.secretMounts` — optional package-scoped secret mount declarations
 - `kody.app` — optional hosted package app config
 - `kody.services` — optional package-owned service runtimes
 - `kody.subscriptions` — optional event-topic subscriptions with package-local
   handlers
+- `kody.emits` — optional package-emitted event topic declarations
 - `kody.webhooks` — optional inbound webhook declarations bound to package
   exports (mint a credential URL separately; see
   [Inbound webhooks](./webhooks.md))
 - `kody.jobs` — optional package-owned schedules
+- `kody.retrievers` — optional package-owned search/context retrievers
 
 `package.json` is the manifest.
 
@@ -244,11 +289,13 @@ explicit `idempotencyKey` when available.
 
 ## Package storage
 
-Every saved package owns one durable storage bucket per user, keyed by the
-package's immutable id. One rule per context:
+Every saved package owns one durable storage bucket per user
+(`storageId = package:{encodeURIComponent(packageId)}`), reached via
+`packageStorage()` from `kody:runtime`. One rule per context:
 
-- **Writing a saved package?** Use `packageStorage()` from `kody:runtime` for
-  the package's own data — always.
+- **Writing a saved package?** Use `packageStorage()` for the package's own data
+  — always, including package apps, exports, subscriptions, retrievers, jobs,
+  and services.
 - **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
   `storageId` on the execute call and use ambient `storage`.
 - **Touching another package's data?** Call that package's exports via
@@ -261,13 +308,18 @@ declaring package's own bucket no matter where the code runs:
 
 - In the package's own export/invocation runtime it is the only way to reach the
   package bucket — those runs bind no ambient `storage`.
-- In package jobs and services — where ambient `storage` binds job-scoped and
-  service-scoped buckets — it reaches the package's shared bucket.
+- In package apps, jobs, and services it reaches the same shared package bucket.
+  Jobs and services may also bind separate run-scoped scratch buckets on ambient
+  `storage`; use `packageStorage()` for shared durable data.
 - When the module is statically imported (`kody:@scope/package/export`) into an
   ad hoc `execute` call or into another package, each module reads and writes
   the bucket of the package it came from, under the calling user's account.
   Ambient `storage` cannot do this; the binding is per-run, so statically
-  imported code sees the caller's bucket or `undefined`.
+  imported code sees the caller's bucket or `undefined`. Note that grants are
+  per-bundle, not per-module: statically importing a package grants the whole
+  bundle read/write access to that package's bucket, so treat static imports as
+  a trust decision and use `packages.invokeChecked` when you want the other
+  package's own runtime to mediate access.
 
 ```ts
 import { packageStorage } from 'kody:runtime'
@@ -292,6 +344,11 @@ consequences:
 - Provenance grants cover directly imported packages. For data owned by a
   package that is not the running package and not statically imported by the
   bundle, use `packages.invokeChecked` so its own runtime does the reading.
+
+Package apps also have a legacy app-root ambient bucket bound to the raw saved
+package id (a different bucket from `package:{...}`). Existing published apps
+may still run against it; new app code uses `packageStorage()` like every other
+package surface.
 
 ### Ambient `storage` in package code
 
@@ -334,8 +391,11 @@ Treat package apps like Worker-style modules:
 
 - app code lives in the package repo
 - the entry module is declared by `kody.app.entry`
-- internal Durable Objects or facets are implementation details, not the public
-  authoring contract
+- durable package data uses `packageStorage()` — the same shared package bucket
+  as exports, jobs, and services
+- internal Durable Objects or facets are app-only realtime/coordination details
+  layered under the package namespace, not the persistence mechanism and not
+  separate saved primitives
 
 ## Package services
 
@@ -438,7 +498,14 @@ package.
 
 - Define them under `package.json#kody.jobs`
 - Reference package-local entry modules
-- Treat their runtime state as package-owned implementation detail
+- Schedule and execution metadata are package-owned config (D1 job rows keyed to
+  the package)
+- Each job run binds a job-scoped scratch bucket
+  (`job:package-job:{packageId}:{encodeURIComponent(jobName)}`); that bucket is
+  run-local
+- Package config (secrets, values, manifest mounts) stays keyed by the saved
+  package id
+- Shared durable data goes through `packageStorage()`
 
 Jobs are part of the package definition.
 

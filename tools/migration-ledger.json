@@ -451,6 +451,10 @@
 		{
 			"filename": "0107-job-execution-claims.sql",
 			"sha256": "2912bf29b37f179cf6517e02a064a509089c146edf49ab829f92927a517c5242"
+		},
+		{
+			"filename": "0108-user-storage-buckets-package-kind.sql",
+			"sha256": "e5740a356896d759734a7699468dd67b7a7967cabfc20cded818dd01ae2f9f18"
 		}
 	]
 }

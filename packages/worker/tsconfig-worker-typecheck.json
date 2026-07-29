@@ -3,6 +3,7 @@
 	"compilerOptions": {
 		"paths": {
 			"#client/app-root.tsx": ["./src/app/ssr-stubs/app-root.ts"],
+			"#client/lazy-route.tsx": ["./src/app/ssr-stubs/lazy-route.ts"],
 			"@modelcontextprotocol/sdk": [
 				"../../node_modules/@modelcontextprotocol/sdk"
 			],

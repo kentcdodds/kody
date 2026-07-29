@@ -692,7 +692,7 @@ export async function runModuleWithRegistry(
  * hydration. Sandbox-supplied strings never extend this set, which is what
  * keeps a malicious module from claiming another installed package's bucket.
  */
-function collectPackageStorageGrantIds(input: {
+export function collectPackageStorageGrantIds(input: {
 	packageContext: PackageContextOptions
 	dependencies: Array<BundleArtifactDependency>
 	dynamicDependencyPackageIds: Array<string>

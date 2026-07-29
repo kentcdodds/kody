@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
+import {
+	buildPackageStorageId,
+	createPackageStorageAccessDeniedMessage,
+} from '#worker/storage-runner.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as ModuleGraph from './module-graph.ts'
 import type * as PublishedBundleArtifacts from './published-bundle-artifacts.ts'
@@ -338,6 +342,7 @@ function resetPackageAppRuntimeMocks() {
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockReset()
 	packageAppRuntimeMock.beginRunRecord.mockReset()
 	packageAppRuntimeMock.finishRunRecord.mockReset()
+	packageAppRuntimeMock.packageAppRuntimeBridge.mockClear()
 	packageAppRuntimeMock.finishRunRecord.mockResolvedValue(undefined)
 	packageAppRuntimeMock.hydrateKodyRuntimeModules.mockImplementation(
 		async ({ modules }: { modules: Record<string, string> }) => ({
@@ -356,7 +361,9 @@ const {
 const { redactedSecretText } =
 	await import('#mcp/secrets/execution-secret-redactor.ts')
 
-function createPackageAppRuntimeBridgeForTest() {
+function createPackageAppRuntimeBridgeForTest(input?: {
+	packageStorageGrantIds?: Array<string>
+}) {
 	const waitUntilTasks: Array<Promise<unknown>> = []
 	const bridge = new PackageAppRuntimeBridge(
 		{
@@ -369,6 +376,7 @@ function createPackageAppRuntimeBridgeForTest() {
 				kodyId: 'example',
 				sourceId: 'source-1',
 				publishedCommit: 'commit-1',
+				packageStorageGrantIds: input?.packageStorageGrantIds ?? ['package-1'],
 			},
 			waitUntil: (promise: Promise<unknown>) => {
 				waitUntilTasks.push(promise)
@@ -920,4 +928,237 @@ test('package app runtime bridge redacts secrets from Error instances in finish 
 	expect(finishInput.error).toBeInstanceOf(Error)
 	expect(finishInput.error.message).toBe(`failed with ${redactedSecretText}`)
 	expect(finishInput.error.message).not.toContain(secretValue)
+})
+
+test('package app worker source binds __kodyPackageStorage in createRuntime', async () => {
+	const sourceText = await readFile(
+		new URL('./package-app.ts', import.meta.url),
+		'utf8',
+	)
+	expect(sourceText).toContain('__kodyPackageStorage: (storagePackageId) => ({')
+	expect(sourceText).toContain(
+		"id: 'package:' + encodeURIComponent(storagePackageId),",
+	)
+	expect(sourceText).toContain('runtimeBridge.packageStorageGet({')
+	expect(sourceText).toContain('runtimeBridge.packageStorageList({')
+	expect(sourceText).toContain('runtimeBridge.packageStorageSql({')
+	expect(sourceText).toContain('runtimeBridge.packageStorageSet({')
+	expect(sourceText).toContain('runtimeBridge.packageStorageDelete({')
+	expect(sourceText).toContain('runtimeBridge.packageStorageClear({')
+	expect(sourceText).toContain(
+		'storage: createStorageProxy(runtimeBridge, packageId),',
+	)
+})
+
+test('package app runtime bridge packageStorage methods grant by provenance and deny others', async () => {
+	const { bridge } = createPackageAppRuntimeBridgeForTest({
+		packageStorageGrantIds: ['package-1', 'dep-package'],
+	})
+	const getValue = vi.fn(async () => ({ value: 'granted-value' }))
+	const setValue = vi.fn(async () => ({ ok: true }))
+	const getStorageRunner = vi
+		.spyOn(
+			bridge as unknown as {
+				getStorageRunner: (storageId: string) => unknown
+			},
+			'getStorageRunner',
+		)
+		.mockImplementation((storageId: string) => ({
+			storageId,
+			getValue,
+			setValue,
+			listValues: vi.fn(),
+			sqlQuery: vi.fn(),
+			deleteValue: vi.fn(),
+			clearStorage: vi.fn(),
+		}))
+	vi.spyOn(
+		bridge as unknown as {
+			assertStorageWriteAllowed: (input: unknown) => Promise<void>
+		},
+		'assertStorageWriteAllowed',
+	).mockResolvedValue(undefined)
+
+	await expect(
+		bridge.packageStorageGet({ packageId: 'package-1', key: 'count' }),
+	).resolves.toEqual({ value: 'granted-value' })
+	expect(getStorageRunner).toHaveBeenCalledWith(
+		buildPackageStorageId('package-1'),
+	)
+	expect(getValue).toHaveBeenCalledWith({ key: 'count' })
+
+	await expect(
+		bridge.packageStorageSet({
+			packageId: 'dep-package',
+			key: 'flag',
+			value: true,
+		}),
+	).resolves.toEqual({ ok: true })
+	expect(getStorageRunner).toHaveBeenCalledWith(
+		buildPackageStorageId('dep-package'),
+	)
+	expect(setValue).toHaveBeenCalledWith({ key: 'flag', value: true })
+
+	await expect(
+		bridge.packageStorageGet({ packageId: 'victim-package', key: 'secret' }),
+	).rejects.toThrow(createPackageStorageAccessDeniedMessage('victim-package'))
+	expect(getValue).toHaveBeenCalledTimes(2)
+
+	await expect(
+		bridge.packageStorageClear({ packageId: '   ' }),
+	).rejects.toThrow('packageStorage requires a non-empty package id.')
+})
+
+test('package app runtime bridge raw storage methods are namespace-locked to the app package id', async () => {
+	const { bridge } = createPackageAppRuntimeBridgeForTest()
+	const getValue = vi.fn(async () => ({ value: 'owned' }))
+	const setValue = vi.fn(async () => ({ ok: true }))
+	const getStorageRunner = vi
+		.spyOn(
+			bridge as unknown as {
+				getStorageRunner: (storageId: string) => unknown
+			},
+			'getStorageRunner',
+		)
+		.mockImplementation(() => ({
+			getValue,
+			setValue,
+			listValues: vi.fn(),
+			sqlQuery: vi.fn(),
+			deleteValue: vi.fn(),
+			clearStorage: vi.fn(),
+		}))
+	vi.spyOn(
+		bridge as unknown as {
+			assertStorageWriteAllowed: (input: unknown) => Promise<void>
+		},
+		'assertStorageWriteAllowed',
+	).mockResolvedValue(undefined)
+
+	await expect(
+		bridge.storageGet({ storageId: 'package-1', key: 'root' }),
+	).resolves.toEqual({ value: 'owned' })
+	await expect(
+		bridge.storageGet({
+			storageId: 'package-1:facet:main',
+			key: 'facet',
+		}),
+	).resolves.toEqual({ value: 'owned' })
+	await expect(
+		bridge.storageSet({
+			storageId: 'package-1:Counter:instance-a',
+			key: 'n',
+			value: 1,
+		}),
+	).resolves.toEqual({ ok: true })
+	expect(getStorageRunner).toHaveBeenCalledWith('package-1')
+	expect(getStorageRunner).toHaveBeenCalledWith('package-1:facet:main')
+	expect(getStorageRunner).toHaveBeenCalledWith('package-1:Counter:instance-a')
+
+	const outsideNamespaceError =
+		/outside this app's namespace[\s\S]*packageStorage\(\)/
+	await expect(
+		bridge.storageGet({
+			storageId: buildPackageStorageId('victim-package'),
+			key: 'secret',
+		}),
+	).rejects.toThrow(outsideNamespaceError)
+	await expect(
+		bridge.storageSet({
+			storageId: 'job:nightly',
+			key: 'state',
+			value: true,
+		}),
+	).rejects.toThrow(outsideNamespaceError)
+	await expect(
+		bridge.storageGet({ storageId: 'other-package', key: 'x' }),
+	).rejects.toThrow(outsideNamespaceError)
+	await expect(
+		bridge.storageGet({ storageId: '   ', key: 'x' }),
+	).rejects.toThrow('Package app storage requires a non-empty storage id.')
+	expect(getStorageRunner).toHaveBeenCalledTimes(4)
+})
+
+test('buildPackageAppWorker passes packageStorage grant ids from root, static, and dynamic deps', async () => {
+	resetPackageAppRuntimeMocks()
+	const { env } = createPackageAppTestEnv()
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		{
+			row: {
+				id: 'artifact-row-1',
+				artifactName: null,
+				entryPoint: 'app.js',
+			},
+			artifact: {
+				mainModule: 'dist/app.js',
+				modules: {
+					'dist/app.js':
+						'export default { fetch() { return new Response("cached") } }',
+				},
+				dependencies: [
+					{
+						sourceId: 'dep-source',
+						publishedCommit: 'dep-commit',
+						kodyId: 'dep',
+						packageId: 'static-dep-package',
+					},
+				],
+				dynamicDependencies: [
+					{
+						specifier: 'kody:@scope/dynamic/default',
+						packageName: '@scope/dynamic',
+						exportName: 'default',
+					},
+				],
+			},
+		},
+	)
+	packageAppRuntimeMock.hydrateKodyRuntimeModules.mockImplementation(
+		async ({ modules }: { modules: Record<string, string> }) => ({
+			modules,
+			dynamicDependencyPackageIds: ['dynamic-dep-package'],
+		}),
+	)
+
+	await buildPackageAppWorker({
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-grants',
+		savedPackage: {
+			id: 'root-package',
+			kodyId: 'example-grants',
+			name: '@kody/example-grants',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+		},
+		source: createPackageAppTestSource(),
+		manifest: createPackageAppTestManifest(),
+		runtime: {
+			callerContext: {
+				user: {
+					userId: 'user-grants',
+					email: 'grants@example.com',
+					displayName: 'Grants User',
+				},
+			},
+		} as never,
+	})
+
+	expect(packageAppRuntimeMock.packageAppRuntimeBridge).toHaveBeenCalledWith({
+		props: expect.objectContaining({
+			packageId: 'root-package',
+			packageStorageGrantIds: expect.arrayContaining([
+				'root-package',
+				'static-dep-package',
+				'dynamic-dep-package',
+			]),
+		}),
+	})
+	const bridgeProps = packageAppRuntimeMock.packageAppRuntimeBridge.mock
+		.calls[0]?.[0] as {
+		props: { packageStorageGrantIds: Array<string> }
+	}
+	expect(bridgeProps.props.packageStorageGrantIds).toHaveLength(3)
 })

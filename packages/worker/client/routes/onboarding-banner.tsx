@@ -6,7 +6,7 @@ import {
 	descriptionCss,
 	primaryLinkCss,
 } from '#client/styles/style-primitives.ts'
-import { onboardingPath } from '#client/routes/onboarding.tsx'
+import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 
 /**
  * Callout shown when the signed-in verified user still needs MCP host setup.

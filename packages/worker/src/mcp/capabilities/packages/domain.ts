@@ -14,7 +14,7 @@ import { savePackageCapability } from './save-package.ts'
 export const packagesDomain = defineDomain({
 	name: capabilityDomainNames.packages,
 	description:
-		'Saved packages, the only top-level persisted primitive: repo-backed code rooted at package.json whose metadata declares exports, jobs, apps, services, and event subscriptions.',
+		'Saved packages are the only top-level persisted primitive: repo-backed source rooted at package.json, package-scoped config (secrets/values), durable package storage via packageStorage(), and optional apps, services, jobs, and other package.json#kody surfaces.',
 	keywords: [
 		'package',
 		'repo',

@@ -1,16 +1,17 @@
-import * as Sentry from '@sentry/browser'
 import {
-	filterBrowserSentryEvent,
 	isBrowserAbortError,
 	isFirefoxDomPermissionDeniedError,
 } from '#client/sentry-browser-filters.ts'
 import {
 	parseSentryClientConfig,
 	SENTRY_CONFIG_META_NAME,
+	type SentryClientConfig,
 } from '#client/sentry-config.ts'
 
 /**
- * Browser-side Sentry: error capture plus error-only Session Replay.
+ * Browser-side Sentry bootstrap: schedules a lazy load of `@sentry/browser`
+ * (error capture plus error-only Session Replay) so the SDK stays out of the
+ * critical-path entry chunk.
  *
  * Privacy defaults are strict on purpose — Kody sessions contain personal
  * assistant content (chats, email, secrets pages), so all text is masked and
@@ -19,10 +20,129 @@ import {
  * go through the same-origin `/sentry-tunnel` route, so the first-party CSP
  * (`connect-src 'self'`) stays unchanged.
  *
+ * Until the SDK chunk loads, window `error` / `unhandledrejection` and
+ * `captureClientException` are buffered (capped) and flushed after init.
  * No-ops when the config meta tag is absent (local dev / tests without a
  * DSN). Must never break app boot.
  */
-export function initSentryClient(doc: Document) {
+
+const BUFFER_CAP = 20
+/** Max delay before loading Sentry when the page is idle (requestIdleCallback timeout / setTimeout fallback). */
+const IDLE_LOAD_TIMEOUT_MS = 2500
+/** Chunk-load attempts before giving up on error reporting for this page. */
+const MAX_LOAD_ATTEMPTS = 3
+
+type CaptureFn = (error: unknown) => void
+
+let pendingConfig: SentryClientConfig | null = null
+let captureImpl: CaptureFn | null = null
+let errorBuffer: Array<unknown> = []
+let buffering = false
+let loadPromise: Promise<void> | null = null
+let loadAttempts = 0
+let onWindowError: ((event: ErrorEvent) => void) | null = null
+let onUnhandledRejection: ((event: PromiseRejectionEvent) => void) | null = null
+
+function shouldIgnoreBufferedError(error: unknown) {
+	return isBrowserAbortError(error) || isFirefoxDomPermissionDeniedError(error)
+}
+
+function enqueueBufferedError(error: unknown) {
+	if (!buffering || captureImpl) return
+	if (shouldIgnoreBufferedError(error)) return
+	// Keep the earliest errors when full — the first failure is usually the
+	// most diagnostic one.
+	if (errorBuffer.length < BUFFER_CAP) {
+		errorBuffer.push(error)
+	}
+	// First (and any subsequent) buffered error loads Sentry immediately so
+	// early crashes are not stuck waiting for idle.
+	void ensureSentryLoaded()
+}
+
+function installBufferListeners() {
+	if (typeof window === 'undefined' || buffering) return
+	buffering = true
+	onWindowError = (event) => {
+		enqueueBufferedError(event.error ?? event.message)
+	}
+	onUnhandledRejection = (event) => {
+		enqueueBufferedError(event.reason)
+	}
+	window.addEventListener('error', onWindowError)
+	window.addEventListener('unhandledrejection', onUnhandledRejection)
+}
+
+function removeBufferListeners() {
+	buffering = false
+	if (typeof window === 'undefined') return
+	if (onWindowError) {
+		window.removeEventListener('error', onWindowError)
+		onWindowError = null
+	}
+	if (onUnhandledRejection) {
+		window.removeEventListener('unhandledrejection', onUnhandledRejection)
+		onUnhandledRejection = null
+	}
+}
+
+function scheduleIdleLoad() {
+	const startLoad = () => {
+		void ensureSentryLoaded()
+	}
+	if (typeof requestIdleCallback === 'function') {
+		requestIdleCallback(startLoad, { timeout: IDLE_LOAD_TIMEOUT_MS })
+		return
+	}
+	setTimeout(startLoad, IDLE_LOAD_TIMEOUT_MS)
+}
+
+function ensureSentryLoaded() {
+	if (loadPromise) return loadPromise
+	const config = pendingConfig
+	if (!config) {
+		return Promise.resolve()
+	}
+	if (loadAttempts >= MAX_LOAD_ATTEMPTS) {
+		return Promise.resolve()
+	}
+	loadAttempts += 1
+	loadPromise = (async () => {
+		try {
+			// Dynamic import is intentional: keeps `@sentry/*` in a separate
+			// async chunk (repo lint discourages inline imports otherwise).
+			const { captureBrowserException, initBrowserSentry } =
+				await import('./sentry-init.ts')
+			initBrowserSentry(config)
+			// Stop buffering before flush so Sentry's own global handlers do
+			// not also land in the buffer (avoids double-reporting).
+			removeBufferListeners()
+			const pending = errorBuffer
+			errorBuffer = []
+			captureImpl = captureBrowserException
+			for (const error of pending) {
+				try {
+					captureBrowserException(error)
+				} catch {
+					// Reporting must never break the app.
+				}
+			}
+		} catch (error) {
+			console.warn('sentry-client-init-failed', error)
+			// Keep the buffer and listeners so a later error can retry the
+			// chunk load (a transient network failure must not permanently
+			// disable error reporting for the page).
+			loadPromise = null
+			if (loadAttempts >= MAX_LOAD_ATTEMPTS) {
+				removeBufferListeners()
+				errorBuffer = []
+			}
+		}
+	})()
+	return loadPromise
+}
+
+export function initSentryClient(doc: Document): boolean {
 	try {
 		const content = doc
 			.querySelector(`meta[name="${SENTRY_CONFIG_META_NAME}"]`)
@@ -30,30 +150,9 @@ export function initSentryClient(doc: Document) {
 		const config = parseSentryClientConfig(content)
 		if (!config) return false
 
-		Sentry.init({
-			dsn: config.dsn,
-			tunnel: config.tunnel,
-			environment: config.environment,
-			...(config.release ? { release: config.release } : {}),
-			sendDefaultPii: false,
-			integrations: [
-				Sentry.replayIntegration({
-					maskAllText: true,
-					blockAllMedia: true,
-				}),
-			],
-			// Error-only replays: nothing is recorded to Sentry for normal
-			// sessions; the in-memory buffer is uploaded only when an error
-			// happens.
-			replaysSessionSampleRate: 0,
-			replaysOnErrorSampleRate: 1.0,
-			// Drop expected browser noise (AbortError aborts, Firefox DOM
-			// permission-denied from Replay/hydration on restricted nodes) —
-			// see filterBrowserSentryEvent / KODY-CLOUDFLARE-23 / issue 7639685398.
-			beforeSend(event, hint) {
-				return filterBrowserSentryEvent(event, hint.originalException)
-			},
-		})
+		pendingConfig = config
+		installBufferListeners()
+		scheduleIdleLoad()
 		return true
 	} catch (error) {
 		console.warn('sentry-client-init-failed', error)
@@ -63,10 +162,14 @@ export function initSentryClient(doc: Document) {
 
 /** Report a caught client error without letting reporting itself throw. */
 export function captureClientException(error: unknown) {
-	if (isBrowserAbortError(error)) return
-	if (isFirefoxDomPermissionDeniedError(error)) return
+	if (shouldIgnoreBufferedError(error)) return
 	try {
-		Sentry.captureException(error)
+		if (captureImpl) {
+			captureImpl(error)
+			return
+		}
+		if (!pendingConfig) return
+		enqueueBufferedError(error)
 	} catch {
 		// Reporting must never break the app.
 	}

@@ -19,16 +19,16 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.id` — user-scoped Kody package id
 - `kody.description` — short public tagline for search/detail (max 200)
 - `kody.tags` — search tags
-- `kody.searchText` — optional extra search text for ranking
+- `kody.searchText` — optional longer search text beyond the short description
 - `kody.dependencies` — direct static saved package dependencies imported via
   `kody:@...`
-- `kody.secretMounts` — optional saved-secret mounts for package code
+- `kody.secretMounts` — optional package-scoped secret mount declarations
 - `kody.app` — optional hosted package app config
-- `kody.services` — optional package-owned long-lived service runtimes
+- `kody.services` — optional package-owned service runtimes
 - `kody.subscriptions` — optional package-owned event subscriptions
 - `kody.emits` — optional package-emitted event topic declarations
-- `kody.webhooks` — optional package-declared inbound webhooks (see
-  [`docs/use/webhooks.md`](../use/webhooks.md))
+- `kody.webhooks` — optional inbound webhook declarations bound to package
+  exports (see [`docs/use/webhooks.md`](../use/webhooks.md))
 - `kody.jobs` — optional package-owned schedules
 - `kody.retrievers` — optional package-owned search/context retrievers
 
@@ -71,14 +71,42 @@ Think in terms of:
 - packages
 - package exports
 - package apps
-- package services
+- package-owned services
 - package-owned jobs
-- package-owned workflows
 - package-owned subscriptions
 - package-owned webhooks
 - package-owned retrievers
+- package-owned webhooks
+- package-owned workflows (declared in runtime code, not the manifest)
 
 The top-level saved identity is the package.
+
+## Package state model
+
+A saved package is the only top-level persisted primitive. Five concepts:
+
+1. **Package source** — Artifacts repo + D1 `entity_sources` projection;
+   manifest rooted at `package.json`.
+2. **Package config** — owned by the saved package id: `package.json#kody`
+   metadata, secret buckets keyed by the saved package id (`kody.secretMounts`),
+   and value buckets keyed by `appId` (package surfaces set `appId` to the saved
+   package id).
+3. **Package storage** — StorageRunner bucket
+   `storageId = buildPackageStorageId(packageId)` →
+   `package:{encodeURIComponent(packageId)}`, reached via `packageStorage()`
+   from every package surface (exports, subscriptions, retrievers, jobs,
+   services, apps).
+4. **Package coordination** — `PackageServiceInstance` Durable Objects for
+   `package.json#kody.services`: lifecycle/liveness and alarms only. Durable
+   data stays in package storage. No general actor abstraction. App facets
+   (`{packageId}:facet:{facetName}`) and package-internal DO namespaces
+   (`{packageId}:{exportName}:{name}`) are app-only StorageRunner buckets under
+   the package namespace, not separate saved primitives.
+5. **Package jobs** — `package.json#kody.jobs` with schedule/execution metadata
+   in D1 `jobs` rows; each run binds
+   `job:package-job:{packageId}:{encodeURIComponent(jobName)}` scratch storage;
+   package config stays keyed by the saved package id; shared durable data uses
+   `packageStorage()`.
 
 ## Package exports
 
@@ -254,8 +282,13 @@ Treat package apps like Worker-style modules:
 
 - package app code belongs to the package repo
 - package app entry is declared by `kody.app.entry`
-- Durable Objects / facets are internal implementation details, not the public
-  authoring contract
+- durable package data uses `packageStorage()` (same
+  `buildPackageStorageId(packageId)` bucket as other package surfaces)
+- package apps also bind a legacy app-root ambient bucket to the raw saved
+  package id; new app code uses `packageStorage()`
+- Durable Objects / facets are app-only realtime/coordination buckets under the
+  package namespace, not the persistence mechanism and not separate saved
+  primitives
 
 ## Package-owned jobs
 
@@ -263,7 +296,10 @@ Jobs belong to packages.
 
 - Define them under `package.json#kody.jobs`
 - Reference package-local entry modules
-- Treat schedule/runtime state as package-owned implementation detail
+- Schedule/execution metadata lives in D1 `jobs` rows (package-owned config)
+- Each job run binds a job-scoped scratch bucket; shared durable data uses
+  `packageStorage()`
+- Package config stays keyed by the saved package id
 
 Jobs are not their own top-level saved primitive.
 

@@ -8,6 +8,7 @@ import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
 	buildKodyFns,
+	collectPackageStorageGrantIds,
 	type PackageEventTools,
 	type PackageInvokeTools,
 } from '#mcp/run-kody-registry.ts'
@@ -30,6 +31,8 @@ import { PromiseLruCache } from '#worker/package-registry/published-package-cach
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
 	assertStorageRunnerWriteWithinEntitlement,
+	buildPackageStorageId,
+	createPackageStorageAccessDeniedMessage,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
 import {
@@ -509,6 +512,43 @@ function createRuntime(runtimeBridge, packageContext) {
 	return {
 		kody: createKodyProxy(runtimeBridge),
 		storage: createStorageProxy(runtimeBridge, packageId),
+		__kodyPackageStorage: (storagePackageId) => ({
+			id: 'package:' + encodeURIComponent(storagePackageId),
+			get: async (key) =>
+				(
+					await runtimeBridge.packageStorageGet({
+						packageId: storagePackageId,
+						key,
+					})
+				).value,
+			list: async (options = {}) =>
+				await runtimeBridge.packageStorageList({
+					...options,
+					packageId: storagePackageId,
+				}),
+			sql: async (query, params = []) =>
+				await runtimeBridge.packageStorageSql({
+					packageId: storagePackageId,
+					query,
+					params,
+					writable: true,
+				}),
+			set: async (key, value) =>
+				await runtimeBridge.packageStorageSet({
+					packageId: storagePackageId,
+					key,
+					value,
+				}),
+			delete: async (key) =>
+				await runtimeBridge.packageStorageDelete({
+					packageId: storagePackageId,
+					key,
+				}),
+			clear: async () =>
+				await runtimeBridge.packageStorageClear({
+					packageId: storagePackageId,
+				}),
+		}),
 		refreshAccessToken: async (providerName) =>
 			await runtimeBridge.refreshAccessToken(providerName),
 		createAuthenticatedFetch: createAuthenticatedFetchHelper(runtimeBridge),
@@ -743,6 +783,7 @@ type PackageAppRuntimeBridgeProps = {
 	kodyId: string
 	sourceId: string
 	publishedCommit: string | null
+	packageStorageGrantIds: Array<string>
 }
 
 function redactRunRecordLogs(
@@ -816,6 +857,49 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			storageId: input.storageId,
 			requested: input.requested,
 		})
+	}
+
+	/**
+	 * Security model for package-app storage:
+	 * - Raw `storage*` methods are namespace-locked to this app's own buckets
+	 *   (`packageId` and `${packageId}:…`). The bridge stub is reachable from
+	 *   user code via `Object.create(env)`, so these methods must never accept
+	 *   arbitrary same-user ids (`package:…`, `job:…`, other package roots).
+	 * - `package:{…}` durable buckets are reached only through the
+	 *   grant-validated `packageStorage*` methods (`assertPackageStorageGranted`
+	 *   from bundler-controlled provenance).
+	 */
+	private assertAppOwnedStorageId(storageId: string) {
+		const normalizedStorageId = storageId.trim()
+		if (!normalizedStorageId) {
+			throw new Error('Package app storage requires a non-empty storage id.')
+		}
+		const packageId = this.ctx.props.packageId
+		if (
+			normalizedStorageId === packageId ||
+			normalizedStorageId.startsWith(`${packageId}:`)
+		) {
+			return normalizedStorageId
+		}
+		throw new Error(
+			`Package app storage id "${normalizedStorageId}" is outside this app's namespace. ` +
+				`Raw storage methods only accept "${packageId}" or ids prefixed with "${packageId}:". ` +
+				'Saved-package durable buckets use packageStorage() and are gated by bundler provenance grants.',
+		)
+	}
+
+	private assertPackageStorageGranted(packageId: string) {
+		const normalizedPackageId = packageId.trim()
+		if (!normalizedPackageId) {
+			throw new Error('packageStorage requires a non-empty package id.')
+		}
+		const grantedPackageIds = new Set(this.ctx.props.packageStorageGrantIds)
+		if (!grantedPackageIds.has(normalizedPackageId)) {
+			throw new Error(
+				createPackageStorageAccessDeniedMessage(normalizedPackageId),
+			)
+		}
+		return normalizedPackageId
 	}
 
 	private getRealtimeSessionRpc() {
@@ -971,7 +1055,8 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async storageGet(input: { storageId: string; key: string }) {
-		return await this.getStorageRunner(input.storageId).getValue({
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.getStorageRunner(storageId).getValue({
 			key: input.key,
 		})
 	}
@@ -982,21 +1067,21 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		pageSize?: number
 		startAfter?: string | null
 	}) {
-		return await this.getStorageRunner(input.storageId).listValues({
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.getStorageRunner(storageId).listValues({
 			prefix: input.prefix,
 			pageSize: input.pageSize,
 			startAfter: input.startAfter,
 		})
 	}
 
-	async storageSql(input: {
+	private async sqlQueryWithEntitlement(input: {
 		storageId: string
 		query: string
 		params?: Array<unknown>
-		writable?: boolean
+		writable: boolean
 	}) {
-		const writable = input.writable ?? false
-		if (writable) {
+		if (input.writable) {
 			await this.assertStorageWriteAllowed({
 				storageId: input.storageId,
 				requested: estimateEntitlementStorageSqlWriteBytes({
@@ -1008,11 +1093,15 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		return await this.getStorageRunner(input.storageId).sqlQuery({
 			query: input.query,
 			params: input.params,
-			writable,
+			writable: input.writable,
 		})
 	}
 
-	async storageSet(input: { storageId: string; key: string; value: unknown }) {
+	private async setValueWithEntitlement(input: {
+		storageId: string
+		key: string
+		value: unknown
+	}) {
 		const existing = await this.getStorageRunner(input.storageId).getValue({
 			key: input.key,
 		})
@@ -1038,14 +1127,111 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
+	async storageSql(input: {
+		storageId: string
+		query: string
+		params?: Array<unknown>
+		writable?: boolean
+	}) {
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.sqlQueryWithEntitlement({
+			storageId,
+			query: input.query,
+			params: input.params,
+			writable: input.writable ?? false,
+		})
+	}
+
+	async storageSet(input: { storageId: string; key: string; value: unknown }) {
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.setValueWithEntitlement({
+			storageId,
+			key: input.key,
+			value: input.value,
+		})
+	}
+
 	async storageDelete(input: { storageId: string; key: string }) {
-		return await this.getStorageRunner(input.storageId).deleteValue({
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.getStorageRunner(storageId).deleteValue({
 			key: input.key,
 		})
 	}
 
 	async storageClear(input: { storageId: string }) {
-		return await this.getStorageRunner(input.storageId).clearStorage()
+		const storageId = this.assertAppOwnedStorageId(input.storageId)
+		return await this.getStorageRunner(storageId).clearStorage()
+	}
+
+	async packageStorageGet(input: { packageId: string; key: string }) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		// Provenance-granted package: buckets intentionally bypass the app
+		// namespace lock on raw storage* (assertAppOwnedStorageId).
+		return await this.getStorageRunner(
+			buildPackageStorageId(packageId),
+		).getValue({
+			key: input.key,
+		})
+	}
+
+	async packageStorageList(input: {
+		packageId: string
+		prefix?: string | null
+		pageSize?: number
+		startAfter?: string | null
+	}) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.getStorageRunner(
+			buildPackageStorageId(packageId),
+		).listValues({
+			prefix: input.prefix,
+			pageSize: input.pageSize,
+			startAfter: input.startAfter,
+		})
+	}
+
+	async packageStorageSql(input: {
+		packageId: string
+		query: string
+		params?: Array<unknown>
+		writable?: boolean
+	}) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.sqlQueryWithEntitlement({
+			storageId: buildPackageStorageId(packageId),
+			query: input.query,
+			params: input.params,
+			writable: input.writable ?? false,
+		})
+	}
+
+	async packageStorageSet(input: {
+		packageId: string
+		key: string
+		value: unknown
+	}) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.setValueWithEntitlement({
+			storageId: buildPackageStorageId(packageId),
+			key: input.key,
+			value: input.value,
+		})
+	}
+
+	async packageStorageDelete(input: { packageId: string; key: string }) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.getStorageRunner(
+			buildPackageStorageId(packageId),
+		).deleteValue({
+			key: input.key,
+		})
+	}
+
+	async packageStorageClear(input: { packageId: string }) {
+		const packageId = this.assertPackageStorageGranted(input.packageId)
+		return await this.getStorageRunner(
+			buildPackageStorageId(packageId),
+		).clearStorage()
 	}
 
 	async refreshAccessToken(providerName: string) {
@@ -1549,12 +1735,24 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		sourceFiles: input.sourceFiles,
 	})
 	const mainModule = 'package-app-entry.js'
-	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		modules: bundled.modules,
-	})
+	const { modules: hydratedModules, dynamicDependencyPackageIds } =
+		await hydrateKodyRuntimeModules({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			modules: bundled.modules,
+		})
+	const packageStorageGrantIds = [
+		...collectPackageStorageGrantIds({
+			packageContext: {
+				packageId: input.savedPackage.id,
+				kodyId: input.savedPackage.kodyId,
+				sourceId: input.savedPackage.sourceId,
+			},
+			dependencies: bundled.dependencies,
+			dynamicDependencyPackageIds,
+		}),
+	]
 	const modules = {
 		...hydratedModules,
 		[mainModule]: createPackageAppWorkerSource({
@@ -1578,6 +1776,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 					kodyId: input.savedPackage.kodyId,
 					sourceId: input.savedPackage.sourceId,
 					publishedCommit: input.savedPackage.publishedCommit,
+					packageStorageGrantIds,
 				},
 			}),
 			__kodyPackageContext: {

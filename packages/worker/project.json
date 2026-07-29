@@ -26,7 +26,8 @@
 			"executor": "nx:run-commands",
 			"outputs": [
 				"{workspaceRoot}/packages/worker/public/client-entry.js",
-				"{workspaceRoot}/packages/worker/public/assets"
+				"{workspaceRoot}/packages/worker/public/assets",
+				"{workspaceRoot}/packages/worker/public/client-manifest.json"
 			],
 			"options": {
 				"command": "npm run build:client:web"
@@ -36,7 +37,8 @@
 			"executor": "nx:run-commands",
 			"outputs": [
 				"{workspaceRoot}/packages/worker/public/client-entry.js",
-				"{workspaceRoot}/packages/worker/public/assets"
+				"{workspaceRoot}/packages/worker/public/assets",
+				"{workspaceRoot}/packages/worker/public/client-manifest.json"
 			],
 			"options": {
 				"command": "npm run build:client"

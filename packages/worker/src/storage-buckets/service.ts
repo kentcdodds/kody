@@ -19,6 +19,7 @@
 export type StorageBucketKind =
 	| 'job'
 	| 'app'
+	| 'package'
 	| 'service'
 	| 'execute'
 	| 'unknown'
@@ -132,6 +133,8 @@ export function storageBucketKindFromStorageId(
 ): StorageBucketKind {
 	if (storageId.startsWith('job:')) return 'job'
 	if (storageId.startsWith('exec:')) return 'execute'
+	if (storageId.startsWith('package:')) return 'package'
+	if (storageId.startsWith('service:')) return 'service'
 	return 'unknown'
 }
 
