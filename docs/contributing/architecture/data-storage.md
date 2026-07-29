@@ -78,12 +78,12 @@ Deletion must cover these user-owned surfaces:
   references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, `PackageServiceInstance`,
-  and `RunLog` are purged through account-deletion RPCs after their D1
-  identifiers are collected (`RunLog` is one object per user and needs no D1 id
-  scan). `MCP` objects remain SDK session-keyed, while `mcp_agent_sessions`
-  indexes each Durable Object id by authenticated stable user id so account
-  deletion can purge stored props, conversation state, raw-fetch state, and
-  transport storage before revoking OAuth grants.
+  `McpClientHub`, and `RunLog` are purged through account-deletion RPCs after
+  their D1 identifiers are collected (`RunLog` is one object per user and needs
+  no D1 id scan). `MCP` objects remain SDK session-keyed, while
+  `mcp_agent_sessions` indexes each Durable Object id by authenticated stable
+  user id so account deletion can purge stored props, conversation state,
+  raw-fetch state, and transport storage before revoking OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw email MIME blobs in `EMAIL_BLOBS` are enumerated from
@@ -192,11 +192,13 @@ Durable Object export behavior:
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
   state summary.
-- `MCP`, `RepoSession`, and `PackageRealtimeSession` are documented exclusions:
-  MCP objects are SDK session-keyed and not globally enumerable; RepoSession is
-  an ephemeral editing workspace; PackageRealtimeSession is live websocket
-  state. Canonical repo-backed source and durable package app state are covered
-  by Artifacts pointers and StorageRunner buckets instead.
+- `MCP`, `RepoSession`, `PackageRealtimeSession`, and `McpClientHub` are
+  documented exclusions: MCP objects are SDK session-keyed and not globally
+  enumerable; RepoSession is an ephemeral editing workspace;
+  PackageRealtimeSession is live websocket state; McpClientHub can hold OAuth
+  tokens and SDK registrations that are non-portable. Canonical repo-backed
+  source and durable package app state are covered by Artifacts pointers and
+  StorageRunner buckets instead.
 
 Vectorize entries are intentionally excluded. Memory text and metadata, job
 metadata, and package projections are exported from D1; vectors are derived and
@@ -222,7 +224,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   initially SHA-256 of the normalized email at signup via
   `createStableUserIdFromEmail`, then preserved across email changes). Optional
   community profile fields (`display_name`, `bio`, `profile_visibility` with
-  default `public`) come from migration 0065. `account_type` (`'person'` default
+  default `public`) come from migration 0068. `account_type` (`'person'` default
   or `'platform'`, migration 0072) distinguishes normal signups from
   operator-provisioned platform accounts that own official package scopes (see
   [Platform accounts](./platform-accounts.md)). Inbound email routing does not
@@ -257,7 +259,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `saved_packages`: package metadata/search projection derived from published
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
-  intact, and `is_private` (0/1, migration 0065) projecting
+  intact, and `is_private` (0/1, migration 0068) projecting
   `package.json#private` for public-profile and timeline filters (migration
   defaults existing rows to private;
   `POST /__maintenance/backfill-package-privacy` recomputes from manifests)
@@ -520,9 +522,18 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `REPO_SESSION` (Durable Objects)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects)
 - `PACKAGE_SERVICE_INSTANCE` (Durable Objects)
+- `MCP_CLIENT_HUB` (Durable Objects; user-added remote MCP servers — see
+  [MCP client servers](./mcp-client-servers.md))
+- `OAUTH_PURGE_COORDINATOR` (Durable Objects)
+- `COMMUNITY_ASSETS` (R2; community listing assets)
+- `CAPABILITY_VECTOR_INDEX` (Vectorize; capability/memory/job/package vectors)
 - `ASSETS` (static assets bucket)
 - `USAGE_EVENTS` (Analytics Engine dataset, production/preview only; see
   [Usage metering](./usage-metering.md))
+
+`packages/worker/wrangler.jsonc` also configures the `EMAIL` send binding,
+dispatch queues, worker loaders (`LOADER` / `APP_LOADER`), the `AI` binding, and
+`DYNAMIC_CALLABLE_WORKFLOWS`; the Wrangler config is authoritative.
 
 ## Repo-backed source and Artifacts
 
@@ -779,6 +790,9 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `derived-cache:v1:usage-rollups:user:{userId}:asof:{YYYY-MM}` — derived
   per-user usage read model written with KV `expirationTtl`; retention is five
   minutes, so immediate account-deletion cleanup is not required.
+- `derived-cache:v1:community-icon:v1:{listingId}:...` — derived community
+  listing icon cache; registered as a user-owned KV surface and deleted for a
+  user's listings during account deletion.
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage

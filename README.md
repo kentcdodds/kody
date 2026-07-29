@@ -7,7 +7,7 @@
 
   <p>
     <a href="https://github.com/kentcdodds/kody/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/kentcdodds/kody/deploy.yml?branch=main&style=flat-square&logo=github&label=CI" alt="Build Status" /></a>
-    <img src="https://img.shields.io/badge/TypeScript-5.9-blue?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+    <img src="https://img.shields.io/badge/TypeScript-6.0-blue?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Node-26-5FA04E?style=flat-square&logo=node.js&logoColor=white" alt="Node 26" />
     <img src="https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Workers" />
     <img src="https://img.shields.io/badge/Remix-3.0_beta-000000?style=flat-square&logo=remix&logoColor=white" alt="Remix" />
@@ -40,8 +40,9 @@ npm install
 npm run dev
 ```
 
-The dev server runs at `localhost:8787`. Wrangler handles the local Cloudflare
-Workers runtime and D1 database automatically.
+The dev server runs at `localhost:3742` by default (the CLI picks the next free
+port and prints the resolved URL). Wrangler handles the local Cloudflare Workers
+runtime and D1 database automatically.
 
 To scaffold a **new** project from the epicflare template instead, run
 `npx create-epicflare`.

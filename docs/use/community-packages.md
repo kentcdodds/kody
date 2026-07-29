@@ -113,6 +113,10 @@ Your agent should:
 5. Rewrite the README **`## Intent`** section for your goals.
 6. Publish via `repo_publish_session`. Repo checks fail if cross-scope imports
    remain.
+7. Optionally call `community_fork_adopt` (with a short `review_summary`) after
+   a real source review, so the fork gets the same automatic secret read/use
+   access as self-authored packages (see
+   [Secrets and values](./secrets-and-values.md)).
 
 Only after publish does the package become a live saved package in your account.
 
@@ -224,6 +228,9 @@ Use the MCP `community` domain:
   count, stargazers, and owner profile linkage when the owner is public)
 - `community_fork` — copy a pinned snapshot into your account (inert until
   published)
+- `community_fork_adopt` — mark a reviewed fork as adopted, granting it
+  self-authored-like secret read/use access (see
+  [Secrets and values](./secrets-and-values.md))
 - `community_rate` — rate a listing after forking
 - `community_star` / `community_unstar` — bookmark a listing (see
   [Community profiles](./community-profiles.md))

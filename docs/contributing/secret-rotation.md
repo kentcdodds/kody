@@ -35,9 +35,14 @@ The live key must remain recoverable outside GitHub Actions and the deployed
 Worker. Solo escrow seals the key under an operator passphrase
 (`SECRET_ESCROW_PASSPHRASE` in the password manager and as a GitHub secret) via
 `.github/workflows/dr-escrow.yml`, which uploads
-`escrow/secret-store-key.v1.json` to the DR backup bucket. After any rotation,
-re-run that workflow so the sealed blob matches the deployed key, then
-smoke-test unsealing offline. See [Disaster recovery](./disaster-recovery.md).
+`escrow/secret-store-key.v1.json` to the DR backup bucket. The escrow object is
+**write-once**: a second PUT to the same key is rejected, so re-sealing after a
+rotation requires bumping `ESCROW_KEY_VERSION` (producing
+`escrow/secret-store-key.v2.json`) when running
+`tools/disaster-recovery/seal-escrow.ts`. The `dr-escrow.yml` workflow has no
+version input today, so run the seal script locally with the new version (or add
+the input) and then smoke-test unsealing offline. See
+[Disaster recovery](./disaster-recovery.md).
 
 ### Procedure
 
@@ -48,7 +53,8 @@ smoke-test unsealing offline. See [Disaster recovery](./disaster-recovery.md).
    future `/__maintenance/reencrypt-secrets` endpoint.
 3. **Deploy** the new `SECRET_STORE_KEY` only after the re-encryption pass is
    complete and verified.
-4. **Re-seal escrow** with `dr-escrow.yml` for the new key value.
+4. **Re-seal escrow** for the new key value with a bumped `ESCROW_KEY_VERSION`
+   (see Escrow above — the previous version's object is write-once).
 
 ### Important notes
 

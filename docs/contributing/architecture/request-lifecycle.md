@@ -58,10 +58,10 @@ Requests are handled in this order:
    - `POST /@{username}/webhooks/:packageKodyId/:webhookName/:urlSecret` —
      inbound package webhooks (see [Inbound webhooks](./webhooks.md))
 7. Remote connector session endpoints (internal-only Worker routes that proxy
-   WebSocket upgrades and JSON-RPC helper requests to the remote connector
-   session Durable Object):
-   - `/@{username}/connectors/:kind/:instanceId...` — username + **`kind`** +
-     instance
+   WebSocket upgrades to the remote connector session Durable Object;
+   non-upgrade requests get a 404 — JSON-RPC helper access uses Durable Object
+   RPC methods, not HTTP routes):
+   - `/@{username}/connectors/:instanceId...` — username + connector name
 
    See [Remote connectors](./remote-connectors.md).
 
@@ -83,7 +83,8 @@ Saved packages may also declare long-lived package services under
 - Package services are **not** routed through a public HTTP path the way package
   apps are.
 - Instead, the Worker hosts them via the `PackageServiceInstance` Durable Object
-  binding and controls them through package runtime bridges and MCP kody.
+  binding and controls them through package runtime bridges and MCP
+  capabilities.
 - Package services share package identity with apps/jobs and can publish into
   package app realtime sessions, but they own their own durable storage bucket
   and lifecycle.
@@ -188,14 +189,19 @@ Full page navigations occur for:
 
 ## CORS behavior
 
-`packages/worker/src/index.ts` wraps the handler with `withCors`:
+`packages/worker/src/index.ts` wraps the handler with `withCors`
+(`getCorsHeaders`):
 
-- CORS headers are only added when `Origin` exactly matches the request origin.
-- Allowed methods are `GET, POST, OPTIONS`.
-- Allowed headers include `content-type` and `authorization`.
+- For `/mcp`, any `Origin` is reflected so browser-hosted remote MCP clients can
+  connect: allowed methods are `GET, HEAD, POST, DELETE, OPTIONS`, allowed
+  headers include the MCP protocol headers, and `WWW-Authenticate` /
+  `Mcp-Session-Id` are exposed so clients can read the OAuth challenge.
+- For every other path, CORS headers are only added when `Origin` exactly
+  matches the request origin; allowed methods are `GET, POST, OPTIONS` and
+  allowed headers include `content-type` and `authorization`.
 
 This keeps cross-origin behavior narrow while allowing same-origin browser and
-API requests.
+API requests, plus the deliberate `/mcp` exception.
 
 ## Observability (Sentry and Workers tracing)
 

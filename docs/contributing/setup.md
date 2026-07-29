@@ -191,14 +191,17 @@ Use this script to ensure a known test login exists in any deployed environment:
 
 ### Reset, re-migrate, then seed
 
-For a full local reset before seeding:
+For a full local reset before seeding, delete the local Wrangler persistence
+directory (dropping individual tables does not work: Wrangler's `d1_migrations`
+tracking table would still mark the migrations as applied, so re-running them
+would recreate nothing):
 
-1. Drop app tables:
-   - `node ./wrangler-env.ts d1 execute APP_DB --local --command "PRAGMA foreign_keys=OFF; DROP TABLE IF EXISTS password_resets; DROP TABLE IF EXISTS users; PRAGMA foreign_keys=ON;"`
+1. Delete local persisted state:
+   - `rm -rf .wrangler/state`
 2. Re-apply migrations:
    - `npm run migrate:local`
 3. Seed test account:
-   - `node tools/seed-test-data.ts`
+   - `node tools/seed-test-data.ts --local`
 
 For preview environments, we do a full resource reset:
 
@@ -239,8 +242,10 @@ against `<deploy-url>/health` and fail the job if it does not return
 `{ ok: true, commitSha }` with `commitSha` matching the commit SHA deployed by
 that workflow.
 
-Preview deploys also run `node tools/seed-test-data.ts` after deploy to create
-or verify the shared test account credentials listed above.
+Preview deploys also run `node tools/seed-test-data.ts --remote` after deploy,
+seeding `me@kentcdodds.com` / `ilikecode` (a non-admin account; the `jane`
+companion account is only seeded locally). See `.github/workflows/preview.yml`
+for the exact invocation.
 
 Preview cleanup also deletes the matching GitHub environment
 (`preview-<pr-number>`). That API requires repository administration write

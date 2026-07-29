@@ -204,8 +204,8 @@ user-authored private text, and only after explicit approval. Community activity
 returns public-listing metadata, acting username, timestamps, and rating scores;
 it omits rating notes and private forked package content. Admin capabilities
 must not join or expose unrelated account content such as packages, secrets,
-values, memories, jobs, user email, chat threads, storage buckets, OAuth grants,
-or remote connectors.
+values, memories, jobs, user email, storage buckets, OAuth grants, or remote
+connectors.
 
 The `summary` field returned by feedback list/get operations and the `details`
 field returned by the get operation are untrusted user-authored content. Admin
@@ -220,6 +220,8 @@ Current admin capabilities:
 - `admin_user_get`
 - `admin_user_create`
 - `admin_user_update`
+- `admin_account_write_lease_list`
+- `admin_account_write_lease_repair`
 - `admin_platform_account_create`
 - `admin_package_scope_grant_create`
 - `admin_package_scope_grant_revoke`
@@ -339,12 +341,14 @@ packages/worker/src/mcp/capabilities/
   types.ts
   coding/
     domain.ts
-    cloudflare-rest.ts
+    kody-official-guide.ts
     index.ts
-  math/
+  values/
     domain.ts
-    do-math.ts
-    index.ts
+    value-get.ts
+    value-set.ts
+    value-list.ts
+    value-delete.ts
 ```
 
 Use an existing domain when the capability clearly belongs there. Add a **new**
@@ -352,7 +356,8 @@ domain when you introduce a new system boundary or ownership area (e.g.
 `calendar/`, `email/`, `storage/`):
 
 1. Add a new key to `capabilityDomainNames` in `domain-metadata.ts` (this
-   extends the `CapabilityDomain` union).
+   extends the `BuiltinCapabilityDomain` union; `CapabilityDomain` itself is a
+   plain `string` so runtime remote-connector domains stay valid).
 2. Add `packages/worker/src/mcp/capabilities/<name>/domain.ts`, capability
    files, and `index.ts` if you want a barrel.
 3. Append the new domain to the `builtinDomains` array in `builtin-domains.ts`.
@@ -495,10 +500,10 @@ Use filename suffixes to choose the Vitest project:
 ## Naming
 
 - Use snake_case capability names.
-- Prefer `<domain>_<noun>_<verb>` or `<domain>_<verb>` names for new kody. Keep
-  the domain prefix unless the capability is one of the intentionally tiny
-  public/meta primitives (`search`, `execute`) where the short name is already
-  part of the contract.
+- Prefer `<domain>_<noun>_<verb>` or `<domain>_<verb>` names for new
+  capabilities. Keep the domain prefix unless the capability is one of the
+  intentionally tiny public/meta primitives (`search`, `execute`) where the
+  short name is already part of the contract.
 - Keep names action-oriented, specific, and boring. Avoid temporary project
   names, implementation details, brand names, or current product UI labels
   unless those terms are the stable user-facing concept forever.
@@ -507,7 +512,7 @@ Use filename suffixes to choose the Vitest project:
 - Before open signup, fix bad names directly while Kent is the only user and can
   manually update saved packages, jobs, and secret allowlists. After real users
   exist, treat capability names as persisted contracts.
-- Avoid introducing new public MCP tool names for individual kody.
+- Avoid introducing new public MCP tool names for individual capabilities.
 
 ## Compatibility and versioning policy
 

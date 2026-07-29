@@ -1,5 +1,13 @@
 # Capability and primitive migration-risk audit (2026-07)
 
+> **Historical snapshot.** This audit captures the July 2026 state of the
+> repository. File names and findings reflect that point in time and are not
+> kept current — for example, `adding-kody.md` is now `adding-capabilities.md`,
+> `meta-list-kody.ts` is now `meta-list-capabilities.ts`, the stale `math`
+> domain constant has been removed, and connector session keys are now
+> `(userId, instanceId)` with no `kind`. Use the linked source files, not this
+> document, as the source of truth.
+
 Kody is still early enough that compatibility mistakes can be fixed cheaply.
 This audit ranks the surfaces that will become expensive once real users have
 saved packages, jobs, secrets, memories, connector settings, package imports,

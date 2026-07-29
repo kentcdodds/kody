@@ -49,7 +49,9 @@ to become.
   ingress that dispatches to a bound saved-package export (HMAC verification,
   ack/sync modes, delivery history via run records).
 - [Remote connectors](./remote-connectors.md): generic outbound WebSocket
-  protocol, URLs, secrets, and MCP caller context for any `kind` / instance.
+  protocol, URLs, secrets, and MCP caller context for any connector
+  instance/name (this is how local-network systems are reached through an
+  outbound agent connection).
 - [MCP client servers](./mcp-client-servers.md): user-added remote MCP servers
   Kody connects to as a client (per-user hub Durable Object, OAuth flow, and
   `kody.mcp[...]` capability synthesis).
@@ -60,9 +62,6 @@ to become.
   connections in D1 (`user_oauth_apps` / `user_integrations`), secret-store
   credential references, dual host gates, `/connect/oauth`, and
   `createAuthenticatedFetch`.
-- [Local Agent Bridge Direction](./local-agent-bridge.md): proposed direction
-  for securely reaching local-network systems through an outbound agent
-  connection.
 
 ## OAuth integration host allowlist
 

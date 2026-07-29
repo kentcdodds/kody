@@ -46,9 +46,8 @@ These are not covered by the rule yet:
   each other's building blocks. The job vector id and embed-text helpers should
   move to a neutral module the way `#worker/vectorize/*` did.
 - Several non-MCP subsystems (`#worker/community/*`, `#worker/email/*`,
-  `#worker/webhooks/*`, `#worker/package-invocations/*`) still import `#app/*`
-  data modules. Extending the rule to all of `#worker/*` would need those
-  extracted first.
+  `#worker/webhooks/*`) still import `#app/*` data modules. Extending the rule
+  to all of `#worker/*` would need those extracted first.
 - The admin data readers under `#worker/admin/*` take their payload envelope
   types from `#app/loader-data.ts`. The import is type-only and erased at build
   time, but relocating the shared loader payload contract out of the app layer

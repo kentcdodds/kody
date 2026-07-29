@@ -34,8 +34,8 @@ supporting cast.
    one. Code references secrets by name and Kody substitutes them at the network
    boundary, only for hosts you approved. The
    [secrets capabilities](https://github.com/kentcdodds/kody/tree/main/packages/worker/src/mcp/capabilities/secrets)
-   are `secret_list`, `secret_set`, `secret_delete`, and `secret_jwt_sign`;
-   there is deliberately no `secret_get`. See
+   are `secret_list`, `secret_set`, `secret_set_many`, `secret_delete`, and
+   `secret_jwt_sign`; there is deliberately no `secret_get`. See
    [Secrets, values, and host approval](./secrets-and-values.md).
 3. **Every install is a fork you own.** Installing someone else's automation
    puts code in your account, on your credentials, that you can open, change,

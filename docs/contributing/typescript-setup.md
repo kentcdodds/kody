@@ -4,48 +4,63 @@ This repo uses **TypeScript project references** (build mode) so the editor and
 CLI typechecking agree without forcing every file into a single TS
 "environment".
 
-## The three environments
+## The environments
 
-We have **three** distinct TypeScript environments, each with its own
-`tsconfig`.
+We have four distinct TypeScript environments, each with its own `tsconfig`. The
+`include` lists below are representative; the configs themselves are the source
+of truth.
 
 ### Client
 
 - **Config**: `packages/worker/tsconfig-client.json`
-- **Files**: `packages/worker/client/**/*.ts`, `packages/worker/client/**/*.tsx`
+- **Files**: `packages/worker/client/**/*.ts(x)` plus a set of shared worker
+  modules the client bundle imports (see the config's `include` list)
 - **Environment**: browser (`DOM`, `DOM.Iterable`) + JSX (`remix/ui`)
 
 ### Tools
 
 - **Config**: `tsconfig-tools.json`
-- **Files**:
-  - `playwright.config.ts`
-  - `wrangler-env.ts`
-  - `cli.ts`
-  - `packages/worker/src/mcp/**/*.mcp-e2e.test.ts`
+- **Files**: `playwright.config.ts`, `wrangler-env.ts`, `cli.ts`, `tools/**`,
+  `packages/shared/src/**`, MCP E2E tests, and a few test-support modules (see
+  the config's `include` list)
 - **Environment**: Node 26 (scripts, configs, tests)
 
 ### Worker
 
-- **Config**: `packages/worker/tsconfig-worker.json`
+- **Config**: `packages/worker/tsconfig-worker.json`, with
+  `packages/worker/tsconfig-worker-typecheck.json` as the config actually used
+  by CLI typechecking and the root solution file (it extends `tsconfig-worker`
+  and remaps `#client/app-root.tsx` to an SSR stub).
+  `packages/worker/tsconfig.json` is a thin `extends` wrapper for the editor.
 - **Files**:
   - `packages/worker/src/**/*.ts`
-  - `packages/worker/src/mcp/**/*.ts`
   - `packages/worker/env.d.ts`, `packages/worker/src/env-schema.ts`
   - generated `packages/worker/worker-configuration.d.ts` (via
     `npm run generate-types`)
 - **Environment**: Cloudflare Workers (`WebWorker`, `WebWorker.Iterable`)
+
+### Backup control plane
+
+- **Config**: `packages/backup-control-plane/tsconfig.json`
+- **Files**: `packages/backup-control-plane/src/**`
+- **Environment**: Cloudflare Workers (standalone backup Worker)
 
 ## Solution config (project references)
 
 The root `tsconfig.json` is the **solution** file:
 
 - It has no `include`.
-- It references the three environment configs above.
+- It references `tsconfig-tools.json`, `packages/worker/tsconfig-client.json`,
+  and `packages/worker/tsconfig-worker-typecheck.json`.
 
-The CLI `typecheck` runs:
+`npm run typecheck` runs:
 
-- `tsc -b --noEmit` (build mode, using the root `tsconfig.json`)
+- `nx run worker:typecheck` — which runs
+  `tsc -b packages/worker/tsconfig-client.json packages/worker/tsconfig-worker-typecheck.json --noEmit`
+- then `tsc --noEmit -p packages/backup-control-plane/tsconfig.json`
+
+The root solution file (and therefore `tsconfig-tools.json`) is used by the
+editor, not by `npm run typecheck`.
 
 ## Generated worker types (`packages/worker/worker-configuration.d.ts`)
 

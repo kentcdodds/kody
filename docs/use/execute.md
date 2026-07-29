@@ -331,52 +331,20 @@ export default async function main() {
 }
 ```
 
-The lower-level token request is:
-
-```ts
-import { secretHeaders } from 'kody:runtime'
-
-export default async function main() {
-	const body = new URLSearchParams({ grant_type: 'client_credentials' })
-	const response = await fetch('https://api.example.com/oauth/token', {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/x-www-form-urlencoded',
-			Authorization: secretHeaders.basic({
-				usernameSecret: 'exampleClientId',
-				passwordSecret: 'exampleClientSecret',
-				scope: 'user',
-			}),
-		},
-		body,
-	})
-	return await response.json()
-}
-```
+For the lower-level token request built directly with `secretHeaders.basic`, see
+the worked example in
+[Secrets, values, and host approval](./secrets-and-values.md).
 
 Kody resolves both saved secrets server-side, requires the token endpoint host
 to be approved for both secrets, and only sends the derived Basic header in the
 outbound request.
 
 See [Secrets, values, and host approval](./secrets-and-values.md) for
-placeholders, host approval, and **`kody.secret_list`** / **`secret_set`**.
-
-Treat placeholder syntax as operational wiring, not prose. Do not place the
-exact **`{{secret:...}}`** token into issue bodies, comments, prompts, logs, or
-other content that may be shown to users or sent to third parties — resolution
-runs on the final serialized request, so even string concatenation cannot keep a
-literal placeholder out of it.
-
-To **mention** the syntax in prose, use the inert form **`{{secret:<name>}}`** —
-angle brackets are outside the placeholder name charset, so it never resolves
-anywhere, now or downstream.
-
-To deliberately deliver a **resolvable** literal placeholder to a third party
-(for example, config that Kody itself resolves later), set the
-**`x-kody-secret-resolution: off`** header on that fetch. The gateway strips the
-header and skips resolution for that request only. The delivered text remains
-one resolution step from the real secret, so use this sparingly.
+placeholders, host approval, **`kody.secret_list`** / **`secret_set`**, and the
+rules for mentioning placeholder syntax without resolving it (the inert
+`{{secret:<name>}}` form and the `x-kody-secret-resolution: off` header). Treat
+placeholder syntax as operational wiring, not prose — never place a resolvable
+**`{{secret:...}}`** token into content shown to users or sent to third parties.
 
 ## Values
 

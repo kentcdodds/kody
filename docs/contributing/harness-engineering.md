@@ -27,10 +27,8 @@ Run this loop for features, fixes, and refactors:
 4. Capture what was learned in docs, tests, or tooling.
 5. Promote repeated guidance into mechanical enforcement.
 
-For this repo, the default evaluation step is:
-
-- `npm run validate`
-- `npm run format`
+For this repo, the default evaluation step is `npm run validate` (read-only; use
+`npm run validate:fix` when you want mutating auto-fixes applied).
 
 ## Promote learning into enforcement
 

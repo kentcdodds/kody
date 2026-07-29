@@ -16,23 +16,19 @@ keeps types, runtime validation, and documentation in sync.
    - `packages/worker/src/app/env.ts` uses the schema to fail fast at runtime.
    - The schema is the single source of truth for validation + types.
 
-   Example:
+   The schema is built with `remix/data-schema` (`createSchema`, `object`,
+   `string`), not Zod. Example:
 
    ```ts
-   const EnvSchema = z.object({
-   	COOKIE_SECRET: z
-   		.string()
-   		.min(
-   			32,
-   			'COOKIE_SECRET must be at least 32 characters for session signing.',
-   		),
-   	SECRET_STORE_KEY: z.string().min(32),
-   	THIRD_PARTY_API_KEY: z
-   		.string()
-   		.min(
-   			1,
-   			'Missing THIRD_PARTY_API_KEY. Go to https://example.com/ to get one.',
-   		),
+   export const EnvSchema = object({
+   	COOKIE_SECRET: string().refine(
+   		(value) => value.length >= 32,
+   		'COOKIE_SECRET must be at least 32 characters for session signing.',
+   	),
+   	THIRD_PARTY_API_KEY: string().refine(
+   		(value) => value.length > 0,
+   		'Missing THIRD_PARTY_API_KEY. Go to https://example.com/ to get one.',
+   	),
    })
    ```
 
@@ -192,9 +188,9 @@ Worker bindings (see `packages/worker/wrangler.jsonc`):
   retrieval (`kody-capabilities-prod` / `kody-capabilities-preview`). Create
   indexes with **`--dimensions=384 --metric=cosine`** to match
   `@cf/baai/bge-small-en-v1.5` with `cls` pooling (see
-  `packages/worker/src/mcp/capabilities/capability-search.ts`). The **`test`**
-  Wrangler environment omits this binding so `npm run test` and e2e use the
-  deterministic offline fusion path (`offline: true` in search results).
+  `packages/worker/src/vectorize/embedding.ts`). The **`test`** Wrangler
+  environment omits this binding so `npm run test` and e2e use the deterministic
+  offline fusion path (`offline: true` in search results).
 - **`AI`** — Workers AI binding used by production and preview capability,
   memory, job, and saved-package embedding calls. Local dev and tests do not
   require it because `WRANGLER_IS_LOCAL_DEV`, `SENTRY_ENVIRONMENT=test`, or a
@@ -206,13 +202,14 @@ Worker secrets:
   the Workers AI binding `gateway` option so production and preview inference is
   logged/routed through AI Gateway. When unset, the Worker calls Workers AI
   directly.
-- **`CAPABILITY_REINDEX_SECRET`** — required in production; bearer token for
-  `POST /__maintenance/reindex-capabilities` and other secret-gated maintenance
-  endpoints. Use the reindex endpoint after changing the embedding model,
-  pooling, or Vectorize index dimensions; it rebuilds built-in capability,
-  memory, job, and saved-package vectors with per-user `userId` metadata on
-  user-owned rows. Local dev uses offline search while `WRANGLER_IS_LOCAL_DEV`
-  is set or the binding is missing.
+- **`CAPABILITY_REINDEX_SECRET`** — strongly recommended for production (CI
+  skips the post-deploy capability reindex and execute smoke check when it is
+  unset); bearer token for `POST /__maintenance/reindex-capabilities` and other
+  secret-gated maintenance endpoints. Use the reindex endpoint after changing
+  the embedding model, pooling, or Vectorize index dimensions; it rebuilds
+  built-in capability, memory, job, and saved-package vectors with per-user
+  `userId` metadata on user-owned rows. Local dev uses offline search while
+  `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
 
 ## Cloudflare API (Worker + Email)
 
@@ -308,8 +305,8 @@ GitHub Actions `workflow_dispatch` escrow (`.github/workflows/dr-escrow.yml`)
 also needs `SECRET_STORE_KEY`, `SECRET_ESCROW_PASSPHRASE`, and the DR S3
 credentials (`DR_BACKUP_*`) as repository secrets.
 
-## Why Zod?
+## Why a schema?
 
-Zod gives type inference for `Env`-driven values and a single runtime gate that
-fails fast with clear errors. It keeps the “what’s required” definition in one
-place.
+The `remix/data-schema` env schema gives type inference for `Env`-driven values
+and a single runtime gate that fails fast with clear errors. It keeps the
+“what’s required” definition in one place.

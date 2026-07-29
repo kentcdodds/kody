@@ -261,7 +261,9 @@ Escrow model (solo):
 2. Manual `workflow_dispatch` of `.github/workflows/dr-escrow.yml` seals the key
    with PBKDF2-SHA-256 (600k iterations) + AES-256-GCM and uploads
    `escrow/secret-store-key.v1.json` to the DR bucket
-   (`tools/disaster-recovery/seal-escrow.ts`).
+   (`tools/disaster-recovery/seal-escrow.ts`). The escrow object is write-once;
+   after a `SECRET_STORE_KEY` rotation, bump `ESCROW_KEY_VERSION` (for example
+   `v2`) when re-sealing — see [Secret rotation](./secret-rotation.md).
 3. Dashboard shows whether the escrow object is present (not whether the
    passphrase still works — test unsealing offline after each seal).
 

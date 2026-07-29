@@ -16,15 +16,22 @@ the same handler as the parent page so auth and user scoping stay consistent.
 ## Registry and handlers
 
 1. Add `packages/worker/src/app/frames/<name>.ts` calling `registerFrame` with
-   `routePathname: routes.<key>.href()` and a `render` function that returns
+   `route: routes.<key>` (the route object) and a `render` function that returns
    fragment HTML (usually `renderToString` of a server component).
 2. Import the module from `frame-registrations.ts`.
 3. In the route handler, before `renderAppPage`:
 
 ```ts
-const frameResponse = await handleFrameRequest(request, env, routes.foo.href())
+const frameResponse = await handleFrameRequest(
+	request,
+	env,
+	new URL(request.url).pathname,
+)
 if (frameResponse) return frameResponse
 ```
+
+Passing the request pathname (rather than a fixed `href()`) lets the frame match
+parameterized routes via `pathnameMatchesFrameRoute`.
 
 `handleFrameRequest` checks `x-remix-target` (see `frame-constants.ts`). When
 the header matches a frame registered for that pathname, it returns bare

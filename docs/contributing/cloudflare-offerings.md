@@ -1,13 +1,17 @@
 # Cloudflare offerings (optional integrations)
 
-kody ships with:
+kody already binds a broad set of Cloudflare offerings in
+`packages/worker/wrangler.jsonc` (the authoritative inventory): D1 (`APP_DB`),
+KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`), many Durable Object namespaces
+(`MCP_OBJECT` and others), R2 (`COMMUNITY_ASSETS`, `EMAIL_BLOBS`), Workers AI
+(`AI`, optionally routed through AI Gateway via `AI_GATEWAY_ID`), Vectorize
+(`CAPABILITY_VECTOR_INDEX`), Queues, Analytics Engine (`USAGE_EVENTS`),
+Workflows, and worker loaders. See
+[architecture/data-storage.md](./architecture/data-storage.md) for what each
+binding stores.
 
-- D1 (`APP_DB`) for relational storage
-- KV (`OAUTH_KV`) for OAuth/session state (owned by
-  `@cloudflare/workers-oauth-provider`)
-- Durable Objects (`MCP_OBJECT`) for MCP server state
-
-This guide covers how to add common Cloudflare offerings to the repo:
+This guide covers how those common offerings are added, useful when you need
+another one of:
 
 - R2 (object storage)
 - Workers AI

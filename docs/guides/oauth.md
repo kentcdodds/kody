@@ -40,13 +40,16 @@ The provider-side setup is the same for every provider:
 4. Paste the client ID (and client secret for confidential flows) into the
    `/connect/oauth` setup form in Kody.
 
-## Required query parameters
+## Query parameters
 
-| Param          | Purpose                                              |
-| -------------- | ---------------------------------------------------- |
-| `provider`     | Short integration label used to derive stored names. |
-| `authorizeUrl` | Provider authorization endpoint URL.                 |
-| `tokenUrl`     | Provider token endpoint URL.                         |
+| Param          | Purpose                                                                                       |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| `provider`     | Required. Short integration label used to derive stored names.                                |
+| `authorizeUrl` | Provider authorization endpoint URL. Required for a new provider setup; omitted on reconnect. |
+| `tokenUrl`     | Provider token endpoint URL. Required for a new provider setup; omitted on reconnect.         |
+
+For reconnects, `/connect/oauth?provider=<name>` alone is enough — the page
+derives the endpoint URLs from the saved integration.
 
 When those URLs are unknown, `integration_registry_search` plus
 `integration_discover({ domain })` can supply candidates from integrations.sh.

@@ -54,8 +54,8 @@ This project uses the following resources:
   - Create once per account, for example:
     `wrangler vectorize create kody-capabilities-prod --dimensions=384 --metric=cosine`
     (same for preview). **Dimensions must match** the embedding model in
-    `packages/worker/src/mcp/capabilities/capability-search.ts`
-    (`@cf/baai/bge-small-en-v1.5`, 384 dimensions, `cls` pooling).
+    `packages/worker/src/vectorize/embedding.ts` (`@cf/baai/bge-small-en-v1.5`,
+    384 dimensions, `cls` pooling).
 - Workers AI binding for semantic search embeddings
   - `binding`: `AI`
   - Production and preview route embedding calls through this binding. When
@@ -91,8 +91,6 @@ This project uses the following resources:
     so a committed route makes every local request arrive as
     `http://kodyapps.dev/...` — canonical URLs, OAuth resource metadata, and
     login redirects then point at the production domain from localhost.
-  - The app origin (`heykody.dev`) stays attached out-of-band; Wrangler does not
-    remove routes that the config omits.
   - Attaching a custom domain needs a deploy token with edit access to the
     target zone. Without it the deploy step fails on the custom domain instead
     of silently skipping it.
@@ -284,11 +282,12 @@ automatically:
   and `preview` — so Artifacts repos are partitioned by deploy environment.)
 - `AI_GATEWAY_ID` (optional Worker secret; routes Workers AI embedding calls
   through the configured Cloudflare AI Gateway when set)
-- `CAPABILITY_REINDEX_SECRET` (required in production; optional locally and for
-  previews; bearer auth for `POST /__maintenance/reindex-capabilities` to
-  refresh all capability-search vectors in Vectorize: built-in kody, memories,
-  jobs, and saved packages. Saved package projections also refresh when packages
-  are saved or published.)
+- `CAPABILITY_REINDEX_SECRET` (strongly recommended for production — CI skips
+  the post-deploy reindex and execute smoke check when unset; optional locally
+  and for previews; bearer auth for `POST /__maintenance/reindex-capabilities`
+  to refresh all capability-search vectors in Vectorize: built-in capabilities,
+  memories, jobs, and saved packages. Saved package projections also refresh
+  when packages are saved or published.)
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID` /
   `GOOGLE_CLIENT_SECRET`, `X_CLIENT_ID` / `X_CLIENT_SECRET` (optional Worker
   secrets; enable the "Sign in with GitHub / Google / X" login buttons. A
@@ -336,9 +335,9 @@ Configure these GitHub Actions secrets and variables for workflows:
   routing for Workers AI embeddings)
 - `SENTRY_DSN` (optional; create a JavaScript/Cloudflare project in Sentry and
   paste the DSN; syncs to the Worker as a secret when set in GitHub Actions)
-- `CAPABILITY_REINDEX_SECRET` (required in production; optional locally and for
-  previews; authenticates post-deploy maintenance calls such as capability
-  reindex)
+- `CAPABILITY_REINDEX_SECRET` (strongly recommended for production; optional
+  locally and for previews; authenticates post-deploy maintenance calls such as
+  capability reindex — CI skips those calls when it is unset)
 - `DR_BACKUP_ACCOUNT_ID` / `DR_BACKUP_BUCKET_NAME` / `DR_BACKUP_ACCESS_KEY_ID` /
   `DR_BACKUP_SECRET_ACCESS_KEY` (production DR staging into the DR bucket; also
   used by `.github/workflows/dr-escrow.yml`. `DR_BACKUP_ACCOUNT_ID` is also the
@@ -442,8 +441,8 @@ How to get/set each value:
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from
     `npx @sentry/wizard@latest -i sourcemaps`).
-- `CAPABILITY_REINDEX_SECRET` (required in production; optional locally and for
-  previews)
+- `CAPABILITY_REINDEX_SECRET` (strongly recommended for production; optional
+  locally and for previews)
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
     workflow sync it to the Worker. After each production deploy, CI POSTs to

@@ -22,7 +22,8 @@ so a green local `validate` means CI will pass. `validate` is read-only; use
 
 ## Services
 
-- **Dev server**: Runs at `localhost:8787` (Cloudflare Workers local)
+- **Dev server**: Runs at `localhost:3742` by default (the CLI picks the next
+  free port and prints the resolved URL)
 - `npm run dev` starts both the client esbuild watcher and Wrangler worker
   server
 
@@ -41,6 +42,8 @@ so a green local `validate` means CI will pass. `validate` is read-only; use
   skill
 - [docs/contributing/setup.md](../docs/contributing/setup.md) - Setup
   documentation
+- [docs/contributing/cloud-agents.md](../docs/contributing/cloud-agents.md) -
+  Cloud Agent VM gotchas (canonical; this file is a quick reference)
 - [docs/contributing/testing-principles.md](../docs/contributing/testing-principles.md) -
   Testing guidelines
 - [docs/contributing/end-to-end-testing.md](../docs/contributing/end-to-end-testing.md) -

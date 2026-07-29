@@ -19,7 +19,7 @@ pinned to `0.17.4`).
 - Capabilities exposed through the compact `search` / `execute` tools are
   registered per-domain (`packages/worker/src/mcp/capabilities/*/domain.ts`) and
   merged in `packages/worker/src/mcp/capabilities/builtin-domains.ts`; see
-  [adding capabilities](./adding-kody.md).
+  [adding capabilities](./adding-capabilities.md).
 - This project is not organized around the React hook APIs from the SDK; for
   non-React clients, use `AgentClient` from `agents/client`.
 

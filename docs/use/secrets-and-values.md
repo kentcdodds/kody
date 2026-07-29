@@ -14,15 +14,8 @@ such as **`package`**) returns **metadata only**: names, descriptions, allowed
 hosts, allowed capabilities — not plaintext values.
 
 Package-scoped secrets belong to one saved package and are available only while
-that package runs. User-scoped secrets are available automatically for **reading
-and using** (mounts, fetch placeholders, capability inputs) to packages the user
-authored themselves, and to community forks the user has adopted with
-`community_fork_adopt` after reviewing the source. Unadopted community forks
-still require explicit package approval (`allowed_packages`) before those
-read/use paths. Updating or deleting a user secret from package code
-(`secret_set`, `secret_delete`, OpenAPI token-refresh writes) always requires
-the explicit package grant, including for self-authored and adopted packages.
-Host and capability approvals are unchanged.
+that package runs. Access rules for user-scoped secrets from package code are
+covered in [Package approval](#package-approval).
 
 **`kody.secret_set(...)`** persists a value that is already available inside
 execution (for example a refreshed OAuth token). It does not return secret
@@ -110,13 +103,16 @@ does not by itself approve new hosts.
 
 ## Package approval
 
-Unadopted community-forked packages need explicit **package** approval
-(`allowed_packages`) before they can read or use user-scoped secrets.
-Self-authored packages and adopted forks (`community_fork_adopt` after a real
-source review) get that read/use access automatically. Updating or deleting a
-user secret from package code always needs the grant. Saving a secret, approving
-a host, or succeeding in an ad hoc execute smoke test does not grant package
-access.
+User-scoped secrets are available automatically for **reading and using**
+(mounts, fetch placeholders, capability inputs) to packages the user authored
+themselves, and to adopted community forks (`community_fork_adopt` after a real
+source review). Unadopted community-forked packages need explicit **package**
+approval (`allowed_packages`) before those read/use paths. Updating or deleting
+a user secret from package code (`secret_set`, `secret_delete`, OpenAPI
+token-refresh writes) always needs the grant, including for self-authored and
+adopted packages. Saving a secret, approving a host, or succeeding in an ad hoc
+execute smoke test does not grant package access. Host and capability approvals
+are unchanged.
 
 When several secrets need the same package approved, Kody can provide a bulk
 approval URL shaped like

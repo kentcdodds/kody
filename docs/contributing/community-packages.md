@@ -171,8 +171,9 @@ Core logic: `packages/worker/src/community/`
 | `og-image.ts`       | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
 | `types.ts`          | Shared record types                                                 |
 
-`publishCommunityListing` validates MIT license, README `## Intent`, published
-commit, and ban status; copies published source into KV; upserts D1 metadata.
+`publishCommunityListing` validates MIT license, non-private
+`package.json#private`, README `## Intent`, published commit, and ban status;
+copies published source into KV; upserts D1 metadata.
 
 `forkCommunityListing` reads the KV snapshot, rewrites `package.json` name/kody
 id to the forker's scope, scans cross-scope references, calls
@@ -220,6 +221,7 @@ Capabilities:
 - `community_search`
 - `community_get`
 - `community_fork`
+- `community_fork_adopt`
 - `community_rate`
 - `community_star` / `community_unstar` / `community_starred_list`
 - `community_profile_get` / `community_profile_update`
@@ -233,8 +235,8 @@ The admin domain also exposes `admin_community_activity_list`, guarded by
 `requiredRole: 'admin'`, for the narrow operator activity feed.
 
 Register the domain in `builtinDomains` and `capabilityDomainNames` like other
-builtin domains (see [Adding capabilities](./adding-kody.md)). Do not surface
-community listings through the general capability/package search path.
+builtin domains (see [Adding capabilities](./adding-capabilities.md)). Do not
+surface community listings through the general capability/package search path.
 
 ## Public routes and Open Graph images
 
@@ -351,6 +353,6 @@ listing), matching the multi-column pattern used for `community_reports`.
   profiles, follows, timelines, and stars
 - [Packages and manifests](./packages-and-manifests.md) — saved package model
 - [Repo-backed editing sessions](../use/repo-sessions.md) — fork activation path
-- [Adding capabilities](./adding-kody.md) — domain registration
+- [Adding capabilities](./adding-capabilities.md) — domain registration
 - [Primitives map](./architecture/primitives.yaml) — `community-listings` and
   `community-social` primitive entries

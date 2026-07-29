@@ -69,12 +69,15 @@ package-app surfaces:
 `packages/worker/src/app/security-headers.ts` to every trusted HTML response
 (login, signup, account pages, the OAuth consent screen, and the SPA shell):
 
-- `Content-Security-Policy` with `script-src 'self'` (no inline scripts),
+- `Content-Security-Policy` with `script-src 'self' https://cdn.usefathom.com`
+  (no inline scripts; the Fathom Analytics tracker is the only allowed external
+  script and its image beacon is also allowed in `img-src`),
   `frame-ancestors 'none'`, `base-uri 'self'`, `object-src 'none'`,
-  `form-action 'self'`, and same-origin `connect-src`. The client bundle loads
-  as an external module, so this does not require inline scripts. `style-src`
-  allows `'unsafe-inline'` because SSR-streamed styles arrive as inline
-  `<style>` tags; style injection is far lower risk than script injection.
+  `form-action 'self'`, `worker-src 'self' blob:` (for Sentry Session Replay),
+  and same-origin `connect-src`. The client bundle loads as an external module,
+  so this does not require inline scripts. `style-src` allows `'unsafe-inline'`
+  because SSR-streamed styles arrive as inline `<style>` tags; style injection
+  is far lower risk than script injection.
 - `X-Frame-Options: DENY` plus `frame-ancestors 'none'` — stops clickjacking of
   the OAuth consent screen and account pages.
 - `X-Content-Type-Options: nosniff`.
@@ -189,9 +192,12 @@ parallel paths. Covered paths (`rateLimitedAuthPaths` in
 `packages/worker/src/index.ts`):
 
 - `POST /auth` (password login/signup)
+- `POST /auth/github`, `POST /auth/google`, `POST /auth/x` (social login start)
 - `POST /oauth/authorize` (inline OAuth login)
 - `POST /password-reset` (reset request)
 - `POST /password-reset/confirm` (reset confirmation)
+- `POST /verify/2fa.json` and `POST /account/two-factor.json` (two-factor)
+- `POST /webauthn/authentication` (passkey authentication)
 
 Excess requests receive `429 Too Many Requests` with a `Retry-After` header. The
 D1 approach uses a batched INSERT + COUNT in a single transaction, avoiding the

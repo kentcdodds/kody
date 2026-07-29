@@ -161,10 +161,6 @@ It only mutates the live session overlay. Pair it with `repo_run_commands` for
 `git add`/`git commit` and `repo_publish_session` (or `repo_run_commands` with
 `publish: true`) when you are ready to publish.
 
-For non-package repo-backed scheduled job source you can also short-circuit
-sessions entirely by passing a replacement `code` string to `job_update`, which
-republishes the job module without opening a session.
-
 ```json
 {
 	"session_id": "session-1",
