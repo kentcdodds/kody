@@ -27,6 +27,7 @@ import { deleteJobRow, listJobRowsByUserId } from '#worker/jobs/repo.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import {
+	buildPackageServiceStorageId,
 	listSavedPackageServices,
 	packageServiceRpc,
 } from '#worker/package-runtime/package-service.ts'
@@ -45,6 +46,15 @@ import {
 	deleteAllPackageScopedSecrets,
 	removeAllSecretApprovalsForPackage,
 } from '#mcp/secrets/service.ts'
+import { deleteAllAppScopedValues } from '#mcp/values/service.ts'
+import { listUserStorageBucketIds } from '#worker/storage-buckets/service.ts'
+import {
+	buildPackageStorageId,
+	storageRunnerRpc,
+} from '#worker/storage-runner.ts'
+
+const savedPackageIdUuidPattern =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -71,6 +81,107 @@ function logPackageRetrieverProjectionError(input: {
 
 function serializeTags(tags: Array<string>) {
 	return JSON.stringify(tags)
+}
+
+/**
+ * Inventory prefix matching is UUID-gated on purpose. `package_save` accepts
+ * arbitrary non-empty package ids, so a raw prefix like `{packageId}:` can
+ * collide with reserved storage namespaces (`job:`, `exec:`, …) or carry LIKE
+ * metacharacters (`%`, `_`; `encodeURIComponent` can also introduce `%`). A
+ * UUID cannot contain `:` or those metacharacters and cannot equal the reserved
+ * namespace literals, which makes `{uuid}:…`, `service:{encodeURIComponent(uuid)}:…`,
+ * and `job:package-job:{uuid}:…` unambiguous. Non-UUID packages still clear the
+ * deterministic set (package bucket, raw id, job/service scratch ids from D1 /
+ * listed services); an orphaned facet bucket for a weird id stays inventoriable
+ * for account deletion.
+ */
+export function filterPackageOwnedStorageIdsFromInventory(input: {
+	packageId: string
+	storageIds: ReadonlyArray<string>
+}): Array<string> {
+	const packageStorageId = buildPackageStorageId(input.packageId)
+	const matched = new Set<string>()
+	for (const storageId of input.storageIds) {
+		if (storageId === input.packageId || storageId === packageStorageId) {
+			matched.add(storageId)
+		}
+	}
+	if (!savedPackageIdUuidPattern.test(input.packageId)) {
+		return [...matched]
+	}
+	const facetPrefix = `${input.packageId}:`
+	const servicePrefix = `service:${encodeURIComponent(input.packageId)}:`
+	const jobPrefix = `job:package-job:${input.packageId}:`
+	for (const storageId of input.storageIds) {
+		if (
+			storageId.startsWith(facetPrefix) ||
+			storageId.startsWith(servicePrefix) ||
+			storageId.startsWith(jobPrefix)
+		) {
+			matched.add(storageId)
+		}
+	}
+	return [...matched]
+}
+
+async function listPackageOwnedStorageIdsFromInventory(input: {
+	env: Env
+	userId: string
+	packageId: string
+}): Promise<Array<string>> {
+	const storageIds = await listUserStorageBucketIds({
+		env: input.env,
+		userId: input.userId,
+	})
+	return filterPackageOwnedStorageIdsFromInventory({
+		packageId: input.packageId,
+		storageIds,
+	})
+}
+
+async function clearPackageOwnedStorageBucket(input: {
+	env: Env
+	userId: string
+	packageId: string
+	storageId: string
+}) {
+	let storageCleared = false
+	try {
+		await storageRunnerRpc({
+			env: input.env,
+			userId: input.userId,
+			storageId: input.storageId,
+		}).clearStorage()
+		storageCleared = true
+	} catch (error) {
+		console.warn(
+			JSON.stringify({
+				message: 'package storage clear failed',
+				userId: input.userId,
+				packageId: input.packageId,
+				storageId: input.storageId,
+				error: getErrorMessage(error),
+			}),
+		)
+	}
+	if (!storageCleared) return
+	try {
+		await input.env.APP_DB.prepare(
+			`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?`,
+		)
+			.bind(input.userId, input.storageId)
+			.run()
+	} catch (error) {
+		console.warn(
+			JSON.stringify({
+				message: 'package storage bucket unregister failed',
+				userId: input.userId,
+				packageId: input.packageId,
+				storageId: input.storageId,
+				error: getErrorMessage(error),
+			}),
+		)
+	}
 }
 
 function toSavedPackageInsertRow(input: {
@@ -330,6 +441,10 @@ export async function deleteSavedPackageProjection(input: {
 				userId: input.userId,
 				packageId: input.packageId,
 			})
+			const packageOwnedStorageIds = new Set<string>([
+				buildPackageStorageId(input.packageId),
+				input.packageId,
+			])
 			let packageJobsRemoved = false
 			if (savedPackage) {
 				const listedServices = await listSavedPackageServices({
@@ -349,6 +464,9 @@ export async function deleteSavedPackageProjection(input: {
 						baseUrl: 'https://package-service.invalid',
 						serviceName: service.name,
 					}).stop()
+					packageOwnedStorageIds.add(
+						buildPackageServiceStorageId(input.packageId, service.name),
+					)
 				}
 				await cleanupArtifactReposForPackage({
 					env: input.env,
@@ -387,9 +505,39 @@ export async function deleteSavedPackageProjection(input: {
 					(row) => row.source_id === savedPackage.sourceId,
 				)
 				for (const row of packageRows) {
+					if (row.storage_id) {
+						packageOwnedStorageIds.add(row.storage_id)
+					}
 					await deleteJobRow(input.env.APP_DB, input.userId, row.id)
 				}
 				packageJobsRemoved = packageRows.length > 0
+			}
+			try {
+				const inventoryIds = await listPackageOwnedStorageIdsFromInventory({
+					env: input.env,
+					userId: input.userId,
+					packageId: input.packageId,
+				})
+				for (const storageId of inventoryIds) {
+					packageOwnedStorageIds.add(storageId)
+				}
+			} catch (error) {
+				console.warn(
+					JSON.stringify({
+						message: 'package storage inventory lookup failed',
+						userId: input.userId,
+						packageId: input.packageId,
+						error: getErrorMessage(error),
+					}),
+				)
+			}
+			for (const storageId of packageOwnedStorageIds) {
+				await clearPackageOwnedStorageBucket({
+					env: input.env,
+					userId: input.userId,
+					packageId: input.packageId,
+					storageId,
+				})
 			}
 			await deleteAllPackageScopedSecrets({
 				env: input.env,
@@ -400,6 +548,20 @@ export async function deleteSavedPackageProjection(input: {
 				env: input.env,
 				userId: input.userId,
 				packageId: input.packageId,
+			})
+			await deleteAllAppScopedValues({
+				env: input.env,
+				userId: input.userId,
+				appId: input.packageId,
+			}).catch((error) => {
+				console.warn(
+					JSON.stringify({
+						message: 'package app-scoped values cleanup failed',
+						userId: input.userId,
+						packageId: input.packageId,
+						error: getErrorMessage(error),
+					}),
+				)
 			})
 			await deleteSavedPackage(input.env.APP_DB, {
 				userId: input.userId,

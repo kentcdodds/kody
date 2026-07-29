@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactRepo from '#worker/repo/published-bundle-artifacts-repo.ts'
 import type * as PublishedRuntimeArtifacts from './published-runtime-artifacts.ts'
 import {
+	isPublishedPackageArtifactBuiltForCommit,
 	loadPublishedBundleArtifactByIdentity,
 	rebuildPublishedPackageArtifacts,
 } from './published-bundle-artifacts.ts'
@@ -143,6 +144,176 @@ test('loadPublishedBundleArtifactByIdentity treats mismatched and malformed KV a
 			artifact: null,
 		})
 	}
+})
+
+test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV artifact for the commit', async () => {
+	mockModule.getPublishedBundleArtifactByIdentity.mockReset()
+	mockModule.readPublishedBundleArtifact.mockReset()
+
+	const envWithoutKv = { APP_DB: {} } as unknown as Env
+	expect(
+		await isPublishedPackageArtifactBuiltForCommit({
+			env: envWithoutKv,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/index.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(false)
+	expect(mockModule.getPublishedBundleArtifactByIdentity).not.toHaveBeenCalled()
+
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {},
+	} as unknown as Env
+	const target = {
+		kind: 'module' as const,
+		artifactName: '.',
+		entryPoint: 'src/index.ts',
+		bundleKind: 'module' as const,
+	}
+
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValueOnce(null)
+	expect(
+		await isPublishedPackageArtifactBuiltForCommit({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			target,
+		}),
+	).toBe(false)
+
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue({
+		id: 'artifact-row-1',
+		userId: 'user-1',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		artifactKind: 'module',
+		artifactName: '.',
+		entryPoint: 'src/index.ts',
+		kvKey: 'kv:module',
+		dependenciesJson: '[]',
+		createdAt: '2026-05-13T00:00:00.000Z',
+		updatedAt: '2026-05-13T00:00:00.000Z',
+	})
+	mockModule.readPublishedBundleArtifact.mockResolvedValueOnce(null)
+	expect(
+		await isPublishedPackageArtifactBuiltForCommit({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			target,
+		}),
+	).toBe(false)
+
+	mockModule.readPublishedBundleArtifact.mockResolvedValueOnce({
+		version: 1,
+		kind: 'module',
+		artifactName: '.',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-old',
+		entryPoint: 'src/index.ts',
+		mainModule: 'dist/index.js',
+		modules: { 'dist/index.js': 'export default {}' },
+		dependencies: [],
+		dynamicDependencies: [],
+		packageContext: null,
+		serviceContext: null,
+		createdAt: '2026-05-13T00:00:00.000Z',
+	})
+	// Identity mismatch (KV commit differs from row) is treated as a miss.
+	expect(
+		await isPublishedPackageArtifactBuiltForCommit({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			target,
+		}),
+	).toBe(false)
+
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue({
+		id: 'artifact-row-1',
+		userId: 'user-1',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-old',
+		artifactKind: 'module',
+		artifactName: '.',
+		entryPoint: 'src/index.ts',
+		kvKey: 'kv:module',
+		dependenciesJson: '[]',
+		createdAt: '2026-05-13T00:00:00.000Z',
+		updatedAt: '2026-05-13T00:00:00.000Z',
+	})
+	mockModule.readPublishedBundleArtifact.mockResolvedValueOnce({
+		version: 1,
+		kind: 'module',
+		artifactName: '.',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-old',
+		entryPoint: 'src/index.ts',
+		mainModule: 'dist/index.js',
+		modules: { 'dist/index.js': 'export default {}' },
+		dependencies: [],
+		dynamicDependencies: [],
+		packageContext: null,
+		serviceContext: null,
+		createdAt: '2026-05-13T00:00:00.000Z',
+	})
+	expect(
+		await isPublishedPackageArtifactBuiltForCommit({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			target,
+		}),
+	).toBe(false)
+
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue({
+		id: 'artifact-row-1',
+		userId: 'user-1',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		artifactKind: 'module',
+		artifactName: '.',
+		entryPoint: 'src/index.ts',
+		kvKey: 'kv:module',
+		dependenciesJson: '[]',
+		createdAt: '2026-05-13T00:00:00.000Z',
+		updatedAt: '2026-05-13T00:00:00.000Z',
+	})
+	mockModule.readPublishedBundleArtifact.mockResolvedValueOnce({
+		version: 1,
+		kind: 'module',
+		artifactName: '.',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		entryPoint: 'src/index.ts',
+		mainModule: 'dist/index.js',
+		modules: { 'dist/index.js': 'export default {}' },
+		dependencies: [],
+		dynamicDependencies: [],
+		packageContext: null,
+		serviceContext: null,
+		createdAt: '2026-05-13T00:00:00.000Z',
+	})
+	expect(
+		await isPublishedPackageArtifactBuiltForCommit({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			target,
+		}),
+	).toBe(true)
 })
 
 test('rebuildPublishedPackageArtifacts bundles declared subscription handlers', async () => {

@@ -3,6 +3,10 @@ import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtim
 import { repoSessionDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type RepoRunCommandsResult } from './repo-session-commands.ts'
 import {
+	type IsolatedArtifactRebuildOutcome,
+	type IsolatedArtifactRebuildRequest,
+} from './isolated-artifact-rebuild.ts'
+import {
 	type IsolatedCheckPhaseOutcome,
 	type IsolatedCheckPhaseRequest,
 } from './isolated-check-phases.ts'
@@ -125,6 +129,16 @@ export type RepoSessionRpc = {
 		sourceId?: string
 		userId: string
 	}) => Promise<Array<PublishedPackageArtifactBuildTarget>>
+	stagePublishedPackageArtifactRebuild: (payload: {
+		sessionId?: string
+		sourceId?: string
+		userId: string
+	}) => Promise<{
+		stagingKey: string
+	}>
+	runIsolatedArtifactRebuild: (
+		payload: IsolatedArtifactRebuildRequest,
+	) => Promise<IsolatedArtifactRebuildOutcome>
 	rebuildPublishedPackageArtifact: (payload: {
 		sessionId?: string
 		sourceId?: string

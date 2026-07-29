@@ -30,6 +30,12 @@ export type SsrDocumentProps = AppRootProps & {
 	 */
 	modulePreloadHrefs?: Array<string>
 	/**
+	 * Full stylesheet text to inline into a `<style>` tag (removes the
+	 * render-blocking stylesheet request). When absent, the stylesheet
+	 * `<link>` is rendered instead.
+	 */
+	inlineStylesheet?: string | null
+	/**
 	 * Browser Sentry config (error capture + error-only replay). Omitted when
 	 * SENTRY_DSN is not configured; the DSN is a publishable client key.
 	 */
@@ -56,6 +62,13 @@ export function ManagedDocumentHead(
 		const { head } = handle.props
 		return (
 			<>
+				{head.description ? (
+					<meta
+						name="description"
+						content={head.description}
+						{...managedHeadAttr('description')}
+					/>
+				) : null}
 				{head.og ? (
 					<>
 						<meta
@@ -173,20 +186,29 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					/>
 				) : null}
 				{handle.props.fathomSiteId ? (
-					// data-spa="auto" makes Fathom track client-side (pushState)
-					// navigations, not just full document loads.
-					<script
-						src="https://cdn.usefathom.com/script.js"
-						data-site={handle.props.fathomSiteId}
-						data-spa="auto"
-						defer
-					></script>
+					<>
+						{/* The deferred tracker script loads late; warming the
+						    connection up front hides the TLS handshake. */}
+						<link rel="preconnect" href="https://cdn.usefathom.com" />
+						{/* data-spa="auto" makes Fathom track client-side (pushState)
+						    navigations, not just full document loads. */}
+						<script
+							src="https://cdn.usefathom.com/script.js"
+							data-site={handle.props.fathomSiteId}
+							data-spa="auto"
+							defer
+						></script>
+					</>
 				) : null}
 				<link rel="modulepreload" href={clientEntryHref} />
 				{(handle.props.modulePreloadHrefs ?? []).map((href) => (
 					<link key={href} rel="modulepreload" href={href} />
 				))}
-				<link rel="stylesheet" href={stylesheetHref} />
+				{handle.props.inlineStylesheet ? (
+					<style>{handle.props.inlineStylesheet}</style>
+				) : (
+					<link rel="stylesheet" href={stylesheetHref} />
+				)}
 			</head>
 			<body>
 				<div id="root">

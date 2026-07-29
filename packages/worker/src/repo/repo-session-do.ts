@@ -28,8 +28,10 @@ import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	collectPublishedPackageArtifactTargets,
+	isPublishedPackageArtifactBuiltForCommit,
 	persistPublishedPackageArtifactTarget,
 	type PublishedPackageArtifactBuildTarget,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
@@ -46,6 +48,13 @@ import {
 	runRepoChecks,
 	validatePackageBundles,
 } from './checks.ts'
+import {
+	isolatedArtifactRebuildStagingKeyBelongsToUser,
+	isolatedArtifactRebuildStagingKeyForUser,
+	isolatedArtifactRebuildStagingTtlSeconds,
+	type IsolatedArtifactRebuildOutcome,
+	type IsolatedArtifactRebuildRequest,
+} from './isolated-artifact-rebuild.ts'
 import {
 	isolatedCheckStagingKeyBelongsToUser,
 	type IsolatedCheckPhaseOutcome,
@@ -1737,6 +1746,140 @@ class RepoSessionBase extends DurableObject<Env> {
 		return await this.listPackageArtifactTargetsForSource(source)
 	}
 
+	/**
+	 * Collect workspace files once on the long-lived publish session and stage
+	 * the snapshot in KV for throwaway rebuild isolates (see
+	 * isolated-artifact-rebuild.ts). Callers list and filter targets before
+	 * staging so already-built resumes skip this work.
+	 */
+	async stagePublishedPackageArtifactRebuild(input: {
+		sessionId?: string
+		sourceId?: string
+		userId: string
+	}): Promise<{
+		stagingKey: string
+	}> {
+		const source = await this.resolvePublishSource(input)
+		if (source.entity_kind !== 'package') {
+			throw new Error(
+				'Published bundle artifacts can only be rebuilt for packages.',
+			)
+		}
+		const stagingKv = (this.env as Env & { BUNDLE_ARTIFACTS_KV?: KVNamespace })
+			.BUNDLE_ARTIFACTS_KV
+		if (!stagingKv) {
+			throw new Error(
+				'BUNDLE_ARTIFACTS_KV binding is required to stage published package artifact rebuilds.',
+			)
+		}
+		const sourceFiles = await this.collectWorkspaceFiles()
+		const stagingKey = isolatedArtifactRebuildStagingKeyForUser(input.userId)
+		await stagingKv.put(stagingKey, JSON.stringify({ sourceFiles }), {
+			expirationTtl: isolatedArtifactRebuildStagingTtlSeconds,
+		})
+		return { stagingKey }
+	}
+
+	/**
+	 * Pure-compute entrypoint for one published-package artifact rebuild,
+	 * invoked on a throwaway Durable Object id so the rebuild's peak memory
+	 * lives in its own isolate (see isolated-artifact-rebuild.ts). It has no
+	 * session and never touches this instance's storage; the staged source
+	 * files come from a short-TTL KV entry written by
+	 * `stagePublishedPackageArtifactRebuild`.
+	 */
+	async runIsolatedArtifactRebuild(
+		input: IsolatedArtifactRebuildRequest,
+	): Promise<IsolatedArtifactRebuildOutcome> {
+		if (
+			!isolatedArtifactRebuildStagingKeyBelongsToUser({
+				stagingKey: input.stagingKey,
+				userId: input.userId,
+			})
+		) {
+			return {
+				ok: false,
+				message:
+					'Isolated artifact rebuild staging key does not belong to the requesting user.',
+				target: input.target,
+			}
+		}
+		const alreadyBuilt = await isPublishedPackageArtifactBuiltForCommit({
+			env: this.env,
+			userId: input.userId,
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+			target: input.target,
+		})
+		if (alreadyBuilt) {
+			return {
+				ok: true,
+				message: 'Published package artifact already built for this commit.',
+				skipped: true,
+				kvKey: null,
+				target: input.target,
+			}
+		}
+		const staged = await this.env.BUNDLE_ARTIFACTS_KV.get<{
+			sourceFiles?: Record<string, string>
+		}>(input.stagingKey, 'json')
+		const sourceFiles = staged?.sourceFiles
+		if (!sourceFiles) {
+			return {
+				ok: false,
+				message:
+					'Isolated artifact rebuild staging data expired or is missing; re-run the publish capability to repair artifacts.',
+				target: input.target,
+			}
+		}
+		try {
+			const source = await this.resolvePublishSource({
+				sourceId: input.sourceId,
+				userId: input.userId,
+			})
+			if (source.entity_kind !== 'package') {
+				return {
+					ok: false,
+					message:
+						'Published bundle artifacts can only be rebuilt for packages.',
+					target: input.target,
+				}
+			}
+			const savedPackage = await getSavedPackageById(this.env.APP_DB, {
+				userId: input.userId,
+				packageId: source.entity_id,
+			})
+			if (!savedPackage) {
+				return {
+					ok: false,
+					message: `Saved package "${source.entity_id}" was not found.`,
+					target: input.target,
+				}
+			}
+			const kvKey = await this.persistPublishedPackageArtifactTargetFromFiles({
+				source,
+				savedPackage,
+				userId: input.userId,
+				publishedCommit: input.publishedCommit,
+				target: input.target,
+				baseUrl: input.baseUrl,
+				sourceFiles,
+			})
+			return {
+				ok: true,
+				message: 'Published package artifact rebuilt.',
+				kvKey,
+				target: input.target,
+			}
+		} catch (error) {
+			return {
+				ok: false,
+				message: getErrorMessage(error),
+				target: input.target,
+			}
+		}
+	}
+
 	async rebuildPublishedPackageArtifact(input: {
 		sessionId?: string
 		sourceId?: string
@@ -1763,8 +1906,33 @@ class RepoSessionBase extends DurableObject<Env> {
 			throw new Error(`Saved package "${source.entity_id}" was not found.`)
 		}
 		const sourceFiles = await this.collectWorkspaceFiles()
+		const kvKey = await this.persistPublishedPackageArtifactTargetFromFiles({
+			source,
+			savedPackage,
+			userId: input.userId,
+			publishedCommit: input.publishedCommit,
+			target: input.target,
+			baseUrl: input.baseUrl,
+			sourceFiles,
+		})
+		return {
+			ok: true,
+			target: input.target,
+			kvKey,
+		}
+	}
+
+	private async persistPublishedPackageArtifactTargetFromFiles(input: {
+		source: EntitySourceRow
+		savedPackage: SavedPackageRecord
+		userId: string
+		publishedCommit: string
+		target: PublishedPackageArtifactBuildTarget
+		baseUrl?: string
+		sourceFiles: Record<string, string>
+	}) {
 		const sourceAtPublishedCommit = {
-			...source,
+			...input.source,
 			published_commit: input.publishedCommit,
 		}
 		const {
@@ -1772,46 +1940,41 @@ class RepoSessionBase extends DurableObject<Env> {
 			buildKodyModuleBundle,
 			buildKodyImportableModuleBundle,
 		} = await import('#worker/package-runtime/module-graph.ts')
-		const kvKey = await persistPublishedPackageArtifactTarget({
+		return await persistPublishedPackageArtifactTarget({
 			env: this.env,
 			userId: input.userId,
 			source: sourceAtPublishedCommit,
-			savedPackage,
+			savedPackage: input.savedPackage,
 			target: input.target,
 			buildAppBundle: async ({ entryPoint }) =>
 				await buildKodyAppBundle({
 					env: this.env,
-					baseUrl: input.baseUrl ?? source.source_root,
+					baseUrl: input.baseUrl ?? input.source.source_root,
 					userId: input.userId,
-					sourceFiles,
+					sourceFiles: input.sourceFiles,
 					entryPoint,
-					rootPackageId: savedPackage.id,
+					rootPackageId: input.savedPackage.id,
 					cacheKey: null,
 				}),
 			buildModuleBundle: async ({ entryPoint }) =>
 				await buildKodyModuleBundle({
 					env: this.env,
-					baseUrl: input.baseUrl ?? source.source_root,
+					baseUrl: input.baseUrl ?? input.source.source_root,
 					userId: input.userId,
-					sourceFiles,
+					sourceFiles: input.sourceFiles,
 					entryPoint,
-					rootPackageId: savedPackage.id,
+					rootPackageId: input.savedPackage.id,
 				}),
 			buildImportableModuleBundle: async ({ entryPoint }) =>
 				await buildKodyImportableModuleBundle({
 					env: this.env,
-					baseUrl: input.baseUrl ?? source.source_root,
+					baseUrl: input.baseUrl ?? input.source.source_root,
 					userId: input.userId,
-					sourceFiles,
+					sourceFiles: input.sourceFiles,
 					entryPoint,
-					rootPackageId: savedPackage.id,
+					rootPackageId: input.savedPackage.id,
 				}),
 		})
-		return {
-			ok: true,
-			target: input.target,
-			kvKey,
-		}
 	}
 
 	async rebaseSession(input: {

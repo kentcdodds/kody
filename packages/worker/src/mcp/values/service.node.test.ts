@@ -2,6 +2,10 @@ import { expect, test } from 'vitest'
 import { maxRestorableTextColumnBytes } from '@kody-internal/shared/backup-restore-safety.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	getStorageBindingKey,
+	resolveStorageScopeOrder,
+} from '#mcp/storage-bindings.ts'
+import {
 	deleteAllAppScopedValues,
 	deleteValue,
 	getValue,
@@ -372,6 +376,89 @@ test('value service rejects unavailable scoped storage', async () => {
 			error instanceof McpCallerError &&
 			error.message === 'Value scope "session" is unavailable in this context.',
 	)
+})
+
+test('value service rejects app scope when only storageId is bound', async () => {
+	const testDb = createValueTestDb()
+	const env = { APP_DB: testDb.db }
+	const storageContext = {
+		sessionId: null,
+		appId: null,
+		storageId: 'job:job-123',
+	}
+
+	expect(getStorageBindingKey('app', storageContext)).toBeNull()
+	expect(resolveStorageScopeOrder(storageContext)).toEqual(['user'])
+
+	await expect(
+		saveValue({
+			env,
+			userId: 'user-123',
+			scope: 'app',
+			name: 'workspaceSlug',
+			value: 'job-scratch-as-app',
+			storageContext,
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message === 'Value scope "app" is unavailable in this context.',
+	)
+})
+
+test('value service cannot read legacy app buckets keyed by storageId', async () => {
+	const testDb = createValueTestDb()
+	const env = { APP_DB: testDb.db }
+	const storageContext = {
+		sessionId: null,
+		appId: null,
+		storageId: 'job:job-123',
+	}
+	const now = new Date().toISOString()
+	const bucketId = 'legacy-job-app-bucket'
+	testDb.buckets.set('user-123:app:job:job-123', {
+		id: bucketId,
+		user_id: 'user-123',
+		scope: 'app',
+		binding_key: 'job:job-123',
+		expires_at: null,
+		created_at: now,
+		updated_at: now,
+	})
+	testDb.entries.set(`${bucketId}:workspaceSlug`, {
+		bucket_id: bucketId,
+		name: 'workspaceSlug',
+		description: 'Legacy job-keyed app value',
+		value: 'stranded-job-value',
+		created_at: now,
+		updated_at: now,
+	})
+
+	expect(resolveStorageScopeOrder(storageContext)).toEqual(['user'])
+	expect(
+		await getValue({
+			env,
+			userId: 'user-123',
+			name: 'workspaceSlug',
+			storageContext,
+		}),
+	).toBeNull()
+	expect(
+		await getValue({
+			env,
+			userId: 'user-123',
+			name: 'workspaceSlug',
+			scope: 'app',
+			storageContext,
+		}),
+	).toBeNull()
+	expect(
+		await listValues({
+			env,
+			userId: 'user-123',
+			storageContext,
+		}),
+	).toEqual([])
 })
 
 test('value service rejects values too large for restorable D1 backups', async () => {

@@ -184,6 +184,11 @@ export const importBoundaries = [
 				reason:
 					'Package deletion revokes package-scoped secrets and approvals, which the MCP secrets service owns. TODO: move secret storage into a neutral #worker/secrets module.',
 			},
+			{
+				specifier: '#mcp/values/service.ts',
+				reason:
+					'Package deletion removes app-scoped values (package config), which the MCP values service owns. TODO: move value storage into a neutral #worker/values module.',
+			},
 		],
 		neverAllowedPrefix: null,
 		neverAllowedMessage: null,

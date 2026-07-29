@@ -28,6 +28,10 @@
  *   Fathom Analytics tracker (rendered only when FATHOM_SITE_ID is set, see
  *   `ssr-document.tsx`): the script loads from that host and reports
  *   pageviews via an image beacon to the same host.
+ * - Cloudflare Web Analytics: injected at the edge by Cloudflare,
+ *   privacy-preserving, no cookies. The beacon script loads from
+ *   `https://static.cloudflareinsights.com` (`script-src`) and POSTs to
+ *   `https://cloudflareinsights.com` (`connect-src`).
  * - `worker-src 'self' blob:` exists for Sentry Session Replay's compression
  *   Web Worker, which is created from a blob URL. Spawning a blob worker
  *   already requires script execution, which `script-src 'self'` still gates,
@@ -42,8 +46,8 @@ const contentSecurityPolicy = [
 	"img-src 'self' data: blob: https://cdn.usefathom.com",
 	"font-src 'self' data:",
 	"style-src 'self' 'unsafe-inline'",
-	"script-src 'self' https://cdn.usefathom.com",
-	"connect-src 'self'",
+	"script-src 'self' https://cdn.usefathom.com https://static.cloudflareinsights.com",
+	"connect-src 'self' https://cloudflareinsights.com",
 	"worker-src 'self' blob:",
 ].join('; ')
 

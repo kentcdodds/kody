@@ -23,9 +23,7 @@ export function getStorageBindingKey(
 	if (scope === 'user') return ''
 	if (scope === 'app') {
 		const appId = storageContext?.appId?.trim()
-		if (appId) return appId
-		const storageId = storageContext?.storageId?.trim()
-		return storageId || null
+		return appId || null
 	}
 	if (scope === 'session') {
 		const sessionId = storageContext?.sessionId?.trim()

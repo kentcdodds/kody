@@ -3,6 +3,7 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as Artifacts from './artifacts.ts'
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
+import type * as PublishedBundleArtifactsModule from '#worker/package-runtime/published-bundle-artifacts.ts'
 
 const mockModule = vi.hoisted(() => {
 	const gitState = {
@@ -125,6 +126,13 @@ const mockModule = vi.hoisted(() => {
 			message:
 				'No semantic diagnostics for 1 callable package runtime entrypoint(s).',
 		})),
+		isPublishedPackageArtifactBuiltForCommit: vi.fn(async () => false),
+		persistPublishedPackageArtifactTarget: vi.fn(async () => 'kv:artifact'),
+		getSavedPackageById: vi.fn(async () => ({
+			id: 'package-1',
+			kodyId: 'demo',
+			sourceId: 'source-1',
+		})),
 	}
 })
 
@@ -192,6 +200,15 @@ function restoreRepoSessionMockBaseline() {
 		},
 	})
 	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
+	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
+	mockModule.persistPublishedPackageArtifactTarget.mockResolvedValue(
+		'kv:artifact',
+	)
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'demo',
+		sourceId: 'source-1',
+	})
 	mockModule.rawPush.mockResolvedValue({ ok: true, refs: {} })
 	mockModule.rawPush.mockClear()
 
@@ -361,6 +378,24 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
 			mockModule.writePublishedSourceSnapshot(...args),
 	}
 })
+
+vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', async () => {
+	const actual = await vi.importActual<typeof PublishedBundleArtifactsModule>(
+		'#worker/package-runtime/published-bundle-artifacts.ts',
+	)
+	return {
+		...actual,
+		isPublishedPackageArtifactBuiltForCommit: (...args: Array<unknown>) =>
+			mockModule.isPublishedPackageArtifactBuiltForCommit(...args),
+		persistPublishedPackageArtifactTarget: (...args: Array<unknown>) =>
+			mockModule.persistPublishedPackageArtifactTarget(...args),
+	}
+})
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
+}))
 
 const { RepoSession } = await import('./repo-session-do.ts')
 const { deleteRepoSession, insertRepoSession } =
@@ -1455,4 +1490,162 @@ test('runIsolatedCheckPhase loads staged files from KV and dispatches the phase'
 	expect(crossUser.ok).toBe(false)
 	expect(crossUser.message).toContain('does not belong to the requesting user')
 	expect(kv.get).not.toHaveBeenCalled()
+})
+
+test('runIsolatedArtifactRebuild loads staged files, skips built targets, and rejects cross-user keys', async () => {
+	restoreRepoSessionMockBaseline()
+	const staged = {
+		sourceFiles: {
+			'package.json':
+				'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}',
+			'index.ts': 'export const ready = true\n',
+		},
+	}
+	const kv = {
+		get: vi.fn(async () => staged),
+		put: vi.fn(async () => undefined),
+	}
+	const packageSource = {
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'package-package-1',
+		published_commit: 'commit-1',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	}
+	mockModule.getEntitySourceById.mockResolvedValue(packageSource)
+	const session = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: kv,
+	} as unknown as Env)
+	const target = {
+		kind: 'module' as const,
+		artifactName: '.',
+		entryPoint: 'index.ts',
+		bundleKind: 'module' as const,
+	}
+
+	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValueOnce(
+		true,
+	)
+	const skipped = await session.runIsolatedArtifactRebuild({
+		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:abc',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit: 'commit-1',
+		target,
+	})
+	expect(skipped).toMatchObject({ ok: true, skipped: true })
+	expect(kv.get).not.toHaveBeenCalled()
+	expect(
+		mockModule.persistPublishedPackageArtifactTarget,
+	).not.toHaveBeenCalled()
+
+	const rebuilt = await session.runIsolatedArtifactRebuild({
+		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:abc',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit: 'commit-1',
+		target,
+		baseUrl: 'https://kody.test',
+	})
+	expect(rebuilt).toMatchObject({
+		ok: true,
+		kvKey: 'kv:artifact',
+		target,
+	})
+	expect(mockModule.persistPublishedPackageArtifactTarget).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			target,
+			source: expect.objectContaining({ published_commit: 'commit-1' }),
+		}),
+	)
+
+	kv.get.mockResolvedValueOnce(null)
+	const expired = await session.runIsolatedArtifactRebuild({
+		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:gone',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit: 'commit-1',
+		target,
+	})
+	expect(expired.ok).toBe(false)
+	expect(expired.message).toContain('staging data expired')
+
+	kv.get.mockClear()
+	const crossUser = await session.runIsolatedArtifactRebuild({
+		stagingKey: 'repo-artifact-rebuild-staging:v1:user-2:abc',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit: 'commit-1',
+		target,
+	})
+	expect(crossUser.ok).toBe(false)
+	expect(crossUser.message).toContain('does not belong to the requesting user')
+	expect(kv.get).not.toHaveBeenCalled()
+})
+
+test('stagePublishedPackageArtifactRebuild collects workspace files once and stages them', async () => {
+	restoreRepoSessionMockBaseline()
+	const packageJson =
+		'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}'
+	mockModule.workspaceGlob.mockResolvedValue([
+		{ type: 'file', path: '/session/package.json' },
+		{ type: 'file', path: '/session/index.ts' },
+	] as unknown as Array<{ type: 'file'; path: string }>)
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/package.json') return packageJson
+		if (path === '/session/index.ts') return 'export const ready = true\n'
+		return null
+	})
+	const packageSource = {
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'package-package-1',
+		published_commit: 'commit-1',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	}
+	mockModule.getEntitySourceById.mockResolvedValue(packageSource)
+
+	const put = vi.fn(async () => undefined)
+	const session = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: { put },
+	} as unknown as Env)
+
+	const staged = await session.stagePublishedPackageArtifactRebuild({
+		sourceId: 'source-1',
+		userId: 'user-1',
+	})
+	expect(
+		staged.stagingKey.startsWith('repo-artifact-rebuild-staging:v1:user-1:'),
+	).toBe(true)
+	expect(put).toHaveBeenCalledTimes(1)
+	expect(put).toHaveBeenCalledWith(
+		staged.stagingKey,
+		expect.stringContaining('"package.json"'),
+		{ expirationTtl: 15 * 60 },
+	)
+	const payload = JSON.parse(put.mock.calls[0]?.[1] as string) as {
+		sourceFiles: Record<string, string>
+	}
+	expect(payload.sourceFiles).toEqual({
+		'package.json': packageJson,
+		'index.ts': 'export const ready = true\n',
+	})
+	expect(mockModule.workspaceGlob).toHaveBeenCalledTimes(1)
 })
