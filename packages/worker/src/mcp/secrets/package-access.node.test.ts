@@ -132,6 +132,8 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 		return true
 	})
 
+	mockModule.getSavedPackageById.mockClear()
+	mockModule.getCommunityForkByForkedPackageId.mockClear()
 	await expect(
 		assertPackageCanAccessResolvedSecret(
 			accessInput({
@@ -157,6 +159,8 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 
 	// Mutate always needs an allowed-packages grant (self-authored and adopted
 	// forks alike); the fork lookup is skipped for mutate.
+	mockModule.getSavedPackageById.mockClear()
+	mockModule.getCommunityForkByForkedPackageId.mockClear()
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	await expect(
 		assertPackageCanAccessResolvedSecret(accessInput({ intent: 'mutate' })),
@@ -164,10 +168,10 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 		expectAccessDenied(error)
 		return true
 	})
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(1)
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 
 	mockModule.getSavedPackageById.mockClear()
-	mockModule.getCommunityForkByForkedPackageId.mockClear()
 	await expect(
 		assertPackageCanAccessResolvedSecret(
 			accessInput({
