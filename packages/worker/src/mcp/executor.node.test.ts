@@ -501,11 +501,10 @@ test('explicit request budgets cap independent roots at four without blocking se
 	expect(secondState.active).toBe(0)
 })
 
-test('createExecuteExecutor queues nested evaluations at four without blocking an unrelated request', async () => {
+test('createExecuteExecutor fails fast when nested fan-out saturates its request budget', async () => {
 	let evaluationCount = 0
-	let activeEvaluations = 0
 	let maxActiveEvaluations = 0
-	const childReleases: Array<() => void> = []
+	let activeEvaluations = 0
 	let nestedEnv: Env
 	const exports = createExecutorTestExports()
 	const providers = [{ name: 'kody', fns: {} }]
@@ -523,7 +522,7 @@ test('createExecuteExecutor queues nested evaluations at four without blocking a
 								activeEvaluations,
 							)
 							if (evaluationCount === 1) {
-								const nestedResults = await Promise.all(
+								return await Promise.all(
 									Array.from({ length: 5 }, async (_, index) => {
 										return await createExecuteExecutor({
 											env: nestedEnv,
@@ -532,15 +531,7 @@ test('createExecuteExecutor queues nested evaluations at four without blocking a
 										}).execute(`async () => ${index}`, providers)
 									}),
 								)
-								activeEvaluations -= 1
-								return {
-									result: nestedResults.length,
-									logs: [],
-								}
 							}
-							await new Promise<void>((resolve) => {
-								childReleases.push(resolve)
-							})
 							activeEvaluations -= 1
 							return { result: 'child', logs: [] }
 						},
@@ -557,53 +548,11 @@ test('createExecuteExecutor queues nested evaluations at four without blocking a
 		gatewayProps: createGatewayProps('nested-user'),
 	}).execute('async () => "root"', providers)
 
-	await expect.poll(() => childReleases.length).toBe(3)
+	await expect(rootExecution).rejects.toThrow(
+		'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
+	)
 	expect(evaluationCount).toBe(4)
 	expect(maxActiveEvaluations).toBe(4)
-
-	let independentStarted = false
-	let releaseIndependent: (() => void) | null = null
-	const independentLoader = {
-		get() {
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate() {
-							independentStarted = true
-							await new Promise<void>((resolve) => {
-								releaseIndependent = resolve
-							})
-							return { result: 'independent', logs: [] }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-	const independentExecution = createExecuteExecutor({
-		env: createExecutorTestEnv(independentLoader),
-		exports,
-		gatewayProps: createGatewayProps('independent-user'),
-	}).execute('async () => "independent"', providers)
-	await expect.poll(() => independentStarted).toBe(true)
-	releaseIndependent?.()
-	await expect(independentExecution).resolves.toMatchObject({
-		result: 'independent',
-	})
-
-	childReleases.shift()?.()
-	await expect.poll(() => evaluationCount).toBe(5)
-	expect(activeEvaluations).toBe(4)
-	childReleases.shift()?.()
-	await expect.poll(() => evaluationCount).toBe(6)
-	expect(activeEvaluations).toBe(4)
-	for (const release of childReleases.splice(0)) {
-		release()
-	}
-
-	await expect(rootExecution).resolves.toMatchObject({ result: 5 })
-	expect(maxActiveEvaluations).toBe(4)
-	expect(activeEvaluations).toBe(0)
 })
 
 test('createExecuteExecutor fails fast instead of deadlocking recursive evaluations beyond four', async () => {

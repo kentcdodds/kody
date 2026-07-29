@@ -175,7 +175,6 @@ async function withTypecheckLock<T>(
 		release = resolve
 	})
 	await previous
-	const holdStartedAtMs = Date.now()
 	let timeoutId: ReturnType<typeof setTimeout> | null = null
 	try {
 		const service = await Promise.race([
@@ -194,14 +193,15 @@ async function withTypecheckLock<T>(
 			clearTimeout(timeoutId)
 			timeoutId = null
 		}
+		const diagnosticsStartedAtMs = Date.now()
 		const result = callback(service)
-		const elapsedMs = Date.now() - holdStartedAtMs
+		const elapsedMs = Date.now() - diagnosticsStartedAtMs
 		if (elapsedMs > maxExecuteTypecheckHoldMs) {
+			// Synchronous LanguageService diagnostics cannot be preempted in this
+			// isolate. Do not turn a completed valid check into a false-positive
+			// failure; discard the slow service so the next request starts fresh.
 			service.languageService.dispose?.()
 			reusableTypecheckServicePromise = null
-			throw new ExecuteTypecheckError([
-				`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckHoldMs}ms execution budget.`,
-			])
 		}
 		return result
 	} finally {
