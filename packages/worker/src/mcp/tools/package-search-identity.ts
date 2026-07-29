@@ -47,6 +47,7 @@ function safelyDecodePathSegment(value: string) {
 function parsePackageUrl(input: {
 	query: string
 	baseUrl: string
+	packageAppBaseUrl: string | null
 	username: string | null
 }): ParsedPackageIdentity {
 	const looksLikeUrl =
@@ -65,6 +66,18 @@ function parsePackageUrl(input: {
 			? { kind: 'invalid-package-identity' }
 			: { kind: 'not-package-identity' }
 	}
+	// Hosted package apps are served from their own origin in production, so the
+	// URL a user copies out of the address bar is on that host, not the app host.
+	// Both are this deployment's own origins; anything else is another site's URL
+	// and must not resolve to one of this user's packages.
+	let packageAppOrigin: string | null = null
+	if (input.packageAppBaseUrl) {
+		try {
+			packageAppOrigin = new URL(input.packageAppBaseUrl).origin
+		} catch {
+			packageAppOrigin = null
+		}
+	}
 
 	const parts = url.pathname.split('/').filter(Boolean)
 	const isAccountPackagePath =
@@ -74,11 +87,14 @@ function parsePackageUrl(input: {
 	if (!isAccountPackagePath && !isHostedPackagePath) {
 		return { kind: 'not-package-identity' }
 	}
-	if (
-		url.origin !== baseUrl.origin ||
-		url.username.length > 0 ||
-		url.password.length > 0
-	) {
+	// The package-app origin only serves `/@{username}/packages/*`; account pages
+	// live on the app origin alone.
+	const isOwnOrigin =
+		url.origin === baseUrl.origin ||
+		(isHostedPackagePath &&
+			packageAppOrigin !== null &&
+			url.origin === packageAppOrigin)
+	if (!isOwnOrigin || url.username.length > 0 || url.password.length > 0) {
 		return { kind: 'invalid-package-identity' }
 	}
 
@@ -106,6 +122,8 @@ function parsePackageUrl(input: {
 export function parsePackageSearchIdentity(input: {
 	query: string
 	baseUrl: string
+	/** Origin hosted package apps are served from, when it is a separate host. */
+	packageAppBaseUrl?: string | null
 	username: string | null
 }): ParsedPackageIdentity {
 	const query = input.query.trim()
@@ -114,6 +132,7 @@ export function parsePackageSearchIdentity(input: {
 	const parsedUrl = parsePackageUrl({
 		query,
 		baseUrl: input.baseUrl,
+		packageAppBaseUrl: input.packageAppBaseUrl ?? null,
 		username: input.username,
 	})
 	if (parsedUrl.kind !== 'not-package-identity') return parsedUrl
@@ -149,6 +168,7 @@ export async function resolvePackageIdentitySearch(input: {
 	userId: string | null
 	query: string
 	baseUrl: string
+	packageAppBaseUrl?: string | null
 	username: string | null
 	includeHiddenPackages: boolean
 }): Promise<PackageIdentitySearchResolution> {

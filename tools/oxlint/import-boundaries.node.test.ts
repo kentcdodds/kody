@@ -11,17 +11,22 @@ const packageRegistryFile = 'packages/worker/src/package-registry/repo.ts'
 const appFile = 'packages/worker/src/app/handlers/admin-users.ts'
 
 test('the layer boundaries forbid upward imports, keep the documented allowlist, and never allow handler imports', () => {
-	// New #mcp -> #app edges fail; the two documented exceptions still pass.
+	// New #mcp -> #app edges fail; the documented exception still passes.
 	expect(
 		findImportBoundaryViolation(mcpFile, '#worker/admin/users-data.ts'),
 	).toBe(null)
 	expect(
 		findImportBoundaryViolation(mcpFile, '#app/admin-users-data.ts'),
 	).toMatch(/#mcp\/\* must not import from #app\/\*/)
-	expect(findImportBoundaryViolation(mcpFile, '#app/app-base-url.ts')).toBe(
+	expect(findImportBoundaryViolation(mcpFile, '#app/community-public.ts')).toBe(
 		null,
 	)
-	expect(findImportBoundaryViolation(mcpFile, '#app/community-public.ts')).toBe(
+	// Public-origin resolution moved to a neutral module, so the app-layer path
+	// is no longer allowlisted and the neutral one needs no exception.
+	expect(findImportBoundaryViolation(mcpFile, '#app/app-base-url.ts')).toMatch(
+		/#mcp\/\* must not import from #app\/\*/,
+	)
+	expect(findImportBoundaryViolation(mcpFile, '#worker/app-base-url.ts')).toBe(
 		null,
 	)
 

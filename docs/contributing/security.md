@@ -121,10 +121,10 @@ the app origin, so the `SameSite=Lax`, `HttpOnly` `kody_session` cookie never
 attaches to them and cross-origin `fetch` from package pages has no CORS grant
 (`withCors` only reflects same-origin, plus `/mcp`). It must stay a **separate
 registrable domain**: a subdomain of the app origin would still be same-site for
-cookie purposes. `getPackageAppBaseUrl`
-(`packages/worker/src/app/app-base-url.ts`) resolves it, and `getAppBaseUrl`
-refuses to resolve the package-app origin as the app origin so package runtime
-callbacks and first-party links always point back at the app.
+cookie purposes. `getPackageAppBaseUrl` (`packages/worker/src/app-base-url.ts`)
+resolves it, and `getAppBaseUrl` refuses to resolve the package-app origin as
+the app origin so package runtime callbacks and first-party links always point
+back at the app.
 
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:
@@ -158,6 +158,17 @@ two-origin flow locally, set
 The cross-site handoff (how the owner is recognized on the package-app origin
 without giving package code a first-party session) is documented in
 [`architecture/authentication.md`](./architecture/authentication.md#package-app-origin-handoff).
+
+Because the package-app origin is one of this deployment's own origins, code
+that decides whether a URL is "ours" must accept both.
+`parsePackageSearchIdentity`
+(`packages/worker/src/mcp/tools/package-search-identity.ts`) accepts a
+`/@{username}/packages/{kodyId}` URL on either origin — so a URL copied out of a
+running package app resolves to that package — while `/account/*` paths stay
+app-origin only, since the package-app origin does not serve them. Untrusted
+markdown is the opposite case and needs no change: `getSafeMarkdownLinkHref`
+refuses any `/@...` user-scope path regardless of host, so a community README
+cannot link into either origin's package surface.
 
 Future hardening, deliberately out of scope for now: per-user subdomains
 (`{username}.kodyapps.dev`) would additionally isolate one user's package apps

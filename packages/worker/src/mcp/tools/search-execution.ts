@@ -1,3 +1,4 @@
+import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { runPackageRetrievers } from '#worker/package-retrievers/service.ts'
@@ -71,6 +72,7 @@ export async function executeSearchList(input: {
 					userId: input.userId,
 					query: input.query,
 					baseUrl: input.callerContext.baseUrl,
+					packageAppBaseUrl: getPackageAppBaseUrl({ env: input.env }),
 					username,
 					includeHiddenPackages: input.includeHiddenPackages,
 				})

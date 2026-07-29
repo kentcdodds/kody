@@ -99,6 +99,67 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 		}),
 	).toEqual({ kind: 'not-package-identity' })
 
+	// Hosted package apps run on their own origin in production, so the URL a
+	// user copies from the address bar is on that host.
+	const hosted = { ...common, packageAppBaseUrl: 'https://kodyapps.dev' }
+	expect(
+		parsePackageSearchIdentity({
+			...hosted,
+			query: 'https://kodyapps.dev/@user/packages/daily-notes',
+		}),
+	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
+	// A deep link inside a running app is not a package identity — unchanged from
+	// how the app origin already treated `/@user/packages/x/<rest>`.
+	expect(
+		parsePackageSearchIdentity({
+			...hosted,
+			query: 'https://kodyapps.dev/@user/packages/daily-notes/report?tab=1',
+		}),
+	).toEqual({ kind: 'not-package-identity' })
+	// The app origin keeps working, and relative URLs still resolve against it.
+	expect(
+		parsePackageSearchIdentity({
+			...hosted,
+			query: 'https://heykody.dev/@user/packages/daily-notes',
+		}),
+	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
+	expect(
+		parsePackageSearchIdentity({
+			...hosted,
+			query: `/account/packages/${packageId}`,
+		}),
+	).toEqual({ kind: 'package-id', value: packageId, authoritative: true })
+
+	for (const query of [
+		// Another user's package, even on the package-app origin.
+		'https://kodyapps.dev/@other/packages/daily-notes',
+		// The package-app origin never serves account pages.
+		`https://kodyapps.dev/account/packages/${packageId}`,
+		// Neighbouring hosts are not this deployment.
+		'https://evil-kodyapps.dev/@user/packages/daily-notes',
+		'https://kodyapps.dev.attacker.example/@user/packages/daily-notes',
+		'https://user:password@kodyapps.dev/@user/packages/daily-notes',
+	]) {
+		expect(parsePackageSearchIdentity({ ...hosted, query }), query).toEqual({
+			kind: 'invalid-package-identity',
+		})
+	}
+	// Deployments that serve package apps inline (no separate origin) must not
+	// start accepting that host.
+	expect(
+		parsePackageSearchIdentity({
+			...common,
+			query: 'https://kodyapps.dev/@user/packages/daily-notes',
+		}),
+	).toEqual({ kind: 'invalid-package-identity' })
+	expect(
+		parsePackageSearchIdentity({
+			...common,
+			packageAppBaseUrl: 'not-a-url',
+			query: 'https://kodyapps.dev/@user/packages/daily-notes',
+		}),
+	).toEqual({ kind: 'invalid-package-identity' })
+
 	for (const query of [
 		`https://attacker.example/account/packages/${packageId}`,
 		`https://attacker.example/@user/packages/daily-notes`,

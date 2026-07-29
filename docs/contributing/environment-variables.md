@@ -88,7 +88,7 @@ Optional Wrangler `var` (public, non-secret; see
 ## Hosted package app origin
 
 Optional Wrangler `var` (public, non-secret; see
-`packages/worker/src/app/app-base-url.ts` and
+`packages/worker/src/app-base-url.ts` and
 `packages/worker/src/app/package-app-origin.ts`):
 
 - `PACKAGE_APP_BASE_URL` — the origin that hosted package apps are served from.

@@ -159,11 +159,6 @@ export const importBoundaries = [
 			'#mcp/* must not import from #app/*. Extract the shared code into a neutral #worker/* module (see docs/contributing/import-boundaries.md).',
 		allowedSpecifiers: [
 			{
-				specifier: '#app/app-base-url.ts',
-				reason:
-					'Builds absolute app URLs from the app-layer deployment config. TODO: move the base-URL resolver into a neutral #worker/* module.',
-			},
-			{
 				specifier: '#app/community-public.ts',
 				reason:
 					'Builds public avatar and listing URLs from the typed route table in #app/routes.ts, which is app-layer by definition. TODO: extract the URL builders behind a neutral interface.',
