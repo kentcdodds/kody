@@ -26,6 +26,9 @@ test('community listings frame reloads fresh data on back-navigation', async ({
 	await expect(
 		page.getByTestId(`community-listing-description-${staleListing.listingId}`),
 	).toHaveText(staleListing.description)
+	await page.waitForFunction(
+		() => window.history.scrollRestoration === 'manual',
+	)
 
 	await page.evaluate(() => {
 		;(window as Window & { __e2eStaleMarker?: boolean }).__e2eStaleMarker = true
@@ -80,6 +83,9 @@ test('community detail frame reloads fresh fork counts on return navigation', as
 	await page.goto(`/community/${listingId}`)
 	const initialForkCount = Number(
 		(await page.getByTestId('community-detail-forks').textContent()) ?? '0',
+	)
+	await page.waitForFunction(
+		() => window.history.scrollRestoration === 'manual',
 	)
 
 	await page.evaluate(() => {
