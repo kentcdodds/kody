@@ -51,10 +51,12 @@ the input) and then smoke-test unsealing offline. See
 2. **Decrypt all secrets with the old key** and re-encrypt them with the new
    `SECRET_STORE_KEY`. This can be done via a one-off script against D1 or a
    future `/__maintenance/reencrypt-secrets` endpoint.
-3. **Deploy** the new `SECRET_STORE_KEY` only after the re-encryption pass is
-   complete and verified.
-4. **Re-seal escrow** for the new key value with a bumped `ESCROW_KEY_VERSION`
-   (see Escrow above — the previous version's object is write-once).
+3. **Re-seal escrow** for the new key value with a bumped `ESCROW_KEY_VERSION`
+   (see Escrow above — the previous version's object is write-once) and
+   smoke-test unsealing offline, so the new key is recoverable before it goes
+   live.
+4. **Deploy** the new `SECRET_STORE_KEY` only after the re-encryption pass and
+   escrow verification are complete.
 
 ### Important notes
 

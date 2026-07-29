@@ -318,11 +318,13 @@ export async function registerTools(agent: MCP) {
 
 **Example in this repo:** Server instructions are built by
 `buildMcpServerInstructions` in `packages/worker/src/mcp/server-instructions.ts`
-(with fragments under `packages/worker/src/mcp/instructions/`). The search tool
-splits metadata/schemas
+(with fragments under `packages/worker/src/mcp/instructions/`). The snippet
+above is the generic pattern for small tools; the search tool deliberately
+splits its responsibilities across metadata/schemas
 (`packages/worker/src/mcp/tools/search-tool-definition.ts`), registration
-(`search-register.ts`), and the handler (`search-tool-runner.ts`), with
-`packages/worker/src/mcp/register-tools.ts` as the small aggregator.
+(`search-register.ts`), and the handler (`search-tool-runner.ts`) because each
+piece grew large, with `packages/worker/src/mcp/register-tools.ts` as the small
+aggregator. Preserve that split rather than folding it back into one file.
 
 ---
 

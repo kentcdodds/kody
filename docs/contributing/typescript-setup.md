@@ -77,7 +77,7 @@ edited by hand.
 ## Common gotchas
 
 - **Missing editor types** usually means the file isn't included by any of the
-  three environment configs. Add it to the appropriate `tsconfig.*.json`.
+  environment configs. Add it to the appropriate `tsconfig.*.json`.
 - **Worker types** depend on the generated
   `packages/worker/worker-configuration.d.ts`; run `npm run generate-types` if
   bindings/types drift.
