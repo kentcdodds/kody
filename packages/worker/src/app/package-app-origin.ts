@@ -244,9 +244,10 @@ async function handleRequestOnPackageAppOrigin(input: {
 
 	// A token that reaches here is stale, forged, or for another package, so it is
 	// worthless — but it is still an internal auth artifact, and package code has
-	// no business seeing one. Serve the request as if it never carried a token.
+	// no business seeing one. Serve the request as if it never carried a token,
+	// including when the parameter is present but empty.
 	return await servePackageAppRequest({
-		request: handoffToken
+		request: url.searchParams.has(packageAppHandoffQueryParam)
 			? new Request(withoutHandoffToken(url), request)
 			: request,
 		env,
