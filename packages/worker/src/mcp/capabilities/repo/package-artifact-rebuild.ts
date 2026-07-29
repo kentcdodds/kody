@@ -223,7 +223,9 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 		publishedCommit: input.publishedCommit,
 		targets,
 	})
-	const succeeded: Array<PublishedPackageArtifactBuildTarget> = [...alreadyBuilt]
+	const succeeded: Array<PublishedPackageArtifactBuildTarget> = [
+		...alreadyBuilt,
+	]
 	if (remaining.length === 0) return
 
 	let stagingKey: string

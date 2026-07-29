@@ -77,7 +77,9 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 		run,
 		discard,
 	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(sampleTargets)
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
+		sampleTargets,
+	)
 	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
 		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
 	})
@@ -113,7 +115,9 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 		expect(run).toHaveBeenCalledTimes(2)
 	})
 	expect(maxInFlight).toBe(2)
-	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledTimes(1)
+	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledTimes(
+		1,
+	)
 	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
 		1,
 	)
@@ -151,7 +155,9 @@ test('isolated rebuild skips targets already built for the published commit', as
 		run,
 		discard,
 	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(sampleTargets)
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
+		sampleTargets,
+	)
 	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
 		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
 	})
@@ -191,7 +197,9 @@ test('does not stage workspace when every artifact target is already built', asy
 		run,
 		discard,
 	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(sampleTargets)
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
+		sampleTargets,
+	)
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
 
 	await rebuildPublishedPackageArtifactsViaRepoSession({
@@ -206,7 +214,9 @@ test('does not stage workspace when every artifact target is already built', asy
 		baseUrl: 'https://kody.test',
 	})
 
-	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledTimes(1)
+	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledTimes(
+		1,
+	)
 	expect(mockModule.stagePublishedPackageArtifactRebuild).not.toHaveBeenCalled()
 	expect(run).not.toHaveBeenCalled()
 	expect(discard).not.toHaveBeenCalled()
@@ -223,14 +233,12 @@ test('isolated rebuild failure stops later chunks, discards staging, and reports
 			bundleKind: 'module' as const,
 		},
 	]
-	const run = vi.fn(
-		async (input: { target: (typeof targets)[number] }) => {
-			if (input.target.artifactName === './b') {
-				return { ok: false, message: 'bundle b failed' }
-			}
-			return { ok: true, message: 'rebuilt' }
-		},
-	)
+	const run = vi.fn(async (input: { target: (typeof targets)[number] }) => {
+		if (input.target.artifactName === './b') {
+			return { ok: false, message: 'bundle b failed' }
+		}
+		return { ok: true, message: 'rebuilt' }
+	})
 	const discard = vi.fn(async () => undefined)
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
 		stage: vi.fn(),
@@ -273,7 +281,9 @@ test('isolated rebuild failure stops later chunks, discards staging, and reports
 test('falls back to per-target session rebuild when isolated runner bindings are missing', async () => {
 	resetMocks()
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue(null)
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(sampleTargets)
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
+		sampleTargets,
+	)
 
 	let inFlight = 0
 	let maxInFlight = 0

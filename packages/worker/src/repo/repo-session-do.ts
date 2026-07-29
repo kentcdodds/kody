@@ -1765,9 +1765,8 @@ class RepoSessionBase extends DurableObject<Env> {
 				'Published bundle artifacts can only be rebuilt for packages.',
 			)
 		}
-		const stagingKv = (
-			this.env as Env & { BUNDLE_ARTIFACTS_KV?: KVNamespace }
-		).BUNDLE_ARTIFACTS_KV
+		const stagingKv = (this.env as Env & { BUNDLE_ARTIFACTS_KV?: KVNamespace })
+			.BUNDLE_ARTIFACTS_KV
 		if (!stagingKv) {
 			throw new Error(
 				'BUNDLE_ARTIFACTS_KV binding is required to stage published package artifact rebuilds.',
@@ -1775,11 +1774,9 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const sourceFiles = await this.collectWorkspaceFiles()
 		const stagingKey = isolatedArtifactRebuildStagingKeyForUser(input.userId)
-		await stagingKv.put(
-			stagingKey,
-			JSON.stringify({ sourceFiles }),
-			{ expirationTtl: isolatedArtifactRebuildStagingTtlSeconds },
-		)
+		await stagingKv.put(stagingKey, JSON.stringify({ sourceFiles }), {
+			expirationTtl: isolatedArtifactRebuildStagingTtlSeconds,
+		})
 		return { stagingKey }
 	}
 

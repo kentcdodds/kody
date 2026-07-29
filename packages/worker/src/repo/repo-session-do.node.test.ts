@@ -1542,7 +1542,9 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 	})
 	expect(skipped).toMatchObject({ ok: true, skipped: true })
 	expect(kv.get).not.toHaveBeenCalled()
-	expect(mockModule.persistPublishedPackageArtifactTarget).not.toHaveBeenCalled()
+	expect(
+		mockModule.persistPublishedPackageArtifactTarget,
+	).not.toHaveBeenCalled()
 
 	const rebuilt = await session.runIsolatedArtifactRebuild({
 		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:abc',

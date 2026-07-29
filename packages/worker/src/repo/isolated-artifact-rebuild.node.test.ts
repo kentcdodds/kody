@@ -8,9 +8,9 @@ import {
 
 test('staging keys are user-namespaced and ownership-checked', () => {
 	const key = isolatedArtifactRebuildStagingKeyForUser('user-1')
-	expect(key.startsWith(`${isolatedArtifactRebuildStagingKeyPrefix}user-1:`)).toBe(
-		true,
-	)
+	expect(
+		key.startsWith(`${isolatedArtifactRebuildStagingKeyPrefix}user-1:`),
+	).toBe(true)
 	expect(
 		isolatedArtifactRebuildStagingKeyBelongsToUser({
 			stagingKey: key,
@@ -66,9 +66,9 @@ test('runner stages to KV, fans out one target per throwaway DO, and maps reset 
 		userId: 'user-1',
 		sourceFiles: { 'package.json': '{}' },
 	})
-	expect(stagingKey.startsWith(`${isolatedArtifactRebuildStagingKeyPrefix}user-1:`)).toBe(
-		true,
-	)
+	expect(
+		stagingKey.startsWith(`${isolatedArtifactRebuildStagingKeyPrefix}user-1:`),
+	).toBe(true)
 	expect(put).toHaveBeenCalledWith(
 		stagingKey,
 		JSON.stringify({ sourceFiles: { 'package.json': '{}' } }),
