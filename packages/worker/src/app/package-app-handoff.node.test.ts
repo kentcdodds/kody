@@ -37,18 +37,20 @@ const claims = {
 	kodyId: 'daily-notes',
 }
 
+const expected = { username: claims.username, kodyId: claims.kodyId }
+
 test('handoff tokens are single use, short lived, and bound to one user and package', async () => {
 	const env = createTestEnv()
 
 	const token = await createPackageAppHandoffToken({ env, claims })
 	await expect(
-		consumePackageAppHandoffToken({ env, token }),
+		consumePackageAppHandoffToken({ env, token, expected }),
 	).resolves.toStrictEqual(claims)
 
 	// Burned on first use, so a token captured from browser history or a referrer
 	// cannot be replayed.
 	await expect(
-		consumePackageAppHandoffToken({ env, token }),
+		consumePackageAppHandoffToken({ env, token, expected }),
 	).resolves.toBeNull()
 
 	// Expired tokens fail closed, even unused ones.
@@ -58,7 +60,7 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 		now: Date.now() - 61_000,
 	})
 	await expect(
-		consumePackageAppHandoffToken({ env, token: staleToken }),
+		consumePackageAppHandoffToken({ env, token: staleToken, expected }),
 	).resolves.toBeNull()
 
 	// Tampering with the payload (for example to point at another user's package)
@@ -84,7 +86,7 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 		'not-a-token',
 	]) {
 		await expect(
-			consumePackageAppHandoffToken({ env, token: forged }),
+			consumePackageAppHandoffToken({ env, token: forged, expected }),
 		).resolves.toBeNull()
 	}
 
@@ -97,8 +99,28 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 		claims,
 	})
 	await expect(
-		consumePackageAppHandoffToken({ env, token: foreignToken }),
+		consumePackageAppHandoffToken({ env, token: foreignToken, expected }),
 	).resolves.toBeNull()
+
+	// A token aimed at another package (or another user) is refused *without*
+	// being burned: it was never meant for this request, so a mistyped URL must
+	// not cost the owner the handoff they still hold.
+	const boundToken = await createPackageAppHandoffToken({ env, claims })
+	for (const wrongTarget of [
+		{ username: 'someone-else', kodyId: claims.kodyId },
+		{ username: claims.username, kodyId: 'other-package' },
+	]) {
+		await expect(
+			consumePackageAppHandoffToken({
+				env,
+				token: boundToken,
+				expected: wrongTarget,
+			}),
+		).resolves.toBeNull()
+	}
+	await expect(
+		consumePackageAppHandoffToken({ env, token: boundToken, expected }),
+	).resolves.toStrictEqual(claims)
 
 	// Replay protection needs KV; signature and expiry checks do not.
 	const envWithoutKv = createTestEnv({ kv: false })
@@ -107,7 +129,11 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 		claims,
 	})
 	await expect(
-		consumePackageAppHandoffToken({ env: envWithoutKv, token: tokenWithoutKv }),
+		consumePackageAppHandoffToken({
+			env: envWithoutKv,
+			token: tokenWithoutKv,
+			expected,
+		}),
 	).resolves.toStrictEqual(claims)
 })
 

@@ -360,8 +360,12 @@ the app origin mints `<base64url payload>.<HMAC-SHA256>`:
   rejects a token whose `username`/`kodyId` do not match the requested path
 - 60 second lifetime
 - single use: `jti` is burned in `BUNDLE_ARTIFACTS_KV` for 60 seconds on first
-  use. Replay protection is best effort (KV is eventually consistent) and is
-  skipped when the binding is missing; signature and expiry always fail closed.
+  use. The burn happens **after** the path binding is checked, so a token
+  presented on the wrong package path is refused without being consumed — a
+  mistyped URL must not cost the owner a handoff they still hold. Replay
+  protection is best effort (KV is eventually consistent) and is skipped when
+  the binding is missing; signature, expiry, and the path binding always fail
+  closed.
 
 It travels in the `__kody_handoff` query parameter of a cross-origin redirect,
 which is why it is deliberately this weak. A token in a URL is exposed to

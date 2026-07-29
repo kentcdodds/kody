@@ -205,12 +205,12 @@ async function handleRequestOnPackageAppOrigin(input: {
 		const claims = await consumePackageAppHandoffToken({
 			env,
 			token: handoffToken,
+			expected: {
+				username: packagePath.username,
+				kodyId: packagePath.kodyId,
+			},
 		})
-		if (
-			claims &&
-			claims.username === packagePath.username &&
-			claims.kodyId === packagePath.kodyId
-		) {
+		if (claims) {
 			return redirectResponse({
 				location: withoutHandoffToken(url).toString(),
 				status: 302,

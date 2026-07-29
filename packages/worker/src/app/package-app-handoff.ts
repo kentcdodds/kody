@@ -105,15 +105,22 @@ export async function createPackageAppHandoffToken(input: {
 }
 
 /**
- * Validate a handoff token and burn it so it cannot be replayed.
+ * Validate a handoff token for one package path and burn it so it cannot be
+ * replayed.
+ *
+ * The path binding is checked **before** the burn: a token that does not belong
+ * to the requested package was never meant for this request, so consuming it
+ * would strand a token the owner can still use (a mistyped URL would otherwise
+ * cost them a fresh handoff).
  *
  * Replay protection is best effort: it uses eventually consistent KV, and a
- * missing KV binding only disables the replay check. Signature and expiry
- * always fail closed.
+ * missing KV binding only disables the replay check. Signature, expiry, and the
+ * path binding always fail closed.
  */
 export async function consumePackageAppHandoffToken(input: {
 	env: Env
 	token: string
+	expected: Pick<PackageAppHandoffClaims, 'username' | 'kodyId'>
 	now?: number
 }): Promise<PackageAppHandoffClaims | null> {
 	const now = input.now ?? Date.now()
@@ -141,6 +148,12 @@ export async function consumePackageAppHandoffToken(input: {
 	}
 	if (!isStoredHandoffPayload(parsed)) return null
 	if (parsed.exp <= now) return null
+	if (
+		parsed.usr !== input.expected.username ||
+		parsed.pkg !== input.expected.kodyId
+	) {
+		return null
+	}
 
 	const replayStore = input.env.BUNDLE_ARTIFACTS_KV
 	if (replayStore) {
