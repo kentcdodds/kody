@@ -61,6 +61,22 @@ This project uses the following resources:
   - Production and preview route embedding calls through this binding. When
     `AI_GATEWAY_ID` is configured, calls are sent through AI Gateway via the
     Workers AI binding options.
+- Second registrable domain for hosted package apps
+  - Production: `kodyapps.dev` (zone in the same Cloudflare account, on
+    Cloudflare nameservers), declared as a `custom_domain` route under
+    `env.production.routes` in `packages/worker/wrangler.jsonc` so
+    `wrangler deploy` provisions the DNS record and edge certificate.
+  - Paired with the production Wrangler var
+    `PACKAGE_APP_BASE_URL=https://kodyapps.dev`. The app origin (`heykody.dev`)
+    stays attached out-of-band; Wrangler does not remove routes that the config
+    does not list.
+  - The domain exists to be a **different registrable domain** from the app
+    origin so author-supplied package code is cross-site. Do not point it at a
+    subdomain of the app origin, and do not host anything first-party on it. See
+    [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
+  - Forks that do not register a second domain simply leave
+    `PACKAGE_APP_BASE_URL` (and the route) out; package apps then serve inline
+    on the app origin, which is weaker isolation.
 - Workers Observability OTLP destination (account-level)
   - Workers automatic tracing is enabled via `observability.traces` in
     `packages/worker/wrangler.jsonc`; traces are viewable in the Workers
@@ -202,6 +218,15 @@ automatically:
   Most request-scoped app/MCP URLs use the inbound request origin so OAuth
   metadata matches the host the client connected to. Password reset email sends
   require this value and use `kody@<hostname>` as the sender.)
+- `PACKAGE_APP_BASE_URL` (optional Wrangler `var`; origin for hosted package
+  apps. Production sets `https://kodyapps.dev` in
+  `packages/worker/wrangler.jsonc` together with a `custom_domain` route on the
+  production env, so `wrangler deploy` provisions the DNS record and certificate
+  in the zone. Must be a **separate registrable domain** from `APP_BASE_URL` —
+  see
+  [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
+  Leave unset locally, for previews, and for tests: those serve package apps
+  inline on the app origin.)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
 - `CLOUDFLARE_ACCOUNT_ID` (required for the Cloudflare Email Service REST API

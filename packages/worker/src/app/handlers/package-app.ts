@@ -18,7 +18,7 @@ import {
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import { wantsJson } from '#worker/utils.ts'
 
-function parsePackageAppPath(pathname: string) {
+export function parsePackageAppPath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
 	const rawUsername = parts[0]?.startsWith('@') ? parts[0].slice(1) : ''
 	if (!rawUsername || parts[1] !== 'packages') return null
@@ -45,10 +45,6 @@ export function isPackageAppRequestPath(pathname: string) {
 }
 
 export type PackageAppPath = NonNullable<ReturnType<typeof parsePackageAppPath>>
-
-export function parsePackageAppRequestPath(pathname: string) {
-	return parsePackageAppPath(pathname)
-}
 
 // Credentials that must never reach author-supplied package code. `Cookie`
 // carries the owner's `kody_session`, `Authorization` carries MCP bearer tokens,

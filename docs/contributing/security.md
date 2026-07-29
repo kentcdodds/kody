@@ -22,7 +22,9 @@ package-app surfaces:
    `'unsafe-inline'` to the CSP `script-src`.
 2. **Untrusted surfaces stay off the strict CSP.** Hosted package apps
    (`/@username/packages/*`) execute author-supplied HTML/JS and intentionally
-   do not use the first-party CSP. Do not "unify" the two.
+   do not use the first-party CSP. Do not "unify" the two. Because they have no
+   CSP backstop, their isolation comes from the origin they run on and the
+   credentials they never receive — see invariant 9.
 3. **Developer-only routes fail closed.** Anything that runs attacker-authored
    content or aids debugging must be gated behind `isNonProductionRuntime`
    (`packages/worker/src/app/deployment-env.ts`) so it is unreachable in
@@ -48,6 +50,18 @@ package-app surfaces:
    with `/@...` user-scope paths refused so a README can never point viewers at
    hosted package endpoints. Never render third-party markdown via an HTML
    string, `innerHTML`, or a markdown-to-HTML renderer.
+9. **Package code never receives first-party credentials, and never executes on
+   the app origin in production.** Every request handed to package code goes
+   through `createPackageCodeRequest`
+   (`packages/worker/src/app/handlers/package-app.ts`), which strips `Cookie`,
+   `Authorization`, `Proxy-Authorization`, and every `X-Kody-*` header — for the
+   forwarded HTTP request _and_ the realtime connect upgrade, because the
+   realtime `connect` hook is handed the request headers too. Production also
+   sets `PACKAGE_APP_BASE_URL` so package apps run on their own registrable
+   domain, cross-site from the app origin. Do not add a first-party route to the
+   package-app origin, and do not reintroduce cookie forwarding "just for
+   convenience". See
+   [Hosted package app origin isolation](#hosted-package-app-origin-isolation).
 
 ## First-party HTTP security headers
 
@@ -70,6 +84,83 @@ package-app surfaces:
 
 These headers are deliberately **not** applied to hosted package apps, which
 need their own looser policies to run author-authored code.
+
+## Hosted package app origin isolation
+
+Hosted package apps (`/@{username}/packages/{kodyId}/...`) execute
+author-supplied HTML, JS, and worker code. Anything that shares an origin with
+them is inside their reach, and they get no CSP backstop (invariant 2), so the
+origin boundary _is_ the control.
+
+**The problem this replaces.** Package apps used to be served on the app origin,
+and the handler forwarded a clone of the original request into the package
+worker. That gave author code two ways to act as the owner:
+
+- server-side, the forwarded request carried the owner's `kody_session` cookie
+  (and any `Authorization` header), so package code could read it and replay it;
+- client-side, a package page was same-origin with the app, so
+  `fetch('/account/secrets.json', { credentials: 'include' })` from author JS
+  would read the owner's secrets or mutate their account.
+
+This was a real vulnerability, not an accepted risk. Two independent fixes now
+close it.
+
+**1. Credential stripping (always on).** `createPackageCodeRequest` builds the
+request package code sees without `Cookie`, `Authorization`,
+`Proxy-Authorization`, or `X-Kody-*` headers. It is applied to the forwarded
+HTTP request and to the realtime WebSocket upgrade, because
+`PackageRealtimeSession`'s `connect` hook receives the upgrade request's
+headers. This holds regardless of hosting mode, so local dev and preview are
+covered too.
+
+**2. A separate registrable domain (production).** `PACKAGE_APP_BASE_URL`
+(production Worker var, `https://kodyapps.dev`) makes package apps cross-site
+from the app origin, so the `SameSite=Lax`, `HttpOnly` `kody_session` cookie
+never attaches to them and cross-origin `fetch` from package pages has no CORS
+grant (`withCors` only reflects same-origin, plus `/mcp`). It must stay a
+**separate registrable domain**: a subdomain of the app origin would still be
+same-site for cookie purposes. `getPackageAppBaseUrl`
+(`packages/worker/src/app/app-base-url.ts`) resolves it, and `getAppBaseUrl`
+refuses to resolve the package-app origin as the app origin so package runtime
+callbacks and first-party links always point back at the app.
+
+Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
+in the Worker `fetch` handler:
+
+- **App origin, `/@{username}/packages/*`:** never executes package code. Safe
+  methods redirect (`302`) to the same path on the package-app origin with a
+  handoff token; other methods get a `307` to that origin. Unauthenticated
+  visitors are sent to `/login` on the app origin first.
+- **Package-app origin:** serves only `/@{username}/packages/*`. `/` redirects
+  to the app origin; everything else (including `/account/*`, `/login`, `/mcp`,
+  and the `/@{username}/api/package-invocations/*`, `/connectors/*`,
+  `/webhooks/*` machine APIs) is `404`. Those APIs stay on the app origin on
+  purpose: they are authenticated by their own bearer tokens or URL secrets,
+  they are never called by package browser code, and hosting them on the
+  package-app origin would only widen its surface.
+- **No redirect cycle:** the app origin only ever redirects _to_ the package-app
+  origin, and the package-app origin only ever redirects within itself (to drop
+  a consumed token from the URL). A package-app request with no usable session
+  terminates in a `403` that links back to the app origin, so a browser that
+  refuses the cookie fails visibly instead of ping-ponging between hosts.
+
+When `PACKAGE_APP_BASE_URL` is unset — local dev, preview, tests, E2E — package
+apps keep being served inline on the app origin by `handlePackageAppRequest`.
+That path is still credential-stripped, but it is same-origin, so **do not treat
+a local deploy as representative of the production isolation boundary**.
+
+The cross-site handoff (how the owner is recognized on the package-app origin
+without giving package code a first-party session) is documented in
+[`architecture/authentication.md`](./architecture/authentication.md#package-app-origin-handoff).
+
+Future hardening, deliberately out of scope for now: per-user subdomains
+(`{username}.kodyapps.dev`) would additionally isolate one user's package apps
+from another's, and one package from another. Today every package app for every
+user shares the `kodyapps.dev` origin, so package A can reach package B's
+`kody_pkg_session`-authorized endpoints from the browser. That is a smaller
+blast radius than first-party access (all of it stays inside one owner's own
+data, since serving is `userId`-scoped and the session is bound to one account),
+but it is not zero.
 
 ## Auth rate limiting
 

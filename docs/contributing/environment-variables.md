@@ -85,6 +85,22 @@ Optional Wrangler `var` (public, non-secret; see
   `https://cdn.usefathom.com` in `script-src` and `img-src` for the tracker and
   its image beacon.
 
+## Hosted package app origin
+
+Optional Wrangler `var` (public, non-secret; see
+`packages/worker/src/app/app-base-url.ts` and
+`packages/worker/src/app/package-app-origin.ts`):
+
+- `PACKAGE_APP_BASE_URL` — origin hosted package apps are served from.
+  Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`,
+  attached as a Workers `custom_domain` route on the production env so the
+  deploy provisions DNS and the certificate. It **must be a separate registrable
+  domain** from `APP_BASE_URL`: that is what makes author-supplied package code
+  cross-site, so the `SameSite=Lax` `kody_session` cookie never reaches it.
+  Intentionally unset for local dev, preview, tests, and E2E, which keep serving
+  package apps inline on the app origin at `/@{username}/packages/*`. See
+  [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
+
 ## MCP `execute` and outbound HTTP
 
 MCP `execute` runs sandboxed JavaScript with a global `fetch`. Calls to

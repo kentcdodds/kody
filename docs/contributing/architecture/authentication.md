@@ -11,6 +11,10 @@ data.
 1. Cookie-based app sessions for browser users
 2. OAuth bearer tokens for MCP access
 
+Hosted package apps are served from a separate origin in production and use a
+third, deliberately narrow credential — see
+[Package app origin handoff](#package-app-origin-handoff).
+
 Authorization (roles and permissions) is layered on top of authentication. See
 [Authorization](./authorization.md) for the RBAC model, admin routes, and the
 `any`-access exception for account administration.
@@ -335,6 +339,55 @@ Password reset handlers are in
 - when required Cloudflare Email API credentials are unset, the helper logs a
   redacted diagnostic without the email body or token URL to prevent token
   leakage in logs
+
+## Package app origin handoff
+
+Hosted package apps run on their own registrable domain in production
+(`PACKAGE_APP_BASE_URL`) so author-supplied code is cross-site from the app
+origin — see
+[Hosted package app origin isolation](../security.md#hosted-package-app-origin-isolation)
+for why. That means `kody_session` never reaches them, so the package-app origin
+needs its own, deliberately smaller credential.
+
+**Handoff token** (`packages/worker/src/app/package-app-handoff.ts`). When a
+signed-in owner requests `/@{username}/packages/{kodyId}/...` on the app origin,
+the app origin mints `<base64url payload>.<HMAC-SHA256>`:
+
+- signed with `COOKIE_SECRET` over a purpose-labelled message
+  (`kody-package-app-handoff:v1`), so it is not interchangeable with any other
+  signed value
+- payload binds `{ userId, username, kodyId, exp, jti }`; the package-app origin
+  rejects a token whose `username`/`kodyId` do not match the requested path
+- 60 second lifetime
+- single use: `jti` is burned in `BUNDLE_ARTIFACTS_KV` for 60 seconds on first
+  use. Replay protection is best effort (KV is eventually consistent) and is
+  skipped when the binding is missing; signature and expiry always fail closed.
+
+It travels in the `__kody_handoff` query parameter of the cross-origin redirect,
+which is why it is so short-lived: the package-app origin immediately redirects
+to the same URL without it, so it does not stay in the address bar, and it
+cannot be reused from history or a referrer.
+
+**Package-app session cookie**
+(`packages/worker/src/app/package-app-session.ts`). Exchanging a valid token
+sets `kody_pkg_session` on the package-app origin:
+
+- `httpOnly: true`, `sameSite: 'Lax'`, `path: '/'`, `secure` per request
+- 12 hour max age
+- signed with a **derived** secret,
+  `sha256Base64Url('kody-package-app-session:v1:' + COOKIE_SECRET)`, so a value
+  signed for this cookie can never verify as a `kody_session`
+- payload is `{ v, pkgUserId, pkgUsername, issuedAt }` — a shape the app session
+  schema rejects, so the two cannot be confused even by name substitution
+
+It authorizes hosted package-app serving for one account and nothing else: the
+app origin has no code path that reads it, and the package-app origin has no
+first-party routes. Every request re-resolves the account from D1
+(`resolvePackageAppOwnerByUserId`) and fails closed for unknown, deleting, or
+suspended accounts, and for sessions issued at or before
+`users.password_changed_at` — the same rules browser sessions follow.
+Deployments with `PACKAGE_APP_BASE_URL` unset never mint either credential; they
+serve package apps inline behind `kody_session`.
 
 ## Account secret reveal
 

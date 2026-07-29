@@ -16,7 +16,7 @@ import {
 } from '#app/package-app-session.ts'
 import {
 	isPackageAppRequestPath,
-	parsePackageAppRequestPath,
+	parsePackageAppPath,
 	servePackageAppRequest,
 } from '#app/handlers/package-app.ts'
 import { wantsJson } from '#worker/utils.ts'
@@ -149,7 +149,7 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 		return redirectResponse({ location: target.toString(), status: 307 })
 	}
 
-	const packagePath = parsePackageAppRequestPath(url.pathname)
+	const packagePath = parsePackageAppPath(url.pathname)
 	if (!packagePath) return new Response('Not Found', { status: 404 })
 
 	const user = await readAuthenticatedAppUser(request, env)
@@ -180,7 +180,7 @@ async function handleRequestOnPackageAppOrigin(input: {
 	const { request, env, url } = input
 	const appBaseUrl = getAppBaseUrl({ env })
 
-	const packagePath = parsePackageAppRequestPath(url.pathname)
+	const packagePath = parsePackageAppPath(url.pathname)
 	if (!packagePath) {
 		// Nothing first-party is reachable here. The bare origin is a plausible
 		// typo or bookmark, so send it home; everything else fails closed.

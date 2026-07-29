@@ -26,6 +26,17 @@ is only the fallback for background work with no request URL.
 
 Requests are handled in this order:
 
+0. Package-app host isolation (before everything else, when
+   `PACKAGE_APP_BASE_URL` is set — see
+   [Hosted package app origin isolation](../security.md#hosted-package-app-origin-isolation)):
+   - On the **package-app origin**, only `/@{username}/packages/*` is served
+     (plus the handoff-token exchange on those same paths). `/` redirects to the
+     app origin; every other path is `404`.
+   - On the **app origin**, `/@{username}/packages/*` never executes package
+     code: safe methods redirect to the package-app origin with a handoff token,
+     other methods get a `307` to the same path there.
+   - When `PACKAGE_APP_BASE_URL` is unset (local dev, preview, tests) this step
+     is a no-op and package apps are served inline at step 9 below.
 1. Protected resource metadata (base path only, before `OAuthProvider`):
    - `/.well-known/oauth-protected-resource` (`GET` / `HEAD` / `OPTIONS`)
 2. OAuth authorization endpoints:
@@ -59,8 +70,10 @@ Requests are handled in this order:
    - Matching files under `packages/worker/public/` are asset-first at the edge
      (they do not enter this Worker list). That includes OpenAI Apps domain
      verification at `/.well-known/openai-apps-challenge`.
-9. App server routes:
-   - Everything else is handled by `packages/worker/src/app/handler.ts`
+9. Hosted package apps served inline on the app origin
+   (`/@{username}/packages/*`), only when `PACKAGE_APP_BASE_URL` is unset.
+10. App server routes:
+    - Everything else is handled by `packages/worker/src/app/handler.ts`
 
 ## Package service runtime
 
