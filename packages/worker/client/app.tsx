@@ -218,10 +218,10 @@ export function App(handle: Handle<AppProps>) {
 							<div mix={css(navGroupCss)}>
 								<a href="/" aria-label="Home" mix={css(navHomeLinkCss)}>
 									<img
-										src="/logo.png"
+										src="/logo-64.webp"
 										alt=""
-										width={112}
-										height={28}
+										width={64}
+										height={64}
 										mix={css({
 											display: 'block',
 											height: '1.35em',
