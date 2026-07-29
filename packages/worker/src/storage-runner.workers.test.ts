@@ -16,6 +16,7 @@ import {
 	assertStorageRunnerWriteWithinEntitlement,
 	createStorageKodyTools,
 	createExecuteStorageId,
+	emptyStorageRunnerEstimatedBytes,
 	StorageRunner,
 	storageRunnerRpc,
 } from './storage-runner.ts'
@@ -468,6 +469,17 @@ test('storage runner registers buckets on writes but not on reads', async () => 
 	await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([
 		writeStorageId,
 	])
+})
+
+test('getEstimatedBytes on a never-written bucket returns the empty DO baseline without registering', async () => {
+	await ensureStorageRunnerTestSchema()
+	const userId = `storage-empty-probe-${crypto.randomUUID()}`
+	const storageId = crypto.randomUUID()
+	const runner = storageRunnerRpc({ env, userId, storageId })
+	const estimate = await runner.getEstimatedBytes()
+	expect(estimate.estimatedBytes).toBe(emptyStorageRunnerEstimatedBytes)
+	await flushStorageBucketRegistrationsForTests()
+	await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([])
 })
 
 test('storage runner dedupes bucket registration to one D1 write per isolate', async () => {
