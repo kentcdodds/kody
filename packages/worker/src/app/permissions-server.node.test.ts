@@ -7,14 +7,17 @@ import {
 import {
 	assignUserRole,
 	getUserRolesAndPermissions,
-} from '#app/permissions-db.ts'
+} from '#worker/identity/permissions-db.ts'
 import {
 	requireUserWithPermission,
 	requireUserWithRole,
 	userHasPermission,
 	userHasRole,
 } from '#app/permissions-server.ts'
-import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import {
+	type PermissionString,
+	type RoleName,
+} from '#worker/identity/permissions.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'

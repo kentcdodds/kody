@@ -3,7 +3,7 @@ import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { platformFeedbackContentWarning } from '#worker/platform-feedback/content-warning.ts'
 import { type AdminPlatformFeedbackLoaderData } from '#app/loader-data.ts'
 import type * as AdminPlatformFeedbackData from '#app/admin-platform-feedback-data.ts'
-import type * as AuditLog from '#app/audit-log.ts'
+import type * as AuditLog from '#worker/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	requireUserWithRole: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock('#app/admin-platform-feedback-data.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#app/audit-log.ts', async (importOriginal) => {
+vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,

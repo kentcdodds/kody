@@ -1,6 +1,6 @@
 import { object, parseSafe, string } from 'remix/data-schema'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import {
 	KitWaitlistError,
@@ -8,7 +8,7 @@ import {
 	resolveKitWaitlistTagId,
 	subscribeToKitWaitlist,
 } from '#app/kit-waitlist.ts'
-import { normalizeEmail } from '#app/normalize-email.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type routes } from '#app/routes.ts'
 import { jsonResponse } from '#worker/json-response.ts'

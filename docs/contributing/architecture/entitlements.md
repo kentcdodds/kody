@@ -134,7 +134,7 @@ accounts, platform-account provisioning, and seed SQL follow the same
 
 Admins also assign or reset plans on existing users through two audited,
 admin-only surfaces, both backed by `updateAdminUserPlan` in
-`packages/worker/src/app/admin-users-data.ts`:
+`packages/worker/src/admin/users-data.ts`:
 
 - **Admin UI** — the "Manage plan" panel on `/admin/users` posts
   `{ action: 'update_plan', userId, plan }` to `POST /admin/users.json` (guarded

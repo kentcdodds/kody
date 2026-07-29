@@ -104,7 +104,7 @@ Deletion must cover these user-owned surfaces:
 
 ## Account export inventory
 
-Account export is implemented in `packages/worker/src/app/account-export.ts`. It
+Account export is implemented in `packages/worker/src/account/export.ts`. It
 mirrors the deletion inventory so portability and account migration cover the
 same user-owned storage surfaces. The D1 table list and shared kind→SQL match
 builders live in `account-data-targets.ts` (`accountUserDataTargets`,
@@ -113,11 +113,11 @@ Out-of-band surfaces (Durable Objects, KV schemes, R2, Vectorize, Artifacts) are
 declared in `account-user-owned-surfaces.ts` and consumed by both deletion and
 export. Growth-table retention dispositions are linked in
 `account-retention-dispositions.ts`.
-`packages/worker/src/app/account-export.node.test.ts` applies the live
-migrations to SQLite and fails if a `user_id` / `*_user_id` column is not
-covered by the export list. The hard invariant is the same as every storage
-path: callers pass the authenticated user's stable MCP `userId`, and every query
-or Durable Object lookup is scoped to that id.
+`packages/worker/src/account/export.node.test.ts` applies the live migrations to
+SQLite and fails if a `user_id` / `*_user_id` column is not covered by the
+export list. The hard invariant is the same as every storage path: callers pass
+the authenticated user's stable MCP `userId`, and every query or Durable Object
+lookup is scoped to that id.
 
 System email rows owned by `system:email` are intentionally absent from account
 exports for the same reason they are absent from deletion: they belong to the

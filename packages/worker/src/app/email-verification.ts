@@ -1,9 +1,20 @@
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
-import { normalizeEmail } from '#app/normalize-email.ts'
 import { normalizeRedirectTo } from '#app/safe-redirect.ts'
 import { createDb, emailVerificationsTable } from '#worker/db.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
+
+/**
+ * The read-only verification check moved to
+ * `#worker/identity/email-verification-state.ts` so callers outside the app
+ * layer do not pull in the token-minting pipeline. Re-exported for app-layer
+ * callers that read it alongside the token helpers below.
+ */
+export {
+	assertAccountEmailVerified,
+	emailVerificationRequiredMessage,
+	isAccountEmailVerified,
+} from '#worker/identity/email-verification-state.ts'
 
 const verificationTokenBytes = 32
 const verificationTokenExpiryMs = 24 * 60 * 60 * 1000
@@ -211,57 +222,4 @@ export async function verifyEmailToken(input: {
 		.run()
 
 	return { ok: true, userId: record.user_id, email: record.email }
-}
-
-export async function isAccountEmailVerified(input: {
-	db: D1Database
-	email?: string | null
-	stableUserId?: string | null
-}) {
-	const normalizedEmail =
-		typeof input.email === 'string' ? normalizeEmail(input.email) : ''
-	const stableUserId = input.stableUserId?.trim() ?? ''
-
-	// When both are present (typical MCP grant props), require the pair so a
-	// stale grant email that another verified account now owns cannot pass.
-	if (normalizedEmail && stableUserId) {
-		const row = await input.db
-			.prepare(
-				`SELECT email_verified_at FROM users
-				 WHERE email = ? AND stable_user_id = ?`,
-			)
-			.bind(normalizedEmail, stableUserId)
-			.first<{ email_verified_at: string | null }>()
-		return Boolean(row?.email_verified_at)
-	}
-
-	// Browser sessions carry email only.
-	if (normalizedEmail) {
-		const row = await input.db
-			.prepare(`SELECT email_verified_at FROM users WHERE email = ?`)
-			.bind(normalizedEmail)
-			.first<{ email_verified_at: string | null }>()
-		return Boolean(row?.email_verified_at)
-	}
-
-	// Package-runtime / grant contexts with only the stable id.
-	if (!stableUserId) return false
-	const row = await input.db
-		.prepare(`SELECT email_verified_at FROM users WHERE stable_user_id = ?`)
-		.bind(stableUserId)
-		.first<{ email_verified_at: string | null }>()
-	return Boolean(row?.email_verified_at)
-}
-
-export const emailVerificationRequiredMessage =
-	'Account email is not verified. Open the verification link sent to your account email, or resend it from /pending-verification or /account.'
-
-export async function assertAccountEmailVerified(input: {
-	db: D1Database
-	email?: string | null
-	stableUserId?: string | null
-}) {
-	if (!(await isAccountEmailVerified(input))) {
-		throw new Error(emailVerificationRequiredMessage)
-	}
 }

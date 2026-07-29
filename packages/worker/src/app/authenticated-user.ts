@@ -1,6 +1,9 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
-import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import {
+	type PermissionString,
+	type RoleName,
+} from '#worker/identity/permissions.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
 export type AuthenticatedAppUser = {

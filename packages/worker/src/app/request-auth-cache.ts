@@ -15,12 +15,15 @@ import {
 	isSecureRequest,
 	readParsedAuthSession,
 } from '#app/auth-session.ts'
-import { getUserRolesAndPermissions } from '#app/permissions-db.ts'
-import { type PermissionString, type RoleName } from '#app/permissions.ts'
+import { getUserRolesAndPermissions } from '#worker/identity/permissions-db.ts'
+import {
+	type PermissionString,
+	type RoleName,
+} from '#worker/identity/permissions.ts'
 import {
 	displayNameFromEmail,
 	getUsernameFormatValidationError,
-} from '#app/username.ts'
+} from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'

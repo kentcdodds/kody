@@ -1,4 +1,4 @@
-import { accountUserOwnedR2Surfaces } from '#app/account-user-owned-surfaces.ts'
+import { accountUserOwnedR2Surfaces } from '#worker/account/user-owned-surfaces.ts'
 import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
 import { emailRawMimeKey } from '#worker/email/repo.ts'
 

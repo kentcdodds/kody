@@ -1,5 +1,5 @@
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { verifyEmailToken } from '#app/email-verification.ts'
 import { resolveVerifyEmailSuccessCta } from '#app/safe-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'

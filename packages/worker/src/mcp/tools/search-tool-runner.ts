@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
-import { resolvePublicUsername } from '#app/user-lookup.ts'
+import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {

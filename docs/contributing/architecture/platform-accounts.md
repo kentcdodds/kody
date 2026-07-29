@@ -22,9 +22,9 @@ Migration `packages/worker/migrations/0072-package-scope-grants.sql`:
   person may act inside the scope owner's package namespace.
 
 Platform account usernames must come from the reserved-username denylist in
-`packages/worker/src/app/reserved-usernames.ts` (for example `kody`, `support`,
-`admin`). That list blocks end-user signup from claiming those names, so
-platform scopes never collide with real accounts.
+`packages/worker/src/identity/reserved-usernames.ts` (for example `kody`,
+`support`, `admin`). That list blocks end-user signup from claiming those names,
+so platform scopes never collide with real accounts.
 
 Platform accounts use a sentinel password hash that never verifies, the same
 pattern as admin-created person accounts awaiting password setup.
@@ -124,4 +124,4 @@ the mechanism.
 - `packages/worker/src/package-registry/package-owner.ts` — scope resolution and
   audit
 - `packages/worker/migrations/0072-package-scope-grants.sql` — schema
-- `packages/worker/src/app/reserved-usernames.ts` — username denylist
+- `packages/worker/src/identity/reserved-usernames.ts` — username denylist

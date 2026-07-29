@@ -6,7 +6,7 @@ import {
 	type AccountPackagesSort,
 } from '#app/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { readPagination } from '#app/query-params.ts'
+import { readPagination } from '#worker/query-params.ts'
 import {
 	getSavedPackageById,
 	searchSavedPackagesByUserId,

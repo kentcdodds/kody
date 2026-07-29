@@ -15,7 +15,7 @@ Reviewed:
   `packages/worker/src/remote-connector/remote-domain-id.ts`.
 - Account export capability/domain code in
   `packages/worker/src/mcp/capabilities/account/` and
-  `packages/worker/src/app/account-export.ts`.
+  `packages/worker/src/account/export.ts`.
 - D1 migrations through `packages/worker/migrations/0049-audit-events.sql`.
 - Durable Object, KV, Vectorize, entity-source, and package import code under
   `packages/worker/src/`.
@@ -123,8 +123,8 @@ change remote id or capabilities namespace rules without a migration plan.
   `0010-secret-allowed-capabilities.sql`, and
   `0023-secret-allowed-packages.sql`.
 - Runtime debug JSON in `0037-package-runtime-debug.sql`.
-- Account export sections in `packages/worker/src/app/account-export.ts` mirror
-  the account-deletion inventory and read D1, Durable Object, KV, and Vectorize
+- Account export sections in `packages/worker/src/account/export.ts` mirror the
+  account-deletion inventory and read D1, Durable Object, KV, and Vectorize
   surfaces through explicit section schemas in
   `packages/worker/src/mcp/capabilities/account/account-export-shared.ts`.
 
@@ -173,7 +173,7 @@ records the schemes as frozen contracts in `data-storage.md`.
 
 - `audit_events` is append-only in
   `packages/worker/migrations/0049-audit-events.sql` and
-  `packages/worker/src/app/audit-log.ts`.
+  `packages/worker/src/audit-log.ts`.
 - Email tables are defined in `0030-email-primitives.sql` and `0031`.
 - `package_runtime_runs` and `package_runtime_logs` are defined in
   `0037-package-runtime-debug.sql`.

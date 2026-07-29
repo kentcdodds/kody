@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { createPlatformAccount } from '#app/platform-account-creation.ts'
+import { createPlatformAccount } from '#worker/identity/platform-account-creation.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {

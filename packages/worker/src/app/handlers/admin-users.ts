@@ -1,8 +1,8 @@
-import { readPositiveInt } from '#app/query-params.ts'
+import { readPositiveInt } from '#worker/query-params.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
-import { loadAdminUserUsageData } from '#app/admin-user-usage-data.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import { loadAdminUserUsageData } from '#worker/admin/user-usage-data.ts'
 import {
 	clearAdminUserEmailOutboundPause,
 	loadAdminUserByIdOrEmail,
@@ -12,7 +12,7 @@ import {
 	updateAdminUserPlan,
 	updateAdminUserSuspension,
 	type AdminUserListItem,
-} from '#app/admin-users-data.ts'
+} from '#worker/admin/users-data.ts'
 import {
 	parsePlanName,
 	resolvePlanWrite,
@@ -26,7 +26,7 @@ import {
 	removeUserRole,
 	requireUserWithPermission,
 } from '#app/permissions-server.ts'
-import { type RoleName, roleNames } from '#app/permissions.ts'
+import { type RoleName, roleNames } from '#worker/identity/permissions.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
 import { type routes } from '#app/routes.ts'
 

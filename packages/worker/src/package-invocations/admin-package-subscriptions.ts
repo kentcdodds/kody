@@ -1,5 +1,5 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
-import { listAdminStableUserIds } from '#app/permissions-db.ts'
+import { listAdminStableUserIds } from '#worker/identity/permissions-db.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'

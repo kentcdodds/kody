@@ -7,7 +7,7 @@ import {
 	buildUserScopedDeleteOrUpdateSql,
 	buildUserScopedTargetMatch,
 	type UserScopedDataTarget,
-} from './account-data-targets.ts'
+} from './data-targets.ts'
 
 function matchFor(target: UserScopedDataTarget) {
 	return buildUserScopedTargetMatch({

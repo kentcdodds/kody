@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
-import { createPlatformAccount } from '#app/platform-account-creation.ts'
+import { createPlatformAccount } from '#worker/identity/platform-account-creation.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { resolvePackageOwnerContext } from './package-owner.ts'
 import { insertPackageScopeGrant } from './scope-grants.ts'

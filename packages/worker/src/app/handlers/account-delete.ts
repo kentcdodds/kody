@@ -1,5 +1,5 @@
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUserForDeletion } from '#app/authenticated-user.ts'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { type routes } from '#app/routes.ts'
@@ -8,7 +8,7 @@ import {
 	AccountDeletionInventoryError,
 	deleteUserAccount,
 } from '#app/account-deletion.ts'
-import { AccountDeletionWritersActiveError } from '#app/account-deletion-state.ts'
+import { AccountDeletionWritersActiveError } from '#worker/account/deletion-state.ts'
 import { McpAgentSessionBackfillIncompleteError } from '#mcp/session-backfill-marker.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'

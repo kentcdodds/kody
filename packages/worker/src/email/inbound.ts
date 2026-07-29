@@ -1,6 +1,6 @@
-import { isReservedUsername } from '#app/reserved-usernames.ts'
-import { withAccountWriteLease } from '#app/account-deletion-state.ts'
-import { findPublicUserIdentityByUsername } from '#app/user-lookup.ts'
+import { isReservedUsername } from '#worker/identity/reserved-usernames.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
+import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
 	parseStoredPlanName,

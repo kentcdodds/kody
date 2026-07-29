@@ -5,7 +5,7 @@ import {
 	AccountDeletionInProgressError,
 	assertAccountWritableDb,
 	withAccountWriteLease,
-} from '#app/account-deletion-state.ts'
+} from '#worker/account/deletion-state.ts'
 import {
 	createKvCachifiedCache,
 	derivedCacheKeyPrefix,

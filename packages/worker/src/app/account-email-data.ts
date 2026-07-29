@@ -3,7 +3,7 @@ import {
 	emailVerificationRequiredMessage,
 	isAccountEmailVerified,
 } from '#app/email-verification.ts'
-import { readPagination } from '#app/query-params.ts'
+import { readPagination } from '#worker/query-params.ts'
 import { toMessageDetail } from '#mcp/capabilities/email/shared.ts'
 import {
 	resolveEmailResourceLimit,

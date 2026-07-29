@@ -1,7 +1,10 @@
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
-import { readPagination } from '#app/query-params.ts'
+import { readPagination } from '#worker/query-params.ts'
+// Type-only: the admin payload envelopes are the app/client wire contract and
+// are erased at build time, so this does not pull the app layer into the
+// worker's runtime graph.
 import { type AdminUsersLoaderData } from '#app/loader-data.ts'
-import { type RoleName, roleNames } from '#app/permissions.ts'
+import { type RoleName, roleNames } from '#worker/identity/permissions.ts'
 import {
 	parseStoredPlanName,
 	planNames,

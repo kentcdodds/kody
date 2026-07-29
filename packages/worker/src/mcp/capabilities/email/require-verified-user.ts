@@ -1,7 +1,7 @@
 import {
 	emailVerificationRequiredMessage,
 	isAccountEmailVerified,
-} from '#app/email-verification.ts'
+} from '#worker/identity/email-verification-state.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 

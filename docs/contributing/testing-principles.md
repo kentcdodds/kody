@@ -101,8 +101,8 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   `setupFiles`): import `logAuditEventSpy` and assert the audit events a handler
   is expected to emit (and `not.toHaveBeenCalled()` where none are). Tests that
   exercise the real audit pipeline opt out with
-  `vi.unmock('#app/audit-log.ts')`; tests that need to override other exports
-  (e.g. `getRequestIp`) declare their own `vi.mock('#app/audit-log.ts', ...)`
+  `vi.unmock('#worker/audit-log.ts')`; tests that need to override other exports
+  (e.g. `getRequestIp`) declare their own `vi.mock('#worker/audit-log.ts', ...)`
   and route `logAuditEvent` back through the shared spy.
 
 ## Examples

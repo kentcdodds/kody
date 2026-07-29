@@ -244,9 +244,9 @@ Guarantees and rules:
 - D1: `SELECT * FROM usage_rollups WHERE user_id = ?1 AND month = ?2` gives
   every metric for a user's month in one small scan.
 - Admin usage drill-down (on the admin users page):
-  `packages/worker/src/app/admin-user-usage-data.ts` caches its per-user rollup
-  read model for ~5 minutes in `BUNDLE_ARTIFACTS_KV` via the
-  `@epic-web/cachified` adapter in `packages/worker/src/kv-cachified.ts` (key
-  prefix `derived-cache:v1:`), keyed by user id + current month, falling through
-  to direct D1 queries when KV is unavailable. Usage is loaded for one selected
+  `packages/worker/src/admin/user-usage-data.ts` caches its per-user rollup read
+  model for ~5 minutes in `BUNDLE_ARTIFACTS_KV` via the `@epic-web/cachified`
+  adapter in `packages/worker/src/kv-cachified.ts` (key prefix
+  `derived-cache:v1:`), keyed by user id + current month, falling through to
+  direct D1 queries when KV is unavailable. Usage is loaded for one selected
   account at a time, so admin reads stay O(1) per view as the user base grows.

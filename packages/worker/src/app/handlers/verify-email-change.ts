@@ -1,5 +1,5 @@
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import {
 	createAuthCookie,
 	isSecureRequest,

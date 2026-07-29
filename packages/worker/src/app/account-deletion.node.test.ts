@@ -8,13 +8,13 @@ import {
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
-import { accountUserDataExcludedOwnerIds } from './account-data-targets.ts'
+import { accountUserDataExcludedOwnerIds } from '#worker/account/data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import {
 	AccountDeletionInProgressError,
 	AccountDeletionWritersActiveError,
 	assertAccountWritable,
-} from './account-deletion-state.ts'
+} from '#worker/account/deletion-state.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>

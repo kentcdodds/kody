@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { loadAdminUsersData } from '#app/admin-users-data.ts'
+import { loadAdminUsersData } from '#worker/admin/users-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {

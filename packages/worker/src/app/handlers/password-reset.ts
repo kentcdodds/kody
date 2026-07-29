@@ -5,14 +5,14 @@ import {
 	logAuditEvent,
 	getRequestIp,
 	redactEmailRecipient,
-} from '#app/audit-log.ts'
+} from '#worker/audit-log.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
-import { normalizeEmail } from '#app/normalize-email.ts'
+import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
 	createPasswordResetToken,
 	hashPasswordResetToken,
 	passwordResetTokenExpiryMs,
-} from '#app/password-reset-tokens.ts'
+} from '#worker/identity/password-reset-tokens.ts'
 import { type routes } from '#app/routes.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'

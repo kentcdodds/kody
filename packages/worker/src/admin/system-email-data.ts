@@ -1,4 +1,5 @@
-import { readPagination } from '#app/query-params.ts'
+import { readPagination } from '#worker/query-params.ts'
+// Type-only: see the note in users-data.ts.
 import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
 import { loadRawMime } from '#worker/email/service.ts'
 import {

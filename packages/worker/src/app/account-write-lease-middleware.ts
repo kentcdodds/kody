@@ -3,7 +3,7 @@ import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
 	withAccountWriteLease,
-} from './account-deletion-state.ts'
+} from '#worker/account/deletion-state.ts'
 import { loadResolvedRequestAuth } from './request-auth-cache.ts'
 
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])

@@ -1,5 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { withAccountWriteLease } from '#app/account-deletion-state.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { buildSavedPackageEmbedText } from './embed.ts'

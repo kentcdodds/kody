@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { adminCreateUserWithPasswordSetup } from '#app/admin-user-creation.ts'
+import { adminCreateUserWithPasswordSetup } from '#worker/identity/admin-user-creation.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {

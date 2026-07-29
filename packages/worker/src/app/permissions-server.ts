@@ -8,7 +8,7 @@ import {
 	type RoleName,
 	userHasPermission,
 	userHasRole,
-} from '#app/permissions.ts'
+} from '#worker/identity/permissions.ts'
 import { wantsJson } from '#worker/utils.ts'
 
 export {
@@ -16,8 +16,8 @@ export {
 	getUserRolesAndPermissions,
 	removeAdminRolePreservingLastAdmin,
 	removeUserRole,
-} from '#app/permissions-db.ts'
-export { userHasPermission, userHasRole } from '#app/permissions.ts'
+} from '#worker/identity/permissions-db.ts'
+export { userHasPermission, userHasRole } from '#worker/identity/permissions.ts'
 
 function unauthorizedResponse(request: Request) {
 	if (wantsJson(request)) {

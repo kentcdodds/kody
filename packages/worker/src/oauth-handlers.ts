@@ -5,14 +5,14 @@ import {
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
 import { createCookie } from '@remix-run/cookie'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import {
 	createAuthCookie,
 	isSecureRequest,
 	readAuthSessionResult,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
-import { isAccountEmailVerified } from '#app/email-verification.ts'
+import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { getEnv } from '#app/env.ts'
 import { type OAuthAuthorizeLoaderData } from '#app/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -22,7 +22,7 @@ import { wantsJson } from './utils.ts'
 import { isTwoFactorEnabled } from '#app/two-factor.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
-import { getUsernameFormatValidationError } from '#app/username.ts'
+import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 import { oauthPaths } from '#app/oauth-paths.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'

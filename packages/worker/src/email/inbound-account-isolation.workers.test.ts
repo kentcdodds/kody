@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
-import type * as UserLookupModule from '#app/user-lookup.ts'
+import type * as UserLookupModule from '#worker/identity/user-lookup.ts'
 import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
 import {
 	consoleWarn,
@@ -21,9 +21,9 @@ const userLookupMockModule = vi.hoisted(() => ({
 	findPublicUserIdentityByUsername: vi.fn(),
 }))
 
-vi.mock('#app/user-lookup.ts', async () => {
+vi.mock('#worker/identity/user-lookup.ts', async () => {
 	const actual = await vi.importActual<typeof UserLookupModule>(
-		'#app/user-lookup.ts',
+		'#worker/identity/user-lookup.ts',
 	)
 	return {
 		...actual,

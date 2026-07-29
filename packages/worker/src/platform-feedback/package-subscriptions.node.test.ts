@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 	loadPackageManifestBySourceId: vi.fn(),
 }))
 
-vi.mock('#app/permissions-db.ts', () => ({
+vi.mock('#worker/identity/permissions-db.ts', () => ({
 	listAdminStableUserIds: mocks.listAdminStableUserIds,
 }))
 

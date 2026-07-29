@@ -52,7 +52,7 @@ request so cookie signing and verification are available to handlers.
 - Uses D1 (`users` table) for user lookups and inserts
 - Hashes passwords with `@kody-internal/shared/password-hash.ts`
 - Returns signed session cookie via `Set-Cookie` on success
-- Emits structured audit events through `packages/worker/src/app/audit-log.ts`
+- Emits structured audit events through `packages/worker/src/audit-log.ts`
 
 ### Signup posture and invites
 
@@ -121,9 +121,9 @@ plan), use, and revocation emit audit events.
 
 The same admin page can create a user directly by email for manually invited
 people. That flow calls `adminCreateUserWithPasswordSetup` in
-`packages/worker/src/app/admin-user-creation.ts` instead of going through the
-web route logic directly, so future admin MCP capabilities can reuse the same
-service. It:
+`packages/worker/src/identity/admin-user-creation.ts` instead of going through
+the web route logic directly, so future admin MCP capabilities can reuse the
+same service. It:
 
 - requires a unique email and either a unique explicit username or an
   auto-generated unique username derived from the email
@@ -432,8 +432,8 @@ routed from `packages/worker/src/index.ts`.
 - `packages/worker/src/app/handlers/auth.ts` for app login/signup flow
 - `packages/worker/src/app/invites.ts` and
   `packages/worker/src/app/handlers/admin-invites.ts` for invite management
-- `packages/worker/src/app/admin-user-creation.ts` for admin-created account
-  setup links
+- `packages/worker/src/identity/admin-user-creation.ts` for admin-created
+  account setup links
 - `packages/worker/src/app/email-verification.ts`,
   `packages/worker/src/app/handlers/verify-email.ts`, and
   `packages/worker/src/app/handlers/account-resend-verification.ts` for

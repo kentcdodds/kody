@@ -1,4 +1,4 @@
-import { readPositiveInt } from '#app/query-params.ts'
+import { readPositiveInt } from '#worker/query-params.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAdminInvitesData } from '#app/admin-invites-data.ts'
@@ -6,11 +6,11 @@ import {
 	getRequestIp,
 	logAuditEvent,
 	redactEmailRecipient,
-} from '#app/audit-log.ts'
+} from '#worker/audit-log.ts'
 import {
 	adminCreateUserWithPasswordSetup,
 	AdminCreateUserError,
-} from '#app/admin-user-creation.ts'
+} from '#worker/identity/admin-user-creation.ts'
 import {
 	createInvite,
 	normalizeInviteCode,

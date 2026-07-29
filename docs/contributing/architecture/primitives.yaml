@@ -125,7 +125,7 @@ primitives:
     name: Role-based access control
     summary: Permissions, roles, admin route guards, and admin MCP metadata.
     code:
-      - packages/worker/src/app/permissions
+      - packages/worker/src/identity/permissions
       - packages/worker/src/app/handlers/admin-
       - packages/worker/src/mcp/capabilities/admin/
       - packages/worker/src/mcp/capabilities/meta/require-permission.ts
@@ -296,7 +296,7 @@ primitives:
     name: Account data export
     summary: User-facing export inventory without secret values.
     code:
-      - packages/worker/src/app/account-export.ts
+      - packages/worker/src/account/export.ts
       - packages/worker/src/app/handlers/account-export.ts
       - packages/worker/src/mcp/capabilities/account/
     docs:

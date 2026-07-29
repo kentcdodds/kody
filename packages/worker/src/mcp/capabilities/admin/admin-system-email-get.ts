@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { loadAdminSystemEmailMessageById } from '#app/admin-system-email-data.ts'
+import { loadAdminSystemEmailMessageById } from '#worker/admin/system-email-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {

@@ -3,7 +3,7 @@ import { expect, test } from 'vitest'
 import {
 	createPlatformAccount,
 	type PlatformAccountCreateError,
-} from '#app/platform-account-creation.ts'
+} from '#worker/identity/platform-account-creation.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { adminPackageScopeGrantCreateCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-create.ts'
 import { adminPackageScopeGrantListCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-list.ts'

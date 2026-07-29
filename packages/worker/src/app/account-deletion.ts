@@ -15,22 +15,22 @@ import { clearRunRecords } from '#worker/run-records/service.ts'
 import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
-} from '#app/account-user-inventory.ts'
+} from '#worker/account/user-inventory.ts'
 import {
 	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
 	buildUserScopedTargetMatch,
 	getAccountD1UserColumnCoverage,
-} from '#app/account-data-targets.ts'
+} from '#worker/account/data-targets.ts'
 import {
 	accountUserOwnedVectorizeSurfaces,
 	getAccountDeletionDurableObjectResultKeys,
-} from '#app/account-user-owned-surfaces.ts'
+} from '#worker/account/user-owned-surfaces.ts'
 import {
 	collectAccountR2Inventory,
 	type AccountCommunityListingSnapshot,
 	type AccountR2ObjectRef,
-} from '#app/account-r2-inventory.ts'
+} from '#worker/account/r2-inventory.ts'
 import {
 	deleteAccountCommunityAssetPrefixes,
 	deleteAccountEmailBlobPrefixes,
@@ -43,7 +43,7 @@ import { assertMcpAgentSessionBackfillComplete } from '#mcp/session-backfill-mar
 import {
 	AccountDeletionWritersActiveError,
 	markAccountDeleting,
-} from '#app/account-deletion-state.ts'
+} from '#worker/account/deletion-state.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { type routes } from '#app/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'

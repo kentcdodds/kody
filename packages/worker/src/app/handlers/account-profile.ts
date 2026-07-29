@@ -2,14 +2,17 @@ import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#app/audit-log.ts'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { getAppBaseUrl } from '#app/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { getUniqueConstraintField } from '#app/database-errors.ts'
+import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { type ProfileVisibility } from '#app/loader-data.ts'
 import { type routes } from '#app/routes.ts'
-import { getUsernameValidationError, normalizeUsername } from '#app/username.ts'
+import {
+	getUsernameValidationError,
+	normalizeUsername,
+} from '#worker/identity/username.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { updateCommunityProfile } from '#worker/community/social-service.ts'
 import {

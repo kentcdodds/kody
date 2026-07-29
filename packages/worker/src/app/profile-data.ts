@@ -1,4 +1,4 @@
-import { readPositiveInt } from '#app/query-params.ts'
+import { readPositiveInt } from '#worker/query-params.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	toPublicCommunityActivityItem,
@@ -6,7 +6,7 @@ import {
 	toPublicProfilePackageItem,
 } from '#app/community-public.ts'
 import { type ProfileLoaderData } from '#app/loader-data.ts'
-import { getUsernameFormatValidationError } from '#app/username.ts'
+import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { getUserFollow } from '#worker/community/social-repo.ts'
 import {
 	getCommunityProfileByUsername,
