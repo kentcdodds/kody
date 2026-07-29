@@ -506,7 +506,7 @@ test('createExecuteExecutor fails fast when nested fan-out saturates its request
 	let maxActiveEvaluations = 0
 	let activeEvaluations = 0
 	let releaseChildren: () => void = () => {}
-	const threeChildrenStarted = new Promise<void>((resolve) => {
+	const childrenMayFinish = new Promise<void>((resolve) => {
 		releaseChildren = resolve
 	})
 	let nestedEnv: Env
@@ -536,8 +536,7 @@ test('createExecuteExecutor fails fast when nested fan-out saturates its request
 									}),
 								)
 							}
-							if (evaluationCount === 4) releaseChildren()
-							await threeChildrenStarted
+							await childrenMayFinish
 							activeEvaluations -= 1
 							return { result: 'child', logs: [] }
 						},
@@ -557,6 +556,7 @@ test('createExecuteExecutor fails fast when nested fan-out saturates its request
 	await expect(rootExecution).rejects.toThrow(
 		'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
 	)
+	releaseChildren()
 	expect(evaluationCount).toBe(4)
 	expect(maxActiveEvaluations).toBe(4)
 })
