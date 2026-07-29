@@ -15,7 +15,7 @@ import {
 	readPackageAppSession,
 } from '#app/package-app-session.ts'
 import {
-	isPackageAppRequestPath,
+	type PackageAppPath,
 	parsePackageAppPath,
 	servePackageAppRequest,
 } from '#app/handlers/package-app.ts'
@@ -96,6 +96,19 @@ function createPackageAppSessionRequiredResponse(input: {
 					<meta charset="utf-8" />
 					<meta name="viewport" content="width=device-width, initial-scale=1" />
 					<title>Open this package app from Kody</title>
+					<style>
+						:root {
+							color-scheme: light dark;
+							font-family: ui-sans-serif, system-ui, sans-serif;
+							line-height: 1.5;
+						}
+						main {
+							box-sizing: border-box;
+							max-width: 34rem;
+							margin: 0 auto;
+							padding: min(12vh, 6rem) 1.25rem;
+						}
+					</style>
 				</head>
 				<body>
 					<main>
@@ -132,9 +145,10 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	request: Request
 	env: Env
 	url: URL
+	packagePath: PackageAppPath
 	packageAppOrigin: string
 }) {
-	const { request, env, url, packageAppOrigin } = input
+	const { request, env, url, packagePath, packageAppOrigin } = input
 	const target = replaceOrigin({
 		url: withoutHandoffToken(url),
 		origin: packageAppOrigin,
@@ -147,9 +161,6 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	if (request.method !== 'GET' && request.method !== 'HEAD') {
 		return redirectResponse({ location: target.toString(), status: 307 })
 	}
-
-	const packagePath = parsePackageAppPath(url.pathname)
-	if (!packagePath) return new Response('Not Found', { status: 404 })
 
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) return await redirectToLoginWhenUnauthenticated(request, env)
@@ -175,11 +186,11 @@ async function handleRequestOnPackageAppOrigin(input: {
 	request: Request
 	env: Env
 	url: URL
+	packagePath: PackageAppPath | null
 }) {
-	const { request, env, url } = input
+	const { request, env, url, packagePath } = input
 	const appBaseUrl = getAppBaseUrl({ env })
 
-	const packagePath = parsePackageAppPath(url.pathname)
 	if (!packagePath) {
 		// Nothing first-party is reachable here. The bare origin is a plausible
 		// typo or bookmark, so send it home; everything else fails closed.
@@ -249,15 +260,22 @@ export async function handlePackageAppOriginRequest(
 	if (!packageAppOrigin) return null
 
 	const url = new URL(request.url)
+	const packagePath = parsePackageAppPath(url.pathname)
 	if (url.origin === packageAppOrigin) {
-		return await handleRequestOnPackageAppOrigin({ request, env, url })
+		return await handleRequestOnPackageAppOrigin({
+			request,
+			env,
+			url,
+			packagePath,
+		})
 	}
-	if (!isPackageAppRequestPath(url.pathname)) return null
+	if (!packagePath) return null
 
 	return await redirectAppOriginToPackageAppOrigin({
 		request,
 		env,
 		url,
+		packagePath,
 		packageAppOrigin,
 	})
 }
