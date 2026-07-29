@@ -593,39 +593,51 @@ async function readStorageEstimateChunkWithRetry(input: {
 	const firstAttempt = await Promise.allSettled(
 		input.storageIds.map((storageId) => readOne(storageId)),
 	)
-	const firstValues: Array<StorageEstimateResult> = []
-	let firstFailed = false
-	for (const result of firstAttempt) {
-		if (result.status === 'fulfilled') {
-			firstValues.push(result.value)
-			continue
-		}
-		firstFailed = true
-	}
-	if (!firstFailed) {
-		return firstValues
-	}
-
-	await new Promise<void>((resolve) => {
-		setTimeout(resolve, storageEstimateReadRetryDelayMs)
+	const values: Array<StorageEstimateResult | undefined> = Array.from({
+		length: input.storageIds.length,
 	})
-	const retry = await Promise.allSettled(
-		input.storageIds.map((storageId) => readOne(storageId)),
-	)
-	const retryValues: Array<StorageEstimateResult> = []
-	for (const [index, result] of retry.entries()) {
+	const failedIndexes: Array<number> = []
+	for (const [index, result] of firstAttempt.entries()) {
 		if (result.status === 'fulfilled') {
-			retryValues.push(result.value)
+			values[index] = result.value
 			continue
 		}
-		// An unreadable bucket cannot safely be treated as zero usage.
-		throw createStorageEstimateReadError({
-			storageId: input.storageIds[index] ?? 'unknown',
-			attempts: 2,
-			cause: result.reason,
-		})
+		failedIndexes.push(index)
 	}
-	return retryValues
+	if (failedIndexes.length > 0) {
+		await new Promise<void>((resolve) => {
+			setTimeout(resolve, storageEstimateReadRetryDelayMs)
+		})
+		const retry = await Promise.allSettled(
+			failedIndexes.map((index) =>
+				readOne(input.storageIds[index] ?? 'unknown'),
+			),
+		)
+		for (const [retryIndex, result] of retry.entries()) {
+			const index = failedIndexes[retryIndex]
+			if (index === undefined) continue
+			if (result.status === 'fulfilled') {
+				values[index] = result.value
+				continue
+			}
+			// An unreadable bucket cannot safely be treated as zero usage.
+			throw createStorageEstimateReadError({
+				storageId: input.storageIds[index] ?? 'unknown',
+				attempts: 2,
+				cause: result.reason,
+			})
+		}
+	}
+	return values.map((value, index) => {
+		if (value === undefined) {
+			throw createStorageEstimateReadError({
+				storageId: input.storageIds[index] ?? 'unknown',
+				attempts: 2,
+				cause: new Error('Storage estimate retry completed without a value.'),
+			})
+		}
+		return value
+	})
 }
 
 export async function assertStorageRunnerWriteWithinEntitlement(input: {

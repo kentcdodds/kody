@@ -162,8 +162,8 @@ test('estimate chunk retry waits for pending first-attempt reads before retrying
 	})
 	expect(maxInFlight).toBe(chunkStorageIds.length)
 
-	// Even after the retry delay elapses, the second wave must not start while
-	// the slow first-attempt peer is still in flight (allSettled must win).
+	// Even after the retry delay elapses, the failed read must not retry while
+	// its slow first-attempt peer is still in flight (allSettled must win).
 	await new Promise<void>((resolve) => {
 		setTimeout(resolve, storageEstimateReadRetryDelayMs + 50)
 	})
@@ -174,6 +174,6 @@ test('estimate chunk retry waits for pending first-attempt reads before retrying
 	await expect(assertion).resolves.toBeUndefined()
 
 	expect(callCounts.get('fast-fail')).toBe(2)
-	expect(callCounts.get('slow-ok')).toBe(2)
+	expect(callCounts.get('slow-ok')).toBe(1)
 	expect(maxInFlight).toBe(chunkStorageIds.length)
 })

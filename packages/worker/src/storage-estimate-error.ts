@@ -1,3 +1,5 @@
+// Deliberately unanchored: transport layers can prefix/wrap this sentence, and
+// execute error taxonomy must still recover the storage id and attempt count.
 const storageEstimateReadErrorPattern =
 	/Unable to verify the storage byte entitlement because the bucket estimate for storageId ("(?:\\.|[^"\\])*") could not be read after (\d+) attempts\./u
 

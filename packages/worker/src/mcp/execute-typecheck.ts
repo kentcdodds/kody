@@ -152,10 +152,13 @@ async function getReusableTypecheckService() {
 				}),
 			}) as Promise<ReusableTypecheckService>,
 	)
+	const servicePromise = reusableTypecheckServicePromise
 	try {
-		return await reusableTypecheckServicePromise
+		return await servicePromise
 	} catch (error) {
-		reusableTypecheckServicePromise = null
+		if (reusableTypecheckServicePromise === servicePromise) {
+			reusableTypecheckServicePromise = null
+		}
 		throw error
 	}
 }
@@ -176,11 +179,15 @@ async function withTypecheckLock<T>(
 	})
 	await previous
 	let timeoutId: ReturnType<typeof setTimeout> | null = null
+	let startupTimedOut = false
+	const servicePromise = getReusableTypecheckService()
+	const cachedServicePromise = reusableTypecheckServicePromise
 	try {
 		const service = await Promise.race([
-			getReusableTypecheckService(),
+			servicePromise,
 			new Promise<never>((_resolve, reject) => {
 				timeoutId = setTimeout(() => {
+					startupTimedOut = true
 					reject(
 						new ExecuteTypecheckError([
 							`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckHoldMs}ms service startup budget.`,
@@ -204,6 +211,19 @@ async function withTypecheckLock<T>(
 			reusableTypecheckServicePromise = null
 		}
 		return result
+	} catch (error) {
+		if (
+			startupTimedOut &&
+			cachedServicePromise &&
+			reusableTypecheckServicePromise === cachedServicePromise
+		) {
+			reusableTypecheckServicePromise = null
+			void cachedServicePromise.then(
+				(service) => service.languageService.dispose?.(),
+				() => undefined,
+			)
+		}
+		throw error
 	} finally {
 		if (timeoutId !== null) clearTimeout(timeoutId)
 		pendingTypecheckCount -= 1
