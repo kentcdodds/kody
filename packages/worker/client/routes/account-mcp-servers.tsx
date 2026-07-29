@@ -780,6 +780,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 															},
 														}),
 												},
+												resetAfterAction: false,
 											}),
 											css(dangerButtonCss),
 										]}

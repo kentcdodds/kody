@@ -10,6 +10,7 @@ type ButtonLikeProps = {
 		click?: ClickHandler
 	}
 	onFirstClick?: ClickHandler
+	resetAfterAction?: boolean
 	[key: string]: unknown
 }
 
@@ -55,7 +56,9 @@ export function createDoubleCheck(handle: Handle) {
 				}
 
 				buttonProps.on?.click?.(event)
-				setDoubleCheck(false)
+				if (buttonProps.resetAfterAction !== false) {
+					setDoubleCheck(false)
+				}
 			}
 
 			return [

@@ -350,7 +350,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		try {
 			sessionStorage.setItem(configStorageKey, JSON.stringify(nextConfig))
 		} catch {
-			// Persisting this convenience state is best-effort.
+			// Config caching is best-effort; the required OAuth state write below still fails visibly.
 		}
 	}
 

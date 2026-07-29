@@ -72,4 +72,15 @@ test('double check button mix requires two clicks, resets on blur, then invokes 
 	expect(action).toHaveBeenCalledTimes(1)
 	expect(firstClickAction).toHaveBeenCalledTimes(2)
 	expect(doubleCheck.doubleCheck).toBe(false)
+
+	const persistentCheck = createDoubleCheck(handle as never)
+	const persistentAction = vi.fn()
+	const persistentMix = persistentCheck.getButtonMix({
+		on: { click: persistentAction },
+		resetAfterAction: false,
+	})
+	invoke(persistentMix[1], { preventDefault: vi.fn() } as unknown as Event)
+	invoke(persistentMix[1], { preventDefault: vi.fn() } as unknown as Event)
+	expect(persistentAction).toHaveBeenCalledTimes(1)
+	expect(persistentCheck.doubleCheck).toBe(true)
 })

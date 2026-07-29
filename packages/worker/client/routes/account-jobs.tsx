@@ -1388,6 +1388,7 @@ export function AccountJobsRoute(handle: Handle) {
 																},
 															}),
 													},
+													resetAfterAction: false,
 												}),
 												css(dangerButtonCss),
 											]}
