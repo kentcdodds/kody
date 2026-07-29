@@ -190,7 +190,11 @@ async function runWithDynamicWorkerEvaluationPermit<T>(
 	const { gate } = context
 	if (gate.active < maxConcurrentDynamicWorkerEvaluationsPerRequest) {
 		gate.active += 1
-	} else if (context.depth >= maxConcurrentDynamicWorkerEvaluationsPerRequest) {
+	} else if (context.depth > 1) {
+		// A nested evaluation cannot wait safely once the request is saturated:
+		// every active permit may belong to an ancestor/sibling that is itself
+		// awaiting a descendant. Immediate children (depth 1) may queue because
+		// another immediate child can still finish and transfer a permit.
 		throw new Error(dynamicWorkerCapacityErrorMessages[1])
 	} else {
 		await new Promise<void>((resolve) => {

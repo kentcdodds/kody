@@ -565,6 +565,77 @@ test('createExecuteExecutor fails fast instead of deadlocking recursive evaluati
 	expect(evaluationCount).toBe(4)
 })
 
+test('createExecuteExecutor fails fast when saturated sibling evaluations recurse together', async () => {
+	let evaluationCount = 0
+	let childCount = 0
+	let releaseChildren: () => void = () => {}
+	const allChildrenStarted = new Promise<void>((resolve) => {
+		releaseChildren = resolve
+	})
+	let recursiveEnv: Env
+	const exports = createExecutorTestExports()
+	const providers = [{ name: 'kody', fns: {} }]
+	const loader = {
+		get(_id: string, factory: () => FakeWorkerOptions) {
+			const options = factory()
+			const serializedOptions = JSON.stringify(options)
+			const kind = serializedOptions.includes('root-marker')
+				? 'root'
+				: serializedOptions.includes('child-marker')
+					? 'child'
+					: 'descendant'
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate() {
+							evaluationCount += 1
+							if (kind === 'root') {
+								return await Promise.all(
+									Array.from({ length: 3 }, async (_, index) =>
+										createExecuteExecutor({
+											env: recursiveEnv,
+											exports,
+											gatewayProps: createGatewayProps('mixed-user'),
+										}).execute(
+											`async () => "child-marker-${index}"`,
+											providers,
+										),
+									),
+								)
+							}
+							if (kind === 'child') {
+								childCount += 1
+								if (childCount === 3) releaseChildren()
+								await allChildrenStarted
+								return await createExecuteExecutor({
+									env: recursiveEnv,
+									exports,
+									gatewayProps: createGatewayProps('mixed-user'),
+								}).execute('async () => "descendant-marker"', providers)
+							}
+							return { result: 'descendant', logs: [] }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+	recursiveEnv = createExecutorTestEnv(loader)
+
+	const startedAtMs = Date.now()
+	await expect(
+		createExecuteExecutor({
+			env: recursiveEnv,
+			exports,
+			gatewayProps: createGatewayProps('mixed-user'),
+		}).execute('async () => "root-marker"', providers),
+	).rejects.toThrow(
+		'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
+	)
+	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
+	expect(evaluationCount).toBe(4)
+})
+
 test('createExecuteExecutor reuses stable dynamic worker ids until binding context or module graph changes', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	const env = createExecutorTestEnv(fakeLoader.loader)
