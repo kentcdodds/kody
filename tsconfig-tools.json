@@ -36,8 +36,8 @@
 		"./packages/worker/src/test-support/cloudflare-mock-server.ts",
 		"./tools/**/*.ts",
 		"./packages/shared/src/**/*.ts",
-		// Worker app modules imported by the seeding tools.
-		"./packages/worker/src/app/username.ts",
-		"./packages/worker/src/app/reserved-usernames.ts"
+		// Worker identity modules imported by the seeding tools.
+		"./packages/worker/src/identity/username.ts",
+		"./packages/worker/src/identity/reserved-usernames.ts"
 	]
 }

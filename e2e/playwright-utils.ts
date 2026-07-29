@@ -6,7 +6,7 @@ import {
 	seedUserInE2eDatabase,
 } from './d1-utils.ts'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
-import { usernameFromEmail } from '../packages/worker/src/app/username.ts'
+import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
 
 export * from '@playwright/test'
 

@@ -20,7 +20,7 @@
 		"./client/**/*.tsx",
 		"./client/**/*.d.ts",
 		"./src/app/oauth-login-errors.ts",
-		"./src/app/permissions.ts",
+		"./src/identity/permissions.ts",
 		"./src/app/routes.ts",
 		"./src/app/route-pattern.ts",
 		"./src/app/oauth-paths.ts",
