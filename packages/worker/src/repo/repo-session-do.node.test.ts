@@ -1631,15 +1631,6 @@ test('stagePublishedPackageArtifactRebuild collects workspace files once and sta
 	expect(
 		staged.stagingKey.startsWith('repo-artifact-rebuild-staging:v1:user-1:'),
 	).toBe(true)
-	expect(staged.targets).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'module',
-				artifactName: '.',
-				entryPoint: 'index.ts',
-			}),
-		]),
-	)
 	expect(put).toHaveBeenCalledTimes(1)
 	expect(put).toHaveBeenCalledWith(
 		staged.stagingKey,

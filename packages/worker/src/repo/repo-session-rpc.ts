@@ -135,7 +135,6 @@ export type RepoSessionRpc = {
 		userId: string
 	}) => Promise<{
 		stagingKey: string
-		targets: Array<PublishedPackageArtifactBuildTarget>
 	}>
 	runIsolatedArtifactRebuild: (
 		payload: IsolatedArtifactRebuildRequest,

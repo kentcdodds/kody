@@ -194,15 +194,15 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 		return
 	}
 
-	let stagingKey: string
+	// List + skip before staging so already_published / repair resumes do not
+	// pay collectWorkspaceFiles + KV stage when nothing remains to rebuild.
 	let targets: Array<PublishedPackageArtifactBuildTarget>
 	try {
-		;({ stagingKey, targets } =
-			await session.stagePublishedPackageArtifactRebuild({
-				sessionId: input.repoSessionId,
-				sourceId: input.sourceId,
-				userId: input.userId,
-			}))
+		targets = await session.listPublishedPackageArtifactTargets({
+			sessionId: input.repoSessionId,
+			sourceId: input.sourceId,
+			userId: input.userId,
+		})
 	} catch (error) {
 		throw new Error(
 			buildRebuildFailureMessage({
@@ -216,22 +216,42 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 		)
 	}
 
-	const succeeded: Array<PublishedPackageArtifactBuildTarget> = []
+	const { remaining, alreadyBuilt } = await filterTargetsNeedingRebuild({
+		env: input.env,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+		targets,
+	})
+	const succeeded: Array<PublishedPackageArtifactBuildTarget> = [...alreadyBuilt]
+	if (remaining.length === 0) return
+
+	let stagingKey: string
+	try {
+		;({ stagingKey } = await session.stagePublishedPackageArtifactRebuild({
+			sessionId: input.repoSessionId,
+			sourceId: input.sourceId,
+			userId: input.userId,
+		}))
+	} catch (error) {
+		throw new Error(
+			buildRebuildFailureMessage({
+				sourceId: input.sourceId,
+				publishedCommit: input.publishedCommit,
+				succeeded,
+				failed: [],
+				error,
+			}),
+			{ cause: error },
+		)
+	}
+
 	const failed: Array<{
 		target: PublishedPackageArtifactBuildTarget
 		error: unknown
 	}> = []
 
 	try {
-		const { remaining, alreadyBuilt } = await filterTargetsNeedingRebuild({
-			env: input.env,
-			userId: input.userId,
-			sourceId: input.sourceId,
-			publishedCommit: input.publishedCommit,
-			targets,
-		})
-		succeeded.push(...alreadyBuilt)
-
 		for (const targetChunk of chunkArray(
 			remaining,
 			publishedPackageArtifactRebuildConcurrency,

@@ -1747,9 +1747,10 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Collect workspace files once on the long-lived publish session, list
-	 * artifact targets, and stage the snapshot in KV for throwaway rebuild
-	 * isolates (see isolated-artifact-rebuild.ts).
+	 * Collect workspace files once on the long-lived publish session and stage
+	 * the snapshot in KV for throwaway rebuild isolates (see
+	 * isolated-artifact-rebuild.ts). Callers list and filter targets before
+	 * staging so already-built resumes skip this work.
 	 */
 	async stagePublishedPackageArtifactRebuild(input: {
 		sessionId?: string
@@ -1757,7 +1758,6 @@ class RepoSessionBase extends DurableObject<Env> {
 		userId: string
 	}): Promise<{
 		stagingKey: string
-		targets: Array<PublishedPackageArtifactBuildTarget>
 	}> {
 		const source = await this.resolvePublishSource(input)
 		if (source.entity_kind !== 'package') {
@@ -1773,17 +1773,14 @@ class RepoSessionBase extends DurableObject<Env> {
 				'BUNDLE_ARTIFACTS_KV binding is required to stage published package artifact rebuilds.',
 			)
 		}
-		const [sourceFiles, targets] = await Promise.all([
-			this.collectWorkspaceFiles(),
-			this.listPackageArtifactTargetsForSource(source),
-		])
+		const sourceFiles = await this.collectWorkspaceFiles()
 		const stagingKey = isolatedArtifactRebuildStagingKeyForUser(input.userId)
 		await stagingKv.put(
 			stagingKey,
 			JSON.stringify({ sourceFiles }),
 			{ expirationTtl: isolatedArtifactRebuildStagingTtlSeconds },
 		)
-		return { stagingKey, targets }
+		return { stagingKey }
 	}
 
 	/**
