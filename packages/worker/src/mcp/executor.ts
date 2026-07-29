@@ -151,40 +151,60 @@ type DynamicWorkerEvaluationGate = {
 	queue: Array<() => void>
 }
 
+type DynamicWorkerEvaluationContext = {
+	gate: DynamicWorkerEvaluationGate
+	depth: number
+}
+
 const dynamicWorkerEvaluationGateStorage =
-	new AsyncLocalStorage<DynamicWorkerEvaluationGate>()
+	new AsyncLocalStorage<DynamicWorkerEvaluationContext>()
 
 async function withDynamicWorkerEvaluationPermit<T>(
 	evaluate: () => Promise<T>,
 ): Promise<T> {
-	const inheritedGate = dynamicWorkerEvaluationGateStorage.getStore()
-	if (inheritedGate) {
-		return await runWithDynamicWorkerEvaluationPermit(inheritedGate, evaluate)
+	const inheritedContext = dynamicWorkerEvaluationGateStorage.getStore()
+	if (inheritedContext) {
+		return await runWithDynamicWorkerEvaluationPermit(
+			inheritedContext,
+			evaluate,
+		)
 	}
-	const requestGate: DynamicWorkerEvaluationGate = {
-		active: 0,
-		queue: [],
+	const requestContext: DynamicWorkerEvaluationContext = {
+		gate: {
+			active: 0,
+			queue: [],
+		},
+		depth: 0,
 	}
 	return await dynamicWorkerEvaluationGateStorage.run(
-		requestGate,
+		requestContext,
 		async () =>
-			await runWithDynamicWorkerEvaluationPermit(requestGate, evaluate),
+			await runWithDynamicWorkerEvaluationPermit(requestContext, evaluate),
 	)
 }
 
 async function runWithDynamicWorkerEvaluationPermit<T>(
-	gate: DynamicWorkerEvaluationGate,
+	context: DynamicWorkerEvaluationContext,
 	evaluate: () => Promise<T>,
 ): Promise<T> {
+	const { gate } = context
 	if (gate.active < maxConcurrentDynamicWorkerEvaluationsPerRequest) {
 		gate.active += 1
+	} else if (context.depth >= maxConcurrentDynamicWorkerEvaluationsPerRequest) {
+		throw new Error(dynamicWorkerCapacityErrorMessages[1])
 	} else {
 		await new Promise<void>((resolve) => {
 			gate.queue.push(resolve)
 		})
 	}
 	try {
-		return await evaluate()
+		return await dynamicWorkerEvaluationGateStorage.run(
+			{
+				gate,
+				depth: context.depth + 1,
+			},
+			evaluate,
+		)
 	} finally {
 		const next = gate.queue.shift()
 		if (next) {

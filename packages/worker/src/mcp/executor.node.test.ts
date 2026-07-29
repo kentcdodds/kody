@@ -525,6 +525,46 @@ test('createExecuteExecutor queues nested evaluations at four without blocking a
 	expect(activeEvaluations).toBe(0)
 })
 
+test('createExecuteExecutor fails fast instead of deadlocking recursive evaluations beyond four', async () => {
+	let evaluationCount = 0
+	let recursiveEnv: Env
+	const exports = createExecutorTestExports()
+	const providers = [{ name: 'kody', fns: {} }]
+	const loader = {
+		get(_id: string, factory: () => FakeWorkerOptions) {
+			factory()
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate() {
+							evaluationCount += 1
+							return await createExecuteExecutor({
+								env: recursiveEnv,
+								exports,
+								gatewayProps: createGatewayProps('recursive-user'),
+							}).execute(`async () => ${evaluationCount}`, providers)
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+	recursiveEnv = createExecutorTestEnv(loader)
+
+	const startedAtMs = Date.now()
+	await expect(
+		createExecuteExecutor({
+			env: recursiveEnv,
+			exports,
+			gatewayProps: createGatewayProps('recursive-user'),
+		}).execute('async () => "root"', providers),
+	).rejects.toThrow(
+		'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
+	)
+	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
+	expect(evaluationCount).toBe(4)
+})
+
 test('createExecuteExecutor reuses stable dynamic worker ids until binding context or module graph changes', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	const env = createExecutorTestEnv(fakeLoader.loader)

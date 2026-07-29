@@ -661,7 +661,7 @@ test('buildKodyModuleBundle cache lifecycle reuses hits, skips when disabled, ke
 	expect(retried).toEqual(createBundleResult('module-retry-success'))
 })
 
-test('buildKodyModuleBundle runs the prepared-graph hook before entering the bundler', async () => {
+test('buildKodyModuleBundle loads type-only Kody packages for the prepared-graph hook before entering the bundler', async () => {
 	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
@@ -674,11 +674,12 @@ test('buildKodyModuleBundle runs the prepared-graph hook before entering the bun
 	await expect(
 		buildKodyModuleBundle({
 			...createModuleBundleInput({
-				code: `import value from 'kody:@kentcdodds/example-package'
+				code: `import type { ExampleInput } from 'kody:@kentcdodds/example-package'
 export default async function run() {
-	return value
+	return null as ExampleInput | null
 }`,
 			}),
+			includeTypeOnlyKodyPackages: true,
 			beforeBundle,
 		}),
 	).rejects.toThrow('static typecheck failed')

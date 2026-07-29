@@ -18,9 +18,12 @@ export function isTypeDeclarationFilePath(filePath: string) {
 function collectStaticKodyPackageImportsFromSource(input: {
 	filePath: string
 	source: string
+	includeTypeOnly?: boolean
 }): Array<StaticKodyPackageImport> {
 	const imports: Array<StaticKodyPackageImport> = []
-	for (const node of collectLiteralImportNodes(input.source)) {
+	for (const node of collectLiteralImportNodes(input.source, {
+		includeTypeOnly: input.includeTypeOnly,
+	})) {
 		if (node.kind !== 'static') continue
 		if (!node.specifier.startsWith(packageSpecifierPrefix)) continue
 		const parsedSpecifier = parseKodyPackageSpecifier(node.specifier)
@@ -36,13 +39,22 @@ function collectStaticKodyPackageImportsFromSource(input: {
 
 export function collectStaticKodyPackageImportsFromFiles(
 	files: Record<string, string>,
+	options?: {
+		includeTypeDeclarations?: boolean
+		includeTypeOnly?: boolean
+	},
 ): Array<StaticKodyPackageImport> {
 	return Object.entries(files)
-		.filter(([filePath]) => !isTypeDeclarationFilePath(filePath))
+		.filter(
+			([filePath]) =>
+				options?.includeTypeDeclarations === true ||
+				!isTypeDeclarationFilePath(filePath),
+		)
 		.flatMap(([filePath, source]) =>
 			collectStaticKodyPackageImportsFromSource({
 				filePath,
 				source,
+				includeTypeOnly: options?.includeTypeOnly,
 			}),
 		)
 		.sort(

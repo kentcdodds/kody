@@ -112,6 +112,66 @@ export default async function run() {
 
 	await expect(
 		assertAdHocExecuteTypechecks({
+			source: `import type { StaticInput } from 'kody:@kentcdodds/static-contract'
+
+export default async function run() {
+	const input: StaticInput = { name: 123 }
+	return input
+}`,
+			packages,
+		}),
+	).rejects.toThrow("Type 'number' is not assignable to type 'string'")
+
+	const transitivePackages = createLoadedPackages(`
+import type { SharedInput } from 'kody:@kentcdodds/shared-types'
+export default function call(input: SharedInput): Promise<number>
+`)
+	const primaryPackage = transitivePackages.get('@kentcdodds/static-contract')!
+	transitivePackages.set('@kentcdodds/shared-types', {
+		...primaryPackage,
+		row: {
+			...primaryPackage.row,
+			id: 'package-2',
+			name: '@kentcdodds/shared-types',
+			kodyId: 'shared-types',
+			sourceId: 'source-2',
+		},
+		source: {
+			...primaryPackage.source,
+			id: 'source-2',
+			entity_id: 'package-2',
+			repo_name: 'shared-types',
+		},
+		manifest: {
+			name: '@kentcdodds/shared-types',
+			exports: {
+				'.': {
+					import: './src/index.ts',
+					types: './types/index.d.ts',
+				},
+			},
+			kody: {
+				id: 'shared-types',
+				description: 'Shared types fixture',
+			},
+		},
+		files: {
+			'src/index.ts': 'export {}',
+			'types/index.d.ts': 'export type SharedInput = { count: number }',
+		},
+	})
+	await expect(
+		assertAdHocExecuteTypechecks({
+			source: `import call from 'kody:@kentcdodds/static-contract'
+export default async function run() {
+	return await call({ count: 'not-a-number' })
+}`,
+			packages: transitivePackages,
+		}),
+	).rejects.toThrow("Type 'string' is not assignable to type 'number'")
+
+	await expect(
+		assertAdHocExecuteTypechecks({
 			source: `import call from 'kody:@kentcdodds/static-contract'
 import { kody, packageStorage } from 'kody:runtime'
 import arbitraryClient from 'arbitrary-uninstalled-npm-package'
@@ -152,4 +212,15 @@ export default async function run() {
 			packages: createLoadedPackages(stringContract),
 		}),
 	).resolves.toBeUndefined()
+})
+
+test('ad hoc execute typecheck rejects oversized source before loading the compiler', async () => {
+	await expect(
+		assertAdHocExecuteTypechecks({
+			source: `export default function run() {}\n/*${'x'.repeat(512 * 1024)}*/`,
+			packages: new Map() as LoadedKodyGraphPackages,
+		}),
+	).rejects.toThrow(
+		'entry.ts exceeds the 524288-byte pre-execution TypeScript source limit.',
+	)
 })

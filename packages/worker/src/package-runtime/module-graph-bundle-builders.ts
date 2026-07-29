@@ -91,6 +91,8 @@ export async function buildKodyModuleBundle(input: {
 	// Saved-package UUID when the root source is a saved package's own module;
 	// stamps root modules with package provenance (see RewriteState).
 	rootPackageId?: string | null
+	// Typecheck-only graph expansion for erased `import type` Kody dependencies.
+	includeTypeOnlyKodyPackages?: boolean
 	// Opt-in: cache createWorkerBundle by prepared-files digest (see createModuleBundleCacheKey).
 	reuseCachedBundle?: boolean
 	/**
@@ -109,6 +111,7 @@ export async function buildKodyModuleBundle(input: {
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
 		rootPackageId: input.rootPackageId,
+		includeTypeOnlyKodyPackages: input.includeTypeOnlyKodyPackages,
 	})
 	const entryPoint =
 		resolveWorkspaceSourceFilePath({

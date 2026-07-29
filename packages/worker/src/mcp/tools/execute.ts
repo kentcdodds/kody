@@ -296,17 +296,19 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					claimedRunHandle = claim.handle
 				}
 
-				const registry = await getCapabilityRegistryForContext({
-					env,
-					callerContext,
-				})
-				const featureFlags = await resolveCallerFeatureFlags(env, callerContext)
-				const surfacedMemories = await surfaceToolMemories({
-					env,
-					callerContext,
-					conversationId: resolvedConversationId,
-					retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
-				})
+				const [registry, featureFlags, surfacedMemories] = await Promise.all([
+					getCapabilityRegistryForContext({
+						env,
+						callerContext,
+					}),
+					resolveCallerFeatureFlags(env, callerContext),
+					surfaceToolMemories({
+						env,
+						callerContext,
+						conversationId: resolvedConversationId,
+						retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
+					}),
+				])
 				const registeredCapabilityCount = Object.keys(
 					registry.capabilityHandlers,
 				).length

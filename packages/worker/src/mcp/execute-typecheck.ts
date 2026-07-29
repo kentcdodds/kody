@@ -1,4 +1,3 @@
-import { createTypescriptLanguageService } from '@cloudflare/worker-bundler/typescript'
 import {
 	normalizePackageExportKey,
 	normalizePackageWorkspacePath,
@@ -57,6 +56,10 @@ const retainedProjectPaths = new Set([
 	tsconfigPath,
 ])
 const unresolvedModuleDiagnosticCodes = new Set([2307, 7016, 2792])
+const typecheckModuleSourcePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
+const maxExecuteTypecheckSourceBytes = 512 * 1024
+const maxExecuteTypecheckPackageFiles = 500
+const maxExecuteTypecheckPackageBytes = 5 * 1024 * 1024
 
 class MemoryTypecheckFileSystem implements TypecheckFileSystem {
 	readonly #files: Map<string, string>
@@ -125,14 +128,26 @@ let reusableTypecheckServicePromise: Promise<ReusableTypecheckService> | null =
 	null
 let typecheckQueue = Promise.resolve()
 
+async function loadTypescriptLanguageService() {
+	// Keep the multi-megabyte compiler out of the default-off Worker's eager
+	// module graph. This is the same lazy-load boundary used by repo checks:
+	// only an opted-in execute request pays the compiler import cost.
+	const { createTypescriptLanguageService } =
+		await import('@cloudflare/worker-bundler/typescript')
+	return createTypescriptLanguageService
+}
+
 async function getReusableTypecheckService() {
-	reusableTypecheckServicePromise ??= createTypescriptLanguageService({
-		fileSystem: new MemoryTypecheckFileSystem({
-			[entryPath]: emptyEntrySource,
-			[runtimeTypesPath]: createRuntimeTypes(),
-			[tsconfigPath]: createTypecheckTsconfig(),
-		}),
-	}) as Promise<ReusableTypecheckService>
+	reusableTypecheckServicePromise ??= loadTypescriptLanguageService().then(
+		(createTypescriptLanguageService) =>
+			createTypescriptLanguageService({
+				fileSystem: new MemoryTypecheckFileSystem({
+					[entryPath]: emptyEntrySource,
+					[runtimeTypesPath]: createRuntimeTypes(),
+					[tsconfigPath]: createTypecheckTsconfig(),
+				}),
+			}) as Promise<ReusableTypecheckService>,
+	)
 	try {
 		return await reusableTypecheckServicePromise
 	} catch (error) {
@@ -219,7 +234,9 @@ function rewriteStaticKodyImports(input: {
 	source: string
 	modulePath: string
 }) {
-	const replacements = collectLiteralImportNodes(input.source)
+	const replacements = collectLiteralImportNodes(input.source, {
+		includeTypeOnly: true,
+	})
 		.filter(
 			(node) =>
 				node.kind === 'static' &&
@@ -278,6 +295,7 @@ function writePackageSources(input: {
 	for (const [packageName, loaded] of input.packages) {
 		const packageRoot = createPackageSourceRoot(packageName)
 		for (const [path, source] of Object.entries(loaded.files)) {
+			if (!typecheckModuleSourcePattern.test(path)) continue
 			const modulePath = joinPath(
 				packageRoot,
 				normalizePackageWorkspacePath(path),
@@ -293,15 +311,56 @@ function writePackageSources(input: {
 	}
 }
 
+function assertTypecheckInputWithinLimits(input: {
+	source: string
+	packages: LoadedKodyGraphPackages
+}) {
+	const encoder = new TextEncoder()
+	const sourceBytes = encoder.encode(input.source).byteLength
+	if (sourceBytes > maxExecuteTypecheckSourceBytes) {
+		throw new ExecuteTypecheckError([
+			`entry.ts exceeds the ${maxExecuteTypecheckSourceBytes}-byte pre-execution TypeScript source limit.`,
+		])
+	}
+	let packageFiles = 0
+	let packageBytes = 0
+	for (const loaded of input.packages.values()) {
+		for (const [path, source] of Object.entries(loaded.files)) {
+			if (!typecheckModuleSourcePattern.test(path)) continue
+			packageFiles += 1
+			packageBytes += encoder.encode(source).byteLength
+			if (
+				packageFiles > maxExecuteTypecheckPackageFiles ||
+				packageBytes > maxExecuteTypecheckPackageBytes
+			) {
+				throw new ExecuteTypecheckError([
+					`Published Kody package types exceed the pre-execution TypeScript graph limit (${maxExecuteTypecheckPackageFiles} files or ${maxExecuteTypecheckPackageBytes} bytes).`,
+				])
+			}
+		}
+	}
+}
+
 function collectTypecheckImports(input: {
 	source: string
 	packages: LoadedKodyGraphPackages
 }) {
-	const imports = collectStaticKodyPackageImportsFromFiles({
-		[entryPath]: input.source,
-	})
+	const imports = collectStaticKodyPackageImportsFromFiles(
+		{
+			[entryPath]: input.source,
+		},
+		{
+			includeTypeDeclarations: true,
+			includeTypeOnly: true,
+		},
+	)
 	for (const loaded of input.packages.values()) {
-		imports.push(...collectStaticKodyPackageImportsFromFiles(loaded.files))
+		imports.push(
+			...collectStaticKodyPackageImportsFromFiles(loaded.files, {
+				includeTypeDeclarations: true,
+				includeTypeOnly: true,
+			}),
+		)
 	}
 	return new Map(
 		imports.map((imported) => [imported.specifier, imported]),
@@ -416,6 +475,7 @@ export async function assertAdHocExecuteTypechecks(input: {
 	source: string
 	packages: LoadedKodyGraphPackages
 }) {
+	assertTypecheckInputWithinLimits(input)
 	await withTypecheckLock(async ({ fileSystem, languageService }) => {
 		clearRequestFiles(fileSystem)
 		try {

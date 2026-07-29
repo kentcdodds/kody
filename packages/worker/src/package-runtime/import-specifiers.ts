@@ -74,6 +74,7 @@ function isTypeOnlyImportOrExport(node: ModuleAstNode) {
 
 export function collectLiteralImportNodes(
 	source: string,
+	options?: { includeTypeOnly?: boolean },
 ): Array<LiteralImportNode> {
 	const nodes: Array<LiteralImportNode> = []
 
@@ -92,7 +93,10 @@ export function collectLiteralImportNodes(
 			typedNode.type === 'ExportAllDeclaration' ||
 			typedNode.type === 'ExportNamedDeclaration'
 		) {
-			if (isTypeOnlyImportOrExport(typedNode)) {
+			if (
+				isTypeOnlyImportOrExport(typedNode) &&
+				options?.includeTypeOnly !== true
+			) {
 				return
 			}
 			const literalNode = readLiteralStringNode(typedNode.source)

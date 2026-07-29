@@ -650,6 +650,7 @@ export async function runModuleWithRegistry(
 		},
 		entryPoint: 'entry.ts',
 		reuseCachedBundle: true,
+		includeTypeOnlyKodyPackages: options?.preExecTypecheck === true,
 		beforeBundle: options?.preExecTypecheck
 			? async ({ packages }) => {
 					await assertAdHocExecuteTypechecks({
