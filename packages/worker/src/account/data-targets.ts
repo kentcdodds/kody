@@ -119,6 +119,26 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'user_activation_milestones' },
 	{ kind: 'user_id', table: 'user_package_run_successes' },
 	{ kind: 'user_id', table: 'agent_package_conversation_uses' },
+	// Per-package codemod outcomes belong to the package owner. Delete before
+	// anonymizing run attribution so orphaned items do not outlive the user.
+	{ kind: 'user_id', table: 'package_codemod_run_items' },
+	// Codemod runs are operator ledger rows: scope_user_id / initiated_by_user_id
+	// are attribution only. Keep the run for audit and anonymize both columns
+	// (matching community_bans.banned_by_user_id / package_scope_grants).
+	{
+		kind: 'replace_user_column',
+		table: 'package_codemod_runs',
+		matchColumn: 'scope_user_id',
+		setColumn: 'scope_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'package_codemod_runs',
+		matchColumn: 'initiated_by_user_id',
+		setColumn: 'initiated_by_user_id',
+		value: 'deleted-user',
+	},
 	{ kind: 'mcp_memory_suppression' },
 	{ kind: 'user_id', table: 'mcp_memories' },
 	{ kind: 'user_id', table: 'mcp_user_server_instructions' },
@@ -615,6 +635,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	community_activity_events: ['actor_user_id'],
 	community_reports: ['listing_owner_user_id', 'resolved_by_user_id'],
 	account_write_lease_repairs: ['target_user_id', 'repaired_by_user_id'],
+	package_codemod_runs: ['scope_user_id', 'initiated_by_user_id'],
 	package_scope_grants: [
 		'scope_owner_user_id',
 		'grantee_user_id',

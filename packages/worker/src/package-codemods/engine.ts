@@ -15,11 +15,13 @@ import {
 	getPackageCodemodRunById,
 	insertPackageCodemodRunItem,
 	listPackageCodemodRunItems,
+	updatePackageCodemodRunItem,
 	updatePackageCodemodRunStatus,
 	type PackageCodemodRunRecord,
 } from './ledger.ts'
 import { getPackageCodemodById } from './registry.ts'
 import {
+	createPackageCodemodSubscriptionCache,
 	dispatchPackageCodemodSubscriptionEvent,
 	packageCodemodAppliedTopic,
 	packageCodemodRevertedTopic,
@@ -72,8 +74,17 @@ export type PackageCodemodRunStepResult = {
 	summary: Partial<Record<PackageCodemodItemStatus, number>>
 }
 
-const defaultStepLimit = 20
-const maxStepLimit = 50
+type PersistedItemResult = PackageCodemodRunItemResult & {
+	revertSnapshotKey?: string | null
+}
+
+const scanDefaultStepLimit = 20
+const scanMaxStepLimit = 50
+const heavyDefaultStepLimit = 5
+const heavyMaxStepLimit = 10
+const fleetScanPageSize = 50
+const maxFleetPagesPerStep = 5
+const revertSnapshotTtlSeconds = 90 * 24 * 60 * 60
 
 type CodemodRevertSnapshot = {
 	codemodId: string
@@ -83,8 +94,30 @@ type CodemodRevertSnapshot = {
 	files: Record<string, string>
 }
 
-function buildRevertSnapshotKvKey(itemId: string) {
-	return `package-codemod-revert:${itemId}`
+export function buildPackageCodemodRevertSnapshotKvKey(input: {
+	userId: string
+	itemId: string
+}) {
+	return `package-codemod-revert:${input.userId}:${input.itemId}`
+}
+
+function compareBinaryIds(left: string, right: string) {
+	if (left < right) return -1
+	if (left > right) return 1
+	return 0
+}
+
+function resolveStepLimit(mode: PackageCodemodRunMode, limit?: number) {
+	if (mode === 'scan') {
+		return Math.min(
+			Math.max(limit ?? scanDefaultStepLimit, 1),
+			scanMaxStepLimit,
+		)
+	}
+	return Math.min(
+		Math.max(limit ?? heavyDefaultStepLimit, 1),
+		heavyMaxStepLimit,
+	)
 }
 
 function createSnapshotFilesWorkspace(files: Record<string, string>) {
@@ -101,11 +134,15 @@ function createSnapshotFilesWorkspace(files: Record<string, string>) {
 	}
 }
 
+function normalizeFailureMessage(message: string) {
+	return message.replace(/\d+/g, '#')
+}
+
 function failureKeys(result: RepoCheckRunResult): Set<string> {
 	const keys = new Set<string>()
 	for (const check of result.results) {
 		if (check.ok) continue
-		keys.add(`${check.kind}:${check.message}`)
+		keys.add(`${check.kind}:${normalizeFailureMessage(check.message)}`)
 	}
 	return keys
 }
@@ -162,7 +199,8 @@ function emptyItemResult(input: {
 	beforeCommit?: string | null
 	afterCommit?: string | null
 	checkSummary?: PackageCodemodRunItemResult['checkSummary']
-}): PackageCodemodRunItemResult {
+	revertSnapshotKey?: string | null
+}): PersistedItemResult {
 	return {
 		itemId: input.itemId,
 		userId: input.userId,
@@ -175,6 +213,23 @@ function emptyItemResult(input: {
 		afterCommit: input.afterCommit ?? null,
 		checkSummary: input.checkSummary ?? null,
 		error: input.error ?? null,
+		revertSnapshotKey: input.revertSnapshotKey ?? null,
+	}
+}
+
+function toPublicItem(item: PersistedItemResult): PackageCodemodRunItemResult {
+	return {
+		itemId: item.itemId,
+		userId: item.userId,
+		packageId: item.packageId,
+		kodyId: item.kodyId,
+		status: item.status,
+		changedPaths: item.changedPaths,
+		findings: item.findings,
+		beforeCommit: item.beforeCommit,
+		afterCommit: item.afterCommit,
+		checkSummary: item.checkSummary,
+		error: item.error,
 	}
 }
 
@@ -183,6 +238,19 @@ function incrementSummary(
 	status: PackageCodemodItemStatus,
 ) {
 	summary[status] = (summary[status] ?? 0) + 1
+}
+
+function requestedScopeUserId(scope: PackageCodemodRunScope) {
+	switch (scope.kind) {
+		case 'user':
+			return scope.userId
+		case 'fleet':
+			return null
+		default: {
+			const exhaustive: never = scope
+			throw new Error(`Unknown package codemod scope: ${String(exhaustive)}`)
+		}
+	}
 }
 
 async function ensureRun(input: {
@@ -195,6 +263,7 @@ async function ensureRun(input: {
 	filters?: PackageCodemodRunFilters
 	revertOfRunId?: string
 }): Promise<PackageCodemodRunRecord> {
+	const scopeUserId = requestedScopeUserId(input.scope)
 	if (input.runId) {
 		const existing = await getPackageCodemodRunById(
 			input.env.APP_DB,
@@ -213,20 +282,18 @@ async function ensureRun(input: {
 				`Package codemod run "${input.runId}" is mode "${existing.mode}", not "${input.mode}".`,
 			)
 		}
-		return existing
-	}
-	let scopeUserId: string | null
-	switch (input.scope.kind) {
-		case 'user':
-			scopeUserId = input.scope.userId
-			break
-		case 'fleet':
-			scopeUserId = null
-			break
-		default: {
-			const exhaustive: never = input.scope
-			throw new Error(`Unknown package codemod scope: ${String(exhaustive)}`)
+		if (existing.scopeUserId !== scopeUserId) {
+			throw new Error(
+				`Package codemod run "${input.runId}" scope does not match the requested scope.`,
+			)
 		}
+		const requestedRevertOf = input.revertOfRunId ?? null
+		if ((existing.revertOfRunId ?? null) !== requestedRevertOf) {
+			throw new Error(
+				`Package codemod run "${input.runId}" revertOfRunId does not match the requested value.`,
+			)
+		}
+		return existing
 	}
 	return await createPackageCodemodRun(input.env.APP_DB, {
 		id: crypto.randomUUID(),
@@ -259,11 +326,13 @@ async function listCandidatePackages(input: {
 			})
 			const ordered = [...all]
 				.filter((savedPackage) => matchesFilters(savedPackage, input.filters))
-				.sort((left, right) => left.id.localeCompare(right.id))
+				.sort((left, right) => compareBinaryIds(left.id, right.id))
 			const startIndex =
 				cursor == null
 					? 0
-					: ordered.findIndex((savedPackage) => savedPackage.id > cursor!)
+					: ordered.findIndex(
+							(savedPackage) => compareBinaryIds(savedPackage.id, cursor!) > 0,
+						)
 			const sliceStart = startIndex < 0 ? ordered.length : startIndex
 			const page = ordered.slice(sliceStart, sliceStart + input.limit)
 			packages.push(...page)
@@ -271,17 +340,21 @@ async function listCandidatePackages(input: {
 			const exhausted =
 				page.length < input.limit ||
 				last == null ||
-				ordered.every((savedPackage) => savedPackage.id <= last.id)
+				ordered.every(
+					(savedPackage) => compareBinaryIds(savedPackage.id, last.id) <= 0,
+				)
 			return {
 				packages,
 				nextCursor: exhausted ? null : (last?.id ?? null),
 			}
 		}
 		case 'fleet': {
+			let pagesScanned = 0
 			for (;;) {
+				pagesScanned += 1
 				const page = await listSavedPackagesPage(input.env.APP_DB, {
 					afterId: cursor,
-					limit: input.limit,
+					limit: fleetScanPageSize,
 				})
 				if (page.length === 0) {
 					return { packages, nextCursor: null }
@@ -297,8 +370,14 @@ async function listCandidatePackages(input: {
 						}
 					}
 				}
-				if (page.length < input.limit) {
+				if (page.length < fleetScanPageSize) {
 					return { packages, nextCursor: null }
+				}
+				if (pagesScanned >= maxFleetPagesPerStep) {
+					return {
+						packages,
+						nextCursor: cursor,
+					}
 				}
 			}
 		}
@@ -312,12 +391,12 @@ async function listCandidatePackages(input: {
 async function detectPublishedDrift(input: {
 	env: Env
 	repoId: string
-	publishedCommit: string
+	expectedCommit: string
 }): Promise<boolean> {
 	try {
 		const head = await resolveArtifactSourceHead(input.env, input.repoId)
 		if (!head.commit) return true
-		return head.commit !== input.publishedCommit
+		return head.commit !== input.expectedCommit
 	} catch {
 		return true
 	}
@@ -325,7 +404,7 @@ async function detectPublishedDrift(input: {
 
 async function persistItem(
 	env: Env,
-	result: PackageCodemodRunItemResult,
+	result: PersistedItemResult,
 	runId: string,
 ) {
 	await insertPackageCodemodRunItem(env.APP_DB, {
@@ -342,6 +421,7 @@ async function persistItem(
 		checkSummaryJson:
 			result.checkSummary == null ? null : JSON.stringify(result.checkSummary),
 		error: result.error,
+		revertSnapshotKey: result.revertSnapshotKey ?? null,
 	})
 }
 
@@ -368,7 +448,7 @@ async function processScanItem(input: {
 	savedPackage: SavedPackageRecord
 	files: Record<string, string>
 	beforeCommit: string | null
-}): Promise<PackageCodemodRunItemResult> {
+}): Promise<PersistedItemResult> {
 	const findings = input.codemod.detect(input.files)
 	const status: PackageCodemodItemStatus =
 		findings.length > 0 ? 'detected' : 'clean'
@@ -395,7 +475,7 @@ async function processTransformGates(input: {
 }): Promise<
 	| {
 			kind: 'terminal'
-			result: PackageCodemodRunItemResult
+			result: PersistedItemResult
 	  }
 	| {
 			kind: 'ready'
@@ -508,7 +588,8 @@ async function processPackageForMode(input: {
 	savedPackage: SavedPackageRecord
 	runId: string
 	waitUntil?: (promise: Promise<unknown>) => void
-}): Promise<PackageCodemodRunItemResult> {
+	subscriptionCache: ReturnType<typeof createPackageCodemodSubscriptionCache>
+}): Promise<PersistedItemResult> {
 	const loaded = await loadPackageSourceBySourceId({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -528,7 +609,7 @@ async function processPackageForMode(input: {
 	const drifted = await detectPublishedDrift({
 		env: input.env,
 		repoId: loaded.source.repo_id,
-		publishedCommit,
+		expectedCommit: publishedCommit,
 	})
 	if (drifted) {
 		return emptyItemResult({
@@ -585,6 +666,30 @@ async function processPackageForMode(input: {
 				sourceRoot: loaded.source.source_root,
 			})
 			if (gated.kind === 'terminal') return gated.result
+
+			const prePublishDrift = await detectPublishedDrift({
+				env: input.env,
+				repoId: loaded.source.repo_id,
+				expectedCommit: publishedCommit,
+			})
+			if (prePublishDrift) {
+				return emptyItemResult({
+					itemId: gated.itemId,
+					userId: input.savedPackage.userId,
+					packageId: input.savedPackage.id,
+					kodyId: input.savedPackage.kodyId,
+					status: 'skipped_drift',
+					changedPaths: gated.changedPaths,
+					findings: gated.findings,
+					beforeCommit: publishedCommit,
+					checkSummary: gated.checkSummary,
+				})
+			}
+
+			const revertSnapshotKey = buildPackageCodemodRevertSnapshotKvKey({
+				userId: input.savedPackage.userId,
+				itemId: gated.itemId,
+			})
 			const snapshot: CodemodRevertSnapshot = {
 				codemodId: input.codemod.id,
 				userId: input.savedPackage.userId,
@@ -593,19 +698,84 @@ async function processPackageForMode(input: {
 				files: loaded.files,
 			}
 			await input.env.BUNDLE_ARTIFACTS_KV.put(
-				buildRevertSnapshotKvKey(gated.itemId),
+				revertSnapshotKey,
 				JSON.stringify(snapshot),
+				{ expirationTtl: revertSnapshotTtlSeconds },
 			)
-			const afterCommit = await syncArtifactSourceSnapshot({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.savedPackage.userId,
-				sourceId: input.savedPackage.sourceId,
-				files: gated.transformedFiles,
-				destructiveOverwriteConfirmed: true,
-				commitMessage: `codemod(${input.codemod.id}): ${input.codemod.description}`,
-			})
-			if (afterCommit == null) {
+
+			try {
+				const afterCommit = await syncArtifactSourceSnapshot({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.savedPackage.userId,
+					sourceId: input.savedPackage.sourceId,
+					files: gated.transformedFiles,
+					destructiveOverwriteConfirmed: true,
+					commitMessage: `codemod(${input.codemod.id}): ${input.codemod.description}`,
+				})
+				if (afterCommit == null) {
+					return emptyItemResult({
+						itemId: gated.itemId,
+						userId: input.savedPackage.userId,
+						packageId: input.savedPackage.id,
+						kodyId: input.savedPackage.kodyId,
+						status: 'failed',
+						changedPaths: gated.changedPaths,
+						findings: gated.findings,
+						beforeCommit: publishedCommit,
+						checkSummary: gated.checkSummary,
+						revertSnapshotKey,
+						error:
+							'syncArtifactSourceSnapshot returned no published commit. A revert snapshot was retained; repo HEAD may be ahead of published_commit.',
+					})
+				}
+				try {
+					await refreshSavedPackageProjection({
+						env: input.env,
+						baseUrl: input.baseUrl,
+						userId: input.savedPackage.userId,
+						packageId: input.savedPackage.id,
+						sourceId: input.savedPackage.sourceId,
+					})
+				} catch (error) {
+					console.error(
+						JSON.stringify({
+							message: 'package-codemod projection refresh failed',
+							packageId: input.savedPackage.id,
+							error: getErrorMessage(error),
+						}),
+					)
+				}
+				await dispatchPackageCodemodSubscriptionEvent({
+					env: input.env,
+					userId: input.savedPackage.userId,
+					topic: packageCodemodAppliedTopic,
+					codemodId: input.codemod.id,
+					codemodDescription: input.codemod.description,
+					packageId: input.savedPackage.id,
+					kodyId: input.savedPackage.kodyId,
+					runId: input.runId,
+					itemId: gated.itemId,
+					changedPaths: gated.changedPaths,
+					beforeCommit: publishedCommit,
+					afterCommit,
+					waitUntil: input.waitUntil,
+					subscriptionCache: input.subscriptionCache,
+				})
+				return emptyItemResult({
+					itemId: gated.itemId,
+					userId: input.savedPackage.userId,
+					packageId: input.savedPackage.id,
+					kodyId: input.savedPackage.kodyId,
+					status: 'applied',
+					changedPaths: gated.changedPaths,
+					findings: gated.findings,
+					beforeCommit: publishedCommit,
+					afterCommit,
+					checkSummary: gated.checkSummary,
+					revertSnapshotKey,
+				})
+			} catch (error) {
 				return emptyItemResult({
 					itemId: gated.itemId,
 					userId: input.savedPackage.userId,
@@ -616,53 +786,10 @@ async function processPackageForMode(input: {
 					findings: gated.findings,
 					beforeCommit: publishedCommit,
 					checkSummary: gated.checkSummary,
-					error: 'syncArtifactSourceSnapshot returned no published commit.',
+					revertSnapshotKey,
+					error: `${getErrorMessage(error)} A revert snapshot was retained; repo HEAD may be ahead of published_commit.`,
 				})
 			}
-			try {
-				await refreshSavedPackageProjection({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					userId: input.savedPackage.userId,
-					packageId: input.savedPackage.id,
-					sourceId: input.savedPackage.sourceId,
-				})
-			} catch (error) {
-				console.error(
-					JSON.stringify({
-						message: 'package-codemod projection refresh failed',
-						packageId: input.savedPackage.id,
-						error: getErrorMessage(error),
-					}),
-				)
-			}
-			await dispatchPackageCodemodSubscriptionEvent({
-				env: input.env,
-				userId: input.savedPackage.userId,
-				topic: packageCodemodAppliedTopic,
-				codemodId: input.codemod.id,
-				codemodDescription: input.codemod.description,
-				packageId: input.savedPackage.id,
-				kodyId: input.savedPackage.kodyId,
-				runId: input.runId,
-				itemId: gated.itemId,
-				changedPaths: gated.changedPaths,
-				beforeCommit: publishedCommit,
-				afterCommit,
-				waitUntil: input.waitUntil,
-			})
-			return emptyItemResult({
-				itemId: gated.itemId,
-				userId: input.savedPackage.userId,
-				packageId: input.savedPackage.id,
-				kodyId: input.savedPackage.kodyId,
-				status: 'applied',
-				changedPaths: gated.changedPaths,
-				findings: gated.findings,
-				beforeCommit: publishedCommit,
-				afterCommit,
-				checkSummary: gated.checkSummary,
-			})
 		}
 		case 'revert':
 			throw new Error('processPackageForMode does not handle revert mode.')
@@ -682,6 +809,7 @@ async function processRevertStep(input: {
 	cursor: string | null
 	limit: number
 	waitUntil?: (promise: Promise<unknown>) => void
+	subscriptionCache: ReturnType<typeof createPackageCodemodSubscriptionCache>
 }): Promise<PackageCodemodRunStepResult> {
 	if (!input.run.revertOfRunId) {
 		throw new Error('revert mode requires revertOfRunId on the run.')
@@ -723,11 +851,15 @@ async function processRevertStep(input: {
 				throw new Error(`Unknown package codemod scope: ${String(exhaustive)}`)
 			}
 			const itemId = crypto.randomUUID()
-			let result: PackageCodemodRunItemResult
+			let result: PersistedItemResult
 			try {
-				const raw = await input.env.BUNDLE_ARTIFACTS_KV.get(
-					buildRevertSnapshotKvKey(priorItem.id),
-				)
+				const snapshotKey =
+					priorItem.revertSnapshotKey ??
+					buildPackageCodemodRevertSnapshotKvKey({
+						userId: priorItem.userId,
+						itemId: priorItem.id,
+					})
+				const raw = await input.env.BUNDLE_ARTIFACTS_KV.get(snapshotKey)
 				if (raw == null) {
 					result = emptyItemResult({
 						itemId,
@@ -740,83 +872,138 @@ async function processRevertStep(input: {
 					})
 				} else {
 					const snapshot = JSON.parse(raw) as CodemodRevertSnapshot
-					const savedPackage = (
-						await listSavedPackagesByUserId(input.env.APP_DB, {
-							userId: priorItem.userId,
-						})
-					).find((candidate) => candidate.id === priorItem.packageId)
-					if (!savedPackage) {
+					if (
+						snapshot.userId !== priorItem.userId ||
+						snapshot.packageId !== priorItem.packageId
+					) {
 						result = emptyItemResult({
 							itemId,
 							userId: priorItem.userId,
 							packageId: priorItem.packageId,
 							kodyId: priorItem.kodyId,
 							status: 'failed',
-							error: `Saved package "${priorItem.packageId}" was not found for revert.`,
+							beforeCommit: priorItem.afterCommit,
+							error: `Revert snapshot ownership mismatch for item "${priorItem.id}".`,
 						})
 					} else {
-						const afterCommit = await syncArtifactSourceSnapshot({
-							env: input.env,
-							baseUrl: input.baseUrl,
-							userId: priorItem.userId,
-							sourceId: savedPackage.sourceId,
-							files: snapshot.files,
-							destructiveOverwriteConfirmed: true,
-							commitMessage: `revert codemod(${input.codemod.id})`,
-						})
-						if (afterCommit == null) {
+						const savedPackage = (
+							await listSavedPackagesByUserId(input.env.APP_DB, {
+								userId: priorItem.userId,
+							})
+						).find((candidate) => candidate.id === priorItem.packageId)
+						if (!savedPackage) {
 							result = emptyItemResult({
 								itemId,
 								userId: priorItem.userId,
 								packageId: priorItem.packageId,
 								kodyId: priorItem.kodyId,
 								status: 'failed',
-								error:
-									'syncArtifactSourceSnapshot returned no published commit.',
+								error: `Saved package "${priorItem.packageId}" was not found for revert.`,
 							})
 						} else {
-							try {
-								await refreshSavedPackageProjection({
-									env: input.env,
-									baseUrl: input.baseUrl,
+							const loaded = await loadPackageSourceBySourceId({
+								env: input.env,
+								baseUrl: input.baseUrl,
+								userId: priorItem.userId,
+								sourceId: savedPackage.sourceId,
+							})
+							const expectedHead = priorItem.afterCommit
+							if (expectedHead == null) {
+								result = emptyItemResult({
+									itemId,
 									userId: priorItem.userId,
 									packageId: priorItem.packageId,
-									sourceId: savedPackage.sourceId,
+									kodyId: priorItem.kodyId,
+									status: 'failed',
+									error: `Applied item "${priorItem.id}" is missing afterCommit for revert drift check.`,
 								})
-							} catch (error) {
-								console.error(
-									JSON.stringify({
-										message: 'package-codemod revert projection refresh failed',
+							} else {
+								const drifted = await detectPublishedDrift({
+									env: input.env,
+									repoId: loaded.source.repo_id,
+									expectedCommit: expectedHead,
+								})
+								if (drifted) {
+									result = emptyItemResult({
+										itemId,
+										userId: priorItem.userId,
 										packageId: priorItem.packageId,
-										error: getErrorMessage(error),
-									}),
-								)
+										kodyId: priorItem.kodyId,
+										status: 'skipped_drift',
+										beforeCommit: priorItem.afterCommit,
+									})
+								} else {
+									const afterCommit = await syncArtifactSourceSnapshot({
+										env: input.env,
+										baseUrl: input.baseUrl,
+										userId: priorItem.userId,
+										sourceId: savedPackage.sourceId,
+										files: snapshot.files,
+										destructiveOverwriteConfirmed: true,
+										commitMessage: `revert codemod(${input.codemod.id})`,
+									})
+									if (afterCommit == null) {
+										result = emptyItemResult({
+											itemId,
+											userId: priorItem.userId,
+											packageId: priorItem.packageId,
+											kodyId: priorItem.kodyId,
+											status: 'failed',
+											error:
+												'syncArtifactSourceSnapshot returned no published commit.',
+										})
+									} else {
+										try {
+											await refreshSavedPackageProjection({
+												env: input.env,
+												baseUrl: input.baseUrl,
+												userId: priorItem.userId,
+												packageId: priorItem.packageId,
+												sourceId: savedPackage.sourceId,
+											})
+										} catch (error) {
+											console.error(
+												JSON.stringify({
+													message:
+														'package-codemod revert projection refresh failed',
+													packageId: priorItem.packageId,
+													error: getErrorMessage(error),
+												}),
+											)
+										}
+										await dispatchPackageCodemodSubscriptionEvent({
+											env: input.env,
+											userId: priorItem.userId,
+											topic: packageCodemodRevertedTopic,
+											codemodId: input.codemod.id,
+											codemodDescription: input.codemod.description,
+											packageId: priorItem.packageId,
+											kodyId: priorItem.kodyId,
+											runId: input.run.id,
+											itemId,
+											changedPaths: priorItem.changedPaths,
+											beforeCommit: priorItem.afterCommit,
+											afterCommit,
+											waitUntil: input.waitUntil,
+											subscriptionCache: input.subscriptionCache,
+										})
+										await updatePackageCodemodRunItem(input.env.APP_DB, {
+											id: priorItem.id,
+											status: 'reverted',
+										})
+										result = emptyItemResult({
+											itemId,
+											userId: priorItem.userId,
+											packageId: priorItem.packageId,
+											kodyId: priorItem.kodyId,
+											status: 'reverted',
+											changedPaths: priorItem.changedPaths,
+											beforeCommit: priorItem.afterCommit,
+											afterCommit,
+										})
+									}
+								}
 							}
-							await dispatchPackageCodemodSubscriptionEvent({
-								env: input.env,
-								userId: priorItem.userId,
-								topic: packageCodemodRevertedTopic,
-								codemodId: input.codemod.id,
-								codemodDescription: input.codemod.description,
-								packageId: priorItem.packageId,
-								kodyId: priorItem.kodyId,
-								runId: input.run.id,
-								itemId,
-								changedPaths: priorItem.changedPaths,
-								beforeCommit: priorItem.afterCommit,
-								afterCommit,
-								waitUntil: input.waitUntil,
-							})
-							result = emptyItemResult({
-								itemId,
-								userId: priorItem.userId,
-								packageId: priorItem.packageId,
-								kodyId: priorItem.kodyId,
-								status: 'reverted',
-								changedPaths: priorItem.changedPaths,
-								beforeCommit: priorItem.afterCommit,
-								afterCommit,
-							})
 						}
 					}
 				}
@@ -831,7 +1018,7 @@ async function processRevertStep(input: {
 				})
 			}
 			await persistItem(input.env, result, input.run.id)
-			items.push(result)
+			items.push(toPublicItem(result))
 			incrementSummary(summary, result.status)
 			if (items.length >= input.limit) {
 				return {
@@ -879,10 +1066,6 @@ export async function runPackageCodemodStep(input: {
 	if (!codemod) {
 		throw new Error(`Unknown package codemod "${input.codemodId}".`)
 	}
-	const limit = Math.min(
-		Math.max(input.limit ?? defaultStepLimit, 1),
-		maxStepLimit,
-	)
 	switch (input.mode) {
 		case 'scan':
 		case 'dry-run':
@@ -894,6 +1077,7 @@ export async function runPackageCodemodStep(input: {
 			throw new Error(`Unknown package codemod mode: ${String(exhaustive)}`)
 		}
 	}
+	const limit = resolveStepLimit(input.mode, input.limit)
 	if (input.mode === 'revert' && !input.revertOfRunId && !input.runId) {
 		throw new Error('revert mode requires revertOfRunId.')
 	}
@@ -907,6 +1091,7 @@ export async function runPackageCodemodStep(input: {
 		filters: input.filters,
 		revertOfRunId: input.revertOfRunId,
 	})
+	const subscriptionCache = createPackageCodemodSubscriptionCache()
 	if (input.mode === 'revert') {
 		return await processRevertStep({
 			env: input.env,
@@ -917,6 +1102,7 @@ export async function runPackageCodemodStep(input: {
 			cursor: input.cursor ?? null,
 			limit,
 			waitUntil: input.waitUntil,
+			subscriptionCache,
 		})
 	}
 
@@ -930,7 +1116,7 @@ export async function runPackageCodemodStep(input: {
 	const items: Array<PackageCodemodRunItemResult> = []
 	const summary: Partial<Record<PackageCodemodItemStatus, number>> = {}
 	for (const savedPackage of packages) {
-		let result: PackageCodemodRunItemResult
+		let result: PersistedItemResult
 		try {
 			result = await processPackageForMode({
 				env: input.env,
@@ -940,6 +1126,7 @@ export async function runPackageCodemodStep(input: {
 				savedPackage,
 				runId: run.id,
 				waitUntil: input.waitUntil,
+				subscriptionCache,
 			})
 		} catch (error) {
 			result = emptyItemResult({
@@ -952,7 +1139,7 @@ export async function runPackageCodemodStep(input: {
 			})
 		}
 		await persistItem(input.env, result, run.id)
-		items.push(result)
+		items.push(toPublicItem(result))
 		incrementSummary(summary, result.status)
 	}
 	if (nextCursor == null) {

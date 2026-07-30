@@ -1,3 +1,8 @@
+import {
+	maxRestorableTextColumnBytes,
+	truncateToUtf8Bytes,
+	utf8ByteLength,
+} from '@kody-internal/shared/backup-restore-safety.ts'
 import { type PackageCodemodFinding } from './types.ts'
 
 export type PackageCodemodRunStatus = 'running' | 'completed' | 'failed'
@@ -28,6 +33,7 @@ export type PackageCodemodRunItemRecord = {
 	findings: Array<PackageCodemodFinding>
 	checkSummaryJson: string | null
 	error: string | null
+	revertSnapshotKey: string | null
 	createdAt: string
 	updatedAt: string
 }
@@ -37,7 +43,11 @@ const runSelectColumns = `id, codemod_id, mode, scope_user_id, initiated_by_user
 
 const itemSelectColumns = `id, run_id, user_id, package_id, kody_id, status,
 	before_commit, after_commit, changed_paths_json, findings_json,
-	check_summary_json, error, created_at, updated_at`
+	check_summary_json, error, revert_snapshot_key, created_at, updated_at`
+
+const maxFindingsStored = 50
+const maxChangedPathsStored = 200
+const truncationNotice = '\n…[truncated]'
 
 function parseJsonArray<T>(value: string | null | undefined): Array<T> {
 	if (value == null || value === '') return []
@@ -47,6 +57,60 @@ function parseJsonArray<T>(value: string | null | undefined): Array<T> {
 	} catch {
 		return []
 	}
+}
+
+function boundTextColumn(value: string | null | undefined): string | null {
+	if (value == null) return null
+	if (utf8ByteLength(value) <= maxRestorableTextColumnBytes) return value
+	return (
+		truncateToUtf8Bytes(
+			value,
+			maxRestorableTextColumnBytes - utf8ByteLength(truncationNotice),
+		) + truncationNotice
+	)
+}
+
+function boundJsonStringArray(values: Array<string>): string {
+	const capped = values.slice(0, maxChangedPathsStored)
+	for (let size = capped.length; size >= 0; size -= 1) {
+		const slice = capped.slice(0, size)
+		const payload =
+			size < values.length
+				? [...slice, `…truncated ${values.length - size} more`]
+				: slice
+		const json = JSON.stringify(payload)
+		if (utf8ByteLength(json) <= maxRestorableTextColumnBytes) {
+			return json
+		}
+	}
+	return JSON.stringify(['…truncated'])
+}
+
+function boundFindingsJson(findings: Array<PackageCodemodFinding>): string {
+	const capped = findings.slice(0, maxFindingsStored)
+	for (let size = capped.length; size >= 0; size -= 1) {
+		const slice = capped.slice(0, size)
+		const payload =
+			size < findings.length
+				? [
+						...slice,
+						{
+							path: null,
+							message: `…truncated ${findings.length - size} more findings`,
+						},
+					]
+				: slice
+		const json = JSON.stringify(payload)
+		if (utf8ByteLength(json) <= maxRestorableTextColumnBytes) {
+			return json
+		}
+	}
+	return JSON.stringify([
+		{
+			path: null,
+			message: 'findings truncated',
+		},
+	])
 }
 
 function mapRunRow(row: Record<string, unknown>): PackageCodemodRunRecord {
@@ -95,6 +159,10 @@ function mapItemRow(row: Record<string, unknown>): PackageCodemodRunItemRecord {
 				? null
 				: String(row['check_summary_json']),
 		error: row['error'] == null ? null : String(row['error']),
+		revertSnapshotKey:
+			row['revert_snapshot_key'] == null
+				? null
+				: String(row['revert_snapshot_key']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -240,6 +308,7 @@ export async function insertPackageCodemodRunItem(
 		findings?: Array<PackageCodemodFinding>
 		checkSummaryJson?: string | null
 		error?: string | null
+		revertSnapshotKey?: string | null
 		createdAt?: string
 		updatedAt?: string
 	},
@@ -249,13 +318,18 @@ export async function insertPackageCodemodRunItem(
 	const updatedAt = input.updatedAt ?? now
 	const changedPaths = input.changedPaths ?? []
 	const findings = input.findings ?? []
+	const changedPathsJson = boundJsonStringArray(changedPaths)
+	const findingsJson = boundFindingsJson(findings)
+	const checkSummaryJson = boundTextColumn(input.checkSummaryJson ?? null)
+	const error = boundTextColumn(input.error ?? null)
+	const revertSnapshotKey = input.revertSnapshotKey ?? null
 	await db
 		.prepare(
 			`INSERT INTO package_codemod_run_items (
 				id, run_id, user_id, package_id, kody_id, status,
 				before_commit, after_commit, changed_paths_json, findings_json,
-				check_summary_json, error, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				check_summary_json, error, revert_snapshot_key, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			input.id,
@@ -266,10 +340,11 @@ export async function insertPackageCodemodRunItem(
 			input.status,
 			input.beforeCommit ?? null,
 			input.afterCommit ?? null,
-			JSON.stringify(changedPaths),
-			JSON.stringify(findings),
-			input.checkSummaryJson ?? null,
-			input.error ?? null,
+			changedPathsJson,
+			findingsJson,
+			checkSummaryJson,
+			error,
+			revertSnapshotKey,
 			createdAt,
 			updatedAt,
 		)
@@ -283,10 +358,11 @@ export async function insertPackageCodemodRunItem(
 		status: input.status,
 		beforeCommit: input.beforeCommit ?? null,
 		afterCommit: input.afterCommit ?? null,
-		changedPaths,
-		findings,
-		checkSummaryJson: input.checkSummaryJson ?? null,
-		error: input.error ?? null,
+		changedPaths: parseJsonArray<string>(changedPathsJson),
+		findings: parseJsonArray<PackageCodemodFinding>(findingsJson),
+		checkSummaryJson,
+		error,
+		revertSnapshotKey,
 		createdAt,
 		updatedAt,
 	}
@@ -303,6 +379,7 @@ export async function updatePackageCodemodRunItem(
 		findings?: Array<PackageCodemodFinding>
 		checkSummaryJson?: string | null
 		error?: string | null
+		revertSnapshotKey?: string | null
 		updatedAt?: string
 	},
 ) {
@@ -322,19 +399,23 @@ export async function updatePackageCodemodRunItem(
 	}
 	if (input.changedPaths !== undefined) {
 		updates.push('changed_paths_json = ?')
-		params.push(JSON.stringify(input.changedPaths))
+		params.push(boundJsonStringArray(input.changedPaths))
 	}
 	if (input.findings !== undefined) {
 		updates.push('findings_json = ?')
-		params.push(JSON.stringify(input.findings))
+		params.push(boundFindingsJson(input.findings))
 	}
 	if (input.checkSummaryJson !== undefined) {
 		updates.push('check_summary_json = ?')
-		params.push(input.checkSummaryJson)
+		params.push(boundTextColumn(input.checkSummaryJson))
 	}
 	if (input.error !== undefined) {
 		updates.push('error = ?')
-		params.push(input.error)
+		params.push(boundTextColumn(input.error))
+	}
+	if (input.revertSnapshotKey !== undefined) {
+		updates.push('revert_snapshot_key = ?')
+		params.push(input.revertSnapshotKey)
 	}
 	const updatedAt = input.updatedAt ?? new Date().toISOString()
 	updates.push('updated_at = ?')
@@ -393,4 +474,14 @@ export async function getPackageCodemodRunItemById(
 		.bind(itemId)
 		.first<Record<string, unknown>>()
 	return row ? mapItemRow(row) : null
+}
+
+/** Exported for unit tests that assert truncation helpers stay under the D1 bound. */
+export const packageCodemodLedgerTextBounds = {
+	maxRestorableTextColumnBytes,
+	maxFindingsStored,
+	maxChangedPathsStored,
+	boundJsonStringArray,
+	boundFindingsJson,
+	boundTextColumn,
 }

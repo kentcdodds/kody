@@ -199,6 +199,38 @@ test('package_codemod_revert looks up codemodId and rejects cross-user runs', as
 		limit: undefined,
 		revertOfRunId: 'apply-run-self',
 	})
+
+	mockModule.getPackageCodemodRunById.mockResolvedValueOnce({
+		id: 'apply-run-fleet',
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'apply',
+		scopeUserId: null,
+		initiatedByUserId: 'admin-1',
+		filtersJson: '{}',
+		status: 'completed',
+		revertOfRunId: null,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	})
+	mockModule.runPackageCodemodStep.mockResolvedValueOnce(
+		emptyStepResult({
+			runId: 'revert-run-fleet',
+			codemodId: '0001-ambient-storage-to-package-storage',
+			mode: 'revert',
+		}),
+	)
+	await expect(
+		packageCodemodRevertCapability.handler(
+			{ revertOfRunId: 'apply-run-fleet' },
+			createCtx('user-1'),
+		),
+	).resolves.toMatchObject({ runId: 'revert-run-fleet', mode: 'revert' })
+	expect(mockModule.runPackageCodemodStep).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			scope: { kind: 'user', userId: 'user-1' },
+			revertOfRunId: 'apply-run-fleet',
+		}),
+	)
 })
 
 test('package_codemod_apply and package_codemod_revert require an authenticated user', async () => {

@@ -1,6 +1,7 @@
 -- Ledger for package codemod runs (fleet or per-user) and per-package items.
 -- Runs track scan / dry-run / apply / revert; items record status, commits,
--- findings, and check summaries so operators can page, audit, and revert.
+-- findings, check summaries, and KV revert snapshot keys so operators can
+-- page, audit, and revert.
 
 CREATE TABLE IF NOT EXISTS package_codemod_runs (
 	id TEXT PRIMARY KEY NOT NULL,
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS package_codemod_run_items (
 	findings_json TEXT NOT NULL DEFAULT '[]',
 	check_summary_json TEXT,
 	error TEXT,
+	revert_snapshot_key TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );

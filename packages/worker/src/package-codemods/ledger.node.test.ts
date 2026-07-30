@@ -94,6 +94,7 @@ test('package codemod ledger pages runs and items with filters', async () => {
 		afterCommit: 'c2',
 		changedPaths: ['index.ts'],
 		findings: [{ path: 'index.ts', message: 'note' }],
+		revertSnapshotKey: 'package-codemod-revert:user-1:item-1',
 	})
 	await insertPackageCodemodRunItem(db, {
 		id: 'item-2',
@@ -122,6 +123,7 @@ test('package codemod ledger pages runs and items with filters', async () => {
 		findings: [{ path: 'index.ts', message: 'note' }],
 		beforeCommit: 'c1',
 		afterCommit: 'c2',
+		revertSnapshotKey: 'package-codemod-revert:user-1:item-1',
 	})
 
 	const secondPage = await listPackageCodemodRunItems(db, {

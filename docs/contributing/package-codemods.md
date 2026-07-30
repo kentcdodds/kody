@@ -45,30 +45,31 @@ Each codemod lives at
 `0001-ambient-storage-to-package-storage.ts`) and is registered in
 `packages/worker/src/package-codemods/registry.ts`.
 
-Every codemod exports:
+Types in `packages/worker/src/package-codemods/types.ts`:
 
 ```ts
-type PackageCodemod = {
-	id: string // matches filename prefix, e.g. '0001-ambient-storage-to-package-storage'
-	description: string
-	detect(files: PackageFileTree): PackageCodemodFinding[]
-	transform(files: PackageFileTree): PackageCodemodTransformResult
+type PackageCodemodFinding = {
+	path: string | null
+	message: string
 }
-```
 
-`PackageCodemodTransformResult`:
-
-```ts
 type PackageCodemodTransformResult = {
-	files: PackageFileTree
+	files: Record<string, string>
 	changed: boolean
-	changedPaths: string[]
-	needsManual: PackageCodemodFinding[]
+	changedPaths: Array<string>
+	needsManual: Array<PackageCodemodFinding>
+}
+
+type PackageCodemod = {
+	id: string
+	description: string
+	detect(files: Record<string, string>): Array<PackageCodemodFinding>
+	transform(files: Record<string, string>): PackageCodemodTransformResult
 }
 ```
 
-- **`detect(files)`** — read-only scan. Returns findings (paths, messages,
-  severity) without mutating the tree. Used for fleet discovery and reporting.
+- **`detect(files)`** — read-only scan. Returns `{ path, message }` findings
+  without mutating the tree. Used for fleet discovery and reporting.
 - **`transform(files)`** — returns a new tree plus metadata. When a hunk cannot
   be migrated confidently, leave the file unchanged and append a `needsManual`
   finding rather than applying a risky rewrite.
@@ -95,15 +96,45 @@ transformed map.
    - a required symbol cannot be resolved from static analysis alone, or
    - the codemod would delete user logic to satisfy the migration.
 
-The first shipped codemod is **`0001-ambient-storage-to-package-storage`**: it
-replaces deprecated ambient `storage` imports from `kody:runtime` with
-`packageStorage()`.
+### `0001-ambient-storage-to-package-storage`
+
+The first shipped codemod migrates deprecated ambient `storage` imports from
+`kody:runtime` to `packageStorage()` **at call sites**:
+
+- Rewrites member uses (`storage.get(...)` → `packageStorage().get(...)`) via
+  AST range replacement; it does **not** insert a module-scope
+  `const storage = packageStorage()` binding.
+- Adjusts the `kody:runtime` import: rename `storage` → `packageStorage`, or
+  drop the `storage` specifier when `packageStorage` is already imported.
+- Emits `needsManual` for aliased imports, non-member uses (value-passing),
+  re-exports, multiple runtime imports, binding sites, and post-rewrite
+  verification failures.
+- Emits `needsManual` for **parse failures** on scannable module files that
+  mention `kody:runtime` and `storage`.
+- **Manifest gate:** when `package.json#kody` declares any non-empty `app`,
+  `services`, `jobs`, `subscriptions`, `webhooks`, or `retrievers` surface,
+  every ambient-storage candidate file gets `needsManual` — ambient `storage`
+  and `packageStorage()` use different bucket identities on those execution
+  surfaces, so automatic rewrite risks silent data repointing.
 
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
-`packages/worker/src/package-codemods/engine.ts`. Long fleet runs are **paged**
-(cursor + limit); operators drive repeated steps until the run completes.
+`packages/worker/src/package-codemods/engine.ts`. Long runs are **paged**: each
+call processes up to `limit` packages (or revert items) and returns `nextCursor`
+plus a per-step `summary` count by item status. Repeat with the same `runId` and
+`nextCursor` until `nextCursor` is null.
+
+### Step limits
+
+| Mode                         | Default `limit` | Max `limit` |
+| ---------------------------- | --------------- | ----------- |
+| `scan`                       | 20              | 50          |
+| `dry-run`, `apply`, `revert` | 5               | 10          |
+
+Fleet scan mode may scan up to five D1 pages of 50 saved packages per step while
+applying filters, and can return a progress `nextCursor` even when the current
+step matched zero packages.
 
 ### Modes
 
@@ -111,8 +142,8 @@ The engine entry point is `runPackageCodemodStep` in
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scan`    | Run `detect` only; record findings per package.                                                                                                                                                                                                                                                                                   |
 | `dry-run` | Run `transform` in memory, then run the full publish check suite (`runRepoChecks`) on **both** the original and transformed trees. Pass only when transformed checks introduce **no new failures** compared to the original. Also verifies mechanical idempotency by transforming twice and requiring an unchanged second result. |
-| `apply`   | Same gates as dry-run. On success: snapshot the original published tree to KV for revert, republish via `syncArtifactSourceSnapshot` with commit message `codemod(<id>): ...`, refresh the saved-package projection, and dispatch subscription events (see below).                                                                |
-| `revert`  | Republish the KV-stored pre-codemod tree from a prior apply run's ledger items.                                                                                                                                                                                                                                                   |
+| `apply`   | Same gates as dry-run. On success: snapshot the original published tree to KV for revert, republish via `syncArtifactSourceSnapshot` with commit message `codemod(<id>): ...`, refresh the saved-package projection, and dispatch subscription events (see below). Re-checks drift immediately before publish.                    |
+| `revert`  | For each `applied` item on a prior apply run: load the KV revert snapshot, verify published HEAD still matches that item's `afterCommit`, republish the snapshot tree, mark the source apply item `reverted`, and dispatch `package.codemod.reverted`.                                                                            |
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.
@@ -120,11 +151,15 @@ items in the same run step.
 ### Safety rails
 
 - **`skipped_unpublished`** — packages with no published commit are skipped.
-- **`skipped_drift`** — when Artifacts repo HEAD has moved **past** the
-  published commit (user edited source after publish), the engine skips and
-  reports drift. It never overwrites unpublished work.
-- **Apply snapshots** — before mutating published state, apply persists the
-  pre-codemod tree to KV keyed from the ledger so revert can restore it.
+- **`skipped_drift`** — when Artifacts default-branch HEAD does not match
+  `entity_sources.published_commit`, the engine skips and never overwrites.
+  Apply re-checks drift after transform gates pass and before KV snapshot /
+  publish. Revert compares HEAD to the prior apply item's **`afterCommit`**
+  (post-codemod published commit); drift skips revert for that item.
+- **Apply snapshots** — before publish, apply writes the pre-codemod published
+  tree to `BUNDLE_ARTIFACTS_KV` at `package-codemod-revert:{userId}:{itemId}`
+  with a **90-day TTL** and stores that key on the ledger item as
+  `revert_snapshot_key`.
 - **Check gate** — apply and dry-run both require the transformed tree to pass
   `runRepoChecks` without regressions versus the original tree.
 
@@ -138,17 +173,28 @@ Each per-package row in a run records one of:
 ## Ledger
 
 Every run and per-package item is stored in D1 (migration
-`0111-package-codemod-ledger.sql`):
+`0111-package-codemod-ledger.sql`). Pagination cursors live on step responses,
+not in the ledger tables.
 
-- `package_codemod_runs` — run metadata (codemod id, mode, filters, cursor,
-  timestamps, aggregate counts).
-- `package_codemod_run_items` — one row per package attempt (status, findings,
-  commit before/after, KV revert pointer, error text).
+**`package_codemod_runs`:** `id`, `codemod_id`, `mode`, `scope_user_id` (`NULL`
+for fleet runs), `initiated_by_user_id`, `filters_json`, `status` (`running` |
+`completed` | `failed`), `revert_of_run_id`, `created_at`, `updated_at`.
 
-The ledger makes runs **resumable** (page forward with cursor), **auditable**
-(who migrated what, when, with which commits), and **revertible** (revert mode
-reads stored pre-codemod snapshots from prior apply items). All rows are scoped
-by the owning user's saved package identity; cross-user reads are a bug.
+**`package_codemod_run_items`:** `id`, `run_id`, `user_id`, `package_id`,
+`kody_id`, `status`, `before_commit`, `after_commit`, `changed_paths_json`,
+`findings_json`, `check_summary_json`, `error`, `revert_snapshot_key`,
+`created_at`, `updated_at`.
+
+Ledger writes **bound** large text columns (`error`, `check_summary_json`,
+`findings_json`, `changed_paths_json`) to restorable UTF-8 byte limits; findings
+cap at 50 entries and changed paths at 200, with truncation notices when
+overflowing.
+
+The ledger makes runs **resumable** (page forward with `nextCursor`),
+**auditable**, and **revertible** (revert reads KV snapshots keyed by
+`revert_snapshot_key`). Revert is only possible while the KV snapshot remains
+(90-day TTL). All rows are scoped by the owning user's saved package identity;
+cross-user reads are a bug.
 
 ## Operator surfaces
 
@@ -169,6 +215,10 @@ Authenticated users can migrate **their own** saved packages:
 - `package_codemod_revert`
 
 These capabilities scope to the calling user's `userId` and saved package rows.
+`package_codemod_revert` accepts a prior **apply** run id and reverts that
+user's applied items — including items from a **fleet** apply run, as long as
+the run is not scoped to another user (`scope_user_id` is `NULL` or matches the
+caller).
 
 ### MCP — fleet (`admin` domain)
 
@@ -204,15 +254,17 @@ allows new packages to reintroduce debt.
 
 ## Revert
 
-Apply persists the pre-codemod published tree to KV and records the pointer on
-the ledger item. **Revert** mode loads that snapshot for a chosen prior apply
-item and republishes it through the same `syncArtifactSourceSnapshot` path,
-restoring `entity_sources.published_commit`, KV snapshots, and D1 projections to
-the pre-migration state. Revert dispatches `package.codemod.reverted` to
-subscribers (see [Package subscriptions](../guides/package-subscriptions.md)).
+Apply persists the pre-codemod published tree to KV (`revert_snapshot_key`,
+90-day TTL) before republishing the transformed tree. **Revert** mode creates a
+new run with `revert_of_run_id` pointing at the prior apply run, pages through
+source items with status `applied`, loads each KV snapshot, and republishes via
+`syncArtifactSourceSnapshot` with commit message `revert codemod(<id>)`. On
+success it marks the **source apply item** `reverted`, refreshes projections,
+and dispatches `package.codemod.reverted`.
 
-Revert does not restore Artifacts working-copy edits made after apply; packages
-in `skipped_drift` were never mutated by apply.
+Revert requires published HEAD to still equal the source item's `afterCommit`.
+Missing or expired KV snapshots fail the revert item. Revert does not restore
+Artifacts working-copy edits made after apply.
 
 ## Subscription events
 

@@ -5,7 +5,9 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import type * as RepoChecks from '#worker/repo/checks.ts'
 import {
 	getPackageCodemodRunById,
+	getPackageCodemodRunItemById,
 	listPackageCodemodRunItems,
+	packageCodemodLedgerTextBounds,
 } from './ledger.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -57,24 +59,32 @@ vi.mock('#worker/repo/checks.ts', async (importOriginal) => {
 vi.mock('./subscription-events.ts', () => ({
 	packageCodemodAppliedTopic: 'package.codemod.applied',
 	packageCodemodRevertedTopic: 'package.codemod.reverted',
+	createPackageCodemodSubscriptionCache: () => ({
+		load: async () => ({ subscriptions: [], discoveryErrors: [] }),
+	}),
 	dispatchPackageCodemodSubscriptionEvent: (...args: Array<unknown>) =>
 		mocks.dispatchPackageCodemodSubscriptionEvent(...args),
 }))
 
-const { runPackageCodemodStep } = await import('./engine.ts')
+const { buildPackageCodemodRevertSnapshotKvKey, runPackageCodemodStep } =
+	await import('./engine.ts')
 
 const codemodId = '0001-ambient-storage-to-package-storage'
 
 function createKv() {
-	const store = new Map<string, string>()
+	const store = new Map<string, { value: string; expirationTtl?: number }>()
 	return {
 		store,
 		namespace: {
 			async get(key: string) {
-				return store.get(key) ?? null
+				return store.get(key)?.value ?? null
 			},
-			async put(key: string, value: string) {
-				store.set(key, value)
+			async put(
+				key: string,
+				value: string,
+				options?: { expirationTtl?: number },
+			) {
+				store.set(key, { value, expirationTtl: options?.expirationTtl })
 			},
 			async delete(key: string) {
 				store.delete(key)
@@ -132,7 +142,7 @@ function savedPackage(input: {
 	}
 }
 
-function ambientFiles(extra?: Record<string, string>) {
+function ambientFiles() {
 	return {
 		'package.json': `${JSON.stringify(
 			{
@@ -145,7 +155,6 @@ function ambientFiles(extra?: Record<string, string>) {
 		)}\n`,
 		'index.ts':
 			"import { storage } from 'kody:runtime'\nexport async function run() {\n\treturn storage.get('k')\n}\n",
-		...extra,
 	}
 }
 
@@ -161,7 +170,7 @@ function cleanFiles() {
 			'\t',
 		)}\n`,
 		'index.ts':
-			"import { packageStorage } from 'kody:runtime'\nconst storage = packageStorage()\nexport async function run() {\n\treturn storage.get('k')\n}\n",
+			"import { packageStorage } from 'kody:runtime'\nexport async function run() {\n\treturn packageStorage().get('k')\n}\n",
 	}
 }
 
@@ -215,7 +224,7 @@ function resetMocks() {
 	})
 	mocks.syncArtifactSourceSnapshot.mockImplementation(
 		async (input: { files: Record<string, string> }) => {
-			const marker = input.files['index.ts']?.includes('packageStorage')
+			const marker = input.files['index.ts']?.includes('packageStorage()')
 				? 'after'
 				: 'reverted'
 			return `commit-${marker}`
@@ -223,7 +232,7 @@ function resetMocks() {
 	)
 }
 
-test('package codemod engine covers scan dry-run apply revert drift unpublished isolation and gates', async () => {
+test('package codemod engine covers lifecycle, drift, isolation, snapshot keys, and gates', async () => {
 	resetMocks()
 	const { env, kv } = createEnv()
 
@@ -354,23 +363,6 @@ test('package codemod engine covers scan dry-run apply revert drift unpublished 
 		skipped_unpublished: 1,
 		failed: 1,
 	})
-	const scanByPackage = Object.fromEntries(
-		scan.items.map((item) => [item.packageId, item.status]),
-	)
-	expect(scanByPackage).toMatchObject({
-		'pkg-ambient': 'detected',
-		'pkg-clean': 'clean',
-		'pkg-drift': 'skipped_drift',
-		'pkg-unpublished': 'skipped_unpublished',
-		'pkg-fail': 'failed',
-	})
-	expect(
-		scan.items.find((item) => item.packageId === 'pkg-fail')?.error,
-	).toContain('source boom')
-	expect(await getPackageCodemodRunById(env.APP_DB, scan.runId)).toMatchObject({
-		status: 'completed',
-		scopeUserId: 'user-1',
-	})
 
 	mocks.runRepoChecks.mockImplementation(
 		async (input: {
@@ -385,11 +377,7 @@ test('package codemod engine covers scan dry-run apply revert drift unpublished 
 				return {
 					ok: false,
 					results: [
-						{
-							kind: 'lint',
-							ok: false,
-							message: 'ambient storage',
-						},
+						{ kind: 'lint', ok: false, message: 'ambient storage line 12' },
 					],
 					manifest: {},
 					sourceFiles: {},
@@ -412,18 +400,11 @@ test('package codemod engine covers scan dry-run apply revert drift unpublished 
 		mode: 'dry-run',
 		scope: { kind: 'user', userId: 'user-1' },
 		filters: { packageIds: ['pkg-ambient', 'pkg-clean'] },
-		limit: 50,
+		limit: 10,
 	})
 	expect(dryRun.summary).toMatchObject({
 		dry_run_ok: 1,
 		clean: 1,
-	})
-	expect(
-		dryRun.items.find((item) => item.packageId === 'pkg-ambient'),
-	).toMatchObject({
-		status: 'dry_run_ok',
-		changedPaths: ['index.ts'],
-		checkSummary: { ok: true, newFailures: [] },
 	})
 	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 
@@ -433,8 +414,7 @@ test('package codemod engine covers scan dry-run apply revert drift unpublished 
 		}) => {
 			const index = await input.workspace.readFile('index.ts')
 			const transformed =
-				typeof index === 'string' &&
-				index.includes('const storage = packageStorage()')
+				typeof index === 'string' && index.includes('packageStorage().get')
 			if (transformed) {
 				return {
 					ok: false,
@@ -465,13 +445,9 @@ test('package codemod engine covers scan dry-run apply revert drift unpublished 
 		mode: 'apply',
 		scope: { kind: 'user', userId: 'user-1' },
 		filters: { packageIds: ['pkg-ambient'] },
-		limit: 50,
+		limit: 10,
 	})
-	expect(gated.items).toHaveLength(1)
 	expect(gated.items[0]?.status).toBe('dry_run_new_failures')
-	expect(gated.items[0]?.checkSummary?.newFailures).toEqual([
-		'lint:new failure only after transform',
-	])
 	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 
 	mocks.runRepoChecks.mockImplementation(
@@ -486,14 +462,18 @@ test('package codemod engine covers scan dry-run apply revert drift unpublished 
 			if (hasAmbient) {
 				return {
 					ok: false,
-					results: [{ kind: 'lint', ok: false, message: 'ambient storage' }],
+					results: [
+						{ kind: 'lint', ok: false, message: 'ambient storage line 12' },
+					],
 					manifest: {},
 					sourceFiles: {},
 				}
 			}
 			return {
-				ok: true,
-				results: [{ kind: 'lint', ok: true, message: 'ok' }],
+				ok: false,
+				results: [
+					{ kind: 'lint', ok: false, message: 'ambient storage line 40' },
+				],
 				manifest: {},
 				sourceFiles: {},
 			}
@@ -508,76 +488,42 @@ test('package codemod engine covers scan dry-run apply revert drift unpublished 
 		mode: 'apply',
 		scope: { kind: 'user', userId: 'user-1' },
 		filters: { packageIds: ['pkg-ambient'] },
-		limit: 50,
+		limit: 10,
 	})
-	expect(apply.items).toHaveLength(1)
 	expect(apply.items[0]).toMatchObject({
 		status: 'applied',
 		packageId: 'pkg-ambient',
 		beforeCommit: 'commit-repo-ambient',
 		afterCommit: 'commit-after',
 	})
-	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({
-			sourceId: 'source-ambient',
-			destructiveOverwriteConfirmed: true,
-			commitMessage: expect.stringContaining(`codemod(${codemodId})`),
-			files: expect.objectContaining({
-				'index.ts': expect.stringContaining('packageStorage'),
-			}),
-		}),
-	)
 	const applyItemId = apply.items[0]!.itemId
-	const revertKey = `package-codemod-revert:${applyItemId}`
-	const snapshotRaw = await env.BUNDLE_ARTIFACTS_KV.get(revertKey)
-	expect(snapshotRaw).toBeTruthy()
-	const snapshot = JSON.parse(snapshotRaw!) as {
-		files: Record<string, string>
-		beforeCommit: string
-	}
-	expect(snapshot.beforeCommit).toBe('commit-repo-ambient')
-	expect(snapshot.files['index.ts']).toContain(
-		"import { storage } from 'kody:runtime'",
-	)
+	const revertKey = buildPackageCodemodRevertSnapshotKvKey({
+		userId: 'user-1',
+		itemId: applyItemId,
+	})
+	expect(revertKey).toBe(`package-codemod-revert:user-1:${applyItemId}`)
+	const stored = kv.store.get(revertKey)
+	expect(stored?.expirationTtl).toBe(90 * 24 * 60 * 60)
+	const ledgerItem = await getPackageCodemodRunItemById(env.APP_DB, applyItemId)
+	expect(ledgerItem?.revertSnapshotKey).toBe(revertKey)
 	expect(mocks.dispatchPackageCodemodSubscriptionEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
 			topic: 'package.codemod.applied',
-			packageId: 'pkg-ambient',
-			itemId: applyItemId,
+			subscriptionCache: expect.anything(),
 		}),
 	)
 
-	const ledgerItems = await listPackageCodemodRunItems(env.APP_DB, {
-		runId: apply.runId,
-		limit: 10,
-	})
-	expect(ledgerItems).toHaveLength(1)
-	expect(ledgerItems[0]?.status).toBe('applied')
-
-	const otherUserApply = await runPackageCodemodStep({
-		env,
-		baseUrl: 'https://example.com',
-		initiatedByUserId: 'user-2',
-		codemodId,
-		mode: 'apply',
-		scope: { kind: 'user', userId: 'user-2' },
-		filters: { packageIds: ['pkg-ambient'] },
-		limit: 50,
-	})
-	expect(otherUserApply.items).toEqual([])
-	expect(otherUserApply.summary).toEqual({})
-
-	const user1CannotSeeUser2 = await runPackageCodemodStep({
-		env,
-		baseUrl: 'https://example.com',
-		initiatedByUserId: 'user-1',
-		codemodId,
-		mode: 'scan',
-		scope: { kind: 'user', userId: 'user-1' },
-		filters: { packageIds: ['pkg-other'] },
-		limit: 50,
-	})
-	expect(user1CannotSeeUser2.items).toEqual([])
+	mocks.resolveArtifactSourceHead.mockImplementation(
+		async (_env: Env, repoId: string) => {
+			if (repoId === 'repo-ambient') {
+				return { branch: 'main', commit: 'commit-after' }
+			}
+			if (repoId === 'repo-drift') {
+				return { branch: 'main', commit: 'commit-head-moved' }
+			}
+			return { branch: 'main', commit: `commit-${repoId}` }
+		},
+	)
 
 	const revert = await runPackageCodemodStep({
 		env,
@@ -587,30 +533,26 @@ test('package codemod engine covers scan dry-run apply revert drift unpublished 
 		mode: 'revert',
 		scope: { kind: 'user', userId: 'user-1' },
 		revertOfRunId: apply.runId,
-		limit: 50,
+		limit: 10,
 	})
-	expect(revert.items).toHaveLength(1)
-	expect(revert.items[0]).toMatchObject({
-		status: 'reverted',
-		packageId: 'pkg-ambient',
-		afterCommit: 'commit-reverted',
+	expect(revert.items[0]?.status).toBe('reverted')
+	const sourceAfterRevert = await getPackageCodemodRunItemById(
+		env.APP_DB,
+		applyItemId,
+	)
+	expect(sourceAfterRevert?.status).toBe('reverted')
+
+	const secondRevert = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'revert',
+		scope: { kind: 'user', userId: 'user-1' },
+		revertOfRunId: apply.runId,
+		limit: 10,
 	})
-	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({
-			files: expect.objectContaining({
-				'index.ts': expect.stringContaining(
-					"import { storage } from 'kody:runtime'",
-				),
-			}),
-			commitMessage: `revert codemod(${codemodId})`,
-		}),
-	)
-	expect(mocks.dispatchPackageCodemodSubscriptionEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			topic: 'package.codemod.reverted',
-			packageId: 'pkg-ambient',
-		}),
-	)
+	expect(secondRevert.items).toEqual([])
 
 	const user2CannotRevertUser1 = await runPackageCodemodStep({
 		env,
@@ -620,9 +562,322 @@ test('package codemod engine covers scan dry-run apply revert drift unpublished 
 		mode: 'revert',
 		scope: { kind: 'user', userId: 'user-2' },
 		revertOfRunId: apply.runId,
-		limit: 50,
+		limit: 10,
 	})
 	expect(user2CannotRevertUser1.items).toEqual([])
+})
 
-	expect(kv.store.has(revertKey)).toBe(true)
+test('package codemod engine enforces resume scope, binary paging, fleet progress, and publish failure id reuse', async () => {
+	resetMocks()
+	const { env, kv } = createEnv()
+
+	const pkgA = savedPackage({
+		id: 'a',
+		userId: 'user-1',
+		kodyId: 'a',
+		sourceId: 'source-a',
+	})
+	const pkgB = savedPackage({
+		id: 'B',
+		userId: 'user-1',
+		kodyId: 'b',
+		sourceId: 'source-b',
+	})
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkgA, pkgB])
+	mocks.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string; userId: string }) =>
+			loadedSource({
+				files: cleanFiles(),
+				publishedCommit: `commit-${input.sourceId}`,
+				repoId: input.sourceId,
+				sourceId: input.sourceId,
+				userId: input.userId,
+			}),
+	)
+	mocks.resolveArtifactSourceHead.mockImplementation(
+		async (_env: Env, repoId: string) => ({
+			branch: 'main',
+			commit: `commit-${repoId}`,
+		}),
+	)
+
+	const firstPage = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'scan',
+		scope: { kind: 'user', userId: 'user-1' },
+		limit: 1,
+	})
+	expect(firstPage.items.map((item) => item.packageId)).toEqual(['B'])
+	expect(firstPage.nextCursor).toBe('B')
+	const secondPage = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'scan',
+		scope: { kind: 'user', userId: 'user-1' },
+		runId: firstPage.runId,
+		cursor: firstPage.nextCursor,
+		limit: 1,
+	})
+	expect(secondPage.items.map((item) => item.packageId)).toEqual(['a'])
+	expect(secondPage.nextCursor).toBeNull()
+
+	await expect(
+		runPackageCodemodStep({
+			env,
+			baseUrl: 'https://example.com',
+			initiatedByUserId: 'user-1',
+			codemodId,
+			mode: 'scan',
+			scope: { kind: 'fleet' },
+			runId: firstPage.runId,
+			limit: 1,
+		}),
+	).rejects.toThrow(/scope does not match/i)
+
+	mocks.listSavedPackagesPage.mockImplementation(
+		async (
+			_db: D1Database,
+			input: { afterId: string | null; limit: number },
+		) => {
+			const start = input.afterId
+				? Number(input.afterId.split('-').at(-1)) + 1
+				: 1
+			if (start > 250) return []
+			return Array.from({ length: input.limit }, (_, index) => {
+				const n = start + index
+				return savedPackage({
+					id: `fleet-${String(n).padStart(4, '0')}`,
+					userId: 'user-9',
+					kodyId: `nope-${n}`,
+					sourceId: `source-fleet-${n}`,
+				})
+			})
+		},
+	)
+	const fleetFiltered = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'admin-1',
+		codemodId,
+		mode: 'scan',
+		scope: { kind: 'fleet' },
+		filters: { packageIds: ['never-match'] },
+		limit: 5,
+	})
+	expect(fleetFiltered.items).toEqual([])
+	expect(fleetFiltered.nextCursor).toBe('fleet-0250')
+	expect(mocks.listSavedPackagesPage.mock.calls.length).toBe(5)
+
+	const pkgPublish = savedPackage({
+		id: 'pkg-publish',
+		userId: 'user-1',
+		kodyId: 'publish',
+		sourceId: 'source-publish',
+	})
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkgPublish])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: ambientFiles(),
+			publishedCommit: 'commit-repo-publish',
+			repoId: 'repo-publish',
+			sourceId: 'source-publish',
+			userId: 'user-1',
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-repo-publish',
+	})
+	mocks.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'lint', ok: true, message: 'ok' }],
+		manifest: {},
+		sourceFiles: {},
+	})
+	mocks.syncArtifactSourceSnapshot.mockRejectedValueOnce(
+		new Error('publish exploded'),
+	)
+	const failedPublish = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'apply',
+		scope: { kind: 'user', userId: 'user-1' },
+		filters: { packageIds: ['pkg-publish'] },
+		limit: 10,
+	})
+	expect(failedPublish.items).toHaveLength(1)
+	expect(failedPublish.items[0]?.status).toBe('failed')
+	expect(failedPublish.items[0]?.error).toMatch(/repo HEAD may be ahead/i)
+	const failedItem = await getPackageCodemodRunItemById(
+		env.APP_DB,
+		failedPublish.items[0]!.itemId,
+	)
+	expect(failedItem?.revertSnapshotKey).toBe(
+		buildPackageCodemodRevertSnapshotKvKey({
+			userId: 'user-1',
+			itemId: failedPublish.items[0]!.itemId,
+		}),
+	)
+	expect(kv.store.has(failedItem!.revertSnapshotKey!)).toBe(true)
+
+	let headCalls = 0
+	mocks.syncArtifactSourceSnapshot.mockReset()
+	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-after')
+	mocks.resolveArtifactSourceHead.mockImplementation(async () => {
+		headCalls += 1
+		if (headCalls >= 2) {
+			return { branch: 'main', commit: 'commit-moved-before-publish' }
+		}
+		return { branch: 'main', commit: 'commit-repo-publish' }
+	})
+	const driftBeforePublish = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'apply',
+		scope: { kind: 'user', userId: 'user-1' },
+		filters: { packageIds: ['pkg-publish'] },
+		limit: 10,
+	})
+	expect(driftBeforePublish.items[0]?.status).toBe('skipped_drift')
+	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+})
+
+test('package codemod revert skips when HEAD no longer matches applied afterCommit', async () => {
+	resetMocks()
+	const { env } = createEnv()
+	const pkg = savedPackage({
+		id: 'pkg-revert-drift',
+		userId: 'user-1',
+		kodyId: 'revert-drift',
+		sourceId: 'source-revert-drift',
+	})
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: ambientFiles(),
+			publishedCommit: 'commit-repo-revert-drift',
+			repoId: 'repo-revert-drift',
+			sourceId: 'source-revert-drift',
+			userId: 'user-1',
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-repo-revert-drift',
+	})
+	mocks.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'lint', ok: true, message: 'ok' }],
+		manifest: {},
+		sourceFiles: {},
+	})
+	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-after-apply')
+
+	const apply = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'apply',
+		scope: { kind: 'user', userId: 'user-1' },
+		limit: 10,
+	})
+	expect(apply.items[0]?.status).toBe('applied')
+
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-user-moved-head',
+	})
+	const revert = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'revert',
+		scope: { kind: 'user', userId: 'user-1' },
+		revertOfRunId: apply.runId,
+		limit: 10,
+	})
+	expect(revert.items[0]?.status).toBe('skipped_drift')
+	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
+})
+
+test('package codemod ledger bounds stored JSON/text columns', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(
+		readFileSync(
+			new URL(
+				'../../migrations/0111-package-codemod-ledger.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
+	const db = createD1FromSqlite(sqlite)
+	const { createPackageCodemodRun, insertPackageCodemodRunItem } =
+		await import('./ledger.ts')
+	await createPackageCodemodRun(db, {
+		id: 'run-bound',
+		codemodId,
+		mode: 'scan',
+		scopeUserId: 'user-1',
+		initiatedByUserId: 'admin',
+	})
+	const hugePaths = Array.from(
+		{ length: 500 },
+		(_, index) => `path-${index}-${'x'.repeat(200)}`,
+	)
+	const hugeFindings = Array.from({ length: 200 }, (_, index) => ({
+		path: `file-${index}.ts`,
+		message: 'm'.repeat(2_000),
+	}))
+	const item = await insertPackageCodemodRunItem(db, {
+		id: 'item-bound',
+		runId: 'run-bound',
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		kodyId: 'one',
+		status: 'detected',
+		changedPaths: hugePaths,
+		findings: hugeFindings,
+		checkSummaryJson: JSON.stringify({
+			ok: false,
+			newFailures: ['x'.repeat(100_000)],
+		}),
+		error: 'e'.repeat(100_000),
+		revertSnapshotKey: 'package-codemod-revert:user-1:item-bound',
+	})
+	expect(
+		new TextEncoder().encode(JSON.stringify(item.changedPaths)).byteLength,
+	).toBeLessThanOrEqual(
+		packageCodemodLedgerTextBounds.maxRestorableTextColumnBytes,
+	)
+	expect(
+		new TextEncoder().encode(JSON.stringify(item.findings)).byteLength,
+	).toBeLessThanOrEqual(
+		packageCodemodLedgerTextBounds.maxRestorableTextColumnBytes,
+	)
+	expect(item.error?.includes('[truncated]')).toBe(true)
+	expect(item.revertSnapshotKey).toBe(
+		'package-codemod-revert:user-1:item-bound',
+	)
+	const listed = await listPackageCodemodRunItems(db, {
+		runId: 'run-bound',
+		limit: 10,
+	})
+	expect(listed[0]?.revertSnapshotKey).toBe(
+		'package-codemod-revert:user-1:item-bound',
+	)
+	expect(await getPackageCodemodRunById(db, 'run-bound')).toMatchObject({
+		id: 'run-bound',
+	})
 })

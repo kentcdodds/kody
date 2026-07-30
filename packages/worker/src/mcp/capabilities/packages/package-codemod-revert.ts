@@ -40,7 +40,10 @@ export const packageCodemodRevertCapability = defineDomainCapability(
 					`Package codemod run "${args.revertOfRunId}" was not found.`,
 				)
 			}
-			if (priorRun.scopeUserId !== user.userId) {
+			if (
+				priorRun.scopeUserId != null &&
+				priorRun.scopeUserId !== user.userId
+			) {
 				throw new McpCallerError(
 					`Package codemod run "${args.revertOfRunId}" is not scoped to the signed-in user.`,
 				)

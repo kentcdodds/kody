@@ -52,6 +52,7 @@ type LiveRunItem = {
 
 const adminCodemodsApiPath = '/admin/codemods.json'
 const adminCodemodsRunApiPath = '/admin/codemods/run.json'
+const maxRunSteps = 200
 
 const runModes = [
 	'scan',
@@ -139,10 +140,10 @@ export function AdminCodemodsRoute(handle: Handle) {
 	let selectedMode: RunMode = 'scan'
 	let userIdsFilter = ''
 	let packageIdsFilter = ''
-	let stepLimit = '20'
 	let revertOfRunId = ''
 
 	let runPhase: RunPhase = 'idle'
+	let stopRequested = false
 	let liveRunId: string | null = null
 	let liveItems: Array<LiveRunItem> = []
 	let liveSummary: Record<string, number> = {}
@@ -290,12 +291,10 @@ export function AdminCodemodsRoute(handle: Handle) {
 	}) {
 		const userIds = parseCommaSeparatedIds(userIdsFilter)
 		const packageIds = parseCommaSeparatedIds(packageIdsFilter)
-		const limit = Number(stepLimit)
 		const body: Record<string, unknown> = {
 			codemodId: input.codemodId,
 			mode: input.mode,
 			scope: 'fleet',
-			limit: Number.isInteger(limit) && limit > 0 ? limit : 20,
 		}
 		if (userIds.length > 0 || packageIds.length > 0) {
 			body.filters = {
@@ -347,6 +346,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 		revertOfRunId?: string
 	}) {
 		runPhase = 'running'
+		stopRequested = false
 		liveRunId = null
 		liveItems = []
 		liveSummary = {}
@@ -357,8 +357,27 @@ export function AdminCodemodsRoute(handle: Handle) {
 
 		let runId: string | undefined
 		let cursor: string | null | undefined
+		let stepCount = 0
 		try {
 			for (;;) {
+				if (stopRequested) {
+					runPhase = 'complete'
+					message = `Stopped ${input.mode} for ${input.codemodId}${liveRunId ? ` (run ${liveRunId})` : ''} after ${stepCount} step(s).`
+					messageTone = 'info'
+					await refreshRuns()
+					handle.update()
+					return
+				}
+				if (stepCount >= maxRunSteps) {
+					runPhase = 'error'
+					message = `Stopped after ${maxRunSteps} steps without completing. Resume later with the same run id if needed.`
+					messageTone = 'error'
+					await refreshRuns()
+					handle.update()
+					return
+				}
+
+				const previousCursor = cursor
 				const step = await postRunStep(
 					buildRunBody({
 						runId,
@@ -369,6 +388,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 					}),
 				)
 				if (!step) return
+				stepCount += 1
 				runId = step.runId
 				liveRunId = step.runId ?? null
 				if (Array.isArray(step.items)) {
@@ -391,6 +411,17 @@ export function AdminCodemodsRoute(handle: Handle) {
 				}
 				handle.update()
 				if (step.nextCursor == null) break
+				if (
+					previousCursor !== undefined &&
+					previousCursor === step.nextCursor
+				) {
+					runPhase = 'error'
+					message = `Codemod run stopped: cursor did not advance (${step.nextCursor}).`
+					messageTone = 'error'
+					await refreshRuns()
+					handle.update()
+					return
+				}
 				cursor = step.nextCursor
 			}
 			runPhase = 'complete'
@@ -406,6 +437,8 @@ export function AdminCodemodsRoute(handle: Handle) {
 					: 'Unable to complete package codemod run.'
 			messageTone = 'error'
 			handle.update()
+		} finally {
+			stopRequested = false
 		}
 	}
 
@@ -550,7 +583,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 
 					<AccountManagementPanel
 						title="Run codemod"
-						description="Each click walks the fleet in pages until nextCursor is null. Apply and revert require confirmation."
+						description="Each click walks the fleet in pages until nextCursor is null (stop anytime; hard ceiling 200 steps). Apply and revert require an explicit scope and confirmation."
 					>
 						<form
 							mix={[
@@ -661,27 +694,6 @@ export function AdminCodemodsRoute(handle: Handle) {
 										]}
 									/>
 								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Page limit</span>
-									<input
-										name="limit"
-										type="number"
-										min="1"
-										max="50"
-										step="1"
-										value={stepLimit}
-										disabled={!canMutate}
-										mix={[
-											css(inputCss),
-											on('input', (event) => {
-												if (!(event.currentTarget instanceof HTMLInputElement))
-													return
-												stepLimit = event.currentTarget.value
-												handle.update()
-											}),
-										]}
-									/>
-								</label>
 								{selectedMode === 'revert' ? (
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Revert of run ID</span>
@@ -775,6 +787,21 @@ export function AdminCodemodsRoute(handle: Handle) {
 										{isRunning ? 'Running…' : 'Run'}
 									</button>
 								)}
+								{isRunning ? (
+									<button
+										type="button"
+										disabled={stopRequested}
+										mix={[
+											on('click', () => {
+												stopRequested = true
+												handle.update()
+											}),
+											css(secondaryButtonCss),
+										]}
+									>
+										{stopRequested ? 'Stopping…' : 'Stop'}
+									</button>
+								) : null}
 								{liveRunId ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										Run {liveRunId} · {formatSummaryCounts(liveSummary)}

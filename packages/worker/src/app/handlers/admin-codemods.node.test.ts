@@ -5,6 +5,8 @@ import {
 } from '#worker/identity/permissions.ts'
 import { type PackageCodemodRunStepResult } from '#worker/package-codemods/engine.ts'
 import { type PackageCodemodRunRecord } from '#worker/package-codemods/ledger.ts'
+import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import type * as AuditLog from '#worker/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -20,6 +22,16 @@ vi.mock('#app/authenticated-user.ts', () => ({
 	readAuthenticatedAppUser: (...args: Array<unknown>) =>
 		mockModule.readAuthenticatedAppUser(...args),
 }))
+
+vi.mock('#worker/audit-log.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof AuditLog>()
+	return {
+		...actual,
+		getRequestIp: () => '127.0.0.1',
+		logAuditEvent: (...args: Parameters<typeof actual.logAuditEvent>) =>
+			logAuditEventSpy(...args),
+	}
+})
 
 vi.mock('#worker/package-codemods/registry.ts', () => ({
 	listPackageCodemods: (...args: Array<unknown>) =>
@@ -79,6 +91,7 @@ const { createAdminCodemodsApiHandler, createAdminCodemodsRunApiHandler } =
 
 beforeEach(() => {
 	vi.clearAllMocks()
+	logAuditEventSpy.mockClear()
 })
 
 function createGetRequest(search = '') {
@@ -120,6 +133,20 @@ const sampleRun: PackageCodemodRunRecord = {
 	revertOfRunId: null,
 	createdAt: '2026-07-30T10:00:00.000Z',
 	updatedAt: '2026-07-30T10:01:00.000Z',
+}
+
+function stubKnownCodemod() {
+	mockModule.getPackageCodemodById.mockReturnValue({
+		id: '0001-ambient-storage-to-package-storage',
+		description: 'Migrate ambient storage imports.',
+		detect: () => [],
+		transform: () => ({
+			files: {},
+			changed: false,
+			changedPaths: [],
+			needsManual: [],
+		}),
+	})
 }
 
 test('admin codemods GET requires admin and returns codemods plus recent runs', async () => {
@@ -208,7 +235,7 @@ test('admin codemods GET with runId returns paged run items', async () => {
 	)
 })
 
-test('admin codemods run POST requires admin and runs one step with fleet scope', async () => {
+test('admin codemods run POST requires admin, audits, and runs one step with fleet scope', async () => {
 	const env = createTestEnv()
 	const handler = createAdminCodemodsRunApiHandler(env)
 	const stepResult: PackageCodemodRunStepResult = {
@@ -233,17 +260,7 @@ test('admin codemods run POST requires admin and runs one step with fleet scope'
 		nextCursor: null,
 		summary: { detected: 1 },
 	}
-	mockModule.getPackageCodemodById.mockReturnValue({
-		id: '0001-ambient-storage-to-package-storage',
-		description: 'Migrate ambient storage imports.',
-		detect: () => [],
-		transform: () => ({
-			files: {},
-			changed: false,
-			changedPaths: [],
-			needsManual: [],
-		}),
-	})
+	stubKnownCodemod()
 	mockModule.runPackageCodemodStep.mockResolvedValue(stepResult)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
@@ -251,6 +268,7 @@ test('admin codemods run POST requires admin and runs one step with fleet scope'
 		createRunRequest({
 			codemodId: '0001-ambient-storage-to-package-storage',
 			mode: 'scan',
+			scope: 'fleet',
 		}),
 	)
 	expect(unauthorized.status).toBe(401)
@@ -262,6 +280,7 @@ test('admin codemods run POST requires admin and runs one step with fleet scope'
 		createRunRequest({
 			codemodId: '0001-ambient-storage-to-package-storage',
 			mode: 'scan',
+			scope: 'fleet',
 		}),
 	)
 	expect(forbidden.status).toBe(403)
@@ -273,8 +292,8 @@ test('admin codemods run POST requires admin and runs one step with fleet scope'
 		createRunRequest({
 			codemodId: '0001-ambient-storage-to-package-storage',
 			mode: 'scan',
+			scope: 'fleet',
 			filters: { packageIds: ['pkg-1'] },
-			limit: 10,
 		}),
 	)
 	expect(response.status).toBe(200)
@@ -290,8 +309,55 @@ test('admin codemods run POST requires admin and runs one step with fleet scope'
 		mode: 'scan',
 		scope: { kind: 'fleet' },
 		filters: { packageIds: ['pkg-1'] },
-		limit: 10,
 	})
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'package_codemod_run_step',
+			result: 'success',
+			email: 'admin@example.com',
+			ip: '127.0.0.1',
+			path: '/admin/codemods/run.json',
+			reason:
+				'codemod_id=0001-ambient-storage-to-package-storage;mode=scan;scope=fleet;run_id=run-new;next_cursor=null;item_count=1',
+		}),
+	)
+})
+
+test('admin codemods run POST requires explicit scope for apply and revert', async () => {
+	const env = createTestEnv()
+	const handler = createAdminCodemodsRunApiHandler(env)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	stubKnownCodemod()
+
+	const missingApplyScope = await handler.handler(
+		createRunRequest({
+			codemodId: '0001-ambient-storage-to-package-storage',
+			mode: 'apply',
+		}),
+	)
+	expect(missingApplyScope.status).toBe(400)
+	await expect(missingApplyScope.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'scope is required for apply and revert modes.',
+	})
+
+	const missingRevertScope = await handler.handler(
+		createRunRequest({
+			codemodId: '0001-ambient-storage-to-package-storage',
+			mode: 'revert',
+			revertOfRunId: 'run-1',
+		}),
+	)
+	expect(missingRevertScope.status).toBe(400)
+	await expect(missingRevertScope.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'scope is required for apply and revert modes.',
+	})
+	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
+	expect(logAuditEventSpy).not.toHaveBeenCalled()
 })
 
 test('admin codemods run POST rejects invalid mode and missing revertOfRunId', async () => {
@@ -300,22 +366,13 @@ test('admin codemods run POST rejects invalid mode and missing revertOfRunId', a
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		createAdminActor(['admin']),
 	)
-	mockModule.getPackageCodemodById.mockReturnValue({
-		id: '0001-ambient-storage-to-package-storage',
-		description: 'Migrate ambient storage imports.',
-		detect: () => [],
-		transform: () => ({
-			files: {},
-			changed: false,
-			changedPaths: [],
-			needsManual: [],
-		}),
-	})
+	stubKnownCodemod()
 
 	const invalidMode = await handler.handler(
 		createRunRequest({
 			codemodId: '0001-ambient-storage-to-package-storage',
 			mode: 'explode',
+			scope: 'fleet',
 		}),
 	)
 	expect(invalidMode.status).toBe(400)
@@ -328,6 +385,7 @@ test('admin codemods run POST rejects invalid mode and missing revertOfRunId', a
 		createRunRequest({
 			codemodId: '0001-ambient-storage-to-package-storage',
 			mode: 'revert',
+			scope: 'fleet',
 		}),
 	)
 	expect(missingRevert.status).toBe(400)

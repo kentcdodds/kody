@@ -12,6 +12,7 @@ import {
 } from '#app/request-body.ts'
 import { type routes } from '#app/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import {
 	runPackageCodemodStep,
@@ -32,8 +33,6 @@ import { readPositiveInt } from '#worker/query-params.ts'
 const recentRunsLimit = 50
 const defaultRunItemsLimit = 50
 const maxRunItemsLimit = 200
-const defaultStepLimit = 20
-const maxStepLimit = 50
 
 const packageCodemodRunModes = [
 	'scan',
@@ -165,6 +164,25 @@ export function createAdminCodemodsRunApiHandler(env: Env) {
 							? { revertOfRunId: parsed.revertOfRunId }
 							: {}),
 					})
+
+					const requestIp = getRequestIp(request) ?? undefined
+					void logAuditEvent({
+						category: 'admin',
+						action: 'package_codemod_run_step',
+						result: 'success',
+						email: actor.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: [
+							`codemod_id=${parsed.codemodId}`,
+							`mode=${parsed.mode}`,
+							`scope=${formatScopeForAudit(parsed.scope)}`,
+							`run_id=${result.runId}`,
+							`next_cursor=${result.nextCursor ?? 'null'}`,
+							`item_count=${result.items.length}`,
+						].join(';'),
+					})
+
 					return jsonResponse({ ok: true, ...result })
 				} catch (error) {
 					return jsonResponse({ ok: false, error: getErrorMessage(error) }, 400)
@@ -212,7 +230,7 @@ function parseRunBody(body: object): ParseRunBodyResult {
 		}
 	}
 
-	const scope = parseScope(body)
+	const scope = parseScope(body, mode)
 	if (!scope.ok) {
 		return scope
 	}
@@ -253,9 +271,7 @@ function parseRunBody(body: object): ParseRunBodyResult {
 		if (!Number.isInteger(parsedLimit) || parsedLimit < 1) {
 			return { ok: false, error: 'limit must be a positive integer.' }
 		}
-		limit = Math.min(parsedLimit, maxStepLimit)
-	} else {
-		limit = defaultStepLimit
+		limit = parsedLimit
 	}
 
 	if (mode === 'revert' && !revertOfRunId && !runId) {
@@ -286,9 +302,17 @@ function parsePackageCodemodRunMode(
 
 function parseScope(
 	body: object,
+	mode: PackageCodemodRunMode,
 ): { ok: true; scope: PackageCodemodRunScope } | { ok: false; error: string } {
 	const record = body as Record<string, unknown>
-	if (!Object.hasOwn(record, 'scope') || record.scope == null) {
+	const scopeMissing = !Object.hasOwn(record, 'scope') || record.scope == null
+	if (scopeMissing) {
+		if (mode === 'apply' || mode === 'revert') {
+			return {
+				ok: false,
+				error: 'scope is required for apply and revert modes.',
+			}
+		}
 		return { ok: true, scope: { kind: 'fleet' } }
 	}
 	const scopeValue = record.scope
@@ -308,6 +332,19 @@ function parseScope(
 	return {
 		ok: false,
 		error: 'scope must be "fleet" or { userId }.',
+	}
+}
+
+function formatScopeForAudit(scope: PackageCodemodRunScope): string {
+	switch (scope.kind) {
+		case 'fleet':
+			return 'fleet'
+		case 'user':
+			return `user:${scope.userId}`
+		default: {
+			const exhaustive: never = scope
+			return String(exhaustive)
+		}
 	}
 }
 
