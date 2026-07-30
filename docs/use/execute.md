@@ -170,6 +170,10 @@ must be recoverable:
   sandbox).
 - Retrying while the first attempt is still running returns
   **`inProgress: true`** with the **`runId`** (no duplicate start).
+- If a keyed run is stranded as `running` (for example the Worker isolate reset
+  before the terminal write), Kody reconciles it to an **Interrupted** error
+  after a few minutes. Polling **`run_get`** or retrying the same key then
+  returns that terminal outcome instead of `inProgress` forever.
 
 Omit the key for ordinary short calls; key-less execute stays on-failure-only so
 Activity is not flooded with successful one-offs.
