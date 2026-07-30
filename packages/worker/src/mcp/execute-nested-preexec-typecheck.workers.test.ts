@@ -195,6 +195,10 @@ test(
 				},
 			)
 
+		// Semantic contract checks no longer run pre-exec (the TypeScript
+		// compiler cannot run safely inside the MCP isolate; see the
+		// execute-typecheck module docstring), so a type-level contract
+		// violation reaches the sandbox and behaves like the flag-off path.
 		const invalid = await runNested(
 			[
 				"import greet from 'kody:@kentcdodds/nested-static-contract'",
@@ -203,8 +207,17 @@ test(
 				'}',
 			].join('\n'),
 		)
-		expect(invalid.error).toContain(
-			"Type 'number' is not assignable to type 'string'",
+		expect(invalid.error).toBeUndefined()
+		expect(invalid.result).toMatchObject({
+			result: { message: 'Hello, 42' },
+		})
+
+		// Malformed nested modules are still rejected before the sandbox runs.
+		const syntaxError = await runNested(
+			'export default async function main() {\n\tconst value =\n}',
+		)
+		expect(syntaxError.error).toContain(
+			'Ad hoc execute TypeScript check failed:',
 		)
 
 		const nested = await runNested(

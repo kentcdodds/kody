@@ -66,8 +66,7 @@ helpers are runtime exports:
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by npm-scoped package name. This is **the default for
   package reuse** whenever the target package's name is known when the code is
-  written: static imports are typed (the pre-execution typechecker resolves
-  `kody:@...` contracts), publish-verified (repo checks prove the export
+  written: static imports are publish-verified (repo checks prove the export
   exists), dependency-graph-visible (`kody.dependencies`, dependents tracking),
   and have zero per-call platform cost. Ad hoc execute bundles per call, so
   static imports from execute always see the current published version; snapshot
@@ -91,26 +90,27 @@ should receive that input through normal function arguments.
 
 Top-level `await` is acceptable when needed.
 
-## Pre-execution TypeScript diagnostics
+## Pre-execution module diagnostics
 
-Kody can run a TypeScript check before starting an ad hoc execute sandbox. This
-is controlled by the **`execute-pre-exec-typecheck`** feature flag and is off by
+Kody can validate an ad hoc execute module before starting its sandbox. This is
+controlled by the **`execute-pre-exec-typecheck`** feature flag and is off by
 default. During the initial rollout, only explicitly opted-in users receive the
 check. The public **execute** tool and the nested **`meta.execute`** capability
 use the same caller-scoped flag; saved-package exports, jobs, workflows, and
 services are not changed by this flag.
 
-When enabled, type errors are returned through the normal execute error result
-before the module's default export runs. The checker is intentionally
-**non-strict**: untyped parameters, property access on `input = {}`, and other
-lazy TypeScript patterns are allowed so agents can iterate quickly. It still
-reports real assignability and property mismatches against published `kody:@…`
-package contracts (wrong argument or result types). Use those diagnostics to
-correct the module and retry. If a module unexpectedly stops before execution
-during the rollout, compare the reported TypeScript diagnostics with the same
-module for a caller whose flag is off. Operators can disable the user's override
-(or the global flag, if a broader rollout was started) to return immediately to
-the previous bundle-and-run behavior.
+When enabled, the check validates source size, module syntax (TypeScript-aware
+parse), and the presence of the default export the execute runtime calls.
+Failures are returned through the normal execute error result with
+`entry.ts:line:column` diagnostics before the module's default export runs —
+catching truncated or malformed modules without paying for sandbox startup. The
+check is deliberately **not semantic**: type-level errors (wrong argument or
+result types against published `kody:@…` package contracts) are not reported,
+because running a TypeScript compiler inside the serving isolate proved unsafe
+in production (memory and CPU spikes stalled unrelated execute calls on the same
+session). Operators can disable the user's override (or the global flag, if a
+broader rollout was started) to return immediately to the previous
+bundle-and-run behavior.
 
 ### Server-Timing phases
 
@@ -118,8 +118,7 @@ Execute responses include Server-Timing-style phase entries under
 **`timing.serverTiming`** (public tool) or top-level **`serverTiming`**
 (`meta.execute`): each entry is `{ name, durationMs }`.
 
-- `bundle` — module-graph preparation and bundling. This span contains the
-  typecheck phases below, so subtract `typecheck-total` for bundler-only time.
+- `bundle` — module-graph preparation and bundling.
 - `hydrate` — refreshing nested runtime modules (and resolving literal dynamic
   `import("kody:@…")` placeholders in bundles published before that pattern was
   removed).
@@ -128,10 +127,11 @@ Execute responses include Server-Timing-style phase entries under
 - `sandbox` — the dynamic worker evaluation of the module itself.
 - `run` — the enclosing span for the three phases above (plus run-record and
   usage bookkeeping).
-- `typecheck-queue`, `typecheck-compiler-startup`, `typecheck-project-write`,
-  `typecheck-diagnostics`, `typecheck-total` — present only when the
-  pre-execution check ran for the call. Failed diagnostics also report these
-  phases so slow checks can be attributed even when the module never executes.
+- `typecheck-semantic-skipped`, `typecheck-parse`, `typecheck-total` — present
+  only when the pre-execution check ran for the call.
+  `typecheck-semantic-skipped` is a 0ms marker recording that no type-level
+  (semantic) checking ran. Failed diagnostics also report these phases so the
+  check can be attributed even when the module never executes.
 
 Phase durations are measured with `Date.now()`, which the Workers runtime only
 advances across I/O boundaries — synchronous CPU inside one phase can be

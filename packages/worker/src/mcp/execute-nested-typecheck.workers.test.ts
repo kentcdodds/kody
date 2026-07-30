@@ -1,41 +1,18 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { assertAdHocExecuteTypechecks } from '#mcp/execute-typecheck.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
-import { type LoadedKodyGraphPackages } from '#worker/package-runtime/module-graph-import-rewriting.ts'
 import { persistPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 
 /**
- * The reusable language service downloads TypeScript's lib files on first
- * startup, which can exceed the per-request startup budget in a cold test
- * isolate. Production isolates that hit the nested bug were warm (the outer
- * typecheck had already run), so warm the shared service before the
- * scenario under test.
- */
-async function warmTypecheckService() {
-	const deadline = Date.now() + 90_000
-	for (;;) {
-		try {
-			await assertAdHocExecuteTypechecks({
-				source: 'export default async function main() {\n\treturn 1\n}',
-				packages: new Map() as LoadedKodyGraphPackages,
-			})
-			return
-		} catch (error) {
-			if (Date.now() > deadline) throw error
-		}
-	}
-}
-
-/**
- * Regression coverage for nested `kody.execute` with the
- * `execute-pre-exec-typecheck` flag on: the nested capability handler runs
- * `runModuleWithRegistry` (including the host-side pre-exec typecheck)
- * inside a ToolDispatcher RPC callback while the outer sandbox `evaluate()`
- * is still in flight. This hung in production (runs reconciled as
- * Interrupted after the stale-running TTL) before the fix.
+ * Regression coverage for the production `execute-pre-exec-typecheck`
+ * incident: nested `kody.execute` calls (the handler runs
+ * `runModuleWithRegistry` inside a ToolDispatcher RPC callback while the
+ * outer sandbox `evaluate()` is in flight) and modules statically importing
+ * real packages hung for minutes and stranded run records as `running`
+ * before the pre-exec check stopped running a TypeScript compiler inside
+ * the MCP isolate.
  */
 
 function createCaller(userId: string) {
@@ -54,7 +31,6 @@ test(
 	{ timeout: 120_000 },
 	async () => {
 		silenceIncidentalRuntimeWarnings()
-		await warmTypecheckService()
 		const userId = 'user-nested-typecheck'
 		const caller = createCaller(userId)
 		const nestedCodeOne =
@@ -106,87 +82,6 @@ test(
 		// The production defect stranded these runs for 180s+ (stale-running
 		// TTL); a healthy nested pipeline completes in single-digit seconds.
 		expect(elapsedMs).toBeLessThan(60_000)
-	},
-)
-
-test(
-	'nested execute with an over-budget package type graph falls back instead of loading package sources',
-	{ timeout: 120_000 },
-	async () => {
-		silenceIncidentalRuntimeWarnings()
-		await warmTypecheckService()
-		// Mirrors the production trigger: the nested module statically imports
-		// a package whose module-source graph exceeds the typed-check budget
-		// (the @kentcdodds/discord incident graph was 67 files / ~692KB). The
-		// oversized graph must be stubbed as `any`, not written into the
-		// shared compiler where it OOMs the host isolate.
-		const files: Record<string, string> = {
-			'src/index.ts':
-				'export default async function call(input: unknown): Promise<unknown> { return input }',
-		}
-		for (let index = 0; index < 30; index += 1) {
-			files[`src/generated-${index}.ts`] =
-				`export const filler${index} = ${JSON.stringify('x'.repeat(4096))}\n`
-		}
-		const packages = new Map([
-			[
-				'@kentcdodds/big-package',
-				{
-					row: {
-						id: 'package-big',
-						userId: 'user-nested-typecheck',
-						name: '@kentcdodds/big-package',
-						kodyId: 'big-package',
-						description: 'Oversized fixture',
-						tags: [],
-						searchText: null,
-						sourceId: 'source-big',
-						hasApp: false,
-						hidden: false,
-						isPrivate: true,
-						createdAt: '2026-07-29T00:00:00.000Z',
-						updatedAt: '2026-07-29T00:00:00.000Z',
-					},
-					source: {
-						id: 'source-big',
-						user_id: 'user-nested-typecheck',
-						entity_type: 'package',
-						entity_id: 'package-big',
-						manifest_path: 'package.json',
-						source_root: '',
-						repo_provider: 'github',
-						repo_owner: 'kentcdodds',
-						repo_name: 'big-package',
-						repo_url: 'https://github.com/kentcdodds/big-package',
-						default_branch: 'main',
-						published_commit: 'commit-1',
-						created_at: '2026-07-29T00:00:00.000Z',
-						updated_at: '2026-07-29T00:00:00.000Z',
-					},
-					manifest: {
-						name: '@kentcdodds/big-package',
-						exports: { '.': './src/index.ts' },
-						kody: { id: 'big-package', description: 'Oversized fixture' },
-					},
-					files,
-					prefix: 'unused-by-typecheck',
-				},
-			],
-		]) as unknown as LoadedKodyGraphPackages
-		const startedAtMs = Date.now()
-		const timing = await assertAdHocExecuteTypechecks({
-			source: [
-				"import call from 'kody:@kentcdodds/big-package'",
-				'export default async function main() {',
-				'\treturn await call({ ok: true })',
-				'}',
-			].join('\n'),
-			packages,
-		})
-		expect(Date.now() - startedAtMs).toBeLessThan(30_000)
-		expect(timing.map((entry) => entry.name)).toContain(
-			'typecheck-package-types-skipped',
-		)
 	},
 )
 
@@ -245,7 +140,7 @@ async function ensureSavedPackageSchema() {
 	)`)
 }
 
-async function saveOverBudgetPackage(input: { userId: string }) {
+async function saveLargePackage(input: { userId: string }) {
 	const unique = crypto.randomUUID()
 	const packageId = `package-${unique}`
 	const sourceId = `source-${unique}`
@@ -260,6 +155,8 @@ async function saveOverBudgetPackage(input: { userId: string }) {
 		'src/index.ts':
 			'export default async function call(input: { name: string }) { return { message: `Hello, ${input.name}` } }',
 	}
+	// The production incident graphs (@kentcdodds/discord: 67 files/~692KB)
+	// OOM-killed the MCP isolate when the removed compiler loaded them.
 	for (let index = 0; index < 30; index += 1) {
 		files[`src/generated-${index}.ts`] =
 			`export const filler${index} = ${JSON.stringify('x'.repeat(4096))}\n`
@@ -311,18 +208,13 @@ async function saveOverBudgetPackage(input: { userId: string }) {
 }
 
 test(
-	'nested execute statically importing an over-budget package completes end-to-end',
+	'nested execute statically importing a large package completes end-to-end',
 	{ timeout: 120_000 },
 	async () => {
-		// The production incident shape: with the flag on, a nested
-		// kody.execute whose module imports kody:@kentcdodds/discord (67
-		// files / ~692KB of sources) OOM-killed the host isolate, stranding
-		// both the nested and the outer run records as `running`.
 		silenceIncidentalRuntimeWarnings()
-		await warmTypecheckService()
 		const userId = `user-oversized-${crypto.randomUUID()}`
 		await ensureSavedPackageSchema()
-		await saveOverBudgetPackage({ userId })
+		await saveLargePackage({ userId })
 		const caller = createCaller(userId)
 		const nestedCode = [
 			"import call from 'kody:@kentcdodds/oversized-graph'",
@@ -369,7 +261,7 @@ test(
 			}
 		).serverTiming
 		expect(nestedServerTiming.map((entry) => entry.name)).toContain(
-			'typecheck-package-types-skipped',
+			'typecheck-semantic-skipped',
 		)
 	},
 )

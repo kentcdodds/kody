@@ -652,8 +652,8 @@ export async function runModuleWithRegistry(
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
 		/**
-		 * Opts ad hoc source into a semantic TypeScript check after its static
-		 * Kody packages load and before bundling or sandbox execution begins.
+		 * Opts ad hoc source into the bounded pre-execution syntax and
+		 * module-shape check before bundling or sandbox execution begins.
 		 */
 		preExecTypecheck?: boolean
 		/**
@@ -679,6 +679,13 @@ export async function runModuleWithRegistry(
 > {
 	const userId = callerContext.user?.userId ?? ''
 	const serverTiming: Array<ExecuteServerTimingEntry> = []
+	if (options?.preExecTypecheck) {
+		serverTiming.push(
+			...(await assertAdHocExecuteTypechecks({
+				source: code,
+			})),
+		)
+	}
 	const bundleStartedAtMs = Date.now()
 	const bundled = await buildKodyModuleBundle({
 		env,
@@ -689,20 +696,7 @@ export async function runModuleWithRegistry(
 		},
 		entryPoint: 'entry.ts',
 		reuseCachedBundle: true,
-		includeTypeOnlyKodyPackages: options?.preExecTypecheck === true,
-		beforeBundle: options?.preExecTypecheck
-			? async ({ packages }) => {
-					serverTiming.push(
-						...(await assertAdHocExecuteTypechecks({
-							source: code,
-							packages,
-						})),
-					)
-				}
-			: undefined,
 	})
-	// `bundle` covers graph preparation plus the opt-in typecheck phases above;
-	// subtract `typecheck-total` when attributing bundler-only time.
 	serverTiming.push({
 		name: 'bundle',
 		durationMs: Date.now() - bundleStartedAtMs,

@@ -23,7 +23,7 @@ export const featureFlagDefinitions = [
 		key: 'execute-pre-exec-typecheck',
 		defaultEnabled: false,
 		description:
-			'Runs the pre-execution TypeScript checker for ad hoc execute modules before sandbox execution. Keep off globally during rollout and enable with per-user overrides.',
+			'Validates ad hoc execute modules (size, syntax, default export) before sandbox execution. Keep off globally during rollout and enable with per-user overrides.',
 	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 

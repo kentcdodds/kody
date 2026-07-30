@@ -1548,7 +1548,7 @@ export default async function run() {
 	}
 })
 
-test('runModuleWithRegistry only installs the pre-execution typecheck hook when opted in', async () => {
+test('runModuleWithRegistry only runs the pre-execution check when opted in', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const buildBundleMock = vi.mocked(buildKodyModuleBundle)
 	buildBundleMock.mockClear()
@@ -1573,23 +1573,10 @@ test('runModuleWithRegistry only installs the pre-execution typecheck hook when 
 			undefined,
 			{ capabilityRegistry },
 		)
-		buildBundleMock.mockImplementationOnce(async (input) => {
-			await input.beforeBundle?.({ packages: new Map() })
-			return {
-				mainModule: 'entry.js',
-				modules: {
-					'entry.js':
-						'export default async function main(input = {}) { return input }',
-				},
-				dependencies: [],
-			}
-		})
-		const typecheckSpy = vi
-			.spyOn(executeTypecheck, 'assertAdHocExecuteTypechecks')
-			.mockResolvedValue([
-				{ name: 'typecheck-queue', durationMs: 1 },
-				{ name: 'typecheck-total', durationMs: 12 },
-			])
+		const typecheckSpy = vi.spyOn(
+			executeTypecheck,
+			'assertAdHocExecuteTypechecks',
+		)
 		const checkedResult = await runModuleWithRegistry(
 			{} as Env,
 			callerContext,
@@ -1597,19 +1584,10 @@ test('runModuleWithRegistry only installs the pre-execution typecheck hook when 
 			undefined,
 			{ capabilityRegistry, preExecTypecheck: true },
 		)
+		expect(typecheckSpy).toHaveBeenCalledTimes(1)
 		typecheckSpy.mockRestore()
 
 		expect(buildBundleMock).toHaveBeenCalledTimes(2)
-		expect(buildBundleMock.mock.calls[0]?.[0].beforeBundle).toBeUndefined()
-		expect(buildBundleMock.mock.calls[0]?.[0].includeTypeOnlyKodyPackages).toBe(
-			false,
-		)
-		expect(buildBundleMock.mock.calls[1]?.[0].beforeBundle).toEqual(
-			expect.any(Function),
-		)
-		expect(buildBundleMock.mock.calls[1]?.[0].includeTypeOnlyKodyPackages).toBe(
-			true,
-		)
 		// Both runs report Server-Timing-style phases; only the opted-in run
 		// carries typecheck phase entries ahead of them.
 		expect(uncheckedResult.serverTiming?.map((entry) => entry.name)).toEqual([
@@ -1620,7 +1598,8 @@ test('runModuleWithRegistry only installs the pre-execution typecheck hook when 
 			'run',
 		])
 		expect(checkedResult.serverTiming?.map((entry) => entry.name)).toEqual([
-			'typecheck-queue',
+			'typecheck-semantic-skipped',
+			'typecheck-parse',
 			'typecheck-total',
 			'bundle',
 			'hydrate',

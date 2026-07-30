@@ -662,39 +662,6 @@ test('buildKodyModuleBundle cache lifecycle reuses hits, skips when disabled, ke
 	expect(retried).toEqual(createBundleResult('module-retry-success'))
 })
 
-test('buildKodyModuleBundle loads type-only Kody packages for the prepared-graph hook before entering the bundler', async () => {
-	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
-		createLoadedPackageSource(),
-	)
-	const beforeBundle = vi.fn(async () => {
-		throw new Error('static typecheck failed')
-	})
-
-	await expect(
-		buildKodyModuleBundle({
-			...createModuleBundleInput({
-				code: `import type { ExampleInput } from 'kody:@kentcdodds/example-package'
-export default async function run() {
-	return null as ExampleInput | null
-}`,
-			}),
-			includeTypeOnlyKodyPackages: true,
-			beforeBundle,
-		}),
-	).rejects.toThrow('static typecheck failed')
-
-	expect(beforeBundle).toHaveBeenCalledTimes(1)
-	const preparedPackages = beforeBundle.mock.calls[0]?.[0].packages
-	expect(preparedPackages.get('@kentcdodds/example-package')).toMatchObject({
-		row: { id: 'pkg-1' },
-		manifest: { name: '@kentcdodds/example-package' },
-	})
-	expect(mockModule.loadPackageSourceBySourceId).toHaveBeenCalledTimes(1)
-	expect(mockModule.createWorker).not.toHaveBeenCalled()
-})
-
 test('buildKodyModuleBundle resolves scoped package imports by full package name first', async () => {
 	mockModule.createWorker.mockResolvedValue(createBundleResult('scoped-import'))
 	mockModule.getSavedPackageByName.mockResolvedValue(
