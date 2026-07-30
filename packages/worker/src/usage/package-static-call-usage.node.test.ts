@@ -118,21 +118,43 @@ test('drops invalid outcomes and normalizes invalid durations', async () => {
 	})
 })
 
-test('caps the number of events processed per batch', async () => {
+test('caps recorded events per run, cumulatively across batches', async () => {
 	await withRecordUsageSpy(async (recordUsageSpy) => {
 		const tools = createPackageStaticCallMeterTools({
 			env: {} as Env,
 			userId: 'user-1',
 			grantedPackageIds: new Set(['pkg-callee']),
 		})
+		const grantedEvent = {
+			packageId: 'pkg-callee',
+			durationMs: 1,
+			outcome: 'success',
+		}
 		await tools?.record({
-			events: Array.from({ length: 1500 }, () => ({
-				packageId: 'pkg-callee',
-				durationMs: 1,
-				outcome: 'success',
-			})),
+			events: Array.from({ length: 500 }, () => grantedEvent),
 		})
-		expect(recordUsageSpy).toHaveBeenCalledTimes(1000)
+		expect(recordUsageSpy).toHaveBeenCalledTimes(200)
+
+		// The cap is per run (per tools instance), not per batch: flush
+		// rounds from the same run share one Analytics Engine budget.
+		recordUsageSpy.mockClear()
+		await tools?.record({
+			events: Array.from({ length: 50 }, () => grantedEvent),
+		})
+		expect(recordUsageSpy).not.toHaveBeenCalled()
+
+		const freshTools = createPackageStaticCallMeterTools({
+			env: {} as Env,
+			userId: 'user-1',
+			grantedPackageIds: new Set(['pkg-callee']),
+		})
+		await freshTools?.record({
+			events: Array.from({ length: 150 }, () => grantedEvent),
+		})
+		await freshTools?.record({
+			events: Array.from({ length: 150 }, () => grantedEvent),
+		})
+		expect(recordUsageSpy).toHaveBeenCalledTimes(200)
 	})
 })
 

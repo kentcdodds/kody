@@ -29,11 +29,14 @@ export type PackageStaticCallMeterTools = {
 }
 
 /**
- * Mirrors the sandbox-side buffer cap in the static-call meter prelude
- * (`createStaticCallMeterHelperPrelude`): bounds work per reported batch
- * even for a sandbox that forges an oversized payload.
+ * Mirrors the sandbox-side cumulative cap in the static-call meter prelude
+ * (`createStaticCallMeterHelperPrelude`), enforced across every batch of
+ * one run even for a sandbox that forges oversized payloads. Sized to fit
+ * the Workers Analytics Engine budget: 250 `writeDataPoint` calls per
+ * invocation, one per event, with headroom left for the run's other usage
+ * events.
  */
-const maxEventsPerBatch = 1000
+const maxRecordedEventsPerRun = 200
 
 export function createPackageStaticCallMeterTools(input: {
 	env: UsageEnv
@@ -48,17 +51,20 @@ export function createPackageStaticCallMeterTools(input: {
 }): PackageStaticCallMeterTools | undefined {
 	const userId = input.userId?.trim()
 	if (!userId) return undefined
+	let recordedCount = 0
 	return {
 		record: async (batch) => {
 			try {
 				const events = Array.isArray(batch?.events) ? batch.events : []
-				for (const rawEvent of events.slice(0, maxEventsPerBatch)) {
-					await recordStaticCallEvent({
+				for (const rawEvent of events.slice(0, maxRecordedEventsPerRun)) {
+					if (recordedCount >= maxRecordedEventsPerRun) return
+					const recorded = await recordStaticCallEvent({
 						env: input.env,
 						userId,
 						grantedPackageIds: input.grantedPackageIds,
 						rawEvent,
 					})
+					if (recorded) recordedCount += 1
 				}
 			} catch (error) {
 				console.debug('package-static-call-usage-failed', error)
@@ -67,6 +73,7 @@ export function createPackageStaticCallMeterTools(input: {
 	}
 }
 
+/** Returns true when the event was recorded (counts against the run cap). */
 async function recordStaticCallEvent(input: {
 	env: UsageEnv
 	userId: string
@@ -85,12 +92,12 @@ async function recordStaticCallEvent(input: {
 			'stamped package id is not a static dependency of this run',
 			packageId,
 		)
-		return
+		return false
 	}
 	const outcome = rawEvent.outcome
 	if (outcome !== 'success' && outcome !== 'error') {
 		console.debug('package-static-call-usage-dropped', 'invalid outcome')
-		return
+		return false
 	}
 	const durationMs =
 		typeof rawEvent.durationMs === 'number' &&
@@ -105,4 +112,5 @@ async function recordStaticCallEvent(input: {
 		durationMs,
 		outcome,
 	})
+	return true
 }

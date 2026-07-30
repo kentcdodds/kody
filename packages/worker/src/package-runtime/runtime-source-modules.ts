@@ -249,7 +249,10 @@ function __kodyRecordStaticPackageCall(packageId, startedAtMs, outcome) {
 // pass through unchanged; function exports keep their identity semantics
 // (arguments, this, return values, thrown errors, properties, construct)
 // behind a transparent Proxy whose only addition is a non-blocking usage
-// event per call.
+// event per call. Only [[Call]] is trapped: every other internal method,
+// including [[Construct]], forwards to the target per the Proxy spec, so
+// \`new WrappedClass()\` constructs the real class (construction is not
+// metered).
 export function __kodyMeterStaticPackageExport(packageId, exportValue) {
 	if (typeof exportValue !== 'function') return exportValue;
 	return new Proxy(exportValue, {
@@ -262,6 +265,14 @@ export function __kodyMeterStaticPackageExport(packageId, exportValue) {
 				__kodyRecordStaticPackageCall(packageId, startedAtMs, 'error');
 				throw error;
 			}
+			// Deliberately only native promises: subscribing to an arbitrary
+			// user thenable would invoke its then() from the metering path,
+			// which can trigger lazy side effects (query-builder style
+			// thenables execute when first awaited) — a behavior change the
+			// wrapper must never cause. All modules run in one isolate, so
+			// async exports always return same-realm native promises;
+			// non-promise thenables record at return time instead of
+			// settlement.
 			if (result instanceof Promise) {
 				result.then(
 					() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'success'),

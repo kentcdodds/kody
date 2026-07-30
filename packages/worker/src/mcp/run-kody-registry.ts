@@ -1063,9 +1063,19 @@ ${runtimeHelperRuntimePropertySource}
   } finally {
     // Deliver buffered static package export call usage events while the
     // sandbox RPC dispatchers are still live. Metering never breaks the
-    // run it observes.
+    // run it observes, and the bounded race keeps a slow metering bridge
+    // from owning the run's tail latency.
     if (typeof __kodyStaticCallMeter !== 'undefined' && __kodyStaticCallMeter != null) {
-      try { await __kodyStaticCallMeter.flush(); } catch {}
+      try {
+        let __kodyStaticCallMeterFlushTimer;
+        await Promise.race([
+          __kodyStaticCallMeter.flush(),
+          new Promise((resolve) => {
+            __kodyStaticCallMeterFlushTimer = setTimeout(resolve, 2_000);
+          }),
+        ]);
+        clearTimeout(__kodyStaticCallMeterFlushTimer);
+      } catch {}
     }
   }
 }`

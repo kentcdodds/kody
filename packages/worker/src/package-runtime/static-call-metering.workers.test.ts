@@ -174,6 +174,15 @@ test(
 						"\tif (shouldThrow) throw new Error('asked to throw')",
 						"\treturn 'calm'",
 						'}',
+						'export class Accumulator {',
+						'\ttotal: number',
+						'\tconstructor(start: number) {',
+						'\t\tthis.total = start',
+						'\t}',
+						'\tbump() {',
+						'\t\treturn ++this.total',
+						'\t}',
+						'}',
 						'export const answer = 42',
 					].join('\n'),
 				},
@@ -186,7 +195,7 @@ test(
 			userId,
 			sourceFiles: {
 				'entry.ts': [
-					"import compute, { throwWhenAsked, answer } from 'kody:@kentcdodds/metered-dep'",
+					"import compute, { throwWhenAsked, Accumulator, answer } from 'kody:@kentcdodds/metered-dep'",
 					'export default async function main() {',
 					'\tconst first = await compute(1)',
 					'\tconst second = await compute(2)',
@@ -197,12 +206,16 @@ test(
 					'\t} catch (error) {',
 					'\t\tthrownMessage = String(error instanceof Error ? error.message : error)',
 					'\t}',
+					'\t// The wrapper only traps [[Call]]: `new` on a wrapped class',
+					'\t// constructs the real class (and is not metered).',
+					'\tconst accumulator = new Accumulator(10)',
 					'\treturn {',
 					'\t\tfirst,',
 					'\t\tsecond,',
 					'\t\tthird,',
 					'\t\tthrownMessage,',
 					'\t\tcalm: throwWhenAsked(false),',
+					'\t\tconstructed: accumulator.bump(),',
 					'\t\tanswer,',
 					'\t\tanswerType: typeof answer,',
 					'\t}',
@@ -220,14 +233,16 @@ test(
 		)
 
 		expect(result.error).toBeUndefined()
-		// The throwing export still throws to the caller; non-function exports
-		// pass through unwrapped.
+		// The throwing export still throws to the caller; class exports
+		// construct through the wrapper; non-function exports pass through
+		// unwrapped.
 		expect(result.result).toEqual({
 			first: { doubled: 2 },
 			second: { doubled: 4 },
 			third: { doubled: 6 },
 			thrownMessage: 'asked to throw',
 			calm: 'calm',
+			constructed: 11,
 			answer: 42,
 			answerType: 'number',
 		})
@@ -361,6 +376,12 @@ test(
 				})
 			},
 			{ timeout: 10_000, interval: 100 },
+		)
+		// Guard against the count racing past 2 after the wait: re-read once
+		// everything in flight has had time to settle.
+		await new Promise((resolve) => setTimeout(resolve, 500))
+		expect(await readStaticCallRollup(userId)).toEqual(
+			expect.objectContaining({ event_count: 2 }),
 		)
 	},
 )
