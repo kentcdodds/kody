@@ -813,12 +813,16 @@ async function readStorageBytesEntitlementBaseline(input: {
 	if (!estimatesByStorageId.has(input.storageId)) {
 		estimatesByStorageId.set(input.storageId, null)
 	}
-	// Live getEstimatedBytes RPCs are limited to the bucket being written
-	// (fresh baseline for the bucket that is about to grow) plus any bucket
-	// whose inventory row has no stored estimate yet — a one-time backfill per
-	// bucket, since probed values are persisted below and later writes keep
-	// them fresh. Every other bucket contributes its stored D1 estimate, so
-	// the cold mutating path no longer fans out across the whole inventory.
+	// Live getEstimatedBytes RPCs are limited to the bucket that triggered
+	// this baseline read (fresh measurement for the bucket about to grow)
+	// plus any bucket whose inventory row has no stored estimate yet; probed
+	// values are persisted below and the estimate backfill lane retries any
+	// row that stays unmeasured. Every other bucket contributes its stored
+	// D1 estimate, so the cold mutating path no longer fans out across the
+	// whole inventory. With a run cache, a later write in the same run that
+	// targets a different already-inventoried bucket reuses that bucket's
+	// stored estimate rather than probing it live — bounded staleness the
+	// run cache offsets by accumulating the run's own reserved bytes.
 	let durableObjectBytes = 0
 	const storageIdsToProbe: Array<string> = []
 	for (const [storageId, estimatedBytes] of estimatesByStorageId) {

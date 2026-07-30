@@ -269,36 +269,39 @@ Rules:
   each bucket's latest measurement is persisted on its
   `user_storage_buckets.estimated_bytes` inventory row (migration 0118). Write
   chokepoints pass `getCurrent` as `D1 estimate + sum of per-bucket estimates`,
-  where only the bucket being written (plus any inventoried bucket that has
-  never been measured — a one-time backfill per bucket) is probed live; every
-  other bucket contributes its stored D1 estimate, so mutating writes no longer
-  fan `getEstimatedBytes` RPCs across the user's whole bucket inventory. Live
-  probe results are persisted fire-and-forget with **UPDATE-only** statements
-  (they can never recreate an inventory row removed by account, package, or job
+  where only the bucket that triggers the baseline read (plus any inventoried
+  bucket with no stored estimate yet) is probed live; every other bucket
+  contributes its stored D1 estimate, so mutating writes no longer fan
+  `getEstimatedBytes` RPCs across the user's whole bucket inventory. Live probe
+  results are persisted fire-and-forget with **UPDATE-only** statements (they
+  can never recreate an inventory row removed by account, package, or job
   deletion), and mutating StorageRunner RPCs opportunistically refresh their own
   bucket's stored estimate after the write, throttled per bucket per isolate
   (`storageBucketEstimateRefreshMinIntervalMs`). Stored estimates are therefore
   freshness hints with bounded lag — acceptable for an order-of-magnitude cap
-  because the written bucket is always measured live. `requested` is the
-  candidate payload size when known. Pure read-only `storage.sql` /
-  `packageStorage().sql` statements (`SELECT` / `EXPLAIN` / schema `PRAGMA`)
-  skip the baseline read entirely even when the helper marks the call writable.
-  Mutating SQL and `storage.set` in one sandbox share a per-run baseline cache
-  so repeated writes do not re-read the baseline. Each live estimate read waits
-  at most ~2s via `Promise.race` and is retried with backoff
-  (`storageEstimateReadRetryDelaysMs`; a single 150ms retry lost to transient
-  per-bucket DO read failures in production) before failing closed for the
-  caller; the underlying DO RPC is not cancelled if the runtime keeps it
+  because the bucket paying the baseline read is measured live and the run cache
+  accounts for the run's own accepted writes. `requested` is the candidate
+  payload size when known. Pure read-only `storage.sql` / `packageStorage().sql`
+  statements (`SELECT` / `EXPLAIN` / schema `PRAGMA`) skip the baseline read
+  entirely even when the helper marks the call writable. Mutating SQL and
+  `storage.set` in one sandbox share a per-run baseline cache so repeated writes
+  do not re-read the baseline; a later write in the same run that targets a
+  **different** already-inventoried bucket reuses that bucket's stored estimate
+  rather than probing it live (bounded staleness, same trade-off as peers). Each
+  live estimate read waits at most ~2s via `Promise.race` and is retried with
+  backoff (`storageEstimateReadRetryDelaysMs`; a single 150ms retry lost to
+  transient per-bucket DO read failures in production) before failing closed for
+  the caller; the underlying DO RPC is not cancelled if the runtime keeps it
   running. A cron lane (`storage_bucket_estimate_backfill`,
-  `packages/worker/src/storage-buckets/estimate-backfill.ts`) sweeps
-  never-measured inventory rows in bounded batches so freshly migrated
-  inventories converge to stored estimates within a few ticks instead of making
-  each user's first mutating write pay (and possibly fail on) the
-  whole-inventory probe. The counter intentionally does **not** attempt to scan
-  Cloudflare Artifacts repository contents, KV snapshot/bundle bodies, R2 object
-  listings beyond `email_messages.raw_size`, or Vectorize: those stores either
-  lack reliable byte metadata or are derived from D1 and are documented in
-  `data-storage.md`.
+  `packages/worker/src/storage-buckets/estimate-backfill.ts`) sweeps inventory
+  rows without a stored estimate in bounded batches (failed probes stay
+  unmeasured and are retried on later sweeps) so freshly migrated inventories
+  converge to stored estimates within a few ticks instead of making each user's
+  first mutating write pay (and possibly fail on) the whole-inventory probe. The
+  counter intentionally does **not** attempt to scan Cloudflare Artifacts
+  repository contents, KV snapshot/bundle bodies, R2 object listings beyond
+  `email_messages.raw_size`, or Vectorize: those stores either lack reliable
+  byte metadata or are derived from D1 and are documented in `data-storage.md`.
 
 ### Concurrency
 

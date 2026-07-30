@@ -135,7 +135,10 @@ function normalizeEstimatedBytes(estimatedBytes: number) {
 
 /**
  * Awaited UPDATE-only estimate persist. Returns whether an inventory row was
- * updated (false when the row does not exist — registration owns creation).
+ * updated: false either when the row does not exist (registration owns row
+ * creation) or when `estimatedBytes` is not a finite number (nothing is
+ * written). Callers that need to distinguish the two must validate the
+ * estimate before calling.
  */
 export async function updateStorageBucketEstimate(input: {
 	db: D1Database
