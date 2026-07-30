@@ -17,6 +17,11 @@ import {
 	createAdminFeatureFlagsApiHandler,
 	createAdminFeatureFlagsHandler,
 } from '#app/handlers/admin-feature-flags.ts'
+import {
+	createAdminCodemodsApiHandler,
+	createAdminCodemodsHandler,
+	createAdminCodemodsRunApiHandler,
+} from '#app/handlers/admin-codemods.ts'
 import { createAdminPackageStorageAuditApiHandler } from '#app/handlers/admin-package-storage-audit.ts'
 import {
 	createAdminRolesApiHandler,
@@ -321,6 +326,9 @@ export function createAppRouter(env: Env) {
 			adminFeatureFlags: createAdminFeatureFlagsHandler(env),
 			adminFeatureFlagsApi: createAdminFeatureFlagsApiHandler(env),
 			adminFeatureFlagsApiPost: createAdminFeatureFlagsApiHandler(env),
+			adminCodemods: createAdminCodemodsHandler(env),
+			adminCodemodsApi: createAdminCodemodsApiHandler(env),
+			adminCodemodsRunApi: createAdminCodemodsRunApiHandler(env),
 			adminPackageStorageAuditApi:
 				createAdminPackageStorageAuditApiHandler(env),
 			adminRoles: createAdminRolesHandler(env),

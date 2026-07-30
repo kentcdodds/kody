@@ -210,6 +210,54 @@ export type AdminFeatureFlagsLoaderData = {
 	featureFlags: Array<AdminFeatureFlag>
 }
 
+export type AdminCodemodListItem = {
+	id: string
+	description: string
+}
+
+export type AdminCodemodRunListItem = {
+	id: string
+	codemodId: string
+	mode: string
+	scopeUserId: string | null
+	initiatedByUserId: string
+	filtersJson: string
+	status: 'running' | 'completed' | 'failed'
+	revertOfRunId: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export type AdminCodemodRunItemListItem = {
+	id: string
+	runId: string
+	userId: string
+	packageId: string
+	kodyId: string
+	status: string
+	beforeCommit: string | null
+	afterCommit: string | null
+	changedPaths: Array<string>
+	findings: Array<{ path: string | null; message: string }>
+	checkSummaryJson: string | null
+	error: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export type AdminCodemodsLoaderData = {
+	ok: true
+	codemods: Array<AdminCodemodListItem>
+	runs: Array<AdminCodemodRunListItem>
+}
+
+export type AdminCodemodRunItemsLoaderData = {
+	ok: true
+	run: AdminCodemodRunListItem | null
+	items: Array<AdminCodemodRunItemListItem>
+	nextAfterId: string | null
+}
+
 export type AdminUsageMetric =
 	| 'execute'
 	| 'package_export'
@@ -1161,6 +1209,7 @@ export type AppLoaderData = {
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminInvites?: AdminInvitesLoaderData
 	adminFeatureFlags?: AdminFeatureFlagsLoaderData
+	adminCodemods?: AdminCodemodsLoaderData
 	adminInsights?: AdminInsightsLoaderData
 	adminPlatformFeedback?: AdminPlatformFeedbackLoaderData
 	adminSystemEmail?: AdminSystemEmailLoaderData

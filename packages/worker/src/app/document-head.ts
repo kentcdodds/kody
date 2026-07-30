@@ -153,6 +153,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.adminUserDetail)]: titleOnly('Admin users'),
 	[routePattern(routes.adminInvites)]: titleOnly('Admin invites'),
 	[routePattern(routes.adminFeatureFlags)]: titleOnly('Admin feature flags'),
+	[routePattern(routes.adminCodemods)]: titleOnly('Admin codemods'),
 	[routePattern(routes.adminRoles)]: titleOnly('Admin roles'),
 	[routePattern(routes.adminCommunityReports)]: titleOnly('Community reports'),
 	[routePattern(routes.adminInsights)]: titleOnly('Admin insights'),

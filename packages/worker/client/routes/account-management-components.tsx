@@ -107,6 +107,11 @@ const adminNavItems = [
 		label: 'Feature flags',
 		paths: ['/admin/feature-flags'],
 	},
+	{
+		href: '/admin/codemods',
+		label: 'Codemods',
+		paths: ['/admin/codemods'],
+	},
 	{ href: '/admin/roles', label: 'Roles', paths: ['/admin/roles'] },
 	{
 		href: '/admin/community-reports',

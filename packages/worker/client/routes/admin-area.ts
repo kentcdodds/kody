@@ -12,6 +12,10 @@ export {
 	adminFeatureFlagsRouteLoader,
 } from './admin-feature-flags.tsx'
 export {
+	AdminCodemodsRoute,
+	adminCodemodsRouteLoader,
+} from './admin-codemods.tsx'
+export {
 	AdminPlatformFeedbackRoute,
 	adminPlatformFeedbackRouteLoader,
 } from './admin-platform-feedback.tsx'
