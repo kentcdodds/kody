@@ -62,6 +62,9 @@ const maxExecuteTypecheckSourceBytes = 512 * 1024
 const maxExecuteTypecheckPackageFiles = 500
 const maxExecuteTypecheckPackageBytes = 5 * 1024 * 1024
 const maxPendingExecuteTypechecks = 4
+// Cold service creation fetches and extracts worker-bundler's TypeScript lib
+// declarations. Keep that bounded separately from the warm diagnostics hold.
+const maxExecuteTypecheckServiceStartupMs = 10_000
 const maxExecuteTypecheckHoldMs = 2_000
 
 class MemoryTypecheckFileSystem implements TypecheckFileSystem {
@@ -163,6 +166,17 @@ async function getReusableTypecheckService() {
 	}
 }
 
+function discardReusableTypecheckService() {
+	const staleServicePromise = reusableTypecheckServicePromise
+	reusableTypecheckServicePromise = null
+	if (staleServicePromise) {
+		void staleServicePromise.then(
+			(service) => service.languageService.dispose?.(),
+			() => undefined,
+		)
+	}
+}
+
 async function withTypecheckLock<T>(
 	phases: ExecuteTypecheckPhaseRecorder,
 	callback: (service: ReusableTypecheckService) => T,
@@ -178,14 +192,32 @@ async function withTypecheckLock<T>(
 	typecheckQueue = new Promise<void>((resolve) => {
 		release = resolve
 	})
-	await phases.measure('queue', async () => {
-		await previous
-	})
 	let timeoutId: ReturnType<typeof setTimeout> | null = null
+	let queueTimeoutId: ReturnType<typeof setTimeout> | null = null
 	let startupTimedOut = false
-	const servicePromise = getReusableTypecheckService()
-	const cachedServicePromise = reusableTypecheckServicePromise
 	try {
+		await phases.measure(
+			'queue',
+			async () =>
+				await Promise.race([
+					previous,
+					new Promise<never>((_resolve, reject) => {
+						queueTimeoutId = setTimeout(() => {
+							discardReusableTypecheckService()
+							reject(
+								new ExecuteTypecheckError([
+									`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckServiceStartupMs}ms queue budget. Retry the execute call.`,
+								]),
+							)
+						}, maxExecuteTypecheckServiceStartupMs)
+					}),
+				]),
+		)
+		if (queueTimeoutId !== null) {
+			clearTimeout(queueTimeoutId)
+			queueTimeoutId = null
+		}
+		const servicePromise = getReusableTypecheckService()
 		const service = await phases.measure(
 			'compiler-startup',
 			async () =>
@@ -196,10 +228,10 @@ async function withTypecheckLock<T>(
 							startupTimedOut = true
 							reject(
 								new ExecuteTypecheckError([
-									`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckHoldMs}ms service startup budget.`,
+									`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckServiceStartupMs}ms service startup budget.`,
 								]),
 							)
-						}, maxExecuteTypecheckHoldMs)
+						}, maxExecuteTypecheckServiceStartupMs)
 					}),
 				]),
 		)
@@ -219,20 +251,11 @@ async function withTypecheckLock<T>(
 		}
 		return result
 	} catch (error) {
-		if (
-			startupTimedOut &&
-			cachedServicePromise &&
-			reusableTypecheckServicePromise === cachedServicePromise
-		) {
-			reusableTypecheckServicePromise = null
-			void cachedServicePromise.then(
-				(service) => service.languageService.dispose?.(),
-				() => undefined,
-			)
-		}
+		if (startupTimedOut) discardReusableTypecheckService()
 		throw error
 	} finally {
 		if (timeoutId !== null) clearTimeout(timeoutId)
+		if (queueTimeoutId !== null) clearTimeout(queueTimeoutId)
 		pendingTypecheckCount -= 1
 		release()
 	}
