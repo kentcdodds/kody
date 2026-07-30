@@ -223,6 +223,61 @@ export function __kodyCreatePackageBoundStorage(packageId) {
 	};
 }
 
+function __kodyRecordStaticPackageCall(packageId, startedAtMs, outcome) {
+	// Fire-and-forget metering: never block and never throw into the call
+	// path. The bridge is read late-bound from the current run's store so
+	// reused worker isolates never pin a disposed dispatcher stub.
+	try {
+		const meter = __kodyRuntimeStorage.getStore()?.__kodyStaticCallMeter;
+		if (meter == null || typeof meter.record !== 'function') return;
+		const pending = meter.record({
+			packageId,
+			durationMs: Date.now() - startedAtMs,
+			outcome,
+		});
+		if (pending != null && typeof pending.then === 'function') {
+			pending.then(
+				() => {},
+				() => {},
+			);
+		}
+	} catch {}
+}
+
+// Call-metering wrapper for statically imported package exports. The
+// bundler stamps the callee package id into generated import proxies (see
+// createMeteredPackageImportProxySource); the id is identity routing only —
+// the host independently validates it against the run's bundler-recorded
+// dependency provenance before recording anything. Non-function exports
+// pass through unchanged; function exports keep their identity semantics
+// (arguments, this, return values, thrown errors, properties, construct)
+// behind a transparent Proxy whose only addition is a non-blocking usage
+// event per call.
+export function __kodyMeterStaticPackageExport(packageId, exportValue) {
+	if (typeof exportValue !== 'function') return exportValue;
+	return new Proxy(exportValue, {
+		apply(target, thisArg, argumentsList) {
+			const startedAtMs = Date.now();
+			let result;
+			try {
+				result = Reflect.apply(target, thisArg, argumentsList);
+			} catch (error) {
+				__kodyRecordStaticPackageCall(packageId, startedAtMs, 'error');
+				throw error;
+			}
+			if (result instanceof Promise) {
+				result.then(
+					() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'success'),
+					() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'error'),
+				);
+				return result;
+			}
+			__kodyRecordStaticPackageCall(packageId, startedAtMs, 'success');
+			return result;
+		},
+	});
+}
+
 // Unstamped fallback: modules without bundler-recorded package provenance
 // (ad hoc execute code, artifacts published before stamping existed) can only
 // reach the storage of the package the run itself belongs to.
@@ -535,6 +590,43 @@ export function createPackageImportProxySource(input: { targetPath: string }) {
 export * from ${JSON.stringify(input.targetPath)};
 import * as __kodyPackageModule from ${JSON.stringify(input.targetPath)};
 export default __kodyPackageModule.default;
+`.trim()
+}
+
+/**
+ * Static-import proxy stamped with the callee saved-package id: function
+ * valued exports are wrapped in the call-metering Proxy from the runtime
+ * module (`__kodyMeterStaticPackageExport`), non-function exports pass
+ * through unchanged. The `export * from` passthrough stays first so any
+ * export name the bundler could not statically discover keeps working (it
+ * is just not metered) — explicitly re-exported wrapped names shadow the
+ * star re-export per the ES module ambiguity rules. Only the static import
+ * rewrite uses this variant; dynamic package import proxies keep the plain
+ * source above.
+ */
+export function createMeteredPackageImportProxySource(input: {
+	targetPath: string
+	runtimeSpecifier: string
+	packageId: string
+	exportNames: Array<string>
+}) {
+	const packageIdJson = JSON.stringify(input.packageId)
+	const namedExportLines = input.exportNames.flatMap((exportName, index) => {
+		if (exportName === 'default') return []
+		const localName = `__kodyMeteredStaticExport${index}`
+		return [
+			`const ${localName} = __kodyMeterStaticPackageExport(${packageIdJson}, __kodyPackageModule.${exportName});`,
+			`export { ${localName} as ${exportName} };`,
+		]
+	})
+	return `
+export * from ${JSON.stringify(input.targetPath)};
+import * as __kodyPackageModule from ${JSON.stringify(input.targetPath)};
+import { __kodyMeterStaticPackageExport } from ${JSON.stringify(
+		input.runtimeSpecifier,
+	)};
+export default __kodyMeterStaticPackageExport(${packageIdJson}, __kodyPackageModule.default);
+${namedExportLines.join('\n')}
 `.trim()
 }
 

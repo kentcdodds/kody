@@ -45,11 +45,13 @@ import {
 	createComputedDynamicImportGuardSource,
 	createDynamicPackageImportHelperSource,
 	createDynamicPackageImportPlaceholderSource,
+	createMeteredPackageImportProxySource,
 	createPackageImportProxySource,
 	createPackageRuntimeModuleSource,
 	createRuntimeModuleSource,
 	iterateModuleSourceTexts,
 } from './runtime-source-modules.ts'
+import { collectModuleExportNames } from './module-export-names.ts'
 import { materializePublishedArtifactModules } from './module-graph-artifacts.ts'
 import {
 	collectReachableSourceFilePaths,
@@ -232,6 +234,11 @@ async function ensurePackageProxy(
 	const existing = state.proxies.get(specifier)
 	if (existing) return existing
 	const parsed = parseKodyPackageSpecifier(specifier)
+	// Callee saved-package UUID stamped into the metered proxy below. Root
+	// self-imports resolve back into the bundle's own source and are not
+	// stamped: the surrounding run already meters that package via
+	// `package_export`.
+	let calleePackageId: string | null = null
 	const absoluteExportPath =
 		parsed.packageName === state.rootPackage?.manifest.name
 			? joinPath(
@@ -244,6 +251,7 @@ async function ensurePackageProxy(
 				)
 			: await (async () => {
 					const loaded = await ensurePackageLoaded(state, specifier)
+					calleePackageId = loaded.row.id
 					return (
 						(await maybeEnsurePublishedArtifactTarget({
 							state,
@@ -274,9 +282,22 @@ async function ensurePackageProxy(
 		proxyPath,
 		absoluteExportPath,
 	)
-	state.files[proxyPath] = createPackageImportProxySource({
-		targetPath: proxyTarget,
-	})
+	state.files[proxyPath] = calleePackageId
+		? createMeteredPackageImportProxySource({
+				targetPath: proxyTarget,
+				runtimeSpecifier: createRelativeImportSpecifier(
+					proxyPath,
+					runtimeModulePath,
+				),
+				packageId: calleePackageId,
+				exportNames: collectModuleExportNames({
+					files: state.files,
+					modulePath: absoluteExportPath,
+				}),
+			})
+		: createPackageImportProxySource({
+				targetPath: proxyTarget,
+			})
 	state.proxies.set(specifier, proxyPath)
 	return proxyPath
 }

@@ -79,6 +79,7 @@ import {
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
+import { createPackageStaticCallMeterTools } from '#worker/usage/package-static-call-usage.ts'
 import { recordAgentPackageConversationUses } from '#worker/usage/agent-package-conversation-uses.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
@@ -941,6 +942,15 @@ export async function runBundledModuleWithRegistry(
 			dependencies: bundle.dependencies ?? [],
 			dynamicDependencyPackageIds,
 		})
+		// Static package export calls report through a sandbox bridge with a
+		// bundler-stamped callee package id; only ids from the same
+		// bundler/host controlled provenance set as packageStorage grants are
+		// recorded (mismatches are dropped host-side).
+		const staticCallMeterTools = createPackageStaticCallMeterTools({
+			env,
+			userId: callerContext.user?.userId ?? null,
+			grantedPackageIds: grantedPackageStorageIds,
+		})
 		const executor = createExecuteExecutor({
 			env,
 			exports: options?.executorExports ?? workerExports,
@@ -1009,6 +1019,7 @@ export async function runBundledModuleWithRegistry(
 			workflowTools,
 			packageInvokeTools: options?.packageInvokeTools,
 			packageEventTools: options?.packageEventTools,
+			staticCallMeterTools,
 		}
 		const runtimeHelperPreludes =
 			createRuntimeHelperPreludes(runtimeHelperContext)

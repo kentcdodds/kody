@@ -2,8 +2,9 @@
  * Per-user usage metering.
  *
  * One event schema covers every metered chokepoint (execute runs, package
- * export invocations, job runs, workflow runs, package service runtime,
- * realtime websocket sessions, gateway fetches, email sends and receives).
+ * export invocations, statically imported package export calls, job runs,
+ * workflow runs, package service runtime, realtime websocket sessions,
+ * gateway fetches, email sends and receives).
  *
  * The write path depends on the environment:
  *
@@ -40,6 +41,7 @@ const runtimeTracing: typeof cloudflareWorkers.tracing | undefined = (
 export type UsageEventType =
 	| 'execute'
 	| 'package_export'
+	| 'package_static_call'
 	| 'job_run'
 	| 'workflow_run'
 	| 'service_runtime'

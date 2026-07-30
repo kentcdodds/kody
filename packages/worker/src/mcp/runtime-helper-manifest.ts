@@ -15,6 +15,10 @@ import {
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
 import { type PackageWorkflowCreateInput } from '#worker/package-runtime/package-workflows.ts'
+import {
+	type PackageStaticCallMeterInput,
+	type PackageStaticCallMeterTools,
+} from '#worker/usage/package-static-call-usage.ts'
 
 export type AdditionalKodyTools = Record<
 	string,
@@ -132,6 +136,7 @@ export type RuntimeHelperManifestContext = {
 	workflowTools?: PackageWorkflowTools | undefined
 	packageInvokeTools?: PackageInvokeTools | undefined
 	packageEventTools?: PackageEventTools | undefined
+	staticCallMeterTools?: PackageStaticCallMeterTools | undefined
 }
 
 type RuntimeHelperManifestEntry = {
@@ -242,6 +247,8 @@ const workflows = {
 const packageInvokeRuntimeBridgeProviderName =
 	'__kodyPackageInvokeRuntimeBridge'
 const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
+const staticCallMeterRuntimeBridgeProviderName =
+	'__kodyStaticCallMeterRuntimeBridge'
 
 function createPackagesHelperPrelude() {
 	// `check` and `invokeChecked` are deprecated widen-phase shims: they keep
@@ -274,6 +281,18 @@ function createEventsHelperPrelude() {
 	return `
 const events = {
   dispatch: async (input) => await ${packageEventRuntimeBridgeProviderName}.dispatch(input ?? {}),
+};
+	`.trim()
+}
+
+// Internal bridge for the static package export call meter in the runtime
+// module (`__kodyMeterStaticPackageExport`): not an author-facing helper,
+// so it has no unbound-access rewrite name. The runtime wrapper reads it
+// from the run store and fires events without awaiting.
+function createStaticCallMeterHelperPrelude() {
+	return `
+const __kodyStaticCallMeter = {
+  record: (input) => ${staticCallMeterRuntimeBridgeProviderName}.record(input ?? {}),
 };
 	`.trim()
 }
@@ -410,6 +429,23 @@ function createPackageEventRuntimeBridgeProvider(
 				execute: async (args: unknown) =>
 					await packageEventTools.dispatch(
 						(args ?? {}) as PackageEventDispatchInput,
+					),
+			},
+		},
+	}
+	return resolveProvider(provider)
+}
+
+function createStaticCallMeterRuntimeBridgeProvider(
+	staticCallMeterTools: PackageStaticCallMeterTools,
+): ResolvedProvider {
+	const provider: ToolProvider = {
+		name: staticCallMeterRuntimeBridgeProviderName,
+		tools: {
+			record: {
+				execute: async (args: unknown) =>
+					await staticCallMeterTools.record(
+						(args ?? {}) as PackageStaticCallMeterInput,
 					),
 			},
 		},
@@ -554,6 +590,23 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 				? [createPackageEventRuntimeBridgeProvider(context.packageEventTools)]
 				: [],
 	},
+	{
+		runtimeName: 'staticCallMeter',
+		runtimeBindings: [
+			{ runtimeName: '__kodyStaticCallMeter', absentValue: 'undefined' },
+		],
+		unboundNames: [],
+		isBound: (context) => Boolean(context.staticCallMeterTools),
+		createPrelude: () => createStaticCallMeterHelperPrelude(),
+		extraProviders: (context) =>
+			context.staticCallMeterTools
+				? [
+						createStaticCallMeterRuntimeBridgeProvider(
+							context.staticCallMeterTools,
+						),
+					]
+				: [],
+	},
 ]
 
 const runtimeHelperRuntimeBindingOrder: Array<string> = [
@@ -566,6 +619,7 @@ const runtimeHelperRuntimeBindingOrder: Array<string> = [
 	'workflows',
 	'packages',
 	'events',
+	'staticCallMeter',
 ]
 
 function runtimeHelperRuntimeBindings() {
