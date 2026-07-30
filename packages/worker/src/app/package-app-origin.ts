@@ -9,7 +9,7 @@ import {
 	createPackageAppHandoffToken,
 	packageAppHandoffQueryParam,
 } from '#app/package-app-handoff.ts'
-import { resolvePackageAppOwnerByUserId } from '#app/package-app-owner.ts'
+import { resolvePackageAppOwnerByStableUserId } from '#app/package-app-owner.ts'
 import {
 	createPackageAppSessionCookie,
 	readPackageAppSession,
@@ -173,7 +173,7 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 		await createPackageAppHandoffToken({
 			env,
 			claims: {
-				userId: String(user.userId),
+				stableUserId: user.mcpUser.userId,
 				username: user.username,
 				kodyId: packagePath.kodyId,
 			},
@@ -216,7 +216,10 @@ async function handleRequestOnPackageAppOrigin(input: {
 				status: 302,
 				setCookie: await createPackageAppSessionCookie({
 					env,
-					session: { userId: claims.userId, username: claims.username },
+					session: {
+						stableUserId: claims.stableUserId,
+						username: claims.username,
+					},
 					secure: isSecureRequest(request),
 				}),
 			})
@@ -225,9 +228,9 @@ async function handleRequestOnPackageAppOrigin(input: {
 
 	const parsedSession = await readPackageAppSession({ request, env })
 	const owner = parsedSession
-		? await resolvePackageAppOwnerByUserId({
+		? await resolvePackageAppOwnerByStableUserId({
 				env,
-				userId: parsedSession.session.userId,
+				stableUserId: parsedSession.session.stableUserId,
 				issuedAt: parsedSession.issuedAt,
 			})
 		: null

@@ -61,16 +61,14 @@ async function resolveRequestAuth(
 	}
 	const { session, issuedAt, setCookie } = parsedSession
 
-	const userId = /^\d+$/.test(session.id) ? Number(session.id) : NaN
 	const db = createDb(env.APP_DB)
-	const userRecord =
-		Number.isSafeInteger(userId) && userId > 0
-			? await db.findOne(usersTable, { where: { id: userId } })
-			: null
+	const userRecord = await db.findOne(usersTable, {
+		where: { stable_user_id: session.stableUserId },
+	})
 
 	if (!userRecord) {
 		return {
-			sessionUserId: session.id,
+			sessionUserId: session.stableUserId,
 			setCookie: await destroyAuthCookie(isSecureRequest(request)),
 			user: null,
 		}
@@ -83,7 +81,7 @@ async function resolveRequestAuth(
 		})
 	) {
 		return {
-			sessionUserId: session.id,
+			sessionUserId: session.stableUserId,
 			setCookie: await destroyAuthCookie(isSecureRequest(request)),
 			user: null,
 		}
@@ -94,7 +92,7 @@ async function resolveRequestAuth(
 	try {
 		;({ roles, permissions } = await getUserRolesAndPermissions(
 			env.APP_DB,
-			userId,
+			userRecord.id,
 		))
 	} catch (error) {
 		console.error('Failed to load roles for authenticated user:', error)
@@ -116,10 +114,10 @@ async function resolveRequestAuth(
 	}
 
 	return {
-		sessionUserId: session.id,
+		sessionUserId: session.stableUserId,
 		setCookie: setCookie ?? undefined,
 		user: {
-			userId,
+			userId: userRecord.id,
 			email: userRecord.email,
 			emailVerified: Boolean(userRecord.email_verified_at),
 			username: userRecord.username,
@@ -134,9 +132,7 @@ async function resolveRequestAuth(
 				username: userRecord.username,
 				displayName,
 			},
-			artifactOwnerIds: Array.from(
-				new Set([session.id, stableUserId].filter(Boolean)),
-			),
+			artifactOwnerIds: [stableUserId],
 		},
 	}
 }

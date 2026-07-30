@@ -118,15 +118,16 @@ async function handleCreateUserAction(input: {
 			ip: requestIp,
 			path: input.url.pathname,
 			reason: [
-				`actor_user_id=${input.actor.userId}`,
-				`target_user_id=${createdUser.userId}`,
+				`actor_stable_user_id=${input.actor.mcpUser.userId}`,
+				`target_stable_user_id=${createdUser.stableUserId}`,
 				`target_email=${redactEmailRecipient(createdUser.email)}`,
 			].join(';'),
 		})
 
+		const { userId: _userId, ...boundaryUser } = createdUser
 		return jsonResponse({
 			...(await loadAdminInvitesData(input.env)),
-			createdUser,
+			createdUser: boundaryUser,
 		})
 	} catch (error) {
 		const message =

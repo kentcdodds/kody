@@ -12,11 +12,11 @@ export type AdminFeatureFlag = {
 		enabled: boolean
 		rolloutPercent: number | null
 		note: string
-		updatedBy: number | null
+		updatedByStableUserId: string | null
 		updatedAt: string
 	} | null
 	overrides: Array<{
-		userId: number
+		stableUserId: string
 		username: string
 		enabled: boolean
 		updatedAt: string

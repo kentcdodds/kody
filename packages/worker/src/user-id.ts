@@ -1,5 +1,7 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 
+const stableUserIdPattern = /^[a-f0-9]{64}$/
+
 /**
  * Initial stable MCP user id for a new account: SHA-256 hex of the trimmed
  * lowercase email. After signup the stored `users.stable_user_id` is
@@ -14,6 +16,13 @@ export async function createStableUserIdFromEmail(email: string) {
 
 export function normalizeStableUserId(value: string | null | undefined) {
 	return value?.trim() ?? ''
+}
+
+export function isStableUserId(value: unknown): value is string {
+	return (
+		typeof value === 'string' &&
+		stableUserIdPattern.test(normalizeStableUserId(value))
+	)
 }
 
 /**

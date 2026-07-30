@@ -3,7 +3,7 @@ import { parseStoredPlanName, planNames } from '#worker/entitlements/plans.ts'
 
 type InviteRow = {
 	code: string
-	created_by: number | null
+	created_by_stable_user_id: string | null
 	created_by_email: string | null
 	note: string
 	max_uses: number
@@ -19,7 +19,7 @@ export async function loadAdminInvitesData(
 ): Promise<AdminInvitesLoaderData> {
 	const result = await env.APP_DB.prepare(
 		`SELECT i.code,
-		        i.created_by,
+		        u.stable_user_id AS created_by_stable_user_id,
 		        u.email AS created_by_email,
 		        i.note,
 		        i.max_uses,
@@ -38,7 +38,7 @@ export async function loadAdminInvitesData(
 		ok: true,
 		invites: (result.results ?? []).map((row) => ({
 			code: row.code,
-			createdBy: row.created_by,
+			createdByStableUserId: row.created_by_stable_user_id,
 			createdByEmail: row.created_by_email,
 			note: row.note,
 			maxUses: row.max_uses,

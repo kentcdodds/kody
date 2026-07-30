@@ -19,6 +19,7 @@ import {
 	readVerifySession,
 	setVerifySessionSecret,
 } from '#app/verify-session.ts'
+import { createDb, usersTable } from '#worker/db.ts'
 
 export function createVerifyHandler(env: Env) {
 	return {
@@ -80,12 +81,15 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 				)
 			}
 
-			const userId = Number(pendingSession.id)
+			const db = createDb(env.APP_DB)
+			const userRecord = await db.findOne(usersTable, {
+				where: { stable_user_id: pendingSession.stableUserId },
+			})
 			const codeValid =
-				Number.isInteger(userId) &&
+				userRecord != null &&
 				(await verifyTwoFactorCode({
 					db: env.APP_DB,
-					userId,
+					userId: userRecord.id,
 					code,
 					type: twoFactorVerificationType,
 				}))
@@ -111,7 +115,7 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 				'Set-Cookie',
 				await createAuthCookie(
 					{
-						id: pendingSession.id,
+						stableUserId: pendingSession.stableUserId,
 						email: pendingSession.email,
 						rememberMe: pendingSession.rememberMe,
 					},

@@ -6,10 +6,14 @@ import {
 	isFeatureFlagKey,
 	type FeatureFlagKey,
 } from '#worker/feature-flags/registry.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
+import {
+	isStableUserId,
+	normalizeStableUserId,
+} from '#worker/user-id.ts'
+import { stableUserIdSchema } from './admin-shared.ts'
 
 export const adminFeatureFlagOverrideSchema = z.object({
-	userId: z.number().int().positive(),
+	stableUserId: stableUserIdSchema,
 	username: z.string(),
 	enabled: z.boolean(),
 	updatedAt: z.string(),
@@ -25,7 +29,7 @@ export const adminFeatureFlagSchema = z.object({
 			enabled: z.boolean(),
 			rolloutPercent: z.number().int().min(0).max(100).nullable(),
 			note: z.string(),
-			updatedBy: z.number().int().positive().nullable(),
+			updatedByStableUserId: stableUserIdSchema.nullable(),
 			updatedAt: z.string(),
 		})
 		.nullable(),
@@ -60,22 +64,25 @@ export async function resolveActingAdminUserId(
 	return row.id
 }
 
-export async function resolveTargetUserId(
+export async function resolveTargetUser(
 	db: D1Database,
-	input: { userId?: number; username?: string },
-): Promise<number> {
-	if (input.userId !== undefined && input.username !== undefined) {
-		throw new Error('Provide either userId or username, not both.')
+	input: { stableUserId?: string; username?: string },
+): Promise<{ dbUserId: number; stableUserId: string }> {
+	if (input.stableUserId !== undefined && input.username !== undefined) {
+		throw new Error('Provide either stableUserId or username, not both.')
 	}
-	if (input.userId !== undefined) {
-		const row = await db
-			.prepare(`SELECT id FROM users WHERE id = ?`)
-			.bind(input.userId)
-			.first<{ id: number }>()
-		if (!row) {
-			throw new Error(`User not found for userId ${input.userId}.`)
+	if (input.stableUserId !== undefined) {
+		if (!isStableUserId(input.stableUserId)) {
+			throw new Error('stableUserId must be a valid stable user id.')
 		}
-		return row.id
+		const row = await db
+			.prepare(`SELECT id, stable_user_id FROM users WHERE stable_user_id = ?`)
+			.bind(input.stableUserId)
+			.first<{ id: number; stable_user_id: string }>()
+		if (!row) {
+			throw new Error(`User not found for stableUserId ${input.stableUserId}.`)
+		}
+		return { dbUserId: row.id, stableUserId: row.stable_user_id }
 	}
 	if (input.username !== undefined) {
 		const username = input.username.trim()
@@ -83,13 +90,13 @@ export async function resolveTargetUserId(
 			throw new Error('username must not be empty.')
 		}
 		const row = await db
-			.prepare(`SELECT id FROM users WHERE username = ?`)
+			.prepare(`SELECT id, stable_user_id FROM users WHERE username = ?`)
 			.bind(username)
-			.first<{ id: number }>()
+			.first<{ id: number; stable_user_id: string }>()
 		if (!row) {
 			throw new Error(`User not found for username "${username}".`)
 		}
-		return row.id
+		return { dbUserId: row.id, stableUserId: row.stable_user_id }
 	}
-	throw new Error('Provide either userId or username.')
+	throw new Error('Provide either stableUserId or username.')
 }

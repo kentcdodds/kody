@@ -1,26 +1,27 @@
 import { z } from 'zod'
-import { loadAdminUserByIdOrEmail } from '#worker/admin/users-data.ts'
+import { loadAdminUserByTarget } from '#worker/admin/users-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminCapabilityAccess,
 	adminUserMetadataSchema,
 	auditAdminCapabilityInvocation,
+	stableUserIdSchema,
 } from './admin-shared.ts'
 
 const inputSchema = z
 	.object({
-		id: z
-			.number()
-			.int()
-			.positive()
-			.optional()
-			.describe('Numeric users.id to look up.'),
+		stableUserId: stableUserIdSchema.optional(),
 		email: z.string().email().optional().describe('Email address to look up.'),
+		username: z.string().min(1).optional().describe('Username to look up.'),
 	})
-	.refine((value) => value.id !== undefined || value.email !== undefined, {
-		message: 'Provide either id or email.',
-	})
+	.refine(
+		(value) =>
+			[value.stableUserId, value.email, value.username].filter(
+				(item) => item !== undefined,
+			).length === 1,
+		{ message: 'Provide exactly one of stableUserId, email, or username.' },
+	)
 
 const outputSchema = z.object({
 	user: adminUserMetadataSchema.nullable(),
@@ -32,13 +33,13 @@ export const adminUserGetCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_user_get',
 		description:
-			'Get one user account metadata record and roles by id or email. Admin-only; never returns user content.',
+			'Get one user account metadata record and roles by stable user id, email, or username. Admin-only; never returns user content.',
 		keywords: ['admin', 'user', 'account', 'roles', 'lookup', 'rbac'],
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(ctx, 'admin_user_get', async () => {
-				const user = await loadAdminUserByIdOrEmail(ctx.env.APP_DB, args)
+				const user = await loadAdminUserByTarget(ctx.env.APP_DB, args)
 				return { user }
 			})
 		},
