@@ -9,9 +9,15 @@ Module: `packages/worker/src/feature-flags/`
 
 - `registry.ts` — the typed flag registry (`featureFlagDefinitions`,
   `FeatureFlagKey`). Flags are created and removed only via code review by
-  editing this array; every gate site is compile-checked against it.
-- `service.ts` — evaluation (`isFeatureEnabled`, `getFeatureFlagsForUser`) and
-  admin mutations (global state, per-user overrides, stale cleanup).
+  editing this array; every gate site is compile-checked against it. Flags
+  should also declare a `successMetric` (see below).
+- `service.ts` — evaluation (`isFeatureEnabled`, `getFeatureFlagsForUser`,
+  `getFeatureFlagEvaluationsForUser` with assignment sources) and admin
+  mutations (global state, per-user overrides, stale cleanup).
+- `exposure.ts` — success-metric exposure recording (which value each user saw
+  and how it was assigned).
+- `success-metric-readout.ts` — the on/off cohort metric readout for the admin
+  surfaces.
 - `types.ts` — dependency-free transport types shared with the client tsconfig.
 
 ## The registry-owns-existence invariant
@@ -62,3 +68,49 @@ default-on flag can never bypass an operator kill switch when D1 is unavailable.
 The registry ships with one permanent flag, `demo-indicator`, which renders a
 small badge in the app chrome and exists so the system stays exercised
 end-to-end (`e2e/admin-feature-flags.spec.ts`).
+
+## Success metrics
+
+Every flag exists to move something; the `successMetric` field on a registry
+definition states what, in code review, alongside the flag itself:
+
+```ts
+successMetric: {
+	eventType: 'execute', // a UsageEventType from usage metering
+	measure: 'error_rate', // 'event_count' | 'error_rate' | 'avg_duration_ms'
+	goal: 'decrease',
+	hypothesis: 'One human sentence stating why this flag should move it.',
+}
+```
+
+The field is compile-checked against the closed `UsageEventType` union
+(`packages/worker/src/usage/event-types.ts`), so a flag can only be judged
+against a metric the usage-metering pipeline already collects. It stays optional
+for genuinely unmeasurable flags (like the permanent `demo-indicator`), but the
+admin UI and the `admin_feature_flag_list` capability render a notice strongly
+recommending one everywhere else.
+
+### Exposures
+
+Current flag state cannot reconstruct who was inside a percentage rollout last
+week, so measured flags record **exposures** at the two evaluation chokepoints
+(the app session flag cache and the MCP caller flag resolver):
+`(stable user id, flag key, on/off, assignment source, timestamp)`. The write
+path mirrors usage metering — the `FLAG_EXPOSURES` Analytics Engine dataset in
+production/preview, the D1 `feature_flag_exposure_rollups` table (migration
+`0117`, 90-day retention) in local dev and tests — and never throws.
+
+The assignment source (`default` / `global` / `rollout` / `override`) is what
+keeps the readout honest: `override` users are hand-picked and excluded from
+comparisons, while `rollout` users are deterministically bucketed.
+
+### Readout
+
+`success-metric-readout.ts` joins exposures with the usage event stream for the
+declared `eventType` over the current UTC month to date, splits users into
+on/off cohorts (excluding override and mixed-exposure users, reported
+separately), and aggregates event count, error rate, and average duration per
+cohort. The admin UI (`/admin/feature-flags`) and `admin_feature_flag_list`
+attach this readout to every measured flag. The comparison is decision support
+for a human — "keep rolling out or kill it" stays an operator call, not an
+automated one.

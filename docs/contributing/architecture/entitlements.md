@@ -267,7 +267,7 @@ Rules:
   from the quota — they are observability history, not user content.
   StorageRunner Durable Object buckets expose their own `estimatedBytes`, and
   each bucket's latest measurement is persisted on its
-  `user_storage_buckets.estimated_bytes` inventory row (migration 0117). Write
+  `user_storage_buckets.estimated_bytes` inventory row (migration 0118). Write
   chokepoints pass `getCurrent` as `D1 estimate + sum of per-bucket estimates`,
   where only the bucket being written (plus any inventoried bucket that has
   never been measured — a one-time backfill per bucket) is probed live; every

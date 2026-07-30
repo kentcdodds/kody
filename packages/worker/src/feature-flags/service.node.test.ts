@@ -3,6 +3,7 @@ import {
 	clearFeatureFlagUserOverride,
 	computeRolloutBucket,
 	deleteStaleFeatureFlag,
+	getFeatureFlagEvaluationsForUser,
 	getFeatureFlagsForUser,
 	isFeatureEnabled,
 	listFeatureFlagsForAdmin,
@@ -30,6 +31,7 @@ type OverrideRow = {
 type UserRow = {
 	id: number
 	username: string
+	stable_user_id?: string
 }
 
 function createFeatureFlagsTestDb(
@@ -48,7 +50,12 @@ function createFeatureFlagsTestDb(
 			{ ...row },
 		]),
 	)
-	const users = new Map((input.users ?? []).map((row) => [row.id, { ...row }]))
+	const users = new Map(
+		(input.users ?? []).map((row) => [
+			row.id,
+			{ ...row, stable_user_id: row.stable_user_id ?? `stable-${row.id}` },
+		]),
+	)
 	let clock = 0
 
 	function nextTimestamp() {
@@ -96,7 +103,11 @@ function createFeatureFlagsTestDb(
 					!normalized.includes('where')
 				) {
 					return {
-						results: [...globals.values()].map((row) => ({ ...row })),
+						results: [...globals.values()].map((row) => ({
+							...row,
+							updated_by_stable_user_id:
+								users.get(row.updated_by ?? -1)?.stable_user_id ?? null,
+						})),
 						meta: { changes: 0 },
 					} as { results: Array<T>; meta: { changes: number } }
 				}
@@ -129,6 +140,7 @@ function createFeatureFlagsTestDb(
 								enabled: row.enabled,
 								updated_at: row.updated_at,
 								username: user.username,
+								stable_user_id: user.stable_user_id,
 							}
 						})
 						.filter((row) => row !== null)
@@ -450,6 +462,54 @@ test('user override wins over global off and global on; clear restores evaluatio
 	).resolves.toBe(false)
 })
 
+test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => {
+	const db = createFeatureFlagsTestDb()
+
+	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toEqual({
+		'demo-indicator': { enabled: false, source: 'default' },
+		'execute-pre-exec-typecheck': { enabled: false, source: 'default' },
+	})
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: true,
+		rolloutPercent: null,
+		updatedBy: 1,
+	})
+	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toMatchObject({
+		'demo-indicator': { enabled: true, source: 'global' },
+	})
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: true,
+		rolloutPercent: 50,
+		updatedBy: 1,
+	})
+	const evaluations = await getFeatureFlagEvaluationsForUser(db, 7)
+	expect(evaluations['demo-indicator'].source).toBe('rollout')
+	expect(evaluations['demo-indicator'].enabled).toBe(
+		computeRolloutBucket('demo-indicator', 7) < 50,
+	)
+	// Anonymous users are excluded from percentage rollouts but the
+	// assignment is still rollout-sourced.
+	await expect(
+		getFeatureFlagEvaluationsForUser(db, null),
+	).resolves.toMatchObject({
+		'demo-indicator': { enabled: false, source: 'rollout' },
+	})
+
+	await setFeatureFlagUserOverride(db, {
+		key: 'demo-indicator',
+		userId: 7,
+		enabled: false,
+		updatedBy: 1,
+	})
+	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toMatchObject({
+		'demo-indicator': { enabled: false, source: 'override' },
+	})
+})
+
 test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', async () => {
 	const db = createFeatureFlagsTestDb({
 		users: [
@@ -500,15 +560,16 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		key: 'demo-indicator',
 		stale: false,
 		defaultEnabled: false,
+		successMetric: null,
 		global: {
 			enabled: true,
 			rolloutPercent: 25,
 			note: 'rolling out',
-			updatedBy: 1,
+			updatedByStableUserId: null,
 		},
 		overrides: [
 			{
-				userId: 4,
+				stableUserId: 'stable-4',
 				username: 'bob',
 				enabled: true,
 			},
@@ -524,9 +585,17 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		key: 'execute-pre-exec-typecheck',
 		stale: false,
 		defaultEnabled: false,
+		successMetric: {
+			eventType: 'execute',
+			measure: 'error_rate',
+			goal: 'decrease',
+		},
 		global: null,
 		overrides: [],
 	})
+	expect(executeTypecheck?.successMetric?.hypothesis).toEqual(
+		expect.any(String),
+	)
 
 	const retired = listed.find((flag) => flag.key === 'retired-flag')
 	expect(retired).toEqual({
@@ -534,11 +603,12 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		description: null,
 		defaultEnabled: null,
 		stale: true,
+		successMetric: null,
 		global: {
 			enabled: false,
 			rolloutPercent: null,
 			note: 'leftover',
-			updatedBy: null,
+			updatedByStableUserId: null,
 			updatedAt: '2026-06-01T00:00:00.000Z',
 		},
 		overrides: [],
@@ -550,10 +620,11 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		description: null,
 		defaultEnabled: null,
 		stale: true,
+		successMetric: null,
 		global: null,
 		overrides: [
 			{
-				userId: 3,
+				stableUserId: 'stable-3',
 				username: 'alice',
 				enabled: false,
 				updatedAt: '2026-07-03T00:00:00.000Z',

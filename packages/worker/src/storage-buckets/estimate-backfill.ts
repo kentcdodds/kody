@@ -6,7 +6,7 @@ import { readStorageBucketEstimatedBytes } from '#worker/storage-runner.ts'
 
 /**
  * Cron lane that seeds `user_storage_buckets.estimated_bytes` for inventory
- * rows that have never been measured (NULL after migration 0117, or rows
+ * rows that have never been measured (NULL after migration 0118, or rows
  * whose live probes kept failing). Without this, each user's first mutating
  * storage write after deploy pays — and can fail on — a live estimate probe
  * of every unmeasured bucket. With it, inventories converge to "every bucket

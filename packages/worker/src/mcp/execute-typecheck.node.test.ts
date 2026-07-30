@@ -300,20 +300,59 @@ test('ad hoc execute typecheck rejects oversized source before loading the compi
 	).rejects.toThrow(
 		'entry.ts exceeds the 524288-byte pre-execution TypeScript source limit.',
 	)
+})
 
+test('over-budget package graphs degrade to entry-only checking instead of failing or loading package sources', async () => {
+	// TypeScript program memory scales at ~100x the package source bytes and
+	// Workers isolates die (killing every in-flight request with no error
+	// path) at 128MB, so real-world package graphs must never be written into
+	// the shared compiler. See the production incident where every execute
+	// importing kody:@kentcdodds/discord stranded its run record.
 	const packages = createLoadedPackages(stringContract)
 	const loaded = packages.get('@kentcdodds/static-contract')!
 	for (let index = 0; index < 500; index += 1) {
 		loaded.files[`src/generated-${index}.ts`] = 'export {}'
 	}
+
+	// A contract violation the typed graph would have caught now passes: the
+	// import is stubbed as `any` rather than loading the oversized graph.
+	const serverTiming = await assertAdHocExecuteTypechecks({
+		source: `import call from 'kody:@kentcdodds/static-contract'
+export default async function run() {
+	const result: number = await call({ name: 123 })
+	return result
+}`,
+		packages,
+	})
+	expect(serverTiming.map((entry) => entry.name)).toEqual([
+		'typecheck-package-types-skipped',
+		'typecheck-queue',
+		'typecheck-compiler-startup',
+		'typecheck-project-write',
+		'typecheck-diagnostics',
+		'typecheck-total',
+	])
+
+	// The entry module itself still gets full semantic checking.
 	await expect(
 		assertAdHocExecuteTypechecks({
-			source: 'export default function run() {}',
+			source: `export default function run(): string {
+	return 42
+}`,
 			packages,
 		}),
-	).rejects.toThrow(
-		'Published Kody package types exceed the pre-execution TypeScript graph limit (500 files or 5242880 bytes).',
-	)
+	).rejects.toThrow("Type 'number' is not assignable to type 'string'")
+
+	// A small graph in the same warm service still gets typed contract checks.
+	await expect(
+		assertAdHocExecuteTypechecks({
+			source: `import call from 'kody:@kentcdodds/static-contract'
+export default async function run() {
+	return await call({ name: 123 })
+}`,
+			packages: createLoadedPackages(stringContract),
+		}),
+	).rejects.toThrow("Type 'number' is not assignable to type 'string'")
 })
 
 test('ad hoc execute typecheck bounds concurrent active and queued checks', async () => {

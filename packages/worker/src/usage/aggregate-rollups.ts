@@ -283,12 +283,20 @@ export async function readIdempotentInboundEmailUsage(input: {
 	return result.results ?? []
 }
 
-async function queryAnalyticsEngineSql(input: {
+/**
+ * Run one Analytics Engine SQL API query (with timeout + retry on transient
+ * failures) and return the parsed rows. Shared with the feature-flag
+ * success-metric readout, which queries the same API against the usage and
+ * flag-exposure datasets.
+ */
+export async function queryAnalyticsEngineSql<
+	Row = AnalyticsEngineSqlRow,
+>(input: {
 	accountId: string
 	apiToken: string
 	baseUrl: string
 	query: string
-}): Promise<Array<AnalyticsEngineSqlRow>> {
+}): Promise<Array<Row>> {
 	const url = `${input.baseUrl.replace(/\/$/, '')}/client/v4/accounts/${input.accountId}/analytics_engine/sql`
 	let lastError: Error | undefined
 	for (
@@ -307,7 +315,7 @@ async function queryAnalyticsEngineSql(input: {
 		const text = await response.text()
 		if (response.ok) {
 			const parsed = JSON.parse(text) as {
-				data?: Array<AnalyticsEngineSqlRow>
+				data?: Array<Row>
 			}
 			return parsed.data ?? []
 		}

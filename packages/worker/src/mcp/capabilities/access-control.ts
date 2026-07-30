@@ -5,11 +5,12 @@ import {
 	userHasPermission,
 	userHasRole,
 } from '#worker/identity/permissions.ts'
+import { recordFeatureFlagExposures } from '#worker/feature-flags/exposure.ts'
 import {
 	type FeatureFlagKey,
 	featureFlagKeys,
 } from '#worker/feature-flags/registry.ts'
-import { getFeatureFlagsForUser } from '#worker/feature-flags/service.ts'
+import { getFeatureFlagEvaluationsForUser } from '#worker/feature-flags/service.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 import {
 	type McpAuthDenialReason,
@@ -56,11 +57,8 @@ function disabledFeatureFlags(): CallerFeatureFlags {
 
 async function resolveFeatureFlagUserId(
 	db: D1Database,
-	callerContext: McpCallerContext,
+	stableUserId: string,
 ): Promise<number | null> {
-	const user = callerContext.user
-	const stableUserId = normalizeStableUserId(user?.userId)
-	if (!stableUserId) return null
 	const row = await db
 		.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
 		.bind(stableUserId)
@@ -71,6 +69,9 @@ async function resolveFeatureFlagUserId(
 /**
  * Resolve the caller's evaluated feature-flag map once per request. Used by
  * registry filtering (search/list) so access checks stay synchronous.
+ * Evaluation also records success-metric exposures for measured flags (see
+ * `#worker/feature-flags/exposure.ts`) so MCP-only users are represented in
+ * admin metric readouts.
  *
  * Fail-closed rules: anonymous callers and authenticated callers whose stable
  * id cannot be resolved to a `users.id` get every flag off, so gated
@@ -84,9 +85,18 @@ export async function resolveCallerFeatureFlags(
 	if (!env.APP_DB) return disabledFeatureFlags()
 	if (!callerContext.user?.userId) return disabledFeatureFlags()
 	try {
-		const userId = await resolveFeatureFlagUserId(env.APP_DB, callerContext)
+		const stableUserId = normalizeStableUserId(callerContext.user.userId)
+		if (!stableUserId) return disabledFeatureFlags()
+		const userId = await resolveFeatureFlagUserId(env.APP_DB, stableUserId)
 		if (userId === null) return disabledFeatureFlags()
-		return await getFeatureFlagsForUser(env.APP_DB, userId)
+		const evaluations = await getFeatureFlagEvaluationsForUser(
+			env.APP_DB,
+			userId,
+		)
+		await recordFeatureFlagExposures(env, { stableUserId, evaluations })
+		return Object.fromEntries(
+			featureFlagKeys.map((key) => [key, evaluations[key].enabled]),
+		) as Record<FeatureFlagKey, boolean>
 	} catch {
 		// Fail closed: gated capabilities stay hidden when evaluation fails.
 		return disabledFeatureFlags()

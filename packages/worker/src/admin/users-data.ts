@@ -15,9 +15,10 @@ import {
 	chunkArray,
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
+import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export const adminUserListItemFieldNames = [
-	'id',
+	'stableUserId',
 	'username',
 	'email',
 	'email_verified',
@@ -34,7 +35,7 @@ export type AdminUserListItemFieldName =
 	(typeof adminUserListItemFieldNames)[number]
 
 export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
-	id: number
+	stableUserId: string
 	username: string
 	email: string
 	email_verified: boolean
@@ -57,15 +58,15 @@ type AdminUserListFilters = {
 }
 
 /**
- * Resolve the selected account id from an HTML path param, a detail
+ * Resolve the selected account's stable id from an HTML path param, a detail
  * pathname, or the JSON API's `?selected=` query (in that order). Invalid
- * / non-numeric values yield null so the client can show "User not found."
+ * values yield null so the client can show "User not found."
  */
-export function readAdminUsersSelectedUserId(
+export function readAdminUsersSelectedStableUserId(
 	requestUrl: string,
-	pathUserId?: string,
-): number | null {
-	const fromPathParam = parseSelectedUserId(pathUserId)
+	pathStableUserId?: string,
+): string | null {
+	const fromPathParam = parseSelectedStableUserId(pathStableUserId)
 	if (fromPathParam != null) return fromPathParam
 
 	const url = new URL(requestUrl, 'http://localhost')
@@ -73,12 +74,12 @@ export function readAdminUsersSelectedUserId(
 	if (url.pathname.startsWith(detailPrefix)) {
 		const segment = decodePathSegment(url.pathname.slice(detailPrefix.length))
 		if (segment && !segment.includes('/')) {
-			const fromPath = parseSelectedUserId(segment)
+			const fromPath = parseSelectedStableUserId(segment)
 			if (fromPath != null) return fromPath
 		}
 	}
 
-	return parseSelectedUserId(url.searchParams.get('selected'))
+	return parseSelectedStableUserId(url.searchParams.get('selected'))
 }
 
 function decodePathSegment(value: string) {
@@ -86,20 +87,16 @@ function decodePathSegment(value: string) {
 		return decodeURIComponent(value)
 	} catch {
 		// Malformed percent-encoding (e.g. a literal `%`) must not throw;
-		// the raw segment simply fails numeric parsing below.
+		// the raw segment simply fails stable-id parsing below.
 		return value
 	}
 }
 
-function parseSelectedUserId(value: string | null | undefined): number | null {
-	if (!value?.trim()) return null
-	const trimmed = value.trim()
-	const parsed = Number.parseInt(trimmed, 10)
-	if (!Number.isFinite(parsed) || parsed < 1) return null
-	// Reject leftovers like "12abc" / "usage.json" so only pure numeric ids
-	// resolve; unknown ids still load as null from the database below.
-	if (String(parsed) !== trimmed) return null
-	return parsed
+function parseSelectedStableUserId(
+	value: string | null | undefined,
+): string | null {
+	const stableUserId = normalizeStableUserId(value)
+	return isStableUserId(stableUserId) ? stableUserId : null
 }
 
 /** Read the `q` and `role` filter query params shared by the page and API. */
@@ -143,7 +140,7 @@ function buildAdminUserListWhereClause(filters: AdminUserListFilters) {
 export async function loadAdminUsersData(
 	env: Env,
 	requestUrl: string,
-	pathUserId?: string,
+	pathStableUserId?: string,
 ): Promise<AdminUsersLoaderData> {
 	const url = new URL(requestUrl, 'http://localhost')
 	const { page, pageSize, offset } = readPagination(url, {
@@ -152,14 +149,17 @@ export async function loadAdminUsersData(
 	})
 	const filters = readAdminUserListFilters(url)
 	const { whereClause, params } = buildAdminUserListWhereClause(filters)
-	const selectedUserId = readAdminUsersSelectedUserId(requestUrl, pathUserId)
+	const selectedStableUserId = readAdminUsersSelectedStableUserId(
+		requestUrl,
+		pathStableUserId,
+	)
 
 	const [totalResult, userRows, selectedUser] = await Promise.all([
 		env.APP_DB.prepare(`SELECT COUNT(*) AS total FROM users ${whereClause}`)
 			.bind(...params)
 			.first<{ total: number }>(),
 		env.APP_DB.prepare(
-			`SELECT id, username, email, email_verified_at, plan, suspended_at,
+			`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
 				email_outbound_paused_at, created_at, updated_at
 			 FROM users
 			 ${whereClause}
@@ -168,8 +168,10 @@ export async function loadAdminUsersData(
 		)
 			.bind(...params, pageSize, offset)
 			.all<AdminUserRow>(),
-		selectedUserId
-			? loadAdminUserByIdOrEmail(env.APP_DB, { id: selectedUserId })
+		selectedStableUserId
+			? loadAdminUserByTarget(env.APP_DB, {
+					stableUserId: selectedStableUserId,
+				})
 			: Promise.resolve(null),
 	])
 	const total = totalResult?.total ?? 0
@@ -191,32 +193,53 @@ export async function loadAdminUsersData(
 	}
 }
 
-export async function loadAdminUserByIdOrEmail(
+export type AdminUserTarget = {
+	stableUserId?: string
+	email?: string
+	username?: string
+}
+
+export async function loadAdminUserByTarget(
 	db: D1Database,
-	input: { id?: number; email?: string },
+	input: AdminUserTarget,
 ): Promise<AdminUserListItem | null> {
+	const stableUserId = normalizeStableUserId(input.stableUserId)
 	const email = input.email?.trim() ?? ''
-	const userRow = input.id
+	const username = input.username?.trim() ?? ''
+	if (input.stableUserId !== undefined && !isStableUserId(stableUserId)) {
+		return null
+	}
+	const userRow = stableUserId
 		? await db
 				.prepare(
-					`SELECT id, username, email, email_verified_at, plan, suspended_at,
+					`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
 						email_outbound_paused_at, created_at, updated_at
 					 FROM users
-					 WHERE id = ?`,
+					 WHERE stable_user_id = ?`,
 				)
-				.bind(input.id)
+				.bind(stableUserId)
 				.first<AdminUserRow>()
 		: email
 			? await db
 					.prepare(
-						`SELECT id, username, email, email_verified_at, plan, suspended_at,
+						`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
 							email_outbound_paused_at, created_at, updated_at
 						 FROM users
 						 WHERE email = ? COLLATE NOCASE`,
 					)
 					.bind(email)
 					.first<AdminUserRow>()
-			: null
+			: username
+				? await db
+						.prepare(
+							`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+								email_outbound_paused_at, created_at, updated_at
+							 FROM users
+							 WHERE username = ? COLLATE NOCASE`,
+						)
+						.bind(username)
+						.first<AdminUserRow>()
+				: null
 	if (!userRow) return null
 
 	const rolesByUserId = await loadRolesByUserIds(db, [userRow.id])
@@ -226,21 +249,26 @@ export async function loadAdminUserByIdOrEmail(
 /**
  * Set the entitlement plan on one user account. Nullish inputs map to `free`,
  * the normal default plan; writers never persist NULL. Returns the updated
- * account metadata record, or null when no user matches `id`/`email`.
+ * account metadata record, or null when no user matches the target.
  */
 export async function updateAdminUserPlan(
 	db: D1Database,
-	input: { id?: number; email?: string; plan: PlanName | null },
+	input: AdminUserTarget & { plan: PlanName | null },
 ): Promise<AdminUserListItem | null> {
-	const existing = await loadAdminUserByIdOrEmail(db, input)
+	const existing = await loadAdminUserByTarget(db, input)
 	if (!existing) return null
+	const existingRow = await loadAdminUserRowByStableUserId(
+		db,
+		existing.stableUserId,
+	)
+	if (!existingRow) return null
 
 	await db
 		.prepare(`UPDATE users SET plan = ?, updated_at = ? WHERE id = ?`)
-		.bind(resolvePlanWrite(input.plan), utcSqliteTimestamp(), existing.id)
+		.bind(resolvePlanWrite(input.plan), utcSqliteTimestamp(), existingRow.id)
 		.run()
 
-	return loadAdminUserByIdOrEmail(db, { id: existing.id })
+	return loadAdminUserByTarget(db, { stableUserId: existing.stableUserId })
 }
 
 /**
@@ -251,9 +279,9 @@ export async function updateAdminUserPlan(
  */
 export async function updateAdminUserSuspension(
 	db: D1Database,
-	input: { id: number; suspended: boolean },
+	input: { stableUserId: string; suspended: boolean },
 ): Promise<AdminUserListItem | null> {
-	const existing = await loadAdminUserByIdOrEmail(db, { id: input.id })
+	const existing = await loadAdminUserRowByStableUserId(db, input.stableUserId)
 	if (!existing) return null
 
 	const now = utcSqliteTimestamp()
@@ -262,7 +290,7 @@ export async function updateAdminUserSuspension(
 		.bind(input.suspended ? now : null, now, existing.id)
 		.run()
 
-	return loadAdminUserByIdOrEmail(db, { id: existing.id })
+	return loadAdminUserByTarget(db, { stableUserId: input.stableUserId })
 }
 
 /**
@@ -272,9 +300,9 @@ export async function updateAdminUserSuspension(
  */
 export async function clearAdminUserEmailOutboundPause(
 	db: D1Database,
-	input: { id: number },
+	input: { stableUserId: string },
 ): Promise<AdminUserListItem | null> {
-	const existing = await loadAdminUserByIdOrEmail(db, { id: input.id })
+	const existing = await loadAdminUserRowByStableUserId(db, input.stableUserId)
 	if (!existing) return null
 
 	await db
@@ -284,7 +312,7 @@ export async function clearAdminUserEmailOutboundPause(
 		.bind(utcSqliteTimestamp(), existing.id)
 		.run()
 
-	return loadAdminUserByIdOrEmail(db, { id: existing.id })
+	return loadAdminUserByTarget(db, { stableUserId: input.stableUserId })
 }
 
 export async function loadRolesByUserIds(
@@ -324,6 +352,7 @@ export async function loadRolesByUserIds(
 
 type AdminUserRow = {
 	id: number
+	stable_user_id: string
 	username: string
 	email: string
 	email_verified_at: string | null
@@ -339,7 +368,7 @@ function toAdminUserListItem(
 	roles: Array<RoleName>,
 ): AdminUserListItem {
 	return {
-		id: row.id,
+		stableUserId: row.stable_user_id,
 		username: row.username,
 		email: row.email,
 		email_verified: Boolean(row.email_verified_at),
@@ -351,6 +380,22 @@ function toAdminUserListItem(
 		updated_at: row.updated_at,
 		roles,
 	}
+}
+
+export async function loadAdminUserRowByStableUserId(
+	db: D1Database,
+	stableUserId: string,
+): Promise<AdminUserRow | null> {
+	if (!isStableUserId(stableUserId)) return null
+	return await db
+		.prepare(
+			`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+				email_outbound_paused_at, created_at, updated_at
+			 FROM users
+			 WHERE stable_user_id = ?`,
+		)
+		.bind(stableUserId)
+		.first<AdminUserRow>()
 }
 
 function isRoleName(value: string): value is RoleName {

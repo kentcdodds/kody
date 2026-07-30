@@ -1,5 +1,6 @@
 import { createCookie } from '@remix-run/cookie'
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
+import { isStableUserId } from '#worker/user-id.ts'
 
 /**
  * Host-scoped session for the package-app origin.
@@ -18,17 +19,16 @@ import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 
 const packageAppSessionCookieName = 'kody_pkg_session'
 const packageAppSessionMaxAgeSeconds = 60 * 60 * 12
-const packageAppSessionSecretPurpose = 'kody-package-app-session:v1'
+const packageAppSessionSecretPurpose = 'kody-package-app-session:v2'
 
 export type PackageAppSession = {
-	/** Numeric app user id, as stored in the `kody_session` cookie payload. */
-	userId: string
+	stableUserId: string
 	username: string
 }
 
 type StoredPackageAppSession = {
-	v: 1
-	pkgUserId: string
+	v: 2
+	stableUserId: string
 	pkgUsername: string
 	issuedAt: number
 }
@@ -75,9 +75,8 @@ function isStoredPackageAppSession(
 	if (!value || typeof value !== 'object') return false
 	const record = value as Record<string, unknown>
 	return (
-		record.v === 1 &&
-		typeof record.pkgUserId === 'string' &&
-		record.pkgUserId.length > 0 &&
+		record.v === 2 &&
+		isStableUserId(record.stableUserId) &&
 		typeof record.pkgUsername === 'string' &&
 		record.pkgUsername.length > 0 &&
 		typeof record.issuedAt === 'number' &&
@@ -95,8 +94,8 @@ export async function createPackageAppSessionCookie(input: {
 	const cookie = await getPackageAppSessionCookie(input.env)
 	return await cookie.serialize(
 		JSON.stringify({
-			v: 1,
-			pkgUserId: input.session.userId,
+			v: 2,
+			stableUserId: input.session.stableUserId,
 			pkgUsername: input.session.username,
 			issuedAt: input.now ?? Date.now(),
 		} satisfies StoredPackageAppSession),
@@ -132,7 +131,7 @@ export async function readPackageAppSession(input: {
 		if (!isStoredPackageAppSession(parsed)) return null
 		return {
 			session: {
-				userId: parsed.pkgUserId,
+				stableUserId: parsed.stableUserId,
 				username: parsed.pkgUsername,
 			},
 			issuedAt: parsed.issuedAt,

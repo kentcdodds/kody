@@ -1,4 +1,5 @@
 import { createCookie } from '@remix-run/cookie'
+import { isStableUserId } from '#worker/user-id.ts'
 
 /**
  * Short-lived signed cookie that parks a password- or passkey-verified login
@@ -9,9 +10,13 @@ import { createCookie } from '@remix-run/cookie'
 const pendingSessionMaxAgeSeconds = 60 * 10
 
 export type PendingTwoFactorSession = {
-	id: string
+	stableUserId: string
 	email: string
 	rememberMe: boolean
+}
+
+type StoredPendingTwoFactorSession = PendingTwoFactorSession & {
+	v: 2
 }
 
 let pendingCookie: ReturnType<typeof createCookie> | null = null
@@ -48,12 +53,12 @@ function getPendingCookie() {
 
 function isPendingTwoFactorSession(
 	value: unknown,
-): value is PendingTwoFactorSession {
+): value is StoredPendingTwoFactorSession {
 	if (!value || typeof value !== 'object') return false
 	const record = value as Record<string, unknown>
 	return (
-		typeof record.id === 'string' &&
-		record.id.length > 0 &&
+		record.v === 2 &&
+		isStableUserId(record.stableUserId) &&
 		typeof record.email === 'string' &&
 		record.email.length > 0 &&
 		typeof record.rememberMe === 'boolean'
@@ -64,7 +69,13 @@ export async function createVerifySessionCookie(
 	session: PendingTwoFactorSession,
 	secure: boolean,
 ) {
-	return getPendingCookie().serialize(JSON.stringify(session), { secure })
+	return getPendingCookie().serialize(
+		JSON.stringify({
+			...session,
+			v: 2,
+		} satisfies StoredPendingTwoFactorSession),
+		{ secure },
+	)
 }
 
 export async function destroyVerifySessionCookie(secure: boolean) {
@@ -87,7 +98,11 @@ export async function readVerifySession(
 	try {
 		const parsed = JSON.parse(stored)
 		if (isPendingTwoFactorSession(parsed)) {
-			return parsed
+			return {
+				stableUserId: parsed.stableUserId,
+				email: parsed.email,
+				rememberMe: parsed.rememberMe,
+			}
 		}
 	} catch {
 		return null

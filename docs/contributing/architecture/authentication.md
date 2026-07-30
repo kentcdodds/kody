@@ -34,7 +34,8 @@ Session cookie behavior is implemented in
 
 The cookie payload stores:
 
-- `id` (user id as string)
+- `v: 2`
+- `stableUserId` (the authoritative `users.stable_user_id`)
 - `email`
 - `issuedAt` (epoch ms when the cookie was issued or last renewed)
 - `rememberMe` when the login used remember-me
@@ -42,6 +43,10 @@ The cookie payload stores:
 Password reset confirmation writes `users.password_changed_at`. Session
 resolution rejects cookies whose `issuedAt` is missing or at/before that
 timestamp, so a reset invalidates every existing browser session.
+
+`users.id` never crosses the cookie boundary. Session resolution looks up the
+stable id and only then uses the numeric primary key for internal D1 joins.
+Version-1 cookies fail closed and require a fresh login.
 
 `packages/worker/src/app/handler.ts` calls `setAuthSessionSecret` on each
 request so cookie signing and verification are available to handlers.
@@ -353,10 +358,11 @@ signed-in owner requests `/@{username}/packages/{kodyId}/...` on the app origin,
 the app origin mints `<base64url payload>.<HMAC-SHA256>`:
 
 - signed with `COOKIE_SECRET` over a purpose-labelled message
-  (`kody-package-app-handoff:v1`), so it is not interchangeable with any other
+  (`kody-package-app-handoff:v2`), so it is not interchangeable with any other
   signed value
-- payload binds `{ userId, username, kodyId, exp, jti }`; the package-app origin
-  rejects a token whose `username`/`kodyId` do not match the requested path
+- payload binds `{ stableUserId, username, kodyId, exp, jti }`; the package-app
+  origin rejects a token whose `username`/`kodyId` do not match the requested
+  path
 - 60 second lifetime
 - single use: `jti` is burned in `BUNDLE_ARTIFACTS_KV` for 60 seconds on first
   use. The burn happens **after** the path binding is checked, so a token
@@ -381,16 +387,17 @@ sets `kody_pkg_session` on the package-app origin:
 - `httpOnly: true`, `sameSite: 'Lax'`, `path: '/'`, `secure` per request
 - 12 hour max age
 - signed with a **derived** secret,
-  `sha256Base64Url('kody-package-app-session:v1:' + COOKIE_SECRET)`, so a value
+  `sha256Base64Url('kody-package-app-session:v2:' + COOKIE_SECRET)`, so a value
   signed for this cookie can never verify as a `kody_session`
-- payload is `{ v, pkgUserId, pkgUsername, issuedAt }` — a shape the app session
-  schema rejects, so the two cannot be confused even by name substitution
+- payload is `{ v, stableUserId, pkgUsername, issuedAt }` — a shape the app
+  session schema rejects, so the two cannot be confused even by name
+  substitution
 
 It authorizes hosted package-app serving for one account and nothing else: the
 app origin has no code path that reads it, and the package-app origin has no
 first-party routes. Every request re-resolves the account from D1
-(`resolvePackageAppOwnerByUserId`) and fails closed for unknown, deleting, or
-suspended accounts, and for sessions issued at or before
+(`resolvePackageAppOwnerByStableUserId`) and fails closed for unknown, deleting,
+or suspended accounts, and for sessions issued at or before
 `users.password_changed_at` — the same rules browser sessions follow.
 Deployments with `PACKAGE_APP_BASE_URL` unset never mint either credential; they
 serve package apps inline behind `kody_session`.

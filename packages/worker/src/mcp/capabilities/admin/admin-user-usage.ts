@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { planNames } from '#worker/entitlements/plans.ts'
-import { loadAdminUserByIdOrEmail } from '#worker/admin/users-data.ts'
+import { loadAdminUserByTarget } from '#worker/admin/users-data.ts'
 import { loadAdminUserUsageData } from '#worker/admin/user-usage-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	stableUserIdSchema,
 } from './admin-shared.ts'
 
 const usageMetricSchema = z.enum([
@@ -62,22 +63,22 @@ const entitlementConsumptionSchema = z.object({
 
 const inputSchema = z
 	.object({
-		id: z
-			.number()
-			.int()
-			.positive()
-			.optional()
-			.describe('Numeric users.id to look up.'),
+		stableUserId: stableUserIdSchema.optional(),
 		email: z.string().email().optional().describe('Email address to look up.'),
+		username: z.string().min(1).optional().describe('Username to look up.'),
 	})
-	.refine((value) => value.id !== undefined || value.email !== undefined, {
-		message: 'Provide either id or email.',
-	})
+	.refine(
+		(value) =>
+			[value.stableUserId, value.email, value.username].filter(
+				(item) => item !== undefined,
+			).length === 1,
+		{ message: 'Provide exactly one of stableUserId, email, or username.' },
+	)
 
 const outputSchema = z.object({
 	usage: z
 		.object({
-			userId: z.number().int().positive(),
+			stableUserId: stableUserIdSchema,
 			username: z.string(),
 			plan: planSchema,
 			currentMonth: z.string(),
@@ -101,7 +102,7 @@ export const adminUserUsageCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_user_usage',
 		description:
-			'Read usage rollups, entitlement counters, and plan-limit consumption for one user account by id or email. Admin-only; never returns user content.',
+			'Read usage rollups, entitlement counters, and plan-limit consumption for one user account by stable user id, email, or username. Admin-only; never returns user content.',
 		keywords: ['admin', 'usage', 'quotas', 'entitlements', 'plans', 'metering'],
 		inputSchema,
 		outputSchema,
@@ -110,9 +111,9 @@ export const adminUserUsageCapability = defineDomainCapability(
 				ctx,
 				'admin_user_usage',
 				async () => {
-					const user = await loadAdminUserByIdOrEmail(ctx.env.APP_DB, args)
+					const user = await loadAdminUserByTarget(ctx.env.APP_DB, args)
 					if (!user) return { usage: null }
-					const data = await loadAdminUserUsageData(ctx.env, user.id)
+					const data = await loadAdminUserUsageData(ctx.env, user.stableUserId)
 					if (!data) return { usage: null }
 					const { ok: _ok, ...usage } = data
 					return { usage }

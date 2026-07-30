@@ -69,10 +69,10 @@ export function createVerifyEmailChangeHandler(env: Env) {
 
 			const { session } = await readAuthSessionResult(request)
 			const setCookie =
-				session?.id === String(result.userId)
+				session?.stableUserId === result.stableUserId
 					? await createAuthCookie(
 							{
-								id: session.id,
+								stableUserId: session.stableUserId,
 								email: result.newEmail,
 								rememberMe: session.rememberMe,
 							},

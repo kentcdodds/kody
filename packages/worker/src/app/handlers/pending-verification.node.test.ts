@@ -80,7 +80,7 @@ function createUserEnv(options: {
 test('pending verification requires a live session, preserves redirectTo after verify, and renders when unverified', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session: AuthSession = {
-		id: '1',
+		stableUserId: testStableUserIdFromEmail('pending@example.com'),
 		email: 'pending@example.com',
 		rememberMe: false,
 	}

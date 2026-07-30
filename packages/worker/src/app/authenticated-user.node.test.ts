@@ -26,11 +26,11 @@ test('readAuthenticatedAppUser only requires the session cookie secret from env'
 	expect(user).toBeNull()
 })
 
-test('readAuthenticatedAppUser rejects partially numeric session ids', async () => {
+test('readAuthenticatedAppUser rejects unknown stable user ids', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(
 		{
-			id: '1abc',
+			stableUserId: 'f'.repeat(64),
 			email: 'user@example.com',
 			rememberMe: false,
 		} satisfies AuthSession,
@@ -55,7 +55,17 @@ test('readAuthenticatedAppUser rejects partially numeric session ids', async () 
 function createAuthenticatedUserTestDb() {
 	return {
 		prepare() {
-			throw new Error('Malformed session id should not query users.')
+			return {
+				bind() {
+					return this
+				},
+				async first() {
+					return null
+				},
+				async all() {
+					return { results: [] }
+				},
+			}
 		},
 		async exec() {
 			return
@@ -67,7 +77,7 @@ test('readAuthenticatedAppUser fails closed to empty roles when the rbac query e
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(
 		{
-			id: '7',
+			stableUserId: testStableUserIdFromEmail('user@example.com'),
 			email: 'user@example.com',
 			rememberMe: false,
 		} satisfies AuthSession,
@@ -135,7 +145,7 @@ test('deleting accounts are invalid for normal requests but can retry deletion',
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(
 		{
-			id: '7',
+			stableUserId: testStableUserIdFromEmail('user@example.com'),
 			email: 'user@example.com',
 			rememberMe: false,
 		} satisfies AuthSession,

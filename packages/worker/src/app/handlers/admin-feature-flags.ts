@@ -14,6 +14,7 @@ import {
 	setFeatureFlagGlobalState,
 	setFeatureFlagUserOverride,
 } from '#worker/feature-flags/service.ts'
+import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export function createAdminFeatureFlagsHandler(env: Env) {
 	return {
@@ -197,7 +198,8 @@ async function handleSetUserOverrideAction(input: {
 	if (resolvedUserId.status === 'not_found') {
 		return jsonResponse({ ok: false, error: 'User not found.' }, 404)
 	}
-	const targetUserId = resolvedUserId.userId
+	const targetUserId = resolvedUserId.dbUserId
+	const targetStableUserId = resolvedUserId.stableUserId
 
 	await setFeatureFlagUserOverride(input.env.APP_DB, {
 		key,
@@ -216,7 +218,7 @@ async function handleSetUserOverrideAction(input: {
 		path: input.url.pathname,
 		reason: [
 			`key=${key}`,
-			`target_user_id=${targetUserId}`,
+			`target_stable_user_id=${targetStableUserId}`,
 			`enabled=${enabled}`,
 		].join(';'),
 	})
@@ -239,14 +241,20 @@ async function handleClearUserOverrideAction(input: {
 		)
 	}
 
-	const userId = readPositiveIntField(input.body, 'userId')
-	if (userId === null) {
-		return jsonResponse({ ok: false, error: 'userId is required.' }, 400)
+	const stableUserId = readStableUserIdField(input.body)
+	if (stableUserId === null) {
+		return jsonResponse({ ok: false, error: 'stableUserId is required.' }, 400)
+	}
+	const target = await resolveOverrideUserId(input.env.APP_DB, {
+		stableUserId,
+	})
+	if (target.status !== 'ok') {
+		return jsonResponse({ ok: false, error: 'User not found.' }, 404)
 	}
 
 	const cleared = await clearFeatureFlagUserOverride(input.env.APP_DB, {
 		key,
-		userId,
+		userId: target.dbUserId,
 	})
 	if (!cleared) {
 		return jsonResponse({ ok: false, error: 'User override not found.' }, 404)
@@ -260,7 +268,7 @@ async function handleClearUserOverrideAction(input: {
 		email: input.actor.email,
 		ip: requestIp,
 		path: input.url.pathname,
-		reason: [`key=${key}`, `target_user_id=${userId}`].join(';'),
+		reason: [`key=${key}`, `target_stable_user_id=${stableUserId}`].join(';'),
 	})
 
 	return jsonResponse(await loadAdminFeatureFlagsData(input.env))
@@ -317,7 +325,7 @@ async function handleDeleteStaleAction(input: {
 }
 
 type ResolveOverrideUserIdResult =
-	| { status: 'ok'; userId: number }
+	| { status: 'ok'; dbUserId: number; stableUserId: string }
 	| { status: 'invalid'; error: string }
 	| { status: 'not_found' }
 
@@ -326,55 +334,64 @@ async function resolveOverrideUserId(
 	body: object,
 ): Promise<ResolveOverrideUserIdResult> {
 	const record = body as Record<string, unknown>
-	const hasUserId = Object.hasOwn(record, 'userId') && record.userId != null
+	const stableUserId = readStableUserIdField(body)
+	const hasStableUserId =
+		Object.hasOwn(record, 'stableUserId') && record.stableUserId != null
 	const username = readNonEmptyTrimmedStringOrNumber(body, 'username')
 	const hasUsername = username !== null
 
-	if (!hasUserId && !hasUsername) {
+	if (!hasStableUserId && !hasUsername) {
 		return {
 			status: 'invalid',
-			error: 'Provide either userId or username.',
+			error: 'Provide either stableUserId or username.',
 		}
 	}
-	if (hasUserId && hasUsername) {
+	if (hasStableUserId && hasUsername) {
 		return {
 			status: 'invalid',
-			error: 'Provide either userId or username, not both.',
+			error: 'Provide either stableUserId or username, not both.',
 		}
 	}
 
-	if (hasUserId) {
-		const userId = readPositiveIntField(body, 'userId')
-		if (userId === null) {
+	if (hasStableUserId) {
+		if (stableUserId === null) {
 			return {
 				status: 'invalid',
-				error: 'userId must be a positive integer.',
+				error: 'stableUserId must be a valid stable user id.',
 			}
 		}
 		const row = await db
-			.prepare(`SELECT id FROM users WHERE id = ?`)
-			.bind(userId)
-			.first<{ id: number }>()
+			.prepare(`SELECT id, stable_user_id FROM users WHERE stable_user_id = ?`)
+			.bind(stableUserId)
+			.first<{ id: number; stable_user_id: string }>()
 		if (!row) {
 			return { status: 'not_found' }
 		}
-		return { status: 'ok', userId: row.id }
+		return {
+			status: 'ok',
+			dbUserId: row.id,
+			stableUserId: row.stable_user_id,
+		}
 	}
 
 	if (!username) {
 		return {
 			status: 'invalid',
-			error: 'Provide either userId or username.',
+			error: 'Provide either stableUserId or username.',
 		}
 	}
 	const row = await db
-		.prepare(`SELECT id FROM users WHERE username = ?`)
+		.prepare(`SELECT id, stable_user_id FROM users WHERE username = ?`)
 		.bind(username)
-		.first<{ id: number }>()
+		.first<{ id: number; stable_user_id: string }>()
 	if (!row) {
 		return { status: 'not_found' }
 	}
-	return { status: 'ok', userId: row.id }
+	return {
+		status: 'ok',
+		dbUserId: row.id,
+		stableUserId: row.stable_user_id,
+	}
 }
 
 function readRolloutPercent(body: object): number | null | false {
@@ -406,16 +423,9 @@ function readBoolean(body: object, key: string): boolean | null {
 	return null
 }
 
-function readPositiveIntField(body: object, key: string): number | null {
-	const value = (body as Record<string, unknown>)[key]
-	if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
-		return value
-	}
-	if (typeof value === 'string' && value.trim()) {
-		const parsed = Number(value.trim())
-		if (Number.isInteger(parsed) && parsed > 0) {
-			return parsed
-		}
-	}
-	return null
+function readStableUserIdField(body: object): string | null {
+	const value = (body as Record<string, unknown>).stableUserId
+	const stableUserId =
+		typeof value === 'string' ? normalizeStableUserId(value) : ''
+	return isStableUserId(stableUserId) ? stableUserId : null
 }

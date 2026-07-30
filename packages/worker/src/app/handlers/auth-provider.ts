@@ -56,7 +56,10 @@ import {
 	resolvePlanWrite,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import {
+	createStableUserIdFromEmail,
+	resolveUserStableId,
+} from '#worker/user-id.ts'
 
 /**
  * Accounts created through social login have no usable password until the
@@ -292,14 +295,19 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				return fail('provider-error', 'provider_exchange_failed')
 			}
 
-			async function issueLogin(user: { id: number; email: string }) {
+			async function issueLogin(user: {
+				id: number
+				stable_user_id: string | null
+				email: string
+			}) {
+				const stableUserId = resolveUserStableId(user)
 				// Two-factor accounts get the same pending-verification gate as
 				// password and passkey logins; the session cookie is only
 				// issued once the TOTP code passes.
 				if (await isTwoFactorEnabled(env.APP_DB, user.id)) {
 					setVerifySessionSecret(env.COOKIE_SECRET)
 					const verifyCookie = await createVerifySessionCookie(
-						{ id: String(user.id), email: user.email, rememberMe: false },
+						{ stableUserId, email: user.email, rememberMe: false },
 						secure,
 					)
 					void logAuditEvent({
@@ -322,7 +330,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				}
 
 				const sessionCookie = await createAuthCookie(
-					{ id: String(user.id), email: user.email, rememberMe: false },
+					{ stableUserId, email: user.email, rememberMe: false },
 					secure,
 				)
 				void logAuditEvent({
@@ -352,7 +360,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			// account switch).
 			if (session) {
 				const currentUser = await db.findOne(usersTable, {
-					where: { id: Number(session.id) },
+					where: { stable_user_id: session.stableUserId },
 				})
 				if (!currentUser) {
 					return fail('account-error', 'session_user_missing')
@@ -470,7 +478,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			// transient failure after consumeInviteCode still releases the invite.
 			let username: string
 			let stableUserId: string
-			let newUser: { id: number } | null = null
+			let newUser: {
+				id: number
+				stable_user_id: string
+				email: string
+			} | null = null
 			try {
 				username = await getAvailableUsernameFromBase(
 					env.APP_DB,
@@ -489,7 +501,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					},
 					{ returnRow: true },
 				)
-				newUser = { id: createdUser.id }
+				newUser = { id: createdUser.id, stable_user_id: stableUserId, email }
 			} catch (error) {
 				await releaseConsumedInvite()
 				if (getUniqueConstraintField(error)) {
@@ -576,10 +588,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					email,
 					ip: requestIp,
 					path: url.pathname,
-					reason: `invite_code=${consumedInviteCode};user_id=${newUser.id};provider=${provider};plan=${resolvePlanWrite(consumedInvitePlan)}`,
+					reason: `invite_code=${consumedInviteCode};stable_user_id=${stableUserId};provider=${provider};plan=${resolvePlanWrite(consumedInvitePlan)}`,
 				})
 			}
-			return issueLogin({ id: newUser.id, email })
+			return issueLogin(newUser)
 		},
 	} satisfies Action<typeof routes.authProviderCallback>
 }

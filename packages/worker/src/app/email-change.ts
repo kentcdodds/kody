@@ -144,7 +144,13 @@ export async function createEmailChangeVerification(input: {
 }
 
 export type VerifyEmailChangeResult =
-	| { ok: true; userId: number; oldEmail: string; newEmail: string }
+	| {
+			ok: true
+			userId: number
+			stableUserId: string
+			oldEmail: string
+			newEmail: string
+	  }
 	| {
 			ok: false
 			reason:
@@ -233,6 +239,7 @@ export async function verifyEmailChangeToken(input: {
 	return {
 		ok: true,
 		userId: record.user_id,
+		stableUserId,
 		oldEmail: record.email,
 		newEmail,
 	}

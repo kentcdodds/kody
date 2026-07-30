@@ -6,6 +6,7 @@ import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
 	buildCreatedUserAuditReason,
+	stableUserIdSchema,
 } from './admin-shared.ts'
 
 const inputSchema = z.object({
@@ -21,7 +22,7 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	createdUser: z.object({
-		userId: z.number().int().positive(),
+		stableUserId: stableUserIdSchema,
 		email: z.string(),
 		username: z.string(),
 		setupLink: z.string(),
@@ -58,12 +59,13 @@ export const adminUserCreateCapability = defineDomainCapability(
 						username: args.username,
 						setupLinkOrigin: ctx.callerContext.baseUrl,
 					})
-					return { createdUser }
+					const { userId: _userId, ...boundaryUser } = createdUser
+					return { createdUser: boundaryUser }
 				},
 				{
 					successReason: ({ createdUser }) =>
 						buildCreatedUserAuditReason({
-							userId: createdUser.userId,
+							stableUserId: createdUser.stableUserId,
 							email: createdUser.email,
 						}),
 				},

@@ -58,7 +58,7 @@ function createStaleSessionTestEnv() {
 test('account handler redirects to login with a session-destroy cookie for stale sessions', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session: AuthSession = {
-		id: '99',
+		stableUserId: 'f'.repeat(64),
 		email: 'missing@example.com',
 		rememberMe: false,
 	}

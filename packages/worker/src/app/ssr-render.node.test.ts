@@ -81,9 +81,11 @@ function createUserTestDb(users: Array<TestUser>) {
 			if (
 				normalizedQuery.startsWith('select') &&
 				normalizedQuery.includes('from "users"') &&
-				/"id"\s*=/.test(normalizedQuery)
+				/"stable_user_id"\s*=/.test(normalizedQuery)
 			) {
-				const user = userRecords.get(Number(params[0]))
+				const user = [...userRecords.values()].find(
+					(row) => row.stable_user_id === params[0],
+				)
 				return {
 					results: user ? [{ ...user }] : [],
 					meta: { changes: 0, last_row_id: 0 },
@@ -131,6 +133,10 @@ function createUserTestDb(users: Array<TestUser>) {
 	return {
 		prepare(query: string) {
 			return createStatement(query)
+		},
+		// Feature-flag exposure recording upserts via db.batch in local mode.
+		async batch(statements: Array<unknown>) {
+			return statements.map(() => ({ meta: { changes: 1 } }))
 		},
 		async exec() {
 			return
@@ -249,7 +255,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 
 	const accountCookie = await createAuthCookie(
 		{
-			id: '1',
+			stableUserId: testStableUserIdFromEmail('user@example.com'),
 			email: 'user@example.com',
 			rememberMe: false,
 		} satisfies AuthSession,

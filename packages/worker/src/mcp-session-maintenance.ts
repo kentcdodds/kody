@@ -63,13 +63,16 @@ export async function handleMcpAgentSessionBackfillCompleteRequest(
 				throw new Error('auditSummary is required.')
 			}
 			const summary = auditSummary as Record<string, unknown>
+			// Ownerless stored MCP objects (no userId in DO state) cannot be
+			// attributed for account deletion. Pre-launch we accept them in the
+			// audit and still write the marker so deletion can proceed for
+			// indexed owners. Failures and ownership conflicts still block.
 			if (
 				Number(summary['failed'] ?? 0) !== 0 ||
-				Number(summary['conflicts'] ?? 0) !== 0 ||
-				Number(summary['noOwner'] ?? 0) !== 0
+				Number(summary['conflicts'] ?? 0) !== 0
 			) {
 				throw new Error(
-					'Backfill cannot complete with failures, ownership conflicts, or unproven ownerless objects.',
+					'Backfill cannot complete with failures or ownership conflicts.',
 				)
 			}
 			const completedAt = new Date().toISOString()

@@ -83,7 +83,7 @@ export const routes = route({
 	accountExport: '/account/export.json',
 	admin: '/admin',
 	adminUsers: '/admin/users',
-	adminUserDetail: '/admin/users/:userId',
+	adminUserDetail: '/admin/users/:stableUserId',
 	adminUsersApi: '/admin/users.json',
 	adminUsersApiPost: post('/admin/users.json'),
 	adminRoles: '/admin/roles',

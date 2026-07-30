@@ -489,7 +489,11 @@
 			"sha256": "f8fc33d7860b074cfb116cec16179b07fca6364d0b37e26883e48df5a2c0fec7"
 		},
 		{
-			"filename": "0117-user-storage-bucket-estimated-bytes.sql",
+			"filename": "0117-feature-flag-exposure-rollups.sql",
+			"sha256": "21c909ac033dbe55fc0654b8a729a4cb3344f769dcb7b1e86aa8f978ed89a6cd"
+		},
+		{
+			"filename": "0118-user-storage-bucket-estimated-bytes.sql",
 			"sha256": "6bde29d7af33c4378bac5a5729e66c7fbb2206e6162ddffa5c988630f4d614c2"
 		}
 	]

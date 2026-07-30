@@ -183,6 +183,7 @@ export const EnvSchema = object({
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	EMAIL: optionalSendEmailSchema,
 	USAGE_EVENTS: optionalAnalyticsEngineDatasetSchema,
+	FLAG_EXPOSURES: optionalAnalyticsEngineDatasetSchema,
 	SENTRY_DSN: optionalUrlStringSchema,
 	SENTRY_ENVIRONMENT: optionalNonEmptyStringSchema,
 	SENTRY_TRACES_SAMPLE_RATE: optionalSentryTracesSampleRateSchema,

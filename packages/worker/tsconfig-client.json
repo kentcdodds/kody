@@ -38,6 +38,7 @@
 		"./src/identity/permissions.ts",
 		"./src/feature-flags/registry.ts",
 		"./src/feature-flags/types.ts",
+		"./src/usage/event-types.ts",
 		"./src/og/pages.ts"
 	],
 	"exclude": ["./client/**/*.test.ts", "./client/**/*.spec.ts"]

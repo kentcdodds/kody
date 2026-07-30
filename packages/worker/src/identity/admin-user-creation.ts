@@ -38,6 +38,7 @@ export class AdminCreateUserError extends Error {
 
 export type AdminCreatedUser = {
 	userId: number
+	stableUserId: string
 	email: string
 	username: string
 	setupLink: string
@@ -181,6 +182,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 
 	return {
 		userId,
+		stableUserId,
 		email,
 		username,
 		setupTokenExpiresAt,

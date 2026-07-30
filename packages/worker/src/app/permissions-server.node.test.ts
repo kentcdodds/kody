@@ -185,9 +185,11 @@ function createAuthenticatedUserEnv(input: {
 								if (
 									normalizedQuery.startsWith('select') &&
 									normalizedQuery.includes('from "users"') &&
-									/"id"\s*=/.test(normalizedQuery)
+									/"stable_user_id"\s*=/.test(normalizedQuery)
 								) {
-									const user = users.get(Number(params[0]))
+									const user = [...users.values()].find(
+										(row) => row.stable_user_id === params[0],
+									)
 									return {
 										results: user ? [{ ...user }] : [],
 										meta: { changes: 0 },
@@ -255,7 +257,7 @@ test('userHasPermission and userHasRole perform pure membership checks', () => {
 test('requireUserWithPermission and requireUserWithRole enforce auth and authorization', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session: AuthSession = {
-		id: '1',
+		stableUserId: testStableUserIdFromEmail('user@example.com'),
 		email: 'user@example.com',
 		rememberMe: false,
 	}

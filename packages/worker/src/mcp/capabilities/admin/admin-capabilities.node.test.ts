@@ -13,6 +13,7 @@ import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { loadAdminUserByTarget } from '#worker/admin/users-data.ts'
 
 type UserRow = {
 	id: number
@@ -179,18 +180,18 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where id = ?',
+							'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where stable_user_id = ?',
 						)
 					) {
-						return (users.find((user) => user.id === params[0]) ??
+						return (users.find((user) => user.stable_user_id === params[0]) ??
 							null) as T | null
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan, stripe_plan, stable_user_id from users where id = ?',
+							'select id, username, email, plan, stripe_plan, stable_user_id from users where stable_user_id = ?',
 						)
 					) {
-						const user = users.find((row) => row.id === Number(params[0]))
+						const user = users.find((row) => row.stable_user_id === params[0])
 						return (
 							user
 								? {
@@ -206,12 +207,22 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where email = ? collate nocase',
+							'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where email = ? collate nocase',
 						)
 					) {
 						const email = String(params[0]).toLowerCase()
 						return (users.find((user) => user.email.toLowerCase() === email) ??
 							null) as T | null
+					}
+					if (
+						normalizedQuery.includes(
+							'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where username = ? collate nocase',
+						)
+					) {
+						const username = String(params[0]).toLowerCase()
+						return (users.find(
+							(user) => user.username.toLowerCase() === username,
+						) ?? null) as T | null
 					}
 					if (normalizedQuery.includes('select id from users where email')) {
 						const email = String(params[0]).toLowerCase()
@@ -282,7 +293,7 @@ function createAdminCapabilityTestDb(input: {
 				async all<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users order by id asc limit ? offset ?',
+							'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users order by id asc limit ? offset ?',
 						)
 					) {
 						const pageSize = Number(params[0])
@@ -551,14 +562,14 @@ test('admin capabilities list and get account metadata and query sanitized audit
 		pageSize: 10,
 		users: [
 			expect.objectContaining({
-				id: 1,
+				stableUserId: testStableUserIdFromEmail('admin@example.com'),
 				email: 'admin@example.com',
 				email_verified: true,
 				email_verified_at: '2026-01-01T00:00:00.000Z',
 				roles: ['admin', 'user'],
 			}),
 			expect.objectContaining({
-				id: 2,
+				stableUserId: testStableUserIdFromEmail('jane@example.com'),
 				email: 'jane@example.com',
 				email_verified: false,
 				email_verified_at: null,
@@ -572,15 +583,18 @@ test('admin capabilities list and get account metadata and query sanitized audit
 		ctx,
 	)
 	expect(getByEmail.user).toMatchObject({
-		id: 2,
+		stableUserId: testStableUserIdFromEmail('jane@example.com'),
 		username: 'jane',
 		email: 'jane@example.com',
 		roles: ['user'],
 	})
 
-	const usage = await adminUserUsageCapability.handler({ id: 2 }, ctx)
+	const usage = await adminUserUsageCapability.handler(
+		{ username: 'jane' },
+		ctx,
+	)
 	expect(usage.usage).toMatchObject({
-		userId: 2,
+		stableUserId: testStableUserIdFromEmail('jane@example.com'),
 		username: 'jane',
 		plan: 'free',
 	})
@@ -771,7 +785,7 @@ test('admin_user_create records audit metadata and assigns the default role', as
 	)
 
 	expect(result.createdUser).toMatchObject({
-		userId: 2,
+		stableUserId: testStableUserIdFromEmail('person+launch@example.com'),
 		email: 'person+launch@example.com',
 	})
 	expect(users.find((user) => user.id === 2)).toMatchObject({
@@ -784,7 +798,7 @@ test('admin_user_create records audit metadata and assigns the default role', as
 		expect.objectContaining({
 			action: 'admin_user_create',
 			result: 'success',
-			reason: 'target_user_id=2;target_email=***@example.com',
+			reason: `target_stable_user_id=${testStableUserIdFromEmail('person+launch@example.com')};target_email=***@example.com`,
 		}),
 	])
 })
@@ -821,7 +835,7 @@ test('admin_user_update sets plan and maps null clear to free with audit metadat
 		ctx,
 	)
 	expect(setByEmail.user).toMatchObject({
-		id: 2,
+		stableUserId: testStableUserIdFromEmail('jane@example.com'),
 		username: 'jane',
 		plan: 'pro',
 		roles: ['user'],
@@ -829,22 +843,28 @@ test('admin_user_update sets plan and maps null clear to free with audit metadat
 	expect(users.find((user) => user.id === 2)?.plan).toBe('pro')
 
 	const clearById = await adminUserUpdateCapability.handler(
-		{ id: 2, plan: null },
+		{
+			stableUserId: testStableUserIdFromEmail('jane@example.com'),
+			plan: null,
+		},
 		ctx,
 	)
-	expect(clearById.user).toMatchObject({ id: 2, plan: 'free' })
+	expect(clearById.user).toMatchObject({
+		stableUserId: testStableUserIdFromEmail('jane@example.com'),
+		plan: 'free',
+	})
 	expect(users.find((user) => user.id === 2)?.plan).toBe('free')
 
 	expect(auditEvents).toEqual([
 		expect.objectContaining({
 			action: 'admin_user_update',
 			result: 'success',
-			reason: 'target_user_id=2;plan=pro',
+			reason: `target_stable_user_id=${testStableUserIdFromEmail('jane@example.com')};plan=pro`,
 		}),
 		expect.objectContaining({
 			action: 'admin_user_update',
 			result: 'success',
-			reason: 'target_user_id=2;plan=free',
+			reason: `target_stable_user_id=${testStableUserIdFromEmail('jane@example.com')};plan=free`,
 		}),
 	])
 })
@@ -884,4 +904,26 @@ test('admin_user_update rejects unknown users and unknown plan names', async () 
 			ctx,
 		),
 	).rejects.toThrow()
+})
+
+test('admin user lookup does not fall through from an invalid stable id', async () => {
+	const { db } = createAdminCapabilityTestDb({
+		users: [
+			adminTestUser({
+				id: 1,
+				username: 'admin',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			}),
+		],
+		userRoles: [{ user_id: 1, role_name: 'admin' }],
+	})
+
+	await expect(
+		loadAdminUserByTarget(db, {
+			stableUserId: 'not-a-stable-id',
+			email: 'admin@example.com',
+		}),
+	).resolves.toBeNull()
 })

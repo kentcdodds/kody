@@ -408,7 +408,11 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	})
 	setAuthSessionSecret(cookieSecret)
 	const cookie = await createAuthCookie(
-		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
+		{
+			stableUserId: await createStableUserIdFromEmail('user@example.com'),
+			email: 'user@example.com',
+			rememberMe: false,
+		},
 		false,
 	)
 
@@ -559,9 +563,9 @@ test('Gemini-shaped authorize requests default resource to /mcp when omitted', a
 	expect(geminiAuthRequestWithoutResource.resource).toBeUndefined()
 })
 
-test('session approval uses database user id when cookie email is stale', async () => {
+test('session approval uses stable user id when cookie email is stale', async () => {
 	const currentEmail = `changed-oauth-${crypto.randomUUID()}@example.com`
-	const userId = await seedWorkerUser(currentEmail, 'password123')
+	await seedWorkerUser(currentEmail, 'password123')
 	let capturedOptions: CompleteAuthorizationOptions | null = null
 	const helpers = createHelpers({
 		async completeAuthorization(options) {
@@ -572,7 +576,7 @@ test('session approval uses database user id when cookie email is stale', async 
 	setAuthSessionSecret(cookieSecret)
 	const cookie = await createAuthCookie(
 		{
-			id: String(userId),
+			stableUserId: await createStableUserIdFromEmail(currentEmail),
 			email: `old-${currentEmail}`,
 			rememberMe: false,
 		},
@@ -603,7 +607,10 @@ test('session approval uses database user id when cookie email is stale', async 
 			}),
 		),
 	).resolves.toMatchObject({
-		session: { id: String(userId), email: currentEmail },
+		session: {
+			stableUserId: await createStableUserIdFromEmail(currentEmail),
+			email: currentEmail,
+		},
 	})
 })
 
@@ -637,7 +644,11 @@ test('authorize rejects unverified accounts before creating a grant', async () =
 
 	setAuthSessionSecret(cookieSecret)
 	const cookie = await createAuthCookie(
-		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
+		{
+			stableUserId: await createStableUserIdFromEmail('user@example.com'),
+			email: 'user@example.com',
+			rememberMe: false,
+		},
 		false,
 	)
 	const sessionUnverifiedResponse = await handleAuthorizeRequest(
@@ -923,7 +934,11 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 	const appDb = await createDatabase('password123')
 	setAuthSessionSecret(cookieSecret)
 	const cookie = await createAuthCookie(
-		{ id: 'session-id', email: 'user@example.com', rememberMe: false },
+		{
+			stableUserId: userId,
+			email: 'user@example.com',
+			rememberMe: false,
+		},
 		false,
 	)
 
