@@ -236,12 +236,13 @@ keyless/keyed convention):
 
 The pre-invoke contract check is built in: `packages.invoke` rejects before
 invoking when the package or export does not exist or params are not a JSON
-object. Package exports do not publish machine-readable params schemas, so Kody
-cannot validate field-level params shape beyond requiring `params` to be a JSON
-object. On success it returns the target export's unwrapped result; non-2xx
-package invocation responses reject with an error whose message starts with the
-underlying code, for example `[package_not_found] ...` or
-`[export_not_found] ...`.
+object, with a message of the form
+`packages.invoke contract check failed: <message>` (no bracketed code prefix).
+Package exports do not publish machine-readable params schemas, so Kody cannot
+validate field-level params shape beyond requiring `params` to be a JSON object.
+On success it returns the target export's unwrapped result; execution-phase
+failures after the check passes reject with an error whose message starts with
+the underlying bracketed code, for example `[invocation_failed] ...`.
 
 Security and loop safeguards:
 
