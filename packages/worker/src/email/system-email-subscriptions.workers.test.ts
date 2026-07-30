@@ -7,6 +7,7 @@ import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { exportRunRecords } from '#worker/run-records/service.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
@@ -369,23 +370,24 @@ test(
 			expect(stored).toBeDefined()
 			if (!stored) throw new Error('Expected stored system message')
 
-			const invocations = await env.APP_DB.prepare(
-				`SELECT package_id, export_name, topic, source, idempotency_key, response_json
-			FROM package_invocations
-			WHERE package_id IN (?, ?)`,
-			)
-				.bind(adminPackage.packageId, regularPackage.packageId)
-				.all<Record<string, unknown>>()
-			expect(invocations.results).toHaveLength(1)
-			const invocation = invocations.results?.[0]
+			// The keyed idempotency ledger lives in each owner's RunLog DO now.
+			const adminInvocations = (
+				await exportRunRecords({ env, userId: adminStableId, pageSize: 100 })
+			).packageInvocations
+			const regularInvocations = (
+				await exportRunRecords({ env, userId: regularStableId, pageSize: 100 })
+			).packageInvocations
+			expect(regularInvocations).toHaveLength(0)
+			expect(adminInvocations).toHaveLength(1)
+			const invocation = adminInvocations[0]
 			expect(invocation).toMatchObject({
-				package_id: adminPackage.packageId,
-				export_name: `subscription:${systemTopic}`,
+				packageId: adminPackage.packageId,
+				exportName: `subscription:${systemTopic}`,
 				topic: systemTopic,
 				source: 'email',
-				idempotency_key: `email:${stored.id}:${adminPackage.packageId}:${systemTopic}`,
+				idempotencyKey: `email:${stored.id}:${adminPackage.packageId}:${systemTopic}`,
 			})
-			const response = JSON.parse(String(invocation?.['response_json'])) as {
+			const response = JSON.parse(String(invocation?.responseJson)) as {
 				body: Record<string, unknown>
 			}
 			expect(response.body).toMatchObject({

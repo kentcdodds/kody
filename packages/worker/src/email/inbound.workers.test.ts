@@ -38,6 +38,7 @@ import {
 } from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { exportRunRecords } from '#worker/run-records/service.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
@@ -3380,18 +3381,19 @@ export default async function main(input = {}) {
 				}
 			}
 
-			const invocations = await db
-				.prepare(
-					`SELECT export_name, topic, source, response_json
-				FROM package_invocations
-				WHERE package_id = ?
-				ORDER BY created_at ASC, id ASC`,
+			// The keyed idempotency ledger lives in the owner's RunLog DO now.
+			const invocations = (
+				await exportRunRecords({ env, userId, pageSize: 100 })
+			).packageInvocations
+				.filter((row) => row.packageId === packageId)
+				.sort((a, b) =>
+					a.createdAt === b.createdAt
+						? a.id.localeCompare(b.id)
+						: a.createdAt.localeCompare(b.createdAt),
 				)
-				.bind(packageId)
-				.all<Record<string, unknown>>()
-			expect(invocations.results).toHaveLength(2)
-			const responses = (invocations.results ?? []).map((row) =>
-				JSON.parse(String(row['response_json'])),
+			expect(invocations).toHaveLength(2)
+			const responses = invocations.map((row) =>
+				JSON.parse(String(row.responseJson)),
 			) as Array<{ status: number; body: Record<string, unknown> }>
 			const outboundMessages = await listEmailMessages({
 				db: env.APP_DB,
@@ -3399,18 +3401,15 @@ export default async function main(input = {}) {
 				direction: 'outbound',
 				limit: 10,
 			})
-			expect(invocations.results?.map((row) => row['export_name'])).toEqual([
+			expect(invocations.map((row) => row.exportName)).toEqual([
 				'subscription:email.message.received',
 				'subscription:email.message.received',
 			])
-			expect(invocations.results?.map((row) => row['topic'])).toEqual([
+			expect(invocations.map((row) => row.topic)).toEqual([
 				'email.message.received',
 				'email.message.received',
 			])
-			expect(invocations.results?.map((row) => row['source'])).toEqual([
-				'email',
-				'email',
-			])
+			expect(invocations.map((row) => row.source)).toEqual(['email', 'email'])
 			expect(responses[0]?.body).toMatchObject({
 				ok: true,
 				result: {

@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { exportRunRecords } from '#worker/run-records/service.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import {
 	assignAdminRole,
@@ -343,31 +344,27 @@ test(
 				feedbackId: dispatchFeedback.id,
 			})
 
-			const invocations = await env.APP_DB.prepare(
-				`SELECT package_id, token_id, export_name, topic, source, idempotency_key, response_json
-			 FROM package_invocations
-			 WHERE package_id IN (?, ?, ?)`,
-			)
-				.bind(
-					firstAdminPackage.packageId,
-					secondAdminPackage.packageId,
-					regularPackage.packageId,
-				)
-				.all<Record<string, unknown>>()
-			expect(invocations.results).toHaveLength(2)
+			// The keyed idempotency ledger lives in each owner's RunLog DO now.
+			const adminInvocations = (
+				await exportRunRecords({ env, userId: adminStableId, pageSize: 100 })
+			).packageInvocations
+			const regularInvocations = (
+				await exportRunRecords({ env, userId: regularStableId, pageSize: 100 })
+			).packageInvocations
+			expect(adminInvocations).toHaveLength(2)
 			for (const adminPackage of [firstAdminPackage, secondAdminPackage]) {
-				const invocation = invocations.results?.find(
-					(row) => row['package_id'] === adminPackage.packageId,
+				const invocation = adminInvocations.find(
+					(row) => row.packageId === adminPackage.packageId,
 				)
 				expect(invocation).toMatchObject({
-					package_id: adminPackage.packageId,
-					token_id: 'internal:platform-feedback-subscriptions',
-					export_name: `subscription:${platformFeedbackSubmittedTopic}`,
+					packageId: adminPackage.packageId,
+					tokenId: 'internal:platform-feedback-subscriptions',
+					exportName: `subscription:${platformFeedbackSubmittedTopic}`,
 					topic: platformFeedbackSubmittedTopic,
 					source: 'platform-feedback',
-					idempotency_key: `platform-feedback:${dispatchFeedback.id}:${adminPackage.packageId}:${platformFeedbackSubmittedTopic}`,
+					idempotencyKey: `platform-feedback:${dispatchFeedback.id}:${adminPackage.packageId}:${platformFeedbackSubmittedTopic}`,
 				})
-				const response = JSON.parse(String(invocation?.['response_json'])) as {
+				const response = JSON.parse(String(invocation?.responseJson)) as {
 					body: Record<string, unknown>
 				}
 				expect(response.body).toMatchObject({
@@ -389,17 +386,24 @@ test(
 					},
 				})
 			}
+			// Nothing may reach the non-admin subscriber's ledger.
+			expect(regularInvocations).toHaveLength(0)
 			expect(
-				invocations.results?.some(
-					(row) => row['package_id'] === regularPackage.packageId,
+				adminInvocations.some(
+					(row) => row.packageId === regularPackage.packageId,
 				),
 			).toBe(false)
 
 			const countInvocations = async () => {
-				const row = await env.APP_DB.prepare(
-					`SELECT COUNT(*) AS total FROM package_invocations`,
-				).first<{ total: number }>()
-				return row?.total ?? 0
+				const pages = await Promise.all(
+					[adminStableId, regularStableId].map((userId) =>
+						exportRunRecords({ env, userId, pageSize: 100 }),
+					),
+				)
+				return pages.reduce(
+					(total, page) => total + page.packageInvocations.length,
+					0,
+				)
 			}
 			await env.APP_DB.prepare(`DELETE FROM user_roles`).run()
 			const before = await countInvocations()
