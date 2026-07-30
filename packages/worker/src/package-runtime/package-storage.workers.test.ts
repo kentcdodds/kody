@@ -567,7 +567,8 @@ test(
 		expect(result.error).toContain(
 			'packageStorage() requires package provenance',
 		)
-		expect(result.error).toContain('packages.invokeChecked')
+		expect(result.error).toContain('packages.invoke')
+		expect(result.error).not.toContain('packages.invokeChecked')
 	},
 )
 

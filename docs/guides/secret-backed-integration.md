@@ -73,7 +73,10 @@ smoke-test path is unclear.
    - When present, either review the source and call `community_fork_adopt`, or
      send `bulk_approval_url` / each `approval_url`.
    - Wait for the user to approve or for adoption (when required), then verify
-     with `packages.invokeChecked(...)` before treating the package as complete.
+     with a keyless `packages.invoke(...)` smoke test before treating the
+     package as complete. It must be `packages.invoke` (not a static import)
+     because only the package's own runtime exercises `kody.secretMounts`
+     mounts.
 
 ## Secret names and value names
 

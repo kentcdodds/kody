@@ -1,0 +1,48 @@
+# Invocation overhead guardrails
+
+The static-first package model rests on a performance claim: static
+`kody:@scope/pkg/export` imports cost nothing per call, and keyless
+`packages.invoke` stays lean enough (tens of milliseconds of platform overhead)
+that agents never route around the contract-checked path. This document records
+the guardrails that keep that claim true. It is about platform overhead per
+call, not about what user code does inside the call.
+
+## Per-call overhead budgets
+
+- **Static imports** add zero per-call platform cost by construction. Their
+  costs are paid at bundle/publish time (typecheck, repo checks, artifact
+  rebuild). Do not add per-call bookkeeping to the static import path.
+- **Keyless `packages.invoke`** is the lean/ephemeral mode: contract check plus
+  dispatch into the target package's own runtime, no idempotency ledger row, run
+  records on-failure-only. Its hot path budget is **tens of milliseconds** of
+  platform overhead per call. Work that would push it beyond that (extra D1
+  round trips, eager run-record writes, synchronous vector or KV lookups)
+  belongs in the keyed mode or off the hot path (`waitUntil`).
+- **Keyed `packages.invoke`** deliberately pays for durability: a ledger claim,
+  eager run records, and a bounded response snapshot for replay. That cost is
+  the feature; it must never silently leak into the keyless mode.
+
+## Watch the percentiles
+
+Every invocation surface is metered through `recordUsage()` (see
+[Usage metering](./usage-metering.md)); events land in the `kody_usage_events`
+Analytics Engine dataset with per-surface `eventType` values (`execute`,
+`package_export`, `job_run`, `workflow_run`, `service_runtime`, ...). When
+touching an invocation path, watch the `durationMs` percentiles (p50/p95/p99)
+per surface before and after the change rather than reasoning from a single
+local timing. A regression in the keyless-invoke or execute percentiles is a
+release blocker for the change that caused it, not a follow-up.
+
+## New awaited D1 writes need a budget justification
+
+Any change that adds an **awaited D1 write** to a hot invocation path (ad hoc
+execute, keyless `packages.invoke`, package export runs, subscription dispatch,
+retriever calls) must include an explicit budget justification in its PR
+description: what the write costs at p95, why it cannot be deferred with
+`waitUntil`, batched, or moved to the keyed/durable mode, and which surface
+percentile it is expected to move. Reviewers should treat an unexplained new
+awaited write on these paths as a defect.
+
+Failure-path writes (error run records) and keyed-mode writes (ledger claim,
+eager run records) are already part of their respective budgets and do not need
+per-PR justification.

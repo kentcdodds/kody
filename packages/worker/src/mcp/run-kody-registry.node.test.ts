@@ -2351,7 +2351,7 @@ export default async function main() {
 		).toMatchObject({
 			kind: 'runtime_helper_unbound',
 			helperName: 'storage',
-			nextStep: expect.stringContaining('packages.invokeChecked'),
+			nextStep: expect.stringContaining('packages.invoke'),
 		})
 
 		// With storage bound, the same TypeError is an ordinary user-code bug

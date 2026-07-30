@@ -34,6 +34,11 @@ to become.
   Objects.
 - [Usage Metering](./usage-metering.md): per-user usage events, the
   `recordUsage()` helper contract, and the D1 rollup table.
+- [Invocation overhead guardrails](./invocation-overhead-guardrails.md):
+  per-call platform overhead budgets for the static-first package model (static
+  imports zero, keyless `packages.invoke` tens of milliseconds), watching
+  `kody_usage_events` percentiles per surface, and the PR-level budget
+  justification required for any new awaited D1 write on a hot invocation path.
 - [Run records](./run-records.md): per-user execution history and logs across
   every runtime surface (`RunLog` Durable Object, `runs` MCP domain,
   `/account/activity`).
