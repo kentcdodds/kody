@@ -5,7 +5,7 @@ import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { type RunRecordContext } from '#worker/run-records/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import {
 	getEmailAttachmentById,
 	getEmailMessageById,
@@ -297,10 +297,10 @@ export async function invokeSavedPackageModule(input: {
 					artifact.packageContext?.sourceId == null ||
 					artifact.packageContext.sourceId === sourceRow.id
 						? sourceRow
-						: await getEntitySourceById(
-								input.env.APP_DB,
-								artifact.packageContext.sourceId,
-							)
+						: await getEntitySourceByIdForUser(input.env.APP_DB, {
+								id: artifact.packageContext.sourceId,
+								userId: input.actor.userId,
+							})
 				const callerContext = createMcpCallerContext({
 					baseUrl: input.baseUrl,
 					executionOrigin: 'background',

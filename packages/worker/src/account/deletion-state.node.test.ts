@@ -175,6 +175,47 @@ test('nested lease for a different user still acquires its own lease', async () 
 	expect(await listActiveAccountWriteLeases(db, 'user-b')).toHaveLength(0)
 })
 
+test('detached work spawned inside write re-acquires after the outer lease releases', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	let detached: Promise<void> = Promise.resolve()
+	let releaseOuter: () => void = () => undefined
+	const outerReleased = new Promise<void>((resolve) => {
+		releaseOuter = resolve
+	})
+	await withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		holder: 'test:outer',
+		async write() {
+			// Simulates a waitUntil callback: created inside the lease scope
+			// (inheriting the AsyncLocalStorage context) but running only
+			// after the outer lease has been released.
+			detached = (async () => {
+				await outerReleased
+				await withAccountWriteLease({
+					db,
+					stableUserId: 'user-a',
+					holder: 'test:detached',
+					async write() {
+						const active = await listActiveAccountWriteLeases(db, 'user-a')
+						expect(active).toHaveLength(1)
+						expect(active[0]).toEqual(
+							expect.objectContaining({ holder: 'test:detached' }),
+						)
+					},
+				})
+			})()
+		},
+	})
+	releaseOuter()
+	await detached
+	expect(countLeaseRows(sqlite)).toBe(2)
+	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
+	expect(
+		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
+	).toEqual({ active_write_count: 0 })
+})
+
 test('sequential sibling leases each acquire after the previous released', async () => {
 	const { sqlite, db } = createLeaseTestDb()
 	await withAccountWriteLease({
