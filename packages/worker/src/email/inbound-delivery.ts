@@ -23,19 +23,6 @@ const inboundStorageLeaseMs = 5 * 60 * 1000
 const inboundReconciliationRetryMs = 15 * 60 * 1000
 const inboundOrphanVerificationMs = 60 * 60 * 1000
 export const inboundDeliveryDedupeWindowMs = 48 * 60 * 60 * 1000
-export const inboundDeliveryCompatibilityWindowMs = 48 * 60 * 60 * 1000
-const legacyInboundAdoptionPageSize = 20
-
-type LegacyInboundCandidate = {
-	id: string
-	thread_id: string | null
-	raw_mime_key: string | null
-	raw_size: number
-	envelope_from: string | null
-	to_addresses_json: string
-	received_at: string | null
-	created_at: string
-}
 
 export type InboundDelivery = {
 	fingerprint: string
@@ -429,116 +416,6 @@ export async function pruneExpiredInboundDedupePointers(input: {
 		(total, result) => total + Number(result.meta.changes ?? 0),
 		0,
 	)
-}
-
-export async function adoptLegacyInboundDelivery(input: {
-	db: D1Database
-	blobs: R2Bucket
-	delivery: InboundDelivery
-	rawMime: string
-	rawSize: number
-	now: Date
-}) {
-	const cutoff = new Date(
-		input.now.getTime() - inboundDeliveryCompatibilityWindowMs,
-	).toISOString()
-	let cursor: { createdAt: string; id: string } | null = null
-	while (true) {
-		const rows: D1Result<LegacyInboundCandidate> = await input.db
-			.prepare(
-				`SELECT
-				id, thread_id, raw_mime_key, raw_size, envelope_from,
-				to_addresses_json, received_at, created_at
-			FROM email_messages
-			WHERE user_id = ?
-				AND inbox_id = ?
-				AND direction = 'inbound'
-				AND raw_size = ?
-				AND created_at >= ?
-				AND id NOT LIKE 'email-inbound-message:%'
-				AND (
-					? IS NULL
-					OR created_at < ?
-					OR (created_at = ? AND id < ?)
-				)
-			ORDER BY created_at DESC, id DESC
-			LIMIT ?`,
-			)
-			.bind(
-				input.delivery.userId,
-				input.delivery.inboxId,
-				input.rawSize,
-				cutoff,
-				cursor?.createdAt ?? null,
-				cursor?.createdAt ?? null,
-				cursor?.createdAt ?? null,
-				cursor?.id ?? null,
-				legacyInboundAdoptionPageSize,
-			)
-			.all<LegacyInboundCandidate>()
-		const candidates: Array<LegacyInboundCandidate> = rows.results ?? []
-		for (const row of candidates) {
-			let toAddresses: Array<unknown> = []
-			try {
-				const parsed = JSON.parse(row.to_addresses_json) as unknown
-				if (Array.isArray(parsed)) toAddresses = parsed
-			} catch {
-				continue
-			}
-			const candidateEnvelopeFrom =
-				normalizeEmailAddress(row.envelope_from ?? '') ??
-				(row.envelope_from ?? '').trim().toLowerCase()
-			if (
-				!row.raw_mime_key ||
-				candidateEnvelopeFrom !== input.delivery.envelopeFrom ||
-				!toAddresses.includes(input.delivery.recipient) ||
-				row.raw_mime_key !== emailRawMimeKey(input.delivery.userId, row.id)
-			) {
-				continue
-			}
-			const object = await input.blobs.get(row.raw_mime_key)
-			if (!object || (await object.text()) !== input.rawMime) continue
-			const adopted: InboundDelivery = {
-				...input.delivery,
-				messageId: row.id,
-				threadId: row.thread_id ?? input.delivery.threadId,
-				rawMimeKey: row.raw_mime_key,
-				state: 'received',
-				finalizationToken: `legacy-adoption:${input.delivery.deliveryId}`,
-				usageEffectSuppressedAt: input.now.toISOString(),
-				usageMonth: (row.received_at ?? row.created_at).slice(0, 7),
-				usageBytes: row.raw_size,
-				subscriptionEffectState: 'pending',
-			}
-			await input.db
-				.prepare(
-					`INSERT OR IGNORE INTO email_delivery_events (
-						id, message_id, user_id, inbox_id, event_type, provider,
-						provider_event_id, detail_json, created_at
-					) VALUES (?, ?, ?, ?, 'received', ?, ?, ?, ?)`,
-				)
-				.bind(
-					adopted.deliveryId,
-					adopted.messageId,
-					adopted.userId,
-					adopted.inboxId,
-					inboundProvider,
-					adopted.deliveryId,
-					JSON.stringify(adopted),
-					input.now.toISOString(),
-				)
-				.run()
-			return await getInboundDelivery({
-				db: input.db,
-				userId: adopted.userId,
-				deliveryId: adopted.deliveryId,
-			})
-		}
-		if (candidates.length < legacyInboundAdoptionPageSize) return null
-		const last: LegacyInboundCandidate | undefined = candidates.at(-1)
-		if (!last) return null
-		cursor = { createdAt: last.created_at, id: last.id }
-	}
 }
 
 async function readCounter(input: {
