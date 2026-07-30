@@ -97,7 +97,9 @@ export default {
 
 test('package app fetch handler can use packageStorage against a real local worker', async () => {
 	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
+	await using server = await startDevServer(database.persistDir, {
+		withCloudflareMock: true,
+	})
 	await using mcp = await createMcpClient(server.origin, database.user, {
 		persistDir: database.persistDir,
 	})

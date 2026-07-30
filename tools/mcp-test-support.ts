@@ -67,8 +67,80 @@ export async function createTestDatabase() {
 	}
 }
 
-export async function startDevServer(persistDir: string) {
+export async function startDevServer(
+	persistDir: string,
+	options?: { withCloudflareMock?: boolean },
+) {
 	await applyMigrations(persistDir)
+	if (options?.withCloudflareMock) {
+		return startDevServerWithCloudflareMock(persistDir)
+	}
+
+	// These smoke tests do not exercise Cloudflare APIs. Leaving that client
+	// unconfigured keeps MCP authentication independent of the email mock;
+	// test-runtime signup deliberately permits a skipped verification send,
+	// and createMcpClient marks the account verified before OAuth begins.
+	for (let attempt = 1; attempt <= maxPortBindRetries; attempt++) {
+		const port = await getPort({ host: localhost })
+		const origin = `http://${localhost}:${port}`
+		const proc = spawnProcess({
+			cmd: [
+				nodeBin,
+				'--env-file=packages/worker/.env',
+				'./wrangler-env.ts',
+				'dev',
+				'--local',
+				'--persist-to',
+				persistDir,
+				'--port',
+				String(port),
+				'--ip',
+				localhost,
+				'--show-interactive-dev-session=false',
+				'--log-level',
+				'error',
+				'--var',
+				`APP_BASE_URL:${origin}`,
+			],
+			cwd: projectRoot,
+			env: {
+				...process.env,
+				CLOUDFLARE_ENV: 'test',
+			},
+		})
+		const getStdout = captureOutput(proc.stdout)
+		const getStderr = captureOutput(proc.stderr)
+
+		try {
+			await waitForHttpReady({
+				label: 'Test worker',
+				url: new URL('/mcp', origin),
+				isReady: (response) => response.status === 401 || response.ok,
+				exited: proc.exited,
+				getStdout,
+				getStderr,
+			})
+			return {
+				origin,
+				async [Symbol.asyncDispose]() {
+					await stopProcess(proc)
+				},
+			}
+		} catch (error) {
+			await stopProcess(proc).catch(() => undefined)
+			if (isPortAlreadyInUseError(error) && attempt < maxPortBindRetries) {
+				continue
+			}
+			throw error
+		}
+	}
+
+	throw new Error(
+		'Failed to start MCP test dev servers after multiple retries.',
+	)
+}
+
+async function startDevServerWithCloudflareMock(persistDir: string) {
 	// package_save (and related repo persistence) needs the local Cloudflare
 	// Artifacts REST mock. Signup still permits a skipped verification send when
 	// the mock is unavailable; createMcpClient marks the account verified before
