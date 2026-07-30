@@ -122,9 +122,12 @@ vi.mock('#worker/app-base-url.ts', () => ({
 	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
 }))
 
-vi.mock('#worker/jobs/service.ts', () => ({
+vi.mock('#worker/jobs/inspect.ts', () => ({
 	inspectJobsForUser: (...args: Array<unknown>) =>
 		mockModule.inspectJobsForUser(...args),
+}))
+
+vi.mock('#worker/jobs/service.ts', () => ({
 	updateJob: (...args: Array<unknown>) => mockModule.updateJob(...args),
 	deleteJob: (...args: Array<unknown>) => mockModule.deleteJob(...args),
 }))

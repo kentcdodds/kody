@@ -15,11 +15,14 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/jobs/service.ts', () => ({
 	createJob: (...args: Array<unknown>) => mockModule.createJob(...args),
 	deleteJob: (...args: Array<unknown>) => mockModule.deleteJob(...args),
+	updateJob: (...args: Array<unknown>) => mockModule.updateJob(...args),
+}))
+
+vi.mock('#worker/jobs/inspect.ts', () => ({
 	getJobInspection: (...args: Array<unknown>) =>
 		mockModule.getJobInspection(...args),
 	inspectJobsForUser: (...args: Array<unknown>) =>
 		mockModule.inspectJobsForUser(...args),
-	updateJob: (...args: Array<unknown>) => mockModule.updateJob(...args),
 }))
 
 vi.mock('#worker/jobs/manager-client.ts', () => ({

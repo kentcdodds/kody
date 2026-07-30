@@ -9,7 +9,7 @@ import {
 	type JobRetentionPreferences,
 } from '#worker/jobs/job-retention.ts'
 import { readJobRetentionPreferencesForUser } from '#worker/jobs/job-retention-cleanup.ts'
-import { inspectJobsForUser } from '#worker/jobs/service.ts'
+import { inspectJobsForUser } from '#worker/jobs/inspect.ts'
 import { type JobSchedule, type JobView } from '#worker/jobs/types.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
 

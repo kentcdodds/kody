@@ -14,10 +14,7 @@ import {
 } from '#worker/run-records/service.ts'
 import { type RunRecordHandle } from '#worker/run-records/types.ts'
 import { applyExecutionOutcome, processDueJobs } from './process-due-jobs.ts'
-import {
-	getJobManagerDebugState,
-	syncJobManagerAlarm,
-} from './manager-client.ts'
+import { syncJobManagerAlarm } from './manager-client.ts'
 import {
 	deleteJobRow,
 	claimJobRow,
@@ -52,7 +49,6 @@ import {
 	type JobExecutionResult,
 	type JobRepoCheckPolicy,
 	type JobRecord,
-	type JobSourceInspection,
 	type JobUpdateInput,
 	type JobView,
 	type PersistedJobCallerContext,
@@ -66,10 +62,6 @@ import {
 	parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
 import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
-import {
-	getManifestEntrypointPath,
-	parseRepoManifest,
-} from '#worker/repo/manifest.ts'
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
@@ -83,14 +75,17 @@ import {
 import { cleanupArtifactReposForSource } from '#worker/repo/artifact-repo-cleanup.ts'
 import { deleteRepoSessionsBySourceForUser } from '#worker/repo/repo-sessions.ts'
 import {
-	loadPublishedEntitySource,
-	type PublishedEntitySource,
-} from '#worker/repo/published-source.ts'
-import {
 	deletePublishedArtifactsForSource,
 	loadPublishedBundleArtifactByIdentity,
 	persistPublishedBundleArtifact,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { resolvePublishedJobSource } from './inspect-published-source.ts'
+import {
+	getJob,
+	getJobInspection,
+	inspectJobsForUser,
+	listJobs,
+} from './inspect.ts'
 import {
 	deleteArchivedJobArtifact,
 	listArchivedJobArtifactsDueBefore,
@@ -105,6 +100,8 @@ import {
 	schedulerErrorFields,
 	type SchedulerJobOutcomeLog,
 } from './scheduler-logging.ts'
+
+export { getJob, getJobInspection, inspectJobsForUser, listJobs }
 
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
@@ -269,87 +266,6 @@ function isPublishedJobBundleCurrent(input: {
 	)
 }
 
-type PublishedJobSourceResolution = {
-	source: NonNullable<PublishedEntitySource['source']>
-	files: Record<string, string>
-	artifactName: string
-	entryPoint: string
-	emittedEventTopics: Array<string>
-	packageContext: {
-		packageId: string
-		kodyId: string
-		sourceId: string
-	} | null
-}
-
-async function resolvePublishedJobSource(input: {
-	env: Env
-	userId: string
-	job: Pick<JobRecord, 'id' | 'name' | 'sourceId'>
-}): Promise<PublishedJobSourceResolution> {
-	if (!input.job.sourceId) {
-		throw new Error('Repo-backed job source is missing.')
-	}
-	const published = await loadPublishedEntitySource({
-		env: input.env,
-		userId: input.userId,
-		sourceId: input.job.sourceId,
-	})
-	const publishedSource = published.source
-	if (!publishedSource) {
-		throw new Error(`Published source "${input.job.sourceId}" was not found.`)
-	}
-	const manifestPath = publishedSource.manifest_path.replace(/^\/+/, '')
-	const manifestContent = published.files[manifestPath]
-	if (!manifestContent) {
-		throw new Error(`Job manifest "${manifestPath}" was not found.`)
-	}
-	const artifactName =
-		publishedSource.entity_kind === 'package' ? input.job.name : input.job.id
-	if (manifestPath === 'kody.json' || publishedSource.entity_kind === 'job') {
-		const manifest = parseRepoManifest({
-			content: manifestContent,
-			manifestPath,
-		})
-		if (manifest.kind !== 'job') {
-			throw new Error(
-				`Repo source "${input.job.sourceId}" is not a job manifest.`,
-			)
-		}
-		return {
-			source: publishedSource,
-			files: published.files,
-			artifactName,
-			entryPoint: getManifestEntrypointPath(manifest),
-			emittedEventTopics: [],
-			packageContext: null,
-		}
-	}
-
-	const manifest = parseAuthoredPackageJson({
-		content: manifestContent,
-		manifestPath,
-	})
-	const jobDefinition = manifest.kody.jobs?.[input.job.name]
-	if (!jobDefinition) {
-		throw new Error(
-			`Package "${manifest.kody.id}" does not define job "${input.job.name}".`,
-		)
-	}
-	return {
-		source: publishedSource,
-		files: published.files,
-		artifactName,
-		entryPoint: normalizePackageWorkspacePath(jobDefinition.entry),
-		emittedEventTopics: Object.keys(manifest.kody.emits ?? {}),
-		packageContext: {
-			packageId: publishedSource.entity_id,
-			kodyId: manifest.kody.id,
-			sourceId: input.job.sourceId,
-		},
-	}
-}
-
 async function ensurePublishedBundleArtifactForJob(input: {
 	env: Env
 	job: JobRecord
@@ -434,43 +350,6 @@ async function ensurePublishedBundleArtifactForJob(input: {
 		)
 	}
 	return loadedArtifact.artifact
-}
-
-function buildJobSourceInspectionError(error: unknown): JobSourceInspection {
-	return {
-		entrypoint: null,
-		code: null,
-		error: formatJobError(error),
-	}
-}
-
-async function inspectPublishedJobSource(input: {
-	env: Env
-	userId: string
-	job: JobView
-}): Promise<JobSourceInspection> {
-	try {
-		const resolved = await resolvePublishedJobSource({
-			env: input.env,
-			userId: input.userId,
-			job: input.job,
-		})
-		const code = resolved.files[resolved.entryPoint]
-		if (typeof code !== 'string') {
-			return {
-				entrypoint: resolved.entryPoint,
-				code: null,
-				error: `Job entrypoint "${resolved.entryPoint}" was not found.`,
-			}
-		}
-		return {
-			entrypoint: resolved.entryPoint,
-			code,
-			error: null,
-		}
-	} catch (error) {
-		return buildJobSourceInspectionError(error)
-	}
 }
 
 async function rebuildAndExecuteJobArtifact(input: {
@@ -1061,66 +940,6 @@ export async function createJob(input: {
 			return toJobView(job)
 		},
 	})
-}
-
-export async function listJobs(input: { env: Env; userId: string }) {
-	const rows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
-	return rows.map((row) => toJobView(row.record))
-}
-
-export async function getJob(input: {
-	env: Env
-	userId: string
-	jobId: string
-}) {
-	const row = await getJobRowById(input.env.APP_DB, input.userId, input.jobId)
-	if (!row) {
-		// Caller-supplied job id that does not resolve for this user — keep it
-		// off Sentry via McpCallerError (agent typos / stale ids are routine).
-		throw new McpCallerError(`Job "${input.jobId}" was not found.`)
-	}
-	return toJobView(row.record)
-}
-
-export async function inspectJobsForUser(input: { env: Env; userId: string }) {
-	const [jobs, alarm] = await Promise.all([
-		listJobs(input),
-		getJobManagerDebugState({
-			env: input.env,
-			userId: input.userId,
-		}),
-	])
-	return {
-		jobs,
-		alarm,
-	}
-}
-
-export async function getJobInspection(input: {
-	env: Env
-	userId: string
-	jobId: string
-	includeCode?: boolean
-}) {
-	const [job, alarm] = await Promise.all([
-		getJob(input),
-		getJobManagerDebugState({
-			env: input.env,
-			userId: input.userId,
-		}),
-	])
-	const source = input.includeCode
-		? await inspectPublishedJobSource({
-				env: input.env,
-				userId: input.userId,
-				job,
-			})
-		: undefined
-	return {
-		job,
-		alarm,
-		...(source ? { source } : {}),
-	}
 }
 
 export async function updateJob(input: {
