@@ -202,6 +202,23 @@ test('Analytics Engine readout queries both datasets and joins by user', async (
 	}
 })
 
+test('uses the D1 path in local Wrangler dev even with binding and credentials', async () => {
+	const { db, queries } = createReadoutTestDb({ exposures: [], usage: [] })
+	const readout = await loadFeatureFlagSuccessMetricReadout(
+		{
+			APP_DB: db,
+			FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
+			CLOUDFLARE_ACCOUNT_ID: 'account',
+			CLOUDFLARE_API_TOKEN: 'token',
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		},
+		{ flagKey: 'execute-pre-exec-typecheck', successMetric },
+		now,
+	)
+	expect(readout).toMatchObject({ status: 'ok' })
+	expect(queries).toHaveLength(2)
+})
+
 test('degrades to unavailable when the data source fails', async () => {
 	silenceExpectedConsoleWarns(['flag-metric-readout-failed'])
 	const db = {

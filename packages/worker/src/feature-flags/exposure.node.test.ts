@@ -79,6 +79,23 @@ test('falls back to D1 exposure rollups without the Analytics Engine binding', a
 	])
 })
 
+test('prefers the D1 sink in local Wrangler dev even when the binding exists', async () => {
+	const dataset = createAnalyticsDataset()
+	const { db, batches } = createExposureTestDb()
+	await recordFeatureFlagExposures(
+		{ FLAG_EXPOSURES: dataset, APP_DB: db, WRANGLER_IS_LOCAL_DEV: 'true' },
+		{
+			stableUserId: 'user-local',
+			evaluations: {
+				'execute-pre-exec-typecheck': { enabled: true, source: 'global' },
+			},
+			timestamp: '2026-07-15T12:00:00.000Z',
+		},
+	)
+	expect(dataset.writeDataPoint).not.toHaveBeenCalled()
+	expect(batches).toHaveLength(1)
+})
+
 test('skips recording without a stable user id or measured flags', async () => {
 	const dataset = createAnalyticsDataset()
 	await recordFeatureFlagExposures(

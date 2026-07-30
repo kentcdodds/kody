@@ -41,6 +41,7 @@ export type FeatureFlagReadoutEnv = {
 	CLOUDFLARE_API_TOKEN?: string
 	CLOUDFLARE_API_BASE_URL?: string
 	SENTRY_ENVIRONMENT?: string
+	WRANGLER_IS_LOCAL_DEV?: string
 }
 
 /**
@@ -329,7 +330,15 @@ export async function loadFeatureFlagSuccessMetricReadout(
 	try {
 		const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
 		const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
-		if (env.FLAG_EXPOSURES && accountId && apiToken) {
+		// Local Wrangler dev emulates the Analytics Engine binding and the CLI
+		// injects mock REST credentials, but the SQL API cannot read locally
+		// emulated datasets — exposures are written to D1 there instead.
+		if (
+			env.FLAG_EXPOSURES &&
+			accountId &&
+			apiToken &&
+			env.WRANGLER_IS_LOCAL_DEV !== 'true'
+		) {
 			return await loadReadoutFromAnalyticsEngine({
 				env,
 				accountId,

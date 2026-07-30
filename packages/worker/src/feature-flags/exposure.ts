@@ -13,9 +13,11 @@
  *
  * - With the `FLAG_EXPOSURES` Analytics Engine binding (production/preview),
  *   each exposure is a single non-blocking `writeDataPoint` call.
- * - Without it (local dev, tests), exposures are upserted into the D1
- *   `feature_flag_exposure_rollups` table (one row per flag/user/day/state)
- *   so the readout keeps working without Analytics Engine access.
+ * - Without it — or in local Wrangler dev, where the binding is a local
+ *   emulation whose data the SQL API can never read — exposures are upserted
+ *   into the D1 `feature_flag_exposure_rollups` table (one row per
+ *   flag/user/day/state) so the readout keeps working without Analytics
+ *   Engine access.
  *
  * `recordFeatureFlagExposures` never throws and never rejects: exposure
  * recording must not break session loading or MCP request handling.
@@ -27,6 +29,7 @@ import { type FeatureFlagEvaluation } from './service.ts'
 export type FeatureFlagExposureEnv = {
 	FLAG_EXPOSURES?: AnalyticsEngineDataset
 	APP_DB?: D1Database
+	WRANGLER_IS_LOCAL_DEV?: string
 }
 
 const exposureRollupUpsertStatement = `
@@ -58,7 +61,7 @@ export async function recordFeatureFlagExposures(
 		) as Array<[FeatureFlagKey, FeatureFlagEvaluation]>
 		if (exposures.length === 0) return
 		const timestamp = input.timestamp ?? new Date().toISOString()
-		if (env.FLAG_EXPOSURES) {
+		if (env.FLAG_EXPOSURES && env.WRANGLER_IS_LOCAL_DEV !== 'true') {
 			writeExposureDataPoints(env, input.stableUserId, exposures, timestamp)
 			return
 		}
