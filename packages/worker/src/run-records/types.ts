@@ -291,3 +291,14 @@ export function runRecordStaleRunningTtlMsForSurface(
 
 /** How often the DO alarm re-runs retention when the object is otherwise idle. */
 export const runRecordRetentionAlarmMs = 60 * 60 * 1000
+
+/**
+ * Keyed package-invocation idempotency ledger rows live in the same per-user
+ * `RunLog` Durable Object as run records (they moved off the shared D1 writer;
+ * see `docs/contributing/architecture/run-records.md`). Terminal rows keep
+ * their replay responses for 90 days — the same window the legacy D1
+ * `package_invocations` sweep used — and are pruned by the DO's own retention
+ * passes. `in_progress` rows are never pruned so duplicate requests cannot
+ * bypass the in-flight guard.
+ */
+export const packageInvocationLedgerRetentionDays = 90

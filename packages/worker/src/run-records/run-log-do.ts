@@ -10,6 +10,7 @@ import {
 	type RunRecordSummary,
 	type RunStatus,
 	type RunSurface,
+	packageInvocationLedgerRetentionDays,
 	runRecordMaxJsonBytes,
 	runRecordMaxLogEntriesPerRun,
 	runRecordMaxRunsPerUser,
@@ -27,18 +28,28 @@ const textEncoder = new TextEncoder()
 const maxAgeDeletesPerFinish = 100
 const maxExcessDeletesPerFinish = 100
 const maxStaleRunningReconcilesPerPass = 100
+const maxLedgerAgeDeletesPerPass = 100
 
 const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-const runLogSchemaVersion = 4
+const runLogSchemaVersion = 5
+
+/**
+ * Cursor namespace for the invocation-ledger phase of `exportRuns`. Run-phase
+ * cursors stay raw run ids for backward compatibility with cursors minted
+ * before the ledger moved into this DO.
+ */
+const exportLedgerCursorPrefix = 'invocation-ledger:'
 
 const staleRunningErrorName = 'Interrupted'
 const staleRunningErrorMessage =
 	'Run did not finish; outcome unknown (reconciled after stale running TTL).'
 
 const retentionMs = runRecordRetentionDays * 24 * 60 * 60 * 1000
+const ledgerRetentionMs =
+	packageInvocationLedgerRetentionDays * 24 * 60 * 60 * 1000
 
 export type RunLogRowInput = {
 	id: string
@@ -72,6 +83,57 @@ export type RunLogEntryInput = {
 	message: string
 	fieldsJson: string | null
 }
+
+export type PackageInvocationLedgerStatus =
+	| 'in_progress'
+	| 'completed'
+	| 'failed'
+
+/**
+ * One keyed package-invocation idempotency row. Same shape as the legacy D1
+ * `package_invocations` table minus `user_id` — the DO identity is the user.
+ */
+export type PackageInvocationLedgerRecord = {
+	id: string
+	tokenId: string
+	packageId: string
+	packageKodyId: string
+	exportName: string
+	idempotencyKey: string
+	requestHash: string
+	source: string | null
+	topic: string | null
+	status: PackageInvocationLedgerStatus
+	/** Bounded replay cache; `null` when the terminal response was oversized. */
+	responseJson: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export type PackageInvocationLedgerKey = {
+	tokenId: string
+	packageId: string
+	exportName: string
+	idempotencyKey: string
+}
+
+export type PackageInvocationClaimInput = PackageInvocationLedgerKey & {
+	id: string
+	packageKodyId: string
+	requestHash: string
+	source: string | null
+	topic: string | null
+}
+
+export type PackageInvocationClaimResult =
+	| {
+			outcome: 'claimed'
+			invocationId: string
+			claimUpdatedAt: string
+			/** True when a stale `in_progress` row was taken over in place. */
+			reclaimed: boolean
+	  }
+	| { outcome: 'existing'; record: PackageInvocationLedgerRecord }
 
 type ListRunsInput = {
 	surface?: RunSurface | null
@@ -226,6 +288,30 @@ function mapLogRow(row: Record<string, SqlStorageValue>): RunRecordLog {
 	}
 }
 
+function mapInvocationLedgerRow(
+	row: Record<string, SqlStorageValue>,
+): PackageInvocationLedgerRecord {
+	const status = String(row['status'] ?? '')
+	return {
+		id: String(row['id']),
+		tokenId: String(row['token_id']),
+		packageId: String(row['package_id']),
+		packageKodyId: String(row['package_kody_id']),
+		exportName: String(row['export_name']),
+		idempotencyKey: String(row['idempotency_key']),
+		requestHash: String(row['request_hash']),
+		source: row['source'] == null ? null : String(row['source']),
+		topic: row['topic'] == null ? null : String(row['topic']),
+		status: (status === 'completed' || status === 'failed'
+			? status
+			: 'in_progress') as PackageInvocationLedgerStatus,
+		responseJson:
+			row['response_json'] == null ? null : String(row['response_json']),
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+	}
+}
+
 function clampMetadataJson(metadataJson: string) {
 	if (textEncoder.encode(metadataJson).length <= runRecordMaxJsonBytes) {
 		return metadataJson
@@ -338,6 +424,35 @@ class RunLogBase extends DurableObject<Env> {
 				PRIMARY KEY (run_id, sequence)
 			)
 		`)
+		// Keyed package-invocation idempotency ledger (migrated from the D1
+		// package_invocations table). No user_id column: the DO identity is the
+		// user. The unique index is the exactly-once claim scope; unlike D1's
+		// INSERT OR IGNORE it never races because DO execution is serialized.
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS package_invocation_ledger (
+				id TEXT PRIMARY KEY NOT NULL,
+				token_id TEXT NOT NULL,
+				package_id TEXT NOT NULL,
+				package_kody_id TEXT NOT NULL,
+				export_name TEXT NOT NULL,
+				idempotency_key TEXT NOT NULL,
+				request_hash TEXT NOT NULL,
+				source TEXT,
+				topic TEXT,
+				status TEXT NOT NULL,
+				response_json TEXT,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)
+		`)
+		this.ctx.storage.sql.exec(
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_invocation_ledger_key
+			ON package_invocation_ledger(token_id, package_id, export_name, idempotency_key)`,
+		)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_invocation_ledger_status_created
+			ON package_invocation_ledger(status, created_at ASC)`,
+		)
 		this.setMeta(metaSchemaVersionKey, runLogSchemaVersion)
 	}
 
@@ -710,6 +825,20 @@ class RunLogBase extends DurableObject<Env> {
 			consider(Date.parse(oldestFinished.started_at) + retentionMs)
 		}
 
+		const oldestTerminalLedgerRow = this.ctx.storage.sql
+			.exec<{ created_at: string }>(
+				`SELECT created_at FROM package_invocation_ledger
+				WHERE status != 'in_progress'
+				ORDER BY created_at ASC
+				LIMIT 1`,
+			)
+			.toArray()[0]
+		if (oldestTerminalLedgerRow) {
+			consider(
+				Date.parse(oldestTerminalLedgerRow.created_at) + ledgerRetentionMs,
+			)
+		}
+
 		// Soonest stale due-time can belong to a newer short-lived surface
 		// (execute) even when an older long-lived service/job row exists.
 		// Only the earliest row per surface can produce that due-time.
@@ -771,7 +900,29 @@ class RunLogBase extends DurableObject<Env> {
 			this.deleteRunsByIds(ids)
 		}
 
+		this.pruneInvocationLedgerForRetention()
 		this.setFinishesSinceRetention(0)
+	}
+
+	/**
+	 * DO-local replacement for the D1 `package_invocations` retention sweep:
+	 * terminal ledger rows keep their replay responses for 90 days;
+	 * `in_progress` rows are never pruned so duplicate requests cannot bypass
+	 * the in-flight guard. Batched so one retention pass stays bounded.
+	 */
+	private pruneInvocationLedgerForRetention() {
+		const cutoff = new Date(Date.now() - ledgerRetentionMs).toISOString()
+		this.ctx.storage.sql.exec(
+			`DELETE FROM package_invocation_ledger
+			WHERE id IN (
+				SELECT id FROM package_invocation_ledger
+				WHERE status != 'in_progress' AND created_at < ?
+				ORDER BY created_at ASC
+				LIMIT ?
+			)`,
+			cutoff,
+			maxLedgerAgeDeletesPerPass,
+		)
 	}
 
 	private maybeEnforceRetention() {
@@ -944,6 +1095,206 @@ class RunLogBase extends DurableObject<Env> {
 		return { ok: true }
 	}
 
+	private findInvocationLedgerRow(
+		key: PackageInvocationLedgerKey,
+	): PackageInvocationLedgerRecord | null {
+		const row = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM package_invocation_ledger
+				WHERE token_id = ?
+					AND package_id = ?
+					AND export_name = ?
+					AND idempotency_key = ?
+				LIMIT 1`,
+				key.tokenId,
+				key.packageId,
+				key.exportName,
+				key.idempotencyKey,
+			)
+			.toArray()[0]
+		return row ? mapInvocationLedgerRow(row) : null
+	}
+
+	private getInvocationLedgerRowById(
+		id: string,
+	): PackageInvocationLedgerRecord | null {
+		const row = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM package_invocation_ledger WHERE id = ? LIMIT 1`,
+				id,
+			)
+			.toArray()[0]
+		return row ? mapInvocationLedgerRow(row) : null
+	}
+
+	/**
+	 * Claim a keyed package invocation and begin its run record in one on-path
+	 * DO call. DO execution is serialized, so lookup-then-insert here is
+	 * atomic — strictly better claim semantics than the racy D1
+	 * `INSERT OR IGNORE` this replaces. A matching stale `in_progress` row
+	 * (same request hash, `updated_at <= staleBefore`) is reclaimed in place;
+	 * everything else the key already owns is returned to the caller for
+	 * replay / mismatch / in-progress resolution.
+	 */
+	async claimPackageInvocation(input: {
+		invocation: PackageInvocationClaimInput
+		/** ISO cutoff: matching `in_progress` rows at or before it are reclaimable. */
+		staleBefore: string
+		/** Eager `running` run row for this attempt; `null` when the caller owns the run record (workflow-sourced invokes). */
+		run: RunLogRowInput | null
+	}): Promise<PackageInvocationClaimResult> {
+		const now = new Date().toISOString()
+		const existing = this.findInvocationLedgerRow(input.invocation)
+		if (existing) {
+			const reclaimable =
+				existing.status === 'in_progress' &&
+				existing.requestHash === input.invocation.requestHash &&
+				existing.updatedAt <= input.staleBefore
+			if (!reclaimable) {
+				return { outcome: 'existing', record: existing }
+			}
+			this.ctx.storage.sql.exec(
+				`UPDATE package_invocation_ledger SET updated_at = ? WHERE id = ?`,
+				now,
+				existing.id,
+			)
+			if (input.run) {
+				this.insertRunningRun({ ...input.run, invocationId: existing.id })
+				await this.ensureRetentionAlarm()
+			}
+			return {
+				outcome: 'claimed',
+				invocationId: existing.id,
+				claimUpdatedAt: now,
+				reclaimed: true,
+			}
+		}
+		this.ctx.storage.sql.exec(
+			`INSERT INTO package_invocation_ledger (
+				id, token_id, package_id, package_kody_id, export_name,
+				idempotency_key, request_hash, source, topic, status,
+				response_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_progress', NULL, ?, ?)`,
+			input.invocation.id,
+			input.invocation.tokenId,
+			input.invocation.packageId,
+			input.invocation.packageKodyId,
+			input.invocation.exportName,
+			input.invocation.idempotencyKey,
+			input.invocation.requestHash,
+			input.invocation.source,
+			input.invocation.topic,
+			now,
+			now,
+		)
+		if (input.run) {
+			this.insertRunningRun({
+				...input.run,
+				invocationId: input.invocation.id,
+			})
+			await this.ensureRetentionAlarm()
+		}
+		return {
+			outcome: 'claimed',
+			invocationId: input.invocation.id,
+			claimUpdatedAt: now,
+			reclaimed: false,
+		}
+	}
+
+	async getPackageInvocation(
+		input: PackageInvocationLedgerKey,
+	): Promise<PackageInvocationLedgerRecord | null> {
+		return this.findInvocationLedgerRow(input)
+	}
+
+	/**
+	 * Store the terminal response and finish the attempt's run record in one
+	 * on-path DO call. The ledger update is fenced on `claimUpdatedAt` so a
+	 * competing stale reclaim cannot be overwritten; the run row is this
+	 * attempt's alone, so it is finished even when the fence fails (the
+	 * attempt still happened and must not stay `running` forever).
+	 */
+	async finishPackageInvocation(input: {
+		invocationId: string
+		claimUpdatedAt: string
+		status: 'completed' | 'failed'
+		responseJson: string | null
+		run: RunLogRowInput | null
+		logs: Array<RunLogEntryInput>
+	}): Promise<{
+		ledgerUpdated: boolean
+		/** Current row when the fence failed, so the caller can resolve it. */
+		record: PackageInvocationLedgerRecord | null
+	}> {
+		const now = new Date().toISOString()
+		const updateCursor = this.ctx.storage.sql.exec(
+			`UPDATE package_invocation_ledger
+			SET status = ?, response_json = ?, updated_at = ?
+			WHERE id = ? AND status = 'in_progress' AND updated_at = ?`,
+			input.status,
+			input.responseJson,
+			now,
+			input.invocationId,
+			input.claimUpdatedAt,
+		)
+		const ledgerUpdated = updateCursor.rowsWritten > 0
+		if (input.run) {
+			const existed = this.runExists(input.run.id)
+			this.upsertRun(input.run, 'replace')
+			this.replaceLogs(input.run.id, input.logs)
+			if (!existed) {
+				this.adjustRunCount(1)
+			}
+		}
+		// A terminal ledger row creates future age-prune work even when no run
+		// row was written, so a stale idle conclusion must be cleared.
+		this.retentionIdleConfirmed = false
+		this.maybeEnforceRetention()
+		await this.ensureRetentionAlarm()
+		if (ledgerUpdated) {
+			return { ledgerUpdated: true, record: null }
+		}
+		return {
+			ledgerUpdated: false,
+			record: this.getInvocationLedgerRowById(input.invocationId),
+		}
+	}
+
+	/**
+	 * Release a claim whose execution never started (transient artifact
+	 * failure, dual-read fallback hit) so retries are not poisoned. Deletes
+	 * the still-`in_progress` ledger row (fenced on `claimUpdatedAt`) and the
+	 * attempt's still-`running` run row.
+	 */
+	async releasePackageInvocation(input: {
+		invocationId: string
+		claimUpdatedAt: string
+		runId: string | null
+	}): Promise<{
+		released: boolean
+		/** Current row when the fence failed, so the caller can resolve it. */
+		record: PackageInvocationLedgerRecord | null
+	}> {
+		const deleteCursor = this.ctx.storage.sql.exec(
+			`DELETE FROM package_invocation_ledger
+			WHERE id = ? AND status = 'in_progress' AND updated_at = ?`,
+			input.invocationId,
+			input.claimUpdatedAt,
+		)
+		const released = deleteCursor.rowsWritten > 0
+		if (input.runId) {
+			await this.deleteRunIfRunning({ runId: input.runId })
+		}
+		if (released) {
+			return { released: true, record: null }
+		}
+		return {
+			released: false,
+			record: this.getInvocationLedgerRowById(input.invocationId),
+		}
+	}
+
 	async listRuns(input: ListRunsInput): Promise<RunRecordPage> {
 		// Heal before listing so `status=running` filters and Activity views
 		// do not keep advertising stranded rows past their surface TTL.
@@ -1094,14 +1445,35 @@ class RunLogBase extends DurableObject<Env> {
 			.map((row) => row.storage_id)
 	}
 
+	/**
+	 * Paged over runs first, then invocation-ledger rows: run-phase cursors
+	 * stay raw run ids (compatible with pre-ledger cursors); ledger-phase
+	 * cursors carry the `invocation-ledger:` prefix. The remainder of the last
+	 * run page is filled with ledger rows so exports stay one-cursor.
+	 */
 	async exportRuns(input: ExportRunsInput): Promise<{
 		runs: Array<RunRecord>
 		logs: Array<RunRecordLog>
+		packageInvocations: Array<PackageInvocationLedgerRecord>
 		nextStartAfter: string | null
 		truncated: boolean
 	}> {
 		const pageSize = normalizePageSize(input.pageSize, runRecordDefaultPageSize)
-		const startAfter = input.startAfter?.trim() || null
+		const startAfterRaw = input.startAfter?.trim() || null
+		if (startAfterRaw?.startsWith(exportLedgerCursorPrefix)) {
+			const ledgerPage = this.exportInvocationLedgerPage({
+				startAfterId: startAfterRaw.slice(exportLedgerCursorPrefix.length),
+				limit: pageSize,
+			})
+			return {
+				runs: [],
+				logs: [],
+				packageInvocations: ledgerPage.rows,
+				nextStartAfter: ledgerPage.nextStartAfter,
+				truncated: ledgerPage.truncated,
+			}
+		}
+		const startAfter = startAfterRaw
 		const rows = (
 			startAfter
 				? this.ctx.storage.sql.exec<Record<string, SqlStorageValue>>(
@@ -1141,10 +1513,57 @@ class RunLogBase extends DurableObject<Env> {
 			logs.push(...runLogs)
 		}
 		const last = pageRows[pageRows.length - 1]
+		if (truncated) {
+			return {
+				runs,
+				logs,
+				packageInvocations: [],
+				nextStartAfter: last ? String(last['id']) : null,
+				truncated,
+			}
+		}
+		const ledgerPage = this.exportInvocationLedgerPage({
+			startAfterId: '',
+			limit: pageSize - runs.length,
+		})
 		return {
 			runs,
 			logs,
-			nextStartAfter: truncated && last ? String(last['id']) : null,
+			packageInvocations: ledgerPage.rows,
+			nextStartAfter: ledgerPage.nextStartAfter,
+			truncated: ledgerPage.truncated,
+		}
+	}
+
+	private exportInvocationLedgerPage(input: {
+		startAfterId: string
+		limit: number
+	}): {
+		rows: Array<PackageInvocationLedgerRecord>
+		nextStartAfter: string | null
+		truncated: boolean
+	} {
+		const limit = Math.max(input.limit, 0)
+		const rows = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM package_invocation_ledger
+				WHERE id > ?
+				ORDER BY id ASC
+				LIMIT ?`,
+				input.startAfterId,
+				limit + 1,
+			)
+			.toArray()
+		const truncated = rows.length > limit
+		const pageRows = truncated ? rows.slice(0, limit) : rows
+		const last = pageRows[pageRows.length - 1]
+		return {
+			rows: pageRows.map(mapInvocationLedgerRow),
+			// A zero-limit page (runs filled the whole page) restarts the ledger
+			// phase from the same cursor so the next call makes progress.
+			nextStartAfter: truncated
+				? `${exportLedgerCursorPrefix}${last ? String(last['id']) : input.startAfterId}`
+				: null,
 			truncated,
 		}
 	}
@@ -1189,11 +1608,39 @@ export type RunLogRpc = {
 	deleteRunIfRunning: (input: {
 		runId: string
 	}) => Promise<{ deleted: boolean }>
+	claimPackageInvocation: (input: {
+		invocation: PackageInvocationClaimInput
+		staleBefore: string
+		run: RunLogRowInput | null
+	}) => Promise<PackageInvocationClaimResult>
+	getPackageInvocation: (
+		input: PackageInvocationLedgerKey,
+	) => Promise<PackageInvocationLedgerRecord | null>
+	finishPackageInvocation: (input: {
+		invocationId: string
+		claimUpdatedAt: string
+		status: 'completed' | 'failed'
+		responseJson: string | null
+		run: RunLogRowInput | null
+		logs: Array<RunLogEntryInput>
+	}) => Promise<{
+		ledgerUpdated: boolean
+		record: PackageInvocationLedgerRecord | null
+	}>
+	releasePackageInvocation: (input: {
+		invocationId: string
+		claimUpdatedAt: string
+		runId: string | null
+	}) => Promise<{
+		released: boolean
+		record: PackageInvocationLedgerRecord | null
+	}>
 	summarize: (input: { since: string }) => Promise<RunRecordSummary>
 	listStorageIds: () => Promise<Array<string>>
 	exportRuns: (input: ExportRunsInput) => Promise<{
 		runs: Array<RunRecord>
 		logs: Array<RunRecordLog>
+		packageInvocations: Array<PackageInvocationLedgerRecord>
 		nextStartAfter: string | null
 		truncated: boolean
 	}>

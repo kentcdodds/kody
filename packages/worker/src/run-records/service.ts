@@ -2,6 +2,9 @@ import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
 import { recordSuccessfulPackageRun } from '#worker/usage/activation.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import {
+	type PackageInvocationClaimInput,
+	type PackageInvocationLedgerKey,
+	type PackageInvocationLedgerRecord,
 	type RunLogEntryInput,
 	type RunLogRowInput,
 	type RunLogRpc,
@@ -573,6 +576,236 @@ export async function abandonRunRecord(input: {
 	}
 }
 
+/**
+ * Claim a keyed package invocation: idempotency-ledger claim plus eager
+ * run-record begin in ONE awaited on-path DO RPC. Unlike {@link beginRunRecord}
+ * this is correctness, not observability — a failed claim must fail the
+ * invocation — so errors propagate to the caller instead of being swallowed.
+ */
+export async function claimPackageInvocationRecord(input: {
+	env: Env
+	userId: string
+	/** `null` when the caller owns the run record (workflow-sourced invokes). */
+	context: RunRecordContext | null
+	invocation: PackageInvocationClaimInput
+	/** ISO cutoff for in-place stale `in_progress` reclaims. */
+	staleBefore: string
+}): Promise<
+	| {
+			outcome: 'claimed'
+			invocationId: string
+			claimUpdatedAt: string
+			reclaimed: boolean
+			handle: RunRecordHandle | null
+	  }
+	| { outcome: 'existing'; record: PackageInvocationLedgerRecord }
+> {
+	let handle: RunRecordHandle | null = null
+	let run: RunLogRowInput | null = null
+	if (input.context) {
+		const startedAt = new Date().toISOString()
+		handle = {
+			id: crypto.randomUUID(),
+			userId: input.userId,
+			startedAt,
+			persistence: runPersistenceForContext(input.context),
+			context: input.context,
+		}
+		run = buildRunRow({
+			handle,
+			status: 'running',
+			finishedAt: null,
+			durationMs: null,
+			errorName: null,
+			errorMessage: null,
+			updatedAt: startedAt,
+		})
+	}
+	const claimed = await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).claimPackageInvocation({
+		invocation: input.invocation,
+		staleBefore: input.staleBefore,
+		run,
+	})
+	if (claimed.outcome === 'existing') {
+		return claimed
+	}
+	if (handle) {
+		// Stale reclaims keep the original ledger row id; the run record must
+		// reference the invocation id that actually owns the claim.
+		handle.context = { ...handle.context, invocationId: claimed.invocationId }
+	}
+	return { ...claimed, handle }
+}
+
+export async function getPackageInvocationRecord(input: {
+	env: Env
+	userId: string
+	key: PackageInvocationLedgerKey
+}): Promise<PackageInvocationLedgerRecord | null> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).getPackageInvocation(input.key)
+}
+
+/**
+ * Terminal ledger response and run-record finish in ONE awaited on-path DO
+ * RPC — the counterpart to {@link claimPackageInvocationRecord}. RPC failures
+ * propagate (the caller decides whether a lost terminal write may poison the
+ * key); the activation-milestone and run-error subscription side effects
+ * shared with {@link finishRunRecord} never throw and are scheduled on
+ * `waitUntil` when provided.
+ */
+export async function finishPackageInvocationRecord(input: {
+	env: Env
+	userId: string
+	handle: RunRecordHandle | null
+	invocationId: string
+	claimUpdatedAt: string
+	ledgerStatus: 'completed' | 'failed'
+	/** Bounded replay cache JSON; `null` drops the replay (oversized). */
+	responseJson: string | null
+	status: RunTerminalStatus
+	logs?: Array<RunRecordLogInput>
+	error?: unknown
+	result?: unknown
+	waitUntil?: (promise: Promise<unknown>) => void
+}): Promise<{
+	ledgerUpdated: boolean
+	record: PackageInvocationLedgerRecord | null
+}> {
+	const handle = input.handle
+	let run: RunLogRowInput | null = null
+	if (handle) {
+		const finishedAt = new Date().toISOString()
+		const durationMs = Math.max(
+			0,
+			Date.parse(finishedAt) - Date.parse(handle.startedAt),
+		)
+		const { errorName, errorMessage } = getErrorFields(input.error)
+		const metadata =
+			input.result === undefined
+				? handle.context.metadata
+				: {
+						...(handle.context.metadata ?? {}),
+						result: snapshotRunRecordResult(input.result),
+					}
+		run = buildRunRow({
+			handle: {
+				...handle,
+				context: {
+					...handle.context,
+					metadata,
+				},
+			},
+			status: input.status,
+			finishedAt,
+			durationMs,
+			errorName,
+			errorMessage,
+			updatedAt: finishedAt,
+		})
+	}
+	const finished = await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).finishPackageInvocation({
+		invocationId: input.invocationId,
+		claimUpdatedAt: input.claimUpdatedAt,
+		status: input.ledgerStatus,
+		responseJson: input.responseJson,
+		run,
+		logs: run ? normalizeLogs(input.logs) : [],
+	})
+	if (handle && run) {
+		const sideEffects = dispatchTerminalRunRecordSideEffects({
+			env: input.env,
+			handle,
+			persistedRun: run,
+			status: input.status,
+			waitUntil: input.waitUntil,
+		})
+		if (input.waitUntil) {
+			input.waitUntil(sideEffects)
+		} else {
+			await sideEffects
+		}
+	}
+	return finished
+}
+
+/**
+ * Release a claim whose execution never started (transient artifact failure
+ * or the dual-read D1 fallback finding a pre-migration owner). Deletes the
+ * still-`in_progress` ledger row and the attempt's `running` run row.
+ */
+export async function releasePackageInvocationRecord(input: {
+	env: Env
+	userId: string
+	invocationId: string
+	claimUpdatedAt: string
+	handle: RunRecordHandle | null
+}): Promise<{
+	released: boolean
+	record: PackageInvocationLedgerRecord | null
+}> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).releasePackageInvocation({
+		invocationId: input.invocationId,
+		claimUpdatedAt: input.claimUpdatedAt,
+		runId: input.handle?.id ?? null,
+	})
+}
+
+/**
+ * Post-terminal-write observers shared by {@link finishRunRecord} and
+ * {@link finishPackageInvocationRecord}: the activation milestone on success
+ * and best-effort `run.error.recorded` dispatch on error. Never throws.
+ */
+async function dispatchTerminalRunRecordSideEffects(input: {
+	env: Env
+	handle: RunRecordHandle
+	persistedRun: RunLogRowInput
+	status: RunTerminalStatus
+	waitUntil?: (promise: Promise<unknown>) => void
+}): Promise<void> {
+	if (input.status === 'success') {
+		const packageId = normalizeOptionalString(input.handle.context.packageId)
+		if (!packageId) return
+		try {
+			await recordSuccessfulPackageRun(input.env, {
+				userId: input.handle.userId,
+				packageId,
+				surface: input.handle.context.surface,
+			})
+		} catch (error) {
+			console.warn('run-record-activation-failed', error)
+		}
+		return
+	}
+	if (input.handle.context.surface === 'subscription') return
+	try {
+		// Dynamic import: a static edge to package-subscriptions pulls
+		// package-invocations and deepens the account-export cycle (see the
+		// matching note in finishRunRecord).
+		const { dispatchRunErrorSubscriptionEvents } =
+			await import('./package-subscriptions.ts')
+		await dispatchRunErrorSubscriptionEvents({
+			env: input.env,
+			userId: input.handle.userId,
+			run: input.persistedRun,
+			waitUntil: input.waitUntil,
+		})
+	} catch (error) {
+		console.warn('run-error-subscription-dispatch-failed', error)
+	}
+}
+
 export async function summarizeRunRecords(input: {
 	env: Env
 	userId: string
@@ -613,6 +846,7 @@ export async function exportRunRecords(input: {
 }): Promise<{
 	runs: Array<RunRecord>
 	logs: Array<RunRecordLog>
+	packageInvocations: Array<PackageInvocationLedgerRecord>
 	nextStartAfter: string | null
 	truncated: boolean
 }> {
@@ -620,14 +854,22 @@ export async function exportRunRecords(input: {
 		return {
 			runs: [],
 			logs: [],
+			packageInvocations: [],
 			nextStartAfter: null,
 			truncated: false,
 		}
 	}
-	return await runLogRpc({ env: input.env, userId: input.userId }).exportRuns({
+	const page = await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).exportRuns({
 		pageSize: input.pageSize ?? runRecordDefaultPageSize,
 		startAfter: input.startAfter ?? null,
 	})
+	return {
+		...page,
+		packageInvocations: page.packageInvocations ?? [],
+	}
 }
 
 export async function clearRunRecords(input: {
@@ -639,3 +881,9 @@ export async function clearRunRecords(input: {
 }
 
 export type { RunLogRpc }
+export type {
+	PackageInvocationClaimInput,
+	PackageInvocationLedgerKey,
+	PackageInvocationLedgerRecord,
+	PackageInvocationLedgerStatus,
+} from './run-log-do.ts'
