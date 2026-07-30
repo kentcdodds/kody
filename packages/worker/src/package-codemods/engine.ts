@@ -165,26 +165,36 @@ function computeCheckSummary(input: {
 	}
 }
 
-function matchesFilters(
-	savedPackage: SavedPackageRecord,
+function matchesCodemodTargetFilters(
+	target: { userId: string; packageId: string },
 	filters: PackageCodemodRunFilters | undefined,
 ) {
 	if (!filters) return true
 	if (
 		filters.userIds != null &&
 		filters.userIds.length > 0 &&
-		!filters.userIds.includes(savedPackage.userId)
+		!filters.userIds.includes(target.userId)
 	) {
 		return false
 	}
 	if (
 		filters.packageIds != null &&
 		filters.packageIds.length > 0 &&
-		!filters.packageIds.includes(savedPackage.id)
+		!filters.packageIds.includes(target.packageId)
 	) {
 		return false
 	}
 	return true
+}
+
+function matchesFilters(
+	savedPackage: SavedPackageRecord,
+	filters: PackageCodemodRunFilters | undefined,
+) {
+	return matchesCodemodTargetFilters(
+		{ userId: savedPackage.userId, packageId: savedPackage.id },
+		filters,
+	)
 }
 
 function emptyItemResult(input: {
@@ -864,6 +874,7 @@ async function processRevertStep(input: {
 	let pagesFetched = 0
 	const scopeUserIdFilter =
 		input.scope.kind === 'user' ? input.scope.userId : undefined
+	const filters = parseStoredFiltersJson(input.run.filtersJson)
 	for (;;) {
 		pagesFetched += 1
 		const page = await listPackageCodemodRunItems(input.env.APP_DB, {
@@ -892,6 +903,19 @@ async function processRevertStep(input: {
 			if (input.scope.kind !== 'user' && input.scope.kind !== 'fleet') {
 				const exhaustive: never = input.scope
 				throw new Error(`Unknown package codemod scope: ${String(exhaustive)}`)
+			}
+			if (
+				!matchesCodemodTargetFilters(
+					{
+						userId: priorItem.userId,
+						packageId: priorItem.packageId,
+					},
+					filters,
+				)
+			) {
+				// Filter skips advance the cursor but do not count toward limit;
+				// the fleet page ceiling still bounds work per step.
+				continue
 			}
 			const itemId = crypto.randomUUID()
 			let result: PersistedItemResult

@@ -1000,6 +1000,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'derived-cache:v1:community-icon:v1:listing-1:abc123',
 		'derived-cache:v1:community-icon:v1:listing-1:historical',
 		'source-snapshot:v1:src-2:def456',
+		`package-codemod-revert:${userAaa}:item-1`,
+		`package-codemod-revert:${userAaa}:item-2`,
+		`package-codemod-revert:${userBbb}:item-other`,
 		'package-retriever-manifest:v1:user-aaa:pkg-1:abc123',
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
@@ -1388,6 +1391,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'derived-cache:v1:community-icon:v1:listing-1:abc123',
 		'derived-cache:v1:community-icon:v1:listing-1:commit-1',
 		'derived-cache:v1:community-icon:v1:listing-1:historical',
+		`package-codemod-revert:${userAaa}:item-1`,
+		`package-codemod-revert:${userAaa}:item-2`,
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
 		'package-retriever-index:v1:user-aaa:context',
@@ -1403,6 +1408,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	)
 	expect(deletedKvKeys).not.toContain(
 		'package-retriever-index:v1:user-bbb:search',
+	)
+	expect(deletedKvKeys).not.toContain(
+		`package-codemod-revert:${userBbb}:item-other`,
 	)
 
 	// Result accounting captures the per-table counts.
@@ -1423,7 +1431,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.updatedRowCounts.community_bans).toBe(1)
 	expect(result.deletedRowCounts.platform_feedback).toBe(1)
 	expect(result.updatedRowCounts.platform_feedback).toBe(1)
-	expect(result.deletedKvKeys).toBe(14)
+	expect(result.deletedKvKeys).toBe(16)
 	expect(result.deletedCommunityAssets).toBe(5)
 	expect(result.deletedEmailBlobs).toBe(2)
 	// Prefix sweeps remove current and historical assets without crossing users.

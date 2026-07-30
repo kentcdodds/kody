@@ -72,7 +72,13 @@ type PackageCodemod = {
   without mutating the tree. Used for fleet discovery and reporting.
 - **`transform(files)`** — returns a new tree plus metadata. When a hunk cannot
   be migrated confidently, leave the file unchanged and append a `needsManual`
-  finding rather than applying a risky rewrite.
+  finding rather than applying a risky rewrite. **Partial transforms are
+  intentional:** when `changed: true` and `needsManual` are both set, dry-run
+  and apply still proceed with the partial tree (per-file conservatism with
+  per-package progress). Findings are recorded on the ledger item and returned
+  to the operator; the no-new-failures check gate still runs on that partial
+  tree. A codemod that must be all-or-nothing should return the original tree
+  with `changed: false` and only findings.
 
 Implementations must stay **pure**: no `fetch`, D1, KV, secrets, or reads of the
 calling user. The engine supplies the published file map; the codemod returns a

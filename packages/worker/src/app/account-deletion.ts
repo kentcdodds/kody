@@ -1039,6 +1039,11 @@ export async function deleteUserAccount(input: {
 					(listing) =>
 						`${derivedCacheKeyPrefix}community-icon:v1:${listing.id}:`,
 				),
+				// Package-codemod apply snapshots are user-namespaced in KV
+				// (`package-codemod-revert:{userId}:{itemId}`). D1 run items are
+				// deleted separately; purge the orphaned revert trees here rather
+				// than waiting on the 90-day TTL.
+				`package-codemod-revert:${input.mcpUserId}:`,
 			],
 			warnings,
 		})

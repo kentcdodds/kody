@@ -1051,3 +1051,137 @@ test('package codemod revert page ceiling and user-scoped SQL filter for sparse 
 		},
 	)
 })
+
+test('package codemod fleet revert applies packageIds filters and leaves others applied', async () => {
+	resetMocks()
+	const { env, kv } = createEnv()
+
+	await createPackageCodemodRun(env.APP_DB, {
+		id: 'prior-canary-apply',
+		codemodId,
+		mode: 'apply',
+		scopeUserId: null,
+		initiatedByUserId: 'admin-1',
+		status: 'completed',
+	})
+
+	const priorItems = [
+		{
+			id: 'item-pkg-keep-a',
+			userId: 'user-1',
+			packageId: 'pkg-keep-a',
+			kodyId: 'keep-a',
+			sourceId: 'source-keep-a',
+			repoId: 'repo-keep-a',
+		},
+		{
+			id: 'item-pkg-revert',
+			userId: 'user-1',
+			packageId: 'pkg-revert-me',
+			kodyId: 'revert-me',
+			sourceId: 'source-revert',
+			repoId: 'repo-revert',
+		},
+		{
+			id: 'item-pkg-keep-b',
+			userId: 'user-2',
+			packageId: 'pkg-keep-b',
+			kodyId: 'keep-b',
+			sourceId: 'source-keep-b',
+			repoId: 'repo-keep-b',
+		},
+	] as const
+
+	for (const prior of priorItems) {
+		const revertSnapshotKey = buildPackageCodemodRevertSnapshotKvKey({
+			userId: prior.userId,
+			itemId: prior.id,
+		})
+		await insertPackageCodemodRunItem(env.APP_DB, {
+			id: prior.id,
+			runId: 'prior-canary-apply',
+			userId: prior.userId,
+			packageId: prior.packageId,
+			kodyId: prior.kodyId,
+			status: 'applied',
+			beforeCommit: `commit-${prior.repoId}-before`,
+			afterCommit: `commit-${prior.repoId}-after`,
+			changedPaths: ['index.ts'],
+			revertSnapshotKey,
+		})
+		await kv.namespace.put(
+			revertSnapshotKey,
+			JSON.stringify({
+				codemodId,
+				userId: prior.userId,
+				packageId: prior.packageId,
+				beforeCommit: `commit-${prior.repoId}-before`,
+				files: cleanFiles(),
+			}),
+		)
+	}
+
+	mocks.listSavedPackagesByUserId.mockImplementation(
+		async (_db: D1Database, input: { userId: string }) =>
+			priorItems
+				.filter((prior) => prior.userId === input.userId)
+				.map((prior) =>
+					savedPackage({
+						id: prior.packageId,
+						userId: prior.userId,
+						kodyId: prior.kodyId,
+						sourceId: prior.sourceId,
+					}),
+				),
+	)
+	mocks.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string; userId: string }) => {
+			const prior = priorItems.find(
+				(candidate) => candidate.sourceId === input.sourceId,
+			)
+			if (!prior) throw new Error(`unexpected source ${input.sourceId}`)
+			return loadedSource({
+				files: cleanFiles(),
+				publishedCommit: `commit-${prior.repoId}-after`,
+				repoId: prior.repoId,
+				sourceId: prior.sourceId,
+				userId: prior.userId,
+			})
+		},
+	)
+	mocks.resolveArtifactSourceHead.mockImplementation(
+		async (_env: Env, repoId: string) => ({
+			branch: 'main',
+			commit: `commit-${repoId}-after`,
+		}),
+	)
+	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-reverted')
+
+	const revert = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'admin-1',
+		codemodId,
+		mode: 'revert',
+		scope: { kind: 'fleet' },
+		filters: { packageIds: ['pkg-revert-me'] },
+		revertOfRunId: 'prior-canary-apply',
+		limit: 10,
+	})
+	expect(revert.items).toHaveLength(1)
+	expect(revert.items[0]).toMatchObject({
+		packageId: 'pkg-revert-me',
+		status: 'reverted',
+	})
+	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
+
+	expect(
+		await getPackageCodemodRunItemById(env.APP_DB, 'item-pkg-revert'),
+	).toMatchObject({ status: 'reverted' })
+	expect(
+		await getPackageCodemodRunItemById(env.APP_DB, 'item-pkg-keep-a'),
+	).toMatchObject({ status: 'applied' })
+	expect(
+		await getPackageCodemodRunItemById(env.APP_DB, 'item-pkg-keep-b'),
+	).toMatchObject({ status: 'applied' })
+})
