@@ -170,9 +170,8 @@ export default async function run() {
 		}),
 	).rejects.toThrow("Type 'string' is not assignable to type 'number'")
 
-	await expect(
-		assertAdHocExecuteTypechecks({
-			source: `import call from 'kody:@kentcdodds/static-contract'
+	const serverTiming = await assertAdHocExecuteTypechecks({
+		source: `import call from 'kody:@kentcdodds/static-contract'
 import { kody, packageStorage } from 'kody:runtime'
 import arbitraryClient from 'arbitrary-uninstalled-npm-package'
 
@@ -183,9 +182,44 @@ export default async function run() {
 	const result = await call({ name: 'Ada' })
 	return result.message
 }`,
-			packages,
-		}),
-	).resolves.toBeUndefined()
+		packages,
+	})
+	expect(serverTiming.map((entry) => entry.name)).toEqual([
+		'typecheck-queue',
+		'typecheck-compiler-startup',
+		'typecheck-project-write',
+		'typecheck-diagnostics',
+		'typecheck-total',
+	])
+	for (const entry of serverTiming) {
+		expect(entry.durationMs).toBeGreaterThanOrEqual(0)
+	}
+	const totalMs = serverTiming.at(-1)!.durationMs
+	const phaseSumMs = serverTiming
+		.slice(0, -1)
+		.reduce((sum, entry) => sum + entry.durationMs, 0)
+	expect(totalMs).toBeGreaterThanOrEqual(phaseSumMs - 5)
+})
+
+test('failed typecheck diagnostics still carry phase timings on the error', async () => {
+	const failure = await assertAdHocExecuteTypechecks({
+		source: `export default function run(): string {
+	return 42
+}`,
+		packages: new Map() as LoadedKodyGraphPackages,
+	}).then(
+		() => null,
+		(error: unknown) => error,
+	)
+	expect(failure).toBeInstanceOf(ExecuteTypecheckError)
+	const timedFailure = failure as ExecuteTypecheckError
+	expect(timedFailure.serverTiming?.map((entry) => entry.name)).toEqual([
+		'typecheck-queue',
+		'typecheck-compiler-startup',
+		'typecheck-project-write',
+		'typecheck-diagnostics',
+		'typecheck-total',
+	])
 })
 
 test('warm typecheck service replaces package sources between requests', async () => {
@@ -201,7 +235,7 @@ export default async function run() {
 					'export default async function call(input: { name: number }): Promise<number> { return input.name }',
 			}),
 		}),
-	).resolves.toBeUndefined()
+	).resolves.toBeDefined()
 
 	await expect(
 		assertAdHocExecuteTypechecks({
@@ -211,7 +245,7 @@ export default async function run() {
 }`,
 			packages: createLoadedPackages(stringContract),
 		}),
-	).resolves.toBeUndefined()
+	).resolves.toBeDefined()
 
 	await expect(
 		assertAdHocExecuteTypechecks({
@@ -225,7 +259,7 @@ export default async function run() {
 					'export default async function call(input: { name: number }): Promise<number> { return input.name }',
 			}),
 		}),
-	).resolves.toBeUndefined()
+	).resolves.toBeDefined()
 })
 
 test('ad hoc execute typecheck rejects oversized source before loading the compiler', async () => {

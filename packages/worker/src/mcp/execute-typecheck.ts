@@ -164,6 +164,7 @@ async function getReusableTypecheckService() {
 }
 
 async function withTypecheckLock<T>(
+	phases: ExecuteTypecheckPhaseRecorder,
 	callback: (service: ReusableTypecheckService) => T,
 ) {
 	if (pendingTypecheckCount >= maxPendingExecuteTypechecks) {
@@ -177,25 +178,31 @@ async function withTypecheckLock<T>(
 	typecheckQueue = new Promise<void>((resolve) => {
 		release = resolve
 	})
-	await previous
+	await phases.measure('queue', async () => {
+		await previous
+	})
 	let timeoutId: ReturnType<typeof setTimeout> | null = null
 	let startupTimedOut = false
 	const servicePromise = getReusableTypecheckService()
 	const cachedServicePromise = reusableTypecheckServicePromise
 	try {
-		const service = await Promise.race([
-			servicePromise,
-			new Promise<never>((_resolve, reject) => {
-				timeoutId = setTimeout(() => {
-					startupTimedOut = true
-					reject(
-						new ExecuteTypecheckError([
-							`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckHoldMs}ms service startup budget.`,
-						]),
-					)
-				}, maxExecuteTypecheckHoldMs)
-			}),
-		])
+		const service = await phases.measure(
+			'compiler-startup',
+			async () =>
+				await Promise.race([
+					servicePromise,
+					new Promise<never>((_resolve, reject) => {
+						timeoutId = setTimeout(() => {
+							startupTimedOut = true
+							reject(
+								new ExecuteTypecheckError([
+									`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckHoldMs}ms service startup budget.`,
+								]),
+							)
+						}, maxExecuteTypecheckHoldMs)
+					}),
+				]),
+		)
 		if (timeoutId !== null) {
 			clearTimeout(timeoutId)
 			timeoutId = null
@@ -518,6 +525,7 @@ function formatDiagnostic(input: {
 
 export class ExecuteTypecheckError extends Error {
 	readonly diagnostics: Array<string>
+	serverTiming: Array<ExecuteServerTimingEntry> | undefined
 
 	constructor(diagnostics: Array<string>) {
 		super(
@@ -530,45 +538,113 @@ export class ExecuteTypecheckError extends Error {
 	}
 }
 
+/**
+ * Server-Timing-style phase entry (`name` + `durationMs`) surfaced through the
+ * execute tool's structured response so agents can attribute latency.
+ */
+export type ExecuteServerTimingEntry = {
+	name: string
+	durationMs: number
+}
+
+type ExecuteTypecheckPhaseRecorder = {
+	entries: Array<ExecuteServerTimingEntry>
+	measure<T>(name: string, run: () => Promise<T> | T): Promise<T>
+	measureSync<T>(name: string, run: () => T): T
+}
+
+function createTypecheckPhaseRecorder(): ExecuteTypecheckPhaseRecorder {
+	const entries: Array<ExecuteServerTimingEntry> = []
+	const record = (name: string, startedAtMs: number) => {
+		entries.push({
+			name: `typecheck-${name}`,
+			durationMs: Date.now() - startedAtMs,
+		})
+	}
+	return {
+		entries,
+		async measure(name, run) {
+			const startedAtMs = Date.now()
+			try {
+				return await run()
+			} finally {
+				record(name, startedAtMs)
+			}
+		},
+		measureSync(name, run) {
+			const startedAtMs = Date.now()
+			try {
+				return run()
+			} finally {
+				record(name, startedAtMs)
+			}
+		},
+	}
+}
+
 export async function assertAdHocExecuteTypechecks(input: {
 	source: string
 	packages: LoadedKodyGraphPackages
-}) {
-	assertTypecheckInputWithinLimits(input)
-	await withTypecheckLock(({ fileSystem, languageService }) => {
-		clearRequestFiles(fileSystem)
-		try {
-			const rewrittenEntry = rewriteStaticKodyImports({
-				source: input.source,
-				modulePath: entryPath,
-			})
-			fileSystem.write(entryPath, rewrittenEntry.source)
-			writePackageSources({
-				fileSystem,
-				packages: input.packages,
-			})
-			writeKodyTypeProxies({
-				fileSystem,
-				source: input.source,
-				packages: input.packages,
-			})
-			const diagnostics = [
-				...languageService.getSyntacticDiagnostics(entryPath),
-				...languageService.getSemanticDiagnostics(entryPath),
-			]
-				.filter((diagnostic) => !isArbitraryNpmImportDiagnostic(diagnostic))
-				.map((diagnostic) =>
-					formatDiagnostic({
-						diagnostic,
-						originalSource: input.source,
-						toOriginalOffset: rewrittenEntry.toOriginalOffset,
-					}),
-				)
-			if (diagnostics.length > 0) {
-				throw new ExecuteTypecheckError(diagnostics)
-			}
-		} finally {
+}): Promise<Array<ExecuteServerTimingEntry>> {
+	const phases = createTypecheckPhaseRecorder()
+	const totalStartedAtMs = Date.now()
+	try {
+		assertTypecheckInputWithinLimits(input)
+		await withTypecheckLock(phases, ({ fileSystem, languageService }) => {
 			clearRequestFiles(fileSystem)
+			try {
+				const rewrittenEntry = phases.measureSync('project-write', () => {
+					const rewritten = rewriteStaticKodyImports({
+						source: input.source,
+						modulePath: entryPath,
+					})
+					fileSystem.write(entryPath, rewritten.source)
+					writePackageSources({
+						fileSystem,
+						packages: input.packages,
+					})
+					writeKodyTypeProxies({
+						fileSystem,
+						source: input.source,
+						packages: input.packages,
+					})
+					return rewritten
+				})
+				const diagnostics = phases
+					.measureSync('diagnostics', () => [
+						...languageService.getSyntacticDiagnostics(entryPath),
+						...languageService.getSemanticDiagnostics(entryPath),
+					])
+					.filter((diagnostic) => !isArbitraryNpmImportDiagnostic(diagnostic))
+					.map((diagnostic) =>
+						formatDiagnostic({
+							diagnostic,
+							originalSource: input.source,
+							toOriginalOffset: rewrittenEntry.toOriginalOffset,
+						}),
+					)
+				if (diagnostics.length > 0) {
+					throw new ExecuteTypecheckError(diagnostics)
+				}
+			} finally {
+				clearRequestFiles(fileSystem)
+			}
+		})
+		phases.entries.push({
+			name: 'typecheck-total',
+			durationMs: Date.now() - totalStartedAtMs,
+		})
+		return phases.entries
+	} catch (error) {
+		phases.entries.push({
+			name: 'typecheck-total',
+			durationMs: Date.now() - totalStartedAtMs,
+		})
+		if (error instanceof ExecuteTypecheckError) {
+			// Diagnostics failures still report where the time went; the execute
+			// tool includes these phases in the failed call's structured timing.
+			error.serverTiming = [...phases.entries]
 		}
-	})
+		throw error
+	}
 }

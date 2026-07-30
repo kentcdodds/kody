@@ -104,6 +104,20 @@ caller whose flag is off. Operators can disable the user's override (or the
 global flag, if a broader rollout was started) to return immediately to the
 previous bundle-and-run behavior.
 
+### Server-Timing phases
+
+Execute responses include Server-Timing-style phase entries under
+**`timing.serverTiming`** (public tool) or top-level **`serverTiming`**
+(`meta.execute`): each entry is `{ name, durationMs }`.
+
+- `bundle` — module-graph preparation and bundling. This span contains the
+  typecheck phases below, so subtract `typecheck-total` for bundler-only time.
+- `run` — hydration, provider assembly, and sandbox execution.
+- `typecheck-queue`, `typecheck-compiler-startup`, `typecheck-project-write`,
+  `typecheck-diagnostics`, `typecheck-total` — present only when the
+  pre-execution check ran for the call. Failed diagnostics also report these
+  phases so slow checks can be attributed even when the module never executes.
+
 ## npm packages on Workers
 
 **execute** and saved packages may import npm packages directly when they are

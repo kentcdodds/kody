@@ -8,6 +8,10 @@ import {
 import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	ExecuteTypecheckError,
+	type ExecuteServerTimingEntry,
+} from '#mcp/execute-typecheck.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -47,6 +51,14 @@ const executeOutputSchema = z.object({
 	error: z.string().optional(),
 	errorDetails: z.unknown().optional(),
 	logs: z.array(z.unknown()),
+	serverTiming: z
+		.array(
+			z.object({
+				name: z.string(),
+				durationMs: z.number().nonnegative(),
+			}),
+		)
+		.optional(),
 })
 
 export const executeCapability = defineDomainCapability(
@@ -250,7 +262,10 @@ export const executeCapability = defineDomainCapability(
 				claimedRunHandle = claim.handle
 			}
 
-			let result: ExecuteResult & { runId?: string }
+			let result: ExecuteResult & {
+				runId?: string
+				serverTiming?: Array<ExecuteServerTimingEntry>
+			}
 			try {
 				const featureFlags = await resolveCallerFeatureFlags(
 					ctx.env,
@@ -310,9 +325,16 @@ export const executeCapability = defineDomainCapability(
 					error: getErrorMessage(cause),
 					errorDetails: getExecutionErrorDetails(cause),
 					logs: [],
+					...(cause instanceof ExecuteTypecheckError && cause.serverTiming
+						? { serverTiming: cause.serverTiming }
+						: {}),
 				}
 			}
 			const logs = result.logs ?? []
+			const serverTiming =
+				result.serverTiming && result.serverTiming.length > 0
+					? result.serverTiming
+					: undefined
 			const runId =
 				typeof result.runId === 'string'
 					? result.runId
@@ -327,6 +349,7 @@ export const executeCapability = defineDomainCapability(
 					error: getErrorMessage(result.error),
 					errorDetails: getExecutionErrorDetails(result.error),
 					logs,
+					...(serverTiming ? { serverTiming } : {}),
 				}
 			}
 
@@ -348,6 +371,7 @@ export const executeCapability = defineDomainCapability(
 					: {}),
 				result: limitedResult.value,
 				logs,
+				...(serverTiming ? { serverTiming } : {}),
 			}
 		},
 	},

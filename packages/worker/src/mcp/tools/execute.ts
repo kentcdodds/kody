@@ -21,6 +21,7 @@ import {
 } from '#mcp/downstream-mcp-result.ts'
 import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import { ExecuteTypecheckError } from '#mcp/execute-typecheck.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
@@ -389,12 +390,20 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								result: undefined,
 								error: getErrorMessage(cause),
 								logs: [],
+								...(cause instanceof ExecuteTypecheckError && cause.serverTiming
+									? { serverTiming: cause.serverTiming }
+									: {}),
 								...(claimedRunHandle ? { runId: claimedRunHandle.id } : {}),
 							}
 						}
 					},
 				)
-				const timing = finishToolTiming(timingStart)
+				const timing = {
+					...finishToolTiming(timingStart),
+					...(result.serverTiming && result.serverTiming.length > 0
+						? { serverTiming: result.serverTiming }
+						: {}),
+				}
 				const durationMs = timing.durationMs
 				const rawFetchHostNudges = await resolveRawFetchHostNudges({
 					agent,

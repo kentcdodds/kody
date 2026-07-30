@@ -5,6 +5,7 @@ import {
 	maxMcpContentBlockCount,
 	wrapDownstreamMcpToolResult,
 } from '#mcp/downstream-mcp-result.ts'
+import { ExecuteTypecheckError } from '#mcp/execute-typecheck.ts'
 import { formatRawFetchHostNudge } from '#mcp/raw-fetch-host-nudge.ts'
 import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
@@ -283,6 +284,11 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
 		result: { ok: true },
 		logs: [],
+		serverTiming: [
+			{ name: 'typecheck-total', durationMs: 12 },
+			{ name: 'bundle', durationMs: 34 },
+			{ name: 'run', durationMs: 56 },
+		],
 	})
 
 	const jsonResponse = await handler({
@@ -307,6 +313,11 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 			startedAt: expect.any(String),
 			endedAt: expect.any(String),
 			durationMs: 9,
+			serverTiming: [
+				{ name: 'typecheck-total', durationMs: 12 },
+				{ name: 'bundle', durationMs: 34 },
+				{ name: 'run', durationMs: 56 },
+			],
 		},
 		returnedBytes: 11,
 		result: { ok: true },
@@ -560,6 +571,43 @@ test('execute enables the pre-exec typecheck only for an opted-in caller', async
 		expect.any(String),
 		undefined,
 		expect.objectContaining({ preExecTypecheck: true }),
+	)
+})
+
+test('execute reports typecheck phase timings when pre-exec diagnostics fail', async () => {
+	const handler = await getExecuteHandler()
+	const typecheckError = new ExecuteTypecheckError([
+		"entry.ts:1:1 TS2322: Type 'number' is not assignable to type 'string'.",
+	])
+	typecheckError.serverTiming = [
+		{ name: 'typecheck-queue', durationMs: 0 },
+		{ name: 'typecheck-diagnostics', durationMs: 21 },
+		{ name: 'typecheck-total', durationMs: 25 },
+	]
+	mockPerformanceSequence(3, 11)
+	mockModule.runModuleWithRegistry.mockRejectedValueOnce(typecheckError)
+
+	const response = await handler({
+		code: 'export default function run(): string { return 42 }',
+		conversationId: 'conv-typecheck-timing',
+	})
+
+	expect(response.isError).toBe(true)
+	expect(response.structuredContent).toEqual(
+		expect.objectContaining({
+			conversationId: 'conv-typecheck-timing',
+			timing: {
+				startedAt: expect.any(String),
+				endedAt: expect.any(String),
+				durationMs: 8,
+				serverTiming: [
+					{ name: 'typecheck-queue', durationMs: 0 },
+					{ name: 'typecheck-diagnostics', durationMs: 21 },
+					{ name: 'typecheck-total', durationMs: 25 },
+				],
+			},
+			error: typecheckError.message,
+		}),
 	)
 })
 

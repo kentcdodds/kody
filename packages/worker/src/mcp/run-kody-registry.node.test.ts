@@ -13,6 +13,7 @@ import {
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
 } from './run-kody-registry.ts'
+import * as executeTypecheck from '#mcp/execute-typecheck.ts'
 import * as mcpExecutor from '#mcp/executor.ts'
 import { type KodyResolvedProvider } from '#mcp/kody-remote-types.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
@@ -1562,20 +1563,38 @@ test('runModuleWithRegistry only installs the pre-execution typecheck hook when 
 	const capabilityRegistry = buildCapabilityRegistry([])
 
 	try {
-		await runModuleWithRegistry(
+		const uncheckedResult = await runModuleWithRegistry(
 			{} as Env,
 			callerContext,
 			'export default async function run() { return "unchecked" }',
 			undefined,
 			{ capabilityRegistry },
 		)
-		await runModuleWithRegistry(
+		buildBundleMock.mockImplementationOnce(async (input) => {
+			await input.beforeBundle?.({ packages: new Map() })
+			return {
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js':
+						'export default async function main(input = {}) { return input }',
+				},
+				dependencies: [],
+			}
+		})
+		const typecheckSpy = vi
+			.spyOn(executeTypecheck, 'assertAdHocExecuteTypechecks')
+			.mockResolvedValue([
+				{ name: 'typecheck-queue', durationMs: 1 },
+				{ name: 'typecheck-total', durationMs: 12 },
+			])
+		const checkedResult = await runModuleWithRegistry(
 			{} as Env,
 			callerContext,
 			'export default async function run() { return "checked" }',
 			undefined,
 			{ capabilityRegistry, preExecTypecheck: true },
 		)
+		typecheckSpy.mockRestore()
 
 		expect(buildBundleMock).toHaveBeenCalledTimes(2)
 		expect(buildBundleMock.mock.calls[0]?.[0].beforeBundle).toBeUndefined()
@@ -1588,6 +1607,21 @@ test('runModuleWithRegistry only installs the pre-execution typecheck hook when 
 		expect(buildBundleMock.mock.calls[1]?.[0].includeTypeOnlyKodyPackages).toBe(
 			true,
 		)
+		// Both runs report Server-Timing-style phases; only the opted-in run
+		// carries typecheck phase entries ahead of them.
+		expect(uncheckedResult.serverTiming?.map((entry) => entry.name)).toEqual([
+			'bundle',
+			'run',
+		])
+		expect(checkedResult.serverTiming?.map((entry) => entry.name)).toEqual([
+			'typecheck-queue',
+			'typecheck-total',
+			'bundle',
+			'run',
+		])
+		for (const entry of checkedResult.serverTiming ?? []) {
+			expect(entry.durationMs).toBeGreaterThanOrEqual(0)
+		}
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 	}

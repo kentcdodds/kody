@@ -10,7 +10,10 @@ import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { createExecuteExecutor } from '#mcp/executor.ts'
-import { assertAdHocExecuteTypechecks } from '#mcp/execute-typecheck.ts'
+import {
+	assertAdHocExecuteTypechecks,
+	type ExecuteServerTimingEntry,
+} from '#mcp/execute-typecheck.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import {
 	getAdditionalPropertiesSchema,
@@ -639,8 +642,15 @@ export async function runModuleWithRegistry(
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
 	},
-): Promise<ExecuteResult & { runId?: string }> {
+): Promise<
+	ExecuteResult & {
+		runId?: string
+		serverTiming?: Array<ExecuteServerTimingEntry>
+	}
+> {
 	const userId = callerContext.user?.userId ?? ''
+	const serverTiming: Array<ExecuteServerTimingEntry> = []
+	const bundleStartedAtMs = Date.now()
 	const bundled = await buildKodyModuleBundle({
 		env,
 		baseUrl: callerContext.baseUrl,
@@ -653,12 +663,20 @@ export async function runModuleWithRegistry(
 		includeTypeOnlyKodyPackages: options?.preExecTypecheck === true,
 		beforeBundle: options?.preExecTypecheck
 			? async ({ packages }) => {
-					await assertAdHocExecuteTypechecks({
-						source: code,
-						packages,
-					})
+					serverTiming.push(
+						...(await assertAdHocExecuteTypechecks({
+							source: code,
+							packages,
+						})),
+					)
 				}
 			: undefined,
+	})
+	// `bundle` covers graph preparation plus the opt-in typecheck phases above;
+	// subtract `typecheck-total` when attributing bundler-only time.
+	serverTiming.push({
+		name: 'bundle',
+		durationMs: Date.now() - bundleStartedAtMs,
 	})
 	const conversationId = options?.conversationId?.trim()
 	if (conversationId && userId) {
@@ -673,7 +691,8 @@ export async function runModuleWithRegistry(
 			})
 		}
 	}
-	return runBundledModuleWithRegistry(
+	const runStartedAtMs = Date.now()
+	const result = await runBundledModuleWithRegistry(
 		env,
 		callerContext,
 		{
@@ -697,6 +716,11 @@ export async function runModuleWithRegistry(
 			conversationId: options?.conversationId ?? null,
 		},
 	)
+	serverTiming.push({
+		name: 'run',
+		durationMs: Date.now() - runStartedAtMs,
+	})
+	return { ...result, serverTiming }
 }
 
 /**
