@@ -110,6 +110,10 @@ export type PackageContextOptions = {
 	sourceId?: string | null
 } | null
 
+/** Once per isolate: sample the first kody.* capability RPC wall time. */
+let firstCapabilityDispatchSampled = false
+const firstCapabilityDispatchWarnMs = 250
+
 function isPackageSecretAvailabilityError(error: unknown) {
 	return (
 		error instanceof Error &&
@@ -255,6 +259,13 @@ async function buildKodyToolContext(
 		Object.entries(capabilityMap).map(([capabilityName, capability]) => [
 			capabilityName,
 			async (args: unknown) => {
+				// First capability RPC in a cold isolate often pays for lazy module
+				// graphs behind handlers; log once so regressions stay visible.
+				const shouldSampleFirstDispatch = !firstCapabilityDispatchSampled
+				const dispatchStartedAtMs = shouldSampleFirstDispatch ? Date.now() : 0
+				if (shouldSampleFirstDispatch) {
+					firstCapabilityDispatchSampled = true
+				}
 				await assertCallerCanAccessCapability(callerContext, capability, {
 					env,
 				})
@@ -276,10 +287,25 @@ async function buildKodyToolContext(
 					value: resolvedArgs,
 					track: options?.trackSecretInputValue,
 				})
-				return capability.handler(resolvedArgs as Record<string, unknown>, {
-					env,
-					callerContext,
-				})
+				try {
+					return await capability.handler(
+						resolvedArgs as Record<string, unknown>,
+						{
+							env,
+							callerContext,
+						},
+					)
+				} finally {
+					if (shouldSampleFirstDispatch) {
+						const durationMs = Date.now() - dispatchStartedAtMs
+						if (durationMs >= firstCapabilityDispatchWarnMs) {
+							console.warn('kody-first-capability-dispatch-slow', {
+								capabilityName,
+								durationMs,
+							})
+						}
+					}
+				}
 			},
 		]),
 	) as AdditionalKodyTools
