@@ -1,9 +1,4 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import {
-	listSavedPackagesPage,
-	setSavedPackagePrivacy,
-} from '#worker/package-registry/repo.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 
 type MaintenanceResult = Record<string, unknown> & { ok?: never }
 
@@ -100,78 +95,4 @@ export async function handleSecretMaintenanceRequest(
 			{ status: 500 },
 		)
 	}
-}
-
-export const packagePrivacyBackfillPageSize = 200
-
-/**
- * Persist `saved_packages.is_private` from each package's package.json
- * `private` field. Existing rows defaulted to private (1) in migration 0065
- * because manifests live in KV and cannot be read from SQL; this endpoint
- * pages through saved packages and corrects the projection.
- */
-export async function backfillPackagePrivacy(input: {
-	env: Env
-	baseUrl: string
-	pageSize?: number
-}) {
-	const pageSize = input.pageSize ?? packagePrivacyBackfillPageSize
-	let afterId: string | null = null
-	let scanned = 0
-	let updated = 0
-	let failed = 0
-	for (;;) {
-		const rows = await listSavedPackagesPage(input.env.APP_DB, {
-			afterId,
-			limit: pageSize,
-		})
-		if (rows.length === 0) break
-		for (const row of rows) {
-			afterId = row.id
-			scanned += 1
-			try {
-				const { manifest } = await loadPackageManifestBySourceId({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					userId: row.userId,
-					sourceId: row.sourceId,
-				})
-				const isPrivate = manifest.private === true
-				if (row.isPrivate === isPrivate) continue
-				const changed = await setSavedPackagePrivacy(input.env.APP_DB, {
-					userId: row.userId,
-					packageId: row.id,
-					isPrivate,
-				})
-				if (changed) updated += 1
-			} catch (error) {
-				failed += 1
-				console.warn('package-privacy-backfill-row-failed', row.id, error)
-			}
-		}
-		if (rows.length < pageSize) break
-	}
-	return { scanned, updated, failed }
-}
-
-/**
- * `POST /__maintenance/backfill-package-privacy`: one-off/idempotent backfill
- * of `saved_packages.is_private` from package manifests, authenticated like
- * the reindex endpoints (Bearer `CAPABILITY_REINDEX_SECRET`).
- */
-export async function handlePackagePrivacyBackfillRequest(
-	request: Request,
-	env: Env,
-): Promise<Response> {
-	const url = new URL(request.url)
-	return handleSecretMaintenanceRequest({
-		request,
-		secret: env.CAPABILITY_REINDEX_SECRET,
-		notConfiguredMessage: 'Package privacy backfill is not configured',
-		run: () =>
-			backfillPackagePrivacy({
-				env,
-				baseUrl: url.origin,
-			}),
-	})
 }

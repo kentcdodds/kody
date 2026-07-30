@@ -19,12 +19,12 @@ import {
 } from '@kody-internal/shared/remote-connectors.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
-import { listEnabledMcpServerRefs } from '#worker/mcp-client/settings-service.ts'
+import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 import { getCachedRemoteConnectorSnapshot } from '#worker/remote-connector/snapshot-cache.ts'
 import { type RemoteConnectorSnapshot } from '#worker/remote-connector/types.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
-import { listOpenApiBindings } from '#worker/openapi/binding-service.ts'
+import { listOpenApiBindingsCached } from '#worker/openapi/binding-service.ts'
 
 let staticRegistryMemo: BuiltCapabilityRegistry | null = null
 
@@ -165,9 +165,11 @@ async function resolveFeatureFlagsForRegistry(input: {
 async function loadEnabledMcpServerRefs(input: {
 	env: Env
 	userId: string
-}): Promise<Array<McpServerRef>> {
+}): Promise<ReadonlyArray<McpServerRef>> {
 	try {
-		return await listEnabledMcpServerRefs({
+		// Per-user 30s cache: registry assembly runs on every execute /
+		// package invocation, so this must not cost a D1 read per call.
+		return await listEnabledMcpServerRefsCached({
 			env: input.env,
 			userId: input.userId,
 		})
@@ -226,9 +228,11 @@ async function loadRemoteConnectorSnapshots(input: {
 async function loadOpenApiBindingsForRegistry(input: {
 	env: Env
 	userId: string
-}): Promise<Array<OpenApiBinding>> {
+}): Promise<ReadonlyArray<OpenApiBinding>> {
 	try {
-		return await listOpenApiBindings({
+		// Per-user 30s cache: registry assembly runs on every execute /
+		// package invocation, so this must not cost a D1 read per call.
+		return await listOpenApiBindingsCached({
 			env: input.env,
 			userId: input.userId,
 		})

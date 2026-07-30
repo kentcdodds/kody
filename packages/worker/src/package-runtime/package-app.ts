@@ -357,11 +357,21 @@ function createWorkflowsProxy(runtimeBridge) {
 }
 
 function createPackagesProxy(runtimeBridge) {
+	// check/invokeChecked were removed with the static-first model; they throw
+	// teaching errors locally so app code learns the replacement from the
+	// error text without a bridge round trip.
 	return {
-		check: async (input) => await runtimeBridge.packageInvokeCheck(input ?? {}),
+		check: () => {
+			throw new Error(
+				'packages.check was removed: packages.invoke always contract-checks before invoking, so call packages.invoke({ kodyId, exportName, params }) directly. A failing contract rejects with "packages.invoke contract check failed: ..." before any execution.',
+			);
+		},
 		invoke: async (input) => await runtimeBridge.packageInvoke(input ?? {}),
-		invokeChecked: async (input) =>
-			await runtimeBridge.packageInvokeChecked(input ?? {}),
+		invokeChecked: () => {
+			throw new Error(
+				'packages.invokeChecked was removed: call packages.invoke({ kodyId, exportName, params }) instead — it is always contract-checked (add idempotencyKey only when you need exactly-once) — or use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time.',
+			);
+		},
 	};
 }
 
@@ -1455,16 +1465,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	async packageInvoke(input: Record<string, unknown>) {
 		const tools = await this.createPackageRuntimeInvokeTools()
 		return await tools.invoke(input)
-	}
-
-	async packageInvokeCheck(input: Record<string, unknown>) {
-		const tools = await this.createPackageRuntimeInvokeTools()
-		return await tools.check(input)
-	}
-
-	async packageInvokeChecked(input: Record<string, unknown>) {
-		const tools = await this.createPackageRuntimeInvokeTools()
-		return await tools.invokeChecked(input)
 	}
 
 	async packageEventDispatch(input: Record<string, unknown>) {

@@ -28,11 +28,21 @@ export type DurableEscalationOutcome<T> =
  * createDynamicCallableWorkflow: active Cloudflare statuses plus any
  * transitional D1 projection status written before the instance is queued
  * (today that transitional value is `creating`). New pre-active statuses are
- * covered automatically; only completed/errored/terminated runs allow another
- * inline attempt.
+ * covered automatically; only terminal runs (complete/errored/terminated/
+ * cancelled) allow another inline attempt.
  */
 export const alreadyDispatchedWorkflowStatusExclusion =
 	terminalWorkflowStatusValues
+
+/**
+ * Terminal create() statuses that mean the durable work did not succeed.
+ * `complete` is excluded: a finished run under the key is an honest dispatched
+ * handle (the work already happened). Derived from terminalWorkflowStatusValues
+ * so cancelled stays aligned with the cancel projection.
+ */
+const deadDurableEscalationStatuses = new Set<string>(
+	terminalWorkflowStatusValues.filter((status) => status !== 'complete'),
+)
 
 /**
  * Compose a workflow_runs idempotency key that is always scoped to the same
@@ -274,6 +284,15 @@ export async function runWithDurableEscalation<T>(input: {
 				params: input.durableParams,
 			},
 		})
+		if (
+			typeof workflow.status === 'string' &&
+			deadDurableEscalationStatuses.has(workflow.status)
+		) {
+			return {
+				kind: 'failed',
+				error: `A previous durable run "${workflow.id}" for this operation ended with status "${workflow.status}" and its idempotency key blocks re-dispatch; the durable work did not complete successfully.`,
+			}
+		}
 		return {
 			kind: 'dispatched',
 			handle: createDispatchedHandle({ workflow, idempotencyKey }),

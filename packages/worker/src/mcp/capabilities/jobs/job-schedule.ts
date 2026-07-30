@@ -12,7 +12,7 @@ export const jobScheduleCapability = defineDomainCapability(
 	{
 		name: 'job_schedule',
 		description:
-			'Schedule a repo-backed job without creating a saved package first. Supports one-off, interval, and cron schedules, and each job gets its own durable storage bucket.',
+			'Schedule a repo-backed job without creating a saved package first. Supports one-off, interval, and cron schedules, optional expires_at auto-disable, and each job gets its own durable storage bucket.',
 		keywords: [
 			'job',
 			'schedule',
@@ -23,6 +23,8 @@ export const jobScheduleCapability = defineDomainCapability(
 			'background',
 			'delayed',
 			'later',
+			'expires',
+			'expiry',
 		],
 		readOnly: false,
 		idempotent: false,

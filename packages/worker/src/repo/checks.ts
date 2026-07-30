@@ -22,7 +22,7 @@ import {
 } from '#worker/package-runtime/package-artifact-targets.ts'
 import {
 	collectDeprecatedInvocationUsage,
-	formatDeprecatedInvocationUsageWarning,
+	formatRemovedInvocationUsageFailure,
 } from '#worker/package-runtime/deprecated-invocation-usage.ts'
 import {
 	collectStaticKodyPackageImportsFromFiles,
@@ -306,53 +306,14 @@ type KodyPackagesInvokeInput = KodyPackagesInvokeTarget &
   idempotency_key?: string;
   topic?: string | null;
 };
-type KodyPackagesInvokeNormalizedInput = {
-  kodyId?: string;
-  packageId?: string;
-  exportName: string;
-  params?: Record<string, unknown>;
-  idempotencyKey?: string;
-  topic?: string;
-};
-type KodyPackagesInvokeContract = {
-  packageId: string;
-  kodyId: string;
-  name: string;
-  sourceId: string;
-  publishedCommit: string | null;
-  exportName: string;
-  runtimeTarget: string | null;
-  description?: string | null;
-  typeDefinition?: string | null;
-  warnings: string[];
-};
-type KodyPackagesInvokeCheckResult =
-  | {
-      ok: true;
-      invoke: KodyPackagesInvokeNormalizedInput;
-      contract: KodyPackagesInvokeContract;
-    }
-  | {
-      ok: false;
-      message: string;
-      problems: string[];
-      contract?: Partial<KodyPackagesInvokeContract>;
-    };
 type KodyPackagesRuntime = {
   /**
-   * Actively resolves the current published package export, validates the
-   * invocation input as far as Kody metadata allows, and returns a normalized
-   * input suitable for packages.invoke. This is runtime contract visibility,
-   * not compile-time type safety; warnings explain weak validation.
+   * The only dynamic invocation primitive. Always contract-checks the current
+   * published package export before invoking; a failing contract rejects with
+   * "packages.invoke contract check failed: ...". Key-less calls are
+   * lean/ephemeral; pass idempotencyKey only for exactly-once semantics.
    */
-  check(input: KodyPackagesInvokeInput): Promise<KodyPackagesInvokeCheckResult>;
   invoke(input: KodyPackagesInvokeInput): Promise<unknown>;
-  /**
-   * Runs packages.check first, throws on check failure, then invokes the
-   * normalized current package export. Prefer this over packages.invoke when
-   * dynamically calling a package whose contract may have changed.
-   */
-  invokeChecked(input: KodyPackagesInvokeInput): Promise<unknown>;
 };
 type KodyStorageRuntime = {
   id: string;
@@ -995,20 +956,17 @@ function buildLintCheck(sourceFiles: Record<string, string>): {
 	ok: boolean
 	message: string
 } {
+	// Narrow phase: the legacy dynamic invocation surface was removed, so new
+	// publishes fail with the replacement named (the runtime also throws
+	// teaching errors for these APIs).
+	const removedUsageFailure = formatRemovedInvocationUsageFailure(
+		collectDeprecatedInvocationUsage(sourceFiles),
+	)
+	if (removedUsageFailure) {
+		return { ok: false, message: removedUsageFailure }
+	}
 	const ambientStorageFiles = collectAmbientStorageImportFiles(sourceFiles)
 	if (ambientStorageFiles.length === 0) {
-		// Widen-phase deprecations stay non-fatal: publishes succeed, but the
-		// passing lint message names each legacy invocation usage and its
-		// replacement so new packages stop adopting the retired surface.
-		const deprecationWarning = formatDeprecatedInvocationUsageWarning(
-			collectDeprecatedInvocationUsage(sourceFiles),
-		)
-		if (deprecationWarning) {
-			return {
-				ok: true,
-				message: `Lint passed. ${deprecationWarning}`,
-			}
-		}
 		return { ok: true, message: lintPlaceholderPassedMessage }
 	}
 	const shownFiles = ambientStorageFiles.slice(

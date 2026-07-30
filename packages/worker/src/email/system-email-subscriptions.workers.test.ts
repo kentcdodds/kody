@@ -9,6 +9,12 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { buildPublishedSourceManifestSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { exportRunRecords } from '#worker/run-records/service.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import {
+	assignAdminRole,
+	ensurePackageSubscriptionTestSchema,
+	ensureRbacTestSchema,
+	seedAccount,
+} from '#worker/test-support/workers-seed.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
@@ -17,125 +23,6 @@ const systemTopic = 'email.system-message.received'
 
 function createInboundEnv() {
 	return { ...env, APP_BASE_URL: platformBaseUrl }
-}
-
-async function ensurePackageSubscriptionTestSchema(db: D1Database) {
-	const statements = [
-		`CREATE TABLE IF NOT EXISTS saved_packages (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			name TEXT NOT NULL,
-			kody_id TEXT NOT NULL,
-			description TEXT NOT NULL,
-			tags_json TEXT NOT NULL DEFAULT '[]',
-			search_text TEXT,
-			source_id TEXT NOT NULL,
-			has_app INTEGER NOT NULL DEFAULT 0,
-			hidden INTEGER NOT NULL DEFAULT 0,
-			is_private INTEGER NOT NULL DEFAULT 1,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS entity_sources (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			entity_kind TEXT NOT NULL,
-			entity_id TEXT NOT NULL,
-			repo_id TEXT NOT NULL,
-			published_commit TEXT,
-			indexed_commit TEXT,
-			manifest_path TEXT NOT NULL,
-			source_root TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			source_id TEXT NOT NULL,
-			published_commit TEXT NOT NULL,
-			artifact_kind TEXT NOT NULL,
-			artifact_name TEXT,
-			entry_point TEXT NOT NULL,
-			kv_key TEXT NOT NULL,
-			dependencies_json TEXT NOT NULL DEFAULT '[]',
-			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_published_bundle_artifacts_identity
-		ON published_bundle_artifacts(user_id, source_id, artifact_kind, COALESCE(artifact_name, ''), entry_point)`,
-	]
-	for (const statement of statements) {
-		await db.prepare(statement).run()
-	}
-	try {
-		await db
-			.prepare(
-				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
-			)
-			.run()
-	} catch {
-		// Column already present on newer schemas.
-	}
-}
-
-async function ensureRbacTestSchema(db: D1Database) {
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS roles (
-				id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-				name TEXT NOT NULL UNIQUE,
-				description TEXT NOT NULL DEFAULT ''
-			)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS user_roles (
-				user_id INTEGER NOT NULL,
-				role_id INTEGER NOT NULL,
-				PRIMARY KEY (user_id, role_id)
-			)`,
-		)
-		.run()
-	await db
-		.prepare(`INSERT OR IGNORE INTO roles (name) VALUES ('user'), ('admin')`)
-		.run()
-}
-
-async function seedAccount(input: { email: string; username: string }) {
-	const stableUserId = await createStableUserIdFromEmail(input.email)
-	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-		 VALUES (?, ?, 'test-password-hash', ?, ?, ?)
-		 ON CONFLICT(email) DO UPDATE SET
-			username = excluded.username,
-			stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
-			plan = excluded.plan,
-			updated_at = CURRENT_TIMESTAMP`,
-	)
-		.bind(
-			input.username,
-			input.email,
-			new Date().toISOString(),
-			stableUserId,
-			'max',
-		)
-		.run()
-	const row = await env.APP_DB.prepare(`SELECT id FROM users WHERE email = ?`)
-		.bind(input.email)
-		.first<{ id: number }>()
-	if (!row) throw new Error(`Expected seeded user row for ${input.email}`)
-	return row.id
-}
-
-async function assignAdminRole(userId: number) {
-	await env.APP_DB.prepare(
-		`INSERT OR IGNORE INTO user_roles (user_id, role_id)
-		 SELECT ?, id FROM roles WHERE name = 'admin'`,
-	)
-		.bind(userId)
-		.run()
 }
 
 async function seedSubscribedPackage(input: {
@@ -273,16 +160,20 @@ test(
 		const adminEmail = `system-sub-admin-${crypto.randomUUID()}@example.com`
 		const adminStableId = await createStableUserIdFromEmail(adminEmail)
 		const adminAccountId = await seedAccount({
+			db: env.APP_DB,
 			email: adminEmail,
 			username: `sysadmin-${crypto.randomUUID().slice(0, 8)}`,
+			plan: 'max',
 		})
-		await assignAdminRole(adminAccountId)
+		await assignAdminRole({ db: env.APP_DB, userId: adminAccountId })
 
 		const regularEmail = `system-sub-user-${crypto.randomUUID()}@example.com`
 		const regularStableId = await createStableUserIdFromEmail(regularEmail)
 		await seedAccount({
+			db: env.APP_DB,
 			email: regularEmail,
 			username: `sysuser-${crypto.randomUUID().slice(0, 8)}`,
+			plan: 'max',
 		})
 
 		const bundleKv = new Map<string, string>()
@@ -293,7 +184,7 @@ test(
 		})
 		// A non-admin saving the identical subscription must never receive
 		// operator system mail.
-		const regularPackage = await seedSubscribedPackage({
+		await seedSubscribedPackage({
 			bundleKv,
 			userId: regularStableId,
 			scope: 'sysuser',

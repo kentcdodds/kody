@@ -68,10 +68,16 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 			if (packageId) {
 				throw new Error(interactiveApprovalErrorMessage)
 			}
+			const submitterUsername = user.username?.trim()
+			if (!submitterUsername) {
+				throw new Error(
+					'Platform feedback requires an authenticated account username.',
+				)
+			}
 			const feedback = await submitPlatformFeedback({
 				db: ctx.env.APP_DB,
 				submitterUserId: user.userId,
-				submitterUsername: user.username ?? null,
+				submitterUsername,
 				submitterEmail: user.email,
 				category: args.category,
 				summary: args.summary,

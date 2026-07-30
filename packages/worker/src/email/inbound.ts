@@ -26,7 +26,6 @@ import {
 	readForwardableEmailRawMime,
 } from './parser.ts'
 import {
-	adoptLegacyInboundDelivery,
 	buildInboundDelivery,
 	claimInboundDeliveryWindow,
 	claimInboundDeliveryStorage,
@@ -279,8 +278,9 @@ export async function handleInboundEmail(
 			const account = {
 				email: identity.email,
 				plan: resolveEffectivePlan(
-					// Defensive: missing row or unexpected stored value still fails open.
-					parseStoredPlanName(accountRow?.plan),
+					// A scoped miss keeps the existing synthetic-account fallback.
+					// A present row must satisfy the plan storage contract.
+					accountRow ? parseStoredPlanName(accountRow.plan) : 'max',
 					accountRow?.stripe_plan ?? null,
 				),
 				emailVerified: Boolean(accountRow?.email_verified_at),
@@ -450,20 +450,11 @@ export async function handleInboundEmail(
 				now: quotaNow,
 			})
 			let delivery = activeWindow ?? candidateDelivery
-			let existingDelivery =
-				(await getInboundDelivery({
-					db: env.APP_DB,
-					userId,
-					deliveryId: delivery.deliveryId,
-				})) ??
-				(await adoptLegacyInboundDelivery({
-					db: env.APP_DB,
-					blobs: env.EMAIL_BLOBS,
-					delivery,
-					rawMime,
-					rawSize: message.rawSize,
-					now: quotaNow,
-				}))
+			let existingDelivery = await getInboundDelivery({
+				db: env.APP_DB,
+				userId,
+				deliveryId: delivery.deliveryId,
+			})
 			if (!existingDelivery) {
 				try {
 					// New deliveries check storage bytes and stored-message caps
@@ -532,20 +523,11 @@ export async function handleInboundEmail(
 					!existingDelivery ||
 					existingDelivery.deliveryId !== delivery.deliveryId
 				) {
-					existingDelivery =
-						(await getInboundDelivery({
-							db: env.APP_DB,
-							userId,
-							deliveryId: delivery.deliveryId,
-						})) ??
-						(await adoptLegacyInboundDelivery({
-							db: env.APP_DB,
-							blobs: env.EMAIL_BLOBS,
-							delivery,
-							rawMime,
-							rawSize: message.rawSize,
-							now: quotaNow,
-						}))
+					existingDelivery = await getInboundDelivery({
+						db: env.APP_DB,
+						userId,
+						deliveryId: delivery.deliveryId,
+					})
 				}
 			}
 			let claimedDelivery: InboundDelivery
@@ -777,20 +759,11 @@ async function handleSystemInboundEmail(input: {
 		now: quotaNow,
 	})
 	let delivery = activeWindow ?? candidateDelivery
-	let existingDelivery =
-		(await getInboundDelivery({
-			db: input.env.APP_DB,
-			userId: systemEmailOwnerId,
-			deliveryId: delivery.deliveryId,
-		})) ??
-		(await adoptLegacyInboundDelivery({
-			db: input.env.APP_DB,
-			blobs: input.env.EMAIL_BLOBS,
-			delivery,
-			rawMime,
-			rawSize: input.message.rawSize,
-			now: quotaNow,
-		}))
+	let existingDelivery = await getInboundDelivery({
+		db: input.env.APP_DB,
+		userId: systemEmailOwnerId,
+		deliveryId: delivery.deliveryId,
+	})
 	if (!existingDelivery) {
 		const storedMessages = await countStoredSystemEmailMessages({
 			db: input.env.APP_DB,
@@ -837,20 +810,11 @@ async function handleSystemInboundEmail(input: {
 			!existingDelivery ||
 			existingDelivery.deliveryId !== delivery.deliveryId
 		) {
-			existingDelivery =
-				(await getInboundDelivery({
-					db: input.env.APP_DB,
-					userId: systemEmailOwnerId,
-					deliveryId: delivery.deliveryId,
-				})) ??
-				(await adoptLegacyInboundDelivery({
-					db: input.env.APP_DB,
-					blobs: input.env.EMAIL_BLOBS,
-					delivery,
-					rawMime,
-					rawSize: input.message.rawSize,
-					now: quotaNow,
-				}))
+			existingDelivery = await getInboundDelivery({
+				db: input.env.APP_DB,
+				userId: systemEmailOwnerId,
+				deliveryId: delivery.deliveryId,
+			})
 		}
 	}
 	const claim = existingDelivery

@@ -154,10 +154,11 @@ function ownershipLabel(ownership: AccountJobListItem['ownership']) {
 function statusLabel(
 	job: Pick<
 		AccountJobListItem,
-		'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus'
+		'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus' | 'expired'
 	>,
 ) {
 	if (job.killSwitchEnabled) return 'Kill switch on'
+	if (job.expired) return 'Expired'
 	if (!job.enabled) return 'Disabled'
 	if (job.dueNow) return 'Due now'
 	if (job.lastRunStatus === 'error') return 'Last run failed'
@@ -168,10 +169,11 @@ function statusLabel(
 function statusColor(
 	job: Pick<
 		AccountJobListItem,
-		'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus'
+		'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus' | 'expired'
 	>,
 ) {
 	if (job.killSwitchEnabled) return colors.error
+	if (job.expired) return colors.textMuted
 	if (!job.enabled) return colors.textMuted
 	if (job.dueNow) return colors.primary
 	if (job.lastRunStatus === 'error') return colors.error
@@ -755,6 +757,20 @@ export function AccountJobsRoute(handle: Handle) {
 																	Preserved
 																</span>
 															) : null}
+															{item.expired ? (
+																<span
+																	mix={css({
+																		fontSize: typography.fontSize.xs,
+																		color: colors.textMuted,
+																		border: `1px solid ${colors.border}`,
+																		borderRadius: radius.md,
+																		padding: `0 ${spacing.sm}`,
+																		lineHeight: '1.4rem',
+																	})}
+																>
+																	Expired
+																</span>
+															) : null}
 															<span
 																mix={css({
 																	fontSize: typography.fontSize.xs,
@@ -825,6 +841,14 @@ export function AccountJobsRoute(handle: Handle) {
 											value: detail.preserved
 												? 'On (never auto-deleted)'
 												: 'Off',
+										},
+										{
+											label: 'Expires',
+											value: detail.expiresAt
+												? detail.expired
+													? `Expired ${formatTimestamp(detail.expiresAt)}`
+													: formatTimestamp(detail.expiresAt)
+												: 'Never',
 										},
 										{
 											label: 'Status',

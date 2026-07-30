@@ -5,6 +5,7 @@ import {
 	validateMcpServerUrl,
 	type McpServerRef,
 } from '@kody-internal/shared/mcp-servers.ts'
+import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { createMcpClientHubClient } from './hub-client.ts'
 import {
 	deleteMcpServerSettingRow,
@@ -62,6 +63,45 @@ export async function listEnabledMcpServerRefs(input: {
 		serverId: row.id,
 		name: row.name,
 	}))
+}
+
+export const enabledMcpServerRefsCacheTtlMs = 30_000
+export const enabledMcpServerRefsCacheLimit = 200
+
+function createEnabledMcpServerRefsCache() {
+	return new PromiseLruCache<ReadonlyArray<McpServerRef>>({
+		ttlMs: enabledMcpServerRefsCacheTtlMs,
+		limit: enabledMcpServerRefsCacheLimit,
+	})
+}
+
+let enabledMcpServerRefsCache = createEnabledMcpServerRefsCache()
+
+/**
+ * Short-TTL per-user cache over {@link listEnabledMcpServerRefs} for hot
+ * invocation paths (capability-registry / runtime metadata assembly, which
+ * otherwise pay this D1 read on every run). Mutations in this module
+ * invalidate eagerly, so the same-isolate staleness after add / enable /
+ * delete is zero; other isolates converge within the TTL — the same bound
+ * the MCP hub and remote-connector snapshot caches already use. Settings UI
+ * reads should keep using the uncached functions.
+ */
+export function listEnabledMcpServerRefsCached(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+}): Promise<ReadonlyArray<McpServerRef>> {
+	return enabledMcpServerRefsCache.getOrCreate({
+		cacheKey: input.userId,
+		create: async () => Object.freeze(await listEnabledMcpServerRefs(input)),
+	})
+}
+
+function invalidateEnabledMcpServerRefsCache(input: { userId: string }) {
+	enabledMcpServerRefsCache.delete(input.userId)
+}
+
+export function clearEnabledMcpServerRefsCacheForTests() {
+	enabledMcpServerRefsCache = createEnabledMcpServerRefsCache()
 }
 
 function validateNameOrThrow(name: string) {
@@ -137,6 +177,7 @@ export async function addMcpServer(input: {
 		await hub.removeServer({ serverId: row.id }).catch(() => {})
 		throw error
 	}
+	invalidateEnabledMcpServerRefsCache({ userId: input.userId })
 	return {
 		setting: toMetadata(row),
 		connection,
@@ -170,6 +211,7 @@ export async function setMcpServerEnabled(input: {
 	if (!updated) {
 		throw new Error('MCP server setting not found.')
 	}
+	invalidateEnabledMcpServerRefsCache({ userId: input.userId })
 	return toMetadata(row)
 }
 
@@ -189,11 +231,13 @@ export async function deleteMcpServer(input: {
 		userId: input.userId,
 	})
 	await hub.removeServer({ serverId: input.id })
-	return deleteMcpServerSettingRow({
+	const deleted = await deleteMcpServerSettingRow({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		id: input.id,
 	})
+	invalidateEnabledMcpServerRefsCache({ userId: input.userId })
+	return deleted
 }
 
 export async function getMcpServerSettingById(input: {

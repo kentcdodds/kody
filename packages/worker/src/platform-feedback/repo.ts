@@ -19,12 +19,8 @@ function mapPlatformFeedbackRow(
 	return {
 		id: String(row['id']),
 		submitterUserId: String(row['submitter_user_id']),
-		submitterUsername:
-			row['submitter_username'] == null
-				? null
-				: String(row['submitter_username']),
-		submitterEmail:
-			row['submitter_email'] == null ? null : String(row['submitter_email']),
+		submitterUsername: String(row['submitter_username']),
+		submitterEmail: String(row['submitter_email']),
 		category: String(row['category']) as PlatformFeedbackCategory,
 		summary: String(row['summary']),
 		details: String(row['details']),

@@ -3,8 +3,10 @@ import {
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
 import {
-	loadPackageManifestBySourceId,
+	loadPackageManifestForSource,
 	loadPackageSourceBySourceId,
+	loadPackageSourceRowForUser,
+	type LoadedPackageManifest,
 } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
@@ -26,6 +28,12 @@ import {
 	type PackageModuleResolution,
 	type PackageModuleSelector,
 } from './common.ts'
+import {
+	loadModuleArtifactWithCommitCache,
+	loadSourceRowWithFreshnessCache,
+	resolveSavedPackageWithFreshnessCache,
+	type CachedInvokeModuleArtifact,
+} from './invoke-contract-cache.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 
 export async function resolveSavedPackage(input: {
@@ -33,32 +41,64 @@ export async function resolveSavedPackage(input: {
 	userId: string
 	packageIdOrKodyId: string
 }): Promise<SavedPackageRecord | null> {
-	return (
-		(await getSavedPackageById(input.db, {
-			userId: input.userId,
-			packageId: input.packageIdOrKodyId,
-		})) ??
-		(await getSavedPackageByKodyId(input.db, {
-			userId: input.userId,
-			kodyId: input.packageIdOrKodyId,
-		}))
-	)
+	return await resolveSavedPackageWithFreshnessCache({
+		userId: input.userId,
+		packageIdOrKodyId: input.packageIdOrKodyId,
+		load: async () =>
+			(await getSavedPackageById(input.db, {
+				userId: input.userId,
+				packageId: input.packageIdOrKodyId,
+			})) ??
+			(await getSavedPackageByKodyId(input.db, {
+				userId: input.userId,
+				kodyId: input.packageIdOrKodyId,
+			})),
+	})
+}
+
+/**
+ * Manifest load for invocation paths: the entity-source row (the freshness
+ * anchor carrying `published_commit`) comes from the short-TTL invoke
+ * contract cache, and the manifest itself from the commit-keyed manifest
+ * cache. Warm calls perform zero D1/KV loads. Publish and rebuild flows must
+ * keep using `loadPackageManifestBySourceId`, which always reads the row
+ * fresh.
+ */
+export async function loadInvokeManifestBySourceId(input: {
+	env: Env
+	userId: string
+	sourceId: string
+}): Promise<LoadedPackageManifest> {
+	const source = await loadSourceRowWithFreshnessCache({
+		userId: input.userId,
+		sourceId: input.sourceId,
+		load: () =>
+			loadPackageSourceRowForUser({
+				env: input.env,
+				userId: input.userId,
+				sourceId: input.sourceId,
+			}),
+	})
+	return await loadPackageManifestForSource({
+		env: input.env,
+		userId: input.userId,
+		source,
+	})
 }
 
 export async function ensureModuleArtifact(input: {
 	env: Env
 	baseUrl: string
-	packageManifest?: Awaited<ReturnType<typeof loadPackageManifestBySourceId>>
+	packageManifest?: LoadedPackageManifest
 	resolution?: PackageModuleResolution
 	savedPackage: SavedPackageRecord
 	selector: PackageModuleSelector
 	userId: string
-}) {
+}): Promise<CachedInvokeModuleArtifact> {
 	const packageManifest =
 		input.packageManifest ??
-		(await loadPackageManifestBySourceId({
+		(await loadInvokeManifestBySourceId({
 			env: input.env,
-			baseUrl: input.baseUrl,
 			userId: input.userId,
 			sourceId: input.savedPackage.sourceId,
 		}))
@@ -68,6 +108,35 @@ export async function ensureModuleArtifact(input: {
 			manifest: packageManifest.manifest,
 			selector: input.selector,
 		})
+	return await loadModuleArtifactWithCommitCache({
+		userId: input.userId,
+		sourceId: input.savedPackage.sourceId,
+		publishedCommit: packageManifest.source.published_commit,
+		artifactName: resolution.artifactName,
+		entryPoint: resolution.entryPoint,
+		load: () =>
+			ensureModuleArtifactUncached({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				packageManifest,
+				resolution,
+				savedPackage: input.savedPackage,
+				selector: input.selector,
+				userId: input.userId,
+			}),
+	})
+}
+
+async function ensureModuleArtifactUncached(input: {
+	env: Env
+	baseUrl: string
+	packageManifest: LoadedPackageManifest
+	resolution: PackageModuleResolution
+	savedPackage: SavedPackageRecord
+	selector: PackageModuleSelector
+	userId: string
+}): Promise<CachedInvokeModuleArtifact> {
+	const { packageManifest, resolution } = input
 	const loaded = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
 		userId: input.userId,
@@ -89,9 +158,18 @@ export async function ensureModuleArtifact(input: {
 		userId: input.userId,
 		sourceId: input.savedPackage.sourceId,
 	})
+	// The caller's manifest may come from the freshness-cached source row and
+	// trail a republish by up to the freshness TTL, while the source load
+	// above is always current. Re-derive the module resolution from the
+	// freshly loaded manifest so the typecheck, bundle, and persisted
+	// artifact identity are all self-consistent with the commit being built.
+	const freshResolution = resolvePackageModuleResolution({
+		manifest: packageSource.manifest,
+		selector: input.selector,
+	})
 	const typecheckResult = await typecheckPackageEntrypointsFromSourceFiles({
 		sourceFiles: packageSource.files,
-		entryPoints: [{ path: resolution.entryPoint, includeStorage: true }],
+		entryPoints: [{ path: freshResolution.entryPoint, includeStorage: true }],
 		emittedEventTopics: Object.keys(packageSource.manifest.kody.emits ?? {}),
 	})
 	if (!typecheckResult.ok) {
@@ -99,7 +177,7 @@ export async function ensureModuleArtifact(input: {
 	}
 	assertPublishedSourceCanRebuildWithoutInstallingDeps({
 		sourceFiles: packageSource.files,
-		bundleLabel: `Saved package export "${resolution.artifactName}"`,
+		bundleLabel: `Saved package export "${freshResolution.artifactName}"`,
 	})
 	const { buildKodyModuleBundle } =
 		await import('#worker/package-runtime/module-graph.ts')
@@ -108,7 +186,7 @@ export async function ensureModuleArtifact(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		sourceFiles: packageSource.files,
-		entryPoint: resolution.entryPoint,
+		entryPoint: freshResolution.entryPoint,
 		rootPackageId: input.savedPackage.id,
 	})
 	await persistPublishedBundleArtifact({
@@ -116,8 +194,8 @@ export async function ensureModuleArtifact(input: {
 		userId: input.userId,
 		source: packageSource.source,
 		kind: 'module',
-		artifactName: resolution.artifactName,
-		entryPoint: resolution.entryPoint,
+		artifactName: freshResolution.artifactName,
+		entryPoint: freshResolution.entryPoint,
 		mainModule: bundle.mainModule,
 		modules: bundle.modules,
 		dependencies: bundle.dependencies,
@@ -133,8 +211,8 @@ export async function ensureModuleArtifact(input: {
 		userId: input.userId,
 		sourceId: input.savedPackage.sourceId,
 		kind: 'module',
-		artifactName: resolution.artifactName,
-		entryPoint: resolution.entryPoint,
+		artifactName: freshResolution.artifactName,
+		entryPoint: freshResolution.entryPoint,
 	})
 	if (!rebuilt?.artifact) {
 		const moduleLabel =
@@ -148,7 +226,7 @@ export async function ensureModuleArtifact(input: {
 	return {
 		artifact: rebuilt.artifact,
 		source: packageSource.source,
-		entryPoint: resolution.entryPoint,
+		entryPoint: freshResolution.entryPoint,
 	}
 }
 

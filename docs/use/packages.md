@@ -148,19 +148,16 @@ exhaustive.
   Ad hoc execute code bundles per call, so static imports from execute always
   see the current published version.
 - Literal dynamic imports such as
-  `await import("kody:@scope/my-package/export")` are **deprecated**. They still
-  resolve the target package export at runtime for the signed-in user, but log a
-  deprecation warning (once per specifier) naming the replacement. Do not write
-  new code with them: use a static import when the name is known at write time,
+  `await import("kody:@scope/my-package/export")` were **removed**. The call
+  site throws a teaching error naming the replacement, and package publish
+  checks fail on them: use a static import when the name is known at write time,
   or `packages.invoke` when it is not (see
   [Dynamic package invocation](#dynamic-package-invocation)).
 - Every direct static `kody:@...` import must be declared in
   `package.json#kody.dependencies` using the imported package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Package
   checks fail when static imports and declarations differ. Type-only imports do
-  not count, declaration files such as `.d.ts` are treated as type-only, and
-  current-version literal dynamic `import("kody:@...")` expressions do not need
-  `kody.dependencies` declarations.
+  not count, and declaration files such as `.d.ts` are treated as type-only.
 - Computed dynamic Kody package imports, including template strings and
   variables such as `import(packageSpecifier)`, are unsupported. When the target
   package is not known until runtime, use `packages.invoke` instead.
@@ -262,13 +259,15 @@ Use keyless `packages.invoke` from execute when you need to enter a saved
 package as that package so it receives `packageContext`, package-owned storage,
 package-mounted secrets (`kody.secretMounts`), and its own `packages` helper.
 
-**Deprecated:** `packages.invokeChecked`, `packages.check`, and literal dynamic
-`import("kody:@...")` still work but should not appear in new code.
-`packages.invoke` already performs the contract check that `invokeChecked` and
-`check` provided (`invokeChecked` is now a plain alias of `invoke`), and the
-static/dynamic rules above cover the literal dynamic import cases. Using any of
-the three logs a runtime deprecation warning naming the replacement, and package
-publish checks report them as non-fatal warnings.
+**Removed:** `packages.invokeChecked`, `packages.check`, and literal dynamic
+`import("kody:@...")` no longer exist. Calling any of them from new source or
+newly built bundles throws a teaching error naming the replacement, and package
+publish checks fail on them (bundles published before the removal keep working
+through hydration until their packages republish). `packages.invoke` performs
+the contract check that `invokeChecked` and `check` provided, and the
+static/dynamic rules above cover the literal dynamic import cases. The
+`0002-static-first-invocation` package codemod migrates `invokeChecked` call
+sites mechanically.
 
 ## Package storage
 
@@ -497,9 +496,12 @@ Jobs are part of the package definition.
 For repo-backed jobs that are not part of a saved package, use `job_schedule`
 instead. `job_schedule_once` is the one-off shortcut, `job_update` can rename a
 job and adjust safe mutable fields such as schedule, timezone, enabled state,
-kill-switch state, params, or ES module code with a default-exported function,
-`job_delete` removes an existing scheduled job by id, and `job_run_now` can
-trigger an existing scheduled job immediately for debugging or ad hoc runs.
+kill-switch state, params, `expires_at` (UTC ISO auto-disable; null clears), or
+ES module code with a default-exported function, `job_delete` removes an
+existing scheduled job by id, and `job_run_now` can trigger an existing
+scheduled job immediately for debugging or ad hoc runs. When `expires_at` is
+reached the platform stops scheduling and auto-disables the job; that is
+separate from `preserved`, which only skips retention deletion.
 
 When `job_update` receives a replacement `code` string, Kody publishes a new
 commit on the job's repo-backed source, and subsequent runs execute the updated

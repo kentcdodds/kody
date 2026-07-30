@@ -1,3 +1,4 @@
+import { parseJsonWithFallback } from '@kody-internal/shared/json-parsing.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 
@@ -15,6 +16,7 @@ type JobRowRecord = {
 	enabled: number
 	kill_switch_enabled: number
 	preserved: number
+	expires_at: string | null
 	caller_context_json: string
 	created_at: string
 	updated_at: string
@@ -58,6 +60,7 @@ function serializeJob(job: JobRecord) {
 		enabled: job.enabled ? 1 : 0,
 		kill_switch_enabled: job.killSwitchEnabled ? 1 : 0,
 		preserved: job.preserved ? 1 : 0,
+		expires_at: job.expiresAt ?? null,
 		created_at: job.createdAt,
 		updated_at: job.updatedAt,
 		last_run_at: job.lastRunAt ?? null,
@@ -68,17 +71,6 @@ function serializeJob(job: JobRecord) {
 		run_count: job.runCount,
 		success_count: job.successCount,
 		error_count: job.errorCount,
-	}
-}
-
-// A corrupt stored JSON column must not fail list/get for every job of the
-// user, so parsing degrades to the caller's fallback shape.
-function parseJson<T>(value: string | null, fallback: T): T {
-	if (!value) return fallback
-	try {
-		return JSON.parse(value) as T
-	} catch {
-		return fallback
 	}
 }
 
@@ -95,25 +87,31 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		sourceId: String(row['source_id']),
 		publishedCommit:
 			row['published_commit'] == null ? null : String(row['published_commit']),
-		repoCheckPolicy: parseJson<JobRecord['repoCheckPolicy'] | undefined>(
+		repoCheckPolicy: parseJsonWithFallback<
+			JobRecord['repoCheckPolicy'] | undefined
+		>(
 			row['repo_check_policy_json'] == null
 				? null
 				: String(row['repo_check_policy_json']),
 			undefined,
 		),
 		storageId,
-		params: parseJson<Record<string, unknown> | undefined>(
+		params: parseJsonWithFallback<Record<string, unknown> | undefined>(
 			row['params_json'] == null ? null : String(row['params_json']),
 			undefined,
 		),
-		schedule: parseJson<JobRecord['schedule']>(String(row['schedule_json']), {
-			type: 'once',
-			runAt: String(row['next_run_at']),
-		}),
+		schedule: parseJsonWithFallback<JobRecord['schedule']>(
+			String(row['schedule_json']),
+			{
+				type: 'once',
+				runAt: String(row['next_run_at']),
+			},
+		),
 		timezone: String(row['timezone']),
 		enabled: Number(row['enabled']) === 1,
 		killSwitchEnabled: Number(row['kill_switch_enabled']) === 1,
 		preserved: Number(row['preserved'] ?? 0) === 1,
+		expiresAt: row['expires_at'] == null ? null : String(row['expires_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 		lastRunAt:
@@ -150,6 +148,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		enabled: record.enabled ? 1 : 0,
 		kill_switch_enabled: record.killSwitchEnabled ? 1 : 0,
 		preserved: record.preserved ? 1 : 0,
+		expires_at: record.expiresAt,
 		caller_context_json: String(row['caller_context_json']),
 		created_at: record.createdAt,
 		updated_at: record.updatedAt,
@@ -181,7 +180,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 				: String(row['last_completed_scheduled_for']),
 		record,
 		callerContextJson: String(row['caller_context_json']),
-		callerContext: parseJson<PersistedJobCallerContext | null>(
+		callerContext: parseJsonWithFallback<PersistedJobCallerContext | null>(
 			row['caller_context_json'] == null
 				? null
 				: String(row['caller_context_json']),
@@ -205,10 +204,10 @@ export async function insertJobRow(input: {
 		.prepare(
 			`INSERT INTO jobs (
 				id, user_id, name, source_id, published_commit, repo_check_policy_json, storage_id, params_json, schedule_json, timezone, enabled,
-				kill_switch_enabled, preserved, caller_context_json, created_at, updated_at,
+				kill_switch_enabled, preserved, expires_at, caller_context_json, created_at, updated_at,
 				last_run_at, last_run_status, last_run_error, last_duration_ms,
 				next_run_at, run_count, success_count, error_count
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			serialized.id,
@@ -224,6 +223,7 @@ export async function insertJobRow(input: {
 			serialized.enabled,
 			serialized.kill_switch_enabled,
 			serialized.preserved,
+			serialized.expires_at,
 			input.callerContextJson,
 			serialized.created_at,
 			serialized.updated_at,
@@ -250,7 +250,7 @@ export async function updateJobRow(input: {
 		.prepare(
 			`UPDATE jobs SET
 				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
-				enabled = ?, kill_switch_enabled = ?, preserved = ?, caller_context_json = ?, updated_at = ?,
+				enabled = ?, kill_switch_enabled = ?, preserved = ?, expires_at = ?, caller_context_json = ?, updated_at = ?,
 				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
 				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?,
 				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
@@ -270,6 +270,7 @@ export async function updateJobRow(input: {
 			serialized.enabled,
 			serialized.kill_switch_enabled,
 			serialized.preserved,
+			serialized.expires_at,
 			input.callerContextJson,
 			serialized.updated_at,
 			serialized.last_run_at,
@@ -348,6 +349,7 @@ export async function listDueJobRows(
 			WHERE user_id = ?
 				AND enabled = 1
 				AND kill_switch_enabled = 0
+				AND (expires_at IS NULL OR expires_at > ?)
 				AND next_run_at <= ?
 				AND (
 					claim_token IS NULL
@@ -361,7 +363,7 @@ export async function listDueJobRows(
 			ORDER BY next_run_at ASC, name ASC
 			LIMIT ?`,
 		)
-		.bind(userId, nowIso, nowIso, maxDueJobsPerAlarm)
+		.bind(userId, nowIso, nowIso, nowIso, maxDueJobsPerAlarm)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
 }
@@ -387,6 +389,7 @@ export async function listSilentlyOverdueJobRowsPage(
 			WHERE id > ?
 				AND enabled = 1
 				AND kill_switch_enabled = 0
+				AND (expires_at IS NULL OR expires_at > ?)
 				AND next_run_at <= ?
 				AND (
 					claim_token IS NULL
@@ -402,6 +405,7 @@ export async function listSilentlyOverdueJobRowsPage(
 		)
 		.bind(
 			input.afterId ?? '',
+			input.nowIso,
 			input.overdueBeforeIso,
 			input.nowIso,
 			input.limit,
@@ -418,6 +422,7 @@ export async function listSilentlyOverdueJobRowsPage(
 export async function listStuckSkippedJobRowsPage(
 	db: D1Database,
 	input: {
+		nowIso: string
 		afterId: string | null
 		limit: number
 	},
@@ -428,13 +433,14 @@ export async function listStuckSkippedJobRowsPage(
 			WHERE id > ?
 				AND enabled = 1
 				AND kill_switch_enabled = 0
+				AND (expires_at IS NULL OR expires_at > ?)
 				AND json_extract(schedule_json, '$.type') != 'once'
 				AND last_completed_scheduled_for IS NOT NULL
 				AND last_completed_scheduled_for = COALESCE(retry_scheduled_for, next_run_at)
 			ORDER BY id ASC
 			LIMIT ?`,
 		)
-		.bind(input.afterId ?? '', input.limit)
+		.bind(input.afterId ?? '', input.nowIso, input.limit)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRow)
 }
@@ -485,12 +491,16 @@ export async function getNextRunnableJobRow(
 						AND lease_expires_at IS NOT NULL
 						AND lease_expires_at > ?
 					THEN lease_expires_at
+					WHEN expires_at IS NOT NULL
+						AND expires_at < next_run_at
+					THEN expires_at
 					ELSE next_run_at
 				END AS scheduler_wake_at
 			FROM jobs
 			WHERE user_id = ?
 				AND enabled = 1
 				AND kill_switch_enabled = 0
+				AND (expires_at IS NULL OR expires_at > ?)
 				AND (
 					last_completed_scheduled_for IS NULL
 					OR last_completed_scheduled_for != COALESCE(retry_scheduled_for, next_run_at)
@@ -498,7 +508,7 @@ export async function getNextRunnableJobRow(
 			ORDER BY scheduler_wake_at ASC, name ASC
 			LIMIT 1`,
 		)
-		.bind(nowIso, userId)
+		.bind(nowIso, userId, nowIso)
 		.first<Record<string, unknown>>()
 	return result ? mapRow(result) : null
 }
@@ -532,6 +542,7 @@ export async function claimJobRow(input: {
 				AND user_id = ?
 				AND enabled = 1
 				AND kill_switch_enabled = 0
+				AND (expires_at IS NULL OR expires_at > ?)
 				AND next_run_at <= ?
 				AND (
 					claim_token IS NULL
@@ -552,6 +563,7 @@ export async function claimJobRow(input: {
 			input.userId,
 			nowIso,
 			nowIso,
+			nowIso,
 		)
 		.first<Record<string, unknown>>()
 	return result ? mapRow(result) : null
@@ -570,7 +582,7 @@ export async function finalizeClaimedJobRow(input: {
 		.prepare(
 			`UPDATE jobs SET
 				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
-				enabled = ?, kill_switch_enabled = ?, preserved = ?, caller_context_json = ?, updated_at = ?,
+				enabled = ?, kill_switch_enabled = ?, preserved = ?, expires_at = ?, caller_context_json = ?, updated_at = ?,
 				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
 				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?,
 				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
@@ -590,6 +602,7 @@ export async function finalizeClaimedJobRow(input: {
 			serialized.enabled,
 			serialized.kill_switch_enabled,
 			serialized.preserved,
+			serialized.expires_at,
 			input.callerContextJson,
 			serialized.updated_at,
 			serialized.last_run_at,
@@ -650,6 +663,31 @@ export async function deleteJobRow(
 		.bind(jobId, userId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
+}
+
+/**
+ * Auto-disable enabled jobs whose expires_at has passed. Expiry stops
+ * scheduling; retention still ages disabled ad-hoc jobs separately from
+ * `preserved`. Returns the number of rows flipped to enabled = 0.
+ */
+export async function disableExpiredJobRowsForUser(input: {
+	db: D1Database
+	userId: string
+	nowIso: string
+}): Promise<number> {
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs SET
+				enabled = 0,
+				updated_at = ?
+			WHERE user_id = ?
+				AND enabled = 1
+				AND expires_at IS NOT NULL
+				AND expires_at <= ?`,
+		)
+		.bind(input.nowIso, input.userId, input.nowIso)
+		.run()
+	return result.meta.changes ?? 0
 }
 
 /**

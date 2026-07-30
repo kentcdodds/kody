@@ -447,8 +447,8 @@ function createJobMutationDatabase(input: {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
 							if (normalized.startsWith('UPDATE jobs SET')) {
-								const id = params[21]
-								const userId = params[22]
+								const id = params[22]
+								const userId = params[23]
 								const existing = selectOne(
 									'jobs',
 									(row) => row['id'] === id && row['user_id'] === userId,
@@ -467,16 +467,17 @@ function createJobMutationDatabase(input: {
 									enabled: params[8],
 									kill_switch_enabled: params[9],
 									preserved: params[10],
-									caller_context_json: params[11],
-									updated_at: params[12],
-									last_run_at: params[13],
-									last_run_status: params[14],
-									last_run_error: params[15],
-									last_duration_ms: params[16],
-									next_run_at: params[17],
-									run_count: params[18],
-									success_count: params[19],
-									error_count: params[20],
+									expires_at: params[11],
+									caller_context_json: params[12],
+									updated_at: params[13],
+									last_run_at: params[14],
+									last_run_status: params[15],
+									last_run_error: params[16],
+									last_duration_ms: params[17],
+									next_run_at: params[18],
+									run_count: params[19],
+									success_count: params[20],
+									error_count: params[21],
 								}
 								const rows = table('jobs')
 								const index = rows.findIndex(
@@ -595,6 +596,7 @@ function createJobRow(
 		enabled: job.enabled ? 1 : 0,
 		kill_switch_enabled: job.killSwitchEnabled ? 1 : 0,
 		preserved: job.preserved ? 1 : 0,
+		expires_at: job.expiresAt ?? null,
 		caller_context_json: JSON.stringify(callerContext),
 		created_at: job.createdAt,
 		updated_at: job.updatedAt,
@@ -696,6 +698,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-16T00:05:00.000Z',
@@ -1909,25 +1912,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 			undefined,
 			{
 				packageInvokeTools: {
-					check: async (input) => ({
-						ok: true,
-						invoke: input as {
-							kodyId: string
-							exportName: string
-						},
-						contract: {
-							packageId: 'pkg-discord-general-chat',
-							kodyId: 'discord-general-chat',
-							name: '@kentcdodds/discord-general-chat',
-							sourceId: 'source-discord-general-chat',
-							publishedCommit: 'commit-1',
-							exportName: './handle-discord-message-created',
-							runtimeTarget: 'src/handle-discord-message-created.ts',
-							warnings: [],
-						},
-					}),
 					invoke: async (input) => ({ ok: true, input }),
-					invokeChecked: async (input) => ({ ok: true, input }),
 				},
 			},
 		)
@@ -1937,32 +1922,12 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		expect(providerFns?.package_invoke).toBeUndefined()
 		expect(providerFns?.package_invoke_checked).toBeUndefined()
 		expect(packageBridgeFns).not.toBeNull()
-		await expect(
-			packageBridgeFns?.check({
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
-			}),
-		).resolves.toMatchObject({
-			ok: true,
-			invoke: {
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
-			},
-		})
+		// The removed check/invokeChecked APIs have no bridge tools; only
+		// invoke crosses the sandbox boundary.
+		expect(packageBridgeFns?.check).toBeUndefined()
+		expect(packageBridgeFns?.invokeChecked).toBeUndefined()
 		await expect(
 			packageBridgeFns?.invoke({
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
-			}),
-		).resolves.toEqual({
-			ok: true,
-			input: {
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
-			},
-		})
-		await expect(
-			packageBridgeFns?.invokeChecked({
 				kodyId: 'discord-general-chat',
 				exportName: './handle-discord-message-created',
 			}),

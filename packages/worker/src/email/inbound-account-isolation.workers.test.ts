@@ -1,11 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import type * as UserLookupModule from '#worker/identity/user-lookup.ts'
-import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
-import {
-	consoleWarn,
-	silenceExpectedConsoleWarns,
-} from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
@@ -61,8 +56,6 @@ async function seedAccount(input: {
 
 test('inbound account plan/verification requires matching email and stable_user_id (per-user isolation)', async () => {
 	silenceIncidentalRuntimeWarnings()
-	// Missing dual-scoped row fails plan parse open to max with this tag.
-	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 
@@ -117,7 +110,6 @@ test('inbound account plan/verification requires matching email and stable_user_
 
 	// Dual-scoped miss → unverified gate (not the other account's verified/max).
 	expect(message.rejectedReason).toBe('Account email is not verified.')
-	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 
 	expect(
 		await listEmailMessages({

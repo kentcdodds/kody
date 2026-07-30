@@ -25,8 +25,8 @@ export type PlatformFeedbackAction = (typeof platformFeedbackActions)[number]
 export type PlatformFeedbackRow = {
 	id: string
 	submitter_user_id: string
-	submitter_username: string | null
-	submitter_email: string | null
+	submitter_username: string
+	submitter_email: string
 	category: PlatformFeedbackCategory
 	summary: string
 	details: string
@@ -41,8 +41,8 @@ export type PlatformFeedbackRow = {
 export type PlatformFeedbackRecord = {
 	id: string
 	submitterUserId: string
-	submitterUsername: string | null
-	submitterEmail: string | null
+	submitterUsername: string
+	submitterEmail: string
 	category: PlatformFeedbackCategory
 	summary: string
 	details: string

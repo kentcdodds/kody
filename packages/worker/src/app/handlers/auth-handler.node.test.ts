@@ -3,7 +3,6 @@ import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
 import {
 	consoleError,
 	consoleInfo,
@@ -739,33 +738,22 @@ test('signup consuming a max invite writes users.plan max', async () => {
 	expect(consoleWarn).not.toHaveBeenCalled()
 })
 
-test('signup consuming an unknown stored invite plan fails open to max with a stable warn', async () => {
+test('signup stops when an invite has an invalid stored plan', async () => {
 	const context = createAuthTestContext({ emailConfigured: true })
 	stubCloudflareEmailFetch({ ok: true })
 	context.testDb.addInvite('PLAN-UNKNOWN', 'enterprise-2099')
-	consoleWarn.mockImplementation(() => {})
 
-	const response = await context.request({
-		email: 'unknown-plan-invite@example.com',
-		username: 'unknown-plan-invite-user',
-		password: 'password123',
-		mode: 'signup',
-		inviteCode: 'plan-unknown',
-	})
-	expect(response.status).toBe(200)
-	expect(
-		context.testDb.users.get('unknown-plan-invite@example.com')?.plan,
-	).toBe('max')
-	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
-	for (const call of consoleWarn.mock.calls) {
-		expect(call).toEqual([unknownStoredPlanWarningTag])
-	}
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'invite_use',
-			result: 'success',
-			reason: expect.stringContaining('plan=max'),
+	await expect(
+		context.request({
+			email: 'unknown-plan-invite@example.com',
+			username: 'unknown-plan-invite-user',
+			password: 'password123',
+			mode: 'signup',
+			inviteCode: 'plan-unknown',
 		}),
+	).rejects.toThrow('Stored plan is not a registered plan name.')
+	expect(context.testDb.users.has('unknown-plan-invite@example.com')).toBe(
+		false,
 	)
+	expect(logAuditEventSpy).not.toHaveBeenCalled()
 })

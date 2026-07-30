@@ -4,11 +4,6 @@ import {
 	type PermissionString,
 	type RoleName,
 } from '#worker/identity/permissions.ts'
-import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
-import {
-	consoleWarn,
-	silenceExpectedConsoleWarns,
-} from '#worker/test-support/console-spies.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 
@@ -328,7 +323,7 @@ test('admin users list payload exposes only account metadata fields', async () =
 				username: 'member',
 				email: 'member@example.com',
 				email_verified_at: null,
-				plan: 'not-a-real-plan',
+				plan: 'free',
 				created_at: '2026-01-03 00:00:00',
 				updated_at: '2026-01-04 00:00:00',
 			},
@@ -339,7 +334,6 @@ test('admin users list payload exposes only account metadata fields', async () =
 		],
 	})
 
-	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
 	const handler = createAdminUsersApiHandler(env as unknown as Env)
 	const response = await handler.handler({
 		request: new Request('https://example.com/admin/users.json', {
@@ -380,11 +374,9 @@ test('admin users list payload exposes only account metadata fields', async () =
 			email: 'member@example.com',
 			email_verified: false,
 			email_verified_at: null,
-			// Unknown stored plan values fail open to max.
-			plan: 'max',
+			plan: 'free',
 		}),
 	])
-	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 })
 
 test('admin users selected param resolves outside the current page and filter', async () => {

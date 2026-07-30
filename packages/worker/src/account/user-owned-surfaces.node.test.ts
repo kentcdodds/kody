@@ -19,12 +19,6 @@ const accountExportSource = readFileSync(
 	fileURLToPath(new URL('./export.ts', import.meta.url)),
 	'utf8',
 )
-const manifestCacheSource = readFileSync(
-	fileURLToPath(
-		new URL('../package-retrievers/manifest-cache.ts', import.meta.url),
-	),
-	'utf8',
-)
 
 test('account deletion and export consume the out-of-band surface registry', () => {
 	const coverage = getAccountUserOwnedSurfaceCoverage()
@@ -84,10 +78,6 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	)
 	expect(accountExportSource).toContain('readAccountR2ExportPage')
 	expect(accountExportSource).not.toContain('collectAccountR2Inventory')
-	expect(manifestCacheSource).toContain('legacyRetrieverScopeIndexPrefix')
-	expect(manifestCacheSource).toContain(
-		'deleteLegacyPackageRetrieverScopeIndexes',
-	)
 
 	for (const prefix of [
 		'source-snapshot:v1:',

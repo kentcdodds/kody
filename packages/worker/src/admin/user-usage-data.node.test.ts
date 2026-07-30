@@ -1,13 +1,4 @@
 import { expect, test } from 'vitest'
-import {
-	maxPlanEmailLimits,
-	planLimits,
-	unknownStoredPlanWarningTag,
-} from '#worker/entitlements/plans.ts'
-import {
-	consoleWarn,
-	silenceExpectedConsoleWarns,
-} from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type AdminUsageRollup } from '#app/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
@@ -280,7 +271,7 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 	])
 })
 
-test('loadAdminUserUsageData shows max email caps for unknown stored plans', async () => {
+test('loadAdminUserUsageData rejects an invalid stored plan', async () => {
 	const email = 'unknown-plan-email@example.com'
 	const usageUserId = await createStableUserIdFromEmail(email)
 	const db = createAdminUserUsageTestDb({
@@ -306,42 +297,13 @@ test('loadAdminUserUsageData shows max email caps for unknown stored plans', asy
 		},
 	})
 
-	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
-	const data = await loadAdminUserUsageData(
-		{ APP_DB: db } as Env,
-		1,
-		new Date('2026-07-05T12:00:00.000Z'),
-	)
-
-	expect(data?.plan).toBe('max')
-	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
-	const consumption = new Map(
-		(data?.entitlementConsumption ?? []).map((entry) => [
-			entry.resource,
-			entry,
-		]),
-	)
-	// Coerced max uses finite ordinary ceilings...
-	expect(consumption.get('saved_packages')?.limit).toBe(
-		planLimits.max.maxSavedPackages,
-	)
-	// ...and email resources use the max plan's email caps.
-	expect(consumption.get('email_sends_per_day')?.limit).toBe(
-		maxPlanEmailLimits.email_sends_per_day,
-	)
-	expect(consumption.get('email_receives_per_day')).toMatchObject({
-		current: 190,
-		limit: 200,
-		overEightyPercent: true,
-	})
-	expect(consumption.get('stored_email_messages')).toMatchObject({
-		current: 12,
-		limit: 2000,
-		overEightyPercent: false,
-	})
-	expect(data?.warnings.map((warning) => warning.resource)).toEqual([
-		'email_receives_per_day',
-	])
+	await expect(
+		loadAdminUserUsageData(
+			{ APP_DB: db } as Env,
+			1,
+			new Date('2026-07-05T12:00:00.000Z'),
+		),
+	).rejects.toThrow('Stored plan is not a registered plan name.')
 })
 
 function createFakeKv() {

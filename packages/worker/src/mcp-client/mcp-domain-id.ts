@@ -1,17 +1,21 @@
+import { synthesizeDomainId } from '@kody-internal/shared/domain-id.ts'
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
 import { slugWithStableDisambiguator } from '@kody-internal/shared/stable-slug.ts'
 
 export function mcpServerKodyName(ref: Pick<McpServerRef, 'name'>): string {
-	return slugWithStableDisambiguator({
+	return synthesizeDomainId({
+		namespace: 'mcp',
 		value: ref.name,
 		fallback: 'server',
-		allowedPattern: /^[\w-]+$/,
-		replacementPattern: /[^\w-]+/g,
-	})
+	}).kodyName
 }
 
 export function mcpServerDomainId(ref: Pick<McpServerRef, 'name'>): string {
-	return `mcp:${mcpServerKodyName(ref)}`
+	return synthesizeDomainId({
+		namespace: 'mcp',
+		value: ref.name,
+		fallback: 'server',
+	}).domainId
 }
 
 export function mcpServerToolName(toolName: string): string {

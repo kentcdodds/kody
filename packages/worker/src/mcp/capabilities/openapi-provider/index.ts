@@ -1,6 +1,9 @@
 import { defineCapability } from '#mcp/capabilities/define-capability.ts'
-import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { type CapabilityDomain } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	defineSynthesizedDomain,
+	tokenizeCapabilityKeywords,
+} from '#mcp/capabilities/synthesized-domain.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -37,15 +40,7 @@ function buildKeywords(
 		...operation.tags,
 		binding.name,
 	]
-	return Array.from(
-		new Set(
-			words
-				.join(' ')
-				.toLowerCase()
-				.match(/[a-z0-9_]+/g)
-				?.filter(Boolean) ?? [],
-		),
-	)
+	return tokenizeCapabilityKeywords(words)
 }
 
 function asSchemaObject(
@@ -237,7 +232,7 @@ export function synthesizeOpenApiProviderDomain(input: {
 	)
 
 	return {
-		domain: defineDomain({
+		domain: defineSynthesizedDomain({
 			name: domainIdForCapabilities,
 			description: domainDescription,
 			keywords: ['openapi', 'rest', 'api', 'provider', 'binding'],

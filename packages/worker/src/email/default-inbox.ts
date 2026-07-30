@@ -23,8 +23,9 @@ export type ProvisionedDefaultInbox = {
  * the same address (there is no user-facing sender verification).
  * Idempotent and race-tolerant: signup provisioning and first-inbound
  * provisioning may run concurrently, so each insert falls back to re-reading
- * the row another writer created. Returns null when the address is already
- * claimed by a different user's legacy alias row.
+ * the row another writer created. If a platform address still belongs to the
+ * username's prior owner, the stale address row is reclaimed for the current
+ * owner without moving the prior owner's inbox or messages.
  */
 export async function ensureDefaultEmailInbox(input: {
 	db: D1Database

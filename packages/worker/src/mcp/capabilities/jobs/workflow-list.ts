@@ -25,6 +25,7 @@ const workflowRunSchema = z.object({
 			'complete',
 			'errored',
 			'terminated',
+			'cancelled',
 		])
 		.nullable(),
 	created_at: z.string(),

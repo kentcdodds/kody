@@ -85,8 +85,8 @@ function createAdminPlatformFeedbackFixture() {
 	insertFeedback.run(
 		'feedback-missing',
 		'stable-deleted',
-		null,
-		null,
+		'deleted-submitter',
+		'deleted@example.com',
 		'suggestion',
 		'Missing submitter account',
 		'The feedback remains after the submitter identity is unavailable.',
@@ -105,7 +105,7 @@ function createAdminPlatformFeedbackFixture() {
 	}
 }
 
-test('admin platform feedback data lists safely and resolves identity only for legacy selected feedback', async () => {
+test('admin platform feedback data lists safely and uses stored submitter snapshots', async () => {
 	const { sqlite, queries, env } = createAdminPlatformFeedbackFixture()
 
 	const list = await loadAdminPlatformFeedbackData(
@@ -178,11 +178,13 @@ test('admin platform feedback data lists safely and resolves identity only for l
 	expect(missingIdentity.selectedFeedback).toMatchObject({
 		id: 'feedback-missing',
 		submitter_user_id: 'stable-deleted',
-		submitter: null,
+		submitter: {
+			user_id: 'stable-deleted',
+			username: 'deleted-submitter',
+			email: 'deleted@example.com',
+		},
 	})
-	expect(queries.filter((query) => query.includes('FROM users'))).toEqual([
-		'SELECT username, email FROM users WHERE stable_user_id = ? LIMIT 1',
-	])
+	expect(queries.filter((query) => query.includes('FROM users'))).toEqual([])
 
 	const clampedSelection = await loadAdminPlatformFeedbackData(
 		env,

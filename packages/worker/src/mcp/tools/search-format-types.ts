@@ -300,9 +300,6 @@ export type SearchEntityDetailStructured =
 					referencedTypes: Array<PackageReferencedTypeProjection>
 				}>
 				referencedTypes: Array<PackageReferencedTypeProjection>
-				// Full type source is no longer emitted by default; keep the nullable
-				// field for structured-output compatibility with existing clients.
-				typesSource: string | null
 				externalInvocation: {
 					method: 'POST'
 					url: string

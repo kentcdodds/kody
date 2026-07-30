@@ -1522,18 +1522,18 @@ export default async function main() {
 	expect(aliasedStorageLint?.message).toContain('packageStorage()')
 })
 
-test('runRepoChecks warns (without failing) on deprecated dynamic invocation usage', async () => {
-	// Widen-phase contract: packages.check, packages.invokeChecked, and
-	// literal dynamic import("kody:@...") keep publishing, but the passing
-	// lint message names each usage and its replacement.
-	const deprecated = await runPackageJobTypecheckChecks(
+test('runRepoChecks fails on the removed dynamic invocation surface with replacements named', async () => {
+	// Narrow-phase contract: packages.check, packages.invokeChecked, and
+	// literal dynamic import("kody:@...") fail new publishes; the message
+	// names each usage, its replacement, and the migration codemod.
+	const removed = await runPackageJobTypecheckChecks(
 		new Map<string, string>([
 			[
 				'package.json',
 				createPackageManifest({
-					packageName: '@kody/deprecated-invocation-package',
-					kodyId: 'deprecated-invocation-package',
-					description: 'Uses deprecated dynamic invocation APIs',
+					packageName: '@kody/removed-invocation-package',
+					kodyId: 'removed-invocation-package',
+					description: 'Uses the removed dynamic invocation APIs',
 				}),
 			],
 			[
@@ -1553,21 +1553,19 @@ export default async function main() {
 			],
 		]),
 	)
-	expect(deprecated.result.ok).toBe(true)
-	const deprecatedLint = deprecated.result.results.find(
+	expect(removed.result.ok).toBe(false)
+	const removedLint = removed.result.results.find(
 		(entry) => entry.kind === 'lint',
 	)
-	expect(deprecatedLint).toMatchObject({ kind: 'lint', ok: true })
-	expect(deprecatedLint?.message).toContain('Deprecation warnings')
-	expect(deprecatedLint?.message).toContain('"src/index.ts"')
-	expect(deprecatedLint?.message).toContain(
-		'packages.invokeChecked is deprecated',
+	expect(removedLint).toMatchObject({ kind: 'lint', ok: false })
+	expect(removedLint?.message).toContain('removed dynamic invocation surface')
+	expect(removedLint?.message).toContain('"src/index.ts"')
+	expect(removedLint?.message).toContain('packages.invokeChecked was removed')
+	expect(removedLint?.message).toContain('packages.check was removed')
+	expect(removedLint?.message).toContain(
+		'literal dynamic import("kody:@...") was removed',
 	)
-	expect(deprecatedLint?.message).toContain('packages.check is deprecated')
-	expect(deprecatedLint?.message).toContain(
-		'literal dynamic import("kody:@...") is deprecated',
-	)
-	expect(deprecatedLint?.message).toContain('static')
+	expect(removedLint?.message).toContain('0002-static-first-invocation')
 })
 
 test('heavy check phases run in throwaway isolates when the env has the bindings', async () => {

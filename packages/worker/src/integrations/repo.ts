@@ -1,3 +1,4 @@
+import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import {
 	type UserIntegrationConnection,
 	type UserIntegrationRow,
@@ -499,15 +500,5 @@ function parseJsonObject(raw: string): Record<string, string> {
 		return result
 	} catch {
 		return {}
-	}
-}
-
-function parseJsonStringArray(raw: string): Array<string> {
-	try {
-		const parsed: unknown = JSON.parse(raw)
-		if (!Array.isArray(parsed)) return []
-		return parsed.filter((entry): entry is string => typeof entry === 'string')
-	} catch {
-		return []
 	}
 }

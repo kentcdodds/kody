@@ -118,13 +118,13 @@ A saved package is the only top-level persisted primitive. Five concepts:
   publish-time artifact rebuilds, Kody records the imported saved package's
   published commit in bundle dependency metadata. Republishing the imported
   package does not rewrite already-published dependent bundles.
-- Literal dynamic imports such as `await import("kody:@scope/pkg/export")` are
-  **deprecated agent guidance** (keep the mechanism working; stop recommending
-  it — the replacements are static imports when the name is known at write time
-  and `packages.invoke` otherwise). Mechanically they are runtime/current
-  package dependencies: bundle artifacts persist only a host-resolved
-  placeholder plus review metadata; just before execution, Kody resolves the
-  target package under the caller's `userId` and hydrates the current published
+- Literal dynamic imports such as `await import("kody:@scope/pkg/export")` were
+  **removed** (the replacements are static imports when the name is known at
+  write time and `packages.invoke` otherwise). New bundles rewrite the call site
+  to a teaching error and publish checks fail on the pattern. For bundles
+  published before the removal, artifacts persisted a host-resolved placeholder
+  plus review metadata; just before execution, Kody resolves the target package
+  under the caller's `userId` and hydrates the current published
   `importable-module` artifact into the dynamic worker module graph.
 - Direct static `kody:@...` imports are a breaking manifest contract: they must
   be listed in `package.json#kody.dependencies` by package name, for example
@@ -261,15 +261,15 @@ statically importing subscriber packages. Republish subscribers independently;
 the dispatcher will observe the current published subscriber export on its next
 dispatch without being republished.
 
-**Deprecated (widen phase):** `packages.invokeChecked`, `packages.check`, and
-literal dynamic `import("kody:@...")` keep working while callers migrate, but no
-guidance surface (tool descriptions, search detail, error `nextStep` strings,
-docs) may recommend them. `packages.invoke` subsumes both helpers because
-checking is no longer optional or separate (`invokeChecked` is a plain alias of
-`invoke`). The sandbox prelude warns once per run on `check` / `invokeChecked`,
-the dynamic import helper warns once per specifier, and publish checks surface
-non-fatal deprecation warnings in the passing lint message
-(`deprecated-invocation-usage.ts`). See
+**Removed (narrow phase):** `packages.invokeChecked`, `packages.check`, and
+literal dynamic `import("kody:@...")` were removed. `packages.invoke` subsumes
+both helpers because checking is not optional or separate. The sandbox prelude
+throws teaching errors for `check` / `invokeChecked`, the bundler rewrites
+literal dynamic kody imports to a teaching error, and publish checks fail on all
+three with the replacement named (`deprecated-invocation-usage.ts`, shared with
+the `0002-static-first-invocation` package codemod). Hydration still resolves
+placeholder modules inside bundles published before the removal so pinned
+snapshots keep working until dependents republish. See
 [Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md)
 for the performance budget that keeps the keyless path honest.
 

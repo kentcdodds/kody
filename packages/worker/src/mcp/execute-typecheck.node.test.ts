@@ -221,6 +221,36 @@ export default async function run() {
 	])
 })
 
+test('ad hoc execute typecheck allows lazy untyped agent TypeScript', async () => {
+	await expect(
+		assertAdHocExecuteTypechecks({
+			source: `export default async function run(input = {}) {
+	const byId = {}
+	const rows = input.messages || []
+	return rows.map((msg, name) => {
+		const headers = (msg.headers || []).map((h) => h)
+		byId[msg.id] = { name, headers }
+		return byId[msg.id]
+	})
+}`,
+			packages: new Map() as LoadedKodyGraphPackages,
+		}),
+	).resolves.toBeDefined()
+
+	// Property errors on real package contracts must still fail.
+	await expect(
+		assertAdHocExecuteTypechecks({
+			source: `import type { StaticInput } from 'kody:@kentcdodds/static-contract'
+
+export default async function run() {
+	const input: StaticInput = { name: 'Ada' }
+	return input.missingField
+}`,
+			packages: createLoadedPackages(stringContract),
+		}),
+	).rejects.toThrow(/Property 'missingField' does not exist/)
+})
+
 test('warm typecheck service replaces package sources between requests', async () => {
 	await expect(
 		assertAdHocExecuteTypechecks({

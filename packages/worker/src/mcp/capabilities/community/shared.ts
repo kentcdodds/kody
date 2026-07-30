@@ -2,7 +2,7 @@ import { z } from 'zod'
 import {
 	buildUserAvatarUrl,
 	getOwnerUsernameFromListingName,
-} from '#app/community-public.ts'
+} from '#worker/community/public-urls.ts'
 import {
 	type CommunityActivityItem,
 	type CommunityListingAggregates,

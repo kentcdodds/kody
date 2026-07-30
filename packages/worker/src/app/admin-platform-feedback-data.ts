@@ -9,7 +9,6 @@ import {
 	getPlatformFeedbackForAdmin,
 	listPlatformFeedbackForAdmin,
 } from '#worker/platform-feedback/service.ts'
-import { resolvePlatformFeedbackSubmitterIdentity } from '#worker/platform-feedback/submitter-identity.ts'
 import {
 	platformFeedbackCategories,
 	platformFeedbackStatuses,
@@ -62,32 +61,18 @@ function formatListItem(
 	}
 }
 
-async function formatDetail(
-	db: D1Database,
+function formatDetail(
 	feedback: PlatformFeedbackRecord,
-): Promise<AdminPlatformFeedbackDetail> {
-	let username = feedback.submitterUsername
-	let email = feedback.submitterEmail
-	if (username === null || email === null) {
-		const liveIdentity = await resolvePlatformFeedbackSubmitterIdentity(
-			db,
-			feedback.submitterUserId,
-		)
-		username ??= liveIdentity.username
-		email ??= liveIdentity.email
-	}
+): AdminPlatformFeedbackDetail {
 	return {
 		...formatListItem(feedback),
 		details_untrusted: feedback.details,
 		admin_note: feedback.adminNote,
-		submitter:
-			username !== null || email !== null
-				? {
-						user_id: feedback.submitterUserId,
-						username,
-						email,
-					}
-				: null,
+		submitter: {
+			user_id: feedback.submitterUserId,
+			username: feedback.submitterUsername,
+			email: feedback.submitterEmail,
+		},
 	}
 }
 
@@ -137,9 +122,7 @@ export async function loadAdminPlatformFeedbackData(
 	return {
 		ok: true,
 		feedback: list.items.map(formatListItem),
-		selectedFeedback: selectedRecord
-			? await formatDetail(env.APP_DB, selectedRecord)
-			: null,
+		selectedFeedback: selectedRecord ? formatDetail(selectedRecord) : null,
 		content_warning: platformFeedbackContentWarning,
 		page: list.page,
 		pageSize: list.pageSize,

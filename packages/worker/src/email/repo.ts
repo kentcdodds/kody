@@ -3,6 +3,7 @@ import {
 	truncateToUtf8Bytes,
 	utf8ByteLength,
 } from '@kody-internal/shared/backup-restore-safety.ts'
+import { parseJsonArray } from '@kody-internal/shared/json-parsing.ts'
 import {
 	emailClassificationValues,
 	type EmailAttachmentRecord,
@@ -75,17 +76,7 @@ export function emailAttachmentBlobKey(
 }
 
 // One corrupt stored row must not fail an entire list/search response, so
-// both parsers degrade to their empty shape on malformed JSON.
-function parseJsonArray(value: string | null) {
-	if (!value) return []
-	try {
-		const parsed = JSON.parse(value) as unknown
-		return Array.isArray(parsed) ? parsed : []
-	} catch {
-		return []
-	}
-}
-
+// the record parser degrades to an empty shape on malformed JSON.
 function parseOptionalJsonRecord(value: string | null) {
 	if (!value) return null
 	try {

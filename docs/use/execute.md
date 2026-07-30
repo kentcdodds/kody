@@ -79,12 +79,11 @@ package artifacts do not contain a copy of the host runtime implementation, so
 old package artifacts automatically observe current host runtime behavior.
 
 Literal dynamic imports (`await import('kody:@scope/my-package/export-name')`)
-are **deprecated**. They still resolve at runtime for the signed-in user (and
-log a deprecation warning naming the replacement), but do not write new code
-with them: use a static `kody:@...` import when the target package's name is
-known when the code is written, or `packages.invoke` when it is not. Computed
-dynamic Kody package imports, including variables and template strings, have
-never been supported.
+were **removed**. The call site throws a teaching error naming the replacement:
+use a static `kody:@...` import when the target package's name is known when the
+code is written, or `packages.invoke` when it is not. Computed dynamic Kody
+package imports, including variables and template strings, have never been
+supported.
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
 the module's **default export** as the first function argument. Shared helpers
@@ -102,12 +101,16 @@ use the same caller-scoped flag; saved-package exports, jobs, workflows, and
 services are not changed by this flag.
 
 When enabled, type errors are returned through the normal execute error result
-before the module's default export runs. Use those diagnostics to correct the
-module and retry. If a module unexpectedly stops before execution during the
-rollout, compare the reported TypeScript diagnostics with the same module for a
-caller whose flag is off. Operators can disable the user's override (or the
-global flag, if a broader rollout was started) to return immediately to the
-previous bundle-and-run behavior.
+before the module's default export runs. The checker is intentionally
+**non-strict**: untyped parameters, property access on `input = {}`, and other
+lazy TypeScript patterns are allowed so agents can iterate quickly. It still
+reports real assignability and property mismatches against published `kody:@…`
+package contracts (wrong argument or result types). Use those diagnostics to
+correct the module and retry. If a module unexpectedly stops before execution
+during the rollout, compare the reported TypeScript diagnostics with the same
+module for a caller whose flag is off. Operators can disable the user's override
+(or the global flag, if a broader rollout was started) to return immediately to
+the previous bundle-and-run behavior.
 
 ### Server-Timing phases
 
@@ -117,8 +120,9 @@ Execute responses include Server-Timing-style phase entries under
 
 - `bundle` — module-graph preparation and bundling. This span contains the
   typecheck phases below, so subtract `typecheck-total` for bundler-only time.
-- `hydrate` — installing published sources for literal dynamic
-  `import("kody:@…")` targets (a deprecated pattern).
+- `hydrate` — refreshing nested runtime modules (and resolving literal dynamic
+  `import("kody:@…")` placeholders in bundles published before that pattern was
+  removed).
 - `provider-assembly` — capability registry, runtime helper, and provider wiring
   ahead of sandbox startup.
 - `sandbox` — the dynamic worker evaluation of the module itself.
@@ -209,18 +213,26 @@ module-oriented runtime model:
   schedules
 - **`kody.job_update(...)`** updates an existing scheduled job by id for safe
   mutable fields such as name, ES module code with a default-exported function,
-  params, schedule, timezone, enabled/disabled state, or kill switch state.
-  Providing `code` republishes the job's repo-backed source so subsequent runs
-  execute the updated module; the replacement must default export a function
-  that receives `params` from its first argument (there is no `params` export
-  from `kody:runtime`)
+  params, schedule, timezone, enabled/disabled state, kill switch state,
+  preserved, or `expires_at` (UTC ISO; null clears). Providing `code`
+  republishes the job's repo-backed source so subsequent runs execute the
+  updated module; the replacement must default export a function that receives
+  `params` from its first argument (there is no `params` export from
+  `kody:runtime`)
+- Optional **`expires_at`** on `job_schedule` / `job_schedule_once` /
+  `job_update` stops the platform from scheduling the job after that UTC time.
+  When expiry is reached, Kody auto-disables the job (`enabled=false`) so it
+  shows as disabled in `job_list` / `job_get` (with `expired: true`) and can age
+  out via normal retention. This is separate from **`preserved`**, which only
+  skips auto-deletion.
 - **`kody.job_get({ id, includeCode: true })`** returns the scheduled job
   inspection details plus the stored repo-backed entrypoint path and source code
   when you need to inspect the current module before changing it
 - **`kody.job_delete(...)`** removes an existing scheduled job by id for the
   signed-in user
 - **`kody.job_run_now(...)`** runs an existing scheduled job immediately and
-  returns both the updated job state and the execution result for debugging
+  returns both the updated job state and the execution result for debugging.
+  Expired jobs are rejected.
 
 Static saved-package imports from ad hoc **execute** run under the ad hoc
 execute runtime. That means imported package modules can share exported helpers,

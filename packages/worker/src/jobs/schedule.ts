@@ -52,21 +52,60 @@ function assertValidCronExpression(expression: string) {
 	return normalized
 }
 
-function parseOnceRunAt(runAt: string) {
-	const trimmed = runAt.trim()
+function parseUtcIsoTimestamp(value: string, label: string) {
+	const trimmed = value.trim()
 	if (!trimmed) {
-		throw new Error('Once schedules require a non-empty runAt timestamp.')
+		throw new Error(`${label} requires a non-empty UTC ISO timestamp.`)
 	}
 	if (!/(?:Z|[+-]00:00)$/i.test(trimmed)) {
 		throw new Error(
-			'Once schedules must use an ISO 8601 UTC timestamp (for example 2026-04-17T15:00:00Z).',
+			`${label} must use an ISO 8601 UTC timestamp (for example 2026-04-17T15:00:00Z).`,
 		)
+	}
+	const calendarMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T/)
+	if (calendarMatch?.[1] && calendarMatch[2] && calendarMatch[3]) {
+		const year = Number.parseInt(calendarMatch[1], 10)
+		const month = Number.parseInt(calendarMatch[2], 10)
+		const day = Number.parseInt(calendarMatch[3], 10)
+		const reconstructed = new Date(Date.UTC(year, month - 1, day))
+		if (
+			reconstructed.getUTCFullYear() !== year ||
+			reconstructed.getUTCMonth() !== month - 1 ||
+			reconstructed.getUTCDate() !== day
+		) {
+			throw new Error(`${label} requires a valid ISO 8601 calendar date.`)
+		}
 	}
 	const parsed = new Date(trimmed)
 	if (Number.isNaN(parsed.valueOf())) {
-		throw new Error('Once schedules require a valid ISO 8601 timestamp.')
+		throw new Error(`${label} requires a valid ISO 8601 timestamp.`)
 	}
 	return parsed
+}
+
+function parseOnceRunAt(runAt: string) {
+	return parseUtcIsoTimestamp(runAt, 'Once schedules')
+}
+
+/**
+ * Normalize an optional job expiry timestamp. Pass `null`/`undefined` for no
+ * expiry; otherwise require a UTC ISO string and return canonical ISO form.
+ */
+export function normalizeJobExpiresAt(
+	expiresAt: string | null | undefined,
+): string | null {
+	if (expiresAt == null) return null
+	return parseUtcIsoTimestamp(expiresAt, 'expires_at').toISOString()
+}
+
+export function isJobExpired(
+	job: Pick<JobRecord, 'expiresAt'>,
+	now = new Date(),
+) {
+	if (job.expiresAt == null) return false
+	const expiresAtMs = new Date(job.expiresAt).valueOf()
+	if (!Number.isFinite(expiresAtMs)) return false
+	return expiresAtMs <= now.valueOf()
 }
 
 function parseIntervalEvery(every: string) {
@@ -172,7 +211,9 @@ export function formatScheduleSummary(input: {
 }
 
 export function isJobDue(job: JobRecord, now = new Date()) {
-	if (!job.enabled || job.killSwitchEnabled) return false
+	if (!job.enabled || job.killSwitchEnabled || isJobExpired(job, now)) {
+		return false
+	}
 	return new Date(job.nextRunAt).valueOf() <= now.valueOf()
 }
 

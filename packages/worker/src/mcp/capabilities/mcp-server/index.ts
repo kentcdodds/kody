@@ -1,7 +1,11 @@
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
 import { defineCapability } from '#mcp/capabilities/define-capability.ts'
-import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { type CapabilityDomain } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	defineSynthesizedDomain,
+	readMcpToolAnnotationHints,
+	tokenizeCapabilityKeywords,
+} from '#mcp/capabilities/synthesized-domain.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import {
@@ -40,15 +44,7 @@ function buildKeywords(tool: McpServerToolDescriptor, ref: McpServerRef) {
 		tool.description ?? '',
 		ref.name,
 	]
-	return Array.from(
-		new Set(
-			words
-				.join(' ')
-				.toLowerCase()
-				.match(/[a-z0-9_]+/g)
-				?.filter(Boolean) ?? [],
-		),
-	)
+	return tokenizeCapabilityKeywords(words)
 }
 
 function createCapabilityFromTool(input: {
@@ -68,6 +64,7 @@ function createCapabilityFromTool(input: {
 		serverId: ref.serverId,
 		mcpToolName: tool.name,
 	}
+	const annotationHints = readMcpToolAnnotationHints(tool.annotations)
 
 	const capability = defineCapability({
 		name: capabilityName,
@@ -77,21 +74,7 @@ function createCapabilityFromTool(input: {
 			tool.title?.trim() ||
 			`MCP server tool ${tool.name}.`,
 		keywords: buildKeywords(tool, ref),
-		readOnly: Boolean(
-			(tool.annotations as Record<string, unknown> | undefined)?.[
-				'readOnlyHint'
-			],
-		),
-		idempotent: Boolean(
-			(tool.annotations as Record<string, unknown> | undefined)?.[
-				'idempotentHint'
-			],
-		),
-		destructive: Boolean(
-			(tool.annotations as Record<string, unknown> | undefined)?.[
-				'destructiveHint'
-			],
-		),
+		...annotationHints,
 		source: 'mcp-server',
 		mcpServer: {
 			serverId: ref.serverId,
@@ -177,7 +160,7 @@ export function synthesizeMcpServerToolDomain(input: {
 	}
 
 	return {
-		domain: defineDomain({
+		domain: defineSynthesizedDomain({
 			name: domainIdForCapabilities,
 			description: domainDescription,
 			keywords: ['mcp', 'integration'],

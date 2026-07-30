@@ -245,11 +245,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   are only representable when the scope owner is a platform account.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
-  pointers, run observability state (`last_run_*`, counters), and `preserved`
-  (skip platform auto-cleanup). Account retention windows live on `users`
-  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed ad-hoc
-  jobs are cleaned by the hourly `job_retention` sweeper; package-owned and
-  preserved jobs are not. Execution history lives in the per-user `RunLog`
+  pointers, run observability state (`last_run_*`, counters), `preserved` (skip
+  platform auto-cleanup), and optional `expires_at` (UTC ISO; when reached the
+  scheduler skips the job and auto-disables it with `enabled = 0`). Account
+  retention windows live on `users` (`job_retention_*_days`; NULL = platform
+  defaults 14/60/90). Completed ad-hoc jobs are cleaned by the hourly
+  `job_retention` sweeper; package-owned and preserved jobs are not.
+  `expires_at` stops scheduling only — it does not delete rows and is
+  independent of `preserved`. Execution history lives in the per-user `RunLog`
   Durable Object (see [Run records](./run-records.md)).
 - `package_service_states` (`0095-package-service-states.sql`): authoritative
   per-service liveness projection (`running` / `idle` / `stopped` / `error`) for
@@ -261,9 +264,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
   intact, and `is_private` (0/1, migration 0068) projecting
-  `package.json#private` for public-profile and timeline filters (migration
-  defaults existing rows to private;
-  `POST /__maintenance/backfill-package-privacy` recomputes from manifests)
+  `package.json#private` for public-profile and timeline filters
 - `community_listings`, `community_forks`, `community_ratings`,
   `community_reports`, `community_bans`: public community package listings and
   moderation (see [Community packages](../community-packages.md))
@@ -818,12 +819,6 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
   for per-entry retriever index rows.
-- `package-retriever-index:v1:{userId}:{scope}` — legacy combined retriever
-  index blob retained as a delete-only cleanup target; active index rows use
-  `package-retriever-index-entry:v1:...`. Package refresh/removal and account
-  deletion delete the known `search` and `context` keys directly, so cleanup
-  does not depend on KV prefix listing. There is no global sweep because that
-  would require cross-user KV enumeration.
 - `derived-cache:v1:usage-rollups:user:{userId}:asof:{YYYY-MM}` — derived
   per-user usage read model written with KV `expirationTtl`; retention is five
   minutes, so immediate account-deletion cleanup is not required.

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { buildUserAvatarUrl } from '#app/community-public.ts'
+import { buildUserAvatarUrl } from '#worker/community/public-urls.ts'
 import { getCommunityListingWithAggregates } from '#worker/community/service.ts'
 import { listCommunityStargazersForListing } from '#worker/community/social-service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'

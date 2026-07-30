@@ -28,6 +28,7 @@ async function ensureJobsSchema() {
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 			kill_switch_enabled INTEGER NOT NULL DEFAULT 0 CHECK (kill_switch_enabled IN (0, 1)),
 			preserved INTEGER NOT NULL DEFAULT 0 CHECK (preserved IN (0, 1)),
+			expires_at TEXT,
 			caller_context_json TEXT NOT NULL,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
@@ -48,6 +49,13 @@ async function ensureJobsSchema() {
 			last_completed_scheduled_for TEXT
 		)`,
 	).run()
+	try {
+		await env.APP_DB.prepare(
+			`ALTER TABLE jobs ADD COLUMN expires_at TEXT`,
+		).run()
+	} catch {
+		// Column already present when migrations or a prior CREATE included it.
+	}
 	await env.APP_DB.prepare(`DELETE FROM jobs`).run()
 }
 
@@ -57,14 +65,15 @@ async function insertJob(input: {
 	nextRunAt: string
 	enabled?: boolean
 	killSwitchEnabled?: boolean
+	expiresAt?: string | null
 }) {
 	const now = '2026-04-20T00:00:00.000Z'
 	await env.APP_DB.prepare(
 		`INSERT INTO jobs (
 			id, user_id, name, source_id, storage_id, schedule_json, timezone,
-			enabled, kill_switch_enabled, caller_context_json, created_at,
+			enabled, kill_switch_enabled, expires_at, caller_context_json, created_at,
 			updated_at, next_run_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'null', ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'null', ?, ?, ?)`,
 	)
 		.bind(
 			input.id,
@@ -76,6 +85,7 @@ async function insertJob(input: {
 			'UTC',
 			input.enabled === false ? 0 : 1,
 			input.killSwitchEnabled === true ? 1 : 0,
+			input.expiresAt ?? null,
 			now,
 			now,
 			input.nextRunAt,
@@ -115,7 +125,12 @@ test('listDueJobRows caps a due-job backlog at maxDueJobsPerAlarm, oldest first'
 		userId,
 		nextRunAt: '2026-04-20T00:00:00.000Z',
 		killSwitchEnabled: true,
-		preserved: false,
+	})
+	await insertJob({
+		id: 'expired',
+		userId,
+		nextRunAt: '2026-04-20T00:00:00.000Z',
+		expiresAt: '2026-04-19T23:00:00.000Z',
 	})
 	await insertJob({
 		id: 'future',
@@ -310,4 +325,78 @@ test('ordinary updates cancel claims and completed occurrence guards fence malfo
 			claimToken: 'must-not-claim',
 		}),
 	).toBeNull()
+})
+
+test('expired jobs are skipped by due/claim/next-runnable and disableExpired flips enabled', async () => {
+	await ensureJobsSchema()
+	const { disableExpiredJobRowsForUser } = await import('./repo.ts')
+	const userId = 'user-expires'
+	const nowIso = '2026-04-20T12:00:00.000Z'
+	await insertJob({
+		id: 'still-valid',
+		userId,
+		nextRunAt: '2026-04-20T11:00:00.000Z',
+		expiresAt: '2026-04-20T13:00:00.000Z',
+	})
+	await insertJob({
+		id: 'already-expired',
+		userId,
+		nextRunAt: '2026-04-20T11:00:00.000Z',
+		expiresAt: '2026-04-20T11:30:00.000Z',
+	})
+	await insertJob({
+		id: 'no-expiry',
+		userId,
+		nextRunAt: '2026-04-20T11:00:00.000Z',
+	})
+
+	const due = await listDueJobRows(env.APP_DB, userId, nowIso)
+	expect(due.map((row) => row.id).sort()).toEqual(['no-expiry', 'still-valid'])
+
+	expect(
+		await claimJobRow({
+			db: env.APP_DB,
+			userId,
+			jobId: 'already-expired',
+			now: new Date(nowIso),
+			claimToken: 'should-fail',
+		}),
+	).toBeNull()
+
+	const next = await getNextRunnableJobRow(env.APP_DB, userId, nowIso)
+	expect(next?.id).toBe('no-expiry')
+
+	expect(
+		await disableExpiredJobRowsForUser({
+			db: env.APP_DB,
+			userId,
+			nowIso,
+		}),
+	).toBe(1)
+	const disabled = await getJobRowById(env.APP_DB, userId, 'already-expired')
+	expect(disabled).toMatchObject({
+		enabled: 0,
+		expires_at: '2026-04-20T11:30:00.000Z',
+	})
+	expect(disabled?.record.expiresAt).toBe('2026-04-20T11:30:00.000Z')
+})
+
+test('getNextRunnableJobRow wakes at expires_at when it is earlier than next_run_at', async () => {
+	await ensureJobsSchema()
+	const userId = 'user-expires-wake'
+	await insertJob({
+		id: 'expires-before-run',
+		userId,
+		nextRunAt: '2026-04-21T12:00:00.000Z',
+		expiresAt: '2026-04-20T18:00:00.000Z',
+	})
+	const next = await getNextRunnableJobRow(
+		env.APP_DB,
+		userId,
+		'2026-04-20T12:00:00.000Z',
+	)
+	expect(next).toMatchObject({
+		id: 'expires-before-run',
+		schedulerWakeAt: '2026-04-20T18:00:00.000Z',
+	})
 })

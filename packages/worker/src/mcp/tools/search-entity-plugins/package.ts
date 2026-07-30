@@ -481,7 +481,6 @@ export const packageSearchEntityPlugin = {
 				detail.record.name,
 				exportDetail.subpath,
 			),
-			typesSource: null,
 			externalInvocation: detail.ownerUsername
 				? buildExternalPackageInvocationDescriptor({
 						baseUrl: detail.baseUrl,

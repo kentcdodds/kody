@@ -25,6 +25,7 @@ function createJob(overrides: Partial<JobRecord> = {}): JobRecord {
 		enabled: false,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
 		nextRunAt: '2026-01-01T00:00:00.000Z',
@@ -79,6 +80,7 @@ test('package and preserved jobs are never eligible', () => {
 		evaluateJobRetentionEligibility({
 			job: createJob({
 				preserved: true,
+				expiresAt: null,
 				lastRunAt: '2026-01-01T00:00:00.000Z',
 				lastRunStatus: 'success',
 				runCount: 1,

@@ -94,9 +94,13 @@ vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#mcp/values/service.ts', () => ({
+vi.mock('#worker/package-config-cleanup.ts', () => ({
 	deleteAllAppScopedValues: (...args: Array<unknown>) =>
 		mockModule.deleteAllAppScopedValues(...args),
+	deleteAllPackageScopedSecrets: (...args: Array<unknown>) =>
+		mockModule.deleteAllPackageScopedSecrets(...args),
+	removeAllSecretApprovalsForPackage: (...args: Array<unknown>) =>
+		mockModule.removeAllSecretApprovalsForPackage(...args),
 }))
 
 vi.mock('#worker/package-retrievers/manifest-cache.ts', () => ({
@@ -140,13 +144,6 @@ vi.mock('#worker/jobs/repo.ts', () => ({
 vi.mock('#worker/jobs/manager-client.ts', () => ({
 	syncJobManagerAlarm: (...args: Array<unknown>) =>
 		mockModule.syncJobManagerAlarm(...args),
-}))
-
-vi.mock('#mcp/secrets/service.ts', () => ({
-	deleteAllPackageScopedSecrets: (...args: Array<unknown>) =>
-		mockModule.deleteAllPackageScopedSecrets(...args),
-	removeAllSecretApprovalsForPackage: (...args: Array<unknown>) =>
-		mockModule.removeAllSecretApprovalsForPackage(...args),
 }))
 
 vi.mock('#worker/jobs/service.ts', () => ({

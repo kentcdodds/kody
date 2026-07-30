@@ -16,10 +16,7 @@ import {
 	invokePackageExportForPackageRuntime,
 } from './http-invoke.ts'
 import { parsePackageInvokeInput } from './input-parsing.ts'
-import {
-	checkPackageInvokeForRuntime,
-	checkPackageInvokeForRuntimeWithPreloads,
-} from './invoke-check.ts'
+import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
 
 export function createPackageRuntimeInvokeToolsWithToolFactories(input: {
 	env: Env
@@ -100,7 +97,6 @@ function createPackageInvokeTools(input: {
 			operationName: 'packages.invoke',
 			userId: user.userId,
 			rawInput,
-			includeExportProjection: false,
 		})
 		if (!check.result.ok || !check.preloads) {
 			const message = check.result.ok
@@ -178,24 +174,8 @@ function createPackageInvokeTools(input: {
 		error.response = response
 		throw error
 	}
-	return {
-		check: async (rawInput) => {
-			// Deprecated: packages.invoke always contract-checks before invoking.
-			// Kept as a working shim during the widen phase; the sandbox prelude
-			// emits the deprecation warning naming the replacement.
-			const { user } = requireRuntimeCaller('packages.check')
-			return await checkPackageInvokeForRuntime({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				operationName: 'packages.check',
-				userId: user.userId,
-				rawInput,
-			})
-		},
-		invoke,
-		// Deprecated alias for the widen phase: packages.invoke is now always
-		// contract-checked, so invokeChecked adds nothing. Key-less calls take
-		// the lean path; the sandbox prelude emits the deprecation warning.
-		invokeChecked: invoke,
-	}
+	// `packages.check` and `packages.invokeChecked` were removed with the
+	// static-first model; the sandbox prelude throws teaching errors for them
+	// without a host round trip.
+	return { invoke }
 }

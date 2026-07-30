@@ -16,7 +16,7 @@
  *   hot buckets from becoming per-event shared D1 writes.
  *
  * The inventory rows also carry the latest per-bucket byte estimate
- * (`estimated_bytes`, migration 0113) so storage-byte entitlement checks can
+ * (`estimated_bytes`, migration 0117) so storage-byte entitlement checks can
  * read most bucket sizes from D1 instead of fanning `getEstimatedBytes` RPCs
  * across every StorageRunner Durable Object. Estimate writes follow the same
  * never-throw fire-and-forget contract and are UPDATE-only: they can never
