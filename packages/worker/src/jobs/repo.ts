@@ -366,6 +366,100 @@ export async function listDueJobRows(
 	return (results ?? []).map(mapRow)
 }
 
+/**
+ * Cross-user keyset page of enabled jobs whose next occurrence is past the
+ * watchdog grace cutoff and not currently leased. Used by the schedule
+ * watchdog to re-arm JobManager alarms when a user's Durable Object alarm was
+ * lost or drifted while due work remained claimable.
+ */
+export async function listSilentlyOverdueJobRowsPage(
+	db: D1Database,
+	input: {
+		overdueBeforeIso: string
+		nowIso: string
+		afterId: string | null
+		limit: number
+	},
+): Promise<Array<JobRow>> {
+	const { results } = await db
+		.prepare(
+			`SELECT * FROM jobs
+			WHERE id > ?
+				AND enabled = 1
+				AND kill_switch_enabled = 0
+				AND next_run_at <= ?
+				AND (
+					claim_token IS NULL
+					OR lease_expires_at IS NULL
+					OR lease_expires_at <= ?
+				)
+				AND (
+					last_completed_scheduled_for IS NULL
+					OR last_completed_scheduled_for != COALESCE(retry_scheduled_for, next_run_at)
+				)
+			ORDER BY id ASC
+			LIMIT ?`,
+		)
+		.bind(
+			input.afterId ?? '',
+			input.overdueBeforeIso,
+			input.nowIso,
+			input.limit,
+		)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapRow)
+}
+
+/**
+ * Enabled jobs permanently skipped by the occurrence fence:
+ * `last_completed_scheduled_for` still equals the current occurrence key, so
+ * due selection and claims never pick them up again until next_run_at moves.
+ */
+export async function listStuckSkippedJobRowsPage(
+	db: D1Database,
+	input: {
+		afterId: string | null
+		limit: number
+	},
+): Promise<Array<JobRow>> {
+	const { results } = await db
+		.prepare(
+			`SELECT * FROM jobs
+			WHERE id > ?
+				AND enabled = 1
+				AND kill_switch_enabled = 0
+				AND last_completed_scheduled_for IS NOT NULL
+				AND last_completed_scheduled_for = COALESCE(retry_scheduled_for, next_run_at)
+			ORDER BY id ASC
+			LIMIT ?`,
+		)
+		.bind(input.afterId ?? '', input.limit)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapRow)
+}
+
+export async function advanceStuckSkippedJobNextRunAt(input: {
+	db: D1Database
+	userId: string
+	jobId: string
+	nextRunAt: string
+	updatedAt: string
+}): Promise<boolean> {
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs SET next_run_at = ?, updated_at = ?
+			WHERE id = ?
+				AND user_id = ?
+				AND enabled = 1
+				AND kill_switch_enabled = 0
+				AND last_completed_scheduled_for IS NOT NULL
+				AND last_completed_scheduled_for = COALESCE(retry_scheduled_for, next_run_at)`,
+		)
+		.bind(input.nextRunAt, input.updatedAt, input.jobId, input.userId)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function getNextRunnableJobRow(
 	db: D1Database,
 	userId: string,
