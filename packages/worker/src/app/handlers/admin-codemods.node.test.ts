@@ -395,3 +395,89 @@ test('admin codemods run POST rejects invalid mode and missing revertOfRunId', a
 	})
 	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
 })
+
+test('admin codemods run POST rejects revert with bare runId in place of revertOfRunId', async () => {
+	const env = createTestEnv()
+	const handler = createAdminCodemodsRunApiHandler(env)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	stubKnownCodemod()
+
+	const response = await handler.handler(
+		createRunRequest({
+			codemodId: '0001-ambient-storage-to-package-storage',
+			mode: 'revert',
+			scope: 'fleet',
+			runId: 'run-1',
+		}),
+	)
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'revert mode requires revertOfRunId.',
+	})
+	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
+})
+
+test('admin codemods run POST rejects supplied-but-empty filters and allows omitted filters', async () => {
+	const env = createTestEnv()
+	const handler = createAdminCodemodsRunApiHandler(env)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	stubKnownCodemod()
+	mockModule.runPackageCodemodStep.mockResolvedValue({
+		runId: 'run-scan',
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'scan',
+		items: [],
+		nextCursor: null,
+		summary: {},
+	})
+
+	const blankPackageIds = await handler.handler(
+		createRunRequest({
+			codemodId: '0001-ambient-storage-to-package-storage',
+			mode: 'scan',
+			scope: 'fleet',
+			filters: { packageIds: ['   '] },
+		}),
+	)
+	expect(blankPackageIds.status).toBe(400)
+	await expect(blankPackageIds.json()).resolves.toMatchObject({
+		ok: false,
+		error:
+			'filters.packageIds was supplied but contained no usable ids. Omit the key, or provide at least one non-empty id.',
+	})
+
+	const emptyUserIds = await handler.handler(
+		createRunRequest({
+			codemodId: '0001-ambient-storage-to-package-storage',
+			mode: 'scan',
+			scope: 'fleet',
+			filters: { userIds: [] },
+		}),
+	)
+	expect(emptyUserIds.status).toBe(400)
+	await expect(emptyUserIds.json()).resolves.toMatchObject({
+		ok: false,
+		error:
+			'filters.userIds was supplied but contained no usable ids. Omit the key, or provide at least one non-empty id.',
+	})
+	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
+
+	const omittedFilters = await handler.handler(
+		createRunRequest({
+			codemodId: '0001-ambient-storage-to-package-storage',
+			mode: 'scan',
+			scope: 'fleet',
+		}),
+	)
+	expect(omittedFilters.status).toBe(200)
+	const omittedCall = mockModule.runPackageCodemodStep.mock.calls.at(-1)?.[0] as
+		| { filters?: unknown }
+		| undefined
+	expect(omittedCall).toBeDefined()
+	expect(omittedCall).not.toHaveProperty('filters')
+})

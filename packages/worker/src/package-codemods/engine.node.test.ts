@@ -4,8 +4,10 @@ import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import type * as RepoChecks from '#worker/repo/checks.ts'
 import {
+	createPackageCodemodRun,
 	getPackageCodemodRunById,
 	getPackageCodemodRunItemById,
+	insertPackageCodemodRunItem,
 	listPackageCodemodRunItems,
 	packageCodemodLedgerTextBounds,
 } from './ledger.ts'
@@ -880,4 +882,172 @@ test('package codemod ledger bounds stored JSON/text columns', async () => {
 	expect(await getPackageCodemodRunById(db, 'run-bound')).toMatchObject({
 		id: 'run-bound',
 	})
+})
+
+test('package codemod engine rejects resume steps with mismatched filters', async () => {
+	resetMocks()
+	const { env } = createEnv()
+	mocks.listSavedPackagesByUserId.mockResolvedValue([
+		savedPackage({
+			id: 'pkg-a',
+			userId: 'user-1',
+			kodyId: 'a',
+			sourceId: 'source-a',
+		}),
+	])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: cleanFiles(),
+			publishedCommit: 'commit-a',
+			repoId: 'repo-a',
+			sourceId: 'source-a',
+			userId: 'user-1',
+		}),
+	)
+
+	const first = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'admin-1',
+		codemodId,
+		mode: 'scan',
+		scope: { kind: 'user', userId: 'user-1' },
+		filters: { packageIds: ['pkg-a', 'pkg-b'] },
+		limit: 10,
+	})
+	expect(first.runId).toBeTruthy()
+
+	await expect(
+		runPackageCodemodStep({
+			env,
+			baseUrl: 'https://example.com',
+			initiatedByUserId: 'admin-2',
+			codemodId,
+			mode: 'scan',
+			scope: { kind: 'user', userId: 'user-1' },
+			runId: first.runId,
+			filters: { packageIds: ['pkg-other'] },
+			limit: 10,
+		}),
+	).rejects.toThrow(/filters do not match/i)
+
+	const resumed = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'admin-2',
+		codemodId,
+		mode: 'scan',
+		scope: { kind: 'user', userId: 'user-1' },
+		runId: first.runId,
+		filters: { packageIds: ['pkg-b', 'pkg-a'] },
+		limit: 10,
+	})
+	expect(resumed.runId).toBe(first.runId)
+})
+
+test('package codemod revert page ceiling and user-scoped SQL filter for sparse ownership', async () => {
+	resetMocks()
+	const { env } = createEnv()
+
+	await createPackageCodemodRun(env.APP_DB, {
+		id: 'prior-fleet',
+		codemodId,
+		mode: 'apply',
+		scopeUserId: null,
+		initiatedByUserId: 'admin-1',
+		status: 'completed',
+	})
+
+	for (let index = 0; index < 40; index += 1) {
+		await insertPackageCodemodRunItem(env.APP_DB, {
+			id: `other-${String(index).padStart(4, '0')}`,
+			runId: 'prior-fleet',
+			userId: 'user-other',
+			packageId: `pkg-other-${index}`,
+			kodyId: `other-${index}`,
+			status: 'applied',
+			beforeCommit: 'before',
+			afterCommit: 'after',
+		})
+	}
+	await insertPackageCodemodRunItem(env.APP_DB, {
+		id: 'mine-0001',
+		runId: 'prior-fleet',
+		userId: 'user-1',
+		packageId: 'pkg-mine-1',
+		kodyId: 'mine-1',
+		status: 'applied',
+		beforeCommit: 'before',
+		afterCommit: 'after',
+	})
+	await insertPackageCodemodRunItem(env.APP_DB, {
+		id: 'mine-0002',
+		runId: 'prior-fleet',
+		userId: 'user-1',
+		packageId: 'pkg-mine-2',
+		kodyId: 'mine-2',
+		status: 'applied',
+		beforeCommit: 'before',
+		afterCommit: 'after',
+	})
+
+	const sparse = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'revert',
+		scope: { kind: 'user', userId: 'user-1' },
+		revertOfRunId: 'prior-fleet',
+		limit: 10,
+	})
+	expect(sparse.items).toHaveLength(2)
+	expect(sparse.items.every((item) => item.userId === 'user-1')).toBe(true)
+	expect(sparse.nextCursor).toBeNull()
+	expect(
+		await getPackageCodemodRunById(env.APP_DB, sparse.runId),
+	).toMatchObject({
+		status: 'completed',
+	})
+
+	await createPackageCodemodRun(env.APP_DB, {
+		id: 'prior-dense',
+		codemodId,
+		mode: 'apply',
+		scopeUserId: null,
+		initiatedByUserId: 'admin-1',
+		status: 'completed',
+	})
+	// More applied rows than one heavy step can finish (step limit caps at 10)
+	// so the revert must return a cursor instead of completing the run.
+	for (let index = 0; index < 30; index += 1) {
+		await insertPackageCodemodRunItem(env.APP_DB, {
+			id: `dense-${String(index).padStart(4, '0')}`,
+			runId: 'prior-dense',
+			userId: 'user-1',
+			packageId: `pkg-dense-${index}`,
+			kodyId: `dense-${index}`,
+			status: 'applied',
+			beforeCommit: 'before',
+			afterCommit: 'after',
+		})
+	}
+
+	const paged = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'revert',
+		scope: { kind: 'user', userId: 'user-1' },
+		revertOfRunId: 'prior-dense',
+		limit: 10,
+	})
+	expect(paged.items).toHaveLength(10)
+	expect(paged.nextCursor).toBe('dense-0009')
+	expect(await getPackageCodemodRunById(env.APP_DB, paged.runId)).toMatchObject(
+		{
+			status: 'running',
+		},
+	)
 })

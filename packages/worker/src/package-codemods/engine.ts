@@ -253,6 +253,41 @@ function requestedScopeUserId(scope: PackageCodemodRunScope) {
 	}
 }
 
+function normalizeFiltersJson(filters?: PackageCodemodRunFilters | null) {
+	const userIds = [...(filters?.userIds ?? [])].sort((left, right) =>
+		compareBinaryIds(left, right),
+	)
+	const packageIds = [...(filters?.packageIds ?? [])].sort((left, right) =>
+		compareBinaryIds(left, right),
+	)
+	const normalized: PackageCodemodRunFilters = {}
+	if (userIds.length > 0) normalized.userIds = userIds
+	if (packageIds.length > 0) normalized.packageIds = packageIds
+	return JSON.stringify(normalized)
+}
+
+function parseStoredFiltersJson(filtersJson: string): PackageCodemodRunFilters {
+	try {
+		const parsed: unknown = JSON.parse(filtersJson)
+		if (!parsed || typeof parsed !== 'object') return {}
+		const record = parsed as Record<string, unknown>
+		const filters: PackageCodemodRunFilters = {}
+		if (Array.isArray(record.userIds)) {
+			filters.userIds = record.userIds.filter(
+				(value): value is string => typeof value === 'string',
+			)
+		}
+		if (Array.isArray(record.packageIds)) {
+			filters.packageIds = record.packageIds.filter(
+				(value): value is string => typeof value === 'string',
+			)
+		}
+		return filters
+	} catch {
+		return {}
+	}
+}
+
 async function ensureRun(input: {
 	env: Env
 	runId?: string
@@ -264,6 +299,7 @@ async function ensureRun(input: {
 	revertOfRunId?: string
 }): Promise<PackageCodemodRunRecord> {
 	const scopeUserId = requestedScopeUserId(input.scope)
+	const filtersJson = normalizeFiltersJson(input.filters)
 	if (input.runId) {
 		const existing = await getPackageCodemodRunById(
 			input.env.APP_DB,
@@ -293,6 +329,14 @@ async function ensureRun(input: {
 				`Package codemod run "${input.runId}" revertOfRunId does not match the requested value.`,
 			)
 		}
+		const existingFiltersJson = normalizeFiltersJson(
+			parseStoredFiltersJson(existing.filtersJson),
+		)
+		if (existingFiltersJson !== filtersJson) {
+			throw new Error(
+				`Package codemod run "${input.runId}" filters do not match the requested filters.`,
+			)
+		}
 		return existing
 	}
 	return await createPackageCodemodRun(input.env.APP_DB, {
@@ -301,7 +345,7 @@ async function ensureRun(input: {
 		mode: input.mode,
 		scopeUserId,
 		initiatedByUserId: input.initiatedByUserId,
-		filtersJson: JSON.stringify(input.filters ?? {}),
+		filtersJson,
 		status: 'running',
 		revertOfRunId: input.revertOfRunId ?? null,
 	})
@@ -817,12 +861,17 @@ async function processRevertStep(input: {
 	const items: Array<PackageCodemodRunItemResult> = []
 	const summary: Partial<Record<PackageCodemodItemStatus, number>> = {}
 	let cursor = input.cursor
+	let pagesFetched = 0
+	const scopeUserIdFilter =
+		input.scope.kind === 'user' ? input.scope.userId : undefined
 	for (;;) {
+		pagesFetched += 1
 		const page = await listPackageCodemodRunItems(input.env.APP_DB, {
 			runId: input.run.revertOfRunId,
 			afterId: cursor,
-			limit: input.limit,
+			limit: fleetScanPageSize,
 			status: 'applied',
+			...(scopeUserIdFilter != null ? { userId: scopeUserIdFilter } : {}),
 		})
 		if (page.length === 0) {
 			await updatePackageCodemodRunStatus(input.env.APP_DB, {
@@ -840,12 +889,6 @@ async function processRevertStep(input: {
 		}
 		for (const priorItem of page) {
 			cursor = priorItem.id
-			if (
-				input.scope.kind === 'user' &&
-				priorItem.userId !== input.scope.userId
-			) {
-				continue
-			}
 			if (input.scope.kind !== 'user' && input.scope.kind !== 'fleet') {
 				const exhaustive: never = input.scope
 				throw new Error(`Unknown package codemod scope: ${String(exhaustive)}`)
@@ -1031,7 +1074,7 @@ async function processRevertStep(input: {
 				}
 			}
 		}
-		if (page.length < input.limit) {
+		if (page.length < fleetScanPageSize) {
 			await updatePackageCodemodRunStatus(input.env.APP_DB, {
 				id: input.run.id,
 				status: 'completed',
@@ -1042,6 +1085,16 @@ async function processRevertStep(input: {
 				mode: 'revert',
 				items,
 				nextCursor: null,
+				summary,
+			}
+		}
+		if (pagesFetched >= maxFleetPagesPerStep) {
+			return {
+				runId: input.run.id,
+				codemodId: input.codemod.id,
+				mode: 'revert',
+				items,
+				nextCursor: cursor,
 				summary,
 			}
 		}

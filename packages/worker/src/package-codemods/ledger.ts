@@ -243,7 +243,19 @@ export async function updatePackageCodemodRunStatus(
 export async function getPackageCodemodRunById(
 	db: D1Database,
 	runId: string,
+	options?: { userId?: string },
 ): Promise<PackageCodemodRunRecord | null> {
+	if (options?.userId != null) {
+		const row = await db
+			.prepare(
+				`SELECT ${runSelectColumns}
+				FROM package_codemod_runs
+				WHERE id = ? AND scope_user_id = ?`,
+			)
+			.bind(runId, options.userId)
+			.first<Record<string, unknown>>()
+		return row ? mapRunRow(row) : null
+	}
 	const row = await db
 		.prepare(
 			`SELECT ${runSelectColumns}
@@ -439,6 +451,7 @@ export async function listPackageCodemodRunItems(
 		afterId?: string | null
 		limit?: number
 		status?: string
+		userId?: string
 	},
 ): Promise<Array<PackageCodemodRunItemRecord>> {
 	const limit = Math.min(Math.max(input.limit ?? 50, 1), 200)
@@ -447,6 +460,10 @@ export async function listPackageCodemodRunItems(
 	if (input.status != null) {
 		conditions.push('status = ?')
 		params.push(input.status)
+	}
+	if (input.userId != null) {
+		conditions.push('user_id = ?')
+		params.push(input.userId)
 	}
 	const rows = await db
 		.prepare(
@@ -464,7 +481,19 @@ export async function listPackageCodemodRunItems(
 export async function getPackageCodemodRunItemById(
 	db: D1Database,
 	itemId: string,
+	options?: { userId?: string },
 ): Promise<PackageCodemodRunItemRecord | null> {
+	if (options?.userId != null) {
+		const row = await db
+			.prepare(
+				`SELECT ${itemSelectColumns}
+				FROM package_codemod_run_items
+				WHERE id = ? AND user_id = ?`,
+			)
+			.bind(itemId, options.userId)
+			.first<Record<string, unknown>>()
+		return row ? mapItemRow(row) : null
+	}
 	const row = await db
 		.prepare(
 			`SELECT ${itemSelectColumns}

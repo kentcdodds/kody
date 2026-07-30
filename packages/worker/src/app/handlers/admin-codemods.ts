@@ -274,7 +274,7 @@ function parseRunBody(body: object): ParseRunBodyResult {
 		limit = parsedLimit
 	}
 
-	if (mode === 'revert' && !revertOfRunId && !runId) {
+	if (mode === 'revert' && !revertOfRunId) {
 		return { ok: false, error: 'revert mode requires revertOfRunId.' }
 	}
 
@@ -367,11 +367,25 @@ function parseFilters(body: object):
 	if (userIds === false) {
 		return { ok: false, error: 'filters.userIds must be an array of strings.' }
 	}
+	if (userIds === 'empty') {
+		return {
+			ok: false,
+			error:
+				'filters.userIds was supplied but contained no usable ids. Omit the key, or provide at least one non-empty id.',
+		}
+	}
 	const packageIds = parseOptionalStringArray(filtersRecord, 'packageIds')
 	if (packageIds === false) {
 		return {
 			ok: false,
 			error: 'filters.packageIds must be an array of strings.',
+		}
+	}
+	if (packageIds === 'empty') {
+		return {
+			ok: false,
+			error:
+				'filters.packageIds was supplied but contained no usable ids. Omit the key, or provide at least one non-empty id.',
 		}
 	}
 	if (!userIds && !packageIds) {
@@ -389,7 +403,7 @@ function parseFilters(body: object):
 function parseOptionalStringArray(
 	record: Record<string, unknown>,
 	key: string,
-): Array<string> | undefined | false {
+): Array<string> | undefined | false | 'empty' {
 	if (!Object.hasOwn(record, key) || record[key] == null) {
 		return undefined
 	}
@@ -401,5 +415,5 @@ function parseOptionalStringArray(
 		const trimmed = entry.trim()
 		if (trimmed) items.push(trimmed)
 	}
-	return items.length > 0 ? items : undefined
+	return items.length > 0 ? items : 'empty'
 }

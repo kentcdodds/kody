@@ -482,6 +482,9 @@ export function AdminCodemodsRoute(handle: Handle) {
 			return
 		}
 		if (selectedMode === 'apply' || selectedMode === 'revert') {
+			message = `Use the ${selectedMode} button and confirm to start a destructive run.`
+			messageTone = 'info'
+			handle.update()
 			return
 		}
 		void runPagedCodemod({

@@ -5,6 +5,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	createPackageCodemodRun,
 	getPackageCodemodRunById,
+	getPackageCodemodRunItemById,
 	insertPackageCodemodRunItem,
 	listPackageCodemodRunItems,
 	listPackageCodemodRuns,
@@ -139,4 +140,36 @@ test('package codemod ledger pages runs and items with filters', async () => {
 		limit: 10,
 	})
 	expect(appliedOnly.map((item) => item.id)).toEqual(['item-1', 'item-3'])
+
+	const user1Items = await listPackageCodemodRunItems(db, {
+		runId: 'run-b',
+		userId: 'user-1',
+		limit: 10,
+	})
+	expect(user1Items.map((item) => item.id)).toEqual(['item-1'])
+
+	const user1AppliedPage = await listPackageCodemodRunItems(db, {
+		runId: 'run-b',
+		userId: 'user-1',
+		status: 'applied',
+		limit: 10,
+	})
+	expect(user1AppliedPage.map((item) => item.id)).toEqual(['item-1'])
+
+	expect(
+		await getPackageCodemodRunById(db, 'run-a', { userId: 'user-1' }),
+	).toMatchObject({ id: 'run-a' })
+	expect(
+		await getPackageCodemodRunById(db, 'run-a', { userId: 'user-2' }),
+	).toBeNull()
+	expect(
+		await getPackageCodemodRunById(db, 'run-b', { userId: 'user-1' }),
+	).toBeNull()
+
+	expect(
+		await getPackageCodemodRunItemById(db, 'item-1', { userId: 'user-1' }),
+	).toMatchObject({ id: 'item-1' })
+	expect(
+		await getPackageCodemodRunItemById(db, 'item-1', { userId: 'user-2' }),
+	).toBeNull()
 })

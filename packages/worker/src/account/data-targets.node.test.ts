@@ -42,6 +42,15 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 			value: 'deleted-user',
 		},
 		{
+			kind: 'replace_user_id_in_json_column',
+			table: 'package_codemod_runs',
+			column: 'filters_json',
+			value: 'deleted-user',
+			includeInExport: false,
+			surface: 'package_codemod_runs_filters_json',
+			reason: 'test',
+		},
+		{
 			kind: 'bucket_parent',
 			table: 'value_entries',
 			parentTable: 'value_buckets',
@@ -110,22 +119,42 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 		params: ['deleted-user', 'user-aaa'],
 	})
 
-	expect(matchFor(samples[6]!).qualifiedWhereSql).toBe(
+	const replaceJsonMatch = matchFor(samples[6]!)
+	expect(replaceJsonMatch).toEqual({
+		table: 'package_codemod_runs',
+		whereSql: 'filters_json LIKE ?',
+		qualifiedWhereSql: 'package_codemod_runs.filters_json LIKE ?',
+		params: ['%"user-aaa"%'],
+		mutation: {
+			kind: 'replace_json_string',
+			column: 'filters_json',
+			search: '"user-aaa"',
+			replacement: '"deleted-user"',
+		},
+	})
+	expect(buildUserScopedDeleteOrUpdateSql(replaceJsonMatch)).toEqual({
+		sql: `UPDATE package_codemod_runs
+						SET filters_json = REPLACE(filters_json, ?, ?)
+						WHERE filters_json LIKE ?`,
+		params: ['"user-aaa"', '"deleted-user"', '%"user-aaa"%'],
+	})
+
+	expect(matchFor(samples[7]!).qualifiedWhereSql).toBe(
 		`value_entries.bucket_id IN (
 						SELECT id FROM value_buckets WHERE user_id = ?
 					)`,
 	)
-	expect(matchFor(samples[7]!).qualifiedWhereSql).toBe(
+	expect(matchFor(samples[8]!).qualifiedWhereSql).toBe(
 		`email_attachments.message_id IN (
 						SELECT id FROM email_messages WHERE user_id = ?
 					)`,
 	)
-	expect(matchFor(samples[8]!).qualifiedWhereSql).toBe(
+	expect(matchFor(samples[9]!).qualifiedWhereSql).toBe(
 		`community_stars.listing_id IN (
 						SELECT id FROM community_listings WHERE owner_user_id = ?
 					)`,
 	)
-	expect(matchFor(samples[9]!)).toEqual({
+	expect(matchFor(samples[10]!)).toEqual({
 		table: 'mcp_memory_conversation_suppressions',
 		whereSql: 'user_id = ?',
 		qualifiedWhereSql: 'mcp_memory_conversation_suppressions.user_id = ?',
