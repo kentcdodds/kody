@@ -5,6 +5,7 @@ import { maxPlanEmailLimits, planLimits } from '#worker/entitlements/plans.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { emailUsageGetCapability } from './email-usage-get.ts'
 
 async function seedUsageAccount(input: {

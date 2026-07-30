@@ -10,17 +10,16 @@ const mcpFile = 'packages/worker/src/mcp/capabilities/admin/admin-user-get.ts'
 const packageRegistryFile = 'packages/worker/src/package-registry/repo.ts'
 const appFile = 'packages/worker/src/app/handlers/admin-users.ts'
 
-test('the layer boundaries forbid upward imports, keep the documented allowlist, and never allow handler imports', () => {
-	// New #mcp -> #app edges fail; the documented exception still passes.
+test('the layer boundaries forbid upward imports and never allow handler imports', () => {
 	expect(
 		findImportBoundaryViolation(mcpFile, '#worker/admin/users-data.ts'),
 	).toBe(null)
 	expect(
 		findImportBoundaryViolation(mcpFile, '#app/admin-users-data.ts'),
 	).toMatch(/#mcp\/\* must not import from #app\/\*/)
-	expect(findImportBoundaryViolation(mcpFile, '#app/community-public.ts')).toBe(
-		null,
-	)
+	expect(
+		findImportBoundaryViolation(mcpFile, '#app/community-public.ts'),
+	).toMatch(/#mcp\/\* must not import from #app\/\*/)
 	// Public-origin resolution moved to a neutral module, so the app-layer path
 	// is no longer allowlisted and the neutral one needs no exception.
 	expect(findImportBoundaryViolation(mcpFile, '#app/app-base-url.ts')).toMatch(
@@ -35,7 +34,6 @@ test('the layer boundaries forbid upward imports, keep the documented allowlist,
 		findImportBoundaryViolation(mcpFile, '#app/handlers/admin-users.ts'),
 	).toMatch(/must never import an #app\/handlers\/\* request handler/)
 
-	// New package-registry -> #mcp edges fail; the one documented exception passes.
 	expect(
 		findImportBoundaryViolation(
 			packageRegistryFile,
@@ -50,7 +48,7 @@ test('the layer boundaries forbid upward imports, keep the documented allowlist,
 	).toMatch(/#worker\/package-registry\/\* must not import from #mcp\/\*/)
 	expect(
 		findImportBoundaryViolation(packageRegistryFile, '#mcp/secrets/service.ts'),
-	).toBe(null)
+	).toMatch(/#worker\/package-registry\/\* must not import from #mcp\/\*/)
 
 	// The app layer sits above both, so it may import downward freely.
 	expect(getImportBoundariesForFile(appFile)).toEqual([])
@@ -66,15 +64,11 @@ test('the layer boundaries forbid upward imports, keep the documented allowlist,
 	).toEqual(['mcp-to-app'])
 })
 
-test('every allowlisted boundary exception documents why it still crosses', () => {
+test('import boundaries have no legacy exceptions', () => {
 	const entries = importBoundaries.flatMap(
 		(boundary: {
 			allowedSpecifiers: Array<{ specifier: string; reason: string }>
 		}) => boundary.allowedSpecifiers,
 	)
-	expect(entries.length).toBeGreaterThan(0)
-	for (const entry of entries) {
-		expect(entry.specifier).toMatch(/^#(app|mcp|worker)\//)
-		expect(entry.reason.length).toBeGreaterThan(40)
-	}
+	expect(entries).toEqual([])
 })
