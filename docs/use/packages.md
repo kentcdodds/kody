@@ -157,9 +157,7 @@ exhaustive.
   `package.json#kody.dependencies` using the imported package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Package
   checks fail when static imports and declarations differ. Type-only imports do
-  not count, declaration files such as `.d.ts` are treated as type-only, and
-  current-version literal dynamic `import("kody:@...")` expressions do not need
-  `kody.dependencies` declarations.
+  not count, and declaration files such as `.d.ts` are treated as type-only.
 - Computed dynamic Kody package imports, including template strings and
   variables such as `import(packageSpecifier)`, are unsupported. When the target
   package is not known until runtime, use `packages.invoke` instead.
@@ -262,12 +260,14 @@ package as that package so it receives `packageContext`, package-owned storage,
 package-mounted secrets (`kody.secretMounts`), and its own `packages` helper.
 
 **Removed:** `packages.invokeChecked`, `packages.check`, and literal dynamic
-`import("kody:@...")` no longer exist. Calling any of them throws a teaching
-error naming the replacement, and package publish checks fail on them.
-`packages.invoke` performs the contract check that `invokeChecked` and `check`
-provided, and the static/dynamic rules above cover the literal dynamic import
-cases. The `0002-static-first-invocation` package codemod migrates
-`invokeChecked` call sites mechanically.
+`import("kody:@...")` no longer exist. Calling any of them from new source or
+newly built bundles throws a teaching error naming the replacement, and package
+publish checks fail on them (bundles published before the removal keep working
+through hydration until their packages republish). `packages.invoke` performs
+the contract check that `invokeChecked` and `check` provided, and the
+static/dynamic rules above cover the literal dynamic import cases. The
+`0002-static-first-invocation` package codemod migrates `invokeChecked` call
+sites mechanically.
 
 ## Package storage
 
