@@ -9,6 +9,7 @@ import {
 	ensureRbacTestSchema,
 	seedAccount,
 } from '#worker/test-support/workers-seed.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 // Different ports on purpose: swapping origins by mutating a `URL` keeps the
 // original port, and identical ports would hide that.
@@ -70,14 +71,18 @@ async function seedOwnerSessionCookie() {
 	]) {
 		await env.APP_DB.prepare(statement).run()
 	}
-	const userId = await seedAccount({
+	await seedAccount({
 		db: env.APP_DB,
 		email: ownerEmail,
 		username: ownerUsername,
 	})
 	setAuthSessionSecret(env.COOKIE_SECRET)
 	const setCookie = await createAuthCookie(
-		{ id: String(userId), email: ownerEmail, rememberMe: false },
+		{
+			stableUserId: await createStableUserIdFromEmail(ownerEmail),
+			email: ownerEmail,
+			rememberMe: false,
+		},
 		true,
 	)
 	return setCookie.split(';')[0] ?? ''

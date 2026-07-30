@@ -216,6 +216,12 @@ export; feedback status may remain exportable.
 
 Current admin capabilities:
 
+User-targeting admin capabilities accept `stableUserId`, email, or username
+where operator ergonomics call for lookup. They never accept or return numeric
+`users.id`; handlers resolve the stable identity to that internal D1 join key
+only after boundary validation. Admin URLs and audit reasons follow the same
+rule.
+
 - `admin_user_list`
 - `admin_user_get`
 - `admin_user_create`

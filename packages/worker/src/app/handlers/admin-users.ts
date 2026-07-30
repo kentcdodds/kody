@@ -212,7 +212,10 @@ async function handleAssignRoleAction(input: {
 	const targetStableUserId = readStableUserIdField(input.body)
 	const roleName = readRoleName(input.body, 'role')
 	if (!targetStableUserId) {
-		return jsonResponse({ ok: false, error: 'Stable user id is required.' }, 400)
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
 	if (!roleName) {
 		return jsonResponse({ ok: false, error: 'Role is required.' }, 400)
@@ -273,7 +276,10 @@ async function handleRemoveRoleAction(input: {
 	const targetStableUserId = readStableUserIdField(input.body)
 	const roleName = readRoleName(input.body, 'role')
 	if (!targetStableUserId) {
-		return jsonResponse({ ok: false, error: 'Stable user id is required.' }, 400)
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
 	if (!roleName) {
 		return jsonResponse({ ok: false, error: 'Role is required.' }, 400)
@@ -356,7 +362,10 @@ async function handleUpdatePlanAction(input: {
 }) {
 	const targetStableUserId = readStableUserIdField(input.body)
 	if (!targetStableUserId) {
-		return jsonResponse({ ok: false, error: 'Stable user id is required.' }, 400)
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
 	const planUpdate = readPlanUpdate(input.body)
 	if (!planUpdate.ok) {
@@ -406,12 +415,12 @@ async function handleSuspensionAction(input: {
 }) {
 	const targetStableUserId = readStableUserIdField(input.body)
 	if (!targetStableUserId) {
-		return jsonResponse({ ok: false, error: 'Stable user id is required.' }, 400)
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
-	if (
-		input.suspended &&
-		targetStableUserId === input.actor.mcpUser.userId
-	) {
+	if (input.suspended && targetStableUserId === input.actor.mcpUser.userId) {
 		return jsonResponse(
 			{ ok: false, error: 'You cannot suspend your own account.' },
 			400,
@@ -453,7 +462,10 @@ async function handleResumeEmailOutboundAction(input: {
 }) {
 	const targetStableUserId = readStableUserIdField(input.body)
 	if (!targetStableUserId) {
-		return jsonResponse({ ok: false, error: 'Stable user id is required.' }, 400)
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
 
 	const updatedUser = await clearAdminUserEmailOutboundPause(input.env.APP_DB, {

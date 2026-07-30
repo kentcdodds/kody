@@ -59,8 +59,7 @@ function isWebAuthnChallenge(value: unknown): value is StoredWebAuthnChallenge {
 		record.challenge.length > 0 &&
 		(record.webauthnUserId === undefined ||
 			typeof record.webauthnUserId === 'string') &&
-		(record.stableUserId === undefined ||
-			isStableUserId(record.stableUserId))
+		(record.stableUserId === undefined || isStableUserId(record.stableUserId))
 	)
 }
 

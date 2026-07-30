@@ -14,6 +14,7 @@ import {
 } from '#app/handlers/webauthn.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -208,7 +209,7 @@ function initTestSecrets() {
 }
 
 const userOneSession: AuthSession = {
-	id: '1',
+	stableUserId: testStableUserIdFromEmail('one@example.com'),
 	email: 'one@example.com',
 	rememberMe: false,
 }

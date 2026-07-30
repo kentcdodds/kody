@@ -26,7 +26,9 @@ const inputSchema = z
 		username: z
 			.string()
 			.optional()
-			.describe('Username for the override target when stableUserId is omitted.'),
+			.describe(
+				'Username for the override target when stableUserId is omitted.',
+			),
 		enabled: z
 			.boolean()
 			.optional()

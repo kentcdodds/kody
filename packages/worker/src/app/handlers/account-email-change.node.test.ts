@@ -12,6 +12,7 @@ import { hashVerificationToken } from '#app/email-verification.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createAccountEmailChangeHandler } from './account-email-change.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -199,7 +200,7 @@ test('email change requests require the current password and create a pending ve
 	})
 	const handler = createAccountEmailChangeHandler(createAppEnv(db))
 	const session = {
-		id: '1',
+		stableUserId: testStableUserIdFromEmail('old@example.com'),
 		email: 'old@example.com',
 		rememberMe: false,
 	}
@@ -295,7 +296,7 @@ test('email change requests reject emails already owned by another account', asy
 		handler,
 		await createRequest({
 			session: {
-				id: '1',
+				stableUserId: testStableUserIdFromEmail('old@example.com'),
 				email: 'old@example.com',
 				rememberMe: false,
 			},
@@ -338,6 +339,7 @@ test('email change verification updates email and preserves stable user id', asy
 	expect(result).toEqual({
 		ok: true,
 		userId: 1,
+		stableUserId: oldStableUserId,
 		oldEmail: 'old@example.com',
 		newEmail: 'new@example.com',
 	})

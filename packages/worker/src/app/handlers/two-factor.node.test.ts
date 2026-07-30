@@ -19,6 +19,7 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -227,7 +228,7 @@ function initTestSecrets() {
 }
 
 const session: AuthSession = {
-	id: '1',
+	stableUserId: testStableUserIdFromEmail('kody@example.com'),
 	email: 'kody@example.com',
 	rememberMe: false,
 }

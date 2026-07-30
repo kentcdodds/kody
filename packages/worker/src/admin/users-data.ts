@@ -206,37 +206,38 @@ export async function loadAdminUserByTarget(
 	const stableUserId = input.stableUserId?.trim() ?? ''
 	const email = input.email?.trim() ?? ''
 	const username = input.username?.trim() ?? ''
-	const userRow = stableUserId && isStableUserId(stableUserId)
-		? await db
-				.prepare(
-					`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
-						email_outbound_paused_at, created_at, updated_at
-					 FROM users
-					 WHERE stable_user_id = ?`,
-				)
-				.bind(stableUserId)
-				.first<AdminUserRow>()
-		: email
+	const userRow =
+		stableUserId && isStableUserId(stableUserId)
 			? await db
 					.prepare(
 						`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
-							email_outbound_paused_at, created_at, updated_at
-						 FROM users
-						 WHERE email = ? COLLATE NOCASE`,
+						email_outbound_paused_at, created_at, updated_at
+					 FROM users
+					 WHERE stable_user_id = ?`,
 					)
-					.bind(email)
+					.bind(stableUserId)
 					.first<AdminUserRow>()
-			: username
+			: email
 				? await db
 						.prepare(
 							`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+							email_outbound_paused_at, created_at, updated_at
+						 FROM users
+						 WHERE email = ? COLLATE NOCASE`,
+						)
+						.bind(email)
+						.first<AdminUserRow>()
+				: username
+					? await db
+							.prepare(
+								`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
 								email_outbound_paused_at, created_at, updated_at
 							 FROM users
 							 WHERE username = ? COLLATE NOCASE`,
-						)
-						.bind(username)
-						.first<AdminUserRow>()
-			: null
+							)
+							.bind(username)
+							.first<AdminUserRow>()
+					: null
 	if (!userRow) return null
 
 	const rolesByUserId = await loadRolesByUserIds(db, [userRow.id])

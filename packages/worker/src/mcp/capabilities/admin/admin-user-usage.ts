@@ -113,10 +113,7 @@ export const adminUserUsageCapability = defineDomainCapability(
 				async () => {
 					const user = await loadAdminUserByTarget(ctx.env.APP_DB, args)
 					if (!user) return { usage: null }
-					const data = await loadAdminUserUsageData(
-						ctx.env,
-						user.stableUserId,
-					)
+					const data = await loadAdminUserUsageData(ctx.env, user.stableUserId)
 					if (!data) return { usage: null }
 					const { ok: _ok, ...usage } = data
 					return { usage }

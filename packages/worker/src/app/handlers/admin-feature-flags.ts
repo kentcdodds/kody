@@ -268,10 +268,7 @@ async function handleClearUserOverrideAction(input: {
 		email: input.actor.email,
 		ip: requestIp,
 		path: input.url.pathname,
-		reason: [
-			`key=${key}`,
-			`target_stable_user_id=${stableUserId}`,
-		].join(';'),
+		reason: [`key=${key}`, `target_stable_user_id=${stableUserId}`].join(';'),
 	})
 
 	return jsonResponse(await loadAdminFeatureFlagsData(input.env))

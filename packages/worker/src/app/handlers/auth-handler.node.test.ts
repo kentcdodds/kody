@@ -12,6 +12,7 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -78,6 +79,7 @@ type TestUser = {
 	username: string
 	password_hash: string
 	plan: string
+	stable_user_id: string
 }
 
 type TestInvite = {
@@ -126,6 +128,7 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 						const username = String(values.username ?? '')
 						const email = String(values.email ?? '')
 						const passwordHash = String(values.password_hash ?? '')
+						const stableUserId = String(values.stable_user_id ?? '')
 						const plan =
 							values.plan === undefined || values.plan === null
 								? null
@@ -148,6 +151,7 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 							username,
 							password_hash: passwordHash,
 							plan,
+							stable_user_id: stableUserId,
 						}
 						nextId += 1
 						users.set(normalizedEmail, user)
@@ -311,6 +315,7 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 			username,
 			password_hash: passwordHash,
 			plan: 'free',
+			stable_user_id: await createStableUserIdFromEmail(email),
 		}
 		nextId += 1
 		users.set(email.toLowerCase(), user)

@@ -138,7 +138,7 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 			} catch (error) {
 				if (error instanceof StripeApiError) {
 					console.error('billing_checkout_failed', {
-						userId: user.userId,
+						stableUserId: user.mcpUser.userId,
 						error: error.message,
 					})
 					return jsonResponse(
@@ -252,7 +252,7 @@ export function createAccountBillingPortalHandler(env: Env) {
 					return billingErrorRedirect(request, 'billing_not_configured')
 				}
 				console.error('billing_portal_failed', {
-					userId: user.userId,
+					stableUserId: user.mcpUser.userId,
 					error: error instanceof Error ? error.message : String(error),
 				})
 				return billingErrorRedirect(request, 'portal_failed')

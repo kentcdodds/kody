@@ -440,9 +440,7 @@ export function AdminUsersRoute(handle: Handle) {
 		const nextItems = updatedUser
 			? matchesRoleFilter
 				? currentItems.map((item) =>
-						item.stableUserId === updatedUser.stableUserId
-							? updatedUser
-							: item,
+						item.stableUserId === updatedUser.stableUserId ? updatedUser : item,
 					)
 				: currentItems.filter(
 						(item) => item.stableUserId !== updatedUser.stableUserId,
@@ -664,8 +662,7 @@ export function AdminUsersRoute(handle: Handle) {
 		const { items: users, hasMore, totalCount, isLoadingMore } = usersSnapshot
 		const filters = readFilterState(currentHref)
 		const hasActiveFilters = Boolean(filters.search || filters.role)
-		const selectedStableUserId =
-			getSelectedStableUserIdFromHref(currentHref)
+		const selectedStableUserId = getSelectedStableUserIdFromHref(currentHref)
 		const selectedUser = resolveSelectedUser(currentHref)
 		const isMutating = actionState !== 'idle'
 
@@ -695,10 +692,7 @@ export function AdminUsersRoute(handle: Handle) {
 
 		// Re-seed the plan draft whenever a different user becomes selected so
 		// the select always starts from that user's stored plan.
-		if (
-			selectedUser &&
-			selectedUser.stableUserId !== planDraftStableUserId
-		) {
+		if (selectedUser && selectedUser.stableUserId !== planDraftStableUserId) {
 			planDraftStableUserId = selectedUser.stableUserId
 			selectedPlanChoice = selectedUser.plan ?? 'free'
 		}
@@ -774,14 +768,9 @@ export function AdminUsersRoute(handle: Handle) {
 								<>
 									<AccountManagementList>
 										{users.map((user) => (
-											<li
-												key={user.stableUserId}
-												mix={css({ minWidth: 0 })}
-											>
+											<li key={user.stableUserId} mix={css({ minWidth: 0 })}>
 												<AccountManagementListItemButton
-													active={
-														selectedStableUserId === user.stableUserId
-													}
+													active={selectedStableUserId === user.stableUserId}
 													disabled={isMutating}
 													onClick={() => {
 														if (isMutating) return
@@ -1106,8 +1095,7 @@ export function AdminUsersRoute(handle: Handle) {
 										</p>
 									) : null}
 									{usageStatus === 'error' &&
-									usageFailedForStableUserId ===
-										selectedUser.stableUserId &&
+									usageFailedForStableUserId === selectedUser.stableUserId &&
 									usageMessage ? (
 										<AccountManagementMessage tone="error">
 											{usageMessage}

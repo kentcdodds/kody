@@ -70,7 +70,10 @@ export async function createVerifySessionCookie(
 	secure: boolean,
 ) {
 	return getPendingCookie().serialize(
-		JSON.stringify({ ...session, v: 2 } satisfies StoredPendingTwoFactorSession),
+		JSON.stringify({
+			...session,
+			v: 2,
+		} satisfies StoredPendingTwoFactorSession),
 		{ secure },
 	)
 }

@@ -888,12 +888,11 @@ export async function handleAuthorizeRequest(
 		approvedUserId = resolveUserStableId(userRecord)
 	} else if (sessionEmail) {
 		const db = createDb(env.APP_DB)
-		const userRecord =
-			session?.stableUserId
-				? await db.findOne(usersTable, {
-						where: { stable_user_id: session.stableUserId },
-					})
-				: await db.findOne(usersTable, { where: { email: sessionEmail } })
+		const userRecord = session?.stableUserId
+			? await db.findOne(usersTable, {
+					where: { stable_user_id: session.stableUserId },
+				})
+			: await db.findOne(usersTable, { where: { email: sessionEmail } })
 		if (!userRecord) {
 			void logAuditEvent({
 				category: 'oauth',
