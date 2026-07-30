@@ -943,13 +943,20 @@ export async function runBundledModuleWithRegistry(
 			dynamicDependencyPackageIds,
 		})
 		// Static package export calls report through a sandbox bridge with a
-		// bundler-stamped callee package id; only ids from the same
-		// bundler/host controlled provenance set as packageStorage grants are
-		// recorded (mismatches are dropped host-side).
+		// bundler-stamped callee package id; only ids recorded as *static*
+		// bundle dependencies at build time are accepted (mismatches are
+		// dropped host-side). This is deliberately tighter than the
+		// packageStorage grant set, which additionally includes the run's own
+		// package id and dynamic-import dependencies — neither of which the
+		// bundler ever stamps into a metered static import proxy.
 		const staticCallMeterTools = createPackageStaticCallMeterTools({
 			env,
 			userId: callerContext.user?.userId ?? null,
-			grantedPackageIds: grantedPackageStorageIds,
+			grantedPackageIds: new Set(
+				(bundle.dependencies ?? [])
+					.map((dependency) => dependency.packageId)
+					.filter((packageId): packageId is string => Boolean(packageId)),
+			),
 		})
 		const executor = createExecuteExecutor({
 			env,

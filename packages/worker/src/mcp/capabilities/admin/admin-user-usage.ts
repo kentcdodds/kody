@@ -12,6 +12,7 @@ import {
 const usageMetricSchema = z.enum([
 	'execute',
 	'package_export',
+	'package_static_call',
 	'job_run',
 	'workflow_run',
 	'service_runtime',

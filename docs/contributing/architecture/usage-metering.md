@@ -85,10 +85,13 @@ package code is reused, so calls through them are metered per call:
   malicious module could forge reports. The host
   (`createPackageStaticCallMeterTools` in
   `packages/worker/src/usage/package-static-call-usage.ts`) only records events
-  whose stamped id is in the run's bundler-recorded static dependency grant set
-  (the same set `packageStorage()` grants use) and silently drops the rest with
-  a debug log. Forgery can therefore at worst inflate counts for packages the
-  bundle already statically depends on.
+  whose stamped id is in the bundle's **static** dependency package ids recorded
+  at build time (`bundle.dependencies`) — a strict subset of the
+  `packageStorage()` grant set, which additionally grants the run's own package
+  id and dynamic-import dependencies, neither of which the bundler ever stamps
+  into a metered proxy — and silently drops the rest with a debug log. Forgery
+  can therefore at worst inflate counts for packages the bundle already
+  statically depends on.
 - **Delivery never blocks the call path.** Each call does one synchronous buffer
   push (capped at 200 events per run — Analytics Engine allows 250
   `writeDataPoint` calls per invocation, one per event, and the run's other
@@ -108,6 +111,13 @@ package code is reused, so calls through them are metered per call:
   saved-package invocations, and the job/workflow/service runs built on them).
   Package-app fetch handlers use a separate runtime bridge and do not bind the
   meter yet; the wrapper silently no-ops there.
+- **Capacity note:** the 200-events-per-run cap shares the ~250
+  `writeDataPoint`-per-invocation Analytics Engine budget with every other usage
+  event in the same invocation — in particular `outbound_fetch`, which also
+  scales per operation. A heavy run (many static calls **and** many gateway
+  fetches) can exceed the budget and Analytics Engine silently drops the
+  overflow points. The eventual fix is aggregation (coalescing per-callee
+  counts/durations into fewer data points), not raising the cap.
 
 ### Nesting: metrics are independent, do not sum across types
 

@@ -9,11 +9,13 @@ import { recordUsage, type UsageEnv } from './record-usage.ts'
  * Trust model: the callee package id is stamped into generated import-proxy
  * code by the bundler, never taken from author-supplied strings. Generated
  * code still runs inside the sandbox realm, though, so the host validates
- * every reported id against the run's bundler-recorded static dependency
- * provenance (the same grant set `packageStorage()` uses) and silently
- * drops anything else. A malicious module can therefore at worst inflate
- * call counts for packages its own bundle already statically depends on —
- * it can never attribute usage to an arbitrary package.
+ * every reported id against the bundle's *static* dependency package ids
+ * recorded at build time (a strict subset of the `packageStorage()` grant
+ * set, which additionally grants the run's own package id and
+ * dynamic-import dependencies) and silently drops anything else. A
+ * malicious module can therefore at worst inflate call counts for packages
+ * its own bundle already statically depends on — it can never attribute
+ * usage to an arbitrary package.
  *
  * Events arrive as one batch per run (buffered sandbox-side and flushed by
  * the run wrapper while the sandbox RPC dispatchers are still live); each
@@ -42,10 +44,10 @@ export function createPackageStaticCallMeterTools(input: {
 	env: UsageEnv
 	userId: string | null | undefined
 	/**
-	 * Saved-package UUIDs statically loaded into the running bundle, from
-	 * bundler/host controlled provenance only (see
-	 * `collectPackageStorageGrantIds`). Reported events whose stamped id is
-	 * not in this set are dropped.
+	 * Saved-package UUIDs recorded as static dependencies of the running
+	 * bundle at build time (`bundle.dependencies`), from bundler/host
+	 * controlled provenance only. Reported events whose stamped id is not
+	 * in this set are dropped.
 	 */
 	grantedPackageIds: ReadonlySet<string>
 }): PackageStaticCallMeterTools | undefined {

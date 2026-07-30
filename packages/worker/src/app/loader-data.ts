@@ -213,6 +213,7 @@ export type AdminFeatureFlagsLoaderData = {
 export type AdminUsageMetric =
 	| 'execute'
 	| 'package_export'
+	| 'package_static_call'
 	| 'job_run'
 	| 'workflow_run'
 	| 'service_runtime'

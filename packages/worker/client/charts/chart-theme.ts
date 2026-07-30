@@ -13,6 +13,7 @@ export const chartColor = {
 	cyan: '#06b6d4',
 	lime: '#84cc16',
 	fuchsia: '#d946ef',
+	teal: '#14b8a6',
 } as const
 
 export const chartSeriesColors = [
@@ -24,6 +25,7 @@ export const chartSeriesColors = [
 	chartColor.cyan,
 	chartColor.lime,
 	chartColor.fuchsia,
+	chartColor.teal,
 ] as const
 
 export const chartGridStroke =
