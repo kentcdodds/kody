@@ -94,13 +94,17 @@ class MemoryTypecheckFileSystem implements TypecheckFileSystem {
 }
 
 function createTypecheckTsconfig() {
+	// Ad hoc execute modules are usually agent-authored one-offs. Keep contract
+	// assignability checks (wrong args/results against published package types)
+	// without failing on lazy patterns like untyped parameters or implicit any.
 	return JSON.stringify({
 		compilerOptions: {
 			allowJs: true,
 			allowImportingTsExtensions: true,
 			noEmit: true,
 			skipLibCheck: true,
-			strict: true,
+			strict: false,
+			noImplicitAny: false,
 			types: [],
 		},
 	})
@@ -494,6 +498,26 @@ function isArbitraryNpmImportDiagnostic(diagnostic: TypecheckDiagnostic) {
 	)
 }
 
+function isLooseEmptyObjectPropertyDiagnostic(diagnostic: TypecheckDiagnostic) {
+	// `input = {}` (and other fresh empty objects) still reject property access
+	// under non-strict settings. Agents and the execute docs use that shape, so
+	// treat "does not exist on type '{}'" as allowed laziness while keeping
+	// property errors on real package/result types.
+	if (diagnostic.code !== 2339) return false
+	return /on type '\{\}'\.?$/.test(
+		flattenDiagnosticMessage(diagnostic.messageText),
+	)
+}
+
+function shouldIgnoreExecuteTypecheckDiagnostic(
+	diagnostic: TypecheckDiagnostic,
+) {
+	return (
+		isArbitraryNpmImportDiagnostic(diagnostic) ||
+		isLooseEmptyObjectPropertyDiagnostic(diagnostic)
+	)
+}
+
 function getLineAndCharacter(source: string, position: number) {
 	const prefix = source.slice(0, position)
 	const lines = prefix.split('\n')
@@ -615,7 +639,9 @@ export async function assertAdHocExecuteTypechecks(input: {
 						...languageService.getSyntacticDiagnostics(entryPath),
 						...languageService.getSemanticDiagnostics(entryPath),
 					])
-					.filter((diagnostic) => !isArbitraryNpmImportDiagnostic(diagnostic))
+					.filter(
+						(diagnostic) => !shouldIgnoreExecuteTypecheckDiagnostic(diagnostic),
+					)
 					.map((diagnostic) =>
 						formatDiagnostic({
 							diagnostic,

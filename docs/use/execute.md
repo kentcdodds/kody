@@ -101,12 +101,16 @@ use the same caller-scoped flag; saved-package exports, jobs, workflows, and
 services are not changed by this flag.
 
 When enabled, type errors are returned through the normal execute error result
-before the module's default export runs. Use those diagnostics to correct the
-module and retry. If a module unexpectedly stops before execution during the
-rollout, compare the reported TypeScript diagnostics with the same module for a
-caller whose flag is off. Operators can disable the user's override (or the
-global flag, if a broader rollout was started) to return immediately to the
-previous bundle-and-run behavior.
+before the module's default export runs. The checker is intentionally
+**non-strict**: untyped parameters, property access on `input = {}`, and other
+lazy TypeScript patterns are allowed so agents can iterate quickly. It still
+reports real assignability and property mismatches against published `kody:@…`
+package contracts (wrong argument or result types). Use those diagnostics to
+correct the module and retry. If a module unexpectedly stops before execution
+during the rollout, compare the reported TypeScript diagnostics with the same
+module for a caller whose flag is off. Operators can disable the user's override
+(or the global flag, if a broader rollout was started) to return immediately to
+the previous bundle-and-run behavior.
 
 ### Server-Timing phases
 
