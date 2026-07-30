@@ -287,12 +287,26 @@ const events = {
 
 // Internal bridge for the static package export call meter in the runtime
 // module (`__kodyMeterStaticPackageExport`): not an author-facing helper,
-// so it has no unbound-access rewrite name. The runtime wrapper reads it
-// from the run store and fires events without awaiting.
+// so it has no unbound-access rewrite name. Per-call reporting is a
+// synchronous buffer push (the call path never awaits and never throws);
+// the run wrapper awaits one `flush` bridge call at the end of the run,
+// while the sandbox RPC dispatchers are still live — a fire-and-forget RPC
+// per call would race dispatcher teardown and drop events. The buffer cap
+// bounds memory and the flush payload; calls past the cap in one run are
+// dropped (mirror the cap host-side in `createPackageStaticCallMeterTools`).
 function createStaticCallMeterHelperPrelude() {
 	return `
+const __kodyStaticCallMeterEvents = [];
 const __kodyStaticCallMeter = {
-  record: (input) => ${staticCallMeterRuntimeBridgeProviderName}.record(input ?? {}),
+  report: (event) => {
+    if (__kodyStaticCallMeterEvents.length >= 1000) return;
+    __kodyStaticCallMeterEvents.push(event);
+  },
+  flush: async () => {
+    if (__kodyStaticCallMeterEvents.length === 0) return;
+    const events = __kodyStaticCallMeterEvents.splice(0, __kodyStaticCallMeterEvents.length);
+    await ${staticCallMeterRuntimeBridgeProviderName}.record({ events });
+  },
 };
 	`.trim()
 }

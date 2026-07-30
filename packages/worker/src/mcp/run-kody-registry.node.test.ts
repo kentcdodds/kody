@@ -1881,7 +1881,9 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 			() =>
 				({
 					async execute(_wrapped, providers) {
-						expect(providers).toHaveLength(2)
+						// Main provider + packages bridge + static-call meter
+						// bridge (bound whenever the run has a user).
+						expect(providers).toHaveLength(3)
 						providerFns = (
 							providers[0] as {
 								fns: Record<string, (args: unknown) => Promise<unknown>>

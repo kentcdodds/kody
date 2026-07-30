@@ -199,7 +199,7 @@ export function collectModuleExportNames(input: {
 		}
 	}
 	names.delete('default')
-	return [...names]
-		.filter((name) => identifierNamePattern.test(name))
-		.sort((left, right) => left.localeCompare(right))
+	// Codepoint sort keeps generated proxy content (and therefore bundle
+	// cache digests) deterministic across ICU locale data.
+	return [...names].filter((name) => identifierNamePattern.test(name)).sort()
 }

@@ -1051,14 +1051,23 @@ ${runtimeHelperRuntimePropertySource}
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
     serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
   };
-  return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {
-    const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});
-    const __kodyEntrypoint = __kodyModule?.default;
-    if (typeof __kodyEntrypoint !== 'function') {
-      throw new Error('Kody execute modules must default export a function.');
+  try {
+    return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {
+      const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});
+      const __kodyEntrypoint = __kodyModule?.default;
+      if (typeof __kodyEntrypoint !== 'function') {
+        throw new Error('Kody execute modules must default export a function.');
+      }
+      return await __kodyEntrypoint(${entrypointInputSource});
+    });
+  } finally {
+    // Deliver buffered static package export call usage events while the
+    // sandbox RPC dispatchers are still live. Metering never breaks the
+    // run it observes.
+    if (typeof __kodyStaticCallMeter !== 'undefined' && __kodyStaticCallMeter != null) {
+      try { await __kodyStaticCallMeter.flush(); } catch {}
     }
-    return await __kodyEntrypoint(${entrypointInputSource});
-  });
+  }
 }`
 		try {
 			const providers: Array<ResolvedProvider> = [

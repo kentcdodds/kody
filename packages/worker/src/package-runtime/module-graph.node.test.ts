@@ -814,7 +814,15 @@ test('buildKodyModuleBundle proxies package module default and named exports', a
 	)?.[1]
 	expect(proxy).toContain('export * from')
 	expect(proxy).toContain('import * as __kodyPackageModule')
-	expect(proxy).toContain('export default __kodyPackageModule.default')
+	// Static import proxies stamp the callee package id and wrap function
+	// valued exports in the call-metering runtime helper.
+	expect(proxy).toContain(
+		'export default __kodyMeterStaticPackageExport("pkg-1", __kodyPackageModule.default)',
+	)
+	expect(proxy).toContain(
+		'__kodyMeterStaticPackageExport("pkg-1", __kodyPackageModule.add)',
+	)
+	expect(proxy).toContain('as add')
 })
 
 test('buildKodyModuleBundle imports callable entrypoints as ESM default exports', async () => {

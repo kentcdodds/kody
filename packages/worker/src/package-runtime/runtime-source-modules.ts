@@ -224,23 +224,20 @@ export function __kodyCreatePackageBoundStorage(packageId) {
 }
 
 function __kodyRecordStaticPackageCall(packageId, startedAtMs, outcome) {
-	// Fire-and-forget metering: never block and never throw into the call
-	// path. The bridge is read late-bound from the current run's store so
-	// reused worker isolates never pin a disposed dispatcher stub.
+	// Metering must never block or throw into the call path: reporting is a
+	// synchronous buffer push into the current run's meter (the surrounding
+	// wrapper flushes the buffer over the host bridge once, at the end of
+	// the run, while its RPC dispatchers are still live). The meter is read
+	// late-bound from the run store so reused worker isolates never pin a
+	// previous run's state, and runs without a meter simply skip recording.
 	try {
 		const meter = __kodyRuntimeStorage.getStore()?.__kodyStaticCallMeter;
-		if (meter == null || typeof meter.record !== 'function') return;
-		const pending = meter.record({
+		if (meter == null || typeof meter.report !== 'function') return;
+		meter.report({
 			packageId,
 			durationMs: Date.now() - startedAtMs,
 			outcome,
 		});
-		if (pending != null && typeof pending.then === 'function') {
-			pending.then(
-				() => {},
-				() => {},
-			);
-		}
 	} catch {}
 }
 
