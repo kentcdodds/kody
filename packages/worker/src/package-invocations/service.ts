@@ -100,6 +100,14 @@ export async function invokePackageExport(input: {
 	request: PackageInvocationRequest
 	runtimeInvokeDepth?: number
 	waitUntil?: (promise: Promise<unknown>) => void
+	/**
+	 * Skip the idempotency ledger and run key-less. Required for Cloudflare
+	 * Workflow step retries: reusing a keyed timeout/error would replay the
+	 * failure in milliseconds instead of re-executing.
+	 */
+	ephemeral?: boolean
+	/** Sandbox wall-clock budget; omit for the default ~90s export cap. */
+	executorTimeoutMs?: number | null
 }): Promise<PackageInvocationResponse> {
 	return await invokePackageExportWithToolFactories({
 		...input,

@@ -141,6 +141,13 @@ const workflowStepDoConfig: WorkflowStepDoConfig = {
 	timeout: '5 minutes',
 }
 
+/**
+ * Sandbox budget for workflow-invoked package exports / inline code.
+ * Kept under the Cloudflare Workflow step timeout (`5 minutes`) so status
+ * bookkeeping still has headroom after the sandbox returns.
+ */
+export const workflowExecutorTimeoutMs = 270_000
+
 type DynamicCallableWorkflowStep = {
 	do(
 		name: string,
@@ -1166,6 +1173,10 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				env: this.env,
 				userId: payload.userId,
 			})
+			// Ephemeral + raised timeout: Workflow step.do already caches
+			// successful results. Keyed invoke would replay a sandbox timeout
+			// on retry (~ms) instead of re-executing; the default 90s export
+			// cap is also below the 5-minute step window.
 			const response = await invokePackageExport({
 				env: this.env,
 				baseUrl: getAppBaseUrl({
@@ -1186,10 +1197,12 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					packageIdOrKodyId: payload.packageId,
 					exportName: payload.exportName,
 					params: payload.params,
-					idempotencyKey: payload.idempotencyKey,
+					idempotencyKey: null,
 					source: packageWorkflowInvocationSource,
 					topic: payload.workflowName,
 				},
+				ephemeral: true,
+				executorTimeoutMs: workflowExecutorTimeoutMs,
 			})
 			if (response.status < 200 || response.status >= 300) {
 				throwWorkflowInvocationFailure(response)
@@ -1277,6 +1290,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				payload.params,
 				{
 					packageContext: payload.packageContext,
+					executorTimeoutMs: workflowExecutorTimeoutMs,
 				},
 			)
 			logs = result.logs

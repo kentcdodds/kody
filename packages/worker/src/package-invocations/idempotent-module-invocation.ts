@@ -56,6 +56,7 @@ export async function invokeSavedPackageModule(input: {
 	preloadedModuleArtifact?: Awaited<
 		ReturnType<typeof ensureModuleArtifact>
 	> | null
+	executorTimeoutMs?: number | null
 }) {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -284,6 +285,7 @@ export async function invokeSavedPackageModule(input: {
 				toolFactories: input.toolFactories,
 				waitUntil: input.waitUntil,
 				preloadedModuleArtifact: input.preloadedModuleArtifact,
+				executorTimeoutMs: input.executorTimeoutMs,
 			})
 			switch (outcome.kind) {
 				case 'artifact-unavailable': {

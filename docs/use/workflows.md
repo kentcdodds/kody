@@ -6,8 +6,12 @@ subscriptions, package exports, and package services.
 
 Use workflows instead of plain `execute` for durable batch sweeps, migrations,
 polling loops, retryable steps, or work that may run longer than execute's
-timeout. The initial `execute` call should submit one `workflows.create`;
-inspect that workflow later with `workflow_run_list`.
+timeout (~90s). Workflow-invoked package exports and inline workflow code get a
+longer sandbox budget (~4.5 minutes, under the Cloudflare Workflow step
+timeout) and run without the package-invocation idempotency ledger, so a step
+retry re-executes instead of replaying a cached timeout. The initial `execute`
+call should submit one `workflows.create`; inspect that workflow later with
+`workflow_run_list`.
 
 ```ts
 import { workflows } from 'kody:runtime'

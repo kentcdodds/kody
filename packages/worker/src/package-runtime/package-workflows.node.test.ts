@@ -6,6 +6,7 @@ import {
 	DynamicCallableWorkflowBase,
 	createDynamicCallableWorkflow,
 	listWorkflowRunsForUser,
+	workflowExecutorTimeoutMs,
 } from './package-workflows.ts'
 
 const invocationMocks = vi.hoisted(() => ({
@@ -381,7 +382,10 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 			}),
 			'export default async function main(p){ return { ok: true, p }; }',
 			{ greeting: 'hello' },
-			{ packageContext: null },
+			{
+				packageContext: null,
+				executorTimeoutMs: workflowExecutorTimeoutMs,
+			},
 		)
 		expect(db.workflowRuns.get(created.id)).toMatchObject({
 			status: 'complete',
@@ -540,7 +544,10 @@ test('package-created inline workflows retain package secret authorization conte
 		}),
 		expect.any(String),
 		undefined,
-		{ packageContext },
+		{
+			packageContext,
+			executorTimeoutMs: workflowExecutorTimeoutMs,
+		},
 	)
 })
 
@@ -597,7 +604,10 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 		expect.objectContaining({ remoteConnectors }),
 		expect.any(String),
 		undefined,
-		{ packageContext: null },
+		{
+			packageContext: null,
+			executorTimeoutMs: workflowExecutorTimeoutMs,
+		},
 	)
 
 	const packageBinding = createStatefulWorkflowBinding()
@@ -646,6 +656,11 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 	expect(invocationMocks.invokePackageExport).toHaveBeenCalledWith(
 		expect.objectContaining({
 			token: expect.objectContaining({ remoteConnectors }),
+			ephemeral: true,
+			executorTimeoutMs: workflowExecutorTimeoutMs,
+			request: expect.objectContaining({
+				idempotencyKey: null,
+			}),
 		}),
 	)
 })

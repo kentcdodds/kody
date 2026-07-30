@@ -76,6 +76,12 @@ export type SavedPackageModuleRunInput = {
 	preloadedModuleArtifact?: Awaited<
 		ReturnType<typeof ensureModuleArtifact>
 	> | null
+	/**
+	 * Sandbox wall-clock budget. Defaults to the execute/export 90s cap when
+	 * omitted. Workflow invocations pass a longer budget so they can use the
+	 * full Cloudflare Workflow step window.
+	 */
+	executorTimeoutMs?: number | null
 }
 
 export async function runSavedPackageModuleOnce(
@@ -160,6 +166,7 @@ export async function runSavedPackageModuleOnce(
 			},
 			input.params,
 			{
+				executorTimeoutMs: input.executorTimeoutMs,
 				// No ambient `storage` binding: package code reaches its bucket via
 				// `packageStorage()` (granted through packageContext below). Legacy
 				// ambient use gets the structured runtime_helper_unbound hint.
