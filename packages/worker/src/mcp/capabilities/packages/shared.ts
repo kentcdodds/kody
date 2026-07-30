@@ -51,7 +51,7 @@ export const pendingPackageSecretApprovalsSchema = z
 	})
 	.nullable()
 	.describe(
-		'Pending user-secret package approvals detected from secretMounts and secret placeholders. Null when none are pending. Do not treat the package as ready to run until the user approves these and a keyless packages.invoke smoke test succeeds (it runs in the package runtime, so secret mounts are exercised).',
+		'Pending user-secret package approvals detected from secretMounts and secret placeholders. Null when none are pending. Do not treat the package as ready to run until the user approves these and a keyless packages.invoke smoke test of a read-only export or dry-run input succeeds (it runs in the package runtime, so secret mounts are exercised).',
 	)
 
 export function toPackageSummary(savedPackage: SavedPackageRecord) {

@@ -1,7 +1,7 @@
 # Invocation overhead guardrails
 
 The static-first package model rests on a performance claim: static
-`kody:@scope/pkg/export` imports cost nothing per call, and keyless
+`kody:@scope/pkg/export` imports cost nothing at invocation time, and keyless
 `packages.invoke` stays lean enough (tens of milliseconds of platform overhead)
 that agents never route around the contract-checked path. This document records
 the guardrails that keep that claim true. It is about platform overhead per
@@ -9,9 +9,12 @@ call, not about what user code does inside the call.
 
 ## Per-call overhead budgets
 
-- **Static imports** add zero per-call platform cost by construction. Their
-  costs are paid at bundle/publish time (typecheck, repo checks, artifact
-  rebuild). Do not add per-call bookkeeping to the static import path.
+- **Static imports** add zero platform cost at invocation time by construction:
+  no dispatch, no contract check, no bookkeeping per call. Their costs are paid
+  when the caller is bundled — at publish time for packages (typecheck, repo
+  checks, artifact rebuild), and inside the per-call bundle step that ad hoc
+  execute already pays regardless of imports. Do not add per-call bookkeeping to
+  the static import path.
 - **Keyless `packages.invoke`** is the lean/ephemeral mode: contract check plus
   dispatch into the target package's own runtime, no idempotency ledger row, run
   records on-failure-only. Its hot path budget is **tens of milliseconds** of

@@ -76,7 +76,8 @@ smoke-test path is unclear.
      with a keyless `packages.invoke(...)` smoke test before treating the
      package as complete. It must be `packages.invoke` (not a static import)
      because only the package's own runtime exercises `kody.secretMounts`
-     mounts.
+     mounts. Prefer a read-only export or a package-supported dry-run input so
+     verification has no external side effects.
 
 ## Secret names and value names
 

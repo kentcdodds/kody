@@ -147,7 +147,9 @@ is non-null (unadopted community forks), either adopt after review or surface
 `bulk_approval_url`, wait when required, and verify with a keyless
 `packages.invoke` smoke test before calling the work complete. The smoke test
 must use `packages.invoke` so the export runs in the package's own runtime and
-exercises its secret mounts; a static import cannot verify those.
+exercises its secret mounts; a static import cannot verify those. Pick a
+read-only export or a package-supported dry-run input for the smoke test so
+verification never triggers external side effects.
 
 ## Important exceptions
 

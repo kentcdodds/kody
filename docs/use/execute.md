@@ -43,9 +43,9 @@ helpers are runtime exports:
 - use **`import { packages } from 'kody:runtime'`** inside saved package runtime
   contexts or authenticated execute calls when a package call must be dynamic:
   the target's name is data, the call needs the target package's own runtime, or
-  you need exactly-once.
-  `packages.invoke({ kodyId, exportName, params, idempotencyKey? })` is the only
-  dynamic call and is always contract-checked before invoking. Pass the bare
+  you need exactly-once. `packages.invoke({ kodyId, exportName, params })` (plus
+  an optional `idempotencyKey` field for exactly-once calls) is the only dynamic
+  call and is always contract-checked before invoking. Pass the bare
   `package.json#kody.id` as `kodyId` (for example, `github`), not the npm-scoped
   `package.json.name` (for example, `@kentcdodds/github`). When the target
   package's name is known when the code is written, use a static `kody:@...`
