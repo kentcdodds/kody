@@ -245,11 +245,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   are only representable when the scope owner is a platform account.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
-  pointers, run observability state (`last_run_*`, counters), and `preserved`
-  (skip platform auto-cleanup). Account retention windows live on `users`
-  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed ad-hoc
-  jobs are cleaned by the hourly `job_retention` sweeper; package-owned and
-  preserved jobs are not. Execution history lives in the per-user `RunLog`
+  pointers, run observability state (`last_run_*`, counters), `preserved` (skip
+  platform auto-cleanup), and optional `expires_at` (UTC ISO; when reached the
+  scheduler skips the job and auto-disables it with `enabled = 0`). Account
+  retention windows live on `users` (`job_retention_*_days`; NULL = platform
+  defaults 14/60/90). Completed ad-hoc jobs are cleaned by the hourly
+  `job_retention` sweeper; package-owned and preserved jobs are not.
+  `expires_at` stops scheduling only — it does not delete rows and is
+  independent of `preserved`. Execution history lives in the per-user `RunLog`
   Durable Object (see [Run records](./run-records.md)).
 - `package_service_states` (`0095-package-service-states.sql`): authoritative
   per-service liveness projection (`running` / `idle` / `stopped` / `error`) for

@@ -496,9 +496,12 @@ Jobs are part of the package definition.
 For repo-backed jobs that are not part of a saved package, use `job_schedule`
 instead. `job_schedule_once` is the one-off shortcut, `job_update` can rename a
 job and adjust safe mutable fields such as schedule, timezone, enabled state,
-kill-switch state, params, or ES module code with a default-exported function,
-`job_delete` removes an existing scheduled job by id, and `job_run_now` can
-trigger an existing scheduled job immediately for debugging or ad hoc runs.
+kill-switch state, params, `expires_at` (UTC ISO auto-disable; null clears), or
+ES module code with a default-exported function, `job_delete` removes an
+existing scheduled job by id, and `job_run_now` can trigger an existing
+scheduled job immediately for debugging or ad hoc runs. When `expires_at` is
+reached the platform stops scheduling and auto-disables the job; that is
+separate from `preserved`, which only skips retention deletion.
 
 When `job_update` receives a replacement `code` string, Kody publishes a new
 commit on the job's repo-backed source, and subsequent runs execute the updated

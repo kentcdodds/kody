@@ -209,18 +209,26 @@ module-oriented runtime model:
   schedules
 - **`kody.job_update(...)`** updates an existing scheduled job by id for safe
   mutable fields such as name, ES module code with a default-exported function,
-  params, schedule, timezone, enabled/disabled state, or kill switch state.
-  Providing `code` republishes the job's repo-backed source so subsequent runs
-  execute the updated module; the replacement must default export a function
-  that receives `params` from its first argument (there is no `params` export
-  from `kody:runtime`)
+  params, schedule, timezone, enabled/disabled state, kill switch state,
+  preserved, or `expires_at` (UTC ISO; null clears). Providing `code`
+  republishes the job's repo-backed source so subsequent runs execute the
+  updated module; the replacement must default export a function that receives
+  `params` from its first argument (there is no `params` export from
+  `kody:runtime`)
+- Optional **`expires_at`** on `job_schedule` / `job_schedule_once` /
+  `job_update` stops the platform from scheduling the job after that UTC time.
+  When expiry is reached, Kody auto-disables the job (`enabled=false`) so it
+  shows as disabled in `job_list` / `job_get` (with `expired: true`) and can age
+  out via normal retention. This is separate from **`preserved`**, which only
+  skips auto-deletion.
 - **`kody.job_get({ id, includeCode: true })`** returns the scheduled job
   inspection details plus the stored repo-backed entrypoint path and source code
   when you need to inspect the current module before changing it
 - **`kody.job_delete(...)`** removes an existing scheduled job by id for the
   signed-in user
 - **`kody.job_run_now(...)`** runs an existing scheduled job immediately and
-  returns both the updated job state and the execution result for debugging
+  returns both the updated job state and the execution result for debugging.
+  Expired jobs are rejected.
 
 Static saved-package imports from ad hoc **execute** run under the ad hoc
 execute runtime. That means imported package modules can share exported helpers,
