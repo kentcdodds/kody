@@ -72,7 +72,8 @@ Even after #1035, a warm dynamic invoke still pays sequential work:
 
 - D1 saved-package resolve (kind-aware lookup preferred)
 - D1 entity-source row (short-TTL cached for warm manifest hits)
-- Published bundle artifact D1 + KV (isolate promise cache)
+- Published bundle artifact D1 row + KV payload (KV payload isolate-cached by
+  kvKey; D1 identity row stays authoritative for published commit)
 - Account write lease (re-entrant when already held)
 - Idempotency claim (`INSERT OR IGNORE` first on the fresh-key path, then
   terminal `UPDATE`)

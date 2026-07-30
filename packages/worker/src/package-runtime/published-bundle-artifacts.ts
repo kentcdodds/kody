@@ -124,29 +124,13 @@ function matchesPublishedBundleArtifactIdentity(input: {
 	)
 }
 
-type LoadedPublishedBundleArtifact = {
-	row: PublishedBundleArtifactRecord
-	artifact: PublishedBundleArtifact | null
-} | null
-
-const publishedBundleArtifactLoadCache =
-	createPublishedPackagePromiseCache<LoadedPublishedBundleArtifact>()
-
-function publishedBundleArtifactLoadCacheKey(input: {
-	userId: string
-	sourceId: string
-	kind: BundleArtifactKind
-	artifactName: string | null
-	entryPoint: string
-}) {
-	return JSON.stringify([
-		input.userId,
-		input.sourceId,
-		input.kind,
-		input.artifactName,
-		input.entryPoint,
-	])
-}
+/**
+ * Isolate cache for KV artifact payloads. Identity/D1 rows stay uncached so
+ * commit-presence checks and post-publish loads observe the current row; the
+ * expensive KV JSON parse/deserialize is what warm repeats should skip.
+ */
+const publishedBundleArtifactKvCache =
+	createPublishedPackagePromiseCache<PublishedBundleArtifact | null>()
 
 export async function persistPublishedBundleArtifact(
 	input: PersistPublishedBundleArtifactInput,
@@ -215,15 +199,7 @@ export async function persistPublishedBundleArtifact(
 		} else {
 			await insertPublishedBundleArtifactRow(input.env.APP_DB, rowInput)
 		}
-		publishedBundleArtifactLoadCache.delete(
-			publishedBundleArtifactLoadCacheKey({
-				userId: input.userId,
-				sourceId: input.source.id,
-				kind: input.kind,
-				artifactName,
-				entryPoint,
-			}),
-		)
+		publishedBundleArtifactKvCache.delete(kvKey)
 	} catch (error) {
 		await deletePublishedBundleArtifact({
 			env: input.env,
@@ -236,6 +212,28 @@ export async function persistPublishedBundleArtifact(
 	return kvKey
 }
 
+async function readPublishedBundleArtifactCached(input: {
+	env: Env
+	kvKey: string
+}) {
+	const cached = publishedBundleArtifactKvCache.get(input.kvKey)
+	if (cached) {
+		return await cached
+	}
+	const artifact = await readPublishedBundleArtifact({
+		env: input.env,
+		kvKey: input.kvKey,
+	})
+	// Cache hits only. A transient KV miss must not stick for the isolate TTL.
+	if (artifact) {
+		publishedBundleArtifactKvCache.set(
+			input.kvKey,
+			Promise.resolve(artifact),
+		)
+	}
+	return artifact
+}
+
 export async function loadPublishedBundleArtifactByIdentity(input: {
 	env: Env
 	userId: string
@@ -243,57 +241,49 @@ export async function loadPublishedBundleArtifactByIdentity(input: {
 	kind: BundleArtifactKind
 	artifactName?: string | null
 	entryPoint: string
-}): Promise<LoadedPublishedBundleArtifact> {
+}) {
 	const artifactName = normalizeArtifactName(input.artifactName)
 	const entryPoint = normalizeEntryPoint(input.entryPoint)
-	return await publishedBundleArtifactLoadCache.getOrCreate({
-		cacheKey: publishedBundleArtifactLoadCacheKey({
-			userId: input.userId,
-			sourceId: input.sourceId,
+	const row = await getPublishedBundleArtifactByIdentity(input.env.APP_DB, {
+		userId: input.userId,
+		sourceId: input.sourceId,
+		artifactKind: input.kind,
+		artifactName,
+		entryPoint,
+	})
+	if (!row) return null
+	const artifact = await readPublishedBundleArtifactCached({
+		env: input.env,
+		kvKey: row.kvKey,
+	})
+	if (!artifact) {
+		return {
+			row,
+			artifact: null,
+		}
+	}
+	if (
+		!matchesPublishedBundleArtifactIdentity({
+			artifact,
+			sourceId: row.sourceId,
+			publishedCommit: row.publishedCommit,
 			kind: input.kind,
 			artifactName,
 			entryPoint,
-		}),
-		create: async () => {
-			const row = await getPublishedBundleArtifactByIdentity(input.env.APP_DB, {
-				userId: input.userId,
-				sourceId: input.sourceId,
-				artifactKind: input.kind,
-				artifactName,
-				entryPoint,
-			})
-			if (!row) return null
-			const artifact = await readPublishedBundleArtifact({
-				env: input.env,
-				kvKey: row.kvKey,
-			})
-			if (!artifact) {
-				return {
-					row,
-					artifact: null,
-				}
-			}
-			if (
-				!matchesPublishedBundleArtifactIdentity({
-					artifact,
-					sourceId: row.sourceId,
-					publishedCommit: row.publishedCommit,
-					kind: input.kind,
-					artifactName,
-					entryPoint,
-				})
-			) {
-				return {
-					row,
-					artifact: null,
-				}
-			}
-			return {
-				row,
-				artifact,
-			}
-		},
-	})
+		})
+	) {
+		// Production kv keys embed publishedCommit, so mismatches are rare; drop
+		// a stale isolate cache entry when the row and payload disagree.
+		publishedBundleArtifactKvCache.delete(row.kvKey)
+		return {
+			row,
+			artifact: null,
+		}
+	}
+	return {
+		row,
+		artifact,
+	}
 }
 
 /**
