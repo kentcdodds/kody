@@ -33,9 +33,13 @@ type UsageEvent = {
 }
 ```
 
-`eventType` is a closed union. Add new members to `UsageEventType` in
-`record-usage.ts` (never ad hoc strings at call sites) so the set of metrics
-stays reviewable in one place.
+`eventType` is a closed union defined in the dependency-free
+`packages/worker/src/usage/event-types.ts` (re-exported by `record-usage.ts`).
+Add new members there (never ad hoc strings at call sites) so the set of metrics
+stays reviewable in one place. The feature-flag registry declares flag success
+metrics against this union, and the flag-exposure stream (`FLAG_EXPOSURES`
+dataset, see [feature-flags.md](./feature-flags.md#success-metrics)) is joined
+with these events for the admin on/off cohort readout.
 
 ### Metrics and their chokepoints
 

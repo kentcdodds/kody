@@ -31,24 +31,18 @@
  */
 
 import * as cloudflareWorkers from 'cloudflare:workers'
+import { type UsageEventType } from '#worker/usage/event-types.ts'
+
+export {
+	usageEventTypes,
+	type UsageEventType,
+} from '#worker/usage/event-types.ts'
 
 // Older local runtimes (and the node test stub) may not expose `tracing`;
 // treat it as optional so metering keeps its never-throws contract.
 const runtimeTracing: typeof cloudflareWorkers.tracing | undefined = (
 	cloudflareWorkers as Partial<typeof cloudflareWorkers>
 ).tracing
-
-export type UsageEventType =
-	| 'execute'
-	| 'package_export'
-	| 'package_static_call'
-	| 'job_run'
-	| 'workflow_run'
-	| 'service_runtime'
-	| 'realtime_session'
-	| 'outbound_fetch'
-	| 'email_send'
-	| 'email_received'
 
 export type UsageOutcome = 'success' | 'error'
 

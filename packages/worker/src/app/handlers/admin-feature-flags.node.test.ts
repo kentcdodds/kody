@@ -207,6 +207,19 @@ function createFeatureFlagsTestEnv(
 						meta: { changes: 0 },
 					} as { results: Array<T>; meta: { changes: number } }
 				}
+				// Metric readout queries (D1 fallback path); no data in this test.
+				if (normalized.includes('from feature_flag_exposure_rollups')) {
+					return {
+						results: [],
+						meta: { changes: 0 },
+					} as { results: Array<T>; meta: { changes: number } }
+				}
+				if (normalized.includes('from usage_rollups')) {
+					return {
+						results: [],
+						meta: { changes: 0 },
+					} as { results: Array<T>; meta: { changes: number } }
+				}
 				throw new Error(`Unsupported all query: ${query}`)
 			},
 			async run() {

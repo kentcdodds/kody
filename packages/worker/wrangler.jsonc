@@ -272,6 +272,10 @@
 					"binding": "USAGE_EVENTS",
 					"dataset": "kody_usage_events",
 				},
+				{
+					"binding": "FLAG_EXPOSURES",
+					"dataset": "kody_flag_exposures",
+				},
 			],
 			"ai": {
 				"binding": "AI",
@@ -435,6 +439,10 @@
 				{
 					"binding": "USAGE_EVENTS",
 					"dataset": "kody_usage_events_preview",
+				},
+				{
+					"binding": "FLAG_EXPOSURES",
+					"dataset": "kody_flag_exposures_preview",
 				},
 			],
 			"ai": {

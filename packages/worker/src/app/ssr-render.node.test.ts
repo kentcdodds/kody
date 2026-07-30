@@ -134,6 +134,10 @@ function createUserTestDb(users: Array<TestUser>) {
 		prepare(query: string) {
 			return createStatement(query)
 		},
+		// Feature-flag exposure recording upserts via db.batch in local mode.
+		async batch(statements: Array<unknown>) {
+			return statements.map(() => ({ meta: { changes: 1 } }))
+		},
 		async exec() {
 			return
 		},

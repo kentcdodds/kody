@@ -7,12 +7,14 @@ import {
 	emailDeliveryEventRetentionDays,
 	emailMessageRetentionDays,
 	entitlementDailyCounterRetentionDays,
+	featureFlagExposureRetentionDays,
 	getRetentionPolicyCoverage,
 	memorySuppressionRetentionDays,
 	platformFeedbackRetentionDays,
 	pruneAuditEventsForRetention,
 	pruneEmailDeliveryEventsForRetention,
 	pruneEntitlementDailyCountersForRetention,
+	pruneFeatureFlagExposuresForRetention,
 	pruneMemorySuppressionsForRetention,
 	prunePlatformFeedbackForRetention,
 	prunePublishedBundleArtifactsForRetention,
@@ -218,6 +220,16 @@ function createRetentionDb() {
 			total_bytes INTEGER NOT NULL DEFAULT 0,
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			PRIMARY KEY (user_id, metric, month)
+		);
+		CREATE TABLE feature_flag_exposure_rollups (
+			flag_key TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			day TEXT NOT NULL,
+			enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+			source TEXT NOT NULL,
+			exposure_count INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (flag_key, user_id, day, enabled, source)
 		);
 		CREATE TABLE audit_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -892,6 +904,36 @@ test('entitlement counter and usage rollup retention respect boundaries', async 
 		.prepare(`SELECT month FROM usage_rollups ORDER BY month`)
 		.all() as Array<{ month: string }>
 	expect(months.map((row) => row.month)).toEqual(['2024-07', '2026-06'])
+})
+
+test('feature flag exposure rollup retention respects the day boundary', async () => {
+	const { sqlite, db } = createRetentionDb()
+	const cutoffDay = daysAgo(featureFlagExposureRetentionDays).slice(0, 10)
+	for (const day of [
+		daysAgo(featureFlagExposureRetentionDays + 1).slice(0, 10),
+		cutoffDay,
+		daysAgo(1).slice(0, 10),
+	]) {
+		sqlite
+			.prepare(
+				`INSERT INTO feature_flag_exposure_rollups (
+				flag_key, user_id, day, enabled, source, exposure_count, updated_at
+			) VALUES ('execute-pre-exec-typecheck', 'user-1', ?, 1, 'rollout', 1, ?)`,
+			)
+			.run(day, now.toISOString())
+	}
+
+	expect(await pruneFeatureFlagExposuresForRetention({ db, now })).toEqual({
+		selected: 1,
+		deleted: 1,
+	})
+	const days = sqlite
+		.prepare(`SELECT day FROM feature_flag_exposure_rollups ORDER BY day`)
+		.all() as Array<{ day: string }>
+	expect(days.map((row) => row.day)).toEqual([
+		cutoffDay,
+		daysAgo(1).slice(0, 10),
+	])
 })
 
 test('published bundle artifact retention deletes stale rows, KV blobs, and source snapshots', async () => {

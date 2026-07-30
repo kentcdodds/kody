@@ -6,19 +6,29 @@
  * need auth should keep using `loadResolvedRequestAuth` /
  * `readAuthenticatedAppUser` and will not hit this path.
  *
+ * Evaluation also records success-metric exposures for measured flags (see
+ * `#worker/feature-flags/exposure.ts`), which is why authenticated
+ * evaluation needs the caller's stable user id alongside the numeric one.
+ *
  * On evaluation failure for an authenticated user, every flag is forced off
  * (fail closed) so a default-on registry flag cannot bypass a kill switch when
  * D1 is unavailable. Anonymous requests still use registry defaults.
  */
 
+import { recordFeatureFlagExposures } from '#worker/feature-flags/exposure.ts'
 import {
 	featureFlagDefinitions,
 	featureFlagKeys,
 	type FeatureFlagKey,
 } from '#worker/feature-flags/registry.ts'
-import { getFeatureFlagsForUser } from '#worker/feature-flags/service.ts'
+import { getFeatureFlagEvaluationsForUser } from '#worker/feature-flags/service.ts'
 
 export type EvaluatedFeatureFlags = Record<FeatureFlagKey, boolean>
+
+export type FeatureFlagRequestUser = {
+	userId: number
+	stableUserId: string
+}
 
 const requestFeatureFlagsStore = new WeakMap<
 	Request,
@@ -43,13 +53,25 @@ function disabledFeatureFlags(): EvaluatedFeatureFlags {
 
 async function resolveRequestFeatureFlags(
 	env: Env,
-	userId: number | null,
+	user: FeatureFlagRequestUser | null,
 ): Promise<EvaluatedFeatureFlags> {
-	if (userId === null) {
+	if (user === null) {
 		return defaultFeatureFlags()
 	}
 	try {
-		return await getFeatureFlagsForUser(env.APP_DB, userId)
+		const evaluations = await getFeatureFlagEvaluationsForUser(
+			env.APP_DB,
+			user.userId,
+		)
+		await recordFeatureFlagExposures(env, {
+			stableUserId: user.stableUserId,
+			evaluations,
+		})
+		const flags = {} as EvaluatedFeatureFlags
+		for (const key of featureFlagKeys) {
+			flags[key] = evaluations[key].enabled
+		}
+		return flags
 	} catch (error) {
 		console.error('Failed to load feature flags for authenticated user:', error)
 		return disabledFeatureFlags()
@@ -59,11 +81,11 @@ async function resolveRequestFeatureFlags(
 export function loadRequestFeatureFlags(
 	request: Request,
 	env: Env,
-	userId: number | null,
+	user: FeatureFlagRequestUser | null,
 ): Promise<EvaluatedFeatureFlags> {
 	let promise = requestFeatureFlagsStore.get(request)
 	if (!promise) {
-		promise = resolveRequestFeatureFlags(env, userId)
+		promise = resolveRequestFeatureFlags(env, user)
 		requestFeatureFlagsStore.set(request, promise)
 	}
 	return promise
