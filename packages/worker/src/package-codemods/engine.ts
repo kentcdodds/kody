@@ -333,8 +333,12 @@ async function ensureRun(input: {
 				`Package codemod run "${input.runId}" scope does not match the requested scope.`,
 			)
 		}
-		const requestedRevertOf = input.revertOfRunId ?? null
-		if ((existing.revertOfRunId ?? null) !== requestedRevertOf) {
+		// Continuation steps may omit revertOfRunId; the stored run is the
+		// source of truth. Only an explicit mismatched value is rejected.
+		if (
+			input.revertOfRunId != null &&
+			(existing.revertOfRunId ?? null) !== input.revertOfRunId
+		) {
 			throw new Error(
 				`Package codemod run "${input.runId}" revertOfRunId does not match the requested value.`,
 			)

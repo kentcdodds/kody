@@ -92,7 +92,9 @@ export const packageCodemodStepInputSchema = z.object({
 		.min(1)
 		.max(50)
 		.optional()
-		.describe('Max packages to process in this step (default 20, max 50).'),
+		.describe(
+			'Max packages to process in this step. Scan: default 20, max 50. Dry-run, apply, and revert are check-heavy: default 5, max 10 (higher values are clamped).',
+		),
 })
 
 export const packageCodemodRevertInputSchema = z.object({
@@ -116,9 +118,11 @@ export const packageCodemodRevertInputSchema = z.object({
 		.number()
 		.int()
 		.min(1)
-		.max(50)
+		.max(10)
 		.optional()
-		.describe('Max packages to process in this step (default 20, max 50).'),
+		.describe(
+			'Max items to revert in this step (default 5, max 10 — reverts republish packages and are check-heavy).',
+		),
 })
 
 export const packageCodemodFiltersSchema = z
