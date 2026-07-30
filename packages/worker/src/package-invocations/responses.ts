@@ -8,7 +8,8 @@ import { type PackageInvocationStoredResponse } from './repo.ts'
 export function buildExecutionSuccessResponse(input: {
 	savedPackage: SavedPackageRecord
 	invocationName: string
-	idempotencyKey: string
+	/** `null` for key-less (ephemeral) invocations, which have no ledger row. */
+	idempotencyKey: string | null
 	source: string | null
 	topic: string | null
 	result: unknown
@@ -31,10 +32,14 @@ export function buildExecutionSuccessResponse(input: {
 			exportName: input.invocationName,
 			source: input.source,
 			topic: input.topic,
-			idempotency: {
-				key: input.idempotencyKey,
-				replayed: false,
-			},
+			...(input.idempotencyKey
+				? {
+						idempotency: {
+							key: input.idempotencyKey,
+							replayed: false,
+						},
+					}
+				: {}),
 			result: toJsonSafeValue(input.result),
 			logs: input.logs,
 			...(input.rawContent
@@ -50,7 +55,8 @@ export function buildExecutionSuccessResponse(input: {
 export function buildExecutionErrorResponse(input: {
 	savedPackage: SavedPackageRecord
 	invocationName: string
-	idempotencyKey: string
+	/** `null` for key-less (ephemeral) invocations, which have no ledger row. */
+	idempotencyKey: string | null
 	source: string | null
 	topic: string | null
 	error: unknown
@@ -68,10 +74,14 @@ export function buildExecutionErrorResponse(input: {
 			exportName: input.invocationName,
 			source: input.source,
 			topic: input.topic,
-			idempotency: {
-				key: input.idempotencyKey,
-				replayed: false,
-			},
+			...(input.idempotencyKey
+				? {
+						idempotency: {
+							key: input.idempotencyKey,
+							replayed: false,
+						},
+					}
+				: {}),
 			error: {
 				code: 'execution_failed',
 				message,

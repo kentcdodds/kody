@@ -87,10 +87,16 @@ export type PackageInvokeCheckOutcome = {
 	preloads: PackageInvokeCheckPreloads | null
 }
 
+export type PackageInvokeCheckOperationName =
+	| 'packages.invoke'
+	| 'packages.check'
+	/** Deprecated widen-phase alias for `packages.invoke`. */
+	| 'packages.invokeChecked'
+
 export async function checkPackageInvokeForRuntime(input: {
 	env: Env
 	baseUrl: string
-	operationName: 'packages.check' | 'packages.invokeChecked'
+	operationName: PackageInvokeCheckOperationName
 	userId: string
 	rawInput: PackageInvokeInput
 }): Promise<PackageInvokeCheckResult> {
@@ -105,7 +111,7 @@ export async function checkPackageInvokeForRuntime(input: {
 export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	env: Env
 	baseUrl: string
-	operationName: 'packages.check' | 'packages.invokeChecked'
+	operationName: PackageInvokeCheckOperationName
 	userId: string
 	rawInput: PackageInvokeInput
 	/**

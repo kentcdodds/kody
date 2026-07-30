@@ -14,6 +14,7 @@ import {
 	type PackageRuntimeToolFactories,
 } from './common.ts'
 import { invokeSavedPackageModule } from './idempotent-module-invocation.ts'
+import { runSavedPackageModuleEphemeral } from './module-execution.ts'
 import { type PackageInvokeCheckPreloads } from './invoke-check.ts'
 import { resolveSavedPackage } from './module-artifacts.ts'
 import { buildJsonErrorResponse } from './responses.ts'
@@ -89,14 +90,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 		})
 	}
 	const exportName = normalizeExportName(input.request.exportName)
-	const idempotencyKey = input.request.idempotencyKey.trim()
-	if (!idempotencyKey) {
-		return buildJsonErrorResponse({
-			status: 400,
-			code: 'missing_idempotency_key',
-			message: 'Package invocations require a non-empty idempotencyKey.',
-		})
-	}
+	const idempotencyKey = normalizeNullableString(input.request.idempotencyKey)
 	const savedPackage =
 		input.preloads?.savedPackage ??
 		(await resolveSavedPackage({
@@ -109,7 +103,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 			status: 404,
 			code: 'package_not_found',
 			message: buildSavedPackageNotFoundMessage(packageIdOrKodyId),
-			idempotencyKey,
+			idempotencyKey: idempotencyKey ?? undefined,
 		})
 	}
 	const conversationId = input.conversationId?.trim()
@@ -121,16 +115,17 @@ export async function invokePackageExportForExecuteRuntime(input: {
 			conversationId,
 		})
 	}
-	return await invokeSavedPackageModule({
+	const actor = {
+		tokenId: internalExecuteRuntimeInvokeTokenId,
+		userId: input.caller.userId,
+		email: input.caller.email,
+		displayName: input.caller.displayName || input.caller.email || 'execute',
+		remoteConnectors: input.caller.remoteConnectors ?? null,
+	}
+	const shared = {
 		env: input.env,
 		baseUrl: input.baseUrl,
-		actor: {
-			tokenId: internalExecuteRuntimeInvokeTokenId,
-			userId: input.caller.userId,
-			email: input.caller.email,
-			displayName: input.caller.displayName || input.caller.email || 'execute',
-			remoteConnectors: input.caller.remoteConnectors ?? null,
-		},
+		actor,
 		savedPackage,
 		invocationName: exportName,
 		moduleSelector: {
@@ -138,7 +133,6 @@ export async function invokePackageExportForExecuteRuntime(input: {
 			exportName,
 		},
 		params: input.request.params,
-		idempotencyKey,
 		source: 'execute',
 		topic: normalizeNullableString(input.request.topic),
 		notFoundCode: 'export_not_found',
@@ -146,7 +140,14 @@ export async function invokePackageExportForExecuteRuntime(input: {
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
 		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
-	})
+	} satisfies Omit<
+		Parameters<typeof invokeSavedPackageModule>[0],
+		'idempotencyKey'
+	>
+	if (!idempotencyKey) {
+		return await runSavedPackageModuleEphemeral(shared)
+	}
+	return await invokeSavedPackageModule({ ...shared, idempotencyKey })
 }
 
 export async function invokePackageExportForPackageRuntime(input: {
@@ -175,14 +176,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 		})
 	}
 	const exportName = normalizeExportName(input.request.exportName)
-	const idempotencyKey = input.request.idempotencyKey.trim()
-	if (!idempotencyKey) {
-		return buildJsonErrorResponse({
-			status: 400,
-			code: 'missing_idempotency_key',
-			message: 'Package invocations require a non-empty idempotencyKey.',
-		})
-	}
+	const idempotencyKey = normalizeNullableString(input.request.idempotencyKey)
 	const savedPackage =
 		input.preloads?.savedPackage ??
 		(await resolveSavedPackage({
@@ -195,10 +189,10 @@ export async function invokePackageExportForPackageRuntime(input: {
 			status: 404,
 			code: 'package_not_found',
 			message: buildSavedPackageNotFoundMessage(packageIdOrKodyId),
-			idempotencyKey,
+			idempotencyKey: idempotencyKey ?? undefined,
 		})
 	}
-	return await invokeSavedPackageModule({
+	const shared = {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		actor: {
@@ -217,7 +211,6 @@ export async function invokePackageExportForPackageRuntime(input: {
 			exportName,
 		},
 		params: input.request.params,
-		idempotencyKey,
 		source:
 			normalizeNullableString(input.request.source) ??
 			`package:${input.caller.packageContext.kodyId}`,
@@ -227,7 +220,14 @@ export async function invokePackageExportForPackageRuntime(input: {
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
 		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
-	})
+	} satisfies Omit<
+		Parameters<typeof invokeSavedPackageModule>[0],
+		'idempotencyKey'
+	>
+	if (!idempotencyKey) {
+		return await runSavedPackageModuleEphemeral(shared)
+	}
+	return await invokeSavedPackageModule({ ...shared, idempotencyKey })
 }
 
 export async function invokePackageExportWithToolFactories(input: {
@@ -248,7 +248,9 @@ export async function invokePackageExportWithToolFactories(input: {
 		})
 	}
 	const exportName = normalizeExportName(input.request.exportName)
-	const idempotencyKey = input.request.idempotencyKey.trim()
+	// External HTTP token invocations stay keyed-only: providers retry
+	// deliveries, so exactly-once is the point of this surface.
+	const idempotencyKey = normalizeNullableString(input.request.idempotencyKey)
 	if (!idempotencyKey) {
 		return buildJsonErrorResponse({
 			status: 400,
