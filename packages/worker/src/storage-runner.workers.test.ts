@@ -8,6 +8,7 @@ import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts
 import {
 	clearStorageBucketRegistrationDedupeForTests,
 	flushStorageBucketRegistrationsForTests,
+	listUserStorageBucketEstimates,
 	listUserStorageBucketIds,
 } from '#worker/storage-buckets/service.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
@@ -469,6 +470,13 @@ test('storage runner registers buckets on writes but not on reads', async () => 
 	await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([
 		writeStorageId,
 	])
+
+	// The mutating write also persists this bucket's byte estimate on its
+	// inventory row so entitlement baselines can read it without a DO probe.
+	const estimates = await listUserStorageBucketEstimates({ env, userId })
+	expect(estimates).toHaveLength(1)
+	expect(estimates[0]?.storageId).toBe(writeStorageId)
+	expect(estimates[0]?.estimatedBytes).toBeGreaterThan(0)
 })
 
 test('getEstimatedBytes on a never-written bucket returns the empty DO baseline without registering', async () => {

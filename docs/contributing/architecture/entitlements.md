@@ -263,21 +263,32 @@ Rules:
   metadata, package invocation results, and published artifact metadata). Run
   records in the per-user `RunLog` Durable Object are intentionally **excluded**
   from the quota — they are observability history, not user content.
-  StorageRunner Durable Object buckets expose their own `estimatedBytes`; write
-  chokepoints pass `getCurrent` as
-  `D1 estimate + sum of inventoried StorageRunner bucket estimates` (plus the
-  target bucket when its inventory row has not landed yet) and `requested` as
-  the candidate payload size when known. Pure read-only `storage.sql` /
+  StorageRunner Durable Object buckets expose their own `estimatedBytes`, and
+  each bucket's latest measurement is persisted on its
+  `user_storage_buckets.estimated_bytes` inventory row (migration 0112). Write
+  chokepoints pass `getCurrent` as `D1 estimate + sum of per-bucket estimates`,
+  where only the bucket being written (plus any inventoried bucket that has
+  never been measured — a one-time backfill per bucket) is probed live; every
+  other bucket contributes its stored D1 estimate, so mutating writes no longer
+  fan `getEstimatedBytes` RPCs across the user's whole bucket inventory. Live
+  probe results are persisted fire-and-forget with **UPDATE-only** statements
+  (they can never recreate an inventory row removed by account, package, or job
+  deletion), and mutating StorageRunner RPCs opportunistically refresh their own
+  bucket's stored estimate after the write, throttled per bucket per isolate
+  (`storageBucketEstimateRefreshMinIntervalMs`). Stored estimates are therefore
+  freshness hints with bounded lag — acceptable for an order-of-magnitude cap
+  because the written bucket is always measured live. `requested` is the
+  candidate payload size when known. Pure read-only `storage.sql` /
   `packageStorage().sql` statements (`SELECT` / `EXPLAIN` / schema `PRAGMA`)
-  skip this fan-out even when the helper marks the call writable. Mutating SQL
-  and `storage.set` in one sandbox share a per-run baseline cache so repeated
-  writes do not rescan every bucket. Each estimate read waits at most ~2s via
-  `Promise.race` and fails closed for the caller; the underlying DO RPC is not
-  cancelled if the runtime keeps it running. The counter intentionally does
-  **not** attempt to scan Cloudflare Artifacts repository contents, KV
-  snapshot/bundle bodies, R2 object listings beyond `email_messages.raw_size`,
-  or Vectorize: those stores either lack reliable byte metadata or are derived
-  from D1 and are documented in `data-storage.md`.
+  skip the baseline read entirely even when the helper marks the call writable.
+  Mutating SQL and `storage.set` in one sandbox share a per-run baseline cache
+  so repeated writes do not re-read the baseline. Each live estimate read waits
+  at most ~2s via `Promise.race` and fails closed for the caller; the underlying
+  DO RPC is not cancelled if the runtime keeps it running. The counter
+  intentionally does **not** attempt to scan Cloudflare Artifacts repository
+  contents, KV snapshot/bundle bodies, R2 object listings beyond
+  `email_messages.raw_size`, or Vectorize: those stores either lack reliable
+  byte metadata or are derived from D1 and are documented in `data-storage.md`.
 
 ### Concurrency
 

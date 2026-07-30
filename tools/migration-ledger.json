@@ -467,6 +467,10 @@
 		{
 			"filename": "0111-package-codemod-ledger.sql",
 			"sha256": "d42350b7bfa88400d8133a8d8436dd6fa2e25e3ab7650e047c447e7f4704863e"
+		},
+		{
+			"filename": "0112-user-storage-bucket-estimated-bytes.sql",
+			"sha256": "6bde29d7af33c4378bac5a5729e66c7fbb2206e6162ddffa5c988630f4d614c2"
 		}
 	]
 }

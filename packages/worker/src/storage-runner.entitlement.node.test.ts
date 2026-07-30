@@ -3,16 +3,22 @@ import { storageEstimateReadRetryDelayMs } from '#worker/storage-runner.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
 const mockModule = vi.hoisted(() => ({
-	listUserStorageBucketIds: vi.fn(),
+	listUserStorageBucketEstimates: vi.fn(),
 	readUserD1StorageBytes: vi.fn(async () => 0),
 	registerStorageBucket: vi.fn(),
+	recordStorageBucketEstimate: vi.fn(),
+	maybeRefreshStorageBucketEstimate: vi.fn(),
 }))
 
 vi.mock('#worker/storage-buckets/service.ts', () => ({
-	listUserStorageBucketIds: (...args: Array<unknown>) =>
-		mockModule.listUserStorageBucketIds(...args),
+	listUserStorageBucketEstimates: (...args: Array<unknown>) =>
+		mockModule.listUserStorageBucketEstimates(...args),
 	registerStorageBucket: (...args: Array<unknown>) =>
 		mockModule.registerStorageBucket(...args),
+	recordStorageBucketEstimate: (...args: Array<unknown>) =>
+		mockModule.recordStorageBucketEstimate(...args),
+	maybeRefreshStorageBucketEstimate: (...args: Array<unknown>) =>
+		mockModule.maybeRefreshStorageBucketEstimate(...args),
 	storageBucketKindFromStorageId: (storageId: string) => {
 		if (storageId.startsWith('job:')) return 'job'
 		if (storageId.startsWith('exec:')) return 'execute'
@@ -60,7 +66,9 @@ function createEstimateEnv(
 }
 
 test('assertStorageRunnerWriteWithinEntitlement retries estimate reads once, fails closed, and waits for peers', async () => {
-	mockModule.listUserStorageBucketIds.mockResolvedValue(['bucket-a'])
+	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
+		{ storageId: 'bucket-a', estimatedBytes: null },
+	])
 	const retryOnce = vi
 		.fn()
 		.mockRejectedValueOnce(new Error('transient DO read failure'))
@@ -105,7 +113,9 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads once, fai
 	}
 
 	const chunkStorageIds = ['fast-fail', 'slow-ok'] as const
-	mockModule.listUserStorageBucketIds.mockResolvedValue([...chunkStorageIds])
+	mockModule.listUserStorageBucketEstimates.mockResolvedValue(
+		chunkStorageIds.map((storageId) => ({ storageId, estimatedBytes: null })),
+	)
 
 	let inFlight = 0
 	let maxInFlight = 0

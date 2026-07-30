@@ -1,18 +1,33 @@
 import { expect, test, vi } from 'vitest'
+import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
 const mockModule = vi.hoisted(() => ({
-	listUserStorageBucketIds: vi.fn(async () => ['bucket-a', 'bucket-b']),
+	listUserStorageBucketEstimates: vi.fn(
+		async (): Promise<
+			Array<{ storageId: string; estimatedBytes: number | null }>
+		> => [
+			{ storageId: 'bucket-a', estimatedBytes: null },
+			{ storageId: 'bucket-b', estimatedBytes: null },
+		],
+	),
 	readUserD1StorageBytes: vi.fn(async () => 0),
 	registerStorageBucket: vi.fn(),
+	recordStorageBucketEstimate: vi.fn(),
+	maybeRefreshStorageBucketEstimate: vi.fn(),
 	getEstimatedBytes: vi.fn(async () => ({ estimatedBytes: 64 })),
 }))
 
 vi.mock('#worker/storage-buckets/service.ts', () => ({
-	listUserStorageBucketIds: (...args: Array<unknown>) =>
-		mockModule.listUserStorageBucketIds(...args),
+	listUserStorageBucketEstimates: (...args: Array<unknown>) =>
+		mockModule.listUserStorageBucketEstimates(...args),
 	registerStorageBucket: (...args: Array<unknown>) =>
 		mockModule.registerStorageBucket(...args),
+	recordStorageBucketEstimate: (...args: Array<unknown>) =>
+		mockModule.recordStorageBucketEstimate(...args),
+	maybeRefreshStorageBucketEstimate: (...args: Array<unknown>) =>
+		mockModule.maybeRefreshStorageBucketEstimate(...args),
 	storageBucketKindFromStorageId: (storageId: string) => {
 		if (storageId.startsWith('package:')) return 'package'
 		return 'unknown'
@@ -99,7 +114,8 @@ test('isReadOnlyStorageSqlQuery accepts single SELECT/EXPLAIN/PRAGMA only', () =
 
 test('writable storage_sql skips entitlement fan-out for read-only queries', async () => {
 	mockModule.getEstimatedBytes.mockClear()
-	mockModule.listUserStorageBucketIds.mockClear()
+	mockModule.listUserStorageBucketEstimates.mockClear()
+	mockModule.maybeRefreshStorageBucketEstimate.mockClear()
 	const tools = createStorageKodyTools({
 		env: createEstimateEnv(),
 		userId: 'user-1',
@@ -116,13 +132,16 @@ test('writable storage_sql skips entitlement fan-out for read-only queries', asy
 		}),
 	).resolves.toMatchObject({ rowCount: 0 })
 
-	expect(mockModule.listUserStorageBucketIds).not.toHaveBeenCalled()
+	expect(mockModule.listUserStorageBucketEstimates).not.toHaveBeenCalled()
 	expect(mockModule.getEstimatedBytes).not.toHaveBeenCalled()
+	expect(mockModule.maybeRefreshStorageBucketEstimate).not.toHaveBeenCalled()
 })
 
 test('writable storage_sql still enforces entitlement for mutating SQL', async () => {
 	mockModule.getEstimatedBytes.mockClear()
-	mockModule.listUserStorageBucketIds.mockClear()
+	mockModule.listUserStorageBucketEstimates.mockClear()
+	mockModule.recordStorageBucketEstimate.mockClear()
+	mockModule.maybeRefreshStorageBucketEstimate.mockClear()
 	const tools = createStorageKodyTools({
 		env: createEstimateEnv(),
 		userId: 'user-1',
@@ -139,14 +158,81 @@ test('writable storage_sql still enforces entitlement for mutating SQL', async (
 		}),
 	).resolves.toMatchObject({ rowsWritten: 1 })
 
-	expect(mockModule.listUserStorageBucketIds).toHaveBeenCalledTimes(1)
-	// Inventoried buckets plus the not-yet-registered target id.
+	expect(mockModule.listUserStorageBucketEstimates).toHaveBeenCalledTimes(1)
+	// Inventoried buckets without stored estimates plus the
+	// not-yet-registered target id.
 	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(3)
+	// Every probed value is persisted for the next baseline read.
+	expect(mockModule.recordStorageBucketEstimate).toHaveBeenCalledTimes(3)
+	// The mutating write also schedules a post-write estimate refresh.
+	expect(mockModule.maybeRefreshStorageBucketEstimate).toHaveBeenCalledTimes(1)
+})
+
+test('mutating entitlement probes only the target bucket when stored estimates exist', async () => {
+	mockModule.getEstimatedBytes.mockClear()
+	mockModule.listUserStorageBucketEstimates.mockClear()
+	mockModule.recordStorageBucketEstimate.mockClear()
+	mockModule.listUserStorageBucketEstimates.mockResolvedValueOnce([
+		{ storageId: 'bucket-a', estimatedBytes: 100 },
+		{ storageId: 'bucket-b', estimatedBytes: 200 },
+		{ storageId: 'package:skills', estimatedBytes: 999 },
+	])
+
+	await expect(
+		assertStorageRunnerWriteWithinEntitlement({
+			env: createEstimateEnv(),
+			userId: 'user-1',
+			email: null,
+			storageId: 'package:skills',
+			requested: 1,
+		}),
+	).resolves.toBeUndefined()
+
+	// Only the bucket being written is probed live; bucket-a and bucket-b
+	// contribute their stored D1 estimates without any DO fan-out.
+	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(1)
+	expect(mockModule.recordStorageBucketEstimate).toHaveBeenCalledTimes(1)
+	expect(mockModule.recordStorageBucketEstimate).toHaveBeenCalledWith({
+		env: expect.anything(),
+		userId: 'user-1',
+		storageId: 'package:skills',
+		estimatedBytes: 64,
+	})
+})
+
+test('stored bucket estimates count toward the storage-byte limit without probes', async () => {
+	mockModule.getEstimatedBytes.mockClear()
+	mockModule.listUserStorageBucketEstimates.mockClear()
+	const maxStorageBytes = planLimits.max.maxStorageBytes
+	mockModule.listUserStorageBucketEstimates.mockResolvedValueOnce([
+		{ storageId: 'bucket-a', estimatedBytes: maxStorageBytes },
+	])
+
+	const denied = await assertStorageRunnerWriteWithinEntitlement({
+		env: createEstimateEnv(),
+		userId: 'user-1',
+		email: null,
+		storageId: 'package:skills',
+		requested: 1,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(denied instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError.')
+	}
+	expect(denied.details).toMatchObject({
+		resource: 'storage_bytes',
+		limit: maxStorageBytes,
+		// bucket-a's stored estimate plus the live probe of the target bucket.
+		current: maxStorageBytes + 64,
+	})
+	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(1)
 })
 
 test('entitlement run cache pays the fan-out once across mutating writes', async () => {
 	mockModule.getEstimatedBytes.mockClear()
-	mockModule.listUserStorageBucketIds.mockClear()
+	mockModule.listUserStorageBucketEstimates.mockClear()
 	const cache = createStorageBytesEntitlementRunCache()
 	const env = createEstimateEnv()
 
@@ -175,13 +261,15 @@ test('entitlement run cache pays the fan-out once across mutating writes', async
 		cache,
 	})
 
-	expect(mockModule.listUserStorageBucketIds).toHaveBeenCalledTimes(1)
+	expect(mockModule.listUserStorageBucketEstimates).toHaveBeenCalledTimes(1)
 	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(3)
 	expect(cache.reservedBytes).toBe(30)
 })
 
 test('entitlement run cache drops a rejected baseline so later writes retry', async () => {
-	mockModule.listUserStorageBucketIds.mockResolvedValue(['bucket-a'])
+	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
+		{ storageId: 'bucket-a', estimatedBytes: null },
+	])
 	mockModule.getEstimatedBytes
 		.mockRejectedValueOnce(new Error('transient estimate failure'))
 		.mockRejectedValueOnce(new Error('transient estimate failure'))
