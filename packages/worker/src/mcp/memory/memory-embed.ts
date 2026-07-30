@@ -1,4 +1,4 @@
-import { parseJsonStringArray } from './json-string-array.ts'
+import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import { type McpMemoryRow } from './types.ts'
 
 export function buildMemoryEmbedText(input: {

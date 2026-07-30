@@ -23,14 +23,12 @@ import {
 } from './secret-bindings.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
-	deletePackageScopeSecretBuckets,
 	deleteSecretEntry,
 	getSecretBucket,
 	getSecretEntry,
 	listPackageScopeSecretMetadata,
 	listSecretMetadataForBucket,
 	listUserScopeSecretMetadata,
-	removePackageFromSecretApprovals,
 	updateApprovedUserSecretEntriesForPackageAtomically,
 	upsertSecretBucket,
 	upsertSecretEntry,
@@ -650,30 +648,6 @@ export async function deleteSecret(input: DeleteSecretInput) {
 		db: input.env.APP_DB,
 		bucketId: bucket.id,
 		name: input.name,
-	})
-}
-
-export async function deleteAllPackageScopedSecrets(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
-	packageId: string
-}) {
-	return await deletePackageScopeSecretBuckets({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		packageId: input.packageId,
-	})
-}
-
-export async function removeAllSecretApprovalsForPackage(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
-	packageId: string
-}) {
-	return await removePackageFromSecretApprovals({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		packageId: input.packageId,
 	})
 }
 

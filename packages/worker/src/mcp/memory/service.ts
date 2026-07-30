@@ -13,7 +13,7 @@ import {
 	pruneExpiredConversationSuppressions,
 	updateMemory,
 } from './repo.ts'
-import { parseJsonStringArray } from './json-string-array.ts'
+import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import { buildMemoryEmbedText } from './memory-embed.ts'
 import { deleteMemoryVector, upsertMemoryVector } from './memory-vectorize.ts'
 import { queryMemoryVectorIds, searchMemories } from './memory-search.ts'

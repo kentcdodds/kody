@@ -1,7 +1,11 @@
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { defineCapability } from '#mcp/capabilities/define-capability.ts'
-import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { type CapabilityDomain } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	defineSynthesizedDomain,
+	readMcpToolAnnotationHints,
+	tokenizeCapabilityKeywords,
+} from '#mcp/capabilities/synthesized-domain.ts'
 import { createRemoteConnectorMcpClient } from '#worker/remote-connector/client.ts'
 import {
 	formatRemoteConnectorUnavailableMessage,
@@ -42,15 +46,7 @@ function buildKeywords(
 		snapshot.connectorId,
 		ref.instanceId,
 	]
-	return Array.from(
-		new Set(
-			words
-				.join(' ')
-				.toLowerCase()
-				.match(/[a-z0-9_]+/g)
-				?.filter(Boolean) ?? [],
-		),
-	)
+	return tokenizeCapabilityKeywords(words)
 }
 
 function createCapabilityFromTool(input: {
@@ -71,6 +67,7 @@ function createCapabilityFromTool(input: {
 		instanceId: ref.instanceId,
 		mcpToolName: tool.name,
 	}
+	const annotationHints = readMcpToolAnnotationHints(tool.annotations)
 
 	const capability = defineCapability({
 		name: capabilityName,
@@ -80,21 +77,7 @@ function createCapabilityFromTool(input: {
 			tool.title?.trim() ||
 			`Remote connector action for ${tool.name}.`,
 		keywords: buildKeywords(snapshot, tool, ref),
-		readOnly: Boolean(
-			(tool.annotations as Record<string, unknown> | undefined)?.[
-				'readOnlyHint'
-			],
-		),
-		idempotent: Boolean(
-			(tool.annotations as Record<string, unknown> | undefined)?.[
-				'idempotentHint'
-			],
-		),
-		destructive: Boolean(
-			(tool.annotations as Record<string, unknown> | undefined)?.[
-				'destructiveHint'
-			],
-		),
+		...annotationHints,
 		source: 'remote-connector',
 		remoteConnector: {
 			instanceId: binding.instanceId,
@@ -192,7 +175,7 @@ export async function synthesizeRemoteToolDomain(input: {
 	}
 
 	return {
-		domain: defineDomain({
+		domain: defineSynthesizedDomain({
 			name: domainIdForCapabilities,
 			description: domainDescription,
 			keywords: [...domainKeywordRoots],

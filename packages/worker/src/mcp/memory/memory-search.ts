@@ -12,7 +12,7 @@ import {
 	sortIdsByScore,
 } from '#worker/vectorize/scoring.ts'
 import { getRawIdFromPassthroughVectorId } from '#worker/vectorize/vector-ids.ts'
-import { parseJsonStringArray } from './json-string-array.ts'
+import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
 import { type McpMemoryRow, type MemorySearchMatch } from './types.ts'
 

@@ -46,8 +46,8 @@ import {
 import {
 	deleteAllPackageScopedSecrets,
 	removeAllSecretApprovalsForPackage,
-} from '#mcp/secrets/service.ts'
-import { deleteAllAppScopedValues } from '#mcp/values/service.ts'
+	deleteAllAppScopedValues,
+} from '#worker/package-config-cleanup.ts'
 import { listUserStorageBucketIds } from '#worker/storage-buckets/service.ts'
 import {
 	buildPackageStorageId,

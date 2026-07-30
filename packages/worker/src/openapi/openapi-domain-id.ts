@@ -1,16 +1,19 @@
-import { slugWithStableDisambiguator } from '@kody-internal/shared/stable-slug.ts'
+import { synthesizeDomainId } from '@kody-internal/shared/domain-id.ts'
 
 export function openApiProviderKodyName(name: string): string {
-	return slugWithStableDisambiguator({
+	return synthesizeDomainId({
+		namespace: 'openapi',
 		value: name,
 		fallback: 'provider',
-		allowedPattern: /^[\w-]+$/,
-		replacementPattern: /[^\w-]+/g,
-	})
+	}).kodyName
 }
 
 export function openApiDomainId(name: string): string {
-	return `openapi:${openApiProviderKodyName(name)}`
+	return synthesizeDomainId({
+		namespace: 'openapi',
+		value: name,
+		fallback: 'provider',
+	}).domainId
 }
 
 export function openApiCapabilityId(name: string, slug: string): string {

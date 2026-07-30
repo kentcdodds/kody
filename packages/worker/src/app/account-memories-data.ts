@@ -1,5 +1,5 @@
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { parseJsonStringArray } from '#mcp/memory/json-string-array.ts'
+import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import { listMemoriesByUserId } from '#mcp/memory/repo.ts'
 import { getMemory } from '#mcp/memory/service.ts'
 import { type MemoryRecord, type MemoryStatus } from '#mcp/memory/types.ts'

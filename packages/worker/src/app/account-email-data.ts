@@ -1,3 +1,4 @@
+import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	emailVerificationRequiredMessage,
@@ -224,18 +225,6 @@ export function readAccountEmailClassificationFilter(
 	return (emailClassificationValues as ReadonlyArray<string>).includes(raw)
 		? (raw as EmailClassification)
 		: null
-}
-
-function parseJsonStringArray(value: unknown): Array<string> {
-	if (typeof value !== 'string' || !value) return []
-	try {
-		const parsed = JSON.parse(value) as unknown
-		return Array.isArray(parsed)
-			? parsed.filter((entry): entry is string => typeof entry === 'string')
-			: []
-	} catch {
-		return []
-	}
 }
 
 function rowToListItem(

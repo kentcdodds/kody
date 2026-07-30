@@ -1,3 +1,4 @@
+import { parseJsonWithFallback } from '@kody-internal/shared/json-parsing.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 
@@ -71,17 +72,6 @@ function serializeJob(job: JobRecord) {
 	}
 }
 
-// A corrupt stored JSON column must not fail list/get for every job of the
-// user, so parsing degrades to the caller's fallback shape.
-function parseJson<T>(value: string | null, fallback: T): T {
-	if (!value) return fallback
-	try {
-		return JSON.parse(value) as T
-	} catch {
-		return fallback
-	}
-}
-
 function mapRow(row: Record<string, unknown>): JobRow {
 	const jobId = String(row['id'])
 	const rawStorageId = row['storage_id']
@@ -95,21 +85,26 @@ function mapRow(row: Record<string, unknown>): JobRow {
 		sourceId: String(row['source_id']),
 		publishedCommit:
 			row['published_commit'] == null ? null : String(row['published_commit']),
-		repoCheckPolicy: parseJson<JobRecord['repoCheckPolicy'] | undefined>(
+		repoCheckPolicy: parseJsonWithFallback<
+			JobRecord['repoCheckPolicy'] | undefined
+		>(
 			row['repo_check_policy_json'] == null
 				? null
 				: String(row['repo_check_policy_json']),
 			undefined,
 		),
 		storageId,
-		params: parseJson<Record<string, unknown> | undefined>(
+		params: parseJsonWithFallback<Record<string, unknown> | undefined>(
 			row['params_json'] == null ? null : String(row['params_json']),
 			undefined,
 		),
-		schedule: parseJson<JobRecord['schedule']>(String(row['schedule_json']), {
-			type: 'once',
-			runAt: String(row['next_run_at']),
-		}),
+		schedule: parseJsonWithFallback<JobRecord['schedule']>(
+			String(row['schedule_json']),
+			{
+				type: 'once',
+				runAt: String(row['next_run_at']),
+			},
+		),
 		timezone: String(row['timezone']),
 		enabled: Number(row['enabled']) === 1,
 		killSwitchEnabled: Number(row['kill_switch_enabled']) === 1,
@@ -181,7 +176,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 				: String(row['last_completed_scheduled_for']),
 		record,
 		callerContextJson: String(row['caller_context_json']),
-		callerContext: parseJson<PersistedJobCallerContext | null>(
+		callerContext: parseJsonWithFallback<PersistedJobCallerContext | null>(
 			row['caller_context_json'] == null
 				? null
 				: String(row['caller_context_json']),

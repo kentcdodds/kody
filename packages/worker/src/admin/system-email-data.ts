@@ -1,3 +1,7 @@
+import {
+	parseJsonStringArray,
+	parseJsonWithFallback,
+} from '@kody-internal/shared/json-parsing.ts'
 import { readPagination } from '#worker/query-params.ts'
 // Type-only: see the note in users-data.ts.
 import { type AdminSystemEmailLoaderData } from '#app/loader-data.ts'
@@ -61,27 +65,9 @@ export type AdminSystemEmailDetail = AdminSystemEmailListItem & {
 const defaultPageSize = 25
 const maxPageSize = 100
 
-// Corrupt stored JSON degrades to empty values instead of crashing the
-// admin mail views.
-function parseJsonSafe(value: string): unknown {
-	try {
-		return JSON.parse(value)
-	} catch {
-		return null
-	}
-}
-
-function parseStringArray(value: string | null) {
-	if (!value) return []
-	const parsed = parseJsonSafe(value)
-	return Array.isArray(parsed)
-		? parsed.filter((entry): entry is string => typeof entry === 'string')
-		: []
-}
-
 function parseHeaders(value: string | null): Record<string, Array<string>> {
 	if (!value) return {}
-	const parsed = parseJsonSafe(value)
+	const parsed = parseJsonWithFallback<unknown>(value, null)
 	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
 	const headers: Record<string, Array<string>> = {}
 	for (const [key, headerValue] of Object.entries(parsed)) {
@@ -153,17 +139,17 @@ export async function loadAdminSystemEmailMessageById(
 	if (!row) return null
 	return {
 		...toListItem(row),
-		to_addresses: parseStringArray(
+		to_addresses: parseJsonStringArray(
 			row['to_addresses_json'] == null
 				? null
 				: String(row['to_addresses_json']),
 		),
-		cc_addresses: parseStringArray(
+		cc_addresses: parseJsonStringArray(
 			row['cc_addresses_json'] == null
 				? null
 				: String(row['cc_addresses_json']),
 		),
-		reply_to_addresses: parseStringArray(
+		reply_to_addresses: parseJsonStringArray(
 			row['reply_to_addresses_json'] == null
 				? null
 				: String(row['reply_to_addresses_json']),
