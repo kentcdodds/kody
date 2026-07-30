@@ -46,7 +46,7 @@ export const memorySearchMutationGuidance =
 	'This result is mutable for the signed-in user. Use this exact id as memory_id with meta_memory_upsert or meta_memory_delete after meta_memory_verify.'
 
 export function getMemoryMutationNotFoundMessage(memoryId: string) {
-	return `Memory ${JSON.stringify(memoryId)} was not found in mutable memory storage for this signed-in user. If this id came from meta_memory_search or meta_memory_verify, copy the full id exactly and retry. If the exact id still fails, rerun meta_memory_search/meta_memory_verify to find the current mutable memory or create a replacement by omitting memory_id; the original id may be stale, deleted, owned by another user, or from a legacy/non-mutable source.`
+	return `Memory ${JSON.stringify(memoryId)} was not found in mutable memory storage for this signed-in user. If this id came from meta_memory_search or meta_memory_verify, copy the full id exactly and retry. If the exact id still fails, rerun meta_memory_search/meta_memory_verify to find the current mutable memory or create a replacement by omitting memory_id; the original id may be stale, deleted, owned by another user, or no longer identify a mutable memory.`
 }
 
 function logMemoryVectorSyncError(input: {
