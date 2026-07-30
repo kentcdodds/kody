@@ -2,13 +2,12 @@
  * Plan definitions and per-plan resource limits.
  *
  * First-class plans include `max`. Writers persist a plan name (never NULL).
- * After `users.plan` NOT NULL, reads resolve stored values to {@link PlanName}
- * via {@link parseStoredPlanName}: known names are unchanged; unexpected
- * NULL / unknown strings / residual stored `'unlimited'` fail open to `max`
- * with a stable console.warn. Untrusted admin/API input still uses strict
- * {@link parsePlanName} so typos and residual `'unlimited'` are rejected
- * rather than coerced. Stripe metadata uses {@link parseStripePlanName},
- * which rejects `max` (manual-only) and residual `'unlimited'`.
+ * After the plan CHECK constraints, reads resolve stored values to
+ * {@link PlanName} via strict {@link parseStoredPlanName}. Unexpected values
+ * indicate schema corruption and throw instead of granting a plan. Untrusted
+ * admin/API input uses {@link parsePlanName} so invalid input can be rejected
+ * without throwing. Stripe metadata uses {@link parseStripePlanName}, which
+ * rejects `max` (manual-only) and residual `'unlimited'`.
  *
  * Follow-up: emergency admin-only `unlimited` is intentionally deferred until
  * a follow-up deployment after 0083's residual sweep. Until then the live
@@ -20,19 +19,9 @@ export const planNames = ['free', 'partner', 'pro', 'max'] as const
 export type PlanName = (typeof planNames)[number]
 
 /**
- * Stable console.warn tag when {@link parseStoredPlanName} coerces an
- * unexpected NULL, unknown stored string, or residual `'unlimited'` to
- * `max`. Never include user identifiers or the raw stored value in the warn
- * arguments.
- */
-export const unknownStoredPlanWarningTag = 'entitlement-unknown-stored-plan'
-
-/**
  * Strict plan-name parser for untrusted admin/API input validation.
  * Unknown strings, typos, residual `'unlimited'`, nullish values, and
- * non-strings return null so callers can reject them. Do not use this for
- * reading stored `users.plan` / `invites.plan` columns — use
- * {@link parseStoredPlanName} instead.
+ * non-strings return null so callers can reject them.
  */
 export function parsePlanName(value: unknown): PlanName | null {
 	return typeof value === 'string' &&
@@ -44,18 +33,14 @@ export function parsePlanName(value: unknown): PlanName | null {
 /**
  * Parse a plan value read from a stored `users.plan` (or equivalent) column.
  *
- * Unlike {@link parsePlanName} (strict validation for untrusted admin/API
- * input — typos, unknown strings, and residual `'unlimited'` stay null so
- * writers can reject them), this helper always returns a {@link PlanName}:
- * known names are unchanged; defensive unexpected NULL, unknown stored
- * strings, and residual `'unlimited'` fail open to `max` and emit
- * {@link unknownStoredPlanWarningTag} with no user data.
+ * Unlike {@link parsePlanName}, which returns null for expected invalid
+ * untrusted input, this helper throws when persisted data violates the schema
+ * contract. The error deliberately omits the raw value and user identifiers.
  */
 export function parseStoredPlanName(value: unknown): PlanName {
 	const plan = parsePlanName(value)
 	if (plan) return plan
-	console.warn(unknownStoredPlanWarningTag)
-	return 'max'
+	throw new Error('Stored plan is not a registered plan name.')
 }
 
 /**

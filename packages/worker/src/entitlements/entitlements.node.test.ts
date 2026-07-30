@@ -1,8 +1,4 @@
 import { expect, test } from 'vitest'
-import {
-	consoleWarn,
-	silenceExpectedConsoleWarns,
-} from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	EntitlementLimitError,
@@ -22,7 +18,6 @@ import {
 	resolveEffectivePlan,
 	resolvePlanLimit,
 	resolvePlanWrite,
-	unknownStoredPlanWarningTag,
 } from './plans.ts'
 import {
 	assertWithinEntitlement,
@@ -261,23 +256,22 @@ test('parsePlanName accepts registered plan names and treats everything else as 
 	expect(parsePlanName(1)).toBeNull()
 })
 
-test('parseStoredPlanName keeps known plans and fails open unknown/null/residual unlimited to max with a stable warn', () => {
-	consoleWarn.mockImplementation(() => {})
+test('parseStoredPlanName keeps known plans and throws for storage-contract violations', () => {
 	for (const plan of planNames) {
 		expect(parseStoredPlanName(plan)).toBe(plan)
 	}
-	expect(consoleWarn).not.toHaveBeenCalled()
-
-	expect(parseStoredPlanName('enterprise-2099')).toBe('max')
-	expect(parseStoredPlanName(null)).toBe('max')
-	expect(parseStoredPlanName(undefined)).toBe('max')
-	expect(parseStoredPlanName('')).toBe('max')
-	expect(parseStoredPlanName(' pro ')).toBe('max')
-	expect(parseStoredPlanName(1)).toBe('max')
-	expect(parseStoredPlanName('unlimited')).toBe('max')
-	expect(consoleWarn).toHaveBeenCalledTimes(7)
-	for (const call of consoleWarn.mock.calls) {
-		expect(call).toEqual([unknownStoredPlanWarningTag])
+	for (const invalid of [
+		'enterprise-2099',
+		null,
+		undefined,
+		'',
+		' pro ',
+		1,
+		'unlimited',
+	]) {
+		expect(() => parseStoredPlanName(invalid)).toThrow(
+			'Stored plan is not a registered plan name.',
+		)
 	}
 })
 
@@ -341,7 +335,7 @@ test('storage byte entry estimates support net-positive upsert deltas', () => {
 	)
 })
 
-test('getUserPlan resolves plans via email+stable id and short-circuits invalid lookups to max', async () => {
+test('getUserPlan resolves plans, defaults scoped misses to max, and rejects invalid stored plans', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const unknownPlanEmail = 'unknown-plan@example.com'
 	const unknownPlanUserId = await createStableUserIdFromEmail(unknownPlanEmail)
@@ -361,7 +355,6 @@ test('getUserPlan resolves plans via email+stable id and short-circuits invalid 
 		'max',
 	)
 	expect(queries).toEqual([])
-	expect(consoleWarn).not.toHaveBeenCalled()
 
 	expect(await getUserPlan(db, { userId, email: plannedEmail })).toBe('pro')
 	expect(
@@ -377,16 +370,13 @@ test('getUserPlan resolves plans via email+stable id and short-circuits invalid 
 			email: unknownPlanEmail,
 		}),
 	).toBe('max')
-	expect(consoleWarn).not.toHaveBeenCalled()
 
-	consoleWarn.mockImplementation(() => {})
-	expect(
-		await getUserPlan(db, {
+	await expect(
+		getUserPlan(db, {
 			userId: unknownPlanUserId,
 			email: unknownPlanEmail,
 		}),
-	).toBe('max')
-	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
+	).rejects.toThrow('Stored plan is not a registered plan name.')
 })
 
 test('getCachedUserPlan caches per db binding and never caches failures', async () => {
@@ -812,7 +802,6 @@ test('missing-email lookups resolve to max and honor max email caps', async () =
 		limit: receiveLimit,
 		current: receiveLimit,
 	})
-	expect(consoleWarn).not.toHaveBeenCalled()
 })
 
 test('requested units and getCurrent overrides are honored', async () => {
@@ -1020,146 +1009,35 @@ test('max plan has finite ordinary limits, email caps, and persistent services',
 	)
 })
 
-test('unexpected stored NULL, unknown, and residual unlimited coerce to max finite limits', async () => {
-	const defensiveNullEmail = 'unexpected-stored-null@example.com'
-	const unknownPlanEmail = 'unknown-plan@example.com'
-	const residualUnlimitedEmail = 'residual-unlimited@example.com'
-	const defensiveNullUserId =
-		await createStableUserIdFromEmail(defensiveNullEmail)
-	const unknownPlanUserId = await createStableUserIdFromEmail(unknownPlanEmail)
-	const residualUnlimitedUserId = await createStableUserIdFromEmail(
-		residualUnlimitedEmail,
-	)
-	const maxJobLimit = planLimits.max.maxScheduledJobs
-	const maxWorkflowLimit = planLimits.max.maxConcurrentWorkflows
-
-	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
-
-	const defensiveNull = createEntitlementsTestDb({
-		users: [
-			{
-				email: defensiveNullEmail,
-				plan: null,
-				stable_user_id: defensiveNullUserId,
-			},
-		],
-		counts: { jobs: maxJobLimit },
-	})
-	const defensiveNullDenied = await assertWithinEntitlement({
-		db: defensiveNull.db,
-		userId: defensiveNullUserId,
-		email: defensiveNullEmail,
-		resource: 'scheduled_jobs',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(defensiveNullDenied instanceof EntitlementLimitError)) {
-		throw new Error('Expected denial for coerced-null max job limit.')
+test('entitlement enforcement stops when a stored plan violates the schema contract', async () => {
+	for (const [index, plan] of [
+		null,
+		'enterprise-2099',
+		'unlimited',
+	].entries()) {
+		const email = `invalid-stored-plan-${index}@example.com`
+		const userId = await createStableUserIdFromEmail(email)
+		const { db, queries } = createEntitlementsTestDb({
+			users: [{ email, plan, stable_user_id: userId }],
+			counts: { jobs: planLimits.max.maxScheduledJobs },
+		})
+		await expect(
+			assertWithinEntitlement({
+				db,
+				userId,
+				email,
+				resource: 'scheduled_jobs',
+			}),
+		).rejects.toThrow('Stored plan is not a registered plan name.')
+		expect(queries.some((query) => query.sql.includes('FROM jobs'))).toBe(false)
 	}
-	expect(defensiveNullDenied.details).toMatchObject({
-		plan: 'max',
-		limit: maxJobLimit,
-		current: maxJobLimit,
-	})
-
-	const unknownPlan = createEntitlementsTestDb({
-		users: [
-			{
-				email: unknownPlanEmail,
-				plan: 'enterprise-2099',
-				stable_user_id: unknownPlanUserId,
-			},
-		],
-		counts: { jobs: maxJobLimit },
-	})
-	const unknownDenied = await assertWithinEntitlement({
-		db: unknownPlan.db,
-		userId: unknownPlanUserId,
-		email: unknownPlanEmail,
-		resource: 'scheduled_jobs',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(unknownDenied instanceof EntitlementLimitError)) {
-		throw new Error('Expected denial for coerced-unknown max job limit.')
-	}
-	expect(unknownDenied.details).toMatchObject({
-		plan: 'max',
-		limit: maxJobLimit,
-	})
-
-	const residualUnlimited = createEntitlementsTestDb({
-		users: [
-			{
-				email: residualUnlimitedEmail,
-				plan: 'unlimited',
-				stable_user_id: residualUnlimitedUserId,
-			},
-		],
-		counts: { jobs: maxJobLimit },
-	})
-	const residualDenied = await assertWithinEntitlement({
-		db: residualUnlimited.db,
-		userId: residualUnlimitedUserId,
-		email: residualUnlimitedEmail,
-		resource: 'scheduled_jobs',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(residualDenied instanceof EntitlementLimitError)) {
-		throw new Error('Expected denial for residual-unlimited→max job limit.')
-	}
-	expect(residualDenied.details).toMatchObject({
-		plan: 'max',
-		limit: maxJobLimit,
-		current: maxJobLimit,
-	})
-
-	const concurrent = createEntitlementsTestDb({
-		users: [
-			{
-				email: residualUnlimitedEmail,
-				plan: 'unlimited',
-				stable_user_id: residualUnlimitedUserId,
-			},
-		],
-		counts: { workflow_runs: maxWorkflowLimit },
-	})
-	const error = await assertWithinEntitlement({
-		db: concurrent.db,
-		userId: residualUnlimitedUserId,
-		email: residualUnlimitedEmail,
-		resource: 'concurrent_workflows',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(error instanceof EntitlementLimitError)) {
-		throw new Error('Expected an EntitlementLimitError.')
-	}
-	expect(error.details).toMatchObject({
-		plan: 'max',
-		limit: maxWorkflowLimit,
-		current: maxWorkflowLimit,
-	})
-	expect(
-		concurrent.queries.some((query) =>
-			query.sql.includes('FROM workflow_runs'),
-		),
-	).toBe(true)
-	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 })
 
 test('getUserPlan resolves effective plan from manual plan and stripe_plan', async () => {
 	const freePlusProEmail = 'manual-free-stripe-pro@example.com'
-	const nullPlusProEmail = 'manual-null-stripe-pro@example.com'
 	const proPlusPartnerEmail = 'manual-pro-stripe-partner@example.com'
 	const unlimitedPlusProEmail = 'manual-unlimited-stripe-pro@example.com'
 	const freePlusProUserId = await createStableUserIdFromEmail(freePlusProEmail)
-	const nullPlusProUserId = await createStableUserIdFromEmail(nullPlusProEmail)
 	const proPlusPartnerUserId =
 		await createStableUserIdFromEmail(proPlusPartnerEmail)
 	const unlimitedPlusProUserId = await createStableUserIdFromEmail(
@@ -1172,12 +1050,6 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 				plan: 'free',
 				stripe_plan: 'pro',
 				stable_user_id: freePlusProUserId,
-			},
-			{
-				email: nullPlusProEmail,
-				plan: null,
-				stripe_plan: 'pro',
-				stable_user_id: nullPlusProUserId,
 			},
 			{
 				email: proPlusPartnerEmail,
@@ -1200,15 +1072,6 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			email: freePlusProEmail,
 		}),
 	).toBe('pro')
-	consoleWarn.mockImplementation(() => {})
-	// Stored NULL fails open to max (which ranks above Stripe).
-	expect(
-		await getUserPlan(db, {
-			userId: nullPlusProUserId,
-			email: nullPlusProEmail,
-		}),
-	).toBe('max')
-	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
 	expect(
 		await getUserPlan(db, {
 			userId: proPlusPartnerUserId,

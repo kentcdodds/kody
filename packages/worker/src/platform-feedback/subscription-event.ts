@@ -20,8 +20,8 @@ export type PlatformFeedbackSubmittedEvent = {
 	}
 	submitter: {
 		user_id: string
-		username: string | null
-		email: string | null
+		username: string
+		email: string
 	}
 }
 

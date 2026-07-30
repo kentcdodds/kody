@@ -1,9 +1,4 @@
 import { expect, test } from 'vitest'
-import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
-import {
-	consoleWarn,
-	silenceExpectedConsoleWarns,
-} from '#worker/test-support/console-spies.ts'
 import { loadAdminInvitesData } from './admin-invites-data.ts'
 
 function createAdminInvitesTestDb(
@@ -32,43 +27,23 @@ function createAdminInvitesTestDb(
 	return db
 }
 
-test('loadAdminInvitesData coerces unknown stored invite plans to max with a stable warn', async () => {
-	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
-	const data = await loadAdminInvitesData({
-		APP_DB: createAdminInvitesTestDb([
-			{
-				code: 'KNOWN-PRO',
-				created_by: 1,
-				created_by_email: 'admin@example.com',
-				note: '',
-				max_uses: 1,
-				use_count: 0,
-				expires_at: null,
-				revoked_at: null,
-				created_at: '2026-07-05T00:00:00.000Z',
-				plan: 'pro',
-			},
-			{
-				code: 'UNKNOWN-PLAN',
-				created_by: 1,
-				created_by_email: 'admin@example.com',
-				note: '',
-				max_uses: 1,
-				use_count: 0,
-				expires_at: null,
-				revoked_at: null,
-				created_at: '2026-07-04T00:00:00.000Z',
-				plan: 'enterprise-2099',
-			},
-		]),
-	} as Env)
-
-	expect(data.invites).toEqual([
-		expect.objectContaining({ code: 'KNOWN-PRO', plan: 'pro' }),
-		expect.objectContaining({ code: 'UNKNOWN-PLAN', plan: 'max' }),
-	])
-	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
-	for (const call of consoleWarn.mock.calls) {
-		expect(call).toEqual([unknownStoredPlanWarningTag])
-	}
+test('loadAdminInvitesData rejects an invalid stored invite plan', async () => {
+	await expect(
+		loadAdminInvitesData({
+			APP_DB: createAdminInvitesTestDb([
+				{
+					code: 'UNKNOWN-PLAN',
+					created_by: 1,
+					created_by_email: 'admin@example.com',
+					note: '',
+					max_uses: 1,
+					use_count: 0,
+					expires_at: null,
+					revoked_at: null,
+					created_at: '2026-07-04T00:00:00.000Z',
+					plan: 'enterprise-2099',
+				},
+			]),
+		} as Env),
+	).rejects.toThrow('Stored plan is not a registered plan name.')
 })

@@ -471,6 +471,18 @@
 		{
 			"filename": "0112-drop-package-invocations.sql",
 			"sha256": "1b3c57a2b6d07f1400939e769a4f024c29180026e78ad77d066a9be31597f505"
+		},
+		{
+			"filename": "0113-plan-check-constraints.sql",
+			"sha256": "7c9a3c7a6a0febc15583de06fe3ddcb8d3099d65d5ac3d8766b1285551a6c488"
+		},
+		{
+			"filename": "0114-platform-feedback-submitter-snapshots-not-null.sql",
+			"sha256": "aa845b560a6bf778dbd00223d3dc90b9b3f1bf10a453990f860b9b5595ea0d77"
+		},
+		{
+			"filename": "0115-delete-integration-secret-values.sql",
+			"sha256": "a0680b7be6d92f9ba89849aa5b355a09a03125ac13794852bfe443c2f5ca0cd7"
 		}
 	]
 }

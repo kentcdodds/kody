@@ -1,12 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { findUserAccountByStableUserId } from '#worker/entitlements/service.ts'
-import { unknownStoredPlanWarningTag } from '#worker/entitlements/plans.ts'
 import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
-import {
-	consoleWarn,
-	silenceExpectedConsoleWarns,
-} from '#worker/test-support/console-spies.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
@@ -32,13 +27,9 @@ test('findUserAccountByStableUserId resolves accounts via indexed stable id and 
 	)
 		.bind(email)
 		.run()
-	silenceExpectedConsoleWarns([unknownStoredPlanWarningTag])
-	expect(await findUserAccountByStableUserId(env.APP_DB, userId)).toEqual({
-		email,
-		plan: 'max',
-		emailVerified: false,
-	})
-	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
+	await expect(
+		findUserAccountByStableUserId(env.APP_DB, userId),
+	).rejects.toThrow('Stored plan is not a registered plan name.')
 	await env.APP_DB.prepare(`DELETE FROM users WHERE email = ?`)
 		.bind(email)
 		.run()

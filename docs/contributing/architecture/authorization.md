@@ -300,7 +300,9 @@ consumer-time fan-out is the authorization boundary rather than a handler role
 check. This remains a narrow exception only for feedback shown to and explicitly
 approved by the user; it does not grant package runtime general admin roles.
 Username and email are stored submission-time snapshots. Package events never
-resolve mutable live profile data, and legacy rows retain null snapshots.
+resolve mutable live profile data. Migration 0114 backfills pre-snapshot rows
+from the matching user and removes rows that cannot satisfy this attribution
+contract, so persisted snapshots are always present.
 
 Submission awaits only Queue enqueue after persistence. An enqueue failure is
 logged without changing the successful response, preventing duplicate feedback

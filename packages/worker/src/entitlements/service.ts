@@ -16,8 +16,8 @@ const stableUserIdPattern = /^[a-f0-9]{64}$/i
  * Resolve the effective plan for a user. Always returns a {@link PlanName}
  * (never a meaningful null): missing email/userId, invalid stable ids, and
  * no matching row resolve to `max` without warning; stored values go through
- * {@link parseStoredPlanName} (unknown / defensive NULL / residual
- * `'unlimited'` → `max` with a stable warn tag).
+ * strict {@link parseStoredPlanName} validation and throw if D1 violates the
+ * plan CHECK constraint.
  *
  * The MCP `userId` is the account's stored `users.stable_user_id`. Lookup
  * requires the email + stable id pair so a mismatched caller context

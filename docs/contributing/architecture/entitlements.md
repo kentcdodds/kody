@@ -44,12 +44,12 @@ name (never NULL); normal creation and reset paths default to `free`.**
 admin-created accounts, platform-account provisioning, seed SQL, and admin plan
 resets. Explicit `max` remains a valid deliberate assignment.
 
-**Reading stored values:** D1 reads use `parseStoredPlanName`. Known plan names
-pass through unchanged; defensive NULL, unknown stored strings, and residual
-stored `'unlimited'` fail open to `max` with a stable
-`entitlement-unknown-stored-plan` warn tag (no user data in the log). Untrusted
-admin/API input still uses strict `parsePlanName` so typos, unknown strings, and
-residual `'unlimited'` are rejected rather than coerced.
+**Reading stored values:** D1 constrains `users.plan` and `invites.plan` to the
+registered names. Reads use strict `parseStoredPlanName`: known names pass
+through unchanged, while a value that violates the storage contract throws
+without including the raw value or user data. Untrusted admin/API input uses
+`parsePlanName` so typos, unknown strings, and residual `'unlimited'` are
+rejected as validation failures.
 
 `users.stripe_plan` stays nullable because it is Stripe-derived; `max` is
 manual-only — admin-visible, not paid or public — and never written from Stripe
@@ -118,7 +118,9 @@ to `'max'` on `users.plan` and `invites.plan` only; it does not touch
 `users.stripe_plan`, unknown plan strings, or the DDL default. Migration
 `0083-plan-default-free.sql` reconciles migration-window residual `'unlimited'`
 to `'max'`, fails closed if any remain, and rebuilds `users` and `invites` with
-NOT NULL DEFAULT `'free'`.
+NOT NULL DEFAULT `'free'`. Migration `0113-plan-check-constraints.sql` verifies
+that every stored plan is registered, then rebuilds both tables with CHECK
+constraints for `free`, `partner`, `pro`, and `max`.
 
 ## Assigning plans
 

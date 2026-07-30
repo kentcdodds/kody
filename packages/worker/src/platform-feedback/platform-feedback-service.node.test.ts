@@ -52,6 +52,8 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 	const second = await submitPlatformFeedback({
 		db,
 		submitterUserId: 'user-b',
+		submitterUsername: 'user-b-name',
+		submitterEmail: 'user-b@example.com',
 		category: 'bug',
 		summary: 'Button does not save',
 		details: 'The save button leaves the form unchanged.',
@@ -59,6 +61,8 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 	const third = await submitPlatformFeedback({
 		db,
 		submitterUserId: 'user-a',
+		submitterUsername: 'user-a-name',
+		submitterEmail: 'user-a@example.com',
 		category: 'experience',
 		summary: 'Search feels slow',
 		details: 'Search takes several seconds to show the first result.',
@@ -139,8 +143,8 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		await getPlatformFeedbackForAdmin({ db, feedbackId: second.id }),
 	).toMatchObject({
 		id: second.id,
-		submitterUsername: null,
-		submitterEmail: null,
+		submitterUsername: 'user-b-name',
+		submitterEmail: 'user-b@example.com',
 		details: 'The save button leaves the form unchanged.',
 		adminNote: null,
 	})
@@ -246,8 +250,8 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		.all() as Array<{
 		id: string
 		submitter_user_id: string
-		submitter_username: string | null
-		submitter_email: string | null
+		submitter_username: string
+		submitter_email: string
 	}>
 	expect(rows.filter((row) => row.submitter_user_id === 'user-a')).toHaveLength(
 		2,
@@ -260,8 +264,8 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		{
 			id: second.id,
 			submitter_user_id: 'user-b',
-			submitter_username: null,
-			submitter_email: null,
+			submitter_username: 'user-b-name',
+			submitter_email: 'user-b@example.com',
 		},
 	])
 })
@@ -271,6 +275,8 @@ test('platform feedback admin note updates reject the same stale revision', asyn
 	const submitted = await submitPlatformFeedback({
 		db,
 		submitterUserId: 'user-a',
+		submitterUsername: 'user-a-name',
+		submitterEmail: 'user-a@example.com',
 		category: 'friction',
 		summary: 'Setup is confusing',
 		details: 'The setup flow does not explain the next action.',
@@ -321,6 +327,8 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 		await submitPlatformFeedback({
 			db: rateLimited.db,
 			submitterUserId: 'rate-limited-user',
+			submitterUsername: 'rate-limited-user',
+			submitterEmail: 'rate-limited-user@example.com',
 			category: 'friction',
 			summary: `Feedback ${index}`,
 			details: `Feedback details ${index}`,
@@ -330,6 +338,8 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 		submitPlatformFeedback({
 			db: rateLimited.db,
 			submitterUserId: 'rate-limited-user',
+			submitterUsername: 'rate-limited-user',
+			submitterEmail: 'rate-limited-user@example.com',
 			category: 'friction',
 			summary: 'Feedback 11',
 			details: 'This submission exceeds the rolling limit.',
@@ -370,6 +380,8 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			submitPlatformFeedback({
 				db,
 				submitterUserId: 'rate-limited-user',
+				submitterUsername: 'rate-limited-user',
+				submitterEmail: 'rate-limited-user@example.com',
 				category: 'friction',
 				summary: 'Feedback 11',
 				details: 'This submission exceeds the rolling limit.',
@@ -402,6 +414,8 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 	await submitPlatformFeedback({
 		db: queueLimited.db,
 		submitterUserId: 'queue-limited-user',
+		submitterUsername: 'queue-limited-user',
+		submitterEmail: 'queue-limited-user@example.com',
 		category: 'bug',
 		summary: 'One hundredth active submission',
 		details: 'This reaches the active queue boundary.',
@@ -410,6 +424,8 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 		submitPlatformFeedback({
 			db: queueLimited.db,
 			submitterUserId: 'queue-limited-user',
+			submitterUsername: 'queue-limited-user',
+			submitterEmail: 'queue-limited-user@example.com',
 			category: 'bug',
 			summary: 'One over the active queue boundary',
 			details: 'This must be rejected atomically.',
@@ -427,6 +443,8 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 	await submitPlatformFeedback({
 		db: queueLimited.db,
 		submitterUserId: 'queue-limited-user',
+		submitterUsername: 'queue-limited-user',
+		submitterEmail: 'queue-limited-user@example.com',
 		category: 'bug',
 		summary: 'Replacement active submission',
 		details: 'A resolved active row makes room for this submission.',

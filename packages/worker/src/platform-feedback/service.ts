@@ -167,8 +167,8 @@ function planTransition(input: {
 export async function submitPlatformFeedback(input: {
 	db: D1Database
 	submitterUserId: string
-	submitterUsername?: string | null
-	submitterEmail?: string | null
+	submitterUsername: string
+	submitterEmail: string
 	category: PlatformFeedbackCategory
 	summary: string
 	details: string
@@ -190,8 +190,8 @@ export async function submitPlatformFeedback(input: {
 	const row: PlatformFeedbackRow = {
 		id: feedbackId,
 		submitter_user_id: submitterUserId,
-		submitter_username: input.submitterUsername ?? null,
-		submitter_email: input.submitterEmail ?? null,
+		submitter_username: input.submitterUsername,
+		submitter_email: input.submitterEmail,
 		category: input.category,
 		summary,
 		details,

@@ -175,20 +175,6 @@ test('platform feedback submitted payload contains exactly the approved event fi
 		expect(payload.feedback).not.toHaveProperty(deniedField)
 		expect(payload.submitter).not.toHaveProperty(deniedField)
 	}
-
-	const legacyPayload = buildPlatformFeedbackSubmittedEvent({
-		baseUrl: 'https://kody.example.com',
-		feedback: {
-			...feedback,
-			submitterUsername: null,
-			submitterEmail: null,
-		},
-	})
-	expect(legacyPayload.submitter).toEqual({
-		user_id: 'submitter-1',
-		username: null,
-		email: null,
-	})
 })
 
 test('platform feedback dispatch isolates terminal handler failures and rejects after retryable or discovery failures', async () => {

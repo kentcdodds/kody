@@ -279,8 +279,9 @@ export async function handleInboundEmail(
 			const account = {
 				email: identity.email,
 				plan: resolveEffectivePlan(
-					// Defensive: missing row or unexpected stored value still fails open.
-					parseStoredPlanName(accountRow?.plan),
+					// A scoped miss keeps the existing synthetic-account fallback.
+					// A present row must satisfy the plan storage contract.
+					accountRow ? parseStoredPlanName(accountRow.plan) : 'max',
 					accountRow?.stripe_plan ?? null,
 				),
 				emailVerified: Boolean(accountRow?.email_verified_at),
