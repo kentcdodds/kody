@@ -257,7 +257,9 @@ export async function invokePackageExportWithToolFactories(input: {
 	// External HTTP token invocations stay keyed-only: providers retry
 	// deliveries, so exactly-once is the point of this surface. Workflow
 	// step retries pass ephemeral: true and run key-less instead.
-	const idempotencyKey = normalizeNullableString(input.request.idempotencyKey)
+	const idempotencyKey = input.ephemeral
+		? null
+		: normalizeNullableString(input.request.idempotencyKey)
 	if (!input.ephemeral && !idempotencyKey) {
 		return buildJsonErrorResponse({
 			status: 400,
@@ -331,7 +333,7 @@ export async function invokePackageExportWithToolFactories(input: {
 		executorTimeoutMs: input.executorTimeoutMs,
 	}
 
-	if (input.ephemeral || !idempotencyKey) {
+	if (!idempotencyKey) {
 		return await runSavedPackageModuleEphemeral(shared)
 	}
 
