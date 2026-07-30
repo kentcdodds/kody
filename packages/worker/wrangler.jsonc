@@ -5,6 +5,11 @@
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"main": "./src/index.ts",
 	"upload_source_maps": true,
+	// The bundle is ~19.5MB unminified; V8 parse/eval of it is the dominant
+	// isolate cold-start cost (~1.3s TTFB spikes on fresh isolates). Minifying
+	// roughly halves that. Wrangler keeps function/class names (keepNames), and
+	// source maps are uploaded, so stack traces stay readable.
+	"minify": true,
 	"rules": [
 		{
 			"type": "Text",
