@@ -134,6 +134,54 @@ function normalizeEstimatedBytes(estimatedBytes: number) {
 }
 
 /**
+ * Awaited UPDATE-only estimate persist. Returns whether an inventory row was
+ * updated (false when the row does not exist — registration owns creation).
+ */
+export async function updateStorageBucketEstimate(input: {
+	db: D1Database
+	userId: string
+	storageId: string
+	estimatedBytes: number
+	updatedAt?: Date
+}): Promise<boolean> {
+	const estimatedBytes = normalizeEstimatedBytes(input.estimatedBytes)
+	if (estimatedBytes === null) return false
+	const result = await input.db
+		.prepare(estimateUpdateStatement)
+		.bind(
+			input.userId,
+			input.storageId,
+			estimatedBytes,
+			(input.updatedAt ?? new Date()).toISOString(),
+		)
+		.run()
+	return (result.meta?.changes ?? 0) > 0
+}
+
+/**
+ * Oldest-estimate-first page of inventory rows that have never been measured.
+ * Used by the cron backfill lane so freshly deployed inventories converge to
+ * "every bucket has a stored estimate" without waiting for each bucket's
+ * next write.
+ */
+export async function listStorageBucketsMissingEstimates(input: {
+	db: D1Database
+	limit: number
+}): Promise<Array<{ userId: string; storageId: string }>> {
+	const result = await input.db
+		.prepare(
+			`SELECT user_id AS userId, storage_id AS storageId
+			FROM user_storage_buckets
+			WHERE estimated_bytes IS NULL
+			ORDER BY last_seen_at DESC, user_id ASC, storage_id ASC
+			LIMIT ?`,
+		)
+		.bind(input.limit)
+		.all<{ userId: string; storageId: string }>()
+	return result.results ?? []
+}
+
+/**
  * Persist one bucket's byte estimate onto its existing inventory row.
  * Synchronous, never throws, fire-and-forget, and UPDATE-only (a bucket
  * without an ownership row is simply not recorded; registration owns row
@@ -150,16 +198,16 @@ export function recordStorageBucketEstimate(input: {
 	try {
 		const userId = input.userId?.trim()
 		const storageId = input.storageId?.trim()
-		const estimatedBytes = normalizeEstimatedBytes(input.estimatedBytes)
-		if (!userId || !storageId || estimatedBytes === null) return
+		if (!userId || !storageId) return
 		const db = input.env.APP_DB
 		if (!db) return
-		const updatedAt = new Date().toISOString()
 		scheduleRegistration(
-			db
-				.prepare(estimateUpdateStatement)
-				.bind(userId, storageId, estimatedBytes, updatedAt)
-				.run()
+			updateStorageBucketEstimate({
+				db,
+				userId,
+				storageId,
+				estimatedBytes: input.estimatedBytes,
+			})
 				.then(() => undefined)
 				.catch((error: unknown) => {
 					console.warn('storage-bucket-estimate-record-failed', error)
@@ -209,12 +257,12 @@ export function maybeRefreshStorageBucketEstimate(input: {
 			input
 				.readEstimatedBytes()
 				.then(async (estimatedBytes) => {
-					const normalized = normalizeEstimatedBytes(estimatedBytes)
-					if (normalized === null) return
-					await db
-						.prepare(estimateUpdateStatement)
-						.bind(userId, storageId, normalized, new Date().toISOString())
-						.run()
+					await updateStorageBucketEstimate({
+						db,
+						userId,
+						storageId,
+						estimatedBytes,
+					})
 				})
 				.catch((error: unknown) => {
 					// Allow an immediate retry after a failed refresh attempt.

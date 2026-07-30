@@ -52,6 +52,11 @@ const mocks = vi.hoisted(() => ({
 		failed: 0,
 		skipped: true,
 	})),
+	backfillStorageBucketEstimates: vi.fn(async () => ({
+		scanned: 0,
+		updated: 0,
+		failed: 0,
+	})),
 }))
 
 vi.mock('./jobs/reconcile-artifacts-pushes.ts', () => ({
@@ -104,6 +109,10 @@ vi.mock('#worker/dr/exporter.ts', () => ({
 
 vi.mock('#worker/billing/subscription-sync.ts', () => ({
 	refreshStaleStripePlans: mocks.refreshStaleStripePlans,
+}))
+
+vi.mock('#worker/storage-buckets/estimate-backfill.ts', () => ({
+	backfillStorageBucketEstimates: mocks.backfillStorageBucketEstimates,
 }))
 
 vi.mock('#worker/jobs/job-schedule-watchdog.ts', () => ({
@@ -166,6 +175,9 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
 	expect(mocks.refreshStaleStripePlans).toHaveBeenCalledWith(
+		expect.objectContaining({ now: new Date(scheduledTime) }),
+	)
+	expect(mocks.backfillStorageBucketEstimates).toHaveBeenCalledWith(
 		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
 	expect(mocks.pruneRetention).not.toHaveBeenCalled()

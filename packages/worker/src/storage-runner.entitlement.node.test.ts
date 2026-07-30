@@ -1,6 +1,12 @@
 import { expect, test, vi } from 'vitest'
-import { storageEstimateReadRetryDelayMs } from '#worker/storage-runner.ts'
+import { storageEstimateReadRetryDelaysMs } from '#worker/storage-runner.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
+
+const totalRetryDelayMs = storageEstimateReadRetryDelaysMs.reduce(
+	(total, delay) => total + delay,
+	0,
+)
+const maxEstimateReadAttempts = storageEstimateReadRetryDelaysMs.length + 1
 
 const mockModule = vi.hoisted(() => ({
 	listUserStorageBucketEstimates: vi.fn(),
@@ -65,7 +71,7 @@ function createEstimateEnv(
 	} as unknown as Env
 }
 
-test('assertStorageRunnerWriteWithinEntitlement retries estimate reads once, fails closed, and waits for peers', async () => {
+test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with backoff, fails closed, and waits for peers', async () => {
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
 		{ storageId: 'bucket-a', estimatedBytes: null },
 	])
@@ -83,13 +89,16 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads once, fai
 			storageId: 'bucket-a',
 			requested: 1,
 		})
-		await vi.advanceTimersByTimeAsync(storageEstimateReadRetryDelayMs)
+		await vi.advanceTimersByTimeAsync(storageEstimateReadRetryDelaysMs[0])
 		await expect(assertion).resolves.toBeUndefined()
 		expect(retryOnce).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.useRealTimers()
 	}
 
+	// The fail-closed error surfaces only after the whole retry policy is
+	// exhausted (production showed a single retry losing to transient
+	// per-bucket DO estimate-read failures).
 	const persistentFailure = vi
 		.fn()
 		.mockRejectedValue(new Error('persistent DO read failure'))
@@ -103,11 +112,11 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads once, fai
 			requested: 1,
 		})
 		const expectation = expect(assertion).rejects.toThrow(
-			'Unable to verify the storage byte entitlement because the bucket estimate for storageId "bucket-a" could not be read after 2 attempts.',
+			`Unable to verify the storage byte entitlement because the bucket estimate for storageId "bucket-a" could not be read after ${maxEstimateReadAttempts} attempts.`,
 		)
-		await vi.advanceTimersByTimeAsync(storageEstimateReadRetryDelayMs)
+		await vi.advanceTimersByTimeAsync(totalRetryDelayMs)
 		await expectation
-		expect(persistentFailure).toHaveBeenCalledTimes(2)
+		expect(persistentFailure).toHaveBeenCalledTimes(maxEstimateReadAttempts)
 	} finally {
 		vi.useRealTimers()
 	}
@@ -169,7 +178,7 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads once, fai
 	// Even after the retry delay elapses, the failed read must not retry while
 	// its slow first-attempt peer is still in flight (allSettled must win).
 	await new Promise<void>((resolve) => {
-		setTimeout(resolve, storageEstimateReadRetryDelayMs + 50)
+		setTimeout(resolve, storageEstimateReadRetryDelaysMs[0] + 50)
 	})
 	expect(callCounts.get('fast-fail')).toBe(1)
 	expect(callCounts.get('slow-ok')).toBe(1)
@@ -180,4 +189,43 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads once, fai
 	expect(callCounts.get('fast-fail')).toBe(2)
 	expect(callCounts.get('slow-ok')).toBe(1)
 	expect(maxInFlight).toBe(chunkStorageIds.length)
+})
+
+// Regression for the 2026-07-30 production incidents: a tiny first write of a
+// run-ledger value was blocked by "Unable to verify the storage byte
+// entitlement because the bucket estimate for storageId 'package:…' could not
+// be read after 2 attempts" — a transient estimate-read failure on a PEER
+// bucket in a large inventory, different bucket each time. Once a peer's
+// estimate is stored in D1, its Durable Object must never be probed (let
+// alone block) another bucket's write.
+test('an unreachable peer bucket with a stored estimate never blocks a write', async () => {
+	const peerStorageIds = Array.from(
+		{ length: 40 },
+		(_value, index) => `package:peer-${String(index)}`,
+	)
+	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
+		...peerStorageIds.map((storageId) => ({ storageId, estimatedBytes: 64 })),
+		{ storageId: 'package:target', estimatedBytes: 128 },
+	])
+	const probedStorageIds: Array<string> = []
+	const getEstimatedBytes = async (storageId: string) => {
+		probedStorageIds.push(storageId)
+		if (storageId !== 'package:target') {
+			throw new Error('peer DO estimate reads are permanently failing')
+		}
+		return { estimatedBytes: 256 }
+	}
+
+	await expect(
+		assertStorageRunnerWriteWithinEntitlement({
+			env: createEstimateEnv(getEstimatedBytes),
+			userId: 'user-1',
+			email: null,
+			storageId: 'package:target',
+			requested: 1,
+		}),
+	).resolves.toBeUndefined()
+
+	// Only the write target was measured live; no peer fan-out happened.
+	expect(probedStorageIds).toEqual(['package:target'])
 })

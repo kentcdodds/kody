@@ -283,12 +283,20 @@ Rules:
   skip the baseline read entirely even when the helper marks the call writable.
   Mutating SQL and `storage.set` in one sandbox share a per-run baseline cache
   so repeated writes do not re-read the baseline. Each live estimate read waits
-  at most ~2s via `Promise.race` and fails closed for the caller; the underlying
-  DO RPC is not cancelled if the runtime keeps it running. The counter
-  intentionally does **not** attempt to scan Cloudflare Artifacts repository
-  contents, KV snapshot/bundle bodies, R2 object listings beyond
-  `email_messages.raw_size`, or Vectorize: those stores either lack reliable
-  byte metadata or are derived from D1 and are documented in `data-storage.md`.
+  at most ~2s via `Promise.race` and is retried with backoff
+  (`storageEstimateReadRetryDelaysMs`; a single 150ms retry lost to transient
+  per-bucket DO read failures in production) before failing closed for the
+  caller; the underlying DO RPC is not cancelled if the runtime keeps it
+  running. A cron lane (`storage_bucket_estimate_backfill`,
+  `packages/worker/src/storage-buckets/estimate-backfill.ts`) sweeps
+  never-measured inventory rows in bounded batches so freshly migrated
+  inventories converge to stored estimates within a few ticks instead of making
+  each user's first mutating write pay (and possibly fail on) the
+  whole-inventory probe. The counter intentionally does **not** attempt to scan
+  Cloudflare Artifacts repository contents, KV snapshot/bundle bodies, R2 object
+  listings beyond `email_messages.raw_size`, or Vectorize: those stores either
+  lack reliable byte metadata or are derived from D1 and are documented in
+  `data-storage.md`.
 
 ### Concurrency
 

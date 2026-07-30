@@ -51,6 +51,7 @@ const {
 	createStorageBytesEntitlementRunCache,
 	createStorageKodyTools,
 	isReadOnlyStorageSqlQuery,
+	storageEstimateReadRetryDelaysMs,
 } = await import('#worker/storage-runner.ts')
 
 function createEstimateEnv() {
@@ -270,23 +271,43 @@ test('entitlement run cache drops a rejected baseline so later writes retry', as
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
 		{ storageId: 'bucket-a', estimatedBytes: null },
 	])
-	mockModule.getEstimatedBytes
-		.mockRejectedValueOnce(new Error('transient estimate failure'))
-		.mockRejectedValueOnce(new Error('transient estimate failure'))
-		.mockResolvedValue({ estimatedBytes: 64 })
+	mockModule.getEstimatedBytes.mockClear()
+	// Exhaust the whole retry policy so the baseline read fails closed.
+	for (
+		let attempt = 0;
+		attempt <= storageEstimateReadRetryDelaysMs.length;
+		attempt += 1
+	) {
+		mockModule.getEstimatedBytes.mockRejectedValueOnce(
+			new Error('transient estimate failure'),
+		)
+	}
+	mockModule.getEstimatedBytes.mockResolvedValue({ estimatedBytes: 64 })
 	const cache = createStorageBytesEntitlementRunCache()
 	const env = createEstimateEnv()
 
-	await expect(
-		assertStorageRunnerWriteWithinEntitlement({
+	vi.useFakeTimers()
+	try {
+		const firstAssertion = assertStorageRunnerWriteWithinEntitlement({
 			env,
 			userId: 'user-1',
 			email: null,
 			storageId: 'bucket-a',
 			requested: 1,
 			cache,
-		}),
-	).rejects.toThrow(/could not be read/)
+		})
+		const expectation =
+			expect(firstAssertion).rejects.toThrow(/could not be read/)
+		await vi.advanceTimersByTimeAsync(
+			storageEstimateReadRetryDelaysMs.reduce(
+				(total, delay) => total + delay,
+				0,
+			),
+		)
+		await expectation
+	} finally {
+		vi.useRealTimers()
+	}
 	expect(cache.baseline).toBeNull()
 
 	await expect(

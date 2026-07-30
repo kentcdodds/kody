@@ -67,6 +67,7 @@ import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-deliveries.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { refreshStaleStripePlans } from '#worker/billing/subscription-sync.ts'
+import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
@@ -636,6 +637,14 @@ const workerHandler = {
 			{
 				name: 'stripe_plan_refresh',
 				run: () => refreshStaleStripePlans({ env, now: scheduledAt }),
+			},
+			{
+				// Seeds stored bucket byte estimates for rows that have never
+				// been measured so mutating storage entitlement checks never
+				// need a whole-inventory DO fan-out. Bounded batch per tick;
+				// a no-op SELECT once every bucket has an estimate.
+				name: 'storage_bucket_estimate_backfill',
+				run: () => backfillStorageBucketEstimates({ env, now: scheduledAt }),
 			},
 			{
 				// One global DO serializes invocations and persists independent phase

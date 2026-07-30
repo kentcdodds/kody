@@ -20,8 +20,15 @@ import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-obje
 const defaultStorageExportPageSize = 250
 const maxStorageExportPageSize = 1_000
 const maxConcurrentStorageEstimateReads = 16
-/** One bounded pause before re-reading a failed estimate chunk. */
-export const storageEstimateReadRetryDelayMs = 150
+/**
+ * Backoff pauses between estimate read attempts (attempts = length + 1).
+ * Entitlement baselines only probe the write-target bucket plus any bucket
+ * that has never been measured, so the probe set is small enough to afford
+ * several attempts: production showed a single 150ms retry was not enough to
+ * ride out transient per-bucket DO estimate-read failures, which used to
+ * block tiny writes outright.
+ */
+export const storageEstimateReadRetryDelaysMs = [150, 600, 2400] as const
 /**
  * Bound each StorageRunner `getEstimatedBytes` RPC so one hung DO cannot own
  * the whole sandbox deadline (~90s). Fail closed after this budget.
@@ -692,7 +699,11 @@ async function readStorageEstimateChunkWithRetry(input: {
 	env: Env
 	userId: string
 	storageIds: Array<string>
+	/** Backoff pauses between attempts; attempts = length + 1. */
+	retryDelaysMs?: ReadonlyArray<number>
 }): Promise<Array<StorageEstimateResult>> {
+	const retryDelaysMs = input.retryDelaysMs ?? storageEstimateReadRetryDelaysMs
+	const maxAttempts = retryDelaysMs.length + 1
 	const readOne = (storageId: string) =>
 		withStorageEstimateReadTimeout(
 			() =>
@@ -704,56 +715,78 @@ async function readStorageEstimateChunkWithRetry(input: {
 			storageId,
 		)
 
-	// Wait for every first-attempt read to settle before retrying so a fast
-	// rejection cannot overlap still-pending peers and exceed the fan-out cap.
-	const firstAttempt = await Promise.allSettled(
-		input.storageIds.map((storageId) => readOne(storageId)),
-	)
 	const values: Array<StorageEstimateResult | undefined> = Array.from({
 		length: input.storageIds.length,
 	})
-	const failedIndexes: Array<number> = []
-	for (const [index, result] of firstAttempt.entries()) {
-		if (result.status === 'fulfilled') {
-			values[index] = result.value
-			continue
-		}
-		failedIndexes.push(index)
-	}
-	if (failedIndexes.length > 0) {
-		await new Promise<void>((resolve) => {
-			setTimeout(resolve, storageEstimateReadRetryDelayMs)
-		})
-		const retry = await Promise.allSettled(
-			failedIndexes.map((index) =>
+	let pendingIndexes = input.storageIds.map((_storageId, index) => index)
+	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+		// Wait for every attempt's reads to settle before retrying so a fast
+		// rejection cannot overlap still-pending peers and exceed the fan-out
+		// cap.
+		const results = await Promise.allSettled(
+			pendingIndexes.map((index) =>
 				readOne(input.storageIds[index] ?? 'unknown'),
 			),
 		)
-		for (const [retryIndex, result] of retry.entries()) {
-			const index = failedIndexes[retryIndex]
+		const failedIndexes: Array<number> = []
+		let firstFailureReason: unknown
+		for (const [resultIndex, result] of results.entries()) {
+			const index = pendingIndexes[resultIndex]
 			if (index === undefined) continue
 			if (result.status === 'fulfilled') {
 				values[index] = result.value
 				continue
 			}
+			if (failedIndexes.length === 0) {
+				firstFailureReason = result.reason
+			}
+			failedIndexes.push(index)
+		}
+		if (failedIndexes.length === 0) break
+		if (attempt === maxAttempts) {
 			// An unreadable bucket cannot safely be treated as zero usage.
 			throw createStorageEstimateReadError({
-				storageId: input.storageIds[index] ?? 'unknown',
-				attempts: 2,
-				cause: result.reason,
+				storageId: input.storageIds[failedIndexes[0] ?? -1] ?? 'unknown',
+				attempts: maxAttempts,
+				cause: firstFailureReason,
 			})
 		}
+		pendingIndexes = failedIndexes
+		await new Promise<void>((resolve) => {
+			setTimeout(resolve, retryDelaysMs[attempt - 1] ?? 0)
+		})
 	}
 	return values.map((value, index) => {
 		if (value === undefined) {
 			throw createStorageEstimateReadError({
 				storageId: input.storageIds[index] ?? 'unknown',
-				attempts: 2,
+				attempts: maxAttempts,
 				cause: new Error('Storage estimate retry completed without a value.'),
 			})
 		}
 		return value
 	})
+}
+
+/**
+ * One bucket's live `getEstimatedBytes`, bounded by the estimate read
+ * timeout and retried per `retryDelaysMs` (defaults to the entitlement
+ * policy). Throws the fail-closed estimate read error when every attempt
+ * fails. Used by the estimate backfill lane.
+ */
+export async function readStorageBucketEstimatedBytes(input: {
+	env: Env
+	userId: string
+	storageId: string
+	retryDelaysMs?: ReadonlyArray<number>
+}): Promise<number> {
+	const estimates = await readStorageEstimateChunkWithRetry({
+		env: input.env,
+		userId: input.userId,
+		storageIds: [input.storageId],
+		retryDelaysMs: input.retryDelaysMs,
+	})
+	return estimates[0]?.estimatedBytes ?? 0
 }
 
 async function readStorageBytesEntitlementBaseline(input: {
