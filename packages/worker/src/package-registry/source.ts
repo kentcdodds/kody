@@ -93,7 +93,14 @@ function canResolveRepoBackedPackageSource(env: Env) {
 	)
 }
 
-async function resolvePackageSourceRow(input: {
+/**
+ * Loads the entity-source row for a saved package, rejecting rows owned by a
+ * different user. Always a fresh D1 read: publish and rebuild flows depend on
+ * observing the current `published_commit`. Invocation hot paths that can
+ * tolerate a bounded-staleness row wrap this in the invoke contract cache
+ * instead (see `#worker/package-invocations/invoke-contract-cache.ts`).
+ */
+export async function loadPackageSourceRowForUser(input: {
 	env: Env
 	userId: string
 	sourceId: string
@@ -152,7 +159,7 @@ export async function loadPackageSourceBySourceId(input: {
 	if (!canResolveRepoBackedPackageSource(input.env)) {
 		throw new Error('Saved package source bindings are not available.')
 	}
-	const source = await resolvePackageSourceRow({
+	const source = await loadPackageSourceRowForUser({
 		env: input.env,
 		userId: input.userId,
 		sourceId: input.sourceId,
@@ -190,11 +197,31 @@ export async function loadPackageManifestBySourceId(input: {
 	if (!canResolveRepoBackedPackageSource(input.env)) {
 		throw new Error('Saved package source bindings are not available.')
 	}
-	const source = await resolvePackageSourceRow({
+	const source = await loadPackageSourceRowForUser({
 		env: input.env,
 		userId: input.userId,
 		sourceId: input.sourceId,
 	})
+	return await loadPackageManifestForSource({
+		env: input.env,
+		userId: input.userId,
+		source,
+	})
+}
+
+/**
+ * Manifest load for a caller that already holds the entity-source row (e.g.
+ * the invoke contract check, which resolves the row through its own
+ * freshness-bounded cache). Shares the commit-keyed manifest cache with
+ * {@link loadPackageManifestBySourceId}, so the KV snapshot is read at most
+ * once per published commit per isolate.
+ */
+export async function loadPackageManifestForSource(input: {
+	env: Env
+	userId: string
+	source: EntitySourceRow
+}): Promise<LoadedPackageManifest> {
+	const source = input.source
 	const cacheKey = createPackageSourceCacheKey({
 		userId: input.userId,
 		source,

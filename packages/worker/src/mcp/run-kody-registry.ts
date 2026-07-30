@@ -92,7 +92,7 @@ import {
 	getMcpServerStatus,
 } from '#worker/mcp-client/status.ts'
 import { mcpServerKodyName } from '#worker/mcp-client/mcp-domain-id.ts'
-import { listEnabledMcpServerRefs } from '#worker/mcp-client/settings-service.ts'
+import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 
 export type {
 	PackageEventDispatchInput,
@@ -436,7 +436,9 @@ async function buildKodyMcpServerMetadata(input: {
 	const servers = new Map<string, KodyMcpServerMetadata>()
 
 	if (userId) {
-		const refs = await listEnabledMcpServerRefs({
+		// Per-user 30s cache: runtime metadata assembly runs on every execute /
+		// package invocation, so this must not cost a D1 read per call.
+		const refs = await listEnabledMcpServerRefsCached({
 			env: input.env,
 			userId,
 		}).catch((error: unknown) => {

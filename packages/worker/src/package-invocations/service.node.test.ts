@@ -8,23 +8,41 @@ import {
 	invokePackageExport,
 	invokePackageSubscription,
 } from './service.ts'
+import { clearInvokeContractCachesForTests } from './invoke-contract-cache.ts'
 import { maxStoredInvocationResponseJsonBytes } from './repo.ts'
 
-const repoMockModule = vi.hoisted(() => ({
-	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
-	listSavedPackagesByUserId: vi.fn(),
-	loadPackageManifestBySourceId: vi.fn(),
-	loadPackageSourceBySourceId: vi.fn(),
-	getEntitySourceById: vi.fn(),
-	loadPublishedBundleArtifactByIdentity: vi.fn(),
-	persistPublishedBundleArtifact: vi.fn(),
-	typecheckPackageEntrypointsFromSourceFiles: vi.fn(),
-	runBundledModuleWithRegistry: vi.fn(),
-	recordAgentPackageConversationUse: vi.fn(),
-	recordSuccessfulPackageRun: vi.fn(),
-	dispatchRunErrorSubscriptionEvents: vi.fn(),
-}))
+const repoMockModule = vi.hoisted(() => {
+	const loadPackageManifestBySourceId = vi.fn()
+	return {
+		getSavedPackageById: vi.fn(),
+		getSavedPackageByKodyId: vi.fn(),
+		listSavedPackagesByUserId: vi.fn(),
+		loadPackageManifestBySourceId,
+		// The invoke path loads the source row and manifest separately (see
+		// loadInvokeManifestBySourceId); default to the same per-test data the
+		// combined mock is configured with.
+		loadPackageSourceRowForUser: vi.fn(
+			async (input: { sourceId: string; userId: string }) =>
+				(await loadPackageManifestBySourceId(input)).source,
+		),
+		loadPackageManifestForSource: vi.fn(
+			async (input: { source: { id: string }; userId: string }) =>
+				await loadPackageManifestBySourceId({
+					...input,
+					sourceId: input.source.id,
+				}),
+		),
+		loadPackageSourceBySourceId: vi.fn(),
+		getEntitySourceById: vi.fn(),
+		loadPublishedBundleArtifactByIdentity: vi.fn(),
+		persistPublishedBundleArtifact: vi.fn(),
+		typecheckPackageEntrypointsFromSourceFiles: vi.fn(),
+		runBundledModuleWithRegistry: vi.fn(),
+		recordAgentPackageConversationUse: vi.fn(),
+		recordSuccessfulPackageRun: vi.fn(),
+		dispatchRunErrorSubscriptionEvents: vi.fn(),
+	}
+})
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
@@ -40,6 +58,10 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 		repoMockModule.loadPackageManifestBySourceId(...args),
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		repoMockModule.loadPackageSourceBySourceId(...args),
+	loadPackageSourceRowForUser: (...args: Array<unknown>) =>
+		repoMockModule.loadPackageSourceRowForUser(...args),
+	loadPackageManifestForSource: (...args: Array<unknown>) =>
+		repoMockModule.loadPackageManifestForSource(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -1213,7 +1235,7 @@ test('package runtime invoke contract-checks once and executes the target', asyn
 		result: { handled: true, eventId: 'message-1' },
 		logs: [],
 	})
-	repoMockModule.loadPackageManifestBySourceId.mockClear()
+	repoMockModule.loadPackageManifestForSource.mockClear()
 	const tools = createRuntimeDispatchTools(db)
 
 	const result = await tools.invoke({
@@ -1227,7 +1249,7 @@ test('package runtime invoke contract-checks once and executes the target', asyn
 	expect(result).toEqual({ handled: true, eventId: 'message-1' })
 	// One logical call resolves its package exactly once: the mandatory
 	// contract check preloads the manifest and the invoke phase reuses it.
-	expect(repoMockModule.loadPackageManifestBySourceId).toHaveBeenCalledTimes(1)
+	expect(repoMockModule.loadPackageManifestForSource).toHaveBeenCalledTimes(1)
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
@@ -2239,6 +2261,10 @@ test('invokePackageSubscription uses the normal capability registry with package
 	}
 
 	const transientKey = 'email:message-transient:pkg-1:email.message.received'
+	// The commit-keyed artifact cache is warm from the invocations above and
+	// would absorb the injected KV failure; this scenario is about a cold
+	// artifact load failing transiently.
+	clearInvokeContractCachesForTests()
 	repoMockModule.loadPublishedBundleArtifactByIdentity.mockRejectedValueOnce(
 		new Error('KV timeout'),
 	)

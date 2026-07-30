@@ -53,6 +53,10 @@ export const sharedProjectConfig = {
 		mockReset: true,
 		setupFiles: [
 			resolve(rootDir, 'packages/worker/src/test-support/console-spies.ts'),
+			resolve(
+				rootDir,
+				'packages/worker/src/test-support/invoke-contract-cache-reset.ts',
+			),
 		],
 		// msw's cookie store probes `typeof localStorage`, which trips Node's
 		// experimental localStorage warning in every fork that loads it.

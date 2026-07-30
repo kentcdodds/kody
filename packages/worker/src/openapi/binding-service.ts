@@ -10,6 +10,7 @@ import {
 	upsertOpenApiBinding,
 	type OpenApiBindingWithOperations,
 } from '#worker/openapi/repo.ts'
+import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 
 export async function listOpenApiBindings(input: {
 	env: Pick<Env, 'APP_DB'>
@@ -25,6 +26,45 @@ export async function listOpenApiBindings(input: {
 		if (parsed) bindings.push(parsed)
 	}
 	return bindings
+}
+
+export const openApiBindingsCacheTtlMs = 30_000
+export const openApiBindingsCacheLimit = 200
+
+function createOpenApiBindingsCache() {
+	return new PromiseLruCache<ReadonlyArray<OpenApiBinding>>({
+		ttlMs: openApiBindingsCacheTtlMs,
+		limit: openApiBindingsCacheLimit,
+	})
+}
+
+let openApiBindingsCache = createOpenApiBindingsCache()
+
+/**
+ * Short-TTL per-user cache over {@link listOpenApiBindings} for hot
+ * invocation paths (capability-registry assembly pays this D1 read on every
+ * run otherwise). Mutations in this module invalidate eagerly, so
+ * same-isolate staleness after save / delete is zero; other isolates
+ * converge within the TTL — the same bound the capability-registry cache
+ * uses. Listing surfaces (UI, `openapi_binding_list`) should keep using the
+ * uncached function.
+ */
+export function listOpenApiBindingsCached(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+}): Promise<ReadonlyArray<OpenApiBinding>> {
+	return openApiBindingsCache.getOrCreate({
+		cacheKey: input.userId,
+		create: async () => Object.freeze(await listOpenApiBindings(input)),
+	})
+}
+
+function invalidateOpenApiBindingsCache(input: { userId: string }) {
+	openApiBindingsCache.delete(input.userId)
+}
+
+export function clearOpenApiBindingsCacheForTests() {
+	openApiBindingsCache = createOpenApiBindingsCache()
 }
 
 export async function getOpenApiBinding(input: {
@@ -58,6 +98,7 @@ export async function saveOpenApiBinding(input: {
 		binding: input.binding,
 		createdAt: existing?.binding.created_at,
 	})
+	invalidateOpenApiBindingsCache({ userId: input.userId })
 }
 
 export async function deleteOpenApiBinding(input: {
@@ -65,11 +106,13 @@ export async function deleteOpenApiBinding(input: {
 	userId: string
 	name: string
 }): Promise<boolean> {
-	return deleteOpenApiBindingByName({
+	const deleted = await deleteOpenApiBindingByName({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		name: input.name,
 	})
+	invalidateOpenApiBindingsCache({ userId: input.userId })
+	return deleted
 }
 
 function toOpenApiBinding(

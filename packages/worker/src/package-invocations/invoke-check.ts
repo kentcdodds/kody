@@ -5,7 +5,6 @@ import {
 	type PackageInvokeInput,
 } from '#mcp/run-kody-registry.ts'
 import { type PackageExportProjection } from '#worker/package-registry/manifest.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
 	buildSavedPackageNotFoundMessage,
 	normalizeExportName,
@@ -16,6 +15,7 @@ import {
 } from './input-parsing.ts'
 import {
 	ensureModuleArtifact,
+	loadInvokeManifestBySourceId,
 	resolvePackageModuleResolution,
 	resolveSavedPackage,
 } from './module-artifacts.ts'
@@ -117,11 +117,10 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 		sourceId: savedPackage.sourceId,
 		exportName,
 	}
-	let manifestResult: Awaited<ReturnType<typeof loadPackageManifestBySourceId>>
+	let manifestResult: Awaited<ReturnType<typeof loadInvokeManifestBySourceId>>
 	try {
-		manifestResult = await loadPackageManifestBySourceId({
+		manifestResult = await loadInvokeManifestBySourceId({
 			env: input.env,
-			baseUrl: input.baseUrl,
 			userId: input.userId,
 			sourceId: savedPackage.sourceId,
 		})

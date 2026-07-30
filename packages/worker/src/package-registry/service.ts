@@ -35,6 +35,7 @@ import {
 	refreshPackageRetrieverManifestCache,
 	removePackageRetrieverManifestCacheEntries,
 } from '#worker/package-retrievers/manifest-cache.ts'
+import { invalidateInvokeContractFreshness } from '#worker/package-invocations/invoke-contract-cache.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
 import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import {
@@ -419,6 +420,19 @@ export async function refreshSavedPackageProjection(input: {
 					userId: input.userId,
 				})
 			}
+			// Same-isolate invoke paths must observe this refresh immediately;
+			// other isolates converge within the freshness-cache TTL.
+			invalidateInvokeContractFreshness({
+				userId: input.userId,
+				packageIdOrKodyIds: [
+					input.packageId,
+					row.kody_id,
+					...(existing && existing.kodyId !== row.kody_id
+						? [existing.kodyId]
+						: []),
+				],
+				sourceId: input.sourceId,
+			})
 			return {
 				record: savedPackage,
 				manifest: loaded.manifest,
@@ -581,6 +595,14 @@ export async function deleteSavedPackageProjection(input: {
 				})
 			}
 			await deleteSavedPackageVector(input.env, input.packageId)
+			invalidateInvokeContractFreshness({
+				userId: input.userId,
+				packageIdOrKodyIds: [
+					input.packageId,
+					...(savedPackage ? [savedPackage.kodyId] : []),
+				],
+				sourceId: savedPackage?.sourceId ?? null,
+			})
 			if (packageJobsRemoved) {
 				await syncJobManagerAlarm({
 					env: input.env,
