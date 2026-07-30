@@ -14,6 +14,7 @@ import {
 	type PackageRuntimeToolFactories,
 } from './common.ts'
 import { invokeSavedPackageModule } from './idempotent-module-invocation.ts'
+import { type PackageInvokeCheckPreloads } from './invoke-check.ts'
 import { resolveSavedPackage } from './module-artifacts.ts'
 import { buildJsonErrorResponse } from './responses.ts'
 
@@ -76,6 +77,8 @@ export async function invokePackageExportForExecuteRuntime(input: {
 	conversationId?: string | null
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
+	/** Check-phase loads from `packages.invokeChecked`; see invoke-check.ts. */
+	preloads?: PackageInvokeCheckPreloads | null
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -94,11 +97,13 @@ export async function invokePackageExportForExecuteRuntime(input: {
 			message: 'Package invocations require a non-empty idempotencyKey.',
 		})
 	}
-	const savedPackage = await resolveSavedPackage({
-		db: input.env.APP_DB,
-		userId: input.caller.userId,
-		packageIdOrKodyId,
-	})
+	const savedPackage =
+		input.preloads?.savedPackage ??
+		(await resolveSavedPackage({
+			db: input.env.APP_DB,
+			userId: input.caller.userId,
+			packageIdOrKodyId,
+		}))
 	if (!savedPackage) {
 		return buildJsonErrorResponse({
 			status: 404,
@@ -140,6 +145,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
+		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
 	})
 }
 
@@ -157,6 +163,8 @@ export async function invokePackageExportForPackageRuntime(input: {
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
+	/** Check-phase loads from `packages.invokeChecked`; see invoke-check.ts. */
+	preloads?: PackageInvokeCheckPreloads | null
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -175,11 +183,13 @@ export async function invokePackageExportForPackageRuntime(input: {
 			message: 'Package invocations require a non-empty idempotencyKey.',
 		})
 	}
-	const savedPackage = await resolveSavedPackage({
-		db: input.env.APP_DB,
-		userId: input.caller.userId,
-		packageIdOrKodyId,
-	})
+	const savedPackage =
+		input.preloads?.savedPackage ??
+		(await resolveSavedPackage({
+			db: input.env.APP_DB,
+			userId: input.caller.userId,
+			packageIdOrKodyId,
+		}))
 	if (!savedPackage) {
 		return buildJsonErrorResponse({
 			status: 404,
@@ -216,6 +226,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
+		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
 	})
 }
 

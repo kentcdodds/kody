@@ -70,6 +70,23 @@ function buildPackageInvokeCheckWarnings(input: {
 	return warnings
 }
 
+/**
+ * Everything the check phase already loaded that the invoke phase would
+ * otherwise reload from D1/KV: the saved-package row, the current manifest,
+ * the resolved module target, and the prepared bundle artifact.
+ * `packages.invokeChecked` passes these straight into the invocation so one
+ * logical call resolves its package exactly once.
+ */
+export type PackageInvokeCheckPreloads = {
+	savedPackage: NonNullable<Awaited<ReturnType<typeof resolveSavedPackage>>>
+	moduleArtifact: Awaited<ReturnType<typeof ensureModuleArtifact>>
+}
+
+export type PackageInvokeCheckOutcome = {
+	result: PackageInvokeCheckResult
+	preloads: PackageInvokeCheckPreloads | null
+}
+
 export async function checkPackageInvokeForRuntime(input: {
 	env: Env
 	baseUrl: string
@@ -77,15 +94,39 @@ export async function checkPackageInvokeForRuntime(input: {
 	userId: string
 	rawInput: PackageInvokeInput
 }): Promise<PackageInvokeCheckResult> {
+	return (
+		await checkPackageInvokeForRuntimeWithPreloads({
+			...input,
+			includeExportProjection: true,
+		})
+	).result
+}
+
+export async function checkPackageInvokeForRuntimeWithPreloads(input: {
+	env: Env
+	baseUrl: string
+	operationName: 'packages.check' | 'packages.invokeChecked'
+	userId: string
+	rawInput: PackageInvokeInput
+	/**
+	 * `packages.check` surfaces description / type-definition detail, which
+	 * requires the full package source. `packages.invokeChecked` discards the
+	 * success contract, so it skips that source load entirely.
+	 */
+	includeExportProjection: boolean
+}): Promise<PackageInvokeCheckOutcome> {
 	let request: ReturnType<typeof parsePackageInvokeInput>
 	try {
 		request = parsePackageInvokeInput(input.rawInput, input.operationName)
 	} catch (error) {
 		const message = getErrorMessage(error)
-		return createPackageInvokeCheckFailure({
-			message,
-			problems: [message],
-		})
+		return {
+			result: createPackageInvokeCheckFailure({
+				message,
+				problems: [message],
+			}),
+			preloads: null,
+		}
 	}
 	const exportName = normalizeExportName(request.exportName)
 	const invoke = buildNormalizedPackageInvokeInput({ request, exportName })
@@ -96,11 +137,14 @@ export async function checkPackageInvokeForRuntime(input: {
 	})
 	if (!savedPackage) {
 		const message = buildSavedPackageNotFoundMessage(request.packageIdOrKodyId)
-		return createPackageInvokeCheckFailure({
-			message,
-			problems: [message],
-			contract: { exportName },
-		})
+		return {
+			result: createPackageInvokeCheckFailure({
+				message,
+				problems: [message],
+				contract: { exportName },
+			}),
+			preloads: null,
+		}
 	}
 	const packageContract = {
 		packageId: savedPackage.id,
@@ -119,11 +163,14 @@ export async function checkPackageInvokeForRuntime(input: {
 		})
 	} catch (error) {
 		const problem = `Could not load current package manifest: ${getErrorMessage(error)}`
-		return createPackageInvokeCheckFailure({
-			message: problem,
-			problems: [problem],
-			contract: packageContract,
-		})
+		return {
+			result: createPackageInvokeCheckFailure({
+				message: problem,
+				problems: [problem],
+				contract: packageContract,
+			}),
+			preloads: null,
+		}
 	}
 	let resolution: ReturnType<typeof resolvePackageModuleResolution>
 	try {
@@ -136,17 +183,21 @@ export async function checkPackageInvokeForRuntime(input: {
 		})
 	} catch (error) {
 		const problem = getErrorMessage(error)
-		return createPackageInvokeCheckFailure({
-			message: problem,
-			problems: [problem],
-			contract: {
-				...packageContract,
-				publishedCommit: manifestResult.source.published_commit ?? null,
-			},
-		})
+		return {
+			result: createPackageInvokeCheckFailure({
+				message: problem,
+				problems: [problem],
+				contract: {
+					...packageContract,
+					publishedCommit: manifestResult.source.published_commit ?? null,
+				},
+			}),
+			preloads: null,
+		}
 	}
+	let moduleArtifact: Awaited<ReturnType<typeof ensureModuleArtifact>>
 	try {
-		await ensureModuleArtifact({
+		moduleArtifact = await ensureModuleArtifact({
 			env: input.env,
 			baseUrl: input.baseUrl,
 			packageManifest: manifestResult,
@@ -160,15 +211,42 @@ export async function checkPackageInvokeForRuntime(input: {
 		})
 	} catch (error) {
 		const problem = `Export "${exportName}" could not be prepared for invocation: ${getErrorMessage(error)}`
-		return createPackageInvokeCheckFailure({
-			message: problem,
-			problems: [problem],
-			contract: {
-				...packageContract,
-				publishedCommit: manifestResult.source.published_commit ?? null,
-				runtimeTarget: resolution.entryPoint,
+		return {
+			result: createPackageInvokeCheckFailure({
+				message: problem,
+				problems: [problem],
+				contract: {
+					...packageContract,
+					publishedCommit: manifestResult.source.published_commit ?? null,
+					runtimeTarget: resolution.entryPoint,
+				},
+			}),
+			preloads: null,
+		}
+	}
+	const preloads: PackageInvokeCheckPreloads = {
+		savedPackage,
+		moduleArtifact,
+	}
+	if (!input.includeExportProjection) {
+		return {
+			result: {
+				ok: true,
+				invoke,
+				contract: {
+					...packageContract,
+					publishedCommit: manifestResult.source.published_commit ?? null,
+					runtimeTarget: resolution.entryPoint,
+					description: null,
+					typeDefinition: null,
+					warnings: buildPackageInvokeCheckWarnings({
+						exportDetail: null,
+						sourceLoadFailed: false,
+					}),
+				},
 			},
-		})
+			preloads,
+		}
 	}
 	let files: Record<string, string> | undefined
 	let sourceLoadFailed = false
@@ -197,15 +275,18 @@ export async function checkPackageInvokeForRuntime(input: {
 		sourceLoadFailed,
 	})
 	return {
-		ok: true,
-		invoke,
-		contract: {
-			...packageContract,
-			publishedCommit: manifestResult.source.published_commit ?? null,
-			runtimeTarget: exportDetail?.runtimeTarget ?? resolution.entryPoint,
-			description: exportDetail?.description ?? null,
-			typeDefinition: exportDetail?.typeDefinition ?? null,
-			warnings,
+		result: {
+			ok: true,
+			invoke,
+			contract: {
+				...packageContract,
+				publishedCommit: manifestResult.source.published_commit ?? null,
+				runtimeTarget: exportDetail?.runtimeTarget ?? resolution.entryPoint,
+				description: exportDetail?.description ?? null,
+				typeDefinition: exportDetail?.typeDefinition ?? null,
+				warnings,
+			},
 		},
+		preloads,
 	}
 }

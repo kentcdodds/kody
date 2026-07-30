@@ -24,7 +24,7 @@ import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-acces
 import { type StorageContext } from '#mcp/storage.ts'
 import {
 	consumeDailyEntitlement,
-	findUserAccountByStableUserId,
+	findCachedUserAccountByStableUserId,
 } from '#worker/entitlements/service.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 
@@ -94,7 +94,7 @@ export async function executeGatewayFetch(input: {
 			const email =
 				input.props.email ??
 				(
-					await findUserAccountByStableUserId(
+					await findCachedUserAccountByStableUserId(
 						input.env.APP_DB,
 						input.props.userId,
 					)

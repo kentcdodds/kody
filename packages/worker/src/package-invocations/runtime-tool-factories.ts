@@ -17,7 +17,11 @@ import {
 	invokePackageExportForPackageRuntime,
 } from './http-invoke.ts'
 import { parsePackageInvokeInput } from './input-parsing.ts'
-import { checkPackageInvokeForRuntime } from './invoke-check.ts'
+import {
+	checkPackageInvokeForRuntime,
+	checkPackageInvokeForRuntimeWithPreloads,
+	type PackageInvokeCheckPreloads,
+} from './invoke-check.ts'
 
 export function createPackageRuntimeInvokeToolsWithToolFactories(input: {
 	env: Env
@@ -77,7 +81,10 @@ function createPackageInvokeTools(input: {
 		}
 		return { user, packageContext: input.packageContext }
 	}
-	const invoke = async (rawInput: PackageInvokeInput) => {
+	const invoke = async (
+		rawInput: PackageInvokeInput,
+		preloads?: PackageInvokeCheckPreloads | null,
+	) => {
 		const { user, packageContext } = requireRuntimeCaller('packages.invoke')
 		const packageInvokeDepth = input.packageInvokeDepth ?? 0
 		if (packageInvokeDepth >= maxPackageRuntimeInvokeDepth) {
@@ -117,6 +124,7 @@ function createPackageInvokeTools(input: {
 					runtimeInvokeDepth: packageInvokeDepth + 1,
 					toolFactories: input.toolFactories,
 					waitUntil: input.waitUntil,
+					preloads: preloads ?? null,
 				})
 			: await invokePackageExportForExecuteRuntime({
 					env: input.env,
@@ -138,6 +146,7 @@ function createPackageInvokeTools(input: {
 					conversationId: input.conversationId ?? null,
 					toolFactories: input.toolFactories,
 					waitUntil: input.waitUntil,
+					preloads: preloads ?? null,
 				})
 		if (response.status >= 200 && response.status < 400) {
 			return response.body['result']
@@ -173,23 +182,28 @@ function createPackageInvokeTools(input: {
 		invoke,
 		invokeChecked: async (rawInput) => {
 			const { user } = requireRuntimeCaller('packages.invokeChecked')
-			const check = await checkPackageInvokeForRuntime({
+			// Skip the export projection (full package source) that a bare
+			// `packages.check` surfaces: invokeChecked discards the success
+			// contract, and the preloads let the invoke phase reuse the
+			// package row, manifest, and bundle artifact loaded here.
+			const check = await checkPackageInvokeForRuntimeWithPreloads({
 				env: input.env,
 				baseUrl: input.baseUrl,
 				operationName: 'packages.invokeChecked',
 				userId: user.userId,
 				rawInput,
+				includeExportProjection: false,
 			})
-			if (!check.ok) {
+			if (!check.result.ok) {
 				const error = new Error(
-					`packages.invokeChecked check failed: ${check.message}`,
+					`packages.invokeChecked check failed: ${check.result.message}`,
 				) as Error & {
 					check?: PackageInvokeCheckResult
 				}
-				error.check = check
+				error.check = check.result
 				throw error
 			}
-			return await invoke(check.invoke)
+			return await invoke(check.result.invoke, check.preloads)
 		},
 	}
 }

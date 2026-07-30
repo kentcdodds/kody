@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 
 export class AccountDeletionInProgressError extends Error {
@@ -80,7 +81,38 @@ export async function assertAccountWritable(env: Env, stableUserId: string) {
 	await assertAccountWritableDb(env.APP_DB, stableUserId)
 }
 
+/**
+ * Stable user ids whose write lease is already held somewhere up the current
+ * async call chain. Nested {@link withAccountWriteLease} calls for the same
+ * user reuse the outer lease instead of paying another acquire/release round
+ * trip to D1 (~5 statements each): the outer lease spans the nested write, so
+ * deletion stays blocked for exactly as long as it does today. MCP requests,
+ * app requests, job runs, and package invocations all take a lease at their
+ * boundary, so before this reuse a single execute call that invoked one
+ * package export paid for two full leases.
+ */
+const heldAccountWriteLeaseStorage = new AsyncLocalStorage<
+	ReadonlySet<string>
+>()
+
 export async function withAccountWriteLease<T>(input: {
+	db: D1Database
+	stableUserId: string
+	holder?: string
+	write: () => Promise<T>
+}) {
+	const heldLeases = heldAccountWriteLeaseStorage.getStore()
+	if (heldLeases?.has(input.stableUserId)) {
+		return await input.write()
+	}
+	const nextHeldLeases = new Set(heldLeases)
+	nextHeldLeases.add(input.stableUserId)
+	return await heldAccountWriteLeaseStorage.run(nextHeldLeases, async () =>
+		acquireAccountWriteLeaseAndWrite(input),
+	)
+}
+
+async function acquireAccountWriteLeaseAndWrite<T>(input: {
 	db: D1Database
 	stableUserId: string
 	holder?: string

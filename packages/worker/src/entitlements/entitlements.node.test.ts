@@ -31,6 +31,8 @@ import {
 	countRunningPackageServices,
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageEntryBytes,
+	findCachedUserAccountByStableUserId,
+	getCachedUserPlan,
 	getUserPlan,
 	incrementDailyEntitlementCounter,
 	packageServiceStateStaleMs,
@@ -132,6 +134,21 @@ function createEntitlementsTestDb(
 										? {
 												plan: user.plan,
 												stripe_plan: user.stripe_plan ?? null,
+											}
+										: null
+								) as T | null
+							}
+							if (query.includes('SELECT email, plan, email_verified_at')) {
+								const stableUserId = params[0]
+								const user = users.find(
+									(row) => row.stable_user_id === stableUserId,
+								)
+								return (
+									user
+										? {
+												email: user.email,
+												plan: user.plan,
+												email_verified_at: null,
 											}
 										: null
 								) as T | null
@@ -372,6 +389,95 @@ test('getUserPlan resolves plans via email+stable id and short-circuits invalid 
 		}),
 	).toBe('max')
 	expect(consoleWarn).toHaveBeenCalledWith(unknownStoredPlanWarningTag)
+})
+
+test('getCachedUserPlan caches per db binding and never caches failures', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const users = [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }]
+	const { db, queries } = createEntitlementsTestDb({ users })
+
+	expect(await getCachedUserPlan(db, { userId, email: plannedEmail })).toBe(
+		'pro',
+	)
+	expect(await getCachedUserPlan(db, { userId, email: plannedEmail })).toBe(
+		'pro',
+	)
+	const planQueries = () =>
+		queries.filter((query) =>
+			query.sql.includes('email = ? AND stable_user_id = ?'),
+		)
+	expect(planQueries()).toHaveLength(1)
+
+	// A plan change is visible to the uncached lookup immediately and to the
+	// cached lookup only after the TTL: quota checks tolerate that staleness.
+	users[0]!.plan = 'free'
+	expect(await getUserPlan(db, { userId, email: plannedEmail })).toBe('free')
+	expect(await getCachedUserPlan(db, { userId, email: plannedEmail })).toBe(
+		'pro',
+	)
+
+	// Another db binding (fresh test database) never shares cache entries.
+	const second = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
+	})
+	expect(
+		await getCachedUserPlan(second.db, { userId, email: plannedEmail }),
+	).toBe('free')
+
+	// Anonymous / invalid ids short-circuit without touching the cache or D1.
+	expect(await getCachedUserPlan(db, { userId, email: null })).toBe('max')
+	expect(
+		await getCachedUserPlan(db, { userId: 'user-1', email: plannedEmail }),
+	).toBe('max')
+
+	// Failures are not pinned for the TTL: the next call retries D1.
+	let firstCall = true
+	const flaky = {
+		prepare() {
+			return {
+				bind() {
+					return {
+						async first() {
+							if (firstCall) {
+								firstCall = false
+								throw new Error('D1 blip')
+							}
+							return { plan: 'pro', stripe_plan: null }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	await expect(
+		getCachedUserPlan(flaky, { userId, email: plannedEmail }),
+	).rejects.toThrow('D1 blip')
+	expect(await getCachedUserPlan(flaky, { userId, email: plannedEmail })).toBe(
+		'pro',
+	)
+})
+
+test('findCachedUserAccountByStableUserId caches the account reverse-resolution per db', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const { db, queries } = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
+	})
+	const accountQueries = () =>
+		queries.filter((query) =>
+			query.sql.includes('SELECT email, plan, email_verified_at'),
+		)
+	expect(await findCachedUserAccountByStableUserId(db, userId)).toEqual({
+		email: plannedEmail,
+		plan: 'pro',
+		emailVerified: false,
+	})
+	expect(await findCachedUserAccountByStableUserId(db, userId)).toEqual({
+		email: plannedEmail,
+		plan: 'pro',
+		emailVerified: false,
+	})
+	expect(accountQueries()).toHaveLength(1)
+	expect(await findCachedUserAccountByStableUserId(db, '  ')).toBeNull()
 })
 
 test('assertWithinEntitlement passes under the limit, throws at it, and enforces finite max ordinary limits', async () => {

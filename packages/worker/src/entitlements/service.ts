@@ -55,6 +55,101 @@ export type StableUserAccount = {
 }
 
 /**
+ * Short-TTL caches for the plan / account lookups that run on metered hot
+ * paths (every execute call and every sandbox outbound fetch pays one). The
+ * quota counter write itself stays atomic and uncached; only the plan-limit
+ * resolution tolerates staleness, so a plan change takes effect for quota
+ * checks within {@link entitlementLookupCacheTtlMs} instead of immediately.
+ * Keyed by the `D1Database` binding so test databases never share entries.
+ */
+const entitlementLookupCacheTtlMs = 60_000
+const entitlementLookupCacheMaxEntries = 1_000
+
+type EntitlementLookupCacheEntry<T> = {
+	value: Promise<T>
+	expiresAtMs: number
+}
+
+function createEntitlementLookupCache<T>() {
+	const cachesByDb = new WeakMap<
+		D1Database,
+		Map<string, EntitlementLookupCacheEntry<T>>
+	>()
+	return {
+		async getOrCreate(
+			db: D1Database,
+			key: string,
+			create: () => Promise<T>,
+		): Promise<T> {
+			let cache = cachesByDb.get(db)
+			if (!cache) {
+				cache = new Map()
+				cachesByDb.set(db, cache)
+			}
+			const nowMs = Date.now()
+			const existing = cache.get(key)
+			if (existing && existing.expiresAtMs > nowMs) {
+				return await existing.value
+			}
+			const value = create()
+			// Never cache failures: a D1 blip must not pin an error for the TTL.
+			value.catch(() => {
+				if (cache.get(key)?.value === value) cache.delete(key)
+			})
+			if (cache.size >= entitlementLookupCacheMaxEntries) {
+				const oldestKey = cache.keys().next().value
+				if (oldestKey !== undefined) cache.delete(oldestKey)
+			}
+			cache.set(key, {
+				value,
+				expiresAtMs: nowMs + entitlementLookupCacheTtlMs,
+			})
+			return await value
+		},
+	}
+}
+
+const cachedUserPlans = createEntitlementLookupCache<PlanName>()
+const cachedStableUserAccounts =
+	createEntitlementLookupCache<StableUserAccount | null>()
+
+/**
+ * {@link getUserPlan} behind the short-TTL hot-path cache. Use only where a
+ * plan change may take up to a minute to apply (quota limit resolution);
+ * interactive plan displays should keep calling {@link getUserPlan}.
+ */
+export async function getCachedUserPlan(
+	db: D1Database,
+	input: { userId: string; email: string | null | undefined },
+): Promise<PlanName> {
+	const email = input.email?.trim().toLowerCase()
+	if (!email || !input.userId) return 'max'
+	if (!stableUserIdPattern.test(input.userId)) return 'max'
+	return await cachedUserPlans.getOrCreate(
+		db,
+		`${input.userId}\n${email}`,
+		async () => await getUserPlan(db, input),
+	)
+}
+
+/**
+ * {@link findUserAccountByStableUserId} behind the short-TTL hot-path cache,
+ * for per-fetch account reverse-resolution in the fetch gateway.
+ */
+export async function findCachedUserAccountByStableUserId(
+	db: D1Database,
+	stableUserId: string,
+): Promise<StableUserAccount | null> {
+	const trimmed = normalizeStableUserId(stableUserId)
+	if (!trimmed) return null
+	return await cachedStableUserAccounts.getOrCreate(
+		db,
+		trimmed,
+		async () => await findUserAccountByStableUserId(db, trimmed),
+	)
+}
+
+/**
  * Reverse-resolve a stable MCP userId back to the account email, plan, and
  * verified-email state via one indexed `users.stable_user_id` point read.
  * Only call this on paths that genuinely have no caller context email (for
@@ -658,7 +753,10 @@ export async function consumeDailyEntitlement(input: {
 	now?: Date
 }): Promise<void> {
 	const now = input.now ?? new Date()
-	const plan = await getUserPlan(input.db, {
+	// Cached plan resolution: this runs on every execute call and every
+	// sandbox outbound fetch, and the atomic counter upsert below is the only
+	// part that must see fresh state.
+	const plan = await getCachedUserPlan(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})

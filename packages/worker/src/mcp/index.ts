@@ -82,6 +82,9 @@ class MCPBase extends McpAgent<Env, State, Props> {
 	getLoopbackExports() {
 		return this.ctx.exports as typeof workerExports
 	}
+	waitUntil(promise: Promise<unknown>) {
+		this.ctx.waitUntil(promise)
+	}
 	requireDomain() {
 		const { baseUrl } = this.getCallerContext()
 		invariant(

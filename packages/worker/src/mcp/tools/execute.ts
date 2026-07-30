@@ -156,6 +156,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 		}) => {
 			const timingStart = startToolTiming()
 			const env = agent.getEnv()
+			// Hand terminal run-record writes and nested-invocation
+			// observability to the Durable Object's waitUntil so they stop
+			// serializing the execute response they observe.
+			const waitUntil = agent.waitUntil?.bind(agent)
 			const baseCallerContext = agent.getCallerContext()
 			const resolvedStorageId = storageId?.trim() || null
 			const callerContext = {
@@ -328,6 +332,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									baseUrl: callerContext.baseUrl,
 									callerContext,
 									conversationId: resolvedConversationId,
+									waitUntil,
 								})
 							: undefined
 						try {
@@ -352,6 +357,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									preExecTypecheck:
 										featureFlags['execute-pre-exec-typecheck'] === true,
 									runRecordHandle: claimedRunHandle,
+									waitUntil,
 									runRecord: {
 										surface: 'execute',
 										name: null,

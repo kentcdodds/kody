@@ -63,6 +63,14 @@ export async function invokeSavedPackageModule(input: {
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
+	/**
+	 * Artifact already prepared by a `packages.invokeChecked` check phase
+	 * moments earlier; skips a second manifest + artifact load. The claim
+	 * still happens first, so replay semantics are unchanged.
+	 */
+	preloadedModuleArtifact?: Awaited<
+		ReturnType<typeof ensureModuleArtifact>
+	> | null
 }) {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -276,20 +284,23 @@ export async function invokeSavedPackageModule(input: {
 			}
 
 			try {
-				const { artifact, source: sourceRow } = await ensureModuleArtifact({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					savedPackage: input.savedPackage,
-					selector: input.moduleSelector,
-					userId: input.actor.userId,
-				})
+				const { artifact, source: sourceRow } =
+					input.preloadedModuleArtifact ??
+					(await ensureModuleArtifact({
+						env: input.env,
+						baseUrl: input.baseUrl,
+						savedPackage: input.savedPackage,
+						selector: input.moduleSelector,
+						userId: input.actor.userId,
+					}))
 				const repoSource =
-					artifact.packageContext?.sourceId != null
-						? await getEntitySourceById(
+					artifact.packageContext?.sourceId == null ||
+					artifact.packageContext.sourceId === sourceRow.id
+						? sourceRow
+						: await getEntitySourceById(
 								input.env.APP_DB,
 								artifact.packageContext.sourceId,
 							)
-						: sourceRow
 				const callerContext = createMcpCallerContext({
 					baseUrl: input.baseUrl,
 					executionOrigin: 'background',
