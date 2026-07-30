@@ -70,6 +70,14 @@ export const scheduledJobInputBaseSchema = {
 		.describe(
 			'Optional timezone label for cron display and schedule calculation. Defaults to UTC when omitted.',
 		),
+	expires_at: z
+		.string()
+		.min(1)
+		.nullable()
+		.optional()
+		.describe(
+			'Optional UTC ISO timestamp after which the platform stops scheduling this job and auto-disables it (enabled=false). Separate from preserved (retention). Pass null on update to clear.',
+		),
 }
 
 export const scheduledJobScheduleSchema = z.discriminatedUnion('type', [
@@ -164,6 +172,15 @@ export const jobInspectionSchema = z.object({
 	enabled: z.boolean(),
 	kill_switch_enabled: z.boolean(),
 	preserved: z.boolean(),
+	expires_at: z
+		.string()
+		.nullable()
+		.describe('UTC ISO expiry timestamp, or null when the job never expires.'),
+	expired: z
+		.boolean()
+		.describe(
+			'True when expires_at is set and now is at or past that timestamp.',
+		),
 	created_at: z.string(),
 	updated_at: z.string(),
 	next_run_at: z.string(),
@@ -244,6 +261,7 @@ export const jobScheduleOutputSchema = z.object({
 	schedule_summary: z.string(),
 	created_at: z.string(),
 	next_run_at: z.string(),
+	expires_at: z.string().nullable(),
 })
 
 export const jobViewOutputSchema = z.object({
@@ -259,6 +277,8 @@ export const jobViewOutputSchema = z.object({
 	enabled: z.boolean(),
 	kill_switch_enabled: z.boolean(),
 	preserved: z.boolean(),
+	expires_at: z.string().nullable(),
+	expired: z.boolean(),
 	created_at: z.string(),
 	updated_at: z.string(),
 	last_run_at: z.string().optional(),
@@ -350,6 +370,14 @@ export const jobUpdateInputSchema = z
 			.describe(
 				'When true, platform job auto-cleanup never deletes this job. Preserved jobs still count toward scheduled_jobs and storage_bytes entitlements. Forever keep is only available via Preserve — account retention preferences cannot be unbounded.',
 			),
+		expires_at: z
+			.string()
+			.min(1)
+			.nullable()
+			.optional()
+			.describe(
+				'Optional UTC ISO timestamp after which the platform stops scheduling this job and auto-disables it (enabled=false). Pass null to clear. Separate from preserved (retention).',
+			),
 	})
 	.refine(
 		(input) =>
@@ -360,7 +388,8 @@ export const jobUpdateInputSchema = z
 			input.timezone !== undefined ||
 			input.enabled !== undefined ||
 			input.kill_switch_enabled !== undefined ||
-			input.preserved !== undefined,
+			input.preserved !== undefined ||
+			input.expires_at !== undefined,
 		{
 			message: 'Provide at least one mutable field to update.',
 		},
@@ -453,6 +482,7 @@ export function resolveJobCreateBody(
 		params: input.params,
 		schedule: toJobSchedule(input.schedule),
 		timezone: input.timezone ?? null,
+		...(input.expires_at !== undefined ? { expiresAt: input.expires_at } : {}),
 	}
 }
 
@@ -466,6 +496,7 @@ export function buildJobScheduleOutput(created: JobView) {
 		schedule_summary: created.scheduleSummary,
 		created_at: created.createdAt,
 		next_run_at: created.nextRunAt,
+		expires_at: created.expiresAt ?? null,
 	}
 }
 
@@ -485,8 +516,14 @@ export function formatJobRecentRunFromRecord(
 
 export function buildJobViewOutput(
 	job: JobView,
-	input: { recentRuns?: Array<JobRecentRunOutput> } = {},
+	input: { recentRuns?: Array<JobRecentRunOutput>; now?: Date } = {},
 ) {
+	const now = input.now ?? new Date()
+	const expiresAt = job.expiresAt ?? null
+	const expired =
+		expiresAt != null &&
+		Number.isFinite(new Date(expiresAt).valueOf()) &&
+		new Date(expiresAt).valueOf() <= now.valueOf()
 	const recentRuns = input.recentRuns ?? []
 	return {
 		job_id: job.id,
@@ -501,6 +538,8 @@ export function buildJobViewOutput(
 		enabled: job.enabled,
 		kill_switch_enabled: job.killSwitchEnabled,
 		preserved: job.preserved,
+		expires_at: expiresAt,
+		expired,
 		created_at: job.createdAt,
 		updated_at: job.updatedAt,
 		last_run_at: job.lastRunAt,
@@ -543,9 +582,15 @@ export function buildJobInspectionOutput(
 ) {
 	const now = input.now ?? new Date()
 	const nextRunAtValue = new Date(job.nextRunAt).valueOf()
+	const expiresAt = job.expiresAt ?? null
+	const expired =
+		expiresAt != null &&
+		Number.isFinite(new Date(expiresAt).valueOf()) &&
+		new Date(expiresAt).valueOf() <= now.valueOf()
 	const dueNow =
 		job.enabled &&
 		job.killSwitchEnabled === false &&
+		!expired &&
 		Number.isFinite(nextRunAtValue) &&
 		nextRunAtValue <= now.valueOf()
 
@@ -562,6 +607,8 @@ export function buildJobInspectionOutput(
 		enabled: job.enabled,
 		kill_switch_enabled: job.killSwitchEnabled,
 		preserved: job.preserved,
+		expires_at: expiresAt,
+		expired,
 		created_at: job.createdAt,
 		updated_at: job.updatedAt,
 		next_run_at: job.nextRunAt,
@@ -615,6 +662,7 @@ export function resolveJobUpdateBody(
 		enabled: input.enabled,
 		killSwitchEnabled: input.kill_switch_enabled,
 		preserved: input.preserved,
+		...(input.expires_at !== undefined ? { expiresAt: input.expires_at } : {}),
 	}
 }
 
