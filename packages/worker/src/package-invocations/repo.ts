@@ -20,7 +20,12 @@ import { toHex } from '@kody-internal/shared/hex.ts'
  */
 export const maxStoredInvocationResponseJsonBytes = maxRestorableTextColumnBytes
 
-function boundedResponseJson(
+/**
+ * Serialize a terminal response for the replay cache, dropping it when
+ * oversized. Shared by the legacy D1 write path and the RunLog DO ledger so
+ * both stores enforce the same restore-safe bound.
+ */
+export function boundedResponseJson(
 	response: PackageInvocationStoredResponse,
 ): string | null {
 	const responseJson = JSON.stringify({
@@ -119,7 +124,7 @@ function parseStringArrayJson(input: { value: string; field: string }) {
 	})
 }
 
-function parseStoredResponse(
+export function parseStoredResponse(
 	value: string | null,
 ): PackageInvocationStoredResponse | null {
 	if (!value) return null
@@ -399,117 +404,12 @@ export async function deletePackageInvocationToken(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
-export async function insertPackageInvocationRow(input: {
-	db: D1Database
-	row: {
-		id: string
-		userId: string
-		tokenId: string
-		packageId: string
-		packageKodyId: string
-		exportName: string
-		idempotencyKey: string
-		requestHash: string
-		source?: string | null
-		topic?: string | null
-		status: 'in_progress' | 'completed' | 'failed'
-		response?: PackageInvocationStoredResponse | null
-	}
-}) {
-	const now = new Date().toISOString()
-	const responseJson = input.row.response
-		? boundedResponseJson(input.row.response)
-		: null
-	const result = await input.db
-		.prepare(
-			`INSERT OR IGNORE INTO package_invocations (
-				id,
-				user_id,
-				token_id,
-				package_id,
-				package_kody_id,
-				export_name,
-				idempotency_key,
-				request_hash,
-				source,
-				topic,
-				status,
-				response_json,
-				created_at,
-				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			input.row.id,
-			input.row.userId,
-			input.row.tokenId,
-			input.row.packageId,
-			input.row.packageKodyId,
-			input.row.exportName,
-			input.row.idempotencyKey,
-			input.row.requestHash,
-			input.row.source ?? null,
-			input.row.topic ?? null,
-			input.row.status,
-			responseJson,
-			now,
-			now,
-		)
-		.run()
-	return {
-		inserted: (result.meta.changes ?? 0) > 0,
-		claimUpdatedAt: now,
-	}
-}
-
-export async function tryClaimStalePackageInvocation(input: {
-	db: D1Database
-	id: string
-	userId: string
-	expectedUpdatedAt: string
-	staleBefore: string
-	now: string
-}) {
-	const result = await input.db
-		.prepare(
-			`UPDATE package_invocations
-			SET updated_at = ?
-			WHERE id = ?
-				AND user_id = ?
-				AND status = 'in_progress'
-				AND updated_at = ?
-				AND updated_at <= ?`,
-		)
-		.bind(
-			input.now,
-			input.id,
-			input.userId,
-			input.expectedUpdatedAt,
-			input.staleBefore,
-		)
-		.run()
-	return (result.meta.changes ?? 0) > 0
-}
-
-export async function releasePackageInvocationClaim(input: {
-	db: D1Database
-	id: string
-	userId: string
-	claimUpdatedAt: string
-}) {
-	const result = await input.db
-		.prepare(
-			`DELETE FROM package_invocations
-			WHERE id = ?
-				AND user_id = ?
-				AND status = 'in_progress'
-				AND updated_at = ?`,
-		)
-		.bind(input.id, input.userId, input.claimUpdatedAt)
-		.run()
-	return (result.meta.changes ?? 0) > 0
-}
-
+/**
+ * Dual-read fallback lookup for keys claimed before the idempotency ledger
+ * moved into the per-user RunLog Durable Object. The D1 table is read-only
+ * now — the write helpers were removed with the migration — and a follow-up
+ * removes this lookup together with the table and its retention sweep.
+ */
 export async function getPackageInvocationByKey(input: {
 	db: D1Database
 	userId: string
@@ -537,34 +437,4 @@ export async function getPackageInvocationByKey(input: {
 		)
 		.first<Record<string, unknown>>()
 	return row ? mapRow(row) : null
-}
-
-export async function updatePackageInvocationResult(input: {
-	db: D1Database
-	id: string
-	userId: string
-	status: 'completed' | 'failed'
-	response: PackageInvocationStoredResponse
-	claimUpdatedAt: string
-}) {
-	const responseJson = boundedResponseJson(input.response)
-	const result = await input.db
-		.prepare(
-			`UPDATE package_invocations
-			SET status = ?, response_json = ?, updated_at = ?
-			WHERE id = ?
-				AND user_id = ?
-				AND status = 'in_progress'
-				AND updated_at = ?`,
-		)
-		.bind(
-			input.status,
-			responseJson,
-			new Date().toISOString(),
-			input.id,
-			input.userId,
-			input.claimUpdatedAt,
-		)
-		.run()
-	return (result.meta.changes ?? 0) > 0
 }

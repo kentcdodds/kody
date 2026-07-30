@@ -8,11 +8,8 @@ import {
 	invokePackageExport,
 	invokePackageSubscription,
 } from './service.ts'
-import {
-	maxStoredInvocationResponseJsonBytes,
-	tryClaimStalePackageInvocation,
-	updatePackageInvocationResult,
-} from './repo.ts'
+import { createRequestHash } from './idempotency.ts'
+import { maxStoredInvocationResponseJsonBytes } from './repo.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -26,6 +23,8 @@ const repoMockModule = vi.hoisted(() => ({
 	typecheckPackageEntrypointsFromSourceFiles: vi.fn(),
 	runBundledModuleWithRegistry: vi.fn(),
 	recordAgentPackageConversationUse: vi.fn(),
+	recordSuccessfulPackageRun: vi.fn(),
+	dispatchRunErrorSubscriptionEvents: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -71,28 +70,240 @@ vi.mock('#worker/usage/agent-package-conversation-uses.ts', () => ({
 		repoMockModule.recordAgentPackageConversationUse(...args),
 }))
 
-function createDatabase(options: { failInsert?: boolean } = {}) {
-	const tables = new Map<string, Array<Record<string, unknown>>>([
-		['package_invocations', []],
-	])
+vi.mock('#worker/usage/activation.ts', () => ({
+	recordSuccessfulPackageRun: (...args: Array<unknown>) =>
+		repoMockModule.recordSuccessfulPackageRun(...args),
+}))
 
+vi.mock('#worker/run-records/package-subscriptions.ts', () => ({
+	dispatchRunErrorSubscriptionEvents: (...args: Array<unknown>) =>
+		repoMockModule.dispatchRunErrorSubscriptionEvents(...args),
+}))
+
+type FakeLedgerRow = {
+	id: string
+	tokenId: string
+	packageId: string
+	packageKodyId: string
+	exportName: string
+	idempotencyKey: string
+	requestHash: string
+	source: string | null
+	topic: string | null
+	status: 'in_progress' | 'completed' | 'failed'
+	responseJson: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+/**
+ * In-memory stand-in for the RunLog Durable Object's package-invocation
+ * ledger RPCs (the real DO semantics are covered by
+ * run-records/invocation-ledger.workers.test.ts against the actual binding).
+ */
+function createFakeRunLog(options: { failClaim?: boolean } = {}) {
+	const ledgerRows: Array<FakeLedgerRow> = []
+	const runRows = new Map<string, Record<string, unknown>>()
 	const clone = <T>(value: T): T => structuredClone(value)
-
-	function getTable(name: string) {
-		const table = tables.get(name)
-		if (!table) {
-			throw new Error(`Unknown table ${name}`)
-		}
-		return table
+	const findByKey = (key: {
+		tokenId: string
+		packageId: string
+		exportName: string
+		idempotencyKey: string
+	}) =>
+		ledgerRows.find(
+			(row) =>
+				row.tokenId === key.tokenId &&
+				row.packageId === key.packageId &&
+				row.exportName === key.exportName &&
+				row.idempotencyKey === key.idempotencyKey,
+		) ?? null
+	const rpc = {
+		async claimPackageInvocation(input: {
+			invocation: Omit<
+				FakeLedgerRow,
+				'status' | 'responseJson' | 'createdAt' | 'updatedAt'
+			>
+			staleBefore: string
+			run: Record<string, unknown> | null
+		}) {
+			if (options.failClaim) throw new Error('RunLog unavailable')
+			const now = new Date().toISOString()
+			const existing = findByKey(input.invocation)
+			if (existing) {
+				const reclaimable =
+					existing.status === 'in_progress' &&
+					existing.requestHash === input.invocation.requestHash &&
+					existing.updatedAt <= input.staleBefore
+				if (!reclaimable) {
+					return { outcome: 'existing' as const, record: clone(existing) }
+				}
+				existing.updatedAt = now
+				if (input.run) {
+					runRows.set(
+						String(input.run['id']),
+						clone({ ...input.run, invocationId: existing.id }),
+					)
+				}
+				return {
+					outcome: 'claimed' as const,
+					invocationId: existing.id,
+					claimUpdatedAt: now,
+					reclaimed: true,
+				}
+			}
+			ledgerRows.push({
+				...clone(input.invocation),
+				status: 'in_progress',
+				responseJson: null,
+				createdAt: now,
+				updatedAt: now,
+			})
+			if (input.run) {
+				runRows.set(
+					String(input.run['id']),
+					clone({ ...input.run, invocationId: input.invocation.id }),
+				)
+			}
+			return {
+				outcome: 'claimed' as const,
+				invocationId: input.invocation.id,
+				claimUpdatedAt: now,
+				reclaimed: false,
+			}
+		},
+		async getPackageInvocation(key: {
+			tokenId: string
+			packageId: string
+			exportName: string
+			idempotencyKey: string
+		}) {
+			const row = findByKey(key)
+			return row ? clone(row) : null
+		},
+		async finishPackageInvocation(input: {
+			invocationId: string
+			claimUpdatedAt: string
+			status: 'completed' | 'failed'
+			responseJson: string | null
+			run: Record<string, unknown> | null
+			logs: Array<unknown>
+		}) {
+			const row =
+				ledgerRows.find((candidate) => candidate.id === input.invocationId) ??
+				null
+			let ledgerUpdated = false
+			if (
+				row &&
+				row.status === 'in_progress' &&
+				row.updatedAt === input.claimUpdatedAt
+			) {
+				row.status = input.status
+				row.responseJson = input.responseJson
+				row.updatedAt = new Date().toISOString()
+				ledgerUpdated = true
+			}
+			if (input.run) {
+				runRows.set(String(input.run['id']), clone(input.run))
+			}
+			return {
+				ledgerUpdated,
+				record: ledgerUpdated ? null : row ? clone(row) : null,
+			}
+		},
+		async releasePackageInvocation(input: {
+			invocationId: string
+			claimUpdatedAt: string
+			runId: string | null
+		}) {
+			const index = ledgerRows.findIndex(
+				(candidate) => candidate.id === input.invocationId,
+			)
+			const row = index >= 0 ? ledgerRows[index] : null
+			let released = false
+			if (
+				row &&
+				row.status === 'in_progress' &&
+				row.updatedAt === input.claimUpdatedAt
+			) {
+				ledgerRows.splice(index, 1)
+				released = true
+			}
+			if (input.runId) {
+				const run = runRows.get(input.runId)
+				if (run && run['status'] === 'running') {
+					runRows.delete(input.runId)
+				}
+			}
+			return {
+				released,
+				record: released || !row ? null : clone(row),
+			}
+		},
 	}
-
-	function selectOne(
-		tableName: string,
-		predicate: (row: Record<string, unknown>) => boolean,
-	) {
-		return clone(getTable(tableName).find(predicate) ?? null)
+	return {
+		namespace: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => rpc,
+		},
+		ledgerRows,
+		runRows,
+		corruptStoredResponses() {
+			for (const row of ledgerRows) {
+				row.responseJson = '{"status":200,"body":null}'
+			}
+		},
+		seedStaleInvocation(idempotencyKey: string) {
+			const completed = ledgerRows[0]
+			if (!completed) throw new Error('Expected completed invocation seed.')
+			const row: FakeLedgerRow = {
+				...structuredClone(completed),
+				id: crypto.randomUUID(),
+				idempotencyKey,
+				status: 'in_progress',
+				responseJson: null,
+				createdAt: '2026-01-01T00:00:00.000Z',
+				updatedAt: '2026-01-01T00:00:00.000Z',
+			}
+			ledgerRows.push(row)
+			return structuredClone(row)
+		},
+		seedFreshInvocation(idempotencyKey: string) {
+			const completed = ledgerRows[0]
+			if (!completed) throw new Error('Expected completed invocation seed.')
+			const now = new Date().toISOString()
+			ledgerRows.push({
+				...structuredClone(completed),
+				id: crypto.randomUUID(),
+				idempotencyKey,
+				status: 'in_progress',
+				responseJson: null,
+				createdAt: now,
+				updatedAt: now,
+			})
+		},
+		completeInvocation(idempotencyKey: string) {
+			const row = ledgerRows.find(
+				(candidate) => candidate.idempotencyKey === idempotencyKey,
+			)
+			const completed = ledgerRows[0]
+			if (!row || !completed) throw new Error('Expected invocation rows.')
+			row.status = 'completed'
+			row.responseJson = completed.responseJson
+			row.updatedAt = new Date().toISOString()
+		},
 	}
+}
 
+/**
+ * Fake D1 with a READ-ONLY legacy `package_invocations` table for the
+ * dual-read window. Any attempted D1 write throws, which is the test-level
+ * proof that no awaited D1 write remains on the keyed hot path.
+ */
+function createDatabase(options: { failClaim?: boolean } = {}) {
+	const legacyRows: Array<Record<string, unknown>> = []
+	const runLog = createFakeRunLog(options)
+	const clone = <T>(value: T): T => structuredClone(value)
 	const db = {
 		prepare(query: string) {
 			return {
@@ -103,166 +314,101 @@ function createDatabase(options: { failInsert?: boolean } = {}) {
 								query.includes('FROM package_invocations') &&
 								query.includes('idempotency_key = ?')
 							) {
-								return selectOne(
-									'package_invocations',
-									(row) =>
-										row['user_id'] === params[0] &&
-										row['token_id'] === params[1] &&
-										row['package_id'] === params[2] &&
-										row['export_name'] === params[3] &&
-										row['idempotency_key'] === params[4],
+								return clone(
+									legacyRows.find(
+										(row) =>
+											row['user_id'] === params[0] &&
+											row['token_id'] === params[1] &&
+											row['package_id'] === params[2] &&
+											row['export_name'] === params[3] &&
+											row['idempotency_key'] === params[4],
+									) ?? null,
 								) as T | null
 							}
 							return null
 						},
 						async run() {
-							if (query.includes('UPDATE users')) {
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (query.includes('DELETE FROM package_invocations')) {
-								const table = getTable('package_invocations')
-								const index = table.findIndex(
-									(row) =>
-										row['id'] === params[0] &&
-										row['user_id'] === params[1] &&
-										row['status'] === 'in_progress' &&
-										row['updated_at'] === params[2],
-								)
-								if (index < 0) return { meta: { changes: 0 } }
-								table.splice(index, 1)
-								return { meta: { changes: 1 } }
-							}
-							if (query.includes('INTO package_invocations')) {
-								if (options.failInsert) {
-									throw new Error('D1 unavailable')
-								}
-								const table = getTable('package_invocations')
-								const existing = table.find(
-									(row) =>
-										row['user_id'] === params[1] &&
-										row['token_id'] === params[2] &&
-										row['package_id'] === params[3] &&
-										row['export_name'] === params[5] &&
-										row['idempotency_key'] === params[6],
-								)
-								if (existing) {
-									return { meta: { changes: 0, last_row_id: 0 } }
-								}
-								table.push(
-									clone({
-										id: params[0],
-										user_id: params[1],
-										token_id: params[2],
-										package_id: params[3],
-										package_kody_id: params[4],
-										export_name: params[5],
-										idempotency_key: params[6],
-										request_hash: params[7],
-										source: params[8],
-										topic: params[9],
-										status: params[10],
-										response_json: params[11],
-										created_at: params[12],
-										updated_at: params[13],
-									}),
-								)
-								return { meta: { changes: 1, last_row_id: 1 } }
-							}
-							if (query.includes('UPDATE package_invocations')) {
-								const table = getTable('package_invocations')
-								if (
-									query.includes('SET updated_at = ?') &&
-									!query.includes('SET status = ?')
-								) {
-									const existing = table.find(
-										(row) =>
-											row['id'] === params[1] &&
-											row['user_id'] === params[2] &&
-											row['status'] === 'in_progress' &&
-											row['updated_at'] === params[3] &&
-											String(row['updated_at']) <= String(params[4]),
-									)
-									if (!existing) return { meta: { changes: 0 } }
-									existing['updated_at'] = params[0]
-									return { meta: { changes: 1 } }
-								}
-								const existing = table.find(
-									(row) =>
-										row['id'] === params[3] &&
-										row['user_id'] === params[4] &&
-										row['status'] === 'in_progress' &&
-										row['updated_at'] === params[5],
-								)
-								if (!existing) {
-									return { meta: { changes: 0, last_row_id: 0 } }
-								}
-								existing['status'] = params[0]
-								existing['response_json'] = params[1]
-								existing['updated_at'] = params[2]
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							throw new Error(`Unhandled query: ${query}`)
+							throw new Error(
+								`Unexpected D1 write on the keyed invocation path: ${query}`,
+							)
 						},
 					}
 				},
 			}
 		},
-		corruptStoredResponses() {
-			for (const row of getTable('package_invocations')) {
-				row['response_json'] = '{"status":200,"body":null}'
-			}
-		},
-		seedStaleInvocation(idempotencyKey: string) {
-			const completed = getTable('package_invocations')[0]
-			if (!completed) throw new Error('Expected completed invocation seed.')
-			const row = {
-				...clone(completed),
+		runLog,
+		seedLegacyInvocation(row: {
+			tokenId: string
+			packageId: string
+			packageKodyId: string
+			exportName: string
+			idempotencyKey: string
+			requestHash: string
+			source?: string | null
+			topic?: string | null
+			status: 'in_progress' | 'completed' | 'failed'
+			responseJson?: string | null
+			updatedAt?: string
+		}) {
+			const updatedAt = row.updatedAt ?? new Date().toISOString()
+			const legacy = {
 				id: crypto.randomUUID(),
-				idempotency_key: idempotencyKey,
-				status: 'in_progress',
-				response_json: null,
-				created_at: '2026-01-01T00:00:00.000Z',
-				updated_at: '2026-01-01T00:00:00.000Z',
+				user_id: 'user-123',
+				token_id: row.tokenId,
+				package_id: row.packageId,
+				package_kody_id: row.packageKodyId,
+				export_name: row.exportName,
+				idempotency_key: row.idempotencyKey,
+				request_hash: row.requestHash,
+				source: row.source ?? null,
+				topic: row.topic ?? null,
+				status: row.status,
+				response_json: row.responseJson ?? null,
+				created_at: updatedAt,
+				updated_at: updatedAt,
 			}
-			getTable('package_invocations').push(row)
-			return clone(row)
+			legacyRows.push(legacy)
+			return clone(legacy)
 		},
-		seedFreshInvocation(idempotencyKey: string) {
-			const completed = getTable('package_invocations')[0]
-			if (!completed) throw new Error('Expected completed invocation seed.')
-			const now = new Date().toISOString()
-			getTable('package_invocations').push({
-				...clone(completed),
-				id: crypto.randomUUID(),
-				idempotency_key: idempotencyKey,
-				status: 'in_progress',
-				response_json: null,
-				created_at: now,
-				updated_at: now,
-			})
-		},
-		completeInvocation(idempotencyKey: string) {
-			const row = getTable('package_invocations').find(
-				(candidate) => candidate['idempotency_key'] === idempotencyKey,
+		completeLegacyInvocation(input: {
+			idempotencyKey: string
+			responseJson: string
+		}) {
+			const row = legacyRows.find(
+				(candidate) => candidate['idempotency_key'] === input.idempotencyKey,
 			)
-			const completed = getTable('package_invocations')[0]
-			if (!row || !completed) throw new Error('Expected invocation rows.')
+			if (!row) throw new Error('Expected legacy invocation row.')
 			row['status'] = 'completed'
-			row['response_json'] = completed['response_json']
+			row['response_json'] = input.responseJson
 			row['updated_at'] = new Date().toISOString()
 		},
 	} as unknown as D1Database & {
-		corruptStoredResponses(): void
-		seedStaleInvocation(idempotencyKey: string): Record<string, unknown>
-		seedFreshInvocation(idempotencyKey: string): void
-		completeInvocation(idempotencyKey: string): void
+		runLog: ReturnType<typeof createFakeRunLog>
+		seedLegacyInvocation(row: {
+			tokenId: string
+			packageId: string
+			packageKodyId: string
+			exportName: string
+			idempotencyKey: string
+			requestHash: string
+			source?: string | null
+			topic?: string | null
+			status: 'in_progress' | 'completed' | 'failed'
+			responseJson?: string | null
+			updatedAt?: string
+		}): Record<string, unknown>
+		completeLegacyInvocation(input: {
+			idempotencyKey: string
+			responseJson: string
+		}): void
 	}
 	return db
 }
 
-function createEnv(db: D1Database) {
+function createEnv(db: ReturnType<typeof createDatabase>) {
 	return {
 		APP_DB: db,
+		RUN_LOG: db.runLog.namespace,
 		BUNDLE_ARTIFACTS_KV: {
 			get: async () => null,
 			put: async () => undefined,
@@ -973,12 +1119,21 @@ test('keyed packages.invoke keeps exactly-once semantics: repeat calls replay th
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 	const runOptions =
 		repoMockModule.runBundledModuleWithRegistry.mock.calls[0]?.[4]
-	expect(runOptions).toMatchObject({
-		runRecord: {
-			surface: 'export',
-			invocationId: expect.any(String),
-			idempotencyKey: 'evt-keyed-1',
-		},
+	// The keyed path owns its run record (claimed together with the ledger
+	// row in one DO call), so the registry must not open a second one.
+	expect(runOptions).toMatchObject({ runRecord: null })
+	const ledgerRow = db.runLog.ledgerRows.find(
+		(row) => row.idempotencyKey === 'evt-keyed-1',
+	)
+	expect(ledgerRow).toMatchObject({ status: 'completed' })
+	const runRow = [...db.runLog.runRows.values()].find(
+		(row) => row['idempotencyKey'] === 'evt-keyed-1',
+	)
+	expect(runRow).toMatchObject({
+		surface: 'export',
+		status: 'success',
+		invocationId: ledgerRow?.id,
+		idempotencyKey: 'evt-keyed-1',
 	})
 })
 
@@ -1658,9 +1813,7 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 			topic: 'discord.message.created',
 		},
 	})
-	;(
-		db as unknown as { corruptStoredResponses(): void }
-	).corruptStoredResponses()
+	db.runLog.corruptStoredResponses()
 	const corruptSecond = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
@@ -1689,7 +1842,7 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(3)
 
-	const failingDb = createDatabase({ failInsert: true })
+	const failingDb = createDatabase({ failClaim: true })
 	seedPackageResolution()
 	consoleError.mockImplementation(() => {})
 	const persistenceFailure = await invokePackageExport({
@@ -1769,6 +1922,228 @@ test('oversized terminal responses are not stored so backups stay restorable', a
 		ok: false,
 		error: { code: 'idempotency_response_unavailable' },
 		idempotency: { key: 'evt-oversized', replayed: false },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+async function dispatchMessageCreatedRequestHash(
+	params: Record<string, unknown>,
+) {
+	return await createRequestHash({
+		packageId: 'pkg-1',
+		exportName: './dispatch-message-created',
+		params,
+		source: 'discord-gateway',
+		topic: 'discord.message.created',
+	})
+}
+
+function dispatchMessageCreatedRequest(idempotencyKey: string) {
+	return {
+		packageIdOrKodyId: 'discord-gateway',
+		exportName: 'dispatch-message-created',
+		params: { content: 'hi' },
+		idempotencyKey,
+		source: 'discord-gateway',
+		topic: 'discord.message.created',
+	}
+}
+
+test('dual-read window: a pre-migration terminal D1 row replays without executing', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	db.seedLegacyInvocation({
+		tokenId: 'discord-gateway',
+		packageId: 'pkg-1',
+		packageKodyId: 'discord-gateway',
+		exportName: './dispatch-message-created',
+		idempotencyKey: 'evt-pre-migration',
+		requestHash: await dispatchMessageCreatedRequestHash({ content: 'hi' }),
+		source: 'discord-gateway',
+		topic: 'discord.message.created',
+		status: 'completed',
+		responseJson: JSON.stringify({
+			status: 200,
+			body: {
+				ok: true,
+				result: { reply: 'stored before the migration' },
+				idempotency: { key: 'evt-pre-migration', replayed: false },
+			},
+		}),
+	})
+
+	const replayed = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: dispatchMessageCreatedRequest('evt-pre-migration'),
+	})
+
+	expect(replayed.status).toBe(200)
+	expect(replayed.body).toMatchObject({
+		ok: true,
+		result: { reply: 'stored before the migration' },
+		idempotency: { key: 'evt-pre-migration', replayed: true },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+	// The DO claim taken ahead of the fallback lookup was released again, so
+	// nothing lingers in the ledger for the legacy-owned key.
+	expect(db.runLog.ledgerRows).toHaveLength(0)
+
+	// A different request against the same pre-migration key still mismatches.
+	const mismatch = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			...dispatchMessageCreatedRequest('evt-pre-migration'),
+			params: { content: 'different' },
+		},
+	})
+	expect(mismatch.status).toBe(409)
+	expect(mismatch.body).toMatchObject({
+		ok: false,
+		error: { code: 'idempotency_mismatch' },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+	expect(db.runLog.ledgerRows).toHaveLength(0)
+})
+
+test('dual-read window: fresh legacy in-progress rows are polled, stale ones are taken over', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { reply: 'executed after takeover' },
+		logs: [],
+	})
+	const requestHash = await dispatchMessageCreatedRequestHash({
+		content: 'hi',
+	})
+	// Fresh in-progress row finished by an old-code isolate mid-poll.
+	db.seedLegacyInvocation({
+		tokenId: 'discord-gateway',
+		packageId: 'pkg-1',
+		packageKodyId: 'discord-gateway',
+		exportName: './dispatch-message-created',
+		idempotencyKey: 'evt-legacy-open',
+		requestHash,
+		source: 'discord-gateway',
+		topic: 'discord.message.created',
+		status: 'in_progress',
+	})
+	const completionTimer = setTimeout(() => {
+		db.completeLegacyInvocation({
+			idempotencyKey: 'evt-legacy-open',
+			responseJson: JSON.stringify({
+				status: 200,
+				body: {
+					ok: true,
+					result: { reply: 'finished by an old isolate' },
+					idempotency: { key: 'evt-legacy-open', replayed: false },
+				},
+			}),
+		})
+	}, 150)
+	try {
+		const polled = await invokePackageExport({
+			env: createEnv(db),
+			baseUrl: 'https://kody.dev',
+			token: createToken(),
+			request: dispatchMessageCreatedRequest('evt-legacy-open'),
+		})
+		expect(polled.status).toBe(200)
+		expect(polled.body).toMatchObject({
+			ok: true,
+			result: { reply: 'finished by an old isolate' },
+			idempotency: { key: 'evt-legacy-open', replayed: true },
+		})
+	} finally {
+		clearTimeout(completionTimer)
+	}
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+	expect(db.runLog.ledgerRows).toHaveLength(0)
+
+	// A stale legacy in-progress row can never finish (nothing writes D1 any
+	// more), so the DO claim proceeds to execute — the old reclaim, recorded
+	// in the DO instead of D1.
+	db.seedLegacyInvocation({
+		tokenId: 'discord-gateway',
+		packageId: 'pkg-1',
+		packageKodyId: 'discord-gateway',
+		exportName: './dispatch-message-created',
+		idempotencyKey: 'evt-legacy-stale',
+		requestHash,
+		source: 'discord-gateway',
+		topic: 'discord.message.created',
+		status: 'in_progress',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	})
+	const takeover = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: dispatchMessageCreatedRequest('evt-legacy-stale'),
+	})
+	expect(takeover.status).toBe(200)
+	expect(takeover.body).toMatchObject({
+		ok: true,
+		result: { reply: 'executed after takeover' },
+		idempotency: { key: 'evt-legacy-stale', replayed: false },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+	expect(
+		db.runLog.ledgerRows.find(
+			(row) => row.idempotencyKey === 'evt-legacy-stale',
+		),
+	).toMatchObject({ status: 'completed' })
+})
+
+test('the RunLog DO ledger is read first; legacy D1 rows are only a fallback for unknown keys', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { reply: 'do-backed execution' },
+		logs: [],
+	})
+	const first = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: dispatchMessageCreatedRequest('evt-do-first'),
+	})
+	expect(first.status).toBe(200)
+
+	// A conflicting legacy row appearing afterwards (e.g. a restored backup)
+	// must lose to the DO row: replay serves the DO-stored response.
+	db.seedLegacyInvocation({
+		tokenId: 'discord-gateway',
+		packageId: 'pkg-1',
+		packageKodyId: 'discord-gateway',
+		exportName: './dispatch-message-created',
+		idempotencyKey: 'evt-do-first',
+		requestHash: await dispatchMessageCreatedRequestHash({ content: 'hi' }),
+		source: 'discord-gateway',
+		topic: 'discord.message.created',
+		status: 'completed',
+		responseJson: JSON.stringify({
+			status: 200,
+			body: { ok: true, result: { reply: 'stale legacy copy' } },
+		}),
+	})
+	const replay = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: dispatchMessageCreatedRequest('evt-do-first'),
+	})
+	expect(replay.status).toBe(200)
+	expect(replay.body).toMatchObject({
+		ok: true,
+		result: { reply: 'do-backed execution' },
+		idempotency: { key: 'evt-do-first', replayed: true },
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
@@ -2198,7 +2573,9 @@ test('invokePackageSubscription uses the normal capability registry with package
 		(runOptions as { storageTools?: unknown }).storageTools,
 	).toBeUndefined()
 
-	db.seedStaleInvocation('email:message-stale:pkg-1:email.message.received')
+	db.runLog.seedStaleInvocation(
+		'email:message-stale:pkg-1:email.message.received',
+	)
 	const recovered = await invokePackageSubscription({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
@@ -2215,9 +2592,9 @@ test('invokePackageSubscription uses the normal capability registry with package
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
 
 	const freshKey = 'email:message-fresh:pkg-1:email.message.received'
-	db.seedFreshInvocation(freshKey)
+	db.runLog.seedFreshInvocation(freshKey)
 	const completionTimer = setTimeout(() => {
-		db.completeInvocation(freshKey)
+		db.runLog.completeInvocation(freshKey)
 	}, 150)
 	try {
 		const polled = await invokePackageSubscription({
@@ -2237,42 +2614,6 @@ test('invokePackageSubscription uses the normal capability registry with package
 	} finally {
 		clearTimeout(completionTimer)
 	}
-
-	const fenced = db.seedStaleInvocation(
-		'email:message-fenced:pkg-1:email.message.received',
-	)
-	const reclaimedAt = new Date().toISOString()
-	expect(
-		await tryClaimStalePackageInvocation({
-			db,
-			id: String(fenced['id']),
-			userId: String(fenced['user_id']),
-			expectedUpdatedAt: String(fenced['updated_at']),
-			staleBefore: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-			now: reclaimedAt,
-		}),
-	).toBe(true)
-	const storedResponse = { status: 200, body: { ok: true } }
-	expect(
-		await updatePackageInvocationResult({
-			db,
-			id: String(fenced['id']),
-			userId: String(fenced['user_id']),
-			status: 'completed',
-			response: storedResponse,
-			claimUpdatedAt: String(fenced['updated_at']),
-		}),
-	).toBe(false)
-	expect(
-		await updatePackageInvocationResult({
-			db,
-			id: String(fenced['id']),
-			userId: String(fenced['user_id']),
-			status: 'completed',
-			response: storedResponse,
-			claimUpdatedAt: reclaimedAt,
-		}),
-	).toBe(true)
 
 	const transientKey = 'email:message-transient:pkg-1:email.message.received'
 	repoMockModule.loadPublishedBundleArtifactByIdentity.mockRejectedValueOnce(

@@ -77,7 +77,7 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 		retentionDays: packageInvocationRetentionDays,
 		batchSize: retentionDefaultBatchSize,
 		description:
-			'Package invocation idempotency rows keep terminal responses for 90 days; in-progress rows are never pruned.',
+			'LEGACY (dual-read window): keyed invocations now claim and store responses in the per-user RunLog Durable Object ledger, which self-enforces the same 90-day terminal-row window. This sweep only drains pre-migration terminal rows; in-progress rows are never pruned. Remove with the follow-up that drops the table and the D1 fallback read.',
 	},
 	{
 		table: 'mcp_memory_conversation_suppressions',

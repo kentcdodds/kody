@@ -1,10 +1,17 @@
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { buildJsonErrorResponse } from './responses.ts'
-import {
-	type getPackageInvocationByKey,
-	type PackageInvocationStoredResponse,
-} from './repo.ts'
+import { type PackageInvocationStoredResponse } from './repo.ts'
+
+/**
+ * Store-agnostic view of an idempotency row: the RunLog DO ledger record and
+ * the legacy D1 `package_invocations` row (dual-read window) both map into it.
+ */
+export type ResolvableInvocationRecord = {
+	requestHash: string
+	status: string
+	storedResponse: PackageInvocationStoredResponse | null
+}
 
 export function markStoredResponseAsReplayed(
 	response: PackageInvocationStoredResponse,
@@ -54,11 +61,11 @@ function buildIdempotencyResponseUnavailable(input: {
 }
 
 export function resolveExistingInvocation(input: {
-	record: NonNullable<Awaited<ReturnType<typeof getPackageInvocationByKey>>>
+	record: ResolvableInvocationRecord
 	requestHash: string
 	idempotencyKey: string
 }): PackageInvocationStoredResponse {
-	if (input.record.request_hash !== input.requestHash) {
+	if (input.record.requestHash !== input.requestHash) {
 		return buildJsonErrorResponse({
 			status: 409,
 			code: 'idempotency_mismatch',

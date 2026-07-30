@@ -1383,6 +1383,23 @@ test('account export includes run_records section with runs and log lines', asyn
 			fields: { ok: true },
 		},
 	]
+	// Keyed package-invocation idempotency ledger row stored in the same
+	// RunLog DO; exported through the same run_records section.
+	const packageInvocation = {
+		id: 'invocation-export-1',
+		tokenId: 'token-1',
+		packageId: 'pkg-1',
+		packageKodyId: 'pkg-one',
+		exportName: './send-message',
+		idempotencyKey: 'evt-1',
+		requestHash: 'hash-1',
+		source: 'webhook',
+		topic: null,
+		status: 'completed' as const,
+		responseJson: '{"status":200,"body":{"ok":true}}',
+		createdAt: '2026-07-26T00:00:00.000Z',
+		updatedAt: '2026-07-26T00:00:01.000Z',
+	}
 	const env = {
 		APP_DB: db,
 		STORAGE_RUNNER: {
@@ -1402,6 +1419,7 @@ test('account export includes run_records section with runs and log lines', asyn
 				exportRuns: async () => ({
 					runs: [run],
 					logs,
+					packageInvocations: [packageInvocation],
 					nextStartAfter: null,
 					truncated: false,
 				}),
@@ -1432,6 +1450,7 @@ test('account export includes run_records section with runs and log lines', asyn
 	expect(accountExport.durableObjects.runRecords).toEqual({
 		runs: [run],
 		logs,
+		packageInvocations: [packageInvocation],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -1447,6 +1466,9 @@ test('account export includes run_records section with runs and log lines', asyn
 		{
 			run,
 			logs,
+		},
+		{
+			packageInvocation,
 		},
 	])
 })

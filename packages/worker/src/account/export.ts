@@ -1772,10 +1772,18 @@ export async function readAccountExportSection(input: {
 		})
 		return {
 			section: input.section,
-			items: page.runs.map((run) => ({
-				run,
-				logs: page.logs.filter((log) => log.runId === run.id),
-			})),
+			// Runs page first; once runs are exhausted the same cursor continues
+			// through the keyed package-invocation idempotency ledger rows that
+			// live in the same per-user RunLog Durable Object.
+			items: [
+				...page.runs.map((run) => ({
+					run,
+					logs: page.logs.filter((log) => log.runId === run.id),
+				})),
+				...page.packageInvocations.map((packageInvocation) => ({
+					packageInvocation,
+				})),
+			],
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,

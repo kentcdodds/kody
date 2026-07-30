@@ -2,7 +2,10 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { persistableExecutionArtifacts } from '#mcp/downstream-mcp-result.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
-import { type RunRecordContext } from '#worker/run-records/types.ts'
+import {
+	type RunRecordContext,
+	type RunRecordHandle,
+} from '#worker/run-records/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import {
@@ -41,10 +44,24 @@ import {
  * - `artifact-unavailable`: artifact preparation failed transiently before
  *   any sandbox work started. Nothing executed, so keyed callers release
  *   their claim and key-less callers can simply retry.
+ *
+ * `logs` / `result` / `error` carry what the registry would otherwise feed
+ * its own run-record finish, for keyed callers that own the run record via
+ * `externalRunRecordHandle` and finish it together with the ledger write.
  */
 export type SavedPackageModuleRunOutcome =
-	| { kind: 'completed'; response: PackageInvocationResponse }
-	| { kind: 'failed'; response: PackageInvocationResponse }
+	| {
+			kind: 'completed'
+			response: PackageInvocationResponse
+			logs: Array<string>
+			result: unknown
+	  }
+	| {
+			kind: 'failed'
+			response: PackageInvocationResponse
+			logs: Array<string>
+			error: unknown
+	  }
 	| { kind: 'artifact-unavailable'; response: PackageInvocationResponse }
 
 export type SavedPackageModuleRunInput = {
@@ -82,6 +99,15 @@ export type SavedPackageModuleRunInput = {
 	 * full Cloudflare Workflow step window.
 	 */
 	executorTimeoutMs?: number | null
+	/**
+	 * Keyed path: the caller already claimed the run record together with the
+	 * idempotency-ledger row (one DO call) and finishes both together from
+	 * the outcome, so the registry must not begin or finish a run record of
+	 * its own. The handle's context still feeds `parentRunRecord` for nested
+	 * invoke/event tools, and is enriched here with the `publishedCommit`
+	 * that is only known after the artifact loads.
+	 */
+	externalRunRecordHandle?: RunRecordHandle | null
 }
 
 export async function runSavedPackageModuleOnce(
@@ -133,8 +159,18 @@ export async function runSavedPackageModuleOnce(
 			kodyId: input.savedPackage.kodyId,
 			sourceId: input.savedPackage.sourceId,
 		}
-		const runRecord: RunRecordContext | null =
-			runtimeSurface == null
+		const externalHandle = input.externalRunRecordHandle ?? null
+		if (externalHandle) {
+			// The caller claimed before the artifact loaded, so its context could
+			// not know the published commit yet; enrich it for the terminal write.
+			externalHandle.context = {
+				...externalHandle.context,
+				publishedCommit: repoSource?.published_commit ?? null,
+			}
+		}
+		const runRecord: RunRecordContext | null = externalHandle
+			? externalHandle.context
+			: runtimeSurface == null
 				? null
 				: {
 						packageId: input.savedPackage.id,
@@ -170,7 +206,9 @@ export async function runSavedPackageModuleOnce(
 				// No ambient `storage` binding: package code reaches its bucket via
 				// `packageStorage()` (granted through packageContext below). Legacy
 				// ambient use gets the structured runtime_helper_unbound hint.
-				runRecord,
+				// Keyed callers own their run record (claimed with the ledger row);
+				// the registry must not begin/finish a second one for this run.
+				runRecord: externalHandle ? null : runRecord,
 				emailTools: {
 					getMessage: async (messageId) => {
 						const loaded = await getEmailMessageWithAttachmentsById({
@@ -300,6 +338,8 @@ export async function runSavedPackageModuleOnce(
 					error: executionResult.error,
 					logs: executionResult.logs ?? [],
 				}),
+				logs: executionResult.logs ?? [],
+				error: executionResult.error,
 			}
 		}
 		const persistedArtifacts = persistableExecutionArtifacts(
@@ -318,6 +358,8 @@ export async function runSavedPackageModuleOnce(
 				rawContentOmitted: persistedArtifacts.rawContentOmitted,
 				logs: executionResult.logs ?? [],
 			}),
+			logs: executionResult.logs ?? [],
+			result: persistedArtifacts.result,
 		}
 	} catch (error) {
 		if (
@@ -345,6 +387,8 @@ export async function runSavedPackageModuleOnce(
 					message: getErrorMessage(error),
 					idempotencyKey: input.idempotencyKey ?? undefined,
 				}),
+				logs: [],
+				error,
 			}
 		}
 		return {
@@ -355,6 +399,8 @@ export async function runSavedPackageModuleOnce(
 				message: getErrorMessage(error),
 				idempotencyKey: input.idempotencyKey ?? undefined,
 			}),
+			logs: [],
+			error,
 		}
 	}
 }
@@ -367,12 +413,16 @@ export async function runSavedPackageModuleOnce(
  * exactly-once path).
  */
 export async function runSavedPackageModuleEphemeral(
-	input: Omit<SavedPackageModuleRunInput, 'idempotencyKey' | 'invocationId'>,
+	input: Omit<
+		SavedPackageModuleRunInput,
+		'idempotencyKey' | 'invocationId' | 'externalRunRecordHandle'
+	>,
 ): Promise<PackageInvocationResponse> {
 	const outcome = await runSavedPackageModuleOnce({
 		...input,
 		idempotencyKey: null,
 		invocationId: null,
+		externalRunRecordHandle: null,
 	})
 	return outcome.response
 }

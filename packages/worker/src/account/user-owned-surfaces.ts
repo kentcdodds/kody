@@ -121,7 +121,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'runLogs',
 			export: 'include',
 			notes:
-				'Execution history and captured logs across every runtime surface. Self-prunes inside the DO rather than through a retention cron lane.',
+				'Execution history and captured logs across every runtime surface, plus the keyed package-invocation idempotency ledger (terminal replay responses, 90-day window). Self-prunes inside the DO rather than through a retention cron lane; account deletion clearAll purges ledger rows with the run history, and account export pages both through the run_records section.',
 		},
 		{
 			id: 'mcp',
