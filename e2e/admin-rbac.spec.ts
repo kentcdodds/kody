@@ -151,9 +151,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	// URL-backed selection: click updates the path, reload restores it, and a
 	// detail pane opens that account (use the non-first seeded user).
 	await page.getByRole('button', { name: memberUser.username }).click()
-	await expect(page).toHaveURL(
-		new RegExp(`/admin/users/${memberStableUserId}`),
-	)
+	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberStableUserId}`))
 	await expect(page.getByText('Account metadata only')).toBeVisible()
 	await expect(page.getByText('Usage & quotas')).toBeVisible()
 	await expect(
@@ -163,9 +161,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 		page.getByRole('heading', { name: 'Entitlements' }),
 	).toBeVisible()
 	await page.reload()
-	await expect(page).toHaveURL(
-		new RegExp(`/admin/users/${memberStableUserId}`),
-	)
+	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberStableUserId}`))
 	await expect(
 		page.getByRole('heading', { name: memberUser.username, exact: true }),
 	).toBeVisible()
