@@ -302,10 +302,7 @@ test('service_list unknown package_id throws McpCallerError', async () => {
 	})
 
 	const error = await serviceListCapability
-		.handler(
-			{ package_id: 'missing-package' },
-			{ env, callerContext },
-		)
+		.handler({ package_id: 'missing-package' }, { env, callerContext })
 		.catch((caught: unknown) => caught)
 	expect(error).toBeInstanceOf(McpCallerError)
 	expect(error).toMatchObject({
