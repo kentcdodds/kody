@@ -23,7 +23,13 @@ call, not about what user code does inside the call.
   belongs in the keyed mode or off the hot path (`waitUntil`).
 - **Keyed `packages.invoke`** deliberately pays for durability: a ledger claim,
   eager run records, and a bounded response snapshot for replay. That cost is
-  the feature; it must never silently leak into the keyless mode.
+  the feature; it must never silently leak into the keyless mode. The ledger
+  lives in the per-user `RunLog` Durable Object (see
+  [Run records](./run-records.md)), so the durability cost is **one awaited DO
+  call for claim + run-record begin and one for terminal response + run-record
+  finish** — not D1 round trips. During the dual-read window the keyed path also
+  pays one awaited D1 **read** for pre-migration keys; a follow-up removes it
+  with the legacy `package_invocations` table.
 
 ## Watch the percentiles
 
