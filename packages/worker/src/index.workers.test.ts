@@ -36,6 +36,15 @@ const mocks = vi.hoisted(() => ({
 	shouldRunDrExportCron: vi.fn(() => false),
 	shouldRunDrExportWatchdogCron: vi.fn(() => false),
 	isDrExportConfigured: vi.fn(() => false),
+	runJobScheduleWatchdogTick: vi.fn(async () => ({
+		overdueJobCount: 0,
+		stuckSkippedJobCount: 0,
+		repairedStuckJobCount: 0,
+		usersSynced: 0,
+		usersSkippedCap: 0,
+		alerted: false,
+	})),
+	shouldRunJobScheduleWatchdogCron: vi.fn(() => false),
 	refreshStaleStripePlans: vi.fn(async () => ({
 		refreshed: 0,
 		failed: 0,
@@ -95,6 +104,11 @@ vi.mock('#worker/billing/subscription-sync.ts', () => ({
 	refreshStaleStripePlans: mocks.refreshStaleStripePlans,
 }))
 
+vi.mock('#worker/jobs/job-schedule-watchdog.ts', () => ({
+	runJobScheduleWatchdogTick: mocks.runJobScheduleWatchdogTick,
+	shouldRunJobScheduleWatchdogCron: mocks.shouldRunJobScheduleWatchdogCron,
+}))
+
 const worker = (await import('./index.ts')).default
 
 function createController(scheduledTime: number) {
@@ -115,6 +129,7 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 	mocks.shouldRunUsageAggregationCron.mockReturnValueOnce(true)
 	mocks.shouldRunAuthDenialAlertCron.mockReturnValueOnce(true)
 	mocks.shouldRunEmailDeliveryAlertCron.mockReturnValueOnce(true)
+	mocks.shouldRunJobScheduleWatchdogCron.mockReturnValueOnce(true)
 	const scheduledTime = Date.parse('2026-07-05T10:00:30.000Z')
 
 	await worker.scheduled?.(
@@ -143,6 +158,9 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
 	expect(mocks.checkEmailDeliveryBurstAndNotify).toHaveBeenCalledWith(
+		expect.objectContaining({ now: new Date(scheduledTime) }),
+	)
+	expect(mocks.runJobScheduleWatchdogTick).toHaveBeenCalledWith(
 		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
 	expect(mocks.refreshStaleStripePlans).toHaveBeenCalledWith(
