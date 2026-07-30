@@ -50,7 +50,6 @@ import {
 	type JobRepoCheckPolicy,
 	type JobRecord,
 	type JobUpdateInput,
-	type JobView,
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
