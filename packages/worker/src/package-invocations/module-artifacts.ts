@@ -32,7 +32,25 @@ export async function resolveSavedPackage(input: {
 	db: D1Database
 	userId: string
 	packageIdOrKodyId: string
+	/**
+	 * When known (from parsed `kodyId` / `packageId` input), look up only that
+	 * column so the common `kodyId` path pays one indexed D1 read instead of
+	 * an id miss followed by a kody_id hit.
+	 */
+	identifierKind?: 'kodyId' | 'packageId'
 }): Promise<SavedPackageRecord | null> {
+	if (input.identifierKind === 'kodyId') {
+		return await getSavedPackageByKodyId(input.db, {
+			userId: input.userId,
+			kodyId: input.packageIdOrKodyId,
+		})
+	}
+	if (input.identifierKind === 'packageId') {
+		return await getSavedPackageById(input.db, {
+			userId: input.userId,
+			packageId: input.packageIdOrKodyId,
+		})
+	}
 	return (
 		(await getSavedPackageById(input.db, {
 			userId: input.userId,

@@ -30,6 +30,8 @@ export type PackageInvocationTokenScope = {
 
 export type PackageInvocationRequest = {
 	packageIdOrKodyId: string
+	/** When known, avoids a dual id/kody_id D1 lookup in resolveSavedPackage. */
+	identifierKind?: 'kodyId' | 'packageId'
 	exportName: string
 	params?: Record<string, unknown>
 	idempotencyKey: string

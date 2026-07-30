@@ -103,6 +103,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 			db: input.env.APP_DB,
 			userId: input.caller.userId,
 			packageIdOrKodyId,
+			identifierKind: input.request.identifierKind,
 		}))
 	if (!savedPackage) {
 		return buildJsonErrorResponse({
@@ -189,6 +190,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 			db: input.env.APP_DB,
 			userId: input.caller.userId,
 			packageIdOrKodyId,
+			identifierKind: input.request.identifierKind,
 		}))
 	if (!savedPackage) {
 		return buildJsonErrorResponse({

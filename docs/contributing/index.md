@@ -33,6 +33,8 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Packages and MCP
 
 - [Packages and manifests](./packages-and-manifests.md)
+- [Per-call platform overhead](./per-call-platform-overhead.md) (static import
+  vs `invokeChecked`, D1 budgets, usage-event guardrails)
 - [Community packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md)
 - [Adding capabilities](./adding-capabilities.md)

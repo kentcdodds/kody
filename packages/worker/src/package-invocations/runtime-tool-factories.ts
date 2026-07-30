@@ -115,6 +115,7 @@ function createPackageInvokeTools(input: {
 					},
 					request: {
 						packageIdOrKodyId: request.packageIdOrKodyId,
+						identifierKind: request.packageIdentifier.kind,
 						exportName: request.exportName,
 						params: request.params,
 						idempotencyKey,
@@ -137,6 +138,7 @@ function createPackageInvokeTools(input: {
 					},
 					request: {
 						packageIdOrKodyId: request.packageIdOrKodyId,
+						identifierKind: request.packageIdentifier.kind,
 						exportName: request.exportName,
 						params: request.params,
 						idempotencyKey,

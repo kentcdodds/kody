@@ -2,6 +2,7 @@ import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
+import { createPublishedPackagePromiseCache } from '#worker/package-registry/published-package-cache.ts'
 import {
 	type BundleArtifactDependency,
 	type BundleArtifactDynamicDependency,
@@ -123,6 +124,30 @@ function matchesPublishedBundleArtifactIdentity(input: {
 	)
 }
 
+type LoadedPublishedBundleArtifact = {
+	row: PublishedBundleArtifactRecord
+	artifact: PublishedBundleArtifact | null
+} | null
+
+const publishedBundleArtifactLoadCache =
+	createPublishedPackagePromiseCache<LoadedPublishedBundleArtifact>()
+
+function publishedBundleArtifactLoadCacheKey(input: {
+	userId: string
+	sourceId: string
+	kind: BundleArtifactKind
+	artifactName: string | null
+	entryPoint: string
+}) {
+	return JSON.stringify([
+		input.userId,
+		input.sourceId,
+		input.kind,
+		input.artifactName,
+		input.entryPoint,
+	])
+}
+
 export async function persistPublishedBundleArtifact(
 	input: PersistPublishedBundleArtifactInput,
 ) {
@@ -190,6 +215,15 @@ export async function persistPublishedBundleArtifact(
 		} else {
 			await insertPublishedBundleArtifactRow(input.env.APP_DB, rowInput)
 		}
+		publishedBundleArtifactLoadCache.delete(
+			publishedBundleArtifactLoadCacheKey({
+				userId: input.userId,
+				sourceId: input.source.id,
+				kind: input.kind,
+				artifactName,
+				entryPoint,
+			}),
+		)
 	} catch (error) {
 		await deletePublishedBundleArtifact({
 			env: input.env,
@@ -209,46 +243,57 @@ export async function loadPublishedBundleArtifactByIdentity(input: {
 	kind: BundleArtifactKind
 	artifactName?: string | null
 	entryPoint: string
-}) {
+}): Promise<LoadedPublishedBundleArtifact> {
 	const artifactName = normalizeArtifactName(input.artifactName)
 	const entryPoint = normalizeEntryPoint(input.entryPoint)
-	const row = await getPublishedBundleArtifactByIdentity(input.env.APP_DB, {
-		userId: input.userId,
-		sourceId: input.sourceId,
-		artifactKind: input.kind,
-		artifactName,
-		entryPoint,
-	})
-	if (!row) return null
-	const artifact = await readPublishedBundleArtifact({
-		env: input.env,
-		kvKey: row.kvKey,
-	})
-	if (!artifact) {
-		return {
-			row,
-			artifact: null,
-		}
-	}
-	if (
-		!matchesPublishedBundleArtifactIdentity({
-			artifact,
-			sourceId: row.sourceId,
-			publishedCommit: row.publishedCommit,
+	return await publishedBundleArtifactLoadCache.getOrCreate({
+		cacheKey: publishedBundleArtifactLoadCacheKey({
+			userId: input.userId,
+			sourceId: input.sourceId,
 			kind: input.kind,
 			artifactName,
 			entryPoint,
-		})
-	) {
-		return {
-			row,
-			artifact: null,
-		}
-	}
-	return {
-		row,
-		artifact,
-	}
+		}),
+		create: async () => {
+			const row = await getPublishedBundleArtifactByIdentity(input.env.APP_DB, {
+				userId: input.userId,
+				sourceId: input.sourceId,
+				artifactKind: input.kind,
+				artifactName,
+				entryPoint,
+			})
+			if (!row) return null
+			const artifact = await readPublishedBundleArtifact({
+				env: input.env,
+				kvKey: row.kvKey,
+			})
+			if (!artifact) {
+				return {
+					row,
+					artifact: null,
+				}
+			}
+			if (
+				!matchesPublishedBundleArtifactIdentity({
+					artifact,
+					sourceId: row.sourceId,
+					publishedCommit: row.publishedCommit,
+					kind: input.kind,
+					artifactName,
+					entryPoint,
+				})
+			) {
+				return {
+					row,
+					artifact: null,
+				}
+			}
+			return {
+				row,
+				artifact,
+			}
+		},
+	})
 }
 
 /**

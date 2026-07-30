@@ -134,6 +134,7 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 		packageIdOrKodyId: request.packageIdOrKodyId,
+		identifierKind: request.packageIdentifier.kind,
 	})
 	if (!savedPackage) {
 		const message = buildSavedPackageNotFoundMessage(request.packageIdOrKodyId)

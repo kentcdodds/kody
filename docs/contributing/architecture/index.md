@@ -34,6 +34,9 @@ to become.
   Objects.
 - [Usage Metering](./usage-metering.md): per-user usage events, the
   `recordUsage()` helper contract, and the D1 rollup table.
+- [Per-call platform overhead](../per-call-platform-overhead.md): static import
+  vs dynamic invoke cost, hot-path D1 budgets, and Analytics Engine guardrails
+  as user count grows.
 - [Run records](./run-records.md): per-user execution history and logs across
   every runtime surface (`RunLog` Durable Object, `runs` MCP domain,
   `/account/activity`).

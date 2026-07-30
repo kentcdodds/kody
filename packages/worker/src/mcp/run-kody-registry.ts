@@ -837,18 +837,26 @@ export async function runBundledModuleWithRegistry(
 	// still counted as failed package runs.
 	const usageStartedAtMs = Date.now()
 	let usageRecorded = false
-	async function recordPackageExportUsage(outcome: 'success' | 'error') {
+	function recordPackageExportUsage(outcome: 'success' | 'error') {
 		if (usageRecorded) return
 		usageRecorded = true
 		const userId = callerContext.user?.userId
 		if (!options?.packageContext || !userId) return
-		await recordUsage(env, {
+		const usagePromise = recordUsage(env, {
 			userId,
 			eventType: 'package_export',
 			entityId: options.packageContext.packageId,
 			durationMs: Date.now() - usageStartedAtMs,
 			outcome,
 		})
+		// Keep metering off the nested-invoke response path when the host can
+		// extend the isolate lifetime; fall back to awaiting when waitUntil is
+		// unavailable (tests, non-DO callers).
+		if (waitUntil) {
+			waitUntil(usagePromise)
+			return
+		}
+		return usagePromise
 	}
 	async function finishObservedRun(input: {
 		status: 'success' | 'error'
@@ -1041,7 +1049,7 @@ ${runtimeHelperRuntimePropertySource}
 					logs: sanitizedResult.logs ?? [],
 					result: sanitizedResult.result,
 				})
-				await recordPackageExportUsage('success')
+				await Promise.resolve(recordPackageExportUsage('success'))
 				return withRunId(sanitizedResult)
 			}
 			const rewrittenMessage =
@@ -1066,7 +1074,7 @@ ${runtimeHelperRuntimePropertySource}
 				logs: finalResult.logs ?? [],
 				error: finalResult.error,
 			})
-			await recordPackageExportUsage('error')
+			await Promise.resolve(recordPackageExportUsage('error'))
 			return withRunId(finalResult)
 		} catch (error) {
 			if (!runRecordFinished) {
@@ -1084,7 +1092,7 @@ ${runtimeHelperRuntimePropertySource}
 				error,
 			})
 		}
-		await recordPackageExportUsage('error')
+		await Promise.resolve(recordPackageExportUsage('error'))
 		throw error
 	}
 }
