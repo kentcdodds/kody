@@ -4,7 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Dry-run audits only; execute writes index rows and the completion marker.
+        description:
+          Dry-run audits only; execute writes index rows and the completion
+          marker.
         type: choice
         options:
           - dry-run
@@ -15,7 +17,9 @@ on:
         type: string
         default: https://heykody.dev
       worker_script:
-        description: Cloudflare Workers script name that owns the MCP Durable Object namespace
+        description:
+          Cloudflare Workers script name that owns the MCP Durable Object
+          namespace
         type: string
         default: kody-production
 
@@ -23,7 +27,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: backfill-mcp-agent-sessions-${{ inputs.origin }}-${{ inputs.worker_script }}
+  group:
+    backfill-mcp-agent-sessions-${{ inputs.origin }}-${{ inputs.worker_script }}
   cancel-in-progress: false
 
 jobs:
