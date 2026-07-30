@@ -5,6 +5,7 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
 	assertStorageRunnerWriteWithinEntitlement,
+	isReadOnlyStorageSqlQuery,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
 import { estimateEntitlementStorageSqlWriteBytes } from '#worker/entitlements/service.ts'
@@ -51,7 +52,7 @@ export const storageQueryCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const writable = args.writable ?? false
-			if (writable) {
+			if (writable && !isReadOnlyStorageSqlQuery(args.query)) {
 				await assertStorageRunnerWriteWithinEntitlement({
 					env: ctx.env,
 					userId: user.userId,

@@ -264,9 +264,15 @@ Rules:
   records in the per-user `RunLog` Durable Object are intentionally **excluded**
   from the quota — they are observability history, not user content.
   StorageRunner Durable Object buckets expose their own `estimatedBytes`; write
-  chokepoints that target a specific bucket pass `getCurrent` as
-  `D1 estimate + target bucket estimate` and `requested` as the candidate
-  payload size when known. The counter intentionally does **not** attempt to
+  chokepoints pass `getCurrent` as
+  `D1 estimate + sum of inventoried StorageRunner bucket estimates` (plus the
+  target bucket when its inventory row has not landed yet) and `requested` as
+  the candidate payload size when known. Pure read-only `storage.sql` /
+  `packageStorage().sql` statements (`SELECT` / `EXPLAIN` / schema `PRAGMA`)
+  skip this fan-out even when the helper marks the call writable. Mutating SQL
+  and `storage.set` in one sandbox share a per-run baseline cache so repeated
+  writes do not rescan every bucket. Each estimate RPC is bounded (~2s) and
+  fails closed on timeout. The counter intentionally does **not** attempt to
   scan Cloudflare Artifacts repository contents, KV snapshot/bundle bodies, R2
   object listings beyond `email_messages.raw_size`, or Vectorize: those stores
   either lack reliable byte metadata or are derived from D1 and are documented

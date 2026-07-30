@@ -11,6 +11,7 @@ import {
 import {
 	createPackageStorageHelperPrelude,
 	createPackageStorageKodyTools,
+	createStorageBytesEntitlementRunCache,
 	createStorageKodyTools,
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
@@ -527,6 +528,7 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 				email: context.callerContext.user?.email,
 				storageId: storageTools.storageId,
 				writable: storageTools.writable,
+				entitlementCache: createStorageBytesEntitlementRunCache(),
 			})
 		},
 	},

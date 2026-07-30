@@ -33,6 +33,8 @@ import {
 	assertStorageRunnerWriteWithinEntitlement,
 	buildPackageStorageId,
 	createPackageStorageAccessDeniedMessage,
+	createStorageBytesEntitlementRunCache,
+	isReadOnlyStorageSqlQuery,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
 import {
@@ -846,6 +848,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
+	private readonly storageBytesEntitlementCache =
+		createStorageBytesEntitlementRunCache()
+
 	private async assertStorageWriteAllowed(input: {
 		storageId: string
 		requested?: number
@@ -856,6 +861,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			email: this.ctx.props.email,
 			storageId: input.storageId,
 			requested: input.requested,
+			cache: this.storageBytesEntitlementCache,
 		})
 	}
 
@@ -1081,7 +1087,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		params?: Array<unknown>
 		writable: boolean
 	}) {
-		if (input.writable) {
+		// package app bridges always mark packageStorage SQL writable, so skip
+		// the all-bucket fan-out for pure SELECT/EXPLAIN/PRAGMA statements.
+		if (input.writable && !isReadOnlyStorageSqlQuery(input.query)) {
 			await this.assertStorageWriteAllowed({
 				storageId: input.storageId,
 				requested: estimateEntitlementStorageSqlWriteBytes({

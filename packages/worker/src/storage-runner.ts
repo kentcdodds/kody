@@ -21,12 +21,48 @@ const maxConcurrentStorageEstimateReads = 16
 /** One bounded pause before re-reading a failed estimate chunk. */
 export const storageEstimateReadRetryDelayMs = 150
 /**
+ * Bound each StorageRunner `getEstimatedBytes` RPC so one hung DO cannot own
+ * the whole sandbox deadline (~90s). Fail closed after this budget.
+ */
+export const storageEstimateReadTimeoutMs = 2_000
+/**
  * `ctx.storage.sql.databaseSize` for a never-written StorageRunner DO (one
  * SQLite page). Audit/entitlement callers that need a "has user data" signal
  * must compare against this floor rather than treating any positive size as
  * non-empty.
  */
 export const emptyStorageRunnerEstimatedBytes = 4096
+
+const readOnlyStorageSqlPrefixes = [
+	'select',
+	'explain',
+	'pragma table_info(',
+	'pragma index_list(',
+	'pragma index_info(',
+	'pragma database_list',
+	'pragma table_list',
+] as const
+
+/**
+ * Per-run memo for storage-byte entitlement totals. The first mutating write
+ * in a sandbox pays the all-bucket estimate fan-out; later writes reuse that
+ * baseline and accumulate `reservedBytes` so the run still accounts for its
+ * own earlier accepted writes without rescanning every Durable Object.
+ */
+export type StorageBytesEntitlementRunCache = {
+	baseline: Promise<{
+		bytes: number
+		storageIds: ReadonlySet<string>
+	}> | null
+	reservedBytes: number
+}
+
+export function createStorageBytesEntitlementRunCache(): StorageBytesEntitlementRunCache {
+	return {
+		baseline: null,
+		reservedBytes: 0,
+	}
+}
 
 type StorageEntry = {
 	key: string
@@ -319,33 +355,68 @@ function hasMultipleSqlStatements(query: string) {
 	return false
 }
 
+/**
+ * True when `query` is a single SELECT / EXPLAIN / schema PRAGMA that the
+ * read-only storage.sql contract accepts. Mutating SQL (and multi-statement
+ * batches) return false even when the caller passed `writable: true`.
+ *
+ * Used to skip the all-bucket storage-byte entitlement fan-out on pure reads:
+ * `packageStorage().sql(...)` always marks calls writable so CREATE/INSERT
+ * work, but SELECT-heavy package exports were paying that fan-out on every
+ * query and timing out under large bucket inventories.
+ */
+export function isReadOnlyStorageSqlQuery(query: string) {
+	const trimmed = query.trim()
+	if (!trimmed || hasMultipleSqlStatements(trimmed)) {
+		return false
+	}
+	const normalized = trimmed.toLowerCase()
+	return readOnlyStorageSqlPrefixes.some((prefix) =>
+		normalized.startsWith(prefix),
+	)
+}
+
 function assertSqlAllowed(query: string, writable: boolean | undefined) {
 	const trimmed = query.trim()
 	if (!trimmed) {
 		throw new Error('storage.sql requires a non-empty query.')
 	}
 	if (writable) return trimmed
-	if (hasMultipleSqlStatements(trimmed)) {
+	if (!isReadOnlyStorageSqlQuery(trimmed)) {
 		throw new Error(
 			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
 		)
 	}
-	const normalized = trimmed.toLowerCase()
-	const allowedReadOnlyPrefixes = [
-		'select',
-		'explain',
-		'pragma table_info(',
-		'pragma index_list(',
-		'pragma index_info(',
-		'pragma database_list',
-		'pragma table_list',
-	] as const
-	if (allowedReadOnlyPrefixes.some((prefix) => normalized.startsWith(prefix))) {
-		return trimmed
+	return trimmed
+}
+
+async function withStorageEstimateReadTimeout<T>(
+	read: () => Promise<T>,
+	storageId: string,
+): Promise<T> {
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	try {
+		return await Promise.race([
+			read(),
+			new Promise<never>((_resolve, reject) => {
+				timeoutId = setTimeout(() => {
+					reject(
+						createStorageEstimateReadError({
+							storageId,
+							attempts: 1,
+							cause: new Error(
+								`Storage estimate read timed out after ${storageEstimateReadTimeoutMs}ms.`,
+							),
+						}),
+					)
+				}, storageEstimateReadTimeoutMs)
+			}),
+		])
+	} finally {
+		if (timeoutId !== undefined) {
+			clearTimeout(timeoutId)
+		}
 	}
-	throw new Error(
-		'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
-	)
 }
 
 function cursorToSqlResult(
@@ -582,11 +653,15 @@ async function readStorageEstimateChunkWithRetry(input: {
 	storageIds: Array<string>
 }): Promise<Array<StorageEstimateResult>> {
 	const readOne = (storageId: string) =>
-		storageRunnerRpc({
-			env: input.env,
-			userId: input.userId,
+		withStorageEstimateReadTimeout(
+			() =>
+				storageRunnerRpc({
+					env: input.env,
+					userId: input.userId,
+					storageId,
+				}).getEstimatedBytes(),
 			storageId,
-		}).getEstimatedBytes()
+		)
 
 	// Wait for every first-attempt read to settle before retrying so a fast
 	// rejection cannot overlap still-pending peers and exceed the fan-out cap.
@@ -640,59 +715,115 @@ async function readStorageEstimateChunkWithRetry(input: {
 	})
 }
 
+async function readStorageBytesEntitlementBaseline(input: {
+	env: Env
+	userId: string
+	storageId: string
+}) {
+	const [d1Bytes, registeredStorageIds] = await Promise.all([
+		readUserD1StorageBytes({
+			db: input.env.APP_DB,
+			userId: input.userId,
+		}),
+		listUserStorageBucketIds({
+			env: input.env,
+			userId: input.userId,
+		}),
+	])
+	// Registration is asynchronous, so include the bucket being written even
+	// when its inventory row has not landed yet. The Set avoids double-counting
+	// once it is registered. Estimate reads are batched to cap concurrent DO
+	// fan-out; total work remains O(bucket count) so every inventoried bucket is
+	// counted exactly. Large inventories are expected to stay rare; callers that
+	// issue many mutating SQL statements in one sandbox should pass a run cache
+	// so only the first write pays this scan.
+	const storageIds = [...new Set([...registeredStorageIds, input.storageId])]
+	let durableObjectBytes = 0
+	for (
+		let offset = 0;
+		offset < storageIds.length;
+		offset += maxConcurrentStorageEstimateReads
+	) {
+		const chunkIds = storageIds.slice(
+			offset,
+			offset + maxConcurrentStorageEstimateReads,
+		)
+		const estimates = await readStorageEstimateChunkWithRetry({
+			env: input.env,
+			userId: input.userId,
+			storageIds: chunkIds,
+		})
+		durableObjectBytes += estimates.reduce(
+			(total, estimate) => total + estimate.estimatedBytes,
+			0,
+		)
+	}
+	return {
+		bytes: d1Bytes + durableObjectBytes,
+		storageIds: new Set(storageIds),
+	}
+}
+
 export async function assertStorageRunnerWriteWithinEntitlement(input: {
 	env: Env
 	userId: string
 	email: string | null | undefined
 	storageId: string
 	requested?: number
+	/**
+	 * Optional per-sandbox memo. When set, the expensive all-bucket estimate
+	 * runs once; later asserts reuse the baseline and accumulate reserved
+	 * bytes from earlier accepted writes in this run.
+	 */
+	cache?: StorageBytesEntitlementRunCache | null
 }) {
+	const cache = input.cache
+	if (cache) {
+		const loadBaseline = () => {
+			if (!cache.baseline) {
+				cache.baseline = readStorageBytesEntitlementBaseline({
+					env: input.env,
+					userId: input.userId,
+					storageId: input.storageId,
+				})
+			}
+			return cache.baseline
+		}
+		let baseline = await loadBaseline()
+		if (!baseline.storageIds.has(input.storageId)) {
+			// A write targeted a bucket missing from the first scan (registration
+			// race or first touch). Recompute so the new bucket is counted.
+			cache.baseline = readStorageBytesEntitlementBaseline({
+				env: input.env,
+				userId: input.userId,
+				storageId: input.storageId,
+			})
+			baseline = await cache.baseline
+		}
+		await assertWithinStorageBytesEntitlement({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			email: input.email,
+			requested: input.requested,
+			getCurrent: async () => baseline.bytes + cache.reservedBytes,
+		})
+		cache.reservedBytes += input.requested ?? 0
+		return
+	}
+
 	await assertWithinStorageBytesEntitlement({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		email: input.email,
 		requested: input.requested,
-		getCurrent: async () => {
-			const [d1Bytes, registeredStorageIds] = await Promise.all([
-				readUserD1StorageBytes({
-					db: input.env.APP_DB,
-					userId: input.userId,
-				}),
-				listUserStorageBucketIds({
+		getCurrent: async () =>
+			(
+				await readStorageBytesEntitlementBaseline({
 					env: input.env,
 					userId: input.userId,
-				}),
-			])
-			// Registration is asynchronous, so include the bucket being written even
-			// when its inventory row has not landed yet. The Set avoids double-counting
-			// once it is registered. Estimate reads are batched to cap concurrent DO
-			// fan-out; total work remains O(bucket count) so every inventoried bucket is
-			// counted exactly. Bucket inventories are expected to remain small.
-			const storageIds = [
-				...new Set([...registeredStorageIds, input.storageId]),
-			]
-			let durableObjectBytes = 0
-			for (
-				let offset = 0;
-				offset < storageIds.length;
-				offset += maxConcurrentStorageEstimateReads
-			) {
-				const chunkIds = storageIds.slice(
-					offset,
-					offset + maxConcurrentStorageEstimateReads,
-				)
-				const estimates = await readStorageEstimateChunkWithRetry({
-					env: input.env,
-					userId: input.userId,
-					storageIds: chunkIds,
+					storageId: input.storageId,
 				})
-				durableObjectBytes += estimates.reduce(
-					(total, estimate) => total + estimate.estimatedBytes,
-					0,
-				)
-			}
-			return d1Bytes + durableObjectBytes
-		},
+			).bytes,
 	})
 }
 
@@ -702,12 +833,27 @@ export function createStorageKodyTools(input: {
 	email?: string | null
 	storageId: string
 	writable: boolean
+	/**
+	 * Optional per-sandbox memo shared across storage tool instances so many
+	 * mutating SQL/set calls do not rescan every inventoried bucket.
+	 */
+	entitlementCache?: StorageBytesEntitlementRunCache | null
 }) {
 	const runner = storageRunnerRpc({
 		env: input.env,
 		userId: input.userId,
 		storageId: input.storageId,
 	})
+	const assertWriteWithinEntitlement = async (requested?: number) => {
+		await assertStorageRunnerWriteWithinEntitlement({
+			env: input.env,
+			userId: input.userId,
+			email: input.email,
+			storageId: input.storageId,
+			requested,
+			cache: input.entitlementCache,
+		})
+	}
 	return {
 		storage_get: async (args: unknown) => {
 			const key =
@@ -751,17 +897,16 @@ export function createStorageKodyTools(input: {
 				: false
 			const query = typeof payload.query === 'string' ? payload.query : ''
 			const params = Array.isArray(payload.params) ? payload.params : undefined
-			if (writable) {
-				await assertStorageRunnerWriteWithinEntitlement({
-					env: input.env,
-					userId: input.userId,
-					email: input.email,
-					storageId: input.storageId,
-					requested: estimateEntitlementStorageSqlWriteBytes({
+			// packageStorage()/writable helpers always pass writable:true so
+			// CREATE/INSERT are allowed, but pure reads must not pay the
+			// all-bucket entitlement fan-out.
+			if (writable && !isReadOnlyStorageSqlQuery(query)) {
+				await assertWriteWithinEntitlement(
+					estimateEntitlementStorageSqlWriteBytes({
 						query,
 						params,
 					}),
-				})
+				)
 			}
 			return await runner.sqlQuery({
 				query,
@@ -778,12 +923,8 @@ export function createStorageKodyTools(input: {
 								: {}
 						const key = typeof payload.key === 'string' ? payload.key : ''
 						const existing = await runner.getValue({ key })
-						await assertStorageRunnerWriteWithinEntitlement({
-							env: input.env,
-							userId: input.userId,
-							email: input.email,
-							storageId: input.storageId,
-							requested: estimateEntitlementStorageEntryByteDelta({
+						await assertWriteWithinEntitlement(
+							estimateEntitlementStorageEntryByteDelta({
 								next: {
 									key,
 									value: payload.value,
@@ -796,7 +937,7 @@ export function createStorageKodyTools(input: {
 												value: existing.value,
 											},
 							}),
-						})
+						)
 						return await runner.setValue({
 							key,
 							value: payload.value,
@@ -860,6 +1001,10 @@ export function createPackageStorageKodyTools(input: {
 	email?: string | null
 	grantedPackageIds: ReadonlySet<string>
 }) {
+	// One cache for the whole sandbox so nested packageStorage() SQL across
+	// granted packages (and repeated CREATE/INSERT in one export) does not
+	// rescan every inventoried bucket on each statement.
+	const entitlementCache = createStorageBytesEntitlementRunCache()
 	const createWritableStorageTools = (packageId: string) => {
 		const {
 			storage_get,
@@ -874,6 +1019,7 @@ export function createPackageStorageKodyTools(input: {
 			email: input.email,
 			storageId: buildPackageStorageId(packageId),
 			writable: true,
+			entitlementCache,
 		})
 		if (!storage_set || !storage_delete || !storage_clear) {
 			// createStorageKodyTools only omits these when writable is false.
