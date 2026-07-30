@@ -33,6 +33,7 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Packages and MCP
 
 - [Packages and manifests](./packages-and-manifests.md)
+- [Package codemods](./package-codemods.md)
 - [Community packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md)
 - [Adding capabilities](./adding-capabilities.md)

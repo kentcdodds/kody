@@ -258,6 +258,85 @@ never emit. Failed `execute` calls do persist and do emit.
 Use this topic for notifier packages that email, write to Sheets, spawn an
 agent, or otherwise react when something in the user's account fails.
 
+## `package.codemod.applied`
+
+After a successful package codemod **apply**, Kody dispatches
+`package.codemod.applied` to packages saved by the **owning user** of the
+migrated package that declare the topic. Delivery follows the same best-effort
+host dispatch path as `run.error.recorded` — there is no Queue / DLQ for this
+topic. Failures during subscriber discovery or package-invocation infrastructure
+are logged and do not fail the codemod apply.
+
+Handlers receive a metadata-first payload:
+
+```ts
+type PackageCodemodAppliedEvent = {
+	event: 'package.codemod.applied'
+	codemod: {
+		id: string
+		description: string
+	}
+	package: {
+		package_id: string
+		kody_id: string
+	}
+	run: {
+		run_id: string
+		item_id: string
+	}
+	changed_paths: Array<string>
+	before_commit: string
+	after_commit: string
+}
+```
+
+`changed_paths` lists published-tree paths the codemod transform modified.
+`before_commit` and `after_commit` are the package's published commit before and
+after apply. The event deliberately omits file contents — fetch the current
+published source with repo or package capabilities when a handler needs diffs or
+full files. Community listing snapshots are unchanged by apply; only the owning
+saved package advances.
+
+Use this topic for notifier packages that record migrations, ping owners, or
+trigger follow-up automation when platform codemods rewrite user package source.
+
+## `package.codemod.reverted`
+
+After a successful package codemod **revert**, Kody dispatches
+`package.codemod.reverted` to packages saved by the **owning user** of the
+restored package that declare the topic. Delivery semantics match
+`package.codemod.applied` and `run.error.recorded`.
+
+Handlers receive:
+
+```ts
+type PackageCodemodRevertedEvent = {
+	event: 'package.codemod.reverted'
+	codemod: {
+		id: string
+		description: string
+	}
+	package: {
+		package_id: string
+		kody_id: string
+	}
+	run: {
+		run_id: string
+		item_id: string
+	}
+	changed_paths: Array<string>
+	before_commit: string
+	after_commit: string
+}
+```
+
+For revert, `before_commit` is the post-codemod published commit and
+`after_commit` is the restored pre-codemod commit. `changed_paths` reflects
+paths that differ between those commits after revert completes.
+
+Use this topic when automation must react to an operator or user undoing a prior
+codemod apply.
+
 ## `community.activity.recorded` (admins)
 
 Successful community fork and rating writes enqueue a durable

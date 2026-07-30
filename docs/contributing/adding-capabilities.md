@@ -240,6 +240,10 @@ Current admin capabilities:
 - `admin_platform_feedback_get`
 - `admin_platform_feedback_update`
 - `admin_community_activity_list`
+- `admin_package_codemod_scan`
+- `admin_package_codemod_dry_run`
+- `admin_package_codemod_apply`
+- `admin_package_codemod_revert`
 
 When adding more admin actions, expose service-layer functions by adding new
 `admin/*` capability files that call those service functions directly, set
