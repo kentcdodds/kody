@@ -112,11 +112,22 @@ Execute responses include Server-Timing-style phase entries under
 
 - `bundle` — module-graph preparation and bundling. This span contains the
   typecheck phases below, so subtract `typecheck-total` for bundler-only time.
-- `run` — hydration, provider assembly, and sandbox execution.
+- `hydrate` — installing published sources for literal dynamic
+  `import("kody:@…")` targets.
+- `provider-assembly` — capability registry, runtime helper, and provider wiring
+  ahead of sandbox startup.
+- `sandbox` — the dynamic worker evaluation of the module itself.
+- `run` — the enclosing span for the three phases above (plus run-record and
+  usage bookkeeping).
 - `typecheck-queue`, `typecheck-compiler-startup`, `typecheck-project-write`,
   `typecheck-diagnostics`, `typecheck-total` — present only when the
   pre-execution check ran for the call. Failed diagnostics also report these
   phases so slow checks can be attributed even when the module never executes.
+
+Phase durations are measured with `Date.now()`, which the Workers runtime only
+advances across I/O boundaries — synchronous CPU inside one phase can be
+attributed to the next timer read. Treat phases as attribution for slow spans,
+not precise CPU accounting.
 
 ## npm packages on Workers
 

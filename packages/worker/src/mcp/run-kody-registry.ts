@@ -716,7 +716,9 @@ export async function runModuleWithRegistry(
 			conversationId: options?.conversationId ?? null,
 		},
 	)
-	serverTiming.push({
+	// The bundled run reports its own sub-phases (hydrate, provider-assembly,
+	// sandbox); `run` is their enclosing wall-clock span.
+	serverTiming.push(...(result.serverTiming ?? []), {
 		name: 'run',
 		durationMs: Date.now() - runStartedAtMs,
 	})
@@ -798,7 +800,13 @@ export async function runBundledModuleWithRegistry(
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
 	},
-): Promise<ExecuteResult & { runId?: string }> {
+): Promise<
+	ExecuteResult & {
+		runId?: string
+		serverTiming?: Array<ExecuteServerTimingEntry>
+	}
+> {
+	const runServerTiming: Array<ExecuteServerTimingEntry> = []
 	const secretRedactor = createExecutionSecretRedactor()
 	const normalizedStorageContext = normalizeStorageContext(
 		callerContext.storageContext ?? null,
@@ -864,14 +872,19 @@ export async function runBundledModuleWithRegistry(
 	}
 	function withRunId<T extends ExecuteResult>(
 		result: T,
-	): T & { runId?: string } {
-		if (!exposeRunId || !runRecordHandle) return result
-		return { ...result, runId: runRecordHandle.id }
+	): T & { runId?: string; serverTiming?: Array<ExecuteServerTimingEntry> } {
+		const timed =
+			runServerTiming.length > 0
+				? { ...result, serverTiming: [...runServerTiming] }
+				: result
+		if (!exposeRunId || !runRecordHandle) return timed
+		return { ...timed, runId: runRecordHandle.id }
 	}
 	try {
 		// Hydration can install additional published-package sources (literal
 		// dynamic `import("kody:@...")` targets); keep a reference so error
 		// rewriting below scans the same module graph the sandbox executed.
+		const hydrateStartedAtMs = Date.now()
 		const { modules: hydratedModules, dynamicDependencyPackageIds } =
 			await hydrateKodyRuntimeModules({
 				env,
@@ -879,6 +892,10 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? '',
 				modules: bundle.modules,
 			})
+		runServerTiming.push({
+			name: 'hydrate',
+			durationMs: Date.now() - hydrateStartedAtMs,
+		})
 		const agentConversationId = options?.conversationId?.trim()
 		const agentUserId = callerContext.user?.userId
 		if (
@@ -892,6 +909,7 @@ export async function runBundledModuleWithRegistry(
 				conversationId: agentConversationId,
 			})
 		}
+		const providerAssemblyStartedAtMs = Date.now()
 		const grantedPackageStorageIds = collectPackageStorageGrantIds({
 			packageContext: options?.packageContext ?? null,
 			dependencies: bundle.dependencies ?? [],
@@ -947,6 +965,10 @@ export async function runBundledModuleWithRegistry(
 			workflowTools,
 			skipCapabilityRegistry: options?.skipCapabilityRegistry,
 			capabilityRegistry: options?.capabilityRegistry,
+		})
+		runServerTiming.push({
+			name: 'provider-assembly',
+			durationMs: Date.now() - providerAssemblyStartedAtMs,
 		})
 		const runtimeHelperContext = {
 			env,
@@ -1006,7 +1028,12 @@ ${runtimeHelperRuntimePropertySource}
 				provider,
 				...createRuntimeHelperExtraProviders(runtimeHelperContext),
 			]
+			const sandboxStartedAtMs = Date.now()
 			const result = await executor.execute(wrapped, providers)
+			runServerTiming.push({
+				name: 'sandbox',
+				durationMs: Date.now() - sandboxStartedAtMs,
+			})
 			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
 			if (!result.error) {
 				await finishObservedRun({

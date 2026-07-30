@@ -1611,12 +1611,18 @@ test('runModuleWithRegistry only installs the pre-execution typecheck hook when 
 		// carries typecheck phase entries ahead of them.
 		expect(uncheckedResult.serverTiming?.map((entry) => entry.name)).toEqual([
 			'bundle',
+			'hydrate',
+			'provider-assembly',
+			'sandbox',
 			'run',
 		])
 		expect(checkedResult.serverTiming?.map((entry) => entry.name)).toEqual([
 			'typecheck-queue',
 			'typecheck-total',
 			'bundle',
+			'hydrate',
+			'provider-assembly',
+			'sandbox',
 			'run',
 		])
 		for (const entry of checkedResult.serverTiming ?? []) {
