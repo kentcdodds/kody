@@ -123,6 +123,27 @@ The first shipped codemod migrates deprecated ambient `storage` imports from
   and `packageStorage()` use different bucket identities on those execution
   surfaces, so automatic rewrite risks silent data repointing.
 
+### `0002-static-first-invocation`
+
+Migrates the deprecated dynamic invocation surface to the static-first two-rule
+model (see
+[`architecture/invocation-overhead-guardrails.md`](./architecture/invocation-overhead-guardrails.md)):
+
+- Rewrites `packages.invokeChecked(...)` member calls (including
+  `packages?.invokeChecked`) to `packages.invoke(...)` via AST range replacement
+  — identical input shape; `packages.invoke` is always contract-checked and
+  key-less calls take the lean/ephemeral path.
+- Emits `needsManual` for `packages.check(...)` (its contract return value has
+  no mechanical equivalent — `invoke` checks internally) and for literal dynamic
+  `import("kody:@...")` (namespace semantics and `kody.dependencies` manifest
+  changes need a human), naming the replacement in each finding.
+- Emits `needsManual` for parse failures on scannable module files that
+  reference the deprecated surface, and verifies post-rewrite that no detectable
+  `packages.invokeChecked` member expressions remain.
+- Detection reuses the publish-check collector
+  (`package-runtime/deprecated-invocation-usage.ts`), so `detect` findings and
+  the non-fatal publish lint warnings stay in lockstep.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
