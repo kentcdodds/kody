@@ -12,13 +12,13 @@ import {
 export const staticFirstInvocationCodemodId = '0002-static-first-invocation'
 
 const invokeCheckedDetectMessage =
-	'Calls deprecated `packages.invokeChecked`; `packages.invoke` is the single dynamic primitive (always contract-checked; key-less = lean/ephemeral, add `idempotencyKey` only for exactly-once). Prefer a static `kody:@scope/pkg/export` import when the target package is known at write time.'
+	'Calls deprecated `packages.invokeChecked`; rewrites mechanically to `packages.invoke` (same call shape and behavior — the runtime aliases them). Optionally, a human may later prefer a static `kody:@scope/pkg/export` import when the target package is known at write time.'
 
 const checkDetectMessage =
-	'Calls deprecated `packages.check`; `packages.invoke` always contract-checks before invoking. Call it directly, or use a static `kody:@scope/pkg/export` import when the target is known at write time; migrate manually.'
+	'Calls deprecated `packages.check`; `packages.invoke` already contract-checks before invoking, so restructure the call site manually (no mechanical rewrite preserves the contract return value).'
 
 const dynamicImportDetectMessage =
-	'Uses a literal dynamic `import("kody:@...")`; use a static import (declared in `package.json#kody.dependencies`) when the target is known at write time, or `packages.invoke` when the target is data; migrate manually.'
+	'Uses a literal dynamic `import("kody:@...")`; migrate manually — `packages.invoke` when the target is data, or a static import (declared in `package.json#kody.dependencies`) when the target is known at write time. Namespace semantics differ, so no mechanical rewrite is safe.'
 
 const manualParseFailureMessage =
 	'File references the deprecated dynamic invocation surface but could not be parsed; migrate to `packages.invoke` / static imports manually.'
