@@ -101,6 +101,14 @@ transformed map.
    - the pattern spans generated or minified output,
    - a required symbol cannot be resolved from static analysis alone, or
    - the codemod would delete user logic to satisfy the migration.
+5. **Never put source contents in findings.** Finding `message` values must be
+   fixed, codemod-authored strings; `path` identifies the file. Interpolating
+   file contents, matched snippets, identifiers from user code, or manifest
+   values into a finding would surface private package source to the operator
+   running the fleet scan, breaking the
+   [privacy policy's codemod disclosure](../use/privacy.md#platform-maintenance-package-codemods)
+   ("codemods are forbidden from embedding file contents in their findings").
+   Both shipped codemods use constant messages; keep it that way.
 
 ### `0001-ambient-storage-to-package-storage`
 

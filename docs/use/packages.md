@@ -532,6 +532,18 @@ Use:
 - `repo_run_commands` to edit, check, and publish repo-backed package source
   after it exists using parsed, git-only command forms rather than shell
 
+### Platform maintenance migrations (codemods)
+
+When the platform's package API changes, Kody may migrate your published package
+source with a **package codemod**: a versioned, deterministic, code-reviewed
+transform that ships in the open-source repository. An applied codemod
+republishes through the normal checks, records a `codemod(<id>): ...` commit in
+your package's git history, keeps a revert snapshot, and dispatches a
+`package.codemod.applied` event your packages can subscribe to. Ambiguous
+matches are never rewritten — they surface as findings for you instead. What
+this does and does not expose to deployment admins is covered in
+[Privacy → Platform maintenance](./privacy.md#platform-maintenance-package-codemods).
+
 ## Hidden packages
 
 Use **`package_update`** with a saved **`package_id`** and

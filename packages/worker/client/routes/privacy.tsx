@@ -112,7 +112,38 @@ export function PrivacyRoute(_handle: Handle) {
 				</ul>
 				<p mix={css(descriptionCss)}>
 					None of this appears in any admin endpoint, page, or API payload — not
-					even in redacted or count form.
+					even in redacted or count form — with one qualified exception:
+					platform maintenance codemods, described next, surface package
+					identity, affected file paths, and fixed migration messages (never
+					file contents).
+				</p>
+			</section>
+
+			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>Platform maintenance (package codemods)</h2>
+				<p mix={css(descriptionCss)}>
+					When the platform&apos;s package API changes, Kody migrates published
+					package source with package codemods: versioned, deterministic
+					transforms that live in the open-source repository and ship through
+					code review like any other platform change. Nobody can author an ad
+					hoc transform through the admin surface — admins only choose when a
+					published, reviewed codemod runs, and can scope it to a dry run first.
+				</p>
+				<p mix={css(descriptionCss)}>
+					A codemod apply rewrites only what the reviewed transform matches,
+					republishes the package through the same checks as a normal publish,
+					records a <code>codemod(&lt;id&gt;)</code> commit in the
+					package&apos;s own git history, keeps a revert snapshot, and
+					dispatches a <code>package.codemod.applied</code> (or{' '}
+					<code>.reverted</code>) event your packages can subscribe to. Fleet
+					runs are audit-logged.
+				</p>
+				<p mix={css(descriptionCss)}>
+					Running a codemod never shows an admin your source. Scan and run
+					results expose only package identity (ids), affected file paths, and
+					the codemod&apos;s own fixed finding messages — codemods are forbidden
+					from embedding file contents in their findings. Ambiguous matches are
+					skipped and reported for the owner rather than rewritten.
 				</p>
 			</section>
 
