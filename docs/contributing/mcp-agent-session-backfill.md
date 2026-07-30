@@ -22,7 +22,7 @@ gh workflow run backfill-mcp-agent-sessions.yml \
 
 Review the uploaded audit artifact, then re-run with `-f mode=execute` only when
 there are no `no_owner` rows, ownership conflicts, or other failures. Production
-inventory is large (thousands of MCP Durable Objects); the job timeout is three
+inventory is large (thousands of MCP Durable Objects); the job timeout is six
 hours.
 
 ## Required environment (local CLI)

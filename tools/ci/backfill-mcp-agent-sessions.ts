@@ -93,9 +93,16 @@ export async function runMcpAgentSessionBackfill(input: {
 		cursor = page.result_info?.cursor || undefined
 	} while (cursor)
 
+	const batchSize = 50
+	const batchCount = Math.ceil(doIds.length / batchSize)
+	console.info(
+		`Listed ${doIds.length} MCP objects with stored data across ${pages} page(s); processing ${batchCount} batch(es) of up to ${batchSize}.`,
+	)
+
 	const rows: Array<Record<string, unknown>> = []
 	const failures: Array<Record<string, unknown>> = []
-	for (let offset = 0; offset < doIds.length; offset += 50) {
+	for (let offset = 0; offset < doIds.length; offset += batchSize) {
+		const batchIndex = Math.floor(offset / batchSize) + 1
 		const result = await withRetry(() =>
 			postMaintenance({
 				origin: input.origin,
@@ -103,7 +110,7 @@ export async function runMcpAgentSessionBackfill(input: {
 				pathname: '/__maintenance/backfill-mcp-agent-sessions',
 				body: {
 					dryRun: !input.execute,
-					doIds: doIds.slice(offset, offset + 50),
+					doIds: doIds.slice(offset, offset + batchSize),
 				},
 				fetcher,
 			}),
@@ -112,6 +119,15 @@ export async function runMcpAgentSessionBackfill(input: {
 		failures.push(
 			...((result['failures'] as Array<Record<string, unknown>>) ?? []),
 		)
+		if (
+			batchIndex === 1 ||
+			batchIndex === batchCount ||
+			batchIndex % 10 === 0
+		) {
+			console.info(
+				`Batch ${batchIndex}/${batchCount}: rows=${rows.length} failures=${failures.length}`,
+			)
+		}
 	}
 	const audit = {
 		schemaVersion: 1,
