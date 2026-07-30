@@ -182,6 +182,17 @@ primitives:
     docs:
       - docs/contributing/architecture/data-storage.md
 
+  - id: package-codemods
+    group: assistant
+    name: Package codemods
+    summary:
+      Versioned pure transforms migrating published user package source, with
+      dry-run gates, a run ledger, and revert snapshots.
+    code:
+      - packages/worker/src/package-codemods/
+    docs:
+      - docs/contributing/package-codemods.md
+
   - id: community-listings
     group: assistant
     name: Community package listings
