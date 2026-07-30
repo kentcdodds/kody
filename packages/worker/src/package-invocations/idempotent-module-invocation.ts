@@ -317,15 +317,15 @@ export async function invokeSavedPackageModule(input: {
 					try {
 						return await persistClaimedResult('completed', outcome.response)
 					} catch (error) {
-						const response = buildJsonErrorResponse({
-							status: 500,
-							code: 'invocation_failed',
-							message: getErrorMessage(error),
-							idempotencyKey: input.idempotencyKey,
-						})
-						return await persistClaimedResult('failed', response).catch(
-							() => response,
+						// The module already succeeded; do not poison the key with a
+						// stored permanent failure. Return the result to the caller and
+						// leave the claim in progress so the stale-reclaim path decides
+						// what happens on a later retry.
+						console.warn(
+							'package invocation completed-result persistence failed',
+							getErrorMessage(error),
 						)
+						return outcome.response
 					}
 				}
 				case 'failed': {

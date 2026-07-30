@@ -1032,7 +1032,10 @@ test(
 		// Realm separation in the other direction: the target's globals never
 		// leak back into the caller realm.
 		expect(payload.targetMarkerVisible).toBe(false)
-		expect(payload.firstDurationMs).toBeGreaterThanOrEqual(0)
+		// Sanity bound only: workerd test timing is too noisy for a strict
+		// budget; the production lean-path latency claim is validated by live
+		// probes, not this test.
+		expect(payload.firstDurationMs).toBeLessThan(20_000)
 		// The deprecation warnings surface in the caller's captured logs, once
 		// per helper, naming the replacement.
 		const warningLogs = (result.logs ?? []).filter((entry) =>
