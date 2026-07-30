@@ -103,8 +103,9 @@ When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
    `packages.invoke(...)` call. The smoke test must go through `packages.invoke`
    — it runs the export in the package's own runtime, so `kody.secretMounts`
    mounts are exercised; a static import cannot verify those. Use a read-only
-   export or a package-supported dry-run input so the smoke test has no external
-   side effects.
+   export or a package-supported dry-run input that actually reads the approved
+   secret (for example an authenticated read-only API call), so the smoke test
+   proves secret access without external side effects.
 5. Only then treat the package as ready to run.
 
 Host approval (from an earlier ad hoc `execute` smoke test) is separate from
