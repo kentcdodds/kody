@@ -29,6 +29,8 @@ export type AccountJobListItem = {
 	enabled: boolean
 	killSwitchEnabled: boolean
 	preserved: boolean
+	expiresAt: string | null
+	expired: boolean
 	dueNow: boolean
 	lastRunStatus: 'success' | 'error' | null
 	nextRunAt: string
@@ -133,6 +135,8 @@ function toListItem(
 		enabled: job.enabled,
 		killSwitchEnabled: job.killSwitchEnabled,
 		preserved: job.preserved,
+		expiresAt: inspection.expires_at,
+		expired: inspection.expired,
 		dueNow: inspection.due_now,
 		lastRunStatus: job.lastRunStatus ?? null,
 		nextRunAt: job.nextRunAt,

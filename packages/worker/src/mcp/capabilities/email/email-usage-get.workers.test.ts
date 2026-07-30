@@ -4,30 +4,22 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { maxPlanEmailLimits, planLimits } from '#worker/entitlements/plans.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
+import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { emailUsageGetCapability } from './email-usage-get.ts'
 
-async function seedUser(input: {
+async function seedUsageAccount(input: {
 	email: string
 	plan: 'pro' | 'max'
 	emailVerifiedAt?: string | null
 }) {
-	const stableUserId = await createStableUserIdFromEmail(input.email)
-	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-	)
-		.bind(
-			`email-usage-${crypto.randomUUID().slice(0, 8)}`,
-			input.email,
-			'test-password-hash',
-			input.emailVerifiedAt === undefined
-				? new Date().toISOString()
-				: input.emailVerifiedAt,
-			input.plan,
-			stableUserId,
-		)
-		.run()
+	await seedAccount({
+		db: env.APP_DB,
+		email: input.email,
+		username: `email-usage-${crypto.randomUUID().slice(0, 8)}`,
+		plan: input.plan,
+		emailVerifiedAt: input.emailVerifiedAt,
+	})
 }
 
 async function seedDailyCounter(input: {
@@ -81,7 +73,7 @@ test('email_usage_get returns usage for verified users and enforces auth require
 
 	const unverifiedEmail = `usage-unverified-${crypto.randomUUID()}@example.com`
 	const unverifiedUserId = await createStableUserIdFromEmail(unverifiedEmail)
-	await seedUser({
+	await seedUsageAccount({
 		email: unverifiedEmail,
 		plan: 'max',
 		emailVerifiedAt: null,
@@ -101,7 +93,7 @@ test('email_usage_get returns usage for verified users and enforces auth require
 
 	const planEmail = `usage-plan-${crypto.randomUUID()}@example.com`
 	const planUserId = await createStableUserIdFromEmail(planEmail)
-	await seedUser({ email: planEmail, plan: 'pro' })
+	await seedUsageAccount({ email: planEmail, plan: 'pro' })
 	await seedDailyCounter({
 		userId: planUserId,
 		resource: 'email_sends_per_day',
@@ -141,7 +133,7 @@ test('email_usage_get returns usage for verified users and enforces auth require
 
 	const maxEmail = `usage-max-${crypto.randomUUID()}@example.com`
 	const maxUserId = await createStableUserIdFromEmail(maxEmail)
-	await seedUser({ email: maxEmail, plan: 'max' })
+	await seedUsageAccount({ email: maxEmail, plan: 'max' })
 	const maxResult = await emailUsageGetCapability.handler(
 		{},
 		{

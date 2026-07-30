@@ -1,5 +1,12 @@
 import { expect, test } from 'vitest'
-import { computeNextRunAt, normalizeJobSchedule } from './schedule.ts'
+import {
+	computeNextRunAt,
+	isJobDue,
+	isJobExpired,
+	normalizeJobExpiresAt,
+	normalizeJobSchedule,
+} from './schedule.ts'
+import { type JobRecord } from './types.ts'
 
 test('job schedule helpers normalize schedules and compute the next run time', () => {
 	expect(
@@ -48,4 +55,47 @@ test('job schedule helpers normalize schedules and compute the next run time', (
 			from: '2026-04-17T15:00:00.000Z',
 		}),
 	).toBe('2026-04-17T15:15:00.000Z')
+})
+
+test('expires_at helpers treat UTC expiry as a schedule gate separate from enabled', () => {
+	expect(normalizeJobExpiresAt(null)).toBeNull()
+	expect(normalizeJobExpiresAt(undefined)).toBeNull()
+	expect(normalizeJobExpiresAt('2026-04-20T18:30:00Z')).toBe(
+		'2026-04-20T18:30:00.000Z',
+	)
+	expect(() => normalizeJobExpiresAt('2026-04-20T18:30:00')).toThrow(
+		/UTC timestamp/,
+	)
+	expect(() => normalizeJobExpiresAt('2026-02-30T00:00:00Z')).toThrow(
+		/calendar date/,
+	)
+
+	const now = new Date('2026-04-20T18:30:00.000Z')
+	const base: JobRecord = {
+		version: 1,
+		id: 'job-1',
+		userId: 'user-1',
+		name: 'Expiring job',
+		sourceId: 'source-1',
+		publishedCommit: null,
+		storageId: 'job:job-1',
+		schedule: { type: 'interval', every: '15m' },
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: '2026-04-20T18:30:00.000Z',
+		createdAt: '2026-04-20T00:00:00.000Z',
+		updatedAt: '2026-04-20T00:00:00.000Z',
+		nextRunAt: '2026-04-20T18:00:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+	}
+	expect(isJobExpired(base, now)).toBe(true)
+	expect(isJobDue(base, now)).toBe(false)
+	expect(
+		isJobDue({ ...base, expiresAt: '2026-04-20T19:00:00.000Z' }, now),
+	).toBe(true)
+	expect(isJobDue({ ...base, expiresAt: null }, now)).toBe(true)
 })

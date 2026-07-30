@@ -39,6 +39,15 @@ function packageOwnershipKey(userId: string, packageId: string) {
 	return `${userId}\0${packageId}`
 }
 
+function comparePackageKeys(
+	left: { userId: string; packageId: string },
+	right: { userId: string; packageId: string },
+) {
+	const byUser = left.userId.localeCompare(right.userId)
+	if (byUser !== 0) return byUser
+	return left.packageId.localeCompare(right.packageId)
+}
+
 function createAuditTestEnv(input: {
 	packages: Array<SavedPackageRow>
 	buckets: Array<StorageBucketRow>
@@ -61,14 +70,22 @@ function createAuditTestEnv(input: {
 					normalized.includes('from saved_packages') &&
 					normalized.includes('has_app = 1')
 				) {
-					const limit = Number(params[0] ?? input.packages.length)
+					const hasKeyset = normalized.includes('user_id > ?')
+					const limit = Number(
+						params[hasKeyset ? 3 : 0] ?? input.packages.length,
+					)
+					const startAfter = hasKeyset
+						? {
+								userId: String(params[0]),
+								packageId: String(params[2]),
+							}
+						: null
 					const rows = input.packages
 						.filter((row) => row.hasApp === 1)
-						.sort((left, right) => {
-							const byUser = left.userId.localeCompare(right.userId)
-							if (byUser !== 0) return byUser
-							return left.packageId.localeCompare(right.packageId)
-						})
+						.filter((row) =>
+							startAfter ? comparePackageKeys(row, startAfter) > 0 : true,
+						)
+						.sort(comparePackageKeys)
 						.slice(0, limit)
 						.map((row) => ({
 							userId: row.userId,
@@ -140,6 +157,10 @@ function stubEstimate(bytes: number | Error) {
 			return { estimatedBytes: bytes }
 		},
 	}
+}
+
+function neverResolves<T>(): Promise<T> {
+	return new Promise(() => {})
 }
 
 test('package storage audit report probes legacy buckets, ambient imports, and orphans', async () => {
@@ -264,6 +285,7 @@ test('package storage audit report probes legacy buckets, ambient imports, and o
 	})
 	expect(body).toMatchObject({
 		ok: true,
+		nextStartAfter: null,
 		totals: {
 			appPackages: 5,
 			nonEmptyLegacyBuckets: 1,
@@ -328,7 +350,7 @@ test('package storage audit report probes legacy buckets, ambient imports, and o
 	}
 })
 
-test('package storage audit report supports limit truncation', async () => {
+test('package storage audit report supports limit truncation and keyset paging', async () => {
 	const packages = Array.from({ length: 4 }, (_, index) => ({
 		userId: 'user-a',
 		packageId: `pkg-${String(index)}`,
@@ -342,15 +364,18 @@ test('package storage audit report supports limit truncation', async () => {
 		files: { 'index.ts': 'export const ok = true\n' },
 	})
 
-	await expect(
-		buildPackageStorageAuditReport({
-			env,
-			baseUrl: 'https://example.com',
-			limit: 2,
-		}),
-	).resolves.toMatchObject({
+	const page1 = await buildPackageStorageAuditReport({
+		env,
+		baseUrl: 'https://example.com',
+		limit: 2,
+	})
+	expect(page1).toMatchObject({
 		ok: true,
 		packages: [{ packageId: 'pkg-0' }, { packageId: 'pkg-1' }],
+		nextStartAfter: JSON.stringify({
+			userId: 'user-a',
+			packageId: 'pkg-1',
+		}),
 		totals: {
 			appPackages: 2,
 			nonEmptyLegacyBuckets: 0,
@@ -359,5 +384,83 @@ test('package storage audit report supports limit truncation', async () => {
 			truncated: true,
 			orphanTruncated: false,
 		},
+	})
+
+	const page2 = await buildPackageStorageAuditReport({
+		env,
+		baseUrl: 'https://example.com',
+		limit: 2,
+		startAfter: page1.nextStartAfter,
+	})
+	expect(page2).toMatchObject({
+		ok: true,
+		packages: [{ packageId: 'pkg-2' }, { packageId: 'pkg-3' }],
+		nextStartAfter: null,
+		totals: {
+			appPackages: 2,
+			truncated: false,
+		},
+	})
+})
+
+test('package storage audit deadlines hanging probes and source scans', async () => {
+	const packages: Array<SavedPackageRow> = [
+		{
+			userId: 'user-a',
+			packageId: 'pkg-hang-probe',
+			kodyId: 'hang-probe',
+			sourceId: 'source-ok',
+			hasApp: 1,
+		},
+		{
+			userId: 'user-a',
+			packageId: 'pkg-hang-scan',
+			kodyId: 'hang-scan',
+			sourceId: 'source-hang',
+			hasApp: 1,
+		},
+	]
+	const env = createAuditTestEnv({ packages, buckets: [] })
+	mockModule.storageRunnerRpc.mockImplementation(
+		(input: { storageId: string }) => {
+			if (input.storageId === 'pkg-hang-probe') {
+				return { getEstimatedBytes: () => neverResolves() }
+			}
+			return stubEstimate(4096)
+		},
+	)
+	mockModule.loadPackageSourceBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			if (input.sourceId === 'source-hang') return neverResolves()
+			return {
+				files: { 'index.ts': 'export const ok = true\n' },
+			}
+		},
+	)
+
+	const report = await buildPackageStorageAuditReport({
+		env,
+		baseUrl: 'https://example.com',
+		limit: 10,
+		budgets: {
+			legacyBucketProbeMs: 20,
+			sourceScanMs: 20,
+		},
+	})
+
+	expect(report.packages).toHaveLength(2)
+	expect(report.nextStartAfter).toBeNull()
+	const byId = new Map(report.packages.map((row) => [row.packageId, row]))
+	expect(byId.get('pkg-hang-probe')).toMatchObject({
+		legacyBucketBytes: null,
+		legacyBucketProbeError: 'timed out after 20ms',
+		ambientStorageImportFiles: [],
+		sourceScanError: null,
+	})
+	expect(byId.get('pkg-hang-scan')).toMatchObject({
+		legacyBucketBytes: 4096,
+		legacyBucketProbeError: null,
+		ambientStorageImportFiles: [],
+		sourceScanError: 'timed out after 20ms',
 	})
 })

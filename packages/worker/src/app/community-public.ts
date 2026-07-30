@@ -7,7 +7,10 @@ import {
 	type PublicProfilePackageItem,
 } from '#app/community-public-types.ts'
 import { routes } from '#app/routes.ts'
-import { parseUserAvatarCacheKey } from '#worker/community/avatar.ts'
+import {
+	buildUserAvatarUrl,
+	getOwnerUsernameFromListingName,
+} from '#worker/community/public-urls.ts'
 import {
 	type CommunityActivityItem,
 	type CommunityListingWithAggregates,
@@ -20,6 +23,10 @@ export {
 	type OnboardingFeaturedListing,
 	type PublicCommunityListing,
 } from '#app/community-public-types.ts'
+export {
+	buildUserAvatarUrl,
+	getOwnerUsernameFromListingName,
+} from '#worker/community/public-urls.ts'
 
 /**
  * Public payload mappers deliberately rebuild objects field-by-field so
@@ -27,19 +34,6 @@ export {
  * into public JSON: stable user ids are unsalted email hashes and package
  * ids are the owner's private handles.
  */
-export function buildUserAvatarUrl(input: {
-	username: string
-	avatarKey: string | null
-}): string | null {
-	if (!input.avatarKey) return null
-	const cacheKey = parseUserAvatarCacheKey(input.avatarKey)
-	if (!cacheKey) return null
-	return routes.profileAvatar.href({
-		username: input.username,
-		cacheKey,
-	})
-}
-
 export function toPublicCommunityProfile(
 	profile: CommunityProfileRecord,
 ): PublicCommunityProfile {
@@ -103,13 +97,6 @@ export function toPublicCommunityStargazer(
 		}),
 		starredAt: stargazer.starredAt,
 	}
-}
-
-const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
-
-export function getOwnerUsernameFromListingName(name: string) {
-	const match = scopedPackageNamePattern.exec(name.trim())
-	return match?.[1] ?? 'unknown'
 }
 
 export function truncateCommunityText(text: string, maxLength: number) {

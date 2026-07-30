@@ -163,6 +163,7 @@ export async function runJobScheduleWatchdogTick(input: {
 	const stuckPage = await collectPagedJobRows({
 		page: (afterId) =>
 			listStuckSkippedJobRowsPage(input.env.APP_DB, {
+				nowIso,
 				afterId,
 				limit: jobScheduleWatchdogPageSize,
 			}),

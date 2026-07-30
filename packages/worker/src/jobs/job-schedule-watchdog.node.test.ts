@@ -77,6 +77,7 @@ function jobRow(input: {
 			enabled: true,
 			killSwitchEnabled: false,
 			preserved: false,
+			expiresAt: null,
 			createdAt: '2026-07-16T15:00:00.000Z',
 			updatedAt: '2026-07-23T17:00:00.000Z',
 			nextRunAt: input.nextRunAt,

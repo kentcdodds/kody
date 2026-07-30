@@ -132,6 +132,7 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 		enabled: false,
 		killSwitchEnabled: true,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-20T10:00:00.000Z',
 		updatedAt: '2026-04-20T12:00:00.000Z',
 		nextRunAt: '2026-04-21T09:00:00.000Z',
@@ -207,6 +208,8 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 		enabled: false,
 		kill_switch_enabled: true,
 		preserved: false,
+		expires_at: null,
+		expired: false,
 		created_at: '2026-04-20T10:00:00.000Z',
 		updated_at: '2026-04-20T12:00:00.000Z',
 		next_run_at: '2026-04-21T09:00:00.000Z',
@@ -231,6 +234,7 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-20T10:00:00.000Z',
 		updatedAt: '2026-04-20T12:00:00.000Z',
 		nextRunAt: '2026-04-22T18:30:00.000Z',
@@ -335,6 +339,7 @@ test('job_run_now executes jobs immediately and preserves failed one-off jobs fo
 			enabled: true,
 			killSwitchEnabled: false,
 			preserved: false,
+			expiresAt: null,
 			createdAt: '2026-04-20T10:00:00.000Z',
 			updatedAt: '2026-04-20T10:05:00.000Z',
 			lastRunAt: '2026-04-20T10:05:00.000Z',
@@ -429,6 +434,7 @@ test('job_run_now executes jobs immediately and preserves failed one-off jobs fo
 			enabled: true,
 			killSwitchEnabled: false,
 			preserved: false,
+			expiresAt: null,
 			createdAt: '2026-04-20T09:00:00.000Z',
 			updatedAt: '2026-04-20T10:00:00.000Z',
 			lastRunAt: '2026-04-20T10:00:00.000Z',
@@ -699,6 +705,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 				enabled: true,
 				killSwitchEnabled: false,
 				preserved: false,
+				expiresAt: null,
 				createdAt: '2026-04-20T10:00:00.000Z',
 				updatedAt: '2026-04-20T10:05:00.000Z',
 				nextRunAt: '2026-04-20T18:30:00.000Z',
@@ -737,6 +744,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			enabled: true,
 			killSwitchEnabled: false,
 			preserved: false,
+			expiresAt: null,
 			createdAt: '2026-04-20T10:00:00.000Z',
 			updatedAt: '2026-04-20T10:05:00.000Z',
 			nextRunAt: '2026-04-20T18:30:00.000Z',
@@ -889,6 +897,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 				enabled: true,
 				killSwitchEnabled: false,
 				preserved: false,
+				expiresAt: null,
 				createdAt: '2026-04-20T10:00:00.000Z',
 				updatedAt: '2026-04-20T10:05:00.000Z',
 				nextRunAt: '2026-04-20T18:30:00.000Z',
@@ -988,4 +997,157 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 	} finally {
 		vi.useRealTimers()
 	}
+})
+
+test('job schedule/update/list/get round-trip expires_at and surface expired state', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+	mockModule.createJob.mockResolvedValue({
+		id: 'job-expiring',
+		name: 'Expiring digest',
+		sourceId: 'source-expiring',
+		publishedCommit: null,
+		storageId: 'job:job-expiring',
+		schedule: {
+			type: 'interval',
+			every: '1h',
+		},
+		scheduleSummary: 'Runs every 1h',
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: '2026-04-21T00:00:00.000Z',
+		createdAt: '2026-04-20T18:30:00.000Z',
+		updatedAt: '2026-04-20T18:30:00.000Z',
+		nextRunAt: '2026-04-20T19:30:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+	})
+
+	const scheduled = await jobScheduleCapability.handler(
+		{
+			name: 'Expiring digest',
+			code: 'export default async () => ({ ok: true })',
+			schedule: { type: 'interval', every: '1h' },
+			expires_at: '2026-04-21T00:00:00Z',
+		},
+		{ env, callerContext },
+	)
+	expect(mockModule.createJob).toHaveBeenCalledWith({
+		env,
+		callerContext,
+		body: {
+			name: 'Expiring digest',
+			code: 'export default async () => ({ ok: true })',
+			params: undefined,
+			schedule: { type: 'interval', every: '1h' },
+			timezone: null,
+			expiresAt: '2026-04-21T00:00:00Z',
+		},
+	})
+	expect(scheduled).toMatchObject({
+		job_id: 'job-expiring',
+		expires_at: '2026-04-21T00:00:00.000Z',
+	})
+
+	mockModule.updateJob.mockResolvedValue({
+		id: 'job-expiring',
+		name: 'Expiring digest',
+		sourceId: 'source-expiring',
+		publishedCommit: null,
+		storageId: 'job:job-expiring',
+		schedule: { type: 'interval', every: '1h' },
+		scheduleSummary: 'Runs every 1h',
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: null,
+		createdAt: '2026-04-20T18:30:00.000Z',
+		updatedAt: '2026-04-20T18:31:00.000Z',
+		nextRunAt: '2026-04-20T19:30:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+	})
+	const cleared = await jobUpdateCapability.handler(
+		{ id: 'job-expiring', expires_at: null },
+		{ env, callerContext },
+	)
+	expect(mockModule.updateJob).toHaveBeenCalledWith({
+		env,
+		callerContext,
+		body: {
+			id: 'job-expiring',
+			name: undefined,
+			code: undefined,
+			params: undefined,
+			schedule: undefined,
+			timezone: undefined,
+			enabled: undefined,
+			killSwitchEnabled: undefined,
+			preserved: undefined,
+			expiresAt: null,
+		},
+	})
+	expect(cleared).toMatchObject({
+		job_id: 'job-expiring',
+		expires_at: null,
+		expired: false,
+	})
+
+	mockModule.inspectJobsForUser.mockResolvedValue({
+		jobs: [
+			{
+				id: 'job-expired',
+				name: 'Expired job',
+				sourceId: 'source-expired',
+				publishedCommit: null,
+				storageId: 'job:job-expired',
+				schedule: { type: 'interval', every: '1h' },
+				scheduleSummary: 'Runs every 1h',
+				timezone: 'UTC',
+				enabled: false,
+				killSwitchEnabled: false,
+				preserved: false,
+				expiresAt: '2026-04-20T18:00:00.000Z',
+				createdAt: '2026-04-20T10:00:00.000Z',
+				updatedAt: '2026-04-20T18:30:00.000Z',
+				nextRunAt: '2026-04-20T19:00:00.000Z',
+				runCount: 1,
+				successCount: 1,
+				errorCount: 0,
+			},
+		],
+		alarm: {
+			bindingAvailable: true,
+			status: 'idle',
+			storedUserId: 'user-123',
+			alarmScheduledFor: null,
+			nextRunnableJobId: null,
+			nextRunnableRunAt: null,
+			alarmInSync: true,
+		},
+	})
+	const listed = await jobListCapability.handler({}, { env, callerContext })
+	expect(listed.jobs[0]).toMatchObject({
+		id: 'job-expired',
+		expires_at: '2026-04-20T18:00:00.000Z',
+		expired: true,
+		due_now: false,
+		enabled: false,
+	})
+	vi.useRealTimers()
 })

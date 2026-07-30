@@ -25,6 +25,7 @@ function createJob(schedule: JobRecord['schedule']): JobRecord {
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-07-29T12:00:00.000Z',
 		updatedAt: '2026-07-29T12:00:00.000Z',
 		nextRunAt: '2026-07-29T12:00:00.000Z',

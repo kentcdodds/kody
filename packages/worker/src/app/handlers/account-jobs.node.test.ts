@@ -13,6 +13,8 @@ const adHocJob = {
 	enabled: true,
 	killSwitchEnabled: false,
 	preserved: false,
+	expiresAt: null,
+	expired: false,
 	createdAt: new Date(0).toISOString(),
 	updatedAt: new Date(0).toISOString(),
 	nextRunAt: new Date('2026-07-26T09:00:00.000Z').toISOString(),
@@ -234,6 +236,8 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 				enabled: true,
 				killSwitchEnabled: false,
 				preserved: false,
+				expiresAt: null,
+				expired: false,
 			}),
 			expect.objectContaining({
 				id: 'package-job:pkg-1:nightly',
@@ -379,6 +383,8 @@ test('jobs API mutations are user-scoped for ad-hoc jobs and kill switch', async
 		...packageJob,
 		killSwitchEnabled: true,
 		preserved: false,
+		expiresAt: null,
+		expired: false,
 	})
 	const killSwitchResponse = await handler.handler({
 		request: new Request('https://example.com/account/jobs.json', {
@@ -389,6 +395,8 @@ test('jobs API mutations are user-scoped for ad-hoc jobs and kill switch', async
 				id: packageJob.id,
 				killSwitchEnabled: true,
 				preserved: false,
+				expiresAt: null,
+				expired: false,
 			}),
 		}),
 	})

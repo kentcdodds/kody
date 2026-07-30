@@ -1,3 +1,4 @@
+import { parseJsonWithFallback } from '@kody-internal/shared/json-parsing.ts'
 import {
 	assertOpenApiBindingWithinSizeLimit,
 	parseOpenApiBinding,
@@ -120,12 +121,18 @@ function toOpenApiBinding(
 ): OpenApiBinding | null {
 	const operations: Array<unknown> = []
 	for (const operation of row.operations) {
-		const parsed = parseJson(operation.operation_json)
+		const parsed = parseJsonWithFallback<unknown>(
+			operation.operation_json,
+			null,
+		)
 		if (parsed == null) return null
 		operations.push(parsed)
 	}
-	const auth = parseJson(row.binding.auth_json)
-	const selection = parseJson(row.binding.selection_json)
+	const auth = parseJsonWithFallback<unknown>(row.binding.auth_json, null)
+	const selection = parseJsonWithFallback<unknown>(
+		row.binding.selection_json,
+		null,
+	)
 	if (auth == null || selection == null) return null
 
 	return parseOpenApiBinding(
@@ -144,12 +151,4 @@ function toOpenApiBinding(
 		},
 		row.binding.name,
 	)
-}
-
-function parseJson(raw: string): unknown {
-	try {
-		return JSON.parse(raw)
-	} catch {
-		return null
-	}
 }

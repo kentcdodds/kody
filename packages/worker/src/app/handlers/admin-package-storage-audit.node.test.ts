@@ -49,10 +49,15 @@ function createAdminActor(roles: Array<RoleName>) {
 const { createAdminPackageStorageAuditApiHandler } =
 	await import('./admin-package-storage-audit.ts')
 
-function createHandlerRequest(input: { limit?: number } = {}) {
+function createHandlerRequest(
+	input: { limit?: number; startAfter?: string } = {},
+) {
 	const url = new URL('https://example.com/admin/package-storage-audit.json')
 	if (input.limit !== undefined) {
 		url.searchParams.set('limit', String(input.limit))
+	}
+	if (input.startAfter !== undefined) {
+		url.searchParams.set('startAfter', input.startAfter)
 	}
 	return {
 		request: new Request(url, {
@@ -71,6 +76,7 @@ test('admin package storage audit route requires admin and returns the report JS
 		ok: true as const,
 		packages: [],
 		orphanAppBuckets: [],
+		nextStartAfter: null,
 		totals: {
 			appPackages: 0,
 			nonEmptyLegacyBuckets: 0,
@@ -98,13 +104,17 @@ test('admin package storage audit route requires admin and returns the report JS
 	)
 	mockModule.buildPackageStorageAuditReport.mockResolvedValue(report)
 
-	const response = await handler.handler(createHandlerRequest({ limit: 50 }))
+	const cursor = JSON.stringify({ userId: 'user-a', packageId: 'pkg-1' })
+	const response = await handler.handler(
+		createHandlerRequest({ limit: 50, startAfter: cursor }),
+	)
 	expect(response.status).toBe(200)
 	await expect(response.json()).resolves.toEqual(report)
 	expect(mockModule.buildPackageStorageAuditReport).toHaveBeenCalledWith({
 		env,
 		baseUrl: 'https://example.com',
 		limit: 50,
+		startAfter: cursor,
 	})
 })
 
@@ -118,6 +128,7 @@ test('admin package storage audit route clamps limit and applies the default', a
 		ok: true,
 		packages: [],
 		orphanAppBuckets: [],
+		nextStartAfter: null,
 		totals: {
 			appPackages: 0,
 			nonEmptyLegacyBuckets: 0,
@@ -130,11 +141,11 @@ test('admin package storage audit route clamps limit and applies the default', a
 
 	await handler.handler(createHandlerRequest({ limit: 9999 }))
 	expect(mockModule.buildPackageStorageAuditReport).toHaveBeenLastCalledWith(
-		expect.objectContaining({ limit: 500 }),
+		expect.objectContaining({ limit: 500, startAfter: null }),
 	)
 
 	await handler.handler(createHandlerRequest())
 	expect(mockModule.buildPackageStorageAuditReport).toHaveBeenLastCalledWith(
-		expect.objectContaining({ limit: 200 }),
+		expect.objectContaining({ limit: 200, startAfter: null }),
 	)
 })

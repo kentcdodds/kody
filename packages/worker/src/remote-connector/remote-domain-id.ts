@@ -1,17 +1,21 @@
 import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
+import { synthesizeDomainId } from '@kody-internal/shared/domain-id.ts'
 import { slugWithStableDisambiguator } from '@kody-internal/shared/stable-slug.ts'
 
 export function remoteConnectorInstanceSlug(ref: RemoteConnectorRef): string {
-	return slugWithStableDisambiguator({
+	return synthesizeDomainId({
+		namespace: 'remote',
 		value: ref.instanceId,
 		fallback: 'instance',
-		allowedPattern: /^[\w-]+$/,
-		replacementPattern: /[^\w-]+/g,
-	})
+	}).kodyName
 }
 
 export function remoteConnectorDomainId(ref: RemoteConnectorRef): string {
-	return `remote:${remoteConnectorKodyName(ref)}`
+	return synthesizeDomainId({
+		namespace: 'remote',
+		value: ref.instanceId,
+		fallback: 'instance',
+	}).domainId
 }
 
 export function remoteConnectorKodyName(ref: RemoteConnectorRef): string {

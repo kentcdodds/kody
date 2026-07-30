@@ -909,6 +909,8 @@ export type AccountJobListItem = {
 	enabled: boolean
 	killSwitchEnabled: boolean
 	preserved: boolean
+	expiresAt: string | null
+	expired: boolean
 	dueNow: boolean
 	lastRunStatus: 'success' | 'error' | null
 	nextRunAt: string

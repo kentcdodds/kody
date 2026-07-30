@@ -19,7 +19,8 @@ secret reference, then run work through **execute**.
   declare package-owned jobs, and can optionally expose an app/UI surface. For
   scheduled work that should not become a saved package, use the built-in
   `job_schedule` capability. `job_schedule_once` is the one-off convenience
-  alias, `job_run_now` can trigger an existing job immediately for debugging or
+  alias, optional `expires_at` auto-disables after a UTC timestamp,
+  `job_run_now` can trigger an existing job immediately for debugging or
   catch-up runs, and `job_update` / `job_delete` let you correct or remove an
   existing scheduled job by id.
 - **Prefer a close community package before creating one.** Community listings

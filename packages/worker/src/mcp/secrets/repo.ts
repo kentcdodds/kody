@@ -383,52 +383,6 @@ export async function listPackageScopeSecretMetadata(input: {
 	return (results ?? []).map(mapSecretMetadataRow)
 }
 
-export async function deletePackageScopeSecretBuckets(input: {
-	db: D1Database
-	userId: string
-	packageId: string
-}) {
-	const result = await input.db
-		.prepare(
-			`DELETE FROM secret_buckets
-			WHERE user_id = ? AND scope = 'package' AND binding_key = ?`,
-		)
-		.bind(input.userId, input.packageId)
-		.run()
-	return result.meta.changes ?? 0
-}
-
-export async function removePackageFromSecretApprovals(input: {
-	db: D1Database
-	userId: string
-	packageId: string
-}) {
-	const result = await input.db
-		.prepare(
-			`UPDATE secret_entries AS e
-			SET allowed_packages = (
-				SELECT json_group_array(value)
-				FROM json_each(e.allowed_packages)
-				WHERE value <> ?
-			),
-			updated_at = CURRENT_TIMESTAMP
-			WHERE e.bucket_id IN (
-				SELECT id
-				FROM secret_buckets
-				WHERE user_id = ? AND scope = 'user'
-			)
-			AND json_valid(e.allowed_packages)
-			AND EXISTS (
-				SELECT 1
-				FROM json_each(e.allowed_packages)
-				WHERE value = ?
-			)`,
-		)
-		.bind(input.packageId, input.userId, input.packageId)
-		.run()
-	return result.meta.changes ?? 0
-}
-
 function mapSecretBucketRow(row: Record<string, unknown>): SecretBucketRow {
 	return {
 		id: String(row['id']),

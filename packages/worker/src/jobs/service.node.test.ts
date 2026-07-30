@@ -781,17 +781,18 @@ function createDatabase(
 									enabled: params[10],
 									kill_switch_enabled: params[11],
 									preserved: params[12],
-									caller_context_json: params[13],
-									created_at: params[14],
-									updated_at: params[15],
-									last_run_at: params[16],
-									last_run_status: params[17],
-									last_run_error: params[18],
-									last_duration_ms: params[19],
-									next_run_at: params[20],
-									run_count: params[21],
-									success_count: params[22],
-									error_count: params[23],
+									expires_at: params[13],
+									caller_context_json: params[14],
+									created_at: params[15],
+									updated_at: params[16],
+									last_run_at: params[17],
+									last_run_status: params[18],
+									last_run_error: params[19],
+									last_duration_ms: params[20],
+									next_run_at: params[21],
+									run_count: params[22],
+									success_count: params[23],
+									error_count: params[24],
 								}
 								upsert(
 									'jobs',
@@ -802,16 +803,48 @@ function createDatabase(
 								)
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
+							if (
+								query.startsWith('UPDATE jobs SET') &&
+								query.includes('expires_at IS NOT NULL') &&
+								query.includes('expires_at <= ?')
+							) {
+								const nowIso = String(params[0])
+								const userId = params[1]
+								const cutoff = String(params[2])
+								let changes = 0
+								for (const row of selectAll(
+									'jobs',
+									(existing) =>
+										existing['user_id'] === userId &&
+										Number(existing['enabled']) === 1 &&
+										existing['expires_at'] != null &&
+										String(existing['expires_at']) <= cutoff,
+								)) {
+									upsert(
+										'jobs',
+										(existing) =>
+											existing['id'] === row['id'] &&
+											existing['user_id'] === row['user_id'],
+										{
+											...row,
+											enabled: 0,
+											updated_at: nowIso,
+										},
+									)
+									changes += 1
+								}
+								return { meta: { changes, last_row_id: 0 } }
+							}
 							if (query.startsWith('UPDATE jobs SET')) {
 								const existingJob = selectOne(
 									'jobs',
 									(existing) =>
-										existing['id'] === params[21] &&
-										existing['user_id'] === params[22],
+										existing['id'] === params[22] &&
+										existing['user_id'] === params[23],
 								)
 								const row = {
-									id: params[21],
-									user_id: params[22],
+									id: params[22],
+									user_id: params[23],
 									name: params[0],
 									source_id: params[1],
 									published_commit: params[2],
@@ -823,17 +856,18 @@ function createDatabase(
 									enabled: params[8],
 									kill_switch_enabled: params[9],
 									preserved: params[10],
-									caller_context_json: params[11],
-									updated_at: params[12],
-									last_run_at: params[13],
-									last_run_status: params[14],
-									last_run_error: params[15],
-									last_duration_ms: params[16],
-									next_run_at: params[17],
-									run_count: params[18],
-									success_count: params[19],
-									error_count: params[20],
-									created_at: existingJob?.['created_at'] ?? params[12],
+									expires_at: params[11],
+									caller_context_json: params[12],
+									updated_at: params[13],
+									last_run_at: params[14],
+									last_run_status: params[15],
+									last_run_error: params[16],
+									last_duration_ms: params[17],
+									next_run_at: params[18],
+									run_count: params[19],
+									success_count: params[20],
+									error_count: params[21],
+									created_at: existingJob?.['created_at'] ?? params[13],
 								}
 								upsert(
 									'jobs',
@@ -2620,6 +2654,7 @@ test('executeJobOnce refreshes repo sessions when base commit moves', async () =
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -2838,6 +2873,7 @@ test('executeJobOnce rebuilds stale published job bundles after the source commi
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -2927,6 +2963,7 @@ test('executeJobOnce executes package-backed jobs from published artifacts', asy
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3061,6 +3098,7 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3237,6 +3275,7 @@ test('executeJobOnce succeeds for repo-backed jobs with repo-session absolute pa
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3404,6 +3443,7 @@ test('executeJobOnce fails instead of reusing a stale repo session when discard 
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3524,6 +3564,7 @@ test('executeJobOnce bundles and runs ESM repo-backed job entrypoints', async ()
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',
@@ -3723,6 +3764,7 @@ test('executeJobOnce returns an error when kody secret policy would reject execu
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-16T00:00:00.000Z',
 		updatedAt: '2026-04-16T00:00:00.000Z',
 		nextRunAt: '2026-04-17T15:00:00.000Z',

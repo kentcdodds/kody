@@ -65,7 +65,8 @@ apps remain package-owned behavior.
 Scheduling alone does not require a package. Use `job_schedule` directly for a
 genuinely ad hoc or one-off job, or for a simple self-contained schedule that is
 not tied to reusable package behavior. `job_schedule_once` is the one-off
-convenience form.
+convenience form. Optional `expires_at` (UTC ISO) stops scheduling and
+auto-disables the job after that time without requiring the job to self-disable.
 
 Use `guide: "package_authoring"` for package shape, README `## Intent`,
 visibility guidance, and the secret-using package approval checklist

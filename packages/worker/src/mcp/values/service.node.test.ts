@@ -5,13 +5,8 @@ import {
 	getStorageBindingKey,
 	resolveStorageScopeOrder,
 } from '#mcp/storage-bindings.ts'
-import {
-	deleteAllAppScopedValues,
-	deleteValue,
-	getValue,
-	listValues,
-	saveValue,
-} from './service.ts'
+import { deleteAllAppScopedValues } from '#worker/package-config-cleanup.ts'
+import { deleteValue, getValue, listValues, saveValue } from './service.ts'
 import { type ValueBucketRow, type ValueEntryRow } from './types.ts'
 
 function createValueTestDb() {

@@ -157,13 +157,7 @@ export const importBoundaries = [
 		forbiddenPrefix: '#app/',
 		message:
 			'#mcp/* must not import from #app/*. Extract the shared code into a neutral #worker/* module (see docs/contributing/import-boundaries.md).',
-		allowedSpecifiers: [
-			{
-				specifier: '#app/community-public.ts',
-				reason:
-					'Builds public avatar and listing URLs from the typed route table in #app/routes.ts, which is app-layer by definition. TODO: extract the URL builders behind a neutral interface.',
-			},
-		],
+		allowedSpecifiers: [],
 		/**
 		 * Never allowlisted: request handlers are the top of the app layer, so
 		 * a capability that needs handler logic is always the wrong shape.
@@ -178,18 +172,7 @@ export const importBoundaries = [
 		forbiddenPrefix: '#mcp/',
 		message:
 			'#worker/package-registry/* must not import from #mcp/*. Extract the shared code into a neutral #worker/* module (see docs/contributing/import-boundaries.md).',
-		allowedSpecifiers: [
-			{
-				specifier: '#mcp/secrets/service.ts',
-				reason:
-					'Package deletion revokes package-scoped secrets and approvals, which the MCP secrets service owns. TODO: move secret storage into a neutral #worker/secrets module.',
-			},
-			{
-				specifier: '#mcp/values/service.ts',
-				reason:
-					'Package deletion removes app-scoped values (package config), which the MCP values service owns. TODO: move value storage into a neutral #worker/values module.',
-			},
-		],
+		allowedSpecifiers: [],
 		neverAllowedPrefix: null,
 		neverAllowedMessage: null,
 	},

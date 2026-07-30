@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { buildUserAvatarUrl } from '#app/community-public.ts'
+import { buildUserAvatarUrl } from '#worker/community/public-urls.ts'
 import {
 	type CommunityProfileRecord,
 	type PublicProfilePackage,

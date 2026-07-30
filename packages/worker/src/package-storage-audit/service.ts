@@ -9,6 +9,8 @@ import {
 
 export const defaultPackageStorageAuditLimit = 200
 export const maxPackageStorageAuditLimit = 500
+export const defaultLegacyBucketProbeTimeoutMs = 10_000
+export const defaultSourceScanTimeoutMs = 20_000
 const maxOrphanAppBuckets = 500
 const maxConcurrentPackageAuditProbes = 5
 
@@ -32,6 +34,7 @@ export type PackageStorageAuditReport = {
 	ok: true
 	packages: Array<PackageStorageAuditPackageRow>
 	orphanAppBuckets: Array<PackageStorageAuditOrphanBucket>
+	nextStartAfter: string | null
 	totals: {
 		appPackages: number
 		nonEmptyLegacyBuckets: number
@@ -42,6 +45,11 @@ export type PackageStorageAuditReport = {
 	}
 }
 
+export type PackageStorageAuditBudgets = {
+	legacyBucketProbeMs?: number
+	sourceScanMs?: number
+}
+
 type AppPackageRow = {
 	userId: string
 	packageId: string
@@ -49,15 +57,30 @@ type AppPackageRow = {
 	sourceId: string
 }
 
+type PackageStorageAuditCursor = {
+	userId: string
+	packageId: string
+}
+
+type ResolvedBudgets = {
+	legacyBucketProbeMs: number
+	sourceScanMs: number
+}
+
 export async function buildPackageStorageAuditReport(input: {
 	env: Env
 	baseUrl: string
 	limit: number
+	startAfter?: string | null
+	budgets?: PackageStorageAuditBudgets
 }): Promise<PackageStorageAuditReport> {
+	const cursor = parseStartAfterCursor(input.startAfter)
+	const budgets = resolveBudgets(input.budgets)
 	const [appPackagePage, orphanPage] = await Promise.all([
 		listAppPackagesForAudit({
 			db: input.env.APP_DB,
 			limit: input.limit,
+			startAfter: cursor,
 		}),
 		listOrphanAppBuckets({ db: input.env.APP_DB }),
 	])
@@ -73,16 +96,25 @@ export async function buildPackageStorageAuditReport(input: {
 					env: input.env,
 					baseUrl: input.baseUrl,
 					row,
+					budgets,
 				}),
 			),
 		)
 		packages.push(...chunkRows)
 	}
 
+	const lastRow = packages.at(-1)
 	return {
 		ok: true,
 		packages,
 		orphanAppBuckets: orphanPage.rows,
+		nextStartAfter:
+			appPackagePage.truncated && lastRow
+				? encodeStartAfterCursor({
+						userId: lastRow.userId,
+						packageId: lastRow.packageId,
+					})
+				: null,
 		totals: {
 			appPackages: packages.length,
 			nonEmptyLegacyBuckets: packages.filter(
@@ -100,21 +132,113 @@ export async function buildPackageStorageAuditReport(input: {
 	}
 }
 
+function resolveBudgets(
+	budgets: PackageStorageAuditBudgets | undefined,
+): ResolvedBudgets {
+	return {
+		legacyBucketProbeMs:
+			budgets?.legacyBucketProbeMs ?? defaultLegacyBucketProbeTimeoutMs,
+		sourceScanMs: budgets?.sourceScanMs ?? defaultSourceScanTimeoutMs,
+	}
+}
+
+function encodeStartAfterCursor(cursor: PackageStorageAuditCursor) {
+	return JSON.stringify({
+		userId: cursor.userId,
+		packageId: cursor.packageId,
+	})
+}
+
+export class InvalidStartAfterCursorError extends Error {}
+
+function parseStartAfterCursor(
+	startAfter: string | null | undefined,
+): PackageStorageAuditCursor | null {
+	if (startAfter == null) return null
+	const trimmed = startAfter.trim()
+	if (trimmed.length === 0) return null
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(trimmed)
+	} catch {
+		throw new InvalidStartAfterCursorError(
+			'Invalid startAfter cursor: expected JSON object.',
+		)
+	}
+	if (
+		!parsed ||
+		typeof parsed !== 'object' ||
+		Array.isArray(parsed) ||
+		typeof (parsed as { userId?: unknown }).userId !== 'string' ||
+		typeof (parsed as { packageId?: unknown }).packageId !== 'string' ||
+		(parsed as { userId: string }).userId.length === 0 ||
+		(parsed as { packageId: string }).packageId.length === 0
+	) {
+		throw new InvalidStartAfterCursorError(
+			'Invalid startAfter cursor: expected { userId, packageId } strings.',
+		)
+	}
+	return {
+		userId: (parsed as { userId: string }).userId,
+		packageId: (parsed as { packageId: string }).packageId,
+	}
+}
+
+async function withDeadline<T>(
+	promise: Promise<T>,
+	timeoutMs: number,
+): Promise<T> {
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	try {
+		return await Promise.race([
+			promise,
+			new Promise<never>((_resolve, reject) => {
+				timeoutId = setTimeout(() => {
+					reject(new Error(`timed out after ${String(timeoutMs)}ms`))
+				}, timeoutMs)
+			}),
+		])
+	} finally {
+		if (timeoutId !== undefined) {
+			clearTimeout(timeoutId)
+		}
+	}
+}
+
 async function listAppPackagesForAudit(input: {
 	db: D1Database
 	limit: number
+	startAfter: PackageStorageAuditCursor | null
 }): Promise<{ rows: Array<AppPackageRow>; truncated: boolean }> {
-	const result = await input.db
-		.prepare(
-			`SELECT user_id AS userId, id AS packageId, kody_id AS kodyId,
-				source_id AS sourceId
-			FROM saved_packages
-			WHERE has_app = 1
-			ORDER BY user_id ASC, id ASC
-			LIMIT ?`,
-		)
-		.bind(input.limit + 1)
-		.all<AppPackageRow>()
+	const result = input.startAfter
+		? await input.db
+				.prepare(
+					`SELECT user_id AS userId, id AS packageId, kody_id AS kodyId,
+						source_id AS sourceId
+					FROM saved_packages
+					WHERE has_app = 1
+						AND (user_id > ? OR (user_id = ? AND id > ?))
+					ORDER BY user_id ASC, id ASC
+					LIMIT ?`,
+				)
+				.bind(
+					input.startAfter.userId,
+					input.startAfter.userId,
+					input.startAfter.packageId,
+					input.limit + 1,
+				)
+				.all<AppPackageRow>()
+		: await input.db
+				.prepare(
+					`SELECT user_id AS userId, id AS packageId, kody_id AS kodyId,
+						source_id AS sourceId
+					FROM saved_packages
+					WHERE has_app = 1
+					ORDER BY user_id ASC, id ASC
+					LIMIT ?`,
+				)
+				.bind(input.limit + 1)
+				.all<AppPackageRow>()
 	const rows = result.results ?? []
 	const truncated = rows.length > input.limit
 	return {
@@ -152,18 +276,21 @@ async function auditAppPackage(input: {
 	env: Env
 	baseUrl: string
 	row: AppPackageRow
+	budgets: ResolvedBudgets
 }): Promise<PackageStorageAuditPackageRow> {
 	const [legacyProbe, sourceScan] = await Promise.all([
 		probeLegacyBucketBytes({
 			env: input.env,
 			userId: input.row.userId,
 			packageId: input.row.packageId,
+			timeoutMs: input.budgets.legacyBucketProbeMs,
 		}),
 		scanAmbientStorageImports({
 			env: input.env,
 			baseUrl: input.baseUrl,
 			userId: input.row.userId,
 			sourceId: input.row.sourceId,
+			timeoutMs: input.budgets.sourceScanMs,
 		}),
 	])
 
@@ -182,13 +309,17 @@ async function probeLegacyBucketBytes(input: {
 	env: Env
 	userId: string
 	packageId: string
+	timeoutMs: number
 }): Promise<{ bytes: number | null; error: string | null }> {
 	try {
-		const estimate = await storageRunnerRpc({
-			env: input.env,
-			userId: input.userId,
-			storageId: input.packageId,
-		}).getEstimatedBytes()
+		const estimate = await withDeadline(
+			storageRunnerRpc({
+				env: input.env,
+				userId: input.userId,
+				storageId: input.packageId,
+			}).getEstimatedBytes(),
+			input.timeoutMs,
+		)
 		return { bytes: estimate.estimatedBytes, error: null }
 	} catch (error) {
 		return { bytes: null, error: getErrorMessage(error) }
@@ -200,14 +331,18 @@ async function scanAmbientStorageImports(input: {
 	baseUrl: string
 	userId: string
 	sourceId: string
+	timeoutMs: number
 }): Promise<{ files: Array<string>; error: string | null }> {
 	try {
-		const loaded = await loadPackageSourceBySourceId({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			sourceId: input.sourceId,
-		})
+		const loaded = await withDeadline(
+			loadPackageSourceBySourceId({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceId: input.sourceId,
+			}),
+			input.timeoutMs,
+		)
 		return {
 			files: collectAmbientStorageImportFiles(loaded.files),
 			error: null,
