@@ -179,3 +179,37 @@ test('entitlement run cache pays the fan-out once across mutating writes', async
 	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(3)
 	expect(cache.reservedBytes).toBe(30)
 })
+
+test('entitlement run cache drops a rejected baseline so later writes retry', async () => {
+	mockModule.listUserStorageBucketIds.mockResolvedValue(['bucket-a'])
+	mockModule.getEstimatedBytes
+		.mockRejectedValueOnce(new Error('transient estimate failure'))
+		.mockRejectedValueOnce(new Error('transient estimate failure'))
+		.mockResolvedValue({ estimatedBytes: 64 })
+	const cache = createStorageBytesEntitlementRunCache()
+	const env = createEstimateEnv()
+
+	await expect(
+		assertStorageRunnerWriteWithinEntitlement({
+			env,
+			userId: 'user-1',
+			email: null,
+			storageId: 'bucket-a',
+			requested: 1,
+			cache,
+		}),
+	).rejects.toThrow(/could not be read/)
+	expect(cache.baseline).toBeNull()
+
+	await expect(
+		assertStorageRunnerWriteWithinEntitlement({
+			env,
+			userId: 'user-1',
+			email: null,
+			storageId: 'bucket-a',
+			requested: 1,
+			cache,
+		}),
+	).resolves.toBeUndefined()
+	expect(cache.reservedBytes).toBe(1)
+})

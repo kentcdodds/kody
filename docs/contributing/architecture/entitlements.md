@@ -271,12 +271,13 @@ Rules:
   `packageStorage().sql` statements (`SELECT` / `EXPLAIN` / schema `PRAGMA`)
   skip this fan-out even when the helper marks the call writable. Mutating SQL
   and `storage.set` in one sandbox share a per-run baseline cache so repeated
-  writes do not rescan every bucket. Each estimate RPC is bounded (~2s) and
-  fails closed on timeout. The counter intentionally does **not** attempt to
-  scan Cloudflare Artifacts repository contents, KV snapshot/bundle bodies, R2
-  object listings beyond `email_messages.raw_size`, or Vectorize: those stores
-  either lack reliable byte metadata or are derived from D1 and are documented
-  in `data-storage.md`.
+  writes do not rescan every bucket. Each estimate read waits at most ~2s via
+  `Promise.race` and fails closed for the caller; the underlying DO RPC is not
+  cancelled if the runtime keeps it running. The counter intentionally does
+  **not** attempt to scan Cloudflare Artifacts repository contents, KV
+  snapshot/bundle bodies, R2 object listings beyond `email_messages.raw_size`,
+  or Vectorize: those stores either lack reliable byte metadata or are derived
+  from D1 and are documented in `data-storage.md`.
 
 ### Concurrency
 

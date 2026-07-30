@@ -779,13 +779,25 @@ export async function assertStorageRunnerWriteWithinEntitlement(input: {
 }) {
 	const cache = input.cache
 	if (cache) {
+		const beginBaselineRead = (storageId: string) => {
+			const pending = readStorageBytesEntitlementBaseline({
+				env: input.env,
+				userId: input.userId,
+				storageId,
+			}).catch((error: unknown) => {
+				// Do not memoize a transient failure for the whole run — the
+				// uncached path recovers on retry; the cache must too.
+				if (cache.baseline === pending) {
+					cache.baseline = null
+				}
+				throw error
+			})
+			cache.baseline = pending
+			return pending
+		}
 		const loadBaseline = () => {
 			if (!cache.baseline) {
-				cache.baseline = readStorageBytesEntitlementBaseline({
-					env: input.env,
-					userId: input.userId,
-					storageId: input.storageId,
-				})
+				return beginBaselineRead(input.storageId)
 			}
 			return cache.baseline
 		}
@@ -793,12 +805,7 @@ export async function assertStorageRunnerWriteWithinEntitlement(input: {
 		if (!baseline.storageIds.has(input.storageId)) {
 			// A write targeted a bucket missing from the first scan (registration
 			// race or first touch). Recompute so the new bucket is counted.
-			cache.baseline = readStorageBytesEntitlementBaseline({
-				env: input.env,
-				userId: input.userId,
-				storageId: input.storageId,
-			})
-			baseline = await cache.baseline
+			baseline = await beginBaselineRead(input.storageId)
 		}
 		await assertWithinStorageBytesEntitlement({
 			db: input.env.APP_DB,
