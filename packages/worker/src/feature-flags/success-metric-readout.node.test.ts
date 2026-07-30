@@ -121,6 +121,7 @@ test('D1 readout splits cohorts and excludes override and mixed users', async ()
 	expect(queries[0]?.params).toEqual([
 		'execute-pre-exec-typecheck',
 		'2026-07-01',
+		'2026-07-15',
 	])
 	expect(queries[1]?.params).toEqual(['execute', '2026-07'])
 })

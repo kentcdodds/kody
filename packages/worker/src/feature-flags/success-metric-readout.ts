@@ -277,14 +277,17 @@ async function loadReadoutFromD1(input: {
 	now: Date
 }): Promise<AdminFeatureFlagMetricReadout> {
 	const window = utcMonthWindow(input.now)
+	// The upper bound mirrors the Analytics Engine path: rows stamped after
+	// the window end (clock skew, backdated writes) must not join the cohorts.
+	const windowEndDay = window.windowEnd.slice(0, 'YYYY-MM-DD'.length)
 	const exposureResult = await input.db
 		.prepare(
 			`SELECT user_id, enabled, source
 			 FROM feature_flag_exposure_rollups
-			 WHERE flag_key = ? AND day >= ?
+			 WHERE flag_key = ? AND day >= ? AND day <= ?
 			 GROUP BY user_id, enabled, source`,
 		)
-		.bind(input.flagKey, window.monthStartDay)
+		.bind(input.flagKey, window.monthStartDay, windowEndDay)
 		.all<D1ExposureRow>()
 	const exposuresByUser = new Map<string, UserExposureState>()
 	for (const row of exposureResult.results ?? []) {
