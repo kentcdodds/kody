@@ -199,7 +199,10 @@ export async function raceWithHostEvaluationDeadline<T>(
 	evaluate: () => Promise<T>,
 	timeoutMs: number,
 ): Promise<T> {
-	if (!Number.isFinite(timeoutMs) || timeoutMs >= maxSupportedExecutorTimeoutMs) {
+	if (
+		!Number.isFinite(timeoutMs) ||
+		timeoutMs >= maxSupportedExecutorTimeoutMs
+	) {
 		return await evaluate()
 	}
 	let timeoutId: ReturnType<typeof setTimeout> | undefined
@@ -207,9 +210,12 @@ export async function raceWithHostEvaluationDeadline<T>(
 		return await Promise.race([
 			evaluate(),
 			new Promise<never>((_resolve, reject) => {
-				timeoutId = setTimeout(() => {
-					reject(new Error(executorSandboxTimeoutMessage))
-				}, Math.max(1, timeoutMs))
+				timeoutId = setTimeout(
+					() => {
+						reject(new Error(executorSandboxTimeoutMessage))
+					},
+					Math.max(1, timeoutMs),
+				)
 			}),
 		])
 	} finally {

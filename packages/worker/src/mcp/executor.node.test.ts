@@ -506,10 +506,7 @@ test('explicit request budgets cap independent roots at four without blocking se
 test('raceWithHostEvaluationDeadline rejects when evaluate never settles', async () => {
 	const startedAtMs = Date.now()
 	await expect(
-		raceWithHostEvaluationDeadline(
-			async () => await new Promise(() => {}),
-			40,
-		),
+		raceWithHostEvaluationDeadline(async () => await new Promise(() => {}), 40),
 	).rejects.toThrow(executorSandboxTimeoutMessage)
 	expect(Date.now() - startedAtMs).toBeLessThan(500)
 })
