@@ -61,11 +61,9 @@ Follow, star, and activity actor columns store the MCP **stable user id**
 (`users.stable_user_id`), matching other community ownership columns such as
 `community_listings.owner_user_id`.
 
-`saved_packages.is_private` defaults to `1` in the migration (safe until
-manifests are read). Package save/publish paths keep the column in sync with
-`package.json#private`. Operators can recompute every row with
-`POST /__maintenance/backfill-package-privacy` (Bearer
-`CAPABILITY_REINDEX_SECRET`), implemented in `maintenance-handler.ts`.
+`saved_packages.is_private` defaulted to `1` when migration 0068 added it.
+Package save and publish paths keep the column in sync with
+`package.json#private`.
 
 ### Derived timeline events
 

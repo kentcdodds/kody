@@ -261,9 +261,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
   intact, and `is_private` (0/1, migration 0068) projecting
-  `package.json#private` for public-profile and timeline filters (migration
-  defaults existing rows to private;
-  `POST /__maintenance/backfill-package-privacy` recomputes from manifests)
+  `package.json#private` for public-profile and timeline filters
 - `community_listings`, `community_forks`, `community_ratings`,
   `community_reports`, `community_bans`: public community package listings and
   moderation (see [Community packages](../community-packages.md))
@@ -818,12 +816,6 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
   for per-entry retriever index rows.
-- `package-retriever-index:v1:{userId}:{scope}` — legacy combined retriever
-  index blob retained as a delete-only cleanup target; active index rows use
-  `package-retriever-index-entry:v1:...`. Package refresh/removal and account
-  deletion delete the known `search` and `context` keys directly, so cleanup
-  does not depend on KV prefix listing. There is no global sweep because that
-  would require cross-user KV enumeration.
 - `derived-cache:v1:usage-rollups:user:{userId}:asof:{YYYY-MM}` — derived
   per-user usage read model written with KV `expirationTtl`; retention is five
   minutes, so immediate account-deletion cleanup is not required.

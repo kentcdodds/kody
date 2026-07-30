@@ -65,24 +65,6 @@ export async function insertSavedPackage(
 		.run()
 }
 
-/** Sets `is_private` without bumping `updated_at` (maintenance backfills). */
-export async function setSavedPackagePrivacy(
-	db: D1Database,
-	input: {
-		userId: string
-		packageId: string
-		isPrivate: boolean
-	},
-) {
-	const result = await db
-		.prepare(
-			`UPDATE saved_packages SET is_private = ? WHERE id = ? AND user_id = ?`,
-		)
-		.bind(input.isPrivate ? 1 : 0, input.packageId, input.userId)
-		.run()
-	return (result.meta.changes ?? 0) > 0
-}
-
 export async function updateSavedPackage(
 	db: D1Database,
 	input: {

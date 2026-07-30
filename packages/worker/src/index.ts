@@ -45,7 +45,6 @@ import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
-import { handlePackagePrivacyBackfillRequest } from './maintenance-handler.ts'
 import {
 	handleMcpAgentSessionBackfillCompleteRequest,
 	handleMcpAgentSessionBackfillRequest,
@@ -297,9 +296,6 @@ const appHandler = withCors({
 			return handleJobReindexRequest(request, env)
 		}
 
-		if (url.pathname === '/__maintenance/backfill-package-privacy') {
-			return handlePackagePrivacyBackfillRequest(request, env)
-		}
 		if (url.pathname === '/__maintenance/dr-restore') {
 			return handleDrRestoreRequest(request, env)
 		}

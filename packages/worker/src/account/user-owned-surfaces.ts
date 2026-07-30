@@ -203,11 +203,6 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 				'package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:',
 			notes: 'Deleted by deleteAllPackageRetrieverCacheEntriesForUser.',
 		},
-		{
-			id: 'package_retriever_index_prefix',
-			binding: 'BUNDLE_ARTIFACTS_KV',
-			prefixTemplate: 'package-retriever-index:v1:{userId}:',
-		},
 	] as const
 
 export const accountUserOwnedR2Surfaces: ReadonlyArray<UserOwnedR2Surface> = [

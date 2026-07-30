@@ -1005,10 +1005,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'package-retriever-manifest:v1:user-aaa:pkg-1:abc123',
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
-		'package-retriever-index:v1:user-aaa:search',
-		'package-retriever-index:v1:user-aaa:context',
 		'package-retriever-index-entry:v1:user-bbb:search:pkg-2:notes',
-		'package-retriever-index:v1:user-bbb:search',
 	]
 	const kv = {
 		async get(key: string) {
@@ -1022,23 +1019,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			const matchingKeys = kvStoreKeys
 				.filter((key) => key.startsWith(prefix))
 				.sort()
-			if (prefix === `package-retriever-index:v1:${userAaa}:`) {
-				const firstPage = matchingKeys.slice(0, 1)
-				if (options?.cursor === 'legacy-page-2') {
-					return {
-						keys: matchingKeys.slice(1).map((name) => ({ name })),
-						list_complete: true,
-						cursor: undefined,
-					}
-				}
-				if (firstPage.length < matchingKeys.length) {
-					return {
-						keys: firstPage.map((name) => ({ name })),
-						list_complete: false,
-						cursor: 'legacy-page-2',
-					}
-				}
-			}
 			if (prefix === 'derived-cache:v1:community-icon:v1:listing-1:') {
 				const start = options?.cursor
 					? Number(options.cursor.replace('icon-page-', '')) - 1
@@ -1394,8 +1374,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		`package-codemod-revert:${userAaa}:item-2`,
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
-		'package-retriever-index:v1:user-aaa:context',
-		'package-retriever-index:v1:user-aaa:search',
 		'package-retriever-manifest:v1:user-aaa:pkg-1:abc123',
 		'source-manifest-snapshot:v1:src-1:abc123',
 		'source-manifest-snapshot:v1:src-1:old456',
@@ -1404,9 +1382,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	])
 	expect(deletedKvKeys).not.toContain(
 		'package-retriever-index-entry:v1:user-bbb:search:pkg-2:notes',
-	)
-	expect(deletedKvKeys).not.toContain(
-		'package-retriever-index:v1:user-bbb:search',
 	)
 	expect(deletedKvKeys).not.toContain(
 		`package-codemod-revert:${userBbb}:item-other`,
@@ -1430,7 +1405,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.updatedRowCounts.community_bans).toBe(1)
 	expect(result.deletedRowCounts.platform_feedback).toBe(1)
 	expect(result.updatedRowCounts.platform_feedback).toBe(1)
-	expect(result.deletedKvKeys).toBe(16)
+	expect(result.deletedKvKeys).toBe(14)
 	expect(result.deletedCommunityAssets).toBe(5)
 	expect(result.deletedEmailBlobs).toBe(2)
 	// Prefix sweeps remove current and historical assets without crossing users.
@@ -1672,52 +1647,6 @@ test('deleteUserAccount fails closed when preflight inventory cannot be read', a
 	])
 	expect(deleteVectors).not.toHaveBeenCalled()
 	expect(clearStorage).not.toHaveBeenCalled()
-})
-
-test('account deletion removes deterministic legacy retriever keys when KV listing fails', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, email: 'a@example.com' }],
-		saved_packages: [
-			{
-				id: 'package-a',
-				user_id: 'user-aaa',
-				kody_id: 'package-a',
-				source_id: 'source-a',
-				has_app: 0,
-			},
-		],
-	})
-	const deletedKeys: Array<string> = []
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				BUNDLE_ARTIFACTS_KV: {
-					get: vi.fn(async () => '{}'),
-					delete: vi.fn(async (key: string) => {
-						deletedKeys.push(key)
-					}),
-					list: vi.fn(async () => {
-						throw new Error('KV list unavailable')
-					}),
-				},
-			}),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toBeInstanceOf(AccountDeletionCleanupError)
-	expect(rows.users).toEqual([
-		expect.objectContaining({
-			id: 1,
-			email: 'a@example.com',
-			deleting_at: expect.any(String),
-		}),
-	])
-	expect(deletedKeys).toEqual(
-		expect.arrayContaining([
-			'package-retriever-index:v1:user-aaa:search',
-			'package-retriever-index:v1:user-aaa:context',
-		]),
-	)
 })
 
 test('atomic D1 deletion rolls back every row when one statement fails', async () => {
