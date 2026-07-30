@@ -371,9 +371,7 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 	})
 
 	const packageInvokeTools = {
-		check: vi.fn(),
 		invoke: vi.fn(),
-		invokeChecked: vi.fn(),
 	}
 	mockModule.createExecutePackageInvokeTools.mockReturnValueOnce(
 		packageInvokeTools,
