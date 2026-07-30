@@ -50,6 +50,7 @@ type ReusableTypecheckService = {
 const entryPath = 'entry.ts'
 const tsconfigPath = 'tsconfig.json'
 const runtimeTypesPath = 'kody-runtime.d.ts'
+const kodyPackageStubsPath = 'kody-package-stubs.d.ts'
 const emptyEntrySource = 'export {}'
 const retainedProjectPaths = new Set([
 	entryPath,
@@ -59,8 +60,18 @@ const retainedProjectPaths = new Set([
 const unresolvedModuleDiagnosticCodes = new Set([2307, 7016, 2792])
 const typecheckModuleSourcePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const maxExecuteTypecheckSourceBytes = 512 * 1024
-const maxExecuteTypecheckPackageFiles = 500
-const maxExecuteTypecheckPackageBytes = 5 * 1024 * 1024
+/**
+ * Budget for writing published package sources into the shared TypeScript
+ * project for typed `kody:` package contract checks. TypeScript program
+ * memory scales at roughly 100-150x the source bytes (measured: 64KB of
+ * package sources ≈ +10MB heap, the 692KB @kentcdodds/discord graph ≈ +90MB),
+ * and Workers isolates are killed at 128MB. Blowing the budget must degrade
+ * to entry-only checking, never OOM the host isolate: an isolate kill aborts
+ * every in-flight execute with no error path, stranding `running` run
+ * records (reconciled minutes later as Interrupted) and hanging MCP calls.
+ */
+const maxTypedPackageGraphBytes = 64 * 1024
+const maxTypedPackageGraphFiles = 24
 const maxPendingExecuteTypechecks = 4
 const maxExecuteTypecheckHoldMs = 2_000
 
@@ -377,35 +388,43 @@ function writePackageSources(input: {
 	}
 }
 
-function assertTypecheckInputWithinLimits(input: {
-	source: string
-	packages: LoadedKodyGraphPackages
-}) {
-	const encoder = new TextEncoder()
-	const sourceBytes = encoder.encode(input.source).byteLength
+function assertEntrySourceWithinLimits(source: string) {
+	const sourceBytes = new TextEncoder().encode(source).byteLength
 	if (sourceBytes > maxExecuteTypecheckSourceBytes) {
 		throw new ExecuteTypecheckError([
 			`entry.ts exceeds the ${maxExecuteTypecheckSourceBytes}-byte pre-execution TypeScript source limit.`,
 		])
 	}
+}
+
+function isTypedPackageGraphWithinBudget(packages: LoadedKodyGraphPackages) {
+	const encoder = new TextEncoder()
 	let packageFiles = 0
 	let packageBytes = 0
-	for (const loaded of input.packages.values()) {
+	for (const loaded of packages.values()) {
 		for (const [path, source] of Object.entries(loaded.files)) {
 			if (!typecheckModuleSourcePattern.test(path)) continue
 			packageFiles += 1
 			packageBytes += encoder.encode(source).byteLength
 			if (
-				packageFiles > maxExecuteTypecheckPackageFiles ||
-				packageBytes > maxExecuteTypecheckPackageBytes
+				packageFiles > maxTypedPackageGraphFiles ||
+				packageBytes > maxTypedPackageGraphBytes
 			) {
-				throw new ExecuteTypecheckError([
-					`Published Kody package types exceed the pre-execution TypeScript graph limit (${maxExecuteTypecheckPackageFiles} files or ${maxExecuteTypecheckPackageBytes} bytes).`,
-				])
+				return false
 			}
 		}
 	}
+	return true
 }
+
+/**
+ * Shorthand ambient wildcard used when the package graph is over budget:
+ * every `kody:@scope/package/export` import types as `any`, so the entry
+ * module still gets full syntactic + semantic checking without loading
+ * package sources into the compiler. The exact `kody:runtime` declaration
+ * in {@link createRuntimeTypes} takes precedence over this pattern.
+ */
+const kodyPackageStubsSource = `declare module "kody:*"`
 
 function collectTypecheckImports(input: {
 	source: string
@@ -589,11 +608,29 @@ export async function assertAdHocExecuteTypechecks(input: {
 	const phases = createTypecheckPhaseRecorder()
 	const totalStartedAtMs = Date.now()
 	try {
-		assertTypecheckInputWithinLimits(input)
+		assertEntrySourceWithinLimits(input.source)
+		const typedPackages = isTypedPackageGraphWithinBudget(input.packages)
+		if (!typedPackages) {
+			phases.entries.push({
+				name: 'typecheck-package-types-skipped',
+				durationMs: 0,
+			})
+		}
 		await withTypecheckLock(phases, ({ fileSystem, languageService }) => {
 			clearRequestFiles(fileSystem)
 			try {
 				const rewrittenEntry = phases.measureSync('project-write', () => {
+					if (!typedPackages) {
+						// Over-budget graph: keep `kody:` imports literal and satisfy
+						// them with the `any` wildcard stub instead of package sources.
+						fileSystem.write(entryPath, input.source)
+						fileSystem.write(kodyPackageStubsPath, kodyPackageStubsSource)
+						return {
+							source: input.source,
+							toOriginalOffset: (transformedOffset: number) =>
+								transformedOffset,
+						}
+					}
 					const rewritten = rewriteStaticKodyImports({
 						source: input.source,
 						modulePath: entryPath,
@@ -628,6 +665,20 @@ export async function assertAdHocExecuteTypechecks(input: {
 				}
 			} finally {
 				clearRequestFiles(fileSystem)
+				if (typedPackages && input.packages.size > 0) {
+					// The language service retains its last computed program until
+					// the next diagnostics request. After package sources were
+					// written, that retained program holds every package file's
+					// AST (tens of MB) between requests — enough to push the
+					// isolate over the Workers memory limit on unrelated later
+					// work. Rebuild against the now-empty project so only the
+					// trivial program stays resident.
+					try {
+						languageService.getSemanticDiagnostics(entryPath)
+					} catch {
+						// Freeing memory is best-effort; never mask the check result.
+					}
+				}
 			}
 		})
 		phases.entries.push({
