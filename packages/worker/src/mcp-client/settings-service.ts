@@ -92,8 +92,7 @@ export function listEnabledMcpServerRefsCached(input: {
 }): Promise<ReadonlyArray<McpServerRef>> {
 	return enabledMcpServerRefsCache.getOrCreate({
 		cacheKey: input.userId,
-		create: async () =>
-			Object.freeze(await listEnabledMcpServerRefs(input)),
+		create: async () => Object.freeze(await listEnabledMcpServerRefs(input)),
 	})
 }
 

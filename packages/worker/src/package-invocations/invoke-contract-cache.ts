@@ -84,7 +84,11 @@ function savedPackageCacheKey(input: {
 	userId: string
 	packageIdOrKodyId: string
 }) {
-	return JSON.stringify(['saved-package', input.userId, input.packageIdOrKodyId])
+	return JSON.stringify([
+		'saved-package',
+		input.userId,
+		input.packageIdOrKodyId,
+	])
 }
 
 function sourceRowCacheKey(input: { userId: string; sourceId: string }) {
