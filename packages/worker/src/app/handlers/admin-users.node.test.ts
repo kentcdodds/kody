@@ -30,6 +30,7 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 
 type UserRow = {
 	id: number
+	stable_user_id?: string
 	username: string
 	email: string
 	email_verified_at?: string | null
@@ -41,6 +42,10 @@ type UserRow = {
 }
 
 type UserRoleRow = { user_id: number; role_name: RoleName }
+
+function stableUserId(id: number) {
+	return id.toString(16).padStart(64, '0')
+}
 
 function createAdminActor(roles: Array<RoleName>) {
 	const permissions: Array<PermissionString> = roles.includes('admin')
@@ -56,7 +61,7 @@ function createAdminActor(roles: Array<RoleName>) {
 		permissions,
 		artifactOwnerIds: ['1'],
 		mcpUser: {
-			userId: 'stable-admin',
+			userId: stableUserId(1),
 			email: 'admin@example.com',
 			username: 'admin-user',
 			displayName: 'admin-user',
@@ -73,6 +78,7 @@ function createAdminTestEnv(input: {
 			user.id,
 			{
 				...user,
+				stable_user_id: user.stable_user_id ?? stableUserId(user.id),
 				// Normal fixtures default to free; unknown/null stay
 				// explicit so the dedicated stored-plan coercion test can warn.
 				plan: user.plan === undefined ? 'free' : user.plan,
@@ -148,7 +154,11 @@ function createAdminTestEnv(input: {
 					bind(...params: Array<unknown>) {
 						return {
 							async all<T>() {
-								if (normalizedQuery.startsWith('select id, username, email')) {
+								if (
+									normalizedQuery.startsWith(
+										'select id, stable_user_id, username, email',
+									)
+								) {
 									const { rows, paramIndex } = applyListFilters(params)
 									const pageSize = Number(params[paramIndex])
 									const offset = Number(params[paramIndex + 1])
@@ -193,18 +203,12 @@ function createAdminTestEnv(input: {
 								}
 								if (
 									normalizedQuery.includes(
-										'select id, email from users where id =',
+										'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where stable_user_id =',
 									)
 								) {
-									const user = users.get(Number(params[0]))
-									return user ? ({ id: user.id, email: user.email } as T) : null
-								}
-								if (
-									normalizedQuery.includes(
-										'select id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where id =',
+									const user = Array.from(users.values()).find(
+										(row) => row.stable_user_id === params[0],
 									)
-								) {
-									const user = users.get(Number(params[0]))
 									return user ? ({ ...user } as T) : null
 								}
 								return null
@@ -427,27 +431,36 @@ test('admin users selected param resolves outside the current page and filter', 
 	}
 
 	// Selected user on a later page is still returned for the detail pane.
-	const paged = await listUsers('?pageSize=1&page=1&selected=3')
-	expect(paged.users.map((user: { id: number }) => user.id)).toEqual([1])
+	const paged = await listUsers(
+		`?pageSize=1&page=1&selected=${stableUserId(3)}`,
+	)
+	expect(
+		paged.users.map((user: { stableUserId: string }) => user.stableUserId),
+	).toEqual([stableUserId(1)])
 	expect(paged.selectedUser).toEqual(
 		expect.objectContaining({
-			id: 3,
+			stableUserId: stableUserId(3),
 			username: 'another-member',
 			email: 'another@example.com',
 		}),
 	)
 
 	// Selected user excluded by the active role filter is still returned.
-	const filtered = await listUsers('?role=admin&selected=2')
-	expect(filtered.users.map((user: { id: number }) => user.id)).toEqual([1])
+	const filtered = await listUsers(`?role=admin&selected=${stableUserId(2)}`)
+	expect(
+		filtered.users.map((user: { stableUserId: string }) => user.stableUserId),
+	).toEqual([stableUserId(1)])
 	expect(filtered.selectedUser).toEqual(
-		expect.objectContaining({ id: 2, username: 'member' }),
+		expect.objectContaining({
+			stableUserId: stableUserId(2),
+			username: 'member',
+		}),
 	)
 
-	const missing = await listUsers('?selected=99999')
+	const missing = await listUsers(`?selected=${stableUserId(99)}`)
 	expect(missing.selectedUser).toBeNull()
 
-	const invalid = await listUsers('?selected=not-a-number')
+	const invalid = await listUsers('?selected=123')
 	expect(invalid.selectedUser).toBeNull()
 })
 
@@ -501,13 +514,19 @@ test('admin users list applies q and role filters to the slice and total', async
 	// q matches username or email; total reflects the filtered set.
 	const searchPayload = await listUsers('?q=searchable')
 	expect(searchPayload.total).toBe(2)
-	expect(searchPayload.users.map((user: { id: number }) => user.id)).toEqual([
-		2, 3,
-	])
+	expect(
+		searchPayload.users.map(
+			(user: { stableUserId: string }) => user.stableUserId,
+		),
+	).toEqual([stableUserId(2), stableUserId(3)])
 
 	const rolePayload = await listUsers('?role=admin')
 	expect(rolePayload.total).toBe(1)
-	expect(rolePayload.users.map((user: { id: number }) => user.id)).toEqual([1])
+	expect(
+		rolePayload.users.map(
+			(user: { stableUserId: string }) => user.stableUserId,
+		),
+	).toEqual([stableUserId(1)])
 
 	const combinedPayload = await listUsers('?q=searchable&role=admin')
 	expect(combinedPayload.total).toBe(0)
@@ -520,7 +539,11 @@ test('admin users list applies q and role filters to the slice and total', async
 	// Filters and pagination compose.
 	const pagedPayload = await listUsers('?q=searchable&pageSize=1&page=2')
 	expect(pagedPayload.total).toBe(2)
-	expect(pagedPayload.users.map((user: { id: number }) => user.id)).toEqual([3])
+	expect(
+		pagedPayload.users.map(
+			(user: { stableUserId: string }) => user.stableUserId,
+		),
+	).toEqual([stableUserId(3)])
 })
 
 test('assign role action updates user roles and logs audit event', async () => {
@@ -551,7 +574,7 @@ test('assign role action updates user roles and logs audit event', async () => {
 			},
 			body: JSON.stringify({
 				action: 'assign_role',
-				userId: 2,
+				stableUserId: stableUserId(2),
 				role: 'admin',
 			}),
 		}),
@@ -566,7 +589,7 @@ test('assign role action updates user roles and logs audit event', async () => {
 	// an infinite-scroll window without resetting to the first page.
 	expect(payload.updatedUser).toEqual(
 		expect.objectContaining({
-			id: 2,
+			stableUserId: stableUserId(2),
 			roles: expect.arrayContaining(['admin', 'user']),
 		}),
 	)
@@ -602,7 +625,7 @@ test('remove role rejects removing the last admin account', async () => {
 			},
 			body: JSON.stringify({
 				action: 'remove_role',
-				userId: 1,
+				stableUserId: stableUserId(1),
 				role: 'admin',
 			}),
 		}),
@@ -651,7 +674,7 @@ test('remove role removes admin when another admin remains', async () => {
 			},
 			body: JSON.stringify({
 				action: 'remove_role',
-				userId: 2,
+				stableUserId: stableUserId(2),
 				role: 'admin',
 			}),
 		}),
@@ -662,7 +685,7 @@ test('remove role removes admin when another admin remains', async () => {
 	expect(response.status).toBe(200)
 	const payload = await response.json()
 	const secondAdmin = payload.users.find(
-		(user: { id: number }) => user.id === 2,
+		(user: { stableUserId: string }) => user.stableUserId === stableUserId(2),
 	)
 	expect(secondAdmin.roles).not.toContain('admin')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
@@ -709,7 +732,7 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 
 	const setPlanResponse = await postUpdatePlan({
 		action: 'update_plan',
-		userId: 2,
+		stableUserId: stableUserId(2),
 		plan: 'pro',
 	})
 	expect(setPlanResponse.status).toBe(200)
@@ -719,13 +742,13 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 			category: 'admin',
 			action: 'update_plan',
 			result: 'success',
-			reason: 'target_user_id=2;plan=pro',
+			reason: `target_stable_user_id=${stableUserId(2)};plan=pro`,
 		}),
 	)
 
 	const clearPlanResponse = await postUpdatePlan({
 		action: 'update_plan',
-		userId: 2,
+		stableUserId: stableUserId(2),
 		plan: null,
 	})
 	expect(clearPlanResponse.status).toBe(200)
@@ -735,20 +758,25 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 			category: 'admin',
 			action: 'update_plan',
 			result: 'success',
-			reason: 'target_user_id=2;plan=free',
+			reason: `target_stable_user_id=${stableUserId(2)};plan=free`,
 		}),
 	)
 
 	for (const body of [
-		{ action: 'update_plan', userId: 2, plan: 'enterprise' },
-		{ action: 'update_plan', userId: 2 },
+		{
+			action: 'update_plan',
+			stableUserId: stableUserId(2),
+			plan: 'enterprise',
+		},
+		{ action: 'update_plan', stableUserId: stableUserId(2) },
+		{ action: 'update_plan', stableUserId: 2, plan: 'pro' },
 	]) {
 		expect((await postUpdatePlan(body)).status).toBe(400)
 	}
 
 	const missingUserResponse = await postUpdatePlan({
 		action: 'update_plan',
-		userId: 42,
+		stableUserId: stableUserId(42),
 		plan: 'pro',
 	})
 	expect(missingUserResponse.status).toBe(404)
@@ -789,7 +817,7 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 
 	const suspendResponse = await postAction({
 		action: 'suspend_user',
-		userId: 2,
+		stableUserId: stableUserId(2),
 	})
 	expect(suspendResponse.status).toBe(200)
 	const suspended = await suspendResponse.json()
@@ -799,13 +827,13 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 			category: 'admin',
 			action: 'suspend_user',
 			result: 'success',
-			reason: 'target_user_id=2',
+			reason: `target_stable_user_id=${stableUserId(2)}`,
 		}),
 	)
 
 	const unsuspendResponse = await postAction({
 		action: 'unsuspend_user',
-		userId: 2,
+		stableUserId: stableUserId(2),
 	})
 	expect(unsuspendResponse.status).toBe(200)
 	expect((await unsuspendResponse.json()).users[0].suspended_at).toBeNull()
@@ -814,13 +842,13 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 			category: 'admin',
 			action: 'unsuspend_user',
 			result: 'success',
-			reason: 'target_user_id=2',
+			reason: `target_stable_user_id=${stableUserId(2)}`,
 		}),
 	)
 
 	const resumeResponse = await postAction({
 		action: 'resume_email_outbound',
-		userId: 2,
+		stableUserId: stableUserId(2),
 	})
 	expect(resumeResponse.status).toBe(200)
 	expect(
@@ -831,7 +859,7 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 			category: 'admin',
 			action: 'resume_email_outbound',
 			result: 'success',
-			reason: 'target_user_id=2',
+			reason: `target_stable_user_id=${stableUserId(2)}`,
 		}),
 	)
 
@@ -840,6 +868,7 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 		users: [
 			{
 				id: 1,
+				stable_user_id: stableUserId(1),
 				username: 'admin-user',
 				email: 'admin@example.com',
 				created_at: '2026-01-01 00:00:00',
@@ -858,7 +887,10 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 				Accept: 'application/json',
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify({ action: 'suspend_user', userId: 1 }),
+			body: JSON.stringify({
+				action: 'suspend_user',
+				stableUserId: stableUserId(1),
+			}),
 		}),
 		params: {},
 		url: new URL('https://example.com/admin/users.json'),
@@ -866,7 +898,12 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 	expect(selfResponse.status).toBe(400)
 
 	expect(
-		(await postAction({ action: 'suspend_user', userId: 42 })).status,
+		(
+			await postAction({
+				action: 'suspend_user',
+				stableUserId: stableUserId(42),
+			})
+		).status,
 	).toBe(404)
 })
 

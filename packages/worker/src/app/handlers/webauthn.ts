@@ -32,6 +32,7 @@ import {
 	setWebAuthnChallengeSecret,
 } from '#app/webauthn.ts'
 import { createDb, usersTable } from '#worker/db.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 
 export function createWebauthnRegistrationHandler(env: Env) {
 	return {
@@ -55,7 +56,7 @@ export function createWebauthnRegistrationHandler(env: Env) {
 					rpName: config.rpName,
 					rpID: config.rpID,
 					userName: user.username,
-					userID: new TextEncoder().encode(String(user.userId)),
+					userID: new TextEncoder().encode(user.mcpUser.userId),
 					userDisplayName: user.displayName || user.email,
 					attestationType: 'none',
 					excludeCredentials: existingPasskeys.map((passkey) => ({
@@ -78,7 +79,7 @@ export function createWebauthnRegistrationHandler(env: Env) {
 								{
 									challenge: options.challenge,
 									webauthnUserId: options.user.id,
-									userId: user.userId,
+									stableUserId: user.mcpUser.userId,
 								},
 								secure,
 							),
@@ -99,7 +100,7 @@ export function createWebauthnRegistrationHandler(env: Env) {
 			// wrong account.
 			if (
 				!challengeData?.webauthnUserId ||
-				challengeData.userId !== user.userId
+				challengeData.stableUserId !== user.mcpUser.userId
 			) {
 				return jsonResponse(
 					{
@@ -335,7 +336,7 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 				'Set-Cookie',
 				await createAuthCookie(
 					{
-						id: String(userRecord.id),
+						stableUserId: resolveUserStableId(userRecord),
 						email: userRecord.email,
 						rememberMe,
 					},

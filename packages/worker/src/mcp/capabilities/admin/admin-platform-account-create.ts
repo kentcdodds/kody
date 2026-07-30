@@ -6,6 +6,7 @@ import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
 	buildCreatedUserAuditReason,
+	stableUserIdSchema,
 } from './admin-shared.ts'
 
 const inputSchema = z.object({
@@ -20,7 +21,7 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	platformAccount: z.object({
-		userId: z.number().int().positive(),
+		stableUserId: stableUserIdSchema,
 		email: z.string(),
 		username: z.string(),
 	}),
@@ -56,7 +57,7 @@ export const adminPlatformAccountCreateCapability = defineDomainCapability(
 					})
 					return {
 						platformAccount: {
-							userId: created.userId,
+							stableUserId: created.stableUserId,
 							email: created.email,
 							username: created.username,
 						},
@@ -65,7 +66,7 @@ export const adminPlatformAccountCreateCapability = defineDomainCapability(
 				{
 					successReason: ({ platformAccount }) =>
 						buildCreatedUserAuditReason({
-							userId: platformAccount.userId,
+							stableUserId: platformAccount.stableUserId,
 							email: platformAccount.email,
 						}),
 				},

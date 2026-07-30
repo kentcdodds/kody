@@ -1,17 +1,19 @@
 import { createCookie } from '@remix-run/cookie'
+import { isStableUserId } from '#worker/user-id.ts'
 
 const defaultSessionMaxAgeSeconds = 60 * 60 * 24 * 7
 const rememberedSessionMaxAgeSeconds = 60 * 60 * 24 * 30
 const rememberedSessionRenewAfterMs = 1000 * 60 * 60 * 24 * 14
 
 export type AuthSession = {
-	id: string
+	stableUserId: string
 	email: string
 	rememberMe: boolean
 }
 
 type StoredAuthSession = {
-	id: string
+	v: 2
+	stableUserId: string
 	email: string
 	rememberMe?: boolean
 	issuedAt?: number
@@ -62,8 +64,8 @@ function isStoredAuthSession(value: unknown): value is StoredAuthSession {
 	if (!value || typeof value !== 'object') return false
 	const record = value as Record<string, unknown>
 	return (
-		typeof record.id === 'string' &&
-		record.id.length > 0 &&
+		record.v === 2 &&
+		isStableUserId(record.stableUserId) &&
 		typeof record.email === 'string' &&
 		record.email.length > 0 &&
 		(record.rememberMe === undefined ||
@@ -88,7 +90,8 @@ function createStoredAuthSession(
 	// Always stamp issuedAt so password resets can invalidate every browser
 	// session, not only remember-me cookies.
 	return {
-		id: session.id,
+		v: 2,
+		stableUserId: session.stableUserId,
 		email: session.email,
 		rememberMe: session.rememberMe ? true : undefined,
 		issuedAt: now,
@@ -111,7 +114,7 @@ export function isAuthSessionInvalidatedByPasswordChange(input: {
 
 function normalizeAuthSession(session: StoredAuthSession): AuthSession {
 	return {
-		id: session.id,
+		stableUserId: session.stableUserId,
 		email: session.email,
 		rememberMe: session.rememberMe === true,
 	}

@@ -546,7 +546,11 @@ test('signed-in users link and disconnect providers from their account', async (
 	})
 	const sessionCookiePair = getCookiePair(
 		await createAuthCookie(
-			{ id: '11', email: 'linker@example.com', rememberMe: false },
+			{
+				stableUserId: await createStableUserIdFromEmail('linker@example.com'),
+				email: 'linker@example.com',
+				rememberMe: false,
+			},
 			false,
 		),
 	)
@@ -603,7 +607,11 @@ test('signed-in users link and disconnect providers from their account', async (
 	})
 	const otherSessionCookiePair = getCookiePair(
 		await createAuthCookie(
-			{ id: '12', email: 'other@example.com', rememberMe: false },
+			{
+				stableUserId: await createStableUserIdFromEmail('other@example.com'),
+				email: 'other@example.com',
+				rememberMe: false,
+			},
 			false,
 		),
 	)

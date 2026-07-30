@@ -16,6 +16,7 @@ import {
 } from '#app/package-app-session.ts'
 
 const cookieSecret = 'PACKAGE_APP_TEST_COOKIE_SECRET_32_CHARS_MINIMUM'
+const ownerStableUserId = '1'.repeat(64)
 
 function createTestEnv(input: { cookieSecret?: string; kv?: boolean } = {}) {
 	const store = new Map<string, string>()
@@ -32,7 +33,7 @@ function createTestEnv(input: { cookieSecret?: string; kv?: boolean } = {}) {
 }
 
 const claims = {
-	userId: '17',
+	stableUserId: ownerStableUserId,
 	username: 'owner',
 	kodyId: 'daily-notes',
 }
@@ -144,7 +145,7 @@ test('the package-app session cookie is not interchangeable with the app session
 
 	const setCookie = await createPackageAppSessionCookie({
 		env,
-		session: { userId: '17', username: 'owner' },
+		session: { stableUserId: ownerStableUserId, username: 'owner' },
 		secure: true,
 	})
 	expect(setCookie).toContain('kody_pkg_session=')
@@ -165,7 +166,7 @@ test('the package-app session cookie is not interchangeable with the app session
 			env,
 		}),
 	).resolves.toMatchObject({
-		session: { userId: '17', username: 'owner' },
+		session: { stableUserId: ownerStableUserId, username: 'owner' },
 	})
 
 	// Same secret material, different derived signing key: replaying the
@@ -181,7 +182,11 @@ test('the package-app session cookie is not interchangeable with the app session
 
 	// And the reverse: an app session cookie value is not a package-app session.
 	const appSetCookie = await createAuthCookie(
-		{ id: '17', email: 'owner@example.com', rememberMe: false },
+		{
+			stableUserId: ownerStableUserId,
+			email: 'owner@example.com',
+			rememberMe: false,
+		},
 		true,
 	)
 	const appCookieValue = (appSetCookie.split(';')[0] ?? '').split('=')[1] ?? ''

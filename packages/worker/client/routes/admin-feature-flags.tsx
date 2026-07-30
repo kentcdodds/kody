@@ -419,9 +419,9 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 											{
 												label: 'Updated by',
 												value:
-													flag.global.updatedBy == null
+													flag.global.updatedByStableUserId == null
 														? 'Unknown'
-														: String(flag.global.updatedBy),
+														: flag.global.updatedByStableUserId,
 											},
 											{
 												label: 'Note',
@@ -448,7 +448,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 									<div mix={css({ display: 'grid', gap: spacing.sm })}>
 										{flag.overrides.map((override) => (
 											<div
-												key={`${flag.key}:${override.userId}`}
+												key={`${flag.key}:${override.stableUserId}`}
 												mix={css({
 													display: 'flex',
 													justifyContent: 'space-between',
@@ -485,7 +485,7 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 																	{
 																		action: 'clear_user_override',
 																		key: flag.key,
-																		userId: override.userId,
+																		stableUserId: override.stableUserId,
 																	},
 																	'clearing-override',
 																	`Removed override for ${override.username}.`,

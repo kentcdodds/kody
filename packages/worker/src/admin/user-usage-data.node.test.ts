@@ -91,10 +91,10 @@ function createAdminUserUsageTestDb(input: {
 				async first<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan, stripe_plan, stable_user_id from users where id = ?',
+							'select id, username, email, plan, stripe_plan, stable_user_id from users where stable_user_id = ?',
 						)
 					) {
-						return (users.find((user) => user.id === Number(params[0])) ??
+						return (users.find((user) => user.stable_user_id === params[0]) ??
 							null) as T | null
 					}
 					if (normalizedQuery.includes('from entitlement_daily_counters')) {
@@ -162,7 +162,7 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 	expect(
 		await loadAdminUserUsageData(
 			{ APP_DB: emptyDb } as Env,
-			42,
+			'missing-stable-user',
 			new Date('2026-07-05T12:00:00.000Z'),
 		),
 	).toBeNull()
@@ -186,13 +186,13 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 
 	const data = await loadAdminUserUsageData(
 		{ APP_DB: db } as Env,
-		1,
+		usageUserId,
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
 
 	expect(data?.currentMonth).toBe('2026-07')
 	expect(data?.today).toBe('2026-07-05')
-	expect(data?.userId).toBe(1)
+	expect(data?.stableUserId).toBe(usageUserId)
 	expect(data?.currentMonthUsage.every((row) => row.eventCount === 0)).toBe(
 		true,
 	)
@@ -255,11 +255,11 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 
 	const data = await loadAdminUserUsageData(
 		{ APP_DB: db } as Env,
-		2,
+		usageUserId,
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
 
-	expect(data?.userId).toBe(2)
+	expect(data?.stableUserId).toBe(usageUserId)
 	expect(getEventCount(data?.currentMonthUsage, 'job_run')).toBe(4)
 	expect(data?.monthUsage.map((month) => month.month)).toEqual([
 		'2026-07',
@@ -300,7 +300,7 @@ test('loadAdminUserUsageData rejects an invalid stored plan', async () => {
 	await expect(
 		loadAdminUserUsageData(
 			{ APP_DB: db } as Env,
-			1,
+			usageUserId,
 			new Date('2026-07-05T12:00:00.000Z'),
 		),
 	).rejects.toThrow('Stored plan is not a registered plan name.')
@@ -364,7 +364,7 @@ test('loadAdminUserUsageData caches rollup reads in KV and serves repeat loads f
 	const env = { APP_DB: countingDb, BUNDLE_ARTIFACTS_KV: kv } as Env
 	const now = new Date('2026-07-05T12:00:00.000Z')
 
-	const first = await loadAdminUserUsageData(env, 1, now)
+	const first = await loadAdminUserUsageData(env, usageUserId, now)
 	expect(getEventCount(first?.currentMonthUsage, 'execute')).toBe(7)
 	const queriesAfterFirstLoad = rollupQueryCount
 	expect(queriesAfterFirstLoad).toBeGreaterThan(0)
@@ -373,7 +373,7 @@ test('loadAdminUserUsageData caches rollup reads in KV and serves repeat loads f
 		expect(key.startsWith('derived-cache:v1:usage-rollups:')).toBe(true)
 	}
 
-	const second = await loadAdminUserUsageData(env, 1, now)
+	const second = await loadAdminUserUsageData(env, usageUserId, now)
 	expect(getEventCount(second?.currentMonthUsage, 'execute')).toBe(7)
 	expect(second?.monthUsage[0]?.month).toBe('2026-07')
 	// The repeat load is served from KV: no additional rollup queries.
@@ -414,7 +414,7 @@ test('loadAdminUserUsageData keeps current-month and month-over-month rollups on
 
 	const data = await loadAdminUserUsageData(
 		{ APP_DB: db } as Env,
-		1,
+		usageUserId,
 		new Date('2026-07-01T00:00:00.000Z'),
 	)
 

@@ -22,8 +22,13 @@ export const roleNameSchema = z.enum(roleNames)
 
 export const planNameSchema = z.enum(planNames)
 
+export const stableUserIdSchema = z
+	.string()
+	.regex(/^[a-f0-9]{64}$/)
+	.describe('Stable users.stable_user_id.')
+
 export const adminUserMetadataSchema = z.object({
-	id: z.number().int().positive(),
+	stableUserId: stableUserIdSchema,
 	username: z.string(),
 	email: z.string(),
 	email_verified: z
@@ -96,11 +101,11 @@ export async function auditAdminCapabilityInvocation<TResult>(
 }
 
 export function buildCreatedUserAuditReason(input: {
-	userId: number
+	stableUserId: string
 	email: string
 }) {
 	return [
-		`target_user_id=${input.userId}`,
+		`target_stable_user_id=${input.stableUserId}`,
 		`target_email=${redactEmailRecipient(input.email)}`,
 	].join(';')
 }

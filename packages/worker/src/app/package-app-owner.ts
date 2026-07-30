@@ -1,7 +1,7 @@
 import { isSessionInvalidatedByStoredPasswordChange } from '#app/request-auth-cache.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { isStableUserId, resolveUserStableId } from '#worker/user-id.ts'
 
 /**
  * The account a hosted package app runs on behalf of.
@@ -25,16 +25,17 @@ export type PackageAppOwner = {
  * accounts being deleted, suspended accounts, and sessions issued at or before
  * a password change are all refused.
  */
-export async function resolvePackageAppOwnerByUserId(input: {
+export async function resolvePackageAppOwnerByStableUserId(input: {
 	env: Env
-	userId: string
+	stableUserId: string
 	issuedAt: number
 }): Promise<PackageAppOwner | null> {
-	const userId = /^\d+$/.test(input.userId) ? Number(input.userId) : NaN
-	if (!Number.isSafeInteger(userId) || userId <= 0) return null
+	if (!isStableUserId(input.stableUserId)) return null
 
 	const db = createDb(input.env.APP_DB)
-	const userRecord = await db.findOne(usersTable, { where: { id: userId } })
+	const userRecord = await db.findOne(usersTable, {
+		where: { stable_user_id: input.stableUserId },
+	})
 	if (!userRecord) return null
 	if (userRecord.deleting_at || userRecord.suspended_at) return null
 

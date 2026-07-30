@@ -30,7 +30,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(page.getByRole('heading', { name: 'Admin users' })).toBeHidden()
 	await expect(page.getByText('Forbidden')).toBeVisible()
 	const memberUsageResponse = await page.request.get(
-		'/admin/users/usage.json?userId=1',
+		'/admin/users/usage.json?stableUserId=forbidden',
 	)
 	expect(memberUsageResponse.status()).toBe(403)
 	await page.goto('/admin/insights')
@@ -146,12 +146,12 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	expect(memberRecord.plan).toBe('free')
 	expect(JSON.stringify(memberRecord)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(memberRecord)).not.toContain('super-secret-value')
-	const memberId = Number(memberRecord.id)
+	const memberStableUserId = String(memberRecord.stableUserId)
 
 	// URL-backed selection: click updates the path, reload restores it, and a
 	// detail pane opens that account (use the non-first seeded user).
 	await page.getByRole('button', { name: memberUser.username }).click()
-	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberId}`))
+	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberStableUserId}`))
 	await expect(page.getByText('Account metadata only')).toBeVisible()
 	await expect(page.getByText('Usage & quotas')).toBeVisible()
 	await expect(
@@ -161,7 +161,7 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 		page.getByRole('heading', { name: 'Entitlements' }),
 	).toBeVisible()
 	await page.reload()
-	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberId}`))
+	await expect(page).toHaveURL(new RegExp(`/admin/users/${memberStableUserId}`))
 	await expect(
 		page.getByRole('heading', { name: memberUser.username, exact: true }),
 	).toBeVisible()
@@ -169,12 +169,12 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await expect(page.getByText('memberPrivateSecret')).toHaveCount(0)
 	await expect(page.getByText('super-secret-value')).toHaveCount(0)
 	const usageApiResponse = await page.request.get(
-		`/admin/users/usage.json?userId=${memberId}`,
+		`/admin/users/usage.json?stableUserId=${memberStableUserId}`,
 	)
 	expect(usageApiResponse.ok()).toBe(true)
 	const usagePayload = await usageApiResponse.json()
 	expect(usagePayload.ok).toBe(true)
-	expect(usagePayload.userId).toBe(memberId)
+	expect(usagePayload.stableUserId).toBe(memberStableUserId)
 	expect(JSON.stringify(usagePayload)).not.toContain('memberPrivateSecret')
 	expect(JSON.stringify(usagePayload)).not.toContain('super-secret-value')
 	expect(JSON.stringify(usagePayload)).not.toContain(memberUser.email)

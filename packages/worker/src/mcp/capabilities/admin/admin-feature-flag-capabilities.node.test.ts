@@ -5,6 +5,7 @@ vi.unmock('#worker/audit-log.ts')
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type UserRow = {
 	id: number
@@ -94,10 +95,19 @@ function createFeatureFlagCapabilityTestDb(input: {
 					return (users.find((user) => user.id === Number(params[0])) ??
 						null) as T | null
 				}
-				if (normalized.includes('select id from users where username = ?')) {
+				if (
+					normalized.includes(
+						'select id, stable_user_id from users where username = ?',
+					)
+				) {
 					const username = String(params[0])
 					const user = users.find((row) => row.username === username)
-					return user ? ({ id: user.id } as T) : null
+					return user
+						? ({
+								id: user.id,
+								stable_user_id: user.stable_user_id,
+							} as T)
+						: null
 				}
 				if (
 					normalized.includes('from feature_flag_user_overrides') &&
@@ -130,6 +140,9 @@ function createFeatureFlagCapabilityTestDb(input: {
 					return {
 						results: [...globals.values()].map((row) => ({
 							...row,
+							updated_by_stable_user_id:
+								users.find((user) => user.id === row.updated_by)
+									?.stable_user_id ?? null,
 						})) as Array<T>,
 					}
 				}
@@ -147,6 +160,7 @@ function createFeatureFlagCapabilityTestDb(input: {
 								enabled: row.enabled,
 								updated_at: row.updated_at,
 								username: user.username,
+								stable_user_id: user.stable_user_id,
 							}
 						})
 						.filter((row) => row !== null)
@@ -270,7 +284,7 @@ function createAdminCapabilityContext(db: D1Database) {
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
-				userId: 'admin-stable',
+				userId: testStableUserIdFromEmail('admin@example.com'),
 				email: 'admin@example.com',
 				displayName: 'admin',
 				roles: ['admin'],
@@ -287,13 +301,13 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 					id: 1,
 					username: 'admin',
 					email: 'admin@example.com',
-					stable_user_id: 'admin-stable',
+					stable_user_id: testStableUserIdFromEmail('admin@example.com'),
 				},
 				{
 					id: 2,
 					username: 'jane',
 					email: 'jane@example.com',
-					stable_user_id: 'jane-stable',
+					stable_user_id: testStableUserIdFromEmail('jane@example.com'),
 				},
 			],
 		})
@@ -336,7 +350,7 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 			enabled: true,
 			rolloutPercent: 25,
 			note: 'gradual rollout',
-			updatedBy: 1,
+			updatedByStableUserId: testStableUserIdFromEmail('admin@example.com'),
 		},
 	})
 	expect(globals.get('demo-indicator')).toMatchObject({
@@ -353,7 +367,7 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 	).rejects.toThrow(/Unknown feature flag key/)
 
 	const setByUsername = await adminFeatureFlagOverrideCapability.handler(
-		{ key: 'demo-indicator', username: 'jane', enabled: true },
+		{ key: 'demo-indicator', username: 'JANE', enabled: true },
 		ctx,
 	)
 	expect(setByUsername).toMatchObject({
@@ -362,7 +376,7 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 			key: 'demo-indicator',
 			overrides: [
 				expect.objectContaining({
-					userId: 2,
+					stableUserId: testStableUserIdFromEmail('jane@example.com'),
 					username: 'jane',
 					enabled: true,
 				}),
@@ -375,7 +389,11 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 	})
 
 	const cleared = await adminFeatureFlagOverrideCapability.handler(
-		{ key: 'demo-indicator', userId: 2, clear: true },
+		{
+			key: 'demo-indicator',
+			stableUserId: testStableUserIdFromEmail('jane@example.com'),
+			clear: true,
+		},
 		ctx,
 	)
 	expect(cleared.cleared).toBe(true)

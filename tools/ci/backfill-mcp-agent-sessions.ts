@@ -144,6 +144,44 @@ export async function runMcpAgentSessionBackfill(input: {
 		await writeFile(input.auditOut, `${JSON.stringify(audit, null, 2)}\n`)
 	}
 	if (input.execute) {
+		// Retry individual RPC failures once (e.g. DO code-update resets).
+		if (failures.length > 0) {
+			const retryIds = failures
+				.map((failure) => failure['doId'])
+				.filter((value): value is string => typeof value === 'string')
+			console.info(
+				`Retrying ${retryIds.length} failed object(s) before completion.`,
+			)
+			const retriedRows: Array<Record<string, unknown>> = []
+			const retriedFailures: Array<Record<string, unknown>> = []
+			for (let offset = 0; offset < retryIds.length; offset += batchSize) {
+				const retried = await withRetry(() =>
+					postMaintenance({
+						origin: input.origin,
+						secret: input.maintenanceSecret,
+						pathname: '/__maintenance/backfill-mcp-agent-sessions',
+						body: {
+							dryRun: false,
+							doIds: retryIds.slice(offset, offset + batchSize),
+						},
+						fetcher,
+					}),
+				)
+				retriedRows.push(
+					...((retried['rows'] as Array<Record<string, unknown>>) ?? []),
+				)
+				retriedFailures.push(
+					...((retried['failures'] as Array<Record<string, unknown>>) ?? []),
+				)
+			}
+			failures.length = 0
+			rows.push(...retriedRows)
+			failures.push(...retriedFailures)
+			audit.completedAt = new Date().toISOString()
+			if (input.auditOut) {
+				await writeFile(input.auditOut, `${JSON.stringify(audit, null, 2)}\n`)
+			}
+		}
 		const noOwner = rows.filter((row) => row['action'] === 'no_owner').length
 		const conflicts = failures.filter(
 			(failure) =>
@@ -165,6 +203,7 @@ export async function runMcpAgentSessionBackfill(input: {
 					failed: failures.length,
 					conflicts,
 					noOwner,
+					acceptedNoOwner: noOwner > 0,
 					audit,
 				},
 			},

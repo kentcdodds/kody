@@ -35,7 +35,10 @@ import {
 } from '#worker/entitlements/plans.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import {
+	createStableUserIdFromEmail,
+	resolveUserStableId,
+} from '#worker/user-id.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -247,7 +250,7 @@ export function createAuthHandler(env: Env) {
 					consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
 				}
 
-				let record: { id: number } | null = null
+				let record: { id: number; stableUserId: string } | null = null
 				try {
 					const stableUserId =
 						await createStableUserIdFromEmail(normalizedEmail)
@@ -264,7 +267,7 @@ export function createAuthHandler(env: Env) {
 							returnRow: true,
 						},
 					)
-					record = { id: createdUser.id }
+					record = { id: createdUser.id, stableUserId }
 				} catch (error) {
 					const uniqueField = getUniqueConstraintField(error)
 					if (uniqueField === 'email' || uniqueField === 'username') {
@@ -419,7 +422,7 @@ export function createAuthHandler(env: Env) {
 
 				const cookie = await createAuthCookie(
 					{
-						id: String(record.id),
+						stableUserId: record.stableUserId,
 						email: normalizedEmail,
 						rememberMe: false,
 					},
@@ -441,7 +444,7 @@ export function createAuthHandler(env: Env) {
 						email: normalizedEmail,
 						ip: requestIp,
 						path: url.pathname,
-						reason: `invite_code=${consumedInviteCode};user_id=${record.id};plan=${resolvePlanWrite(consumedInvitePlan)}`,
+						reason: `invite_code=${consumedInviteCode};stable_user_id=${record.stableUserId};plan=${resolvePlanWrite(consumedInvitePlan)}`,
 					})
 				}
 				return Response.json(
@@ -495,7 +498,7 @@ export function createAuthHandler(env: Env) {
 				const secure = isSecureRequest(request)
 				const verifyCookie = await createVerifySessionCookie(
 					{
-						id: String(userRecord.id),
+						stableUserId: resolveUserStableId(userRecord),
 						email: normalizedEmail,
 						rememberMe,
 					},
@@ -522,7 +525,7 @@ export function createAuthHandler(env: Env) {
 
 			const cookie = await createAuthCookie(
 				{
-					id: String(userRecord.id),
+					stableUserId: resolveUserStableId(userRecord),
 					email: normalizedEmail,
 					rememberMe,
 				},

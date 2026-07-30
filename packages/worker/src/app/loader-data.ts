@@ -119,7 +119,7 @@ export type CommunityStargazersLoaderData = {
  * share these types with the JSON API response shapes.
  */
 export type AdminUserListItem = {
-	id: number
+	stableUserId: string
 	username: string
 	email: string
 	email_verified: boolean
@@ -188,7 +188,7 @@ export type AdminCommunityReportsLoaderData = {
 
 export type AdminInviteListItem = {
 	code: string
-	createdBy: number | null
+	createdByStableUserId: string | null
 	createdByEmail: string | null
 	note: string
 	maxUses: number
@@ -316,7 +316,7 @@ export type AdminUsageMonthRollup = {
  */
 export type AdminUserUsageLoaderData = {
 	ok: true
-	userId: number
+	stableUserId: string
 	username: string
 	plan: AdminPlanName
 	currentMonth: string
@@ -546,7 +546,7 @@ export type AdminPlatformFeedbackLoaderData = {
 }
 
 export type AdminCreatedUserSetup = {
-	userId: number
+	stableUserId: string
 	email: string
 	username: string
 	setupLink: string

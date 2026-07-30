@@ -10,7 +10,7 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 const rememberedSession: AuthSession = {
-	id: '1',
+	stableUserId: testStableUserIdFromEmail('user@example.com'),
 	email: 'user@example.com',
 	rememberMe: true,
 }
@@ -47,9 +47,11 @@ function createSessionTestDb() {
 			if (
 				normalizedQuery.startsWith('select') &&
 				normalizedQuery.includes('from "users"') &&
-				/"id"\s*=/.test(normalizedQuery)
+				/"stable_user_id"\s*=/.test(normalizedQuery)
 			) {
-				const user = users.get(Number(params[0]))
+				const user = [...users.values()].find(
+					(row) => row.stable_user_id === params[0],
+				)
 				return {
 					results: user ? [{ ...user }] : [],
 					meta: { changes: 0, last_row_id: 0 },
@@ -173,13 +175,13 @@ test('session handler only renews remembered sessions after the renewal window',
 	}
 })
 
-test('session handler clears invalid session cookies for missing users and malformed ids', async () => {
+test('session handler clears cookies for unknown stable user ids', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session = createSessionHandler(createEnv())
 	const invalidCookies = await Promise.all([
 		createAuthCookie(
 			{
-				id: '404',
+				stableUserId: 'f'.repeat(64),
 				email: 'missing@example.com',
 				rememberMe: false,
 			},
@@ -187,7 +189,7 @@ test('session handler clears invalid session cookies for missing users and malfo
 		),
 		createAuthCookie(
 			{
-				id: '1abc',
+				stableUserId: 'e'.repeat(64),
 				email: 'user@example.com',
 				rememberMe: false,
 			},

@@ -1,11 +1,11 @@
-import { readPositiveInt } from '#worker/query-params.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { loadAdminUserUsageData } from '#worker/admin/user-usage-data.ts'
 import {
 	clearAdminUserEmailOutboundPause,
-	loadAdminUserByIdOrEmail,
+	loadAdminUserByTarget,
+	loadAdminUserRowByStableUserId,
 	loadAdminUsersData,
 	loadRolesByUserIds,
 	adminUserListItemFieldNames,
@@ -29,6 +29,7 @@ import {
 import { type RoleName, roleNames } from '#worker/identity/permissions.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
 import { type routes } from '#app/routes.ts'
+import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export { adminUserListItemFieldNames, type AdminUserListItem }
 
@@ -59,17 +60,17 @@ export function createAdminUsersHandler(env: Env) {
 			// not anchor the list past the rows it can never load.
 			const pageUrl = new URL(request.url)
 			pageUrl.searchParams.delete('page')
-			const pathUserId =
+			const pathStableUserId =
 				typeof params === 'object' &&
 				params !== null &&
-				'userId' in params &&
-				typeof params.userId === 'string'
-					? params.userId
+				'stableUserId' in params &&
+				typeof params.stableUserId === 'string'
+					? params.stableUserId
 					: undefined
 			const adminUsers = await loadAdminUsersData(
 				env,
 				pageUrl.toString(),
-				pathUserId,
+				pathStableUserId,
 			)
 
 			return renderAppPage({
@@ -181,11 +182,14 @@ export function createAdminUserUsageApiHandler(env: Env) {
 			try {
 				await requireUserWithPermission(request, env, 'read:user:any')
 				const url = new URL(request.url)
-				const userId = readPositiveInt(url.searchParams.get('userId'), 0)
-				if (!userId) {
-					return jsonResponse({ ok: false, error: 'userId is required.' }, 400)
+				const stableUserId = url.searchParams.get('stableUserId')?.trim() ?? ''
+				if (!isStableUserId(stableUserId)) {
+					return jsonResponse(
+						{ ok: false, error: 'stableUserId is required.' },
+						400,
+					)
 				}
-				const payload = await loadAdminUserUsageData(env, userId)
+				const payload = await loadAdminUserUsageData(env, stableUserId)
 				if (!payload) {
 					return jsonResponse({ ok: false, error: 'User not found.' }, 404)
 				}
@@ -205,30 +209,29 @@ async function handleAssignRoleAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
 	body: object
 }) {
-	const targetUserId = readPositiveInt(
-		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
-		0,
-	)
+	const targetStableUserId = readStableUserIdField(input.body)
 	const roleName = readRoleName(input.body, 'role')
-	if (!targetUserId) {
-		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
+	if (!targetStableUserId) {
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
 	if (!roleName) {
 		return jsonResponse({ ok: false, error: 'Role is required.' }, 400)
 	}
 
-	const targetUser = await input.env.APP_DB.prepare(
-		`SELECT id, email FROM users WHERE id = ?`,
+	const targetUser = await loadAdminUserRowByStableUserId(
+		input.env.APP_DB,
+		targetStableUserId,
 	)
-		.bind(targetUserId)
-		.first<{ id: number; email: string }>()
 	if (!targetUser) {
 		return jsonResponse({ ok: false, error: 'User not found.' }, 404)
 	}
 
 	await assignUserRole({
 		db: input.env.APP_DB,
-		userId: targetUserId,
+		userId: targetUser.id,
 		roleName,
 	})
 
@@ -240,10 +243,10 @@ async function handleAssignRoleAction(input: {
 		email: input.actor.email,
 		ip: requestIp,
 		path: input.url.pathname,
-		reason: `target_user_id=${targetUserId};role=${roleName}`,
+		reason: `target_stable_user_id=${targetStableUserId};role=${roleName}`,
 	})
 
-	return buildMutationResponse(input.env, input.request.url, targetUserId)
+	return buildMutationResponse(input.env, input.request.url, targetStableUserId)
 }
 
 /**
@@ -254,11 +257,11 @@ async function handleAssignRoleAction(input: {
 async function buildMutationResponse(
 	env: Env,
 	requestUrl: string,
-	targetUserId: number,
+	targetStableUserId: string,
 ) {
 	const [payload, updatedUser] = await Promise.all([
 		loadAdminUsersData(env, requestUrl),
-		loadAdminUserByIdOrEmail(env.APP_DB, { id: targetUserId }),
+		loadAdminUserByTarget(env.APP_DB, { stableUserId: targetStableUserId }),
 	])
 	return jsonResponse({ ...payload, updatedUser })
 }
@@ -270,23 +273,22 @@ async function handleRemoveRoleAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
 	body: object
 }) {
-	const targetUserId = readPositiveInt(
-		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
-		0,
-	)
+	const targetStableUserId = readStableUserIdField(input.body)
 	const roleName = readRoleName(input.body, 'role')
-	if (!targetUserId) {
-		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
+	if (!targetStableUserId) {
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
 	if (!roleName) {
 		return jsonResponse({ ok: false, error: 'Role is required.' }, 400)
 	}
 
-	const targetUser = await input.env.APP_DB.prepare(
-		`SELECT id, email FROM users WHERE id = ?`,
+	const targetUser = await loadAdminUserRowByStableUserId(
+		input.env.APP_DB,
+		targetStableUserId,
 	)
-		.bind(targetUserId)
-		.first<{ id: number; email: string }>()
 	if (!targetUser) {
 		return jsonResponse({ ok: false, error: 'User not found.' }, 404)
 	}
@@ -297,13 +299,13 @@ async function handleRemoveRoleAction(input: {
 		// deployment with zero admins.
 		const { removed } = await removeAdminRolePreservingLastAdmin({
 			db: input.env.APP_DB,
-			userId: targetUserId,
+			userId: targetUser.id,
 		})
 		if (!removed) {
 			const targetRoles = await loadRolesByUserIds(input.env.APP_DB, [
-				targetUserId,
+				targetUser.id,
 			])
-			const targetStillAdmin = (targetRoles.get(targetUserId) ?? []).includes(
+			const targetStillAdmin = (targetRoles.get(targetUser.id) ?? []).includes(
 				'admin',
 			)
 			if (targetStillAdmin) {
@@ -332,7 +334,7 @@ async function handleRemoveRoleAction(input: {
 	} else {
 		await removeUserRole({
 			db: input.env.APP_DB,
-			userId: targetUserId,
+			userId: targetUser.id,
 			roleName,
 		})
 	}
@@ -345,10 +347,10 @@ async function handleRemoveRoleAction(input: {
 		email: input.actor.email,
 		ip: requestIp,
 		path: input.url.pathname,
-		reason: `target_user_id=${targetUserId};role=${roleName}`,
+		reason: `target_stable_user_id=${targetStableUserId};role=${roleName}`,
 	})
 
-	return buildMutationResponse(input.env, input.request.url, targetUserId)
+	return buildMutationResponse(input.env, input.request.url, targetStableUserId)
 }
 
 async function handleUpdatePlanAction(input: {
@@ -358,12 +360,12 @@ async function handleUpdatePlanAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
 	body: object
 }) {
-	const targetUserId = readPositiveInt(
-		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
-		0,
-	)
-	if (!targetUserId) {
-		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
+	const targetStableUserId = readStableUserIdField(input.body)
+	if (!targetStableUserId) {
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
 	const planUpdate = readPlanUpdate(input.body)
 	if (!planUpdate.ok) {
@@ -377,7 +379,7 @@ async function handleUpdatePlanAction(input: {
 	}
 
 	const updatedUser = await updateAdminUserPlan(input.env.APP_DB, {
-		id: targetUserId,
+		stableUserId: targetStableUserId,
 		plan: planUpdate.plan,
 	})
 	if (!updatedUser) {
@@ -392,10 +394,10 @@ async function handleUpdatePlanAction(input: {
 		email: input.actor.email,
 		ip: requestIp,
 		path: input.url.pathname,
-		reason: `target_user_id=${targetUserId};plan=${planUpdate.plan}`,
+		reason: `target_stable_user_id=${targetStableUserId};plan=${planUpdate.plan}`,
 	})
 
-	return buildMutationResponse(input.env, input.request.url, targetUserId)
+	return buildMutationResponse(input.env, input.request.url, targetStableUserId)
 }
 
 /**
@@ -411,14 +413,14 @@ async function handleSuspensionAction(input: {
 	body: object
 	suspended: boolean
 }) {
-	const targetUserId = readPositiveInt(
-		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
-		0,
-	)
-	if (!targetUserId) {
-		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
+	const targetStableUserId = readStableUserIdField(input.body)
+	if (!targetStableUserId) {
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
-	if (input.suspended && targetUserId === input.actor.userId) {
+	if (input.suspended && targetStableUserId === input.actor.mcpUser.userId) {
 		return jsonResponse(
 			{ ok: false, error: 'You cannot suspend your own account.' },
 			400,
@@ -426,7 +428,7 @@ async function handleSuspensionAction(input: {
 	}
 
 	const updatedUser = await updateAdminUserSuspension(input.env.APP_DB, {
-		id: targetUserId,
+		stableUserId: targetStableUserId,
 		suspended: input.suspended,
 	})
 	if (!updatedUser) {
@@ -441,10 +443,10 @@ async function handleSuspensionAction(input: {
 		email: input.actor.email,
 		ip: requestIp,
 		path: input.url.pathname,
-		reason: `target_user_id=${targetUserId}`,
+		reason: `target_stable_user_id=${targetStableUserId}`,
 	})
 
-	return buildMutationResponse(input.env, input.request.url, targetUserId)
+	return buildMutationResponse(input.env, input.request.url, targetStableUserId)
 }
 
 /**
@@ -458,16 +460,16 @@ async function handleResumeEmailOutboundAction(input: {
 	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
 	body: object
 }) {
-	const targetUserId = readPositiveInt(
-		readNonEmptyTrimmedStringOrNumber(input.body, 'userId'),
-		0,
-	)
-	if (!targetUserId) {
-		return jsonResponse({ ok: false, error: 'User id is required.' }, 400)
+	const targetStableUserId = readStableUserIdField(input.body)
+	if (!targetStableUserId) {
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
 	}
 
 	const updatedUser = await clearAdminUserEmailOutboundPause(input.env.APP_DB, {
-		id: targetUserId,
+		stableUserId: targetStableUserId,
 	})
 	if (!updatedUser) {
 		return jsonResponse({ ok: false, error: 'User not found.' }, 404)
@@ -481,10 +483,10 @@ async function handleResumeEmailOutboundAction(input: {
 		email: input.actor.email,
 		ip: requestIp,
 		path: input.url.pathname,
-		reason: `target_user_id=${targetUserId}`,
+		reason: `target_stable_user_id=${targetStableUserId}`,
 	})
 
-	return buildMutationResponse(input.env, input.request.url, targetUserId)
+	return buildMutationResponse(input.env, input.request.url, targetStableUserId)
 }
 
 /**
@@ -514,4 +516,11 @@ function isRoleName(value: string): value is RoleName {
 function readRoleName(body: object, key: string): RoleName | null {
 	const value = readNonEmptyTrimmedStringOrNumber(body, key)
 	return value && isRoleName(value) ? value : null
+}
+
+function readStableUserIdField(body: object): string | null {
+	const value = (body as Record<string, unknown>).stableUserId
+	if (typeof value !== 'string') return null
+	const stableUserId = normalizeStableUserId(value)
+	return isStableUserId(stableUserId) ? stableUserId : null
 }

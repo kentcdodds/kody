@@ -138,7 +138,7 @@ async function runHandler(
 }
 
 const session: AuthSession = {
-	id: '1',
+	stableUserId: testStableUserIdFromEmail('resend-user@example.com'),
 	email: 'resend-user@example.com',
 	rememberMe: false,
 }

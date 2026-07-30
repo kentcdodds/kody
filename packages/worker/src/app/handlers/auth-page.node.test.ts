@@ -58,7 +58,7 @@ function createStaleSessionTestEnv() {
 test('auth page renders login for a stale session instead of redirecting away', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session: AuthSession = {
-		id: '99',
+		stableUserId: 'f'.repeat(64),
 		email: 'missing@example.com',
 		rememberMe: false,
 	}

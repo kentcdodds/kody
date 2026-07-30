@@ -54,10 +54,11 @@ function createProfileTestDb(initialUsers: Array<TestUser>) {
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			return {
 				bind(...params: Array<unknown>) {
-					const readUserById = () => {
-						const id = Number(params[0])
-						return users.get(id) ?? null
-					}
+					const readUserByStableUserId = () =>
+						[...users.values()].find(
+							(user) => user.stable_user_id === params[0],
+						) ?? null
+					const readUserById = () => users.get(Number(params[0])) ?? null
 					const readUserByUsername = () => {
 						const username = String(params[0] ?? '').toLowerCase()
 						return (
@@ -90,6 +91,17 @@ function createProfileTestDb(initialUsers: Array<TestUser>) {
 							return {
 								results: user ? [{ ...user }] : [],
 								meta: { changes: user ? 1 : 0, last_row_id: 0 },
+							}
+						}
+						if (
+							normalizedQuery.startsWith('select') &&
+							normalizedQuery.includes('from "users"') &&
+							/"stable_user_id"\s*=/.test(normalizedQuery)
+						) {
+							const user = readUserByStableUserId()
+							return {
+								results: user ? [{ ...user }] : [],
+								meta: { changes: 0, last_row_id: 0 },
 							}
 						}
 						if (
@@ -232,7 +244,7 @@ test('account profile API returns email and username for the signed-in user', as
 		handler,
 		await createRequest({
 			session: {
-				id: '1',
+				stableUserId: testStableUserIdFromEmail('current-user@example.com'),
 				email: 'current-user@example.com',
 				rememberMe: false,
 			},
@@ -281,7 +293,7 @@ test('account profile API updates username for the signed-in user', async () => 
 		handler,
 		await createRequest({
 			session: {
-				id: '1',
+				stableUserId: testStableUserIdFromEmail('current-user@example.com'),
 				email: 'current-user@example.com',
 				rememberMe: false,
 			},
@@ -337,7 +349,11 @@ test('account profile API treats an unchanged username as a no-op so grandfather
 	const response = await runHandler(
 		handler,
 		await createRequest({
-			session: { id: '1', email: 'kody@example.com', rememberMe: false },
+			session: {
+				stableUserId: testStableUserIdFromEmail('kody@example.com'),
+				email: 'kody@example.com',
+				rememberMe: false,
+			},
 			method: 'POST',
 			body: { username: 'kody', displayName: 'Kody the Koala', bio: 'Hi' },
 		}),
@@ -370,7 +386,7 @@ test('account profile API rejects username changes when package updates fail', a
 		handler,
 		await createRequest({
 			session: {
-				id: '1',
+				stableUserId: testStableUserIdFromEmail('current-user@example.com'),
 				email: 'current-user@example.com',
 				rememberMe: false,
 			},
@@ -403,7 +419,7 @@ test('account profile API rejects invalid or duplicate usernames', async () => {
 	])
 	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
 	const session = {
-		id: '1',
+		stableUserId: testStableUserIdFromEmail('current-user@example.com'),
 		email: 'current-user@example.com',
 		rememberMe: false,
 	}
@@ -464,7 +480,7 @@ test('account profile API rounds trip displayName, bio, and visibility', async (
 	const env = createEnv(testDb.db)
 	const handler = createAccountProfileApiHandler(env)
 	const session = {
-		id: '1',
+		stableUserId: testStableUserIdFromEmail('current-user@example.com'),
 		email: 'current-user@example.com',
 		rememberMe: false,
 	}
@@ -546,7 +562,7 @@ test('account profile API validates profile field updates', async () => {
 	const testDb = createProfileTestDb([createUser(1, 'current-user')])
 	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
 	const session = {
-		id: '1',
+		stableUserId: testStableUserIdFromEmail('current-user@example.com'),
 		email: 'current-user@example.com',
 		rememberMe: false,
 	}

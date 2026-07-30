@@ -3,6 +3,7 @@ import {
 	bytesToBase64Url,
 	utf8ToBase64Url,
 } from '@kody-internal/shared/base64.ts'
+import { isStableUserId } from '#worker/user-id.ts'
 
 /**
  * Cross-site auth handoff for hosted package apps.
@@ -22,22 +23,21 @@ import {
 export const packageAppHandoffQueryParam = '__kody_handoff'
 
 const handoffTokenTtlMs = 60_000
-const handoffSignaturePurpose = 'kody-package-app-handoff:v1'
+const handoffSignaturePurpose = 'kody-package-app-handoff:v2'
 const handoffReplayKeyPrefix = 'package-app-handoff:'
 // Cloudflare KV enforces a 60 second minimum expiration TTL, which matches the
 // token lifetime.
 const handoffReplayTtlSeconds = 60
 
 export type PackageAppHandoffClaims = {
-	/** Numeric app user id, as stored in the `kody_session` cookie payload. */
-	userId: string
+	stableUserId: string
 	username: string
 	kodyId: string
 }
 
 type StoredHandoffPayload = {
-	v: 1
-	uid: string
+	v: 2
+	stableUserId: string
 	usr: string
 	pkg: string
 	exp: number
@@ -48,9 +48,8 @@ function isStoredHandoffPayload(value: unknown): value is StoredHandoffPayload {
 	if (!value || typeof value !== 'object') return false
 	const record = value as Record<string, unknown>
 	return (
-		record.v === 1 &&
-		typeof record.uid === 'string' &&
-		record.uid.length > 0 &&
+		record.v === 2 &&
+		isStableUserId(record.stableUserId) &&
 		typeof record.usr === 'string' &&
 		record.usr.length > 0 &&
 		typeof record.pkg === 'string' &&
@@ -88,8 +87,8 @@ export async function createPackageAppHandoffToken(input: {
 	const now = input.now ?? Date.now()
 	const payload = utf8ToBase64Url(
 		JSON.stringify({
-			v: 1,
-			uid: input.claims.userId,
+			v: 2,
+			stableUserId: input.claims.stableUserId,
 			usr: input.claims.username,
 			pkg: input.claims.kodyId,
 			exp: now + handoffTokenTtlMs,
@@ -169,7 +168,7 @@ export async function consumePackageAppHandoffToken(input: {
 	}
 
 	return {
-		userId: parsed.uid,
+		stableUserId: parsed.stableUserId,
 		username: parsed.usr,
 		kodyId: parsed.pkg,
 	}

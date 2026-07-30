@@ -82,13 +82,13 @@ type AdminUsageRollupRow = {
  */
 export async function loadAdminUserUsageData(
 	env: Env,
-	userId: number,
+	stableUserId: string,
 	now: Date = new Date(),
 ): Promise<AdminUserUsageLoaderData | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT id, username, email, plan, stripe_plan, stable_user_id FROM users WHERE id = ?`,
+		`SELECT id, username, email, plan, stripe_plan, stable_user_id FROM users WHERE stable_user_id = ?`,
 	)
-		.bind(userId)
+		.bind(stableUserId)
 		.first<AdminUserUsageUserRow>()
 	if (!row) return null
 
@@ -127,7 +127,7 @@ export async function loadAdminUserUsageData(
 
 	return {
 		ok: true,
-		userId: row.id,
+		stableUserId: usageUserId,
 		username: row.username,
 		plan,
 		currentMonth,

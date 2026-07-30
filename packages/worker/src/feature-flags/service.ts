@@ -17,7 +17,7 @@ type GlobalFlagRow = {
 	enabled: number
 	rollout_percent: number | null
 	note: string
-	updated_by: number | null
+	updated_by_stable_user_id: string | null
 	updated_at: string
 }
 
@@ -27,6 +27,7 @@ type OverrideFlagRow = {
 	enabled: number
 	updated_at: string
 	username: string
+	stable_user_id: string
 }
 
 type OverrideEnabledRow = {
@@ -260,8 +261,10 @@ export async function listFeatureFlagsForAdmin(
 ): Promise<Array<AdminFeatureFlag>> {
 	const globalResult = await db
 		.prepare(
-			`SELECT key, enabled, rollout_percent, note, updated_by, updated_at
-			 FROM feature_flags`,
+			`SELECT f.key, f.enabled, f.rollout_percent, f.note,
+				u.stable_user_id AS updated_by_stable_user_id, f.updated_at
+			 FROM feature_flags f
+			 LEFT JOIN users u ON u.id = f.updated_by`,
 		)
 		.all<GlobalFlagRow>()
 	const globalByKey = new Map(
@@ -270,7 +273,8 @@ export async function listFeatureFlagsForAdmin(
 
 	const overrideResult = await db
 		.prepare(
-			`SELECT o.flag_key, o.user_id, o.enabled, o.updated_at, u.username
+			`SELECT o.flag_key, o.user_id, o.enabled, o.updated_at, u.username,
+				u.stable_user_id
 			 FROM feature_flag_user_overrides o
 			 JOIN users u ON u.id = o.user_id
 			 ORDER BY o.flag_key ASC, u.username ASC`,
@@ -283,7 +287,7 @@ export async function listFeatureFlagsForAdmin(
 	for (const row of overrideResult.results ?? []) {
 		const list = overridesByKey.get(row.flag_key) ?? []
 		list.push({
-			userId: row.user_id,
+			stableUserId: row.stable_user_id,
 			username: row.username,
 			enabled: row.enabled === 1,
 			updatedAt: row.updated_at,
@@ -307,7 +311,7 @@ export async function listFeatureFlagsForAdmin(
 						enabled: global.enabled === 1,
 						rolloutPercent: global.rollout_percent,
 						note: global.note,
-						updatedBy: global.updated_by,
+						updatedByStableUserId: global.updated_by_stable_user_id,
 						updatedAt: global.updated_at,
 					}
 				: null,
@@ -335,7 +339,7 @@ export async function listFeatureFlagsForAdmin(
 						enabled: global.enabled === 1,
 						rolloutPercent: global.rollout_percent,
 						note: global.note,
-						updatedBy: global.updated_by,
+						updatedByStableUserId: global.updated_by_stable_user_id,
 						updatedAt: global.updated_at,
 					}
 				: null,

@@ -10,27 +10,25 @@ import {
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	stableUserIdSchema,
 } from './admin-shared.ts'
 import {
 	adminFeatureFlagSchema,
 	assertFeatureFlagKey,
 	resolveActingAdminUserId,
-	resolveTargetUserId,
+	resolveTargetUser,
 } from './feature-flag-shared.ts'
 
 const inputSchema = z
 	.object({
 		key: z.string().min(1).describe('Feature flag key from the code registry.'),
-		userId: z
-			.number()
-			.int()
-			.positive()
-			.optional()
-			.describe('Numeric users.id for the override target.'),
+		stableUserId: stableUserIdSchema.optional(),
 		username: z
 			.string()
 			.optional()
-			.describe('Username for the override target when userId is omitted.'),
+			.describe(
+				'Username for the override target when stableUserId is omitted.',
+			),
 		enabled: z
 			.boolean()
 			.optional()
@@ -58,17 +56,17 @@ const inputSchema = z
 				path: ['enabled'],
 			})
 		}
-		if (value.userId === undefined && value.username === undefined) {
+		if (value.stableUserId === undefined && value.username === undefined) {
 			context.addIssue({
 				code: 'custom',
-				message: 'Provide either userId or username.',
-				path: ['userId'],
+				message: 'Provide either stableUserId or username.',
+				path: ['stableUserId'],
 			})
 		}
-		if (value.userId !== undefined && value.username !== undefined) {
+		if (value.stableUserId !== undefined && value.username !== undefined) {
 			context.addIssue({
 				code: 'custom',
-				message: 'Provide either userId or username, not both.',
+				message: 'Provide either stableUserId or username, not both.',
 				path: ['username'],
 			})
 		}
@@ -85,7 +83,7 @@ export const adminFeatureFlagOverrideCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_feature_flag_override',
 		description:
-			'Set or clear a per-user feature flag override by userId or username. Admin-only; never returns user content.',
+			'Set or clear a per-user feature flag override by stable user id or username. Admin-only; never returns user content.',
 		keywords: [
 			'admin',
 			'feature flags',
@@ -102,26 +100,26 @@ export const adminFeatureFlagOverrideCapability = defineDomainCapability(
 				'admin_feature_flag_override',
 				async () => {
 					const key = assertFeatureFlagKey(args.key)
-					const targetUserId = await resolveTargetUserId(ctx.env.APP_DB, {
-						userId: args.userId,
+					const target = await resolveTargetUser(ctx.env.APP_DB, {
+						stableUserId: args.stableUserId,
 						username: args.username,
 					})
 					const clear = args.clear === true
 					if (clear) {
 						const cleared = await clearFeatureFlagUserOverride(ctx.env.APP_DB, {
 							key,
-							userId: targetUserId,
+							userId: target.dbUserId,
 						})
 						if (!cleared) {
 							throw new Error(
-								`No override exists for feature flag "${key}" and userId ${targetUserId}.`,
+								`No override exists for feature flag "${key}" and stableUserId ${target.stableUserId}.`,
 							)
 						}
 					} else {
 						const updatedBy = await resolveActingAdminUserId(ctx)
 						await setFeatureFlagUserOverride(ctx.env.APP_DB, {
 							key,
-							userId: targetUserId,
+							userId: target.dbUserId,
 							enabled: args.enabled === true,
 							updatedBy,
 						})

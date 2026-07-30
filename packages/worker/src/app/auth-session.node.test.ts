@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { createCookie } from '@remix-run/cookie'
 import {
 	createAuthCookie,
 	isAuthSessionInvalidatedByPasswordChange,
@@ -13,7 +14,11 @@ test('createAuthCookie stamps issuedAt for password-change invalidation', async 
 	setAuthSessionSecret(testCookieSecret)
 	const now = 1_700_000_000_000
 	const cookie = await createAuthCookie(
-		{ id: '1', email: 'user@example.com', rememberMe: false },
+		{
+			stableUserId: '1'.repeat(64),
+			email: 'user@example.com',
+			rememberMe: false,
+		},
 		false,
 		now,
 	)
@@ -23,6 +28,29 @@ test('createAuthCookie stamps issuedAt for password-change invalidation', async 
 	const parsed = await readParsedAuthSession(request, now)
 	expect(parsed?.issuedAt).toBe(now)
 	expect(parsed?.session.rememberMe).toBe(false)
+})
+
+test('legacy numeric-id session cookies fail closed', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	const legacyCookie = createCookie('kody_session', {
+		httpOnly: true,
+		sameSite: 'Lax',
+		path: '/',
+		secrets: [testCookieSecret],
+	})
+	const cookie = await legacyCookie.serialize(
+		JSON.stringify({
+			id: '42',
+			email: 'user@example.com',
+			rememberMe: false,
+			issuedAt: Date.now(),
+		}),
+	)
+	const request = new Request('https://example.com/', {
+		headers: { Cookie: cookie.split(';')[0]! },
+	})
+
+	await expect(readParsedAuthSession(request)).resolves.toBeNull()
 })
 
 test('password-change invalidation covers legacy cookies, second-precision SQLite, and re-login', () => {

@@ -1,5 +1,6 @@
 import { createCookie } from '@remix-run/cookie'
 import { isSecureRequest } from '#app/auth-session.ts'
+import { isStableUserId } from '#worker/user-id.ts'
 
 /**
  * WebAuthn ceremony state. The challenge lives in a short-lived signed
@@ -12,8 +13,10 @@ export type WebAuthnChallenge = {
 	challenge: string
 	webauthnUserId?: string
 	/** Registration only: the app user the ceremony was started for. */
-	userId?: number
+	stableUserId?: string
 }
+
+type StoredWebAuthnChallenge = WebAuthnChallenge & { v: 2 }
 
 let challengeCookie: ReturnType<typeof createCookie> | null = null
 let challengeSecret: string | null = null
@@ -47,15 +50,16 @@ function getChallengeCookie() {
 	return challengeCookie
 }
 
-function isWebAuthnChallenge(value: unknown): value is WebAuthnChallenge {
+function isWebAuthnChallenge(value: unknown): value is StoredWebAuthnChallenge {
 	if (!value || typeof value !== 'object') return false
 	const record = value as Record<string, unknown>
 	return (
+		record.v === 2 &&
 		typeof record.challenge === 'string' &&
 		record.challenge.length > 0 &&
 		(record.webauthnUserId === undefined ||
 			typeof record.webauthnUserId === 'string') &&
-		(record.userId === undefined || typeof record.userId === 'number')
+		(record.stableUserId === undefined || isStableUserId(record.stableUserId))
 	)
 }
 
@@ -63,7 +67,10 @@ export async function createWebAuthnChallengeCookie(
 	data: WebAuthnChallenge,
 	secure: boolean,
 ) {
-	return getChallengeCookie().serialize(JSON.stringify(data), { secure })
+	return getChallengeCookie().serialize(
+		JSON.stringify({ ...data, v: 2 } satisfies StoredWebAuthnChallenge),
+		{ secure },
+	)
 }
 
 export async function destroyWebAuthnChallengeCookie(secure: boolean) {
@@ -86,7 +93,11 @@ export async function readWebAuthnChallenge(
 	try {
 		const parsed = JSON.parse(stored)
 		if (isWebAuthnChallenge(parsed)) {
-			return parsed
+			return {
+				challenge: parsed.challenge,
+				webauthnUserId: parsed.webauthnUserId,
+				stableUserId: parsed.stableUserId,
+			}
 		}
 	} catch {
 		return null

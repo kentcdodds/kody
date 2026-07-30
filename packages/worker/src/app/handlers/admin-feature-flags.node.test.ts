@@ -45,6 +45,11 @@ type OverrideRow = {
 type UserRow = {
 	id: number
 	username: string
+	stable_user_id?: string
+}
+
+function stableUserId(id: number) {
+	return id.toString(16).padStart(64, '0')
 }
 
 function createAdminActor(roles: Array<RoleName>) {
@@ -61,7 +66,7 @@ function createAdminActor(roles: Array<RoleName>) {
 		permissions,
 		artifactOwnerIds: ['1'],
 		mcpUser: {
-			userId: 'stable-admin',
+			userId: stableUserId(1),
 			email: 'admin@example.com',
 			username: 'admin-user',
 			displayName: 'admin-user',
@@ -85,7 +90,12 @@ function createFeatureFlagsTestEnv(
 			{ ...row },
 		]),
 	)
-	const users = new Map((input.users ?? []).map((row) => [row.id, { ...row }]))
+	const users = new Map(
+		(input.users ?? []).map((row) => [
+			row.id,
+			{ ...row, stable_user_id: row.stable_user_id ?? stableUserId(row.id) },
+		]),
+	)
 	let clock = 0
 
 	function nextTimestamp() {
@@ -104,15 +114,30 @@ function createFeatureFlagsTestEnv(
 				return createStatement(query, nextParams)
 			},
 			async first<T>() {
-				if (normalized.includes('select id from users where id = ?')) {
-					const user = users.get(Number(params[0]))
-					return (user ? { id: user.id } : null) as T | null
+				if (
+					normalized.includes(
+						'select id, stable_user_id from users where stable_user_id = ?',
+					)
+				) {
+					const user = [...users.values()].find(
+						(row) => row.stable_user_id === params[0],
+					)
+					return (
+						user ? { id: user.id, stable_user_id: user.stable_user_id } : null
+					) as T | null
 				}
-				if (normalized.includes('select id from users where username = ?')) {
+				if (
+					normalized.includes(
+						'select id, stable_user_id from users where username = ?',
+					)
+				) {
 					const username = String(params[0])
 					for (const user of users.values()) {
 						if (user.username === username) {
-							return { id: user.id } as T
+							return {
+								id: user.id,
+								stable_user_id: user.stable_user_id,
+							} as T
 						}
 					}
 					return null
@@ -146,7 +171,11 @@ function createFeatureFlagsTestEnv(
 					!normalized.includes('where')
 				) {
 					return {
-						results: [...globals.values()].map((row) => ({ ...row })),
+						results: [...globals.values()].map((row) => ({
+							...row,
+							updated_by_stable_user_id:
+								users.get(row.updated_by ?? -1)?.stable_user_id ?? null,
+						})),
 						meta: { changes: 0 },
 					} as { results: Array<T>; meta: { changes: number } }
 				}
@@ -164,6 +193,7 @@ function createFeatureFlagsTestEnv(
 								enabled: row.enabled,
 								updated_at: row.updated_at,
 								username: user.username,
+								stable_user_id: user.stable_user_id,
 							}
 						})
 						.filter((row) => row !== null)
@@ -360,7 +390,7 @@ test('admin feature flags HTTP lifecycle: auth, list, set_global, and validation
 					enabled: true,
 					rolloutPercent: 25,
 					note: 'canary',
-					updatedBy: 1,
+					updatedByStableUserId: null,
 				},
 			},
 			{
@@ -418,8 +448,12 @@ test('admin feature flags set_user_override validates user identity and existenc
 	const handler = createAdminFeatureFlagsApiHandler(
 		createFeatureFlagsTestEnv({
 			users: [
-				{ id: 1, username: 'admin-user' },
-				{ id: 2, username: 'jane' },
+				{
+					id: 1,
+					username: 'admin-user',
+					stable_user_id: stableUserId(1),
+				},
+				{ id: 2, username: 'jane', stable_user_id: stableUserId(2) },
 			],
 		}) as unknown as Env,
 	)
@@ -447,7 +481,7 @@ test('admin feature flags set_user_override validates user identity and existenc
 				action: 'set_user_override',
 				key: 'demo-indicator',
 				enabled: true,
-				userId: 2,
+				stableUserId: stableUserId(2),
 				username: 'jane',
 			},
 		}),
@@ -465,7 +499,7 @@ test('admin feature flags set_user_override validates user identity and existenc
 				action: 'set_user_override',
 				key: 'demo-indicator',
 				enabled: true,
-				userId: 404,
+				stableUserId: stableUserId(404),
 			},
 		}),
 	)
@@ -494,7 +528,7 @@ test('admin feature flags set_user_override validates user identity and existenc
 				key: 'demo-indicator',
 				overrides: [
 					expect.objectContaining({
-						userId: 2,
+						stableUserId: stableUserId(2),
 						username: 'jane',
 						enabled: true,
 					}),

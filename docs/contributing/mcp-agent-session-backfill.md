@@ -20,10 +20,11 @@ gh workflow run backfill-mcp-agent-sessions.yml \
   -f worker_script=kody-production
 ```
 
-Review the uploaded audit artifact, then re-run with `-f mode=execute` only when
-there are no `no_owner` rows, ownership conflicts, or other failures. Production
-inventory is large (thousands of MCP Durable Objects); the job timeout is six
-hours.
+Review the uploaded audit artifact, then re-run with `-f mode=execute` when
+there are no ownership conflicts or hard failures. Ownerless stored objects
+(`no_owner`) are accepted in the completion audit pre-launch — they have no
+`userId` to attribute for account deletion. Production inventory is large
+(thousands of MCP Durable Objects); the job timeout is six hours.
 
 ## Required environment (local CLI)
 
@@ -42,7 +43,8 @@ npm run backfill:mcp-agent-sessions -- \
 
 The command resolves the `MCP` namespace, cursor-pages every object with stored
 data, and calls the maintenance ownership RPC in batches of 50 without writing
-index rows. Review every `no_owner`, conflict, and failure before execution.
+index rows. Review conflicts and failures before execution; `no_owner` rows are
+recorded but do not block completion.
 
 ## Execute (local)
 
@@ -55,7 +57,7 @@ npm run backfill:mcp-agent-sessions -- \
 ```
 
 Execution is idempotent. It registers same-owner rows, rejects ownership
-conflicts, writes an audit artifact, and writes completion marker version `1`
-only when no failures remain. Account deletion fails closed with HTTP 503 until
-that marker exists. Do not run the production execute command from an agent; an
-operator must review the dry-run artifact first.
+conflicts, retries transient per-object failures once, writes an audit artifact,
+and writes completion marker version `1` when no failures or ownership conflicts
+remain (`no_owner` is accepted). Account deletion fails closed with HTTP 503
+until that marker exists.

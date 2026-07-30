@@ -515,9 +515,9 @@ export function AdminInvitesRoute(handle: Handle) {
 											label: 'Created by',
 											value:
 												invite.createdByEmail ??
-												(invite.createdBy == null
+												(invite.createdByStableUserId == null
 													? 'Unknown'
-													: String(invite.createdBy)),
+													: invite.createdByStableUserId),
 										},
 										{
 											label: 'Revoked',

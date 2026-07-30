@@ -110,13 +110,9 @@ function getDataKey(href: string) {
 	return `${pathname}?${getListKey(href)}`
 }
 
-function parseSelectedUserId(value: string | null): number | null {
-	if (!value) return null
-	const parsed = Number.parseInt(value, 10)
-	if (!Number.isFinite(parsed) || parsed < 1 || String(parsed) !== value) {
-		return null
-	}
-	return parsed
+function parseSelectedStableUserId(value: string | null): string | null {
+	if (!value || !/^[a-f0-9]{64}$/.test(value)) return null
+	return value
 }
 
 /**
@@ -173,7 +169,7 @@ export function AdminUsersRoute(handle: Handle) {
 	let loadedThroughPage = 1
 	const userList = createInfiniteList<AdminUserListItem>({
 		mergeDirection: 'append',
-		getKey: (user) => String(user.id),
+		getKey: (user) => user.stableUserId,
 		onSnapshot: (snapshot) => {
 			usersSnapshot = snapshot
 		},
@@ -194,7 +190,7 @@ export function AdminUsersRoute(handle: Handle) {
 	// Draft follows the selected user (see the render body) until the admin
 	// edits it. Null stored plan values are shown/saved as `free`.
 	let selectedPlanChoice: AdminPlanName = 'free'
-	let planDraftUserId: number | null = null
+	let planDraftStableUserId: string | null = null
 	let loadRequestId = 0
 	let lastLoadedDataKey = ''
 	let lastLoadedListKey = ''
@@ -204,24 +200,26 @@ export function AdminUsersRoute(handle: Handle) {
 	let usageData: AdminUserUsageLoaderData | null = null
 	let usageMessage: string | null = null
 	let usageRequestId = 0
-	let usageLoadedForUserId: number | null = null
-	let usageLoadingForUserId: number | null = null
-	let usageFailedForUserId: number | null = null
+	let usageLoadedForStableUserId: string | null = null
+	let usageLoadingForStableUserId: string | null = null
+	let usageFailedForStableUserId: string | null = null
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
 	}
 
-	function getSelectedUserIdFromHref(href: string) {
-		return parseSelectedUserId(getSelection(href).selectedId)
+	function getSelectedStableUserIdFromHref(href: string) {
+		return parseSelectedStableUserId(getSelection(href).selectedId)
 	}
 
 	function resolveSelectedUser(href: string) {
-		const selectedUserId = getSelectedUserIdFromHref(href)
-		if (selectedUserId == null) return null
+		const selectedStableUserId = getSelectedStableUserIdFromHref(href)
+		if (selectedStableUserId == null) return null
 		return (
-			usersSnapshot.items.find((user) => user.id === selectedUserId) ??
-			(selectedUserFallback?.id === selectedUserId
+			usersSnapshot.items.find(
+				(user) => user.stableUserId === selectedStableUserId,
+			) ??
+			(selectedUserFallback?.stableUserId === selectedStableUserId
 				? selectedUserFallback
 				: null)
 		)
@@ -250,7 +248,7 @@ export function AdminUsersRoute(handle: Handle) {
 		selectedUserFallback = payload.selectedUser
 		resetPlanDraft()
 		message =
-			getSelectedUserIdFromHref(href) != null && !payload.selectedUser
+			getSelectedStableUserIdFromHref(href) != null && !payload.selectedUser
 				? 'User not found.'
 				: null
 		status = 'ready'
@@ -272,18 +270,18 @@ export function AdminUsersRoute(handle: Handle) {
 		return `${url.pathname}${url.search}`
 	}
 
-	function buildUserDetailHref(userId: number) {
+	function buildUserDetailHref(stableUserId: string) {
 		const url = new URL(getCurrentHref(), 'http://localhost')
 		url.searchParams.delete('page')
-		return buildDetailHref(String(userId), url.search)
+		return buildDetailHref(stableUserId, url.search)
 	}
 
-	async function loadUserUsage(userId: number) {
-		usageLoadingForUserId = userId
+	async function loadUserUsage(stableUserId: string) {
+		usageLoadingForStableUserId = stableUserId
 		const requestId = ++usageRequestId
 		try {
 			const response = await fetch(
-				`${adminUserUsageApiPath}?userId=${userId}`,
+				`${adminUserUsageApiPath}?stableUserId=${stableUserId}`,
 				{ headers: { Accept: 'application/json' }, credentials: 'include' },
 			)
 			if (requestId !== usageRequestId) return
@@ -298,8 +296,8 @@ export function AdminUsersRoute(handle: Handle) {
 			usageData = payload
 			usageStatus = 'ready'
 			usageMessage = null
-			usageLoadedForUserId = userId
-			usageFailedForUserId = null
+			usageLoadedForStableUserId = stableUserId
+			usageFailedForStableUserId = null
 			handle.update()
 		} catch (error) {
 			if (requestId !== usageRequestId) return
@@ -308,10 +306,10 @@ export function AdminUsersRoute(handle: Handle) {
 				error instanceof Error
 					? error.message
 					: 'Unable to load usage for this account.'
-			usageFailedForUserId = userId
+			usageFailedForStableUserId = stableUserId
 			handle.update()
 		} finally {
-			if (requestId === usageRequestId) usageLoadingForUserId = null
+			if (requestId === usageRequestId) usageLoadingForStableUserId = null
 		}
 	}
 
@@ -320,15 +318,15 @@ export function AdminUsersRoute(handle: Handle) {
 	// keeps stale limits from rendering while the refetch is in flight.
 	function invalidateUsage() {
 		usageData = null
-		usageLoadedForUserId = null
-		usageFailedForUserId = null
+		usageLoadedForStableUserId = null
+		usageFailedForStableUserId = null
 	}
 
 	// Any refresh of `users` may carry a newer stored plan, so drop the
 	// unsaved draft and let the render pass reseed the select from the
 	// refreshed record.
 	function resetPlanDraft() {
-		planDraftUserId = null
+		planDraftStableUserId = null
 	}
 
 	async function loadAdminUsers() {
@@ -442,9 +440,11 @@ export function AdminUsersRoute(handle: Handle) {
 		const nextItems = updatedUser
 			? matchesRoleFilter
 				? currentItems.map((item) =>
-						item.id === updatedUser.id ? updatedUser : item,
+						item.stableUserId === updatedUser.stableUserId ? updatedUser : item,
 					)
-				: currentItems.filter((item) => item.id !== updatedUser.id)
+				: currentItems.filter(
+						(item) => item.stableUserId !== updatedUser.stableUserId,
+					)
 			: currentItems
 		// reset() invalidates any in-flight load-more so a page fetched before
 		// the mutation cannot merge stale rows or counts back in afterward.
@@ -454,12 +454,12 @@ export function AdminUsersRoute(handle: Handle) {
 			hasMore: nextItems.length < payload.total,
 			totalCount: payload.total,
 		})
-		const selectedUserId = getSelectedUserIdFromHref(href)
+		const selectedStableUserId = getSelectedStableUserIdFromHref(href)
 		selectedUserFallback =
 			payload.selectedUser ??
 			(updatedUser &&
-			selectedUserId != null &&
-			updatedUser.id === selectedUserId
+			selectedStableUserId != null &&
+			updatedUser.stableUserId === selectedStableUserId
 				? updatedUser
 				: selectedUserFallback)
 		resetPlanDraft()
@@ -484,7 +484,7 @@ export function AdminUsersRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({
 					action,
-					userId: selectedUser.id,
+					stableUserId: selectedUser.stableUserId,
 					role: selectedRoleToAssign,
 				}),
 			})
@@ -535,7 +535,7 @@ export function AdminUsersRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({
 					action: 'update_plan',
-					userId: selectedUser.id,
+					stableUserId: selectedUser.stableUserId,
 					plan,
 				}),
 			})
@@ -585,7 +585,7 @@ export function AdminUsersRoute(handle: Handle) {
 				credentials: 'include',
 				body: JSON.stringify({
 					action,
-					userId: selectedUser.id,
+					stableUserId: selectedUser.stableUserId,
 				}),
 			})
 			if (response.status === 401) {
@@ -662,26 +662,28 @@ export function AdminUsersRoute(handle: Handle) {
 		const { items: users, hasMore, totalCount, isLoadingMore } = usersSnapshot
 		const filters = readFilterState(currentHref)
 		const hasActiveFilters = Boolean(filters.search || filters.role)
-		const selectedUserId = getSelectedUserIdFromHref(currentHref)
+		const selectedStableUserId = getSelectedStableUserIdFromHref(currentHref)
 		const selectedUser = resolveSelectedUser(currentHref)
 		const isMutating = actionState !== 'idle'
 
 		if (
 			selectedUser &&
 			typeof document !== 'undefined' &&
-			usageLoadedForUserId !== selectedUser.id &&
-			usageLoadingForUserId !== selectedUser.id &&
-			usageFailedForUserId !== selectedUser.id
+			usageLoadedForStableUserId !== selectedUser.stableUserId &&
+			usageLoadingForStableUserId !== selectedUser.stableUserId &&
+			usageFailedForStableUserId !== selectedUser.stableUserId
 		) {
 			usageStatus = 'loading'
-			usageLoadingForUserId = selectedUser.id
-			const usageUserId = selectedUser.id
-			handle.queueTask(() => loadUserUsage(usageUserId))
+			usageLoadingForStableUserId = selectedUser.stableUserId
+			const usageStableUserId = selectedUser.stableUserId
+			handle.queueTask(() => loadUserUsage(usageStableUserId))
 		}
 		// Never render one account's usage under another account's header
 		// while the drill-down request is still in flight.
 		const selectedUsage =
-			selectedUser && usageData && usageData.userId === selectedUser.id
+			selectedUser &&
+			usageData &&
+			usageData.stableUserId === selectedUser.stableUserId
 				? usageData
 				: null
 		const usageMonthsAscending = selectedUsage
@@ -690,8 +692,8 @@ export function AdminUsersRoute(handle: Handle) {
 
 		// Re-seed the plan draft whenever a different user becomes selected so
 		// the select always starts from that user's stored plan.
-		if (selectedUser && selectedUser.id !== planDraftUserId) {
-			planDraftUserId = selectedUser.id
+		if (selectedUser && selectedUser.stableUserId !== planDraftStableUserId) {
+			planDraftStableUserId = selectedUser.stableUserId
 			selectedPlanChoice = selectedUser.plan ?? 'free'
 		}
 
@@ -766,13 +768,13 @@ export function AdminUsersRoute(handle: Handle) {
 								<>
 									<AccountManagementList>
 										{users.map((user) => (
-											<li key={user.id} mix={css({ minWidth: 0 })}>
+											<li key={user.stableUserId} mix={css({ minWidth: 0 })}>
 												<AccountManagementListItemButton
-													active={selectedUserId === user.id}
+													active={selectedStableUserId === user.stableUserId}
 													disabled={isMutating}
 													onClick={() => {
 														if (isMutating) return
-														navigate(buildUserDetailHref(user.id))
+														navigate(buildUserDetailHref(user.stableUserId))
 													}}
 												>
 													<strong mix={css({ display: 'block' })}>
@@ -873,7 +875,10 @@ export function AdminUsersRoute(handle: Handle) {
 												? (selectedUser.email_verified_at ?? 'Verified')
 												: 'No',
 										},
-										{ label: 'User id', value: String(selectedUser.id) },
+										{
+											label: 'Stable user id',
+											value: selectedUser.stableUserId,
+										},
 										{
 											label: 'Roles',
 											value:
@@ -1090,7 +1095,7 @@ export function AdminUsersRoute(handle: Handle) {
 										</p>
 									) : null}
 									{usageStatus === 'error' &&
-									usageFailedForUserId === selectedUser.id &&
+									usageFailedForStableUserId === selectedUser.stableUserId &&
 									usageMessage ? (
 										<AccountManagementMessage tone="error">
 											{usageMessage}
