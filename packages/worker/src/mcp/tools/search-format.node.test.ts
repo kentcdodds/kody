@@ -655,7 +655,6 @@ export declare function fetch(request: Request): Promise<Response>
 					tokenSetupUrl:
 						'http://localhost/account/package-invocation-tokens/new?packageKodyIds=observed-package&exportNames=app',
 				}),
-				typesSource: null,
 				referencedTypes: [],
 				functions: [
 					expect.objectContaining({
