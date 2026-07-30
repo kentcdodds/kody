@@ -15,7 +15,7 @@ import {
 	chunkArray,
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
-import { isStableUserId } from '#worker/user-id.ts'
+import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export const adminUserListItemFieldNames = [
 	'stableUserId',
@@ -95,8 +95,8 @@ function decodePathSegment(value: string) {
 function parseSelectedStableUserId(
 	value: string | null | undefined,
 ): string | null {
-	const trimmed = value?.trim() ?? ''
-	return isStableUserId(trimmed) ? trimmed : null
+	const stableUserId = normalizeStableUserId(value)
+	return isStableUserId(stableUserId) ? stableUserId : null
 }
 
 /** Read the `q` and `role` filter query params shared by the page and API. */
@@ -203,41 +203,43 @@ export async function loadAdminUserByTarget(
 	db: D1Database,
 	input: AdminUserTarget,
 ): Promise<AdminUserListItem | null> {
-	const stableUserId = input.stableUserId?.trim() ?? ''
+	const stableUserId = normalizeStableUserId(input.stableUserId)
 	const email = input.email?.trim() ?? ''
 	const username = input.username?.trim() ?? ''
-	const userRow =
-		stableUserId && isStableUserId(stableUserId)
-			? await db
-					.prepare(
-						`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+	if (input.stableUserId !== undefined && !isStableUserId(stableUserId)) {
+		return null
+	}
+	const userRow = stableUserId
+		? await db
+				.prepare(
+					`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
 						email_outbound_paused_at, created_at, updated_at
 					 FROM users
 					 WHERE stable_user_id = ?`,
-					)
-					.bind(stableUserId)
-					.first<AdminUserRow>()
-			: email
-				? await db
-						.prepare(
-							`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+				)
+				.bind(stableUserId)
+				.first<AdminUserRow>()
+		: email
+			? await db
+					.prepare(
+						`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
 							email_outbound_paused_at, created_at, updated_at
 						 FROM users
 						 WHERE email = ? COLLATE NOCASE`,
-						)
-						.bind(email)
-						.first<AdminUserRow>()
-				: username
-					? await db
-							.prepare(
-								`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+					)
+					.bind(email)
+					.first<AdminUserRow>()
+			: username
+				? await db
+						.prepare(
+							`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
 								email_outbound_paused_at, created_at, updated_at
 							 FROM users
 							 WHERE username = ? COLLATE NOCASE`,
-							)
-							.bind(username)
-							.first<AdminUserRow>()
-					: null
+						)
+						.bind(username)
+						.first<AdminUserRow>()
+				: null
 	if (!userRow) return null
 
 	const rolesByUserId = await loadRolesByUserIds(db, [userRow.id])

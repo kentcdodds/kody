@@ -69,20 +69,21 @@ export async function resolveTargetUser(
 		throw new Error('Provide either stableUserId or username, not both.')
 	}
 	if (input.stableUserId !== undefined) {
-		if (!isStableUserId(input.stableUserId)) {
+		const stableUserId = normalizeStableUserId(input.stableUserId)
+		if (!isStableUserId(stableUserId)) {
 			throw new Error('stableUserId must be a valid stable user id.')
 		}
 		const row = await db
 			.prepare(`SELECT id, stable_user_id FROM users WHERE stable_user_id = ?`)
-			.bind(input.stableUserId)
+			.bind(stableUserId)
 			.first<{ id: number; stable_user_id: string }>()
 		if (!row) {
-			throw new Error(`User not found for stableUserId ${input.stableUserId}.`)
+			throw new Error(`User not found for stableUserId ${stableUserId}.`)
 		}
 		return { dbUserId: row.id, stableUserId: row.stable_user_id }
 	}
 	if (input.username !== undefined) {
-		const username = input.username.trim()
+		const username = input.username.trim().toLowerCase()
 		if (!username) {
 			throw new Error('username must not be empty.')
 		}

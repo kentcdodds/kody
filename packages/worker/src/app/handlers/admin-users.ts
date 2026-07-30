@@ -29,7 +29,7 @@ import {
 import { type RoleName, roleNames } from '#worker/identity/permissions.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
 import { type routes } from '#app/routes.ts'
-import { isStableUserId } from '#worker/user-id.ts'
+import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export { adminUserListItemFieldNames, type AdminUserListItem }
 
@@ -521,6 +521,6 @@ function readRoleName(body: object, key: string): RoleName | null {
 function readStableUserIdField(body: object): string | null {
 	const value = (body as Record<string, unknown>).stableUserId
 	if (typeof value !== 'string') return null
-	const normalized = value.trim()
-	return isStableUserId(normalized) ? normalized : null
+	const stableUserId = normalizeStableUserId(value)
+	return isStableUserId(stableUserId) ? stableUserId : null
 }

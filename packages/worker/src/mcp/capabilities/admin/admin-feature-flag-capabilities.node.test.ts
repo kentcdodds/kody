@@ -367,7 +367,7 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 	).rejects.toThrow(/Unknown feature flag key/)
 
 	const setByUsername = await adminFeatureFlagOverrideCapability.handler(
-		{ key: 'demo-indicator', username: 'jane', enabled: true },
+		{ key: 'demo-indicator', username: 'JANE', enabled: true },
 		ctx,
 	)
 	expect(setByUsername).toMatchObject({

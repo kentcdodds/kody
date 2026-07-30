@@ -13,6 +13,7 @@ import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { loadAdminUserByTarget } from '#worker/admin/users-data.ts'
 
 type UserRow = {
 	id: number
@@ -903,4 +904,26 @@ test('admin_user_update rejects unknown users and unknown plan names', async () 
 			ctx,
 		),
 	).rejects.toThrow()
+})
+
+test('admin user lookup does not fall through from an invalid stable id', async () => {
+	const { db } = createAdminCapabilityTestDb({
+		users: [
+			adminTestUser({
+				id: 1,
+				username: 'admin',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			}),
+		],
+		userRoles: [{ user_id: 1, role_name: 'admin' }],
+	})
+
+	await expect(
+		loadAdminUserByTarget(db, {
+			stableUserId: 'not-a-stable-id',
+			email: 'admin@example.com',
+		}),
+	).resolves.toBeNull()
 })

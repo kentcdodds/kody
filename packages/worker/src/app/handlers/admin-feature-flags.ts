@@ -14,7 +14,7 @@ import {
 	setFeatureFlagGlobalState,
 	setFeatureFlagUserOverride,
 } from '#worker/feature-flags/service.ts'
-import { isStableUserId } from '#worker/user-id.ts'
+import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export function createAdminFeatureFlagsHandler(env: Env) {
 	return {
@@ -425,5 +425,7 @@ function readBoolean(body: object, key: string): boolean | null {
 
 function readStableUserIdField(body: object): string | null {
 	const value = (body as Record<string, unknown>).stableUserId
-	return isStableUserId(value) ? value : null
+	const stableUserId =
+		typeof value === 'string' ? normalizeStableUserId(value) : ''
+	return isStableUserId(stableUserId) ? stableUserId : null
 }
