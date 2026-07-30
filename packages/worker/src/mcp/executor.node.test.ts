@@ -539,6 +539,66 @@ test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs',
 	expect(Date.now() - startedAtMs).toBeLessThan(500)
 })
 
+test('createExecuteExecutor drops queued evaluations when the host deadline expires', async () => {
+	let evaluateStarts = 0
+	let releaseHolders: () => void = () => {}
+	const holdersMayFinish = new Promise<void>((resolve) => {
+		releaseHolders = resolve
+	})
+	let resolveAllHoldersStarted: () => void = () => {}
+	const allHoldersStarted = new Promise<void>((resolve) => {
+		resolveAllHoldersStarted = resolve
+	})
+	let sharedEnv: Env
+	const exports = createExecutorTestExports()
+	const providers = [{ name: 'kody', fns: {} }]
+	const loader = {
+		get(_id: string, factory: () => FakeWorkerOptions) {
+			factory()
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate() {
+							evaluateStarts += 1
+							if (evaluateStarts === 4) resolveAllHoldersStarted()
+							await holdersMayFinish
+							return { result: 'done', logs: [] }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+	sharedEnv = createExecutorTestEnv(loader)
+
+	await runWithDynamicWorkerEvaluationBudget(async () => {
+		const holders = Array.from({ length: 4 }, () =>
+			createExecuteExecutor({
+				env: sharedEnv,
+				exports,
+				gatewayProps: createGatewayProps('queue-user'),
+				timeoutMs: 10_000,
+			}).execute('async () => "holder"', providers),
+		)
+		await allHoldersStarted
+		expect(evaluateStarts).toBe(4)
+
+		const queuedResult = await createExecuteExecutor({
+			env: sharedEnv,
+			exports,
+			gatewayProps: createGatewayProps('queue-user'),
+			timeoutMs: 40,
+		}).execute('async () => "queued"', providers)
+
+		expect(queuedResult.error).toBe(executorSandboxTimeoutMessage)
+		expect(evaluateStarts).toBe(4)
+
+		releaseHolders()
+		await Promise.all(holders)
+		expect(evaluateStarts).toBe(4)
+	})
+})
+
 test('createExecuteExecutor fails fast when nested fan-out saturates its request budget', async () => {
 	let evaluationCount = 0
 	let maxActiveEvaluations = 0

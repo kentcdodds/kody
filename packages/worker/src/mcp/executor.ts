@@ -146,9 +146,14 @@ type DynamicWorkerEntrypoint = {
 	}>
 }
 
+type DynamicWorkerPermitWaiter = {
+	resolve: () => void
+	reject: (error: Error) => void
+}
+
 type DynamicWorkerEvaluationGate = {
 	active: number
-	queue: Array<() => void>
+	queue: Array<DynamicWorkerPermitWaiter>
 }
 
 type DynamicWorkerEvaluationContext = {
@@ -178,14 +183,22 @@ export async function runWithDynamicWorkerEvaluationBudget<T>(
 
 async function withDynamicWorkerEvaluationPermit<T>(
 	evaluate: () => Promise<T>,
+	signal?: AbortSignal,
 ): Promise<T> {
 	return await runWithDynamicWorkerEvaluationBudget(async () => {
 		const context = dynamicWorkerEvaluationGateStorage.getStore()
 		if (!context) {
 			throw new Error('Dynamic worker evaluation budget was not initialized.')
 		}
-		return await runWithDynamicWorkerEvaluationPermit(context, evaluate)
+		return await runWithDynamicWorkerEvaluationPermit(context, evaluate, signal)
 	})
+}
+
+function throwIfEvaluationDeadlineAborted(signal?: AbortSignal) {
+	if (!signal?.aborted) return
+	const reason = signal.reason
+	if (reason instanceof Error) throw reason
+	throw new Error(executorSandboxTimeoutMessage)
 }
 
 /**
@@ -194,30 +207,35 @@ async function withDynamicWorkerEvaluationPermit<T>(
  * dynamic worker is running and can schedule timers. If `evaluate` never
  * returns (or never starts), this host race is what bounds the request and
  * lets run-record finish write an error instead of leaving `running` forever.
+ *
+ * The AbortSignal is shared with the permit queue so a timed-out waiter is
+ * removed and cannot start `evaluate` after `execute` has already returned.
  */
 export async function raceWithHostEvaluationDeadline<T>(
-	evaluate: () => Promise<T>,
+	evaluate: (signal: AbortSignal) => Promise<T>,
 	timeoutMs: number,
 ): Promise<T> {
 	if (
 		!Number.isFinite(timeoutMs) ||
 		timeoutMs >= maxSupportedExecutorTimeoutMs
 	) {
-		return await evaluate()
+		return await evaluate(new AbortController().signal)
 	}
+	const controller = new AbortController()
 	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	const timeoutPromise = new Promise<never>((_resolve, reject) => {
+		timeoutId = setTimeout(
+			() => {
+				const error = new Error(executorSandboxTimeoutMessage)
+				controller.abort(error)
+				reject(error)
+			},
+			Math.max(1, timeoutMs),
+		)
+	})
 	try {
-		return await Promise.race([
-			evaluate(),
-			new Promise<never>((_resolve, reject) => {
-				timeoutId = setTimeout(
-					() => {
-						reject(new Error(executorSandboxTimeoutMessage))
-					},
-					Math.max(1, timeoutMs),
-				)
-			}),
-		])
+		throwIfEvaluationDeadlineAborted(controller.signal)
+		return await Promise.race([evaluate(controller.signal), timeoutPromise])
 	} finally {
 		if (timeoutId !== undefined) {
 			clearTimeout(timeoutId)
@@ -228,10 +246,14 @@ export async function raceWithHostEvaluationDeadline<T>(
 async function runWithDynamicWorkerEvaluationPermit<T>(
 	context: DynamicWorkerEvaluationContext,
 	evaluate: () => Promise<T>,
+	signal?: AbortSignal,
 ): Promise<T> {
 	const { gate } = context
+	throwIfEvaluationDeadlineAborted(signal)
+	let acquired = false
 	if (gate.active < maxConcurrentDynamicWorkerEvaluationsPerRequest) {
 		gate.active += 1
+		acquired = true
 	} else if (context.depth > 0) {
 		// A nested evaluation cannot wait safely once the request is saturated:
 		// every active permit may belong to an ancestor/sibling that is itself
@@ -240,11 +262,44 @@ async function runWithDynamicWorkerEvaluationPermit<T>(
 		// waiting for the queued evaluation.
 		throw new Error(dynamicWorkerCapacityErrorMessages[1])
 	} else {
-		await new Promise<void>((resolve) => {
-			gate.queue.push(resolve)
+		await new Promise<void>((resolve, reject) => {
+			const waiter: DynamicWorkerPermitWaiter = {
+				resolve: () => {
+					cleanup()
+					resolve()
+				},
+				reject: (error) => {
+					cleanup()
+					reject(error)
+				},
+			}
+			const onAbort = () => {
+				const index = gate.queue.indexOf(waiter)
+				if (index >= 0) {
+					gate.queue.splice(index, 1)
+				}
+				waiter.reject(new Error(executorSandboxTimeoutMessage))
+			}
+			const cleanup = () => {
+				if (signal) {
+					signal.removeEventListener('abort', onAbort)
+				}
+			}
+			if (signal) {
+				signal.addEventListener('abort', onAbort, { once: true })
+				if (signal.aborted) {
+					onAbort()
+					return
+				}
+			}
+			gate.queue.push(waiter)
 		})
+		// A cancelled waiter never reaches here; a transferred permit means we
+		// already own `active` without incrementing again.
+		acquired = true
 	}
 	try {
+		throwIfEvaluationDeadlineAborted(signal)
 		return await dynamicWorkerEvaluationGateStorage.run(
 			{
 				gate,
@@ -253,10 +308,11 @@ async function runWithDynamicWorkerEvaluationPermit<T>(
 			evaluate,
 		)
 	} finally {
+		if (!acquired) return
 		const next = gate.queue.shift()
 		if (next) {
 			// Transfer this permit directly to the oldest waiter.
-			next()
+			next.resolve()
 		} else {
 			gate.active -= 1
 		}
@@ -434,10 +490,11 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				let response: Awaited<ReturnType<DynamicWorkerEntrypoint['evaluate']>>
 				try {
 					response = await raceWithHostEvaluationDeadline(
-						async () =>
-							await withDynamicWorkerEvaluationPermit(
-								async () => await entrypoint.evaluate(dispatchers),
-							),
+						async (signal) =>
+							await withDynamicWorkerEvaluationPermit(async () => {
+								throwIfEvaluationDeadlineAborted(signal)
+								return await entrypoint.evaluate(dispatchers)
+							}, signal),
 						input.timeout,
 					)
 				} catch (error) {

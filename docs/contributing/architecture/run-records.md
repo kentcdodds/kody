@@ -193,10 +193,11 @@ Orphan log lines are cleaned in the same pass. Caps are applied in small batches
 per finish so a single RPC stays bounded.
 
 Stranded `running` rows (isolate reset, lost `waitUntil` finish, hung Worker
-Loader `evaluate`) are reconciled to `error` / `Interrupted` / outcome-unknown
-using the surface-aware TTLs above. Reconciliation runs on the DO alarm, on
-retention passes, and **on read** (`getRun`, keyed lookup, `listRuns`,
-`summarize`) so Activity and keyed-execute recovery do not wait for an alarm.
+Loader `evaluate`) are reconciled to `status=error` with `errorName=Interrupted`
+(Interrupted means the execution outcome is unknown) using the surface-aware
+TTLs above. Reconciliation runs on the DO alarm, on retention passes, and **on
+read** (`getRun`, keyed lookup, `listRuns`, `summarize`) so Activity and
+keyed-execute recovery do not wait for an alarm.
 
 ## Invariant: state vs history
 

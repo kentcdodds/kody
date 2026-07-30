@@ -556,6 +556,9 @@ class RunLogBase extends DurableObject<Env> {
 			finishedAt,
 			input.id,
 		)
+		// Row became terminal: age-prune now applies, so any prior idle
+		// conclusion is stale (covers reconcile + heal-on-read callers).
+		this.retentionIdleConfirmed = false
 	}
 
 	/**
@@ -639,7 +642,6 @@ class RunLogBase extends DurableObject<Env> {
 			id: run.id,
 			startedAt: run.startedAt,
 		})
-		this.retentionIdleConfirmed = false
 		const healed = this.ctx.storage.sql
 			.exec<Record<string, SqlStorageValue>>(
 				`SELECT r.*,
@@ -710,13 +712,15 @@ class RunLogBase extends DurableObject<Env> {
 
 		// Soonest stale due-time can belong to a newer short-lived surface
 		// (execute) even when an older long-lived service/job row exists.
-		const runningRows = this.ctx.storage.sql
-			.exec<{ started_at: string; surface: string }>(
-				`SELECT started_at, surface FROM runs
-				WHERE status = 'running'`,
+		// Only the earliest row per surface can produce that due-time.
+		const oldestRunningPerSurface = this.ctx.storage.sql
+			.exec<{ surface: string; started_at: string }>(
+				`SELECT surface, MIN(started_at) AS started_at FROM runs
+				WHERE status = 'running'
+				GROUP BY surface`,
 			)
 			.toArray()
-		for (const row of runningRows) {
+		for (const row of oldestRunningPerSurface) {
 			const surface = isRunSurface(row.surface) ? row.surface : 'execute'
 			consider(
 				Date.parse(row.started_at) +
