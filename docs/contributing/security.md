@@ -95,17 +95,19 @@ author-supplied HTML, JS, and worker code. Anything that shares an origin with
 them is inside their reach, and they get no CSP backstop (invariant 2), so the
 origin boundary _is_ the control.
 
-**The problem this replaces.** Package apps used to be served on the app origin,
-and the handler forwarded a clone of the original request into the package
-worker. That gave author code two ways to act as the owner:
+**Threat model.** Author-supplied package code must not act as the owner. If
+package apps shared the app origin and the handler forwarded a clone of the
+original request into the package worker, author code would have two ways to act
+as the owner:
 
-- server-side, the forwarded request carried the owner's `kody_session` cookie
-  (and any `Authorization` header), so package code could read it and replay it;
-- client-side, a package page was same-origin with the app, so
+- server-side, the forwarded request would carry the owner's `kody_session`
+  cookie (and any `Authorization` header), so package code could read it and
+  replay it;
+- client-side, a same-origin package page could
   `fetch('/account/secrets.json', { credentials: 'include' })` from author JS
-  would read the owner's secrets or mutate their account.
+  and read the owner's secrets or mutate their account.
 
-This was a real vulnerability, not an accepted risk. Two independent fixes now
+That is a real vulnerability, not an accepted risk. Two independent controls
 close it.
 
 **1. Credential stripping (always on).** `createPackageCodeRequest` builds the
@@ -169,18 +171,17 @@ that decides whether a URL is "ours" must accept both.
 `/@{username}/packages/{kodyId}` URL on either origin — so a URL copied out of a
 running package app resolves to that package — while `/account/*` paths stay
 app-origin only, since the package-app origin does not serve them. Untrusted
-markdown is the opposite case and needs no change: `getSafeMarkdownLinkHref`
-refuses any `/@...` user-scope path regardless of host, so a community README
-cannot link into either origin's package surface.
+markdown is the opposite case: `getSafeMarkdownLinkHref` refuses any `/@...`
+user-scope path regardless of host, so a community README cannot link into
+either origin's package surface.
 
-Future hardening, deliberately out of scope for now: per-user subdomains
-(`{username}.kodyapps.dev`) would additionally isolate one user's package apps
-from another's, and one package from another. Today every package app for every
-user shares the `kodyapps.dev` origin, so package A can reach package B's
-`kody_pkg_session`-authorized endpoints from the browser. That is a smaller
-blast radius than first-party access (all of it stays inside one owner's own
-data, since serving is `userId`-scoped and the session is bound to one account),
-but it is not zero.
+Out of scope here: per-user subdomains (`{username}.kodyapps.dev`) would
+additionally isolate one user's package apps from another's, and one package
+from another. Every package app for every user shares the `kodyapps.dev` origin,
+so package A can reach package B's `kody_pkg_session`-authorized endpoints from
+the browser. That is a smaller blast radius than first-party access (all of it
+stays inside one owner's own data, since serving is `userId`-scoped and the
+session is bound to one account), but it is not zero.
 
 ## Auth rate limiting
 
