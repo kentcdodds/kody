@@ -265,7 +265,11 @@ dispatch without being republished.
 literal dynamic `import("kody:@...")` keep working while callers migrate, but no
 guidance surface (tool descriptions, search detail, error `nextStep` strings,
 docs) may recommend them. `packages.invoke` subsumes both helpers because
-checking is no longer optional or separate. See
+checking is no longer optional or separate (`invokeChecked` is a plain alias of
+`invoke`). The sandbox prelude warns once per run on `check` / `invokeChecked`,
+the dynamic import helper warns once per specifier, and publish checks surface
+non-fatal deprecation warnings in the passing lint message
+(`deprecated-invocation-usage.ts`). See
 [Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md)
 for the performance budget that keeps the keyless path honest.
 

@@ -79,11 +79,12 @@ package artifacts do not contain a copy of the host runtime implementation, so
 old package artifacts automatically observe current host runtime behavior.
 
 Literal dynamic imports (`await import('kody:@scope/my-package/export-name')`)
-are **deprecated**. They still resolve at runtime for the signed-in user, but do
-not write new code with them: use a static `kody:@...` import when the target
-package's name is known when the code is written, or `packages.invoke` when it
-is not. Computed dynamic Kody package imports, including variables and template
-strings, have never been supported.
+are **deprecated**. They still resolve at runtime for the signed-in user (and
+log a deprecation warning naming the replacement), but do not write new code
+with them: use a static `kody:@...` import when the target package's name is
+known when the code is written, or `packages.invoke` when it is not. Computed
+dynamic Kody package imports, including variables and template strings, have
+never been supported.
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
 the module's **default export** as the first function argument. Shared helpers

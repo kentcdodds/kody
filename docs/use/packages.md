@@ -149,9 +149,10 @@ exhaustive.
   see the current published version.
 - Literal dynamic imports such as
   `await import("kody:@scope/my-package/export")` are **deprecated**. They still
-  resolve the target package export at runtime for the signed-in user, but do
-  not write new code with them: use a static import when the name is known at
-  write time, or `packages.invoke` when it is not (see
+  resolve the target package export at runtime for the signed-in user, but log a
+  deprecation warning (once per specifier) naming the replacement. Do not write
+  new code with them: use a static import when the name is known at write time,
+  or `packages.invoke` when it is not (see
   [Dynamic package invocation](#dynamic-package-invocation)).
 - Every direct static `kody:@...` import must be declared in
   `package.json#kody.dependencies` using the imported package name, for example
@@ -264,8 +265,10 @@ package-mounted secrets (`kody.secretMounts`), and its own `packages` helper.
 **Deprecated:** `packages.invokeChecked`, `packages.check`, and literal dynamic
 `import("kody:@...")` still work but should not appear in new code.
 `packages.invoke` already performs the contract check that `invokeChecked` and
-`check` provided, and the static/dynamic rules above cover the literal dynamic
-import cases.
+`check` provided (`invokeChecked` is now a plain alias of `invoke`), and the
+static/dynamic rules above cover the literal dynamic import cases. Using any of
+the three logs a runtime deprecation warning naming the replacement, and package
+publish checks report them as non-fatal warnings.
 
 ## Package storage
 
