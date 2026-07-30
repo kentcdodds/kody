@@ -1185,3 +1185,22 @@ test('package codemod fleet revert applies packageIds filters and leaves others 
 		await getPackageCodemodRunItemById(env.APP_DB, 'item-pkg-keep-b'),
 	).toMatchObject({ status: 'applied' })
 })
+
+test('package codemod step rejects a cursor without a runId', async () => {
+	resetMocks()
+	const { env } = createEnv()
+	mocks.listSavedPackagesByUserId.mockResolvedValue([])
+
+	await expect(
+		runPackageCodemodStep({
+			env,
+			baseUrl: 'https://example.com',
+			initiatedByUserId: 'user-1',
+			codemodId,
+			mode: 'scan',
+			scope: { kind: 'user', userId: 'user-1' },
+			cursor: 'pkg-somewhere',
+			limit: 50,
+		}),
+	).rejects.toThrow('cursor requires runId')
+})

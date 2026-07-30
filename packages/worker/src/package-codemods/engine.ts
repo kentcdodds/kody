@@ -1162,6 +1162,11 @@ export async function runPackageCodemodStep(input: {
 	if (input.mode === 'revert' && !input.revertOfRunId && !input.runId) {
 		throw new Error('revert mode requires revertOfRunId.')
 	}
+	// A cursor is only meaningful when continuing an existing run; accepting
+	// one on a fresh run would silently skip everything before the cursor.
+	if (input.cursor != null && !input.runId) {
+		throw new Error('cursor requires runId to continue an existing run.')
+	}
 	const run = await ensureRun({
 		env: input.env,
 		runId: input.runId,
