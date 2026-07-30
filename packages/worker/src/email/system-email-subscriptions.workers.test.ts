@@ -184,7 +184,7 @@ test(
 		})
 		// A non-admin saving the identical subscription must never receive
 		// operator system mail.
-		const regularPackage = await seedSubscribedPackage({
+		await seedSubscribedPackage({
 			bundleKv,
 			userId: regularStableId,
 			scope: 'sysuser',
