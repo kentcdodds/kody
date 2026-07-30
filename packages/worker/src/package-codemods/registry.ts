@@ -1,0 +1,24 @@
+import { ambientStorageToPackageStorageCodemod } from './codemods/0001-ambient-storage-to-package-storage.ts'
+import { type PackageCodemod } from './types.ts'
+
+const packageCodemods: Array<PackageCodemod> = [
+	ambientStorageToPackageStorageCodemod,
+]
+
+const packageCodemodsById = new Map(
+	packageCodemods.map((codemod) => [codemod.id, codemod]),
+)
+
+export function listPackageCodemods(): Array<{
+	id: string
+	description: string
+}> {
+	return packageCodemods.map((codemod) => ({
+		id: codemod.id,
+		description: codemod.description,
+	}))
+}
+
+export function getPackageCodemodById(id: string): PackageCodemod | null {
+	return packageCodemodsById.get(id) ?? null
+}

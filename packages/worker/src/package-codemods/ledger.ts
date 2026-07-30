@@ -1,0 +1,396 @@
+import { type PackageCodemodFinding } from './types.ts'
+
+export type PackageCodemodRunStatus = 'running' | 'completed' | 'failed'
+
+export type PackageCodemodRunRecord = {
+	id: string
+	codemodId: string
+	mode: string
+	scopeUserId: string | null
+	initiatedByUserId: string
+	filtersJson: string
+	status: PackageCodemodRunStatus
+	revertOfRunId: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export type PackageCodemodRunItemRecord = {
+	id: string
+	runId: string
+	userId: string
+	packageId: string
+	kodyId: string
+	status: string
+	beforeCommit: string | null
+	afterCommit: string | null
+	changedPaths: Array<string>
+	findings: Array<PackageCodemodFinding>
+	checkSummaryJson: string | null
+	error: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+const runSelectColumns = `id, codemod_id, mode, scope_user_id, initiated_by_user_id,
+	filters_json, status, revert_of_run_id, created_at, updated_at`
+
+const itemSelectColumns = `id, run_id, user_id, package_id, kody_id, status,
+	before_commit, after_commit, changed_paths_json, findings_json,
+	check_summary_json, error, created_at, updated_at`
+
+function parseJsonArray<T>(value: string | null | undefined): Array<T> {
+	if (value == null || value === '') return []
+	try {
+		const parsed: unknown = JSON.parse(value)
+		return Array.isArray(parsed) ? (parsed as Array<T>) : []
+	} catch {
+		return []
+	}
+}
+
+function mapRunRow(row: Record<string, unknown>): PackageCodemodRunRecord {
+	const status = String(row['status'])
+	return {
+		id: String(row['id']),
+		codemodId: String(row['codemod_id']),
+		mode: String(row['mode']),
+		scopeUserId:
+			row['scope_user_id'] == null ? null : String(row['scope_user_id']),
+		initiatedByUserId: String(row['initiated_by_user_id']),
+		filtersJson: String(row['filters_json'] ?? '{}'),
+		status:
+			status === 'completed' || status === 'failed' || status === 'running'
+				? status
+				: 'failed',
+		revertOfRunId:
+			row['revert_of_run_id'] == null ? null : String(row['revert_of_run_id']),
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+	}
+}
+
+function mapItemRow(row: Record<string, unknown>): PackageCodemodRunItemRecord {
+	return {
+		id: String(row['id']),
+		runId: String(row['run_id']),
+		userId: String(row['user_id']),
+		packageId: String(row['package_id']),
+		kodyId: String(row['kody_id']),
+		status: String(row['status']),
+		beforeCommit:
+			row['before_commit'] == null ? null : String(row['before_commit']),
+		afterCommit:
+			row['after_commit'] == null ? null : String(row['after_commit']),
+		changedPaths: parseJsonArray<string>(
+			row['changed_paths_json'] == null
+				? '[]'
+				: String(row['changed_paths_json']),
+		),
+		findings: parseJsonArray<PackageCodemodFinding>(
+			row['findings_json'] == null ? '[]' : String(row['findings_json']),
+		),
+		checkSummaryJson:
+			row['check_summary_json'] == null
+				? null
+				: String(row['check_summary_json']),
+		error: row['error'] == null ? null : String(row['error']),
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+	}
+}
+
+export async function createPackageCodemodRun(
+	db: D1Database,
+	input: {
+		id: string
+		codemodId: string
+		mode: string
+		scopeUserId: string | null
+		initiatedByUserId: string
+		filtersJson?: string
+		status?: PackageCodemodRunStatus
+		revertOfRunId?: string | null
+		createdAt?: string
+		updatedAt?: string
+	},
+): Promise<PackageCodemodRunRecord> {
+	const now = new Date().toISOString()
+	const createdAt = input.createdAt ?? now
+	const updatedAt = input.updatedAt ?? now
+	const status = input.status ?? 'running'
+	await db
+		.prepare(
+			`INSERT INTO package_codemod_runs (
+				id, codemod_id, mode, scope_user_id, initiated_by_user_id,
+				filters_json, status, revert_of_run_id, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			input.id,
+			input.codemodId,
+			input.mode,
+			input.scopeUserId,
+			input.initiatedByUserId,
+			input.filtersJson ?? '{}',
+			status,
+			input.revertOfRunId ?? null,
+			createdAt,
+			updatedAt,
+		)
+		.run()
+	return {
+		id: input.id,
+		codemodId: input.codemodId,
+		mode: input.mode,
+		scopeUserId: input.scopeUserId,
+		initiatedByUserId: input.initiatedByUserId,
+		filtersJson: input.filtersJson ?? '{}',
+		status,
+		revertOfRunId: input.revertOfRunId ?? null,
+		createdAt,
+		updatedAt,
+	}
+}
+
+export async function updatePackageCodemodRunStatus(
+	db: D1Database,
+	input: {
+		id: string
+		status: PackageCodemodRunStatus
+		updatedAt?: string
+	},
+) {
+	const updatedAt = input.updatedAt ?? new Date().toISOString()
+	await db
+		.prepare(
+			`UPDATE package_codemod_runs
+			SET status = ?, updated_at = ?
+			WHERE id = ?`,
+		)
+		.bind(input.status, updatedAt, input.id)
+		.run()
+}
+
+export async function getPackageCodemodRunById(
+	db: D1Database,
+	runId: string,
+): Promise<PackageCodemodRunRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${runSelectColumns}
+			FROM package_codemod_runs
+			WHERE id = ?`,
+		)
+		.bind(runId)
+		.first<Record<string, unknown>>()
+	return row ? mapRunRow(row) : null
+}
+
+export async function listPackageCodemodRuns(
+	db: D1Database,
+	input: {
+		codemodId?: string
+		scopeUserId?: string | null
+		limit?: number
+	} = {},
+): Promise<Array<PackageCodemodRunRecord>> {
+	const limit = Math.min(Math.max(input.limit ?? 50, 1), 200)
+	const conditions: Array<string> = []
+	const params: Array<unknown> = []
+	if (input.codemodId != null) {
+		conditions.push('codemod_id = ?')
+		params.push(input.codemodId)
+	}
+	if (input.scopeUserId !== undefined) {
+		if (input.scopeUserId == null) {
+			conditions.push('scope_user_id IS NULL')
+		} else {
+			conditions.push('scope_user_id = ?')
+			params.push(input.scopeUserId)
+		}
+	}
+	const whereClause =
+		conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+	const rows = await db
+		.prepare(
+			`SELECT ${runSelectColumns}
+			FROM package_codemod_runs
+			${whereClause}
+			ORDER BY created_at DESC, id DESC
+			LIMIT ?`,
+		)
+		.bind(...params, limit)
+		.all<Record<string, unknown>>()
+	return (rows.results ?? []).map(mapRunRow)
+}
+
+export async function insertPackageCodemodRunItem(
+	db: D1Database,
+	input: {
+		id: string
+		runId: string
+		userId: string
+		packageId: string
+		kodyId: string
+		status: string
+		beforeCommit?: string | null
+		afterCommit?: string | null
+		changedPaths?: Array<string>
+		findings?: Array<PackageCodemodFinding>
+		checkSummaryJson?: string | null
+		error?: string | null
+		createdAt?: string
+		updatedAt?: string
+	},
+): Promise<PackageCodemodRunItemRecord> {
+	const now = new Date().toISOString()
+	const createdAt = input.createdAt ?? now
+	const updatedAt = input.updatedAt ?? now
+	const changedPaths = input.changedPaths ?? []
+	const findings = input.findings ?? []
+	await db
+		.prepare(
+			`INSERT INTO package_codemod_run_items (
+				id, run_id, user_id, package_id, kody_id, status,
+				before_commit, after_commit, changed_paths_json, findings_json,
+				check_summary_json, error, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			input.id,
+			input.runId,
+			input.userId,
+			input.packageId,
+			input.kodyId,
+			input.status,
+			input.beforeCommit ?? null,
+			input.afterCommit ?? null,
+			JSON.stringify(changedPaths),
+			JSON.stringify(findings),
+			input.checkSummaryJson ?? null,
+			input.error ?? null,
+			createdAt,
+			updatedAt,
+		)
+		.run()
+	return {
+		id: input.id,
+		runId: input.runId,
+		userId: input.userId,
+		packageId: input.packageId,
+		kodyId: input.kodyId,
+		status: input.status,
+		beforeCommit: input.beforeCommit ?? null,
+		afterCommit: input.afterCommit ?? null,
+		changedPaths,
+		findings,
+		checkSummaryJson: input.checkSummaryJson ?? null,
+		error: input.error ?? null,
+		createdAt,
+		updatedAt,
+	}
+}
+
+export async function updatePackageCodemodRunItem(
+	db: D1Database,
+	input: {
+		id: string
+		status?: string
+		beforeCommit?: string | null
+		afterCommit?: string | null
+		changedPaths?: Array<string>
+		findings?: Array<PackageCodemodFinding>
+		checkSummaryJson?: string | null
+		error?: string | null
+		updatedAt?: string
+	},
+) {
+	const updates: Array<string> = []
+	const params: Array<unknown> = []
+	if (input.status !== undefined) {
+		updates.push('status = ?')
+		params.push(input.status)
+	}
+	if (input.beforeCommit !== undefined) {
+		updates.push('before_commit = ?')
+		params.push(input.beforeCommit)
+	}
+	if (input.afterCommit !== undefined) {
+		updates.push('after_commit = ?')
+		params.push(input.afterCommit)
+	}
+	if (input.changedPaths !== undefined) {
+		updates.push('changed_paths_json = ?')
+		params.push(JSON.stringify(input.changedPaths))
+	}
+	if (input.findings !== undefined) {
+		updates.push('findings_json = ?')
+		params.push(JSON.stringify(input.findings))
+	}
+	if (input.checkSummaryJson !== undefined) {
+		updates.push('check_summary_json = ?')
+		params.push(input.checkSummaryJson)
+	}
+	if (input.error !== undefined) {
+		updates.push('error = ?')
+		params.push(input.error)
+	}
+	const updatedAt = input.updatedAt ?? new Date().toISOString()
+	updates.push('updated_at = ?')
+	params.push(updatedAt)
+	if (updates.length === 1) return
+	params.push(input.id)
+	await db
+		.prepare(
+			`UPDATE package_codemod_run_items
+			SET ${updates.join(', ')}
+			WHERE id = ?`,
+		)
+		.bind(...params)
+		.run()
+}
+
+export async function listPackageCodemodRunItems(
+	db: D1Database,
+	input: {
+		runId: string
+		afterId?: string | null
+		limit?: number
+		status?: string
+	},
+): Promise<Array<PackageCodemodRunItemRecord>> {
+	const limit = Math.min(Math.max(input.limit ?? 50, 1), 200)
+	const conditions = ['run_id = ?', 'id > ?']
+	const params: Array<unknown> = [input.runId, input.afterId ?? '']
+	if (input.status != null) {
+		conditions.push('status = ?')
+		params.push(input.status)
+	}
+	const rows = await db
+		.prepare(
+			`SELECT ${itemSelectColumns}
+			FROM package_codemod_run_items
+			WHERE ${conditions.join(' AND ')}
+			ORDER BY id ASC
+			LIMIT ?`,
+		)
+		.bind(...params, limit)
+		.all<Record<string, unknown>>()
+	return (rows.results ?? []).map(mapItemRow)
+}
+
+export async function getPackageCodemodRunItemById(
+	db: D1Database,
+	itemId: string,
+): Promise<PackageCodemodRunItemRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${itemSelectColumns}
+			FROM package_codemod_run_items
+			WHERE id = ?`,
+		)
+		.bind(itemId)
+		.first<Record<string, unknown>>()
+	return row ? mapItemRow(row) : null
+}
