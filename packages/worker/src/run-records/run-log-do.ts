@@ -1228,17 +1228,25 @@ class RunLogBase extends DurableObject<Env> {
 		record: PackageInvocationLedgerRecord | null
 	}> {
 		const now = new Date().toISOString()
-		const updateCursor = this.ctx.storage.sql.exec(
-			`UPDATE package_invocation_ledger
-			SET status = ?, response_json = ?, updated_at = ?
-			WHERE id = ? AND status = 'in_progress' AND updated_at = ?`,
-			input.status,
-			input.responseJson,
-			now,
-			input.invocationId,
-			input.claimUpdatedAt,
-		)
-		const ledgerUpdated = updateCursor.rowsWritten > 0
+		// DO execution is serialized, so this read-then-write is atomic within
+		// the RPC; the fence is decided by an explicit row read instead of the
+		// billing-side rowsWritten counter.
+		const current = this.getInvocationLedgerRowById(input.invocationId)
+		const ledgerUpdated =
+			current != null &&
+			current.status === 'in_progress' &&
+			current.updatedAt === input.claimUpdatedAt
+		if (ledgerUpdated) {
+			this.ctx.storage.sql.exec(
+				`UPDATE package_invocation_ledger
+				SET status = ?, response_json = ?, updated_at = ?
+				WHERE id = ?`,
+				input.status,
+				input.responseJson,
+				now,
+				input.invocationId,
+			)
+		}
 		if (input.run) {
 			const existed = this.runExists(input.run.id)
 			this.upsertRun(input.run, 'replace')
@@ -1255,10 +1263,7 @@ class RunLogBase extends DurableObject<Env> {
 		if (ledgerUpdated) {
 			return { ledgerUpdated: true, record: null }
 		}
-		return {
-			ledgerUpdated: false,
-			record: this.getInvocationLedgerRowById(input.invocationId),
-		}
+		return { ledgerUpdated: false, record: current }
 	}
 
 	/**
@@ -1276,23 +1281,26 @@ class RunLogBase extends DurableObject<Env> {
 		/** Current row when the fence failed, so the caller can resolve it. */
 		record: PackageInvocationLedgerRecord | null
 	}> {
-		const deleteCursor = this.ctx.storage.sql.exec(
-			`DELETE FROM package_invocation_ledger
-			WHERE id = ? AND status = 'in_progress' AND updated_at = ?`,
-			input.invocationId,
-			input.claimUpdatedAt,
-		)
-		const released = deleteCursor.rowsWritten > 0
+		// Same explicit read-then-write fence as finishPackageInvocation: DO
+		// execution is serialized, so this is atomic within the RPC.
+		const current = this.getInvocationLedgerRowById(input.invocationId)
+		const released =
+			current != null &&
+			current.status === 'in_progress' &&
+			current.updatedAt === input.claimUpdatedAt
+		if (released) {
+			this.ctx.storage.sql.exec(
+				`DELETE FROM package_invocation_ledger WHERE id = ?`,
+				input.invocationId,
+			)
+		}
 		if (input.runId) {
 			await this.deleteRunIfRunning({ runId: input.runId })
 		}
 		if (released) {
 			return { released: true, record: null }
 		}
-		return {
-			released: false,
-			record: this.getInvocationLedgerRowById(input.invocationId),
-		}
+		return { released: false, record: current }
 	}
 
 	async listRuns(input: ListRunsInput): Promise<RunRecordPage> {

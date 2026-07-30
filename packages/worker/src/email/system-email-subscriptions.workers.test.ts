@@ -387,7 +387,11 @@ test(
 				source: 'email',
 				idempotencyKey: `email:${stored.id}:${adminPackage.packageId}:${systemTopic}`,
 			})
-			const response = JSON.parse(String(invocation?.responseJson)) as {
+			const responseJson = invocation?.responseJson
+			if (!responseJson) {
+				throw new Error('Expected a stored replay response for the admin row.')
+			}
+			const response = JSON.parse(responseJson) as {
 				body: Record<string, unknown>
 			}
 			expect(response.body).toMatchObject({
