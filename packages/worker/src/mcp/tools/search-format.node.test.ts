@@ -676,16 +676,23 @@ export declare function fetch(request: Request): Promise<Response>
 			truncated: false,
 		},
 	})
-	expect(observedPackageDetail.markdown).toContain('## Invoke vs import')
+	expect(observedPackageDetail.markdown).toContain('## Import vs invoke')
+	expect(observedPackageDetail.markdown).toContain(
+		'Preferred — static/bundled snapshot',
+	)
+	expect(observedPackageDetail.markdown).toContain(
+		'`import entry from "kody:@kody/observed-package"`',
+	)
+	expect(observedPackageDetail.markdown).toContain(
+		'Edge case — dynamic/current version or target-package runtime',
+	)
 	expect(observedPackageDetail.markdown).toContain(
 		'`packages.invokeChecked({ kodyId: "observed-package", exportName, params })`',
 	)
 	expect(observedPackageDetail.markdown).toContain(
 		'The `kodyId` is the bare Kody id (`observed-package`), not the npm-scoped package name (`@kody/observed-package`).',
 	)
-	expect(observedPackageDetail.markdown).toContain(
-		'`import entry from "kody:@kody/observed-package"`',
-	)
+	expect(observedPackageDetail.markdown).toContain('Prefer:')
 })
 
 test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {

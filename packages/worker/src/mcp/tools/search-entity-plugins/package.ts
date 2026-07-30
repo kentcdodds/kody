@@ -538,10 +538,10 @@ export const packageSearchEntityPlugin = {
 			`- Git lane: \`${maintain.gitLane}\` → clone → edit → push → \`${maintain.publish}\``,
 			'- Tool-only: `package_save` / repo sessions; full guide: `coding_guide_get({ guide: "package_authoring" })`',
 			'',
-			'## Invoke vs import',
+			'## Import vs invoke',
 			'',
-			`- Dynamic/current version: ${formatMarkdownInlineCode(invokeCheckedUsage)}. The \`kodyId\` is the bare Kody id (${formatMarkdownInlineCode(detail.record.kodyId)}), not the npm-scoped package name (${formatMarkdownInlineCode(detail.record.name)}).`,
-			`- Static/bundled snapshot: ${formatMarkdownInlineCode(rootImportUsage)}. Static \`kody:\` imports use the npm-scoped package name.`,
+			`- Preferred — static/bundled snapshot: ${formatMarkdownInlineCode(rootImportUsage)}. Static \`kody:\` imports use the npm-scoped package name and run in the caller's sandbox (negligible per-call platform overhead after bundling).`,
+			`- Edge case — dynamic/current version or target-package runtime: ${formatMarkdownInlineCode(invokeCheckedUsage)}. Use only when you need fresh published-export semantics without republishing the caller, or the target package's own runtime (\`packageContext\`, \`packageSecrets\`, nested \`packages\`, or mediated \`packageStorage\`). The \`kodyId\` is the bare Kody id (${formatMarkdownInlineCode(detail.record.kodyId)}), not the npm-scoped package name (${formatMarkdownInlineCode(detail.record.name)}).`,
 		]
 		if (appEntry) {
 			lines.push(
@@ -555,8 +555,17 @@ export const packageSearchEntityPlugin = {
 		if (exportDetails.length > 0) {
 			lines.push('', '## Exports', '')
 			for (const exportDetail of exportDetails) {
+				const primaryFunction = exportDetail.functions[0]
+				const staticUsage = primaryFunction
+					? buildPackageActionImportUsage({
+							packageName: detail.record.name,
+							subpath: exportDetail.subpath,
+							functionName: primaryFunction.name,
+						})
+					: `import entry from ${JSON.stringify(exportDetail.importSpecifier)}`
 				lines.push(
 					`- \`${exportDetail.subpath}\` -> \`${exportDetail.importSpecifier}\`${exportDetail.runtimeTarget ? ` (runtime target: \`${exportDetail.runtimeTarget}\`)` : ''}${exportDetail.typesPath ? ` (types: \`${exportDetail.typesPath}\`)` : ''}`,
+					`  - Prefer: \`${staticUsage}\``,
 				)
 				if (exportDetail.externalInvocation) {
 					lines.push(

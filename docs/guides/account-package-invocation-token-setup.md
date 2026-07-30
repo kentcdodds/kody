@@ -6,8 +6,11 @@ invocation HTTP API. The agent may construct a prefilled setup URL, but the
 agent must never see, generate for chat, or place the raw bearer token in the
 URL.
 
-For package runtime code that runs inside Kody, prefer `packages.invoke` or
-`packages.invokeChecked` instead of bearer tokens. Package invocation tokens are
+For package runtime code that runs inside Kody, prefer a static
+`kody:@scope/package/export` import for ordinary reuse, and
+`packages.invoke` / `packages.invokeChecked` only when dynamic current-version
+or target-package runtime semantics are required — never bearer tokens.
+Package invocation tokens are
 for external systems such as webhooks, gateway proxies, CLIs, or other trusted
 personal clients that call Kody over HTTP.
 

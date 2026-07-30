@@ -72,8 +72,10 @@ smoke-test path is unclear.
      packages).
    - When present, either review the source and call `community_fork_adopt`, or
      send `bulk_approval_url` / each `approval_url`.
-   - Wait for the user to approve or for adoption (when required), then verify
-     with `packages.invokeChecked(...)` before treating the package as complete.
+   - Wait for the user to approve or for adoption (when required), then
+     smoke-test before treating the package as complete (prefer a static
+     `kody:@...` import when enough; use `packages.invokeChecked(...)` when the
+     package runtime is required).
 
 ## Secret names and value names
 

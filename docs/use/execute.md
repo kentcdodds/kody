@@ -40,13 +40,23 @@ helpers are runtime exports:
   may run longer than execute's timeout. See [Workflows](./workflows.md)
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
+- use **`import thing from 'kody:@scope/my-package/export-name'`** or
+  **`import { helper } from 'kody:@scope/my-package/export-name'`** as the
+  default way to reuse a saved package export by npm-scoped package name. Static
+  `kody:@...` imports bundle a published snapshot into the caller's sandbox;
+  after bundling, each call has negligible platform overhead compared with
+  dynamic invocation
 - use **`import { packages } from 'kody:runtime'`** inside saved package runtime
-  contexts or authenticated execute calls when you need dynamic current-version
-  invocation through `packages.check(...)`, `packages.invoke(...)`, or
-  `packages.invokeChecked(...)`. Prefer `invokeChecked` unless you already
-  called `check` and are passing `check.invoke` to `invoke`. Pass the bare
-  `package.json#kody.id` as `kodyId` (for example, `github`), not the npm-scoped
-  `package.json.name` (for example, `@kentcdodds/github`)
+  contexts or authenticated execute calls only when you need dynamic
+  current-version invocation through `packages.check(...)`, `packages.invoke(...)`,
+  or `packages.invokeChecked(...)`. Prefer static imports for ordinary reuse.
+  Reach for `invokeChecked` when you need fresh published-export semantics,
+  the target package's own runtime (`packageContext`, `packageSecrets`, nested
+  `packages`), or mediated cross-package storage — and prefer `invokeChecked`
+  over bare `invoke` unless you already called `check` and are passing
+  `check.invoke` to `invoke`. Pass the bare `package.json#kody.id` as `kodyId`
+  (for example, `github`), not the npm-scoped `package.json.name` (for example,
+  `@kentcdodds/github`)
 - use **`import { serviceContext } from 'kody:runtime'`** inside package service
   code when you need the current service identity; it is **`null`** outside
   package service runs
@@ -59,12 +69,6 @@ helpers are runtime exports:
 - package service runs may also declare **`kody.services.<name>.timeoutMs`** in
   `package.json` when they need a longer executor budget than the default
   package-service timeout
-- use **`import thing from 'kody:@scope/my-package/export-name'`** or
-  **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
-  saved package export by npm-scoped package name. Unlike dynamic
-  `packages.invokeChecked` calls, static `kody:@...` imports use the scoped name
-  and are pinned to the dependency's published artifact when the caller is
-  bundled.
 
 `kody:runtime` is always supplied by the Kody host at execution time. Saved
 package artifacts do not contain a copy of the host runtime implementation, so
@@ -213,14 +217,16 @@ module-oriented runtime model:
 - **`kody.job_run_now(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging
 
-Static saved-package imports from ad hoc **execute** run under the ad hoc
-execute runtime. That means imported package modules can share exported helpers,
-but `packageContext` remains **`null`** because the imported module has not been
-entered as its own package runtime. Authenticated execute calls may import
-`packages` from `kody:runtime` and use `packages.check`, `packages.invoke`, or
-`packages.invokeChecked`; prefer `packages.invokeChecked` when execute needs to
-enter a saved package export so that target code receives its package runtime
-context. Those methods resolve the bare `kodyId`, such as `my-package`, rather
+Static saved-package imports from ad hoc **execute** are the default reuse path.
+They run under the ad hoc execute runtime: imported package modules share
+exported helpers (and `packageStorage()` still reaches the declaring package's
+bucket via bundler provenance), but `packageContext` remains **`null`** because
+the imported module has not been entered as its own package runtime.
+Authenticated execute calls may import `packages` from `kody:runtime` and use
+`packages.check`, `packages.invoke`, or `packages.invokeChecked` only for the
+edge cases that need dynamic current-version resolution or the target package's
+own runtime context. Prefer `packages.invokeChecked` over bare `invoke` in those
+cases. Those methods resolve the bare `kodyId`, such as `my-package`, rather
 than the npm-scoped package name, such as `@scope/my-package`.
 
 When you need to edit saved source, prefer the repo-backed workflow in
@@ -244,8 +250,10 @@ from execute or another saved package.
 
 One rule per context: ad hoc execute code binds a `storageId` on the call and
 uses ambient `storage`; saved-package code always uses `packageStorage()` for
-the package's own data; another package's data goes through
-`packages.invokeChecked`. See [Package storage](./packages.md#package-storage).
+the package's own data; another package's data goes through that package's
+export (prefer a static `kody:@...` import when a bundled snapshot is enough;
+use `packages.invokeChecked` when the target package's own runtime must mediate
+access). See [Package storage](./packages.md#package-storage).
 
 Kody supports durable storage binding for execute and scheduled jobs, including
 package-owned jobs and non-package jobs created with `job_schedule` or

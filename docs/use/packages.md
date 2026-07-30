@@ -173,6 +173,11 @@ exhaustive.
 
 ### Dynamic package invocation
 
+Prefer static `kody:@scope/package/export` imports for ordinary reuse. Dynamic
+invocation is the edge case: use it when the caller must pick up the target's
+current published export without being republished, or when the target export
+must run in its own package runtime.
+
 Package runtime code can invoke another package owned by the same user without
 statically importing it:
 
@@ -191,15 +196,13 @@ const result = await packages.invoke({
 })
 ```
 
-Use `packages.invokeChecked` for event subscribers, workflow dispatchers,
-agents, and other runtime fan-out where the caller should pick up the target
-package's current published export and wants Kody to validate the current
-runtime contract before invoking it. The check resolves the target package at
-runtime, so republishing `event-subscriber` changes what `event-dispatcher`
-observes without republishing `event-dispatcher`.
-
-Use static `kody:@scope/package/export` imports for library-like dependencies
-where bundling a published dependency snapshot with the caller is desired.
+Use `packages.invokeChecked` for event subscribers, workflow dispatchers, and
+other runtime fan-out where the caller should pick up the target package's
+current published export and wants Kody to validate the current runtime contract
+before invoking it. The check resolves the target package at runtime, so
+republishing `event-subscriber` changes what `event-dispatcher` observes without
+republishing `event-dispatcher`. Agents composing library-like helpers in
+`execute` should keep using static imports instead.
 
 Use `packages.check` when the caller wants to inspect the current contract
 before deciding whether to invoke:
@@ -267,13 +270,13 @@ construct a prefilled `/account/package-invocation-tokens/new` URL without raw
 token material.
 
 Static package imports from ad hoc MCP `execute` code, such as
-`kody:@scope/package/export`, do not get a package runtime context. They run as
-library/snapshot imports in the execute caller's runtime, where
-`packageStorage()` reaches the declaring package's own storage bucket (see
-[Package storage](#package-storage)). Use `packages.invokeChecked` from execute
-when you need to enter a saved package as that package so it receives
-`packageContext`, package-owned storage, package secrets, and its own `packages`
-helper.
+`kody:@scope/package/export`, are the default reuse path. They do not get a
+package runtime context: they run as library/snapshot imports in the execute
+caller's runtime, where `packageStorage()` still reaches the declaring package's
+own storage bucket (see [Package storage](#package-storage)). Use
+`packages.invokeChecked` from execute only when you need to enter a saved
+package as that package so it receives `packageContext`, package secrets, and
+its own `packages` helper, or when fresh current-version semantics matter.
 
 If `idempotencyKey` is omitted, Kody generates one. In package invocations that
 already have a parent idempotency key, the generated key is deterministic for
@@ -298,9 +301,11 @@ Every saved package owns one durable storage bucket per user
   and services.
 - **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
   `storageId` on the execute call and use ambient `storage`.
-- **Touching another package's data?** Call that package's exports via
-  `packages.invokeChecked({ kodyId, exportName, params })` so its own runtime
-  does the reading and writing.
+- **Touching another package's data?** Call that package's export. Prefer a
+  static `kody:@...` import when a bundled snapshot (with provenance-granted
+  `packageStorage()`) is enough; use
+  `packages.invokeChecked({ kodyId, exportName, params })` when the other
+  package's own runtime must mediate the read/write.
 
 `packageStorage()` returns the same storage interface as ambient `storage`
 (`get`/`set`/`list`/`sql`/`delete`/`clear`/`id`), writable, always bound to the
@@ -318,8 +323,9 @@ declaring package's own bucket no matter where the code runs:
   imported code sees the caller's bucket or `undefined`. Note that grants are
   per-bundle, not per-module: statically importing a package grants the whole
   bundle read/write access to that package's bucket, so treat static imports as
-  a trust decision and use `packages.invokeChecked` when you want the other
-  package's own runtime to mediate access.
+  a trust decision. Prefer static imports for ordinary composition; use
+  `packages.invokeChecked` when you want the other package's own runtime to
+  mediate access.
 
 ```ts
 import { packageStorage } from 'kody:runtime'

@@ -6,17 +6,21 @@ new package behavior.
 
 ## Choose the smallest durable surface
 
-### Invoke an existing package or capability
+### Reuse an existing package or capability
 
 Search first. If a built-in capability or saved package already does the work,
-invoke it instead of creating another implementation.
+call it instead of creating another implementation.
 
 - Call discovered built-in capabilities through `kody` in `execute`.
-- For a saved package's current published export, use
-  `packages.invokeChecked({ kodyId, exportName, params })` from an authenticated
-  `execute` call or package runtime.
-- Use a static `kody:@scope/package/export` import only when a bundled,
-  published snapshot is the intended dependency behavior.
+- For a saved package export, prefer a static
+  `kody:@scope/package/export` import. That bundles a published snapshot into
+  the caller's sandbox and avoids per-call dynamic-invocation platform overhead.
+- Use `packages.invokeChecked({ kodyId, exportName, params })` from an
+  authenticated `execute` call or package runtime only when you need dynamic
+  current-version semantics (pick up the target's latest published export
+  without republishing the caller), the target package's own runtime
+  (`packageContext`, `packageSecrets`, nested `packages`), or mediated
+  cross-package storage.
 
 This is the default for an established operation whose behavior should stay
 owned by its existing capability or package.
@@ -139,10 +143,12 @@ package-owned job with `"enabled": false`.
 After package checks and publishing succeed:
 
 1. Inspect the published package and export contracts.
-2. Invoke the scheduled wrapper from authenticated `execute` with
-   `packages.invokeChecked(...)` and omit `params`. This verifies the same
-   no-input contract the scheduler uses.
-3. Optionally invoke the underlying callable export with representative input:
+2. Smoke-test the scheduled wrapper from authenticated `execute`. Prefer a
+   static import when a bundled snapshot is enough; use
+   `packages.invokeChecked(...)` (omit `params`) when the wrapper needs the
+   package's own runtime — that path matches the no-input contract the
+   scheduler uses.
+3. Optionally call the underlying callable export with representative input:
    realistic field shapes, boundary values, and the same configuration
    references the wrapper will load. Never put plaintext secrets in params.
 4. Validate the structured results and the intended durable or external effects.
@@ -150,7 +156,7 @@ After package checks and publishing succeed:
 5. Only then change the job to `"enabled": true`, publish again, and verify the
    package/job detail reflects the enabled schedule.
 
-Example test call:
+Example test call when the wrapper needs package runtime context:
 
 ```ts
 import { packages } from 'kody:runtime'
@@ -160,6 +166,16 @@ export default async function main() {
 		kodyId: 'daily-report',
 		exportName: './scheduled-report',
 	})
+}
+```
+
+Example test call when a bundled snapshot is enough:
+
+```ts
+import scheduledReport from 'kody:@scope/daily-report/scheduled-report'
+
+export default async function main() {
+	return await scheduledReport()
 }
 ```
 

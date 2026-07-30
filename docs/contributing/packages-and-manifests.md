@@ -166,7 +166,9 @@ A saved package is the only top-level persisted primitive. Five concepts:
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
-  goes through `packages.invokeChecked`. Package-invocation runs (exports,
+  goes through that package's export (prefer static `kody:@...` import when a
+  bundled snapshot is enough; `packages.invokeChecked` when the target runtime
+  must mediate). Package-invocation runs (exports,
   subscription handlers, retrievers) bind no ambient `storage`, so guard-less
   ambient access in those contexts fails with the structured
   `runtime_helper_unbound` hint pointing at `packageStorage()`. Job and service
@@ -181,6 +183,12 @@ A saved package is the only top-level persisted primitive. Five concepts:
 - Packages may also export non-callable helper modules and values for reuse.
 
 ### Dynamic current-version invocation
+
+Static `kody:@scope/package/export` imports are the default agent and package
+composition path. Dynamic invocation is an edge case with substantially higher
+per-call platform overhead (idempotency D1 rows, nested export run records, and
+a separate sandbox evaluation). Prefer static imports unless the caller needs
+fresh published-export semantics or the target package's own runtime.
 
 Package runtime contexts and authenticated ad hoc execute calls expose
 `packages.check`, `packages.invoke`, and `packages.invokeChecked` from
@@ -209,10 +217,10 @@ user and package caller context. Package code never handles external
 package-invocation bearer tokens for this flow.
 
 Use dynamic invocation for runtime dispatch surfaces that must pick up the
-target package's current published bundle, such as event subscribers, workflows,
-and agents. Prefer `packages.invokeChecked` for new dynamic calls so Kody first
-checks that the current package and export exist, params are a JSON object, and
-the current contract metadata can be surfaced to the caller. Use
+target package's current published bundle, such as event subscribers and
+workflow fan-out. Prefer `packages.invokeChecked` for those dynamic calls so
+Kody first checks that the current package and export exist, params are a JSON
+object, and the current contract metadata can be surfaced to the caller. Use
 `packages.check` directly when a caller wants to inspect the current contract or
 warnings before deciding whether to invoke:
 
@@ -260,8 +268,9 @@ Security and loop safeguards:
 - Resolution is same-user only; package code cannot invoke another user's saved
   package.
 - `packages.invoke` requires either package runtime context or authenticated
-  execute context. Static `kody:@...` imports remain library/snapshot imports;
-  use `packages.invokeChecked` when execute needs to enter a package runtime.
+  execute context. Static `kody:@...` imports remain the default
+  library/snapshot path; use `packages.invokeChecked` only when execute needs
+  to enter a package runtime or needs fresh current-version semantics.
 - Nested dynamic package invocations are depth-limited to prevent runaway
   package-to-package loops.
 

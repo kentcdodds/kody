@@ -144,8 +144,9 @@ to user secrets (host approval still applies; updating or deleting a user secret
 from package code still needs an `allowed_packages` grant). After you save or
 publish a secret-using package, read `pending_secret_package_approvals`; when it
 is non-null (unadopted community forks), either adopt after review or surface
-`bulk_approval_url`, wait when required, and verify with
-`packages.invokeChecked` before calling the work complete.
+`bulk_approval_url`, wait when required, and smoke-test before calling the work
+complete (prefer a static `kody:@...` import when enough; use
+`packages.invokeChecked` when the package runtime is required).
 
 ## Important exceptions
 
