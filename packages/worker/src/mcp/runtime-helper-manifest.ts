@@ -302,10 +302,17 @@ const __kodyStaticCallMeter = {
     if (__kodyStaticCallMeterEvents.length >= 1000) return;
     __kodyStaticCallMeterEvents.push(event);
   },
+  // Flush in rounds: async calls that settle while a flush RPC is in
+  // flight land in the buffer afterwards, so loop (bounded) until the
+  // buffer stays empty. Calls still pending when the run's entrypoint has
+  // finished are not metered — metering never extends a run's lifetime,
+  // and a dangling promise may never settle inside the sandbox at all.
   flush: async () => {
-    if (__kodyStaticCallMeterEvents.length === 0) return;
-    const events = __kodyStaticCallMeterEvents.splice(0, __kodyStaticCallMeterEvents.length);
-    await ${staticCallMeterRuntimeBridgeProviderName}.record({ events });
+    for (let round = 0; round < 3; round += 1) {
+      if (__kodyStaticCallMeterEvents.length === 0) return;
+      const events = __kodyStaticCallMeterEvents.splice(0, __kodyStaticCallMeterEvents.length);
+      await ${staticCallMeterRuntimeBridgeProviderName}.record({ events });
+    }
   },
 };
 	`.trim()

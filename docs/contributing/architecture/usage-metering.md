@@ -91,10 +91,14 @@ package code is reused, so calls through them are metered per call:
   bundle already statically depends on.
 - **Delivery never blocks the call path.** Each call does one synchronous buffer
   push (capped at 1000 events per run; overflow is dropped); the run wrapper in
-  `runBundledModuleWithRegistry` flushes the buffer over a runtime bridge in one
-  batch at the end of the run, while the sandbox RPC dispatchers are still live
-  — a fire-and-forget RPC per call would race dispatcher teardown and lose
-  events. Flush failures are swallowed.
+  `runBundledModuleWithRegistry` flushes the buffer over a runtime bridge in
+  batches at the end of the run, while the sandbox RPC dispatchers are still
+  live — a fire-and-forget RPC per call would race dispatcher teardown and lose
+  events. The flush loops (bounded) so async calls that settle during an
+  in-flight flush are still delivered; calls that have **not settled when the
+  run's entrypoint finishes** (a promise the run never awaited) are not metered
+  — metering never extends a run's lifetime, and such a dangling promise may
+  never settle inside the sandbox at all. Flush failures are swallowed.
 - **Coverage:** every surface that funnels through
   `runBundledModuleWithRegistry` (ad hoc execute with static `kody:@…` imports,
   saved-package invocations, and the job/workflow/service runs built on them).
