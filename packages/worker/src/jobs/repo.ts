@@ -496,6 +496,9 @@ export async function getNextRunnableJobRow(
 						AND lease_expires_at IS NOT NULL
 						AND lease_expires_at > ?
 					THEN lease_expires_at
+					WHEN expires_at IS NOT NULL
+						AND expires_at < next_run_at
+					THEN expires_at
 					ELSE next_run_at
 				END AS scheduler_wake_at
 			FROM jobs

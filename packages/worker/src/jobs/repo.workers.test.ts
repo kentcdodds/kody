@@ -380,3 +380,23 @@ test('expired jobs are skipped by due/claim/next-runnable and disableExpired fli
 	})
 	expect(disabled?.record.expiresAt).toBe('2026-04-20T11:30:00.000Z')
 })
+
+test('getNextRunnableJobRow wakes at expires_at when it is earlier than next_run_at', async () => {
+	await ensureJobsSchema()
+	const userId = 'user-expires-wake'
+	await insertJob({
+		id: 'expires-before-run',
+		userId,
+		nextRunAt: '2026-04-21T12:00:00.000Z',
+		expiresAt: '2026-04-20T18:00:00.000Z',
+	})
+	const next = await getNextRunnableJobRow(
+		env.APP_DB,
+		userId,
+		'2026-04-20T12:00:00.000Z',
+	)
+	expect(next).toMatchObject({
+		id: 'expires-before-run',
+		schedulerWakeAt: '2026-04-20T18:00:00.000Z',
+	})
+})

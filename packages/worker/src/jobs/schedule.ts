@@ -62,6 +62,20 @@ function parseUtcIsoTimestamp(value: string, label: string) {
 			`${label} must use an ISO 8601 UTC timestamp (for example 2026-04-17T15:00:00Z).`,
 		)
 	}
+	const calendarMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T/)
+	if (calendarMatch?.[1] && calendarMatch[2] && calendarMatch[3]) {
+		const year = Number.parseInt(calendarMatch[1], 10)
+		const month = Number.parseInt(calendarMatch[2], 10)
+		const day = Number.parseInt(calendarMatch[3], 10)
+		const reconstructed = new Date(Date.UTC(year, month - 1, day))
+		if (
+			reconstructed.getUTCFullYear() !== year ||
+			reconstructed.getUTCMonth() !== month - 1 ||
+			reconstructed.getUTCDate() !== day
+		) {
+			throw new Error(`${label} requires a valid ISO 8601 calendar date.`)
+		}
+	}
 	const parsed = new Date(trimmed)
 	if (Number.isNaN(parsed.valueOf())) {
 		throw new Error(`${label} requires a valid ISO 8601 timestamp.`)

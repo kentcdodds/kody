@@ -66,6 +66,9 @@ test('expires_at helpers treat UTC expiry as a schedule gate separate from enabl
 	expect(() => normalizeJobExpiresAt('2026-04-20T18:30:00')).toThrow(
 		/UTC timestamp/,
 	)
+	expect(() => normalizeJobExpiresAt('2026-02-30T00:00:00Z')).toThrow(
+		/calendar date/,
+	)
 
 	const now = new Date('2026-04-20T18:30:00.000Z')
 	const base: JobRecord = {
