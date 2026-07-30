@@ -1548,9 +1548,17 @@ export async function runDueJobsForUser(input: {
 						scheduledFor: row.claimed_scheduled_for,
 					})
 					if (!finalized) {
-						throw new Error(
-							`Scheduled job "${row.id}" lost its fenced execution claim before finalization.`,
-						)
+						// Ordinary edits clear claim_token; lease reclaim can
+						// also supersede this runner. The fence worked — do not
+						// fail the alarm or abort remaining due jobs.
+						logJobSchedulerEvent({
+							event: 'claim_lost_before_finalization',
+							userId: input.userId,
+							jobId: row.id,
+							scheduleType: row.record.schedule.type,
+							reason: 'fenced_claim_superseded',
+						})
+						continue
 					}
 					successCount += result.successCount
 					errorCount += result.errorCount
@@ -1571,9 +1579,14 @@ export async function runDueJobsForUser(input: {
 						nextRunAt: retryAt,
 					})
 					if (!retried) {
-						throw new Error(
-							`Scheduled job "${row.id}" lost its fenced execution claim before retry transition.`,
-						)
+						logJobSchedulerEvent({
+							event: 'claim_lost_before_retry_transition',
+							userId: input.userId,
+							jobId: row.id,
+							scheduleType: row.record.schedule.type,
+							reason: 'fenced_claim_superseded',
+						})
+						continue
 					}
 					errorCount += 1
 					jobOutcomes.push({
