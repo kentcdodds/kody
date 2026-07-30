@@ -48,9 +48,11 @@ and publish paths are covered in
   [`@kentcdodds/codemod-runner`](https://heykody.dev/community/b06c0f98-865a-4379-adb0-d0fb2cdda14f)
   community package: same contract vocabulary (`detect`/`transform`,
   dry-run-before-apply, drift skips, idempotency verification, revert
-  snapshots), with the codemod authored as a package export the user owns. Do
-  not grow the built-in engine to execute user-authored transforms; the dividing
-  line is who authored the transform.
+  snapshots), with the codemod authored as a package export the user owns. As
+  with any community package, inspect the source and fork (which pins your own
+  copy) before running it against your packages. Do not grow the built-in engine
+  to execute user-authored transforms; the dividing line is who authored the
+  transform.
 
 ## Codemod contract
 
