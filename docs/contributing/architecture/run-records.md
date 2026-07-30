@@ -203,8 +203,10 @@ keyed-execute recovery do not wait for an alarm.
 
 The same per-user `RunLog` DO also hosts the **keyed package-invocation
 idempotency ledger** (`package_invocation_ledger` table), migrated off the D1
-`package_invocations` table. This is correctness state, not observability: it is
-what makes keyed `packages.invoke` exactly-once.
+`package_invocations` table. This is correctness state, not observability: it
+holds the claims and bounded replay responses that keyed `packages.invoke`
+dedupes against. Unlike run history it cannot be rebuilt — a lost terminal row
+means a replayed delivery for that key re-executes instead of replaying.
 
 - **Claim + run-record begin are one awaited DO RPC**
   (`claimPackageInvocation`): lookup-then-insert is atomic because DO execution

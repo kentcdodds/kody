@@ -3384,17 +3384,26 @@ export default async function main(input = {}) {
 			// The keyed idempotency ledger lives in the owner's RunLog DO now.
 			const invocations = (
 				await exportRunRecords({ env, userId, pageSize: 100 })
-			).packageInvocations
-				.filter((row) => row.packageId === packageId)
-				.sort((a, b) =>
-					a.createdAt === b.createdAt
-						? a.id.localeCompare(b.id)
-						: a.createdAt.localeCompare(b.createdAt),
-				)
+			).packageInvocations.filter((row) => row.packageId === packageId)
 			expect(invocations).toHaveLength(2)
-			const responses = invocations.map((row) =>
-				JSON.parse(String(row.responseJson)),
-			) as Array<{ status: number; body: Record<string, unknown> }>
+			// Anchor each stored response to its message body instead of relying
+			// on ledger ordering.
+			const responseBodies = invocations.map(
+				(row) =>
+					(
+						JSON.parse(String(row.responseJson)) as {
+							status: number
+							body: Record<string, unknown>
+						}
+					).body,
+			)
+			const responseForTextBody = (textBody: string) =>
+				responseBodies.find(
+					(body) =>
+						(body['result'] as Record<string, unknown> | undefined)?.[
+							'textBody'
+						] === textBody,
+				)
 			const outboundMessages = await listEmailMessages({
 				db: env.APP_DB,
 				userId,
@@ -3410,7 +3419,7 @@ export default async function main(input = {}) {
 				'email.message.received',
 			])
 			expect(invocations.map((row) => row.source)).toEqual(['email', 'email'])
-			expect(responses[0]?.body).toMatchObject({
+			expect(responseForTextBody('Stored body.\n')).toMatchObject({
 				ok: true,
 				result: {
 					eventType: 'received',
@@ -3420,7 +3429,7 @@ export default async function main(input = {}) {
 					replyDirection: 'outbound',
 				},
 			})
-			expect(responses[1]?.body).toMatchObject({
+			expect(responseForTextBody('Approved body.\n')).toMatchObject({
 				ok: true,
 				result: {
 					eventType: 'received',
