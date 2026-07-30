@@ -129,6 +129,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'package_service_states' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },
 	{ kind: 'user_id', table: 'usage_rollups' },
+	{ kind: 'user_id', table: 'feature_flag_exposure_rollups' },
 	{ kind: 'user_id', table: 'user_activation_milestones' },
 	{ kind: 'user_id', table: 'user_package_run_successes' },
 	{ kind: 'user_id', table: 'agent_package_conversation_uses' },

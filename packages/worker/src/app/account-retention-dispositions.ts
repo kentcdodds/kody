@@ -18,6 +18,7 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 		{ table: 'email_threads', kind: 'scheduled_policy' },
 		{ table: 'entitlement_daily_counters', kind: 'scheduled_policy' },
 		{ table: 'usage_rollups', kind: 'scheduled_policy' },
+		{ table: 'feature_flag_exposure_rollups', kind: 'scheduled_policy' },
 		{ table: 'audit_events', kind: 'scheduled_policy' },
 		{ table: 'stripe_webhook_events', kind: 'scheduled_policy' },
 		{

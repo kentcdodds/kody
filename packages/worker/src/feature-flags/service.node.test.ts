@@ -3,6 +3,7 @@ import {
 	clearFeatureFlagUserOverride,
 	computeRolloutBucket,
 	deleteStaleFeatureFlag,
+	getFeatureFlagEvaluationsForUser,
 	getFeatureFlagsForUser,
 	isFeatureEnabled,
 	listFeatureFlagsForAdmin,
@@ -461,6 +462,54 @@ test('user override wins over global off and global on; clear restores evaluatio
 	).resolves.toBe(false)
 })
 
+test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => {
+	const db = createFeatureFlagsTestDb()
+
+	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toEqual({
+		'demo-indicator': { enabled: false, source: 'default' },
+		'execute-pre-exec-typecheck': { enabled: false, source: 'default' },
+	})
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: true,
+		rolloutPercent: null,
+		updatedBy: 1,
+	})
+	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toMatchObject({
+		'demo-indicator': { enabled: true, source: 'global' },
+	})
+
+	await setFeatureFlagGlobalState(db, {
+		key: 'demo-indicator',
+		enabled: true,
+		rolloutPercent: 50,
+		updatedBy: 1,
+	})
+	const evaluations = await getFeatureFlagEvaluationsForUser(db, 7)
+	expect(evaluations['demo-indicator'].source).toBe('rollout')
+	expect(evaluations['demo-indicator'].enabled).toBe(
+		computeRolloutBucket('demo-indicator', 7) < 50,
+	)
+	// Anonymous users are excluded from percentage rollouts but the
+	// assignment is still rollout-sourced.
+	await expect(
+		getFeatureFlagEvaluationsForUser(db, null),
+	).resolves.toMatchObject({
+		'demo-indicator': { enabled: false, source: 'rollout' },
+	})
+
+	await setFeatureFlagUserOverride(db, {
+		key: 'demo-indicator',
+		userId: 7,
+		enabled: false,
+		updatedBy: 1,
+	})
+	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toMatchObject({
+		'demo-indicator': { enabled: false, source: 'override' },
+	})
+})
+
 test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', async () => {
 	const db = createFeatureFlagsTestDb({
 		users: [
@@ -511,6 +560,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		key: 'demo-indicator',
 		stale: false,
 		defaultEnabled: false,
+		successMetric: null,
 		global: {
 			enabled: true,
 			rolloutPercent: 25,
@@ -535,9 +585,17 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		key: 'execute-pre-exec-typecheck',
 		stale: false,
 		defaultEnabled: false,
+		successMetric: {
+			eventType: 'execute',
+			measure: 'error_rate',
+			goal: 'decrease',
+		},
 		global: null,
 		overrides: [],
 	})
+	expect(executeTypecheck?.successMetric?.hypothesis).toEqual(
+		expect.any(String),
+	)
 
 	const retired = listed.find((flag) => flag.key === 'retired-flag')
 	expect(retired).toEqual({
@@ -545,6 +603,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		description: null,
 		defaultEnabled: null,
 		stale: true,
+		successMetric: null,
 		global: {
 			enabled: false,
 			rolloutPercent: null,
@@ -561,6 +620,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		description: null,
 		defaultEnabled: null,
 		stale: true,
+		successMetric: null,
 		global: null,
 		overrides: [
 			{

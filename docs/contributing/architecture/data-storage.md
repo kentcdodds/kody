@@ -950,6 +950,10 @@ Current retention policies:
 - `entitlement_daily_counters`: daily rate counters keep 400 days by `day` key.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
+- `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90
+  days by `day` key, matching Analytics Engine retention for the production
+  `FLAG_EXPOSURES` exposure stream; the admin metric readout window is the
+  current month.
 - `platform_feedback`: open and triaged rows remain until review changes them to
   resolved or dismissed, or the submitter deletes their account. Resolved and
   dismissed rows keep 365 days after `updated_at`; submitter deletion removes

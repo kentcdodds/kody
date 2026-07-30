@@ -51,6 +51,7 @@ export const emailDeliveryEventRetentionDays = 90
 export const emailMessageRetentionDays = 365
 export const entitlementDailyCounterRetentionDays = 400
 export const usageRollupRetentionMonths = 24
+export const featureFlagExposureRetentionDays = 90
 export const auditEventRetentionDays = 180
 export const stripeWebhookEventRetentionDays = 30
 
@@ -148,6 +149,14 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 			'Per user/metric/month usage rollups keep 24 months; Analytics Engine retains the raw event stream separately.',
 	},
 	{
+		table: 'feature_flag_exposure_rollups',
+		scope: 'per-user',
+		retentionDays: featureFlagExposureRetentionDays,
+		batchSize: retentionDefaultBatchSize,
+		description:
+			'Local-dev/test flag exposure rollups keep 90 days, matching Analytics Engine retention for the production exposure stream; the metric readout window is the current month.',
+	},
+	{
 		table: 'audit_events',
 		scope: 'global',
 		retentionDays: auditEventRetentionDays,
@@ -203,6 +212,7 @@ export type RetentionPruneResult = {
 	}
 	entitlementDailyCounters: number
 	usageRollups: number
+	featureFlagExposureRollups: number
 	auditEvents: number
 	stripeWebhookEvents: number
 	batchesPerTable: Record<string, number>
@@ -810,6 +820,29 @@ export async function pruneUsageRollupsForRetention(input: {
 	})
 }
 
+export async function pruneFeatureFlagExposuresForRetention(input: {
+	db: D1Database
+	now?: Date
+	batchSize?: number
+}) {
+	const cutoffDay = cutoffIso(
+		input.now ?? new Date(),
+		featureFlagExposureRetentionDays,
+	).slice(0, 'YYYY-MM-DD'.length)
+	return selectAndDeleteByIds({
+		db: input.db,
+		column: 'rowid',
+		bindings: [cutoffDay, input.batchSize ?? retentionDefaultBatchSize],
+		sql: `SELECT rowid
+			FROM feature_flag_exposure_rollups
+			WHERE day < ?
+			ORDER BY day ASC, rowid ASC
+			LIMIT ?`,
+		table: 'feature_flag_exposure_rollups',
+		idColumn: 'rowid',
+	})
+}
+
 export async function pruneAuditEventsForRetention(input: {
 	db: D1Database
 	now?: Date
@@ -886,6 +919,7 @@ export async function pruneRetention(input: {
 		},
 		entitlementDailyCounters: 0,
 		usageRollups: 0,
+		featureFlagExposureRollups: 0,
 		auditEvents: 0,
 		stripeWebhookEvents: 0,
 		batchesPerTable: {},
@@ -988,6 +1022,13 @@ export async function pruneRetention(input: {
 			() => pruneUsageRollupsForRetention({ db, now }),
 			(count) => {
 				result.usageRollups += count
+			},
+		),
+		countTask(
+			'feature_flag_exposure_rollups',
+			() => pruneFeatureFlagExposuresForRetention({ db, now }),
+			(count) => {
+				result.featureFlagExposureRollups += count
 			},
 		),
 		countTask(

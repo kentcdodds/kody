@@ -6,6 +6,7 @@ import {
 	isFeatureFlagKey,
 	type FeatureFlagKey,
 } from '#worker/feature-flags/registry.ts'
+import { usageEventTypes } from '#worker/usage/event-types.ts'
 import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 import { stableUserIdSchema } from './admin-shared.ts'
 
@@ -16,11 +17,47 @@ export const adminFeatureFlagOverrideSchema = z.object({
 	updatedAt: z.string(),
 })
 
+export const featureFlagSuccessMetricSchema = z.object({
+	eventType: z.enum(usageEventTypes),
+	measure: z.enum(['event_count', 'error_rate', 'avg_duration_ms']),
+	goal: z.enum(['increase', 'decrease']),
+	hypothesis: z.string(),
+})
+
+const featureFlagMetricCohortSchema = z.object({
+	users: z.number().int().min(0),
+	eventCount: z.number().int().min(0),
+	errorCount: z.number().int().min(0),
+	errorRate: z.number().nullable(),
+	avgDurationMs: z.number().nullable(),
+})
+
+export const adminFeatureFlagMetricReadoutSchema = z.discriminatedUnion(
+	'status',
+	[
+		z.object({
+			status: z.literal('unavailable'),
+			reason: z.string(),
+		}),
+		z.object({
+			status: z.literal('ok'),
+			windowStart: z.string(),
+			windowEnd: z.string(),
+			on: featureFlagMetricCohortSchema,
+			off: featureFlagMetricCohortSchema,
+			overrideUsers: z.number().int().min(0),
+			mixedUsers: z.number().int().min(0),
+		}),
+	],
+)
+
 export const adminFeatureFlagSchema = z.object({
 	key: z.string(),
 	description: z.string().nullable(),
 	defaultEnabled: z.boolean().nullable(),
 	stale: z.boolean(),
+	successMetric: featureFlagSuccessMetricSchema.nullable(),
+	metricReadout: adminFeatureFlagMetricReadoutSchema.optional(),
 	global: z
 		.object({
 			enabled: z.boolean(),

@@ -5,7 +5,9 @@ import {
 	emptyCapabilityInputSchema,
 	type CapabilityContext,
 } from '#mcp/capabilities/types.ts'
+import { missingSuccessMetricNotice } from '#worker/feature-flags/registry.ts'
 import { listFeatureFlagsForAdmin } from '#worker/feature-flags/service.ts'
+import { attachFeatureFlagMetricReadouts } from '#worker/feature-flags/success-metric-readout.ts'
 import {
 	adminCapabilityAccess,
 	auditAdminCapabilityInvocation,
@@ -13,7 +15,11 @@ import {
 import { adminFeatureFlagSchema } from './feature-flag-shared.ts'
 
 const outputSchema = z.object({
-	flags: z.array(adminFeatureFlagSchema),
+	flags: z.array(
+		adminFeatureFlagSchema.extend({
+			successMetricNotice: z.string().optional(),
+		}),
+	),
 })
 
 export const adminFeatureFlagListCapability = defineDomainCapability(
@@ -22,7 +28,7 @@ export const adminFeatureFlagListCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_feature_flag_list',
 		description:
-			'List feature flags for admin review, including registry metadata, global state, and per-user overrides. Admin-only; never returns user content.',
+			"List feature flags for admin review, including registry metadata, global state, per-user overrides, and each flag's declared success metric with its on/off cohort readout (exposures joined with usage events, current month to date). Registry flags without a success metric carry a successMetricNotice strongly recommending one. Admin-only; never returns user content.",
 		keywords: [
 			'admin',
 			'feature flags',
@@ -30,6 +36,10 @@ export const adminFeatureFlagListCapability = defineDomainCapability(
 			'rollout',
 			'overrides',
 			'toggles',
+			'success metric',
+			'metrics',
+			'readout',
+			'experiment',
 		],
 		inputSchema: emptyCapabilityInputSchema,
 		outputSchema,
@@ -39,7 +49,15 @@ export const adminFeatureFlagListCapability = defineDomainCapability(
 				'admin_feature_flag_list',
 				async () => {
 					const flags = await listFeatureFlagsForAdmin(ctx.env.APP_DB)
-					return { flags }
+					await attachFeatureFlagMetricReadouts(ctx.env, flags)
+					return {
+						flags: flags.map((flag) => ({
+							...flag,
+							...(flag.stale || flag.successMetric
+								? {}
+								: { successMetricNotice: missingSuccessMetricNotice }),
+						})),
+					}
 				},
 			)
 		},

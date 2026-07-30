@@ -42,26 +42,47 @@ export function computeRolloutBucket(key: string, userId: number): number {
 	return fnv1a32(`${key}:${userId}`) % 100
 }
 
+/**
+ * How a flag's evaluated value was assigned. Recorded with success-metric
+ * exposures so readouts can compare only fairly assigned cohorts: `override`
+ * users are hand-picked (selection bias) and are excluded from on/off
+ * comparisons, while `rollout` users are deterministically bucketed.
+ */
+export type FeatureFlagAssignmentSource =
+	| 'override'
+	| 'global'
+	| 'rollout'
+	| 'default'
+
+export type FeatureFlagEvaluation = {
+	enabled: boolean
+	source: FeatureFlagAssignmentSource
+}
+
 function evaluateFlagState(input: {
 	key: string
 	userId: number | null
 	overrideEnabled: boolean | null
 	global: { enabled: boolean; rolloutPercent: number | null } | null
 	defaultEnabled: boolean
-}): boolean {
+}): FeatureFlagEvaluation {
 	if (input.overrideEnabled !== null) {
-		return input.overrideEnabled
+		return { enabled: input.overrideEnabled, source: 'override' }
 	}
 	if (input.global) {
-		if (!input.global.enabled) return false
-		if (input.global.rolloutPercent === null) return true
-		if (input.userId === null) return false
-		return (
-			computeRolloutBucket(input.key, input.userId) <
-			input.global.rolloutPercent
-		)
+		if (!input.global.enabled) return { enabled: false, source: 'global' }
+		if (input.global.rolloutPercent === null) {
+			return { enabled: true, source: 'global' }
+		}
+		if (input.userId === null) return { enabled: false, source: 'rollout' }
+		return {
+			enabled:
+				computeRolloutBucket(input.key, input.userId) <
+				input.global.rolloutPercent,
+			source: 'rollout',
+		}
 	}
-	return input.defaultEnabled
+	return { enabled: input.defaultEnabled, source: 'default' }
 }
 
 function assertValidRolloutPercent(rolloutPercent: number | null) {
@@ -130,13 +151,13 @@ export async function isFeatureEnabled(
 				}
 			: null,
 		defaultEnabled: getFeatureFlagDefinition(key).defaultEnabled,
-	})
+	}).enabled
 }
 
-export async function getFeatureFlagsForUser(
+export async function getFeatureFlagEvaluationsForUser(
 	db: D1Database,
 	userId: number | null,
-): Promise<Record<FeatureFlagKey, boolean>> {
+): Promise<Record<FeatureFlagKey, FeatureFlagEvaluation>> {
 	const globalResult = await db
 		.prepare(
 			`SELECT key, enabled, rollout_percent
@@ -162,13 +183,13 @@ export async function getFeatureFlagsForUser(
 		}
 	}
 
-	const flags = {} as Record<FeatureFlagKey, boolean>
+	const evaluations = {} as Record<FeatureFlagKey, FeatureFlagEvaluation>
 	for (const key of featureFlagKeys) {
 		const global = globalByKey.get(key)
 		const overrideEnabled = overrideByKey.has(key)
 			? (overrideByKey.get(key) ?? false)
 			: null
-		flags[key] = evaluateFlagState({
+		evaluations[key] = evaluateFlagState({
 			key,
 			userId,
 			overrideEnabled,
@@ -180,6 +201,18 @@ export async function getFeatureFlagsForUser(
 				: null,
 			defaultEnabled: getFeatureFlagDefinition(key).defaultEnabled,
 		})
+	}
+	return evaluations
+}
+
+export async function getFeatureFlagsForUser(
+	db: D1Database,
+	userId: number | null,
+): Promise<Record<FeatureFlagKey, boolean>> {
+	const evaluations = await getFeatureFlagEvaluationsForUser(db, userId)
+	const flags = {} as Record<FeatureFlagKey, boolean>
+	for (const key of featureFlagKeys) {
+		flags[key] = evaluations[key].enabled
 	}
 	return flags
 }
@@ -306,6 +339,8 @@ export async function listFeatureFlagsForAdmin(
 			description: definition.description,
 			defaultEnabled: definition.defaultEnabled,
 			stale: false,
+			successMetric:
+				'successMetric' in definition ? definition.successMetric : null,
 			global: global
 				? {
 						enabled: global.enabled === 1,
@@ -334,6 +369,7 @@ export async function listFeatureFlagsForAdmin(
 			description: null,
 			defaultEnabled: null,
 			stale: true,
+			successMetric: null,
 			global: global
 				? {
 						enabled: global.enabled === 1,

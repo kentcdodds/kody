@@ -10,6 +10,7 @@ interface __BaseEnv_Env {
 	CAPABILITY_VECTOR_INDEX: VectorizeIndex;
 	EMAIL: SendEmail;
 	USAGE_EVENTS: AnalyticsEngineDataset;
+	FLAG_EXPOSURES: AnalyticsEngineDataset;
 	PLATFORM_FEEDBACK_DISPATCH_QUEUE: Queue;
 	COMMUNITY_ACTIVITY_DISPATCH_QUEUE: Queue;
 	LOADER: WorkerLoader;

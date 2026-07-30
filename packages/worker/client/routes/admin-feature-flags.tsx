@@ -28,6 +28,11 @@ import {
 	type AdminFeatureFlagsLoaderData,
 } from '#app/loader-data.ts'
 import {
+	missingSuccessMetricNotice,
+	type FeatureFlagSuccessMetricMeasure,
+} from '#worker/feature-flags/registry.ts'
+import { type FeatureFlagMetricCohort } from '#worker/feature-flags/types.ts'
+import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
@@ -44,6 +49,48 @@ const adminFeatureFlagsApiPath = '/admin/feature-flags.json'
 
 function isAdminFeatureFlagsPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/admin/feature-flags'
+}
+
+function formatMeasureLabel(measure: FeatureFlagSuccessMetricMeasure): string {
+	switch (measure) {
+		case 'event_count':
+			return 'event count'
+		case 'error_rate':
+			return 'error rate'
+		case 'avg_duration_ms':
+			return 'average duration'
+		default:
+			measure satisfies never
+			return measure
+	}
+}
+
+function formatMeasureValue(
+	measure: FeatureFlagSuccessMetricMeasure,
+	cohort: FeatureFlagMetricCohort,
+): string {
+	switch (measure) {
+		case 'event_count':
+			return String(cohort.eventCount)
+		case 'error_rate':
+			return cohort.errorRate === null
+				? 'n/a'
+				: `${(cohort.errorRate * 100).toFixed(1)}%`
+		case 'avg_duration_ms':
+			return cohort.avgDurationMs === null
+				? 'n/a'
+				: `${Math.round(cohort.avgDurationMs)} ms`
+		default:
+			measure satisfies never
+			return 'n/a'
+	}
+}
+
+function summarizeMetricCohort(
+	measure: FeatureFlagSuccessMetricMeasure,
+	cohort: FeatureFlagMetricCohort,
+): string {
+	return `${cohort.users} user(s) · ${cohort.eventCount} event(s) · ${formatMeasureLabel(measure)} ${formatMeasureValue(measure, cohort)}`
 }
 
 function summarizeEffectiveSource(flag: AdminFeatureFlag): string {
@@ -324,6 +371,103 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 									{flag.description ?? 'No description provided.'}
 								</p>
 							</div>
+							{flag.successMetric ? (
+								<div
+									data-testid={`success-metric-${flag.key}`}
+									mix={css({
+										border: `1px solid ${colors.border}`,
+										borderRadius: '0.75rem',
+										padding: spacing.md,
+										marginBottom: spacing.lg,
+										display: 'grid',
+										gap: spacing.sm,
+									})}
+								>
+									<h3
+										mix={css({
+											margin: 0,
+											fontSize: typography.fontSize.base,
+											fontWeight: typography.fontWeight.semibold,
+										})}
+									>
+										Success metric:{' '}
+										<code mix={css({ fontSize: typography.fontSize.sm })}>
+											{flag.successMetric.eventType}
+										</code>{' '}
+										{formatMeasureLabel(flag.successMetric.measure)} should{' '}
+										{flag.successMetric.goal}
+									</h3>
+									<p mix={css(descriptionCss)}>
+										{flag.successMetric.hypothesis}
+									</p>
+									{flag.metricReadout?.status === 'ok' ? (
+										<>
+											<MetadataGrid
+												columns={3}
+												items={[
+													{
+														label: 'On cohort',
+														value: summarizeMetricCohort(
+															flag.successMetric.measure,
+															flag.metricReadout.on,
+														),
+													},
+													{
+														label: 'Off cohort',
+														value: summarizeMetricCohort(
+															flag.successMetric.measure,
+															flag.metricReadout.off,
+														),
+													},
+													{
+														label: 'Excluded',
+														value: `${flag.metricReadout.overrideUsers} override user(s) · ${flag.metricReadout.mixedUsers} mixed-exposure user(s)`,
+													},
+												]}
+											/>
+											<p
+												mix={css({
+													margin: 0,
+													color: colors.textMuted,
+													fontSize: typography.fontSize.sm,
+												})}
+											>
+												Window: {flag.metricReadout.windowStart.slice(0, 10)} to{' '}
+												{flag.metricReadout.windowEnd.slice(0, 10)} (current
+												month to date). Override users are excluded because they
+												are hand-picked; mixed users saw both values inside the
+												window.
+											</p>
+										</>
+									) : flag.metricReadout?.status === 'unavailable' ? (
+										<p
+											mix={css({
+												margin: 0,
+												color: colors.textMuted,
+												fontSize: typography.fontSize.sm,
+											})}
+										>
+											{flag.metricReadout.reason}
+										</p>
+									) : null}
+								</div>
+							) : (
+								<p
+									data-testid={`success-metric-notice-${flag.key}`}
+									mix={css({
+										margin: 0,
+										marginBottom: spacing.lg,
+										padding: spacing.sm,
+										border: `1px solid ${colors.border}`,
+										borderRadius: '0.75rem',
+										background: colors.primarySoftest,
+										color: colors.textMuted,
+										fontSize: typography.fontSize.sm,
+									})}
+								>
+									{missingSuccessMetricNotice}
+								</p>
+							)}
 							<form
 								mix={[
 									css({
