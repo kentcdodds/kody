@@ -236,10 +236,14 @@ export async function invokeSavedPackageModule(input: {
 
 	/**
 	 * Dual-read fallback for keys claimed before the ledger moved into the
-	 * RunLog DO. Runs only after a FRESH DO claim (the DO had no row for the
-	 * key); reclaims and replays never touch D1. Returns the response to
-	 * serve from the legacy row, or `null` when this attempt should proceed
-	 * to execute. Awaited D1 reads only — never writes.
+	 * RunLog DO. Runs after every claim (fresh or stale reclaim): a
+	 * pre-migration key can sit terminal in D1 while a dead attempt's stale
+	 * DO claim still exists — e.g. a takeover attempt died and a zombie
+	 * pre-migration isolate later finished the legacy row — and replaying it
+	 * beats re-executing. DO replays never reach this (terminal DO rows
+	 * resolve before claiming). Returns the response to serve from the
+	 * legacy row, or `null` when this attempt should proceed to execute.
+	 * Awaited D1 reads only — never writes.
 	 */
 	const resolveLegacyFallback = async (claimed: ClaimedInvocation) => {
 		let legacy: Awaited<ReturnType<typeof lookupLegacy>>
@@ -380,10 +384,8 @@ export async function invokeSavedPackageModule(input: {
 		claimUpdatedAt: claim.claimUpdatedAt,
 		handle: claim.handle,
 	}
-	if (!claim.reclaimed) {
-		const legacyResponse = await resolveLegacyFallback(claimed)
-		if (legacyResponse) return legacyResponse
-	}
+	const legacyResponse = await resolveLegacyFallback(claimed)
+	if (legacyResponse) return legacyResponse
 
 	const outcome = await runSavedPackageModuleOnce({
 		env: input.env,

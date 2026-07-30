@@ -1446,7 +1446,8 @@ test('account export includes run_records section with runs and log lines', asyn
 		dbUserId: 1,
 		mcpUserId: 'user-aaa',
 	})
-	expect(accountExport.manifest.sections.run_records?.count).toBe(1)
+	// One run plus one invocation-ledger row exported through the section.
+	expect(accountExport.manifest.sections.run_records?.count).toBe(2)
 	expect(accountExport.durableObjects.runRecords).toEqual({
 		runs: [run],
 		logs,

@@ -1456,10 +1456,14 @@ function buildManifest(input: {
 		discovery: { section: 'job_manager' },
 	}
 	sections.run_records = {
+		// The section carries runs plus the RunLog DO's package-invocation
+		// idempotency ledger rows, so count both when the export payload is
+		// present. The inventory fallback comes from `summarize` (runs only).
 		count:
-			input.durableObjects?.runRecords?.runs.length ??
-			input.inventoryCounts?.runRecords ??
-			0,
+			input.durableObjects?.runRecords == null
+				? (input.inventoryCounts?.runRecords ?? 0)
+				: input.durableObjects.runRecords.runs.length +
+					input.durableObjects.runRecords.packageInvocations.length,
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Run records '),
 		),

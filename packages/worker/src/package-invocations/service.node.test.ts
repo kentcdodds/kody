@@ -2100,6 +2100,68 @@ test('dual-read window: fresh legacy in-progress rows are polled, stale ones are
 	).toMatchObject({ status: 'completed' })
 })
 
+test('dual-read window: a stale DO claim defers to a terminal pre-migration row instead of re-executing', async () => {
+	const db = createDatabase()
+	seedPackageResolution()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	const requestHash = await dispatchMessageCreatedRequestHash({
+		content: 'hi',
+	})
+	// A takeover attempt claimed the key in the DO and died (claim now
+	// stale), while a zombie pre-migration isolate finished the legacy row.
+	db.runLog.ledgerRows.push({
+		id: crypto.randomUUID(),
+		tokenId: 'discord-gateway',
+		packageId: 'pkg-1',
+		packageKodyId: 'discord-gateway',
+		exportName: './dispatch-message-created',
+		idempotencyKey: 'evt-zombie-finish',
+		requestHash,
+		source: 'discord-gateway',
+		topic: 'discord.message.created',
+		status: 'in_progress',
+		responseJson: null,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	})
+	db.seedLegacyInvocation({
+		tokenId: 'discord-gateway',
+		packageId: 'pkg-1',
+		packageKodyId: 'discord-gateway',
+		exportName: './dispatch-message-created',
+		idempotencyKey: 'evt-zombie-finish',
+		requestHash,
+		source: 'discord-gateway',
+		topic: 'discord.message.created',
+		status: 'completed',
+		responseJson: JSON.stringify({
+			status: 200,
+			body: {
+				ok: true,
+				result: { reply: 'finished by a zombie isolate' },
+				idempotency: { key: 'evt-zombie-finish', replayed: false },
+			},
+		}),
+	})
+
+	const replayed = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: dispatchMessageCreatedRequest('evt-zombie-finish'),
+	})
+
+	expect(replayed.status).toBe(200)
+	expect(replayed.body).toMatchObject({
+		ok: true,
+		result: { reply: 'finished by a zombie isolate' },
+		idempotency: { key: 'evt-zombie-finish', replayed: true },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+	// The reclaimed DO claim was released; the legacy row owns the key again.
+	expect(db.runLog.ledgerRows).toHaveLength(0)
+})
+
 test('the RunLog DO ledger is read first; legacy D1 rows are only a fallback for unknown keys', async () => {
 	const db = createDatabase()
 	seedPackageResolution()

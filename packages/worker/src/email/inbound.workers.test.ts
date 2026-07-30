@@ -3387,15 +3387,19 @@ export default async function main(input = {}) {
 			).packageInvocations.filter((row) => row.packageId === packageId)
 			expect(invocations).toHaveLength(2)
 			// Anchor each stored response to its message body instead of relying
-			// on ledger ordering.
-			const responseBodies = invocations.map(
-				(row) =>
-					(
-						JSON.parse(String(row.responseJson)) as {
-							status: number
-							body: Record<string, unknown>
-						}
-					).body,
+			// on ledger ordering. Rows without a replay cache (oversized) would
+			// simply not match and fail the assertions below.
+			const responseBodies = invocations.flatMap((row) =>
+				row.responseJson == null
+					? []
+					: [
+							(
+								JSON.parse(row.responseJson) as {
+									status: number
+									body: Record<string, unknown>
+								}
+							).body,
+						],
 			)
 			const responseForTextBody = (textBody: string) =>
 				responseBodies.find(
