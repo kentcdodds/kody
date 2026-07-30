@@ -191,6 +191,18 @@ Restore rebuilds these; do not treat them as recovery media:
   Account export/deletion cover run records for user-facing portability and
   purge; disaster recovery deliberately does not.
 
+  **Known risk — keyed invocation idempotency ledger:** the same `RunLog` DO
+  also holds the keyed package-invocation idempotency ledger (claims + 90-day
+  terminal replay responses; migrated off the D1 `package_invocations` table).
+  Losing the DO therefore loses exactly-once state, not just observability:
+  webhook providers and other keyed callers that retry deliveries would
+  **re-execute** invocations whose keys were already terminal, and in-flight
+  replays would return fresh executions instead of stored responses. This is
+  accepted: the ledger is per-user, self-expiring, and rebuilt organically by
+  new traffic, and the blast radius of a loss is duplicate side effects for at
+  most the retention window — not data loss. Restores from a D1 backup restore
+  the legacy table only; the DO ledger is not part of DR media.
+
 ### Honest gaps
 
 - **Artifacts Git history** is not mirrored. Only published source snapshots in

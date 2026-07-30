@@ -199,6 +199,38 @@ TTLs above. Reconciliation runs on the DO alarm, on retention passes, and **on
 read** (`getRun`, keyed lookup, `listRuns`, `summarize`) so Activity and
 keyed-execute recovery do not wait for an alarm.
 
+## Keyed package-invocation idempotency ledger
+
+The same per-user `RunLog` DO also hosts the **keyed package-invocation
+idempotency ledger** (`package_invocation_ledger` table), migrated off the D1
+`package_invocations` table. This is correctness state, not observability: it is
+what makes keyed `packages.invoke` exactly-once.
+
+- **Claim + run-record begin are one awaited DO RPC**
+  (`claimPackageInvocation`): lookup-then-insert is atomic because DO execution
+  is serialized — strictly better than the D1 `INSERT OR IGNORE` race it
+  replaced — and the eager `running` run row is written in the same call. Stale
+  `in_progress` claims (15 minutes, matching request hash) are reclaimed in
+  place.
+- **Terminal response + run-record finish are one awaited DO RPC**
+  (`finishPackageInvocation`): the bounded replay response (same restore-safe
+  byte ceiling as before) and the terminal run row land together; the ledger
+  update is fenced on the claim timestamp so a competing reclaim cannot be
+  overwritten.
+- **Ledger retention is DO-local**: terminal rows keep replay responses for 90
+  days (`packageInvocationLedgerRetentionDays`), pruned by the same retention
+  passes and alarm as run rows; `in_progress` rows are never pruned. The old D1
+  retention sweep remains only to drain pre-migration rows.
+- **Dual-read window**: the keyed path reads the DO first and falls back to a
+  read-only D1 `package_invocations` lookup for keys claimed before the
+  migration. Writes go only to the DO. A follow-up removes the fallback, the D1
+  table, its sweep, and the legacy row shapes.
+- Account export pages ledger rows through the same `run_records` section cursor
+  (runs first, then ledger rows); account deletion purges them with `clearAll`.
+  Disaster recovery deliberately does not stage the DO — losing it risks
+  duplicate execution of replayed webhooks (see
+  [disaster recovery](../disaster-recovery.md)).
+
 ## Invariant: state vs history
 
 Entity rows hold **current state**. Run records hold **history**. Never derive

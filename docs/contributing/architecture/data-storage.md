@@ -184,10 +184,11 @@ Durable Object export behavior:
   hold application/job/service durable state and are the primary account
   migration surface for Durable Object storage.
 - `JobManager` exposes scheduler alarm/debug state through an export RPC.
-- `RunLog` exports per-user execution history (runs + log lines) through the
-  account-export `run_records` section (`exportRuns` RPC). Retention is
-  self-enforced inside the DO (~30 days / 2,000 runs); see
-  [Run records](./run-records.md).
+- `RunLog` exports per-user execution history (runs + log lines) and the keyed
+  package-invocation idempotency ledger through the account-export `run_records`
+  section (`exportRuns` RPC; one cursor pages runs first, then ledger rows).
+  Retention is self-enforced inside the DO (~30 days / 2,000 runs; ledger
+  terminal rows 90 days); see [Run records](./run-records.md).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -922,9 +923,14 @@ documented exemption.
 
 Current retention policies:
 
-- `package_invocations`: keep terminal idempotency rows for 90 days. Rows with
-  `status = 'in_progress'` are never pruned so duplicate requests cannot bypass
-  the in-flight guard.
+- `package_invocations`: **legacy dual-read window.** Keyed invocations now
+  claim and store replay responses in the per-user `RunLog` Durable Object
+  ledger (`package_invocation_ledger` table inside the DO), which self-enforces
+  the same 90-day terminal-row window; the keyed path only reads this D1 table
+  as a fallback for pre-migration keys and never writes it. The sweep keeps
+  draining pre-migration terminal rows (rows with `status = 'in_progress'` are
+  never pruned) until a follow-up drops the table, the fallback read, and this
+  policy entry.
 - `mcp_memory_conversation_suppressions`: keep active suppressions and prune
   expired rows only after they have not been seen for 90 days. The existing
   request-time memory prune may remove expired rows sooner.
