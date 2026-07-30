@@ -428,6 +428,7 @@ export async function listStuckSkippedJobRowsPage(
 			WHERE id > ?
 				AND enabled = 1
 				AND kill_switch_enabled = 0
+				AND json_extract(schedule_json, '$.type') != 'once'
 				AND last_completed_scheduled_for IS NOT NULL
 				AND last_completed_scheduled_for = COALESCE(retry_scheduled_for, next_run_at)
 			ORDER BY id ASC
@@ -447,15 +448,26 @@ export async function advanceStuckSkippedJobNextRunAt(input: {
 }): Promise<boolean> {
 	const result = await input.db
 		.prepare(
-			`UPDATE jobs SET next_run_at = ?, updated_at = ?
+			`UPDATE jobs SET
+				next_run_at = ?,
+				updated_at = ?,
+				retry_scheduled_for = NULL,
+				retry_count = 0
 			WHERE id = ?
 				AND user_id = ?
 				AND enabled = 1
 				AND kill_switch_enabled = 0
 				AND last_completed_scheduled_for IS NOT NULL
-				AND last_completed_scheduled_for = COALESCE(retry_scheduled_for, next_run_at)`,
+				AND last_completed_scheduled_for = COALESCE(retry_scheduled_for, next_run_at)
+				AND next_run_at != ?`,
 		)
-		.bind(input.nextRunAt, input.updatedAt, input.jobId, input.userId)
+		.bind(
+			input.nextRunAt,
+			input.updatedAt,
+			input.jobId,
+			input.userId,
+			input.nextRunAt,
+		)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }

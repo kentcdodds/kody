@@ -24,6 +24,8 @@ export const jobScheduleWatchdogGraceMs = 5 * 60 * 1_000
 /** Worker cron fires every 5 minutes; run this lane on :00/:15/:30/:45. */
 export const jobScheduleWatchdogIntervalMinutes = 15
 export const jobScheduleWatchdogPageSize = 100
+/** Cap cross-user page accumulation so a large backlog cannot OOM the cron. */
+export const jobScheduleWatchdogMaxRowsPerTick = 5_000
 export const jobScheduleWatchdogMaxUsersPerTick = 50
 export const jobScheduleWatchdogMaxJobsLogged = 20
 /** Avoid re-paging Sentry on the same sustained overdue set every tick. */
@@ -46,15 +48,17 @@ export type JobScheduleWatchdogResult = {
 	stuckSkippedJobCount: number
 	repairedStuckJobCount: number
 	usersSynced: number
+	usersFailedSync: number
 	usersSkippedCap: number
+	scanTruncated: boolean
 	alerted: boolean
 }
 
 function summarizeJobs(rows: Array<JobRow>) {
+	// Omit user-authored job names from ops/Sentry payloads; job ids are enough.
 	return rows.slice(0, jobScheduleWatchdogMaxJobsLogged).map((row) => ({
 		jobId: row.id,
 		userId: row.user_id,
-		name: row.name,
 		nextRunAt: row.next_run_at,
 		lastRunAt: row.last_run_at,
 		lastCompletedScheduledFor: row.last_completed_scheduled_for,
@@ -63,17 +67,25 @@ function summarizeJobs(rows: Array<JobRow>) {
 
 async function collectPagedJobRows(input: {
 	page: (afterId: string | null) => Promise<Array<JobRow>>
-}): Promise<Array<JobRow>> {
+}): Promise<{ rows: Array<JobRow>; truncated: boolean }> {
 	const rows: Array<JobRow> = []
 	let afterId: string | null = null
 	while (true) {
 		const page = await runD1WithRetry(() => input.page(afterId))
 		if (page.length === 0) break
 		rows.push(...page)
-		if (page.length < jobScheduleWatchdogPageSize) break
+		if (page.length < jobScheduleWatchdogPageSize) {
+			return { rows, truncated: false }
+		}
+		if (rows.length >= jobScheduleWatchdogMaxRowsPerTick) {
+			return {
+				rows: rows.slice(0, jobScheduleWatchdogMaxRowsPerTick),
+				truncated: true,
+			}
+		}
 		afterId = page[page.length - 1]!.id
 	}
-	return rows
+	return { rows, truncated: false }
 }
 
 async function maybeCaptureWatchdogAlert(input: {
@@ -139,7 +151,7 @@ export async function runJobScheduleWatchdogTick(input: {
 		now.getTime() - jobScheduleWatchdogGraceMs,
 	).toISOString()
 
-	const overdueRows = await collectPagedJobRows({
+	const overduePage = await collectPagedJobRows({
 		page: (afterId) =>
 			listSilentlyOverdueJobRowsPage(input.env.APP_DB, {
 				overdueBeforeIso,
@@ -148,13 +160,16 @@ export async function runJobScheduleWatchdogTick(input: {
 				limit: jobScheduleWatchdogPageSize,
 			}),
 	})
-	const stuckRows = await collectPagedJobRows({
+	const stuckPage = await collectPagedJobRows({
 		page: (afterId) =>
 			listStuckSkippedJobRowsPage(input.env.APP_DB, {
 				afterId,
 				limit: jobScheduleWatchdogPageSize,
 			}),
 	})
+	const overdueRows = overduePage.rows
+	const stuckRows = stuckPage.rows
+	const scanTruncated = overduePage.truncated || stuckPage.truncated
 
 	let repairedStuckJobCount = 0
 	const usersNeedingSync = new Set<string>()
@@ -164,9 +179,6 @@ export async function runJobScheduleWatchdogTick(input: {
 
 	for (const row of stuckRows) {
 		usersNeedingSync.add(row.user_id)
-		if (row.record.schedule.type === 'once') {
-			continue
-		}
 		try {
 			const nextRunAt = computeNextRunAt({
 				schedule: row.record.schedule,
@@ -213,14 +225,23 @@ export async function runJobScheduleWatchdogTick(input: {
 		userIds.length - jobScheduleWatchdogMaxUsersPerTick,
 	)
 	let usersSynced = 0
+	let usersFailedSync = 0
 	for (const userId of usersToSync) {
-		await syncJobManagerAlarm({ env: input.env as Env, userId })
-		usersSynced += 1
-		logJobSchedulerEvent({
-			event: 'watchdog_sync_alarm',
-			userId,
-			reason: 'silently_overdue_or_stuck_skipped',
-		})
+		try {
+			await syncJobManagerAlarm({ env: input.env as Env, userId })
+			usersSynced += 1
+			logJobSchedulerEvent({
+				event: 'watchdog_sync_alarm',
+				userId,
+				reason: 'silently_overdue_or_stuck_skipped',
+			})
+		} catch (error) {
+			usersFailedSync += 1
+			console.warn('job-schedule-watchdog-sync-failed', {
+				userId,
+				error: error instanceof Error ? error.message : String(error),
+			})
+		}
 	}
 
 	const baseResult = {
@@ -228,7 +249,9 @@ export async function runJobScheduleWatchdogTick(input: {
 		stuckSkippedJobCount: stuckRows.length,
 		repairedStuckJobCount,
 		usersSynced,
+		usersFailedSync,
 		usersSkippedCap,
+		scanTruncated,
 	}
 	const alerted = await maybeCaptureWatchdogAlert({
 		env: input.env,

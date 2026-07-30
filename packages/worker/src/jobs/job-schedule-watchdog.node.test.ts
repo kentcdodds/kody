@@ -87,7 +87,7 @@ function jobRow(input: {
 	}
 }
 
-test('job schedule watchdog re-arms alarms for overdue users, repairs stuck fences, and cools Sentry alerts', async () => {
+test('job schedule watchdog re-arms alarms for overdue users, repairs stuck fences, isolates sync failures, and cools Sentry alerts', async () => {
 	expect(
 		shouldRunJobScheduleWatchdogCron(new Date('2026-07-23T17:00:00.000Z')),
 	).toBe(true)
@@ -116,6 +116,13 @@ test('job schedule watchdog re-arms alarms for overdue users, repairs stuck fenc
 	listSilentlyOverdueJobRowsPage.mockResolvedValueOnce([overdue])
 	listStuckSkippedJobRowsPage.mockResolvedValueOnce([stuck])
 	advanceStuckSkippedJobNextRunAt.mockResolvedValueOnce(true)
+	syncJobManagerAlarm
+		.mockRejectedValueOnce(new Error('do unavailable'))
+		.mockResolvedValueOnce({
+			ok: true as const,
+			userId: 'user-b',
+			nextRunAt: null,
+		})
 	consoleWarn.mockImplementation(() => {})
 
 	const kvStore = new Map<string, string>()
@@ -136,8 +143,10 @@ test('job schedule watchdog re-arms alarms for overdue users, repairs stuck fenc
 		overdueJobCount: 1,
 		stuckSkippedJobCount: 1,
 		repairedStuckJobCount: 1,
-		usersSynced: 2,
+		usersSynced: 1,
+		usersFailedSync: 1,
 		usersSkippedCap: 0,
+		scanTruncated: false,
 		alerted: true,
 	})
 	expect(syncJobManagerAlarm).toHaveBeenCalledTimes(2)
@@ -159,18 +168,38 @@ test('job schedule watchdog re-arms alarms for overdue users, repairs stuck fenc
 	expect(captureMessage).toHaveBeenCalledTimes(1)
 	expect(kvStore.get(jobScheduleWatchdogAlertKvKey)).toBe(String(now.getTime()))
 	expect(consoleWarn).toHaveBeenCalledWith(
+		'job-schedule-watchdog-sync-failed',
+		expect.objectContaining({ userId: 'user-a' }),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
 		'job-schedule-watchdog-overdue',
 		expect.objectContaining({
 			overdueJobCount: 1,
 			stuckSkippedJobCount: 1,
-			usersSynced: 2,
+			usersSynced: 1,
+			usersFailedSync: 1,
+			overdueSample: [
+				expect.objectContaining({
+					jobId: 'job-overdue',
+					userId: 'user-a',
+				}),
+			],
 		}),
 	)
+	const overduePayload = consoleWarn.mock.calls.find(
+		(call) => call[0] === 'job-schedule-watchdog-overdue',
+	)?.[1] as { overdueSample: Array<{ name?: string }> }
+	expect(overduePayload.overdueSample[0]).not.toHaveProperty('name')
 
 	listSilentlyOverdueJobRowsPage.mockResolvedValueOnce([overdue])
 	listStuckSkippedJobRowsPage.mockResolvedValueOnce([])
 	advanceStuckSkippedJobNextRunAt.mockClear()
-	syncJobManagerAlarm.mockClear()
+	syncJobManagerAlarm.mockReset()
+	syncJobManagerAlarm.mockResolvedValue({
+		ok: true as const,
+		userId: 'user-a',
+		nextRunAt: null,
+	})
 	captureMessage.mockClear()
 	consoleWarn.mockClear()
 	consoleWarn.mockImplementation(() => {})
@@ -181,6 +210,7 @@ test('job schedule watchdog re-arms alarms for overdue users, repairs stuck fenc
 	})
 	expect(second.alerted).toBe(false)
 	expect(second.usersSynced).toBe(1)
+	expect(second.usersFailedSync).toBe(0)
 	expect(captureMessage).not.toHaveBeenCalled()
 	expect(syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
