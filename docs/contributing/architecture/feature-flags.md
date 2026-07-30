@@ -98,7 +98,7 @@ week, so measured flags record **exposures** at the two evaluation chokepoints
 `(stable user id, flag key, on/off, assignment source, timestamp)`. The write
 path mirrors usage metering — the `FLAG_EXPOSURES` Analytics Engine dataset in
 production/preview, the D1 `feature_flag_exposure_rollups` table (migration
-`0113`, 90-day retention) in local dev and tests — and never throws.
+`0117`, 90-day retention) in local dev and tests — and never throws.
 
 The assignment source (`default` / `global` / `rollout` / `override`) is what
 keeps the readout honest: `override` users are hand-picked and excluded from
