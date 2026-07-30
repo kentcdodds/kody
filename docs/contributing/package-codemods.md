@@ -278,6 +278,11 @@ items keep their `applied` status, retrying is starting a **new** revert run
 against the same apply run — it picks up exactly the items that were not
 reverted.
 
+Steps do not take a per-package lock. Publishes serialize in the repo session
+Durable Object and transforms are deterministic, so overlapping steps of the
+**same** codemod are benign, but do not fleet-apply two **different** codemods
+concurrently — the second may transform stale published source.
+
 ## Subscription events
 
 After each successful **apply** or **revert**, the host dispatches
