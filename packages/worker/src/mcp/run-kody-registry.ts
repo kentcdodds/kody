@@ -266,28 +266,28 @@ async function buildKodyToolContext(
 				if (shouldSampleFirstDispatch) {
 					firstCapabilityDispatchSampled = true
 				}
-				await assertCallerCanAccessCapability(callerContext, capability, {
-					env,
-				})
-				const resolveSecretValue =
-					options?.resolveSecretValue ??
-					createCapabilityInputSecretResolver(
-						env,
-						callerContext,
-						capabilityName,
-					)
-				const resolvedArgs = await resolveCapabilityInputSecrets({
-					schema: capability.inputSchema,
-					value: (args ?? {}) as Record<string, unknown>,
-					resolveSecretValue: (secret) =>
-						resolveSecretValue(secret, capabilityName),
-				})
-				collectSecretInputValues({
-					schema: capability.inputSchema,
-					value: resolvedArgs,
-					track: options?.trackSecretInputValue,
-				})
 				try {
+					await assertCallerCanAccessCapability(callerContext, capability, {
+						env,
+					})
+					const resolveSecretValue =
+						options?.resolveSecretValue ??
+						createCapabilityInputSecretResolver(
+							env,
+							callerContext,
+							capabilityName,
+						)
+					const resolvedArgs = await resolveCapabilityInputSecrets({
+						schema: capability.inputSchema,
+						value: (args ?? {}) as Record<string, unknown>,
+						resolveSecretValue: (secret) =>
+							resolveSecretValue(secret, capabilityName),
+					})
+					collectSecretInputValues({
+						schema: capability.inputSchema,
+						value: resolvedArgs,
+						track: options?.trackSecretInputValue,
+					})
 					return await capability.handler(
 						resolvedArgs as Record<string, unknown>,
 						{
