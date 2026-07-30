@@ -995,7 +995,15 @@ export async function cancelWorkflowRunForUser(input: {
 			// terminate throws instead of stamping cancelled over a finished run.
 			await instance.terminate()
 		} catch (error) {
-			const statusResult = await instance.status()
+			// Per Cloudflare WorkflowInstance.terminate (worker-configuration.d.ts):
+			// "Terminate the instance. If it is errored, terminated or complete, an
+			// error will be thrown." — that contract makes catch-and-reread correct.
+			let statusResult: { status?: string } | null = null
+			try {
+				statusResult = await instance.status()
+			} catch {
+				throw error
+			}
 			const engineStatus =
 				typeof statusResult?.status === 'string' ? statusResult.status : null
 			if (engineStatus && terminalWorkflowStatuses.has(engineStatus)) {
@@ -1027,26 +1035,50 @@ export async function cancelWorkflowRunForUser(input: {
 		// (deliberately no extra guard — creation semantics must not change).
 	}
 	const now = new Date().toISOString()
-	// Accepted straggler race: a `mark workflow running` step write that lands
-	// after this cancelled projection can flip the row back to an active status;
-	// the next listWorkflowRunsForUser refresh then projects the engine's
-	// terminal `terminated`. Self-healing; no guard added on purpose.
+	const terminalStatusPlaceholders = terminalWorkflowStatusValues
+		.map(() => '?')
+		.join(', ')
+	// Guard against stamping cancelled over a concurrent terminal D1 write
+	// (complete/errored/…) that landed while terminate still succeeded — the
+	// engine can still report running when the workflow's own terminal step
+	// write has already finished. Re-SELECT decides the winner; do not trust
+	// meta.changes. An active straggler (`mark workflow running`) that lands
+	// after a successful cancelled projection can still flip the row back; the
+	// next listWorkflowRunsForUser refresh then projects engine `terminated`.
 	await input.env.APP_DB.prepare(
 		`UPDATE workflow_runs
 		SET status = 'cancelled', updated_at = ?, completed_at = COALESCE(completed_at, ?)
-		WHERE id = ? AND user_id = ?`,
+		WHERE id = ? AND user_id = ?
+			AND COALESCE(status, '') NOT IN (${terminalStatusPlaceholders})`,
 	)
-		.bind(now, now, row.id, input.userId)
+		.bind(now, now, row.id, input.userId, ...terminalWorkflowStatusValues)
 		.run()
-	return {
-		outcome: 'cancelled',
-		run: {
-			...row,
-			status: 'cancelled',
-			updatedAt: now,
-			completedAt: row.completedAt ?? now,
-		},
+	const projected = await input.env.APP_DB.prepare(
+		`SELECT * FROM workflow_runs WHERE id = ? AND user_id = ? LIMIT 1`,
+	)
+		.bind(row.id, input.userId)
+		.first<Record<string, unknown>>()
+	if (!projected) {
+		throw new Error(
+			`Workflow run "${row.id}" disappeared while cancelling for the current user.`,
+		)
 	}
+	const projectedRun = mapWorkflowRunRow(projected)
+	if (projectedRun.status === 'cancelled') {
+		return { outcome: 'cancelled', run: projectedRun }
+	}
+	if (
+		projectedRun.status !== null &&
+		terminalWorkflowStatuses.has(projectedRun.status)
+	) {
+		return { outcome: 'already_terminal', run: projectedRun }
+	}
+	// An active straggler write (for example `mark workflow running`) landed
+	// between the guarded update and the re-read. The terminate already
+	// succeeded (or the instance was missing), so the cancellation itself
+	// worked; the row self-heals to the engine's terminal status on the next
+	// listWorkflowRunsForUser refresh.
+	return { outcome: 'cancelled', run: projectedRun }
 }
 
 export async function listWorkflowRunsForUser(input: {

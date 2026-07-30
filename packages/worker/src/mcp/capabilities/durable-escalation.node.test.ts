@@ -460,6 +460,85 @@ test('runWithDurableEscalation never throws and reports structured failures', as
 	})
 })
 
+test('budget exhaustion fails closed when create single-flights onto a dead terminal run', async () => {
+	const hangUntilAborted = vi.fn(
+		async (signal: AbortSignal) =>
+			await new Promise<never>((_resolve, reject) => {
+				signal.addEventListener(
+					'abort',
+					() => {
+						reject(new DOMException('Aborted', 'AbortError'))
+					},
+					{ once: true },
+				)
+			}),
+	)
+
+	mockModule.createDynamicCallableWorkflow.mockResolvedValueOnce({
+		ok: true,
+		id: 'dynwf-cancelled-1',
+		workflow_name: 'package_publish_external_push',
+		source_type: 'inline',
+		run_at: '2026-07-27T00:00:00.000Z',
+		plan_date: '2026-07-27',
+		status: 'cancelled',
+	})
+	const cancelledOutcome = await runWithDurableEscalation({
+		env: {
+			APP_DB: createWorkflowRunsDb(),
+			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		} as Env,
+		userId: 'user-1',
+		idempotencyParts: publishParts,
+		workflowName: 'package_publish_external_push',
+		durableCode: 'export default async function main() { return null }',
+		budgetMs: 30,
+		run: hangUntilAborted,
+	})
+	expect(cancelledOutcome.kind).toBe('failed')
+	if (cancelledOutcome.kind !== 'failed') {
+		throw new Error('Expected cancelled single-flight to fail closed.')
+	}
+	expect(cancelledOutcome.error).toContain('dynwf-cancelled-1')
+	expect(cancelledOutcome.error).toContain('cancelled')
+	expect(cancelledOutcome.error).toContain('blocks re-dispatch')
+
+	mockModule.createDynamicCallableWorkflow.mockResolvedValueOnce({
+		ok: true,
+		id: 'dynwf-complete-1',
+		workflow_name: 'package_publish_external_push',
+		source_type: 'inline',
+		run_at: '2026-07-27T00:00:00.000Z',
+		plan_date: '2026-07-27',
+		status: 'complete',
+	})
+	const completeParts = [...publishParts, 'complete-replay'] as const
+	const completeOutcome = await runWithDurableEscalation({
+		env: {
+			APP_DB: createWorkflowRunsDb(),
+			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		} as Env,
+		userId: 'user-1',
+		idempotencyParts: completeParts,
+		workflowName: 'package_publish_external_push',
+		durableCode: 'export default async function main() { return null }',
+		budgetMs: 30,
+		run: hangUntilAborted,
+	})
+	expect(completeOutcome).toEqual({
+		kind: 'dispatched',
+		handle: expect.objectContaining({
+			status: 'dispatched',
+			workflow_id: 'dynwf-complete-1',
+			run_status: 'complete',
+			idempotency_key: buildCallerScopedIdempotencyKey({
+				userId: 'user-1',
+				parts: completeParts,
+			}),
+		}),
+	})
+})
+
 test('budget abort dispatches while the inline attempt is still in flight', async () => {
 	const events: Array<string> = []
 	mockModule.createDynamicCallableWorkflow.mockImplementation(async () => {

@@ -74,7 +74,10 @@ Cancelling an already-finished run (`complete`, `errored`, `terminated`, or
 `cancelled`) is a safe no-op: the response has `cancelled: false` and
 `already_terminal: true` with the run's terminal status. Cancelling is
 idempotent. If the run finishes in the moment you cancel it, the cancel reports
-the run's actual terminal status instead of pretending it was cancelled.
+the run's actual terminal status instead of pretending it was cancelled. In rare
+races a cancelled run can instead surface as `terminated` (the engine's own
+terminal status) — treat `cancelled` and `terminated` both as "the run was
+stopped".
 
 A cancelled run keeps single-flighting its idempotency key, exactly like a
 `complete` or `errored` run — calling `workflows.create` again with the same key

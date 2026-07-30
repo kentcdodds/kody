@@ -38,6 +38,7 @@ type FakeInstanceOptions = {
 	status?: string
 	terminateThrows?: Error | null
 	statusAfterTerminate?: string
+	onTerminate?: () => void | Promise<void>
 }
 
 function createCancelTestBinding(options?: {
@@ -67,6 +68,7 @@ function createCancelTestBinding(options?: {
 			}),
 			terminate: vi.fn(async () => {
 				terminateCalls.push(id)
+				if (knobs.onTerminate) await knobs.onTerminate()
 				if (knobs.terminateThrows) throw knobs.terminateThrows
 				knobs.status = 'terminated'
 				knobs.statusAfterTerminate = 'terminated'
@@ -349,6 +351,56 @@ test('cancel races with a run that finishes first', async () => {
 	).toMatchObject({
 		status: 'queued',
 		completed_at: null,
+	})
+})
+
+test('cancel projection loses to a concurrent complete write', async () => {
+	const { sqlite, db } = createWorkflowRunsDb()
+	const binding = createCancelTestBinding()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			code: 'export default async function main() { return { ok: true } }',
+			idempotencyKey: 'guarded-projection-key',
+			runAt: '2026-05-03T12:34:56.000Z',
+		},
+	})
+	const completedAt = '2026-05-03T12:35:00.000Z'
+	binding.perInstance.set(created.id, {
+		onTerminate: async () => {
+			await db
+				.prepare(
+					`UPDATE workflow_runs
+					SET status = 'complete', completed_at = ?, updated_at = ?
+					WHERE id = ? AND user_id = ?`,
+				)
+				.bind(completedAt, completedAt, created.id, 'user-1')
+				.run()
+		},
+	})
+
+	const result = await cancelWorkflowRunForUser({
+		env,
+		userId: 'user-1',
+		workflowRunId: created.id,
+	})
+	expect(result).toMatchObject({
+		outcome: 'already_terminal',
+		run: {
+			id: created.id,
+			status: 'complete',
+			completedAt,
+		},
+	})
+	expect(readWorkflowRunRow(sqlite, created.id)).toMatchObject({
+		status: 'complete',
+		completed_at: completedAt,
 	})
 })
 
