@@ -570,18 +570,32 @@ class RunLogBase extends DurableObject<Env> {
 	private reconcileStaleRunning() {
 		const nowMs = Date.now()
 		const finishedAt = new Date(nowMs).toISOString()
-		// Shortest surface TTL is the earliest a row can possibly be stale;
-		// filter the rest in JS so each surface keeps its own budget.
-		const earliestCutoff = new Date(
+		// Per-surface cutoffs so long-lived job/service rows cannot fill the
+		// batch and starve short-lived execute/export rows that are already
+		// past their 3-minute TTL.
+		const shortLivedCutoff = new Date(
 			nowMs - runRecordStaleRunningTtlMsForSurface('execute'),
+		).toISOString()
+		const jobCutoff = new Date(
+			nowMs - runRecordStaleRunningTtlMsForSurface('job'),
+		).toISOString()
+		const longLivedCutoff = new Date(
+			nowMs - runRecordStaleRunningTtlMsForSurface('service'),
 		).toISOString()
 		const candidates = this.ctx.storage.sql
 			.exec<{ id: string; started_at: string; surface: string }>(
 				`SELECT id, started_at, surface FROM runs
-				WHERE status = 'running' AND started_at < ?
+				WHERE status = 'running' AND (
+					(surface IN ('execute', 'export', 'retriever', 'webhook', 'subscription', 'app_fetch', 'app_realtime')
+						AND started_at < ?)
+					OR (surface = 'job' AND started_at < ?)
+					OR (surface IN ('service', 'workflow') AND started_at < ?)
+				)
 				ORDER BY started_at ASC
 				LIMIT ?`,
-				earliestCutoff,
+				shortLivedCutoff,
+				jobCutoff,
+				longLivedCutoff,
 				maxStaleRunningReconcilesPerPass,
 			)
 			.toArray()
