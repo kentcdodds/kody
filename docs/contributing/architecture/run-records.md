@@ -182,12 +182,21 @@ a shared D1 table:
 | Log lines per run          | 200                                             |
 | Text / JSON field budgets  | 16 KiB / 32 KiB truncated                       |
 | `metadata.result` snapshot | 4 KiB (`runRecordMaxResultSnapshotBytes`)       |
+| Stale `running` (short)    | ~3 minutes for execute/export/webhook/…         |
+| Stale `running` (job)      | ~6 hours                                        |
+| Stale `running` (long)     | ~24 hours for service/workflow                  |
 
 Age prune deletes finished runs older than the cutoff (rows still `running` are
 kept). Count prune deletes the oldest excess rows **failure-last**: successes
 are removed before errors (`ORDER BY (status = 'error') ASC, started_at ASC`).
 Orphan log lines are cleaned in the same pass. Caps are applied in small batches
 per finish so a single RPC stays bounded.
+
+Stranded `running` rows (isolate reset, lost `waitUntil` finish, hung Worker
+Loader `evaluate`) are reconciled to `error` / `Interrupted` / outcome-unknown
+using the surface-aware TTLs above. Reconciliation runs on the DO alarm, on
+retention passes, and **on read** (`getRun`, keyed lookup, `listRuns`,
+`summarize`) so Activity and keyed-execute recovery do not wait for an alarm.
 
 ## Invariant: state vs history
 

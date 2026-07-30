@@ -27,7 +27,8 @@ import {
 	runRecordMaxRunsPerUser,
 	runRecordRetentionDays,
 	runRecordRetentionEveryNFinishes,
-	runRecordStaleRunningTtlMs,
+	runRecordStaleRunningTtlMsJob,
+	runRecordStaleRunningTtlMsShortLived,
 	type RunRecordContext,
 	type RunRecordHandle,
 	type RunSurface,
@@ -576,7 +577,7 @@ test('cap and stale retention journey', async () => {
 		const userId = uniqueUserId('stale-running')
 		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 		const staleStartedAt = new Date(
-			Date.now() - runRecordStaleRunningTtlMs - 60_000,
+			Date.now() - runRecordStaleRunningTtlMsJob - 60_000,
 		).toISOString()
 		const freshStartedAt = new Date().toISOString()
 		await runInDurableObject(stub, async (instance: RunLog, state) => {
@@ -616,13 +617,40 @@ test('cap and stale retention journey', async () => {
 		expect(fresh?.run.finishedAt).toBeNull()
 	}
 
+	// --- execute-surface stale rows heal on read within minutes, not 24h ---
+	{
+		const userId = uniqueUserId('stale-execute-heal')
+		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+		const staleStartedAt = new Date(
+			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
+		).toISOString()
+		await runInDurableObject(stub, async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			insertRunRow(state, {
+				id: 'stale-execute',
+				status: 'running',
+				startedAt: staleStartedAt,
+				finishedAt: null,
+				surface: 'execute',
+			})
+		})
+		const healed = await getRunRecord({
+			env,
+			userId,
+			runId: 'stale-execute',
+		})
+		expect(healed?.run.status).toBe('error')
+		expect(healed?.run.errorName).toBe('Interrupted')
+		expect(healed?.run.surface).toBe('execute')
+	}
+
 	// --- stale rows become cap-evictable after reconcile ---
 	{
 		const userId = uniqueUserId('stale-cap-evict')
 		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 		const baseMs = Date.now() - 3_600_000
 		const staleStartedAt = new Date(
-			Date.now() - runRecordStaleRunningTtlMs - 60_000,
+			Date.now() - runRecordStaleRunningTtlMsJob - 60_000,
 		).toISOString()
 		const successCount = 2
 		const errorCount = runRecordMaxRunsPerUser - 2

@@ -19,7 +19,7 @@ import {
 	runRecordRetentionAlarmMs,
 	runRecordRetentionDays,
 	runRecordRetentionEveryNFinishes,
-	runRecordStaleRunningTtlMs,
+	runRecordStaleRunningTtlMsForSurface,
 	runSurfaceValues,
 } from './types.ts'
 
@@ -516,52 +516,128 @@ class RunLogBase extends DurableObject<Env> {
 		this.adjustRunCount(-ids.length)
 	}
 
+	private isStaleRunning(input: {
+		surface: string
+		startedAt: string
+		nowMs?: number
+	}): boolean {
+		const surface = isRunSurface(input.surface) ? input.surface : 'execute'
+		const startedMs = Date.parse(input.startedAt)
+		if (!Number.isFinite(startedMs)) return false
+		const nowMs = input.nowMs ?? Date.now()
+		return nowMs - startedMs >= runRecordStaleRunningTtlMsForSurface(surface)
+	}
+
+	private markRunningInterrupted(input: {
+		id: string
+		startedAt: string
+		finishedAt?: string
+	}) {
+		const finishedAt = input.finishedAt ?? new Date().toISOString()
+		const startedMs = Date.parse(input.startedAt)
+		const finishedMs = Date.parse(finishedAt)
+		const durationMs =
+			Number.isFinite(startedMs) && Number.isFinite(finishedMs)
+				? Math.max(0, finishedMs - startedMs)
+				: null
+		this.ctx.storage.sql.exec(
+			`UPDATE runs
+			SET status = 'error',
+				finished_at = ?,
+				duration_ms = ?,
+				error_name = ?,
+				error_message = ?,
+				updated_at = ?
+			WHERE id = ? AND status = 'running'`,
+			finishedAt,
+			durationMs,
+			staleRunningErrorName,
+			staleRunningErrorMessage,
+			finishedAt,
+			input.id,
+		)
+	}
+
 	/**
 	 * Prefer marking stranded `running` rows terminal over deleting them: an
 	 * interrupted attempt is useful history. `error` + Interrupted is used
 	 * because the public status union has no dedicated unknown-outcome value;
 	 * live "is it running?" state must not be read from these rows anyway.
+	 *
+	 * TTL is surface-aware: sandbox-backed surfaces (execute/export/…) heal in
+	 * minutes; long-lived service/workflow rows keep the day-scale TTL.
 	 */
 	private reconcileStaleRunning() {
-		const cutoff = new Date(
-			Date.now() - runRecordStaleRunningTtlMs,
+		const nowMs = Date.now()
+		const finishedAt = new Date(nowMs).toISOString()
+		// Shortest surface TTL is the earliest a row can possibly be stale;
+		// filter the rest in JS so each surface keeps its own budget.
+		const earliestCutoff = new Date(
+			nowMs - runRecordStaleRunningTtlMsForSurface('execute'),
 		).toISOString()
-		const finishedAt = new Date().toISOString()
-		const stale = this.ctx.storage.sql
-			.exec<{ id: string; started_at: string }>(
-				`SELECT id, started_at FROM runs
+		const candidates = this.ctx.storage.sql
+			.exec<{ id: string; started_at: string; surface: string }>(
+				`SELECT id, started_at, surface FROM runs
 				WHERE status = 'running' AND started_at < ?
 				ORDER BY started_at ASC
 				LIMIT ?`,
-				cutoff,
+				earliestCutoff,
 				maxStaleRunningReconcilesPerPass,
 			)
 			.toArray()
-		for (const row of stale) {
-			const startedMs = Date.parse(row.started_at)
-			const finishedMs = Date.parse(finishedAt)
-			const durationMs =
-				Number.isFinite(startedMs) && Number.isFinite(finishedMs)
-					? Math.max(0, finishedMs - startedMs)
-					: null
-			this.ctx.storage.sql.exec(
-				`UPDATE runs
-				SET status = 'error',
-					finished_at = ?,
-					duration_ms = ?,
-					error_name = ?,
-					error_message = ?,
-					updated_at = ?
-				WHERE id = ? AND status = 'running'`,
+		let reconciled = 0
+		for (const row of candidates) {
+			if (
+				!this.isStaleRunning({
+					surface: row.surface,
+					startedAt: row.started_at,
+					nowMs,
+				})
+			) {
+				continue
+			}
+			this.markRunningInterrupted({
+				id: row.id,
+				startedAt: row.started_at,
 				finishedAt,
-				durationMs,
-				staleRunningErrorName,
-				staleRunningErrorMessage,
-				finishedAt,
-				row.id,
-			)
+			})
+			reconciled += 1
 		}
-		return stale.length
+		return reconciled
+	}
+
+	/**
+	 * Heal one still-`running` row when a reader observes it past its surface
+	 * TTL. Keeps Activity / keyed-execute recovery honest even when the DO
+	 * alarm has not fired yet (unvisited objects, sticky armed alarms).
+	 */
+	private healStaleRunningRecord(run: RunRecord): RunRecord {
+		if (run.status !== 'running') return run
+		if (
+			!this.isStaleRunning({
+				surface: run.surface,
+				startedAt: run.startedAt,
+			})
+		) {
+			return run
+		}
+		this.markRunningInterrupted({
+			id: run.id,
+			startedAt: run.startedAt,
+		})
+		this.retentionIdleConfirmed = false
+		const healed = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT r.*,
+					(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
+				FROM runs r
+				WHERE r.id = ?
+				LIMIT 1`,
+				run.id,
+			)
+			.toArray()[0]
+		if (!healed) return run
+		return mapRunRow(healed, Number(healed['log_count'] ?? 0) || 0)
 	}
 
 	private deleteOldestWithStatus(status: RunStatus, limit: number) {
@@ -618,17 +694,19 @@ class RunLogBase extends DurableObject<Env> {
 			consider(Date.parse(oldestFinished.started_at) + retentionMs)
 		}
 
-		const oldestRunning = this.ctx.storage.sql
-			.exec<{ started_at: string }>(
-				`SELECT started_at FROM runs
-				WHERE status = 'running'
-				ORDER BY started_at ASC
-				LIMIT 1`,
+		// Soonest stale due-time can belong to a newer short-lived surface
+		// (execute) even when an older long-lived service/job row exists.
+		const runningRows = this.ctx.storage.sql
+			.exec<{ started_at: string; surface: string }>(
+				`SELECT started_at, surface FROM runs
+				WHERE status = 'running'`,
 			)
-			.toArray()[0]
-		if (oldestRunning) {
+			.toArray()
+		for (const row of runningRows) {
+			const surface = isRunSurface(row.surface) ? row.surface : 'execute'
 			consider(
-				Date.parse(oldestRunning.started_at) + runRecordStaleRunningTtlMs,
+				Date.parse(row.started_at) +
+					runRecordStaleRunningTtlMsForSurface(surface),
 			)
 		}
 
@@ -750,7 +828,14 @@ class RunLogBase extends DurableObject<Env> {
 				surface: input.run.surface,
 			})
 			if (existing) {
-				return { claimed: false, run: existing }
+				// Heal stranded `running` owners before refusing the claim so a
+				// keyed retry after an isolate death is not stuck on inProgress
+				// forever. Terminal rows (including reconciled Interrupted)
+				// still own the key for replay.
+				return {
+					claimed: false,
+					run: this.healStaleRunningRecord(existing),
+				}
 			}
 		}
 		this.insertRunningRun(input.run)
@@ -792,10 +877,12 @@ class RunLogBase extends DurableObject<Env> {
 	}): Promise<RunRecord | null> {
 		const key = input.idempotencyKey.trim()
 		if (!key) return null
-		return this.findRunByIdempotencyKey({
+		const existing = this.findRunByIdempotencyKey({
 			idempotencyKey: key,
 			surface: input.surface ?? null,
 		})
+		if (!existing) return null
+		return this.healStaleRunningRecord(existing)
 	}
 
 	/**
@@ -840,6 +927,9 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	async listRuns(input: ListRunsInput): Promise<RunRecordPage> {
+		// Heal before listing so `status=running` filters and Activity views
+		// do not keep advertising stranded rows past their surface TTL.
+		this.reconcileStaleRunning()
 		const limit = normalizePageSize(input.limit, runRecordDefaultPageSize)
 		const clauses: Array<string> = ['1 = 1']
 		const params: Array<SqlStorageValue> = []
@@ -916,6 +1006,9 @@ class RunLogBase extends DurableObject<Env> {
 			)
 			.toArray()[0]
 		if (!row) return null
+		const run = this.healStaleRunningRecord(
+			mapRunRow(row, Number(row['log_count'] ?? 0) || 0),
+		)
 		const logs = this.ctx.storage.sql
 			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM run_logs WHERE run_id = ? ORDER BY sequence ASC`,
@@ -924,12 +1017,13 @@ class RunLogBase extends DurableObject<Env> {
 			.toArray()
 			.map(mapLogRow)
 		return {
-			run: mapRunRow(row, Number(row['log_count'] ?? 0) || 0),
+			run,
 			logs,
 		}
 	}
 
 	async summarize(input: { since: string }): Promise<RunRecordSummary> {
+		this.reconcileStaleRunning()
 		const since = input.since
 		const totals = this.ctx.storage.sql
 			.exec<{ total: number; errors: number; running: number }>(

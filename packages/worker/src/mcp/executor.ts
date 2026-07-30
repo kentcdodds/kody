@@ -188,6 +188,37 @@ async function withDynamicWorkerEvaluationPermit<T>(
 	})
 }
 
+/**
+ * Host-side deadline around Worker Loader `evaluate` (and its permit wait).
+ * The sandbox also races an internal timer, but that only helps once the
+ * dynamic worker is running and can schedule timers. If `evaluate` never
+ * returns (or never starts), this host race is what bounds the request and
+ * lets run-record finish write an error instead of leaving `running` forever.
+ */
+export async function raceWithHostEvaluationDeadline<T>(
+	evaluate: () => Promise<T>,
+	timeoutMs: number,
+): Promise<T> {
+	if (!Number.isFinite(timeoutMs) || timeoutMs >= maxSupportedExecutorTimeoutMs) {
+		return await evaluate()
+	}
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	try {
+		return await Promise.race([
+			evaluate(),
+			new Promise<never>((_resolve, reject) => {
+				timeoutId = setTimeout(() => {
+					reject(new Error(executorSandboxTimeoutMessage))
+				}, Math.max(1, timeoutMs))
+			}),
+		])
+	} finally {
+		if (timeoutId !== undefined) {
+			clearTimeout(timeoutId)
+		}
+	}
+}
+
 async function runWithDynamicWorkerEvaluationPermit<T>(
 	context: DynamicWorkerEvaluationContext,
 	evaluate: () => Promise<T>,
@@ -394,9 +425,27 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				const entrypoint = input.loader
 					.get(workerId, () => workerOptions)
 					.getEntrypoint() as unknown as DynamicWorkerEntrypoint
-				const response = await withDynamicWorkerEvaluationPermit(
-					async () => await entrypoint.evaluate(dispatchers),
-				)
+				let response: Awaited<ReturnType<DynamicWorkerEntrypoint['evaluate']>>
+				try {
+					response = await raceWithHostEvaluationDeadline(
+						async () =>
+							await withDynamicWorkerEvaluationPermit(
+								async () => await entrypoint.evaluate(dispatchers),
+							),
+						input.timeout,
+					)
+				} catch (error) {
+					const message = getErrorMessage(error)
+					if (message === executorSandboxTimeoutMessage) {
+						outcome = 'error'
+						return {
+							result: undefined,
+							error: executorSandboxTimeoutMessage,
+							logs: [],
+						}
+					}
+					throw error
+				}
 				if (input.rawFetchHostSink) {
 					for (const hostname of response.rawFetchHosts ?? []) {
 						input.rawFetchHostSink.add(hostname)

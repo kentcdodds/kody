@@ -55,6 +55,13 @@ export type { FetchGatewayProps }
  */
 export const secretResolutionHeaderName = 'x-kody-secret-resolution'
 
+/**
+ * Default deadline for sandbox outbound `fetch` when the caller did not pass
+ * a tighter `AbortSignal`. Kept under the execute sandbox budget (90s) so a
+ * hung upstream cannot strand the whole evaluation past the host deadline.
+ */
+export const defaultOutboundFetchTimeoutMs = 60_000
+
 export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 	async fetch(request: Request) {
 		return executeGatewayFetch({
@@ -66,18 +73,40 @@ export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 	}
 }
 
+function applyOutboundFetchTimeout(
+	request: Request,
+	timeoutMs: number,
+): Request {
+	const timeoutSignal = AbortSignal.timeout(timeoutMs)
+	const existing = request.signal
+	const signal =
+		existing && typeof AbortSignal.any === 'function'
+			? AbortSignal.any([existing, timeoutSignal])
+			: timeoutSignal
+	return new Request(request, { signal })
+}
+
 export async function executeGatewayFetch(input: {
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'> & UsageEnv
 	props: FetchGatewayProps
 	request: Request
 	globalFetch?: typeof fetch
 	waitUntil?: (promise: Promise<unknown>) => void
+	/**
+	 * Override the default outbound deadline. `null` disables the gateway
+	 * timeout (caller signal only). Tests use short values.
+	 */
+	timeoutMs?: number | null
 }): Promise<Response> {
 	const globalFetch = input.globalFetch ?? fetch
 	const startedAtMs = Date.now()
 	let outcome: 'success' | 'error' = 'success'
 	let response: Response | undefined
 	let meteredEntityId = readMeteredRequestHostname(input.request.url, null)
+	const timeoutMs =
+		input.timeoutMs === null
+			? null
+			: (input.timeoutMs ?? defaultOutboundFetchTimeoutMs)
 
 	try {
 		// Daily outbound-fetch quota: every sandbox fetch leaves through
@@ -116,7 +145,11 @@ export async function executeGatewayFetch(input: {
 			input.request.url,
 			transformed.url,
 		)
-		response = await globalFetch(transformed)
+		const outbound =
+			timeoutMs == null
+				? transformed
+				: applyOutboundFetchTimeout(transformed, timeoutMs)
+		response = await globalFetch(outbound)
 		return response
 	} catch (error) {
 		outcome = 'error'

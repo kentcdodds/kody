@@ -21,8 +21,10 @@ import {
 	formatLimitedExecutionOutput,
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
+	raceWithHostEvaluationDeadline,
 	runWithDynamicWorkerEvaluationBudget,
 } from './executor.ts'
+import { executorSandboxTimeoutMessage } from '#worker/sentry-options.ts'
 import { assertGeneratedExecutorSourceIsBundleSafe } from './kody-remote-proxy-source.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 
@@ -499,6 +501,45 @@ test('explicit request budgets cap independent roots at four without blocking se
 	await expect(secondRequest).resolves.toHaveLength(5)
 	expect(firstState.active).toBe(0)
 	expect(secondState.active).toBe(0)
+})
+
+test('raceWithHostEvaluationDeadline rejects when evaluate never settles', async () => {
+	const startedAtMs = Date.now()
+	await expect(
+		raceWithHostEvaluationDeadline(
+			async () => await new Promise(() => {}),
+			40,
+		),
+	).rejects.toThrow(executorSandboxTimeoutMessage)
+	expect(Date.now() - startedAtMs).toBeLessThan(500)
+})
+
+test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs', async () => {
+	const loader = {
+		get(_id: string, factory: () => FakeWorkerOptions) {
+			factory()
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate() {
+							return await new Promise(() => {})
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+	const env = createExecutorTestEnv(loader)
+	const startedAtMs = Date.now()
+	const result = await createExecuteExecutor({
+		env,
+		exports: createExecutorTestExports(),
+		gatewayProps: createGatewayProps('hang-user'),
+		timeoutMs: 40,
+	}).execute('async () => "never"', [{ name: 'kody', fns: {} }])
+	expect(result.error).toBe(executorSandboxTimeoutMessage)
+	expect(result.result).toBeUndefined()
+	expect(Date.now() - startedAtMs).toBeLessThan(500)
 })
 
 test('createExecuteExecutor fails fast when nested fan-out saturates its request budget', async () => {

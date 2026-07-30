@@ -841,3 +841,40 @@ test('gateway fetch metering never derives a hostname from expanded secret place
 		resolveSpy.mockRestore()
 	}
 })
+
+test('fetch gateway aborts hung outbound fetches at the default deadline', async () => {
+	const fetchStub = vi.fn((_request: Request) => {
+		return new Promise<Response>((_resolve, reject) => {
+			_request.signal.addEventListener(
+				'abort',
+				() => {
+					reject(
+						_request.signal.reason ??
+							new DOMException('The operation was aborted.', 'AbortError'),
+					)
+				},
+				{ once: true },
+			)
+		})
+	})
+	const startedAtMs = Date.now()
+	await expect(
+		executeGatewayFetch({
+			env,
+			props,
+			request: new Request('https://example.com/slow'),
+			globalFetch: fetchStub as unknown as typeof fetch,
+			timeoutMs: 40,
+		}),
+	).rejects.toSatisfy((error: unknown) => {
+		const name =
+			error && typeof error === 'object' && 'name' in error
+				? String(error.name)
+				: ''
+		return name === 'TimeoutError' || name === 'AbortError'
+	})
+	expect(Date.now() - startedAtMs).toBeLessThan(500)
+	expect(fetchStub).toHaveBeenCalledTimes(1)
+	const outbound = fetchStub.mock.calls[0]?.[0]
+	expect(outbound?.signal.aborted).toBe(true)
+})

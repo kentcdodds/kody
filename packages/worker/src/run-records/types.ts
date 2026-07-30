@@ -236,10 +236,52 @@ export const runRecordMaxPageSize = 100
 export const runRecordRetentionEveryNFinishes = 32
 
 /**
- * `running` rows older than this are marked terminal with outcome-unknown.
- * History only — live service/job state lives on entity rows, not here.
+ * Default / longest stale-`running` TTL (service + workflow). Prefer
+ * {@link runRecordStaleRunningTtlMsForSurface} so short-lived surfaces heal
+ * in minutes instead of a day.
  */
 export const runRecordStaleRunningTtlMs = 24 * 60 * 60 * 1000
+
+/**
+ * Execute / export / similar sandbox surfaces default to a 90s host timeout.
+ * Keep this TTL a small multiple of that budget so stranded `running` rows
+ * (isolate reset, lost `waitUntil` finish, hung evaluate) self-heal soon
+ * enough for Activity and keyed-execute recovery, without waiting 24h.
+ */
+export const runRecordStaleRunningTtlMsShortLived = 3 * 60 * 1000
+
+/** Jobs can run longer than a single sandbox invoke; still bound the history row. */
+export const runRecordStaleRunningTtlMsJob = 6 * 60 * 60 * 1000
+
+/**
+ * Surface-aware stale-`running` TTL. Persistent services and workflows keep the
+ * long default; sandbox-backed surfaces heal after a few minutes.
+ *
+ * History only — live service/job state lives on entity rows, not here.
+ */
+export function runRecordStaleRunningTtlMsForSurface(
+	surface: RunSurface,
+): number {
+	switch (surface) {
+		case 'execute':
+		case 'export':
+		case 'retriever':
+		case 'webhook':
+		case 'subscription':
+		case 'app_fetch':
+		case 'app_realtime':
+			return runRecordStaleRunningTtlMsShortLived
+		case 'job':
+			return runRecordStaleRunningTtlMsJob
+		case 'workflow':
+		case 'service':
+			return runRecordStaleRunningTtlMs
+		default: {
+			const exhaustive: never = surface
+			throw new Error(`Unhandled run surface: ${String(exhaustive)}`)
+		}
+	}
+}
 
 /** How often the DO alarm re-runs retention when the object is otherwise idle. */
 export const runRecordRetentionAlarmMs = 60 * 60 * 1000
