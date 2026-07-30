@@ -308,13 +308,14 @@ async function runWithDynamicWorkerEvaluationPermit<T>(
 			evaluate,
 		)
 	} finally {
-		if (!acquired) return
-		const next = gate.queue.shift()
-		if (next) {
-			// Transfer this permit directly to the oldest waiter.
-			next.resolve()
-		} else {
-			gate.active -= 1
+		if (acquired) {
+			const next = gate.queue.shift()
+			if (next) {
+				// Transfer this permit directly to the oldest waiter.
+				next.resolve()
+			} else {
+				gate.active -= 1
+			}
 		}
 	}
 }
