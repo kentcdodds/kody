@@ -221,12 +221,13 @@ means a replayed delivery for that key re-executes instead of replaying.
   overwritten.
 - **Ledger retention is DO-local**: terminal rows keep replay responses for 90
   days (`packageInvocationLedgerRetentionDays`), pruned by the same retention
-  passes and alarm as run rows; `in_progress` rows are never pruned. The old D1
-  retention sweep remains only to drain pre-migration rows.
-- **Dual-read window**: the keyed path reads the DO first and falls back to a
-  read-only D1 `package_invocations` lookup for keys claimed before the
-  migration. Writes go only to the DO. A follow-up removes the fallback, the D1
-  table, its sweep, and the legacy row shapes.
+  passes and alarm as run rows; `in_progress` rows are never pruned. There is no
+  D1 sweep — the legacy table is gone.
+- **The DO is the only store**: the legacy D1 `package_invocations` table was
+  dropped (`0112-drop-package-invocations.sql`) after the dual-read window was
+  deliberately waived, and the keyed path performs no D1 ledger reads or writes.
+  Keys claimed before the DO migration no longer replay; a redelivery for such a
+  key executes fresh, exactly like a new key.
 - Account export pages ledger rows through the same `run_records` section cursor
   (runs first, then ledger rows); account deletion purges them with `clearAll`.
   Disaster recovery deliberately does not stage the DO — losing it risks

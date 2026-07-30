@@ -124,7 +124,6 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  * tables) are not represented.
  */
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
-	{ kind: 'user_id', table: 'package_invocations' },
 	{ kind: 'user_id', table: 'package_invocation_tokens' },
 	{ kind: 'user_id', table: 'workflow_runs' },
 	{ kind: 'user_id', table: 'package_service_states' },

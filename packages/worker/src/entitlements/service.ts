@@ -485,28 +485,10 @@ export async function readUserD1StorageBytes(input: {
 			WHERE user_id = ?`,
 			[userId],
 		),
-		sumStorageBytes(
-			db,
-			`SELECT COALESCE(SUM(
-				${textBytesExpression([
-					'token_id',
-					'package_id',
-					'package_kody_id',
-					'export_name',
-					'idempotency_key',
-					'request_hash',
-					'source',
-					'topic',
-					'response_json',
-				])}
-			), 0) AS count
-			FROM package_invocations
-			WHERE user_id = ?`,
-			[userId],
-		),
-		// Run records are observability history, not user content, and now live
-		// in a per-user RunLog Durable Object. They are intentionally excluded
-		// from the storage quota.
+		// Run records and the keyed package-invocation idempotency ledger live
+		// in the per-user RunLog Durable Object (the D1 package_invocations
+		// table was dropped). Both are self-expiring operational state, not
+		// user content, and are intentionally excluded from the storage quota.
 		sumStorageBytes(
 			db,
 			`SELECT COALESCE(SUM(

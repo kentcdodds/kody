@@ -364,7 +364,13 @@ test(
 					source: 'platform-feedback',
 					idempotencyKey: `platform-feedback:${dispatchFeedback.id}:${adminPackage.packageId}:${platformFeedbackSubmittedTopic}`,
 				})
-				const response = JSON.parse(String(invocation?.responseJson)) as {
+				const responseJson = invocation?.responseJson
+				if (!responseJson) {
+					throw new Error(
+						'Expected a stored replay response for the admin row.',
+					)
+				}
+				const response = JSON.parse(responseJson) as {
 					body: Record<string, unknown>
 				}
 				expect(response.body).toMatchObject({

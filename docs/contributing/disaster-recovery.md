@@ -193,17 +193,17 @@ Restore rebuilds these; do not treat them as recovery media:
 
   **Known risk — keyed invocation idempotency ledger:** the same `RunLog` DO
   also holds the keyed package-invocation idempotency ledger (claims + 90-day
-  terminal replay responses; migrated off the D1 `package_invocations` table).
-  Losing the DO therefore loses idempotency/replay state, not just
-  observability: webhook providers and other keyed callers that retry deliveries
-  would **re-execute** invocations whose keys were already terminal, and
-  in-flight replays would return fresh executions instead of stored responses.
-  This is accepted with eyes open: lost rows are gone — later traffic
-  re-establishes claims only for keys used after the loss, it does not restore
-  protection for keys used before it. The blast radius is duplicate side effects
-  (a loss of correctness state) bounded by the 90-day retention window; no
-  stored user content is lost. Restores from a D1 backup restore the legacy
-  table only; the DO ledger is not part of DR media.
+  terminal replay responses; the legacy D1 `package_invocations` table was
+  dropped, so the DO is the only store). Losing the DO therefore loses
+  idempotency/replay state, not just observability: webhook providers and other
+  keyed callers that retry deliveries would **re-execute** invocations whose
+  keys were already terminal, and in-flight replays would return fresh
+  executions instead of stored responses. This is accepted with eyes open: lost
+  rows are gone — later traffic re-establishes claims only for keys used after
+  the loss, it does not restore protection for keys used before it. The blast
+  radius is duplicate side effects (a loss of correctness state) bounded by the
+  90-day retention window; no stored user content is lost. The DO ledger is not
+  part of DR media, and D1 backups no longer carry any invocation ledger at all.
 
 ### Honest gaps
 

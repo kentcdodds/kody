@@ -44,6 +44,29 @@ export function buildSourceRecoveryProblemMessage(input: {
 	].join(' ')
 }
 
+/**
+ * True when a source-recovery message is specifically "Artifacts HEAD does not
+ * match published_commit". That state is expected after a git-lane push before
+ * `package_publish_external_push` (or the reconcile cron) lands — a caller
+ * precondition, not a platform defect.
+ */
+export function isPublishedCommitHeadMismatchMessage(message: string) {
+	return (
+		message.includes('default branch HEAD') &&
+		message.includes('does not match published commit')
+	)
+}
+
+export function buildPublishedCommitHeadMismatchCallerMessage(
+	recoveryMessage: string,
+) {
+	return [
+		recoveryMessage,
+		'Publish the current Artifacts HEAD with package_publish_external_push (or wait for the reconcile job), then retry.',
+		'Repo sessions open from the published commit and refuse to start while unpublished remote commits are present.',
+	].join(' ')
+}
+
 function buildDestructiveOverwriteConfirmationMessage(input: {
 	source: EntitySourceRow
 	operation: string

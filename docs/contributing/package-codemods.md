@@ -37,6 +37,22 @@ and publish paths are covered in
 - **Community listing publishes.** A successful apply republishes the owning
   user's saved package only. Pinned community listings keep serving the pinned
   commit; listing snapshots are not advanced by codemod apply or revert.
+- **Personal codemods.** The built-in system is for **platform-authored**
+  migrations: the transform ships in this repo, reviewed and fixture-tested in
+  CI, because its correctness is pinned to a platform version and it runs
+  fleet-wide over other users' source. A user transforming **their own**
+  packages with **their own** transform needs no primitive — every required
+  power (repo sessions, `repo_run_checks` against a staged tree, gated publish,
+  git history) already exists as user capabilities. That userland pattern is
+  packaged as the
+  [`@kentcdodds/codemod-runner`](https://heykody.dev/community/b06c0f98-865a-4379-adb0-d0fb2cdda14f)
+  community package: same contract vocabulary (`detect`/`transform`,
+  dry-run-before-apply, drift skips, idempotency verification, revert
+  snapshots), with the codemod authored as a package export the user owns. As
+  with any community package, inspect the source and fork (which pins your own
+  copy) before running it against your packages. Do not grow the built-in engine
+  to execute user-authored transforms; the dividing line is who authored the
+  transform.
 
 ## Codemod contract
 
@@ -101,6 +117,14 @@ transformed map.
    - the pattern spans generated or minified output,
    - a required symbol cannot be resolved from static analysis alone, or
    - the codemod would delete user logic to satisfy the migration.
+5. **Never put source contents in findings.** Finding `message` values must be
+   fixed, codemod-authored strings; `path` identifies the file. Interpolating
+   file contents, matched snippets, identifiers from user code, or manifest
+   values into a finding would surface private package source to the operator
+   running the fleet scan, breaking the
+   [privacy policy's codemod disclosure](../use/privacy.md#platform-maintenance-package-codemods)
+   ("codemods are forbidden from embedding file contents in their findings").
+   Both shipped codemods use constant messages; keep it that way.
 
 ### `0001-ambient-storage-to-package-storage`
 

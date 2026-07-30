@@ -709,11 +709,13 @@ on write unless a migration backfills existing rows.
   (`0028-published-bundle-artifacts-and-archived-jobs.sql`) stores package
   dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
-- `package_invocations.package_ids_json`,
-  `package_invocations.package_kody_ids_json`,
-  `package_invocations.export_names_json`, `package_invocations.sources_json`,
-  and `package_invocations.response_json` (`0029-package-invocations.sql`) store
-  invocation routing and cached response projections.
+- `package_invocation_tokens.package_ids_json`,
+  `package_invocation_tokens.package_kody_ids_json`,
+  `package_invocation_tokens.export_names_json`, and
+  `package_invocation_tokens.sources_json` (`0029-package-invocations.sql`)
+  store invocation-token scope projections. The sibling `package_invocations`
+  table from that migration was dropped (`0112-drop-package-invocations.sql`);
+  its replay cache lives in the RunLog Durable Object ledger now.
 - `email_messages.*_addresses_json`, `email_messages.references_json`,
   `email_messages.headers_json`, and `email_delivery_events.detail_json`
   (`0030-email-primitives.sql`, `0031-unified-email-receipt.sql`,
@@ -923,14 +925,6 @@ documented exemption.
 
 Current retention policies:
 
-- `package_invocations`: **legacy dual-read window.** Keyed invocations now
-  claim and store replay responses in the per-user `RunLog` Durable Object
-  ledger (`package_invocation_ledger` table inside the DO), which self-enforces
-  the same 90-day terminal-row window; the keyed path only reads this D1 table
-  as a fallback for pre-migration keys and never writes it. The sweep keeps
-  draining pre-migration terminal rows (rows with `status = 'in_progress'` are
-  never pruned) until a follow-up drops the table, the fallback read, and this
-  policy entry.
 - `mcp_memory_conversation_suppressions`: keep active suppressions and prune
   expired rows only after they have not been seen for 90 days. The existing
   request-time memory prune may remove expired rows sooner.

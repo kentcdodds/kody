@@ -12,18 +12,19 @@ import {
 import { toHex } from '@kody-internal/shared/hex.ts'
 
 /**
- * Replay-cache ceiling for `response_json`. Rows above this would serialize
- * into D1 export statements that D1's import path rejects (SQLITE_TOOBIG),
- * making the whole backup un-restorable. Oversized terminal responses are
- * stored as NULL; idempotent duplicates of those invocations get the
- * existing `idempotency_response_unavailable` outcome instead of a replay.
+ * Replay-cache ceiling for the ledger's `response_json`. The ledger lives in
+ * the per-user RunLog Durable Object now, but the bound is kept at the
+ * restore-safe D1 column ceiling it inherited: replay payloads above it were
+ * never stored, so the DO rows stay small and export sections stay pageable.
+ * Oversized terminal responses are stored as NULL; idempotent duplicates of
+ * those invocations get the existing `idempotency_response_unavailable`
+ * outcome instead of a replay.
  */
 export const maxStoredInvocationResponseJsonBytes = maxRestorableTextColumnBytes
 
 /**
- * Serialize a terminal response for the replay cache, dropping it when
- * oversized. Shared by the legacy D1 write path and the RunLog DO ledger so
- * both stores enforce the same restore-safe bound.
+ * Serialize a terminal response for the RunLog DO ledger's replay cache,
+ * dropping it when oversized.
  */
 export function boundedResponseJson(
 	response: PackageInvocationStoredResponse,
@@ -37,23 +38,6 @@ export function boundedResponseJson(
 	}
 	return responseJson
 }
-
-const packageInvocationRowSchema = object({
-	id: string(),
-	user_id: string(),
-	token_id: string(),
-	package_id: string(),
-	package_kody_id: string(),
-	export_name: string(),
-	idempotency_key: string(),
-	request_hash: string(),
-	source: nullable(string()),
-	topic: nullable(string()),
-	status: string(),
-	response_json: nullable(string()),
-	created_at: string(),
-	updated_at: string(),
-})
 
 const packageInvocationTokenRowSchema = object({
 	id: string(),
@@ -75,12 +59,6 @@ const packageInvocationTokenRowSchema = object({
 export type PackageInvocationStoredResponse = {
 	status: number
 	body: Record<string, unknown>
-}
-
-export type PackageInvocationRecord = InferOutput<
-	typeof packageInvocationRowSchema
-> & {
-	storedResponse: PackageInvocationStoredResponse | null
 }
 
 export type PackageInvocationTokenRecord = InferOutput<
@@ -180,18 +158,6 @@ function mapTokenRow(
 			value: parsed.value.sources_json,
 			field: 'sources_json',
 		}),
-	}
-}
-
-function mapRow(row: Record<string, unknown>): PackageInvocationRecord {
-	const parsed = parseSafe(packageInvocationRowSchema, row)
-	if (!parsed.success) {
-		const message = parsed.issues.map((issue) => issue.message).join(', ')
-		throw new Error(`Invalid package invocation record: ${message}`)
-	}
-	return {
-		...parsed.value,
-		storedResponse: parseStoredResponse(parsed.value.response_json),
 	}
 }
 
@@ -402,39 +368,4 @@ export async function deletePackageInvocationToken(input: {
 		.bind(input.id, input.userId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
-}
-
-/**
- * Dual-read fallback lookup for keys claimed before the idempotency ledger
- * moved into the per-user RunLog Durable Object. The D1 table is read-only
- * now — the write helpers were removed with the migration — and a follow-up
- * removes this lookup together with the table and its retention sweep.
- */
-export async function getPackageInvocationByKey(input: {
-	db: D1Database
-	userId: string
-	tokenId: string
-	packageId: string
-	exportName: string
-	idempotencyKey: string
-}) {
-	const row = await input.db
-		.prepare(
-			`SELECT *
-			FROM package_invocations
-			WHERE user_id = ?
-				AND token_id = ?
-				AND package_id = ?
-				AND export_name = ?
-				AND idempotency_key = ?`,
-		)
-		.bind(
-			input.userId,
-			input.tokenId,
-			input.packageId,
-			input.exportName,
-			input.idempotencyKey,
-		)
-		.first<Record<string, unknown>>()
-	return row ? mapRow(row) : null
 }

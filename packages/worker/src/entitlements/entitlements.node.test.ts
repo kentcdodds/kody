@@ -60,7 +60,6 @@ function createEntitlementsTestDb(
 				| 'saved_packages'
 				| 'jobs'
 				| 'repo_sessions'
-				| 'package_invocations'
 				| 'published_bundle_artifacts'
 				| 'secret_entries'
 				| 'value_entries'
@@ -92,7 +91,6 @@ function createEntitlementsTestDb(
 			'entity_sources',
 			'jobs',
 			'repo_sessions',
-			'package_invocations',
 			'published_bundle_artifacts',
 			'workflow_runs',
 		] as const

@@ -4,8 +4,8 @@ import { buildJsonErrorResponse } from './responses.ts'
 import { type PackageInvocationStoredResponse } from './repo.ts'
 
 /**
- * Store-agnostic view of an idempotency row: the RunLog DO ledger record and
- * the legacy D1 `package_invocations` row (dual-read window) both map into it.
+ * The fields `resolveExistingInvocation` needs from a RunLog DO ledger
+ * record (mapped from `PackageInvocationLedgerRecord` at the call site).
  */
 export type ResolvableInvocationRecord = {
 	requestHash: string
