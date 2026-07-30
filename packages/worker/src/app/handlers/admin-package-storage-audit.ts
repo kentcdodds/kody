@@ -23,10 +23,12 @@ export function createAdminPackageStorageAuditApiHandler(env: Env) {
 					defaultPackageStorageAuditLimit,
 					maxPackageStorageAuditLimit,
 				)
+				const startAfter = url.searchParams.get('startAfter')
 				const report = await buildPackageStorageAuditReport({
 					env,
 					baseUrl: url.origin,
 					limit,
+					startAfter,
 				})
 				return jsonResponse(report)
 			} catch (error) {

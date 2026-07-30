@@ -31,6 +31,12 @@ const outputSchema = z.object({
 	ok: z.literal(true),
 	packages: z.array(packageRowSchema),
 	orphanAppBuckets: z.array(orphanBucketSchema),
+	nextStartAfter: z
+		.string()
+		.nullable()
+		.describe(
+			'Opaque keyset cursor for the next page when truncated; null when complete.',
+		),
 	totals: z.object({
 		appPackages: z.number().int().nonnegative(),
 		nonEmptyLegacyBuckets: z.number().int().nonnegative(),
@@ -47,7 +53,7 @@ export const adminPackageStorageAuditCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_package_storage_audit',
 		description:
-			'Platform-wide audit of has_app package legacy StorageRunner bucket sizes, ambient storage imports in published sources, and orphaned kind=app buckets. Admin-only and not user-scoped; returns aggregated metadata only, never raw bucket contents or full package source.',
+			'Platform-wide audit of has_app package legacy StorageRunner bucket sizes, ambient storage imports in published sources, and orphaned kind=app buckets. Admin-only and not user-scoped; returns aggregated metadata only, never raw bucket contents or full package source. Page with limit + start_after / nextStartAfter.',
 		keywords: [
 			'admin',
 			'package',
@@ -67,6 +73,13 @@ export const adminPackageStorageAuditCapability = defineDomainCapability(
 				.describe(
 					`Max has_app packages to audit. Defaults to ${String(defaultPackageStorageAuditLimit)} and maxes at ${String(maxPackageStorageAuditLimit)}.`,
 				),
+			start_after: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'Opaque keyset cursor from a prior nextStartAfter; resumes after that package.',
+				),
 		}),
 		outputSchema,
 		async handler(args, ctx) {
@@ -78,6 +91,7 @@ export const adminPackageStorageAuditCapability = defineDomainCapability(
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
 						limit: args.limit ?? defaultPackageStorageAuditLimit,
+						startAfter: args.start_after,
 					}),
 			)
 		},
