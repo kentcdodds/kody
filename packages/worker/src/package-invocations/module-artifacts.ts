@@ -158,9 +158,18 @@ async function ensureModuleArtifactUncached(input: {
 		userId: input.userId,
 		sourceId: input.savedPackage.sourceId,
 	})
+	// The caller's manifest may come from the freshness-cached source row and
+	// trail a republish by up to the freshness TTL, while the source load
+	// above is always current. Re-derive the module resolution from the
+	// freshly loaded manifest so the typecheck, bundle, and persisted
+	// artifact identity are all self-consistent with the commit being built.
+	const freshResolution = resolvePackageModuleResolution({
+		manifest: packageSource.manifest,
+		selector: input.selector,
+	})
 	const typecheckResult = await typecheckPackageEntrypointsFromSourceFiles({
 		sourceFiles: packageSource.files,
-		entryPoints: [{ path: resolution.entryPoint, includeStorage: true }],
+		entryPoints: [{ path: freshResolution.entryPoint, includeStorage: true }],
 		emittedEventTopics: Object.keys(packageSource.manifest.kody.emits ?? {}),
 	})
 	if (!typecheckResult.ok) {
@@ -168,7 +177,7 @@ async function ensureModuleArtifactUncached(input: {
 	}
 	assertPublishedSourceCanRebuildWithoutInstallingDeps({
 		sourceFiles: packageSource.files,
-		bundleLabel: `Saved package export "${resolution.artifactName}"`,
+		bundleLabel: `Saved package export "${freshResolution.artifactName}"`,
 	})
 	const { buildKodyModuleBundle } =
 		await import('#worker/package-runtime/module-graph.ts')
@@ -177,7 +186,7 @@ async function ensureModuleArtifactUncached(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		sourceFiles: packageSource.files,
-		entryPoint: resolution.entryPoint,
+		entryPoint: freshResolution.entryPoint,
 		rootPackageId: input.savedPackage.id,
 	})
 	await persistPublishedBundleArtifact({
@@ -185,8 +194,8 @@ async function ensureModuleArtifactUncached(input: {
 		userId: input.userId,
 		source: packageSource.source,
 		kind: 'module',
-		artifactName: resolution.artifactName,
-		entryPoint: resolution.entryPoint,
+		artifactName: freshResolution.artifactName,
+		entryPoint: freshResolution.entryPoint,
 		mainModule: bundle.mainModule,
 		modules: bundle.modules,
 		dependencies: bundle.dependencies,
@@ -202,8 +211,8 @@ async function ensureModuleArtifactUncached(input: {
 		userId: input.userId,
 		sourceId: input.savedPackage.sourceId,
 		kind: 'module',
-		artifactName: resolution.artifactName,
-		entryPoint: resolution.entryPoint,
+		artifactName: freshResolution.artifactName,
+		entryPoint: freshResolution.entryPoint,
 	})
 	if (!rebuilt?.artifact) {
 		const moduleLabel =
@@ -217,7 +226,7 @@ async function ensureModuleArtifactUncached(input: {
 	return {
 		artifact: rebuilt.artifact,
 		source: packageSource.source,
-		entryPoint: resolution.entryPoint,
+		entryPoint: freshResolution.entryPoint,
 	}
 }
 

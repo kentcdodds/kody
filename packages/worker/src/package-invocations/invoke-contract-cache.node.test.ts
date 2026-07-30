@@ -5,6 +5,10 @@ import {
 	invokeContractFreshnessTtlMs,
 	loadModuleArtifactWithCommitCache,
 } from './invoke-contract-cache.ts'
+import {
+	ensureModuleArtifact,
+	loadInvokeManifestBySourceId,
+} from './module-artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -14,6 +18,8 @@ const mockModule = vi.hoisted(() => ({
 	loadPublishedEntitySource: vi.fn(),
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
 	persistPublishedBundleArtifact: vi.fn(),
+	typecheckPackageEntrypointsFromSourceFiles: vi.fn(),
+	buildKodyModuleBundle: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -40,6 +46,16 @@ vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', () => ({
 		mockModule.loadPublishedBundleArtifactByIdentity(...args),
 	persistPublishedBundleArtifact: (...args: Array<unknown>) =>
 		mockModule.persistPublishedBundleArtifact(...args),
+}))
+
+vi.mock('#worker/repo/checks.ts', () => ({
+	typecheckPackageEntrypointsFromSourceFiles: (...args: Array<unknown>) =>
+		mockModule.typecheckPackageEntrypointsFromSourceFiles(...args),
+}))
+
+vi.mock('#worker/package-runtime/module-graph.ts', () => ({
+	buildKodyModuleBundle: (...args: Array<unknown>) =>
+		mockModule.buildKodyModuleBundle(...args),
 }))
 
 /**
@@ -343,6 +359,105 @@ test('contract-check caches never serve entries across users', async () => {
 	// The second user's check must load its own rows, not reuse user-1's.
 	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(1)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
+})
+
+test('an artifact rebuild resolves its entry point from the fresh source, not the cached manifest', async () => {
+	const userId = 'user-rebuild'
+	const sourceId = 'source-rebuild'
+	const savedPackage = createFixture({
+		userId,
+		publishedCommit: 'commit-1',
+		suffix: 'rebuild',
+	}).savedPackage
+	const buildManifestContent = (entryPoint: string) =>
+		JSON.stringify({
+			name: '@kentcdodds/sentry-triage',
+			exports: { './probe': entryPoint },
+			kody: { id: 'sentry-triage', description: 'probe' },
+		})
+	const buildSourceRow = (publishedCommit: string) => ({
+		...createFixture({ userId, publishedCommit, suffix: 'rebuild' }).source,
+		id: sourceId,
+	})
+
+	// Warm the freshness cache with the commit-1 row + manifest, where the
+	// probe export points at the v1 entry point.
+	mockModule.getEntitySourceById.mockResolvedValue(buildSourceRow('commit-1'))
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source: buildSourceRow('commit-1'),
+		content: buildManifestContent('./src/probe-v1.ts'),
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockResolvedValue({
+		ok: true,
+	})
+	mockModule.buildKodyModuleBundle.mockResolvedValue({
+		mainModule: 'main.js',
+		modules: { 'main.js': 'export default async () => ({ ok: true })' },
+		dependencies: [],
+		dynamicDependencies: [],
+	})
+	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
+
+	// Republish lands between the manifest load and the rebuild: the fresh
+	// source is commit-2 and moves the probe export to the v2 entry point,
+	// while this isolate's freshness cache still holds the commit-1 row.
+	const v2Files = {
+		'package.json': buildManifestContent('./src/probe-v2.ts'),
+		'src/probe-v2.ts': 'export default async function probe() { return 2 }',
+	}
+	const runEnsure = async () =>
+		await ensureModuleArtifact({
+			env: createEnv(),
+			baseUrl: 'https://kody.dev',
+			savedPackage: { ...savedPackage, sourceId },
+			selector: { kind: 'export', exportName: 'probe' },
+			userId,
+		})
+
+	// Warm only the freshness-tier row cache with the commit-1 manifest (no
+	// artifact exists for the identity yet).
+	await loadInvokeManifestBySourceId({
+		env: createEnv(),
+		userId,
+		sourceId,
+	})
+
+	// Now the republish is visible to fresh reads only; the first-ever
+	// artifact rebuild for this identity happens against the stale cached
+	// manifest.
+	mockModule.getEntitySourceById.mockResolvedValue(buildSourceRow('commit-2'))
+	mockModule.loadPublishedEntitySource.mockResolvedValue({
+		source: buildSourceRow('commit-2'),
+		files: v2Files,
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity
+		.mockResolvedValueOnce(null)
+		.mockResolvedValueOnce({
+			row: { kvKey: 'kv-key' },
+			artifact: { publishedCommit: 'commit-2', entryPoint: 'src/probe-v2.ts' },
+		})
+
+	const rebuilt = await runEnsure()
+
+	// The rebuild must be self-consistent with the freshly loaded commit-2
+	// source: typecheck, bundle, and persisted identity all use the v2 entry
+	// point, even though this isolate's cached manifest still says v1.
+	expect(
+		mockModule.typecheckPackageEntrypointsFromSourceFiles,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			entryPoints: [{ path: 'src/probe-v2.ts', includeStorage: true }],
+		}),
+	)
+	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
+		expect.objectContaining({ entryPoint: 'src/probe-v2.ts' }),
+	)
+	expect(mockModule.persistPublishedBundleArtifact).toHaveBeenCalledWith(
+		expect.objectContaining({ entryPoint: 'src/probe-v2.ts' }),
+	)
+	expect(rebuilt.artifact.publishedCommit).toBe('commit-2')
+	expect(rebuilt.entryPoint).toBe('src/probe-v2.ts')
 })
 
 test('an artifact from a different commit is served but never retained', async () => {
