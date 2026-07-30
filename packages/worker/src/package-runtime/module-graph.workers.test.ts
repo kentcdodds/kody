@@ -386,21 +386,30 @@ test('saved package artifact imports keep the execute wrapper as the runtime ent
 				"import workflowDiscord from 'kody:@kentcdodds/email-received-subscriber/workflow-discord-message-created'",
 				"import { inspectNestedImport } from './src/deep/nested.ts'",
 				'export default async function main() {',
-				"\tconst dynamicListTraces = await import('kody:@kentcdodds/email-received-subscriber/list-traces')",
+				"\tlet dynamicImportError = ''",
+				'\ttry {',
+				"\t\tawait import('kody:@kentcdodds/email-received-subscriber/list-traces')",
+				'\t} catch (error) {',
+				'\t\tdynamicImportError = String(error?.message ?? error)',
+				'\t}',
 				'\tconst nestedImport = await inspectNestedImport()',
 				'\treturn {',
 				'\t\tlistTraces: { staticType: typeof listTraces },',
 				'\t\tsmokeTest: { staticType: typeof smokeTest },',
 				'\t\tworkflowDiscord: { staticType: typeof workflowDiscord },',
-				'\t\tdynamicListTraces: { defaultType: typeof dynamicListTraces.default },',
+				'\t\tdynamicImportError,',
 				'\t\tnestedImport,',
 				'\t}',
 				'}',
 			].join('\n'),
 			'src/deep/nested.ts': [
 				'export async function inspectNestedImport() {',
-				"\tconst dynamicListTraces = await import('kody:@kentcdodds/email-received-subscriber/list-traces')",
-				'\treturn { defaultType: typeof dynamicListTraces.default }',
+				'\ttry {',
+				"\t\tawait import('kody:@kentcdodds/email-received-subscriber/list-traces')",
+				'\t\treturn { threw: false }',
+				'\t} catch (error) {',
+				'\t\treturn { threw: true }',
+				'\t}',
 				'}',
 			].join('\n'),
 		},
@@ -437,11 +446,11 @@ test('saved package artifact imports keep the execute wrapper as the runtime ent
 		workflowDiscord: {
 			staticType: 'function',
 		},
-		dynamicListTraces: {
-			defaultType: 'function',
-		},
+		dynamicImportError: expect.stringContaining(
+			'Dynamic import("kody:@kentcdodds/email-received-subscriber/list-traces") was removed: use a static import',
+		),
 		nestedImport: {
-			defaultType: 'function',
+			threw: true,
 		},
 	})
 })
@@ -638,29 +647,7 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 				sourceId: 'source-invoker',
 			},
 			packageInvokeTools: {
-				check: async (input) => ({
-					ok: true,
-					invoke: input as {
-						kodyId: string
-						exportName: string
-						params?: Record<string, unknown>
-					},
-					contract: {
-						packageId: 'pkg-target',
-						kodyId: 'target-package',
-						name: '@kentcdodds/target-package',
-						sourceId: 'source-target',
-						publishedCommit: 'commit-1',
-						exportName: './run',
-						runtimeTarget: 'src/run.ts',
-						warnings: [],
-					},
-				}),
 				invoke: async (input) => {
-					invokedInputs.push(input)
-					return { ok: true, input }
-				},
-				invokeChecked: async (input) => {
 					invokedInputs.push(input)
 					return { ok: true, input }
 				},
@@ -698,7 +685,7 @@ test('saved package execution exposes packages.invoke when package invoke tools 
 	])
 })
 
-test('ad hoc execute runtime exposes packages.invoke when package invoke tools are provided', async () => {
+test('ad hoc execute runtime exposes packages.invoke and throws teaching errors for removed APIs', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const bundle = await buildKodyModuleBundle({
 		env,
@@ -708,8 +695,17 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 			'entry.ts': [
 				"import { kody, packageContext, packages } from 'kody:runtime'",
 				'',
+				'const captureError = (fn) => {',
+				'\ttry {',
+				'\t\tfn()',
+				"\t\treturn 'resolved'",
+				'\t} catch (error) {',
+				'\t\treturn String(error?.message ?? error)',
+				'\t}',
+				'}',
+				'',
 				'export default async function main(input = {}) {',
-				'\t// Direct kody.package_invoke_checked should reject; packages.invokeChecked is the public API.',
+				'\t// Direct kody.package_invoke_checked should reject; packages.invoke is the public API.',
 				'\tlet directKodyInvokeChecked;',
 				'\ttry {',
 				'\t\tawait kody.package_invoke_checked({',
@@ -722,9 +718,10 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 				'\t}',
 				'\treturn {',
 				'\t\tpackageContextIsNull: packageContext === null,',
-				"\t\thasInvokeChecked: typeof packages?.invokeChecked === 'function',",
+				'\t\tremovedCheckError: captureError(() => packages?.check({})),',
+				'\t\tremovedInvokeCheckedError: captureError(() => packages?.invokeChecked({})),',
 				'\t\tdirectKodyInvokeChecked,',
-				'\t\tinvoked: await packages?.invokeChecked({',
+				'\t\tinvoked: await packages?.invoke({',
 				"\t\t\tkodyId: 'target-package',",
 				"\t\t\texportName: './run',",
 				'\t\t\tparams: input,',
@@ -754,29 +751,7 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 		{
 			packageContext: null,
 			packageInvokeTools: {
-				check: async (input) => ({
-					ok: true,
-					invoke: input as {
-						kodyId: string
-						exportName: string
-						params?: Record<string, unknown>
-					},
-					contract: {
-						packageId: 'pkg-target',
-						kodyId: 'target-package',
-						name: '@kentcdodds/target-package',
-						sourceId: 'source-target',
-						publishedCommit: 'commit-1',
-						exportName: './run',
-						runtimeTarget: 'src/run.ts',
-						warnings: [],
-					},
-				}),
 				invoke: async (input) => {
-					invokedInputs.push(input)
-					return { ok: true, input }
-				},
-				invokeChecked: async (input) => {
 					invokedInputs.push(input)
 					return { ok: true, input }
 				},
@@ -788,7 +763,10 @@ test('ad hoc execute runtime exposes packages.invoke when package invoke tools a
 	expect(result.error).toBeUndefined()
 	expect(result.result).toEqual({
 		packageContextIsNull: true,
-		hasInvokeChecked: true,
+		removedCheckError: expect.stringContaining('packages.check was removed'),
+		removedInvokeCheckedError: expect.stringContaining(
+			'packages.invokeChecked was removed',
+		),
 		directKodyInvokeChecked: expect.stringContaining('package_invoke_checked'),
 		invoked: {
 			ok: true,
@@ -950,19 +928,28 @@ test(
 				'entry.ts': [
 					"import { packages } from 'kody:runtime'",
 					'',
+					'const captureError = (fn: () => unknown) => {',
+					'\ttry {',
+					'\t\tfn()',
+					"\t\treturn 'resolved'",
+					'\t} catch (error) {',
+					'\t\treturn String((error as Error)?.message ?? error)',
+					'\t}',
+					'}',
+					'',
 					'export default async function main() {',
 					";(globalThis as Record<string, unknown>).__kodyLeanCallerMarker = 'caller'",
 					'\tconst startedAt = Date.now()',
 					"\tconst first = await packages?.invoke({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'first' } })",
 					'\tconst firstDurationMs = Date.now() - startedAt',
 					"\tconst second = await packages?.invoke({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'second' } })",
-					"\tconst checked = await packages?.invokeChecked({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'checked' } })",
-					"\tconst checkResult = (await packages?.check({ kodyId: 'lean-target', exportName: './probe' })) as { ok?: boolean }",
+					"\tconst removedInvokeCheckedError = captureError(() => packages?.invokeChecked({ kodyId: 'lean-target', exportName: './probe' }))",
+					"\tconst removedCheckError = captureError(() => packages?.check({ kodyId: 'lean-target', exportName: './probe' }))",
 					'\treturn {',
 					'\t\tfirst,',
 					'\t\tsecond,',
-					'\t\tchecked,',
-					'\t\tcheckOk: checkResult?.ok === true,',
+					'\t\tremovedInvokeCheckedError,',
+					'\t\tremovedCheckError,',
 					'\t\tfirstDurationMs,',
 					"\t\ttargetMarkerVisible: typeof (globalThis as Record<string, unknown>).__kodyLeanTargetMarker !== 'undefined',",
 					'\t}',
@@ -1002,8 +989,8 @@ test(
 		const payload = result.result as {
 			first: Record<string, unknown>
 			second: Record<string, unknown>
-			checked: Record<string, unknown>
-			checkOk: boolean
+			removedInvokeCheckedError: string
+			removedCheckError: string
 			firstDurationMs: number
 			targetMarkerVisible: boolean
 		}
@@ -1021,14 +1008,11 @@ test(
 			targetKodyId: 'lean-target',
 			callerMarkerVisible: false,
 		})
-		// Deprecated shims keep working end to end.
-		expect(payload.checked).toEqual({
-			marker: 'checked',
-			isolateCallCount: 1,
-			targetKodyId: 'lean-target',
-			callerMarkerVisible: false,
-		})
-		expect(payload.checkOk).toBe(true)
+		// Removed APIs throw teaching errors naming the replacement.
+		expect(payload.removedInvokeCheckedError).toContain(
+			'packages.invokeChecked was removed',
+		)
+		expect(payload.removedCheckError).toContain('packages.check was removed')
 		// Realm separation in the other direction: the target's globals never
 		// leak back into the caller realm.
 		expect(payload.targetMarkerVisible).toBe(false)
@@ -1036,14 +1020,5 @@ test(
 		// budget; the production lean-path latency claim is validated by live
 		// probes, not this test.
 		expect(payload.firstDurationMs).toBeLessThan(20_000)
-		// The deprecation warnings surface in the caller's captured logs, once
-		// per helper, naming the replacement.
-		const warningLogs = (result.logs ?? []).filter((entry) =>
-			entry.includes('[deprecated]'),
-		)
-		expect(warningLogs).toEqual([
-			expect.stringContaining('[deprecated] packages.invokeChecked'),
-			expect.stringContaining('[deprecated] packages.check'),
-		])
 	},
 )

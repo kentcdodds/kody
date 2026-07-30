@@ -4,14 +4,8 @@ import {
 	type PackageInvokeContract,
 	type PackageInvokeInput,
 } from '#mcp/run-kody-registry.ts'
-import {
-	buildPackageSearchProjection,
-	type PackageExportProjection,
-} from '#worker/package-registry/manifest.ts'
-import {
-	loadPackageManifestBySourceId,
-	loadPackageSourceBySourceId,
-} from '#worker/package-registry/source.ts'
+import { type PackageExportProjection } from '#worker/package-registry/manifest.ts'
+import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
 	buildSavedPackageNotFoundMessage,
 	normalizeExportName,
@@ -37,17 +31,6 @@ function createPackageInvokeCheckFailure(input: {
 		problems: input.problems,
 		...(input.contract ? { contract: input.contract } : {}),
 	}
-}
-
-function findPackageExportProjection(input: {
-	exports: Array<PackageExportProjection>
-	exportName: string
-}) {
-	return (
-		input.exports.find(
-			(exportDetail) => exportDetail.subpath === input.exportName,
-		) ?? null
-	)
 }
 
 function buildPackageInvokeCheckWarnings(input: {
@@ -87,26 +70,7 @@ export type PackageInvokeCheckOutcome = {
 	preloads: PackageInvokeCheckPreloads | null
 }
 
-export type PackageInvokeCheckOperationName =
-	| 'packages.invoke'
-	| 'packages.check'
-	/** Deprecated widen-phase alias for `packages.invoke`. */
-	| 'packages.invokeChecked'
-
-export async function checkPackageInvokeForRuntime(input: {
-	env: Env
-	baseUrl: string
-	operationName: PackageInvokeCheckOperationName
-	userId: string
-	rawInput: PackageInvokeInput
-}): Promise<PackageInvokeCheckResult> {
-	return (
-		await checkPackageInvokeForRuntimeWithPreloads({
-			...input,
-			includeExportProjection: true,
-		})
-	).result
-}
+export type PackageInvokeCheckOperationName = 'packages.invoke'
 
 export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	env: Env
@@ -114,12 +78,6 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	operationName: PackageInvokeCheckOperationName
 	userId: string
 	rawInput: PackageInvokeInput
-	/**
-	 * `packages.check` surfaces description / type-definition detail, which
-	 * requires the full package source. `packages.invokeChecked` discards the
-	 * success contract, so it skips that source load entirely.
-	 */
-	includeExportProjection: boolean
 }): Promise<PackageInvokeCheckOutcome> {
 	let request: ReturnType<typeof parsePackageInvokeInput>
 	try {
@@ -234,52 +192,6 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 		savedPackage,
 		moduleArtifact,
 	}
-	if (!input.includeExportProjection) {
-		return {
-			result: {
-				ok: true,
-				invoke,
-				contract: {
-					...packageContract,
-					publishedCommit: manifestResult.source.published_commit ?? null,
-					runtimeTarget: resolution.entryPoint,
-					description: null,
-					typeDefinition: null,
-					warnings: buildPackageInvokeCheckWarnings({
-						exportDetail: null,
-						sourceLoadFailed: false,
-					}),
-				},
-			},
-			preloads,
-		}
-	}
-	let files: Record<string, string> | undefined
-	let sourceLoadFailed = false
-	try {
-		files = (
-			await loadPackageSourceBySourceId({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceId: savedPackage.sourceId,
-			})
-		).files
-	} catch {
-		sourceLoadFailed = true
-	}
-	const projection = buildPackageSearchProjection(
-		manifestResult.manifest,
-		files,
-	)
-	const exportDetail = findPackageExportProjection({
-		exports: projection.exports,
-		exportName,
-	})
-	const warnings = buildPackageInvokeCheckWarnings({
-		exportDetail,
-		sourceLoadFailed,
-	})
 	return {
 		result: {
 			ok: true,
@@ -287,10 +199,13 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 			contract: {
 				...packageContract,
 				publishedCommit: manifestResult.source.published_commit ?? null,
-				runtimeTarget: exportDetail?.runtimeTarget ?? resolution.entryPoint,
-				description: exportDetail?.description ?? null,
-				typeDefinition: exportDetail?.typeDefinition ?? null,
-				warnings,
+				runtimeTarget: resolution.entryPoint,
+				description: null,
+				typeDefinition: null,
+				warnings: buildPackageInvokeCheckWarnings({
+					exportDetail: null,
+					sourceLoadFailed: false,
+				}),
 			},
 		},
 		preloads,

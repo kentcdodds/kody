@@ -5,7 +5,6 @@ import {
 	decodePathKey,
 	dirname,
 	dynamicPackageImportResolvedMarker,
-	dynamicPackageImportSpecifierExportName,
 	encodePathKey,
 	joinPath,
 	normalizeWorkspaceModulePath,
@@ -639,16 +638,13 @@ ${namedExportLines.join('\n')}
 `.trim()
 }
 
-export function createDynamicPackageImportPlaceholderSource(input: {
-	specifier: string
-}) {
-	return `
-export const ${dynamicPackageImportSpecifierExportName} = ${JSON.stringify(input.specifier)};
-
-throw new Error(
-	${JSON.stringify(`Kody dynamic package import "${input.specifier}" was not resolved by the host runtime.`)},
-);
-`.trim()
+export function buildRemovedDynamicKodyImportMessage(specifier: string) {
+	return (
+		`Dynamic import(${JSON.stringify(specifier)}) was removed: use a static import ` +
+		`(import fn from ${JSON.stringify(specifier)}) — execute bundles always see the current ` +
+		`published version, and saved packages declare the dependency in package.json#kody.dependencies — ` +
+		`or packages.invoke({ kodyId, exportName, params }) when the target package is data.`
+	)
 }
 
 export function createDynamicPackageImportProxySource(input: {
@@ -669,7 +665,7 @@ const ${input.helperName} = async (specifier) => {
 		packageSpecifierPrefix,
 	)})) {
 		throw new Error(
-			'Computed dynamic Kody package imports are unsupported. Use a string literal like import("kody:@scope/package/export") for current runtime package resolution.',
+			'Dynamic kody:@ package imports were removed. Use a static import (import fn from "kody:@scope/package/export") when the package name is known at write time, or packages.invoke({ kodyId, exportName, params }) when the target is data.',
 		);
 	}
 	return await import(specifier);
@@ -677,23 +673,18 @@ const ${input.helperName} = async (specifier) => {
 `.trim()
 }
 
-export function createDynamicPackageImportHelperSource(input: {
+export function createRemovedDynamicKodyImportHelperSource(input: {
 	helperName: string
 }) {
-	// Literal dynamic kody:@ imports are a deprecated widen-phase shim: they
-	// keep resolving via host hydration but warn once per specifier naming
-	// the static-import replacement.
+	// Literal dynamic kody:@ imports were removed with the static-first model.
+	// The bundler rewrites each call site to this helper so the failure is an
+	// actionable teaching error naming the replacement, not a resolution error.
 	return `
-const ${input.helperName} = (() => {
-	const warned = new Set();
-	return async (specifier, kodySpecifier) => {
-		if (kodySpecifier && !warned.has(kodySpecifier)) {
-			warned.add(kodySpecifier);
-			console.warn('[deprecated] dynamic import("' + kodySpecifier + '"): use a static import (import fn from "' + kodySpecifier + '") instead. Static imports from execute always see the current published version; saved packages must also declare the dependency in package.json#kody.dependencies. When the target name is only known at runtime, use packages.invoke({ kodyId, exportName, params }).');
-		}
-		return await import(specifier);
-	};
-})();
+const ${input.helperName} = (specifier) => {
+	throw new Error(
+		'Dynamic import("' + specifier + '") was removed: use a static import (import fn from "' + specifier + '") — execute bundles always see the current published version, and saved packages declare the dependency in package.json#kody.dependencies — or packages.invoke({ kodyId, exportName, params }) when the target package is data.',
+	);
+};
 `.trim()
 }
 

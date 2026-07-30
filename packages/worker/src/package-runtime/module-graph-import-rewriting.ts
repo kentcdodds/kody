@@ -27,7 +27,6 @@ import {
 import {
 	createPackageProxyPathSegment,
 	createRelativeImportSpecifier,
-	dirname,
 	encodePathKeyAsPath,
 	joinPath,
 	normalizeWorkspaceModulePath,
@@ -43,8 +42,7 @@ import {
 import {
 	buildPackageRuntimeModulePath,
 	createComputedDynamicImportGuardSource,
-	createDynamicPackageImportHelperSource,
-	createDynamicPackageImportPlaceholderSource,
+	createRemovedDynamicKodyImportHelperSource,
 	createMeteredPackageImportProxySource,
 	createPackageImportProxySource,
 	createPackageRuntimeModuleSource,
@@ -302,23 +300,6 @@ async function ensurePackageProxy(
 	return proxyPath
 }
 
-function ensureDynamicPackageImportProxy(
-	state: RewriteState,
-	specifier: string,
-) {
-	const existing = state.dynamicPackageImports.get(specifier)
-	if (existing) return existing
-	const proxyPath = joinPath(
-		dynamicPackageImportProxyPrefix,
-		`${createPackageProxyPathSegment(specifier)}.js`,
-	)
-	state.files[proxyPath] = createDynamicPackageImportPlaceholderSource({
-		specifier,
-	})
-	state.dynamicPackageImports.set(specifier, proxyPath)
-	return proxyPath
-}
-
 export function collectDynamicPackageImportProxyModules(
 	files: Record<string, string>,
 	emittedModules: WorkerLoaderModules,
@@ -433,27 +414,22 @@ async function rewriteKodyImports(input: {
 		})
 	}
 	let computedImportHelperName: string | null = null
-	let dynamicPackageImportHelperName: string | null = null
+	let removedDynamicImportHelperName: string | null = null
 	for (const node of dynamicImportNodes) {
 		if (node.literalSpecifier?.startsWith(packageSpecifierPrefix)) {
-			const proxyPath = ensureDynamicPackageImportProxy(
-				input.state,
-				node.literalSpecifier,
-			)
-			input.state.files[joinPath(rootSourcePrefix, proxyPath)] ??=
-				input.state.files[proxyPath] ?? ''
-			input.state.files[joinPath(dirname(input.modulePath), proxyPath)] ??=
-				input.state.files[proxyPath] ?? ''
-			dynamicPackageImportHelperName ??= createUniqueHelperName(
+			// Literal dynamic kody:@ imports were removed with the static-first
+			// model: the call site becomes a teaching error naming the
+			// replacement (publish checks fail on them too).
+			removedDynamicImportHelperName ??= createUniqueHelperName(
 				input.source,
-				'__kodyDynamicPackageImport',
+				'__kodyRemovedDynamicKodyImport',
 			)
 			replacements.push({
 				start: node.start,
 				end: node.end,
-				value: `${dynamicPackageImportHelperName}(${JSON.stringify(
-					`./${proxyPath}`,
-				)}, ${JSON.stringify(node.literalSpecifier)})`,
+				value: `${removedDynamicImportHelperName}(${JSON.stringify(
+					node.literalSpecifier,
+				)})`,
 			})
 			continue
 		}
@@ -477,9 +453,9 @@ async function rewriteKodyImports(input: {
 	assertReplacementsDoNotOverlap(sortedReplacements)
 	const rewritten = applyReplacements(input.source, sortedReplacements)
 	const helpers = [
-		dynamicPackageImportHelperName
-			? createDynamicPackageImportHelperSource({
-					helperName: dynamicPackageImportHelperName,
+		removedDynamicImportHelperName
+			? createRemovedDynamicKodyImportHelperSource({
+					helperName: removedDynamicImportHelperName,
 				})
 			: '',
 		computedImportHelperName

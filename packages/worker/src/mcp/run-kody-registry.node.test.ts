@@ -1909,25 +1909,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 			undefined,
 			{
 				packageInvokeTools: {
-					check: async (input) => ({
-						ok: true,
-						invoke: input as {
-							kodyId: string
-							exportName: string
-						},
-						contract: {
-							packageId: 'pkg-discord-general-chat',
-							kodyId: 'discord-general-chat',
-							name: '@kentcdodds/discord-general-chat',
-							sourceId: 'source-discord-general-chat',
-							publishedCommit: 'commit-1',
-							exportName: './handle-discord-message-created',
-							runtimeTarget: 'src/handle-discord-message-created.ts',
-							warnings: [],
-						},
-					}),
 					invoke: async (input) => ({ ok: true, input }),
-					invokeChecked: async (input) => ({ ok: true, input }),
 				},
 			},
 		)
@@ -1937,32 +1919,12 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		expect(providerFns?.package_invoke).toBeUndefined()
 		expect(providerFns?.package_invoke_checked).toBeUndefined()
 		expect(packageBridgeFns).not.toBeNull()
-		await expect(
-			packageBridgeFns?.check({
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
-			}),
-		).resolves.toMatchObject({
-			ok: true,
-			invoke: {
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
-			},
-		})
+		// The removed check/invokeChecked APIs have no bridge tools; only
+		// invoke crosses the sandbox boundary.
+		expect(packageBridgeFns?.check).toBeUndefined()
+		expect(packageBridgeFns?.invokeChecked).toBeUndefined()
 		await expect(
 			packageBridgeFns?.invoke({
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
-			}),
-		).resolves.toEqual({
-			ok: true,
-			input: {
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
-			},
-		})
-		await expect(
-			packageBridgeFns?.invokeChecked({
 				kodyId: 'discord-general-chat',
 				exportName: './handle-discord-message-created',
 			}),

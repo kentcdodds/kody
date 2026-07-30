@@ -1389,7 +1389,7 @@ test('buildKodyModuleBundle refreshes nested artifact runtimes before static imp
 	expect(bundlerInput?.files?.[nestedRuntimePath]).not.toBe(staleRuntimeSource)
 })
 
-test('buildKodyModuleBundle keeps static imports pinned while literal dynamic imports resolve current packages', async () => {
+test('buildKodyModuleBundle keeps static imports pinned and rewrites literal dynamic imports to teaching errors', async () => {
 	mockModule.createWorker.mockImplementation(
 		async (input: { files: Record<string, string>; entryPoint: string }) => ({
 			mainModule: input.entryPoint,
@@ -1483,13 +1483,9 @@ export default async function run() {
 			packageId: 'pkg-1',
 		},
 	])
-	expect(bundle.dynamicDependencies).toEqual([
-		{
-			specifier: 'kody:@kentcdodds/example-package/value',
-			packageName: '@kentcdodds/example-package',
-			exportName: './value',
-		},
-	])
+	// Literal dynamic kody imports no longer produce placeholder modules or
+	// dynamic-dependency metadata; the call site becomes a teaching error.
+	expect(bundle.dynamicDependencies ?? []).toEqual([])
 	packageVersion = 'current'
 	const { modules: hydratedModules } = await hydrateKodyRuntimeModules({
 		env: {
@@ -1500,28 +1496,17 @@ export default async function run() {
 		userId: 'user-1',
 		modules: bundle.modules,
 	})
-	consoleWarn.mockImplementation(() => {})
 	const moduleGraph = await createTemporaryModuleGraph(hydratedModules)
 	try {
 		const entry = (await moduleGraph.importModule(bundle.mainModule)) as {
 			default: () => Promise<unknown>
 		}
-		await expect(entry.default()).resolves.toEqual({
-			staticValue: 'pinned',
-			dynamicValue: 'current',
-			dynamicMarker: 'current',
-		})
+		await expect(entry.default()).rejects.toThrow(
+			'Dynamic import("kody:@kentcdodds/example-package/value") was removed: use a static import',
+		)
 	} finally {
 		await moduleGraph.cleanup()
 	}
-	// The literal dynamic import shim warns once per specifier, naming the
-	// static-import replacement.
-	expect(consoleWarn).toHaveBeenCalledTimes(1)
-	expect(consoleWarn).toHaveBeenCalledWith(
-		expect.stringContaining(
-			'[deprecated] dynamic import("kody:@kentcdodds/example-package/value")',
-		),
-	)
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
 		{},
 		expect.objectContaining({
@@ -1583,7 +1568,7 @@ export default async function run() {
 			default: () => Promise<unknown>
 		}
 		await expect(entry.default()).rejects.toThrow(
-			'Computed dynamic Kody package imports are unsupported',
+			'Dynamic kody:@ package imports were removed',
 		)
 	} finally {
 		await moduleGraph.cleanup()

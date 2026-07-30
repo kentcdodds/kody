@@ -4,10 +4,11 @@ import { packageSpecifierPrefix } from './package-import-resolution.ts'
 import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 
 /**
- * Widen-phase deprecation detection for the legacy dynamic invocation
- * surface: `packages.check`, `packages.invokeChecked`, and literal dynamic
- * `import("kody:@...")`. Publish checks surface these as non-fatal warnings
- * so new usage stops before the narrow phase removes the shims.
+ * Detection for the removed legacy dynamic invocation surface:
+ * `packages.check`, `packages.invokeChecked`, and literal dynamic
+ * `import("kody:@...")`. Publish checks fail on these (the runtime throws
+ * teaching errors), and the `0002-static-first-invocation` package codemod
+ * reuses the same collector so codemod findings stay in lockstep.
  */
 export type DeprecatedInvocationUsageKind =
 	| 'packages.check'
@@ -105,33 +106,30 @@ export function collectDeprecatedInvocationUsage(
 	)
 }
 
-const deprecatedUsageReplacements: Record<
-	DeprecatedInvocationUsageKind,
-	string
-> = {
-	'packages.check':
-		'packages.check is deprecated: packages.invoke always contract-checks before invoking, so call it directly',
-	'packages.invokeChecked':
-		'packages.invokeChecked is deprecated: use a static kody:@scope/pkg/export import when the target package is known at write time, or packages.invoke({ kodyId, exportName, params }) for dynamic targets',
-	'dynamic-kody-import':
-		'literal dynamic import("kody:@...") is deprecated: use a static import and declare it in package.json#kody.dependencies',
-}
+const removedUsageReplacements: Record<DeprecatedInvocationUsageKind, string> =
+	{
+		'packages.check':
+			'packages.check was removed: packages.invoke always contract-checks before invoking, so call it directly',
+		'packages.invokeChecked':
+			'packages.invokeChecked was removed: use a static kody:@scope/pkg/export import when the target package is known at write time, or packages.invoke({ kodyId, exportName, params }) for dynamic targets',
+		'dynamic-kody-import':
+			'literal dynamic import("kody:@...") was removed: use a static import and declare it in package.json#kody.dependencies, or packages.invoke when the target is data',
+	}
 
-const maxReportedDeprecatedUsages = 5
+const maxReportedRemovedUsages = 5
 
-export function formatDeprecatedInvocationUsageWarning(
+export function formatRemovedInvocationUsageFailure(
 	usages: Array<DeprecatedInvocationUsage>,
 ) {
 	if (usages.length === 0) return null
-	const shown = usages.slice(0, maxReportedDeprecatedUsages)
+	const shown = usages.slice(0, maxReportedRemovedUsages)
 	const hiddenCount = usages.length - shown.length
 	const details = shown
 		.map(
-			(usage) =>
-				`"${usage.filePath}": ${deprecatedUsageReplacements[usage.kind]}`,
+			(usage) => `"${usage.filePath}": ${removedUsageReplacements[usage.kind]}`,
 		)
 		.join('; ')
-	return `Deprecation warnings (non-blocking): ${details}${
+	return `Package code uses the removed dynamic invocation surface: ${details}${
 		hiddenCount > 0 ? ` (and ${hiddenCount} more)` : ''
-	}.`
+	}. The 0002-static-first-invocation package codemod migrates invokeChecked call sites mechanically.`
 }

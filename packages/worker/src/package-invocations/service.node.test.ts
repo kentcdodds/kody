@@ -1137,28 +1137,16 @@ test('keyed packages.invoke keeps exactly-once semantics: repeat calls replay th
 	})
 })
 
-test('packages.invokeChecked remains a working key-less alias during the widen phase', async () => {
+test('runtime invoke tools expose only invoke (check/invokeChecked were removed)', () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
-	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	let executionCount = 0
-	repoMockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
-		executionCount += 1
-		return { result: { handled: true, executionCount }, logs: [] }
-	})
-	const tools = createRuntimeDispatchTools(db)
+	const tools = createRuntimeDispatchTools(db) as Record<string, unknown>
 
-	const request = {
-		kodyId: 'discord-general-chat',
-		exportName: './handle-discord-message-created',
-		params: { event: { id: 'message-1' } },
-	}
-	const first = await tools.invokeChecked(request)
-	const second = await tools.invokeChecked(request)
-
-	expect(first).toEqual({ handled: true, executionCount: 1 })
-	expect(second).toEqual({ handled: true, executionCount: 2 })
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
+	expect(typeof tools.invoke).toBe('function')
+	// The sandbox prelude throws the teaching errors for the removed names;
+	// the host tool set no longer carries them at all.
+	expect(tools.check).toBeUndefined()
+	expect(tools.invokeChecked).toBeUndefined()
 })
 
 test('package runtime dispatches declared events to same-user package subscriptions', async () => {
@@ -1292,7 +1280,7 @@ test('package runtime dispatches declared events to same-user package subscripti
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 })
 
-test('package runtime checks and invokes another package with current contract metadata', async () => {
+test('package runtime invoke contract-checks once and executes the target', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
@@ -1302,7 +1290,7 @@ test('package runtime checks and invokes another package with current contract m
 	repoMockModule.loadPackageManifestBySourceId.mockClear()
 	const tools = createRuntimeDispatchTools(db)
 
-	const check = await tools.check({
+	const result = await tools.invoke({
 		kodyId: 'discord-general-chat',
 		exportName: 'handle-discord-message-created',
 		params: { event: { id: 'message-1' }, dryRun: true },
@@ -1310,40 +1298,14 @@ test('package runtime checks and invokes another package with current contract m
 		topic: 'discord.message.created',
 	})
 
-	expect(check).toMatchObject({
-		ok: true,
-		invoke: {
-			kodyId: 'discord-general-chat',
-			exportName: './handle-discord-message-created',
-			params: { event: { id: 'message-1' }, dryRun: true },
-			idempotencyKey: 'message-1',
-			topic: 'discord.message.created',
-		},
-		contract: {
-			packageId: 'pkg-subscriber',
-			kodyId: 'discord-general-chat',
-			name: '@kentcdodds/discord-general-chat',
-			sourceId: 'source-subscriber',
-			publishedCommit: 'subscriber-commit-1',
-			exportName: './handle-discord-message-created',
-			runtimeTarget: 'src/handle-discord-message-created.ts',
-			description: 'Handle a Discord message-created event.',
-			typeDefinition:
-				'export default async function handleDiscordMessageCreated(input: { event: { id: string }, dryRun?: boolean }): Promise<{ handled: boolean }>',
-		},
-	})
-	expect(check.ok && check.contract.warnings).toHaveLength(1)
-	expect(check.ok && check.contract.warnings[0]).toMatch(/params schema/i)
-	expect(repoMockModule.loadPackageManifestBySourceId).toHaveBeenCalledTimes(1)
-	if (!check.ok) throw new Error(check.message)
-
-	const result = await tools.invoke(check.invoke)
-
 	expect(result).toEqual({ handled: true, eventId: 'message-1' })
+	// One logical call resolves its package exactly once: the mandatory
+	// contract check preloads the manifest and the invoke phase reuses it.
+	expect(repoMockModule.loadPackageManifestBySourceId).toHaveBeenCalledTimes(1)
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
-test('execute runtime invokeChecked invokes target package with execute provenance', async () => {
+test('execute runtime invoke invokes target package with execute provenance', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
@@ -1367,7 +1329,7 @@ test('execute runtime invokeChecked invokes target package with execute provenan
 		conversationId: 'conv-execute-1',
 	})
 
-	const result = await tools.invokeChecked({
+	const result = await tools.invoke({
 		kodyId: 'discord-general-chat',
 		exportName: './handle-discord-message-created',
 		params: { event: { id: 'message-1' } },
@@ -1418,77 +1380,23 @@ test('execute runtime invokeChecked invokes target package with execute provenan
 	)
 })
 
-test('package runtime check reads target package metadata changes without republishing caller', async () => {
-	const db = createDatabase()
-	const { sourceFiles, sources, subscriber } = seedRuntimeDispatchPackages()
-	const tools = createRuntimeDispatchTools(db)
-
-	const first = await tools.check({
-		kodyId: 'discord-general-chat',
-		exportName: './handle-discord-message-created',
-		params: { event: { id: 'message-1' } },
-	})
-	sources.set(
-		'source-subscriber',
-		createSource({
-			id: 'source-subscriber',
-			entityId: subscriber.id,
-			commit: 'subscriber-commit-2',
-		}),
-	)
-	sourceFiles.set('source-subscriber', {
-		'package.json':
-			sourceFiles.get('source-subscriber')?.['package.json'] ?? '',
-		'src/handle-discord-message-created.ts': `/**
- * Handle the current Discord message-created event contract.
- */
-export default async function handleDiscordMessageCreated(input: { event: { id: string, guildId: string } }): Promise<{ handled: boolean, version: 2 }> {
-	return { handled: true, version: 2 }
-}`,
-	})
-
-	const second = await tools.check({
-		kodyId: 'discord-general-chat',
-		exportName: './handle-discord-message-created',
-		params: { event: { id: 'message-2', guildId: 'guild-1' } },
-	})
-
-	expect(first).toMatchObject({
-		ok: true,
-		contract: {
-			publishedCommit: 'subscriber-commit-1',
-			description: 'Handle a Discord message-created event.',
-		},
-	})
-	expect(second).toMatchObject({
-		ok: true,
-		contract: {
-			publishedCommit: 'subscriber-commit-2',
-			description: 'Handle the current Discord message-created event contract.',
-			typeDefinition:
-				'export default async function handleDiscordMessageCreated(input: { event: { id: string, guildId: string } }): Promise<{ handled: boolean, version: 2 }>',
-		},
-	})
-})
-
 test('package runtime dispatch rejects invalid targets before and during invocation', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
 	const tools = createRuntimeDispatchTools(db)
 
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
 	await expect(
-		tools.check({
+		tools.invoke({
 			kodyId: 'missing-package',
 			exportName: './handle-discord-message-created',
 			params: {},
 		}),
-	).resolves.toMatchObject({
-		ok: false,
-		message: 'Saved package "missing-package" was not found for this user.',
-		problems: ['Saved package "missing-package" was not found for this user.'],
-	})
+	).rejects.toThrow(
+		'packages.invoke contract check failed: Saved package "missing-package" was not found for this user.',
+	)
 	await expect(
-		tools.invokeChecked({
+		tools.invoke({
 			kodyId: '@kentcdodds/discord-general-chat',
 			exportName: './handle-discord-message-created',
 			params: {},
@@ -1497,38 +1405,7 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 		'packages.invoke contract check failed: Saved package "@kentcdodds/discord-general-chat" was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").',
 	)
 	await expect(
-		tools.check({
-			kodyId: 'discord-general-chat',
-			exportName: './missing-export',
-			params: {},
-		}),
-	).resolves.toMatchObject({
-		ok: false,
-		problems: [
-			'Package "discord-general-chat" does not define export "./missing-export".',
-		],
-		contract: {
-			packageId: 'pkg-subscriber',
-			kodyId: 'discord-general-chat',
-			publishedCommit: 'subscriber-commit-1',
-			exportName: './missing-export',
-		},
-	})
-	await expect(
-		tools.check({
-			kodyId: 'discord-general-chat',
-			exportName: './handle-discord-message-created',
-			params: 'not-an-object',
-		}),
-	).resolves.toMatchObject({
-		ok: false,
-		message: 'packages.check params must be a JSON object when provided.',
-		problems: ['packages.check params must be a JSON object when provided.'],
-	})
-
-	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	await expect(
-		tools.invokeChecked({
+		tools.invoke({
 			kodyId: 'discord-general-chat',
 			exportName: './missing-export',
 			params: {},
@@ -1537,7 +1414,7 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 		'packages.invoke contract check failed: Package "discord-general-chat" does not define export "./missing-export".',
 	)
 	await expect(
-		tools.invokeChecked({
+		tools.invoke({
 			kodyId: 'discord-general-chat',
 			exportName: './handle-discord-message-created',
 			params: 'not-an-object',

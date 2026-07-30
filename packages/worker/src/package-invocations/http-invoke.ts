@@ -78,7 +78,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 	conversationId?: string | null
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
-	/** Check-phase loads from `packages.invokeChecked`; see invoke-check.ts. */
+	/** Check-phase loads from the `packages.invoke` contract check; see invoke-check.ts. */
 	preloads?: PackageInvokeCheckPreloads | null
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
@@ -164,7 +164,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
-	/** Check-phase loads from `packages.invokeChecked`; see invoke-check.ts. */
+	/** Check-phase loads from the `packages.invoke` contract check; see invoke-check.ts. */
 	preloads?: PackageInvokeCheckPreloads | null
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
