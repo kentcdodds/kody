@@ -1076,9 +1076,10 @@ export async function cancelWorkflowRunForUser(input: {
 	// An active straggler write (for example `mark workflow running`) landed
 	// between the guarded update and the re-read. The terminate already
 	// succeeded (or the instance was missing), so the cancellation itself
-	// worked; the row self-heals to the engine's terminal status on the next
+	// worked; report the effective cancelled status to the caller while the
+	// row self-heals to the engine's terminal status on the next
 	// listWorkflowRunsForUser refresh.
-	return { outcome: 'cancelled', run: projectedRun }
+	return { outcome: 'cancelled', run: { ...projectedRun, status: 'cancelled' } }
 }
 
 export async function listWorkflowRunsForUser(input: {

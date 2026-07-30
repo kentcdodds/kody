@@ -290,7 +290,7 @@ export async function runWithDurableEscalation<T>(input: {
 		) {
 			return {
 				kind: 'failed',
-				error: `A previous durable run "${workflow.id}" for this operation ended with status "${workflow.status}" and its idempotency key blocks re-dispatch; the durable work did not run.`,
+				error: `A previous durable run "${workflow.id}" for this operation ended with status "${workflow.status}" and its idempotency key blocks re-dispatch; the durable work did not complete successfully.`,
 			}
 		}
 		return {
