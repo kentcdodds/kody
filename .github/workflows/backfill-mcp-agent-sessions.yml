@@ -1,0 +1,125 @@
+name: 🧭 Backfill MCP agent sessions
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Dry-run audits only; execute writes index rows and the completion marker.
+        type: choice
+        options:
+          - dry-run
+          - execute
+        default: dry-run
+      origin:
+        description: Deployed Worker origin that serves /__maintenance/*
+        type: string
+        default: https://heykody.dev
+      worker_script:
+        description: Cloudflare Workers script name that owns the MCP Durable Object namespace
+        type: string
+        default: kody-production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backfill-mcp-agent-sessions-${{ inputs.origin }}-${{ inputs.worker_script }}
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    name: 🧭 Backfill MCP agent sessions (${{ inputs.mode }})
+    timeout-minutes: 180
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: 📥 Install Dependencies
+        run: npm ci
+
+      - name: 🧭 Run MCP agent session backfill
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
+          BACKFILL_MODE: ${{ inputs.mode }}
+          BACKFILL_ORIGIN: ${{ inputs.origin }}
+          BACKFILL_WORKER_SCRIPT: ${{ inputs.worker_script }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ] || [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CAPABILITY_REINDEX_SECRET:-}" ]; then
+            echo "CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, and CAPABILITY_REINDEX_SECRET are required." >&2
+            exit 1
+          fi
+
+          args=(
+            --origin "${BACKFILL_ORIGIN}"
+            --worker-script "${BACKFILL_WORKER_SCRIPT}"
+            --audit-out "${RUNNER_TEMP}/mcp-agent-session-backfill-${BACKFILL_MODE}.json"
+          )
+          if [ "${BACKFILL_MODE}" = "execute" ]; then
+            args+=(--execute)
+          fi
+
+          echo "Running backfill mode=${BACKFILL_MODE} origin=${BACKFILL_ORIGIN} worker_script=${BACKFILL_WORKER_SCRIPT}"
+          npm run backfill:mcp-agent-sessions -- "${args[@]}"
+          echo "AUDIT_PATH=${RUNNER_TEMP}/mcp-agent-session-backfill-${BACKFILL_MODE}.json" >> "$GITHUB_ENV"
+
+      - name: 📊 Summarize audit
+        if: always() && env.AUDIT_PATH != ''
+        run: |
+          set -euo pipefail
+          if [ ! -f "${AUDIT_PATH}" ]; then
+            echo "No audit artifact was written."
+            exit 0
+          fi
+          node <<'NODE'
+          const fs = require('node:fs')
+          const audit = JSON.parse(fs.readFileSync(process.env.AUDIT_PATH, 'utf8'))
+          const actions = {}
+          for (const row of audit.rows ?? []) {
+            const action = String(row.action ?? 'unknown')
+            actions[action] = (actions[action] ?? 0) + 1
+          }
+          const failureErrors = {}
+          for (const failure of audit.failures ?? []) {
+            const error = String(failure.error ?? 'unknown')
+            failureErrors[error] = (failureErrors[error] ?? 0) + 1
+          }
+          console.log(
+            JSON.stringify(
+              {
+                dryRun: audit.dryRun,
+                workerScript: audit.workerScript,
+                namespaceId: audit.namespaceId,
+                pages: audit.pages,
+                listedWithStoredData: audit.listedWithStoredData,
+                rowCount: (audit.rows ?? []).length,
+                failureCount: (audit.failures ?? []).length,
+                actions,
+                failureErrors,
+                completedAt: audit.completedAt,
+              },
+              null,
+              2,
+            ),
+          )
+          NODE
+
+      - name: 📤 Upload audit artifact
+        if: always() && env.AUDIT_PATH != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-agent-session-backfill-${{ inputs.mode }}
+          path: ${{ env.AUDIT_PATH }}
+          if-no-files-found: ignore
+          retention-days: 30

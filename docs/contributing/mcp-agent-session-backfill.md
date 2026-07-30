@@ -8,18 +8,35 @@ The operator sweep uses Cloudflare's Durable Objects list API and the existing
 `CAPABILITY_REINDEX_SECRET` maintenance authentication. Never pass secrets as
 CLI flags or commit audit output.
 
-## Required environment
+## Preferred: GitHub Actions
+
+Use the `🧭 Backfill MCP agent sessions` workflow
+(`.github/workflows/backfill-mcp-agent-sessions.yml`):
+
+```bash
+gh workflow run backfill-mcp-agent-sessions.yml \
+  -f mode=dry-run \
+  -f origin=https://heykody.dev \
+  -f worker_script=kody-production
+```
+
+Review the uploaded audit artifact, then re-run with `-f mode=execute` only when
+there are no `no_owner` rows, ownership conflicts, or other failures. Production
+inventory is large (thousands of MCP Durable Objects); the job timeout is three
+hours.
+
+## Required environment (local CLI)
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `CLOUDFLARE_API_TOKEN` with Workers/Durable Objects read access
-- `CAPABILITY_REINDEX_SECRET`
+- `CLOUDFLARE_API_TOKEN` with Workers Scripts Read (Durable Objects list)
+- `CAPABILITY_REINDEX_SECRET` matching the deployed Worker secret
 
-## Dry run
+## Dry run (local)
 
 ```bash
 npm run backfill:mcp-agent-sessions -- \
   --origin https://heykody.dev \
-  --worker-script kody \
+  --worker-script kody-production \
   --audit-out /tmp/mcp-agent-session-backfill-dry-run.json
 ```
 
@@ -27,12 +44,12 @@ The command resolves the `MCP` namespace, cursor-pages every object with stored
 data, and calls the maintenance ownership RPC in batches of 50 without writing
 index rows. Review every `no_owner`, conflict, and failure before execution.
 
-## Execute
+## Execute (local)
 
 ```bash
 npm run backfill:mcp-agent-sessions -- \
   --origin https://heykody.dev \
-  --worker-script kody \
+  --worker-script kody-production \
   --audit-out /tmp/mcp-agent-session-backfill-execute.json \
   --execute
 ```
