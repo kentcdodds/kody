@@ -801,7 +801,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		],
 		mcp_user_server_instructions: [{ user_id: userAaa }],
 		package_invocation_tokens: [{ id: 'pit-1', user_id: userAaa }],
-		package_invocations: [{ id: 'pi-1', user_id: userAaa }],
 		agent_package_conversation_uses: [
 			{
 				user_id: userAaa,

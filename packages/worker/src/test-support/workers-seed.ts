@@ -77,24 +77,6 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_published_bundle_artifacts_identity
 		ON published_bundle_artifacts(user_id, source_id, artifact_kind, COALESCE(artifact_name, ''), entry_point)`,
-		`CREATE TABLE IF NOT EXISTS package_invocations (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			token_id TEXT NOT NULL,
-			package_id TEXT NOT NULL,
-			package_kody_id TEXT NOT NULL,
-			export_name TEXT NOT NULL,
-			idempotency_key TEXT NOT NULL,
-			request_hash TEXT NOT NULL,
-			source TEXT,
-			topic TEXT,
-			status TEXT NOT NULL,
-			response_json TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_package_invocations_key
-		ON package_invocations(user_id, token_id, package_id, export_name, idempotency_key)`,
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()

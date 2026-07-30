@@ -43,7 +43,6 @@ export const publishedBundleArtifactRetentionBatchSize = 100
  */
 export const retentionRunTimeBudgetMs = 20_000
 
-export const packageInvocationRetentionDays = 90
 export const memorySuppressionRetentionDays = 90
 export const workflowRunRetentionDays = 90
 export const platformFeedbackRetentionDays = 365
@@ -71,14 +70,6 @@ const terminalWorkflowStatusList = terminalWorkflowStatusValues
  * in `retention.node.test.ts` remains a second net for discovering new tables.
  */
 export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
-	{
-		table: 'package_invocations',
-		scope: 'per-user',
-		retentionDays: packageInvocationRetentionDays,
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'LEGACY (dual-read window): keyed invocations now claim and store responses in the per-user RunLog Durable Object ledger, which self-enforces the same 90-day terminal-row window. This sweep only drains pre-migration terminal rows; in-progress rows are never pruned. Remove with the follow-up that drops the table and the D1 fallback read.',
-	},
 	{
 		table: 'mcp_memory_conversation_suppressions',
 		scope: 'per-user',
@@ -192,7 +183,6 @@ export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> 
 		}))
 
 export type RetentionPruneResult = {
-	packageInvocations: number
 	memorySuppressions: number
 	workflowRuns: number
 	platformFeedback: number
@@ -350,29 +340,6 @@ async function deletePublishedBundleArtifactRowIfStillStale(input: {
 			.run(),
 	)
 	return result.meta.changes ?? 0
-}
-
-export async function prunePackageInvocationsForRetention(input: {
-	db: D1Database
-	now?: Date
-	batchSize?: number
-}) {
-	const cutoff = cutoffIso(
-		input.now ?? new Date(),
-		packageInvocationRetentionDays,
-	)
-	return selectAndDeleteByIds({
-		db: input.db,
-		bindings: [cutoff, input.batchSize ?? retentionDefaultBatchSize],
-		sql: `SELECT id
-			FROM package_invocations
-			WHERE created_at < ?
-				AND status != 'in_progress'
-			ORDER BY created_at ASC, id ASC
-			LIMIT ?`,
-		table: 'package_invocations',
-		idColumn: 'id',
-	})
 }
 
 export async function pruneMemorySuppressionsForRetention(input: {
@@ -899,7 +866,6 @@ export async function pruneRetention(input: {
 	// for blob reasons so a blocked head cannot wedge later batches.
 	let emailMessagesCursor: EmailMessageRetentionCursor | null = null
 	const result: RetentionPruneResult = {
-		packageInvocations: 0,
 		memorySuppressions: 0,
 		workflowRuns: 0,
 		platformFeedback: 0,
@@ -945,13 +911,6 @@ export async function pruneRetention(input: {
 		done: boolean
 		run: () => Promise<boolean>
 	}> = [
-		countTask(
-			'package_invocations',
-			() => prunePackageInvocationsForRetention({ db, now }),
-			(count) => {
-				result.packageInvocations += count
-			},
-		),
 		countTask(
 			'mcp_memory_conversation_suppressions',
 			() => pruneMemorySuppressionsForRetention({ db, now }),

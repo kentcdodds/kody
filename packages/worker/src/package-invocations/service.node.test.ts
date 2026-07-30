@@ -8,7 +8,6 @@ import {
 	invokePackageExport,
 	invokePackageSubscription,
 } from './service.ts'
-import { createRequestHash } from './idempotency.ts'
 import { maxStoredInvocationResponseJsonBytes } from './repo.ts'
 
 const repoMockModule = vi.hoisted(() => ({
@@ -296,36 +295,25 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 }
 
 /**
- * Fake D1 with a READ-ONLY legacy `package_invocations` table for the
- * dual-read window. Any attempted D1 write throws, which is the test-level
- * proof that no awaited D1 write remains on the keyed hot path.
+ * Fake D1 that rejects EVERY `package_invocations` statement (the table is
+ * dropped; the ledger lives in the RunLog DO) and every write. Keyed tests
+ * passing against this is the proof that no D1 ledger read or write remains
+ * anywhere on the invoke path.
  */
 function createDatabase(options: { failClaim?: boolean } = {}) {
-	const legacyRows: Array<Record<string, unknown>> = []
 	const runLog = createFakeRunLog(options)
-	const clone = <T>(value: T): T => structuredClone(value)
 	const db = {
 		prepare(query: string) {
+			if (query.includes('package_invocations')) {
+				throw new Error(
+					`Unexpected D1 access to the dropped package_invocations table: ${query}`,
+				)
+			}
 			return {
-				bind(...params: Array<unknown>) {
+				bind() {
 					return {
 						async first<T = Record<string, unknown>>() {
-							if (
-								query.includes('FROM package_invocations') &&
-								query.includes('idempotency_key = ?')
-							) {
-								return clone(
-									legacyRows.find(
-										(row) =>
-											row['user_id'] === params[0] &&
-											row['token_id'] === params[1] &&
-											row['package_id'] === params[2] &&
-											row['export_name'] === params[3] &&
-											row['idempotency_key'] === params[4],
-									) ?? null,
-								) as T | null
-							}
-							return null
+							return null as T | null
 						},
 						async run() {
 							throw new Error(
@@ -337,70 +325,8 @@ function createDatabase(options: { failClaim?: boolean } = {}) {
 			}
 		},
 		runLog,
-		seedLegacyInvocation(row: {
-			tokenId: string
-			packageId: string
-			packageKodyId: string
-			exportName: string
-			idempotencyKey: string
-			requestHash: string
-			source?: string | null
-			topic?: string | null
-			status: 'in_progress' | 'completed' | 'failed'
-			responseJson?: string | null
-			updatedAt?: string
-		}) {
-			const updatedAt = row.updatedAt ?? new Date().toISOString()
-			const legacy = {
-				id: crypto.randomUUID(),
-				user_id: 'user-123',
-				token_id: row.tokenId,
-				package_id: row.packageId,
-				package_kody_id: row.packageKodyId,
-				export_name: row.exportName,
-				idempotency_key: row.idempotencyKey,
-				request_hash: row.requestHash,
-				source: row.source ?? null,
-				topic: row.topic ?? null,
-				status: row.status,
-				response_json: row.responseJson ?? null,
-				created_at: updatedAt,
-				updated_at: updatedAt,
-			}
-			legacyRows.push(legacy)
-			return clone(legacy)
-		},
-		completeLegacyInvocation(input: {
-			idempotencyKey: string
-			responseJson: string
-		}) {
-			const row = legacyRows.find(
-				(candidate) => candidate['idempotency_key'] === input.idempotencyKey,
-			)
-			if (!row) throw new Error('Expected legacy invocation row.')
-			row['status'] = 'completed'
-			row['response_json'] = input.responseJson
-			row['updated_at'] = new Date().toISOString()
-		},
 	} as unknown as D1Database & {
 		runLog: ReturnType<typeof createFakeRunLog>
-		seedLegacyInvocation(row: {
-			tokenId: string
-			packageId: string
-			packageKodyId: string
-			exportName: string
-			idempotencyKey: string
-			requestHash: string
-			source?: string | null
-			topic?: string | null
-			status: 'in_progress' | 'completed' | 'failed'
-			responseJson?: string | null
-			updatedAt?: string
-		}): Record<string, unknown>
-		completeLegacyInvocation(input: {
-			idempotencyKey: string
-			responseJson: string
-		}): void
 	}
 	return db
 }
@@ -1926,288 +1852,46 @@ test('oversized terminal responses are not stored so backups stay restorable', a
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
-async function dispatchMessageCreatedRequestHash(
-	params: Record<string, unknown>,
-) {
-	return await createRequestHash({
-		packageId: 'pkg-1',
-		exportName: './dispatch-message-created',
-		params,
-		source: 'discord-gateway',
-		topic: 'discord.message.created',
-	})
-}
-
-function dispatchMessageCreatedRequest(idempotencyKey: string) {
-	return {
-		packageIdOrKodyId: 'discord-gateway',
-		exportName: 'dispatch-message-created',
-		params: { content: 'hi' },
-		idempotencyKey,
-		source: 'discord-gateway',
-		topic: 'discord.message.created',
-	}
-}
-
-test('dual-read window: a pre-migration terminal D1 row replays without executing', async () => {
+test('a pre-migration-style key misses cleanly: it executes fresh instead of erroring', async () => {
+	// Keys claimed before the ledger moved into the RunLog DO no longer have
+	// any store to replay from (the D1 table is dropped). A redelivery for
+	// such a key is indistinguishable from a brand-new key: it claims in the
+	// DO and executes, without touching D1 at all (the fake D1 above throws
+	// on any package_invocations statement).
 	const db = createDatabase()
 	seedPackageResolution()
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	db.seedLegacyInvocation({
-		tokenId: 'discord-gateway',
-		packageId: 'pkg-1',
-		packageKodyId: 'discord-gateway',
-		exportName: './dispatch-message-created',
-		idempotencyKey: 'evt-pre-migration',
-		requestHash: await dispatchMessageCreatedRequestHash({ content: 'hi' }),
-		source: 'discord-gateway',
-		topic: 'discord.message.created',
-		status: 'completed',
-		responseJson: JSON.stringify({
-			status: 200,
-			body: {
-				ok: true,
-				result: { reply: 'stored before the migration' },
-				idempotency: { key: 'evt-pre-migration', replayed: false },
-			},
-		}),
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { reply: 'executed fresh' },
+		logs: [],
 	})
 
-	const replayed = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken(),
-		request: dispatchMessageCreatedRequest('evt-pre-migration'),
-	})
-
-	expect(replayed.status).toBe(200)
-	expect(replayed.body).toMatchObject({
-		ok: true,
-		result: { reply: 'stored before the migration' },
-		idempotency: { key: 'evt-pre-migration', replayed: true },
-	})
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-	// The DO claim taken ahead of the fallback lookup was released again, so
-	// nothing lingers in the ledger for the legacy-owned key.
-	expect(db.runLog.ledgerRows).toHaveLength(0)
-
-	// A different request against the same pre-migration key still mismatches.
-	const mismatch = await invokePackageExport({
+	const response = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken(),
 		request: {
-			...dispatchMessageCreatedRequest('evt-pre-migration'),
-			params: { content: 'different' },
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-from-before-the-migration',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
 		},
 	})
-	expect(mismatch.status).toBe(409)
-	expect(mismatch.body).toMatchObject({
-		ok: false,
-		error: { code: 'idempotency_mismatch' },
-	})
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-	expect(db.runLog.ledgerRows).toHaveLength(0)
-})
 
-test('dual-read window: fresh legacy in-progress rows are polled, stale ones are taken over', async () => {
-	const db = createDatabase()
-	seedPackageResolution()
-	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { reply: 'executed after takeover' },
-		logs: [],
-	})
-	const requestHash = await dispatchMessageCreatedRequestHash({
-		content: 'hi',
-	})
-	// Fresh in-progress row finished by an old-code isolate mid-poll.
-	db.seedLegacyInvocation({
-		tokenId: 'discord-gateway',
-		packageId: 'pkg-1',
-		packageKodyId: 'discord-gateway',
-		exportName: './dispatch-message-created',
-		idempotencyKey: 'evt-legacy-open',
-		requestHash,
-		source: 'discord-gateway',
-		topic: 'discord.message.created',
-		status: 'in_progress',
-	})
-	const completionTimer = setTimeout(() => {
-		db.completeLegacyInvocation({
-			idempotencyKey: 'evt-legacy-open',
-			responseJson: JSON.stringify({
-				status: 200,
-				body: {
-					ok: true,
-					result: { reply: 'finished by an old isolate' },
-					idempotency: { key: 'evt-legacy-open', replayed: false },
-				},
-			}),
-		})
-	}, 150)
-	try {
-		const polled = await invokePackageExport({
-			env: createEnv(db),
-			baseUrl: 'https://kody.dev',
-			token: createToken(),
-			request: dispatchMessageCreatedRequest('evt-legacy-open'),
-		})
-		expect(polled.status).toBe(200)
-		expect(polled.body).toMatchObject({
-			ok: true,
-			result: { reply: 'finished by an old isolate' },
-			idempotency: { key: 'evt-legacy-open', replayed: true },
-		})
-	} finally {
-		clearTimeout(completionTimer)
-	}
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-	expect(db.runLog.ledgerRows).toHaveLength(0)
-
-	// A stale legacy in-progress row can never finish (nothing writes D1 any
-	// more), so the DO claim proceeds to execute — the old reclaim, recorded
-	// in the DO instead of D1.
-	db.seedLegacyInvocation({
-		tokenId: 'discord-gateway',
-		packageId: 'pkg-1',
-		packageKodyId: 'discord-gateway',
-		exportName: './dispatch-message-created',
-		idempotencyKey: 'evt-legacy-stale',
-		requestHash,
-		source: 'discord-gateway',
-		topic: 'discord.message.created',
-		status: 'in_progress',
-		updatedAt: '2026-01-01T00:00:00.000Z',
-	})
-	const takeover = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken(),
-		request: dispatchMessageCreatedRequest('evt-legacy-stale'),
-	})
-	expect(takeover.status).toBe(200)
-	expect(takeover.body).toMatchObject({
+	expect(response.status).toBe(200)
+	expect(response.body).toMatchObject({
 		ok: true,
-		result: { reply: 'executed after takeover' },
-		idempotency: { key: 'evt-legacy-stale', replayed: false },
+		result: { reply: 'executed fresh' },
+		idempotency: { key: 'evt-from-before-the-migration', replayed: false },
 	})
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 	expect(
 		db.runLog.ledgerRows.find(
-			(row) => row.idempotencyKey === 'evt-legacy-stale',
+			(row) => row.idempotencyKey === 'evt-from-before-the-migration',
 		),
 	).toMatchObject({ status: 'completed' })
-})
-
-test('dual-read window: a stale DO claim defers to a terminal pre-migration row instead of re-executing', async () => {
-	const db = createDatabase()
-	seedPackageResolution()
-	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	const requestHash = await dispatchMessageCreatedRequestHash({
-		content: 'hi',
-	})
-	// A takeover attempt claimed the key in the DO and died (claim now
-	// stale), while a zombie pre-migration isolate finished the legacy row.
-	db.runLog.ledgerRows.push({
-		id: crypto.randomUUID(),
-		tokenId: 'discord-gateway',
-		packageId: 'pkg-1',
-		packageKodyId: 'discord-gateway',
-		exportName: './dispatch-message-created',
-		idempotencyKey: 'evt-zombie-finish',
-		requestHash,
-		source: 'discord-gateway',
-		topic: 'discord.message.created',
-		status: 'in_progress',
-		responseJson: null,
-		createdAt: '2026-01-01T00:00:00.000Z',
-		updatedAt: '2026-01-01T00:00:00.000Z',
-	})
-	db.seedLegacyInvocation({
-		tokenId: 'discord-gateway',
-		packageId: 'pkg-1',
-		packageKodyId: 'discord-gateway',
-		exportName: './dispatch-message-created',
-		idempotencyKey: 'evt-zombie-finish',
-		requestHash,
-		source: 'discord-gateway',
-		topic: 'discord.message.created',
-		status: 'completed',
-		responseJson: JSON.stringify({
-			status: 200,
-			body: {
-				ok: true,
-				result: { reply: 'finished by a zombie isolate' },
-				idempotency: { key: 'evt-zombie-finish', replayed: false },
-			},
-		}),
-	})
-
-	const replayed = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken(),
-		request: dispatchMessageCreatedRequest('evt-zombie-finish'),
-	})
-
-	expect(replayed.status).toBe(200)
-	expect(replayed.body).toMatchObject({
-		ok: true,
-		result: { reply: 'finished by a zombie isolate' },
-		idempotency: { key: 'evt-zombie-finish', replayed: true },
-	})
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-	// The reclaimed DO claim was released; the legacy row owns the key again.
-	expect(db.runLog.ledgerRows).toHaveLength(0)
-})
-
-test('the RunLog DO ledger is read first; legacy D1 rows are only a fallback for unknown keys', async () => {
-	const db = createDatabase()
-	seedPackageResolution()
-	repoMockModule.runBundledModuleWithRegistry.mockClear()
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { reply: 'do-backed execution' },
-		logs: [],
-	})
-	const first = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken(),
-		request: dispatchMessageCreatedRequest('evt-do-first'),
-	})
-	expect(first.status).toBe(200)
-
-	// A conflicting legacy row appearing afterwards (e.g. a restored backup)
-	// must lose to the DO row: replay serves the DO-stored response.
-	db.seedLegacyInvocation({
-		tokenId: 'discord-gateway',
-		packageId: 'pkg-1',
-		packageKodyId: 'discord-gateway',
-		exportName: './dispatch-message-created',
-		idempotencyKey: 'evt-do-first',
-		requestHash: await dispatchMessageCreatedRequestHash({ content: 'hi' }),
-		source: 'discord-gateway',
-		topic: 'discord.message.created',
-		status: 'completed',
-		responseJson: JSON.stringify({
-			status: 200,
-			body: { ok: true, result: { reply: 'stale legacy copy' } },
-		}),
-	})
-	const replay = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken(),
-		request: dispatchMessageCreatedRequest('evt-do-first'),
-	})
-	expect(replay.status).toBe(200)
-	expect(replay.body).toMatchObject({
-		ok: true,
-		result: { reply: 'do-backed execution' },
-		idempotency: { key: 'evt-do-first', replayed: true },
-	})
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
 test('invokePackageExport enforces source scopes for wildcard tokens', async () => {

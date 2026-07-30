@@ -27,11 +27,7 @@ import {
 import { type ensureModuleArtifact } from './module-artifacts.ts'
 import { runSavedPackageModuleOnce } from './module-execution.ts'
 import { buildJsonErrorResponse } from './responses.ts'
-import {
-	boundedResponseJson,
-	getPackageInvocationByKey,
-	parseStoredResponse,
-} from './repo.ts'
+import { boundedResponseJson, parseStoredResponse } from './repo.ts'
 
 export const packageInvocationStaleAfterMs = 15 * 60 * 1000
 const packageInvocationPollIntervalMs = 100
@@ -51,16 +47,6 @@ function toResolvableLedgerRecord(
 	}
 }
 
-function toResolvableLegacyRecord(
-	record: NonNullable<Awaited<ReturnType<typeof getPackageInvocationByKey>>>,
-): ResolvableInvocationRecord {
-	return {
-		requestHash: record.request_hash,
-		status: record.status,
-		storedResponse: record.storedResponse,
-	}
-}
-
 type ClaimedInvocation = {
 	invocationId: string
 	claimUpdatedAt: string
@@ -75,10 +61,10 @@ type ClaimedInvocation = {
  * `runSavedPackageModuleEphemeral` in module-execution.ts instead — the
  * execution itself is shared via `runSavedPackageModuleOnce`.
  *
- * During the dual-read window this path still READS the legacy D1
- * `package_invocations` table for keys claimed before the migration, but it
- * never writes it; a follow-up removes the fallback together with the table
- * and its retention sweep.
+ * The legacy D1 `package_invocations` table is retired: this path performs
+ * no D1 ledger reads or writes at all. Keys claimed before the DO migration
+ * no longer replay — a redelivery for such a key simply executes fresh
+ * (accepted when the dual-read window was waived).
  *
  * This path deliberately takes no `withAccountWriteLease`: the lease guards
  * D1 writes against concurrent account deletion, and no D1 writes remain
@@ -206,107 +192,6 @@ export async function invokeSavedPackageModule(input: {
 			userId: input.actor.userId,
 			key: ledgerKey,
 		})
-	const lookupLegacy = async () =>
-		await getPackageInvocationByKey({
-			db: input.env.APP_DB,
-			userId: input.actor.userId,
-			tokenId: input.actor.tokenId,
-			packageId: input.savedPackage.id,
-			exportName: input.invocationName,
-			idempotencyKey: input.idempotencyKey,
-		})
-	const releaseClaimBestEffort = async (claimed: ClaimedInvocation) => {
-		try {
-			await releasePackageInvocationRecord({
-				env: input.env,
-				userId: input.actor.userId,
-				invocationId: claimed.invocationId,
-				claimUpdatedAt: claimed.claimUpdatedAt,
-				handle: claimed.handle,
-			})
-		} catch (error) {
-			// Worst case the key stays claimed until the 15-minute stale
-			// reclaim — the same failure mode as an isolate death mid-run.
-			console.warn(
-				'package invocation claim release failed',
-				getErrorMessage(error),
-			)
-		}
-	}
-
-	/**
-	 * Dual-read fallback for keys claimed before the ledger moved into the
-	 * RunLog DO. Runs after every claim (fresh or stale reclaim): a
-	 * pre-migration key can sit terminal in D1 while a dead attempt's stale
-	 * DO claim still exists — e.g. a takeover attempt died and a zombie
-	 * pre-migration isolate later finished the legacy row — and replaying it
-	 * beats re-executing. DO replays never reach this (terminal DO rows
-	 * resolve before claiming). Returns the response to serve from the
-	 * legacy row, or `null` when this attempt should proceed to execute.
-	 * Awaited D1 reads only — never writes.
-	 */
-	const resolveLegacyFallback = async (claimed: ClaimedInvocation) => {
-		let legacy: Awaited<ReturnType<typeof lookupLegacy>>
-		try {
-			legacy = await lookupLegacy()
-		} catch (error) {
-			console.error('package invocation idempotency lookup failed', error)
-			await releaseClaimBestEffort(claimed)
-			return buildLookupFailedResponse()
-		}
-		if (!legacy) return null
-		const resolveLegacy = (
-			record: NonNullable<Awaited<ReturnType<typeof lookupLegacy>>>,
-		) =>
-			resolveExistingInvocation({
-				record: toResolvableLegacyRecord(record),
-				requestHash,
-				idempotencyKey: input.idempotencyKey,
-			})
-		if (
-			legacy.request_hash !== requestHash ||
-			legacy.status !== 'in_progress'
-		) {
-			await releaseClaimBestEffort(claimed)
-			return resolveLegacy(legacy)
-		}
-		// A legacy in-progress row may still be finished by an old-code isolate
-		// during the deploy window, so poll it like the pre-migration path did.
-		const pollDeadline = Date.now() + packageInvocationPollBudgetMs
-		let current: Awaited<ReturnType<typeof lookupLegacy>> = legacy
-		while (
-			current &&
-			current.status === 'in_progress' &&
-			!isStaleInvocation(current.updated_at, new Date()) &&
-			Date.now() < pollDeadline
-		) {
-			await new Promise((resolve) =>
-				setTimeout(resolve, packageInvocationPollIntervalMs),
-			)
-			try {
-				current = await lookupLegacy()
-			} catch (error) {
-				console.error('package invocation idempotency lookup failed', error)
-				await releaseClaimBestEffort(claimed)
-				return buildLookupFailedResponse()
-			}
-		}
-		if (!current) return null
-		if (current.status !== 'in_progress') {
-			await releaseClaimBestEffort(claimed)
-			return resolveLegacy(current)
-		}
-		if (!isStaleInvocation(current.updated_at, new Date())) {
-			await releaseClaimBestEffort(claimed)
-			return resolveLegacy(current)
-		}
-		// Stale legacy in-progress row: nothing writes D1 anymore, so it can
-		// never finish. Keep the DO claim and execute — the equivalent of the
-		// old D1 stale reclaim, recorded in the DO instead. The abandoned row
-		// is dropped with the table in the follow-up.
-		return null
-	}
-
 	let claim: Awaited<ReturnType<typeof attemptClaim>>
 	try {
 		claim = await attemptClaim()
@@ -342,22 +227,9 @@ export async function invokeSavedPackageModule(input: {
 			}
 		}
 		if (!record) {
-			// The owner released its claim (transient artifact failure, or a
-			// dual-read fallback hit whose response lives in the legacy table).
-			let legacy: Awaited<ReturnType<typeof lookupLegacy>>
-			try {
-				legacy = await lookupLegacy()
-			} catch (error) {
-				console.error('package invocation idempotency lookup failed', error)
-				return buildLookupFailedResponse()
-			}
-			if (legacy) {
-				return resolveExistingInvocation({
-					record: toResolvableLegacyRecord(legacy),
-					requestHash,
-					idempotencyKey: input.idempotencyKey,
-				})
-			}
+			// The owner released its claim (transient artifact failure) and the
+			// key is free again; the caller retries rather than us re-claiming
+			// mid-poll.
 			return buildJsonErrorResponse({
 				status: 500,
 				code: 'idempotency_conflict_unresolved',
@@ -384,9 +256,6 @@ export async function invokeSavedPackageModule(input: {
 		claimUpdatedAt: claim.claimUpdatedAt,
 		handle: claim.handle,
 	}
-	const legacyResponse = await resolveLegacyFallback(claimed)
-	if (legacyResponse) return legacyResponse
-
 	const outcome = await runSavedPackageModuleOnce({
 		env: input.env,
 		baseUrl: input.baseUrl,

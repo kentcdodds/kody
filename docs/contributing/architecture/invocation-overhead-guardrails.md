@@ -27,9 +27,8 @@ call, not about what user code does inside the call.
   lives in the per-user `RunLog` Durable Object (see
   [Run records](./run-records.md)), so the durability cost is **one awaited DO
   call for claim + run-record begin and one for terminal response + run-record
-  finish** — not D1 round trips. During the dual-read window the keyed path also
-  pays one awaited D1 **read** for pre-migration keys; a follow-up removes it
-  with the legacy `package_invocations` table.
+  finish** — no D1 round trips at all (the legacy `package_invocations` table
+  and its dual-read fallback are gone).
 
 ## Watch the percentiles
 

@@ -467,6 +467,10 @@
 		{
 			"filename": "0111-package-codemod-ledger.sql",
 			"sha256": "d42350b7bfa88400d8133a8d8436dd6fa2e25e3ab7650e047c447e7f4704863e"
+		},
+		{
+			"filename": "0112-drop-package-invocations.sql",
+			"sha256": "1b3c57a2b6d07f1400939e769a4f024c29180026e78ad77d066a9be31597f505"
 		}
 	]
 }

@@ -9,13 +9,11 @@ import {
 	entitlementDailyCounterRetentionDays,
 	getRetentionPolicyCoverage,
 	memorySuppressionRetentionDays,
-	packageInvocationRetentionDays,
 	platformFeedbackRetentionDays,
 	pruneAuditEventsForRetention,
 	pruneEmailDeliveryEventsForRetention,
 	pruneEntitlementDailyCountersForRetention,
 	pruneMemorySuppressionsForRetention,
-	prunePackageInvocationsForRetention,
 	prunePlatformFeedbackForRetention,
 	prunePublishedBundleArtifactsForRetention,
 	pruneRetention,
@@ -99,22 +97,6 @@ function createD1FromSqlite(
 function createRetentionDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
-		CREATE TABLE package_invocations (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			token_id TEXT NOT NULL,
-			package_id TEXT NOT NULL,
-			package_kody_id TEXT NOT NULL,
-			export_name TEXT NOT NULL,
-			idempotency_key TEXT NOT NULL,
-			request_hash TEXT NOT NULL,
-			source TEXT,
-			topic TEXT,
-			status TEXT NOT NULL,
-			response_json TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		);
 		CREATE TABLE workflow_runs (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
@@ -315,21 +297,23 @@ function insertEmailThread(
 	)
 }
 
-function insertPackageInvocation(
+function insertWorkflowRun(
 	db: DatabaseSync,
-	input: { id: string; status?: string; createdAt: string },
+	input: { id: string; status?: string | null; completedAt: string },
 ) {
 	db.prepare(
-		`INSERT INTO package_invocations (
-			id, user_id, token_id, package_id, package_kody_id, export_name,
-			idempotency_key, request_hash, status, created_at, updated_at
-		) VALUES (?, 'user-1', 'token', 'pkg-1', 'pkg-1', '.', ?, 'hash', ?, ?, ?)`,
+		`INSERT INTO workflow_runs (
+			id, user_id, source_type, workflow_name, idempotency_key, run_at,
+			status, created_at, updated_at, completed_at
+		) VALUES (?, 'user-1', 'inline', 'wf', ?, ?, ?, ?, ?, ?)`,
 	).run(
 		input.id,
 		`key-${input.id}`,
-		input.status ?? 'completed',
-		input.createdAt,
-		input.createdAt,
+		input.completedAt,
+		input.status === undefined ? 'complete' : input.status,
+		input.completedAt,
+		input.completedAt,
+		input.completedAt,
 	)
 }
 
@@ -350,31 +334,8 @@ test('retention cron runs only on the hourly gate', () => {
 	)
 })
 
-test('package invocation and workflow retention keeps boundary and active idempotency rows', async () => {
+test('workflow retention keeps boundary and non-terminal rows', async () => {
 	const { sqlite, db } = createRetentionDb()
-	for (const [id, status, createdAt] of [
-		[
-			'inv-old-completed',
-			'completed',
-			daysAgo(packageInvocationRetentionDays + 1),
-		],
-		['inv-old-failed', 'failed', daysAgo(packageInvocationRetentionDays + 1)],
-		['inv-boundary', 'completed', daysAgo(packageInvocationRetentionDays)],
-		[
-			'inv-in-progress',
-			'in_progress',
-			daysAgo(packageInvocationRetentionDays + 1),
-		],
-	]) {
-		sqlite
-			.prepare(
-				`INSERT INTO package_invocations (
-				id, user_id, token_id, package_id, package_kody_id, export_name,
-				idempotency_key, request_hash, status, response_json, created_at, updated_at
-			) VALUES (?, 'user-1', 'token', 'pkg-1', 'pkg-1', '.', ?, 'hash', ?, '{}', ?, ?)`,
-			)
-			.run(id, id, status, createdAt, createdAt)
-	}
 	for (const [id, status, completedAt] of [
 		[
 			'workflow-old-complete',
@@ -386,29 +347,14 @@ test('package invocation and workflow retention keeps boundary and active idempo
 		['workflow-running', 'running', daysAgo(workflowRunRetentionDays + 1)],
 		['workflow-unknown', null, daysAgo(workflowRunRetentionDays + 1)],
 	] as const) {
-		sqlite
-			.prepare(
-				`INSERT INTO workflow_runs (
-				id, user_id, source_type, workflow_name, idempotency_key, run_at, status,
-				created_at, updated_at, completed_at
-			) VALUES (?, 'user-1', 'inline', 'wf', ?, ?, ?, ?, ?, ?)`,
-			)
-			.run(id, id, completedAt, status, completedAt, completedAt, completedAt)
+		insertWorkflowRun(sqlite, { id, status, completedAt })
 	}
 
-	expect(await prunePackageInvocationsForRetention({ db, now })).toEqual({
-		selected: 2,
-		deleted: 2,
-	})
 	expect(await pruneWorkflowRunsForRetention({ db, now })).toEqual({
 		selected: 2,
 		deleted: 2,
 	})
 
-	expect(idsForTable(sqlite, 'package_invocations')).toEqual([
-		'inv-boundary',
-		'inv-in-progress',
-	])
 	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([
 		'workflow-boundary',
 		'workflow-running',
@@ -865,14 +811,14 @@ test('retention prune reports selected separately from deleted when rows vanish 
 	const dbWithVanishingRow = {
 		prepare(query: string) {
 			const prepared = baseDb.prepare(query)
-			if (!query.includes('DELETE FROM package_invocations')) return prepared
+			if (!query.includes('DELETE FROM workflow_runs')) return prepared
 			return {
 				bind(...params: Array<unknown>) {
 					const bound = prepared.bind(...params)
 					return {
 						async run() {
 							sqlite
-								.prepare(`DELETE FROM package_invocations WHERE id = 'inv-0'`)
+								.prepare(`DELETE FROM workflow_runs WHERE id = 'wf-0'`)
 								.run()
 							return bound.run()
 						},
@@ -884,14 +830,14 @@ test('retention prune reports selected separately from deleted when rows vanish 
 		},
 	} as unknown as D1Database
 	for (let index = 0; index < 2; index += 1) {
-		insertPackageInvocation(sqlite, {
-			id: `inv-${index}`,
-			createdAt: daysAgo(120),
+		insertWorkflowRun(sqlite, {
+			id: `wf-${index}`,
+			completedAt: daysAgo(120),
 		})
 	}
 
 	expect(
-		await prunePackageInvocationsForRetention({
+		await pruneWorkflowRunsForRetention({
 			db: dbWithVanishingRow,
 			now,
 			batchSize: 2,
@@ -1137,53 +1083,44 @@ test('published bundle artifact retention rechecks staleness before deleting sel
 test('retention pruning deletes only one configured batch per table invocation', async () => {
 	const { sqlite, db } = createRetentionDb()
 	for (let index = 0; index < 3; index += 1) {
-		sqlite
-			.prepare(
-				`INSERT INTO package_invocations (
-				id, user_id, token_id, package_id, package_kody_id, export_name,
-				idempotency_key, request_hash, status, created_at, updated_at
-			) VALUES (?, 'user-1', 'token', 'pkg-1', 'pkg-1', '.', ?, 'hash', 'completed', ?, ?)`,
-			)
-			.run(`inv-${index}`, `key-${index}`, daysAgo(120), daysAgo(120))
+		insertWorkflowRun(sqlite, {
+			id: `wf-${index}`,
+			completedAt: daysAgo(120),
+		})
 	}
 
 	expect(
-		await prunePackageInvocationsForRetention({ db, now, batchSize: 2 }),
+		await pruneWorkflowRunsForRetention({ db, now, batchSize: 2 }),
 	).toEqual({ selected: 2, deleted: 2 })
-	expect(idsForTable(sqlite, 'package_invocations')).toEqual(['inv-2'])
+	expect(idsForTable(sqlite, 'workflow_runs')).toEqual(['wf-2'])
 	expect(
-		await prunePackageInvocationsForRetention({ db, now, batchSize: 2 }),
+		await pruneWorkflowRunsForRetention({ db, now, batchSize: 2 }),
 	).toEqual({ selected: 1, deleted: 1 })
-	expect(idsForTable(sqlite, 'package_invocations')).toEqual([])
+	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([])
 })
 
 test('retention row deletes chunk ids to stay within the D1 binding limit', async () => {
 	const { sqlite } = createRetentionDb()
 	const db = createD1FromSqlite(sqlite, { maxBindings: 100 })
 	for (let index = 0; index < 101; index += 1) {
-		sqlite
-			.prepare(
-				`INSERT INTO package_invocations (
-					id, user_id, token_id, package_id, package_kody_id, export_name,
-					idempotency_key, request_hash, status, created_at, updated_at
-				) VALUES (?, 'user-1', 'token', 'pkg-1', 'pkg-1', '.', ?, 'hash',
-					'completed', ?, ?)`,
-			)
-			.run(`inv-${index}`, `key-${index}`, daysAgo(120), daysAgo(120))
+		insertWorkflowRun(sqlite, {
+			id: `wf-${String(index).padStart(3, '0')}`,
+			completedAt: daysAgo(120),
+		})
 	}
 
 	expect(
-		await prunePackageInvocationsForRetention({ db, now, batchSize: 101 }),
+		await pruneWorkflowRunsForRetention({ db, now, batchSize: 101 }),
 	).toEqual({ selected: 101, deleted: 101 })
-	expect(idsForTable(sqlite, 'package_invocations')).toEqual([])
+	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([])
 })
 
 test('retention run loops batches per table until backlogs are drained', async () => {
 	const { sqlite, db } = createRetentionDb()
 	for (let index = 0; index < 501; index += 1) {
-		insertPackageInvocation(sqlite, {
-			id: `inv-${String(index).padStart(3, '0')}`,
-			createdAt: daysAgo(120),
+		insertWorkflowRun(sqlite, {
+			id: `wf-${String(index).padStart(3, '0')}`,
+			completedAt: daysAgo(120),
 		})
 	}
 	for (let index = 0; index < 300; index += 1) {
@@ -1203,20 +1140,20 @@ test('retention run loops batches per table until backlogs are drained', async (
 
 	const result = await pruneRetention({ env, now })
 
-	expect(result.packageInvocations).toBe(501)
+	expect(result.workflowRuns).toBe(501)
 	expect(result.auditEvents).toBe(300)
-	expect(result.batchesPerTable['package_invocations']).toBe(3)
+	expect(result.batchesPerTable['workflow_runs']).toBe(3)
 	expect(result.batchesPerTable['audit_events']).toBe(2)
 	expect(result.timeBudgetExhausted).toBe(false)
-	expect(idsForTable(sqlite, 'package_invocations')).toEqual([])
+	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([])
 })
 
 test('retention run gives every table one batch and stops when the budget is exhausted', async () => {
 	const { sqlite, db } = createRetentionDb()
 	for (let index = 0; index < 300; index += 1) {
-		insertPackageInvocation(sqlite, {
-			id: `inv-${String(index).padStart(3, '0')}`,
-			createdAt: daysAgo(120),
+		insertWorkflowRun(sqlite, {
+			id: `wf-${String(index).padStart(3, '0')}`,
+			completedAt: daysAgo(120),
 		})
 	}
 	sqlite
@@ -1236,11 +1173,11 @@ test('retention run gives every table one batch and stops when the budget is exh
 
 	// The first round-robin pass always completes so a hot table cannot starve
 	// the others, then the exhausted budget stops further passes.
-	expect(result.packageInvocations).toBe(250)
+	expect(result.workflowRuns).toBe(250)
 	expect(result.auditEvents).toBe(1)
-	expect(result.batchesPerTable['package_invocations']).toBe(1)
+	expect(result.batchesPerTable['workflow_runs']).toBe(1)
 	expect(result.timeBudgetExhausted).toBe(true)
-	expect(idsForTable(sqlite, 'package_invocations')).toHaveLength(50)
+	expect(idsForTable(sqlite, 'workflow_runs')).toHaveLength(50)
 })
 
 test('retention coverage includes every live growth-pattern table or documented exemption', () => {
