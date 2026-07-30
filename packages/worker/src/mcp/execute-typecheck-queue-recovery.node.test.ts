@@ -85,7 +85,7 @@ test('cancelled typecheck holders cannot strand the queue or exhaust its slots',
 				return true
 			},
 		)
-		await vi.advanceTimersByTimeAsync(10_001)
+		await vi.advanceTimersByTimeAsync(12_001)
 		await blockedExpectation
 	}
 

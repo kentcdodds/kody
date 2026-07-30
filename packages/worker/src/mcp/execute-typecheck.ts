@@ -66,6 +66,8 @@ const maxPendingExecuteTypechecks = 4
 // declarations. Keep that bounded separately from the warm diagnostics hold.
 const maxExecuteTypecheckServiceStartupMs = 10_000
 const maxExecuteTypecheckHoldMs = 2_000
+const maxExecuteTypecheckQueueWaitMs =
+	maxExecuteTypecheckServiceStartupMs + maxExecuteTypecheckHoldMs
 
 class MemoryTypecheckFileSystem implements TypecheckFileSystem {
 	readonly #files: Map<string, string>
@@ -167,7 +169,7 @@ async function getReusableTypecheckService() {
 	}
 }
 
-function discardReusableTypecheckService() {
+function invalidateReusableTypecheckService() {
 	reusableTypecheckServicePromise = null
 }
 
@@ -191,6 +193,7 @@ async function withTypecheckLock<T>(
 	let timeoutId: ReturnType<typeof setTimeout> | null = null
 	let queueTimeoutId: ReturnType<typeof setTimeout> | null = null
 	let startupTimedOut = false
+	let cachedServicePromise: Promise<ReusableTypecheckService> | null = null
 	try {
 		await phases.measure(
 			'queue',
@@ -204,13 +207,13 @@ async function withTypecheckLock<T>(
 									pendingTypecheckRequestIds.delete(pendingRequestId)
 								}
 							}
-							discardReusableTypecheckService()
+							invalidateReusableTypecheckService()
 							reject(
 								new ExecuteTypecheckError([
-									`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckServiceStartupMs}ms queue budget. Retry the execute call.`,
+									`The pre-execution TypeScript checker exceeded its ${maxExecuteTypecheckQueueWaitMs}ms queue budget. Retry the execute call.`,
 								]),
 							)
-						}, maxExecuteTypecheckServiceStartupMs)
+						}, maxExecuteTypecheckQueueWaitMs)
 					}),
 				]),
 		)
@@ -219,6 +222,7 @@ async function withTypecheckLock<T>(
 			queueTimeoutId = null
 		}
 		const servicePromise = getReusableTypecheckService()
+		cachedServicePromise = reusableTypecheckServicePromise
 		const service = await phases.measure(
 			'compiler-startup',
 			async () =>
@@ -252,7 +256,17 @@ async function withTypecheckLock<T>(
 		}
 		return result
 	} catch (error) {
-		if (startupTimedOut) discardReusableTypecheckService()
+		if (
+			startupTimedOut &&
+			cachedServicePromise &&
+			reusableTypecheckServicePromise === cachedServicePromise
+		) {
+			reusableTypecheckServicePromise = null
+			void cachedServicePromise.then(
+				(service) => service.languageService.dispose?.(),
+				() => undefined,
+			)
+		}
 		throw error
 	} finally {
 		if (timeoutId !== null) clearTimeout(timeoutId)
