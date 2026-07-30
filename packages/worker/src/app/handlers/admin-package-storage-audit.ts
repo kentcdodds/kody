@@ -5,6 +5,7 @@ import { jsonResponse } from '#worker/json-response.ts'
 import {
 	buildPackageStorageAuditReport,
 	defaultPackageStorageAuditLimit,
+	InvalidStartAfterCursorError,
 	maxPackageStorageAuditLimit,
 } from '#worker/package-storage-audit/service.ts'
 import { readPositiveInt } from '#worker/query-params.ts'
@@ -33,6 +34,9 @@ export function createAdminPackageStorageAuditApiHandler(env: Env) {
 				return jsonResponse(report)
 			} catch (error) {
 				if (error instanceof Response) return error
+				if (error instanceof InvalidStartAfterCursorError) {
+					return jsonResponse({ ok: false, error: error.message }, 400)
+				}
 				throw error
 			}
 		},

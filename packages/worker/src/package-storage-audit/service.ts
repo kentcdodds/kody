@@ -149,6 +149,8 @@ function encodeStartAfterCursor(cursor: PackageStorageAuditCursor) {
 	})
 }
 
+export class InvalidStartAfterCursorError extends Error {}
+
 function parseStartAfterCursor(
 	startAfter: string | null | undefined,
 ): PackageStorageAuditCursor | null {
@@ -159,7 +161,9 @@ function parseStartAfterCursor(
 	try {
 		parsed = JSON.parse(trimmed)
 	} catch {
-		throw new Error('Invalid startAfter cursor: expected JSON object.')
+		throw new InvalidStartAfterCursorError(
+			'Invalid startAfter cursor: expected JSON object.',
+		)
 	}
 	if (
 		!parsed ||
@@ -170,7 +174,7 @@ function parseStartAfterCursor(
 		(parsed as { userId: string }).userId.length === 0 ||
 		(parsed as { packageId: string }).packageId.length === 0
 	) {
-		throw new Error(
+		throw new InvalidStartAfterCursorError(
 			'Invalid startAfter cursor: expected { userId, packageId } strings.',
 		)
 	}

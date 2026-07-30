@@ -2,8 +2,10 @@ import { z } from 'zod'
 import {
 	buildPackageStorageAuditReport,
 	defaultPackageStorageAuditLimit,
+	InvalidStartAfterCursorError,
 	maxPackageStorageAuditLimit,
 } from '#worker/package-storage-audit/service.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -86,13 +88,21 @@ export const adminPackageStorageAuditCapability = defineDomainCapability(
 			return auditAdminCapabilityInvocation(
 				ctx,
 				'admin_package_storage_audit',
-				async () =>
-					buildPackageStorageAuditReport({
-						env: ctx.env,
-						baseUrl: ctx.callerContext.baseUrl,
-						limit: args.limit ?? defaultPackageStorageAuditLimit,
-						startAfter: args.start_after,
-					}),
+				async () => {
+					try {
+						return await buildPackageStorageAuditReport({
+							env: ctx.env,
+							baseUrl: ctx.callerContext.baseUrl,
+							limit: args.limit ?? defaultPackageStorageAuditLimit,
+							startAfter: args.start_after,
+						})
+					} catch (error) {
+						if (error instanceof InvalidStartAfterCursorError) {
+							throw new McpCallerError(error.message)
+						}
+						throw error
+					}
+				},
 			)
 		},
 	},
