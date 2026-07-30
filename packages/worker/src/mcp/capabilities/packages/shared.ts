@@ -51,7 +51,7 @@ export const pendingPackageSecretApprovalsSchema = z
 	})
 	.nullable()
 	.describe(
-		'Pending user-secret package approvals detected from secretMounts and secret placeholders. Null when none are pending. Do not treat the package as ready to run until the user approves these and a smoke test succeeds (static kody:@ import when enough; packages.invokeChecked when the package runtime is required).',
+		'Pending user-secret package approvals detected from secretMounts and secret placeholders. Null when none are pending. Do not treat the package as ready to run until the user approves these and a packages.invokeChecked smoke test succeeds (it must run in the package runtime so secret mounts are exercised; a static import does not verify approvals).',
 	)
 
 export function toPackageSummary(savedPackage: SavedPackageRecord) {

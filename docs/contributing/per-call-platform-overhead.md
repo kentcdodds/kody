@@ -36,6 +36,50 @@ Outer `execute` responses expose Server-Timing-style phases under
 those phases when attributing outer-execute cost; nested invoke overhead sits
 inside the outer `sandbox` phase today.
 
+## Why dynamic invocation was the original default
+
+The ~600–1000 ms is not accidental waste; it buys guarantees that static
+imports do not provide. `invokeChecked` was blessed because it is the path
+that **always works and always upholds the platform's contracts**:
+
+- **Freshness** — resolves the target's current published artifact at call
+  time. (For *ad hoc execute*, static imports are bundled per call, so they
+  also see the current published version; the staleness concern is real for
+  *package-to-package* static deps, which freeze until the dependent
+  republishes.)
+- **Isolation / trust boundary** — the target runs in its own runtime with its
+  own grants. Static imports pull the target's code into the caller's sandbox,
+  and storage grants are **per-bundle**: importing a package grants the whole
+  bundle read/write on that package's bucket. For unadopted community-fork
+  code this is a materially wider trust surface.
+- **Package runtime context** — `packageSecrets` mounts, `packageContext`,
+  nested `packages`, and package-mediated storage exist only in the package's
+  own runtime. Post-approval secret smoke tests **must** use `invokeChecked`;
+  a static import cannot verify secret mounts.
+- **Idempotent dedup** — the `package_invocations` row dedupes domain events
+  (webhook redelivery, retried dispatch). Static composition has no replay
+  protection beyond the outer execute's optional key.
+- **Observability** — each dynamic call produces a `package_export` run record
+  and usage event (Activity, `runs` domain, per-package cost attribution).
+  Static composition attributes everything to the caller's execute.
+
+The old guidance chose the universally-correct-but-slow default. The flip
+re-scopes it: for **library-like reuse of trusted packages from execute** —
+the dominant agent pattern — none of those guarantees are needed, so paying
+~1s per call for them is waste. The guarantees stay blessed where they matter.
+
+## What the flip costs (accepted trade-offs)
+
+- **Thinner per-package observability**: statically composed calls emit no
+  `package_export` events, so that metric's population shifts toward the
+  genuinely dynamic surfaces (watch the volume ratio, not just percentiles).
+- **Trust responsibility moves to guidance**: static-first copy must keep the
+  "trust decision" caveat loud; unadopted community forks belong behind
+  `invokeChecked` isolation.
+- **Staleness footguns for package authors**: packages that statically import
+  other packages keep snapshots until republished. Event fan-out and
+  dispatcher packages must stay on dynamic invocation.
+
 ## When dynamic invocation is genuinely required
 
 Prefer static `kody:@scope/package/export` imports unless one of these applies:
@@ -46,9 +90,14 @@ Prefer static `kody:@scope/package/export` imports unless one of these applies:
 2. **Target package runtime** — the export needs `packageContext`,
    `packageSecrets`, the nested `packages` helper, or other package-only
    bindings that a static import into ad hoc execute does not provide.
+   Post-approval secret smoke tests are always this case.
 3. **Cross-package storage mediation** — the caller wants the *other* package's
    runtime to mediate reads/writes rather than trusting bundler provenance
    grants from a static import.
+4. **Isolation for less-trusted code** — unadopted community forks should run
+   in their own runtime, not inside the caller's bundle.
+5. **Domain-event dedup** — the invocation needs an idempotency row keyed by a
+   domain event id.
 
 Literal `await import("kody:@scope/package/export")` is a middle ground: it
 resolves the current published artifact at runtime inside the caller's run
@@ -71,18 +120,24 @@ detail (`## Import vs invoke`), and usage docs follow this order.
 Even after #1035, a warm dynamic invoke still pays sequential work:
 
 - D1 saved-package resolve (kind-aware lookup preferred)
-- D1 entity-source row (short-TTL cached for warm manifest hits)
+- D1 entity-source row — **deliberately uncached**: its `published_commit` is
+  how every downstream cache observes republishes; caching it would delay the
+  freshness contract dynamic invocation exists to provide
 - Published bundle artifact D1 row + KV payload (KV payload isolate-cached by
-  kvKey; D1 identity row stays authoritative for published commit)
+  kvKey, which embeds the published commit; the D1 identity row stays
+  authoritative and uncached)
 - Account write lease (re-entrant when already held)
-- Idempotency claim (`INSERT OR IGNORE` first on the fresh-key path, then
-  terminal `UPDATE`)
+- Idempotency claim — `INSERT OR IGNORE` first **only** when the key is a
+  fresh auto-generated UUID (execute-origin, replay impossible);
+  caller-supplied and deterministic keys stay lookup-first because replays are
+  expected there and a read is cheaper than an ignored write attempt
 - Nested RunLog begin/finish (scheduled via `waitUntil` when available)
 - Nested LOADER evaluate + provider assembly
 - Package-export usage metering (scheduled via `waitUntil` when available)
 
-Safe cheapening continues to target **duplicate reads** and **response-path
-awaits**, not correctness of idempotency or run history.
+Safe cheapening targets **duplicate reads** and **response-path awaits** only.
+Reads whose freshness carries a contract (source rows) and writes that carry
+replay semantics (idempotency rows for domain events) are not fair game.
 
 ## Systemic recommendation: keep overhead bounded as users grow
 

@@ -35,6 +35,11 @@ export type PackageInvocationRequest = {
 	exportName: string
 	params?: Record<string, unknown>
 	idempotencyKey: string
+	/**
+	 * True when the key was auto-generated as a fresh random UUID (no replay
+	 * possible), enabling the insert-first idempotency claim.
+	 */
+	expectFreshIdempotencyKey?: boolean
 	source?: string | null
 	topic?: string | null
 }

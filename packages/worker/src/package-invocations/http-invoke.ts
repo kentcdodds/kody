@@ -140,6 +140,7 @@ export async function invokePackageExportForExecuteRuntime(input: {
 		},
 		params: input.request.params,
 		idempotencyKey,
+		expectFreshIdempotencyKey: input.request.expectFreshIdempotencyKey ?? false,
 		source: 'execute',
 		topic: normalizeNullableString(input.request.topic),
 		notFoundCode: 'export_not_found',
@@ -220,6 +221,7 @@ export async function invokePackageExportForPackageRuntime(input: {
 		},
 		params: input.request.params,
 		idempotencyKey,
+		expectFreshIdempotencyKey: input.request.expectFreshIdempotencyKey ?? false,
 		source:
 			normalizeNullableString(input.request.source) ??
 			`package:${input.caller.packageContext.kodyId}`,

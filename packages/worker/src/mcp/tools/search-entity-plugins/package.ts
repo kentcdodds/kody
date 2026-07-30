@@ -540,8 +540,8 @@ export const packageSearchEntityPlugin = {
 			'',
 			'## Import vs invoke',
 			'',
-			`- Preferred — static/bundled snapshot: ${formatMarkdownInlineCode(rootImportUsage)}. Static \`kody:\` imports use the npm-scoped package name and run in the caller's sandbox (negligible per-call platform overhead after bundling).`,
-			`- Edge case — dynamic/current version or target-package runtime: ${formatMarkdownInlineCode(invokeCheckedUsage)}. Use only when you need fresh published-export semantics without republishing the caller, or the target package's own runtime (\`packageContext\`, \`packageSecrets\`, nested \`packages\`, or mediated \`packageStorage\`). The \`kodyId\` is the bare Kody id (${formatMarkdownInlineCode(detail.record.kodyId)}), not the npm-scoped package name (${formatMarkdownInlineCode(detail.record.name)}).`,
+			`- Preferred — static/bundled snapshot: ${formatMarkdownInlineCode(rootImportUsage)}. Static \`kody:\` imports use the npm-scoped package name and run in the caller's sandbox (negligible per-call platform overhead after bundling; a trust decision — the bundle shares grants).`,
+			`- Edge case — dynamic/current version, target-package runtime, or isolation: ${formatMarkdownInlineCode(invokeCheckedUsage)}. Use when you need fresh published-export semantics without republishing the caller, the target package's own runtime (\`packageContext\`, \`packageSecrets\`, nested \`packages\`, or mediated \`packageStorage\`), or isolation for less-trusted code. The \`kodyId\` is the bare Kody id (${formatMarkdownInlineCode(detail.record.kodyId)}), not the npm-scoped package name (${formatMarkdownInlineCode(detail.record.name)}).`,
 		]
 		if (appEntry) {
 			lines.push(

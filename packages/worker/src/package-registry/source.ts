@@ -25,15 +25,6 @@ export type LoadedPackageManifest = {
 
 const packageSourceCache = new PromiseLruCache<LoadedPackageSource>()
 const packageManifestCache = new PromiseLruCache<LoadedPackageManifest>()
-/**
- * Short-lived source-row cache so warm invoke/check paths that hit a cached
- * manifest do not still pay a D1 round trip for the row used only to build the
- * cache key. TTL matches entitlement plan lookup caching (60s).
- */
-const packageSourceRowCache = new PromiseLruCache<EntitySourceRow>({
-	ttlMs: 60 * 1000,
-	limit: 200,
-})
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
 	if (value && typeof value === 'object') {
@@ -102,26 +93,24 @@ function canResolveRepoBackedPackageSource(env: Env) {
 	)
 }
 
+/**
+ * Deliberately uncached: the row's `published_commit` is how every downstream
+ * cache (source, manifest, published artifacts) observes republishes. Caching
+ * this read would delay the "current version" contract that dynamic package
+ * invocation exists to provide.
+ */
 async function resolvePackageSourceRow(input: {
 	env: Env
 	userId: string
 	sourceId: string
 }) {
-	const cacheKey = JSON.stringify([input.userId, input.sourceId])
-	return await packageSourceRowCache.getOrCreate({
-		cacheKey,
-		create: async () => {
-			const source = await runD1WithRetry(() =>
-				getEntitySourceById(input.env.APP_DB, input.sourceId),
-			)
-			if (!source || source.user_id !== input.userId) {
-				throw new Error(
-					`Saved package source "${input.sourceId}" was not found.`,
-				)
-			}
-			return source
-		},
-	})
+	const source = await runD1WithRetry(() =>
+		getEntitySourceById(input.env.APP_DB, input.sourceId),
+	)
+	if (!source || source.user_id !== input.userId) {
+		throw new Error(`Saved package source "${input.sourceId}" was not found.`)
+	}
+	return source
 }
 
 function createPackageSourceCacheKey(input: {

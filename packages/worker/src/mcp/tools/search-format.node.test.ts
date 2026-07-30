@@ -684,7 +684,7 @@ export declare function fetch(request: Request): Promise<Response>
 		'`import entry from "kody:@kody/observed-package"`',
 	)
 	expect(observedPackageDetail.markdown).toContain(
-		'Edge case — dynamic/current version or target-package runtime',
+		'Edge case — dynamic/current version, target-package runtime, or isolation',
 	)
 	expect(observedPackageDetail.markdown).toContain(
 		'`packages.invokeChecked({ kodyId: "observed-package", exportName, params })`',

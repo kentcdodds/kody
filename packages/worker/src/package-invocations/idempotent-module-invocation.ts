@@ -64,6 +64,14 @@ export async function invokeSavedPackageModule(input: {
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
 	/**
+	 * True when the caller generated a fresh random idempotency key for this
+	 * call (execute-origin auto keys), so a replay hit is impossible and the
+	 * claim can insert first without a pre-insert lookup. Leave false for
+	 * caller-supplied and deterministic keys, where replays are expected and a
+	 * read is cheaper than an ignored D1 write attempt.
+	 */
+	expectFreshIdempotencyKey?: boolean
+	/**
 	 * Artifact already prepared by a `packages.invokeChecked` check phase
 	 * moments earlier; skips a second manifest + artifact load. The claim
 	 * still happens first, so replay semantics are unchanged.
@@ -93,15 +101,10 @@ export async function invokeSavedPackageModule(input: {
 					idempotencyKey: input.idempotencyKey,
 				})
 			let executionStarted = false
-			// Fresh keys dominate execute-time invoke (auto UUID). Insert-first
-			// saves the pre-insert SELECT on that common path; conflicts fall
-			// back to lookup + the same replay / in-progress / stale reclaim
-			// handling as before.
 			let invocationId: string = crypto.randomUUID()
 			let claimUpdatedAt: string | null = null
-			let insertResult: Awaited<ReturnType<typeof insertPackageInvocationRow>>
-			try {
-				insertResult = await insertPackageInvocationRow({
+			const insertClaim = async () =>
+				await insertPackageInvocationRow({
 					db: input.env.APP_DB,
 					row: {
 						id: invocationId,
@@ -117,23 +120,56 @@ export async function invokeSavedPackageModule(input: {
 						status: 'in_progress',
 					},
 				})
-			} catch (error) {
-				console.error(
-					'package invocation idempotency persistence failed',
-					error,
-				)
-				return buildJsonErrorResponse({
-					status: 500,
-					code: 'idempotency_persistence_failed',
-					message:
-						'Unable to persist the package invocation idempotency record. Please retry.',
-					idempotencyKey: input.idempotencyKey,
-				})
-			}
-			if (insertResult.inserted) {
-				claimUpdatedAt = insertResult.claimUpdatedAt
+			let existing: Awaited<ReturnType<typeof getPackageInvocationByKey>> =
+				null
+			if (input.expectFreshIdempotencyKey) {
+				// Execute-origin auto keys are random UUIDs, so a replay hit is
+				// impossible: insert first and skip the pre-insert lookup. A
+				// conflict still falls through to the shared replay handling.
+				let insertResult: Awaited<ReturnType<typeof insertClaim>>
+				try {
+					insertResult = await insertClaim()
+				} catch (error) {
+					console.error(
+						'package invocation idempotency persistence failed',
+						error,
+					)
+					return buildJsonErrorResponse({
+						status: 500,
+						code: 'idempotency_persistence_failed',
+						message:
+							'Unable to persist the package invocation idempotency record. Please retry.',
+						idempotencyKey: input.idempotencyKey,
+					})
+				}
+				if (insertResult.inserted) {
+					claimUpdatedAt = insertResult.claimUpdatedAt
+				} else {
+					try {
+						existing = await lookupInvocation()
+					} catch (error) {
+						console.error('package invocation idempotency lookup failed', error)
+						return buildJsonErrorResponse({
+							status: 500,
+							code: 'idempotency_lookup_failed',
+							message:
+								'Unable to look up the package invocation idempotency record. Please retry.',
+							idempotencyKey: input.idempotencyKey,
+						})
+					}
+					if (!existing) {
+						return buildJsonErrorResponse({
+							status: 500,
+							code: 'idempotency_conflict_unresolved',
+							message:
+								'Package invocation idempotency insert conflicted but no existing row was found.',
+							idempotencyKey: input.idempotencyKey,
+						})
+					}
+				}
 			} else {
-				let existing: Awaited<ReturnType<typeof getPackageInvocationByKey>>
+				// Caller-supplied and deterministic keys expect replays: read
+				// first so a replay costs a D1 read, not an ignored write.
 				try {
 					existing = await lookupInvocation()
 				} catch (error) {
@@ -146,15 +182,8 @@ export async function invokeSavedPackageModule(input: {
 						idempotencyKey: input.idempotencyKey,
 					})
 				}
-				if (!existing) {
-					return buildJsonErrorResponse({
-						status: 500,
-						code: 'idempotency_conflict_unresolved',
-						message:
-							'Package invocation idempotency insert conflicted but no existing row was found.',
-						idempotencyKey: input.idempotencyKey,
-					})
-				}
+			}
+			if (!claimUpdatedAt && existing) {
 				if (
 					existing.request_hash !== requestHash ||
 					existing.status !== 'in_progress'
@@ -229,6 +258,56 @@ export async function invokeSavedPackageModule(input: {
 				}
 				invocationId = existing.id
 				claimUpdatedAt = reclaimedAt
+			}
+
+			if (!claimUpdatedAt) {
+				let insertResult: Awaited<ReturnType<typeof insertClaim>>
+				try {
+					insertResult = await insertClaim()
+				} catch (error) {
+					console.error(
+						'package invocation idempotency persistence failed',
+						error,
+					)
+					return buildJsonErrorResponse({
+						status: 500,
+						code: 'idempotency_persistence_failed',
+						message:
+							'Unable to persist the package invocation idempotency record. Please retry.',
+						idempotencyKey: input.idempotencyKey,
+					})
+				}
+				if (insertResult.inserted) {
+					claimUpdatedAt = insertResult.claimUpdatedAt
+				} else {
+					let current: Awaited<ReturnType<typeof getPackageInvocationByKey>>
+					try {
+						current = await lookupInvocation()
+					} catch (error) {
+						console.error('package invocation idempotency lookup failed', error)
+						return buildJsonErrorResponse({
+							status: 500,
+							code: 'idempotency_lookup_failed',
+							message:
+								'Unable to look up the package invocation idempotency record. Please retry.',
+							idempotencyKey: input.idempotencyKey,
+						})
+					}
+					if (!current) {
+						return buildJsonErrorResponse({
+							status: 500,
+							code: 'idempotency_conflict_unresolved',
+							message:
+								'Package invocation idempotency insert conflicted but no existing row was found.',
+							idempotencyKey: input.idempotencyKey,
+						})
+					}
+					return resolveExistingInvocation({
+						record: current,
+						requestHash,
+						idempotencyKey: input.idempotencyKey,
+					})
+				}
 			}
 			if (!claimUpdatedAt) {
 				throw new Error(

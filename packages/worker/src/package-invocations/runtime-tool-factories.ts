@@ -102,6 +102,11 @@ function createPackageInvokeTools(input: {
 				sequence: autoIdempotencySequence,
 				request,
 			}))
+		// Auto keys are fresh random UUIDs unless a parent invocation key made
+		// them deterministic (nested dispatch, where retries replay).
+		const expectFreshIdempotencyKey =
+			!request.idempotencyKey &&
+			(!packageContext || !input.parentRunRecord?.idempotencyKey?.trim())
 		const response = packageContext
 			? await invokePackageExportForPackageRuntime({
 					env: input.env,
@@ -119,6 +124,7 @@ function createPackageInvokeTools(input: {
 						exportName: request.exportName,
 						params: request.params,
 						idempotencyKey,
+						expectFreshIdempotencyKey,
 						source: `package:${packageContext.kodyId}`,
 						topic: request.topic,
 					},
@@ -142,6 +148,7 @@ function createPackageInvokeTools(input: {
 						exportName: request.exportName,
 						params: request.params,
 						idempotencyKey,
+						expectFreshIdempotencyKey,
 						topic: request.topic,
 					},
 					runtimeInvokeDepth: packageInvokeDepth + 1,
