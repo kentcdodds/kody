@@ -950,6 +950,105 @@ export async function createDynamicCallableWorkflow(input: {
 	return createWorkflowCreateResult({ summary, payload })
 }
 
+export type CancelWorkflowRunResult =
+	| { outcome: 'not_found' }
+	| { outcome: 'already_terminal'; run: WorkflowRunInspection }
+	| { outcome: 'cancelled'; run: WorkflowRunInspection }
+
+export async function cancelWorkflowRunForUser(input: {
+	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS'>
+	userId: string
+	workflowRunId: string
+}): Promise<CancelWorkflowRunResult> {
+	const workflowRunId = normalizeNonEmptyString(
+		input.workflowRunId,
+		'workflowRunId',
+	)
+	// USER-ISOLATION BOUNDARY: never touch the workflow binding before this
+	// ownership check passes.
+	const result = await input.env.APP_DB.prepare(
+		`SELECT * FROM workflow_runs WHERE id = ? AND user_id = ? LIMIT 1`,
+	)
+		.bind(workflowRunId, input.userId)
+		.first<Record<string, unknown>>()
+	if (!result) {
+		return { outcome: 'not_found' }
+	}
+	const row = mapWorkflowRunRow(result)
+	if (row.status !== null && terminalWorkflowStatuses.has(row.status)) {
+		return { outcome: 'already_terminal', run: row }
+	}
+	if (!input.env.DYNAMIC_CALLABLE_WORKFLOWS) {
+		throw new Error('Missing DYNAMIC_CALLABLE_WORKFLOWS binding.')
+	}
+	let instance: WorkflowInstance | null = null
+	try {
+		instance = await input.env.DYNAMIC_CALLABLE_WORKFLOWS.get(row.id)
+	} catch (error) {
+		if (!isMissingWorkflowInstanceError(error)) {
+			throw error
+		}
+	}
+	if (instance) {
+		try {
+			// Terminate before projecting cancelled: if the run finishes first,
+			// terminate throws instead of stamping cancelled over a finished run.
+			await instance.terminate()
+		} catch (error) {
+			const statusResult = await instance.status()
+			const engineStatus =
+				typeof statusResult?.status === 'string' ? statusResult.status : null
+			if (engineStatus && terminalWorkflowStatuses.has(engineStatus)) {
+				const now = new Date().toISOString()
+				await input.env.APP_DB.prepare(
+					`UPDATE workflow_runs
+					SET status = ?, updated_at = ?, completed_at = COALESCE(completed_at, ?)
+					WHERE id = ? AND user_id = ?`,
+				)
+					.bind(engineStatus, now, now, row.id, input.userId)
+					.run()
+				return {
+					outcome: 'already_terminal',
+					run: {
+						...row,
+						status: engineStatus as WorkflowRunStatus,
+						updatedAt: now,
+						completedAt: row.completedAt ?? now,
+					},
+				}
+			}
+			throw error
+		}
+	} else {
+		// Missing instance (stuck `creating`, or engine retention expiry): nothing
+		// can fire, so projecting cancelled is safe. A concurrent create may still
+		// be in flight for a `creating` row; its own status projection would then
+		// surface the run again as active, which is visible and re-cancellable
+		// (deliberately no extra guard — creation semantics must not change).
+	}
+	const now = new Date().toISOString()
+	// Accepted straggler race: a `mark workflow running` step write that lands
+	// after this cancelled projection can flip the row back to an active status;
+	// the next listWorkflowRunsForUser refresh then projects the engine's
+	// terminal `terminated`. Self-healing; no guard added on purpose.
+	await input.env.APP_DB.prepare(
+		`UPDATE workflow_runs
+		SET status = 'cancelled', updated_at = ?, completed_at = COALESCE(completed_at, ?)
+		WHERE id = ? AND user_id = ?`,
+	)
+		.bind(now, now, row.id, input.userId)
+		.run()
+	return {
+		outcome: 'cancelled',
+		run: {
+			...row,
+			status: 'cancelled',
+			updatedAt: now,
+			completedAt: row.completedAt ?? now,
+		},
+	}
+}
+
 export async function listWorkflowRunsForUser(input: {
 	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS'>
 	userId: string

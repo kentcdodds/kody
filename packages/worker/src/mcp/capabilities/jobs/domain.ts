@@ -7,6 +7,7 @@ import { jobRunNowCapability } from './job-run-now.ts'
 import { jobScheduleCapability } from './job-schedule.ts'
 import { jobScheduleOnceCapability } from './job-schedule-once.ts'
 import { jobUpdateCapability } from './job-update.ts'
+import { workflowCancelCapability } from './workflow-cancel.ts'
 import { workflowListCapability } from './workflow-list.ts'
 
 export const jobsDomain = defineDomain({
@@ -28,6 +29,9 @@ export const jobsDomain = defineDomain({
 		'inspect',
 		'run now',
 		'immediate',
+		'cancel',
+		'stop',
+		'workflow',
 	],
 	capabilities: [
 		jobListCapability,
@@ -38,5 +42,6 @@ export const jobsDomain = defineDomain({
 		jobDeleteCapability,
 		jobRunNowCapability,
 		workflowListCapability,
+		workflowCancelCapability,
 	],
 })
