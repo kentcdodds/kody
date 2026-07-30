@@ -2,8 +2,9 @@ import { expect, test, vi } from 'vitest'
 import { type LoadedKodyGraphPackages } from '#worker/package-runtime/module-graph-import-rewriting.ts'
 
 const compilerMock = vi.hoisted(() => {
-	let resolveFirstService: ((service: unknown) => void) | undefined
+	const stalledServiceResolvers: Array<(service: unknown) => void> = []
 	let creationCount = 0
+	let stallNextCreation = true
 	const createService = () => {
 		const files = new Map<string, string>()
 		return {
@@ -27,15 +28,24 @@ const compilerMock = vi.hoisted(() => {
 	return {
 		createTypescriptLanguageService: vi.fn(() => {
 			creationCount += 1
-			if (creationCount === 1) {
+			if (stallNextCreation) {
+				stallNextCreation = false
 				return new Promise((resolve) => {
-					resolveFirstService = resolve
+					stalledServiceResolvers.push(resolve)
 				})
 			}
 			return Promise.resolve(createService())
 		}),
-		resolveFirst() {
-			resolveFirstService?.(createService())
+		stallNext() {
+			stallNextCreation = true
+		},
+		resolveStalled() {
+			for (const resolve of stalledServiceResolvers) {
+				resolve(createService())
+			}
+		},
+		getCreationCount() {
+			return creationCount
 		},
 	}
 })
@@ -49,37 +59,39 @@ import {
 	ExecuteTypecheckError,
 } from './execute-typecheck.ts'
 
-test('a cancelled typecheck holder cannot strand the isolate queue', async () => {
+test('cancelled typecheck holders cannot strand the queue or exhaust its slots', async () => {
 	vi.useFakeTimers()
 	const input = {
 		source: 'export default function main() { return "ok" }',
 		packages: new Map() as LoadedKodyGraphPackages,
 	}
+	const cancelledCalls: Array<Promise<unknown>> = []
 
-	const cancelled = assertAdHocExecuteTypechecks(input)
-	await vi.waitFor(() => {
-		expect(compilerMock.createTypescriptLanguageService).toHaveBeenCalledTimes(
-			1,
+	for (let cycle = 1; cycle <= 5; cycle += 1) {
+		if (cycle > 1) compilerMock.stallNext()
+		cancelledCalls.push(assertAdHocExecuteTypechecks(input))
+		await vi.waitFor(() => {
+			expect(compilerMock.getCreationCount()).toBe(cycle)
+		})
+		// Model workerd cancelling the request context: its timers and
+		// continuation disappear, while isolate module state survives.
+		vi.clearAllTimers()
+
+		const blocked = assertAdHocExecuteTypechecks(input)
+		const blockedExpectation = expect(blocked).rejects.toSatisfy(
+			(error: unknown) => {
+				expect(error).toBeInstanceOf(ExecuteTypecheckError)
+				expect((error as Error).message).toContain('queue budget')
+				return true
+			},
 		)
-	})
-	// Model workerd cancelling the request context: its timers and continuation
-	// disappear, while isolate module state survives for the next request.
-	vi.clearAllTimers()
-
-	const blocked = assertAdHocExecuteTypechecks(input)
-	const blockedExpectation = expect(blocked).rejects.toSatisfy(
-		(error: unknown) => {
-			expect(error).toBeInstanceOf(ExecuteTypecheckError)
-			expect((error as Error).message).toContain('queue budget')
-			return true
-		},
-	)
-	await vi.advanceTimersByTimeAsync(10_001)
-	await blockedExpectation
+		await vi.advanceTimersByTimeAsync(10_001)
+		await blockedExpectation
+	}
 
 	await expect(assertAdHocExecuteTypechecks(input)).resolves.toBeDefined()
 
-	compilerMock.resolveFirst()
-	await expect(cancelled).resolves.toBeDefined()
+	compilerMock.resolveStalled()
+	await expect(Promise.all(cancelledCalls)).resolves.toBeDefined()
 	vi.useRealTimers()
 })

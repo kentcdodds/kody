@@ -133,7 +133,8 @@ function createRuntimeTypes() {
 let reusableTypecheckServicePromise: Promise<ReusableTypecheckService> | null =
 	null
 let typecheckQueue = Promise.resolve()
-let pendingTypecheckCount = 0
+const pendingTypecheckRequestIds = new Set<number>()
+let nextTypecheckRequestId = 1
 
 async function loadTypescriptLanguageService() {
 	// Keep the multi-megabyte compiler out of the default-off Worker's eager
@@ -167,26 +168,21 @@ async function getReusableTypecheckService() {
 }
 
 function discardReusableTypecheckService() {
-	const staleServicePromise = reusableTypecheckServicePromise
 	reusableTypecheckServicePromise = null
-	if (staleServicePromise) {
-		void staleServicePromise.then(
-			(service) => service.languageService.dispose?.(),
-			() => undefined,
-		)
-	}
 }
 
 async function withTypecheckLock<T>(
 	phases: ExecuteTypecheckPhaseRecorder,
 	callback: (service: ReusableTypecheckService) => T,
 ) {
-	if (pendingTypecheckCount >= maxPendingExecuteTypechecks) {
+	if (pendingTypecheckRequestIds.size >= maxPendingExecuteTypechecks) {
 		throw new ExecuteTypecheckError([
 			`The pre-execution TypeScript checker already has ${maxPendingExecuteTypechecks} active or queued requests. Retry after one finishes.`,
 		])
 	}
-	pendingTypecheckCount += 1
+	const requestId = nextTypecheckRequestId
+	nextTypecheckRequestId += 1
+	pendingTypecheckRequestIds.add(requestId)
 	const previous = typecheckQueue
 	let release: () => void = () => {}
 	typecheckQueue = new Promise<void>((resolve) => {
@@ -203,6 +199,11 @@ async function withTypecheckLock<T>(
 					previous,
 					new Promise<never>((_resolve, reject) => {
 						queueTimeoutId = setTimeout(() => {
+							for (const pendingRequestId of pendingTypecheckRequestIds) {
+								if (pendingRequestId < requestId) {
+									pendingTypecheckRequestIds.delete(pendingRequestId)
+								}
+							}
 							discardReusableTypecheckService()
 							reject(
 								new ExecuteTypecheckError([
@@ -256,7 +257,7 @@ async function withTypecheckLock<T>(
 	} finally {
 		if (timeoutId !== null) clearTimeout(timeoutId)
 		if (queueTimeoutId !== null) clearTimeout(queueTimeoutId)
-		pendingTypecheckCount -= 1
+		pendingTypecheckRequestIds.delete(requestId)
 		release()
 	}
 }
