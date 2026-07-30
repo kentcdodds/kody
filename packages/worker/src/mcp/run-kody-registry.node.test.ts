@@ -1881,7 +1881,9 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 			() =>
 				({
 					async execute(_wrapped, providers) {
-						expect(providers).toHaveLength(2)
+						// Main provider + packages bridge + static-call meter
+						// bridge (bound whenever the run has a user).
+						expect(providers).toHaveLength(3)
 						providerFns = (
 							providers[0] as {
 								fns: Record<string, (args: unknown) => Promise<unknown>>
@@ -2351,8 +2353,11 @@ export default async function main() {
 		).toMatchObject({
 			kind: 'runtime_helper_unbound',
 			helperName: 'storage',
-			nextStep: expect.stringContaining('packages.invokeChecked'),
+			nextStep: expect.stringContaining('packages.invoke'),
 		})
+		expect(
+			mcpExecutor.getExecutionErrorDetails(unboundResult.error)?.nextStep,
+		).not.toContain('packages.invokeChecked')
 
 		// With storage bound, the same TypeError is an ordinary user-code bug
 		// and keeps its bare message.

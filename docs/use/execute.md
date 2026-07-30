@@ -41,12 +41,15 @@ helpers are runtime exports:
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import { packages } from 'kody:runtime'`** inside saved package runtime
-  contexts or authenticated execute calls when you need dynamic current-version
-  invocation through `packages.check(...)`, `packages.invoke(...)`, or
-  `packages.invokeChecked(...)`. Prefer `invokeChecked` unless you already
-  called `check` and are passing `check.invoke` to `invoke`. Pass the bare
+  contexts or authenticated execute calls when a package call must be dynamic:
+  the target's name is data, the call needs the target package's own runtime, or
+  you need exactly-once. `packages.invoke({ kodyId, exportName, params })` (plus
+  an optional `idempotencyKey` field for exactly-once calls) is the only dynamic
+  call and is always contract-checked before invoking. Pass the bare
   `package.json#kody.id` as `kodyId` (for example, `github`), not the npm-scoped
-  `package.json.name` (for example, `@kentcdodds/github`)
+  `package.json.name` (for example, `@kentcdodds/github`). When the target
+  package's name is known when the code is written, use a static `kody:@...`
+  import instead (see below)
 - use **`import { serviceContext } from 'kody:runtime'`** inside package service
   code when you need the current service identity; it is **`null`** outside
   package service runs
@@ -61,25 +64,27 @@ helpers are runtime exports:
   package-service timeout
 - use **`import thing from 'kody:@scope/my-package/export-name'`** or
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
-  saved package export by npm-scoped package name. Unlike dynamic
-  `packages.invokeChecked` calls, static `kody:@...` imports use the scoped name
-  and are pinned to the dependency's published artifact when the caller is
-  bundled.
+  saved package export by npm-scoped package name. This is **the default for
+  package reuse** whenever the target package's name is known when the code is
+  written: static imports are typed (the pre-execution typechecker resolves
+  `kody:@...` contracts), publish-verified (repo checks prove the export
+  exists), dependency-graph-visible (`kody.dependencies`, dependents tracking),
+  and have zero per-call platform cost. Ad hoc execute bundles per call, so
+  static imports from execute always see the current published version; snapshot
+  staleness only affects package-to-package static dependencies, which keep the
+  bundled snapshot until the dependent republishes.
 
 `kody:runtime` is always supplied by the Kody host at execution time. Saved
 package artifacts do not contain a copy of the host runtime implementation, so
 old package artifacts automatically observe current host runtime behavior.
 
-Use literal dynamic imports when package code needs the current published
-version of another saved package export:
-
-```ts
-const helper = await import('kody:@scope/my-package/export-name')
-```
-
-Kody resolves that literal import at runtime for the signed-in user. Computed
-dynamic Kody package imports, including variables and template strings, are not
-supported.
+Literal dynamic imports (`await import('kody:@scope/my-package/export-name')`)
+are **deprecated**. They still resolve at runtime for the signed-in user (and
+log a deprecation warning naming the replacement), but do not write new code
+with them: use a static `kody:@...` import when the target package's name is
+known when the code is written, or `packages.invoke` when it is not. Computed
+dynamic Kody package imports, including variables and template strings, have
+never been supported.
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
 the module's **default export** as the first function argument. Shared helpers
@@ -113,7 +118,7 @@ Execute responses include Server-Timing-style phase entries under
 - `bundle` — module-graph preparation and bundling. This span contains the
   typecheck phases below, so subtract `typecheck-total` for bundler-only time.
 - `hydrate` — installing published sources for literal dynamic
-  `import("kody:@…")` targets.
+  `import("kody:@…")` targets (a deprecated pattern).
 - `provider-assembly` — capability registry, runtime helper, and provider wiring
   ahead of sandbox startup.
 - `sandbox` — the dynamic worker evaluation of the module itself.
@@ -220,12 +225,15 @@ module-oriented runtime model:
 Static saved-package imports from ad hoc **execute** run under the ad hoc
 execute runtime. That means imported package modules can share exported helpers,
 but `packageContext` remains **`null`** because the imported module has not been
-entered as its own package runtime. Authenticated execute calls may import
-`packages` from `kody:runtime` and use `packages.check`, `packages.invoke`, or
-`packages.invokeChecked`; prefer `packages.invokeChecked` when execute needs to
-enter a saved package export so that target code receives its package runtime
-context. Those methods resolve the bare `kodyId`, such as `my-package`, rather
-than the npm-scoped package name, such as `@scope/my-package`.
+entered as its own package runtime. This is fine for most reuse — packages
+backed by user-scope secrets (for example `github`) work fully through plain
+static imports because `{{secret:...}}` placeholders resolve at the fetch
+gateway under the calling user. When execute must enter a saved package export
+as that package — package-mounted secrets (`kody.secretMounts`),
+`packageContext`, the package's own `packageStorage()` bucket — use keyless
+`packages.invoke` from `kody:runtime`. It resolves the bare `kodyId`, such as
+`my-package`, rather than the npm-scoped package name, such as
+`@scope/my-package`.
 
 When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity
@@ -248,8 +256,9 @@ from execute or another saved package.
 
 One rule per context: ad hoc execute code binds a `storageId` on the call and
 uses ambient `storage`; saved-package code always uses `packageStorage()` for
-the package's own data; another package's data goes through
-`packages.invokeChecked`. See [Package storage](./packages.md#package-storage).
+the package's own data; another package's data goes through keyless
+`packages.invoke` so its own runtime does the reading and writing. See
+[Package storage](./packages.md#package-storage).
 
 Kody supports durable storage binding for execute and scheduled jobs, including
 package-owned jobs and non-package jobs created with `job_schedule` or

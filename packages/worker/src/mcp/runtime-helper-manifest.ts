@@ -15,6 +15,10 @@ import {
 	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
 import { type PackageWorkflowCreateInput } from '#worker/package-runtime/package-workflows.ts'
+import {
+	type PackageStaticCallMeterInput,
+	type PackageStaticCallMeterTools,
+} from '#worker/usage/package-static-call-usage.ts'
 
 export type AdditionalKodyTools = Record<
 	string,
@@ -132,6 +136,7 @@ export type RuntimeHelperManifestContext = {
 	workflowTools?: PackageWorkflowTools | undefined
 	packageInvokeTools?: PackageInvokeTools | undefined
 	packageEventTools?: PackageEventTools | undefined
+	staticCallMeterTools?: PackageStaticCallMeterTools | undefined
 }
 
 type RuntimeHelperManifestEntry = {
@@ -242,14 +247,33 @@ const workflows = {
 const packageInvokeRuntimeBridgeProviderName =
 	'__kodyPackageInvokeRuntimeBridge'
 const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
+const staticCallMeterRuntimeBridgeProviderName =
+	'__kodyStaticCallMeterRuntimeBridge'
 
 function createPackagesHelperPrelude() {
+	// `check` and `invokeChecked` are deprecated widen-phase shims: they keep
+	// working but warn once per run naming the replacement, because agents
+	// learn the current contract from logs and error text.
 	return `
-const packages = {
-  check: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.check(input ?? {}),
-  invoke: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invoke(input ?? {}),
-  invokeChecked: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invokeChecked(input ?? {}),
-};
+const packages = (() => {
+  const warned = new Set();
+  const warnOnce = (name, message) => {
+    if (warned.has(name)) return;
+    warned.add(name);
+    console.warn(message);
+  };
+  return {
+    check: async (input) => {
+      warnOnce('check', '[deprecated] packages.check: packages.invoke always contract-checks before invoking, so call packages.invoke({ kodyId, exportName, params }) directly (add idempotencyKey only when you need exactly-once).');
+      return await ${packageInvokeRuntimeBridgeProviderName}.check(input ?? {});
+    },
+    invoke: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invoke(input ?? {}),
+    invokeChecked: async (input) => {
+      warnOnce('invokeChecked', '[deprecated] packages.invokeChecked: use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time, or packages.invoke({ kodyId, exportName, params }) for dynamic targets (add idempotencyKey only when you need exactly-once).');
+      return await ${packageInvokeRuntimeBridgeProviderName}.invokeChecked(input ?? {});
+    },
+  };
+})();
 	`.trim()
 }
 
@@ -257,6 +281,45 @@ function createEventsHelperPrelude() {
 	return `
 const events = {
   dispatch: async (input) => await ${packageEventRuntimeBridgeProviderName}.dispatch(input ?? {}),
+};
+	`.trim()
+}
+
+// Internal bridge for the static package export call meter in the runtime
+// module (`__kodyMeterStaticPackageExport`): not an author-facing helper,
+// so it has no unbound-access rewrite name. Per-call reporting is a
+// synchronous buffer push (the call path never awaits and never throws);
+// the run wrapper awaits one `flush` bridge call at the end of the run,
+// while the sandbox RPC dispatchers are still live — a fire-and-forget RPC
+// per call would race dispatcher teardown and drop events. The cumulative
+// cap bounds memory, the flush payload, and — most importantly — the
+// Analytics Engine budget: Workers Analytics Engine allows 250
+// `writeDataPoint` calls per invocation and each event is one data point,
+// so 200 leaves headroom for the run's other usage events. Calls past the
+// cap in one run are dropped (mirror the cap host-side in
+// `createPackageStaticCallMeterTools`).
+function createStaticCallMeterHelperPrelude() {
+	return `
+let __kodyStaticCallMeterReportedCount = 0;
+const __kodyStaticCallMeterEvents = [];
+const __kodyStaticCallMeter = {
+  report: (event) => {
+    if (__kodyStaticCallMeterReportedCount >= 200) return;
+    __kodyStaticCallMeterReportedCount += 1;
+    __kodyStaticCallMeterEvents.push(event);
+  },
+  // Flush in rounds: async calls that settle while a flush RPC is in
+  // flight land in the buffer afterwards, so loop (bounded) until the
+  // buffer stays empty. Calls still pending when the run's entrypoint has
+  // finished are not metered — metering never extends a run's lifetime,
+  // and a dangling promise may never settle inside the sandbox at all.
+  flush: async () => {
+    for (let round = 0; round < 3; round += 1) {
+      if (__kodyStaticCallMeterEvents.length === 0) return;
+      const events = __kodyStaticCallMeterEvents.splice(0, __kodyStaticCallMeterEvents.length);
+      await ${staticCallMeterRuntimeBridgeProviderName}.record({ events });
+    }
+  },
 };
 	`.trim()
 }
@@ -393,6 +456,23 @@ function createPackageEventRuntimeBridgeProvider(
 				execute: async (args: unknown) =>
 					await packageEventTools.dispatch(
 						(args ?? {}) as PackageEventDispatchInput,
+					),
+			},
+		},
+	}
+	return resolveProvider(provider)
+}
+
+function createStaticCallMeterRuntimeBridgeProvider(
+	staticCallMeterTools: PackageStaticCallMeterTools,
+): ResolvedProvider {
+	const provider: ToolProvider = {
+		name: staticCallMeterRuntimeBridgeProviderName,
+		tools: {
+			record: {
+				execute: async (args: unknown) =>
+					await staticCallMeterTools.record(
+						(args ?? {}) as PackageStaticCallMeterInput,
 					),
 			},
 		},
@@ -537,6 +617,23 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 				? [createPackageEventRuntimeBridgeProvider(context.packageEventTools)]
 				: [],
 	},
+	{
+		runtimeName: 'staticCallMeter',
+		runtimeBindings: [
+			{ runtimeName: '__kodyStaticCallMeter', absentValue: 'undefined' },
+		],
+		unboundNames: [],
+		isBound: (context) => Boolean(context.staticCallMeterTools),
+		createPrelude: () => createStaticCallMeterHelperPrelude(),
+		extraProviders: (context) =>
+			context.staticCallMeterTools
+				? [
+						createStaticCallMeterRuntimeBridgeProvider(
+							context.staticCallMeterTools,
+						),
+					]
+				: [],
+	},
 ]
 
 const runtimeHelperRuntimeBindingOrder: Array<string> = [
@@ -549,6 +646,7 @@ const runtimeHelperRuntimeBindingOrder: Array<string> = [
 	'workflows',
 	'packages',
 	'events',
+	'staticCallMeter',
 ]
 
 function runtimeHelperRuntimeBindings() {

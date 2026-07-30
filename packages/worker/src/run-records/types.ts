@@ -108,7 +108,10 @@ export type RunRecordContext = {
 
 /**
  * Persistence for one begin/finish pair. Same as
- * {@link runPersistenceForSurface} except keyed `execute` upgrades to `eager`.
+ * {@link runPersistenceForSurface} except the idempotency key toggles the two
+ * caller-facing surfaces: keyed `execute` upgrades to `eager`, and key-less
+ * `export` (the lean `packages.invoke` path, which has no ledger row and
+ * returns its result inline) downgrades to `on-failure`.
  */
 export function runPersistenceForContext(
 	context: Pick<RunRecordContext, 'surface' | 'idempotencyKey'>,
@@ -116,6 +119,9 @@ export function runPersistenceForContext(
 	const key = context.idempotencyKey?.trim()
 	if (context.surface === 'execute' && key) {
 		return 'eager'
+	}
+	if (context.surface === 'export' && !key) {
+		return 'on-failure'
 	}
 	return runPersistenceForSurface(context.surface)
 }

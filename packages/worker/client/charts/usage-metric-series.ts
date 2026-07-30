@@ -19,6 +19,11 @@ export const usageMetricSeries: Array<UsageMetricSeries> = [
 		label: 'Package runs',
 		color: chartColor.emerald,
 	},
+	{
+		metric: 'package_static_call',
+		label: 'Static package calls',
+		color: chartColor.teal,
+	},
 	{ metric: 'job_run', label: 'Job runs', color: chartColor.amber },
 	{ metric: 'workflow_run', label: 'Workflow runs', color: chartColor.violet },
 	{

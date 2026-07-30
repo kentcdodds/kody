@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { createWorker } from '@cloudflare/worker-bundler'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
+import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	buildKodyImportableModuleBundle,
 	buildKodyModuleBundle,
@@ -861,3 +862,188 @@ test('ad hoc execute runtime exposes packages as null without package invoke too
 		hasInvoke: false,
 	})
 })
+
+test(
+	'key-less packages.invoke runs the target package lean in its own realm',
+	{ timeout: 30_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		await ensureSavedPackageArtifactSchema()
+		const unique = crypto.randomUUID()
+		const userId = `user-${unique}`
+		const sourceId = `source-${unique}`
+		const packageId = `pkg-${unique}`
+		const publishedCommit = `commit-${unique}`
+		const source = await insertSavedPackage({
+			userId,
+			packageId,
+			kodyId: 'lean-target',
+			name: '@kentcdodds/lean-target',
+			sourceId,
+			publishedCommit,
+		})
+		const targetSourceFiles = {
+			'package.json': JSON.stringify({
+				name: '@kentcdodds/lean-target',
+				exports: {
+					'./probe': './src/probe.ts',
+				},
+				kody: {
+					id: 'lean-target',
+					description: 'Lean invoke probe target',
+				},
+			}),
+			'src/probe.ts': [
+				"import { packageContext } from 'kody:runtime'",
+				'',
+				'let isolateCallCount = 0',
+				'',
+				'export default async function probe(input: { marker?: string } = {}) {',
+				'\tisolateCallCount += 1',
+				";(globalThis as Record<string, unknown>).__kodyLeanTargetMarker = 'target'",
+				'\treturn {',
+				'\t\tmarker: input.marker ?? null,',
+				'\t\tisolateCallCount,',
+				'\t\ttargetKodyId: packageContext?.kodyId ?? null,',
+				"\t\tcallerMarkerVisible: typeof (globalThis as Record<string, unknown>).__kodyLeanCallerMarker !== 'undefined',",
+				'\t}',
+				'}',
+			].join('\n'),
+		}
+		await persistPublishedSourceSnapshot({
+			env,
+			userId,
+			source,
+			snapshot: {
+				files: targetSourceFiles,
+			},
+		})
+		const artifactBundle = await buildKodyImportableModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			sourceFiles: targetSourceFiles,
+			entryPoint: 'src/probe.ts',
+		})
+		await persistPublishedBundleArtifact({
+			env,
+			userId,
+			source,
+			kind: 'importable-module',
+			artifactName: './probe',
+			entryPoint: 'src/probe.ts',
+			mainModule: artifactBundle.mainModule,
+			modules: artifactBundle.modules,
+			dependencies: artifactBundle.dependencies,
+			packageContext: {
+				packageId,
+				kodyId: 'lean-target',
+				sourceId,
+			},
+		})
+
+		const callerBundle = await buildKodyModuleBundle({
+			env,
+			baseUrl: 'https://kody.dev',
+			userId,
+			sourceFiles: {
+				'entry.ts': [
+					"import { packages } from 'kody:runtime'",
+					'',
+					'export default async function main() {',
+					";(globalThis as Record<string, unknown>).__kodyLeanCallerMarker = 'caller'",
+					'\tconst startedAt = Date.now()',
+					"\tconst first = await packages?.invoke({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'first' } })",
+					'\tconst firstDurationMs = Date.now() - startedAt',
+					"\tconst second = await packages?.invoke({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'second' } })",
+					"\tconst checked = await packages?.invokeChecked({ kodyId: 'lean-target', exportName: './probe', params: { marker: 'checked' } })",
+					"\tconst checkResult = (await packages?.check({ kodyId: 'lean-target', exportName: './probe' })) as { ok?: boolean }",
+					'\treturn {',
+					'\t\tfirst,',
+					'\t\tsecond,',
+					'\t\tchecked,',
+					'\t\tcheckOk: checkResult?.ok === true,',
+					'\t\tfirstDurationMs,',
+					"\t\ttargetMarkerVisible: typeof (globalThis as Record<string, unknown>).__kodyLeanTargetMarker !== 'undefined',",
+					'\t}',
+					'}',
+				].join('\n'),
+			},
+			entryPoint: 'entry.ts',
+		})
+		const callerContext = createMcpCallerContext({
+			baseUrl: 'https://kody.dev',
+			user: {
+				userId,
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
+		})
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: callerBundle.mainModule,
+				modules: callerBundle.modules,
+			},
+			undefined,
+			{
+				packageContext: null,
+				packageInvokeTools: createExecutePackageInvokeTools({
+					env,
+					baseUrl: 'https://kody.dev',
+					callerContext,
+				}),
+				skipCapabilityRegistry: true,
+			},
+		)
+
+		expect(result.error).toBeUndefined()
+		const payload = result.result as {
+			first: Record<string, unknown>
+			second: Record<string, unknown>
+			checked: Record<string, unknown>
+			checkOk: boolean
+			firstDurationMs: number
+			targetMarkerVisible: boolean
+		}
+		// The target ran in its own runtime (packageContext bound to the target
+		// package) and each key-less invoke got a fresh isolate.
+		expect(payload.first).toEqual({
+			marker: 'first',
+			isolateCallCount: 1,
+			targetKodyId: 'lean-target',
+			callerMarkerVisible: false,
+		})
+		expect(payload.second).toEqual({
+			marker: 'second',
+			isolateCallCount: 1,
+			targetKodyId: 'lean-target',
+			callerMarkerVisible: false,
+		})
+		// Deprecated shims keep working end to end.
+		expect(payload.checked).toEqual({
+			marker: 'checked',
+			isolateCallCount: 1,
+			targetKodyId: 'lean-target',
+			callerMarkerVisible: false,
+		})
+		expect(payload.checkOk).toBe(true)
+		// Realm separation in the other direction: the target's globals never
+		// leak back into the caller realm.
+		expect(payload.targetMarkerVisible).toBe(false)
+		// Sanity bound only: workerd test timing is too noisy for a strict
+		// budget; the production lean-path latency claim is validated by live
+		// probes, not this test.
+		expect(payload.firstDurationMs).toBeLessThan(20_000)
+		// The deprecation warnings surface in the caller's captured logs, once
+		// per helper, naming the replacement.
+		const warningLogs = (result.logs ?? []).filter((entry) =>
+			entry.includes('[deprecated]'),
+		)
+		expect(warningLogs).toEqual([
+			expect.stringContaining('[deprecated] packages.invokeChecked'),
+			expect.stringContaining('[deprecated] packages.check'),
+		])
+	},
+)

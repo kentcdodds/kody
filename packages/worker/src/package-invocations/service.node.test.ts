@@ -912,6 +912,100 @@ test('package runtime can dynamically invoke the current published export from a
 	).toEqual(expect.any(Function))
 })
 
+test('key-less packages.invoke takes the lean path: re-executes on repeat and writes no ledger row', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	let executionCount = 0
+	repoMockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
+		executionCount += 1
+		return { result: { handled: true, executionCount }, logs: [] }
+	})
+	const tools = createRuntimeDispatchTools(db)
+
+	const request = {
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { event: { id: 'message-1' } },
+	}
+	const first = await tools.invoke(request)
+	const second = await tools.invoke(request)
+
+	// Ephemeral semantics: identical key-less calls execute independently.
+	expect(first).toEqual({ handled: true, executionCount: 1 })
+	expect(second).toEqual({ handled: true, executionCount: 2 })
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
+	const runOptions =
+		repoMockModule.runBundledModuleWithRegistry.mock.calls[0]?.[4]
+	// No ledger row exists, so the run record carries neither an invocation id
+	// nor an idempotency key (which downgrades it to on-failure persistence).
+	expect(runOptions).toMatchObject({
+		runRecord: {
+			surface: 'export',
+			invocationId: null,
+			idempotencyKey: null,
+		},
+	})
+})
+
+test('keyed packages.invoke keeps exactly-once semantics: repeat calls replay the stored response', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	let executionCount = 0
+	repoMockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
+		executionCount += 1
+		return { result: { handled: true, executionCount }, logs: [] }
+	})
+	const tools = createRuntimeDispatchTools(db)
+
+	const request = {
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { event: { id: 'message-1' } },
+		idempotencyKey: 'evt-keyed-1',
+	}
+	const first = await tools.invoke(request)
+	const second = await tools.invoke(request)
+
+	expect(first).toEqual({ handled: true, executionCount: 1 })
+	expect(second).toEqual({ handled: true, executionCount: 1 })
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+	const runOptions =
+		repoMockModule.runBundledModuleWithRegistry.mock.calls[0]?.[4]
+	expect(runOptions).toMatchObject({
+		runRecord: {
+			surface: 'export',
+			invocationId: expect.any(String),
+			idempotencyKey: 'evt-keyed-1',
+		},
+	})
+})
+
+test('packages.invokeChecked remains a working key-less alias during the widen phase', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockClear()
+	let executionCount = 0
+	repoMockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
+		executionCount += 1
+		return { result: { handled: true, executionCount }, logs: [] }
+	})
+	const tools = createRuntimeDispatchTools(db)
+
+	const request = {
+		kodyId: 'discord-general-chat',
+		exportName: './handle-discord-message-created',
+		params: { event: { id: 'message-1' } },
+	}
+	const first = await tools.invokeChecked(request)
+	const second = await tools.invokeChecked(request)
+
+	expect(first).toEqual({ handled: true, executionCount: 1 })
+	expect(second).toEqual({ handled: true, executionCount: 2 })
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
+})
+
 test('package runtime dispatches declared events to same-user package subscriptions', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
@@ -1245,7 +1339,7 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 			params: {},
 		}),
 	).rejects.toThrow(
-		'packages.invokeChecked check failed: Saved package "@kentcdodds/discord-general-chat" was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").',
+		'packages.invoke contract check failed: Saved package "@kentcdodds/discord-general-chat" was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").',
 	)
 	await expect(
 		tools.check({
@@ -1285,7 +1379,7 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 			params: {},
 		}),
 	).rejects.toThrow(
-		'packages.invokeChecked check failed: Package "discord-general-chat" does not define export "./missing-export".',
+		'packages.invoke contract check failed: Package "discord-general-chat" does not define export "./missing-export".',
 	)
 	await expect(
 		tools.invokeChecked({
@@ -1294,7 +1388,7 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 			params: 'not-an-object',
 		}),
 	).rejects.toThrow(
-		'packages.invokeChecked check failed: packages.invokeChecked params must be a JSON object when provided.',
+		'packages.invoke params must be a JSON object when provided.',
 	)
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
 
@@ -1333,7 +1427,7 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 			exportName: './handle-discord-message-created',
 		}),
 	).rejects.toThrow(
-		'[package_not_found] Saved package "missing-package" was not found for this user.',
+		'packages.invoke contract check failed: Saved package "missing-package" was not found for this user.',
 	)
 
 	repoMockModule.getSavedPackageByKodyId.mockReset()
@@ -1344,10 +1438,15 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 			exportName: './missing-export',
 			params: { event: { id: 'message-1' } },
 		}),
-	).rejects.toThrow('[export_not_found]')
+	).rejects.toThrow(
+		'packages.invoke contract check failed: Package "discord-general-chat" does not define export "./missing-export".',
+	)
 })
 
-test('package runtime auto idempotency keys include parent runtime identity', async () => {
+// Auto-generated idempotency keys were removed with the lean key-less path:
+// nested key-less invokes are ephemeral and always re-execute, regardless of
+// the parent run's identity. Exactly-once now requires an explicit key.
+test('key-less nested invokes re-execute for every parent run', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockImplementation(

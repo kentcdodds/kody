@@ -32,7 +32,12 @@ export type PackageInvocationRequest = {
 	packageIdOrKodyId: string
 	exportName: string
 	params?: Record<string, unknown>
-	idempotencyKey: string
+	/**
+	 * `null` selects the key-less (lean/ephemeral) path for runtime callers:
+	 * no idempotency ledger row, no account write lease, run records on
+	 * failure only. External HTTP token invocations still require a key.
+	 */
+	idempotencyKey: string | null
 	source?: string | null
 	topic?: string | null
 }

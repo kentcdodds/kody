@@ -39,17 +39,18 @@ stays reviewable in one place.
 
 ### Metrics and their chokepoints
 
-| `eventType`        | Metered unit                                    | Recorded at                                                                                | `entityId`                     |
-| ------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------ |
-| `execute`          | one dynamic-worker sandbox evaluation           | `packages/worker/src/mcp/executor.ts` (`execute`)                                          | none                           |
-| `package_export`   | one saved-package bundled-code run              | `packages/worker/src/mcp/run-kody-registry.ts` (bundled runs with a package context)       | package id                     |
-| `job_run`          | one job execution                               | `packages/worker/src/jobs/service.ts` (`executeJobOnce`)                                   | job id                         |
-| `workflow_run`     | one Cloudflare Workflow run                     | `packages/worker/src/package-runtime/package-workflows.ts` (`DynamicCallableWorkflow.run`) | workflow instance id           |
-| `service_runtime`  | one package service run (bounded or persistent) | `packages/worker/src/package-runtime/package-service.ts` (run finalization)                | `{packageId}:{serviceName}`    |
-| `realtime_session` | one realtime websocket session                  | reserved — not yet instrumented                                                            | session id                     |
-| `outbound_fetch`   | one outbound fetch through the gateway          | `packages/worker/src/mcp/fetch-gateway.ts` (`KodyFetchGateway.fetch`)                      | request host                   |
-| `email_send`       | one outbound email send attempt                 | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                              | email message id               |
-| `email_received`   | one inbound receive attempt for a routed inbox  | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)      | email message id (when stored) |
+| `eventType`           | Metered unit                                                                      | Recorded at                                                                                                                                                                 | `entityId`                     |
+| --------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `execute`             | one dynamic-worker sandbox evaluation                                             | `packages/worker/src/mcp/executor.ts` (`execute`)                                                                                                                           | none                           |
+| `package_export`      | one saved-package bundled-code run                                                | `packages/worker/src/mcp/run-kody-registry.ts` (bundled runs with a package context)                                                                                        | package id                     |
+| `package_static_call` | one call of a statically imported package export (function-valued, incl. default) | sandbox-side wrapper stamped by the bundler; validated and recorded host-side by `packages/worker/src/usage/package-static-call-usage.ts` (wired in `run-kody-registry.ts`) | callee package id              |
+| `job_run`             | one job execution                                                                 | `packages/worker/src/jobs/service.ts` (`executeJobOnce`)                                                                                                                    | job id                         |
+| `workflow_run`        | one Cloudflare Workflow run                                                       | `packages/worker/src/package-runtime/package-workflows.ts` (`DynamicCallableWorkflow.run`)                                                                                  | workflow instance id           |
+| `service_runtime`     | one package service run (bounded or persistent)                                   | `packages/worker/src/package-runtime/package-service.ts` (run finalization)                                                                                                 | `{packageId}:{serviceName}`    |
+| `realtime_session`    | one realtime websocket session                                                    | reserved — not yet instrumented                                                                                                                                             | session id                     |
+| `outbound_fetch`      | one outbound fetch through the gateway                                            | `packages/worker/src/mcp/fetch-gateway.ts` (`KodyFetchGateway.fetch`)                                                                                                       | request host                   |
+| `email_send`          | one outbound email send attempt                                                   | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                                                                                                               | email message id               |
+| `email_received`      | one inbound receive attempt for a routed inbox                                    | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)                                                                                       | email message id (when stored) |
 
 `email_received` covers receive attempts once an inbound message is routed to a
 known, enabled inbox: stored messages record `success`; unverified-account
@@ -58,13 +59,76 @@ rejections, size rejections, entitlement rejections, and parse failures record
 rejected mail. Mail rejected before inbox resolution (unknown alias, disabled
 inbox) has no owning user and is not metered.
 
+### `package_static_call`: statically imported package export calls
+
+Static imports (`import fn from 'kody:@scope/pkg/export'`) are the default way
+package code is reused, so calls through them are metered per call:
+
+- **Metered unit:** one call of a function-valued export (named or default) that
+  was statically imported from a saved package. Non-function exports pass
+  through unwrapped; imports that are never called record nothing. `userId` is
+  the user the host run executes as, `entityId` is the **callee** package id,
+  `durationMs` is the wall time of the call (through settlement for async
+  functions), and `outcome` is `error` iff the call threw or rejected — the
+  error still propagates to the caller unchanged.
+- **Provenance is bundler stamping, never sandbox strings.** The import
+  rewriter's proxy module (`ensurePackageProxy` in
+  `packages/worker/src/package-runtime/module-graph-import-rewriting.ts`) knows
+  which saved package a `kody:@…` specifier resolved to and bakes that id into
+  the generated proxy (`createMeteredPackageImportProxySource`), which wraps
+  function exports with `__kodyMeterStaticPackageExport` from the virtual
+  runtime module — the same stamping discipline as per-package
+  `packageStorage()` routing. Root self-imports are not stamped (the run already
+  records `package_export` for that package).
+- **Host-side validation (trust model, stated honestly):** stamped ids ride in
+  generated code, but that code still executes inside the sandbox realm, so a
+  malicious module could forge reports. The host
+  (`createPackageStaticCallMeterTools` in
+  `packages/worker/src/usage/package-static-call-usage.ts`) only records events
+  whose stamped id is in the bundle's **static** dependency package ids recorded
+  at build time (`bundle.dependencies`) — a strict subset of the
+  `packageStorage()` grant set, which additionally grants the run's own package
+  id and dynamic-import dependencies, neither of which the bundler ever stamps
+  into a metered proxy — and silently drops the rest with a debug log. Forgery
+  can therefore at worst inflate counts for packages the bundle already
+  statically depends on.
+- **Delivery never blocks the call path.** Each call does one synchronous buffer
+  push (capped at 200 events per run — Analytics Engine allows 250
+  `writeDataPoint` calls per invocation, one per event, and the run's other
+  usage events need headroom; overflow is dropped and the cap is enforced
+  host-side too); the run wrapper in `runBundledModuleWithRegistry` flushes the
+  buffer over a runtime bridge in batches at the end of the run, while the
+  sandbox RPC dispatchers are still live — a fire-and-forget RPC per call would
+  race dispatcher teardown and lose events. The awaited flush is bounded by a
+  short timeout so a slow bridge never owns the run's tail latency, and it loops
+  (bounded) so async calls that settle during an in-flight flush are still
+  delivered; calls that have **not settled when the run's entrypoint finishes**
+  (a promise the run never awaited) are not metered — metering never extends a
+  run's lifetime, and such a dangling promise may never settle inside the
+  sandbox at all. Flush failures are swallowed.
+- **Coverage:** every surface that funnels through
+  `runBundledModuleWithRegistry` (ad hoc execute with static `kody:@…` imports,
+  saved-package invocations, and the job/workflow/service runs built on them).
+  Package-app fetch handlers use a separate runtime bridge and do not bind the
+  meter yet; the wrapper silently no-ops there.
+- **Capacity note:** the 200-events-per-run cap shares the ~250
+  `writeDataPoint`-per-invocation Analytics Engine budget with every other usage
+  event in the same invocation — in particular `outbound_fetch`, which also
+  scales per operation. A heavy run (many static calls **and** many gateway
+  fetches) can exceed the budget and Analytics Engine silently drops the
+  overflow points. The eventual fix is aggregation (coalescing per-callee
+  counts/durations into fewer data points), not raising the cap.
+
 ### Nesting: metrics are independent, do not sum across types
 
 Execution surfaces nest. A job run funnels through the bundled-module runner and
 the sandbox executor, so a single package job produces one `job_run`, one
-`package_export`, and one `execute` event, each measuring its own layer. This is
-intentional: each metric answers its own question (`execute` is total sandbox
-pressure; `job_run` is job activity). Never add durations across different
+`package_export`, and one `execute` event, each measuring its own layer.
+Likewise, a bundled run that calls statically imported package exports produces
+one `package_static_call` event per call **inside** the run's own
+`execute`/`package_export` span. This is intentional: each metric answers its
+own question (`execute` is total sandbox pressure; `job_run` is job activity;
+`package_static_call` is per-callee reuse). Never add durations across different
 `eventType` values — that double counts nested layers. Within one `eventType`,
 each chokepoint records exactly one event per metered unit, so sums are safe.
 

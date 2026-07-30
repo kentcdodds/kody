@@ -99,8 +99,13 @@ When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 3. When pending approvals are present, either review the fork source and call
    `community_fork_adopt` with a `review_summary`, or send the user
    `bulk_approval_url` / each `approval_url`.
-4. Wait for approval or adoption (when required), then smoke-test with
-   `packages.invokeChecked(...)`.
+4. Wait for approval or adoption (when required), then smoke-test with a keyless
+   `packages.invoke(...)` call. The smoke test must go through `packages.invoke`
+   — it runs the export in the package's own runtime, so `kody.secretMounts`
+   mounts are exercised; a static import cannot verify those. Use a read-only
+   export or a package-supported dry-run input that actually reads the approved
+   secret (for example an authenticated read-only API call), so the smoke test
+   proves secret access without external side effects.
 5. Only then treat the package as ready to run.
 
 Host approval (from an earlier ad hoc `execute` smoke test) is separate from

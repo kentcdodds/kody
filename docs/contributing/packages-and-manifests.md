@@ -119,11 +119,13 @@ A saved package is the only top-level persisted primitive. Five concepts:
   published commit in bundle dependency metadata. Republishing the imported
   package does not rewrite already-published dependent bundles.
 - Literal dynamic imports such as `await import("kody:@scope/pkg/export")` are
-  runtime/current package dependencies. Bundle artifacts persist only a
-  host-resolved placeholder plus review metadata; just before execution, Kody
-  resolves the target package under the caller's `userId` and hydrates the
-  current published `importable-module` artifact into the dynamic worker module
-  graph.
+  **deprecated agent guidance** (keep the mechanism working; stop recommending
+  it — the replacements are static imports when the name is known at write time
+  and `packages.invoke` otherwise). Mechanically they are runtime/current
+  package dependencies: bundle artifacts persist only a host-resolved
+  placeholder plus review metadata; just before execution, Kody resolves the
+  target package under the caller's `userId` and hydrates the current published
+  `importable-module` artifact into the dynamic worker module graph.
 - Direct static `kody:@...` imports are a breaking manifest contract: they must
   be listed in `package.json#kody.dependencies` by package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Repo checks
@@ -166,7 +168,7 @@ A saved package is the only top-level persisted primitive. Five concepts:
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
-  goes through `packages.invokeChecked`. Package-invocation runs (exports,
+  goes through keyless `packages.invoke`. Package-invocation runs (exports,
   subscription handlers, retrievers) bind no ambient `storage`, so guard-less
   ambient access in those contexts fails with the structured
   `runtime_helper_unbound` hint pointing at `packageStorage()`. Job and service
@@ -180,27 +182,38 @@ A saved package is the only top-level persisted primitive. Five concepts:
   registry.
 - Packages may also export non-callable helper modules and values for reuse.
 
-### Dynamic current-version invocation
+### Dynamic invocation (`packages.invoke`)
 
-Package runtime contexts and authenticated ad hoc execute calls expose
-`packages.check`, `packages.invoke`, and `packages.invokeChecked` from
-`kody:runtime`:
+The agent-facing package-reuse contract is two rules:
+
+1. **Name known when the code is written → static import**
+   (`kody:@scope/package/export`). The default from execute and from other
+   packages: typed by the pre-exec typechecker, publish-verified by repo checks,
+   visible in the dependency graph (`kody.dependencies`, dependents tracking),
+   and zero per-call platform cost. Ad hoc execute bundles per call, so static
+   imports from execute always see the current published version; snapshot
+   staleness only affects package-to-package static dependencies.
+2. **Name is data, the call needs the target package's own runtime, or the call
+   needs exactly-once → `packages.invoke`.** Package runtime contexts and
+   authenticated ad hoc execute calls expose it from `kody:runtime`. It is the
+   only dynamic primitive and is always contract-checked before invoking.
 
 ```ts
 import { packages } from 'kody:runtime'
 
-await packages.invokeChecked({
+await packages.invoke({
 	kodyId: 'event-subscriber',
 	exportName: './handle-event',
 	params: { event },
+	idempotencyKey: event.id, // only when exactly-once is needed
 })
 ```
 
 The `kodyId` field is the bare `package.json#kody.id` value (for example,
 `github`), not the npm-scoped `package.json.name` (for example,
 `@kentcdodds/github`). Static `kody:@scope/package/export` imports use the
-npm-scoped name; dynamic `packages.*` invocation uses the bare Kody id (or the
-saved package's immutable `packageId`).
+npm-scoped name; dynamic `packages.invoke` uses the bare Kody id (or the saved
+package's immutable `packageId`).
 
 This path deliberately does not rewrite to a static `kody:@...` import during
 bundle construction. It resolves the target saved package and export at call
@@ -208,68 +221,57 @@ time through the package invocation service, using the current authenticated
 user and package caller context. Package code never handles external
 package-invocation bearer tokens for this flow.
 
-Use dynamic invocation for runtime dispatch surfaces that must pick up the
-target package's current published bundle, such as event subscribers, workflows,
-and agents. Prefer `packages.invokeChecked` for new dynamic calls so Kody first
-checks that the current package and export exist, params are a JSON object, and
-the current contract metadata can be surfaced to the caller. Use
-`packages.check` directly when a caller wants to inspect the current contract or
-warnings before deciding whether to invoke:
+Invoke has two modes, selected by `idempotencyKey` (mirroring execute's
+keyless/keyed convention):
 
-```ts
-const check = await packages.check({
-	kodyId: 'event-subscriber',
-	exportName: './handle-event',
-	params: { event, dryRun: true },
-})
+- **Keyless — lean/ephemeral.** Resolves the current published version and runs
+  it in the target package's own runtime (`packageContext`, `kody.secretMounts`
+  package secrets, `packageStorage()`, own isolate). No idempotency ledger row;
+  run records stay on-failure-only; per-call platform overhead stays in the tens
+  of milliseconds.
+- **Keyed — durable/exactly-once.** Claims a ledger row, records the run
+  eagerly, and replays a bounded response snapshot on retry with the same key.
+  For domain events (webhook event ids) and retried dispatch. `idempotency_key`
+  is an accepted alias.
 
-if (!check.ok) throw new Error(check.message)
-const result = await packages.invoke(check.invoke)
-```
-
-Use static `kody:@scope/package/export` imports for library-like dependencies
-where the caller should keep the dependency bundle it was published with. Use
-bare `packages.invoke` only after a successful `packages.check` or when the
-caller intentionally accepts direct runtime failure.
-
-`packages.check` returns the current package id/kody id/name, source id,
-published commit, normalized export name, runtime target, and available
-JSDoc/type definition. It also returns warnings when validation is weak. Package
-exports do not publish machine-readable params schemas, so Kody cannot validate
-field-level params shape beyond requiring `params` to be a JSON object.
-
-`packages.invoke` returns the target export's unwrapped result. Non-2xx package
-invocation responses reject with an error whose message starts with the
-underlying code, for example `[package_not_found] ...` or
-`[export_not_found] ...`. `packages.invokeChecked` throws before invoking when
-the check fails.
-
-Idempotency:
-
-- Callers may pass `idempotencyKey` (or `idempotency_key`) explicitly. This is
-  recommended for domain events such as webhook event ids.
-- If omitted during a parent package invocation with its own idempotency key,
-  Kody derives a nested key from the parent key, parent runtime surface/name,
-  call order, target, export, and params so retries do not duplicate the same
-  nested dispatch.
-- If omitted in contexts without a parent invocation key, Kody uses a unique key
-  because replay is not implied.
+The pre-invoke contract check is built in: `packages.invoke` rejects before
+invoking when the package or export does not exist or params are not a JSON
+object, with a message of the form
+`packages.invoke contract check failed: <message>` (no bracketed code prefix).
+Package exports do not publish machine-readable params schemas, so Kody cannot
+validate field-level params shape beyond requiring `params` to be a JSON object.
+On success it returns the target export's unwrapped result; execution-phase
+failures after the check passes reject with an error whose message starts with
+the underlying bracketed code, for example `[invocation_failed] ...`.
 
 Security and loop safeguards:
 
 - Resolution is same-user only; package code cannot invoke another user's saved
   package.
 - `packages.invoke` requires either package runtime context or authenticated
-  execute context. Static `kody:@...` imports remain library/snapshot imports;
-  use `packages.invokeChecked` when execute needs to enter a package runtime.
+  execute context. Static `kody:@...` imports remain library imports in the
+  caller's runtime; use keyless `packages.invoke` when execute needs to enter a
+  package runtime.
 - Nested dynamic package invocations are depth-limited to prevent runaway
   package-to-package loops.
 
-For event dispatcher/subscriber packages, switch dispatchers from statically
-importing subscriber packages to
-`packages.invoke({ kodyId, exportName, params, idempotencyKey })`. Republish
-subscribers independently; the dispatcher will observe the current published
-subscriber export on its next dispatch without being republished.
+For event dispatcher/subscriber packages, dispatchers should use
+`packages.invoke({ kodyId, exportName, params, idempotencyKey })` rather than
+statically importing subscriber packages. Republish subscribers independently;
+the dispatcher will observe the current published subscriber export on its next
+dispatch without being republished.
+
+**Deprecated (widen phase):** `packages.invokeChecked`, `packages.check`, and
+literal dynamic `import("kody:@...")` keep working while callers migrate, but no
+guidance surface (tool descriptions, search detail, error `nextStep` strings,
+docs) may recommend them. `packages.invoke` subsumes both helpers because
+checking is no longer optional or separate (`invokeChecked` is a plain alias of
+`invoke`). The sandbox prelude warns once per run on `check` / `invokeChecked`,
+the dynamic import helper warns once per specifier, and publish checks surface
+non-fatal deprecation warnings in the passing lint message
+(`deprecated-invocation-usage.ts`). See
+[Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md)
+for the performance budget that keeps the keyless path honest.
 
 ## Package apps
 

@@ -136,16 +136,24 @@ exhaustive.
 `package.json.exports` is the package's callable and importable surface.
 
 - Cross-package imports use the full package name such as
-  `kody:@scope/my-package/export-name`.
+  `kody:@scope/my-package/export-name`. Static import is **the default for
+  package reuse** — from execute and from other packages — whenever the target
+  package's name is known when the code is written. Static imports are typed,
+  publish-verified, dependency-graph-visible, and add zero per-call platform
+  cost.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published
   dependents; they keep using the bundled snapshot until they are republished.
+  Ad hoc execute code bundles per call, so static imports from execute always
+  see the current published version.
 - Literal dynamic imports such as
-  `await import("kody:@scope/my-package/export")` are current-version package
-  dependencies. Kody leaves them out of the saved bundle and resolves the target
-  package export at runtime for the signed-in user, so the next execution sees
-  the target package's current published importable artifact.
+  `await import("kody:@scope/my-package/export")` are **deprecated**. They still
+  resolve the target package export at runtime for the signed-in user, but log a
+  deprecation warning (once per specifier) naming the replacement. Do not write
+  new code with them: use a static import when the name is known at write time,
+  or `packages.invoke` when it is not (see
+  [Dynamic package invocation](#dynamic-package-invocation)).
 - Every direct static `kody:@...` import must be declared in
   `package.json#kody.dependencies` using the imported package name, for example
   `"dependencies": ["@scope/my-package"]` inside the `kody` object. Package
@@ -154,9 +162,8 @@ exhaustive.
   current-version literal dynamic `import("kody:@...")` expressions do not need
   `kody.dependencies` declarations.
 - Computed dynamic Kody package imports, including template strings and
-  variables such as `import(packageSpecifier)`, are unsupported. Use a string
-  literal `import("kody:@scope/my-package/export")` when you want
-  current-version runtime resolution.
+  variables such as `import(packageSpecifier)`, are unsupported. When the target
+  package is not known until runtime, use `packages.invoke` instead.
 - `kody:runtime` is always host-owned and request-scoped. Static imports such as
   `import { kody } from "kody:runtime"` stay valid, but saved package artifacts
   do not persist Kody's runtime implementation; execution always uses the
@@ -173,13 +180,20 @@ exhaustive.
 
 ### Dynamic package invocation
 
-Package runtime code can invoke another package owned by the same user without
-statically importing it:
+Package reuse follows two rules:
 
-`packages.check`, `packages.invoke`, and `packages.invokeChecked` take the bare
-`package.json#kody.id` value as `kodyId` (for example, `github`). Do not pass
-the npm-scoped `package.json.name` (for example, `@kentcdodds/github`). The
-scoped name belongs in static `kody:@scope/package/export` imports instead.
+1. **Name known when the code is written → static import.** Use
+   `import fn from 'kody:@scope/my-package/export-name'` from execute and from
+   other packages. This is the default.
+2. **Name is data, the call needs the target package's own runtime, or you need
+   exactly-once → `packages.invoke`.** It is the only dynamic primitive, and it
+   is always contract-checked before invoking — checking is not optional and not
+   a separate API.
+
+`packages.invoke` takes the bare `package.json#kody.id` value as `kodyId` (for
+example, `github`). Do not pass the npm-scoped `package.json.name` (for example,
+`@kentcdodds/github`). The scoped name belongs in static
+`kody:@scope/package/export` imports instead.
 
 ```ts
 import { packages } from 'kody:runtime'
@@ -191,64 +205,35 @@ const result = await packages.invoke({
 })
 ```
 
-Use `packages.invokeChecked` for event subscribers, workflow dispatchers,
-agents, and other runtime fan-out where the caller should pick up the target
-package's current published export and wants Kody to validate the current
-runtime contract before invoking it. The check resolves the target package at
-runtime, so republishing `event-subscriber` changes what `event-dispatcher`
-observes without republishing `event-dispatcher`.
+The optional `idempotencyKey` selects between the two invoke modes:
 
-Use static `kody:@scope/package/export` imports for library-like dependencies
-where bundling a published dependency snapshot with the caller is desired.
+- **Keyless (default) — lean and ephemeral.** The call resolves the target
+  package's current published version and runs it in the target package's own
+  runtime: `packageContext`, `kody.secretMounts` package secrets,
+  `packageStorage()`, its own isolate. No idempotency ledger row is written and
+  run records stay on-failure-only, so keyless invoke stays cheap — platform
+  overhead is tens of milliseconds.
+- **Keyed — durable and exactly-once.** Passing `idempotencyKey` claims a ledger
+  row, records the run eagerly, and replays a bounded response snapshot when the
+  same key is retried. Use a key only when the call must dedupe: domain events
+  (for example webhook event ids) and retried dispatch.
 
-Use `packages.check` when the caller wants to inspect the current contract
-before deciding whether to invoke:
+This mirrors execute's keyless/keyed convention: keyless is on-failure-only and
+lean, keyed is durable and replayable.
 
-```ts
-import { packages } from 'kody:runtime'
+Because invocation resolves the target package at runtime, republishing
+`event-subscriber` changes what a dispatcher observes without republishing the
+dispatcher. For an event-dispatch package, subscriber dispatch should use
+`packages.invoke` with the source event id as the explicit `idempotencyKey` when
+available.
 
-const check = await packages.check({
-	kodyId: 'event-subscriber',
-	exportName: './handle-event',
-	params: { event, dryRun: true },
-})
-
-if (!check.ok) throw new Error(check.message)
-console.log(check.contract)
-
-const result = await packages.invoke(check.invoke)
-```
-
-For the common check-then-invoke flow, use the combined helper:
-
-```ts
-import { packages } from 'kody:runtime'
-
-const result = await packages.invokeChecked({
-	kodyId: 'event-subscriber',
-	exportName: './handle-event',
-	params: { event, dryRun: true },
-})
-```
-
-Use bare `packages.invoke` only when the caller has already checked the contract
-or intentionally accepts direct runtime failure. Use static
-`kody:@scope/package/export` imports for library-like dependencies where
-bundling the published dependency snapshot with the caller is desired.
-
-`packages.check` returns `ok: false` with `message` and `problems` when the
-package, export, or params are invalid. On success it returns `contract`
-metadata, including package id/kody id/name, source id, published commit,
-normalized export name, runtime target, available JSDoc/type definition, and
-warnings on `check.contract.warnings`. Those warnings are important: Kody
-surfaces JSDoc/type metadata but not a machine-readable params schema for
-package exports, so params are only validated as a JSON object.
-
-`packages.invoke` and `packages.invokeChecked` return the target export's
-unwrapped return value. If execution fails, the promise rejects with an error
-that includes the package invocation error code in the message. If the
-pre-invoke check fails, `packages.invokeChecked` rejects before invoking the
-target export.
+`packages.invoke` returns the target export's unwrapped return value. If the
+pre-invoke contract check fails (missing package, missing export, params not a
+JSON object), the promise rejects before invoking the target export. If
+execution fails, the promise rejects with an error that includes the package
+invocation error code in the message. Kody surfaces JSDoc/type metadata but not
+a machine-readable params schema for package exports, so params are only
+validated as a JSON object.
 
 The primary identifier is the bare `kodyId`; `kody_id`, `packageId`, and
 `package_id` are accepted aliases. `exportName` is required, and `export_name`
@@ -268,24 +253,22 @@ token material.
 
 Static package imports from ad hoc MCP `execute` code, such as
 `kody:@scope/package/export`, do not get a package runtime context. They run as
-library/snapshot imports in the execute caller's runtime, where
-`packageStorage()` reaches the declaring package's own storage bucket (see
-[Package storage](#package-storage)). Use `packages.invokeChecked` from execute
-when you need to enter a saved package as that package so it receives
-`packageContext`, package-owned storage, package secrets, and its own `packages`
-helper.
+library imports in the execute caller's runtime, where `packageStorage()` still
+reaches the declaring package's own storage bucket (see
+[Package storage](#package-storage)), and `{{secret:...}}` placeholders for
+user-scope secrets still resolve at the fetch gateway under the calling user —
+so secret-backed packages such as `github` work fully via plain static import.
+Use keyless `packages.invoke` from execute when you need to enter a saved
+package as that package so it receives `packageContext`, package-owned storage,
+package-mounted secrets (`kody.secretMounts`), and its own `packages` helper.
 
-If `idempotencyKey` is omitted, Kody generates one. In package invocations that
-already have a parent idempotency key, the generated key is deterministic for
-the parent key, parent runtime surface/name, call order, target, export, and
-params. In contexts without a parent invocation key, Kody uses a unique key,
-which avoids accidental replay. Pass your own `idempotencyKey` when the target
-operation must dedupe against a domain event id.
-
-For an event-dispatch package, subscriber dispatch should prefer the dynamic
-shape above over static imports such as
-`kody:@scope/event-subscriber/handle-event`, using the source event id as the
-explicit `idempotencyKey` when available.
+**Deprecated:** `packages.invokeChecked`, `packages.check`, and literal dynamic
+`import("kody:@...")` still work but should not appear in new code.
+`packages.invoke` already performs the contract check that `invokeChecked` and
+`check` provided (`invokeChecked` is now a plain alias of `invoke`), and the
+static/dynamic rules above cover the literal dynamic import cases. Using any of
+the three logs a runtime deprecation warning naming the replacement, and package
+publish checks report them as non-fatal warnings.
 
 ## Package storage
 
@@ -298,9 +281,9 @@ Every saved package owns one durable storage bucket per user
   and services.
 - **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
   `storageId` on the execute call and use ambient `storage`.
-- **Touching another package's data?** Call that package's exports via
-  `packages.invokeChecked({ kodyId, exportName, params })` so its own runtime
-  does the reading and writing.
+- **Touching another package's data?** Call that package's exports via keyless
+  `packages.invoke({ kodyId, exportName, params })` so its own runtime does the
+  reading and writing.
 
 `packageStorage()` returns the same storage interface as ambient `storage`
 (`get`/`set`/`list`/`sql`/`delete`/`clear`/`id`), writable, always bound to the
@@ -317,9 +300,10 @@ declaring package's own bucket no matter where the code runs:
   Ambient `storage` cannot do this; the binding is per-run, so statically
   imported code sees the caller's bucket or `undefined`. Note that grants are
   per-bundle, not per-module: statically importing a package grants the whole
-  bundle read/write access to that package's bucket, so treat static imports as
-  a trust decision and use `packages.invokeChecked` when you want the other
-  package's own runtime to mediate access.
+  bundle read/write access to that package's bucket, so treat static imports of
+  unadopted community forks as a trust decision (adopt after review) and use
+  keyless `packages.invoke` when you want the other package's own runtime to
+  mediate access.
 
 ```ts
 import { packageStorage } from 'kody:runtime'
@@ -339,11 +323,12 @@ Hand-written code cannot claim another package's id to read its bucket. Two
 consequences:
 
 - Inline `execute` code has no package provenance, so `packageStorage()` throws
-  an actionable error there. Bind a `storageId` and use ambient `storage`, or
-  call the owning package's export via `packages.invokeChecked`.
+  an actionable error there. Bind a `storageId` and use ambient `storage`,
+  statically import the owning package's export, or call it via keyless
+  `packages.invoke`.
 - Provenance grants cover directly imported packages. For data owned by a
   package that is not the running package and not statically imported by the
-  bundle, use `packages.invokeChecked` so its own runtime does the reading.
+  bundle, use keyless `packages.invoke` so its own runtime does the reading.
 
 Package apps also have a legacy app-root ambient bucket bound to the raw saved
 package id (a different bucket from `package:{...}`). Existing published apps

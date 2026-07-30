@@ -223,6 +223,69 @@ export function __kodyCreatePackageBoundStorage(packageId) {
 	};
 }
 
+function __kodyRecordStaticPackageCall(packageId, startedAtMs, outcome) {
+	// Metering must never block or throw into the call path: reporting is a
+	// synchronous buffer push into the current run's meter (the surrounding
+	// wrapper flushes the buffer over the host bridge once, at the end of
+	// the run, while its RPC dispatchers are still live). The meter is read
+	// late-bound from the run store so reused worker isolates never pin a
+	// previous run's state, and runs without a meter simply skip recording.
+	try {
+		const meter = __kodyRuntimeStorage.getStore()?.__kodyStaticCallMeter;
+		if (meter == null || typeof meter.report !== 'function') return;
+		meter.report({
+			packageId,
+			durationMs: Date.now() - startedAtMs,
+			outcome,
+		});
+	} catch {}
+}
+
+// Call-metering wrapper for statically imported package exports. The
+// bundler stamps the callee package id into generated import proxies (see
+// createMeteredPackageImportProxySource); the id is identity routing only —
+// the host independently validates it against the run's bundler-recorded
+// dependency provenance before recording anything. Non-function exports
+// pass through unchanged; function exports keep their identity semantics
+// (arguments, this, return values, thrown errors, properties, construct)
+// behind a transparent Proxy whose only addition is a non-blocking usage
+// event per call. Only [[Call]] is trapped: every other internal method,
+// including [[Construct]], forwards to the target per the Proxy spec, so
+// \`new WrappedClass()\` constructs the real class (construction is not
+// metered).
+export function __kodyMeterStaticPackageExport(packageId, exportValue) {
+	if (typeof exportValue !== 'function') return exportValue;
+	return new Proxy(exportValue, {
+		apply(target, thisArg, argumentsList) {
+			const startedAtMs = Date.now();
+			let result;
+			try {
+				result = Reflect.apply(target, thisArg, argumentsList);
+			} catch (error) {
+				__kodyRecordStaticPackageCall(packageId, startedAtMs, 'error');
+				throw error;
+			}
+			// Deliberately only native promises: subscribing to an arbitrary
+			// user thenable would invoke its then() from the metering path,
+			// which can trigger lazy side effects (query-builder style
+			// thenables execute when first awaited) — a behavior change the
+			// wrapper must never cause. All modules run in one isolate, so
+			// async exports always return same-realm native promises;
+			// non-promise thenables record at return time instead of
+			// settlement.
+			if (result instanceof Promise) {
+				result.then(
+					() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'success'),
+					() => __kodyRecordStaticPackageCall(packageId, startedAtMs, 'error'),
+				);
+				return result;
+			}
+			__kodyRecordStaticPackageCall(packageId, startedAtMs, 'success');
+			return result;
+		},
+	});
+}
+
 // Unstamped fallback: modules without bundler-recorded package provenance
 // (ad hoc execute code, artifacts published before stamping existed) can only
 // reach the storage of the package the run itself belongs to.
@@ -233,7 +296,8 @@ export function packageStorage() {
 		throw new Error(
 			'packageStorage() requires package provenance: this module was not bundled from a saved package and the run has no package context. ' +
 				'For ad hoc execute code, bind a storageId to the execute call and use the ambient storage helper, ' +
-				"or call the owning package's export via packages.invokeChecked({ kodyId, exportName, params }).",
+				"statically import the owning package's export (kody:@scope/package/export) when the package name is known, " +
+				"or call the owning package's export via keyless packages.invoke({ kodyId, exportName, params }).",
 		);
 	}
 	return __kodyResolvePackageStorage(declaringPackageId);
@@ -538,6 +602,43 @@ export default __kodyPackageModule.default;
 `.trim()
 }
 
+/**
+ * Static-import proxy stamped with the callee saved-package id: function
+ * valued exports are wrapped in the call-metering Proxy from the runtime
+ * module (`__kodyMeterStaticPackageExport`), non-function exports pass
+ * through unchanged. The `export * from` passthrough stays first so any
+ * export name the bundler could not statically discover keeps working (it
+ * is just not metered) — explicitly re-exported wrapped names shadow the
+ * star re-export per the ES module ambiguity rules. Only the static import
+ * rewrite uses this variant; dynamic package import proxies keep the plain
+ * source above.
+ */
+export function createMeteredPackageImportProxySource(input: {
+	targetPath: string
+	runtimeSpecifier: string
+	packageId: string
+	exportNames: Array<string>
+}) {
+	const packageIdJson = JSON.stringify(input.packageId)
+	const namedExportLines = input.exportNames.flatMap((exportName, index) => {
+		if (exportName === 'default') return []
+		const localName = `__kodyMeteredStaticExport${index}`
+		return [
+			`const ${localName} = __kodyMeterStaticPackageExport(${packageIdJson}, __kodyPackageModule.${exportName});`,
+			`export { ${localName} as ${exportName} };`,
+		]
+	})
+	return `
+export * from ${JSON.stringify(input.targetPath)};
+import * as __kodyPackageModule from ${JSON.stringify(input.targetPath)};
+import { __kodyMeterStaticPackageExport } from ${JSON.stringify(
+		input.runtimeSpecifier,
+	)};
+export default __kodyMeterStaticPackageExport(${packageIdJson}, __kodyPackageModule.default);
+${namedExportLines.join('\n')}
+`.trim()
+}
+
 export function createDynamicPackageImportPlaceholderSource(input: {
 	specifier: string
 }) {
@@ -579,10 +680,20 @@ const ${input.helperName} = async (specifier) => {
 export function createDynamicPackageImportHelperSource(input: {
 	helperName: string
 }) {
+	// Literal dynamic kody:@ imports are a deprecated widen-phase shim: they
+	// keep resolving via host hydration but warn once per specifier naming
+	// the static-import replacement.
 	return `
-const ${input.helperName} = async (specifier) => {
-	return await import(specifier);
-};
+const ${input.helperName} = (() => {
+	const warned = new Set();
+	return async (specifier, kodySpecifier) => {
+		if (kodySpecifier && !warned.has(kodySpecifier)) {
+			warned.add(kodySpecifier);
+			console.warn('[deprecated] dynamic import("' + kodySpecifier + '"): use a static import (import fn from "' + kodySpecifier + '") instead. Static imports from execute always see the current published version; saved packages must also declare the dependency in package.json#kody.dependencies. When the target name is only known at runtime, use packages.invoke({ kodyId, exportName, params }).');
+		}
+		return await import(specifier);
+	};
+})();
 `.trim()
 }
 

@@ -567,7 +567,10 @@ test(
 		expect(result.error).toContain(
 			'packageStorage() requires package provenance',
 		)
-		expect(result.error).toContain('packages.invokeChecked')
+		expect(result.error).toContain(
+			'keyless packages.invoke({ kodyId, exportName, params })',
+		)
+		expect(result.error).not.toContain('packages.invokeChecked')
 	},
 )
 

@@ -11,7 +11,6 @@ import {
 	type PackageRuntimeContext,
 	type PackageRuntimeToolFactories,
 } from './common.ts'
-import { createAutoPackageInvokeIdempotencyKey } from './idempotency.ts'
 import {
 	invokePackageExportForExecuteRuntime,
 	invokePackageExportForPackageRuntime,
@@ -20,7 +19,6 @@ import { parsePackageInvokeInput } from './input-parsing.ts'
 import {
 	checkPackageInvokeForRuntime,
 	checkPackageInvokeForRuntimeWithPreloads,
-	type PackageInvokeCheckPreloads,
 } from './invoke-check.ts'
 
 export function createPackageRuntimeInvokeToolsWithToolFactories(input: {
@@ -70,7 +68,6 @@ function createPackageInvokeTools(input: {
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageInvokeTools {
-	let autoIdempotencySequence = 0
 	const requireRuntimeCaller = (operationName: string) => {
 		const user = input.callerContext.user
 		if (!user?.userId) {
@@ -81,10 +78,14 @@ function createPackageInvokeTools(input: {
 		}
 		return { user, packageContext: input.packageContext }
 	}
-	const invoke = async (
-		rawInput: PackageInvokeInput,
-		preloads?: PackageInvokeCheckPreloads | null,
-	) => {
+	/**
+	 * The single dynamic invocation primitive. Always contract-checked first
+	 * (the check preloads the package row, manifest, and bundle artifact so
+	 * the invoke phase never reloads them), then routed by key presence:
+	 * key-less runs the lean/ephemeral path, keyed runs the exactly-once
+	 * ledger path.
+	 */
+	const invoke = async (rawInput: PackageInvokeInput) => {
 		const { user, packageContext } = requireRuntimeCaller('packages.invoke')
 		const packageInvokeDepth = input.packageInvokeDepth ?? 0
 		if (packageInvokeDepth >= maxPackageRuntimeInvokeDepth) {
@@ -93,15 +94,24 @@ function createPackageInvokeTools(input: {
 			)
 		}
 		const request = parsePackageInvokeInput(rawInput)
-		autoIdempotencySequence += 1
-		const idempotencyKey =
-			request.idempotencyKey ??
-			(await createAutoPackageInvokeIdempotencyKey({
-				callerPackageContext: packageContext,
-				parentRunRecord: input.parentRunRecord ?? null,
-				sequence: autoIdempotencySequence,
-				request,
-			}))
+		const check = await checkPackageInvokeForRuntimeWithPreloads({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			operationName: 'packages.invoke',
+			userId: user.userId,
+			rawInput,
+			includeExportProjection: false,
+		})
+		if (!check.result.ok || !check.preloads) {
+			const message = check.result.ok
+				? 'packages.invoke could not preload the package artifact.'
+				: `packages.invoke contract check failed: ${check.result.message}`
+			const error = new Error(message) as Error & {
+				check?: PackageInvokeCheckResult
+			}
+			error.check = check.result
+			throw error
+		}
 		const response = packageContext
 			? await invokePackageExportForPackageRuntime({
 					env: input.env,
@@ -117,14 +127,14 @@ function createPackageInvokeTools(input: {
 						packageIdOrKodyId: request.packageIdOrKodyId,
 						exportName: request.exportName,
 						params: request.params,
-						idempotencyKey,
+						idempotencyKey: request.idempotencyKey,
 						source: `package:${packageContext.kodyId}`,
 						topic: request.topic,
 					},
 					runtimeInvokeDepth: packageInvokeDepth + 1,
 					toolFactories: input.toolFactories,
 					waitUntil: input.waitUntil,
-					preloads: preloads ?? null,
+					preloads: check.preloads,
 				})
 			: await invokePackageExportForExecuteRuntime({
 					env: input.env,
@@ -139,14 +149,14 @@ function createPackageInvokeTools(input: {
 						packageIdOrKodyId: request.packageIdOrKodyId,
 						exportName: request.exportName,
 						params: request.params,
-						idempotencyKey,
+						idempotencyKey: request.idempotencyKey,
 						topic: request.topic,
 					},
 					runtimeInvokeDepth: packageInvokeDepth + 1,
 					conversationId: input.conversationId ?? null,
 					toolFactories: input.toolFactories,
 					waitUntil: input.waitUntil,
-					preloads: preloads ?? null,
+					preloads: check.preloads,
 				})
 		if (response.status >= 200 && response.status < 400) {
 			return response.body['result']
@@ -170,6 +180,9 @@ function createPackageInvokeTools(input: {
 	}
 	return {
 		check: async (rawInput) => {
+			// Deprecated: packages.invoke always contract-checks before invoking.
+			// Kept as a working shim during the widen phase; the sandbox prelude
+			// emits the deprecation warning naming the replacement.
 			const { user } = requireRuntimeCaller('packages.check')
 			return await checkPackageInvokeForRuntime({
 				env: input.env,
@@ -180,30 +193,9 @@ function createPackageInvokeTools(input: {
 			})
 		},
 		invoke,
-		invokeChecked: async (rawInput) => {
-			const { user } = requireRuntimeCaller('packages.invokeChecked')
-			// Skip the export projection (full package source) that a bare
-			// `packages.check` surfaces: invokeChecked discards the success
-			// contract, and the preloads let the invoke phase reuse the
-			// package row, manifest, and bundle artifact loaded here.
-			const check = await checkPackageInvokeForRuntimeWithPreloads({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				operationName: 'packages.invokeChecked',
-				userId: user.userId,
-				rawInput,
-				includeExportProjection: false,
-			})
-			if (!check.result.ok) {
-				const error = new Error(
-					`packages.invokeChecked check failed: ${check.result.message}`,
-				) as Error & {
-					check?: PackageInvokeCheckResult
-				}
-				error.check = check.result
-				throw error
-			}
-			return await invoke(check.result.invoke, check.preloads)
-		},
+		// Deprecated alias for the widen phase: packages.invoke is now always
+		// contract-checked, so invokeChecked adds nothing. Key-less calls take
+		// the lean path; the sandbox prelude emits the deprecation warning.
+		invokeChecked: invoke,
 	}
 }

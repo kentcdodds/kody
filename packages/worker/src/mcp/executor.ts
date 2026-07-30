@@ -1261,13 +1261,13 @@ const kodyRuntimeExportNames = new Set([
  */
 const unboundRuntimeHelperNextSteps: Record<string, string> = {
 	storage:
-		"If this code belongs to a saved package that owns its data, use `packageStorage()` from 'kody:runtime' inside that package's module instead of ambient `storage`: it always reaches the declaring package's own bucket, in the package's own runtime and when statically imported into another context. Otherwise ambient `storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a caller-owned bucket. To work with another package's data, invoke that package's export dynamically (for example `packages.invokeChecked({ kodyId, exportName, params })`) so it runs in the package's own runtime context. Code that must also run without storage can guard with `if (storage) { ... }`.",
+		"If this code belongs to a saved package that owns its data, use `packageStorage()` from 'kody:runtime' inside that package's module instead of ambient `storage`: it always reaches the declaring package's own bucket, in the package's own runtime and when statically imported into another context. Otherwise ambient `storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a caller-owned bucket. To work with another package's data, call that package's export with keyless `packages.invoke({ kodyId, exportName, params })` so it runs in the package's own runtime context. Code that must also run without storage can guard with `if (storage) { ... }`.",
 	packages:
 		'`packages` is bound for authenticated ad hoc execute calls and saved-package runtime contexts; retry the call as an authenticated user, or guard with `if (packages) { ... }` where dynamic package invocation is optional.',
 	events:
-		"`events` is only bound in saved-package runtime contexts that can dispatch package events; invoke the owning package's export dynamically (for example `packages.invokeChecked`) so it runs in that context, or guard with `if (events) { ... }`.",
+		"`events` is only bound in saved-package runtime contexts that can dispatch package events; call the owning package's export with keyless `packages.invoke` so it runs in that context, or guard with `if (events) { ... }`.",
 	packageSecrets:
-		"`packageSecrets` is only bound in saved-package runtime contexts; invoke the owning package's export dynamically (for example `packages.invokeChecked`) so it runs with the package's mounted secrets, or guard with `if (packageSecrets) { ... }`.",
+		"`packageSecrets` is only bound in saved-package runtime contexts; call the owning package's export with keyless `packages.invoke` so it runs with the package's mounted secrets, or guard with `if (packageSecrets) { ... }`.",
 	service:
 		'`service` is only bound in package service runs; guard with `if (service) { ... }` when the code can also run outside a service context.',
 	email:
@@ -1277,7 +1277,7 @@ const unboundRuntimeHelperNextSteps: Record<string, string> = {
 function buildUnboundRuntimeHelperNextStep(helperName: string) {
 	return (
 		unboundRuntimeHelperNextSteps[helperName] ??
-		`The optional \`${helperName}\` export of 'kody:runtime' is not provided in this execution context; guard with a falsiness check (for example \`if (${helperName}) { ... }\`) or run the code in a context that binds it, such as invoking the owning saved package's export dynamically via \`packages.invokeChecked\`.`
+		`The optional \`${helperName}\` export of 'kody:runtime' is not provided in this execution context; guard with a falsiness check (for example \`if (${helperName}) { ... }\`) or run the code in a context that binds it, such as calling the owning saved package's export via keyless \`packages.invoke\`.`
 	)
 }
 

@@ -12,11 +12,16 @@ Search first. If a built-in capability or saved package already does the work,
 invoke it instead of creating another implementation.
 
 - Call discovered built-in capabilities through `kody` in `execute`.
-- For a saved package's current published export, use
-  `packages.invokeChecked({ kodyId, exportName, params })` from an authenticated
-  `execute` call or package runtime.
-- Use a static `kody:@scope/package/export` import only when a bundled,
-  published snapshot is the intended dependency behavior.
+- For a saved package export whose package name is known when the code is
+  written, use a static `kody:@scope/package/export` import — the default for
+  package reuse from `execute` and from other packages. Ad hoc execute bundles
+  per call, so static imports from execute always see the current published
+  version.
+- Use keyless `packages.invoke({ kodyId, exportName, params })` from an
+  authenticated `execute` call or package runtime when the target's name is data
+  or the call must run in the target package's own runtime (package secret
+  mounts, `packageStorage()`, `packageContext`). Pass `idempotencyKey` only when
+  the call needs exactly-once semantics.
 
 This is the default for an established operation whose behavior should stay
 owned by its existing capability or package.
@@ -139,9 +144,9 @@ package-owned job with `"enabled": false`.
 After package checks and publishing succeed:
 
 1. Inspect the published package and export contracts.
-2. Invoke the scheduled wrapper from authenticated `execute` with
-   `packages.invokeChecked(...)` and omit `params`. This verifies the same
-   no-input contract the scheduler uses.
+2. Invoke the scheduled wrapper from authenticated `execute` with keyless
+   `packages.invoke(...)` and omit `params`. This verifies the same no-input
+   contract the scheduler uses, in the package's own runtime.
 3. Optionally invoke the underlying callable export with representative input:
    realistic field shapes, boundary values, and the same configuration
    references the wrapper will load. Never put plaintext secrets in params.
@@ -156,7 +161,7 @@ Example test call:
 import { packages } from 'kody:runtime'
 
 export default async function main() {
-	return await packages.invokeChecked({
+	return await packages.invoke({
 		kodyId: 'daily-report',
 		exportName: './scheduled-report',
 	})

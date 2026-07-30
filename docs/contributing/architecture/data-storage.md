@@ -522,8 +522,9 @@ strip the runtime source before persistence. Execution loaders hydrate those
 paths with the deployed host runtime source for every package surface (exports,
 subscriptions, jobs, services, package apps, workflows, and ad hoc execute).
 Static `kody:@...` package imports remain pinned snapshots, while literal
-dynamic `import("kody:@...")` imports are hydrated at execution time from the
-current published package export under the caller's `userId`.
+dynamic `import("kody:@...")` imports (deprecated in agent guidance in favor of
+`packages.invoke`) are hydrated at execution time from the current published
+package export under the caller's `userId`.
 
 ## Configuration reference
 
@@ -896,8 +897,9 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
 3. `packages/worker/src/package-registry/manifest.ts` normalizes export keys and
    resolves them through `package.json#exports`.
 4. Static imports are pinned into bundle dependencies at publish time. Literal
-   dynamic `import("kody:@...")` calls resolve at runtime to the caller's
-   current published package export.
+   dynamic `import("kody:@...")` calls (deprecated in agent guidance in favor of
+   `packages.invoke`) resolve at runtime to the caller's current published
+   package export.
 
 Do not change this grammar or static/dynamic distinction without a user-code
 migration plan.

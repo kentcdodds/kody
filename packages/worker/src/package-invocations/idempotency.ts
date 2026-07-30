@@ -1,8 +1,5 @@
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
-import { type RunRecordContext } from '#worker/run-records/types.ts'
-import { normalizeExportName, type PackageRuntimeContext } from './common.ts'
-import { type ParsedPackageInvokeInput } from './input-parsing.ts'
 import { buildJsonErrorResponse } from './responses.ts'
 import {
 	type getPackageInvocationByKey,
@@ -42,44 +39,6 @@ export async function createRequestHash(input: {
 		new TextEncoder().encode(canonical),
 	)
 	return toHex(new Uint8Array(digest))
-}
-
-export async function createAutoPackageInvokeIdempotencyKey(input: {
-	callerPackageContext: PackageRuntimeContext | null
-	parentRunRecord: RunRecordContext | null
-	sequence: number
-	request: ParsedPackageInvokeInput
-}) {
-	if (!input.callerPackageContext) {
-		return `pkginvoke:${crypto.randomUUID()}`
-	}
-	const parentKey = input.parentRunRecord?.idempotencyKey?.trim()
-	if (!parentKey) {
-		return `pkginvoke:${crypto.randomUUID()}`
-	}
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(
-			canonicalJsonStringify({
-				callerPackageId: input.callerPackageContext.packageId,
-				parentKey,
-				parentSurface: input.parentRunRecord?.surface ?? null,
-				parentName: input.parentRunRecord?.name ?? null,
-				sequence: input.sequence,
-				packageIdOrKodyId: input.request.packageIdOrKodyId,
-				exportName: normalizeExportName(input.request.exportName),
-				params: input.request.params,
-				topic: input.request.topic,
-			}),
-		),
-	)
-	return [
-		'pkginvoke',
-		input.callerPackageContext.packageId,
-		parentKey,
-		String(input.sequence),
-		toHex(new Uint8Array(digest)).slice(0, 24),
-	].join(':')
 }
 
 function buildIdempotencyResponseUnavailable(input: {

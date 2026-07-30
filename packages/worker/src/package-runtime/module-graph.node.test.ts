@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 
@@ -813,7 +814,15 @@ test('buildKodyModuleBundle proxies package module default and named exports', a
 	)?.[1]
 	expect(proxy).toContain('export * from')
 	expect(proxy).toContain('import * as __kodyPackageModule')
-	expect(proxy).toContain('export default __kodyPackageModule.default')
+	// Static import proxies stamp the callee package id and wrap function
+	// valued exports in the call-metering runtime helper.
+	expect(proxy).toContain(
+		'export default __kodyMeterStaticPackageExport("pkg-1", __kodyPackageModule.default)',
+	)
+	expect(proxy).toContain(
+		'const __kodyMeteredStaticExport0 = __kodyMeterStaticPackageExport("pkg-1", __kodyPackageModule.add);',
+	)
+	expect(proxy).toContain('export { __kodyMeteredStaticExport0 as add };')
 })
 
 test('buildKodyModuleBundle imports callable entrypoints as ESM default exports', async () => {
@@ -1491,6 +1500,7 @@ export default async function run() {
 		userId: 'user-1',
 		modules: bundle.modules,
 	})
+	consoleWarn.mockImplementation(() => {})
 	const moduleGraph = await createTemporaryModuleGraph(hydratedModules)
 	try {
 		const entry = (await moduleGraph.importModule(bundle.mainModule)) as {
@@ -1504,6 +1514,14 @@ export default async function run() {
 	} finally {
 		await moduleGraph.cleanup()
 	}
+	// The literal dynamic import shim warns once per specifier, naming the
+	// static-import replacement.
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining(
+			'[deprecated] dynamic import("kody:@kentcdodds/example-package/value")',
+		),
+	)
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
 		{},
 		expect.objectContaining({

@@ -1395,10 +1395,13 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	})
 	expect(
 		getExecutionErrorDetails(new Error(unboundStorageMessage))?.nextStep,
-	).toContain('packages.invokeChecked')
+	).toContain('packages.invoke')
+	expect(
+		getExecutionErrorDetails(new Error(unboundStorageMessage))?.nextStep,
+	).not.toContain('packages.invokeChecked')
 	// Saved-package code should always use packageStorage() (the storage
 	// prescription), so the hint leads with it before the storageId and
-	// invokeChecked alternatives.
+	// keyless-invoke alternatives.
 	const unboundStorageNextStep =
 		getExecutionErrorDetails(new Error(unboundStorageMessage))?.nextStep ?? ''
 	expect(unboundStorageNextStep).toContain('packageStorage()')
@@ -1406,7 +1409,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		unboundStorageNextStep.indexOf('`storageId`'),
 	)
 	expect(unboundStorageNextStep.indexOf('packageStorage()')).toBeLessThan(
-		unboundStorageNextStep.indexOf('packages.invokeChecked'),
+		unboundStorageNextStep.indexOf('packages.invoke'),
 	)
 	// Wrapped transports prefix the message (for example package invocation
 	// responses); parsing stays prefix-tolerant.

@@ -79,6 +79,7 @@ import {
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
+import { createPackageStaticCallMeterTools } from '#worker/usage/package-static-call-usage.ts'
 import { recordAgentPackageConversationUses } from '#worker/usage/agent-package-conversation-uses.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
@@ -941,6 +942,22 @@ export async function runBundledModuleWithRegistry(
 			dependencies: bundle.dependencies ?? [],
 			dynamicDependencyPackageIds,
 		})
+		// Static package export calls report through a sandbox bridge with a
+		// bundler-stamped callee package id; only ids recorded as *static*
+		// bundle dependencies at build time are accepted (mismatches are
+		// dropped host-side). This is deliberately tighter than the
+		// packageStorage grant set, which additionally includes the run's own
+		// package id and dynamic-import dependencies — neither of which the
+		// bundler ever stamps into a metered static import proxy.
+		const staticCallMeterTools = createPackageStaticCallMeterTools({
+			env,
+			userId: callerContext.user?.userId ?? null,
+			grantedPackageIds: new Set(
+				(bundle.dependencies ?? [])
+					.map((dependency) => dependency.packageId)
+					.filter((packageId): packageId is string => Boolean(packageId)),
+			),
+		})
 		const executor = createExecuteExecutor({
 			env,
 			exports: options?.executorExports ?? workerExports,
@@ -1009,6 +1026,7 @@ export async function runBundledModuleWithRegistry(
 			workflowTools,
 			packageInvokeTools: options?.packageInvokeTools,
 			packageEventTools: options?.packageEventTools,
+			staticCallMeterTools,
 		}
 		const runtimeHelperPreludes =
 			createRuntimeHelperPreludes(runtimeHelperContext)
@@ -1040,14 +1058,33 @@ ${runtimeHelperRuntimePropertySource}
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
     serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
   };
-  return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {
-    const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});
-    const __kodyEntrypoint = __kodyModule?.default;
-    if (typeof __kodyEntrypoint !== 'function') {
-      throw new Error('Kody execute modules must default export a function.');
+  try {
+    return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {
+      const __kodyModule = await import(${JSON.stringify(`./${bundle.mainModule}`)});
+      const __kodyEntrypoint = __kodyModule?.default;
+      if (typeof __kodyEntrypoint !== 'function') {
+        throw new Error('Kody execute modules must default export a function.');
+      }
+      return await __kodyEntrypoint(${entrypointInputSource});
+    });
+  } finally {
+    // Deliver buffered static package export call usage events while the
+    // sandbox RPC dispatchers are still live. Metering never breaks the
+    // run it observes, and the bounded race keeps a slow metering bridge
+    // from owning the run's tail latency.
+    if (typeof __kodyStaticCallMeter !== 'undefined' && __kodyStaticCallMeter != null) {
+      try {
+        let __kodyStaticCallMeterFlushTimer;
+        await Promise.race([
+          __kodyStaticCallMeter.flush(),
+          new Promise((resolve) => {
+            __kodyStaticCallMeterFlushTimer = setTimeout(resolve, 2_000);
+          }),
+        ]);
+        clearTimeout(__kodyStaticCallMeterFlushTimer);
+      } catch {}
     }
-    return await __kodyEntrypoint(${entrypointInputSource});
-  });
+  }
 }`
 		try {
 			const providers: Array<ResolvedProvider> = [
