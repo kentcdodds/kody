@@ -1,6 +1,7 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { z } from 'zod'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 
 export const packageRealtimeSessionRecordSchema = z.object({
@@ -53,8 +54,9 @@ function resolvePackageId(
 	if (appId) {
 		return appId
 	}
-	throw new Error(
-		'Package realtime APIs require package app or package job caller context.',
+	// Agent calls from MCP omit package context unless they pass package_id.
+	throw new McpCallerError(
+		'Package realtime APIs require package_id, or a package app or package job caller context.',
 	)
 }
 
@@ -73,7 +75,9 @@ export async function requirePackageRealtimeContext(input: {
 		packageId,
 	})
 	if (!savedPackage || !savedPackage.hasApp) {
-		throw new Error('Saved package app was not found for realtime operations.')
+		throw new McpCallerError(
+			'Saved package app was not found for realtime operations.',
+		)
 	}
 	return {
 		user,

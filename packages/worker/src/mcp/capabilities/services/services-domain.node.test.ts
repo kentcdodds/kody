@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -258,5 +259,56 @@ test('package service capabilities list, tolerate status failures, and delegate 
 		),
 	).resolves.toEqual({
 		ok: true,
+	})
+})
+
+test('service_list missing package context throws McpCallerError', async () => {
+	resetMocks()
+	const env = {
+		APP_DB: {} as D1Database,
+	} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+
+	const error = await serviceListCapability
+		.handler({}, { env, callerContext })
+		.catch((caught: unknown) => caught)
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(error).toMatchObject({
+		message: expect.stringMatching(/require package_id/),
+	})
+	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
+})
+
+test('service_list unknown package_id throws McpCallerError', async () => {
+	resetMocks()
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	const env = {
+		APP_DB: {} as D1Database,
+	} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+
+	const error = await serviceListCapability
+		.handler(
+			{ package_id: 'missing-package' },
+			{ env, callerContext },
+		)
+		.catch((caught: unknown) => caught)
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(error).toMatchObject({
+		message: expect.stringMatching(/Saved package was not found/),
 	})
 })

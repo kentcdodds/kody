@@ -1,6 +1,7 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { z } from 'zod'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	listSavedPackageServices,
@@ -43,8 +44,9 @@ function resolvePackageId(
 	if (appId) {
 		return appId
 	}
-	throw new Error(
-		'Package service APIs require package app or package job caller context.',
+	// Agent calls from MCP omit package context unless they pass package_id.
+	throw new McpCallerError(
+		'Package service APIs require package_id, or a package app or package job caller context.',
 	)
 }
 
@@ -94,7 +96,7 @@ export async function requirePackageServiceContext(input: {
 		packageId,
 	})
 	if (!savedPackage) {
-		throw new Error(
+		throw new McpCallerError(
 			'Saved package was not found for package service operations.',
 		)
 	}
