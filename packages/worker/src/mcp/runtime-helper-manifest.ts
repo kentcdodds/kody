@@ -244,12 +244,29 @@ const packageInvokeRuntimeBridgeProviderName =
 const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
 
 function createPackagesHelperPrelude() {
+	// `check` and `invokeChecked` are deprecated widen-phase shims: they keep
+	// working but warn once per run naming the replacement, because agents
+	// learn the current contract from logs and error text.
 	return `
-const packages = {
-  check: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.check(input ?? {}),
-  invoke: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invoke(input ?? {}),
-  invokeChecked: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invokeChecked(input ?? {}),
-};
+const packages = (() => {
+  const warned = new Set();
+  const warnOnce = (name, message) => {
+    if (warned.has(name)) return;
+    warned.add(name);
+    console.warn(message);
+  };
+  return {
+    check: async (input) => {
+      warnOnce('check', '[deprecated] packages.check: packages.invoke always contract-checks before invoking, so call packages.invoke({ kodyId, exportName, params }) directly (add idempotencyKey only when you need exactly-once).');
+      return await ${packageInvokeRuntimeBridgeProviderName}.check(input ?? {});
+    },
+    invoke: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invoke(input ?? {}),
+    invokeChecked: async (input) => {
+      warnOnce('invokeChecked', '[deprecated] packages.invokeChecked: use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time, or packages.invoke({ kodyId, exportName, params }) for dynamic targets (add idempotencyKey only when you need exactly-once).');
+      return await ${packageInvokeRuntimeBridgeProviderName}.invokeChecked(input ?? {});
+    },
+  };
+})();
 	`.trim()
 }
 

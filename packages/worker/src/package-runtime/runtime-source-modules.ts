@@ -579,10 +579,20 @@ const ${input.helperName} = async (specifier) => {
 export function createDynamicPackageImportHelperSource(input: {
 	helperName: string
 }) {
+	// Literal dynamic kody:@ imports are a deprecated widen-phase shim: they
+	// keep resolving via host hydration but warn once per specifier naming
+	// the static-import replacement.
 	return `
-const ${input.helperName} = async (specifier) => {
-	return await import(specifier);
-};
+const ${input.helperName} = (() => {
+	const warned = new Set();
+	return async (specifier, kodySpecifier) => {
+		if (kodySpecifier && !warned.has(kodySpecifier)) {
+			warned.add(kodySpecifier);
+			console.warn('[deprecated] dynamic import("' + kodySpecifier + '"): use a static import (import fn from "' + kodySpecifier + '") instead. Static imports from execute always see the current published version; saved packages must also declare the dependency in package.json#kody.dependencies. When the target name is only known at runtime, use packages.invoke({ kodyId, exportName, params }).');
+		}
+		return await import(specifier);
+	};
+})();
 `.trim()
 }
 

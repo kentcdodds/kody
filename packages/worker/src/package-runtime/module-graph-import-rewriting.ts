@@ -432,7 +432,7 @@ async function rewriteKodyImports(input: {
 				end: node.end,
 				value: `${dynamicPackageImportHelperName}(${JSON.stringify(
 					`./${proxyPath}`,
-				)})`,
+				)}, ${JSON.stringify(node.literalSpecifier)})`,
 			})
 			continue
 		}

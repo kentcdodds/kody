@@ -21,6 +21,10 @@ import {
 	type PublishedPackageArtifactBuildTarget,
 } from '#worker/package-runtime/package-artifact-targets.ts'
 import {
+	collectDeprecatedInvocationUsage,
+	formatDeprecatedInvocationUsageWarning,
+} from '#worker/package-runtime/deprecated-invocation-usage.ts'
+import {
 	collectStaticKodyPackageImportsFromFiles,
 	isTypeDeclarationFilePath,
 } from '#worker/package-runtime/static-kody-imports.ts'
@@ -993,6 +997,18 @@ function buildLintCheck(sourceFiles: Record<string, string>): {
 } {
 	const ambientStorageFiles = collectAmbientStorageImportFiles(sourceFiles)
 	if (ambientStorageFiles.length === 0) {
+		// Widen-phase deprecations stay non-fatal: publishes succeed, but the
+		// passing lint message names each legacy invocation usage and its
+		// replacement so new packages stop adopting the retired surface.
+		const deprecationWarning = formatDeprecatedInvocationUsageWarning(
+			collectDeprecatedInvocationUsage(sourceFiles),
+		)
+		if (deprecationWarning) {
+			return {
+				ok: true,
+				message: `Lint passed. ${deprecationWarning}`,
+			}
+		}
 		return { ok: true, message: lintPlaceholderPassedMessage }
 	}
 	const shownFiles = ambientStorageFiles.slice(
