@@ -35,7 +35,8 @@ jobs:
   backfill:
     runs-on: ubuntu-latest
     name: 🧭 Backfill MCP agent sessions (${{ inputs.mode }})
-    timeout-minutes: 180
+    # Production inventory is ~8k MCP DOs (~162 batches); 180m was not enough.
+    timeout-minutes: 360
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
