@@ -272,6 +272,12 @@ Revert requires published HEAD to still equal the source item's `afterCommit`.
 Missing or expired KV snapshots fail the revert item. Revert does not restore
 Artifacts working-copy edits made after apply.
 
+Runs are single-pass in every mode: items that fail or are drift-skipped are
+recorded on the run but not retried within it. Because failed or skipped source
+items keep their `applied` status, retrying is starting a **new** revert run
+against the same apply run — it picks up exactly the items that were not
+reverted.
+
 ## Subscription events
 
 After each successful **apply** or **revert**, the host dispatches
