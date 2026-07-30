@@ -19,3 +19,8 @@ CREATE TABLE IF NOT EXISTS feature_flag_exposure_rollups (
 
 CREATE INDEX IF NOT EXISTS idx_feature_flag_exposure_rollups_user_id
 	ON feature_flag_exposure_rollups (user_id);
+
+-- Retention prunes select and order by day (see retention.ts); the composite
+-- primary key starts with flag_key so it cannot serve that scan.
+CREATE INDEX IF NOT EXISTS idx_feature_flag_exposure_rollups_day
+	ON feature_flag_exposure_rollups (day);
