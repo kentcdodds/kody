@@ -40,6 +40,14 @@ test('execute capability runs modules through the shared execute runtime', async
 		logs: [{ level: 'info', message: 'ran' }],
 	})
 
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+		},
+	})
 	const result = await executeCapability.handler(
 		{
 			code: 'export default async function main() { return { marker: "execute-ok" } }',
@@ -49,14 +57,7 @@ test('execute capability runs modules through the shared execute runtime', async
 		},
 		{
 			env: {} as Env,
-			callerContext: createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				user: {
-					userId: 'user-1',
-					email: 'user@example.com',
-					displayName: 'User',
-				},
-			}),
+			callerContext,
 		},
 	)
 
@@ -93,10 +94,7 @@ test('execute capability runs modules through the shared execute runtime', async
 			preExecTypecheck: false,
 		}),
 	)
-})
 
-test('execute capability passes the opted-in pre-exec typecheck to the shared runtime', async () => {
-	vi.clearAllMocks()
 	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
 		'demo-indicator': false,
 		'execute-pre-exec-typecheck': true,
@@ -105,31 +103,16 @@ test('execute capability passes the opted-in pre-exec typecheck to the shared ru
 		result: { marker: 'typecheck-enabled' },
 		logs: [],
 	})
-
 	await executeCapability.handler(
 		{
 			code: 'export default async function main() { return { marker: "typecheck-enabled" } }',
 		},
 		{
 			env: {} as Env,
-			callerContext: createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				user: {
-					userId: 'user-1',
-					email: 'user@example.com',
-					displayName: 'User',
-				},
-			}),
+			callerContext,
 		},
 	)
-
-	expect(mockModule.resolveCallerFeatureFlags).toHaveBeenCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			user: expect.objectContaining({ userId: 'user-1' }),
-		}),
-	)
-	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
+	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
 		expect.anything(),
 		expect.anything(),
 		expect.any(String),

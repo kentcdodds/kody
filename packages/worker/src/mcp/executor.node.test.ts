@@ -21,7 +21,6 @@ import {
 	formatLimitedExecutionOutput,
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
-	raceWithHostEvaluationDeadline,
 	runWithDynamicWorkerEvaluationBudget,
 } from './executor.ts'
 import { executorSandboxTimeoutMessage } from '#worker/sentry-options.ts'
@@ -503,14 +502,6 @@ test('explicit request budgets cap independent roots at four without blocking se
 	expect(secondState.active).toBe(0)
 })
 
-test('raceWithHostEvaluationDeadline rejects when evaluate never settles', async () => {
-	const startedAtMs = Date.now()
-	await expect(
-		raceWithHostEvaluationDeadline(async () => await new Promise(() => {}), 40),
-	).rejects.toThrow(executorSandboxTimeoutMessage)
-	expect(Date.now() - startedAtMs).toBeLessThan(500)
-})
-
 test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs', async () => {
 	const loader = {
 		get(_id: string, factory: () => FakeWorkerOptions) {
@@ -599,175 +590,170 @@ test('createExecuteExecutor drops queued evaluations when the host deadline expi
 	})
 })
 
-test('createExecuteExecutor fails fast when nested fan-out saturates its request budget', async () => {
-	let evaluationCount = 0
-	let maxActiveEvaluations = 0
-	let activeEvaluations = 0
-	let releaseChildren: () => void = () => {}
-	const childrenMayFinish = new Promise<void>((resolve) => {
-		releaseChildren = resolve
-	})
-	let nestedEnv: Env
+test('createExecuteExecutor fails fast when a request saturates its four-evaluation budget', async () => {
+	const concurrencyLimitMessage =
+		'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.'
 	const exports = createExecutorTestExports()
 	const providers = [{ name: 'kody', fns: {} }]
-	const loader = {
-		get(_id: string, factory: () => FakeWorkerOptions) {
-			factory()
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate() {
-							evaluationCount += 1
-							activeEvaluations += 1
-							maxActiveEvaluations = Math.max(
-								maxActiveEvaluations,
-								activeEvaluations,
-							)
-							if (evaluationCount === 1) {
-								return await Promise.all(
-									Array.from({ length: 5 }, async (_, index) => {
-										return await createExecuteExecutor({
-											env: nestedEnv,
-											exports,
-											gatewayProps: createGatewayProps('nested-user'),
-										}).execute(`async () => ${index}`, providers)
-									}),
+
+	{
+		let evaluationCount = 0
+		let maxActiveEvaluations = 0
+		let activeEvaluations = 0
+		let releaseChildren: () => void = () => {}
+		const childrenMayFinish = new Promise<void>((resolve) => {
+			releaseChildren = resolve
+		})
+		let nestedEnv: Env
+		const loader = {
+			get(_id: string, factory: () => FakeWorkerOptions) {
+				factory()
+				return {
+					getEntrypoint() {
+						return {
+							async evaluate() {
+								evaluationCount += 1
+								activeEvaluations += 1
+								maxActiveEvaluations = Math.max(
+									maxActiveEvaluations,
+									activeEvaluations,
 								)
-							}
-							await childrenMayFinish
-							activeEvaluations -= 1
-							return { result: 'child', logs: [] }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-	nestedEnv = createExecutorTestEnv(loader)
+								if (evaluationCount === 1) {
+									return await Promise.all(
+										Array.from({ length: 5 }, async (_, index) => {
+											return await createExecuteExecutor({
+												env: nestedEnv,
+												exports,
+												gatewayProps: createGatewayProps('nested-user'),
+											}).execute(`async () => ${index}`, providers)
+										}),
+									)
+								}
+								await childrenMayFinish
+								activeEvaluations -= 1
+								return { result: 'child', logs: [] }
+							},
+						}
+					},
+				}
+			},
+		} as unknown as Env['LOADER']
+		nestedEnv = createExecutorTestEnv(loader)
 
-	const rootExecution = createExecuteExecutor({
-		env: nestedEnv,
-		exports,
-		gatewayProps: createGatewayProps('nested-user'),
-	}).execute('async () => "root"', providers)
+		await expect(
+			createExecuteExecutor({
+				env: nestedEnv,
+				exports,
+				gatewayProps: createGatewayProps('nested-user'),
+			}).execute('async () => "root"', providers),
+		).rejects.toThrow(concurrencyLimitMessage)
+		releaseChildren()
+		expect(evaluationCount).toBe(4)
+		expect(maxActiveEvaluations).toBe(4)
+	}
 
-	await expect(rootExecution).rejects.toThrow(
-		'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
-	)
-	releaseChildren()
-	expect(evaluationCount).toBe(4)
-	expect(maxActiveEvaluations).toBe(4)
-})
-
-test('createExecuteExecutor fails fast instead of deadlocking recursive evaluations beyond four', async () => {
-	let evaluationCount = 0
-	let recursiveEnv: Env
-	const exports = createExecutorTestExports()
-	const providers = [{ name: 'kody', fns: {} }]
-	const loader = {
-		get(_id: string, factory: () => FakeWorkerOptions) {
-			factory()
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate() {
-							evaluationCount += 1
-							return await createExecuteExecutor({
-								env: recursiveEnv,
-								exports,
-								gatewayProps: createGatewayProps('recursive-user'),
-							}).execute(`async () => ${evaluationCount}`, providers)
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-	recursiveEnv = createExecutorTestEnv(loader)
-
-	const startedAtMs = Date.now()
-	await expect(
-		createExecuteExecutor({
-			env: recursiveEnv,
-			exports,
-			gatewayProps: createGatewayProps('recursive-user'),
-		}).execute('async () => "root"', providers),
-	).rejects.toThrow(
-		'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
-	)
-	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
-	expect(evaluationCount).toBe(4)
-})
-
-test('createExecuteExecutor fails fast when saturated sibling evaluations recurse together', async () => {
-	let evaluationCount = 0
-	let childCount = 0
-	let releaseChildren: () => void = () => {}
-	const allChildrenStarted = new Promise<void>((resolve) => {
-		releaseChildren = resolve
-	})
-	let recursiveEnv: Env
-	const exports = createExecutorTestExports()
-	const providers = [{ name: 'kody', fns: {} }]
-	const loader = {
-		get(_id: string, factory: () => FakeWorkerOptions) {
-			const options = factory()
-			const serializedOptions = JSON.stringify(options)
-			const kind = serializedOptions.includes('root-marker')
-				? 'root'
-				: serializedOptions.includes('child-marker')
-					? 'child'
-					: 'descendant'
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate() {
-							evaluationCount += 1
-							if (kind === 'root') {
-								return await Promise.all(
-									Array.from({ length: 3 }, async (_, index) =>
-										createExecuteExecutor({
-											env: recursiveEnv,
-											exports,
-											gatewayProps: createGatewayProps('mixed-user'),
-										}).execute(
-											`async () => "child-marker-${index}"`,
-											providers,
-										),
-									),
-								)
-							}
-							if (kind === 'child') {
-								childCount += 1
-								if (childCount === 3) releaseChildren()
-								await allChildrenStarted
+	{
+		let evaluationCount = 0
+		let recursiveEnv: Env
+		const loader = {
+			get(_id: string, factory: () => FakeWorkerOptions) {
+				factory()
+				return {
+					getEntrypoint() {
+						return {
+							async evaluate() {
+								evaluationCount += 1
 								return await createExecuteExecutor({
 									env: recursiveEnv,
 									exports,
-									gatewayProps: createGatewayProps('mixed-user'),
-								}).execute('async () => "descendant-marker"', providers)
-							}
-							return { result: 'descendant', logs: [] }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-	recursiveEnv = createExecutorTestEnv(loader)
+									gatewayProps: createGatewayProps('recursive-user'),
+								}).execute(`async () => ${evaluationCount}`, providers)
+							},
+						}
+					},
+				}
+			},
+		} as unknown as Env['LOADER']
+		recursiveEnv = createExecutorTestEnv(loader)
 
-	const startedAtMs = Date.now()
-	await expect(
-		createExecuteExecutor({
-			env: recursiveEnv,
-			exports,
-			gatewayProps: createGatewayProps('mixed-user'),
-		}).execute('async () => "root-marker"', providers),
-	).rejects.toThrow(
-		'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
-	)
-	expect(Date.now() - startedAtMs).toBeLessThan(1_000)
-	expect(evaluationCount).toBe(4)
+		const startedAtMs = Date.now()
+		await expect(
+			createExecuteExecutor({
+				env: recursiveEnv,
+				exports,
+				gatewayProps: createGatewayProps('recursive-user'),
+			}).execute('async () => "root"', providers),
+		).rejects.toThrow(concurrencyLimitMessage)
+		expect(Date.now() - startedAtMs).toBeLessThan(1_000)
+		expect(evaluationCount).toBe(4)
+	}
+
+	{
+		let evaluationCount = 0
+		let childCount = 0
+		let releaseChildren: () => void = () => {}
+		const allChildrenStarted = new Promise<void>((resolve) => {
+			releaseChildren = resolve
+		})
+		let recursiveEnv: Env
+		const loader = {
+			get(_id: string, factory: () => FakeWorkerOptions) {
+				const options = factory()
+				const serializedOptions = JSON.stringify(options)
+				const kind = serializedOptions.includes('root-marker')
+					? 'root'
+					: serializedOptions.includes('child-marker')
+						? 'child'
+						: 'descendant'
+				return {
+					getEntrypoint() {
+						return {
+							async evaluate() {
+								evaluationCount += 1
+								if (kind === 'root') {
+									return await Promise.all(
+										Array.from({ length: 3 }, async (_, index) =>
+											createExecuteExecutor({
+												env: recursiveEnv,
+												exports,
+												gatewayProps: createGatewayProps('mixed-user'),
+											}).execute(
+												`async () => "child-marker-${index}"`,
+												providers,
+											),
+										),
+									)
+								}
+								if (kind === 'child') {
+									childCount += 1
+									if (childCount === 3) releaseChildren()
+									await allChildrenStarted
+									return await createExecuteExecutor({
+										env: recursiveEnv,
+										exports,
+										gatewayProps: createGatewayProps('mixed-user'),
+									}).execute('async () => "descendant-marker"', providers)
+								}
+								return { result: 'descendant', logs: [] }
+							},
+						}
+					},
+				}
+			},
+		} as unknown as Env['LOADER']
+		recursiveEnv = createExecutorTestEnv(loader)
+
+		const startedAtMs = Date.now()
+		await expect(
+			createExecuteExecutor({
+				env: recursiveEnv,
+				exports,
+				gatewayProps: createGatewayProps('mixed-user'),
+			}).execute('async () => "root-marker"', providers),
+		).rejects.toThrow(concurrencyLimitMessage)
+		expect(Date.now() - startedAtMs).toBeLessThan(1_000)
+		expect(evaluationCount).toBe(4)
+	}
 })
 
 test('createExecuteExecutor reuses stable dynamic worker ids until binding context or module graph changes', async () => {

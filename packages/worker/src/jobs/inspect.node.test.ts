@@ -11,10 +11,10 @@ function importSpecs(source: string) {
 	].map((match) => match[1])
 }
 
-test('job inspect module stays off the job execution import graph', () => {
-	const source = readFileSync(join(here, 'inspect.ts'), 'utf8')
-	const specs = importSpecs(source)
-	expect(specs).not.toEqual(
+test('job list/get capabilities statically import slim inspect off the execution graph', () => {
+	const inspectSource = readFileSync(join(here, 'inspect.ts'), 'utf8')
+	const inspectSpecs = importSpecs(inspectSource)
+	expect(inspectSpecs).not.toEqual(
 		expect.arrayContaining([
 			expect.stringMatching(/run-kody-registry/),
 			expect.stringMatching(/jobs\/service/),
@@ -22,31 +22,19 @@ test('job inspect module stays off the job execution import graph', () => {
 			expect.stringMatching(/entitlements\/service/),
 		]),
 	)
-	expect(specs).toContain('./manager-client.ts')
-	expect(specs).toContain('./repo.ts')
-})
+	expect(inspectSpecs).toContain('./manager-client.ts')
+	expect(inspectSpecs).toContain('./repo.ts')
 
-test('job_list capability statically imports slim inspect, not service', () => {
-	const source = readFileSync(
-		join(here, '../mcp/capabilities/jobs/job-list.ts'),
-		'utf8',
-	)
-	const specs = importSpecs(source)
-	expect(specs).toContain('#worker/jobs/inspect.ts')
-	expect(specs).not.toEqual(
-		expect.arrayContaining([expect.stringMatching(/jobs\/service/)]),
-	)
-	expect(source).not.toMatch(/await import\s*\(/)
-})
-
-test('job_get capability statically imports slim inspect, not service', () => {
-	const source = readFileSync(
-		join(here, '../mcp/capabilities/jobs/job-get.ts'),
-		'utf8',
-	)
-	const specs = importSpecs(source)
-	expect(specs).toContain('#worker/jobs/inspect.ts')
-	expect(specs).not.toEqual(
-		expect.arrayContaining([expect.stringMatching(/jobs\/service/)]),
-	)
+	for (const relativePath of [
+		'../mcp/capabilities/jobs/job-list.ts',
+		'../mcp/capabilities/jobs/job-get.ts',
+	]) {
+		const source = readFileSync(join(here, relativePath), 'utf8')
+		const specs = importSpecs(source)
+		expect(specs).toContain('#worker/jobs/inspect.ts')
+		expect(specs).not.toEqual(
+			expect.arrayContaining([expect.stringMatching(/jobs\/service/)]),
+		)
+		expect(source).not.toMatch(/await import\s*\(/)
+	}
 })

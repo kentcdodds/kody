@@ -13,7 +13,7 @@ const staleListing = {
 	tags: ['stale', 'frame'],
 }
 
-test('community listings frame reloads fresh data on back-navigation', async ({
+test('community listing and detail frames reload fresh data on back-navigation', async ({
 	page,
 }) => {
 	await ensurePrimaryUserExists()
@@ -45,7 +45,7 @@ test('community listings frame reloads fresh data on back-navigation', async ({
 		description: updatedDescription,
 	})
 
-	const frameReload = page.waitForResponse(
+	const listingsFrameReload = page.waitForResponse(
 		(response) =>
 			response.request().headers()['x-remix-target'] === 'community-listings' &&
 			response.url().includes('/community') &&
@@ -54,7 +54,7 @@ test('community listings frame reloads fresh data on back-navigation', async ({
 
 	await page.getByRole('link', { name: 'Community packages' }).click()
 	await expect(page).toHaveURL(/\/community$/)
-	await frameReload
+	await listingsFrameReload
 
 	await expect(
 		page.getByTestId(`community-listing-description-${staleListing.listingId}`),
@@ -65,22 +65,16 @@ test('community listings frame reloads fresh data on back-navigation', async ({
 				(window as Window & { __e2eStaleMarker?: boolean }).__e2eStaleMarker,
 		),
 	).toBe(true)
-})
 
-test('community detail frame reloads fresh fork counts on return navigation', async ({
-	page,
-}) => {
-	await ensurePrimaryUserExists()
+	const detailListingId = 'e2e-frame-detail-stale-listing'
 	await seedCommunityListingInE2eDatabase({
 		...staleListing,
-		listingId: 'e2e-frame-detail-stale-listing',
+		listingId: detailListingId,
 		name: '@kody/frame-detail-stale-package',
 		ownerEmail: primaryTestUser.email,
 	})
 
-	const listingId = 'e2e-frame-detail-stale-listing'
-
-	await page.goto(`/community/${listingId}`)
+	await page.goto(`/community/${detailListingId}`)
 	const initialForkCount = Number(
 		(await page.getByTestId('community-detail-forks').textContent()) ?? '0',
 	)
@@ -97,23 +91,23 @@ test('community detail frame reloads fresh fork counts on return navigation', as
 	await expect(page).toHaveURL(/\/community$/)
 
 	await seedCommunityForkInE2eDatabase({
-		listingId,
+		listingId: detailListingId,
 		forkerEmail: primaryTestUser.email,
-		forkId: `fork-${listingId}-${Date.now()}`,
+		forkId: `fork-${detailListingId}-${Date.now()}`,
 	})
 
-	const frameReload = page.waitForResponse(
+	const detailFrameReload = page.waitForResponse(
 		(response) =>
 			response.request().headers()['x-remix-target'] === 'community-detail' &&
-			response.url().includes(`/community/${listingId}`) &&
+			response.url().includes(`/community/${detailListingId}`) &&
 			response.status() === 200,
 	)
 
 	await page
 		.getByRole('link', { name: '@kody/frame-detail-stale-package' })
 		.click()
-	await expect(page).toHaveURL(new RegExp(`/community/${listingId}$`))
-	await frameReload
+	await expect(page).toHaveURL(new RegExp(`/community/${detailListingId}$`))
+	await detailFrameReload
 
 	await expect(page.getByTestId('community-detail-forks')).toHaveText(
 		String(initialForkCount + 1),

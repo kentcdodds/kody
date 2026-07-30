@@ -59,9 +59,9 @@ function createEstimateEnv(
 	} as unknown as Env
 }
 
-test('assertStorageRunnerWriteWithinEntitlement retries a failed estimate chunk once', async () => {
+test('assertStorageRunnerWriteWithinEntitlement retries estimate reads once, fails closed, and waits for peers', async () => {
 	mockModule.listUserStorageBucketIds.mockResolvedValue(['bucket-a'])
-	const getEstimatedBytes = vi
+	const retryOnce = vi
 		.fn()
 		.mockRejectedValueOnce(new Error('transient DO read failure'))
 		.mockResolvedValueOnce({ estimatedBytes: 32 })
@@ -69,7 +69,7 @@ test('assertStorageRunnerWriteWithinEntitlement retries a failed estimate chunk 
 	vi.useFakeTimers()
 	try {
 		const assertion = assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(() => getEstimatedBytes()),
+			env: createEstimateEnv(() => retryOnce()),
 			userId: 'user-1',
 			email: null,
 			storageId: 'bucket-a',
@@ -77,22 +77,18 @@ test('assertStorageRunnerWriteWithinEntitlement retries a failed estimate chunk 
 		})
 		await vi.advanceTimersByTimeAsync(storageEstimateReadRetryDelayMs)
 		await expect(assertion).resolves.toBeUndefined()
-		expect(getEstimatedBytes).toHaveBeenCalledTimes(2)
+		expect(retryOnce).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.useRealTimers()
 	}
-})
 
-test('assertStorageRunnerWriteWithinEntitlement fails closed when the retry also fails', async () => {
-	mockModule.listUserStorageBucketIds.mockResolvedValue(['bucket-a'])
-	const getEstimatedBytes = vi
+	const persistentFailure = vi
 		.fn()
 		.mockRejectedValue(new Error('persistent DO read failure'))
-
 	vi.useFakeTimers()
 	try {
 		const assertion = assertStorageRunnerWriteWithinEntitlement({
-			env: createEstimateEnv(() => getEstimatedBytes()),
+			env: createEstimateEnv(() => persistentFailure()),
 			userId: 'user-1',
 			email: null,
 			storageId: 'bucket-a',
@@ -103,13 +99,11 @@ test('assertStorageRunnerWriteWithinEntitlement fails closed when the retry also
 		)
 		await vi.advanceTimersByTimeAsync(storageEstimateReadRetryDelayMs)
 		await expectation
-		expect(getEstimatedBytes).toHaveBeenCalledTimes(2)
+		expect(persistentFailure).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.useRealTimers()
 	}
-})
 
-test('estimate chunk retry waits for pending first-attempt reads before retrying', async () => {
 	const chunkStorageIds = ['fast-fail', 'slow-ok'] as const
 	mockModule.listUserStorageBucketIds.mockResolvedValue([...chunkStorageIds])
 
@@ -148,7 +142,7 @@ test('estimate chunk retry waits for pending first-attempt reads before retrying
 		}
 	}
 
-	const assertion = assertStorageRunnerWriteWithinEntitlement({
+	const peerAssertion = assertStorageRunnerWriteWithinEntitlement({
 		env: createEstimateEnv(getEstimatedBytes),
 		userId: 'user-1',
 		email: null,
@@ -171,7 +165,7 @@ test('estimate chunk retry waits for pending first-attempt reads before retrying
 	expect(callCounts.get('slow-ok')).toBe(1)
 
 	resolveSlow?.()
-	await expect(assertion).resolves.toBeUndefined()
+	await expect(peerAssertion).resolves.toBeUndefined()
 
 	expect(callCounts.get('fast-fail')).toBe(2)
 	expect(callCounts.get('slow-ok')).toBe(1)

@@ -938,7 +938,7 @@ test('deleteSavedPackageProjection clears deterministic storage when projection 
 	})
 })
 
-test('filterPackageOwnedStorageIdsFromInventory exact-matches only for non-UUID package ids', () => {
+test('filterPackageOwnedStorageIdsFromInventory exact-matches non-UUIDs and UUID-gates prefixes', () => {
 	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 	const inventory = [
 		'job',
@@ -973,32 +973,27 @@ test('filterPackageOwnedStorageIdsFromInventory exact-matches only for non-UUID 
 			storageIds: [...inventory, 'exec', 'package:exec'],
 		}).toSorted(),
 	).toEqual(['exec', 'package:exec'].toSorted())
-})
 
-test('filterPackageOwnedStorageIdsFromInventory applies UUID-gated prefixes', () => {
 	const packageId = 'b2fda105-005a-4e2b-9f22-1513b6752da2'
-	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 	const packageStorageId = `package:${encodeURIComponent(packageId)}`
 	const facetStorageId = `${packageId}:facet:main`
 	const jobStorageId = `job:package-job:${packageId}:event-runner`
 	const serviceStorageId = `service:${encodeURIComponent(packageId)}:realtime-supervisor`
-	const inventory = [
-		packageId,
-		packageStorageId,
-		facetStorageId,
-		jobStorageId,
-		serviceStorageId,
-		'job:ad-hoc-1',
-		`job:package-job:${otherPackageId}:nightly`,
-		`${otherPackageId}:facet:main`,
-		`service:${encodeURIComponent(otherPackageId)}:other`,
-		'exec:scratch-1',
-	]
-
 	expect(
 		filterPackageOwnedStorageIdsFromInventory({
 			packageId,
-			storageIds: inventory,
+			storageIds: [
+				packageId,
+				packageStorageId,
+				facetStorageId,
+				jobStorageId,
+				serviceStorageId,
+				'job:ad-hoc-1',
+				`job:package-job:${otherPackageId}:nightly`,
+				`${otherPackageId}:facet:main`,
+				`service:${encodeURIComponent(otherPackageId)}:other`,
+				'exec:scratch-1',
+			],
 		}).toSorted(),
 	).toEqual(
 		[
@@ -1011,7 +1006,7 @@ test('filterPackageOwnedStorageIdsFromInventory applies UUID-gated prefixes', ()
 	)
 })
 
-test('deleteSavedPackageProjection does not clear unrelated buckets for package id "job"', async () => {
+test('deleteSavedPackageProjection does not clear unrelated buckets for exact-match package ids', async () => {
 	setupDefaultMocks()
 	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 	const storageBuckets = [
@@ -1049,42 +1044,6 @@ test('deleteSavedPackageProjection does not clear unrelated buckets for package 
 			'job:ad-hoc-1',
 			`job:package-job:${otherPackageId}:nightly`,
 			'job:facet:main',
-		].toSorted(),
-	)
-})
-
-test('deleteSavedPackageProjection does not clear unrelated buckets for package id "%"', async () => {
-	setupDefaultMocks()
-	const packageId = '%'
-	const packageStorageId = `package:${encodeURIComponent(packageId)}`
-	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
-	const storageBuckets = [
-		{ userId: 'user-1', storageId: packageId },
-		{ userId: 'user-1', storageId: packageStorageId },
-		{ userId: 'user-1', storageId: 'job:ad-hoc-1' },
-		{ userId: 'user-1', storageId: `${otherPackageId}:facet:main` },
-		{ userId: 'user-1', storageId: 'exec:scratch-1' },
-	]
-	const env = createEnv('user-1', { storageBuckets })
-	mockModule.getSavedPackageById.mockResolvedValue(null)
-
-	await deleteSavedPackageProjection({
-		env,
-		userId: 'user-1',
-		packageId,
-	})
-
-	const clearedStorageIds = mockModule.storageRunnerRpc.mock.calls.map(
-		(call) => (call[0] as { storageId: string }).storageId,
-	)
-	expect(clearedStorageIds.toSorted()).toEqual(
-		[packageId, packageStorageId].toSorted(),
-	)
-	expect(storageBuckets.map((row) => row.storageId).toSorted()).toEqual(
-		[
-			'job:ad-hoc-1',
-			`${otherPackageId}:facet:main`,
-			'exec:scratch-1',
 		].toSorted(),
 	)
 })

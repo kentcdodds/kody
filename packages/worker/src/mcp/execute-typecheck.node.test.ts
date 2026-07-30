@@ -199,9 +199,7 @@ export default async function run() {
 		.slice(0, -1)
 		.reduce((sum, entry) => sum + entry.durationMs, 0)
 	expect(totalMs).toBeGreaterThanOrEqual(phaseSumMs - 5)
-})
 
-test('failed typecheck diagnostics still carry phase timings on the error', async () => {
 	const failure = await assertAdHocExecuteTypechecks({
 		source: `export default function run(): string {
 	return 42
@@ -212,8 +210,9 @@ test('failed typecheck diagnostics still carry phase timings on the error', asyn
 		(error: unknown) => error,
 	)
 	expect(failure).toBeInstanceOf(ExecuteTypecheckError)
-	const timedFailure = failure as ExecuteTypecheckError
-	expect(timedFailure.serverTiming?.map((entry) => entry.name)).toEqual([
+	expect(
+		(failure as ExecuteTypecheckError).serverTiming?.map((entry) => entry.name),
+	).toEqual([
 		'typecheck-queue',
 		'typecheck-compiler-startup',
 		'typecheck-project-write',

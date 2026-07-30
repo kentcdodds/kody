@@ -53,32 +53,3 @@ test('every non-eager route pattern resolves to a registered lazy area', () => {
 		}
 	}
 })
-
-test('lazy area names match the manifest builder contract', () => {
-	// Must stay in sync with `lazyAreaNames` in tools/build-client-manifest.ts
-	// (tools/build-client-manifest.node.test.ts pins the same literal).
-	const expectedAreaNames = [
-		'account-area',
-		'admin-area',
-		'blog-area',
-		'community-area',
-		'onboarding-area',
-	]
-	const registeredNames = new Set<string>()
-	const samplePaths = [
-		'/account',
-		'/admin/users',
-		'/blog',
-		'/community',
-		'/@someone',
-		'/timeline',
-		'/onboarding',
-		'/connect/oauth',
-		'/oauth/authorize',
-	]
-	for (const path of samplePaths) {
-		const name = clientRouteAreaNameForPath(path)
-		if (name) registeredNames.add(name)
-	}
-	expect([...registeredNames].sort()).toEqual(expectedAreaNames)
-})

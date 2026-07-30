@@ -3145,6 +3145,10 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 			result: { ok: true, bypassed: true },
 			logs: ['repo-backed kody executed'],
 		})
+	const formatJobErrorSpy = vi.spyOn(
+		await import('./schedule.ts'),
+		'formatJobError',
+	)
 
 	try {
 		const outcome = await executeJobOnce({
@@ -3159,160 +3163,15 @@ test('executeJobOnce bypasses typecheck-only failures when the stored repo polic
 			logs: ['repo-backed kody executed'],
 		})
 		expect(executeSpy).toHaveBeenCalledTimes(1)
-	} finally {
-		repoSessionRpcSpy.mockRestore()
-		executeSpy.mockRestore()
-	}
-})
 
-test('executeJobOnce preserves bypass audit logs when execution fails after a typecheck-only bypass', async () => {
-	silenceIncidentalRuntimeWarnings()
-	const db = createDatabase()
-	const bundleKv = createBundleArtifactsKv()
-	await insertPublishedEntitySource({
-		db,
-		userId: 'user-123',
-		sourceId: 'source-bypass-failure',
-		entityKind: 'package',
-		entityId: 'job-repo-typecheck-bypass-failure',
-		publishedCommit: 'commit-bypass-failure',
-		manifestPath: 'package.json',
-		files: {
-			'package.json': createPackageJobManifestText({
-				packageName: '@kody/repo-bypass-failure',
-				kodyId: 'repo-bypass-failure',
-				description: 'Runs from repo',
-				jobName: 'Repo-backed bypass failure job',
-			}),
-			'src/job.ts': 'export default async () => ({ ok: true, bypassed: true })',
-		},
-		env: {
-			APP_DB: db,
-			BUNDLE_ARTIFACTS_KV: bundleKv,
-		} as Env,
-	})
-	const env = {
-		APP_DB: db,
-		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
-		CLOUDFLARE_API_TOKEN: 'token-test',
-		BUNDLE_ARTIFACTS_KV: bundleKv,
-		LOADER: {} as WorkerLoader,
-	} as Env
-	const callerContext = createBaseCallerContext()
-	const job: JobRecord = {
-		version: 1,
-		id: 'job-repo-typecheck-bypass-failure',
-		userId: callerContext.user.userId,
-		name: 'Repo-backed bypass failure job',
-		code: null,
-		sourceId: 'source-bypass-failure',
-		publishedCommit: 'commit-bypass-failure',
-		repoCheckPolicy: {
-			allowTypecheckFailures: true,
-		},
-		storageId: 'job:job-repo-typecheck-bypass-failure',
-		schedule: {
-			type: 'once',
-			runAt: '2026-04-17T15:00:00Z',
-		},
-		timezone: 'UTC',
-		enabled: true,
-		killSwitchEnabled: false,
-		preserved: false,
-		createdAt: '2026-04-16T00:00:00.000Z',
-		updatedAt: '2026-04-16T00:00:00.000Z',
-		nextRunAt: '2026-04-17T15:00:00.000Z',
-		runCount: 0,
-		successCount: 0,
-		errorCount: 0,
-	}
-	const sessionClient = {
-		openSession: vi.fn(async () => ({
-			id: 'job-runtime-job-repo-typecheck-bypass-failure',
-			source_id: 'source-bypass-failure',
-			source_root: '/',
-			base_commit: 'commit-bypass-failure',
-			conversation_id: null,
-			last_checkpoint_commit: null,
-			last_check_run_id: null,
-			last_check_tree_hash: null,
-			expires_at: null,
-			created_at: '2026-04-16T00:00:00.000Z',
-			updated_at: '2026-04-16T00:00:00.000Z',
-			published_commit: 'commit-bypass-failure',
-			manifest_path: 'package.json',
-			entity_type: 'job' as const,
-		})),
-		runChecks: vi.fn(async () => ({
-			ok: false,
-			results: [
-				{
-					kind: 'typecheck' as const,
-					ok: false,
-					message: "src/job.ts:1:28 Cannot find name 'kody'.",
-				},
-			],
-			manifest: createPackageJobManifest({
-				packageName: '@kody/repo-bypass-failure',
-				kodyId: 'repo-bypass-failure',
-				description: 'Runs from repo',
-				jobName: 'Repo-backed bypass failure job',
-			}),
-			runId: 'check-run-bypass-failure',
-			treeHash: 'tree-hash-bypass-failure',
-			checkedAt: '2026-04-16T00:00:00.000Z',
-		})),
-		readFile: vi.fn(async ({ path }: { path: string }) => ({
-			path,
-			content:
-				path === 'package.json'
-					? createPackageJobManifestText({
-							packageName: '@kody/repo-bypass-failure',
-							kodyId: 'repo-bypass-failure',
-							description: 'Runs from repo',
-							jobName: 'Repo-backed bypass failure job',
-						})
-					: 'export default async () => ({ ok: true, bypassed: true })',
-		})),
-		tree: vi.fn(async () => ({
-			path: '',
-			name: '',
-			type: 'directory' as const,
-			size: 0,
-			children: [
-				{
-					path: 'src/job.ts',
-					name: 'job.ts',
-					type: 'file' as const,
-					size: 1,
-				},
-			],
-		})),
-		discardSession: vi.fn(),
-	}
-
-	const repoSessionRpcSpy = vi
-		.spyOn(await import('#worker/repo/repo-session-do.ts'), 'repoSessionRpc')
-		.mockReturnValue(sessionClient as never)
-	const executeSpy = vi.spyOn(
-		await import('#mcp/run-kody-registry.ts'),
-		'runBundledModuleWithRegistry',
-	)
-	const formatJobErrorSpy = vi.spyOn(
-		await import('./schedule.ts'),
-		'formatJobError',
-	)
-
-	try {
+		// Same bypass path must still surface executor failures after the check.
 		executeSpy.mockRejectedValueOnce(new Error('Executor import failed'))
-
-		const outcome = await executeJobOnce({
+		const failedOutcome = await executeJobOnce({
 			env,
 			job,
 			callerContext,
 		})
-
-		expect(outcome.execution).toEqual({
+		expect(failedOutcome.execution).toEqual({
 			ok: false,
 			error: 'Executor import failed',
 			logs: [],

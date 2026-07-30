@@ -152,7 +152,7 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 	)
 })
 
-test('isolated rebuild skips targets already built for the published commit', async () => {
+test('isolated rebuild skips already-built targets and does not stage when all are built', async () => {
 	resetMocks()
 	const run = vi.fn(async () => ({ ok: true, message: 'rebuilt' }))
 	const discard = vi.fn(async () => undefined)
@@ -172,7 +172,7 @@ test('isolated rebuild skips targets already built for the published commit', as
 			input.target.artifactName === '.' || input.target.artifactName === './c',
 	)
 
-	await rebuildPublishedPackageArtifactsViaRepoSession({
+	const rebuildInput = {
 		env: {
 			REPO_SESSION: {},
 			BUNDLE_ARTIFACTS_KV: {},
@@ -182,7 +182,8 @@ test('isolated rebuild skips targets already built for the published commit', as
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
 		baseUrl: 'https://kody.test',
-	})
+	}
+	await rebuildPublishedPackageArtifactsViaRepoSession(rebuildInput)
 
 	expect(run).toHaveBeenCalledTimes(1)
 	expect(run).toHaveBeenCalledWith(
@@ -192,12 +193,10 @@ test('isolated rebuild skips targets already built for the published commit', as
 		1,
 	)
 	expect(discard).toHaveBeenCalledTimes(1)
-})
 
-test('does not stage workspace when every artifact target is already built', async () => {
 	resetMocks()
-	const run = vi.fn(async () => ({ ok: true, message: 'rebuilt' }))
-	const discard = vi.fn(async () => undefined)
+	run.mockClear()
+	discard.mockClear()
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
 		touch: vi.fn(),
 		run,
@@ -208,17 +207,7 @@ test('does not stage workspace when every artifact target is already built', asy
 	)
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
 
-	await rebuildPublishedPackageArtifactsViaRepoSession({
-		env: {
-			REPO_SESSION: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as unknown as Env,
-		rpcSessionId: 'session-1',
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-		baseUrl: 'https://kody.test',
-	})
+	await rebuildPublishedPackageArtifactsViaRepoSession(rebuildInput)
 
 	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledTimes(
 		1,
@@ -228,8 +217,7 @@ test('does not stage workspace when every artifact target is already built', asy
 	expect(discard).not.toHaveBeenCalled()
 })
 
-test('isolated rebuild failure stops later chunks, discards staging, and reports succeeded versus failed', async () => {
-	resetMocks()
+test('rebuild failure stops later chunks and reports succeeded versus failed for isolated and fallback paths', async () => {
 	const targets = [
 		...sampleTargets,
 		{
@@ -239,6 +227,10 @@ test('isolated rebuild failure stops later chunks, discards staging, and reports
 			bundleKind: 'module' as const,
 		},
 	]
+	const failurePattern =
+		/Succeeded: \{ kind "module", artifact "\.", entry "src\/a\.ts", bundle "module" \}\. Failed: \{ kind "module", artifact "\.\/b", entry "src\/b\.ts", bundle "module" \}: bundle b failed/
+
+	resetMocks()
 	const run = vi.fn(async (input: { target: (typeof targets)[number] }) => {
 		if (input.target.artifactName === './b') {
 			return { ok: false, message: 'bundle b failed' }
@@ -269,11 +261,8 @@ test('isolated rebuild failure stops later chunks, discards staging, and reports
 			publishedCommit: 'commit-1',
 			baseUrl: 'https://kody.test',
 		}),
-	).rejects.toThrow(
-		/Succeeded: \{ kind "module", artifact "\.", entry "src\/a\.ts", bundle "module" \}\. Failed: \{ kind "module", artifact "\.\/b", entry "src\/b\.ts", bundle "module" \}: bundle b failed/,
-	)
+	).rejects.toThrow(failurePattern)
 	expect(touch).not.toHaveBeenCalled()
-
 	expect(run).toHaveBeenCalledTimes(2)
 	expect(run).not.toHaveBeenCalledWith(
 		expect.objectContaining({ target: targets[2] }),
@@ -283,6 +272,43 @@ test('isolated rebuild failure stops later chunks, discards staging, and reports
 	)
 	expect(discard).toHaveBeenCalledWith(
 		'repo-artifact-rebuild-staging:v1:user-1:stage-1',
+	)
+
+	resetMocks()
+	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue(null)
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
+	mockModule.rebuildPublishedPackageArtifact.mockImplementation(
+		async (input: { target: (typeof targets)[number] }) => {
+			if (input.target.artifactName === './b') {
+				throw new Error('bundle b failed')
+			}
+			return { ok: true, target: input.target, kvKey: 'bundle-key' }
+		},
+	)
+
+	await expect(
+		rebuildPublishedPackageArtifactsViaRepoSession({
+			env: {} as Env,
+			rpcSessionId: 'session-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			publishedCommit: 'commit-1',
+			baseUrl: 'https://kody.test',
+		}),
+	).rejects.toThrow(failurePattern)
+
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith(
+		expect.objectContaining({ target: targets[0] }),
+	)
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith(
+		expect.objectContaining({ target: targets[1] }),
+	)
+	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalledWith(
+		expect.objectContaining({ target: targets[2] }),
+	)
+	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalledWith(
+		expect.objectContaining({ target: targets[3] }),
 	)
 })
 
@@ -332,54 +358,4 @@ test('falls back to per-target session rebuild when isolated runner bindings are
 
 	expect(maxInFlight).toBe(2)
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(3)
-})
-
-test('fallback rebuild failure stops later chunks and reports succeeded versus failed targets', async () => {
-	resetMocks()
-	const targets = [
-		...sampleTargets,
-		{
-			kind: 'module' as const,
-			artifactName: './d',
-			entryPoint: 'src/d.ts',
-			bundleKind: 'module' as const,
-		},
-	]
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue(null)
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
-	mockModule.rebuildPublishedPackageArtifact.mockImplementation(
-		async (input: { target: (typeof targets)[number] }) => {
-			if (input.target.artifactName === './b') {
-				throw new Error('bundle b failed')
-			}
-			return { ok: true, target: input.target, kvKey: 'bundle-key' }
-		},
-	)
-
-	await expect(
-		rebuildPublishedPackageArtifactsViaRepoSession({
-			env: {} as Env,
-			rpcSessionId: 'session-1',
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-1',
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow(
-		/Succeeded: \{ kind "module", artifact "\.", entry "src\/a\.ts", bundle "module" \}\. Failed: \{ kind "module", artifact "\.\/b", entry "src\/b\.ts", bundle "module" \}: bundle b failed/,
-	)
-
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[0] }),
-	)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[1] }),
-	)
-	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[2] }),
-	)
-	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[3] }),
-	)
 })

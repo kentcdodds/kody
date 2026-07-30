@@ -6,9 +6,7 @@ import {
 } from './build-client-manifest.ts'
 
 test('lazy area names match the client router contract', () => {
-	// Must stay in sync with the areas registered in
-	// packages/worker/client/lazy-route.tsx (lazy-route.node.test.ts pins the
-	// same literal).
+	// Source of truth for area ids consumed by packages/worker/client/lazy-route.tsx.
 	expect([...lazyAreaNames].sort()).toEqual([
 		'account-area',
 		'admin-area',

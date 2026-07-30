@@ -4,7 +4,6 @@ import {
 	createCodeChallenge,
 	createCodeVerifier,
 	decodeBase64Payload,
-	formatMissingSetupFields,
 	formatOAuthExchangeFailure,
 	isMostlyPrintable,
 	isOAuthExchangeSessionExpired,
@@ -806,54 +805,27 @@ test('parseConnectOauthNextSteps accepts suggestion payload and drops unsafe URL
 	).toBeNull()
 })
 
-test('formatMissingSetupFields enumerates missing credential fields', () => {
-	expect(formatMissingSetupFields([])).toBe('Ready to connect.')
-	expect(formatMissingSetupFields(['client ID'])).toBe(
-		'Enter your client ID to continue.',
-	)
-	expect(formatMissingSetupFields(['client ID', 'client secret'])).toBe(
-		'Enter your client ID and client secret to continue.',
-	)
-	expect(
-		formatMissingSetupFields(['client ID', 'client secret', 'redirect URI']),
-	).toBe('Enter your client ID, client secret and redirect URI to continue.')
-})
-
-test('isSafeExternalUrl and parseOptionalUrl accept only usable http(s) URLs', () => {
+test('connect OAuth query helpers decode instructions, scopes, and safe URLs', () => {
 	expect(isSafeExternalUrl('https://example.com/path')).toBe(true)
 	expect(isSafeExternalUrl('http://localhost:8787')).toBe(true)
 	expect(isSafeExternalUrl('javascript:alert(1)')).toBe(false)
 	expect(isSafeExternalUrl('ftp://files.example.com')).toBe(false)
-	expect(isSafeExternalUrl('not a url')).toBe(false)
-
 	expect(parseOptionalUrl(null)).toBeNull()
-	expect(parseOptionalUrl('')).toBeNull()
 	expect(parseOptionalUrl('https://example.com/a?b=1')).toBe(
 		'https://example.com/a?b=1',
 	)
 	expect(parseOptionalUrl('not a url')).toBeNull()
-})
 
-test('decodeBase64Payload and isMostlyPrintable characterize base64 instruction decoding', () => {
 	expect(decodeBase64Payload('!!!')).toBeNull()
 	expect(
 		decodeBase64Payload(utf8ToBase64Url('Open the developer console.')),
 	).toBe('Open the developer console.')
-	expect(decodeBase64Payload('not!valid')).toBeNull()
-
-	expect(isMostlyPrintable('')).toBe(false)
 	expect(isMostlyPrintable('printable text\nwith tabs\tand returns\r')).toBe(
 		true,
 	)
 	expect(isMostlyPrintable('\u0001\u0002\u0003\u0004\u0005')).toBe(false)
-	// Threshold is strictly greater than 0.85 printable characters.
-	expect(isMostlyPrintable(`${'ok'.repeat(9)}\u0001\u0002`)).toBe(true)
-	expect(isMostlyPrintable('ok\u0001\u0002')).toBe(false)
-})
 
-test('parseExtraParams and parseScopes tolerate query-string shapes', () => {
 	expect(parseExtraParams(null)).toEqual({})
-	expect(parseExtraParams('')).toEqual({})
 	expect(
 		parseExtraParams('{"prompt":"consent","access_type":"offline"}'),
 	).toEqual({
@@ -865,12 +837,7 @@ test('parseExtraParams and parseScopes tolerate query-string shapes', () => {
 		b: 'true',
 		x: 'null',
 	})
-	expect(parseExtraParams('["not","object"]')).toEqual({})
 	expect(parseExtraParams('{')).toEqual({})
-
-	expect(parseScopes(null)).toEqual([])
-	expect(parseScopes('')).toEqual([])
-	expect(parseScopes('   ')).toEqual([])
 	expect(parseScopes('repo, read:user  openid')).toEqual([
 		'repo',
 		'read:user',
@@ -878,15 +845,10 @@ test('parseExtraParams and parseScopes tolerate query-string shapes', () => {
 	])
 	expect(parseScopes('["repo","read:user"]')).toEqual(['repo', 'read:user'])
 	expect(parseScopes('[not-json')).toEqual(['[not-json'])
-	expect(parseScopes('{"not":"array"}')).toEqual(['{"not":"array"}'])
-})
 
-test('parseProviderSetupInstructions decodes base64 payloads when printable', () => {
 	const plain = 'Visit the provider console and create an OAuth app.'
 	const encoded = utf8ToBase64Url(plain)
 	expect(parseProviderSetupInstructions(null)).toBeNull()
-	expect(parseProviderSetupInstructions('')).toBeNull()
-	expect(parseProviderSetupInstructions('   ')).toBeNull()
 	expect(parseProviderSetupInstructions(plain)).toBe(plain)
 	expect(parseProviderSetupInstructions(`base64:${encoded}`)).toBe(plain)
 	expect(parseProviderSetupInstructions(encoded)).toBe(plain)

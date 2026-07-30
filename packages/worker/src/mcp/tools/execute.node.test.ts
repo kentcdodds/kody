@@ -519,7 +519,7 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 	)
 })
 
-test('execute enables the pre-exec typecheck only for an opted-in caller', async () => {
+test('execute enables the pre-exec typecheck only for an opted-in caller and reports phase timings on failure', async () => {
 	const callerContext = {
 		baseUrl: 'https://example.com',
 		user: {
@@ -572,9 +572,7 @@ test('execute enables the pre-exec typecheck only for an opted-in caller', async
 		undefined,
 		expect.objectContaining({ preExecTypecheck: true }),
 	)
-})
 
-test('execute reports typecheck phase timings when pre-exec diagnostics fail', async () => {
 	const handler = await getExecuteHandler()
 	const typecheckError = new ExecuteTypecheckError([
 		"entry.ts:1:1 TS2322: Type 'number' is not assignable to type 'string'.",

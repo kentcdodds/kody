@@ -260,14 +260,10 @@ test('package service capabilities list, tolerate status failures, and delegate 
 	).resolves.toEqual({
 		ok: true,
 	})
-})
 
-test('service_list missing package context throws McpCallerError', async () => {
+	// Caller mistakes stay on McpCallerError so they are not reported to Sentry.
 	resetMocks()
-	const env = {
-		APP_DB: {} as D1Database,
-	} as Env
-	const callerContext = createMcpCallerContext({
+	const noPackageContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
 			userId: 'user-123',
@@ -275,37 +271,24 @@ test('service_list missing package context throws McpCallerError', async () => {
 			displayName: 'User Example',
 		},
 	})
-
-	const error = await serviceListCapability
-		.handler({}, { env, callerContext })
+	const missingPackageError = await serviceListCapability
+		.handler({}, { env, callerContext: noPackageContext })
 		.catch((caught: unknown) => caught)
-	expect(error).toBeInstanceOf(McpCallerError)
-	expect(error).toMatchObject({
+	expect(missingPackageError).toBeInstanceOf(McpCallerError)
+	expect(missingPackageError).toMatchObject({
 		message: expect.stringMatching(/require package_id/),
 	})
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
-})
 
-test('service_list unknown package_id throws McpCallerError', async () => {
-	resetMocks()
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	const env = {
-		APP_DB: {} as D1Database,
-	} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-
-	const error = await serviceListCapability
-		.handler({ package_id: 'missing-package' }, { env, callerContext })
+	const unknownPackageError = await serviceListCapability
+		.handler(
+			{ package_id: 'missing-package' },
+			{ env, callerContext: noPackageContext },
+		)
 		.catch((caught: unknown) => caught)
-	expect(error).toBeInstanceOf(McpCallerError)
-	expect(error).toMatchObject({
+	expect(unknownPackageError).toBeInstanceOf(McpCallerError)
+	expect(unknownPackageError).toMatchObject({
 		message: expect.stringMatching(/Saved package was not found/),
 	})
 })
