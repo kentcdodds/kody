@@ -483,6 +483,10 @@
 		{
 			"filename": "0115-delete-integration-secret-values.sql",
 			"sha256": "a0680b7be6d92f9ba89849aa5b355a09a03125ac13794852bfe443c2f5ca0cd7"
+		},
+		{
+			"filename": "0116-job-expires-at.sql",
+			"sha256": "f8fc33d7860b074cfb116cec16179b07fca6364d0b37e26883e48df5a2c0fec7"
 		}
 	]
 }

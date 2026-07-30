@@ -42,6 +42,12 @@ export type JobRecord = {
 	 * jobs still count toward `scheduled_jobs` and `storage_bytes`.
 	 */
 	preserved: boolean
+	/**
+	 * Optional UTC ISO timestamp after which the platform stops scheduling and
+	 * auto-disables the job (`enabled = false`). Null means never expires.
+	 * Separate from `preserved` (retention) and `lease_expires_at` (claim lease).
+	 */
+	expiresAt: string | null
 	createdAt: string
 	updatedAt: string
 	lastRunAt?: string
@@ -117,6 +123,7 @@ export type JobCreateInput = {
 	enabled?: boolean
 	killSwitchEnabled?: boolean
 	preserved?: boolean
+	expiresAt?: string | null
 }
 
 export type JobUpdateInput = {
@@ -132,6 +139,8 @@ export type JobUpdateInput = {
 	enabled?: boolean
 	killSwitchEnabled?: boolean
 	preserved?: boolean
+	/** Pass null to clear expiry. Omit to leave unchanged. */
+	expiresAt?: string | null
 }
 
 export type JobUpsertInput = {
@@ -147,4 +156,5 @@ export type JobUpsertInput = {
 	enabled?: boolean
 	killSwitchEnabled?: boolean
 	preserved?: boolean
+	expiresAt?: string | null
 }

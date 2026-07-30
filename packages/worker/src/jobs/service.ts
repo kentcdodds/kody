@@ -18,6 +18,7 @@ import { syncJobManagerAlarm } from './manager-client.ts'
 import {
 	deleteJobRow,
 	claimJobRow,
+	disableExpiredJobRowsForUser,
 	finalizeClaimedJobRow,
 	getJobRowById,
 	listDueJobRows,
@@ -39,6 +40,8 @@ import {
 import {
 	computeNextRunAt,
 	formatJobError,
+	isJobExpired,
+	normalizeJobExpiresAt,
 	normalizeJobSchedule,
 	normalizeJobTimezone,
 	toJobView,
@@ -58,7 +61,7 @@ import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
 	normalizePackageWorkspacePath,
-	parseAuthoredPackageJson,
+	type parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
 import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
@@ -735,6 +738,7 @@ export async function syncPackageJobsForPackage(input: {
 					enabled,
 					killSwitchEnabled: false,
 					preserved: false,
+					expiresAt: null,
 					createdAt: now,
 					updatedAt: now,
 					nextRunAt: computeNextRunAt({
@@ -863,6 +867,7 @@ export async function createJob(input: {
 			})
 			const schedule = normalizeJobSchedule(input.body.schedule)
 			const timezone = normalizeJobTimezone(input.body.timezone)
+			const expiresAt = normalizeJobExpiresAt(input.body.expiresAt)
 			const now = new Date().toISOString()
 			const shape = resolveCreateShape(input.body)
 			const jobId = crypto.randomUUID()
@@ -876,6 +881,8 @@ export async function createJob(input: {
 				sourceRoot: '/',
 				requirePersistence: true,
 			})
+			const requestedEnabled = input.body.enabled ?? true
+			const expiredAtCreate = isJobExpired({ expiresAt }, new Date(now))
 			const job: JobRecord = {
 				version: 1,
 				id: jobId,
@@ -888,9 +895,10 @@ export async function createJob(input: {
 				params: normalizeOptionalParams(input.body.params),
 				schedule,
 				timezone,
-				enabled: input.body.enabled ?? true,
+				enabled: expiredAtCreate ? false : requestedEnabled,
 				killSwitchEnabled: input.body.killSwitchEnabled ?? false,
 				preserved: input.body.preserved ?? false,
+				expiresAt,
 				createdAt: now,
 				updatedAt: now,
 				nextRunAt: computeNextRunAt({
@@ -968,7 +976,16 @@ export async function updateJob(input: {
 				input.body.timezone === null
 					? normalizeJobTimezone(null)
 					: normalizeJobTimezone(input.body.timezone ?? existing.timezone)
-			const nextEnabled = input.body.enabled ?? existing.enabled
+			const nextExpiresAt =
+				input.body.expiresAt === undefined
+					? (existing.expiresAt ?? null)
+					: normalizeJobExpiresAt(input.body.expiresAt)
+			const now = new Date()
+			const nowIso = now.toISOString()
+			const expired = isJobExpired({ expiresAt: nextExpiresAt }, now)
+			const nextEnabled = expired
+				? false
+				: (input.body.enabled ?? existing.enabled)
 			const shouldRecomputeNextRunAt =
 				JSON.stringify(nextSchedule) !== JSON.stringify(existing.schedule) ||
 				nextTimezone !== existing.timezone ||
@@ -1005,7 +1022,8 @@ export async function updateJob(input: {
 				killSwitchEnabled:
 					input.body.killSwitchEnabled ?? existing.killSwitchEnabled,
 				preserved: input.body.preserved ?? existing.preserved,
-				updatedAt: new Date().toISOString(),
+				expiresAt: nextExpiresAt,
+				updatedAt: nowIso,
 				nextRunAt: shouldRecomputeNextRunAt
 					? computeNextRunAt({
 							schedule: nextSchedule,
@@ -1327,6 +1345,11 @@ export async function runJobNow(input: {
 			if (!row) {
 				throw new McpCallerError(`Job "${input.jobId}" was not found.`)
 			}
+			if (isJobExpired(row.record)) {
+				throw new McpCallerError(
+					`Job "${input.jobId}" expired at ${row.record.expiresAt} and cannot be run.`,
+				)
+			}
 			const activeCallerContext = input.callerContext
 				? requirePersistableJobCallerContext(input.callerContext)
 				: row.callerContext
@@ -1453,10 +1476,16 @@ export async function runDueJobsForUser(input: {
 		stableUserId: input.userId,
 		async write() {
 			const now = input.now ?? new Date()
+			const nowIso = now.toISOString()
+			await disableExpiredJobRowsForUser({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				nowIso,
+			})
 			const dueRows = await listDueJobRows(
 				input.env.APP_DB,
 				input.userId,
-				now.toISOString(),
+				nowIso,
 			)
 			if (dueRows.length === 0) {
 				logJobSchedulerEvent({
@@ -1571,8 +1600,23 @@ export async function runDueJobsForUser(input: {
 	})
 }
 
-export async function getNextRunnableJob(input: { env: Env; userId: string }) {
-	const row = await getNextRunnableJobRow(input.env.APP_DB, input.userId)
+export async function getNextRunnableJob(input: {
+	env: Env
+	userId: string
+	now?: Date
+}) {
+	const now = input.now ?? new Date()
+	const nowIso = now.toISOString()
+	await disableExpiredJobRowsForUser({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		nowIso,
+	})
+	const row = await getNextRunnableJobRow(
+		input.env.APP_DB,
+		input.userId,
+		nowIso,
+	)
 	return row
 		? {
 				...row.record,

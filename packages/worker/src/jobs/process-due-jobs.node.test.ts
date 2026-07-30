@@ -19,6 +19,7 @@ function createCronJob(overrides: Partial<JobRecord> = {}): JobRecord {
 		enabled: true,
 		killSwitchEnabled: false,
 		preserved: false,
+		expiresAt: null,
 		createdAt: '2026-04-12T00:00:00.000Z',
 		updatedAt: '2026-04-12T00:00:00.000Z',
 		nextRunAt: '2026-04-12T07:00:00.000Z',
