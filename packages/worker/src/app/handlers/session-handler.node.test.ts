@@ -181,7 +181,7 @@ test('session handler clears cookies for unknown stable user ids', async () => {
 	const invalidCookies = await Promise.all([
 		createAuthCookie(
 			{
-				stableUserId: 'missing-stable-user',
+				stableUserId: 'f'.repeat(64),
 				email: 'missing@example.com',
 				rememberMe: false,
 			},
@@ -189,7 +189,7 @@ test('session handler clears cookies for unknown stable user ids', async () => {
 		),
 		createAuthCookie(
 			{
-				stableUserId: 'other-missing-stable-user',
+				stableUserId: 'e'.repeat(64),
 				email: 'user@example.com',
 				rememberMe: false,
 			},

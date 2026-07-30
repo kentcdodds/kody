@@ -519,6 +519,8 @@ function readRoleName(body: object, key: string): RoleName | null {
 }
 
 function readStableUserIdField(body: object): string | null {
-	const value = readNonEmptyTrimmedStringOrNumber(body, 'stableUserId')
-	return value && isStableUserId(value) ? value : null
+	const value = (body as Record<string, unknown>).stableUserId
+	if (typeof value !== 'string') return null
+	const normalized = value.trim()
+	return isStableUserId(normalized) ? normalized : null
 }

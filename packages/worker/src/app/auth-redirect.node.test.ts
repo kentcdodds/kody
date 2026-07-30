@@ -65,7 +65,7 @@ test('redirectToLogin attaches Set-Cookie when provided', async () => {
 test('redirectToLoginWhenUnauthenticated clears a stale session cookie', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session: AuthSession = {
-		stableUserId: 'missing-stable-user',
+		stableUserId: 'f'.repeat(64),
 		email: 'missing@example.com',
 		rememberMe: false,
 	}

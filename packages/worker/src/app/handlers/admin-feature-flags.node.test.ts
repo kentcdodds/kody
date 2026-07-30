@@ -48,6 +48,10 @@ type UserRow = {
 	stable_user_id?: string
 }
 
+function stableUserId(id: number) {
+	return id.toString(16).padStart(64, '0')
+}
+
 function createAdminActor(roles: Array<RoleName>) {
 	const permissions: Array<PermissionString> = roles.includes('admin')
 		? ['read:user:any', 'update:user:any']
@@ -62,7 +66,7 @@ function createAdminActor(roles: Array<RoleName>) {
 		permissions,
 		artifactOwnerIds: ['1'],
 		mcpUser: {
-			userId: 'stable-admin',
+			userId: stableUserId(1),
 			email: 'admin@example.com',
 			username: 'admin-user',
 			displayName: 'admin-user',
@@ -89,7 +93,7 @@ function createFeatureFlagsTestEnv(
 	const users = new Map(
 		(input.users ?? []).map((row) => [
 			row.id,
-			{ ...row, stable_user_id: row.stable_user_id ?? `stable-${row.id}` },
+			{ ...row, stable_user_id: row.stable_user_id ?? stableUserId(row.id) },
 		]),
 	)
 	let clock = 0
@@ -447,9 +451,9 @@ test('admin feature flags set_user_override validates user identity and existenc
 				{
 					id: 1,
 					username: 'admin-user',
-					stable_user_id: 'stable-admin',
+					stable_user_id: stableUserId(1),
 				},
-				{ id: 2, username: 'jane', stable_user_id: 'stable-jane' },
+				{ id: 2, username: 'jane', stable_user_id: stableUserId(2) },
 			],
 		}) as unknown as Env,
 	)
@@ -477,7 +481,7 @@ test('admin feature flags set_user_override validates user identity and existenc
 				action: 'set_user_override',
 				key: 'demo-indicator',
 				enabled: true,
-				stableUserId: 'stable-jane',
+				stableUserId: stableUserId(2),
 				username: 'jane',
 			},
 		}),
@@ -495,7 +499,7 @@ test('admin feature flags set_user_override validates user identity and existenc
 				action: 'set_user_override',
 				key: 'demo-indicator',
 				enabled: true,
-				stableUserId: 'stable-missing',
+				stableUserId: stableUserId(404),
 			},
 		}),
 	)
@@ -524,7 +528,7 @@ test('admin feature flags set_user_override validates user identity and existenc
 				key: 'demo-indicator',
 				overrides: [
 					expect.objectContaining({
-						stableUserId: 'stable-jane',
+						stableUserId: stableUserId(2),
 						username: 'jane',
 						enabled: true,
 					}),

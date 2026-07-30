@@ -30,7 +30,7 @@ test('readAuthenticatedAppUser rejects unknown stable user ids', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(
 		{
-			stableUserId: 'unknown-stable-user',
+			stableUserId: 'f'.repeat(64),
 			email: 'user@example.com',
 			rememberMe: false,
 		} satisfies AuthSession,

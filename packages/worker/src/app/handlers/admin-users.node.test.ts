@@ -43,6 +43,10 @@ type UserRow = {
 
 type UserRoleRow = { user_id: number; role_name: RoleName }
 
+function stableUserId(id: number) {
+	return id.toString(16).padStart(64, '0')
+}
+
 function createAdminActor(roles: Array<RoleName>) {
 	const permissions: Array<PermissionString> = roles.includes('admin')
 		? ['read:user:any', 'update:user:any']
@@ -57,7 +61,7 @@ function createAdminActor(roles: Array<RoleName>) {
 		permissions,
 		artifactOwnerIds: ['1'],
 		mcpUser: {
-			userId: 'stable-admin',
+			userId: stableUserId(1),
 			email: 'admin@example.com',
 			username: 'admin-user',
 			displayName: 'admin-user',
@@ -74,7 +78,7 @@ function createAdminTestEnv(input: {
 			user.id,
 			{
 				...user,
-				stable_user_id: user.stable_user_id ?? `stable-${user.id}`,
+				stable_user_id: user.stable_user_id ?? stableUserId(user.id),
 				// Normal fixtures default to free; unknown/null stay
 				// explicit so the dedicated stored-plan coercion test can warn.
 				plan: user.plan === undefined ? 'free' : user.plan,
@@ -427,34 +431,36 @@ test('admin users selected param resolves outside the current page and filter', 
 	}
 
 	// Selected user on a later page is still returned for the detail pane.
-	const paged = await listUsers('?pageSize=1&page=1&selected=stable-3')
+	const paged = await listUsers(
+		`?pageSize=1&page=1&selected=${stableUserId(3)}`,
+	)
 	expect(
 		paged.users.map((user: { stableUserId: string }) => user.stableUserId),
-	).toEqual(['stable-1'])
+	).toEqual([stableUserId(1)])
 	expect(paged.selectedUser).toEqual(
 		expect.objectContaining({
-			stableUserId: 'stable-3',
+			stableUserId: stableUserId(3),
 			username: 'another-member',
 			email: 'another@example.com',
 		}),
 	)
 
 	// Selected user excluded by the active role filter is still returned.
-	const filtered = await listUsers('?role=admin&selected=stable-2')
+	const filtered = await listUsers(`?role=admin&selected=${stableUserId(2)}`)
 	expect(
 		filtered.users.map((user: { stableUserId: string }) => user.stableUserId),
-	).toEqual(['stable-1'])
+	).toEqual([stableUserId(1)])
 	expect(filtered.selectedUser).toEqual(
 		expect.objectContaining({
-			stableUserId: 'stable-2',
+			stableUserId: stableUserId(2),
 			username: 'member',
 		}),
 	)
 
-	const missing = await listUsers('?selected=missing-stable-user')
+	const missing = await listUsers(`?selected=${stableUserId(99)}`)
 	expect(missing.selectedUser).toBeNull()
 
-	const invalid = await listUsers('?selected=')
+	const invalid = await listUsers('?selected=123')
 	expect(invalid.selectedUser).toBeNull()
 })
 
@@ -512,7 +518,7 @@ test('admin users list applies q and role filters to the slice and total', async
 		searchPayload.users.map(
 			(user: { stableUserId: string }) => user.stableUserId,
 		),
-	).toEqual(['stable-2', 'stable-3'])
+	).toEqual([stableUserId(2), stableUserId(3)])
 
 	const rolePayload = await listUsers('?role=admin')
 	expect(rolePayload.total).toBe(1)
@@ -520,7 +526,7 @@ test('admin users list applies q and role filters to the slice and total', async
 		rolePayload.users.map(
 			(user: { stableUserId: string }) => user.stableUserId,
 		),
-	).toEqual(['stable-1'])
+	).toEqual([stableUserId(1)])
 
 	const combinedPayload = await listUsers('?q=searchable&role=admin')
 	expect(combinedPayload.total).toBe(0)
@@ -537,7 +543,7 @@ test('admin users list applies q and role filters to the slice and total', async
 		pagedPayload.users.map(
 			(user: { stableUserId: string }) => user.stableUserId,
 		),
-	).toEqual(['stable-3'])
+	).toEqual([stableUserId(3)])
 })
 
 test('assign role action updates user roles and logs audit event', async () => {
@@ -568,7 +574,7 @@ test('assign role action updates user roles and logs audit event', async () => {
 			},
 			body: JSON.stringify({
 				action: 'assign_role',
-				stableUserId: 'stable-2',
+				stableUserId: stableUserId(2),
 				role: 'admin',
 			}),
 		}),
@@ -583,7 +589,7 @@ test('assign role action updates user roles and logs audit event', async () => {
 	// an infinite-scroll window without resetting to the first page.
 	expect(payload.updatedUser).toEqual(
 		expect.objectContaining({
-			stableUserId: 'stable-2',
+			stableUserId: stableUserId(2),
 			roles: expect.arrayContaining(['admin', 'user']),
 		}),
 	)
@@ -619,7 +625,7 @@ test('remove role rejects removing the last admin account', async () => {
 			},
 			body: JSON.stringify({
 				action: 'remove_role',
-				stableUserId: 'stable-1',
+				stableUserId: stableUserId(1),
 				role: 'admin',
 			}),
 		}),
@@ -668,7 +674,7 @@ test('remove role removes admin when another admin remains', async () => {
 			},
 			body: JSON.stringify({
 				action: 'remove_role',
-				stableUserId: 'stable-2',
+				stableUserId: stableUserId(2),
 				role: 'admin',
 			}),
 		}),
@@ -679,7 +685,7 @@ test('remove role removes admin when another admin remains', async () => {
 	expect(response.status).toBe(200)
 	const payload = await response.json()
 	const secondAdmin = payload.users.find(
-		(user: { stableUserId: string }) => user.stableUserId === 'stable-2',
+		(user: { stableUserId: string }) => user.stableUserId === stableUserId(2),
 	)
 	expect(secondAdmin.roles).not.toContain('admin')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
@@ -726,7 +732,7 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 
 	const setPlanResponse = await postUpdatePlan({
 		action: 'update_plan',
-		stableUserId: 'stable-2',
+		stableUserId: stableUserId(2),
 		plan: 'pro',
 	})
 	expect(setPlanResponse.status).toBe(200)
@@ -736,13 +742,13 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 			category: 'admin',
 			action: 'update_plan',
 			result: 'success',
-			reason: 'target_stable_user_id=stable-2;plan=pro',
+			reason: `target_stable_user_id=${stableUserId(2)};plan=pro`,
 		}),
 	)
 
 	const clearPlanResponse = await postUpdatePlan({
 		action: 'update_plan',
-		stableUserId: 'stable-2',
+		stableUserId: stableUserId(2),
 		plan: null,
 	})
 	expect(clearPlanResponse.status).toBe(200)
@@ -752,24 +758,25 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 			category: 'admin',
 			action: 'update_plan',
 			result: 'success',
-			reason: 'target_stable_user_id=stable-2;plan=free',
+			reason: `target_stable_user_id=${stableUserId(2)};plan=free`,
 		}),
 	)
 
 	for (const body of [
 		{
 			action: 'update_plan',
-			stableUserId: 'stable-2',
+			stableUserId: stableUserId(2),
 			plan: 'enterprise',
 		},
-		{ action: 'update_plan', stableUserId: 'stable-2' },
+		{ action: 'update_plan', stableUserId: stableUserId(2) },
+		{ action: 'update_plan', stableUserId: 2, plan: 'pro' },
 	]) {
 		expect((await postUpdatePlan(body)).status).toBe(400)
 	}
 
 	const missingUserResponse = await postUpdatePlan({
 		action: 'update_plan',
-		stableUserId: 'stable-42',
+		stableUserId: stableUserId(42),
 		plan: 'pro',
 	})
 	expect(missingUserResponse.status).toBe(404)
@@ -810,7 +817,7 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 
 	const suspendResponse = await postAction({
 		action: 'suspend_user',
-		stableUserId: 'stable-2',
+		stableUserId: stableUserId(2),
 	})
 	expect(suspendResponse.status).toBe(200)
 	const suspended = await suspendResponse.json()
@@ -820,13 +827,13 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 			category: 'admin',
 			action: 'suspend_user',
 			result: 'success',
-			reason: 'target_stable_user_id=stable-2',
+			reason: `target_stable_user_id=${stableUserId(2)}`,
 		}),
 	)
 
 	const unsuspendResponse = await postAction({
 		action: 'unsuspend_user',
-		stableUserId: 'stable-2',
+		stableUserId: stableUserId(2),
 	})
 	expect(unsuspendResponse.status).toBe(200)
 	expect((await unsuspendResponse.json()).users[0].suspended_at).toBeNull()
@@ -835,13 +842,13 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 			category: 'admin',
 			action: 'unsuspend_user',
 			result: 'success',
-			reason: 'target_stable_user_id=stable-2',
+			reason: `target_stable_user_id=${stableUserId(2)}`,
 		}),
 	)
 
 	const resumeResponse = await postAction({
 		action: 'resume_email_outbound',
-		stableUserId: 'stable-2',
+		stableUserId: stableUserId(2),
 	})
 	expect(resumeResponse.status).toBe(200)
 	expect(
@@ -852,7 +859,7 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 			category: 'admin',
 			action: 'resume_email_outbound',
 			result: 'success',
-			reason: 'target_stable_user_id=stable-2',
+			reason: `target_stable_user_id=${stableUserId(2)}`,
 		}),
 	)
 
@@ -861,7 +868,7 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 		users: [
 			{
 				id: 1,
-				stable_user_id: 'stable-admin',
+				stable_user_id: stableUserId(1),
 				username: 'admin-user',
 				email: 'admin@example.com',
 				created_at: '2026-01-01 00:00:00',
@@ -882,7 +889,7 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 			},
 			body: JSON.stringify({
 				action: 'suspend_user',
-				stableUserId: 'stable-admin',
+				stableUserId: stableUserId(1),
 			}),
 		}),
 		params: {},
@@ -894,7 +901,7 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 		(
 			await postAction({
 				action: 'suspend_user',
-				stableUserId: 'stable-42',
+				stableUserId: stableUserId(42),
 			})
 		).status,
 	).toBe(404)

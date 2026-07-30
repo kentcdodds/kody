@@ -15,7 +15,7 @@ test('createAuthCookie stamps issuedAt for password-change invalidation', async 
 	const now = 1_700_000_000_000
 	const cookie = await createAuthCookie(
 		{
-			stableUserId: 'stable-user-1',
+			stableUserId: '1'.repeat(64),
 			email: 'user@example.com',
 			rememberMe: false,
 		},
