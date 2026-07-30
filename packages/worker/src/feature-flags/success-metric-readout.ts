@@ -333,12 +333,17 @@ export async function loadFeatureFlagSuccessMetricReadout(
 		// Local Wrangler dev emulates the Analytics Engine binding and the CLI
 		// injects mock REST credentials, but the SQL API cannot read locally
 		// emulated datasets — exposures are written to D1 there instead.
-		if (
-			env.FLAG_EXPOSURES &&
-			accountId &&
-			apiToken &&
-			env.WRANGLER_IS_LOCAL_DEV !== 'true'
-		) {
+		if (env.FLAG_EXPOSURES && env.WRANGLER_IS_LOCAL_DEV !== 'true') {
+			if (!accountId || !apiToken) {
+				// With the binding present, exposures were written only to
+				// Analytics Engine; falling back to the (empty) D1 tables would
+				// present confident zero cohorts instead of a config problem.
+				return {
+					status: 'unavailable',
+					reason:
+						'Analytics Engine SQL credentials (CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN) are not configured, so recorded exposures cannot be read.',
+				}
+			}
 			return await loadReadoutFromAnalyticsEngine({
 				env,
 				accountId,

@@ -219,6 +219,22 @@ test('uses the D1 path in local Wrangler dev even with binding and credentials',
 	expect(queries).toHaveLength(2)
 })
 
+test('reports unavailable when the binding exists but SQL credentials are missing', async () => {
+	// Falling back to the empty D1 tables here would present confident zero
+	// cohorts even though exposures were written to Analytics Engine.
+	const { db, queries } = createReadoutTestDb({ exposures: [], usage: [] })
+	const readout = await loadFeatureFlagSuccessMetricReadout(
+		{ APP_DB: db, FLAG_EXPOSURES: {} as AnalyticsEngineDataset },
+		{ flagKey: 'execute-pre-exec-typecheck', successMetric },
+		now,
+	)
+	expect(readout).toEqual({
+		status: 'unavailable',
+		reason: expect.stringContaining('credentials'),
+	})
+	expect(queries).toHaveLength(0)
+})
+
 test('degrades to unavailable when the data source fails', async () => {
 	silenceExpectedConsoleWarns(['flag-metric-readout-failed'])
 	const db = {
