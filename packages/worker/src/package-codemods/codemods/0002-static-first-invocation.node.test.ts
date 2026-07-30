@@ -123,6 +123,38 @@ test('0002 reports packages.check and literal dynamic kody imports as needsManua
 	])
 })
 
+test('0002 flags unparseable files that reference the deprecated surface', () => {
+	const files = {
+		'package.json': manifest(),
+		'broken.ts': [
+			"import { packages } from 'kody:runtime'",
+			'export default async function run( {', // malformed on purpose
+			"\treturn await packages.invokeChecked({ kodyId: 'github', exportName: './request' })",
+			'}',
+			'',
+		].join('\n'),
+	}
+
+	const findings = staticFirstInvocationCodemod.detect(files)
+	expect(findings).toEqual([
+		{
+			path: 'broken.ts',
+			message: expect.stringContaining('could not be parsed'),
+		},
+	])
+
+	const result = staticFirstInvocationCodemod.transform(files)
+	expect(result.changed).toBe(false)
+	expect(result.changedPaths).toEqual([])
+	expect(result.files).toEqual(files)
+	expect(result.needsManual).toEqual([
+		{
+			path: 'broken.ts',
+			message: expect.stringContaining('could not be parsed'),
+		},
+	])
+})
+
 test('0002 mixes mechanical rewrites with needsManual findings in one package', () => {
 	const files = {
 		'package.json': manifest(),

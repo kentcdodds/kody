@@ -49,6 +49,35 @@ function parseProgram(source: string): AstNode | null {
 }
 
 /**
+ * Textual net for the parse-failure path: `collectDeprecatedInvocationUsage`
+ * returns nothing for files it cannot parse, so unparseable files that still
+ * mention the deprecated surface must be caught here and surfaced as
+ * `needsManual` instead of silently scanning clean.
+ */
+function referencesDeprecatedSurface(source: string) {
+	return (
+		source.includes('invokeChecked') ||
+		/packages\s*\??\.\s*check\b/.test(source) ||
+		(source.includes('kody:@') && source.includes('import('))
+	)
+}
+
+function collectUnparseableDeprecatedFiles(
+	files: Record<string, string>,
+): Array<string> {
+	const paths: Array<string> = []
+	for (const [path, source] of Object.entries(files)) {
+		if (!scannableModuleFilePattern.test(path)) continue
+		if (isTypeDeclarationFilePath(path)) continue
+		if (!referencesDeprecatedSurface(source)) continue
+		if (parseProgram(source) == null) {
+			paths.push(path)
+		}
+	}
+	return paths.sort((left, right) => left.localeCompare(right))
+}
+
+/**
  * Positions of the `invokeChecked` property identifier in
  * `packages.invokeChecked` / `packages?.invokeChecked` member expressions.
  * Only exact `packages` identifier objects match — the same shape the runtime
@@ -127,10 +156,17 @@ function findingMessageForUsage(usage: DeprecatedInvocationUsage): string {
 }
 
 function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
-	return collectDeprecatedInvocationUsage(files).map((usage) => ({
-		path: usage.filePath,
-		message: findingMessageForUsage(usage),
-	}))
+	const findings: Array<PackageCodemodFinding> =
+		collectDeprecatedInvocationUsage(files).map((usage) => ({
+			path: usage.filePath,
+			message: findingMessageForUsage(usage),
+		}))
+	for (const path of collectUnparseableDeprecatedFiles(files)) {
+		findings.push({ path, message: manualParseFailureMessage })
+	}
+	return findings.sort((left, right) =>
+		(left.path ?? '').localeCompare(right.path ?? ''),
+	)
 }
 
 function transform(
@@ -140,6 +176,11 @@ function transform(
 	const nextFiles: Record<string, string> = { ...files }
 	const changedPaths: Array<string> = []
 	const needsManual: Array<PackageCodemodFinding> = []
+	const unparseablePaths = collectUnparseableDeprecatedFiles(files)
+	for (const path of unparseablePaths) {
+		needsManual.push({ path, message: manualParseFailureMessage })
+	}
+	const unparseablePathSet = new Set(unparseablePaths)
 	const invokeCheckedPaths = new Set(
 		usages
 			.filter((usage) => usage.kind === 'packages.invokeChecked')
@@ -173,9 +214,13 @@ function transform(
 		}
 	}
 
-	// Defensive verification: the rewrite must fully clear detectable
-	// `packages.invokeChecked` member expressions, or the file needs a human.
-	for (const path of changedPaths) {
+	// Defensive verification over every rewrite candidate (not only changed
+	// files): any detectable `packages.invokeChecked` member expression that
+	// survives the rewrite pass needs a human.
+	for (const path of [...invokeCheckedPaths].sort((left, right) =>
+		left.localeCompare(right),
+	)) {
+		if (unparseablePathSet.has(path)) continue
 		const source = nextFiles[path]
 		if (!scannableModuleFilePattern.test(path)) continue
 		if (isTypeDeclarationFilePath(path)) continue
