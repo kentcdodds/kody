@@ -1,8 +1,10 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { buildSourceRecoveryProblemMessage } from '#worker/repo/source-safety-policy.ts'
 import { repoOpenSessionInputSchema } from './repo-shared.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -162,6 +164,64 @@ test('repo target accepts camelCase aliases for its snake_case fields', () => {
 			target: { kind: 'package', kody_id: 'triage-github-pr' },
 		}).target,
 	).toEqual({ kind: 'package', kody_id: 'triage-github-pr' })
+})
+
+test('repo_open_session maps published HEAD mismatch to McpCallerError', async () => {
+	resetMocks()
+	const email = 'head-mismatch@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const env = {
+		APP_DB: createEntitlementsDatabase({
+			users: [{ email, plan: 'pro', stable_user_id: userId }],
+			repoSessionCount: 0,
+		}),
+	} as Env
+	const ctx = {
+		env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId,
+				email,
+				displayName: 'Head Mismatch User',
+			},
+		}),
+	}
+	const source = createPackageSourceRow(userId)
+	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
+		createSavedPackageRow(userId),
+	)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(source)
+	const openRpc = createRepoRpc()
+	openRpc.openSession.mockRejectedValueOnce(
+		new Error(
+			buildSourceRecoveryProblemMessage({
+				source,
+				operation: 'repo_open_session',
+				reason: `artifact source repo "${source.repo_id}" default branch HEAD "commit-unpublished" does not match published commit "${source.published_commit}"`,
+			}),
+		),
+	)
+	mockModule.repoSessionRpc.mockReturnValue(openRpc)
+
+	const error = await repoOpenSessionCapability
+		.handler(
+			{
+				target: { kind: 'package', kody_id: 'triage-github-pr' },
+			},
+			ctx,
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(error).toMatchObject({
+		message: expect.stringContaining('package_publish_external_push'),
+	})
+	expect(openRpc.openSession).toHaveBeenCalled()
 })
 
 test('repo_open_session enforces the repo sessions entitlement for plan users opening a new session', async () => {

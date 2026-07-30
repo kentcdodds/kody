@@ -1,9 +1,14 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { getActiveRepoSessionByConversation } from '#worker/repo/repo-sessions.ts'
+import {
+	buildPublishedCommitHeadMismatchCallerMessage,
+	isPublishedCommitHeadMismatchMessage,
+} from '#worker/repo/source-safety-policy.ts'
 import {
 	repoOpenSessionOutputSchema,
 	repoOpenSessionInputSchema,
@@ -74,15 +79,31 @@ export const repoOpenSessionCapability = defineDomainCapability(
 				resource: 'repo_sessions',
 			})
 
-			const session = await repoSessionRpc(ctx.env, sessionId).openSession({
-				sessionId,
-				sourceId: requested.source.id,
-				userId: user.userId,
-				baseUrl: ctx.callerContext.baseUrl,
-				conversationId: args.conversation_id ?? null,
-				sourceRoot: args.source_root ?? requested.source.source_root,
-				defaultBranch: args.default_branch ?? null,
-			})
+			let session
+			try {
+				session = await repoSessionRpc(ctx.env, sessionId).openSession({
+					sessionId,
+					sourceId: requested.source.id,
+					userId: user.userId,
+					baseUrl: ctx.callerContext.baseUrl,
+					conversationId: args.conversation_id ?? null,
+					sourceRoot: args.source_root ?? requested.source.source_root,
+					defaultBranch: args.default_branch ?? null,
+				})
+			} catch (error) {
+				const message = getErrorMessage(error)
+				// Unpublished git-lane pushes leave HEAD ahead of published_commit
+				// until package_publish_external_push (or reconcile) lands. Keep the
+				// safety gate, but classify it as a caller precondition so Sentry
+				// does not open platform-bug issues for expected workflow state.
+				if (isPublishedCommitHeadMismatchMessage(message)) {
+					throw new McpCallerError(
+						buildPublishedCommitHeadMismatchCallerMessage(message),
+						{ cause: error },
+					)
+				}
+				throw error
+			}
 			return {
 				...session,
 				resolved_target: requested.resolvedTarget,

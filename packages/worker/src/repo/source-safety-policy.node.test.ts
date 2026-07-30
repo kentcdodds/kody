@@ -2,7 +2,10 @@ import { expect, test } from 'vitest'
 import {
 	assertPackageSourceOverwriteAllowed,
 	assertRestorablePackageSourceSnapshot,
+	buildPublishedCommitHeadMismatchCallerMessage,
+	buildSourceRecoveryProblemMessage,
 	destructiveOverwriteConfirmationField,
+	isPublishedCommitHeadMismatchMessage,
 } from './source-safety-policy.ts'
 import { type EntitySourceRow } from './types.ts'
 
@@ -57,6 +60,31 @@ function createEnvWithRawSnapshot(snapshot: unknown) {
 		},
 	} as unknown as Env
 }
+
+test('published commit HEAD mismatch messages are detected for caller-error classification', () => {
+	const mismatch = buildSourceRecoveryProblemMessage({
+		source: packageSource({
+			published_commit: 'commit-published',
+			repo_id: 'package-1',
+		}),
+		operation: 'repo_open_session',
+		reason:
+			'artifact source repo "package-1" default branch HEAD "commit-unpublished" does not match published commit "commit-published"',
+	})
+	expect(isPublishedCommitHeadMismatchMessage(mismatch)).toBe(true)
+	expect(
+		isPublishedCommitHeadMismatchMessage(
+			buildSourceRecoveryProblemMessage({
+				source: packageSource(),
+				operation: 'repo_open_session',
+				reason: 'artifact source repo "package-1" was not found',
+			}),
+		),
+	).toBe(false)
+	expect(buildPublishedCommitHeadMismatchCallerMessage(mismatch)).toContain(
+		'package_publish_external_push',
+	)
+})
 
 test('package source overwrite requires explicit destructive confirmation before snapshot verification', async () => {
 	await expect(
