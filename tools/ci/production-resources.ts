@@ -27,6 +27,8 @@ type ResolvedProductionBindings = {
 	workerName: string
 	d1DatabaseName: string
 	d1ConfiguredId: string
+	auditD1DatabaseName: string
+	auditD1ConfiguredId: string
 	oauthKvTitle: string
 	oauthKvConfiguredId: string
 	bundleArtifactsKvTitle: string
@@ -281,6 +283,26 @@ async function resolveProductionBindings({
 	}
 	const d1ConfiguredId =
 		typeof d1Entry.database_id === 'string' ? d1Entry.database_id : ''
+	const auditD1Entry = d1Databases.find((entry) => {
+		if (!entry || typeof entry !== 'object') return false
+		return (entry as Record<string, unknown>).binding === 'AUDIT_DB'
+	}) as Record<string, unknown> | undefined
+	if (!auditD1Entry) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" has no production D1 binding for "AUDIT_DB".`,
+		)
+	}
+	const auditD1DatabaseName = auditD1Entry.database_name
+	if (
+		typeof auditD1DatabaseName !== 'string' ||
+		auditD1DatabaseName.length === 0
+	) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" is missing "database_name" for production "AUDIT_DB".`,
+		)
+	}
+	const auditD1ConfiguredId =
+		typeof auditD1Entry.database_id === 'string' ? auditD1Entry.database_id : ''
 
 	const kvNamespaces = (productionEnv as Record<string, unknown>).kv_namespaces
 	if (!Array.isArray(kvNamespaces)) {
@@ -396,6 +418,8 @@ async function resolveProductionBindings({
 		workerName,
 		d1DatabaseName,
 		d1ConfiguredId,
+		auditD1DatabaseName,
+		auditD1ConfiguredId,
 		oauthKvTitle,
 		oauthKvConfiguredId,
 		bundleArtifactsKvTitle,
@@ -420,6 +444,12 @@ async function ensureProductionResources(options: CliOptions) {
 	const d1 = ensureD1Database({
 		name: bindings.d1DatabaseName,
 		configuredId: bindings.d1ConfiguredId,
+		location: options.d1Location,
+		dryRun: options.dryRun,
+	})
+	const auditD1 = ensureD1Database({
+		name: bindings.auditD1DatabaseName,
+		configuredId: bindings.auditD1ConfiguredId,
 		location: options.d1Location,
 		dryRun: options.dryRun,
 	})
@@ -503,6 +533,8 @@ async function ensureProductionResources(options: CliOptions) {
 		workerName: bindings.workerName,
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
+		auditD1DatabaseName: auditD1.name,
+		auditD1DatabaseId: auditD1.id,
 		oauthKvId: oauthKv.id,
 		bundleArtifactsKvId: bundleArtifactsKv.id,
 		communityAssetsBucketName: communityAssets.name,
@@ -518,6 +550,8 @@ async function ensureProductionResources(options: CliOptions) {
 	console.log(`wrangler_config=${generatedConfigPath}`)
 	console.log(`d1_database_name=${d1.name}`)
 	console.log(`d1_database_id=${d1.id}`)
+	console.log(`audit_d1_database_name=${auditD1.name}`)
+	console.log(`audit_d1_database_id=${auditD1.id}`)
 	console.log(`oauth_kv_title=${oauthKv.title}`)
 	console.log(`oauth_kv_id=${oauthKv.id}`)
 	console.log(`bundle_artifacts_kv_title=${bundleArtifactsKv.title}`)

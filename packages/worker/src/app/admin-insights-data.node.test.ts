@@ -1,4 +1,5 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	buildAuthDays,
 	buildEmailDays,
@@ -405,6 +406,69 @@ test('activation latency excludes users who have no usable verification date', a
 		users: 1,
 	})
 	expect(data.activation.medianHoursToActivation).toBeNull()
+})
+
+test('admin insights reads email reporting from Analytics Engine and degrades when it is unavailable', async () => {
+	const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+		Response.json({
+			data: [
+				{
+					day: '2026-07-08',
+					event_type: 'email_send',
+					outcome: '',
+					n: '7',
+				},
+				{
+					day: '2026-07-08',
+					event_type: 'email_receive',
+					outcome: '',
+					n: 4,
+				},
+				{
+					day: '2026-07-08',
+					event_type: 'email_delivery',
+					outcome: 'delivered',
+					n: '6',
+				},
+			],
+		}),
+	)
+	const env = {
+		APP_DB: createInsightsTestDb(),
+		EMAIL_EVENTS: {} as AnalyticsEngineDataset,
+		CLOUDFLARE_ACCOUNT_ID: 'account-1',
+		CLOUDFLARE_API_TOKEN: 'token-1',
+		SENTRY_ENVIRONMENT: 'preview',
+	} as Env
+
+	const data = await loadAdminInsightsData(env, now)
+	expect(data.emailByDay.at(-1)).toEqual({
+		day: '2026-07-08',
+		sends: 7,
+		receives: 4,
+	})
+	expect(data.emailDeliveryByDay.at(-1)).toMatchObject({ delivered: 6 })
+	expect(fetchSpy).toHaveBeenCalledTimes(1)
+	const request = fetchSpy.mock.calls[0]
+	expect(request?.[0]).toBe(
+		'https://api.cloudflare.com/client/v4/accounts/account-1/analytics_engine/sql',
+	)
+	expect(String(request?.[1]?.body)).toContain('FROM kody_email_events_preview')
+	expect(String(request?.[1]?.body)).toContain('sum(_sample_interval)')
+
+	consoleWarn.mockImplementation(() => {})
+	fetchSpy.mockResolvedValueOnce(new Response('query failed', { status: 400 }))
+	const degraded = await loadAdminInsightsData(env, now)
+	expect(degraded.ok).toBe(true)
+	expect(degraded.emailByDay.every((day) => day.sends === 0)).toBe(true)
+	expect(degraded.emailDeliveryByDay.every((day) => day.failed === 0)).toBe(
+		true,
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-insights-email-analytics-unavailable',
+		{ error: expect.any(Error) },
+	)
+	fetchSpy.mockRestore()
 })
 
 test('medianOf averages the middle pair and ignores non-finite values', () => {

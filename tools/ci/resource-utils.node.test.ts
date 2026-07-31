@@ -47,6 +47,8 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			envName: 'production',
 			d1DatabaseName: 'kody',
 			d1DatabaseId: 'dry-run-kody',
+			auditD1DatabaseName: 'kody-audit',
+			auditD1DatabaseId: 'dry-run-kody-audit',
 			oauthKvId: 'dry-run-kody-oauth',
 			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 			communityAssetsBucketName: 'kody-community-assets',
@@ -66,6 +68,12 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			env?: {
 				production?: {
 					assets?: { run_worker_first?: Array<string> }
+					d1_databases?: Array<{
+						binding: string
+						database_name: string
+						database_id: string
+						migrations_dir: string
+					}>
 					r2_buckets?: Array<{ binding: string; bucket_name: string }>
 					routes?: Array<{ pattern: string; custom_domain?: boolean }>
 					workers_dev?: boolean
@@ -93,6 +101,20 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			productionConfig.env?.production?.assets,
 		)
 		expect(productionConfig.assets?.run_worker_first?.length).toBeGreaterThan(0)
+		expect(productionConfig.env?.production?.d1_databases).toEqual([
+			{
+				binding: 'APP_DB',
+				database_name: 'kody',
+				database_id: 'dry-run-kody',
+				migrations_dir: './migrations',
+			},
+			{
+				binding: 'AUDIT_DB',
+				database_name: 'kody-audit',
+				database_id: 'dry-run-kody-audit',
+				migrations_dir: './audit-migrations',
+			},
+		])
 		expect(productionConfig.env?.production?.r2_buckets).toEqual([
 			{ binding: 'COMMUNITY_ASSETS', bucket_name: 'kody-community-assets' },
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-email-blobs' },
@@ -126,6 +148,8 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			workerName: 'kody-pr-123',
 			d1DatabaseName: 'kody-pr-123-db',
 			d1DatabaseId: 'dry-run-kody-pr-123-db',
+			auditD1DatabaseName: 'kody-pr-123-audit-db',
+			auditD1DatabaseId: 'dry-run-kody-pr-123-audit-db',
 			oauthKvId: 'dry-run-kody-pr-123-oauth',
 			bundleArtifactsKvId: 'dry-run-kody-pr-123-bundle-artifacts',
 			communityAssetsBucketName: 'kody-pr-123-community-assets',
@@ -137,6 +161,12 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			env?: {
 				preview?: {
 					assets?: { run_worker_first?: Array<string> }
+					d1_databases?: Array<{
+						binding: string
+						database_name: string
+						database_id: string
+						migrations_dir: string
+					}>
 					r2_buckets?: Array<{ binding: string; bucket_name: string }>
 					routes?: Array<{ pattern: string; custom_domain?: boolean }>
 				}
@@ -144,6 +174,20 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		}>(await readFile(previewOutPath, 'utf8'))
 		expect(previewConfig.assets).toEqual(previewConfig.env?.preview?.assets)
 		expect(previewConfig.assets?.run_worker_first?.length).toBeGreaterThan(0)
+		expect(previewConfig.env?.preview?.d1_databases).toEqual([
+			{
+				binding: 'APP_DB',
+				database_name: 'kody-pr-123-db',
+				database_id: 'dry-run-kody-pr-123-db',
+				migrations_dir: './migrations',
+			},
+			{
+				binding: 'AUDIT_DB',
+				database_name: 'kody-pr-123-audit-db',
+				database_id: 'dry-run-kody-pr-123-audit-db',
+				migrations_dir: './audit-migrations',
+			},
+		])
 		// The preview R2 bucket name is overridden per preview deploy.
 		expect(previewConfig.env?.preview?.r2_buckets).toEqual([
 			{
@@ -174,6 +218,8 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 					envName: 'production',
 					d1DatabaseName: 'kody',
 					d1DatabaseId: 'dry-run-kody',
+					auditD1DatabaseName: 'kody-audit',
+					auditD1DatabaseId: 'dry-run-kody-audit',
 					oauthKvId: 'dry-run-kody-oauth',
 					bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 					communityAssetsBucketName: 'kody-community-assets',
@@ -402,6 +448,8 @@ test('writeGeneratedWranglerConfig rejects invalid environment asset config', as
 				envName: 'production',
 				d1DatabaseName: 'kody',
 				d1DatabaseId: 'dry-run-kody',
+				auditD1DatabaseName: 'kody-audit',
+				auditD1DatabaseId: 'dry-run-kody-audit',
 				oauthKvId: 'dry-run-kody-oauth',
 				bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 				communityAssetsBucketName: 'kody-community-assets',

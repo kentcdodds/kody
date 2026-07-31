@@ -213,6 +213,11 @@
 					"database_name": "kody",
 					"migrations_dir": "./migrations",
 				},
+				{
+					"binding": "AUDIT_DB",
+					"database_name": "kody-audit",
+					"migrations_dir": "./audit-migrations",
+				},
 			],
 			"send_email": [
 				{
@@ -286,6 +291,10 @@
 				{
 					"binding": "FLAG_EXPOSURES",
 					"dataset": "kody_flag_exposures",
+				},
+				{
+					"binding": "EMAIL_EVENTS",
+					"dataset": "kody_email_events",
 				},
 			],
 			"ai": {
@@ -427,6 +436,11 @@
 					"database_name": "kody-preview",
 					"migrations_dir": "./migrations",
 				},
+				{
+					"binding": "AUDIT_DB",
+					"database_name": "kody-preview-audit",
+					"migrations_dir": "./audit-migrations",
+				},
 			],
 			"send_email": [
 				{
@@ -465,6 +479,10 @@
 				{
 					"binding": "FLAG_EXPOSURES",
 					"dataset": "kody_flag_exposures_preview",
+				},
+				{
+					"binding": "EMAIL_EVENTS",
+					"dataset": "kody_email_events_preview",
 				},
 			],
 			"ai": {
@@ -557,6 +575,11 @@
 					"binding": "APP_DB",
 					"database_name": "kody-preview",
 					"migrations_dir": "./migrations",
+				},
+				{
+					"binding": "AUDIT_DB",
+					"database_name": "kody-preview-audit",
+					"migrations_dir": "./audit-migrations",
 				},
 			],
 			"send_email": [

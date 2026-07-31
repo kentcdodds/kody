@@ -319,6 +319,31 @@ App access pattern:
   `remix/data-table` (including `findOne`, `create`, `update`, `deleteMany`, and
   `count`)
 
+## Analytics Engine reporting
+
+The role-gated admin insights page reads its 28-day email volume and outbound
+delivery-outcome charts from the `EMAIL_EVENTS` Analytics Engine dataset.
+Charged sends and receives write one event after entitlement consumption;
+persisted `cloudflare-email` provider outcomes write one delivery event. The
+layout is `index1 = userId`, `blob1 = event type`, `blob2 = delivery outcome`,
+`blob3 = source timestamp`, and `double1 = 1`. Admin queries return only
+platform-wide day/outcome counts and weight sampled rows by `_sample_interval`.
+When Analytics Engine SQL is unreachable, these two charts zero-fill while the
+rest of the page renders. Local development uses the existing D1 counters and
+delivery-event table because Wrangler's emulated dataset has no SQL API.
+
+Two D1 reporting projections deliberately remain:
+
+- `usage_rollups` keeps 24 months of per-user monthly aggregates. Analytics
+  Engine's account retention is approximately 90 days, so it cannot safely
+  serve the 12-month admin trend or preserve the 24-month read model. The
+  hourly Analytics Engine recompute and D1 table remain unchanged.
+- `agent_package_conversation_uses` is read while building MCP server
+  instructions to provide popular-package hints. That request path is
+  latency-sensitive, so Analytics Engine SQL is not a suitable replacement.
+  A per-user meter Durable Object is a possible future home if D1 write
+  contention requires another move.
+
 ## KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)
 
 OAuth provider state is stored in `OAUTH_KV` through the
@@ -534,6 +559,7 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 (names and bindings only; remote D1/KV IDs come from deploy-generated configs):
 
 - `APP_DB` (D1)
+- `AUDIT_DB` (D1, global hashed security audit trail)
 - `OAUTH_KV` (KV)
 - `BUNDLE_ARTIFACTS_KV` (KV)
 - `EMAIL_BLOBS` (R2, raw email MIME blobs)
@@ -554,6 +580,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `ASSETS` (static assets bucket)
 - `USAGE_EVENTS` (Analytics Engine dataset, production/preview only; see
   [Usage metering](./usage-metering.md))
+- `EMAIL_EVENTS` (Analytics Engine dataset, production/preview only; indexed by
+  stable user id and read only through role-gated platform aggregates)
 
 `packages/worker/wrangler.jsonc` also configures the `EMAIL` send binding,
 dispatch queues, worker loaders (`LOADER` / `APP_LOADER`), the `AI` binding, and
@@ -956,8 +984,11 @@ Current retention policies:
   resolved or dismissed, or the submitter deletes their account. Resolved and
   dismissed rows keep 365 days after `updated_at`; submitter deletion removes
   any remaining rows.
-- `audit_events`: global hashed auth/security audit events keep 180 days. They
-  are not user-owned D1 rows and remain independent of account deletion/export.
+- `audit_events`: global hashed auth/security audit events are dual-written to
+  the legacy `APP_DB` table and the dedicated `AUDIT_DB` database during the
+  expand phase. Retention prunes only `AUDIT_DB` after 180 days; the legacy
+  table remains in place until a later contract phase. Audit events are not
+  user-owned rows and remain independent of account deletion/export.
 - `stripe_webhook_events`: platform Stripe webhook idempotency rows keep 30 days
   by `processed_at`. They are not user-owned and remain independent of account
   deletion/export.

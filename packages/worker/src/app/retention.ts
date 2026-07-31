@@ -886,7 +886,7 @@ export async function pruneStripeWebhookEventsForRetention(input: {
 }
 
 export async function pruneRetention(input: {
-	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	env: Pick<Env, 'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
 	now?: Date
 	timeBudgetMs?: number
 }): Promise<RetentionPruneResult> {
@@ -894,6 +894,7 @@ export async function pruneRetention(input: {
 	const timeBudgetMs = input.timeBudgetMs ?? retentionRunTimeBudgetMs
 	const startedAtMs = Date.now()
 	const db = input.env.APP_DB
+	const auditDb = input.env.AUDIT_DB
 	const emailBlobs = input.env.EMAIL_BLOBS
 	// Per-run keyset cursor for the email prune; advances past rows skipped
 	// for blob reasons so a blocked head cannot wedge later batches.
@@ -1033,7 +1034,7 @@ export async function pruneRetention(input: {
 		),
 		countTask(
 			'audit_events',
-			() => pruneAuditEventsForRetention({ db, now }),
+			() => pruneAuditEventsForRetention({ db: auditDb, now }),
 			(count) => {
 				result.auditEvents += count
 			},
