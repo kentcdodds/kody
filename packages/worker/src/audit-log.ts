@@ -129,6 +129,18 @@ async function persistAuditEvent(
 		.run()
 }
 
+function resolveAuditDatabase(event: AuditEvent) {
+	if (event.auditDb) return event.auditDb
+	try {
+		return env.AUDIT_DB
+	} catch {
+		// Some node test and standalone utility contexts intentionally provide
+		// only APP_DB. Preserve the legacy write there without turning an absent
+		// runtime binding into an audit failure.
+		return undefined
+	}
+}
+
 export async function logAuditEvent(event: AuditEvent) {
 	try {
 		const payload = await buildAuditPayload(event)
@@ -136,7 +148,7 @@ export async function logAuditEvent(event: AuditEvent) {
 		if (!event.db) return
 		await Promise.all([
 			persistAuditEvent(event.db, payload),
-			persistAuditEvent(event.auditDb ?? env.AUDIT_DB, payload),
+			persistAuditEvent(resolveAuditDatabase(event), payload),
 		])
 	} catch (error) {
 		console.warn('audit-event-failed', error)
