@@ -30,8 +30,9 @@ MCP URL and setup prompt.
   Remote servers are not configured through `claude_desktop_config.json`.
 - **Grok** — On [grok.com/connectors](https://grok.com/connectors), click **New
   Connector**, select **Custom**, and paste the MCP URL. Complete OAuth when
-  prompted. On Grok Business and Enterprise, a team admin may need to provision
-  the connector first. See xAI's
+  prompted. For Grok Business and Enterprise, a team admin must first add this
+  custom MCP server in the cloud console; members can then connect it from the
+  Grok connectors page. See xAI's
   [custom MCP connector docs](https://docs.x.ai/grok/connectors).
 - **Claude Code** — `claude mcp add --transport http -s user kody <url>`, or a
   `.mcp.json` entry with `"type": "http"`.
