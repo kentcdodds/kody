@@ -155,9 +155,7 @@ export async function assertCallerCanAccessCapability(
 	// capability surface, so it is recorded even though it is not an error.
 	await recordMcpAuthDenial({
 		db: options.env?.APP_DB,
-		auditDb: options.env
-			? auditDatabaseFromEnv(options.env)
-			: undefined,
+		auditDb: options.env ? auditDatabaseFromEnv(options.env) : undefined,
 		action: 'mcp_capability_denied',
 		reason: denial.reason,
 		email: callerContext.user?.email,

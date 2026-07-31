@@ -335,14 +335,14 @@ delivery-event table because Wrangler's emulated dataset has no SQL API.
 Two D1 reporting projections deliberately remain:
 
 - `usage_rollups` keeps 24 months of per-user monthly aggregates. Analytics
-  Engine's account retention is approximately 90 days, so it cannot safely
-  serve the 12-month admin trend or preserve the 24-month read model. The
-  hourly Analytics Engine recompute and D1 table remain unchanged.
+  Engine's account retention is approximately 90 days, so it cannot safely serve
+  the 12-month admin trend or preserve the 24-month read model. The hourly
+  Analytics Engine recompute and D1 table remain unchanged.
 - `agent_package_conversation_uses` is read while building MCP server
   instructions to provide popular-package hints. That request path is
-  latency-sensitive, so Analytics Engine SQL is not a suitable replacement.
-  A per-user meter Durable Object is a possible future home if D1 write
-  contention requires another move.
+  latency-sensitive, so Analytics Engine SQL is not a suitable replacement. A
+  per-user meter Durable Object is a possible future home if D1 write contention
+  requires another move.
 
 ## KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)
 

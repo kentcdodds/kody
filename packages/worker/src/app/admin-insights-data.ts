@@ -283,10 +283,7 @@ async function loadEmailInsightsRows(input: {
 	// Wrangler exposes a local Analytics Engine binding, but its SQL API cannot
 	// query the emulated dataset. Local development therefore keeps using the
 	// existing D1 tables, matching the feature-flag exposure fallback.
-	if (
-		!input.env.EMAIL_EVENTS ||
-		input.env.WRANGLER_IS_LOCAL_DEV === 'true'
-	) {
+	if (!input.env.EMAIL_EVENTS || input.env.WRANGLER_IS_LOCAL_DEV === 'true') {
 		const [emailRows, deliveryRows] = await Promise.all([
 			input.env.APP_DB.prepare(
 				`SELECT day, resource, SUM(count) AS n

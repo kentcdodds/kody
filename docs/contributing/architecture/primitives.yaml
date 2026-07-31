@@ -426,7 +426,8 @@ primitives:
   - id: audit-d1
     group: storage
     name: Audit database
-    summary: AUDIT_DB global hashed security audit trail with independent retention.
+    summary:
+      AUDIT_DB global hashed security audit trail with independent retention.
     code:
       - packages/worker/audit-migrations/
       - packages/worker/src/audit-log.ts
@@ -436,7 +437,8 @@ primitives:
   - id: email-reporting
     group: storage
     name: Email reporting stream
-    summary: EMAIL_EVENTS Analytics Engine stream for role-gated platform aggregates.
+    summary:
+      EMAIL_EVENTS Analytics Engine stream for role-gated platform aggregates.
     code:
       - packages/worker/src/email/reporting-events.ts
       - packages/worker/src/app/admin-insights-data.ts
