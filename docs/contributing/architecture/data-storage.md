@@ -853,26 +853,43 @@ the same user-owned D1 rows used by account deletion.
 
 ### Vectorize metadata contracts
 
-Vector ids and metadata are conventional and require reindexing when changed.
+Vector ids, namespaces, and metadata are conventional and require reindexing
+when changed. User-owned vectors use the account's 64-character stable user id
+as their Vectorize namespace. Builtin capability vectors use the reserved
+`__kody_builtin__` namespace; stable user ids are lowercase SHA-256 hex, so the
+reserved value cannot collide with an account. Namespace filtering is the
+primary isolation boundary and is applied by Vectorize before search. The
+`userId` metadata filter remains mandatory on every user-owned query as
+defense-in-depth.
+
 User-owned ids must also stay within Cloudflare Vectorize's 64-byte id limit:
 builders first emit the legacy passthrough form when it fits, then fall back to
 `{prefix}_sha256:{truncatedHexDigest}` for overlong raw ids. Length checks are
 UTF-8 byte checks, not JavaScript string-length checks, and the digest form is
 deterministic so upserts and deletes target the same vector.
 
-- Memories: `memory_{memoryId}` with metadata
+- Memories: `memory_{memoryId}` in namespace `{userId}`, with metadata
   `{ kind: 'memory', userId, status, category? }`. Memory ids are UUID-like, so
   search parses only the passthrough `memory_` form back to the D1 id.
 - Jobs: `job_{jobId}` or `job_sha256:{digest}` with metadata
-  `{ kind: 'job', userId }`. Package-owned job ids
+  `{ kind: 'job', userId }` in namespace `{userId}`. Package-owned job ids
   `package-job:{packageId}:{jobName}` often need the digest form.
 - Saved packages: `package_{packageId}` or `package_sha256:{digest}` with
-  metadata `{ kind: 'package', userId }`.
-- Builtin capabilities: id is the capability name with metadata
-  `{ kind: 'builtin', domain }`.
+  metadata `{ kind: 'package', userId }` in namespace `{userId}`.
+- Builtin capabilities: id is the capability name in namespace
+  `__kody_builtin__`, with metadata `{ kind: 'builtin', domain }`.
 
-Every user-owned Vectorize query must filter by `userId`; capability vectors are
-global built-in metadata and are rebuilt through the maintenance reindex path.
+The namespace migration uses expand/contract reads. Each query first searches
+the intended namespace. If that namespace returns no matches, it repeats the
+same metadata-filtered query against the legacy default namespace. The
+post-deploy `POST /__maintenance/reindex-capabilities` sweep keyset-pages every
+memory, job, and saved package from D1 (200 rows per page) and upserts it into
+the owner's namespace; it also rebuilds builtins in their reserved namespace.
+The deploy is not considered migrated until every phase reports no `error` or
+`failed` vectors. Remove the default-namespace fallback in a follow-up contract
+deploy only after a production full sweep succeeds and the next deploy confirms
+normal namespaced search. Vectors are derived from D1, so no canonical data is
+moved or deleted during this migration.
 
 ### `entity_sources` and package import contracts
 

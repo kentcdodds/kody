@@ -7,6 +7,7 @@ import {
 	reindexVectorCandidates,
 	type VectorReindexResult,
 } from '#worker/vectorize/reindex-batches.ts'
+import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
@@ -50,6 +51,7 @@ export async function reindexJobVectors(
 						sourceId: view.sourceId,
 						publishedCommit: view.publishedCommit,
 					}),
+					namespace: userVectorNamespace(row.user_id),
 					metadata: { kind: 'job', userId: row.user_id },
 				}
 			})

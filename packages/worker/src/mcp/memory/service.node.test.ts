@@ -639,6 +639,7 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 
 	const vectorQueryCalls: Array<{
 		topK: number
+		namespace?: string
 		filter?: Record<string, unknown>
 	}> = []
 	const runtimeEnv = {
@@ -648,7 +649,11 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 		CAPABILITY_VECTOR_INDEX: {
 			async query(
 				_values: Array<number>,
-				options: { topK: number; filter?: Record<string, unknown> },
+				options: {
+					topK: number
+					namespace?: string
+					filter?: Record<string, unknown>
+				},
 			) {
 				vectorQueryCalls.push(options)
 				return {
@@ -669,6 +674,7 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 	// query happens inside the fusion step.
 	expect(vectorQueryCalls).toHaveLength(1)
 	expect(vectorQueryCalls[0]).toMatchObject({
+		namespace: 'user-123',
 		filter: {
 			kind: { $eq: 'memory' },
 			userId: { $eq: 'user-123' },

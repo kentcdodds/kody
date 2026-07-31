@@ -127,6 +127,7 @@ test('saved package reindex embeds full manifests with user-scoped metadata', as
 		{
 			id: 'package_pkg-1',
 			values: [0.1, 0.2, 0.3],
+			namespace: 'user-1',
 			metadata: {
 				kind: 'package',
 				userId: 'user-1',

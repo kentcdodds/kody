@@ -30,9 +30,24 @@ test('reindexVectorCandidates isolates failed embedding items and upserts the re
 				index: { upsert } as unknown as VectorizeIndex,
 				kind: 'test',
 				candidates: [
-					{ id: 'good-1', text: 'alpha', metadata: { kind: 'test' } },
-					{ id: 'bad-1', text: 'bad', metadata: { kind: 'test' } },
-					{ id: 'good-2', text: 'beta', metadata: { kind: 'test' } },
+					{
+						id: 'good-1',
+						text: 'alpha',
+						namespace: 'user-a',
+						metadata: { kind: 'test' },
+					},
+					{
+						id: 'bad-1',
+						text: 'bad',
+						namespace: 'user-a',
+						metadata: { kind: 'test' },
+					},
+					{
+						id: 'good-2',
+						text: 'beta',
+						namespace: 'user-b',
+						metadata: { kind: 'test' },
+					},
 				],
 			}),
 		).resolves.toEqual({
@@ -52,6 +67,7 @@ test('reindexVectorCandidates isolates failed embedding items and upserts the re
 			{
 				id: 'good-1',
 				values: [5],
+				namespace: 'user-a',
 				metadata: { kind: 'test' },
 			},
 		])
@@ -59,6 +75,7 @@ test('reindexVectorCandidates isolates failed embedding items and upserts the re
 			{
 				id: 'good-2',
 				values: [4],
+				namespace: 'user-b',
 				metadata: { kind: 'test' },
 			},
 		])
@@ -83,8 +100,18 @@ test('reindexVectorCandidates marks a phase fatal when every vector fails', asyn
 				index: { upsert: vi.fn() } as unknown as VectorizeIndex,
 				kind: 'test',
 				candidates: [
-					{ id: 'bad-1', text: 'alpha', metadata: { kind: 'test' } },
-					{ id: 'bad-2', text: 'beta', metadata: { kind: 'test' } },
+					{
+						id: 'bad-1',
+						text: 'alpha',
+						namespace: 'user-a',
+						metadata: { kind: 'test' },
+					},
+					{
+						id: 'bad-2',
+						text: 'beta',
+						namespace: 'user-b',
+						metadata: { kind: 'test' },
+					},
 				],
 			}),
 		).resolves.toMatchObject({

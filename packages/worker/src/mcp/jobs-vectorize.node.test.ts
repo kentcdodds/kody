@@ -54,6 +54,7 @@ test('job vectors use the same length-safe id for upsert and delete', async () =
 		{
 			id: vectorId,
 			values: [0.1, 0.2, 0.3],
+			namespace: 'user-1',
 			metadata: { kind: 'job', userId: 'user-1' },
 		},
 	])
