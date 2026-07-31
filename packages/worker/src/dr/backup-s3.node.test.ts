@@ -87,7 +87,7 @@ test('put retries transport errors then surfaces exhausted failures', async () =
 	expect(fetchImpl).toHaveBeenCalledTimes(3)
 })
 
-test('head and getText retry transient 503 responses', async () => {
+test('head, getText, and getBytes retry transient 503 responses', async () => {
 	const headFetch = vi
 		.fn()
 		.mockResolvedValueOnce(jsonResponse(503))
@@ -101,6 +101,7 @@ test('head and getText retry transient 503 responses', async () => {
 		status: 200,
 		etag: '"h"',
 	})
+	expect(headFetch).toHaveBeenCalledTimes(2)
 
 	const getFetch = vi
 		.fn()
@@ -114,6 +115,21 @@ test('head and getText retry transient 503 responses', async () => {
 		text: '{"ok":true}',
 		etag: '"g"',
 	})
+	expect(getFetch).toHaveBeenCalledTimes(2)
+
+	const bytesFetch = vi
+		.fn()
+		.mockResolvedValueOnce(jsonResponse(503, 'busy'))
+		.mockResolvedValueOnce(jsonResponse(200, 'abc', { etag: '"b"' }))
+	const bytesClient = createDrBackupS3Client(
+		config,
+		bytesFetch as typeof fetch,
+		{ maxAttempts: 2, baseDelayMs: 1 },
+	)
+	await expect(bytesClient.getBytes('blob.bin')).resolves.toEqual(
+		new Uint8Array([97, 98, 99]),
+	)
+	expect(bytesFetch).toHaveBeenCalledTimes(2)
 })
 
 test('readDrBackupS3Config requires all fields', () => {
