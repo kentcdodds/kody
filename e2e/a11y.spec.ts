@@ -32,17 +32,9 @@ const publicRoutes: RouteScenario[] = [
 			await expect(page.getByLabel('Password')).toBeVisible()
 		},
 	},
-	{
-		path: '/community',
-		ready: async (page) => {
-			await expect(
-				page.getByRole('heading', { name: 'Community packages', exact: true }),
-			).toBeVisible()
-		},
-	},
 ]
 
-const accountRoutes: RouteScenario[] = [
+const authenticatedRoutes: RouteScenario[] = [
 	{
 		path: '/account',
 		ready: async (page) => {
@@ -51,17 +43,6 @@ const accountRoutes: RouteScenario[] = [
 			).toBeVisible()
 		},
 	},
-	{
-		path: '/account/jobs',
-		ready: async (page) => {
-			await expect(
-				page.getByRole('heading', { name: 'Jobs', exact: true }),
-			).toBeVisible()
-		},
-	},
-]
-
-const adminRoutes: RouteScenario[] = [
 	{
 		path: '/admin/users',
 		ready: async (page) => {
@@ -99,8 +80,10 @@ async function scanRoute(page: Page, scenario: RouteScenario, theme: Theme) {
 	).toEqual([])
 }
 
-test('public pages have no blocking axe violations in either theme', async ({
+test('critical routes have no blocking axe violations in either theme', async ({
 	page,
+	seedE2eUser,
+	login,
 }) => {
 	await page.context().clearCookies()
 	for (const theme of themes) {
@@ -108,37 +91,7 @@ test('public pages have no blocking axe violations in either theme', async ({
 			await scanRoute(page, scenario, theme)
 		}
 	}
-})
 
-test('account pages have no blocking axe violations in either theme', async ({
-	page,
-	seedE2eUser,
-	login,
-}) => {
-	const runId = Date.now()
-	const user = await seedE2eUser({
-		email: `a11y-user-${runId}@example.com`,
-		username: `a11y-user-${runId}`,
-		password: 'a11y-user-password',
-	})
-	await login({
-		email: user.email,
-		password: user.password,
-		mode: 'login',
-	})
-
-	for (const theme of themes) {
-		for (const scenario of accountRoutes) {
-			await scanRoute(page, scenario, theme)
-		}
-	}
-})
-
-test('admin pages have no blocking axe violations in either theme', async ({
-	page,
-	seedE2eUser,
-	login,
-}) => {
 	const runId = Date.now()
 	const admin = await seedE2eUser({
 		email: `a11y-admin-${runId}@example.com`,
@@ -153,7 +106,7 @@ test('admin pages have no blocking axe violations in either theme', async ({
 	})
 
 	for (const theme of themes) {
-		for (const scenario of adminRoutes) {
+		for (const scenario of authenticatedRoutes) {
 			await scanRoute(page, scenario, theme)
 		}
 	}

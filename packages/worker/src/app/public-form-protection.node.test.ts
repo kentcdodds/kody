@@ -1,15 +1,11 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	getTurnstileSiteKey,
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#app/signup-mode.ts'
 
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
-
-test('signup mode and Turnstile configuration default closed and degrade gracefully', async () => {
+test('public form protection defaults closed, rejects honeypots, and verifies Turnstile', async () => {
 	expect(getSignupMode({} as Pick<Env, 'SIGNUP_MODE'>)).toBe('invite')
 	expect(
 		getSignupMode({
@@ -26,12 +22,13 @@ test('signup mode and Turnstile configuration default closed and degrade gracefu
 		method: 'POST',
 		headers: { 'CF-Connecting-IP': '203.0.113.10' },
 	})
-	const unconfigured = await verifyPublicFormProtection({
-		env: {},
-		request,
-		body: {},
-	})
-	expect(unconfigured).toEqual({ ok: true })
+	await expect(
+		verifyPublicFormProtection({
+			env: {},
+			request,
+			body: {},
+		}),
+	).resolves.toEqual({ ok: true })
 
 	const honeypot = await verifyPublicFormProtection({
 		env: {},
@@ -41,9 +38,7 @@ test('signup mode and Turnstile configuration default closed and degrade gracefu
 	expect(honeypot.ok).toBe(false)
 	if (honeypot.ok) throw new Error('Expected honeypot rejection.')
 	expect(honeypot.response.status).toBe(400)
-})
 
-test('configured Turnstile requires and verifies a token server-side', async () => {
 	const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {
 		expect(init.method).toBe('POST')
 		const body = new URLSearchParams(String(init.body))
@@ -53,30 +48,35 @@ test('configured Turnstile requires and verifies a token server-side', async () 
 		return Response.json({ success: true })
 	})
 	vi.stubGlobal('fetch', fetchSpy)
-	const env = {
-		TURNSTILE_SITE_KEY: 'site-key',
-		TURNSTILE_SECRET_KEY: 'secret-key',
+	try {
+		const env = {
+			TURNSTILE_SITE_KEY: 'site-key',
+			TURNSTILE_SECRET_KEY: 'secret-key',
+		}
+		const turnstileRequest = new Request('https://example.com/auth', {
+			method: 'POST',
+			headers: { 'CF-Connecting-IP': '203.0.113.11' },
+		})
+
+		const missing = await verifyPublicFormProtection({
+			env,
+			request: turnstileRequest,
+			body: {},
+		})
+		expect(missing.ok).toBe(false)
+		if (missing.ok) throw new Error('Expected missing-token rejection.')
+		expect(missing.response.status).toBe(400)
+		expect(fetchSpy).not.toHaveBeenCalled()
+
+		await expect(
+			verifyPublicFormProtection({
+				env,
+				request: turnstileRequest,
+				body: { turnstileToken: 'valid-token' },
+			}),
+		).resolves.toEqual({ ok: true })
+		expect(fetchSpy).toHaveBeenCalledOnce()
+	} finally {
+		vi.unstubAllGlobals()
 	}
-	const request = new Request('https://example.com/auth', {
-		method: 'POST',
-		headers: { 'CF-Connecting-IP': '203.0.113.11' },
-	})
-
-	const missing = await verifyPublicFormProtection({
-		env,
-		request,
-		body: {},
-	})
-	expect(missing.ok).toBe(false)
-	if (missing.ok) throw new Error('Expected missing-token rejection.')
-	expect(missing.response.status).toBe(400)
-	expect(fetchSpy).not.toHaveBeenCalled()
-
-	const verified = await verifyPublicFormProtection({
-		env,
-		request,
-		body: { turnstileToken: 'valid-token' },
-	})
-	expect(verified).toEqual({ ok: true })
-	expect(fetchSpy).toHaveBeenCalledOnce()
 })

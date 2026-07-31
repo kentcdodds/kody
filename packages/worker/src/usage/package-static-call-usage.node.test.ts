@@ -15,7 +15,7 @@ async function withRecordUsageSpy(
 	}
 }
 
-test('records one package_static_call event per granted batch entry', async () => {
+test('records only granted, valid, sanitized package_static_call events', async () => {
 	await withRecordUsageSpy(async (recordUsageSpy) => {
 		const env = {} as Env
 		const tools = createPackageStaticCallMeterTools({
@@ -29,10 +29,19 @@ test('records one package_static_call event per granted batch entry', async () =
 			events: [
 				{ packageId: 'pkg-callee', durationMs: 42, outcome: 'success' },
 				{ packageId: 'pkg-callee', durationMs: 7, outcome: 'error' },
-				{ packageId: 'pkg-callee', durationMs: 3, outcome: 'success' },
+				{
+					packageId: 'pkg-other-users-package',
+					durationMs: 1,
+					outcome: 'success',
+				},
+				{ packageId: '', durationMs: 1, outcome: 'success' },
+				{ durationMs: 1, outcome: 'success' },
+				{ packageId: 42, durationMs: 1, outcome: 'success' },
+				'not-an-object',
+				{ packageId: 'pkg-callee', durationMs: 1, outcome: 'made-up' },
 			],
 		})
-		expect(recordUsageSpy).toHaveBeenCalledTimes(3)
+		expect(recordUsageSpy).toHaveBeenCalledTimes(2)
 		expect(recordUsageSpy).toHaveBeenNthCalledWith(1, env, {
 			userId: 'user-1',
 			eventType: 'package_static_call',
@@ -49,58 +58,8 @@ test('records one package_static_call event per granted batch entry', async () =
 				durationMs: 7,
 			}),
 		)
-	})
-})
 
-test('drops stamped package ids outside the static dependency grant set', async () => {
-	await withRecordUsageSpy(async (recordUsageSpy) => {
-		const tools = createPackageStaticCallMeterTools({
-			env: {} as Env,
-			userId: 'user-1',
-			grantedPackageIds: new Set(['pkg-callee']),
-		})
-		await tools?.record({
-			events: [
-				{
-					packageId: 'pkg-other-users-package',
-					durationMs: 1,
-					outcome: 'success',
-				},
-				{ packageId: '', durationMs: 1, outcome: 'success' },
-				{ durationMs: 1, outcome: 'success' },
-				{ packageId: 42, durationMs: 1, outcome: 'success' },
-				'not-an-object',
-			],
-		})
-		expect(recordUsageSpy).not.toHaveBeenCalled()
-
-		// A dropped entry does not block granted entries in the same batch.
-		await tools?.record({
-			events: [
-				{ packageId: 'pkg-forged', durationMs: 1, outcome: 'success' },
-				{ packageId: 'pkg-callee', durationMs: 1, outcome: 'success' },
-			],
-		})
-		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
-		expect(recordUsageSpy).toHaveBeenCalledWith(
-			expect.anything(),
-			expect.objectContaining({ entityId: 'pkg-callee' }),
-		)
-	})
-})
-
-test('drops invalid outcomes and normalizes invalid durations', async () => {
-	await withRecordUsageSpy(async (recordUsageSpy) => {
-		const tools = createPackageStaticCallMeterTools({
-			env: {} as Env,
-			userId: 'user-1',
-			grantedPackageIds: new Set(['pkg-callee']),
-		})
-		await tools?.record({
-			events: [{ packageId: 'pkg-callee', durationMs: 1, outcome: 'made-up' }],
-		})
-		expect(recordUsageSpy).not.toHaveBeenCalled()
-
+		recordUsageSpy.mockClear()
 		await tools?.record({
 			events: [
 				{ packageId: 'pkg-callee', durationMs: -5, outcome: 'success' },
@@ -135,8 +94,6 @@ test('caps recorded events per run, cumulatively across batches', async () => {
 		})
 		expect(recordUsageSpy).toHaveBeenCalledTimes(200)
 
-		// The cap is per run (per tools instance), not per batch: flush
-		// rounds from the same run share one Analytics Engine budget.
 		recordUsageSpy.mockClear()
 		await tools?.record({
 			events: Array.from({ length: 50 }, () => grantedEvent),

@@ -54,51 +54,33 @@ function createSettingRow(input: { id: string; enabled?: boolean }) {
 	}
 }
 
-function setupEnabledServerFixture() {
+test('listEnabledMcpServerRefsCached warms per user, expires, and invalidates on mutation', async () => {
 	clearEnabledMcpServerRefsCacheForTests()
 	mockModule.listEnabledMcpServerSettingRows.mockResolvedValue([
 		createSettingRow({ id: 'server-1' }),
 	])
-}
 
-test('listEnabledMcpServerRefsCached serves warm calls without a D1 read, per user', async () => {
-	setupEnabledServerFixture()
 	const env = { APP_DB: {} } as Env
-
 	const first = await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
 	const second = await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
-
 	expect(first).toEqual([{ serverId: 'server-1', name: 'server-server-1' }])
 	expect(second).toBe(first)
 	expect(mockModule.listEnabledMcpServerSettingRows).toHaveBeenCalledTimes(1)
 
 	await listEnabledMcpServerRefsCached({ env, userId: 'user-2' })
-	// Another user's lookup must not reuse user-1's entry.
 	expect(mockModule.listEnabledMcpServerSettingRows).toHaveBeenCalledTimes(2)
 	expect(mockModule.listEnabledMcpServerSettingRows).toHaveBeenLastCalledWith(
 		expect.objectContaining({ userId: 'user-2' }),
 	)
-})
 
-test('listEnabledMcpServerRefsCached expires after its TTL', async () => {
-	setupEnabledServerFixture()
 	vi.useFakeTimers()
 	try {
-		const env = { APP_DB: {} } as Env
-		await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
 		vi.setSystemTime(Date.now() + enabledMcpServerRefsCacheTtlMs + 1)
 		await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
-		expect(mockModule.listEnabledMcpServerSettingRows).toHaveBeenCalledTimes(2)
+		expect(mockModule.listEnabledMcpServerSettingRows).toHaveBeenCalledTimes(3)
 	} finally {
 		vi.useRealTimers()
 	}
-})
-
-test('mutations invalidate the enabled-refs cache in the same isolate', async () => {
-	setupEnabledServerFixture()
-	const env = { APP_DB: {} } as Env
-	const warm = await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
-	expect(warm).toHaveLength(1)
 
 	mockModule.getMcpServerSettingRowById.mockResolvedValue(
 		createSettingRow({ id: 'server-1' }),
@@ -110,12 +92,11 @@ test('mutations invalidate the enabled-refs cache in the same isolate', async ()
 		id: 'server-1',
 		enabled: false,
 	})
-
 	mockModule.listEnabledMcpServerSettingRows.mockResolvedValue([])
 	const afterDisable = await listEnabledMcpServerRefsCached({
 		env,
 		userId: 'user-1',
 	})
 	expect(afterDisable).toEqual([])
-	expect(mockModule.listEnabledMcpServerSettingRows).toHaveBeenCalledTimes(2)
+	expect(mockModule.listEnabledMcpServerSettingRows).toHaveBeenCalledTimes(4)
 })

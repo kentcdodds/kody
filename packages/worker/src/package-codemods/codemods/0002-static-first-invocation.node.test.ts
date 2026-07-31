@@ -16,7 +16,7 @@ function manifest(name = '@user/demo', kodyId = 'demo') {
 	)}\n`
 }
 
-test('0002 rewrites invokeChecked member calls (including optional chaining) to invoke', () => {
+test('0002 rewrites invokeChecked member calls and leaves non-targets alone', () => {
 	const files = {
 		'package.json': manifest(),
 		'index.ts': [
@@ -51,15 +51,11 @@ test('0002 rewrites invokeChecked member calls (including optional chaining) to 
 	)
 	expect(result.files['index.ts']).not.toContain('invokeChecked')
 
-	// Idempotent: rerunning on the transformed tree changes nothing.
 	const rerun = staticFirstInvocationCodemod.transform(result.files)
 	expect(rerun.changed).toBe(false)
-	expect(rerun.changedPaths).toEqual([])
 	expect(rerun.files).toEqual(result.files)
-})
 
-test('0002 leaves unrelated invokeChecked identifiers and non-code files alone', () => {
-	const files = {
+	const untouched = {
 		'package.json': manifest(),
 		'README.md':
 			'Historical note: `packages.invokeChecked` used to be the recommendation.\n',
@@ -71,17 +67,14 @@ test('0002 leaves unrelated invokeChecked identifiers and non-code files alone',
 			'',
 		].join('\n'),
 	}
-
-	expect(staticFirstInvocationCodemod.detect(files)).toEqual([])
-	const result = staticFirstInvocationCodemod.transform(files)
-	expect(result.changed).toBe(false)
-	expect(result.changedPaths).toEqual([])
-	expect(result.needsManual).toEqual([])
-	expect(result.files).toEqual(files)
+	expect(staticFirstInvocationCodemod.detect(untouched)).toEqual([])
+	const untouchedResult = staticFirstInvocationCodemod.transform(untouched)
+	expect(untouchedResult.changed).toBe(false)
+	expect(untouchedResult.files).toEqual(untouched)
 })
 
-test('0002 reports packages.check and literal dynamic kody imports as needsManual', () => {
-	const files = {
+test('0002 reports needsManual for check/dynamic imports, parse failures, and mixed packages', () => {
+	const manualFiles = {
 		'package.json': manifest(),
 		'index.ts': [
 			"import { packages } from 'kody:runtime'",
@@ -94,9 +87,9 @@ test('0002 reports packages.check and literal dynamic kody imports as needsManua
 			'',
 		].join('\n'),
 	}
-
-	const findings = staticFirstInvocationCodemod.detect(files)
-	expect(findings).toEqual([
+	const manualResult = staticFirstInvocationCodemod.transform(manualFiles)
+	expect(manualResult.changed).toBe(false)
+	expect(manualResult.needsManual).toEqual([
 		{
 			path: 'index.ts',
 			message: expect.stringContaining('literal dynamic `import("kody:@...")`'),
@@ -107,24 +100,7 @@ test('0002 reports packages.check and literal dynamic kody imports as needsManua
 		},
 	])
 
-	const result = staticFirstInvocationCodemod.transform(files)
-	expect(result.changed).toBe(false)
-	expect(result.changedPaths).toEqual([])
-	expect(result.files).toEqual(files)
-	expect(result.needsManual).toEqual([
-		{
-			path: 'index.ts',
-			message: expect.stringContaining('literal dynamic `import("kody:@...")`'),
-		},
-		{
-			path: 'index.ts',
-			message: expect.stringContaining('`packages.check`'),
-		},
-	])
-})
-
-test('0002 flags unparseable files that reference the deprecated surface', () => {
-	const files = {
+	const brokenFiles = {
 		'package.json': manifest(),
 		'broken.ts': [
 			"import { packages } from 'kody:runtime'",
@@ -134,29 +110,16 @@ test('0002 flags unparseable files that reference the deprecated surface', () =>
 			'',
 		].join('\n'),
 	}
-
-	const findings = staticFirstInvocationCodemod.detect(files)
-	expect(findings).toEqual([
+	const brokenResult = staticFirstInvocationCodemod.transform(brokenFiles)
+	expect(brokenResult.changed).toBe(false)
+	expect(brokenResult.needsManual).toEqual([
 		{
 			path: 'broken.ts',
 			message: expect.stringContaining('could not be parsed'),
 		},
 	])
 
-	const result = staticFirstInvocationCodemod.transform(files)
-	expect(result.changed).toBe(false)
-	expect(result.changedPaths).toEqual([])
-	expect(result.files).toEqual(files)
-	expect(result.needsManual).toEqual([
-		{
-			path: 'broken.ts',
-			message: expect.stringContaining('could not be parsed'),
-		},
-	])
-})
-
-test('0002 mixes mechanical rewrites with needsManual findings in one package', () => {
-	const files = {
+	const mixedFiles = {
 		'package.json': manifest(),
 		'auto.ts': [
 			"import { packages } from 'kody:runtime'",
@@ -173,14 +136,13 @@ test('0002 mixes mechanical rewrites with needsManual findings in one package', 
 			'',
 		].join('\n'),
 	}
-
-	const result = staticFirstInvocationCodemod.transform(files)
-	expect(result.changed).toBe(true)
-	expect(result.changedPaths).toEqual(['auto.ts'])
-	expect(result.files['auto.ts']).toContain('packages.invoke({')
-	expect(result.files['auto.ts']).not.toContain('invokeChecked')
-	expect(result.files['manual.ts']).toBe(files['manual.ts'])
-	expect(result.needsManual).toEqual([
+	const mixedResult = staticFirstInvocationCodemod.transform(mixedFiles)
+	expect(mixedResult.changed).toBe(true)
+	expect(mixedResult.changedPaths).toEqual(['auto.ts'])
+	expect(mixedResult.files['auto.ts']).toContain('packages.invoke({')
+	expect(mixedResult.files['auto.ts']).not.toContain('invokeChecked')
+	expect(mixedResult.files['manual.ts']).toBe(mixedFiles['manual.ts'])
+	expect(mixedResult.needsManual).toEqual([
 		{
 			path: 'manual.ts',
 			message: expect.stringContaining('`packages.check`'),

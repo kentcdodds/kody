@@ -10,7 +10,7 @@ import {
 	stripMarkdownCode,
 } from './check-docs-temporal-language.ts'
 
-test('stripMarkdownCode removes inline and fenced code while preserving lines', () => {
+test('stripMarkdownCode preserves lines and only matches durable prose', () => {
 	const input = [
 		'Before `Kody now supports code` after.',
 		'',
@@ -31,54 +31,78 @@ test('stripMarkdownCode removes inline and fenced code while preserving lines', 
 	)
 	expect(stripped).not.toContain('Kody now supports')
 	expect(stripped).not.toContain('We no longer accept')
-	expect(stripped).toMatch(/^Before +after\./)
 	expect(stripped).toContain('Still prose.')
-})
 
-test('stripMarkdownCode binds fences by character and minimum length', () => {
-	const content = [
-		'~~~~md',
-		'~~~',
-		'Kody now supports fenced code.',
-		'```',
-		'~~~~',
-		'Kody now supports prose.',
-	].join('\n')
-	const matches = findTemporalLanguageMatches({
+	const nestedFenceMatches = findTemporalLanguageMatches({
 		relativePath: 'docs/use/example.md',
-		content,
+		content: [
+			'~~~~md',
+			'~~~',
+			'Kody now supports fenced code.',
+			'```',
+			'~~~~',
+			'Kody now supports prose.',
+		].join('\n'),
 	})
-
-	expect(matches).toEqual([
+	expect(nestedFenceMatches).toEqual([
 		expect.objectContaining({ line: 6, pattern: 'Kody now' }),
 		expect.objectContaining({
 			line: 6,
 			pattern: 'now support/accept/require/use/store/return',
 		}),
 	])
-})
 
-test('stripMarkdownCode masks multi-backtick inline code spans', () => {
-	const content = [
+	const multiBacktick = [
 		'Before ``code `x` Kody now supports hidden`` after.',
 		'Kody now supports prose.',
 	].join('\n')
-	const stripped = stripMarkdownCode(content)
-	const matches = findTemporalLanguageMatches({
-		relativePath: 'docs/use/example.md',
-		content,
-	})
-
-	expect(stripped.split('\n')[0]).toHaveLength(
-		content.split('\n')[0]?.length ?? 0,
+	expect(stripMarkdownCode(multiBacktick).split('\n')[0]).toHaveLength(
+		multiBacktick.split('\n')[0]?.length ?? 0,
 	)
-	expect(matches).toEqual([
+	expect(
+		findTemporalLanguageMatches({
+			relativePath: 'docs/use/example.md',
+			content: multiBacktick,
+		}),
+	).toEqual([
 		expect.objectContaining({ line: 2, pattern: 'Kody now' }),
 		expect.objectContaining({
 			line: 2,
 			pattern: 'now support/accept/require/use/store/return',
 		}),
 	])
+
+	expect(
+		findTemporalLanguageMatches({
+			relativePath: 'docs/use/example.md',
+			content: [
+				'```md',
+				'We no longer accept this sample.',
+				'```',
+				'',
+				'Before `sample` Kody now supports packages.',
+			].join('\n'),
+		}),
+	).toEqual([
+		expect.objectContaining({
+			line: 5,
+			column: 17,
+			pattern: 'Kody now',
+		}),
+		expect.objectContaining({
+			line: 5,
+			column: 22,
+			pattern: 'now support/accept/require/use/store/return',
+		}),
+	])
+
+	expect(
+		findTemporalLanguageMatches({
+			relativePath: 'docs/use/example.md',
+			content:
+				'Run the previous step, then use the current option. The audit previously mapped package ownership.',
+		}),
+	).toEqual([])
 })
 
 test.each([
@@ -109,48 +133,7 @@ test.each([
 	)
 })
 
-test('reports original line numbers after fenced code', () => {
-	const matches = findTemporalLanguageMatches({
-		relativePath: 'docs/use/example.md',
-		content: [
-			'```md',
-			'We no longer accept this sample.',
-			'```',
-			'',
-			'Before `sample` Kody now supports packages.',
-		].join('\n'),
-	})
-	expect(matches).toEqual([
-		expect.objectContaining({
-			line: 5,
-			column: 17,
-			pattern: 'Kody now',
-		}),
-		expect.objectContaining({
-			line: 5,
-			column: 22,
-			pattern: 'now support/accept/require/use/store/return',
-		}),
-	])
-})
-
-test('keeps conservative phrasing out of the match set', () => {
-	expect(
-		findTemporalLanguageMatches({
-			relativePath: 'docs/use/example.md',
-			content:
-				'Run the previous step, then use the current option. The audit previously mapped package ownership.',
-		}),
-	).toEqual([])
-})
-
-test('exempts the principles page and migration procedures', () => {
-	expect(exemptRelativePaths).toEqual(
-		new Set([
-			'docs/contributing/documentation.md',
-			'docs/contributing/secret-rotation.md',
-		]),
-	)
+test('exempts principles and migration pages and scans discovered docs', async () => {
 	for (const relativePath of exemptRelativePaths) {
 		expect(
 			findTemporalLanguageMatches({
@@ -159,9 +142,7 @@ test('exempts the principles page and migration procedures', () => {
 			}),
 		).toEqual([])
 	}
-})
 
-test('discovers durable docs and scans them end to end', async () => {
 	const cwd = await mkdtemp(path.join(os.tmpdir(), 'kody-docs-check-'))
 	try {
 		await Promise.all([

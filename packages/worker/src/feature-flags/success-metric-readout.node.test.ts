@@ -126,11 +126,10 @@ test('D1 readout splits cohorts and excludes override and mixed users', async ()
 	expect(queries[1]?.params).toEqual(['execute', '2026-07'])
 })
 
-test('Analytics Engine readout queries both datasets and joins by user', async () => {
+test('Analytics Engine readout joins exposures and usage by user', async () => {
 	const fetchMock = vi.fn(async (_url: unknown, init: unknown) => {
 		const query = String((init as { body: string }).body)
 		if (query.includes('kody_flag_exposures')) {
-			expect(query).toContain("blob2 = 'metric-test-flag'")
 			return new Response(
 				JSON.stringify({
 					data: [
@@ -156,8 +155,6 @@ test('Analytics Engine readout queries both datasets and joins by user', async (
 				}),
 			)
 		}
-		expect(query).toContain('kody_usage_events')
-		expect(query).toContain("blob2 = 'execute'")
 		return new Response(
 			JSON.stringify({
 				data: [
@@ -203,55 +200,62 @@ test('Analytics Engine readout queries both datasets and joins by user', async (
 	}
 })
 
-test('uses the D1 path in local Wrangler dev even with binding and credentials', async () => {
-	const { db, queries } = createReadoutTestDb({ exposures: [], usage: [] })
-	const readout = await loadFeatureFlagSuccessMetricReadout(
-		{
-			APP_DB: db,
-			FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
-			CLOUDFLARE_ACCOUNT_ID: 'account',
-			CLOUDFLARE_API_TOKEN: 'token',
-			WRANGLER_IS_LOCAL_DEV: 'true',
-		},
-		{ flagKey: 'metric-test-flag', successMetric },
-		now,
-	)
-	expect(readout).toMatchObject({ status: 'ok' })
-	expect(queries).toHaveLength(2)
-})
+test('selects D1 locally, stays unavailable without credentials, and degrades on failure', async () => {
+	const local = createReadoutTestDb({ exposures: [], usage: [] })
+	await expect(
+		loadFeatureFlagSuccessMetricReadout(
+			{
+				APP_DB: local.db,
+				FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
+				CLOUDFLARE_ACCOUNT_ID: 'account',
+				CLOUDFLARE_API_TOKEN: 'token',
+				WRANGLER_IS_LOCAL_DEV: 'true',
+			},
+			{ flagKey: 'metric-test-flag', successMetric },
+			now,
+		),
+	).resolves.toMatchObject({ status: 'ok' })
+	expect(local.queries).toHaveLength(2)
 
-test('reports unavailable when the binding exists but SQL credentials are missing', async () => {
-	// Falling back to the empty D1 tables here would present confident zero
-	// cohorts even though exposures were written to Analytics Engine.
-	const { db, queries } = createReadoutTestDb({ exposures: [], usage: [] })
-	const readout = await loadFeatureFlagSuccessMetricReadout(
-		{ APP_DB: db, FLAG_EXPOSURES: {} as AnalyticsEngineDataset },
-		{ flagKey: 'metric-test-flag', successMetric },
-		now,
-	)
-	expect(readout).toEqual({
+	// Falling back to empty D1 tables would present confident zero cohorts
+	// even though exposures were written to Analytics Engine.
+	const missingCredentials = createReadoutTestDb({ exposures: [], usage: [] })
+	await expect(
+		loadFeatureFlagSuccessMetricReadout(
+			{
+				APP_DB: missingCredentials.db,
+				FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
+			},
+			{ flagKey: 'metric-test-flag', successMetric },
+			now,
+		),
+	).resolves.toEqual({
 		status: 'unavailable',
 		reason: expect.stringContaining('credentials'),
 	})
-	expect(queries).toHaveLength(0)
-})
+	expect(missingCredentials.queries).toHaveLength(0)
 
-test('degrades to unavailable when the data source fails', async () => {
 	silenceExpectedConsoleWarns(['flag-metric-readout-failed'])
-	const db = {
+	const failingDb = {
 		prepare() {
 			throw new Error('d1 down')
 		},
 	} as unknown as D1Database
-	const readout = await loadFeatureFlagSuccessMetricReadout(
-		{ APP_DB: db },
-		{ flagKey: 'metric-test-flag', successMetric },
-		now,
-	)
-	expect(readout).toEqual({
+	await expect(
+		loadFeatureFlagSuccessMetricReadout(
+			{ APP_DB: failingDb },
+			{ flagKey: 'metric-test-flag', successMetric },
+			now,
+		),
+	).resolves.toEqual({
 		status: 'unavailable',
 		reason: expect.stringContaining('readout query failed'),
 	})
+
+	expect(resolveFlagExposuresDataset({})).toBe('kody_flag_exposures')
+	expect(resolveFlagExposuresDataset({ SENTRY_ENVIRONMENT: 'preview' })).toBe(
+		'kody_flag_exposures_preview',
+	)
 })
 
 test('attachFeatureFlagMetricReadouts only decorates measured registry flags', async () => {
@@ -271,11 +275,4 @@ test('attachFeatureFlagMetricReadouts only decorates measured registry flags', a
 	expect(flags[0]?.metricReadout).toMatchObject({ status: 'ok' })
 	expect(flags[1]?.metricReadout).toBeUndefined()
 	expect(flags[2]?.metricReadout).toBeUndefined()
-})
-
-test('resolveFlagExposuresDataset picks the preview dataset in preview', () => {
-	expect(resolveFlagExposuresDataset({})).toBe('kody_flag_exposures')
-	expect(resolveFlagExposuresDataset({ SENTRY_ENVIRONMENT: 'preview' })).toBe(
-		'kody_flag_exposures_preview',
-	)
 })

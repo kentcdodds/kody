@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { recordFeatureFlagExposures } from './exposure.ts'
 
-test('skips exposure recording when the registry has no measured flags', async () => {
+test('skips exposure recording without measured flags or a stable user id', async () => {
 	const writeDataPoint = vi.fn()
 	const batch = vi.fn()
 
@@ -20,13 +20,8 @@ test('skips exposure recording when the registry has no measured flags', async (
 			timestamp: '2026-07-31T00:00:00.000Z',
 		},
 	)
-
 	expect(writeDataPoint).not.toHaveBeenCalled()
 	expect(batch).not.toHaveBeenCalled()
-})
-
-test('skips exposure recording without a stable user id', async () => {
-	const writeDataPoint = vi.fn()
 
 	await recordFeatureFlagExposures(
 		{
@@ -41,6 +36,5 @@ test('skips exposure recording without a stable user id', async () => {
 			},
 		},
 	)
-
 	expect(writeDataPoint).not.toHaveBeenCalled()
 })

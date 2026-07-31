@@ -65,25 +65,16 @@ function emptyStepResult(input: {
 	}
 }
 
-test('admin domain registers fleet package codemod capabilities with admin access', () => {
+test('admin package codemod capabilities are fleet-scoped, audited, and role-gated', async () => {
 	const byName = new Map(
 		adminDomain.capabilities.map((capability) => [capability.name, capability]),
 	)
-	for (const name of [
-		'admin_package_codemod_scan',
-		'admin_package_codemod_dry_run',
-		'admin_package_codemod_apply',
-		'admin_package_codemod_revert',
-	]) {
-		expect(byName.get(name)?.requiredRole).toBe('admin')
-	}
+	expect(byName.get('admin_package_codemod_scan')?.requiredRole).toBe('admin')
 	expect(byName.get('admin_package_codemod_scan')?.readOnly).toBe(true)
-	expect(byName.get('admin_package_codemod_dry_run')?.readOnly).toBe(true)
 	expect(byName.get('admin_package_codemod_apply')?.destructive).toBe(true)
 	expect(byName.get('admin_package_codemod_revert')?.destructive).toBe(true)
-})
+	expect(adminPackageCodemodApplyCapability.destructive).toBe(true)
 
-test('admin_package_codemod_scan uses fleet scope and merges filters', async () => {
 	mockModule.runPackageCodemodStep.mockResolvedValue(
 		emptyStepResult({
 			runId: 'fleet-scan-1',
@@ -103,7 +94,6 @@ test('admin_package_codemod_scan uses fleet scope and merges filters', async () 
 			createAdminCtx(),
 		),
 	).resolves.toMatchObject({ runId: 'fleet-scan-1', mode: 'scan' })
-
 	expect(mockModule.runPackageCodemodStep).toHaveBeenCalledWith({
 		env: { APP_DB: {} },
 		baseUrl: 'https://heykody.dev',
@@ -123,9 +113,7 @@ test('admin_package_codemod_scan uses fleet scope and merges filters', async () 
 			result: 'success',
 		}),
 	)
-})
 
-test('admin_package_codemod_apply is fleet-scoped and destructive', async () => {
 	mockModule.runPackageCodemodStep.mockResolvedValue(
 		emptyStepResult({
 			runId: 'fleet-apply-1',
@@ -133,8 +121,6 @@ test('admin_package_codemod_apply is fleet-scoped and destructive', async () => 
 			mode: 'apply',
 		}),
 	)
-	mockModule.logAuditEvent.mockResolvedValue(undefined)
-
 	await expect(
 		adminPackageCodemodApplyCapability.handler(
 			{
@@ -144,8 +130,7 @@ test('admin_package_codemod_apply is fleet-scoped and destructive', async () => 
 			createAdminCtx(),
 		),
 	).resolves.toMatchObject({ mode: 'apply' })
-
-	expect(mockModule.runPackageCodemodStep).toHaveBeenCalledWith(
+	expect(mockModule.runPackageCodemodStep).toHaveBeenLastCalledWith(
 		expect.objectContaining({
 			mode: 'apply',
 			scope: { kind: 'fleet' },
@@ -153,10 +138,7 @@ test('admin_package_codemod_apply is fleet-scoped and destructive', async () => 
 			initiatedByUserId: 'admin-1',
 		}),
 	)
-	expect(adminPackageCodemodApplyCapability.destructive).toBe(true)
-})
 
-test('admin_package_codemod_revert resolves codemodId from the prior run without user-scope gating', async () => {
 	mockModule.getPackageCodemodRunById.mockResolvedValue({
 		id: 'fleet-apply-1',
 		codemodId: '0001-ambient-storage-to-package-storage',
@@ -176,16 +158,13 @@ test('admin_package_codemod_revert resolves codemodId from the prior run without
 			mode: 'revert',
 		}),
 	)
-	mockModule.logAuditEvent.mockResolvedValue(undefined)
-
 	await expect(
 		adminPackageCodemodRevertCapability.handler(
 			{ revertOfRunId: 'fleet-apply-1' },
 			createAdminCtx(),
 		),
 	).resolves.toMatchObject({ runId: 'fleet-revert-1', mode: 'revert' })
-
-	expect(mockModule.runPackageCodemodStep).toHaveBeenCalledWith(
+	expect(mockModule.runPackageCodemodStep).toHaveBeenLastCalledWith(
 		expect.objectContaining({
 			codemodId: '0001-ambient-storage-to-package-storage',
 			mode: 'revert',

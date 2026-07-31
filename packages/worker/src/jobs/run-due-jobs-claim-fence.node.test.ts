@@ -117,29 +117,31 @@ function claimedRow(record: JobRecord) {
 	}
 }
 
-test('runDueJobsForUser treats a superseded finalization claim as expected fencing', async () => {
+test('runDueJobsForUser treats superseded finalization and retry claims as expected fencing', async () => {
 	const now = new Date('2026-07-30T19:00:00.000Z')
-	const record = createJobRecord()
-	const row = claimedRow(record)
-	listDueJobRows.mockResolvedValue([row])
-	claimJobRow.mockResolvedValue(row)
+	const env = { APP_DB: {} } as Env
+
+	const finalizeRecord = createJobRecord()
+	const finalizeRow = claimedRow(finalizeRecord)
+	listDueJobRows.mockResolvedValue([finalizeRow])
+	claimJobRow.mockResolvedValue(finalizeRow)
 	claimRunRecord.mockResolvedValue({
 		claimed: false,
 		run: {
 			id: 'run-1',
 			surface: 'job',
 			status: 'success',
-			name: record.name,
+			name: finalizeRecord.name,
 			packageId: null,
 			kodyId: null,
-			sourceId: record.sourceId,
+			sourceId: finalizeRecord.sourceId,
 			publishedCommit: null,
-			storageId: record.storageId,
-			jobId: record.id,
+			storageId: finalizeRecord.storageId,
+			jobId: finalizeRecord.id,
 			workflowId: null,
 			invocationId: null,
 			sessionId: null,
-			idempotencyKey: `scheduled-job:${record.id}:${row.claimed_scheduled_for}`,
+			idempotencyKey: `scheduled-job:${finalizeRecord.id}:${finalizeRow.claimed_scheduled_for}`,
 			parentRunId: null,
 			startedAt: now.toISOString(),
 			finishedAt: now.toISOString(),
@@ -152,13 +154,13 @@ test('runDueJobsForUser treats a superseded finalization claim as expected fenci
 	})
 	finalizeClaimedJobRow.mockResolvedValue(false)
 
-	const result = await runDueJobsForUser({
-		env: { APP_DB: {} } as Env,
-		userId: record.userId,
-		now,
-	})
-
-	expect(result).toEqual({
+	await expect(
+		runDueJobsForUser({
+			env,
+			userId: finalizeRecord.userId,
+			now,
+		}),
+	).resolves.toEqual({
 		dueJobCount: 1,
 		successCount: 0,
 		errorCount: 0,
@@ -170,24 +172,25 @@ test('runDueJobsForUser treats a superseded finalization claim as expected fenci
 		'job-scheduler',
 		expect.stringContaining('"event":"claim_lost_before_finalization"'),
 	)
-})
 
-test('runDueJobsForUser treats a superseded retry claim as expected fencing', async () => {
-	const now = new Date('2026-07-30T19:00:00.000Z')
-	const record = createJobRecord({ id: 'job-retry-fence' })
-	const row = claimedRow(record)
-	listDueJobRows.mockResolvedValue([row])
-	claimJobRow.mockResolvedValue(row)
+	finalizeClaimedJobRow.mockClear()
+	retryClaimedJobRow.mockClear()
+	consoleInfo.mockClear()
+
+	const retryRecord = createJobRecord({ id: 'job-retry-fence' })
+	const retryRow = claimedRow(retryRecord)
+	listDueJobRows.mockResolvedValue([retryRow])
+	claimJobRow.mockResolvedValue(retryRow)
 	claimRunRecord.mockResolvedValue(null)
 	retryClaimedJobRow.mockResolvedValue(false)
 
-	const result = await runDueJobsForUser({
-		env: { APP_DB: {} } as Env,
-		userId: record.userId,
-		now,
-	})
-
-	expect(result).toEqual({
+	await expect(
+		runDueJobsForUser({
+			env,
+			userId: retryRecord.userId,
+			now,
+		}),
+	).resolves.toEqual({
 		dueJobCount: 1,
 		successCount: 0,
 		errorCount: 0,

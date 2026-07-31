@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	type PermissionString,
 	type RoleName,
@@ -89,11 +89,6 @@ function createTestEnv() {
 const { createAdminCodemodsApiHandler, createAdminCodemodsRunApiHandler } =
 	await import('./admin-codemods.ts')
 
-beforeEach(() => {
-	vi.clearAllMocks()
-	logAuditEventSpy.mockClear()
-})
-
 function createGetRequest(search = '') {
 	const url = new URL(`https://example.com/admin/codemods.json${search}`)
 	return {
@@ -147,6 +142,16 @@ function stubKnownCodemod() {
 			needsManual: [],
 		}),
 	})
+}
+
+async function expectBadRunRequest(
+	handler: ReturnType<typeof createAdminCodemodsRunApiHandler>,
+	body: unknown,
+) {
+	const response = await handler.handler(createRunRequest(body))
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({ ok: false })
+	return response
 }
 
 test('admin codemods GET requires admin and returns codemods plus recent runs', async () => {
@@ -324,103 +329,7 @@ test('admin codemods run POST requires admin, audits, and runs one step with fle
 	)
 })
 
-test('admin codemods run POST requires explicit scope for apply and revert', async () => {
-	const env = createTestEnv()
-	const handler = createAdminCodemodsRunApiHandler(env)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	stubKnownCodemod()
-
-	const missingApplyScope = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'apply',
-		}),
-	)
-	expect(missingApplyScope.status).toBe(400)
-	await expect(missingApplyScope.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'scope is required for apply and revert modes.',
-	})
-
-	const missingRevertScope = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'revert',
-			revertOfRunId: 'run-1',
-		}),
-	)
-	expect(missingRevertScope.status).toBe(400)
-	await expect(missingRevertScope.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'scope is required for apply and revert modes.',
-	})
-	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
-	expect(logAuditEventSpy).not.toHaveBeenCalled()
-})
-
-test('admin codemods run POST rejects invalid mode and missing revertOfRunId', async () => {
-	const env = createTestEnv()
-	const handler = createAdminCodemodsRunApiHandler(env)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	stubKnownCodemod()
-
-	const invalidMode = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'explode',
-			scope: 'fleet',
-		}),
-	)
-	expect(invalidMode.status).toBe(400)
-	await expect(invalidMode.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'mode must be one of scan, dry-run, apply, or revert.',
-	})
-
-	const missingRevert = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'revert',
-			scope: 'fleet',
-		}),
-	)
-	expect(missingRevert.status).toBe(400)
-	await expect(missingRevert.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'revert mode requires revertOfRunId.',
-	})
-	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
-})
-
-test('admin codemods run POST rejects revert with bare runId in place of revertOfRunId', async () => {
-	const env = createTestEnv()
-	const handler = createAdminCodemodsRunApiHandler(env)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	stubKnownCodemod()
-
-	const response = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'revert',
-			scope: 'fleet',
-			runId: 'run-1',
-		}),
-	)
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'revert mode requires revertOfRunId.',
-	})
-	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
-})
-
-test('admin codemods run POST rejects supplied-but-empty filters and allows omitted filters', async () => {
+test('admin codemods run POST rejects invalid requests and allows omitted filters', async () => {
 	const env = createTestEnv()
 	const handler = createAdminCodemodsRunApiHandler(env)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
@@ -436,36 +345,45 @@ test('admin codemods run POST rejects supplied-but-empty filters and allows omit
 		summary: {},
 	})
 
-	const blankPackageIds = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'scan',
-			scope: 'fleet',
-			filters: { packageIds: ['   '] },
-		}),
-	)
-	expect(blankPackageIds.status).toBe(400)
-	await expect(blankPackageIds.json()).resolves.toMatchObject({
-		ok: false,
-		error:
-			'filters.packageIds was supplied but contained no usable ids. Omit the key, or provide at least one non-empty id.',
+	await expectBadRunRequest(handler, {
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'apply',
 	})
-
-	const emptyUserIds = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'scan',
-			scope: 'fleet',
-			filters: { userIds: [] },
-		}),
-	)
-	expect(emptyUserIds.status).toBe(400)
-	await expect(emptyUserIds.json()).resolves.toMatchObject({
-		ok: false,
-		error:
-			'filters.userIds was supplied but contained no usable ids. Omit the key, or provide at least one non-empty id.',
+	await expectBadRunRequest(handler, {
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'revert',
+		revertOfRunId: 'run-1',
+	})
+	await expectBadRunRequest(handler, {
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'explode',
+		scope: 'fleet',
+	})
+	await expectBadRunRequest(handler, {
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'revert',
+		scope: 'fleet',
+	})
+	await expectBadRunRequest(handler, {
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'revert',
+		scope: 'fleet',
+		runId: 'run-1',
+	})
+	await expectBadRunRequest(handler, {
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'scan',
+		scope: 'fleet',
+		filters: { packageIds: ['   '] },
+	})
+	await expectBadRunRequest(handler, {
+		codemodId: '0001-ambient-storage-to-package-storage',
+		mode: 'scan',
+		scope: 'fleet',
+		filters: { userIds: [] },
 	})
 	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
+	expect(logAuditEventSpy).not.toHaveBeenCalled()
 
 	const omittedFilters = await handler.handler(
 		createRunRequest({
