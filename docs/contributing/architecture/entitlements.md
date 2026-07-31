@@ -164,36 +164,30 @@ unique index; initially from `createStableUserIdFromEmail` at signup, then
 preserved across email changes). `getUserPlan(db, { userId, email })` always
 returns a `PlanName`:
 
-1. Normalizes the email and returns `free` when email or `userId` is absent (no
-   warn).
-2. Returns `free` without touching D1 when `userId` is not a 64-char hex string.
-   Synthetic runtime contexts (package-scoped caller contexts with `email: ''`,
-   workflow-internal users, test fixtures) therefore fail closed to `free`.
-3. Reads
+1. Returns `free` when `userId` is absent (no warn).
+2. Returns `free` without touching D1 when `userId` is not a 64-char hex string
+   (test fixtures and non-account ids).
+3. When email is present: reads
    `SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`
    and returns `resolveEffectivePlan(parseStoredPlanName(plan), stripe_plan)`. A
    mismatched email/stable-id pair or missing row returns `free` (no warn).
+4. When email is absent/blank: reverse-resolves
+   `SELECT plan, stripe_plan FROM users WHERE stable_user_id = ?` so package-job,
+   workflow, webhook, and other background contexts that persist `email: ''`
+   still enforce the account's real plan. Missing rows return `free`.
 
-Consequence: enforcement points must have the acting user's account email
-available. Both auth surfaces provide it — app sessions expose
-`user.mcpUser.email` and MCP caller contexts expose
-`ctx.callerContext.user.email`. Code paths that genuinely have no user email
-(for example package-manifest job sync or workflow-spawned inline code) resolve
-to `free` at plan lookup. Internal callers that need a higher quota must resolve
-an actual account whose stored plan grants it; there is no implicit elevated
-synthetic context.
+Interactive surfaces still carry email (app sessions expose
+`user.mcpUser.email`, MCP caller contexts expose
+`ctx.callerContext.user.email`). Background package-runtime paths that only
+have the stable userId no longer need a separate email hydrate step for
+entitlement checks — `getUserPlan` reverse-resolves for them.
 
-One path still needs explicit account resolution: inbound email routing has no
-caller context but must enforce receive quotas. It resolves the owning account
-via the indexed username lookup (`findPublicUserIdentityByUsername`) — it does
-not reverse-resolve stable user ids. `findUserAccountByStableUserId` in
-`service.ts` remains the reverse-resolution helper for other contextless paths
-(package-runtime contexts that act with only the stable userId, mirroring
-`findUserAccount` in `email/platform-address.ts`): `users.stable_user_id` is NOT
-NULL with a unique index (migrations 0052 + 0075; written at signup from
-`createStableUserIdFromEmail`, preserved across email changes), so reverse
-lookup is always one indexed point read. Only use it on contextless paths;
-interactive surfaces already carry the email.
+Inbound email routing has no caller context and resolves the owning account via
+the indexed username lookup (`findPublicUserIdentityByUsername`) — it does not
+use stable-id reverse resolution. `findUserAccountByStableUserId` in
+`service.ts` remains available for other contextless paths that need email /
+verified-state (for example the outbound fetch gateway), mirroring
+`findUserAccount` in `email/platform-address.ts`.
 
 ## The error shape
 

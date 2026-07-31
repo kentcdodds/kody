@@ -120,7 +120,11 @@ function createStatefulWorkflowBinding() {
 function createWorkflowRunsDatabase(options?: {
 	activeCount?: number
 	savedPackage?: Record<string, unknown> | null
-	users?: Array<{ email: string; plan: string | null }>
+	users?: Array<{
+		email: string
+		plan: string | null
+		stable_user_id?: string
+	}>
 }) {
 	const workflowRuns = new Map<string, Record<string, unknown>>()
 	const savedPackage = options?.savedPackage ?? {
@@ -145,14 +149,17 @@ function createWorkflowRunsDatabase(options?: {
 							if (query.includes('COUNT(*) AS count')) {
 								return { count: options?.activeCount ?? 0 }
 							}
-							if (
-								query.includes(
-									'SELECT plan, stripe_plan FROM users WHERE email = ?',
-								)
-							) {
-								const email = String(params[0] ?? '')
+							if (query.includes('SELECT plan, stripe_plan FROM users')) {
+								if (query.includes('email = ?')) {
+									const email = String(params[0] ?? '')
+									const user = (options?.users ?? []).find(
+										(row) => row.email === email,
+									)
+									return user ? { plan: user.plan } : null
+								}
+								const stableUserId = String(params[0] ?? '')
 								const user = (options?.users ?? []).find(
-									(row) => row.email === email,
+									(row) => row.stable_user_id === stableUserId,
 								)
 								return user ? { plan: user.plan } : null
 							}
@@ -1580,7 +1587,7 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 			env: {
 				APP_DB: createWorkflowRunsDatabase({
 					activeCount: limit,
-					users: [{ email, plan: 'pro' }],
+					users: [{ email, plan: 'pro', stable_user_id: userId }],
 				}),
 				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
 			} as Env,
@@ -1610,7 +1617,7 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 		env: {
 			APP_DB: createWorkflowRunsDatabase({
 				activeCount: limit - 1,
-				users: [{ email, plan: 'pro' }],
+				users: [{ email, plan: 'pro', stable_user_id: userId }],
 			}),
 			DYNAMIC_CALLABLE_WORKFLOWS: createStatefulWorkflowBinding().workflow,
 		} as Env,
@@ -1622,6 +1629,26 @@ test('createDynamicCallableWorkflow enforces plan concurrent workflow limits', a
 		},
 	})
 	expect(allowed.ok).toBe(true)
+
+	// Package jobs persist email: '' — reverse-resolve by stable userId so a
+	// max-plan account is not wrongly capped at the free concurrent limit.
+	const freeLimit = planLimits.free.maxConcurrentWorkflows
+	const maxAllowed = await createDynamicCallableWorkflow({
+		env: {
+			APP_DB: createWorkflowRunsDatabase({
+				activeCount: freeLimit,
+				users: [{ email, plan: 'max', stable_user_id: userId }],
+			}),
+			DYNAMIC_CALLABLE_WORKFLOWS: createStatefulWorkflowBinding().workflow,
+		} as Env,
+		userId,
+		userEmail: '',
+		body: {
+			...body,
+			idempotencyKey: 'plan-limit-blank-email-max-key',
+		},
+	})
+	expect(maxAllowed.ok).toBe(true)
 })
 
 test('listWorkflowRunsForUser returns recent workflow statuses', async () => {

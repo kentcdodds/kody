@@ -115,19 +115,38 @@ function createEntitlementsTestDb(
 								query.includes('SELECT plan, stripe_plan FROM users') ||
 								query.includes('SELECT plan FROM users')
 							) {
-								const email = params[0]
-								const stableUserId = params[1]
-								// Pair match is required: omitted bind params or
-								// email-only fixtures must not resolve a plan.
-								if (
-									typeof email !== 'string' ||
-									typeof stableUserId !== 'string'
-								) {
+								const isPairLookup = query.includes('email = ?')
+								if (isPairLookup) {
+									const email = params[0]
+									const stableUserId = params[1]
+									// Pair match is required: omitted bind params or
+									// email-only fixtures must not resolve a plan.
+									if (
+										typeof email !== 'string' ||
+										typeof stableUserId !== 'string'
+									) {
+										return null as T | null
+									}
+									const user = users.find(
+										(row) =>
+											row.email === email &&
+											row.stable_user_id === stableUserId,
+									)
+									return (
+										user
+											? {
+													plan: user.plan,
+													stripe_plan: user.stripe_plan ?? null,
+												}
+											: null
+									) as T | null
+								}
+								const stableUserId = params[0]
+								if (typeof stableUserId !== 'string') {
 									return null as T | null
 								}
 								const user = users.find(
-									(row) =>
-										row.email === email && row.stable_user_id === stableUserId,
+									(row) => row.stable_user_id === stableUserId,
 								)
 								return (
 									user
@@ -388,6 +407,16 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 	expect(queries.at(-1)?.sql).toContain('email = ? AND stable_user_id = ?')
 	expect(queries.at(-1)?.params).toEqual([plannedEmail, userId])
 
+	// Package-job / workflow contexts persist email: '' — reverse-resolve by
+	// stable userId so entitlement checks use the real plan (not free).
+	expect(await getUserPlan(db, { userId, email: null })).toBe('pro')
+	expect(await getUserPlan(db, { userId, email: '' })).toBe('pro')
+	expect(await getUserPlan(db, { userId, email: '   ' })).toBe('pro')
+	expect(queries.at(-1)?.sql).toContain(
+		'FROM users WHERE stable_user_id = ?',
+	)
+	expect(queries.at(-1)?.params).toEqual([userId])
+
 	// Mismatched email/stable-id pairs fail closed without warning.
 	expect(
 		await getUserPlan(db, {
@@ -590,6 +619,44 @@ test('assertWithinEntitlement enforces free concurrent workflow limit without em
 		plan: 'free',
 		limit: freeLimit,
 		current: freeLimit,
+	})
+})
+
+test('assertWithinEntitlement reverse-resolves plan when email is blank for a real stable userId', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const freeLimit = planLimits.free.maxConcurrentWorkflows
+	const maxLimit = planLimits.max.maxConcurrentWorkflows
+	const underMax = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
+		counts: { workflow_runs: freeLimit },
+	})
+	await assertWithinEntitlement({
+		db: underMax.db,
+		userId,
+		email: '',
+		resource: 'concurrent_workflows',
+	})
+
+	const atMax = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
+		counts: { workflow_runs: maxLimit },
+	})
+	const error = await assertWithinEntitlement({
+		db: atMax.db,
+		userId,
+		email: null,
+		resource: 'concurrent_workflows',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(error instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError at the max ceiling.')
+	}
+	expect(error.details).toMatchObject({
+		plan: 'max',
+		limit: maxLimit,
+		current: maxLimit,
 	})
 })
 
