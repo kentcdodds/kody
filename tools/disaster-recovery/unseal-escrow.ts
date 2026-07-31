@@ -276,8 +276,15 @@ async function writeRecoveredSecret(
 
 	const resolvedOutputPath = path.resolve(outputPath)
 	const resolvedParent = await realpath(path.dirname(resolvedOutputPath))
-	const checkedOutputPath = path.join(resolvedParent, path.basename(outputPath))
-	const relativeToRepository = path.relative(repositoryRoot, checkedOutputPath)
+	const checkedOutputPath = path.join(
+		resolvedParent,
+		path.basename(resolvedOutputPath),
+	)
+	const resolvedRepositoryRoot = await realpath(repositoryRoot)
+	const relativeToRepository = path.relative(
+		resolvedRepositoryRoot,
+		checkedOutputPath,
+	)
 	if (
 		relativeToRepository === '' ||
 		(!relativeToRepository.startsWith(`..${path.sep}`) &&

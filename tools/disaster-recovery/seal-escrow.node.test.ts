@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import {
+	mkdtemp,
+	readFile,
+	rm,
+	stat,
+	symlink,
+	writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test, vi } from 'vitest'
@@ -72,6 +79,17 @@ test('the operator unseal tool round-trips sealed key bytes and fails closed', a
 		await expect(stat(mismatchedOutputPath)).rejects.toMatchObject({
 			code: 'ENOENT',
 		})
+
+		const repositoryLink = path.join(directory, 'repository-link')
+		await symlink(process.cwd(), repositoryLink, 'dir')
+		await expect(
+			unsealMain({ SECRET_ESCROW_PASSPHRASE: passphrase }, [
+				'--input',
+				inputPath,
+				'--output',
+				path.join(repositoryLink, 'recovered-secret'),
+			]),
+		).rejects.toThrow(/inside the repository/)
 	} finally {
 		await rm(directory, { recursive: true, force: true })
 	}
