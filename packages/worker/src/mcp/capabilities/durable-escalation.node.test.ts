@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import {
 	alreadyDispatchedWorkflowStatusExclusion,
 	buildCallerScopedIdempotencyKey,
@@ -6,56 +6,129 @@ import {
 	runWithDurableEscalation,
 } from './durable-escalation.ts'
 import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
+import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
+import type {
+	WorkflowProjectionRecord,
+	WorkflowProjectionUpsertInput,
+} from '#worker/run-records/service.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createDynamicCallableWorkflow: vi.fn(),
 }))
+
+const runRecordMocks = vi.hoisted(() => {
+	const projectionsByUser = new Map<
+		string,
+		Map<string, WorkflowProjectionRecord>
+	>()
+
+	function userStore(userId: string) {
+		let store = projectionsByUser.get(userId)
+		if (!store) {
+			store = new Map()
+			projectionsByUser.set(userId, store)
+		}
+		return store
+	}
+
+	function toRecord(
+		input: WorkflowProjectionUpsertInput,
+	): WorkflowProjectionRecord {
+		const now = new Date().toISOString()
+		return {
+			id: input.id,
+			bindingName: input.bindingName,
+			sourceType: input.sourceType,
+			packageId: input.packageId ?? null,
+			kodyId: input.kodyId ?? null,
+			sourceId: input.sourceId ?? null,
+			workflowName: input.workflowName,
+			exportName: input.exportName ?? null,
+			idempotencyKey: input.idempotencyKey,
+			runAt: input.runAt,
+			planDate: input.planDate ?? null,
+			status: input.status ?? null,
+			createdAt: input.createdAt?.trim() || now,
+			updatedAt: input.updatedAt?.trim() || now,
+			completedAt: input.completedAt ?? null,
+			lastError: input.lastError ?? null,
+		}
+	}
+
+	return {
+		resetProjections() {
+			projectionsByUser.clear()
+		},
+		seed(userId: string, projection: WorkflowProjectionUpsertInput) {
+			userStore(userId).set(projection.id, toRecord(projection))
+		},
+		findWorkflowProjectionByIdempotencyKey: vi.fn(
+			async (input: {
+				env: Env
+				userId: string
+				idempotencyKey: string
+			}) => {
+				const matches = [...userStore(input.userId).values()]
+					.filter(
+						(row) =>
+							row.idempotencyKey === input.idempotencyKey &&
+							row.status !== 'creating',
+					)
+					.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+				return matches[0] ?? null
+			},
+		),
+		listWorkflowProjections: vi.fn(
+			async (input: {
+				env: Env
+				userId: string
+				limit?: number | null
+				status?: string | null
+			}) => {
+				const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
+				const rows = [...userStore(input.userId).values()]
+					.filter((row) => (input.status ? row.status === input.status : true))
+					.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+				return {
+					projections: rows.slice(0, limit),
+					nextCursor: null as string | null,
+				}
+			},
+		),
+	}
+})
 
 vi.mock('#worker/package-runtime/package-workflows.ts', () => ({
 	createDynamicCallableWorkflow: (...args: Array<unknown>) =>
 		mockModule.createDynamicCallableWorkflow(...args),
 }))
 
-function createWorkflowRunsDb(rows: Array<Record<string, unknown>> = []) {
-	return {
-		prepare(query: string) {
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async first() {
-							if (
-								!query.includes('FROM workflow_runs') ||
-								!query.includes('idempotency_key = ?')
-							) {
-								return null
-							}
-							const userId = params[0]
-							const idempotencyKey = params[1]
-							const excludedStatuses = new Set(
-								params.slice(2).map((value) => String(value)),
-							)
-							const usesNotIn = query.includes('NOT IN')
-							return (
-								rows.find((row) => {
-									if (
-										row['user_id'] !== userId ||
-										row['idempotency_key'] !== idempotencyKey
-									) {
-										return false
-									}
-									const status = String(row['status'] ?? '')
-									return usesNotIn
-										? !excludedStatuses.has(status)
-										: excludedStatuses.has(status)
-								}) ?? null
-							)
-						},
-					}
+vi.mock('#worker/run-records/service.ts', () => ({
+	findWorkflowProjectionByIdempotencyKey: (...args: Array<unknown>) =>
+		runRecordMocks.findWorkflowProjectionByIdempotencyKey(
+			...(args as [{ env: Env; userId: string; idempotencyKey: string }]),
+		),
+	listWorkflowProjections: (...args: Array<unknown>) =>
+		runRecordMocks.listWorkflowProjections(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					limit?: number | null
+					status?: string | null
 				},
-			}
-		},
-	} as unknown as D1Database
-}
+			]),
+		),
+}))
+
+const projectionBindingName = 'DYNAMIC_CALLABLE_WORKFLOWS'
+
+beforeEach(() => {
+	runRecordMocks.resetProjections()
+	mockModule.createDynamicCallableWorkflow.mockReset()
+	runRecordMocks.findWorkflowProjectionByIdempotencyKey.mockClear()
+	runRecordMocks.listWorkflowProjections.mockClear()
+})
 
 const publishParts = [
 	'package_publish_external_push',
@@ -64,13 +137,18 @@ const publishParts = [
 	'commit-new',
 ] as const
 
+function envStub() {
+	return {
+		APP_DB: {} as D1Database,
+		DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
+}
+
 test('runWithDurableEscalation returns the inline result when work finishes within budget', async () => {
 	const run = vi.fn(async () => ({ status: 'published', commit: 'abc' }))
 	const outcome = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb(),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		idempotencyParts: ['publish', 'pkg-1', 'commit-1'],
 		workflowName: 'package_publish_external_push',
@@ -119,10 +197,7 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 	})
 
 	const first = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb(),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		userEmail: 'user@example.com',
 		idempotencyParts: publishParts,
@@ -159,19 +234,18 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 	)
 
 	mockModule.createDynamicCallableWorkflow.mockClear()
-	const activeRow = {
+	runRecordMocks.seed('user-1', {
 		id: 'dynwf-escalated-1',
-		user_id: 'user-1',
-		workflow_name: 'package_publish_external_push',
-		idempotency_key: expectedKey,
+		bindingName: projectionBindingName,
+		sourceType: 'inline',
+		workflowName: 'package_publish_external_push',
+		idempotencyKey: expectedKey,
+		runAt: '2026-07-27T00:00:00.000Z',
 		status: 'running',
-	}
+	})
 
 	const second = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb([activeRow]),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		idempotencyParts: publishParts,
 		workflowName: 'package_publish_external_push',
@@ -191,9 +265,12 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 	})
 	expect(mockModule.createDynamicCallableWorkflow).not.toHaveBeenCalled()
 	expect(hangUntilAborted).toHaveBeenCalledTimes(1)
+	expect(
+		runRecordMocks.findWorkflowProjectionByIdempotencyKey,
+	).toHaveBeenCalled()
 })
 
-test('mid-creation workflow_runs rows are treated as already dispatched', async () => {
+test('mid-creation workflow projection rows are treated as already dispatched', async () => {
 	expect(alreadyDispatchedWorkflowStatusExclusion).toEqual(
 		terminalWorkflowStatusValues,
 	)
@@ -215,19 +292,18 @@ test('mid-creation workflow_runs rows are treated as already dispatched', async 
 		userId: 'user-1',
 		parts: publishParts,
 	})
-	const creatingRow = {
+	runRecordMocks.seed('user-1', {
 		id: 'dynwf-creating-1',
-		user_id: 'user-1',
-		workflow_name: 'package_publish_external_push',
-		idempotency_key: expectedKey,
-		status: 'creating',
-	}
+		bindingName: projectionBindingName,
+		sourceType: 'inline',
+		workflowName: 'package_publish_external_push',
+		idempotencyKey: expectedKey,
+		runAt: '2026-07-27T00:00:00.000Z',
+		status: creatingWorkflowProjectionStatus,
+	})
 
 	const outcome = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb([creatingRow]),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		idempotencyParts: publishParts,
 		workflowName: 'package_publish_external_push',
@@ -247,6 +323,12 @@ test('mid-creation workflow_runs rows are treated as already dispatched', async 
 	})
 	expect(hangUntilAborted).not.toHaveBeenCalled()
 	expect(mockModule.createDynamicCallableWorkflow).not.toHaveBeenCalled()
+	expect(runRecordMocks.listWorkflowProjections).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			status: creatingWorkflowProjectionStatus,
+		}),
+	)
 })
 
 test('different acting callers get non-colliding dedupe; same caller still reuses', async () => {
@@ -297,14 +379,8 @@ test('different acting callers get non-colliding dedupe; same caller still reuse
 			status: 'queued',
 		})
 
-	const activeRows: Array<Record<string, unknown>> = []
-	const sharedDb = createWorkflowRunsDb(activeRows)
-
 	const delegateA = await runWithDurableEscalation({
-		env: {
-			APP_DB: sharedDb,
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'delegate-a',
 		idempotencyParts: publishParts,
 		workflowName: 'package_publish_external_push',
@@ -319,21 +395,20 @@ test('different acting callers get non-colliding dedupe; same caller still reuse
 			idempotency_key: delegateAKey,
 		}),
 	})
-	activeRows.push({
+	runRecordMocks.seed('delegate-a', {
 		id: 'dynwf-delegate-a',
-		user_id: 'delegate-a',
-		workflow_name: 'package_publish_external_push',
-		idempotency_key: delegateAKey,
+		bindingName: projectionBindingName,
+		sourceType: 'inline',
+		workflowName: 'package_publish_external_push',
+		idempotencyKey: delegateAKey,
+		runAt: '2026-07-27T00:00:00.000Z',
 		status: 'running',
 	})
 
 	// A second acting caller must not reuse the first caller's active row even
-	// when owner/package/commit parts match (workflow_runs are user-scoped).
+	// when owner/package/commit parts match (projections are user-scoped).
 	const delegateB = await runWithDurableEscalation({
-		env: {
-			APP_DB: sharedDb,
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'delegate-b',
 		idempotencyParts: publishParts,
 		workflowName: 'package_publish_external_push',
@@ -365,19 +440,18 @@ test('different acting callers get non-colliding dedupe; same caller still reuse
 	)
 
 	mockModule.createDynamicCallableWorkflow.mockClear()
-	activeRows.push({
+	runRecordMocks.seed('delegate-b', {
 		id: 'dynwf-delegate-b',
-		user_id: 'delegate-b',
-		workflow_name: 'package_publish_external_push',
-		idempotency_key: delegateBKey,
+		bindingName: projectionBindingName,
+		sourceType: 'inline',
+		workflowName: 'package_publish_external_push',
+		idempotencyKey: delegateBKey,
+		runAt: '2026-07-27T00:00:00.000Z',
 		status: 'running',
 	})
 
 	const delegateARepeat = await runWithDurableEscalation({
-		env: {
-			APP_DB: sharedDb,
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'delegate-a',
 		idempotencyParts: publishParts,
 		workflowName: 'package_publish_external_push',
@@ -398,10 +472,7 @@ test('different acting callers get non-colliding dedupe; same caller still reuse
 
 test('runWithDurableEscalation never throws and reports structured failures', async () => {
 	const rejected = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb(),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		idempotencyParts: ['publish', 'pkg-1', 'fail'],
 		workflowName: 'package_publish_external_push',
@@ -417,10 +488,7 @@ test('runWithDurableEscalation never throws and reports structured failures', as
 	})
 
 	const emptyParts = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb(),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		idempotencyParts: ['   ', ''],
 		workflowName: 'package_publish_external_push',
@@ -436,10 +504,7 @@ test('runWithDurableEscalation never throws and reports structured failures', as
 		new Error('Missing DYNAMIC_CALLABLE_WORKFLOWS binding.'),
 	)
 	const dispatchFailed = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb(),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		idempotencyParts: ['publish', 'pkg-1', 'dispatch-fail'],
 		workflowName: 'package_publish_external_push',
@@ -484,10 +549,7 @@ test('budget exhaustion fails closed when create single-flights onto a dead term
 		status: 'cancelled',
 	})
 	const cancelledOutcome = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb(),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		idempotencyParts: publishParts,
 		workflowName: 'package_publish_external_push',
@@ -514,10 +576,7 @@ test('budget exhaustion fails closed when create single-flights onto a dead term
 	})
 	const completeParts = [...publishParts, 'complete-replay'] as const
 	const completeOutcome = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb(),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		idempotencyParts: completeParts,
 		workflowName: 'package_publish_external_push',
@@ -556,10 +615,7 @@ test('budget abort dispatches while the inline attempt is still in flight', asyn
 
 	let releaseInline: (() => void) | null = null
 	const outcome = await runWithDurableEscalation({
-		env: {
-			APP_DB: createWorkflowRunsDb(),
-			DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
-		} as Env,
+		env: envStub(),
 		userId: 'user-1',
 		idempotencyParts: ['publish', 'pkg-1', 'overlap'],
 		workflowName: 'package_publish_external_push',
