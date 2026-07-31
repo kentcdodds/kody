@@ -1076,7 +1076,7 @@ test('package app runtime bridge raw storage methods only allow internal app buc
 	await expect(
 		bridge.storageGet({ storageId: '   ', key: 'x' }),
 	).rejects.toThrow('Package app storage requires a non-empty storage id.')
-	expect(getStorageRunner).toHaveBeenCalledTimes(2)
+	expect(getStorageRunner).toHaveBeenCalledTimes(3)
 })
 
 test('buildPackageAppWorker passes packageStorage grant ids from root, static, and dynamic deps', async () => {

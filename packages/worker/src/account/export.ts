@@ -2044,7 +2044,6 @@ export async function readAccountExportSection(input: {
 						input.mcpUserId,
 						input.mcpUserId,
 						input.mcpUserId,
-						input.mcpUserId,
 						afterId,
 						pageSize + 1,
 					)
