@@ -138,6 +138,7 @@ function createAppEnv(
 		APP_DB: db,
 		COOKIE_SECRET: testCookieSecret,
 		SENTRY_ENVIRONMENT: 'test',
+		SIGNUP_MODE: 'open',
 		GITHUB_CLIENT_ID: 'github-client-id-test',
 		GITHUB_CLIENT_SECRET: 'github-client-secret-test',
 		GOOGLE_CLIENT_ID: 'google-client-id-test',
@@ -193,6 +194,8 @@ test('providers api lists only configured providers', async () => {
 	)
 	expect(await allEnabled.json()).toEqual({
 		ok: true,
+		signupMode: 'open',
+		turnstileSiteKey: null,
 		providers: [
 			{ id: 'github', label: 'GitHub' },
 			{ id: 'google', label: 'Google' },
@@ -213,6 +216,8 @@ test('providers api lists only configured providers', async () => {
 	)
 	expect(await githubOnly.json()).toEqual({
 		ok: true,
+		signupMode: 'open',
+		turnstileSiteKey: null,
 		providers: [{ id: 'github', label: 'GitHub' }],
 	})
 })
@@ -794,7 +799,7 @@ function mockGithubProfileExchange(email = 'octo@example.com') {
 test('production OAuth signup is invite-gated while existing connections still log in', async () => {
 	const missingInvite = createMigratedDb()
 	const missingInviteEnv = createAppEnv(missingInvite.db, {
-		SENTRY_ENVIRONMENT: 'production',
+		SIGNUP_MODE: 'invite',
 	})
 	mockGithubProfileExchange()
 	const missingStart = await startProviderFlow(
@@ -820,7 +825,7 @@ test('production OAuth signup is invite-gated while existing connections still l
 
 	const invalidInvite = createMigratedDb()
 	const invalidInviteEnv = createAppEnv(invalidInvite.db, {
-		SENTRY_ENVIRONMENT: 'production',
+		SIGNUP_MODE: 'invite',
 	})
 	mockGithubProfileExchange()
 	const invalidStart = await startProviderFlow(
@@ -846,7 +851,7 @@ test('production OAuth signup is invite-gated while existing connections still l
 
 	const invitedSignup = createMigratedDb()
 	const invitedEnv = createAppEnv(invitedSignup.db, {
-		SENTRY_ENVIRONMENT: 'production',
+		SIGNUP_MODE: 'invite',
 	})
 	seedInvite(invitedSignup.sqlite, 'SOCIAL-INVITE')
 	mockGithubProfileExchange('social-invited@example.com')
@@ -893,7 +898,7 @@ test('production OAuth signup is invite-gated while existing connections still l
 
 	const existingLogin = createMigratedDb()
 	const existingEnv = createAppEnv(existingLogin.db, {
-		SENTRY_ENVIRONMENT: 'production',
+		SIGNUP_MODE: 'invite',
 	})
 	await seedUser(existingLogin.sqlite, {
 		id: 11,

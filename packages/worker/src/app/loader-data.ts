@@ -12,6 +12,7 @@ import {
 	type RoleName,
 } from '#worker/identity/permissions.ts'
 import { type AdminFeatureFlag } from '#worker/feature-flags/types.ts'
+import { type SignupMode } from '#worker/env-schema.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -1184,6 +1185,8 @@ export type AccountEmailLoaderData = {
 export type AuthProvidersLoaderData = {
 	ok: true
 	providers: Array<{ id: string; label: string }>
+	signupMode: SignupMode
+	turnstileSiteKey: string | null
 }
 
 export type OAuthAuthorizeLoaderData =

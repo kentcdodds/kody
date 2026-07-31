@@ -9,7 +9,6 @@ import {
 	readAuthSessionResult,
 } from '#app/auth-session.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { getAvailableUsernameFromBase } from '#worker/identity/generated-username.ts'
 import {
@@ -60,6 +59,11 @@ import {
 	createStableUserIdFromEmail,
 	resolveUserStableId,
 } from '#worker/user-id.ts'
+import {
+	getSignupMode,
+	getTurnstileSiteKey,
+	verifyPublicFormProtection,
+} from '#app/public-form-protection.ts'
 
 /**
  * Accounts created through social login have no usable password until the
@@ -109,10 +113,6 @@ function prefersJsonResponse(request: Request) {
 	)
 }
 
-function isInviteRequiredForSignup(env: Env) {
-	return !isNonProductionRuntime(env)
-}
-
 function inviteFailureToOauthError(
 	reason: InviteConsumeFailureReason,
 ): OauthLoginErrorCode {
@@ -140,6 +140,8 @@ export function createAuthProvidersApiHandler(env: Env) {
 		async handler() {
 			return jsonResponse({
 				ok: true,
+				signupMode: getSignupMode(env),
+				turnstileSiteKey: getTurnstileSiteKey(env),
 				providers: getEnabledOauthProviders(env).map((provider) => ({
 					id: provider,
 					label: oauthProviderDefinitions[provider].label,
@@ -156,6 +158,20 @@ export function createAuthProviderStartHandler(env: Env) {
 			const wantsJson = prefersJsonResponse(request)
 			const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
 			const inviteCode = normalizeInviteCode(url.searchParams.get('inviteCode'))
+			const { session } = await readAuthSessionResult(request)
+
+			if (!session) {
+				const body = (await request
+					.clone()
+					.json()
+					.catch(() => ({}))) as Record<string, unknown>
+				const protection = await verifyPublicFormProtection({
+					env,
+					request,
+					body: typeof body === 'object' && body !== null ? body : {},
+				})
+				if (!protection.ok) return protection.response
+			}
 
 			function startError(code: OauthLoginErrorCode) {
 				if (wantsJson) {
@@ -457,7 +473,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				consumedInvitePlan = null
 			}
 
-			const inviteRequired = isInviteRequiredForSignup(env)
+			const inviteRequired = getSignupMode(env) !== 'open'
 			const inviteCodeFromState = loginState.inviteCode
 			if (inviteRequired || normalizeInviteCode(inviteCodeFromState)) {
 				const inviteResult = await consumeInviteCode({

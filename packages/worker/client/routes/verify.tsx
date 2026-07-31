@@ -14,6 +14,13 @@ import {
 	pageTitleCss,
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
+import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import {
+	honeypotFieldName,
+	readPublicFormProtection,
+	renderTurnstileWidgets,
+	turnstileWidgetClassName,
+} from '#client/public-form-protection.ts'
 
 function normalizeRedirectTo(value: string | null) {
 	if (!value) return null
@@ -31,6 +38,15 @@ function buildLoginHref(redirectTo: string | null) {
 export function VerifyRoute(handle: Handle) {
 	let status: 'idle' | 'submitting' = 'idle'
 	let message: string | null = null
+	let turnstileSiteKey: string | null | undefined
+
+	async function loadProtectionConfig(signal: AbortSignal) {
+		if (turnstileSiteKey !== undefined) return
+		const config = await fetchPublicAuthConfig(signal)
+		if (signal.aborted) return
+		turnstileSiteKey = config?.turnstileSiteKey ?? null
+		handle.update()
+	}
 
 	function getRedirectTo() {
 		const params = new URLSearchParams(readRouterSearch(handle))
@@ -43,6 +59,7 @@ export function VerifyRoute(handle: Handle) {
 
 		const formData = new FormData(event.currentTarget)
 		const code = String(formData.get('code') ?? '').trim()
+		const protection = readPublicFormProtection(formData)
 		if (!code) {
 			message = 'Enter the 6-digit code from your authenticator app.'
 			handle.update()
@@ -58,7 +75,7 @@ export function VerifyRoute(handle: Handle) {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ code }),
+				body: JSON.stringify({ code, ...protection }),
 			})
 			const payload = await response.json().catch(() => null)
 			if (!response.ok || !payload?.ok) {
@@ -84,6 +101,12 @@ export function VerifyRoute(handle: Handle) {
 	}
 
 	return () => {
+		if (typeof document !== 'undefined' && turnstileSiteKey === undefined) {
+			handle.queueTask(loadProtectionConfig)
+		}
+		if (typeof document !== 'undefined' && turnstileSiteKey) {
+			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey ?? null))
+		}
 		const isSubmitting = status === 'submitting'
 
 		return (
@@ -96,6 +119,14 @@ export function VerifyRoute(handle: Handle) {
 					</p>
 				</header>
 				<form mix={[css(cardCss), on('submit', handleSubmit)]}>
+					<input
+						type="text"
+						name={honeypotFieldName}
+						tabIndex={-1}
+						autoComplete="off"
+						aria-hidden="true"
+						mix={css(honeypotCss)}
+					/>
 					<label mix={css(fieldCss)}>
 						<span mix={css(fieldLabelCss)}>Verification code</span>
 						<input
@@ -110,6 +141,9 @@ export function VerifyRoute(handle: Handle) {
 							mix={css(inputCss)}
 						/>
 					</label>
+					{turnstileSiteKey ? (
+						<div class={turnstileWidgetClassName}></div>
+					) : null}
 					<button
 						type="submit"
 						disabled={isSubmitting}
@@ -146,3 +180,11 @@ const pageCss = {
 }
 
 const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+
+const honeypotCss = {
+	position: 'absolute' as const,
+	left: '-10000px',
+	width: '1px',
+	height: '1px',
+	overflow: 'hidden' as const,
+}

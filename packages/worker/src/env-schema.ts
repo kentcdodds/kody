@@ -6,6 +6,9 @@ import {
 	type InferOutput,
 } from 'remix/data-schema'
 
+export const signupModes = ['invite', 'open', 'waitlist'] as const
+export type SignupMode = (typeof signupModes)[number]
+
 const d1DatabaseSchema = createSchema<unknown, D1Database>((value, context) => {
 	if (value) {
 		return { value: value as D1Database }
@@ -53,6 +56,17 @@ const optionalNonEmptyStringSchema = createSchema<unknown, string | undefined>(
 		return { value: trimmed.length > 0 ? trimmed : undefined }
 	},
 )
+
+const signupModeSchema = createSchema<unknown, SignupMode>((value, context) => {
+	if (value === undefined || value === '') return { value: 'invite' }
+	if (typeof value === 'string' && signupModes.includes(value as SignupMode)) {
+		return { value: value as SignupMode }
+	}
+	return fail(
+		`SIGNUP_MODE must be one of: ${signupModes.join(', ')}`,
+		context.path,
+	)
+})
 
 const optionalUrlStringSchema = createSchema<unknown, string | undefined>(
 	(value, context) => {
@@ -174,6 +188,13 @@ export const EnvSchema = object({
 		'Missing MCP_CLIENT_HUB binding for user-added MCP server connections.',
 	),
 	APP_BASE_URL: optionalUrlStringSchema,
+	// Public account creation posture. `invite` is the safe default; switching
+	// to `open` is an explicit deployment configuration change.
+	SIGNUP_MODE: signupModeSchema,
+	// Turnstile remains disabled unless both keys are configured, preserving
+	// local development, preview deployments, and tests.
+	TURNSTILE_SITE_KEY: optionalNonEmptyStringSchema,
+	TURNSTILE_SECRET_KEY: optionalNonEmptyStringSchema,
 	// Origin that hosted package apps are served from. Required in production
 	// and must use a separate registrable domain so author-supplied package code
 	// is cross-site from the app origin. It may be unset locally/preview/test,

@@ -17,6 +17,7 @@ import { type routes } from '#app/routes.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
+import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 
 const resetRequestSchema = object({
 	email: string(),
@@ -84,6 +85,15 @@ export function createPasswordResetRequestHandler(env: Env) {
 					{ status: 400 },
 				)
 			}
+			const protection = await verifyPublicFormProtection({
+				env,
+				request,
+				body:
+					typeof body === 'object' && body !== null
+						? (body as Record<string, unknown>)
+						: {},
+			})
+			if (!protection.ok) return protection.response
 			const parsed = parseSafe(resetRequestSchema, body)
 			const requestIp = getRequestIp(request) ?? undefined
 			const normalizedEmail = parsed.success
@@ -196,6 +206,15 @@ export function createPasswordResetConfirmHandler(env: Env) {
 					{ status: 400 },
 				)
 			}
+			const protection = await verifyPublicFormProtection({
+				env,
+				request,
+				body:
+					typeof body === 'object' && body !== null
+						? (body as Record<string, unknown>)
+						: {},
+			})
+			if (!protection.ok) return protection.response
 			const parsed = parseSafe(resetConfirmSchema, body)
 			const requestIp = getRequestIp(request) ?? undefined
 			const token = parsed.success ? parsed.value.token.trim() : ''

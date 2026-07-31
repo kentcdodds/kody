@@ -35,7 +35,7 @@ function createAuthRequest(
 
 function createAuthTestContext(
 	options: {
-		signupEnabled?: boolean
+		signupMode?: 'invite' | 'open' | 'waitlist'
 		failRoleAssignment?: boolean
 		emailConfigured?: boolean
 	} = {},
@@ -46,16 +46,8 @@ function createAuthTestContext(
 	const handler = createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
-		// SENTRY_ENVIRONMENT defaults to 'production' (signups blocked).
-		// Pass `signupEnabled: true` to put the handler in the 'test' env
-		// that mirrors the wrangler `test`/`preview` envs.
-		...(options.signupEnabled
-			? {
-					SENTRY_ENVIRONMENT: 'test' as const,
-				}
-			: {
-					SENTRY_ENVIRONMENT: 'production' as const,
-				}),
+		SIGNUP_MODE: options.signupMode ?? 'invite',
+		SENTRY_ENVIRONMENT: 'production',
 		...(options.emailConfigured
 			? {
 					CLOUDFLARE_ACCOUNT_ID: 'cf-account-test',
@@ -363,7 +355,7 @@ test('auth handler login and signup workflow', async () => {
 	// Production signups must actually deliver the verification email, so
 	// the production context gets a (stubbed) configured Cloudflare sender.
 	const productionContext = createAuthTestContext({ emailConfigured: true })
-	const signupContext = createAuthTestContext({ signupEnabled: true })
+	const signupContext = createAuthTestContext({ signupMode: 'open' })
 	stubCloudflareEmailFetch({ ok: true })
 
 	const invalidJsonResponse = await productionContext.request('{')
@@ -602,7 +594,7 @@ test('auth handler login and signup workflow', async () => {
 
 test('signup fails when the default user role cannot be assigned', async () => {
 	const context = createAuthTestContext({
-		signupEnabled: true,
+		signupMode: 'open',
 		failRoleAssignment: true,
 	})
 
@@ -631,7 +623,7 @@ test('signup rolls back when the verification email cannot be sent', async () =>
 	consoleError.mockImplementation(() => {})
 	consoleWarn.mockImplementation(() => {})
 	const context = createAuthTestContext({
-		signupEnabled: true,
+		signupMode: 'open',
 		emailConfigured: true,
 	})
 	stubCloudflareEmailFetch({ ok: false, message: 'delivery refused' })

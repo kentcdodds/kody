@@ -19,10 +19,17 @@ import {
 import { getOauthLoginErrorMessage } from '#app/oauth-login-errors.ts'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
 import {
-	fetchEnabledAuthProviders,
+	fetchPublicAuthConfig,
 	startSocialSignIn,
 	type AuthProviderInfo,
 } from '#client/social-sign-in.ts'
+import {
+	honeypotFieldName,
+	readPublicFormProtection,
+	renderTurnstileWidgets,
+	turnstileWidgetClassName,
+} from '#client/public-form-protection.ts'
+import { type SignupMode } from '#worker/env-schema.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import { resolvePasswordAuthRedirect } from '#client/routes/resolve-password-auth-redirect.ts'
 import {
@@ -42,7 +49,7 @@ import {
 
 type AuthMode = 'login' | 'signup'
 type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
-type SignupPanel = 'waiting-list' | 'invite'
+type SignupPanel = 'waiting-list' | 'invite' | 'open'
 
 function shouldOpenInviteSignup(searchParams: URLSearchParams) {
 	if (searchParams.has('code') || searchParams.has('invite')) return true
@@ -58,8 +65,13 @@ function readPrefillInviteCode(searchParams: URLSearchParams) {
 	return ''
 }
 
-function resolveSignupPanel(searchParams: URLSearchParams): SignupPanel {
-	return shouldOpenInviteSignup(searchParams) ? 'invite' : 'waiting-list'
+function resolveSignupPanel(
+	searchParams: URLSearchParams,
+	signupMode: SignupMode,
+): SignupPanel {
+	if (shouldOpenInviteSignup(searchParams)) return 'invite'
+	if (searchParams.get('panel') === 'waiting-list') return 'waiting-list'
+	return signupMode === 'waitlist' ? 'waiting-list' : signupMode
 }
 
 function buildAuthPath(mode: AuthMode, redirectTo: string | null) {
@@ -92,11 +104,11 @@ export async function authProvidersRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const providers = await fetchEnabledAuthProviders(signal)
+	const config = await fetchPublicAuthConfig(signal)
 	// A failed fetch yields no loader data, so the route's fallback fetch
 	// retries instead of rendering a permanently button-less page.
-	if (!providers) return {}
-	return { authProviders: { ok: true, providers } }
+	if (!config) return {}
+	return { authProviders: { ok: true, ...config } }
 }
 
 export function LoginRoute(handle: Handle) {
@@ -105,13 +117,18 @@ export function LoginRoute(handle: Handle) {
 	let sessionStatus: SessionStatus = 'idle'
 	let sessionEmail = ''
 	let authProviders: Array<AuthProviderInfo> = []
+	let signupMode: SignupMode = 'invite'
+	let turnstileSiteKey: string | null = null
 	// True once the provider list came from SSR-embedded or SPA-preloaded
 	// loader data (the normal paths); the client fetch is a fallback only.
 	let authProvidersReady = false
 	let activeMode = getCurrentAuthMode(handle)
 	let routePath: string | null = null
 	let activeSignupSearch = readRouterSearch(handle)
-	let signupPanel: SignupPanel = resolveSignupPanel(getSearchParams(handle))
+	let signupPanel: SignupPanel = resolveSignupPanel(
+		getSearchParams(handle),
+		signupMode,
+	)
 	let prefillInviteCode = readPrefillInviteCode(getSearchParams(handle))
 
 	function setState(nextStatus: AuthStatus, nextMessage: string | null = null) {
@@ -126,7 +143,7 @@ export function LoginRoute(handle: Handle) {
 	}
 
 	function applySignupSearch(searchParams: URLSearchParams) {
-		signupPanel = resolveSignupPanel(searchParams)
+		signupPanel = resolveSignupPanel(searchParams, signupMode)
 		prefillInviteCode = readPrefillInviteCode(searchParams)
 	}
 
@@ -147,9 +164,9 @@ export function LoginRoute(handle: Handle) {
 		if (sessionStatus !== 'idle') return
 		sessionStatus = 'loading'
 
-		const [session, providers] = await Promise.all([
+		const [session, config] = await Promise.all([
 			fetchSessionInfo(signal),
-			authProvidersReady ? null : fetchEnabledAuthProviders(signal),
+			authProvidersReady ? null : fetchPublicAuthConfig(signal),
 		])
 		if (signal.aborted) {
 			// Hydration re-renders abort in-flight queued tasks; reset so the
@@ -158,8 +175,11 @@ export function LoginRoute(handle: Handle) {
 			return
 		}
 		sessionEmail = session?.email ?? ''
-		if (providers && !authProvidersReady) {
-			authProviders = providers
+		if (config && !authProvidersReady) {
+			authProviders = config.providers
+			signupMode = config.signupMode
+			turnstileSiteKey = config.turnstileSiteKey
+			applySignupSearch(getSearchParams(handle))
 			authProvidersReady = true
 		}
 
@@ -179,6 +199,7 @@ export function LoginRoute(handle: Handle) {
 		const formData = new FormData(form)
 		const firstName = String(formData.get('firstName') ?? '').trim()
 		const email = String(formData.get('email') ?? '').trim()
+		const protection = readPublicFormProtection(formData)
 
 		if (!firstName || !email) {
 			setState('error', 'First name and email are required.')
@@ -192,7 +213,7 @@ export function LoginRoute(handle: Handle) {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ firstName, email }),
+				body: JSON.stringify({ firstName, email, ...protection }),
 			})
 			const payload = await response.json().catch(() => null)
 
@@ -229,6 +250,7 @@ export function LoginRoute(handle: Handle) {
 		const inviteCode =
 			mode === 'signup' ? String(formData.get('inviteCode') ?? '').trim() : ''
 		const rememberMe = mode === 'login' && formData.get('rememberMe') === 'on'
+		const protection = readPublicFormProtection(formData)
 
 		if (!email || !password) {
 			setState('error', 'Email and password are required.')
@@ -251,6 +273,7 @@ export function LoginRoute(handle: Handle) {
 					password,
 					mode,
 					rememberMe,
+					...protection,
 					...(mode === 'signup'
 						? {
 								username,
@@ -299,10 +322,17 @@ export function LoginRoute(handle: Handle) {
 					inviteCode = inviteInput.value.trim() || null
 				}
 			}
+			const authForm = document.querySelector<HTMLFormElement>(
+				'form[data-public-auth-form]',
+			)
+			const protection = authForm
+				? readPublicFormProtection(new FormData(authForm))
+				: { website: '', turnstileToken: '' }
 			const errorMessage = await startSocialSignIn(
 				providerId,
 				getCurrentRedirectTo(handle),
 				inviteCode,
+				protection,
 			)
 			if (errorMessage) {
 				setState('error', errorMessage)
@@ -345,6 +375,12 @@ export function LoginRoute(handle: Handle) {
 			const rememberMeInput = document.querySelector('input[name="rememberMe"]')
 			const rememberMe =
 				rememberMeInput instanceof HTMLInputElement && rememberMeInput.checked
+			const authForm = document.querySelector<HTMLFormElement>(
+				'form[data-public-auth-form]',
+			)
+			const protection = authForm
+				? readPublicFormProtection(new FormData(authForm))
+				: { website: '', turnstileToken: '' }
 
 			const verificationResponse = await fetch('/webauthn/authentication', {
 				method: 'POST',
@@ -353,6 +389,7 @@ export function LoginRoute(handle: Handle) {
 				body: JSON.stringify({
 					response: authenticationResponse,
 					rememberMe,
+					...protection,
 				}),
 			})
 			const verificationPayload = await verificationResponse
@@ -390,8 +427,14 @@ export function LoginRoute(handle: Handle) {
 			)
 			if (routeData) {
 				authProviders = routeData.providers
+				signupMode = routeData.signupMode
+				turnstileSiteKey = routeData.turnstileSiteKey
+				applySignupSearch(getSearchParams(handle))
 				authProvidersReady = true
 			}
+		}
+		if (typeof document !== 'undefined' && turnstileSiteKey) {
+			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey))
 		}
 		if (typeof document !== 'undefined' && sessionStatus === 'idle') {
 			handle.queueTask(loadSessionAndProviders)
@@ -431,7 +474,9 @@ export function LoginRoute(handle: Handle) {
 		const description = showWaitingList
 			? 'Kody is built for people who want to own their automations. Join the waitlist for an invite.'
 			: isSignup
-				? 'Use your invite code to create an account and start building automations you own.'
+				? showInviteSignup
+					? 'Use your invite code to create an account and start building automations you own.'
+					: 'Create an account and start building automations you own.'
 				: 'Log in to keep building automations you own.'
 		const submitLabel = isSignup ? 'Create account' : 'Sign in'
 		const toggleLabel = isSignup
@@ -459,6 +504,14 @@ export function LoginRoute(handle: Handle) {
 				) : null}
 				{showWaitingList ? (
 					<form mix={[css(cardCss), on('submit', handleWaitingListSubmit)]}>
+						<input
+							type="text"
+							name={honeypotFieldName}
+							tabIndex={-1}
+							autoComplete="off"
+							aria-hidden="true"
+							mix={css(honeypotCss)}
+						/>
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>First name</span>
 							<input
@@ -472,6 +525,9 @@ export function LoginRoute(handle: Handle) {
 								mix={css(inputCss)}
 							/>
 						</label>
+						{turnstileSiteKey ? (
+							<div class={turnstileWidgetClassName}></div>
+						) : null}
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Email</span>
 							<input
@@ -490,21 +546,31 @@ export function LoginRoute(handle: Handle) {
 						>
 							{isSubmitting ? 'Joining...' : 'Join waiting list'}
 						</button>
-						{message ? (
-							<p
-								aria-live="polite"
-								mix={css({
-									color: status === 'error' ? colors.error : colors.text,
-									fontSize: typography.fontSize.sm,
-								})}
-							>
-								{message}
-							</p>
-						) : null}
+						<p
+							aria-live="polite"
+							role={status === 'error' ? 'alert' : undefined}
+							mix={css({
+								color: status === 'error' ? colors.error : colors.text,
+								fontSize: typography.fontSize.sm,
+							})}
+						>
+							{message ?? ''}
+						</p>
 					</form>
 				) : (
-					<form mix={[css(cardCss), on('submit', handleSubmit)]}>
-						{showInviteSignup ? (
+					<form
+						data-public-auth-form
+						mix={[css(cardCss), on('submit', handleSubmit)]}
+					>
+						<input
+							type="text"
+							name={honeypotFieldName}
+							tabIndex={-1}
+							autoComplete="off"
+							aria-hidden="true"
+							mix={css(honeypotCss)}
+						/>
+						{isSignup ? (
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Username</span>
 								<input
@@ -526,7 +592,7 @@ export function LoginRoute(handle: Handle) {
 								type="email"
 								name="email"
 								required
-								autoFocus={!showInviteSignup}
+								autoFocus={!isSignup}
 								autoComplete="email"
 								placeholder="you@example.com"
 								mix={css(inputCss)}
@@ -538,9 +604,7 @@ export function LoginRoute(handle: Handle) {
 								type="password"
 								name="password"
 								required
-								autoComplete={
-									showInviteSignup ? 'new-password' : 'current-password'
-								}
+								autoComplete={isSignup ? 'new-password' : 'current-password'}
 								placeholder="At least 8 characters"
 								mix={css(inputCss)}
 							/>
@@ -557,6 +621,9 @@ export function LoginRoute(handle: Handle) {
 									mix={css(inputCss)}
 								/>
 							</label>
+						) : null}
+						{turnstileSiteKey ? (
+							<div class={turnstileWidgetClassName}></div>
 						) : null}
 						{!isSignup ? (
 							<label
@@ -618,17 +685,16 @@ export function LoginRoute(handle: Handle) {
 								Sign in with a passkey
 							</button>
 						) : null}
-						{message ? (
-							<p
-								aria-live="polite"
-								mix={css({
-									color: status === 'error' ? colors.error : colors.text,
-									fontSize: typography.fontSize.sm,
-								})}
-							>
-								{message}
-							</p>
-						) : null}
+						<p
+							aria-live="polite"
+							role={status === 'error' ? 'alert' : undefined}
+							mix={css({
+								color: status === 'error' ? colors.error : colors.text,
+								fontSize: typography.fontSize.sm,
+							})}
+						>
+							{message ?? ''}
+						</p>
 					</form>
 				)}
 				{isSignup ? (
@@ -724,4 +790,12 @@ const providerButtonCss = {
 const actionLinkCss = {
 	...primaryLinkCss,
 	textAlign: 'left' as const,
+}
+
+const honeypotCss = {
+	position: 'absolute' as const,
+	left: '-10000px',
+	width: '1px',
+	height: '1px',
+	overflow: 'hidden' as const,
 }

@@ -12,6 +12,7 @@ import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type routes } from '#app/routes.ts'
 import { jsonResponse } from '#worker/json-response.ts'
+import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 
 export const waitingListRateLimitConfig = {
 	maxRequests: 5,
@@ -48,6 +49,16 @@ export function createWaitingListHandler(env: Env) {
 			} catch {
 				return jsonResponse({ ok: false, error: 'Invalid JSON payload.' }, 400)
 			}
+
+			const protection = await verifyPublicFormProtection({
+				env,
+				request,
+				body:
+					typeof body === 'object' && body !== null
+						? (body as Record<string, unknown>)
+						: {},
+			})
+			if (!protection.ok) return protection.response
 
 			const parsedBody = parseSafe(waitingListRequestSchema, body)
 			if (!parsedBody.success) {

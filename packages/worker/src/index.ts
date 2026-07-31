@@ -93,6 +93,7 @@ import {
 } from '#worker/jobs/job-schedule-watchdog.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
+import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 
 export {
 	RepoSession,
@@ -141,6 +142,11 @@ const rateLimitedAuthPaths = new Set([
 	'/password-reset/confirm',
 	'/verify/2fa.json',
 	'/account/two-factor.json',
+	'/webauthn/authentication',
+])
+
+const protectedPublicJsonFormPaths = new Set([
+	'/verify/2fa.json',
 	'/webauthn/authentication',
 ])
 
@@ -274,6 +280,22 @@ const appHandler = withCors({
 			}
 		}
 
+		if (
+			request.method === 'POST' &&
+			protectedPublicJsonFormPaths.has(url.pathname)
+		) {
+			const body = (await request
+				.clone()
+				.json()
+				.catch(() => ({}))) as Record<string, unknown>
+			const protection = await verifyPublicFormProtection({
+				env,
+				request,
+				body: typeof body === 'object' && body !== null ? body : {},
+			})
+			if (!protection.ok) return protection.response
+		}
+
 		if (url.pathname === '/__maintenance/reindex-capabilities') {
 			return handleCapabilityReindexRequest(request, env)
 		}
@@ -303,6 +325,25 @@ const appHandler = withCors({
 
 		if (url.pathname === oauthPaths.authorize) {
 			try {
+				if (
+					request.method === 'POST' &&
+					request.headers
+						.get('Content-Type')
+						?.includes('application/x-www-form-urlencoded')
+				) {
+					const formData = await request.clone().formData()
+					// Only the signed-out inline-login form accepts credentials.
+					// Signed-in approval/denial posts remain protected by session
+					// and OAuth request state rather than a public bot challenge.
+					if (formData.has('email') || formData.has('password')) {
+						const protection = await verifyPublicFormProtection({
+							env,
+							request,
+							body: Object.fromEntries(formData),
+						})
+						if (!protection.ok) return protection.response
+					}
+				}
 				return await handleAuthorizeRequest(request, env)
 			} catch (error) {
 				Sentry.captureException(error)

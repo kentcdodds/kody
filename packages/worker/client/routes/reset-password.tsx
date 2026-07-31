@@ -16,6 +16,13 @@ import {
 	primaryLinkCss,
 	stackedPageCss,
 } from '#client/styles/style-primitives.ts'
+import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import {
+	honeypotFieldName,
+	readPublicFormProtection,
+	renderTurnstileWidgets,
+	turnstileWidgetClassName,
+} from '#client/public-form-protection.ts'
 
 type ResetStatus = 'idle' | 'submitting' | 'success' | 'error'
 
@@ -26,6 +33,7 @@ function getSearchParams(handle: Handle) {
 export function ResetPasswordRoute(handle: Handle) {
 	let status: ResetStatus = 'idle'
 	let message: string | null = null
+	let turnstileSiteKey: string | null | undefined
 
 	function setState(
 		nextStatus: ResetStatus,
@@ -36,12 +44,21 @@ export function ResetPasswordRoute(handle: Handle) {
 		handle.update()
 	}
 
+	async function loadProtectionConfig(signal: AbortSignal) {
+		if (turnstileSiteKey !== undefined) return
+		const config = await fetchPublicAuthConfig(signal)
+		if (signal.aborted) return
+		turnstileSiteKey = config?.turnstileSiteKey ?? null
+		handle.update()
+	}
+
 	async function submitResetRequest(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 
 		const formData = new FormData(event.currentTarget)
 		const email = String(formData.get('email') ?? '').trim()
+		const protection = readPublicFormProtection(formData)
 		if (!email) {
 			setState('error', 'Email is required.')
 			return
@@ -52,7 +69,7 @@ export function ResetPasswordRoute(handle: Handle) {
 			const response = await fetch('/password-reset', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email }),
+				body: JSON.stringify({ email, ...protection }),
 			})
 			const payload = await response.json().catch(() => null)
 			if (!response.ok) {
@@ -78,6 +95,7 @@ export function ResetPasswordRoute(handle: Handle) {
 
 		const formData = new FormData(event.currentTarget)
 		const password = String(formData.get('password') ?? '')
+		const protection = readPublicFormProtection(formData)
 		if (!password) {
 			setState('error', 'Password is required.')
 			return
@@ -88,7 +106,7 @@ export function ResetPasswordRoute(handle: Handle) {
 			const response = await fetch('/password-reset/confirm', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ token, password }),
+				body: JSON.stringify({ token, password, ...protection }),
 			})
 			const payload = await response.json().catch(() => null)
 			if (!response.ok) {
@@ -106,6 +124,12 @@ export function ResetPasswordRoute(handle: Handle) {
 	}
 
 	return () => {
+		if (typeof document !== 'undefined' && turnstileSiteKey === undefined) {
+			handle.queueTask(loadProtectionConfig)
+		}
+		if (typeof document !== 'undefined' && turnstileSiteKey) {
+			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey ?? null))
+		}
 		const searchParams = getSearchParams(handle)
 		const token = String(searchParams.get('token') ?? '').trim()
 		const mode = token ? 'confirm' : 'request'
@@ -137,6 +161,14 @@ export function ResetPasswordRoute(handle: Handle) {
 						),
 					]}
 				>
+					<input
+						type="text"
+						name={honeypotFieldName}
+						tabIndex={-1}
+						autoComplete="off"
+						aria-hidden="true"
+						mix={css(honeypotCss)}
+					/>
 					{mode === 'confirm' ? (
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>New password</span>
@@ -164,6 +196,9 @@ export function ResetPasswordRoute(handle: Handle) {
 							/>
 						</label>
 					)}
+					{turnstileSiteKey ? (
+						<div class={turnstileWidgetClassName}></div>
+					) : null}
 					<button
 						type="submit"
 						disabled={isSubmitting}
@@ -207,3 +242,11 @@ const pageCss = {
 }
 
 const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+
+const honeypotCss = {
+	position: 'absolute' as const,
+	left: '-10000px',
+	width: '1px',
+	height: '1px',
+	overflow: 'hidden' as const,
+}

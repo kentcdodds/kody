@@ -6,6 +6,13 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
+import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import {
+	honeypotFieldName,
+	readPublicFormProtection,
+	renderTurnstileWidgets,
+	turnstileWidgetClassName,
+} from '#client/public-form-protection.ts'
 import {
 	renderEmailVerificationPrompt,
 	requestResendVerification,
@@ -99,6 +106,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	let message: OAuthAuthorizeMessage | null = null
 	let submittingDecision: OAuthAuthorizeDecision | null = null
 	let lastSearch = ''
+	let turnstileSiteKey: string | null | undefined
 	let session: SessionInfo | null = null
 	let sessionStatus: SessionStatus = 'idle'
 	let resetCompleted = false
@@ -119,6 +127,14 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		if (description) return description
 		const error = params.get('error')
 		return error ? `Authorization error: ${error}` : null
+	}
+
+	async function loadProtectionConfig(signal: AbortSignal) {
+		if (turnstileSiteKey !== undefined) return
+		const config = await fetchPublicAuthConfig(signal)
+		if (signal.aborted) return
+		turnstileSiteKey = config?.turnstileSiteKey ?? null
+		handle.update()
 	}
 
 	async function loadInfo(requestId: number) {
@@ -279,6 +295,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				}
 				body.set('email', email)
 				body.set('password', password)
+				const protection = readPublicFormProtection(formData)
+				body.set('website', protection.website)
+				body.set('turnstileToken', protection.turnstileToken)
 			}
 			const response = await fetch(window.location.href, {
 				method: 'POST',
@@ -337,6 +356,12 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	}
 
 	return () => {
+		if (typeof document !== 'undefined' && turnstileSiteKey === undefined) {
+			handle.queueTask(loadProtectionConfig)
+		}
+		if (typeof document !== 'undefined' && turnstileSiteKey) {
+			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey ?? null))
+		}
 		const currentHref = readCurrentRouterHref(handle)
 		const currentSearch = readRouterSearch(handle)
 		// Consume on every render so same-path preload-then-commit refreshes
@@ -520,6 +545,14 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							on('submit', handleSubmit),
 						]}
 					>
+						<input
+							type="text"
+							name={honeypotFieldName}
+							tabIndex={-1}
+							autoComplete="off"
+							aria-hidden="true"
+							mix={css(honeypotCss)}
+						/>
 						{!isLoggedIn && isSessionReady ? (
 							<>
 								<label mix={css(fieldCss)}>
@@ -547,6 +580,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 									/>
 								</label>
 							</>
+						) : null}
+						{!isLoggedIn && turnstileSiteKey ? (
+							<div class={turnstileWidgetClassName}></div>
 						) : null}
 						<div
 							mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
@@ -583,6 +619,14 @@ const pageCss = {
 	...stackedPageCss,
 	maxWidth: '28rem',
 	margin: '0 auto',
+}
+
+const honeypotCss = {
+	position: 'absolute' as const,
+	left: '-10000px',
+	width: '1px',
+	height: '1px',
+	overflow: 'hidden' as const,
 }
 
 const headerCss = pageHeaderCss

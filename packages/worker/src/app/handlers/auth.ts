@@ -44,15 +44,14 @@ import {
 	verifyPassword,
 } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
-import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
+import {
+	getSignupMode,
+	verifyPublicFormProtection,
+} from '#app/public-form-protection.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
-
-function isInviteRequiredForSignup(env: Env) {
-	return !isNonProductionRuntime(env)
-}
 
 const authRequestSchema = object({
 	email: string(),
@@ -79,6 +78,16 @@ export function createAuthHandler(env: Env) {
 					{ status: 400 },
 				)
 			}
+
+			const protection = await verifyPublicFormProtection({
+				env,
+				request,
+				body:
+					typeof body === 'object' && body !== null
+						? (body as Record<string, unknown>)
+						: {},
+			})
+			if (!protection.ok) return protection.response
 
 			const parsedBody = parseSafe(authRequestSchema, body)
 			if (!parsedBody.success) {
@@ -220,7 +229,7 @@ export function createAuthHandler(env: Env) {
 					consumedInvitePlan = null
 				}
 
-				const inviteRequired = isInviteRequiredForSignup(env)
+				const inviteRequired = getSignupMode(env) !== 'open'
 				if (inviteRequired || normalizeInviteCode(inviteCode)) {
 					const inviteResult = await consumeInviteCode({
 						db: env.APP_DB,

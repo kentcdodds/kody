@@ -32,6 +32,8 @@
  *   privacy-preserving, no cookies. The beacon script loads from
  *   `https://static.cloudflareinsights.com` (`script-src`) and POSTs to
  *   `https://cloudflareinsights.com` (`connect-src`).
+ * - Cloudflare Turnstile loads its explicit-render API and challenge iframe
+ *   from `https://challenges.cloudflare.com` when both keys are configured.
  * - `worker-src 'self' blob:` exists for Sentry Session Replay's compression
  *   Web Worker, which is created from a blob URL. Spawning a blob worker
  *   already requires script execution, which `script-src 'self'` still gates,
@@ -46,8 +48,9 @@ const contentSecurityPolicy = [
 	"img-src 'self' data: blob: https://cdn.usefathom.com",
 	"font-src 'self' data:",
 	"style-src 'self' 'unsafe-inline'",
-	"script-src 'self' https://cdn.usefathom.com https://static.cloudflareinsights.com",
-	"connect-src 'self' https://cloudflareinsights.com",
+	"script-src 'self' https://cdn.usefathom.com https://static.cloudflareinsights.com https://challenges.cloudflare.com",
+	"connect-src 'self' https://cloudflareinsights.com https://challenges.cloudflare.com",
+	'frame-src https://challenges.cloudflare.com',
 	"worker-src 'self' blob:",
 ].join('; ')
 

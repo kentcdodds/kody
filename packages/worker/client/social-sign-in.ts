@@ -1,4 +1,11 @@
+import { type SignupMode } from '#worker/env-schema.ts'
+
 export type AuthProviderInfo = { id: string; label: string }
+export type PublicAuthConfig = {
+	providers: Array<AuthProviderInfo>
+	signupMode: SignupMode
+	turnstileSiteKey: string | null
+}
 
 export function buildProviderStartPath(
 	providerId: string,
@@ -20,6 +27,13 @@ export function buildProviderStartPath(
 export async function fetchEnabledAuthProviders(
 	signal?: AbortSignal,
 ): Promise<Array<AuthProviderInfo> | null> {
+	const config = await fetchPublicAuthConfig(signal)
+	return config?.providers ?? null
+}
+
+export async function fetchPublicAuthConfig(
+	signal?: AbortSignal,
+): Promise<PublicAuthConfig | null> {
 	try {
 		const response = await fetch('/auth/providers.json', {
 			headers: { Accept: 'application/json' },
@@ -27,14 +41,24 @@ export async function fetchEnabledAuthProviders(
 		})
 		const payload = await response.json().catch(() => null)
 		if (!response.ok || payload?.ok !== true) return null
-		const providers = Array.isArray(payload.providers) ? payload.providers : []
-		return providers.filter(
+		const providers = (
+			Array.isArray(payload.providers) ? payload.providers : []
+		).filter(
 			(provider: unknown): provider is AuthProviderInfo =>
 				typeof provider === 'object' &&
 				provider !== null &&
 				typeof (provider as AuthProviderInfo).id === 'string' &&
 				typeof (provider as AuthProviderInfo).label === 'string',
 		)
+		const signupMode: SignupMode =
+			payload.signupMode === 'open' || payload.signupMode === 'waitlist'
+				? payload.signupMode
+				: 'invite'
+		const turnstileSiteKey =
+			typeof payload.turnstileSiteKey === 'string'
+				? payload.turnstileSiteKey
+				: null
+		return { providers, signupMode, turnstileSiteKey }
 	} catch {
 		return null
 	}
@@ -54,13 +78,21 @@ export async function startSocialSignIn(
 	providerId: string,
 	redirectTo: string | null,
 	inviteCode: string | null = null,
+	protection: { website: string; turnstileToken: string } = {
+		website: '',
+		turnstileToken: '',
+	},
 ): Promise<string | null> {
 	const response = await fetch(
 		buildProviderStartPath(providerId, redirectTo, inviteCode),
 		{
 			method: 'POST',
-			headers: { Accept: 'application/json' },
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
 			credentials: 'include',
+			body: JSON.stringify(protection),
 		},
 	)
 	const payload = await response.json().catch(() => null)

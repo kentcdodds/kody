@@ -12,6 +12,13 @@ import {
 	spacing,
 	typography,
 } from '#client/styles/tokens.ts'
+import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import {
+	honeypotFieldName,
+	readPublicFormProtection,
+	renderTurnstileWidgets,
+	turnstileWidgetClassName,
+} from '#client/public-form-protection.ts'
 
 type WaitlistStatus = 'idle' | 'submitting' | 'success' | 'error'
 
@@ -22,6 +29,7 @@ type WaitlistStatus = 'idle' | 'submitting' | 'success' | 'error'
 export function WaitlistBanner(handle: Handle) {
 	let status: WaitlistStatus = 'idle'
 	let message: string | null = null
+	let turnstileSiteKey: string | null | undefined
 
 	function setState(
 		nextStatus: WaitlistStatus,
@@ -29,6 +37,14 @@ export function WaitlistBanner(handle: Handle) {
 	) {
 		status = nextStatus
 		message = nextMessage
+		handle.update()
+	}
+
+	async function loadProtectionConfig(signal: AbortSignal) {
+		if (turnstileSiteKey !== undefined) return
+		const config = await fetchPublicAuthConfig(signal)
+		if (signal.aborted) return
+		turnstileSiteKey = config?.turnstileSiteKey ?? null
 		handle.update()
 	}
 
@@ -40,6 +56,7 @@ export function WaitlistBanner(handle: Handle) {
 		const formData = new FormData(form)
 		const firstName = String(formData.get('firstName') ?? '').trim()
 		const email = String(formData.get('email') ?? '').trim()
+		const protection = readPublicFormProtection(formData)
 
 		if (!firstName || !email) {
 			setState('error', 'First name and email are required.')
@@ -53,7 +70,7 @@ export function WaitlistBanner(handle: Handle) {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ firstName, email }),
+				body: JSON.stringify({ firstName, email, ...protection }),
 			})
 			const payload = await response.json().catch(() => null)
 
@@ -78,6 +95,12 @@ export function WaitlistBanner(handle: Handle) {
 	}
 
 	return () => {
+		if (typeof document !== 'undefined' && turnstileSiteKey === undefined) {
+			handle.queueTask(loadProtectionConfig)
+		}
+		if (typeof document !== 'undefined' && turnstileSiteKey) {
+			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey ?? null))
+		}
 		const isSubmitting = status === 'submitting'
 		const isSuccess = status === 'success'
 
@@ -103,6 +126,14 @@ export function WaitlistBanner(handle: Handle) {
 								waitlist for an invite.
 							</p>
 							<form mix={[css(formCss), on('submit', handleSubmit)]}>
+								<input
+									type="text"
+									name={honeypotFieldName}
+									tabIndex={-1}
+									autoComplete="off"
+									aria-hidden="true"
+									mix={css(honeypotCss)}
+								/>
 								<label mix={css(nameFieldCss)}>
 									<span mix={css(visuallyHiddenCss)}>First name</span>
 									<input
@@ -135,21 +166,23 @@ export function WaitlistBanner(handle: Handle) {
 										{isSubmitting ? 'Joining…' : 'Join'}
 									</button>
 								</div>
+								{turnstileSiteKey ? (
+									<div class={turnstileWidgetClassName}></div>
+								) : null}
 							</form>
-							{message ? (
-								<p
-									aria-live="polite"
-									mix={css({
-										margin: 0,
-										color: colors.error,
-										fontSize: typography.fontSize.xs,
-										width: '100%',
-										textAlign: 'center' as const,
-									})}
-								>
-									{message}
-								</p>
-							) : null}
+							<p
+								aria-live="polite"
+								role={status === 'error' ? 'alert' : undefined}
+								mix={css({
+									margin: 0,
+									color: colors.error,
+									fontSize: typography.fontSize.xs,
+									width: '100%',
+									textAlign: 'center' as const,
+								})}
+							>
+								{message ?? ''}
+							</p>
 						</>
 					)}
 				</div>
@@ -293,4 +326,9 @@ const visuallyHiddenCss = {
 	clip: 'rect(0, 0, 0, 0)',
 	whiteSpace: 'nowrap' as const,
 	border: 0,
+}
+
+const honeypotCss = {
+	...visuallyHiddenCss,
+	left: '-10000px',
 }
