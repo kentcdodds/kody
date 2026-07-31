@@ -97,8 +97,9 @@ test('processDueJobs handles cron batching and once-job retain, preserve, and re
 			}),
 		]),
 	)
-	expect(batchResult.saveJobs.find((job) => job.id === 'job-1')?.lastRunError)
-		.toBeUndefined()
+	expect(
+		batchResult.saveJobs.find((job) => job.id === 'job-1')?.lastRunError,
+	).toBeUndefined()
 	expect(batchResult.saveJobs[0]).not.toHaveProperty('runHistory')
 	expect(batchResult.saveJobs[1]).not.toHaveProperty('runHistory')
 

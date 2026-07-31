@@ -111,11 +111,7 @@ const runRecordMocks = vi.hoisted(() => {
 				userStore(input.userId).get(input.id) ?? null,
 		),
 		findWorkflowProjectionByIdempotencyKey: vi.fn(
-			async (input: {
-				env: Env
-				userId: string
-				idempotencyKey: string
-			}) => {
+			async (input: { env: Env; userId: string; idempotencyKey: string }) => {
 				const matches = [...userStore(input.userId).values()]
 					.filter(
 						(row) =>

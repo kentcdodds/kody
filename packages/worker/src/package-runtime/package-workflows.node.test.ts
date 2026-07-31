@@ -129,11 +129,7 @@ const runRecordMocks = vi.hoisted(() => {
 				userStore(input.userId).get(input.id) ?? null,
 		),
 		findWorkflowProjectionByIdempotencyKey: vi.fn(
-			async (input: {
-				env: Env
-				userId: string
-				idempotencyKey: string
-			}) => {
+			async (input: { env: Env; userId: string; idempotencyKey: string }) => {
 				const matches = [...userStore(input.userId).values()]
 					.filter(
 						(row) =>
@@ -154,12 +150,8 @@ const runRecordMocks = vi.hoisted(() => {
 			}) => {
 				const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
 				const rows = [...userStore(input.userId).values()]
-					.filter((row) =>
-						input.status ? row.status === input.status : true,
-					)
-					.sort((left, right) =>
-						right.createdAt.localeCompare(left.createdAt),
-					)
+					.filter((row) => (input.status ? row.status === input.status : true))
+					.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 				return {
 					projections: rows.slice(0, limit),
 					nextCursor: null as string | null,
@@ -211,9 +203,7 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		),
 	findWorkflowProjectionByIdempotencyKey: (...args: Array<unknown>) =>
 		runRecordMocks.findWorkflowProjectionByIdempotencyKey(
-			...(args as [
-				{ env: Env; userId: string; idempotencyKey: string },
-			]),
+			...(args as [{ env: Env; userId: string; idempotencyKey: string }]),
 		),
 	listWorkflowProjections: (...args: Array<unknown>) =>
 		runRecordMocks.listWorkflowProjections(

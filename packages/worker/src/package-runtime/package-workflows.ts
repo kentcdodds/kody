@@ -633,7 +633,8 @@ function buildWorkflowProjectionUpsert(input: {
 		sourceType: input.payload.sourceType,
 		packageId:
 			input.payload.sourceType === 'package' ? input.payload.packageId : null,
-		kodyId: input.payload.sourceType === 'package' ? input.payload.kodyId : null,
+		kodyId:
+			input.payload.sourceType === 'package' ? input.payload.kodyId : null,
 		sourceId:
 			input.payload.sourceType === 'package' ? input.payload.sourceId : null,
 		workflowName: input.payload.workflowName,

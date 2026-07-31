@@ -875,8 +875,9 @@ test('run recording degrades to a warning instead of failing the observed run', 
 		}),
 	).toBeNull()
 
-	// `user_activation_milestones` is absent from this suite's D1 schema, so the
-	// activation milestone write fans out into a failure the run must survive.
+	// Finish still lands even when begin was refused; activation now lives in
+	// the RunLog DO (not D1), so a successful finish does not emit an
+	// activation warning here.
 	await finishRunRecord({
 		env,
 		handle: {
@@ -895,7 +896,6 @@ test('run recording degrades to a warning instead of failing the observed run', 
 
 	expect(consoleWarn.mock.calls.map(([message]) => message)).toEqual([
 		'run-record-begin-failed',
-		'activation-run-record-failed',
 	])
 	const page = await listRunRecords({ env, userId })
 	expect(page.runs).toHaveLength(1)

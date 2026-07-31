@@ -164,7 +164,9 @@ test('activation reads never throw when RunLog is missing or RPC fails', async (
 		listActivationMilestones({ env: envWithoutBinding, userId: 'user-1' }),
 	).resolves.toEqual([])
 
-	mocks.listPackageRunSuccesses.mockRejectedValueOnce(new Error('do unavailable'))
+	mocks.listPackageRunSuccesses.mockRejectedValueOnce(
+		new Error('do unavailable'),
+	)
 	mocks.listActivationMilestones.mockRejectedValueOnce(
 		new Error('do unavailable'),
 	)

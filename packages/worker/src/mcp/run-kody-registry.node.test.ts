@@ -6,6 +6,11 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildKodyModuleBundle } from '#worker/package-runtime/module-graph.ts'
 import type * as ModuleGraph from '#worker/package-runtime/module-graph.ts'
+import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
+import type {
+	WorkflowProjectionRecord,
+	WorkflowProjectionUpsertInput,
+} from '#worker/run-records/service.ts'
 import {
 	buildKodyFns,
 	buildKodyProvider,
@@ -23,6 +28,129 @@ import {
 	type PersistedJobCallerContext,
 } from '#worker/jobs/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+
+/**
+ * User-scoped RunLog namespace stub (idFromName(userId) → per-user RPC), enough
+ * for workflow projection create/idempotency/active-count paths. Mirrors the
+ * package-invocations fake-RunLog pattern used elsewhere in node tests.
+ */
+function createFakeRunLogNamespace() {
+	const activeStatuses = new Set<string>(activeWorkflowStatusValues)
+	const stubs = new Map<
+		string,
+		{
+			projections: Map<string, WorkflowProjectionRecord>
+			rpc: {
+				upsertWorkflowProjection: (
+					input: WorkflowProjectionUpsertInput,
+				) => Promise<{ ok: true }>
+				getWorkflowProjection: (input: {
+					id: string
+				}) => Promise<WorkflowProjectionRecord | null>
+				findWorkflowProjectionByIdempotencyKey: (input: {
+					idempotencyKey: string
+				}) => Promise<WorkflowProjectionRecord | null>
+				listWorkflowProjections: (input: {
+					limit?: number | null
+					cursor?: string | null
+					status?: string | null
+				}) => Promise<{
+					projections: Array<WorkflowProjectionRecord>
+					nextCursor: string | null
+				}>
+				countActiveWorkflowProjections: () => Promise<{ count: number }>
+			}
+		}
+	>()
+
+	function stubFor(name: string) {
+		const existing = stubs.get(name)
+		if (existing) return existing
+		const projections = new Map<string, WorkflowProjectionRecord>()
+		const rpc = {
+			async upsertWorkflowProjection(input: WorkflowProjectionUpsertInput) {
+				const now = new Date().toISOString()
+				const prior = projections.get(input.id) ?? null
+				if (!prior) {
+					projections.set(input.id, {
+						id: input.id,
+						bindingName: input.bindingName,
+						sourceType: input.sourceType,
+						packageId: input.packageId ?? null,
+						kodyId: input.kodyId ?? null,
+						sourceId: input.sourceId ?? null,
+						workflowName: input.workflowName,
+						exportName: input.exportName ?? null,
+						idempotencyKey: input.idempotencyKey,
+						runAt: input.runAt,
+						planDate: input.planDate ?? null,
+						status: input.status ?? null,
+						createdAt: input.createdAt?.trim() || now,
+						updatedAt: input.updatedAt?.trim() || now,
+						completedAt: input.completedAt ?? null,
+						lastError: input.lastError ?? null,
+					})
+					return { ok: true as const }
+				}
+				projections.set(input.id, {
+					...prior,
+					status: input.status ?? null,
+					updatedAt: input.updatedAt?.trim() || now,
+					completedAt: input.completedAt ?? prior.completedAt,
+					lastError: input.lastError ?? prior.lastError,
+				})
+				return { ok: true as const }
+			},
+			async getWorkflowProjection(input: { id: string }) {
+				return projections.get(input.id) ?? null
+			},
+			async findWorkflowProjectionByIdempotencyKey(input: {
+				idempotencyKey: string
+			}) {
+				const key = input.idempotencyKey.trim()
+				if (!key) return null
+				const matches = [...projections.values()]
+					.filter(
+						(row) => row.idempotencyKey === key && row.status !== 'creating',
+					)
+					.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+				return matches[0] ?? null
+			},
+			async listWorkflowProjections(input: {
+				limit?: number | null
+				cursor?: string | null
+				status?: string | null
+			}) {
+				const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
+				const rows = [...projections.values()]
+					.filter((row) => (input.status ? row.status === input.status : true))
+					.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+				return {
+					projections: rows.slice(0, limit),
+					nextCursor: null as string | null,
+				}
+			},
+			async countActiveWorkflowProjections() {
+				const count = [...projections.values()].filter(
+					(row) => row.status != null && activeStatuses.has(row.status),
+				).length
+				return { count }
+			},
+		}
+		const stub = { projections, rpc }
+		stubs.set(name, stub)
+		return stub
+	}
+
+	return {
+		stubs,
+		namespace: {
+			idFromName: (name: string) =>
+				({ toString: () => name }) as unknown as DurableObjectId,
+			get: (id: DurableObjectId) => stubFor(String(id)).rpc,
+		} as unknown as DurableObjectNamespace,
+	}
+}
 
 test('buildKodyFns rejects role-gated capabilities even when passed an unfiltered registry', async () => {
 	// The stub Env has no MCP server storage, so metadata loading warns
@@ -69,6 +197,7 @@ test('buildKodyFns rejects role-gated capabilities even when passed an unfiltere
 test('package workflow tools create instances from package context and honor caller overrides in runModuleWithRegistry', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
+	const runLog = createFakeRunLogNamespace()
 	const workflowTools = createWorkflowTools({
 		env: {
 			APP_DB: {
@@ -103,6 +232,7 @@ test('package workflow tools create instances from package context and honor cal
 					}
 				},
 			} as unknown as D1Database,
+			RUN_LOG: runLog.namespace,
 			DYNAMIC_CALLABLE_WORKFLOWS: {
 				get: async () => {
 					throw new Error('not found')
@@ -228,6 +358,7 @@ export default async function run() {
 test('runModuleWithRegistry queues inline workflows.create calls without runAt or idempotencyKey', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
+	const runLog = createFakeRunLogNamespace()
 	const env = {
 		APP_DB: {
 			prepare(query: string) {
@@ -246,6 +377,7 @@ test('runModuleWithRegistry queues inline workflows.create calls without runAt o
 				}
 			},
 		} as unknown as D1Database,
+		RUN_LOG: runLog.namespace,
 		DYNAMIC_CALLABLE_WORKFLOWS: {
 			get: async () => {
 				throw new Error('not found')
@@ -1545,6 +1677,7 @@ export default async function run() {
 test('runBundledModuleWithRegistry passes params and injects runtime helpers', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
+	const runLog = createFakeRunLogNamespace()
 	const workflowEnv = {
 		APP_DB: {
 			prepare(query: string) {
@@ -1563,6 +1696,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 				}
 			},
 		} as unknown as D1Database,
+		RUN_LOG: runLog.namespace,
 		DYNAMIC_CALLABLE_WORKFLOWS: {
 			get: async () => {
 				throw new Error('not found')

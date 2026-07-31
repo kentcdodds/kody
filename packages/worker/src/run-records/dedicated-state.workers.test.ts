@@ -444,7 +444,9 @@ test('activation counts same-package successes, excludes HTTP surfaces, and is i
 		expect.objectContaining({ packageId: 'pkg-b', successCount: 1 }),
 	])
 	expect(
-		(await listActivationMilestones({ env, userId })).map((row) => row.milestone),
+		(await listActivationMilestones({ env, userId })).map(
+			(row) => row.milestone,
+		),
 	).toEqual(['package_run_succeeded'])
 
 	await finishSuccess({ packageId: 'pkg-a', surface: 'webhook' })
@@ -584,9 +586,9 @@ test('retention prunes runs but never dedicated workflow/job/activation state', 
 	await finishRunRecord({ env, handle, status: 'success' })
 
 	const remainingRuns = await listRunRecords({ env, userId, limit: 100 })
-	expect(
-		remainingRuns.runs.every((run) => !run.id.startsWith('aged-')),
-	).toBe(true)
+	expect(remainingRuns.runs.every((run) => !run.id.startsWith('aged-'))).toBe(
+		true,
+	)
 
 	expect(
 		await getWorkflowProjection({ env, userId, id: 'wf-keep' }),
@@ -785,7 +787,9 @@ test('export pages dedicated state after runs and ledger; clearAll purges and re
 		truncated: false,
 		nextStartAfter: null,
 	})
-	expect(await getWorkflowProjection({ env, userId, id: 'wf-export' })).toBeNull()
+	expect(
+		await getWorkflowProjection({ env, userId, id: 'wf-export' }),
+	).toBeNull()
 	expect(
 		await getJobRunObservability({ env, userId, jobId: 'job-export' }),
 	).toBeNull()

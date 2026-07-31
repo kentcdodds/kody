@@ -1357,8 +1357,7 @@ class RunLogBase extends DurableObject<Env> {
 			typeof input.durationMs === 'number' && Number.isFinite(input.durationMs)
 				? Math.max(0, Math.trunc(input.durationMs))
 				: null
-		const error =
-			input.status === 'error' ? (input.error?.trim() || null) : null
+		const error = input.status === 'error' ? input.error?.trim() || null : null
 		const successDelta = input.status === 'success' ? 1 : 0
 		const errorDelta = input.status === 'error' ? 1 : 0
 		this.ctx.storage.sql.exec(
@@ -1391,7 +1390,9 @@ class RunLogBase extends DurableObject<Env> {
 			)
 			.toArray()[0]
 		if (!row) {
-			throw new Error(`job_run_observability row missing after upsert: ${jobId}`)
+			throw new Error(
+				`job_run_observability row missing after upsert: ${jobId}`,
+			)
 		}
 		return mapJobRunObservabilityRow(row)
 	}
@@ -1419,14 +1420,12 @@ class RunLogBase extends DurableObject<Env> {
 			const jobId = input.run.jobId?.trim() || null
 			if (!jobId) return
 			const ranAt =
-				input.run.finishedAt ??
-				input.run.updatedAt ??
-				new Date().toISOString()
+				input.run.finishedAt ?? input.run.updatedAt ?? new Date().toISOString()
 			const error =
 				input.run.status === 'error'
-					? (input.run.errorMessage?.trim() ||
+					? input.run.errorMessage?.trim() ||
 						input.run.errorName?.trim() ||
-						null)
+						null
 					: null
 			this.writeJobRunObservabilityOutcome({
 				jobId,
@@ -1758,9 +1757,7 @@ class RunLogBase extends DurableObject<Env> {
 		return row ? mapWorkflowProjectionRow(row) : null
 	}
 
-	async listWorkflowProjections(
-		input: WorkflowProjectionListInput,
-	): Promise<{
+	async listWorkflowProjections(input: WorkflowProjectionListInput): Promise<{
 		projections: Array<WorkflowProjectionRecord>
 		nextCursor: string | null
 	}> {
@@ -1839,9 +1836,7 @@ class RunLogBase extends DurableObject<Env> {
 	}): Promise<Array<JobRunObservabilityRecord>> {
 		const ids = [
 			...new Set(
-				input.jobIds
-					.map((id) => id.trim())
-					.filter((id) => id.length > 0),
+				input.jobIds.map((id) => id.trim()).filter((id) => id.length > 0),
 			),
 		]
 		if (ids.length === 0) return []
@@ -2082,7 +2077,9 @@ class RunLogBase extends DurableObject<Env> {
 			if (cursor.startsWith(exportWorkflowProjectionsCursorPrefix)) {
 				return {
 					phase: 'workflow-projections',
-					startAfterId: cursor.slice(exportWorkflowProjectionsCursorPrefix.length),
+					startAfterId: cursor.slice(
+						exportWorkflowProjectionsCursorPrefix.length,
+					),
 				}
 			}
 			if (cursor.startsWith(exportJobRunObservabilityCursorPrefix)) {
@@ -2096,7 +2093,9 @@ class RunLogBase extends DurableObject<Env> {
 			if (cursor.startsWith(exportPackageRunSuccessesCursorPrefix)) {
 				return {
 					phase: 'package-run-successes',
-					startAfterId: cursor.slice(exportPackageRunSuccessesCursorPrefix.length),
+					startAfterId: cursor.slice(
+						exportPackageRunSuccessesCursorPrefix.length,
+					),
 				}
 			}
 			if (cursor.startsWith(exportActivationMilestonesCursorPrefix)) {
@@ -2209,9 +2208,7 @@ class RunLogBase extends DurableObject<Env> {
 					continue
 				}
 				const prefix = cursorPrefixForPhase(currentPhase)
-				const nextStartAfter = prefix
-					? `${prefix}${page.nextId}`
-					: page.nextId
+				const nextStartAfter = prefix ? `${prefix}${page.nextId}` : page.nextId
 				// Refuse to emit the inbound cursor again (would spin clients).
 				if (nextStartAfter === startAfterRaw) {
 					phaseIndex += 1

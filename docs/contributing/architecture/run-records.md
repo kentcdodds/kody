@@ -367,11 +367,11 @@ The same per-user `RunLog` DO also stores **correctness and observability state
 that must survive run-history pruning**. These tables are never pruned by the
 run retention passes; only account deletion `clearAll` removes them.
 
-| Table | Role |
-| ----- | ---- |
-| `workflow_projections` | Workflow idempotency + concurrent-workflow entitlements. Mirrors expand-phase D1 `workflow_runs` (minus `user_id`) and adds `binding_name` (typically `DYNAMIC_CALLABLE_WORKFLOWS`) so multiple bindings project correctly. |
-| `job_run_observability` | Per-job terminal outcomes and counters for Activity and MCP reads. Not a substitute for D1 schedule metadata; D1 `jobs.last_run_at` remains for the hourly job-retention sweeper only. |
-| `package_run_successes` | Per-package success counters toward activation. |
+| Table                   | Role                                                                                                                                                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workflow_projections`  | Workflow idempotency + concurrent-workflow entitlements. Mirrors expand-phase D1 `workflow_runs` (minus `user_id`) and adds `binding_name` (typically `DYNAMIC_CALLABLE_WORKFLOWS`) so multiple bindings project correctly.                   |
+| `job_run_observability` | Per-job terminal outcomes and counters for Activity and MCP reads. Not a substitute for D1 schedule metadata; D1 `jobs.last_run_at` remains for the hourly job-retention sweeper only.                                                        |
+| `package_run_successes` | Per-package success counters toward activation.                                                                                                                                                                                               |
 | `activation_milestones` | One row each for `package_run_succeeded` and `package_activated` (`package_id` on the second). High-frequency HTTP surfaces (`webhook`, `app_fetch`) do not count; activation means two unattended capability successes for the same package. |
 
 During the expand phase, workflow writes still project into D1 `workflow_runs`
