@@ -15,7 +15,7 @@ test('waiting list signup from home banner and signup page', async ({
 		banner.getByText("You're on the list. We'll be in touch."),
 	).toBeVisible()
 
-	await page.goto('/signup')
+	await page.goto('/signup?panel=waiting-list')
 	await expect(
 		page.getByRole('region', { name: 'Join the waiting list' }),
 	).toHaveCount(0)

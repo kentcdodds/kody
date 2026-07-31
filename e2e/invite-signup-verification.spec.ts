@@ -134,9 +134,8 @@ test('admin invite signup and email verification happy path', async ({
 	).toHaveCount(0)
 
 	await page.context().clearCookies()
-	await page.goto('/signup')
+	await page.goto('/signup?invite=')
 	clearAuthRateLimitsInE2eDatabase()
-	await page.getByRole('button', { name: 'I have a code' }).click()
 	await page.getByLabel('Username').fill(invitedUsername)
 	await page.getByLabel('Email').fill(invitedEmail)
 	await page.getByLabel('Password').fill(invitedPassword)
