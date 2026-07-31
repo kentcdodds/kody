@@ -68,8 +68,10 @@ async function seedPlannedStorageUser(input: {
 }) {
 	const userId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
-		VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO users (
+			username, email, password_hash, email_verified_at, plan,
+			stable_user_id, d1_storage_bytes, d1_storage_bytes_updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			`storage-${crypto.randomUUID().slice(0, 8)}`,
@@ -78,6 +80,8 @@ async function seedPlannedStorageUser(input: {
 			new Date().toISOString(),
 			input.plan,
 			userId,
+			input.rawSize,
+			new Date().toISOString(),
 		)
 		.run()
 	await env.APP_DB.prepare(

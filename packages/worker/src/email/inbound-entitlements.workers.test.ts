@@ -104,6 +104,14 @@ async function insertStoredMessageBytes(userId: string, rawSize: number) {
 	)
 		.bind(`storage-bytes-${crypto.randomUUID()}`, userId, rawSize, now, now)
 		.run()
+	await env.APP_DB.prepare(
+		`UPDATE users
+		SET d1_storage_bytes = ?,
+			d1_storage_bytes_updated_at = ?
+		WHERE stable_user_id = ?`,
+	)
+		.bind(rawSize, now, userId)
+		.run()
 }
 
 async function readRejectionEvents(userId: string) {

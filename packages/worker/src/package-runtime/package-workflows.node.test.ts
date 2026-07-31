@@ -1528,12 +1528,12 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 })
 
 test('createDynamicCallableWorkflow enforces the per-user concurrent workflow limit', async () => {
-	const maxLimit = planLimits.max.maxConcurrentWorkflows
+	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	let error: unknown
 	try {
 		await createDynamicCallableWorkflow({
 			env: {
-				APP_DB: createWorkflowRunsDatabase({ activeCount: maxLimit }),
+				APP_DB: createWorkflowRunsDatabase({ activeCount: freeLimit }),
 				DYNAMIC_CALLABLE_WORKFLOWS: createStatefulWorkflowBinding().workflow,
 			} as Env,
 			userId: 'user-1',
@@ -1553,13 +1553,13 @@ test('createDynamicCallableWorkflow enforces the per-user concurrent workflow li
 		)
 	}
 	expect(error.message).toContain(
-		`your "max" plan allows at most ${maxLimit} concurrent workflows`,
+		`your "free" plan allows at most ${freeLimit} concurrent workflows`,
 	)
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'concurrent_workflows',
-		plan: 'max',
-		limit: maxLimit,
+		plan: 'free',
+		limit: freeLimit,
 	})
 })
 

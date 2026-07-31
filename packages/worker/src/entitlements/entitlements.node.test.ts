@@ -438,10 +438,10 @@ test('getCachedUserPlan caches per db binding and never caches failures', async 
 	).toBe('free')
 
 	// Anonymous / invalid ids short-circuit without touching the cache or D1.
-	expect(await getCachedUserPlan(db, { userId, email: null })).toBe('max')
+	expect(await getCachedUserPlan(db, { userId, email: null })).toBe('free')
 	expect(
 		await getCachedUserPlan(db, { userId: 'user-1', email: plannedEmail }),
-	).toBe('max')
+	).toBe('free')
 
 	// Failures are not pinned for the TTL: the next call retries D1.
 	let firstCall = true
@@ -569,10 +569,10 @@ test('assertWithinEntitlement passes under the limit, throws at it, and enforces
 	expect(error.message).toBe(buildEntitlementLimitMessage(error.details))
 })
 
-test('assertWithinEntitlement enforces max concurrent workflow limit without email', async () => {
-	const maxLimit = planLimits.max.maxConcurrentWorkflows
+test('assertWithinEntitlement enforces free concurrent workflow limit without email', async () => {
+	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	const { db } = createEntitlementsTestDb({
-		counts: { workflow_runs: maxLimit },
+		counts: { workflow_runs: freeLimit },
 	})
 	const error = await assertWithinEntitlement({
 		db,
@@ -587,9 +587,9 @@ test('assertWithinEntitlement enforces max concurrent workflow limit without ema
 		throw new Error('Expected an EntitlementLimitError.')
 	}
 	expect(error.details).toMatchObject({
-		plan: 'max',
-		limit: maxLimit,
-		current: maxLimit,
+		plan: 'free',
+		limit: freeLimit,
+		current: freeLimit,
 	})
 })
 
@@ -769,9 +769,9 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 	).toBe(0)
 })
 
-test('missing-email lookups resolve to max and honor max email caps', async () => {
+test('missing-email lookups fail closed and honor free email caps', async () => {
 	const { db, counters } = createEntitlementsTestDb()
-	const sendLimit = maxPlanEmailLimits.email_sends_per_day
+	const sendLimit = planLimits.free.maxEmailSendsPerDay
 	const now = new Date('2026-07-05T15:00:00.000Z')
 	for (let index = 0; index < sendLimit; index += 1) {
 		await consumeDailyEntitlement({
@@ -793,7 +793,7 @@ test('missing-email lookups resolve to max and honor max email caps', async () =
 		}),
 	).rejects.toBeInstanceOf(EntitlementLimitError)
 
-	const receiveLimit = maxPlanEmailLimits.email_receives_per_day
+	const receiveLimit = planLimits.free.maxEmailReceivesPerDay
 	for (let index = 0; index < receiveLimit; index += 1) {
 		await consumeDailyEntitlement({
 			db,
@@ -823,7 +823,7 @@ test('missing-email lookups resolve to max and honor max email caps', async () =
 	expect(denied.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'email_receives_per_day',
-		plan: 'max',
+		plan: 'free',
 		limit: receiveLimit,
 		current: receiveLimit,
 	})

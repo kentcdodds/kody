@@ -204,9 +204,9 @@ test('mutating entitlement probes only the target bucket when stored estimates e
 test('stored bucket estimates count toward the storage-byte limit without probes', async () => {
 	mockModule.getEstimatedBytes.mockClear()
 	mockModule.listUserStorageBucketEstimates.mockClear()
-	const maxStorageBytes = planLimits.max.maxStorageBytes
+	const freeStorageBytes = planLimits.free.maxStorageBytes
 	mockModule.listUserStorageBucketEstimates.mockResolvedValueOnce([
-		{ storageId: 'bucket-a', estimatedBytes: maxStorageBytes },
+		{ storageId: 'bucket-a', estimatedBytes: freeStorageBytes },
 	])
 
 	const denied = await assertStorageRunnerWriteWithinEntitlement({
@@ -224,9 +224,9 @@ test('stored bucket estimates count toward the storage-byte limit without probes
 	}
 	expect(denied.details).toMatchObject({
 		resource: 'storage_bytes',
-		limit: maxStorageBytes,
+		limit: freeStorageBytes,
 		// bucket-a's stored estimate plus the live probe of the target bucket.
-		current: maxStorageBytes + 64,
+		current: freeStorageBytes + 64,
 	})
 	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(1)
 })

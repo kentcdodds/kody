@@ -763,11 +763,10 @@ export async function assertWithinStorageBytesEntitlement(input: {
 		db: input.db,
 		userId: input.userId,
 	})
-	if (current + requested <= limit) {
-		throw new Error(
-			'Cannot account for D1 storage without a persisted user identity.',
-		)
-	}
+	// Synthetic contexts have no users row to reserve against. Their plan has
+	// already failed closed to `free`; preserve that finite limit without
+	// inventing a user-owned counter row that reconciliation cannot resolve.
+	if (current + requested <= limit) return
 	throw new EntitlementLimitError({
 		resource: 'storage_bytes',
 		plan,
