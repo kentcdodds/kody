@@ -68,7 +68,7 @@ test('the operator unseal tool round-trips sealed key bytes and fails closed', a
 				'--output',
 				mismatchedOutputPath,
 			]),
-		).rejects.toThrow(/canonical escrow JSON/)
+		).rejects.toThrow(/invalid versioned shape/)
 		await expect(stat(mismatchedOutputPath)).rejects.toMatchObject({
 			code: 'ENOENT',
 		})

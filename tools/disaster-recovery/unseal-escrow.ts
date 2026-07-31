@@ -317,12 +317,13 @@ export async function main(
 				secretAccessKey: requiredEnv(env, 'DR_BACKUP_SECRET_ACCESS_KEY'),
 				objectKey,
 			})
-	let blob: SealedEscrowBlob
+	let inputValue: unknown
 	try {
-		blob = parseSealedEscrowBlob(JSON.parse(body))
+		inputValue = JSON.parse(body)
 	} catch {
-		throw new Error('Sealed escrow input is not valid canonical escrow JSON')
+		throw new Error('Sealed escrow input is not valid JSON')
 	}
+	const blob: SealedEscrowBlob = parseSealedEscrowBlob(inputValue)
 	const secretValue = unsealEscrowSecret(blob, passphrase)
 	await writeRecoveredSecret(secretValue, outputPath)
 	return secretValue
