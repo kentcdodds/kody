@@ -70,6 +70,7 @@ export async function sweepStaleInboundDeliveries(input: {
 				FROM email_delivery_events
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'received'
+					AND needs_effect_reconcile = 1
 					AND json_extract(detail_json, '$.fingerprint') IS NOT NULL
 					AND (
 						(

@@ -186,9 +186,38 @@ export async function readIdempotentInboundEmailUsage(input: {
 		input.db
 			.prepare(
 				`UPDATE email_delivery_events
-				SET detail_json = json_set(
-					detail_json,
-					'$.usageMonth', COALESCE(
+				SET
+					detail_json = json_set(
+						detail_json,
+						'$.usageMonth', COALESCE(
+							json_extract(detail_json, '$.usageMonth'),
+							(
+								SELECT substr(
+									COALESCE(message.received_at, message.created_at),
+									1,
+									7
+								)
+								FROM email_messages message
+								WHERE message.id = email_delivery_events.message_id
+									AND message.user_id = email_delivery_events.user_id
+							)
+						),
+						'$.usageBytes', COALESCE(
+							json_extract(detail_json, '$.usageBytes'),
+							(
+								SELECT COALESCE(message.raw_size, 0)
+								FROM email_messages message
+								WHERE message.id = email_delivery_events.message_id
+									AND message.user_id = email_delivery_events.user_id
+							)
+						)
+					),
+					usage_effect_recorded_at = COALESCE(
+						usage_effect_recorded_at,
+						json_extract(detail_json, '$.usageEffectRecordedAt')
+					),
+					usage_month = COALESCE(
+						usage_month,
 						json_extract(detail_json, '$.usageMonth'),
 						(
 							SELECT substr(
@@ -201,7 +230,8 @@ export async function readIdempotentInboundEmailUsage(input: {
 								AND message.user_id = email_delivery_events.user_id
 						)
 					),
-					'$.usageBytes', COALESCE(
+					usage_bytes = COALESCE(
+						usage_bytes,
 						json_extract(detail_json, '$.usageBytes'),
 						(
 							SELECT COALESCE(message.raw_size, 0)
@@ -209,10 +239,47 @@ export async function readIdempotentInboundEmailUsage(input: {
 							WHERE message.id = email_delivery_events.message_id
 								AND message.user_id = email_delivery_events.user_id
 						)
-					)
-				)
+					),
+					usage_duration_ms = COALESCE(
+						usage_duration_ms,
+						json_extract(detail_json, '$.usageDurationMs'),
+						0
+					),
+					needs_effect_reconcile = CASE
+						WHEN json_extract(
+							detail_json,
+							'$.subscriptionEffectState'
+						) IN ('complete', 'dead-letter')
+							AND COALESCE(
+								usage_month,
+								json_extract(detail_json, '$.usageMonth'),
+								(
+									SELECT substr(
+										COALESCE(message.received_at, message.created_at),
+										1,
+										7
+									)
+									FROM email_messages message
+									WHERE message.id = email_delivery_events.message_id
+										AND message.user_id = email_delivery_events.user_id
+								)
+							) IS NOT NULL
+							AND COALESCE(
+								usage_bytes,
+								json_extract(detail_json, '$.usageBytes'),
+								(
+									SELECT COALESCE(message.raw_size, 0)
+									FROM email_messages message
+									WHERE message.id = email_delivery_events.message_id
+										AND message.user_id = email_delivery_events.user_id
+								)
+							) IS NOT NULL
+						THEN 0
+						ELSE 1
+					END
 				WHERE provider = 'cloudflare-email-routing'
 					AND event_type = 'received'
+					AND needs_effect_reconcile = 1
 					AND (
 						email_delivery_events.user_id = 'system:email'
 						OR EXISTS (
@@ -226,13 +293,20 @@ export async function readIdempotentInboundEmailUsage(input: {
 						'$.usageEffectRecordedAt'
 					) IS NOT NULL
 					AND (
-						json_extract(detail_json, '$.usageMonth') IS NULL
-						OR json_extract(detail_json, '$.usageBytes') IS NULL
+						usage_effect_recorded_at IS NULL
+						OR usage_month IS NULL
+						OR usage_bytes IS NULL
 					)
-					AND EXISTS (
-						SELECT 1 FROM email_messages message
-						WHERE message.id = email_delivery_events.message_id
-							AND message.user_id = email_delivery_events.user_id
+					AND (
+						(
+							json_extract(detail_json, '$.usageMonth') IS NOT NULL
+							AND json_extract(detail_json, '$.usageBytes') IS NOT NULL
+						)
+						OR EXISTS (
+							SELECT 1 FROM email_messages message
+							WHERE message.id = email_delivery_events.message_id
+								AND message.user_id = email_delivery_events.user_id
+						)
 					)`,
 			)
 			.bind()
@@ -244,16 +318,16 @@ export async function readIdempotentInboundEmailUsage(input: {
 				`SELECT
 					event.user_id,
 					'email_received' AS metric,
-					json_extract(event.detail_json, '$.usageMonth') AS month,
+					event.usage_month AS month,
 					COUNT(*) AS event_count,
 					0 AS error_count,
 					SUM(COALESCE(
-						json_extract(event.detail_json, '$.usageDurationMs'),
+						event.usage_duration_ms,
 						0
 					)) AS total_duration_ms,
 					0 AS total_cpu_ms,
 					SUM(COALESCE(
-						json_extract(event.detail_json, '$.usageBytes'),
+						event.usage_bytes,
 						0
 					)) AS total_bytes
 				FROM email_delivery_events event
@@ -267,14 +341,8 @@ export async function readIdempotentInboundEmailUsage(input: {
 								AND deleting_at IS NULL
 						)
 					)
-					AND json_extract(
-						event.detail_json,
-						'$.usageEffectRecordedAt'
-					) IS NOT NULL
-					AND json_extract(
-						event.detail_json,
-						'$.usageMonth'
-					) IN (?, ?)
+					AND event.usage_effect_recorded_at IS NOT NULL
+					AND event.usage_month IN (?, ?)
 				GROUP BY event.user_id, month`,
 			)
 			.bind(...input.months)

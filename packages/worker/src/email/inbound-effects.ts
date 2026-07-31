@@ -77,10 +77,29 @@ async function recordInboundUsageEffect(input: {
 				),
 				input.env.APP_DB.prepare(
 					`UPDATE email_delivery_events
-					SET detail_json = json_remove(
-						json_set(detail_json, '$.usageEffectRecordedAt', ?),
-						'$.usageEffectRetryAt'
-					)
+					SET
+						detail_json = json_remove(
+							json_set(
+								detail_json,
+								'$.usageEffectRecordedAt', ?,
+								'$.usageMonth', ?,
+								'$.usageBytes', ?,
+								'$.usageDurationMs', ?
+							),
+							'$.usageEffectRetryAt'
+						),
+						usage_effect_recorded_at = ?,
+						usage_month = ?,
+						usage_bytes = ?,
+						usage_duration_ms = ?,
+						needs_effect_reconcile = CASE
+							WHEN json_extract(
+								detail_json,
+								'$.subscriptionEffectState'
+							) IN ('complete', 'dead-letter')
+							THEN 0
+							ELSE 1
+						END
 					WHERE id = ?
 						AND user_id = ?
 						AND event_type = 'received'
@@ -93,6 +112,13 @@ async function recordInboundUsageEffect(input: {
 						AND (? IS NULL OR json_extract(detail_json, '$.finalizationToken') = ?)`,
 				).bind(
 					input.now.toISOString(),
+					month,
+					Math.round(input.usageBytes),
+					Math.round(input.durationMs ?? 0),
+					input.now.toISOString(),
+					month,
+					Math.round(input.usageBytes),
+					Math.round(input.durationMs ?? 0),
 					input.deliveryId,
 					input.userId,
 					input.now.toISOString(),
@@ -112,7 +138,26 @@ async function recordInboundUsageEffect(input: {
 			// best-effort metering semantics without poisoning the outbox.
 			await input.env.APP_DB.prepare(
 				`UPDATE email_delivery_events
-				SET detail_json = json_set(detail_json, '$.usageEffectRecordedAt', ?)
+				SET
+					detail_json = json_set(
+						detail_json,
+						'$.usageEffectRecordedAt', ?,
+						'$.usageMonth', ?,
+						'$.usageBytes', ?,
+						'$.usageDurationMs', ?
+					),
+					usage_effect_recorded_at = ?,
+					usage_month = ?,
+					usage_bytes = ?,
+					usage_duration_ms = ?,
+					needs_effect_reconcile = CASE
+						WHEN json_extract(
+							detail_json,
+							'$.subscriptionEffectState'
+						) IN ('complete', 'dead-letter')
+						THEN 0
+						ELSE 1
+					END
 				WHERE id = ?
 					AND user_id = ?
 					AND event_type = 'received'
@@ -122,6 +167,13 @@ async function recordInboundUsageEffect(input: {
 			)
 				.bind(
 					input.now.toISOString(),
+					month,
+					Math.round(input.usageBytes),
+					Math.round(input.durationMs ?? 0),
+					input.now.toISOString(),
+					month,
+					Math.round(input.usageBytes),
+					Math.round(input.durationMs ?? 0),
 					input.deliveryId,
 					input.userId,
 					finalizationToken,
@@ -133,10 +185,29 @@ async function recordInboundUsageEffect(input: {
 	}
 	await input.env.APP_DB.prepare(
 		`UPDATE email_delivery_events
-		SET detail_json = json_remove(
-			json_set(detail_json, '$.usageEffectRecordedAt', ?),
-			'$.usageEffectRetryAt'
-		)
+		SET
+			detail_json = json_remove(
+				json_set(
+					detail_json,
+					'$.usageEffectRecordedAt', ?,
+					'$.usageMonth', ?,
+					'$.usageBytes', ?,
+					'$.usageDurationMs', ?
+				),
+				'$.usageEffectRetryAt'
+			),
+			usage_effect_recorded_at = ?,
+			usage_month = ?,
+			usage_bytes = ?,
+			usage_duration_ms = ?,
+			needs_effect_reconcile = CASE
+				WHEN json_extract(
+					detail_json,
+					'$.subscriptionEffectState'
+				) IN ('complete', 'dead-letter')
+				THEN 0
+				ELSE 1
+			END
 		WHERE id = ?
 			AND user_id = ?
 			AND event_type = 'received'
@@ -146,6 +217,13 @@ async function recordInboundUsageEffect(input: {
 	)
 		.bind(
 			input.now.toISOString(),
+			input.usageMonth,
+			Math.round(input.usageBytes),
+			Math.round(input.durationMs ?? 0),
+			input.now.toISOString(),
+			input.usageMonth,
+			Math.round(input.usageBytes),
+			Math.round(input.durationMs ?? 0),
 			input.deliveryId,
 			input.userId,
 			finalizationToken,
@@ -200,11 +278,21 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 	if (!message) {
 		await input.env.APP_DB.prepare(
 			`UPDATE email_delivery_events
-			SET detail_json = json_set(
-				detail_json,
-				'$.subscriptionEffectState', 'complete',
-				'$.subscriptionEffectMissingMessageAt', ?
-			)
+			SET
+				detail_json = json_set(
+					detail_json,
+					'$.subscriptionEffectState', 'complete',
+					'$.subscriptionEffectMissingMessageAt', ?
+				),
+				needs_effect_reconcile = CASE
+					WHEN usage_effect_recorded_at IS NOT NULL
+						OR json_extract(
+							detail_json,
+							'$.usageEffectSuppressedAt'
+						) IS NOT NULL
+					THEN 0
+					ELSE 1
+				END
 			WHERE id = ?
 				AND user_id = ?
 				AND event_type = 'received'
@@ -275,20 +363,30 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 		) {
 			await input.env.APP_DB.prepare(
 				`UPDATE email_delivery_events
-				SET detail_json = json_remove(
-					json_remove(
+				SET
+					detail_json = json_remove(
 						json_remove(
-							json_set(
-								detail_json,
-								'$.subscriptionEffectState', 'complete',
-								'$.subscriptionEffectSuppressedQuarantineAt', ?
+							json_remove(
+								json_set(
+									detail_json,
+									'$.subscriptionEffectState', 'complete',
+									'$.subscriptionEffectSuppressedQuarantineAt', ?
+								),
+								'$.subscriptionEffectLease'
 							),
-							'$.subscriptionEffectLease'
+							'$.subscriptionEffectLeaseAt'
 						),
-						'$.subscriptionEffectLeaseAt'
+						'$.subscriptionEffectRetryAt'
 					),
-					'$.subscriptionEffectRetryAt'
-				)
+					needs_effect_reconcile = CASE
+						WHEN usage_effect_recorded_at IS NOT NULL
+							OR json_extract(
+								detail_json,
+								'$.usageEffectSuppressedAt'
+							) IS NOT NULL
+						THEN 0
+						ELSE 1
+					END
 				WHERE id = ?
 					AND user_id = ?
 					AND json_extract(detail_json, '$.subscriptionEffectLease') = ?`,
@@ -313,16 +411,26 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 		}
 		await input.env.APP_DB.prepare(
 			`UPDATE email_delivery_events
-			SET detail_json = json_remove(
-				json_remove(
+			SET
+				detail_json = json_remove(
 					json_remove(
-						json_set(detail_json, '$.subscriptionEffectState', 'complete'),
-						'$.subscriptionEffectLease'
+						json_remove(
+							json_set(detail_json, '$.subscriptionEffectState', 'complete'),
+							'$.subscriptionEffectLease'
+						),
+						'$.subscriptionEffectLeaseAt'
 					),
-					'$.subscriptionEffectLeaseAt'
+					'$.subscriptionEffectRetryAt'
 				),
-				'$.subscriptionEffectRetryAt'
-			)
+				needs_effect_reconcile = CASE
+					WHEN usage_effect_recorded_at IS NOT NULL
+						OR json_extract(
+							detail_json,
+							'$.usageEffectSuppressedAt'
+						) IS NOT NULL
+					THEN 0
+					ELSE 1
+				END
 			WHERE id = ?
 				AND user_id = ?
 				AND json_extract(detail_json, '$.subscriptionEffectLease') = ?`,
@@ -338,20 +446,33 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 		const deadLettered = failure.deadLettered
 		await input.env.APP_DB.prepare(
 			`UPDATE email_delivery_events
-			SET detail_json = json_remove(
-				json_remove(
-					json_set(
-						detail_json,
-						'$.subscriptionEffectState', ?,
-						'$.subscriptionEffectRetryAt', ?,
-						'$.subscriptionEffectAttemptCount', ?,
-						'$.subscriptionEffectLastError', ?,
-						'$.subscriptionEffectDeadLetterAt', ?
+			SET
+				detail_json = json_remove(
+					json_remove(
+						json_set(
+							detail_json,
+							'$.subscriptionEffectState', ?,
+							'$.subscriptionEffectRetryAt', ?,
+							'$.subscriptionEffectAttemptCount', ?,
+							'$.subscriptionEffectLastError', ?,
+							'$.subscriptionEffectDeadLetterAt', ?
+						),
+						'$.subscriptionEffectLease'
 					),
-					'$.subscriptionEffectLease'
+					'$.subscriptionEffectLeaseAt'
 				),
-				'$.subscriptionEffectLeaseAt'
-			)
+				needs_effect_reconcile = CASE
+					WHEN ?
+						AND (
+							usage_effect_recorded_at IS NOT NULL
+							OR json_extract(
+								detail_json,
+								'$.usageEffectSuppressedAt'
+							) IS NOT NULL
+						)
+					THEN 0
+					ELSE 1
+				END
 			WHERE id = ?
 				AND user_id = ?
 				AND json_extract(detail_json, '$.subscriptionEffectLease') = ?`,
@@ -364,6 +485,7 @@ async function processInboundDeliveryEffectsWithLeaseHeld(input: {
 				nextAttempt,
 				error instanceof Error ? error.message : String(error),
 				deadLettered ? now.toISOString() : null,
+				deadLettered,
 				delivery.deliveryId,
 				input.userId,
 				effectLease,
@@ -411,6 +533,7 @@ export async function reconcileInboundDeliveryEffectsForUser(input: {
 		WHERE user_id = ?
 			AND provider = 'cloudflare-email-routing'
 			AND event_type = 'received'
+			AND needs_effect_reconcile = 1
 			AND json_extract(detail_json, '$.fingerprint') IS NOT NULL
 			AND (
 				(

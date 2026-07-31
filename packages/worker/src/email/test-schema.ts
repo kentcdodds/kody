@@ -146,8 +146,25 @@ ON email_sender_rules(user_id, kind, value);`,
 	provider_message_id TEXT,
 	provider_event_id TEXT,
 	detail_json TEXT NOT NULL DEFAULT '{}',
+	needs_effect_reconcile INTEGER NOT NULL DEFAULT 1 CHECK (
+		needs_effect_reconcile IN (0, 1)
+	),
+	usage_effect_recorded_at TEXT,
+	usage_month TEXT,
+	usage_bytes INTEGER,
+	usage_duration_ms INTEGER,
 	created_at TEXT NOT NULL
 );`,
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_pending_effects
+ON email_delivery_events(user_id, created_at)
+WHERE provider = 'cloudflare-email-routing'
+	AND event_type = 'received'
+	AND needs_effect_reconcile = 1;`,
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_recorded_usage_month
+ON email_delivery_events(usage_month, user_id)
+WHERE provider = 'cloudflare-email-routing'
+	AND event_type = 'received'
+	AND usage_effect_recorded_at IS NOT NULL;`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_messages_provider_message_id
 ON email_messages(provider_message_id)
 WHERE direction = 'outbound'
