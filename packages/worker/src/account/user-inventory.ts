@@ -164,7 +164,6 @@ export async function listAccountUserStorageIds(input: {
 		jobRows,
 		archivedRows,
 		bucketIds,
-		packageRows,
 		packageServices,
 		runRecordStorageIds,
 	] = await Promise.all([
@@ -182,11 +181,6 @@ export async function listAccountUserStorageIds(input: {
 			env: input.env,
 			userId: input.userId,
 		}),
-		input.env.APP_DB.prepare(
-			`SELECT id FROM saved_packages WHERE user_id = ? AND has_app = 1`,
-		)
-			.bind(input.userId)
-			.all<{ id: string }>(),
 		input.packageServices
 			? Promise.resolve([...input.packageServices])
 			: listAccountUserPackageServices(input),
@@ -196,7 +190,6 @@ export async function listAccountUserStorageIds(input: {
 		...(jobRows.results ?? []).map((row) => row.storage_id),
 		...(archivedRows.results ?? []).map((row) => row.storage_id),
 		...bucketIds,
-		...(packageRows.results ?? []).map((row) => row.id),
 		...packageServices.map((service) =>
 			buildPackageServiceStorageId(service.packageId, service.serviceName),
 		),

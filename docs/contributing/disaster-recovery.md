@@ -217,16 +217,16 @@ Restore rebuilds these; do not treat them as recovery media:
 - R2 restore puts sealed objects back by key; it does not sweep orphans that
   appeared after the sealed day.
 - **StorageRunner inventory** unions authoritative D1 sources: `jobs`,
-  `archived_job_artifacts`, `saved_packages` (app packages), the
-  `user_storage_buckets` registry (including ad-hoc / execute buckets), and
-  `package_service_states` (projected service storage ids). Platform DR has only
-  a `D1Database`, so it does **not** walk package manifests or enumerate
-  `RunLog` Durable Objects. A service whose Durable Object never projected into
-  `package_service_states` is therefore absent from sealed-day inventory until
-  it heartbeats or transitions; account deletion/export cover those via manifest
-  enumeration. Buckets known only inside a user's `RunLog` (and never registered
-  in `user_storage_buckets` or an entity table) remain outside DR inventory by
-  design — RunLog is observability, not a canonical store.
+  `archived_job_artifacts`, the `user_storage_buckets` registry (including
+  ad-hoc / execute buckets), and `package_service_states` (projected service
+  storage ids). Platform DR has only a `D1Database`, so it does **not** walk
+  package manifests or enumerate `RunLog` Durable Objects. A service whose
+  Durable Object never projected into `package_service_states` is therefore
+  absent from sealed-day inventory until it heartbeats or transitions; account
+  deletion/export cover those via manifest enumeration. Buckets known only
+  inside a user's `RunLog` (and never registered in `user_storage_buckets` or an
+  entity table) remain outside DR inventory by design — RunLog is observability,
+  not a canonical store.
 
 ## Credentials and Access
 

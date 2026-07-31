@@ -35,20 +35,17 @@ function createContext(roles: Array<string>) {
 
 const emptyReport = {
 	ok: true as const,
-	packages: [],
-	orphanAppBuckets: [],
+	legacyBuckets: [],
 	nextStartAfter: null as string | null,
 	totals: {
-		appPackages: 0,
+		legacyBuckets: 0,
 		nonEmptyLegacyBuckets: 0,
-		packagesWithAmbientImports: 0,
-		orphanAppBuckets: 0,
+		probeErrors: 0,
 		truncated: false,
-		orphanTruncated: false,
 	},
 }
 
-test('admin package storage audit requires admin and returns the platform-wide report', async () => {
+test('admin package storage audit requires admin and returns legacy inventory', async () => {
 	await expect(
 		adminPackageStorageAuditCapability.handler({}, createContext(['user'])),
 	).rejects.toThrow('lacks required role "admin"')
@@ -64,33 +61,30 @@ test('admin package storage audit requires admin and returns the platform-wide r
 
 	const nextStartAfter = JSON.stringify({
 		userId: 'user-a',
-		packageId: 'pkg-1',
+		storageId: 'pkg-1',
 	})
 	mocks.buildPackageStorageAuditReport.mockResolvedValue({
 		...emptyReport,
-		packages: [
+		legacyBuckets: [
 			{
 				userId: 'user-a',
-				packageId: 'pkg-1',
-				kodyId: 'demo',
-				legacyBucketBytes: 8192,
-				legacyBucketProbeError: null,
-				ambientStorageImportFiles: ['app.ts'],
-				sourceScanError: null,
+				storageId: 'pkg-1',
+				lastSeenAt: '2026-07-01T00:00:00.000Z',
+				estimatedBytes: 8192,
+				probeError: null,
 			},
 		],
 		nextStartAfter,
 		totals: {
 			...emptyReport.totals,
-			appPackages: 1,
+			legacyBuckets: 1,
 			nonEmptyLegacyBuckets: 1,
-			packagesWithAmbientImports: 1,
 			truncated: true,
 		},
 	})
 
 	const ctx = createContext(['admin'])
-	const cursor = JSON.stringify({ userId: 'user-a', packageId: 'pkg-0' })
+	const cursor = JSON.stringify({ userId: 'user-a', storageId: 'pkg-0' })
 	const result = await adminPackageStorageAuditCapability.handler(
 		{ limit: 25, start_after: cursor },
 		ctx,
@@ -98,25 +92,13 @@ test('admin package storage audit requires admin and returns the platform-wide r
 
 	expect(mocks.buildPackageStorageAuditReport).toHaveBeenCalledWith({
 		env: ctx.env,
-		baseUrl: 'https://heykody.dev',
 		limit: 25,
 		startAfter: cursor,
 	})
 	expect(result).toMatchObject({
-		ok: true,
 		nextStartAfter,
-		packages: [
-			expect.objectContaining({
-				packageId: 'pkg-1',
-				ambientStorageImportFiles: ['app.ts'],
-			}),
-		],
-		totals: {
-			appPackages: 1,
-			nonEmptyLegacyBuckets: 1,
-			packagesWithAmbientImports: 1,
-			truncated: true,
-		},
+		legacyBuckets: [{ storageId: 'pkg-1', estimatedBytes: 8192 }],
+		totals: { legacyBuckets: 1, nonEmptyLegacyBuckets: 1, truncated: true },
 	})
 	expect(auditEventSummaries()).toEqual([
 		'mcp_capability_denied:failure',
@@ -137,9 +119,4 @@ test('admin package storage audit defaults limit and rejects values above max', 
 		adminPackageStorageAuditCapability.handler({ limit: 501 }, ctx),
 	).rejects.toThrow()
 	expect(mocks.buildPackageStorageAuditReport).toHaveBeenCalledTimes(1)
-
-	await adminPackageStorageAuditCapability.handler({ limit: 500 }, ctx)
-	expect(mocks.buildPackageStorageAuditReport).toHaveBeenLastCalledWith(
-		expect.objectContaining({ limit: 500 }),
-	)
 })

@@ -256,7 +256,7 @@ export async function listPlatformStorageInventory(
 	// service buckets come from projected `package_service_states` rather than
 	// package manifests. Ad-hoc / execute buckets come from the authoritative
 	// `user_storage_buckets` registry via `listPlatformStorageBuckets`.
-	const [jobRows, archivedRows, registeredBuckets, packageRows, serviceRows] =
+	const [jobRows, archivedRows, registeredBuckets, serviceRows] =
 		await Promise.all([
 			db
 				.prepare(
@@ -271,12 +271,6 @@ export async function listPlatformStorageInventory(
 				)
 				.all<{ userId: string; storageId: string }>(),
 			listPlatformStorageBuckets({ db }),
-			db
-				.prepare(
-					`SELECT user_id AS userId, id AS storageId
-					FROM saved_packages WHERE has_app = 1`,
-				)
-				.all<{ userId: string; storageId: string }>(),
 			db
 				.prepare(
 					`SELECT DISTINCT user_id AS userId, package_id AS packageId,
@@ -301,7 +295,6 @@ export async function listPlatformStorageInventory(
 	for (const row of jobRows.results ?? []) push(row.userId, row.storageId)
 	for (const row of archivedRows.results ?? []) push(row.userId, row.storageId)
 	for (const row of registeredBuckets) push(row.userId, row.storageId)
-	for (const row of packageRows.results ?? []) push(row.userId, row.storageId)
 	for (const row of serviceRows.results ?? []) {
 		push(
 			row.userId,

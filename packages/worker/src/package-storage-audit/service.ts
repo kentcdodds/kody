@@ -1,7 +1,6 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
-import { collectAmbientStorageImportFiles } from '#worker/repo/checks.ts'
+import { clearPackageOwnedStorageBucket } from '#worker/package-registry/service.ts'
 import {
 	emptyStorageRunnerEstimatedBytes,
 	storageRunnerRpc,
@@ -10,124 +9,155 @@ import {
 export const defaultPackageStorageAuditLimit = 200
 export const maxPackageStorageAuditLimit = 500
 export const defaultLegacyBucketProbeTimeoutMs = 10_000
-export const defaultSourceScanTimeoutMs = 20_000
-const maxOrphanAppBuckets = 500
 const maxConcurrentPackageAuditProbes = 5
 
-export type PackageStorageAuditPackageRow = {
-	userId: string
-	packageId: string
-	kodyId: string
-	legacyBucketBytes: number | null
-	legacyBucketProbeError: string | null
-	ambientStorageImportFiles: Array<string>
-	sourceScanError: string | null
-}
-
-export type PackageStorageAuditOrphanBucket = {
+export type PackageStorageAuditBucketRow = {
 	userId: string
 	storageId: string
 	lastSeenAt: string
+	estimatedBytes: number | null
+	probeError: string | null
 }
 
 export type PackageStorageAuditReport = {
 	ok: true
-	packages: Array<PackageStorageAuditPackageRow>
-	orphanAppBuckets: Array<PackageStorageAuditOrphanBucket>
+	legacyBuckets: Array<PackageStorageAuditBucketRow>
 	nextStartAfter: string | null
 	totals: {
-		appPackages: number
+		legacyBuckets: number
 		nonEmptyLegacyBuckets: number
-		packagesWithAmbientImports: number
-		orphanAppBuckets: number
+		probeErrors: number
 		truncated: boolean
-		orphanTruncated: boolean
 	}
 }
 
 export type PackageStorageAuditBudgets = {
 	legacyBucketProbeMs?: number
-	sourceScanMs?: number
 }
 
-type AppPackageRow = {
-	userId: string
-	packageId: string
-	kodyId: string
-	sourceId: string
+export type PackageStorageCleanupReport = {
+	ok: true
+	buckets: Array<{
+		userId: string
+		storageId: string
+		cleared: boolean
+	}>
+	nextStartAfter: string | null
+	totals: {
+		cleared: number
+		failed: number
+		truncated: boolean
+	}
 }
 
 type PackageStorageAuditCursor = {
 	userId: string
-	packageId: string
+	storageId: string
 }
 
 type ResolvedBudgets = {
 	legacyBucketProbeMs: number
-	sourceScanMs: number
 }
 
 export async function buildPackageStorageAuditReport(input: {
 	env: Env
-	baseUrl: string
 	limit: number
 	startAfter?: string | null
 	budgets?: PackageStorageAuditBudgets
 }): Promise<PackageStorageAuditReport> {
 	const cursor = parseStartAfterCursor(input.startAfter)
 	const budgets = resolveBudgets(input.budgets)
-	const [appPackagePage, orphanPage] = await Promise.all([
-		listAppPackagesForAudit({
-			db: input.env.APP_DB,
-			limit: input.limit,
-			startAfter: cursor,
-		}),
-		listOrphanAppBuckets({ db: input.env.APP_DB }),
-	])
+	const bucketPage = await listLegacyBucketsForAudit({
+		db: input.env.APP_DB,
+		limit: input.limit,
+		startAfter: cursor,
+	})
 
-	const packages: Array<PackageStorageAuditPackageRow> = []
+	const legacyBuckets: Array<PackageStorageAuditBucketRow> = []
 	for (const chunk of chunkArray(
-		appPackagePage.rows,
+		bucketPage.rows,
 		maxConcurrentPackageAuditProbes,
 	)) {
 		const chunkRows = await Promise.all(
 			chunk.map((row) =>
-				auditAppPackage({
+				auditLegacyBucket({
 					env: input.env,
-					baseUrl: input.baseUrl,
 					row,
 					budgets,
 				}),
 			),
 		)
-		packages.push(...chunkRows)
+		legacyBuckets.push(...chunkRows)
 	}
 
-	const lastRow = packages.at(-1)
+	const lastRow = legacyBuckets.at(-1)
 	return {
 		ok: true,
-		packages,
-		orphanAppBuckets: orphanPage.rows,
+		legacyBuckets,
 		nextStartAfter:
-			appPackagePage.truncated && lastRow
+			bucketPage.truncated && lastRow
 				? encodeStartAfterCursor({
 						userId: lastRow.userId,
-						packageId: lastRow.packageId,
+						storageId: lastRow.storageId,
 					})
 				: null,
 		totals: {
-			appPackages: packages.length,
-			nonEmptyLegacyBuckets: packages.filter(
+			legacyBuckets: legacyBuckets.length,
+			nonEmptyLegacyBuckets: legacyBuckets.filter(
 				(row) =>
-					row.legacyBucketBytes != null &&
-					row.legacyBucketBytes > emptyStorageRunnerEstimatedBytes,
+					row.estimatedBytes != null &&
+					row.estimatedBytes > emptyStorageRunnerEstimatedBytes,
 			).length,
-			packagesWithAmbientImports: packages.filter(
-				(row) => row.ambientStorageImportFiles.length > 0,
-			).length,
-			orphanAppBuckets: orphanPage.rows.length,
-			truncated: appPackagePage.truncated,
-			orphanTruncated: orphanPage.truncated,
+			probeErrors: legacyBuckets.filter((row) => row.probeError != null).length,
+			truncated: bucketPage.truncated,
+		},
+	}
+}
+
+export async function cleanupLegacyPackageStorageBuckets(input: {
+	env: Env
+	limit: number
+	startAfter?: string | null
+}): Promise<PackageStorageCleanupReport> {
+	const bucketPage = await listLegacyBucketsForAudit({
+		db: input.env.APP_DB,
+		limit: input.limit,
+		startAfter: parseStartAfterCursor(input.startAfter),
+	})
+	const buckets: PackageStorageCleanupReport['buckets'] = []
+	for (const chunk of chunkArray(
+		bucketPage.rows,
+		maxConcurrentPackageAuditProbes,
+	)) {
+		const chunkResults = await Promise.all(
+			chunk.map(async (row) => ({
+				userId: row.userId,
+				storageId: row.storageId,
+				cleared: await clearPackageOwnedStorageBucket({
+					env: input.env,
+					userId: row.userId,
+					packageId: row.storageId,
+					storageId: row.storageId,
+				}),
+			})),
+		)
+		buckets.push(...chunkResults)
+	}
+	const lastRow = buckets.at(-1)
+	return {
+		ok: true,
+		buckets,
+		nextStartAfter:
+			bucketPage.truncated && lastRow
+				? encodeStartAfterCursor({
+						userId: lastRow.userId,
+						storageId: lastRow.storageId,
+					})
+				: null,
+		totals: {
+			cleared: buckets.filter((row) => row.cleared).length,
+			failed: buckets.filter((row) => !row.cleared).length,
+			truncated: bucketPage.truncated,
 		},
 	}
 }
@@ -138,14 +168,13 @@ function resolveBudgets(
 	return {
 		legacyBucketProbeMs:
 			budgets?.legacyBucketProbeMs ?? defaultLegacyBucketProbeTimeoutMs,
-		sourceScanMs: budgets?.sourceScanMs ?? defaultSourceScanTimeoutMs,
 	}
 }
 
 function encodeStartAfterCursor(cursor: PackageStorageAuditCursor) {
 	return JSON.stringify({
 		userId: cursor.userId,
-		packageId: cursor.packageId,
+		storageId: cursor.storageId,
 	})
 }
 
@@ -170,17 +199,17 @@ function parseStartAfterCursor(
 		typeof parsed !== 'object' ||
 		Array.isArray(parsed) ||
 		typeof (parsed as { userId?: unknown }).userId !== 'string' ||
-		typeof (parsed as { packageId?: unknown }).packageId !== 'string' ||
+		typeof (parsed as { storageId?: unknown }).storageId !== 'string' ||
 		(parsed as { userId: string }).userId.length === 0 ||
-		(parsed as { packageId: string }).packageId.length === 0
+		(parsed as { storageId: string }).storageId.length === 0
 	) {
 		throw new InvalidStartAfterCursorError(
-			'Invalid startAfter cursor: expected { userId, packageId } strings.',
+			'Invalid startAfter cursor: expected { userId, storageId } strings.',
 		)
 	}
 	return {
 		userId: (parsed as { userId: string }).userId,
-		packageId: (parsed as { packageId: string }).packageId,
+		storageId: (parsed as { storageId: string }).storageId,
 	}
 }
 
@@ -205,40 +234,46 @@ async function withDeadline<T>(
 	}
 }
 
-async function listAppPackagesForAudit(input: {
+type LegacyBucketInventoryRow = {
+	userId: string
+	storageId: string
+	lastSeenAt: string
+}
+
+async function listLegacyBucketsForAudit(input: {
 	db: D1Database
 	limit: number
 	startAfter: PackageStorageAuditCursor | null
-}): Promise<{ rows: Array<AppPackageRow>; truncated: boolean }> {
+}): Promise<{ rows: Array<LegacyBucketInventoryRow>; truncated: boolean }> {
 	const result = input.startAfter
 		? await input.db
 				.prepare(
-					`SELECT user_id AS userId, id AS packageId, kody_id AS kodyId,
-						source_id AS sourceId
-					FROM saved_packages
-					WHERE has_app = 1
-						AND (user_id > ? OR (user_id = ? AND id > ?))
-					ORDER BY user_id ASC, id ASC
+					`SELECT user_id AS userId, storage_id AS storageId,
+						last_seen_at AS lastSeenAt
+					FROM user_storage_buckets
+					WHERE kind = 'app'
+						AND (user_id > ? OR (user_id = ? AND storage_id > ?))
+					ORDER BY user_id ASC, storage_id ASC
 					LIMIT ?`,
 				)
 				.bind(
 					input.startAfter.userId,
 					input.startAfter.userId,
-					input.startAfter.packageId,
+					input.startAfter.storageId,
 					input.limit + 1,
 				)
-				.all<AppPackageRow>()
+				.all<LegacyBucketInventoryRow>()
 		: await input.db
 				.prepare(
-					`SELECT user_id AS userId, id AS packageId, kody_id AS kodyId,
-						source_id AS sourceId
-					FROM saved_packages
-					WHERE has_app = 1
-					ORDER BY user_id ASC, id ASC
+					`SELECT user_id AS userId, storage_id AS storageId,
+						last_seen_at AS lastSeenAt
+					FROM user_storage_buckets
+					WHERE kind = 'app'
+					ORDER BY user_id ASC, storage_id ASC
 					LIMIT ?`,
 				)
 				.bind(input.limit + 1)
-				.all<AppPackageRow>()
+				.all<LegacyBucketInventoryRow>()
 	const rows = result.results ?? []
 	const truncated = rows.length > input.limit
 	return {
@@ -247,68 +282,28 @@ async function listAppPackagesForAudit(input: {
 	}
 }
 
-async function listOrphanAppBuckets(input: { db: D1Database }): Promise<{
-	rows: Array<PackageStorageAuditOrphanBucket>
-	truncated: boolean
-}> {
-	const result = await input.db
-		.prepare(
-			`SELECT b.user_id AS userId, b.storage_id AS storageId,
-				b.last_seen_at AS lastSeenAt
-			FROM user_storage_buckets b
-			LEFT JOIN saved_packages p
-				ON p.id = b.storage_id AND p.user_id = b.user_id
-			WHERE b.kind = 'app' AND p.id IS NULL
-			ORDER BY b.user_id ASC, b.storage_id ASC
-			LIMIT ?`,
-		)
-		.bind(maxOrphanAppBuckets + 1)
-		.all<PackageStorageAuditOrphanBucket>()
-	const rows = result.results ?? []
-	const truncated = rows.length > maxOrphanAppBuckets
-	return {
-		rows: truncated ? rows.slice(0, maxOrphanAppBuckets) : rows,
-		truncated,
-	}
-}
-
-async function auditAppPackage(input: {
+async function auditLegacyBucket(input: {
 	env: Env
-	baseUrl: string
-	row: AppPackageRow
+	row: LegacyBucketInventoryRow
 	budgets: ResolvedBudgets
-}): Promise<PackageStorageAuditPackageRow> {
-	const [legacyProbe, sourceScan] = await Promise.all([
-		probeLegacyBucketBytes({
-			env: input.env,
-			userId: input.row.userId,
-			packageId: input.row.packageId,
-			timeoutMs: input.budgets.legacyBucketProbeMs,
-		}),
-		scanAmbientStorageImports({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.row.userId,
-			sourceId: input.row.sourceId,
-			timeoutMs: input.budgets.sourceScanMs,
-		}),
-	])
-
-	return {
+}): Promise<PackageStorageAuditBucketRow> {
+	const probe = await probeLegacyBucketBytes({
+		env: input.env,
 		userId: input.row.userId,
-		packageId: input.row.packageId,
-		kodyId: input.row.kodyId,
-		legacyBucketBytes: legacyProbe.bytes,
-		legacyBucketProbeError: legacyProbe.error,
-		ambientStorageImportFiles: sourceScan.files,
-		sourceScanError: sourceScan.error,
+		storageId: input.row.storageId,
+		timeoutMs: input.budgets.legacyBucketProbeMs,
+	})
+	return {
+		...input.row,
+		estimatedBytes: probe.bytes,
+		probeError: probe.error,
 	}
 }
 
 async function probeLegacyBucketBytes(input: {
 	env: Env
 	userId: string
-	packageId: string
+	storageId: string
 	timeoutMs: number
 }): Promise<{ bytes: number | null; error: string | null }> {
 	try {
@@ -316,38 +311,12 @@ async function probeLegacyBucketBytes(input: {
 			storageRunnerRpc({
 				env: input.env,
 				userId: input.userId,
-				storageId: input.packageId,
+				storageId: input.storageId,
 			}).getEstimatedBytes(),
 			input.timeoutMs,
 		)
 		return { bytes: estimate.estimatedBytes, error: null }
 	} catch (error) {
 		return { bytes: null, error: getErrorMessage(error) }
-	}
-}
-
-async function scanAmbientStorageImports(input: {
-	env: Env
-	baseUrl: string
-	userId: string
-	sourceId: string
-	timeoutMs: number
-}): Promise<{ files: Array<string>; error: string | null }> {
-	try {
-		const loaded = await withDeadline(
-			loadPackageSourceBySourceId({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceId: input.sourceId,
-			}),
-			input.timeoutMs,
-		)
-		return {
-			files: collectAmbientStorageImportFiles(loaded.files),
-			error: null,
-		}
-	} catch (error) {
-		return { files: [], error: getErrorMessage(error) }
 	}
 }

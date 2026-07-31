@@ -1068,9 +1068,8 @@ export function createStorageKodyTools(input: {
 /**
  * Durable storage id of a saved package's own bucket. Reached via
  * `packageStorage()` from every package surface (invocations, jobs, services,
- * and package apps). Ambient `storage` is not bound on this id for package
- * invocations; apps still expose a legacy ambient `storage` proxy on the raw
- * package id for published compatibility, which is a different bucket.
+ * and package apps). Saved-package runtimes do not bind ambient `storage` to
+ * this bucket; bundler provenance grants access through `packageStorage()`.
  */
 export function buildPackageStorageId(packageId: string) {
 	return `package:${encodeURIComponent(packageId)}`

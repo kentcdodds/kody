@@ -140,12 +140,12 @@ async function listPackageOwnedStorageIdsFromInventory(input: {
 	})
 }
 
-async function clearPackageOwnedStorageBucket(input: {
+export async function clearPackageOwnedStorageBucket(input: {
 	env: Env
 	userId: string
 	packageId: string
 	storageId: string
-}) {
+}): Promise<boolean> {
 	let storageCleared = false
 	try {
 		await storageRunnerRpc({
@@ -165,13 +165,14 @@ async function clearPackageOwnedStorageBucket(input: {
 			}),
 		)
 	}
-	if (!storageCleared) return
+	if (!storageCleared) return false
 	try {
 		await input.env.APP_DB.prepare(
 			`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?`,
 		)
 			.bind(input.userId, input.storageId)
 			.run()
+		return true
 	} catch (error) {
 		console.warn(
 			JSON.stringify({
@@ -182,6 +183,7 @@ async function clearPackageOwnedStorageBucket(input: {
 				error: getErrorMessage(error),
 			}),
 		)
+		return false
 	}
 }
 

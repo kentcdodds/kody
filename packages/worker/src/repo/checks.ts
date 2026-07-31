@@ -947,10 +947,10 @@ export function collectAmbientStorageImportFiles(
  * imported into another context. This only runs where repo checks run — new
  * session check runs, session/external publishes, and community fork installs
  * — so already-published artifacts are never re-validated retroactively.
- * Stage two of the ambient-storage removal plan: #817 shipped the advisory
- * nudge, this fails new publishes, and a follow-up removes the ambient
- * binding from package invocation contexts once an operator audit of
- * published artifacts confirms no remaining usage.
+ * Final guard from the ambient-storage removal: #817 shipped the advisory,
+ * then this check began failing new publishes. The package runtime no longer
+ * binds ambient storage, so this keeps package code portable across every
+ * package surface and points authors at the canonical package bucket.
  */
 function buildLintCheck(sourceFiles: Record<string, string>): {
 	ok: boolean

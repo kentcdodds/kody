@@ -286,8 +286,6 @@ Treat package apps like Worker-style modules:
 - package app entry is declared by `kody.app.entry`
 - durable package data uses `packageStorage()` (same
   `buildPackageStorageId(packageId)` bucket as other package surfaces)
-- package apps also bind a legacy app-root ambient bucket to the raw saved
-  package id; new app code uses `packageStorage()`
 - Durable Objects / facets are app-only realtime/coordination buckets under the
   package namespace, not the persistence mechanism and not separate saved
   primitives

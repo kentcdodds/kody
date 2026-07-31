@@ -74,16 +74,13 @@ test('admin package storage audit route requires admin and returns the report JS
 	const handler = createAdminPackageStorageAuditApiHandler(env)
 	const report = {
 		ok: true as const,
-		packages: [],
-		orphanAppBuckets: [],
+		legacyBuckets: [],
 		nextStartAfter: null,
 		totals: {
-			appPackages: 0,
+			legacyBuckets: 0,
 			nonEmptyLegacyBuckets: 0,
-			packagesWithAmbientImports: 0,
-			orphanAppBuckets: 0,
+			probeErrors: 0,
 			truncated: false,
-			orphanTruncated: false,
 		},
 	}
 
@@ -112,7 +109,6 @@ test('admin package storage audit route requires admin and returns the report JS
 	await expect(response.json()).resolves.toEqual(report)
 	expect(mockModule.buildPackageStorageAuditReport).toHaveBeenCalledWith({
 		env,
-		baseUrl: 'https://example.com',
 		limit: 50,
 		startAfter: cursor,
 	})
@@ -126,16 +122,13 @@ test('admin package storage audit route clamps limit and applies the default', a
 	)
 	mockModule.buildPackageStorageAuditReport.mockResolvedValue({
 		ok: true,
-		packages: [],
-		orphanAppBuckets: [],
+		legacyBuckets: [],
 		nextStartAfter: null,
 		totals: {
-			appPackages: 0,
+			legacyBuckets: 0,
 			nonEmptyLegacyBuckets: 0,
-			packagesWithAmbientImports: 0,
-			orphanAppBuckets: 0,
+			probeErrors: 0,
 			truncated: false,
-			orphanTruncated: false,
 		},
 	})
 

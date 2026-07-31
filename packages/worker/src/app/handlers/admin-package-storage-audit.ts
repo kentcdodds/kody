@@ -27,7 +27,6 @@ export function createAdminPackageStorageAuditApiHandler(env: Env) {
 				const startAfter = url.searchParams.get('startAfter')
 				const report = await buildPackageStorageAuditReport({
 					env,
-					baseUrl: url.origin,
 					limit,
 					startAfter,
 				})

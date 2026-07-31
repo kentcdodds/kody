@@ -177,44 +177,6 @@ function createKodyProxy(runtimeBridge) {
 	});
 }
 
-function createStorageProxy(runtimeBridge, storageId) {
-	return {
-		id: storageId,
-		get: async (key) =>
-			(await runtimeBridge.storageGet({
-				storageId,
-				key,
-			})).value,
-		list: async (options = {}) =>
-			await runtimeBridge.storageList({
-				storageId,
-				...options,
-			}),
-		sql: async (query, params = []) =>
-			await runtimeBridge.storageSql({
-				storageId,
-				query,
-				params,
-				writable: true,
-			}),
-		set: async (key, value) =>
-			await runtimeBridge.storageSet({
-				storageId,
-				key,
-				value,
-			}),
-		delete: async (key) =>
-			await runtimeBridge.storageDelete({
-				storageId,
-				key,
-			}),
-		clear: async () =>
-			await runtimeBridge.storageClear({
-				storageId,
-			}),
-	}
-}
-
 function createRealtimeProxy(runtimeBridge) {
 	return {
 		emit: async (sessionId, data) =>
@@ -523,7 +485,7 @@ function createRuntime(runtimeBridge, packageContext) {
 				}
 	return {
 		kody: createKodyProxy(runtimeBridge),
-		storage: createStorageProxy(runtimeBridge, packageId),
+		storage: undefined,
 		__kodyPackageStorage: (storagePackageId) => ({
 			id: 'package:' + encodeURIComponent(storagePackageId),
 			get: async (key) =>
@@ -877,10 +839,10 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	/**
 	 * Security model for package-app storage:
-	 * - Raw `storage*` methods are namespace-locked to this app's own buckets
-	 *   (`packageId` and `${packageId}:…`). The bridge stub is reachable from
+	 * - Raw `storage*` methods are namespace-locked to this app's internal
+	 *   `${packageId}:…` buckets. The bridge stub is reachable from
 	 *   user code via `Object.create(env)`, so these methods must never accept
-	 *   arbitrary same-user ids (`package:…`, `job:…`, other package roots).
+	 *   arbitrary same-user ids (`package:…`, raw package ids, `job:…`).
 	 * - `package:{…}` durable buckets are reached only through the
 	 *   grant-validated `packageStorage*` methods (`assertPackageStorageGranted`
 	 *   from bundler-controlled provenance).
@@ -891,15 +853,12 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			throw new Error('Package app storage requires a non-empty storage id.')
 		}
 		const packageId = this.ctx.props.packageId
-		if (
-			normalizedStorageId === packageId ||
-			normalizedStorageId.startsWith(`${packageId}:`)
-		) {
+		if (normalizedStorageId.startsWith(`${packageId}:`)) {
 			return normalizedStorageId
 		}
 		throw new Error(
 			`Package app storage id "${normalizedStorageId}" is outside this app's namespace. ` +
-				`Raw storage methods only accept "${packageId}" or ids prefixed with "${packageId}:". ` +
+				`Raw storage methods only accept ids prefixed with "${packageId}:". ` +
 				'Saved-package durable buckets use packageStorage() and are gated by bundler provenance grants.',
 		)
 	}
@@ -989,73 +948,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	async callCapability(input: { name: string; args?: unknown }) {
 		const name = input.name.trim()
-		switch (name) {
-			case 'storage_get':
-				return await this.storageGet({
-					storageId: this.ctx.props.packageId,
-					key:
-						typeof input.args === 'object' &&
-						input.args !== null &&
-						'key' in input.args
-							? String((input.args as { key: unknown }).key ?? '')
-							: '',
-				})
-			case 'storage_list':
-				return await this.storageList({
-					storageId: this.ctx.props.packageId,
-					...(typeof input.args === 'object' && input.args !== null
-						? (input.args as Record<string, unknown>)
-						: {}),
-				})
-			case 'storage_sql':
-				return await this.storageSql({
-					storageId: this.ctx.props.packageId,
-					query:
-						typeof input.args === 'object' &&
-						input.args !== null &&
-						'query' in input.args
-							? String((input.args as { query: unknown }).query ?? '')
-							: '',
-					params:
-						typeof input.args === 'object' &&
-						input.args !== null &&
-						Array.isArray((input.args as { params?: unknown }).params)
-							? ((input.args as { params: Array<unknown> }).params ?? [])
-							: [],
-					writable: true,
-				})
-			case 'storage_set':
-				return await this.storageSet({
-					storageId: this.ctx.props.packageId,
-					key:
-						typeof input.args === 'object' &&
-						input.args !== null &&
-						'key' in input.args
-							? String((input.args as { key: unknown }).key ?? '')
-							: '',
-					value:
-						typeof input.args === 'object' && input.args !== null
-							? (input.args as { value?: unknown }).value
-							: undefined,
-				})
-			case 'storage_delete':
-				return await this.storageDelete({
-					storageId: this.ctx.props.packageId,
-					key:
-						typeof input.args === 'object' &&
-						input.args !== null &&
-						'key' in input.args
-							? String((input.args as { key: unknown }).key ?? '')
-							: '',
-				})
-			case 'storage_clear':
-				return await this.storageClear({
-					storageId: this.ctx.props.packageId,
-				})
-		}
 		const { capabilityMap } = await getCapabilityRegistryForContext({
 			env: this.env,
-			callerContext: this.createCallerContext(this.ctx.props.packageId),
+			callerContext: this.createCallerContext(null),
 		})
 		const capability = capabilityMap[name]
 		if (!capability) {
@@ -1065,7 +960,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			(input.args ?? {}) as Record<string, unknown>,
 			{
 				env: this.env,
-				callerContext: this.createCallerContext(this.ctx.props.packageId),
+				callerContext: this.createCallerContext(null),
 			},
 		)
 	}
@@ -1804,7 +1699,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 							sessionId: null,
 							appId: input.savedPackage.id,
 							packageId: input.savedPackage.id,
-							storageId: input.savedPackage.id,
+							storageId: null,
 						},
 					},
 				})
@@ -1897,7 +1792,7 @@ export async function createPackageAppCallerContext(input: {
 			sessionId: null,
 			appId: input.packageId,
 			packageId: input.packageId,
-			storageId: input.packageId,
+			storageId: null,
 		},
 	})
 }

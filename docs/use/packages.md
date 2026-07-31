@@ -329,18 +329,13 @@ consequences:
   package that is not the running package and not statically imported by the
   bundle, use keyless `packages.invoke` so its own runtime does the reading.
 
-Package apps also have a legacy app-root ambient bucket bound to the raw saved
-package id (a different bucket from `package:{...}`). Existing published apps
-may still run against it; new app code uses `packageStorage()` like every other
-package surface.
-
 ### Ambient `storage` in package code
 
-Package exports, subscription handlers, and retrievers do not bind ambient
-`storage`. In those contexts ambient `storage` is `undefined`; guard-less access
-fails with a structured `runtime_helper_unbound` error whose remedy points at
-`packageStorage()`, the one way package code reaches its bucket (same interface,
-same bucket).
+Saved-package runtimes, including apps, exports, subscription handlers, and
+retrievers, do not bind ambient `storage`. In those contexts ambient `storage`
+is `undefined`; guard-less access fails with a structured
+`runtime_helper_unbound` error whose remedy points at `packageStorage()`, the
+one way package code reaches its bucket (same interface, same bucket).
 
 Repo checks fail when package source imports ambient `storage` from
 `kody:runtime` (type-only imports and `.d.ts` files are exempt).

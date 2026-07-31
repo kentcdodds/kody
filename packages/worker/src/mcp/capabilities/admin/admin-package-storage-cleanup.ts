@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-	buildPackageStorageAuditReport,
+	cleanupLegacyPackageStorageBuckets,
 	defaultPackageStorageAuditLimit,
 	InvalidStartAfterCursorError,
 	maxPackageStorageAuditLimit,
@@ -13,46 +13,41 @@ import {
 	auditAdminCapabilityInvocation,
 } from './admin-shared.ts'
 
-const legacyBucketSchema = z.object({
-	userId: z.string(),
-	storageId: z.string(),
-	lastSeenAt: z.string(),
-	estimatedBytes: z.number().nullable(),
-	probeError: z.string().nullable(),
-})
-
 const outputSchema = z.object({
 	ok: z.literal(true),
-	legacyBuckets: z.array(legacyBucketSchema),
-	nextStartAfter: z
-		.string()
-		.nullable()
-		.describe(
-			'Opaque keyset cursor for the next page when truncated; null when complete.',
-		),
+	buckets: z.array(
+		z.object({
+			userId: z.string(),
+			storageId: z.string(),
+			cleared: z.boolean(),
+		}),
+	),
+	nextStartAfter: z.string().nullable(),
 	totals: z.object({
-		legacyBuckets: z.number().int().nonnegative(),
-		nonEmptyLegacyBuckets: z.number().int().nonnegative(),
-		probeErrors: z.number().int().nonnegative(),
+		cleared: z.number().int().nonnegative(),
+		failed: z.number().int().nonnegative(),
 		truncated: z.boolean(),
 	}),
 })
 
-export const adminPackageStorageAuditCapability = defineDomainCapability(
+export const adminPackageStorageCleanupCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_package_storage_audit',
+		name: 'admin_package_storage_cleanup',
 		description:
-			'Verify whether any legacy raw-package-id app StorageRunner buckets remain in the platform inventory. Admin-only and not user-scoped; reports bucket sizes but never bucket contents. Page with limit + start_after / nextStartAfter.',
+			'Clear legacy raw-package-id app StorageRunner buckets and unregister them from the platform inventory. Admin-only, destructive, and bounded; page with limit + start_after / nextStartAfter until truncated is false.',
 		keywords: [
 			'admin',
 			'package',
 			'storage',
-			'audit',
+			'cleanup',
 			'legacy bucket',
-			'verification',
+			'migration',
 		],
+		readOnly: false,
+		idempotent: true,
+		destructive: true,
 		inputSchema: z.object({
 			limit: z
 				.number()
@@ -61,24 +56,24 @@ export const adminPackageStorageAuditCapability = defineDomainCapability(
 				.max(maxPackageStorageAuditLimit)
 				.optional()
 				.describe(
-					`Max legacy inventory buckets to audit. Defaults to ${String(defaultPackageStorageAuditLimit)} and maxes at ${String(maxPackageStorageAuditLimit)}.`,
+					`Max legacy inventory buckets to clear. Defaults to ${String(defaultPackageStorageAuditLimit)} and maxes at ${String(maxPackageStorageAuditLimit)}.`,
 				),
 			start_after: z
 				.string()
 				.min(1)
 				.optional()
 				.describe(
-					'Opaque keyset cursor from a prior nextStartAfter; resumes after that package.',
+					'Opaque keyset cursor from a prior nextStartAfter; resumes after that bucket.',
 				),
 		}),
 		outputSchema,
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_package_storage_audit',
+				'admin_package_storage_cleanup',
 				async () => {
 					try {
-						return await buildPackageStorageAuditReport({
+						return await cleanupLegacyPackageStorageBuckets({
 							env: ctx.env,
 							limit: args.limit ?? defaultPackageStorageAuditLimit,
 							startAfter: args.start_after,

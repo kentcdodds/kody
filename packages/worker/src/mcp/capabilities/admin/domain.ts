@@ -13,6 +13,7 @@ import { adminPackageScopeGrantCreateCapability } from './admin-package-scope-gr
 import { adminPackageScopeGrantListCapability } from './admin-package-scope-grant-list.ts'
 import { adminPackageScopeGrantRevokeCapability } from './admin-package-scope-grant-revoke.ts'
 import { adminPackageStorageAuditCapability } from './admin-package-storage-audit.ts'
+import { adminPackageStorageCleanupCapability } from './admin-package-storage-cleanup.ts'
 import { adminPlatformAccountCreateCapability } from './admin-platform-account-create.ts'
 import { adminPlatformFeedbackGetCapability } from './admin-platform-feedback-get.ts'
 import { adminPlatformFeedbackListCapability } from './admin-platform-feedback-list.ts'
@@ -70,6 +71,7 @@ export const adminDomain = defineDomain({
 		adminPackageCodemodApplyCapability,
 		adminPackageCodemodRevertCapability,
 		adminPackageStorageAuditCapability,
+		adminPackageStorageCleanupCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
 		adminFeatureFlagListCapability,

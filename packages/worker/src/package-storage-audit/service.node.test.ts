@@ -1,214 +1,104 @@
 import { expect, test, vi } from 'vitest'
+import type * as PackageRegistryService from '#worker/package-registry/service.ts'
 import type * as StorageRunnerModule from '#worker/storage-runner.ts'
 
-const mockModule = vi.hoisted(() => ({
+const mocks = vi.hoisted(() => ({
+	clearPackageOwnedStorageBucket: vi.fn(),
 	storageRunnerRpc: vi.fn(),
-	loadPackageSourceBySourceId: vi.fn(),
 }))
+
+vi.mock('#worker/package-registry/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof PackageRegistryService>()
+	return {
+		...actual,
+		clearPackageOwnedStorageBucket: (...args: Array<unknown>) =>
+			mocks.clearPackageOwnedStorageBucket(...args),
+	}
+})
 
 vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof StorageRunnerModule>()
 	return {
 		...actual,
 		storageRunnerRpc: (...args: Array<unknown>) =>
-			mockModule.storageRunnerRpc(...args),
+			mocks.storageRunnerRpc(...args),
 	}
 })
 
-vi.mock('#worker/package-registry/source.ts', () => ({
-	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
-		mockModule.loadPackageSourceBySourceId(...args),
-}))
-
-type SavedPackageRow = {
-	userId: string
-	packageId: string
-	kodyId: string
-	sourceId: string
-	hasApp: number
-}
-
-type StorageBucketRow = {
+type BucketRow = {
 	userId: string
 	storageId: string
 	kind: string
 	lastSeenAt: string
 }
 
-function packageOwnershipKey(userId: string, packageId: string) {
-	return `${userId}\0${packageId}`
-}
-
-function comparePackageKeys(
-	left: { userId: string; packageId: string },
-	right: { userId: string; packageId: string },
+function compareBucketKeys(
+	left: Pick<BucketRow, 'userId' | 'storageId'>,
+	right: Pick<BucketRow, 'userId' | 'storageId'>,
 ) {
 	const byUser = left.userId.localeCompare(right.userId)
-	if (byUser !== 0) return byUser
-	return left.packageId.localeCompare(right.packageId)
+	return byUser === 0 ? left.storageId.localeCompare(right.storageId) : byUser
 }
 
-function createAuditTestEnv(input: {
-	packages: Array<SavedPackageRow>
-	buckets: Array<StorageBucketRow>
-}) {
-	function normalize(query: string) {
-		return query.replace(/\s+/g, ' ').trim().toLowerCase()
-	}
-
-	function createStatement(query: string, params: Array<unknown> = []) {
-		const normalized = normalize(query)
-		return {
-			bind(...nextParams: Array<unknown>) {
-				return createStatement(query, nextParams)
-			},
-			async first() {
-				throw new Error(`Unsupported first query: ${query}`)
-			},
-			async all<T>() {
-				if (
-					normalized.includes('from saved_packages') &&
-					normalized.includes('has_app = 1')
-				) {
-					const hasKeyset = normalized.includes('user_id > ?')
-					const limit = Number(
-						params[hasKeyset ? 3 : 0] ?? input.packages.length,
-					)
-					const startAfter = hasKeyset
-						? {
-								userId: String(params[0]),
-								packageId: String(params[2]),
-							}
-						: null
-					const rows = input.packages
-						.filter((row) => row.hasApp === 1)
-						.filter((row) =>
-							startAfter ? comparePackageKeys(row, startAfter) > 0 : true,
-						)
-						.sort(comparePackageKeys)
-						.slice(0, limit)
-						.map((row) => ({
-							userId: row.userId,
-							packageId: row.packageId,
-							kodyId: row.kodyId,
-							sourceId: row.sourceId,
-						}))
-					return {
-						results: rows,
-						meta: { changes: 0 },
-					} as { results: Array<T>; meta: { changes: number } }
-				}
-				if (
-					normalized.includes('from user_storage_buckets b') &&
-					normalized.includes("kind = 'app'") &&
-					normalized.includes('p.user_id = b.user_id')
-				) {
-					const limit = Number(params[0] ?? Number.POSITIVE_INFINITY)
-					const ownedKeys = new Set(
-						input.packages.map((row) =>
-							packageOwnershipKey(row.userId, row.packageId),
-						),
-					)
-					const rows = input.buckets
-						.filter(
-							(row) =>
-								row.kind === 'app' &&
-								!ownedKeys.has(packageOwnershipKey(row.userId, row.storageId)),
-						)
-						.sort((left, right) => {
-							const byUser = left.userId.localeCompare(right.userId)
-							if (byUser !== 0) return byUser
-							return left.storageId.localeCompare(right.storageId)
-						})
-						.slice(0, limit)
-						.map((row) => ({
-							userId: row.userId,
-							storageId: row.storageId,
-							lastSeenAt: row.lastSeenAt,
-						}))
-					return {
-						results: rows,
-						meta: { changes: 0 },
-					} as { results: Array<T>; meta: { changes: number } }
-				}
-				throw new Error(`Unsupported all query: ${query}`)
-			},
-			async run() {
-				throw new Error(`Unsupported run query: ${query}`)
-			},
-		}
-	}
-
+function createAuditEnv(buckets: Array<BucketRow>) {
 	return {
 		APP_DB: {
 			prepare(query: string) {
-				return createStatement(query)
+				const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+				return {
+					bind(...params: Array<unknown>) {
+						return {
+							async all<T>() {
+								if (
+									!normalized.includes('from user_storage_buckets') ||
+									!normalized.includes("kind = 'app'")
+								) {
+									throw new Error(`Unsupported query: ${query}`)
+								}
+								const hasCursor = normalized.includes('user_id > ?')
+								const cursor = hasCursor
+									? {
+											userId: String(params[0]),
+											storageId: String(params[2]),
+										}
+									: null
+								const limit = Number(params[hasCursor ? 3 : 0])
+								const rows = buckets
+									.filter((row) => row.kind === 'app')
+									.filter((row) =>
+										cursor ? compareBucketKeys(row, cursor) > 0 : true,
+									)
+									.sort(compareBucketKeys)
+									.slice(0, limit)
+									.map(({ userId, storageId, lastSeenAt }) => ({
+										userId,
+										storageId,
+										lastSeenAt,
+									}))
+								return { results: rows as Array<T> }
+							},
+						}
+					},
+				}
 			},
 		},
 	} as unknown as Env
 }
 
-const { buildPackageStorageAuditReport } = await import('./service.ts')
-
-function stubEstimate(bytes: number | Error) {
+function estimate(bytes: number | Error) {
 	return {
-		getEstimatedBytes: async () => {
+		async getEstimatedBytes() {
 			if (bytes instanceof Error) throw bytes
 			return { estimatedBytes: bytes }
 		},
 	}
 }
 
-function neverResolves<T>(): Promise<T> {
-	return new Promise(() => {})
-}
+const { buildPackageStorageAuditReport, cleanupLegacyPackageStorageBuckets } =
+	await import('./service.ts')
 
-test('package storage audit report probes legacy buckets, ambient imports, and orphans', async () => {
-	const packages: Array<SavedPackageRow> = [
-		{
-			userId: 'user-a',
-			packageId: 'pkg-empty',
-			kodyId: 'empty-app',
-			sourceId: 'source-empty',
-			hasApp: 1,
-		},
-		{
-			userId: 'user-a',
-			packageId: 'pkg-data',
-			kodyId: 'data-app',
-			sourceId: 'source-data',
-			hasApp: 1,
-		},
-		{
-			userId: 'user-b',
-			packageId: 'pkg-ambient',
-			kodyId: 'ambient-app',
-			sourceId: 'source-ambient',
-			hasApp: 1,
-		},
-		{
-			userId: 'user-b',
-			packageId: 'pkg-probe-error',
-			kodyId: 'probe-error-app',
-			sourceId: 'source-probe-error',
-			hasApp: 1,
-		},
-		{
-			userId: 'user-b',
-			packageId: 'pkg-scan-error',
-			kodyId: 'scan-error-app',
-			sourceId: 'source-scan-error',
-			hasApp: 1,
-		},
-		{
-			userId: 'user-a',
-			packageId: 'pkg-no-app',
-			kodyId: 'no-app',
-			sourceId: 'source-no-app',
-			hasApp: 0,
-		},
-	]
-	const buckets: Array<StorageBucketRow> = [
+test('package storage audit verifies only registered legacy app buckets', async () => {
+	const env = createAuditEnv([
 		{
 			userId: 'user-a',
 			storageId: 'pkg-empty',
@@ -216,251 +106,126 @@ test('package storage audit report probes legacy buckets, ambient imports, and o
 			lastSeenAt: '2026-07-01T00:00:00.000Z',
 		},
 		{
-			userId: 'user-z',
-			storageId: 'deleted-pkg',
-			kind: 'app',
+			userId: 'user-a',
+			storageId: 'job:keep',
+			kind: 'job',
 			lastSeenAt: '2026-07-02T00:00:00.000Z',
 		},
 		{
-			// Cross-user collision: storage_id matches user-b's package, but the
-			// bucket belongs to user-a, so it must still count as an orphan.
-			userId: 'user-a',
-			storageId: 'pkg-ambient',
+			userId: 'user-b',
+			storageId: 'pkg-data',
 			kind: 'app',
-			lastSeenAt: '2026-07-02T12:00:00.000Z',
-		},
-		{
-			userId: 'user-a',
-			storageId: 'job:still-here',
-			kind: 'job',
 			lastSeenAt: '2026-07-03T00:00:00.000Z',
 		},
-	]
-	const env = createAuditTestEnv({ packages, buckets })
-
-	mockModule.storageRunnerRpc.mockImplementation(
-		(input: { storageId: string }) => {
-			if (input.storageId === 'pkg-empty') return stubEstimate(4096)
-			if (input.storageId === 'pkg-data') return stubEstimate(8192)
-			if (input.storageId === 'pkg-ambient') return stubEstimate(4096)
-			if (input.storageId === 'pkg-probe-error') {
-				return stubEstimate(new Error('DO unavailable'))
-			}
-			if (input.storageId === 'pkg-scan-error') return stubEstimate(4096)
-			throw new Error(`Unexpected storageId: ${input.storageId}`)
-		},
-	)
-	mockModule.loadPackageSourceBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			if (
-				input.sourceId === 'source-empty' ||
-				input.sourceId === 'source-data' ||
-				input.sourceId === 'source-probe-error'
-			) {
-				return {
-					files: {
-						'index.ts': `import { packageStorage } from 'kody:runtime'\nexport const x = packageStorage()\n`,
-					},
-				}
-			}
-			if (input.sourceId === 'source-ambient') {
-				return {
-					files: {
-						'app.ts': `import { storage } from 'kody:runtime'\nexport const read = () => storage.get('k')\n`,
-						'helpers.ts': `import { kody } from 'kody:runtime'\nexport const noop = () => kody\n`,
-					},
-				}
-			}
-			if (input.sourceId === 'source-scan-error') {
-				throw new Error('source missing')
-			}
-			throw new Error(`Unexpected sourceId: ${input.sourceId}`)
-		},
+	])
+	mocks.storageRunnerRpc.mockImplementation((input: { storageId: string }) =>
+		estimate(input.storageId === 'pkg-empty' ? 4096 : 8192),
 	)
 
-	const body = await buildPackageStorageAuditReport({
-		env,
-		baseUrl: 'https://example.com',
-		limit: 200,
-	})
-	expect(body).toMatchObject({
+	const report = await buildPackageStorageAuditReport({ env, limit: 200 })
+
+	expect(report).toEqual({
 		ok: true,
-		nextStartAfter: null,
-		totals: {
-			appPackages: 5,
-			nonEmptyLegacyBuckets: 1,
-			packagesWithAmbientImports: 1,
-			orphanAppBuckets: 2,
-			truncated: false,
-			orphanTruncated: false,
-		},
-		orphanAppBuckets: [
+		legacyBuckets: [
 			{
 				userId: 'user-a',
-				storageId: 'pkg-ambient',
-				lastSeenAt: '2026-07-02T12:00:00.000Z',
+				storageId: 'pkg-empty',
+				lastSeenAt: '2026-07-01T00:00:00.000Z',
+				estimatedBytes: 4096,
+				probeError: null,
 			},
 			{
-				userId: 'user-z',
-				storageId: 'deleted-pkg',
-				lastSeenAt: '2026-07-02T00:00:00.000Z',
+				userId: 'user-b',
+				storageId: 'pkg-data',
+				lastSeenAt: '2026-07-03T00:00:00.000Z',
+				estimatedBytes: 8192,
+				probeError: null,
 			},
 		],
-	})
-
-	const byId = new Map(body.packages.map((row) => [row.packageId, row]))
-	expect(byId.get('pkg-empty')).toMatchObject({
-		userId: 'user-a',
-		kodyId: 'empty-app',
-		legacyBucketBytes: 4096,
-		legacyBucketProbeError: null,
-		ambientStorageImportFiles: [],
-		sourceScanError: null,
-	})
-	expect(byId.get('pkg-data')).toMatchObject({
-		legacyBucketBytes: 8192,
-		legacyBucketProbeError: null,
-		ambientStorageImportFiles: [],
-		sourceScanError: null,
-	})
-	expect(byId.get('pkg-ambient')).toMatchObject({
-		userId: 'user-b',
-		legacyBucketBytes: 4096,
-		ambientStorageImportFiles: ['app.ts'],
-		sourceScanError: null,
-	})
-	expect(byId.get('pkg-probe-error')).toMatchObject({
-		legacyBucketBytes: null,
-		legacyBucketProbeError: 'DO unavailable',
-		ambientStorageImportFiles: [],
-		sourceScanError: null,
-	})
-	expect(byId.get('pkg-scan-error')).toMatchObject({
-		legacyBucketBytes: 4096,
-		legacyBucketProbeError: null,
-		ambientStorageImportFiles: [],
-		sourceScanError: 'source missing',
-	})
-
-	for (const call of mockModule.storageRunnerRpc.mock.calls) {
-		const arg = call[0] as { userId: string; storageId: string }
-		const pkg = packages.find((row) => row.packageId === arg.storageId)
-		expect(pkg).toBeTruthy()
-		expect(arg.userId).toBe(pkg?.userId)
-	}
-})
-
-test('package storage audit report supports limit truncation and keyset paging', async () => {
-	const packages = Array.from({ length: 4 }, (_, index) => ({
-		userId: 'user-a',
-		packageId: `pkg-${String(index)}`,
-		kodyId: `app-${String(index)}`,
-		sourceId: `source-${String(index)}`,
-		hasApp: 1 as const,
-	}))
-	const env = createAuditTestEnv({ packages, buckets: [] })
-	mockModule.storageRunnerRpc.mockImplementation(() => stubEstimate(0))
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		files: { 'index.ts': 'export const ok = true\n' },
-	})
-
-	const page1 = await buildPackageStorageAuditReport({
-		env,
-		baseUrl: 'https://example.com',
-		limit: 2,
-	})
-	expect(page1).toMatchObject({
-		ok: true,
-		packages: [{ packageId: 'pkg-0' }, { packageId: 'pkg-1' }],
-		nextStartAfter: JSON.stringify({
-			userId: 'user-a',
-			packageId: 'pkg-1',
-		}),
-		totals: {
-			appPackages: 2,
-			nonEmptyLegacyBuckets: 0,
-			packagesWithAmbientImports: 0,
-			orphanAppBuckets: 0,
-			truncated: true,
-			orphanTruncated: false,
-		},
-	})
-
-	const page2 = await buildPackageStorageAuditReport({
-		env,
-		baseUrl: 'https://example.com',
-		limit: 2,
-		startAfter: page1.nextStartAfter,
-	})
-	expect(page2).toMatchObject({
-		ok: true,
-		packages: [{ packageId: 'pkg-2' }, { packageId: 'pkg-3' }],
 		nextStartAfter: null,
 		totals: {
-			appPackages: 2,
+			legacyBuckets: 2,
+			nonEmptyLegacyBuckets: 1,
+			probeErrors: 0,
 			truncated: false,
 		},
 	})
+	expect(mocks.storageRunnerRpc).toHaveBeenCalledTimes(2)
 })
 
-test('package storage audit deadlines hanging probes and source scans', async () => {
-	const packages: Array<SavedPackageRow> = [
-		{
+test('package storage audit supports keyset paging and probe deadlines', async () => {
+	const env = createAuditEnv(
+		Array.from({ length: 3 }, (_, index) => ({
 			userId: 'user-a',
-			packageId: 'pkg-hang-probe',
-			kodyId: 'hang-probe',
-			sourceId: 'source-ok',
-			hasApp: 1,
-		},
-		{
-			userId: 'user-a',
-			packageId: 'pkg-hang-scan',
-			kodyId: 'hang-scan',
-			sourceId: 'source-hang',
-			hasApp: 1,
-		},
-	]
-	const env = createAuditTestEnv({ packages, buckets: [] })
-	mockModule.storageRunnerRpc.mockImplementation(
-		(input: { storageId: string }) => {
-			if (input.storageId === 'pkg-hang-probe') {
-				return { getEstimatedBytes: () => neverResolves() }
-			}
-			return stubEstimate(4096)
-		},
+			storageId: `pkg-${String(index)}`,
+			kind: 'app',
+			lastSeenAt: '2026-07-01T00:00:00.000Z',
+		})),
 	)
-	mockModule.loadPackageSourceBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			if (input.sourceId === 'source-hang') return neverResolves()
-			return {
-				files: { 'index.ts': 'export const ok = true\n' },
-			}
-		},
+	mocks.storageRunnerRpc.mockImplementation((input: { storageId: string }) =>
+		input.storageId === 'pkg-1'
+			? { getEstimatedBytes: () => new Promise(() => {}) }
+			: estimate(4096),
 	)
 
-	const report = await buildPackageStorageAuditReport({
+	const first = await buildPackageStorageAuditReport({
 		env,
-		baseUrl: 'https://example.com',
-		limit: 10,
-		budgets: {
-			legacyBucketProbeMs: 20,
-			sourceScanMs: 20,
-		},
+		limit: 2,
+		budgets: { legacyBucketProbeMs: 10 },
+	})
+	expect(first.nextStartAfter).toBe(
+		JSON.stringify({ userId: 'user-a', storageId: 'pkg-1' }),
+	)
+	expect(first.totals).toEqual({
+		legacyBuckets: 2,
+		nonEmptyLegacyBuckets: 0,
+		probeErrors: 1,
+		truncated: true,
 	})
 
-	expect(report.packages).toHaveLength(2)
-	expect(report.nextStartAfter).toBeNull()
-	const byId = new Map(report.packages.map((row) => [row.packageId, row]))
-	expect(byId.get('pkg-hang-probe')).toMatchObject({
-		legacyBucketBytes: null,
-		legacyBucketProbeError: 'timed out after 20ms',
-		ambientStorageImportFiles: [],
-		sourceScanError: null,
+	const second = await buildPackageStorageAuditReport({
+		env,
+		limit: 2,
+		startAfter: first.nextStartAfter,
 	})
-	expect(byId.get('pkg-hang-scan')).toMatchObject({
-		legacyBucketBytes: 4096,
-		legacyBucketProbeError: null,
-		ambientStorageImportFiles: [],
-		sourceScanError: 'timed out after 20ms',
+	expect(second.legacyBuckets.map((row) => row.storageId)).toEqual(['pkg-2'])
+	expect(second.nextStartAfter).toBeNull()
+})
+
+test('legacy package storage cleanup clears buckets through package cleanup machinery', async () => {
+	const env = createAuditEnv([
+		{
+			userId: 'user-a',
+			storageId: 'pkg-ok',
+			kind: 'app',
+			lastSeenAt: '2026-07-01T00:00:00.000Z',
+		},
+		{
+			userId: 'user-b',
+			storageId: 'pkg-failed',
+			kind: 'app',
+			lastSeenAt: '2026-07-02T00:00:00.000Z',
+		},
+	])
+	mocks.clearPackageOwnedStorageBucket.mockImplementation(
+		async (input: { storageId: string }) => input.storageId === 'pkg-ok',
+	)
+
+	const report = await cleanupLegacyPackageStorageBuckets({ env, limit: 200 })
+
+	expect(report).toEqual({
+		ok: true,
+		buckets: [
+			{ userId: 'user-a', storageId: 'pkg-ok', cleared: true },
+			{ userId: 'user-b', storageId: 'pkg-failed', cleared: false },
+		],
+		nextStartAfter: null,
+		totals: { cleared: 1, failed: 1, truncated: false },
+	})
+	expect(mocks.clearPackageOwnedStorageBucket).toHaveBeenCalledWith({
+		env,
+		userId: 'user-a',
+		packageId: 'pkg-ok',
+		storageId: 'pkg-ok',
 	})
 })

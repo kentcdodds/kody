@@ -38,7 +38,7 @@ async function extractCreateKodyProxySource() {
 		'utf8',
 	)
 	const start = sourceText.indexOf('function createKodyProxy(runtimeBridge) {')
-	const end = sourceText.indexOf('\nfunction createStorageProxy', start)
+	const end = sourceText.indexOf('\nfunction createRealtimeProxy', start)
 	if (start < 0 || end < 0) {
 		throw new Error('createKodyProxy source was not found.')
 	}
@@ -945,9 +945,10 @@ test('package app worker source binds __kodyPackageStorage in createRuntime', as
 	expect(sourceText).toContain('runtimeBridge.packageStorageSet({')
 	expect(sourceText).toContain('runtimeBridge.packageStorageDelete({')
 	expect(sourceText).toContain('runtimeBridge.packageStorageClear({')
-	expect(sourceText).toContain(
-		'storage: createStorageProxy(runtimeBridge, packageId),',
-	)
+	expect(sourceText).toContain('storage: undefined,')
+	expect(sourceText).not.toContain('function createStorageProxy(')
+	expect(sourceText).not.toContain("case 'storage_get':")
+	expect(sourceText).not.toContain("case 'storage_clear':")
 })
 
 test('package app runtime bridge packageStorage methods grant by provenance and deny others', async () => {
@@ -1009,7 +1010,7 @@ test('package app runtime bridge packageStorage methods grant by provenance and 
 	).rejects.toThrow('packageStorage requires a non-empty package id.')
 })
 
-test('package app runtime bridge raw storage methods are namespace-locked to the app package id', async () => {
+test('package app runtime bridge raw storage methods only allow internal app buckets', async () => {
 	const { bridge } = createPackageAppRuntimeBridgeForTest()
 	const getValue = vi.fn(async () => ({ value: 'owned' }))
 	const setValue = vi.fn(async () => ({ ok: true }))
@@ -1036,9 +1037,6 @@ test('package app runtime bridge raw storage methods are namespace-locked to the
 	).mockResolvedValue(undefined)
 
 	await expect(
-		bridge.storageGet({ storageId: 'package-1', key: 'root' }),
-	).resolves.toEqual({ value: 'owned' })
-	await expect(
 		bridge.storageGet({
 			storageId: 'package-1:facet:main',
 			key: 'facet',
@@ -1051,12 +1049,14 @@ test('package app runtime bridge raw storage methods are namespace-locked to the
 			value: 1,
 		}),
 	).resolves.toEqual({ ok: true })
-	expect(getStorageRunner).toHaveBeenCalledWith('package-1')
 	expect(getStorageRunner).toHaveBeenCalledWith('package-1:facet:main')
 	expect(getStorageRunner).toHaveBeenCalledWith('package-1:Counter:instance-a')
 
 	const outsideNamespaceError =
 		/outside this app's namespace[\s\S]*packageStorage\(\)/
+	await expect(
+		bridge.storageGet({ storageId: 'package-1', key: 'legacy-root' }),
+	).rejects.toThrow(outsideNamespaceError)
 	await expect(
 		bridge.storageGet({
 			storageId: buildPackageStorageId('victim-package'),
@@ -1076,7 +1076,7 @@ test('package app runtime bridge raw storage methods are namespace-locked to the
 	await expect(
 		bridge.storageGet({ storageId: '   ', key: 'x' }),
 	).rejects.toThrow('Package app storage requires a non-empty storage id.')
-	expect(getStorageRunner).toHaveBeenCalledTimes(4)
+	expect(getStorageRunner).toHaveBeenCalledTimes(2)
 })
 
 test('buildPackageAppWorker passes packageStorage grant ids from root, static, and dynamic deps', async () => {

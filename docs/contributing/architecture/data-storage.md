@@ -799,8 +799,6 @@ Storage ids are also stable strings. Changing a form strands the old bucket:
   job run scratch.
 - `package:{encodeURIComponent(packageId)}` — package bucket behind
   `packageStorage()` / `buildPackageStorageId(packageId)`.
-- Raw saved package id (no prefix) — legacy package-app root ambient bucket;
-  distinct from `package:{...}`. New app code uses `packageStorage()`.
 - `{packageId}:facet:{facetName}` — package-app facet StorageRunner buckets.
 - `{packageId}:{exportName}:{name}` — package-app internal Durable Object
   namespace StorageRunner buckets.
