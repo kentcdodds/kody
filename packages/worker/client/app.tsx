@@ -1,9 +1,11 @@
 import { type Handle, css } from 'remix/ui'
+import { on } from './event-mixin.ts'
 import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
 import {
 	listenToRouterMutations,
 	listenToRouterNavigation,
 	listenToRouterNavigationEnd,
+	navigate,
 	registerRouteLoaders,
 	Router,
 } from './client-router.tsx'
@@ -200,7 +202,20 @@ export function App(handle: Handle<AppProps>) {
 						boxSizing: 'border-box',
 					})}
 				>
-					<a href="#main" mix={css(visuallyHiddenUntilFocusedCss)}>
+					<a
+						href="#main"
+						mix={[
+							on('click', (event) => {
+								const main = document.getElementById('main')
+								if (!(main instanceof HTMLElement)) return
+								event.preventDefault()
+								navigate('#main')
+								main.focus({ preventScroll: true })
+								main.scrollIntoView()
+							}),
+							css(visuallyHiddenUntilFocusedCss),
+						]}
+					>
 						Skip to content
 					</a>
 					{hideWaitlistBanner ? null : <WaitlistBanner />}
