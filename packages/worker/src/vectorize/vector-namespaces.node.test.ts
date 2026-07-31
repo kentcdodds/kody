@@ -7,6 +7,7 @@ import {
 
 type TestVector = {
 	id: string
+	score: number
 	namespace?: string
 	userId?: string
 }
@@ -20,22 +21,38 @@ function createVectorIndex(vectors: ReadonlyArray<TestVector>) {
 			const matches = vectors
 				.filter((vector) => vector.namespace === options?.namespace)
 				.filter((vector) => !expectedUserId || vector.userId === expectedUserId)
-				.map((vector) => ({ id: vector.id, score: 1 }))
+				.map((vector) => ({ id: vector.id, score: vector.score }))
 			return { matches, count: matches.length }
 		},
 	)
 	return { index: { query } as unknown as VectorizeIndex, query }
 }
 
-test('user namespace queries deny cross-user vectors and fall back to legacy metadata-scoped vectors', async () => {
+test('user namespace queries merge partial reindex results and deny cross-user vectors', async () => {
 	const userA = 'a'.repeat(64)
 	const userB = 'b'.repeat(64)
 	const { index, query } = createVectorIndex([
-		{ id: 'package-user-b', namespace: userB, userId: userB },
-		{ id: 'package-user-a-legacy', userId: userA },
+		{
+			id: 'package-user-a-namespaced',
+			score: 0.8,
+			namespace: userA,
+			userId: userA,
+		},
+		{
+			id: 'package-user-a-namespaced',
+			score: 0.7,
+			userId: userA,
+		},
+		{ id: 'package-user-a-legacy', score: 0.9, userId: userA },
+		{
+			id: 'package-user-b',
+			score: 0.99,
+			namespace: userB,
+			userId: userB,
+		},
 	])
 	const options = {
-		topK: 10,
+		topK: 2,
 		filter: {
 			kind: { $eq: 'package' },
 			userId: { $eq: userA },
@@ -50,7 +67,11 @@ test('user namespace queries deny cross-user vectors and fall back to legacy met
 			options,
 		}),
 	).resolves.toMatchObject({
-		matches: [{ id: 'package-user-a-legacy' }],
+		matches: [
+			{ id: 'package-user-a-legacy', score: 0.9 },
+			{ id: 'package-user-a-namespaced', score: 0.8 },
+		],
+		count: 2,
 	})
 	expect(query).toHaveBeenNthCalledWith(
 		1,
@@ -60,29 +81,9 @@ test('user namespace queries deny cross-user vectors and fall back to legacy met
 	expect(query).toHaveBeenNthCalledWith(
 		2,
 		[0.1, 0.2],
-		expect.not.objectContaining({ namespace: expect.anything() }),
+		expect.objectContaining({ filter: options.filter }),
 	)
-	expect(
-		query.mock.results.flatMap((result) =>
-			result.type === 'return' ? [result.value] : [],
-		),
-	).toHaveLength(2)
-
-	query.mockClear()
-	const namespaced = createVectorIndex([
-		{ id: 'package-user-a', namespace: userA, userId: userA },
-		{ id: 'package-user-b', namespace: userB, userId: userB },
-	])
-	await expect(
-		queryVectorizeWithNamespaceFallback({
-			index: namespaced.index,
-			vector: [0.1, 0.2],
-			namespace: userVectorNamespace(userA),
-			options,
-		}),
-	).resolves.toMatchObject({
-		matches: [{ id: 'package-user-a' }],
-	})
-	expect(namespaced.query).toHaveBeenCalledTimes(1)
+	expect(query.mock.calls[1]?.[1]).not.toHaveProperty('namespace')
+	expect(query).toHaveBeenCalledTimes(2)
 	expect(BUILTIN_VECTOR_NAMESPACE).not.toMatch(/^[a-f0-9]{64}$/)
 })

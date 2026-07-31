@@ -879,14 +879,15 @@ deterministic so upserts and deletes target the same vector.
 - Builtin capabilities: id is the capability name in namespace
   `__kody_builtin__`, with metadata `{ kind: 'builtin', domain }`.
 
-The namespace migration uses expand/contract reads. Each query first searches
-the intended namespace. If that namespace returns no matches, it repeats the
-same metadata-filtered query against the legacy default namespace. The
+The namespace migration uses expand/contract reads. Each query searches both the
+intended namespace and the legacy default namespace with the same metadata
+filter, then deduplicates, ranks, and limits the combined matches. This keeps
+partially reindexed accounts complete without weakening user isolation. The
 post-deploy `POST /__maintenance/reindex-capabilities` sweep keyset-pages every
 memory, job, and saved package from D1 (200 rows per page) and upserts it into
 the owner's namespace; it also rebuilds builtins in their reserved namespace.
 The deploy is not considered migrated until every phase reports no `error` or
-`failed` vectors. Remove the default-namespace fallback in a follow-up contract
+`failed` vectors. Remove the default-namespace read in a follow-up contract
 deploy only after a production full sweep succeeds and the next deploy confirms
 normal namespaced search. Vectors are derived from D1, so no canonical data is
 moved or deleted during this migration.

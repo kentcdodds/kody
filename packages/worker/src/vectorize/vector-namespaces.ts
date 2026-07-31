@@ -9,9 +9,9 @@ export function userVectorNamespace(userId: string): string {
 }
 
 /**
- * Expand-phase read path for the namespace migration. New vectors are queried
- * first; the legacy default namespace is consulted only when the new namespace
- * has no matches. Metadata filters stay identical on both reads.
+ * Expand-phase read path for the namespace migration. Queries both the new
+ * namespace and the legacy default namespace so partially reindexed users keep
+ * complete results. Metadata filters stay identical on both reads.
  *
  * Remove this fallback after production's full capability reindex reports that
  * every user-owned vector was upserted into its user namespace.
@@ -22,10 +22,28 @@ export async function queryVectorizeWithNamespaceFallback(input: {
 	namespace: string
 	options: VectorizeQueryOptions
 }): Promise<VectorizeMatches> {
-	const namespacedMatches = await input.index.query([...input.vector], {
-		...input.options,
-		namespace: input.namespace,
-	})
-	if (namespacedMatches.matches.length > 0) return namespacedMatches
-	return input.index.query([...input.vector], input.options)
+	const [namespacedMatches, legacyMatches] = await Promise.all([
+		input.index.query([...input.vector], {
+			...input.options,
+			namespace: input.namespace,
+		}),
+		input.index.query([...input.vector], input.options),
+	])
+	const matchById = new Map<string, VectorizeMatch>()
+	for (const match of [
+		...namespacedMatches.matches,
+		...legacyMatches.matches,
+	]) {
+		const existing = matchById.get(match.id)
+		if (!existing || match.score > existing.score) {
+			matchById.set(match.id, match)
+		}
+	}
+	const topK =
+		input.options.topK ??
+		Math.max(namespacedMatches.matches.length, legacyMatches.matches.length)
+	const matches = [...matchById.values()]
+		.sort((left, right) => right.score - left.score)
+		.slice(0, topK)
+	return { matches, count: matches.length }
 }
