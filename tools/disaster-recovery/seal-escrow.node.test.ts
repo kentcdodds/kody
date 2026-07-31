@@ -1,28 +1,80 @@
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { expect, test, vi } from 'vitest'
-import {
-	main,
-	putSealedEscrowBlob,
-	sealEscrowSecret,
-	unsealEscrowSecretForTests,
-} from './seal-escrow.ts'
+import { main, putSealedEscrowBlob, sealEscrowSecret } from './seal-escrow.ts'
+import { main as unsealMain, unsealEscrowSecret } from './unseal-escrow.ts'
 import {
 	backupEscrowSecretStoreKeyKey,
 	parseSealedEscrowBlob,
 } from '@kody-internal/shared/backup-staging.ts'
 
-test('sealEscrowSecret round-trips through unseal helper', () => {
+test('the operator unseal tool round-trips sealed key bytes and fails closed', async () => {
+	const secretValue = 'known-test-secret-store-key-\u0000-\u{1f512}'
+	const passphrase = 'test-only-operator-passphrase'
 	const sealed = sealEscrowSecret({
-		secretValue: 'super-secret-value-32-chars-minimum!!',
-		passphrase: 'operator-passphrase',
+		secretValue,
+		passphrase,
 		label: 'secret-store-key',
 		sealedAt: '2026-07-23T01:02:03.000Z',
 	})
 	expect(sealed.iterations).toBeGreaterThanOrEqual(600_000)
 	expect(parseSealedEscrowBlob(sealed).label).toBe('secret-store-key')
-	expect(unsealEscrowSecretForTests(sealed, 'operator-passphrase')).toBe(
-		'super-secret-value-32-chars-minimum!!',
+	expect(
+		Buffer.from(unsealEscrowSecret(sealed, passphrase), 'utf8').equals(
+			Buffer.from(secretValue, 'utf8'),
+		),
+	).toBe(true)
+	expect(() => unsealEscrowSecret(sealed, 'wrong-passphrase')).toThrow(
+		/authentication failed/,
 	)
-	expect(() => unsealEscrowSecretForTests(sealed, 'wrong-passphrase')).toThrow()
+
+	const directory = await mkdtemp(path.join(tmpdir(), 'kody-escrow-unseal-'))
+	try {
+		const inputPath = path.join(directory, 'secret-store-key.v1.json')
+		const outputPath = path.join(directory, 'recovered-secret')
+		await writeFile(inputPath, JSON.stringify(sealed), 'utf8')
+
+		await expect(
+			unsealMain({ SECRET_ESCROW_PASSPHRASE: 'wrong-passphrase' }, [
+				'--input',
+				inputPath,
+				'--output',
+				outputPath,
+			]),
+		).rejects.toThrow(/authentication failed/)
+		await expect(stat(outputPath)).rejects.toMatchObject({ code: 'ENOENT' })
+
+		await unsealMain({ SECRET_ESCROW_PASSPHRASE: passphrase }, [
+			'--input',
+			inputPath,
+			'--output',
+			outputPath,
+		])
+		expect(await readFile(outputPath, 'utf8')).toBe(secretValue)
+		expect((await stat(outputPath)).mode & 0o777).toBe(0o600)
+
+		const mismatchedPath = path.join(directory, 'mismatched.json')
+		const mismatchedOutputPath = path.join(directory, 'mismatched-output')
+		await writeFile(
+			mismatchedPath,
+			JSON.stringify({ ...sealed, schemaVersion: 2 }),
+			'utf8',
+		)
+		await expect(
+			unsealMain({ SECRET_ESCROW_PASSPHRASE: passphrase }, [
+				'--input',
+				mismatchedPath,
+				'--output',
+				mismatchedOutputPath,
+			]),
+		).rejects.toThrow(/canonical escrow JSON/)
+		await expect(stat(mismatchedOutputPath)).rejects.toMatchObject({
+			code: 'ENOENT',
+		})
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
 })
 
 test('main seals and uploads the default escrow key without printing secret material', async () => {

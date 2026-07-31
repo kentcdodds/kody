@@ -13,6 +13,9 @@ Also here:
 - `seal-escrow.ts` — seal `SECRET_STORE_KEY` under an operator passphrase and
   upload `escrow/secret-store-key.v1.json` (used by
   `.github/workflows/dr-escrow.yml`).
+- `unseal-escrow.ts` — recover the key from a local sealed blob or the DR
+  bucket, writing only to stdout or a new mode-`0600` file outside the
+  repository.
 
 These tools do not create, bind, overwrite, delete, cut over, or use Time Travel
 on a production D1 database.

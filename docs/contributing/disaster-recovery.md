@@ -294,8 +294,21 @@ Escrow model (solo):
    (`tools/disaster-recovery/seal-escrow.ts`). The escrow object is write-once;
    after a `SECRET_STORE_KEY` rotation, bump `ESCROW_KEY_VERSION` (for example
    `v2`) when re-sealing — see [Secret rotation](./secret-rotation.md).
-3. Dashboard shows whether the escrow object is present (not whether the
-   passphrase still works — test unsealing offline after each seal).
+3. Dashboard presence does not prove that the passphrase recovers the key. Copy
+   the sealed blob to an offline environment and run:
+
+   ```sh
+   node tools/disaster-recovery/unseal-escrow.ts \
+     --input /secure/input/secret-store-key.v1.json \
+     --output /secure/output/secret-store-key
+   ```
+
+   The tool reads `SECRET_ESCROW_PASSPHRASE` or prompts without echo. It creates
+   the output with mode `0600`, refuses repository paths and existing files, and
+   emits no secret metadata. Omit `--output` only when writing the recovered key
+   directly to stdout is intentional. To read from the DR bucket instead of a
+   local file, omit `--input`, set the DR bucket credentials, and select the
+   sealed object with `ESCROW_KEY_VERSION` (default `v1`).
 
 Never put the plaintext key or passphrase in manifests, tickets, logs, or the
 backup SQL. See [Secret rotation](./secret-rotation.md).
@@ -369,6 +382,9 @@ UI-down recovery:
   readiness assessment from local Ed25519 evidence envelopes
 - `node tools/disaster-recovery/seal-escrow.ts` — same seal used by
   `dr-escrow.yml` (also runnable locally with env vars)
+- `node tools/disaster-recovery/unseal-escrow.ts` — authenticated recovery from
+  a local sealed blob or the DR bucket; writes only to stdout or a new file
+  outside the repository
 
 Details:
 [`tools/disaster-recovery/readme.md`](../../tools/disaster-recovery/readme.md).
@@ -452,8 +468,9 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 ### 6. Escrow and ongoing drills
 
 - [ ] `SECRET_ESCROW_PASSPHRASE` in password manager + GitHub secret; run
-      `dr-escrow.yml`; dashboard shows escrow present; offline unseal smoke test
-      with the passphrase.
+      `dr-escrow.yml`; dashboard shows escrow present; run
+      `node tools/disaster-recovery/unseal-escrow.ts --input <sealed-blob> --output <secure-path>`
+      against the sealed blob with the real passphrase, offline.
 - [ ] Set `DR_EXPORT_ENABLED=true` in production after staging path is proven.
 - [ ] Monthly: UI isolated D1 drill on a retained day; confirm alert paths for
       freshness failures.

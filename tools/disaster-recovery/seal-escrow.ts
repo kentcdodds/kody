@@ -13,7 +13,6 @@
  */
 import {
 	createCipheriv,
-	createDecipheriv,
 	createHash,
 	createHmac,
 	pbkdf2Sync,
@@ -95,32 +94,6 @@ export function sealEscrowSecret(input: {
 		label: input.label,
 	}
 	return parseSealedEscrowBlob(sealed)
-}
-
-/** Test-only helper: reverse {@link sealEscrowSecret}. */
-export function unsealEscrowSecretForTests(
-	blob: SealedEscrowBlob,
-	passphrase: string,
-): string {
-	const parsed = parseSealedEscrowBlob(blob)
-	const salt = Buffer.from(parsed.saltBase64, 'base64')
-	const iv = Buffer.from(parsed.ivBase64, 'base64')
-	const packed = Buffer.from(parsed.ciphertextBase64, 'base64')
-	const authTag = packed.subarray(packed.length - 16)
-	const ciphertext = packed.subarray(0, packed.length - 16)
-	const key = pbkdf2Sync(
-		passphrase,
-		salt,
-		parsed.iterations,
-		keyBytes,
-		'sha256',
-	)
-	const decipher = createDecipheriv('aes-256-gcm', key, iv)
-	decipher.setAuthTag(authTag)
-	return Buffer.concat([
-		decipher.update(ciphertext),
-		decipher.final(),
-	]).toString('utf8')
 }
 
 function isWriteOnceRejection(status: number, bodyText: string) {
