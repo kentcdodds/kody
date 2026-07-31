@@ -1,4 +1,9 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	cancelSubscription,
+	deleteCustomer,
+	listSubscriptions,
+} from '#worker/billing/stripe-client.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { purgeJobManagerForUser } from '#worker/jobs/manager-client.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
@@ -121,6 +126,7 @@ type UserPackageServiceSnapshot = {
 }
 
 type UserDeletionInventory = {
+	stripeCustomerId: string | null
 	vectorIds: Array<string>
 	storageIds: Array<string>
 	bundleKvKeys: Array<string>
@@ -134,6 +140,11 @@ type UserDeletionInventory = {
 	packageServices: Array<UserPackageServiceSnapshot>
 	communityListings: Array<AccountCommunityListingSnapshot>
 }
+
+const stripeSubscriptionStatusesCanceledOnAccountDeletion = new Set([
+	'active',
+	'trialing',
+])
 
 export class AccountDeletionInventoryError extends Error {
 	readonly inventoryErrors: ReadonlyArray<string>
@@ -190,6 +201,15 @@ async function listUserVectorIds(env: Env, userId: string) {
 		}
 	}
 	return ids
+}
+
+async function getUserStripeCustomerId(env: Env, dbUserId: number) {
+	const row = await env.APP_DB.prepare(
+		`SELECT stripe_customer_id FROM users WHERE id = ?`,
+	)
+		.bind(dbUserId)
+		.first<{ stripe_customer_id: string | null }>()
+	return row?.stripe_customer_id?.trim() || null
 }
 
 async function listUserStorageIds(
@@ -354,6 +374,7 @@ async function collectUserDeletionInventory(input: {
 		return [] as Array<UserPackageServiceSnapshot>
 	})
 	const [
+		stripeCustomerId,
 		vectorIds,
 		storageIds,
 		r2Inventory,
@@ -364,6 +385,10 @@ async function collectUserDeletionInventory(input: {
 		mcpServers,
 		mcpAgentSessions,
 	] = await Promise.all([
+		getUserStripeCustomerId(input.env, input.dbUserId).catch((error) => {
+			recordInventoryError('Stripe customer id', error)
+			return null
+		}),
 		listUserVectorIds(input.env, input.userId).catch((error) => {
 			recordInventoryError('vector ids', error)
 			return [] as Array<string>
@@ -428,6 +453,7 @@ async function collectUserDeletionInventory(input: {
 		throw new AccountDeletionInventoryError(inventoryErrors)
 	}
 	return {
+		stripeCustomerId,
 		vectorIds,
 		storageIds,
 		bundleKvKeys,
@@ -440,6 +466,48 @@ async function collectUserDeletionInventory(input: {
 		mcpAgentSessions,
 		packageServices,
 		communityListings: r2Inventory.communityListings,
+	}
+}
+
+async function cancelSubscriptionsAndDeleteStripeCustomer(input: {
+	env: Env
+	customerId: string
+}) {
+	const failures: Array<unknown> = []
+	try {
+		const subscriptions = await listSubscriptions(input.env, input.customerId)
+		for (const subscription of subscriptions) {
+			if (
+				!stripeSubscriptionStatusesCanceledOnAccountDeletion.has(
+					subscription.status,
+				)
+			) {
+				continue
+			}
+			try {
+				await cancelSubscription(input.env, subscription.id)
+			} catch (error) {
+				failures.push(error)
+			}
+		}
+	} catch (error) {
+		failures.push(error)
+	}
+
+	// Customer deletion is still attempted when listing or canceling a
+	// subscription fails. Stripe customer deletion also cancels active
+	// subscriptions, so this is the most important final cleanup attempt.
+	try {
+		await deleteCustomer(input.env, input.customerId)
+	} catch (error) {
+		failures.push(error)
+	}
+
+	if (failures.length > 0) {
+		throw new AggregateError(
+			failures,
+			`Stripe account cleanup encountered ${failures.length} failure(s).`,
+		)
 	}
 }
 
@@ -1125,6 +1193,22 @@ export async function deleteUserAccount(input: {
 
 	if (warnings.length > 0) {
 		throw new AccountDeletionCleanupError(warnings, result)
+	}
+
+	if (inventory.stripeCustomerId) {
+		try {
+			await cancelSubscriptionsAndDeleteStripeCustomer({
+				env: input.env,
+				customerId: inventory.stripeCustomerId,
+			})
+		} catch (error) {
+			const warning = `Stripe customer cleanup failed during account deletion: ${getErrorMessage(error)}`
+			warnings.push(warning)
+			console.error('account_deletion_stripe_cleanup_failed', {
+				userId: input.mcpUserId,
+				error,
+			})
+		}
 	}
 
 	try {

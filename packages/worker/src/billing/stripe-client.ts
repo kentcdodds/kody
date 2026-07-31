@@ -6,6 +6,7 @@
  */
 import {
 	array,
+	boolean,
 	nullable,
 	number,
 	object,
@@ -74,6 +75,16 @@ const billingPortalSessionSchema = object({
 	url: string(),
 })
 
+const canceledSubscriptionSchema = object({
+	id: string(),
+	status: string(),
+})
+
+const deletedCustomerSchema = object({
+	id: string(),
+	deleted: boolean(),
+})
+
 export type StripeCheckoutSession = InferOutput<typeof checkoutSessionSchema>
 export type StripeSubscription = InferOutput<typeof subscriptionSchema>
 
@@ -93,7 +104,7 @@ function requireStripeSecretKey(env: StripeEnv) {
 async function stripeRequest(
 	env: StripeEnv,
 	input: {
-		method: 'GET' | 'POST'
+		method: 'DELETE' | 'GET' | 'POST'
 		path: string
 		query?: Record<string, string>
 		form?: Record<string, string>
@@ -127,10 +138,11 @@ async function stripeRequest(
 
 	const response = await fetch(url.toString(), init)
 	const text = await response.text()
-	// Checkout session paths embed the session id; keep ids out of logs.
+	// Resource paths embed customer, subscription, or session ids; keep them
+	// out of logs while preserving the endpoint name for reconciliation.
 	const loggablePath = input.path.replace(
-		/(checkout\/sessions\/)[^/?]+/,
-		'$1<redacted>',
+		/(checkout\/sessions|customers|subscriptions)\/[^/?]+/,
+		'$1/<redacted>',
 	)
 	let body: unknown = null
 	if (text) {
@@ -302,6 +314,56 @@ export async function listSubscriptions(
 		})
 	}
 	return parsed.value.data
+}
+
+/**
+ * Immediately cancels a subscription. Account deletion intentionally does not
+ * use cancel_at_period_end because the user is relinquishing portal access and
+ * all account state.
+ */
+export async function cancelSubscription(
+	env: StripeEnv,
+	subscriptionId: string,
+): Promise<void> {
+	const trimmed = subscriptionId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Subscription id is required.', { status: 400 })
+	}
+	const body = await stripeRequest(env, {
+		method: 'DELETE',
+		path: `/v1/subscriptions/${encodeURIComponent(trimmed)}`,
+	})
+	const parsed = parseSafe(canceledSubscriptionSchema, body)
+	if (!parsed.success || parsed.value.status !== 'canceled') {
+		throw new StripeApiError('Unexpected Stripe canceled subscription shape.', {
+			status: 502,
+		})
+	}
+}
+
+/**
+ * Permanently deletes a Stripe customer after its active subscriptions have
+ * been canceled, preventing future invoices for an account that no longer
+ * exists in Kody.
+ */
+export async function deleteCustomer(
+	env: StripeEnv,
+	customerId: string,
+): Promise<void> {
+	const trimmed = customerId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Customer id is required.', { status: 400 })
+	}
+	const body = await stripeRequest(env, {
+		method: 'DELETE',
+		path: `/v1/customers/${encodeURIComponent(trimmed)}`,
+	})
+	const parsed = parseSafe(deletedCustomerSchema, body)
+	if (!parsed.success || !parsed.value.deleted) {
+		throw new StripeApiError('Unexpected Stripe deleted customer shape.', {
+			status: 502,
+		})
+	}
 }
 
 export async function createBillingPortalSession(

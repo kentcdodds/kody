@@ -2,6 +2,7 @@ import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import * as stripeClient from '#worker/billing/stripe-client.ts'
 import {
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
@@ -15,7 +16,10 @@ import {
 	AccountDeletionWritersActiveError,
 	assertAccountWritable,
 } from '#worker/account/deletion-state.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
@@ -290,6 +294,17 @@ function createTestDb(
 									.filter((row) => Number(row['id']) === numericId)
 									.map((row) => ({
 										avatar_key: row['avatar_key'] ?? null,
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower === 'select stripe_customer_id from users where id = ?'
+							) {
+								const numericId = Number(params[0])
+								results = (rows.users ?? [])
+									.filter((row) => Number(row['id']) === numericId)
+									.map((row) => ({
+										stripe_customer_id: row['stripe_customer_id'] ?? null,
 									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
@@ -1433,6 +1448,136 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		userId: userAaa,
 	})
 	expect(result.warnings).toEqual([])
+})
+
+test('account deletion cancels Stripe billing and remains non-blocking on Stripe failures', async () => {
+	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
+	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
+	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
+	try {
+		listSubscriptions.mockResolvedValue([
+			{
+				id: 'sub_active',
+				status: 'active',
+				cancel_at: null,
+				items: { data: [{ price: { id: 'price_pro' } }] },
+			},
+			{
+				id: 'sub_trialing',
+				status: 'trialing',
+				cancel_at: null,
+				items: { data: [{ price: { id: 'price_pro' } }] },
+			},
+			{
+				id: 'sub_canceled',
+				status: 'canceled',
+				cancel_at: null,
+				items: { data: [{ price: { id: 'price_pro' } }] },
+			},
+		])
+		cancelSubscription.mockResolvedValue(undefined)
+		deleteCustomer.mockResolvedValue(undefined)
+		const { db, rows } = createTestDb({
+			users: [
+				{
+					id: 1,
+					email: 'pro@example.com',
+					stable_user_id: 'user-pro',
+					stripe_customer_id: 'cus_pro',
+				},
+			],
+		})
+
+		const result = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db),
+			dbUserId: 1,
+			mcpUserId: 'user-pro',
+		})
+
+		expect(listSubscriptions).toHaveBeenCalledWith(
+			expect.any(Object),
+			'cus_pro',
+		)
+		expect(cancelSubscription).toHaveBeenCalledTimes(2)
+		expect(cancelSubscription).toHaveBeenCalledWith(
+			expect.any(Object),
+			'sub_active',
+		)
+		expect(cancelSubscription).toHaveBeenCalledWith(
+			expect.any(Object),
+			'sub_trialing',
+		)
+		expect(deleteCustomer).toHaveBeenCalledWith(expect.any(Object), 'cus_pro')
+		expect(rows.users).toEqual([])
+		expect(result.warnings).toEqual([])
+
+		listSubscriptions.mockRejectedValue(
+			new Error('Stripe subscriptions unavailable'),
+		)
+		deleteCustomer.mockRejectedValue(new Error('Stripe customer unavailable'))
+		cancelSubscription.mockClear()
+		consoleError.mockImplementation(() => {})
+		const { db: failureDb, rows: failureRows } = createTestDb({
+			users: [
+				{
+					id: 2,
+					email: 'failure@example.com',
+					stable_user_id: 'user-stripe-failure',
+					stripe_customer_id: 'cus_failure',
+				},
+			],
+		})
+
+		const failureResult = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(failureDb),
+			dbUserId: 2,
+			mcpUserId: 'user-stripe-failure',
+		})
+
+		expect(deleteCustomer).toHaveBeenLastCalledWith(
+			expect.any(Object),
+			'cus_failure',
+		)
+		expect(cancelSubscription).not.toHaveBeenCalled()
+		expect(failureRows.users).toEqual([])
+		expect(failureResult.warnings).toEqual([
+			expect.stringContaining('Stripe customer cleanup failed'),
+		])
+		expect(consoleError).toHaveBeenCalledOnce()
+		expect(consoleError).toHaveBeenCalledWith(
+			'account_deletion_stripe_cleanup_failed',
+			expect.objectContaining({
+				userId: 'user-stripe-failure',
+				error: expect.any(AggregateError),
+			}),
+		)
+
+		listSubscriptions.mockClear()
+		deleteCustomer.mockClear()
+		const { db: freeDb, rows: freeRows } = createTestDb({
+			users: [
+				{
+					id: 3,
+					email: 'free@example.com',
+					stable_user_id: 'user-free',
+					stripe_customer_id: null,
+				},
+			],
+		})
+		await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(freeDb),
+			dbUserId: 3,
+			mcpUserId: 'user-free',
+		})
+		expect(listSubscriptions).not.toHaveBeenCalled()
+		expect(deleteCustomer).not.toHaveBeenCalled()
+		expect(freeRows.users).toEqual([])
+	} finally {
+		listSubscriptions.mockRestore()
+		cancelSubscription.mockRestore()
+		deleteCustomer.mockRestore()
+		consoleError.mockReset()
+	}
 })
 
 test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanup errors', async () => {
