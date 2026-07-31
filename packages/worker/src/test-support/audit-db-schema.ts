@@ -1,11 +1,11 @@
 import {
 	applyD1Migrations,
+	type D1Migration,
 	env,
-	readD1Migrations,
 } from 'cloudflare:test'
 
-const auditMigrations = await readD1Migrations(
-	'packages/worker/audit-migrations',
-)
+const testEnv = env as Env & {
+	TEST_AUDIT_MIGRATIONS: Array<D1Migration>
+}
 
-await applyD1Migrations(env.AUDIT_DB, auditMigrations)
+await applyD1Migrations(env.AUDIT_DB, testEnv.TEST_AUDIT_MIGRATIONS)
