@@ -435,7 +435,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			<section mix={css(pageCss)}>
 				<header mix={css(headerCss)}>
 					<span mix={css(eyebrowCss)}>Kody secure connection</span>
-					<h2 mix={css(pageTitleCss)}>Authorize access</h2>
+					<h1 mix={css(pageTitleCss)}>Authorize access</h1>
 					<p mix={css(pageDescriptionCss)}>
 						{clientLabel} wants to access your kody account.
 					</p>

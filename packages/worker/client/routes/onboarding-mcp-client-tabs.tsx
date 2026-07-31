@@ -1,6 +1,6 @@
 import { type Handle, css } from 'remix/ui'
+import { Tab, TabList, TabPanel, Tabs } from 'remix/ui/tabs'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
-import { on } from '#client/event-mixin.ts'
 import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
@@ -24,20 +24,13 @@ import {
 } from '#client/styles/tokens.ts'
 import {
 	descriptionCss,
+	focusRingCss,
 	getSecondaryButtonCss,
 	pageEyebrowCss,
 } from '#client/styles/style-primitives.ts'
 
 type OnboardingMcpClientTabsProps = {
 	mcpServerUrl: string
-}
-
-function tabButtonId(id: McpClientKind) {
-	return `onboarding-mcp-client-tab-${id}`
-}
-
-function tabPanelId(id: McpClientKind) {
-	return `onboarding-mcp-client-panel-${id}`
 }
 
 type CopyCardProps = {
@@ -290,73 +283,45 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 export function OnboardingMcpClientTabs(
 	handle: Handle<OnboardingMcpClientTabsProps>,
 ) {
-	let selectedTab: McpClientKind = 'cursor'
 	const secondaryButtonCss = getSecondaryButtonCss()
 
-	function selectTab(id: McpClientKind) {
-		if (selectedTab === id) return
-		selectedTab = id
-		handle.update()
-	}
-
-	return () => {
-		const mcpServerUrl = handle.props.mcpServerUrl
-		const activeTab = selectedTab
-
-		return (
-			<div mix={css(tabsRootCss)}>
-				<div mix={css(tabPickerCss)}>
-					<p mix={css(pageEyebrowCss)}>Choose your client</p>
-					<div
-						role="tablist"
-						aria-label="MCP client setup instructions"
-						mix={css(tabListCss)}
-					>
-						{mcpClientTabs.map((tab) => {
-							const isActive = tab.id === activeTab
-							return (
-								<button
-									key={tab.id}
-									type="button"
-									role="tab"
-									id={tabButtonId(tab.id)}
-									aria-selected={isActive}
-									aria-controls={tabPanelId(tab.id)}
-									tabIndex={isActive ? 0 : -1}
-									mix={[
-										on('click', () => selectTab(tab.id)),
-										css({
-											...secondaryButtonCss,
-											...tabPillCss,
-											...(isActive
-												? {
-														borderColor: colors.primary,
-														backgroundColor: colors.primarySoftest,
-														color: colors.primaryText,
-														fontWeight: typography.fontWeight.medium,
-													}
-												: {}),
-										}),
-									]}
-								>
-									{tab.label}
-								</button>
-							)
-						})}
-					</div>
-				</div>
-
-				<div
-					role="tabpanel"
-					id={tabPanelId(activeTab)}
-					aria-labelledby={tabButtonId(activeTab)}
-					mix={css(tabPanelCss)}
+	return () => (
+		<Tabs defaultActiveTab="cursor" mix={css(tabsRootCss)}>
+			<div mix={css(tabPickerCss)}>
+				<p mix={css(pageEyebrowCss)}>Choose your client</p>
+				<TabList
+					aria-label="MCP client setup instructions"
+					mix={css(tabListCss)}
 				>
-					{renderPanelContent(activeTab, mcpServerUrl)}
-				</div>
+					{mcpClientTabs.map((tab) => (
+						<Tab
+							key={tab.id}
+							name={tab.id}
+							mix={css({
+								...secondaryButtonCss,
+								...tabPillCss,
+								'&[data-state="active"]': {
+									borderColor: colors.primary,
+									backgroundColor: colors.primarySoftest,
+									color: colors.primaryText,
+									fontWeight: typography.fontWeight.medium,
+								},
+								'&:focus-visible': focusRingCss,
+							})}
+						>
+							{tab.label}
+						</Tab>
+					))}
+				</TabList>
 			</div>
-		)
-	}
+
+			{mcpClientTabs.map((tab) => (
+				<TabPanel key={tab.id} name={tab.id} mix={css(tabPanelCss)}>
+					{renderPanelContent(tab.id, handle.props.mcpServerUrl)}
+				</TabPanel>
+			))}
+		</Tabs>
+	)
 }
 
 const tabsRootCss = {
@@ -373,9 +338,19 @@ const tabListCss = {
 	display: 'flex',
 	gap: spacing.sm,
 	flexWrap: 'wrap' as const,
+	width: '100%',
+	padding: 0,
+	background: 'transparent',
+	boxShadow: 'none',
+	overflow: 'visible',
 }
 
 const tabPillCss = {
+	width: 'auto',
+	height: 'auto',
+	minHeight: 0,
+	fontFamily: typography.fontFamily,
+	lineHeight: 1.5,
 	[mq.mobile]: {
 		padding: `${spacing.xs} ${spacing.sm}`,
 		fontSize: typography.fontSize.sm,
@@ -386,6 +361,10 @@ const tabPanelCss = {
 	display: 'grid',
 	gap: spacing.md,
 	minWidth: 0,
+	color: colors.text,
+	fontFamily: typography.fontFamily,
+	fontSize: typography.fontSize.base,
+	lineHeight: 1.6,
 }
 
 const copyCardCss = {

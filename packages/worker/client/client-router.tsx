@@ -765,6 +765,19 @@ export function listenToRouterNavigation(
 	})
 }
 
+export function listenToRouterNavigationEnd(
+	handle: Pick<Handle, 'signal' | 'update'>,
+	listener: (detail: RouterNavigationEventDetail) => void,
+) {
+	if (typeof document === 'undefined') return
+	ensureRouter()
+	addEventListeners(routerEvents, handle.signal, {
+		navigationend: (event) => {
+			listener((event as CustomEvent<RouterNavigationEventDetail>).detail)
+		},
+	})
+}
+
 /**
  * Fires after the router submits a non-GET form (a mutation, e.g. logout).
  * Listeners that cache or throttle server-derived state must revalidate:

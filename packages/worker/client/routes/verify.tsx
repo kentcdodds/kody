@@ -112,7 +112,7 @@ export function VerifyRoute(handle: Handle) {
 		return (
 			<section mix={css(pageCss)}>
 				<header mix={css(pageHeaderCss)}>
-					<h2 mix={css(pageTitleCss)}>Two-factor authentication</h2>
+					<h1 mix={css(pageTitleCss)}>Two-factor authentication</h1>
 					<p mix={css(pageDescriptionCss)}>
 						Enter the 6-digit code from your authenticator app to finish signing
 						in.

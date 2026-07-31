@@ -144,7 +144,7 @@ export function ResetPasswordRoute(handle: Handle) {
 		return (
 			<section mix={css(pageCss)}>
 				<header mix={css(pageHeaderCss)}>
-					<h2 mix={css(pageTitleCss)}>{title}</h2>
+					<h1 mix={css(pageTitleCss)}>{title}</h1>
 					<p mix={css(pageDescriptionCss)}>{description}</p>
 				</header>
 				<form

@@ -42,6 +42,7 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
+	focusRingCss,
 	getDangerButtonCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
@@ -344,8 +345,7 @@ const switchCss = {
 		transform: 'translateY(-50%) translateX(1.25rem)',
 	},
 	'&:focus-visible': {
-		outline: 'none',
-		boxShadow: `0 0 0 3px ${colors.primarySoftStrong}`,
+		...focusRingCss,
 	},
 	'&:disabled': {
 		cursor: 'not-allowed',

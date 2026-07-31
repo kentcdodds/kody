@@ -1,5 +1,6 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { focusRingCss } from '#client/styles/style-primitives.ts'
 
 type EditableTextProps = {
 	id: string
@@ -145,7 +146,7 @@ export function EditableText(handle: Handle) {
 								padding: 0,
 								border: 'none',
 								background: 'none',
-								outline: 'none',
+								'&:focus-visible': focusRingCss,
 								fieldSizing: 'content',
 								...inheritTextStyles,
 								...props.inputCss,

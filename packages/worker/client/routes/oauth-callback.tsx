@@ -26,7 +26,7 @@ export function OAuthCallbackRoute(handle: Handle) {
 			<section mix={css(pageCss)}>
 				<header mix={css(headerCss)}>
 					<span mix={css(eyebrowCss)}>Kody secure connection</span>
-					<h2 mix={css(pageTitleCss)}>OAuth callback</h2>
+					<h1 mix={css(pageTitleCss)}>OAuth callback</h1>
 					<p mix={css(pageDescriptionCss)}>{title}.</p>
 				</header>
 				{detail ? <pre mix={css(detailCardCss)}>{detail}</pre> : null}

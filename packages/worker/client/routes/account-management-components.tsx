@@ -462,6 +462,7 @@ export function AccountManagementListItemButton(
 		<button
 			type="button"
 			disabled={handle.props.disabled}
+			aria-current={handle.props.active ? 'true' : undefined}
 			mix={[
 				on('click', handle.props.onClick),
 				css({
@@ -478,6 +479,7 @@ export function AccountManagementListItemButton(
 					border: `1px solid ${
 						handle.props.active ? colors.primary : colors.border
 					}`,
+					borderLeftWidth: handle.props.active ? '0.3rem' : '1px',
 					backgroundColor: handle.props.active
 						? colors.primarySoftest
 						: colors.background,

@@ -191,6 +191,46 @@ export const inputCss = {
 	boxSizing: 'border-box' as const,
 }
 
+export const focusRingCss = {
+	outline: `2px solid ${colors.primary}`,
+	outlineOffset: '2px',
+}
+
+export const visuallyHiddenCss = {
+	position: 'absolute' as const,
+	width: '1px',
+	height: '1px',
+	padding: 0,
+	margin: '-1px',
+	overflow: 'hidden' as const,
+	clip: 'rect(0, 0, 0, 0)',
+	whiteSpace: 'nowrap' as const,
+	border: 0,
+}
+
+export const visuallyHiddenUntilFocusedCss = {
+	...visuallyHiddenCss,
+	'&:focus-visible': {
+		...focusRingCss,
+		position: 'fixed' as const,
+		top: spacing.sm,
+		left: spacing.sm,
+		zIndex: 1000,
+		width: 'auto',
+		height: 'auto',
+		margin: 0,
+		padding: `${spacing.sm} ${spacing.md}`,
+		overflow: 'visible' as const,
+		clip: 'auto',
+		whiteSpace: 'normal' as const,
+		border: `1px solid ${colors.primary}`,
+		borderRadius: radius.md,
+		backgroundColor: colors.surface,
+		color: colors.primaryText,
+		fontWeight: typography.fontWeight.semibold,
+	},
+}
+
 export const textareaCss = {
 	...inputCss,
 	resize: 'vertical' as const,
