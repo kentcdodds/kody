@@ -8,6 +8,7 @@ export type McpClientKind =
 	| 'chatgpt'
 	| 'codex'
 	| 'claude-desktop'
+	| 'grok'
 	| 'claude-code'
 	| 'opencode'
 	| 'vscode'
@@ -25,6 +26,7 @@ export const mcpClientTabs = [
 	{ id: 'chatgpt', label: 'ChatGPT', isNonCodingAgent: true },
 	{ id: 'codex', label: 'Codex', isNonCodingAgent: false },
 	{ id: 'claude-desktop', label: 'Claude Desktop', isNonCodingAgent: true },
+	{ id: 'grok', label: 'Grok', isNonCodingAgent: true },
 	{ id: 'claude-code', label: 'Claude Code', isNonCodingAgent: false },
 	{ id: 'opencode', label: 'OpenCode', isNonCodingAgent: false },
 	{ id: 'vscode', label: 'VS Code', isNonCodingAgent: false },
@@ -33,6 +35,11 @@ export const mcpClientTabs = [
 
 export const chatGptDeveloperModeGuideUrl =
 	'https://developers.openai.com/api/docs/guides/developer-mode'
+
+/** Grok.com UI for adding a custom remote MCP connector. */
+export const grokConnectorsUrl = 'https://grok.com/connectors'
+
+export const grokCustomMcpGuideUrl = 'https://docs.x.ai/grok/connectors'
 
 /** Square favicon suitable for ChatGPT plugin / connector app icons. */
 export function buildKodyAppIconUrl(mcpServerUrl: string) {

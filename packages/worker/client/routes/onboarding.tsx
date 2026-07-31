@@ -235,9 +235,9 @@ export function OnboardingRoute(handle: Handle) {
 								<>
 									<p mix={css(descriptionCss)}>
 										Paste this into any AI agent that can fetch a URL or search
-										the web — ChatGPT, Claude, or whatever you already use. It
-										has the agent read Kody&apos;s docs, interview you, and
-										suggest concrete automations. No account or setup needed
+										the web — ChatGPT, Claude, Grok, or whatever you already
+										use. It has the agent read Kody&apos;s docs, interview you,
+										and suggest concrete automations. No account or setup needed
 										yet.
 									</p>
 									<pre mix={css(codeBlockCss)}>{discoveryPrompt}</pre>

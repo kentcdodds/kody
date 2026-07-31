@@ -1,8 +1,8 @@
 # Connect your agent
 
 Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Claude Code, OpenCode, VS Code, or any other AI agent that supports MCP — not
-from a separate Kody chat app.
+Grok, Claude Code, OpenCode, VS Code, or any other AI agent that supports MCP —
+not from a separate Kody chat app.
 
 The in-app Get started page (`/onboarding`) has tabs with client-specific
 instructions and copyable config snippets for the host you are on.
@@ -28,6 +28,11 @@ MCP URL and setup prompt.
   `mcpServers.kody.url` entry into `~/.cursor/mcp.json` / `.cursor/mcp.json`.
 - **Claude Desktop** — Use Settings → Connectors (custom connector + MCP URL).
   Remote servers are not configured through `claude_desktop_config.json`.
+- **Grok** — On [grok.com/connectors](https://grok.com/connectors), click **New
+  Connector**, select **Custom**, and paste the MCP URL. Complete OAuth when
+  prompted. On Grok Business and Enterprise, a team admin may need to provision
+  the connector first. See xAI's
+  [custom MCP connector docs](https://docs.x.ai/grok/connectors).
 - **Claude Code** — `claude mcp add --transport http -s user kody <url>`, or a
   `.mcp.json` entry with `"type": "http"`.
 - **ChatGPT** — On an
@@ -47,10 +52,10 @@ MCP URL and setup prompt.
 
 ### Coding vs non-coding agents
 
-Using Kody packages works great with non-coding agents such as Claude Desktop
-and ChatGPT. For creating or editing packages, a coding agent (Cursor, Claude
-Code, Codex, VS Code, OpenCode, and similar) is usually smoother because those
-hosts can edit files and iterate on code more easily.
+Using Kody packages works great with non-coding agents such as Claude Desktop,
+ChatGPT, and Grok. For creating or editing packages, a coding agent (Cursor,
+Claude Code, Codex, VS Code, OpenCode, and similar) is usually smoother because
+those hosts can edit files and iterate on code more easily.
 
 ## Install a starter or build your own
 

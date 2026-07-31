@@ -11,6 +11,8 @@ import {
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
 	codingAgentPackageHint,
+	grokConnectorsUrl,
+	grokCustomMcpGuideUrl,
 	type McpClientKind,
 	mcpClientTabs,
 	nonCodingAgentNote,
@@ -168,6 +170,40 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						Customize → Connectors), add a custom connector, and paste this MCP
 						URL. Claude Desktop handles remote OAuth through that UI — do not
 						put the remote URL into <code>claude_desktop_config.json</code>.
+					</p>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+						variant="primary"
+					/>
+					<ClientNote>{nonCodingAgentNote}</ClientNote>
+				</>
+			)
+		case 'grok':
+			return (
+				<>
+					<p mix={css(descriptionCss)}>
+						In{' '}
+						<a
+							href={grokConnectorsUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Grok.com → Connectors
+						</a>
+						, click <strong>New Connector</strong>, select{' '}
+						<strong>Custom</strong>, and paste this MCP URL. Complete OAuth when
+						Grok prompts you. On Grok Business and Enterprise, a team admin may
+						need to provision the connector first. See xAI&apos;s{' '}
+						<a
+							href={grokCustomMcpGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							custom MCP connector docs
+						</a>{' '}
+						for details.
 					</p>
 					<CopyCard
 						label="MCP URL"

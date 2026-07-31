@@ -8,6 +8,8 @@ import {
 	buildOpenCodeMcpJson,
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
+	grokConnectorsUrl,
+	grokCustomMcpGuideUrl,
 	mcpClientTabs,
 } from './onboarding-mcp-clients.ts'
 
@@ -19,6 +21,7 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		'chatgpt',
 		'codex',
 		'claude-desktop',
+		'grok',
 		'claude-code',
 		'opencode',
 		'vscode',
@@ -26,7 +29,7 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	])
 	expect(
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
-	).toEqual(['chatgpt', 'claude-desktop'])
+	).toEqual(['chatgpt', 'claude-desktop', 'grok'])
 
 	expect(JSON.parse(buildCursorMcpJson(mcpServerUrl))).toEqual({
 		mcpServers: {
@@ -72,4 +75,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(chatGptDeveloperModeGuideUrl).toBe(
 		'https://developers.openai.com/api/docs/guides/developer-mode',
 	)
+	expect(grokConnectorsUrl).toBe('https://grok.com/connectors')
+	expect(grokCustomMcpGuideUrl).toBe('https://docs.x.ai/grok/connectors')
 })
