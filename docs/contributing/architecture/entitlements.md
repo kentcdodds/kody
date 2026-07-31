@@ -16,8 +16,9 @@ Module: `packages/worker/src/entitlements/`
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
-- `service.ts` — `getUserPlan`, `assertWithinEntitlement`, built-in D1 usage
-  counters, and the daily-counter helpers for rate-style limits.
+- `service.ts` — `getUserPlan`, `getCachedUserPlan` (60s TTL enforcement cache),
+  `assertWithinEntitlement`, built-in D1 usage counters, and the daily-counter
+  helpers for rate-style limits.
 
 ## Plan model
 
@@ -189,6 +190,16 @@ use stable-id reverse resolution. `findUserAccountByStableUserId` in
 `service.ts` remains available for other contextless paths that need email /
 verified-state (for example the outbound fetch gateway), mirroring
 `findUserAccount` in `email/platform-address.ts`.
+
+**Enforcement plan cache:** `assertWithinEntitlement` resolves the plan limit
+via `getCachedUserPlan`, which wraps `getUserPlan` behind a 60-second per-isolate
+TTL cache keyed by D1 binding and `(stable_user_id, normalized email)`. Cache
+entries share the lookup semantics above; failures are never cached. Built-in
+usage counters and any `getCurrent` override are read fresh on every call, so
+only the plan limit can be stale — a plan change may take up to ~60s to bind at
+enforcement points while current usage stays accurate. Surfaces that display the
+user's plan (billing UI, email usage) should keep calling `getUserPlan`
+directly.
 
 ## The error shape
 

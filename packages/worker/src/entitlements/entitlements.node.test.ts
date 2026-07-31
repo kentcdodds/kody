@@ -596,6 +596,58 @@ test('assertWithinEntitlement passes under the limit, throws at it, and enforces
 	expect(error.message).toBe(buildEntitlementLimitMessage(error.details))
 })
 
+test('assertWithinEntitlement reuses cached plan within TTL while still enforcing usage', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const freeLimit = planLimits.free.maxScheduledJobs
+	const counts = { jobs: freeLimit - 1 }
+	const { db, queries } = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
+		counts,
+	})
+	const planQueries = () =>
+		queries.filter((query) =>
+			query.sql.includes('email = ? AND stable_user_id = ?'),
+		)
+	const usageQueries = () =>
+		queries.filter((query) => query.sql.includes('FROM jobs'))
+
+	await assertWithinEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		resource: 'scheduled_jobs',
+	})
+	await assertWithinEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		resource: 'scheduled_jobs',
+	})
+	expect(planQueries()).toHaveLength(1)
+	expect(usageQueries()).toHaveLength(2)
+
+	counts.jobs = freeLimit
+	const denied = await assertWithinEntitlement({
+		db,
+		userId,
+		email: plannedEmail,
+		resource: 'scheduled_jobs',
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(denied instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError.')
+	}
+	expect(denied.details).toMatchObject({
+		plan: 'free',
+		limit: freeLimit,
+		current: freeLimit,
+	})
+	expect(planQueries()).toHaveLength(1)
+	expect(usageQueries()).toHaveLength(3)
+})
+
 test('assertWithinEntitlement enforces free concurrent workflow limit without email', async () => {
 	const freeLimit = planLimits.free.maxConcurrentWorkflows
 	const { db } = createEntitlementsTestDb({

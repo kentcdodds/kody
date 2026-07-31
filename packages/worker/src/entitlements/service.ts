@@ -791,8 +791,9 @@ export type AssertWithinEntitlementInput = {
 	/**
 	 * Account email of the acting user when available. When present, plan
 	 * lookup requires the email + stable-id pair. When absent (package-job /
-	 * workflow contexts with `email: ''`), {@link getUserPlan} reverse-resolves
-	 * by stable userId; unknown accounts still fail closed to `free`.
+	 * workflow contexts with `email: ''`), {@link getCachedUserPlan}
+	 * reverse-resolves by stable userId; unknown accounts still fail closed
+	 * to `free`.
 	 */
 	email: string | null | undefined
 	resource: EntitlementResource
@@ -812,7 +813,9 @@ export type AssertWithinEntitlementInput = {
 export async function assertWithinEntitlement(
 	input: AssertWithinEntitlementInput,
 ): Promise<void> {
-	const plan = await getUserPlan(input.db, {
+	// Cached plan resolution: quota limit lookup tolerates short-TTL
+	// staleness; usage counters below stay fresh on every call.
+	const plan = await getCachedUserPlan(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
