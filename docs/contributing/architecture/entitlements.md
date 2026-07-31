@@ -102,7 +102,8 @@ two compute surfaces `usage-metering.md` already observes:
   user's account email for plan lookup; when a caller cannot carry one (OpenAPI
   provider requests, package runtime), the gateway reverse-resolves the account
   via `findUserAccountByStableUserId` so the caller's real plan binds. Genuinely
-  accountless synthetic contexts resolve to `max`, whose limit is still finite.
+  accountless synthetic contexts resolve to `free` so missing identity plumbing
+  cannot grant elevated quotas.
 
 Both consume only when the context has a `userId`, matching the usage-metering
 rule that events without an owning user are skipped.
@@ -163,23 +164,24 @@ unique index; initially from `createStableUserIdFromEmail` at signup, then
 preserved across email changes). `getUserPlan(db, { userId, email })` always
 returns a `PlanName`:
 
-1. Normalizes the email and returns `max` when email or `userId` is absent (no
+1. Normalizes the email and returns `free` when email or `userId` is absent (no
    warn).
-2. Returns `max` without touching D1 when `userId` is not a 64-char hex string.
+2. Returns `free` without touching D1 when `userId` is not a 64-char hex string.
    Synthetic runtime contexts (package-scoped caller contexts with `email: ''`,
-   workflow-internal users, test fixtures) therefore resolve to `max`.
+   workflow-internal users, test fixtures) therefore fail closed to `free`.
 3. Reads
    `SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`
    and returns `resolveEffectivePlan(parseStoredPlanName(plan), stripe_plan)`. A
-   mismatched email/stable-id pair or missing row returns `max` (no warn).
+   mismatched email/stable-id pair or missing row returns `free` (no warn).
 
 Consequence: enforcement points must have the acting user's account email
 available. Both auth surfaces provide it — app sessions expose
 `user.mcpUser.email` and MCP caller contexts expose
 `ctx.callerContext.user.email`. Code paths that genuinely have no user email
 (for example package-manifest job sync or workflow-spawned inline code) resolve
-to `max` at plan lookup — acceptable because they are only reachable after a
-user action that is itself gated.
+to `free` at plan lookup. Internal callers that need a higher quota must resolve
+an actual account whose stored plan grants it; there is no implicit elevated
+synthetic context.
 
 One path still needs explicit account resolution: inbound email routing has no
 caller context but must enforce receive quotas. It resolves the owning account
@@ -258,25 +260,35 @@ Rules:
   against the limit instead of an accumulating count: the enforcement point
   passes the candidate size via `getCurrent` with `requested: 0`. There is no
   built-in counter for these.
-- **Storage-byte limits** (`storage_bytes`) use a built-in D1 byte estimate for
+- **Storage-byte limits** (`storage_bytes`) store the D1 payload estimate on
+  `users.d1_storage_bytes` (migration 0119). Entitlement checks read that
+  indexed user row and D1 write chokepoints atomically reserve their existing
+  positive byte-delta estimate before the write, so mailbox growth and other hot
+  writes never rescan the user's accumulated rows. The estimate covers
   user-owned rows with durable payloads (`email_messages.raw_size` plus
   extracted message bodies/metadata, externally stored attachments, values,
   encrypted secrets, memories, saved-package projections, jobs, repo/session
   metadata, package invocation results, and published artifact metadata). Run
   records in the per-user `RunLog` Durable Object are intentionally **excluded**
-  from the quota — they are observability history, not user content.
-  StorageRunner Durable Object buckets expose their own `estimatedBytes`, and
-  each bucket's latest measurement is persisted on its
-  `user_storage_buckets.estimated_bytes` inventory row (migration 0118). Write
-  chokepoints pass `getCurrent` as `D1 estimate + sum of per-bucket estimates`,
-  where only the bucket that triggers the baseline read (plus any inventoried
-  bucket with no stored estimate yet) is probed live; every other bucket
-  contributes its stored D1 estimate, so mutating writes no longer fan
-  `getEstimatedBytes` RPCs across the user's whole bucket inventory. Live probe
-  results are persisted fire-and-forget with **UPDATE-only** statements (they
-  can never recreate an inventory row removed by account, package, or job
-  deletion), and mutating StorageRunner RPCs opportunistically refresh their own
-  bucket's stored estimate after the write, throttled per bucket per isolate
+  from the quota — they are observability history, not user content. A fixed
+  batch of eight oldest users is reconciled every five-minute cron tick by
+  `d1_storage_reconciliation`; each selected counter is replaced with the
+  authoritative cross-surface sum. This bounded lane corrects over-reservation
+  after failed writes, shrinkage from deletes, and writes on surfaces without a
+  storage-byte chokepoint. Failed rows retain their conservative value and
+  rotate to the back of the queue for a later retry. StorageRunner Durable
+  Object buckets expose their own `estimatedBytes`, and each bucket's latest
+  measurement is persisted on its `user_storage_buckets.estimated_bytes`
+  inventory row (migration 0118). Write chokepoints pass `getCurrent` as
+  `D1 counter + sum of per-bucket estimates`, where only the bucket that
+  triggers the baseline read (plus any inventoried bucket with no stored
+  estimate yet) is probed live; every other bucket contributes its stored D1
+  estimate, so mutating writes no longer fan `getEstimatedBytes` RPCs across the
+  user's whole bucket inventory. Live probe results are persisted
+  fire-and-forget with **UPDATE-only** statements (they can never recreate an
+  inventory row removed by account, package, or job deletion), and mutating
+  StorageRunner RPCs opportunistically refresh their own bucket's stored
+  estimate after the write, throttled per bucket per isolate
   (`storageBucketEstimateRefreshMinIntervalMs`). Stored estimates are therefore
   freshness hints with bounded lag — acceptable for an order-of-magnitude cap
   because the bucket paying the baseline read is measured live and the run cache

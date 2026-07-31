@@ -273,10 +273,14 @@ test('storage runner storage byte entitlement aggregates only inventoried user b
 	})
 	const targetD1Bytes = limit - estimateB - 1
 	await env.APP_DB.prepare(
-		`UPDATE email_messages SET raw_size = ? WHERE user_id = ?`,
+		`UPDATE users
+		SET d1_storage_bytes = ?,
+			d1_storage_bytes_updated_at = ?
+		WHERE stable_user_id = ?`,
 	)
-		.bind(targetD1Bytes - initialD1Bytes, userId)
+		.bind(targetD1Bytes, new Date().toISOString(), userId)
 		.run()
+	expect(initialD1Bytes).toBe(0)
 	await expect(
 		readUserD1StorageBytes({ db: env.APP_DB, userId }),
 	).resolves.toBe(targetD1Bytes)

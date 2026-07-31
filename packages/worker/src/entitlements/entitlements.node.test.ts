@@ -74,6 +74,13 @@ function createEntitlementsTestDb(
 	const counts = input.counts ?? {}
 	const counters = input.counters ?? []
 	const queries: Array<{ sql: string; params: Array<unknown> }> = []
+	const initialStorageBytes = Object.values(counts).reduce(
+		(total, count) => total + (count ?? 0),
+		0,
+	)
+	const storageBytesByUser = new Map(
+		users.map((user) => [user.stable_user_id, initialStorageBytes]),
+	)
 
 	function countFor(query: string) {
 		const tableNames = [
@@ -146,6 +153,10 @@ function createEntitlementsTestDb(
 										: null
 								) as T | null
 							}
+							if (query.includes('SELECT d1_storage_bytes AS bytes')) {
+								const bytes = storageBytesByUser.get(String(params[0]))
+								return (bytes === undefined ? null : { bytes }) as T | null
+							}
 							if (query.includes('FROM entitlement_daily_counters')) {
 								const row = counters.find(
 									(counter) =>
@@ -162,6 +173,20 @@ function createEntitlementsTestDb(
 							throw new Error(`Unsupported first query: ${query}`)
 						},
 						async run() {
+							if (
+								query.includes('SET d1_storage_bytes = d1_storage_bytes + ?')
+							) {
+								const userId = String(params[2])
+								const existing = storageBytesByUser.get(userId)
+								if (
+									existing === undefined ||
+									existing + Number(params[3]) > Number(params[4])
+								) {
+									return { meta: { changes: 0 } }
+								}
+								storageBytesByUser.set(userId, existing + Number(params[0]))
+								return { meta: { changes: 1 } }
+							}
 							if (query.includes('INSERT INTO entitlement_daily_counters')) {
 								const isConditionalConsume = query.includes('count + 1 <= ?')
 								const amount = isConditionalConsume ? 1 : Number(params[3])
@@ -335,7 +360,7 @@ test('storage byte entry estimates support net-positive upsert deltas', () => {
 	)
 })
 
-test('getUserPlan resolves plans, defaults scoped misses to max, and rejects invalid stored plans', async () => {
+test('getUserPlan resolves plans, defaults unresolved contexts to free, and rejects invalid stored plans', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const unknownPlanEmail = 'unknown-plan@example.com'
 	const unknownPlanUserId = await createStableUserIdFromEmail(unknownPlanEmail)
@@ -349,10 +374,10 @@ test('getUserPlan resolves plans, defaults scoped misses to max, and rejects inv
 			},
 		],
 	})
-	expect(await getUserPlan(db, { userId: 'user-1', email: null })).toBe('max')
-	expect(await getUserPlan(db, { userId: 'user-1', email: '' })).toBe('max')
+	expect(await getUserPlan(db, { userId: 'user-1', email: null })).toBe('free')
+	expect(await getUserPlan(db, { userId: 'user-1', email: '' })).toBe('free')
 	expect(await getUserPlan(db, { userId: 'user-1', email: plannedEmail })).toBe(
-		'max',
+		'free',
 	)
 	expect(queries).toEqual([])
 
@@ -363,13 +388,13 @@ test('getUserPlan resolves plans, defaults scoped misses to max, and rejects inv
 	expect(queries.at(-1)?.sql).toContain('email = ? AND stable_user_id = ?')
 	expect(queries.at(-1)?.params).toEqual([plannedEmail, userId])
 
-	// Mismatched email/stable-id pair is intentionally max (no warn).
+	// Mismatched email/stable-id pairs fail closed without warning.
 	expect(
 		await getUserPlan(db, {
 			userId,
 			email: unknownPlanEmail,
 		}),
-	).toBe('max')
+	).toBe('free')
 
 	await expect(
 		getUserPlan(db, {
@@ -940,6 +965,12 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 		email: plannedEmail,
 		requested: 1,
 	})
+	expect(underLimit.queries.some(({ sql }) => sql.includes('SUM('))).toBe(false)
+	expect(
+		underLimit.queries.some(({ sql }) =>
+			sql.includes('SET d1_storage_bytes = d1_storage_bytes + ?'),
+		),
+	).toBe(true)
 })
 
 test('getPlanRank orders free < pro < partner < max', () => {

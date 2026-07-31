@@ -15,7 +15,7 @@ const stableUserIdPattern = /^[a-f0-9]{64}$/i
 /**
  * Resolve the effective plan for a user. Always returns a {@link PlanName}
  * (never a meaningful null): missing email/userId, invalid stable ids, and
- * no matching row resolve to `max` without warning; stored values go through
+ * no matching row resolve to `free` without warning; stored values go through
  * strict {@link parseStoredPlanName} validation and throw if D1 violates the
  * plan CHECK constraint.
  *
@@ -35,15 +35,15 @@ export async function getUserPlan(
 	input: { userId: string; email: string | null | undefined },
 ): Promise<PlanName> {
 	const email = input.email?.trim().toLowerCase()
-	if (!email || !input.userId) return 'max'
-	if (!stableUserIdPattern.test(input.userId)) return 'max'
+	if (!email || !input.userId) return 'free'
+	if (!stableUserIdPattern.test(input.userId)) return 'free'
 	const row = await db
 		.prepare(
 			`SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`,
 		)
 		.bind(email, input.userId)
 		.first<{ plan: string; stripe_plan: string | null }>()
-	if (!row) return 'max'
+	if (!row) return 'free'
 	return resolveEffectivePlan(parseStoredPlanName(row.plan), row.stripe_plan)
 }
 
@@ -123,8 +123,8 @@ export async function getCachedUserPlan(
 	input: { userId: string; email: string | null | undefined },
 ): Promise<PlanName> {
 	const email = input.email?.trim().toLowerCase()
-	if (!email || !input.userId) return 'max'
-	if (!stableUserIdPattern.test(input.userId)) return 'max'
+	if (!email || !input.userId) return 'free'
+	if (!stableUserIdPattern.test(input.userId)) return 'free'
 	return await cachedUserPlans.getOrCreate(
 		db,
 		`${input.userId}\n${email}`,
@@ -327,7 +327,12 @@ async function sumStorageBytes(
 	return Number(row?.count ?? 0)
 }
 
-export async function readUserD1StorageBytes(input: {
+/**
+ * Authoritative D1 payload scan. This is intentionally reserved for migration
+ * backfills and the bounded reconciliation lane; entitlement checks must use
+ * the stored point-read counter below.
+ */
+export async function calculateUserD1StorageBytes(input: {
 	db: D1Database
 	userId: string
 }) {
@@ -510,6 +515,73 @@ export async function readUserD1StorageBytes(input: {
 	return sums.reduce((total, value) => total + value, 0)
 }
 
+export async function readUserD1StorageBytes(input: {
+	db: D1Database
+	userId: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT d1_storage_bytes AS bytes
+			FROM users
+			WHERE stable_user_id = ?`,
+		)
+		.bind(input.userId)
+		.first<{ bytes: number }>()
+	return Math.max(0, Number(row?.bytes ?? 0))
+}
+
+export async function reconcileUserD1StorageBytes(input: {
+	db: D1Database
+	userId: string
+	now?: Date
+}) {
+	const bytes = await calculateUserD1StorageBytes(input)
+	const result = await input.db
+		.prepare(
+			`UPDATE users
+			SET d1_storage_bytes = ?,
+				d1_storage_bytes_updated_at = ?
+			WHERE stable_user_id = ?`,
+		)
+		.bind(bytes, (input.now ?? new Date()).toISOString(), input.userId)
+		.run()
+	return { bytes, updated: (result.meta.changes ?? 0) > 0 }
+}
+
+export async function listUsersForD1StorageReconciliation(input: {
+	db: D1Database
+	limit: number
+}): Promise<Array<{ userId: string }>> {
+	const result = await input.db
+		.prepare(
+			`SELECT stable_user_id AS userId
+			FROM users
+			ORDER BY
+				d1_storage_bytes_updated_at IS NOT NULL,
+				d1_storage_bytes_updated_at ASC,
+				stable_user_id ASC
+			LIMIT ?`,
+		)
+		.bind(input.limit)
+		.all<{ userId: string }>()
+	return result.results ?? []
+}
+
+export async function markUserD1StorageReconciliationAttempt(input: {
+	db: D1Database
+	userId: string
+	now?: Date
+}) {
+	await input.db
+		.prepare(
+			`UPDATE users
+			SET d1_storage_bytes_updated_at = ?
+			WHERE stable_user_id = ?`,
+		)
+		.bind((input.now ?? new Date()).toISOString(), input.userId)
+		.run()
+}
+
 /**
  * Staleness threshold for counting a `package_service_states` row as running.
  *
@@ -656,13 +728,52 @@ export async function assertWithinStorageBytesEntitlement(input: {
 	requested?: number
 	getCurrent?: () => Promise<number>
 }) {
-	await assertWithinEntitlement({
-		db: input.db,
+	if (input.getCurrent) {
+		await assertWithinEntitlement({
+			db: input.db,
+			userId: input.userId,
+			email: input.email,
+			resource: 'storage_bytes',
+			requested: input.requested,
+			getCurrent: input.getCurrent,
+		})
+		return
+	}
+
+	const plan = await getUserPlan(input.db, {
 		userId: input.userId,
 		email: input.email,
+	})
+	const limit = resolvePlanLimit(plan, 'storage_bytes')
+	const requested = Math.max(0, input.requested ?? 1)
+	const now = new Date().toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE users
+			SET d1_storage_bytes = d1_storage_bytes + ?,
+				d1_storage_bytes_updated_at = ?
+			WHERE stable_user_id = ?
+				AND d1_storage_bytes + ? <= ?`,
+		)
+		.bind(requested, now, input.userId, requested, limit)
+		.run()
+	if ((result.meta.changes ?? 0) > 0) return
+
+	const current = await readUserD1StorageBytes({
+		db: input.db,
+		userId: input.userId,
+	})
+	if (current + requested <= limit) {
+		throw new Error(
+			'Cannot account for D1 storage without a persisted user identity.',
+		)
+	}
+	throw new EntitlementLimitError({
 		resource: 'storage_bytes',
-		requested: input.requested,
-		getCurrent: input.getCurrent,
+		plan,
+		limit,
+		current,
+		upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
 	})
 }
 
@@ -672,7 +783,7 @@ export type AssertWithinEntitlementInput = {
 	/**
 	 * Account email of the acting user when available. Plan lookup requires
 	 * the email + stable-id pair; when absent (synthetic runtime contexts)
-	 * {@link getUserPlan} resolves to `max`.
+	 * {@link getUserPlan} resolves to `free`.
 	 */
 	email: string | null | undefined
 	resource: EntitlementResource

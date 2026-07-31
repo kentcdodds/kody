@@ -72,6 +72,8 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	email_outbound_paused_at: { create: 'TEXT' },
 	active_write_count: { create: 'INTEGER NOT NULL DEFAULT 0' },
 	active_write_expires_at: { create: 'TEXT' },
+	d1_storage_bytes: { create: 'INTEGER NOT NULL DEFAULT 0' },
+	d1_storage_bytes_updated_at: { create: 'TEXT' },
 }
 
 /**

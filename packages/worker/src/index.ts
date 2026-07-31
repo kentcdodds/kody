@@ -63,6 +63,7 @@ import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-del
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { refreshStaleStripePlans } from '#worker/billing/subscription-sync.ts'
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
+import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconciliation.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
@@ -629,6 +630,16 @@ const workerHandler = {
 				// a no-op SELECT once every bucket has an estimate.
 				name: 'storage_bucket_estimate_backfill',
 				run: () => backfillStorageBucketEstimates({ env, now: scheduledAt }),
+			},
+			{
+				// Rotates through a fixed user batch, replacing conservative
+				// write reservations with an authoritative D1 payload sum.
+				name: 'd1_storage_reconciliation',
+				run: () =>
+					reconcileD1StorageBytes({
+						db: env.APP_DB,
+						now: scheduledAt,
+					}),
 			},
 			{
 				// One global DO serializes invocations and persists independent phase
