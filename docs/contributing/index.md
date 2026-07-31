@@ -6,6 +6,8 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Setup and workflow
 
 - [Getting started](./getting-started.md), [project intent](./project-intent.md)
+- [Decision records](./decisions/index.md) (ADRs, including decisions **not** to
+  build something)
 - [Setup](./setup.md), [environment variables](./environment-variables.md),
   [setup manifest](./setup-manifest.md)
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)

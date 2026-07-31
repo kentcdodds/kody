@@ -21,6 +21,11 @@ export const exemptRelativePaths = new Set([
 	'docs/contributing/secret-rotation.md',
 ])
 
+/** Directories whose pages are intentionally point-in-time records. */
+export const exemptRelativePrefixes: ReadonlyArray<string> = [
+	'docs/contributing/decisions/',
+]
+
 /**
  * Changelog-style phrases to flag in durable documentation.
  * Keep this list narrow and aligned with docs/contributing/documentation.md.
@@ -150,7 +155,10 @@ export function findTemporalLanguageMatches(input: {
 	content: string
 }): TemporalLanguageMatch[] {
 	const relativePath = input.relativePath.replaceAll('\\', '/')
-	if (exemptRelativePaths.has(relativePath)) {
+	if (
+		exemptRelativePaths.has(relativePath) ||
+		exemptRelativePrefixes.some((prefix) => relativePath.startsWith(prefix))
+	) {
 		return []
 	}
 

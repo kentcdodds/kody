@@ -42,7 +42,9 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   what needs explicit validation.
 
 - Project intent and scope:
-  - [docs/contributing/project-intent.md](./docs/contributing/project-intent.md)
+- [docs/contributing/project-intent.md](./docs/contributing/project-intent.md)
+- Decision records (check before proposing something already decided against):
+- [docs/contributing/decisions/index.md](./docs/contributing/decisions/index.md)
 - Setup, checks, docs maintenance, preview deploys, and seeding:
   - [docs/contributing/setup.md](./docs/contributing/setup.md)
 - Code style conventions:

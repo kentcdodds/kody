@@ -5,6 +5,7 @@ import { expect, test } from 'vitest'
 import {
 	checkDocumentationTemporalLanguage,
 	exemptRelativePaths,
+	exemptRelativePrefixes,
 	findTemporalLanguageMatches,
 	listDocumentationPaths,
 	stripMarkdownCode,
@@ -138,7 +139,10 @@ test.each([
 })
 
 test('exempts principles and migration pages and scans discovered docs', async () => {
-	for (const relativePath of exemptRelativePaths) {
+	for (const relativePath of [
+		...exemptRelativePaths,
+		...exemptRelativePrefixes.map((prefix) => `${prefix}0001-example.md`),
+	]) {
 		expect(
 			findTemporalLanguageMatches({
 				relativePath,

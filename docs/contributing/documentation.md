@@ -23,9 +23,11 @@ notes.
 
 **Exceptions.** Migration and rotation guides (for example
 [`secret-rotation.md`](./secret-rotation.md)) may use ordered steps across
-deploy phases. Outside those procedures, still describe the current design in
-plain language. Quoted validation errors and runtime messages should match what
-the product returns, even when the wording contrasts with older manifest shapes.
+deploy phases, and [decision records](./decisions/index.md) are point-in-time
+documents by design. Outside those procedures, still describe the current design
+in plain language. Quoted validation errors and runtime messages should match
+what the product returns, even when the wording contrasts with older manifest
+shapes.
 
 **Stay lightweight but valuable.** Prefer small, accurate pages over large stale
 ones. **Garden** docs when behavior changes: update or delete sections in the
