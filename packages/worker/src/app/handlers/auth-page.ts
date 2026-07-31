@@ -5,10 +5,8 @@ import {
 } from '#app/oauth-providers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import {
-	getSignupMode,
-	getTurnstileSiteKey,
-} from '#app/public-form-protection.ts'
+import { getTurnstileSiteKey } from '#app/public-form-protection.ts'
+import { getSignupMode } from '#app/signup-mode.ts'
 
 export function createAuthPageHandler(
 	env: Env,

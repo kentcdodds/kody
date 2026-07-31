@@ -35,6 +35,7 @@
 		"./src/app/document-head.ts",
 		"./src/app/loader-data.ts",
 		"./src/app/safe-redirect.ts",
+		"./src/app/signup-mode.ts",
 		"./src/identity/permissions.ts",
 		"./src/feature-flags/registry.ts",
 		"./src/feature-flags/types.ts",

@@ -12,7 +12,7 @@ import {
 	type RoleName,
 } from '#worker/identity/permissions.ts'
 import { type AdminFeatureFlag } from '#worker/feature-flags/types.ts'
-import { type SignupMode } from '#worker/env-schema.ts'
+import { type SignupMode } from '#app/signup-mode.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }

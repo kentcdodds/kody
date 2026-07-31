@@ -47,7 +47,10 @@ function createAuthTestContext(
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
 		SIGNUP_MODE: options.signupMode ?? 'invite',
-		SENTRY_ENVIRONMENT: 'production',
+		SENTRY_ENVIRONMENT:
+			options.signupMode === 'open'
+				? ('test' as const)
+				: ('production' as const),
 		...(options.emailConfigured
 			? {
 					CLOUDFLARE_ACCOUNT_ID: 'cf-account-test',

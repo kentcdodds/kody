@@ -60,10 +60,10 @@ import {
 	resolveUserStableId,
 } from '#worker/user-id.ts'
 import {
-	getSignupMode,
 	getTurnstileSiteKey,
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
+import { getSignupMode } from '#app/signup-mode.ts'
 
 /**
  * Accounts created through social login have no usable password until the

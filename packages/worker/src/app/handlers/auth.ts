@@ -45,10 +45,8 @@ import {
 } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
-import {
-	getSignupMode,
-	verifyPublicFormProtection,
-} from '#app/public-form-protection.ts'
+import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
+import { getSignupMode } from '#app/signup-mode.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]

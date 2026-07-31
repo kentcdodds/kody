@@ -1,9 +1,9 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import {
-	getSignupMode,
 	getTurnstileSiteKey,
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
+import { getSignupMode } from '#app/signup-mode.ts'
 
 afterEach(() => {
 	vi.unstubAllGlobals()

@@ -1,4 +1,4 @@
-import { type SignupMode } from '#worker/env-schema.ts'
+import { type SignupMode } from '#app/signup-mode.ts'
 
 export type AuthProviderInfo = { id: string; label: string }
 export type PublicAuthConfig = {

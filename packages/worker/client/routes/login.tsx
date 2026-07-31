@@ -29,7 +29,7 @@ import {
 	renderTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
-import { type SignupMode } from '#worker/env-schema.ts'
+import { type SignupMode } from '#app/signup-mode.ts'
 import { colors, spacing, typography } from '#client/styles/tokens.ts'
 import { resolvePasswordAuthRedirect } from '#client/routes/resolve-password-auth-redirect.ts'
 import {

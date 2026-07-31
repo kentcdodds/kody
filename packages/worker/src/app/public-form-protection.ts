@@ -1,5 +1,4 @@
 import { getRequestIp } from '#worker/audit-log.ts'
-import { signupModes, type SignupMode } from '#worker/env-schema.ts'
 
 export const honeypotFieldName = 'website'
 export const turnstileResponseFieldName = 'turnstileToken'
@@ -9,11 +8,6 @@ type PublicFormBody = Record<string, unknown>
 function readTrimmedString(body: PublicFormBody, fieldName: string) {
 	const value = body[fieldName]
 	return typeof value === 'string' ? value.trim() : ''
-}
-
-export function getSignupMode(env: Pick<Env, 'SIGNUP_MODE'>): SignupMode {
-	const mode = env.SIGNUP_MODE
-	return signupModes.includes(mode) ? mode : 'invite'
 }
 
 export function getTurnstileSiteKey(
