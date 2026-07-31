@@ -1,12 +1,14 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	createDynamicCallableWorkflow,
+	dynamicCallableWorkflowsBindingName,
+	findWorkflowRunByIdempotencyKey,
 	type PackageWorkflowCreateResult,
 } from '#worker/package-runtime/package-workflows.ts'
 import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import {
-	findWorkflowProjectionByIdempotencyKey,
 	listWorkflowProjections,
+	upsertWorkflowProjection,
 } from '#worker/run-records/service.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
 
@@ -91,6 +93,50 @@ function createDispatchedHandle(input: {
 	}
 }
 
+async function importCreatingD1RowIfPresent(input: {
+	env: Env
+	userId: string
+	idempotencyKey: string
+}) {
+	if (!input.env.APP_DB) return
+	const row = await input.env.APP_DB.prepare(
+		`SELECT *
+		FROM workflow_runs
+		WHERE user_id = ? AND idempotency_key = ? AND status = ?
+		ORDER BY created_at ASC
+		LIMIT 1`,
+	)
+		.bind(input.userId, input.idempotencyKey, creatingWorkflowProjectionStatus)
+		.first<Record<string, unknown>>()
+	if (!row) return
+	await upsertWorkflowProjection({
+		env: input.env,
+		userId: input.userId,
+		projection: {
+			id: String(row['id']),
+			bindingName: dynamicCallableWorkflowsBindingName,
+			sourceType: row['source_type'] === 'package' ? 'package' : 'inline',
+			packageId:
+				typeof row['package_id'] === 'string' ? row['package_id'] : null,
+			kodyId: typeof row['kody_id'] === 'string' ? row['kody_id'] : null,
+			sourceId: typeof row['source_id'] === 'string' ? row['source_id'] : null,
+			workflowName: String(row['workflow_name']),
+			exportName:
+				typeof row['export_name'] === 'string' ? row['export_name'] : null,
+			idempotencyKey: String(row['idempotency_key']),
+			runAt: String(row['run_at']),
+			planDate: typeof row['plan_date'] === 'string' ? row['plan_date'] : null,
+			status: creatingWorkflowProjectionStatus,
+			createdAt: String(row['created_at']),
+			updatedAt: String(row['updated_at']),
+			completedAt:
+				typeof row['completed_at'] === 'string' ? row['completed_at'] : null,
+			lastError:
+				typeof row['last_error'] === 'string' ? row['last_error'] : null,
+		},
+	})
+}
+
 async function findAlreadyDispatchedWorkflowRunByIdempotencyKey(input: {
 	env: Env
 	userId: string
@@ -104,10 +150,12 @@ async function findAlreadyDispatchedWorkflowRunByIdempotencyKey(input: {
 	const trimmedKey = input.idempotencyKey.trim()
 	if (!trimmedKey) return null
 
-	const existing = await findWorkflowProjectionByIdempotencyKey({
+	// Dual-read via package-workflows (RunLog, then matching D1 import).
+	const existing = await findWorkflowRunByIdempotencyKey({
 		env: input.env,
 		userId: input.userId,
 		idempotencyKey: trimmedKey,
+		bindingName: dynamicCallableWorkflowsBindingName,
 	})
 	if (existing) {
 		const status = existing.status ?? ''
@@ -121,16 +169,20 @@ async function findAlreadyDispatchedWorkflowRunByIdempotencyKey(input: {
 		}
 	}
 
-	// `findWorkflowProjectionByIdempotencyKey` excludes mid-creation placeholders
-	// (matches create's idempotency reader). Durable escalation still treats
-	// `creating` as already dispatched so a concurrent inline attempt does not
-	// start while create is single-flighting the same key.
+	// Creating placeholders are excluded from the idempotency reader; import any
+	// legacy D1 creating row, then scan RunLog creating projections.
+	await importCreatingD1RowIfPresent({
+		env: input.env,
+		userId: input.userId,
+		idempotencyKey: trimmedKey,
+	})
 	let cursor: string | null = null
 	for (;;) {
 		const page = await listWorkflowProjections({
 			env: input.env,
 			userId: input.userId,
 			status: creatingWorkflowProjectionStatus,
+			bindingName: dynamicCallableWorkflowsBindingName,
 			limit: 100,
 			cursor,
 		})

@@ -62,13 +62,34 @@ const runRecordMocks = vi.hoisted(() => {
 		seed(userId: string, projection: WorkflowProjectionUpsertInput) {
 			userStore(userId).set(projection.id, toRecord(projection))
 		},
+		upsertWorkflowProjection: vi.fn(
+			async (input: {
+				env: Env
+				userId: string
+				projection: WorkflowProjectionUpsertInput
+			}) => {
+				userStore(input.userId).set(
+					input.projection.id,
+					toRecord(input.projection),
+				)
+				return { ok: true as const }
+			},
+		),
 		findWorkflowProjectionByIdempotencyKey: vi.fn(
-			async (input: { env: Env; userId: string; idempotencyKey: string }) => {
+			async (input: {
+				env: Env
+				userId: string
+				idempotencyKey: string
+				bindingName?: string | null
+			}) => {
 				const matches = [...userStore(input.userId).values()]
 					.filter(
 						(row) =>
 							row.idempotencyKey === input.idempotencyKey &&
-							row.status !== 'creating',
+							row.status !== 'creating' &&
+							(input.bindingName
+								? row.bindingName === input.bindingName
+								: true),
 					)
 					.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
 				return matches[0] ?? null
@@ -80,10 +101,17 @@ const runRecordMocks = vi.hoisted(() => {
 				userId: string
 				limit?: number | null
 				status?: string | null
+				bindingName?: string | null
 			}) => {
 				const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
 				const rows = [...userStore(input.userId).values()]
-					.filter((row) => (input.status ? row.status === input.status : true))
+					.filter(
+						(row) =>
+							(input.status ? row.status === input.status : true) &&
+							(input.bindingName
+								? row.bindingName === input.bindingName
+								: true),
+					)
 					.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 				return {
 					projections: rows.slice(0, limit),
@@ -94,15 +122,42 @@ const runRecordMocks = vi.hoisted(() => {
 	}
 })
 
-vi.mock('#worker/package-runtime/package-workflows.ts', () => ({
-	createDynamicCallableWorkflow: (...args: Array<unknown>) =>
-		mockModule.createDynamicCallableWorkflow(...args),
-}))
+vi.mock(
+	'#worker/package-runtime/package-workflows.ts',
+	async (importOriginal) => {
+		const actual =
+			await importOriginal<
+				typeof import('#worker/package-runtime/package-workflows.ts')
+			>()
+		return {
+			...actual,
+			createDynamicCallableWorkflow: (...args: Array<unknown>) =>
+				mockModule.createDynamicCallableWorkflow(...args),
+		}
+	},
+)
 
 vi.mock('#worker/run-records/service.ts', () => ({
+	upsertWorkflowProjection: (...args: Array<unknown>) =>
+		runRecordMocks.upsertWorkflowProjection(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					projection: WorkflowProjectionUpsertInput
+				},
+			]),
+		),
 	findWorkflowProjectionByIdempotencyKey: (...args: Array<unknown>) =>
 		runRecordMocks.findWorkflowProjectionByIdempotencyKey(
-			...(args as [{ env: Env; userId: string; idempotencyKey: string }]),
+			...(args as [
+				{
+					env: Env
+					userId: string
+					idempotencyKey: string
+					bindingName?: string | null
+				},
+			]),
 		),
 	listWorkflowProjections: (...args: Array<unknown>) =>
 		runRecordMocks.listWorkflowProjections(
@@ -112,6 +167,7 @@ vi.mock('#worker/run-records/service.ts', () => ({
 					userId: string
 					limit?: number | null
 					status?: string | null
+					bindingName?: string | null
 				},
 			]),
 		),
@@ -122,6 +178,7 @@ const projectionBindingName = 'DYNAMIC_CALLABLE_WORKFLOWS'
 beforeEach(() => {
 	runRecordMocks.resetProjections()
 	mockModule.createDynamicCallableWorkflow.mockReset()
+	runRecordMocks.upsertWorkflowProjection.mockClear()
 	runRecordMocks.findWorkflowProjectionByIdempotencyKey.mockClear()
 	runRecordMocks.listWorkflowProjections.mockClear()
 })
@@ -135,7 +192,8 @@ const publishParts = [
 
 function envStub() {
 	return {
-		APP_DB: {} as D1Database,
+		// Falsy so dual-read skips D1 prepare on the stub env.
+		APP_DB: undefined as unknown as D1Database,
 		DYNAMIC_CALLABLE_WORKFLOWS: {} as Workflow,
 		RUN_LOG: {} as DurableObjectNamespace,
 	} as Env
@@ -323,6 +381,7 @@ test('mid-creation workflow projection rows are treated as already dispatched', 
 		expect.objectContaining({
 			userId: 'user-1',
 			status: creatingWorkflowProjectionStatus,
+			bindingName: projectionBindingName,
 		}),
 	)
 })

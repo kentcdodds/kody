@@ -25,6 +25,7 @@ const runRecordMocks = vi.hoisted(() => {
 		'waitingForPause',
 		'unknown',
 	])
+	const reservationStatuses = new Set<string>([...activeStatuses, 'creating'])
 
 	function userStore(userId: string) {
 		let store = projectionsByUser.get(userId)
@@ -66,6 +67,35 @@ const runRecordMocks = vi.hoisted(() => {
 		}
 	}
 
+	const upsertWorkflowProjection = vi.fn(
+		async (input: {
+			env: Env
+			userId: string
+			projection: WorkflowProjectionUpsertInput
+		}) => {
+			const store = userStore(input.userId)
+			const existing = store.get(input.projection.id) ?? null
+			const nextUpdatedAt =
+				input.projection.updatedAt?.trim() || new Date().toISOString()
+			if (!existing) {
+				store.set(input.projection.id, toRecord(input.projection, null))
+				return { ok: true as const }
+			}
+			if (nextUpdatedAt < existing.updatedAt) {
+				return { ok: true as const }
+			}
+			store.set(input.projection.id, {
+				...existing,
+				status: input.projection.status ?? null,
+				updatedAt: nextUpdatedAt,
+				completedAt:
+					input.projection.completedAt ?? existing.completedAt ?? null,
+				lastError: input.projection.lastError ?? existing.lastError ?? null,
+			})
+			return { ok: true as const }
+		},
+	)
+
 	return {
 		projectionsByUser,
 		resetProjections() {
@@ -82,41 +112,26 @@ const runRecordMocks = vi.hoisted(() => {
 			context: { surface: 'workflow' as const },
 		})),
 		finishRunRecord: vi.fn(async () => {}),
-		upsertWorkflowProjection: vi.fn(
-			async (input: {
-				env: Env
-				userId: string
-				projection: WorkflowProjectionUpsertInput
-			}) => {
-				const store = userStore(input.userId)
-				const existing = store.get(input.projection.id) ?? null
-				if (!existing) {
-					store.set(input.projection.id, toRecord(input.projection, null))
-					return { ok: true as const }
-				}
-				const now = new Date().toISOString()
-				store.set(input.projection.id, {
-					...existing,
-					status: input.projection.status ?? null,
-					updatedAt: input.projection.updatedAt?.trim() || now,
-					completedAt:
-						input.projection.completedAt ?? existing.completedAt ?? null,
-					lastError: input.projection.lastError ?? existing.lastError ?? null,
-				})
-				return { ok: true as const }
-			},
-		),
+		upsertWorkflowProjection,
 		getWorkflowProjection: vi.fn(
 			async (input: { env: Env; userId: string; id: string }) =>
 				userStore(input.userId).get(input.id) ?? null,
 		),
 		findWorkflowProjectionByIdempotencyKey: vi.fn(
-			async (input: { env: Env; userId: string; idempotencyKey: string }) => {
+			async (input: {
+				env: Env
+				userId: string
+				idempotencyKey: string
+				bindingName?: string | null
+			}) => {
 				const matches = [...userStore(input.userId).values()]
 					.filter(
 						(row) =>
 							row.idempotencyKey === input.idempotencyKey &&
-							row.status !== 'creating',
+							row.status !== 'creating' &&
+							(input.bindingName
+								? row.bindingName === input.bindingName
+								: true),
 					)
 					.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
 				return matches[0] ?? null
@@ -128,10 +143,17 @@ const runRecordMocks = vi.hoisted(() => {
 				userId: string
 				limit?: number | null
 				status?: string | null
+				bindingName?: string | null
 			}) => {
 				const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
 				const rows = [...userStore(input.userId).values()]
-					.filter((row) => (input.status ? row.status === input.status : true))
+					.filter(
+						(row) =>
+							(input.status ? row.status === input.status : true) &&
+							(input.bindingName
+								? row.bindingName === input.bindingName
+								: true),
+					)
 					.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 				return {
 					projections: rows.slice(0, limit),
@@ -144,6 +166,56 @@ const runRecordMocks = vi.hoisted(() => {
 				[...userStore(input.userId).values()].filter(
 					(row) => row.status != null && activeStatuses.has(row.status),
 				).length,
+		),
+		reserveWorkflowProjectionSlot: vi.fn(
+			async (input: {
+				env: Env
+				userId: string
+				projection: WorkflowProjectionUpsertInput
+			}) => {
+				const store = userStore(input.userId)
+				const existing = store.get(input.projection.id) ?? null
+				const totalReserved = [...store.values()].filter(
+					(row) => row.status != null && reservationStatuses.has(row.status),
+				).length
+				const existingOccupies =
+					existing?.status != null && reservationStatuses.has(existing.status)
+				const countBeforeReservation = existingOccupies
+					? Math.max(0, totalReserved - 1)
+					: totalReserved
+				const now = new Date().toISOString()
+				store.set(
+					input.projection.id,
+					toRecord(
+						{
+							...input.projection,
+							status: 'creating',
+							createdAt:
+								input.projection.createdAt ?? existing?.createdAt ?? now,
+							updatedAt: input.projection.updatedAt ?? now,
+							completedAt: null,
+							lastError: null,
+						},
+						existing,
+					),
+				)
+				const projection = store.get(input.projection.id)
+				if (!projection) {
+					throw new Error('Expected reserved projection.')
+				}
+				return { countBeforeReservation, projection }
+			},
+		),
+		deleteWorkflowProjectionIfCreating: vi.fn(
+			async (input: { env: Env; userId: string; id: string }) => {
+				const store = userStore(input.userId)
+				const existing = store.get(input.id)
+				if (existing?.status === 'creating') {
+					store.delete(input.id)
+					return { deleted: true }
+				}
+				return { deleted: false }
+			},
 		),
 	}
 })
@@ -169,7 +241,14 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		),
 	findWorkflowProjectionByIdempotencyKey: (...args: Array<unknown>) =>
 		runRecordMocks.findWorkflowProjectionByIdempotencyKey(
-			...(args as [{ env: Env; userId: string; idempotencyKey: string }]),
+			...(args as [
+				{
+					env: Env
+					userId: string
+					idempotencyKey: string
+					bindingName?: string | null
+				},
+			]),
 		),
 	listWorkflowProjections: (...args: Array<unknown>) =>
 		runRecordMocks.listWorkflowProjections(
@@ -179,12 +258,27 @@ vi.mock('#worker/run-records/service.ts', () => ({
 					userId: string
 					limit?: number | null
 					status?: string | null
+					bindingName?: string | null
 				},
 			]),
 		),
 	countActiveWorkflowProjections: (...args: Array<unknown>) =>
 		runRecordMocks.countActiveWorkflowProjections(
 			...(args as [{ env: Env; userId: string }]),
+		),
+	reserveWorkflowProjectionSlot: (...args: Array<unknown>) =>
+		runRecordMocks.reserveWorkflowProjectionSlot(
+			...(args as [
+				{
+					env: Env
+					userId: string
+					projection: WorkflowProjectionUpsertInput
+				},
+			]),
+		),
+	deleteWorkflowProjectionIfCreating: (...args: Array<unknown>) =>
+		runRecordMocks.deleteWorkflowProjectionIfCreating(
+			...(args as [{ env: Env; userId: string; id: string }]),
 		),
 }))
 
@@ -625,13 +719,16 @@ test('cancel projection loses to a concurrent complete write', async () => {
 			runAt: '2026-05-03T12:34:56.000Z',
 		},
 	})
-	const completedAt = '2026-05-03T12:35:00.000Z'
 	binding.perInstance.set(created.id, {
 		onTerminate: async () => {
 			const existing = runRecordMocks
 				.listForUser('user-1')
 				.find((row) => row.id === created.id)
 			if (!existing) throw new Error('Expected projection before race write.')
+			// Must be >= existing.updatedAt so monotonic upsert accepts the race.
+			const completedAt = new Date(
+				Math.max(Date.parse(existing.updatedAt) + 1, Date.now()),
+			).toISOString()
 			await runRecordMocks.upsertWorkflowProjection({
 				env,
 				userId: 'user-1',
@@ -656,14 +753,14 @@ test('cancel projection loses to a concurrent complete write', async () => {
 		run: {
 			id: created.id,
 			status: 'complete',
-			completedAt,
+			completedAt: expect.any(String),
 		},
 	})
 	expect(
 		runRecordMocks.listForUser('user-1').find((row) => row.id === created.id),
 	).toMatchObject({
 		status: 'complete',
-		completedAt,
+		completedAt: expect.any(String),
 	})
 	await flusher.flush()
 	// D1 mirror may still show queued from create if cancel skipped the

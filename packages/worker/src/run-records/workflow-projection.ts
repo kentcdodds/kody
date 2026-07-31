@@ -13,6 +13,20 @@ import {
 	type WorkflowRunStatus,
 } from '#worker/package-runtime/workflow-statuses.ts'
 
+/**
+ * Cloudflare Workflow binding names Kody may project. Expand the union when a
+ * second binding ships; resolvers must stay exhaustive.
+ */
+export const workflowBindingNames = ['DYNAMIC_CALLABLE_WORKFLOWS'] as const
+
+export type WorkflowBindingName = (typeof workflowBindingNames)[number]
+
+export function isWorkflowBindingName(
+	value: string,
+): value is WorkflowBindingName {
+	return (workflowBindingNames as ReadonlyArray<string>).includes(value)
+}
+
 export type WorkflowProjectionSourceType = 'package' | 'inline'
 
 export type WorkflowProjectionRecord = {
@@ -53,10 +67,22 @@ export type WorkflowProjectionUpsertInput = {
 	lastError?: string | null
 }
 
+export type WorkflowProjectionReserveResult = {
+	/** Active + creating count excluding this id's prior reservation, if any. */
+	countBeforeReservation: number
+	projection: WorkflowProjectionRecord
+}
+
 /** Mid-creation placeholder excluded from idempotency lookups (matches D1). */
 export const creatingWorkflowProjectionStatus = 'creating'
 
 export const workflowProjectionActiveStatuses: ReadonlyArray<string> =
 	activeWorkflowStatusValues
+
+/** Statuses that occupy a concurrent-workflow entitlement slot. */
+export const workflowProjectionReservationStatuses: ReadonlyArray<string> = [
+	...workflowProjectionActiveStatuses,
+	creatingWorkflowProjectionStatus,
+]
 
 export type { WorkflowRunStatus }

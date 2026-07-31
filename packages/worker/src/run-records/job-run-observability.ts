@@ -28,3 +28,10 @@ export type JobRunObservabilityUpsertInput = {
 	error?: string | null
 	durationMs?: number | null
 }
+
+/**
+ * Full observability row used when seeding from D1 `jobs` before the first
+ * RunLog terminal finish. Inserted with `INSERT OR IGNORE` so a concurrent
+ * finish cannot be overwritten by a stale seed.
+ */
+export type JobRunObservabilitySeedInput = JobRunObservabilityRecord

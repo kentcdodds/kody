@@ -302,3 +302,10 @@ export const runRecordRetentionAlarmMs = 60 * 60 * 1000
  * bypass the in-flight guard.
  */
 export const packageInvocationLedgerRetentionDays = 90
+
+/**
+ * Terminal workflow projections keep entitlement/idempotency history for 90
+ * days inside the RunLog DO. Active / creating / nonterminal rows are never
+ * age-pruned (same shape as the invocation-ledger in-progress guard).
+ */
+export const workflowProjectionRetentionDays = 90

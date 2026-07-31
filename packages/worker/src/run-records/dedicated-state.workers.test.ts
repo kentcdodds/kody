@@ -20,6 +20,8 @@ import {
 	listPackageRunSuccesses,
 	listRunRecords,
 	listWorkflowProjections,
+	reserveWorkflowProjectionSlot,
+	deleteWorkflowProjectionIfCreating,
 	upsertJobRunObservability,
 	upsertWorkflowProjection,
 } from './service.ts'
@@ -202,6 +204,97 @@ test('workflow projections track binding name, idempotency, and active counts', 
 	expect(
 		listed.projections.find((row) => row.id === 'wf-active-2')?.bindingName,
 	).toBe('OTHER_WORKFLOWS')
+})
+
+test('reserveWorkflowProjectionSlot serializes concurrent creating reservations for a one-slot limit', async () => {
+	const userId = uniqueUserId('wf-reserve')
+	const results = await Promise.all(
+		Array.from({ length: 5 }, (_, index) =>
+			reserveWorkflowProjectionSlot({
+				env,
+				userId,
+				projection: {
+					id: `wf-reserve-${index}`,
+					bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+					sourceType: 'inline',
+					workflowName: 'adhoc',
+					idempotencyKey: `reserve-key-${index}`,
+					runAt: '2026-07-31T00:00:00.000Z',
+					status: 'creating',
+				},
+			}),
+		),
+	)
+	const counts = results
+		.map((result) => result.countBeforeReservation)
+		.sort((left, right) => left - right)
+	expect(counts).toEqual([0, 1, 2, 3, 4])
+
+	const oneSlotLimit = 1
+	await Promise.all(
+		results.map(async (result) => {
+			if (result.countBeforeReservation + 1 > oneSlotLimit) {
+				await deleteWorkflowProjectionIfCreating({
+					env,
+					userId,
+					id: result.projection.id,
+				})
+			}
+		}),
+	)
+	const remaining = await listWorkflowProjections({
+		env,
+		userId,
+		status: 'creating',
+		limit: 10,
+	})
+	expect(remaining.projections).toHaveLength(1)
+	expect(remaining.projections[0]?.id).toBe(
+		results.find((result) => result.countBeforeReservation === 0)?.projection
+			.id,
+	)
+})
+
+test('workflow projection upsert is monotonic by updatedAt', async () => {
+	const userId = uniqueUserId('wf-mono')
+	await upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			id: 'wf-mono',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'adhoc',
+			idempotencyKey: 'mono-key',
+			runAt: '2026-07-31T20:00:00.000Z',
+			status: 'complete',
+			createdAt: '2026-07-31T20:00:00.000Z',
+			updatedAt: '2026-07-31T20:00:00.000Z',
+			completedAt: '2026-07-31T20:00:00.000Z',
+		},
+	})
+	await upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			id: 'wf-mono',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'adhoc',
+			idempotencyKey: 'mono-key',
+			runAt: '2026-07-31T19:00:00.000Z',
+			status: 'running',
+			createdAt: '2026-07-31T19:00:00.000Z',
+			updatedAt: '2026-07-31T19:00:00.000Z',
+			completedAt: null,
+		},
+	})
+	expect(
+		await getWorkflowProjection({ env, userId, id: 'wf-mono' }),
+	).toMatchObject({
+		status: 'complete',
+		updatedAt: '2026-07-31T20:00:00.000Z',
+	})
 })
 
 test('job run observability upserts terminal outcomes and supports batch reads', async () => {
@@ -532,6 +625,11 @@ test('retention prunes runs but never dedicated workflow/job/activation state', 
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('retention')
 
+	// Recent terminal projection (within the 90-day workflow lane) plus job /
+	// activation counters: run age/excess prune must not remove them.
+	const recentWorkflowAt = new Date(
+		Date.now() - 2 * 24 * 60 * 60 * 1000,
+	).toISOString()
 	await upsertWorkflowProjection({
 		env,
 		userId,
@@ -541,9 +639,11 @@ test('retention prunes runs but never dedicated workflow/job/activation state', 
 			sourceType: 'inline',
 			workflowName: 'keep',
 			idempotencyKey: 'idem-keep',
-			runAt: '2026-01-01T00:00:00.000Z',
+			runAt: recentWorkflowAt,
 			status: 'complete',
-			completedAt: '2026-01-01T00:01:00.000Z',
+			createdAt: recentWorkflowAt,
+			updatedAt: recentWorkflowAt,
+			completedAt: recentWorkflowAt,
 		},
 	})
 	await upsertJobRunObservability({
@@ -552,7 +652,7 @@ test('retention prunes runs but never dedicated workflow/job/activation state', 
 		outcome: {
 			jobId: 'job-keep',
 			status: 'success',
-			ranAt: '2026-01-01T00:00:00.000Z',
+			ranAt: recentWorkflowAt,
 			durationMs: 5,
 		},
 	})

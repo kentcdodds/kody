@@ -28,6 +28,16 @@ export type ActivationMilestoneRecord = {
 	packageId: string | null
 }
 
+/**
+ * Snapshot imported from D1 `user_package_run_successes` /
+ * `user_activation_milestones` into the per-user RunLog DO. Counts merge
+ * monotonically; milestone rows keep the first-writer `reached_at`.
+ */
+export type ActivationStateImport = {
+	packageRunSuccesses: Array<PackageRunSuccessRecord>
+	milestones: Array<ActivationMilestoneRecord>
+}
+
 const activationExcludedSurfaces = new Set<RunSurface>(['webhook', 'app_fetch'])
 
 /**

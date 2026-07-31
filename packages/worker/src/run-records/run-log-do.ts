@@ -1,24 +1,29 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
+import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
 	type ActivationMilestone,
 	type ActivationMilestoneRecord,
+	type ActivationStateImport,
 	type PackageRunSuccessRecord,
 	countsTowardPackageActivation,
 } from './package-activation-state.ts'
 import {
 	type JobRunObservabilityRecord,
+	type JobRunObservabilitySeedInput,
 	type JobRunObservabilityStatus,
 	type JobRunObservabilityUpsertInput,
 } from './job-run-observability.ts'
 import {
 	type WorkflowProjectionRecord,
+	type WorkflowProjectionReserveResult,
 	type WorkflowProjectionSourceType,
 	type WorkflowProjectionUpsertInput,
 	creatingWorkflowProjectionStatus,
 	workflowProjectionActiveStatuses,
+	workflowProjectionReservationStatuses,
 } from './workflow-projection.ts'
 import {
 	type RunLogLevel,
@@ -40,6 +45,7 @@ import {
 	runRecordRetentionEveryNFinishes,
 	runRecordStaleRunningTtlMsForSurface,
 	runSurfaceValues,
+	workflowProjectionRetentionDays,
 } from './types.ts'
 
 const textEncoder = new TextEncoder()
@@ -47,10 +53,13 @@ const maxAgeDeletesPerFinish = 100
 const maxExcessDeletesPerFinish = 100
 const maxStaleRunningReconcilesPerPass = 100
 const maxLedgerAgeDeletesPerPass = 100
+const maxWorkflowProjectionAgeDeletesPerPass = 100
 
 const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
 const metaSchemaVersionKey = 'schema_version'
+/** Set once after the D1 → RunLog activation seed attempt for this user. */
+const metaActivationInitializedKey = 'activation_initialized'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
 const runLogSchemaVersion = 6
 
@@ -72,6 +81,11 @@ const staleRunningErrorMessage =
 const retentionMs = runRecordRetentionDays * 24 * 60 * 60 * 1000
 const ledgerRetentionMs =
 	packageInvocationLedgerRetentionDays * 24 * 60 * 60 * 1000
+const workflowProjectionRetentionMs =
+	workflowProjectionRetentionDays * 24 * 60 * 60 * 1000
+
+const workflowProjectionTerminalStatuses: ReadonlyArray<string> =
+	terminalWorkflowStatusValues
 
 export type RunLogRowInput = {
 	id: string
@@ -194,6 +208,7 @@ type WorkflowProjectionListInput = {
 	limit: number
 	cursor?: string | null
 	status?: string | null
+	bindingName?: string | null
 }
 
 function truncateUtf8(value: string, maxBytes: number) {
@@ -1015,6 +1030,26 @@ class RunLogBase extends DurableObject<Env> {
 			)
 		}
 
+		const terminalPlaceholders = workflowProjectionTerminalStatuses
+			.map(() => '?')
+			.join(', ')
+		const oldestTerminalWorkflowProjection = this.ctx.storage.sql
+			.exec<{ due_at: string }>(
+				`SELECT COALESCE(completed_at, updated_at) AS due_at
+				FROM workflow_projections
+				WHERE status IN (${terminalPlaceholders})
+				ORDER BY COALESCE(completed_at, updated_at) ASC
+				LIMIT 1`,
+				...workflowProjectionTerminalStatuses,
+			)
+			.toArray()[0]
+		if (oldestTerminalWorkflowProjection) {
+			consider(
+				Date.parse(oldestTerminalWorkflowProjection.due_at) +
+					workflowProjectionRetentionMs,
+			)
+		}
+
 		// Soonest stale due-time can belong to a newer short-lived surface
 		// (execute) even when an older long-lived service/job row exists.
 		// Only the earliest row per surface can produce that due-time.
@@ -1077,6 +1112,7 @@ class RunLogBase extends DurableObject<Env> {
 		}
 
 		this.pruneInvocationLedgerForRetention()
+		this.pruneWorkflowProjectionsForRetention()
 		this.setFinishesSinceRetention(0)
 	}
 
@@ -1098,6 +1134,34 @@ class RunLogBase extends DurableObject<Env> {
 			)`,
 			cutoff,
 			maxLedgerAgeDeletesPerPass,
+		)
+	}
+
+	/**
+	 * Age-prune terminal workflow projections after 90 days. Active, creating,
+	 * and other nonterminal rows are never removed — they are correctness
+	 * state for concurrent_workflows. Success counts, milestones, and job
+	 * observability are intentionally absent from this lane.
+	 */
+	private pruneWorkflowProjectionsForRetention() {
+		const cutoff = new Date(
+			Date.now() - workflowProjectionRetentionMs,
+		).toISOString()
+		const placeholders = workflowProjectionTerminalStatuses
+			.map(() => '?')
+			.join(', ')
+		this.ctx.storage.sql.exec(
+			`DELETE FROM workflow_projections
+			WHERE id IN (
+				SELECT id FROM workflow_projections
+				WHERE status IN (${placeholders})
+					AND COALESCE(completed_at, updated_at) < ?
+				ORDER BY COALESCE(completed_at, updated_at) ASC
+				LIMIT ?
+			)`,
+			...workflowProjectionTerminalStatuses,
+			cutoff,
+			maxWorkflowProjectionAgeDeletesPerPass,
 		)
 	}
 
@@ -1278,21 +1342,19 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Increment package success counts / milestones for a genuine new terminal
-	 * success. Never throws into the observed finish path.
+	 * Atomically increment package success counts and write first-success /
+	 * activated milestones. Uses `transactionSync` so a mid-unit SQL failure
+	 * rolls back rather than leaving a partial activation write.
 	 */
-	private recordSuccessfulPackageActivation(input: {
-		packageId: string | null
-		surface: string
+	private applySuccessfulPackageActivationIncrement(input: {
+		packageId: string
 		reachedAt: string
 	}) {
-		try {
-			const packageId = input.packageId?.trim() || null
-			if (!packageId) return
-			if (!countsTowardPackageActivation(input.surface)) return
+		const packageId = input.packageId
+		const updatedAt = input.reachedAt
+		this.ctx.storage.transactionSync(() => {
 			if (this.hasActivationMilestone('package_activated')) return
 
-			const updatedAt = input.reachedAt
 			this.ctx.storage.sql.exec(
 				`INSERT INTO package_run_successes (package_id, success_count, updated_at)
 				VALUES (?, 1, ?)
@@ -1323,6 +1385,26 @@ class RunLogBase extends DurableObject<Env> {
 				updatedAt,
 				packageId,
 			)
+		})
+	}
+
+	/**
+	 * Increment package success counts / milestones for a genuine new terminal
+	 * success. Never throws into the observed finish path.
+	 */
+	private recordSuccessfulPackageActivation(input: {
+		packageId: string | null
+		surface: string
+		reachedAt: string
+	}) {
+		try {
+			const packageId = input.packageId?.trim() || null
+			if (!packageId) return
+			if (!countsTowardPackageActivation(input.surface)) return
+			this.applySuccessfulPackageActivationIncrement({
+				packageId,
+				reachedAt: input.reachedAt,
+			})
 		} catch (error) {
 			console.warn('run-log-activation-failed', error)
 		}
@@ -1694,6 +1776,8 @@ class RunLogBase extends DurableObject<Env> {
 		const now = new Date().toISOString()
 		const createdAt = input.createdAt?.trim() || now
 		const updatedAt = input.updatedAt?.trim() || now
+		// Monotonic by updated_at so a lagging expand-phase D1 mirror/import
+		// cannot regress a newer RunLog status.
 		this.ctx.storage.sql.exec(
 			`INSERT INTO workflow_projections (
 				id, binding_name, source_type, package_id, kody_id, source_id,
@@ -1704,7 +1788,8 @@ class RunLogBase extends DurableObject<Env> {
 				status = excluded.status,
 				updated_at = excluded.updated_at,
 				completed_at = COALESCE(excluded.completed_at, workflow_projections.completed_at),
-				last_error = COALESCE(excluded.last_error, workflow_projections.last_error)`,
+				last_error = COALESCE(excluded.last_error, workflow_projections.last_error)
+			WHERE excluded.updated_at >= workflow_projections.updated_at`,
 			input.id,
 			input.bindingName,
 			input.sourceType,
@@ -1722,6 +1807,9 @@ class RunLogBase extends DurableObject<Env> {
 			input.completedAt ?? null,
 			input.lastError ?? null,
 		)
+		// Terminal projections create future age-prune work.
+		this.retentionIdleConfirmed = false
+		await this.ensureRetentionAlarm()
 		return { ok: true }
 	}
 
@@ -1739,21 +1827,38 @@ class RunLogBase extends DurableObject<Env> {
 
 	async findWorkflowProjectionByIdempotencyKey(input: {
 		idempotencyKey: string
+		bindingName?: string | null
 	}): Promise<WorkflowProjectionRecord | null> {
 		const trimmedKey = input.idempotencyKey.trim()
 		if (!trimmedKey) return null
-		const row = this.ctx.storage.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT *
-				FROM workflow_projections
-				WHERE idempotency_key = ?
-					AND COALESCE(status, '') != ?
-				ORDER BY created_at ASC
-				LIMIT 1`,
-				trimmedKey,
-				creatingWorkflowProjectionStatus,
-			)
-			.toArray()[0]
+		const bindingName = input.bindingName?.trim() || null
+		const row = bindingName
+			? this.ctx.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT *
+						FROM workflow_projections
+						WHERE idempotency_key = ?
+							AND binding_name = ?
+							AND COALESCE(status, '') != ?
+						ORDER BY created_at ASC
+						LIMIT 1`,
+						trimmedKey,
+						bindingName,
+						creatingWorkflowProjectionStatus,
+					)
+					.toArray()[0]
+			: this.ctx.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT *
+						FROM workflow_projections
+						WHERE idempotency_key = ?
+							AND COALESCE(status, '') != ?
+						ORDER BY created_at ASC
+						LIMIT 1`,
+						trimmedKey,
+						creatingWorkflowProjectionStatus,
+					)
+					.toArray()[0]
 		return row ? mapWorkflowProjectionRow(row) : null
 	}
 
@@ -1767,6 +1872,11 @@ class RunLogBase extends DurableObject<Env> {
 		if (input.status) {
 			clauses.push('status = ?')
 			params.push(input.status)
+		}
+		const bindingName = input.bindingName?.trim() || null
+		if (bindingName) {
+			clauses.push('binding_name = ?')
+			params.push(bindingName)
 		}
 		if (input.cursor) {
 			const cursor = decodeCursor(input.cursor)
@@ -1813,22 +1923,190 @@ class RunLogBase extends DurableObject<Env> {
 		return { count: Number(row.count ?? 0) || 0 }
 	}
 
+	/**
+	 * Atomically count entitlement-occupying projections (active + creating)
+	 * and insert/claim this workflow's `creating` reservation. Returns the
+	 * count *before* this reservation for assertWithinEntitlement getCurrent.
+	 */
+	async reserveWorkflowProjectionSlot(
+		input: WorkflowProjectionUpsertInput,
+	): Promise<WorkflowProjectionReserveResult> {
+		const now = new Date().toISOString()
+		const existing = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM workflow_projections WHERE id = ? LIMIT 1`,
+				input.id,
+			)
+			.toArray()[0]
+		const reservationPlaceholders = workflowProjectionReservationStatuses
+			.map(() => '?')
+			.join(', ')
+		const countRow = this.ctx.storage.sql
+			.exec<{ count: number }>(
+				`SELECT COUNT(*) AS count FROM workflow_projections
+				WHERE status IN (${reservationPlaceholders})`,
+				...workflowProjectionReservationStatuses,
+			)
+			.one()
+		const totalReserved = Number(countRow.count ?? 0) || 0
+		const existingStatus =
+			existing && typeof existing['status'] === 'string'
+				? String(existing['status'])
+				: null
+		const existingOccupiesSlot =
+			existingStatus != null &&
+			workflowProjectionReservationStatuses.includes(existingStatus)
+		const countBeforeReservation = existingOccupiesSlot
+			? Math.max(0, totalReserved - 1)
+			: totalReserved
+
+		const createdAt =
+			input.createdAt?.trim() ||
+			(existing ? String(existing['created_at']) : now)
+		const updatedAt = input.updatedAt?.trim() || now
+		const projectionInput: WorkflowProjectionUpsertInput = {
+			...input,
+			status: creatingWorkflowProjectionStatus,
+			createdAt,
+			updatedAt,
+			completedAt: null,
+			lastError: null,
+		}
+		await this.upsertWorkflowProjection(projectionInput)
+		const projection = await this.getWorkflowProjection({ id: input.id })
+		if (!projection) {
+			throw new Error(
+				`Workflow projection "${input.id}" disappeared after reservation.`,
+			)
+		}
+		return { countBeforeReservation, projection }
+	}
+
+	async deleteWorkflowProjectionIfCreating(input: {
+		id: string
+	}): Promise<{ deleted: boolean }> {
+		this.ctx.storage.sql.exec(
+			`DELETE FROM workflow_projections
+			WHERE id = ? AND COALESCE(status, '') = ?`,
+			input.id,
+			creatingWorkflowProjectionStatus,
+		)
+		const remaining = await this.getWorkflowProjection({ id: input.id })
+		return { deleted: remaining === null }
+	}
+
 	async upsertJobRunObservability(
 		input: JobRunObservabilityUpsertInput,
 	): Promise<JobRunObservabilityRecord> {
 		return this.writeJobRunObservabilityOutcome(input)
 	}
 
-	async getJobRunObservability(input: {
-		jobId: string
-	}): Promise<JobRunObservabilityRecord | null> {
+	/**
+	 * Seed one job's historical observability from D1. `INSERT OR IGNORE` so a
+	 * concurrent terminal finish that already wrote the row cannot be
+	 * overwritten by a stale seed.
+	 */
+	async seedJobRunObservabilityIfAbsent(
+		input: JobRunObservabilitySeedInput,
+	): Promise<{ seeded: boolean }> {
+		const jobId = input.jobId.trim()
+		if (!jobId) return { seeded: false }
+		if (this.getJobRunObservabilitySync(jobId) != null) {
+			return { seeded: false }
+		}
+		const lastRunStatus =
+			input.lastRunStatus === 'success' || input.lastRunStatus === 'error'
+				? input.lastRunStatus
+				: null
+		this.ctx.storage.sql.exec(
+			`INSERT OR IGNORE INTO job_run_observability (
+				job_id, last_run_at, last_run_status, last_run_error, last_duration_ms,
+				run_count, success_count, error_count, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			jobId,
+			input.lastRunAt,
+			lastRunStatus,
+			input.lastRunError,
+			input.lastDurationMs,
+			Math.max(0, Math.trunc(input.runCount)),
+			Math.max(0, Math.trunc(input.successCount)),
+			Math.max(0, Math.trunc(input.errorCount)),
+			input.updatedAt,
+		)
+		return {
+			seeded: this.getJobRunObservabilitySync(jobId) != null,
+		}
+	}
+
+	private getJobRunObservabilitySync(
+		jobId: string,
+	): JobRunObservabilityRecord | null {
 		const row = this.ctx.storage.sql
 			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM job_run_observability WHERE job_id = ? LIMIT 1`,
-				input.jobId,
+				jobId,
 			)
 			.toArray()[0]
 		return row ? mapJobRunObservabilityRow(row) : null
+	}
+
+	async isActivationInitialized(): Promise<{ initialized: boolean }> {
+		return {
+			initialized: (this.getMeta(metaActivationInitializedKey) ?? 0) === 1,
+		}
+	}
+
+	/**
+	 * Monotonic import of D1 activation counters/milestones. Safe to call
+	 * repeatedly: success counts only rise, milestone first-writer wins, and
+	 * the initialized marker is set so the service stops reading D1.
+	 */
+	async importActivationState(
+		input: ActivationStateImport,
+	): Promise<{ initialized: boolean }> {
+		for (const row of input.packageRunSuccesses) {
+			const packageId = row.packageId.trim()
+			if (!packageId) continue
+			const successCount = Math.max(0, Math.trunc(row.successCount))
+			const updatedAt = row.updatedAt.trim() || new Date().toISOString()
+			this.ctx.storage.sql.exec(
+				`INSERT INTO package_run_successes (package_id, success_count, updated_at)
+				VALUES (?, ?, ?)
+				ON CONFLICT(package_id) DO UPDATE SET
+					success_count = MAX(package_run_successes.success_count, excluded.success_count),
+					updated_at = CASE
+						WHEN excluded.success_count > package_run_successes.success_count
+							THEN excluded.updated_at
+						ELSE package_run_successes.updated_at
+					END`,
+				packageId,
+				successCount,
+				updatedAt,
+			)
+		}
+		for (const row of input.milestones) {
+			if (
+				row.milestone !== 'package_run_succeeded' &&
+				row.milestone !== 'package_activated'
+			) {
+				continue
+			}
+			this.ctx.storage.sql.exec(
+				`INSERT OR IGNORE INTO activation_milestones (milestone, reached_at, package_id)
+				VALUES (?, ?, ?)`,
+				row.milestone,
+				row.reachedAt,
+				row.packageId,
+			)
+		}
+		this.setMeta(metaActivationInitializedKey, 1)
+		return { initialized: true }
+	}
+
+	async getJobRunObservability(input: {
+		jobId: string
+	}): Promise<JobRunObservabilityRecord | null> {
+		return this.getJobRunObservabilitySync(input.jobId)
 	}
 
 	async getJobRunObservabilityBatch(input: {
@@ -2522,21 +2800,35 @@ export type RunLogRpc = {
 	}) => Promise<WorkflowProjectionRecord | null>
 	findWorkflowProjectionByIdempotencyKey: (input: {
 		idempotencyKey: string
+		bindingName?: string | null
 	}) => Promise<WorkflowProjectionRecord | null>
 	listWorkflowProjections: (input: WorkflowProjectionListInput) => Promise<{
 		projections: Array<WorkflowProjectionRecord>
 		nextCursor: string | null
 	}>
 	countActiveWorkflowProjections: () => Promise<{ count: number }>
+	reserveWorkflowProjectionSlot: (
+		input: WorkflowProjectionUpsertInput,
+	) => Promise<WorkflowProjectionReserveResult>
+	deleteWorkflowProjectionIfCreating: (input: {
+		id: string
+	}) => Promise<{ deleted: boolean }>
 	upsertJobRunObservability: (
 		input: JobRunObservabilityUpsertInput,
 	) => Promise<JobRunObservabilityRecord>
+	seedJobRunObservabilityIfAbsent: (
+		input: JobRunObservabilitySeedInput,
+	) => Promise<{ seeded: boolean }>
 	getJobRunObservability: (input: {
 		jobId: string
 	}) => Promise<JobRunObservabilityRecord | null>
 	getJobRunObservabilityBatch: (input: {
 		jobIds: Array<string>
 	}) => Promise<Array<JobRunObservabilityRecord>>
+	isActivationInitialized: () => Promise<{ initialized: boolean }>
+	importActivationState: (
+		input: ActivationStateImport,
+	) => Promise<{ initialized: boolean }>
 	listPackageRunSuccesses: () => Promise<Array<PackageRunSuccessRecord>>
 	listActivationMilestones: () => Promise<Array<ActivationMilestoneRecord>>
 	summarize: (input: { since: string }) => Promise<RunRecordSummary>
