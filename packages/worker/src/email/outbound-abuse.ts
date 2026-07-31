@@ -24,7 +24,7 @@ import { type EmailDeliveryStatus } from './types.ts'
 export const outboundEmailBouncePauseThresholdPerDay = 5
 
 export const emailOutboundPausedMessage =
-	'Outbound email is paused for this account after spam complaints or repeated bounces. Contact the operator of this Kody deployment to have it reviewed and re-enabled.'
+	'Outbound email is paused for this account after spam complaints or repeated bounces. Email support@heykody.dev to have it reviewed and re-enabled.'
 
 type OutboundAbuseEnv = Pick<
 	Env,

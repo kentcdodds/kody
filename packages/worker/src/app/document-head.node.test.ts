@@ -21,6 +21,7 @@ test('resolveDocumentHead covers static titles, dynamic OG, fallbacks, and absol
 	expect(resolveDocumentTitle('/community')).toBe('Community packages')
 	expect(resolveDocumentTitle('/timeline')).toBe('Timeline')
 	expect(resolveDocumentTitle('/admin/users')).toBe('Admin users')
+	expect(resolveDocumentTitle('/pricing')).toBe('Pricing')
 	expect(resolveDocumentTitle('/privacy')).toBe('Privacy')
 	expect(resolveDocumentTitle('/terms')).toBe('Terms')
 

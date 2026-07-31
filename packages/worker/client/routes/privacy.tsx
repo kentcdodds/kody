@@ -17,9 +17,22 @@ export function PrivacyRoute(_handle: Handle) {
 			<header mix={css(pageHeaderCss)}>
 				<h1 mix={css(pageTitleCss)}>Privacy</h1>
 				<p mix={css(pageDescriptionCss)}>
-					How Kody stores your data and what a deployment admin can see.
+					What Kody collects, why it is needed, and the choices you have.
 				</p>
 			</header>
+
+			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>Who is responsible for your data</h2>
+				<p mix={css(descriptionCss)}>
+					Kent C. Dodds, operator of Kody at heykody.dev, is the data controller
+					for the hosted service. You can reach the operator at{' '}
+					<a href="mailto:support@heykody.dev" mix={css(mutedLinkCss)}>
+						support@heykody.dev
+					</a>
+					. A separately operated Kody deployment has its own operator and data
+					controller.
+				</p>
+			</section>
 
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>What Kody stores per account</h2>
@@ -148,6 +161,82 @@ export function PrivacyRoute(_handle: Handle) {
 			</section>
 
 			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>How long Kody keeps data</h2>
+				<p mix={css(descriptionCss)}>
+					Account content such as packages, secrets, values, memories, jobs, and
+					durable storage remains available while your account and that content
+					exist. You can delete individual content or the whole account. Some
+					operational records have fixed cleanup periods:
+				</p>
+				<ul mix={css(listCss)}>
+					<li>Email delivery events: 90 days</li>
+					<li>Email messages and their attachments: 365 days</li>
+					<li>
+						Completed workflow runs and conversation-suppression records: 90
+						days
+					</li>
+					<li>
+						Resolved or dismissed platform feedback: 365 days after its last
+						update; open or triaged feedback remains until it is resolved,
+						dismissed, or the account is deleted
+					</li>
+					<li>Audit events: 180 days</li>
+					<li>Feature-flag exposure records: 90 days</li>
+					<li>Daily entitlement counters: 400 days</li>
+					<li>Monthly usage rollups: 24 months</li>
+					<li>Stripe webhook event records: 30 days</li>
+					<li>
+						Non-current published bundle artifacts: at least 30 days, then
+						eligible for removal when no active source or repo session needs
+						them
+					</li>
+				</ul>
+				<p mix={css(descriptionCss)}>
+					Deletion from a subprocessor&apos;s backups or logs follows that
+					subprocessor&apos;s own retention cycle. Records may be kept longer
+					when required by law, needed to resolve a dispute, or necessary to
+					protect the service from abuse.
+				</p>
+			</section>
+
+			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>Service providers</h2>
+				<p mix={css(descriptionCss)}>
+					Kody uses these subprocessors to run the hosted service. They process
+					only the data needed for their role:
+				</p>
+				<ul mix={css(listCss)}>
+					<li>
+						Cloudflare — application hosting, database, object storage, email
+						delivery, security, and network infrastructure
+					</li>
+					<li>Stripe — paid subscriptions, billing, and payment records</li>
+					<li>
+						Kit — waitlist and product email subscriptions when you submit your
+						email for those purposes
+					</li>
+					<li>
+						Sentry — application error reporting and operational diagnostics
+					</li>
+					<li>Fathom — privacy-focused website traffic analytics</li>
+				</ul>
+			</section>
+
+			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>Your choices and rights</h2>
+				<p mix={css(descriptionCss)}>
+					Use Account settings to export a copy of your Kody data or delete your
+					account. You can also ask to access, correct, delete, restrict, or
+					receive your personal data, or object to its processing, by emailing{' '}
+					<a href="mailto:support@heykody.dev" mix={css(mutedLinkCss)}>
+						support@heykody.dev
+					</a>
+					. Which rights apply depends on where you live. We may need to verify
+					your identity before acting on a request.
+				</p>
+			</section>
+
+			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Deployment operator access</h2>
 				<p mix={css(descriptionCss)}>
 					Role-based access controls the application surface. Whoever operates
@@ -159,6 +248,10 @@ export function PrivacyRoute(_handle: Handle) {
 			</section>
 
 			<p mix={css({ margin: 0 })}>
+				<a href="/pricing" mix={css(mutedLinkCss)}>
+					Pricing
+				</a>
+				{' · '}
 				<a href="/terms" mix={css(mutedLinkCss)}>
 					Terms
 				</a>

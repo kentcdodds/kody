@@ -60,6 +60,13 @@ export const publicOgPages = {
 		ogDescription: 'Sign up to start using kody.',
 		path: '/signup',
 	},
+	pricing: {
+		imageTitle: 'Simple Kody pricing',
+		imageSubtitle: 'Start free. Pro is $5 per month when you need more room.',
+		ogTitle: 'Pricing — Kody',
+		ogDescription: 'Compare the Free and Pro plans and their finite limits.',
+		path: '/pricing',
+	},
 	privacy: {
 		imageTitle: 'Privacy',
 		imageSubtitle:

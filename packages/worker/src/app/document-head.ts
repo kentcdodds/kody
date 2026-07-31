@@ -248,6 +248,7 @@ const routeDocumentHeads = {
 		'Get started',
 	),
 	[routePattern(routes.pendingVerification)]: titleOnly('Verify your email'),
+	[routePattern(routes.pricing)]: publicPageHead('pricing', 'Pricing'),
 	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
 	[routePattern(routes.terms)]: publicPageHead('terms', 'Terms'),
 	[routePattern(routes.resetPassword)]: publicPageHead(

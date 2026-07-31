@@ -171,6 +171,7 @@ import {
 	createOnboardingApiHandler,
 	createOnboardingHandler,
 } from '#app/handlers/onboarding.ts'
+import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
@@ -222,6 +223,7 @@ export function createAppRouter(env: Env) {
 			blogPost: createBlogPostHandler(env),
 			blogPostApi: createBlogPostApiHandler(env),
 			blogPostOgImage: createBlogPostOgImageHandler(env),
+			pricing: createPricingHandler(env),
 			privacy: createPrivacyHandler(env),
 			terms: createTermsHandler(env),
 			onboarding: createOnboardingHandler(env),

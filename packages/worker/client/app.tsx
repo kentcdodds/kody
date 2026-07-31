@@ -235,6 +235,9 @@ export function App(handle: Handle<AppProps>) {
 								<a href="/blog" mix={css(primaryLinkCss)}>
 									Blog
 								</a>
+								<a href="/pricing" mix={css(primaryLinkCss)}>
+									Pricing
+								</a>
 								{isLoggedIn ? (
 									<a href="/timeline" mix={css(primaryLinkCss)}>
 										Timeline

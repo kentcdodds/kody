@@ -13,7 +13,7 @@ import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 
 export const accountSuspendedMessage =
-	'This account is suspended. Contact the operator of this Kody deployment to appeal.'
+	'This account is suspended. Email support@heykody.dev to appeal.'
 
 export type AccountRestrictions = {
 	suspendedAt: string | null

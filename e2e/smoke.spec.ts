@@ -58,4 +58,12 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await expect(
 		page.getByRole('heading', { name: 'What an admin can never see' }),
 	).toBeVisible()
+
+	await page.goto('/pricing')
+	await expect(page.getByRole('heading', { name: 'Pricing' })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Free' })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Pro' })).toBeVisible()
+	await expect(
+		page.getByRole('row', { name: 'Saved packages 25 100' }),
+	).toBeVisible()
 })

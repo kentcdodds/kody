@@ -21,6 +21,7 @@ import {
 	PendingVerificationRoute,
 	pendingVerificationRouteLoader,
 } from './pending-verification.tsx'
+import { PricingRoute } from './pricing.tsx'
 import { PrivacyRoute } from './privacy.tsx'
 import { TermsRoute } from './terms.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
@@ -434,6 +435,7 @@ export const clientRoutes = {
 		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
 	),
 	[routePattern(routes.pendingVerification)]: <PendingVerificationRoute />,
+	[routePattern(routes.pricing)]: <PricingRoute />,
 	[routePattern(routes.privacy)]: <PrivacyRoute />,
 	[routePattern(routes.terms)]: <TermsRoute />,
 	[routePattern(routes.signup)]: <LoginRoute />,

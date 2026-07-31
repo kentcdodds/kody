@@ -1,5 +1,12 @@
 # Troubleshooting
 
+## Contact support
+
+For help with the hosted Kody service at `heykody.dev`, email
+[`support@heykody.dev`](mailto:support@heykody.dev). Operators of other Kody
+deployments receive support mail at `support@<apex>`, where `<apex>` is the
+deployment's `APP_BASE_URL` hostname.
+
 ## MCP requests fail with `email_verification_required`
 
 Kody requires a verified account email before any MCP access, including OAuth

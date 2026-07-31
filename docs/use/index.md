@@ -38,9 +38,12 @@ Read in order for a full tour, or jump to a topic.
   provider POSTs to a saved-package export
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,
   and other runtimes (`/account/activity` and the `runs` MCP capabilities)
+- [Plans and pricing](https://heykody.dev/pricing) — Free and Pro prices and the
+  finite limits enforced for each plan
 - [Mutating actions and confirmations](./mutating-actions.md)
 - [Privacy](./privacy.md) — what Kody stores and what deployment admins can see
-  (Terms and Acceptable Use are in-app at `/terms`)
+  (Terms and Acceptable Use are in-app at
+  [`/terms`](https://heykody.dev/terms))
 - [Troubleshooting](./troubleshooting.md)
 - [Memory and conversation context](./memory.md)
 - [Community Project mark](./community-project-mark.md) — logo for unofficial
