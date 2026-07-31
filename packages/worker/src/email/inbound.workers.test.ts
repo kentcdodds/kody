@@ -1105,14 +1105,16 @@ test('ambiguous quota-ledger batch response charges one delivery exactly once', 
 		email: accountEmail,
 		username,
 	})
-	let batchResponseFailed = false
+	let batchCalls = 0
 	const ambiguousDb = new Proxy(env.APP_DB, {
 		get(target, property, receiver) {
 			if (property === 'batch') {
 				return async (statements: Parameters<D1Database['batch']>[0]) => {
+					batchCalls++
 					const result = await target.batch(statements)
-					if (!batchResponseFailed) {
-						batchResponseFailed = true
+					// The account-write lease acquire is the first batch. Lose the
+					// response from the following quota-ledger batch.
+					if (batchCalls === 2) {
 						throw new Error('simulated quota batch response loss')
 					}
 					return result
@@ -2681,15 +2683,15 @@ test('insertEmailMessageWithAttachments cleans message and blob when attachment 
 	await insertWritableEmailTestUser(userId)
 	const messageId = crypto.randomUUID()
 	const key = emailRawMimeKey(userId, messageId)
-	// Fail only the first batch (attachment insert). Message cleanup also
-	// uses db.batch and must still run.
-	let attachmentBatchFailed = false
+	// Lease acquire/release use the first two batches. Fail only the following
+	// attachment insert; message cleanup also uses db.batch and must still run.
+	let batchCalls = 0
 	const failingDb = new Proxy(env.APP_DB, {
 		get(target, property, receiver) {
 			if (property === 'batch') {
 				return async (statements: Parameters<D1Database['batch']>[0]) => {
-					if (!attachmentBatchFailed) {
-						attachmentBatchFailed = true
+					batchCalls++
+					if (batchCalls === 3) {
 						throw new Error('simulated attachment insert failure')
 					}
 					return target.batch(statements)
@@ -2742,10 +2744,13 @@ test('attachment cleanup failure with remaining row is acknowledged without retr
 	await insertWritableEmailTestUser(userId)
 	const messageId = crypto.randomUUID()
 	const key = emailRawMimeKey(userId, messageId)
+	let batchCalls = 0
 	const failingDb = new Proxy(env.APP_DB, {
 		get(target, property, receiver) {
 			if (property === 'batch') {
-				return async () => {
+				return async (statements: Parameters<D1Database['batch']>[0]) => {
+					batchCalls++
+					if (batchCalls <= 2) return target.batch(statements)
 					throw new Error('simulated attachment and cleanup batch failure')
 				}
 			}
