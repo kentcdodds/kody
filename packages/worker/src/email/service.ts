@@ -10,6 +10,10 @@ import {
 	type InboundDelivery,
 } from './inbound-delivery.ts'
 import {
+	recordEmailReportingEvent,
+	type EmailReportingEnv,
+} from './reporting-events.ts'
+import {
 	createEmailThread,
 	deleteEmailMessageById,
 	emailRawMimeKey,
@@ -700,6 +704,7 @@ export async function recordBoundedEmailRejectionEvent(input: {
 
 export async function recordProviderEmailDeliveryEvent(input: {
 	db: D1Database
+	reportingEnv?: EmailReportingEnv
 	providerMessageId: string
 	providerEventId: string
 	deliveryStatus: EmailDeliveryStatus
@@ -769,6 +774,14 @@ export async function recordProviderEmailDeliveryEvent(input: {
 			outcome: duplicateIsCurrent ? ('duplicate' as const) : ('stale' as const),
 			message,
 		}
+	}
+	if (input.reportingEnv) {
+		recordEmailReportingEvent(input.reportingEnv, {
+			userId: message.userId,
+			eventType: 'email_delivery',
+			outcome: input.deliveryStatus,
+			timestamp: input.eventTimestamp,
+		})
 	}
 	if (!updatedLatestStatus) {
 		return { outcome: 'stale' as const, message }
