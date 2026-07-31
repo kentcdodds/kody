@@ -1,6 +1,13 @@
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
-import { recordSuccessfulPackageRun } from '#worker/usage/activation.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import {
+	type ActivationMilestoneRecord,
+	type PackageRunSuccessRecord,
+} from './package-activation-state.ts'
+import {
+	type JobRunObservabilityRecord,
+	type JobRunObservabilityUpsertInput,
+} from './job-run-observability.ts'
 import {
 	type PackageInvocationClaimInput,
 	type PackageInvocationLedgerKey,
@@ -9,6 +16,10 @@ import {
 	type RunLogRowInput,
 	type RunLogRpc,
 } from './run-log-do.ts'
+import {
+	type WorkflowProjectionRecord,
+	type WorkflowProjectionUpsertInput,
+} from './workflow-projection.ts'
 import {
 	type RunRecord,
 	type RunRecordContext,
@@ -343,9 +354,9 @@ export async function claimRunRecord(input: {
 }
 
 /**
- * Never throws, including the activation milestone write it fans out to: the
- * terminal record and the milestone both observe the run, so neither may fail
- * it.
+ * Never throws: the terminal record is observability, so it must not fail the
+ * run it observes. Activation counts and milestones are updated atomically
+ * inside the RunLog DO finish path.
  */
 export async function finishRunRecord(input: {
 	env: Env
@@ -406,21 +417,6 @@ export async function finishRunRecord(input: {
 			}
 		} catch (error) {
 			console.warn('run-record-finish-failed', error)
-		}
-
-		if (input.status === 'success') {
-			const packageId = normalizeOptionalString(handle.context.packageId)
-			if (packageId) {
-				try {
-					await recordSuccessfulPackageRun(input.env, {
-						userId: handle.userId,
-						packageId,
-						surface: handle.context.surface,
-					})
-				} catch (error) {
-					console.warn('run-record-activation-failed', error)
-				}
-			}
 		}
 
 		if (
@@ -655,9 +651,9 @@ export async function getPackageInvocationRecord(input: {
  * Terminal ledger response and run-record finish in ONE awaited on-path DO
  * RPC — the counterpart to {@link claimPackageInvocationRecord}. RPC failures
  * propagate (the caller decides whether a lost terminal write may poison the
- * key); the activation-milestone and run-error subscription side effects
- * shared with {@link finishRunRecord} never throw and are scheduled on
- * `waitUntil` when provided.
+ * key); run-error subscription side effects shared with
+ * {@link finishRunRecord} never throw and are scheduled on `waitUntil` when
+ * provided.
  */
 export async function finishPackageInvocationRecord(input: {
 	env: Env
@@ -764,8 +760,8 @@ export async function releasePackageInvocationRecord(input: {
 
 /**
  * Post-terminal-write observers shared by {@link finishRunRecord} and
- * {@link finishPackageInvocationRecord}: the activation milestone on success
- * and best-effort `run.error.recorded` dispatch on error. Never throws.
+ * {@link finishPackageInvocationRecord}: best-effort `run.error.recorded`
+ * dispatch on error. Never throws.
  */
 async function dispatchTerminalRunRecordSideEffects(input: {
 	env: Env
@@ -774,20 +770,7 @@ async function dispatchTerminalRunRecordSideEffects(input: {
 	status: RunTerminalStatus
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<void> {
-	if (input.status === 'success') {
-		const packageId = normalizeOptionalString(input.handle.context.packageId)
-		if (!packageId) return
-		try {
-			await recordSuccessfulPackageRun(input.env, {
-				userId: input.handle.userId,
-				packageId,
-				surface: input.handle.context.surface,
-			})
-		} catch (error) {
-			console.warn('run-record-activation-failed', error)
-		}
-		return
-	}
+	if (input.status !== 'error') return
 	if (input.handle.context.surface === 'subscription') return
 	try {
 		// Dynamic import: a static edge to package-subscriptions pulls
@@ -847,6 +830,10 @@ export async function exportRunRecords(input: {
 	runs: Array<RunRecord>
 	logs: Array<RunRecordLog>
 	packageInvocations: Array<PackageInvocationLedgerRecord>
+	workflowProjections: Array<WorkflowProjectionRecord>
+	jobRunObservability: Array<JobRunObservabilityRecord>
+	packageRunSuccesses: Array<PackageRunSuccessRecord>
+	activationMilestones: Array<ActivationMilestoneRecord>
 	nextStartAfter: string | null
 	truncated: boolean
 }> {
@@ -855,6 +842,10 @@ export async function exportRunRecords(input: {
 			runs: [],
 			logs: [],
 			packageInvocations: [],
+			workflowProjections: [],
+			jobRunObservability: [],
+			packageRunSuccesses: [],
+			activationMilestones: [],
 			nextStartAfter: null,
 			truncated: false,
 		}
@@ -869,6 +860,10 @@ export async function exportRunRecords(input: {
 	return {
 		...page,
 		packageInvocations: page.packageInvocations ?? [],
+		workflowProjections: page.workflowProjections ?? [],
+		jobRunObservability: page.jobRunObservability ?? [],
+		packageRunSuccesses: page.packageRunSuccesses ?? [],
+		activationMilestones: page.activationMilestones ?? [],
 	}
 }
 
@@ -880,6 +875,170 @@ export async function clearRunRecords(input: {
 	await runLogRpc({ env: input.env, userId: input.userId }).clearAll()
 }
 
+/**
+ * Workflow projection writes/reads are correctness (idempotency + concurrent
+ * workflow entitlements). Errors propagate to the caller.
+ */
+export async function upsertWorkflowProjection(input: {
+	env: Env
+	userId: string
+	projection: WorkflowProjectionUpsertInput
+}): Promise<{ ok: true }> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).upsertWorkflowProjection(input.projection)
+}
+
+export async function getWorkflowProjection(input: {
+	env: Env
+	userId: string
+	id: string
+}): Promise<WorkflowProjectionRecord | null> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).getWorkflowProjection({ id: input.id })
+}
+
+export async function findWorkflowProjectionByIdempotencyKey(input: {
+	env: Env
+	userId: string
+	idempotencyKey: string
+}): Promise<WorkflowProjectionRecord | null> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).findWorkflowProjectionByIdempotencyKey({
+		idempotencyKey: input.idempotencyKey,
+	})
+}
+
+export async function listWorkflowProjections(input: {
+	env: Env
+	userId: string
+	limit?: number | null
+	cursor?: string | null
+	status?: string | null
+}): Promise<{
+	projections: Array<WorkflowProjectionRecord>
+	nextCursor: string | null
+}> {
+	const limit = Math.min(
+		Math.max(input.limit ?? runRecordDefaultPageSize, 1),
+		runRecordMaxPageSize,
+	)
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).listWorkflowProjections({
+		limit,
+		cursor: input.cursor ?? null,
+		status: input.status ?? null,
+	})
+}
+
+export async function countActiveWorkflowProjections(input: {
+	env: Env
+	userId: string
+}): Promise<number> {
+	const result = await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).countActiveWorkflowProjections()
+	return result.count
+}
+
+/**
+ * Job-run observability is best-effort instrumentation. Never throws.
+ */
+export async function upsertJobRunObservability(input: {
+	env: Env
+	userId: string
+	outcome: JobRunObservabilityUpsertInput
+}): Promise<JobRunObservabilityRecord | null> {
+	if (!runLogBinding(input.env)) return null
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).upsertJobRunObservability(input.outcome)
+	} catch (error) {
+		console.warn('job-run-observability-upsert-failed', error)
+		return null
+	}
+}
+
+export async function getJobRunObservability(input: {
+	env: Env
+	userId: string
+	jobId: string
+}): Promise<JobRunObservabilityRecord | null> {
+	if (!runLogBinding(input.env)) return null
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).getJobRunObservability({ jobId: input.jobId })
+	} catch (error) {
+		console.warn('job-run-observability-get-failed', error)
+		return null
+	}
+}
+
+export async function getJobRunObservabilityBatch(input: {
+	env: Env
+	userId: string
+	jobIds: Array<string>
+}): Promise<Array<JobRunObservabilityRecord>> {
+	if (!runLogBinding(input.env)) return []
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).getJobRunObservabilityBatch({ jobIds: input.jobIds })
+	} catch (error) {
+		console.warn('job-run-observability-batch-failed', error)
+		return []
+	}
+}
+
+/**
+ * Activation reads are observability. Never throws. Writes happen atomically
+ * inside terminal `finishRun` / `finishPackageInvocation`.
+ */
+export async function listPackageRunSuccesses(input: {
+	env: Env
+	userId: string
+}): Promise<Array<PackageRunSuccessRecord>> {
+	if (!runLogBinding(input.env)) return []
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).listPackageRunSuccesses()
+	} catch (error) {
+		console.warn('package-run-successes-list-failed', error)
+		return []
+	}
+}
+
+export async function listActivationMilestones(input: {
+	env: Env
+	userId: string
+}): Promise<Array<ActivationMilestoneRecord>> {
+	if (!runLogBinding(input.env)) return []
+	try {
+		return await runLogRpc({
+			env: input.env,
+			userId: input.userId,
+		}).listActivationMilestones()
+	} catch (error) {
+		console.warn('activation-milestones-list-failed', error)
+		return []
+	}
+}
+
 export type { RunLogRpc }
 export type {
 	PackageInvocationClaimInput,
@@ -887,3 +1046,18 @@ export type {
 	PackageInvocationLedgerRecord,
 	PackageInvocationLedgerStatus,
 } from './run-log-do.ts'
+export type {
+	ActivationMilestone,
+	ActivationMilestoneRecord,
+	PackageRunSuccessRecord,
+} from './package-activation-state.ts'
+export type {
+	JobRunObservabilityRecord,
+	JobRunObservabilityStatus,
+	JobRunObservabilityUpsertInput,
+} from './job-run-observability.ts'
+export type {
+	WorkflowProjectionRecord,
+	WorkflowProjectionSourceType,
+	WorkflowProjectionUpsertInput,
+} from './workflow-projection.ts'

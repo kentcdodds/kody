@@ -226,9 +226,10 @@ of replaying.
   `0112-drop-package-invocations.sql`). Only keys claimed in this DO ledger can
   replay; a redelivery for an unknown key executes fresh.
 - Account export pages ledger rows through the same `run_records` section cursor
-  (runs first, then ledger rows); account deletion purges them with `clearAll`.
-  Disaster recovery deliberately does not stage the DO — losing it risks
-  duplicate execution of replayed webhooks (see
+  (runs first, then ledger rows, then dedicated unpruned state); account
+  deletion purges them with `clearAll` (every DO table, then schema
+  reinitialization). Disaster recovery deliberately does not stage the DO —
+  losing it risks duplicate execution of replayed webhooks (see
   [disaster recovery](../disaster-recovery.md)).
 
 ## Invariant: state vs history
@@ -239,9 +240,11 @@ live state (is this service running? how many?) by querying run records.
 Entitlement concurrency reads `package_service_states` (migration `0095`), an
 authoritative D1 projection upserted and heartbeaten by the service Durable
 Object. History rows can outlive an evicted DO or stay `running` after a crash,
-so they are not a reliable liveness signal. Jobs keep `last_run_*` and counters
-on the `jobs` row for the same reason — those fields are entity state, not a
-substitute for run history.
+so they are not a reliable liveness signal. Jobs keep schedule metadata and
+`last_run_at` on the D1 `jobs` row for the hourly retention sweeper; terminal
+outcomes and counters for observability live in RunLog `job_run_observability`
+and survive run-history pruning. Package activation counters and milestones live
+in the same DO (`package_run_successes`, `activation_milestones`).
 
 ## Recipe: instrumenting a new surface
 
@@ -352,10 +355,35 @@ package services heartbeat `package_service_states`. History browsers
   log viewer, cursor pagination). `/account/jobs` recent runs link into it.
 - MCP domain `runs`: `run_list`, `run_get`, `run_summary`.
 - Account export: section `run_records` pages through the user’s `RunLog`.
-- Account deletion: `clearAll` on the user’s `RunLog` stub.
+- Account deletion: `clearAll` on the user’s `RunLog` stub (deletes every DO
+  table — runs, ledger, and dedicated state — then reinitializes schema).
 
 Run records are **excluded from the `storage_bytes` entitlement**. They are
 observability history, not user content.
+
+## Dedicated unpruned RunLog state
+
+The same per-user `RunLog` DO also stores **correctness and observability state
+that must survive run-history pruning**. These tables are never pruned by the
+run retention passes; only account deletion `clearAll` removes them.
+
+| Table | Role |
+| ----- | ---- |
+| `workflow_projections` | Workflow idempotency + concurrent-workflow entitlements. Mirrors expand-phase D1 `workflow_runs` (minus `user_id`) and adds `binding_name` (typically `DYNAMIC_CALLABLE_WORKFLOWS`) so multiple bindings project correctly. |
+| `job_run_observability` | Per-job terminal outcomes and counters for Activity and MCP reads. Not a substitute for D1 schedule metadata; D1 `jobs.last_run_at` remains for the hourly job-retention sweeper only. |
+| `package_run_successes` | Per-package success counters toward activation. |
+| `activation_milestones` | One row each for `package_run_succeeded` and `package_activated` (`package_id` on the second). High-frequency HTTP surfaces (`webhook`, `app_fetch`) do not count; activation means two unattended capability successes for the same package. |
+
+During the expand phase, workflow writes still project into D1 `workflow_runs`
+for compatibility while the authoritative correctness copy lives in
+`workflow_projections`. The D1 table is pruned by the hourly retention job;
+RunLog projections are not.
+
+Account export pages all of the above through section `run_records` after runs
+and ledger rows (`exportRuns` phases: raw run-id cursor, then
+`invocation-ledger:`, `workflow-projections:`, `job-run-observability:`,
+`package-run-successes:`, `activation-milestones:`). Legacy run-id and ledger
+cursors remain valid.
 
 ## Related
 

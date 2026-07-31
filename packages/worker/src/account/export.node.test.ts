@@ -8,6 +8,7 @@ import {
 	getAccountExportD1UserColumnCoverage,
 	readAccountExportSection,
 } from './export.ts'
+import { accountUserOwnedDurableObjectSurfaces } from './user-owned-surfaces.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 function applyMigrations(db: DatabaseSync) {
@@ -1331,7 +1332,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 	).toBe(false)
 })
 
-test('account export includes run_records section with runs and log lines', async () => {
+test('account export includes run_records section with runs, ledger, and dedicated state', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
 		INSERT INTO users (
@@ -1400,6 +1401,45 @@ test('account export includes run_records section with runs and log lines', asyn
 		createdAt: '2026-07-26T00:00:00.000Z',
 		updatedAt: '2026-07-26T00:00:01.000Z',
 	}
+	const workflowProjection = {
+		id: 'wf-export-1',
+		bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+		sourceType: 'inline' as const,
+		packageId: null,
+		kodyId: null,
+		sourceId: null,
+		workflowName: 'export-wf',
+		exportName: null,
+		idempotencyKey: 'idem-export',
+		runAt: '2026-07-31T00:00:00.000Z',
+		planDate: null,
+		status: 'complete',
+		createdAt: '2026-07-31T00:00:00.000Z',
+		updatedAt: '2026-07-31T00:00:01.000Z',
+		completedAt: '2026-07-31T00:00:01.000Z',
+		lastError: null,
+	}
+	const jobRunObservability = {
+		jobId: 'job-export-1',
+		lastRunAt: '2026-07-31T00:00:00.000Z',
+		lastRunStatus: 'success' as const,
+		lastRunError: null,
+		lastDurationMs: 12,
+		runCount: 1,
+		successCount: 1,
+		errorCount: 0,
+		updatedAt: '2026-07-31T00:00:01.000Z',
+	}
+	const packageRunSuccess = {
+		packageId: 'pkg-1',
+		successCount: 2,
+		updatedAt: '2026-07-31T00:00:01.000Z',
+	}
+	const activationMilestone = {
+		milestone: 'package_activated' as const,
+		reachedAt: '2026-07-31T00:00:01.000Z',
+		packageId: 'pkg-1',
+	}
 	const env = {
 		APP_DB: db,
 		STORAGE_RUNNER: {
@@ -1420,6 +1460,10 @@ test('account export includes run_records section with runs and log lines', asyn
 					runs: [run],
 					logs,
 					packageInvocations: [packageInvocation],
+					workflowProjections: [workflowProjection],
+					jobRunObservability: [jobRunObservability],
+					packageRunSuccesses: [packageRunSuccess],
+					activationMilestones: [activationMilestone],
 					nextStartAfter: null,
 					truncated: false,
 				}),
@@ -1446,12 +1490,16 @@ test('account export includes run_records section with runs and log lines', asyn
 		dbUserId: 1,
 		mcpUserId: 'user-aaa',
 	})
-	// One run plus one invocation-ledger row exported through the section.
-	expect(accountExport.manifest.sections.run_records?.count).toBe(2)
+	// One run plus one row from each RunLog export phase.
+	expect(accountExport.manifest.sections.run_records?.count).toBe(6)
 	expect(accountExport.durableObjects.runRecords).toEqual({
 		runs: [run],
 		logs,
 		packageInvocations: [packageInvocation],
+		workflowProjections: [workflowProjection],
+		jobRunObservability: [jobRunObservability],
+		packageRunSuccesses: [packageRunSuccess],
+		activationMilestones: [activationMilestone],
 		nextStartAfter: null,
 		truncated: false,
 	})
@@ -1471,7 +1519,153 @@ test('account export includes run_records section with runs and log lines', asyn
 		{
 			packageInvocation,
 		},
+		{
+			workflowProjection,
+		},
+		{
+			jobRunObservability,
+		},
+		{
+			packageRunSuccess,
+		},
+		{
+			activationMilestone,
+		},
 	])
+})
+
+test('run_records section paging preserves exportRuns cursor across dedicated phases', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+	`)
+	const run = {
+		id: 'run-page-1',
+		surface: 'job' as const,
+		status: 'success' as const,
+		name: 'page',
+		packageId: null,
+		kodyId: null,
+		sourceId: null,
+		publishedCommit: null,
+		storageId: null,
+		jobId: 'job-page',
+		workflowId: null,
+		invocationId: null,
+		sessionId: null,
+		idempotencyKey: null,
+		parentRunId: null,
+		startedAt: '2026-07-26T00:00:00.000Z',
+		finishedAt: '2026-07-26T00:00:01.000Z',
+		durationMs: 1000,
+		errorName: null,
+		errorMessage: null,
+		metadata: {},
+		logCount: 0,
+	}
+	const workflowProjection = {
+		id: 'wf-page-1',
+		bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+		sourceType: 'inline' as const,
+		packageId: null,
+		kodyId: null,
+		sourceId: null,
+		workflowName: 'page-wf',
+		exportName: null,
+		idempotencyKey: 'idem-page',
+		runAt: '2026-07-31T00:00:00.000Z',
+		planDate: null,
+		status: 'complete',
+		createdAt: '2026-07-31T00:00:00.000Z',
+		updatedAt: '2026-07-31T00:00:01.000Z',
+		completedAt: '2026-07-31T00:00:01.000Z',
+		lastError: null,
+	}
+	const exportRuns = vi
+		.fn()
+		.mockResolvedValueOnce({
+			runs: [run],
+			logs: [],
+			packageInvocations: [],
+			workflowProjections: [],
+			jobRunObservability: [],
+			packageRunSuccesses: [],
+			activationMilestones: [],
+			nextStartAfter: 'invocation-ledger:',
+			truncated: true,
+		})
+		.mockResolvedValueOnce({
+			runs: [],
+			logs: [],
+			packageInvocations: [],
+			workflowProjections: [workflowProjection],
+			jobRunObservability: [],
+			packageRunSuccesses: [],
+			activationMilestones: [],
+			nextStartAfter: null,
+			truncated: false,
+		})
+	const env = {
+		APP_DB: db,
+		RUN_LOG: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({ exportRuns }),
+		},
+	} as unknown as Env
+
+	const first = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'run_records',
+		pageSize: 1,
+	})
+	expect(first.items).toEqual([{ run, logs: [] }])
+	expect(first.truncated).toBe(true)
+	expect(first.nextStartAfter).toBe('invocation-ledger:')
+
+	const second = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'run_records',
+		pageSize: 1,
+		startAfter: first.nextStartAfter ?? undefined,
+	})
+	expect(second.items).toEqual([{ workflowProjection }])
+	expect(second.truncated).toBe(false)
+	expect(exportRuns).toHaveBeenNthCalledWith(
+		2,
+		expect.objectContaining({
+			pageSize: 1,
+			startAfter: 'invocation-ledger:',
+		}),
+	)
+})
+
+test('run_log surface notes document clearAll purging every RunLog table', () => {
+	const runLog = accountUserOwnedDurableObjectSurfaces.find(
+		(surface) => surface.id === 'run_log',
+	)
+	expect(runLog?.binding).toBe('RUN_LOG')
+	expect(runLog?.deletionResultKey).toBe('runLogs')
+	expect(runLog?.notes).toContain('clearAll')
+	for (const table of [
+		'workflow_projections',
+		'job_run_observability',
+		'package_run_successes',
+		'activation_milestones',
+		'package-invocation idempotency ledger',
+	]) {
+		expect(runLog?.notes).toContain(table)
+	}
 })
 
 test('account export includes a package service known only via package_service_states', async () => {

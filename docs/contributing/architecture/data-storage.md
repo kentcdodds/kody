@@ -184,11 +184,14 @@ Durable Object export behavior:
   hold application/job/service durable state and are the primary account
   migration surface for Durable Object storage.
 - `JobManager` exposes scheduler alarm/debug state through an export RPC.
-- `RunLog` exports per-user execution history (runs + log lines) and the keyed
-  package-invocation idempotency ledger through the account-export `run_records`
-  section (`exportRuns` RPC; one cursor pages runs first, then ledger rows).
-  Retention is self-enforced inside the DO (~30 days / 2,000 runs; ledger
-  terminal rows 90 days); see [Run records](./run-records.md).
+- `RunLog` exports per-user execution history (runs + log lines), the keyed
+  package-invocation idempotency ledger, and dedicated unpruned RunLog state
+  (workflow projections, job-run observability, package run successes,
+  activation milestones) through the account-export `run_records` section
+  (`exportRuns` RPC; one cursor pages runs first, then ledger rows, then each
+  dedicated phase via prefixed cursors). Run history self-prunes inside the DO
+  (~30 days / 2,000 runs; ledger terminal rows 90 days); dedicated tables are
+  never pruned by retention. See [Run records](./run-records.md).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -245,15 +248,17 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   are only representable when the scope owner is a platform account.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - `jobs`: persisted job metadata, caller context, schedule state, repo source
-  pointers, run observability state (`last_run_*`, counters), `preserved` (skip
-  platform auto-cleanup), and optional `expires_at` (UTC ISO; when reached the
-  scheduler skips the job and auto-disables it with `enabled = 0`). Account
-  retention windows live on `users` (`job_retention_*_days`; NULL = platform
-  defaults 14/60/90). Completed ad-hoc jobs are cleaned by the hourly
-  `job_retention` sweeper; package-owned and preserved jobs are not.
-  `expires_at` stops scheduling only — it does not delete rows and is
-  independent of `preserved`. Execution history lives in the per-user `RunLog`
-  Durable Object (see [Run records](./run-records.md)).
+  pointers, `preserved` (skip platform auto-cleanup), and optional `expires_at`
+  (UTC ISO; when reached the scheduler skips the job and auto-disables it with
+  `enabled = 0`). Account retention windows live on `users`
+  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed ad-hoc
+  jobs are cleaned by the hourly `job_retention` sweeper; package-owned and
+  preserved jobs are not. `expires_at` stops scheduling only — it does not
+  delete rows and is independent of `preserved`. D1 keeps schedule fields
+  (`next_run_at`, `schedule_json`, …) and `last_run_at` for the retention
+  sweeper only; terminal run outcomes and counters for observability live in the
+  per-user `RunLog` `job_run_observability` table (see
+  [Run records](./run-records.md)). Execution history rows live in the same DO.
 - `package_service_states` (`0095-package-service-states.sql`): authoritative
   per-service liveness projection (`running` / `idle` / `stopped` / `error`) for
   entitlement concurrency. Upserted and heartbeaten by the package-service
@@ -477,7 +482,9 @@ via `durableObjectNameFromParts`); domain helpers such as
 - `JobManager` — `jobManagerDurableObjectName(userId)` → `idFromName(userId)`.
 - `RunLog` — `runLogDurableObjectName(userId)` → `idFromName(userId)`. One
   execution-history DO per user; there is no `user_id` column inside it because
-  the DO identity is the user. See [Run records](./run-records.md).
+  the DO identity is the user. Hosts pruned run history, the invocation ledger,
+  and dedicated unpruned state (workflow projections, job-run observability,
+  package activation counters/milestones). See [Run records](./run-records.md).
 - `McpClientHub` — `mcpClientHubDurableObjectName(userId)` →
   `idFromName(userId.trim())`.
 - `StorageRunner` — `storageRunnerDurableObjectName(userId, storageId)` →

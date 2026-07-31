@@ -195,9 +195,49 @@ export type AccountExportArtifactRepo = {
 	sourceRoot: string
 }
 
+type RunRecordsExportPayload = Awaited<ReturnType<typeof exportRunRecords>>
+
+function countRunRecordsExportEntries(
+	runRecords: RunRecordsExportPayload | null | undefined,
+) {
+	if (runRecords == null) return 0
+	return (
+		runRecords.runs.length +
+		runRecords.packageInvocations.length +
+		runRecords.workflowProjections.length +
+		runRecords.jobRunObservability.length +
+		runRecords.packageRunSuccesses.length +
+		runRecords.activationMilestones.length
+	)
+}
+
+function formatRunRecordsExportSectionItems(page: RunRecordsExportPayload) {
+	return [
+		...page.runs.map((run) => ({
+			run,
+			logs: page.logs.filter((log) => log.runId === run.id),
+		})),
+		...page.packageInvocations.map((packageInvocation) => ({
+			packageInvocation,
+		})),
+		...page.workflowProjections.map((workflowProjection) => ({
+			workflowProjection,
+		})),
+		...page.jobRunObservability.map((jobRunObservability) => ({
+			jobRunObservability,
+		})),
+		...page.packageRunSuccesses.map((packageRunSuccess) => ({
+			packageRunSuccess,
+		})),
+		...page.activationMilestones.map((activationMilestone) => ({
+			activationMilestone,
+		})),
+	]
+}
+
 type AccountExportDurableObjects = {
 	jobManager: unknown | null
-	runRecords: Awaited<ReturnType<typeof exportRunRecords>> | null
+	runRecords: RunRecordsExportPayload | null
 	remoteConnectorSessions: Array<{
 		instanceId: string
 		export: RemoteConnectorSessionExport | null
@@ -1454,14 +1494,13 @@ function buildManifest(input: {
 		discovery: { section: 'job_manager' },
 	}
 	sections.run_records = {
-		// The section carries runs plus the RunLog DO's package-invocation
-		// idempotency ledger rows, so count both when the export payload is
-		// present. The inventory fallback comes from `summarize` (runs only).
+		// Full exports count every RunLog table returned by exportRuns (runs,
+		// ledger, and dedicated unpruned state). Manifest-only inventory falls
+		// back to summarize (run rows only).
 		count:
 			input.durableObjects?.runRecords == null
 				? (input.inventoryCounts?.runRecords ?? 0)
-				: input.durableObjects.runRecords.runs.length +
-					input.durableObjects.runRecords.packageInvocations.length,
+				: countRunRecordsExportEntries(input.durableObjects.runRecords),
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Run records '),
 		),
@@ -1774,18 +1813,11 @@ export async function readAccountExportSection(input: {
 		})
 		return {
 			section: input.section,
-			// Runs page first; once runs are exhausted the same cursor continues
-			// through the keyed package-invocation idempotency ledger rows that
-			// live in the same per-user RunLog Durable Object.
-			items: [
-				...page.runs.map((run) => ({
-					run,
-					logs: page.logs.filter((log) => log.runId === run.id),
-				})),
-				...page.packageInvocations.map((packageInvocation) => ({
-					packageInvocation,
-				})),
-			],
+			// One cursor pages runs, then ledger rows, then dedicated unpruned
+			// RunLog state (workflow projections, job-run observability, package
+			// run successes, activation milestones). Raw run-id cursors remain
+			// valid; later phases use prefixed cursors from exportRuns.
+			items: formatRunRecordsExportSectionItems(page),
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,

@@ -5,19 +5,21 @@ const mocks = vi.hoisted(() => ({
 	dispatchRunErrorSubscriptionEvents: vi.fn(async () => []),
 	finishRun: vi.fn(async () => ({ ok: true })),
 	startRun: vi.fn(async () => ({ ok: true })),
-	recordSuccessfulPackageRun: vi.fn(async () => {}),
+	listPackageRunSuccesses: vi.fn(async () => []),
+	listActivationMilestones: vi.fn(async () => []),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
 	dispatchRunErrorSubscriptionEvents: mocks.dispatchRunErrorSubscriptionEvents,
 }))
 
-vi.mock('#worker/usage/activation.ts', () => ({
-	recordSuccessfulPackageRun: mocks.recordSuccessfulPackageRun,
-}))
-
-const { beginRunRecord, finishRunRecord, recordRunRecord } =
-	await import('./service.ts')
+const {
+	beginRunRecord,
+	finishRunRecord,
+	listActivationMilestones,
+	listPackageRunSuccesses,
+	recordRunRecord,
+} = await import('./service.ts')
 
 function createEnv() {
 	return {
@@ -26,6 +28,8 @@ function createEnv() {
 			get: () => ({
 				startRun: mocks.startRun,
 				finishRun: mocks.finishRun,
+				listPackageRunSuccesses: mocks.listPackageRunSuccesses,
+				listActivationMilestones: mocks.listActivationMilestones,
 			}),
 		},
 		APP_DB: {},
@@ -72,7 +76,7 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 	const successHandle = beginRunRecord({
 		env,
 		userId: 'user-1',
-		context: { surface: 'job', name: 'ok' },
+		context: { surface: 'job', name: 'ok', packageId: 'pkg-a' },
 	})
 	await finishRunRecord({
 		env,
@@ -80,6 +84,7 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 		status: 'success',
 	})
 	expect(mocks.dispatchRunErrorSubscriptionEvents).not.toHaveBeenCalled()
+	expect(mocks.finishRun).toHaveBeenCalledTimes(2)
 
 	const subscriptionHandle = beginRunRecord({
 		env,
@@ -145,6 +150,37 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 	).resolves.toBeUndefined()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'run-error-subscription-dispatch-failed',
+		expect.any(Error),
+	)
+})
+
+test('activation reads never throw when RunLog is missing or RPC fails', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const envWithoutBinding = {} as Env
+	await expect(
+		listPackageRunSuccesses({ env: envWithoutBinding, userId: 'user-1' }),
+	).resolves.toEqual([])
+	await expect(
+		listActivationMilestones({ env: envWithoutBinding, userId: 'user-1' }),
+	).resolves.toEqual([])
+
+	mocks.listPackageRunSuccesses.mockRejectedValueOnce(new Error('do unavailable'))
+	mocks.listActivationMilestones.mockRejectedValueOnce(
+		new Error('do unavailable'),
+	)
+	const env = createEnv()
+	await expect(
+		listPackageRunSuccesses({ env, userId: 'user-1' }),
+	).resolves.toEqual([])
+	await expect(
+		listActivationMilestones({ env, userId: 'user-1' }),
+	).resolves.toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'package-run-successes-list-failed',
+		expect.any(Error),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'activation-milestones-list-failed',
 		expect.any(Error),
 	)
 })

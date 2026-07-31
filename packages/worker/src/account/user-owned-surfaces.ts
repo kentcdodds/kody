@@ -121,7 +121,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'runLogs',
 			export: 'include',
 			notes:
-				'Execution history and captured logs across every runtime surface, plus the keyed package-invocation idempotency ledger (terminal replay responses, 90-day window). Self-prunes inside the DO rather than through a retention cron lane; account deletion clearAll purges ledger rows with the run history, and account export pages both through the run_records section.',
+				'Per-user RunLog DO (RUN_LOG binding; idFromName(userId)). Stores pruned run history (runs + run_logs), the keyed package-invocation idempotency ledger, and dedicated unpruned state: workflow_projections (binding_name, typically DYNAMIC_CALLABLE_WORKFLOWS; mirrors expand-phase D1 workflow_runs), job_run_observability (terminal outcomes/counters; D1 jobs keeps schedule + last_run_at for retention only), package_run_successes, and activation_milestones. Run rows self-prune inside the DO; dedicated tables do not. Account deletion clearAll deletes every table and reinitializes schema. Account export pages all tables through the run_records section (runs first, then ledger, then dedicated phases).',
 		},
 		{
 			id: 'mcp',
