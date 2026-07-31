@@ -261,7 +261,7 @@ Rules:
   passes the candidate size via `getCurrent` with `requested: 0`. There is no
   built-in counter for these.
 - **Storage-byte limits** (`storage_bytes`) store the D1 payload estimate on
-  `users.d1_storage_bytes` (migration 0119). Entitlement checks read that
+  `users.d1_storage_bytes` (migration 0122). Entitlement checks read that
   indexed user row and D1 write chokepoints atomically reserve their existing
   positive byte-delta estimate before the write, so mailbox growth and other hot
   writes never rescan the user's accumulated rows. The estimate covers
