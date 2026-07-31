@@ -36,30 +36,30 @@ Place data by access pattern.
 - the data is found by something other than the owner's `userId` — login by
   email, username-based email routing, token-hash webhook ingress;
 - invariants span entities or tables — the publish transaction over
-  `entity_sources` + `saved_packages` + KV snapshots; secrets grants
-  referencing package ids;
+  `entity_sources` + `saved_packages` + KV snapshots; secrets grants referencing
+  package ids;
 - it is low-write configuration read by many surfaces (cached);
 - fleet-wide operational queries matter; or
 - it is a cross-user enumeration/deletion index (`user_storage_buckets`,
   `mcp_agent_sessions`) — Durable Objects cannot be enumerated.
 
 **A per-user Durable Object** when the data is high-write, always addressed by
-the owner's `userId`, has owner-local invariants, and is read on the owner's
-own request path: quota counters, deletion fencing, run history, activation
-milestones, mailboxes, live sessions. A per-user DO converts D1's global 10 GB
-/ global single writer into 10 GB and a serialized writer **per user**.
-Serialization is the correctness mechanism for counters and a throughput
-ceiling everywhere else — do not put everything for a user behind one DO.
+the owner's `userId`, has owner-local invariants, and is read on the owner's own
+request path: quota counters, deletion fencing, run history, activation
+milestones, mailboxes, live sessions. A per-user DO converts D1's global 10 GB /
+global single writer into 10 GB and a serialized writer **per user**.
+Serialization is the correctness mechanism for counters and a throughput ceiling
+everywhere else — do not put everything for a user behind one DO.
 
-**Analytics Engine** when the data is append-only telemetry with
-reporting-grade reads inside AE's retention window: admin insights aggregates,
-delivery-event analytics, usage events. Never for request-path reads (query
-latency is seconds); never for data needing retention beyond AE's window — the
-180-day audit trail goes to a separate dedicated audit D1 instead.
+**Analytics Engine** when the data is append-only telemetry with reporting-grade
+reads inside AE's retention window: admin insights aggregates, delivery-event
+analytics, usage events. Never for request-path reads (query latency is
+seconds); never for data needing retention beyond AE's window — the 180-day
+audit trail goes to a separate dedicated audit D1 instead.
 
-**Already-settled homes**, unchanged by this record: blobs in R2, OAuth
-provider state and published-source snapshots in KV, vectors in Vectorize with
-per-user namespaces plus `userId` metadata as defense in depth.
+**Already-settled homes**, unchanged by this record: blobs in R2, OAuth provider
+state and published-source snapshots in KV, vectors in Vectorize with per-user
+namespaces plus `userId` metadata as defense in depth.
 
 ### The five forces behind the rubric
 
@@ -69,11 +69,10 @@ per-user namespaces plus `userId` metadata as defense in depth.
   multi-table batches.
 - **Read topology** — a DO lives in one location; D1 reads can replicate and
   batch.
-- **Serialization** — per-user actor ordering is a feature for quota state and
-  a liability for throughput.
-- **Operations** — fleet-wide SQL, shared migrations, and enumeration exist
-  only in D1, so every DO move must build export/purge RPCs and any needed
-  index.
+- **Serialization** — per-user actor ordering is a feature for quota state and a
+  liability for throughput.
+- **Operations** — fleet-wide SQL, shared migrations, and enumeration exist only
+  in D1, so every DO move must build export/purge RPCs and any needed index.
 
 ### Standing rules
 
@@ -89,8 +88,8 @@ per-user namespaces plus `userId` metadata as defense in depth.
 
 ## Consequences
 
-Concrete placements decided by the review (implemented by concurrent tracks;
-the placements are the decision, independent of any track's merge state):
+Concrete placements decided by the review (implemented by concurrent tracks; the
+placements are the decision, independent of any track's merge state):
 
 - **Per-user meter DO:** entitlement daily counters, `d1_storage_bytes`
   accounting, service liveness, deletion fence.
@@ -115,6 +114,6 @@ ceiling to watch); expand/contract discipline means moved D1 tables stay
 dual-written until production verification, with retirement migrations in
 follow-ups.
 
-Revisit if Cloudflare materially changes the constraints (multi-writer or
-larger D1, DO enumeration, AE retention/latency), or if a per-user DO becomes a
+Revisit if Cloudflare materially changes the constraints (multi-writer or larger
+D1, DO enumeration, AE retention/latency), or if a per-user DO becomes a
 measured throughput bottleneck on an owner's own request path.
