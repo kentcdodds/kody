@@ -189,12 +189,10 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 	expect(mocks.backfillStorageBucketEstimates).toHaveBeenCalledWith(
 		expect.objectContaining({ now: new Date(scheduledTime) }),
 	)
-	expect(mocks.reconcileD1StorageBytes).toHaveBeenCalledWith(
-		expect.objectContaining({
-			db: env.APP_DB,
-			now: new Date(scheduledTime),
-		}),
-	)
+	expect(mocks.reconcileD1StorageBytes).toHaveBeenCalledTimes(1)
+	const reconciliationInput = mocks.reconcileD1StorageBytes.mock.calls[0]?.[0]
+	expect(reconciliationInput?.db === env.APP_DB).toBe(true)
+	expect(reconciliationInput?.now).toEqual(new Date(scheduledTime))
 	expect(mocks.pruneRetention).not.toHaveBeenCalled()
 })
 
