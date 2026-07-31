@@ -5,12 +5,17 @@ function readFlag(name: string) {
 	return index >= 0 ? process.argv[index + 1] : undefined
 }
 
+const allowedOrigins = new Set(['https://heykody.dev'])
+
 const maintenanceSecret = process.env['CAPABILITY_REINDEX_SECRET']
 const origin = readFlag('--origin')
 const idsPath =
 	readFlag('--ids') ?? 'tools/ci/ownerless-mcp-session-do-ids.json'
 if (!maintenanceSecret || !origin) {
 	throw new Error('CAPABILITY_REINDEX_SECRET and --origin are required.')
+}
+if (!allowedOrigins.has(origin.replace(/\/$/, ''))) {
+	throw new Error(`Origin must be one of: ${[...allowedOrigins].join(', ')}.`)
 }
 
 const payload = JSON.parse(await readFile(idsPath, 'utf8')) as {

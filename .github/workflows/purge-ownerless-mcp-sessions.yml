@@ -5,7 +5,9 @@ on:
     inputs:
       origin:
         description: Deployed Worker origin that serves /__maintenance/*
-        type: string
+        type: choice
+        options:
+          - https://heykody.dev
         default: https://heykody.dev
 
 permissions:
