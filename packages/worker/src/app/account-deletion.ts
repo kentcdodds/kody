@@ -39,7 +39,6 @@ import {
 	listMcpAgentSessionsForUser,
 	type McpAgentSession,
 } from '#mcp/session-registry.ts'
-import { assertMcpAgentSessionBackfillComplete } from '#mcp/session-backfill-marker.ts'
 import {
 	AccountDeletionWritersActiveError,
 	markAccountDeleting,
@@ -923,7 +922,6 @@ export async function deleteUserAccount(input: {
 	dbUserId: number
 	mcpUserId: string
 }): Promise<AccountDeletionResult> {
-	await assertMcpAgentSessionBackfillComplete(input.env.APP_DB)
 	const activeWriteCount = await markAccountDeleting({
 		db: input.env.APP_DB,
 		dbUserId: input.dbUserId,

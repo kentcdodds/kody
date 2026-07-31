@@ -45,10 +45,6 @@ import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
-import {
-	handleMcpAgentSessionBackfillCompleteRequest,
-	handleMcpAgentSessionBackfillRequest,
-} from './mcp-session-maintenance.ts'
 import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from './repo/repo-session-cleanup.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
@@ -299,14 +295,6 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/dr-restore') {
 			return handleDrRestoreRequest(request, env)
-		}
-		if (url.pathname === '/__maintenance/backfill-mcp-agent-sessions') {
-			return handleMcpAgentSessionBackfillRequest(request, env)
-		}
-		if (
-			url.pathname === '/__maintenance/backfill-mcp-agent-sessions/complete'
-		) {
-			return handleMcpAgentSessionBackfillCompleteRequest(request, env)
 		}
 
 		if (url.pathname.startsWith('/__maintenance/')) {

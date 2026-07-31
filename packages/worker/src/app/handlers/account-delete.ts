@@ -9,7 +9,6 @@ import {
 	deleteUserAccount,
 } from '#app/account-deletion.ts'
 import { AccountDeletionWritersActiveError } from '#worker/account/deletion-state.ts'
-import { McpAgentSessionBackfillIncompleteError } from '#mcp/session-backfill-marker.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
@@ -89,8 +88,7 @@ export function createAccountDeleteHandler(env: Env) {
 					!(
 						error instanceof AccountDeletionInventoryError ||
 						error instanceof AccountDeletionCleanupError ||
-						error instanceof AccountDeletionWritersActiveError ||
-						error instanceof McpAgentSessionBackfillIncompleteError
+						error instanceof AccountDeletionWritersActiveError
 					)
 				) {
 					throw error
@@ -103,13 +101,11 @@ export function createAccountDeleteHandler(env: Env) {
 					ip: requestIp,
 					path: url.pathname,
 					reason:
-						error instanceof McpAgentSessionBackfillIncompleteError
-							? 'mcp_agent_session_backfill_incomplete'
-							: error instanceof AccountDeletionWritersActiveError
-								? 'writers_active'
-								: error instanceof AccountDeletionInventoryError
-									? 'inventory_incomplete'
-									: 'cleanup_incomplete',
+						error instanceof AccountDeletionWritersActiveError
+							? 'writers_active'
+							: error instanceof AccountDeletionInventoryError
+								? 'inventory_incomplete'
+								: 'cleanup_incomplete',
 				})
 				return Response.json(
 					{

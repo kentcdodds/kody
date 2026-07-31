@@ -88,16 +88,6 @@ function createTestDb(
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
-								lower ===
-								'select version from deployment_backfill_markers where key = ?'
-							) {
-								results =
-									'deployment_backfill_markers' in rows
-										? (rows.deployment_backfill_markers ?? [])
-										: [{ version: 1 }]
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
 								lower.includes(
 									'select count(*) as count from account_write_leases',
 								)
@@ -1592,21 +1582,6 @@ test('account deletion reports a missing email blob binding and remains retryabl
 			deleting_at: expect.any(String),
 		}),
 	])
-})
-
-test('account deletion is disabled until legacy MCP sessions are backfilled', async () => {
-	const { db, rows } = createTestDb({
-		users: [{ id: 1, stable_user_id: 'user-aaa' }],
-		deployment_backfill_markers: [],
-	})
-	await expect(
-		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db),
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-		}),
-	).rejects.toThrow('MCP agent session backfill is incomplete')
-	expect(rows.users).toEqual([{ id: 1, stable_user_id: 'user-aaa' }])
 })
 
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
