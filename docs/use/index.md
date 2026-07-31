@@ -42,8 +42,7 @@ Read in order for a full tour, or jump to a topic.
   finite limits enforced for each plan
 - [Mutating actions and confirmations](./mutating-actions.md)
 - [Privacy](./privacy.md) — what Kody stores and what deployment admins can see
-  (Terms and Acceptable Use are in-app at
-  [`/terms`](https://heykody.dev/terms))
+  (Terms and Acceptable Use are in-app at [`/terms`](https://heykody.dev/terms))
 - [Troubleshooting](./troubleshooting.md)
 - [Memory and conversation context](./memory.md)
 - [Community Project mark](./community-project-mark.md) — logo for unofficial

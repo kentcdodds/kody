@@ -1,14 +1,6 @@
 import { type Handle, css } from 'remix/ui'
-import {
-	planLimits,
-	type PlanLimits,
-} from '#worker/entitlements/plans.ts'
-import {
-	colors,
-	radius,
-	spacing,
-	typography,
-} from '#client/styles/tokens.ts'
+import { planLimits, type PlanLimits } from '#worker/entitlements/plans.ts'
+import { colors, radius, spacing, typography } from '#client/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
@@ -74,8 +66,8 @@ export function PricingRoute(_handle: Handle) {
 						<p mix={css(priceCss)}>$0</p>
 					</div>
 					<p mix={css(descriptionCss)}>
-						Enough to build useful automations and find out whether Kody earns
-						a place in your setup.
+						Enough to build useful automations and find out whether Kody earns a
+						place in your setup.
 					</p>
 					<a href="/signup" mix={css(primaryLinkCss)}>
 						Create a free account
