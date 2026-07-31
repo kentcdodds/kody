@@ -836,15 +836,17 @@ function createDatabase(
 								return { meta: { changes, last_row_id: 0 } }
 							}
 							if (query.startsWith('UPDATE jobs SET')) {
+								// Scheduling finalization writes last_run_at/status +
+								// next_run_at but leaves RunLog-owned columns intact.
 								const existingJob = selectOne(
 									'jobs',
 									(existing) =>
-										existing['id'] === params[22] &&
-										existing['user_id'] === params[23],
+										existing['id'] === params[17] &&
+										existing['user_id'] === params[18],
 								)
 								const row = {
-									id: params[22],
-									user_id: params[23],
+									id: params[17],
+									user_id: params[18],
 									name: params[0],
 									source_id: params[1],
 									published_commit: params[2],
@@ -861,12 +863,12 @@ function createDatabase(
 									updated_at: params[13],
 									last_run_at: params[14],
 									last_run_status: params[15],
-									last_run_error: params[16],
-									last_duration_ms: params[17],
-									next_run_at: params[18],
-									run_count: params[19],
-									success_count: params[20],
-									error_count: params[21],
+									last_run_error: existingJob?.['last_run_error'] ?? null,
+									last_duration_ms: existingJob?.['last_duration_ms'] ?? null,
+									next_run_at: params[16],
+									run_count: existingJob?.['run_count'] ?? 0,
+									success_count: existingJob?.['success_count'] ?? 0,
+									error_count: existingJob?.['error_count'] ?? 0,
 									created_at: existingJob?.['created_at'] ?? params[13],
 								}
 								upsert(
@@ -1758,11 +1760,6 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 	}
 	jobRow.record.lastRunAt = '2026-04-20T10:05:00.000Z'
 	jobRow.record.lastRunStatus = 'error'
-	jobRow.record.lastRunError = 'Worker fetch failed'
-	jobRow.record.lastDurationMs = 321
-	jobRow.record.runCount = 3
-	jobRow.record.successCount = 1
-	jobRow.record.errorCount = 2
 	jobRow.record.nextRunAt = '2026-04-20T10:00:00.000Z'
 	jobRow.record.updatedAt = '2026-04-20T10:05:00.000Z'
 	await (
@@ -1782,41 +1779,68 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 		nextRunnableRunAt: '2026-04-20T10:00:00.000Z',
 		alarmInSync: true,
 	})
+	const observabilitySpy = vi
+		.spyOn(
+			await import('#worker/run-records/service.ts'),
+			'getJobRunObservabilityBatch',
+		)
+		.mockResolvedValue([
+			{
+				jobId: created.id,
+				lastRunAt: '2026-04-20T10:05:00.000Z',
+				lastRunStatus: 'error',
+				lastRunError: 'Worker fetch failed',
+				lastDurationMs: 321,
+				runCount: 3,
+				successCount: 1,
+				errorCount: 2,
+				updatedAt: '2026-04-20T10:05:00.000Z',
+			},
+		])
 
-	const inspected = await inspectJobsForUser({
-		env,
-		userId: callerContext.user.userId,
-		now: new Date('2026-04-20T10:10:00.000Z'),
-	})
+	try {
+		const inspected = await inspectJobsForUser({
+			env,
+			userId: callerContext.user.userId,
+			now: new Date('2026-04-20T10:10:00.000Z'),
+		})
 
-	expect(jobManagerMockModule.getJobManagerDebugState).toHaveBeenCalledWith({
-		env,
-		userId: callerContext.user.userId,
-	})
-	expect(inspected.alarm).toEqual({
-		bindingAvailable: true,
-		status: 'armed',
-		storedUserId: 'user-123',
-		alarmScheduledFor: '2026-04-20T10:00:00.000Z',
-		nextRunnableJobId: created.id,
-		nextRunnableRunAt: '2026-04-20T10:00:00.000Z',
-		alarmInSync: true,
-	})
-	expect(inspected.jobs).toEqual([
-		expect.objectContaining({
-			id: created.id,
-			name: 'Inspect recurring job',
-			sourceId: created.sourceId,
-			storageId: created.storageId,
-			lastRunAt: '2026-04-20T10:05:00.000Z',
-			lastRunStatus: 'error',
-			lastRunError: 'Worker fetch failed',
-			lastDurationMs: 321,
-			runCount: 3,
-			successCount: 1,
-			errorCount: 2,
-		}),
-	])
+		expect(jobManagerMockModule.getJobManagerDebugState).toHaveBeenCalledWith({
+			env,
+			userId: callerContext.user.userId,
+		})
+		expect(observabilitySpy).toHaveBeenCalledWith({
+			env,
+			userId: callerContext.user.userId,
+			jobIds: [created.id],
+		})
+		expect(inspected.alarm).toEqual({
+			bindingAvailable: true,
+			status: 'armed',
+			storedUserId: 'user-123',
+			alarmScheduledFor: '2026-04-20T10:00:00.000Z',
+			nextRunnableJobId: created.id,
+			nextRunnableRunAt: '2026-04-20T10:00:00.000Z',
+			alarmInSync: true,
+		})
+		expect(inspected.jobs).toEqual([
+			expect.objectContaining({
+				id: created.id,
+				name: 'Inspect recurring job',
+				sourceId: created.sourceId,
+				storageId: created.storageId,
+				lastRunAt: '2026-04-20T10:05:00.000Z',
+				lastRunStatus: 'error',
+				lastRunError: 'Worker fetch failed',
+				lastDurationMs: 321,
+				runCount: 3,
+				successCount: 1,
+				errorCount: 2,
+			}),
+		])
+	} finally {
+		observabilitySpy.mockRestore()
+	}
 })
 
 test('getJobInspection reports alarm state, source code, and artifact gaps', async () => {
@@ -4009,8 +4033,13 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 				id: jobView.id,
 				enabled: false,
 				lastRunStatus: 'success',
-				runCount: 1,
-				successCount: 1,
+				lastRunAt: expect.any(String),
+				// RunLog-owned counters/error/duration stay at insert defaults.
+				runCount: 0,
+				successCount: 0,
+				errorCount: 0,
+				lastRunError: undefined,
+				lastDurationMs: undefined,
 			}),
 		)
 	} finally {

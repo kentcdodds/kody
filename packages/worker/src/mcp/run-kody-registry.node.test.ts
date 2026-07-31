@@ -446,8 +446,8 @@ function createJobMutationDatabase(input: {
 								return { meta: { changes: 1, last_row_id: 0 } }
 							}
 							if (normalized.startsWith('UPDATE jobs SET')) {
-								const id = params[22]
-								const userId = params[23]
+								const id = params[17]
+								const userId = params[18]
 								const existing = selectOne(
 									'jobs',
 									(row) => row['id'] === id && row['user_id'] === userId,
@@ -471,12 +471,7 @@ function createJobMutationDatabase(input: {
 									updated_at: params[13],
 									last_run_at: params[14],
 									last_run_status: params[15],
-									last_run_error: params[16],
-									last_duration_ms: params[17],
-									next_run_at: params[18],
-									run_count: params[19],
-									success_count: params[20],
-									error_count: params[21],
+									next_run_at: params[16],
 								}
 								const rows = table('jobs')
 								const index = rows.findIndex(

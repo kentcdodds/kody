@@ -255,6 +255,64 @@ test('conditional job claims exclude overlap and reclaim only after lease expiry
 	expect(retriedOccurrence?.retry_count).toBe(1)
 })
 
+test('finalizeClaimedJobRow updates scheduling fences without writing RunLog-owned columns', async () => {
+	await ensureJobsSchema()
+	const userId = 'user-finalize-observability'
+	const scheduledFor = '2026-04-20T12:00:00.000Z'
+	await insertJob({
+		id: 'finalize-observability',
+		userId,
+		nextRunAt: scheduledFor,
+	})
+	const claimed = await claimJobRow({
+		db: env.APP_DB,
+		userId,
+		jobId: 'finalize-observability',
+		now: new Date(scheduledFor),
+		claimToken: 'claim-obs',
+	})
+	if (!claimed) throw new Error('Expected job claim.')
+
+	const finishedAt = '2026-04-20T12:00:05.000Z'
+	expect(
+		await finalizeClaimedJobRow({
+			db: env.APP_DB,
+			userId,
+			job: {
+				...claimed.record,
+				updatedAt: finishedAt,
+				lastRunAt: finishedAt,
+				lastRunStatus: 'success',
+				// Poison values: finalization must not copy these into D1.
+				lastRunError: 'should-not-persist',
+				lastDurationMs: 999,
+				runCount: 7,
+				successCount: 5,
+				errorCount: 2,
+				enabled: false,
+				nextRunAt: scheduledFor,
+			},
+			callerContextJson: claimed.callerContextJson,
+			claimToken: 'claim-obs',
+			scheduledFor,
+		}),
+	).toBe(true)
+
+	const row = await getJobRowById(env.APP_DB, userId, 'finalize-observability')
+	expect(row).toMatchObject({
+		last_run_at: finishedAt,
+		last_run_status: 'success',
+		last_completed_scheduled_for: scheduledFor,
+		claim_token: null,
+		enabled: 0,
+		last_run_error: null,
+		last_duration_ms: null,
+		run_count: 0,
+		success_count: 0,
+		error_count: 0,
+	})
+})
+
 test('ordinary updates cancel claims and completed occurrence guards fence malformed due rows', async () => {
 	await ensureJobsSchema()
 	const userId = 'user-fencing'
