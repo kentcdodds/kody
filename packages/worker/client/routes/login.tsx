@@ -503,7 +503,10 @@ export function LoginRoute(handle: Handle) {
 					</p>
 				) : null}
 				{showWaitingList ? (
-					<form mix={[css(cardCss), on('submit', handleWaitingListSubmit)]}>
+					<form
+						key="waiting-list"
+						mix={[css(cardCss), on('submit', handleWaitingListSubmit)]}
+					>
 						<input
 							type="text"
 							name={honeypotFieldName}
@@ -559,6 +562,7 @@ export function LoginRoute(handle: Handle) {
 					</form>
 				) : (
 					<form
+						key="authentication"
 						data-public-auth-form
 						mix={[css(cardCss), on('submit', handleSubmit)]}
 					>
