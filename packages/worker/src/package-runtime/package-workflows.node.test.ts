@@ -152,8 +152,11 @@ function createWorkflowRunsDatabase(options?: {
 							if (query.includes('SELECT plan, stripe_plan FROM users')) {
 								if (query.includes('email = ?')) {
 									const email = String(params[0] ?? '')
+									const stableUserId = String(params[1] ?? '')
 									const user = (options?.users ?? []).find(
-										(row) => row.email === email,
+										(row) =>
+											row.email === email &&
+											row.stable_user_id === stableUserId,
 									)
 									return user ? { plan: user.plan } : null
 								}
