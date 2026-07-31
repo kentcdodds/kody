@@ -84,10 +84,12 @@ test('capability Vectorize stays builtin-scoped, query-embed-only, and lexical-o
 			'oauth redirect uri provider registration guide for configuring providers.',
 		),
 	}
-	const { env, embeddedTexts, capturedFilters, capturedNamespaces } = onlineEnv([
-		{ id: 'package_pkg-1', score: 0.99 },
-		{ id: 'capability_noise_a', score: 0.41 },
-	])
+	const { env, embeddedTexts, capturedFilters, capturedNamespaces } = onlineEnv(
+		[
+			{ id: 'package_pkg-1', score: 0.99 },
+			{ id: 'capability_noise_a', score: 0.41 },
+		],
+	)
 	const result = await searchCapabilities({
 		env,
 		query,

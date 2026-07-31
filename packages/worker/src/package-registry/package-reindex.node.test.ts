@@ -222,6 +222,7 @@ test('saved package reindex skips failed manifest loads and continues the batch'
 		{
 			id: 'package_pkg-good',
 			values: [0.4, 0.5, 0.6],
+			namespace: 'user-1',
 			metadata: {
 				kind: 'package',
 				userId: 'user-1',

@@ -19,9 +19,7 @@ function createVectorIndex(vectors: ReadonlyArray<TestVector>) {
 			)?.$eq
 			const matches = vectors
 				.filter((vector) => vector.namespace === options?.namespace)
-				.filter(
-					(vector) => !expectedUserId || vector.userId === expectedUserId,
-				)
+				.filter((vector) => !expectedUserId || vector.userId === expectedUserId)
 				.map((vector) => ({ id: vector.id, score: 1 }))
 			return { matches, count: matches.length }
 		},
