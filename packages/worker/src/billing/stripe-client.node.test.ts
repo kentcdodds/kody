@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import { silenceExpectedConsoleErrors } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	silenceExpectedConsoleErrors,
+} from '#worker/test-support/console-spies.ts'
 import {
 	BillingNotConfiguredError,
 	cancelSubscription,
@@ -227,8 +230,22 @@ test('stripe client immediately cancels subscriptions and deletes customers', as
 			'https://api.stripe.com/v1/customers/cus_delete',
 			expect.objectContaining({ method: 'DELETE' }),
 		])
+
+		consoleError.mockImplementation(() => {})
+		fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'unavailable' }, 503))
+		await expect(
+			deleteCustomer(env, 'cus_sensitive_identifier'),
+		).rejects.toBeInstanceOf(StripeApiError)
+		expect(consoleError).toHaveBeenCalledWith('stripe_api_error', {
+			status: 503,
+			path: '/v1/customers/<redacted>',
+		})
+		expect(JSON.stringify(consoleError.mock.calls)).not.toContain(
+			'cus_sensitive_identifier',
+		)
 	} finally {
 		vi.unstubAllGlobals()
+		consoleError.mockReset()
 	}
 })
 
