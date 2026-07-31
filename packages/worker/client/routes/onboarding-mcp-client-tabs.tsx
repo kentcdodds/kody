@@ -365,6 +365,9 @@ const tabPanelCss = {
 	fontFamily: typography.fontFamily,
 	fontSize: typography.fontSize.base,
 	lineHeight: 1.6,
+	'&[hidden]': {
+		display: 'none',
+	},
 }
 
 const copyCardCss = {
