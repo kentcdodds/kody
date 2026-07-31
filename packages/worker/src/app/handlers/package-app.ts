@@ -3,10 +3,7 @@ import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
-import {
-	getAppBaseUrl,
-	getPackageAppOriginConfigurationError,
-} from '#worker/app-base-url.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { type PackageAppOwner } from '#app/package-app-owner.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
@@ -437,11 +434,8 @@ export async function servePackageAppRequest(input: {
  */
 export async function handlePackageAppRequest(request: Request, env: Env) {
 	if (!isNonProductionRuntime(env)) {
-		const configurationError =
-			getPackageAppOriginConfigurationError(env) ??
-			'Inline package-app serving is disabled in production.'
 		return new Response(
-			`Hosted package apps are unavailable. ${configurationError}`,
+			'Hosted package apps are unavailable. Inline package-app serving is disabled in production.',
 			{
 				status: 500,
 				headers: {
