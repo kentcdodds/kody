@@ -60,6 +60,7 @@
     "validate": "concurrently -n format,lint,typecheck,test,e2e,mcp,backup-build,primitives,migrations,docs -c green,yellow,magenta,blue,cyan,red,blueBright,white,gray,greenBright \"npm run format:check\" \"npm run lint\" \"npm run typecheck\" \"npm run test\" \"npm run test:e2e:run\" \"npm run test:mcp\" \"npm run backup:build\" \"npm run primitives:check\" \"npm run migrations:check\" \"npm run docs:check-temporal\"",
     "validate:fix": "npm run format && npm run lint:fix",
     "test:e2e:ensure": "node tools/ensure-playwright-browser.ts",
+    "test:e2e:a11y": "playwright test e2e/a11y.spec.ts",
     "test:e2e:run": "nx run worker:test-e2e",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install chromium --with-deps",
@@ -70,6 +71,7 @@
     "audit:prod": "npm audit --omit=dev"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@cloudflare/vitest-pool-workers": "^0.17.0",
     "@cloudflare/workers-types": "^4.20260702.1",
     "@epic-web/config": "^1.24.1",
