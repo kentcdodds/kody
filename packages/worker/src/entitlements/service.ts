@@ -47,9 +47,7 @@ export async function getUserPlan(
 				.bind(email, input.userId)
 				.first<{ plan: string; stripe_plan: string | null }>()
 		: await db
-				.prepare(
-					`SELECT plan, stripe_plan FROM users WHERE stable_user_id = ?`,
-				)
+				.prepare(`SELECT plan, stripe_plan FROM users WHERE stable_user_id = ?`)
 				.bind(input.userId)
 				.first<{ plan: string; stripe_plan: string | null }>()
 	if (!row) return 'free'

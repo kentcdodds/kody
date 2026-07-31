@@ -172,15 +172,16 @@ returns a `PlanName`:
    and returns `resolveEffectivePlan(parseStoredPlanName(plan), stripe_plan)`. A
    mismatched email/stable-id pair or missing row returns `free` (no warn).
 4. When email is absent/blank: reverse-resolves
-   `SELECT plan, stripe_plan FROM users WHERE stable_user_id = ?` so package-job,
-   workflow, webhook, and other background contexts that persist `email: ''`
-   still enforce the account's real plan. Missing rows return `free`.
+   `SELECT plan, stripe_plan FROM users WHERE stable_user_id = ?` so
+   package-job, workflow, webhook, and other background contexts that persist
+   `email: ''` still enforce the account's real plan. Missing rows return
+   `free`.
 
 Interactive surfaces still carry email (app sessions expose
 `user.mcpUser.email`, MCP caller contexts expose
-`ctx.callerContext.user.email`). Background package-runtime paths that only
-have the stable userId no longer need a separate email hydrate step for
-entitlement checks — `getUserPlan` reverse-resolves for them.
+`ctx.callerContext.user.email`). Background package-runtime paths that only have
+the stable userId no longer need a separate email hydrate step for entitlement
+checks — `getUserPlan` reverse-resolves for them.
 
 Inbound email routing has no caller context and resolves the owning account via
 the indexed username lookup (`findPublicUserIdentityByUsername`) — it does not

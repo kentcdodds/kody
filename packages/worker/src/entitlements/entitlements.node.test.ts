@@ -412,9 +412,7 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 	expect(await getUserPlan(db, { userId, email: null })).toBe('pro')
 	expect(await getUserPlan(db, { userId, email: '' })).toBe('pro')
 	expect(await getUserPlan(db, { userId, email: '   ' })).toBe('pro')
-	expect(queries.at(-1)?.sql).toContain(
-		'FROM users WHERE stable_user_id = ?',
-	)
+	expect(queries.at(-1)?.sql).toContain('FROM users WHERE stable_user_id = ?')
 	expect(queries.at(-1)?.params).toEqual([userId])
 
 	// Mismatched email/stable-id pairs fail closed without warning.
