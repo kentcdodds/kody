@@ -104,6 +104,7 @@ vi.mock('#worker/package-runtime/realtime-session.ts', () => ({
 }))
 
 const { handlePackageAppRequest } = await import('./package-app.ts')
+const nonProductionEnv = { SENTRY_ENVIRONMENT: 'test' } as Env
 
 function resetMocks() {
 	vi.clearAllMocks()
@@ -117,7 +118,7 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 		new Request(
 			'https://example.com/@test-user/packages/example/report?tab=errors',
 		),
-		{} as Env,
+		nonProductionEnv,
 	)
 
 	expect(response.status).toBe(500)
@@ -170,7 +171,7 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 		new Request('https://example.com/@test-user/packages/example/api/data', {
 			headers: { accept: 'application/json' },
 		}),
-		{} as Env,
+		nonProductionEnv,
 	)
 
 	expect(apiResponse.status).toBe(500)
@@ -222,7 +223,7 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 
 	const response = await handlePackageAppRequest(
 		new Request('https://example.com/@test-user/packages/example'),
-		{} as Env,
+		nonProductionEnv,
 	)
 
 	expect(response.status).toBe(500)
@@ -251,7 +252,7 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 		},
 	)
 
-	const response = await handlePackageAppRequest(request, {} as Env)
+	const response = await handlePackageAppRequest(request, nonProductionEnv)
 
 	expect(response.status).toBe(200)
 	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
@@ -307,7 +308,7 @@ test('handlePackageAppRequest forwards package code a request stripped of owner 
 			},
 			body: JSON.stringify({ note: 'hello' }),
 		}),
-		{} as Env,
+		nonProductionEnv,
 	)
 
 	expect(response.status).toBe(200)
@@ -331,7 +332,7 @@ test('handlePackageAppRequest returns not found when the URL username does not m
 
 	const response = await handlePackageAppRequest(
 		new Request('https://example.com/@other-user/packages/example'),
-		{} as Env,
+		nonProductionEnv,
 	)
 
 	expect(response.status).toBe(404)
