@@ -1830,8 +1830,13 @@ class RunLogBase extends DurableObject<Env> {
 		const now = new Date().toISOString()
 		const createdAt = input.createdAt?.trim() || now
 		const updatedAt = input.updatedAt?.trim() || now
-		// Monotonic by updated_at so a lagging expand-phase D1 mirror/import
-		// cannot regress a newer RunLog status.
+		// Monotonic by updated_at, plus the same terminal-stickiness predicate as
+		// the D1 workflow_runs mirror: a terminal existing status cannot regress
+		// to active/creating/null even with a newer updated_at. Terminal→terminal
+		// and nonterminal→any remain allowed when updated_at does not go backward.
+		const terminalPlaceholders = workflowProjectionTerminalStatuses
+			.map(() => '?')
+			.join(', ')
 		this.ctx.storage.sql.exec(
 			`INSERT INTO workflow_projections (
 				id, binding_name, source_type, package_id, kody_id, source_id,
@@ -1843,7 +1848,11 @@ class RunLogBase extends DurableObject<Env> {
 				updated_at = excluded.updated_at,
 				completed_at = COALESCE(excluded.completed_at, workflow_projections.completed_at),
 				last_error = COALESCE(excluded.last_error, workflow_projections.last_error)
-			WHERE excluded.updated_at >= workflow_projections.updated_at`,
+			WHERE excluded.updated_at >= workflow_projections.updated_at
+				AND (
+					COALESCE(workflow_projections.status, '') NOT IN (${terminalPlaceholders})
+					OR COALESCE(excluded.status, '') IN (${terminalPlaceholders})
+				)`,
 			input.id,
 			input.bindingName,
 			input.sourceType,
@@ -1860,6 +1869,8 @@ class RunLogBase extends DurableObject<Env> {
 			updatedAt,
 			input.completedAt ?? null,
 			input.lastError ?? null,
+			...workflowProjectionTerminalStatuses,
+			...workflowProjectionTerminalStatuses,
 		)
 		// Terminal projections create future age-prune work.
 		this.retentionIdleConfirmed = false

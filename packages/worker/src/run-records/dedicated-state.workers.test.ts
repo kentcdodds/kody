@@ -449,6 +449,81 @@ test('workflow projection upsert is monotonic by updatedAt', async () => {
 	})
 })
 
+test('workflow projection upsert keeps terminal status sticky against newer active/creating', async () => {
+	const userId = uniqueUserId('wf-terminal-sticky')
+	const terminalAt = '2026-07-31T20:00:00.000Z'
+	const newerAt = '2026-07-31T20:00:01.000Z'
+
+	for (const terminalStatus of ['cancelled', 'complete'] as const) {
+		const id = `wf-${terminalStatus}`
+		await upsertWorkflowProjection({
+			env,
+			userId,
+			projection: {
+				id,
+				bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+				sourceType: 'inline',
+				workflowName: 'adhoc',
+				idempotencyKey: `${terminalStatus}-key`,
+				runAt: terminalAt,
+				status: terminalStatus,
+				createdAt: terminalAt,
+				updatedAt: terminalAt,
+				completedAt: terminalAt,
+			},
+		})
+
+		for (const regressStatus of ['queued', 'running', 'creating'] as const) {
+			await upsertWorkflowProjection({
+				env,
+				userId,
+				projection: {
+					id,
+					bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+					sourceType: 'inline',
+					workflowName: 'adhoc',
+					idempotencyKey: `${terminalStatus}-key`,
+					runAt: newerAt,
+					status: regressStatus,
+					createdAt: terminalAt,
+					updatedAt: newerAt,
+					completedAt: null,
+				},
+			})
+			expect(await getWorkflowProjection({ env, userId, id })).toMatchObject({
+				status: terminalStatus,
+				updatedAt: terminalAt,
+				completedAt: terminalAt,
+			})
+		}
+	}
+
+	// Terminal → terminal with a newer updatedAt remains allowed.
+	await upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			id: 'wf-cancelled',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'adhoc',
+			idempotencyKey: 'cancelled-key',
+			runAt: terminalAt,
+			status: 'complete',
+			createdAt: terminalAt,
+			updatedAt: newerAt,
+			completedAt: newerAt,
+		},
+	})
+	expect(
+		await getWorkflowProjection({ env, userId, id: 'wf-cancelled' }),
+	).toMatchObject({
+		status: 'complete',
+		updatedAt: newerAt,
+		completedAt: newerAt,
+	})
+})
+
 test('job run observability upserts terminal outcomes and supports batch reads', async () => {
 	const userId = uniqueUserId('jobs')
 	const first = await upsertJobRunObservability({

@@ -66,6 +66,8 @@ function createFakeRunLogNamespace() {
 					input: WorkflowProjectionUpsertInput,
 				) => Promise<{
 					countBeforeReservation: number
+					reserved: boolean
+					inserted: boolean
 					projection: WorkflowProjectionRecord
 				}>
 				deleteWorkflowProjectionIfCreating: (input: {
@@ -170,20 +172,40 @@ function createFakeRunLogNamespace() {
 				input: WorkflowProjectionUpsertInput,
 			) {
 				const existing = projections.get(input.id) ?? null
-				const totalReserved = [...projections.values()].filter(
-					(row) => row.status != null && reservationStatuses.has(row.status),
+				const countBeforeReservation = [...projections.values()].filter(
+					(row) =>
+						row.id !== input.id &&
+						row.status != null &&
+						reservationStatuses.has(row.status),
 				).length
-				const existingOccupies =
-					existing?.status != null && reservationStatuses.has(existing.status)
-				const countBeforeReservation = existingOccupies
-					? Math.max(0, totalReserved - 1)
-					: totalReserved
+				// Insert-only / creating-refresh: never clobber queued/running/terminal.
+				if (existing?.status != null && existing.status !== 'creating') {
+					return {
+						countBeforeReservation,
+						reserved: false,
+						inserted: false,
+						projection: existing,
+					}
+				}
 				const now = new Date().toISOString()
-				await rpc.upsertWorkflowProjection({
-					...input,
+				const inserted = existing == null
+				const createdAt = input.createdAt ?? existing?.createdAt ?? now
+				const updatedAt = input.updatedAt ?? now
+				projections.set(input.id, {
+					id: input.id,
+					bindingName: input.bindingName,
+					sourceType: input.sourceType,
+					packageId: input.packageId ?? null,
+					kodyId: input.kodyId ?? null,
+					sourceId: input.sourceId ?? null,
+					workflowName: input.workflowName,
+					exportName: input.exportName ?? null,
+					idempotencyKey: input.idempotencyKey,
+					runAt: input.runAt,
+					planDate: input.planDate ?? null,
 					status: 'creating',
-					createdAt: input.createdAt ?? existing?.createdAt ?? now,
-					updatedAt: input.updatedAt ?? now,
+					createdAt,
+					updatedAt,
 					completedAt: null,
 					lastError: null,
 				})
@@ -191,7 +213,12 @@ function createFakeRunLogNamespace() {
 				if (!projection) {
 					throw new Error('Expected reserved projection.')
 				}
-				return { countBeforeReservation, projection }
+				return {
+					countBeforeReservation,
+					reserved: true,
+					inserted,
+					projection,
+				}
 			},
 			async deleteWorkflowProjectionIfCreating(input: { id: string }) {
 				const existing = projections.get(input.id)
