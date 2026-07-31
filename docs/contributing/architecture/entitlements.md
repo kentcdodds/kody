@@ -192,14 +192,14 @@ verified-state (for example the outbound fetch gateway), mirroring
 `findUserAccount` in `email/platform-address.ts`.
 
 **Enforcement plan cache:** `assertWithinEntitlement` resolves the plan limit
-via `getCachedUserPlan`, which wraps `getUserPlan` behind a 60-second per-isolate
-TTL cache keyed by D1 binding and `(stable_user_id, normalized email)`. Cache
-entries share the lookup semantics above; failures are never cached. Built-in
-usage counters and any `getCurrent` override are read fresh on every call, so
-only the plan limit can be stale — a plan change may take up to ~60s to bind at
-enforcement points while current usage stays accurate. Surfaces that display the
-user's plan (billing UI, email usage) should keep calling `getUserPlan`
-directly.
+via `getCachedUserPlan`, which wraps `getUserPlan` behind a 60-second
+per-isolate TTL cache keyed by D1 binding and
+`(stable_user_id, normalized email)`. Cache entries share the lookup semantics
+above; failures are never cached. Built-in usage counters and any `getCurrent`
+override are read fresh on every call, so only the plan limit can be stale — a
+plan change may take up to ~60s to bind at enforcement points while current
+usage stays accurate. Surfaces that display the user's plan (billing UI, email
+usage) should keep calling `getUserPlan` directly.
 
 ## The error shape
 
