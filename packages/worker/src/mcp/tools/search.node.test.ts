@@ -2065,7 +2065,7 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 		expect(valueProviderIndex).toBeGreaterThan(exactValueIndex)
 	}
 
-	expect(capturedFilters).toHaveLength(cases.length * 5)
+	expect(capturedFilters).toHaveLength(cases.length * 7)
 	expect(
 		capturedFilters.filter(
 			(filter) =>
@@ -2077,7 +2077,7 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 			(filter) =>
 				(filter as { kind?: { $eq?: string } }).kind?.$eq === 'package',
 		),
-	).toHaveLength(cases.length * 2)
+	).toHaveLength(cases.length * 4)
 	expect(aiRunCount).toBe(cases.length * 3)
 })
 
