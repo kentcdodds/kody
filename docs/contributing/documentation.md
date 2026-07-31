@@ -14,6 +14,9 @@ contributing docs; those belong in commit messages or release notes. Describe
 the system as it works today (“Kody stores…”, “The manifest rejects…”) instead
 of narrating a rollout (“Kody now stores…”, “We no longer accept…”).
 
+`npm run docs:check-temporal` checks durable documentation and docs-like MCP
+instructions for common rollout phrases. It runs as part of `npm run validate`.
+
 Docs-like product copy follows the same rule: MCP server instructions, tool and
 schema descriptions, and user-visible UI strings should not read like release
 notes.
