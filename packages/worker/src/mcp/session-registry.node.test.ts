@@ -4,6 +4,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	listMcpAgentSessionsForUser,
 	purgePersistedMcpAgentSession,
+	purgePersistedOwnerlessMcpAgentSession,
 	readPersistedMcpAgentOwner,
 	registerMcpAgentSession,
 } from './session-registry.ts'
@@ -84,6 +85,45 @@ test('cold MCP session owner discovery reads persisted Agents SDK props', async 
 		},
 		doId: 'cold-do',
 		userId: 'user-a',
+	})
+	expect(purged).toBe(true)
+})
+
+test('ownerless MCP session purge refuses owned objects and clears ownerless ones', async () => {
+	const ownedProps = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		executionOrigin: 'interactive',
+		user: {
+			userId: 'user-a',
+			email: 'a@example.com',
+			displayName: 'User A',
+		},
+	})
+	await expect(
+		purgePersistedOwnerlessMcpAgentSession({
+			storage: {
+				async get() {
+					return ownedProps
+				},
+				async deleteAll() {
+					throw new Error('should not delete owned session')
+				},
+			},
+			doId: 'owned-do',
+		}),
+	).rejects.toThrow('refusing ownerless purge')
+
+	let purged = false
+	await purgePersistedOwnerlessMcpAgentSession({
+		storage: {
+			async get() {
+				return undefined
+			},
+			async deleteAll() {
+				purged = true
+			},
+		},
+		doId: 'orphan-do',
 	})
 	expect(purged).toBe(true)
 })

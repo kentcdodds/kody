@@ -66,3 +66,15 @@ export async function purgePersistedMcpAgentSession(input: {
 	}
 	await input.storage.deleteAll()
 }
+
+/** Clears storage only when the DO has no attributable userId. */
+export async function purgePersistedOwnerlessMcpAgentSession(input: {
+	storage: Pick<DurableObjectStorage, 'get' | 'deleteAll'>
+	doId: string
+}) {
+	const owner = await readPersistedMcpAgentOwner(input)
+	if (owner.userId !== null) {
+		throw new Error('MCP agent session has an owner; refusing ownerless purge.')
+	}
+	await input.storage.deleteAll()
+}

@@ -17,6 +17,7 @@ import { listPopularAgentPackagesForUser } from '#worker/usage/agent-package-con
 import {
 	readPersistedMcpAgentOwner,
 	purgePersistedMcpAgentSession,
+	purgePersistedOwnerlessMcpAgentSession,
 	registerMcpAgentSession,
 } from './session-registry.ts'
 
@@ -105,6 +106,13 @@ class MCPBase extends McpAgent<Env, State, Props> {
 			storage: this.ctx.storage,
 			doId: this.ctx.id.toString(),
 		})
+	}
+	async purgeIfOwnerlessForMaintenance() {
+		await purgePersistedOwnerlessMcpAgentSession({
+			storage: this.ctx.storage,
+			doId: this.ctx.id.toString(),
+		})
+		return { doId: this.ctx.id.toString(), action: 'purged' as const }
 	}
 }
 

@@ -45,6 +45,7 @@ import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
+import { handleOwnerlessMcpSessionPurgeRequest } from './mcp-ownerless-purge-maintenance.ts'
 import { reconcileArtifactsPushes } from './jobs/reconcile-artifacts-pushes.ts'
 import { cleanupRepoSessionBranches } from './repo/repo-session-cleanup.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
@@ -295,6 +296,10 @@ const appHandler = withCors({
 
 		if (url.pathname === '/__maintenance/dr-restore') {
 			return handleDrRestoreRequest(request, env)
+		}
+
+		if (url.pathname === '/__maintenance/purge-ownerless-mcp-sessions') {
+			return handleOwnerlessMcpSessionPurgeRequest(request, env)
 		}
 
 		if (url.pathname.startsWith('/__maintenance/')) {
