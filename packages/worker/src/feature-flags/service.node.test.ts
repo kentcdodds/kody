@@ -268,7 +268,6 @@ test('isFeatureEnabled falls back to registry default when no DB state exists', 
 	)
 	await expect(getFeatureFlagsForUser(db, 1)).resolves.toEqual({
 		'demo-indicator': false,
-		'execute-pre-exec-typecheck': false,
 	})
 })
 
@@ -435,7 +434,6 @@ test('user override wins over global off and global on; clear restores evaluatio
 	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(false)
 	await expect(getFeatureFlagsForUser(db, 7)).resolves.toEqual({
 		'demo-indicator': true,
-		'execute-pre-exec-typecheck': false,
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -467,7 +465,6 @@ test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => 
 
 	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toEqual({
 		'demo-indicator': { enabled: false, source: 'default' },
-		'execute-pre-exec-typecheck': { enabled: false, source: 'default' },
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -553,7 +550,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(4)
+	expect(listed).toHaveLength(3)
 
 	const demo = listed.find((flag) => flag.key === 'demo-indicator')
 	expect(demo).toMatchObject({
@@ -577,25 +574,6 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 	expect(demo?.description).toEqual(expect.any(String))
 	expect(demo?.description).not.toHaveLength(0)
-
-	const executeTypecheck = listed.find(
-		(flag) => flag.key === 'execute-pre-exec-typecheck',
-	)
-	expect(executeTypecheck).toMatchObject({
-		key: 'execute-pre-exec-typecheck',
-		stale: false,
-		defaultEnabled: false,
-		successMetric: {
-			eventType: 'execute',
-			measure: 'error_rate',
-			goal: 'decrease',
-		},
-		global: null,
-		overrides: [],
-	})
-	expect(executeTypecheck?.successMetric?.hypothesis).toEqual(
-		expect.any(String),
-	)
 
 	const retired = listed.find((flag) => flag.key === 'retired-flag')
 	expect(retired).toEqual({

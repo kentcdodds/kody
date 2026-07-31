@@ -97,7 +97,6 @@ export const routes = route({
 	adminCodemods: '/admin/codemods',
 	adminCodemodsApi: '/admin/codemods.json',
 	adminCodemodsRunApi: post('/admin/codemods/run.json'),
-	adminPackageStorageAuditApi: '/admin/package-storage-audit.json',
 	adminCommunityReports: '/admin/community-reports',
 	adminCommunityReportsApi: '/admin/community-reports.json',
 	adminCommunityReportsApiPost: post('/admin/community-reports.json'),

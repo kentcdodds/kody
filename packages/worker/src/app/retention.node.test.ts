@@ -918,7 +918,7 @@ test('feature flag exposure rollup retention respects the day boundary', async (
 			.prepare(
 				`INSERT INTO feature_flag_exposure_rollups (
 				flag_key, user_id, day, enabled, source, exposure_count, updated_at
-			) VALUES ('execute-pre-exec-typecheck', 'user-1', ?, 1, 'rollout', 1, ?)`,
+			) VALUES ('retired-flag', 'user-1', ?, 1, 'rollout', 1, ?)`,
 			)
 			.run(day, now.toISOString())
 	}

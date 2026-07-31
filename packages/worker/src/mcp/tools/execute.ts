@@ -19,9 +19,7 @@ import {
 	limitMcpContentBlocks,
 	validateDownstreamMcpContentBlocks,
 } from '#mcp/downstream-mcp-result.ts'
-import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { ExecuteTypecheckError } from '#mcp/execute-typecheck.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
@@ -301,12 +299,11 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					claimedRunHandle = claim.handle
 				}
 
-				const [registry, featureFlags, surfacedMemories] = await Promise.all([
+				const [registry, surfacedMemories] = await Promise.all([
 					getCapabilityRegistryForContext({
 						env,
 						callerContext,
 					}),
-					resolveCallerFeatureFlags(env, callerContext),
 					surfaceToolMemories({
 						env,
 						callerContext,
@@ -355,8 +352,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									packageInvokeTools,
 									rawFetchHostSink: rawFetchHosts.sink,
 									conversationId: resolvedConversationId,
-									preExecTypecheck:
-										featureFlags['execute-pre-exec-typecheck'] === true,
 									runRecordHandle: claimedRunHandle,
 									waitUntil,
 									runRecord: {
@@ -396,9 +391,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								result: undefined,
 								error: getErrorMessage(cause),
 								logs: [],
-								...(cause instanceof ExecuteTypecheckError && cause.serverTiming
-									? { serverTiming: cause.serverTiming }
-									: {}),
 								...(claimedRunHandle ? { runId: claimedRunHandle.id } : {}),
 							}
 						}

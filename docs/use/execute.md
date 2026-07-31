@@ -90,28 +90,6 @@ should receive that input through normal function arguments.
 
 Top-level `await` is acceptable when needed.
 
-## Pre-execution module diagnostics
-
-Kody can validate an ad hoc execute module before starting its sandbox. This is
-controlled by the **`execute-pre-exec-typecheck`** feature flag and is off by
-default. During the initial rollout, only explicitly opted-in users receive the
-check. The public **execute** tool and the nested **`meta.execute`** capability
-use the same caller-scoped flag; saved-package exports, jobs, workflows, and
-services are not changed by this flag.
-
-When enabled, the check validates source size, module syntax (TypeScript-aware
-parse), and the presence of the default export the execute runtime calls.
-Failures are returned through the normal execute error result with
-`entry.ts:line:column` diagnostics before the module's default export runs —
-catching truncated or malformed modules without paying for sandbox startup. The
-check is deliberately **not semantic**: type-level errors (wrong argument or
-result types against published `kody:@…` package contracts) are not reported,
-because running a TypeScript compiler inside the serving isolate proved unsafe
-in production (memory and CPU spikes stalled unrelated execute calls on the same
-session). Operators can disable the user's override (or the global flag, if a
-broader rollout was started) to return immediately to the previous
-bundle-and-run behavior.
-
 ### Server-Timing phases
 
 Execute responses include Server-Timing-style phase entries under
@@ -126,17 +104,10 @@ Execute responses include Server-Timing-style phase entries under
   ahead of sandbox startup.
 - `sandbox` — the dynamic worker evaluation of the module itself.
 - `run` — the enclosing span for the three phases above (plus run-record and
-  usage bookkeeping).
-- `typecheck-semantic-skipped`, `typecheck-parse`, `typecheck-total` — present
-  only when the pre-execution check ran for the call.
-  `typecheck-semantic-skipped` is a 0ms marker recording that no type-level
-  (semantic) checking ran. Failed diagnostics also report these phases so the
-  check can be attributed even when the module never executes.
-
-Phase durations are measured with `Date.now()`, which the Workers runtime only
-advances across I/O boundaries — synchronous CPU inside one phase can be
-attributed to the next timer read. Treat phases as attribution for slow spans,
-not precise CPU accounting.
+  usage bookkeeping). Phase durations are measured with `Date.now()`, which the
+  Workers runtime only advances across I/O boundaries — synchronous CPU inside
+  one phase can be attributed to the next timer read. Treat phases as
+  attribution for slow spans, not precise CPU accounting.
 
 ## npm packages on Workers
 

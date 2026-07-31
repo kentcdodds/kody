@@ -323,17 +323,8 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 			global: null,
 			overrides: [],
 		}),
-		expect.objectContaining({
-			key: 'execute-pre-exec-typecheck',
-			description: expect.any(String),
-			defaultEnabled: false,
-			stale: false,
-			global: null,
-			overrides: [],
-		}),
 	])
 	expect(listResult.flags[0]?.description).not.toHaveLength(0)
-	expect(listResult.flags[1]?.description).not.toHaveLength(0)
 
 	const setResult = await adminFeatureFlagSetCapability.handler(
 		{

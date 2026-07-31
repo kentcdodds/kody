@@ -49,19 +49,6 @@ export const featureFlagDefinitions = [
 		// exercise the flag system itself (including the "no success metric"
 		// admin notice), not to move a product metric.
 	},
-	{
-		key: 'execute-pre-exec-typecheck',
-		defaultEnabled: false,
-		description:
-			'Validates ad hoc execute modules (size, syntax, default export) before sandbox execution. Keep off globally during rollout and enable with per-user overrides.',
-		successMetric: {
-			eventType: 'execute',
-			measure: 'error_rate',
-			goal: 'decrease',
-			hypothesis:
-				'Validating execute modules before sandbox execution should catch malformed modules early and lower the execute error rate.',
-		},
-	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -85,8 +72,12 @@ const featureFlagDefinitionByKey = new Map<
  */
 export const measuredFeatureFlagDefinitions: ReadonlyArray<
 	FeatureFlagDefinition & { successMetric: FeatureFlagSuccessMetric }
-> = featureFlagDefinitions.flatMap((definition) =>
-	'successMetric' in definition ? [definition] : [],
+> = (featureFlagDefinitions as ReadonlyArray<FeatureFlagDefinition>).filter(
+	(
+		definition,
+	): definition is FeatureFlagDefinition & {
+		successMetric: FeatureFlagSuccessMetric
+	} => definition.successMetric !== undefined,
 )
 
 export const measuredFeatureFlagKeys: ReadonlySet<FeatureFlagKey> = new Set(

@@ -232,8 +232,6 @@ rule.
 - `admin_package_scope_grant_create`
 - `admin_package_scope_grant_revoke`
 - `admin_package_scope_grant_list`
-- `admin_package_storage_audit`
-- `admin_package_storage_cleanup`
 - `admin_audit_log_query`
 - `admin_user_usage`
 - `admin_feature_flag_list`

@@ -4,7 +4,6 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
-	resolveCallerFeatureFlags: vi.fn(),
 	assertCallerCanAccessCapability: vi.fn(async () => undefined),
 }))
 
@@ -19,8 +18,6 @@ vi.mock(
 		const actual = await importOriginal()
 		return {
 			...actual,
-			resolveCallerFeatureFlags: (...args: Array<unknown>) =>
-				mockModule.resolveCallerFeatureFlags(...args),
 			assertCallerCanAccessCapability: (...args: Array<unknown>) =>
 				mockModule.assertCallerCanAccessCapability(...args),
 		}
@@ -31,10 +28,6 @@ const { executeCapability } = await import('./execute.ts')
 
 test('execute capability runs modules through the shared execute runtime', async () => {
 	vi.clearAllMocks()
-	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
-		'demo-indicator': false,
-		'execute-pre-exec-typecheck': false,
-	})
 	mockModule.runModuleWithRegistry.mockResolvedValue({
 		result: { marker: 'execute-ok' },
 		logs: [{ level: 'info', message: 'ran' }],
@@ -91,32 +84,6 @@ test('execute capability runs modules through the shared execute runtime', async
 				surface: 'execute',
 				storageId: 'package:agent-turns',
 			}),
-			preExecTypecheck: false,
 		}),
-	)
-
-	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
-		'demo-indicator': false,
-		'execute-pre-exec-typecheck': true,
-	})
-	mockModule.runModuleWithRegistry.mockResolvedValue({
-		result: { marker: 'typecheck-enabled' },
-		logs: [],
-	})
-	await executeCapability.handler(
-		{
-			code: 'export default async function main() { return { marker: "typecheck-enabled" } }',
-		},
-		{
-			env: {} as Env,
-			callerContext,
-		},
-	)
-	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
-		expect.anything(),
-		expect.anything(),
-		expect.any(String),
-		undefined,
-		expect.objectContaining({ preExecTypecheck: true }),
 	)
 })

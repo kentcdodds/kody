@@ -13,7 +13,6 @@ import {
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
 } from './run-kody-registry.ts'
-import * as executeTypecheck from '#mcp/execute-typecheck.ts'
 import * as mcpExecutor from '#mcp/executor.ts'
 import { type KodyResolvedProvider } from '#mcp/kody-remote-types.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
@@ -1545,73 +1544,6 @@ export default async function run() {
 		createExecuteExecutorSpy.mockRestore()
 		resolvePackageMountedSecretSpy.mockRestore()
 		getRegistrySpy.mockRestore()
-	}
-})
-
-test('runModuleWithRegistry only runs the pre-execution check when opted in', async () => {
-	silenceIncidentalRuntimeWarnings()
-	const buildBundleMock = vi.mocked(buildKodyModuleBundle)
-	buildBundleMock.mockClear()
-	const createExecuteExecutorSpy = vi
-		.spyOn(mcpExecutor, 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return { result: 'ok', logs: [] }
-			},
-		} as never)
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const capabilityRegistry = buildCapabilityRegistry([])
-
-	try {
-		const uncheckedResult = await runModuleWithRegistry(
-			{} as Env,
-			callerContext,
-			'export default async function run() { return "unchecked" }',
-			undefined,
-			{ capabilityRegistry },
-		)
-		const typecheckSpy = vi.spyOn(
-			executeTypecheck,
-			'assertAdHocExecuteTypechecks',
-		)
-		const checkedResult = await runModuleWithRegistry(
-			{} as Env,
-			callerContext,
-			'export default async function run() { return "checked" }',
-			undefined,
-			{ capabilityRegistry, preExecTypecheck: true },
-		)
-		expect(typecheckSpy).toHaveBeenCalledTimes(1)
-		typecheckSpy.mockRestore()
-
-		expect(buildBundleMock).toHaveBeenCalledTimes(2)
-		// Both runs report Server-Timing-style phases; only the opted-in run
-		// carries typecheck phase entries ahead of them.
-		expect(uncheckedResult.serverTiming?.map((entry) => entry.name)).toEqual([
-			'bundle',
-			'hydrate',
-			'provider-assembly',
-			'sandbox',
-			'run',
-		])
-		expect(checkedResult.serverTiming?.map((entry) => entry.name)).toEqual([
-			'typecheck-semantic-skipped',
-			'typecheck-parse',
-			'typecheck-total',
-			'bundle',
-			'hydrate',
-			'provider-assembly',
-			'sandbox',
-			'run',
-		])
-		for (const entry of checkedResult.serverTiming ?? []) {
-			expect(entry.durationMs).toBeGreaterThanOrEqual(0)
-		}
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
 	}
 })
 

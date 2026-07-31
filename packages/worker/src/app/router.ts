@@ -22,7 +22,6 @@ import {
 	createAdminCodemodsHandler,
 	createAdminCodemodsRunApiHandler,
 } from '#app/handlers/admin-codemods.ts'
-import { createAdminPackageStorageAuditApiHandler } from '#app/handlers/admin-package-storage-audit.ts'
 import {
 	createAdminRolesApiHandler,
 	createAdminRolesHandler,
@@ -329,8 +328,6 @@ export function createAppRouter(env: Env) {
 			adminCodemods: createAdminCodemodsHandler(env),
 			adminCodemodsApi: createAdminCodemodsApiHandler(env),
 			adminCodemodsRunApi: createAdminCodemodsRunApiHandler(env),
-			adminPackageStorageAuditApi:
-				createAdminPackageStorageAuditApiHandler(env),
 			adminRoles: createAdminRolesHandler(env),
 			adminRolesApi: createAdminRolesApiHandler(env),
 			adminCommunityReports: createAdminCommunityReportsHandler(env),

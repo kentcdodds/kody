@@ -495,6 +495,10 @@
 		{
 			"filename": "0118-user-storage-bucket-estimated-bytes.sql",
 			"sha256": "6bde29d7af33c4378bac5a5729e66c7fbb2206e6162ddffa5c988630f4d614c2"
+		},
+		{
+			"filename": "0121-drop-legacy-storage-and-backfill-marker.sql",
+			"sha256": "ebd72ef316e8ab209455674ab9ff7efee6d60a9e835d4cfc07f3c99528c3e892"
 		}
 	]
 }

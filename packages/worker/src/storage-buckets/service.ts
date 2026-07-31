@@ -25,7 +25,6 @@
 
 export type StorageBucketKind =
 	| 'job'
-	| 'app'
 	| 'package'
 	| 'service'
 	| 'execute'

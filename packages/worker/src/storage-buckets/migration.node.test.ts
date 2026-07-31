@@ -129,3 +129,73 @@ test('user_storage_buckets package-kind migration reclassifies package and servi
 			.get() as { kind: string },
 	).toEqual({ kind: 'package' })
 })
+
+test('legacy cleanup migration drops the backfill marker and app bucket kind', () => {
+	const migration = '0121-drop-legacy-storage-and-backfill-marker.sql'
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, migration)
+	db.exec(`
+		INSERT INTO deployment_backfill_markers (
+			key, version, completed_at, audit_summary_json
+		) VALUES (
+			'mcp-agent-sessions', 1, '2026-07-31T00:00:00.000Z', '{}'
+		);
+		INSERT INTO user_storage_buckets (
+			user_id, storage_id, kind, created_at, last_seen_at,
+			estimated_bytes, estimated_bytes_updated_at
+		) VALUES (
+			'user-a', 'package:abc', 'package',
+			'2026-07-01T00:00:00.000Z', '2026-07-02T00:00:00.000Z',
+			8192, '2026-07-02T00:00:00.000Z'
+		);
+	`)
+
+	applyMigration(db, migration)
+
+	expect(
+		db
+			.prepare(
+				`SELECT storage_id, kind, estimated_bytes
+			 FROM user_storage_buckets`,
+			)
+			.all(),
+	).toEqual([
+		{ storage_id: 'package:abc', kind: 'package', estimated_bytes: 8192 },
+	])
+	expect(
+		db
+			.prepare(
+				`SELECT name FROM sqlite_master
+				 WHERE type = 'table' AND name = 'deployment_backfill_markers'`,
+			)
+			.get(),
+	).toBeUndefined()
+	expect(() =>
+		db.exec(`
+			INSERT INTO user_storage_buckets (
+				user_id, storage_id, kind, created_at, last_seen_at
+			) VALUES (
+				'user-a', 'legacy-app', 'app',
+				'2026-07-03T00:00:00.000Z', '2026-07-03T00:00:00.000Z'
+			);
+		`),
+	).toThrow(/CHECK constraint failed/)
+})
+
+test('legacy cleanup migration refuses to orphan an app StorageRunner', () => {
+	const migration = '0121-drop-legacy-storage-and-backfill-marker.sql'
+	const db = new DatabaseSync(':memory:')
+	applyMigrationsBefore(db, migration)
+	db.exec(`
+		INSERT INTO user_storage_buckets (
+			user_id, storage_id, kind, created_at, last_seen_at
+		) VALUES (
+			'user-a', 'legacy-app', 'app',
+			'2026-07-01T00:00:00.000Z', '2026-07-02T00:00:00.000Z'
+		);
+	`)
+
+	expect(() => applyMigration(db, migration)).toThrow(
+		/CHECK constraint failed: 0/,
+	)
+})

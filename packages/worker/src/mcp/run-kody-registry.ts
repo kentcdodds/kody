@@ -10,10 +10,6 @@ import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { createExecuteExecutor } from '#mcp/executor.ts'
-import {
-	assertAdHocExecuteTypechecks,
-	type ExecuteServerTimingEntry,
-} from '#mcp/execute-typecheck.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import {
 	getAdditionalPropertiesSchema,
@@ -93,6 +89,11 @@ import {
 } from '#worker/mcp-client/status.ts'
 import { mcpServerKodyName } from '#worker/mcp-client/mcp-domain-id.ts'
 import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
+
+type ExecuteServerTimingEntry = {
+	name: string
+	durationMs: number
+}
 
 export type {
 	PackageEventDispatchInput,
@@ -652,11 +653,6 @@ export async function runModuleWithRegistry(
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
 		/**
-		 * Opts ad hoc source into the bounded pre-execution syntax and
-		 * module-shape check before bundling or sandbox execution begins.
-		 */
-		preExecTypecheck?: boolean
-		/**
 		 * When set (MCP public `execute` tool), static/dynamic `kody:@…`
 		 * package deps are credited toward agent-facing package popularity.
 		 */
@@ -674,18 +670,11 @@ export async function runModuleWithRegistry(
 ): Promise<
 	ExecuteResult & {
 		runId?: string
-		serverTiming?: Array<ExecuteServerTimingEntry>
+		serverTiming?: Array<{ name: string; durationMs: number }>
 	}
 > {
 	const userId = callerContext.user?.userId ?? ''
-	const serverTiming: Array<ExecuteServerTimingEntry> = []
-	if (options?.preExecTypecheck) {
-		serverTiming.push(
-			...(await assertAdHocExecuteTypechecks({
-				source: code,
-			})),
-		)
-	}
+	const serverTiming: Array<{ name: string; durationMs: number }> = []
 	const bundleStartedAtMs = Date.now()
 	const bundled = await buildKodyModuleBundle({
 		env,

@@ -33,14 +33,10 @@ test('admin feature flags: global toggle and per-user override visibility', asyn
 		page.getByRole('heading', { name: 'Admin feature flags' }),
 	).toBeVisible()
 
-	// Success-metric surfaces: the measured flag renders its readout panel and
-	// the unmeasured demo flag renders the strong recommendation notice.
+	// The permanent demo flag is intentionally unmeasured.
 	await expect(
 		page.getByTestId('success-metric-notice-demo-indicator'),
 	).toContainText('No success metric declared')
-	await expect(
-		page.getByTestId('success-metric-execute-pre-exec-typecheck'),
-	).toContainText('error rate should decrease')
 
 	const demoFlagSection = page
 		.getByRole('heading', { name: 'demo-indicator' })

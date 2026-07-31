@@ -12,7 +12,6 @@ import { type Capability } from './types.ts'
 function createFlagMap(enabled: boolean): CallerFeatureFlags {
 	return {
 		'demo-indicator': enabled,
-		'execute-pre-exec-typecheck': enabled,
 	}
 }
 

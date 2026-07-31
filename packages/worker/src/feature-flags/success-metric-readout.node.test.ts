@@ -93,7 +93,7 @@ test('D1 readout splits cohorts and excludes override and mixed users', async ()
 
 	const readout = await loadFeatureFlagSuccessMetricReadout(
 		{ APP_DB: db },
-		{ flagKey: 'execute-pre-exec-typecheck', successMetric },
+		{ flagKey: 'metric-test-flag', successMetric },
 		now,
 	)
 
@@ -119,7 +119,7 @@ test('D1 readout splits cohorts and excludes override and mixed users', async ()
 		mixedUsers: 1,
 	})
 	expect(queries[0]?.params).toEqual([
-		'execute-pre-exec-typecheck',
+		'metric-test-flag',
 		'2026-07-01',
 		'2026-07-15',
 	])
@@ -130,7 +130,7 @@ test('Analytics Engine readout queries both datasets and joins by user', async (
 	const fetchMock = vi.fn(async (_url: unknown, init: unknown) => {
 		const query = String((init as { body: string }).body)
 		if (query.includes('kody_flag_exposures')) {
-			expect(query).toContain("blob2 = 'execute-pre-exec-typecheck'")
+			expect(query).toContain("blob2 = 'metric-test-flag'")
 			return new Response(
 				JSON.stringify({
 					data: [
@@ -186,7 +186,7 @@ test('Analytics Engine readout queries both datasets and joins by user', async (
 				CLOUDFLARE_ACCOUNT_ID: 'account',
 				CLOUDFLARE_API_TOKEN: 'token',
 			},
-			{ flagKey: 'execute-pre-exec-typecheck', successMetric },
+			{ flagKey: 'metric-test-flag', successMetric },
 			now,
 		)
 
@@ -213,7 +213,7 @@ test('uses the D1 path in local Wrangler dev even with binding and credentials',
 			CLOUDFLARE_API_TOKEN: 'token',
 			WRANGLER_IS_LOCAL_DEV: 'true',
 		},
-		{ flagKey: 'execute-pre-exec-typecheck', successMetric },
+		{ flagKey: 'metric-test-flag', successMetric },
 		now,
 	)
 	expect(readout).toMatchObject({ status: 'ok' })
@@ -226,7 +226,7 @@ test('reports unavailable when the binding exists but SQL credentials are missin
 	const { db, queries } = createReadoutTestDb({ exposures: [], usage: [] })
 	const readout = await loadFeatureFlagSuccessMetricReadout(
 		{ APP_DB: db, FLAG_EXPOSURES: {} as AnalyticsEngineDataset },
-		{ flagKey: 'execute-pre-exec-typecheck', successMetric },
+		{ flagKey: 'metric-test-flag', successMetric },
 		now,
 	)
 	expect(readout).toEqual({
@@ -245,7 +245,7 @@ test('degrades to unavailable when the data source fails', async () => {
 	} as unknown as D1Database
 	const readout = await loadFeatureFlagSuccessMetricReadout(
 		{ APP_DB: db },
-		{ flagKey: 'execute-pre-exec-typecheck', successMetric },
+		{ flagKey: 'metric-test-flag', successMetric },
 		now,
 	)
 	expect(readout).toEqual({
@@ -258,7 +258,7 @@ test('attachFeatureFlagMetricReadouts only decorates measured registry flags', a
 	const { db } = createReadoutTestDb({ exposures: [], usage: [] })
 	const flags = [
 		{
-			key: 'execute-pre-exec-typecheck',
+			key: 'metric-test-flag',
 			stale: false,
 			successMetric,
 		},

@@ -340,7 +340,7 @@ export async function listFeatureFlagsForAdmin(
 			defaultEnabled: definition.defaultEnabled,
 			stale: false,
 			successMetric:
-				'successMetric' in definition ? definition.successMetric : null,
+				getFeatureFlagDefinition(definition.key).successMetric ?? null,
 			global: global
 				? {
 						enabled: global.enabled === 1,
