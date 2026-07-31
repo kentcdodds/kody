@@ -850,8 +850,8 @@ test('durable object discovery pages high-cardinality storage ids without nested
 					return {
 						async all<T>() {
 							if (query.includes('SELECT id FROM (')) {
-								const afterId = String(params[4])
-								const limit = Number(params[5])
+								const afterId = String(params[3])
+								const limit = Number(params[4])
 								const rows = ids
 									.filter((id) => id > afterId)
 									.slice(0, limit)

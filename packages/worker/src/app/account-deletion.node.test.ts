@@ -1424,7 +1424,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	)
 	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({
-		storageRunners: 7,
+		storageRunners: 6,
 		runLogs: 1,
 		jobManagers: 1,
 		repoSessions: 1,
