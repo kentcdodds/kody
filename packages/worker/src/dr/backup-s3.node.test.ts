@@ -92,11 +92,10 @@ test('head and getText retry transient 503 responses', async () => {
 		.fn()
 		.mockResolvedValueOnce(jsonResponse(503))
 		.mockResolvedValueOnce(jsonResponse(200, '', { etag: '"h"' }))
-	const headClient = createDrBackupS3Client(
-		config,
-		headFetch as typeof fetch,
-		{ maxAttempts: 2, baseDelayMs: 1 },
-	)
+	const headClient = createDrBackupS3Client(config, headFetch as typeof fetch, {
+		maxAttempts: 2,
+		baseDelayMs: 1,
+	})
 	await expect(headClient.head('blob')).resolves.toEqual({
 		exists: true,
 		status: 200,
