@@ -204,6 +204,7 @@ export async function getSealedEscrowBlob(input: {
 	const fetchImpl = input.fetchImpl ?? fetch
 	const response = await fetchImpl(url, {
 		method: 'GET',
+		signal: AbortSignal.timeout(30_000),
 		headers: {
 			Authorization: authorization,
 			'x-amz-content-sha256': payloadHash,
@@ -309,11 +310,6 @@ export async function main(
 	const options = parseArgs(argv)
 	const inputPath = options.inputPath ?? env.ESCROW_INPUT_PATH
 	const outputPath = options.outputPath ?? env.ESCROW_OUTPUT_PATH
-	const passphrase = env.SECRET_ESCROW_PASSPHRASE?.length
-		? env.SECRET_ESCROW_PASSPHRASE
-		: await promptForPassphrase()
-	const version = env.ESCROW_KEY_VERSION?.trim() || 'v1'
-	const objectKey = buildEscrowSecretStoreKey(version)
 
 	const body = inputPath
 		? await readFile(path.resolve(inputPath), 'utf8')
@@ -322,7 +318,9 @@ export async function main(
 				bucketName: requiredEnv(env, 'DR_BACKUP_BUCKET_NAME'),
 				accessKeyId: requiredEnv(env, 'DR_BACKUP_ACCESS_KEY_ID'),
 				secretAccessKey: requiredEnv(env, 'DR_BACKUP_SECRET_ACCESS_KEY'),
-				objectKey,
+				objectKey: buildEscrowSecretStoreKey(
+					env.ESCROW_KEY_VERSION?.trim() || 'v1',
+				),
 			})
 	let inputValue: unknown
 	try {
@@ -331,6 +329,9 @@ export async function main(
 		throw new Error('Sealed escrow input is not valid JSON')
 	}
 	const blob: SealedEscrowBlob = parseSealedEscrowBlob(inputValue)
+	const passphrase = env.SECRET_ESCROW_PASSPHRASE?.length
+		? env.SECRET_ESCROW_PASSPHRASE
+		: await promptForPassphrase()
 	const secretValue = unsealEscrowSecret(blob, passphrase)
 	await writeRecoveredSecret(secretValue, outputPath)
 	return secretValue

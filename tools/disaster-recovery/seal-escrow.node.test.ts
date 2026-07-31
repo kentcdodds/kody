@@ -60,6 +60,15 @@ test('the operator unseal tool round-trips sealed key bytes and fails closed', a
 		])
 		expect(await readFile(outputPath, 'utf8')).toBe(secretValue)
 		expect((await stat(outputPath)).mode & 0o777).toBe(0o600)
+		await expect(
+			unsealMain({ SECRET_ESCROW_PASSPHRASE: passphrase }, [
+				'--input',
+				inputPath,
+				'--output',
+				outputPath,
+			]),
+		).rejects.toMatchObject({ code: 'EEXIST' })
+		expect(await readFile(outputPath, 'utf8')).toBe(secretValue)
 
 		const mismatchedPath = path.join(directory, 'mismatched.json')
 		const mismatchedOutputPath = path.join(directory, 'mismatched-output')

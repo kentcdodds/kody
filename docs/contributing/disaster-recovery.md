@@ -305,7 +305,9 @@ Escrow model (solo):
 
    The tool reads `SECRET_ESCROW_PASSPHRASE` or prompts without echo. It creates
    the output with mode `0600`, refuses repository paths and existing files, and
-   emits no secret metadata. Omit `--output` only when writing the recovered key
+   emits no secret metadata. The output parent directory must already exist.
+   `ESCROW_INPUT_PATH` and `ESCROW_OUTPUT_PATH` are the environment equivalents
+   of the two flags. Omit `--output` only when writing the recovered key
    directly to stdout is intentional. To read from the DR bucket instead of a
    local file, omit `--input`, set the DR bucket credentials, and select the
    sealed object with `ESCROW_KEY_VERSION` (default `v1`).
