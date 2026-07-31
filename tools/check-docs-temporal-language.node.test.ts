@@ -35,6 +35,52 @@ test('stripMarkdownCode removes inline and fenced code while preserving lines', 
 	expect(stripped).toContain('Still prose.')
 })
 
+test('stripMarkdownCode binds fences by character and minimum length', () => {
+	const content = [
+		'~~~~md',
+		'~~~',
+		'Kody now supports fenced code.',
+		'```',
+		'~~~~',
+		'Kody now supports prose.',
+	].join('\n')
+	const matches = findTemporalLanguageMatches({
+		relativePath: 'docs/use/example.md',
+		content,
+	})
+
+	expect(matches).toEqual([
+		expect.objectContaining({ line: 6, pattern: 'Kody now' }),
+		expect.objectContaining({
+			line: 6,
+			pattern: 'now support/accept/require/use/store/return',
+		}),
+	])
+})
+
+test('stripMarkdownCode masks multi-backtick inline code spans', () => {
+	const content = [
+		'Before ``code `x` Kody now supports hidden`` after.',
+		'Kody now supports prose.',
+	].join('\n')
+	const stripped = stripMarkdownCode(content)
+	const matches = findTemporalLanguageMatches({
+		relativePath: 'docs/use/example.md',
+		content,
+	})
+
+	expect(stripped.split('\n')[0]).toHaveLength(
+		content.split('\n')[0]?.length ?? 0,
+	)
+	expect(matches).toEqual([
+		expect.objectContaining({ line: 2, pattern: 'Kody now' }),
+		expect.objectContaining({
+			line: 2,
+			pattern: 'now support/accept/require/use/store/return',
+		}),
+	])
+})
+
 test.each([
 	['Now we reject invalid manifests.', 'now we'],
 	['We now reject invalid manifests.', 'we now'],
@@ -126,6 +172,10 @@ test('discovers durable docs and scans them end to end', async () => {
 			mkdir(path.join(cwd, 'packages', 'worker', 'src', 'mcp'), {
 				recursive: true,
 			}),
+			mkdir(
+				path.join(cwd, 'packages', 'worker', 'src', 'mcp', 'instructions'),
+				{ recursive: true },
+			),
 		])
 		await Promise.all([
 			writeFile(path.join(cwd, 'README.md'), 'Current behavior.\n'),
@@ -149,6 +199,18 @@ test('discovers durable docs and scans them end to end', async () => {
 				),
 				'export const instructions = "Current behavior."\n',
 			),
+			writeFile(
+				path.join(
+					cwd,
+					'packages',
+					'worker',
+					'src',
+					'mcp',
+					'instructions',
+					'base-server-fragments.ts',
+				),
+				'export const fragment = "Current behavior."\n',
+			),
 		])
 
 		expect(await listDocumentationPaths(cwd)).toEqual([
@@ -156,6 +218,7 @@ test('discovers durable docs and scans them end to end', async () => {
 			'AGENTS.md',
 			'README.md',
 			'docs/use/example.md',
+			'packages/worker/src/mcp/instructions/base-server-fragments.ts',
 			'packages/worker/src/mcp/server-instructions.ts',
 		])
 		expect(await checkDocumentationTemporalLanguage(cwd)).toEqual([

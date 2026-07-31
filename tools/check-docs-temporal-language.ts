@@ -55,12 +55,89 @@ function blankPreservingNewlines(value: string): string {
 	return value.replace(/[^\r\n]/g, ' ')
 }
 
+function maskInlineCode(line: string): string {
+	const characters = line.split('')
+	let cursor = 0
+
+	while (cursor < line.length) {
+		if (line[cursor] !== '`') {
+			cursor += 1
+			continue
+		}
+
+		let openingEnd = cursor
+		while (line[openingEnd] === '`') {
+			openingEnd += 1
+		}
+		const delimiterLength = openingEnd - cursor
+		let searchFrom = openingEnd
+		let closingEnd: number | null = null
+
+		while (searchFrom < line.length) {
+			const closingStart = line.indexOf('`', searchFrom)
+			if (closingStart === -1) {
+				break
+			}
+			let candidateEnd = closingStart
+			while (line[candidateEnd] === '`') {
+				candidateEnd += 1
+			}
+			if (candidateEnd - closingStart === delimiterLength) {
+				closingEnd = candidateEnd
+				break
+			}
+			searchFrom = candidateEnd
+		}
+
+		if (closingEnd === null) {
+			cursor = openingEnd
+			continue
+		}
+		characters.fill(' ', cursor, closingEnd)
+		cursor = closingEnd
+	}
+
+	return characters.join('')
+}
+
 export function stripMarkdownCode(content: string): string {
-	const withoutFencedCode = content.replace(
-		/(?:^|\n)[ \t]*(?:```|~~~)[^\n]*(?:\n[\s\S]*?(?:^|\n)[ \t]*(?:```|~~~)[ \t]*(?=\n|$)|$)/g,
-		blankPreservingNewlines,
-	)
-	return withoutFencedCode.replace(/`[^`\n]+`/g, blankPreservingNewlines)
+	const parts = content.split(/(\r\n|\r|\n)/)
+	let openFence: { character: string; length: number } | null = null
+
+	for (let index = 0; index < parts.length; index += 2) {
+		const line = parts[index]
+		if (line === undefined) {
+			continue
+		}
+
+		if (openFence) {
+			const closingFence = /^[ \t]{0,3}(?<fence>`{3,}|~{3,})[ \t]*$/.exec(line)
+				?.groups?.fence
+			parts[index] = blankPreservingNewlines(line)
+			if (
+				closingFence?.[0] === openFence.character &&
+				closingFence.length >= openFence.length
+			) {
+				openFence = null
+			}
+			continue
+		}
+
+		const openingFence = /^[ \t]{0,3}(?<fence>`{3,}|~{3,})/.exec(line)?.groups
+			?.fence
+		if (openingFence) {
+			openFence = {
+				character: openingFence[0] ?? '',
+				length: openingFence.length,
+			}
+			parts[index] = blankPreservingNewlines(line)
+			continue
+		}
+
+		parts[index] = maskInlineCode(line)
+	}
+
+	return parts.join('')
 }
 
 export function findTemporalLanguageMatches(input: {
@@ -96,9 +173,10 @@ export function findTemporalLanguageMatches(input: {
 	return matches
 }
 
-async function collectMarkdownPaths(
+async function collectMatchingPaths(
 	directory: string,
 	relativePrefix: string,
+	filePattern: RegExp = /\.mdx?$/,
 ): Promise<Array<string>> {
 	const entries = await readdir(directory, { withFileTypes: true })
 	const paths: Array<string> = []
@@ -107,8 +185,14 @@ async function collectMarkdownPaths(
 		const relativePath = `${relativePrefix}/${entry.name}`
 		const absolutePath = path.join(directory, entry.name)
 		if (entry.isDirectory()) {
-			paths.push(...(await collectMarkdownPaths(absolutePath, relativePath)))
-		} else if (entry.isFile() && /\.mdx?$/.test(entry.name)) {
+			paths.push(
+				...(await collectMatchingPaths(
+					absolutePath,
+					relativePath,
+					filePattern,
+				)),
+			)
+		} else if (entry.isFile() && filePattern.test(entry.name)) {
 			paths.push(relativePath.replaceAll('\\', '/'))
 		}
 	}
@@ -125,8 +209,22 @@ export async function listDocumentationPaths(
 		'packages/worker/src/mcp/server-instructions.ts',
 	]
 	for (const root of ['docs', '.agents']) {
-		paths.push(...(await collectMarkdownPaths(path.join(cwd, root), root)))
+		paths.push(...(await collectMatchingPaths(path.join(cwd, root), root)))
 	}
+	const instructionsRoot = path.join(
+		'packages',
+		'worker',
+		'src',
+		'mcp',
+		'instructions',
+	)
+	paths.push(
+		...(await collectMatchingPaths(
+			path.join(cwd, instructionsRoot),
+			instructionsRoot,
+			/\.ts$/,
+		)),
+	)
 	return [...new Set(paths)].sort()
 }
 
