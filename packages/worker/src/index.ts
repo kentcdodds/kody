@@ -353,9 +353,9 @@ const appHandler = withCors({
 			})
 		}
 
-		// Inline (same-origin) package apps. Deployments that configure
-		// PACKAGE_APP_BASE_URL never reach this branch: handlePackageAppOriginRequest
-		// redirects these paths to the package-app origin first.
+		// Non-production inline package apps. Production requests normally redirect
+		// in handlePackageAppOriginRequest; this handler independently returns 500
+		// rather than executing package code if that routing invariant is broken.
 		if (isPackageAppRequestPath(url.pathname)) {
 			return handlePackageAppRequest(request, env)
 		}

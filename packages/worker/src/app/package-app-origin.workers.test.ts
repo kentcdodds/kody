@@ -2,7 +2,10 @@ import { env, exports } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
-import { createPackageCodeRequest } from '#app/handlers/package-app.ts'
+import {
+	createPackageCodeRequest,
+	handlePackageAppRequest,
+} from '#app/handlers/package-app.ts'
 import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
 import {
 	ensurePackageSubscriptionTestSchema,
@@ -14,7 +17,7 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 // Different ports on purpose: swapping origins by mutating a `URL` keeps the
 // original port, and identical ports would hide that.
 const appOrigin = 'https://app.kody.test:8788'
-const packageAppOrigin = 'https://packages.kody.test'
+const packageAppOrigin = 'https://packages.isolated.test'
 const ownerEmail = 'pkg-owner@example.com'
 const ownerUsername = 'pkg-owner'
 
@@ -22,10 +25,14 @@ const ownerUsername = 'pkg-owner'
  * The generated `Env` types pin production var literals, so origin overrides go
  * through a mutable view of the same object the worker handler receives.
  */
-function configureOrigins(input: { packageAppBaseUrl?: string }) {
+function configureOrigins(input: {
+	packageAppBaseUrl?: string
+	runtime: 'production' | 'preview'
+}) {
 	const mutableEnv = env as unknown as Record<string, string | undefined>
 	mutableEnv.APP_BASE_URL = appOrigin
 	mutableEnv.PACKAGE_APP_BASE_URL = input.packageAppBaseUrl
+	mutableEnv.SENTRY_ENVIRONMENT = input.runtime
 }
 
 async function workerFetch(
@@ -93,7 +100,10 @@ function cookieValue(setCookieHeader: string) {
 }
 
 test('hosted package apps move to the package-app origin behind a single-use handoff', async () => {
-	configureOrigins({ packageAppBaseUrl: packageAppOrigin })
+	configureOrigins({
+		packageAppBaseUrl: packageAppOrigin,
+		runtime: 'production',
+	})
 	const sessionCookie = await seedOwnerSessionCookie()
 
 	// 1. The app origin never executes package code: it mints a handoff token and
@@ -231,7 +241,7 @@ test('hosted package apps move to the package-app origin behind a single-use han
 })
 
 test('package apps stay inline on the app origin when no package-app origin is configured', async () => {
-	configureOrigins({ packageAppBaseUrl: undefined })
+	configureOrigins({ packageAppBaseUrl: undefined, runtime: 'preview' })
 	const sessionCookie = await seedOwnerSessionCookie()
 
 	const response = await workerFetch(
@@ -241,6 +251,41 @@ test('package apps stay inline on the app origin when no package-app origin is c
 	// Served inline (no cross-origin redirect); the saved package does not exist.
 	expect(response.status).toBe(404)
 	await expect(response.text()).resolves.toBe('Saved package app not found.')
+})
+
+test('production package apps fail closed when origin isolation is missing or unsafe', async () => {
+	for (const packageAppBaseUrl of [
+		undefined,
+		appOrigin,
+		'https://packages.kody.test',
+	]) {
+		configureOrigins({ packageAppBaseUrl, runtime: 'production' })
+		const response = await workerFetch(
+			`${appOrigin}/@${ownerUsername}/packages/demo`,
+		)
+
+		expect(response.status).toBe(500)
+		expect(response.headers.get('Cache-Control')).toBe('no-store')
+		expect(response.headers.get('Location')).toBeNull()
+		await expect(response.text()).resolves.toContain(
+			'Hosted package apps are unavailable.',
+		)
+	}
+
+	// Defense in depth: even a future routing regression cannot call the inline
+	// handler in production when the separate origin itself is configured safely.
+	configureOrigins({
+		packageAppBaseUrl: packageAppOrigin,
+		runtime: 'production',
+	})
+	const inlineResponse = await handlePackageAppRequest(
+		new Request(`${appOrigin}/@${ownerUsername}/packages/demo`),
+		env,
+	)
+	expect(inlineResponse.status).toBe(500)
+	await expect(inlineResponse.text()).resolves.toContain(
+		'Inline package-app serving is disabled in production.',
+	)
 })
 
 test('createPackageCodeRequest drops credential headers in the workers runtime', async () => {

@@ -3,7 +3,11 @@ import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import {
+	getAppBaseUrl,
+	getPackageAppOriginConfigurationError,
+} from '#worker/app-base-url.ts'
+import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { type PackageAppOwner } from '#app/package-app-owner.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
@@ -49,8 +53,8 @@ export type PackageAppPath = NonNullable<ReturnType<typeof parsePackageAppPath>>
 // Credentials that must never reach author-supplied package code. `Cookie`
 // carries the owner's `kody_session`, `Authorization` carries MCP bearer tokens,
 // and the `X-Kody-*` family is worker-internal auth (connector session keys and
-// user ids). Stripping is unconditional: it is required when package apps share
-// the app origin and harmless when they are served cross-site.
+// user ids). Stripping is unconditional as defense in depth and is also required
+// for the non-production inline serving path.
 const strippedPackageRequestHeaders = [
 	'cookie',
 	'authorization',
@@ -277,10 +281,9 @@ function createPackageAppErrorResponse(input: {
 /**
  * Serve a hosted package app for an already-authenticated owner.
  *
- * The owner is resolved by the caller because the two hosting modes authenticate
- * differently: inline (same-origin) mode uses the `kody_session` cookie, and the
- * package-app origin uses its own host-scoped `kody_pkg_session` cookie (see
- * `packages/worker/src/app/package-app-origin.ts`).
+ * The owner is resolved by the caller because the package-app origin uses its
+ * own host-scoped `kody_pkg_session` cookie, while the non-production inline
+ * mode uses the `kody_session` cookie (see `package-app-origin.ts`).
  */
 export async function servePackageAppRequest(input: {
 	request: Request
@@ -433,6 +436,22 @@ export async function servePackageAppRequest(input: {
  * is never reached — see `packages/worker/src/app/package-app-origin.ts`.
  */
 export async function handlePackageAppRequest(request: Request, env: Env) {
+	if (!isNonProductionRuntime(env)) {
+		const configurationError =
+			getPackageAppOriginConfigurationError(env) ??
+			'Inline package-app serving is disabled in production.'
+		return new Response(
+			`Hosted package apps are unavailable. ${configurationError}`,
+			{
+				status: 500,
+				headers: {
+					'Cache-Control': 'no-store',
+					'Content-Type': 'text/plain; charset=utf-8',
+				},
+			},
+		)
+	}
+
 	const requestUrl = new URL(request.url)
 	const packagePath = parsePackageAppPath(requestUrl.pathname)
 	if (!packagePath) {

@@ -353,6 +353,12 @@ A package app is optional.
 When `package.json#kody.app` is present, the package is hosted under the package
 app route.
 
+Production-hosted package apps run on Kody's separate `kodyapps.dev` origin, not
+on the signed-in app origin. Opening an app from Kody performs a short-lived
+session handoff to that origin. Package author JavaScript cannot use the
+first-party `kody_session` cookie or call authenticated Kody pages as the
+signed-in user.
+
 Use the package app model when the package needs:
 
 - interactive UI

@@ -83,8 +83,8 @@ Optional Wrangler `var` (public, non-secret; see
 
 ## Hosted package app origin
 
-Optional Wrangler `var` (public, non-secret; see
-`packages/worker/src/app-base-url.ts` and
+Wrangler `var` (public and non-secret; required in production, optional in
+confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
 `packages/worker/src/app/package-app-origin.ts`):
 
 - `PACKAGE_APP_BASE_URL` — the origin that hosted package apps are served from.
@@ -94,8 +94,12 @@ Optional Wrangler `var` (public, non-secret; see
   [setup-manifest.md](./setup-manifest.md)). It **must be a separate registrable
   domain** from `APP_BASE_URL`: that is what makes author-supplied package code
   cross-site, so the `SameSite=Lax` `kody_session` cookie never reaches it.
-  Preview, tests, and E2E leave it unset and keep serving package apps inline on
-  the app origin at `/@{username}/packages/*`.
+  Production origin validation also requires `APP_BASE_URL` so this relationship
+  can be checked at runtime. Production returns `500` for package-app requests
+  when this value is missing, invalid, equal to `APP_BASE_URL`, or on the same
+  registrable domain; it never falls back to inline serving. Preview, tests, and
+  E2E may leave it unset and keep serving package apps inline on the app origin
+  at `/@{username}/packages/*`.
 
   `npm run dev` runs the **production** Wrangler environment, so the committed
   production value reaches local dev too; `getPackageAppBaseUrl` ignores an

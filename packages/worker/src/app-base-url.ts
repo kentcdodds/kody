@@ -1,3 +1,6 @@
+import { getDomain } from 'tldts'
+import { isNonProductionRuntime } from '#app/deployment-env.ts'
+
 const DEFAULT_APP_BASE_URL = 'https://heykody.dev'
 
 type PackageAppBaseUrlEnv = {
@@ -7,6 +10,10 @@ type PackageAppBaseUrlEnv = {
 
 type AppBaseUrlEnv = PackageAppBaseUrlEnv & {
 	APP_BASE_URL?: string | null
+}
+
+export type PackageAppOriginEnv = AppBaseUrlEnv & {
+	SENTRY_ENVIRONMENT?: string | undefined
 }
 
 function isLocallyServableHostname(hostname: string) {
@@ -20,12 +27,12 @@ function isLocallyServableHostname(hostname: string) {
 
 /**
  * Resolve the origin hosted package apps are served from, or `null` when the
- * deployment serves them inline on the app origin.
+ * a non-production deployment serves them inline on the app origin.
  *
- * Production sets `PACKAGE_APP_BASE_URL` to a separate registrable domain so
+ * Production must set `PACKAGE_APP_BASE_URL` to a separate registrable domain so
  * author-supplied package code is cross-site from the first-party app origin
  * and can never receive the owner's `kody_session` cookie. Preview, tests, and
- * E2E leave it unset and keep the path-based same-origin behavior.
+ * E2E may leave it unset and keep the path-based same-origin behavior.
  *
  * `npm run dev` runs against the **production** Wrangler environment, so the
  * committed production value reaches local dev too. A local server cannot serve
@@ -54,6 +61,47 @@ export function getPackageAppBaseUrl(input: { env: PackageAppBaseUrlEnv }) {
 		// same-origin behavior instead of routing to a bogus host.
 		return null
 	}
+}
+
+function getRegistrableDomain(url: URL) {
+	return getDomain(url.hostname) ?? url.hostname.toLowerCase()
+}
+
+/**
+ * Return a clear production configuration failure instead of allowing package
+ * apps to fall back to the first-party origin.
+ */
+export function getPackageAppOriginConfigurationError(
+	env: PackageAppOriginEnv,
+) {
+	if (isNonProductionRuntime(env)) return null
+
+	const packageAppOrigin = getPackageAppBaseUrl({ env })
+	if (!packageAppOrigin) {
+		return 'Production requires PACKAGE_APP_BASE_URL to be set to a valid, separate registrable origin.'
+	}
+
+	const configuredAppBaseUrl = env.APP_BASE_URL?.trim()
+	if (!configuredAppBaseUrl) {
+		return 'Production requires APP_BASE_URL when hosted package apps are enabled.'
+	}
+
+	let appOrigin: string
+	try {
+		appOrigin = new URL(configuredAppBaseUrl).origin
+	} catch {
+		return 'Production requires APP_BASE_URL to be a valid origin when hosted package apps are enabled.'
+	}
+	const packageAppUrl = new URL(packageAppOrigin)
+	const appUrl = new URL(appOrigin)
+	if (
+		packageAppUrl.origin === appUrl.origin ||
+		getRegistrableDomain(packageAppUrl) === getRegistrableDomain(appUrl)
+	) {
+		return 'Production requires PACKAGE_APP_BASE_URL to use a separate registrable domain from APP_BASE_URL.'
+	}
+
+	return null
 }
 
 /**

@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { getAppBaseUrl, getPackageAppBaseUrl } from './app-base-url.ts'
+import {
+	getAppBaseUrl,
+	getPackageAppBaseUrl,
+	getPackageAppOriginConfigurationError,
+} from './app-base-url.ts'
 
 test('getAppBaseUrl prefers the request origin when present', () => {
 	expect(
@@ -95,4 +99,41 @@ test('the package-app origin is configurable and never resolves as the app origi
 	expect(
 		getAppBaseUrl({ env, requestUrl: 'https://heykody.dev/@me/packages/x' }),
 	).toBe('https://heykody.dev')
+})
+
+test('production package-app origin configuration requires a separate registrable domain', () => {
+	expect(
+		getPackageAppOriginConfigurationError({
+			APP_BASE_URL: 'https://heykody.dev',
+			SENTRY_ENVIRONMENT: 'preview',
+		}),
+	).toBeNull()
+
+	expect(
+		getPackageAppOriginConfigurationError({
+			APP_BASE_URL: 'https://heykody.dev',
+			SENTRY_ENVIRONMENT: 'production',
+		}),
+	).toContain('requires PACKAGE_APP_BASE_URL')
+
+	for (const packageAppBaseUrl of [
+		'https://heykody.dev',
+		'https://apps.heykody.dev',
+	]) {
+		expect(
+			getPackageAppOriginConfigurationError({
+				APP_BASE_URL: 'https://heykody.dev',
+				PACKAGE_APP_BASE_URL: packageAppBaseUrl,
+				SENTRY_ENVIRONMENT: 'production',
+			}),
+		).toContain('separate registrable domain')
+	}
+
+	expect(
+		getPackageAppOriginConfigurationError({
+			APP_BASE_URL: 'https://heykody.dev',
+			PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
+			SENTRY_ENVIRONMENT: 'production',
+		}),
+	).toBeNull()
 })

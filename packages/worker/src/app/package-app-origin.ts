@@ -1,6 +1,10 @@
 import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
-import { getAppBaseUrl, getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import {
+	getAppBaseUrl,
+	getPackageAppBaseUrl,
+	getPackageAppOriginConfigurationError,
+} from '#worker/app-base-url.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { isSecureRequest } from '#app/auth-session.ts'
@@ -24,8 +28,8 @@ import { wantsJson } from '#worker/utils.ts'
 /**
  * Host-based isolation for hosted package apps.
  *
- * Package apps execute author-supplied HTML/JS. While they were served from the
- * app origin, that code was same-site with `kody_session`: a package page could
+ * Package apps execute author-supplied HTML/JS. If they were served from the app
+ * origin, that code would be same-site with `kody_session`: a package page could
  * call first-party endpoints with the owner's credentials, and the owner's
  * cookie was forwarded into the package worker. Serving them from a separate
  * registrable domain (`PACKAGE_APP_BASE_URL`) makes them cross-site, so the
@@ -66,6 +70,16 @@ function redirectResponse(input: {
 	})
 	if (input.setCookie) headers.append('Set-Cookie', input.setCookie)
 	return new Response(null, { status: input.status, headers })
+}
+
+function createPackageAppOriginConfigurationErrorResponse(message: string) {
+	return new Response(`Hosted package apps are unavailable. ${message}`, {
+		status: 500,
+		headers: {
+			'Cache-Control': 'no-store',
+			'Content-Type': 'text/plain; charset=utf-8',
+		},
+	})
 }
 
 /**
@@ -262,19 +276,24 @@ async function handleRequestOnPackageAppOrigin(input: {
 /**
  * Route a request according to the configured package-app origin.
  *
- * Returns `null` when the deployment has no separate package-app origin, or when
- * the request is ordinary first-party traffic on the app origin — both cases
- * fall through to the normal worker pipeline.
+ * Returns `null` when a non-production deployment has no separate package-app
+ * origin, or when the request is ordinary first-party traffic on the app origin.
+ * A production package-app request with unsafe origin configuration fails closed.
  */
 export async function handlePackageAppOriginRequest(
 	request: Request,
 	env: Env,
 ) {
+	const url = new URL(request.url)
+	const packagePath = parsePackageAppPath(url.pathname)
+	const configurationError = getPackageAppOriginConfigurationError(env)
+	if (configurationError && packagePath) {
+		return createPackageAppOriginConfigurationErrorResponse(configurationError)
+	}
+
 	const packageAppOrigin = getPackageAppBaseUrl({ env })
 	if (!packageAppOrigin) return null
 
-	const url = new URL(request.url)
-	const packagePath = parsePackageAppPath(url.pathname)
 	if (url.origin === packageAppOrigin) {
 		return await handleRequestOnPackageAppOrigin({
 			request,

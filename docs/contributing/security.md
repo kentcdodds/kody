@@ -151,13 +151,15 @@ in the Worker `fetch` handler:
   terminates in a `403` that links back to the app origin, so a browser that
   refuses the cookie fails visibly instead of ping-ponging between hosts.
 
-When no package-app origin resolves — preview, tests, E2E, and `npm run dev`,
-which ignores an origin a local server cannot answer on — package apps keep
-being served inline on the app origin by `handlePackageAppRequest`. That path is
-still credential-stripped, but it is same-origin, so **do not treat a local run
-as representative of the production isolation boundary**. To exercise the
-two-origin flow locally, set
-`PACKAGE_APP_BASE_URL=http://packages.localhost:<port>` in
+Production fails closed with `500` before executing package code when
+`PACKAGE_APP_BASE_URL` is missing, invalid, equal to `APP_BASE_URL`, or on the
+same registrable domain. There is no production inline fallback.
+
+Preview, tests, E2E, and `npm run dev` may keep serving package apps inline when
+no package-app origin resolves. That path is still credential-stripped, but it
+is same-origin, so **do not treat a non-production inline run as representative
+of the production isolation boundary**. To exercise the two-origin flow locally,
+set `PACKAGE_APP_BASE_URL=http://packages.localhost:<port>` in
 `packages/worker/.env`.
 
 The cross-site handoff (how the owner is recognized on the package-app origin

@@ -174,10 +174,11 @@ export const EnvSchema = object({
 		'Missing MCP_CLIENT_HUB binding for user-added MCP server connections.',
 	),
 	APP_BASE_URL: optionalUrlStringSchema,
-	// Origin that hosted package apps are served from. Set in production only
-	// (a separate registrable domain) so author-supplied package code is
-	// cross-site from the app origin; unset locally/preview/test keeps the
-	// same-origin path-based behavior. See docs/contributing/security.md.
+	// Origin that hosted package apps are served from. Required in production
+	// and must use a separate registrable domain so author-supplied package code
+	// is cross-site from the app origin. It may be unset locally/preview/test,
+	// where the same-origin path-based behavior remains available.
+	// See docs/contributing/security.md.
 	PACKAGE_APP_BASE_URL: optionalUrlStringSchema,
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,

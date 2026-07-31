@@ -98,9 +98,10 @@ This project uses the following resources:
     origin so author-supplied package code is cross-site. Do not point it at a
     subdomain of the app origin, and do not host anything first-party on it. See
     [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
-  - Forks that do not register a second domain simply leave
-    `PACKAGE_APP_BASE_URL` unset; package apps then serve inline on the app
-    origin, which is weaker isolation.
+  - Production forks must register a second domain and set
+    `PACKAGE_APP_BASE_URL`; package-app requests return `500` when it is missing
+    or not on a separate registrable domain. Confirmed local, preview, and test
+    runtimes may leave it unset and use inline serving.
 - Workers Observability OTLP destination (account-level)
   - Workers automatic tracing is enabled via `observability.traces` in
     `packages/worker/wrangler.jsonc`; traces are viewable in the Workers
@@ -242,12 +243,12 @@ automatically:
   Most request-scoped app/MCP URLs use the inbound request origin so OAuth
   metadata matches the host the client connected to. Password reset email sends
   require this value and use `kody@<hostname>` as the sender.)
-- `PACKAGE_APP_BASE_URL` (optional Wrangler `var`; origin for hosted package
-  apps. Production sets `https://kodyapps.dev` in
-  `packages/worker/wrangler.jsonc`, and the deploy attaches that host as a
-  Workers custom domain from the generated config (see the Cloudflare resources
-  list above). Must be a **separate registrable domain** from `APP_BASE_URL` —
-  see
+- `PACKAGE_APP_BASE_URL` (Wrangler `var`; required in production and optional
+  for confirmed local/preview/test runtimes; origin for hosted package apps.
+  Production sets `https://kodyapps.dev` in `packages/worker/wrangler.jsonc`,
+  and the deploy attaches that host as a Workers custom domain from the
+  generated config (see the Cloudflare resources list above). Must be a
+  **separate registrable domain** from `APP_BASE_URL` — see
   [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
   Local dev ignores any value it cannot serve itself, and preview/test leave it
   unset, so those keep serving package apps inline on the app origin. Point it

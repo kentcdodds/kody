@@ -398,9 +398,11 @@ app origin has no code path that reads it, and the package-app origin has no
 first-party routes. Every request re-resolves the account from D1
 (`resolvePackageAppOwnerByStableUserId`) and fails closed for unknown, deleting,
 or suspended accounts, and for sessions issued at or before
-`users.password_changed_at` — the same rules browser sessions follow.
-Deployments with `PACKAGE_APP_BASE_URL` unset never mint either credential; they
-serve package apps inline behind `kody_session`.
+`users.password_changed_at` — the same rules browser sessions follow. Confirmed
+local, preview, and test runtimes with `PACKAGE_APP_BASE_URL` unset never mint
+either credential; they serve package apps inline behind `kody_session`.
+Production requires a separate registrable package-app origin and returns `500`
+instead of falling back inline when that configuration is missing or unsafe.
 
 ## Account secret reveal
 
