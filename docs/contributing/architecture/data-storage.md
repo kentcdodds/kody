@@ -714,9 +714,9 @@ on write unless a migration backfills existing rows.
   `package_invocation_tokens.package_kody_ids_json`,
   `package_invocation_tokens.export_names_json`, and
   `package_invocation_tokens.sources_json` (`0029-package-invocations.sql`)
-  store invocation-token scope projections. The sibling `package_invocations`
-  table from that migration was dropped (`0112-drop-package-invocations.sql`);
-  its replay cache lives in the RunLog Durable Object ledger now.
+  store invocation-token scope projections. Keyed invocation replay lives in the
+  RunLog Durable Object ledger (see [Run records](./run-records.md)); there is
+  no D1 `package_invocations` table (`0112-drop-package-invocations.sql`).
 - `email_messages.*_addresses_json`, `email_messages.references_json`,
   `email_messages.headers_json`, and `email_delivery_events.detail_json`
   (`0030-email-primitives.sql`, `0031-unified-email-receipt.sql`,

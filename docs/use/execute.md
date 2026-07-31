@@ -78,11 +78,10 @@ package artifacts do not contain a copy of the host runtime implementation, so
 old package artifacts automatically observe current host runtime behavior.
 
 Literal dynamic imports (`await import('kody:@scope/my-package/export-name')`)
-were **removed**. The call site throws a teaching error naming the replacement:
+are unsupported. The call site throws a teaching error naming the replacement:
 use a static `kody:@...` import when the target package's name is known when the
 code is written, or `packages.invoke` when it is not. Computed dynamic Kody
-package imports, including variables and template strings, have never been
-supported.
+package imports, including variables and template strings, are also unsupported.
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
 the module's **default export** as the first function argument. Shared helpers

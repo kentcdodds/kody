@@ -27,8 +27,7 @@ call, not about what user code does inside the call.
   lives in the per-user `RunLog` Durable Object (see
   [Run records](./run-records.md)), so the durability cost is **one awaited DO
   call for claim + run-record begin and one for terminal response + run-record
-  finish** — no D1 round trips at all (the legacy `package_invocations` table
-  and its dual-read fallback are gone).
+  finish** — no D1 round trips at all.
 
 ## Per-isolate caches and their staleness bounds
 

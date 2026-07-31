@@ -283,7 +283,7 @@ Rules:
   `D1 counter + sum of per-bucket estimates`, where only the bucket that
   triggers the baseline read (plus any inventoried bucket with no stored
   estimate yet) is probed live; every other bucket contributes its stored D1
-  estimate, so mutating writes no longer fan `getEstimatedBytes` RPCs across the
+  estimate, so mutating writes do not fan `getEstimatedBytes` RPCs across the
   user's whole bucket inventory. Live probe results are persisted
   fire-and-forget with **UPDATE-only** statements (they can never recreate an
   inventory row removed by account, package, or job deletion), and mutating

@@ -33,9 +33,14 @@ export const temporalLanguagePatterns: ReadonlyArray<TemporalLanguagePattern> =
 		{ label: 'Kody now', regex: /\bKody now\b/i },
 		{ label: 'previously we', regex: /\bpreviously we\b/i },
 		{ label: 'formerly we', regex: /\bformerly we\b/i },
+		{ label: 'as before', regex: /\bas before\b/i },
 		{
-			label: 'no longer support/accept/require/use',
-			regex: /\bno longer (?:support|accept|require|use)s?\b/i,
+			label: 'were removed',
+			regex: /\bwere(?:\s+\*{1,2})?\s*removed\b(?:\*{1,2})?/i,
+		},
+		{
+			label: 'no longer support/accept/require/use/fan/carry/replay',
+			regex: /\bno longer (?:support|accept|require|use|fan|carry|replay)s?\b/i,
 		},
 		{
 			label: 'now support/accept/require/use/store/return',

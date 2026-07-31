@@ -219,7 +219,7 @@ Restore rebuilds these; do not treat them as recovery media:
   the loss, it does not restore protection for keys used before it. The blast
   radius is duplicate side effects (a loss of correctness state) bounded by the
   90-day retention window; no stored user content is lost. The DO ledger is not
-  part of DR media, and D1 backups no longer carry any invocation ledger at all.
+  part of DR media, and D1 backups do not carry any invocation ledger.
 
 ### Honest gaps
 

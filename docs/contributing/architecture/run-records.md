@@ -202,32 +202,29 @@ keyed-execute recovery do not wait for an alarm.
 ## Keyed package-invocation idempotency ledger
 
 The same per-user `RunLog` DO also hosts the **keyed package-invocation
-idempotency ledger** (`package_invocation_ledger` table), migrated off the D1
-`package_invocations` table. This is correctness state, not observability: it
-holds the claims and bounded replay responses that keyed `packages.invoke`
-dedupes against. Unlike run history it cannot be rebuilt — a lost terminal row
-means a replayed delivery for that key re-executes instead of replaying.
+idempotency ledger** (`package_invocation_ledger` table). This is correctness
+state, not observability: it holds the claims and bounded replay responses that
+keyed `packages.invoke` dedupes against. Unlike run history it cannot be rebuilt
+— a lost terminal row means a replayed delivery for that key re-executes instead
+of replaying.
 
 - **Claim + run-record begin are one awaited DO RPC**
   (`claimPackageInvocation`): lookup-then-insert is atomic because DO execution
-  is serialized — strictly better than the D1 `INSERT OR IGNORE` race it
-  replaced — and the eager `running` run row is written in the same call. Stale
-  `in_progress` claims (15 minutes, matching request hash) are reclaimed in
-  place.
+  is serialized, and the eager `running` run row is written in the same call.
+  Stale `in_progress` claims (15 minutes, matching request hash) are reclaimed
+  in place.
 - **Terminal response + run-record finish are one awaited DO RPC**
-  (`finishPackageInvocation`): the bounded replay response (same restore-safe
-  byte ceiling as before) and the terminal run row land together; the ledger
-  update is fenced on the claim timestamp so a competing reclaim cannot be
-  overwritten.
+  (`finishPackageInvocation`): the bounded replay response (restore-safe byte
+  ceiling) and the terminal run row land together; the ledger update is fenced
+  on the claim timestamp so a competing reclaim cannot be overwritten.
 - **Ledger retention is DO-local**: terminal rows keep replay responses for 90
   days (`packageInvocationLedgerRetentionDays`), pruned by the same retention
   passes and alarm as run rows; `in_progress` rows are never pruned. There is no
-  D1 sweep — the legacy table is gone.
-- **The DO is the only store**: the legacy D1 `package_invocations` table was
-  dropped (`0112-drop-package-invocations.sql`) after the dual-read window was
-  deliberately waived, and the keyed path performs no D1 ledger reads or writes.
-  Keys claimed before the DO migration no longer replay; a redelivery for such a
-  key executes fresh, exactly like a new key.
+  D1 ledger or D1 sweep for this state.
+- **The DO is the only store**: the keyed path performs no D1 ledger reads or
+  writes (there is no D1 `package_invocations` table; see migration
+  `0112-drop-package-invocations.sql`). Only keys claimed in this DO ledger can
+  replay; a redelivery for an unknown key executes fresh.
 - Account export pages ledger rows through the same `run_records` section cursor
   (runs first, then ledger rows); account deletion purges them with `clearAll`.
   Disaster recovery deliberately does not stage the DO — losing it risks

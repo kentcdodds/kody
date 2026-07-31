@@ -89,9 +89,13 @@ test.each([
 	['Previously we stored package state elsewhere.', 'previously we'],
 	['Formerly we stored package state elsewhere.', 'formerly we'],
 	['The API no longer supports that option.', 'no longer support'],
+	['Mutating writes no longer fan RPCs across buckets.', 'no longer support'],
 	['The API now supports this option.', 'now support'],
 	['This guide was recently updated.', 'recently changed'],
 	['The API used to require that option.', 'used to support'],
+	['Use the same restore-safe byte ceiling as before.', 'as before'],
+	['Literal dynamic imports were removed.', 'were removed'],
+	['Literal dynamic imports were **removed**.', 'were removed'],
 ])('flags rollout prose %j', (content, pattern) => {
 	expect(
 		findTemporalLanguageMatches({

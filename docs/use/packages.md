@@ -148,10 +148,10 @@ exhaustive.
   Ad hoc execute code bundles per call, so static imports from execute always
   see the current published version.
 - Literal dynamic imports such as
-  `await import("kody:@scope/my-package/export")` were **removed**. The call
-  site throws a teaching error naming the replacement, and package publish
-  checks fail on them: use a static import when the name is known at write time,
-  or `packages.invoke` when it is not (see
+  `await import("kody:@scope/my-package/export")` are unsupported. The call site
+  throws a teaching error naming the replacement, and package publish checks
+  fail on them: use a static import when the name is known at write time, or
+  `packages.invoke` when it is not (see
   [Dynamic package invocation](#dynamic-package-invocation)).
 - Every direct static `kody:@...` import must be declared in
   `package.json#kody.dependencies` using the imported package name, for example
@@ -259,13 +259,13 @@ Use keyless `packages.invoke` from execute when you need to enter a saved
 package as that package so it receives `packageContext`, package-owned storage,
 package-mounted secrets (`kody.secretMounts`), and its own `packages` helper.
 
-**Removed:** `packages.invokeChecked`, `packages.check`, and literal dynamic
-`import("kody:@...")` no longer exist. Calling any of them from new source or
-newly built bundles throws a teaching error naming the replacement, and package
-publish checks fail on them (bundles published before the removal keep working
-through hydration until their packages republish). `packages.invoke` performs
-the contract check that `invokeChecked` and `check` provided, and the
-static/dynamic rules above cover the literal dynamic import cases. The
+**Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
+dynamic `import("kody:@...")` are not available. Calling any of them from new
+source or newly built bundles throws a teaching error naming the replacement,
+and package publish checks fail on them. Older published bundles that still
+embed host-resolved dynamic-import placeholders hydrate at execution time until
+those packages republish. `packages.invoke` performs the contract check inline,
+and the static/dynamic rules above cover the literal dynamic import cases. The
 `0002-static-first-invocation` package codemod migrates `invokeChecked` call
 sites mechanically.
 
