@@ -125,6 +125,29 @@ type FakeLedgerRow = {
 function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 	const ledgerRows: Array<FakeLedgerRow> = []
 	const runRows = new Map<string, Record<string, unknown>>()
+	const jobObservability = new Map<
+		string,
+		{
+			jobId: string
+			lastRunAt: string | null
+			lastRunStatus: 'success' | 'error' | null
+			lastRunError: string | null
+			lastDurationMs: number | null
+			runCount: number
+			successCount: number
+			errorCount: number
+			updatedAt: string
+		}
+	>()
+	const packageRunSuccesses = new Map<
+		string,
+		{ packageId: string; successCount: number; updatedAt: string }
+	>()
+	const activationMilestones = new Map<
+		string,
+		{ milestone: string; reachedAt: string; packageId: string | null }
+	>()
+	let activationInitialized = false
 	const clone = <T>(value: T): T => structuredClone(value)
 	const findByKey = (key: {
 		tokenId: string
@@ -225,7 +248,97 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 				ledgerUpdated = true
 			}
 			if (input.run) {
+				const previous = runRows.get(String(input.run['id']))
+				const previousStatus =
+					previous && typeof previous['status'] === 'string'
+						? String(previous['status'])
+						: null
 				runRows.set(String(input.run['id']), clone(input.run))
+				// Mirror RunLog terminal side effects used by finish seeding:
+				// activation increments and job observability for genuine new
+				// terminal writes (replay of an already-terminal row is a no-op).
+				const runStatus = String(input.run['status'] ?? '')
+				const alreadyTerminal =
+					previousStatus === 'success' || previousStatus === 'error'
+				if (!alreadyTerminal && runStatus === 'success') {
+					const packageId =
+						typeof input.run['packageId'] === 'string'
+							? input.run['packageId'].trim()
+							: ''
+					const surface =
+						typeof input.run['surface'] === 'string'
+							? input.run['surface']
+							: null
+					if (packageId && surface !== 'webhook' && surface !== 'app_fetch') {
+						const reachedAt =
+							typeof input.run['finishedAt'] === 'string'
+								? input.run['finishedAt']
+								: new Date().toISOString()
+						const existing = packageRunSuccesses.get(packageId)
+						const successCount = (existing?.successCount ?? 0) + 1
+						packageRunSuccesses.set(packageId, {
+							packageId,
+							successCount,
+							updatedAt: reachedAt,
+						})
+						if (!activationMilestones.has('package_run_succeeded')) {
+							activationMilestones.set('package_run_succeeded', {
+								milestone: 'package_run_succeeded',
+								reachedAt,
+								packageId,
+							})
+						}
+						if (
+							successCount >= 2 &&
+							!activationMilestones.has('package_activated')
+						) {
+							activationMilestones.set('package_activated', {
+								milestone: 'package_activated',
+								reachedAt,
+								packageId,
+							})
+						}
+					}
+				}
+				if (
+					!alreadyTerminal &&
+					(runStatus === 'success' || runStatus === 'error')
+				) {
+					const jobId =
+						typeof input.run['jobId'] === 'string'
+							? input.run['jobId'].trim()
+							: ''
+					if (jobId) {
+						const existing = jobObservability.get(jobId)
+						const ranAt =
+							typeof input.run['finishedAt'] === 'string'
+								? input.run['finishedAt']
+								: new Date().toISOString()
+						const durationMs =
+							typeof input.run['durationMs'] === 'number'
+								? input.run['durationMs']
+								: null
+						const error =
+							runStatus === 'error' &&
+							typeof input.run['errorMessage'] === 'string'
+								? input.run['errorMessage']
+								: null
+						jobObservability.set(jobId, {
+							jobId,
+							lastRunAt: ranAt,
+							lastRunStatus: runStatus,
+							lastRunError: error,
+							lastDurationMs: durationMs,
+							runCount: (existing?.runCount ?? 0) + 1,
+							successCount:
+								(existing?.successCount ?? 0) +
+								(runStatus === 'success' ? 1 : 0),
+							errorCount:
+								(existing?.errorCount ?? 0) + (runStatus === 'error' ? 1 : 0),
+							updatedAt: ranAt,
+						})
+					}
+				}
 			}
 			return {
 				ledgerUpdated,
@@ -260,6 +373,67 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 				released,
 				record: released || !row ? null : clone(row),
 			}
+		},
+		async isActivationInitialized() {
+			return { initialized: activationInitialized }
+		},
+		async importActivationState(input: {
+			packageRunSuccesses: Array<{
+				packageId: string
+				successCount: number
+				updatedAt: string
+			}>
+			milestones: Array<{
+				milestone: string
+				reachedAt: string
+				packageId: string | null
+			}>
+		}) {
+			for (const row of input.packageRunSuccesses) {
+				const packageId = row.packageId.trim()
+				if (!packageId) continue
+				const existing = packageRunSuccesses.get(packageId)
+				const nextCount = Math.max(
+					existing?.successCount ?? 0,
+					Math.max(0, Math.trunc(row.successCount)),
+				)
+				packageRunSuccesses.set(packageId, {
+					packageId,
+					successCount: nextCount,
+					updatedAt:
+						!existing || nextCount > existing.successCount
+							? row.updatedAt
+							: existing.updatedAt,
+				})
+			}
+			for (const row of input.milestones) {
+				if (activationMilestones.has(row.milestone)) continue
+				activationMilestones.set(row.milestone, clone(row))
+			}
+			activationInitialized = true
+			return { initialized: true }
+		},
+		async getJobRunObservability(input: { jobId: string }) {
+			const row = jobObservability.get(input.jobId)
+			return row ? clone(row) : null
+		},
+		async seedJobRunObservabilityIfAbsent(input: {
+			jobId: string
+			lastRunAt: string | null
+			lastRunStatus: 'success' | 'error' | null
+			lastRunError: string | null
+			lastDurationMs: number | null
+			runCount: number
+			successCount: number
+			errorCount: number
+			updatedAt: string
+		}) {
+			const jobId = input.jobId.trim()
+			if (!jobId || jobObservability.has(jobId)) {
+				return { seeded: false }
+			}
+			jobObservability.set(jobId, clone({ ...input, jobId }))
+			return { seeded: true }
 		},
 	}
 	return {

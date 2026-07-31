@@ -36,6 +36,7 @@ import { type EntitySourceRow } from '#worker/repo/types.ts'
  */
 function createFakeRunLogNamespace() {
 	const activeStatuses = new Set<string>(activeWorkflowStatusValues)
+	const reservationStatuses = new Set<string>([...activeStatuses, 'creating'])
 	const stubs = new Map<
 		string,
 		{
@@ -49,16 +50,27 @@ function createFakeRunLogNamespace() {
 				}) => Promise<WorkflowProjectionRecord | null>
 				findWorkflowProjectionByIdempotencyKey: (input: {
 					idempotencyKey: string
+					bindingName?: string | null
 				}) => Promise<WorkflowProjectionRecord | null>
 				listWorkflowProjections: (input: {
 					limit?: number | null
 					cursor?: string | null
 					status?: string | null
+					bindingName?: string | null
 				}) => Promise<{
 					projections: Array<WorkflowProjectionRecord>
 					nextCursor: string | null
 				}>
 				countActiveWorkflowProjections: () => Promise<{ count: number }>
+				reserveWorkflowProjectionSlot: (
+					input: WorkflowProjectionUpsertInput,
+				) => Promise<{
+					countBeforeReservation: number
+					projection: WorkflowProjectionRecord
+				}>
+				deleteWorkflowProjectionIfCreating: (input: {
+					id: string
+				}) => Promise<{ deleted: boolean }>
 			}
 		}
 	>()
@@ -70,6 +82,7 @@ function createFakeRunLogNamespace() {
 		const rpc = {
 			async upsertWorkflowProjection(input: WorkflowProjectionUpsertInput) {
 				const now = new Date().toISOString()
+				const nextUpdatedAt = input.updatedAt?.trim() || now
 				const prior = projections.get(input.id) ?? null
 				if (!prior) {
 					projections.set(input.id, {
@@ -86,16 +99,20 @@ function createFakeRunLogNamespace() {
 						planDate: input.planDate ?? null,
 						status: input.status ?? null,
 						createdAt: input.createdAt?.trim() || now,
-						updatedAt: input.updatedAt?.trim() || now,
+						updatedAt: nextUpdatedAt,
 						completedAt: input.completedAt ?? null,
 						lastError: input.lastError ?? null,
 					})
 					return { ok: true as const }
 				}
+				// Monotonic by updatedAt (matches RunLog DO).
+				if (nextUpdatedAt < prior.updatedAt) {
+					return { ok: true as const }
+				}
 				projections.set(input.id, {
 					...prior,
 					status: input.status ?? null,
-					updatedAt: input.updatedAt?.trim() || now,
+					updatedAt: nextUpdatedAt,
 					completedAt: input.completedAt ?? prior.completedAt,
 					lastError: input.lastError ?? prior.lastError,
 				})
@@ -106,12 +123,18 @@ function createFakeRunLogNamespace() {
 			},
 			async findWorkflowProjectionByIdempotencyKey(input: {
 				idempotencyKey: string
+				bindingName?: string | null
 			}) {
 				const key = input.idempotencyKey.trim()
 				if (!key) return null
 				const matches = [...projections.values()]
 					.filter(
-						(row) => row.idempotencyKey === key && row.status !== 'creating',
+						(row) =>
+							row.idempotencyKey === key &&
+							row.status !== 'creating' &&
+							(input.bindingName
+								? row.bindingName === input.bindingName
+								: true),
 					)
 					.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
 				return matches[0] ?? null
@@ -120,10 +143,17 @@ function createFakeRunLogNamespace() {
 				limit?: number | null
 				cursor?: string | null
 				status?: string | null
+				bindingName?: string | null
 			}) {
 				const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
 				const rows = [...projections.values()]
-					.filter((row) => (input.status ? row.status === input.status : true))
+					.filter(
+						(row) =>
+							(input.status ? row.status === input.status : true) &&
+							(input.bindingName
+								? row.bindingName === input.bindingName
+								: true),
+					)
 					.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 				return {
 					projections: rows.slice(0, limit),
@@ -135,6 +165,41 @@ function createFakeRunLogNamespace() {
 					(row) => row.status != null && activeStatuses.has(row.status),
 				).length
 				return { count }
+			},
+			async reserveWorkflowProjectionSlot(
+				input: WorkflowProjectionUpsertInput,
+			) {
+				const existing = projections.get(input.id) ?? null
+				const totalReserved = [...projections.values()].filter(
+					(row) => row.status != null && reservationStatuses.has(row.status),
+				).length
+				const existingOccupies =
+					existing?.status != null && reservationStatuses.has(existing.status)
+				const countBeforeReservation = existingOccupies
+					? Math.max(0, totalReserved - 1)
+					: totalReserved
+				const now = new Date().toISOString()
+				await rpc.upsertWorkflowProjection({
+					...input,
+					status: 'creating',
+					createdAt: input.createdAt ?? existing?.createdAt ?? now,
+					updatedAt: input.updatedAt ?? now,
+					completedAt: null,
+					lastError: null,
+				})
+				const projection = projections.get(input.id)
+				if (!projection) {
+					throw new Error('Expected reserved projection.')
+				}
+				return { countBeforeReservation, projection }
+			},
+			async deleteWorkflowProjectionIfCreating(input: { id: string }) {
+				const existing = projections.get(input.id)
+				if (existing?.status === 'creating') {
+					projections.delete(input.id)
+					return { deleted: true }
+				}
+				return { deleted: false }
 			},
 		}
 		const stub = { projections, rpc }
@@ -223,6 +288,13 @@ test('package workflow tools create instances from package context and honor cal
 										}
 									}
 									return null
+								},
+								async all() {
+									// Expand-phase D1 dual-read (active/recent workflow_runs).
+									if (query.includes('FROM workflow_runs')) {
+										return { results: [] }
+									}
+									throw new Error(`Unsupported all query: ${query}`)
 								},
 								async run() {
 									return { success: true }
@@ -368,6 +440,13 @@ test('runModuleWithRegistry queues inline workflows.create calls without runAt o
 							async first() {
 								if (query.includes('COUNT(*) AS count')) return { count: 0 }
 								return null
+							},
+							async all() {
+								// Expand-phase D1 dual-read (active/recent workflow_runs).
+								if (query.includes('FROM workflow_runs')) {
+									return { results: [] }
+								}
+								throw new Error(`Unsupported all query: ${query}`)
 							},
 							async run() {
 								return { success: true }
@@ -1687,6 +1766,13 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 							async first() {
 								if (query.includes('COUNT(*) AS count')) return { count: 0 }
 								return null
+							},
+							async all() {
+								// Expand-phase D1 dual-read (active/recent workflow_runs).
+								if (query.includes('FROM workflow_runs')) {
+									return { results: [] }
+								}
+								throw new Error(`Unsupported all query: ${query}`)
 							},
 							async run() {
 								return { success: true }
