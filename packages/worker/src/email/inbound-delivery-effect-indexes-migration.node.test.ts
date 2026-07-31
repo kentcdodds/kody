@@ -155,7 +155,11 @@ test('indexed inbound effect path preserves the legacy due set', () => {
 		'2026-07-31T00:55:00.000Z',
 	] as const
 	const legacyDue = db
-		.prepare(`SELECT id FROM email_delivery_events WHERE ${effectDuePredicate}`)
+		.prepare(
+			`SELECT id FROM email_delivery_events
+			WHERE ${effectDuePredicate}
+			ORDER BY id`,
+		)
 		.all(...dueParameters)
 
 	db.exec(`BEGIN; ${migration} COMMIT;`)
@@ -164,11 +168,12 @@ test('indexed inbound effect path preserves the legacy due set', () => {
 		.prepare(
 			`SELECT id FROM email_delivery_events
 			WHERE needs_effect_reconcile = 1
-				AND ${effectDuePredicate}`,
+				AND ${effectDuePredicate}
+			ORDER BY id`,
 		)
 		.all(...dueParameters)
 	expect(indexedDue).toEqual(legacyDue)
-	expect(indexedDue).toEqual([{ id: 'usage-due' }, { id: 'subscription-due' }])
+	expect(indexedDue).toEqual([{ id: 'subscription-due' }, { id: 'usage-due' }])
 
 	const plans = db
 		.prepare(

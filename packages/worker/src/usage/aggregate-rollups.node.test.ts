@@ -363,8 +363,11 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 	)
 	expect(query).toContain('GROUP BY blob1, blob2')
 	expect(selects[0]?.sql).not.toContain('JOIN email_messages')
-	expect(selects[0]?.sql).toContain(`'$.usageMonth'`)
-	expect(selects[0]?.sql).toContain(`'$.usageBytes'`)
+	expect(selects[0]?.sql).not.toContain('json_extract')
+	expect(selects[0]?.sql).toContain(
+		'event.usage_effect_recorded_at IS NOT NULL',
+	)
+	expect(selects[0]?.sql).toContain('event.usage_month IN (?, ?)')
 	expect(selects[0]?.params).toEqual(['2026-07', '2026-06'])
 
 	expect(batches).toHaveLength(1)
