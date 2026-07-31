@@ -132,6 +132,10 @@ async function persistAuditEvent(
 function resolveAuditDatabase(event: AuditEvent) {
 	if (event.auditDb) return event.auditDb
 	try {
+		// Generic Workers tests opt into the real audit sink explicitly so they
+		// do not all need to migrate a second database unrelated to their
+		// behavior. Dedicated audit tests pass `auditDb` above.
+		if (env.SENTRY_ENVIRONMENT === 'test') return undefined
 		return env.AUDIT_DB
 	} catch {
 		// Some node test and standalone utility contexts intentionally provide
