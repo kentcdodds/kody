@@ -26,6 +26,7 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
@@ -207,6 +208,13 @@ type DynamicCallableWorkflowStep = {
 const packageWorkflowTokenId = 'internal:package-workflows'
 const maxPackageWorkflowParamsJsonBytes = 16 * 1024
 const workflowStatusRefreshTtlMs = 30_000
+/**
+ * Defensive LIMIT for expand-phase active D1 → RunLog import. One above the
+ * highest concurrent_workflows entitlement so an overflow page still forces
+ * entitlement denial (countBeforeReservation + 1 > every plan limit).
+ */
+export const activeD1WorkflowImportBound =
+	planLimits.max.maxConcurrentWorkflows + 1
 const knownWorkflowStatusValues = [
 	...activeWorkflowStatusValues,
 	...terminalWorkflowStatusValues,
@@ -214,6 +222,9 @@ const knownWorkflowStatusValues = [
 const activeWorkflowStatuses = new Set<string>(activeWorkflowStatusValues)
 const terminalWorkflowStatuses = new Set<string>(terminalWorkflowStatusValues)
 const knownWorkflowStatuses = new Set<string>(knownWorkflowStatusValues)
+const terminalWorkflowStatusSqlList = terminalWorkflowStatusValues
+	.map((status) => `'${status}'`)
+	.join(', ')
 
 function getWorkflowInvocationErrorMessage(response: {
 	status: number
@@ -739,6 +750,7 @@ async function readD1WorkflowRunByIdempotencyKey(input: {
 async function readD1ActiveWorkflowRuns(input: {
 	db: D1Database
 	userId: string
+	limit: number
 }): Promise<Array<WorkflowRunInspection>> {
 	const placeholders = workflowProjectionActiveStatuses
 		.map(() => '?')
@@ -747,9 +759,11 @@ async function readD1ActiveWorkflowRuns(input: {
 		.prepare(
 			`SELECT *
 			FROM workflow_runs
-			WHERE user_id = ? AND status IN (${placeholders})`,
+			WHERE user_id = ? AND status IN (${placeholders})
+			ORDER BY created_at DESC
+			LIMIT ?`,
 		)
-		.bind(input.userId, ...workflowProjectionActiveStatuses)
+		.bind(input.userId, ...workflowProjectionActiveStatuses, input.limit)
 		.all<Record<string, unknown>>()
 	return (result.results ?? []).map(mapD1WorkflowRunRow)
 }
@@ -849,6 +863,7 @@ async function importActiveD1WorkflowRuns(input: { env: Env; userId: string }) {
 	const active = await readD1ActiveWorkflowRuns({
 		db: input.env.APP_DB,
 		userId: input.userId,
+		limit: activeD1WorkflowImportBound,
 	})
 	for (const row of active) {
 		await importWorkflowInspectionIntoRunLog({ env: input.env, row })
@@ -986,7 +1001,14 @@ async function createDynamicCallableWorkflowInstanceId(
 	return await createInlineWorkflowInstanceId({ ...payload, options })
 }
 
-/** Expand-phase compatibility mirror for out-of-scope D1 readers. */
+function isTerminalWorkflowStatus(status: string | null | undefined): boolean {
+	return status != null && terminalWorkflowStatuses.has(status)
+}
+
+/**
+ * Expand-phase compatibility mirror for out-of-scope D1 readers.
+ * Monotonic by updated_at; terminal rows refuse active/creating regression.
+ */
 async function mirrorWorkflowRunToD1(input: {
 	db: D1Database
 	id: string
@@ -1022,7 +1044,12 @@ async function mirrorWorkflowRunToD1(input: {
 				status = excluded.status,
 				updated_at = excluded.updated_at,
 				completed_at = COALESCE(excluded.completed_at, workflow_runs.completed_at),
-				last_error = COALESCE(excluded.last_error, workflow_runs.last_error)`,
+				last_error = COALESCE(excluded.last_error, workflow_runs.last_error)
+			WHERE excluded.updated_at >= workflow_runs.updated_at
+				AND (
+					COALESCE(workflow_runs.status, '') NOT IN (${terminalWorkflowStatusSqlList})
+					OR COALESCE(excluded.status, '') IN (${terminalWorkflowStatusSqlList})
+				)`,
 		)
 		.bind(
 			input.id,
@@ -1057,6 +1084,20 @@ async function projectWorkflowRun(input: {
 	createdAt?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
+	const existing = await getWorkflowProjection({
+		env: input.env,
+		userId: input.userId,
+		id: input.id,
+	})
+	// Terminal stickiness: a later queued/running/creating write must not
+	// regress cancelled/complete/errored/terminated projections.
+	if (
+		isTerminalWorkflowStatus(existing?.status) &&
+		input.status != null &&
+		!isTerminalWorkflowStatus(input.status)
+	) {
+		return
+	}
 	const projection = buildWorkflowProjectionUpsert({
 		id: input.id,
 		payload: input.payload,
@@ -1064,7 +1105,7 @@ async function projectWorkflowRun(input: {
 		now: input.now,
 		lastError: input.lastError,
 		completedAt: input.completedAt,
-		createdAt: input.createdAt,
+		createdAt: input.createdAt ?? existing?.createdAt ?? null,
 	})
 	await upsertWorkflowProjection({
 		env: input.env,
@@ -1258,6 +1299,12 @@ export async function createDynamicCallableWorkflow(input: {
 		userId: input.userId,
 		projection: reservationProjection,
 	})
+	if (!reservation.reserved) {
+		// Insert-only reserve refused to clobber queued/running/terminal.
+		return createWorkflowCreateResultFromRow(
+			mapWorkflowProjectionToInspection(reservation.projection, input.userId),
+		)
+	}
 	// Mirror the creating reservation asynchronously for legacy D1 readers.
 	if (input.env.APP_DB) {
 		scheduleD1WorkflowRunMirror(input.waitUntil, async () => {
@@ -1463,11 +1510,39 @@ export async function cancelWorkflowRunForUser(input: {
 			throw error
 		}
 	} else {
-		// Missing instance (stuck `creating`, or engine retention expiry): nothing
-		// can fire, so projecting cancelled is safe. A concurrent create may still
-		// be in flight for a `creating` row; its own status projection would then
-		// surface the run again as active, which is visible and re-cancellable
-		// (deliberately no extra guard — creation semantics must not change).
+		// Missing engine instance: re-read before deciding. A concurrent create
+		// may still own a `creating` reservation; reporting cancelled here would
+		// let that create overtake with queued/running.
+		const latestMissing = await getWorkflowProjection({
+			env,
+			userId: input.userId,
+			id: row.id,
+		})
+		if (!latestMissing) {
+			throw new Error(
+				`Workflow run "${row.id}" disappeared while cancelling for the current user.`,
+			)
+		}
+		// `creating` is not a Cloudflare WorkflowRunStatus, so inspection mapping
+		// nulls it — check the raw projection before mapping.
+		if (latestMissing.status === creatingWorkflowProjectionStatus) {
+			// Same shape as package-invocation `invocation_in_progress` (retryable).
+			throw new Error(
+				`Workflow run "${row.id}" is still being created; retry cancellation shortly.`,
+			)
+		}
+		const latestMissingRun = mapWorkflowProjectionToInspection(
+			latestMissing,
+			input.userId,
+		)
+		if (
+			latestMissingRun.status !== null &&
+			terminalWorkflowStatuses.has(latestMissingRun.status)
+		) {
+			return { outcome: 'already_terminal', run: latestMissingRun }
+		}
+		// Non-creating active/unknown with no engine instance (retention expiry):
+		// nothing can fire, so projecting cancelled below is safe.
 	}
 	const now = new Date().toISOString()
 	// Guard against stamping cancelled over a concurrent terminal projection

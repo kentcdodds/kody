@@ -232,7 +232,7 @@ test('first post-cutover job finish preserves cumulative D1 counters', async () 
 		lastRunStatus: 'success',
 	})
 
-	// INSERT OR IGNORE: a newer DO outcome cannot be overwritten by re-seed.
+	// legacy_seeded: a later re-seed cannot overwrite or double-add.
 	await runLogRpc({ env, userId }).seedJobRunObservabilityIfAbsent({
 		jobId,
 		lastRunAt: '2020-01-01T00:00:00.000Z',
@@ -248,6 +248,7 @@ test('first post-cutover job finish preserves cumulative D1 counters', async () 
 		runCount: 5,
 		successCount: 4,
 		lastRunStatus: 'success',
+		legacySeeded: true,
 	})
 
 	const handle = beginRunRecord({
@@ -270,41 +271,72 @@ test('first post-cutover job finish preserves cumulative D1 counters', async () 
 	})
 })
 
-test('activation increment uses a storage transaction that rolls back on throw', async () => {
-	const userId = uniqueUserId('activation-tx')
+test('finishRun rolls back run upsert when a later terminal side effect throws', async () => {
+	const userId = uniqueUserId('finish-tx')
 	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const runId = crypto.randomUUID()
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)
-		try {
-			state.storage.transactionSync(() => {
-				state.storage.sql.exec(
-					`INSERT INTO package_run_successes (package_id, success_count, updated_at)
-					VALUES ('pkg-tx', 1, '2026-07-31T00:00:00.000Z')`,
-				)
-				state.storage.sql.exec(
-					`INSERT INTO activation_milestones (milestone, reached_at, package_id)
-					VALUES ('package_run_succeeded', '2026-07-31T00:00:00.000Z', 'pkg-tx')`,
-				)
-				throw new Error('forced-activation-rollback')
-			})
-		} catch (error) {
-			expect(String(error)).toContain('forced-activation-rollback')
+		const proto = Object.getPrototypeOf(instance) as {
+			recordTerminalRunSideEffects: (input: unknown) => void
 		}
+		const original = proto.recordTerminalRunSideEffects
+		proto.recordTerminalRunSideEffects = () => {
+			throw new Error('forced-finish-rollback')
+		}
+		try {
+			await expect(
+				instance.finishRun({
+					run: {
+						id: runId,
+						surface: 'job',
+						status: 'success',
+						name: 'tx-fail',
+						packageId: 'pkg-finish-tx',
+						kodyId: null,
+						sourceId: null,
+						publishedCommit: null,
+						storageId: null,
+						jobId: 'job-finish-tx',
+						workflowId: null,
+						invocationId: null,
+						sessionId: null,
+						idempotencyKey: null,
+						parentRunId: null,
+						startedAt: '2026-07-31T00:00:00.000Z',
+						finishedAt: '2026-07-31T00:00:01.000Z',
+						durationMs: 1000,
+						errorName: null,
+						errorMessage: null,
+						metadataJson: '{}',
+						createdAt: '2026-07-31T00:00:00.000Z',
+						updatedAt: '2026-07-31T00:00:01.000Z',
+					},
+					logs: [],
+				}),
+			).rejects.toThrow('forced-finish-rollback')
+		} finally {
+			proto.recordTerminalRunSideEffects = original
+		}
+		const runs = state.storage.sql
+			.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs WHERE id = ?`, runId)
+			.one()
 		const successes = state.storage.sql
 			.exec<{ n: number }>(
-				`SELECT COUNT(*) AS n FROM package_run_successes WHERE package_id = 'pkg-tx'`,
+				`SELECT COUNT(*) AS n FROM package_run_successes WHERE package_id = 'pkg-finish-tx'`,
 			)
 			.one()
-		const milestones = state.storage.sql
+		const jobs = state.storage.sql
 			.exec<{ n: number }>(
-				`SELECT COUNT(*) AS n FROM activation_milestones WHERE package_id = 'pkg-tx'`,
+				`SELECT COUNT(*) AS n FROM job_run_observability WHERE job_id = 'job-finish-tx'`,
 			)
 			.one()
+		expect(Number(runs.n)).toBe(0)
 		expect(Number(successes.n)).toBe(0)
-		expect(Number(milestones.n)).toBe(0)
+		expect(Number(jobs.n)).toBe(0)
 	})
 
-	// Happy path still lands count + milestone together via finish.
+	// Happy path still lands run + count + milestone together via finish.
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	await finishRunRecord({
 		env,
@@ -328,6 +360,180 @@ test('activation increment uses a storage transaction that rolls back on throw',
 			packageId: 'pkg-tx-ok',
 		}),
 	])
+})
+
+test('activation seed failure then finish then recovery merges legacy additively once', async () => {
+	silenceExpectedConsoleWarns([
+		'activation-run-record-failed',
+		'run-log-activation-seed-failed',
+	])
+	await ensureActivationD1Schema()
+	const userId = uniqueUserId('activation-recover')
+	await env.APP_DB.prepare(
+		`DELETE FROM user_package_run_successes WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.run()
+	await env.APP_DB.prepare(
+		`DELETE FROM user_activation_milestones WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.run()
+
+	// First seed sees a D1 query failure (missing table name) and must not mark
+	// initialized.
+	const envBrokenDb = {
+		...env,
+		APP_DB: {
+			prepare: () => {
+				throw new Error('forced-activation-d1-failure')
+			},
+		},
+	} as unknown as Env
+	await ensureActivationStateSeeded({ env: envBrokenDb, userId })
+	expect(await runLogRpc({ env, userId }).isActivationInitialized()).toEqual({
+		initialized: false,
+	})
+
+	// Finish must also see D1 failure so prepare-seed does not mark initialized
+	// via a successful empty read before the increment.
+	await finishRunRecord({
+		env: envBrokenDb,
+		handle: beginRunRecord({
+			env: envBrokenDb,
+			userId,
+			context: {
+				surface: 'job',
+				name: 'post-cutover-before-seed',
+				packageId: 'pkg-recover',
+			},
+		}),
+		status: 'success',
+	})
+	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
+		expect.objectContaining({ packageId: 'pkg-recover', successCount: 1 }),
+	])
+	expect(await runLogRpc({ env, userId }).isActivationInitialized()).toEqual({
+		initialized: false,
+	})
+
+	await env.APP_DB.prepare(
+		`INSERT INTO user_package_run_successes (user_id, package_id, success_count, updated_at)
+		VALUES (?, 'pkg-recover', 1, ?)`,
+	)
+		.bind(userId, '2026-01-15T00:00:00.000Z')
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT INTO user_activation_milestones (user_id, milestone, reached_at, package_id)
+		VALUES (?, 'package_run_succeeded', ?, 'pkg-recover')`,
+	)
+		.bind(userId, '2026-01-15T00:00:00.000Z')
+		.run()
+
+	await ensureActivationStateSeeded({ env, userId })
+	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
+		expect.objectContaining({ packageId: 'pkg-recover', successCount: 2 }),
+	])
+	expect(await listActivationMilestones({ env, userId })).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				milestone: 'package_activated',
+				packageId: 'pkg-recover',
+			}),
+			expect.objectContaining({
+				milestone: 'package_run_succeeded',
+			}),
+		]),
+	)
+	expect(await runLogRpc({ env, userId }).isActivationInitialized()).toEqual({
+		initialized: true,
+	})
+
+	// Later seeds no-op (not MAX / not additive again).
+	await env.APP_DB.prepare(
+		`UPDATE user_package_run_successes SET success_count = 9 WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.run()
+	await ensureActivationStateSeeded({ env, userId })
+	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
+		expect.objectContaining({ packageId: 'pkg-recover', successCount: 2 }),
+	])
+})
+
+test('job observability seed failure then finish then recovery merges legacy once', async () => {
+	silenceExpectedConsoleWarns([
+		'activation-run-record-failed',
+		'run-log-job-observability-seed-failed',
+	])
+	await ensureJobsD1Schema()
+	const userId = uniqueUserId('job-recover')
+	const jobId = `job-${crypto.randomUUID()}`
+	const legacyAt = '2026-06-01T00:00:00.000Z'
+
+	const envBrokenDb = {
+		...env,
+		APP_DB: {
+			prepare: () => {
+				throw new Error('forced-job-d1-failure')
+			},
+		},
+	} as unknown as Env
+	await ensureJobRunObservabilitySeeded({
+		env: envBrokenDb,
+		userId,
+		jobId,
+	})
+	expect(await getJobRunObservability({ env, userId, jobId })).toBeNull()
+
+	const handle = beginRunRecord({
+		env: envBrokenDb,
+		userId,
+		context: { surface: 'job', name: 'before-seed', jobId },
+	})
+	await finishRunRecord({
+		env: envBrokenDb,
+		handle,
+		status: 'success',
+	})
+	const afterFinish = await getJobRunObservability({ env, userId, jobId })
+	expect(afterFinish).toMatchObject({
+		runCount: 1,
+		successCount: 1,
+		errorCount: 0,
+		legacySeeded: false,
+	})
+
+	await env.APP_DB.prepare(`DELETE FROM jobs WHERE id = ?`).bind(jobId).run()
+	await env.APP_DB.prepare(
+		`INSERT INTO jobs (
+			id, user_id, name, created_at, updated_at, last_run_at, last_run_status,
+			last_run_error, last_duration_ms, run_count, success_count, error_count
+		) VALUES (?, ?, 'legacy', ?, ?, ?, 'error', 'old', 5, 3, 2, 1)`,
+	)
+		.bind(jobId, userId, legacyAt, legacyAt, legacyAt)
+		.run()
+
+	await ensureJobRunObservabilitySeeded({ env, userId, jobId })
+	const recovered = await getJobRunObservability({ env, userId, jobId })
+	expect(recovered).toMatchObject({
+		runCount: 4,
+		successCount: 3,
+		errorCount: 1,
+		legacySeeded: true,
+		// Newer post-cutover finish outcome wins over older legacy last_run.
+		lastRunStatus: 'success',
+	})
+	expect(recovered?.lastRunAt).not.toBe(legacyAt)
+	expect(recovered?.lastRunAt != null).toBe(true)
+
+	await ensureJobRunObservabilitySeeded({ env, userId, jobId })
+	expect(await getJobRunObservability({ env, userId, jobId })).toMatchObject({
+		runCount: 4,
+		successCount: 3,
+		errorCount: 1,
+		legacySeeded: true,
+	})
 })
 
 test('workflow projection retention prunes old terminal rows but keeps active and unpruned dedicated state', async () => {
@@ -425,9 +631,10 @@ test('workflow projection retention prunes old terminal rows but keeps active an
 	expect(
 		await getWorkflowProjection({ env, userId, id: 'wf-old-active' }),
 	).toMatchObject({ id: 'wf-old-active', status: 'running' })
+	// Stale creating reservations past TTL are pruned; active/running stay.
 	expect(
 		await getWorkflowProjection({ env, userId, id: 'wf-old-creating' }),
-	).toMatchObject({ id: 'wf-old-creating', status: 'creating' })
+	).toBeNull()
 
 	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
 		expect.objectContaining({

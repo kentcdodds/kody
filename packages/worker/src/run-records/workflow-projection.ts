@@ -68,13 +68,26 @@ export type WorkflowProjectionUpsertInput = {
 }
 
 export type WorkflowProjectionReserveResult = {
-	/** Active + creating count excluding this id's prior reservation, if any. */
+	/**
+	 * Active + creating count excluding this id so an idempotent re-reserve of
+	 * the same workflow does not consume two entitlement slots.
+	 */
 	countBeforeReservation: number
+	/** True when this id holds a `creating` reservation after the call. */
+	reserved: boolean
+	/** True when a new `creating` row was inserted by this call. */
+	inserted: boolean
 	projection: WorkflowProjectionRecord
 }
 
-/** Mid-creation placeholder excluded from idempotency lookups (matches D1). */
+/** Mid-creation placeholder excluded from non-creating idempotency lookups. */
 export const creatingWorkflowProjectionStatus = 'creating'
+
+/**
+ * Stale `creating` reservations older than this are pruned before reserve/count
+ * and by retention alarms. Active/running projections are never TTL-pruned.
+ */
+export const workflowProjectionCreatingTtlMs = 10 * 60 * 1000
 
 export const workflowProjectionActiveStatuses: ReadonlyArray<string> =
 	activeWorkflowStatusValues

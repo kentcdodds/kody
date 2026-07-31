@@ -5,6 +5,8 @@ import type {
 	WorkflowProjectionRecord,
 	WorkflowProjectionUpsertInput,
 } from '#worker/run-records/service.ts'
+import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
+import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import {
 	cancelWorkflowRunForUser,
 	createDynamicCallableWorkflow,
@@ -84,9 +86,22 @@ const runRecordMocks = vi.hoisted(() => {
 			if (nextUpdatedAt < existing.updatedAt) {
 				return { ok: true as const }
 			}
+			const nextStatus = input.projection.status ?? null
+			if (
+				existing.status != null &&
+				(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+					existing.status,
+				) &&
+				nextStatus != null &&
+				!(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+					nextStatus,
+				)
+			) {
+				return { ok: true as const }
+			}
 			store.set(input.projection.id, {
 				...existing,
-				status: input.projection.status ?? null,
+				status: nextStatus,
 				updatedAt: nextUpdatedAt,
 				completedAt:
 					input.projection.completedAt ?? existing.completedAt ?? null,
@@ -175,15 +190,22 @@ const runRecordMocks = vi.hoisted(() => {
 			}) => {
 				const store = userStore(input.userId)
 				const existing = store.get(input.projection.id) ?? null
-				const totalReserved = [...store.values()].filter(
-					(row) => row.status != null && reservationStatuses.has(row.status),
+				const countBeforeReservation = [...store.values()].filter(
+					(row) =>
+						row.id !== input.projection.id &&
+						row.status != null &&
+						reservationStatuses.has(row.status),
 				).length
-				const existingOccupies =
-					existing?.status != null && reservationStatuses.has(existing.status)
-				const countBeforeReservation = existingOccupies
-					? Math.max(0, totalReserved - 1)
-					: totalReserved
+				if (existing?.status != null && existing.status !== 'creating') {
+					return {
+						countBeforeReservation,
+						reserved: false,
+						inserted: false,
+						projection: existing,
+					}
+				}
 				const now = new Date().toISOString()
+				const inserted = existing == null
 				store.set(
 					input.projection.id,
 					toRecord(
@@ -203,7 +225,12 @@ const runRecordMocks = vi.hoisted(() => {
 				if (!projection) {
 					throw new Error('Expected reserved projection.')
 				}
-				return { countBeforeReservation, projection }
+				return {
+					countBeforeReservation,
+					reserved: true,
+					inserted,
+					projection,
+				}
 			},
 		),
 		deleteWorkflowProjectionIfCreating: vi.fn(
@@ -823,4 +850,105 @@ test('cancelling a run whose engine instance is missing still projects cancelled
 		status: 'cancelled',
 		completed_at: expect.any(String),
 	})
+})
+
+test('cancel of a creating projection without an engine instance is retryable', async () => {
+	const { db } = createWorkflowRunsDb()
+	const flusher = createWaitUntilFlusher()
+	const binding = createCancelTestBinding()
+	const now = '2026-05-03T12:34:56.000Z'
+	const runId = 'dynwf-creating-race'
+	await runRecordMocks.upsertWorkflowProjection({
+		env: {
+			APP_DB: db,
+			DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+			RUN_LOG: {} as DurableObjectNamespace,
+		} as Env,
+		userId: 'user-1',
+		projection: {
+			id: runId,
+			bindingName: dynamicCallableWorkflowsBindingName,
+			sourceType: 'inline',
+			workflowName: 'inline-code',
+			idempotencyKey: 'creating-race-key',
+			runAt: now,
+			planDate: '2026-05-03',
+			status: creatingWorkflowProjectionStatus,
+			createdAt: now,
+			updatedAt: now,
+		},
+	})
+	binding.missingIds.add(runId)
+
+	await expect(
+		cancelWorkflowRunForUser({
+			env: {
+				APP_DB: db,
+				DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+				RUN_LOG: {} as DurableObjectNamespace,
+			} as Env,
+			userId: 'user-1',
+			workflowRunId: runId,
+			waitUntil: flusher.waitUntil,
+		}),
+	).rejects.toThrow(/still being created; retry cancellation shortly/)
+	expect(binding.terminateCalls).toEqual([])
+	expect(
+		runRecordMocks.listForUser('user-1').find((row) => row.id === runId),
+	).toMatchObject({
+		status: creatingWorkflowProjectionStatus,
+		completedAt: null,
+	})
+})
+
+test('terminal projection stickiness blocks later queued regression after cancel', async () => {
+	const binding = createCancelTestBinding()
+	const { db } = createWorkflowRunsDb()
+	const flusher = createWaitUntilFlusher()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		waitUntil: flusher.waitUntil,
+		body: {
+			code: 'export default async function main() { return { ok: true } }',
+			idempotencyKey: 'terminal-sticky-key',
+			runAt: '2026-05-03T12:34:56.000Z',
+		},
+	})
+	await cancelWorkflowRunForUser({
+		env,
+		userId: 'user-1',
+		workflowRunId: created.id,
+		waitUntil: flusher.waitUntil,
+	})
+	expect(
+		runRecordMocks.listForUser('user-1').find((row) => row.id === created.id)
+			?.status,
+	).toBe('cancelled')
+
+	const cancelled = runRecordMocks
+		.listForUser('user-1')
+		.find((row) => row.id === created.id)
+	if (!cancelled) throw new Error('Expected cancelled projection.')
+	await runRecordMocks.upsertWorkflowProjection({
+		env,
+		userId: 'user-1',
+		projection: {
+			...cancelled,
+			status: 'queued',
+			completedAt: null,
+			updatedAt: new Date(
+				Date.parse(cancelled.updatedAt) + 1_000,
+			).toISOString(),
+		},
+	})
+	expect(
+		runRecordMocks.listForUser('user-1').find((row) => row.id === created.id),
+	).toMatchObject({ status: 'cancelled' })
 })

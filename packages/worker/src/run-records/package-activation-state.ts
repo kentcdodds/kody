@@ -30,8 +30,10 @@ export type ActivationMilestoneRecord = {
 
 /**
  * Snapshot imported from D1 `user_package_run_successes` /
- * `user_activation_milestones` into the per-user RunLog DO. Counts merge
- * monotonically; milestone rows keep the first-writer `reached_at`.
+ * `user_activation_milestones` into the per-user RunLog DO. Applied exactly
+ * once per user (`activation_initialized`): legacy counts add to any
+ * post-cutover increments, and milestone rows keep the first-writer
+ * `reached_at`.
  */
 export type ActivationStateImport = {
 	packageRunSuccesses: Array<PackageRunSuccessRecord>

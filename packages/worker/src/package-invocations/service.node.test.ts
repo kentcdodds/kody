@@ -137,6 +137,7 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 			successCount: number
 			errorCount: number
 			updatedAt: string
+			legacySeeded: boolean
 		}
 	>()
 	const packageRunSuccesses = new Map<
@@ -336,6 +337,7 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 							errorCount:
 								(existing?.errorCount ?? 0) + (runStatus === 'error' ? 1 : 0),
 							updatedAt: ranAt,
+							legacySeeded: existing?.legacySeeded ?? false,
 						})
 					}
 				}
@@ -389,21 +391,18 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 				packageId: string | null
 			}>
 		}) {
+			if (activationInitialized) {
+				return { initialized: true }
+			}
 			for (const row of input.packageRunSuccesses) {
 				const packageId = row.packageId.trim()
 				if (!packageId) continue
 				const existing = packageRunSuccesses.get(packageId)
-				const nextCount = Math.max(
-					existing?.successCount ?? 0,
-					Math.max(0, Math.trunc(row.successCount)),
-				)
+				const add = Math.max(0, Math.trunc(row.successCount))
 				packageRunSuccesses.set(packageId, {
 					packageId,
-					successCount: nextCount,
-					updatedAt:
-						!existing || nextCount > existing.successCount
-							? row.updatedAt
-							: existing.updatedAt,
+					successCount: (existing?.successCount ?? 0) + add,
+					updatedAt: row.updatedAt,
 				})
 			}
 			for (const row of input.milestones) {
@@ -429,10 +428,27 @@ function createFakeRunLog(options: { failClaim?: boolean } = {}) {
 			updatedAt: string
 		}) {
 			const jobId = input.jobId.trim()
-			if (!jobId || jobObservability.has(jobId)) {
+			if (!jobId) return { seeded: false }
+			const existing = jobObservability.get(jobId)
+			if (existing?.legacySeeded) {
 				return { seeded: false }
 			}
-			jobObservability.set(jobId, clone({ ...input, jobId }))
+			if (!existing) {
+				jobObservability.set(
+					jobId,
+					clone({ ...input, jobId, legacySeeded: true }),
+				)
+				return { seeded: true }
+			}
+			jobObservability.set(jobId, {
+				...existing,
+				runCount: existing.runCount + Math.max(0, Math.trunc(input.runCount)),
+				successCount:
+					existing.successCount + Math.max(0, Math.trunc(input.successCount)),
+				errorCount:
+					existing.errorCount + Math.max(0, Math.trunc(input.errorCount)),
+				legacySeeded: true,
+			})
 			return { seeded: true }
 		},
 	}
@@ -510,6 +526,9 @@ function createDatabase(options: { failClaim?: boolean } = {}) {
 					return {
 						async first<T = Record<string, unknown>>() {
 							return null as T | null
+						},
+						async all<T = Record<string, unknown>>() {
+							return { results: [] as Array<T>, success: true }
 						},
 						async run() {
 							throw new Error(

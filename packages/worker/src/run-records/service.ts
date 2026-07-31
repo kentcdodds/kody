@@ -361,8 +361,9 @@ export async function claimRunRecord(input: {
 
 /**
  * Lazily seed RunLog activation counters/milestones from D1 exactly once per
- * user. Never throws: missing APP_DB/tables degrade to an empty import that
- * still marks the DO initialized so later finishes skip D1.
+ * user. Never throws. D1 query failures leave the DO uninitialized so a later
+ * successful read can merge; successful empty (including missing APP_DB) still
+ * marks initialized.
  */
 export async function ensureActivationStateSeeded(input: {
 	env: Env
@@ -377,15 +378,21 @@ export async function ensureActivationStateSeeded(input: {
 			env: input.env,
 			userId: input.userId,
 		})
-		await rpc.importActivationState(snapshot)
+		if (!snapshot.ok) {
+			console.warn('run-log-activation-seed-failed', snapshot.error)
+			return
+		}
+		await rpc.importActivationState(snapshot.value)
 	} catch (error) {
 		console.warn('run-log-activation-seed-failed', error)
 	}
 }
 
 /**
- * Lazily seed one job's observability from D1 when the RunLog row is absent.
- * Never throws. INSERT OR IGNORE inside the DO so a newer finish wins.
+ * Lazily seed one job's observability from D1 exactly once (`legacy_seeded`).
+ * Never throws. D1 query failures skip seeding so a later success can merge
+ * into counters created by post-cutover finishes; successful empty marks
+ * `legacy_seeded` with zeros.
  */
 export async function ensureJobRunObservabilitySeeded(input: {
 	env: Env
@@ -397,29 +404,53 @@ export async function ensureJobRunObservabilitySeeded(input: {
 	try {
 		const rpc = runLogRpc({ env: input.env, userId: input.userId })
 		const existing = await rpc.getJobRunObservability({ jobId })
-		if (existing) return
-		const seed = await readJobRunObservabilityFromD1({
+		if (existing?.legacySeeded) return
+		const read = await readJobRunObservabilityFromD1({
 			env: input.env,
 			userId: input.userId,
 			jobId,
 		})
-		if (!seed) return
+		if (!read.ok) {
+			console.warn('run-log-job-observability-seed-failed', read.error)
+			return
+		}
+		const seed =
+			read.value ??
+			({
+				jobId,
+				lastRunAt: null,
+				lastRunStatus: null,
+				lastRunError: null,
+				lastDurationMs: null,
+				runCount: 0,
+				successCount: 0,
+				errorCount: 0,
+				updatedAt: new Date().toISOString(),
+			} satisfies JobRunObservabilitySeedInput)
 		await rpc.seedJobRunObservabilityIfAbsent(seed)
 	} catch (error) {
 		console.warn('run-log-job-observability-seed-failed', error)
 	}
 }
 
+type D1ReadResult<T> = { ok: true; value: T } | { ok: false; error: unknown }
+
+/** Schema-not-ready is a successful empty legacy snapshot, not a retryable read failure. */
+function isMissingD1RelationError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error)
+	return /no such table/i.test(message)
+}
+
 async function readActivationStateFromD1(input: {
 	env: Env
 	userId: string
-}): Promise<ActivationStateImport> {
+}): Promise<D1ReadResult<ActivationStateImport>> {
 	const empty: ActivationStateImport = {
 		packageRunSuccesses: [],
 		milestones: [],
 	}
 	const db = input.env.APP_DB
-	if (!db) return empty
+	if (!db) return { ok: true, value: empty }
 	try {
 		const successRows = await db
 			.prepare(
@@ -448,26 +479,32 @@ async function readActivationStateFromD1(input: {
 				package_id: string | null
 			}>()
 		return {
-			packageRunSuccesses: (successRows.results ?? []).map((row) => ({
-				packageId: String(row.package_id),
-				successCount: Number(row.success_count) || 0,
-				updatedAt: String(row.updated_at),
-			})),
-			milestones: (milestoneRows.results ?? [])
-				.filter(
-					(row) =>
-						row.milestone === 'package_run_succeeded' ||
-						row.milestone === 'package_activated',
-				)
-				.map((row) => ({
-					milestone: row.milestone as ActivationMilestone,
-					reachedAt: String(row.reached_at),
-					packageId: row.package_id == null ? null : String(row.package_id),
+			ok: true,
+			value: {
+				packageRunSuccesses: (successRows.results ?? []).map((row) => ({
+					packageId: String(row.package_id),
+					successCount: Number(row.success_count) || 0,
+					updatedAt: String(row.updated_at),
 				})),
+				milestones: (milestoneRows.results ?? [])
+					.filter(
+						(row) =>
+							row.milestone === 'package_run_succeeded' ||
+							row.milestone === 'package_activated',
+					)
+					.map((row) => ({
+						milestone: row.milestone as ActivationMilestone,
+						reachedAt: String(row.reached_at),
+						packageId: row.package_id == null ? null : String(row.package_id),
+					})),
+			},
 		}
-	} catch {
-		// Table absence / D1 errors: empty snapshot; import still marks initialized.
-		return empty
+	} catch (error) {
+		if (isMissingD1RelationError(error)) {
+			return { ok: true, value: empty }
+		}
+		// Transient / unexpected D1 failure: do not mark initialized.
+		return { ok: false, error }
 	}
 }
 
@@ -475,9 +512,9 @@ async function readJobRunObservabilityFromD1(input: {
 	env: Env
 	userId: string
 	jobId: string
-}): Promise<JobRunObservabilitySeedInput | null> {
+}): Promise<D1ReadResult<JobRunObservabilitySeedInput | null>> {
 	const db = input.env.APP_DB
-	if (!db) return null
+	if (!db) return { ok: true, value: null }
 	try {
 		const row = await db
 			.prepare(
@@ -499,26 +536,34 @@ async function readJobRunObservabilityFromD1(input: {
 				error_count: number
 				updated_at: string
 			}>()
-		if (!row) return null
+		if (!row) return { ok: true, value: null }
 		const lastRunStatus: JobRunObservabilityStatus | null =
 			row.last_run_status === 'success' || row.last_run_status === 'error'
 				? row.last_run_status
 				: null
 		return {
-			jobId: String(row.id),
-			lastRunAt: row.last_run_at == null ? null : String(row.last_run_at),
-			lastRunStatus,
-			lastRunError:
-				row.last_run_error == null ? null : String(row.last_run_error),
-			lastDurationMs:
-				row.last_duration_ms == null ? null : Number(row.last_duration_ms) || 0,
-			runCount: Number(row.run_count) || 0,
-			successCount: Number(row.success_count) || 0,
-			errorCount: Number(row.error_count) || 0,
-			updatedAt: String(row.updated_at),
+			ok: true,
+			value: {
+				jobId: String(row.id),
+				lastRunAt: row.last_run_at == null ? null : String(row.last_run_at),
+				lastRunStatus,
+				lastRunError:
+					row.last_run_error == null ? null : String(row.last_run_error),
+				lastDurationMs:
+					row.last_duration_ms == null
+						? null
+						: Number(row.last_duration_ms) || 0,
+				runCount: Number(row.run_count) || 0,
+				successCount: Number(row.success_count) || 0,
+				errorCount: Number(row.error_count) || 0,
+				updatedAt: String(row.updated_at),
+			},
 		}
-	} catch {
-		return null
+	} catch (error) {
+		if (isMissingD1RelationError(error)) {
+			return { ok: true, value: null }
+		}
+		return { ok: false, error }
 	}
 }
 
@@ -1123,6 +1168,25 @@ export async function findWorkflowProjectionByIdempotencyKey(input: {
 	})
 }
 
+/**
+ * Exact binding + idempotency lookup that includes `creating` rows. Use this
+ * instead of listing/scanning creating projections.
+ */
+export async function findWorkflowProjectionByBindingIdempotencyKey(input: {
+	env: Env
+	userId: string
+	bindingName: string
+	idempotencyKey: string
+}): Promise<WorkflowProjectionRecord | null> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).findWorkflowProjectionByBindingIdempotencyKey({
+		bindingName: input.bindingName,
+		idempotencyKey: input.idempotencyKey,
+	})
+}
+
 export async function listWorkflowProjections(input: {
 	env: Env
 	userId: string
@@ -1304,5 +1368,6 @@ export {
 	isWorkflowBindingName,
 	workflowBindingNames,
 	workflowProjectionActiveStatuses,
+	workflowProjectionCreatingTtlMs,
 	workflowProjectionReservationStatuses,
 } from './workflow-projection.ts'

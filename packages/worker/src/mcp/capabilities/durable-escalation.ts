@@ -7,7 +7,7 @@ import {
 } from '#worker/package-runtime/package-workflows.ts'
 import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import {
-	listWorkflowProjections,
+	findWorkflowProjectionByBindingIdempotencyKey,
 	upsertWorkflowProjection,
 } from '#worker/run-records/service.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
@@ -169,38 +169,36 @@ async function findAlreadyDispatchedWorkflowRunByIdempotencyKey(input: {
 		}
 	}
 
-	// Creating placeholders are excluded from the idempotency reader; import any
-	// legacy D1 creating row, then scan RunLog creating projections.
+	// Creating placeholders are excluded from the non-creating idempotency
+	// reader; import any legacy D1 creating row, then use the exact
+	// binding+idempotency lookup that includes `creating`.
 	await importCreatingD1RowIfPresent({
 		env: input.env,
 		userId: input.userId,
 		idempotencyKey: trimmedKey,
 	})
-	let cursor: string | null = null
-	for (;;) {
-		const page = await listWorkflowProjections({
-			env: input.env,
-			userId: input.userId,
-			status: creatingWorkflowProjectionStatus,
-			bindingName: dynamicCallableWorkflowsBindingName,
-			limit: 100,
-			cursor,
-		})
-		const match = page.projections.find(
-			(projection) => projection.idempotencyKey === trimmedKey,
-		)
-		if (match) {
-			return {
-				id: match.id,
-				workflowName: match.workflowName,
-				idempotencyKey: match.idempotencyKey,
-				status: match.status,
-			}
-		}
-		if (!page.nextCursor) break
-		cursor = page.nextCursor
+	const match = await findWorkflowProjectionByBindingIdempotencyKey({
+		env: input.env,
+		userId: input.userId,
+		bindingName: dynamicCallableWorkflowsBindingName,
+		idempotencyKey: trimmedKey,
+	})
+	if (!match) return null
+	const status = match.status ?? ''
+	// Exact lookup includes creating; terminal rows fall through to create()
+	// single-flight / fail-closed handling.
+	if (
+		status !== creatingWorkflowProjectionStatus &&
+		terminalDurableEscalationStatuses.has(status)
+	) {
+		return null
 	}
-	return null
+	return {
+		id: match.id,
+		workflowName: match.workflowName,
+		idempotencyKey: match.idempotencyKey,
+		status: match.status,
+	}
 }
 
 function waitForAbort(signal: AbortSignal) {

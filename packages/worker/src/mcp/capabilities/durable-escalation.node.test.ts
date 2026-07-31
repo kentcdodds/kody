@@ -95,28 +95,21 @@ const runRecordMocks = vi.hoisted(() => {
 				return matches[0] ?? null
 			},
 		),
-		listWorkflowProjections: vi.fn(
+		findWorkflowProjectionByBindingIdempotencyKey: vi.fn(
 			async (input: {
 				env: Env
 				userId: string
-				limit?: number | null
-				status?: string | null
-				bindingName?: string | null
+				bindingName: string
+				idempotencyKey: string
 			}) => {
-				const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
-				const rows = [...userStore(input.userId).values()]
+				const matches = [...userStore(input.userId).values()]
 					.filter(
 						(row) =>
-							(input.status ? row.status === input.status : true) &&
-							(input.bindingName
-								? row.bindingName === input.bindingName
-								: true),
+							row.bindingName === input.bindingName &&
+							row.idempotencyKey === input.idempotencyKey,
 					)
-					.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-				return {
-					projections: rows.slice(0, limit),
-					nextCursor: null as string | null,
-				}
+					.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+				return matches[0] ?? null
 			},
 		),
 	}
@@ -159,15 +152,14 @@ vi.mock('#worker/run-records/service.ts', () => ({
 				},
 			]),
 		),
-	listWorkflowProjections: (...args: Array<unknown>) =>
-		runRecordMocks.listWorkflowProjections(
+	findWorkflowProjectionByBindingIdempotencyKey: (...args: Array<unknown>) =>
+		runRecordMocks.findWorkflowProjectionByBindingIdempotencyKey(
 			...(args as [
 				{
 					env: Env
 					userId: string
-					limit?: number | null
-					status?: string | null
-					bindingName?: string | null
+					bindingName: string
+					idempotencyKey: string
 				},
 			]),
 		),
@@ -180,7 +172,7 @@ beforeEach(() => {
 	mockModule.createDynamicCallableWorkflow.mockReset()
 	runRecordMocks.upsertWorkflowProjection.mockClear()
 	runRecordMocks.findWorkflowProjectionByIdempotencyKey.mockClear()
-	runRecordMocks.listWorkflowProjections.mockClear()
+	runRecordMocks.findWorkflowProjectionByBindingIdempotencyKey.mockClear()
 })
 
 const publishParts = [
@@ -377,11 +369,13 @@ test('mid-creation workflow projection rows are treated as already dispatched', 
 	})
 	expect(hangUntilAborted).not.toHaveBeenCalled()
 	expect(mockModule.createDynamicCallableWorkflow).not.toHaveBeenCalled()
-	expect(runRecordMocks.listWorkflowProjections).toHaveBeenCalledWith(
+	expect(
+		runRecordMocks.findWorkflowProjectionByBindingIdempotencyKey,
+	).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
-			status: creatingWorkflowProjectionStatus,
 			bindingName: projectionBindingName,
+			idempotencyKey: expectedKey,
 		}),
 	)
 })

@@ -1,7 +1,10 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#worker/entitlements/plans.ts'
-import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
+import {
+	activeWorkflowStatusValues,
+	terminalWorkflowStatusValues,
+} from '#worker/package-runtime/workflow-statuses.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
 import type {
 	WorkflowProjectionRecord,
@@ -14,6 +17,7 @@ import {
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	DynamicCallableWorkflowBase,
+	activeD1WorkflowImportBound,
 	cancelWorkflowRunForUser,
 	createDynamicCallableWorkflow,
 	dynamicCallableWorkflowsBindingName,
@@ -103,9 +107,22 @@ const runRecordMocks = vi.hoisted(() => {
 			if (nextUpdatedAt < existing.updatedAt) {
 				return { ok: true as const }
 			}
+			const nextStatus = input.projection.status ?? null
+			if (
+				existing.status != null &&
+				(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+					existing.status,
+				) &&
+				nextStatus != null &&
+				!(terminalWorkflowStatusValues as ReadonlyArray<string>).includes(
+					nextStatus,
+				)
+			) {
+				return { ok: true as const }
+			}
 			store.set(input.projection.id, {
 				...existing,
-				status: input.projection.status ?? null,
+				status: nextStatus,
 				updatedAt: nextUpdatedAt,
 				completedAt:
 					input.projection.completedAt ?? existing.completedAt ?? null,
@@ -195,15 +212,26 @@ const runRecordMocks = vi.hoisted(() => {
 			}) => {
 				const store = userStore(input.userId)
 				const existing = store.get(input.projection.id) ?? null
-				const totalReserved = [...store.values()].filter(
-					(row) => row.status != null && reservationStatuses.has(row.status),
+				const countBeforeReservation = [...store.values()].filter(
+					(row) =>
+						row.id !== input.projection.id &&
+						row.status != null &&
+						reservationStatuses.has(row.status),
 				).length
-				const existingOccupies =
-					existing?.status != null && reservationStatuses.has(existing.status)
-				const countBeforeReservation = existingOccupies
-					? Math.max(0, totalReserved - 1)
-					: totalReserved
+				// Insert-only / creating-refresh: never clobber queued/running/terminal.
+				if (
+					existing?.status != null &&
+					existing.status !== creatingWorkflowProjectionStatus
+				) {
+					return {
+						countBeforeReservation,
+						reserved: false,
+						inserted: false,
+						projection: existing,
+					}
+				}
 				const now = new Date().toISOString()
+				const inserted = existing == null
 				// Keep count+insert synchronous (no await) so concurrent create
 				// tests observe DO-like serialization under Promise.all.
 				store.set(
@@ -225,7 +253,12 @@ const runRecordMocks = vi.hoisted(() => {
 				if (!projection) {
 					throw new Error('Expected reserved projection.')
 				}
-				return { countBeforeReservation, projection }
+				return {
+					countBeforeReservation,
+					reserved: true,
+					inserted,
+					projection,
+				}
 			},
 		),
 		deleteWorkflowProjectionIfCreating: vi.fn(
@@ -567,15 +600,29 @@ function createWorkflowRunsDatabase(options?: {
 						async all() {
 							const userId = params[0]
 							if (query.includes('status IN')) {
+								const limitIndex = params.length - 1
+								const limit = query.includes('LIMIT')
+									? Number(params[limitIndex] ?? 25)
+									: Number.POSITIVE_INFINITY
+								const statusParams = query.includes('LIMIT')
+									? params.slice(1, limitIndex)
+									: params.slice(1)
 								const statuses = new Set(
-									params.slice(1).map((value) => String(value)),
+									statusParams.map((value) => String(value)),
 								)
 								return {
-									results: [...workflowRuns.values()].filter(
-										(row) =>
-											row['user_id'] === userId &&
-											statuses.has(String(row['status'])),
-									),
+									results: [...workflowRuns.values()]
+										.filter(
+											(row) =>
+												row['user_id'] === userId &&
+												statuses.has(String(row['status'])),
+										)
+										.sort((left, right) =>
+											String(right['created_at']).localeCompare(
+												String(left['created_at']),
+											),
+										)
+										.slice(0, Number.isFinite(limit) ? limit : undefined),
 								}
 							}
 							const limit = Number(params[1] ?? 25)
@@ -606,7 +653,23 @@ function createWorkflowRunsDatabase(options?: {
 							if (query.includes('INSERT INTO workflow_runs')) {
 								const id = String(params[0])
 								const existing = workflowRuns.get(id)
+								const nextStatus = String(params[11] ?? '')
+								const nextUpdatedAt = String(params[13] ?? '')
+								const terminal = new Set(terminalWorkflowStatusValues)
 								if (existing) {
+									const existingUpdatedAt = String(existing['updated_at'] ?? '')
+									const existingStatus = String(existing['status'] ?? '')
+									// Mirror ON CONFLICT guards: monotonic updated_at +
+									// terminal stickiness against active regression.
+									if (nextUpdatedAt < existingUpdatedAt) {
+										return { success: true }
+									}
+									if (
+										terminal.has(existingStatus) &&
+										!terminal.has(nextStatus)
+									) {
+										return { success: true }
+									}
 									existing['status'] = params[11]
 									existing['updated_at'] = params[13]
 									existing['completed_at'] =
@@ -2200,6 +2263,137 @@ test('monotonic upsert ignores older D1 mirror timestamps on dual-read import', 
 		updatedAt: '2026-05-08T20:00:00.000Z',
 	})
 	expect(runRecordMocks.listForUser('user-1')[0]?.status).toBe('complete')
+})
+
+test('out-of-order D1 mirrors cannot regress a newer terminal row', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const flusher = createWaitUntilFlusher()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
+
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-05-08T19:30:00.000Z'))
+		const created = await createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			waitUntil: flusher.waitUntil,
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'mirror-mono-key',
+				runAt: '2026-05-08T19:30:00.000Z',
+			},
+		})
+		await flusher.flush()
+
+		vi.setSystemTime(new Date('2026-05-08T19:31:00.000Z'))
+		await cancelWorkflowRunForUser({
+			env,
+			userId: 'user-1',
+			workflowRunId: created.id,
+			waitUntil: flusher.waitUntil,
+		})
+		await flusher.flush()
+		expect(db.workflowRuns.get(created.id)).toMatchObject({
+			status: 'cancelled',
+			updated_at: '2026-05-08T19:31:00.000Z',
+		})
+
+		// Lagging creating/queued mirror with an older updated_at must not win.
+		vi.setSystemTime(new Date('2026-05-08T19:30:30.000Z'))
+		db.workflowRuns.set(created.id, {
+			...db.workflowRuns.get(created.id)!,
+			status: 'cancelled',
+			updated_at: '2026-05-08T19:31:00.000Z',
+			completed_at: '2026-05-08T19:31:00.000Z',
+		})
+		const mirrorBind = env.APP_DB.prepare(
+			`INSERT INTO workflow_runs (
+				id, user_id, source_type, package_id, kody_id, source_id,
+				workflow_name, export_name, idempotency_key, run_at, plan_date,
+				status, created_at, updated_at, completed_at, last_error
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).bind(
+			created.id,
+			'user-1',
+			'inline',
+			null,
+			null,
+			null,
+			'inline-code',
+			null,
+			'mirror-mono-key',
+			'2026-05-08T19:30:00.000Z',
+			'2026-05-08',
+			'queued',
+			'2026-05-08T19:30:00.000Z',
+			'2026-05-08T19:30:30.000Z',
+			null,
+			null,
+		)
+		await mirrorBind.run()
+		expect(db.workflowRuns.get(created.id)).toMatchObject({
+			status: 'cancelled',
+			updated_at: '2026-05-08T19:31:00.000Z',
+		})
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('active D1 import bound overflows still block entitlement', async () => {
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		RUN_LOG: {} as DurableObjectNamespace,
+	} as Env
+	const now = '2026-05-08T18:00:00.000Z'
+	const overflowCount = activeD1WorkflowImportBound + 25
+	for (let index = 0; index < overflowCount; index += 1) {
+		const id = `dynwf-overflow-${index}`
+		db.workflowRuns.set(id, {
+			id,
+			user_id: 'user-1',
+			source_type: 'inline',
+			package_id: null,
+			kody_id: null,
+			source_id: null,
+			workflow_name: 'inline-code',
+			export_name: null,
+			idempotency_key: `overflow-${index}`,
+			run_at: now,
+			plan_date: '2026-05-08',
+			status: 'running',
+			created_at: now,
+			updated_at: now,
+			completed_at: null,
+			last_error: null,
+		})
+	}
+
+	await expect(
+		createDynamicCallableWorkflow({
+			env,
+			userId: 'user-1',
+			body: {
+				code: 'export default async function main() { return { ok: true } }',
+				idempotencyKey: 'blocked-by-overflow',
+				runAt: '2026-05-08T19:30:00.000Z',
+			},
+		}),
+	).rejects.toSatisfy((error: unknown) => isEntitlementLimitError(error))
+	expect(binding.create).not.toHaveBeenCalled()
+	expect(
+		runRecordMocks
+			.listForUser('user-1')
+			.filter((row) => row.status === 'running'),
+	).toHaveLength(activeD1WorkflowImportBound)
 })
 
 test('concurrent creates cannot exceed a one-slot workflow entitlement', async () => {

@@ -10,6 +10,7 @@ import {
 	clearRunRecords,
 	countActiveWorkflowProjections,
 	exportRunRecords,
+	findWorkflowProjectionByBindingIdempotencyKey,
 	findWorkflowProjectionByIdempotencyKey,
 	finishPackageInvocationRecord,
 	finishRunRecord,
@@ -24,6 +25,7 @@ import {
 	deleteWorkflowProjectionIfCreating,
 	upsertJobRunObservability,
 	upsertWorkflowProjection,
+	workflowProjectionCreatingTtlMs,
 } from './service.ts'
 import {
 	runRecordMaxRunsPerUser,
@@ -229,6 +231,9 @@ test('reserveWorkflowProjectionSlot serializes concurrent creating reservations 
 		.map((result) => result.countBeforeReservation)
 		.sort((left, right) => left - right)
 	expect(counts).toEqual([0, 1, 2, 3, 4])
+	expect(results.every((result) => result.reserved && result.inserted)).toBe(
+		true,
+	)
 
 	const oneSlotLimit = 1
 	await Promise.all(
@@ -253,6 +258,153 @@ test('reserveWorkflowProjectionSlot serializes concurrent creating reservations 
 		results.find((result) => result.countBeforeReservation === 0)?.projection
 			.id,
 	)
+})
+
+test('reserveWorkflowProjectionSlot prunes stale creating and never overwrites terminal', async () => {
+	const userId = uniqueUserId('wf-reserve-ttl')
+	const staleAt = new Date(
+		Date.now() - workflowProjectionCreatingTtlMs - 60_000,
+	).toISOString()
+
+	await upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			id: 'wf-stale-creating',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'stale',
+			idempotencyKey: 'stale-creating-key',
+			runAt: staleAt,
+			status: 'creating',
+			createdAt: staleAt,
+			updatedAt: staleAt,
+		},
+	})
+	await upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			id: 'wf-terminal',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'done',
+			idempotencyKey: 'terminal-key',
+			runAt: '2026-07-31T00:00:00.000Z',
+			status: 'complete',
+			createdAt: '2026-07-31T00:00:00.000Z',
+			updatedAt: '2026-07-31T00:00:00.000Z',
+			completedAt: '2026-07-31T00:00:00.000Z',
+		},
+	})
+
+	const recovered = await reserveWorkflowProjectionSlot({
+		env,
+		userId,
+		projection: {
+			id: 'wf-fresh',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'fresh',
+			idempotencyKey: 'fresh-key',
+			runAt: '2026-07-31T01:00:00.000Z',
+			status: 'creating',
+		},
+	})
+	// Stale creating pruned before count, so the fresh reserve sees an empty slot.
+	expect(recovered.countBeforeReservation).toBe(0)
+	expect(recovered).toMatchObject({ reserved: true, inserted: true })
+	expect(
+		await getWorkflowProjection({ env, userId, id: 'wf-stale-creating' }),
+	).toBeNull()
+
+	const againstTerminal = await reserveWorkflowProjectionSlot({
+		env,
+		userId,
+		projection: {
+			id: 'wf-terminal',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'should-not-clobber',
+			idempotencyKey: 'terminal-key',
+			runAt: '2026-07-31T02:00:00.000Z',
+			status: 'creating',
+		},
+	})
+	expect(againstTerminal).toMatchObject({
+		reserved: false,
+		inserted: false,
+		projection: expect.objectContaining({
+			id: 'wf-terminal',
+			status: 'complete',
+			workflowName: 'done',
+		}),
+	})
+
+	const sameId = await reserveWorkflowProjectionSlot({
+		env,
+		userId,
+		projection: {
+			id: 'wf-fresh',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: 'fresh',
+			idempotencyKey: 'fresh-key',
+			runAt: '2026-07-31T01:00:00.000Z',
+			status: 'creating',
+		},
+	})
+	expect(sameId.countBeforeReservation).toBe(0)
+	expect(sameId).toMatchObject({ reserved: true, inserted: false })
+})
+
+test('findWorkflowProjectionByBindingIdempotencyKey includes creating exactly', async () => {
+	const userId = uniqueUserId('wf-lookup')
+	await upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			id: 'wf-creating-lookup',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'package',
+			packageId: 'pkg-1',
+			workflowName: 'nightly',
+			exportName: 'run',
+			idempotencyKey: 'lookup-creating-key',
+			runAt: '2026-07-31T00:00:00.000Z',
+			status: 'creating',
+		},
+	})
+
+	expect(
+		await findWorkflowProjectionByIdempotencyKey({
+			env,
+			userId,
+			idempotencyKey: 'lookup-creating-key',
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+		}),
+	).toBeNull()
+
+	expect(
+		await findWorkflowProjectionByBindingIdempotencyKey({
+			env,
+			userId,
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			idempotencyKey: 'lookup-creating-key',
+		}),
+	).toMatchObject({
+		id: 'wf-creating-lookup',
+		status: 'creating',
+		idempotencyKey: 'lookup-creating-key',
+	})
+	expect(
+		await findWorkflowProjectionByBindingIdempotencyKey({
+			env,
+			userId,
+			bindingName: 'OTHER_WORKFLOWS',
+			idempotencyKey: 'lookup-creating-key',
+		}),
+	).toBeNull()
 })
 
 test('workflow projection upsert is monotonic by updatedAt', async () => {

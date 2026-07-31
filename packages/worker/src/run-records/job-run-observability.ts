@@ -19,6 +19,12 @@ export type JobRunObservabilityRecord = {
 	successCount: number
 	errorCount: number
 	updatedAt: string
+	/**
+	 * Set once after a successful D1 legacy seed (including successful empty).
+	 * Post-cutover finishes may create the row first; a later seed then merges
+	 * legacy counters exactly once while this flag is still unset.
+	 */
+	legacySeeded: boolean
 }
 
 export type JobRunObservabilityUpsertInput = {
@@ -30,8 +36,11 @@ export type JobRunObservabilityUpsertInput = {
 }
 
 /**
- * Full observability row used when seeding from D1 `jobs` before the first
- * RunLog terminal finish. Inserted with `INSERT OR IGNORE` so a concurrent
- * finish cannot be overwritten by a stale seed.
+ * Legacy D1 `jobs` observability snapshot. Applied exactly once per job
+ * (`legacy_seeded`): absent rows insert; rows created by post-cutover finishes
+ * add counters and keep the newer last-run outcome by timestamp.
  */
-export type JobRunObservabilitySeedInput = JobRunObservabilityRecord
+export type JobRunObservabilitySeedInput = Omit<
+	JobRunObservabilityRecord,
+	'legacySeeded'
+>
