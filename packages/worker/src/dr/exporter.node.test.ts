@@ -1,6 +1,8 @@
 import { expect, test, vi } from 'vitest'
 import {
 	backupBlobKey,
+	sealedFullManifestKey,
+	sealedFullPrefix,
 	stagingR2IndexKey,
 	stagingStorageDumpKey,
 	stagingSummaryKey,
@@ -290,7 +292,7 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 		pageSize: 250,
 		estimatedBytes: 1,
 	})
-	const { client } = createMemoryS3()
+	const { client, objects } = createMemoryS3()
 	let nowMs = 1_000_000
 	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
 	const originalPut = client.put.bind(client)
@@ -332,6 +334,14 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 		expect(tick1.timeBudgetExhausted).toBe(true)
 		expect(tick1.summaryWritten).toBe(false)
 		expect(tick1.storageDumpsCompleted).toBe(1)
+		const progressAfterFirstTick = JSON.parse(
+			(await client.getText('staging/2026-07-23/exporter/progress.json'))!.text,
+		) as Record<string, unknown>
+		expect(progressAfterFirstTick).not.toHaveProperty('storageEntries')
+		expect(progressAfterFirstTick).not.toHaveProperty('artifactEntries')
+		expect(progressAfterFirstTick).not.toHaveProperty('storagePartialNdjson')
+		expect(progressAfterFirstTick).not.toHaveProperty('r2PartialNdjson')
+		expect(progressAfterFirstTick.storagePendingEntries).toHaveLength(1)
 
 		nowMs = 1_000_000
 		const tick2 = await runDrExportTick({
@@ -342,6 +352,11 @@ test('exporter resumes from progress cursor across ticks when budget is exhauste
 		})
 		expect(tick2.summaryWritten).toBe(true)
 		expect(storageMocks.exportStorage.mock.calls.length).toBe(2)
+		expect(
+			[...objects.keys()].some((key) =>
+				key.startsWith('staging/2026-07-23/exporter/chunks/storage-index/'),
+			),
+		).toBe(true)
 	} finally {
 		dateNow.mockRestore()
 	}
@@ -488,26 +503,28 @@ test('exporter skips oversized storage dumps with a summary warning', async () =
 
 test('exporter aborts quietly when progress If-Match precondition fails', async () => {
 	storageMocks.exportStorage.mockReset()
-	storageMocks.exportStorage.mockResolvedValue({
-		entries: [{ key: 'k', value: 1 }],
+	let storedValue = 1
+	storageMocks.exportStorage.mockImplementation(async () => ({
+		entries: [{ key: 'k', value: storedValue }],
 		truncated: false,
 		nextStartAfter: null,
 		pageSize: 250,
 		estimatedBytes: 1,
-	})
+	}))
 	const { client } = createMemoryS3()
 	const originalPut = client.put.bind(client)
 	let progressPuts = 0
 	client.put = async (key, body, options) => {
 		if (key.includes('exporter/progress.json')) {
 			progressPuts += 1
-			if (progressPuts === 1) {
-				return originalPut(key, body, options)
+			if (progressPuts === 2) {
+				throw new DrBackupPreconditionFailedError(key)
 			}
-			throw new DrBackupPreconditionFailedError(key)
 		}
 		return originalPut(key, body, options)
 	}
+	let nowMs = 1_000_000
+	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
 	const env = {
 		DR_EXPORT_ENABLED: 'true',
 		DR_BACKUP_ACCOUNT_ID: 'acct',
@@ -523,14 +540,39 @@ test('exporter aborts quietly when progress If-Match precondition fails', async 
 		STORAGE_RUNNER: {},
 	} as unknown as Env
 
-	const result = await runDrExportTick({
-		env,
-		now: new Date('2026-07-23T01:00:00.000Z'),
-		timeBudgetMs: 60_000,
-		s3: client,
-	})
-	expect(result.skipped).toBe(true)
-	expect(result.reason).toBe('progress-precondition-failed')
+	try {
+		const result = await runDrExportTick({
+			env,
+			now: new Date('2026-07-23T01:00:00.000Z'),
+			timeBudgetMs: 60_000,
+			s3: client,
+		})
+		expect(result.skipped).toBe(true)
+		expect(result.reason).toBe('progress-precondition-failed')
+
+		// The failed tick wrote a complete immutable dump before losing
+		// progress ownership. Once its lease expires, changed source bytes can
+		// produce a new orphaned chunk while resume adopts the first complete
+		// dump and finishes rather than conflicting forever.
+		storedValue = 2
+		nowMs += 3 * 60_000
+		const resumed = await runDrExportTick({
+			env,
+			now: new Date('2026-07-23T01:05:00.000Z'),
+			timeBudgetMs: 60_000,
+			s3: client,
+		})
+		expect(resumed.summaryWritten).toBe(true)
+		const identity = encodeStorageIdentity('user-a', 'job:1')
+		const dump = await client.getText(
+			stagingStorageDumpKey('2026-07-23', identity),
+		)
+		expect(JSON.parse(dump!.text.trim())).toMatchObject({
+			valueJson: JSON.stringify(1),
+		})
+	} finally {
+		dateNow.mockRestore()
+	}
 })
 
 test('R2 export does not duplicate index lines across budget interruptions', async () => {
@@ -600,6 +642,7 @@ test('R2 export does not duplicate index lines across budget interruptions', asy
 	let nowMs = 1_000_000
 	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
 	const originalPut = client.put.bind(client)
+	let exhaustedAfterFirstPage = false
 	client.put = async (key, body, options) => {
 		const result = await originalPut(key, body, options)
 		// After the first R2 list page is persisted (cursor advanced), exhaust
@@ -607,8 +650,10 @@ test('R2 export does not duplicate index lines across budget interruptions', asy
 		if (
 			key.includes('exporter/progress.json') &&
 			typeof body === 'string' &&
-			body.includes('"r2ListCursor":"page-2"')
+			body.includes('"r2ListCursor":"page-2"') &&
+			!exhaustedAfterFirstPage
 		) {
+			exhaustedAfterFirstPage = true
 			nowMs += 50_000
 		}
 		return result
@@ -660,6 +705,156 @@ test('R2 export does not duplicate index lines across budget interruptions', asy
 	} finally {
 		dateNow.mockRestore()
 	}
+})
+
+test('R2 export reuses unchanged objects from the latest sealed index', async () => {
+	storageMocks.exportStorage.mockReset()
+	storageMocks.exportStorage.mockResolvedValue({
+		entries: [],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 250,
+		estimatedBytes: 0,
+	})
+	const unchangedBytes = new TextEncoder().encode('unchanged')
+	const changedBytes = new TextEncoder().encode('changed-now')
+	const unchangedDigest = await sha256Hex(unchangedBytes)
+	const oldChangedDigest = await sha256Hex('changed-before')
+	const uploaded = new Date('2026-07-20T12:00:00.000Z')
+	const previousIndexBody = [
+		{
+			key: 'unchanged',
+			size: unchangedBytes.byteLength,
+			sha256: unchangedDigest,
+			etag: 'etag-unchanged',
+			uploaded: uploaded.toISOString(),
+		},
+		{
+			key: 'changed',
+			size: changedBytes.byteLength,
+			sha256: oldChangedDigest,
+			etag: 'etag-before',
+			uploaded: uploaded.toISOString(),
+		},
+	]
+		.map((entry) => `${JSON.stringify(entry)}\n`)
+		.join('')
+	const previousIndexKey = `${sealedFullPrefix('2026-07-22')}r2-index/email-blobs.ndjson`
+	const { client } = createMemoryS3()
+	await client.put(previousIndexKey, previousIndexBody)
+	await client.put(backupBlobKey(unchangedDigest), unchangedBytes)
+	await client.put(
+		sealedFullManifestKey('2026-07-22'),
+		JSON.stringify({
+			schemaVersion: 1,
+			payload: {
+				schemaVersion: 1,
+				day: '2026-07-22',
+				d1ManifestKey: 'daily/d1/2026-07-22/manifest.json',
+				d1ManifestSha256: 'a'.repeat(64),
+				storageIndex: {
+					objectKey: `${sealedFullPrefix('2026-07-22')}storage-index.json`,
+					bytes: 0,
+					sha256: 'b'.repeat(64),
+				},
+				r2Indexes: {
+					'email-blobs': {
+						objectKey: previousIndexKey,
+						bytes: new TextEncoder().encode(previousIndexBody).byteLength,
+						sha256: await sha256Hex(previousIndexBody),
+					},
+				},
+				artifactsIndex: {
+					objectKey: `${sealedFullPrefix('2026-07-22')}artifacts-index.json`,
+					bytes: 0,
+					sha256: 'c'.repeat(64),
+				},
+				sealedAt: '2026-07-22T06:30:00.000Z',
+				buildCommit: 'abcdef1',
+				signing: { algorithm: 'Ed25519', keyId: 'test-key' },
+			},
+			signature: {
+				algorithm: 'Ed25519',
+				keyId: 'test-key',
+				value: 'test-signature',
+			},
+		}),
+	)
+	const get = vi.fn(async (key: string) => {
+		const bytes =
+			key === 'unchanged'
+				? unchangedBytes
+				: key === 'changed'
+					? changedBytes
+					: null
+		if (!bytes) return null
+		return {
+			arrayBuffer: async () =>
+				bytes.buffer.slice(
+					bytes.byteOffset,
+					bytes.byteOffset + bytes.byteLength,
+				),
+		}
+	})
+	const emailBucket = {
+		async list() {
+			return {
+				objects: [
+					{
+						key: 'unchanged',
+						size: unchangedBytes.byteLength,
+						uploaded,
+						etag: 'etag-unchanged',
+					},
+					{
+						key: 'changed',
+						size: changedBytes.byteLength,
+						uploaded,
+						etag: 'etag-now',
+					},
+				],
+				truncated: false,
+				cursor: '',
+			}
+		},
+		get,
+	} as unknown as R2Bucket
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({}),
+		EMAIL_BLOBS: emailBucket,
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+
+	const result = await runDrExportTick({
+		env,
+		now: new Date('2026-07-23T01:00:00.000Z'),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(result.summaryWritten).toBe(true)
+	expect(get).toHaveBeenCalledTimes(1)
+	expect(get).toHaveBeenCalledWith('changed')
+	const currentIndex = (await client.getText(
+		stagingR2IndexKey('2026-07-23', 'email-blobs'),
+	))!.text
+	const entries = currentIndex
+		.trim()
+		.split('\n')
+		.map((line) => JSON.parse(line) as { key: string; sha256: string })
+	expect(entries).toEqual([
+		expect.objectContaining({ key: 'unchanged', sha256: unchangedDigest }),
+		expect.objectContaining({
+			key: 'changed',
+			sha256: await sha256Hex(changedBytes),
+		}),
+	])
 })
 
 test('DR inventory includes registry buckets and package_service_states services', async () => {
@@ -715,22 +910,35 @@ test('watchdog passes on a written summary and fails loudly on an incomplete nig
 		'staging/2026-07-23/exporter/progress.json',
 		new TextEncoder().encode(
 			JSON.stringify({
-				schemaVersion: 1,
+				schemaVersion: 2,
 				day: '2026-07-23',
 				startedAt: '2026-07-23T00:30:00.000Z',
 				phase: 'artifacts',
 				revision: 42,
+				leaseId: null,
+				leaseExpiresAt: null,
 				storageIndex: 10,
 				storagePageStartAfter: null,
-				storagePartialNdjson: '',
+				storagePartialIdentity: null,
+				storageDumpChunkCount: 0,
+				storageDumpChunkHead: null,
 				storagePartialEntryCount: 0,
-				storageEntries: [],
+				storagePartialBytes: 0,
+				storageEntryChunkCount: 0,
+				storageEntryChunkHead: null,
+				storagePendingEntries: [],
 				r2LabelIndex: 2,
 				r2ListCursor: null,
-				r2PartialNdjson: '',
+				r2ChunkCount: 0,
+				r2ChunkHead: null,
+				r2FinalPageReady: false,
 				r2Completed: {},
+				previousSealedDayResolved: true,
+				previousSealedDay: null,
 				artifactsIndex: 7,
-				artifactEntries: [],
+				artifactEntryChunkCount: 0,
+				artifactEntryChunkHead: null,
+				artifactPendingEntries: [],
 				blobsWritten: 0,
 				blobsReused: 0,
 				warnings: [],

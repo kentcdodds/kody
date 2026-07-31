@@ -11,16 +11,13 @@ import {
 	type ArtifactsIndex,
 	type ArtifactsIndexEntry,
 	type BackupR2BucketLabel,
-	type R2IndexEntry,
 	type StagingFileSummary,
 	type StagingSummary,
 	type StorageDumpEntry,
 	type StorageIndex,
 	type StorageIndexEntry,
 } from '@kody-internal/shared/backup-staging.ts'
-import { buildPackageServiceStorageId } from '#worker/package-runtime/package-service.ts'
 import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import { listPlatformStorageBuckets } from '#worker/storage-buckets/service.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import {
 	createDrBackupS3Client,
@@ -29,15 +26,46 @@ import {
 	type DrBackupS3Client,
 } from '#worker/dr/backup-s3.ts'
 import { sha256Hex } from '#worker/dr/sha256.ts'
-import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
+import {
+	loadPreviousR2Index,
+	putImmutableOutput,
+	putLinkedChunk,
+	readLinkedChunkBody,
+	readLinkedChunkEntries,
+	resolvePreviousSealedDay,
+	stagingChunkKey,
+	stagingR2IndexChunkKey,
+	stagingStorageDumpChunkKey,
+	type IncrementalR2IndexEntry,
+} from '#worker/dr/exporter-staging.ts'
+import {
+	listPlatformArtifactInventory,
+	listPlatformStorageInventory,
+	type ArtifactInventoryEntry,
+	type StorageInventoryEntry,
+} from '#worker/dr/exporter-inventory.ts'
+import {
+	isDrExportConfigured,
+	shouldRunDrExportCron,
+} from '#worker/dr/exporter-schedule.ts'
+
+export { listPlatformStorageInventory } from '#worker/dr/exporter-inventory.ts'
+export {
+	isDrExportConfigured,
+	shouldRunDrExportCron,
+	shouldRunDrExportWatchdogCron,
+} from '#worker/dr/exporter-schedule.ts'
 
 export const drExportRunTimeBudgetMs = 20_000
 /** Skip individual R2 objects larger than this (full-buffer ceiling). */
 export const drExportMaxObjectBytes = 25 * 1024 * 1024
-/** Cap for in-progress storage NDJSON carried inside progress.json. */
+/** Cap for an assembled storage dump before it is admitted to the index. */
 export const drExportMaxStorageDumpBufferBytes = 16 * 1024 * 1024
 const storageExportPageSize = 250
-const exporterProgressSchemaVersion = 1 as const
+const indexChunkEntryLimit = 100
+const previousSealedDayLookbackDays = 35
+const progressLeaseDurationMs = 2 * 60_000
+const exporterProgressSchemaVersion = 2 as const
 
 export type DrExporterPhase =
 	| 'storage'
@@ -53,6 +81,8 @@ export type DrExporterProgress = {
 	phase: DrExporterPhase
 	/** Monotonic counter bumped on every progress persist. */
 	revision: number
+	leaseId: string | null
+	leaseExpiresAt: string | null
 	/**
 	 * Count of storage identities completed or skipped. The inventory is
 	 * re-listed every tick and can drift mid-run (jobs registering new
@@ -71,18 +101,29 @@ export type DrExporterProgress = {
 	 * identity resets the partial state.
 	 */
 	storagePartialIdentity?: string | null
-	/** Accumulated NDJSON for the in-progress storage dump (resumed pages). */
-	storagePartialNdjson: string
+	/** Number of page chunks written for the in-progress storage dump. */
+	storageDumpChunkCount: number
+	storageDumpChunkHead: string | null
 	storagePartialEntryCount: number
-	storageEntries: Array<StorageIndexEntry>
+	storagePartialBytes: number
+	storageEntryChunkCount: number
+	storageEntryChunkHead: string | null
+	/** Bounded tail; full chunks live under exporter/chunks/storage-index/. */
+	storagePendingEntries: Array<StorageIndexEntry>
 	/** Index into backupR2BucketLabels. */
 	r2LabelIndex: number
 	r2ListCursor: string | null
-	/** Accumulated NDJSON for the in-progress R2 bucket index. */
-	r2PartialNdjson: string
+	r2ChunkCount: number
+	r2ChunkHead: string | null
+	r2FinalPageReady: boolean
 	r2Completed: Partial<Record<BackupR2BucketLabel, StagingFileSummary>>
+	previousSealedDayResolved: boolean
+	previousSealedDay: string | null
 	artifactsIndex: number
-	artifactEntries: Array<ArtifactsIndexEntry>
+	artifactEntryChunkCount: number
+	artifactEntryChunkHead: string | null
+	/** Bounded tail; full chunks live under exporter/chunks/artifacts-index/. */
+	artifactPendingEntries: Array<ArtifactsIndexEntry>
 	blobsWritten: number
 	blobsReused: number
 	warnings: Array<string>
@@ -109,20 +150,6 @@ export type DrExportTickResult = {
 	summaryWritten: boolean
 }
 
-type StorageInventoryEntry = {
-	userId: string
-	storageId: string
-	identity: string
-}
-
-type ArtifactInventoryEntry = {
-	sourceId: string
-	userId: string
-	entityKind: string
-	entityId: string
-	publishedCommit: string
-}
-
 function stagingProgressKey(day: string) {
 	return `${stagingPrefix(day)}exporter/progress.json`
 }
@@ -135,48 +162,6 @@ function utf8ByteLength(value: string) {
 	return new TextEncoder().encode(value).byteLength
 }
 
-/**
- * Nightly DR export window: roughly 00:30–06:10 UTC on the worker's
- * every-5-minute cron (~68 ticks × 20 s ≈ 22 minutes of staging work).
- * Ticks outside this window are skipped so daytime traffic is not competing
- * with a full-platform export. The original 00:30–02:10 window never
- * finished a night's staging at production scale (the exporter was still in
- * the artifacts phase every day), so no `exporter/summary.json` was ever
- * written and no day could be sealed. Completed days exit cheaply via the
- * `already-complete` check.
- */
-export function shouldRunDrExportCron(now: Date) {
-	const minutes = now.getUTCHours() * 60 + now.getUTCMinutes()
-	return minutes >= 30 && minutes <= 6 * 60 + 10
-}
-
-/**
- * One cron tick after the export window closes (06:15–06:19 UTC). The
- * watchdog fails loudly (lane failure → Sentry) when the night's staging
- * summary is missing, because the exporter itself never errors when it
- * merely runs out of window.
- */
-export function shouldRunDrExportWatchdogCron(now: Date) {
-	const minutes = now.getUTCHours() * 60 + now.getUTCMinutes()
-	return minutes >= 6 * 60 + 15 && minutes < 6 * 60 + 20
-}
-
-export function isDrExportConfigured(
-	env: Pick<
-		Env,
-		| 'DR_EXPORT_ENABLED'
-		| 'DR_BACKUP_ACCOUNT_ID'
-		| 'DR_BACKUP_BUCKET_NAME'
-		| 'DR_BACKUP_ACCESS_KEY_ID'
-		| 'DR_BACKUP_SECRET_ACCESS_KEY'
-	>,
-) {
-	return (
-		env.DR_EXPORT_ENABLED?.trim() === 'true' &&
-		readDrBackupS3Config(env) !== null
-	)
-}
-
 function createInitialProgress(day: string, now: Date): DrExporterProgress {
 	return {
 		schemaVersion: exporterProgressSchemaVersion,
@@ -184,18 +169,30 @@ function createInitialProgress(day: string, now: Date): DrExporterProgress {
 		startedAt: now.toISOString(),
 		phase: 'storage',
 		revision: 0,
+		leaseId: null,
+		leaseExpiresAt: null,
 		storageIndex: 0,
 		storagePageStartAfter: null,
 		storagePartialIdentity: null,
-		storagePartialNdjson: '',
+		storageDumpChunkCount: 0,
+		storageDumpChunkHead: null,
 		storagePartialEntryCount: 0,
-		storageEntries: [],
+		storagePartialBytes: 0,
+		storageEntryChunkCount: 0,
+		storageEntryChunkHead: null,
+		storagePendingEntries: [],
 		r2LabelIndex: 0,
 		r2ListCursor: null,
-		r2PartialNdjson: '',
+		r2ChunkCount: 0,
+		r2ChunkHead: null,
+		r2FinalPageReady: false,
 		r2Completed: {},
+		previousSealedDayResolved: false,
+		previousSealedDay: null,
 		artifactsIndex: 0,
-		artifactEntries: [],
+		artifactEntryChunkCount: 0,
+		artifactEntryChunkHead: null,
+		artifactPendingEntries: [],
 		blobsWritten: 0,
 		blobsReused: 0,
 		warnings: [],
@@ -242,82 +239,40 @@ function ndjsonLine(value: unknown) {
 	return `${JSON.stringify(value)}\n`
 }
 
-/**
- * Platform-wide StorageRunner inventory.
- *
- * Deliberate exception to per-user scoping: this operator-level DR exporter
- * iterates every user's storage ids so the sealed day can rebuild the whole
- * platform. Do not copy this pattern into user-facing read/write paths.
- */
-export async function listPlatformStorageInventory(
-	db: D1Database,
-): Promise<Array<StorageInventoryEntry>> {
-	// Platform-wide DR has only a D1Database (no per-user Env / network), so
-	// service buckets come from projected `package_service_states` rather than
-	// package manifests. Ad-hoc / execute buckets come from the authoritative
-	// `user_storage_buckets` registry via `listPlatformStorageBuckets`.
-	const [jobRows, archivedRows, registeredBuckets, serviceRows] =
-		await Promise.all([
-			db
-				.prepare(
-					`SELECT user_id AS userId, storage_id AS storageId
-					FROM jobs WHERE storage_id IS NOT NULL`,
-				)
-				.all<{ userId: string; storageId: string }>(),
-			db
-				.prepare(
-					`SELECT user_id AS userId, storage_id AS storageId
-					FROM archived_job_artifacts WHERE storage_id IS NOT NULL`,
-				)
-				.all<{ userId: string; storageId: string }>(),
-			listPlatformStorageBuckets({ db }),
-			db
-				.prepare(
-					`SELECT DISTINCT user_id AS userId, package_id AS packageId,
-						service_name AS serviceName
-					FROM package_service_states`,
-				)
-				.all<{
-					userId: string
-					packageId: string
-					serviceName: string
-				}>(),
-		])
-
-	const seen = new Set<string>()
-	const inventory: Array<StorageInventoryEntry> = []
-	const push = (userId: string, storageId: string) => {
-		const identity = encodeStorageIdentity(userId, storageId)
-		if (seen.has(identity)) return
-		seen.add(identity)
-		inventory.push({ userId, storageId, identity })
-	}
-	for (const row of jobRows.results ?? []) push(row.userId, row.storageId)
-	for (const row of archivedRows.results ?? []) push(row.userId, row.storageId)
-	for (const row of registeredBuckets) push(row.userId, row.storageId)
-	for (const row of serviceRows.results ?? []) {
-		push(
-			row.userId,
-			buildPackageServiceStorageId(row.packageId, row.serviceName),
-		)
-	}
-	inventory.sort((left, right) => left.identity.localeCompare(right.identity))
-	return inventory
+function ndjsonEntryCount(body: string) {
+	return body.split('\n').filter(Boolean).length
 }
 
-export async function listPlatformArtifactInventory(
-	db: D1Database,
-): Promise<Array<ArtifactInventoryEntry>> {
-	const result = await db
-		.prepare(
-			`SELECT id AS sourceId, user_id AS userId, entity_kind AS entityKind,
-				entity_id AS entityId, published_commit AS publishedCommit
-			FROM entity_sources
-			WHERE published_commit IS NOT NULL AND trim(published_commit) != ''
-			ORDER BY id ASC`,
-		)
-		.all<ArtifactInventoryEntry>()
-	return result.results ?? []
+async function flushStorageEntryChunk(input: {
+	s3: DrBackupS3Client
+	progress: DrExporterProgress
+}) {
+	if (input.progress.storagePendingEntries.length === 0) return
+	const body = input.progress.storagePendingEntries.map(ndjsonLine).join('')
+	input.progress.storageEntryChunkHead = await putLinkedChunk({
+		s3: input.s3,
+		keyPrefix: stagingChunkKey(input.progress.day, 'storage-index'),
+		entriesBody: body,
+		previousKey: input.progress.storageEntryChunkHead,
+	})
+	input.progress.storageEntryChunkCount += 1
+	input.progress.storagePendingEntries = []
+}
+
+async function flushArtifactEntryChunk(input: {
+	s3: DrBackupS3Client
+	progress: DrExporterProgress
+}) {
+	if (input.progress.artifactPendingEntries.length === 0) return
+	const body = input.progress.artifactPendingEntries.map(ndjsonLine).join('')
+	input.progress.artifactEntryChunkHead = await putLinkedChunk({
+		s3: input.s3,
+		keyPrefix: stagingChunkKey(input.progress.day, 'artifacts-index'),
+		entriesBody: body,
+		previousKey: input.progress.artifactEntryChunkHead,
+	})
+	input.progress.artifactEntryChunkCount += 1
+	input.progress.artifactPendingEntries = []
 }
 
 async function putBlobIfAbsent(input: {
@@ -361,6 +316,11 @@ function r2BindingForLabel(
  * on PutObject (412 PreconditionFailed on conflict).
  */
 async function persistProgress(s3: DrBackupS3Client, session: ProgressSession) {
+	if (session.progress.leaseId) {
+		session.progress.leaseExpiresAt = new Date(
+			Date.now() + progressLeaseDurationMs,
+		).toISOString()
+	}
 	session.progress.revision += 1
 	const body = JSON.stringify(session.progress)
 	const key = stagingProgressKey(session.progress.day)
@@ -402,8 +362,10 @@ const oversizedStorageDumpWarningPrefix = 'storage dump too large: '
 function resetPartialStorageState(progress: DrExporterProgress) {
 	progress.storagePageStartAfter = null
 	progress.storagePartialIdentity = null
-	progress.storagePartialNdjson = ''
+	progress.storageDumpChunkCount = 0
+	progress.storageDumpChunkHead = null
 	progress.storagePartialEntryCount = 0
+	progress.storagePartialBytes = 0
 }
 
 function skipOversizedStorageDump(
@@ -415,11 +377,20 @@ function skipOversizedStorageDump(
 	resetPartialStorageState(progress)
 }
 
-function collectHandledStorageIdentities(progress: DrExporterProgress) {
-	const handled = new Set(
-		progress.storageEntries.map((entry) => entry.storageId),
-	)
-	for (const warning of progress.warnings) {
+async function collectHandledStorageIdentities(input: {
+	s3: DrBackupS3Client
+	progress: DrExporterProgress
+}) {
+	const chunkEntries = await readLinkedChunkEntries<StorageIndexEntry>({
+		s3: input.s3,
+		headKey: input.progress.storageEntryChunkHead,
+		chunkCount: input.progress.storageEntryChunkCount,
+	})
+	const handled = new Set([
+		...chunkEntries.map((entry) => entry.storageId),
+		...input.progress.storagePendingEntries.map((entry) => entry.storageId),
+	])
+	for (const warning of input.progress.warnings) {
 		if (warning.startsWith(oversizedStorageDumpWarningPrefix)) {
 			handled.add(warning.slice(oversizedStorageDumpWarningPrefix.length))
 		}
@@ -443,12 +414,22 @@ async function exportStoragePhase(input: {
 	// which shifts positions in the sorted list. A positional cursor then
 	// dumps the same identity twice — producing duplicate storage-index
 	// entries that later wedge sealing — or silently skips identities.
-	const handledIdentities = collectHandledStorageIdentities(progress)
+	const handledIdentities = await collectHandledStorageIdentities({
+		s3,
+		progress,
+	})
+	let inventoryIndex = 0
 	for (;;) {
 		if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
-		const item = inventory.find(
-			(candidate) => !handledIdentities.has(candidate.identity),
-		)
+		let item: StorageInventoryEntry | undefined
+		while (inventoryIndex < inventory.length) {
+			const candidate = inventory[inventoryIndex]!
+			inventoryIndex += 1
+			if (!handledIdentities.has(candidate.identity)) {
+				item = candidate
+				break
+			}
+		}
 		if (!item) break
 		if (progress.storagePartialIdentity !== item.identity) {
 			// The persisted partial page state belongs to a different (drifted)
@@ -464,16 +445,18 @@ async function exportStoragePhase(input: {
 			pageSize: storageExportPageSize,
 			startAfter: progress.storagePageStartAfter,
 		})
+		let pageBody = ''
 		for (const entry of page.entries) {
 			const dumpEntry = {
 				key: entry.key,
 				valueJson: JSON.stringify(entry.value),
 			} satisfies StorageDumpEntry
-			progress.storagePartialNdjson += ndjsonLine(dumpEntry)
+			pageBody += ndjsonLine(dumpEntry)
 			progress.storagePartialEntryCount += 1
 		}
+		const pageBytes = utf8ByteLength(pageBody)
 		if (
-			utf8ByteLength(progress.storagePartialNdjson) >
+			progress.storagePartialBytes + pageBytes >
 			drExportMaxStorageDumpBufferBytes
 		) {
 			skipOversizedStorageDump(progress, item.identity)
@@ -481,28 +464,51 @@ async function exportStoragePhase(input: {
 			await persistProgress(s3, session)
 			continue
 		}
+		if (pageBody.length > 0) {
+			progress.storageDumpChunkHead = await putLinkedChunk({
+				s3,
+				keyPrefix: stagingStorageDumpChunkKey(progress.day, item.identity),
+				entriesBody: pageBody,
+				previousKey: progress.storageDumpChunkHead,
+			})
+			progress.storageDumpChunkCount += 1
+			progress.storagePartialBytes += pageBytes
+		}
 		if (page.truncated && page.nextStartAfter) {
 			progress.storagePageStartAfter = page.nextStartAfter
 			await persistProgress(s3, session)
 			continue
 		}
 		const objectKey = stagingStorageDumpKey(progress.day, item.identity)
-		const body = progress.storagePartialNdjson
-		await s3.put(objectKey, body, { contentType: 'application/x-ndjson' })
-		const summary = await fileSummary(objectKey, body)
-		progress.storageEntries.push({
+		const body = await readLinkedChunkBody({
+			s3,
+			headKey: progress.storageDumpChunkHead,
+			chunkCount: progress.storageDumpChunkCount,
+		})
+		const storedBody = await putImmutableOutput({
+			s3,
+			key: objectKey,
+			body,
+			contentType: 'application/x-ndjson',
+		})
+		const summary = await fileSummary(objectKey, storedBody)
+		progress.storagePendingEntries.push({
 			storageId: item.identity,
 			objectKey,
-			entryCount: progress.storagePartialEntryCount,
+			entryCount: ndjsonEntryCount(storedBody),
 			bytes: summary.bytes,
 			sha256: summary.sha256,
 		})
+		if (progress.storagePendingEntries.length >= indexChunkEntryLimit) {
+			await flushStorageEntryChunk({ s3, progress })
+		}
 		handledIdentities.add(item.identity)
 		progress.storageIndex += 1
 		resetPartialStorageState(progress)
 		input.counts.storageDumpsCompleted += 1
 		await persistProgress(s3, session)
 	}
+	await flushStorageEntryChunk({ s3, progress })
 	progress.phase = 'r2'
 	await persistProgress(s3, session)
 	return false
@@ -518,57 +524,121 @@ async function exportR2Phase(input: {
 }): Promise<boolean> {
 	const { session, s3, env } = input
 	const { progress } = session
+	if (!progress.previousSealedDayResolved) {
+		progress.previousSealedDay = await resolvePreviousSealedDay({
+			s3,
+			day: progress.day,
+			lookbackDays: previousSealedDayLookbackDays,
+		})
+		progress.previousSealedDayResolved = true
+		await persistProgress(s3, session)
+	}
 	while (progress.r2LabelIndex < backupR2BucketLabels.length) {
-		if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
 		const label = backupR2BucketLabels[progress.r2LabelIndex]!
 		const bucket = r2BindingForLabel(env, label)
-		const listed = await bucket.list({
-			cursor: progress.r2ListCursor ?? undefined,
-			limit: 100,
-		})
-		// Finish the whole list page before checking the tick budget. Persisting
-		// mid-page without advancing r2ListCursor would re-append the same
-		// NDJSON index lines on the next tick. List pages are bounded (≤100).
-		for (const object of listed.objects) {
-			if (object.size > drExportMaxObjectBytes) {
-				progress.warnings.push(
-					`Skipped ${label} object ${object.key}: size ${object.size} exceeds ${drExportMaxObjectBytes} bytes`,
-				)
-				input.counts.r2ObjectsProcessed += 1
-				continue
+		if (!progress.r2FinalPageReady) {
+			const previousEntries = await loadPreviousR2Index({
+				s3,
+				day: progress.previousSealedDay,
+				label,
+			})
+			for (;;) {
+				if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
+				const listed = await bucket.list({
+					cursor: progress.r2ListCursor ?? undefined,
+					limit: 100,
+				})
+				// Finish the whole list page before checking the tick budget.
+				// Persisting mid-page without advancing r2ListCursor would replay
+				// its index lines. List pages are bounded (≤100).
+				let pageIndexBody = ''
+				for (const object of listed.objects) {
+					if (object.size > drExportMaxObjectBytes) {
+						progress.warnings.push(
+							`Skipped ${label} object ${object.key}: size ${object.size} exceeds ${drExportMaxObjectBytes} bytes`,
+						)
+						input.counts.r2ObjectsProcessed += 1
+						continue
+					}
+					const uploaded = object.uploaded.toISOString()
+					const previous = previousEntries.get(object.key)
+					if (
+						previous &&
+						previous.size === object.size &&
+						previous.etag === object.etag &&
+						previous.uploaded === uploaded &&
+						(await s3.head(backupBlobKey(previous.sha256))).exists
+					) {
+						const indexEntry = {
+							key: object.key,
+							size: object.size,
+							sha256: previous.sha256,
+							etag: object.etag,
+							uploaded,
+						} satisfies IncrementalR2IndexEntry
+						pageIndexBody += ndjsonLine(indexEntry)
+						progress.blobsReused += 1
+						input.counts.r2ObjectsProcessed += 1
+						continue
+					}
+					const body = await bucket.get(object.key)
+					if (!body) {
+						progress.warnings.push(
+							`Missing ${label} object during export: ${object.key}`,
+						)
+						input.counts.r2ObjectsProcessed += 1
+						continue
+					}
+					const bytes = new Uint8Array(await body.arrayBuffer())
+					const digest = await sha256Hex(bytes)
+					await putBlobIfAbsent({ s3, sha256: digest, bytes, progress })
+					const indexEntry = {
+						key: object.key,
+						size: bytes.byteLength,
+						sha256: digest,
+						etag: object.etag,
+						uploaded,
+					} satisfies IncrementalR2IndexEntry
+					pageIndexBody += ndjsonLine(indexEntry)
+					input.counts.r2ObjectsProcessed += 1
+				}
+				if (pageIndexBody.length > 0) {
+					progress.r2ChunkHead = await putLinkedChunk({
+						s3,
+						keyPrefix: stagingR2IndexChunkKey(progress.day, label),
+						entriesBody: pageIndexBody,
+						previousKey: progress.r2ChunkHead,
+					})
+					progress.r2ChunkCount += 1
+				}
+				if (listed.truncated) {
+					progress.r2ListCursor = listed.cursor
+					await persistProgress(s3, session)
+					continue
+				}
+				progress.r2FinalPageReady = true
+				await persistProgress(s3, session)
+				break
 			}
-			const body = await bucket.get(object.key)
-			if (!body) {
-				progress.warnings.push(
-					`Missing ${label} object during export: ${object.key}`,
-				)
-				input.counts.r2ObjectsProcessed += 1
-				continue
-			}
-			const bytes = new Uint8Array(await body.arrayBuffer())
-			const digest = await sha256Hex(bytes)
-			await putBlobIfAbsent({ s3, sha256: digest, bytes, progress })
-			const indexEntry = {
-				key: object.key,
-				size: bytes.byteLength,
-				sha256: digest,
-			} satisfies R2IndexEntry
-			progress.r2PartialNdjson += ndjsonLine(indexEntry)
-			input.counts.r2ObjectsProcessed += 1
-		}
-		if (listed.truncated) {
-			progress.r2ListCursor = listed.cursor
-			await persistProgress(s3, session)
-			if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
-			continue
 		}
 		const objectKey = stagingR2IndexKey(progress.day, label)
-		const body = progress.r2PartialNdjson
-		await s3.put(objectKey, body, { contentType: 'application/x-ndjson' })
-		progress.r2Completed[label] = await fileSummary(objectKey, body)
+		const body = await readLinkedChunkBody({
+			s3,
+			headKey: progress.r2ChunkHead,
+			chunkCount: progress.r2ChunkCount,
+		})
+		const storedBody = await putImmutableOutput({
+			s3,
+			key: objectKey,
+			body,
+			contentType: 'application/x-ndjson',
+		})
+		progress.r2Completed[label] = await fileSummary(objectKey, storedBody)
 		progress.r2LabelIndex += 1
 		progress.r2ListCursor = null
-		progress.r2PartialNdjson = ''
+		progress.r2ChunkCount = 0
+		progress.r2ChunkHead = null
+		progress.r2FinalPageReady = false
 		await persistProgress(s3, session)
 	}
 	progress.phase = 'artifacts'
@@ -607,7 +677,7 @@ async function exportArtifactsPhase(input: {
 		const bytes = new TextEncoder().encode(snapshotText)
 		const digest = await sha256Hex(bytes)
 		await putBlobIfAbsent({ s3, sha256: digest, bytes, progress })
-		progress.artifactEntries.push({
+		progress.artifactPendingEntries.push({
 			sourceId: item.sourceId,
 			entityKind: item.entityKind,
 			entityId: item.entityId,
@@ -615,10 +685,14 @@ async function exportArtifactsPhase(input: {
 			publishedCommit: item.publishedCommit,
 			snapshotSha256: digest,
 		})
+		if (progress.artifactPendingEntries.length >= indexChunkEntryLimit) {
+			await flushArtifactEntryChunk({ s3, progress })
+		}
 		progress.artifactsIndex += 1
 		input.counts.artifactsProcessed += 1
 		await persistProgress(s3, session)
 	}
+	await flushArtifactEntryChunk({ s3, progress })
 	progress.phase = 'finalize'
 	await persistProgress(s3, session)
 	return false
@@ -632,29 +706,48 @@ async function finalizeExport(input: {
 }): Promise<StagingSummary> {
 	const { session, s3, env, now } = input
 	const { progress } = session
+	const storageEntries = await readLinkedChunkEntries<StorageIndexEntry>({
+		s3,
+		headKey: progress.storageEntryChunkHead,
+		chunkCount: progress.storageEntryChunkCount,
+	})
 	const storageIndexBody = JSON.stringify({
 		schemaVersion: backupStagingSchemaVersion,
 		day: progress.day,
-		entries: progress.storageEntries,
+		entries: storageEntries,
 	} satisfies StorageIndex)
 	const storageIndexKey = stagingStorageIndexKey(progress.day)
-	await s3.put(storageIndexKey, storageIndexBody, {
+	const storedStorageIndexBody = await putImmutableOutput({
+		s3,
+		key: storageIndexKey,
+		body: storageIndexBody,
 		contentType: 'application/json',
 	})
-	const storageIndex = await fileSummary(storageIndexKey, storageIndexBody)
+	const storageIndex = await fileSummary(
+		storageIndexKey,
+		storedStorageIndexBody,
+	)
 
+	const artifactEntries = await readLinkedChunkEntries<ArtifactsIndexEntry>({
+		s3,
+		headKey: progress.artifactEntryChunkHead,
+		chunkCount: progress.artifactEntryChunkCount,
+	})
 	const artifactsIndexBody = JSON.stringify({
 		schemaVersion: backupStagingSchemaVersion,
 		day: progress.day,
-		entries: progress.artifactEntries,
+		entries: artifactEntries,
 	} satisfies ArtifactsIndex)
 	const artifactsIndexKey = stagingArtifactsIndexKey(progress.day)
-	await s3.put(artifactsIndexKey, artifactsIndexBody, {
+	const storedArtifactsIndexBody = await putImmutableOutput({
+		s3,
+		key: artifactsIndexKey,
+		body: artifactsIndexBody,
 		contentType: 'application/json',
 	})
 	const artifactsIndex = await fileSummary(
 		artifactsIndexKey,
-		artifactsIndexBody,
+		storedArtifactsIndexBody,
 	)
 
 	const summary: StagingSummary = {
@@ -670,7 +763,10 @@ async function finalizeExport(input: {
 		blobsReused: progress.blobsReused,
 		warnings: progress.warnings,
 	}
-	await s3.put(stagingSummaryKey(progress.day), JSON.stringify(summary), {
+	await putImmutableOutput({
+		s3,
+		key: stagingSummaryKey(progress.day),
+		body: JSON.stringify(summary),
 		contentType: 'application/json',
 	})
 	progress.phase = 'done'
@@ -728,6 +824,17 @@ export async function runDrExportTick(input: {
 	let timeBudgetExhausted = false
 
 	try {
+		const leaseExpiresAtMs = Date.parse(progress.leaseExpiresAt ?? '')
+		if (
+			progress.leaseId &&
+			Number.isFinite(leaseExpiresAtMs) &&
+			leaseExpiresAtMs > Date.now()
+		) {
+			return empty('progress-lease-active')
+		}
+		progress.leaseId = crypto.randomUUID()
+		await persistProgress(s3, session)
+
 		if (progress.phase === 'storage') {
 			const inventory = await listPlatformStorageInventory(input.env.APP_DB)
 			timeBudgetExhausted = await exportStoragePhase({
@@ -767,6 +874,9 @@ export async function runDrExportTick(input: {
 			await finalizeExport({ env: input.env, s3, session, now })
 			summaryWritten = true
 		}
+		progress.leaseId = null
+		progress.leaseExpiresAt = null
+		await persistProgress(s3, session)
 
 		const result: DrExportTickResult = {
 			day,

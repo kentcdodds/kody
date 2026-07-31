@@ -112,13 +112,13 @@ were already gone or moved).
 
 Contract: `packages/shared/src/backup-staging.ts`.
 
-| Prefix                          | Mutability       | Contents                                                                     |
-| ------------------------------- | ---------------- | ---------------------------------------------------------------------------- |
-| `daily/d1/...`, `weekly/d1/...` | Immutable        | Signed D1 SQL + schema-v2 D1 manifests                                       |
-| `staging/{day}/...`             | Mutable          | Production exporter progress, indexes, NDJSON dumps, `exporter/summary.json` |
-| `daily/full/{day}/...`          | Immutable        | Sealed copy of staged indexes/dumps + Ed25519 full-backup manifest           |
-| `blobs/sha256/{hash}`           | Immutable        | Deduplicated email MIME, community assets, published source snapshots        |
-| `escrow/`                       | Operator-managed | Sealed `SECRET_STORE_KEY` blob (`escrow/secret-store-key.v1.json`)           |
+| Prefix                          | Mutability       | Contents                                                                                                  |
+| ------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------- |
+| `daily/d1/...`, `weekly/d1/...` | Immutable        | Signed D1 SQL + schema-v2 D1 manifests                                                                    |
+| `staging/{day}/...`             | Mutable          | Production exporter cursor progress, chunked phase output, indexes, NDJSON dumps, `exporter/summary.json` |
+| `daily/full/{day}/...`          | Immutable        | Sealed copy of staged indexes/dumps + Ed25519 full-backup manifest                                        |
+| `blobs/sha256/{hash}`           | Immutable        | Deduplicated email MIME, community assets, published source snapshots                                     |
+| `escrow/`                       | Operator-managed | Sealed `SECRET_STORE_KEY` blob (`escrow/secret-store-key.v1.json`)                                        |
 
 ### Capture lanes
 
@@ -138,9 +138,25 @@ Contract: `packages/shared/src/backup-staging.ts`.
      are skipped with a warning in the staging summary; the same summary also
      warns when a `StorageRunner` dump exceeds the 16 MiB buffer ceiling and is
      skipped — review dashboard warnings before treating a sealed day as
-     complete)
+     complete). An object whose key, size, ETag, and uploaded timestamp match
+     the latest retained sealed-day index reuses that index entry and
+     content-addressed blob without downloading or hashing the source object.
+     Missing, malformed, or checksum-mismatched sealed indexes fall back to the
+     full download and hash path.
    - **Published artifacts** — `BUNDLE_ARTIFACTS_KV` published source snapshots
      for rows in `entity_sources` with a `published_commit`
+   - **Resumable phase state** — `exporter/progress.json` contains phase
+     cursors, counters, a bounded index-entry tail, and conditional-write
+     revision data. Storage dump pages and storage, R2, and artifact index
+     entries are written under `exporter/chunks/` as bounded NDJSON objects.
+     Finalization reads those chunks and emits the stable storage, R2, and
+     artifact index contracts referenced by `exporter/summary.json`. Chunk
+     objects are content-addressed linked lists whose head keys and counts live
+     in progress. Stale writers can therefore leave only unreferenced chunks;
+     they cannot overwrite chunks selected by a newer lease. Progress updates
+     retain `If-Match` ownership semantics. Canonical per-day dumps, indexes,
+     and the completion summary are create-only; a resumed writer adopts an
+     already completed object instead of replacing it.
 3. **Seal** — Control plane verifies staged checksums against
    `staging/{day}/exporter/summary.json`, requires a verified same-day D1
    manifest, copies staged files under `daily/full/{day}/...`, and signs a
