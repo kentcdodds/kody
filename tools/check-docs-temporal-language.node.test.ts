@@ -26,9 +26,12 @@ test('stripMarkdownCode removes inline and fenced code while preserving lines', 
 
 	const stripped = stripMarkdownCode(input)
 	expect(stripped.split('\n')).toHaveLength(input.split('\n').length)
+	expect(stripped.split('\n')[0]).toHaveLength(
+		input.split('\n')[0]?.length ?? 0,
+	)
 	expect(stripped).not.toContain('Kody now supports')
 	expect(stripped).not.toContain('We no longer accept')
-	expect(stripped).toContain('Before  after.')
+	expect(stripped).toMatch(/^Before +after\./)
 	expect(stripped).toContain('Still prose.')
 })
 
@@ -68,18 +71,18 @@ test('reports original line numbers after fenced code', () => {
 			'We no longer accept this sample.',
 			'```',
 			'',
-			'Kody now supports packages.',
+			'Before `sample` Kody now supports packages.',
 		].join('\n'),
 	})
 	expect(matches).toEqual([
 		expect.objectContaining({
 			line: 5,
-			column: 1,
+			column: 17,
 			pattern: 'Kody now',
 		}),
 		expect.objectContaining({
 			line: 5,
-			column: 6,
+			column: 22,
 			pattern: 'now support/accept/require/use/store/return',
 		}),
 	])

@@ -52,7 +52,7 @@ export const temporalLanguagePatterns: ReadonlyArray<TemporalLanguagePattern> =
 	]
 
 function blankPreservingNewlines(value: string): string {
-	return value.replace(/[^\r\n]/g, '')
+	return value.replace(/[^\r\n]/g, ' ')
 }
 
 export function stripMarkdownCode(content: string): string {
@@ -60,7 +60,7 @@ export function stripMarkdownCode(content: string): string {
 		/(?:^|\n)[ \t]*(?:```|~~~)[^\n]*(?:\n[\s\S]*?(?:^|\n)[ \t]*(?:```|~~~)[ \t]*(?=\n|$)|$)/g,
 		blankPreservingNewlines,
 	)
-	return withoutFencedCode.replace(/`[^`\n]+`/g, '')
+	return withoutFencedCode.replace(/`[^`\n]+`/g, blankPreservingNewlines)
 }
 
 export function findTemporalLanguageMatches(input: {
