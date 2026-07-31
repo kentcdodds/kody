@@ -257,7 +257,9 @@ export async function listEntitySourcesForExternalReconcile(
 		? ''
 		: `AND external_check_until IS NOT NULL
 				AND (last_external_check_at IS NULL OR last_external_check_at < ?)`
-	const bindings: Array<string | number> = input.includeAll ? [] : [input.before]
+	const bindings: Array<string | number> = input.includeAll
+		? []
+		: [input.before]
 	if (input.after) {
 		bindings.push(
 			input.after.staleOrderedAt,

@@ -640,12 +640,12 @@ pushed the session commit to the source Artifacts repo.
 external pushes that were not followed by an explicit
 `package_publish_external_push` call. The Worker scheduled handler runs every
 five minutes (`wrangler.jsonc` `*/5 * * * *`). A write-token mint sets the
-source's `external_check_until` to the token expiry plus a one-hour grace period.
-The normal pass only scans these pending sources, using
+source's `external_check_until` to the token expiry plus a one-hour grace
+period. The normal pass only scans these pending sources, using
 `last_external_check_at` for the five-minute cadence and keyset paging until the
-pending queue is drained or a wall-clock time budget
-(`reconcileTimeBudgetMs`, ~60 seconds) is exhausted. Dormant package sources no
-longer incur an Artifacts HEAD lookup on every tick.
+pending queue is drained or a wall-clock time budget (`reconcileTimeBudgetMs`,
+~60 seconds) is exhausted. Dormant package sources no longer incur an Artifacts
+HEAD lookup on every tick.
 
 For each pending source, reconcile resolves the Artifacts default-branch HEAD.
 When HEAD matches `published_commit`, it advances `last_external_check_at`

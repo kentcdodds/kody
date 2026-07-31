@@ -162,17 +162,23 @@ test('reconcile keeps active token horizons, clears expired matching horizons, a
 		now: new Date('2026-05-04T02:00:00.000Z'),
 	})
 
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(expect.anything(), {
-		id: 'source-active',
-		userId: 'user-1',
-		lastExternalCheckAt: '2026-05-04T02:00:00.000Z',
-	})
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(expect.anything(), {
-		id: 'source-expired',
-		userId: 'user-1',
-		lastExternalCheckAt: '2026-05-04T02:00:00.000Z',
-		externalCheckUntil: null,
-	})
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			id: 'source-active',
+			userId: 'user-1',
+			lastExternalCheckAt: '2026-05-04T02:00:00.000Z',
+		},
+	)
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			id: 'source-expired',
+			userId: 'user-1',
+			lastExternalCheckAt: '2026-05-04T02:00:00.000Z',
+			externalCheckUntil: null,
+		},
+	)
 	expect(consoleInfo).toHaveBeenCalledWith(
 		'reconcile_artifacts_pushes',
 		expect.objectContaining({
