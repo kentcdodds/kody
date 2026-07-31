@@ -15,9 +15,7 @@ import { loadRemoteConnectorInstructionSummaries } from './remote-connector-inst
 import { type RawFetchHostNudgeState } from '#mcp/raw-fetch-host-nudge.ts'
 import { listPopularAgentPackagesForUser } from '#worker/usage/agent-package-conversation-uses.ts'
 import {
-	readPersistedMcpAgentOwner,
 	purgePersistedMcpAgentSession,
-	purgePersistedOwnerlessMcpAgentSession,
 	registerMcpAgentSession,
 } from './session-registry.ts'
 
@@ -100,19 +98,6 @@ class MCPBase extends McpAgent<Env, State, Props> {
 			doId: this.ctx.id.toString(),
 			userId: input.userId,
 		})
-	}
-	async getStoredOwnerForMaintenance() {
-		return readPersistedMcpAgentOwner({
-			storage: this.ctx.storage,
-			doId: this.ctx.id.toString(),
-		})
-	}
-	async purgeIfOwnerlessForMaintenance() {
-		await purgePersistedOwnerlessMcpAgentSession({
-			storage: this.ctx.storage,
-			doId: this.ctx.id.toString(),
-		})
-		return { doId: this.ctx.id.toString(), action: 'purged' as const }
 	}
 }
 
