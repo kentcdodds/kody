@@ -852,14 +852,20 @@ export async function markInboundDeliveryReceived(input: {
 	}
 	delete detail.storageLease
 	delete detail.storageLeaseAt
+	const usageEffectComplete =
+		detail.usageEffectRecordedAt != null ||
+		detail.usageEffectSuppressedAt != null
+	const subscriptionEffectComplete =
+		detail.subscriptionEffectState === 'complete' ||
+		detail.subscriptionEffectState === 'dead-letter'
 	const result = await input.db
 		.prepare(
 			`UPDATE email_delivery_events
 			SET message_id = ?,
 				event_type = 'received',
 				detail_json = ?,
-				needs_effect_reconcile = 1,
-				usage_effect_recorded_at = NULL,
+				needs_effect_reconcile = ?,
+				usage_effect_recorded_at = ?,
 				usage_month = ?,
 				usage_bytes = ?,
 				usage_duration_ms = ?
@@ -871,6 +877,8 @@ export async function markInboundDeliveryReceived(input: {
 		.bind(
 			input.delivery.messageId,
 			JSON.stringify(detail),
+			usageEffectComplete && subscriptionEffectComplete ? 0 : 1,
+			detail.usageEffectRecordedAt ?? null,
 			detail.usageMonth,
 			detail.usageBytes,
 			detail.usageDurationMs,

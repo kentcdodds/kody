@@ -296,6 +296,7 @@ export async function readIdempotentInboundEmailUsage(input: {
 						usage_effect_recorded_at IS NULL
 						OR usage_month IS NULL
 						OR usage_bytes IS NULL
+						OR usage_duration_ms IS NULL
 					)
 					AND (
 						(

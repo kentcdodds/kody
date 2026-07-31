@@ -220,6 +220,11 @@ test('migration preserves durable inbound usage while indexing month reads', () 
 			'cloudflare-email-routing', 'received',
 			'{"fingerprint":"a","usageEffectRecordedAt":"2026-08-01T00:00:00.000Z","usageDurationMs":45,"subscriptionEffectState":"complete"}',
 			'2026-07-31T23:59:59.000Z'
+		), (
+			'event-unhydratable', NULL, 'user-2',
+			'cloudflare-email-routing', 'received',
+			'{"fingerprint":"b","usageEffectRecordedAt":"2026-08-01T00:00:00.000Z","subscriptionEffectState":"complete"}',
+			'2026-07-31T23:59:59.000Z'
 		);
 	`)
 	const legacy = db
@@ -241,7 +246,16 @@ test('migration preserves durable inbound usage while indexing month reads', () 
 			FROM email_delivery_events
 			WHERE provider = 'cloudflare-email-routing'
 				AND event_type = 'received'
-				AND json_extract(detail_json, '$.usageEffectRecordedAt') IS NOT NULL`,
+				AND json_extract(detail_json, '$.usageEffectRecordedAt') IS NOT NULL
+				AND COALESCE(
+					json_extract(detail_json, '$.usageMonth'),
+					(
+						SELECT substr(COALESCE(message.received_at, message.created_at), 1, 7)
+						FROM email_messages message
+						WHERE message.id = email_delivery_events.message_id
+							AND message.user_id = email_delivery_events.user_id
+					)
+				) IN ('2026-07', '2026-06')`,
 		)
 		.all()
 
@@ -263,6 +277,15 @@ test('migration preserves durable inbound usage while indexing month reads', () 
 		)
 		.all()
 	expect(indexed).toEqual(legacy)
+	expect(
+		db
+			.prepare(
+				`SELECT needs_effect_reconcile
+				FROM email_delivery_events
+				WHERE id = 'event-unhydratable'`,
+			)
+			.get(),
+	).toEqual({ needs_effect_reconcile: 0 })
 
 	const plans = db
 		.prepare(

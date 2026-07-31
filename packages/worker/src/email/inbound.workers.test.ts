@@ -2657,13 +2657,22 @@ test('scheduled sweep cleans quiet-user orphans and recovers partial commits', a
 	const effects = await env.APP_DB.prepare(
 		`SELECT
 			json_extract(detail_json, '$.usageEffectRecordedAt') AS usage_at,
-			json_extract(detail_json, '$.subscriptionEffectState') AS subscription_state
+			json_extract(detail_json, '$.subscriptionEffectState') AS subscription_state,
+			needs_effect_reconcile,
+			usage_effect_recorded_at
 		FROM email_delivery_events WHERE id = ? AND user_id = ?`,
 	)
 		.bind(partial.deliveryId, partial.userId)
-		.first<{ usage_at: string; subscription_state: string }>()
+		.first<{
+			usage_at: string
+			subscription_state: string
+			needs_effect_reconcile: number
+			usage_effect_recorded_at: string
+		}>()
 	expect(effects?.usage_at).toEqual(expect.any(String))
 	expect(effects?.subscription_state).toBe('complete')
+	expect(effects?.needs_effect_reconcile).toBe(0)
+	expect(effects?.usage_effect_recorded_at).toBe(effects?.usage_at)
 	expect(
 		await sweepStaleInboundDeliveries({
 			env: createInboundEnv(),

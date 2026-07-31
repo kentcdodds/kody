@@ -75,6 +75,18 @@ SET needs_effect_reconcile = CASE
 			OR (
 				json_extract(detail_json, '$.usageEffectRecordedAt') IS NOT NULL
 				AND (usage_month IS NULL OR usage_bytes IS NULL)
+				AND (
+					(
+						json_extract(detail_json, '$.usageMonth') IS NOT NULL
+						AND json_extract(detail_json, '$.usageBytes') IS NOT NULL
+					)
+					OR EXISTS (
+						SELECT 1
+						FROM email_messages message
+						WHERE message.id = email_delivery_events.message_id
+							AND message.user_id = email_delivery_events.user_id
+					)
+				)
 			)
 		)
 	THEN 1
