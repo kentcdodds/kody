@@ -46,7 +46,7 @@
     "primitives:classify": "node .agents/skills/visual-recap/scripts/classify-primitives.mjs",
     "docs:check-temporal": "node tools/check-docs-temporal-language.ts",
     "migrations:check": "node tools/check-migrations.ts",
-    "migrate:local": "node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply APP_DB --local",
+    "migrate:local": "node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply APP_DB --local && node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply AUDIT_DB --local",
     "migrate:e2e": "node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply APP_DB --local --persist-to .wrangler/state/e2e",
     "preview": "nx run worker:build-client && npm run migrate:local && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local",
     "preview:e2e": "node --env-file=packages/worker/.env tools/prepare-e2e-env.ts && nx run worker:build-client && npm run migrate:e2e && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",

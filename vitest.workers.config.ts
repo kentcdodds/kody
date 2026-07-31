@@ -22,6 +22,12 @@ export default mergeConfig(
 		test: {
 			name: 'workers-unit',
 			include: ['**/*.workers.test.ts'],
+			setupFiles: [
+				resolve(
+					rootDir,
+					'packages/worker/src/test-support/audit-db-schema.ts',
+				),
+			],
 		},
 	}),
 )
