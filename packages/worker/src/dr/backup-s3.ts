@@ -42,6 +42,28 @@ export type DrBackupS3Client = {
 	) => Promise<{ etag: string | null }>
 }
 
+/** R2/S3 platform blips observed on PutObject (and siblings) during cron ticks. */
+export const drBackupS3RetryMaxAttempts = 4
+export const drBackupS3RetryBaseDelayMs = 150
+
+function sleep(ms: number) {
+	return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Transient R2/S3 HTTP statuses worth retrying. 412 stays non-retryable so
+ * conditional progress.json ownership conflicts surface immediately.
+ */
+export function isTransientDrBackupHttpStatus(status: number) {
+	return (
+		status === 429 ||
+		status === 500 ||
+		status === 502 ||
+		status === 503 ||
+		status === 504
+	)
+}
+
 function objectUrl(config: DrBackupS3Config, key: string) {
 	const encodedKey = key
 		.split('/')
@@ -55,9 +77,21 @@ function readEtag(response: Response): string | null {
 	return etag && etag.length > 0 ? etag : null
 }
 
+async function drainResponseBody(response: Response) {
+	try {
+		await response.arrayBuffer()
+	} catch {
+		// Best-effort: free the connection before the next attempt.
+	}
+}
+
 export function createDrBackupS3Client(
 	config: DrBackupS3Config,
 	fetchImpl: typeof fetch = fetch,
+	options?: {
+		maxAttempts?: number
+		baseDelayMs?: number
+	},
 ): DrBackupS3Client {
 	const aws = new AwsClient({
 		accessKeyId: config.accessKeyId,
@@ -65,15 +99,43 @@ export function createDrBackupS3Client(
 		service: 's3',
 		region: 'auto',
 	})
+	const maxAttempts = options?.maxAttempts ?? drBackupS3RetryMaxAttempts
+	const baseDelayMs = options?.baseDelayMs ?? drBackupS3RetryBaseDelayMs
 
 	async function signedFetch(key: string, init?: RequestInit) {
 		const request = await aws.sign(objectUrl(config, key), init)
 		return fetchImpl(request)
 	}
 
+	/**
+	 * Retry transport / platform blips. Conditional headers are preserved on
+	 * each attempt: a phantom success that still 412s on retry is handled by
+	 * callers as `DrBackupPreconditionFailedError` (safe skip / resume).
+	 */
+	async function signedFetchWithRetry(key: string, init?: RequestInit) {
+		let lastError: unknown
+		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				const response = await signedFetch(key, init)
+				if (
+					!isTransientDrBackupHttpStatus(response.status) ||
+					attempt === maxAttempts
+				) {
+					return response
+				}
+				await drainResponseBody(response)
+			} catch (error) {
+				lastError = error
+				if (attempt === maxAttempts) throw error
+			}
+			await sleep(baseDelayMs * 2 ** (attempt - 1))
+		}
+		throw lastError ?? new Error('DR backup request failed after retries')
+	}
+
 	return {
 		async head(key) {
-			const response = await signedFetch(key, { method: 'HEAD' })
+			const response = await signedFetchWithRetry(key, { method: 'HEAD' })
 			if (response.status === 404) {
 				return { exists: false, status: response.status, etag: null }
 			}
@@ -89,7 +151,7 @@ export function createDrBackupS3Client(
 			}
 		},
 		async getText(key) {
-			const response = await signedFetch(key, { method: 'GET' })
+			const response = await signedFetchWithRetry(key, { method: 'GET' })
 			if (response.status === 404) return null
 			if (!response.ok) {
 				throw new Error(
@@ -102,7 +164,7 @@ export function createDrBackupS3Client(
 			}
 		},
 		async getBytes(key) {
-			const response = await signedFetch(key, { method: 'GET' })
+			const response = await signedFetchWithRetry(key, { method: 'GET' })
 			if (response.status === 404) return null
 			if (!response.ok) {
 				throw new Error(
@@ -121,7 +183,7 @@ export function createDrBackupS3Client(
 			if (options.ifNoneMatch) {
 				headers['If-None-Match'] = options.ifNoneMatch
 			}
-			const response = await signedFetch(key, {
+			const response = await signedFetchWithRetry(key, {
 				method: 'PUT',
 				headers,
 				body: body as BodyInit,
