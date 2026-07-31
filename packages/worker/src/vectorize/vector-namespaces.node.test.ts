@@ -53,6 +53,7 @@ test('user namespace queries merge partial reindex results and deny cross-user v
 	])
 	const options = {
 		topK: 2,
+		namespace: userB,
 		filter: {
 			kind: { $eq: 'package' },
 			userId: { $eq: userA },

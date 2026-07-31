@@ -22,12 +22,14 @@ export async function queryVectorizeWithNamespaceFallback(input: {
 	namespace: string
 	options: VectorizeQueryOptions
 }): Promise<VectorizeMatches> {
+	const queryOptions = { ...input.options }
+	delete queryOptions.namespace
 	const [namespacedMatches, legacyMatches] = await Promise.all([
 		input.index.query([...input.vector], {
-			...input.options,
+			...queryOptions,
 			namespace: input.namespace,
 		}),
-		input.index.query([...input.vector], input.options),
+		input.index.query([...input.vector], queryOptions),
 	])
 	const matchById = new Map<string, VectorizeMatch>()
 	for (const match of [
@@ -40,7 +42,7 @@ export async function queryVectorizeWithNamespaceFallback(input: {
 		}
 	}
 	const topK =
-		input.options.topK ??
+		queryOptions.topK ??
 		Math.max(namespacedMatches.matches.length, legacyMatches.matches.length)
 	const matches = [...matchById.values()]
 		.sort((left, right) => right.score - left.score)
