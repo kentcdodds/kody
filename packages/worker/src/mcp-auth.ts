@@ -2,10 +2,8 @@ import {
 	type OAuthHelpers,
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
-import { isAccountSuspended } from '#app/account-suspension.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getRequestIp } from '#worker/audit-log.ts'
-import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
 import {
 	type McpAuthDenialReason,
@@ -14,7 +12,6 @@ import {
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import { oauthScopes } from './oauth-handlers.ts'
-import { listAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'
 
 export const mcpResourcePath = '/mcp'
 export const protectedResourceMetadataPath =
@@ -179,23 +176,18 @@ export async function handleMcpRequest({
 
 	const context = ctx as OAuthExecutionContext
 	const grantProps = tokenSummary.grant.props ?? null
-	const mcpUser = await buildMcpUserContextFromGrantProps(env, grantProps)
+	const authContext = await buildMcpUserContextFromGrantProps(env, grantProps)
 
 	// Fail-closed email verification gate: every MCP request must map to an
 	// account whose email is verified. Tokens without an identifiable user
-	// are rejected too, since verification cannot be established for them.
-	// A D1 failure inside `isAccountEmailVerified` propagates as an error
-	// instead of silently allowing access.
-	if (!mcpUser) {
+	// are rejected too, since verification cannot be established for them. The
+	// context loader reads identity, verification, and suspension in one query.
+	if (!authContext) {
 		await recordRejection('unidentified_grant')
 		return createEmailVerificationRequiredResponse(origin)
 	}
-	const emailVerified = await isAccountEmailVerified({
-		db: env.APP_DB,
-		email: mcpUser.email,
-		stableUserId: mcpUser.userId,
-	})
-	if (!emailVerified) {
+	const { user: mcpUser, remoteConnectors } = authContext
+	if (!authContext.emailVerified) {
 		await recordRejection('email_unverified', mcpUser.email)
 		return createEmailVerificationRequiredResponse(origin)
 	}
@@ -204,31 +196,24 @@ export async function handleMcpRequest({
 	// suspended account keeps its OAuth grants (stateless tokens cannot be
 	// revoked individually) but every MCP request is rejected until an
 	// admin clears the suspension.
-	const suspended = await isAccountSuspended({
-		db: env.APP_DB,
-		email: mcpUser.email,
-		stableUserId: mcpUser.userId,
-	})
-	if (suspended) {
+	if (authContext.suspended) {
 		await recordRejection('account_suspended', mcpUser.email)
 		return createAccountSuspendedResponse()
 	}
 
-	const remoteConnectors = await listAttachedRemoteConnectorRefs({
-		env,
-		userId: mcpUser.userId,
-	})
 	const props: OAuthContextProps = createMcpCallerContext({
 		baseUrl: origin,
 		executionOrigin: 'interactive',
 		user: mcpUser,
-		remoteConnectors,
+		remoteConnectors: [...remoteConnectors],
 	})
 	context.props = props
 
 	return await withAccountWriteLease({
 		db: env.APP_DB,
 		stableUserId: mcpUser.userId,
+		holder: `mcp:${request.method} ${url.pathname}`,
+		waitUntil: ctx.waitUntil.bind(ctx),
 		write: async () =>
 			await fetchMcp(
 				request,

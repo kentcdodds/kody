@@ -69,6 +69,8 @@ type MockAccountRow = {
 	display_name: string | null
 	stable_user_id: string
 	email_verified_at: string | null
+	deleting_at?: string | null
+	suspended_at?: string | null
 }
 
 type VerificationLookupKind =
@@ -94,6 +96,8 @@ type MockDbOptions = {
 	auditInserts?: Array<Array<unknown>>
 	// Optional sink for which verification SQL shapes were exercised.
 	verificationLookups?: Array<VerificationLookupKind>
+	// Optional sink for consolidated users SELECTs.
+	userSelects?: Array<string>
 }
 
 function createMockDb(options: MockDbOptions = {}) {
@@ -147,6 +151,7 @@ function createMockDb(options: MockDbOptions = {}) {
 					normalized.includes('where stable_user_id') &&
 					normalized.includes('select id')
 				if (isProfileLookup) {
+					options.userSelects?.push(normalized)
 					if (!boundStableUserId) return null
 					if (options.accountByStableId !== undefined) {
 						if (
@@ -168,6 +173,8 @@ function createMockDb(options: MockDbOptions = {}) {
 						display_name: null,
 						stable_user_id: defaultStableUserId,
 						email_verified_at: verifiedAt,
+						deleting_at: null,
+						suspended_at: options.suspendedAt ?? null,
 					} satisfies MockAccountRow
 				}
 				if (normalized.includes('select suspended_at from users')) {
@@ -370,9 +377,11 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		audience: `https://example.com${mcpResourcePath}`,
 	}
 	const verificationLookups: Array<VerificationLookupKind> = []
+	const userSelects: Array<string> = []
 	const verifiedDb: MockDbOptions = {
 		emailVerifiedAt: new Date(0).toISOString(),
 		verificationLookups,
+		userSelects,
 	}
 
 	const invalidResponse = await handleMcpRequest({
@@ -423,10 +432,10 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		storageContext: null,
 		user: { userId: 'user' },
 	})
-	// MCP grant props carry email + stable userId, so verification must use the
-	// paired lookup — never the browser-session email-only SQL shape.
-	expect(verificationLookups).toContain('email_and_stable_user_id')
-	expect(verificationLookups).not.toContain('email_only')
+	expect(userSelects).toHaveLength(1)
+	expect(userSelects[0]).toContain('email_verified_at')
+	expect(userSelects[0]).toContain('suspended_at')
+	expect(verificationLookups).toHaveLength(0)
 
 	const withConnectorResponse = await handleMcpRequest({
 		request,
@@ -487,7 +496,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		}),
 	).rejects.toThrow('D1 unavailable')
 	expect(consoleError).toHaveBeenCalledWith(
-		'Failed to load roles for MCP user context:',
+		'Failed to load MCP auth user context:',
 		expect.any(Error),
 	)
 })
@@ -605,7 +614,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	const fallbackEmail = 'fallback@example.com'
 	const stableUserId = await createStableUserIdFromEmail(fallbackEmail)
 	const verifiedAt = new Date(0).toISOString()
-	const fallbackVerificationLookups: Array<VerificationLookupKind> = []
+	const fallbackUserSelects: Array<string> = []
 	const fallbackResponse = await handleMcpRequest({
 		request,
 		env: createEnv(
@@ -623,7 +632,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 					stable_user_id: stableUserId,
 					email_verified_at: verifiedAt,
 				},
-				verificationLookups: fallbackVerificationLookups,
+				userSelects: fallbackUserSelects,
 			},
 		),
 		ctx: createContext(),
@@ -631,6 +640,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	})
 	expect(fallbackResponse.status).toBe(200)
 	expect(fetchMcpCalled).toBe(true)
-	expect(fallbackVerificationLookups).toContain('email_and_stable_user_id')
-	expect(fallbackVerificationLookups).not.toContain('email_only')
+	expect(fallbackUserSelects).toHaveLength(1)
+	expect(fallbackUserSelects[0]).toContain('email_verified_at')
+	expect(fallbackUserSelects[0]).toContain('suspended_at')
 })

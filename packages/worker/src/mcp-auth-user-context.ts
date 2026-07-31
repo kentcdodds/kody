@@ -4,6 +4,9 @@ import {
 	getUsernameFormatValidationError,
 } from '#worker/identity/username.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
+import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
+import { listAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'
 
 type McpOAuthGrantProps = {
 	userId?: unknown
@@ -19,6 +22,41 @@ type GrantUserRow = {
 	display_name: string | null
 	stable_user_id: string
 	deleting_at: string | null
+	email_verified_at: string | null
+	suspended_at: string | null
+}
+
+export type McpAuthUserContext = {
+	user: McpUserContext
+	emailVerified: boolean
+	suspended: boolean
+	remoteConnectors: ReadonlyArray<RemoteConnectorRef>
+}
+
+export const attachedRemoteConnectorRefsCacheTtlMs = 30_000
+const attachedRemoteConnectorRefsCacheLimit = 200
+const attachedRemoteConnectorRefsCaches = new WeakMap<
+	D1Database,
+	PromiseLruCache<ReadonlyArray<RemoteConnectorRef>>
+>()
+
+function listAttachedRemoteConnectorRefsCached(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+}) {
+	let cache = attachedRemoteConnectorRefsCaches.get(input.env.APP_DB)
+	if (!cache) {
+		cache = new PromiseLruCache<ReadonlyArray<RemoteConnectorRef>>({
+			ttlMs: attachedRemoteConnectorRefsCacheTtlMs,
+			limit: attachedRemoteConnectorRefsCacheLimit,
+		})
+		attachedRemoteConnectorRefsCaches.set(input.env.APP_DB, cache)
+	}
+	return cache.getOrCreate({
+		cacheKey: input.userId,
+		create: async () =>
+			Object.freeze(await listAttachedRemoteConnectorRefs(input)),
+	})
 }
 
 function buildBaseUserFromGrant(
@@ -54,7 +92,7 @@ function buildBaseUserFromGrant(
 export async function buildMcpUserContextFromGrantProps(
 	env: Env,
 	grantProps: McpOAuthGrantProps,
-): Promise<McpUserContext | null> {
+): Promise<McpAuthUserContext | null> {
 	if (!grantProps || typeof grantProps.userId !== 'string') {
 		return null
 	}
@@ -67,7 +105,8 @@ export async function buildMcpUserContextFromGrantProps(
 	// never continue through stale OAuth grant metadata.
 	try {
 		const row = await env.APP_DB.prepare(
-			`SELECT id, email, username, display_name, stable_user_id, deleting_at
+			`SELECT id, email, username, display_name, stable_user_id,
+				deleting_at, email_verified_at, suspended_at
 			 FROM users
 			 WHERE stable_user_id = ?`,
 		)
@@ -86,21 +125,26 @@ export async function buildMcpUserContextFromGrantProps(
 			username ||
 			(email ? displayNameFromEmail(email) : baseUser.displayName)
 
-		const { roles, permissions } = await getUserRolesAndPermissions(
-			env.APP_DB,
-			row.id,
-		)
+		const [{ roles, permissions }, remoteConnectors] = await Promise.all([
+			getUserRolesAndPermissions(env.APP_DB, row.id),
+			listAttachedRemoteConnectorRefsCached({ env, userId }),
+		])
 
 		return {
-			userId,
-			email,
-			displayName,
-			...(username ? { username } : {}),
-			roles,
-			permissions,
+			user: {
+				userId,
+				email,
+				displayName,
+				...(username ? { username } : {}),
+				roles,
+				permissions,
+			},
+			emailVerified: Boolean(row.email_verified_at),
+			suspended: Boolean(row.suspended_at),
+			remoteConnectors,
 		}
 	} catch (error) {
-		console.error('Failed to load roles for MCP user context:', error)
+		console.error('Failed to load MCP auth user context:', error)
 		throw error
 	}
 }

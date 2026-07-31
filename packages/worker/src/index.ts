@@ -39,7 +39,7 @@ import {
 } from './webhooks/http.ts'
 import { withCors } from './utils.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
-import { checkRateLimit, authRateLimitConfig } from '#app/rate-limit.ts'
+import { checkAuthRateLimit } from '#app/rate-limit.ts'
 import { getRequestIp } from '#worker/audit-log.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
@@ -231,11 +231,7 @@ const appHandler = withCors({
 		if (request.method === 'POST' && rateLimitedAuthPaths.has(url.pathname)) {
 			const ip = getRequestIp(request) ?? 'unknown'
 			const rateLimitKey = `auth:ip:${ip}`
-			const result = await checkRateLimit(
-				env.APP_DB,
-				rateLimitKey,
-				authRateLimitConfig,
-			)
+			const result = await checkAuthRateLimit(env, rateLimitKey)
 			if (!result.allowed) {
 				// A non-JSON social-login start is a document navigation, so a
 				// JSON 429 body would render as raw text; bounce back to the

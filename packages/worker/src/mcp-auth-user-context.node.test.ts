@@ -20,11 +20,15 @@ type GrantUserRow = {
 	display_name: string | null
 	stable_user_id: string
 	deleting_at?: string | null
+	email_verified_at?: string | null
+	suspended_at?: string | null
 }
 
 function createMockAppDb(options: {
 	row?: GrantUserRow | null
 	reject?: Error
+	connectorRows?: Array<{ instance_id: string }>
+	onConnectorQuery?: () => void
 }) {
 	const queries: Array<{ sql: string; params: Array<unknown> }> = []
 	const db = {
@@ -43,6 +47,14 @@ function createMockAppDb(options: {
 								return (options.row ?? null) as T | null
 							}
 							throw new Error(`Unsupported query: ${sql}`)
+						},
+						async all<T>() {
+							options.onConnectorQuery?.()
+							return {
+								results: (options.connectorRows ?? []) as Array<T>,
+								success: true,
+								meta: {},
+							}
 						},
 					}
 				},
@@ -75,15 +87,22 @@ test('buildMcpUserContextFromGrantProps resolves by stable id, refreshes profile
 			displayName: 'stale display',
 		}),
 	).resolves.toEqual({
-		userId: 'stable-admin-id',
-		email: 'current@example.com',
-		username: 'admin',
-		displayName: 'Admin Display',
-		roles: ['admin'],
-		permissions: ['read:user:any', 'read:role:any'],
+		user: {
+			userId: 'stable-admin-id',
+			email: 'current@example.com',
+			username: 'admin',
+			displayName: 'Admin Display',
+			roles: ['admin'],
+			permissions: ['read:user:any', 'read:role:any'],
+		},
+		emailVerified: false,
+		suspended: false,
+		remoteConnectors: [],
 	})
-	expect(refreshed.queries).toHaveLength(1)
+	expect(refreshed.queries).toHaveLength(2)
 	expect(refreshed.queries[0]?.params).toEqual(['stable-admin-id'])
+	expect(refreshed.queries[0]?.sql).toContain('email_verified_at')
+	expect(refreshed.queries[0]?.sql).toContain('suspended_at')
 	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(
 		refreshed.db,
 		42,
@@ -113,12 +132,17 @@ test('buildMcpUserContextFromGrantProps resolves by stable id, refreshes profile
 			},
 		),
 	).resolves.toEqual({
-		userId: 'stable-original',
-		email: 'original-owner@example.com',
-		username: 'original',
-		displayName: 'original',
-		roles: ['user'],
-		permissions: [],
+		user: {
+			userId: 'stable-original',
+			email: 'original-owner@example.com',
+			username: 'original',
+			displayName: 'original',
+			roles: ['user'],
+			permissions: [],
+		},
+		emailVerified: false,
+		suspended: false,
+		remoteConnectors: [],
 	})
 	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(
 		staleEmailOwnedElsewhere.db,
@@ -143,12 +167,17 @@ test('buildMcpUserContextFromGrantProps resolves by stable id, refreshes profile
 			userId: 'legacy-id',
 		}),
 	).resolves.toEqual({
-		userId: 'legacy-id',
-		email: 'resolved@example.com',
-		username: 'resolved',
-		displayName: 'resolved',
-		roles: ['user'],
-		permissions: [],
+		user: {
+			userId: 'legacy-id',
+			email: 'resolved@example.com',
+			username: 'resolved',
+			displayName: 'resolved',
+			roles: ['user'],
+			permissions: [],
+		},
+		emailVerified: false,
+		suspended: false,
+		remoteConnectors: [],
 	})
 	expect(emailOmitted.queries[0]?.params).toEqual(['legacy-id'])
 
@@ -192,4 +221,71 @@ test('buildMcpUserContextFromGrantProps resolves by stable id, refreshes profile
 	).rejects.toThrow('D1 unavailable')
 	expect(consoleError).toHaveBeenCalled()
 	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledTimes(3)
+})
+
+test('MCP auth reads account gates once, loads roles and connectors in parallel, and caches connector refs', async () => {
+	let resolveRoles: (value: {
+		roles: Array<string>
+		permissions: Array<string>
+	}) => void = () => undefined
+	const roles = new Promise<{
+		roles: Array<string>
+		permissions: Array<string>
+	}>((resolve) => {
+		resolveRoles = resolve
+	})
+	let rolesStarted = false
+	let connectorStarted = false
+	mockModule.getUserRolesAndPermissions.mockImplementationOnce(() => {
+		rolesStarted = true
+		return roles
+	})
+	const account = createMockAppDb({
+		row: {
+			id: 12,
+			email: 'verified@example.com',
+			username: 'verified',
+			display_name: null,
+			stable_user_id: 'verified-id',
+			email_verified_at: '2026-07-31 04:00:00',
+			suspended_at: null,
+		},
+		connectorRows: [{ instance_id: 'home' }],
+		onConnectorQuery() {
+			connectorStarted = true
+		},
+	})
+
+	const pending = buildMcpUserContextFromGrantProps(
+		{ APP_DB: account.db } as Env,
+		{ userId: 'verified-id' },
+	)
+	await vi.waitFor(() => {
+		expect(rolesStarted).toBe(true)
+		expect(connectorStarted).toBe(true)
+	})
+	resolveRoles({ roles: ['user'], permissions: [] })
+	await expect(pending).resolves.toMatchObject({
+		emailVerified: true,
+		suspended: false,
+		remoteConnectors: [{ instanceId: 'home' }],
+	})
+
+	mockModule.getUserRolesAndPermissions.mockResolvedValueOnce({
+		roles: ['user'],
+		permissions: [],
+	})
+	await buildMcpUserContextFromGrantProps({ APP_DB: account.db } as Env, {
+		userId: 'verified-id',
+	})
+	expect(
+		account.queries.filter(({ sql }) =>
+			sql.toLowerCase().includes('remote_connector_settings'),
+		),
+	).toHaveLength(1)
+	expect(
+		account.queries.filter(({ sql }) =>
+			sql.toLowerCase().includes('from users'),
+		),
+	).toHaveLength(2)
 })

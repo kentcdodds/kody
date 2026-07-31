@@ -4,6 +4,7 @@
 	"compatibility_date": "2026-04-16",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"main": "./src/index.ts",
+	"minify": true,
 	"upload_source_maps": true,
 	"rules": [
 		{
@@ -109,6 +110,16 @@
 	},
 	"env": {
 		"production": {
+			"ratelimits": [
+				{
+					"name": "AUTH_RATE_LIMITER",
+					"namespace_id": "1001",
+					"simple": {
+						"limit": 10,
+						"period": 60,
+					},
+				},
+			],
 			// Replaces the top-level observability block (wrangler env keys
 			// override wholesale, so "enabled" is restated): same tracing,
 			// plus the account-level Sentry OTLP export destination
@@ -327,6 +338,16 @@
 			},
 		},
 		"preview": {
+			"ratelimits": [
+				{
+					"name": "AUTH_RATE_LIMITER",
+					"namespace_id": "1002",
+					"simple": {
+						"limit": 10,
+						"period": 60,
+					},
+				},
+			],
 			"worker_loaders": [
 				{
 					"binding": "LOADER",

@@ -209,7 +209,7 @@ test('detached work spawned inside write re-acquires after the outer lease relea
 	})
 	releaseOuter()
 	await detached
-	expect(countLeaseRows(sqlite)).toBe(2)
+	expect(countLeaseRows(sqlite)).toBe(0)
 	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
 	expect(
 		sqlite.prepare(`SELECT active_write_count FROM users WHERE id = 1`).get(),
@@ -229,9 +229,54 @@ test('sequential sibling leases each acquire after the previous released', async
 		db,
 		stableUserId: 'user-a',
 		async write() {
-			expect(countLeaseRows(sqlite)).toBe(2)
+			expect(countLeaseRows(sqlite)).toBe(1)
 			expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(1)
 		},
 	})
 	expect(await listActiveAccountWriteLeases(db, 'user-a')).toHaveLength(0)
+	expect(countLeaseRows(sqlite)).toBe(0)
+})
+
+test('waitUntil moves lease release off the response path', async () => {
+	let finishRelease: () => void = () => undefined
+	const releaseGate = new Promise<void>((resolve) => {
+		finishRelease = resolve
+	})
+	let updateCount = 0
+	const db = {
+		prepare() {
+			return {
+				bind() {
+					return {
+						async run() {
+							updateCount++
+							if (updateCount === 1) {
+								return { meta: { changes: 1 } }
+							}
+							await releaseGate
+							return { meta: { changes: 1 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+	let releasePromise: Promise<unknown> | undefined
+
+	const result = await withAccountWriteLease({
+		db,
+		stableUserId: 'user-a',
+		waitUntil(promise) {
+			releasePromise = promise
+		},
+		async write() {
+			return 'response'
+		},
+	})
+
+	expect(result).toBe('response')
+	expect(updateCount).toBe(2)
+	expect(releasePromise).toBeDefined()
+	finishRelease()
+	await releasePromise
 })

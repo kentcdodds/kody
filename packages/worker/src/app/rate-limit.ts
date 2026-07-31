@@ -8,6 +8,11 @@ type RateLimitResult = {
 	retryAfterSeconds: number | null
 }
 
+type AuthRateLimitEnv = {
+	APP_DB: D1Database
+	AUTH_RATE_LIMITER?: RateLimit
+}
+
 const initializedDbs = new WeakSet<D1Database>()
 
 async function ensureRateLimitTable(db: D1Database) {
@@ -47,7 +52,9 @@ export async function checkRateLimit(
 	const windowStart = now - config.windowSeconds
 
 	const results = await db.batch([
-		db.prepare(`DELETE FROM _rate_limits WHERE ts <= ?`).bind(windowStart),
+		db
+			.prepare(`DELETE FROM _rate_limits WHERE key = ? AND ts <= ?`)
+			.bind(key, windowStart),
 		db
 			.prepare(
 				`INSERT INTO _rate_limits (key, ts)
@@ -91,4 +98,24 @@ export async function releaseRateLimit(db: D1Database, key: string) {
 export const authRateLimitConfig: RateLimitConfig = {
 	maxRequests: 10,
 	windowSeconds: 60,
+}
+
+/**
+ * Uses Cloudflare's per-location rate-limit binding on deployed auth ingress,
+ * keeping a D1 fallback for local development, tests, and self-hosted configs.
+ */
+export async function checkAuthRateLimit(
+	env: AuthRateLimitEnv,
+	key: string,
+): Promise<RateLimitResult> {
+	if (!env.AUTH_RATE_LIMITER) {
+		return checkRateLimit(env.APP_DB, key, authRateLimitConfig)
+	}
+	const result = await env.AUTH_RATE_LIMITER.limit({ key })
+	return result.success
+		? { allowed: true, retryAfterSeconds: null }
+		: {
+				allowed: false,
+				retryAfterSeconds: authRateLimitConfig.windowSeconds,
+			}
 }
