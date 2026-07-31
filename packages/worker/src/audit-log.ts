@@ -1,5 +1,4 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
-import { env } from 'cloudflare:workers'
 
 export const auditEventCategories = [
 	'account',
@@ -129,20 +128,15 @@ async function persistAuditEvent(
 		.run()
 }
 
-function resolveAuditDatabase(event: AuditEvent) {
-	if (event.auditDb) return event.auditDb
-	try {
-		// Generic Workers tests opt into the real audit sink explicitly so they
-		// do not all need to migrate a second database unrelated to their
-		// behavior. Dedicated audit tests pass `auditDb` above.
-		if (env.SENTRY_ENVIRONMENT === 'test') return undefined
-		return env.AUDIT_DB
-	} catch {
-		// Some node test and standalone utility contexts intentionally provide
-		// only APP_DB. Preserve the legacy write there without turning an absent
-		// runtime binding into an audit failure.
-		return undefined
-	}
+export function auditDatabaseFromEnv(runtimeEnv: {
+	AUDIT_DB?: D1Database
+	SENTRY_ENVIRONMENT?: string
+}) {
+	// Generic Workers tests opt into the real audit sink explicitly so they do
+	// not all need to migrate a second database unrelated to their behavior.
+	return runtimeEnv.SENTRY_ENVIRONMENT === 'test'
+		? undefined
+		: runtimeEnv.AUDIT_DB
 }
 
 export async function logAuditEvent(event: AuditEvent) {
@@ -152,7 +146,7 @@ export async function logAuditEvent(event: AuditEvent) {
 		if (!event.db) return
 		await Promise.all([
 			persistAuditEvent(event.db, payload),
-			persistAuditEvent(resolveAuditDatabase(event), payload),
+			persistAuditEvent(event.auditDb, payload),
 		])
 	} catch (error) {
 		console.warn('audit-event-failed', error)

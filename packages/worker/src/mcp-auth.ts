@@ -3,7 +3,7 @@ import {
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { getRequestIp } from '#worker/audit-log.ts'
+import { auditDatabaseFromEnv, getRequestIp } from '#worker/audit-log.ts'
 import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
 import {
 	type McpAuthDenialReason,
@@ -141,6 +141,7 @@ export async function handleMcpRequest({
 	) => {
 		await recordMcpAuthDenial({
 			db: env.APP_DB,
+			auditDb: auditDatabaseFromEnv(env),
 			action: 'mcp_token_rejected',
 			reason,
 			email,
