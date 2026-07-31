@@ -25,7 +25,11 @@ import {
 	resolveArtifactSourceRepo,
 } from './artifacts.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
-import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
+import {
+	getEntitySourceById,
+	markEntitySourcePendingExternalReconcile,
+	updateEntitySource,
+} from './entity-sources.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -185,12 +189,27 @@ async function ensureArtifactRepoRemote(input: {
 		}>
 	}
 	scope?: 'write' | 'read'
+	pendingReconcile?: {
+		db: D1Database
+		source: Pick<EntitySourceRow, 'id' | 'user_id'>
+	}
 }) {
 	const info = await input.repo.info()
 	if (!info?.remote) {
 		throw new Error('Artifact repo remote URL is unavailable.')
 	}
-	const token = await input.repo.createToken(input.scope ?? 'write', 3600)
+	const tokenTtlSeconds = 3600
+	const scope = input.scope ?? 'write'
+	const token = await input.repo.createToken(scope, tokenTtlSeconds)
+	if (scope === 'write' && input.pendingReconcile) {
+		await markEntitySourcePendingExternalReconcile(input.pendingReconcile.db, {
+			id: input.pendingReconcile.source.id,
+			userId: input.pendingReconcile.source.user_id,
+			tokenExpiresAt: new Date(
+				Date.now() + tokenTtlSeconds * 1000,
+			).toISOString(),
+		})
+	}
 	return {
 		remote: info.remote,
 		token: token.plaintext,
@@ -318,6 +337,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		const access = await ensureArtifactRepoRemote({
 			repo: sourceRepo,
 			scope: 'write',
+			pendingReconcile: { db: this.env.APP_DB, source },
 		})
 		await this.initialize({
 			sessionId: sessionRow.id,
@@ -813,6 +833,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			const sourceAccess = await ensureArtifactRepoRemote({
 				repo: sourceRepo,
 				scope: 'write',
+				pendingReconcile: { db: this.env.APP_DB, source },
 			})
 			const sourceBranch =
 				sourceHead?.defaultBranch ??
@@ -912,6 +933,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			const access = await ensureArtifactRepoRemote({
 				repo: sourceRepo,
 				scope: 'write',
+				pendingReconcile: { db: this.env.APP_DB, source },
 			})
 			await this.initialize({
 				sessionId: sessionRow.id,
@@ -982,6 +1004,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			sourceAccess = await ensureArtifactRepoRemote({
 				repo: sourceRepo,
 				scope: 'write',
+				pendingReconcile: { db: this.env.APP_DB, source },
 			})
 		}
 		const targetBranch =
@@ -1221,6 +1244,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		const access = await ensureArtifactRepoRemote({
 			repo: sourceRepo,
 			scope: 'write',
+			pendingReconcile: { db: this.env.APP_DB, source },
 		})
 		await this.initialize({
 			sessionId: input.sessionRow.id,
@@ -2247,6 +2271,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				const sourceWriteAccess = await ensureArtifactRepoRemote({
 					repo: sourceRepo,
 					scope: 'write',
+					pendingReconcile: { db: this.env.APP_DB, source },
 				})
 				await this.attachSourcePublishGitNote({
 					source,

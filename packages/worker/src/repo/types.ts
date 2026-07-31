@@ -15,6 +15,7 @@ export const entitySourceRowSchema = z.object({
 	manifest_path: z.string(),
 	source_root: z.string(),
 	last_external_check_at: z.string().nullable(),
+	external_check_until: z.string().nullable(),
 	created_at: z.string(),
 	updated_at: z.string(),
 })

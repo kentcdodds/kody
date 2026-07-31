@@ -123,6 +123,7 @@ function createFixture(input: {
 		manifest_path: 'package.json',
 		source_root: '/',
 		last_external_check_at: null,
+		external_check_until: null,
 		created_at: '2026-07-01T00:00:00.000Z',
 		updated_at: '2026-07-01T00:00:00.000Z',
 	}

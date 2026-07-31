@@ -70,6 +70,7 @@ export async function reconcileArtifactsPushes(input: {
 		budgetExhausted: false,
 	}
 	const shouldCleanupTokens = shouldRunDailyTokenCleanup(now)
+	const includeAllSources = shouldCleanupTokens
 	// Sources whose cursor write failed stay stale and would be re-selected by
 	// the next batch query; tracking seen ids prevents re-processing them in a
 	// tight loop within a single tick.
@@ -78,7 +79,12 @@ export async function reconcileArtifactsPushes(input: {
 	while (!result.budgetExhausted) {
 		const batch = await listEntitySourcesForExternalReconcile(
 			input.env.APP_DB,
-			{ before, limit: batchSize, after },
+			{
+				before,
+				limit: batchSize,
+				after,
+				...(includeAllSources ? { includeAll: true } : {}),
+			},
 		)
 		const lastRow = batch.at(-1)
 		if (lastRow) {
@@ -154,10 +160,14 @@ async function reconcileSource(input: {
 		}
 		if (head.commit === source.published_commit) {
 			result.alreadyPublished += 1
+			const horizonPassed =
+				source.external_check_until !== null &&
+				source.external_check_until <= now.toISOString()
 			await updateEntitySource(env.APP_DB, {
 				id: source.id,
 				userId: source.user_id,
 				lastExternalCheckAt: now.toISOString(),
+				...(horizonPassed ? { externalCheckUntil: null } : {}),
 			})
 			return
 		}
@@ -198,6 +208,10 @@ async function reconcileSource(input: {
 			id: source.id,
 			userId: source.user_id,
 			lastExternalCheckAt: now.toISOString(),
+			...(publishResult.status === 'published' ||
+			publishResult.status === 'already_published'
+				? { externalCheckUntil: null }
+				: {}),
 		})
 	} catch (error) {
 		result.errors += 1
