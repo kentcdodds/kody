@@ -639,20 +639,28 @@ pushed the session commit to the source Artifacts repo.
 `packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for
 external pushes that were not followed by an explicit
 `package_publish_external_push` call. The Worker scheduled handler runs every
-five minutes (`wrangler.jsonc` `*/5 * * * *`) and loops over batches of stale
-`entity_sources` rows (selected by `last_external_check_at`) until the backlog
-is drained or a wall-clock time budget (`reconcileTimeBudgetMs`, ~60 seconds) is
-exhausted, so throughput scales with backlog size instead of being capped at one
-batch per tick. For each source it resolves the Artifacts default-branch HEAD
-cheaply; when HEAD matches `published_commit` (or is unresolvable) it only
-advances `last_external_check_at` without any Durable Object work, and it spins
-up the RepoSession publish path only when HEAD differs.
+five minutes (`wrangler.jsonc` `*/5 * * * *`). A write-token mint sets the
+source's `external_check_until` to the token expiry plus a one-hour grace
+period. The normal pass only scans these pending sources, using
+`last_external_check_at` for the five-minute cadence and keyset paging until the
+pending queue is drained or a wall-clock time budget (`reconcileTimeBudgetMs`,
+~60 seconds) is exhausted. Dormant package sources no longer incur an Artifacts
+HEAD lookup on every tick.
+
+For each pending source, reconcile resolves the Artifacts default-branch HEAD.
+When HEAD matches `published_commit`, it advances `last_external_check_at`
+without any Durable Object work; once the token horizon has passed, that final
+matching check also clears `external_check_until`. A successful explicit or
+reconcile publish clears the pending horizon immediately. Unresolvable or
+changed HEADs remain pending, and the RepoSession publish path is spun up only
+when HEAD differs.
 
 The reconcile loop is idempotent: if another caller publishes the same commit
 first, the publish path returns `already_published`. Check failures and
 non-fast-forward results leave D1/KV untouched and are counted in the one-line
 metrics log, which also records batches processed and whether the time budget
 was exhausted. Once per day during the 03:00 UTC cron window, reconcile also
+widens the same keyset scan to every package source as a full-fleet backstop and
 calls `revokeStaleArtifactsTokens(...)` for checked repos to clean up expired
 Artifacts tokens.
 

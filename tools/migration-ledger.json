@@ -507,6 +507,10 @@
 		{
 			"filename": "0123-inbound-delivery-effect-indexes.sql",
 			"sha256": "eb972cefd3ebf6c692b75600c27a68df9c401e113700bb9b1d4e0a62ea31bc13"
+		},
+		{
+			"filename": "0124-entity-sources-external-reconcile-pending.sql",
+			"sha256": "75b93b4c2fa14c6303834877d6a07a42bb054a33b16a55de23c6b56f4b31bd0d"
 		}
 	]
 }

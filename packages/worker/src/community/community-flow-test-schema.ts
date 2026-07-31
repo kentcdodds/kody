@@ -51,6 +51,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			manifest_path TEXT NOT NULL DEFAULT 'package.json',
 			source_root TEXT NOT NULL DEFAULT '/',
 			last_external_check_at TEXT,
+			external_check_until TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
