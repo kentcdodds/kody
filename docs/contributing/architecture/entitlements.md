@@ -153,12 +153,13 @@ then initializes that key at zero via `UserMeter.initialize()`
 only the DO RPC and never touches D1 daily counter state.
 
 **D1 daily mirror writes stopped:** consume, refund, inbound charge/read,
-point-read surfaces, account export, and retention no longer read or write
-`entitlement_daily_counters`. Account deletion keeps removing rows while the
-physical table exists. A follow-up code deploy removes that target before the
-later migration-only drop (migrations apply before Workers); existing rows are
-otherwise quiescent historical mirror state. Analytics Engine remains the
-production reporting path for email send/receive aggregates.
+point-read surfaces, and retention no longer read or write
+`entitlement_daily_counters`. Generic account export and deletion keep reading
+or removing user rows while the physical table exists. A follow-up code deploy
+removes those inventory targets before the later migration-only drop (migrations
+apply before Workers); existing rows are otherwise quiescent historical mirror
+state. Analytics Engine remains the production reporting path for email
+send/receive aggregates.
 
 **Point-read surfaces** call `readDailyEntitlementResourceUsage` (UserMeter with
 the same cold zero-init path):
