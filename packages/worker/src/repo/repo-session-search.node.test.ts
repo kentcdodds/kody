@@ -1,0 +1,96 @@
+import { expect, test, vi } from 'vitest'
+import { expandBraceGlobs, searchRepoWorkspace } from './repo-session-search.ts'
+
+test('expandBraceGlobs expands brace alternatives that include wildcards', () => {
+	expect(expandBraceGlobs('/{README.md,package.json,**/README*}')).toEqual([
+		'/README.md',
+		'/package.json',
+		'/**/README*',
+	])
+	expect(expandBraceGlobs('**/*.{ts,tsx}')).toEqual(['**/*.ts', '**/*.tsx'])
+	expect(expandBraceGlobs('src/{a,{b,c}}/x')).toEqual([
+		'src/a/x',
+		'src/b/x',
+		'src/c/x',
+	])
+	expect(expandBraceGlobs('plain.txt')).toEqual(['plain.txt'])
+	expect(expandBraceGlobs('{unclosed')).toEqual(['{unclosed'])
+})
+
+test('searchRepoWorkspace accepts brace globs with nested wildcards without calling shell brace conversion', async () => {
+	const globCalls: Array<string> = []
+	const files = new Map<string, string>([
+		['/README.md', 'hello from readme'],
+		['/package.json', '{"name":"demo"}'],
+		['/docs/README.extra.md', 'hello from nested readme'],
+		['/src/index.ts', 'hello from source'],
+	])
+
+	const result = await searchRepoWorkspace({
+		root: '/',
+		pattern: 'hello',
+		glob: '/{README.md,package.json,**/README*}',
+		workspace: {
+			async glob(pattern) {
+				globCalls.push(pattern)
+				// Mimic @cloudflare/shell Workspace.glob: brace groups that still
+				// contain wildcards throw SyntaxError ("Nothing to repeat").
+				if (/\{[^}]*[*?]/.test(pattern)) {
+					throw new SyntaxError(
+						`Invalid regular expression: /^${pattern}$/: Nothing to repeat`,
+					)
+				}
+				return [...files.keys()]
+					.filter((path) => {
+						if (pattern === '/README.md') return path === '/README.md'
+						if (pattern === '/package.json') return path === '/package.json'
+						if (pattern === '/**/README*') {
+							return path === '/README.md' || path.endsWith('/README.extra.md')
+						}
+						return false
+					})
+					.map((path) => ({ path, type: 'file' }))
+			},
+			async readFile(path) {
+				return files.get(path) ?? null
+			},
+		},
+		toExternalPath(path) {
+			return path.replace(/^\//, '')
+		},
+	})
+
+	expect(globCalls).toEqual(['/README.md', '/package.json', '/**/README*'])
+	expect(result.totalFiles).toBe(2)
+	expect(result.totalMatches).toBe(2)
+	expect(result.files.map((file) => file.path).sort()).toEqual([
+		'README.md',
+		'docs/README.extra.md',
+	])
+})
+
+test('searchRepoWorkspace rejects pathological brace expansion', async () => {
+	const workspace = {
+		glob: vi.fn(async () => []),
+		readFile: vi.fn(async () => null),
+	}
+
+	await expect(
+		searchRepoWorkspace({
+			root: '/',
+			pattern: 'x',
+			glob: '{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}',
+			workspace,
+			toExternalPath: (path) => path,
+		}),
+	).rejects.toThrow(/expands to more than 64 patterns/)
+	expect(workspace.glob).not.toHaveBeenCalled()
+})
+
+test('expandBraceGlobs rejects deeply nested single-alternative braces', () => {
+	let nested = 'x'
+	for (let index = 0; index < 20; index += 1) {
+		nested = `{${nested}}`
+	}
+	expect(() => expandBraceGlobs(nested)).toThrow(/brace nesting exceeds 16/)
+})
