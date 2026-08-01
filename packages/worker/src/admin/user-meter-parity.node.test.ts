@@ -330,6 +330,7 @@ test('loadAdminUserMeterParityReport reports full parity across daily/storage/se
 		stableUserId,
 		daily: {
 			day,
+			mirrorRetired: false,
 			mismatchCount: 0,
 		},
 		storage: {
@@ -762,5 +763,157 @@ test('loadAdminUserMeterParityReport fails closed on zero-item write-lease curso
 	expect(report?.deletion).toMatchObject({
 		truncated: true,
 		mirrorLeaseParity: false,
+	})
+})
+
+test('loadAdminUserMeterParityReport reports mirrorRetired when entitlement_daily_counters is absent', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(`
+		CREATE TABLE users (
+			id INTEGER PRIMARY KEY,
+			stable_user_id TEXT UNIQUE NOT NULL,
+			username TEXT NOT NULL,
+			email TEXT NOT NULL,
+			d1_storage_bytes INTEGER NOT NULL DEFAULT 0,
+			deleting_at TEXT,
+			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
+		);
+		CREATE TABLE package_service_states (
+			user_id TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			service_name TEXT NOT NULL,
+			status TEXT NOT NULL CHECK (status IN ('running', 'idle', 'stopped', 'error')),
+			started_at TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, package_id, service_name)
+		);
+		CREATE TABLE account_write_leases (
+			token TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			holder TEXT NOT NULL,
+			acquired_at TEXT NOT NULL,
+			released_at TEXT
+		);
+	`)
+	const db = createD1FromSqlite(sqlite)
+	const meter = createInMemoryUserMeterEnv()
+	insertUser(sqlite, { stableUserId, d1StorageBytes: 0 })
+	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
+	await meterStub.initialize({
+		resource: 'email_sends_per_day',
+		day,
+		count: 4,
+		updatedAt: now.toISOString(),
+	})
+	await meterStub.initializeStorageBytes({
+		bytes: 0,
+		updatedAt: now.toISOString(),
+	})
+
+	const report = await loadAdminUserMeterParityReport({
+		db,
+		env: meter.env,
+		stableUserId,
+		now,
+	})
+	expect(report?.daily).toMatchObject({
+		mirrorRetired: true,
+		mismatchCount: 0,
+	})
+	expect(
+		report?.daily.resources.find(
+			(row) => row.resource === 'email_sends_per_day',
+		),
+	).toMatchObject({
+		d1Count: null,
+		meterCount: 4,
+		delta: null,
+		parity: true,
+	})
+})
+
+test('loadAdminUserMeterParityReport still compares D1 daily counts when mirror table exists', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(`
+		CREATE TABLE users (
+			id INTEGER PRIMARY KEY,
+			stable_user_id TEXT UNIQUE NOT NULL,
+			username TEXT NOT NULL,
+			email TEXT NOT NULL,
+			password_hash TEXT,
+			d1_storage_bytes INTEGER NOT NULL DEFAULT 0,
+			deleting_at TEXT,
+			active_write_count INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
+		);
+		CREATE TABLE entitlement_daily_counters (
+			user_id TEXT NOT NULL,
+			resource TEXT NOT NULL,
+			day TEXT NOT NULL,
+			count INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, resource, day)
+		);
+		CREATE TABLE package_service_states (
+			user_id TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			service_name TEXT NOT NULL,
+			status TEXT NOT NULL CHECK (status IN ('running', 'idle', 'stopped', 'error')),
+			started_at TEXT,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, package_id, service_name)
+		);
+		CREATE TABLE account_write_leases (
+			token TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			holder TEXT NOT NULL,
+			acquired_at TEXT NOT NULL,
+			released_at TEXT
+		);
+	`)
+	const db = createD1FromSqlite(sqlite)
+	const meter = createInMemoryUserMeterEnv()
+	insertUser(sqlite, { stableUserId, d1StorageBytes: 0 })
+	for (const resource of dailyEntitlementResources) {
+		sqlite
+			.prepare(
+				`INSERT INTO entitlement_daily_counters (
+					user_id, resource, day, count, updated_at
+				) VALUES (?, ?, ?, ?, ?)`,
+			)
+			.run(stableUserId, resource, day, 1, now.toISOString())
+	}
+	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
+	for (const resource of dailyEntitlementResources) {
+		await meterStub.initialize({
+			resource,
+			day,
+			count: resource === 'email_sends_per_day' ? 9 : 1,
+			updatedAt: now.toISOString(),
+		})
+	}
+	await meterStub.initializeStorageBytes({
+		bytes: 0,
+		updatedAt: now.toISOString(),
+	})
+	const report = await loadAdminUserMeterParityReport({
+		db,
+		env: meter.env,
+		stableUserId,
+		now,
+	})
+	expect(report?.daily.mirrorRetired).toBe(false)
+	expect(report?.daily.mismatchCount).toBe(1)
+	expect(
+		report?.daily.resources.find(
+			(row) => row.resource === 'email_sends_per_day',
+		),
+	).toMatchObject({
+		d1Count: 1,
+		meterCount: 9,
+		delta: -8,
+		parity: false,
 	})
 })

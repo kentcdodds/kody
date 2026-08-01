@@ -32,13 +32,6 @@ type UsageRollupRow = {
 	total_bytes: number
 }
 
-type CounterRow = {
-	user_id: string
-	resource: string
-	day: string
-	count: number
-}
-
 type ResourceCount = Partial<
 	Record<
 		| 'saved_packages'
@@ -59,12 +52,10 @@ function normalizeQuery(query: string) {
 function createAdminUserUsageTestDb(input: {
 	users: Array<UserRow>
 	usageRollups?: Array<UsageRollupRow>
-	dailyCounters?: Array<CounterRow>
 	resourceCounts?: Record<string, ResourceCount>
 }) {
 	const users = input.users.map((user) => ({ ...user }))
 	const usageRollups = input.usageRollups?.map((row) => ({ ...row })) ?? []
-	const dailyCounters = input.dailyCounters?.map((row) => ({ ...row })) ?? []
 	const resourceCounts = input.resourceCounts ?? {}
 
 	function countForQuery(normalizedQuery: string, userId: string) {
@@ -105,15 +96,6 @@ function createAdminUserUsageTestDb(input: {
 					) {
 						return (users.find((user) => user.stable_user_id === params[0]) ??
 							null) as T | null
-					}
-					if (normalizedQuery.includes('from entitlement_daily_counters')) {
-						const row = dailyCounters.find(
-							(counter) =>
-								counter.user_id === params[0] &&
-								counter.resource === params[1] &&
-								counter.day === params[2],
-						)
-						return (row ? { count: row.count } : null) as T | null
 					}
 					const count = countForQuery(normalizedQuery, String(params[0]))
 					if (count !== null) return { count } as T
@@ -243,14 +225,6 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 				event_count: 40,
 			}),
 		],
-		dailyCounters: [
-			{
-				user_id: usageUserId,
-				resource: 'email_sends_per_day',
-				day: '2026-07-05',
-				count: 170,
-			},
-		],
 		resourceCounts: {
 			[usageUserId]: {
 				saved_packages: 85,
@@ -262,8 +236,15 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 		},
 	})
 
+	const env = withUserMeter({ APP_DB: db })
+	await env.meter.seed({
+		userId: usageUserId,
+		resource: 'email_sends_per_day',
+		day: '2026-07-05',
+		count: 170,
+	})
 	const data = await loadAdminUserUsageData(
-		withUserMeter({ APP_DB: db }) as Env,
+		env as Env,
 		usageUserId,
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
@@ -291,14 +272,6 @@ test('loadAdminUserUsageData rejects an invalid stored plan', async () => {
 				email,
 				plan: 'enterprise-2099',
 				stable_user_id: usageUserId,
-			},
-		],
-		dailyCounters: [
-			{
-				user_id: usageUserId,
-				resource: 'email_receives_per_day',
-				day: '2026-07-05',
-				count: 190,
 			},
 		],
 		resourceCounts: {
@@ -439,43 +412,42 @@ test('loadAdminUserUsageData keeps current-month and month-over-month rollups on
 	expect(getEventCount(data?.monthUsage[1]?.usage, 'execute')).toBe(12)
 })
 
-test('loadAdminUserUsageData reads daily counts from UserMeter (bootstrap then warm)', async () => {
+test('loadAdminUserUsageData reads daily counts from UserMeter (seeded then warm)', async () => {
 	const now = new Date('2026-07-05T12:00:00.000Z')
 	const day = utcDayKey(now)
 
 	const bootstrapEmail = 'bootstrap-drilldown@example.com'
 	const bootstrapUserId = await createStableUserIdFromEmail(bootstrapEmail)
-	const bootstrapped = await loadAdminUserUsageData(
-		withUserMeter({
-			APP_DB: createAdminUserUsageTestDb({
-				users: [
-					{
-						id: 3,
-						username: 'bootstrap',
-						email: bootstrapEmail,
-						plan: 'pro',
-						stable_user_id: bootstrapUserId,
-					},
-				],
-				dailyCounters: [
-					{
-						user_id: bootstrapUserId,
-						resource: 'email_receives_per_day',
-						day,
-						count: 55,
-					},
-					{
-						user_id: bootstrapUserId,
-						resource: 'outbound_fetches_per_day',
-						day,
-						count: 66,
-					},
-				],
-				resourceCounts: {
-					[bootstrapUserId]: { secrets: 3 },
+	const bootstrapEnv = withUserMeter({
+		APP_DB: createAdminUserUsageTestDb({
+			users: [
+				{
+					id: 3,
+					username: 'bootstrap',
+					email: bootstrapEmail,
+					plan: 'pro',
+					stable_user_id: bootstrapUserId,
 				},
-			}),
-		}) as Env,
+			],
+			resourceCounts: {
+				[bootstrapUserId]: { secrets: 3 },
+			},
+		}),
+	})
+	await bootstrapEnv.meter.seed({
+		userId: bootstrapUserId,
+		resource: 'email_receives_per_day',
+		day,
+		count: 55,
+	})
+	await bootstrapEnv.meter.seed({
+		userId: bootstrapUserId,
+		resource: 'outbound_fetches_per_day',
+		day,
+		count: 66,
+	})
+	const bootstrapped = await loadAdminUserUsageData(
+		bootstrapEnv as Env,
 		bootstrapUserId,
 		now,
 	)
@@ -506,32 +478,6 @@ test('loadAdminUserUsageData reads daily counts from UserMeter (bootstrap then w
 					email: meterEmail,
 					plan: 'pro',
 					stable_user_id: meterUserId,
-				},
-			],
-			dailyCounters: [
-				{
-					user_id: meterUserId,
-					resource: 'email_sends_per_day',
-					day,
-					count: 11,
-				},
-				{
-					user_id: meterUserId,
-					resource: 'email_receives_per_day',
-					day,
-					count: 22,
-				},
-				{
-					user_id: meterUserId,
-					resource: 'execute_calls_per_day',
-					day,
-					count: 33,
-				},
-				{
-					user_id: meterUserId,
-					resource: 'outbound_fetches_per_day',
-					day,
-					count: 44,
 				},
 			],
 			resourceCounts: {

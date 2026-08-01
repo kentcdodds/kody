@@ -588,8 +588,7 @@ export async function sendOutboundEmail(
 				}) + attachmentBytesTotal,
 		})
 
-		// Atomic check-and-increment via UserMeter. No ExecutionContext here;
-		// the legacy D1 mirror uses the service's caught best-effort fallback.
+		// Atomic check-and-increment via UserMeter (sole daily authority).
 		await consumeDailyEntitlement({
 			db: input.env.APP_DB,
 			env: input.env,

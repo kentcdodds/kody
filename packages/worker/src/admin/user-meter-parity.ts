@@ -24,10 +24,22 @@ export const userMeterParityPageSize = 500
 
 type DailyResourceParity = {
 	resource: DailyEntitlementResource
-	d1Count: number
+	/**
+	 * D1 mirror count for the current UTC day. `null` when
+	 * `daily.mirrorRetired` is true (table dropped / comparison retired).
+	 */
+	d1Count: number | null
 	meterCount: number | null
 	needsBootstrap: boolean
+	/**
+	 * `d1Count - meterCount` when both sides are present; `null` when the
+	 * mirror is retired or the meter still needs bootstrap.
+	 */
 	delta: number | null
+	/**
+	 * When the mirror is active: true iff counts match. When
+	 * `mirrorRetired`, always true (no D1 comparison is claimed).
+	 */
 	parity: boolean
 }
 
@@ -91,6 +103,12 @@ export type AdminUserMeterParityReport = {
 	stableUserId: string
 	daily: {
 		day: string
+		/**
+		 * True when D1 `entitlement_daily_counters` is absent (retired). The
+		 * daily gate then reports meter counts only and does not claim a D1
+		 * comparison (`d1Count`/`delta` are null; `parity` stays true).
+		 */
+		mirrorRetired: boolean
 		resources: Array<DailyResourceParity>
 		mismatchCount: number
 	}
@@ -129,6 +147,23 @@ async function userExists(db: D1Database, stableUserId: string) {
 		.bind(stableUserId)
 		.first<{ present: number }>()
 	return row != null
+}
+
+/**
+ * Detect retirement without querying the missing table. Uses sqlite_master
+ * only (safe when the table has already been dropped).
+ */
+async function isEntitlementDailyCountersMirrorRetired(
+	db: D1Database,
+): Promise<boolean> {
+	const row = await db
+		.prepare(
+			`SELECT 1 AS present
+			FROM sqlite_master
+			WHERE type = 'table' AND name = 'entitlement_daily_counters'`,
+		)
+		.first<{ present: number }>()
+	return row == null
 }
 
 async function readD1DailyCounts(input: {
@@ -170,11 +205,11 @@ async function readDailyParity(input: {
 	day: string
 	generatedAt: string
 }): Promise<AdminUserMeterParityReport['daily']> {
-	const d1Counts = await readD1DailyCounts(input)
+	const mirrorRetired = await isEntitlementDailyCountersMirrorRetired(input.db)
+	const d1Counts = mirrorRetired ? null : await readD1DailyCounts(input)
 	const meter = userMeterRpc({ env: input.env, userId: input.stableUserId })
 	const resources: Array<DailyResourceParity> = []
 	for (const resource of dailyEntitlementResources) {
-		const d1Count = d1Counts.get(resource) ?? 0
 		const meterRead = await meter.read({
 			resource,
 			day: input.day,
@@ -182,6 +217,19 @@ async function readDailyParity(input: {
 		})
 		const needsBootstrap = meterRead.outcome === 'needs_bootstrap'
 		const meterCount = needsBootstrap ? null : meterRead.count
+		if (mirrorRetired) {
+			resources.push({
+				resource,
+				d1Count: null,
+				meterCount,
+				needsBootstrap,
+				delta: null,
+				// Mirror comparison is retired; do not claim a D1 mismatch.
+				parity: true,
+			})
+			continue
+		}
+		const d1Count = d1Counts?.get(resource) ?? 0
 		const { delta, parity } = countDeltaParity({
 			d1Value: d1Count,
 			meterValue: meterCount,
@@ -198,8 +246,11 @@ async function readDailyParity(input: {
 	}
 	return {
 		day: input.day,
+		mirrorRetired,
 		resources,
-		mismatchCount: resources.filter((row) => !row.parity).length,
+		mismatchCount: mirrorRetired
+			? 0
+			: resources.filter((row) => !row.parity).length,
 	}
 }
 

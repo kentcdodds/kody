@@ -11,24 +11,15 @@ function withUsageEnv(env: { APP_DB: D1Database } & Record<string, unknown>) {
 	return { ...env, ...meter.env, ...runLog.env, meter, runLog }
 }
 
-type DailyCounterRow = {
-	user_id: string
-	resource: string
-	day: string
-	count: number
-}
-
 function createUsageTestDb(input: {
 	userId: number
 	email: string
 	plan: string
 	stripePlan?: string | null
 	packageCount?: number
-	dailyCounters?: Array<DailyCounterRow>
 	d1StorageBytes?: number
 }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
-	const dailyCounters = input.dailyCounters?.map((row) => ({ ...row })) ?? []
 	const d1StorageBytes = input.d1StorageBytes ?? 0
 	return {
 		stableUserId,
@@ -52,15 +43,6 @@ function createUsageTestDb(input: {
 								}
 								if (normalized.includes('from saved_packages')) {
 									return { count: input.packageCount ?? 0 } as T
-								}
-								if (normalized.includes('from entitlement_daily_counters')) {
-									const row = dailyCounters.find(
-										(counter) =>
-											counter.user_id === params[0] &&
-											counter.resource === params[1] &&
-											counter.day === params[2],
-									)
-									return (row ? { count: row.count } : { count: 0 }) as T
 								}
 								if (normalized.includes('d1_storage_bytes')) {
 									return { bytes: d1StorageBytes } as T
@@ -123,23 +105,22 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		email: bootstrapEmail,
 		plan: 'pro',
 		packageCount: 1,
-		dailyCounters: [
-			{
-				user_id: bootstrapUserId,
-				resource: 'email_sends_per_day',
-				day,
-				count: 17,
-			},
-			{
-				user_id: bootstrapUserId,
-				resource: 'execute_calls_per_day',
-				day,
-				count: 91,
-			},
-		],
+	})
+	const bootstrapEnv = withUsageEnv({ APP_DB: bootstrapDb })
+	await bootstrapEnv.meter.seed({
+		userId: bootstrapUserId,
+		resource: 'email_sends_per_day',
+		day,
+		count: 17,
+	})
+	await bootstrapEnv.meter.seed({
+		userId: bootstrapUserId,
+		resource: 'execute_calls_per_day',
+		day,
+		count: 91,
 	})
 	const bootstrapped = await loadAccountUsageData({
-		env: withUsageEnv({ APP_DB: bootstrapDb }) as Env,
+		env: bootstrapEnv as Env,
 		userId: 8,
 		now,
 	})
@@ -154,32 +135,6 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 		email: meterEmail,
 		plan: 'pro',
 		packageCount: 4,
-		dailyCounters: [
-			{
-				user_id: meterUserId,
-				resource: 'email_sends_per_day',
-				day,
-				count: 11,
-			},
-			{
-				user_id: meterUserId,
-				resource: 'email_receives_per_day',
-				day,
-				count: 22,
-			},
-			{
-				user_id: meterUserId,
-				resource: 'execute_calls_per_day',
-				day,
-				count: 33,
-			},
-			{
-				user_id: meterUserId,
-				resource: 'outbound_fetches_per_day',
-				day,
-				count: 44,
-			},
-		],
 	})
 	const warmEnv = withUsageEnv({ APP_DB: warmDb })
 	warmEnv.runLog.setActiveWorkflowCount(meterUserId, 3)

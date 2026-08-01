@@ -897,10 +897,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		email_attachments: [{ id: 'ea-1', message_id: 'em-1' }],
 		email_delivery_events: [{ id: 'ed-1', user_id: userAaa }],
 		email_sender_identities: [{ id: 'ei-1', user_id: userAaa }],
-		entitlement_daily_counters: [
-			{ user_id: userAaa, resource: 'email_sends_per_day', day: '2026-07-05' },
-			{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
-		],
 		platform_feedback: [
 			{
 				id: 'feedback-submitted-by-a',
@@ -1305,9 +1301,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(deletedEmailBlobKeys.sort()).toEqual([
 		'email-raw:v1:user-aaa/em-1',
 		'email-raw:v1:user-aaa/em-2',
-	])
-	expect(rows.entitlement_daily_counters).toEqual([
-		{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
 	])
 	expect(rows.platform_feedback).toEqual([
 		{

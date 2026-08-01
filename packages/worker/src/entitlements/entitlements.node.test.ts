@@ -33,18 +33,8 @@ import {
 	refundDailyEntitlement,
 } from './service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import {
-	createInMemoryUserMeterEnv,
-	createWaitUntilDrain,
-} from '#worker/test-support/user-meter.ts'
-
-type CounterRow = {
-	user_id: string
-	resource: string
-	day: string
-	count: number
-	updated_at?: string
-}
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { userMeterRpc } from './user-meter-client.ts'
 
 function createEntitlementsTestDb(
 	input: {
@@ -71,12 +61,10 @@ function createEntitlementsTestDb(
 				number
 			>
 		>
-		counters?: Array<CounterRow>
 	} = {},
 ) {
 	const users = input.users ?? []
 	const counts = input.counts ?? {}
-	const counters = input.counters ?? []
 	const queries: Array<{ sql: string; params: Array<unknown> }> = []
 	const initialStorageBytes = Object.values(counts).reduce(
 		(total, count) => total + (count ?? 0),
@@ -180,15 +168,6 @@ function createEntitlementsTestDb(
 								const bytes = storageBytesByUser.get(String(params[0]))
 								return (bytes === undefined ? null : { bytes }) as T | null
 							}
-							if (query.includes('FROM entitlement_daily_counters')) {
-								const row = counters.find(
-									(counter) =>
-										counter.user_id === params[0] &&
-										counter.resource === params[1] &&
-										counter.day === params[2],
-								)
-								return (row ? { count: row.count } : null) as T | null
-							}
 							const count = countFor(query)
 							if (count !== null) {
 								return { count } as T
@@ -210,66 +189,6 @@ function createEntitlementsTestDb(
 								storageBytesByUser.set(userId, existing + Number(params[0]))
 								return { meta: { changes: 1 } }
 							}
-							if (query.includes('INSERT INTO entitlement_daily_counters')) {
-								const isAbsoluteMirror =
-									query.includes('count = excluded.count') &&
-									query.includes('updated_at < excluded.updated_at')
-								const isConditionalConsume = query.includes('count + 1 <= ?')
-								const amount = isConditionalConsume ? 1 : Number(params[3])
-								const mirrorUpdatedAt = String(params[4] ?? '')
-								const existing = counters.find(
-									(counter) =>
-										counter.user_id === params[0] &&
-										counter.resource === params[1] &&
-										counter.day === params[2],
-								)
-								if (existing) {
-									if (
-										isConditionalConsume &&
-										existing.count + 1 > Number(params[4])
-									) {
-										return { meta: { changes: 0 } }
-									}
-									if (isAbsoluteMirror) {
-										const existingUpdatedAt = existing.updated_at ?? ''
-										if (
-											existingUpdatedAt !== '' &&
-											!(existingUpdatedAt < mirrorUpdatedAt)
-										) {
-											return { meta: { changes: 0 } }
-										}
-										existing.count = amount
-										existing.updated_at = mirrorUpdatedAt
-									} else {
-										existing.count += amount
-									}
-								} else {
-									counters.push({
-										user_id: String(params[0]),
-										resource: String(params[1]),
-										day: String(params[2]),
-										count: amount,
-										...(isAbsoluteMirror
-											? { updated_at: mirrorUpdatedAt }
-											: {}),
-									})
-								}
-								return { meta: { changes: 1 } }
-							}
-							if (query.includes('UPDATE entitlement_daily_counters')) {
-								// bind(updated_at, user_id, resource, day)
-								const existing = counters.find(
-									(counter) =>
-										counter.user_id === params[1] &&
-										counter.resource === params[2] &&
-										counter.day === params[3],
-								)
-								if (existing) {
-									existing.count = Math.max(0, existing.count - 1)
-									return { meta: { changes: 1 } }
-								}
-								return { meta: { changes: 0 } }
-							}
 							throw new Error(`Unsupported run query: ${query}`)
 						},
 					}
@@ -278,7 +197,28 @@ function createEntitlementsTestDb(
 		},
 	} as unknown as D1Database
 
-	return { db, counters, queries }
+	return { db, queries }
+}
+
+async function readMeterDailyCount(input: {
+	env: ReturnType<typeof createInMemoryUserMeterEnv>['env']
+	userId: string
+	resource:
+		| 'email_sends_per_day'
+		| 'email_receives_per_day'
+		| 'execute_calls_per_day'
+		| 'outbound_fetches_per_day'
+	now: Date
+}) {
+	const result = await userMeterRpc({
+		env: input.env,
+		userId: input.userId,
+	}).read({
+		resource: input.resource,
+		day: utcDayKey(input.now),
+		now: input.now.toISOString(),
+	})
+	return result.outcome === 'ready' ? result.count : 0
 }
 
 const plannedEmail = 'planned@example.com'
@@ -770,11 +710,10 @@ test('persistent package services are gated as a 0/1 limit', async () => {
 test('plan user daily entitlements increment, enforce at limit, and reset on a new UTC day', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const now = new Date('2026-07-05T15:00:00.000Z')
-	const { db, counters } = createEntitlementsTestDb({
+	const { db } = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
 	})
 	const { env } = createInMemoryUserMeterEnv()
-	const mirror = createWaitUntilDrain()
 	expect(utcDayKey(now)).toBe('2026-07-05')
 
 	const limit = planLimits.free.maxEmailSendsPerDay
@@ -787,19 +726,16 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 			email: plannedEmail,
 			resource: 'email_sends_per_day',
 			now,
-			waitUntil: mirror.waitUntil,
 		})
 	}
-	await mirror.drain()
-	expect(counters).toEqual([
-		{
-			user_id: userId,
+	expect(
+		await readMeterDailyCount({
+			env,
+			userId,
 			resource: 'email_sends_per_day',
-			day: '2026-07-05',
-			count: limit,
-			updated_at: expect.stringMatching(/^r\/0+[0-9]+$/),
-		},
-	])
+			now,
+		}),
+	).toBe(limit)
 	await expect(
 		assertWithinEntitlement({
 			db,
@@ -808,7 +744,7 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 			resource: 'email_sends_per_day',
 			now,
 		}),
-	).rejects.toBeInstanceOf(EntitlementLimitError)
+	).rejects.toThrow(/must be read from UserMeter/)
 
 	const denied = await consumeDailyEntitlement({
 		db,
@@ -817,7 +753,6 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 		email: plannedEmail,
 		resource: 'email_sends_per_day',
 		now,
-		waitUntil: mirror.waitUntil,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -832,7 +767,6 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 		limit,
 		current: limit,
 	})
-	expect(counters[0]?.count).toBe(limit)
 
 	const nextDay = new Date('2026-07-06T00:00:01.000Z')
 	await consumeDailyEntitlement({
@@ -842,17 +776,28 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 		email: plannedEmail,
 		resource: 'email_sends_per_day',
 		now: nextDay,
-		waitUntil: mirror.waitUntil,
 	})
-	await mirror.drain()
-	expect(counters).toHaveLength(2)
-	expect(counters[1]?.count).toBe(1)
+	expect(
+		await readMeterDailyCount({
+			env,
+			userId,
+			resource: 'email_sends_per_day',
+			now: nextDay,
+		}),
+	).toBe(1)
+	expect(
+		await readMeterDailyCount({
+			env,
+			userId,
+			resource: 'email_sends_per_day',
+			now,
+		}),
+	).toBe(limit)
 })
 
 test('refundDailyEntitlement decrements the user/day counter and floors at zero', async () => {
-	const { db, counters } = createEntitlementsTestDb()
+	const { db } = createEntitlementsTestDb()
 	const { env } = createInMemoryUserMeterEnv()
-	const mirror = createWaitUntilDrain()
 	const now = new Date('2026-07-05T15:00:00.000Z')
 	for (let index = 0; index < 2; index += 1) {
 		await consumeDailyEntitlement({
@@ -862,7 +807,6 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 			email: null,
 			resource: 'email_receives_per_day',
 			now,
-			waitUntil: mirror.waitUntil,
 		})
 	}
 	for (let index = 0; index < 3; index += 1) {
@@ -873,30 +817,30 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 			email: null,
 			resource: 'email_receives_per_day',
 			now,
-			waitUntil: mirror.waitUntil,
 		})
 	}
-	await mirror.drain()
 	await refundDailyEntitlement({
 		db,
 		env,
 		userId: 'user-1',
 		resource: 'email_receives_per_day',
 		now,
-		waitUntil: mirror.waitUntil,
 	})
-	await mirror.drain()
 	expect(
-		counters.find(
-			(row) =>
-				row.user_id === 'user-1' && row.resource === 'email_receives_per_day',
-		)?.count,
+		await readMeterDailyCount({
+			env,
+			userId: 'user-1',
+			resource: 'email_receives_per_day',
+			now,
+		}),
 	).toBe(1)
 	expect(
-		counters.find(
-			(row) =>
-				row.user_id === 'user-2' && row.resource === 'email_receives_per_day',
-		)?.count,
+		await readMeterDailyCount({
+			env,
+			userId: 'user-2',
+			resource: 'email_receives_per_day',
+			now,
+		}),
 	).toBe(3)
 
 	await refundDailyEntitlement({
@@ -905,7 +849,6 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 		userId: 'user-1',
 		resource: 'email_receives_per_day',
 		now,
-		waitUntil: mirror.waitUntil,
 	})
 	await refundDailyEntitlement({
 		db,
@@ -913,21 +856,20 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 		userId: 'user-1',
 		resource: 'email_receives_per_day',
 		now,
-		waitUntil: mirror.waitUntil,
 	})
-	await mirror.drain()
 	expect(
-		counters.find(
-			(row) =>
-				row.user_id === 'user-1' && row.resource === 'email_receives_per_day',
-		)?.count,
+		await readMeterDailyCount({
+			env,
+			userId: 'user-1',
+			resource: 'email_receives_per_day',
+			now,
+		}),
 	).toBe(0)
 })
 
 test('missing-email lookups fail closed and honor free email caps', async () => {
-	const { db, counters } = createEntitlementsTestDb()
+	const { db } = createEntitlementsTestDb()
 	const { env } = createInMemoryUserMeterEnv()
-	const mirror = createWaitUntilDrain()
 	const sendLimit = planLimits.free.maxEmailSendsPerDay
 	const now = new Date('2026-07-05T15:00:00.000Z')
 	for (let index = 0; index < sendLimit; index += 1) {
@@ -938,11 +880,16 @@ test('missing-email lookups fail closed and honor free email caps', async () => 
 			email: null,
 			resource: 'email_sends_per_day',
 			now,
-			waitUntil: mirror.waitUntil,
 		})
 	}
-	await mirror.drain()
-	expect(counters[0]?.count).toBe(sendLimit)
+	expect(
+		await readMeterDailyCount({
+			env,
+			userId: 'user-1',
+			resource: 'email_sends_per_day',
+			now,
+		}),
+	).toBe(sendLimit)
 	await expect(
 		consumeDailyEntitlement({
 			db,
@@ -951,7 +898,6 @@ test('missing-email lookups fail closed and honor free email caps', async () => 
 			email: null,
 			resource: 'email_sends_per_day',
 			now,
-			waitUntil: mirror.waitUntil,
 		}),
 	).rejects.toBeInstanceOf(EntitlementLimitError)
 
@@ -964,12 +910,15 @@ test('missing-email lookups fail closed and honor free email caps', async () => 
 			email: null,
 			resource: 'email_receives_per_day',
 			now,
-			waitUntil: mirror.waitUntil,
 		})
 	}
-	await mirror.drain()
 	expect(
-		counters.find((row) => row.resource === 'email_receives_per_day')?.count,
+		await readMeterDailyCount({
+			env,
+			userId: 'user-1',
+			resource: 'email_receives_per_day',
+			now,
+		}),
 	).toBe(receiveLimit)
 
 	const denied = await consumeDailyEntitlement({
@@ -979,7 +928,6 @@ test('missing-email lookups fail closed and honor free email caps', async () => 
 		email: null,
 		resource: 'email_receives_per_day',
 		now,
-		waitUntil: mirror.waitUntil,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
