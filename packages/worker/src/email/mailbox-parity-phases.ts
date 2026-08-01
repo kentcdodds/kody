@@ -21,14 +21,40 @@ export type MailboxParityPhaseEnv = MailboxLiveMirrorEnv & {
 	APP_DB: D1Database
 }
 
-export type MailboxParityPhaseResult = {
+type MailboxParityPhaseBase = {
 	state: MailboxParityUserState
 	backfilled: number
-	budgetExhausted: boolean
-	retryableFailure: boolean
-	/** Set when a selected mirror outcome must not advance the cursor. */
-	blockedReason: string | null
 }
+
+/** Creation (message/event) phase outcome. */
+export type MailboxParityCreationPhaseResult =
+	| (MailboxParityPhaseBase & { status: 'complete' })
+	| (MailboxParityPhaseBase & { status: 'budget_exhausted' })
+	| (MailboxParityPhaseBase & {
+			status: 'retryable_failure'
+			blockedReason: string
+	  })
+	| (MailboxParityPhaseBase & { status: 'deletion_started' })
+
+/** Content-replay phase outcome (`complete` ≡ full window finished). */
+export type MailboxParityContentPhaseResult =
+	| (MailboxParityPhaseBase & {
+			status: 'complete'
+			openedWindow: boolean
+	  })
+	| (MailboxParityPhaseBase & {
+			status: 'budget_exhausted'
+			openedWindow: boolean
+	  })
+	| (MailboxParityPhaseBase & {
+			status: 'retryable_failure'
+			blockedReason: string
+			openedWindow: boolean
+	  })
+	| (MailboxParityPhaseBase & {
+			status: 'deletion_started'
+			openedWindow: boolean
+	  })
 
 /**
  * Message graph cursor may advance only on mirrored/stale. missing / skipped /
@@ -132,18 +158,11 @@ export async function backfillMessagesForUser(input: {
 	state: MailboxParityUserState
 	deadlineMs: number
 	isDeleting: () => Promise<boolean>
-}): Promise<MailboxParityPhaseResult & { deletionStarted: boolean }> {
+}): Promise<MailboxParityCreationPhaseResult> {
 	let state = input.state
 	let backfilled = 0
 	if (state.messagesCompletedAt != null) {
-		return {
-			state,
-			backfilled,
-			budgetExhausted: false,
-			retryableFailure: false,
-			blockedReason: null,
-			deletionStarted: false,
-		}
+		return { status: 'complete', state, backfilled }
 	}
 
 	while (Date.now() < input.deadlineMs) {
@@ -158,39 +177,18 @@ export async function backfillMessagesForUser(input: {
 				...state,
 				messagesCompletedAt: new Date().toISOString(),
 			}
-			return {
-				state,
-				backfilled,
-				budgetExhausted: false,
-				retryableFailure: false,
-				blockedReason: null,
-				deletionStarted: false,
-			}
+			return { status: 'complete', state, backfilled }
 		}
 
 		let cursor = state.messageCursor
 		for (const row of page) {
 			if (Date.now() >= input.deadlineMs) {
 				state = { ...state, messageCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: true,
-					retryableFailure: false,
-					blockedReason: null,
-					deletionStarted: false,
-				}
+				return { status: 'budget_exhausted', state, backfilled }
 			}
 			if (await input.isDeleting()) {
 				state = { ...state, messageCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: false,
-					retryableFailure: false,
-					blockedReason: null,
-					deletionStarted: true,
-				}
+				return { status: 'deletion_started', state, backfilled }
 			}
 			const summary = await mirrorMailboxMessageGraphFromD1({
 				env: input.env,
@@ -200,24 +198,15 @@ export async function backfillMessagesForUser(input: {
 			})
 			if (await input.isDeleting()) {
 				state = { ...state, messageCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: false,
-					retryableFailure: false,
-					blockedReason: null,
-					deletionStarted: true,
-				}
+				return { status: 'deletion_started', state, backfilled }
 			}
 			if (!messageGraphAllowsCursorAdvance(summary)) {
 				state = { ...state, messageCursor: cursor }
 				return {
+					status: 'retryable_failure',
 					state,
 					backfilled,
-					budgetExhausted: false,
-					retryableFailure: true,
 					blockedReason: `message graph ${summary.message.status}`,
-					deletionStarted: false,
 				}
 			}
 			cursor = { createdAt: row.created_at, id: row.id }
@@ -226,14 +215,7 @@ export async function backfillMessagesForUser(input: {
 		state = { ...state, messageCursor: cursor }
 	}
 
-	return {
-		state,
-		backfilled,
-		budgetExhausted: true,
-		retryableFailure: false,
-		blockedReason: null,
-		deletionStarted: false,
-	}
+	return { status: 'budget_exhausted', state, backfilled }
 }
 
 export async function backfillEventsForUser(input: {
@@ -241,28 +223,14 @@ export async function backfillEventsForUser(input: {
 	state: MailboxParityUserState
 	deadlineMs: number
 	isDeleting: () => Promise<boolean>
-}): Promise<MailboxParityPhaseResult & { deletionStarted: boolean }> {
+}): Promise<MailboxParityCreationPhaseResult> {
 	let state = input.state
 	let backfilled = 0
 	if (state.messagesCompletedAt == null) {
-		return {
-			state,
-			backfilled,
-			budgetExhausted: false,
-			retryableFailure: false,
-			blockedReason: null,
-			deletionStarted: false,
-		}
+		return { status: 'complete', state, backfilled }
 	}
 	if (state.eventsCompletedAt != null) {
-		return {
-			state,
-			backfilled,
-			budgetExhausted: false,
-			retryableFailure: false,
-			blockedReason: null,
-			deletionStarted: false,
-		}
+		return { status: 'complete', state, backfilled }
 	}
 
 	while (Date.now() < input.deadlineMs) {
@@ -277,39 +245,18 @@ export async function backfillEventsForUser(input: {
 				...state,
 				eventsCompletedAt: new Date().toISOString(),
 			}
-			return {
-				state,
-				backfilled,
-				budgetExhausted: false,
-				retryableFailure: false,
-				blockedReason: null,
-				deletionStarted: false,
-			}
+			return { status: 'complete', state, backfilled }
 		}
 
 		let cursor = state.eventCursor
 		for (const row of page) {
 			if (Date.now() >= input.deadlineMs) {
 				state = { ...state, eventCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: true,
-					retryableFailure: false,
-					blockedReason: null,
-					deletionStarted: false,
-				}
+				return { status: 'budget_exhausted', state, backfilled }
 			}
 			if (await input.isDeleting()) {
 				state = { ...state, eventCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: false,
-					retryableFailure: false,
-					blockedReason: null,
-					deletionStarted: true,
-				}
+				return { status: 'deletion_started', state, backfilled }
 			}
 			const result = await mirrorMailboxParityDeliveryEventFromD1({
 				env: input.env,
@@ -319,27 +266,18 @@ export async function backfillEventsForUser(input: {
 			})
 			if (await input.isDeleting()) {
 				state = { ...state, eventCursor: cursor }
-				return {
-					state,
-					backfilled,
-					budgetExhausted: false,
-					retryableFailure: false,
-					blockedReason: null,
-					deletionStarted: true,
-				}
+				return { status: 'deletion_started', state, backfilled }
 			}
 			if (!eventMirrorAllowsCursorAdvance(result)) {
 				state = { ...state, eventCursor: cursor }
 				return {
+					status: 'retryable_failure',
 					state,
 					backfilled,
-					budgetExhausted: false,
-					retryableFailure: true,
 					blockedReason:
 						result.status === 'skipped'
 							? `event skipped:${result.reason}`
 							: `event ${result.status}`,
-					deletionStarted: false,
 				}
 			}
 			cursor = { createdAt: row.created_at, id: row.id }
@@ -348,14 +286,7 @@ export async function backfillEventsForUser(input: {
 		state = { ...state, eventCursor: cursor }
 	}
 
-	return {
-		state,
-		backfilled,
-		budgetExhausted: true,
-		retryableFailure: false,
-		blockedReason: null,
-		deletionStarted: false,
-	}
+	return { status: 'budget_exhausted', state, backfilled }
 }
 
 /**
@@ -368,13 +299,7 @@ export async function replayContentUpdatesForUser(input: {
 	nowIso: string
 	deadlineMs: number
 	isDeleting: () => Promise<boolean>
-}): Promise<
-	MailboxParityPhaseResult & {
-		deletionStarted: boolean
-		windowComplete: boolean
-		openedWindow: boolean
-	}
-> {
+}): Promise<MailboxParityContentPhaseResult> {
 	let state = input.state
 	const watermarkAt = state.contentWatermarkAt ?? input.nowIso
 	let openedWindow = false
@@ -408,6 +333,7 @@ export async function replayContentUpdatesForUser(input: {
 		})
 		if (page.length === 0) {
 			return {
+				status: 'complete',
 				state: {
 					...state,
 					contentWatermarkAt: upperBoundAt,
@@ -415,11 +341,6 @@ export async function replayContentUpdatesForUser(input: {
 					contentReplayCursor: null,
 				},
 				backfilled,
-				budgetExhausted: false,
-				retryableFailure: false,
-				blockedReason: null,
-				deletionStarted: false,
-				windowComplete: true,
 				openedWindow,
 			}
 		}
@@ -427,33 +348,25 @@ export async function replayContentUpdatesForUser(input: {
 		for (const row of page) {
 			if (Date.now() >= input.deadlineMs) {
 				return {
+					status: 'budget_exhausted',
 					state: {
 						...state,
 						contentReplayUpperAt: upperBoundAt,
 						contentReplayCursor: cursor,
 					},
 					backfilled,
-					budgetExhausted: true,
-					retryableFailure: false,
-					blockedReason: null,
-					deletionStarted: false,
-					windowComplete: false,
 					openedWindow,
 				}
 			}
 			if (await input.isDeleting()) {
 				return {
+					status: 'deletion_started',
 					state: {
 						...state,
 						contentReplayUpperAt: upperBoundAt,
 						contentReplayCursor: cursor,
 					},
 					backfilled,
-					budgetExhausted: false,
-					retryableFailure: false,
-					blockedReason: null,
-					deletionStarted: true,
-					windowComplete: false,
 					openedWindow,
 				}
 			}
@@ -465,33 +378,26 @@ export async function replayContentUpdatesForUser(input: {
 			})
 			if (await input.isDeleting()) {
 				return {
+					status: 'deletion_started',
 					state: {
 						...state,
 						contentReplayUpperAt: upperBoundAt,
 						contentReplayCursor: cursor,
 					},
 					backfilled,
-					budgetExhausted: false,
-					retryableFailure: false,
-					blockedReason: null,
-					deletionStarted: true,
-					windowComplete: false,
 					openedWindow,
 				}
 			}
 			if (!messageGraphAllowsCursorAdvance(summary)) {
 				return {
+					status: 'retryable_failure',
 					state: {
 						...state,
 						contentReplayUpperAt: upperBoundAt,
 						contentReplayCursor: cursor,
 					},
 					backfilled,
-					budgetExhausted: false,
-					retryableFailure: true,
 					blockedReason: `content replay ${summary.message.status}`,
-					deletionStarted: false,
-					windowComplete: false,
 					openedWindow,
 				}
 			}
@@ -506,17 +412,13 @@ export async function replayContentUpdatesForUser(input: {
 	}
 
 	return {
+		status: 'budget_exhausted',
 		state: {
 			...state,
 			contentReplayUpperAt: upperBoundAt,
 			contentReplayCursor: cursor,
 		},
 		backfilled,
-		budgetExhausted: true,
-		retryableFailure: false,
-		blockedReason: null,
-		deletionStarted: false,
-		windowComplete: false,
 		openedWindow,
 	}
 }

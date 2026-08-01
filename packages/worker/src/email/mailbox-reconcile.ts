@@ -17,6 +17,8 @@ import {
 	mailboxParityMessagePageSize,
 	mirrorMailboxParityDeliveryEventFromD1,
 	replayContentUpdatesForUser,
+	type MailboxParityContentPhaseResult,
+	type MailboxParityCreationPhaseResult,
 } from './mailbox-parity-phases.ts'
 import {
 	countD1MailboxParity,
@@ -70,6 +72,32 @@ export {
 	listEventBackfillPage,
 	listUsersForMailboxParity,
 }
+
+type MailboxParityCompareResult =
+	| { status: 'matched'; state: MailboxParityUserState }
+	| { status: 'mismatched_reset'; state: MailboxParityUserState }
+	| {
+			status: 'mismatched_purge_failed'
+			state: MailboxParityUserState
+			lastError: string
+	  }
+
+type MailboxParityUserTickResult =
+	| { status: 'skipped' }
+	| { status: 'deletion_stopped'; backfilled: number }
+	| {
+			status: 'phase_checkpoint'
+			backfilled: number
+			failed: boolean
+			budgetExhausted: boolean
+	  }
+	| {
+			status: 'compared'
+			backfilled: number
+			matched: boolean
+			mismatched: boolean
+			failed: boolean
+	  }
 
 function safeParityErrorText(error: unknown): string {
 	const raw = error instanceof Error ? error.message : String(error)
@@ -214,12 +242,7 @@ async function compareParityForUser(input: {
 	env: MailboxParityReconcileEnv
 	state: MailboxParityUserState
 	nowIso: string
-}): Promise<{
-	state: MailboxParityUserState
-	matched: boolean
-	purgeFailed: boolean
-	lastError: string | null
-}> {
+}): Promise<MailboxParityCompareResult> {
 	const d1 = await countD1MailboxParity({
 		db: input.env.APP_DB,
 		userId: input.state.userId,
@@ -241,14 +264,12 @@ async function compareParityForUser(input: {
 	})
 	if (matched) {
 		return {
+			status: 'matched',
 			state: {
 				...input.state,
 				matchingSince: input.state.matchingSince ?? input.nowIso,
 				mismatchCount: 0,
 			},
-			matched: true,
-			purgeFailed: false,
-			lastError: null,
 		}
 	}
 
@@ -266,18 +287,18 @@ async function compareParityForUser(input: {
 			purged.errorText,
 		)
 		return {
+			status: 'mismatched_purge_failed',
 			state: {
 				...input.state,
 				matchingSince: null,
 				mismatchCount: input.state.mismatchCount + 1,
 			},
-			matched: false,
-			purgeFailed: true,
 			lastError: purged.errorText,
 		}
 	}
 
 	return {
+		status: 'mismatched_reset',
 		state: {
 			...input.state,
 			matchingSince: null,
@@ -290,9 +311,85 @@ async function compareParityForUser(input: {
 			contentReplayUpperAt: null,
 			contentReplayCursor: null,
 		},
-		matched: false,
-		purgeFailed: false,
-		lastError: null,
+	}
+}
+
+function creationPhaseCheckpoint(input: {
+	phase: 'message' | 'event'
+	result: MailboxParityCreationPhaseResult
+}): {
+	kind: 'continue' | 'deletion' | 'failed' | 'budget'
+	lastError: string | null
+	warnDetail: string | null
+} {
+	switch (input.result.status) {
+		case 'complete':
+			return { kind: 'continue', lastError: null, warnDetail: null }
+		case 'deletion_started':
+			return { kind: 'deletion', lastError: null, warnDetail: null }
+		case 'budget_exhausted':
+			return { kind: 'budget', lastError: null, warnDetail: null }
+		case 'retryable_failure': {
+			const prefix =
+				input.phase === 'message' ? 'message backfill' : 'event backfill'
+			return {
+				kind: 'failed',
+				lastError: `${prefix} ${input.result.blockedReason}`,
+				warnDetail: input.result.blockedReason,
+			}
+		}
+		default: {
+			const exhaustive: never = input.result
+			throw new Error(
+				`Unhandled creation phase status: ${JSON.stringify(exhaustive)}`,
+			)
+		}
+	}
+}
+
+function contentPhaseCheckpoint(input: {
+	result: MailboxParityContentPhaseResult
+}): {
+	kind: 'continue' | 'deletion' | 'failed' | 'budget'
+	lastError: string | null
+	warnDetail: string | null
+	freezeOpenedWindow: boolean
+} {
+	switch (input.result.status) {
+		case 'complete':
+			return {
+				kind: 'continue',
+				lastError: null,
+				warnDetail: null,
+				freezeOpenedWindow: false,
+			}
+		case 'deletion_started':
+			return {
+				kind: 'deletion',
+				lastError: null,
+				warnDetail: null,
+				freezeOpenedWindow: false,
+			}
+		case 'budget_exhausted':
+			return {
+				kind: 'budget',
+				lastError: null,
+				warnDetail: null,
+				freezeOpenedWindow: input.result.openedWindow,
+			}
+		case 'retryable_failure':
+			return {
+				kind: 'failed',
+				lastError: `content replay ${input.result.blockedReason}`,
+				warnDetail: input.result.blockedReason,
+				freezeOpenedWindow: input.result.openedWindow,
+			}
+		default: {
+			const exhaustive: never = input.result
+			throw new Error(
+				`Unhandled content phase status: ${JSON.stringify(exhaustive)}`,
+			)
+		}
 	}
 }
 
@@ -301,27 +398,13 @@ async function reconcileOneUser(input: {
 	userId: string
 	nowIso: string
 	deadlineMs: number
-}): Promise<{
-	backfilled: number
-	compared: boolean
-	matched: boolean
-	mismatched: boolean
-	failed: boolean
-	budgetExhausted: boolean
-}> {
+}): Promise<MailboxParityUserTickResult> {
 	const loaded = await loadUserParityState({
 		db: input.env.APP_DB,
 		userId: input.userId,
 	})
 	if (!loaded) {
-		return {
-			backfilled: 0,
-			compared: false,
-			matched: false,
-			mismatched: false,
-			failed: false,
-			budgetExhausted: false,
-		}
+		return { status: 'skipped' }
 	}
 
 	let state = loaded
@@ -331,30 +414,23 @@ async function reconcileOneUser(input: {
 	const isDeleting = () =>
 		isUserDeleting({ db: input.env.APP_DB, userId: state.userId })
 
-	const stopForDeletion = async () => {
+	const stopForDeletion = async (): Promise<MailboxParityUserTickResult> => {
 		await purgeMailboxBestEffort({
 			env: input.env,
 			userId: state.userId,
 		})
-		return {
-			backfilled,
-			compared: false,
-			matched: false,
-			mismatched: false,
-			failed: false,
-			budgetExhausted: false,
-		}
+		return { status: 'deletion_stopped', backfilled }
 	}
 
-	const persistProgress = async (inputPersist: {
+	const persistCheckpoint = async (checkpoint: {
 		matchingSince: string | null
 		lastError: string | null
 	}) => {
-		const { wrote } = await persistUserParityProgress({
+		await persistUserParityProgress({
 			db: input.env.APP_DB,
 			userId: state.userId,
 			nowIso: input.nowIso,
-			matchingSince: inputPersist.matchingSince,
+			matchingSince: checkpoint.matchingSince,
 			mismatchCount: state.mismatchCount,
 			contentWatermarkAt: state.contentWatermarkAt,
 			contentReplayUpperAt: state.contentReplayUpperAt,
@@ -363,9 +439,8 @@ async function reconcileOneUser(input: {
 			messagesCompletedAt: state.messagesCompletedAt,
 			eventCursor: state.eventCursor,
 			eventsCompletedAt: state.eventsCompletedAt,
-			lastError: inputPersist.lastError,
+			lastError: checkpoint.lastError,
 		})
-		return wrote
 	}
 
 	if (await isDeleting()) {
@@ -391,39 +466,42 @@ async function reconcileOneUser(input: {
 	state = messagePass.state
 	creationBackfilled += messagePass.backfilled
 	backfilled += messagePass.backfilled
-	if (messagePass.deletionStarted) {
-		return stopForDeletion()
-	}
-	if (messagePass.retryableFailure) {
-		await persistProgress({
-			matchingSince: null,
-			lastError: messagePass.blockedReason
-				? `message backfill ${messagePass.blockedReason}`
-				: 'message backfill mirror error or timeout',
-		})
-		console.warn(
-			'mailbox-parity-message-backfill-retryable',
-			state.userId,
-			messagePass.blockedReason ?? 'error-or-timeout',
-		)
-		return {
-			backfilled,
-			compared: false,
-			matched: false,
-			mismatched: false,
-			failed: true,
-			budgetExhausted: false,
-		}
-	}
-	if (messagePass.budgetExhausted) {
-		await persistProgress({ matchingSince: null, lastError: null })
-		return {
-			backfilled,
-			compared: false,
-			matched: false,
-			mismatched: false,
-			failed: false,
-			budgetExhausted: true,
+	const messageCheckpoint = creationPhaseCheckpoint({
+		phase: 'message',
+		result: messagePass,
+	})
+	switch (messageCheckpoint.kind) {
+		case 'continue':
+			break
+		case 'deletion':
+			return stopForDeletion()
+		case 'failed':
+			await persistCheckpoint({
+				matchingSince: null,
+				lastError: messageCheckpoint.lastError,
+			})
+			console.warn(
+				'mailbox-parity-message-backfill-retryable',
+				state.userId,
+				messageCheckpoint.warnDetail ?? 'error-or-timeout',
+			)
+			return {
+				status: 'phase_checkpoint',
+				backfilled,
+				failed: true,
+				budgetExhausted: false,
+			}
+		case 'budget':
+			await persistCheckpoint({ matchingSince: null, lastError: null })
+			return {
+				status: 'phase_checkpoint',
+				backfilled,
+				failed: false,
+				budgetExhausted: true,
+			}
+		default: {
+			const exhaustive: never = messageCheckpoint.kind
+			throw new Error(`Unhandled message checkpoint: ${exhaustive}`)
 		}
 	}
 
@@ -436,49 +514,50 @@ async function reconcileOneUser(input: {
 	state = eventPass.state
 	creationBackfilled += eventPass.backfilled
 	backfilled += eventPass.backfilled
-	if (eventPass.deletionStarted) {
-		return stopForDeletion()
-	}
-	if (eventPass.retryableFailure) {
-		await persistProgress({
-			matchingSince: null,
-			lastError: eventPass.blockedReason
-				? `event backfill ${eventPass.blockedReason}`
-				: 'event backfill mirror error or timeout',
-		})
-		console.warn(
-			'mailbox-parity-event-backfill-retryable',
-			state.userId,
-			eventPass.blockedReason ?? 'error-or-timeout',
-		)
-		return {
-			backfilled,
-			compared: false,
-			matched: false,
-			mismatched: false,
-			failed: true,
-			budgetExhausted: false,
-		}
-	}
-	if (eventPass.budgetExhausted) {
-		await persistProgress({ matchingSince: null, lastError: null })
-		return {
-			backfilled,
-			compared: false,
-			matched: false,
-			mismatched: false,
-			failed: false,
-			budgetExhausted: true,
+	const eventCheckpoint = creationPhaseCheckpoint({
+		phase: 'event',
+		result: eventPass,
+	})
+	switch (eventCheckpoint.kind) {
+		case 'continue':
+			break
+		case 'deletion':
+			return stopForDeletion()
+		case 'failed':
+			await persistCheckpoint({
+				matchingSince: null,
+				lastError: eventCheckpoint.lastError,
+			})
+			console.warn(
+				'mailbox-parity-event-backfill-retryable',
+				state.userId,
+				eventCheckpoint.warnDetail ?? 'error-or-timeout',
+			)
+			return {
+				status: 'phase_checkpoint',
+				backfilled,
+				failed: true,
+				budgetExhausted: false,
+			}
+		case 'budget':
+			await persistCheckpoint({ matchingSince: null, lastError: null })
+			return {
+				status: 'phase_checkpoint',
+				backfilled,
+				failed: false,
+				budgetExhausted: true,
+			}
+		default: {
+			const exhaustive: never = eventCheckpoint.kind
+			throw new Error(`Unhandled event checkpoint: ${exhaustive}`)
 		}
 	}
 
 	if (state.messagesCompletedAt == null || state.eventsCompletedAt == null) {
-		await persistProgress({ matchingSince: null, lastError: null })
+		await persistCheckpoint({ matchingSince: null, lastError: null })
 		return {
+			status: 'phase_checkpoint',
 			backfilled,
-			compared: false,
-			matched: false,
-			mismatched: false,
 			failed: false,
 			budgetExhausted: false,
 		}
@@ -499,47 +578,47 @@ async function reconcileOneUser(input: {
 	})
 	state = contentPass.state
 	backfilled += contentPass.backfilled
-	if (contentPass.deletionStarted) {
-		return stopForDeletion()
-	}
-	// Durably freeze a newly opened window even when this tick cannot finish it.
-	if (contentPass.openedWindow && !contentPass.windowComplete) {
-		await persistProgress({
-			matchingSince: null,
-			lastError: null,
-		})
-	}
-	if (contentPass.retryableFailure) {
-		await persistProgress({
-			matchingSince: null,
-			lastError: contentPass.blockedReason
-				? `content replay ${contentPass.blockedReason}`
-				: 'content replay mirror error or timeout',
-		})
-		console.warn(
-			'mailbox-parity-content-replay-retryable',
-			state.userId,
-			contentPass.blockedReason ?? 'error-or-timeout',
-		)
-		return {
-			backfilled,
-			compared: false,
-			matched: false,
-			mismatched: false,
-			failed: true,
-			budgetExhausted: false,
-		}
-	}
-	if (!contentPass.windowComplete) {
-		// Freeze/retain upper + cursor; clear soak on incomplete budget ticks.
-		await persistProgress({ matchingSince: null, lastError: null })
-		return {
-			backfilled,
-			compared: false,
-			matched: false,
-			mismatched: false,
-			failed: false,
-			budgetExhausted: contentPass.budgetExhausted,
+	const contentCheckpoint = contentPhaseCheckpoint({ result: contentPass })
+	switch (contentCheckpoint.kind) {
+		case 'continue':
+			break
+		case 'deletion':
+			return stopForDeletion()
+		case 'failed':
+			// Durably freeze a newly opened window even when this tick cannot finish it.
+			if (contentCheckpoint.freezeOpenedWindow) {
+				await persistCheckpoint({ matchingSince: null, lastError: null })
+			}
+			await persistCheckpoint({
+				matchingSince: null,
+				lastError: contentCheckpoint.lastError,
+			})
+			console.warn(
+				'mailbox-parity-content-replay-retryable',
+				state.userId,
+				contentCheckpoint.warnDetail ?? 'error-or-timeout',
+			)
+			return {
+				status: 'phase_checkpoint',
+				backfilled,
+				failed: true,
+				budgetExhausted: false,
+			}
+		case 'budget':
+			if (contentCheckpoint.freezeOpenedWindow) {
+				await persistCheckpoint({ matchingSince: null, lastError: null })
+			}
+			// Freeze/retain upper + cursor; clear soak on incomplete budget ticks.
+			await persistCheckpoint({ matchingSince: null, lastError: null })
+			return {
+				status: 'phase_checkpoint',
+				backfilled,
+				failed: false,
+				budgetExhausted: true,
+			}
+		default: {
+			const exhaustive: never = contentCheckpoint.kind
+			throw new Error(`Unhandled content checkpoint: ${exhaustive}`)
 		}
 	}
 
@@ -556,17 +635,48 @@ async function reconcileOneUser(input: {
 	if (await isDeleting()) {
 		return stopForDeletion()
 	}
-	await persistProgress({
-		matchingSince: state.matchingSince,
-		lastError: compared.lastError,
-	})
-	return {
-		backfilled,
-		compared: true,
-		matched: compared.matched,
-		mismatched: !compared.matched,
-		failed: compared.purgeFailed,
-		budgetExhausted: false,
+
+	switch (compared.status) {
+		case 'matched':
+			await persistCheckpoint({
+				matchingSince: state.matchingSince,
+				lastError: null,
+			})
+			return {
+				status: 'compared',
+				backfilled,
+				matched: true,
+				mismatched: false,
+				failed: false,
+			}
+		case 'mismatched_reset':
+			await persistCheckpoint({
+				matchingSince: state.matchingSince,
+				lastError: null,
+			})
+			return {
+				status: 'compared',
+				backfilled,
+				matched: false,
+				mismatched: true,
+				failed: false,
+			}
+		case 'mismatched_purge_failed':
+			await persistCheckpoint({
+				matchingSince: state.matchingSince,
+				lastError: compared.lastError,
+			})
+			return {
+				status: 'compared',
+				backfilled,
+				matched: false,
+				mismatched: true,
+				failed: true,
+			}
+		default: {
+			const exhaustive: never = compared
+			throw new Error(`Unhandled compare status: ${JSON.stringify(exhaustive)}`)
+		}
 	}
 }
 
@@ -603,12 +713,34 @@ export async function reconcileMailboxParity(input: {
 				nowIso,
 				deadlineMs,
 			})
-			metrics.backfilled += result.backfilled
-			if (result.compared) metrics.compared += 1
-			if (result.matched) metrics.matched += 1
-			if (result.mismatched) metrics.mismatched += 1
-			if (result.failed) metrics.failed += 1
-			if (result.budgetExhausted) break
+			switch (result.status) {
+				case 'skipped':
+					break
+				case 'deletion_stopped':
+					metrics.backfilled += result.backfilled
+					break
+				case 'phase_checkpoint':
+					metrics.backfilled += result.backfilled
+					if (result.failed) metrics.failed += 1
+					if (result.budgetExhausted) {
+						// Stop scanning further users this tick.
+						return metrics
+					}
+					break
+				case 'compared':
+					metrics.backfilled += result.backfilled
+					metrics.compared += 1
+					if (result.matched) metrics.matched += 1
+					if (result.mismatched) metrics.mismatched += 1
+					if (result.failed) metrics.failed += 1
+					break
+				default: {
+					const exhaustive: never = result
+					throw new Error(
+						`Unhandled user tick status: ${JSON.stringify(exhaustive)}`,
+					)
+				}
+			}
 		} catch (error) {
 			metrics.failed += 1
 			const lastError = safeParityErrorText(error)
