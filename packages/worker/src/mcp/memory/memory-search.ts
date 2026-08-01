@@ -11,10 +11,7 @@ import {
 	reciprocalRankFusion,
 	sortIdsByScore,
 } from '#worker/vectorize/scoring.ts'
-import {
-	queryVectorizeWithNamespaceFallback,
-	userVectorNamespace,
-} from '#worker/vectorize/vector-namespaces.ts'
+import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { getRawIdFromPassthroughVectorId } from '#worker/vectorize/vector-ids.ts'
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
@@ -49,15 +46,11 @@ export async function queryMemoryVectorIds(input: {
 	const index = getCapabilityVectorIndex(input.env)
 	if (!index || !input.userId) return []
 	const queryVector = await embedTextForVectorize(input.env, input.query)
-	const vectorMatches = await queryVectorizeWithNamespaceFallback({
-		index,
-		vector: queryVector,
+	const vectorMatches = await index.query(queryVector, {
+		topK: input.topK,
 		namespace: userVectorNamespace(input.userId),
-		options: {
-			topK: input.topK,
-			returnMetadata: 'none',
-			filter: buildMemoryVectorFilter(input),
-		},
+		returnMetadata: 'none',
+		filter: buildMemoryVectorFilter(input),
 	})
 	const memoryIds: Array<string> = []
 	const seen = new Set<string>()
@@ -126,19 +119,15 @@ export async function searchMemories(input: {
 		const index = getCapabilityVectorIndex(input.env)!
 		const queryVector = await embedTextForVectorize(input.env, query)
 		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
-		const vectorMatches = await queryVectorizeWithNamespaceFallback({
-			index,
-			vector: queryVector,
+		const vectorMatches = await index.query(queryVector, {
+			topK,
 			namespace: userVectorNamespace(input.userId),
-			options: {
-				topK,
-				returnMetadata: 'none',
-				filter: buildMemoryVectorFilter({
-					userId: input.userId,
-					statuses: input.statuses,
-					category: input.category,
-				}),
-			},
+			returnMetadata: 'none',
+			filter: buildMemoryVectorFilter({
+				userId: input.userId,
+				statuses: input.statuses,
+				category: input.category,
+			}),
 		})
 		const seen = new Set<string>()
 		const fromIndex: Array<string> = []
