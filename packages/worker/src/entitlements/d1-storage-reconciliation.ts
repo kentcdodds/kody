@@ -1,3 +1,4 @@
+import { type UserMeterEnv } from './user-meter-client.ts'
 import {
 	listUsersForD1StorageReconciliation,
 	markUserD1StorageReconciliationAttempt,
@@ -9,6 +10,8 @@ import {
  * Reservations keep the hot path conservative between sweeps; this lane
  * corrects drift from deletes, failed writes after reservation, and D1
  * surfaces whose writes do not pass through storage-byte enforcement.
+ * Optional `env` best-effort shadows each absolute into UserMeter after the
+ * D1 update; shadow failures never fail or poison the lane.
  */
 export const d1StorageReconciliationBatchSize = 8
 
@@ -16,6 +19,8 @@ export async function reconcileD1StorageBytes(input: {
 	db: D1Database
 	now?: Date
 	batchSize?: number
+	/** Optional expand-phase UserMeter shadow after each D1 absolute update. */
+	env?: UserMeterEnv
 }): Promise<{ scanned: number; updated: number; failed: number }> {
 	const now = input.now ?? new Date()
 	const rows = await listUsersForD1StorageReconciliation({
@@ -28,6 +33,7 @@ export async function reconcileD1StorageBytes(input: {
 		try {
 			const result = await reconcileUserD1StorageBytes({
 				db: input.db,
+				env: input.env,
 				userId: row.userId,
 				now,
 			})

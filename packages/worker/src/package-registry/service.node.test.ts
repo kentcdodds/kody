@@ -1095,6 +1095,9 @@ function createEntitlementsDatabase(input: {
 								const user = users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
 							}
+							if (query.includes('SELECT d1_storage_bytes AS bytes')) {
+								return null
+							}
 							if (
 								query.includes('SELECT COUNT(*) AS count FROM saved_packages')
 							) {

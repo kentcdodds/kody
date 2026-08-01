@@ -39,6 +39,7 @@ import {
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryByteDelta,
 } from '#worker/entitlements/service.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { type SecretMetadata, type SecretScope } from './types.ts'
 
 type SecretOwnerContext = {
@@ -46,14 +47,17 @@ type SecretOwnerContext = {
 	storageContext?: StorageContext | null
 }
 
+type SecretWriteEnv = Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'> & UserMeterEnv
+
 type SaveSecretInput = SecretOwnerContext & {
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	env: SecretWriteEnv
 	scope: SecretScope
 	name: string
 	value: string
 	description?: string | null
 	sessionExpiresAt?: string | null
 	userEmail?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 type ListSecretsInput = SecretOwnerContext & {
@@ -126,6 +130,7 @@ export async function saveSecret(
 	const encryptedValue = await encryptSecretValue(input.env, value)
 	await assertWithinStorageBytesEntitlement({
 		db: input.env.APP_DB,
+		env: input.env,
 		userId: input.userId,
 		email: input.userEmail,
 		requested: estimateEntitlementStorageEntryByteDelta({
@@ -152,6 +157,7 @@ export async function saveSecret(
 					}
 				: null,
 		}),
+		waitUntil: input.waitUntil,
 	})
 	const now = new Date().toISOString()
 	await upsertSecretEntry({
@@ -189,13 +195,14 @@ export async function saveSecret(
 }
 
 export async function updateUserSecretForPackage(input: {
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	env: SecretWriteEnv
 	userId: string
 	userEmail?: string | null
 	packageId: string
 	name: string
 	value: string
 	description?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const [saved] = await updateUserSecretsForPackageAtomically({
 		env: input.env,
@@ -209,6 +216,7 @@ export async function updateUserSecretForPackage(input: {
 				description: input.description,
 			},
 		],
+		waitUntil: input.waitUntil,
 	})
 	if (!saved) {
 		throw new Error(
@@ -226,7 +234,7 @@ export async function updateUserSecretForPackage(input: {
  * fail-closes in SQL if any secret lacks the grant.
  */
 export async function setSecretsAtomically(input: {
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	env: SecretWriteEnv
 	userId: string
 	userEmail?: string | null
 	secrets: Array<{
@@ -236,6 +244,7 @@ export async function setSecretsAtomically(input: {
 		description?: string | null
 	}>
 	storageContext?: StorageContext | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Array<SecretMetadata>> {
 	if (input.secrets.length === 0) {
 		throw new Error('At least one secret is required.')
@@ -279,6 +288,7 @@ export async function setSecretsAtomically(input: {
 				value: secret.value,
 				description: secret.description,
 			})),
+			waitUntil: input.waitUntil,
 		})
 	}
 
@@ -293,11 +303,12 @@ export async function setSecretsAtomically(input: {
 			description: secret.description,
 		})),
 		storageContext,
+		waitUntil: input.waitUntil,
 	})
 }
 
 export async function updateUserSecretsForPackageAtomically(input: {
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	env: SecretWriteEnv
 	userId: string
 	userEmail?: string | null
 	packageId: string
@@ -306,6 +317,7 @@ export async function updateUserSecretsForPackageAtomically(input: {
 		value: string
 		description?: string | null
 	}>
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Array<SecretMetadata>> {
 	const packageId = input.packageId.trim()
 	if (!packageId) throw new Error('Package id is required.')
@@ -371,9 +383,11 @@ export async function updateUserSecretsForPackageAtomically(input: {
 
 	await assertWithinStorageBytesEntitlement({
 		db: input.env.APP_DB,
+		env: input.env,
 		userId: input.userId,
 		email: input.userEmail,
 		requested: requestedStorageBytes,
+		waitUntil: input.waitUntil,
 	})
 
 	try {
@@ -420,7 +434,7 @@ export async function updateUserSecretsForPackageAtomically(input: {
 }
 
 async function saveSecretsAtomically(input: {
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
+	env: SecretWriteEnv
 	userId: string
 	userEmail?: string | null
 	scope: SecretScope
@@ -430,6 +444,7 @@ async function saveSecretsAtomically(input: {
 		description?: string | null
 	}>
 	storageContext?: StorageContext | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Array<SecretMetadata>> {
 	const bucket = await getOrCreateSecretBucket({
 		db: input.env.APP_DB,
@@ -502,9 +517,11 @@ async function saveSecretsAtomically(input: {
 	}
 	await assertWithinStorageBytesEntitlement({
 		db: input.env.APP_DB,
+		env: input.env,
 		userId: input.userId,
 		email: input.userEmail,
 		requested: requestedStorageBytes,
+		waitUntil: input.waitUntil,
 	})
 
 	await upsertSecretEntriesAtomically({

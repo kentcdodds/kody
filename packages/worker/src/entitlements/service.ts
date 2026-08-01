@@ -13,7 +13,11 @@ import {
 	isDailyEntitlementResource,
 	type DailyEntitlementResource,
 } from './user-meter-do.ts'
-import { userMeterRpc, type UserMeterEnv } from './user-meter-client.ts'
+import {
+	userMeterNamespace,
+	userMeterRpc,
+	type UserMeterEnv,
+} from './user-meter-client.ts'
 
 /** Env surface for authoritative entitlement usage readers (UserMeter + RunLog). */
 export type EntitlementUsageEnv = UserMeterEnv & Pick<Env, 'RUN_LOG'>
@@ -682,10 +686,49 @@ export async function calculateUserD1StorageBytes(input: {
 	return sums.reduce((total, value) => total + value, 0)
 }
 
+/** Best-effort D1→UserMeter absolute shadow; re-reads D1 at task time. */
+async function shadowUserMeterStorageBytesFromD1(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: string
+}) {
+	if (!userMeterNamespace(input.env)) return
+	const bytes = await readUserD1StorageBytes({
+		db: input.db,
+		userId: input.userId,
+	})
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	await meter.setStorageBytes({
+		bytes,
+		updatedAt: new Date().toISOString(),
+	})
+}
+
+function scheduleUserMeterStorageBytesShadow(input: {
+	db: D1Database
+	env: UserMeterEnv | undefined
+	userId: string
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	if (!input.env || !userMeterNamespace(input.env)) return
+	const tracked = shadowUserMeterStorageBytesFromD1({
+		db: input.db,
+		env: input.env,
+		userId: input.userId,
+	}).catch((error: unknown) => {
+		console.warn('entitlement-storage-bytes-shadow-failed', error)
+	})
+	if (input.waitUntil) {
+		input.waitUntil(tracked)
+		return
+	}
+	void tracked
+}
+
 export async function readUserD1StorageBytes(input: {
 	db: D1Database
 	userId: string
-}) {
+}): Promise<number> {
 	const row = await input.db
 		.prepare(
 			`SELECT d1_storage_bytes AS bytes
@@ -697,10 +740,17 @@ export async function readUserD1StorageBytes(input: {
 	return Math.max(0, Number(row?.bytes ?? 0))
 }
 
+/**
+ * Replace one user's D1 storage-byte counter with the cross-surface D1 payload
+ * sum. Optional `env` best-effort shadows into UserMeter after the D1 write;
+ * shadow failures never fail or poison this reconcile.
+ */
 export async function reconcileUserD1StorageBytes(input: {
 	db: D1Database
 	userId: string
 	now?: Date
+	/** Optional expand-phase UserMeter shadow after the D1 absolute update. */
+	env?: UserMeterEnv
 }) {
 	const bytes = await calculateUserD1StorageBytes(input)
 	const result = await input.db
@@ -712,7 +762,19 @@ export async function reconcileUserD1StorageBytes(input: {
 		)
 		.bind(bytes, (input.now ?? new Date()).toISOString(), input.userId)
 		.run()
-	return { bytes, updated: (result.meta.changes ?? 0) > 0 }
+	const updated = (result.meta.changes ?? 0) > 0
+	if (input.env) {
+		try {
+			await shadowUserMeterStorageBytesFromD1({
+				db: input.db,
+				env: input.env,
+				userId: input.userId,
+			})
+		} catch (error) {
+			console.warn('entitlement-storage-bytes-shadow-failed', error)
+		}
+	}
+	return { bytes, updated }
 }
 
 export async function listUsersForD1StorageReconciliation(input: {
@@ -923,12 +985,22 @@ export async function readCurrentEntitlementResourceUsage(input: {
 	})
 }
 
+/**
+ * Atomically reserve D1 payload storage bytes against the plan limit.
+ * Optional `env` schedules a best-effort UserMeter shadow after a successful
+ * reserve (never awaited; failures logged only). `getCurrent` is check-only
+ * and does not reserve in D1 or UserMeter.
+ */
 export async function assertWithinStorageBytesEntitlement(input: {
 	db: D1Database
 	userId: string
 	email: string | null | undefined
 	requested?: number
 	getCurrent?: () => Promise<number>
+	/** Optional expand-phase UserMeter shadow after a successful D1 reserve. */
+	env?: UserMeterEnv
+	/** Prefer `ctx.waitUntil` for the UserMeter shadow; never awaited here. */
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	if (input.getCurrent) {
 		await assertWithinEntitlement({
@@ -959,7 +1031,15 @@ export async function assertWithinStorageBytesEntitlement(input: {
 		)
 		.bind(requested, now, input.userId, requested, limit)
 		.run()
-	if ((result.meta.changes ?? 0) > 0) return
+	if ((result.meta.changes ?? 0) > 0) {
+		scheduleUserMeterStorageBytesShadow({
+			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			waitUntil: input.waitUntil,
+		})
+		return
+	}
 
 	const current = await readUserD1StorageBytes({
 		db: input.db,

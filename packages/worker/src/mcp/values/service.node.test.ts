@@ -6,6 +6,13 @@ import {
 	resolveStorageScopeOrder,
 } from '#mcp/storage-bindings.ts'
 import { deleteAllAppScopedValues } from '#worker/package-config-cleanup.ts'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
+	createInMemoryUserMeterEnv,
+	createWaitUntilDrain,
+	withPatchedDbPrepare,
+} from '#worker/test-support/user-meter.ts'
 import { deleteValue, getValue, listValues, saveValue } from './service.ts'
 import { type ValueBucketRow, type ValueEntryRow } from './types.ts'
 
@@ -662,4 +669,123 @@ test('saveValue permits underscore-prefixed ordinary value names', async () => {
 		name: '_scratch:widgets',
 		value: '{"provider":"widgets"}',
 	})
+})
+
+test('saveValue awaits atomic D1 storage reserve; D1→UserMeter shadow is deferred and non-blocking', async () => {
+	const testDb = createValueTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const drain = createWaitUntilDrain()
+	const userId = 'a'.repeat(64)
+	const email = 'value-storage@example.com'
+	let d1StorageBytes = 100
+	let failShadowPointRead = false
+	await meter.seedStorageBytes({ userId, bytes: 7 })
+
+	let releaseShadowRead!: () => void
+	const shadowReadGate = new Promise<void>((resolve) => {
+		releaseShadowRead = resolve
+	})
+	let shadowPointReadStarted = false
+	let atomicReserveCompleted = false
+	using _patch = withPatchedDbPrepare(testDb.db, (originalPrepare) => {
+		return ((query: string) => {
+			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+			const statement = originalPrepare(query)
+			const originalBind = statement.bind.bind(statement)
+			return {
+				bind(...params: Array<unknown>) {
+					const bound = originalBind(...params)
+					return {
+						first: async <T>() => {
+							if (
+								normalized.includes('select plan, stripe_plan from users') &&
+								normalized.includes('stable_user_id')
+							) {
+								return { plan: 'pro', stripe_plan: null } as T
+							}
+							if (
+								normalized.includes('select d1_storage_bytes as bytes') &&
+								normalized.includes('from users')
+							) {
+								if (failShadowPointRead) {
+									throw new Error('forced D1→UserMeter shadow read failure')
+								}
+								shadowPointReadStarted = true
+								await shadowReadGate
+								return { bytes: d1StorageBytes } as T
+							}
+							return await bound.first<T>()
+						},
+						all: bound.all.bind(bound),
+						raw: bound.raw?.bind(bound),
+						run: async () => {
+							if (
+								normalized.includes(
+									'set d1_storage_bytes = d1_storage_bytes + ?',
+								)
+							) {
+								const requested = Number(params[0])
+								const limit = Number(params[4])
+								if (d1StorageBytes + requested <= limit) {
+									d1StorageBytes += requested
+									atomicReserveCompleted = true
+									return { meta: { changes: 1 } }
+								}
+								return { meta: { changes: 0 } }
+							}
+							return await bound.run()
+						},
+					}
+				},
+			}
+		}) as D1Database['prepare']
+	})
+
+	const env = { APP_DB: testDb.db, ...meter.env }
+	const saved = await saveValue({
+		env,
+		userId,
+		userEmail: email,
+		scope: 'user',
+		name: 'metered-value',
+		value: 'hello-storage',
+		waitUntil: drain.waitUntil,
+	})
+	expect(saved).toMatchObject({ name: 'metered-value' })
+	expect(atomicReserveCompleted).toBe(true)
+	expect(d1StorageBytes).toBeGreaterThan(100)
+	expect(shadowPointReadStarted).toBe(true)
+	expect(await userMeterRpc({ env, userId }).readStorageBytes()).toMatchObject({
+		outcome: 'ready',
+		bytes: 7,
+	})
+
+	releaseShadowRead()
+	await drain.drain()
+	expect(await userMeterRpc({ env, userId }).readStorageBytes()).toMatchObject({
+		outcome: 'ready',
+		bytes: d1StorageBytes,
+	})
+
+	failShadowPointRead = true
+	consoleWarn.mockImplementation(() => {})
+	const failingDrain = createWaitUntilDrain()
+	const bytesBeforeFailingSave = d1StorageBytes
+	await expect(
+		saveValue({
+			env,
+			userId,
+			userEmail: email,
+			scope: 'user',
+			name: 'metered-value-2',
+			value: 'still-ok',
+			waitUntil: failingDrain.waitUntil,
+		}),
+	).resolves.toMatchObject({ name: 'metered-value-2' })
+	expect(d1StorageBytes).toBeGreaterThan(bytesBeforeFailingSave)
+	await failingDrain.drain()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'entitlement-storage-bytes-shadow-failed',
+		expect.any(Error),
+	)
 })
