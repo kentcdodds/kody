@@ -90,6 +90,13 @@ const retentionMetricsSchema = z.object({
 		ownersAttempted: z.number().int().nonnegative(),
 		ownersSucceeded: z.number().int().nonnegative(),
 		ownersFailed: z.number().int().nonnegative(),
+		pendingD1Owners: z
+			.number()
+			.int()
+			.nonnegative()
+			.describe(
+				'Owners skipped because expired D1 email_messages (365d) or email_delivery_events (90d) remain after global prune batches. Cursor still advances.',
+			),
 		before: mailboxCountSchema,
 		after: mailboxCountSchema,
 		blobDeleteFailureOwners: z.number().int().nonnegative(),
@@ -155,7 +162,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_mailbox_maintenance',
 		description:
-			'Admin-only Mailbox parity/retention maintenance: aggregate status (no email content), bounded reconcileMailboxParity, or keyset-paged natural retention (D1 authoritative prune then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget). Never accepts arbitrary cutoffs or seed data. Audited.',
+			'Admin-only Mailbox parity/retention maintenance: aggregate status (no email content), bounded reconcileMailboxParity, or keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget). Never accepts arbitrary cutoffs or seed data. Audited.',
 		keywords: [
 			'admin',
 			'mailbox',

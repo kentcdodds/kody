@@ -70,6 +70,7 @@ const emptyRetentionResult = {
 			ownersAttempted: 1,
 			ownersSucceeded: 1,
 			ownersFailed: 0,
+			pendingD1Owners: 0,
 			before: {
 				threads: 1,
 				messages: 1,

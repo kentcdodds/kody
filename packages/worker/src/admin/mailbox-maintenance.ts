@@ -1,4 +1,6 @@
 import {
+	emailDeliveryEventRetentionDays,
+	emailMessageRetentionDays,
 	pruneEmailDeliveryEventsForRetention,
 	pruneUserEmailMessagesForRetention,
 } from '#app/retention.ts'
@@ -65,6 +67,11 @@ export type AdminMailboxMaintenanceRetentionMailboxMetrics = {
 	ownersAttempted: number
 	ownersSucceeded: number
 	ownersFailed: number
+	/**
+	 * Owners skipped because expired D1 message/event rows remain after the
+	 * global prune batches. Cursor still advances; repeated calls drain via D1.
+	 */
+	pendingD1Owners: number
 	before: MailboxCountResult
 	after: MailboxCountResult
 	blobDeleteFailureOwners: number
@@ -74,6 +81,49 @@ export type AdminMailboxMaintenanceRetentionMailboxMetrics = {
 export type AdminMailboxMaintenanceRetentionMetrics = {
 	d1: AdminMailboxMaintenanceRetentionD1Metrics
 	mailbox: AdminMailboxMaintenanceRetentionMailboxMetrics
+}
+
+const millisecondsPerDay = 24 * 60 * 60 * 1000
+
+/** Same ISO cutoff formula as `#app/retention` `cutoffIso`. */
+export function adminEmailRetentionCutoffIso(now: Date, days: number) {
+	return new Date(now.getTime() - days * millisecondsPerDay).toISOString()
+}
+
+/**
+ * True when the owner still has natural-cutoff-expired D1 mail rows. Owners are
+ * already non-system from discovery — no extra system exclusion here.
+ */
+export async function ownerHasPendingExpiredD1Retention(input: {
+	db: D1Database
+	userId: string
+	now: Date
+}): Promise<boolean> {
+	const messageCutoff = adminEmailRetentionCutoffIso(
+		input.now,
+		emailMessageRetentionDays,
+	)
+	const eventCutoff = adminEmailRetentionCutoffIso(
+		input.now,
+		emailDeliveryEventRetentionDays,
+	)
+	const row = await input.db
+		.prepare(
+			`SELECT 1 AS ok
+			WHERE EXISTS (
+				SELECT 1 FROM email_messages
+				WHERE user_id = ? AND created_at < ?
+				LIMIT 1
+			)
+			OR EXISTS (
+				SELECT 1 FROM email_delivery_events
+				WHERE user_id = ? AND created_at < ?
+				LIMIT 1
+			)`,
+		)
+		.bind(input.userId, messageCutoff, input.userId, eventCutoff)
+		.first<{ ok: number }>()
+	return row != null
 }
 
 const trackedOwnerSql = `
@@ -182,6 +232,7 @@ type OwnerRetentionOutcome =
 			expiredRemaining: boolean
 	  }
 	| { status: 'failed' }
+	| { status: 'pending_d1' }
 
 async function runOwnersWithBudget(input: {
 	owners: ReadonlyArray<{ userId: string }>
@@ -406,8 +457,10 @@ export async function runAdminMailboxMaintenanceReconcile(input: {
 
 /**
  * Bounded retention sweep: D1 natural-cutoff prune (authoritative blob-before-row
- * for messages) then owner-keyed Mailbox DO passes. Stable-id keyset cursor;
- * wall budget + concurrency bounds; per-owner failures isolated.
+ * for messages), then per-owner expired-D1 checks, then Mailbox DO passes only
+ * when D1 is clear for that owner. Stable-id keyset cursor; wall budget +
+ * concurrency bounds; per-owner failures isolated. Pending-D1 owners skip DO
+ * but still advance the cursor.
  */
 export async function runAdminMailboxMaintenanceRetention(input: {
 	env: AdminMailboxMaintenanceEnv
@@ -465,6 +518,17 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 			nowMs,
 			async runOwner(userId) {
 				try {
+					// Never DO/R2-delete while this owner still has expired D1 rows
+					// (global oldest-first batches may have omitted them).
+					if (
+						await ownerHasPendingExpiredD1Retention({
+							db: input.env.APP_DB,
+							userId,
+							now,
+						})
+					) {
+						return { status: 'pending_d1' as const }
+					}
 					const result = await mailboxRpc({
 						env: input.env,
 						userId,
@@ -486,24 +550,39 @@ export async function runAdminMailboxMaintenanceRetention(input: {
 		})
 
 	const mailbox: AdminMailboxMaintenanceRetentionMailboxMetrics = {
-		ownersAttempted: outcomes.length,
+		ownersAttempted: 0,
 		ownersSucceeded: 0,
 		ownersFailed: 0,
+		pendingD1Owners: 0,
 		before: emptyMailboxCounts(),
 		after: emptyMailboxCounts(),
 		blobDeleteFailureOwners: 0,
 		expiredRemainingOwners: 0,
 	}
 	for (const outcome of outcomes) {
-		if (outcome.status === 'failed') {
-			mailbox.ownersFailed += 1
-			continue
+		switch (outcome.status) {
+			case 'pending_d1':
+				mailbox.pendingD1Owners += 1
+				break
+			case 'failed':
+				mailbox.ownersAttempted += 1
+				mailbox.ownersFailed += 1
+				break
+			case 'succeeded':
+				mailbox.ownersAttempted += 1
+				mailbox.ownersSucceeded += 1
+				mailbox.before = addMailboxCounts(mailbox.before, outcome.before)
+				mailbox.after = addMailboxCounts(mailbox.after, outcome.after)
+				if (outcome.blobDeleteFailures) mailbox.blobDeleteFailureOwners += 1
+				if (outcome.expiredRemaining) mailbox.expiredRemainingOwners += 1
+				break
+			default: {
+				const exhaustive: never = outcome
+				throw new Error(
+					`Unhandled retention owner outcome: ${JSON.stringify(exhaustive)}`,
+				)
+			}
 		}
-		mailbox.ownersSucceeded += 1
-		mailbox.before = addMailboxCounts(mailbox.before, outcome.before)
-		mailbox.after = addMailboxCounts(mailbox.after, outcome.after)
-		if (outcome.blobDeleteFailures) mailbox.blobDeleteFailureOwners += 1
-		if (outcome.expiredRemaining) mailbox.expiredRemainingOwners += 1
 	}
 
 	const pageFull = owners.length >= limit

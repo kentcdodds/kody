@@ -8,6 +8,7 @@ import {
 	mailboxReadCutoverCheckedAtMaxAgeMs,
 	mailboxReadCutoverSoakMs,
 } from '#worker/email/mailbox-read-cutover.ts'
+import { emailMessageRetentionDays } from '#app/retention.ts'
 import type * as RetentionModule from '#app/retention.ts'
 import type * as MailboxClientModule from '#worker/email/mailbox-client.ts'
 import type * as MailboxReconcileModule from '#worker/email/mailbox-reconcile.ts'
@@ -47,6 +48,7 @@ vi.mock('#app/retention.ts', async (importOriginal) => {
 })
 
 const {
+	adminEmailRetentionCutoffIso,
 	adminMailboxMaintenanceMaxBatchSize,
 	adminMailboxMaintenanceRetentionConcurrency,
 	adminMailboxMaintenanceRetentionMaxLimit,
@@ -57,6 +59,7 @@ const {
 } = await import('./mailbox-maintenance.ts')
 
 const now = new Date('2026-08-01T12:00:00.000Z')
+const freshCreatedAt = now.toISOString()
 
 function createMaintenanceDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -83,14 +86,27 @@ function createMaintenanceDb() {
 		);
 		CREATE TABLE email_messages (
 			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL
+			user_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT '${freshCreatedAt}'
 		);
 		CREATE TABLE email_delivery_events (
 			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL
+			user_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT '${freshCreatedAt}'
 		);
 	`)
 	return { sqlite, db: createD1FromSqlite(sqlite) }
+}
+
+function insertEmailMessage(
+	sqlite: DatabaseSync,
+	input: { id: string; userId: string; createdAt?: string },
+) {
+	sqlite
+		.prepare(
+			`INSERT INTO email_messages (id, user_id, created_at) VALUES (?, ?, ?)`,
+		)
+		.run(input.id, input.userId, input.createdAt ?? freshCreatedAt)
 }
 
 function insertTrackedUser(
@@ -259,12 +275,8 @@ test('retention discovery is stable_user_id keyset ordered, not parity checked_a
 		stableUserId: 'f'.repeat(64),
 		checkedAt: '2026-07-01T00:00:00.000Z',
 	})
-	sqlite
-		.prepare(`INSERT INTO email_messages (id, user_id) VALUES (?, ?)`)
-		.run('m1', laterChecked)
-	sqlite
-		.prepare(`INSERT INTO email_messages (id, user_id) VALUES (?, ?)`)
-		.run('m2', earlierChecked)
+	insertEmailMessage(sqlite, { id: 'm1', userId: laterChecked })
+	insertEmailMessage(sqlite, { id: 'm2', userId: earlierChecked })
 
 	const firstPage = await listUsersForAdminMailboxRetention({
 		db,
@@ -302,9 +314,7 @@ test('retention runs D1 prune before DO, pages by cursor, isolates failures', as
 			stableUserId: id,
 			checkedAt: '2026-07-01T00:00:00.000Z',
 		})
-		sqlite
-			.prepare(`INSERT INTO email_messages (id, user_id) VALUES (?, ?)`)
-			.run(`m-${id.slice(0, 4)}`, id)
+		insertEmailMessage(sqlite, { id: `m-${id.slice(0, 4)}`, userId: id })
 	}
 
 	mocks.pruneUserEmailMessagesForRetention.mockImplementation(async () => {
@@ -373,6 +383,7 @@ test('retention runs D1 prune before DO, pages by cursor, isolates failures', as
 	expect(first.metrics.mailbox.ownersAttempted).toBe(2)
 	expect(first.metrics.mailbox.ownersSucceeded).toBe(1)
 	expect(first.metrics.mailbox.ownersFailed).toBe(1)
+	expect(first.metrics.mailbox.pendingD1Owners).toBe(0)
 	expect(first.metrics.mailbox.before).toEqual({
 		threads: 1,
 		messages: 2,
@@ -435,9 +446,7 @@ test('retention concurrency stays at most 4 and budget truncates with cursor', a
 			stableUserId: id,
 			checkedAt: '2026-07-01T00:00:00.000Z',
 		})
-		sqlite
-			.prepare(`INSERT INTO email_messages (id, user_id) VALUES (?, ?)`)
-			.run(`m${index}`, id)
+		insertEmailMessage(sqlite, { id: `m${index}`, userId: id })
 		return id
 	}).sort()
 
@@ -491,4 +500,89 @@ test('retention concurrency stays at most 4 and budget truncates with cursor', a
 		owners[adminMailboxMaintenanceRetentionConcurrency - 1],
 	)
 	expect(result.metrics.mailbox.ownersAttempted).toBeLessThan(owners.length)
+	expect(result.metrics.mailbox.pendingD1Owners).toBe(0)
+})
+
+test('retention skips DO while owner still has expired D1 rows omitted by global batch', async () => {
+	stubD1Prune()
+	const { sqlite, db } = createMaintenanceDb()
+	const pendingOwner = 'a'.repeat(64)
+	const clearOwner = 'b'.repeat(64)
+	insertTrackedUser(sqlite, {
+		email: 'pending@example.com',
+		stableUserId: pendingOwner,
+		checkedAt: '2026-07-01T00:00:00.000Z',
+	})
+	insertTrackedUser(sqlite, {
+		email: 'clear@example.com',
+		stableUserId: clearOwner,
+		checkedAt: '2026-07-01T00:00:00.000Z',
+	})
+	const expiredCreatedAt = adminEmailRetentionCutoffIso(
+		now,
+		emailMessageRetentionDays + 1,
+	)
+	// Expired row remains after mocked global prune (oldest-batch omitted this owner).
+	insertEmailMessage(sqlite, {
+		id: 'expired-pending',
+		userId: pendingOwner,
+		createdAt: expiredCreatedAt,
+	})
+	insertEmailMessage(sqlite, {
+		id: 'fresh-clear',
+		userId: clearOwner,
+		createdAt: freshCreatedAt,
+	})
+
+	const runRetentionNow = vi.fn(async () => ({
+		before: {
+			threads: 1,
+			messages: 1,
+			attachments: 0,
+			deliveryEvents: 0,
+		},
+		after: {
+			threads: 0,
+			messages: 0,
+			attachments: 0,
+			deliveryEvents: 0,
+		},
+		blobDeleteFailures: false,
+		expiredRemaining: false,
+	}))
+	mocks.mailboxRpc.mockImplementation(({ userId }: { userId: string }) => ({
+		runRetentionNow: () => runRetentionNow({ ownerId: userId }),
+	}))
+
+	const first = await runAdminMailboxMaintenanceRetention({
+		env: envFor(db),
+		limit: 2,
+		now,
+	})
+	expect(first.metrics.mailbox.pendingD1Owners).toBe(1)
+	expect(first.metrics.mailbox.ownersAttempted).toBe(1)
+	expect(first.metrics.mailbox.ownersSucceeded).toBe(1)
+	expect(runRetentionNow).toHaveBeenCalledTimes(1)
+	expect(runRetentionNow).toHaveBeenCalledWith({ ownerId: clearOwner })
+	// Cursor still advanced past the pending owner so global D1 batches can drain.
+	expect(first.nextStartAfter).toBe(clearOwner)
+	expect(first.truncated).toBe(true)
+
+	// After D1 clears the omitted expired row, DO retention runs for that owner.
+	sqlite
+		.prepare(`DELETE FROM email_messages WHERE id = ?`)
+		.run('expired-pending')
+	const second = await runAdminMailboxMaintenanceRetention({
+		env: envFor(db),
+		limit: 2,
+		startAfterUserId: null,
+		now,
+	})
+	expect(second.metrics.mailbox.pendingD1Owners).toBe(0)
+	expect(second.metrics.mailbox.ownersSucceeded).toBe(2)
+	expect(runRetentionNow.mock.calls.map((call) => call[0]?.ownerId)).toEqual([
+		clearOwner,
+		pendingOwner,
+		clearOwner,
+	])
 })

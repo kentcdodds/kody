@@ -966,9 +966,16 @@ max 100, then status), and `retention` (natural cutoffs only):
 2. Keyset-page non-deleting non-system owners with mail/parity state by
    `stable_user_id ASC` (`start_after_user_id` / `nextStartAfter` / `truncated`;
    never parity `checked_at` ordering; `limit` default/max 20).
-3. Call owner-bound `Mailbox.runRetentionNow` with concurrency ≤4 and a ~10s
-   wall budget (stop scheduling new owners after the deadline; cursor is the
-   last attempted owner). Per-owner failures are isolated.
+3. Before each owner DO pass, check for remaining natural-cutoff-expired D1
+   `email_messages` (`emailMessageRetentionDays` = 365) or
+   `email_delivery_events` (`emailDeliveryEventRetentionDays` = 90). If any
+   remain (e.g. omitted by the global oldest-first batch), skip
+   `runRetentionNow`, count `pendingD1Owners`, and still advance the cursor so
+   repeated global D1 batches can drain — never DO/R2-delete while D1 expired
+   rows remain for that owner.
+4. Otherwise call owner-bound `Mailbox.runRetentionNow` with concurrency ≤4 and
+   a ~10s wall budget (stop scheduling new owners after the deadline; cursor is
+   the last considered owner). Per-owner failures are isolated.
 
 Returns D1 delete/error totals plus aggregate Mailbox before/after counts (no
 message ids or email content). No seed or arbitrary-cutoff surface.
