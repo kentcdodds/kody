@@ -1,14 +1,11 @@
 import {
 	assertMailboxCanonicalIsoTimestamp,
 	assertMailboxClassification,
-	assertMailboxDeliveryEventType,
 	assertMailboxDeliveryStatus,
 	assertMailboxDirection,
-	assertMailboxInboundDeliveryState,
 	assertMailboxNonEmptyString,
 	assertMailboxProcessingStatus,
 	assertMailboxStorageKind,
-	assertMailboxSubscriptionEffectState,
 	assertOptionalMailboxCanonicalIsoTimestamp,
 	decodeMailboxListCursor,
 	encodeMailboxListCursor,
@@ -31,20 +28,34 @@ import {
 import {
 	type EmailDeliveryEventType,
 	type EmailDeliveryStatus,
+	type EmailDirection,
 } from './types.ts'
+import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 import {
 	boundedEmailBody,
 	escapeLikePattern,
 	mapMailboxAttachmentRow,
-	mapMailboxDeliveryEventRow,
 	mapMailboxMessageRow,
 	mapMailboxThreadRow,
 } from './mailbox-mappers.ts'
+import {
+	deliveryEventOwnsMessage,
+	hasExpiredMailboxDeliveryEvents,
+	listMailboxDeliveryEvents,
+	oldestMailboxDeliveryEventCreatedAt,
+	pruneExpiredMailboxDeliveryEvents,
+	writeMailboxDeliveryEventRow,
+} from './mailbox-delivery-events.ts'
 import {
 	exportMailboxFromStore,
 	listMailboxBlobReferences,
 } from './mailbox-export.ts'
 import { initializeMailboxSchema } from './mailbox-schema.ts'
+
+export type MailboxUpsertResult = {
+	created: boolean
+	accepted: boolean
+}
 
 /**
  * SQLite write/query helpers for one Mailbox DO. No alarm / R2 side effects.
@@ -64,7 +75,97 @@ export class MailboxStore {
 		initializeMailboxSchema(this.storage)
 	}
 
-	upsertThreadRow(thread: MailboxThreadInput) {
+	getOwnerId(): string | null {
+		const row = this.sql
+			.exec<{ owner_id: string }>(
+				`SELECT owner_id FROM mailbox_owner_identity
+				WHERE singleton = 1
+				LIMIT 1`,
+			)
+			.toArray()[0]
+		return row?.owner_id ?? null
+	}
+
+	/**
+	 * Persist owner once; reject cross-user writes. DO name is not
+	 * introspectable — see mailbox_owner_identity DDL comment.
+	 */
+	assertOwner(ownerId: string): string {
+		const id = assertMailboxNonEmptyString(ownerId, 'ownerId')
+		const existing = this.getOwnerId()
+		if (existing == null) {
+			this.sql.exec(
+				`INSERT INTO mailbox_owner_identity (singleton, owner_id)
+				VALUES (1, ?)`,
+				id,
+			)
+			return id
+		}
+		if (existing !== id) {
+			throw new Error(
+				`Mailbox ownerId mismatch; this object is bound to a different owner.`,
+			)
+		}
+		return id
+	}
+
+	validateMessageBlobKeys(input: {
+		ownerId: string
+		message: MailboxMessageInput
+		attachments?: Array<MailboxAttachmentInput>
+	}) {
+		const messageId = assertMailboxNonEmptyString(
+			input.message.id,
+			'message.id',
+		)
+		const direction = assertMailboxDirection(input.message.direction)
+		const rawMimeKey = input.message.rawMimeKey ?? null
+		if (direction === 'inbound') {
+			const expected = emailRawMimeKey(input.ownerId, messageId)
+			if (rawMimeKey !== expected) {
+				throw new Error(
+					`Mailbox inbound rawMimeKey must equal emailRawMimeKey(ownerId, messageId).`,
+				)
+			}
+		} else if (rawMimeKey != null) {
+			const expected = emailRawMimeKey(input.ownerId, messageId)
+			if (rawMimeKey !== expected) {
+				throw new Error(
+					`Mailbox outbound rawMimeKey must be null or equal emailRawMimeKey(ownerId, messageId).`,
+				)
+			}
+		}
+
+		if (input.attachments === undefined) return
+		for (const attachment of input.attachments) {
+			const attachmentId = assertMailboxNonEmptyString(
+				attachment.id,
+				'attachment.id',
+			)
+			const storageKind = assertMailboxStorageKind(
+				String(attachment.storageKind),
+			)
+			const storageKey = attachment.storageKey ?? null
+			if (storageKind === 'external') {
+				const expected = emailAttachmentBlobKey(
+					input.ownerId,
+					messageId,
+					attachmentId,
+				)
+				if (storageKey !== expected) {
+					throw new Error(
+						`Mailbox external attachment storageKey must equal emailAttachmentBlobKey(ownerId, messageId, attachmentId).`,
+					)
+				}
+			} else if (storageKey != null) {
+				throw new Error(
+					`Mailbox ${storageKind} attachment storageKey must be null.`,
+				)
+			}
+		}
+	}
+
+	upsertThreadRow(thread: MailboxThreadInput): MailboxUpsertResult {
 		const id = assertMailboxNonEmptyString(thread.id, 'thread.id')
 		const lastMessageAt = assertMailboxCanonicalIsoTimestamp(
 			thread.lastMessageAt,
@@ -75,9 +176,18 @@ export class MailboxStore {
 			'thread.createdAt',
 		)
 		const updatedAt = assertMailboxCanonicalIsoTimestamp(
-			thread.updatedAt?.trim() || mailboxNowIso(),
+			thread.updatedAt,
 			'thread.updatedAt',
 		)
+		const existing = this.sql
+			.exec<{ updated_at: string }>(
+				`SELECT updated_at FROM email_threads WHERE id = ? LIMIT 1`,
+				id,
+			)
+			.toArray()[0]
+		if (existing && updatedAt < existing.updated_at) {
+			return { created: false, accepted: false }
+		}
 		this.sql.exec(
 			`INSERT INTO email_threads (
 				id, inbox_id, subject_normalized, root_message_id_header,
@@ -88,7 +198,8 @@ export class MailboxStore {
 				subject_normalized = excluded.subject_normalized,
 				root_message_id_header = excluded.root_message_id_header,
 				last_message_at = excluded.last_message_at,
-				updated_at = excluded.updated_at`,
+				updated_at = excluded.updated_at
+			WHERE excluded.updated_at >= email_threads.updated_at`,
 			id,
 			thread.inboxId ?? null,
 			thread.subjectNormalized ?? '',
@@ -97,14 +208,15 @@ export class MailboxStore {
 			createdAt,
 			updatedAt,
 		)
+		return { created: existing == null, accepted: true }
 	}
 
 	/**
-	 * Upsert message metadata. Delivery status is monotonic by
-	 * `delivery_status_at` (`>=` / equal timestamps may update; older must not
-	 * regress a newer status from dual-write replay).
+	 * Upsert message metadata. Whole-row updates require equal/newer
+	 * `updatedAt`. Delivery status remains monotonic by `delivery_status_at`
+	 * within an accepted snapshot.
 	 */
-	upsertMessageRow(message: MailboxMessageInput) {
+	upsertMessageRow(message: MailboxMessageInput): MailboxUpsertResult {
 		const id = assertMailboxNonEmptyString(message.id, 'message.id')
 		const direction = assertMailboxDirection(message.direction)
 		const processingStatus = assertMailboxProcessingStatus(
@@ -131,7 +243,7 @@ export class MailboxStore {
 			'message.createdAt',
 		)
 		const updatedAt = assertMailboxCanonicalIsoTimestamp(
-			message.updatedAt?.trim() || mailboxNowIso(),
+			message.updatedAt,
 			'message.updatedAt',
 		)
 		const receivedAt = assertOptionalMailboxCanonicalIsoTimestamp(
@@ -142,6 +254,15 @@ export class MailboxStore {
 			message.sentAt,
 			'message.sentAt',
 		)
+		const existing = this.sql
+			.exec<{ updated_at: string }>(
+				`SELECT updated_at FROM email_messages WHERE id = ? LIMIT 1`,
+				id,
+			)
+			.toArray()[0]
+		if (existing && updatedAt < existing.updated_at) {
+			return { created: false, accepted: false }
+		}
 		this.sql.exec(
 			`INSERT INTO email_messages (
 				id, direction, inbox_id, thread_id, sender_identity_id,
@@ -202,7 +323,8 @@ export class MailboxStore {
 				error = excluded.error,
 				received_at = excluded.received_at,
 				sent_at = excluded.sent_at,
-				updated_at = excluded.updated_at`,
+				updated_at = excluded.updated_at
+			WHERE excluded.updated_at >= email_messages.updated_at`,
 			id,
 			direction,
 			message.inboxId ?? null,
@@ -236,6 +358,7 @@ export class MailboxStore {
 			createdAt,
 			updatedAt,
 		)
+		return { created: existing == null, accepted: true }
 	}
 
 	replaceAttachmentsForMessage(
@@ -283,188 +406,11 @@ export class MailboxStore {
 		}
 	}
 
-	findDeliveryEventByProviderEventId(
-		providerEventId: string,
-	): MailboxDeliveryEventRecord | null {
-		const row = this.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT * FROM email_delivery_events
-				WHERE provider_event_id = ?
-				LIMIT 1`,
-				providerEventId,
-			)
-			.toArray()[0]
-		return row ? mapMailboxDeliveryEventRow(row) : null
-	}
-
-	writeDeliveryEventRow(event: MailboxDeliveryEventInput): boolean {
-		const id = assertMailboxNonEmptyString(event.id, 'event.id')
-		const eventType = assertMailboxDeliveryEventType(event.eventType)
-		const providerEventId = event.providerEventId ?? null
-		if (providerEventId) {
-			const existingByProvider =
-				this.findDeliveryEventByProviderEventId(providerEventId)
-			if (existingByProvider && existingByProvider.id !== id) {
-				return false
-			}
-		}
-		const existed = this.sql
-			.exec<{ ok: number }>(
-				`SELECT 1 AS ok FROM email_delivery_events WHERE id = ? LIMIT 1`,
-				id,
-			)
-			.toArray()[0]
-		const createdAt = assertMailboxCanonicalIsoTimestamp(
-			event.createdAt?.trim() || mailboxNowIso(),
-			'event.createdAt',
-		)
-		const detailJson =
-			typeof event.detailJson === 'string' && event.detailJson.length > 0
-				? event.detailJson
-				: '{}'
-		const needsEffectReconcile = event.needsEffectReconcile === true ? 1 : 0
-		const state =
-			event.state == null
-				? null
-				: assertMailboxInboundDeliveryState(event.state)
-		const subscriptionEffectState =
-			event.subscriptionEffectState == null
-				? null
-				: assertMailboxSubscriptionEffectState(event.subscriptionEffectState)
-
-		this.sql.exec(
-			`INSERT INTO email_delivery_events (
-				id, message_id, inbox_id, event_type, provider,
-				provider_message_id, provider_event_id, detail_json,
-				needs_effect_reconcile, state, fingerprint,
-				storage_lease, storage_lease_at, cleanup_lease, cleanup_lease_at,
-				cleanup_retry_at, expected_attachment_count, finalization_token,
-				reconcile_after, dedupe_expires_at,
-				usage_effect_recorded_at, usage_effect_suppressed_at, usage_started_at,
-				usage_month, usage_bytes, usage_duration_ms,
-				usage_effect_retry_at, usage_effect_lease, usage_effect_lease_at,
-				subscription_effect_state, subscription_effect_lease,
-				subscription_effect_lease_at, subscription_effect_retry_at,
-				subscription_effect_attempt_count, subscription_effect_dead_letter_at,
-				subscription_effect_last_error, created_at
-			) VALUES (
-				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-			)
-			ON CONFLICT(id) DO UPDATE SET
-				message_id = excluded.message_id,
-				inbox_id = excluded.inbox_id,
-				event_type = excluded.event_type,
-				provider = excluded.provider,
-				provider_message_id = excluded.provider_message_id,
-				provider_event_id = excluded.provider_event_id,
-				detail_json = excluded.detail_json,
-				needs_effect_reconcile = excluded.needs_effect_reconcile,
-				state = excluded.state,
-				fingerprint = excluded.fingerprint,
-				storage_lease = excluded.storage_lease,
-				storage_lease_at = excluded.storage_lease_at,
-				cleanup_lease = excluded.cleanup_lease,
-				cleanup_lease_at = excluded.cleanup_lease_at,
-				cleanup_retry_at = excluded.cleanup_retry_at,
-				expected_attachment_count = excluded.expected_attachment_count,
-				finalization_token = excluded.finalization_token,
-				reconcile_after = excluded.reconcile_after,
-				dedupe_expires_at = excluded.dedupe_expires_at,
-				usage_effect_recorded_at = excluded.usage_effect_recorded_at,
-				usage_effect_suppressed_at = excluded.usage_effect_suppressed_at,
-				usage_started_at = excluded.usage_started_at,
-				usage_month = excluded.usage_month,
-				usage_bytes = excluded.usage_bytes,
-				usage_duration_ms = excluded.usage_duration_ms,
-				usage_effect_retry_at = excluded.usage_effect_retry_at,
-				usage_effect_lease = excluded.usage_effect_lease,
-				usage_effect_lease_at = excluded.usage_effect_lease_at,
-				subscription_effect_state = excluded.subscription_effect_state,
-				subscription_effect_lease = excluded.subscription_effect_lease,
-				subscription_effect_lease_at = excluded.subscription_effect_lease_at,
-				subscription_effect_retry_at = excluded.subscription_effect_retry_at,
-				subscription_effect_attempt_count = excluded.subscription_effect_attempt_count,
-				subscription_effect_dead_letter_at = excluded.subscription_effect_dead_letter_at,
-				subscription_effect_last_error = excluded.subscription_effect_last_error`,
-			id,
-			event.messageId ?? null,
-			event.inboxId ?? null,
-			eventType,
-			event.provider ?? 'kody',
-			event.providerMessageId ?? null,
-			providerEventId,
-			detailJson,
-			needsEffectReconcile,
-			state,
-			event.fingerprint ?? null,
-			event.storageLease ?? null,
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.storageLeaseAt,
-				'event.storageLeaseAt',
-			),
-			event.cleanupLease ?? null,
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.cleanupLeaseAt,
-				'event.cleanupLeaseAt',
-			),
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.cleanupRetryAt,
-				'event.cleanupRetryAt',
-			),
-			event.expectedAttachmentCount ?? null,
-			event.finalizationToken ?? null,
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.reconcileAfter,
-				'event.reconcileAfter',
-			),
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.dedupeExpiresAt,
-				'event.dedupeExpiresAt',
-			),
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.usageEffectRecordedAt,
-				'event.usageEffectRecordedAt',
-			),
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.usageEffectSuppressedAt,
-				'event.usageEffectSuppressedAt',
-			),
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.usageStartedAt,
-				'event.usageStartedAt',
-			),
-			event.usageMonth ?? null,
-			event.usageBytes ?? null,
-			event.usageDurationMs ?? null,
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.usageEffectRetryAt,
-				'event.usageEffectRetryAt',
-			),
-			event.usageEffectLease ?? null,
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.usageEffectLeaseAt,
-				'event.usageEffectLeaseAt',
-			),
-			subscriptionEffectState,
-			event.subscriptionEffectLease ?? null,
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.subscriptionEffectLeaseAt,
-				'event.subscriptionEffectLeaseAt',
-			),
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.subscriptionEffectRetryAt,
-				'event.subscriptionEffectRetryAt',
-			),
-			event.subscriptionEffectAttemptCount ?? null,
-			assertOptionalMailboxCanonicalIsoTimestamp(
-				event.subscriptionEffectDeadLetterAt,
-				'event.subscriptionEffectDeadLetterAt',
-			),
-			event.subscriptionEffectLastError ?? null,
-			createdAt,
-		)
-		return existed == null
+	writeDeliveryEventRow(event: MailboxDeliveryEventInput): {
+		inserted: boolean
+		accepted: boolean
+	} {
+		return writeMailboxDeliveryEventRow(this.sql, event)
 	}
 
 	updateLatestDeliveryStatus(input: {
@@ -495,17 +441,7 @@ export class MailboxStore {
 	}
 
 	deliveryEventOwnsMessage(eventId: string, messageId: string) {
-		return (
-			this.sql
-				.exec<{ ok: number }>(
-					`SELECT 1 AS ok FROM email_delivery_events
-					WHERE id = ? AND message_id = ?
-					LIMIT 1`,
-					eventId,
-					messageId,
-				)
-				.toArray()[0] != null
-		)
+		return deliveryEventOwnsMessage(this.sql, eventId, messageId)
 	}
 
 	getThread(threadId: string): MailboxThreadRecord | null {
@@ -685,28 +621,7 @@ export class MailboxStore {
 		eventType?: EmailDeliveryEventType | null
 		limit?: number
 	}): Array<MailboxDeliveryEventRecord> {
-		const limit = normalizeMailboxPageSize(input.limit)
-		const clauses: Array<string> = ['1 = 1']
-		const params: Array<SqlStorageValue> = []
-		if (input.messageId) {
-			clauses.push('message_id = ?')
-			params.push(input.messageId)
-		}
-		if (input.eventType) {
-			clauses.push('event_type = ?')
-			params.push(assertMailboxDeliveryEventType(input.eventType))
-		}
-		params.push(limit)
-		return this.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT * FROM email_delivery_events
-				WHERE ${clauses.join(' AND ')}
-				ORDER BY created_at DESC, id DESC
-				LIMIT ?`,
-				...params,
-			)
-			.toArray()
-			.map(mapMailboxDeliveryEventRow)
+		return listMailboxDeliveryEvents(this.sql, input)
 	}
 
 	countMailbox(): MailboxCountResult {
@@ -741,7 +656,11 @@ export class MailboxStore {
 		pageSize?: number
 		startAfter?: string | null
 	}): MailboxBlobReferencePage {
-		return listMailboxBlobReferences(this.sql, input)
+		return listMailboxBlobReferences(this.sql, {
+			ownerId: this.getOwnerId(),
+			pageSize: input.pageSize,
+			startAfter: input.startAfter,
+		})
 	}
 
 	oldestMessageCreatedAt(): string | null {
@@ -756,27 +675,24 @@ export class MailboxStore {
 	}
 
 	oldestDeliveryEventCreatedAt(): string | null {
-		const row = this.sql
-			.exec<{ created_at: string }>(
-				`SELECT created_at FROM email_delivery_events
-				ORDER BY created_at ASC, id ASC
-				LIMIT 1`,
-			)
-			.toArray()[0]
-		return row?.created_at ?? null
+		return oldestMailboxDeliveryEventCreatedAt(this.sql)
 	}
 
 	listExpiredMessagesForRetention(input: {
 		cutoff: string
 		limit: number
-	}): Array<{ id: string; raw_mime_key: string | null; created_at: string }> {
+	}): Array<{
+		id: string
+		direction: EmailDirection
+		created_at: string
+	}> {
 		return this.sql
 			.exec<{
 				id: string
-				raw_mime_key: string | null
+				direction: EmailDirection
 				created_at: string
 			}>(
-				`SELECT id, raw_mime_key, created_at FROM email_messages
+				`SELECT id, direction, created_at FROM email_messages
 				WHERE created_at < ?
 				ORDER BY created_at ASC, id ASC
 				LIMIT ?`,
@@ -786,15 +702,18 @@ export class MailboxStore {
 			.toArray()
 	}
 
-	listAttachmentStorageKeysForMessages(
+	listAttachmentsForRetention(
 		messageIds: Array<string>,
-	): Array<{ message_id: string; storage_key: string }> {
+	): Array<{ id: string; message_id: string; storage_key: string | null }> {
 		if (messageIds.length === 0) return []
 		return this.sql
-			.exec<{ message_id: string; storage_key: string }>(
-				`SELECT message_id, storage_key FROM email_attachments
-				WHERE storage_key IS NOT NULL
-					AND message_id IN (${messageIds.map(() => '?').join(', ')})`,
+			.exec<{
+				id: string
+				message_id: string
+				storage_key: string | null
+			}>(
+				`SELECT id, message_id, storage_key FROM email_attachments
+				WHERE message_id IN (${messageIds.map(() => '?').join(', ')})`,
 				...messageIds,
 			)
 			.toArray()
@@ -809,17 +728,24 @@ export class MailboxStore {
 	}
 
 	pruneExpiredDeliveryEvents(input: { cutoff: string; limit: number }) {
-		this.sql.exec(
-			`DELETE FROM email_delivery_events
-			WHERE id IN (
-				SELECT id FROM email_delivery_events
-				WHERE created_at < ?
-				ORDER BY created_at ASC, id ASC
-				LIMIT ?
-			)`,
-			input.cutoff,
-			input.limit,
+		pruneExpiredMailboxDeliveryEvents(this.sql, input)
+	}
+
+	hasExpiredMessages(cutoff: string): boolean {
+		return (
+			this.sql
+				.exec<{ ok: number }>(
+					`SELECT 1 AS ok FROM email_messages
+					WHERE created_at < ?
+					LIMIT 1`,
+					cutoff,
+				)
+				.toArray()[0] != null
 		)
+	}
+
+	hasExpiredDeliveryEvents(cutoff: string): boolean {
+		return hasExpiredMailboxDeliveryEvents(this.sql, cutoff)
 	}
 
 	pruneOrphanThreads(limit: number) {

@@ -536,6 +536,7 @@ primitives:
     name: Email blob storage (R2)
     summary: EMAIL_BLOBS R2 for raw MIME and outbound attachments.
     code:
+      - packages/worker/src/email/blob-keys.ts
       - packages/worker/src/email/repo.ts
     docs:
       - docs/contributing/architecture/data-storage.md

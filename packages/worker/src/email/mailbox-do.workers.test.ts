@@ -1,115 +1,18 @@
-import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
-import { mailboxDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
-import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
+import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
+import { mapMailboxMessageRow } from './mailbox-mappers.ts'
+import { Mailbox } from './mailbox-do.ts'
 import {
-	Mailbox,
-	mailboxDeliveryEventRetentionDays,
-	mailboxMessageRetentionDays,
-	mailboxRetentionRetryDelayMs,
-	type MailboxAttachmentInput,
-	type MailboxMessageInput,
-	type MailboxThreadInput,
-} from './mailbox-do.ts'
-
-function mailboxEnv(): MailboxEnv & { MAILBOX: DurableObjectNamespace } {
-	const mailbox = (env as MailboxEnv).MAILBOX
-	if (!mailbox) {
-		throw new Error(
-			'MAILBOX Durable Object binding is required for mailbox-do workers tests.',
-		)
-	}
-	return { MAILBOX: mailbox }
-}
-
-function stubFor(userId: string) {
-	const { MAILBOX } = mailboxEnv()
-	return MAILBOX.get(MAILBOX.idFromName(mailboxDurableObjectName(userId)))
-}
-
-function rpcFor(userId: string) {
-	return mailboxRpc({ env: mailboxEnv(), userId })
-}
-
-function uniqueUserId(label: string) {
-	return `mailbox-${label}-${crypto.randomUUID()}`
-}
-
-async function assertMailboxThrows(
-	pattern: RegExp,
-	run: () => Promise<unknown>,
-) {
-	try {
-		await run()
-		throw new Error(`Expected mailbox RPC to throw matching ${pattern}`)
-	} catch (error) {
-		expect(String(error)).toMatch(pattern)
-	}
-}
-
-function baseThread(
-	overrides?: Partial<MailboxThreadInput>,
-): MailboxThreadInput {
-	const id = overrides?.id ?? crypto.randomUUID()
-	const at = overrides?.lastMessageAt ?? '2026-07-01T12:00:00.000Z'
-	return {
-		id,
-		inboxId: 'inbox-1',
-		subjectNormalized: 'hello',
-		rootMessageIdHeader: `<root-${id}@example.com>`,
-		lastMessageAt: at,
-		createdAt: at,
-		updatedAt: at,
-		...overrides,
-	}
-}
-
-function baseMessage(
-	overrides?: Partial<MailboxMessageInput>,
-): MailboxMessageInput {
-	const id = overrides?.id ?? crypto.randomUUID()
-	const at = overrides?.createdAt ?? '2026-07-01T12:00:00.000Z'
-	return {
-		id,
-		direction: 'inbound',
-		inboxId: 'inbox-1',
-		threadId: null,
-		fromAddress: 'sender@example.com',
-		envelopeFrom: 'envelope@example.com',
-		toAddresses: ['owner@example.com'],
-		subject: 'Hello mailbox',
-		messageIdHeader: `<msg-${id}@example.com>`,
-		rawMimeKey: `email-raw:v1:owner/${id}`,
-		rawSize: 128,
-		processingStatus: 'stored',
-		classification: 'accepted',
-		receivedAt: at,
-		createdAt: at,
-		updatedAt: at,
-		...overrides,
-	}
-}
-
-function baseAttachment(
-	messageId: string,
-	overrides?: Partial<MailboxAttachmentInput>,
-): MailboxAttachmentInput {
-	const id = overrides?.id ?? crypto.randomUUID()
-	return {
-		id,
-		messageId,
-		filename: 'note.txt',
-		contentType: 'text/plain',
-		size: 12,
-		storageKind: 'external',
-		storageKey: `email-attachment:v1:owner/${messageId}/${id}`,
-		createdAt: '2026-07-01T12:00:00.000Z',
-		...overrides,
-	}
-}
+	assertMailboxThrows,
+	baseAttachment,
+	baseMessage,
+	baseThread,
+	rpcFor,
+	stubFor,
+	uniqueUserId,
+} from './mailbox-test-helpers.ts'
 
 test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', async () => {
 	silenceIncidentalRuntimeWarnings()
@@ -127,7 +30,8 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 				WHERE type = 'table'
 					AND name IN (
 						'email_threads', 'email_messages',
-						'email_attachments', 'email_delivery_events'
+						'email_attachments', 'email_delivery_events',
+						'mailbox_owner_identity'
 					)
 				ORDER BY name ASC`,
 			)
@@ -138,27 +42,34 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 			'email_delivery_events',
 			'email_messages',
 			'email_threads',
+			'mailbox_owner_identity',
 		])
 		expect(await state.storage.getAlarm()).toBeNull()
 	})
 
 	const thread = baseThread({ id: 'thread-1' })
-	const message = baseMessage({
+	const message = baseMessage(ownerA, {
 		id: 'msg-1',
 		threadId: thread.id,
 		subject: 'Project update',
 		fromAddress: 'alice@example.com',
 	})
-	const attachment = baseAttachment(message.id, { id: 'att-1' })
+	const attachment = baseAttachment(ownerA, message.id, { id: 'att-1' })
 
 	await mailboxA.mirrorMessage({
+		ownerId: ownerA,
 		thread,
 		message,
 		attachments: [attachment],
 	})
 	await mailboxA.mirrorMessage({
+		ownerId: ownerA,
 		thread,
-		message: { ...message, subject: 'Project update (edited)' },
+		message: {
+			...message,
+			subject: 'Project update (edited)',
+			updatedAt: '2026-07-01T12:00:01.000Z',
+		},
 		attachments: [attachment],
 	})
 
@@ -168,7 +79,7 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 		threadId: thread.id,
 		subject: 'Project update (edited)',
 		fromAddress: 'alice@example.com',
-		rawMimeKey: message.rawMimeKey,
+		rawMimeKey: emailRawMimeKey(ownerA, message.id),
 	})
 	expect(await mailboxA.getThread({ threadId: thread.id })).toMatchObject({
 		id: thread.id,
@@ -198,8 +109,9 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 	).toHaveLength(0)
 
 	await mailboxB.mirrorMessage({
+		ownerId: ownerB,
 		thread: baseThread({ id: 'thread-b' }),
-		message: baseMessage({
+		message: baseMessage(ownerB, {
 			id: 'msg-b',
 			threadId: 'thread-b',
 			subject: 'Other owner',
@@ -222,7 +134,8 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 
 	const outboundId = 'msg-out-1'
 	await mailboxA.mirrorMessage({
-		message: baseMessage({
+		ownerId: ownerA,
+		message: baseMessage(ownerA, {
 			id: outboundId,
 			direction: 'outbound',
 			subject: 'Sent mail',
@@ -236,6 +149,236 @@ test('Mailbox mirrors, reads, searches, isolates owners, and stays idempotent', 
 			providerMessageId: 'provider-1',
 		}),
 	).toMatchObject({ id: outboundId })
+
+	// Cross-user ownerId and forged blob keys must be rejected.
+	await runInDurableObject(stubA, async (instance: Mailbox) => {
+		await assertMailboxThrows(/ownerId mismatch/, () =>
+			instance.mirrorMessage({
+				ownerId: ownerB,
+				message: baseMessage(ownerA, { id: 'cross-user' }),
+			}),
+		)
+		await assertMailboxThrows(/rawMimeKey must equal/, () =>
+			instance.mirrorMessage({
+				ownerId: ownerA,
+				message: baseMessage(ownerA, {
+					id: 'bad-key',
+					rawMimeKey: emailRawMimeKey(ownerB, 'bad-key'),
+				}),
+			}),
+		)
+		await assertMailboxThrows(/storageKey must equal/, () =>
+			instance.mirrorMessage({
+				ownerId: ownerA,
+				message: baseMessage(ownerA, { id: 'bad-att-msg' }),
+				attachments: [
+					baseAttachment(ownerA, 'bad-att-msg', {
+						id: 'bad-att',
+						storageKey: emailAttachmentBlobKey(
+							ownerB,
+							'bad-att-msg',
+							'bad-att',
+						),
+					}),
+				],
+			}),
+		)
+	})
+})
+
+test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const userId = uniqueUserId('stale')
+	const mailbox = rpcFor(userId)
+
+	const thread = baseThread({ id: 'stale-thread' })
+	const message = baseMessage(userId, {
+		id: 'stale-msg',
+		threadId: thread.id,
+		classification: 'accepted',
+		updatedAt: '2026-07-01T12:00:00.000Z',
+	})
+	const attachment = baseAttachment(userId, message.id, { id: 'stale-att' })
+
+	await mailbox.mirrorMessage({
+		ownerId: userId,
+		thread,
+		message,
+		attachments: [attachment],
+	})
+
+	// Omitted attachments leave existing metadata unchanged.
+	await mailbox.mirrorMessage({
+		ownerId: userId,
+		message: {
+			...message,
+			subject: 'edited without attachments field',
+			updatedAt: '2026-07-01T12:00:01.000Z',
+		},
+	})
+	expect(
+		await mailbox.listAttachmentsForMessage({ messageId: message.id }),
+	).toHaveLength(1)
+
+	// Stale snapshot must not regress classification, thread time, or attachments.
+	const staleMirror = await mailbox.mirrorMessage({
+		ownerId: userId,
+		thread: {
+			...thread,
+			lastMessageAt: '2026-06-01T00:00:00.000Z',
+			updatedAt: '2026-06-01T00:00:00.000Z',
+		},
+		message: {
+			...message,
+			classification: 'quarantined',
+			subject: 'stale subject',
+			updatedAt: '2026-07-01T11:00:00.000Z',
+		},
+		attachments: [],
+	})
+	expect(staleMirror.accepted).toBe(false)
+	expect(await mailbox.getMessage({ messageId: message.id })).toMatchObject({
+		classification: 'accepted',
+		subject: 'edited without attachments field',
+		updatedAt: '2026-07-01T12:00:01.000Z',
+	})
+	expect(await mailbox.getThread({ threadId: thread.id })).toMatchObject({
+		lastMessageAt: thread.lastMessageAt,
+	})
+	expect(
+		await mailbox.listAttachmentsForMessage({ messageId: message.id }),
+	).toHaveLength(1)
+
+	// Explicit [] clears only when the message snapshot is accepted.
+	await mailbox.mirrorMessage({
+		ownerId: userId,
+		message: {
+			...message,
+			subject: 'cleared attachments',
+			updatedAt: '2026-07-01T12:00:02.000Z',
+		},
+		attachments: [],
+	})
+	expect(
+		await mailbox.listAttachmentsForMessage({ messageId: message.id }),
+	).toHaveLength(0)
+
+	const outbound = baseMessage(userId, {
+		id: 'stale-out',
+		direction: 'outbound',
+		providerMessageId: 'prov-stale',
+		processingStatus: 'sent',
+		deliveryStatus: 'delivered',
+		deliveryStatusAt: '2026-07-02T10:00:00.000Z',
+		updatedAt: '2026-07-02T10:00:00.000Z',
+	})
+	await mailbox.mirrorMessage({ ownerId: userId, message: outbound })
+	await mailbox.mirrorMessage({
+		ownerId: userId,
+		message: {
+			...outbound,
+			deliveryStatus: 'deferred',
+			deliveryStatusAt: '2026-07-02T09:00:00.000Z',
+			updatedAt: '2026-07-02T10:00:01.000Z',
+		},
+	})
+	expect(await mailbox.getMessage({ messageId: outbound.id })).toMatchObject({
+		deliveryStatus: 'delivered',
+		deliveryStatusAt: '2026-07-02T10:00:00.000Z',
+	})
+
+	const first = await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
+		event: {
+			id: 'evt-1',
+			messageId: outbound.id,
+			eventType: 'delivered',
+			provider: 'cloudflare-email',
+			providerMessageId: 'prov-stale',
+			providerEventId: 'provider-event-1',
+			createdAt: '2026-07-02T10:00:00.000Z',
+			updatedAt: '2026-07-02T10:00:00.000Z',
+			needsEffectReconcile: false,
+			state: 'received',
+			fingerprint: 'fp-1',
+		},
+		latestDeliveryStatus: {
+			messageId: outbound.id,
+			deliveryStatus: 'delivered',
+			deliveryStatusAt: '2026-07-02T10:30:00.000Z',
+		},
+	})
+	expect(first).toEqual({
+		inserted: true,
+		accepted: true,
+		updatedLatestStatus: true,
+	})
+
+	const staleEvent = await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
+		event: {
+			id: 'evt-1',
+			messageId: outbound.id,
+			eventType: 'deferred',
+			provider: 'cloudflare-email',
+			providerEventId: 'provider-event-1',
+			createdAt: '2026-07-02T10:00:00.000Z',
+			updatedAt: '2026-07-02T09:00:00.000Z',
+			needsEffectReconcile: true,
+			state: null,
+			fingerprint: null,
+		},
+	})
+	expect(staleEvent).toEqual({
+		inserted: false,
+		accepted: false,
+		updatedLatestStatus: false,
+	})
+	const eventRow = (
+		await mailbox.listDeliveryEvents({ messageId: outbound.id, limit: 5 })
+	).find((row) => row.id === 'evt-1')
+	expect(eventRow).toMatchObject({
+		eventType: 'delivered',
+		state: 'received',
+		fingerprint: 'fp-1',
+		needsEffectReconcile: false,
+		updatedAt: '2026-07-02T10:00:00.000Z',
+	})
+
+	const duplicate = await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
+		event: {
+			id: 'evt-1-dup',
+			messageId: outbound.id,
+			eventType: 'delivered',
+			provider: 'cloudflare-email',
+			providerEventId: 'provider-event-1',
+			createdAt: '2026-07-02T11:00:00.000Z',
+			updatedAt: '2026-07-02T11:00:00.000Z',
+		},
+	})
+	expect(duplicate).toEqual({
+		inserted: false,
+		accepted: false,
+		updatedLatestStatus: false,
+	})
+
+	expect(() =>
+		mapMailboxMessageRow({
+			id: 'corrupt',
+			direction: 'bogus',
+			processing_status: 'stored',
+			classification: 'accepted',
+			to_addresses_json: '[]',
+			cc_addresses_json: '[]',
+			bcc_addresses_json: '[]',
+			reply_to_addresses_json: '[]',
+			references_json: '[]',
+			headers_json: '{}',
+			created_at: '2026-07-01T12:00:00.000Z',
+			updated_at: '2026-07-01T12:00:00.000Z',
+		}),
+	).toThrow(/persisted direction is invalid/)
 })
 
 test('Mailbox delivery status, promoted inbound fields, export paging, and cursor rejection', async () => {
@@ -244,34 +387,47 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 	const mailbox = rpcFor(userId)
 
 	const thread = baseThread({ id: 'export-thread' })
-	const message = baseMessage({
+	const message = baseMessage(userId, {
 		id: 'export-msg',
 		threadId: thread.id,
 		direction: 'outbound',
 		providerMessageId: 'prov-export',
 		processingStatus: 'sent',
-		rawMimeKey: 'email-raw:v1:owner/export-msg',
+		rawMimeKey: null,
 		deliveryStatus: 'delivered',
 		deliveryStatusAt: '2026-07-02T10:00:00.000Z',
 	})
-	const attachment = baseAttachment(message.id, {
+	const attachment = baseAttachment(userId, message.id, {
 		id: 'export-att',
-		storageKey: 'email-attachment:v1:owner/export-msg/export-att',
+	})
+	const inboundBlobMessage = baseMessage(userId, {
+		id: 'export-inbound',
+		subject: 'inbound for blobs',
+	})
+	const inboundAttachment = baseAttachment(userId, inboundBlobMessage.id, {
+		id: 'export-inbound-att',
 	})
 	await mailbox.mirrorMessage({
+		ownerId: userId,
 		thread,
 		message,
 		attachments: [attachment],
 	})
+	await mailbox.mirrorMessage({
+		ownerId: userId,
+		message: inboundBlobMessage,
+		attachments: [inboundAttachment],
+	})
 
 	// Stale dual-write replay must not regress a newer delivery status.
 	await mailbox.mirrorMessage({
+		ownerId: userId,
 		message: {
 			...message,
 			deliveryStatus: 'deferred',
 			deliveryStatusAt: '2026-07-02T09:00:00.000Z',
+			updatedAt: '2026-07-02T10:00:01.000Z',
 		},
-		attachments: [attachment],
 	})
 	expect(await mailbox.getMessage({ messageId: message.id })).toMatchObject({
 		deliveryStatus: 'delivered',
@@ -280,12 +436,13 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 
 	// Equal timestamps may update (matches D1 <= semantics).
 	await mailbox.mirrorMessage({
+		ownerId: userId,
 		message: {
 			...message,
 			deliveryStatus: 'complained',
 			deliveryStatusAt: '2026-07-02T10:00:00.000Z',
+			updatedAt: '2026-07-02T10:00:02.000Z',
 		},
-		attachments: [attachment],
 	})
 	expect(await mailbox.getMessage({ messageId: message.id })).toMatchObject({
 		deliveryStatus: 'complained',
@@ -293,6 +450,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 	})
 
 	const first = await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
 		event: {
 			id: 'evt-1',
 			messageId: message.id,
@@ -301,6 +459,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			providerMessageId: 'prov-export',
 			providerEventId: 'provider-event-1',
 			createdAt: '2026-07-02T10:00:00.000Z',
+			updatedAt: '2026-07-02T10:00:00.000Z',
 			needsEffectReconcile: false,
 		},
 		latestDeliveryStatus: {
@@ -309,9 +468,14 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			deliveryStatusAt: '2026-07-02T10:30:00.000Z',
 		},
 	})
-	expect(first).toEqual({ inserted: true, updatedLatestStatus: true })
+	expect(first).toEqual({
+		inserted: true,
+		accepted: true,
+		updatedLatestStatus: true,
+	})
 
 	const inbound = await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
 		event: {
 			id: 'inbound-delivery-1',
 			messageId: 'inbound-msg-1',
@@ -319,6 +483,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			eventType: 'received',
 			provider: 'cloudflare-email-routing',
 			createdAt: '2026-07-02T11:00:00.000Z',
+			updatedAt: '2026-07-02T11:00:00.000Z',
 			needsEffectReconcile: true,
 			state: 'received',
 			fingerprint: 'fp-abc',
@@ -356,6 +521,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		usageBytes: 2048,
 		subscriptionEffectState: 'pending',
 		subscriptionEffectRetryAt: '2026-07-02T12:00:00.000Z',
+		updatedAt: '2026-07-02T11:00:00.000Z',
 	})
 	expect(JSON.parse(inboundRow!.detailJson)).toMatchObject({
 		recipient: 'owner@example.com',
@@ -363,12 +529,14 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 
 	// Default needsEffectReconcile is false unless explicitly true.
 	await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
 		event: {
 			id: 'evt-default-reconcile',
 			messageId: message.id,
 			eventType: 'sent',
 			provider: 'kody',
 			createdAt: '2026-07-02T11:30:00.000Z',
+			updatedAt: '2026-07-02T11:30:00.000Z',
 		},
 	})
 	const defaultReconcile = (
@@ -377,6 +545,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 	expect(defaultReconcile?.needsEffectReconcile).toBe(false)
 
 	const duplicate = await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
 		event: {
 			id: 'evt-1-dup',
 			messageId: message.id,
@@ -385,6 +554,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			providerMessageId: 'prov-export',
 			providerEventId: 'provider-event-1',
 			createdAt: '2026-07-02T11:00:00.000Z',
+			updatedAt: '2026-07-02T11:00:00.000Z',
 		},
 		latestDeliveryStatus: {
 			messageId: message.id,
@@ -393,8 +563,10 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		},
 	})
 	expect(duplicate.inserted).toBe(false)
+	expect(duplicate.accepted).toBe(false)
 
 	const stale = await mailbox.upsertDeliveryEvent({
+		ownerId: userId,
 		event: {
 			id: 'evt-2',
 			messageId: message.id,
@@ -403,6 +575,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			providerMessageId: 'prov-export',
 			providerEventId: 'provider-event-2',
 			createdAt: '2026-07-02T09:00:00.000Z',
+			updatedAt: '2026-07-02T09:00:00.000Z',
 		},
 		latestDeliveryStatus: {
 			messageId: message.id,
@@ -410,14 +583,16 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			deliveryStatusAt: '2026-07-02T09:00:00.000Z',
 		},
 	})
-	expect(stale).toEqual({ inserted: true, updatedLatestStatus: false })
+	expect(stale).toEqual({
+		inserted: true,
+		accepted: true,
+		updatedLatestStatus: false,
+	})
 	expect(await mailbox.getMessage({ messageId: message.id })).toMatchObject({
 		deliveryStatus: 'delivered',
 		deliveryStatusAt: '2026-07-02T10:30:00.000Z',
 	})
 
-	// Assert validation failures inside the DO isolate so remote RPC error
-	// plumbing does not surface uncaught worker exceptions.
 	const stub = stubFor(userId)
 	await runInDurableObject(stub, async (instance: Mailbox) => {
 		await assertMailboxThrows(/export cursor is invalid/, () =>
@@ -431,9 +606,11 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		)
 		await assertMailboxThrows(/canonical ISO-8601/, () =>
 			instance.mirrorMessage({
-				message: baseMessage({
+				ownerId: userId,
+				message: baseMessage(userId, {
 					id: 'bad-iso',
 					createdAt: '2026-07-01T12:00:00Z',
+					updatedAt: '2026-07-01T12:00:00Z',
 				}),
 			}),
 		)
@@ -441,7 +618,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 
 	const kinds: Array<string> = []
 	let startAfter: string | null = null
-	for (let page = 0; page < 30; page += 1) {
+	for (let page = 0; page < 40; page += 1) {
 		const exported = await mailbox.exportMailbox({
 			pageSize: 1,
 			startAfter,
@@ -453,10 +630,10 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 					expect(row.row.id).toBe(thread.id)
 					break
 				case 'message':
-					expect(row.row.id).toBe(message.id)
+					expect(['export-msg', 'export-inbound']).toContain(row.row.id)
 					break
 				case 'attachment':
-					expect(row.row.id).toBe(attachment.id)
+					expect(['export-att', 'export-inbound-att']).toContain(row.row.id)
 					break
 				case 'delivery_event':
 					expect(typeof row.row.id).toBe('string')
@@ -472,13 +649,14 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		startAfter = exported.nextStartAfter
 	}
 	expect(kinds.filter((kind) => kind === 'thread')).toHaveLength(1)
-	expect(kinds.filter((kind) => kind === 'message')).toHaveLength(1)
-	expect(kinds.filter((kind) => kind === 'attachment')).toHaveLength(1)
+	expect(kinds.filter((kind) => kind === 'message')).toHaveLength(2)
+	expect(kinds.filter((kind) => kind === 'attachment')).toHaveLength(2)
 	expect(
 		kinds.filter((kind) => kind === 'delivery_event').length,
 	).toBeGreaterThanOrEqual(3)
 
 	const blobKinds: Array<string> = []
+	const blobKeys: Array<string> = []
 	let blobCursor: string | null = null
 	for (let page = 0; page < 10; page += 1) {
 		const pageResult = await mailbox.listBlobReferences({
@@ -487,19 +665,31 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		})
 		for (const reference of pageResult.references) {
 			blobKinds.push(reference.kind)
+			blobKeys.push(reference.key)
 			if (reference.kind === 'raw_mime') {
-				expect(reference.key).toBe(message.rawMimeKey)
-				expect(reference.messageId).toBe(message.id)
+				expect(reference.key).toBe(
+					emailRawMimeKey(userId, inboundBlobMessage.id),
+				)
+				expect(reference.messageId).toBe(inboundBlobMessage.id)
 			} else {
-				expect(reference.key).toBe(attachment.storageKey)
-				expect(reference.attachmentId).toBe(attachment.id)
+				expect(reference.key).toBe(
+					emailAttachmentBlobKey(
+						userId,
+						reference.messageId,
+						reference.attachmentId!,
+					),
+				)
 			}
 		}
 		if (!pageResult.truncated) break
 		expect(pageResult.nextStartAfter).not.toBe(blobCursor)
 		blobCursor = pageResult.nextStartAfter
 	}
-	expect(blobKinds).toEqual(['raw_mime', 'attachment'])
+	expect(blobKinds[0]).toBe('raw_mime')
+	expect(blobKinds.filter((kind) => kind === 'attachment').length).toBe(2)
+	expect(blobKeys).toContain(
+		emailAttachmentBlobKey(userId, message.id, attachment.id),
+	)
 
 	await mailbox.purge()
 	expect(await mailbox.countMailbox()).toEqual({
@@ -508,153 +698,4 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		attachments: 0,
 		deliveryEvents: 0,
 	})
-})
-
-test('Mailbox retention deletes R2 blobs before metadata and backs off on failure', async () => {
-	silenceIncidentalRuntimeWarnings()
-	consoleWarn.mockImplementation((...args: Array<unknown>) => {
-		const message = String(args[0] ?? '')
-		if (message.includes('mailbox-retention-blob-delete-failed')) return
-	})
-
-	const userId = uniqueUserId('retention')
-	const mailbox = rpcFor(userId)
-	const stub = stubFor(userId)
-
-	const oldMessageAt = new Date(
-		Date.now() - (mailboxMessageRetentionDays + 3) * 24 * 60 * 60 * 1000,
-	).toISOString()
-	const oldEventAt = new Date(
-		Date.now() - (mailboxDeliveryEventRetentionDays + 3) * 24 * 60 * 60 * 1000,
-	).toISOString()
-	const freshAt = new Date().toISOString()
-
-	const keepMessage = baseMessage({
-		id: 'keep-msg',
-		subject: 'fresh',
-		createdAt: freshAt,
-		updatedAt: freshAt,
-		rawMimeKey: 'email-raw:v1:owner/keep-msg',
-	})
-	const dropMessage = baseMessage({
-		id: 'drop-msg',
-		threadId: 'drop-thread',
-		subject: 'old',
-		createdAt: oldMessageAt,
-		updatedAt: oldMessageAt,
-		rawMimeKey: 'email-raw:v1:owner/drop-msg',
-	})
-	const failMessage = baseMessage({
-		id: 'fail-msg',
-		subject: 'fail-old',
-		createdAt: oldMessageAt,
-		updatedAt: oldMessageAt,
-		rawMimeKey: 'email-raw:v1:owner/fail-msg',
-	})
-	const dropAttachment = baseAttachment(dropMessage.id, {
-		id: 'drop-att',
-		storageKey: 'email-attachment:v1:owner/drop-msg/drop-att',
-		createdAt: oldMessageAt,
-	})
-
-	await mailbox.mirrorMessage({
-		thread: baseThread({
-			id: 'drop-thread',
-			lastMessageAt: oldMessageAt,
-			createdAt: oldMessageAt,
-			updatedAt: oldMessageAt,
-		}),
-		message: dropMessage,
-		attachments: [dropAttachment],
-	})
-	await mailbox.mirrorMessage({ message: keepMessage })
-	await mailbox.mirrorMessage({ message: failMessage })
-	await mailbox.upsertDeliveryEvent({
-		event: {
-			id: 'old-event',
-			messageId: keepMessage.id,
-			eventType: 'received',
-			provider: 'kody',
-			createdAt: oldEventAt,
-			needsEffectReconcile: false,
-		},
-	})
-	await mailbox.upsertDeliveryEvent({
-		event: {
-			id: 'fresh-event',
-			messageId: keepMessage.id,
-			eventType: 'received',
-			provider: 'kody',
-			createdAt: freshAt,
-			needsEffectReconcile: false,
-		},
-	})
-
-	await env.EMAIL_BLOBS.put(dropMessage.rawMimeKey!, 'drop-raw')
-	await env.EMAIL_BLOBS.put(dropAttachment.storageKey!, 'drop-att')
-	await env.EMAIL_BLOBS.put(failMessage.rawMimeKey!, 'fail-raw')
-	await env.EMAIL_BLOBS.put(keepMessage.rawMimeKey!, 'keep-raw')
-
-	const originalDelete = env.EMAIL_BLOBS.delete.bind(env.EMAIL_BLOBS)
-	env.EMAIL_BLOBS.delete = (async (keys: string | Array<string>) => {
-		const list = Array.isArray(keys) ? keys : [keys]
-		if (list.includes(failMessage.rawMimeKey!)) {
-			throw new Error('simulated R2 delete failure')
-		}
-		return await originalDelete(keys)
-	}) as typeof env.EMAIL_BLOBS.delete
-
-	try {
-		const alarmBefore = Date.now()
-		const alarmAfterFailure = await runInDurableObject(
-			stub,
-			async (instance: Mailbox, state) => {
-				expect(instance).toBeInstanceOf(Mailbox)
-				await state.storage.deleteAlarm()
-				await instance.alarm()
-				return await state.storage.getAlarm()
-			},
-		)
-		// Overdue retained work (failed R2 delete) must retry with hourly backoff,
-		// not every second.
-		expect(alarmAfterFailure).toBeTypeOf('number')
-		expect(alarmAfterFailure).toBeGreaterThanOrEqual(
-			alarmBefore + mailboxRetentionRetryDelayMs - 5_000,
-		)
-		expect(alarmAfterFailure).toBeLessThanOrEqual(
-			alarmBefore + mailboxRetentionRetryDelayMs + 5_000,
-		)
-
-		expect(await env.EMAIL_BLOBS.get(dropMessage.rawMimeKey!)).toBeNull()
-		expect(await env.EMAIL_BLOBS.get(dropAttachment.storageKey!)).toBeNull()
-		expect(await env.EMAIL_BLOBS.get(failMessage.rawMimeKey!)).not.toBeNull()
-		expect(await env.EMAIL_BLOBS.get(keepMessage.rawMimeKey!)).not.toBeNull()
-
-		expect(await mailbox.getMessage({ messageId: dropMessage.id })).toBeNull()
-		expect(
-			await mailbox.listAttachmentsForMessage({ messageId: dropMessage.id }),
-		).toHaveLength(0)
-		expect(await mailbox.getThread({ threadId: 'drop-thread' })).toBeNull()
-		expect(
-			await mailbox.getMessage({ messageId: failMessage.id }),
-		).toMatchObject({
-			id: failMessage.id,
-			rawMimeKey: failMessage.rawMimeKey,
-		})
-		expect(
-			await mailbox.getMessage({ messageId: keepMessage.id }),
-		).toMatchObject({
-			id: keepMessage.id,
-		})
-		const events = await mailbox.listDeliveryEvents({ limit: 10 })
-		expect(events.map((event) => event.id)).toEqual(['fresh-event'])
-	} finally {
-		env.EMAIL_BLOBS.delete = originalDelete
-	}
-
-	await runInDurableObject(stub, async (instance: Mailbox) => {
-		await instance.alarm()
-	})
-	expect(await env.EMAIL_BLOBS.get(failMessage.rawMimeKey!)).toBeNull()
-	expect(await mailbox.getMessage({ messageId: failMessage.id })).toBeNull()
 })

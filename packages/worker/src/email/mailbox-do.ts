@@ -6,6 +6,7 @@ import {
 	type EmailDeliveryStatus,
 } from './types.ts'
 import {
+	computeMailboxRetentionReschedule,
 	enforceMailboxRetention,
 	mailboxRetentionAlarmAtMs,
 	nextMailboxRetentionDueAtMs,
@@ -24,6 +25,7 @@ import {
 	type MailboxListMessagesInput,
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
+	type MailboxRpc,
 	type MailboxSearchMessagesInput,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
@@ -32,13 +34,15 @@ import {
 /**
  * Per-owner Mailbox Durable Object: SQLite metadata for threads, messages,
  * attachments, and delivery events. Object identity is ownership — no
- * `user_id` columns. Raw MIME / external attachment bytes stay in
- * `EMAIL_BLOBS`; rows retain keys. `system:email` stays in D1 by design.
+ * `user_id` columns on data rows. Owner binding for blob-key validation is
+ * a singleton identity row (DO name is not introspectable). Raw MIME /
+ * external attachment bytes stay in `EMAIL_BLOBS`; rows retain keys.
+ * `system:email` stays in D1 by design.
  *
  * Scaffold only: dual-write / cutover callers are not wired here.
  */
 
-class MailboxBase extends DurableObject<Env> {
+class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	private readonly store: MailboxStore
 	/**
 	 * In-isolate cache: once an alarm is scheduled, hot writes skip
@@ -66,8 +70,9 @@ class MailboxBase extends DurableObject<Env> {
 	 * Arming rule (keep this comment accurate — reviewers rely on it):
 	 *
 	 * - Schedule at most one alarm for the soonest retention due-time.
-	 * - Overdue work uses an hourly retry delay (not now+1s) so persistent R2
-	 *   failures cannot storm alarm wakes; future rows keep due-time scheduling.
+	 * - Overdue work on the write path uses an hourly retry delay (not now+1s).
+	 * - After an alarm: blob failures → hourly backoff; successful pass with
+	 *   expired rows remaining → near-immediate continuation; else future due.
 	 * - `retentionAlarmArmed` skips getAlarm/setAlarm on hot writes once armed.
 	 * - `retentionIdleConfirmed` skips re-evaluation only while no new row has
 	 *   been written; every write clears it so the next ensure re-arms.
@@ -104,43 +109,57 @@ class MailboxBase extends DurableObject<Env> {
 	}
 
 	async alarm(): Promise<void> {
-		await enforceMailboxRetention({
+		const nowMs = Date.now()
+		const result = await enforceMailboxRetention({
 			store: this.store,
 			blobs: this.env.EMAIL_BLOBS,
 		})
-		const dueAtMs = nextMailboxRetentionDueAtMs(this.store)
-		const alarmAt = mailboxRetentionAlarmAtMs({ dueAtMs })
-		if (alarmAt == null) {
+		const nextDueAtMs = nextMailboxRetentionDueAtMs(this.store)
+		const reschedule = computeMailboxRetentionReschedule({
+			nowMs,
+			hadBlobDeleteFailures: result.hadBlobDeleteFailures,
+			expiredWorkRemaining: result.expiredWorkRemaining,
+			nextDueAtMs,
+		})
+		if (reschedule.atMs == null) {
 			this.retentionAlarmArmed = false
 			this.retentionIdleConfirmed = true
 			return
 		}
-		await this.ctx.storage.setAlarm(alarmAt)
+		await this.ctx.storage.setAlarm(reschedule.atMs)
 		this.retentionAlarmArmed = true
 		this.retentionIdleConfirmed = false
 	}
 
 	/** Atomic mirror of thread + message + attachments for dual-write. */
 	async mirrorMessage(input: {
+		ownerId: string
 		thread?: MailboxThreadInput | null
 		message: MailboxMessageInput
 		attachments?: Array<MailboxAttachmentInput>
-	}): Promise<{ ok: true }> {
+	}): Promise<{ ok: true; accepted: boolean }> {
 		const message = input.message
 		assertMailboxNonEmptyString(message.id, 'message.id')
-		const attachments = Array.isArray(input.attachments)
-			? input.attachments
-			: []
+		let accepted = false
 		this.ctx.storage.transactionSync(() => {
+			const ownerId = this.store.assertOwner(input.ownerId)
+			this.store.validateMessageBlobKeys({
+				ownerId,
+				message,
+				attachments: input.attachments,
+			})
 			if (input.thread) {
 				this.store.upsertThreadRow(input.thread)
 			}
-			this.store.upsertMessageRow(message)
-			this.store.replaceAttachmentsForMessage(message.id, attachments)
+			const messageResult = this.store.upsertMessageRow(message)
+			accepted = messageResult.accepted
+			if (accepted && input.attachments !== undefined) {
+				this.store.replaceAttachmentsForMessage(message.id, input.attachments)
+			}
 		})
 		this.markRetentionDirty()
 		await this.ensureRetentionAlarm()
-		return { ok: true }
+		return { ok: true, accepted }
 	}
 
 	/**
@@ -148,18 +167,27 @@ class MailboxBase extends DurableObject<Env> {
 	 * apply a monotonic latest `delivery_status` update on the message.
 	 */
 	async upsertDeliveryEvent(input: {
+		ownerId: string
 		event: MailboxDeliveryEventInput
 		latestDeliveryStatus?: {
 			messageId: string
 			deliveryStatus: EmailDeliveryStatus
 			deliveryStatusAt: string
 		} | null
-	}): Promise<{ inserted: boolean; updatedLatestStatus: boolean }> {
+	}): Promise<{
+		inserted: boolean
+		accepted: boolean
+		updatedLatestStatus: boolean
+	}> {
 		let inserted = false
+		let accepted = false
 		let updatedLatestStatus = false
 		this.ctx.storage.transactionSync(() => {
-			inserted = this.store.writeDeliveryEventRow(input.event)
-			if (input.latestDeliveryStatus) {
+			this.store.assertOwner(input.ownerId)
+			const write = this.store.writeDeliveryEventRow(input.event)
+			inserted = write.inserted
+			accepted = write.accepted
+			if (accepted && input.latestDeliveryStatus) {
 				const eventId = assertMailboxNonEmptyString(input.event.id, 'event.id')
 				const messageId = assertMailboxNonEmptyString(
 					input.latestDeliveryStatus.messageId,
@@ -174,7 +202,7 @@ class MailboxBase extends DurableObject<Env> {
 		})
 		this.markRetentionDirty()
 		await this.ensureRetentionAlarm()
-		return { inserted, updatedLatestStatus }
+		return { inserted, accepted, updatedLatestStatus }
 	}
 
 	async getThread(input: {
@@ -275,6 +303,7 @@ export type { MailboxRpc } from './mailbox-types.ts'
 export {
 	mailboxDeliveryEventRetentionDays,
 	mailboxMessageRetentionDays,
+	mailboxRetentionContinuationDelayMs,
 	mailboxRetentionRetryDelayMs,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
@@ -290,3 +319,4 @@ export {
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
 } from './mailbox-types.ts'
+export { computeMailboxRetentionReschedule } from './mailbox-retention.ts'

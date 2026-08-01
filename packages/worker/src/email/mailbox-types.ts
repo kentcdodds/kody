@@ -24,10 +24,12 @@ export const mailboxRetentionBatchSize = 100
 export const mailboxRetentionAlarmSkewMs = 60_000
 /** Bound retry delay when overdue retention work cannot finish (e.g. R2 errors). */
 export const mailboxRetentionRetryDelayMs = 60 * 60 * 1000
+/** Near-immediate continuation when a retention pass succeeds but expired rows remain. */
+export const mailboxRetentionContinuationDelayMs = 1_000
 export const mailboxBlobDeleteMaxKeys = 1000
 
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-export const mailboxSchemaVersion = 2
+export const mailboxSchemaVersion = 1
 export const mailboxMetaSchemaVersionKey = 'schema_version'
 
 export const mailboxExportThreadCursorPrefix = 'thread:'
@@ -122,7 +124,7 @@ export type MailboxAttachmentRecord = {
 	contentId: string | null
 	disposition: string | null
 	size: number
-	storageKind: string
+	storageKind: MailboxStorageKind
 	storageKey: string | null
 	createdAt: string
 }
@@ -169,6 +171,7 @@ export type MailboxDeliveryEventRecord = {
 	subscriptionEffectDeadLetterAt: string | null
 	subscriptionEffectLastError: string | null
 	createdAt: string
+	updatedAt: string
 }
 
 export type MailboxThreadInput = {
@@ -178,7 +181,8 @@ export type MailboxThreadInput = {
 	rootMessageIdHeader?: string | null
 	lastMessageAt: string
 	createdAt?: string
-	updatedAt?: string
+	/** Required for stale-snapshot rejection (equal/newer only). */
+	updatedAt: string
 }
 
 export type MailboxMessageInput = {
@@ -213,7 +217,8 @@ export type MailboxMessageInput = {
 	receivedAt?: string | null
 	sentAt?: string | null
 	createdAt?: string
-	updatedAt?: string
+	/** Required for stale-snapshot rejection (equal/newer only). */
+	updatedAt: string
 }
 
 export type MailboxAttachmentInput = {
@@ -268,6 +273,8 @@ export type MailboxDeliveryEventInput = {
 	subscriptionEffectDeadLetterAt?: string | null
 	subscriptionEffectLastError?: string | null
 	createdAt?: string
+	/** Required monotonic mirror timestamp (equal/newer accepted). */
+	updatedAt: string
 }
 
 export type MailboxExportRow =
@@ -334,18 +341,33 @@ export type MailboxExportPhase =
 
 export type MailboxRpc = {
 	mirrorMessage: (input: {
+		/**
+		 * Explicit owner binding. DO name is not introspectable at runtime, so
+		 * writers must pass the owning user id for blob-key validation and
+		 * singleton identity checks.
+		 */
+		ownerId: string
 		thread?: MailboxThreadInput | null
 		message: MailboxMessageInput
+		/**
+		 * Omitted → leave existing attachment metadata unchanged.
+		 * Explicit `[]` → clear attachments (only when the message snapshot is accepted).
+		 */
 		attachments?: Array<MailboxAttachmentInput>
-	}) => Promise<{ ok: true }>
+	}) => Promise<{ ok: true; accepted: boolean }>
 	upsertDeliveryEvent: (input: {
+		ownerId: string
 		event: MailboxDeliveryEventInput
 		latestDeliveryStatus?: {
 			messageId: string
 			deliveryStatus: EmailDeliveryStatus
 			deliveryStatusAt: string
 		} | null
-	}) => Promise<{ inserted: boolean; updatedLatestStatus: boolean }>
+	}) => Promise<{
+		inserted: boolean
+		accepted: boolean
+		updatedLatestStatus: boolean
+	}>
 	getThread: (input: {
 		threadId: string
 	}) => Promise<MailboxThreadRecord | null>

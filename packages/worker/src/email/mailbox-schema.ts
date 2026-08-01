@@ -29,48 +29,10 @@ export function setMailboxMeta(
 	)
 }
 
-/** Warm v1 objects lack promoted inbound columns. */
-function ensureDeliveryEventPromotedColumns(
-	sql: SqlStorage,
-	installedVersion: number | null,
-) {
-	if (installedVersion == null || installedVersion >= mailboxSchemaVersion) {
-		return
-	}
-	const columns: Array<string> = [
-		`state TEXT`,
-		`fingerprint TEXT`,
-		`storage_lease TEXT`,
-		`storage_lease_at TEXT`,
-		`cleanup_lease TEXT`,
-		`cleanup_lease_at TEXT`,
-		`cleanup_retry_at TEXT`,
-		`expected_attachment_count INTEGER`,
-		`finalization_token TEXT`,
-		`reconcile_after TEXT`,
-		`dedupe_expires_at TEXT`,
-		`usage_effect_suppressed_at TEXT`,
-		`usage_started_at TEXT`,
-		`usage_effect_retry_at TEXT`,
-		`usage_effect_lease TEXT`,
-		`usage_effect_lease_at TEXT`,
-		`subscription_effect_state TEXT`,
-		`subscription_effect_lease TEXT`,
-		`subscription_effect_lease_at TEXT`,
-		`subscription_effect_retry_at TEXT`,
-		`subscription_effect_attempt_count INTEGER`,
-		`subscription_effect_dead_letter_at TEXT`,
-		`subscription_effect_last_error TEXT`,
-	]
-	for (const column of columns) {
-		try {
-			sql.exec(`ALTER TABLE email_delivery_events ADD COLUMN ${column}`)
-		} catch {
-			// Column already present on a partially migrated object.
-		}
-	}
-}
-
+/**
+ * Schema v1 — coherent ship shape (this DO class has never been deployed).
+ * No warm ALTER migrations; bump `mailboxSchemaVersion` only with a real plan.
+ */
 export function initializeMailboxSchema(storage: DurableObjectStorage) {
 	const sql = storage.sql
 	sql.exec(`
@@ -81,6 +43,20 @@ export function initializeMailboxSchema(storage: DurableObjectStorage) {
 	`)
 	const installedVersion = getMailboxMeta(storage, mailboxMetaSchemaVersionKey)
 	if (installedVersion === mailboxSchemaVersion) return
+
+	/**
+	 * Cloudflare DO runtime does not expose a reverse lookup from the object
+	 * id to the `idFromName` string, so the human owner id is not
+	 * introspectable inside the DO. Ownership for blob-key validation and
+	 * cross-user rejection is an explicit write-contract field, persisted
+	 * once in this singleton row. Data rows still have no `user_id` column.
+	 */
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS mailbox_owner_identity (
+			singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+			owner_id TEXT NOT NULL
+		)
+	`)
 
 	sql.exec(`
 		CREATE TABLE IF NOT EXISTS email_threads (
@@ -276,10 +252,10 @@ export function initializeMailboxSchema(storage: DurableObjectStorage) {
 			subscription_effect_attempt_count INTEGER,
 			subscription_effect_dead_letter_at TEXT,
 			subscription_effect_last_error TEXT,
-			created_at TEXT NOT NULL
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
 		)
 	`)
-	ensureDeliveryEventPromotedColumns(sql, installedVersion)
 	sql.exec(
 		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_message_id
 		ON email_delivery_events(message_id)`,

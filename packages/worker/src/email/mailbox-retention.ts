@@ -1,8 +1,10 @@
+import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 import {
 	mailboxBlobDeleteMaxKeys,
 	mailboxDeliveryEventRetentionDays,
 	mailboxMessageRetentionDays,
 	mailboxRetentionBatchSize,
+	mailboxRetentionContinuationDelayMs,
 	mailboxRetentionRetryDelayMs,
 } from './mailbox-types.ts'
 import { type MailboxStore } from './mailbox-store.ts'
@@ -14,12 +16,54 @@ const deliveryEventRetentionMs =
 export type MailboxRetentionPassResult = {
 	/** True when at least one message blob delete failed (row retained). */
 	hadBlobDeleteFailures: boolean
+	/** True when expired rows remain after a successful bounded pass. */
+	expiredWorkRemaining: boolean
+}
+
+export type MailboxRetentionRescheduleKind =
+	| 'idle'
+	| 'backoff'
+	| 'continue'
+	| 'next-due'
+
+export type MailboxRetentionReschedule = {
+	kind: MailboxRetentionRescheduleKind
+	atMs: number | null
+}
+
+/**
+ * Deterministic next-alarm choice after a retention pass.
+ * - Blob delete failures → hourly backoff only
+ * - Successful pass with expired rows remaining → near-immediate continuation
+ * - Otherwise → future due-time (or idle)
+ */
+export function computeMailboxRetentionReschedule(input: {
+	nowMs: number
+	hadBlobDeleteFailures: boolean
+	expiredWorkRemaining: boolean
+	nextDueAtMs: number | null
+	continuationDelayMs?: number
+	backoffMs?: number
+}): MailboxRetentionReschedule {
+	const backoffMs = input.backoffMs ?? mailboxRetentionRetryDelayMs
+	const continuationDelayMs =
+		input.continuationDelayMs ?? mailboxRetentionContinuationDelayMs
+	if (input.hadBlobDeleteFailures) {
+		return { kind: 'backoff', atMs: input.nowMs + backoffMs }
+	}
+	if (input.expiredWorkRemaining) {
+		return { kind: 'continue', atMs: input.nowMs + continuationDelayMs }
+	}
+	if (input.nextDueAtMs == null) {
+		return { kind: 'idle', atMs: null }
+	}
+	return { kind: 'next-due', atMs: input.nextDueAtMs }
 }
 
 /**
  * Soonest retention due-time from stored rows, or null when empty.
  * Overdue rows yield timestamps in the past — callers must apply retry backoff
- * instead of scheduling at now+1s.
+ * or continuation instead of scheduling at now+1s blindly.
  */
 export function nextMailboxRetentionDueAtMs(
 	store: MailboxStore,
@@ -42,7 +86,7 @@ export function nextMailboxRetentionDueAtMs(
 }
 
 /**
- * Schedule time for the next retention alarm.
+ * Schedule time for the next retention alarm on a write path.
  * - Future due-time → schedule at due-time
  * - Overdue work → bounded hourly backoff (avoids 1s storms on persistent R2 failure)
  */
@@ -79,9 +123,39 @@ async function deleteBlobKeys(
 	}
 }
 
+/**
+ * Build owner-safe R2 keys for an expired message. Never deletes arbitrary
+ * stored key strings — only canonical inbound raw MIME keys and matching
+ * external attachment keys.
+ */
+export function canonicalRetentionBlobKeys(input: {
+	ownerId: string
+	messageId: string
+	direction: 'inbound' | 'outbound'
+	attachments: Array<{ id: string; storage_key: string | null }>
+}): Array<string> {
+	const keys: Array<string> = []
+	if (input.direction === 'inbound') {
+		keys.push(emailRawMimeKey(input.ownerId, input.messageId))
+	}
+	for (const attachment of input.attachments) {
+		if (attachment.storage_key == null) continue
+		const expected = emailAttachmentBlobKey(
+			input.ownerId,
+			input.messageId,
+			attachment.id,
+		)
+		if (attachment.storage_key === expected) {
+			keys.push(expected)
+		}
+	}
+	return keys
+}
+
 async function pruneExpiredMessages(input: {
 	store: MailboxStore
 	blobs: Pick<R2Bucket, 'delete'>
+	ownerId: string
 }): Promise<boolean> {
 	const cutoff = new Date(Date.now() - messageRetentionMs).toISOString()
 	const rows = input.store.listExpiredMessagesForRetention({
@@ -90,26 +164,29 @@ async function pruneExpiredMessages(input: {
 	})
 	if (rows.length === 0) return false
 
-	const attachmentRows = input.store.listAttachmentStorageKeysForMessages(
+	const attachmentRows = input.store.listAttachmentsForRetention(
 		rows.map((row) => row.id),
 	)
-	const attachmentKeysByMessageId = new Map<string, Array<string>>()
+	const attachmentsByMessageId = new Map<
+		string,
+		Array<{ id: string; storage_key: string | null }>
+	>()
 	for (const attachment of attachmentRows) {
-		const keys = attachmentKeysByMessageId.get(attachment.message_id)
-		if (keys) keys.push(attachment.storage_key)
+		const list = attachmentsByMessageId.get(attachment.message_id)
+		if (list) list.push(attachment)
 		else {
-			attachmentKeysByMessageId.set(attachment.message_id, [
-				attachment.storage_key,
-			])
+			attachmentsByMessageId.set(attachment.message_id, [attachment])
 		}
 	}
 
 	let hadBlobDeleteFailures = false
 	for (const row of rows) {
-		const keys = [
-			...(row.raw_mime_key ? [row.raw_mime_key] : []),
-			...(attachmentKeysByMessageId.get(row.id) ?? []),
-		]
+		const keys = canonicalRetentionBlobKeys({
+			ownerId: input.ownerId,
+			messageId: row.id,
+			direction: row.direction,
+			attachments: attachmentsByMessageId.get(row.id) ?? [],
+		})
 		const blobsDeleted = await deleteBlobKeys(input.blobs, keys)
 		if (!blobsDeleted) {
 			hadBlobDeleteFailures = true
@@ -124,14 +201,30 @@ export async function enforceMailboxRetention(input: {
 	store: MailboxStore
 	blobs: Pick<R2Bucket, 'delete'>
 }): Promise<MailboxRetentionPassResult> {
-	const hadBlobDeleteFailures = await pruneExpiredMessages(input)
+	const messageCutoff = new Date(Date.now() - messageRetentionMs).toISOString()
 	const eventCutoff = new Date(
 		Date.now() - deliveryEventRetentionMs,
 	).toISOString()
+
+	const ownerId = input.store.getOwnerId()
+	let hadBlobDeleteFailures = false
+	if (ownerId) {
+		hadBlobDeleteFailures = await pruneExpiredMessages({
+			store: input.store,
+			blobs: input.blobs,
+			ownerId,
+		})
+	}
+
 	input.store.pruneExpiredDeliveryEvents({
 		cutoff: eventCutoff,
 		limit: mailboxRetentionBatchSize,
 	})
 	input.store.pruneOrphanThreads(mailboxRetentionBatchSize)
-	return { hadBlobDeleteFailures }
+
+	const expiredWorkRemaining =
+		input.store.hasExpiredMessages(messageCutoff) ||
+		input.store.hasExpiredDeliveryEvents(eventCutoff)
+
+	return { hadBlobDeleteFailures, expiredWorkRemaining }
 }

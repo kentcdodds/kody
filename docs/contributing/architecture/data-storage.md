@@ -456,6 +456,9 @@ transaction, the rebuild snapshots and restores
 not lost. Runtime types and `ensurePlatformSenderIdentity` provision verified
 rows only.
 
+- Canonical key builders are `emailRawMimeKey` / `emailAttachmentBlobKey` in
+  `packages/worker/src/email/blob-keys.ts` (re-exported from
+  `packages/worker/src/email/repo.ts`).
 - All reads go through `loadRawMime` in `packages/worker/src/email/repo.ts`,
   which fetches the blob by `raw_mime_key` only. Attachment content extraction
   re-parses the resolved MIME from that blob.
@@ -582,27 +585,45 @@ SQLite (`packages/worker/src/email/mailbox-do.ts` and siblings under
 Worker binding is `MAILBOX` (class `Mailbox`; Wrangler SQLite migration tag
 `v22` via `new_sqlite_classes` in `packages/worker/wrangler.jsonc`). Raw MIME
 and outbound attachment bytes stay in `EMAIL_BLOBS` R2; the DO stores object
-keys, not payload bytes.
+keys, not payload bytes. Canonical key builders live in
+`packages/worker/src/email/blob-keys.ts`.
 
 Naming matches `RunLog`, `JobManager`, and `UserMeter`: one object per untrimmed
 stable MCP `userId` via `mailboxDurableObjectName(userId)` →
 `idFromName(userId)` in
-`packages/worker/src/user-scoped-durable-object-name.ts`. There is no `user_id`
-column inside the DO because the object identity is the user.
+`packages/worker/src/user-scoped-durable-object-name.ts`. Data rows have no
+`user_id` column (object identity is the user). Because a Durable Object cannot
+introspect its `idFromName` string, a singleton `mailbox_owner_identity` row
+persists `ownerId` on first write and rejects cross-owner RPCs. That persisted
+owner is also used to validate canonical owner-scoped R2 keys (`emailRawMimeKey`
+/ `emailAttachmentBlobKey`).
 
-**SQLite ownership** (schema version in `mailbox_meta`, currently
-`mailboxSchemaVersion = 2`):
+**SQLite ownership** (schema version in `mailbox_meta`; ships as
+`mailboxSchemaVersion = 1`):
 
+- `mailbox_owner_identity` — singleton `owner_id` for blob-key validation and
+  cross-user write rejection
 - `email_threads`, `email_messages`, `email_attachments`, and
   `email_delivery_events` for the owning user (same logical names as the D1
   tables they will eventually replace)
 - latest per-message delivery status on `email_messages.delivery_status`, kept
   separate from send-request `processing_status`
 
+**Mirror write contract:** `mirrorMessage` and `upsertDeliveryEvent` require
+`ownerId` and apply equal-or-newer `updatedAt` snapshots (stale snapshots are
+ignored, not applied). On `mirrorMessage`, omitting `attachments` preserves
+existing attachment metadata; an explicit `attachments: []` clears them.
+Accepted mirrors validate inbound/outbound `rawMimeKey` and external attachment
+`storageKey` values against the canonical builders for that `ownerId`.
+
 **Retention** is self-enforced inside the DO with alarms
 (`mailboxMessageRetentionDays = 365`, `mailboxDeliveryEventRetentionDays = 90`).
-Alarm-driven deletes are strict blob-before-row for `EMAIL_BLOBS` keys (failed
-blob deletes skip the row for retry), matching today's D1 retention ordering.
+Alarm-driven deletes derive canonical blob keys from `ownerId` + row ids (rather
+than trusting stored key strings), then apply strict blob-before-row ordering
+for `EMAIL_BLOBS` (failed blob deletes skip the row for retry). After a
+retention pass: successful work with expired rows remaining schedules a
+near-immediate continuation (`mailboxRetentionContinuationDelayMs`); R2 delete
+failures use hourly backoff (`mailboxRetentionRetryDelayMs`).
 
 Account deletion calls `Mailbox.purge()` (one RPC per user, no D1 id scan;
 result key `mailboxes`). During expand, `purge` clears DO SQLite / alarm state
@@ -1103,9 +1124,15 @@ App-owned R2 keys are:
   prefix, including historical replacements left by earlier cleanup failures.
 
 - `email-raw:v1:{userId}/{messageId}` — raw email MIME for the message row that
-  stores this key in `email_messages.raw_mime_key`. The `userId` prefix is part
-  of the per-user isolation contract; account deletion deletes a user's blobs by
-  the keys stored on their rows.
+  stores this key in `email_messages.raw_mime_key`. Built by `emailRawMimeKey`
+  in `packages/worker/src/email/blob-keys.ts`. The `userId` prefix is part of
+  the per-user isolation contract; account deletion removes a user's blobs under
+  the matching prefix (and any remaining inventoried keys).
+
+- `email-attachment:v1:{userId}/{messageId}/{attachmentId}` — standalone
+  attachment bytes (`storage_kind = 'external'`). Built by
+  `emailAttachmentBlobKey` in `packages/worker/src/email/blob-keys.ts`. Same
+  per-user prefix isolation and account-deletion coverage as raw MIME.
 
 New R2 key prefixes must add corresponding account-deletion coverage or a
 deliberate retention note, same as KV. All currently registered R2 surfaces use

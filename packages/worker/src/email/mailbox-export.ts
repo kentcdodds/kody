@@ -1,3 +1,4 @@
+import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 import {
 	mailboxBlobRefAttachmentCursorPrefix,
 	mailboxBlobRefRawMimeCursorPrefix,
@@ -183,13 +184,23 @@ function exportPhasePage(
 	}
 }
 
+/**
+ * List owner-safe blob references. Inbound raw MIME keys are always derived
+ * from the canonical helper (even when the stored column is null). External
+ * attachment keys are included only when they match the canonical helper.
+ */
 export function listMailboxBlobReferences(
 	sql: SqlStorage,
 	input: {
+		ownerId: string | null
 		pageSize?: number
 		startAfter?: string | null
 	},
 ): MailboxBlobReferencePage {
+	if (input.ownerId == null) {
+		return { references: [], nextStartAfter: null, truncated: false }
+	}
+	const ownerId = input.ownerId
 	const pageSize = normalizeMailboxPageSize(input.pageSize)
 	const startAfterRaw =
 		typeof input.startAfter === 'string' && input.startAfter.length > 0
@@ -201,9 +212,9 @@ export function listMailboxBlobReferences(
 
 	if (phase === 'raw_mime') {
 		const rows = sql
-			.exec<{ id: string; raw_mime_key: string }>(
-				`SELECT id, raw_mime_key FROM email_messages
-				WHERE raw_mime_key IS NOT NULL AND id > ?
+			.exec<{ id: string }>(
+				`SELECT id FROM email_messages
+				WHERE direction = 'inbound' AND id > ?
 				ORDER BY id ASC
 				LIMIT ?`,
 				startAfterId,
@@ -215,7 +226,7 @@ export function listMailboxBlobReferences(
 		for (const row of pageRows) {
 			references.push({
 				kind: 'raw_mime',
-				key: row.raw_mime_key,
+				key: emailRawMimeKey(ownerId, row.id),
 				messageId: row.id,
 				attachmentId: null,
 			})
@@ -237,6 +248,7 @@ export function listMailboxBlobReferences(
 			}
 		}
 		const attachmentPage = listAttachmentBlobReferences(sql, {
+			ownerId,
 			startAfterId: '',
 			limit: remaining,
 		})
@@ -249,6 +261,7 @@ export function listMailboxBlobReferences(
 	}
 
 	return listAttachmentBlobReferences(sql, {
+		ownerId,
 		startAfterId,
 		limit: remaining,
 	})
@@ -257,6 +270,7 @@ export function listMailboxBlobReferences(
 function listAttachmentBlobReferences(
 	sql: SqlStorage,
 	input: {
+		ownerId: string
 		startAfterId: string
 		limit: number
 	},
@@ -264,30 +278,48 @@ function listAttachmentBlobReferences(
 	if (input.limit <= 0) {
 		return { references: [], nextStartAfter: null, truncated: false }
 	}
+	// Scan past non-canonical keys so callers never receive forgeable refs.
+	const scanLimit = Math.max(input.limit * 4, 32)
 	const rows = sql
-		.exec<{ id: string; message_id: string; storage_key: string }>(
+		.exec<{ id: string; message_id: string; storage_key: string | null }>(
 			`SELECT id, message_id, storage_key FROM email_attachments
-			WHERE storage_key IS NOT NULL AND id > ?
+			WHERE storage_kind = 'external' AND id > ?
 			ORDER BY id ASC
 			LIMIT ?`,
 			input.startAfterId,
-			input.limit + 1,
+			scanLimit,
 		)
 		.toArray()
-	const truncated = rows.length > input.limit
-	const pageRows = truncated ? rows.slice(0, input.limit) : rows
-	const last = pageRows[pageRows.length - 1]
-	return {
-		references: pageRows.map((row) => ({
-			kind: 'attachment' as const,
-			key: row.storage_key,
+	const references: Array<MailboxBlobReference> = []
+	let lastScannedId = input.startAfterId
+	for (const row of rows) {
+		lastScannedId = row.id
+		const expected = emailAttachmentBlobKey(
+			input.ownerId,
+			row.message_id,
+			row.id,
+		)
+		if (row.storage_key !== expected) continue
+		references.push({
+			kind: 'attachment',
+			key: expected,
 			messageId: row.message_id,
 			attachmentId: row.id,
-		})),
-		nextStartAfter:
-			truncated && last
-				? `${mailboxBlobRefAttachmentCursorPrefix}${last.id}`
-				: null,
-		truncated,
+		})
+		if (references.length >= input.limit) {
+			return {
+				references,
+				nextStartAfter: `${mailboxBlobRefAttachmentCursorPrefix}${row.id}`,
+				truncated: true,
+			}
+		}
+	}
+	const maybeMore = rows.length >= scanLimit
+	return {
+		references,
+		nextStartAfter: maybeMore
+			? `${mailboxBlobRefAttachmentCursorPrefix}${lastScannedId}`
+			: null,
+		truncated: maybeMore,
 	}
 }

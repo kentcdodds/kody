@@ -18,11 +18,13 @@ import {
 } from './types.ts'
 import {
 	mailboxInboundDeliveryStateValues,
+	mailboxStorageKindValues,
 	mailboxSubscriptionEffectStateValues,
 	type MailboxAttachmentRecord,
 	type MailboxDeliveryEventRecord,
 	type MailboxInboundDeliveryState,
 	type MailboxMessageRecord,
+	type MailboxStorageKind,
 	type MailboxSubscriptionEffectState,
 	type MailboxThreadRecord,
 } from './mailbox-types.ts'
@@ -60,26 +62,27 @@ export function escapeLikePattern(value: string) {
 	return value.replaceAll(/[\\%_]/g, (character) => `\\${character}`)
 }
 
-function mapInboundState(value: unknown): MailboxInboundDeliveryState | null {
-	if (value == null) return null
-	const state = String(value)
-	return (mailboxInboundDeliveryStateValues as ReadonlyArray<string>).includes(
-		state,
-	)
-		? (state as MailboxInboundDeliveryState)
-		: null
+function requirePersistedEnum<T extends string>(
+	values: ReadonlyArray<T>,
+	value: unknown,
+	label: string,
+): T {
+	const raw = String(value ?? '')
+	if (!(values as ReadonlyArray<string>).includes(raw)) {
+		throw new Error(
+			`Mailbox persisted ${label} is invalid; got ${JSON.stringify(value)}.`,
+		)
+	}
+	return raw as T
 }
 
-function mapSubscriptionEffectState(
+function requireOptionalPersistedEnum<T extends string>(
+	values: ReadonlyArray<T>,
 	value: unknown,
-): MailboxSubscriptionEffectState | null {
+	label: string,
+): T | null {
 	if (value == null) return null
-	const state = String(value)
-	return (
-		mailboxSubscriptionEffectStateValues as ReadonlyArray<string>
-	).includes(state)
-		? (state as MailboxSubscriptionEffectState)
-		: null
+	return requirePersistedEnum(values, value, label)
 }
 
 export function mapMailboxThreadRow(
@@ -105,18 +108,13 @@ export function mapMailboxThreadRow(
 export function mapMailboxMessageRow(
 	row: Record<string, SqlStorageValue>,
 ): MailboxMessageRecord {
-	const direction = String(row['direction'] ?? '')
-	const processingStatus = String(row['processing_status'] ?? '')
-	const classificationRaw = String(row['classification'] ?? 'accepted')
-	const deliveryStatusRaw =
-		row['delivery_status'] == null ? null : String(row['delivery_status'])
 	return {
 		id: String(row['id']),
-		direction: (emailDirectionValues as ReadonlyArray<string>).includes(
-			direction,
-		)
-			? (direction as EmailDirection)
-			: 'inbound',
+		direction: requirePersistedEnum(
+			emailDirectionValues,
+			row['direction'],
+			'direction',
+		) as EmailDirection,
 		inboxId: row['inbox_id'] == null ? null : String(row['inbox_id']),
 		threadId: row['thread_id'] == null ? null : String(row['thread_id']),
 		senderIdentityId:
@@ -153,16 +151,16 @@ export function mapMailboxMessageRow(
 		rawMimeKey:
 			row['raw_mime_key'] == null ? null : String(row['raw_mime_key']),
 		rawSize: row['raw_size'] == null ? null : Number(row['raw_size']) || 0,
-		processingStatus: (
-			emailProcessingStatusValues as ReadonlyArray<string>
-		).includes(processingStatus)
-			? (processingStatus as EmailProcessingStatus)
-			: 'stored',
-		classification: (
-			emailClassificationValues as ReadonlyArray<string>
-		).includes(classificationRaw)
-			? (classificationRaw as EmailClassification)
-			: 'accepted',
+		processingStatus: requirePersistedEnum(
+			emailProcessingStatusValues,
+			row['processing_status'],
+			'processingStatus',
+		) as EmailProcessingStatus,
+		classification: requirePersistedEnum(
+			emailClassificationValues,
+			row['classification'],
+			'classification',
+		) as EmailClassification,
 		classificationReason:
 			row['classification_reason'] == null
 				? null
@@ -171,13 +169,11 @@ export function mapMailboxMessageRow(
 			row['provider_message_id'] == null
 				? null
 				: String(row['provider_message_id']),
-		deliveryStatus:
-			deliveryStatusRaw != null &&
-			(emailDeliveryStatusValues as ReadonlyArray<string>).includes(
-				deliveryStatusRaw,
-			)
-				? (deliveryStatusRaw as EmailDeliveryStatus)
-				: null,
+		deliveryStatus: requireOptionalPersistedEnum(
+			emailDeliveryStatusValues,
+			row['delivery_status'],
+			'deliveryStatus',
+		) as EmailDeliveryStatus | null,
 		deliveryStatusAt:
 			row['delivery_status_at'] == null
 				? null
@@ -202,7 +198,11 @@ export function mapMailboxAttachmentRow(
 		contentId: row['content_id'] == null ? null : String(row['content_id']),
 		disposition: row['disposition'] == null ? null : String(row['disposition']),
 		size: Number(row['size'] ?? 0) || 0,
-		storageKind: String(row['storage_kind']),
+		storageKind: requirePersistedEnum(
+			mailboxStorageKindValues,
+			row['storage_kind'],
+			'storageKind',
+		) as MailboxStorageKind,
 		storageKey: row['storage_key'] == null ? null : String(row['storage_key']),
 		createdAt: String(row['created_at']),
 	}
@@ -211,16 +211,15 @@ export function mapMailboxAttachmentRow(
 export function mapMailboxDeliveryEventRow(
 	row: Record<string, SqlStorageValue>,
 ): MailboxDeliveryEventRecord {
-	const eventType = String(row['event_type'] ?? '')
 	return {
 		id: String(row['id']),
 		messageId: row['message_id'] == null ? null : String(row['message_id']),
 		inboxId: row['inbox_id'] == null ? null : String(row['inbox_id']),
-		eventType: (emailDeliveryEventTypeValues as ReadonlyArray<string>).includes(
-			eventType,
-		)
-			? (eventType as EmailDeliveryEventType)
-			: 'received',
+		eventType: requirePersistedEnum(
+			emailDeliveryEventTypeValues,
+			row['event_type'],
+			'eventType',
+		) as EmailDeliveryEventType,
 		provider: row['provider'] == null ? null : String(row['provider']),
 		providerMessageId:
 			row['provider_message_id'] == null
@@ -232,7 +231,11 @@ export function mapMailboxDeliveryEventRow(
 				: String(row['provider_event_id']),
 		detailJson: String(row['detail_json'] ?? '{}'),
 		needsEffectReconcile: Number(row['needs_effect_reconcile'] ?? 0) === 1,
-		state: mapInboundState(row['state']),
+		state: requireOptionalPersistedEnum(
+			mailboxInboundDeliveryStateValues,
+			row['state'],
+			'state',
+		) as MailboxInboundDeliveryState | null,
 		fingerprint: row['fingerprint'] == null ? null : String(row['fingerprint']),
 		storageLease:
 			row['storage_lease'] == null ? null : String(row['storage_lease']),
@@ -287,9 +290,11 @@ export function mapMailboxDeliveryEventRow(
 			row['usage_effect_lease_at'] == null
 				? null
 				: String(row['usage_effect_lease_at']),
-		subscriptionEffectState: mapSubscriptionEffectState(
+		subscriptionEffectState: requireOptionalPersistedEnum(
+			mailboxSubscriptionEffectStateValues,
 			row['subscription_effect_state'],
-		),
+			'subscriptionEffectState',
+		) as MailboxSubscriptionEffectState | null,
 		subscriptionEffectLease:
 			row['subscription_effect_lease'] == null
 				? null
@@ -315,5 +320,6 @@ export function mapMailboxDeliveryEventRow(
 				? null
 				: String(row['subscription_effect_last_error']),
 		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
 	}
 }
