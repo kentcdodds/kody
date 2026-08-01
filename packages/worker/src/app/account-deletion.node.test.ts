@@ -20,6 +20,7 @@ import {
 	consoleError,
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
@@ -513,6 +514,7 @@ function createSuccessfulDeletionEnv(
 ) {
 	const durableObjectId = (name: string) => name as unknown as DurableObjectId
 	const fetchOk = async () => Response.json({ ok: true })
+	const userMeter = createInMemoryUserMeterEnv()
 	return {
 		APP_DB: db,
 		CAPABILITY_VECTOR_INDEX: {
@@ -529,10 +531,7 @@ function createSuccessfulDeletionEnv(
 				listStorageIds: async () => [] as Array<string>,
 			}),
 		},
-		USER_METER: {
-			idFromName: durableObjectId,
-			get: () => ({ purge: async () => ({ ok: true as const }) }),
-		},
+		USER_METER: userMeter.env.USER_METER,
 		STRIPE_PLAN_REFRESH: {
 			idFromName: durableObjectId,
 			get: () => ({ purgeUser: async () => ({ ok: true as const }) }),
@@ -1131,6 +1130,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const purgeMcpAgentSessionMock = vi.fn(async () => undefined)
 	const doFetchMock = vi.fn(async () => Response.json({ ok: true }))
 	const deleteVectorsMock = vi.fn(async () => undefined)
+	const userMeter = createInMemoryUserMeterEnv()
 	const env = createSuccessfulDeletionEnv(db, {
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: communityAssets,
@@ -1150,8 +1150,11 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			}),
 		},
 		USER_METER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ purge: purgeUserMeterMock }),
+			idFromName: (name: string) => userMeter.env.USER_METER!.idFromName(name),
+			get: (id: DurableObjectId) => ({
+				...userMeter.env.USER_METER!.get(id),
+				purge: async () => purgeUserMeterMock(),
+			}),
 		},
 		STRIPE_PLAN_REFRESH: {
 			idFromName: stripePlanRefreshIdFromNameMock,

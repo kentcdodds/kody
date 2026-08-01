@@ -40,6 +40,7 @@ export const adminAccountWriteLeaseRepairCapability = defineDomainCapability(
 						expectedAcquiredAt: args.expected_acquired_at,
 						repairedByUserId,
 						reason: args.reason,
+						env: ctx.env,
 					})
 					return {
 						repaired: result.repaired,

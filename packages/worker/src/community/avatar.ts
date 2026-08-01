@@ -4,6 +4,7 @@ import {
 	assertAccountWritableDb,
 	withAccountWriteLease,
 } from '#worker/account/deletion-state.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import {
 	readJpegDimensions,
 	readPngDimensions,
@@ -146,7 +147,7 @@ async function sha256Hex(bytes: Uint8Array) {
 }
 
 export async function saveUserAvatar(input: {
-	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'>
+	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'> & UserMeterEnv
 	numericUserId: number
 	stableUserId: string
 	bytes: Uint8Array
@@ -155,6 +156,7 @@ export async function saveUserAvatar(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.stableUserId,
+		env: input.env,
 		async write() {
 			await assertAccountWritableDb(input.env.APP_DB, input.stableUserId)
 			const contentHash = await sha256Hex(input.bytes)
@@ -226,13 +228,14 @@ export async function saveUserAvatar(input: {
 }
 
 export async function deleteUserAvatar(input: {
-	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'>
+	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'> & UserMeterEnv
 	numericUserId: number
 	stableUserId: string
 }): Promise<void> {
 	await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.stableUserId,
+		env: input.env,
 		async write() {
 			await assertAccountWritableDb(input.env.APP_DB, input.stableUserId)
 			const existing = await input.env.APP_DB.prepare(

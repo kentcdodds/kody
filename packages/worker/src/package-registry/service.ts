@@ -222,6 +222,8 @@ export async function refreshSavedPackageProjection(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
+		waitUntil: input.waitUntil,
 		async write() {
 			const shouldRebuildArtifacts = input.rebuildArtifacts ?? true
 			const loaded = shouldRebuildArtifacts
@@ -455,6 +457,7 @@ export async function deleteSavedPackageProjection(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		async write() {
 			const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 				userId: input.userId,

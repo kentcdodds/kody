@@ -1064,6 +1064,7 @@ export async function deleteUserAccount(input: {
 	const activeWriteCount = await markAccountDeleting({
 		db: input.env.APP_DB,
 		dbUserId: input.dbUserId,
+		env: input.env,
 	})
 	if (activeWriteCount > 0) {
 		throw new AccountDeletionWritersActiveError(activeWriteCount)

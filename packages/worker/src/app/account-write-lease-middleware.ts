@@ -39,6 +39,7 @@ export function createAccountWriteLeaseMiddleware(env: Env): Middleware {
 				db: env.APP_DB,
 				stableUserId: auth.user.mcpUser.userId,
 				holder: `web:${request.method} ${url.pathname}`,
+				env,
 				write: next,
 			})
 		} catch (error) {

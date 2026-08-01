@@ -1,5 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
+import {
+	userMeterNamespace,
+	userMeterRpc,
+	type UserMeterEnv,
+} from '#worker/entitlements/user-meter-client.ts'
 
 export class AccountDeletionInProgressError extends Error {
 	constructor() {
@@ -34,10 +39,31 @@ export type AccountWriteLease = {
 	acquiredAt: string
 }
 
+const accountDeletionShadowFailedLog =
+	'account-deletion-user-meter-shadow-failed'
+
+function scheduleAccountDeletionShadow(input: {
+	env?: UserMeterEnv
+	waitUntil?: (promise: Promise<unknown>) => void
+	task: (env: UserMeterEnv) => Promise<void>
+}): Promise<void> {
+	const env = input.env
+	if (!env || !userMeterNamespace(env)) return Promise.resolve()
+	const tracked = input.task(env).catch((error: unknown) => {
+		console.warn(accountDeletionShadowFailedLog, error)
+	})
+	if (input.waitUntil) input.waitUntil(tracked)
+	return tracked
+}
+
 export async function markAccountDeleting(input: {
 	db: D1Database
 	dbUserId: number
 	now?: Date
+	/** Optional expand-phase UserMeter shadow after a successful D1 mark. */
+	env?: UserMeterEnv
+	/** Prefer `ctx.waitUntil`; awaited (non-rejecting) when omitted. */
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const now = utcSqliteTimestamp(input.now ?? new Date())
 	const result = await input.db
@@ -61,6 +87,29 @@ export async function markAccountDeleting(input: {
 		)
 		.bind(input.dbUserId)
 		.first<{ count: number }>()
+	if (input.env && userMeterNamespace(input.env)) {
+		const userRow = await input.db
+			.prepare(
+				`SELECT stable_user_id, deleting_at
+				FROM users
+				WHERE id = ?`,
+			)
+			.bind(input.dbUserId)
+			.first<{ stable_user_id: string; deleting_at: string | null }>()
+		if (userRow?.stable_user_id && userRow.deleting_at) {
+			const { stable_user_id: stableUserId, deleting_at: deletingAt } = userRow
+			const markShadowPromise = scheduleAccountDeletionShadow({
+				env: input.env,
+				waitUntil: input.waitUntil,
+				task: async (env) => {
+					await userMeterRpc({ env, userId: stableUserId }).shadowMarkDeleting({
+						deletingAt,
+					})
+				},
+			})
+			if (!input.waitUntil) await markShadowPromise
+		}
+	}
 	return Number(row?.count ?? 0)
 }
 
@@ -107,6 +156,8 @@ export async function withAccountWriteLease<T>(input: {
 	stableUserId: string
 	holder?: string
 	waitUntil?: (promise: Promise<unknown>) => void
+	/** Optional expand-phase UserMeter shadow after D1 acquire/release. */
+	env?: UserMeterEnv
 	write: () => Promise<T>
 }) {
 	const heldLeases = heldAccountWriteLeaseStorage.getStore()
@@ -130,6 +181,7 @@ async function acquireAccountWriteLeaseAndWrite<T>(input: {
 	stableUserId: string
 	holder?: string
 	waitUntil?: (promise: Promise<unknown>) => void
+	env?: UserMeterEnv
 	frame: AccountWriteLeaseFrame
 	write: () => Promise<T>
 }) {
@@ -228,6 +280,21 @@ async function acquireAccountWriteLeaseAndWrite<T>(input: {
 	) {
 		throw new AccountDeletionInProgressError()
 	}
+	// Hold acquire so a detached release shadow cannot land first.
+	const acquireShadowPromise = scheduleAccountDeletionShadow({
+		env: input.env,
+		waitUntil: input.waitUntil,
+		task: async (env) => {
+			await userMeterRpc({
+				env,
+				userId: lease.stableUserId,
+			}).shadowAcquireWriteLease({
+				token: lease.token,
+				holder: lease.holder,
+				acquiredAt: lease.acquiredAt,
+			})
+		},
+	})
 	try {
 		const result = await input.write()
 		const held = await input.db
@@ -292,6 +359,20 @@ async function acquireAccountWriteLeaseAndWrite<T>(input: {
 		const releasePromise = release()
 		if (input.waitUntil) input.waitUntil(releasePromise)
 		else await releasePromise
+		// Ordered after D1 release; await when waitUntil is omitted.
+		const releaseShadowPromise = scheduleAccountDeletionShadow({
+			env: input.env,
+			waitUntil: input.waitUntil,
+			task: async (env) => {
+				await releasePromise
+				await acquireShadowPromise
+				await userMeterRpc({
+					env,
+					userId: lease.stableUserId,
+				}).shadowReleaseWriteLease({ token: lease.token })
+			},
+		})
+		if (!input.waitUntil) await releaseShadowPromise
 	}
 }
 
@@ -318,6 +399,10 @@ export async function repairAccountWriteLease(input: {
 	expectedAcquiredAt: string
 	repairedByUserId: string
 	reason: string
+	/** Optional expand-phase UserMeter shadow after a successful D1 repair. */
+	env?: UserMeterEnv
+	/** Prefer `ctx.waitUntil`; awaited (non-rejecting) when omitted. */
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	if (input.reason.trim().length < 10) {
 		throw new Error('Lease repair requires a detailed audit reason.')
@@ -377,5 +462,16 @@ export async function repairAccountWriteLease(input: {
 	) {
 		throw new Error('Active account write lease did not match repair request.')
 	}
+	const repairShadowPromise = scheduleAccountDeletionShadow({
+		env: input.env,
+		waitUntil: input.waitUntil,
+		task: async (env) => {
+			await userMeterRpc({
+				env,
+				userId: input.stableUserId,
+			}).shadowReleaseWriteLease({ token: input.token })
+		},
+	})
+	if (!input.waitUntil) await repairShadowPromise
 	return { repaired: true as const, repairId }
 }
