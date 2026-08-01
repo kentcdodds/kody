@@ -25,6 +25,7 @@ const { dispatchScheduledLanes, handleScheduledDispatchQueue } =
 function createQueueMessage(input: {
 	id: string
 	lane: 'reconcile_artifacts_pushes' | 'repo_session_cleanup'
+	extraBody?: Record<string, unknown>
 }) {
 	return {
 		id: input.id,
@@ -34,6 +35,7 @@ function createQueueMessage(input: {
 			lane: input.lane,
 			scheduledTime: Date.parse('2026-08-01T06:00:00.000Z'),
 			cron: '*/5 * * * *',
+			...input.extraBody,
 		},
 		ack: vi.fn(),
 		retry: vi.fn(),
@@ -115,4 +117,22 @@ test('a deliberately slow lane invocation does not delay its sibling invocation'
 	releaseSlowLane?.()
 	await slowInvocation
 	expect(slowMessage.ack).toHaveBeenCalledTimes(1)
+})
+
+test('lane failures are logged once and left for the next cron tick', async () => {
+	mocks.runScheduledLaneWithFailureIsolation.mockResolvedValueOnce('failed')
+	const message = createQueueMessage({
+		id: 'failed',
+		lane: 'repo_session_cleanup',
+		extraBody: { producerVersion: 2 },
+	})
+
+	await handleScheduledDispatchQueue(
+		createBatch(message),
+		{} as Env,
+		{} as ExecutionContext,
+	)
+
+	expect(message.ack).toHaveBeenCalledTimes(1)
+	expect(message.retry).not.toHaveBeenCalled()
 })

@@ -1,5 +1,9 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
+import {
+	AccountDeletionInProgressError,
+	withAccountWriteLease,
+} from '#worker/account/deletion-state.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { stripePlanRefreshBackstopDelayMs } from './stripe-plan-refresh-client.ts'
 import { refreshStripePlanForUser } from './subscription-sync.ts'
@@ -49,12 +53,37 @@ class StripePlanRefreshBase extends DurableObject<Env> {
 			await this.ctx.storage.deleteAll()
 			return
 		}
+		const customerId = user.stripe_customer_id
 
-		await refreshStripePlanForUser({
-			env: this.env,
-			userId: user.id,
-			customerId: user.stripe_customer_id,
-		})
+		try {
+			await withAccountWriteLease({
+				db: this.env.APP_DB,
+				stableUserId: userId,
+				holder: 'stripe_plan_refresh_alarm',
+				write: async () => {
+					await refreshStripePlanForUser({
+						env: this.env,
+						userId: user.id,
+						customerId,
+					})
+				},
+			})
+		} catch (error) {
+			if (error instanceof AccountDeletionInProgressError) {
+				await this.ctx.storage.deleteAll()
+				return
+			}
+			console.error('stripe_plan_refresh_alarm_failed', { userId, error })
+			Sentry.withScope((scope) => {
+				scope.setTag('billing.operation', 'stripe_plan_refresh_alarm')
+				scope.setContext('stripe_plan_refresh', { userId })
+				Sentry.captureException(error)
+			})
+			await this.ctx.storage.setAlarm(
+				Date.now() + stripePlanRefreshBackstopDelayMs,
+			)
+			return
+		}
 		console.info('stripe_plan_refresh_alarm', {
 			userId,
 			status: 'refreshed',

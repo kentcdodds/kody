@@ -1115,6 +1115,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const clearStorageMock = vi.fn(async () => ({ ok: true as const }))
 	const clearRunLogMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeUserMeterMock = vi.fn(async () => ({ ok: true as const }))
+	const purgeStripePlanRefreshMock = vi.fn(async () => ({ ok: true as const }))
+	const stripePlanRefreshIdFromNameMock = vi.fn(
+		(name: string) => name as unknown as DurableObjectId,
+	)
 	const purgeJobManagerMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
@@ -1143,6 +1147,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		USER_METER: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({ purge: purgeUserMeterMock }),
+		},
+		STRIPE_PLAN_REFRESH: {
+			idFromName: stripePlanRefreshIdFromNameMock,
+			get: () => ({ purgeUser: purgeStripePlanRefreshMock }),
 		},
 		JOB_MANAGER: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
@@ -1445,6 +1453,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		storageRunners: 6,
 		runLogs: 1,
 		userMeters: 1,
+		stripePlanRefreshes: 1,
 		jobManagers: 1,
 		repoSessions: 1,
 		remoteConnectorSessions: 1,
@@ -1458,6 +1467,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	})
 	expect(clearRunLogMock).toHaveBeenCalledTimes(1)
 	expect(purgeUserMeterMock).toHaveBeenCalledTimes(1)
+	expect(stripePlanRefreshIdFromNameMock).toHaveBeenCalledWith(userAaa)
+	expect(purgeStripePlanRefreshMock).toHaveBeenCalledWith({ userId: userAaa })
 	expect(purgeMcpClientHubMock).toHaveBeenCalledTimes(1)
 	expect(purgeMcpAgentSessionMock).toHaveBeenCalledWith({
 		userId: userAaa,

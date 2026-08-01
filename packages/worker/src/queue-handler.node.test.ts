@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { scheduledDispatchQueueName } from '#worker/scheduled/scheduled-dispatch-queue-names.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -31,10 +32,6 @@ vi.mock('#worker/scheduled/scheduled-dispatch-queue.ts', () => ({
 	handleScheduledDispatchQueue: mocks.handleScheduledDispatchQueue,
 }))
 
-vi.mock('#worker/scheduled/scheduled-dispatch-queue-names.ts', () => ({
-	scheduledDispatchQueueName: 'kody-scheduled-dispatch',
-}))
-
 const { handleQueueBatch } = await import('./queue-handler.ts')
 
 function createBatch(queue: string) {
@@ -53,7 +50,7 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	const emailBatch = createBatch('kody-email-delivery')
 	const feedbackBatch = createBatch('kody-platform-feedback-dispatch')
 	const communityActivityBatch = createBatch('kody-community-activity-dispatch')
-	const scheduledBatch = createBatch('kody-scheduled-dispatch')
+	const scheduledBatch = createBatch(scheduledDispatchQueueName)
 	const unknownBatch = createBatch('unexpected-queue')
 
 	await handleQueueBatch(emailBatch, env, ctx)

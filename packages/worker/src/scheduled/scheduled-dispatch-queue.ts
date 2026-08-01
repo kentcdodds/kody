@@ -1,11 +1,10 @@
+import * as Sentry from '@sentry/cloudflare'
 import {
 	getScheduledLanes,
 	isScheduledLaneName,
 	runScheduledLaneWithFailureIsolation,
 	type ScheduledLaneMessage,
 } from './scheduled-lanes.ts'
-
-const scheduledLaneRetryDelaySeconds = 30
 
 function parseScheduledLaneMessage(body: unknown): ScheduledLaneMessage | null {
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return null
@@ -14,7 +13,6 @@ function parseScheduledLaneMessage(body: unknown): ScheduledLaneMessage | null {
 	const scheduledTime = record['scheduledTime']
 	const cron = record['cron']
 	if (
-		Object.keys(record).length !== 3 ||
 		!isScheduledLaneName(lane) ||
 		typeof scheduledTime !== 'number' ||
 		!Number.isFinite(scheduledTime) ||
@@ -56,6 +54,15 @@ export async function dispatchScheduledLanes(input: {
 				} satisfies ScheduledLaneMessage)
 			} catch (error) {
 				console.error(`scheduled_lane_dispatch_failed lane=${lane}`, error)
+				Sentry.withScope((scope) => {
+					scope.setTag('scheduled.lane', lane)
+					scope.setContext('scheduled_dispatch', {
+						lane,
+						scheduledTime: scheduledAt.toISOString(),
+						cron: input.controller.cron,
+					})
+					Sentry.captureException(error)
+				})
 			}
 		}),
 	)
@@ -75,11 +82,7 @@ export async function handleScheduledDispatchQueue(
 			queueMessage.ack()
 			continue
 		}
-		const status = await runScheduledLaneWithFailureIsolation({ env, message })
-		if (status === 'completed') {
-			queueMessage.ack()
-			continue
-		}
-		queueMessage.retry({ delaySeconds: scheduledLaneRetryDelaySeconds })
+		await runScheduledLaneWithFailureIsolation({ env, message })
+		queueMessage.ack()
 	}
 }

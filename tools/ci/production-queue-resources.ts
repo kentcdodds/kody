@@ -59,6 +59,29 @@ function readQueueConsumer(input: {
 	}
 }
 
+function readQueueProducer(input: {
+	producers: Array<unknown>
+	binding: string
+	queueName: string
+	configPath: string
+}) {
+	const producer = input.producers.find((entry) => {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+			return false
+		return (entry as Record<string, unknown>).binding === input.binding
+	})
+	if (
+		!producer ||
+		typeof producer !== 'object' ||
+		Array.isArray(producer) ||
+		(producer as Record<string, unknown>).queue !== input.queueName
+	) {
+		throw new Error(
+			`wrangler config "${input.configPath}" must bind "${input.binding}" to "${input.queueName}".`,
+		)
+	}
+}
+
 export function parseProductionQueueResources(input: {
 	productionEnv: Record<string, unknown>
 	configPath: string
@@ -109,63 +132,24 @@ export function parseProductionQueueResources(input: {
 			`wrangler config "${input.configPath}" must define production Queue producers.`,
 		)
 	}
-	const platformFeedbackProducer = producers.find((entry) => {
-		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
-			return false
-		return (
-			(entry as Record<string, unknown>).binding ===
-			platformFeedbackDispatchQueueBinding
-		)
+	readQueueProducer({
+		producers,
+		binding: platformFeedbackDispatchQueueBinding,
+		queueName: platformFeedbackDispatchQueueName,
+		configPath: input.configPath,
 	})
-	if (
-		!platformFeedbackProducer ||
-		typeof platformFeedbackProducer !== 'object' ||
-		Array.isArray(platformFeedbackProducer) ||
-		(platformFeedbackProducer as Record<string, unknown>).queue !==
-			platformFeedbackDispatchQueueName
-	) {
-		throw new Error(
-			`wrangler config "${input.configPath}" must bind "${platformFeedbackDispatchQueueBinding}" to "${platformFeedbackDispatchQueueName}".`,
-		)
-	}
-	const communityActivityProducer = producers.find((entry) => {
-		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
-			return false
-		return (
-			(entry as Record<string, unknown>).binding ===
-			communityActivityDispatchQueueBinding
-		)
+	readQueueProducer({
+		producers,
+		binding: communityActivityDispatchQueueBinding,
+		queueName: communityActivityDispatchQueueName,
+		configPath: input.configPath,
 	})
-	if (
-		!communityActivityProducer ||
-		typeof communityActivityProducer !== 'object' ||
-		Array.isArray(communityActivityProducer) ||
-		(communityActivityProducer as Record<string, unknown>).queue !==
-			communityActivityDispatchQueueName
-	) {
-		throw new Error(
-			`wrangler config "${input.configPath}" must bind "${communityActivityDispatchQueueBinding}" to "${communityActivityDispatchQueueName}".`,
-		)
-	}
-	const scheduledDispatchProducer = producers.find((entry) => {
-		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
-			return false
-		return (
-			(entry as Record<string, unknown>).binding ===
-			scheduledDispatchQueueBinding
-		)
+	readQueueProducer({
+		producers,
+		binding: scheduledDispatchQueueBinding,
+		queueName: scheduledDispatchQueueName,
+		configPath: input.configPath,
 	})
-	if (
-		!scheduledDispatchProducer ||
-		typeof scheduledDispatchProducer !== 'object' ||
-		Array.isArray(scheduledDispatchProducer) ||
-		(scheduledDispatchProducer as Record<string, unknown>).queue !==
-			scheduledDispatchQueueName
-	) {
-		throw new Error(
-			`wrangler config "${input.configPath}" must bind "${scheduledDispatchQueueBinding}" to "${scheduledDispatchQueueName}".`,
-		)
-	}
 	return {
 		emailDeliveryQueueName: emailDelivery.queue,
 		emailDeliveryDeadLetterQueueName: emailDelivery.deadLetterQueue,

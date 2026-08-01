@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:test'
+import { env, runInDurableObject } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -176,6 +176,14 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 		stripe_plan: 'pro',
 		stripe_plan_refreshed_at: now.toISOString(),
 	})
+	const refreshAlarm = env.STRIPE_PLAN_REFRESH.get(
+		env.STRIPE_PLAN_REFRESH.idFromName(user.stableUserId),
+	)
+	expect(
+		await runInDurableObject(refreshAlarm, async (_instance, state) =>
+			state.storage.getAlarm(),
+		),
+	).toBeTypeOf('number')
 
 	vi.unstubAllGlobals()
 })

@@ -148,7 +148,7 @@ primitives:
     name: Stripe billing
     summary:
       Authenticated Checkout Session creation, Stripe webhooks, customer
-      linking, and subscription→plan sync (cron poll as backup).
+      linking, and subscription→plan sync with per-user activity-driven alarms.
     code:
       - packages/worker/src/billing/
       - packages/worker/src/app/handlers/stripe-webhook.ts

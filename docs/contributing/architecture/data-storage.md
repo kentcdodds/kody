@@ -743,13 +743,15 @@ pushed the session commit to the source Artifacts repo.
 
 `packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for
 external pushes that were not followed by an explicit
-`package_publish_external_push` call. The Worker cron dispatcher runs every five
-minutes (`wrangler.jsonc` `*/5 * * * *`) and sends each due maintenance lane to
-`kody-scheduled-dispatch`. The consumer is configured for one message per
-invocation with independent concurrency, so a slow reconcile cannot consume the
-runtime budget of retention, OAuth purge, or another sibling lane. A write-token
-mint sets the source's `external_check_until` to the token expiry plus a
-one-hour grace period. The normal pass only scans these pending sources, using
+`package_publish_external_push` call. In production, the Worker cron dispatcher
+runs every five minutes (`wrangler.jsonc` `*/5 * * * *`) and sends each due
+maintenance lane to `kody-scheduled-dispatch`. The consumer is configured for
+one message per invocation with independent concurrency, so a slow reconcile
+cannot consume the runtime budget of retention, OAuth purge, or another sibling
+lane. Preview and local runtimes execute the same registry inline when the
+production-only queue binding is unavailable. A write-token mint sets the
+source's `external_check_until` to the token expiry plus a one-hour grace
+period. The normal pass only scans these pending sources, using
 `last_external_check_at` for the five-minute cadence and keyset paging until the
 pending queue is drained or a wall-clock time budget (`reconcileTimeBudgetMs`,
 ~60 seconds) is exhausted. Dormant package sources no longer incur an Artifacts
@@ -775,9 +777,11 @@ Artifacts tokens.
 Reconcile runs through the registry in
 `packages/worker/src/scheduled/scheduled-lanes.ts`, alongside repo-session
 cleanup, system-email retention, general retention, job retention, and hourly
-usage-rollup aggregation. Each queue message preserves the existing
-`scheduled_lane_failed` / D1 lock-contention log and Sentry context. Failed
-messages retry independently and cannot abort or mask sibling invocations.
+usage-rollup aggregation. Each production queue message preserves the existing
+`scheduled_lane_failed` / D1 lock-contention log and Sentry context. A handled
+lane failure is acknowledged and retried by the next cron tick, matching the old
+cron semantics; Queue transport failures retain the configured retry/DLQ
+behavior. No failure can abort or mask a sibling invocation.
 
 Production note:
 
@@ -1042,15 +1046,16 @@ migration plan.
 
 The Worker cron dispatcher runs every five minutes, but
 `packages/worker/src/app/retention.ts` gates the general retention job to the
-top of the hour and dispatches it as its own queue invocation. Each hourly run
-loops in round-robin passes over the policy tables — every pending table gets
-one configured batch before any table gets a second one — until every table is
-drained or the run's time budget (`retentionRunTimeBudgetMs`, ~20 seconds
-measured with `Date.now`) is exhausted. The first pass always completes so a hot
-table cannot starve the others, and per-batch sizes stay small to bound D1
-single-writer pressure. Progress is reported with a one-line `retention-prune`
-log that includes batches-per-table counts and whether the budget ran out. The
-retention module owns the named constants and manifest, and
+top of the hour. Production dispatches it as its own queue invocation; preview
+and local runtimes run it inline. Each hourly run loops in round-robin passes
+over the policy tables — every pending table gets one configured batch before
+any table gets a second one — until every table is drained or the run's time
+budget (`retentionRunTimeBudgetMs`, ~20 seconds measured with `Date.now`) is
+exhausted. The first pass always completes so a hot table cannot starve the
+others, and per-batch sizes stay small to bound D1 single-writer pressure.
+Progress is reported with a one-line `retention-prune` log that includes
+batches-per-table counts and whether the budget ran out. The retention module
+owns the named constants and manifest, and
 `packages/worker/src/app/retention.node.test.ts` fails if a future
 growth-pattern D1 table is added without either a policy or a documented
 exemption.
