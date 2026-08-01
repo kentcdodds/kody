@@ -42,8 +42,7 @@ function readQueueConsumer(input: {
 	const consumer = value as Record<string, unknown>
 	if (
 		consumer.dead_letter_queue !== input.deadLetterQueueName ||
-		consumer.max_batch_size !==
-			(input.maxBatchSize ?? expectedMaxBatchSize) ||
+		consumer.max_batch_size !== (input.maxBatchSize ?? expectedMaxBatchSize) ||
 		consumer.max_batch_timeout !==
 			(input.maxBatchTimeout ?? expectedMaxBatchTimeout) ||
 		consumer.max_retries !== expectedMaxRetries ||

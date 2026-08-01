@@ -108,8 +108,7 @@ test('production queue config requires all consumers and consistent producers', 
 	const missingCommunityProducer = createProductionEnv()
 	missingCommunityProducer.queues.producers =
 		missingCommunityProducer.queues.producers.filter(
-			(producer) =>
-				producer.binding !== 'COMMUNITY_ACTIVITY_DISPATCH_QUEUE',
+			(producer) => producer.binding !== 'COMMUNITY_ACTIVITY_DISPATCH_QUEUE',
 		)
 	expect(() =>
 		parseProductionQueueResources({

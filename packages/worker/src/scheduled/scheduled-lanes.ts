@@ -1,6 +1,12 @@
 import * as Sentry from '@sentry/cloudflare'
-import { checkAuthDenialBurstAndNotify, shouldRunAuthDenialAlertCron } from '#app/auth-denial-alerts.ts'
-import { checkEmailDeliveryBurstAndNotify, shouldRunEmailDeliveryAlertCron } from '#app/email-delivery-alerts.ts'
+import {
+	checkAuthDenialBurstAndNotify,
+	shouldRunAuthDenialAlertCron,
+} from '#app/auth-denial-alerts.ts'
+import {
+	checkEmailDeliveryBurstAndNotify,
+	shouldRunEmailDeliveryAlertCron,
+} from '#app/email-delivery-alerts.ts'
 import { pruneRetention, shouldRunRetentionCron } from '#app/retention.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
@@ -19,7 +25,6 @@ import {
 	shouldRunJobScheduleWatchdogCron,
 } from '#worker/jobs/job-schedule-watchdog.ts'
 import { reconcileArtifactsPushes } from '#worker/jobs/reconcile-artifacts-pushes.ts'
-import { OAuthPurgeCoordinator } from '#worker/oauth-purge.ts'
 import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts'
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import {
@@ -53,7 +58,9 @@ export type ScheduledLaneMessage = {
 	cron: string
 }
 
-export function isScheduledLaneName(value: unknown): value is ScheduledLaneName {
+export function isScheduledLaneName(
+	value: unknown,
+): value is ScheduledLaneName {
 	return (
 		typeof value === 'string' &&
 		(scheduledLaneNames as ReadonlyArray<string>).includes(value)

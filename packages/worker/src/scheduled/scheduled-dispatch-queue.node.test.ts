@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as ScheduledLanesModule from './scheduled-lanes.ts'
 
 const mocks = vi.hoisted(() => ({
 	getScheduledLanes: vi.fn(() => [
@@ -9,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('./scheduled-lanes.ts', async (importOriginal) => {
-	const original = await importOriginal<typeof import('./scheduled-lanes.ts')>()
+	const original = await importOriginal<typeof ScheduledLanesModule>()
 	return {
 		...original,
 		getScheduledLanes: mocks.getScheduledLanes,
@@ -18,9 +19,8 @@ vi.mock('./scheduled-lanes.ts', async (importOriginal) => {
 	}
 })
 
-const { dispatchScheduledLanes, handleScheduledDispatchQueue } = await import(
-	'./scheduled-dispatch-queue.ts'
-)
+const { dispatchScheduledLanes, handleScheduledDispatchQueue } =
+	await import('./scheduled-dispatch-queue.ts')
 
 function createQueueMessage(input: {
 	id: string

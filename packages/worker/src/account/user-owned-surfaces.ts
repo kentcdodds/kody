@@ -299,7 +299,9 @@ export function getAccountExportExcludedDurableObjects(): Array<{
 			'repo_session',
 			'package_realtime_session',
 			'stripe_plan_refresh',
-		] satisfies Array<keyof typeof accountExportExcludedDurableObjectDisplayNames>
+		] satisfies Array<
+			keyof typeof accountExportExcludedDurableObjectDisplayNames
+		>
 	).map((id) => {
 		const surface = accountUserOwnedDurableObjectSurfaces.find(
 			(candidate) => candidate.id === id,

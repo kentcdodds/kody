@@ -516,15 +516,17 @@ are idempotent), then recorded. A UNIQUE conflict after a successful process is
 treated as duplicate success (`200`). Process failures return `500` without
 inserting so Stripe can retry. Rows older than 30 days are pruned by retention.
 
-### Poll backup
+### Activity-driven backup
 
-`users.stripe_plan` also stays fresh via an hourly cron lane
-(`refreshStaleStripePlans`: 25 users/sweep, 1h staleness) and an on-page refresh
-every time `/account/billing` loads (always calls Stripe so non-persisted
-`cancel_at` / `subscriptionStatus` stay current). Keep the poll as a backup if a
-webhook is missed or the success URL is never hit. Migration
+The global hourly customer scan is retired. Checkout completion and
+subscription/invoice webhooks refresh immediately and also arm the owning user's
+one-shot `StripePlanRefresh` Durable Object alarm for one hour later. That
+independent retry closes over transient Stripe failures without repeatedly
+enumerating inactive users. `/account/billing` still refreshes on every view so
+non-persisted `cancel_at` / `subscriptionStatus` stay current. Migration
 `0066-stripe-billing.sql` adds `stripe_customer_id` (unique partial index),
-`stripe_plan`, and `stripe_plan_refreshed_at`.
+`stripe_plan`, and `stripe_plan_refreshed_at`; Wrangler migration `v22` adds the
+alarm DO class without moving canonical billing data out of D1.
 
 Published prices: Free $0, Pro $5/mo. Env vars and deploy wiring are documented
 in [`../environment-variables.md`](../environment-variables.md).
