@@ -1,5 +1,7 @@
 import { type CloudflareOptions } from '@sentry/cloudflare'
 import { type ErrorEvent, type EventHint } from '@sentry/core'
+import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
+import { isEntitlementLimitError } from './entitlements/errors.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 import { isUserCodeError } from './user-code-error.ts'
 
@@ -30,6 +32,36 @@ export function filterUserCodeErrorSentryEvent(
 ) {
 	if (isUserCodeError(hint?.originalException)) return null
 	return _event
+}
+
+/**
+ * Plan-limit denials are expected account policy outcomes (clean up usage or
+ * upgrade), not platform defects. MCP observability already skips them via
+ * `isCallerFailure`; this `beforeSend` gate is the backstop for any other
+ * capture path that still forwards the typed error.
+ */
+export function isEntitlementLimitErrorSentryEvent(
+	event: ErrorEvent,
+	hint?: EventHint,
+) {
+	if (
+		getErrorCauseChain(hint?.originalException).some(isEntitlementLimitError)
+	) {
+		return true
+	}
+	return (
+		event.exception?.values?.some(
+			(value) => value.type === 'EntitlementLimitError',
+		) ?? false
+	)
+}
+
+export function filterEntitlementLimitErrorSentryEvent(
+	event: ErrorEvent,
+	hint?: EventHint,
+) {
+	if (!isEntitlementLimitErrorSentryEvent(event, hint)) return event
+	return null
 }
 
 /**
@@ -83,13 +115,15 @@ export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
 
 /**
  * Exact Cloudflare Durable Object platform-reset messages. When a DO hits its
- * memory or CPU limit, or when a deploy replaces DO code under an in-flight
+ * memory or CPU limit, when a deploy replaces DO code under an in-flight
  * RPC/alarm (for example cron `oauth_purge_expired` → OAuthPurgeCoordinator),
- * the platform resets the isolate and surfaces one of these errors to the
- * caller. The next call gets a fresh isolate; app-level retry is unsafe for
- * non-idempotent jobs, and moving heavy orchestration off JobManager is an
- * architectural change outside a triage fix. Match only the bare platform
- * strings so wrapped failures such as exhausted
+ * or when `blockConcurrencyWhile` exceeds its ~30s deadlock timeout (for
+ * example PartyServer awaiting MCP Agent `onStart` via `getServerByName` →
+ * `setName`), the platform resets the isolate and surfaces one of these
+ * errors to the caller. The next call gets a fresh isolate; app-level retry
+ * is unsafe for non-idempotent jobs, and moving heavy Agent/MCP startup out
+ * of `onStart` is an architectural change outside a triage fix. Match only
+ * the bare platform strings so wrapped failures such as exhausted
  * `package_publish_external_push` recovery messages stay visible.
  */
 export const durableObjectIsolateMemoryResetMessage =
@@ -100,6 +134,9 @@ export const durableObjectIsolateCpuResetMessage =
 
 export const durableObjectCodeUpdatedResetMessage =
 	'Durable Object reset because its code was updated.'
+
+export const durableObjectBlockConcurrencyWhileTimeoutResetMessage =
+	'A call to blockConcurrencyWhile() in a Durable Object waited for too long. The call was canceled and the Durable Object was reset.'
 
 function normalizeDurableObjectIsolateResetMessage(message: string) {
 	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
@@ -113,7 +150,8 @@ export function isDurableObjectIsolateResetMessage(message: string) {
 	return (
 		normalized === durableObjectIsolateMemoryResetMessage ||
 		normalized === durableObjectIsolateCpuResetMessage ||
-		normalized === durableObjectCodeUpdatedResetMessage
+		normalized === durableObjectCodeUpdatedResetMessage ||
+		normalized === durableObjectBlockConcurrencyWhileTimeoutResetMessage
 	)
 }
 
@@ -138,6 +176,7 @@ export function filterDurableObjectIsolateResetSentryEvent(event: ErrorEvent) {
 export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	// Marker first: primary mechanism for user-authored failures.
 	if (filterUserCodeErrorSentryEvent(event, hint) === null) return null
+	if (filterEntitlementLimitErrorSentryEvent(event, hint) === null) return null
 	if (filterRetryableD1LockSentryEvent(event) === null) return null
 	// String-match backstops for paths that cannot yet be marked.
 	if (filterUserModuleBundlerFailureSentryEvent(event) === null) return null
@@ -174,13 +213,15 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// regress Sentry issues.
 		//
 		// User-authored failures are dropped primarily via `UserCodeError`
-		// (`filterUserCodeErrorSentryEvent`). Bundler / sandbox-timeout string
-		// matches remain as backstops for unmarked paths; see
-		// filterUserModuleBundlerFailureSentryEvent and
+		// (`filterUserCodeErrorSentryEvent`). Plan-limit denials
+		// (`EntitlementLimitError`) are dropped the same way — expected
+		// account policy, still visible on structured `mcp-event` logs. Bundler
+		// / sandbox-timeout string matches remain as backstops for unmarked
+		// paths; see filterUserModuleBundlerFailureSentryEvent and
 		// filterExecutorSandboxTimeoutSentryEvent. Bare Cloudflare Durable
-		// Object platform reset strings (memory/CPU limits and deploy-time
-		// code updates) are dropped the same way — see
-		// filterDurableObjectIsolateResetSentryEvent.
+		// Object platform reset strings (memory/CPU limits, deploy-time code
+		// updates, and blockConcurrencyWhile timeouts) are dropped the same
+		// way — see filterDurableObjectIsolateResetSentryEvent.
 		beforeSend: filterSentryEvent,
 	}
 }

@@ -375,6 +375,40 @@ soak/parity review.
 waits until reporting-off-D1 work merges and mirror parity is verified in
 production.
 
+### Admin UserMeter parity gates (`admin_user_meter_parity`)
+
+Production verification for mirror retirement and authority flips uses the
+admin-only read-only capability `admin_user_meter_parity` (input:
+`stable_user_id`). It compares production-shaped D1 rows for one account against
+direct UserMeter RPCs and never bootstraps or writes parity state. Opening a
+cold UserMeter stub may still run Durable Object constructor schema maintenance
+and opportunistic stale daily-counter pruning. Cold meter rows surface as
+`needsBootstrap` with `meterCount`/`meterBytes` null.
+
+Interpret the structured report as independent gates:
+
+| Gate                             | Pass condition                                                                                                                                                                                                                                                                      |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Daily counters (current UTC day) | Each of the four daily resources has `parity: true` (`d1Count === meterCount`); aggregate `daily.mismatchCount === 0`.                                                                                                                                                              |
+| Storage bytes                    | `storage.parity` — D1 `users.d1_storage_bytes` equals UserMeter `readStorageBytes` (not `needsBootstrap`).                                                                                                                                                                          |
+| Package services                 | `packageServices.parity` — inventory mismatch category counts are all zero (`d1Only` / `meterOnly` / `statusMismatch` / `startedAtMismatch` / `sourceUpdatedAtMismatch`), fresh-running counts match under the shared 24h stale window, and the meter page walk is not `truncated`. |
+| Deletion tombstone               | `deletion.deletingAtParity` — D1 `users.deleting_at` matches the meter tombstone.                                                                                                                                                                                                   |
+| Temporary D1 lease mirror        | `deletion.mirrorLeaseParity` — `doOnly === 0`, `legacyWithoutD1 === 0`, inventory not truncated, and `d1ActiveLeaseCount >= doAuthorityLeaseCount` (same-token mirror coverage). `tokenSetMismatches.d1Only` is reported but does **not** fail this gate.                           |
+
+**D1-only leases:** email and other transition paths that omit `env` still take
+exact D1 leases, so `d1Only > 0` is expected until that handoff. Mirror-removal
+readiness therefore ignores `d1Only`. Operators separately confirm those rows
+are known email/transition holders via `admin_account_write_lease_list` and
+holder classification before retiring the temporary D1 mirror inventory.
+
+**Threshold:** treat unexplained mismatches as blocking for the corresponding
+cutover (daily mirror retirement, storage authority flip, package-service
+authority flip, or temporary D1 lease-mirror removal). Expected cold accounts
+may report `needsBootstrap` until live traffic or an intentional bootstrap path
+seeds the DO; that is a bootstrap gap, not a silent pass. Truncated inventories
+fail closed (`parity` / `mirrorLeaseParity` false) so operators re-run or raise
+the bounded page cap rather than approve a partial compare.
+
 Module wiring: `consumeDailyEntitlement`, `refundDailyEntitlement`, and
 `readDailyEntitlementResourceUsage` require `env.USER_METER` and fail closed
 when the binding is missing. Storage-byte helpers (`readUserD1StorageBytes`,

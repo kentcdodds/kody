@@ -110,10 +110,12 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	})
 
 	expect(adminRegistry.capabilityMap.admin_user_list).toBeTruthy()
+	expect(adminRegistry.capabilityMap.admin_user_meter_parity).toBeTruthy()
 	expect(
 		adminRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(true)
 	expect(regularRegistry.capabilityMap.admin_user_list).toBeUndefined()
+	expect(regularRegistry.capabilityMap.admin_user_meter_parity).toBeUndefined()
 	expect(
 		regularRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(false)
