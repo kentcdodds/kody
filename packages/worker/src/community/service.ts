@@ -1127,7 +1127,9 @@ export async function rateCommunityListing(input: {
 		includeDelisted: false,
 	})
 	if (!listing) {
-		throw new Error(`Community listing "${input.listingId}" was not found.`)
+		throw new CommunityActionError(
+			`Community listing "${input.listingId}" was not found.`,
+		)
 	}
 	if (listing.ownerUserId === input.userId) {
 		throw new CommunityActionError('You cannot rate your own listing.')
@@ -1138,7 +1140,10 @@ export async function rateCommunityListing(input: {
 		userId: input.userId,
 	})
 	if (!fork) {
-		throw new Error('rate after forking')
+		// Precondition the agent can clear: fork first, then rate.
+		throw new CommunityActionError(
+			'Fork this community listing before rating it.',
+		)
 	}
 
 	const rating = await upsertCommunityRating(input.env.APP_DB, {

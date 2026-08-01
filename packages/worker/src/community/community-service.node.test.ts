@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { CommunityActionError } from './errors.ts'
 import type * as CommunityRepo from './repo.ts'
 import { type CommunityListingRecord } from './types.ts'
 
@@ -797,7 +798,7 @@ test('rateCommunityListing rejects owner self-ratings and persists valid ratings
 			stars: 5,
 			adaptationEffort: 2,
 		}),
-	).rejects.toThrow()
+	).rejects.toBeInstanceOf(CommunityActionError)
 	expect(mockModule.upsertCommunityRating).not.toHaveBeenCalled()
 
 	mockModule.getCommunityForkByListingAndUser.mockResolvedValue({
@@ -835,6 +836,27 @@ test('rateCommunityListing rejects owner self-ratings and persists valid ratings
 		kind: 'rating',
 		activityId: 'rating-1',
 	})
+})
+
+test('rateCommunityListing rejects ratings without a prior fork as CommunityActionError', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.getCommunityForkByListingAndUser.mockResolvedValue(null)
+
+	await expect(
+		rateCommunityListing({
+			env: createEnv(),
+			userId: 'user-2',
+			listingId: 'listing-1',
+			stars: 4,
+			adaptationEffort: 2,
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			error.message === 'Fork this community listing before rating it.',
+	)
+	expect(mockModule.upsertCommunityRating).not.toHaveBeenCalled()
 })
 
 test('forkCommunityListing creates inert source without saved package row', async () => {

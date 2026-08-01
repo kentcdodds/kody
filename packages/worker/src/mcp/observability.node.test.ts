@@ -36,6 +36,7 @@ const { logMcpEvent } = await import('./observability.ts')
 const { McpCallerError } = await import('./caller-error.ts')
 const { PackageSecretAccessDeniedError } =
 	await import('./secrets/package-access.ts')
+const { CommunityActionError } = await import('#worker/community/errors.ts')
 const { EntitlementLimitError } = await import('#worker/entitlements/errors.ts')
 const { UserCodeError } = await import('#worker/user-code-error.ts')
 
@@ -162,6 +163,19 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			),
 		})
 
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'community_rate',
+			domain: 'community',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'CommunityActionError',
+			errorMessage: 'Fork this community listing before rating it.',
+			cause: new CommunityActionError(
+				'Fork this community listing before rating it.',
+			),
+		})
+
 		const entitlementLimitError = new EntitlementLimitError({
 			resource: 'storage_bytes',
 			plan: 'free',
@@ -201,7 +215,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		})
 	})
 
-	expect(payloads).toHaveLength(10)
+	expect(payloads).toHaveLength(11)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',
