@@ -10,10 +10,7 @@ import {
 	reciprocalRankFusion,
 	sortIdsByScore,
 } from '#worker/vectorize/scoring.ts'
-import {
-	queryVectorizeWithNamespaceFallback,
-	userVectorNamespace,
-} from '#worker/vectorize/vector-namespaces.ts'
+import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { buildExternalPackageInvocationDescriptor } from '#worker/package-invocations/public-url.ts'
 import {
 	buildPackageSearchDocument,
@@ -144,17 +141,13 @@ async function queryPackageVectorScores(input: {
 			(await embedTextForVectorize(input.env, input.query))),
 	]
 	const topK = Math.min(Math.max(input.rows.length, input.limit * 5), 100)
-	const vectorMatches = await queryVectorizeWithNamespaceFallback({
-		index,
-		vector: queryVector,
+	const vectorMatches = await index.query(queryVector, {
+		topK,
 		namespace: userVectorNamespace(input.userId),
-		options: {
-			topK,
-			returnMetadata: 'none',
-			filter: {
-				kind: { $eq: 'package' },
-				userId: { $eq: input.userId },
-			},
+		returnMetadata: 'none',
+		filter: {
+			kind: { $eq: 'package' },
+			userId: { $eq: input.userId },
 		},
 	})
 	const scores = new Map<string, number>()
