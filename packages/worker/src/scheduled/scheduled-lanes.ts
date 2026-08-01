@@ -16,6 +16,7 @@ import {
 	shouldRunDrExportCron,
 	shouldRunDrExportWatchdogCron,
 } from '#worker/dr/exporter.ts'
+import { reconcileMailboxParity } from '#worker/email/mailbox-reconcile.ts'
 import { sweepStaleInboundDeliveries } from '#worker/email/reconcile-inbound-deliveries.ts'
 import { pruneSystemEmailRetention } from '#worker/email/system-email.ts'
 import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconciliation.ts'
@@ -31,6 +32,11 @@ import {
 	aggregateUsageRollups,
 	shouldRunUsageAggregationCron,
 } from '#worker/usage/aggregate-rollups.ts'
+
+/** Worker cron fires every 5 minutes; run this lane on the top of each UTC hour. */
+export function shouldRunMailboxParityCron(now: Date) {
+	return now.getUTCMinutes() === 0
+}
 
 export const scheduledLaneNames = [
 	'reconcile_artifacts_pushes',
@@ -48,6 +54,7 @@ export const scheduledLaneNames = [
 	'dr_export',
 	'dr_export_watchdog',
 	'job_schedule_watchdog',
+	'mailbox_parity',
 ] as const
 
 export type ScheduledLaneName = (typeof scheduledLaneNames)[number]
@@ -106,6 +113,9 @@ export function getScheduledLanes(input: {
 	}
 	if (shouldRunJobScheduleWatchdogCron(input.scheduledAt)) {
 		lanes.push('job_schedule_watchdog')
+	}
+	if (shouldRunMailboxParityCron(input.scheduledAt)) {
+		lanes.push('mailbox_parity')
 	}
 	return lanes
 }
@@ -180,6 +190,11 @@ export async function runScheduledLane(input: {
 			})
 		case 'job_schedule_watchdog':
 			return runJobScheduleWatchdogTick({
+				env: input.env,
+				now: input.scheduledAt,
+			})
+		case 'mailbox_parity':
+			return reconcileMailboxParity({
 				env: input.env,
 				now: input.scheduledAt,
 			})

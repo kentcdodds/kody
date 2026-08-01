@@ -314,17 +314,33 @@ test('admin feature flag MCP capabilities: list, set, override, and audit wiring
 	const ctx = createAdminCapabilityContext(db)
 
 	const listResult = await adminFeatureFlagListCapability.handler({}, ctx)
-	expect(listResult.flags).toEqual([
-		expect.objectContaining({
-			key: 'demo-indicator',
-			description: expect.any(String),
-			defaultEnabled: false,
-			stale: false,
-			global: null,
-			overrides: [],
-		}),
-	])
-	expect(listResult.flags[0]?.description).not.toHaveLength(0)
+	expect(listResult.flags).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				key: 'demo-indicator',
+				description: expect.any(String),
+				defaultEnabled: false,
+				stale: false,
+				global: null,
+				overrides: [],
+				successMetric: null,
+			}),
+			expect.objectContaining({
+				key: 'mailbox-read-cutover',
+				defaultEnabled: false,
+				stale: false,
+				successMetric: expect.objectContaining({
+					eventType: 'email_received',
+					measure: 'error_rate',
+					goal: 'decrease',
+				}),
+			}),
+		]),
+	)
+	const demoFlag = listResult.flags.find(
+		(flag) => flag.key === 'demo-indicator',
+	)
+	expect(demoFlag?.description).not.toHaveLength(0)
 
 	const setResult = await adminFeatureFlagSetCapability.handler(
 		{
