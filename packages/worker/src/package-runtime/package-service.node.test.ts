@@ -179,6 +179,37 @@ async function flushWaitUntilTasks(waitUntilTasks: Array<Promise<unknown>>) {
 	await Promise.all(waitUntilTasks)
 }
 
+/**
+ * Drain UserMeter shadow (and other promptly settling) waitUntil tasks without
+ * hanging on long-lived background service runs also scheduled via waitUntil.
+ */
+async function drainSettledWaitUntilTasks(
+	waitUntilTasks: Array<Promise<unknown>>,
+	fromIndex = 0,
+) {
+	const pending = waitUntilTasks.slice(fromIndex)
+	await Promise.all(
+		pending.map(async (task) => {
+			const state = { settled: false }
+			void Promise.resolve(task).then(
+				() => {
+					state.settled = true
+				},
+				() => {
+					state.settled = true
+				},
+			)
+			for (let i = 0; i < 40; i++) {
+				await Promise.resolve()
+				if (state.settled) {
+					await task
+					return
+				}
+			}
+		}),
+	)
+}
+
 function resetMocks() {
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockReset()
@@ -890,6 +921,9 @@ test('package service start/heartbeat/stop/purge shadow UserMeter transitions', 
 		} as Env)
 		const start = await postPackageService(created.instance, 'start')
 		expect(start.status).toBe(200)
+		// D1 projection stays on the awaited lifecycle path.
+		expect(upserts[0]?.[3]).toBe('running')
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
 		expect(
 			packageServiceShadowRow(
 				meter,
@@ -906,7 +940,12 @@ test('package service start/heartbeat/stop/purge shadow UserMeter transitions', 
 		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T13:00:00.000Z'))
 
 		vi.setSystemTime(new Date('2026-07-05T13:00:00.000Z'))
+		const afterStartWaitUntilCount = created.waitUntilTasks.length
 		await created.instance.alarm()
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			afterStartWaitUntilCount,
+		)
 		expect(
 			packageServiceShadowRow(
 				meter,
@@ -921,7 +960,12 @@ test('package service start/heartbeat/stop/purge shadow UserMeter transitions', 
 		})
 		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T14:00:00.000Z'))
 
+		const afterHeartbeatWaitUntilCount = created.waitUntilTasks.length
 		await postPackageService(created.instance, 'stop')
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			afterHeartbeatWaitUntilCount,
+		)
 		expect(
 			packageServiceShadowRow(
 				meter,
@@ -935,7 +979,12 @@ test('package service start/heartbeat/stop/purge shadow UserMeter transitions', 
 			revision: 3,
 		})
 
+		const afterStopWaitUntilCount = created.waitUntilTasks.length
 		await postPackageService(created.instance, 'purge')
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			afterStopWaitUntilCount,
+		)
 		expect(
 			packageServiceShadowRow(
 				meter,
@@ -950,6 +999,77 @@ test('package service start/heartbeat/stop/purge shadow UserMeter transitions', 
 			'realtime-supervisor',
 		])
 		expect(upserts.length).toBeGreaterThanOrEqual(3)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('package service lifecycle does not await a gated UserMeter shadow', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const { appDb, upserts } = createRecordingPackageServiceDb()
+	let releaseShadow!: () => void
+	const shadowGate = new Promise<void>((resolve) => {
+		releaseShadow = resolve
+	})
+	let shadowFinished = false
+	const gatedMeter = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async upsertPackageServiceState() {
+					await shadowGate
+					shadowFinished = true
+					return {
+						applied: true,
+						created: true,
+						state: {
+							packageId: 'package-1',
+							serviceName: 'realtime-supervisor',
+							status: 'running' as const,
+							startedAt: '2026-07-05T12:00:00.000Z',
+							sourceUpdatedAt: '2026-07-05T12:00:00.000Z',
+							revision: 1,
+							updatedAt: '2026-07-05T12:00:00.000Z',
+							mirrorUpdatedAt: 'r/00000000000000000001',
+						},
+					}
+				},
+				async deletePackageServiceState() {
+					return { deleted: true }
+				},
+			}),
+		},
+	}
+
+	try {
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+
+		const created = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: gatedMeter.USER_METER,
+		} as Env)
+		const start = await postPackageService(created.instance, 'start')
+		expect(start.status).toBe(200)
+		expect(upserts[0]).toEqual([
+			'user-123',
+			'package-1',
+			'realtime-supervisor',
+			'running',
+			'2026-07-05T12:00:00.000Z',
+			'2026-07-05T12:00:00.000Z',
+		])
+		// Lifecycle returned while the shadow DO hop is still gated.
+		expect(shadowFinished).toBe(false)
+		expect(created.waitUntilTasks.length).toBeGreaterThan(0)
+
+		releaseShadow()
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(shadowFinished).toBe(true)
 	} finally {
 		vi.useRealTimers()
 	}
@@ -1010,8 +1130,17 @@ test('package service UserMeter shadow failure cannot break D1 projection or lif
 			expect.any(Error),
 		)
 
+		const beforePurgeWaitUntilCount = created.waitUntilTasks.length
 		const purge = await postPackageService(created.instance, 'purge')
 		expect(purge.status).toBe(200)
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			beforePurgeWaitUntilCount,
+		)
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'package-service-user-meter-shadow-failed',
+			expect.any(Error),
+		)
 	} finally {
 		vi.useRealTimers()
 	}
@@ -1060,6 +1189,8 @@ test('package service UserMeter shadows are isolated per owning user', async () 
 
 		await postPackageService(first.instance, 'start')
 		await postPackageService(second.instance, 'start', otherBinding)
+		await drainSettledWaitUntilTasks(first.waitUntilTasks)
+		await drainSettledWaitUntilTasks(second.waitUntilTasks)
 
 		expect(
 			packageServiceShadowRow(
@@ -1120,6 +1251,7 @@ test('package service restore shadows current D1 projection into UserMeter', asy
 			USER_METER: meter.env.USER_METER,
 		} as Env)
 		await waitForRestoreState(restored.state)
+		await drainSettledWaitUntilTasks(restored.waitUntilTasks)
 
 		expect(
 			packageServiceShadowRow(

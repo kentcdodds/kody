@@ -420,10 +420,11 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 
 	/**
 	 * Best-effort D1 projection of service liveness for entitlement counting,
-	 * plus an expand-phase UserMeter shadow. D1 remains sole count/discovery
-	 * authority; shadow failures never break the service path. Stop/error/idle
-	 * writes still attempt to clear `running` so quota is released when D1 is
-	 * healthy.
+	 * plus a non-awaited expand-phase UserMeter shadow via `waitUntil`. D1
+	 * remains sole count/discovery authority and stays on the awaited path;
+	 * shadow DO hops must not gate lifecycle/heartbeat responses.
+	 * Stop/error/idle writes still attempt to clear `running` so quota is
+	 * released when D1 is healthy.
 	 */
 	private async projectServiceStateToD1() {
 		const binding = this.stateSnapshot.binding
@@ -444,7 +445,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		} catch {
 			// Best-effort: D1 outages must not take down package services.
 		}
-		await this.shadowPackageServiceStateToUserMeter({
+		this.schedulePackageServiceStateShadow({
 			binding,
 			status,
 			startedAt,
@@ -452,14 +453,28 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		})
 	}
 
-	/** Best-effort UserMeter shadow; optional when `USER_METER` is unbound. */
-	private async shadowPackageServiceStateToUserMeter(input: {
+	/**
+	 * Schedule a best-effort UserMeter shadow upsert. Never awaited by
+	 * lifecycle/heartbeat paths; the helper catches so `waitUntil` cannot
+	 * reject.
+	 */
+	private schedulePackageServiceStateShadow(input: {
 		binding: PackageServiceBindingState
 		status: PackageServiceProjectedStatus
 		startedAt: string | null
 		sourceUpdatedAt: string
 	}) {
 		if (!userMeterNamespace(this.env)) return
+		this.ctx.waitUntil(this.shadowPackageServiceStateToUserMeter(input))
+	}
+
+	/** Best-effort UserMeter shadow upsert; catches/logs so waitUntil settles. */
+	private async shadowPackageServiceStateToUserMeter(input: {
+		binding: PackageServiceBindingState
+		status: PackageServiceProjectedStatus
+		startedAt: string | null
+		sourceUpdatedAt: string
+	}) {
 		try {
 			const meter = userMeterRpc({
 				env: this.env,
@@ -477,10 +492,21 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		}
 	}
 
-	private async deletePackageServiceShadow(
+	/**
+	 * Schedule a best-effort UserMeter shadow delete. Never awaited by purge;
+	 * the helper catches so `waitUntil` cannot reject.
+	 */
+	private schedulePackageServiceShadowDelete(
 		binding: PackageServiceBindingState,
 	) {
 		if (!userMeterNamespace(this.env)) return
+		this.ctx.waitUntil(this.deletePackageServiceShadow(binding))
+	}
+
+	/** Best-effort UserMeter shadow delete; catches/logs so waitUntil settles. */
+	private async deletePackageServiceShadow(
+		binding: PackageServiceBindingState,
+	) {
 		try {
 			const meter = userMeterRpc({
 				env: this.env,
@@ -508,7 +534,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		} catch {
 			// Best-effort cleanup on purge.
 		}
-		await this.deletePackageServiceShadow(binding)
+		this.schedulePackageServiceShadowDelete(binding)
 	}
 
 	private async ensureRunningHeartbeat() {
