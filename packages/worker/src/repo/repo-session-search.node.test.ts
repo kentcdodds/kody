@@ -1,8 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import {
-	expandBraceGlobs,
-	searchRepoWorkspace,
-} from './repo-session-search.ts'
+import { expandBraceGlobs, searchRepoWorkspace } from './repo-session-search.ts'
 
 test('expandBraceGlobs expands brace alternatives that include wildcards', () => {
 	expect(expandBraceGlobs('/{README.md,package.json,**/README*}')).toEqual([
@@ -63,11 +60,7 @@ test('searchRepoWorkspace accepts brace globs with nested wildcards without call
 		},
 	})
 
-	expect(globCalls).toEqual([
-		'/README.md',
-		'/package.json',
-		'/**/README*',
-	])
+	expect(globCalls).toEqual(['/README.md', '/package.json', '/**/README*'])
 	expect(result.totalFiles).toBe(2)
 	expect(result.totalMatches).toBe(2)
 	expect(result.files.map((file) => file.path).sort()).toEqual([
