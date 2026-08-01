@@ -12,6 +12,7 @@ import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
+import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { loadAdminUserByTarget } from '#worker/admin/users-data.ts'
@@ -506,6 +507,7 @@ function createAdminCapabilityTestDb(input: {
 }
 
 const userMeter = createInMemoryUserMeterEnv()
+const runLog = createInMemoryRunLogUsageEnv()
 
 function createAdminCapabilityContext(
 	db: D1Database,
@@ -513,6 +515,7 @@ function createAdminCapabilityContext(
 ) {
 	return {
 		env: {
+			...runLog.env,
 			...userMeter.env,
 			APP_DB: db,
 			EMAIL_BLOBS: blobs ?? {
