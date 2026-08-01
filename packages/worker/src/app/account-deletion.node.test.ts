@@ -37,7 +37,18 @@ function createTestDb(
 } {
 	const rows: RowMap = {}
 	for (const [key, value] of Object.entries(initial)) {
-		rows[key] = value.map((row) => ({ ...row }))
+		rows[key] = value.map((row) => {
+			const copy = { ...row }
+			if (
+				key === 'users' &&
+				(copy['stable_user_id'] == null || copy['stable_user_id'] === '')
+			) {
+				const id = Number(copy['id'])
+				if (id === 1) copy['stable_user_id'] = 'user-aaa'
+				else if (id === 2) copy['stable_user_id'] = 'user-bbb'
+			}
+			return copy
+		})
 	}
 
 	function deleteByPredicate(
@@ -1414,7 +1425,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	for (const run of rows.package_codemod_runs ?? []) {
 		expect(String(run['filters_json'])).not.toContain(userAaa)
 	}
-	expect(rows.users).toEqual([{ id: 2, email: 'b@example.com' }])
+	expect(rows.users).toEqual([
+		{ id: 2, email: 'b@example.com', stable_user_id: 'user-bbb' },
+	])
 	expect(result.deletedRowCounts.password_resets).toBe(2)
 	expect(result.deletedRowCounts.user_roles).toBe(1)
 
@@ -1796,19 +1809,6 @@ test('account deletion reports missing Durable Object / blob bindings and remain
 			},
 		},
 		{
-			envOverrides: { USER_METER: undefined },
-			cleanupError:
-				'USER_METER binding was unavailable; the user meter Durable Object was not purged.',
-			partialResult: {
-				clearedDurableObjects: expect.objectContaining({
-					userMeters: 0,
-				}),
-			},
-			seed: {
-				users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
-			},
-		},
-		{
 			envOverrides: { MAILBOX: undefined },
 			cleanupError:
 				'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
@@ -1845,12 +1845,31 @@ test('account deletion reports missing Durable Object / blob bindings and remain
 			}),
 		])
 	}
+
+	const { db: missingMeterDb, rows: missingMeterRows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+	})
+	await expect(
+		deleteUserAccount({
+			env: createSuccessfulDeletionEnv(missingMeterDb, {
+				USER_METER: undefined,
+			}),
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toThrow('USER_METER Durable Object binding is not configured.')
+	expect(missingMeterRows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			deleting_at: expect.any(String),
+		}),
+	])
 })
 
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
 	const { db, rows } = createTestDb(
 		{
-			users: [{ id: 1, email: 'a@example.com' }],
+			users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
 			mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
 			jobs: [{ id: 'job-a', user_id: 'user-aaa', storage_id: 'job:job-a' }],
 		},
@@ -1858,10 +1877,12 @@ test('deleteUserAccount fails closed when preflight inventory cannot be read', a
 	)
 	const deleteVectors = vi.fn(async () => undefined)
 	const clearStorage = vi.fn(async () => undefined)
+	const userMeter = createInMemoryUserMeterEnv()
 	await expect(
 		deleteUserAccount({
 			env: {
 				APP_DB: db,
+				USER_METER: userMeter.env.USER_METER,
 				CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectors },
 				STORAGE_RUNNER: {
 					idFromName: (name: string) => name as unknown as DurableObjectId,

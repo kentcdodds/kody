@@ -1277,36 +1277,40 @@ test('UserMeter package-service shadow upserts are monotonic, isolated, exportab
 	})
 }, 30_000)
 
-test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserves tombstone across purge', async () => {
+test('UserMeter deletion leases distinguish do/legacy authority, repair, export, and purge tombstone', async () => {
 	const userA = await seedFreeUser('meter-deletion-a')
 	const userB = await seedFreeUser('meter-deletion-b')
 	const meterA = userMeterRpc({ env, userId: userA.userId })
 	const meterB = userMeterRpc({ env, userId: userB.userId })
 
-	const firstMark = await meterA.shadowMarkDeleting({
+	const firstMark = await meterA.markDeleting({
 		deletingAt: '2026-08-01 10:00:00',
+		legacyLeases: [],
 	})
 	expect(firstMark).toEqual({
 		deletingAt: '2026-08-01 10:00:00',
 		created: true,
+		leaseCount: 0,
 	})
-	const secondMark = await meterA.shadowMarkDeleting({
+	const secondMark = await meterA.markDeleting({
 		deletingAt: '2026-08-01 11:00:00',
+		legacyLeases: [],
 	})
 	expect(secondMark).toEqual({
 		deletingAt: '2026-08-01 10:00:00',
 		created: false,
+		leaseCount: 0,
 	})
 
 	await expect(
-		meterB.shadowAcquireWriteLease({
+		meterB.acquireWriteLease({
 			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 			holder: 'test:writer',
 			acquiredAt: '2026-08-01 10:05:00',
 		}),
 	).resolves.toEqual({ acquired: true })
 	await expect(
-		meterB.shadowAcquireWriteLease({
+		meterB.acquireWriteLease({
 			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 			holder: 'test:writer',
 			acquiredAt: '2026-08-01 10:05:00',
@@ -1315,11 +1319,23 @@ test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserve
 	await expect(
 		meterB.shadowAcquireWriteLease({
 			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-			holder: 'test:other',
+			holder: 'test:legacy',
 			acquiredAt: '2026-08-01 10:06:00',
 		}),
 	).resolves.toEqual({ acquired: true })
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 2 })
+	expect(await meterB.listDoAuthorityWriteLeases({})).toEqual({
+		leases: [
+			{
+				token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+				holder: 'test:writer',
+				acquiredAt: '2026-08-01 10:05:00',
+				authority: 'do',
+			},
+		],
+		nextStartAfter: null,
+		truncated: false,
+	})
 
 	const listed = await meterB.listWriteLeases({ pageSize: 1 })
 	expect(listed.leases).toHaveLength(1)
@@ -1332,14 +1348,14 @@ test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserve
 	expect(listedRest.truncated).toBe(false)
 
 	await expect(
-		meterB.shadowReleaseWriteLease({
+		meterB.releaseWriteLease({
 			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 		}),
 	).resolves.toEqual({ released: true })
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 1 })
 
 	await expect(
-		meterA.shadowAcquireWriteLease({
+		meterA.acquireWriteLease({
 			token: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
 			holder: 'test:blocked',
 			acquiredAt: '2026-08-01 10:07:00',
@@ -1351,13 +1367,14 @@ test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserve
 		leases: [
 			{
 				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-				holder: 'test:other',
+				holder: 'test:legacy',
 				acquiredAt: '2026-08-01 10:06:00',
 			},
 			{
 				token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-				holder: 'test:boot',
+				holder: 'test:boot-do',
 				acquiredAt: '2026-08-01 10:08:00',
+				authority: 'do',
 			},
 		],
 	})
@@ -1366,6 +1383,84 @@ test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserve
 		leasesApplied: 1,
 		leasesSkipped: 1,
 	})
+
+	const marked = await meterB.markDeleting({
+		deletingAt: '2026-08-01 12:30:00',
+		legacyLeases: [
+			{
+				token: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+				holder: 'test:d1-snapshot',
+				acquiredAt: '2026-08-01 10:09:00',
+			},
+		],
+	})
+	expect(marked).toEqual({
+		deletingAt: '2026-08-01 12:00:00',
+		created: false,
+		leaseCount: 2,
+	})
+	expect(await meterB.listWriteLeases({})).toEqual({
+		leases: [
+			{
+				token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+				holder: 'test:boot-do',
+				acquiredAt: '2026-08-01 10:08:00',
+				authority: 'do',
+			},
+			{
+				token: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+				holder: 'test:d1-snapshot',
+				acquiredAt: '2026-08-01 10:09:00',
+				authority: 'legacy',
+			},
+		],
+		nextStartAfter: null,
+		truncated: false,
+	})
+
+	const prepared = await meterB.prepareWriteLeaseRepair({
+		token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+		expectedAcquiredAt: '2026-08-01 10:08:00',
+	})
+	expect(prepared).toEqual(
+		expect.objectContaining({
+			prepared: true,
+			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			acquiredAt: '2026-08-01 10:08:00',
+		}),
+	)
+	const repairId =
+		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
+	await expect(
+		meterB.prepareWriteLeaseRepair({
+			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			expectedAcquiredAt: '2026-08-01 10:08:00',
+		}),
+	).resolves.toEqual(expect.objectContaining({ prepared: true, repairId }))
+	await expect(
+		meterB.assertWriteLeaseHeld({
+			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+		}),
+	).resolves.toEqual({ held: true })
+	await expect(
+		meterB.finalizeWriteLeaseRepair({
+			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			repairId,
+			expectedAcquiredAt: '2026-08-01 10:08:00',
+		}),
+	).resolves.toEqual({ finalized: true })
+	await expect(
+		meterB.assertWriteLeaseHeld({
+			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+		}),
+	).resolves.toEqual({ held: false })
+	await expect(
+		meterB.finalizeWriteLeaseRepair({
+			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			repairId,
+			expectedAcquiredAt: '2026-08-01 10:08:00',
+		}),
+	).resolves.toEqual({ finalized: true })
 
 	const day = '2026-08-01'
 	for (const resource of [
@@ -1413,8 +1508,8 @@ test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserve
 		truncated: false,
 	})
 	await expect(
-		meterA.shadowAcquireWriteLease({
-			token: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+		meterA.acquireWriteLease({
+			token: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
 			holder: 'test:post-purge',
 			acquiredAt: '2026-08-01 13:00:00',
 		}),
@@ -1423,54 +1518,10 @@ test('UserMeter deletion shadow is monotonic, isolated, exportable, and preserve
 	expect(await meterB.readDeletionState()).toEqual({
 		deletingAt: '2026-08-01 12:00:00',
 	})
-	expect(await meterB.listWriteLeases({})).toMatchObject({
-		leases: expect.arrayContaining([
-			expect.objectContaining({
-				token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-			}),
-			expect.objectContaining({
-				token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-			}),
-		]),
-	})
-
-	const replaced = await meterB.shadowReplaceDeletionState({
-		deletingAt: '2026-08-01 14:00:00',
-		leases: [
-			{
-				token: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
-				holder: 'test:replace',
-				acquiredAt: '2026-08-01 10:09:00',
-			},
-		],
-	})
-	expect(replaced).toEqual({
-		deletingAt: '2026-08-01 12:00:00',
-		created: false,
-		leaseCount: 1,
-	})
-	expect(await meterB.listWriteLeases({})).toEqual({
-		leases: [
-			{
-				token: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
-				holder: 'test:replace',
-				acquiredAt: '2026-08-01 10:09:00',
-			},
-		],
-		nextStartAfter: null,
-		truncated: false,
-	})
-	expect(await meterB.exportCounters({})).toMatchObject({
-		deletionShadow: {
-			deletingAt: '2026-08-01 12:00:00',
-			activeWriteLeaseCount: 1,
-			writeLeases: [{ acquiredAt: '2026-08-01 10:09:00' }],
-		},
-	})
 	await expect(
-		meterB.shadowReplaceDeletionState({
+		meterB.markDeleting({
 			deletingAt: '2026-08-01 15:00:00',
-			leases: [],
+			legacyLeases: [],
 		}),
 	).resolves.toEqual({
 		deletingAt: '2026-08-01 12:00:00',
