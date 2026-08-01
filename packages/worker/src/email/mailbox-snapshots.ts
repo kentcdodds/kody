@@ -62,11 +62,28 @@ export type EmailDeliveryEventMirrorProjection = {
 	usageDurationMs: number | null
 }
 
+function describeSnapshotValue(value: unknown): string {
+	if (value === null) return 'null'
+	if (value === undefined) return 'undefined'
+	if (typeof value === 'string') {
+		return `string (${value.length} chars)`
+	}
+	if (typeof value === 'number') {
+		return Number.isFinite(value) ? 'number' : 'number (non-finite)'
+	}
+	if (typeof value === 'boolean') return 'boolean'
+	if (Array.isArray(value)) return `array (${value.length} items)`
+	if (typeof value === 'object') {
+		return `object (${Object.keys(value as Record<string, unknown>).length} keys)`
+	}
+	return typeof value
+}
+
 function requireOptionalString(value: unknown, label: string): string | null {
 	if (value == null) return null
 	if (typeof value !== 'string') {
 		throw new Error(
-			`Mailbox snapshot ${label} must be a string or null; got ${JSON.stringify(value)}.`,
+			`Mailbox snapshot ${label} must be a string or null; got ${describeSnapshotValue(value)}.`,
 		)
 	}
 	return value
@@ -76,7 +93,7 @@ function requireOptionalNumber(value: unknown, label: string): number | null {
 	if (value == null) return null
 	if (typeof value !== 'number' || !Number.isFinite(value)) {
 		throw new Error(
-			`Mailbox snapshot ${label} must be a finite number or null; got ${JSON.stringify(value)}.`,
+			`Mailbox snapshot ${label} must be a finite number or null; got ${describeSnapshotValue(value)}.`,
 		)
 	}
 	return value
@@ -93,7 +110,7 @@ function requireOptionalEnum<T extends string>(
 		!(values as ReadonlyArray<string>).includes(value)
 	) {
 		throw new Error(
-			`Mailbox snapshot ${label} is invalid; got ${JSON.stringify(value)}.`,
+			`Mailbox snapshot ${label} is invalid; got ${describeSnapshotValue(value)}.`,
 		)
 	}
 	return value as T
@@ -105,12 +122,12 @@ function parseDetailRecord(detailJson: string): Record<string, unknown> {
 		parsed = JSON.parse(detailJson) as unknown
 	} catch {
 		throw new Error(
-			`Mailbox snapshot detailJson is not valid JSON; got ${JSON.stringify(detailJson)}.`,
+			`Mailbox snapshot detailJson is not valid JSON; payload is ${detailJson.length} bytes.`,
 		)
 	}
 	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
 		throw new Error(
-			`Mailbox snapshot detailJson must be a JSON object; got ${JSON.stringify(parsed)}.`,
+			`Mailbox snapshot detailJson must be a JSON object; got ${describeSnapshotValue(parsed)}.`,
 		)
 	}
 	return parsed as Record<string, unknown>
@@ -285,8 +302,11 @@ export function toMailboxDeliveryEventInput(input: {
 			'detail.usageStartedAt',
 		),
 		usageMonth: projection.usageMonth,
-		usageBytes: projection.usageBytes,
-		usageDurationMs: projection.usageDurationMs,
+		usageBytes: requireOptionalNumber(projection.usageBytes, 'usageBytes'),
+		usageDurationMs: requireOptionalNumber(
+			projection.usageDurationMs,
+			'usageDurationMs',
+		),
 		usageEffectRetryAt: requireOptionalString(
 			detail['usageEffectRetryAt'],
 			'detail.usageEffectRetryAt',

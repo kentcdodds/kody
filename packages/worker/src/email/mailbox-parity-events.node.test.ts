@@ -128,6 +128,19 @@ test('mailbox parity skips system email and never throws when the binding is abs
 	)
 	expect(writeDataPoint).not.toHaveBeenCalled()
 
+	recordMailboxParityEvent(
+		{
+			EMAIL_EVENTS: { writeDataPoint } as unknown as AnalyticsEngineDataset,
+		},
+		{
+			userId: '',
+			category: 'mirror',
+			operation: 'mirror_message',
+			outcome: 'mirrored',
+		},
+	)
+	expect(writeDataPoint).not.toHaveBeenCalled()
+
 	expect(() =>
 		recordMailboxParityEvent(
 			{},

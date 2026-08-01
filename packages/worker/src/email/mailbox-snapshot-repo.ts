@@ -57,9 +57,9 @@ function mapDeliveryEventMirrorRow(
 				? null
 				: String(row.usage_effect_recorded_at),
 		usageMonth: row.usage_month == null ? null : String(row.usage_month),
-		usageBytes: row.usage_bytes == null ? null : Number(row.usage_bytes) || 0,
+		usageBytes: row.usage_bytes == null ? null : Number(row.usage_bytes),
 		usageDurationMs:
-			row.usage_duration_ms == null ? null : Number(row.usage_duration_ms) || 0,
+			row.usage_duration_ms == null ? null : Number(row.usage_duration_ms),
 	}
 }
 

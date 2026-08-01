@@ -4,6 +4,8 @@ import {
 	assertMailboxNonEmptyString,
 	assertMailboxProcessingStatus,
 	assertOptionalMailboxCanonicalIsoTimestamp,
+	type MailboxDeleteDeliveryEventInput,
+	type MailboxDeleteMessageMetadataInput,
 	type MailboxDeleteResult,
 	type MailboxDeleteThreadIfEmptyInput,
 	type MailboxPartialMutationResult,
@@ -141,7 +143,7 @@ export function setMailboxMessageClassification(
  */
 export function deleteMailboxMessageMetadata(
 	sql: SqlStorage,
-	input: { messageId: string; deletedAt: string },
+	input: Omit<MailboxDeleteMessageMetadataInput, 'ownerId'>,
 ): MailboxDeleteResult {
 	const messageId = assertMailboxNonEmptyString(input.messageId, 'messageId')
 	const deletedAt = assertMailboxCanonicalIsoTimestamp(
@@ -182,7 +184,7 @@ export function deleteMailboxMessageMetadata(
  */
 export function deleteMailboxDeliveryEvent(
 	sql: SqlStorage,
-	input: { eventId: string; deletedAt: string },
+	input: Omit<MailboxDeleteDeliveryEventInput, 'ownerId'>,
 ): MailboxDeleteResult {
 	const eventId = assertMailboxNonEmptyString(input.eventId, 'eventId')
 	const deletedAt = assertMailboxCanonicalIsoTimestamp(

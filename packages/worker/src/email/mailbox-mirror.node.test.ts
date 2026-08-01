@@ -349,4 +349,15 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 			message: baseMessage(),
 		}),
 	).toEqual({ status: 'skipped', reason: 'mailbox-unconfigured' })
+
+	expect(
+		await mirrorMailboxTouchThread({
+			env,
+			ownerId: '',
+			threadId: 'thread-1',
+			lastMessageAt: '2026-07-01T13:00:00.000Z',
+			updatedAt: '2026-07-01T13:00:00.000Z',
+		}),
+	).toEqual({ status: 'skipped', reason: 'missing-owner' })
+	expect(touchThread).toHaveBeenCalledTimes(1)
 })

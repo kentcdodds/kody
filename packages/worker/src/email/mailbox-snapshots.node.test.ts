@@ -223,6 +223,7 @@ test('D1→Mailbox snapshot converters normalize defaults and prefer D1 promoted
 })
 
 test('D1→Mailbox delivery snapshot conversion fails clearly on invalid JSON or enums', () => {
+	const sentinelSecret = 'SENTINEL_SECRET_DO_NOT_LEAK_9f3a2b1c'
 	const baseProjection: EmailDeliveryEventMirrorProjection = {
 		id: 'evt-bad',
 		messageId: null,
@@ -243,10 +244,27 @@ test('D1→Mailbox delivery snapshot conversion fails clearly on invalid JSON or
 
 	expect(() =>
 		toMailboxDeliveryEventInput({
-			projection: { ...baseProjection, detailJson: '{not-json' },
+			projection: baseProjection,
+			sourceMutationAt: '',
+		}),
+	).toThrow(/sourceMutationAt must be a non-empty string/)
+
+	const invalidJsonDetail = `{not-json,"apiKey":"${sentinelSecret}"`
+	expect(() =>
+		toMailboxDeliveryEventInput({
+			projection: { ...baseProjection, detailJson: invalidJsonDetail },
 			sourceMutationAt: '2026-07-02T10:00:00.000Z',
 		}),
 	).toThrow(/detailJson is not valid JSON/)
+	try {
+		toMailboxDeliveryEventInput({
+			projection: { ...baseProjection, detailJson: invalidJsonDetail },
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
+		})
+	} catch (error) {
+		expect(String(error)).not.toContain(sentinelSecret)
+		expect(String(error)).toMatch(/payload is \d+ bytes/)
+	}
 
 	expect(() =>
 		toMailboxDeliveryEventInput({
@@ -254,6 +272,18 @@ test('D1→Mailbox delivery snapshot conversion fails clearly on invalid JSON or
 			sourceMutationAt: '2026-07-02T10:00:00.000Z',
 		}),
 	).toThrow(/detailJson must be a JSON object/)
+	try {
+		toMailboxDeliveryEventInput({
+			projection: {
+				...baseProjection,
+				detailJson: JSON.stringify([sentinelSecret]),
+			},
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
+		})
+	} catch (error) {
+		expect(String(error)).not.toContain(sentinelSecret)
+		expect(String(error)).toMatch(/array \(1 items\)/)
+	}
 
 	expect(() =>
 		toMailboxDeliveryEventInput({
@@ -264,6 +294,20 @@ test('D1→Mailbox delivery snapshot conversion fails clearly on invalid JSON or
 			sourceMutationAt: '2026-07-02T10:00:00.000Z',
 		}),
 	).toThrow(/detail\.state is invalid/)
+	try {
+		toMailboxDeliveryEventInput({
+			projection: {
+				...baseProjection,
+				detailJson: JSON.stringify({
+					state: 'not-a-state',
+					apiKey: sentinelSecret,
+				}),
+			},
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
+		})
+	} catch (error) {
+		expect(String(error)).not.toContain(sentinelSecret)
+	}
 
 	expect(() =>
 		toMailboxDeliveryEventInput({
@@ -286,6 +330,30 @@ test('D1→Mailbox delivery snapshot conversion fails clearly on invalid JSON or
 			sourceMutationAt: '2026-07-02T10:00:00.000Z',
 		}),
 	).toThrow(/detail\.expectedAttachmentCount must be a finite number/)
+	try {
+		toMailboxDeliveryEventInput({
+			projection: {
+				...baseProjection,
+				detailJson: JSON.stringify({
+					expectedAttachmentCount: sentinelSecret,
+				}),
+			},
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
+		})
+	} catch (error) {
+		expect(String(error)).not.toContain(sentinelSecret)
+		expect(String(error)).toMatch(/string \(\d+ chars\)/)
+	}
+
+	expect(() =>
+		toMailboxDeliveryEventInput({
+			projection: {
+				...baseProjection,
+				usageBytes: Number.NaN,
+			},
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
+		}),
+	).toThrow(/usageBytes must be a finite number/)
 
 	expect(() =>
 		toMailboxAttachmentInput({

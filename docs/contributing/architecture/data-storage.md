@@ -763,7 +763,7 @@ surface that later live-path wiring will call.
 2. **D1-authoritative dual-write + parity** — every user-mail mutation that
    writes D1 also writes the DO; parity counters and reconciliation prove DO
    completeness against D1. D1 stays authoritative for reads. Phase 2a (current
-   PR) adds `email-owner.ts`, `mailbox-snapshots.ts`,
+   PR) adds `email-owner.ts`, `mailbox-types.ts`, `mailbox-snapshots.ts`,
    `mailbox-snapshot-repo.ts`, `mailbox-mirror.ts`, `mailbox-mutations.ts` +
    matching DO RPCs (`touchThread`, `updateMessageDelivery`,
    `setMessageClassification`, `deleteMessageMetadata`, `deleteDeliveryEvent`,
