@@ -130,11 +130,12 @@ v5 adds an optional per-service shadow table as **best-effort future-cutover
 support only** — see
 [Package service liveness — UserMeter shadow](#package-service-liveness--usermeter-shadow-expand-phase-slice-4-phase-a).
 
-**D1 account-deletion write fencing** (`users.deleting_at` /
-`account_write_leases`) stays authoritative for fencing, list, repair, and
-drain. UserMeter schema v6 adds an optional deletion-fence / write-lease shadow
-as **best-effort future-cutover support only** — see
-[Account-deletion write fencing — UserMeter shadow](#account-deletion-write-fencing--usermeter-shadow-expand-phase-slice-5-phase-a).
+**Account-deletion write fencing** uses a split authority model after slice 5
+Phase B: D1 `users.deleting_at` remains the permanent point gate; callers that
+supply `USER_METER` treat UserMeter (`authority='do'`) as authoritative for
+lease acquire/held/release/drain count, while email/transition callers that omit
+`env` keep the exact D1 `account_write_leases` path. See
+[Account-deletion write fencing — UserMeter authority](#account-deletion-write-fencing--usermeter-authority-expand-phase-slice-5-phase-b).
 
 StorageRunner bucket `estimatedBytes` and the per-bucket inventory in
 `user_storage_buckets` stay a **separate** quota component. StorageRunner write
@@ -282,60 +283,63 @@ remains on D1.
 **Account purge:** `UserMeter.purge()` clears package-service shadow rows with
 the rest of DO state via `deleteAll`.
 
-### Account-deletion write fencing — UserMeter shadow (expand phase slice 5, Phase A)
+### Account-deletion write fencing — UserMeter authority (expand phase slice 5, Phase B)
 
-D1 `users.deleting_at`, `account_write_leases`, and
-`account_write_lease_repairs` remain the **sole authority** for deletion
-fencing, lease acquire/release, active-lease list, audited repair, and deletion
-drain waits in this PR. Nothing in Phase A switches `withAccountWriteLease`,
-`markAccountDeleting`, `listActiveAccountWriteLeases`, or
-`repairAccountWriteLease` onto UserMeter reads — public errors, ALS nested-lease
-reuse, and D1 `waitUntil` release semantics stay identical when optional `env`
-is omitted.
+UserMeter schema **v7** stores `account_write_leases.authority` (`do` |
+`legacy`; rows created under v6 default to `legacy`) and `pending_repair_id` for
+audit-safe DO repair.
 
-UserMeter schema **v6** adds a singleton `deletion_state.deleting_at` tombstone
-plus per-token `account_write_leases` rows (`token`, `holder`, `acquired_at`) as
-**best-effort shadow / future-cutover support only**. User scope is the DO
-identity — there is no `user_id` column. Shadow rows are never read for fencing,
-list, repair, or drain in this slice.
+**Split authority:**
 
-**Optional dual-write from `account/deletion-state.ts`:** after a **successful**
-D1 mark/acquire/release/repair, callers may pass optional `env?: UserMeterEnv`
-(and `waitUntil` when available). The helper schedules a best-effort UserMeter
-shadow (`shadowReplaceDeletionState` on mark, `shadowAcquireWriteLease`,
-`shadowReleaseWriteLease`). After D1 `deleting_at` is set, mark loads the
-authoritative active D1 lease rows and calls `shadowReplaceDeletionState`, which
-under DO serialization sets/preserves the tombstone then deletes and re-inserts
-exactly that lease set — so a prior failed shadow release cannot leave stale
-rows, and a deletion retry with zero D1 leases clears the shadow set. Acquire
-shadows start during the write; ordered release shadows run after authoritative
-D1 release. When `waitUntil` is provided, shadows detach through it; when
-omitted, mark/release/repair shadows are awaited (still non-rejecting) so
-middleware and other non-`waitUntil` callers cannot return with a stale shadow
-lease or missing tombstone. Missing `USER_METER` is a no-op; failures log
-`account-deletion-user-meter-shadow-failed` and never alter D1 results or
-errors. Mark is monotonic (first `deleting_at` wins). Acquire is rejected when a
-deleting tombstone is present and is idempotent for an already-held token.
-Cutover/list RPCs (`listWriteLeases`, `bootstrapDeletionState`) may still carry
-token/holder for parity review.
+- D1 `users.deleting_at` remains the **permanent point gate** (auth projection /
+  purge failures fail closed). Assert-only readers (`assertAccountWritable*`)
+  stay D1-only. D1 `account_write_leases` / `account_write_lease_repairs` tables
+  are **not** retired.
+- When `env.USER_METER` is supplied (all non-email Phase-A-wired callers),
+  UserMeter is **authoritative** for lease acquire / held / release via
+  `acquireWriteLease` / `assertWriteLeaseHeld` / `releaseWriteLease`
+  (`authority='do'`). Missing binding or DO failures **fail closed**.
+- When `env` is omitted (email transition), retain the **exact D1 lease path**
+  (including `active_write_count`, ALS nested reuse, and `waitUntil` release).
 
-**Account export:** `UserMeter.exportCounters` returns additive `deletionShadow`
-on the first page only (`startAfter` absent); later pages return `null`. The
-export shape is sanitized (`deletingAt`, `activeWriteLeaseCount`, and
-`writeLeases` with `acquiredAt` only — no raw token or holder). Section totals
-count the tombstone (when set) plus `activeWriteLeaseCount`; the field is
-explicitly non-authoritative — authoritative fencing remains on D1.
+**Temporary rolling-version D1 mirror (not the final hot path):** while older
+isolates may still run Phase-A mark (D1-only lease counts), every DO-authority
+acquire also inserts the **same** `token` / `holder` / `acquiredAt` into D1
+`account_write_leases` and bumps `active_write_count` with the existing atomic
+batch + lost-response reconcile. If that D1 mirror cannot be confirmed, the DO
+lease is released and acquire fails closed. Authoritative release clears the DO
+lease first, then the D1 mirror/`active_write_count` (same `waitUntil`
+detachment semantics) so a stale D1 row may overblock old marks but never
+underblock. After old isolates drain, remove this mirror (and later the D1 lease
+inventory) from the hot path.
 
-**Account purge:** `UserMeter.purge()` clears counters, claims, storage shadow,
-package-service shadow, and write-lease shadow via `deleteAll`, then restores
-any pre-existing deleting tombstone so a later authority cutover cannot reopen
-writes for a purged account.
+**`markAccountDeleting`:** always `COALESCE`s D1 `deleting_at` first, then loads
+live D1 leases (including temporary DO mirrors). With `env`, calls authoritative
+`markDeleting` which sets/preserves the DO tombstone, replaces **only legacy**
+rows with that exact D1 snapshot, preserves DO-authority rows, and returns the
+deduped-by-token union count used for drain waits. Without `env`, returns the D1
+lease count unchanged (so Phase-A marks observe DO acquires via the mirror).
 
-Non-email production call sites that hold `env` pass it into deletion-state APIs
-(`withAccountWriteLease`, `markAccountDeleting`, `repairAccountWriteLease`) and
-forward existing `waitUntil` when available. Email paths stay untouched in this
-slice (`system:email` skip unchanged). Assert-only readers
-(`assertAccountWritable*`, `listActiveAccountWriteLeases`) remain D1-only.
+**Admin list / repair:** `listActiveAccountWriteLeases(db, userId, env?)` with
+`env` unions live D1 leases + DO-authority leases (dedupe by token, same
+`acquired_at, token` order); without `env` exact D1 behavior. DO repair is
+audit-first and idempotent: prepare (stable `repairId`, lease stays held) →
+insert/verify D1 audit → finalize exact pending DO repair → then idempotently
+clear matching D1 mirror/count. The D1 mirror is never cleared while the DO
+lease remains held. Finalize failure without commit leaves DO + D1 mirror held
+and fails closed; retry resumes the pending repair. Retry after finalize commit
+/ lost response returns success when the matching audit exists and the DO lease
+is absent (clears any stale D1 mirror; never falls through to a mismatched D1
+atomic batch). Post-write held checks treat pending repair as held until
+finalize, then surface `AccountWriteLeaseLostError`. Pure D1 leases keep the
+existing atomic audit-before-release batch.
+
+**Account export / purge:** first-page sanitized `deletionShadow` still omits
+raw token/holder. `purge()` clears leases/counters/shadows via `deleteAll` then
+restores any deleting tombstone; D1 `deleting_at` remains the gate.
+
+Public errors, ALS nested-lease reuse, holder strings, and `waitUntil` release
+detachment stay parity-compatible with the pre-cutover surface.
 
 ### Future package-service authority flip (contract follow-up)
 
@@ -361,11 +365,11 @@ Only then do reads, reserves, and reconciliation switch to UserMeter-first with
 D1 as mirror/cursor. Until that flip, shadow divergence is acceptable; D1
 remains the contract.
 
-**Remaining UserMeter expand roadmap:** slice 5 Phase A — account-deletion write
-fencing shadow (this PR; D1 authority unchanged; non-email dual-write wired).
-Package-service and storage authority flips are separate high-risk contract
-follow-ups after soak/parity review. Deletion-fence authority flip is a separate
-high-risk contract follow-up after shadow/D1 parity review.
+**Current UserMeter cutover:** slice 5 Phase B moves non-email write leases into
+UserMeter authority while retaining the D1 `deleting_at` gate and temporary
+same-token rollout mirrors; email keeps its D1 lease path. Package-service and
+storage authority flips remain separate high-risk contract follow-ups after
+soak/parity review.
 
 **Daily-counter mirror retirement:** dropping D1 `entitlement_daily_counters`
 waits until reporting-off-D1 work merges and mirror parity is verified in
