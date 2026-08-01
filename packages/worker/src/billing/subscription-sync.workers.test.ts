@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers'
+import { env } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -6,7 +6,6 @@ import { createBillingLinkReference } from './billing-config.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSession,
-	refreshStaleStripePlans,
 } from './subscription-sync.ts'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -291,59 +290,4 @@ test('linkStripeCustomerFromCheckoutSession rejects unsafe checkout links withou
 		})
 		vi.unstubAllGlobals()
 	}
-})
-
-test('refreshStaleStripePlans refreshes stale linked customers', async () => {
-	const email = `stale-refresh-${crypto.randomUUID()}@example.com`
-	const staleAt = '2026-07-19T10:00:00.000Z'
-	const now = new Date('2026-07-19T12:00:00.000Z')
-	const user = await seedUser({
-		email,
-		stripeCustomerId: 'cus_stale',
-		stripePlan: 'pro',
-		stripePlanRefreshedAt: staleAt,
-	})
-	stubStripeFetch({
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_stale',
-					status: 'active',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_pro' } }] },
-				},
-			],
-		},
-	})
-
-	const result = await refreshStaleStripePlans({
-		env: createBillingEnv(),
-		now,
-	})
-	expect(result.skipped).toBe(false)
-	expect(result.refreshed).toBeGreaterThanOrEqual(1)
-	expect(result.failed).toBe(0)
-
-	const row = await readUserBilling(user.id)
-	expect(row).toEqual({
-		stripe_customer_id: 'cus_stale',
-		stripe_plan: 'pro',
-		stripe_plan_refreshed_at: now.toISOString(),
-	})
-
-	vi.unstubAllGlobals()
-})
-
-test('refreshStaleStripePlans skips when billing is not configured', async () => {
-	await ensureEntitlementTestSchema(env.APP_DB)
-	const fetchStub = vi.fn()
-	vi.stubGlobal('fetch', fetchStub)
-
-	const result = await refreshStaleStripePlans({
-		env: createBillingEnv({ STRIPE_SECRET_KEY: '' }),
-	})
-	expect(result).toEqual({ refreshed: 0, failed: 0, skipped: true })
-	expect(fetchStub).not.toHaveBeenCalled()
-
-	vi.unstubAllGlobals()
 })

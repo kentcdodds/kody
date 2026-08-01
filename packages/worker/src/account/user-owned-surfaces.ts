@@ -9,6 +9,7 @@ export type UserOwnedDurableObjectSurface = {
 		| 'package_service_instance'
 		| 'run_log'
 		| 'user_meter'
+		| 'stripe_plan_refresh'
 		| 'mcp'
 	binding: string
 	/** Result key used in AccountDeletionResult.clearedDurableObjects when purged */
@@ -131,6 +132,16 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			export: 'include',
 			notes:
 				'Per-user daily entitlement counters (one DO per stable userId). Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters and the inbound delivery ledger, and account export pages counters through the user_meter section via exportCounters.',
+		},
+		{
+			id: 'stripe_plan_refresh',
+			binding: 'STRIPE_PLAN_REFRESH',
+			deletionResultKey: 'stripePlanRefreshes',
+			export: 'exclude',
+			excludeReason:
+				'Ephemeral one-shot Stripe reconciliation alarm state. Billing columns remain canonical in D1 and are included in the users export.',
+			notes:
+				'One alarm object per stable userId. Account deletion cancels the alarm and clears its stored owner id.',
 		},
 		{
 			id: 'mcp',
@@ -267,11 +278,15 @@ export const accountUserOwnedArtifactSurfaces: ReadonlyArray<UserOwnedArtifactSu
 	] as const
 
 const accountExportExcludedDurableObjectDisplayNames: Readonly<
-	Record<'mcp' | 'repo_session' | 'package_realtime_session', string>
+	Record<
+		'mcp' | 'repo_session' | 'package_realtime_session' | 'stripe_plan_refresh',
+		string
+	>
 > = {
 	mcp: 'MCP',
 	repo_session: 'RepoSession',
 	package_realtime_session: 'PackageRealtimeSession',
+	stripe_plan_refresh: 'StripePlanRefresh',
 } as const
 
 export function getAccountExportExcludedDurableObjects(): Array<{
@@ -279,9 +294,12 @@ export function getAccountExportExcludedDurableObjects(): Array<{
 	reason: string
 }> {
 	return (
-		['mcp', 'repo_session', 'package_realtime_session'] satisfies Array<
-			keyof typeof accountExportExcludedDurableObjectDisplayNames
-		>
+		[
+			'mcp',
+			'repo_session',
+			'package_realtime_session',
+			'stripe_plan_refresh',
+		] satisfies Array<keyof typeof accountExportExcludedDurableObjectDisplayNames>
 	).map((id) => {
 		const surface = accountUserOwnedDurableObjectSurfaces.find(
 			(candidate) => candidate.id === id,

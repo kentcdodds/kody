@@ -533,6 +533,10 @@ function createSuccessfulDeletionEnv(
 			idFromName: durableObjectId,
 			get: () => ({ purge: async () => ({ ok: true as const }) }),
 		},
+		STRIPE_PLAN_REFRESH: {
+			idFromName: durableObjectId,
+			get: () => ({ purgeUser: async () => ({ ok: true as const }) }),
+		},
 		JOB_MANAGER: {
 			idFromName: durableObjectId,
 			get: () => ({ purgeUser: async () => ({ ok: true as const }) }),

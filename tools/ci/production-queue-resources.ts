@@ -8,6 +8,11 @@ import {
 	platformFeedbackDispatchQueueBinding,
 	platformFeedbackDispatchQueueName,
 } from '../../packages/worker/src/platform-feedback/dispatch-queue-names.ts'
+import {
+	scheduledDispatchDeadLetterQueueName,
+	scheduledDispatchQueueBinding,
+	scheduledDispatchQueueName,
+} from '../../packages/worker/src/scheduled/scheduled-dispatch-queue-names.ts'
 
 const emailDeliveryQueueName = 'kody-email-delivery'
 const emailDeliveryDeadLetterQueueName = 'kody-email-delivery-dlq'
@@ -20,6 +25,9 @@ function readQueueConsumer(input: {
 	queueName: string
 	deadLetterQueueName: string
 	configPath: string
+	maxBatchSize?: number
+	maxBatchTimeout?: number
+	maxConcurrency?: number
 }) {
 	const value = input.consumers.find((entry) => {
 		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
@@ -34,9 +42,13 @@ function readQueueConsumer(input: {
 	const consumer = value as Record<string, unknown>
 	if (
 		consumer.dead_letter_queue !== input.deadLetterQueueName ||
-		consumer.max_batch_size !== expectedMaxBatchSize ||
-		consumer.max_batch_timeout !== expectedMaxBatchTimeout ||
-		consumer.max_retries !== expectedMaxRetries
+		consumer.max_batch_size !==
+			(input.maxBatchSize ?? expectedMaxBatchSize) ||
+		consumer.max_batch_timeout !==
+			(input.maxBatchTimeout ?? expectedMaxBatchTimeout) ||
+		consumer.max_retries !== expectedMaxRetries ||
+		(input.maxConcurrency !== undefined &&
+			consumer.max_concurrency !== input.maxConcurrency)
 	) {
 		throw new Error(
 			`wrangler config "${input.configPath}" has invalid production consumer settings for "${input.queueName}".`,
@@ -60,9 +72,9 @@ export function parseProductionQueueResources(input: {
 	}
 	const queueConfig = queues as Record<string, unknown>
 	const consumers = queueConfig.consumers
-	if (!Array.isArray(consumers) || consumers.length !== 3) {
+	if (!Array.isArray(consumers) || consumers.length !== 4) {
 		throw new Error(
-			`wrangler config "${input.configPath}" must define exactly three production Queue consumers.`,
+			`wrangler config "${input.configPath}" must define exactly four production Queue consumers.`,
 		)
 	}
 	const emailDelivery = readQueueConsumer({
@@ -82,6 +94,15 @@ export function parseProductionQueueResources(input: {
 		queueName: communityActivityDispatchQueueName,
 		deadLetterQueueName: communityActivityDispatchDeadLetterQueueName,
 		configPath: input.configPath,
+	})
+	const scheduledDispatch = readQueueConsumer({
+		consumers,
+		queueName: scheduledDispatchQueueName,
+		deadLetterQueueName: scheduledDispatchDeadLetterQueueName,
+		configPath: input.configPath,
+		maxBatchSize: 1,
+		maxBatchTimeout: 0,
+		maxConcurrency: 16,
 	})
 	const producers = queueConfig.producers
 	if (!Array.isArray(producers)) {
@@ -127,6 +148,25 @@ export function parseProductionQueueResources(input: {
 			`wrangler config "${input.configPath}" must bind "${communityActivityDispatchQueueBinding}" to "${communityActivityDispatchQueueName}".`,
 		)
 	}
+	const scheduledDispatchProducer = producers.find((entry) => {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+			return false
+		return (
+			(entry as Record<string, unknown>).binding ===
+			scheduledDispatchQueueBinding
+		)
+	})
+	if (
+		!scheduledDispatchProducer ||
+		typeof scheduledDispatchProducer !== 'object' ||
+		Array.isArray(scheduledDispatchProducer) ||
+		(scheduledDispatchProducer as Record<string, unknown>).queue !==
+			scheduledDispatchQueueName
+	) {
+		throw new Error(
+			`wrangler config "${input.configPath}" must bind "${scheduledDispatchQueueBinding}" to "${scheduledDispatchQueueName}".`,
+		)
+	}
 	return {
 		emailDeliveryQueueName: emailDelivery.queue,
 		emailDeliveryDeadLetterQueueName: emailDelivery.deadLetterQueue,
@@ -136,5 +176,7 @@ export function parseProductionQueueResources(input: {
 		communityActivityDispatchQueueName: communityActivityDispatch.queue,
 		communityActivityDispatchDeadLetterQueueName:
 			communityActivityDispatch.deadLetterQueue,
+		scheduledDispatchQueueName: scheduledDispatch.queue,
+		scheduledDispatchDeadLetterQueueName: scheduledDispatch.deadLetterQueue,
 	}
 }

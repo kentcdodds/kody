@@ -35,6 +35,11 @@ export function userMeterDurableObjectName(userId: string) {
 	return userId
 }
 
+/** StripePlanRefresh — one activity-driven refresh alarm per user. */
+export function stripePlanRefreshDurableObjectName(userId: string) {
+	return userId
+}
+
 /** McpClientHub — one client-hub DO per user (trimmed). */
 export function mcpClientHubDurableObjectName(userId: string) {
 	return userId.trim()
