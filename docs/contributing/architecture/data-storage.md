@@ -753,7 +753,10 @@ field-by-field.
 
 **Best-effort mirror helpers** (`mailbox-mirror.ts`): non-throwing wrappers
 around the DO RPCs for D1-authoritative dual-write. Each awaited DO RPC is
-bounded by `mailboxMirrorRpcTimeoutMs` (1 second). Each returns a structured
+bounded by `mailboxMirrorRpcTimeoutMs` (1 second) by default.
+`mirrorMailboxDeliveryEventSnapshots` accepts an optional `timeoutMs` override
+(telemetry/outcomes unchanged) so the scheduled parity lane can use a longer
+batch bound without slowing live dual-write. Each returns a structured
 `MailboxMirrorResult`: `{ status: 'mirrored' }`, `{ status: 'stale' }`,
 `{ status: 'missing' }`, `{ status: 'timeout' }`,
 `{ status: 'skipped', reason }` (`system-email` | `mailbox-unconfigured` |
@@ -846,7 +849,9 @@ mail (`email_messages` or `email_delivery_events`) are always eligible;
 discoverable even when D1 mail is empty so DO-only leftovers after the last-row
 delete can be purged and reconciled. Never-tracked empty users stay out.
 Per-user work shares a ~10s wall-clock budget (`mailboxParityTimeBudgetMs`)
-across the batch.
+across the batch. The five-minute cron cadence plus that budget is the
+production convergence loop: each tick should make forward progress on the
+oldest owners rather than soaking the lane on per-event RPCs.
 
 **Account-deletion races:** `loadUserParityState`, `persistUserParityProgress`,
 and `rotateCheckedAt` require `deleting_at IS NULL` (zero-row updates are
@@ -865,10 +870,19 @@ Per user, the lane:
    graph via `mirrorMailboxMessageGraphFromD1` until complete or
    budget-exhausted.
 3. **Bounded delivery-event backfill** — after messages complete, keyset-pages
-   **every** owner `email_delivery_events` row by `(created_at, id)` — not only
-   `message_id`-null orphans — and mirrors each via
-   `mirrorMailboxParityDeliveryEventFromD1`. This repairs events omitted when
-   per-message graph mirroring truncates the event batch.
+   **every** owner `email_delivery_events` row by `(created_at, id)` into ready
+   `MailboxDeliveryEventInput` snapshots
+   (`listMailboxDeliveryEventMirrorInputsForOwnerKeyset`; not only
+   `message_id`-null orphans) and mirrors each page with **one**
+   `upsertDeliveryEvents` batch via `mirrorMailboxDeliveryEventSnapshots`
+   (`mailboxParityEventPageSize` ≤ DO max, timeout
+   `mailboxParityEventMirrorTimeoutMs` ≈ 5s). Production evidence: per-event 1s
+   RPCs repeatedly timed out on a lagging owner and prevented soak under the 10s
+   lane budget; page batches restore convergence while live dual-write keeps the
+   1s bound. Cursor advances through per-event mirrored/stale/missing results
+   (equal `created_at` progresses by id); uniform timeout/error/unconfigured
+   retains the cursor so the next tick reloads the same page. Rows deleted
+   before the snapshot load simply do not appear.
 4. **Durable content watermark replay** — after both creation phases complete,
    opens a frozen window `(watermark, upper]`
    (`mailbox_parity_content_replay_upper_at` set once when the window opens;
@@ -1319,17 +1333,17 @@ Reconcile runs through the registry in
 cleanup, system-email retention, general retention, job retention, hourly
 usage-rollup aggregation, and the every-5-minute `mailbox_parity` lane
 (queue-isolated; up to sixteen users per tick within a ~10s budget; D1 user
-discovery including previously tracked empty-mail owners, bounded message + full
-delivery-event backfill, durable content-watermark replay, metadata-only purge +
-full rebuild on count mismatch, and count compare — see
-[Mailbox](#durable-objects-mailbox)). Each production queue message preserves
-`scheduled_lane_failed` / D1 lock-contention log and Sentry context. A handled
-lane failure is acknowledged and retried by the next cron tick, matching the old
-cron semantics. A failed enqueue is reported and runs through the inline
-fallback after all sibling enqueue attempts finish; multiple failed enqueues
-fall back sequentially to avoid D1 lock contention. Consumer transport failures
-retain the configured retry/DLQ behavior. No failure can abort or mask a sibling
-invocation.
+discovery including previously tracked empty-mail owners, bounded message +
+page-batched delivery-event backfill (~5s batch timeout under the ~10s lane
+budget), durable content-watermark replay, metadata-only purge + full rebuild on
+count mismatch, and count compare — see [Mailbox](#durable-objects-mailbox)).
+Each production queue message preserves `scheduled_lane_failed` / D1
+lock-contention log and Sentry context. A handled lane failure is acknowledged
+and retried by the next cron tick, matching the old cron semantics. A failed
+enqueue is reported and runs through the inline fallback after all sibling
+enqueue attempts finish; multiple failed enqueues fall back sequentially to
+avoid D1 lock contention. Consumer transport failures retain the configured
+retry/DLQ behavior. No failure can abort or mask a sibling invocation.
 
 Production note:
 

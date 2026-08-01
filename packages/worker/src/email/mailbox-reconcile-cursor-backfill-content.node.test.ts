@@ -8,6 +8,7 @@ import {
 	listEventBackfillPage,
 	listUsersForMailboxParity,
 	mockDoCounts,
+	mockMirroredEventSnapshots,
 	parkUser,
 	parityEnv,
 	readParityRow,
@@ -19,6 +20,7 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 import {
 	mailboxParityContentPageSize,
+	mailboxParityEventMirrorTimeoutMs,
 	mailboxParityMessagePageSize,
 } from './mailbox-parity-phases.ts'
 
@@ -141,9 +143,7 @@ test('mailbox parity multi-run cursor progress, isolation, soak, errors, and cou
 			return successGraph(input.messageId)
 		},
 	)
-	mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValue({
-		status: 'mirrored',
-	})
+	mockMirroredEventSnapshots()
 	mockDoCounts({
 		threads: 0,
 		messages: 0,
@@ -200,7 +200,7 @@ test('mailbox parity multi-run cursor progress, isolation, soak, errors, and cou
 		async (input: { messageId: string }) => successGraph(input.messageId),
 	)
 	mocks.mirrorMailboxMessageGraphFromD1.mockClear()
-	mocks.mirrorMailboxDeliveryEventFromD1.mockClear()
+	mocks.mirrorMailboxDeliveryEventSnapshots.mockClear()
 	mocks.recordMailboxParityEvent.mockClear()
 	await parkUser(db, ownerB)
 	const mismatchNow = new Date('2026-08-01T11:00:00.000Z')
@@ -217,11 +217,16 @@ test('mailbox parity multi-run cursor progress, isolation, soak, errors, and cou
 		mismatched: 1,
 		failed: 0,
 	})
-	expect(mocks.mirrorMailboxDeliveryEventFromD1).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: ownerA, eventId: 'evt-bound-1' }),
-	)
-	expect(mocks.mirrorMailboxDeliveryEventFromD1).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: ownerA, eventId: 'evt-orphan-1' }),
+	expect(mocks.mirrorMailboxDeliveryEventSnapshots).toHaveBeenCalledTimes(1)
+	expect(mocks.mirrorMailboxDeliveryEventSnapshots).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ownerId: ownerA,
+			events: expect.arrayContaining([
+				expect.objectContaining({ id: 'evt-bound-1' }),
+				expect.objectContaining({ id: 'evt-orphan-1' }),
+			]),
+			timeoutMs: mailboxParityEventMirrorTimeoutMs,
+		}),
 	)
 
 	const afterMismatch = await readParityRow(db, ownerA)
@@ -247,7 +252,7 @@ test('mailbox parity multi-run cursor progress, isolation, soak, errors, and cou
 		createdAt: '2026-07-03T00:00:00.000Z',
 	})
 	mocks.mirrorMailboxMessageGraphFromD1.mockClear()
-	mocks.mirrorMailboxDeliveryEventFromD1.mockClear()
+	mocks.mirrorMailboxDeliveryEventSnapshots.mockClear()
 	mockDoCounts({
 		threads: 1,
 		messages: mailboxParityMessagePageSize + 2,
@@ -345,9 +350,7 @@ test('mailbox parity content watermark repairs equal-count updates and soak', as
 		mocks.mirrorMailboxMessageGraphFromD1.mockImplementation(
 			async (input: { messageId: string }) => successGraph(input.messageId),
 		)
-		mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValue({
-			status: 'mirrored',
-		})
+		mockMirroredEventSnapshots()
 		mockDoCounts({
 			threads: 0,
 			messages: 2,
@@ -438,9 +441,7 @@ test('mailbox parity replays message updated during initial backfill', async () 
 				return successGraph(input.messageId)
 			},
 		)
-		mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValue({
-			status: 'mirrored',
-		})
+		mockMirroredEventSnapshots()
 		mockDoCounts({
 			threads: 0,
 			messages: 2,
@@ -496,9 +497,7 @@ test('mailbox parity content replay resumes durable upper and cursor across tick
 		mocks.mirrorMailboxMessageGraphFromD1.mockImplementation(
 			async (input: { messageId: string }) => successGraph(input.messageId),
 		)
-		mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValue({
-			status: 'mirrored',
-		})
+		mockMirroredEventSnapshots()
 		mockDoCounts({
 			threads: 0,
 			messages: messageCount,
@@ -599,9 +598,7 @@ test('mailbox parity eventsTruncated still completes via full event phase', asyn
 	mocks.mirrorMailboxMessageGraphFromD1.mockResolvedValue(
 		successGraph('msg-1', true),
 	)
-	mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValue({
-		status: 'mirrored',
-	})
+	mockMirroredEventSnapshots()
 	mockDoCounts({
 		threads: 0,
 		messages: 1,
@@ -622,5 +619,15 @@ test('mailbox parity eventsTruncated still completes via full event phase', asyn
 		mismatched: 0,
 		failed: 0,
 	})
-	expect(mocks.mirrorMailboxDeliveryEventFromD1).toHaveBeenCalledTimes(3)
+	expect(mocks.mirrorMailboxDeliveryEventSnapshots).toHaveBeenCalledTimes(1)
+	expect(mocks.mirrorMailboxDeliveryEventSnapshots).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ownerId: owner,
+			events: [
+				expect.objectContaining({ id: 'evt-0' }),
+				expect.objectContaining({ id: 'evt-1' }),
+				expect.objectContaining({ id: 'evt-2' }),
+			],
+		}),
+	)
 })

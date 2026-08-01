@@ -11,6 +11,7 @@ import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 const mocks = vi.hoisted(() => ({
 	mirrorMailboxMessageGraphFromD1: vi.fn(),
 	mirrorMailboxDeliveryEventFromD1: vi.fn(),
+	mirrorMailboxDeliveryEventSnapshots: vi.fn(),
 	awaitMailboxMirrorRpc: vi.fn(),
 	recordMailboxParityEvent: vi.fn(),
 	mailboxRpc: vi.fn(),
@@ -30,6 +31,8 @@ vi.mock('#worker/email/mailbox-mirror.ts', async (importOriginal) => {
 	return {
 		...actual,
 		awaitMailboxMirrorRpc: mocks.awaitMailboxMirrorRpc,
+		mirrorMailboxDeliveryEventSnapshots:
+			mocks.mirrorMailboxDeliveryEventSnapshots,
 	}
 })
 
@@ -198,6 +201,17 @@ export function successGraph(messageId: string, eventsTruncated = false) {
 		events: [],
 		eventsTruncated,
 	}
+}
+
+/** Default event-backfill batch mock: every snapshot mirrors. */
+export function mockMirroredEventSnapshots() {
+	mocks.mirrorMailboxDeliveryEventSnapshots.mockImplementation(
+		async (input: { events: Array<{ id: string }> }) =>
+			input.events.map((event) => ({
+				eventId: event.id,
+				result: { status: 'mirrored' as const },
+			})),
+	)
 }
 
 export function mockDoCounts(

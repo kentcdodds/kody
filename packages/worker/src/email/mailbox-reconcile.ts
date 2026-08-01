@@ -13,6 +13,7 @@ import {
 	backfillEventsForUser,
 	backfillMessagesForUser,
 	mailboxParityContentPageSize,
+	mailboxParityEventMirrorTimeoutMs,
 	mailboxParityEventPageSize,
 	mailboxParityMessagePageSize,
 	mirrorMailboxParityDeliveryEventFromD1,
@@ -36,11 +37,12 @@ import { type MailboxCountResult } from './mailbox-types.ts'
  * Bounded five-minute Mailbox backfill + count-parity reconciler.
  *
  * Discovers a small oldest-first page of non-deleting D1 mail owners (no DO
- * enumeration), mirrors message graphs then every owner delivery event through
- * existing live-mirror helpers (repairing graph truncation), durably
- * keyset-replays messages updated after the content watermark, then compares
- * owner-scoped D1 counts with `countMailbox`. D1 remains mail authority; this
- * lane never mutates email_* rows and does not flip read authority.
+ * enumeration), mirrors message graphs then every owner delivery event as
+ * page-sized `upsertDeliveryEvents` batches (repairing graph truncation;
+ * {@link mailboxParityEventMirrorTimeoutMs}), durably keyset-replays messages
+ * updated after the content watermark, then compares owner-scoped D1 counts
+ * with `countMailbox`. D1 remains mail authority; this lane never mutates
+ * email_* rows and does not flip read authority.
  */
 
 export const mailboxParityUserBatchSize = 16
@@ -49,6 +51,7 @@ export const mailboxParityLastErrorMaxBytes = 512
 
 export {
 	mailboxParityContentPageSize,
+	mailboxParityEventMirrorTimeoutMs,
 	mailboxParityEventPageSize,
 	mailboxParityMessagePageSize,
 	mirrorMailboxParityDeliveryEventFromD1,

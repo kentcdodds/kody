@@ -6,6 +6,7 @@ import {
 	insertUser,
 	listUsersForMailboxParity,
 	mockDoCounts,
+	mockMirroredEventSnapshots,
 	parityEnv,
 	readParityRow,
 	reconcileMailboxParity,
@@ -48,9 +49,7 @@ test('mailbox parity missing and unconfigured do not advance creation cursors', 
 		events: [],
 		eventsTruncated: false,
 	})
-	mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValue({
-		status: 'mirrored',
-	})
+	mockMirroredEventSnapshots()
 	mockDoCounts({
 		threads: 0,
 		messages: 2,
@@ -71,10 +70,16 @@ test('mailbox parity missing and unconfigured do not advance creation cursors', 
 	mocks.mirrorMailboxMessageGraphFromD1.mockImplementation(
 		async (input: { messageId: string }) => successGraph(input.messageId),
 	)
-	mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValueOnce({
-		status: 'skipped',
-		reason: 'mailbox-unconfigured',
-	})
+	mocks.mirrorMailboxDeliveryEventSnapshots.mockImplementationOnce(
+		async (input: { events: Array<{ id: string }> }) =>
+			input.events.map((event) => ({
+				eventId: event.id,
+				result: {
+					status: 'skipped' as const,
+					reason: 'mailbox-unconfigured' as const,
+				},
+			})),
+	)
 	await expect(
 		reconcileMailboxParity({
 			env,
@@ -120,9 +125,16 @@ test('mailbox parity event missing advances cursor while unconfigured does not',
 	mocks.mirrorMailboxMessageGraphFromD1.mockImplementation(
 		async (input: { messageId: string }) => successGraph(input.messageId),
 	)
-	mocks.mirrorMailboxDeliveryEventFromD1
-		.mockResolvedValueOnce({ status: 'missing' })
-		.mockResolvedValueOnce({ status: 'mirrored' })
+	mocks.mirrorMailboxDeliveryEventSnapshots.mockImplementationOnce(
+		async (input: { events: Array<{ id: string }> }) =>
+			input.events.map((event) => ({
+				eventId: event.id,
+				result:
+					event.id === 'evt-gone'
+						? { status: 'missing' as const }
+						: { status: 'mirrored' as const },
+			})),
+	)
 	mockDoCounts({
 		threads: 0,
 		messages: 1,
@@ -180,9 +192,7 @@ test('mailbox parity deletion race purges Mailbox and skips parity writes', asyn
 			.run()
 		return successGraph('msg-1')
 	})
-	mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValue({
-		status: 'mirrored',
-	})
+	mockMirroredEventSnapshots()
 
 	await expect(
 		reconcileMailboxParity({
@@ -230,9 +240,7 @@ test('tracked empty user discovers DO-only leftover, purges, then reaches zero p
 	mocks.mirrorMailboxMessageGraphFromD1.mockImplementation(
 		async (input: { messageId: string }) => successGraph(input.messageId),
 	)
-	mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValue({
-		status: 'mirrored',
-	})
+	mockMirroredEventSnapshots()
 	const purge = vi.fn(async () => ({ ok: true as const }))
 	mockDoCounts(
 		{
@@ -350,9 +358,7 @@ test('mismatch purge failure clears soak and does not start rebuild reset', asyn
 		mocks.mirrorMailboxMessageGraphFromD1.mockImplementation(
 			async (input: { messageId: string }) => successGraph(input.messageId),
 		)
-		mocks.mirrorMailboxDeliveryEventFromD1.mockResolvedValue({
-			status: 'mirrored',
-		})
+		mockMirroredEventSnapshots()
 		mockDoCounts({
 			threads: 0,
 			messages: 1,

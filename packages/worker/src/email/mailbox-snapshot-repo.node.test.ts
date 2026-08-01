@@ -6,6 +6,7 @@ import {
 	getMailboxDeliveryEventMirrorInput,
 	listEmailDeliveryEventMirrorProjectionsForMessage,
 	listMailboxDeliveryEventMirrorInputsForMessage,
+	listMailboxDeliveryEventMirrorInputsForOwnerKeyset,
 } from './mailbox-snapshot-repo.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
@@ -181,4 +182,19 @@ test('mailbox-snapshot-repo loads complete delivery-event projection and ready M
 		limit: 1,
 	})
 	expect(newestOnly.map((event) => event.id)).toEqual(['evt-2'])
+
+	const ownerPage = await listMailboxDeliveryEventMirrorInputsForOwnerKeyset({
+		db,
+		ownerId: 'user-aaa',
+		cursor: null,
+		limit: 10,
+	})
+	expect(ownerPage.map((event) => event.id)).toEqual(['evt-1', 'evt-2'])
+	const afterFirst = await listMailboxDeliveryEventMirrorInputsForOwnerKeyset({
+		db,
+		ownerId: 'user-aaa',
+		cursor: { createdAt: '2026-07-02T10:00:00.000Z', id: 'evt-1' },
+		limit: 10,
+	})
+	expect(afterFirst.map((event) => event.id)).toEqual(['evt-2'])
 })

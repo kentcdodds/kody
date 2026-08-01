@@ -41,10 +41,12 @@ import {
  * structured outcomes (`mirrored | stale | missing | timeout | skipped |
  * error`). `system:email` stays in D1 only.
  *
- * Every awaited DO RPC is bounded by {@link mailboxMirrorRpcTimeoutMs}. Partial
- * mutation `missing` stays distinct from `mirrored`; delete `missing` maps to
- * `mirrored` because desired absence is achieved. Outcomes are recorded via
- * `recordMailboxParityEvent` when a user id is known.
+ * Every awaited DO RPC is bounded by {@link mailboxMirrorRpcTimeoutMs} unless a
+ * helper accepts an explicit `timeoutMs` override (batch delivery-event mirror
+ * for scheduled parity). Partial mutation `missing` stays distinct from
+ * `mirrored`; delete `missing` maps to `mirrored` because desired absence is
+ * achieved. Outcomes are recorded via `recordMailboxParityEvent` when a user
+ * id is known.
  *
  * Delivery-event snapshots should be loaded via
  * `getMailboxDeliveryEventMirrorInput` (mailbox-snapshot-repo) so callers do
@@ -322,14 +324,17 @@ export async function mirrorMailboxDeliveryEventSnapshot(input: {
 /**
  * Best-effort batch delivery-event snapshot mirror.
  *
- * One 1s timeout and one `upsert_delivery_event_batch` telemetry outcome.
- * Timeout/error/skip apply uniformly to each per-event summary entry.
- * Empty `events` returns `[]` without RPC or telemetry.
+ * One timeout (default {@link mailboxMirrorRpcTimeoutMs}) and one
+ * `upsert_delivery_event_batch` telemetry outcome. Timeout/error/skip apply
+ * uniformly to each per-event summary entry. Empty `events` returns `[]`
+ * without RPC or telemetry.
  */
 export async function mirrorMailboxDeliveryEventSnapshots(input: {
 	env: MailboxMirrorEnv
 	ownerId: string
 	events: Array<MailboxDeliveryEventInput>
+	/** Override RPC timeout; defaults to {@link mailboxMirrorRpcTimeoutMs}. */
+	timeoutMs?: number
 }): Promise<Array<MailboxMirrorDeliveryEventBatchItemResult>> {
 	const operation = 'upsert_delivery_event_batch' as const
 	if (input.events.length === 0) return []
@@ -354,6 +359,7 @@ export async function mirrorMailboxDeliveryEventSnapshots(input: {
 				ownerId: owner.ownerId,
 				events: input.events,
 			}),
+			input.timeoutMs ?? mailboxMirrorRpcTimeoutMs,
 		)
 		if (!raced.ok) {
 			const result = { status: 'timeout' as const }
