@@ -15,6 +15,7 @@ import {
 } from './mailbox-do.ts'
 import { mailboxRetentionAlarmSkewMs } from './mailbox-types.ts'
 import {
+	assertMailboxThrows,
 	baseAttachment,
 	baseDeliveryEvent,
 	baseMessage,
@@ -276,4 +277,113 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 	})
 	expect(await env.EMAIL_BLOBS.get(failRawKey)).toBeNull()
 	expect(await mailbox.getMessage({ messageId: failMessage.id })).toBeNull()
+})
+
+test('Mailbox runRetentionNow is owner-bound, R2-before-row, and no-ops fresh rows', async () => {
+	silenceIncidentalRuntimeWarnings()
+	consoleWarn.mockImplementation((...args: Array<unknown>) => {
+		const message = String(args[0] ?? '')
+		if (message.includes('mailbox-retention-blob-delete-failed')) return
+	})
+
+	const userId = uniqueUserId('retention-now')
+	const otherOwner = uniqueUserId('retention-other')
+	const mailbox = rpcFor(userId)
+	const stub = stubFor(userId)
+
+	const oldMessageAt = new Date(
+		Date.now() - (mailboxMessageRetentionDays + 3) * 24 * 60 * 60 * 1000,
+	).toISOString()
+	const freshAt = new Date().toISOString()
+
+	const keepMessage = baseMessage(userId, {
+		id: 'keep-fresh',
+		subject: 'fresh',
+		createdAt: freshAt,
+		updatedAt: freshAt,
+	})
+	const dropMessage = baseMessage(userId, {
+		id: 'drop-old',
+		threadId: 'drop-thread',
+		subject: 'old',
+		createdAt: oldMessageAt,
+		updatedAt: oldMessageAt,
+	})
+	const failMessage = baseMessage(userId, {
+		id: 'fail-old',
+		subject: 'fail-old',
+		createdAt: oldMessageAt,
+		updatedAt: oldMessageAt,
+	})
+
+	await mailbox.mirrorMessage({ ownerId: userId, message: keepMessage })
+	await mailbox.mirrorMessage({
+		ownerId: userId,
+		thread: baseThread({
+			id: 'drop-thread',
+			lastMessageAt: oldMessageAt,
+			createdAt: oldMessageAt,
+			updatedAt: oldMessageAt,
+		}),
+		message: dropMessage,
+	})
+	await mailbox.mirrorMessage({ ownerId: userId, message: failMessage })
+
+	await runInDurableObject(stub, async (instance: Mailbox) => {
+		await assertMailboxThrows(/ownerId mismatch/, () =>
+			instance.runRetentionNow({ ownerId: otherOwner }),
+		)
+	})
+
+	const dropRawKey = emailRawMimeKey(userId, dropMessage.id)
+	const failRawKey = emailRawMimeKey(userId, failMessage.id)
+	const keepRawKey = emailRawMimeKey(userId, keepMessage.id)
+	await env.EMAIL_BLOBS.put(dropRawKey, 'drop-raw')
+	await env.EMAIL_BLOBS.put(failRawKey, 'fail-raw')
+	await env.EMAIL_BLOBS.put(keepRawKey, 'keep-raw')
+
+	const originalDelete = env.EMAIL_BLOBS.delete.bind(env.EMAIL_BLOBS)
+	const deletedKeys: Array<string> = []
+	env.EMAIL_BLOBS.delete = (async (keys: string | Array<string>) => {
+		const list = Array.isArray(keys) ? keys : [keys]
+		deletedKeys.push(...list)
+		if (list.includes(failRawKey)) {
+			throw new Error('simulated R2 delete failure')
+		}
+		return await originalDelete(keys)
+	}) as typeof env.EMAIL_BLOBS.delete
+
+	try {
+		const result = await mailbox.runRetentionNow({ ownerId: userId })
+		expect(result.before.messages).toBe(3)
+		expect(result.after.messages).toBe(2)
+		expect(result.blobDeleteFailures).toBe(true)
+		expect(result.expiredRemaining).toBe(true)
+		expect(deletedKeys).toEqual(
+			expect.arrayContaining([dropRawKey, failRawKey]),
+		)
+		// R2-before-row via existing fake: successful blob delete drops the
+		// row; failed blob delete retains the row and the R2 object.
+		expect(await env.EMAIL_BLOBS.get(dropRawKey)).toBeNull()
+		expect(await env.EMAIL_BLOBS.get(failRawKey)).not.toBeNull()
+		expect(await env.EMAIL_BLOBS.get(keepRawKey)).not.toBeNull()
+		expect(await mailbox.getMessage({ messageId: dropMessage.id })).toBeNull()
+		expect(
+			await mailbox.getMessage({ messageId: failMessage.id }),
+		).toMatchObject({ id: failMessage.id })
+		expect(
+			await mailbox.getMessage({ messageId: keepMessage.id }),
+		).toMatchObject({ id: keepMessage.id })
+	} finally {
+		env.EMAIL_BLOBS.delete = originalDelete
+	}
+
+	// Natural cutoff no-op: only fresh rows remain after retry clears the
+	// failed delete — later pass reports no further deletions.
+	await mailbox.runRetentionNow({ ownerId: userId })
+	const noop = await mailbox.runRetentionNow({ ownerId: userId })
+	expect(noop.before).toEqual(noop.after)
+	expect(noop.blobDeleteFailures).toBe(false)
+	expect(noop.expiredRemaining).toBe(false)
+	expect(noop.after.messages).toBe(1)
 })

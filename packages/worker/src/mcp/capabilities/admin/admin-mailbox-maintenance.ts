@@ -1,0 +1,243 @@
+import { z } from 'zod'
+import {
+	adminMailboxMaintenanceMaxBatchSize,
+	adminMailboxMaintenanceRetentionMaxLimit,
+	loadAdminMailboxMaintenanceStatus,
+	runAdminMailboxMaintenanceReconcile,
+	runAdminMailboxMaintenanceRetention,
+} from '#worker/admin/mailbox-maintenance.ts'
+import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
+import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import {
+	adminMutationCapabilityAccess,
+	auditAdminCapabilityInvocation,
+	stableUserIdSchema,
+} from './admin-shared.ts'
+
+const reconcileBatchSizeSchema = z
+	.number()
+	.int()
+	.min(1)
+	.max(adminMailboxMaintenanceMaxBatchSize)
+	.optional()
+	.describe(
+		`Optional bounded owner batch size (1–${adminMailboxMaintenanceMaxBatchSize}). Defaults to the scheduled parity lane batch size.`,
+	)
+
+const retentionLimitSchema = z
+	.number()
+	.int()
+	.min(1)
+	.max(adminMailboxMaintenanceRetentionMaxLimit)
+	.optional()
+	.describe(
+		`Optional owner page size (1–${adminMailboxMaintenanceRetentionMaxLimit}). Defaults to ${adminMailboxMaintenanceRetentionMaxLimit}.`,
+	)
+
+const mailboxCountSchema = z.object({
+	threads: z.number().int().nonnegative(),
+	messages: z.number().int().nonnegative(),
+	attachments: z.number().int().nonnegative(),
+	deliveryEvents: z.number().int().nonnegative(),
+})
+
+const statusSchema = z.object({
+	generatedAt: z.string(),
+	trackedOwners: z.number().int().nonnegative(),
+	matching: z.number().int().nonnegative(),
+	mismatch: z.number().int().nonnegative(),
+	error: z.number().int().nonnegative(),
+	incomplete: z.number().int().nonnegative(),
+	eligible: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe(
+			'Tracked owners meeting parity soak timing (matching_since age + fresh checked_at, zero mismatch/error). Does not require the read-cutover feature flag.',
+		),
+	oldestMatchingSince: z.string().nullable(),
+	newestMatchingSince: z.string().nullable(),
+	oldestCheckedAt: z.string().nullable(),
+	newestCheckedAt: z.string().nullable(),
+	earliestCutoverAt: z
+		.string()
+		.nullable()
+		.describe(
+			'Earliest matching_since + soak duration among matching owners, or null.',
+		),
+})
+
+const reconcileMetricsSchema = z.object({
+	scanned: z.number().int().nonnegative(),
+	backfilled: z.number().int().nonnegative(),
+	compared: z.number().int().nonnegative(),
+	matched: z.number().int().nonnegative(),
+	mismatched: z.number().int().nonnegative(),
+	failed: z.number().int().nonnegative(),
+})
+
+const retentionMetricsSchema = z.object({
+	d1: z.object({
+		messagesDeleted: z.number().int().nonnegative(),
+		attachmentsDeleted: z.number().int().nonnegative(),
+		threadsDeleted: z.number().int().nonnegative(),
+		deliveryEventsDeleted: z.number().int().nonnegative(),
+		rawMimeBlobsDeleted: z.number().int().nonnegative(),
+		attachmentBlobsDeleted: z.number().int().nonnegative(),
+		blobDeleteErrors: z.number().int().nonnegative(),
+	}),
+	mailbox: z.object({
+		ownersAttempted: z.number().int().nonnegative(),
+		ownersSucceeded: z.number().int().nonnegative(),
+		ownersFailed: z.number().int().nonnegative(),
+		pendingD1Owners: z
+			.number()
+			.int()
+			.nonnegative()
+			.describe(
+				'Owners skipped because expired D1 email_messages (365d) or email_delivery_events (90d) remain after global prune batches. Cursor still advances.',
+			),
+		before: mailboxCountSchema,
+		after: mailboxCountSchema,
+		blobDeleteFailureOwners: z.number().int().nonnegative(),
+		expiredRemainingOwners: z.number().int().nonnegative(),
+	}),
+})
+
+const inputSchema = z.discriminatedUnion('action', [
+	z
+		.object({
+			action: z.literal('status'),
+		})
+		.strict(),
+	z
+		.object({
+			action: z.literal('reconcile'),
+			batch_size: reconcileBatchSizeSchema,
+		})
+		.strict(),
+	z
+		.object({
+			action: z.literal('retention'),
+			limit: retentionLimitSchema,
+			start_after_user_id: stableUserIdSchema
+				.optional()
+				.describe(
+					'Stable-user-id keyset cursor from a prior retention nextStartAfter. Ordered by stable_user_id ASC; never parity checked_at.',
+				),
+		})
+		.strict(),
+])
+
+const outputSchema = z.discriminatedUnion('action', [
+	z.object({
+		action: z.literal('status'),
+		status: statusSchema,
+	}),
+	z.object({
+		action: z.literal('reconcile'),
+		metrics: reconcileMetricsSchema,
+		status: statusSchema,
+	}),
+	z.object({
+		action: z.literal('retention'),
+		metrics: retentionMetricsSchema,
+		nextStartAfter: stableUserIdSchema
+			.nullable()
+			.describe(
+				'Pass as start_after_user_id on the next call when truncated is true.',
+			),
+		truncated: z
+			.boolean()
+			.describe(
+				'True when more owners remain (full page) or the wall-clock budget stopped scheduling.',
+			),
+		status: statusSchema,
+	}),
+])
+
+export const adminMailboxMaintenanceCapability = defineDomainCapability(
+	capabilityDomainNames.admin,
+	{
+		...adminMutationCapabilityAccess,
+		name: 'admin_mailbox_maintenance',
+		description:
+			'Admin-only Mailbox parity/retention maintenance: aggregate status (no email content), bounded reconcileMailboxParity, or keyset-paged natural retention (D1 authoritative prune, skip DO while owner still has expired D1 rows, then Mailbox.runRetentionNow; limit≤20; concurrency≤4; ~10s budget). Never accepts arbitrary cutoffs or seed data. Audited.',
+		keywords: [
+			'admin',
+			'mailbox',
+			'maintenance',
+			'parity',
+			'reconcile',
+			'retention',
+			'cutover',
+			'soak',
+		],
+		destructive: true,
+		inputSchema,
+		outputSchema,
+		async handler(args, ctx) {
+			return auditAdminCapabilityInvocation(
+				ctx,
+				'admin_mailbox_maintenance',
+				async () => {
+					switch (args.action) {
+						case 'status': {
+							const status = await loadAdminMailboxMaintenanceStatus({
+								db: ctx.env.APP_DB,
+							})
+							return { action: 'status' as const, status }
+						}
+						case 'reconcile': {
+							const result = await runAdminMailboxMaintenanceReconcile({
+								env: ctx.env,
+								batchSize: args.batch_size,
+							})
+							return {
+								action: 'reconcile' as const,
+								metrics: result.metrics,
+								status: result.status,
+							}
+						}
+						case 'retention': {
+							const result = await runAdminMailboxMaintenanceRetention({
+								env: ctx.env,
+								limit: args.limit,
+								startAfterUserId: args.start_after_user_id,
+							})
+							return {
+								action: 'retention' as const,
+								metrics: result.metrics,
+								nextStartAfter: result.nextStartAfter,
+								truncated: result.truncated,
+								status: result.status,
+							}
+						}
+						default: {
+							const exhaustive: never = args
+							throw new Error(
+								`Unhandled admin_mailbox_maintenance action: ${JSON.stringify(exhaustive)}`,
+							)
+						}
+					}
+				},
+				{
+					successReason: (result) => {
+						switch (result.action) {
+							case 'status':
+								return `action=status;tracked=${result.status.trackedOwners}`
+							case 'reconcile':
+								return `action=reconcile;scanned=${result.metrics.scanned};matched=${result.metrics.matched}`
+							case 'retention':
+								return `action=retention;attempted=${result.metrics.mailbox.ownersAttempted};succeeded=${result.metrics.mailbox.ownersSucceeded};truncated=${result.truncated ? 1 : 0}`
+							default: {
+								const exhaustive: never = result
+								return `action=unknown;${JSON.stringify(exhaustive)}`
+							}
+						}
+					},
+				},
+			)
+		},
+	},
+)
