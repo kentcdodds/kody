@@ -157,8 +157,8 @@ writes cannot overwrite newer state, including refunds that lower `count`.
 Mirror failures are logged and never affect enforcement. The D1 table is **not**
 dropped in this phase — it remains for existing readers and reporting.
 
-**Point-read surfaces** now call `readDailyEntitlementResourceUsage` (UserMeter
-with the same cold-bootstrap path) instead of reading D1 directly:
+**Point-read surfaces** call `readDailyEntitlementResourceUsage` (UserMeter with
+the same cold-bootstrap path):
 
 - Account usage UI — `packages/worker/src/app/account-usage-data.ts`
 - Account email usage panel — `packages/worker/src/app/account-email-data.ts`
@@ -392,7 +392,7 @@ returns a `PlanName`:
 Interactive surfaces still carry email (app sessions expose
 `user.mcpUser.email`, MCP caller contexts expose
 `ctx.callerContext.user.email`). Background package-runtime paths that only have
-the stable userId no longer need a separate email hydrate step for entitlement
+the stable userId do not need a separate email hydrate step for entitlement
 checks — `getUserPlan` reverse-resolves for them.
 
 Inbound email routing has no caller context and resolves the owning account via

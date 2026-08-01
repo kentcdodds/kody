@@ -954,7 +954,7 @@ source's `external_check_until` to the token expiry plus a one-hour grace
 period. The normal pass only scans these pending sources, using
 `last_external_check_at` for the five-minute cadence and keyset paging until the
 pending queue is drained or a wall-clock time budget (`reconcileTimeBudgetMs`,
-~60 seconds) is exhausted. Dormant package sources no longer incur an Artifacts
+~60 seconds) is exhausted. Dormant package sources do not incur an Artifacts
 HEAD lookup on every tick.
 
 For each pending source, reconcile resolves the Artifacts default-branch HEAD.
