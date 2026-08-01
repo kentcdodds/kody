@@ -1196,7 +1196,7 @@ test('searchUnified degrades to lexical package ranking when the vector query th
 	})
 
 	expect(result.offline).toBe(false)
-	expect(packageVectorQueryAttempts).toBe(1)
+	expect(packageVectorQueryAttempts).toBe(2)
 	expect(
 		result.matches.some(
 			(match) => match.type === 'package' && match.packageId === 'pkg-inbox',
@@ -1548,7 +1548,7 @@ test('searchUnified shares query embedding, fail-closes package isolation, and k
 	})
 	expect(aiRunCount).toBe(1)
 	expect(maxInFlightQueries).toBeGreaterThanOrEqual(2)
-	expect(packageQueryCount).toBe(1)
+	expect(packageQueryCount).toBe(2)
 	expect(capturedFilters).toContainEqual(
 		expect.objectContaining({
 			kind: { $eq: 'package' },
@@ -2065,19 +2065,19 @@ test('online search ranks remote, MCP, and OpenAPI Sonos operations above real c
 		expect(valueProviderIndex).toBeGreaterThan(exactValueIndex)
 	}
 
-	expect(capturedFilters).toHaveLength(cases.length * 5)
+	expect(capturedFilters).toHaveLength(cases.length * 10)
 	expect(
 		capturedFilters.filter(
 			(filter) =>
 				(filter as { kind?: { $eq?: string } }).kind?.$eq === 'builtin',
 		),
-	).toHaveLength(cases.length * 3)
+	).toHaveLength(cases.length * 6)
 	expect(
 		capturedFilters.filter(
 			(filter) =>
 				(filter as { kind?: { $eq?: string } }).kind?.$eq === 'package',
 		),
-	).toHaveLength(cases.length * 2)
+	).toHaveLength(cases.length * 4)
 	expect(aiRunCount).toBe(cases.length * 3)
 })
 

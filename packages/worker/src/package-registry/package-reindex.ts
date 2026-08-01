@@ -9,6 +9,7 @@ import {
 	type VectorReindexFailure,
 	type VectorReindexResult,
 } from '#worker/vectorize/reindex-batches.ts'
+import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
@@ -54,6 +55,7 @@ export async function reindexSavedPackageVectors(
 				candidates.push({
 					id: savedPackageVectorId(row.id),
 					text: buildSavedPackageEmbedText(manifest),
+					namespace: userVectorNamespace(row.userId),
 					metadata: {
 						kind: 'package',
 						userId: row.userId,

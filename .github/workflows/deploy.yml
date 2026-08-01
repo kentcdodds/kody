@@ -169,9 +169,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
-        run:
-          node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config
-          "$WRANGLER_CONFIG"
+        run: |
+          node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config "$WRANGLER_CONFIG"
+          node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config "$WRANGLER_CONFIG"
 
       - name: ☁️ Deploy to Cloudflare Workers
         id: deploy

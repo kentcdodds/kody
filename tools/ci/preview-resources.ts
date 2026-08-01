@@ -92,12 +92,18 @@ function parseArgs(argv: Array<string>): {
 function buildPreviewResourceNames(workerName: string) {
 	const maxLen = 63
 	const d1Suffix = '-db'
+	const auditD1Suffix = '-audit-db'
 	const oauthKvSuffix = '-oauth-kv'
 	const bundleKvSuffix = '-bundle-artifacts-kv'
 	const communityAssetsSuffix = '-community-assets'
 	const emailBlobsSuffix = '-email-blobs'
 
 	const d1DatabaseName = truncateWithSuffix(workerName, d1Suffix, maxLen)
+	const auditD1DatabaseName = truncateWithSuffix(
+		workerName,
+		auditD1Suffix,
+		maxLen,
+	)
 	const oauthKvTitle = truncateWithSuffix(workerName, oauthKvSuffix, maxLen)
 	const bundleArtifactsKvTitle = truncateWithSuffix(
 		workerName,
@@ -117,6 +123,7 @@ function buildPreviewResourceNames(workerName: string) {
 
 	return {
 		d1DatabaseName,
+		auditD1DatabaseName,
 		oauthKvTitle,
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
@@ -256,6 +263,7 @@ function deleteKvNamespace({
 async function ensurePreviewResources(options: CliOptions) {
 	const {
 		d1DatabaseName,
+		auditD1DatabaseName,
 		oauthKvTitle,
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
@@ -263,6 +271,11 @@ async function ensurePreviewResources(options: CliOptions) {
 	} = buildPreviewResourceNames(options.workerName)
 	const d1 = ensureD1Database({
 		name: d1DatabaseName,
+		location: options.d1Location,
+		dryRun: options.dryRun,
+	})
+	const auditD1 = ensureD1Database({
+		name: auditD1DatabaseName,
 		location: options.d1Location,
 		dryRun: options.dryRun,
 	})
@@ -290,6 +303,8 @@ async function ensurePreviewResources(options: CliOptions) {
 		workerName: options.workerName,
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
+		auditD1DatabaseName: auditD1.name,
+		auditD1DatabaseId: auditD1.id,
 		oauthKvId: oauthKv.id,
 		bundleArtifactsKvId: bundleArtifactsKv.id,
 		communityAssetsBucketName: communityAssets.name,
@@ -303,6 +318,8 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(`wrangler_config=${generatedConfigPath}`)
 	console.log(`d1_database_name=${d1.name}`)
 	console.log(`d1_database_id=${d1.id}`)
+	console.log(`audit_d1_database_name=${auditD1.name}`)
+	console.log(`audit_d1_database_id=${auditD1.id}`)
 	console.log(`oauth_kv_title=${oauthKv.title}`)
 	console.log(`oauth_kv_id=${oauthKv.id}`)
 	console.log(`bundle_artifacts_kv_title=${bundleArtifactsKv.title}`)
@@ -346,6 +363,7 @@ function deletePreviewWorkers(workerName: string, dryRun: boolean) {
 async function cleanupPreviewResources(options: CliOptions) {
 	const {
 		d1DatabaseName,
+		auditD1DatabaseName,
 		oauthKvTitle,
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
@@ -356,6 +374,7 @@ async function cleanupPreviewResources(options: CliOptions) {
 	deleteR2Bucket({ name: emailBlobsBucketName, dryRun: options.dryRun })
 	deleteKvNamespace({ title: bundleArtifactsKvTitle, dryRun: options.dryRun })
 	deleteKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })
+	deleteD1Database({ name: auditD1DatabaseName, dryRun: options.dryRun })
 	deleteD1Database({ name: d1DatabaseName, dryRun: options.dryRun })
 }
 

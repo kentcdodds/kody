@@ -144,9 +144,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
-        run:
-          node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config
-          "$WRANGLER_CONFIG"
+        run: |
+          node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config "$WRANGLER_CONFIG"
+          node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config "$WRANGLER_CONFIG"
 
       - name: 🧪 Deploy preview mock Workers
         id: deploy_mocks

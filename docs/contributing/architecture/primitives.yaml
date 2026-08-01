@@ -423,6 +423,28 @@ primitives:
     docs:
       - docs/contributing/architecture/data-storage.md
 
+  - id: audit-d1
+    group: storage
+    name: Audit database
+    summary:
+      AUDIT_DB global hashed security audit trail with independent retention.
+    code:
+      - packages/worker/audit-migrations/
+      - packages/worker/src/audit-log.ts
+    docs:
+      - docs/contributing/architecture/data-storage.md
+
+  - id: email-reporting
+    group: storage
+    name: Email reporting stream
+    summary:
+      EMAIL_EVENTS Analytics Engine stream for role-gated platform aggregates.
+    code:
+      - packages/worker/src/email/reporting-events.ts
+      - packages/worker/src/app/admin-insights-data.ts
+    docs:
+      - docs/contributing/architecture/data-storage.md
+
   - id: backup-control-plane
     group: storage
     name: Production backup control plane

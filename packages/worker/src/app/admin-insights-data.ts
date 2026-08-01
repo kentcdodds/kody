@@ -2,6 +2,7 @@ import { cachified } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
+import { queryAnalyticsEngineSql } from '#worker/usage/aggregate-rollups.ts'
 import {
 	type AdminInsightsActivation,
 	type AdminInsightsActivationStep,
@@ -43,6 +44,12 @@ type UsageMonthRow = {
 }
 type EmailDayRow = { day: string; resource: string; n: number }
 type EmailDeliveryDayRow = { day: string; event_type: string; n: number }
+type EmailAnalyticsRow = {
+	day: string
+	event_type: string
+	outcome: string
+	n: number | string
+}
 type PlanRow = { plan: string; n: number }
 type AuthDayRow = { day: string; result: string; n: number }
 type AuthCategoryRow = { category: string; n: number }
@@ -67,19 +74,20 @@ export async function loadAdminInsightsData(
 	const cache = env.BUNDLE_ARTIFACTS_KV
 		? createKvCachifiedCache(env.BUNDLE_ARTIFACTS_KV)
 		: null
-	if (!cache) return await queryAdminInsights(env.APP_DB, now)
+	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v2',
+		key: 'admin-insights:v3',
 		cache,
 		ttl: insightsCacheTtlMs,
-		getFreshValue: () => queryAdminInsights(env.APP_DB, now),
+		getFreshValue: () => queryAdminInsights(env, now),
 	})
 }
 
 async function queryAdminInsights(
-	db: D1Database,
+	env: Env,
 	now: Date,
 ): Promise<AdminInsightsLoaderData> {
+	const db = env.APP_DB
 	const signupCutoff =
 		listUtcWeekStarts(now, adminInsightsSignupWeeks)[0] ?? utcDayKey(now)
 	const monthCutoff = utcMonthKey(
@@ -93,6 +101,7 @@ async function queryAdminInsights(
 	)
 	const dayCutoff =
 		listUtcDayKeys(now, adminInsightsActivityDays)[0] ?? utcDayKey(now)
+	const emailInsightsRows = loadEmailInsightsRows({ env, dayCutoff, now })
 
 	const [
 		totals,
@@ -141,31 +150,8 @@ async function queryAdminInsights(
 			)
 			.bind(monthCutoff)
 			.all<UsageMonthRow>(),
-		db
-			.prepare(
-				`SELECT day, resource, SUM(count) AS n
-				 FROM entitlement_daily_counters
-				 WHERE day >= ? AND resource IN ('email_sends_per_day', 'email_receives_per_day')
-				 GROUP BY day, resource`,
-			)
-			.bind(dayCutoff)
-			.all<EmailDayRow>(),
-		db
-			.prepare(
-				// Provider ('cloudflare-email') events only: outbound
-				// delivery outcomes, excluding inbound routing rejections.
-				// Deliberately unscoped like every other query in this
-				// admin-only platform-wide read model: the aggregation
-				// returns per-day outcome counts with no user identifiers
-				// or message content, monitoring the shared sending
-				// domain's reputation.
-				`SELECT substr(created_at, 1, 10) AS day, event_type, COUNT(*) AS n
-				 FROM email_delivery_events
-				 WHERE provider = 'cloudflare-email' AND created_at >= ?
-				 GROUP BY day, event_type`,
-			)
-			.bind(dayCutoff)
-			.all<EmailDeliveryDayRow>(),
+		emailInsightsRows.then((rows) => ({ results: rows.emailRows })),
+		emailInsightsRows.then((rows) => ({ results: rows.deliveryRows })),
 		db
 			.prepare(
 				`SELECT COALESCE(plan, 'none') AS plan, COUNT(*) AS n
@@ -275,6 +261,118 @@ async function queryAdminInsights(
 		),
 		jobHealth,
 		activation,
+	}
+}
+
+export function resolveEmailEventsDataset(env: {
+	SENTRY_ENVIRONMENT?: string
+}) {
+	return env.SENTRY_ENVIRONMENT === 'preview'
+		? 'kody_email_events_preview'
+		: 'kody_email_events'
+}
+
+async function loadEmailInsightsRows(input: {
+	env: Env
+	dayCutoff: string
+	now: Date
+}): Promise<{
+	emailRows: Array<EmailDayRow>
+	deliveryRows: Array<EmailDeliveryDayRow>
+}> {
+	// Wrangler exposes a local Analytics Engine binding, but its SQL API cannot
+	// query the emulated dataset. Local development therefore keeps using the
+	// existing D1 tables, matching the feature-flag exposure fallback.
+	if (!input.env.EMAIL_EVENTS || input.env.WRANGLER_IS_LOCAL_DEV === 'true') {
+		const [emailRows, deliveryRows] = await Promise.all([
+			input.env.APP_DB.prepare(
+				`SELECT day, resource, SUM(count) AS n
+				 FROM entitlement_daily_counters
+				 WHERE day >= ? AND resource IN ('email_sends_per_day', 'email_receives_per_day')
+				 GROUP BY day, resource`,
+			)
+				.bind(input.dayCutoff)
+				.all<EmailDayRow>(),
+			input.env.APP_DB.prepare(
+				`SELECT substr(created_at, 1, 10) AS day, event_type, COUNT(*) AS n
+				 FROM email_delivery_events
+				 WHERE provider = 'cloudflare-email' AND created_at >= ?
+				 GROUP BY day, event_type`,
+			)
+				.bind(input.dayCutoff)
+				.all<EmailDeliveryDayRow>(),
+		])
+		return {
+			emailRows: emailRows.results ?? [],
+			deliveryRows: deliveryRows.results ?? [],
+		}
+	}
+
+	const accountId = input.env.CLOUDFLARE_ACCOUNT_ID?.trim()
+	const apiToken = input.env.CLOUDFLARE_API_TOKEN?.trim()
+	if (!accountId || !apiToken) {
+		console.warn('admin-insights-email-analytics-unavailable', {
+			reason: 'missing-analytics-engine-credentials',
+		})
+		return { emailRows: [], deliveryRows: [] }
+	}
+	const nextDay = new Date(input.now.getTime() + dayMs)
+		.toISOString()
+		.slice(0, 'YYYY-MM-DD'.length)
+	const query = `
+SELECT
+	substring(blob3, 1, 10) AS day,
+	blob1 AS event_type,
+	blob2 AS outcome,
+	sum(_sample_interval) AS n
+FROM ${resolveEmailEventsDataset(input.env)}
+WHERE blob3 >= '${input.dayCutoff}T00:00:00.000Z'
+	AND blob3 < '${nextDay}T00:00:00.000Z'
+	AND blob1 IN ('email_send', 'email_receive', 'email_delivery')
+GROUP BY day, event_type, outcome
+FORMAT JSON
+`.trim()
+	try {
+		const rows = await queryAnalyticsEngineSql<EmailAnalyticsRow>({
+			accountId,
+			apiToken,
+			baseUrl:
+				input.env.CLOUDFLARE_API_BASE_URL?.trim() ||
+				'https://api.cloudflare.com',
+			query,
+		})
+		const emailRows: Array<EmailDayRow> = []
+		const deliveryRows: Array<EmailDeliveryDayRow> = []
+		for (const row of rows) {
+			const n = Number(row.n)
+			if (!Number.isFinite(n)) continue
+			if (row.event_type === 'email_send') {
+				emailRows.push({
+					day: row.day,
+					resource: 'email_sends_per_day',
+					n,
+				})
+			} else if (row.event_type === 'email_receive') {
+				emailRows.push({
+					day: row.day,
+					resource: 'email_receives_per_day',
+					n,
+				})
+			} else if (row.event_type === 'email_delivery') {
+				deliveryRows.push({
+					day: row.day,
+					event_type: row.outcome,
+					n,
+				})
+			}
+		}
+		return { emailRows, deliveryRows }
+	} catch (error) {
+		// Email reporting is operational context, not an availability
+		// dependency for the admin page. Render the rest of the dashboard and
+		// zero-fill these charts until Analytics Engine recovers.
+		console.warn('admin-insights-email-analytics-unavailable', { error })
+		return { emailRows: [], deliveryRows: [] }
 	}
 }
 

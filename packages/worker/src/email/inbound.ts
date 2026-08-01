@@ -47,6 +47,10 @@ import {
 	getPlatformEmailDomain,
 	getSystemEmailDomain,
 } from './platform-address.ts'
+import {
+	recordEmailReportingEvent,
+	type EmailReportingEnv,
+} from './reporting-events.ts'
 import { deleteEmptyEmailThreads, getEmailMessageById } from './repo.ts'
 import {
 	recordBoundedEmailRejectionEvent,
@@ -197,7 +201,8 @@ export async function handleInboundEmail(
 		| 'USER_EMAIL_DOMAIN'
 		| 'USAGE_EVENTS'
 		| 'USER_METER'
-	>,
+	> &
+		EmailReportingEnv,
 	ctx?: ExecutionContext,
 ) {
 	const recipient = normalizeEmailAddress(message.to)
@@ -537,16 +542,19 @@ export async function handleInboundEmail(
 				? (promise: Promise<unknown>) => ctx.waitUntil(promise)
 				: undefined
 			let claimedDelivery: InboundDelivery
+			let chargedReceive = false
 			try {
-				claimedDelivery =
-					existingDelivery ??
-					(await chargeUserInboundDeliveryOnce({
+				if (existingDelivery) {
+					claimedDelivery = existingDelivery
+				} else {
+					const chargeCandidate = {
+						...delivery,
+						quotaDay: userInboundQuotaDay(quotaNow),
+					}
+					claimedDelivery = await chargeUserInboundDeliveryOnce({
 						db: env.APP_DB,
 						env,
-						delivery: {
-							...delivery,
-							quotaDay: userInboundQuotaDay(quotaNow),
-						},
+						delivery: chargeCandidate,
 						plan: account.plan,
 						limit: resolveEmailResourceLimit(
 							account.plan,
@@ -554,7 +562,12 @@ export async function handleInboundEmail(
 						),
 						now: quotaNow,
 						waitUntil,
-					}))
+					})
+					// The charge helper returns the candidate object only when this
+					// invocation won the atomic D1 charge. A concurrently committed
+					// delivery is returned as a separately parsed object.
+					chargedReceive = claimedDelivery === chargeCandidate
+				}
 			} catch (error) {
 				if (!isEntitlementLimitError(error)) throw error
 				message.setReject('Recipient mailbox is over quota.')
@@ -568,6 +581,13 @@ export async function handleInboundEmail(
 				}).catch(warnRejectionAuditWriteFailed)
 				await recordReceiveUsage({ outcome: 'error' })
 				return
+			}
+			if (chargedReceive) {
+				recordEmailReportingEvent(env, {
+					userId,
+					eventType: 'email_receive',
+					timestamp: quotaNow.toISOString(),
+				})
 			}
 			if (claimedDelivery.state === 'rejected') {
 				message.setReject(

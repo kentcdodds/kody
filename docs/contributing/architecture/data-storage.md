@@ -326,6 +326,31 @@ App access pattern:
   `remix/data-table` (including `findOne`, `create`, `update`, `deleteMany`, and
   `count`)
 
+## Analytics Engine reporting
+
+The role-gated admin insights page reads its 28-day email volume and outbound
+delivery-outcome charts from the `EMAIL_EVENTS` Analytics Engine dataset.
+Charged sends and receives write one event after entitlement consumption;
+persisted `cloudflare-email` provider outcomes write one delivery event. The
+layout is `index1 = userId`, `blob1 = event type`, `blob2 = delivery outcome`,
+`blob3 = source timestamp`, and `double1 = 1`. Admin queries return only
+platform-wide day/outcome counts and weight sampled rows by `_sample_interval`.
+When Analytics Engine SQL is unreachable, these two charts zero-fill while the
+rest of the page renders. Local development uses the existing D1 counters and
+delivery-event table because Wrangler's emulated dataset has no SQL API.
+
+Two D1 reporting projections deliberately remain:
+
+- `usage_rollups` keeps 24 months of per-user monthly aggregates. Analytics
+  Engine's account retention is approximately 90 days, so it cannot safely serve
+  the 12-month admin trend or preserve the 24-month read model. The hourly
+  Analytics Engine recompute and D1 table remain unchanged.
+- `agent_package_conversation_uses` is read while building MCP server
+  instructions to provide popular-package hints. That request path is
+  latency-sensitive, so Analytics Engine SQL is not a suitable replacement. A
+  per-user meter Durable Object is a possible future home if D1 write contention
+  requires another move.
+
 ## KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)
 
 OAuth provider state is stored in `OAUTH_KV` through the
@@ -593,6 +618,7 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 (names and bindings only; remote D1/KV IDs come from deploy-generated configs):
 
 - `APP_DB` (D1)
+- `AUDIT_DB` (D1, global hashed security audit trail)
 - `OAUTH_KV` (KV)
 - `BUNDLE_ARTIFACTS_KV` (KV)
 - `EMAIL_BLOBS` (R2, raw email MIME blobs)
@@ -615,6 +641,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `ASSETS` (static assets bucket)
 - `USAGE_EVENTS` (Analytics Engine dataset, production/preview only; see
   [Usage metering](./usage-metering.md))
+- `EMAIL_EVENTS` (Analytics Engine dataset, production/preview only; indexed by
+  stable user id and read only through role-gated platform aggregates)
 
 `packages/worker/wrangler.jsonc` also configures the `EMAIL` send binding,
 dispatch queues, worker loaders (`LOADER` / `APP_LOADER`), the `AI` binding, and
@@ -924,26 +952,44 @@ the same user-owned D1 rows used by account deletion.
 
 ### Vectorize metadata contracts
 
-Vector ids and metadata are conventional and require reindexing when changed.
+Vector ids, namespaces, and metadata are conventional and require reindexing
+when changed. User-owned vectors use the account's 64-character stable user id
+as their Vectorize namespace. Builtin capability vectors use the reserved
+`__kody_builtin__` namespace; stable user ids are lowercase SHA-256 hex, so the
+reserved value cannot collide with an account. Namespace filtering is the
+primary isolation boundary and is applied by Vectorize before search. The
+`userId` metadata filter remains mandatory on every user-owned query as
+defense-in-depth.
+
 User-owned ids must also stay within Cloudflare Vectorize's 64-byte id limit:
 builders first emit the legacy passthrough form when it fits, then fall back to
 `{prefix}_sha256:{truncatedHexDigest}` for overlong raw ids. Length checks are
 UTF-8 byte checks, not JavaScript string-length checks, and the digest form is
 deterministic so upserts and deletes target the same vector.
 
-- Memories: `memory_{memoryId}` with metadata
+- Memories: `memory_{memoryId}` in namespace `{userId}`, with metadata
   `{ kind: 'memory', userId, status, category? }`. Memory ids are UUID-like, so
   search parses only the passthrough `memory_` form back to the D1 id.
 - Jobs: `job_{jobId}` or `job_sha256:{digest}` with metadata
-  `{ kind: 'job', userId }`. Package-owned job ids
+  `{ kind: 'job', userId }` in namespace `{userId}`. Package-owned job ids
   `package-job:{packageId}:{jobName}` often need the digest form.
 - Saved packages: `package_{packageId}` or `package_sha256:{digest}` with
-  metadata `{ kind: 'package', userId }`.
-- Builtin capabilities: id is the capability name with metadata
-  `{ kind: 'builtin', domain }`.
+  metadata `{ kind: 'package', userId }` in namespace `{userId}`.
+- Builtin capabilities: id is the capability name in namespace
+  `__kody_builtin__`, with metadata `{ kind: 'builtin', domain }`.
 
-Every user-owned Vectorize query must filter by `userId`; capability vectors are
-global built-in metadata and are rebuilt through the maintenance reindex path.
+The namespace migration uses expand/contract reads. Each query searches both the
+intended namespace and the legacy default namespace with the same metadata
+filter, then deduplicates, ranks, and limits the combined matches. This keeps
+partially reindexed accounts complete without weakening user isolation. The
+post-deploy `POST /__maintenance/reindex-capabilities` sweep keyset-pages every
+memory, job, and saved package from D1 (200 rows per page) and upserts it into
+the owner's namespace; it also rebuilds builtins in their reserved namespace.
+The deploy is not considered migrated until every phase reports no `error` or
+`failed` vectors. Remove the default-namespace read in a follow-up contract
+deploy only after a production full sweep succeeds and the next deploy confirms
+normal namespaced search. Vectors are derived from D1, so no canonical data is
+moved or deleted during this migration.
 
 ### `entity_sources` and package import contracts
 
@@ -1030,8 +1076,11 @@ Current retention policies:
   resolved or dismissed, or the submitter deletes their account. Resolved and
   dismissed rows keep 365 days after `updated_at`; submitter deletion removes
   any remaining rows.
-- `audit_events`: global hashed auth/security audit events keep 180 days. They
-  are not user-owned D1 rows and remain independent of account deletion/export.
+- `audit_events`: global hashed auth/security audit events are dual-written to
+  the legacy `APP_DB` table and the dedicated `AUDIT_DB` database during the
+  expand phase. Retention prunes only `AUDIT_DB` after 180 days; the legacy
+  table remains in place until a later contract phase. Audit events are not
+  user-owned rows and remain independent of account deletion/export.
 - `stripe_webhook_events`: platform Stripe webhook idempotency rows keep 30 days
   by `processed_at`. They are not user-owned and remain independent of account
   deletion/export.

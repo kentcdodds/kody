@@ -3,6 +3,7 @@ import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	deterministicEmbedding,
 } from '#worker/vectorize/embedding.ts'
+import { BUILTIN_VECTOR_NAMESPACE } from '#worker/vectorize/vector-namespaces.ts'
 import {
 	CAPABILITY_VECTOR_KIND,
 	buildCapabilityVectorMetadataFilter,
@@ -31,6 +32,7 @@ function spec(name: string, description: string): CapabilitySpec {
 function onlineEnv(matches: Array<{ id: string; score: number }>) {
 	const embeddedTexts: Array<string> = []
 	const capturedFilters: Array<Record<string, unknown> | undefined> = []
+	const capturedNamespaces: Array<string | undefined> = []
 	const env = {
 		SENTRY_ENVIRONMENT: 'production',
 		AI: {
@@ -49,14 +51,15 @@ function onlineEnv(matches: Array<{ id: string; score: number }>) {
 		CAPABILITY_VECTOR_INDEX: {
 			async query(
 				_values: Array<number>,
-				options: { filter?: Record<string, unknown> },
+				options: { filter?: Record<string, unknown>; namespace?: string },
 			) {
 				capturedFilters.push(options.filter)
+				capturedNamespaces.push(options.namespace)
 				return { matches }
 			},
 		},
 	} as unknown as Env
-	return { env, embeddedTexts, capturedFilters }
+	return { env, embeddedTexts, capturedFilters, capturedNamespaces }
 }
 
 test('capability Vectorize stays builtin-scoped, query-embed-only, and lexical-only for misses', async () => {
@@ -81,10 +84,12 @@ test('capability Vectorize stays builtin-scoped, query-embed-only, and lexical-o
 			'oauth redirect uri provider registration guide for configuring providers.',
 		),
 	}
-	const { env, embeddedTexts, capturedFilters } = onlineEnv([
-		{ id: 'package_pkg-1', score: 0.99 },
-		{ id: 'capability_noise_a', score: 0.41 },
-	])
+	const { env, embeddedTexts, capturedFilters, capturedNamespaces } = onlineEnv(
+		[
+			{ id: 'package_pkg-1', score: 0.99 },
+			{ id: 'capability_noise_a', score: 0.41 },
+		],
+	)
 	const result = await searchCapabilities({
 		env,
 		query,
@@ -96,7 +101,9 @@ test('capability Vectorize stays builtin-scoped, query-embed-only, and lexical-o
 	expect(embeddedTexts).toEqual([query])
 	expect(capturedFilters).toEqual([
 		{ domain: { $eq: 'meta' }, kind: { $eq: CAPABILITY_VECTOR_KIND } },
+		{ domain: { $eq: 'meta' }, kind: { $eq: CAPABILITY_VECTOR_KIND } },
 	])
+	expect(capturedNamespaces).toEqual([BUILTIN_VECTOR_NAMESPACE, undefined])
 	expect(result.matches.map((match) => match.name)).toContain(
 		'oauth_redirect_helper',
 	)

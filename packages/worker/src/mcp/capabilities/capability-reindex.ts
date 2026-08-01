@@ -4,6 +4,7 @@ import {
 	reindexVectorCandidates,
 	type VectorReindexResult,
 } from '#worker/vectorize/reindex-batches.ts'
+import { BUILTIN_VECTOR_NAMESPACE } from '#worker/vectorize/vector-namespaces.ts'
 import { type CapabilitySpec } from './types.ts'
 
 export async function reindexCapabilityVectors(
@@ -22,6 +23,7 @@ export async function reindexCapabilityVectors(
 		candidates: Object.values(specs).map((spec) => ({
 			id: spec.name,
 			text: buildCapabilityEmbedText(spec),
+			namespace: BUILTIN_VECTOR_NAMESPACE,
 			metadata: { domain: spec.domain, kind: 'builtin' },
 		})),
 	})

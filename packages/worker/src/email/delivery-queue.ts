@@ -1,6 +1,7 @@
 import { processCloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import { applyOutboundEmailAbusePause } from './outbound-abuse.ts'
 import { dispatchEmailDeliverySubscriptionEvents } from './package-subscriptions.ts'
+import { type EmailReportingEnv } from './reporting-events.ts'
 
 const unmatchedRetryDelaySeconds = 30
 export const emailDeliveryQueueName = 'kody-email-delivery'
@@ -15,6 +16,7 @@ export async function handleEmailDeliveryQueue(
 		try {
 			const result = await processCloudflareEmailDeliveryEvent({
 				db: env.APP_DB,
+				reportingEnv: env as Env & EmailReportingEnv,
 				body: queueMessage.body,
 			})
 			switch (result.outcome) {

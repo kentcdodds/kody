@@ -428,9 +428,13 @@ test('platform feedback retention prunes terminal rows in bounded batches and ru
 		.run(daysAgo(platformFeedbackRetentionDays + 1))
 	const env = {
 		APP_DB: db,
+		AUDIT_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
 		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	} as unknown as Pick<
+		Env,
+		'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'
+	>
 	const result = await pruneRetention({ env, now })
 	expect(result.platformFeedback).toBe(1)
 	expect(result.batchesPerTable['platform_feedback']).toBe(1)
@@ -797,13 +801,17 @@ test('retention run reports blob delete errors across a full email batch when R2
 	}
 	const env = {
 		APP_DB: db,
+		AUDIT_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
 		EMAIL_BLOBS: {
 			delete: vi.fn(async () => {
 				throw new Error('r2 unavailable')
 			}),
 		},
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	} as unknown as Pick<
+		Env,
+		'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'
+	>
 
 	const result = await pruneRetention({ env, now })
 
@@ -1159,6 +1167,7 @@ test('retention row deletes chunk ids to stay within the D1 binding limit', asyn
 
 test('retention run loops batches per table until backlogs are drained', async () => {
 	const { sqlite, db } = createRetentionDb()
+	const { sqlite: auditSqlite, db: auditDb } = createRetentionDb()
 	for (let index = 0; index < 501; index += 1) {
 		insertWorkflowRun(sqlite, {
 			id: `wf-${String(index).padStart(3, '0')}`,
@@ -1166,7 +1175,7 @@ test('retention run loops batches per table until backlogs are drained', async (
 		})
 	}
 	for (let index = 0; index < 300; index += 1) {
-		sqlite
+		auditSqlite
 			.prepare(
 				`INSERT INTO audit_events (
 				category, action, result, timestamp
@@ -1176,9 +1185,13 @@ test('retention run loops batches per table until backlogs are drained', async (
 	}
 	const env = {
 		APP_DB: db,
+		AUDIT_DB: auditDb,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
 		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	} as unknown as Pick<
+		Env,
+		'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'
+	>
 
 	const result = await pruneRetention({ env, now })
 
@@ -1188,6 +1201,9 @@ test('retention run loops batches per table until backlogs are drained', async (
 	expect(result.batchesPerTable['audit_events']).toBe(2)
 	expect(result.timeBudgetExhausted).toBe(false)
 	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([])
+	expect(
+		auditSqlite.prepare(`SELECT COUNT(*) AS count FROM audit_events`).get(),
+	).toEqual({ count: 0 })
 })
 
 test('retention run gives every table one batch and stops when the budget is exhausted', async () => {
@@ -1207,9 +1223,13 @@ test('retention run gives every table one batch and stops when the budget is exh
 		.run(daysAgo(auditEventRetentionDays + 1))
 	const env = {
 		APP_DB: db,
+		AUDIT_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
 		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	} as unknown as Pick<
+		Env,
+		'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'
+	>
 
 	const result = await pruneRetention({ env, now, timeBudgetMs: 0 })
 

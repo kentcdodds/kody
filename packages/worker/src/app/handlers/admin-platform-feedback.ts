@@ -1,5 +1,9 @@
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import {
 	loadAdminPlatformFeedbackData,
 	readAdminPlatformFeedbackId,
@@ -34,6 +38,7 @@ async function auditPlatformFeedbackRead(input: {
 }) {
 	await logAuditEvent({
 		db: input.env.APP_DB,
+		auditDb: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: input.action,
 		result: 'success',

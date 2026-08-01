@@ -20,6 +20,10 @@ import { normalizeEmailAddress } from './address.ts'
 import { emailOutboundPausedMessage } from './outbound-abuse.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
 import {
+	recordEmailReportingEvent,
+	type EmailReportingEnv,
+} from './reporting-events.ts'
+import {
 	createEmailThread,
 	emailAttachmentBlobKey,
 	ensurePlatformSenderIdentity,
@@ -44,7 +48,8 @@ type SendEmailEnv = Pick<
 	| 'CLOUDFLARE_API_BASE_URL'
 	| 'CLOUDFLARE_API_TOKEN'
 	| 'USER_METER'
->
+> &
+	EmailReportingEnv
 
 /**
  * Ceiling on the number of files per outbound message. Total size is
@@ -559,6 +564,10 @@ export async function sendOutboundEmail(
 			userId: input.userId,
 			email: sender.accountEmail,
 			resource: 'email_sends_per_day',
+		})
+		recordEmailReportingEvent(input.env, {
+			userId: input.userId,
+			eventType: 'email_send',
 		})
 
 		const existingThreadId = original?.threadId ?? input.threadId ?? null

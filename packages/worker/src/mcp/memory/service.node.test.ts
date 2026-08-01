@@ -639,6 +639,7 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 
 	const vectorQueryCalls: Array<{
 		topK: number
+		namespace?: string
 		filter?: Record<string, unknown>
 	}> = []
 	const runtimeEnv = {
@@ -648,7 +649,11 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 		CAPABILITY_VECTOR_INDEX: {
 			async query(
 				_values: Array<number>,
-				options: { topK: number; filter?: Record<string, unknown> },
+				options: {
+					topK: number
+					namespace?: string
+					filter?: Record<string, unknown>
+				},
 			) {
 				vectorQueryCalls.push(options)
 				return {
@@ -665,16 +670,21 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 		limit: 5,
 	})
 
-	// One Vectorize query with user/kind/status metadata filters; no second
-	// query happens inside the fusion step.
-	expect(vectorQueryCalls).toHaveLength(1)
+	// The migration reads both the user namespace and legacy default namespace
+	// with identical user/kind/status metadata filters.
+	expect(vectorQueryCalls).toHaveLength(2)
 	expect(vectorQueryCalls[0]).toMatchObject({
+		namespace: 'user-123',
 		filter: {
 			kind: { $eq: 'memory' },
 			userId: { $eq: 'user-123' },
 			status: { $in: ['active', 'archived'] },
 		},
 	})
+	expect(vectorQueryCalls[1]).toMatchObject({
+		filter: vectorQueryCalls[0]!.filter,
+	})
+	expect(vectorQueryCalls[1]).not.toHaveProperty('namespace')
 	const matchedIds = result.matches.map((match) => match.id)
 	expect(matchedIds).toContain('memory-old-vector-hit')
 	expect(matchedIds).toContain('memory-recent')
