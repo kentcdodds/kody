@@ -10,7 +10,7 @@ import {
 	readParityRow,
 	reconcileMailboxParity,
 	successGraph,
-} from './mailbox-reconcile-test-support.ts'
+} from './mailbox-reconcile.node.test-support.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
