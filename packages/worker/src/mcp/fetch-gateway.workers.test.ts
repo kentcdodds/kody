@@ -71,12 +71,12 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 	})
 	expect(await allowed.text()).toBe('ok')
 	await Promise.all(waitUntilTasks)
-		expect(
-			await userMeterRpc({ env, userId }).read({
-				resource: 'outbound_fetches_per_day',
-				day: utcDayKey(),
-			}),
-		).toMatchObject({ outcome: 'ready', count: 1 })
+	expect(
+		await userMeterRpc({ env, userId }).read({
+			resource: 'outbound_fetches_per_day',
+			day: utcDayKey(),
+		}),
+	).toMatchObject({ outcome: 'ready', count: 1 })
 
 	// Fill the remaining free-plan quota in UserMeter, then expect denial.
 	await seedOutboundFetchCounter(
