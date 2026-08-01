@@ -85,6 +85,13 @@ namespaces plus `userId` metadata as defense in depth.
   guardrail tests) as part of the move, not as a follow-up.
 - Any admin view depending on a cross-user SELECT of moved data must be
   redesigned (AE or point reads) in the same change.
+- Shared storage does not relax per-user isolation. User-owned data in every
+  home — packages, jobs, secrets, values, memories, remote connectors, email
+  inboxes, durable storage — stays scoped by `userId` (and every Durable Object
+  backing user-owned state stays namespaced by `userId`); cross-user access is
+  limited to the documented operator/admin indexes and reporting aggregates. The
+  full isolation contract lives in
+  [data storage](../architecture/data-storage.md).
 
 ## Consequences
 
