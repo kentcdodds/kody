@@ -6,9 +6,14 @@ import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { mailboxLiveMirrorMaxEvents } from './mailbox-live-mirror.ts'
 import {
 	countD1MailboxParity,
+	listUsersForMailboxParity,
 	reconcileMailboxParity,
 } from './mailbox-reconcile.ts'
-import { rpcFor } from './mailbox-test-helpers.ts'
+import {
+	baseDeliveryEvent,
+	baseMessage,
+	rpcFor,
+} from './mailbox-test-helpers.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
 async function seedParityUser(input: {
@@ -264,10 +269,10 @@ test('reconcileMailboxParity mismatch full reset and soak', async () => {
 			eventsCompletedAt: null,
 			messageCursorId: null,
 			eventCursorId: null,
+			contentWatermarkAt: null,
 			contentReplayUpperAt: null,
 			checkedAt: mismatchNow.toISOString(),
 		})
-		expect(afterMismatch?.contentWatermarkAt).not.toBeNull()
 
 		await env.APP_DB.prepare(
 			`UPDATE users SET mailbox_parity_checked_at = NULL WHERE stable_user_id = ?`,
@@ -328,6 +333,118 @@ test('reconcileMailboxParity mismatch full reset and soak', async () => {
 	} finally {
 		vi.useRealTimers()
 	}
+}, 30_000)
+
+test('reconcileMailboxParity purges DO-only leftover for tracked empty owners', async () => {
+	silenceIncidentalRuntimeWarnings(['mailbox-live-mirror-events-truncated'])
+	await ensureUsersTestSchema({ db: env.APP_DB })
+	await ensureEmailTestSchema(env.APP_DB)
+
+	await env.APP_DB.prepare(
+		`UPDATE users
+		SET mailbox_parity_checked_at = '9999-12-31T23:59:59.999Z'`,
+	).run()
+
+	const userId = await seedParityUser({
+		email: `do-extra-${crypto.randomUUID()}@example.test`,
+		checkedAt: null,
+	})
+	await seedMessageGraph({
+		userId,
+		messageId: 'do-extra-msg',
+		threadId: 'do-extra-thread',
+		createdAt: '2026-07-01T12:00:00.000Z',
+	})
+	const mailbox = rpcFor(userId)
+	await mailbox.getMessage({ messageId: 'warmup-nonexistent' })
+
+	const firstNow = new Date('2026-08-01T10:00:00.000Z')
+	await expect(
+		reconcileMailboxParity({ env, now: firstNow, batchSize: 1 }),
+	).resolves.toMatchObject({ matched: 1 })
+	expect(await mailbox.countMailbox()).toEqual(
+		await countD1MailboxParity({ db: env.APP_DB, userId }),
+	)
+
+	// Failed delete mirror: clear D1, leave Mailbox metadata populated.
+	await env.APP_DB.prepare(
+		`DELETE FROM email_delivery_events WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.run()
+	await env.APP_DB.prepare(`DELETE FROM email_attachments WHERE message_id = ?`)
+		.bind('do-extra-msg')
+		.run()
+	await env.APP_DB.prepare(`DELETE FROM email_messages WHERE user_id = ?`)
+		.bind(userId)
+		.run()
+	await env.APP_DB.prepare(`DELETE FROM email_threads WHERE user_id = ?`)
+		.bind(userId)
+		.run()
+	await mailbox.mirrorMessage({
+		ownerId: userId,
+		message: baseMessage(userId, { id: 'do-extra-msg' }),
+	})
+	await mailbox.upsertDeliveryEvents({
+		ownerId: userId,
+		events: [
+			baseDeliveryEvent({
+				id: 'do-extra-evt',
+				messageId: 'do-extra-msg',
+			}),
+		],
+	})
+	expect((await mailbox.countMailbox()).messages).toBeGreaterThan(0)
+	expect(
+		(await listUsersForMailboxParity({ db: env.APP_DB, limit: 10 })).some(
+			(row) => row.userId === userId,
+		),
+	).toBe(true)
+
+	await env.APP_DB.prepare(
+		`UPDATE users SET mailbox_parity_checked_at = NULL WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.run()
+	const mismatchNow = new Date('2026-08-01T11:00:00.000Z')
+	await expect(
+		reconcileMailboxParity({ env, now: mismatchNow, batchSize: 1 }),
+	).resolves.toMatchObject({
+		compared: 1,
+		matched: 0,
+		mismatched: 1,
+		failed: 0,
+	})
+	expect(await readParityState(userId)).toMatchObject({
+		matchingSince: null,
+		mismatchCount: 1,
+		contentWatermarkAt: null,
+		messagesCompletedAt: null,
+		eventsCompletedAt: null,
+	})
+	expect(await mailbox.countMailbox()).toEqual({
+		threads: 0,
+		messages: 0,
+		attachments: 0,
+		deliveryEvents: 0,
+	})
+
+	await env.APP_DB.prepare(
+		`UPDATE users SET mailbox_parity_checked_at = NULL WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.run()
+	const zeroNow = new Date('2026-08-01T12:00:00.000Z')
+	await expect(
+		reconcileMailboxParity({ env, now: zeroNow, batchSize: 1 }),
+	).resolves.toMatchObject({ matched: 1, mismatched: 0 })
+	expect(await readParityState(userId)).toMatchObject({
+		matchingSince: zeroNow.toISOString(),
+		mismatchCount: 0,
+	})
+	expect(await mailbox.countMailbox()).toEqual(
+		await countD1MailboxParity({ db: env.APP_DB, userId }),
+	)
 }, 30_000)
 
 test('reconcileMailboxParity eventually repairs >100 bound delivery events', async () => {

@@ -33,11 +33,6 @@ import {
 	shouldRunUsageAggregationCron,
 } from '#worker/usage/aggregate-rollups.ts'
 
-/** Worker cron fires every 5 minutes; run this lane on the top of each UTC hour. */
-export function shouldRunMailboxParityCron(now: Date) {
-	return now.getUTCMinutes() === 0
-}
-
 export const scheduledLaneNames = [
 	'reconcile_artifacts_pushes',
 	'repo_session_cleanup',
@@ -86,6 +81,7 @@ export function getScheduledLanes(input: {
 		'storage_bucket_estimate_backfill',
 		'd1_storage_reconciliation',
 		'oauth_purge_expired',
+		'mailbox_parity',
 	]
 	if (shouldRunRetentionCron(input.scheduledAt)) {
 		lanes.push('retention', 'job_retention')
@@ -113,9 +109,6 @@ export function getScheduledLanes(input: {
 	}
 	if (shouldRunJobScheduleWatchdogCron(input.scheduledAt)) {
 		lanes.push('job_schedule_watchdog')
-	}
-	if (shouldRunMailboxParityCron(input.scheduledAt)) {
-		lanes.push('mailbox_parity')
 	}
 	return lanes
 }

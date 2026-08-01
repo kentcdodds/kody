@@ -27,8 +27,11 @@ import { type EmailMessageRecord } from './types.ts'
 /** Continuous exact parity must hold at least this long before cutover. */
 export const mailboxReadCutoverSoakMs = 24 * 60 * 60 * 1000
 
-/** Parity `checked_at` must be newer than this (hourly lane + slack). */
-export const mailboxReadCutoverCheckedAtMaxAgeMs = 2 * 60 * 60 * 1000
+/**
+ * Parity `checked_at` must be newer than this. Sized for the every-5m parity
+ * lane with bounded batch scaling (not a strict 5m SLA).
+ */
+export const mailboxReadCutoverCheckedAtMaxAgeMs = 6 * 60 * 60 * 1000
 
 export const mailboxReadCutoverFlagKey = 'mailbox-read-cutover' as const
 

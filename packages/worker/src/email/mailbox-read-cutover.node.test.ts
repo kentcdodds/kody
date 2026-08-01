@@ -272,7 +272,7 @@ test('mailbox-read-cutover defaults off and requires soak + fresh zero-mismatch 
 		}),
 	).resolves.toBe(false)
 
-	// Stale checked_at (> 2h).
+	// Stale checked_at (> 6h freshness window).
 	const staleDb = createCutoverTestDb({
 		flags: { overrideEnabled: true, globalEnabled: null },
 		parityByUserId: new Map([
@@ -280,7 +280,7 @@ test('mailbox-read-cutover defaults off and requires soak + fresh zero-mismatch 
 				dbUserId,
 				{
 					...soakedParity(),
-					mailbox_parity_checked_at: hoursAgoIso(3),
+					mailbox_parity_checked_at: hoursAgoIso(7),
 				},
 			],
 		]),

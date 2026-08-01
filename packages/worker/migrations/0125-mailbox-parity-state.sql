@@ -9,9 +9,11 @@
 -- content-replay window (replay_upper_at + replay cursor) keyset-replays
 -- messages with updated_at in (watermark, upper]; the watermark advances to
 -- upper only when that window finishes. Count compare runs only after the full
--- event phase and a completed content window. Count mismatch clears soak
--- eligibility and resets both creation cursors and completion markers for a
--- full historical rescan (watermark preserved; in-flight replay window cleared).
+-- event phase and a completed content window. Count mismatch best-effort purges
+-- Mailbox SQLite metadata (no R2), then clears soak and resets creation cursors,
+-- completion markers, and content watermark/window for an authoritative D1
+-- rebuild. Purge timeout/error clears soak, records failure, and does not reset
+-- rebuild state. Previously tracked users stay eligible even at zero D1 rows.
 -- matching_since may persist across a successful content replay + exact compare.
 
 ALTER TABLE users ADD COLUMN mailbox_parity_checked_at TEXT;

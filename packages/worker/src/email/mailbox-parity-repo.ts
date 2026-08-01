@@ -45,6 +45,9 @@ export async function listUsersForMailboxParity(input: {
 	db: D1Database
 	limit: number
 }): Promise<Array<{ userId: string }>> {
+	// Include previously tracked owners (any parity column non-null) even when
+	// D1 mail is empty so DO-only leftovers after last-row deletion are purged.
+	// Never-tracked empty users, system email, and deleting users stay out.
 	const result = await input.db
 		.prepare(
 			`SELECT u.stable_user_id AS userId
@@ -60,6 +63,17 @@ export async function listUsersForMailboxParity(input: {
 						SELECT 1 FROM email_delivery_events e
 						WHERE e.user_id = u.stable_user_id
 					)
+					OR u.mailbox_parity_checked_at IS NOT NULL
+					OR u.mailbox_parity_matching_since IS NOT NULL
+					OR u.mailbox_parity_last_error IS NOT NULL
+					OR u.mailbox_parity_mismatch_count > 0
+					OR u.mailbox_parity_content_watermark_at IS NOT NULL
+					OR u.mailbox_parity_content_replay_upper_at IS NOT NULL
+					OR u.mailbox_parity_content_replay_cursor_id IS NOT NULL
+					OR u.mailbox_parity_message_backfill_cursor_id IS NOT NULL
+					OR u.mailbox_parity_message_backfill_completed_at IS NOT NULL
+					OR u.mailbox_parity_event_backfill_cursor_id IS NOT NULL
+					OR u.mailbox_parity_event_backfill_completed_at IS NOT NULL
 				)
 			ORDER BY u.mailbox_parity_checked_at ASC, u.stable_user_id ASC
 			LIMIT ?`,

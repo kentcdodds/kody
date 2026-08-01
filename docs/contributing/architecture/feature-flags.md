@@ -81,7 +81,8 @@ parity soak on `users` (migration `0125-mailbox-parity-state.sql`):
 
 - `mailbox_parity_matching_since` at least **24 hours** old (continuous exact
   D1↔Mailbox count parity),
-- `mailbox_parity_checked_at` fresh within **2 hours** (hourly lane + slack),
+- `mailbox_parity_checked_at` fresh within **6 hours** (every-5m lane with
+  bounded batch scaling; not a strict 5m SLA),
 - `mailbox_parity_mismatch_count === 0`,
 - exact `stable_user_id` match between the gate caller and the loaded row,
 - `deleting_at IS NULL` (accounts marked for deletion fail closed to D1).

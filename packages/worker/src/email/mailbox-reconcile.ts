@@ -41,7 +41,7 @@ import { type MailboxCountResult } from './mailbox-types.ts'
  * lane never mutates email_* rows and does not flip read authority.
  */
 
-export const mailboxParityUserBatchSize = 8
+export const mailboxParityUserBatchSize = 16
 export const mailboxParityTimeBudgetMs = 10_000
 export const mailboxParityLastErrorMaxBytes = 512
 
@@ -85,17 +85,49 @@ function safeParityErrorText(error: unknown): string {
 	)
 }
 
+/**
+ * Bounded Mailbox SQLite metadata purge (no R2). Used for account-deletion
+ * races (best-effort) and count-mismatch rebuild (must observe success).
+ */
+async function purgeMailboxMetadata(input: {
+	env: MailboxParityReconcileEnv
+	userId: string
+}): Promise<
+	{ ok: true } | { ok: false; reason: 'timeout' | 'error'; errorText: string }
+> {
+	try {
+		const raced = await awaitMailboxMirrorRpc(
+			mailboxRpc({ env: input.env, userId: input.userId }).purge(),
+			mailboxMirrorRpcTimeoutMs,
+		)
+		if (!raced.ok) {
+			return {
+				ok: false,
+				reason: 'timeout',
+				errorText: 'mailbox metadata purge timeout',
+			}
+		}
+		return { ok: true }
+	} catch (error) {
+		return {
+			ok: false,
+			reason: 'error',
+			errorText: safeParityErrorText(error),
+		}
+	}
+}
+
 async function purgeMailboxBestEffort(input: {
 	env: MailboxParityReconcileEnv
 	userId: string
 }) {
-	try {
-		await awaitMailboxMirrorRpc(
-			mailboxRpc({ env: input.env, userId: input.userId }).purge(),
-			mailboxMirrorRpcTimeoutMs,
+	const result = await purgeMailboxMetadata(input)
+	if (!result.ok) {
+		console.warn(
+			'mailbox-parity-purge-on-delete-failed',
+			input.userId,
+			result.errorText,
 		)
-	} catch (error) {
-		console.warn('mailbox-parity-purge-on-delete-failed', input.userId, error)
 	}
 }
 
@@ -185,6 +217,8 @@ async function compareParityForUser(input: {
 }): Promise<{
 	state: MailboxParityUserState
 	matched: boolean
+	purgeFailed: boolean
+	lastError: string | null
 }> {
 	const d1 = await countD1MailboxParity({
 		db: input.env.APP_DB,
@@ -213,10 +247,36 @@ async function compareParityForUser(input: {
 				mismatchCount: 0,
 			},
 			matched: true,
+			purgeFailed: false,
+			lastError: null,
 		}
 	}
-	// Full historical rescan: clear creation cursors + completion markers.
-	// Preserve content watermark; drop any in-flight replay window; clear soak.
+
+	// DO may hold extras after D1 deletes. Purge Mailbox metadata (no R2) before
+	// resetting rebuild state so the next ticks authoritatively mirror D1.
+	const purged = await purgeMailboxMetadata({
+		env: input.env,
+		userId: input.state.userId,
+	})
+	if (!purged.ok) {
+		console.warn(
+			'mailbox-parity-mismatch-purge-failed',
+			input.state.userId,
+			purged.reason,
+			purged.errorText,
+		)
+		return {
+			state: {
+				...input.state,
+				matchingSince: null,
+				mismatchCount: input.state.mismatchCount + 1,
+			},
+			matched: false,
+			purgeFailed: true,
+			lastError: purged.errorText,
+		}
+	}
+
 	return {
 		state: {
 			...input.state,
@@ -226,10 +286,13 @@ async function compareParityForUser(input: {
 			messagesCompletedAt: null,
 			eventCursor: null,
 			eventsCompletedAt: null,
+			contentWatermarkAt: null,
 			contentReplayUpperAt: null,
 			contentReplayCursor: null,
 		},
 		matched: false,
+		purgeFailed: false,
+		lastError: null,
 	}
 }
 
@@ -495,14 +558,14 @@ async function reconcileOneUser(input: {
 	}
 	await persistProgress({
 		matchingSince: state.matchingSince,
-		lastError: null,
+		lastError: compared.lastError,
 	})
 	return {
 		backfilled,
 		compared: true,
 		matched: compared.matched,
 		mismatched: !compared.matched,
-		failed: false,
+		failed: compared.purgeFailed,
 		budgetExhausted: false,
 	}
 }

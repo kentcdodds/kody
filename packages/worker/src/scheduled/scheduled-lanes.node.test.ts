@@ -8,36 +8,19 @@ vi.mock('#worker/email/mailbox-reconcile.ts', () => ({
 	reconcileMailboxParity: mocks.reconcileMailboxParity,
 }))
 
-const { getScheduledLanes, runScheduledLane, shouldRunMailboxParityCron } =
+const { getScheduledLanes, runScheduledLane } =
 	await import('./scheduled-lanes.ts')
 
-test('shouldRunMailboxParityCron gates to the top of each UTC hour', () => {
-	expect(shouldRunMailboxParityCron(new Date('2026-07-05T10:00:30.000Z'))).toBe(
-		true,
-	)
-	expect(shouldRunMailboxParityCron(new Date('2026-07-05T10:05:00.000Z'))).toBe(
-		false,
-	)
-	expect(shouldRunMailboxParityCron(new Date('2026-07-05T10:30:00.000Z'))).toBe(
-		false,
-	)
-})
-
-test('getScheduledLanes includes mailbox_parity only on the hourly gate', () => {
+test('getScheduledLanes includes mailbox_parity on every cron tick', () => {
 	const env = {} as Env
 
-	expect(
-		getScheduledLanes({
-			env,
-			scheduledAt: new Date('2026-07-05T10:00:30.000Z'),
-		}),
-	).toContain('mailbox_parity')
-	expect(
-		getScheduledLanes({
-			env,
-			scheduledAt: new Date('2026-07-05T10:30:00.000Z'),
-		}),
-	).not.toContain('mailbox_parity')
+	for (const scheduledAt of [
+		new Date('2026-07-05T10:00:30.000Z'),
+		new Date('2026-07-05T10:05:00.000Z'),
+		new Date('2026-07-05T10:30:00.000Z'),
+	]) {
+		expect(getScheduledLanes({ env, scheduledAt })).toContain('mailbox_parity')
+	}
 })
 
 test('runScheduledLane dispatches mailbox_parity through reconcileMailboxParity', async () => {
