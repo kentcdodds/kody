@@ -11,9 +11,12 @@ import {
 	mailboxMessageRetentionDays,
 	mailboxRetentionContinuationDelayMs,
 	mailboxRetentionRetryDelayMs,
+	selectMailboxRetentionWriteAlarm,
 } from './mailbox-do.ts'
+import { mailboxRetentionAlarmSkewMs } from './mailbox-types.ts'
 import {
 	baseAttachment,
+	baseDeliveryEvent,
 	baseMessage,
 	baseThread,
 	rpcFor,
@@ -61,6 +64,41 @@ test('computeMailboxRetentionReschedule prefers backoff, then continue, then due
 			nextDueAtMs: null,
 		}),
 	).toEqual({ kind: 'idle', atMs: null })
+})
+
+test('selectMailboxRetentionWriteAlarm never postpones an earlier existing alarm', () => {
+	const earlier = 1_700_000_100_000
+	const later = earlier + 60_000
+	expect(
+		selectMailboxRetentionWriteAlarm({
+			proposedAtMs: later,
+			existingAtMs: earlier,
+		}),
+	).toEqual({ action: 'keep-existing' })
+	expect(
+		selectMailboxRetentionWriteAlarm({
+			proposedAtMs: earlier,
+			existingAtMs: later,
+		}),
+	).toEqual({ action: 'set', atMs: earlier })
+	expect(
+		selectMailboxRetentionWriteAlarm({
+			proposedAtMs: earlier + Math.floor(mailboxRetentionAlarmSkewMs / 2),
+			existingAtMs: earlier,
+		}),
+	).toEqual({ action: 'keep-existing' })
+	expect(
+		selectMailboxRetentionWriteAlarm({
+			proposedAtMs: earlier,
+			existingAtMs: null,
+		}),
+	).toEqual({ action: 'set', atMs: earlier })
+	expect(
+		selectMailboxRetentionWriteAlarm({
+			proposedAtMs: null,
+			existingAtMs: earlier,
+		}),
+	).toEqual({ action: 'idle' })
 })
 
 test('Mailbox retention deletes canonical R2 keys before metadata and backs off on failure', async () => {
@@ -128,7 +166,7 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 	await mailbox.mirrorMessage({ ownerId: userId, message: missingKeyMessage })
 	await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'old-event',
 			messageId: keepMessage.id,
 			eventType: 'received',
@@ -136,11 +174,11 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 			createdAt: oldEventAt,
 			updatedAt: oldEventAt,
 			needsEffectReconcile: false,
-		},
+		}),
 	})
 	await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'fresh-event',
 			messageId: keepMessage.id,
 			eventType: 'received',
@@ -148,7 +186,7 @@ test('Mailbox retention deletes canonical R2 keys before metadata and backs off 
 			createdAt: freshAt,
 			updatedAt: freshAt,
 			needsEffectReconcile: false,
-		},
+		}),
 	})
 
 	const dropRawKey = emailRawMimeKey(userId, dropMessage.id)

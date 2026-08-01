@@ -174,106 +174,120 @@ export type MailboxDeliveryEventRecord = {
 	updatedAt: string
 }
 
+/**
+ * Full thread snapshot for mirror writes — every persisted field is required.
+ * Nullable columns use `T | null` (no omitted/defaulted fields).
+ */
 export type MailboxThreadInput = {
 	id: string
-	inboxId?: string | null
-	subjectNormalized?: string | null
-	rootMessageIdHeader?: string | null
+	inboxId: string | null
+	subjectNormalized: string
+	rootMessageIdHeader: string | null
 	lastMessageAt: string
-	createdAt?: string
-	/** Required for stale-snapshot rejection (equal/newer only). */
+	createdAt: string
+	/** Stale-snapshot rejection: equal/newer only. */
 	updatedAt: string
 }
 
+/**
+ * Full message snapshot for mirror writes — every persisted field is required.
+ * Nullable columns use `T | null` (no omitted/defaulted fields).
+ */
 export type MailboxMessageInput = {
 	id: string
 	direction: EmailDirection
-	inboxId?: string | null
-	threadId?: string | null
-	senderIdentityId?: string | null
-	fromAddress?: string | null
-	envelopeFrom?: string | null
-	toAddresses?: Array<unknown>
-	ccAddresses?: Array<unknown>
-	bccAddresses?: Array<unknown>
-	replyToAddresses?: Array<unknown>
-	subject?: string | null
-	messageIdHeader?: string | null
-	inReplyToHeader?: string | null
-	references?: Array<unknown>
-	headers?: Record<string, unknown> | null
-	authResults?: string | null
-	textBody?: string | null
-	htmlBody?: string | null
-	rawMimeKey?: string | null
-	rawSize?: number | null
+	inboxId: string | null
+	threadId: string | null
+	senderIdentityId: string | null
+	fromAddress: string
+	envelopeFrom: string | null
+	toAddresses: Array<unknown>
+	ccAddresses: Array<unknown>
+	bccAddresses: Array<unknown>
+	replyToAddresses: Array<unknown>
+	subject: string
+	messageIdHeader: string | null
+	inReplyToHeader: string | null
+	references: Array<unknown>
+	headers: Record<string, unknown>
+	authResults: string | null
+	textBody: string | null
+	htmlBody: string | null
+	rawMimeKey: string | null
+	rawSize: number
 	processingStatus: EmailProcessingStatus
-	classification?: EmailClassification
-	classificationReason?: string | null
-	providerMessageId?: string | null
-	deliveryStatus?: EmailDeliveryStatus | null
-	deliveryStatusAt?: string | null
-	error?: string | null
-	receivedAt?: string | null
-	sentAt?: string | null
-	createdAt?: string
-	/** Required for stale-snapshot rejection (equal/newer only). */
+	classification: EmailClassification
+	classificationReason: string | null
+	providerMessageId: string | null
+	deliveryStatus: EmailDeliveryStatus | null
+	deliveryStatusAt: string | null
+	error: string | null
+	receivedAt: string | null
+	sentAt: string | null
+	createdAt: string
+	/** Stale-snapshot rejection: equal/newer only. */
 	updatedAt: string
 }
 
+/**
+ * Full attachment snapshot — every persisted field is required.
+ * The RPC `attachments` array itself may still be omitted (preserve) or `[]` (clear).
+ */
 export type MailboxAttachmentInput = {
 	id: string
 	messageId: string
-	filename?: string | null
-	contentType?: string | null
-	contentId?: string | null
-	disposition?: string | null
-	size?: number
-	storageKind: MailboxStorageKind | string
-	storageKey?: string | null
-	createdAt?: string
+	filename: string | null
+	contentType: string
+	contentId: string | null
+	disposition: string | null
+	size: number
+	storageKind: MailboxStorageKind
+	storageKey: string | null
+	createdAt: string
 }
 
+/**
+ * Full delivery-event snapshot — every persisted field is required.
+ * `updatedAt` is the monotonic mirror timestamp (equal/newer accepted).
+ */
 export type MailboxDeliveryEventInput = {
 	id: string
-	messageId?: string | null
-	inboxId?: string | null
+	messageId: string | null
+	inboxId: string | null
 	eventType: EmailDeliveryEventType
-	provider?: string | null
-	providerMessageId?: string | null
-	providerEventId?: string | null
-	detailJson?: string
-	/** Defaults false — set true only when inbound effects still need reconcile. */
-	needsEffectReconcile?: boolean
-	state?: MailboxInboundDeliveryState | null
-	fingerprint?: string | null
-	storageLease?: string | null
-	storageLeaseAt?: string | null
-	cleanupLease?: string | null
-	cleanupLeaseAt?: string | null
-	cleanupRetryAt?: string | null
-	expectedAttachmentCount?: number | null
-	finalizationToken?: string | null
-	reconcileAfter?: string | null
-	dedupeExpiresAt?: string | null
-	usageEffectRecordedAt?: string | null
-	usageEffectSuppressedAt?: string | null
-	usageStartedAt?: string | null
-	usageMonth?: string | null
-	usageBytes?: number | null
-	usageDurationMs?: number | null
-	usageEffectRetryAt?: string | null
-	usageEffectLease?: string | null
-	usageEffectLeaseAt?: string | null
-	subscriptionEffectState?: MailboxSubscriptionEffectState | null
-	subscriptionEffectLease?: string | null
-	subscriptionEffectLeaseAt?: string | null
-	subscriptionEffectRetryAt?: string | null
-	subscriptionEffectAttemptCount?: number | null
-	subscriptionEffectDeadLetterAt?: string | null
-	subscriptionEffectLastError?: string | null
-	createdAt?: string
-	/** Required monotonic mirror timestamp (equal/newer accepted). */
+	provider: string
+	providerMessageId: string | null
+	providerEventId: string | null
+	detailJson: string
+	needsEffectReconcile: boolean
+	state: MailboxInboundDeliveryState | null
+	fingerprint: string | null
+	storageLease: string | null
+	storageLeaseAt: string | null
+	cleanupLease: string | null
+	cleanupLeaseAt: string | null
+	cleanupRetryAt: string | null
+	expectedAttachmentCount: number | null
+	finalizationToken: string | null
+	reconcileAfter: string | null
+	dedupeExpiresAt: string | null
+	usageEffectRecordedAt: string | null
+	usageEffectSuppressedAt: string | null
+	usageStartedAt: string | null
+	usageMonth: string | null
+	usageBytes: number | null
+	usageDurationMs: number | null
+	usageEffectRetryAt: string | null
+	usageEffectLease: string | null
+	usageEffectLeaseAt: string | null
+	subscriptionEffectState: MailboxSubscriptionEffectState | null
+	subscriptionEffectLease: string | null
+	subscriptionEffectLeaseAt: string | null
+	subscriptionEffectRetryAt: string | null
+	subscriptionEffectAttemptCount: number | null
+	subscriptionEffectDeadLetterAt: string | null
+	subscriptionEffectLastError: string | null
+	createdAt: string
 	updatedAt: string
 }
 

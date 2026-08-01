@@ -609,12 +609,15 @@ owner is also used to validate canonical owner-scoped R2 keys (`emailRawMimeKey`
 - latest per-message delivery status on `email_messages.delivery_status`, kept
   separate from send-request `processing_status`
 
-**Mirror write contract:** `mirrorMessage` and `upsertDeliveryEvent` require
-`ownerId` and apply equal-or-newer `updatedAt` snapshots (stale snapshots are
-ignored, not applied). On `mirrorMessage`, omitting `attachments` preserves
-existing attachment metadata; an explicit `attachments: []` clears them.
-Accepted mirrors validate inbound/outbound `rawMimeKey` and external attachment
-`storageKey` values against the canonical builders for that `ownerId`.
+**Mirror write contract:** `mirrorMessage` and `upsertDeliveryEvent` take
+complete snapshots — every persisted field is explicit (nullable fields use
+explicit `null`). They are not patch APIs. Both require `ownerId` and apply
+equal-or-newer `updatedAt` snapshots (stale snapshots are ignored, not applied).
+The only omission exception is the `mirrorMessage` `attachments` bundle:
+omitting it preserves existing attachment rows; an explicit `attachments: []`
+clears them. Accepted mirrors validate inbound/outbound `rawMimeKey` and
+external attachment `storageKey` values against the canonical builders for that
+`ownerId`.
 
 **Retention** is self-enforced inside the DO with alarms
 (`mailboxMessageRetentionDays = 365`, `mailboxDeliveryEventRetentionDays = 90`).
@@ -623,7 +626,9 @@ than trusting stored key strings), then apply strict blob-before-row ordering
 for `EMAIL_BLOBS` (failed blob deletes skip the row for retry). After a
 retention pass: successful work with expired rows remaining schedules a
 near-immediate continuation (`mailboxRetentionContinuationDelayMs`); R2 delete
-failures use hourly backoff (`mailboxRetentionRetryDelayMs`).
+failures use hourly backoff (`mailboxRetentionRetryDelayMs`). Write-path alarm
+selection never postpones an earlier existing alarm under sustained writes
+(near-equal times within skew keep the existing alarm).
 
 Account deletion calls `Mailbox.purge()` (one RPC per user, no D1 id scan;
 result key `mailboxes`). During expand, `purge` clears DO SQLite / alarm state

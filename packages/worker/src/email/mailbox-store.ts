@@ -119,7 +119,7 @@ export class MailboxStore {
 			'message.id',
 		)
 		const direction = assertMailboxDirection(input.message.direction)
-		const rawMimeKey = input.message.rawMimeKey ?? null
+		const rawMimeKey = input.message.rawMimeKey
 		if (direction === 'inbound') {
 			const expected = emailRawMimeKey(input.ownerId, messageId)
 			if (rawMimeKey !== expected) {
@@ -142,10 +142,8 @@ export class MailboxStore {
 				attachment.id,
 				'attachment.id',
 			)
-			const storageKind = assertMailboxStorageKind(
-				String(attachment.storageKind),
-			)
-			const storageKey = attachment.storageKey ?? null
+			const storageKind = assertMailboxStorageKind(attachment.storageKind)
+			const storageKey = attachment.storageKey
 			if (storageKind === 'external') {
 				const expected = emailAttachmentBlobKey(
 					input.ownerId,
@@ -172,7 +170,7 @@ export class MailboxStore {
 			'thread.lastMessageAt',
 		)
 		const createdAt = assertMailboxCanonicalIsoTimestamp(
-			thread.createdAt?.trim() || mailboxNowIso(),
+			thread.createdAt,
 			'thread.createdAt',
 		)
 		const updatedAt = assertMailboxCanonicalIsoTimestamp(
@@ -201,9 +199,9 @@ export class MailboxStore {
 				updated_at = excluded.updated_at
 			WHERE excluded.updated_at >= email_threads.updated_at`,
 			id,
-			thread.inboxId ?? null,
-			thread.subjectNormalized ?? '',
-			thread.rootMessageIdHeader ?? null,
+			thread.inboxId,
+			thread.subjectNormalized,
+			thread.rootMessageIdHeader,
 			lastMessageAt,
 			createdAt,
 			updatedAt,
@@ -222,9 +220,7 @@ export class MailboxStore {
 		const processingStatus = assertMailboxProcessingStatus(
 			message.processingStatus,
 		)
-		const classification = assertMailboxClassification(
-			message.classification ?? 'accepted',
-		)
+		const classification = assertMailboxClassification(message.classification)
 		const deliveryStatus =
 			message.deliveryStatus == null
 				? null
@@ -239,7 +235,7 @@ export class MailboxStore {
 			)
 		}
 		const createdAt = assertMailboxCanonicalIsoTimestamp(
-			message.createdAt?.trim() || mailboxNowIso(),
+			message.createdAt,
 			'message.createdAt',
 		)
 		const updatedAt = assertMailboxCanonicalIsoTimestamp(
@@ -327,32 +323,32 @@ export class MailboxStore {
 			WHERE excluded.updated_at >= email_messages.updated_at`,
 			id,
 			direction,
-			message.inboxId ?? null,
-			message.threadId ?? null,
-			message.senderIdentityId ?? null,
-			message.fromAddress ?? '',
-			message.envelopeFrom ?? null,
-			JSON.stringify(message.toAddresses ?? []),
-			JSON.stringify(message.ccAddresses ?? []),
-			JSON.stringify(message.bccAddresses ?? []),
-			JSON.stringify(message.replyToAddresses ?? []),
-			message.subject ?? '',
-			message.messageIdHeader ?? null,
-			message.inReplyToHeader ?? null,
-			JSON.stringify(message.references ?? []),
-			message.headers ? JSON.stringify(message.headers) : '{}',
-			message.authResults ?? null,
+			message.inboxId,
+			message.threadId,
+			message.senderIdentityId,
+			message.fromAddress,
+			message.envelopeFrom,
+			JSON.stringify(message.toAddresses),
+			JSON.stringify(message.ccAddresses),
+			JSON.stringify(message.bccAddresses),
+			JSON.stringify(message.replyToAddresses),
+			message.subject,
+			message.messageIdHeader,
+			message.inReplyToHeader,
+			JSON.stringify(message.references),
+			JSON.stringify(message.headers),
+			message.authResults,
 			boundedEmailBody(message.textBody),
 			boundedEmailBody(message.htmlBody),
-			message.rawMimeKey ?? null,
-			message.rawSize ?? 0,
+			message.rawMimeKey,
+			message.rawSize,
 			processingStatus,
 			classification,
-			message.classificationReason ?? null,
-			message.providerMessageId ?? null,
+			message.classificationReason,
+			message.providerMessageId,
 			deliveryStatus,
 			deliveryStatusAt,
-			message.error ?? null,
+			message.error,
 			receivedAt,
 			sentAt,
 			createdAt,
@@ -380,13 +376,14 @@ export class MailboxStore {
 					'Mailbox attachment.messageId must match the mirrored message id.',
 				)
 			}
-			const storageKind = assertMailboxStorageKind(
-				String(attachment.storageKind),
-			)
+			const storageKind = assertMailboxStorageKind(attachment.storageKind)
 			const createdAt = assertMailboxCanonicalIsoTimestamp(
-				attachment.createdAt?.trim() || mailboxNowIso(),
+				attachment.createdAt,
 				'attachment.createdAt',
 			)
+			if (!Number.isFinite(attachment.size)) {
+				throw new Error('Mailbox attachment.size must be a finite number.')
+			}
 			this.sql.exec(
 				`INSERT INTO email_attachments (
 					id, message_id, filename, content_type, content_id, disposition,
@@ -394,13 +391,13 @@ export class MailboxStore {
 				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				id,
 				attachmentMessageId,
-				attachment.filename ?? null,
-				attachment.contentType ?? 'application/octet-stream',
-				attachment.contentId ?? null,
-				attachment.disposition ?? null,
-				Math.max(0, Math.trunc(Number(attachment.size) || 0)),
+				attachment.filename,
+				attachment.contentType,
+				attachment.contentId,
+				attachment.disposition,
+				Math.trunc(attachment.size),
 				storageKind,
-				attachment.storageKey ?? null,
+				attachment.storageKey,
 				createdAt,
 			)
 		}

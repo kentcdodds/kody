@@ -5,7 +5,6 @@ import {
 	assertMailboxNonEmptyString,
 	assertMailboxSubscriptionEffectState,
 	assertOptionalMailboxCanonicalIsoTimestamp,
-	mailboxNowIso,
 	normalizeMailboxPageSize,
 	type MailboxDeliveryEventInput,
 	type MailboxDeliveryEventRecord,
@@ -34,7 +33,8 @@ export function writeMailboxDeliveryEventRow(
 ): { inserted: boolean; accepted: boolean } {
 	const id = assertMailboxNonEmptyString(event.id, 'event.id')
 	const eventType = assertMailboxDeliveryEventType(event.eventType)
-	const providerEventId = event.providerEventId ?? null
+	const provider = assertMailboxNonEmptyString(event.provider, 'event.provider')
+	const providerEventId = event.providerEventId
 	if (providerEventId) {
 		const existingByProvider = findDeliveryEventByProviderEventId(
 			sql,
@@ -51,7 +51,7 @@ export function writeMailboxDeliveryEventRow(
 		)
 		.toArray()[0]
 	const createdAt = assertMailboxCanonicalIsoTimestamp(
-		event.createdAt?.trim() || mailboxNowIso(),
+		event.createdAt,
 		'event.createdAt',
 	)
 	const updatedAt = assertMailboxCanonicalIsoTimestamp(
@@ -61,11 +61,13 @@ export function writeMailboxDeliveryEventRow(
 	if (existing && updatedAt < existing.updated_at) {
 		return { inserted: false, accepted: false }
 	}
-	const detailJson =
-		typeof event.detailJson === 'string' && event.detailJson.length > 0
-			? event.detailJson
-			: '{}'
-	const needsEffectReconcile = event.needsEffectReconcile === true ? 1 : 0
+	if (typeof event.detailJson !== 'string') {
+		throw new Error('Mailbox event.detailJson must be a string.')
+	}
+	if (typeof event.needsEffectReconcile !== 'boolean') {
+		throw new Error('Mailbox event.needsEffectReconcile must be a boolean.')
+	}
+	const needsEffectReconcile = event.needsEffectReconcile ? 1 : 0
 	const state =
 		event.state == null ? null : assertMailboxInboundDeliveryState(event.state)
 	const subscriptionEffectState =
@@ -131,22 +133,22 @@ export function writeMailboxDeliveryEventRow(
 			updated_at = excluded.updated_at
 		WHERE excluded.updated_at >= email_delivery_events.updated_at`,
 		id,
-		event.messageId ?? null,
-		event.inboxId ?? null,
+		event.messageId,
+		event.inboxId,
 		eventType,
-		event.provider ?? 'kody',
-		event.providerMessageId ?? null,
+		provider,
+		event.providerMessageId,
 		providerEventId,
-		detailJson,
+		event.detailJson,
 		needsEffectReconcile,
 		state,
-		event.fingerprint ?? null,
-		event.storageLease ?? null,
+		event.fingerprint,
+		event.storageLease,
 		assertOptionalMailboxCanonicalIsoTimestamp(
 			event.storageLeaseAt,
 			'event.storageLeaseAt',
 		),
-		event.cleanupLease ?? null,
+		event.cleanupLease,
 		assertOptionalMailboxCanonicalIsoTimestamp(
 			event.cleanupLeaseAt,
 			'event.cleanupLeaseAt',
@@ -155,8 +157,8 @@ export function writeMailboxDeliveryEventRow(
 			event.cleanupRetryAt,
 			'event.cleanupRetryAt',
 		),
-		event.expectedAttachmentCount ?? null,
-		event.finalizationToken ?? null,
+		event.expectedAttachmentCount,
+		event.finalizationToken,
 		assertOptionalMailboxCanonicalIsoTimestamp(
 			event.reconcileAfter,
 			'event.reconcileAfter',
@@ -177,20 +179,20 @@ export function writeMailboxDeliveryEventRow(
 			event.usageStartedAt,
 			'event.usageStartedAt',
 		),
-		event.usageMonth ?? null,
-		event.usageBytes ?? null,
-		event.usageDurationMs ?? null,
+		event.usageMonth,
+		event.usageBytes,
+		event.usageDurationMs,
 		assertOptionalMailboxCanonicalIsoTimestamp(
 			event.usageEffectRetryAt,
 			'event.usageEffectRetryAt',
 		),
-		event.usageEffectLease ?? null,
+		event.usageEffectLease,
 		assertOptionalMailboxCanonicalIsoTimestamp(
 			event.usageEffectLeaseAt,
 			'event.usageEffectLeaseAt',
 		),
 		subscriptionEffectState,
-		event.subscriptionEffectLease ?? null,
+		event.subscriptionEffectLease,
 		assertOptionalMailboxCanonicalIsoTimestamp(
 			event.subscriptionEffectLeaseAt,
 			'event.subscriptionEffectLeaseAt',
@@ -199,12 +201,12 @@ export function writeMailboxDeliveryEventRow(
 			event.subscriptionEffectRetryAt,
 			'event.subscriptionEffectRetryAt',
 		),
-		event.subscriptionEffectAttemptCount ?? null,
+		event.subscriptionEffectAttemptCount,
 		assertOptionalMailboxCanonicalIsoTimestamp(
 			event.subscriptionEffectDeadLetterAt,
 			'event.subscriptionEffectDeadLetterAt',
 		),
-		event.subscriptionEffectLastError ?? null,
+		event.subscriptionEffectLastError,
 		createdAt,
 		updatedAt,
 	)

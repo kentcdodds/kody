@@ -10,11 +10,11 @@ import {
 	enforceMailboxRetention,
 	mailboxRetentionAlarmAtMs,
 	nextMailboxRetentionDueAtMs,
+	selectMailboxRetentionWriteAlarm,
 } from './mailbox-retention.ts'
 import { MailboxStore } from './mailbox-store.ts'
 import {
 	assertMailboxNonEmptyString,
-	mailboxRetentionAlarmSkewMs,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReferencePage,
@@ -71,6 +71,8 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	 *
 	 * - Schedule at most one alarm for the soonest retention due-time.
 	 * - Overdue work on the write path uses an hourly retry delay (not now+1s).
+	 * - Write-path ensure never postpones an earlier existing alarm (skew-equal
+	 *   times keep the existing alarm to avoid churn).
 	 * - After an alarm: blob failures → hourly backoff; successful pass with
 	 *   expired rows remaining → near-immediate continuation; else future due.
 	 * - `retentionAlarmArmed` skips getAlarm/setAlarm on hot writes once armed.
@@ -83,24 +85,33 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		if (this.retentionIdleConfirmed) return
 
 		const dueAtMs = nextMailboxRetentionDueAtMs(this.store)
-		const alarmAt = mailboxRetentionAlarmAtMs({ dueAtMs })
-		if (alarmAt == null) {
-			this.retentionIdleConfirmed = true
-			this.retentionAlarmArmed = false
-			return
+		const proposedAtMs = mailboxRetentionAlarmAtMs({ dueAtMs })
+		const existingAtMs = await this.ctx.storage.getAlarm()
+		const selection = selectMailboxRetentionWriteAlarm({
+			proposedAtMs,
+			existingAtMs,
+		})
+		switch (selection.action) {
+			case 'idle':
+				this.retentionIdleConfirmed = true
+				this.retentionAlarmArmed = false
+				return
+			case 'keep-existing':
+				this.retentionIdleConfirmed = false
+				this.retentionAlarmArmed = true
+				return
+			case 'set':
+				this.retentionIdleConfirmed = false
+				await this.ctx.storage.setAlarm(selection.atMs)
+				this.retentionAlarmArmed = true
+				return
+			default: {
+				const exhaustive: never = selection
+				throw new Error(
+					`Unhandled retention write-alarm selection: ${String(exhaustive)}`,
+				)
+			}
 		}
-
-		this.retentionIdleConfirmed = false
-		const existing = await this.ctx.storage.getAlarm()
-		if (
-			existing != null &&
-			Math.abs(existing - alarmAt) < mailboxRetentionAlarmSkewMs
-		) {
-			this.retentionAlarmArmed = true
-			return
-		}
-		await this.ctx.storage.setAlarm(alarmAt)
-		this.retentionAlarmArmed = true
 	}
 
 	private markRetentionDirty() {
@@ -319,4 +330,7 @@ export {
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
 } from './mailbox-types.ts'
-export { computeMailboxRetentionReschedule } from './mailbox-retention.ts'
+export {
+	computeMailboxRetentionReschedule,
+	selectMailboxRetentionWriteAlarm,
+} from './mailbox-retention.ts'

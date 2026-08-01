@@ -7,6 +7,7 @@ import { Mailbox } from './mailbox-do.ts'
 import {
 	assertMailboxThrows,
 	baseAttachment,
+	baseDeliveryEvent,
 	baseMessage,
 	baseThread,
 	rpcFor,
@@ -289,7 +290,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 
 	const first = await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'evt-1',
 			messageId: outbound.id,
 			eventType: 'delivered',
@@ -301,7 +302,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 			needsEffectReconcile: false,
 			state: 'received',
 			fingerprint: 'fp-1',
-		},
+		}),
 		latestDeliveryStatus: {
 			messageId: outbound.id,
 			deliveryStatus: 'delivered',
@@ -316,7 +317,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 
 	const staleEvent = await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'evt-1',
 			messageId: outbound.id,
 			eventType: 'deferred',
@@ -327,7 +328,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 			needsEffectReconcile: true,
 			state: null,
 			fingerprint: null,
-		},
+		}),
 	})
 	expect(staleEvent).toEqual({
 		inserted: false,
@@ -347,7 +348,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 
 	const duplicate = await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'evt-1-dup',
 			messageId: outbound.id,
 			eventType: 'delivered',
@@ -355,7 +356,7 @@ test('Mailbox stale snapshots, attachment omit/clear, delivery-event updatedAt',
 			providerEventId: 'provider-event-1',
 			createdAt: '2026-07-02T11:00:00.000Z',
 			updatedAt: '2026-07-02T11:00:00.000Z',
-		},
+		}),
 	})
 	expect(duplicate).toEqual({
 		inserted: false,
@@ -451,7 +452,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 
 	const first = await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'evt-1',
 			messageId: message.id,
 			eventType: 'delivered',
@@ -461,7 +462,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			createdAt: '2026-07-02T10:00:00.000Z',
 			updatedAt: '2026-07-02T10:00:00.000Z',
 			needsEffectReconcile: false,
-		},
+		}),
 		latestDeliveryStatus: {
 			messageId: message.id,
 			deliveryStatus: 'delivered',
@@ -476,7 +477,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 
 	const inbound = await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'inbound-delivery-1',
 			messageId: 'inbound-msg-1',
 			inboxId: 'inbox-1',
@@ -487,10 +488,6 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			needsEffectReconcile: true,
 			state: 'received',
 			fingerprint: 'fp-abc',
-			storageLease: null,
-			storageLeaseAt: null,
-			cleanupLease: null,
-			cleanupLeaseAt: null,
 			expectedAttachmentCount: 2,
 			finalizationToken: 'lease-token-1',
 			usageStartedAt: '2026-07-02T10:59:00.000Z',
@@ -500,7 +497,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			subscriptionEffectState: 'pending',
 			subscriptionEffectRetryAt: '2026-07-02T12:00:00.000Z',
 			detailJson: JSON.stringify({ recipient: 'owner@example.com' }),
-		},
+		}),
 	})
 	expect(inbound.inserted).toBe(true)
 	const inboundRow = (
@@ -527,17 +524,18 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 		recipient: 'owner@example.com',
 	})
 
-	// Default needsEffectReconcile is false unless explicitly true.
+	// Explicit needsEffectReconcile: false is stored as false.
 	await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'evt-default-reconcile',
 			messageId: message.id,
 			eventType: 'sent',
 			provider: 'kody',
 			createdAt: '2026-07-02T11:30:00.000Z',
 			updatedAt: '2026-07-02T11:30:00.000Z',
-		},
+			needsEffectReconcile: false,
+		}),
 	})
 	const defaultReconcile = (
 		await mailbox.listDeliveryEvents({ messageId: message.id, limit: 20 })
@@ -546,7 +544,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 
 	const duplicate = await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'evt-1-dup',
 			messageId: message.id,
 			eventType: 'delivered',
@@ -555,7 +553,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			providerEventId: 'provider-event-1',
 			createdAt: '2026-07-02T11:00:00.000Z',
 			updatedAt: '2026-07-02T11:00:00.000Z',
-		},
+		}),
 		latestDeliveryStatus: {
 			messageId: message.id,
 			deliveryStatus: 'delivered',
@@ -567,7 +565,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 
 	const stale = await mailbox.upsertDeliveryEvent({
 		ownerId: userId,
-		event: {
+		event: baseDeliveryEvent({
 			id: 'evt-2',
 			messageId: message.id,
 			eventType: 'deferred',
@@ -576,7 +574,7 @@ test('Mailbox delivery status, promoted inbound fields, export paging, and curso
 			providerEventId: 'provider-event-2',
 			createdAt: '2026-07-02T09:00:00.000Z',
 			updatedAt: '2026-07-02T09:00:00.000Z',
-		},
+		}),
 		latestDeliveryStatus: {
 			messageId: message.id,
 			deliveryStatus: 'deferred',

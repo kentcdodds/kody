@@ -3,6 +3,7 @@ import {
 	mailboxBlobDeleteMaxKeys,
 	mailboxDeliveryEventRetentionDays,
 	mailboxMessageRetentionDays,
+	mailboxRetentionAlarmSkewMs,
 	mailboxRetentionBatchSize,
 	mailboxRetentionContinuationDelayMs,
 	mailboxRetentionRetryDelayMs,
@@ -100,6 +101,39 @@ export function mailboxRetentionAlarmAtMs(input: {
 		return nowMs + mailboxRetentionRetryDelayMs
 	}
 	return input.dueAtMs
+}
+
+export type MailboxRetentionWriteAlarmSelection =
+	| { action: 'idle' }
+	| { action: 'keep-existing' }
+	| { action: 'set'; atMs: number }
+
+/**
+ * Choose whether a write-path ensure should set, keep, or clear interest in
+ * an alarm. Sustained writes must never postpone an earlier existing alarm;
+ * near-equal times within skew keep the existing alarm to avoid churn.
+ */
+export function selectMailboxRetentionWriteAlarm(input: {
+	proposedAtMs: number | null
+	existingAtMs: number | null
+	skewMs?: number
+}): MailboxRetentionWriteAlarmSelection {
+	if (input.proposedAtMs == null) {
+		return { action: 'idle' }
+	}
+	const existingAtMs = input.existingAtMs
+	if (existingAtMs == null) {
+		return { action: 'set', atMs: input.proposedAtMs }
+	}
+	const skewMs = input.skewMs ?? mailboxRetentionAlarmSkewMs
+	if (Math.abs(existingAtMs - input.proposedAtMs) < skewMs) {
+		return { action: 'keep-existing' }
+	}
+	// Existing fires sooner — never postpone retention for a later proposal.
+	if (existingAtMs < input.proposedAtMs) {
+		return { action: 'keep-existing' }
+	}
+	return { action: 'set', atMs: input.proposedAtMs }
 }
 
 async function deleteBlobKeys(

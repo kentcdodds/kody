@@ -5,6 +5,7 @@ import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
 import {
 	type MailboxAttachmentInput,
+	type MailboxDeliveryEventInput,
 	type MailboxMessageInput,
 	type MailboxThreadInput,
 } from './mailbox-do.ts'
@@ -44,12 +45,13 @@ export async function assertMailboxThrows(
 	}
 }
 
+/** Complete thread snapshot; overrides may be Partial. */
 export function baseThread(
 	overrides?: Partial<MailboxThreadInput>,
 ): MailboxThreadInput {
 	const id = overrides?.id ?? crypto.randomUUID()
 	const at = overrides?.lastMessageAt ?? '2026-07-01T12:00:00.000Z'
-	return {
+	const defaults: MailboxThreadInput = {
 		id,
 		inboxId: 'inbox-1',
 		subjectNormalized: 'hello',
@@ -57,10 +59,11 @@ export function baseThread(
 		lastMessageAt: at,
 		createdAt: at,
 		updatedAt: at,
-		...overrides,
 	}
+	return { ...defaults, ...overrides, id: overrides?.id ?? id }
 }
 
+/** Complete message snapshot; overrides may be Partial. */
 export function baseMessage(
 	ownerId: string,
 	overrides?: Partial<MailboxMessageInput>,
@@ -74,20 +77,42 @@ export function baseMessage(
 			: direction === 'outbound'
 				? null
 				: emailRawMimeKey(ownerId, id)
-	return {
+	const defaults: MailboxMessageInput = {
+		id,
+		direction,
 		inboxId: 'inbox-1',
 		threadId: null,
+		senderIdentityId: null,
 		fromAddress: 'sender@example.com',
 		envelopeFrom: 'envelope@example.com',
 		toAddresses: ['owner@example.com'],
+		ccAddresses: [],
+		bccAddresses: [],
+		replyToAddresses: [],
 		subject: 'Hello mailbox',
 		messageIdHeader: `<msg-${id}@example.com>`,
+		inReplyToHeader: null,
+		references: [],
+		headers: {},
+		authResults: null,
+		textBody: null,
+		htmlBody: null,
+		rawMimeKey,
 		rawSize: 128,
 		processingStatus: 'stored',
 		classification: 'accepted',
+		classificationReason: null,
+		providerMessageId: null,
+		deliveryStatus: null,
+		deliveryStatusAt: null,
+		error: null,
 		receivedAt: at,
+		sentAt: null,
 		createdAt: at,
 		updatedAt: at,
+	}
+	return {
+		...defaults,
 		...overrides,
 		id,
 		direction,
@@ -95,6 +120,7 @@ export function baseMessage(
 	}
 }
 
+/** Complete attachment snapshot; overrides may be Partial. */
 export function baseAttachment(
 	ownerId: string,
 	messageId: string,
@@ -108,15 +134,73 @@ export function baseAttachment(
 			: storageKind === 'external'
 				? emailAttachmentBlobKey(ownerId, messageId, id)
 				: null
-	return {
+	const defaults: MailboxAttachmentInput = {
+		id,
+		messageId,
 		filename: 'note.txt',
 		contentType: 'text/plain',
+		contentId: null,
+		disposition: null,
 		size: 12,
+		storageKind,
+		storageKey,
 		createdAt: '2026-07-01T12:00:00.000Z',
+	}
+	return {
+		...defaults,
 		...overrides,
 		id,
 		messageId,
 		storageKind,
 		storageKey,
 	}
+}
+
+/** Complete delivery-event snapshot; overrides may be Partial. */
+export function baseDeliveryEvent(
+	overrides?: Partial<MailboxDeliveryEventInput>,
+): MailboxDeliveryEventInput {
+	const id = overrides?.id ?? crypto.randomUUID()
+	const at = overrides?.createdAt ?? '2026-07-02T10:00:00.000Z'
+	const defaults: MailboxDeliveryEventInput = {
+		id,
+		messageId: null,
+		inboxId: null,
+		eventType: 'received',
+		provider: 'kody',
+		providerMessageId: null,
+		providerEventId: null,
+		detailJson: '{}',
+		needsEffectReconcile: false,
+		state: null,
+		fingerprint: null,
+		storageLease: null,
+		storageLeaseAt: null,
+		cleanupLease: null,
+		cleanupLeaseAt: null,
+		cleanupRetryAt: null,
+		expectedAttachmentCount: null,
+		finalizationToken: null,
+		reconcileAfter: null,
+		dedupeExpiresAt: null,
+		usageEffectRecordedAt: null,
+		usageEffectSuppressedAt: null,
+		usageStartedAt: null,
+		usageMonth: null,
+		usageBytes: null,
+		usageDurationMs: null,
+		usageEffectRetryAt: null,
+		usageEffectLease: null,
+		usageEffectLeaseAt: null,
+		subscriptionEffectState: null,
+		subscriptionEffectLease: null,
+		subscriptionEffectLeaseAt: null,
+		subscriptionEffectRetryAt: null,
+		subscriptionEffectAttemptCount: null,
+		subscriptionEffectDeadLetterAt: null,
+		subscriptionEffectLastError: null,
+		createdAt: at,
+		updatedAt: at,
+	}
+	return { ...defaults, ...overrides, id: overrides?.id ?? id }
 }
