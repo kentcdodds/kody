@@ -94,7 +94,18 @@ test('audit writes retry transient errors and report dedicated sink failures', a
 		persisted: false,
 		failedSinks: ['AUDIT_DB'],
 	})
-	expect(consoleWarn).toHaveBeenCalledTimes(1)
+
+	const missingBindingResult = await logAuditEvent({
+		db: null,
+		category: 'account',
+		action: 'audit_binding_missing',
+		result: 'failure',
+	})
+	expect(missingBindingResult).toEqual({
+		persisted: false,
+		failedSinks: ['AUDIT_DB'],
+	})
+	expect(consoleWarn).toHaveBeenCalledTimes(2)
 	expect(consoleWarn).toHaveBeenCalledWith('audit-event-write-failed', {
 		failedSinks: ['AUDIT_DB'],
 		errors: [expect.any(Error)],
