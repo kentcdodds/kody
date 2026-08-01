@@ -154,8 +154,7 @@ export async function assertCallerCanAccessCapability(
 	// A denial is the one signal we would have that a principal is walking the
 	// capability surface, so it is recorded even though it is not an error.
 	await recordMcpAuthDenial({
-		db: options.env?.APP_DB,
-		auditDb: options.env ? auditDatabaseFromEnv(options.env) : undefined,
+		db: options.env ? auditDatabaseFromEnv(options.env) : undefined,
 		action: 'mcp_capability_denied',
 		reason: denial.reason,
 		email: callerContext.user?.email,

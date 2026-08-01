@@ -314,8 +314,10 @@ function createEnv(
 	overrides: Partial<Env> = {},
 	dbOptions: MockDbOptions = {},
 ) {
+	const db = createMockDb(dbOptions)
 	return {
-		APP_DB: createMockDb(dbOptions),
+		APP_DB: db,
+		AUDIT_DB: db,
 		OAUTH_PROVIDER: helpers,
 		USER_METER: env.USER_METER,
 		...overrides,

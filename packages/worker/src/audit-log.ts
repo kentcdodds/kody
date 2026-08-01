@@ -14,7 +14,6 @@ export type AuditEventResult = (typeof auditEventResults)[number]
 
 type AuditEvent = {
 	db?: D1Database
-	auditDb?: D1Database
 	category: AuditEventCategory
 	action: string
 	result: AuditEventResult
@@ -147,23 +146,16 @@ export async function logAuditEvent(event: AuditEvent) {
 		const payload = await buildAuditPayload(event)
 		console.info('audit-event', JSON.stringify(payload))
 		if (!event.db) return { persisted: false, failedSinks: [] }
-		const results = await Promise.allSettled([
-			persistAuditEvent(event.db, payload),
-			persistAuditEvent(event.auditDb, payload),
-		])
-		const sinkNames = ['APP_DB', 'AUDIT_DB'] as const
-		const failedSinks = results.flatMap((result, index) =>
-			result.status === 'rejected' ? [sinkNames[index] ?? 'unknown'] : [],
-		)
-		if (failedSinks.length > 0) {
+		try {
+			await persistAuditEvent(event.db, payload)
+			return { persisted: true, failedSinks: [] }
+		} catch (error) {
 			console.warn('audit-event-write-failed', {
-				failedSinks,
-				errors: results.flatMap((result) =>
-					result.status === 'rejected' ? [result.reason] : [],
-				),
+				failedSinks: ['AUDIT_DB'],
+				errors: [error],
 			})
+			return { persisted: false, failedSinks: ['AUDIT_DB'] }
 		}
-		return { persisted: failedSinks.length === 0, failedSinks }
 	} catch (error) {
 		console.warn('audit-event-failed', error)
 		return { persisted: false, failedSinks: ['event'] }
