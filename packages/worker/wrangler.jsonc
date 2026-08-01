@@ -95,6 +95,10 @@
 			"new_sqlite_classes": ["UserMeter"],
 			"tag": "v21",
 		},
+		{
+			"new_sqlite_classes": ["Mailbox"],
+			"tag": "v22",
+		},
 	],
 
 	"observability": {
@@ -200,6 +204,10 @@
 					{
 						"class_name": "UserMeter",
 						"name": "USER_METER",
+					},
+					{
+						"class_name": "Mailbox",
+						"name": "MAILBOX",
 					},
 					{
 						"class_name": "RepoSession",
@@ -429,6 +437,10 @@
 						"name": "USER_METER",
 					},
 					{
+						"class_name": "Mailbox",
+						"name": "MAILBOX",
+					},
+					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
 					},
@@ -571,6 +583,10 @@
 					{
 						"class_name": "UserMeter",
 						"name": "USER_METER",
+					},
+					{
+						"class_name": "Mailbox",
+						"name": "MAILBOX",
 					},
 					{
 						"class_name": "RepoSession",

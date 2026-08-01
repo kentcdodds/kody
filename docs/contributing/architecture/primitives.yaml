@@ -522,6 +522,15 @@ primitives:
       - docs/contributing/architecture/data-storage.md
       - docs/contributing/architecture/entitlements.md
 
+  - id: mailbox
+    group: storage
+    name: Mailbox
+    summary: Per-user Mailbox DO SQLite for email metadata; R2 keeps raw MIME.
+    code:
+      - packages/worker/src/email/mailbox-
+    docs:
+      - docs/contributing/architecture/data-storage.md
+
   - id: email-blobs-r2
     group: storage
     name: Email blob storage (R2)

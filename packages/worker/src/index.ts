@@ -7,6 +7,7 @@ import { JobManager } from './jobs/manager-do.ts'
 import { StorageRunner } from './storage-runner.ts'
 import { RunLog } from './run-records/run-log-do.ts'
 import { UserMeter } from './entitlements/user-meter-do.ts'
+import { Mailbox } from './email/mailbox-do.ts'
 import { RepoSession } from './repo/repo-session-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { PackageServiceInstance } from '#worker/package-runtime/package-service.ts'
@@ -110,6 +111,7 @@ export {
 	StorageRunner,
 	RunLog,
 	UserMeter,
+	Mailbox,
 	OAuthPurgeCoordinator,
 }
 

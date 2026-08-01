@@ -21,6 +21,7 @@ import {
 	userMeterNamespace,
 	userMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
+import { mailboxNamespace, mailboxRpc } from '#worker/email/mailbox-client.ts'
 import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
@@ -621,6 +622,27 @@ async function purgeUserMeter(input: {
 	}
 }
 
+async function purgeMailbox(input: {
+	env: Env
+	userId: string
+	warnings: Array<string>
+}): Promise<number> {
+	try {
+		if (!mailboxNamespace(input.env)) {
+			input.warnings.push(
+				'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
+			)
+			return 0
+		}
+		await mailboxRpc({ env: input.env, userId: input.userId }).purge()
+		return 1
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(`Mailbox purge failed: ${message}`)
+		return 0
+	}
+}
+
 async function purgeJobManager(input: {
 	env: Env
 	userId: string
@@ -1118,6 +1140,11 @@ export async function deleteUserAccount(input: {
 		warnings,
 	})
 	result.clearedDurableObjects.userMeters = await purgeUserMeter({
+		env: input.env,
+		userId: input.mcpUserId,
+		warnings,
+	})
+	result.clearedDurableObjects.mailboxes = await purgeMailbox({
 		env: input.env,
 		userId: input.mcpUserId,
 		warnings,

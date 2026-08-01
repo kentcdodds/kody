@@ -1677,6 +1677,161 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	)
 })
 
+test('account export includes mailbox rows, pages them, and warns on truncation', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+	`)
+	const rows = [
+		{
+			kind: 'thread' as const,
+			row: {
+				id: 'thread-1',
+				inboxId: 'inbox-1',
+				subjectNormalized: 'hello',
+				rootMessageIdHeader: null,
+				lastMessageAt: '2026-07-30T00:00:00.000Z',
+				createdAt: '2026-07-30T00:00:00.000Z',
+				updatedAt: '2026-07-30T00:00:00.000Z',
+			},
+		},
+		{
+			kind: 'message' as const,
+			row: {
+				id: 'message-1',
+				threadId: 'thread-1',
+				inboxId: 'inbox-1',
+				direction: 'inbound' as const,
+				processingStatus: 'received' as const,
+				deliveryStatus: 'delivered' as const,
+				classification: 'personal' as const,
+				subject: 'hello',
+				fromAddress: 'a@example.com',
+				toAddresses: ['b@example.com'],
+				ccAddresses: [],
+				bccAddresses: [],
+				replyToAddresses: [],
+				messageIdHeader: null,
+				inReplyToHeader: null,
+				referencesHeader: null,
+				sentAt: '2026-07-30T00:00:00.000Z',
+				receivedAt: '2026-07-30T00:00:00.000Z',
+				rawMimeKey: null,
+				rawMimeStorageKind: 'unavailable' as const,
+				bodyText: 'hi',
+				bodyHtml: null,
+				snippet: 'hi',
+				hasAttachments: false,
+				createdAt: '2026-07-30T00:00:00.000Z',
+				updatedAt: '2026-07-30T00:00:00.000Z',
+			},
+		},
+		{
+			kind: 'attachment' as const,
+			row: {
+				id: 'attachment-1',
+				messageId: 'message-1',
+				filename: 'file.txt',
+				contentType: 'text/plain',
+				sizeBytes: 3,
+				storageKey: null,
+				storageKind: 'unavailable' as const,
+				contentId: null,
+				isInline: false,
+				createdAt: '2026-07-30T00:00:00.000Z',
+			},
+		},
+	]
+	const exportMailbox = vi.fn(
+		async (input: { pageSize?: number; startAfter?: string | null }) => {
+			const pageSize = input.pageSize ?? 100
+			const startIndex = input.startAfter
+				? rows.findIndex((row) => row.row.id === input.startAfter) + 1
+				: 0
+			const page = rows.slice(startIndex, startIndex + pageSize)
+			const truncated = startIndex + pageSize < rows.length
+			return {
+				rows: page,
+				nextStartAfter: truncated ? page.at(-1)!.row.id : null,
+				truncated,
+			}
+		},
+	)
+	const countMailbox = vi.fn(async () => ({
+		threads: 1,
+		messages: 1,
+		attachments: 1,
+		deliveryEvents: 0,
+	}))
+	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
+	const env = {
+		APP_DB: db,
+		MAILBOX: {
+			idFromName,
+			get: () => ({ exportMailbox, countMailbox }),
+		},
+	} as unknown as Env
+
+	const accountExport = await createAccountExport({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(idFromName).toHaveBeenCalledWith('user-aaa')
+	expect(accountExport.manifest.sections.mailbox?.count).toBe(3)
+	expect(accountExport.durableObjects.mailbox).toEqual({
+		rows,
+		nextStartAfter: null,
+		truncated: false,
+	})
+
+	const first = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'mailbox',
+		pageSize: 2,
+	})
+	expect(first.items).toEqual(rows.slice(0, 2))
+	expect(first.truncated).toBe(true)
+	expect(first.nextStartAfter).toBe('message-1')
+
+	const second = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'mailbox',
+		pageSize: 2,
+		startAfter: first.nextStartAfter ?? undefined,
+	})
+	expect(second.items).toEqual(rows.slice(2))
+	expect(second.truncated).toBe(false)
+	expect(second.nextStartAfter).toBeNull()
+	expect(exportMailbox).toHaveBeenCalled()
+
+	exportMailbox.mockImplementation(async () => ({
+		rows: [rows[0]!],
+		nextStartAfter: 'cursor-more',
+		truncated: true,
+	}))
+	const truncatedExport = await createAccountExport({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(truncatedExport.durableObjects.mailbox?.truncated).toBe(true)
+	expect(truncatedExport.manifest.warnings).toContain(
+		'Mailbox rows were truncated in the full export; use account_export_section with section "mailbox" to retrieve additional pages.',
+	)
+})
+
 test('run_records section paging preserves exportRuns cursor across dedicated phases', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`

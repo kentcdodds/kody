@@ -78,22 +78,28 @@ Deletion must cover these user-owned surfaces:
   references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
   `RemoteConnectorSession`, `PackageRealtimeSession`, `PackageServiceInstance`,
-  `McpClientHub`, `RunLog`, and `UserMeter` are purged through account-deletion
-  RPCs after their D1 identifiers are collected (`RunLog` and `UserMeter` are
-  one object per user and need no D1 id scan). `MCP` objects remain SDK
-  session-keyed, while `mcp_agent_sessions` indexes each Durable Object id by
-  authenticated stable user id so account deletion can purge stored props,
-  conversation state, raw-fetch state, and transport storage before revoking
-  OAuth grants.
+  `McpClientHub`, `RunLog`, `UserMeter`, and `Mailbox` are purged through
+  account-deletion RPCs after their D1 identifiers are collected (`RunLog`,
+  `UserMeter`, and `Mailbox` are one object per user and need no D1 id scan).
+  During the Mailbox expand phase, `Mailbox.purge()` clears DO SQLite only; D1
+  `email_*` rows and `EMAIL_BLOBS` deletion remain the authoritative account-
+  deletion path for mail content (see [Mailbox](#durable-objects-mailbox)).
+  `MCP` objects remain SDK session-keyed, while `mcp_agent_sessions` indexes
+  each Durable Object id by authenticated stable user id so account deletion can
+  purge stored props, conversation state, raw-fetch state, and transport storage
+  before revoking OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
-- **R2:** raw email MIME blobs in `EMAIL_BLOBS` are enumerated from
-  `email_messages` (deterministic `emailRawMimeKey` keys) and attachment storage
-  keys while those rows still exist. A failed object delete aborts D1
-  finalization so those inventory rows remain available for retry. Rows owned by
-  `system:email` keep their blobs here (they are not user data); those blobs are
-  removed when the system-email retention prune deletes the messages through the
-  shared delete-message helper.
+- **R2:** raw email MIME and attachment blobs in `EMAIL_BLOBS` are deleted by
+  per-user prefix cleanup (`email-raw:v1:{userId}/` and
+  `email-attachment:v1:{userId}/`) plus any remaining D1-inventoried keys
+  outside those prefixes. A failed object delete aborts D1 finalization so
+  inventory rows remain available for retry. Rows owned by `system:email` keep
+  their blobs here (they are not user data); those blobs are removed when the
+  system-email retention prune deletes the messages through the shared
+  delete-message helper. Mailbox expand-phase `purge` does not delete R2 objects
+  — D1 email rows and this existing R2 prefix deletion stay authoritative during
+  expand.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
   community listing snapshots, and per-user package retriever cache/index keys
   in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
@@ -168,8 +174,9 @@ migration-safe chunked interface:
   storage export capability. User meter counters use `section: "user_meter"` and
   the `UserMeter.exportCounters` RPC (daily counters plus additive
   `storageBytesShadow` on the first page only when present; explicitly
-  non-authoritative). R2 raw MIME, attachment, avatar, and icon objects use
-  `section: "r2_object"`; each response contains at most one 256 KiB base64
+  non-authoritative). Mailbox metadata uses `section: "mailbox"` and the
+  `Mailbox.exportMailbox` RPC. R2 raw MIME, attachment, avatar, and icon objects
+  use `section: "r2_object"`; each response contains at most one 256 KiB base64
   chunk and an opaque cursor. Each request uses bounded `LIMIT 1` ownership
   queries rather than reconstructing inventory. Continuation cursors bind the
   source row, object key, size, and ETag; ownership/key mutations and object
@@ -206,6 +213,13 @@ Durable Object export behavior:
   (seven UTC days of counter and inbound-delivery-claim rows); shadow
   storage-byte state is not time-pruned. See
   [Entitlements](./entitlements.md#usermeter-expand-phase).
+- `Mailbox` exports per-user email metadata (threads, messages, attachments,
+  delivery events) through the account-export `mailbox` section (`exportMailbox`
+  RPC; keyset pagination with prefixed cursors over those tables). Manifest
+  counts use `countMailbox`. Phase 1 registers this consumption without
+  dual-write or a change of D1 authority — D1 `email_*` rows remain the live
+  source of truth and are still exported in the `d1` section. See
+  [Mailbox](#durable-objects-mailbox).
 - `RemoteConnectorSession` exposes persisted connector metadata and tool
   descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
@@ -560,6 +574,110 @@ section / `account_export_section` (daily counters plus additive
 `storageBytesShadow` on the first page only when present; shadow field is
 non-authoritative).
 
+## Durable Objects (`Mailbox`)
+
+User-owned email **metadata** moves to a per-user `Mailbox` Durable Object with
+SQLite (`packages/worker/src/email/mailbox-do.ts` and siblings under
+`mailbox-*.ts`; client in `packages/worker/src/email/mailbox-client.ts`). The
+Worker binding is `MAILBOX` (class `Mailbox`; Wrangler SQLite migration tag
+`v22` via `new_sqlite_classes` in `packages/worker/wrangler.jsonc`). Raw MIME
+and outbound attachment bytes stay in `EMAIL_BLOBS` R2; the DO stores object
+keys, not payload bytes.
+
+Naming matches `RunLog`, `JobManager`, and `UserMeter`: one object per untrimmed
+stable MCP `userId` via `mailboxDurableObjectName(userId)` →
+`idFromName(userId)` in
+`packages/worker/src/user-scoped-durable-object-name.ts`. There is no `user_id`
+column inside the DO because the object identity is the user.
+
+**SQLite ownership** (schema version in `mailbox_meta`, currently
+`mailboxSchemaVersion = 2`):
+
+- `email_threads`, `email_messages`, `email_attachments`, and
+  `email_delivery_events` for the owning user (same logical names as the D1
+  tables they will eventually replace)
+- latest per-message delivery status on `email_messages.delivery_status`, kept
+  separate from send-request `processing_status`
+
+**Retention** is self-enforced inside the DO with alarms
+(`mailboxMessageRetentionDays = 365`, `mailboxDeliveryEventRetentionDays = 90`).
+Alarm-driven deletes are strict blob-before-row for `EMAIL_BLOBS` keys (failed
+blob deletes skip the row for retry), matching today's D1 retention ordering.
+
+Account deletion calls `Mailbox.purge()` (one RPC per user, no D1 id scan;
+result key `mailboxes`). During expand, `purge` clears DO SQLite / alarm state
+only and reinitializes schema — it does **not** delete R2 objects. D1 `email_*`
+row deletion and existing `EMAIL_BLOBS` prefix deletion remain authoritative for
+mail content. Account export pages Mailbox state through the `mailbox` section
+(`exportMailbox` / `countMailbox`).
+
+### Expand/contract phases
+
+This is an expand/contract migration. **The current PR is phase 1 only:**
+additive scaffold (DO class, binding, naming, client, mirror/export/purge RPCs,
+and alarm retention) **plus registered account-deletion `purge` and
+account-export `mailbox` section consumption**. It does **not** dual-write, does
+**not** change live email read/write authority, and leaves D1 `email_*` tables
+authoritative for all live paths. D1 email rows and existing R2 inventory
+deletion stay authoritative during expand.
+
+1. **Additive scaffold / no live mail behavior** — bind `Mailbox`, freeze
+   `idFromName(userId)`, ship client + `mirrorMessage` / `upsertDeliveryEvent` /
+   `exportMailbox` / `countMailbox` / `purge` RPCs and alarm retention, and
+   register account deletion/export consumption. No dual-write; D1 remains sole
+   authority for live mail.
+2. **D1-authoritative dual-write + parity** — every user-mail mutation that
+   writes D1 also writes the DO; parity counters and reconciliation prove DO
+   completeness against D1. D1 stays authoritative for reads.
+3. **Reads cut over after production parity** — user-mail reads move to the DO
+   only after production parity is verified. D1 writes continue.
+4. **D1 write-off / event retirement** — stop writing moved user-mail metadata
+   to D1; retire dual-write and event/mirror machinery used only for the
+   migration.
+5. **Later contract migrations** — drop retired D1 user-mail tables/columns only
+   after verification. No premature schema deletion.
+
+A cron sibling track owns scheduled-lane wiring (for example parity /
+reconciliation ticks). This Mailbox track owns DO storage semantics, alarm
+retention, and the inbound durability boundary below.
+
+### What stays in D1
+
+- **`system:email` operator inbox** — remains in D1 for cross-account / admin
+  access, fixed bounded caps, and separate system-email retention. Those rows
+  stay excluded from account deletion and export
+  (`accountUserDataExcludedOwnerIds`). They are not migrated into per-user
+  Mailbox objects.
+- **Low-write email config** — sender identities, inboxes, inbox addresses,
+  sender rules, and similar low-churn configuration stay in D1.
+- **Provider-message reverse lookup** — outbound `provider_message_id` → owner
+  resolution stays in D1 until the delivery webhook path already knows the
+  owning user. Contextless provider-id reverse lookups must not require
+  enumerating per-user Mailbox objects.
+
+### Inbound durability boundary (eventual DO phase)
+
+Today's D1-authoritative inbound commit boundary is documented under
+[R2 (`EMAIL_BLOBS`)](#r2-community_assets-email_blobs): thread prework + R2 put
+
+- D1 message/attachment rows are pre-commit; `touchEmailThread` / `received`
+  delivery-event writes are post-commit best-effort; ambiguous attachment-insert
+  failures acknowledge rather than risk duplicates.
+
+When Mailbox becomes authoritative, the same shape applies with the DO as the
+metadata store:
+
+- **Pre-commit:** thread prework + R2 raw-MIME put + atomic Mailbox
+  message/attachment commit.
+- **Post-commit (best effort):** thread touch and delivery-event writes — log
+  failures without throwing (retry would duplicate mail).
+- **Ambiguity:** if attachment commit fails but message cleanup (or a residual
+  probe) cannot prove the pre-commit state, acknowledge the already-created
+  message (logged, non-retry) rather than risking a duplicate on Email Routing
+  retry.
+
+Phase 1 scaffolding does not change that live D1 boundary.
+
 ### Package state model
 
 Saved packages are the only top-level persisted primitive. Their state maps onto
@@ -599,6 +717,9 @@ via `durableObjectNameFromParts`); domain helpers such as
   daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`),
   plus optional schema-v4 D1 storage-byte shadow. See
   [Entitlements](./entitlements.md#usermeter-expand-phase).
+- `Mailbox` — `mailboxDurableObjectName(userId)` → `idFromName(userId)`. One
+  email-metadata DO per user (untrimmed stable id, same as `RunLog`). See
+  [Mailbox](#durable-objects-mailbox).
 - `McpClientHub` — `mcpClientHubDurableObjectName(userId)` →
   `idFromName(userId.trim())`.
 - `StorageRunner` — `storageRunnerDurableObjectName(userId, storageId)` →
@@ -666,6 +787,9 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
   [Run records](./run-records.md))
 - `USER_METER` (Durable Objects; per-user daily entitlement counters — see
   [Entitlements](./entitlements.md#usermeter-expand-phase))
+- `MAILBOX` (Durable Objects; per-user email metadata — see
+  [Mailbox](#durable-objects-mailbox); phase 1 registers purge/export
+  consumption without changing D1 authority)
 - `STORAGE_RUNNER` (Durable Objects)
 - `REPO_SESSION` (Durable Objects)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects)
@@ -914,6 +1038,7 @@ to `durableObjectNameFromParts`).
 - `RunLog`: `idFromName(userId)` (no trim); one execution-history DO per user.
 - `UserMeter`: `idFromName(userId)` (no trim); one daily-entitlement meter DO
   per user, plus optional schema-v4 D1 storage-byte shadow.
+- `Mailbox`: `idFromName(userId)` (no trim); one email-metadata DO per user.
 - `McpClientHub`: `idFromName(userId.trim())`.
 - `StorageRunner`: `idFromName(JSON.stringify([userId, storageId]))`.
 - `RepoSession`: `idFromName(repo_sessions.id)`; the key is not user-prefixed,
@@ -1091,7 +1216,9 @@ Current retention policies:
   which prunes messages (and their `EMAIL_BLOBS` raw-MIME blobs) and delivery
   events older than 90 days in bounded batches within its own time budget,
   deletes stale `system_email_daily_counters`, and caps stored system messages
-  at 5000.
+  at 5000. After Mailbox cut-over, user-owned delivery-event retention moves to
+  the per-user Mailbox DO alarm (still 90 days, strict blob-before-row); D1
+  policies here remain authoritative until that phase.
 - `email_messages` / `email_attachments` / `email_threads`: user-owned messages
   (excluding the `system:email` owner) keep 365 days, deleted oldest first in
   batches. Retention deletes the deterministic
@@ -1099,6 +1226,9 @@ Current retention policies:
   blob delete fails, those rows are skipped and still selected on later runs so
   cleanup can retry. Dependent `email_attachments` rows are deleted before their
   messages, and threads left with no messages are pruned for the affected users.
+  After Mailbox cut-over, the same 365-day window and blob-before-row ordering
+  are self-enforced by the Mailbox DO alarm; `system:email` stays on the D1
+  system-email retention job.
 - `entitlement_daily_counters`: expand-phase **mirror** of UserMeter daily
   counters (authoritative state lives in the per-user `UserMeter` DO). Rows keep
   400 days by `day` key until mirror retirement is verified after

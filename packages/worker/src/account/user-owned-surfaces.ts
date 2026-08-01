@@ -9,6 +9,7 @@ export type UserOwnedDurableObjectSurface = {
 		| 'package_service_instance'
 		| 'run_log'
 		| 'user_meter'
+		| 'mailbox'
 		| 'mcp'
 	binding: string
 	/** Result key used in AccountDeletionResult.clearedDurableObjects when purged */
@@ -131,6 +132,14 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			export: 'include',
 			notes:
 				'Per-user daily entitlement counters plus expand-phase D1 storage-byte shadow (one DO per stable userId). Daily counters are authoritative in UserMeter; storage-byte shadow is not. Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters, storage shadow, and the inbound delivery ledger; account export pages counters through the user_meter section via exportCounters (may include additive non-authoritative storageBytesShadow on the first page only).',
+		},
+		{
+			id: 'mailbox',
+			binding: 'MAILBOX',
+			deletionResultKey: 'mailboxes',
+			export: 'include',
+			notes:
+				'Per-user email metadata DO (MAILBOX binding; idFromName(userId)). Phase-1 scaffold only: D1 email_* tables remain authoritative for live reads and writes; account deletion purge clears SQLite state only while D1 and prefix R2 deletion stay authoritative; account export pages threads, messages, attachments, and delivery events through the mailbox section via exportMailbox.',
 		},
 		{
 			id: 'mcp',
