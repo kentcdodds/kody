@@ -124,6 +124,12 @@ storage layout and naming are documented in [Data storage](./data-storage.md).
 `storage_bytes_state` singleton as a **best-effort shadow** for future cutover —
 it does not drive reads, reserves, or reconciliation in this additive slice.
 
+**D1 package service liveness** (`package_service_states`) stays authoritative
+for running counts, discovery, and `service_start` enforcement. UserMeter schema
+v5 adds an optional per-service shadow table as **best-effort future-cutover
+support only** — see
+[Package service liveness — UserMeter shadow](#package-service-liveness--usermeter-shadow-expand-phase-slice-4-phase-a).
+
 StorageRunner bucket `estimatedBytes` and the per-bucket inventory in
 `user_storage_buckets` stay a **separate** quota component. StorageRunner write
 chokepoints pass `getCurrent` as a check-only composed total (D1 payload bytes
@@ -214,11 +220,78 @@ failures are logged and never fail or poison the lane. Current
 `readUserD1StorageBytes` only.
 
 **Account export and purge:** `UserMeter.exportCounters` may return additive
-non-authoritative `storageBytesShadow` on the first page only (`startAfter`
-absent) when the shadow row exists; subsequent pages return `null` so paged
-consumers never double-count it (still counted once in the `user_meter` section
-total). `UserMeter.purge()` clears counters, inbound delivery claims, and any
-shadow storage state via `deleteAll`.
+non-authoritative shadow fields on the first page only (`startAfter` absent):
+`storageBytesShadow` when the schema-v4 row exists, and
+`packageServiceStatesShadow` when schema-v5 service rows exist. Subsequent pages
+return `null` for each shadow so paged consumers never double-count them
+(section totals still count each shadow inventory once when present).
+`UserMeter.purge()` clears counters, inbound delivery claims, and all shadow
+state (storage bytes and package-service liveness) via `deleteAll`.
+
+### Package service liveness — UserMeter shadow (expand phase slice 4, Phase A)
+
+D1 `package_service_states` remains the **sole authority** for running-service
+**count**, **discovery**, and **`service_start` enforcement** in this PR.
+Nothing in Phase A switches those reads or the `assertWithinEntitlement` path
+for `package_services` / `persistent_package_services`.
+
+UserMeter schema **v5** adds a per-service `package_service_states` table inside
+the DO as **best-effort shadow / future-cutover support only** (`status`,
+`started_at`, monotonic `source_updated_at` from the D1 projection timestamp,
+`revision`, `updated_at`). User scope is the DO identity — there is no `user_id`
+column. Shadow rows are never read for usage display, entitlement enforcement,
+or account-deletion inventory in this slice.
+
+**Dual-write from `PackageServiceInstance`:** every D1 projection also attempts
+a best-effort UserMeter shadow on the same lifecycle surface:
+
+- lifecycle transitions and warm-start restore after upgrades
+  (`projectServiceStateToD1`)
+- running-service heartbeat alarms (1h `packageServiceStateHeartbeatMs`,
+  unchanged)
+- stop, error, and idle projections that clear `running`
+- purge (`deleteProjectedServiceState` deletes D1 then shadow before
+  `deleteAll`)
+
+D1 upsert/delete runs first; shadow RPCs are optional when `USER_METER` is
+unbound and failures log `package-service-user-meter-shadow-failed` without
+affecting the service path. Shadow upserts reject stale/out-of-order writes when
+`sourceUpdatedAt` is older than the existing shadow row so cold bootstrap cannot
+clobber fresher state.
+
+**Timing unchanged:** live services heartbeat D1 `updated_at` every **1 hour**
+(`packageServiceStateHeartbeatMs`). Running counts still treat rows as stale
+after **24 hours** without a fresh heartbeat (`packageServiceStateStaleMs` in
+`entitlements/service.ts`). The UserMeter cutover-support RPC
+`countRunningPackageServices` uses the same 24h window on shadow
+`source_updated_at` but is **not** wired to enforcement in Phase A.
+
+**Account export:** `UserMeter.exportCounters` returns additive
+`packageServiceStatesShadow` on the first page only (`startAfter` absent); later
+pages return `null`. Section totals count the shadow inventory once when
+present; the field is explicitly non-authoritative — authoritative liveness
+remains on D1.
+
+**Account purge:** `UserMeter.purge()` clears package-service shadow rows with
+the rest of DO state via `deleteAll`.
+
+### Future package-service authority flip (contract follow-up)
+
+A separate **high-risk contract PR** — not a merge blocker for Phase A — will
+flip running-service count/discovery/enforcement into UserMeter only after:
+
+1. at least one full **24h stale-window soak** with shadow/D1 parity review, and
+2. a **cold-bootstrap design** for accounts whose DO shadow is empty while D1
+   still holds rows (`bootstrapPackageServiceStates` / equivalent).
+
+Until that flip, shadow divergence is acceptable; D1 remains the contract. **D1
+likely stays the enumeration index** for account export, deletion, and admin
+discovery until an alternate inventory exists — UserMeter would become the
+running-count authority first, not a wholesale replacement for every D1 reader.
+
+**Remaining expand roadmap:** slice 4 Phase A (this shadow slice) is additive
+only; slice 5 — account-deletion write fencing — follows independently. Storage
+authority flip remains the separate contract follow-up above.
 
 ### Future storage authority flip (contract follow-up)
 
@@ -234,9 +307,10 @@ Only then do reads, reserves, and reconciliation switch to UserMeter-first with
 D1 as mirror/cursor. Until that flip, shadow divergence is acceptable; D1
 remains the contract.
 
-**Remaining UserMeter expand roadmap:** slice 4 — `package_service_states`
-running counts (service liveness); slice 5 — account-deletion write fencing.
-Storage authority flip is tracked separately as the contract follow-up above.
+**Remaining UserMeter expand roadmap:** slice 4 Phase A —
+`package_service_states` UserMeter shadow (this PR; D1 authority unchanged);
+slice 5 — account-deletion write fencing. Package-service and storage authority
+flips are separate high-risk contract follow-ups after soak/parity review.
 
 **Daily-counter mirror retirement:** dropping D1 `entitlement_daily_counters`
 waits until reporting-off-D1 work merges and mirror parity is verified in
@@ -382,12 +456,14 @@ Rules:
   running package services) are counted **directly from their source D1 tables
   at the enforcement point** via built-in counters in `service.ts`. They do not
   depend on any metering or rollup tables. Running package services are counted
-  from `package_service_states` (status `running` and freshly heartbeaten), not
-  from run-history rows — see [Run records](./run-records.md)
-  (`state-vs-history`). **Concurrent workflows** are authoritative in per-user
-  RunLog `workflow_projections`: create reserves atomically via
-  `reserveWorkflowProjectionSlot`, and usage readers call
-  `countActiveWorkflowProjections` through
+  from D1 `package_service_states` (status `running` and freshly heartbeaten; 1h
+  heartbeat, 24h staleness), not from run-history rows — see
+  [Run records](./run-records.md) (`state-vs-history`). Expand-phase slice 4
+  Phase A dual-writes the same projection into UserMeter as a non-authoritative
+  shadow; enforcement and `service_start` still read D1 only. **Concurrent
+  workflows** are authoritative in per-user RunLog `workflow_projections`:
+  create reserves atomically via `reserveWorkflowProjectionSlot`, and usage
+  readers call `countActiveWorkflowProjections` through
   `readCurrentEntitlementResourceUsage`. Expand-phase D1 `workflow_runs` is a
   compatibility mirror only.
 - **Rate-style limits** (email sends/receives per day, execute calls per day,
