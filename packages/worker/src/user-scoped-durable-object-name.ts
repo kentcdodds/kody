@@ -35,6 +35,11 @@ export function userMeterDurableObjectName(userId: string) {
 	return userId
 }
 
+/** Mailbox — one email-metadata DO per user (untrimmed, like RunLog). */
+export function mailboxDurableObjectName(userId: string) {
+	return userId
+}
+
 /** McpClientHub — one client-hub DO per user (trimmed). */
 export function mcpClientHubDurableObjectName(userId: string) {
 	return userId.trim()
