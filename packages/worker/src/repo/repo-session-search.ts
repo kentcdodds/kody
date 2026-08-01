@@ -9,6 +9,8 @@ import {
 const defaultRepoSearchLimit = 50
 const maxRepoSearchBytes = 200_000
 const maxRepoSearchRegexLength = 512
+const maxExpandedGlobPatterns = 64
+const maxBraceNestingDepth = 16
 const obviousNestedQuantifierPattern =
 	/\((?:[^()\\]|\\.)*[+*{][^)]*\)(?:[+*]|\{\d+(?:,\d*)?\})/
 
@@ -19,6 +21,99 @@ function normalizeSearchLimit(limit: number | undefined) {
 
 function escapeRegex(source: string) {
 	return source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Expand brace groups into concrete globs before calling Workspace.glob.
+ *
+ * @cloudflare/shell currently splices brace alternatives into one regex group
+ * without converting nested wildcards, so a brace arm that still contains `*`
+ * or `?` throws "SyntaxError: Nothing to repeat". Expanding first keeps each
+ * alternative on the wildcard-aware path.
+ */
+export function expandBraceGlobs(
+	pattern: string,
+	nestingDepth = 0,
+): Array<string> {
+	const open = pattern.indexOf('{')
+	if (open === -1) return [pattern]
+	if (nestingDepth >= maxBraceNestingDepth) {
+		throw new Error(
+			`repo_search glob brace nesting exceeds ${maxBraceNestingDepth} levels.`,
+		)
+	}
+
+	let braceDepth = 0
+	let close = -1
+	for (let index = open; index < pattern.length; index += 1) {
+		const character = pattern[index]
+		if (character === '{') braceDepth += 1
+		else if (character === '}') {
+			braceDepth -= 1
+			if (braceDepth === 0) {
+				close = index
+				break
+			}
+		}
+	}
+	if (close === -1) return [pattern]
+
+	const prefix = pattern.slice(0, open)
+	const suffix = pattern.slice(close + 1)
+	const alternatives: Array<string> = []
+	let alternativeStart = open + 1
+	braceDepth = 0
+	for (let index = open + 1; index < close; index += 1) {
+		const character = pattern[index]
+		if (character === '{') braceDepth += 1
+		else if (character === '}') braceDepth -= 1
+		else if (character === ',' && braceDepth === 0) {
+			alternatives.push(pattern.slice(alternativeStart, index))
+			alternativeStart = index + 1
+		}
+	}
+	alternatives.push(pattern.slice(alternativeStart, close))
+
+	const expanded: Array<string> = []
+	for (const alternative of alternatives) {
+		for (const candidate of expandBraceGlobs(
+			`${prefix}${alternative}${suffix}`,
+			nestingDepth + 1,
+		)) {
+			expanded.push(candidate)
+			if (expanded.length > maxExpandedGlobPatterns) {
+				throw new Error(
+					`repo_search glob expands to more than ${maxExpandedGlobPatterns} patterns.`,
+				)
+			}
+		}
+	}
+	return expanded
+}
+
+async function globWorkspaceFiles(input: {
+	workspace: {
+		glob(pattern: string): Promise<Array<{ path: string; type: string }>>
+	}
+	pattern: string
+}): Promise<Array<{ path: string; type: string }>> {
+	const patterns = expandBraceGlobs(input.pattern)
+	if (patterns.length === 1) {
+		const [onlyPattern] = patterns
+		if (onlyPattern === undefined) return []
+		return input.workspace.glob(onlyPattern)
+	}
+
+	const byPath = new Map<string, { path: string; type: string }>()
+	for (const pattern of patterns) {
+		const entries = await input.workspace.glob(pattern)
+		for (const entry of entries) {
+			byPath.set(entry.path, entry)
+		}
+	}
+	return [...byPath.values()].sort((left, right) =>
+		left.path.localeCompare(right.path),
+	)
 }
 
 function assertSafeRepoSearchRegex(pattern: string) {
@@ -149,7 +244,10 @@ export async function searchRepoWorkspace(input: {
 	const globPattern =
 		input.glob?.trim() ||
 		`${input.root.replace(/\/+$/, '')}/**/*.{ts,tsx,js,jsx,json,md,css}`
-	const files = await input.workspace.glob(globPattern)
+	const files = await globWorkspaceFiles({
+		workspace: input.workspace,
+		pattern: globPattern,
+	})
 	const matchMap = new Map<string, RepoSearchFileMatch>()
 	const outputMode = input.outputMode ?? 'content'
 	let remaining = normalizeSearchLimit(input.limit)

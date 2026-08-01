@@ -7,7 +7,7 @@ import {
 	type EntitlementResource,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
-import { readEntitlementResourceUsage } from '#worker/entitlements/service.ts'
+import { readCurrentEntitlementResourceUsage } from '#worker/entitlements/service.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	type AccountUsageEntitlementConsumption,
@@ -62,7 +62,7 @@ export async function loadAccountUsageData(input: {
 	)
 	const usageUserId = resolveUserStableId(row)
 	const entitlementConsumption = await readEntitlementConsumption({
-		db: input.env.APP_DB,
+		env: input.env,
 		usageUserId,
 		plan,
 		now,
@@ -78,15 +78,16 @@ export async function loadAccountUsageData(input: {
 }
 
 async function readEntitlementConsumption(input: {
-	db: D1Database
+	env: Env
 	usageUserId: string
 	plan: PlanName
 	now: Date
 }): Promise<Array<AccountUsageEntitlementConsumption>> {
 	return await Promise.all(
 		accountUsageEntitlementResources.map(async (resource) => {
-			const current = await readEntitlementResourceUsage({
-				db: input.db,
+			const current = await readCurrentEntitlementResourceUsage({
+				db: input.env.APP_DB,
+				env: input.env,
 				userId: input.usageUserId,
 				resource,
 				now: input.now,

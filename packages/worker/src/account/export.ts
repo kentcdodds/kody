@@ -34,6 +34,13 @@ import {
 	listRunRecordStorageIds,
 	summarizeRunRecords,
 } from '#worker/run-records/service.ts'
+import {
+	userMeterNamespace,
+	userMeterRpc,
+} from '#worker/entitlements/user-meter-client.ts'
+import { type UserMeterExportResult } from '#worker/entitlements/user-meter-do.ts'
+import { mailboxNamespace, mailboxRpc } from '#worker/email/mailbox-client.ts'
+import { type MailboxExportResult } from '#worker/email/mailbox-types.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	listAccountUserPackageServices,
@@ -55,6 +62,8 @@ export const accountExportSectionNames = [
 	'storage_runner',
 	'job_manager',
 	'run_records',
+	'user_meter',
+	'mailbox',
 	'remote_connector_session',
 	'package_service',
 	'oauth_grants',
@@ -126,6 +135,8 @@ type UserExportInventory = {
 type ManifestInventoryCounts = {
 	storageRunners: number
 	runRecords: number
+	userMeterCounters: number
+	mailboxRows: number
 	remoteConnectorSessions: number
 	packageServices: number
 	artifactRepos: number
@@ -195,9 +206,67 @@ export type AccountExportArtifactRepo = {
 	sourceRoot: string
 }
 
+type RunRecordsExportPayload = Awaited<ReturnType<typeof exportRunRecords>>
+
+function countUserMeterExportEntries(result: UserMeterExportResult): number {
+	const deletionShadowCount =
+		result.deletionShadow == null
+			? 0
+			: (result.deletionShadow.deletingAt == null ? 0 : 1) +
+				result.deletionShadow.activeWriteLeaseCount
+	return (
+		result.counters.length +
+		(result.storageBytesShadow == null ? 0 : 1) +
+		(result.packageServiceStatesShadow == null
+			? 0
+			: result.packageServiceStatesShadow.length) +
+		deletionShadowCount
+	)
+}
+
+function countRunRecordsExportEntries(
+	runRecords: RunRecordsExportPayload | null | undefined,
+) {
+	if (runRecords == null) return 0
+	return (
+		runRecords.runs.length +
+		runRecords.packageInvocations.length +
+		runRecords.workflowProjections.length +
+		runRecords.jobRunObservability.length +
+		runRecords.packageRunSuccesses.length +
+		runRecords.activationMilestones.length
+	)
+}
+
+function formatRunRecordsExportSectionItems(page: RunRecordsExportPayload) {
+	return [
+		...page.runs.map((run) => ({
+			run,
+			logs: page.logs.filter((log) => log.runId === run.id),
+		})),
+		...page.packageInvocations.map((packageInvocation) => ({
+			packageInvocation,
+		})),
+		...page.workflowProjections.map((workflowProjection) => ({
+			workflowProjection,
+		})),
+		...page.jobRunObservability.map((jobRunObservability) => ({
+			jobRunObservability,
+		})),
+		...page.packageRunSuccesses.map((packageRunSuccess) => ({
+			packageRunSuccess,
+		})),
+		...page.activationMilestones.map((activationMilestone) => ({
+			activationMilestone,
+		})),
+	]
+}
+
 type AccountExportDurableObjects = {
 	jobManager: unknown | null
-	runRecords: Awaited<ReturnType<typeof exportRunRecords>> | null
+	runRecords: RunRecordsExportPayload | null
+	userMeter: UserMeterExportResult | null
+	mailbox: MailboxExportResult | null
 	remoteConnectorSessions: Array<{
 		instanceId: string
 		export: RemoteConnectorSessionExport | null
@@ -231,6 +300,23 @@ export type AccountExportSectionResult = {
 	nextStartAfter: string | null
 	pageSize: number
 	warnings: Array<string>
+	/**
+	 * Non-authoritative UserMeter storage-byte shadow. Present only on the
+	 * first `user_meter` page (`startAfter` absent); later pages omit it.
+	 */
+	storageBytesShadow?: UserMeterExportResult['storageBytesShadow']
+	/**
+	 * Non-authoritative UserMeter package-service shadow rows. Present only on
+	 * the first `user_meter` page (`startAfter` absent); later pages set it to
+	 * `null`.
+	 */
+	packageServiceStatesShadow?: UserMeterExportResult['packageServiceStatesShadow']
+	/**
+	 * Sanitized UserMeter deletion-fence / write-lease inventory (no raw token
+	 * or holder). Present only on the first `user_meter` page (`startAfter`
+	 * absent); later pages set it to `null`.
+	 */
+	deletionShadow?: UserMeterExportResult['deletionShadow']
 }
 
 function normalizePageSize(pageSize: number | undefined) {
@@ -977,6 +1063,8 @@ async function collectManifestInventoryCounts(input: {
 	const [
 		storageRunners,
 		runRecords,
+		userMeterCounters,
+		mailboxRows,
 		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
@@ -992,6 +1080,29 @@ async function collectManifestInventoryCounts(input: {
 				userId: input.userId,
 			})
 			return summary.total
+		}),
+		safeCount('user meter counters', async () => {
+			if (!userMeterNamespace(input.env)) return 0
+			const page = await userMeterRpc({
+				env: input.env,
+				userId: input.userId,
+			}).exportCounters({
+				pageSize: maxExportPageSize,
+			})
+			return countUserMeterExportEntries(page)
+		}),
+		safeCount('mailbox rows', async () => {
+			if (!mailboxNamespace(input.env)) return 0
+			const counts = await mailboxRpc({
+				env: input.env,
+				userId: input.userId,
+			}).countMailbox()
+			return (
+				counts.threads +
+				counts.messages +
+				counts.attachments +
+				counts.deliveryEvents
+			)
 		}),
 		safeCount('remote connectors', async () =>
 			countScalar(
@@ -1030,6 +1141,8 @@ async function collectManifestInventoryCounts(input: {
 	return {
 		storageRunners,
 		runRecords,
+		userMeterCounters,
+		mailboxRows,
 		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
@@ -1272,6 +1385,66 @@ async function exportUserRunRecords(input: {
 	}
 }
 
+async function exportUserMeterCounters(input: {
+	env: AccountExportEnv
+	userId: string
+	warnings: Array<string>
+}): Promise<UserMeterExportResult | null> {
+	try {
+		if (!userMeterNamespace(input.env)) {
+			input.warnings.push(
+				'USER_METER binding was unavailable; user meter counters were not exported.',
+			)
+			return null
+		}
+		const page = await userMeterRpc({
+			env: input.env,
+			userId: input.userId,
+		}).exportCounters({
+			pageSize: maxExportPageSize,
+		})
+		if (page.truncated) {
+			input.warnings.push(
+				`User meter counters were truncated in the full export; use account_export_section with section "user_meter" to retrieve additional pages.`,
+			)
+		}
+		return page
+	} catch (error) {
+		input.warnings.push(`User meter export failed: ${getErrorMessage(error)}`)
+		return null
+	}
+}
+
+async function exportMailboxRows(input: {
+	env: AccountExportEnv
+	userId: string
+	warnings: Array<string>
+}): Promise<MailboxExportResult | null> {
+	try {
+		if (!mailboxNamespace(input.env)) {
+			input.warnings.push(
+				'MAILBOX binding was unavailable; mailbox rows were not exported.',
+			)
+			return null
+		}
+		const page = await mailboxRpc({
+			env: input.env,
+			userId: input.userId,
+		}).exportMailbox({
+			pageSize: maxExportPageSize,
+		})
+		if (page.truncated) {
+			input.warnings.push(
+				`Mailbox rows were truncated in the full export; use account_export_section with section "mailbox" to retrieve additional pages.`,
+			)
+		}
+		return page
+	} catch (error) {
+		input.warnings.push(`Mailbox export failed: ${getErrorMessage(error)}`)
+		return null
+	}
+}
+
 async function exportRemoteConnectorSessions(input: {
 	env: AccountExportEnv
 	userId: string
@@ -1364,32 +1537,48 @@ async function exportDurableObjects(input: {
 	inventory: UserExportInventory
 	warnings: Array<string>
 }): Promise<AccountExportDurableObjects> {
-	const [storageRunners, remoteConnectorSessions, packageServices, runRecords] =
-		await Promise.all([
-			exportStorageRunners({
-				env: input.env,
-				userId: input.userId,
-				storageIds: input.inventory.storageIds,
-				warnings: input.warnings,
-			}),
-			exportRemoteConnectorSessions({
-				env: input.env,
-				userId: input.userId,
-				connectors: input.inventory.remoteConnectors,
-				warnings: input.warnings,
-			}),
-			exportPackageServices({
-				env: input.env,
-				userId: input.userId,
-				services: input.inventory.packageServices,
-				warnings: input.warnings,
-			}),
-			exportUserRunRecords({
-				env: input.env,
-				userId: input.userId,
-				warnings: input.warnings,
-			}),
-		])
+	const [
+		storageRunners,
+		remoteConnectorSessions,
+		packageServices,
+		runRecords,
+		userMeter,
+		mailbox,
+	] = await Promise.all([
+		exportStorageRunners({
+			env: input.env,
+			userId: input.userId,
+			storageIds: input.inventory.storageIds,
+			warnings: input.warnings,
+		}),
+		exportRemoteConnectorSessions({
+			env: input.env,
+			userId: input.userId,
+			connectors: input.inventory.remoteConnectors,
+			warnings: input.warnings,
+		}),
+		exportPackageServices({
+			env: input.env,
+			userId: input.userId,
+			services: input.inventory.packageServices,
+			warnings: input.warnings,
+		}),
+		exportUserRunRecords({
+			env: input.env,
+			userId: input.userId,
+			warnings: input.warnings,
+		}),
+		exportUserMeterCounters({
+			env: input.env,
+			userId: input.userId,
+			warnings: input.warnings,
+		}),
+		exportMailboxRows({
+			env: input.env,
+			userId: input.userId,
+			warnings: input.warnings,
+		}),
+	])
 	let jobManager: unknown | null = null
 	try {
 		jobManager = await exportJobManagerForUser({
@@ -1402,6 +1591,8 @@ async function exportDurableObjects(input: {
 	return {
 		jobManager,
 		runRecords,
+		userMeter,
+		mailbox,
 		remoteConnectorSessions,
 		packageServices,
 		storageRunners,
@@ -1454,18 +1645,39 @@ function buildManifest(input: {
 		discovery: { section: 'job_manager' },
 	}
 	sections.run_records = {
-		// The section carries runs plus the RunLog DO's package-invocation
-		// idempotency ledger rows, so count both when the export payload is
-		// present. The inventory fallback comes from `summarize` (runs only).
+		// Full exports count every RunLog table returned by exportRuns (runs,
+		// ledger, and dedicated unpruned state). Manifest-only inventory falls
+		// back to summarize (run rows only).
 		count:
 			input.durableObjects?.runRecords == null
 				? (input.inventoryCounts?.runRecords ?? 0)
-				: input.durableObjects.runRecords.runs.length +
-					input.durableObjects.runRecords.packageInvocations.length,
+				: countRunRecordsExportEntries(input.durableObjects.runRecords),
 		warnings: input.warnings.filter((warning) =>
 			warning.startsWith('Run records '),
 		),
 		discovery: { section: 'run_records' },
+	}
+	sections.user_meter = {
+		count:
+			input.durableObjects?.userMeter == null
+				? (input.inventoryCounts?.userMeterCounters ?? 0)
+				: countUserMeterExportEntries(input.durableObjects.userMeter),
+		warnings: input.warnings.filter(
+			(warning) =>
+				warning.startsWith('User meter ') || warning.startsWith('USER_METER '),
+		),
+		discovery: { section: 'user_meter' },
+	}
+	sections.mailbox = {
+		count:
+			input.durableObjects?.mailbox == null
+				? (input.inventoryCounts?.mailboxRows ?? 0)
+				: input.durableObjects.mailbox.rows.length,
+		warnings: input.warnings.filter(
+			(warning) =>
+				warning.startsWith('Mailbox ') || warning.startsWith('MAILBOX '),
+		),
+		discovery: { section: 'mailbox' },
 	}
 	sections.remote_connector_sessions = {
 		count:
@@ -1774,18 +1986,56 @@ export async function readAccountExportSection(input: {
 		})
 		return {
 			section: input.section,
-			// Runs page first; once runs are exhausted the same cursor continues
-			// through the keyed package-invocation idempotency ledger rows that
-			// live in the same per-user RunLog Durable Object.
-			items: [
-				...page.runs.map((run) => ({
-					run,
-					logs: page.logs.filter((log) => log.runId === run.id),
-				})),
-				...page.packageInvocations.map((packageInvocation) => ({
-					packageInvocation,
-				})),
-			],
+			// One cursor pages runs, then ledger rows, then dedicated unpruned
+			// RunLog state (workflow projections, job-run observability, package
+			// run successes, activation milestones). Raw run-id cursors remain
+			// valid; later phases use prefixed cursors from exportRuns.
+			items: formatRunRecordsExportSectionItems(page),
+			truncated: page.truncated,
+			nextStartAfter: page.nextStartAfter,
+			pageSize,
+			warnings,
+		}
+	}
+	if (input.section === 'user_meter') {
+		if (!userMeterNamespace(input.env)) {
+			throw new Error('USER_METER binding was unavailable.')
+		}
+		const pageSize = normalizePageSize(input.pageSize)
+		const page = await userMeterRpc({
+			env: input.env,
+			userId: input.mcpUserId,
+		}).exportCounters({
+			pageSize,
+			startAfter: input.startAfter ?? null,
+		})
+		return {
+			section: input.section,
+			items: page.counters,
+			storageBytesShadow: page.storageBytesShadow,
+			packageServiceStatesShadow: page.packageServiceStatesShadow,
+			deletionShadow: page.deletionShadow,
+			truncated: page.truncated,
+			nextStartAfter: page.nextStartAfter,
+			pageSize,
+			warnings,
+		}
+	}
+	if (input.section === 'mailbox') {
+		if (!mailboxNamespace(input.env)) {
+			throw new Error('MAILBOX binding was unavailable.')
+		}
+		const pageSize = normalizePageSize(input.pageSize)
+		const page = await mailboxRpc({
+			env: input.env,
+			userId: input.mcpUserId,
+		}).exportMailbox({
+			pageSize,
+			startAfter: input.startAfter ?? null,
+		})
+		return {
+			section: input.section,
+			items: page.rows,
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,

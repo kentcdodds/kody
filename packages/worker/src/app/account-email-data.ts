@@ -12,8 +12,10 @@ import {
 } from '#worker/entitlements/plans.ts'
 import {
 	getUserPlan,
+	readDailyEntitlementResourceUsage,
 	readEntitlementResourceUsage,
 } from '#worker/entitlements/service.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import {
 	buildPlatformEmailAddress,
 	getPlatformEmailDomain,
@@ -369,6 +371,7 @@ async function countAndListMessages(input: {
 
 async function loadUsage(input: {
 	db: D1Database
+	env: UserMeterEnv
 	userId: string
 	email: string
 }): Promise<AccountEmailUsage> {
@@ -384,14 +387,16 @@ async function loadUsage(input: {
 			resource: 'stored_email_messages',
 			now,
 		}),
-		readEntitlementResourceUsage({
+		readDailyEntitlementResourceUsage({
 			db: input.db,
+			env: input.env,
 			userId: input.userId,
 			resource: 'email_sends_per_day',
 			now,
 		}),
-		readEntitlementResourceUsage({
+		readDailyEntitlementResourceUsage({
 			db: input.db,
+			env: input.env,
 			userId: input.userId,
 			resource: 'email_receives_per_day',
 			now,
@@ -578,6 +583,7 @@ export async function loadAccountEmailData(input: {
 		loadInboxes({ db: input.env.APP_DB, userId }),
 		loadUsage({
 			db: input.env.APP_DB,
+			env: input.env,
 			userId,
 			email: input.user.email,
 		}),

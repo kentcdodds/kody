@@ -8,6 +8,9 @@ export type UserOwnedDurableObjectSurface = {
 		| 'package_realtime_session'
 		| 'package_service_instance'
 		| 'run_log'
+		| 'user_meter'
+		| 'stripe_plan_refresh'
+		| 'mailbox'
 		| 'mcp'
 	binding: string
 	/** Result key used in AccountDeletionResult.clearedDurableObjects when purged */
@@ -121,7 +124,33 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'runLogs',
 			export: 'include',
 			notes:
-				'Execution history and captured logs across every runtime surface, plus the keyed package-invocation idempotency ledger (terminal replay responses, 90-day window). Self-prunes inside the DO rather than through a retention cron lane; account deletion clearAll purges ledger rows with the run history, and account export pages both through the run_records section.',
+				'Per-user RunLog DO (RUN_LOG binding; idFromName(userId)). Stores pruned run history (runs + run_logs), the keyed package-invocation idempotency ledger, and dedicated unpruned state: workflow_projections (binding_name, typically DYNAMIC_CALLABLE_WORKFLOWS; mirrors expand-phase D1 workflow_runs), job_run_observability (terminal outcomes/counters; D1 jobs keeps schedule + last_run_at for retention only), package_run_successes, and activation_milestones. Run rows self-prune inside the DO; dedicated tables do not. Account deletion clearAll deletes every table and reinitializes schema. Account export pages all tables through the run_records section (runs first, then ledger, then dedicated phases).',
+		},
+		{
+			id: 'user_meter',
+			binding: 'USER_METER',
+			deletionResultKey: 'userMeters',
+			export: 'include',
+			notes:
+				'Per-user daily entitlement counters plus D1 storage-byte/package-service shadows and deletion-fence/write-lease state (one DO per stable userId). Daily counters are authoritative in UserMeter; storage-byte and package-service shadows are not. For write leases, schema v7 distinguishes authority=do (UserMeter-authoritative when callers supply USER_METER) from authority=legacy (D1 snapshot); DO-authority acquires temporarily dual-write the same token into D1 account_write_leases so Phase-A D1-only marks still observe them (rollout mirror, not final hot path). D1 users.deleting_at remains the permanent point gate and email paths omit env to keep the exact D1 lease path. Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters, storage shadow, package-service shadow, and write leases while preserving an existing deleting tombstone; markAccountDeleting replaces only legacy rows from the live D1 snapshot and preserves DO-authority rows; account export pages counters through the user_meter section via exportCounters (may include additive storageBytesShadow, packageServiceStatesShadow, and sanitized deletionShadow without raw lease token/holder on the first page only).',
+		},
+		{
+			id: 'stripe_plan_refresh',
+			binding: 'STRIPE_PLAN_REFRESH',
+			deletionResultKey: 'stripePlanRefreshes',
+			export: 'exclude',
+			excludeReason:
+				'Ephemeral one-shot Stripe reconciliation alarm state. Billing columns remain canonical in D1 and are included in the users export.',
+			notes:
+				'One alarm object per stable userId. Account deletion cancels the alarm and clears its stored owner id.',
+		},
+		{
+			id: 'mailbox',
+			binding: 'MAILBOX',
+			deletionResultKey: 'mailboxes',
+			export: 'include',
+			notes:
+				'Per-user email metadata DO (MAILBOX binding; idFromName(userId)). Phase-1 scaffold only: D1 email_* tables remain authoritative for live reads and writes; account deletion purge clears SQLite state only while D1 and prefix R2 deletion stay authoritative; account export pages threads, messages, attachments, and delivery events through the mailbox section via exportMailbox.',
 		},
 		{
 			id: 'mcp',
@@ -258,11 +287,15 @@ export const accountUserOwnedArtifactSurfaces: ReadonlyArray<UserOwnedArtifactSu
 	] as const
 
 const accountExportExcludedDurableObjectDisplayNames: Readonly<
-	Record<'mcp' | 'repo_session' | 'package_realtime_session', string>
+	Record<
+		'mcp' | 'repo_session' | 'package_realtime_session' | 'stripe_plan_refresh',
+		string
+	>
 > = {
 	mcp: 'MCP',
 	repo_session: 'RepoSession',
 	package_realtime_session: 'PackageRealtimeSession',
+	stripe_plan_refresh: 'StripePlanRefresh',
 } as const
 
 export function getAccountExportExcludedDurableObjects(): Array<{
@@ -270,7 +303,12 @@ export function getAccountExportExcludedDurableObjects(): Array<{
 	reason: string
 }> {
 	return (
-		['mcp', 'repo_session', 'package_realtime_session'] satisfies Array<
+		[
+			'mcp',
+			'repo_session',
+			'package_realtime_session',
+			'stripe_plan_refresh',
+		] satisfies Array<
 			keyof typeof accountExportExcludedDurableObjectDisplayNames
 		>
 	).map((id) => {

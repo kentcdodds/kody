@@ -72,6 +72,26 @@ export const accountUserDataExcludedOwnerIds = [
 	},
 ] as const
 
+/**
+ * Physical D1 tables that still exist in the migrated schema (pending a later
+ * drop migration) but are intentionally absent from runtime account
+ * deletion/export inventory. Schema coverage guardrails treat these
+ * `user_id` / `*_user_id` columns as covered so the live table does not look
+ * like a missing inventory target; runtime deletion and export never query
+ * them. Export documents each omission under `excludedD1Surfaces` (no raw
+ * rows). Empty after `entitlement_daily_counters` was dropped by migration
+ * `0126`.
+ */
+export type AccountUserDataPendingDropTarget = {
+	table: string
+	column: string
+	surface: string
+	reason: string
+}
+
+export const accountUserDataPendingDropTargets: ReadonlyArray<AccountUserDataPendingDropTarget> =
+	[]
+
 /** Targets that account export should skip (deletion still covers them). */
 export function isExcludedFromAccountExport(
 	target: UserScopedDataTarget,
@@ -81,7 +101,8 @@ export function isExcludedFromAccountExport(
 
 /**
  * Documented D1 surfaces omitted from account export. Includes owner-id
- * exclusions plus targets marked includeInExport: false with surface/reason.
+ * exclusions, pending-drop physical tables, plus targets marked
+ * includeInExport: false with surface/reason.
  */
 export function getAccountExportExcludedD1Surfaces(): Array<{
 	name: string
@@ -91,6 +112,10 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
 		...accountUserDataExcludedOwnerIds.map((exclusion) => ({
 			name: exclusion.surface,
 			reason: exclusion.reason,
+		})),
+		...accountUserDataPendingDropTargets.map((target) => ({
+			name: target.surface,
+			reason: target.reason,
 		})),
 	]
 	for (const target of accountUserDataTargets) {
@@ -116,7 +141,10 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  * update.
  * Rows owned by accountUserDataExcludedOwnerIds are operator/platform data,
  * not user data; tests assert those owner ids stay deliberately excluded from
- * user account operations.
+ * user account operations. Physical tables pending a later drop migration are
+ * listed in accountUserDataPendingDropTargets instead of here so runtime
+ * deletion/export never query them while schema coverage still recognizes
+ * their user columns.
  *
  * Order matters for deletion: child tables come before parent tables so the
  * cascade is self-contained even on engines / configs where foreign-key
@@ -219,7 +247,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'email_sender_identities' },
 	{ kind: 'user_id', table: 'email_sender_rules' },
 	{ kind: 'user_id', table: 'webhook_endpoints' },
-	{ kind: 'user_id', table: 'entitlement_daily_counters' },
 	{
 		kind: 'user_columns',
 		table: 'platform_feedback',
@@ -423,6 +450,9 @@ export function getAccountD1UserColumnCoverage() {
 				)
 			}
 		}
+	}
+	for (const target of accountUserDataPendingDropTargets) {
+		covered.add(`${target.table}.${target.column}`)
 	}
 	return covered
 }

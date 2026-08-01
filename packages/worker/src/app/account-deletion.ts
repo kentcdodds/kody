@@ -4,6 +4,7 @@ import {
 	deleteCustomer,
 	listSubscriptions,
 } from '#worker/billing/stripe-client.ts'
+import { purgeStripePlanRefreshForUser } from '#worker/billing/stripe-plan-refresh-client.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { purgeJobManagerForUser } from '#worker/jobs/manager-client.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
@@ -17,6 +18,11 @@ import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-objec
 import { packageServiceRpc } from '#worker/package-runtime/package-service.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import { clearRunRecords } from '#worker/run-records/service.ts'
+import {
+	userMeterNamespace,
+	userMeterRpc,
+} from '#worker/entitlements/user-meter-client.ts'
+import { mailboxNamespace, mailboxRpc } from '#worker/email/mailbox-client.ts'
 import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
@@ -596,6 +602,71 @@ async function clearRunLog(input: {
 	}
 }
 
+async function purgeUserMeter(input: {
+	env: Env
+	userId: string
+	warnings: Array<string>
+}): Promise<number> {
+	try {
+		if (!userMeterNamespace(input.env)) {
+			input.warnings.push(
+				'USER_METER binding was unavailable; the user meter Durable Object was not purged.',
+			)
+			return 0
+		}
+		await userMeterRpc({ env: input.env, userId: input.userId }).purge()
+		return 1
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(`User meter purge failed: ${message}`)
+		return 0
+	}
+}
+
+async function purgeStripePlanRefresh(input: {
+	env: Env
+	userId: string
+	warnings: Array<string>
+}): Promise<number> {
+	try {
+		const result = await purgeStripePlanRefreshForUser({
+			env: input.env,
+			userId: input.userId,
+		})
+		if (!result.purged) {
+			input.warnings.push(
+				'STRIPE_PLAN_REFRESH binding was unavailable; the user Stripe refresh alarm was not purged.',
+			)
+		}
+		return result.purged ? 1 : 0
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(`Stripe plan refresh purge failed: ${message}`)
+		return 0
+	}
+}
+
+async function purgeMailbox(input: {
+	env: Env
+	userId: string
+	warnings: Array<string>
+}): Promise<number> {
+	try {
+		if (!mailboxNamespace(input.env)) {
+			input.warnings.push(
+				'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
+			)
+			return 0
+		}
+		await mailboxRpc({ env: input.env, userId: input.userId }).purge()
+		return 1
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(`Mailbox purge failed: ${message}`)
+		return 0
+	}
+}
+
 async function purgeJobManager(input: {
 	env: Env
 	userId: string
@@ -993,6 +1064,7 @@ export async function deleteUserAccount(input: {
 	const activeWriteCount = await markAccountDeleting({
 		db: input.env.APP_DB,
 		dbUserId: input.dbUserId,
+		env: input.env,
 	})
 	if (activeWriteCount > 0) {
 		throw new AccountDeletionWritersActiveError(activeWriteCount)
@@ -1088,6 +1160,22 @@ export async function deleteUserAccount(input: {
 		warnings,
 	})
 	result.clearedDurableObjects.runLogs = await clearRunLog({
+		env: input.env,
+		userId: input.mcpUserId,
+		warnings,
+	})
+	result.clearedDurableObjects.userMeters = await purgeUserMeter({
+		env: input.env,
+		userId: input.mcpUserId,
+		warnings,
+	})
+	result.clearedDurableObjects.stripePlanRefreshes =
+		await purgeStripePlanRefresh({
+			env: input.env,
+			userId: input.mcpUserId,
+			warnings,
+		})
+	result.clearedDurableObjects.mailboxes = await purgeMailbox({
 		env: input.env,
 		userId: input.mcpUserId,
 		warnings,

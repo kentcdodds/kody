@@ -46,6 +46,7 @@ function buildEntitySourceRow(input: {
 			(input.entityKind === 'package' ? 'package.json' : 'kody.json'),
 		source_root: input.sourceRoot ?? '/',
 		last_external_check_at: null,
+		external_check_until: null,
 		created_at: now,
 		updated_at: now,
 	}

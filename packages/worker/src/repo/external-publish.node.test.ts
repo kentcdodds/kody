@@ -58,6 +58,7 @@ function source(overrides: Record<string, unknown> = {}) {
 		manifest_path: 'package.json',
 		source_root: '/',
 		last_external_check_at: null,
+		external_check_until: null,
 		created_at: '2026-05-04T00:00:00.000Z',
 		updated_at: '2026-05-04T00:00:00.000Z',
 		...overrides,
@@ -82,7 +83,9 @@ function resetPublishMocks() {
 
 test('publishes an external fast-forward ref after checks pass', async () => {
 	resetPublishMocks()
-	mockModule.getEntitySourceById.mockResolvedValue(source())
+	mockModule.getEntitySourceById.mockResolvedValue(
+		source({ external_check_until: '2026-05-04T04:00:00.000Z' }),
+	)
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
 		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
@@ -110,6 +113,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		expect.objectContaining({
 			id: 'source-1',
 			publishedCommit: 'commit-new',
+			externalCheckUntil: null,
 		}),
 	)
 	// A successful package publish refreshes the community listing icon so

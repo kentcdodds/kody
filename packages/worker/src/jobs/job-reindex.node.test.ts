@@ -91,6 +91,7 @@ test('job reindex keeps package job vector ids under the Vectorize limit', async
 		{
 			id: vectorId,
 			values: [0.4, 0.5, 0.6],
+			namespace: 'user-1',
 			metadata: { kind: 'job', userId: 'user-1' },
 		},
 	])

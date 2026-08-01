@@ -7,6 +7,7 @@ import {
 	reindexVectorCandidates,
 	type VectorReindexResult,
 } from '#worker/vectorize/reindex-batches.ts'
+import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
 import { listMemoriesPage } from './repo.ts'
@@ -46,6 +47,7 @@ export async function reindexMemoryVectors(
 				candidates: rows.map((row) => ({
 					id: memoryVectorId(row.id),
 					text: buildMemoryEmbedTextFromRow(row),
+					namespace: userVectorNamespace(row.user_id),
 					metadata: {
 						kind: 'memory',
 						userId: row.user_id,

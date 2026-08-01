@@ -11,6 +11,7 @@ const incidentalRuntimeWarnings = [
 	'usage-event-record-failed',
 	'usage-event-analytics-failed',
 	'usage-rollup-failed',
+	'entitlement-storage-bytes-shadow-failed',
 	'run-record-begin-failed',
 	'run-record-start-failed',
 	'run-record-finish-failed',

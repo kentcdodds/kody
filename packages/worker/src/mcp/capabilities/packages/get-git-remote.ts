@@ -12,6 +12,7 @@ import {
 	buildAuthenticatedArtifactsRemote,
 	parseArtifactTokenSecret,
 } from '#worker/repo/artifacts.ts'
+import { markEntitySourcePendingExternalReconcile } from '#worker/repo/entity-sources.ts'
 import {
 	assertPublishedPackageSourceRepoHead,
 	assertRestorablePackageSourceSnapshot,
@@ -170,6 +171,13 @@ export const getGitRemoteCapability = defineDomainCapability(
 				throw new Error(
 					'package_get_git_remote failed to mint an artifact access token.',
 				)
+			}
+			if (args.scope === 'write') {
+				await markEntitySourcePendingExternalReconcile(ctx.env.APP_DB, {
+					id: source.id,
+					userId: owner.ownerUserId,
+					tokenExpiresAt: token.expiresAt,
+				})
 			}
 			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = source.entity_id

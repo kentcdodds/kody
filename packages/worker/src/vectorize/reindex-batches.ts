@@ -12,6 +12,7 @@ export type VectorReindexFailure = {
 export type VectorReindexCandidate = {
 	id: string
 	text: string
+	namespace: string
 	metadata: Record<string, VectorizeVectorMetadata>
 }
 
@@ -116,6 +117,7 @@ export async function reindexVectorCandidates(input: {
 				batch.map((candidate, index_) => ({
 					id: candidate.id,
 					values: embeddings[index_]!,
+					namespace: candidate.namespace,
 					metadata: candidate.metadata,
 				})),
 			)

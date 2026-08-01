@@ -21,6 +21,7 @@ import {
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryByteDelta,
 } from '#worker/entitlements/service.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import {
 	type McpMemoryRow,
 	type MemoryRecord,
@@ -72,7 +73,8 @@ type MemoryOwnerContext = {
 }
 
 type MemoryEnv = Pick<Env, 'APP_DB'> &
-	Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
+	Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>> &
+	UserMeterEnv
 
 type MemoryUpsertInput = MemoryOwnerContext & {
 	env: MemoryEnv
@@ -86,6 +88,7 @@ type MemoryUpsertInput = MemoryOwnerContext & {
 	dedupeKey?: string | null
 	status?: 'active' | 'archived'
 	verificationReference?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 type MemoryDeleteInput = MemoryOwnerContext & {
@@ -145,6 +148,7 @@ export async function acknowledgeSurfacedMemories(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		async write() {
 			const memoryIds = Array.from(
 				new Set(input.memoryIds.filter((id) => id.trim().length > 0)),
@@ -172,6 +176,8 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
+		waitUntil: input.waitUntil,
 		async write() {
 			const normalized = normalizeMemoryPayload(input)
 			const now = new Date().toISOString()
@@ -215,6 +221,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 
 			await assertWithinStorageBytesEntitlement({
 				db: input.env.APP_DB,
+				env: input.env,
 				userId: input.userId,
 				email: input.userEmail,
 				requested: estimateEntitlementStorageEntryByteDelta({
@@ -247,6 +254,7 @@ export async function upsertMemory(input: MemoryUpsertInput): Promise<{
 							}
 						: null,
 				}),
+				waitUntil: input.waitUntil,
 			})
 
 			if (existing) {
@@ -324,6 +332,7 @@ export async function deleteMemory(
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		async write() {
 			const existing = await getMemoryById(
 				input.env.APP_DB,

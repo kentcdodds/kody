@@ -3,6 +3,7 @@ import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#worker/vectorize/embedding.ts'
+import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { savedPackageVectorId } from './repo.ts'
 
 export async function upsertSavedPackageVector(
@@ -20,6 +21,7 @@ export async function upsertSavedPackageVector(
 		{
 			id: savedPackageVectorId(input.packageId),
 			values,
+			namespace: userVectorNamespace(input.userId),
 			metadata: {
 				kind: 'package',
 				userId: input.userId,

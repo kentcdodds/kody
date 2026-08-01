@@ -100,6 +100,7 @@ export async function getCommunityIconObject(input: {
 					await withAccountWriteLease({
 						db: input.env.APP_DB,
 						stableUserId: input.listing.ownerUserId,
+						env: input.env,
 						write,
 					})
 				} else {
@@ -361,6 +362,7 @@ async function createCommunityIconDescriptor(input: {
 		? await withAccountWriteLease({
 				db: input.env.APP_DB,
 				stableUserId: input.listing.ownerUserId,
+				env: input.env,
 				write,
 			})
 		: await write()

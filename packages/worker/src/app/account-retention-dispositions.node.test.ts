@@ -45,6 +45,14 @@ test('retention dispositions stay aligned with scheduled policies and documented
 	).toBe(true)
 	expect(
 		nonScheduled.some(
+			(disposition) => disposition.table === 'entitlement_daily_counters',
+		),
+	).toBe(false)
+	expect(getRetentionPolicyCoverage().has('entitlement_daily_counters')).toBe(
+		false,
+	)
+	expect(
+		nonScheduled.some(
 			(disposition) =>
 				disposition.table === 'mcp_memories' &&
 				disposition.kind === 'durable_forever',

@@ -4,6 +4,10 @@ import { DurableObject } from 'cloudflare:workers'
 import { z } from 'zod'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
+	userMeterNamespace,
+	userMeterRpc,
+} from '#worker/entitlements/user-meter-client.ts'
+import {
 	getPackageServiceEntryPath,
 	listPackageServices,
 } from '#worker/package-registry/manifest.ts'
@@ -340,6 +344,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private stateSnapshot: PackageServiceState =
 		createInitialPackageServiceState()
 	private activeRunPromise: Promise<void> | null = null
+	/** Per-instance shadow write chain so waitUntil hops cannot reorder. */
+	private shadowQueue: Promise<void> = Promise.resolve()
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
@@ -415,25 +421,118 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Best-effort D1 projection of service liveness for entitlement counting.
-	 * Failures must never break the service path; stop/error/idle writes still
-	 * attempt to clear `running` so quota is released when D1 is healthy.
+	 * Best-effort D1 projection of service liveness for entitlement counting,
+	 * plus a non-awaited expand-phase UserMeter shadow via `waitUntil`. D1
+	 * remains sole count/discovery authority and stays on the awaited path;
+	 * shadow DO hops must not gate lifecycle/heartbeat responses.
+	 * Stop/error/idle writes still attempt to clear `running` so quota is
+	 * released when D1 is healthy.
 	 */
 	private async projectServiceStateToD1() {
 		const binding = this.stateSnapshot.binding
 		if (!binding) return
+		const status = projectPackageServiceStatus(this.stateSnapshot.status)
+		const startedAt = this.stateSnapshot.lastStartedAt
+		const updatedAt = new Date().toISOString()
 		try {
 			await upsertPackageServiceState({
 				db: this.env.APP_DB,
 				userId: binding.userId,
 				packageId: binding.packageId,
 				serviceName: binding.serviceName,
-				status: projectPackageServiceStatus(this.stateSnapshot.status),
-				startedAt: this.stateSnapshot.lastStartedAt,
-				updatedAt: new Date().toISOString(),
+				status,
+				startedAt,
+				updatedAt,
 			})
 		} catch {
 			// Best-effort: D1 outages must not take down package services.
+		}
+		this.schedulePackageServiceStateShadow({
+			binding,
+			status,
+			startedAt,
+			sourceUpdatedAt: updatedAt,
+		})
+	}
+
+	/**
+	 * Schedule a best-effort UserMeter shadow upsert. Never awaited by
+	 * lifecycle/heartbeat paths; the helper catches so `waitUntil` cannot
+	 * reject. Appended to the per-instance shadow queue so rapid transitions
+	 * and purge (stopped upsert then delete) cannot reorder.
+	 */
+	private schedulePackageServiceStateShadow(input: {
+		binding: PackageServiceBindingState
+		status: PackageServiceProjectedStatus
+		startedAt: string | null
+		sourceUpdatedAt: string
+	}) {
+		if (!userMeterNamespace(this.env)) return
+		this.enqueueShadowTask(() =>
+			this.shadowPackageServiceStateToUserMeter(input),
+		)
+	}
+
+	/** Best-effort UserMeter shadow upsert; catches/logs so waitUntil settles. */
+	private async shadowPackageServiceStateToUserMeter(input: {
+		binding: PackageServiceBindingState
+		status: PackageServiceProjectedStatus
+		startedAt: string | null
+		sourceUpdatedAt: string
+	}) {
+		try {
+			const meter = userMeterRpc({
+				env: this.env,
+				userId: input.binding.userId,
+			})
+			await meter.upsertPackageServiceState({
+				packageId: input.binding.packageId,
+				serviceName: input.binding.serviceName,
+				status: input.status,
+				startedAt: input.startedAt,
+				sourceUpdatedAt: input.sourceUpdatedAt,
+			})
+		} catch (error) {
+			console.warn('package-service-user-meter-shadow-failed', error)
+		}
+	}
+
+	/**
+	 * Schedule a best-effort UserMeter shadow delete. Never awaited by purge;
+	 * the helper catches so `waitUntil` cannot reject. Queued after any prior
+	 * shadow upserts for this instance.
+	 */
+	private schedulePackageServiceShadowDelete(
+		binding: PackageServiceBindingState,
+	) {
+		if (!userMeterNamespace(this.env)) return
+		this.enqueueShadowTask(() => this.deletePackageServiceShadow(binding))
+	}
+
+	/**
+	 * Run shadow writes in scheduling order and register the chain with
+	 * `waitUntil`. Helpers already catch, so the queue itself does not reject.
+	 */
+	private enqueueShadowTask(task: () => Promise<void>) {
+		this.shadowQueue = this.shadowQueue.then(task, task)
+		this.ctx.waitUntil(this.shadowQueue)
+	}
+
+	/** Best-effort UserMeter shadow delete; catches/logs so waitUntil settles. */
+	private async deletePackageServiceShadow(
+		binding: PackageServiceBindingState,
+	) {
+		try {
+			const meter = userMeterRpc({
+				env: this.env,
+				userId: binding.userId,
+			})
+			await meter.deletePackageServiceState({
+				packageId: binding.packageId,
+				serviceName: binding.serviceName,
+			})
+		} catch (error) {
+			console.warn('package-service-user-meter-shadow-failed', error)
 		}
 	}
 
@@ -450,6 +549,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		} catch {
 			// Best-effort cleanup on purge.
 		}
+		this.schedulePackageServiceShadowDelete(binding)
 	}
 
 	private async ensureRunningHeartbeat() {
@@ -956,8 +1056,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		await this.ctx.storage.deleteAlarm().catch(() => {
 			// Best effort cleanup before deleteAll.
 		})
-		await this.ctx.storage.deleteAll()
+		// Clear D1 + UserMeter shadow before deleteAll.
 		await this.deleteProjectedServiceState(binding)
+		await this.ctx.storage.deleteAll()
 		return Response.json({
 			ok: true,
 		})

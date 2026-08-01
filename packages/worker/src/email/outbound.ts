@@ -11,18 +11,22 @@ import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	assertWithinEntitlement,
-	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
 	estimateEntitlementStorageEntryBytes,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
+import {
+	mirrorMailboxMessageGraphFromD1,
+	type MailboxLiveMirrorEnv,
+} from './mailbox-live-mirror.ts'
 import { emailOutboundPausedMessage } from './outbound-abuse.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
 import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
+import { reserveEmailStorageBytes } from './storage-reservation.ts'
 import {
 	createEmailThread,
 	emailAttachmentBlobKey,
@@ -34,7 +38,11 @@ import {
 	insertEmailMessageWithoutRawMime,
 	updateEmailMessageDelivery,
 } from './service.ts'
-import { type EmailMessageRecord, type EmailProcessingStatus } from './types.ts'
+import {
+	type EmailMessageRecord,
+	type EmailProcessingStatus,
+	type EmailThreadRecord,
+} from './types.ts'
 
 type SendEmailEnv = Pick<
 	Env,
@@ -47,8 +55,12 @@ type SendEmailEnv = Pick<
 	| 'CLOUDFLARE_ACCOUNT_ID'
 	| 'CLOUDFLARE_API_BASE_URL'
 	| 'CLOUDFLARE_API_TOKEN'
+	| 'USER_METER'
+	| 'MAILBOX'
+	| 'EMAIL_EVENTS'
 > &
-	EmailReportingEnv
+	EmailReportingEnv &
+	MailboxLiveMirrorEnv
 
 /**
  * Ceiling on the number of files per outbound message. Total size is
@@ -323,6 +335,27 @@ async function requireStoredEmailMessage(input: {
 	return stored
 }
 
+/**
+ * One bounded never-throw D1 → Mailbox graph mirror at outbound terminals.
+ * Passes a just-created thread when present; otherwise omits `thread` so
+ * `mirrorMailboxMessageGraphFromD1` loads it from D1. Failures never affect
+ * send/refund.
+ */
+async function mirrorOutboundMailboxMessageGraph(input: {
+	env: SendEmailEnv
+	userId: string
+	messageId: string
+	createdThread: EmailThreadRecord | null
+}) {
+	await mirrorMailboxMessageGraphFromD1({
+		env: input.env,
+		db: input.env.APP_DB,
+		userId: input.userId,
+		messageId: input.messageId,
+		...(input.createdThread ? { thread: input.createdThread } : {}),
+	})
+}
+
 async function sendViaBinding(input: {
 	env: SendEmailEnv
 	from: string
@@ -536,8 +569,9 @@ export async function sendOutboundEmail(
 			inReplyTo: input.inReplyToHeader ?? null,
 			references: input.references ?? [],
 		})
-		await assertWithinStorageBytesEntitlement({
+		await reserveEmailStorageBytes({
 			db: input.env.APP_DB,
+			env: input.env,
 			userId: input.userId,
 			email: sender.accountEmail,
 			requested:
@@ -555,11 +589,10 @@ export async function sendOutboundEmail(
 				}) + attachmentBytesTotal,
 		})
 
-		// Atomic check-and-increment: the counter tracks attempts for every user
-		// and denies the send when a plan's daily limit is reached. The
-		// `max` plan uses finite email caps rather than uncapped mail.
+		// Atomic check-and-increment via UserMeter (sole daily authority).
 		await consumeDailyEntitlement({
 			db: input.env.APP_DB,
+			env: input.env,
 			userId: input.userId,
 			email: sender.accountEmail,
 			resource: 'email_sends_per_day',
@@ -570,7 +603,7 @@ export async function sendOutboundEmail(
 		})
 
 		const existingThreadId = original?.threadId ?? input.threadId ?? null
-		const thread = existingThreadId
+		const createdThread = existingThreadId
 			? null
 			: await createEmailThread({
 					db: input.env.APP_DB,
@@ -580,7 +613,7 @@ export async function sendOutboundEmail(
 					rootMessageIdHeader: input.inReplyToHeader ?? null,
 					lastMessageAt: new Date().toISOString(),
 				})
-		const threadId = existingThreadId ?? thread?.id ?? null
+		const threadId = existingThreadId ?? createdThread?.id ?? null
 		const providerHeaders = buildProviderHeaders(storedHeaders)
 		const message = await insertEmailMessageWithoutRawMime({
 			db: input.env.APP_DB,
@@ -616,6 +649,13 @@ export async function sendOutboundEmail(
 				sentAt: null,
 			},
 		})
+		const mirrorMailboxGraph = () =>
+			mirrorOutboundMailboxMessageGraph({
+				env: input.env,
+				userId: input.userId,
+				messageId: message.id,
+				createdThread,
+			})
 		try {
 			await storeOutboundAttachments({
 				db: input.env.APP_DB,
@@ -654,6 +694,7 @@ export async function sendOutboundEmail(
 			}).catch((eventError) => {
 				console.warn('email-attachment-failure-event-insert-failed', eventError)
 			})
+			await mirrorMailboxGraph()
 			throw error
 		}
 		await insertEmailDeliveryEvent({
@@ -721,6 +762,7 @@ export async function sendOutboundEmail(
 				providerMessageId,
 				detail: { providerMessageId },
 			})
+			await mirrorMailboxGraph()
 			return {
 				message: await requireStoredEmailMessage({
 					env: input.env,
@@ -756,6 +798,7 @@ export async function sendOutboundEmail(
 			}).catch((eventError) => {
 				console.warn('email-delivery-failure-event-insert-failed', eventError)
 			})
+			await mirrorMailboxGraph()
 			return {
 				message:
 					(await getEmailMessageById({

@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import {
+	consoleInfo,
 	consoleWarn,
 	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
@@ -52,6 +53,7 @@ function source(overrides: Record<string, unknown> = {}) {
 		manifest_path: 'package.json',
 		source_root: '/',
 		last_external_check_at: null,
+		external_check_until: null,
 		created_at: '2026-05-04T00:00:00.000Z',
 		updated_at: '2026-05-04T00:00:00.000Z',
 		...overrides,
@@ -133,6 +135,74 @@ test('publishes changed Artifacts HEADs and records reconcile checks', async () 
 		}),
 	)
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
+})
+
+test('reconcile keeps active token horizons, clears expired matching horizons, and widens the daily backstop', async () => {
+	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([
+		source({
+			id: 'source-active',
+			published_commit: 'commit-current',
+			external_check_until: '2026-05-04T03:00:00.000Z',
+		}),
+		source({
+			id: 'source-expired',
+			repo_id: 'repo-2',
+			published_commit: 'commit-current',
+			external_check_until: '2026-05-04T01:00:00.000Z',
+		}),
+	])
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-current',
+	})
+
+	const regular = await reconcileArtifactsPushes({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		now: new Date('2026-05-04T02:00:00.000Z'),
+	})
+
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			id: 'source-active',
+			userId: 'user-1',
+			lastExternalCheckAt: '2026-05-04T02:00:00.000Z',
+		},
+	)
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			id: 'source-expired',
+			userId: 'user-1',
+			lastExternalCheckAt: '2026-05-04T02:00:00.000Z',
+			externalCheckUntil: null,
+		},
+	)
+	expect(consoleInfo).toHaveBeenCalledWith(
+		'reconcile_artifacts_pushes',
+		expect.objectContaining({
+			batches: 1,
+			budgetExhausted: false,
+		}),
+	)
+	expect(regular.checked).toBe(2)
+
+	mockModule.listEntitySourcesForExternalReconcile.mockClear()
+	mockModule.listEntitySourcesForExternalReconcile.mockResolvedValue([])
+	await reconcileArtifactsPushes({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://kody.test',
+		now: new Date('2026-05-04T03:02:00.000Z'),
+	})
+	expect(mockModule.listEntitySourcesForExternalReconcile).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			before: '2026-05-04T02:57:00.000Z',
+			limit: 50,
+			includeAll: true,
+		},
+	)
 })
 
 test('reconcile records source checks and continues the batch when a source or its check write fails', async () => {

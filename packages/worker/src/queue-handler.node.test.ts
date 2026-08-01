@@ -1,10 +1,12 @@
 import { expect, test, vi } from 'vitest'
+import { scheduledDispatchQueueName } from '#worker/scheduled/scheduled-dispatch-queue-names.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mocks = vi.hoisted(() => ({
 	handleCommunityActivityDispatchQueue: vi.fn(),
 	handleEmailDeliveryQueue: vi.fn(),
 	handlePlatformFeedbackDispatchQueue: vi.fn(),
+	handleScheduledDispatchQueue: vi.fn(),
 }))
 
 vi.mock('#worker/community/activity-dispatch-queue.ts', () => ({
@@ -26,6 +28,10 @@ vi.mock('#worker/platform-feedback/dispatch-queue.ts', () => ({
 		mocks.handlePlatformFeedbackDispatchQueue,
 }))
 
+vi.mock('#worker/scheduled/scheduled-dispatch-queue.ts', () => ({
+	handleScheduledDispatchQueue: mocks.handleScheduledDispatchQueue,
+}))
+
 const { handleQueueBatch } = await import('./queue-handler.ts')
 
 function createBatch(queue: string) {
@@ -44,11 +50,13 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	const emailBatch = createBatch('kody-email-delivery')
 	const feedbackBatch = createBatch('kody-platform-feedback-dispatch')
 	const communityActivityBatch = createBatch('kody-community-activity-dispatch')
+	const scheduledBatch = createBatch(scheduledDispatchQueueName)
 	const unknownBatch = createBatch('unexpected-queue')
 
 	await handleQueueBatch(emailBatch, env, ctx)
 	await handleQueueBatch(feedbackBatch, env, ctx)
 	await handleQueueBatch(communityActivityBatch, env, ctx)
+	await handleQueueBatch(scheduledBatch, env, ctx)
 	await handleQueueBatch(unknownBatch, env, ctx)
 
 	expect(mocks.handleEmailDeliveryQueue).toHaveBeenCalledTimes(1)
@@ -66,6 +74,11 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	expect(mocks.handleCommunityActivityDispatchQueue).toHaveBeenCalledTimes(1)
 	expect(mocks.handleCommunityActivityDispatchQueue).toHaveBeenCalledWith(
 		communityActivityBatch,
+		env,
+		ctx,
+	)
+	expect(mocks.handleScheduledDispatchQueue).toHaveBeenCalledWith(
+		scheduledBatch,
 		env,
 		ctx,
 	)

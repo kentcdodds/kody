@@ -4,6 +4,10 @@ import {
 	deterministicEmbedding,
 } from '#worker/vectorize/embedding.ts'
 import {
+	createInMemoryUserMeterEnv,
+	createPermissiveAccountWriteLeaseDbHooks,
+} from '#worker/test-support/user-meter.ts'
+import {
 	acknowledgeSurfacedMemories,
 	deleteMemory,
 	getMemory,
@@ -21,6 +25,7 @@ function createMemoryTestDb() {
 	const memories = new Map<string, McpMemoryRow>()
 	const suppressions = new Map<string, McpMemoryConversationSuppressionRow>()
 	const batches: Array<Array<unknown>> = []
+	const writeLeaseDb = createPermissiveAccountWriteLeaseDbHooks()
 
 	function suppressionKey(
 		userId: string,
@@ -45,6 +50,12 @@ function createMemoryTestDb() {
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
+							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
+								return writeLeaseDb.deletingAtFirstResult() as T
+							}
+							if (writeLeaseDb.supportsHeldLeaseQuery(query)) {
+								return writeLeaseDb.heldLeaseFirstResult() as T
+							}
 							if (
 								normalizedQuery.startsWith(
 									'select 1 as held from account_write_leases',
@@ -122,16 +133,8 @@ function createMemoryTestDb() {
 							return { results: [] as Array<T>, meta: { changes: 0 } }
 						},
 						async run() {
-							if (
-								normalizedQuery.startsWith(
-									'insert into account_write_leases',
-								) ||
-								normalizedQuery.startsWith('update account_write_leases')
-							) {
-								return { meta: { changes: 1 } }
-							}
-							if (normalizedQuery.startsWith('update users')) {
-								return { meta: { changes: 1 } }
+							if (writeLeaseDb.supportsWriteLeaseRun(query)) {
+								return writeLeaseDb.writeLeaseRunResult()
 							}
 							if (normalizedQuery.startsWith('insert into mcp_memories')) {
 								const [
@@ -290,10 +293,25 @@ function createMemoryTestDb() {
 	return { db, memories, suppressions, batches }
 }
 
-const env = (db: D1Database) =>
+const env = (
+	db: D1Database,
+	bindings: Partial<
+		Pick<Env, 'AI' | 'CAPABILITY_VECTOR_INDEX' | 'SENTRY_ENVIRONMENT'>
+	> = {},
+	meter = createInMemoryUserMeterEnv(),
+) =>
 	({
 		APP_DB: db,
-	}) satisfies Pick<Env, 'APP_DB'> as Pick<Env, 'APP_DB' | 'AI'>
+		USER_METER: meter.env.USER_METER,
+		...bindings,
+	}) satisfies Pick<Env, 'APP_DB' | 'USER_METER'> as Pick<
+		Env,
+		| 'APP_DB'
+		| 'USER_METER'
+		| 'AI'
+		| 'CAPABILITY_VECTOR_INDEX'
+		| 'SENTRY_ENVIRONMENT'
+	>
 
 function createDeterministicAiBinding(): Ai {
 	return {
@@ -385,7 +403,7 @@ test('memory service upserts, verifies, and soft deletes', async () => {
 	expect(deleted?.status).toBe('deleted')
 
 	const loaded = await getMemory({
-		env: { APP_DB: testDb.db },
+		env: runtimeEnv,
 		userId: 'user-123',
 		memoryId: created.memory.id,
 	})
@@ -577,7 +595,7 @@ test('memory service rejects invalid source uris and tolerates missing stored va
 	} as unknown as McpMemoryRow)
 
 	const loaded = await getMemory({
-		env: { APP_DB: testDb.db },
+		env: runtimeEnv,
 		userId: 'user-123',
 		memoryId: 'legacy-memory',
 	})
@@ -639,16 +657,20 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 
 	const vectorQueryCalls: Array<{
 		topK: number
+		namespace?: string
 		filter?: Record<string, unknown>
 	}> = []
-	const runtimeEnv = {
-		APP_DB: testDb.db,
+	const runtimeEnv = env(testDb.db, {
 		SENTRY_ENVIRONMENT: 'production',
 		AI: createDeterministicAiBinding(),
 		CAPABILITY_VECTOR_INDEX: {
 			async query(
 				_values: Array<number>,
-				options: { topK: number; filter?: Record<string, unknown> },
+				options: {
+					topK: number
+					namespace?: string
+					filter?: Record<string, unknown>
+				},
 			) {
 				vectorQueryCalls.push(options)
 				return {
@@ -656,7 +678,7 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 				}
 			},
 		},
-	} as unknown as Pick<Env, 'APP_DB' | 'CAPABILITY_VECTOR_INDEX'>
+	})
 
 	const result = await searchMemoryRecords({
 		env: runtimeEnv,
@@ -665,16 +687,21 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 		limit: 5,
 	})
 
-	// One Vectorize query with user/kind/status metadata filters; no second
-	// query happens inside the fusion step.
-	expect(vectorQueryCalls).toHaveLength(1)
+	// The migration reads both the user namespace and legacy default namespace
+	// with identical user/kind/status metadata filters.
+	expect(vectorQueryCalls).toHaveLength(2)
 	expect(vectorQueryCalls[0]).toMatchObject({
+		namespace: 'user-123',
 		filter: {
 			kind: { $eq: 'memory' },
 			userId: { $eq: 'user-123' },
 			status: { $in: ['active', 'archived'] },
 		},
 	})
+	expect(vectorQueryCalls[1]).toMatchObject({
+		filter: vectorQueryCalls[0]!.filter,
+	})
+	expect(vectorQueryCalls[1]).not.toHaveProperty('namespace')
 	const matchedIds = result.matches.map((match) => match.id)
 	expect(matchedIds).toContain('memory-old-vector-hit')
 	expect(matchedIds).toContain('memory-recent')

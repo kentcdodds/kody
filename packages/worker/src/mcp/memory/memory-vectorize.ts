@@ -3,6 +3,7 @@ import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#worker/vectorize/embedding.ts'
+import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 import { type MemoryStatus } from './types.ts'
 
@@ -27,6 +28,7 @@ export async function upsertMemoryVector(
 		{
 			id: memoryVectorId(input.memoryId),
 			values,
+			namespace: userVectorNamespace(input.userId),
 			metadata: {
 				kind: 'memory',
 				userId: input.userId,

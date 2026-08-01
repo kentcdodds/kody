@@ -5,32 +5,43 @@ const mocks = vi.hoisted(() => ({
 	dispatchRunErrorSubscriptionEvents: vi.fn(async () => []),
 	finishRun: vi.fn(async () => ({ ok: true })),
 	startRun: vi.fn(async () => ({ ok: true })),
-	recordSuccessfulPackageRun: vi.fn(async () => {}),
+	listPackageRunSuccesses: vi.fn(async () => []),
+	listActivationMilestones: vi.fn(async () => []),
+	isActivationInitialized: vi.fn(async () => ({ initialized: false })),
+	importActivationState: vi.fn(async () => ({ initialized: true })),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
 	dispatchRunErrorSubscriptionEvents: mocks.dispatchRunErrorSubscriptionEvents,
 }))
 
-vi.mock('#worker/usage/activation.ts', () => ({
-	recordSuccessfulPackageRun: mocks.recordSuccessfulPackageRun,
-}))
+const {
+	beginRunRecord,
+	ensureActivationStateSeeded,
+	finishRunRecord,
+	isMissingD1RelationError,
+	listActivationMilestones,
+	listPackageRunSuccesses,
+	recordRunRecord,
+} = await import('./service.ts')
 
-const { beginRunRecord, finishRunRecord, recordRunRecord } =
-	await import('./service.ts')
-
-function createEnv() {
+function createEnv(overrides: Partial<Env> = {}) {
 	return {
 		RUN_LOG: {
 			idFromName: () => ({ toString: () => 'run-log-id' }),
 			get: () => ({
 				startRun: mocks.startRun,
 				finishRun: mocks.finishRun,
+				listPackageRunSuccesses: mocks.listPackageRunSuccesses,
+				listActivationMilestones: mocks.listActivationMilestones,
+				isActivationInitialized: mocks.isActivationInitialized,
+				importActivationState: mocks.importActivationState,
 			}),
 		},
 		APP_DB: {},
 		BUNDLE_ARTIFACTS_KV: {},
 		APP_BASE_URL: 'https://example.com',
+		...overrides,
 	} as unknown as Env
 }
 
@@ -72,7 +83,7 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 	const successHandle = beginRunRecord({
 		env,
 		userId: 'user-1',
-		context: { surface: 'job', name: 'ok' },
+		context: { surface: 'job', name: 'ok', packageId: 'pkg-a' },
 	})
 	await finishRunRecord({
 		env,
@@ -80,6 +91,7 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 		status: 'success',
 	})
 	expect(mocks.dispatchRunErrorSubscriptionEvents).not.toHaveBeenCalled()
+	expect(mocks.finishRun).toHaveBeenCalledTimes(2)
 
 	const subscriptionHandle = beginRunRecord({
 		env,
@@ -145,6 +157,82 @@ test('finishRunRecord dispatches run.error.recorded only for persisted non-subsc
 	).resolves.toBeUndefined()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'run-error-subscription-dispatch-failed',
+		expect.any(Error),
+	)
+})
+
+test('isMissingD1RelationError treats no-such-table and no-such-column as empty', () => {
+	expect(isMissingD1RelationError(new Error('no such table: jobs'))).toBe(true)
+	expect(
+		isMissingD1RelationError(
+			new Error('D1_ERROR: no such column: legacy_seeded: SQLITE_ERROR'),
+		),
+	).toBe(true)
+	expect(isMissingD1RelationError(new Error('D1 unavailable'))).toBe(false)
+})
+
+test('activation seed treats no-such-column as successful empty import', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mocks.isActivationInitialized.mockReset()
+	mocks.importActivationState.mockReset()
+	mocks.isActivationInitialized.mockResolvedValue({ initialized: false })
+	mocks.importActivationState.mockResolvedValue({ initialized: true })
+
+	const env = createEnv({
+		APP_DB: {
+			prepare: () => ({
+				bind: () => ({
+					all: async () => {
+						throw new Error(
+							'D1_ERROR: no such column: success_count: SQLITE_ERROR',
+						)
+					},
+				}),
+			}),
+		} as unknown as D1Database,
+	})
+
+	await ensureActivationStateSeeded({ env, userId: 'user-1' })
+	expect(mocks.importActivationState).toHaveBeenCalledTimes(1)
+	expect(mocks.importActivationState).toHaveBeenCalledWith({
+		packageRunSuccesses: [],
+		milestones: [],
+	})
+	expect(consoleWarn).not.toHaveBeenCalledWith(
+		'run-log-activation-seed-failed',
+		expect.anything(),
+	)
+})
+
+test('activation reads never throw when RunLog is missing or RPC fails', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const envWithoutBinding = {} as Env
+	await expect(
+		listPackageRunSuccesses({ env: envWithoutBinding, userId: 'user-1' }),
+	).resolves.toEqual([])
+	await expect(
+		listActivationMilestones({ env: envWithoutBinding, userId: 'user-1' }),
+	).resolves.toEqual([])
+
+	mocks.listPackageRunSuccesses.mockRejectedValueOnce(
+		new Error('do unavailable'),
+	)
+	mocks.listActivationMilestones.mockRejectedValueOnce(
+		new Error('do unavailable'),
+	)
+	const env = createEnv()
+	await expect(
+		listPackageRunSuccesses({ env, userId: 'user-1' }),
+	).resolves.toEqual([])
+	await expect(
+		listActivationMilestones({ env, userId: 'user-1' }),
+	).resolves.toEqual([])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'package-run-successes-list-failed',
+		expect.any(Error),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'activation-milestones-list-failed',
 		expect.any(Error),
 	)
 })

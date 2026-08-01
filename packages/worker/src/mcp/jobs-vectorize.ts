@@ -3,6 +3,7 @@ import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#worker/vectorize/embedding.ts'
+import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 
 export function jobVectorId(jobId: string): string {
@@ -24,6 +25,7 @@ export async function upsertJobVector(
 		{
 			id: jobVectorId(input.jobId),
 			values,
+			namespace: userVectorNamespace(input.userId),
 			metadata: { kind: 'job', userId: input.userId },
 		},
 	])

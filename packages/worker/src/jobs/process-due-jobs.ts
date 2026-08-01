@@ -108,7 +108,6 @@ export async function processDueJobs(input: {
 				{
 					updatedAt: now.toISOString(),
 					enabled: false,
-					lastRunError: failedRescheduleError,
 				},
 			)
 			saveJobs.push(updated)
@@ -139,21 +138,21 @@ export function applyExecutionOutcome(
 	overrides: Partial<JobRecord> = {},
 ): JobRecord {
 	const status: JobRunStatus = outcome.execution.ok ? 'success' : 'error'
-	const executionError =
-		overrides.lastRunError ??
-		(outcome.execution.ok ? undefined : outcome.execution.error)
 	return {
 		...job,
 		updatedAt: overrides.updatedAt ?? outcome.finishedAt,
+		// Retention ages from execution time and classifies once jobs by status.
 		lastRunAt: outcome.finishedAt,
 		lastRunStatus: status,
-		lastRunError: executionError,
-		lastDurationMs: outcome.durationMs,
+		// RunLog owns last_run_error, last_duration_ms, and counters. Leave the
+		// D1 copies untouched so finalization does not copy them back.
+		lastRunError: job.lastRunError,
+		lastDurationMs: job.lastDurationMs,
 		nextRunAt: overrides.nextRunAt ?? job.nextRunAt,
 		enabled: overrides.enabled ?? job.enabled,
 		killSwitchEnabled: overrides.killSwitchEnabled ?? job.killSwitchEnabled,
-		runCount: job.runCount + 1,
-		successCount: job.successCount + (outcome.execution.ok ? 1 : 0),
-		errorCount: job.errorCount + (outcome.execution.ok ? 0 : 1),
+		runCount: job.runCount,
+		successCount: job.successCount,
+		errorCount: job.errorCount,
 	}
 }

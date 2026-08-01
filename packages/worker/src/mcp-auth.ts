@@ -214,6 +214,7 @@ export async function handleMcpRequest({
 		db: env.APP_DB,
 		stableUserId: mcpUser.userId,
 		holder: `mcp:${request.method} ${url.pathname}`,
+		env,
 		waitUntil: ctx.waitUntil.bind(ctx),
 		write: async () =>
 			await fetchMcp(

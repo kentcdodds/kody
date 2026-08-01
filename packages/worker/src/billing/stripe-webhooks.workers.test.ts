@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers'
+import { env } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { silenceExpectedConsoleErrors } from '#worker/test-support/console-spies.ts'

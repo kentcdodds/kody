@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { planLimits } from '#worker/entitlements/plans.ts'
 import { storageEstimateReadRetryDelaysMs } from '#worker/storage-runner.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
@@ -198,7 +200,7 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 // bucket in a large inventory, different bucket each time. Once a peer's
 // estimate is stored in D1, its Durable Object must never be probed (let
 // alone block) another bucket's write.
-test('an unreachable peer bucket with a stored estimate never blocks a write', async () => {
+test('peer estimates stay out of the live probe path while D1 + target compose the baseline', async () => {
 	const peerStorageIds = Array.from(
 		{ length: 40 },
 		(_value, index) => `package:peer-${String(index)}`,
@@ -228,4 +230,48 @@ test('an unreachable peer bucket with a stored estimate never blocks a write', a
 
 	// Only the write target was measured live; no peer fan-out happened.
 	expect(probedStorageIds).toEqual(['package:target'])
+
+	const userId = 'user-1'
+	const limit = planLimits.free.maxStorageBytes
+	mockModule.readUserD1StorageBytes.mockImplementation(
+		async (input: { userId: string }) => {
+			expect(input.userId).toBe(userId)
+			return limit - 100
+		},
+	)
+	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
+		{ storageId: 'package:peer', estimatedBytes: 50 },
+		{ storageId: 'package:target', estimatedBytes: 200 },
+	])
+	probedStorageIds.length = 0
+	const composeEstimate = async (storageId: string) => {
+		probedStorageIds.push(storageId)
+		return { estimatedBytes: storageId === 'package:target' ? 60 : 50 }
+	}
+
+	const denied = await assertStorageRunnerWriteWithinEntitlement({
+		env: createEstimateEnv(composeEstimate),
+		userId,
+		email: null,
+		storageId: 'package:target',
+		requested: 1,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	expect(isEntitlementLimitError(denied)).toBe(true)
+	expect(denied).toMatchObject({
+		details: {
+			resource: 'storage_bytes',
+			current: limit - 100 + 50 + 60,
+			limit,
+		},
+	})
+	expect(probedStorageIds).toEqual(['package:target'])
+	expect(mockModule.readUserD1StorageBytes).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId,
+			db: expect.anything(),
+		}),
+	)
 })

@@ -9,7 +9,6 @@ import {
 } from '#worker/entitlements/plans.ts'
 import {
 	assertWithinEntitlement,
-	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryBytes,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
@@ -48,6 +47,11 @@ import {
 	getSystemEmailDomain,
 } from './platform-address.ts'
 import {
+	scheduleInboundReceivedTerminalWork,
+	scheduleInboundRejectedTerminalWork,
+	type InboundMailboxEnv,
+} from './inbound-mailbox.ts'
+import {
 	recordEmailReportingEvent,
 	type EmailReportingEnv,
 } from './reporting-events.ts'
@@ -57,6 +61,7 @@ import {
 	RetryableInboundStorageError,
 	storeIdempotentInboundEmail,
 } from './service.ts'
+import { reserveEmailStorageBytes } from './storage-reservation.ts'
 import {
 	countStoredSystemEmailMessages,
 	ensureSystemEmailInbox,
@@ -157,6 +162,7 @@ async function cleanupInboundDurability(input: {
 	}
 }
 
+/** System-inbox effects only (no Mailbox dual-write). */
 async function scheduleInboundDeliveryEffects(input: {
 	env: Parameters<typeof processInboundDeliveryEffects>[0]['env']
 	userId: string
@@ -200,8 +206,12 @@ export async function handleInboundEmail(
 		| 'APP_BASE_URL'
 		| 'USER_EMAIL_DOMAIN'
 		| 'USAGE_EVENTS'
+		| 'USER_METER'
+		| 'MAILBOX'
+		| 'EMAIL_EVENTS'
 	> &
-		EmailReportingEnv,
+		EmailReportingEnv &
+		InboundMailboxEnv,
 	ctx?: ExecutionContext,
 ) {
 	const recipient = normalizeEmailAddress(message.to)
@@ -466,14 +476,18 @@ export async function handleInboundEmail(
 					// before their durable quota claim. A retry with an existing
 					// ledger bypasses both so already-charged mail can still repair
 					// after unrelated writes fill the mailbox.
-					await assertWithinStorageBytesEntitlement({
+					await reserveEmailStorageBytes({
 						db: env.APP_DB,
+						env,
 						userId,
 						email: account.email,
 						requested: estimateInboundEmailStorageBytes({
 							message,
 							recipient,
 						}),
+						waitUntil: ctx
+							? (promise: Promise<unknown>) => ctx.waitUntil(promise)
+							: undefined,
 					})
 					await assertWithinEntitlement({
 						db: env.APP_DB,
@@ -487,8 +501,10 @@ export async function handleInboundEmail(
 					)
 					const receivesToday = await readUserInboundReceiveCount({
 						db: env.APP_DB,
+						env,
 						userId,
 						day: userInboundQuotaDay(quotaNow),
+						now: quotaNow,
 					})
 					if (receivesToday >= receiveLimit) {
 						message.setReject('Recipient mailbox is over quota.')
@@ -535,6 +551,9 @@ export async function handleInboundEmail(
 					})
 				}
 			}
+			const waitUntil = ctx
+				? (promise: Promise<unknown>) => ctx.waitUntil(promise)
+				: undefined
 			let claimedDelivery: InboundDelivery
 			let chargedReceive = false
 			try {
@@ -547,6 +566,7 @@ export async function handleInboundEmail(
 					}
 					claimedDelivery = await chargeUserInboundDeliveryOnce({
 						db: env.APP_DB,
+						env,
 						delivery: chargeCandidate,
 						plan: account.plan,
 						limit: resolveEmailResourceLimit(
@@ -554,6 +574,7 @@ export async function handleInboundEmail(
 							'email_receives_per_day',
 						),
 						now: quotaNow,
+						waitUntil,
 					})
 					// The charge helper returns the candidate object only when this
 					// invocation won the atomic D1 charge. A concurrently committed
@@ -585,6 +606,12 @@ export async function handleInboundEmail(
 				message.setReject(
 					claimedDelivery.rejectionReason ?? 'Failed to parse inbound email.',
 				)
+				await scheduleInboundRejectedTerminalWork({
+					env,
+					userId,
+					deliveryId: claimedDelivery.deliveryId,
+					ctx,
+				})
 				return
 			}
 			if (claimedDelivery.state === 'received') {
@@ -594,10 +621,12 @@ export async function handleInboundEmail(
 					messageId: claimedDelivery.messageId,
 				})
 				if (existing) {
-					await scheduleInboundDeliveryEffects({
+					await scheduleInboundReceivedTerminalWork({
 						env,
 						userId,
+						messageId: claimedDelivery.messageId,
 						deliveryId: claimedDelivery.deliveryId,
+						expectedFinalizationToken: claimedDelivery.finalizationToken,
 						durationMs: Date.now() - receiveStartedAtMs,
 						ctx,
 						logLabel: 'Inbound email effect reconciliation failed',
@@ -621,6 +650,12 @@ export async function handleInboundEmail(
 				})
 				if (!rejected) return
 				await recordReceiveUsage({ outcome: 'error' })
+				await scheduleInboundRejectedTerminalWork({
+					env,
+					userId,
+					deliveryId: claimedDelivery.deliveryId,
+					ctx,
+				})
 				return
 			}
 			const storageClaim = await claimInboundDeliveryStorage({
@@ -630,7 +665,19 @@ export async function handleInboundEmail(
 				usageStartedAt: new Date(receiveStartedAtMs).toISOString(),
 			})
 			if (!storageClaim.claimed) {
-				if (storageClaim.delivery?.state === 'received') return
+				if (storageClaim.delivery?.state === 'received') {
+					await scheduleInboundReceivedTerminalWork({
+						env,
+						userId,
+						messageId: claimedDelivery.messageId,
+						deliveryId: storageClaim.delivery.deliveryId,
+						expectedFinalizationToken: storageClaim.delivery.finalizationToken,
+						durationMs: Date.now() - receiveStartedAtMs,
+						ctx,
+						logLabel: 'Inbound email effect reconciliation failed',
+					})
+					return
+				}
 				throw new RetryableInboundStorageError(
 					'Inbound delivery is already being stored; retry the stable delivery.',
 				)
@@ -656,10 +703,12 @@ export async function handleInboundEmail(
 				})
 				throw error
 			}
+			// Mailbox dual-write only after durable D1/R2 commit + finalization win.
 			if (!storedResult.wonFinalization) return
-			await scheduleInboundDeliveryEffects({
+			await scheduleInboundReceivedTerminalWork({
 				env,
 				userId,
+				messageId: storedResult.finalizedDelivery.messageId,
 				deliveryId: storedResult.finalizedDelivery.deliveryId,
 				expectedFinalizationToken:
 					storedResult.finalizedDelivery.finalizationToken,
