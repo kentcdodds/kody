@@ -15,10 +15,7 @@ import {
 	sortIdsByScore,
 	tokenizeSearchText,
 } from '#worker/vectorize/scoring.ts'
-import {
-	BUILTIN_VECTOR_NAMESPACE,
-	queryVectorizeWithNamespaceFallback,
-} from '#worker/vectorize/vector-namespaces.ts'
+import { BUILTIN_VECTOR_NAMESPACE } from '#worker/vectorize/vector-namespaces.ts'
 
 /**
  * Indexed metadata `kind` for builtin capability vectors in the shared
@@ -226,15 +223,11 @@ export async function searchCapabilities(input: {
 			input.vectorMetadataFilter,
 		)
 
-		const vecMatches = await queryVectorizeWithNamespaceFallback({
-			index: vectorIndex,
-			vector: qVec,
+		const vecMatches = await vectorIndex.query(qVec, {
+			topK,
 			namespace: BUILTIN_VECTOR_NAMESPACE,
-			options: {
-				topK,
-				returnMetadata: 'none',
-				filter,
-			},
+			returnMetadata: 'none',
+			filter,
 		})
 		const fromIndex: Array<string> = []
 		const seen = new Set<string>()

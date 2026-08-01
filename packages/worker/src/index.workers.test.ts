@@ -124,6 +124,7 @@ vi.mock('#worker/storage-buckets/estimate-backfill.ts', () => ({
 }))
 
 vi.mock('#worker/entitlements/d1-storage-reconciliation.ts', () => ({
+	d1StorageReconciliationBatchSize: 8,
 	reconcileD1StorageBytes: mocks.reconcileD1StorageBytes,
 }))
 

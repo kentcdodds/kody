@@ -1,4 +1,5 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
+import { runD1WithRetry } from '#worker/d1-retry.ts'
 
 export const auditEventCategories = [
 	'account',
@@ -100,9 +101,10 @@ async function persistAuditEvent(
 	payload: Awaited<ReturnType<typeof buildAuditPayload>>,
 ) {
 	if (!db) return
-	await db
-		.prepare(
-			`INSERT INTO audit_events (
+	await runD1WithRetry(() =>
+		db
+			.prepare(
+				`INSERT INTO audit_events (
 				category,
 				action,
 				result,
@@ -113,19 +115,20 @@ async function persistAuditEvent(
 				reason,
 				timestamp
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			payload.category,
-			payload.action,
-			payload.result,
-			payload.emailHash ?? null,
-			payload.ipHash ?? null,
-			payload.clientId ?? null,
-			payload.path ?? null,
-			payload.reason ?? null,
-			payload.timestamp,
-		)
-		.run()
+			)
+			.bind(
+				payload.category,
+				payload.action,
+				payload.result,
+				payload.emailHash ?? null,
+				payload.ipHash ?? null,
+				payload.clientId ?? null,
+				payload.path ?? null,
+				payload.reason ?? null,
+				payload.timestamp,
+			)
+			.run(),
+	)
 }
 
 export function auditDatabaseFromEnv(runtimeEnv: {
@@ -143,13 +146,27 @@ export async function logAuditEvent(event: AuditEvent) {
 	try {
 		const payload = await buildAuditPayload(event)
 		console.info('audit-event', JSON.stringify(payload))
-		if (!event.db) return
-		await Promise.all([
+		if (!event.db) return { persisted: false, failedSinks: [] }
+		const results = await Promise.allSettled([
 			persistAuditEvent(event.db, payload),
 			persistAuditEvent(event.auditDb, payload),
 		])
+		const sinkNames = ['APP_DB', 'AUDIT_DB'] as const
+		const failedSinks = results.flatMap((result, index) =>
+			result.status === 'rejected' ? [sinkNames[index] ?? 'unknown'] : [],
+		)
+		if (failedSinks.length > 0) {
+			console.warn('audit-event-write-failed', {
+				failedSinks,
+				errors: results.flatMap((result) =>
+					result.status === 'rejected' ? [result.reason] : [],
+				),
+			})
+		}
+		return { persisted: failedSinks.length === 0, failedSinks }
 	} catch (error) {
 		console.warn('audit-event-failed', error)
+		return { persisted: false, failedSinks: ['event'] }
 	}
 }
 

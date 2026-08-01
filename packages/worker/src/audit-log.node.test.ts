@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { logAuditEvent } from './audit-log.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 vi.unmock('#worker/audit-log.ts')
 
@@ -57,4 +58,88 @@ test('persisted audit events dual-write while optional persistence stays optiona
 			reason: 'invalid_password',
 		},
 	])
+})
+
+function createAuditDbWithRun(run: () => Promise<unknown>) {
+	return {
+		prepare() {
+			return {
+				bind() {
+					return { run }
+				},
+			}
+		},
+	} as unknown as D1Database
+}
+
+test('audit dual writes retry transient errors and report partial sink failures', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const transientRun = vi
+		.fn()
+		.mockRejectedValueOnce(new Error('D1_ERROR: Network connection lost'))
+		.mockResolvedValueOnce({ meta: { changes: 1 } })
+	const retryAudit = createAuditDb()
+	const retryResult = await logAuditEvent({
+		db: createAuditDbWithRun(transientRun),
+		auditDb: retryAudit.db,
+		category: 'account',
+		action: 'transient_retry',
+		result: 'success',
+	})
+	expect(retryResult).toEqual({ persisted: true, failedSinks: [] })
+	expect(transientRun).toHaveBeenCalledTimes(2)
+	expect(
+		retryAudit.sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM audit_events`)
+			.get(),
+	).toEqual({ count: 1 })
+
+	const successfulAudit = createAuditDb()
+	const failedAppResult = await logAuditEvent({
+		db: createAuditDbWithRun(() =>
+			Promise.reject(new Error('APP_DB permanent failure')),
+		),
+		auditDb: successfulAudit.db,
+		category: 'account',
+		action: 'app_failed',
+		result: 'failure',
+	})
+	expect(failedAppResult).toEqual({
+		persisted: false,
+		failedSinks: ['APP_DB'],
+	})
+	expect(
+		successfulAudit.sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM audit_events`)
+			.get(),
+	).toEqual({ count: 1 })
+
+	const successfulApp = createAuditDb()
+	const failedAuditResult = await logAuditEvent({
+		db: successfulApp.db,
+		auditDb: createAuditDbWithRun(() =>
+			Promise.reject(new Error('AUDIT_DB permanent failure')),
+		),
+		category: 'account',
+		action: 'audit_failed',
+		result: 'failure',
+	})
+	expect(failedAuditResult).toEqual({
+		persisted: false,
+		failedSinks: ['AUDIT_DB'],
+	})
+	expect(
+		successfulApp.sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM audit_events`)
+			.get(),
+	).toEqual({ count: 1 })
+	expect(consoleWarn).toHaveBeenCalledTimes(2)
+	expect(consoleWarn).toHaveBeenCalledWith('audit-event-write-failed', {
+		failedSinks: ['APP_DB'],
+		errors: [expect.any(Error)],
+	})
+	expect(consoleWarn).toHaveBeenCalledWith('audit-event-write-failed', {
+		failedSinks: ['AUDIT_DB'],
+		errors: [expect.any(Error)],
+	})
 })

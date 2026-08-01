@@ -60,7 +60,7 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 		displayName: actor.username,
 	}
 
-	expect(await resolvePackageOwnerContext(env.APP_DB, personUser)).toEqual({
+	expect(await resolvePackageOwnerContext(env, personUser)).toEqual({
 		ownerUserId: person.stableUserId,
 		ownerScope: person.username,
 		ownerEmail: person.email,
@@ -74,7 +74,7 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 		createdByUserId: person.stableUserId,
 	})
 	expect(
-		await resolvePackageOwnerContext(env.APP_DB, personUser, platform.username),
+		await resolvePackageOwnerContext(env, personUser, platform.username),
 	).toEqual({
 		ownerUserId: platform.stableUserId,
 		ownerScope: platform.username,
@@ -84,15 +84,15 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 	})
 
 	await expect(
-		resolvePackageOwnerContext(env.APP_DB, actorUser, otherPerson.username),
+		resolvePackageOwnerContext(env, actorUser, otherPerson.username),
 	).rejects.toThrow(/not a platform account scope/)
 
 	await expect(
-		resolvePackageOwnerContext(env.APP_DB, actorUser, platform.username),
+		resolvePackageOwnerContext(env, actorUser, platform.username),
 	).rejects.toThrow(/do not have a package scope grant/)
 
 	await expect(
-		resolvePackageOwnerContext(env.APP_DB, actorUser, 'missing-scope-xyz'),
+		resolvePackageOwnerContext(env, actorUser, 'missing-scope-xyz'),
 	).rejects.toThrow(/not a platform account scope/)
 
 	// Email on the caller context can drift (for example mid-request email
@@ -100,7 +100,7 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 	// still resolve from identity, not email.
 	const staleEmail = `stale-${crypto.randomUUID()}@example.com`
 	expect(
-		await resolvePackageOwnerContext(env.APP_DB, {
+		await resolvePackageOwnerContext(env, {
 			userId: person.stableUserId,
 			email: staleEmail,
 			displayName: person.username,
