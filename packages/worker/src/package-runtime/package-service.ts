@@ -344,6 +344,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	private stateSnapshot: PackageServiceState =
 		createInitialPackageServiceState()
 	private activeRunPromise: Promise<void> | null = null
+	/** Per-instance shadow write chain so waitUntil hops cannot reorder. */
+	private shadowQueue: Promise<void> = Promise.resolve()
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
@@ -456,7 +458,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 	/**
 	 * Schedule a best-effort UserMeter shadow upsert. Never awaited by
 	 * lifecycle/heartbeat paths; the helper catches so `waitUntil` cannot
-	 * reject.
+	 * reject. Appended to the per-instance shadow queue so rapid transitions
+	 * and purge (stopped upsert then delete) cannot reorder.
 	 */
 	private schedulePackageServiceStateShadow(input: {
 		binding: PackageServiceBindingState
@@ -465,7 +468,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		sourceUpdatedAt: string
 	}) {
 		if (!userMeterNamespace(this.env)) return
-		this.ctx.waitUntil(this.shadowPackageServiceStateToUserMeter(input))
+		this.enqueueShadowTask(() =>
+			this.shadowPackageServiceStateToUserMeter(input),
+		)
 	}
 
 	/** Best-effort UserMeter shadow upsert; catches/logs so waitUntil settles. */
@@ -494,13 +499,23 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 
 	/**
 	 * Schedule a best-effort UserMeter shadow delete. Never awaited by purge;
-	 * the helper catches so `waitUntil` cannot reject.
+	 * the helper catches so `waitUntil` cannot reject. Queued after any prior
+	 * shadow upserts for this instance.
 	 */
 	private schedulePackageServiceShadowDelete(
 		binding: PackageServiceBindingState,
 	) {
 		if (!userMeterNamespace(this.env)) return
-		this.ctx.waitUntil(this.deletePackageServiceShadow(binding))
+		this.enqueueShadowTask(() => this.deletePackageServiceShadow(binding))
+	}
+
+	/**
+	 * Run shadow writes in scheduling order and register the chain with
+	 * `waitUntil`. Helpers already catch, so the queue itself does not reject.
+	 */
+	private enqueueShadowTask(task: () => Promise<void>) {
+		this.shadowQueue = this.shadowQueue.then(task, task)
+		this.ctx.waitUntil(this.shadowQueue)
 	}
 
 	/** Best-effort UserMeter shadow delete; catches/logs so waitUntil settles. */

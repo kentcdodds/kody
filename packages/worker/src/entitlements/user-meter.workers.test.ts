@@ -1215,3 +1215,60 @@ test('UserMeter package-service shadow upserts are monotonic, isolated, exportab
 		],
 	})
 }, 30_000)
+
+test('UserMeter package-service sourceUpdatedAt accepts only canonical UTC ISO timestamps', async () => {
+	const user = await seedFreeUser('meter-pkg-svc-iso')
+	const meter = userMeterRpc({ env, userId: user.userId })
+	const stub = env.USER_METER.get(
+		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+	)
+	const valid = '2026-08-01T10:00:00.000Z'
+
+	await expect(
+		meter.upsertPackageServiceState({
+			packageId: 'pkg-iso',
+			serviceName: 'worker',
+			status: 'running',
+			startedAt: valid,
+			sourceUpdatedAt: valid,
+		}),
+	).resolves.toMatchObject({
+		applied: true,
+		state: { sourceUpdatedAt: valid },
+	})
+
+	const rejected = [
+		'',
+		'not-a-timestamp',
+		'2026-08-01T10:00:00Z',
+		'2026-08-01 10:00:00.000Z',
+		'2026-08-01T10:00:00.000+02:00',
+		'2026-08-01T08:00:00.000+00:00',
+		'2026-13-01T00:00:00.000Z',
+		'2026-02-30T00:00:00.000Z',
+	] as const
+	await runInDurableObject(stub, async (instance: UserMeter) => {
+		for (const sourceUpdatedAt of rejected) {
+			await expect(
+				instance.upsertPackageServiceState({
+					packageId: 'pkg-iso',
+					serviceName: 'worker',
+					status: 'stopped',
+					startedAt: null,
+					sourceUpdatedAt,
+				}),
+			).rejects.toThrow(/ISO-8601 UTC timestamp/)
+		}
+	})
+
+	// Prior valid row must remain; rejected writes must not throw RangeError past RPC.
+	expect(await meter.listPackageServiceStates({})).toMatchObject({
+		states: [
+			expect.objectContaining({
+				packageId: 'pkg-iso',
+				status: 'running',
+				sourceUpdatedAt: valid,
+			}),
+		],
+	})
+}, 30_000)

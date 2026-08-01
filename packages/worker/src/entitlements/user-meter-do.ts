@@ -39,6 +39,9 @@ const maxPackageServiceIdLength = 256
 const inboundReceiveResource =
 	'email_receives_per_day' satisfies DailyEntitlementResource
 const utcDayKeyPattern = /^\d{4}-\d{2}-\d{2}$/
+/** Matches `new Date().toISOString()` — required for lexicographic monotonicity. */
+const packageServiceSourceUpdatedAtPattern =
+	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 const packageServiceShadowStatuses = [
 	'running',
 	'idle',
@@ -286,9 +289,22 @@ function assertPackageServiceStatus(
 }
 
 function assertSourceUpdatedAt(sourceUpdatedAt: string): string {
-	if (typeof sourceUpdatedAt !== 'string' || sourceUpdatedAt.length === 0) {
+	if (
+		typeof sourceUpdatedAt !== 'string' ||
+		!packageServiceSourceUpdatedAtPattern.test(sourceUpdatedAt)
+	) {
 		throw new Error(
-			'UserMeter package service sourceUpdatedAt must be a non-empty string.',
+			'UserMeter package service sourceUpdatedAt must be an ISO-8601 UTC timestamp.',
+		)
+	}
+	// Pattern-first: avoid Invalid Date → RangeError from toISOString().
+	const parsedMs = Date.parse(sourceUpdatedAt)
+	if (
+		!Number.isFinite(parsedMs) ||
+		new Date(parsedMs).toISOString() !== sourceUpdatedAt
+	) {
+		throw new Error(
+			'UserMeter package service sourceUpdatedAt must be an ISO-8601 UTC timestamp.',
 		)
 	}
 	return sourceUpdatedAt

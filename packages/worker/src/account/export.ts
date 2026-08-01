@@ -301,7 +301,8 @@ export type AccountExportSectionResult = {
 	storageBytesShadow?: UserMeterExportResult['storageBytesShadow']
 	/**
 	 * Non-authoritative UserMeter package-service shadow rows. Present only on
-	 * the first `user_meter` page (`startAfter` absent); later pages omit it.
+	 * the first `user_meter` page (`startAfter` absent); later pages set it to
+	 * `null`.
 	 */
 	packageServiceStatesShadow?: UserMeterExportResult['packageServiceStatesShadow']
 }

@@ -1004,6 +1004,187 @@ test('package service start/heartbeat/stop/purge shadow UserMeter transitions', 
 	}
 })
 
+test('package service serializes gated UserMeter shadows so purge stays deleted and running→stopped cannot regress', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	const { appDb } = createRecordingPackageServiceDb()
+	const meter = createInMemoryUserMeterEnv()
+
+	type Gate = {
+		release: () => void
+		promise: Promise<void>
+		label: string
+	}
+	const gates: Array<Gate> = []
+	const callOrder: Array<string> = []
+	const baseStub = meter.env.USER_METER.get(
+		meter.env.USER_METER.idFromName('user-123'),
+	)
+
+	function pushGate(label: string): Gate {
+		const gate: Gate = {
+			label,
+			release: () => {},
+			promise: Promise.resolve(),
+		}
+		gate.promise = new Promise<void>((resolve) => {
+			gate.release = resolve
+		})
+		gates.push(gate)
+		return gate
+	}
+
+	const gatedMeter = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async upsertPackageServiceState(
+					input: Parameters<typeof baseStub.upsertPackageServiceState>[0],
+				) {
+					const gate = pushGate(`upsert:${input.status}`)
+					await gate.promise
+					callOrder.push(`upsert:${input.status}`)
+					return baseStub.upsertPackageServiceState(input)
+				},
+				async deletePackageServiceState(
+					input: Parameters<typeof baseStub.deletePackageServiceState>[0],
+				) {
+					const gate = pushGate('delete')
+					await gate.promise
+					callOrder.push('delete')
+					return baseStub.deletePackageServiceState(input)
+				},
+			}),
+		},
+	}
+
+	async function settleMicrotasks() {
+		await Promise.resolve()
+		await Promise.resolve()
+		await Promise.resolve()
+	}
+
+	async function waitForGate(label: string) {
+		for (let i = 0; i < 100; i++) {
+			if (gates.some((gate) => gate.label === label)) return
+			await Promise.resolve()
+		}
+		throw new Error(`Timed out waiting for gated shadow op ${label}.`)
+	}
+
+	try {
+		setupSavedPackage('bounded')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
+			vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+			return { result: { ok: true }, error: null }
+		})
+
+		const created = await createPackageServiceInstance({
+			APP_DB: appDb,
+			USER_METER: gatedMeter.USER_METER,
+		} as Env)
+
+		const start = await postPackageService(created.instance, 'start')
+		expect(start.status).toBe(200)
+		// Lifecycle returned while the first shadow hop is still gated.
+		expect(created.waitUntilTasks.length).toBeGreaterThanOrEqual(2)
+		await waitForGate('upsert:running')
+		expect(gates.map((gate) => gate.label)).toEqual(['upsert:running'])
+		expect(callOrder).toEqual([])
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toBeUndefined()
+
+		// Finish the bounded background run while the running shadow stays gated so
+		// the same-ms stopped upsert is chained behind it (not started yet).
+		const backgroundRunTask = created.waitUntilTasks[1]
+		expect(backgroundRunTask).toBeDefined()
+		await backgroundRunTask
+		await settleMicrotasks()
+		expect(gates.map((gate) => gate.label)).toEqual(['upsert:running'])
+		expect(callOrder).toEqual([])
+
+		// Same-ms running→stopped: stopped cannot begin until running is released,
+		// so a reordered drain cannot let stopped win first and then regress.
+		gates[0]?.release()
+		await waitForGate('upsert:stopped')
+		expect(callOrder).toEqual(['upsert:running'])
+		expect(gates.map((gate) => gate.label)).toEqual([
+			'upsert:running',
+			'upsert:stopped',
+		])
+		gates[1]?.release()
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(callOrder).toEqual(['upsert:running', 'upsert:stopped'])
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'stopped',
+			sourceUpdatedAt: '2026-07-05T12:00:00.000Z',
+		})
+
+		callOrder.length = 0
+		gates.length = 0
+		const beforePurgeWaitUntilCount = created.waitUntilTasks.length
+		const purge = await postPackageService(created.instance, 'purge')
+		expect(purge.status).toBe(200)
+		await waitForGate('upsert:stopped')
+		// Purge schedules stopped upsert then delete; delete cannot start first.
+		expect(gates.map((gate) => gate.label)).toEqual(['upsert:stopped'])
+		expect(callOrder).toEqual([])
+
+		// Prefer settling the trailing waitUntil chain entry first while the head
+		// upsert is still gated. Serialization keeps delete behind the upsert, so
+		// the purge final state stays deleted instead of resurrecting.
+		const trailingPurgeChain = created.waitUntilTasks.at(-1)
+		expect(trailingPurgeChain).toBeDefined()
+		let trailingSettled = false
+		void Promise.resolve(trailingPurgeChain).then(() => {
+			trailingSettled = true
+		})
+		await settleMicrotasks()
+		expect(trailingSettled).toBe(false)
+		expect(callOrder).toEqual([])
+
+		gates[0]?.release()
+		await waitForGate('delete')
+		expect(callOrder).toEqual(['upsert:stopped'])
+		expect(gates.map((gate) => gate.label)).toEqual([
+			'upsert:stopped',
+			'delete',
+		])
+		expect(trailingSettled).toBe(false)
+		gates[1]?.release()
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			beforePurgeWaitUntilCount,
+		)
+		expect(trailingSettled).toBe(true)
+		expect(callOrder).toEqual(['upsert:stopped', 'delete'])
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toBeUndefined()
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
 test('package service lifecycle does not await a gated UserMeter shadow', async () => {
 	resetMocks()
 	vi.useFakeTimers()
