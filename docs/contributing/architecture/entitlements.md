@@ -155,7 +155,7 @@ only the DO RPC and never touches D1 daily counter state.
 **D1 daily mirror retired:** consume, refund, inbound charge/read, point-read
 surfaces, retention, and account export/deletion never read or write
 `entitlement_daily_counters`. The three-deploy retirement is complete: Worker
-#1133 stopped mirror writes, #1134 detached runtime inventory, and migration
+`#1133` stopped mirror writes, `#1134` detached runtime inventory, and migration
 `0126-drop-entitlement-daily-counters.sql` dropped the table and day index.
 `admin_user_meter_parity` reports `daily.mirrorRetired: true` (meter counts
 only; `d1Count`/`delta` null). Analytics Engine remains the production reporting
@@ -361,10 +361,10 @@ storage authority flips remain separate high-risk contract follow-ups after
 soak/parity review.
 
 **Daily-counter mirror retirement (three-deploy, complete):** stage 1 (Worker
-#1133) stopped all D1 mirror/bootstrap/retention use while leaving the physical
-`entitlement_daily_counters` table in place. Stage 2 (#1134) detached the
-runtime account export/deletion inventory target and kept a pending-drop schema
-coverage exemption while the table still existed. Stage 3 (migration
+`#1133`) stopped all D1 mirror/bootstrap/retention use while leaving the
+physical `entitlement_daily_counters` table in place. Stage 2 (`#1134`) detached
+the runtime account export/deletion inventory target and kept a pending-drop
+schema coverage exemption while the table still existed. Stage 3 (migration
 `0126-drop-entitlement-daily-counters.sql`) drops the table and
 `idx_entitlement_daily_counters_day`. Production `admin_user_meter_parity` scans
 across 38 users showed zero daily mismatches with Analytics Engine reporting

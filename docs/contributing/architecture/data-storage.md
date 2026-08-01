@@ -647,9 +647,9 @@ release/repair/purge.
 **D1 daily mirror retired:** enforcement, point reads, bootstrap, mirror, and
 account export/deletion inventory paths never read or write
 `entitlement_daily_counters`. The three-deploy retirement is complete (Workers
-#1133 / #1134, then migration `0126-drop-entitlement-daily-counters.sql`). The
-final live schema has no table or day index; `admin_user_meter_parity` reports
-`daily.mirrorRetired: true` (meter counts only). See
+`#1133` / `#1134`, then migration `0126-drop-entitlement-daily-counters.sql`).
+The final live schema has no table or day index; `admin_user_meter_parity`
+reports `daily.mirrorRetired: true` (meter counts only). See
 [Entitlements](./entitlements.md#usermeter-expand-phase).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
