@@ -50,30 +50,9 @@ export type EmailInboundDeliveryFence = {
 	storageLease: string
 }
 
-/**
- * R2 object key for a message's raw MIME payload in the EMAIL_BLOBS
- * bucket. The userId prefix is part of the per-user isolation contract:
- * account deletion enumerates and deletes a user's blobs by these stored
- * keys, and the key can never be forged to point at another user's mail.
- * Writers always store this canonical key in `raw_mime_key`.
- */
-export function emailRawMimeKey(userId: string, messageId: string) {
-	return `email-raw:v1:${userId}/${messageId}`
-}
+import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 
-/**
- * R2 object key for an attachment stored on its own (storage_kind
- * 'external'), used by outbound mail whose bytes never exist as raw MIME.
- * The userId prefix follows the same per-user isolation contract as
- * emailRawMimeKey.
- */
-export function emailAttachmentBlobKey(
-	userId: string,
-	messageId: string,
-	attachmentId: string,
-) {
-	return `email-attachment:v1:${userId}/${messageId}/${attachmentId}`
-}
+export { emailAttachmentBlobKey, emailRawMimeKey }
 
 // One corrupt stored row must not fail an entire list/search response, so
 // the record parser degrades to an empty shape on malformed JSON.
@@ -545,6 +524,29 @@ async function findThreadForMessage(input: {
 
 export const findEmailThreadForInboundMessage = findThreadForMessage
 
+/**
+ * Owner-scoped thread lookup for D1 → Mailbox graph mirrors and other
+ * strictly user-bound readers. Returns null when absent or owned by another
+ * user — never use for inbound delivery fencing.
+ */
+export async function getEmailThreadById(input: {
+	db: D1Database
+	userId: string
+	threadId: string
+}) {
+	const row = await input.db
+		.prepare(
+			`SELECT *
+			FROM email_threads
+			WHERE id = ?
+				AND user_id = ?
+			LIMIT 1`,
+		)
+		.bind(input.threadId, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapThreadRow(row) : null
+}
+
 export async function createEmailThread(input: {
 	db: D1Database
 	id?: string
@@ -853,11 +855,13 @@ export async function getEmailMessageById(input: {
 }
 
 /**
- * Reclassify a stored inbound message (spam <-> not spam). Reclassifying to
+ * D1-only inbound classification update. Prefer
+ * `setEmailMessageClassification` in `service.ts`, which dual-writes the
+ * Mailbox graph mirror after a successful mutation. Reclassifying to
  * `accepted` does not retroactively dispatch package subscription events; the
  * receive-time classification decides dispatch exactly once.
  */
-export async function setEmailMessageClassification(input: {
+export async function updateEmailMessageClassificationInD1(input: {
 	db: D1Database
 	userId: string
 	messageId: string
@@ -1219,7 +1223,22 @@ export async function insertEmailDeliveryEvent(input: {
 	providerEventId?: string | null
 	detail?: Record<string, unknown> | null
 	createdAt?: string
-}) {
+}): Promise<EmailDeliveryEventRecord> {
+	const id = crypto.randomUUID()
+	const createdAt = input.createdAt ?? nowIso()
+	const detailJson = JSON.stringify(input.detail ?? {})
+	const record: EmailDeliveryEventRecord = {
+		id,
+		messageId: input.messageId ?? null,
+		userId: input.userId ?? null,
+		inboxId: input.inboxId ?? null,
+		eventType: input.eventType,
+		provider: input.provider ?? null,
+		providerMessageId: input.providerMessageId ?? null,
+		providerEventId: input.providerEventId ?? null,
+		detailJson,
+		createdAt,
+	}
 	await input.db
 		.prepare(
 			`INSERT INTO email_delivery_events (
@@ -1228,16 +1247,17 @@ export async function insertEmailDeliveryEvent(input: {
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
-			crypto.randomUUID(),
-			input.messageId ?? null,
-			input.userId ?? null,
-			input.inboxId ?? null,
-			input.eventType,
-			input.provider ?? null,
-			input.providerMessageId ?? null,
-			input.providerEventId ?? null,
-			JSON.stringify(input.detail ?? {}),
-			input.createdAt ?? nowIso(),
+			record.id,
+			record.messageId,
+			record.userId,
+			record.inboxId,
+			record.eventType,
+			record.provider,
+			record.providerMessageId,
+			record.providerEventId,
+			record.detailJson,
+			record.createdAt,
 		)
 		.run()
+	return record
 }

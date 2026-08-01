@@ -1,6 +1,6 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
-import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
+import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
 import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
 	parseStoredPlanName,
@@ -9,6 +9,18 @@ import {
 	type EntitlementResource,
 	type PlanName,
 } from './plans.ts'
+import {
+	isDailyEntitlementResource,
+	type DailyEntitlementResource,
+} from './user-meter-do.ts'
+import {
+	userMeterNamespace,
+	userMeterRpc,
+	type UserMeterEnv,
+} from './user-meter-client.ts'
+
+/** Env surface for authoritative entitlement usage readers (UserMeter + RunLog). */
+export type EntitlementUsageEnv = UserMeterEnv & Pick<Env, 'RUN_LOG'>
 
 const stableUserIdPattern = /^[a-f0-9]{64}$/i
 
@@ -192,51 +204,83 @@ export async function findUserAccountByStableUserId(
 	}
 }
 
-/**
- * Increment a daily counter for a rate-style entitlement (for example
- * email sends per day). Counters accumulate for every user regardless of
- * plan so that assigning a plan later enforces against real usage.
- */
-export async function incrementDailyEntitlementCounter(input: {
-	db: D1Database
-	userId: string
-	resource: EntitlementResource
-	amount?: number
-	now?: Date
-}) {
-	const now = input.now ?? new Date()
-	await input.db
-		.prepare(
-			`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
-			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(user_id, resource, day) DO UPDATE SET
-				count = entitlement_daily_counters.count + excluded.count,
-				updated_at = excluded.updated_at`,
+function assertDailyEntitlementResource(
+	resource: EntitlementResource,
+): DailyEntitlementResource {
+	if (!isDailyEntitlementResource(resource)) {
+		throw new Error(
+			`Expected a daily entitlement resource; got ${JSON.stringify(resource)}.`,
 		)
-		.bind(
-			input.userId,
-			input.resource,
-			utcDayKey(now),
-			input.amount ?? 1,
-			now.toISOString(),
-		)
-		.run()
+	}
+	return resource
 }
 
-async function readDailyEntitlementCounter(input: {
+/**
+ * Seed a missing UserMeter `(resource, day)` at zero. `INSERT OR IGNORE`
+ * inside the DO keeps concurrent cold callers safe.
+ */
+async function ensureUserMeterCounterInitializedAtZero(input: {
+	env: UserMeterEnv
+	userId: string
+	resource: DailyEntitlementResource
+	day: string
+	updatedAt: string
+}) {
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	await meter.initialize({
+		resource: input.resource,
+		day: input.day,
+		count: 0,
+		updatedAt: input.updatedAt,
+	})
+}
+
+/**
+ * Point-read one daily entitlement counter from UserMeter. Cold meters
+ * initialize the `(resource, day)` at zero, then re-read; warm meters return
+ * the DO count. Never touches D1 daily counter state.
+ *
+ * `db` remains on the signature for call-site stability; plan/account lookups
+ * on other paths still need APP_DB.
+ */
+export async function readDailyEntitlementResourceUsage(input: {
 	db: D1Database
+	env: UserMeterEnv
 	userId: string
 	resource: EntitlementResource
-	now: Date
-}) {
-	const row = await input.db
-		.prepare(
-			`SELECT count FROM entitlement_daily_counters
-			WHERE user_id = ? AND resource = ? AND day = ?`,
-		)
-		.bind(input.userId, input.resource, utcDayKey(input.now))
-		.first<{ count: number }>()
-	return Number(row?.count ?? 0)
+	now?: Date
+}): Promise<number> {
+	void input.db
+	const resource = assertDailyEntitlementResource(input.resource)
+	const now = input.now ?? new Date()
+	const day = utcDayKey(now)
+	const updatedAt = now.toISOString()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	let result = await meter.read({
+		resource,
+		day,
+		now: updatedAt,
+	})
+	if (result.outcome === 'needs_bootstrap') {
+		await ensureUserMeterCounterInitializedAtZero({
+			env: input.env,
+			userId: input.userId,
+			resource,
+			day,
+			updatedAt,
+		})
+		result = await meter.read({
+			resource,
+			day,
+			now: updatedAt,
+		})
+		if (result.outcome === 'needs_bootstrap') {
+			throw new Error(
+				'UserMeter daily entitlement read still needs bootstrap after initialize.',
+			)
+		}
+	}
+	return result.count
 }
 
 async function countRows(db: D1Database, sql: string, params: Array<unknown>) {
@@ -524,10 +568,49 @@ export async function calculateUserD1StorageBytes(input: {
 	return sums.reduce((total, value) => total + value, 0)
 }
 
-export async function readUserD1StorageBytes(input: {
+/** Best-effort D1→UserMeter absolute shadow; re-reads D1 at task time. */
+async function shadowUserMeterStorageBytesFromD1(input: {
 	db: D1Database
+	env: UserMeterEnv
 	userId: string
 }) {
+	if (!userMeterNamespace(input.env)) return
+	const bytes = await readUserD1StorageBytes({
+		db: input.db,
+		userId: input.userId,
+	})
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	await meter.setStorageBytes({
+		bytes,
+		updatedAt: new Date().toISOString(),
+	})
+}
+
+function scheduleUserMeterStorageBytesShadow(input: {
+	db: D1Database
+	env: UserMeterEnv | undefined
+	userId: string
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	if (!input.env || !userMeterNamespace(input.env)) return
+	const tracked = shadowUserMeterStorageBytesFromD1({
+		db: input.db,
+		env: input.env,
+		userId: input.userId,
+	}).catch((error: unknown) => {
+		console.warn('entitlement-storage-bytes-shadow-failed', error)
+	})
+	if (input.waitUntil) {
+		input.waitUntil(tracked)
+		return
+	}
+	void tracked
+}
+
+async function readUserD1StorageBytesRow(input: {
+	db: D1Database
+	userId: string
+}): Promise<{ bytes: number } | null> {
 	const row = await input.db
 		.prepare(
 			`SELECT d1_storage_bytes AS bytes
@@ -536,13 +619,29 @@ export async function readUserD1StorageBytes(input: {
 		)
 		.bind(input.userId)
 		.first<{ bytes: number }>()
-	return Math.max(0, Number(row?.bytes ?? 0))
+	if (row == null) return null
+	return { bytes: Math.max(0, Number(row.bytes ?? 0)) }
 }
 
+export async function readUserD1StorageBytes(input: {
+	db: D1Database
+	userId: string
+}): Promise<number> {
+	const row = await readUserD1StorageBytesRow(input)
+	return row?.bytes ?? 0
+}
+
+/**
+ * Replace one user's D1 storage-byte counter with the cross-surface D1 payload
+ * sum. Optional `env` best-effort shadows into UserMeter after the D1 write;
+ * shadow failures never fail or poison this reconcile.
+ */
 export async function reconcileUserD1StorageBytes(input: {
 	db: D1Database
 	userId: string
 	now?: Date
+	/** Optional expand-phase UserMeter shadow after the D1 absolute update. */
+	env?: UserMeterEnv
 }) {
 	const bytes = await calculateUserD1StorageBytes(input)
 	const result = await input.db
@@ -554,7 +653,19 @@ export async function reconcileUserD1StorageBytes(input: {
 		)
 		.bind(bytes, (input.now ?? new Date()).toISOString(), input.userId)
 		.run()
-	return { bytes, updated: (result.meta.changes ?? 0) > 0 }
+	const updated = (result.meta.changes ?? 0) > 0
+	if (input.env) {
+		try {
+			await shadowUserMeterStorageBytesFromD1({
+				db: input.db,
+				env: input.env,
+				userId: input.userId,
+			})
+		} catch (error) {
+			console.warn('entitlement-storage-bytes-shadow-failed', error)
+		}
+	}
+	return { bytes, updated }
 }
 
 export async function listUsersForD1StorageReconciliation(input: {
@@ -685,12 +796,12 @@ export async function readEntitlementResourceUsage(input: {
 		case 'email_receives_per_day':
 		case 'execute_calls_per_day':
 		case 'outbound_fetches_per_day':
-			return await readDailyEntitlementCounter({
-				db,
-				userId,
-				resource,
-				now,
-			})
+			// Authoritative daily counters live in UserMeter. Callers must use
+			// consumeDailyEntitlement / readDailyEntitlementResourceUsage /
+			// readCurrentEntitlementResourceUsage — the retired D1 mirror is gone.
+			throw new Error(
+				`${resource} usage must be read from UserMeter (use readDailyEntitlementResourceUsage or readCurrentEntitlementResourceUsage).`,
+			)
 		case 'stored_email_messages':
 			return await countRows(
 				db,
@@ -706,15 +817,15 @@ export async function readEntitlementResourceUsage(input: {
 					AND (sb.expires_at IS NULL OR sb.expires_at > ?)`,
 				[userId, now.toISOString()],
 			)
-		case 'concurrent_workflows': {
-			const placeholders = activeWorkflowStatusValues.map(() => '?').join(', ')
-			return await countRows(
-				db,
-				`SELECT COUNT(*) AS count FROM workflow_runs
-				WHERE user_id = ? AND status IN (${placeholders})`,
-				[userId, ...activeWorkflowStatusValues],
+		case 'concurrent_workflows':
+			// Authoritative concurrent-workflow occupancy lives in per-user
+			// RunLog `workflow_projections`. Callers must pass getCurrent from
+			// reserveWorkflowProjectionSlot (create path) or use
+			// readCurrentEntitlementResourceUsage (usage readers). The expand-
+			// phase D1 `workflow_runs` mirror is not authoritative here.
+			throw new Error(
+				'concurrent_workflows usage must be read from RunLog (pass getCurrent or use readCurrentEntitlementResourceUsage).',
 			)
-		}
 		case 'storage_bytes':
 			return await readUserD1StorageBytes({ db, userId })
 		case 'email_message_bytes':
@@ -730,12 +841,66 @@ export async function readEntitlementResourceUsage(input: {
 	}
 }
 
+/**
+ * Authoritative current usage for any entitlement resource: daily counters
+ * via UserMeter, concurrent workflows via RunLog workflow projections, and
+ * everything else via the legacy D1 helpers.
+ */
+export async function readCurrentEntitlementResourceUsage(input: {
+	db: D1Database
+	env: EntitlementUsageEnv
+	userId: string
+	resource: EntitlementResource
+	now: Date
+}): Promise<number> {
+	if (isDailyEntitlementResource(input.resource)) {
+		return await readDailyEntitlementResourceUsage({
+			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			resource: input.resource,
+			now: input.now,
+		})
+	}
+	if (input.resource === 'concurrent_workflows') {
+		return await countActiveWorkflowProjections({
+			env: input.env as Env,
+			userId: input.userId,
+		})
+	}
+	return await readEntitlementResourceUsage({
+		db: input.db,
+		userId: input.userId,
+		resource: input.resource,
+		now: input.now,
+	})
+}
+
+/** Bounded retries when a conditional D1 reserve loses to concurrent writers. */
+const storageBytesReserveMaxAttempts = 5
+
+/**
+ * Atomically reserve D1 payload storage bytes against the plan limit.
+ * Optional `env` schedules a best-effort UserMeter shadow after a successful
+ * reserve (never awaited; failures logged only). `getCurrent` is check-only
+ * and does not reserve in D1 or UserMeter.
+ *
+ * Real users never succeed unreserved: a failed conditional update re-reads
+ * row existence/current, throws {@link EntitlementLimitError} at the limit,
+ * retries while a real row remains under limit, and fails closed with an
+ * operational error if contention never resolves. Missing-user synthetic
+ * contexts keep their prior under-limit allow / over-limit deny semantics.
+ */
 export async function assertWithinStorageBytesEntitlement(input: {
 	db: D1Database
 	userId: string
 	email: string | null | undefined
 	requested?: number
 	getCurrent?: () => Promise<number>
+	/** Optional expand-phase UserMeter shadow after a successful D1 reserve. */
+	env?: UserMeterEnv
+	/** Prefer `ctx.waitUntil` for the UserMeter shadow; never awaited here. */
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	if (input.getCurrent) {
 		await assertWithinEntitlement({
@@ -755,34 +920,66 @@ export async function assertWithinStorageBytesEntitlement(input: {
 	})
 	const limit = resolvePlanLimit(plan, 'storage_bytes')
 	const requested = Math.max(0, input.requested ?? 1)
-	const now = new Date().toISOString()
-	const result = await input.db
-		.prepare(
-			`UPDATE users
-			SET d1_storage_bytes = d1_storage_bytes + ?,
-				d1_storage_bytes_updated_at = ?
-			WHERE stable_user_id = ?
-				AND d1_storage_bytes + ? <= ?`,
-		)
-		.bind(requested, now, input.userId, requested, limit)
-		.run()
-	if ((result.meta.changes ?? 0) > 0) return
 
-	const current = await readUserD1StorageBytes({
-		db: input.db,
-		userId: input.userId,
-	})
-	// Synthetic contexts have no users row to reserve against. Their plan has
-	// already failed closed to `free`; preserve that finite limit without
-	// inventing a user-owned counter row that reconciliation cannot resolve.
-	if (current + requested <= limit) return
-	throw new EntitlementLimitError({
-		resource: 'storage_bytes',
-		plan,
-		limit,
-		current,
-		upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
-	})
+	for (let attempt = 0; attempt < storageBytesReserveMaxAttempts; attempt++) {
+		const now = new Date().toISOString()
+		const result = await input.db
+			.prepare(
+				`UPDATE users
+				SET d1_storage_bytes = d1_storage_bytes + ?,
+					d1_storage_bytes_updated_at = ?
+				WHERE stable_user_id = ?
+					AND d1_storage_bytes + ? <= ?`,
+			)
+			.bind(requested, now, input.userId, requested, limit)
+			.run()
+		if ((result.meta.changes ?? 0) > 0) {
+			scheduleUserMeterStorageBytesShadow({
+				db: input.db,
+				env: input.env,
+				userId: input.userId,
+				waitUntil: input.waitUntil,
+			})
+			return
+		}
+
+		const row = await readUserD1StorageBytesRow({
+			db: input.db,
+			userId: input.userId,
+		})
+		// Synthetic contexts have no users row to reserve against. Their plan
+		// has already failed closed to `free`; preserve that finite limit
+		// without inventing a user-owned counter row that reconciliation
+		// cannot resolve.
+		if (row == null) {
+			const current = 0
+			if (current + requested <= limit) return
+			throw new EntitlementLimitError({
+				resource: 'storage_bytes',
+				plan,
+				limit,
+				current,
+				upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
+			})
+		}
+
+		const current = row.bytes
+		if (current + requested > limit) {
+			throw new EntitlementLimitError({
+				resource: 'storage_bytes',
+				plan,
+				limit,
+				current,
+				upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
+			})
+		}
+		// Real row still under limit: another writer raced the conditional
+		// UPDATE. Retry the reserve rather than succeeding unreserved.
+	}
+
+	throw new Error(
+		'Storage byte reservation could not complete under concurrent updates.',
+	)
 }
 
 export type AssertWithinEntitlementInput = {
@@ -791,14 +988,18 @@ export type AssertWithinEntitlementInput = {
 	/**
 	 * Account email of the acting user when available. When present, plan
 	 * lookup requires the email + stable-id pair. When absent (package-job /
-	 * workflow contexts with `email: ''`), {@link getUserPlan} reverse-resolves
-	 * by stable userId; unknown accounts still fail closed to `free`.
+	 * workflow contexts with `email: ''`), {@link getCachedUserPlan}
+	 * reverse-resolves by stable userId; unknown accounts still fail closed
+	 * to `free`.
 	 */
 	email: string | null | undefined
 	resource: EntitlementResource
 	/** How many units the operation is about to consume. Defaults to 1. */
 	requested?: number
-	/** Override the built-in D1 usage counter for this resource. */
+	/**
+	 * Override the built-in usage counter for this resource. Required for
+	 * `concurrent_workflows` (pass RunLog reservation occupancy).
+	 */
 	getCurrent?: () => Promise<number>
 	now?: Date
 }
@@ -812,7 +1013,9 @@ export type AssertWithinEntitlementInput = {
 export async function assertWithinEntitlement(
 	input: AssertWithinEntitlementInput,
 ): Promise<void> {
-	const plan = await getUserPlan(input.db, {
+	// Cached plan resolution: quota limit lookup tolerates short-TTL
+	// staleness; usage counters below stay fresh on every call.
+	const plan = await getCachedUserPlan(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
@@ -838,95 +1041,112 @@ export async function assertWithinEntitlement(
 	}
 }
 
-/**
- * Atomically consume one unit of a daily rate-style entitlement (check and
- * increment in a single conditional D1 upsert), throwing
- * EntitlementLimitError when the consumption would exceed the plan limit.
- * This avoids the check-then-increment race that separate
- * assertWithinEntitlement + incrementDailyEntitlementCounter calls would
- * have under concurrent requests, and evaluates the UTC day key once.
- * Every resolved plan has finite numeric limits.
- */
-export async function consumeDailyEntitlement(input: {
+export type ConsumeDailyEntitlementInput = {
 	db: D1Database
+	/** Must expose `USER_METER` (sole daily counter authority). */
+	env: UserMeterEnv
 	userId: string
 	email: string | null | undefined
 	resource: EntitlementResource
 	now?: Date
-}): Promise<void> {
+	/**
+	 * Retained for call-site stability. Daily counters no longer schedule D1
+	 * mirror work; unused after mirror retirement.
+	 */
+	waitUntil?: (promise: Promise<unknown>) => void
+}
+
+/**
+ * Atomically consume one daily entitlement unit via UserMeter, throwing
+ * EntitlementLimitError when the plan limit would be exceeded. Cold keys
+ * initialize at zero (concurrent-safe); warm path awaits only the DO RPC.
+ * Never touches the retired D1 daily counter table.
+ */
+export async function consumeDailyEntitlement(
+	input: ConsumeDailyEntitlementInput,
+): Promise<void> {
+	void input.waitUntil
+	const resource = assertDailyEntitlementResource(input.resource)
 	const now = input.now ?? new Date()
+	const day = utcDayKey(now)
+	const updatedAt = now.toISOString()
 	// Cached plan resolution: this runs on every execute call and every
-	// sandbox outbound fetch, and the atomic counter upsert below is the only
-	// part that must see fresh state.
+	// sandbox outbound fetch; the UserMeter consume below is the only
+	// counter state that must be fresh.
 	const plan = await getCachedUserPlan(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
-	const limit = resolvePlanLimit(plan, input.resource)
-	const throwLimitError = async () => {
+	const limit = resolvePlanLimit(plan, resource)
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	let result = await meter.consume({
+		resource,
+		day,
+		limit,
+		updatedAt,
+	})
+	if (result.outcome === 'needs_bootstrap') {
+		await ensureUserMeterCounterInitializedAtZero({
+			env: input.env,
+			userId: input.userId,
+			resource,
+			day,
+			updatedAt,
+		})
+		result = await meter.consume({
+			resource,
+			day,
+			limit,
+			updatedAt,
+		})
+		if (result.outcome === 'needs_bootstrap') {
+			throw new Error(
+				'UserMeter consume still needs bootstrap after initialize.',
+			)
+		}
+	}
+	if (!result.consumed) {
 		throw new EntitlementLimitError({
-			resource: input.resource,
+			resource,
 			plan,
 			limit,
-			current: await readDailyEntitlementCounter({
-				db: input.db,
-				userId: input.userId,
-				resource: input.resource,
-				now,
-			}),
-			upgradeHint: buildEntitlementUpgradeHint(input.resource),
+			current: result.count,
+			upgradeHint: buildEntitlementUpgradeHint(resource),
 		})
-	}
-	// The fresh-row INSERT branch is unconditional, so a limit below one
-	// unit can never be satisfied and must be rejected up front.
-	if (limit < 1) {
-		await throwLimitError()
-	}
-	const result = await input.db
-		.prepare(
-			`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
-			VALUES (?, ?, ?, 1, ?)
-			ON CONFLICT(user_id, resource, day) DO UPDATE SET
-				count = entitlement_daily_counters.count + 1,
-				updated_at = excluded.updated_at
-			WHERE entitlement_daily_counters.count + 1 <= ?`,
-		)
-		.bind(
-			input.userId,
-			input.resource,
-			utcDayKey(now),
-			now.toISOString(),
-			limit,
-		)
-		.run()
-	if ((result.meta.changes ?? 0) === 0) {
-		await throwLimitError()
 	}
 }
 
-/**
- * Atomically refund one previously consumed daily entitlement unit for the
- * given user/resource/UTC day (floors at zero). Scoped by `user_id` so a
- * refund can never touch another user's counter. Used when inbound receive
- * quota was charged before a retryable storage failure — the same `now`
- * (day key) as the matching `consumeDailyEntitlement` call must be passed.
- */
-export async function refundDailyEntitlement(input: {
+export type RefundDailyEntitlementInput = {
 	db: D1Database
+	env: UserMeterEnv
 	userId: string
 	resource: EntitlementResource
 	now?: Date
-}): Promise<void> {
+	/**
+	 * Retained for call-site stability. Daily counters no longer schedule D1
+	 * mirror work; unused after mirror retirement.
+	 */
+	waitUntil?: (promise: Promise<unknown>) => void
+}
+
+/**
+ * Atomically refund one previously consumed daily entitlement unit in
+ * UserMeter (floors at zero). Pass the same `now` (day key) as the matching
+ * consume. Never touches the retired D1 daily counter table.
+ */
+export async function refundDailyEntitlement(
+	input: RefundDailyEntitlementInput,
+): Promise<void> {
+	void input.db
+	void input.waitUntil
+	const resource = assertDailyEntitlementResource(input.resource)
 	const now = input.now ?? new Date()
-	await input.db
-		.prepare(
-			`UPDATE entitlement_daily_counters
-			SET count = MAX(0, count - 1),
-				updated_at = ?
-			WHERE user_id = ?
-				AND resource = ?
-				AND day = ?`,
-		)
-		.bind(now.toISOString(), input.userId, input.resource, utcDayKey(now))
-		.run()
+	const day = utcDayKey(now)
+	const updatedAt = now.toISOString()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	await meter.refund({
+		resource,
+		day,
+		updatedAt,
+	})
 }

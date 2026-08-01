@@ -21,6 +21,7 @@ import {
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryByteDelta,
 } from '#worker/entitlements/service.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 
 type ValueOwnerContext = {
 	userId: string
@@ -28,13 +29,14 @@ type ValueOwnerContext = {
 }
 
 type SaveValueInput = ValueOwnerContext & {
-	env: Pick<Env, 'APP_DB'>
+	env: Pick<Env, 'APP_DB'> & UserMeterEnv
 	scope: ValueScope
 	name: string
 	value: string
 	description?: string | null
 	sessionExpiresAt?: string | null
 	userEmail?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 type ListValuesInput = ValueOwnerContext & {
@@ -87,6 +89,7 @@ export async function saveValue(input: SaveValueInput): Promise<ValueMetadata> {
 	})
 	await assertWithinStorageBytesEntitlement({
 		db: input.env.APP_DB,
+		env: input.env,
 		userId: input.userId,
 		email: input.userEmail,
 		requested: estimateEntitlementStorageEntryByteDelta({
@@ -104,6 +107,7 @@ export async function saveValue(input: SaveValueInput): Promise<ValueMetadata> {
 					}
 				: null,
 		}),
+		waitUntil: input.waitUntil,
 	})
 	const now = new Date().toISOString()
 	await upsertValueEntry({

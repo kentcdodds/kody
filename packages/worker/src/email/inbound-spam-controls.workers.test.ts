@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import type * as PackageSubscriptionsModule from './package-subscriptions.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
@@ -68,13 +69,11 @@ async function seedVerifiedAccount(input: {
 }
 
 async function readUserDailyReceiveCount(userId: string) {
-	const row = await env.APP_DB.prepare(
-		`SELECT count FROM entitlement_daily_counters
-			WHERE user_id = ? AND resource = 'email_receives_per_day' AND day = ?`,
-	)
-		.bind(userId, new Date().toISOString().slice(0, 10))
-		.first<{ count: number }>()
-	return Number(row?.count ?? 0)
+	const result = await userMeterRpc({ env, userId }).read({
+		resource: 'email_receives_per_day',
+		day: new Date().toISOString().slice(0, 10),
+	})
+	return result.outcome === 'ready' ? result.count : 0
 }
 
 function dmarcFailAuthResults() {

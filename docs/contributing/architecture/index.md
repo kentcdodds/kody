@@ -31,7 +31,9 @@ to become.
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.
 - [Data Storage](./data-storage.md): what is stored in D1, KV, and Durable
-  Objects.
+  Objects. The rubric for choosing between D1, a per-user Durable Object, and
+  Analytics Engine is recorded in decision record
+  [0002 — Data placement](../decisions/0002-data-placement.md).
 - [Usage Metering](./usage-metering.md): per-user usage events, the
   `recordUsage()` helper contract, and the D1 rollup table.
 - [Invocation overhead guardrails](./invocation-overhead-guardrails.md):

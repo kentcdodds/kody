@@ -211,8 +211,10 @@ test('transient platform failures back off the same occurrence while permanent o
 	})
 	expect(permanent.saveJobs[0]).toMatchObject({
 		enabled: false,
-		runCount: 1,
-		errorCount: 1,
-		lastRunError: 'user code failed',
+		lastRunStatus: 'error',
+		lastRunAt: expect.any(String),
+		// RunLog owns counters/error; scheduling finalization keeps D1 copies.
+		runCount: 0,
+		errorCount: 0,
 	})
 })

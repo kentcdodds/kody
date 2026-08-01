@@ -7,6 +7,7 @@ import {
 } from '#mcp/downstream-mcp-result.ts'
 import { formatRawFetchHostNudge } from '#mcp/raw-fetch-host-nudge.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
@@ -59,6 +60,8 @@ vi.mock('#worker/run-records/service.ts', async () => {
 
 const { registerExecuteTool } = await import('./execute.ts')
 
+const userMeter = createInMemoryUserMeterEnv()
+
 /**
  * Minimal env stub: the daily execute entitlement consumed at the top of
  * the tool handler issues one conditional upsert (allowed when
@@ -66,6 +69,7 @@ const { registerExecuteTool } = await import('./execute.ts')
  * contexts carry no account email (resolves to `max`).
  */
 const stubEnv = {
+	...userMeter.env,
 	APP_DB: {
 		prepare() {
 			return {

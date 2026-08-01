@@ -251,8 +251,10 @@ export async function updateJobRow(input: {
 			`UPDATE jobs SET
 				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
 				enabled = ?, kill_switch_enabled = ?, preserved = ?, expires_at = ?, caller_context_json = ?, updated_at = ?,
-				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
-				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?,
+				last_run_at = ?, last_run_status = ?,
+				last_run_error = CASE WHEN last_run_at IS ? THEN last_run_error ELSE NULL END,
+				last_duration_ms = CASE WHEN last_run_at IS ? THEN last_duration_ms ELSE NULL END,
+				next_run_at = ?,
 				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
 				claimed_scheduled_for = NULL, retry_scheduled_for = NULL,
 				retry_count = 0
@@ -275,12 +277,10 @@ export async function updateJobRow(input: {
 			serialized.updated_at,
 			serialized.last_run_at,
 			serialized.last_run_status,
-			serialized.last_run_error,
-			serialized.last_duration_ms,
+			// NULL-safe: clear legacy fallback only when last_run_at advances.
+			serialized.last_run_at,
+			serialized.last_run_at,
 			serialized.next_run_at,
-			serialized.run_count,
-			serialized.success_count,
-			serialized.error_count,
 			serialized.id,
 			input.userId,
 		)
@@ -583,8 +583,10 @@ export async function finalizeClaimedJobRow(input: {
 			`UPDATE jobs SET
 				name = ?, source_id = ?, published_commit = ?, repo_check_policy_json = ?, storage_id = ?, params_json = ?, schedule_json = ?, timezone = ?,
 				enabled = ?, kill_switch_enabled = ?, preserved = ?, expires_at = ?, caller_context_json = ?, updated_at = ?,
-				last_run_at = ?, last_run_status = ?, last_run_error = ?, last_duration_ms = ?,
-				next_run_at = ?, run_count = ?, success_count = ?, error_count = ?,
+				last_run_at = ?, last_run_status = ?,
+				last_run_error = CASE WHEN last_run_at IS ? THEN last_run_error ELSE NULL END,
+				last_duration_ms = CASE WHEN last_run_at IS ? THEN last_duration_ms ELSE NULL END,
+				next_run_at = ?,
 				claim_token = NULL, running_since = NULL, lease_expires_at = NULL,
 				claimed_scheduled_for = NULL, retry_scheduled_for = NULL,
 				retry_count = 0, last_completed_scheduled_for = ?
@@ -607,12 +609,10 @@ export async function finalizeClaimedJobRow(input: {
 			serialized.updated_at,
 			serialized.last_run_at,
 			serialized.last_run_status,
-			serialized.last_run_error,
-			serialized.last_duration_ms,
+			// NULL-safe: clear legacy fallback only when last_run_at advances.
+			serialized.last_run_at,
+			serialized.last_run_at,
 			serialized.next_run_at,
-			serialized.run_count,
-			serialized.success_count,
-			serialized.error_count,
 			input.scheduledFor,
 			serialized.id,
 			input.userId,
@@ -729,7 +729,6 @@ export async function listJobRetentionCandidateRows(
 						enabled = 1
 						AND kill_switch_enabled = 0
 						AND json_extract(schedule_json, '$.type') = 'once'
-						AND run_count = 0
 						AND last_run_at IS NULL
 					)
 				)

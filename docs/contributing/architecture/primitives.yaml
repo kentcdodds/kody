@@ -66,9 +66,11 @@ primitives:
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler
-    summary: Worker cron entry with isolated maintenance lanes.
+    summary:
+      Worker cron dispatcher with queue-isolated maintenance lane invocations.
     code:
       - packages/worker/src/index.ts
+      - packages/worker/src/scheduled/
       - packages/worker/src/jobs/reconcile-artifacts-pushes.ts
       - packages/worker/src/jobs/job-retention-cleanup.ts
       - packages/worker/src/repo/repo-session-cleanup.ts
@@ -146,7 +148,7 @@ primitives:
     name: Stripe billing
     summary:
       Authenticated Checkout Session creation, Stripe webhooks, customer
-      linking, and subscription→plan sync (cron poll as backup).
+      linking, and subscription→plan sync with per-user activity-driven alarms.
     code:
       - packages/worker/src/billing/
       - packages/worker/src/app/handlers/stripe-webhook.ts
@@ -423,6 +425,28 @@ primitives:
     docs:
       - docs/contributing/architecture/data-storage.md
 
+  - id: audit-d1
+    group: storage
+    name: Audit database
+    summary:
+      AUDIT_DB global hashed security audit trail with independent retention.
+    code:
+      - packages/worker/audit-migrations/
+      - packages/worker/src/audit-log.ts
+    docs:
+      - docs/contributing/architecture/data-storage.md
+
+  - id: email-reporting
+    group: storage
+    name: Email reporting stream
+    summary:
+      EMAIL_EVENTS Analytics Engine stream for role-gated platform aggregates.
+    code:
+      - packages/worker/src/email/reporting-events.ts
+      - packages/worker/src/app/admin-insights-data.ts
+    docs:
+      - docs/contributing/architecture/data-storage.md
+
   - id: backup-control-plane
     group: storage
     name: Production backup control plane
@@ -487,11 +511,38 @@ primitives:
     docs:
       - docs/contributing/architecture/run-records.md
 
+  - id: user-meter
+    group: storage
+    name: User meter
+    summary:
+      Per-user UserMeter DO SQLite for daily entitlement counters, inbound
+      delivery idempotency, expand-phase D1 storage-byte shadow, expand-phase
+      package-service liveness shadow, and expand-phase account-deletion
+      write-fence shadow (D1 remains sole fence/lease authority in slice 5 Phase
+      A).
+    code:
+      - packages/worker/src/entitlements/user-meter-do.ts
+      - packages/worker/src/entitlements/user-meter-client.ts
+      - packages/worker/src/account/deletion-state.ts
+    docs:
+      - docs/contributing/architecture/data-storage.md
+      - docs/contributing/architecture/entitlements.md
+
+  - id: mailbox
+    group: storage
+    name: Mailbox
+    summary: Per-user Mailbox DO SQLite for email metadata; R2 keeps raw MIME.
+    code:
+      - packages/worker/src/email/mailbox-
+    docs:
+      - docs/contributing/architecture/data-storage.md
+
   - id: email-blobs-r2
     group: storage
     name: Email blob storage (R2)
     summary: EMAIL_BLOBS R2 for raw MIME and outbound attachments.
     code:
+      - packages/worker/src/email/blob-keys.ts
       - packages/worker/src/email/repo.ts
     docs:
       - docs/contributing/architecture/data-storage.md
@@ -605,3 +656,4 @@ invariants:
     docs:
       - docs/contributing/architecture/usage-metering.md
       - docs/contributing/architecture/run-records.md
+      - docs/contributing/architecture/entitlements.md

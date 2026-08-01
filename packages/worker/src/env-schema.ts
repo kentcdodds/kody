@@ -202,6 +202,7 @@ export const EnvSchema = object({
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	EMAIL: optionalSendEmailSchema,
+	EMAIL_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	USAGE_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	FLAG_EXPOSURES: optionalAnalyticsEngineDatasetSchema,
 	SENTRY_DSN: optionalUrlStringSchema,

@@ -87,7 +87,7 @@ function applyOutboundFetchTimeout(
 }
 
 export async function executeGatewayFetch(input: {
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'> & UsageEnv
+	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY' | 'USER_METER'> & UsageEnv
 	props: FetchGatewayProps
 	request: Request
 	globalFetch?: typeof fetch
@@ -131,9 +131,11 @@ export async function executeGatewayFetch(input: {
 				null
 			await consumeDailyEntitlement({
 				db: input.env.APP_DB,
+				env: input.env,
 				userId: input.props.userId,
 				email,
 				resource: 'outbound_fetches_per_day',
+				waitUntil: input.waitUntil,
 			})
 		}
 		const transformed = await expandSecretPlaceholders({

@@ -8,7 +8,7 @@ import {
 	type EntitlementResource,
 	type PlanName,
 } from '#worker/entitlements/plans.ts'
-import { readEntitlementResourceUsage } from '#worker/entitlements/service.ts'
+import { readCurrentEntitlementResourceUsage } from '#worker/entitlements/service.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
@@ -113,7 +113,7 @@ export async function loadAdminUserUsageData(
 			currentMonth,
 		}),
 		readEntitlementConsumption({
-			db: env.APP_DB,
+			env,
 			usageUserId,
 			plan,
 			now,
@@ -140,15 +140,16 @@ export async function loadAdminUserUsageData(
 }
 
 async function readEntitlementConsumption(input: {
-	db: D1Database
+	env: Env
 	usageUserId: string
 	plan: PlanName
 	now: Date
 }): Promise<Array<AdminUsageEntitlementConsumption>> {
 	return await Promise.all(
 		adminUserUsageEntitlementResources.map(async (resource) => {
-			const current = await readEntitlementResourceUsage({
-				db: input.db,
+			const current = await readCurrentEntitlementResourceUsage({
+				db: input.env.APP_DB,
+				env: input.env,
 				userId: input.usageUserId,
 				resource,
 				now: input.now,

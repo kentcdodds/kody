@@ -49,7 +49,6 @@ export const platformFeedbackRetentionDays = 365
 export const publishedBundleArtifactRetentionDays = 30
 export const emailDeliveryEventRetentionDays = 90
 export const emailMessageRetentionDays = 365
-export const entitlementDailyCounterRetentionDays = 400
 export const usageRollupRetentionMonths = 24
 export const featureFlagExposureRetentionDays = 90
 export const auditEventRetentionDays = 180
@@ -134,14 +133,6 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 			'Threads orphaned by email message retention are pruned for the affected users in the same run.',
 	},
 	{
-		table: 'entitlement_daily_counters',
-		scope: 'per-user',
-		retentionDays: entitlementDailyCounterRetentionDays,
-		batchSize: retentionDefaultBatchSize,
-		description:
-			'Daily entitlement rate counters keep 400 days so year-over-year usage stays inspectable before rows age out.',
-	},
-	{
 		table: 'usage_rollups',
 		scope: 'per-user',
 		batchSize: retentionDefaultBatchSize,
@@ -210,7 +201,6 @@ export type RetentionPruneResult = {
 		deletedAttachmentBlobs: number
 		blobDeleteErrors: number
 	}
-	entitlementDailyCounters: number
 	usageRollups: number
 	featureFlagExposureRollups: number
 	auditEvents: number
@@ -774,29 +764,6 @@ export async function pruneUserEmailMessagesForRetention(input: {
 	return result
 }
 
-export async function pruneEntitlementDailyCountersForRetention(input: {
-	db: D1Database
-	now?: Date
-	batchSize?: number
-}) {
-	const cutoffDay = cutoffIso(
-		input.now ?? new Date(),
-		entitlementDailyCounterRetentionDays,
-	).slice(0, 'YYYY-MM-DD'.length)
-	return selectAndDeleteByIds({
-		db: input.db,
-		column: 'rowid',
-		bindings: [cutoffDay, input.batchSize ?? retentionDefaultBatchSize],
-		sql: `SELECT rowid
-			FROM entitlement_daily_counters
-			WHERE day < ?
-			ORDER BY day ASC, rowid ASC
-			LIMIT ?`,
-		table: 'entitlement_daily_counters',
-		idColumn: 'rowid',
-	})
-}
-
 export async function pruneUsageRollupsForRetention(input: {
 	db: D1Database
 	now?: Date
@@ -886,7 +853,7 @@ export async function pruneStripeWebhookEventsForRetention(input: {
 }
 
 export async function pruneRetention(input: {
-	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	env: Pick<Env, 'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
 	now?: Date
 	timeBudgetMs?: number
 }): Promise<RetentionPruneResult> {
@@ -894,6 +861,7 @@ export async function pruneRetention(input: {
 	const timeBudgetMs = input.timeBudgetMs ?? retentionRunTimeBudgetMs
 	const startedAtMs = Date.now()
 	const db = input.env.APP_DB
+	const auditDb = input.env.AUDIT_DB
 	const emailBlobs = input.env.EMAIL_BLOBS
 	// Per-run keyset cursor for the email prune; advances past rows skipped
 	// for blob reasons so a blocked head cannot wedge later batches.
@@ -917,7 +885,6 @@ export async function pruneRetention(input: {
 			deletedAttachmentBlobs: 0,
 			blobDeleteErrors: 0,
 		},
-		entitlementDailyCounters: 0,
 		usageRollups: 0,
 		featureFlagExposureRollups: 0,
 		auditEvents: 0,
@@ -1011,13 +978,6 @@ export async function pruneRetention(input: {
 			},
 		},
 		countTask(
-			'entitlement_daily_counters',
-			() => pruneEntitlementDailyCountersForRetention({ db, now }),
-			(count) => {
-				result.entitlementDailyCounters += count
-			},
-		),
-		countTask(
 			'usage_rollups',
 			() => pruneUsageRollupsForRetention({ db, now }),
 			(count) => {
@@ -1033,7 +993,7 @@ export async function pruneRetention(input: {
 		),
 		countTask(
 			'audit_events',
-			() => pruneAuditEventsForRetention({ db, now }),
+			() => pruneAuditEventsForRetention({ db: auditDb, now }),
 			(count) => {
 				result.auditEvents += count
 			},

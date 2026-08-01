@@ -39,6 +39,7 @@ export async function finalizePublishedEntitySource(
 		publishedCommit: input.publishedCommit,
 		manifestPath: input.source.manifest_path,
 		sourceRoot: input.source.source_root,
+		externalCheckUntil: null,
 	})
 	if (hasPublishedRuntimeArtifacts(input.env)) {
 		try {
@@ -59,6 +60,7 @@ export async function finalizePublishedEntitySource(
 					publishedCommit: previousPublishedCommit,
 					manifestPath: input.source.manifest_path,
 					sourceRoot: input.source.source_root,
+					externalCheckUntil: input.source.external_check_until,
 				})
 			} catch (revertError) {
 				Sentry.captureException(revertError, {
@@ -94,6 +96,7 @@ export async function finalizePublishedEntitySource(
 				publishedCommit: previousPublishedCommit,
 				manifestPath: input.source.manifest_path,
 				sourceRoot: input.source.source_root,
+				externalCheckUntil: input.source.external_check_until,
 			})
 			if (wrotePublishedSnapshot) {
 				await deletePublishedSourceSnapshot({

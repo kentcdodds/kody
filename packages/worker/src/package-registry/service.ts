@@ -217,10 +217,13 @@ export async function refreshSavedPackageProjection(input: {
 	packageId: string
 	sourceId: string
 	rebuildArtifacts?: boolean
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
+		waitUntil: input.waitUntil,
 		async write() {
 			const shouldRebuildArtifacts = input.rebuildArtifacts ?? true
 			const loaded = shouldRebuildArtifacts
@@ -248,6 +251,7 @@ export async function refreshSavedPackageProjection(input: {
 			})
 			await assertWithinStorageBytesEntitlement({
 				db: input.env.APP_DB,
+				env: input.env,
 				userId: input.userId,
 				email: input.userEmail,
 				requested: estimateEntitlementStorageEntryByteDelta({
@@ -276,6 +280,7 @@ export async function refreshSavedPackageProjection(input: {
 							}
 						: null,
 				}),
+				waitUntil: input.waitUntil,
 			})
 			if (existing) {
 				await updateSavedPackage(input.env.APP_DB, {
@@ -452,6 +457,7 @@ export async function deleteSavedPackageProjection(input: {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,
+		env: input.env,
 		async write() {
 			const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 				userId: input.userId,

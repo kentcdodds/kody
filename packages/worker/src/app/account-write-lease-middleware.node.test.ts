@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 
 const authMock = vi.hoisted(() => ({
 	loadResolvedRequestAuth: vi.fn(),
@@ -19,20 +21,31 @@ test('authenticated delayed mutation holds web lease through handler completion'
 			mcpUser: { userId: 'user-a' },
 		},
 	})
-	let active = 0
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
 	const db = {
 		prepare(query: string) {
 			return {
 				bind() {
 					return {
+						async first() {
+							if (query.includes('deleting_at')) {
+								return { deleting_at: null }
+							}
+							return null
+						},
 						async run() {
-							if (query.includes('active_write_count + 1')) active += 1
-							if (query.includes('MAX(active_write_count - 1')) active -= 1
 							return { meta: { changes: 1 } }
+						},
+						async all() {
+							return { results: [], meta: { changes: 0 } }
 						},
 					}
 				},
 			}
+		},
+		async batch() {
+			return []
 		},
 	} as unknown as D1Database
 	let startHandler: () => void = () => undefined
@@ -45,6 +58,7 @@ test('authenticated delayed mutation holds web lease through handler completion'
 	})
 	const middleware = createAccountWriteLeaseMiddleware({
 		APP_DB: db,
+		USER_METER: meter.env.USER_METER,
 	} as Env)
 	const responsePromise = middleware(
 		{
@@ -56,14 +70,15 @@ test('authenticated delayed mutation holds web lease through handler completion'
 			context: new Map(),
 		} as never,
 		async () => {
+			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
 			startHandler()
 			await finish
 			return Response.json({ ok: true })
 		},
 	)
 	await started
-	expect(active).toBe(1)
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
 	finishHandler()
 	await expect(responsePromise).resolves.toMatchObject({ status: 200 })
-	expect(active).toBe(0)
+	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
 })

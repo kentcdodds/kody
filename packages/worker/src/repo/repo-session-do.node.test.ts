@@ -94,6 +94,7 @@ const mockModule = vi.hoisted(() => {
 		getEntitySourceById: vi.fn(),
 		updateRepoSession: vi.fn(async () => undefined),
 		updateEntitySource: vi.fn(async () => undefined),
+		markEntitySourcePendingExternalReconcile: vi.fn(async () => true),
 		resolveArtifactSourceRepo: vi.fn(),
 		resolveExistingArtifactSourceRepo: vi.fn(),
 		resolveArtifactDefaultBranchHead: vi.fn(async () => ({
@@ -339,6 +340,8 @@ vi.mock('./entity-sources.ts', () => ({
 		mockModule.getEntitySourceById(...args),
 	updateEntitySource: (...args: Array<unknown>) =>
 		mockModule.updateEntitySource(...args),
+	markEntitySourcePendingExternalReconcile: (...args: Array<unknown>) =>
+		mockModule.markEntitySourcePendingExternalReconcile(...args),
 }))
 
 vi.mock('./artifacts.ts', async () => {
@@ -451,6 +454,7 @@ function stubPackageSourceForOpenSession({
 		manifest_path: 'package.json',
 		source_root: '/',
 		last_external_check_at: null,
+		external_check_until: null,
 		created_at: '2026-04-16T00:00:00.000Z',
 		updated_at: '2026-04-16T00:00:00.000Z',
 	})
@@ -1029,6 +1033,13 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 			ref: opened.session_branch,
 		}),
 	)
+	expect(
+		mockModule.markEntitySourcePendingExternalReconcile,
+	).toHaveBeenCalledWith(expect.anything(), {
+		id: 'source-1',
+		userId: 'user-1',
+		tokenExpiresAt: expect.any(String),
+	})
 
 	restoreRepoSessionMockBaseline()
 	stubPackageSourceForOpenSession({
@@ -1516,6 +1527,7 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		manifest_path: 'package.json',
 		source_root: '/',
 		last_external_check_at: null,
+		external_check_until: null,
 		created_at: '2026-04-18T00:00:00.000Z',
 		updated_at: '2026-04-18T00:00:00.000Z',
 	}
@@ -1616,6 +1628,7 @@ test('stagePublishedPackageArtifactRebuild collects workspace files once and sta
 		manifest_path: 'package.json',
 		source_root: '/',
 		last_external_check_at: null,
+		external_check_until: null,
 		created_at: '2026-04-18T00:00:00.000Z',
 		updated_at: '2026-04-18T00:00:00.000Z',
 	}

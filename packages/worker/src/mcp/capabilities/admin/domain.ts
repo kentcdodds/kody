@@ -28,11 +28,12 @@ import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
 import { adminAccountWriteLeaseListCapability } from './admin-account-write-lease-list.ts'
 import { adminAccountWriteLeaseRepairCapability } from './admin-account-write-lease-repair.ts'
+import { adminUserMeterParityCapability } from './admin-user-meter-parity.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
 	description:
-		'Admin-only operator capabilities for account metadata, platform accounts, package scope grants, fleet package-codemod scan/dry-run/apply/revert over published package trees, feature flags, operator-owned system email, attributed platform feedback users explicitly submit for admin review, and metadata about activity on public community listings; never exposes private package source or unrelated user content such as secrets, memories, jobs, or user inbox email.',
+		'Admin-only operator capabilities for account metadata, platform accounts, package scope grants, fleet package-codemod scan/dry-run/apply/revert over published package trees, feature flags, operator-owned system email, attributed platform feedback users explicitly submit for admin review, UserMeter↔D1 parity verification, and metadata about activity on public community listings; never exposes private package source or unrelated user content such as secrets, memories, jobs, or user inbox email.',
 	keywords: [
 		'admin',
 		'rbac',
@@ -51,12 +52,16 @@ export const adminDomain = defineDomain({
 		'package codemod',
 		'fleet',
 		'migration',
+		'user meter',
+		'parity',
+		'cutover',
 	],
 	capabilities: [
 		adminUserListCapability,
 		adminUserGetCapability,
 		adminUserCreateCapability,
 		adminUserUpdateCapability,
+		adminUserMeterParityCapability,
 		adminAccountWriteLeaseListCapability,
 		adminAccountWriteLeaseRepairCapability,
 		adminPlatformAccountCreateCapability,

@@ -302,3 +302,12 @@ export const runRecordRetentionAlarmMs = 60 * 60 * 1000
  * bypass the in-flight guard.
  */
 export const packageInvocationLedgerRetentionDays = 90
+
+/**
+ * Terminal workflow projections keep entitlement/idempotency history for 90
+ * days inside the RunLog DO (matches the legacy D1/idempotency window; separate
+ * from run-list caps). Active / running rows are never age-pruned. Stale
+ * `creating` reservations use a short TTL
+ * ({@link workflowProjectionCreatingTtlMs} in `workflow-projection.ts`).
+ */
+export const workflowProjectionRetentionDays = 90

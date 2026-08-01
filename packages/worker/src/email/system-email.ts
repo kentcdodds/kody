@@ -10,9 +10,10 @@ import {
 	getEmailInboxByName,
 } from './repo.ts'
 import { buildPlatformEmailAddress } from './platform-address.ts'
+import { systemEmailOwnerId } from './email-owner.ts'
 import { type EmailInboxAddressRecord, type EmailInboxRecord } from './types.ts'
 
-export const systemEmailOwnerId = 'system:email'
+export { systemEmailOwnerId }
 
 export const systemEmailLocals = [
 	'kody',

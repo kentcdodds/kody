@@ -1,6 +1,10 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { loadAdminSystemEmailData } from '#worker/admin/system-email-data.ts'
 import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
@@ -16,6 +20,7 @@ async function auditSystemEmailRead(input: {
 }) {
 	await logAuditEvent({
 		db: input.env.APP_DB,
+		auditDb: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: input.action,
 		result: 'success',

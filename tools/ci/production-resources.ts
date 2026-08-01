@@ -27,6 +27,8 @@ type ResolvedProductionBindings = {
 	workerName: string
 	d1DatabaseName: string
 	d1ConfiguredId: string
+	auditD1DatabaseName: string
+	auditD1ConfiguredId: string
 	oauthKvTitle: string
 	oauthKvConfiguredId: string
 	bundleArtifactsKvTitle: string
@@ -39,6 +41,8 @@ type ResolvedProductionBindings = {
 	platformFeedbackDispatchDeadLetterQueueName: string
 	communityActivityDispatchQueueName: string
 	communityActivityDispatchDeadLetterQueueName: string
+	scheduledDispatchQueueName: string
+	scheduledDispatchDeadLetterQueueName: string
 }
 
 function parseArgs(argv: Array<string>): {
@@ -281,6 +285,26 @@ async function resolveProductionBindings({
 	}
 	const d1ConfiguredId =
 		typeof d1Entry.database_id === 'string' ? d1Entry.database_id : ''
+	const auditD1Entry = d1Databases.find((entry) => {
+		if (!entry || typeof entry !== 'object') return false
+		return (entry as Record<string, unknown>).binding === 'AUDIT_DB'
+	}) as Record<string, unknown> | undefined
+	if (!auditD1Entry) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" has no production D1 binding for "AUDIT_DB".`,
+		)
+	}
+	const auditD1DatabaseName = auditD1Entry.database_name
+	if (
+		typeof auditD1DatabaseName !== 'string' ||
+		auditD1DatabaseName.length === 0
+	) {
+		fail(
+			`wrangler config "${wranglerConfigPath}" is missing "database_name" for production "AUDIT_DB".`,
+		)
+	}
+	const auditD1ConfiguredId =
+		typeof auditD1Entry.database_id === 'string' ? auditD1Entry.database_id : ''
 
 	const kvNamespaces = (productionEnv as Record<string, unknown>).kv_namespaces
 	if (!Array.isArray(kvNamespaces)) {
@@ -396,6 +420,8 @@ async function resolveProductionBindings({
 		workerName,
 		d1DatabaseName,
 		d1ConfiguredId,
+		auditD1DatabaseName,
+		auditD1ConfiguredId,
 		oauthKvTitle,
 		oauthKvConfiguredId,
 		bundleArtifactsKvTitle,
@@ -414,12 +440,18 @@ async function ensureProductionResources(options: CliOptions) {
 		kvTitleOverride: options.kvTitleOverride,
 	})
 	console.error(
-		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName})`,
+		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Scheduled Dispatch Queue: ${bindings.scheduledDispatchQueueName}, Scheduled Dispatch DLQ: ${bindings.scheduledDispatchDeadLetterQueueName})`,
 	)
 
 	const d1 = ensureD1Database({
 		name: bindings.d1DatabaseName,
 		configuredId: bindings.d1ConfiguredId,
+		location: options.d1Location,
+		dryRun: options.dryRun,
+	})
+	const auditD1 = ensureD1Database({
+		name: bindings.auditD1DatabaseName,
+		configuredId: bindings.auditD1ConfiguredId,
 		location: options.d1Location,
 		dryRun: options.dryRun,
 	})
@@ -485,6 +517,18 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.communityActivityDispatchDeadLetterQueueName,
 		dryRun: options.dryRun,
 	})
+	const scheduledDispatchQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.scheduledDispatchQueueName,
+		dryRun: options.dryRun,
+	})
+	const scheduledDispatchDeadLetterQueue = await ensureCloudflareQueue({
+		accountId: accountId ?? 'dry-run-account',
+		apiToken: apiToken ?? 'dry-run-token',
+		name: bindings.scheduledDispatchDeadLetterQueueName,
+		dryRun: options.dryRun,
+	})
 	const emailSendingDomain = resolveEmailSendingDomain(options.dryRun)
 	const emailEventSubscription = await ensureEmailSendingEventSubscription({
 		accountId: accountId ?? 'dry-run-account',
@@ -503,6 +547,8 @@ async function ensureProductionResources(options: CliOptions) {
 		workerName: bindings.workerName,
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
+		auditD1DatabaseName: auditD1.name,
+		auditD1DatabaseId: auditD1.id,
 		oauthKvId: oauthKv.id,
 		bundleArtifactsKvId: bundleArtifactsKv.id,
 		communityAssetsBucketName: communityAssets.name,
@@ -518,6 +564,8 @@ async function ensureProductionResources(options: CliOptions) {
 	console.log(`wrangler_config=${generatedConfigPath}`)
 	console.log(`d1_database_name=${d1.name}`)
 	console.log(`d1_database_id=${d1.id}`)
+	console.log(`audit_d1_database_name=${auditD1.name}`)
+	console.log(`audit_d1_database_id=${auditD1.id}`)
 	console.log(`oauth_kv_title=${oauthKv.title}`)
 	console.log(`oauth_kv_id=${oauthKv.id}`)
 	console.log(`bundle_artifacts_kv_title=${bundleArtifactsKv.title}`)
@@ -539,6 +587,10 @@ async function ensureProductionResources(options: CliOptions) {
 	)
 	console.log(
 		`community_activity_dispatch_dead_letter_queue_name=${communityActivityDispatchDeadLetterQueue.name}`,
+	)
+	console.log(`scheduled_dispatch_queue_name=${scheduledDispatchQueue.name}`)
+	console.log(
+		`scheduled_dispatch_dead_letter_queue_name=${scheduledDispatchDeadLetterQueue.name}`,
 	)
 	console.log(`email_event_subscription_id=${emailEventSubscription.id}`)
 }

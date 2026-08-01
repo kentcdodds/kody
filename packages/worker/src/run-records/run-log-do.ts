@@ -1,7 +1,32 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
+import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import {
+	type ActivationMilestone,
+	type ActivationMilestoneRecord,
+	type ActivationStateImport,
+	type PackageRunSuccessRecord,
+	countsTowardPackageActivation,
+} from './package-activation-state.ts'
+import {
+	type JobRunObservabilityRecord,
+	type JobRunObservabilitySeedInput,
+	type JobRunObservabilityStatus,
+	type JobRunObservabilityUpsertInput,
+} from './job-run-observability.ts'
+import {
+	type WorkflowProjectionRecord,
+	type WorkflowProjectionReserveResult,
+	type WorkflowProjectionSourceType,
+	type WorkflowProjectionUpsertInput,
+	creatingWorkflowProjectionStatus,
+	workflowProjectionActiveStatuses,
+	workflowProjectionCreatingTtlMs,
+	workflowProjectionImportMaxBatch,
+	workflowProjectionReservationStatuses,
+} from './workflow-projection.ts'
 import {
 	type RunLogLevel,
 	type RunRecord,
@@ -22,6 +47,7 @@ import {
 	runRecordRetentionEveryNFinishes,
 	runRecordStaleRunningTtlMsForSurface,
 	runSurfaceValues,
+	workflowProjectionRetentionDays,
 } from './types.ts'
 
 const textEncoder = new TextEncoder()
@@ -29,19 +55,27 @@ const maxAgeDeletesPerFinish = 100
 const maxExcessDeletesPerFinish = 100
 const maxStaleRunningReconcilesPerPass = 100
 const maxLedgerAgeDeletesPerPass = 100
+const maxWorkflowProjectionAgeDeletesPerPass = 100
+const maxStaleCreatingDeletesPerPass = 100
 
 const metaRunCountKey = 'run_count'
 const metaFinishesSinceRetentionKey = 'finishes_since_retention'
 const metaSchemaVersionKey = 'schema_version'
+/** Set once after a successful D1 → RunLog activation seed (incl. empty). */
+const metaActivationInitializedKey = 'activation_initialized'
 /** Bump when initializeSchema's DDL set changes; warm objects skip DDL. */
-const runLogSchemaVersion = 5
+const runLogSchemaVersion = 7
 
 /**
- * Cursor namespace for the invocation-ledger phase of `exportRuns`. Run-phase
- * cursors stay raw run ids for backward compatibility with cursors minted
- * before the ledger moved into this DO.
+ * Cursor namespaces for `exportRuns` phases after the raw run-id phase.
+ * Run-phase cursors stay raw run ids for backward compatibility with cursors
+ * minted before later phases existed.
  */
 const exportLedgerCursorPrefix = 'invocation-ledger:'
+const exportWorkflowProjectionsCursorPrefix = 'workflow-projections:'
+const exportJobRunObservabilityCursorPrefix = 'job-run-observability:'
+const exportPackageRunSuccessesCursorPrefix = 'package-run-successes:'
+const exportActivationMilestonesCursorPrefix = 'activation-milestones:'
 
 const staleRunningErrorName = 'Interrupted'
 const staleRunningErrorMessage =
@@ -50,6 +84,11 @@ const staleRunningErrorMessage =
 const retentionMs = runRecordRetentionDays * 24 * 60 * 60 * 1000
 const ledgerRetentionMs =
 	packageInvocationLedgerRetentionDays * 24 * 60 * 60 * 1000
+const workflowProjectionRetentionMs =
+	workflowProjectionRetentionDays * 24 * 60 * 60 * 1000
+
+const workflowProjectionTerminalStatuses: ReadonlyArray<string> =
+	terminalWorkflowStatusValues
 
 export type RunLogRowInput = {
 	id: string
@@ -151,9 +190,28 @@ type ExportRunsInput = {
 	startAfter?: string | null
 }
 
+export type ExportRunsResult = {
+	runs: Array<RunRecord>
+	logs: Array<RunRecordLog>
+	packageInvocations: Array<PackageInvocationLedgerRecord>
+	workflowProjections: Array<WorkflowProjectionRecord>
+	jobRunObservability: Array<JobRunObservabilityRecord>
+	packageRunSuccesses: Array<PackageRunSuccessRecord>
+	activationMilestones: Array<ActivationMilestoneRecord>
+	nextStartAfter: string | null
+	truncated: boolean
+}
+
 type CursorPayload = {
 	startedAt: string
 	id: string
+}
+
+type WorkflowProjectionListInput = {
+	limit: number
+	cursor?: string | null
+	status?: string | null
+	bindingName?: string | null
 }
 
 function truncateUtf8(value: string, maxBytes: number) {
@@ -312,6 +370,77 @@ function mapInvocationLedgerRow(
 	}
 }
 
+function mapWorkflowProjectionRow(
+	row: Record<string, SqlStorageValue>,
+): WorkflowProjectionRecord {
+	const rawSourceType = String(row['source_type'] ?? '')
+	const sourceType: WorkflowProjectionSourceType =
+		rawSourceType === 'inline' ? 'inline' : 'package'
+	return {
+		id: String(row['id']),
+		bindingName: String(row['binding_name']),
+		sourceType,
+		packageId: row['package_id'] == null ? null : String(row['package_id']),
+		kodyId: row['kody_id'] == null ? null : String(row['kody_id']),
+		sourceId: row['source_id'] == null ? null : String(row['source_id']),
+		workflowName: String(row['workflow_name']),
+		exportName: row['export_name'] == null ? null : String(row['export_name']),
+		idempotencyKey: String(row['idempotency_key']),
+		runAt: String(row['run_at']),
+		planDate: row['plan_date'] == null ? null : String(row['plan_date']),
+		status: row['status'] == null ? null : String(row['status']),
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+		completedAt:
+			row['completed_at'] == null ? null : String(row['completed_at']),
+		lastError: row['last_error'] == null ? null : String(row['last_error']),
+	}
+}
+
+function mapJobRunObservabilityRow(
+	row: Record<string, SqlStorageValue>,
+): JobRunObservabilityRecord {
+	const rawStatus = row['last_run_status']
+	const lastRunStatus: JobRunObservabilityStatus | null =
+		rawStatus === 'success' || rawStatus === 'error' ? rawStatus : null
+	return {
+		jobId: String(row['job_id']),
+		lastRunAt: row['last_run_at'] == null ? null : String(row['last_run_at']),
+		lastRunStatus,
+		lastRunError:
+			row['last_run_error'] == null ? null : String(row['last_run_error']),
+		lastDurationMs:
+			row['last_duration_ms'] == null
+				? null
+				: Number(row['last_duration_ms']) || 0,
+		runCount: Number(row['run_count'] ?? 0) || 0,
+		successCount: Number(row['success_count'] ?? 0) || 0,
+		errorCount: Number(row['error_count'] ?? 0) || 0,
+		updatedAt: String(row['updated_at']),
+		legacySeeded: Number(row['legacy_seeded'] ?? 0) === 1,
+	}
+}
+
+function mapPackageRunSuccessRow(
+	row: Record<string, SqlStorageValue>,
+): PackageRunSuccessRecord {
+	return {
+		packageId: String(row['package_id']),
+		successCount: Number(row['success_count'] ?? 0) || 0,
+		updatedAt: String(row['updated_at']),
+	}
+}
+
+function mapActivationMilestoneRow(
+	row: Record<string, SqlStorageValue>,
+): ActivationMilestoneRecord {
+	return {
+		milestone: String(row['milestone']) as ActivationMilestone,
+		reachedAt: String(row['reached_at']),
+		packageId: row['package_id'] == null ? null : String(row['package_id']),
+	}
+}
+
 function clampMetadataJson(metadataJson: string) {
 	if (textEncoder.encode(metadataJson).length <= runRecordMaxJsonBytes) {
 		return metadataJson
@@ -453,6 +582,88 @@ class RunLogBase extends DurableObject<Env> {
 			`CREATE INDEX IF NOT EXISTS idx_invocation_ledger_status_created
 			ON package_invocation_ledger(status, created_at ASC)`,
 		)
+		// Dedicated unpruned workflow projections (mirrors D1 workflow_runs
+		// minus user_id, plus binding_name). Correctness state for idempotency
+		// and concurrent_workflows — never derived from pruned runs.
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS workflow_projections (
+				id TEXT PRIMARY KEY NOT NULL,
+				binding_name TEXT NOT NULL,
+				source_type TEXT NOT NULL CHECK (source_type IN ('package', 'inline')),
+				package_id TEXT,
+				kody_id TEXT,
+				source_id TEXT,
+				workflow_name TEXT NOT NULL,
+				export_name TEXT,
+				idempotency_key TEXT NOT NULL,
+				run_at TEXT NOT NULL,
+				plan_date TEXT,
+				status TEXT,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				completed_at TEXT,
+				last_error TEXT
+			)
+		`)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_workflow_projections_created
+			ON workflow_projections(created_at DESC, id DESC)`,
+		)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_workflow_projections_status
+			ON workflow_projections(status)`,
+		)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_workflow_projections_idempotency
+			ON workflow_projections(idempotency_key, created_at ASC)`,
+		)
+		// Dedicated unpruned per-job last-run outcome + counters. Not runs.
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS job_run_observability (
+				job_id TEXT PRIMARY KEY NOT NULL,
+				last_run_at TEXT,
+				last_run_status TEXT,
+				last_run_error TEXT,
+				last_duration_ms INTEGER,
+				run_count INTEGER NOT NULL DEFAULT 0,
+				success_count INTEGER NOT NULL DEFAULT 0,
+				error_count INTEGER NOT NULL DEFAULT 0,
+				updated_at TEXT NOT NULL,
+				legacy_seeded INTEGER NOT NULL DEFAULT 0
+			)
+		`)
+		this.ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS idx_workflow_projections_binding_idempotency
+			ON workflow_projections(binding_name, idempotency_key, created_at ASC)`,
+		)
+		// Dedicated unpruned package activation counters + milestones.
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS package_run_successes (
+				package_id TEXT PRIMARY KEY NOT NULL,
+				success_count INTEGER NOT NULL CHECK (success_count >= 0),
+				updated_at TEXT NOT NULL
+			)
+		`)
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS activation_milestones (
+				milestone TEXT PRIMARY KEY NOT NULL CHECK (
+					milestone IN ('package_run_succeeded', 'package_activated')
+				),
+				reached_at TEXT NOT NULL,
+				package_id TEXT
+			)
+		`)
+		// Warm DOs created at schema v6 lack `legacy_seeded`; ignore if present.
+		if ((installedVersion ?? 0) < 7) {
+			try {
+				this.ctx.storage.sql.exec(
+					`ALTER TABLE job_run_observability
+					ADD COLUMN legacy_seeded INTEGER NOT NULL DEFAULT 0`,
+				)
+			} catch {
+				// Column already exists (fresh CREATE above).
+			}
+		}
 		this.setMeta(metaSchemaVersionKey, runLogSchemaVersion)
 	}
 
@@ -839,6 +1050,42 @@ class RunLogBase extends DurableObject<Env> {
 			)
 		}
 
+		const terminalPlaceholders = workflowProjectionTerminalStatuses
+			.map(() => '?')
+			.join(', ')
+		const oldestTerminalWorkflowProjection = this.ctx.storage.sql
+			.exec<{ due_at: string }>(
+				`SELECT COALESCE(completed_at, updated_at) AS due_at
+				FROM workflow_projections
+				WHERE status IN (${terminalPlaceholders})
+				ORDER BY COALESCE(completed_at, updated_at) ASC
+				LIMIT 1`,
+				...workflowProjectionTerminalStatuses,
+			)
+			.toArray()[0]
+		if (oldestTerminalWorkflowProjection) {
+			consider(
+				Date.parse(oldestTerminalWorkflowProjection.due_at) +
+					workflowProjectionRetentionMs,
+			)
+		}
+
+		const oldestStaleCreatingProjection = this.ctx.storage.sql
+			.exec<{ updated_at: string }>(
+				`SELECT updated_at FROM workflow_projections
+				WHERE COALESCE(status, '') = ?
+				ORDER BY updated_at ASC
+				LIMIT 1`,
+				creatingWorkflowProjectionStatus,
+			)
+			.toArray()[0]
+		if (oldestStaleCreatingProjection) {
+			consider(
+				Date.parse(oldestStaleCreatingProjection.updated_at) +
+					workflowProjectionCreatingTtlMs,
+			)
+		}
+
 		// Soonest stale due-time can belong to a newer short-lived surface
 		// (execute) even when an older long-lived service/job row exists.
 		// Only the earliest row per surface can produce that due-time.
@@ -901,6 +1148,7 @@ class RunLogBase extends DurableObject<Env> {
 		}
 
 		this.pruneInvocationLedgerForRetention()
+		this.pruneWorkflowProjectionsForRetention()
 		this.setFinishesSinceRetention(0)
 	}
 
@@ -922,6 +1170,55 @@ class RunLogBase extends DurableObject<Env> {
 			)`,
 			cutoff,
 			maxLedgerAgeDeletesPerPass,
+		)
+	}
+
+	/**
+	 * Age-prune terminal workflow projections after 90 days and drop stale
+	 * `creating` reservations past their short TTL. Active/running rows are
+	 * never removed. Success counts, milestones, and job observability are
+	 * intentionally absent from this lane.
+	 */
+	private pruneWorkflowProjectionsForRetention() {
+		this.pruneStaleCreatingWorkflowProjections()
+		const cutoff = new Date(
+			Date.now() - workflowProjectionRetentionMs,
+		).toISOString()
+		const placeholders = workflowProjectionTerminalStatuses
+			.map(() => '?')
+			.join(', ')
+		this.ctx.storage.sql.exec(
+			`DELETE FROM workflow_projections
+			WHERE id IN (
+				SELECT id FROM workflow_projections
+				WHERE status IN (${placeholders})
+					AND COALESCE(completed_at, updated_at) < ?
+				ORDER BY COALESCE(completed_at, updated_at) ASC
+				LIMIT ?
+			)`,
+			...workflowProjectionTerminalStatuses,
+			cutoff,
+			maxWorkflowProjectionAgeDeletesPerPass,
+		)
+	}
+
+	/** Drop `creating` rows whose `updated_at` is older than the creating TTL. */
+	private pruneStaleCreatingWorkflowProjections() {
+		const cutoff = new Date(
+			Date.now() - workflowProjectionCreatingTtlMs,
+		).toISOString()
+		this.ctx.storage.sql.exec(
+			`DELETE FROM workflow_projections
+			WHERE id IN (
+				SELECT id FROM workflow_projections
+				WHERE COALESCE(status, '') = ?
+					AND updated_at < ?
+				ORDER BY updated_at ASC
+				LIMIT ?
+			)`,
+			creatingWorkflowProjectionStatus,
+			cutoff,
+			maxStaleCreatingDeletesPerPass,
 		)
 	}
 
@@ -1076,16 +1373,235 @@ class RunLogBase extends DurableObject<Env> {
 		return { deleted: true }
 	}
 
+	private getRunStatus(runId: string): RunStatus | null {
+		const row = this.ctx.storage.sql
+			.exec<{ status: string }>(
+				`SELECT status FROM runs WHERE id = ? LIMIT 1`,
+				runId,
+			)
+			.toArray()[0]
+		if (!row) return null
+		const status = String(row.status)
+		if (status === 'running' || status === 'success' || status === 'error') {
+			return status
+		}
+		return null
+	}
+
+	private hasActivationMilestone(milestone: ActivationMilestone): boolean {
+		const row = this.ctx.storage.sql
+			.exec<{ ok: number }>(
+				`SELECT 1 AS ok FROM activation_milestones WHERE milestone = ? LIMIT 1`,
+				milestone,
+			)
+			.toArray()[0]
+		return row != null
+	}
+
+	/**
+	 * Increment package success counts and write first-success / activated
+	 * milestones. Transaction-neutral so callers can wrap it with run upsert +
+	 * log replacement in one `transactionSync` (nested transactions are not
+	 * supported).
+	 *
+	 * Legacy contract: once the global `package_activated` milestone exists,
+	 * counters and milestones stop changing for every package (short-circuit
+	 * before any write). This matches pre-cutover D1 activation semantics.
+	 */
+	private applySuccessfulPackageActivationIncrement(input: {
+		packageId: string
+		reachedAt: string
+	}) {
+		const packageId = input.packageId
+		const updatedAt = input.reachedAt
+		// Global activation latch: further package successes must not mutate
+		// success_count rows or milestones after the user is already activated.
+		if (this.hasActivationMilestone('package_activated')) return
+
+		this.ctx.storage.sql.exec(
+			`INSERT INTO package_run_successes (package_id, success_count, updated_at)
+			VALUES (?, 1, ?)
+			ON CONFLICT(package_id) DO UPDATE SET
+				success_count = success_count + 1,
+				updated_at = excluded.updated_at`,
+			packageId,
+			updatedAt,
+		)
+		this.ctx.storage.sql.exec(
+			`INSERT OR IGNORE INTO activation_milestones (milestone, reached_at, package_id)
+			VALUES ('package_run_succeeded', ?, ?)`,
+			updatedAt,
+			packageId,
+		)
+		const countRow = this.ctx.storage.sql
+			.exec<{ success_count: number }>(
+				`SELECT success_count FROM package_run_successes
+				WHERE package_id = ? LIMIT 1`,
+				packageId,
+			)
+			.toArray()[0]
+		const successCount = Number(countRow?.success_count ?? 0) || 0
+		if (successCount < 2) return
+		this.ctx.storage.sql.exec(
+			`INSERT OR IGNORE INTO activation_milestones (milestone, reached_at, package_id)
+			VALUES ('package_activated', ?, ?)`,
+			updatedAt,
+			packageId,
+		)
+	}
+
+	/**
+	 * Increment package success counts / milestones for a genuine new terminal
+	 * success. Throws on SQL failure so the finish transaction can roll back.
+	 */
+	private recordSuccessfulPackageActivation(input: {
+		packageId: string | null
+		surface: string
+		reachedAt: string
+	}) {
+		const packageId = input.packageId?.trim() || null
+		if (!packageId) return
+		if (!countsTowardPackageActivation(input.surface)) return
+		this.applySuccessfulPackageActivationIncrement({
+			packageId,
+			reachedAt: input.reachedAt,
+		})
+	}
+
+	private maybeRecordActivationForTerminalRun(input: {
+		previousStatus: RunStatus | null
+		run: RunLogRowInput
+	}) {
+		if (input.run.status !== 'success') return
+		// Replacement/replay of an already-terminal success must not re-count.
+		if (input.previousStatus === 'success') return
+		this.recordSuccessfulPackageActivation({
+			packageId: input.run.packageId,
+			surface: input.run.surface,
+			reachedAt:
+				input.run.finishedAt ?? input.run.updatedAt ?? new Date().toISOString(),
+		})
+	}
+
+	/**
+	 * Apply one terminal job outcome to `job_run_observability`. Shared by the
+	 * public upsert RPC and the finish-path side effect.
+	 */
+	private writeJobRunObservabilityOutcome(
+		input: JobRunObservabilityUpsertInput,
+	): JobRunObservabilityRecord {
+		const jobId = input.jobId.trim()
+		const ranAt = input.ranAt
+		const updatedAt = ranAt
+		const durationMs =
+			typeof input.durationMs === 'number' && Number.isFinite(input.durationMs)
+				? Math.max(0, Math.trunc(input.durationMs))
+				: null
+		const error = input.status === 'error' ? input.error?.trim() || null : null
+		const successDelta = input.status === 'success' ? 1 : 0
+		const errorDelta = input.status === 'error' ? 1 : 0
+		this.ctx.storage.sql.exec(
+			`INSERT INTO job_run_observability (
+				job_id, last_run_at, last_run_status, last_run_error, last_duration_ms,
+				run_count, success_count, error_count, updated_at, legacy_seeded
+			) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, 0)
+			ON CONFLICT(job_id) DO UPDATE SET
+				last_run_at = excluded.last_run_at,
+				last_run_status = excluded.last_run_status,
+				last_run_error = excluded.last_run_error,
+				last_duration_ms = excluded.last_duration_ms,
+				run_count = run_count + 1,
+				success_count = success_count + excluded.success_count,
+				error_count = error_count + excluded.error_count,
+				updated_at = excluded.updated_at`,
+			jobId,
+			ranAt,
+			input.status,
+			error,
+			durationMs,
+			successDelta,
+			errorDelta,
+			updatedAt,
+		)
+		const row = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM job_run_observability WHERE job_id = ? LIMIT 1`,
+				jobId,
+			)
+			.toArray()[0]
+		if (!row) {
+			throw new Error(
+				`job_run_observability row missing after upsert: ${jobId}`,
+			)
+		}
+		return mapJobRunObservabilityRow(row)
+	}
+
+	/**
+	 * Upsert job last-run counters for a genuine new terminal finish with a
+	 * `jobId`. Replay/replacement of an already-terminal run must not
+	 * double-count. Throws on SQL failure so the finish transaction can roll
+	 * back.
+	 */
+	private maybeRecordJobRunObservabilityForTerminalRun(input: {
+		previousStatus: RunStatus | null
+		run: RunLogRowInput
+	}) {
+		if (input.run.status !== 'success' && input.run.status !== 'error') {
+			return
+		}
+		// Already-terminal → terminal replacement/replay: counters stay put.
+		if (
+			input.previousStatus === 'success' ||
+			input.previousStatus === 'error'
+		) {
+			return
+		}
+		const jobId = input.run.jobId?.trim() || null
+		if (!jobId) return
+		const ranAt =
+			input.run.finishedAt ?? input.run.updatedAt ?? new Date().toISOString()
+		const error =
+			input.run.status === 'error'
+				? input.run.errorMessage?.trim() || input.run.errorName?.trim() || null
+				: null
+		this.writeJobRunObservabilityOutcome({
+			jobId,
+			status: input.run.status,
+			ranAt,
+			error,
+			durationMs: input.run.durationMs,
+		})
+	}
+
+	private recordTerminalRunSideEffects(input: {
+		previousStatus: RunStatus | null
+		run: RunLogRowInput
+	}) {
+		this.maybeRecordActivationForTerminalRun(input)
+		this.maybeRecordJobRunObservabilityForTerminalRun(input)
+	}
+
 	async finishRun(input: {
 		run: RunLogRowInput
 		logs: Array<RunLogEntryInput>
 	}): Promise<{ ok: true }> {
-		const existed = this.runExists(input.run.id)
-		this.upsertRun(input.run, 'replace')
-		this.replaceLogs(input.run.id, input.logs)
-		if (!existed) {
-			this.adjustRunCount(1)
-		}
+		const previousStatus = this.getRunStatus(input.run.id)
+		const existed = previousStatus != null
+		// One transaction for run upsert + logs + job observability + activation
+		// so a mid-unit SQL failure cannot leave a terminal run that suppresses
+		// missing derived side effects. Alarm / async retention stay outside.
+		this.ctx.storage.transactionSync(() => {
+			this.upsertRun(input.run, 'replace')
+			this.replaceLogs(input.run.id, input.logs)
+			if (!existed) {
+				this.adjustRunCount(1)
+			}
+			this.recordTerminalRunSideEffects({
+				previousStatus,
+				run: input.run,
+			})
+		})
 		// Any write invalidates idle. Keep `retentionAlarmArmed` so repeated
 		// finishes inside an already-scheduled window stay off alarm storage;
 		// terminal rows only push age deadlines later.
@@ -1228,33 +1744,45 @@ class RunLogBase extends DurableObject<Env> {
 		record: PackageInvocationLedgerRecord | null
 	}> {
 		const now = new Date().toISOString()
-		// DO execution is serialized, so this read-then-write is atomic within
-		// the RPC; the fence is decided by an explicit row read instead of the
-		// billing-side rowsWritten counter.
-		const current = this.getInvocationLedgerRowById(input.invocationId)
-		const ledgerUpdated =
-			current != null &&
-			current.status === 'in_progress' &&
-			current.updatedAt === input.claimUpdatedAt
-		if (ledgerUpdated) {
-			this.ctx.storage.sql.exec(
-				`UPDATE package_invocation_ledger
-				SET status = ?, response_json = ?, updated_at = ?
-				WHERE id = ?`,
-				input.status,
-				input.responseJson,
-				now,
-				input.invocationId,
-			)
-		}
-		if (input.run) {
-			const existed = this.runExists(input.run.id)
-			this.upsertRun(input.run, 'replace')
-			this.replaceLogs(input.run.id, input.logs)
-			if (!existed) {
-				this.adjustRunCount(1)
+		// Fence + run/log/derived side effects share one transaction so a SQL
+		// failure cannot leave a terminal run without its ledger/side effects.
+		// Alarm scheduling stays outside.
+		let ledgerUpdated = false
+		let current: PackageInvocationLedgerRecord | null = null
+		this.ctx.storage.transactionSync(() => {
+			current = this.getInvocationLedgerRowById(input.invocationId)
+			ledgerUpdated =
+				current != null &&
+				current.status === 'in_progress' &&
+				current.updatedAt === input.claimUpdatedAt
+			if (ledgerUpdated) {
+				this.ctx.storage.sql.exec(
+					`UPDATE package_invocation_ledger
+					SET status = ?, response_json = ?, updated_at = ?
+					WHERE id = ?`,
+					input.status,
+					input.responseJson,
+					now,
+					input.invocationId,
+				)
 			}
-		}
+			if (input.run) {
+				const previousStatus = this.getRunStatus(input.run.id)
+				const existed = previousStatus != null
+				this.upsertRun(input.run, 'replace')
+				this.replaceLogs(input.run.id, input.logs)
+				if (!existed) {
+					this.adjustRunCount(1)
+				}
+				// Activation + job observability follow the run transition, not
+				// the ledger fence: the attempt still happened and must count
+				// once even when a competing reclaim owns the ledger row.
+				this.recordTerminalRunSideEffects({
+					previousStatus,
+					run: input.run,
+				})
+			}
+		})
 		// A terminal ledger row creates future age-prune work even when no run
 		// row was written, so a stale idle conclusion must be cleared.
 		this.retentionIdleConfirmed = false
@@ -1301,6 +1829,577 @@ class RunLogBase extends DurableObject<Env> {
 			return { released: true, record: null }
 		}
 		return { released: false, record: current }
+	}
+
+	/**
+	 * Authoritative workflow projection write: monotonic by `updated_at`, plus
+	 * terminal-stickiness (same predicate as the D1 `workflow_runs` mirror).
+	 */
+	private writeWorkflowProjectionRow(input: WorkflowProjectionUpsertInput) {
+		const now = new Date().toISOString()
+		const createdAt = input.createdAt?.trim() || now
+		const updatedAt = input.updatedAt?.trim() || now
+		const terminalPlaceholders = workflowProjectionTerminalStatuses
+			.map(() => '?')
+			.join(', ')
+		this.ctx.storage.sql.exec(
+			`INSERT INTO workflow_projections (
+				id, binding_name, source_type, package_id, kody_id, source_id,
+				workflow_name, export_name, idempotency_key, run_at, plan_date,
+				status, created_at, updated_at, completed_at, last_error
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				status = excluded.status,
+				updated_at = excluded.updated_at,
+				completed_at = COALESCE(excluded.completed_at, workflow_projections.completed_at),
+				last_error = COALESCE(excluded.last_error, workflow_projections.last_error)
+			WHERE excluded.updated_at >= workflow_projections.updated_at
+				AND (
+					COALESCE(workflow_projections.status, '') NOT IN (${terminalPlaceholders})
+					OR COALESCE(excluded.status, '') IN (${terminalPlaceholders})
+				)`,
+			input.id,
+			input.bindingName,
+			input.sourceType,
+			input.packageId ?? null,
+			input.kodyId ?? null,
+			input.sourceId ?? null,
+			input.workflowName,
+			input.exportName ?? null,
+			input.idempotencyKey,
+			input.runAt,
+			input.planDate ?? null,
+			input.status ?? null,
+			createdAt,
+			updatedAt,
+			input.completedAt ?? null,
+			input.lastError ?? null,
+			...workflowProjectionTerminalStatuses,
+			...workflowProjectionTerminalStatuses,
+		)
+	}
+
+	async upsertWorkflowProjection(
+		input: WorkflowProjectionUpsertInput,
+	): Promise<{ ok: true }> {
+		this.writeWorkflowProjectionRow(input)
+		// Terminal projections create future age-prune work.
+		this.retentionIdleConfirmed = false
+		await this.ensureRetentionAlarm()
+		return { ok: true }
+	}
+
+	/**
+	 * Expand-phase D1 → RunLog batch import. Applies the same monotonic +
+	 * terminal-sticky upsert as {@link upsertWorkflowProjection} for each row
+	 * in one DO RPC. Input is hard-capped at
+	 * {@link workflowProjectionImportMaxBatch}.
+	 */
+	async importWorkflowProjections(input: {
+		projections: Array<WorkflowProjectionUpsertInput>
+	}): Promise<{ imported: number }> {
+		const projections = Array.isArray(input.projections)
+			? input.projections.slice(0, workflowProjectionImportMaxBatch)
+			: []
+		for (const projection of projections) {
+			this.writeWorkflowProjectionRow(projection)
+		}
+		if (projections.length > 0) {
+			this.retentionIdleConfirmed = false
+			await this.ensureRetentionAlarm()
+		}
+		return { imported: projections.length }
+	}
+
+	async getWorkflowProjection(input: {
+		id: string
+	}): Promise<WorkflowProjectionRecord | null> {
+		const row = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM workflow_projections WHERE id = ? LIMIT 1`,
+				input.id,
+			)
+			.toArray()[0]
+		return row ? mapWorkflowProjectionRow(row) : null
+	}
+
+	async findWorkflowProjectionByIdempotencyKey(input: {
+		idempotencyKey: string
+		bindingName?: string | null
+	}): Promise<WorkflowProjectionRecord | null> {
+		const trimmedKey = input.idempotencyKey.trim()
+		if (!trimmedKey) return null
+		const bindingName = input.bindingName?.trim() || null
+		const row = bindingName
+			? this.ctx.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT *
+						FROM workflow_projections
+						WHERE idempotency_key = ?
+							AND binding_name = ?
+							AND COALESCE(status, '') != ?
+						ORDER BY created_at ASC
+						LIMIT 1`,
+						trimmedKey,
+						bindingName,
+						creatingWorkflowProjectionStatus,
+					)
+					.toArray()[0]
+			: this.ctx.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT *
+						FROM workflow_projections
+						WHERE idempotency_key = ?
+							AND COALESCE(status, '') != ?
+						ORDER BY created_at ASC
+						LIMIT 1`,
+						trimmedKey,
+						creatingWorkflowProjectionStatus,
+					)
+					.toArray()[0]
+		return row ? mapWorkflowProjectionRow(row) : null
+	}
+
+	/**
+	 * Exact binding + idempotency lookup that includes `creating` rows. Prefer
+	 * this over listing/scanning creating projections.
+	 */
+	async findWorkflowProjectionByBindingIdempotencyKey(input: {
+		bindingName: string
+		idempotencyKey: string
+	}): Promise<WorkflowProjectionRecord | null> {
+		const bindingName = input.bindingName.trim()
+		const trimmedKey = input.idempotencyKey.trim()
+		if (!bindingName || !trimmedKey) return null
+		const row = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT *
+				FROM workflow_projections
+				WHERE binding_name = ?
+					AND idempotency_key = ?
+				ORDER BY created_at ASC
+				LIMIT 1`,
+				bindingName,
+				trimmedKey,
+			)
+			.toArray()[0]
+		return row ? mapWorkflowProjectionRow(row) : null
+	}
+
+	async listWorkflowProjections(input: WorkflowProjectionListInput): Promise<{
+		projections: Array<WorkflowProjectionRecord>
+		nextCursor: string | null
+	}> {
+		const limit = normalizePageSize(input.limit, runRecordDefaultPageSize)
+		const clauses: Array<string> = ['1 = 1']
+		const params: Array<SqlStorageValue> = []
+		if (input.status) {
+			clauses.push('status = ?')
+			params.push(input.status)
+		}
+		const bindingName = input.bindingName?.trim() || null
+		if (bindingName) {
+			clauses.push('binding_name = ?')
+			params.push(bindingName)
+		}
+		if (input.cursor) {
+			const cursor = decodeCursor(input.cursor)
+			if (cursor) {
+				clauses.push('(created_at, id) < (?, ?)')
+				params.push(cursor.startedAt, cursor.id)
+			}
+		}
+		params.push(limit + 1)
+		const rows = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM workflow_projections
+				WHERE ${clauses.join(' AND ')}
+				ORDER BY created_at DESC, id DESC
+				LIMIT ?`,
+				...params,
+			)
+			.toArray()
+		const hasMore = rows.length > limit
+		const pageRows = hasMore ? rows.slice(0, limit) : rows
+		const projections = pageRows.map(mapWorkflowProjectionRow)
+		const last = pageRows[pageRows.length - 1]
+		const nextCursor =
+			hasMore && last
+				? encodeCursor({
+						startedAt: String(last['created_at']),
+						id: String(last['id']),
+					})
+				: null
+		return { projections, nextCursor }
+	}
+
+	async countActiveWorkflowProjections(): Promise<{ count: number }> {
+		const placeholders = workflowProjectionActiveStatuses
+			.map(() => '?')
+			.join(', ')
+		const row = this.ctx.storage.sql
+			.exec<{ count: number }>(
+				`SELECT COUNT(*) AS count FROM workflow_projections
+				WHERE status IN (${placeholders})`,
+				...workflowProjectionActiveStatuses,
+			)
+			.one()
+		return { count: Number(row.count ?? 0) || 0 }
+	}
+
+	/**
+	 * Atomically prune stale creating rows, count entitlement-occupying
+	 * projections (active + creating, excluding this id), and insert-only
+	 * claim a `creating` reservation. Never overwrites queued/running/terminal
+	 * state. Returns the count *before* this reservation for
+	 * assertWithinEntitlement getCurrent.
+	 */
+	async reserveWorkflowProjectionSlot(
+		input: WorkflowProjectionUpsertInput,
+	): Promise<WorkflowProjectionReserveResult> {
+		const now = new Date().toISOString()
+		this.pruneStaleCreatingWorkflowProjections()
+
+		const existing = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM workflow_projections WHERE id = ? LIMIT 1`,
+				input.id,
+			)
+			.toArray()[0]
+		const existingStatus =
+			existing && typeof existing['status'] === 'string'
+				? String(existing['status'])
+				: null
+
+		const reservationPlaceholders = workflowProjectionReservationStatuses
+			.map(() => '?')
+			.join(', ')
+		const countRow = this.ctx.storage.sql
+			.exec<{ count: number }>(
+				`SELECT COUNT(*) AS count FROM workflow_projections
+				WHERE status IN (${reservationPlaceholders})
+					AND id != ?`,
+				...workflowProjectionReservationStatuses,
+				input.id,
+			)
+			.one()
+		const countBeforeReservation = Number(countRow.count ?? 0) || 0
+
+		// Insert-only / creating-refresh: never clobber queued/running/terminal.
+		if (
+			existing != null &&
+			existingStatus != null &&
+			existingStatus !== creatingWorkflowProjectionStatus
+		) {
+			return {
+				countBeforeReservation,
+				reserved: false,
+				inserted: false,
+				projection: mapWorkflowProjectionRow(existing),
+			}
+		}
+
+		const createdAt =
+			input.createdAt?.trim() ||
+			(existing ? String(existing['created_at']) : now)
+		const updatedAt = input.updatedAt?.trim() || now
+		const inserted = existing == null
+		this.ctx.storage.sql.exec(
+			`INSERT INTO workflow_projections (
+				id, binding_name, source_type, package_id, kody_id, source_id,
+				workflow_name, export_name, idempotency_key, run_at, plan_date,
+				status, created_at, updated_at, completed_at, last_error
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+			ON CONFLICT(id) DO UPDATE SET
+				updated_at = excluded.updated_at
+			WHERE COALESCE(workflow_projections.status, '') = ?`,
+			input.id,
+			input.bindingName,
+			input.sourceType,
+			input.packageId ?? null,
+			input.kodyId ?? null,
+			input.sourceId ?? null,
+			input.workflowName,
+			input.exportName ?? null,
+			input.idempotencyKey,
+			input.runAt,
+			input.planDate ?? null,
+			creatingWorkflowProjectionStatus,
+			createdAt,
+			updatedAt,
+			creatingWorkflowProjectionStatus,
+		)
+		const projection = await this.getWorkflowProjection({ id: input.id })
+		if (!projection) {
+			throw new Error(
+				`Workflow projection "${input.id}" disappeared after reservation.`,
+			)
+		}
+		this.retentionIdleConfirmed = false
+		await this.ensureRetentionAlarm()
+		return {
+			countBeforeReservation,
+			reserved: projection.status === creatingWorkflowProjectionStatus,
+			inserted,
+			projection,
+		}
+	}
+
+	async deleteWorkflowProjectionIfCreating(input: {
+		id: string
+	}): Promise<{ deleted: boolean }> {
+		this.ctx.storage.sql.exec(
+			`DELETE FROM workflow_projections
+			WHERE id = ? AND COALESCE(status, '') = ?`,
+			input.id,
+			creatingWorkflowProjectionStatus,
+		)
+		const remaining = await this.getWorkflowProjection({ id: input.id })
+		return { deleted: remaining === null }
+	}
+
+	async upsertJobRunObservability(
+		input: JobRunObservabilityUpsertInput,
+	): Promise<JobRunObservabilityRecord> {
+		return this.writeJobRunObservabilityOutcome(input)
+	}
+
+	/**
+	 * Apply one job's historical D1 observability exactly once
+	 * (`legacy_seeded`). Absent rows insert; rows created by post-cutover
+	 * finishes before a successful seed add legacy counters and keep the newer
+	 * last-run outcome by timestamp without clobbering a newer current state.
+	 */
+	async seedJobRunObservabilityIfAbsent(
+		input: JobRunObservabilitySeedInput,
+	): Promise<{ seeded: boolean }> {
+		const jobId = input.jobId.trim()
+		if (!jobId) return { seeded: false }
+		const existing = this.getJobRunObservabilitySync(jobId)
+		if (existing?.legacySeeded) {
+			return { seeded: false }
+		}
+		const lastRunStatus =
+			input.lastRunStatus === 'success' || input.lastRunStatus === 'error'
+				? input.lastRunStatus
+				: null
+		const legacyRunCount = Math.max(0, Math.trunc(input.runCount))
+		const legacySuccessCount = Math.max(0, Math.trunc(input.successCount))
+		const legacyErrorCount = Math.max(0, Math.trunc(input.errorCount))
+		const legacyUpdatedAt = input.updatedAt.trim() || new Date().toISOString()
+
+		if (!existing) {
+			this.ctx.storage.sql.exec(
+				`INSERT INTO job_run_observability (
+					job_id, last_run_at, last_run_status, last_run_error, last_duration_ms,
+					run_count, success_count, error_count, updated_at, legacy_seeded
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+				jobId,
+				input.lastRunAt,
+				lastRunStatus,
+				input.lastRunError,
+				input.lastDurationMs,
+				legacyRunCount,
+				legacySuccessCount,
+				legacyErrorCount,
+				legacyUpdatedAt,
+			)
+			return { seeded: true }
+		}
+
+		const legacyLastRunAt = input.lastRunAt
+		const currentLastRunAt = existing.lastRunAt
+		const legacyIsNewer =
+			legacyLastRunAt != null &&
+			(currentLastRunAt == null || legacyLastRunAt > currentLastRunAt)
+		const mergedLastRunAt = legacyIsNewer ? legacyLastRunAt : currentLastRunAt
+		const mergedLastRunStatus = legacyIsNewer
+			? lastRunStatus
+			: existing.lastRunStatus
+		const mergedLastRunError = legacyIsNewer
+			? input.lastRunError
+			: existing.lastRunError
+		const mergedLastDurationMs = legacyIsNewer
+			? input.lastDurationMs
+			: existing.lastDurationMs
+		const mergedUpdatedAt =
+			legacyUpdatedAt > existing.updatedAt
+				? legacyUpdatedAt
+				: existing.updatedAt
+
+		this.ctx.storage.sql.exec(
+			`UPDATE job_run_observability SET
+				last_run_at = ?,
+				last_run_status = ?,
+				last_run_error = ?,
+				last_duration_ms = ?,
+				run_count = run_count + ?,
+				success_count = success_count + ?,
+				error_count = error_count + ?,
+				updated_at = ?,
+				legacy_seeded = 1
+			WHERE job_id = ? AND legacy_seeded = 0`,
+			mergedLastRunAt,
+			mergedLastRunStatus,
+			mergedLastRunError,
+			mergedLastDurationMs,
+			legacyRunCount,
+			legacySuccessCount,
+			legacyErrorCount,
+			mergedUpdatedAt,
+			jobId,
+		)
+		return { seeded: true }
+	}
+
+	private getJobRunObservabilitySync(
+		jobId: string,
+	): JobRunObservabilityRecord | null {
+		const row = this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM job_run_observability WHERE job_id = ? LIMIT 1`,
+				jobId,
+			)
+			.toArray()[0]
+		return row ? mapJobRunObservabilityRow(row) : null
+	}
+
+	async isActivationInitialized(): Promise<{ initialized: boolean }> {
+		return {
+			initialized: (this.getMeta(metaActivationInitializedKey) ?? 0) === 1,
+		}
+	}
+
+	/**
+	 * One-shot import of D1 activation counters/milestones. Safe to call
+	 * repeatedly: after `activation_initialized` is set this is a no-op. On
+	 * first success, legacy counts add to any post-cutover increments, milestone
+	 * first-writer wins, and the marker is set in the same transaction.
+	 */
+	async importActivationState(
+		input: ActivationStateImport,
+	): Promise<{ initialized: boolean }> {
+		if ((this.getMeta(metaActivationInitializedKey) ?? 0) === 1) {
+			return { initialized: true }
+		}
+		const mergeAt = new Date().toISOString()
+		this.ctx.storage.transactionSync(() => {
+			if ((this.getMeta(metaActivationInitializedKey) ?? 0) === 1) {
+				return
+			}
+			for (const row of input.packageRunSuccesses) {
+				const packageId = row.packageId.trim()
+				if (!packageId) continue
+				const successCount = Math.max(0, Math.trunc(row.successCount))
+				const updatedAt = row.updatedAt.trim() || mergeAt
+				this.ctx.storage.sql.exec(
+					`INSERT INTO package_run_successes (package_id, success_count, updated_at)
+					VALUES (?, ?, ?)
+					ON CONFLICT(package_id) DO UPDATE SET
+						success_count = package_run_successes.success_count + excluded.success_count,
+						updated_at = excluded.updated_at`,
+					packageId,
+					successCount,
+					updatedAt,
+				)
+			}
+			for (const row of input.milestones) {
+				if (
+					row.milestone !== 'package_run_succeeded' &&
+					row.milestone !== 'package_activated'
+				) {
+					continue
+				}
+				this.ctx.storage.sql.exec(
+					`INSERT OR IGNORE INTO activation_milestones (milestone, reached_at, package_id)
+					VALUES (?, ?, ?)`,
+					row.milestone,
+					row.reachedAt,
+					row.packageId,
+				)
+			}
+			// Derive milestones from merged counts when legacy/post-cutover
+			// increments cross thresholds without a matching milestone row.
+			const countRows = this.ctx.storage.sql
+				.exec<{
+					package_id: string
+					success_count: number
+					updated_at: string
+				}>(
+					`SELECT package_id, success_count, updated_at
+					FROM package_run_successes
+					ORDER BY success_count DESC, package_id ASC`,
+				)
+				.toArray()
+			for (const row of countRows) {
+				const packageId = String(row.package_id)
+				const successCount = Number(row.success_count) || 0
+				const reachedAt = String(row.updated_at || mergeAt)
+				if (successCount >= 1) {
+					this.ctx.storage.sql.exec(
+						`INSERT OR IGNORE INTO activation_milestones (milestone, reached_at, package_id)
+						VALUES ('package_run_succeeded', ?, ?)`,
+						reachedAt,
+						packageId,
+					)
+				}
+				if (successCount >= 2) {
+					this.ctx.storage.sql.exec(
+						`INSERT OR IGNORE INTO activation_milestones (milestone, reached_at, package_id)
+						VALUES ('package_activated', ?, ?)`,
+						reachedAt,
+						packageId,
+					)
+				}
+			}
+			this.setMeta(metaActivationInitializedKey, 1)
+		})
+		return { initialized: true }
+	}
+
+	async getJobRunObservability(input: {
+		jobId: string
+	}): Promise<JobRunObservabilityRecord | null> {
+		return this.getJobRunObservabilitySync(input.jobId)
+	}
+
+	async getJobRunObservabilityBatch(input: {
+		jobIds: Array<string>
+	}): Promise<Array<JobRunObservabilityRecord>> {
+		const ids = [
+			...new Set(
+				input.jobIds.map((id) => id.trim()).filter((id) => id.length > 0),
+			),
+		]
+		if (ids.length === 0) return []
+		const placeholders = ids.map(() => '?').join(', ')
+		return this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM job_run_observability
+				WHERE job_id IN (${placeholders})
+				ORDER BY job_id ASC`,
+				...ids,
+			)
+			.toArray()
+			.map(mapJobRunObservabilityRow)
+	}
+
+	async listPackageRunSuccesses(): Promise<Array<PackageRunSuccessRecord>> {
+		return this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM package_run_successes ORDER BY package_id ASC`,
+			)
+			.toArray()
+			.map(mapPackageRunSuccessRow)
+	}
+
+	async listActivationMilestones(): Promise<Array<ActivationMilestoneRecord>> {
+		return this.ctx.storage.sql
+			.exec<Record<string, SqlStorageValue>>(
+				`SELECT * FROM activation_milestones ORDER BY milestone ASC`,
+			)
+			.toArray()
+			.map(mapActivationMilestoneRow)
 	}
 
 	async listRuns(input: ListRunsInput): Promise<RunRecordPage> {
@@ -1454,125 +2553,429 @@ class RunLogBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Paged over runs first, then invocation-ledger rows: run-phase cursors
-	 * stay raw run ids (compatible with pre-ledger cursors); ledger-phase
-	 * cursors carry the `invocation-ledger:` prefix. The remainder of the last
-	 * run page is filled with ledger rows so exports stay one-cursor.
+	 * Paged export across dedicated DO state in fixed phases:
+	 * 1. runs (raw run-id cursors — compatible with pre-ledger exports)
+	 * 2. invocation-ledger (`invocation-ledger:`)
+	 * 3. workflow-projections (`workflow-projections:`)
+	 * 4. job-run-observability (`job-run-observability:`)
+	 * 5. package-run-successes (`package-run-successes:`)
+	 * 6. activation-milestones (`activation-milestones:`)
+	 *
+	 * Each phase fills the remainder of the page into the next so exports stay
+	 * one-cursor. Old run-id and ledger cursors remain valid.
 	 */
-	async exportRuns(input: ExportRunsInput): Promise<{
-		runs: Array<RunRecord>
-		logs: Array<RunRecordLog>
-		packageInvocations: Array<PackageInvocationLedgerRecord>
-		nextStartAfter: string | null
-		truncated: boolean
-	}> {
+	async exportRuns(input: ExportRunsInput): Promise<ExportRunsResult> {
 		const pageSize = normalizePageSize(input.pageSize, runRecordDefaultPageSize)
 		const startAfterRaw = input.startAfter?.trim() || null
-		if (startAfterRaw?.startsWith(exportLedgerCursorPrefix)) {
-			const ledgerPage = this.exportInvocationLedgerPage({
-				startAfterId: startAfterRaw.slice(exportLedgerCursorPrefix.length),
-				limit: pageSize,
+		const empty: ExportRunsResult = {
+			runs: [],
+			logs: [],
+			packageInvocations: [],
+			workflowProjections: [],
+			jobRunObservability: [],
+			packageRunSuccesses: [],
+			activationMilestones: [],
+			nextStartAfter: null,
+			truncated: false,
+		}
+
+		type ExportPhase =
+			| 'runs'
+			| 'invocation-ledger'
+			| 'workflow-projections'
+			| 'job-run-observability'
+			| 'package-run-successes'
+			| 'activation-milestones'
+
+		const phaseOrder: Array<ExportPhase> = [
+			'runs',
+			'invocation-ledger',
+			'workflow-projections',
+			'job-run-observability',
+			'package-run-successes',
+			'activation-milestones',
+		]
+
+		const parsePhase = (
+			cursor: string | null,
+		): { phase: ExportPhase; startAfterId: string } => {
+			if (!cursor) return { phase: 'runs', startAfterId: '' }
+			if (cursor.startsWith(exportLedgerCursorPrefix)) {
+				return {
+					phase: 'invocation-ledger',
+					startAfterId: cursor.slice(exportLedgerCursorPrefix.length),
+				}
+			}
+			if (cursor.startsWith(exportWorkflowProjectionsCursorPrefix)) {
+				return {
+					phase: 'workflow-projections',
+					startAfterId: cursor.slice(
+						exportWorkflowProjectionsCursorPrefix.length,
+					),
+				}
+			}
+			if (cursor.startsWith(exportJobRunObservabilityCursorPrefix)) {
+				return {
+					phase: 'job-run-observability',
+					startAfterId: cursor.slice(
+						exportJobRunObservabilityCursorPrefix.length,
+					),
+				}
+			}
+			if (cursor.startsWith(exportPackageRunSuccessesCursorPrefix)) {
+				return {
+					phase: 'package-run-successes',
+					startAfterId: cursor.slice(
+						exportPackageRunSuccessesCursorPrefix.length,
+					),
+				}
+			}
+			if (cursor.startsWith(exportActivationMilestonesCursorPrefix)) {
+				return {
+					phase: 'activation-milestones',
+					startAfterId: cursor.slice(
+						exportActivationMilestonesCursorPrefix.length,
+					),
+				}
+			}
+			return { phase: 'runs', startAfterId: cursor }
+		}
+
+		const cursorPrefixForPhase = (phase: ExportPhase): string | null => {
+			switch (phase) {
+				case 'runs':
+					return null
+				case 'invocation-ledger':
+					return exportLedgerCursorPrefix
+				case 'workflow-projections':
+					return exportWorkflowProjectionsCursorPrefix
+				case 'job-run-observability':
+					return exportJobRunObservabilityCursorPrefix
+				case 'package-run-successes':
+					return exportPackageRunSuccessesCursorPrefix
+				case 'activation-milestones':
+					return exportActivationMilestonesCursorPrefix
+				default: {
+					const exhaustive: never = phase
+					throw new Error(`Unhandled export phase: ${String(exhaustive)}`)
+				}
+			}
+		}
+
+		const result: ExportRunsResult = { ...empty }
+		let { phase, startAfterId } = parsePhase(startAfterRaw)
+		let remaining = pageSize
+		let phaseIndex = phaseOrder.indexOf(phase)
+		// Hard cap: each iteration either emits rows, advances phase, or
+		// returns. Bound by phase count so a stuck cursor cannot spin.
+		const maxIterations = phaseOrder.length + 1
+		let iterations = 0
+
+		while (phaseIndex < phaseOrder.length) {
+			iterations += 1
+			if (iterations > maxIterations) {
+				throw new Error('exportRuns exceeded phase iteration budget')
+			}
+			// Never query a phase with a zero limit — that used to return
+			// truncated:true with the same cursor and could infinite-loop
+			// clients that retry while truncated.
+			if (remaining <= 0) {
+				const nextPhase = phaseOrder[phaseIndex]!
+				const prefix = cursorPrefixForPhase(nextPhase)
+				const handoff = prefix ? `${prefix}` : null
+				if (handoff != null && handoff === startAfterRaw) {
+					phaseIndex += 1
+					startAfterId = ''
+					continue
+				}
+				result.nextStartAfter = handoff
+				result.truncated = handoff != null
+				return result
+			}
+
+			const currentPhase = phaseOrder[phaseIndex]!
+			const page = this.exportPhasePage({
+				phase: currentPhase,
+				startAfterId,
+				limit: remaining,
 			})
-			return {
-				runs: [],
-				logs: [],
-				packageInvocations: ledgerPage.rows,
-				nextStartAfter: ledgerPage.nextStartAfter,
-				truncated: ledgerPage.truncated,
+			switch (currentPhase) {
+				case 'runs': {
+					result.runs.push(...page.runs)
+					result.logs.push(...page.logs)
+					break
+				}
+				case 'invocation-ledger': {
+					result.packageInvocations.push(...page.packageInvocations)
+					break
+				}
+				case 'workflow-projections': {
+					result.workflowProjections.push(...page.workflowProjections)
+					break
+				}
+				case 'job-run-observability': {
+					result.jobRunObservability.push(...page.jobRunObservability)
+					break
+				}
+				case 'package-run-successes': {
+					result.packageRunSuccesses.push(...page.packageRunSuccesses)
+					break
+				}
+				case 'activation-milestones': {
+					result.activationMilestones.push(...page.activationMilestones)
+					break
+				}
+				default: {
+					const exhaustive: never = currentPhase
+					throw new Error(`Unhandled export phase: ${String(exhaustive)}`)
+				}
+			}
+			remaining -= page.taken
+
+			if (page.truncated) {
+				// Zero-row "truncation" cannot make progress; treat as exhausted.
+				if (page.taken <= 0) {
+					phaseIndex += 1
+					startAfterId = ''
+					continue
+				}
+				const prefix = cursorPrefixForPhase(currentPhase)
+				const nextStartAfter = prefix ? `${prefix}${page.nextId}` : page.nextId
+				// Refuse to emit the inbound cursor again (would spin clients).
+				if (nextStartAfter === startAfterRaw) {
+					phaseIndex += 1
+					startAfterId = ''
+					continue
+				}
+				result.nextStartAfter = nextStartAfter
+				result.truncated = true
+				return result
+			}
+
+			// Phase exhausted. If the page budget is spent, hand off to the
+			// next phase prefix so the following call starts there (legacy
+			// ledger handoff contract).
+			phaseIndex += 1
+			startAfterId = ''
+			if (remaining <= 0 && phaseIndex < phaseOrder.length) {
+				const nextPhase = phaseOrder[phaseIndex]!
+				const prefix = cursorPrefixForPhase(nextPhase)
+				const handoff = prefix ? `${prefix}` : null
+				if (handoff != null && handoff === startAfterRaw) {
+					continue
+				}
+				result.nextStartAfter = handoff
+				result.truncated = handoff != null
+				return result
 			}
 		}
-		const startAfter = startAfterRaw
-		const rows = (
-			startAfter
-				? this.ctx.storage.sql.exec<Record<string, SqlStorageValue>>(
-						`SELECT r.*,
-							(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
-						FROM runs r
-						WHERE r.id > ?
-						ORDER BY r.id ASC
-						LIMIT ?`,
-						startAfter,
-						pageSize + 1,
-					)
-				: this.ctx.storage.sql.exec<Record<string, SqlStorageValue>>(
-						`SELECT r.*,
-							(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
-						FROM runs r
-						ORDER BY r.id ASC
-						LIMIT ?`,
-						pageSize + 1,
-					)
-		).toArray()
-		const truncated = rows.length > pageSize
-		const pageRows = truncated ? rows.slice(0, pageSize) : rows
-		const runs = pageRows.map((row) =>
-			mapRunRow(row, Number(row['log_count'] ?? 0) || 0),
-		)
-		const runIds = runs.map((run) => run.id)
-		const logs: Array<RunRecordLog> = []
-		for (const runId of runIds) {
-			const runLogs = this.ctx.storage.sql
-				.exec<Record<string, SqlStorageValue>>(
-					`SELECT * FROM run_logs WHERE run_id = ? ORDER BY sequence ASC`,
-					runId,
-				)
-				.toArray()
-				.map(mapLogRow)
-			logs.push(...runLogs)
-		}
-		const last = pageRows[pageRows.length - 1]
-		if (truncated) {
-			return {
-				runs,
-				logs,
-				packageInvocations: [],
-				nextStartAfter: last ? String(last['id']) : null,
-				truncated,
-			}
-		}
-		const ledgerPage = this.exportInvocationLedgerPage({
-			startAfterId: '',
-			limit: pageSize - runs.length,
-		})
-		return {
-			runs,
-			logs,
-			packageInvocations: ledgerPage.rows,
-			nextStartAfter: ledgerPage.nextStartAfter,
-			truncated: ledgerPage.truncated,
-		}
+		return result
 	}
 
-	private exportInvocationLedgerPage(input: {
+	private exportPhasePage(input: {
+		phase:
+			| 'runs'
+			| 'invocation-ledger'
+			| 'workflow-projections'
+			| 'job-run-observability'
+			| 'package-run-successes'
+			| 'activation-milestones'
 		startAfterId: string
 		limit: number
 	}): {
-		rows: Array<PackageInvocationLedgerRecord>
-		nextStartAfter: string | null
+		runs: Array<RunRecord>
+		logs: Array<RunRecordLog>
+		packageInvocations: Array<PackageInvocationLedgerRecord>
+		workflowProjections: Array<WorkflowProjectionRecord>
+		jobRunObservability: Array<JobRunObservabilityRecord>
+		packageRunSuccesses: Array<PackageRunSuccessRecord>
+		activationMilestones: Array<ActivationMilestoneRecord>
+		taken: number
 		truncated: boolean
+		nextId: string
 	} {
-		const limit = Math.max(input.limit, 0)
-		const rows = this.ctx.storage.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT * FROM package_invocation_ledger
-				WHERE id > ?
-				ORDER BY id ASC
-				LIMIT ?`,
-				input.startAfterId,
-				limit + 1,
-			)
-			.toArray()
-		const truncated = rows.length > limit
-		const pageRows = truncated ? rows.slice(0, limit) : rows
-		const last = pageRows[pageRows.length - 1]
-		return {
-			rows: pageRows.map(mapInvocationLedgerRow),
-			// A zero-limit page (runs filled the whole page) restarts the ledger
-			// phase from the same cursor so the next call makes progress.
-			nextStartAfter: truncated
-				? `${exportLedgerCursorPrefix}${last ? String(last['id']) : input.startAfterId}`
-				: null,
-			truncated,
+		const empty = {
+			runs: [] as Array<RunRecord>,
+			logs: [] as Array<RunRecordLog>,
+			packageInvocations: [] as Array<PackageInvocationLedgerRecord>,
+			workflowProjections: [] as Array<WorkflowProjectionRecord>,
+			jobRunObservability: [] as Array<JobRunObservabilityRecord>,
+			packageRunSuccesses: [] as Array<PackageRunSuccessRecord>,
+			activationMilestones: [] as Array<ActivationMilestoneRecord>,
+			taken: 0,
+			truncated: false,
+			nextId: input.startAfterId,
+		}
+		// Callers must not request a zero-limit page; treat as exhausted so
+		// the export loop advances instead of re-emitting the same cursor.
+		if (input.limit <= 0) {
+			return empty
+		}
+		const limit = Math.trunc(input.limit)
+
+		switch (input.phase) {
+			case 'runs': {
+				const rows = (
+					input.startAfterId
+						? this.ctx.storage.sql.exec<Record<string, SqlStorageValue>>(
+								`SELECT r.*,
+									(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
+								FROM runs r
+								WHERE r.id > ?
+								ORDER BY r.id ASC
+								LIMIT ?`,
+								input.startAfterId,
+								limit + 1,
+							)
+						: this.ctx.storage.sql.exec<Record<string, SqlStorageValue>>(
+								`SELECT r.*,
+									(SELECT COUNT(*) FROM run_logs l WHERE l.run_id = r.id) AS log_count
+								FROM runs r
+								ORDER BY r.id ASC
+								LIMIT ?`,
+								limit + 1,
+							)
+				).toArray()
+				const truncated = rows.length > limit
+				const pageRows = truncated ? rows.slice(0, limit) : rows
+				const runs = pageRows.map((row) =>
+					mapRunRow(row, Number(row['log_count'] ?? 0) || 0),
+				)
+				const logs: Array<RunRecordLog> = []
+				for (const run of runs) {
+					const runLogs = this.ctx.storage.sql
+						.exec<Record<string, SqlStorageValue>>(
+							`SELECT * FROM run_logs WHERE run_id = ? ORDER BY sequence ASC`,
+							run.id,
+						)
+						.toArray()
+						.map(mapLogRow)
+					logs.push(...runLogs)
+				}
+				const last = pageRows[pageRows.length - 1]
+				return {
+					...empty,
+					runs,
+					logs,
+					taken: runs.length,
+					truncated,
+					nextId: last ? String(last['id']) : input.startAfterId,
+				}
+			}
+			case 'invocation-ledger': {
+				const rows = this.ctx.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT * FROM package_invocation_ledger
+						WHERE id > ?
+						ORDER BY id ASC
+						LIMIT ?`,
+						input.startAfterId,
+						limit + 1,
+					)
+					.toArray()
+				const truncated = rows.length > limit
+				const pageRows = truncated ? rows.slice(0, limit) : rows
+				const last = pageRows[pageRows.length - 1]
+				return {
+					...empty,
+					packageInvocations: pageRows.map(mapInvocationLedgerRow),
+					taken: pageRows.length,
+					truncated,
+					nextId: last ? String(last['id']) : input.startAfterId,
+				}
+			}
+			case 'workflow-projections': {
+				const rows = this.ctx.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT * FROM workflow_projections
+						WHERE id > ?
+						ORDER BY id ASC
+						LIMIT ?`,
+						input.startAfterId,
+						limit + 1,
+					)
+					.toArray()
+				const truncated = rows.length > limit
+				const pageRows = truncated ? rows.slice(0, limit) : rows
+				const last = pageRows[pageRows.length - 1]
+				return {
+					...empty,
+					workflowProjections: pageRows.map(mapWorkflowProjectionRow),
+					taken: pageRows.length,
+					truncated,
+					nextId: last ? String(last['id']) : input.startAfterId,
+				}
+			}
+			case 'job-run-observability': {
+				const rows = this.ctx.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT * FROM job_run_observability
+						WHERE job_id > ?
+						ORDER BY job_id ASC
+						LIMIT ?`,
+						input.startAfterId,
+						limit + 1,
+					)
+					.toArray()
+				const truncated = rows.length > limit
+				const pageRows = truncated ? rows.slice(0, limit) : rows
+				const last = pageRows[pageRows.length - 1]
+				return {
+					...empty,
+					jobRunObservability: pageRows.map(mapJobRunObservabilityRow),
+					taken: pageRows.length,
+					truncated,
+					nextId: last ? String(last['job_id']) : input.startAfterId,
+				}
+			}
+			case 'package-run-successes': {
+				const rows = this.ctx.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT * FROM package_run_successes
+						WHERE package_id > ?
+						ORDER BY package_id ASC
+						LIMIT ?`,
+						input.startAfterId,
+						limit + 1,
+					)
+					.toArray()
+				const truncated = rows.length > limit
+				const pageRows = truncated ? rows.slice(0, limit) : rows
+				const last = pageRows[pageRows.length - 1]
+				return {
+					...empty,
+					packageRunSuccesses: pageRows.map(mapPackageRunSuccessRow),
+					taken: pageRows.length,
+					truncated,
+					nextId: last ? String(last['package_id']) : input.startAfterId,
+				}
+			}
+			case 'activation-milestones': {
+				const rows = this.ctx.storage.sql
+					.exec<Record<string, SqlStorageValue>>(
+						`SELECT * FROM activation_milestones
+						WHERE milestone > ?
+						ORDER BY milestone ASC
+						LIMIT ?`,
+						input.startAfterId,
+						limit + 1,
+					)
+					.toArray()
+				const truncated = rows.length > limit
+				const pageRows = truncated ? rows.slice(0, limit) : rows
+				const last = pageRows[pageRows.length - 1]
+				return {
+					...empty,
+					activationMilestones: pageRows.map(mapActivationMilestoneRow),
+					taken: pageRows.length,
+					truncated,
+					nextId: last ? String(last['milestone']) : input.startAfterId,
+				}
+			}
+			default: {
+				const exhaustive: never = input.phase
+				throw new Error(`Unhandled export phase: ${String(exhaustive)}`)
+			}
 		}
 	}
 
@@ -1643,14 +3046,54 @@ export type RunLogRpc = {
 		released: boolean
 		record: PackageInvocationLedgerRecord | null
 	}>
+	upsertWorkflowProjection: (
+		input: WorkflowProjectionUpsertInput,
+	) => Promise<{ ok: true }>
+	importWorkflowProjections: (input: {
+		projections: Array<WorkflowProjectionUpsertInput>
+	}) => Promise<{ imported: number }>
+	getWorkflowProjection: (input: {
+		id: string
+	}) => Promise<WorkflowProjectionRecord | null>
+	findWorkflowProjectionByIdempotencyKey: (input: {
+		idempotencyKey: string
+		bindingName?: string | null
+	}) => Promise<WorkflowProjectionRecord | null>
+	findWorkflowProjectionByBindingIdempotencyKey: (input: {
+		bindingName: string
+		idempotencyKey: string
+	}) => Promise<WorkflowProjectionRecord | null>
+	listWorkflowProjections: (input: WorkflowProjectionListInput) => Promise<{
+		projections: Array<WorkflowProjectionRecord>
+		nextCursor: string | null
+	}>
+	countActiveWorkflowProjections: () => Promise<{ count: number }>
+	reserveWorkflowProjectionSlot: (
+		input: WorkflowProjectionUpsertInput,
+	) => Promise<WorkflowProjectionReserveResult>
+	deleteWorkflowProjectionIfCreating: (input: {
+		id: string
+	}) => Promise<{ deleted: boolean }>
+	upsertJobRunObservability: (
+		input: JobRunObservabilityUpsertInput,
+	) => Promise<JobRunObservabilityRecord>
+	seedJobRunObservabilityIfAbsent: (
+		input: JobRunObservabilitySeedInput,
+	) => Promise<{ seeded: boolean }>
+	getJobRunObservability: (input: {
+		jobId: string
+	}) => Promise<JobRunObservabilityRecord | null>
+	getJobRunObservabilityBatch: (input: {
+		jobIds: Array<string>
+	}) => Promise<Array<JobRunObservabilityRecord>>
+	isActivationInitialized: () => Promise<{ initialized: boolean }>
+	importActivationState: (
+		input: ActivationStateImport,
+	) => Promise<{ initialized: boolean }>
+	listPackageRunSuccesses: () => Promise<Array<PackageRunSuccessRecord>>
+	listActivationMilestones: () => Promise<Array<ActivationMilestoneRecord>>
 	summarize: (input: { since: string }) => Promise<RunRecordSummary>
 	listStorageIds: () => Promise<Array<string>>
-	exportRuns: (input: ExportRunsInput) => Promise<{
-		runs: Array<RunRecord>
-		logs: Array<RunRecordLog>
-		packageInvocations: Array<PackageInvocationLedgerRecord>
-		nextStartAfter: string | null
-		truncated: boolean
-	}>
+	exportRuns: (input: ExportRunsInput) => Promise<ExportRunsResult>
 	clearAll: () => Promise<{ ok: true }>
 }

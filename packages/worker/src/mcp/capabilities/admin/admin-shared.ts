@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { logAuditEvent, redactEmailRecipient } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	logAuditEvent,
+	redactEmailRecipient,
+} from '#worker/audit-log.ts'
 import { roleNames } from '#worker/identity/permissions.ts'
 import { planNames } from '#worker/entitlements/plans.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -78,6 +82,7 @@ export async function auditAdminCapabilityInvocation<TResult>(
 		const result = await run()
 		await logAuditEvent({
 			db: ctx.env.APP_DB,
+			auditDb: auditDatabaseFromEnv(ctx.env),
 			category: 'admin',
 			action: capabilityName,
 			result: 'success',
@@ -89,6 +94,7 @@ export async function auditAdminCapabilityInvocation<TResult>(
 	} catch (error) {
 		await logAuditEvent({
 			db: ctx.env.APP_DB,
+			auditDb: auditDatabaseFromEnv(ctx.env),
 			category: 'admin',
 			action: capabilityName,
 			result: 'failure',

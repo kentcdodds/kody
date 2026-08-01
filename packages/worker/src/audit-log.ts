@@ -13,6 +13,7 @@ export type AuditEventResult = (typeof auditEventResults)[number]
 
 type AuditEvent = {
 	db?: D1Database
+	auditDb?: D1Database
 	category: AuditEventCategory
 	action: string
 	result: AuditEventResult
@@ -127,11 +128,26 @@ async function persistAuditEvent(
 		.run()
 }
 
+export function auditDatabaseFromEnv(runtimeEnv: {
+	AUDIT_DB?: D1Database
+	SENTRY_ENVIRONMENT?: string
+}) {
+	// Generic Workers tests opt into the real audit sink explicitly so they do
+	// not all need to migrate a second database unrelated to their behavior.
+	return runtimeEnv.SENTRY_ENVIRONMENT === 'test'
+		? undefined
+		: runtimeEnv.AUDIT_DB
+}
+
 export async function logAuditEvent(event: AuditEvent) {
 	try {
 		const payload = await buildAuditPayload(event)
 		console.info('audit-event', JSON.stringify(payload))
-		await persistAuditEvent(event.db, payload)
+		if (!event.db) return
+		await Promise.all([
+			persistAuditEvent(event.db, payload),
+			persistAuditEvent(event.auditDb, payload),
+		])
 	} catch (error) {
 		console.warn('audit-event-failed', error)
 	}

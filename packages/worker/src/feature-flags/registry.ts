@@ -49,6 +49,19 @@ export const featureFlagDefinitions = [
 		// exercise the flag system itself (including the "no success metric"
 		// admin notice), not to move a product metric.
 	},
+	{
+		key: 'mailbox-read-cutover',
+		defaultEnabled: false,
+		description:
+			'Serve owner-scoped user-mail message reads from the per-user Mailbox Durable Object when the account also has continuous D1↔Mailbox parity soak (matching_since ≥ 24h, fresh checked_at, zero mismatches). Default off; fail closed without verified parity. No live reader is switched until a later wiring PR.',
+		successMetric: {
+			eventType: 'email_received',
+			measure: 'error_rate',
+			goal: 'decrease',
+			hypothesis:
+				'After verified parity soak, reading owner mail from Mailbox should reduce read-path failures that currently surface alongside inbound mail handling.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']

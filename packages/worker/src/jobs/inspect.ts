@@ -1,5 +1,9 @@
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	hydrateJobViewFromRunLog,
+	hydrateJobViewsFromRunLog,
+} from './job-run-observability-hydrate.ts'
+import {
 	getJobManagerDebugState,
 	type JobManagerDebugState,
 } from './manager-client.ts'
@@ -16,7 +20,11 @@ import { type JobSourceInspection, type JobView } from './types.ts'
  */
 export async function listJobs(input: { env: Env; userId: string }) {
 	const rows = await listJobRowsByUserId(input.env.APP_DB, input.userId)
-	return rows.map((row) => toJobView(row.record))
+	return hydrateJobViewsFromRunLog({
+		env: input.env,
+		userId: input.userId,
+		jobs: rows.map((row) => toJobView(row.record)),
+	})
 }
 
 export async function getJob(input: {
@@ -30,7 +38,11 @@ export async function getJob(input: {
 		// off Sentry via McpCallerError (agent typos / stale ids are routine).
 		throw new McpCallerError(`Job "${input.jobId}" was not found.`)
 	}
-	return toJobView(row.record)
+	return hydrateJobViewFromRunLog({
+		env: input.env,
+		userId: input.userId,
+		job: toJobView(row.record),
+	})
 }
 
 export async function inspectJobsForUser(input: {

@@ -24,6 +24,7 @@ test('job list/get capabilities statically import slim inspect off the execution
 	)
 	expect(inspectSpecs).toContain('./manager-client.ts')
 	expect(inspectSpecs).toContain('./repo.ts')
+	expect(inspectSpecs).toContain('./job-run-observability-hydrate.ts')
 
 	for (const relativePath of [
 		'../mcp/capabilities/jobs/job-list.ts',

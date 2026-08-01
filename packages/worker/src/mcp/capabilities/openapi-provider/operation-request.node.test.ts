@@ -7,7 +7,10 @@ import * as integrationsService from '#worker/integrations/service.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { executeOpenApiOperationRequest } from './operation-request.ts'
+
+const userMeter = createInMemoryUserMeterEnv()
 
 const spotifyIntegrationConfig = {
 	name: 'spotify',
@@ -137,6 +140,7 @@ function createEnv(entries: Map<string, string> = new Map()) {
 	} as unknown as D1Database
 
 	return {
+		...userMeter.env,
 		APP_DB: db,
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 	} as unknown as Env

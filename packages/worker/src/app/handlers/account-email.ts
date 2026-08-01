@@ -7,7 +7,7 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { type routes } from '#app/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { setEmailMessageClassification } from '#worker/email/repo.ts'
+import { setEmailMessageClassification } from '#worker/email/service.ts'
 import {
 	emailClassificationValues,
 	type EmailClassification,
@@ -112,6 +112,7 @@ export function createAccountEmailApiHandler(env: Env) {
 			}
 
 			const updated = await setEmailMessageClassification({
+				env,
 				db: env.APP_DB,
 				userId: user.mcpUser.userId,
 				messageId,

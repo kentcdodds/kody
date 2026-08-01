@@ -1,0 +1,107 @@
+/**
+ * Workflow run projections stored in the per-user RunLog Durable Object.
+ *
+ * Mirrors D1 `workflow_runs` (minus `user_id` — the DO identity is the user)
+ * and adds the Cloudflare Workflow binding name so a user with multiple
+ * bindings can be projected correctly. This is correctness state for
+ * idempotency and concurrent-workflow entitlements; it must never be derived
+ * from pruned run-history rows.
+ */
+
+import {
+	activeWorkflowStatusValues,
+	type WorkflowRunStatus,
+} from '#worker/package-runtime/workflow-statuses.ts'
+
+/**
+ * Cloudflare Workflow binding names Kody may project. Expand the union when a
+ * second binding ships; resolvers must stay exhaustive.
+ */
+export const workflowBindingNames = ['DYNAMIC_CALLABLE_WORKFLOWS'] as const
+
+export type WorkflowBindingName = (typeof workflowBindingNames)[number]
+
+export function isWorkflowBindingName(
+	value: string,
+): value is WorkflowBindingName {
+	return (workflowBindingNames as ReadonlyArray<string>).includes(value)
+}
+
+export type WorkflowProjectionSourceType = 'package' | 'inline'
+
+export type WorkflowProjectionRecord = {
+	id: string
+	bindingName: string
+	sourceType: WorkflowProjectionSourceType
+	packageId: string | null
+	kodyId: string | null
+	sourceId: string | null
+	workflowName: string
+	exportName: string | null
+	idempotencyKey: string
+	runAt: string
+	planDate: string | null
+	status: string | null
+	createdAt: string
+	updatedAt: string
+	completedAt: string | null
+	lastError: string | null
+}
+
+export type WorkflowProjectionUpsertInput = {
+	id: string
+	bindingName: string
+	sourceType: WorkflowProjectionSourceType
+	packageId?: string | null
+	kodyId?: string | null
+	sourceId?: string | null
+	workflowName: string
+	exportName?: string | null
+	idempotencyKey: string
+	runAt: string
+	planDate?: string | null
+	status?: string | null
+	createdAt?: string | null
+	updatedAt?: string | null
+	completedAt?: string | null
+	lastError?: string | null
+}
+
+export type WorkflowProjectionReserveResult = {
+	/**
+	 * Active + creating count excluding this id so an idempotent re-reserve of
+	 * the same workflow does not consume two entitlement slots.
+	 */
+	countBeforeReservation: number
+	/** True when this id holds a `creating` reservation after the call. */
+	reserved: boolean
+	/** True when a new `creating` row was inserted by this call. */
+	inserted: boolean
+	projection: WorkflowProjectionRecord
+}
+
+/** Mid-creation placeholder excluded from non-creating idempotency lookups. */
+export const creatingWorkflowProjectionStatus = 'creating'
+
+/**
+ * Stale `creating` reservations older than this are pruned before reserve/count
+ * and by retention alarms. Active/running projections are never TTL-pruned.
+ */
+export const workflowProjectionCreatingTtlMs = 10 * 60 * 1000
+
+/**
+ * Hard cap for one {@link importWorkflowProjections} RPC. Matches the expand-
+ * phase active D1 import bound (`planLimits.max.maxConcurrentWorkflows + 1`).
+ */
+export const workflowProjectionImportMaxBatch = 5_001
+
+export const workflowProjectionActiveStatuses: ReadonlyArray<string> =
+	activeWorkflowStatusValues
+
+/** Statuses that occupy a concurrent-workflow entitlement slot. */
+export const workflowProjectionReservationStatuses: ReadonlyArray<string> = [
+	...workflowProjectionActiveStatuses,
+	creatingWorkflowProjectionStatus,
+]
+
+export type { WorkflowRunStatus }

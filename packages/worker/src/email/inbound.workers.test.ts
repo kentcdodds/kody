@@ -1,5 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
 import {
@@ -118,164 +120,171 @@ async function seedVerifiedAccount(input: {
 // budget these explicitly like the other sandbox-executing suites rather than
 // letting them flake under a loaded `npm run validate`.
 const subscriptionDispatchTimeoutMs = 60_000
+// handleInboundEmail touches the real USER_METER DO; isolated runs finish in
+// a few seconds but the default 5s budget flakes under full-suite contention.
+const inboundRoutingTimeoutMs = 15_000
 
-test('inbound email routes {username}@platform-domain and auto-provisions the default inbox', async () => {
-	// Usage recording degrades with a warn when the usage_rollups table is
-	// not part of this test's schema; that is incidental to routing.
-	silenceIncidentalRuntimeWarnings()
-	await ensureEmailTestSchema(env.APP_DB)
-	const username = `inbound-${crypto.randomUUID().slice(0, 8)}`
-	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
-	const address = `${username}@${platformDomain}`
-	await seedVerifiedAccount({
-		db: env.APP_DB,
-		email: accountEmail,
-		username,
-	})
+test(
+	'inbound email routes {username}@platform-domain and auto-provisions the default inbox',
+	async () => {
+		// Usage recording degrades with a warn when the usage_rollups table is
+		// not part of this test's schema; that is incidental to routing.
+		silenceIncidentalRuntimeWarnings()
+		await ensureEmailTestSchema(env.APP_DB)
+		const username = `inbound-${crypto.randomUUID().slice(0, 8)}`
+		const accountEmail = `account-${crypto.randomUUID()}@example.com`
+		const userId = await createStableUserIdFromEmail(accountEmail)
+		const address = `${username}@${platformDomain}`
+		await seedVerifiedAccount({
+			db: env.APP_DB,
+			email: accountEmail,
+			username,
+		})
 
-	const firstMessage = createForwardableEmailMessage({
-		from: 'stranger@example.net',
-		to: address,
-		raw: [
-			'From: Stranger <stranger@example.net>',
-			`To: ${address}`,
-			'Subject: Unknown sender',
-			'Message-ID: <unknown@example.net>',
-			'',
-			'Please help.',
-		].join('\r\n'),
-	})
-	await handleInboundEmail(firstMessage, createInboundEnv())
-	expect(firstMessage.rejectedReason).toBeNull()
+		const firstMessage = createForwardableEmailMessage({
+			from: 'stranger@example.net',
+			to: address,
+			raw: [
+				'From: Stranger <stranger@example.net>',
+				`To: ${address}`,
+				'Subject: Unknown sender',
+				'Message-ID: <unknown@example.net>',
+				'',
+				'Please help.',
+			].join('\r\n'),
+		})
+		await handleInboundEmail(firstMessage, createInboundEnv())
+		expect(firstMessage.rejectedReason).toBeNull()
 
-	// First inbound provisioned the default inbox and address.
-	const inboxes = await listEmailInboxesForUser({ db: env.APP_DB, userId })
-	expect(inboxes).toHaveLength(1)
-	expect(inboxes[0]).toMatchObject({ name: defaultEmailInboxName })
-	const addresses = await listEmailInboxAddressesForUser({
-		db: env.APP_DB,
-		userId,
-	})
-	expect(addresses).toHaveLength(1)
-	expect(addresses[0]).toMatchObject({
-		address,
-		localPart: username,
-		domain: platformDomain,
-	})
-	// Provisioning also created the platform-assigned verified sender
-	// identity for the same address.
-	const identity = await env.APP_DB.prepare(
-		`SELECT email, domain, status FROM email_sender_identities
+		// First inbound provisioned the default inbox and address.
+		const inboxes = await listEmailInboxesForUser({ db: env.APP_DB, userId })
+		expect(inboxes).toHaveLength(1)
+		expect(inboxes[0]).toMatchObject({ name: defaultEmailInboxName })
+		const addresses = await listEmailInboxAddressesForUser({
+			db: env.APP_DB,
+			userId,
+		})
+		expect(addresses).toHaveLength(1)
+		expect(addresses[0]).toMatchObject({
+			address,
+			localPart: username,
+			domain: platformDomain,
+		})
+		// Provisioning also created the platform-assigned verified sender
+		// identity for the same address.
+		const identity = await env.APP_DB.prepare(
+			`SELECT email, domain, status FROM email_sender_identities
 			WHERE user_id = ? AND email = ?`,
-	)
-		.bind(userId, address)
-		.first<Record<string, unknown>>()
-	expect(identity).toEqual({
-		email: address,
-		domain: platformDomain,
-		status: 'verified',
-	})
-	const inbox = inboxes[0]!
+		)
+			.bind(userId, address)
+			.first<Record<string, unknown>>()
+		expect(identity).toEqual({
+			email: address,
+			domain: platformDomain,
+			status: 'verified',
+		})
+		const inbox = inboxes[0]!
 
-	const secondMessage = createForwardableEmailMessage({
-		from: 'agent@trusted.example',
-		to: `${username.toUpperCase()}@${platformDomain}`,
-		raw: [
-			'From: Agent <agent@trusted.example>',
-			`To: ${address}`,
-			'Subject: Approved sender',
-			'Message-ID: <approved@trusted.example>',
-			'',
-			'Approved body.',
-		].join('\r\n'),
-	})
-	await handleInboundEmail(secondMessage, createInboundEnv())
-	expect(secondMessage.rejectedReason).toBeNull()
+		const secondMessage = createForwardableEmailMessage({
+			from: 'agent@trusted.example',
+			to: `${username.toUpperCase()}@${platformDomain}`,
+			raw: [
+				'From: Agent <agent@trusted.example>',
+				`To: ${address}`,
+				'Subject: Approved sender',
+				'Message-ID: <approved@trusted.example>',
+				'',
+				'Approved body.',
+			].join('\r\n'),
+		})
+		await handleInboundEmail(secondMessage, createInboundEnv())
+		expect(secondMessage.rejectedReason).toBeNull()
 
-	// The second delivery reuses the provisioned inbox instead of creating
-	// another one.
-	expect(
-		await listEmailInboxesForUser({ db: env.APP_DB, userId }),
-	).toHaveLength(1)
+		// The second delivery reuses the provisioned inbox instead of creating
+		// another one.
+		expect(
+			await listEmailInboxesForUser({ db: env.APP_DB, userId }),
+		).toHaveLength(1)
 
-	const messages = await listEmailMessages({
-		db: env.APP_DB,
-		userId,
-		inboxId: inbox.id,
-		limit: 10,
-	})
-	expect(messages).toHaveLength(2)
-	expect(messages[0]).toMatchObject({
-		fromAddress: 'agent@trusted.example',
-		subject: 'Approved sender',
-		processingStatus: 'stored',
-	})
-	expect(messages[1]).toMatchObject({
-		fromAddress: 'stranger@example.net',
-		subject: 'Unknown sender',
-		error: null,
-	})
+		const messages = await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			inboxId: inbox.id,
+			limit: 10,
+		})
+		expect(messages).toHaveLength(2)
+		expect(messages[0]).toMatchObject({
+			fromAddress: 'agent@trusted.example',
+			subject: 'Approved sender',
+			processingStatus: 'stored',
+		})
+		expect(messages[1]).toMatchObject({
+			fromAddress: 'stranger@example.net',
+			subject: 'Unknown sender',
+			error: null,
+		})
 
-	const normalizedExistingThread = await createEmailThread({
-		db: env.APP_DB,
-		userId,
-		inboxId: inbox.id,
-		subjectNormalized: 'normalized subject',
-	})
-	const subjectOnlyMessage = createForwardableEmailMessage({
-		from: 'sender@example.net',
-		to: address,
-		raw: [
-			'From: Sender <sender@example.net>',
-			`To: ${address}`,
-			'Subject: Re: Normalized Subject',
-			'',
-			'Subject-only body.',
-		].join('\r\n'),
-	})
-	await handleInboundEmail(subjectOnlyMessage, createInboundEnv())
-	const subjectOnly = await listEmailMessages({
-		db: env.APP_DB,
-		userId,
-		inboxId: inbox.id,
-		limit: 1,
-	})
-	expect(subjectOnly[0]?.threadId).not.toBe(normalizedExistingThread.id)
+		const normalizedExistingThread = await createEmailThread({
+			db: env.APP_DB,
+			userId,
+			inboxId: inbox.id,
+			subjectNormalized: 'normalized subject',
+		})
+		const subjectOnlyMessage = createForwardableEmailMessage({
+			from: 'sender@example.net',
+			to: address,
+			raw: [
+				'From: Sender <sender@example.net>',
+				`To: ${address}`,
+				'Subject: Re: Normalized Subject',
+				'',
+				'Subject-only body.',
+			].join('\r\n'),
+		})
+		await handleInboundEmail(subjectOnlyMessage, createInboundEnv())
+		const subjectOnly = await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			inboxId: inbox.id,
+			limit: 1,
+		})
+		expect(subjectOnly[0]?.threadId).not.toBe(normalizedExistingThread.id)
 
-	// RFC 5233 subaddressing routes {username}+{tag} to the same inbox and
-	// keeps the full tagged address in the stored to_addresses so package
-	// handlers can dispatch on the tag.
-	const taggedAddress = `${username}+billing@${platformDomain}`
-	const taggedMessage = createForwardableEmailMessage({
-		from: 'invoices@example.net',
-		to: taggedAddress,
-		raw: [
-			'From: Invoices <invoices@example.net>',
-			`To: ${taggedAddress}`,
-			'Subject: Subaddressed mail',
-			'Message-ID: <subaddressed@example.net>',
-			'',
-			'Tagged body.',
-		].join('\r\n'),
-	})
-	await handleInboundEmail(taggedMessage, createInboundEnv())
-	expect(taggedMessage.rejectedReason).toBeNull()
-	const taggedStored = await listEmailMessages({
-		db: env.APP_DB,
-		userId,
-		inboxId: inbox.id,
-		limit: 1,
-	})
-	expect(taggedStored[0]).toMatchObject({
-		subject: 'Subaddressed mail',
-		toAddresses: [taggedAddress],
-	})
-	// Still the same single auto-provisioned inbox after the tagged delivery.
-	expect(
-		await listEmailInboxesForUser({ db: env.APP_DB, userId }),
-	).toHaveLength(1)
-})
+		// RFC 5233 subaddressing routes {username}+{tag} to the same inbox and
+		// keeps the full tagged address in the stored to_addresses so package
+		// handlers can dispatch on the tag.
+		const taggedAddress = `${username}+billing@${platformDomain}`
+		const taggedMessage = createForwardableEmailMessage({
+			from: 'invoices@example.net',
+			to: taggedAddress,
+			raw: [
+				'From: Invoices <invoices@example.net>',
+				`To: ${taggedAddress}`,
+				'Subject: Subaddressed mail',
+				'Message-ID: <subaddressed@example.net>',
+				'',
+				'Tagged body.',
+			].join('\r\n'),
+		})
+		await handleInboundEmail(taggedMessage, createInboundEnv())
+		expect(taggedMessage.rejectedReason).toBeNull()
+		const taggedStored = await listEmailMessages({
+			db: env.APP_DB,
+			userId,
+			inboxId: inbox.id,
+			limit: 1,
+		})
+		expect(taggedStored[0]).toMatchObject({
+			subject: 'Subaddressed mail',
+			toAddresses: [taggedAddress],
+		})
+		// Still the same single auto-provisioned inbox after the tagged delivery.
+		expect(
+			await listEmailInboxesForUser({ db: env.APP_DB, userId }),
+		).toHaveLength(1)
+	},
+	inboundRoutingTimeoutMs,
+)
 
 test('inbound email rejects unknown usernames, reserved locals, and foreign domains', async () => {
 	// Usage recording degrades with a warn when the usage_rollups table is
@@ -568,13 +577,12 @@ test('inbound email handler rejects mail for unverified accounts', async () => {
 		limit: 10,
 	})
 	expect(messages).toEqual([])
-	const counterRow = await env.APP_DB.prepare(
-		`SELECT count FROM entitlement_daily_counters
-			WHERE user_id = ? AND resource = 'email_receives_per_day'`,
-	)
-		.bind(userId)
-		.first<{ count: number }>()
-	expect(counterRow).toBeNull()
+	expect(
+		await userMeterRpc({ env, userId }).read({
+			resource: 'email_receives_per_day',
+			day: utcDayKey(),
+		}),
+	).toEqual({ outcome: 'needs_bootstrap' })
 	const events = await env.APP_DB.prepare(
 		`SELECT event_type, detail_json FROM email_delivery_events WHERE user_id = ?`,
 	)
@@ -848,13 +856,27 @@ test('inbound email stores raw MIME in R2 and readers and deletes follow the blo
 })
 
 async function readUserDailyReceiveCount(userId: string) {
-	const row = await env.APP_DB.prepare(
-		`SELECT count FROM entitlement_daily_counters
-			WHERE user_id = ? AND resource = 'email_receives_per_day' AND day = ?`,
-	)
-		.bind(userId, new Date().toISOString().slice(0, 10))
-		.first<{ count: number }>()
-	return Number(row?.count ?? 0)
+	const result = await userMeterRpc({ env, userId }).read({
+		resource: 'email_receives_per_day',
+		day: new Date().toISOString().slice(0, 10),
+	})
+	return result.outcome === 'ready' ? result.count : 0
+}
+
+async function readUserTotalReceiveCount(userId: string) {
+	const meter = userMeterRpc({ env, userId })
+	const counters: Array<{ resource: string; count: number }> = []
+	let startAfter: string | null = null
+	for (;;) {
+		const page = await meter.exportCounters({ startAfter })
+		counters.push(...page.counters)
+		if (!page.truncated) break
+		if (!page.nextStartAfter) break
+		startAfter = page.nextStartAfter
+	}
+	return counters
+		.filter((row) => row.resource === 'email_receives_per_day')
+		.reduce((total, row) => total + row.count, 0)
 }
 
 function createFailingEmailBlobs() {
@@ -1093,7 +1115,7 @@ test('charged retry repairs after unrelated writes fill storage bytes', async ()
 	).toHaveLength(1)
 })
 
-test('ambiguous quota-ledger batch response charges one delivery exactly once', async () => {
+test('ambiguous delivery-event insert response charges one delivery exactly once', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `quota-ambiguous-${crypto.randomUUID().slice(0, 8)}`
@@ -1105,19 +1127,37 @@ test('ambiguous quota-ledger batch response charges one delivery exactly once', 
 		email: accountEmail,
 		username,
 	})
-	let batchCalls = 0
+	let loseNextDeliveryInsertResponse = true
 	const ambiguousDb = new Proxy(env.APP_DB, {
 		get(target, property, receiver) {
-			if (property === 'batch') {
-				return async (statements: Parameters<D1Database['batch']>[0]) => {
-					batchCalls++
-					const result = await target.batch(statements)
-					// The account-write lease acquire is the first batch. Lose the
-					// response from the following quota-ledger batch.
-					if (batchCalls === 2) {
-						throw new Error('simulated quota batch response loss')
+			if (property === 'prepare') {
+				return (query: string) => {
+					const statement = target.prepare(query)
+					const isDeliveryInsert =
+						query.includes('INSERT OR IGNORE INTO email_delivery_events') &&
+						query.includes("'receive_started'")
+					if (!isDeliveryInsert) return statement
+					const originalBind = statement.bind.bind(statement)
+					return {
+						bind(...params: Array<unknown>) {
+							const bound = originalBind(...params)
+							return {
+								first: bound.first.bind(bound),
+								all: bound.all.bind(bound),
+								raw: bound.raw?.bind(bound),
+								run: async () => {
+									const result = await bound.run()
+									if (loseNextDeliveryInsertResponse) {
+										loseNextDeliveryInsertResponse = false
+										throw new Error(
+											'simulated delivery event insert response loss',
+										)
+									}
+									return result
+								},
+							}
+						},
 					}
-					return result
 				}
 			}
 			const value = Reflect.get(target, property, receiver)
@@ -1299,13 +1339,12 @@ test('pointer-only retry after midnight enforces the current quota day', async (
 		})
 		const receiveLimit = planLimits.free.maxEmailReceivesPerDay
 		if (receiveLimit == null) throw new Error('Expected finite receive limit.')
-		await env.APP_DB.prepare(
-			`INSERT INTO entitlement_daily_counters (
-				user_id, resource, day, count, updated_at
-			) VALUES (?, 'email_receives_per_day', '2026-07-23', ?, ?)`,
-		)
-			.bind(userId, receiveLimit, retryNow.toISOString())
-			.run()
+		await userMeterRpc({ env, userId }).initialize({
+			resource: 'email_receives_per_day',
+			day: '2026-07-23',
+			count: receiveLimit,
+			updatedAt: retryNow.toISOString(),
+		})
 
 		vi.setSystemTime(retryNow)
 		const retry = createForwardableEmailMessage({
@@ -1391,13 +1430,7 @@ test('byte-identical mail dedupes only inside the explicit delivery window', asy
 				limit: 10,
 			}),
 		).toHaveLength(2)
-		const counter = await env.APP_DB.prepare(
-			`SELECT SUM(count) AS count FROM entitlement_daily_counters
-			WHERE user_id = ? AND resource = 'email_receives_per_day'`,
-		)
-			.bind(userId)
-			.first<{ count: number }>()
-		expect(Number(counter?.count ?? 0)).toBe(2)
+		expect(await readUserTotalReceiveCount(userId)).toBe(2)
 		expect(
 			await env.APP_DB.prepare(
 				`SELECT event_count FROM usage_rollups

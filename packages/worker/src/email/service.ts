@@ -10,6 +10,14 @@ import {
 	type InboundDelivery,
 } from './inbound-delivery.ts'
 import {
+	mirrorMailboxMessageGraphFromD1,
+	type MailboxLiveMirrorEnv,
+} from './mailbox-live-mirror.ts'
+import {
+	recordEmailReportingEvent,
+	type EmailReportingEnv,
+} from './reporting-events.ts'
+import {
 	createEmailThread,
 	deleteEmailMessageById,
 	emailRawMimeKey,
@@ -22,6 +30,7 @@ import {
 	insertEmailMessage,
 	listEmailAttachmentsForMessage,
 	touchEmailThread,
+	updateEmailMessageClassificationInD1,
 } from './repo.ts'
 import { evaluateEmailSenderRules } from './sender-rules.ts'
 import {
@@ -698,8 +707,43 @@ export async function recordBoundedEmailRejectionEvent(input: {
 	return rejectionsToday
 }
 
+/**
+ * Reclassify a stored inbound message and, on D1 success only, best-effort
+ * mirror the full message graph into Mailbox. Returns the D1 mutation boolean;
+ * mirror failures never throw or change that response.
+ */
+export async function setEmailMessageClassification(input: {
+	env: MailboxLiveMirrorEnv
+	db: D1Database
+	userId: string
+	messageId: string
+	classification: EmailClassification
+	classificationReason?: string | null
+	now?: string
+}) {
+	const updated = await updateEmailMessageClassificationInD1({
+		db: input.db,
+		userId: input.userId,
+		messageId: input.messageId,
+		classification: input.classification,
+		classificationReason: input.classificationReason,
+		now: input.now,
+	})
+	if (!updated) {
+		return false
+	}
+	await mirrorMailboxMessageGraphFromD1({
+		env: input.env,
+		db: input.db,
+		userId: input.userId,
+		messageId: input.messageId,
+	})
+	return true
+}
+
 export async function recordProviderEmailDeliveryEvent(input: {
 	db: D1Database
+	reportingEnv?: EmailReportingEnv
 	providerMessageId: string
 	providerEventId: string
 	deliveryStatus: EmailDeliveryStatus
@@ -769,6 +813,14 @@ export async function recordProviderEmailDeliveryEvent(input: {
 			outcome: duplicateIsCurrent ? ('duplicate' as const) : ('stale' as const),
 			message,
 		}
+	}
+	if (input.reportingEnv) {
+		recordEmailReportingEvent(input.reportingEnv, {
+			userId: message.userId,
+			eventType: 'email_delivery',
+			outcome: input.deliveryStatus,
+			timestamp: input.eventTimestamp,
+		})
 	}
 	if (!updatedLatestStatus) {
 		return { outcome: 'stale' as const, message }

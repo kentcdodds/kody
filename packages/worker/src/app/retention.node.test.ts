@@ -6,14 +6,12 @@ import {
 	auditEventRetentionDays,
 	emailDeliveryEventRetentionDays,
 	emailMessageRetentionDays,
-	entitlementDailyCounterRetentionDays,
 	featureFlagExposureRetentionDays,
 	getRetentionPolicyCoverage,
 	memorySuppressionRetentionDays,
 	platformFeedbackRetentionDays,
 	pruneAuditEventsForRetention,
 	pruneEmailDeliveryEventsForRetention,
-	pruneEntitlementDailyCountersForRetention,
 	pruneFeatureFlagExposuresForRetention,
 	pruneMemorySuppressionsForRetention,
 	prunePlatformFeedbackForRetention,
@@ -200,14 +198,6 @@ function createRetentionDb() {
 			storage_kind TEXT NOT NULL,
 			storage_key TEXT,
 			created_at TEXT NOT NULL
-		);
-		CREATE TABLE entitlement_daily_counters (
-			user_id TEXT NOT NULL,
-			resource TEXT NOT NULL,
-			day TEXT NOT NULL,
-			count INTEGER NOT NULL DEFAULT 0,
-			updated_at TEXT NOT NULL,
-			PRIMARY KEY (user_id, resource, day)
 		);
 		CREATE TABLE usage_rollups (
 			user_id TEXT NOT NULL,
@@ -428,9 +418,13 @@ test('platform feedback retention prunes terminal rows in bounded batches and ru
 		.run(daysAgo(platformFeedbackRetentionDays + 1))
 	const env = {
 		APP_DB: db,
+		AUDIT_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
 		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	} as unknown as Pick<
+		Env,
+		'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'
+	>
 	const result = await pruneRetention({ env, now })
 	expect(result.platformFeedback).toBe(1)
 	expect(result.batchesPerTable['platform_feedback']).toBe(1)
@@ -797,13 +791,17 @@ test('retention run reports blob delete errors across a full email batch when R2
 	}
 	const env = {
 		APP_DB: db,
+		AUDIT_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
 		EMAIL_BLOBS: {
 			delete: vi.fn(async () => {
 				throw new Error('r2 unavailable')
 			}),
 		},
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	} as unknown as Pick<
+		Env,
+		'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'
+	>
 
 	const result = await pruneRetention({ env, now })
 
@@ -857,22 +855,8 @@ test('retention prune reports selected separately from deleted when rows vanish 
 	).toEqual({ selected: 2, deleted: 1 })
 })
 
-test('entitlement counter and usage rollup retention respect boundaries', async () => {
+test('usage rollup retention respects month boundaries', async () => {
 	const { sqlite, db } = createRetentionDb()
-	const cutoffDay = daysAgo(entitlementDailyCounterRetentionDays).slice(0, 10)
-	for (const day of [
-		daysAgo(entitlementDailyCounterRetentionDays + 1).slice(0, 10),
-		cutoffDay,
-		daysAgo(1).slice(0, 10),
-	]) {
-		sqlite
-			.prepare(
-				`INSERT INTO entitlement_daily_counters (
-				user_id, resource, day, count, updated_at
-			) VALUES ('user-1', 'email_sends_per_day', ?, 1, ?)`,
-			)
-			.run(day, now.toISOString())
-	}
 	// 24 months before 2026-07 keeps 2024-07 and later.
 	for (const month of ['2024-06', '2024-07', '2026-06']) {
 		sqlite
@@ -884,22 +868,11 @@ test('entitlement counter and usage rollup retention respect boundaries', async 
 			.run(month, now.toISOString())
 	}
 
-	expect(await pruneEntitlementDailyCountersForRetention({ db, now })).toEqual({
-		selected: 1,
-		deleted: 1,
-	})
 	expect(await pruneUsageRollupsForRetention({ db, now })).toEqual({
 		selected: 1,
 		deleted: 1,
 	})
 
-	const days = sqlite
-		.prepare(`SELECT day FROM entitlement_daily_counters ORDER BY day`)
-		.all() as Array<{ day: string }>
-	expect(days.map((row) => row.day)).toEqual([
-		cutoffDay,
-		daysAgo(1).slice(0, 10),
-	])
 	const months = sqlite
 		.prepare(`SELECT month FROM usage_rollups ORDER BY month`)
 		.all() as Array<{ month: string }>
@@ -1159,6 +1132,7 @@ test('retention row deletes chunk ids to stay within the D1 binding limit', asyn
 
 test('retention run loops batches per table until backlogs are drained', async () => {
 	const { sqlite, db } = createRetentionDb()
+	const { sqlite: auditSqlite, db: auditDb } = createRetentionDb()
 	for (let index = 0; index < 501; index += 1) {
 		insertWorkflowRun(sqlite, {
 			id: `wf-${String(index).padStart(3, '0')}`,
@@ -1166,7 +1140,7 @@ test('retention run loops batches per table until backlogs are drained', async (
 		})
 	}
 	for (let index = 0; index < 300; index += 1) {
-		sqlite
+		auditSqlite
 			.prepare(
 				`INSERT INTO audit_events (
 				category, action, result, timestamp
@@ -1176,9 +1150,13 @@ test('retention run loops batches per table until backlogs are drained', async (
 	}
 	const env = {
 		APP_DB: db,
+		AUDIT_DB: auditDb,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
 		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	} as unknown as Pick<
+		Env,
+		'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'
+	>
 
 	const result = await pruneRetention({ env, now })
 
@@ -1188,6 +1166,9 @@ test('retention run loops batches per table until backlogs are drained', async (
 	expect(result.batchesPerTable['audit_events']).toBe(2)
 	expect(result.timeBudgetExhausted).toBe(false)
 	expect(idsForTable(sqlite, 'workflow_runs')).toEqual([])
+	expect(
+		auditSqlite.prepare(`SELECT COUNT(*) AS count FROM audit_events`).get(),
+	).toEqual({ count: 0 })
 })
 
 test('retention run gives every table one batch and stops when the budget is exhausted', async () => {
@@ -1207,9 +1188,13 @@ test('retention run gives every table one batch and stops when the budget is exh
 		.run(daysAgo(auditEventRetentionDays + 1))
 	const env = {
 		APP_DB: db,
+		AUDIT_DB: db,
 		BUNDLE_ARTIFACTS_KV: { delete: vi.fn(async () => undefined) },
 		EMAIL_BLOBS: { delete: vi.fn(async () => undefined) },
-	} as unknown as Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'>
+	} as unknown as Pick<
+		Env,
+		'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV' | 'EMAIL_BLOBS'
+	>
 
 	const result = await pruneRetention({ env, now, timeBudgetMs: 0 })
 

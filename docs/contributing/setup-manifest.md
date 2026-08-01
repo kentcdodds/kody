@@ -48,6 +48,16 @@ This project uses the following resources:
     reloads the metadata-only activity projection, acknowledges invalid or
     deleted activity, and retries transient lookup, subscription-discovery, or
     package-invocation infrastructure failures.
+- Cloudflare Queue for isolated scheduled maintenance
+  - Producer binding: `SCHEDULED_DISPATCH_QUEUE`
+  - Queue: `kody-scheduled-dispatch`
+  - Dead-letter queue: `kody-scheduled-dispatch-dlq`
+  - The production consumer receives one lane message per invocation, permits up
+    to 16 concurrent lane invocations, retries three times, and routes exhausted
+    messages to the dedicated dead-letter queue. Production CI ensures both
+    resources.
+  - Preview and local runtimes without this production-only queue binding run
+    the same registry inline so maintenance behavior remains testable.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
   - Production: `kody-capabilities-prod`
   - Preview: `kody-capabilities-preview`

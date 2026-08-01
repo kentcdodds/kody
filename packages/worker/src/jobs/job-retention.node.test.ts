@@ -127,8 +127,6 @@ test('failed and never-ran past once jobs use the longer once retention', () => 
 	const failed = createJob({
 		lastRunAt: '2026-01-01T00:00:00.000Z',
 		lastRunStatus: 'error',
-		runCount: 1,
-		errorCount: 1,
 	})
 	expect(
 		evaluateJobRetentionEligibility({
@@ -144,7 +142,7 @@ test('failed and never-ran past once jobs use the longer once retention', () => 
 
 	const neverRan = createJob({
 		enabled: false,
-		runCount: 0,
+		lastRunAt: undefined,
 		schedule: { type: 'once', runAt: '2026-01-01T00:00:00.000Z' },
 	})
 	expect(
@@ -166,7 +164,7 @@ test('upcoming never-ran once jobs and enabled recurring jobs are skipped', () =
 		evaluateJobRetentionEligibility({
 			job: createJob({
 				enabled: true,
-				runCount: 0,
+				lastRunAt: undefined,
 				schedule: { type: 'once', runAt: '2026-01-01T00:00:00.000Z' },
 			}),
 			preferences,

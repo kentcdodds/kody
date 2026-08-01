@@ -8,6 +8,7 @@ import {
 } from '#worker/entitlements/plans.ts'
 import {
 	getUserPlan,
+	readDailyEntitlementResourceUsage,
 	readEntitlementResourceUsage,
 } from '#worker/entitlements/service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
@@ -54,14 +55,16 @@ export const emailUsageGetCapability = defineDomainCapability(
 					resource: 'stored_email_messages',
 					now,
 				}),
-				readEntitlementResourceUsage({
+				readDailyEntitlementResourceUsage({
 					db,
+					env: ctx.env,
 					userId: user.userId,
 					resource: 'email_sends_per_day',
 					now,
 				}),
-				readEntitlementResourceUsage({
+				readDailyEntitlementResourceUsage({
 					db,
+					env: ctx.env,
 					userId: user.userId,
 					resource: 'email_receives_per_day',
 					now,

@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { type routes } from '#app/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
@@ -42,6 +46,7 @@ export function createCommunityTrustApiPostHandler(env: Env) {
 				})
 				void logAuditEvent({
 					db: env.APP_DB,
+					auditDb: auditDatabaseFromEnv(env),
 					category: 'admin',
 					action: 'community_listing_trust',
 					result: 'success',

@@ -22,6 +22,10 @@ function mapEntitySourceRow(row: Record<string, unknown>): EntitySourceRow {
 			row['last_external_check_at'] == null
 				? null
 				: String(row['last_external_check_at']),
+		external_check_until:
+			row['external_check_until'] == null
+				? null
+				: String(row['external_check_until']),
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	})
@@ -35,8 +39,9 @@ export async function insertEntitySource(
 		.prepare(
 			`INSERT INTO entity_sources (
 				id, user_id, entity_kind, entity_id, repo_id, published_commit, indexed_commit,
-				manifest_path, source_root, last_external_check_at, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				manifest_path, source_root, last_external_check_at, external_check_until,
+				created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -49,6 +54,7 @@ export async function insertEntitySource(
 			row.manifest_path,
 			row.source_root,
 			row.last_external_check_at,
+			row.external_check_until,
 			row.created_at,
 			row.updated_at,
 		)
@@ -125,6 +131,7 @@ export async function updateEntitySource(
 		manifestPath?: string
 		sourceRoot?: string
 		lastExternalCheckAt?: string | null
+		externalCheckUntil?: string | null
 	},
 ): Promise<boolean> {
 	const assignments: Array<string> = []
@@ -143,6 +150,9 @@ export async function updateEntitySource(
 	if (input.sourceRoot !== undefined) add('source_root', input.sourceRoot)
 	if (input.lastExternalCheckAt !== undefined) {
 		add('last_external_check_at', input.lastExternalCheckAt)
+	}
+	if (input.externalCheckUntil !== undefined) {
+		add('external_check_until', input.externalCheckUntil)
 	}
 	add('updated_at', new Date().toISOString())
 	const result = await runD1WithRetry(() =>
@@ -182,8 +192,40 @@ export async function upsertEntitySource(
 	await insertEntitySource(db, row)
 }
 
+export const externalReconcileGraceMs = 60 * 60 * 1000
+
+export async function markEntitySourcePendingExternalReconcile(
+	db: D1Database,
+	input: {
+		id: string
+		userId: string
+		tokenExpiresAt: string
+	},
+): Promise<boolean> {
+	const checkUntil = new Date(
+		new Date(input.tokenExpiresAt).getTime() + externalReconcileGraceMs,
+	).toISOString()
+	const updatedAt = new Date().toISOString()
+	const result = await runD1WithRetry(() =>
+		db
+			.prepare(
+				`UPDATE entity_sources
+				SET external_check_until = CASE
+						WHEN external_check_until IS NULL OR external_check_until < ?
+							THEN ?
+						ELSE external_check_until
+					END,
+					updated_at = ?
+				WHERE id = ? AND user_id = ?`,
+			)
+			.bind(checkUntil, checkUntil, updatedAt, input.id, input.userId)
+			.run(),
+	)
+	return (result.meta.changes ?? 0) > 0
+}
+
 /**
- * Keyset cursor over the stale ordering used by
+ * Keyset cursor over the reconcile ordering used by
  * {@link listEntitySourcesForExternalReconcile}: the coalesced
  * `last_external_check_at`/`created_at` value of the last row in the previous
  * batch, with the row id as a tie-breaker.
@@ -199,6 +241,7 @@ export async function listEntitySourcesForExternalReconcile(
 		before: string
 		limit: number
 		after?: ExternalReconcileCursor
+		includeAll?: boolean
 	},
 ): Promise<Array<EntitySourceRow>> {
 	// The `after` keyset lets callers page strictly forward within one pass
@@ -210,7 +253,13 @@ export async function listEntitySourcesForExternalReconcile(
 				OR (COALESCE(last_external_check_at, created_at) = ? AND id > ?)
 			)`
 		: ''
-	const bindings: Array<string | number> = [input.before]
+	const pendingClause = input.includeAll
+		? ''
+		: `AND external_check_until IS NOT NULL
+				AND (last_external_check_at IS NULL OR last_external_check_at < ?)`
+	const bindings: Array<string | number> = input.includeAll
+		? []
+		: [input.before]
 	if (input.after) {
 		bindings.push(
 			input.after.staleOrderedAt,
@@ -223,7 +272,7 @@ export async function listEntitySourcesForExternalReconcile(
 		.prepare(
 			`SELECT * FROM entity_sources
 			WHERE entity_kind = 'package'
-				AND (last_external_check_at IS NULL OR last_external_check_at < ?)
+				${pendingClause}
 				${afterClause}
 			ORDER BY COALESCE(last_external_check_at, created_at) ASC, id ASC
 			LIMIT ?`,

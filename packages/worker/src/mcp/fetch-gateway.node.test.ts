@@ -12,15 +12,10 @@ import {
 import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 
-/**
- * Minimal D1 stub for the entitlement reads/writes executeGatewayFetch
- * performs (account reverse-resolution `first()` and the conditional
- * counter upsert `run()`); secret resolution itself is spied at the
- * service layer. Both statements must bind the acting userId — the stub
- * fails loudly when a query drops the per-user scoping.
- */
+const userMeter = createInMemoryUserMeterEnv()
 const env = {
 	APP_DB: {
 		prepare(query: string) {
@@ -29,16 +24,6 @@ const env = {
 				bind(...params: Array<unknown>) {
 					return {
 						async run() {
-							if (
-								normalizedQuery.includes(
-									'insert into entitlement_daily_counters',
-								) &&
-								params[0] !== 'user-123'
-							) {
-								throw new Error(
-									'Entitlement counter upsert must bind the acting userId.',
-								)
-							}
 							return { meta: { changes: 1 } }
 						},
 						async first() {
@@ -57,9 +42,10 @@ const env = {
 			}
 		},
 	} as unknown as D1Database,
+	...userMeter.env,
 	COOKIE_SECRET: 'test-cookie-secret',
 	SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-}
+} as unknown as Env
 
 const props = {
 	baseUrl: 'https://example.com',
@@ -626,6 +612,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		})
 		expect(successResponse.status).toBe(200)
 		expect(fetchStub).toHaveBeenCalledTimes(1)
+		// waitUntil: usage metering only (daily D1 mirror retired)
 		expect(waitUntil).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledWith(env, {
@@ -750,6 +737,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 				waitUntil,
 			}),
 		).rejects.toThrow('network failed with waitUntil')
+		// waitUntil: usage metering only (daily D1 mirror retired)
 		expect(waitUntil).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({

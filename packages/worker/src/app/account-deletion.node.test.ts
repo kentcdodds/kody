@@ -20,6 +20,7 @@ import {
 	consoleError,
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 type RowMap = Record<string, Array<Record<string, unknown>>>
 
@@ -36,7 +37,18 @@ function createTestDb(
 } {
 	const rows: RowMap = {}
 	for (const [key, value] of Object.entries(initial)) {
-		rows[key] = value.map((row) => ({ ...row }))
+		rows[key] = value.map((row) => {
+			const copy = { ...row }
+			if (
+				key === 'users' &&
+				(copy['stable_user_id'] == null || copy['stable_user_id'] === '')
+			) {
+				const id = Number(copy['id'])
+				if (id === 1) copy['stable_user_id'] = 'user-aaa'
+				else if (id === 2) copy['stable_user_id'] = 'user-bbb'
+			}
+			return copy
+		})
 	}
 
 	function deleteByPredicate(
@@ -108,6 +120,45 @@ function createTestDb(
 										).length,
 									},
 								]
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower ===
+								'select stable_user_id, deleting_at from users where id = ?'
+							) {
+								const numericId = Number(params[0])
+								results = (rows.users ?? [])
+									.filter((row) => Number(row['id']) === numericId)
+									.map((row) => ({
+										stable_user_id: row['stable_user_id'],
+										deleting_at: row['deleting_at'] ?? null,
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower.startsWith(
+									'select token, holder, acquired_at from account_write_leases',
+								)
+							) {
+								const stableUserId = params[0] as string
+								results = (rows.account_write_leases ?? [])
+									.filter(
+										(row) =>
+											row['user_id'] === stableUserId &&
+											row['released_at'] == null,
+									)
+									.map((row) => ({
+										token: row['token'],
+										holder: row['holder'],
+										acquired_at: row['acquired_at'],
+									}))
+									.sort((left, right) => {
+										const byAcquired = String(left.acquired_at).localeCompare(
+											String(right.acquired_at),
+										)
+										if (byAcquired !== 0) return byAcquired
+										return String(left.token).localeCompare(String(right.token))
+									})
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
@@ -513,6 +564,7 @@ function createSuccessfulDeletionEnv(
 ) {
 	const durableObjectId = (name: string) => name as unknown as DurableObjectId
 	const fetchOk = async () => Response.json({ ok: true })
+	const userMeter = createInMemoryUserMeterEnv()
 	return {
 		APP_DB: db,
 		CAPABILITY_VECTOR_INDEX: {
@@ -528,6 +580,15 @@ function createSuccessfulDeletionEnv(
 				clearAll: async () => ({ ok: true as const }),
 				listStorageIds: async () => [] as Array<string>,
 			}),
+		},
+		USER_METER: userMeter.env.USER_METER,
+		STRIPE_PLAN_REFRESH: {
+			idFromName: durableObjectId,
+			get: () => ({ purgeUser: async () => ({ ok: true as const }) }),
+		},
+		MAILBOX: {
+			idFromName: durableObjectId,
+			get: () => ({ purge: async () => ({ ok: true as const }) }),
 		},
 		JOB_MANAGER: {
 			idFromName: durableObjectId,
@@ -836,10 +897,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		email_attachments: [{ id: 'ea-1', message_id: 'em-1' }],
 		email_delivery_events: [{ id: 'ed-1', user_id: userAaa }],
 		email_sender_identities: [{ id: 'ei-1', user_id: userAaa }],
-		entitlement_daily_counters: [
-			{ user_id: userAaa, resource: 'email_sends_per_day', day: '2026-07-05' },
-			{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
-		],
 		platform_feedback: [
 			{
 				id: 'feedback-submitted-by-a',
@@ -1106,6 +1163,12 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 
 	const clearStorageMock = vi.fn(async () => ({ ok: true as const }))
 	const clearRunLogMock = vi.fn(async () => ({ ok: true as const }))
+	const purgeUserMeterMock = vi.fn(async () => ({ ok: true as const }))
+	const purgeStripePlanRefreshMock = vi.fn(async () => ({ ok: true as const }))
+	const stripePlanRefreshIdFromNameMock = vi.fn(
+		(name: string) => name as unknown as DurableObjectId,
+	)
+	const purgeMailboxMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeJobManagerMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
@@ -1113,6 +1176,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	const purgeMcpAgentSessionMock = vi.fn(async () => undefined)
 	const doFetchMock = vi.fn(async () => Response.json({ ok: true }))
 	const deleteVectorsMock = vi.fn(async () => undefined)
+	const userMeter = createInMemoryUserMeterEnv()
 	const env = createSuccessfulDeletionEnv(db, {
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: communityAssets,
@@ -1130,6 +1194,21 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				clearAll: clearRunLogMock,
 				listStorageIds: async () => [] as Array<string>,
 			}),
+		},
+		USER_METER: {
+			idFromName: (name: string) => userMeter.env.USER_METER!.idFromName(name),
+			get: (id: DurableObjectId) => ({
+				...userMeter.env.USER_METER!.get(id),
+				purge: async () => purgeUserMeterMock(),
+			}),
+		},
+		STRIPE_PLAN_REFRESH: {
+			idFromName: stripePlanRefreshIdFromNameMock,
+			get: () => ({ purgeUser: purgeStripePlanRefreshMock }),
+		},
+		MAILBOX: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({ purge: purgeMailboxMock }),
 		},
 		JOB_MANAGER: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
@@ -1222,9 +1301,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(deletedEmailBlobKeys.sort()).toEqual([
 		'email-raw:v1:user-aaa/em-1',
 		'email-raw:v1:user-aaa/em-2',
-	])
-	expect(rows.entitlement_daily_counters).toEqual([
-		{ user_id: userBbb, resource: 'email_sends_per_day', day: '2026-07-05' },
 	])
 	expect(rows.platform_feedback).toEqual([
 		{
@@ -1342,7 +1418,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	for (const run of rows.package_codemod_runs ?? []) {
 		expect(String(run['filters_json'])).not.toContain(userAaa)
 	}
-	expect(rows.users).toEqual([{ id: 2, email: 'b@example.com' }])
+	expect(rows.users).toEqual([
+		{ id: 2, email: 'b@example.com', stable_user_id: 'user-bbb' },
+	])
 	expect(result.deletedRowCounts.password_resets).toBe(2)
 	expect(result.deletedRowCounts.user_roles).toBe(1)
 
@@ -1431,6 +1509,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.clearedDurableObjects).toMatchObject({
 		storageRunners: 6,
 		runLogs: 1,
+		userMeters: 1,
+		stripePlanRefreshes: 1,
+		mailboxes: 1,
 		jobManagers: 1,
 		repoSessions: 1,
 		remoteConnectorSessions: 1,
@@ -1443,6 +1524,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		packageServiceInstances: 3,
 	})
 	expect(clearRunLogMock).toHaveBeenCalledTimes(1)
+	expect(purgeUserMeterMock).toHaveBeenCalledTimes(1)
+	expect(stripePlanRefreshIdFromNameMock).toHaveBeenCalledWith(userAaa)
+	expect(purgeStripePlanRefreshMock).toHaveBeenCalledWith({ userId: userAaa })
+	expect(purgeMailboxMock).toHaveBeenCalledTimes(1)
 	expect(purgeMcpClientHubMock).toHaveBeenCalledTimes(1)
 	expect(purgeMcpAgentSessionMock).toHaveBeenCalledWith({
 		userId: userAaa,
@@ -1694,34 +1779,79 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	])
 })
 
-test('account deletion reports a missing email blob binding and remains retryable', async () => {
-	const { db, rows } = createTestDb({
-		users: [
-			{
-				id: 1,
-				email: 'a@example.com',
-				stable_user_id: 'user-aaa',
+test('account deletion reports missing Durable Object / blob bindings and remains retryable', async () => {
+	const missingBindings = [
+		{
+			envOverrides: { EMAIL_BLOBS: undefined },
+			cleanupError:
+				'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
+			seed: {
+				users: [
+					{
+						id: 1,
+						email: 'a@example.com',
+						stable_user_id: 'user-aaa',
+					},
+				],
+				email_messages: [{ id: 'message-a', user_id: 'user-aaa' }],
 			},
-		],
-		email_messages: [{ id: 'message-a', user_id: 'user-aaa' }],
+			assertRows: (rows: ReturnType<typeof createTestDb>['rows']) => {
+				expect(rows.email_messages).toEqual([
+					{ id: 'message-a', user_id: 'user-aaa' },
+				])
+			},
+		},
+		{
+			envOverrides: { MAILBOX: undefined },
+			cleanupError:
+				'MAILBOX binding was unavailable; the mailbox Durable Object was not purged.',
+			partialResult: {
+				clearedDurableObjects: expect.objectContaining({
+					mailboxes: 0,
+				}),
+			},
+			seed: {
+				users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+			},
+		},
+	] as const
+
+	for (const scenario of missingBindings) {
+		const { db, rows } = createTestDb(scenario.seed)
+		await expect(
+			deleteUserAccount({
+				env: createSuccessfulDeletionEnv(db, scenario.envOverrides),
+				dbUserId: 1,
+				mcpUserId: 'user-aaa',
+			}),
+		).rejects.toMatchObject({
+			cleanupErrors: expect.arrayContaining([scenario.cleanupError]),
+			...('partialResult' in scenario
+				? { partialResult: scenario.partialResult }
+				: {}),
+		})
+		scenario.assertRows?.(rows)
+		expect(rows.users).toEqual([
+			expect.objectContaining({
+				id: 1,
+				deleting_at: expect.any(String),
+			}),
+		])
+	}
+
+	const { db: missingMeterDb, rows: missingMeterRows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
 	})
 	await expect(
 		deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				EMAIL_BLOBS: undefined,
+			env: createSuccessfulDeletionEnv(missingMeterDb, {
+				USER_METER: undefined,
 			}),
 			dbUserId: 1,
 			mcpUserId: 'user-aaa',
 		}),
-	).rejects.toMatchObject({
-		cleanupErrors: expect.arrayContaining([
-			'EMAIL_BLOBS binding was unavailable; email objects were not removed.',
-		]),
-	})
-	expect(rows.email_messages).toEqual([
-		{ id: 'message-a', user_id: 'user-aaa' },
-	])
-	expect(rows.users).toEqual([
+	).rejects.toThrow('USER_METER Durable Object binding is not configured.')
+	expect(missingMeterRows.users).toEqual([
 		expect.objectContaining({
 			id: 1,
 			deleting_at: expect.any(String),
@@ -1732,7 +1862,7 @@ test('account deletion reports a missing email blob binding and remains retryabl
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
 	const { db, rows } = createTestDb(
 		{
-			users: [{ id: 1, email: 'a@example.com' }],
+			users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
 			mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
 			jobs: [{ id: 'job-a', user_id: 'user-aaa', storage_id: 'job:job-a' }],
 		},
@@ -1740,10 +1870,12 @@ test('deleteUserAccount fails closed when preflight inventory cannot be read', a
 	)
 	const deleteVectors = vi.fn(async () => undefined)
 	const clearStorage = vi.fn(async () => undefined)
+	const userMeter = createInMemoryUserMeterEnv()
 	await expect(
 		deleteUserAccount({
 			env: {
 				APP_DB: db,
+				USER_METER: userMeter.env.USER_METER,
 				CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectors },
 				STORAGE_RUNNER: {
 					idFromName: (name: string) => name as unknown as DurableObjectId,

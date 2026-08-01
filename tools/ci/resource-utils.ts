@@ -782,6 +782,8 @@ export async function writeGeneratedWranglerConfig({
 	workerName,
 	d1DatabaseName,
 	d1DatabaseId,
+	auditD1DatabaseName,
+	auditD1DatabaseId,
 	oauthKvId,
 	bundleArtifactsKvId,
 	communityAssetsBucketName,
@@ -795,6 +797,8 @@ export async function writeGeneratedWranglerConfig({
 	workerName?: string
 	d1DatabaseName: string
 	d1DatabaseId: string
+	auditD1DatabaseName: string
+	auditD1DatabaseId: string
 	oauthKvId: string
 	bundleArtifactsKvId: string
 	communityAssetsBucketName: string
@@ -838,21 +842,33 @@ export async function writeGeneratedWranglerConfig({
 		)
 	}
 
-	const d1EntryIndex = d1Databases.findIndex((entry) => {
-		if (!entry || typeof entry !== 'object') return false
-		return (entry as Record<string, unknown>).binding === 'APP_DB'
-	})
-	if (d1EntryIndex < 0) {
-		fail(
-			`wrangler config "${baseConfigPath}" has no ${envName} D1 binding for "APP_DB".`,
-		)
-	}
-
-	const d1Entry = d1Databases[d1EntryIndex] as Record<string, unknown>
-	d1Databases[d1EntryIndex] = {
-		...d1Entry,
-		database_name: d1DatabaseName,
-		database_id: d1DatabaseId,
+	for (const binding of [
+		{
+			name: 'APP_DB',
+			databaseName: d1DatabaseName,
+			databaseId: d1DatabaseId,
+		},
+		{
+			name: 'AUDIT_DB',
+			databaseName: auditD1DatabaseName,
+			databaseId: auditD1DatabaseId,
+		},
+	]) {
+		const entryIndex = d1Databases.findIndex((entry) => {
+			if (!entry || typeof entry !== 'object') return false
+			return (entry as Record<string, unknown>).binding === binding.name
+		})
+		if (entryIndex < 0) {
+			fail(
+				`wrangler config "${baseConfigPath}" has no ${envName} D1 binding for "${binding.name}".`,
+			)
+		}
+		const entry = d1Databases[entryIndex] as Record<string, unknown>
+		d1Databases[entryIndex] = {
+			...entry,
+			database_name: binding.databaseName,
+			database_id: binding.databaseId,
+		}
 	}
 
 	const kvNamespaces = (targetEnv as Record<string, unknown>).kv_namespaces

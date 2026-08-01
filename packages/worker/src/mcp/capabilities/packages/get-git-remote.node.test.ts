@@ -4,6 +4,7 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
+	markEntitySourcePendingExternalReconcile: vi.fn(),
 	resolveExistingArtifactSourceRepo: vi.fn(),
 	createStubSavedPackage: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
@@ -37,6 +38,8 @@ vi.mock('#worker/package-registry/package-owner.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceByIdForUser(...args),
+	markEntitySourcePendingExternalReconcile: (...args: Array<unknown>) =>
+		mockModule.markEntitySourcePendingExternalReconcile(...args),
 }))
 
 vi.mock('#worker/repo/artifacts.ts', async () => {
@@ -156,6 +159,7 @@ function mockPackageSource(sourceUserId = 'user-1') {
 				manifest_path: 'package.json',
 				source_root: '/',
 				last_external_check_at: null,
+				external_check_until: null,
 				created_at: '2026-05-04T00:00:00.000Z',
 				updated_at: '2026-05-04T00:00:00.000Z',
 			}
@@ -214,6 +218,13 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 	const writeExpiresAt = new Date(writeResult.expires_at).getTime()
 	expect(createToken).toHaveBeenCalledTimes(1)
 	expect(createToken).toHaveBeenCalledWith('write', 1800)
+	expect(
+		mockModule.markEntitySourcePendingExternalReconcile,
+	).toHaveBeenCalledWith(expect.anything(), {
+		id: 'source-1',
+		userId: 'user-1',
+		tokenExpiresAt: writeResult.expires_at,
+	})
 	expect(writeResult.package_id).toBe('package-1')
 	expect(writeResult.kody_id).toBe('unleashed-wifi')
 	expect(writeResult.created).toBe(false)
@@ -255,6 +266,9 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 	)
 	expect(readResult.setup_commands[0]).toMatch(/^git -c http\.extraHeader=/)
 	expect(readResult.setup_commands.at(-1)).toContain("HEAD:'main'")
+	expect(
+		mockModule.markEntitySourcePendingExternalReconcile,
+	).not.toHaveBeenCalled()
 
 	resetMocks()
 	mockPackageSource()

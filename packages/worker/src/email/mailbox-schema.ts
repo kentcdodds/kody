@@ -1,0 +1,304 @@
+import {
+	mailboxMetaSchemaVersionKey,
+	mailboxSchemaVersion,
+} from './mailbox-types.ts'
+
+export function getMailboxMeta(
+	storage: DurableObjectStorage,
+	key: string,
+): number | null {
+	const row = storage.sql
+		.exec<{ value: number }>(
+			`SELECT value FROM mailbox_meta WHERE key = ? LIMIT 1`,
+			key,
+		)
+		.toArray()[0]
+	return row == null ? null : Number(row.value) || 0
+}
+
+export function setMailboxMeta(
+	storage: DurableObjectStorage,
+	key: string,
+	value: number,
+) {
+	storage.sql.exec(
+		`INSERT INTO mailbox_meta (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		key,
+		value,
+	)
+}
+
+/**
+ * Schema v1 — coherent ship shape (this DO class has never been deployed).
+ * No warm ALTER migrations; bump `mailboxSchemaVersion` only with a real plan.
+ */
+export function initializeMailboxSchema(storage: DurableObjectStorage) {
+	const sql = storage.sql
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS mailbox_meta (
+			key TEXT PRIMARY KEY NOT NULL,
+			value INTEGER NOT NULL
+		)
+	`)
+	const installedVersion = getMailboxMeta(storage, mailboxMetaSchemaVersionKey)
+	if (installedVersion === mailboxSchemaVersion) return
+
+	/**
+	 * Cloudflare DO runtime does not expose a reverse lookup from the object
+	 * id to the `idFromName` string, so the human owner id is not
+	 * introspectable inside the DO. Ownership for blob-key validation and
+	 * cross-user rejection is an explicit write-contract field, persisted
+	 * once in this singleton row. Data rows still have no `user_id` column.
+	 */
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS mailbox_owner_identity (
+			singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+			owner_id TEXT NOT NULL
+		)
+	`)
+
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS email_threads (
+			id TEXT PRIMARY KEY NOT NULL,
+			inbox_id TEXT,
+			subject_normalized TEXT NOT NULL DEFAULT '',
+			root_message_id_header TEXT,
+			last_message_at TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)
+	`)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_threads_last_message_at
+		ON email_threads(last_message_at DESC, id DESC)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_threads_root_message_id
+		ON email_threads(root_message_id_header)
+		WHERE root_message_id_header IS NOT NULL`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_threads_created_at
+		ON email_threads(created_at ASC, id ASC)`,
+	)
+
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS email_messages (
+			id TEXT PRIMARY KEY NOT NULL,
+			direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+			inbox_id TEXT,
+			thread_id TEXT,
+			sender_identity_id TEXT,
+			from_address TEXT NOT NULL DEFAULT '',
+			envelope_from TEXT,
+			to_addresses_json TEXT NOT NULL DEFAULT '[]',
+			cc_addresses_json TEXT NOT NULL DEFAULT '[]',
+			bcc_addresses_json TEXT NOT NULL DEFAULT '[]',
+			reply_to_addresses_json TEXT NOT NULL DEFAULT '[]',
+			subject TEXT NOT NULL DEFAULT '',
+			message_id_header TEXT,
+			in_reply_to_header TEXT,
+			references_json TEXT NOT NULL DEFAULT '[]',
+			headers_json TEXT NOT NULL DEFAULT '{}',
+			auth_results TEXT,
+			text_body TEXT,
+			html_body TEXT,
+			raw_mime_key TEXT,
+			raw_size INTEGER NOT NULL DEFAULT 0,
+			processing_status TEXT NOT NULL CHECK (
+				processing_status IN ('stored', 'sent', 'failed')
+			),
+			classification TEXT NOT NULL DEFAULT 'accepted' CHECK (
+				classification IN ('accepted', 'quarantined')
+			),
+			classification_reason TEXT,
+			provider_message_id TEXT,
+			delivery_status TEXT CHECK (
+				delivery_status IS NULL OR delivery_status IN (
+					'delivered', 'deferred', 'bounced', 'failed',
+					'rejected', 'complained'
+				)
+			),
+			delivery_status_at TEXT,
+			error TEXT,
+			received_at TEXT,
+			sent_at TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)
+	`)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_created_at
+		ON email_messages(created_at DESC, id DESC)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_created_at_asc
+		ON email_messages(created_at ASC, id ASC)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_inbox_created_at
+		ON email_messages(inbox_id, created_at DESC, id DESC)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_thread_created_at
+		ON email_messages(thread_id, created_at DESC, id DESC)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_message_id_header
+		ON email_messages(message_id_header)
+		WHERE message_id_header IS NOT NULL`,
+	)
+	sql.exec(
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_messages_provider_message_id
+		ON email_messages(provider_message_id)
+		WHERE direction = 'outbound' AND provider_message_id IS NOT NULL`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_direction_created_at
+		ON email_messages(direction, created_at DESC, id DESC)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_delivery_status_created_at
+		ON email_messages(delivery_status, created_at DESC, id DESC)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_classification_created_at
+		ON email_messages(classification, created_at DESC, id DESC)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_messages_raw_mime_key
+		ON email_messages(id ASC)
+		WHERE raw_mime_key IS NOT NULL`,
+	)
+
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS email_attachments (
+			id TEXT PRIMARY KEY NOT NULL,
+			message_id TEXT NOT NULL,
+			filename TEXT,
+			content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+			content_id TEXT,
+			disposition TEXT,
+			size INTEGER NOT NULL DEFAULT 0,
+			storage_kind TEXT NOT NULL CHECK (
+				storage_kind IN ('raw-mime', 'external', 'unavailable')
+			),
+			storage_key TEXT,
+			created_at TEXT NOT NULL
+		)
+	`)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_attachments_message_id
+		ON email_attachments(message_id)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_attachments_storage_key
+		ON email_attachments(id ASC)
+		WHERE storage_key IS NOT NULL`,
+	)
+
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS email_delivery_events (
+			id TEXT PRIMARY KEY NOT NULL,
+			message_id TEXT,
+			inbox_id TEXT,
+			event_type TEXT NOT NULL CHECK (
+				event_type IN (
+					'receive_started', 'received', 'rejected', 'send_requested',
+					'sent', 'failed', 'delivered', 'deferred', 'bounced', 'complained'
+				)
+			),
+			provider TEXT NOT NULL DEFAULT 'kody',
+			provider_message_id TEXT,
+			provider_event_id TEXT,
+			detail_json TEXT NOT NULL DEFAULT '{}',
+			needs_effect_reconcile INTEGER NOT NULL DEFAULT 0 CHECK (
+				needs_effect_reconcile IN (0, 1)
+			),
+			state TEXT CHECK (
+				state IS NULL OR state IN (
+					'pending', 'storing', 'cleaning', 'received',
+					'rejected', 'orphan-cleaned'
+				)
+			),
+			fingerprint TEXT,
+			storage_lease TEXT,
+			storage_lease_at TEXT,
+			cleanup_lease TEXT,
+			cleanup_lease_at TEXT,
+			cleanup_retry_at TEXT,
+			expected_attachment_count INTEGER,
+			finalization_token TEXT,
+			reconcile_after TEXT,
+			dedupe_expires_at TEXT,
+			usage_effect_recorded_at TEXT,
+			usage_effect_suppressed_at TEXT,
+			usage_started_at TEXT,
+			usage_month TEXT,
+			usage_bytes INTEGER,
+			usage_duration_ms INTEGER,
+			usage_effect_retry_at TEXT,
+			usage_effect_lease TEXT,
+			usage_effect_lease_at TEXT,
+			subscription_effect_state TEXT CHECK (
+				subscription_effect_state IS NULL OR subscription_effect_state IN (
+					'pending', 'processing', 'complete', 'dead-letter'
+				)
+			),
+			subscription_effect_lease TEXT,
+			subscription_effect_lease_at TEXT,
+			subscription_effect_retry_at TEXT,
+			subscription_effect_attempt_count INTEGER,
+			subscription_effect_dead_letter_at TEXT,
+			subscription_effect_last_error TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)
+	`)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_message_id
+		ON email_delivery_events(message_id)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_created_at
+		ON email_delivery_events(created_at DESC, id DESC)`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_created_at_asc
+		ON email_delivery_events(created_at ASC, id ASC)`,
+	)
+	sql.exec(
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_delivery_events_provider_event_id
+		ON email_delivery_events(provider_event_id)
+		WHERE provider_event_id IS NOT NULL`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_pending_effects
+		ON email_delivery_events(created_at ASC, id ASC)
+		WHERE needs_effect_reconcile = 1
+			AND fingerprint IS NOT NULL`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_state_created
+		ON email_delivery_events(state, created_at ASC)
+		WHERE state IS NOT NULL`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_fingerprint
+		ON email_delivery_events(fingerprint)
+		WHERE fingerprint IS NOT NULL`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_dedupe_expires
+		ON email_delivery_events(dedupe_expires_at ASC)
+		WHERE dedupe_expires_at IS NOT NULL`,
+	)
+	sql.exec(
+		`CREATE INDEX IF NOT EXISTS idx_email_delivery_events_recorded_usage_month
+		ON email_delivery_events(usage_month, created_at ASC)
+		WHERE usage_effect_recorded_at IS NOT NULL`,
+	)
+
+	setMailboxMeta(storage, mailboxMetaSchemaVersionKey, mailboxSchemaVersion)
+}

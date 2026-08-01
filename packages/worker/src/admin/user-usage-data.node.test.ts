@@ -1,7 +1,16 @@
 import { expect, test } from 'vitest'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type AdminUsageRollup } from '#app/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
+
+function withUserMeter(env: { APP_DB: D1Database } & Record<string, unknown>) {
+	const meter = createInMemoryUserMeterEnv()
+	const runLog = createInMemoryRunLogUsageEnv()
+	return { ...env, ...meter.env, ...runLog.env, meter, runLog }
+}
 
 type UserRow = {
 	id: number
@@ -21,13 +30,6 @@ type UsageRollupRow = {
 	total_duration_ms: number
 	total_cpu_ms: number
 	total_bytes: number
-}
-
-type CounterRow = {
-	user_id: string
-	resource: string
-	day: string
-	count: number
 }
 
 type ResourceCount = Partial<
@@ -50,12 +52,10 @@ function normalizeQuery(query: string) {
 function createAdminUserUsageTestDb(input: {
 	users: Array<UserRow>
 	usageRollups?: Array<UsageRollupRow>
-	dailyCounters?: Array<CounterRow>
 	resourceCounts?: Record<string, ResourceCount>
 }) {
 	const users = input.users.map((user) => ({ ...user }))
 	const usageRollups = input.usageRollups?.map((row) => ({ ...row })) ?? []
-	const dailyCounters = input.dailyCounters?.map((row) => ({ ...row })) ?? []
 	const resourceCounts = input.resourceCounts ?? {}
 
 	function countForQuery(normalizedQuery: string, userId: string) {
@@ -96,15 +96,6 @@ function createAdminUserUsageTestDb(input: {
 					) {
 						return (users.find((user) => user.stable_user_id === params[0]) ??
 							null) as T | null
-					}
-					if (normalizedQuery.includes('from entitlement_daily_counters')) {
-						const row = dailyCounters.find(
-							(counter) =>
-								counter.user_id === params[0] &&
-								counter.resource === params[1] &&
-								counter.day === params[2],
-						)
-						return (row ? { count: row.count } : null) as T | null
 					}
 					const count = countForQuery(normalizedQuery, String(params[0]))
 					if (count !== null) return { count } as T
@@ -161,7 +152,7 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 	const emptyDb = createAdminUserUsageTestDb({ users: [] })
 	expect(
 		await loadAdminUserUsageData(
-			{ APP_DB: emptyDb } as Env,
+			withUserMeter({ APP_DB: emptyDb }) as Env,
 			'missing-stable-user',
 			new Date('2026-07-05T12:00:00.000Z'),
 		),
@@ -185,7 +176,7 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 	})
 
 	const data = await loadAdminUserUsageData(
-		{ APP_DB: db } as Env,
+		withUserMeter({ APP_DB: db }) as Env,
 		usageUserId,
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
@@ -234,14 +225,6 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 				event_count: 40,
 			}),
 		],
-		dailyCounters: [
-			{
-				user_id: usageUserId,
-				resource: 'email_sends_per_day',
-				day: '2026-07-05',
-				count: 170,
-			},
-		],
 		resourceCounts: {
 			[usageUserId]: {
 				saved_packages: 85,
@@ -253,8 +236,15 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 		},
 	})
 
+	const env = withUserMeter({ APP_DB: db })
+	await env.meter.seed({
+		userId: usageUserId,
+		resource: 'email_sends_per_day',
+		day: '2026-07-05',
+		count: 170,
+	})
 	const data = await loadAdminUserUsageData(
-		{ APP_DB: db } as Env,
+		env as Env,
 		usageUserId,
 		new Date('2026-07-05T12:00:00.000Z'),
 	)
@@ -284,14 +274,6 @@ test('loadAdminUserUsageData rejects an invalid stored plan', async () => {
 				stable_user_id: usageUserId,
 			},
 		],
-		dailyCounters: [
-			{
-				user_id: usageUserId,
-				resource: 'email_receives_per_day',
-				day: '2026-07-05',
-				count: 190,
-			},
-		],
 		resourceCounts: {
 			[usageUserId]: { stored_email_messages: 12 },
 		},
@@ -299,7 +281,7 @@ test('loadAdminUserUsageData rejects an invalid stored plan', async () => {
 
 	await expect(
 		loadAdminUserUsageData(
-			{ APP_DB: db } as Env,
+			withUserMeter({ APP_DB: db }) as Env,
 			usageUserId,
 			new Date('2026-07-05T12:00:00.000Z'),
 		),
@@ -361,7 +343,10 @@ test('loadAdminUserUsageData caches rollup reads in KV and serves repeat loads f
 		},
 	})
 	const { kv, store } = createFakeKv()
-	const env = { APP_DB: countingDb, BUNDLE_ARTIFACTS_KV: kv } as Env
+	const env = withUserMeter({
+		APP_DB: countingDb,
+		BUNDLE_ARTIFACTS_KV: kv,
+	}) as Env
 	const now = new Date('2026-07-05T12:00:00.000Z')
 
 	const first = await loadAdminUserUsageData(env, usageUserId, now)
@@ -413,7 +398,7 @@ test('loadAdminUserUsageData keeps current-month and month-over-month rollups on
 	})
 
 	const data = await loadAdminUserUsageData(
-		{ APP_DB: db } as Env,
+		withUserMeter({ APP_DB: db }) as Env,
 		usageUserId,
 		new Date('2026-07-01T00:00:00.000Z'),
 	)
@@ -425,6 +410,145 @@ test('loadAdminUserUsageData keeps current-month and month-over-month rollups on
 	])
 	expect(getEventCount(data?.monthUsage[0]?.usage, 'execute')).toBe(2)
 	expect(getEventCount(data?.monthUsage[1]?.usage, 'execute')).toBe(12)
+})
+
+test('loadAdminUserUsageData reads daily counts from UserMeter (seeded then warm)', async () => {
+	const now = new Date('2026-07-05T12:00:00.000Z')
+	const day = utcDayKey(now)
+
+	const bootstrapEmail = 'bootstrap-drilldown@example.com'
+	const bootstrapUserId = await createStableUserIdFromEmail(bootstrapEmail)
+	const bootstrapEnv = withUserMeter({
+		APP_DB: createAdminUserUsageTestDb({
+			users: [
+				{
+					id: 3,
+					username: 'bootstrap',
+					email: bootstrapEmail,
+					plan: 'pro',
+					stable_user_id: bootstrapUserId,
+				},
+			],
+			resourceCounts: {
+				[bootstrapUserId]: { secrets: 3 },
+			},
+		}),
+	})
+	await bootstrapEnv.meter.seed({
+		userId: bootstrapUserId,
+		resource: 'email_receives_per_day',
+		day,
+		count: 55,
+	})
+	await bootstrapEnv.meter.seed({
+		userId: bootstrapUserId,
+		resource: 'outbound_fetches_per_day',
+		day,
+		count: 66,
+	})
+	const bootstrapped = await loadAdminUserUsageData(
+		bootstrapEnv as Env,
+		bootstrapUserId,
+		now,
+	)
+	expect(
+		bootstrapped?.entitlementConsumption.find(
+			(row) => row.resource === 'email_receives_per_day',
+		)?.current,
+	).toBe(55)
+	expect(
+		bootstrapped?.entitlementConsumption.find(
+			(row) => row.resource === 'outbound_fetches_per_day',
+		)?.current,
+	).toBe(66)
+	expect(
+		bootstrapped?.entitlementConsumption.find(
+			(row) => row.resource === 'secrets',
+		)?.current,
+	).toBe(3)
+
+	const meterEmail = 'meter-drilldown@example.com'
+	const meterUserId = await createStableUserIdFromEmail(meterEmail)
+	const warmEnv = withUserMeter({
+		APP_DB: createAdminUserUsageTestDb({
+			users: [
+				{
+					id: 4,
+					username: 'meter',
+					email: meterEmail,
+					plan: 'pro',
+					stable_user_id: meterUserId,
+				},
+			],
+			resourceCounts: {
+				[meterUserId]: {
+					saved_packages: 6,
+					stored_email_messages: 9,
+				},
+			},
+		}),
+	})
+	warmEnv.runLog.setActiveWorkflowCount(meterUserId, 2)
+	await warmEnv.meter.seed({
+		userId: meterUserId,
+		resource: 'email_sends_per_day',
+		day,
+		count: 111,
+	})
+	await warmEnv.meter.seed({
+		userId: meterUserId,
+		resource: 'email_receives_per_day',
+		day,
+		count: 222,
+	})
+	await warmEnv.meter.seed({
+		userId: meterUserId,
+		resource: 'execute_calls_per_day',
+		day,
+		count: 333,
+	})
+	await warmEnv.meter.seed({
+		userId: meterUserId,
+		resource: 'outbound_fetches_per_day',
+		day,
+		count: 444,
+	})
+	const warm = await loadAdminUserUsageData(warmEnv as Env, meterUserId, now)
+	expect(
+		warm?.entitlementConsumption.find(
+			(row) => row.resource === 'email_sends_per_day',
+		)?.current,
+	).toBe(111)
+	expect(
+		warm?.entitlementConsumption.find(
+			(row) => row.resource === 'email_receives_per_day',
+		)?.current,
+	).toBe(222)
+	expect(
+		warm?.entitlementConsumption.find(
+			(row) => row.resource === 'execute_calls_per_day',
+		)?.current,
+	).toBe(333)
+	expect(
+		warm?.entitlementConsumption.find(
+			(row) => row.resource === 'outbound_fetches_per_day',
+		)?.current,
+	).toBe(444)
+	expect(
+		warm?.entitlementConsumption.find(
+			(row) => row.resource === 'saved_packages',
+		)?.current,
+	).toBe(6)
+	expect(
+		warm?.entitlementConsumption.find(
+			(row) => row.resource === 'stored_email_messages',
+		)?.current,
+	).toBe(9)
+	expect(
+		warm?.entitlementConsumption.find(
+			(row) => row.resource === 'concurrent_workflows',
+		)?.current,
+	).toBe(2)
 })
 
 function getEventCount(

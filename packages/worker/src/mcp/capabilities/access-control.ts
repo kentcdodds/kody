@@ -1,4 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { auditDatabaseFromEnv } from '#worker/audit-log.ts'
 import {
 	type PermissionString,
 	type RoleName,
@@ -154,6 +155,7 @@ export async function assertCallerCanAccessCapability(
 	// capability surface, so it is recorded even though it is not an error.
 	await recordMcpAuthDenial({
 		db: options.env?.APP_DB,
+		auditDb: options.env ? auditDatabaseFromEnv(options.env) : undefined,
 		action: 'mcp_capability_denied',
 		reason: denial.reason,
 		email: callerContext.user?.email,
