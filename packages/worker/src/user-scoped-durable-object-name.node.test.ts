@@ -9,7 +9,9 @@ import {
 	packageRealtimeSessionDurableObjectName,
 	packageServiceInstanceDurableObjectName,
 	repoSessionDurableObjectName,
+	runLogDurableObjectName,
 	storageRunnerDurableObjectName,
+	userMeterDurableObjectName,
 } from './user-scoped-durable-object-name.ts'
 
 const identityModuleRelativePath =
@@ -21,6 +23,13 @@ test('user-scoped Durable Object name helpers preserve frozen idFromName contrac
 	expect(jobManagerDurableObjectName('user-aaa')).toBe('user-aaa')
 	// JobManager historically does not trim; keep that wire format frozen.
 	expect(jobManagerDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
+
+	expect(runLogDurableObjectName('user-aaa')).toBe('user-aaa')
+	expect(runLogDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
+
+	expect(userMeterDurableObjectName('user-aaa')).toBe('user-aaa')
+	// UserMeter matches RunLog: untrimmed userId is the frozen idFromName.
+	expect(userMeterDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
 
 	expect(mcpClientHubDurableObjectName('  user-aaa  ')).toBe('user-aaa')
 

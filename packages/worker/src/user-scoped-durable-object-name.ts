@@ -30,6 +30,11 @@ export function runLogDurableObjectName(userId: string) {
 	return userId
 }
 
+/** UserMeter — one daily-entitlement meter DO per user (untrimmed, like RunLog). */
+export function userMeterDurableObjectName(userId: string) {
+	return userId
+}
+
 /** McpClientHub — one client-hub DO per user (trimmed). */
 export function mcpClientHubDurableObjectName(userId: string) {
 	return userId.trim()

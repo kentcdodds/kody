@@ -196,6 +196,7 @@ export async function handleInboundEmail(
 		| 'APP_BASE_URL'
 		| 'USER_EMAIL_DOMAIN'
 		| 'USAGE_EVENTS'
+		| 'USER_METER'
 	>,
 	ctx?: ExecutionContext,
 ) {
@@ -482,8 +483,10 @@ export async function handleInboundEmail(
 					)
 					const receivesToday = await readUserInboundReceiveCount({
 						db: env.APP_DB,
+						env,
 						userId,
 						day: userInboundQuotaDay(quotaNow),
+						now: quotaNow,
 					})
 					if (receivesToday >= receiveLimit) {
 						message.setReject('Recipient mailbox is over quota.')
@@ -530,12 +533,16 @@ export async function handleInboundEmail(
 					})
 				}
 			}
+			const waitUntil = ctx
+				? (promise: Promise<unknown>) => ctx.waitUntil(promise)
+				: undefined
 			let claimedDelivery: InboundDelivery
 			try {
 				claimedDelivery =
 					existingDelivery ??
 					(await chargeUserInboundDeliveryOnce({
 						db: env.APP_DB,
+						env,
 						delivery: {
 							...delivery,
 							quotaDay: userInboundQuotaDay(quotaNow),
@@ -546,6 +553,7 @@ export async function handleInboundEmail(
 							'email_receives_per_day',
 						),
 						now: quotaNow,
+						waitUntil,
 					}))
 			} catch (error) {
 				if (!isEntitlementLimitError(error)) throw error

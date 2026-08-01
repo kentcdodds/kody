@@ -262,9 +262,11 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				if (callerContext.user?.userId) {
 					await consumeDailyEntitlement({
 						db: env.APP_DB,
+						env,
 						userId: callerContext.user.userId,
 						email: callerContext.user.email,
 						resource: 'execute_calls_per_day',
+						waitUntil: agent.waitUntil?.bind(agent),
 					})
 				}
 

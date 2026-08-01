@@ -12,15 +12,10 @@ import {
 import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 
-/**
- * Minimal D1 stub for the entitlement reads/writes executeGatewayFetch
- * performs (account reverse-resolution `first()` and the conditional
- * counter upsert `run()`); secret resolution itself is spied at the
- * service layer. Both statements must bind the acting userId — the stub
- * fails loudly when a query drops the per-user scoping.
- */
+const userMeter = createInMemoryUserMeterEnv()
 const env = {
 	APP_DB: {
 		prepare(query: string) {
@@ -57,9 +52,10 @@ const env = {
 			}
 		},
 	} as unknown as D1Database,
+	...userMeter.env,
 	COOKIE_SECRET: 'test-cookie-secret',
 	SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-}
+} as unknown as Env
 
 const props = {
 	baseUrl: 'https://example.com',
@@ -626,7 +622,8 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		})
 		expect(successResponse.status).toBe(200)
 		expect(fetchStub).toHaveBeenCalledTimes(1)
-		expect(waitUntil).toHaveBeenCalledTimes(1)
+		// waitUntil: entitlement D1 mirror + usage metering
+		expect(waitUntil).toHaveBeenCalledTimes(2)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledWith(env, {
 			userId: 'user-123',
@@ -750,7 +747,8 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 				waitUntil,
 			}),
 		).rejects.toThrow('network failed with waitUntil')
-		expect(waitUntil).toHaveBeenCalledTimes(1)
+		// waitUntil: entitlement D1 mirror (before fetch) + usage metering (error path)
+		expect(waitUntil).toHaveBeenCalledTimes(2)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
 			entityId: 'api.example.com',

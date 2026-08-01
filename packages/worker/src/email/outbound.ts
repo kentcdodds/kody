@@ -43,6 +43,7 @@ type SendEmailEnv = Pick<
 	| 'CLOUDFLARE_ACCOUNT_ID'
 	| 'CLOUDFLARE_API_BASE_URL'
 	| 'CLOUDFLARE_API_TOKEN'
+	| 'USER_METER'
 >
 
 /**
@@ -550,11 +551,11 @@ export async function sendOutboundEmail(
 				}) + attachmentBytesTotal,
 		})
 
-		// Atomic check-and-increment: the counter tracks attempts for every user
-		// and denies the send when a plan's daily limit is reached. The
-		// `max` plan uses finite email caps rather than uncapped mail.
+		// Atomic check-and-increment via UserMeter. No ExecutionContext here;
+		// the legacy D1 mirror uses the service's caught best-effort fallback.
 		await consumeDailyEntitlement({
 			db: input.env.APP_DB,
+			env: input.env,
 			userId: input.userId,
 			email: sender.accountEmail,
 			resource: 'email_sends_per_day',

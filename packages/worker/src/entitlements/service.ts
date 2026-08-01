@@ -9,6 +9,11 @@ import {
 	type EntitlementResource,
 	type PlanName,
 } from './plans.ts'
+import {
+	isDailyEntitlementResource,
+	type DailyEntitlementResource,
+} from './user-meter-do.ts'
+import { userMeterRpc, type UserMeterEnv } from './user-meter-client.ts'
 
 const stableUserIdPattern = /^[a-f0-9]{64}$/i
 
@@ -193,9 +198,9 @@ export async function findUserAccountByStableUserId(
 }
 
 /**
- * Increment a daily counter for a rate-style entitlement (for example
- * email sends per day). Counters accumulate for every user regardless of
- * plan so that assigning a plan later enforces against real usage.
+ * Legacy D1 mirror write for a daily entitlement counter. Expand-phase
+ * enforcement is authoritative in UserMeter; this helper remains for tests,
+ * backfills, and the best-effort mirror scheduled after DO consume/refund.
  */
 export async function incrementDailyEntitlementCounter(input: {
 	db: D1Database
@@ -223,6 +228,110 @@ export async function incrementDailyEntitlementCounter(input: {
 		.run()
 }
 
+function assertDailyEntitlementResource(
+	resource: EntitlementResource,
+): DailyEntitlementResource {
+	if (!isDailyEntitlementResource(resource)) {
+		throw new Error(
+			`Expected a daily entitlement resource; got ${JSON.stringify(resource)}.`,
+		)
+	}
+	return resource
+}
+
+// Best-effort mirror scheduling: prefer `waitUntil` when available; otherwise
+// catch so the promise cannot surface as unhandled. Never awaited by callers.
+function scheduleDailyEntitlementMirror(
+	work: Promise<unknown>,
+	waitUntil?: (promise: Promise<unknown>) => void,
+) {
+	const tracked = work.catch((error: unknown) => {
+		console.warn('entitlement-daily-mirror-failed', error)
+	})
+	if (waitUntil) {
+		waitUntil(tracked)
+		return
+	}
+	void tracked
+}
+
+// Absolute D1 mirror ordered by DO-minted `mirrorUpdatedAt` (revision-primary)
+// so a late older write cannot overwrite newer state, including refunds.
+async function mirrorDailyEntitlementAbsoluteCount(input: {
+	db: D1Database
+	userId: string
+	resource: DailyEntitlementResource
+	day: string
+	count: number
+	mirrorUpdatedAt: string
+}) {
+	await input.db
+		.prepare(
+			`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(user_id, resource, day) DO UPDATE SET
+				count = excluded.count,
+				updated_at = excluded.updated_at
+			WHERE entitlement_daily_counters.updated_at < excluded.updated_at`,
+		)
+		.bind(
+			input.userId,
+			input.resource,
+			input.day,
+			input.count,
+			input.mirrorUpdatedAt,
+		)
+		.run()
+}
+
+/** Best-effort absolute D1 mirror of UserMeter daily counter state. */
+export function scheduleAbsoluteDailyEntitlementMirror(input: {
+	db: D1Database
+	userId: string
+	resource: EntitlementResource
+	day: string
+	count: number
+	mirrorUpdatedAt: string
+	waitUntil?: (promise: Promise<unknown>) => void
+}): void {
+	const resource = assertDailyEntitlementResource(input.resource)
+	scheduleDailyEntitlementMirror(
+		mirrorDailyEntitlementAbsoluteCount({
+			db: input.db,
+			userId: input.userId,
+			resource,
+			day: input.day,
+			count: input.count,
+			mirrorUpdatedAt: input.mirrorUpdatedAt,
+		}),
+		input.waitUntil,
+	)
+}
+
+async function ensureUserMeterCounterInitialized(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: string
+	resource: DailyEntitlementResource
+	day: string
+	updatedAt: string
+	now: Date
+}) {
+	const baseline = await readDailyEntitlementCounter({
+		db: input.db,
+		userId: input.userId,
+		resource: input.resource,
+		now: input.now,
+	})
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	await meter.initialize({
+		resource: input.resource,
+		day: input.day,
+		count: baseline,
+		updatedAt: input.updatedAt,
+	})
+}
+
 async function readDailyEntitlementCounter(input: {
 	db: D1Database
 	userId: string
@@ -237,6 +346,52 @@ async function readDailyEntitlementCounter(input: {
 		.bind(input.userId, input.resource, utcDayKey(input.now))
 		.first<{ count: number }>()
 	return Number(row?.count ?? 0)
+}
+
+/**
+ * Point-read one daily entitlement counter from UserMeter. Cold meters
+ * bootstrap once from the legacy D1 point row, then re-read; warm meters
+ * return the DO count without touching D1.
+ */
+export async function readDailyEntitlementResourceUsage(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: string
+	resource: EntitlementResource
+	now?: Date
+}): Promise<number> {
+	const resource = assertDailyEntitlementResource(input.resource)
+	const now = input.now ?? new Date()
+	const day = utcDayKey(now)
+	const updatedAt = now.toISOString()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	let result = await meter.read({
+		resource,
+		day,
+		now: updatedAt,
+	})
+	if (result.outcome === 'needs_bootstrap') {
+		await ensureUserMeterCounterInitialized({
+			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			resource,
+			day,
+			updatedAt,
+			now,
+		})
+		result = await meter.read({
+			resource,
+			day,
+			now: updatedAt,
+		})
+		if (result.outcome === 'needs_bootstrap') {
+			throw new Error(
+				'UserMeter daily entitlement read still needs bootstrap after initialize.',
+			)
+		}
+	}
+	return result.count
 }
 
 async function countRows(db: D1Database, sql: string, params: Array<unknown>) {
@@ -730,6 +885,34 @@ export async function readEntitlementResourceUsage(input: {
 	}
 }
 
+/**
+ * Authoritative current usage for any entitlement resource: daily counters
+ * via UserMeter, everything else via the legacy D1 helpers.
+ */
+export async function readCurrentEntitlementResourceUsage(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: string
+	resource: EntitlementResource
+	now: Date
+}): Promise<number> {
+	if (isDailyEntitlementResource(input.resource)) {
+		return await readDailyEntitlementResourceUsage({
+			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			resource: input.resource,
+			now: input.now,
+		})
+	}
+	return await readEntitlementResourceUsage({
+		db: input.db,
+		userId: input.userId,
+		resource: input.resource,
+		now: input.now,
+	})
+}
+
 export async function assertWithinStorageBytesEntitlement(input: {
 	db: D1Database
 	userId: string
@@ -841,95 +1024,128 @@ export async function assertWithinEntitlement(
 	}
 }
 
-/**
- * Atomically consume one unit of a daily rate-style entitlement (check and
- * increment in a single conditional D1 upsert), throwing
- * EntitlementLimitError when the consumption would exceed the plan limit.
- * This avoids the check-then-increment race that separate
- * assertWithinEntitlement + incrementDailyEntitlementCounter calls would
- * have under concurrent requests, and evaluates the UTC day key once.
- * Every resolved plan has finite numeric limits.
- */
-export async function consumeDailyEntitlement(input: {
+export type ConsumeDailyEntitlementInput = {
 	db: D1Database
+	/** Must expose `USER_METER` (authoritative); D1 is a best-effort mirror. */
+	env: UserMeterEnv
 	userId: string
 	email: string | null | undefined
 	resource: EntitlementResource
 	now?: Date
-}): Promise<void> {
+	/** Prefer `ctx.waitUntil` for the legacy D1 mirror; never awaited here. */
+	waitUntil?: (promise: Promise<unknown>) => void
+}
+
+/**
+ * Atomically consume one daily entitlement unit via UserMeter, throwing
+ * EntitlementLimitError when the plan limit would be exceeded. Cold keys
+ * bootstrap once from legacy D1; warm path awaits only the DO RPC. Mirror
+ * writes are best-effort and cannot affect enforcement.
+ */
+export async function consumeDailyEntitlement(
+	input: ConsumeDailyEntitlementInput,
+): Promise<void> {
+	const resource = assertDailyEntitlementResource(input.resource)
 	const now = input.now ?? new Date()
+	const day = utcDayKey(now)
+	const updatedAt = now.toISOString()
 	// Cached plan resolution: this runs on every execute call and every
-	// sandbox outbound fetch, and the atomic counter upsert below is the only
-	// part that must see fresh state.
+	// sandbox outbound fetch; the UserMeter consume below is the only
+	// counter state that must be fresh.
 	const plan = await getCachedUserPlan(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
-	const limit = resolvePlanLimit(plan, input.resource)
-	const throwLimitError = async () => {
+	const limit = resolvePlanLimit(plan, resource)
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	let result = await meter.consume({
+		resource,
+		day,
+		limit,
+		updatedAt,
+	})
+	if (result.outcome === 'needs_bootstrap') {
+		await ensureUserMeterCounterInitialized({
+			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			resource,
+			day,
+			updatedAt,
+			now,
+		})
+		result = await meter.consume({
+			resource,
+			day,
+			limit,
+			updatedAt,
+		})
+		if (result.outcome === 'needs_bootstrap') {
+			throw new Error(
+				'UserMeter consume still needs bootstrap after initialize.',
+			)
+		}
+	}
+	if (!result.consumed) {
 		throw new EntitlementLimitError({
-			resource: input.resource,
+			resource,
 			plan,
 			limit,
-			current: await readDailyEntitlementCounter({
-				db: input.db,
-				userId: input.userId,
-				resource: input.resource,
-				now,
-			}),
-			upgradeHint: buildEntitlementUpgradeHint(input.resource),
+			current: result.count,
+			upgradeHint: buildEntitlementUpgradeHint(resource),
 		})
 	}
-	// The fresh-row INSERT branch is unconditional, so a limit below one
-	// unit can never be satisfied and must be rejected up front.
-	if (limit < 1) {
-		await throwLimitError()
-	}
-	const result = await input.db
-		.prepare(
-			`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
-			VALUES (?, ?, ?, 1, ?)
-			ON CONFLICT(user_id, resource, day) DO UPDATE SET
-				count = entitlement_daily_counters.count + 1,
-				updated_at = excluded.updated_at
-			WHERE entitlement_daily_counters.count + 1 <= ?`,
-		)
-		.bind(
-			input.userId,
-			input.resource,
-			utcDayKey(now),
-			now.toISOString(),
-			limit,
-		)
-		.run()
-	if ((result.meta.changes ?? 0) === 0) {
-		await throwLimitError()
-	}
+	scheduleDailyEntitlementMirror(
+		mirrorDailyEntitlementAbsoluteCount({
+			db: input.db,
+			userId: input.userId,
+			resource,
+			day,
+			count: result.count,
+			mirrorUpdatedAt: result.mirrorUpdatedAt,
+		}),
+		input.waitUntil,
+	)
 }
 
-/**
- * Atomically refund one previously consumed daily entitlement unit for the
- * given user/resource/UTC day (floors at zero). Scoped by `user_id` so a
- * refund can never touch another user's counter. Used when inbound receive
- * quota was charged before a retryable storage failure — the same `now`
- * (day key) as the matching `consumeDailyEntitlement` call must be passed.
- */
-export async function refundDailyEntitlement(input: {
+export type RefundDailyEntitlementInput = {
 	db: D1Database
+	env: UserMeterEnv
 	userId: string
 	resource: EntitlementResource
 	now?: Date
-}): Promise<void> {
+	waitUntil?: (promise: Promise<unknown>) => void
+}
+
+/**
+ * Atomically refund one previously consumed daily entitlement unit in
+ * UserMeter (floors at zero). Pass the same `now` (day key) as the matching
+ * consume. The legacy D1 mirror is best-effort and never awaited.
+ */
+export async function refundDailyEntitlement(
+	input: RefundDailyEntitlementInput,
+): Promise<void> {
+	const resource = assertDailyEntitlementResource(input.resource)
 	const now = input.now ?? new Date()
-	await input.db
-		.prepare(
-			`UPDATE entitlement_daily_counters
-			SET count = MAX(0, count - 1),
-				updated_at = ?
-			WHERE user_id = ?
-				AND resource = ?
-				AND day = ?`,
-		)
-		.bind(now.toISOString(), input.userId, input.resource, utcDayKey(now))
-		.run()
+	const day = utcDayKey(now)
+	const updatedAt = now.toISOString()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	const result = await meter.refund({
+		resource,
+		day,
+		updatedAt,
+	})
+	// revision 0 means the key was never initialized; nothing to mirror.
+	if (result.revision < 1) return
+	scheduleDailyEntitlementMirror(
+		mirrorDailyEntitlementAbsoluteCount({
+			db: input.db,
+			userId: input.userId,
+			resource,
+			day,
+			count: result.count,
+			mirrorUpdatedAt: result.mirrorUpdatedAt,
+		}),
+		input.waitUntil,
+	)
 }

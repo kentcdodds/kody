@@ -5,6 +5,11 @@ import {
 	EntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
 import { type PlanName } from '#worker/entitlements/plans.ts'
+import { scheduleAbsoluteDailyEntitlementMirror } from '#worker/entitlements/service.ts'
+import {
+	userMeterRpc,
+	type UserMeterEnv,
+} from '#worker/entitlements/user-meter-client.ts'
 import { normalizeEmailAddress } from './address.ts'
 import {
 	emailRawMimeKey,
@@ -447,17 +452,47 @@ async function readCounter(input: {
 	return Number(row?.count ?? 0)
 }
 
+/** Point-read today's user inbound receive count from UserMeter. */
 export async function readUserInboundReceiveCount(input: {
 	db: D1Database
+	env: UserMeterEnv
 	userId: string
 	day: string
+	now?: Date
 }) {
-	return await readCounter({
-		db: input.db,
-		table: 'entitlement_daily_counters',
-		userId: input.userId,
+	const now = input.now ?? new Date()
+	const updatedAt = now.toISOString()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	let result = await meter.read({
+		resource: 'email_receives_per_day',
 		day: input.day,
+		now: updatedAt,
 	})
+	if (result.outcome === 'needs_bootstrap') {
+		const baseline = await readCounter({
+			db: input.db,
+			table: 'entitlement_daily_counters',
+			userId: input.userId,
+			day: input.day,
+		})
+		await meter.initialize({
+			resource: 'email_receives_per_day',
+			day: input.day,
+			count: baseline,
+			updatedAt,
+		})
+		result = await meter.read({
+			resource: 'email_receives_per_day',
+			day: input.day,
+			now: updatedAt,
+		})
+		if (result.outcome === 'needs_bootstrap') {
+			throw new Error(
+				'UserMeter inbound receive read still needs bootstrap after initialize.',
+			)
+		}
+	}
+	return result.count
 }
 
 export async function readSystemInboundReceiveCount(input: {
@@ -484,85 +519,101 @@ async function resolveConcurrentDelivery(input: {
 	})
 }
 
+/**
+ * Charge one inbound receive via UserMeter, then persist the D1 delivery
+ * event. Delivery-id idempotency lives in the DO; D1 mirror is best-effort.
+ */
 export async function chargeUserInboundDeliveryOnce(input: {
 	db: D1Database
+	env: UserMeterEnv
 	delivery: InboundDelivery
 	plan: PlanName
 	limit: number
 	now: Date
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<InboundDelivery> {
 	const existing = await resolveConcurrentDelivery(input)
 	if (existing) return existing
-	const current = await readCounter({
-		db: input.db,
-		table: 'entitlement_daily_counters',
+
+	const updatedAt = input.now.toISOString()
+	const meter = userMeterRpc({
+		env: input.env,
 		userId: input.delivery.userId,
-		day: input.delivery.quotaDay,
 	})
-	const throwLimitError = (): never => {
+	let meterResult = await meter.consumeInboundDelivery({
+		deliveryId: input.delivery.deliveryId,
+		resource: 'email_receives_per_day',
+		day: input.delivery.quotaDay,
+		limit: input.limit,
+		updatedAt,
+	})
+	if (meterResult.outcome === 'needs_bootstrap') {
+		const baseline = await readCounter({
+			db: input.db,
+			table: 'entitlement_daily_counters',
+			userId: input.delivery.userId,
+			day: input.delivery.quotaDay,
+		})
+		await meter.initialize({
+			resource: 'email_receives_per_day',
+			day: input.delivery.quotaDay,
+			count: baseline,
+			updatedAt,
+		})
+		meterResult = await meter.consumeInboundDelivery({
+			deliveryId: input.delivery.deliveryId,
+			resource: 'email_receives_per_day',
+			day: input.delivery.quotaDay,
+			limit: input.limit,
+			updatedAt,
+		})
+		if (meterResult.outcome === 'needs_bootstrap') {
+			throw new Error(
+				'UserMeter inbound delivery consume still needs bootstrap after initialize.',
+			)
+		}
+	}
+
+	const accepted = meterResult.consumed || meterResult.replayed
+	if (!accepted) {
 		throw new EntitlementLimitError({
 			resource: 'email_receives_per_day',
 			plan: input.plan,
 			limit: input.limit,
-			current,
+			current: meterResult.count,
 			upgradeHint: buildEntitlementUpgradeHint('email_receives_per_day'),
 		})
 	}
-	if (input.limit < 1 || current >= input.limit) throwLimitError()
-	const operationTimestamp = randomOperationTimestamp(input.now)
+
+	scheduleAbsoluteDailyEntitlementMirror({
+		db: input.db,
+		userId: input.delivery.userId,
+		resource: meterResult.resource,
+		day: meterResult.day,
+		count: meterResult.count,
+		mirrorUpdatedAt: meterResult.mirrorUpdatedAt,
+		waitUntil: input.waitUntil,
+	})
+
 	try {
-		const results = await input.db.batch([
-			input.db
-				.prepare(
-					`INSERT INTO entitlement_daily_counters (
-						user_id, resource, day, count, updated_at
-					) VALUES (?, 'email_receives_per_day', ?, 1, ?)
-					ON CONFLICT(user_id, resource, day) DO UPDATE SET
-						count = entitlement_daily_counters.count + 1,
-						updated_at = excluded.updated_at
-					WHERE entitlement_daily_counters.count + 1 <= ?
-						AND NOT EXISTS (
-							SELECT 1 FROM email_delivery_events
-							WHERE id = ? AND user_id = ?
-						)`,
-				)
-				.bind(
-					input.delivery.userId,
-					input.delivery.quotaDay,
-					operationTimestamp,
-					input.limit,
-					input.delivery.deliveryId,
-					input.delivery.userId,
-				),
-			input.db
-				.prepare(
-					`INSERT OR IGNORE INTO email_delivery_events (
-						id, message_id, user_id, inbox_id, event_type, provider,
-						provider_event_id, detail_json, created_at
-					)
-					SELECT ?, NULL, ?, ?, 'receive_started', ?, ?, ?, ?
-					WHERE EXISTS (
-						SELECT 1 FROM entitlement_daily_counters
-						WHERE user_id = ?
-							AND resource = 'email_receives_per_day'
-							AND day = ?
-							AND updated_at = ?
-					)`,
-				)
-				.bind(
-					input.delivery.deliveryId,
-					input.delivery.userId,
-					input.delivery.inboxId,
-					inboundProvider,
-					input.delivery.deliveryId,
-					JSON.stringify(input.delivery),
-					input.now.toISOString(),
-					input.delivery.userId,
-					input.delivery.quotaDay,
-					operationTimestamp,
-				),
-		])
-		if (Number(results[1]?.meta.changes ?? 0) > 0) return input.delivery
+		const insert = await input.db
+			.prepare(
+				`INSERT OR IGNORE INTO email_delivery_events (
+					id, message_id, user_id, inbox_id, event_type, provider,
+					provider_event_id, detail_json, created_at
+				) VALUES (?, NULL, ?, ?, 'receive_started', ?, ?, ?, ?)`,
+			)
+			.bind(
+				input.delivery.deliveryId,
+				input.delivery.userId,
+				input.delivery.inboxId,
+				inboundProvider,
+				input.delivery.deliveryId,
+				JSON.stringify(input.delivery),
+				input.now.toISOString(),
+			)
+			.run()
+		if (Number(insert.meta.changes ?? 0) > 0) return input.delivery
 	} catch (error) {
 		const committed = await resolveConcurrentDelivery(input).catch(() => null)
 		if (committed) return committed
@@ -570,7 +621,9 @@ export async function chargeUserInboundDeliveryOnce(input: {
 	}
 	const raced = await resolveConcurrentDelivery(input)
 	if (raced) return raced
-	return throwLimitError()
+	throw new Error(
+		'Inbound delivery charge was accepted but the delivery event was not persisted.',
+	)
 }
 
 export async function chargeSystemInboundDeliveryOnce(input: {

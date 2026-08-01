@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
 import {
@@ -848,13 +849,18 @@ test('inbound email stores raw MIME in R2 and readers and deletes follow the blo
 })
 
 async function readUserDailyReceiveCount(userId: string) {
-	const row = await env.APP_DB.prepare(
-		`SELECT count FROM entitlement_daily_counters
-			WHERE user_id = ? AND resource = 'email_receives_per_day' AND day = ?`,
-	)
-		.bind(userId, new Date().toISOString().slice(0, 10))
-		.first<{ count: number }>()
-	return Number(row?.count ?? 0)
+	const result = await userMeterRpc({ env, userId }).read({
+		resource: 'email_receives_per_day',
+		day: new Date().toISOString().slice(0, 10),
+	})
+	return result.outcome === 'ready' ? result.count : 0
+}
+
+async function readUserTotalReceiveCount(userId: string) {
+	const exported = await userMeterRpc({ env, userId }).exportCounters({})
+	return exported.counters
+		.filter((row) => row.resource === 'email_receives_per_day')
+		.reduce((total, row) => total + row.count, 0)
 }
 
 function createFailingEmailBlobs() {
@@ -1093,7 +1099,7 @@ test('charged retry repairs after unrelated writes fill storage bytes', async ()
 	).toHaveLength(1)
 })
 
-test('ambiguous quota-ledger batch response charges one delivery exactly once', async () => {
+test('ambiguous delivery-event insert response charges one delivery exactly once', async () => {
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `quota-ambiguous-${crypto.randomUUID().slice(0, 8)}`
@@ -1105,19 +1111,37 @@ test('ambiguous quota-ledger batch response charges one delivery exactly once', 
 		email: accountEmail,
 		username,
 	})
-	let batchCalls = 0
+	let loseNextDeliveryInsertResponse = true
 	const ambiguousDb = new Proxy(env.APP_DB, {
 		get(target, property, receiver) {
-			if (property === 'batch') {
-				return async (statements: Parameters<D1Database['batch']>[0]) => {
-					batchCalls++
-					const result = await target.batch(statements)
-					// The account-write lease acquire is the first batch. Lose the
-					// response from the following quota-ledger batch.
-					if (batchCalls === 2) {
-						throw new Error('simulated quota batch response loss')
+			if (property === 'prepare') {
+				return (query: string) => {
+					const statement = target.prepare(query)
+					const isDeliveryInsert =
+						query.includes('INSERT OR IGNORE INTO email_delivery_events') &&
+						query.includes("'receive_started'")
+					if (!isDeliveryInsert) return statement
+					const originalBind = statement.bind.bind(statement)
+					return {
+						bind(...params: Array<unknown>) {
+							const bound = originalBind(...params)
+							return {
+								first: bound.first.bind(bound),
+								all: bound.all.bind(bound),
+								raw: bound.raw?.bind(bound),
+								run: async () => {
+									const result = await bound.run()
+									if (loseNextDeliveryInsertResponse) {
+										loseNextDeliveryInsertResponse = false
+										throw new Error(
+											'simulated delivery event insert response loss',
+										)
+									}
+									return result
+								},
+							}
+						},
 					}
-					return result
 				}
 			}
 			const value = Reflect.get(target, property, receiver)
@@ -1391,13 +1415,7 @@ test('byte-identical mail dedupes only inside the explicit delivery window', asy
 				limit: 10,
 			}),
 		).toHaveLength(2)
-		const counter = await env.APP_DB.prepare(
-			`SELECT SUM(count) AS count FROM entitlement_daily_counters
-			WHERE user_id = ? AND resource = 'email_receives_per_day'`,
-		)
-			.bind(userId)
-			.first<{ count: number }>()
-		expect(Number(counter?.count ?? 0)).toBe(2)
+		expect(await readUserTotalReceiveCount(userId)).toBe(2)
 		expect(
 			await env.APP_DB.prepare(
 				`SELECT event_count FROM usage_rollups

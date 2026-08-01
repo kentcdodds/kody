@@ -91,6 +91,10 @@
 			"new_sqlite_classes": ["RunLog"],
 			"tag": "v20",
 		},
+		{
+			"new_sqlite_classes": ["UserMeter"],
+			"tag": "v21",
+		},
 	],
 
 	"observability": {
@@ -192,6 +196,10 @@
 					{
 						"class_name": "RunLog",
 						"name": "RUN_LOG",
+					},
+					{
+						"class_name": "UserMeter",
+						"name": "USER_METER",
 					},
 					{
 						"class_name": "RepoSession",
@@ -408,6 +416,10 @@
 						"name": "RUN_LOG",
 					},
 					{
+						"class_name": "UserMeter",
+						"name": "USER_METER",
+					},
+					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
 					},
@@ -537,6 +549,10 @@
 					{
 						"class_name": "RunLog",
 						"name": "RUN_LOG",
+					},
+					{
+						"class_name": "UserMeter",
+						"name": "USER_METER",
 					},
 					{
 						"class_name": "RepoSession",

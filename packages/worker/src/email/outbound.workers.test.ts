@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers'
+import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
@@ -22,7 +23,9 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { maxPlanEmailLimits, planLimits } from '#worker/entitlements/plans.ts'
-import { incrementDailyEntitlementCounter } from '#worker/entitlements/service.ts'
+import { UserMeter } from '#worker/entitlements/user-meter-do.ts'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
+import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
@@ -70,13 +73,35 @@ async function seedVerifiedAccount(input: {
 }
 
 async function readDailyEmailSendCounter(userId: string) {
-	const row = await env.APP_DB.prepare(
-		`SELECT count FROM entitlement_daily_counters
-			WHERE user_id = ? AND resource = ? AND day = ?`,
+	const result = await userMeterRpc({ env, userId }).read({
+		resource: 'email_sends_per_day',
+		day: utcDayKey(),
+	})
+	return result.outcome === 'ready' ? result.count : 0
+}
+
+async function seedDailyEmailSendCounter(userId: string, count: number) {
+	const day = utcDayKey()
+	const updatedAt = new Date().toISOString()
+	const stub = env.USER_METER.get(
+		env.USER_METER.idFromName(userMeterDurableObjectName(userId)),
 	)
-		.bind(userId, 'email_sends_per_day', utcDayKey())
-		.first<{ count: number }>()
-	return Number(row?.count ?? 0)
+	await runInDurableObject(stub, async (instance: UserMeter, state) => {
+		expect(instance).toBeInstanceOf(UserMeter)
+		await instance.read({ resource: 'email_sends_per_day', day })
+		state.storage.sql.exec(
+			`INSERT INTO daily_counters (resource, day, count, revision, updated_at)
+			VALUES (?, ?, ?, 1, ?)
+			ON CONFLICT(resource, day) DO UPDATE SET
+				count = excluded.count,
+				revision = excluded.revision,
+				updated_at = excluded.updated_at`,
+			'email_sends_per_day',
+			day,
+			count,
+			updatedAt,
+		)
+	})
 }
 
 async function sendSelfNotification(input: {
@@ -187,7 +212,7 @@ test('sendOutboundEmail sends from the platform-assigned username address to the
 		limit: 5,
 	})
 	expect(listed.map((message) => message.id)).toContain(result.message.id)
-})
+}, 30_000)
 
 test('sendOutboundEmail rejects suspended accounts', async () => {
 	silenceIncidentalRuntimeWarnings()
@@ -823,7 +848,7 @@ test('sendOutboundEmail rejects invalid and oversized attachments', async () => 
 			limit: 5,
 		}),
 	).toEqual([])
-})
+}, 30_000)
 
 test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
@@ -832,18 +857,7 @@ test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit
 	const limit = planLimits.pro.maxEmailSendsPerDay
 	if (limit === null) throw new Error('Expected a numeric pro email limit.')
 	await seedVerifiedAccount({ email, plan: 'pro' })
-	await env.APP_DB.prepare(
-		`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
-			VALUES (?, ?, ?, ?, ?)`,
-	)
-		.bind(
-			userId,
-			'email_sends_per_day',
-			utcDayKey(),
-			limit,
-			new Date().toISOString(),
-		)
-		.run()
+	await seedDailyEmailSendCounter(userId, limit)
 
 	const error = await sendSelfNotification({
 		userId,
@@ -863,7 +877,7 @@ test('sendOutboundEmail enforces email_sends_per_day for plan users at the limit
 		current: limit,
 	})
 	expect(error.message).toContain(`at most ${limit} email sends per day`)
-})
+}, 30_000)
 
 test('sendOutboundEmail binds plan limits even when the caller context has no account email', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
@@ -872,18 +886,7 @@ test('sendOutboundEmail binds plan limits even when the caller context has no ac
 	const limit = planLimits.pro.maxEmailSendsPerDay
 	if (limit === null) throw new Error('Expected a numeric pro email limit.')
 	await seedVerifiedAccount({ email, plan: 'pro' })
-	await env.APP_DB.prepare(
-		`INSERT INTO entitlement_daily_counters (user_id, resource, day, count, updated_at)
-			VALUES (?, ?, ?, ?, ?)`,
-	)
-		.bind(
-			userId,
-			'email_sends_per_day',
-			utcDayKey(),
-			limit,
-			new Date().toISOString(),
-		)
-		.run()
+	await seedDailyEmailSendCounter(userId, limit)
 
 	// Package subscription contexts pass an empty account email; the plan
 	// limit must still apply (no fallback-limit bypass).
@@ -906,7 +909,7 @@ test('sendOutboundEmail binds plan limits even when the caller context has no ac
 		plan: 'pro',
 		limit,
 	})
-})
+}, 30_000)
 
 test('sendOutboundEmail increments the daily counter when under the plan limit', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
@@ -922,7 +925,7 @@ test('sendOutboundEmail increments the daily counter when under the plan limit',
 
 	expect(result.status).toBe('sent')
 	expect(await readDailyEmailSendCounter(userId)).toBe(1)
-})
+}, 30_000)
 
 test('sendOutboundEmail caps max-plan users at the email daily backstop', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
@@ -930,17 +933,10 @@ test('sendOutboundEmail caps max-plan users at the email daily backstop', async 
 	const email = `max-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
 	await seedVerifiedAccount({ email, plan: 'max' })
-	for (
-		let index = 0;
-		index < maxPlanEmailLimits.email_sends_per_day - 1;
-		index += 1
-	) {
-		await incrementDailyEntitlementCounter({
-			db: env.APP_DB,
-			userId,
-			resource: 'email_sends_per_day',
-		})
-	}
+	await seedDailyEmailSendCounter(
+		userId,
+		maxPlanEmailLimits.email_sends_per_day - 1,
+	)
 	// One send left under the backstop succeeds...
 	const result = await sendSelfNotification({ userId, accountEmail: email })
 	expect(result.status).toBe('sent')
@@ -969,4 +965,4 @@ test('sendOutboundEmail caps max-plan users at the email daily backstop', async 
 	expect(await readDailyEmailSendCounter(userId)).toBe(
 		maxPlanEmailLimits.email_sends_per_day,
 	)
-})
+}, 30_000)

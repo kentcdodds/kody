@@ -1,6 +1,15 @@
 import { expect, test } from 'vitest'
-import { loadAccountUsageData } from '#app/account-usage-data.ts'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { loadAccountUsageData } from '#app/account-usage-data.ts'
+
+type DailyCounterRow = {
+	user_id: string
+	resource: string
+	day: string
+	count: number
+}
 
 function createUsageTestDb(input: {
 	userId: number
@@ -8,73 +17,192 @@ function createUsageTestDb(input: {
 	plan: string
 	stripePlan?: string | null
 	packageCount?: number
+	dailyCounters?: Array<DailyCounterRow>
 }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
+	const dailyCounters = input.dailyCounters?.map((row) => ({ ...row })) ?? []
 	return {
-		prepare(query: string) {
-			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async first<T>() {
-							if (
-								normalized.includes('from users') &&
-								normalized.includes('where id')
-							) {
-								return {
-									id: input.userId,
-									plan: input.plan,
-									stripe_plan: input.stripePlan ?? null,
-									stable_user_id: stableUserId,
-								} as T
-							}
-							if (normalized.includes('from saved_packages')) {
-								return { count: input.packageCount ?? 0 } as T
-							}
-							if (normalized.includes('from entitlement_daily_counters')) {
-								return { count: 0 } as T
-							}
-							if (
-								normalized.includes('count(*)') ||
-								normalized.includes('sum(')
-							) {
-								return { count: 0, total: 0 } as T
-							}
-							void params
-							return null
-						},
-						async all() {
-							return { results: [] }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
+		stableUserId,
+		db: {
+			prepare(query: string) {
+				const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+				return {
+					bind(...params: Array<unknown>) {
+						return {
+							async first<T>() {
+								if (
+									normalized.includes('from users') &&
+									normalized.includes('where id')
+								) {
+									return {
+										id: input.userId,
+										plan: input.plan,
+										stripe_plan: input.stripePlan ?? null,
+										stable_user_id: stableUserId,
+									} as T
+								}
+								if (normalized.includes('from saved_packages')) {
+									return { count: input.packageCount ?? 0 } as T
+								}
+								if (normalized.includes('from entitlement_daily_counters')) {
+									const row = dailyCounters.find(
+										(counter) =>
+											counter.user_id === params[0] &&
+											counter.resource === params[1] &&
+											counter.day === params[2],
+									)
+									return (row ? { count: row.count } : { count: 0 }) as T
+								}
+								if (
+									normalized.includes('count(*)') ||
+									normalized.includes('sum(') ||
+									normalized.includes('d1_storage_bytes')
+								) {
+									return { count: 0, total: 0, bytes: 0 } as T
+								}
+								void params
+								return null
+							},
+							async all() {
+								return { results: [] }
+							},
+						}
+					},
+				}
+			},
+		} as unknown as D1Database,
+	}
 }
 
-test('loadAccountUsageData returns plan and entitlement rows for the account', async () => {
-	const env = {
-		APP_DB: createUsageTestDb({
-			userId: 7,
-			email: 'usage@example.com',
-			plan: 'free',
-			packageCount: 2,
-		}),
-	} as Env
+function currentFor(
+	data: Awaited<ReturnType<typeof loadAccountUsageData>>,
+	resource: string,
+) {
+	return data?.entitlementConsumption.find((row) => row.resource === resource)
+		?.current
+}
 
-	const data = await loadAccountUsageData({
-		env,
+test('loadAccountUsageData returns plan rows and authoritative UserMeter daily counts', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const day = utcDayKey(now)
+
+	const baselineMeter = createInMemoryUserMeterEnv()
+	const { db: emptyDailyDb } = createUsageTestDb({
 		userId: 7,
-		now: new Date('2026-07-25T12:00:00.000Z'),
+		email: 'usage@example.com',
+		plan: 'free',
+		packageCount: 2,
 	})
-	expect(data?.ok).toBe(true)
-	expect(data?.plan).toBe('free')
-	expect(data?.today).toBe('2026-07-25')
-	const packages = data?.entitlementConsumption.find(
-		(row) => row.resource === 'saved_packages',
-	)
-	expect(packages?.current).toBe(2)
-	expect(packages?.limit).toBeGreaterThan(0)
-	expect(data?.entitlementConsumption.length).toBeGreaterThan(5)
+	const baseline = await loadAccountUsageData({
+		env: { APP_DB: emptyDailyDb, ...baselineMeter.env } as Env,
+		userId: 7,
+		now,
+	})
+	expect(baseline?.ok).toBe(true)
+	expect(baseline?.plan).toBe('free')
+	expect(baseline?.today).toBe('2026-07-25')
+	expect(currentFor(baseline, 'saved_packages')).toBe(2)
+	expect(baseline?.entitlementConsumption.length).toBeGreaterThan(5)
+
+	const bootstrapEmail = 'usage-bootstrap@example.com'
+	const bootstrapUserId = testStableUserIdFromEmail(bootstrapEmail)
+	const bootstrapMeter = createInMemoryUserMeterEnv()
+	const { db: bootstrapDb } = createUsageTestDb({
+		userId: 8,
+		email: bootstrapEmail,
+		plan: 'pro',
+		packageCount: 1,
+		dailyCounters: [
+			{
+				user_id: bootstrapUserId,
+				resource: 'email_sends_per_day',
+				day,
+				count: 17,
+			},
+			{
+				user_id: bootstrapUserId,
+				resource: 'execute_calls_per_day',
+				day,
+				count: 91,
+			},
+		],
+	})
+	const bootstrapped = await loadAccountUsageData({
+		env: { APP_DB: bootstrapDb, ...bootstrapMeter.env } as Env,
+		userId: 8,
+		now,
+	})
+	expect(currentFor(bootstrapped, 'email_sends_per_day')).toBe(17)
+	expect(currentFor(bootstrapped, 'execute_calls_per_day')).toBe(91)
+	expect(currentFor(bootstrapped, 'saved_packages')).toBe(1)
+
+	const meterEmail = 'usage-meter@example.com'
+	const meterUserId = testStableUserIdFromEmail(meterEmail)
+	const warmMeter = createInMemoryUserMeterEnv()
+	const { db: warmDb } = createUsageTestDb({
+		userId: 9,
+		email: meterEmail,
+		plan: 'pro',
+		packageCount: 4,
+		dailyCounters: [
+			{
+				user_id: meterUserId,
+				resource: 'email_sends_per_day',
+				day,
+				count: 11,
+			},
+			{
+				user_id: meterUserId,
+				resource: 'email_receives_per_day',
+				day,
+				count: 22,
+			},
+			{
+				user_id: meterUserId,
+				resource: 'execute_calls_per_day',
+				day,
+				count: 33,
+			},
+			{
+				user_id: meterUserId,
+				resource: 'outbound_fetches_per_day',
+				day,
+				count: 44,
+			},
+		],
+	})
+	await warmMeter.seed({
+		userId: meterUserId,
+		resource: 'email_sends_per_day',
+		day,
+		count: 101,
+	})
+	await warmMeter.seed({
+		userId: meterUserId,
+		resource: 'email_receives_per_day',
+		day,
+		count: 202,
+	})
+	await warmMeter.seed({
+		userId: meterUserId,
+		resource: 'execute_calls_per_day',
+		day,
+		count: 303,
+	})
+	await warmMeter.seed({
+		userId: meterUserId,
+		resource: 'outbound_fetches_per_day',
+		day,
+		count: 404,
+	})
+	const authoritative = await loadAccountUsageData({
+		env: { APP_DB: warmDb, ...warmMeter.env } as Env,
+		userId: 9,
+		now,
+	})
+	expect(currentFor(authoritative, 'email_sends_per_day')).toBe(101)
+	expect(currentFor(authoritative, 'email_receives_per_day')).toBe(202)
+	expect(currentFor(authoritative, 'execute_calls_per_day')).toBe(303)
+	expect(currentFor(authoritative, 'outbound_fetches_per_day')).toBe(404)
+	expect(currentFor(authoritative, 'saved_packages')).toBe(4)
 })
