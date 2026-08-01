@@ -6,10 +6,8 @@ import {
 } from './mailbox-client.ts'
 import {
 	toMailboxAttachmentInput,
-	toMailboxDeliveryEventInput,
 	toMailboxMessageInput,
 	toMailboxThreadInput,
-	type EmailDeliveryEventMirrorSnapshot,
 } from './mailbox-snapshots.ts'
 import {
 	type EmailAttachmentRecord,
@@ -19,9 +17,11 @@ import {
 } from './types.ts'
 import {
 	type MailboxDeleteDeliveryEventInput,
-	type MailboxDeleteDeliveryEventResult,
 	type MailboxDeleteMessageMetadataInput,
-	type MailboxDeleteMessageMetadataResult,
+	type MailboxDeleteResult,
+	type MailboxDeleteThreadIfEmptyInput,
+	type MailboxDeliveryEventInput,
+	type MailboxPartialMutationResult,
 	type MailboxSetMessageClassificationInput,
 	type MailboxTouchThreadInput,
 	type MailboxUpdateMessageDeliveryInput,
@@ -33,6 +33,10 @@ import {
  * Never throw into D1 authority paths: catch/log with stable tags and return
  * structured `mirrored | stale | skipped | error` outcomes. `system:email`
  * stays in D1 only.
+ *
+ * Delivery-event snapshots should be loaded via
+ * `getMailboxDeliveryEventMirrorInput` (mailbox-snapshot-repo) so callers do
+ * not supply promoted D1 columns individually.
  */
 
 export type MailboxMirrorEnv = MailboxEnv
@@ -72,22 +76,46 @@ function skipIfMailboxMissing(
 	return null
 }
 
-function outcomeFromAccepted(accepted: boolean): MailboxMirrorResult {
-	return accepted ? { status: 'mirrored' } : { status: 'stale' }
+/** Map touch/update/classify: accepted/missing → mirrored; stale → stale. */
+function outcomeFromPartialMutation(
+	result: MailboxPartialMutationResult,
+): MailboxMirrorResult {
+	switch (result.status) {
+		case 'accepted':
+		case 'missing':
+			return { status: 'mirrored' }
+		case 'stale':
+			return { status: 'stale' }
+		default: {
+			const exhaustive: never = result
+			throw new Error(
+				`Unhandled mailbox partial mutation status: ${JSON.stringify(exhaustive)}`,
+			)
+		}
+	}
 }
 
-/**
- * Map delete RPC outcome:
- * - `deleted: true` → mirrored
- * - `deleted: false, stale: true` → stale
- * - `deleted: false, stale: false` (missing) → mirrored (idempotent)
- */
+/** Map delete RPC: deleted/missing → mirrored; stale → stale. */
 function outcomeFromDeleteResult(
-	result: MailboxDeleteMessageMetadataResult | MailboxDeleteDeliveryEventResult,
+	result: MailboxDeleteResult,
 ): MailboxMirrorResult {
-	if (result.deleted) return { status: 'mirrored' }
-	if (result.stale) return { status: 'stale' }
-	return { status: 'mirrored' }
+	switch (result.status) {
+		case 'deleted':
+		case 'missing':
+			return { status: 'mirrored' }
+		case 'stale':
+			return { status: 'stale' }
+		default: {
+			const exhaustive: never = result
+			throw new Error(
+				`Unhandled mailbox delete status: ${JSON.stringify(exhaustive)}`,
+			)
+		}
+	}
+}
+
+function outcomeFromAccepted(accepted: boolean): MailboxMirrorResult {
+	return accepted ? { status: 'mirrored' } : { status: 'stale' }
 }
 
 async function runMirror(
@@ -128,17 +156,24 @@ export async function mirrorMailboxMessageSnapshot(input: {
 	})
 }
 
-/** Best-effort delivery-event snapshot mirror. */
+/**
+ * Best-effort delivery-event snapshot mirror.
+ *
+ * Prefer loading `event` with `getMailboxDeliveryEventMirrorInput` so promoted
+ * D1 columns and detail decoding stay cohesive. `event.updatedAt` must be the
+ * canonical `sourceMutationAt` from that load (inserts: `created_at`).
+ */
 export async function mirrorMailboxDeliveryEventSnapshot(input: {
 	env: MailboxMirrorEnv
-	snapshot: EmailDeliveryEventMirrorSnapshot
+	ownerId: string
+	event: MailboxDeliveryEventInput
 	latestDeliveryStatus?: {
 		messageId: string
 		deliveryStatus: EmailDeliveryStatus
 		deliveryStatusAt: string
 	} | null
 }): Promise<MailboxMirrorResult> {
-	const owner = resolveMirrorOwner(input.snapshot.event.userId)
+	const owner = resolveMirrorOwner(input.ownerId)
 	if (!owner.ok) return owner.result
 	const skippedMailbox = skipIfMailboxMissing(input.env)
 	if (skippedMailbox) return skippedMailbox
@@ -149,7 +184,7 @@ export async function mirrorMailboxDeliveryEventSnapshot(input: {
 			userId: owner.ownerId,
 		}).upsertDeliveryEvent({
 			ownerId: owner.ownerId,
-			event: toMailboxDeliveryEventInput(input.snapshot),
+			event: input.event,
 			latestDeliveryStatus: input.latestDeliveryStatus,
 		})
 		return outcomeFromAccepted(result.accepted)
@@ -171,7 +206,7 @@ export async function mirrorMailboxTouchThread(
 			env: input.env,
 			userId: owner.ownerId,
 		}).touchThread(rpcInput)
-		return outcomeFromAccepted(result.accepted)
+		return outcomeFromPartialMutation(result)
 	})
 }
 
@@ -192,7 +227,7 @@ export async function mirrorMailboxUpdateMessageDelivery(
 				env: input.env,
 				userId: owner.ownerId,
 			}).updateMessageDelivery(rpcInput)
-			return outcomeFromAccepted(result.accepted)
+			return outcomeFromPartialMutation(result)
 		},
 	)
 }
@@ -214,7 +249,7 @@ export async function mirrorMailboxSetMessageClassification(
 				env: input.env,
 				userId: owner.ownerId,
 			}).setMessageClassification(rpcInput)
-			return outcomeFromAccepted(result.accepted)
+			return outcomeFromPartialMutation(result)
 		},
 	)
 }
@@ -256,6 +291,25 @@ export async function mirrorMailboxDeleteDeliveryEvent(
 			env: input.env,
 			userId: owner.ownerId,
 		}).deleteDeliveryEvent(rpcInput)
+		return outcomeFromDeleteResult(result)
+	})
+}
+
+/** Best-effort empty-thread cleanup mirror (D1 deleteEmptyEmailThreads parity). */
+export async function mirrorMailboxDeleteThreadIfEmpty(
+	input: MailboxDeleteThreadIfEmptyInput & { env: MailboxMirrorEnv },
+): Promise<MailboxMirrorResult> {
+	const owner = resolveMirrorOwner(input.ownerId)
+	if (!owner.ok) return owner.result
+	const skippedMailbox = skipIfMailboxMissing(input.env)
+	if (skippedMailbox) return skippedMailbox
+
+	return runMirror('mailbox-mirror-delete-thread-if-empty-failed', async () => {
+		const { env: _env, ...rpcInput } = input
+		const result = await mailboxRpc({
+			env: input.env,
+			userId: owner.ownerId,
+		}).deleteThreadIfEmpty(rpcInput)
 		return outcomeFromDeleteResult(result)
 	})
 }

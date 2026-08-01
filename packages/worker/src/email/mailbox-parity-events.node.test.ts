@@ -59,37 +59,53 @@ test('mailbox parity writes compact indexed mirror and parity data points', () =
 	expect(writeDataPoint).toHaveBeenCalledTimes(6)
 	expect(writeDataPoint).toHaveBeenNthCalledWith(1, {
 		indexes: ['user-1'],
-		blobs: ['mirror_message', 'mirrored', '2026-07-30T10:00:00.000Z'],
-		doubles: [0, 1],
+		blobs: [
+			'mailbox_mirror:mirror_message',
+			'mirrored',
+			'2026-07-30T10:00:00.000Z',
+		],
+		doubles: [1, 0],
 	})
 	expect(writeDataPoint).toHaveBeenNthCalledWith(2, {
 		indexes: ['user-1'],
-		blobs: ['touch_thread', 'stale', '2026-07-30T10:05:00.000Z'],
-		doubles: [0, 1],
+		blobs: ['mailbox_mirror:touch_thread', 'stale', '2026-07-30T10:05:00.000Z'],
+		doubles: [1, 0],
 	})
 	expect(writeDataPoint).toHaveBeenNthCalledWith(3, {
 		indexes: ['user-1'],
 		blobs: [
-			'set_message_classification',
+			'mailbox_mirror:set_message_classification',
 			'skipped',
 			'2026-07-30T10:06:00.000Z',
 		],
-		doubles: [0, 1],
+		doubles: [1, 0],
 	})
 	expect(writeDataPoint).toHaveBeenNthCalledWith(4, {
 		indexes: ['user-1'],
-		blobs: ['delete_message_metadata', 'error', '2026-07-30T10:07:00.000Z'],
-		doubles: [0, 1],
+		blobs: [
+			'mailbox_mirror:delete_message_metadata',
+			'error',
+			'2026-07-30T10:07:00.000Z',
+		],
+		doubles: [1, 0],
 	})
 	expect(writeDataPoint).toHaveBeenNthCalledWith(5, {
 		indexes: ['user-2'],
-		blobs: ['compare_messages', 'mismatch', '2026-07-30T11:00:00.000Z'],
-		doubles: [2, 1],
+		blobs: [
+			'mailbox_parity:compare_messages',
+			'mismatch',
+			'2026-07-30T11:00:00.000Z',
+		],
+		doubles: [1, 2],
 	})
 	expect(writeDataPoint).toHaveBeenNthCalledWith(6, {
 		indexes: ['user-3'],
-		blobs: ['compare_threads', 'match', '2026-07-30T12:00:00.000Z'],
-		doubles: [0, 1],
+		blobs: [
+			'mailbox_parity:compare_threads',
+			'match',
+			'2026-07-30T12:00:00.000Z',
+		],
+		doubles: [1, 0],
 	})
 })
 

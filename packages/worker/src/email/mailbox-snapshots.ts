@@ -1,6 +1,6 @@
 import {
 	type EmailAttachmentRecord,
-	type EmailDeliveryEventRecord,
+	type EmailDeliveryEventType,
 	type EmailMessageRecord,
 	type EmailThreadRecord,
 } from './types.ts'
@@ -23,38 +23,42 @@ import {
  * Pure D1 → Mailbox complete-snapshot converters.
  *
  * Normalize nulls to Mailbox SQLite defaults (empty strings, `[]`, `{}`, `0`,
- * `application/octet-stream`, `kody`). Delivery-event conversion takes an
- * additive {@link EmailDeliveryEventMirrorSnapshot}: D1-promoted columns are
- * authoritative; `detail_json` supplies only fields that remain JSON-owned.
- * Invalid persisted JSON/enums fail clearly rather than fabricating state.
+ * `application/octet-stream`, `kody`). Delivery-event conversion consumes a
+ * complete {@link EmailDeliveryEventMirrorProjection} (base + promoted D1
+ * columns) plus an explicit `sourceMutationAt`. Invalid persisted JSON/enums
+ * fail clearly rather than fabricating state.
+ *
+ * Load projections via `mailbox-snapshot-repo.ts` — callers must not assemble
+ * promoted columns field-by-field.
  */
 
 /**
- * Additive delivery-event mirror input. D1 `EmailDeliveryEventRecord` does not
- * yet expose promoted columns or `updated_at`; callers pass those explicitly.
+ * Complete D1 delivery-event mirror projection: base row fields plus
+ * authoritative promoted columns. `detail_json` still owns inbound/effect
+ * lease fields that have not been promoted.
  *
- * Authoritative D1 columns (do not read these from `detail_json`):
+ * Authoritative D1 columns (never read from `detail_json`):
  * - `needs_effect_reconcile`
  * - `usage_effect_recorded_at`
  * - `usage_month`
  * - `usage_bytes`
  * - `usage_duration_ms`
- *
- * Still JSON-owned in `detail_json` (inbound/effect lease fields, etc.).
  */
-export type EmailDeliveryEventMirrorSnapshot = {
-	event: EmailDeliveryEventRecord
-	/** D1 delivery events lack `updated_at`; required for stale rejection. */
-	updatedAt: string
-	/** D1 `needs_effect_reconcile` column. */
+export type EmailDeliveryEventMirrorProjection = {
+	id: string
+	messageId: string | null
+	userId: string | null
+	inboxId: string | null
+	eventType: EmailDeliveryEventType
+	provider: string | null
+	providerMessageId: string | null
+	providerEventId: string | null
+	detailJson: string
+	createdAt: string
 	needsEffectReconcile: boolean
-	/** D1 `usage_effect_recorded_at` column. */
 	usageEffectRecordedAt: string | null
-	/** D1 `usage_month` column. */
 	usageMonth: string | null
-	/** D1 `usage_bytes` column. */
 	usageBytes: number | null
-	/** D1 `usage_duration_ms` column. */
 	usageDurationMs: number | null
 }
 
@@ -190,73 +194,41 @@ export function toMailboxAttachmentInput(
 }
 
 /**
- * Convert a D1 delivery-event mirror snapshot into a full Mailbox input.
- * Promoted D1 columns win; remaining inbound/effect fields come from JSON.
+ * Convert a complete D1 delivery-event projection into a Mailbox input.
+ * Promoted columns win; remaining inbound/effect fields come from JSON.
+ *
+ * `sourceMutationAt` becomes Mailbox `updatedAt`. D1 delivery events lack
+ * `updated_at`: phase-2 high-risk lifecycle mutations must pass the same
+ * canonical timestamp used for the D1 mutation; inserts use `created_at`.
  */
-export function toMailboxDeliveryEventInput(
-	snapshot: EmailDeliveryEventMirrorSnapshot,
-): MailboxDeliveryEventInput {
-	const {
-		event,
-		updatedAt,
-		needsEffectReconcile,
-		usageEffectRecordedAt,
-		usageMonth,
-		usageBytes,
-		usageDurationMs,
-	} = snapshot
-	if (typeof needsEffectReconcile !== 'boolean') {
+export function toMailboxDeliveryEventInput(input: {
+	projection: EmailDeliveryEventMirrorProjection
+	sourceMutationAt: string
+}): MailboxDeliveryEventInput {
+	const { projection, sourceMutationAt } = input
+	if (typeof sourceMutationAt !== 'string' || sourceMutationAt.length === 0) {
 		throw new Error(
-			`Mailbox snapshot needsEffectReconcile must be a boolean; got ${JSON.stringify(needsEffectReconcile)}.`,
+			`Mailbox snapshot sourceMutationAt must be a non-empty string; got ${JSON.stringify(sourceMutationAt)}.`,
 		)
 	}
-	if (typeof updatedAt !== 'string' || updatedAt.length === 0) {
+	if (typeof projection.needsEffectReconcile !== 'boolean') {
 		throw new Error(
-			`Mailbox snapshot updatedAt must be a non-empty string; got ${JSON.stringify(updatedAt)}.`,
-		)
-	}
-	if (
-		usageEffectRecordedAt != null &&
-		typeof usageEffectRecordedAt !== 'string'
-	) {
-		throw new Error(
-			`Mailbox snapshot usageEffectRecordedAt must be a string or null; got ${JSON.stringify(usageEffectRecordedAt)}.`,
-		)
-	}
-	if (usageMonth != null && typeof usageMonth !== 'string') {
-		throw new Error(
-			`Mailbox snapshot usageMonth must be a string or null; got ${JSON.stringify(usageMonth)}.`,
-		)
-	}
-	if (
-		usageBytes != null &&
-		(typeof usageBytes !== 'number' || !Number.isFinite(usageBytes))
-	) {
-		throw new Error(
-			`Mailbox snapshot usageBytes must be a finite number or null; got ${JSON.stringify(usageBytes)}.`,
-		)
-	}
-	if (
-		usageDurationMs != null &&
-		(typeof usageDurationMs !== 'number' || !Number.isFinite(usageDurationMs))
-	) {
-		throw new Error(
-			`Mailbox snapshot usageDurationMs must be a finite number or null; got ${JSON.stringify(usageDurationMs)}.`,
+			`Mailbox snapshot needsEffectReconcile must be a boolean; got ${JSON.stringify(projection.needsEffectReconcile)}.`,
 		)
 	}
 
-	const detail = parseDetailRecord(event.detailJson)
+	const detail = parseDetailRecord(projection.detailJson)
 
 	return {
-		id: event.id,
-		messageId: event.messageId,
-		inboxId: event.inboxId,
-		eventType: assertMailboxDeliveryEventType(event.eventType),
-		provider: event.provider ?? 'kody',
-		providerMessageId: event.providerMessageId,
-		providerEventId: event.providerEventId,
-		detailJson: event.detailJson,
-		needsEffectReconcile,
+		id: projection.id,
+		messageId: projection.messageId,
+		inboxId: projection.inboxId,
+		eventType: assertMailboxDeliveryEventType(projection.eventType),
+		provider: projection.provider ?? 'kody',
+		providerMessageId: projection.providerMessageId,
+		providerEventId: projection.providerEventId,
+		detailJson: projection.detailJson,
+		needsEffectReconcile: projection.needsEffectReconcile,
 		state: requireOptionalEnum(
 			mailboxInboundDeliveryStateValues,
 			detail['state'],
@@ -303,7 +275,7 @@ export function toMailboxDeliveryEventInput(
 			'detail.dedupeExpiresAt',
 		),
 		// Authoritative D1 columns — ignore any JSON copies of these keys.
-		usageEffectRecordedAt,
+		usageEffectRecordedAt: projection.usageEffectRecordedAt,
 		usageEffectSuppressedAt: requireOptionalString(
 			detail['usageEffectSuppressedAt'],
 			'detail.usageEffectSuppressedAt',
@@ -312,9 +284,9 @@ export function toMailboxDeliveryEventInput(
 			detail['usageStartedAt'],
 			'detail.usageStartedAt',
 		),
-		usageMonth,
-		usageBytes,
-		usageDurationMs,
+		usageMonth: projection.usageMonth,
+		usageBytes: projection.usageBytes,
+		usageDurationMs: projection.usageDurationMs,
 		usageEffectRetryAt: requireOptionalString(
 			detail['usageEffectRetryAt'],
 			'detail.usageEffectRetryAt',
@@ -356,7 +328,7 @@ export function toMailboxDeliveryEventInput(
 			detail['subscriptionEffectLastError'],
 			'detail.subscriptionEffectLastError',
 		),
-		createdAt: event.createdAt,
-		updatedAt,
+		createdAt: projection.createdAt,
+		updatedAt: sourceMutationAt,
 	}
 }

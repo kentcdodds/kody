@@ -5,16 +5,14 @@ import {
 	mirrorMailboxDeliveryEventSnapshot,
 	mirrorMailboxDeleteDeliveryEvent,
 	mirrorMailboxDeleteMessageMetadata,
+	mirrorMailboxDeleteThreadIfEmpty,
 	mirrorMailboxMessageSnapshot,
 	mirrorMailboxSetMessageClassification,
 	mirrorMailboxTouchThread,
 	mirrorMailboxUpdateMessageDelivery,
 } from './mailbox-mirror.ts'
-import {
-	type EmailDeliveryEventRecord,
-	type EmailMessageRecord,
-	type EmailThreadRecord,
-} from './types.ts'
+import { type EmailMessageRecord, type EmailThreadRecord } from './types.ts'
+import { type MailboxDeliveryEventInput } from './mailbox-types.ts'
 
 function fakeMailboxEnv(stub: Record<string, unknown>) {
 	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
@@ -84,27 +82,30 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 		accepted: true,
 		updatedLatestStatus: false,
 	}))
-	const touchThread = vi.fn(async () => ({ accepted: true }))
-	const updateMessageDelivery = vi.fn(async () => ({ accepted: false }))
-	const setMessageClassification = vi.fn(async () => ({ accepted: true }))
+	const touchThread = vi.fn(async () => ({ status: 'accepted' as const }))
+	const updateMessageDelivery = vi.fn(async () => ({
+		status: 'stale' as const,
+	}))
+	const setMessageClassification = vi.fn(async () => ({
+		status: 'missing' as const,
+	}))
 	const deleteMessageMetadata = vi.fn(
 		async (input: { messageId: string; deletedAt: string }) => {
 			if (input.messageId === 'missing-msg') {
-				return { deleted: false as const, stale: false as const }
+				return { status: 'missing' as const }
 			}
 			if (input.deletedAt < '2026-07-01T12:00:00.000Z') {
-				return { deleted: false as const, stale: true as const }
+				return { status: 'stale' as const }
 			}
-			return {
-				deleted: true as const,
-				stale: false as const,
-				orphanThreadDeleted: false,
-			}
+			return { status: 'deleted' as const }
 		},
 	)
 	const deleteDeliveryEvent = vi.fn(async () => {
 		throw new Error('do unavailable')
 	})
+	const deleteThreadIfEmpty = vi.fn(async () => ({
+		status: 'missing' as const,
+	}))
 
 	const { env, idFromName } = fakeMailboxEnv({
 		mirrorMessage,
@@ -114,6 +115,7 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 		setMessageClassification,
 		deleteMessageMetadata,
 		deleteDeliveryEvent,
+		deleteThreadIfEmpty,
 	})
 
 	const thread: EmailThreadRecord = {
@@ -177,59 +179,61 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 		],
 	})
 
-	const detail = {
-		state: 'storing',
-		fingerprint: 'fp-mirror',
-		storageLease: 'lease',
-		subscriptionEffectState: 'processing',
-		// Stale JSON copies of promoted columns — must not win.
-		usageEffectRecordedAt: '2026-01-01T00:00:00.000Z',
-		usageMonth: 'json-month',
-		usageBytes: 1,
-		usageDurationMs: 1,
-	}
-	const event: EmailDeliveryEventRecord = {
+	const deliveryEvent: MailboxDeliveryEventInput = {
 		id: 'evt-1',
 		messageId: 'msg-1',
-		userId: 'user-aaa',
 		inboxId: 'inbox-1',
 		eventType: 'receive_started',
 		provider: 'cloudflare-email-routing',
 		providerMessageId: null,
 		providerEventId: null,
-		detailJson: JSON.stringify(detail),
-		createdAt: '2026-07-02T10:00:00.000Z',
-	}
-	expect(
-		await mirrorMailboxDeliveryEventSnapshot({
-			env,
-			snapshot: {
-				event,
-				updatedAt: '2026-07-02T10:00:01.000Z',
-				needsEffectReconcile: true,
-				usageEffectRecordedAt: '2026-07-02T10:01:00.000Z',
-				usageMonth: '2026-07',
-				usageBytes: 99,
-				usageDurationMs: 50,
-			},
-		}),
-	).toEqual({ status: 'mirrored' })
-	expect(upsertDeliveryEvent).toHaveBeenCalledWith({
-		ownerId: 'user-aaa',
-		event: expect.objectContaining({
-			id: 'evt-1',
-			provider: 'cloudflare-email-routing',
-			needsEffectReconcile: true,
+		detailJson: JSON.stringify({
 			state: 'storing',
 			fingerprint: 'fp-mirror',
 			storageLease: 'lease',
 			subscriptionEffectState: 'processing',
-			usageEffectRecordedAt: '2026-07-02T10:01:00.000Z',
-			usageMonth: '2026-07',
-			usageBytes: 99,
-			usageDurationMs: 50,
-			updatedAt: '2026-07-02T10:00:01.000Z',
 		}),
+		needsEffectReconcile: true,
+		state: 'storing',
+		fingerprint: 'fp-mirror',
+		storageLease: 'lease',
+		storageLeaseAt: null,
+		cleanupLease: null,
+		cleanupLeaseAt: null,
+		cleanupRetryAt: null,
+		expectedAttachmentCount: null,
+		finalizationToken: null,
+		reconcileAfter: null,
+		dedupeExpiresAt: null,
+		usageEffectRecordedAt: '2026-07-02T10:01:00.000Z',
+		usageEffectSuppressedAt: null,
+		usageStartedAt: null,
+		usageMonth: '2026-07',
+		usageBytes: 99,
+		usageDurationMs: 50,
+		usageEffectRetryAt: null,
+		usageEffectLease: null,
+		usageEffectLeaseAt: null,
+		subscriptionEffectState: 'processing',
+		subscriptionEffectLease: null,
+		subscriptionEffectLeaseAt: null,
+		subscriptionEffectRetryAt: null,
+		subscriptionEffectAttemptCount: null,
+		subscriptionEffectDeadLetterAt: null,
+		subscriptionEffectLastError: null,
+		createdAt: '2026-07-02T10:00:00.000Z',
+		updatedAt: '2026-07-02T10:00:01.000Z',
+	}
+	expect(
+		await mirrorMailboxDeliveryEventSnapshot({
+			env,
+			ownerId: 'user-aaa',
+			event: deliveryEvent,
+		}),
+	).toEqual({ status: 'mirrored' })
+	expect(upsertDeliveryEvent).toHaveBeenCalledWith({
+		ownerId: 'user-aaa',
+		event: deliveryEvent,
 		latestDeliveryStatus: undefined,
 	})
 
@@ -262,6 +266,7 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 		}),
 	).toEqual({ status: 'stale' })
 
+	// missing partial mutation is idempotent success for best-effort dual-write
 	expect(
 		await mirrorMailboxSetMessageClassification({
 			env,
@@ -299,6 +304,20 @@ test('mailbox mirror helpers scope by user idFromName, convert payloads, and rep
 			deletedAt: '2026-07-01T15:00:00.000Z',
 		}),
 	).toEqual({ status: 'mirrored' })
+
+	expect(
+		await mirrorMailboxDeleteThreadIfEmpty({
+			env,
+			ownerId: 'user-aaa',
+			threadId: 'thread-1',
+			deletedAt: '2026-07-01T16:00:00.000Z',
+		}),
+	).toEqual({ status: 'mirrored' })
+	expect(deleteThreadIfEmpty).toHaveBeenCalledWith({
+		ownerId: 'user-aaa',
+		threadId: 'thread-1',
+		deletedAt: '2026-07-01T16:00:00.000Z',
+	})
 
 	expect(
 		await mirrorMailboxDeleteDeliveryEvent({

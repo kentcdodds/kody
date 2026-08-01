@@ -14,22 +14,30 @@ import {
 } from './mailbox-retention.ts'
 import { MailboxStore } from './mailbox-store.ts'
 import {
+	deleteMailboxDeliveryEvent,
+	deleteMailboxMessageMetadata,
+	deleteMailboxThreadIfEmpty,
+	setMailboxMessageClassification,
+	touchMailboxThread,
+	updateMailboxMessageDelivery,
+} from './mailbox-mutations.ts'
+import {
 	assertMailboxNonEmptyString,
-	type MailboxAcceptedResult,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReferencePage,
 	type MailboxCountResult,
 	type MailboxDeleteDeliveryEventInput,
-	type MailboxDeleteDeliveryEventResult,
 	type MailboxDeleteMessageMetadataInput,
-	type MailboxDeleteMessageMetadataResult,
+	type MailboxDeleteResult,
+	type MailboxDeleteThreadIfEmptyInput,
 	type MailboxDeliveryEventInput,
 	type MailboxDeliveryEventRecord,
 	type MailboxExportResult,
 	type MailboxListMessagesInput,
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
+	type MailboxPartialMutationResult,
 	type MailboxRpc,
 	type MailboxSearchMessagesInput,
 	type MailboxSetMessageClassificationInput,
@@ -230,19 +238,14 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	 */
 	async touchThread(
 		input: MailboxTouchThreadInput,
-	): Promise<MailboxAcceptedResult> {
-		let accepted = false
+	): Promise<MailboxPartialMutationResult> {
+		let result: MailboxPartialMutationResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
-			accepted = this.store.touchThread({
-				threadId: input.threadId,
-				lastMessageAt: input.lastMessageAt,
-				updatedAt: input.updatedAt,
-			}).accepted
+			const { ownerId: _ownerId, ...mutationInput } = input
+			result = touchMailboxThread(this.ctx.storage.sql, mutationInput)
 		})
-		this.markRetentionDirty()
-		await this.ensureRetentionAlarm()
-		return { accepted }
+		return result
 	}
 
 	/**
@@ -251,22 +254,14 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	 */
 	async updateMessageDelivery(
 		input: MailboxUpdateMessageDeliveryInput,
-	): Promise<MailboxAcceptedResult> {
-		let accepted = false
+	): Promise<MailboxPartialMutationResult> {
+		let result: MailboxPartialMutationResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
-			accepted = this.store.updateMessageDelivery({
-				messageId: input.messageId,
-				processingStatus: input.processingStatus,
-				providerMessageId: input.providerMessageId,
-				error: input.error,
-				sentAt: input.sentAt,
-				updatedAt: input.updatedAt,
-			}).accepted
+			const { ownerId: _ownerId, ...mutationInput } = input
+			result = updateMailboxMessageDelivery(this.ctx.storage.sql, mutationInput)
 		})
-		this.markRetentionDirty()
-		await this.ensureRetentionAlarm()
-		return { accepted }
+		return result
 	}
 
 	/**
@@ -275,42 +270,32 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	 */
 	async setMessageClassification(
 		input: MailboxSetMessageClassificationInput,
-	): Promise<MailboxAcceptedResult> {
-		let accepted = false
+	): Promise<MailboxPartialMutationResult> {
+		let result: MailboxPartialMutationResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
-			accepted = this.store.setMessageClassification({
-				messageId: input.messageId,
-				classification: input.classification,
-				classificationReason: input.classificationReason,
-				updatedAt: input.updatedAt,
-			}).accepted
+			const { ownerId: _ownerId, ...mutationInput } = input
+			result = setMailboxMessageClassification(
+				this.ctx.storage.sql,
+				mutationInput,
+			)
 		})
-		this.markRetentionDirty()
-		await this.ensureRetentionAlarm()
-		return { accepted }
+		return result
 	}
 
 	/**
-	 * Metadata-only delete (attachments + message + orphan thread). Never
-	 * deletes R2. Stale when the message `updated_at` is newer than `deletedAt`.
+	 * Metadata-only delete (null delivery-event message_id + attachments +
+	 * message). Never deletes R2 or empty threads.
 	 */
 	async deleteMessageMetadata(
 		input: MailboxDeleteMessageMetadataInput,
-	): Promise<MailboxDeleteMessageMetadataResult> {
-		let result: MailboxDeleteMessageMetadataResult = {
-			deleted: false,
-			stale: false,
-		}
+	): Promise<MailboxDeleteResult> {
+		let result: MailboxDeleteResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
-			result = this.store.deleteMessageMetadata({
-				messageId: input.messageId,
-				deletedAt: input.deletedAt,
-			})
+			const { ownerId: _ownerId, ...mutationInput } = input
+			result = deleteMailboxMessageMetadata(this.ctx.storage.sql, mutationInput)
 		})
-		this.markRetentionDirty()
-		await this.ensureRetentionAlarm()
 		return result
 	}
 
@@ -320,20 +305,28 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	 */
 	async deleteDeliveryEvent(
 		input: MailboxDeleteDeliveryEventInput,
-	): Promise<MailboxDeleteDeliveryEventResult> {
-		let result: MailboxDeleteDeliveryEventResult = {
-			deleted: false,
-			stale: false,
-		}
+	): Promise<MailboxDeleteResult> {
+		let result: MailboxDeleteResult = { status: 'missing' }
 		this.ctx.storage.transactionSync(() => {
 			this.store.assertOwner(input.ownerId)
-			result = this.store.deleteDeliveryEvent({
-				eventId: input.eventId,
-				deletedAt: input.deletedAt,
-			})
+			const { ownerId: _ownerId, ...mutationInput } = input
+			result = deleteMailboxDeliveryEvent(this.ctx.storage.sql, mutationInput)
 		})
-		this.markRetentionDirty()
-		await this.ensureRetentionAlarm()
+		return result
+	}
+
+	/**
+	 * Deferred empty-thread cleanup. Stale-safe by `thread.updated_at`.
+	 */
+	async deleteThreadIfEmpty(
+		input: MailboxDeleteThreadIfEmptyInput,
+	): Promise<MailboxDeleteResult> {
+		let result: MailboxDeleteResult = { status: 'missing' }
+		this.ctx.storage.transactionSync(() => {
+			this.store.assertOwner(input.ownerId)
+			const { ownerId: _ownerId, ...mutationInput } = input
+			result = deleteMailboxThreadIfEmpty(this.ctx.storage.sql, mutationInput)
+		})
 		return result
 	}
 
@@ -437,22 +430,22 @@ export {
 	mailboxMessageRetentionDays,
 	mailboxRetentionContinuationDelayMs,
 	mailboxRetentionRetryDelayMs,
-	type MailboxAcceptedResult,
 	type MailboxAttachmentInput,
 	type MailboxAttachmentRecord,
 	type MailboxBlobReference,
 	type MailboxBlobReferencePage,
 	type MailboxCountResult,
 	type MailboxDeleteDeliveryEventInput,
-	type MailboxDeleteDeliveryEventResult,
 	type MailboxDeleteMessageMetadataInput,
-	type MailboxDeleteMessageMetadataResult,
+	type MailboxDeleteResult,
+	type MailboxDeleteThreadIfEmptyInput,
 	type MailboxDeliveryEventInput,
 	type MailboxDeliveryEventRecord,
 	type MailboxExportResult,
 	type MailboxExportRow,
 	type MailboxMessageInput,
 	type MailboxMessageRecord,
+	type MailboxPartialMutationResult,
 	type MailboxSetMessageClassificationInput,
 	type MailboxThreadInput,
 	type MailboxThreadRecord,

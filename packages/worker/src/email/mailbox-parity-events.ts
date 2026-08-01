@@ -12,6 +12,7 @@ export type MailboxMirrorOperation =
 	| 'set_message_classification'
 	| 'delete_message_metadata'
 	| 'delete_delivery_event'
+	| 'delete_thread_if_empty'
 
 export type MailboxMirrorOutcome = 'mirrored' | 'stale' | 'skipped' | 'error'
 
@@ -52,15 +53,23 @@ function resolveCountDelta(event: MailboxParityEvent): number {
 	return 0
 }
 
+function mailboxParityEventType(event: MailboxParityEvent): string {
+	const prefix =
+		event.category === 'mirror' ? 'mailbox_mirror' : 'mailbox_parity'
+	return `${prefix}:${event.operation}`
+}
+
 /**
  * Additive Analytics Engine schema (same EMAIL_EVENTS dataset as reporting):
  *
  * - index1: stable user id (per-user isolation)
- * - blob1: mirror or parity operation
+ * - blob1: namespaced event type (`mailbox_mirror:<operation>` or
+ *   `mailbox_parity:<operation>`) so unfiltered consumers can distinguish these
+ *   from `email_send` / `email_receive` / `email_delivery`
  * - blob2: operation outcome
  * - blob3: source event timestamp (ISO 8601)
- * - double1: D1-minus-DO count delta (0 when absent or not applicable)
- * - double2: event weight (always 1)
+ * - double1: event weight (always 1, matching reporting)
+ * - double2: D1-minus-DO count delta (0 when absent or not applicable)
  *
  * `system:email` is excluded — operator mail stays in D1 only.
  */
@@ -75,11 +84,11 @@ export function recordMailboxParityEvent(
 		env.EMAIL_EVENTS.writeDataPoint({
 			indexes: [event.userId],
 			blobs: [
-				event.operation,
+				mailboxParityEventType(event),
 				event.outcome,
 				event.timestamp ?? new Date().toISOString(),
 			],
-			doubles: [resolveCountDelta(event), 1],
+			doubles: [1, resolveCountDelta(event)],
 		})
 	} catch (error) {
 		console.warn('mailbox-parity-event-write-failed', error)

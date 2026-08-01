@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	type EmailAttachmentRecord,
-	type EmailDeliveryEventRecord,
 	type EmailMessageRecord,
 	type EmailThreadRecord,
 } from './types.ts'
@@ -10,7 +9,7 @@ import {
 	toMailboxDeliveryEventInput,
 	toMailboxMessageInput,
 	toMailboxThreadInput,
-	type EmailDeliveryEventMirrorSnapshot,
+	type EmailDeliveryEventMirrorProjection,
 } from './mailbox-snapshots.ts'
 
 test('D1→Mailbox snapshot converters normalize defaults and prefer D1 promoted columns', () => {
@@ -129,8 +128,6 @@ test('D1→Mailbox snapshot converters normalize defaults and prefer D1 promoted
 		createdAt: '2026-07-01T12:00:00.000Z',
 	})
 
-	// detail_json still owns inbound/effect lease fields, but also may contain
-	// stale copies of promoted columns — converter must prefer D1 columns.
 	const detail = {
 		state: 'received',
 		fingerprint: 'fp-1',
@@ -161,7 +158,7 @@ test('D1→Mailbox snapshot converters normalize defaults and prefer D1 promoted
 		subscriptionEffectLastError: null,
 		recipient: 'owner@example.com',
 	}
-	const event: EmailDeliveryEventRecord = {
+	const projection: EmailDeliveryEventMirrorProjection = {
 		id: 'evt-1',
 		messageId: 'msg-1',
 		userId: 'user-1',
@@ -172,17 +169,18 @@ test('D1→Mailbox snapshot converters normalize defaults and prefer D1 promoted
 		providerEventId: 'provider-evt-1',
 		detailJson: JSON.stringify(detail),
 		createdAt: '2026-07-02T10:00:00.000Z',
-	}
-	const snapshot: EmailDeliveryEventMirrorSnapshot = {
-		event,
-		updatedAt: '2026-07-02T10:00:01.000Z',
 		needsEffectReconcile: true,
 		usageEffectRecordedAt: '2026-07-02T10:01:00.000Z',
 		usageMonth: '2026-07',
 		usageBytes: 2048,
 		usageDurationMs: 120,
 	}
-	expect(toMailboxDeliveryEventInput(snapshot)).toEqual({
+	expect(
+		toMailboxDeliveryEventInput({
+			projection,
+			sourceMutationAt: '2026-07-02T10:00:01.000Z',
+		}),
+	).toEqual({
 		id: 'evt-1',
 		messageId: 'msg-1',
 		inboxId: 'inbox-1',
@@ -190,7 +188,7 @@ test('D1→Mailbox snapshot converters normalize defaults and prefer D1 promoted
 		provider: 'kody',
 		providerMessageId: null,
 		providerEventId: 'provider-evt-1',
-		detailJson: event.detailJson,
+		detailJson: projection.detailJson,
 		needsEffectReconcile: true,
 		state: 'received',
 		fingerprint: 'fp-1',
@@ -225,7 +223,7 @@ test('D1→Mailbox snapshot converters normalize defaults and prefer D1 promoted
 })
 
 test('D1→Mailbox delivery snapshot conversion fails clearly on invalid JSON or enums', () => {
-	const baseEvent: EmailDeliveryEventRecord = {
+	const baseProjection: EmailDeliveryEventMirrorProjection = {
 		id: 'evt-bad',
 		messageId: null,
 		userId: 'user-1',
@@ -236,59 +234,56 @@ test('D1→Mailbox delivery snapshot conversion fails clearly on invalid JSON or
 		providerEventId: null,
 		detailJson: '{}',
 		createdAt: '2026-07-02T10:00:00.000Z',
-	}
-	const baseSnapshot = {
-		updatedAt: '2026-07-02T10:00:00.000Z',
 		needsEffectReconcile: false,
 		usageEffectRecordedAt: null,
 		usageMonth: null,
 		usageBytes: null,
 		usageDurationMs: null,
-	} satisfies Omit<EmailDeliveryEventMirrorSnapshot, 'event'>
+	}
 
 	expect(() =>
 		toMailboxDeliveryEventInput({
-			...baseSnapshot,
-			event: { ...baseEvent, detailJson: '{not-json' },
+			projection: { ...baseProjection, detailJson: '{not-json' },
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
 		}),
 	).toThrow(/detailJson is not valid JSON/)
 
 	expect(() =>
 		toMailboxDeliveryEventInput({
-			...baseSnapshot,
-			event: { ...baseEvent, detailJson: '[]' },
+			projection: { ...baseProjection, detailJson: '[]' },
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
 		}),
 	).toThrow(/detailJson must be a JSON object/)
 
 	expect(() =>
 		toMailboxDeliveryEventInput({
-			...baseSnapshot,
-			event: {
-				...baseEvent,
+			projection: {
+				...baseProjection,
 				detailJson: JSON.stringify({ state: 'not-a-state' }),
 			},
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
 		}),
 	).toThrow(/detail\.state is invalid/)
 
 	expect(() =>
 		toMailboxDeliveryEventInput({
-			...baseSnapshot,
-			event: {
-				...baseEvent,
+			projection: {
+				...baseProjection,
 				detailJson: JSON.stringify({
 					subscriptionEffectState: 'bogus',
 				}),
 			},
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
 		}),
 	).toThrow(/detail\.subscriptionEffectState is invalid/)
 
 	expect(() =>
 		toMailboxDeliveryEventInput({
-			...baseSnapshot,
-			event: {
-				...baseEvent,
+			projection: {
+				...baseProjection,
 				detailJson: JSON.stringify({ expectedAttachmentCount: 'lots' }),
 			},
+			sourceMutationAt: '2026-07-02T10:00:00.000Z',
 		}),
 	).toThrow(/detail\.expectedAttachmentCount must be a finite number/)
 

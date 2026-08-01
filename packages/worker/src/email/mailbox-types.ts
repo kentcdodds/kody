@@ -382,8 +382,9 @@ export type MailboxSetMessageClassificationInput = {
 }
 
 /**
- * Metadata-only message delete. Never touches R2. Stale when the row's
- * `updated_at` is newer than `deletedAt`. Idempotent when already absent.
+ * Metadata-only message delete. Never touches R2. Nulls matching delivery
+ * event `message_id` first; does not delete empty threads (use
+ * `deleteThreadIfEmpty`). Stale when `updated_at` is newer than `deletedAt`.
  */
 export type MailboxDeleteMessageMetadataInput = {
 	ownerId: string
@@ -401,35 +402,37 @@ export type MailboxDeleteDeliveryEventInput = {
 	deletedAt: string
 }
 
-export type MailboxAcceptedResult = {
-	accepted: boolean
+/**
+ * Deferred empty-thread cleanup (D1 `deleteEmptyEmailThreads` parity).
+ * Stale-safe by `thread.updated_at`; no-op when messages remain.
+ */
+export type MailboxDeleteThreadIfEmptyInput = {
+	ownerId: string
+	threadId: string
+	deletedAt: string
 }
 
 /**
- * Message metadata delete outcome.
- * - `deleted: true` — row removed; includes `orphanThreadDeleted`
- * - `deleted: false, stale: false` — missing (idempotent success)
- * - `deleted: false, stale: true` — newer row retained
- *
- * Best-effort callers map missing (`!deleted && !stale`) to success.
+ * Partial touch/update/classify outcome.
+ * - `accepted` — mutation applied
+ * - `missing` — target row absent (idempotent success for best-effort callers)
+ * - `stale` — newer `updated_at` retained
  */
-export type MailboxDeleteMessageMetadataResult =
-	| { deleted: true; stale: false; orphanThreadDeleted: boolean }
-	| { deleted: false; stale: true }
-	| { deleted: false; stale: false }
+export type MailboxPartialMutationResult =
+	| { status: 'accepted' }
+	| { status: 'missing' }
+	| { status: 'stale' }
 
 /**
- * Delivery-event delete outcome.
- * - `deleted: true` — row removed
- * - `deleted: false, stale: false` — missing (idempotent success)
- * - `deleted: false, stale: true` — newer row retained
- *
- * Best-effort callers map missing (`!deleted && !stale`) to success.
+ * Metadata delete outcome (message, delivery event, or empty thread).
+ * - `deleted` — row removed
+ * - `missing` — already absent or nothing to delete (idempotent success)
+ * - `stale` — newer `updated_at` retained
  */
-export type MailboxDeleteDeliveryEventResult =
-	| { deleted: true; stale: false }
-	| { deleted: false; stale: true }
-	| { deleted: false; stale: false }
+export type MailboxDeleteResult =
+	| { status: 'deleted' }
+	| { status: 'missing' }
+	| { status: 'stale' }
 
 export type MailboxRpc = {
 	mirrorMessage: (input: {
@@ -462,19 +465,22 @@ export type MailboxRpc = {
 	}>
 	touchThread: (
 		input: MailboxTouchThreadInput,
-	) => Promise<MailboxAcceptedResult>
+	) => Promise<MailboxPartialMutationResult>
 	updateMessageDelivery: (
 		input: MailboxUpdateMessageDeliveryInput,
-	) => Promise<MailboxAcceptedResult>
+	) => Promise<MailboxPartialMutationResult>
 	setMessageClassification: (
 		input: MailboxSetMessageClassificationInput,
-	) => Promise<MailboxAcceptedResult>
+	) => Promise<MailboxPartialMutationResult>
 	deleteMessageMetadata: (
 		input: MailboxDeleteMessageMetadataInput,
-	) => Promise<MailboxDeleteMessageMetadataResult>
+	) => Promise<MailboxDeleteResult>
 	deleteDeliveryEvent: (
 		input: MailboxDeleteDeliveryEventInput,
-	) => Promise<MailboxDeleteDeliveryEventResult>
+	) => Promise<MailboxDeleteResult>
+	deleteThreadIfEmpty: (
+		input: MailboxDeleteThreadIfEmptyInput,
+	) => Promise<MailboxDeleteResult>
 	getThread: (input: {
 		threadId: string
 	}) => Promise<MailboxThreadRecord | null>

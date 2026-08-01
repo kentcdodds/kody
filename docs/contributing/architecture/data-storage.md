@@ -383,20 +383,22 @@ defined in `packages/worker/src/email/mailbox-parity-events.ts`
 and reconciliation — they do not feed the admin insights charts today:
 
 - `index1` — stable user id (per-user isolation; `system:email` is excluded)
-- `blob1` — mirror or parity operation name
+- `blob1` — namespaced event type (`mailbox_mirror:<operation>` or
+  `mailbox_parity:<operation>`) so unfiltered consumers can distinguish these
+  from `email_send` / `email_receive` / `email_delivery`
 - `blob2` — operation outcome
 - `blob3` — source event timestamp (ISO 8601)
-- `double1` — D1-minus-DO count delta (`d1Count - doCount` for parity compares;
+- `double1` — event weight (always `1`, matching reporting)
+- `double2` — D1-minus-DO count delta (`d1Count - doCount` for parity compares;
   `0` when absent or not applicable)
-- `double2` — event weight (always `1`)
 
 Mirror operations: `mirror_message`, `upsert_delivery_event`, `touch_thread`,
 `update_message_delivery`, `set_message_classification`,
-`delete_message_metadata`, `delete_delivery_event`. Mirror outcomes: `mirrored`,
-`stale`, `skipped`, `error`. Parity operations: `compare_threads`,
-`compare_messages`, `compare_attachments`, `compare_delivery_events`. Parity
-outcomes: `match`, `mismatch`. Writes are best-effort and never throw into D1
-authority paths.
+`delete_message_metadata`, `delete_delivery_event`, `delete_thread_if_empty`.
+Mirror outcomes: `mirrored`, `stale`, `skipped`, `error`. Parity operations:
+`compare_threads`, `compare_messages`, `compare_attachments`,
+`compare_delivery_events`. Parity outcomes: `match`, `mismatch`. Writes are
+best-effort and never throw into D1 authority paths.
 
 Two D1 reporting projections deliberately remain:
 
@@ -663,19 +665,23 @@ external attachment `storageKey` values against the canonical builders for that
 `ownerId`.
 
 **Partial mutation RPCs** (phase 2a; owner-bound, monotonic on `updatedAt`, no
-R2 or alarm side effects beyond the usual retention dirty mark):
+R2 or retention-alarm side effects — unlike full snapshot mirrors, these do not
+mark retention dirty or reschedule alarms):
 
 - `touchThread` — advance `last_message_at` / `updated_at` without a full
   snapshot; `last_message_at` never moves backward
 - `updateMessageDelivery` — outbound processing fields (`processing_status`,
   `provider_message_id`, `error`, `sent_at`)
 - `setMessageClassification` — inbound classification fields
-- `deleteMessageMetadata` — metadata-only delete (attachments + message + orphan
-  thread); never deletes R2; distinguishes missing (idempotent) from stale
-  (newer `updated_at` retained)
-- `deleteDeliveryEvent` — metadata-only delivery-event delete with the same
-  missing vs stale semantics
+- `deleteMessageMetadata` — metadata-only delete (null delivery-event
+  `message_id`, then attachments + message); never deletes R2 or empty threads
+- `deleteDeliveryEvent` — metadata-only delivery-event delete
+- `deleteThreadIfEmpty` — deferred empty-thread cleanup (D1
+  `deleteEmptyEmailThreads` parity); stale-safe by `thread.updated_at`
 
+Partial touch/update/classify RPCs return `accepted`, `missing` (target absent —
+idempotent for best-effort callers), or `stale` (newer `updated_at` retained).
+Delete RPCs return `deleted`, `missing`, or `stale` with the same semantics.
 Implementation lives in `mailbox-mutations.ts` (SQLite helpers) and is exposed
 through `mailbox-do.ts` RPCs. All require `ownerId` and reject cross-owner
 calls.
@@ -686,16 +692,20 @@ lightweight module exporting `systemEmailOwnerId` (`'system:email'`) and
 dual-write helpers can skip the reserved operator inbox without import cycles.
 Operator mail is never mirrored into per-user Mailbox objects.
 
-**D1 → Mailbox snapshot adapters** (`mailbox-snapshots.ts`): pure converters
-that turn D1 rows into complete Mailbox wire inputs — `toMailboxThreadInput`,
-`toMailboxMessageInput`, `toMailboxAttachmentInput`, and
-`toMailboxDeliveryEventInput`. They normalize nulls to Mailbox SQLite defaults
-(empty strings, `[]`, `{}`, `0`, `application/octet-stream`, `kody`) and fail
-clearly on invalid persisted JSON/enums rather than fabricating state. Delivery
-events take an additive `EmailDeliveryEventMirrorSnapshot`: D1-promoted columns
-(`needs_effect_reconcile`, usage-effect fields) are authoritative; remaining
-inbound/effect lease fields come from `detail_json`. D1 delivery events lack
-`updated_at`; callers pass it explicitly for stale rejection.
+**D1 → Mailbox snapshot adapters** (`mailbox-snapshots.ts`; delivery loads in
+`mailbox-snapshot-repo.ts`): pure converters that turn D1 rows into complete
+Mailbox wire inputs — `toMailboxThreadInput`, `toMailboxMessageInput`,
+`toMailboxAttachmentInput`, and `toMailboxDeliveryEventInput`. They normalize
+nulls to Mailbox SQLite defaults (empty strings, `[]`, `{}`, `0`,
+`application/octet-stream`, `kody`) and fail clearly on invalid persisted
+JSON/enums rather than fabricating state. Delivery events consume a complete
+`EmailDeliveryEventMirrorProjection` loaded as one cohesive D1 row (base columns
+plus promoted `needs_effect_reconcile` and usage-effect fields); inbound/effect
+lease fields still come from `detail_json`. Callers load via
+`getMailboxDeliveryEventMirrorInput` / `getEmailDeliveryEventMirrorProjection`
+and supply only `sourceMutationAt` — the canonical mirror `updatedAt` from the
+D1 mutation (inserts use `created_at`). Callers must not stitch promoted columns
+field-by-field.
 
 **Best-effort mirror helpers** (`mailbox-mirror.ts`): non-throwing wrappers
 around the DO RPCs for future D1-authoritative dual-write. Each returns a
@@ -704,13 +714,14 @@ structured `MailboxMirrorResult`: `{ status: 'mirrored' }`,
 `mailbox-unconfigured` | `missing-owner`), or `{ status: 'error', error }`.
 Failures log with stable tags (for example `mailbox-mirror-message-failed`) and
 never propagate into D1 commit paths. Helpers cover full snapshots
-(`mirrorMailboxMessageSnapshot`, `mirrorMailboxDeliveryEventSnapshot`) and
-partial mutations (`mirrorMailboxTouchThread`,
-`mirrorMailboxUpdateMessageDelivery`, `mirrorMailboxSetMessageClassification`,
-`mirrorMailboxDeleteMessageMetadata`, `mirrorMailboxDeleteDeliveryEvent`).
-**There are no live dual-write callers in the phase-2a PR** — only unit/worker
-tests invoke these helpers. D1 remains sole authority for all live mail
-read/write paths.
+(`mirrorMailboxMessageSnapshot`, `mirrorMailboxDeliveryEventSnapshot` — prefer
+loading delivery events with `getMailboxDeliveryEventMirrorInput`) and partial
+mutations (`mirrorMailboxTouchThread`, `mirrorMailboxUpdateMessageDelivery`,
+`mirrorMailboxSetMessageClassification`, `mirrorMailboxDeleteMessageMetadata`,
+`mirrorMailboxDeleteDeliveryEvent`, `mirrorMailboxDeleteThreadIfEmpty`). **There
+are no live dual-write callers in the phase-2a PR** — only unit/worker tests
+invoke these helpers. D1 remains sole authority for all live mail read/write
+paths.
 
 **Retention** is self-enforced inside the DO with alarms
 (`mailboxMessageRetentionDays = 365`, `mailboxDeliveryEventRetentionDays = 90`).
@@ -752,10 +763,11 @@ surface that later live-path wiring will call.
 2. **D1-authoritative dual-write + parity** — every user-mail mutation that
    writes D1 also writes the DO; parity counters and reconciliation prove DO
    completeness against D1. D1 stays authoritative for reads. Phase 2a (current
-   PR) adds `email-owner.ts`, `mailbox-snapshots.ts`, `mailbox-mirror.ts`,
-   `mailbox-mutations.ts` + matching DO RPCs (`touchThread`,
-   `updateMessageDelivery`, `setMessageClassification`, `deleteMessageMetadata`,
-   `deleteDeliveryEvent`), and `mailbox-parity-events.ts`. Those helpers and
+   PR) adds `email-owner.ts`, `mailbox-snapshots.ts`,
+   `mailbox-snapshot-repo.ts`, `mailbox-mirror.ts`, `mailbox-mutations.ts` +
+   matching DO RPCs (`touchThread`, `updateMessageDelivery`,
+   `setMessageClassification`, `deleteMessageMetadata`, `deleteDeliveryEvent`,
+   `deleteThreadIfEmpty`), and `mailbox-parity-events.ts`. Those helpers and
    parity-event writers are library-only today — **no production path invokes
    them yet**; live-path dual-write and parity wiring remain for the rest of
    phase 2.
