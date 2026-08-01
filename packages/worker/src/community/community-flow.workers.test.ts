@@ -309,7 +309,11 @@ test('community package flow works end-to-end through capability handlers', asyn
 			},
 			reporterCtx,
 		),
-	).rejects.toThrow('Fork this community listing before rating it.')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			error.message === 'Fork this community listing before rating it.',
+	)
 
 	await communityRateCapability.handler(
 		{
