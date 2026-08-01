@@ -141,7 +141,7 @@ test('scheduled runs gated lanes and passes EMAIL_BLOBS to system-email retentio
 	mocks.shouldRunAuthDenialAlertCron.mockReturnValueOnce(true)
 	mocks.shouldRunEmailDeliveryAlertCron.mockReturnValueOnce(true)
 	mocks.shouldRunJobScheduleWatchdogCron.mockReturnValueOnce(true)
-	const scheduledTime = Date.parse('2026-07-05T10:00:30.000Z')
+	const scheduledTime = Date.parse('2026-07-05T10:05:30.000Z')
 
 	await worker.scheduled?.(
 		createController(scheduledTime),
