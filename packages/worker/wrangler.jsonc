@@ -96,8 +96,12 @@
 			"tag": "v21",
 		},
 		{
-			"new_sqlite_classes": ["StripePlanRefresh"],
+			"new_sqlite_classes": ["Mailbox"],
 			"tag": "v22",
+		},
+		{
+			"new_sqlite_classes": ["StripePlanRefresh"],
+			"tag": "v23",
 		},
 	],
 
@@ -204,6 +208,10 @@
 					{
 						"class_name": "UserMeter",
 						"name": "USER_METER",
+					},
+					{
+						"class_name": "Mailbox",
+						"name": "MAILBOX",
 					},
 					{
 						"class_name": "StripePlanRefresh",
@@ -449,6 +457,10 @@
 						"name": "USER_METER",
 					},
 					{
+						"class_name": "Mailbox",
+						"name": "MAILBOX",
+					},
+					{
 						"class_name": "StripePlanRefresh",
 						"name": "STRIPE_PLAN_REFRESH",
 					},
@@ -595,6 +607,10 @@
 					{
 						"class_name": "UserMeter",
 						"name": "USER_METER",
+					},
+					{
+						"class_name": "Mailbox",
+						"name": "MAILBOX",
 					},
 					{
 						"class_name": "StripePlanRefresh",

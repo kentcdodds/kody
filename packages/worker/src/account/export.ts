@@ -39,6 +39,8 @@ import {
 	userMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
 import { type UserMeterExportResult } from '#worker/entitlements/user-meter-do.ts'
+import { mailboxNamespace, mailboxRpc } from '#worker/email/mailbox-client.ts'
+import { type MailboxExportResult } from '#worker/email/mailbox-types.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	listAccountUserPackageServices,
@@ -61,6 +63,7 @@ export const accountExportSectionNames = [
 	'job_manager',
 	'run_records',
 	'user_meter',
+	'mailbox',
 	'remote_connector_session',
 	'package_service',
 	'oauth_grants',
@@ -133,6 +136,7 @@ type ManifestInventoryCounts = {
 	storageRunners: number
 	runRecords: number
 	userMeterCounters: number
+	mailboxRows: number
 	remoteConnectorSessions: number
 	packageServices: number
 	artifactRepos: number
@@ -250,6 +254,7 @@ type AccountExportDurableObjects = {
 	jobManager: unknown | null
 	runRecords: RunRecordsExportPayload | null
 	userMeter: UserMeterExportResult | null
+	mailbox: MailboxExportResult | null
 	remoteConnectorSessions: Array<{
 		instanceId: string
 		export: RemoteConnectorSessionExport | null
@@ -1035,6 +1040,7 @@ async function collectManifestInventoryCounts(input: {
 		storageRunners,
 		runRecords,
 		userMeterCounters,
+		mailboxRows,
 		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
@@ -1060,6 +1066,19 @@ async function collectManifestInventoryCounts(input: {
 				pageSize: maxExportPageSize,
 			})
 			return countUserMeterExportEntries(page)
+		}),
+		safeCount('mailbox rows', async () => {
+			if (!mailboxNamespace(input.env)) return 0
+			const counts = await mailboxRpc({
+				env: input.env,
+				userId: input.userId,
+			}).countMailbox()
+			return (
+				counts.threads +
+				counts.messages +
+				counts.attachments +
+				counts.deliveryEvents
+			)
 		}),
 		safeCount('remote connectors', async () =>
 			countScalar(
@@ -1099,6 +1118,7 @@ async function collectManifestInventoryCounts(input: {
 		storageRunners,
 		runRecords,
 		userMeterCounters,
+		mailboxRows,
 		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
@@ -1371,6 +1391,36 @@ async function exportUserMeterCounters(input: {
 	}
 }
 
+async function exportMailboxRows(input: {
+	env: AccountExportEnv
+	userId: string
+	warnings: Array<string>
+}): Promise<MailboxExportResult | null> {
+	try {
+		if (!mailboxNamespace(input.env)) {
+			input.warnings.push(
+				'MAILBOX binding was unavailable; mailbox rows were not exported.',
+			)
+			return null
+		}
+		const page = await mailboxRpc({
+			env: input.env,
+			userId: input.userId,
+		}).exportMailbox({
+			pageSize: maxExportPageSize,
+		})
+		if (page.truncated) {
+			input.warnings.push(
+				`Mailbox rows were truncated in the full export; use account_export_section with section "mailbox" to retrieve additional pages.`,
+			)
+		}
+		return page
+	} catch (error) {
+		input.warnings.push(`Mailbox export failed: ${getErrorMessage(error)}`)
+		return null
+	}
+}
+
 async function exportRemoteConnectorSessions(input: {
 	env: AccountExportEnv
 	userId: string
@@ -1469,6 +1519,7 @@ async function exportDurableObjects(input: {
 		packageServices,
 		runRecords,
 		userMeter,
+		mailbox,
 	] = await Promise.all([
 		exportStorageRunners({
 			env: input.env,
@@ -1498,6 +1549,11 @@ async function exportDurableObjects(input: {
 			userId: input.userId,
 			warnings: input.warnings,
 		}),
+		exportMailboxRows({
+			env: input.env,
+			userId: input.userId,
+			warnings: input.warnings,
+		}),
 	])
 	let jobManager: unknown | null = null
 	try {
@@ -1512,6 +1568,7 @@ async function exportDurableObjects(input: {
 		jobManager,
 		runRecords,
 		userMeter,
+		mailbox,
 		remoteConnectorSessions,
 		packageServices,
 		storageRunners,
@@ -1586,6 +1643,17 @@ function buildManifest(input: {
 				warning.startsWith('User meter ') || warning.startsWith('USER_METER '),
 		),
 		discovery: { section: 'user_meter' },
+	}
+	sections.mailbox = {
+		count:
+			input.durableObjects?.mailbox == null
+				? (input.inventoryCounts?.mailboxRows ?? 0)
+				: input.durableObjects.mailbox.rows.length,
+		warnings: input.warnings.filter(
+			(warning) =>
+				warning.startsWith('Mailbox ') || warning.startsWith('MAILBOX '),
+		),
+		discovery: { section: 'mailbox' },
 	}
 	sections.remote_connector_sessions = {
 		count:
@@ -1921,6 +1989,27 @@ export async function readAccountExportSection(input: {
 			section: input.section,
 			items: page.counters,
 			storageBytesShadow: page.storageBytesShadow,
+			truncated: page.truncated,
+			nextStartAfter: page.nextStartAfter,
+			pageSize,
+			warnings,
+		}
+	}
+	if (input.section === 'mailbox') {
+		if (!mailboxNamespace(input.env)) {
+			throw new Error('MAILBOX binding was unavailable.')
+		}
+		const pageSize = normalizePageSize(input.pageSize)
+		const page = await mailboxRpc({
+			env: input.env,
+			userId: input.mcpUserId,
+		}).exportMailbox({
+			pageSize,
+			startAfter: input.startAfter ?? null,
+		})
+		return {
+			section: input.section,
+			items: page.rows,
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,

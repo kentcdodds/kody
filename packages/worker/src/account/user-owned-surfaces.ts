@@ -10,6 +10,7 @@ export type UserOwnedDurableObjectSurface = {
 		| 'run_log'
 		| 'user_meter'
 		| 'stripe_plan_refresh'
+		| 'mailbox'
 		| 'mcp'
 	binding: string
 	/** Result key used in AccountDeletionResult.clearedDurableObjects when purged */
@@ -142,6 +143,14 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 				'Ephemeral one-shot Stripe reconciliation alarm state. Billing columns remain canonical in D1 and are included in the users export.',
 			notes:
 				'One alarm object per stable userId. Account deletion cancels the alarm and clears its stored owner id.',
+		},
+		{
+			id: 'mailbox',
+			binding: 'MAILBOX',
+			deletionResultKey: 'mailboxes',
+			export: 'include',
+			notes:
+				'Per-user email metadata DO (MAILBOX binding; idFromName(userId)). Phase-1 scaffold only: D1 email_* tables remain authoritative for live reads and writes; account deletion purge clears SQLite state only while D1 and prefix R2 deletion stay authoritative; account export pages threads, messages, attachments, and delivery events through the mailbox section via exportMailbox.',
 		},
 		{
 			id: 'mcp',
